@@ -9,9 +9,15 @@ function setupScene(A) {
   A.canvas = canvas;
 
   // §S258: ColorManagement.enabled=false set in loader.js (before any THREE.Color created)
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
+  var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: !_isMobileRenderer,
+    preserveDrawingBuffer: true
+  });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // §S259: cap at 2x — 3x Retina = 9x fill
+  renderer.setPixelRatio(_isMobileRenderer ? 1 : Math.min(window.devicePixelRatio, 2));  // §S271: mobile=1x, desktop=cap 2x
   renderer.setClearColor(0x1a1a2e);
   renderer.shadowMap.enabled = false;
   // §S260: shadow setup deferred entirely to toggleShadow() in tools.js

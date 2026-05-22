@@ -162,7 +162,7 @@
     <a href="https://youtu.be/bSyuLQ_c4rw" target="_blank" style="display:inline-flex;align-items:center;gap:6px;color:#0277bd;font-size:13px;text-decoration:none;padding:4px 8px"><img src="viewer/YT.png" alt="YouTube" style="height:20px;vertical-align:middle"> <span data-trl="landing_watch_demo">Watch Demo</span></a>
     <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.toggle('active')" style="display:inline-flex;align-items:center;gap:5px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px">&#10067; <span data-trl="landing_about">About</span></a>
     <a href="javascript:void(0)" id="header-flag-btn" onclick="if(window._TRL_LOADER)_TRL_LOADER.openFlagPicker()" style="display:inline-flex;align-items:center;gap:4px;color:#444;font-size:16px;text-decoration:none;padding:4px 8px;cursor:pointer" title="Language">&#127760;</a>
-    <a href="javascript:void(0)" onclick="if(window.APP&&APP.reportBug)APP.reportBug();else window.open('https://github.com/red1oon/BIMCompiler/issues/new?labels=bug','_blank')" style="display:inline-flex;align-items:center;gap:4px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px;cursor:pointer" title="Send to GitHub Issues Tracker"><img src="submit.png" alt="Submit" style="height:18px;vertical-align:middle"> <span style="font-size:10px">Send to GitHub Issues Tracker</span></a>
+    <a href="javascript:void(0)" onclick="if(window.APP&&APP.reportBug)APP.reportBug();else window.open('https://github.com/red1oon/bim-ootb/issues/new?labels=bug','_blank')" style="display:inline-flex;align-items:center;gap:4px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px;cursor:pointer" title="Send to GitHub Issues Tracker"><img src="submit.png" alt="Submit" style="height:18px;vertical-align:middle"> <span style="font-size:10px">Send to GitHub Issues Tracker</span></a>
   </div>
 </div>
 
@@ -280,7 +280,7 @@
 <div class="footer">
   <a href="https://red1oon.github.io/BIMCompiler/StrategicIndustryPositioning/" target="_blank">Documentation</a>
   &nbsp;&middot;&nbsp;
-  <a href="https://github.com/red1oon/BIMCompiler" target="_blank">GitHub</a>
+  <a href="https://github.com/red1oon/bim-ootb" target="_blank">GitHub</a>
   &nbsp;&middot;&nbsp;
   BIM OOTB &mdash; FOSS &middot; No account &middot; No vendor lock-in
   &nbsp;&middot;&nbsp;
@@ -1490,12 +1490,12 @@ async function exportProjectIFC(projectKey, flyout) {
     <img src="Sysnova.png" alt="Sysnova" style="height:50px;margin-bottom:8px;background:#f5f0e0;border-radius:6px;padding:4px 10px">
     <div style="font-size:20px;font-weight:700;color:#e0e0e0">BIM</div>
     <div style="font-size:12px;letter-spacing:3px;color:#888;margin-bottom:6px">Out Of The Box</div>
-    <div style="color:#888;font-size:11px;margin-bottom:8px">Version 0.6 alpha (October 2025 &#8211; April 2026)</div>
+    <div style="color:#888;font-size:11px;margin-bottom:8px">Version 1.0 (April &#8211; May 2026)</div>
     <div style="color:#aaa;font-size:11px;font-style:italic;margin-bottom:4px">Frictionless BIM. Two DBs. One browser. Zero install.</div>
     <div style="color:#e8a735;font-size:10px;font-style:italic;margin-bottom:12px">Probably the lightest BIM app ever made.</div>
 
     <table style="margin:0 auto 12px;font-size:10px;color:#999;border-collapse:collapse;text-align:left">
-      <tr><td style="padding:2px 8px 2px 0;color:#666">Three.js</td><td>r128</td></tr>
+      <tr><td style="padding:2px 8px 2px 0;color:#666">Three.js</td><td>r160 ESM (BatchedMesh, DLOD)</td></tr>
       <tr><td style="padding:2px 8px 2px 0;color:#666">SQLite</td><td>3.44.2 (sql.js 1.10.3 WASM)</td></tr>
       <tr><td style="padding:2px 8px 2px 0;color:#666">web-ifc</td><td>0.0.77 (IFC2x3 + IFC4)</td></tr>
       <tr><td style="padding:2px 8px 2px 0;color:#666">SheetJS</td><td>0.20.3</td></tr>
@@ -1507,21 +1507,21 @@ async function exportProjectIFC(projectKey, flyout) {
     </div>
 
     <div style="margin-bottom:10px;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:4px">
-      <div style="color:#666;font-size:9px;text-transform:uppercase;margin-bottom:3px">Stage 1 &#8212; Pure Browser (current)</div>
-      <div style="color:#999;font-size:10px;line-height:1.5">17K lines vanilla JS. No server, no APIs.<br>IFC parsed client-side. SQLite DBs ARE the app.</div>
+      <div style="color:#666;font-size:9px;text-transform:uppercase;margin-bottom:3px">Architecture</div>
+      <div style="color:#999;font-size:10px;line-height:1.5">80+ JS modules, vanilla ES6. No server, no APIs.<br>IFC parsed client-side. SQLite DBs ARE the app.<br>30 buildings. 18 languages. 17 country rates.</div>
     </div>
 
     <div style="margin-bottom:10px;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:4px">
-      <div style="color:#666;font-size:9px;text-transform:uppercase;margin-bottom:3px">Stage 2 &#8212; DAGCompiler Backend (planned)</div>
-      <div style="color:#999;font-size:10px;line-height:1.5">Java BOM engine: 2.1M lines &#8226; Python: 2.7M lines<br>SQL rules: 644K lines. Same two-DB output format.</div>
+      <div style="color:#666;font-size:9px;text-transform:uppercase;margin-bottom:3px">Features</div>
+      <div style="color:#999;font-size:10px;line-height:1.5">3D/2D viewer &#8226; IFC import/export &#8226; Clash detection<br>4D time machine &#8226; 5D cost estimation &#8226; BOM engine<br>Grid system &#8226; ERP &#8226; PWA offline &#8226; City mode (786 buildings)</div>
     </div>
 
     <div style="color:#888;font-size:10px;margin-bottom:4px">Copyright &#169; 2006 Redhuan D. Oon. MIT License.</div>
     <div style="color:#666;font-size:9px;line-height:1.4;margin-bottom:10px;padding:4px 8px;background:rgba(255,255,255,0.03);border-radius:4px">Permission is hereby granted, free of charge, to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software, subject to the above copyright notice and this permission notice.</div>
     <div style="display:flex;justify-content:center;gap:12px;font-size:11px;margin-bottom:8px">
       <a href="mailto:red1org@gmail.com" style="color:#0277bd;text-decoration:none">&#9993; Email</a>
-      <a href="https://github.com/red1oon/BIMCompiler" target="_blank" style="color:#0277bd;text-decoration:none">&#11088; GitHub</a>
-      <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.remove('active');if(window.APP&&APP.reportBug)APP.reportBug();else window.open('https://github.com/red1oon/BIMCompiler/issues/new?labels=bug','_blank')" style="color:#ff8a65;text-decoration:none">&#128027; Report Bug</a>
+      <a href="https://github.com/red1oon/bim-ootb" target="_blank" style="color:#0277bd;text-decoration:none">&#11088; GitHub</a>
+      <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.remove('active');if(window.APP&&APP.reportBug)APP.reportBug();else window.open('https://github.com/red1oon/bim-ootb/issues/new?labels=bug','_blank')" style="color:#ff8a65;text-decoration:none">&#128027; Report Bug</a>
     </div>
     <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.remove('active');document.getElementById('diy-dialog').classList.add('active')" style="color:#e8a735;font-size:11px;text-decoration:none;cursor:pointer">&#128736; DIY Downloader</a>
   </div>
@@ -1611,7 +1611,7 @@ function downloadDIYScript() {
       'cd /d "%DEST%"',
       '',
       'echo Downloading BIM OOTB viewer...',
-      'curl -sL -o bim-ootb.zip "https://github.com/red1oon/BIMCompiler/archive/refs/heads/full.zip"',
+      'curl -sL -o bim-ootb.zip "https://github.com/red1oon/bim-ootb/archive/refs/heads/full.zip"',
       'if errorlevel 1 (',
       '  echo [!] Download failed. Check your internet connection.',
       '  pause',
@@ -1663,7 +1663,7 @@ function downloadDIYScript() {
       'DEST="$HOME/bim-ootb"',
       'mkdir -p "$DEST" && cd "$DEST"',
       'echo "Downloading BIM OOTB viewer..."',
-      'curl -sL -o bim-ootb.zip "https://github.com/red1oon/BIMCompiler/archive/refs/heads/full.zip"',
+      'curl -sL -o bim-ootb.zip "https://github.com/red1oon/bim-ootb/archive/refs/heads/full.zip"',
       'echo "Extracting..."',
       'unzip -qo bim-ootb.zip "BIMCompiler-full/deploy/dev/*" -d _tmp',
       'cp -r _tmp/BIMCompiler-full/deploy/dev/* . && rm -rf _tmp bim-ootb.zip',

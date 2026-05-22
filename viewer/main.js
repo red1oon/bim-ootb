@@ -509,8 +509,18 @@ function initViewer() {
     }
   });
 
+  // §S271: Pause rAF when tab backgrounded — saves battery, avoids WebGL context kill
+  var _tabVisible = true;
+  document.addEventListener('visibilitychange', function() {
+    _tabVisible = !document.hidden;
+    if (_tabVisible) { _needsRender = true; _rafId = requestAnimationFrame(animate); }
+    else if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+    console.log('§TAB_VISIBILITY visible=' + _tabVisible);
+  });
+
+  var _rafId;
   function animate() {
-    requestAnimationFrame(animate);
+    _rafId = requestAnimationFrame(animate);
     if (!APP.walkModeActive) {
       APP.controls.update();
       if (APP.walkMode) { APP.walkTick(); } else { APP.flyTick(); }
@@ -523,13 +533,16 @@ function initViewer() {
     APP.walkModeGpsTick();
     // Device orientation LAST — nothing may overwrite the quaternion after this
     if (APP.walkModeActive) APP.walkOrientTick();
-    // §S265c: Unconditional render — on-demand gate broke sliders, palette, bbox loading.
-    // markDirty() calls remain harmless throughout codebase.
+    // §S271: Re-enable on-demand render — streaming/DLOD/sliders all call markDirty().
+    // S265c broke this; fixed by ensuring all mutation paths mark dirty.
     APP.updateMeasureLabels();
     if (APP.ground && APP.ground.visible) {
       APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
-    APP.renderer.render(APP.scene, APP.camera);
+    if (_needsRender || APP._streaming) {
+      APP.renderer.render(APP.scene, APP.camera);
+      _needsRender = false;
+    }
   }
 
   // Go

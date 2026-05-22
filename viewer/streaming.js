@@ -619,7 +619,7 @@ function setupStreaming(A) {
         // 2+ instances — InstancedMesh (both desktop and mobile)
         const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
-        iMesh.frustumCulled = false;
+        iMesh.frustumCulled = true;  // §S271: let Three.js cull off-screen InstancedMesh
         const meta = [];
 
         for (let i = 0; i < elements.length; i++) {

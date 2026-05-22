@@ -15,7 +15,7 @@ function setupDLOD(A) {
   A._dlodPaused = false;     // true = cooperate with time machine (skip TM-hidden meshes)
 
   var EVAL_EVERY = 6;             // frames between evaluations
-  var MIN_ELEMENTS = 100000;      // §S262: LTU (122K) onwards — visibility culling for very large buildings
+  var MIN_ELEMENTS = 5000;        // §S271: frustum culling for all non-trivial buildings (was 100K)
   var STOREY_RANGE = 3;           // show N storeys above/below look target
   var _frustum = new THREE.Frustum();
   var _projScreenMatrix = new THREE.Matrix4();
