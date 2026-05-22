@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BIM OOTB — 2D Grid Editor</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#4fc3f7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+#canvas3d { width: 100vw; height: 100vh; display: block; }
+
+/* ── Toolbar ── */
+#toolbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  background: rgba(20,20,40,0.95); border-bottom: 1px solid #333;
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px; flex-wrap: wrap;
+}
+#toolbar h1 { font-size: 14px; color: #4fc3f7; margin-right: 12px; white-space: nowrap; }
+#toolbar button {
+  background: #333; color: #ccc; border: 1px solid #555; border-radius: 4px;
+  padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+#toolbar button:hover { background: #444; color: #fff; }
+#toolbar button.active { background: #4fc3f7; color: #000; border-color: #4fc3f7; }
+
+/* ── Grid Measurements Panel ── */
+#grid-panel {
+  position: fixed; top: 44px; right: 8px; z-index: 10;
+  background: rgba(20,40,80,0.55); border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px; backdrop-filter: blur(8px);
+  min-width: 200px; max-width: 280px; max-height: 60vh; overflow-y: auto;
+  padding: 0; font-size: 12px; cursor: grab;
+}
+#grid-panel h3 {
+  font-size: 12px; color: #4fc3f7; padding: 8px 12px; margin: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+#grid-panel .axis-label {
+  color: #aaa; font-size: 10px; margin: 6px 12px 2px;
+  border-bottom: 1px solid #333; padding-bottom: 2px;
+}
+#grid-panel .grid-row {
+  padding: 4px 12px; cursor: pointer; border-radius: 3px;
+  display: flex; justify-content: space-between; transition: background 0.15s;
+}
+#grid-panel .grid-row:hover { background: rgba(79,195,247,0.15); }
+#grid-panel .grid-row.active { background: rgba(255,140,0,0.2); color: #ff8c00; }
+#grid-panel .grid-row .dim { color: #4fc3f7; font-weight: 600; }
+#grid-panel .grid-row.active .dim { color: #ff8c00; }
+#grid-panel .total-row {
+  padding: 3px 12px; font-size: 11px; color: #888;
+  display: flex; justify-content: space-between;
+}
+
+/* ── Status bar ── */
+#status {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+  background: rgba(20,20,40,0.95); border-top: 1px solid #333;
+  padding: 4px 12px; font-size: 11px; color: #888;
+}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <h1>2D Grid Editor</h1>
+  <button id="fit-btn" title="Fit All">Fit</button>
+  <button id="ortho-btn" title="Top-down orthographic" class="active">Top</button>
+  <button id="persp-btn" title="Perspective 3D">3D</button>
+  <button id="back-btn" title="Back to 3D viewer" onclick="history.back()">← Back</button>
+</div>
+
+<div id="grid-panel">
+  <h3>Grid Dimensions</h3>
+  <div id="grid-panel-body"><div style="padding:12px;color:#888">Loading…</div></div>
+</div>
+
+<canvas id="canvas3d"></canvas>
+<div id="status">Initializing…</div>
+
+<!-- Dependencies -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.min.js"></script>
+<script src="grid_dims.js?v=4"></script>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── Constants ─────────────────────────────────────────────────────
+  var COLOR_DEFAULT = 0x222222;
+  var COLOR_HIGHLIGHT = 0xff8c00;
+  var BUBBLE_RADIUS_PX = 18;
+  var LINE_OVERSHOOT = 2.0; // metres past bbox
+  var status = document.getElementById('status');
+
+  // ── Three.js Setup ────────────────────────────────────────────────
+  var canvas = document.getElementById('canvas3d');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setClearColor(0x1a1a2e);
+
+  var scene = new THREE.Scene();
+
+  // Orthographic camera (top-down by default)
+  var frustum = 30;
+  var aspect = window.innerWidth / window.innerHeight;
+  var camera = new THREE.OrthographicCamera(
+    -frustum * aspect, frustum * aspect, frustum, -frustum, 0.1, 10000
+  );
+  camera.position.set(0, 100, 0);
+  camera.lookAt(0, 0, 0);
+  camera.up.set(0, 0, -1); // so Z-negative is "up" on screen (north)
+
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableRotate = false; // top-down: pan + zoom only
+  controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.screenSpacePanning = true;
+
+  // Perspective camera (alternate)
+  var perspCamera = new THREE.PerspectiveCamera(45, aspect, 0.1, 10000);
+  perspCamera.position.set(40, 40, 40);
+
+  var activeCamera = camera;
+  var isPerspective = false;
+
+  // Ambient light
+  scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+
+  // ── State ─────────────────────────────────────────────────────────
+  var gridData = null;
+  var lineMeshes = {};   // label -> THREE.Line
+  var bubbleSprites = []; // all bubble sprites
+  var selectedLabel = null;
+  var sceneBbox = new THREE.Box3();
+
+  // ── Database Loading ──────────────────────────────────────────────
+  var params = new URLSearchParams(location.search);
+  var dbUrl = params.get('db') || '';
+
+  if (!dbUrl) {
+    status.textContent = 'No ?db= parameter — pass the building database URL';
+    return;
+  }
+
+  status.textContent = 'Loading database…';
+
+  initSqlJs({ locateFile: function(f) { return 'https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/' + f; } })
+  .then(function(SQL) {
+    return fetch(dbUrl).then(function(r) {
+      if (!r.ok) throw new Error('DB fetch failed: ' + r.status);
+      return r.arrayBuffer();
+    }).then(function(buf) {
+      return new SQL.Database(new Uint8Array(buf));
+    });
+  })
+  .then(function(db) {
+    status.textContent = 'Detecting grids…';
+    runGridDetection(db);
+  })
+  .catch(function(err) {
+    console.error('[2D_Editor] §GRID_INIT FAIL', err);
+    status.textContent = 'Error: ' + err.message;
+  });
+
+  // ── Grid Detection & Rendering ────────────────────────────────────
+
+  function runGridDetection(db) {
+    if (typeof GridDims === 'undefined') {
+      status.textContent = 'grid_dims.js not loaded';
+      return;
+    }
+
+    gridData = GridDims.detectGrids(db);
+    console.log('[2D_Editor] §GRID_DETECT xLines=' + (gridData.xLines||[]).length +
+                ' yLines=' + (gridData.yLines||[]).length);
+
+    if ((!gridData.xLines || !gridData.xLines.length) && (!gridData.yLines || !gridData.yLines.length)) {
+      status.textContent = 'No grids detected (need ≥3 columns in database)';
+      return;
+    }
+
+    var dims = GridDims.generateDimensions(gridData);
+    buildGridScene(gridData);
+    buildPanel(gridData);
+    fitAll();
+    status.textContent = 'Grid mode — ' + ((gridData.xLines||[]).length + (gridData.yLines||[]).length) + ' lines';
+  }
+
+  // ── Build 3D Grid Lines ───────────────────────────────────────────
+
+  function buildGridScene(grids) {
+    var xLines = grids.xLines || [];
+    var yLines = grids.yLines || [];
+
+    // Compute extent from grid positions (IFC coords, metres)
+    var allX = xLines.map(function(l) { return l.position; });
+    var allY = yLines.map(function(l) { return l.position; });
+    var xMin = allX.length ? Math.min.apply(null, allX) - LINE_OVERSHOOT : -10;
+    var xMax = allX.length ? Math.max.apply(null, allX) + LINE_OVERSHOOT : 10;
+    var yMin = allY.length ? Math.min.apply(null, allY) - LINE_OVERSHOOT : -10;
+    var yMax = allY.length ? Math.max.apply(null, allY) + LINE_OVERSHOOT : 10;
+
+    // In this 2D editor: IFC X → Three X, IFC Y → Three -Z, all at Y=0 (ground)
+    // X-axis grids: vertical lines (constant IFC-X, running full IFC-Y extent)
+    for (var i = 0; i < xLines.length; i++) {
+      var xPos = xLines[i].position;
+      var pts = [
+        new THREE.Vector3(xPos, 0, -yMin),
+        new THREE.Vector3(xPos, 0, -yMax)
+      ];
+      addGridLine(xLines[i].label, 'X', xPos, pts);
+    }
+
+    // Y-axis grids: horizontal lines (constant IFC-Y, running full IFC-X extent)
+    for (var j = 0; j < yLines.length; j++) {
+      var yPos = yLines[j].position;
+      var pts2 = [
+        new THREE.Vector3(xMin, 0, -yPos),
+        new THREE.Vector3(xMax, 0, -yPos)
+      ];
+      addGridLine(yLines[j].label, 'Y', yPos, pts2);
+    }
+
+    // Update scene bbox
+    sceneBbox.setFromObject(scene);
+  }
+
+  function addGridLine(label, axis, pos, points) {
+    var geom = new THREE.BufferGeometry().setFromPoints(points);
+    var mat = new THREE.LineBasicMaterial({ color: COLOR_DEFAULT, linewidth: 1 });
+    var line = new THREE.Line(geom, mat);
+    line.userData = { gridLabel: label, gridAxis: axis, gridPos: pos };
+    scene.add(line);
+    lineMeshes[label] = line;
+
+    // Bubbles at both ends
+    addBubble(label, points[0], false);
+    addBubble(label, points[1], false);
+
+    console.log('[2D_Editor] §GRID_LINE axis=' + axis + ' pos=' + pos.toFixed(3) + ' label=' + label);
+  }
+
+  function addBubble(label, position, highlighted) {
+    var canvas2 = document.createElement('canvas');
+    canvas2.width = 64; canvas2.height = 64;
+    var ctx = canvas2.getContext('2d');
+    ctx.beginPath();
+    ctx.arc(32, 32, 28, 0, Math.PI * 2);
+    ctx.fillStyle = highlighted ? '#fff3e0' : '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = highlighted ? '#ff8c00' : '#000000';
+    ctx.stroke();
+    ctx.fillStyle = highlighted ? '#ff8c00' : '#000000';
+    ctx.font = 'bold 26px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 32, 33);
+
+    var texture = new THREE.CanvasTexture(canvas2);
+    var mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, sizeAttenuation: false });
+    var sprite = new THREE.Sprite(mat);
+    sprite.position.copy(position);
+    sprite.scale.set(0.04, 0.04, 1); // constant screen size for ortho
+    sprite.userData = { gridLabel: label, highlighted: highlighted };
+    scene.add(sprite);
+    bubbleSprites.push(sprite);
+  }
+
+  // ── Measurements Panel ────────────────────────────────────────────
+
+  function buildPanel(grids) {
+    var body = document.getElementById('grid-panel-body');
+    var html = '';
+
+    var xLines = grids.xLines || [];
+    if (xLines.length > 1) {
+      html += '<div class="axis-label">X-Axis (1, 2, 3…)</div>';
+      for (var i = 0; i < xLines.length - 1; i++) {
+        var dist = Math.abs(xLines[i + 1].position - xLines[i].position);
+        html += '<div class="grid-row" data-label="' + xLines[i].label + '" data-axis="X">' +
+          '<span>' + xLines[i].label + '–' + xLines[i + 1].label + '</span>' +
+          '<span class="dim">' + (dist * 1000).toFixed(0) + ' mm</span></div>';
+      }
+      var totalX = Math.abs(xLines[xLines.length - 1].position - xLines[0].position);
+      html += '<div class="total-row"><span>' + xLines[0].label + '–' + xLines[xLines.length - 1].label +
+        ' total</span><span>' + (totalX * 1000).toFixed(0) + ' mm</span></div>';
+    }
+
+    var yLines = grids.yLines || [];
+    if (yLines.length > 1) {
+      html += '<div class="axis-label">Y-Axis (A, B, C…)</div>';
+      for (var j = 0; j < yLines.length - 1; j++) {
+        var dist2 = Math.abs(yLines[j + 1].position - yLines[j].position);
+        html += '<div class="grid-row" data-label="' + yLines[j].label + '" data-axis="Y">' +
+          '<span>' + yLines[j].label + '–' + yLines[j + 1].label + '</span>' +
+          '<span class="dim">' + (dist2 * 1000).toFixed(0) + ' mm</span></div>';
+      }
+      var totalY = Math.abs(yLines[yLines.length - 1].position - yLines[0].position);
+      html += '<div class="total-row"><span>' + yLines[0].label + '–' + yLines[yLines.length - 1].label +
+        ' total</span><span>' + (totalY * 1000).toFixed(0) + ' mm</span></div>';
+    }
+
+    if (!html) html = '<div style="padding:12px;color:#888">No grids detected</div>';
+    body.innerHTML = html;
+
+    // Attach click handlers
+    var rows = body.querySelectorAll('.grid-row');
+    for (var r = 0; r < rows.length; r++) {
+      rows[r].addEventListener('pointerup', onRowClick);
+    }
+  }
+
+  // ── Click-to-Zoom + Orange Highlight ──────────────────────────────
+
+  function onRowClick(e) {
+    var label = e.currentTarget.getAttribute('data-label');
+    if (!label) return;
+    highlightGrid(label);
+    zoomToGrid(label);
+  }
+
+  function highlightGrid(label) {
+    // Reset previous
+    if (selectedLabel && lineMeshes[selectedLabel]) {
+      lineMeshes[selectedLabel].material.color.setHex(COLOR_DEFAULT);
+    }
+    // Reset panel
+    var rows = document.querySelectorAll('#grid-panel .grid-row');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.remove('active');
+
+    selectedLabel = label;
+
+    // Highlight line orange
+    if (lineMeshes[label]) {
+      lineMeshes[label].material.color.setHex(COLOR_HIGHLIGHT);
+    }
+
+    // Highlight panel rows
+    var matching = document.querySelectorAll('#grid-panel .grid-row[data-label="' + label + '"]');
+    for (var j = 0; j < matching.length; j++) matching[j].classList.add('active');
+
+    // Update bubbles
+    rebuildBubbles(label);
+
+    console.log('[2D_Editor] §GRID_ZOOM highlight=' + label);
+  }
+
+  function rebuildBubbles(activeLabel) {
+    // Remove old sprites
+    for (var i = 0; i < bubbleSprites.length; i++) {
+      var s = bubbleSprites[i];
+      scene.remove(s);
+      if (s.material.map) s.material.map.dispose();
+      s.material.dispose();
+    }
+    bubbleSprites = [];
+
+    // Rebuild all
+    var allLines = (gridData.xLines || []).concat(gridData.yLines || []);
+    for (var k = 0; k < allLines.length; k++) {
+      var lbl = allLines[k].label;
+      var line = lineMeshes[lbl];
+      if (!line) continue;
+      var positions = line.geometry.attributes.position;
+      var p0 = new THREE.Vector3(positions.getX(0), positions.getY(0), positions.getZ(0));
+      var p1 = new THREE.Vector3(positions.getX(1), positions.getY(1), positions.getZ(1));
+      var isActive = (lbl === activeLabel);
+      addBubble(lbl, p0, isActive);
+      addBubble(lbl, p1, isActive);
+    }
+  }
+
+  function zoomToGrid(label) {
+    var line = lineMeshes[label];
+    if (!line) return;
+
+    var positions = line.geometry.attributes.position;
+    var mid = new THREE.Vector3(
+      (positions.getX(0) + positions.getX(1)) / 2,
+      0,
+      (positions.getZ(0) + positions.getZ(1)) / 2
+    );
+
+    var lineLen = Math.abs(
+      line.userData.gridAxis === 'X'
+        ? positions.getZ(1) - positions.getZ(0)
+        : positions.getX(1) - positions.getX(0)
+    );
+
+    // Zoom: adjust frustum to show the grid line with some padding
+    var padding = lineLen * 0.3;
+    var targetFrustum = (lineLen + padding) / 2;
+    if (targetFrustum < 5) targetFrustum = 5;
+
+    // Animate (16 frames)
+    var startTarget = controls.target.clone();
+    var startZoom = camera.zoom;
+    var targetZoom = frustum / targetFrustum;
+    var frame = 0;
+    var total = 16;
+
+    function step() {
+      frame++;
+      var t = frame / total;
+      t = t * (2 - t); // ease-out
+
+      controls.target.lerpVectors(startTarget, mid, t);
+      camera.zoom = startZoom + (targetZoom - startZoom) * t;
+      camera.updateProjectionMatrix();
+      controls.update();
+
+      if (frame < total) requestAnimationFrame(step);
+    }
+    step();
+
+    console.log('[2D_Editor] §GRID_ZOOM label=' + label + ' mid=(' + mid.x.toFixed(1) + ',' + mid.z.toFixed(1) + ')');
+  }
+
+  // ── Fit All ───────────────────────────────────────────────────────
+
+  function fitAll() {
+    var box = new THREE.Box3().setFromObject(scene);
+    if (box.isEmpty()) return;
+    var center = new THREE.Vector3();
+    box.getCenter(center);
+    var size = new THREE.Vector3();
+    box.getSize(size);
+
+    controls.target.set(center.x, 0, center.z);
+    var maxDim = Math.max(size.x, size.z);
+    camera.zoom = frustum * 2 / (maxDim + 4);
+    camera.updateProjectionMatrix();
+    controls.update();
+  }
+
+  // ── Toolbar Buttons ───────────────────────────────────────────────
+
+  document.getElementById('fit-btn').addEventListener('pointerup', fitAll);
+
+  document.getElementById('ortho-btn').addEventListener('pointerup', function() {
+    if (!isPerspective) return;
+    isPerspective = false;
+    activeCamera = camera;
+    controls.object = camera;
+    controls.enableRotate = false;
+    camera.position.set(controls.target.x, 100, controls.target.z);
+    camera.updateProjectionMatrix();
+    controls.update();
+    this.classList.add('active');
+    document.getElementById('persp-btn').classList.remove('active');
+  });
+
+  document.getElementById('persp-btn').addEventListener('pointerup', function() {
+    if (isPerspective) return;
+    isPerspective = true;
+    var t = controls.target.clone();
+    perspCamera.position.set(t.x + 30, 30, t.z + 30);
+    perspCamera.lookAt(t);
+    activeCamera = perspCamera;
+    controls.object = perspCamera;
+    controls.enableRotate = true;
+    controls.update();
+    this.classList.add('active');
+    document.getElementById('ortho-btn').classList.remove('active');
+  });
+
+  // ── Render Loop ───────────────────────────────────────────────────
+
+  var needsRender = true;
+  controls.addEventListener('change', function() { needsRender = true; });
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (needsRender) {
+      renderer.render(scene, activeCamera);
+      needsRender = false;
+    }
+  }
+  animate();
+
+  // ── Resize ────────────────────────────────────────────────────────
+
+  window.addEventListener('resize', function() {
+    var w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    aspect = w / h;
+    camera.left = -frustum * aspect;
+    camera.right = frustum * aspect;
+    camera.top = frustum;
+    camera.bottom = -frustum;
+    camera.updateProjectionMatrix();
+    perspCamera.aspect = aspect;
+    perspCamera.updateProjectionMatrix();
+    needsRender = true;
+  });
+
+  // ── Make panel draggable ────────────────────────────────────────
+  (function() {
+    var panel = document.getElementById('grid-panel');
+    var dragging = false, ox, oy, sx, sy;
+    var dragStrip = 30;
+    panel.addEventListener('pointerdown', function(e) {
+      if (e.target.closest('.grid-row')) return; // don't drag on row click
+      var rect = panel.getBoundingClientRect();
+      if (e.clientY - rect.top > dragStrip) return;
+      dragging = true; ox = e.clientX; oy = e.clientY;
+      sx = rect.left; sy = rect.top;
+      panel.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    panel.addEventListener('pointermove', function(e) {
+      if (!dragging) return;
+      panel.style.left = (sx + e.clientX - ox) + 'px';
+      panel.style.top = (sy + e.clientY - oy) + 'px';
+      panel.style.right = 'auto';
+    });
+    panel.addEventListener('pointerup', function() { dragging = false; });
+    panel.addEventListener('lostpointercapture', function() { dragging = false; });
+  })();
+
+  console.log('[2D_Editor] §GRID_INIT ready');
+})();
+</script>
+</body>
+</html>

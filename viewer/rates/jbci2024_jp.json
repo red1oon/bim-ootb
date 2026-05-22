@@ -1,0 +1,850 @@
+{
+  "meta": {
+    "name": "JBCI Japan 2024",
+    "region": "JP",
+    "currency": "JPY",
+    "currency2": "USD",
+    "exchange_rate": 156.9,
+    "source": "JBCI Construction Cost Index / Ministry of Land 2024",
+    "validity_days": 60,
+    "measurement_standard": "JASS / AIJ"
+  },
+  "materials": {
+    "IfcDuct": {
+      "rate": 5800,
+      "unit": "M",
+      "desc": "亜鉛鋼板ダクト（平均400mm）",
+      "smm_section": "U10"
+    },
+    "IfcDuctSegment": {
+      "rate": 5800,
+      "unit": "M",
+      "desc": "ダクトセグメント",
+      "smm_section": "U10"
+    },
+    "IfcDuctFitting": {
+      "rate": 12500,
+      "unit": "EA",
+      "desc": "ダクト継手（エルボ、ティー）",
+      "smm_section": "U10"
+    },
+    "IfcPipe": {
+      "rate": 2200,
+      "unit": "M",
+      "desc": "配管（SGP/VP 平均100mm）",
+      "smm_section": "S10"
+    },
+    "IfcPipeSegment": {
+      "rate": 2200,
+      "unit": "M",
+      "desc": "配管セグメント",
+      "smm_section": "S10"
+    },
+    "IfcPipeFitting": {
+      "rate": 4500,
+      "unit": "EA",
+      "desc": "配管継手",
+      "smm_section": "S10"
+    },
+    "IfcCableCarrier": {
+      "rate": 3800,
+      "unit": "M",
+      "desc": "ケーブルラック（300mm）",
+      "smm_section": "V20"
+    },
+    "IfcCableCarrierSegment": {
+      "rate": 3800,
+      "unit": "M",
+      "desc": "ケーブルラックセグメント",
+      "smm_section": "V20"
+    },
+    "IfcBeam": {
+      "rate": 28000,
+      "unit": "M",
+      "desc": "構造用H形鋼梁",
+      "smm_section": "G10"
+    },
+    "IfcColumn": {
+      "rate": 52000,
+      "unit": "M",
+      "desc": "構造用鋼柱",
+      "smm_section": "G10"
+    },
+    "IfcSlab": {
+      "rate": 12800,
+      "unit": "M2",
+      "desc": "RC床版 250mm",
+      "smm_section": "E10"
+    },
+    "IfcWall": {
+      "rate": 6500,
+      "unit": "M2",
+      "desc": "コンクリートブロック壁 150mm",
+      "smm_section": "F10"
+    },
+    "IfcWallStandardCase": {
+      "rate": 6500,
+      "unit": "M2",
+      "desc": "標準壁",
+      "smm_section": "F10"
+    },
+    "IfcCurtainWall": {
+      "rate": 35000,
+      "unit": "M2",
+      "desc": "カーテンウォール",
+      "smm_section": "H10"
+    },
+    "IfcCovering": {
+      "rate": 8500,
+      "unit": "M2",
+      "desc": "床・天井仕上げ",
+      "smm_section": "M10"
+    },
+    "IfcRoof": {
+      "rate": 11500,
+      "unit": "M2",
+      "desc": "金属屋根",
+      "smm_section": "H60"
+    },
+    "IfcLightFixture": {
+      "rate": 18500,
+      "unit": "EA",
+      "desc": "LED照明器具",
+      "smm_section": "V40"
+    },
+    "IfcOutlet": {
+      "rate": 5800,
+      "unit": "EA",
+      "desc": "コンセント",
+      "smm_section": "V20"
+    },
+    "IfcDoor": {
+      "rate": 125000,
+      "unit": "EA",
+      "desc": "建具セット",
+      "smm_section": "L20"
+    },
+    "IfcWindow": {
+      "rate": 72000,
+      "unit": "EA",
+      "desc": "窓",
+      "smm_section": "L10"
+    },
+    "IfcBuildingElementProxy": {
+      "rate": 35000,
+      "unit": "EA",
+      "desc": "その他要素",
+      "smm_section": "P10"
+    },
+    "IfcFlowTerminal": {
+      "rate": 145000,
+      "unit": "EA",
+      "desc": "空調端末",
+      "smm_section": "U10"
+    },
+    "IfcFurnishingElement": {
+      "rate": 48000,
+      "unit": "EA",
+      "desc": "家具",
+      "smm_section": "N10"
+    },
+    "IfcPlate": {
+      "rate": 4200,
+      "unit": "M2",
+      "desc": "鋼板",
+      "smm_section": "G10"
+    },
+    "IfcMember": {
+      "rate": 13500,
+      "unit": "M",
+      "desc": "鋼部材",
+      "smm_section": "G10"
+    },
+    "IfcRailing": {
+      "rate": 12800,
+      "unit": "M",
+      "desc": "手摺り",
+      "smm_section": "L30"
+    },
+    "IfcStair": {
+      "rate": 185000,
+      "unit": "EA",
+      "desc": "階段",
+      "smm_section": "L30"
+    },
+    "IfcStairFlight": {
+      "rate": 92000,
+      "unit": "EA",
+      "desc": "階段フライト",
+      "smm_section": "L30"
+    },
+    "IfcFooting": {
+      "rate": 14500,
+      "unit": "EA",
+      "desc": "基礎フーチング",
+      "smm_section": "D20"
+    },
+    "IfcPile": {
+      "rate": 38000,
+      "unit": "EA",
+      "desc": "基礎杭",
+      "smm_section": "D30"
+    },
+    "IfcReinforcingBar": {
+      "rate": 185,
+      "unit": "KG",
+      "desc": "鉄筋",
+      "smm_section": "E30"
+    },
+    "IfcFlowSegment": {
+      "rate": 5200,
+      "unit": "M",
+      "desc": "流路セグメント",
+      "smm_section": "Y10"
+    },
+    "IfcFlowFitting": {
+      "rate": 8500,
+      "unit": "EA",
+      "desc": "流路継手",
+      "smm_section": "Y10"
+    },
+    "IfcFlowController": {
+      "rate": 19500,
+      "unit": "EA",
+      "desc": "流路制御機器",
+      "smm_section": "Y10"
+    },
+    "IfcEnergyConversionDevice": {
+      "rate": 380000,
+      "unit": "EA",
+      "desc": "エネルギー変換機器",
+      "smm_section": "T10"
+    },
+    "IfcFlowTreatmentDevice": {
+      "rate": 52000,
+      "unit": "EA",
+      "desc": "流体処理機器",
+      "smm_section": "Y10"
+    },
+    "IfcFlowMovingDevice": {
+      "rate": 145000,
+      "unit": "EA",
+      "desc": "流体搬送機器",
+      "smm_section": "T10"
+    },
+    "IfcFlowStorageDevice": {
+      "rate": 215000,
+      "unit": "EA",
+      "desc": "流体貯蔵機器",
+      "smm_section": "Y10"
+    },
+    "IfcElectricAppliance": {
+      "rate": 22000,
+      "unit": "EA",
+      "desc": "電気機器",
+      "smm_section": "V20"
+    },
+    "IfcFurniture": {
+      "rate": 62000,
+      "unit": "EA",
+      "desc": "家具",
+      "smm_section": "N10"
+    },
+    "IfcOpeningElement": {
+      "rate": 0,
+      "unit": "EA",
+      "desc": "開口部",
+      "smm_section": ""
+    },
+    "IfcDistributionElement": {
+      "rate": 18500,
+      "unit": "EA",
+      "desc": "配分装置",
+      "smm_section": "Y10"
+    },
+    "IfcFireSuppressionTerminal": {
+      "rate": 16500,
+      "unit": "EA",
+      "desc": "スプリンクラーヘッド",
+      "smm_section": "S60"
+    },
+    "IfcAirTerminal": {
+      "rate": 14000,
+      "unit": "EA",
+      "desc": "吹出口/吸込口",
+      "smm_section": "U10"
+    },
+    "IfcValve": {
+      "rate": 10500,
+      "unit": "EA",
+      "desc": "バルブ",
+      "smm_section": "S10"
+    },
+    "IfcAlarm": {
+      "rate": 13000,
+      "unit": "EA",
+      "desc": "火災報知器",
+      "smm_section": "W50"
+    },
+    "IfcController": {
+      "rate": 45000,
+      "unit": "EA",
+      "desc": "ビル管理コントローラ",
+      "smm_section": "W60"
+    },
+    "IfcRamp": {
+      "rate": 120000,
+      "unit": "EA",
+      "desc": "スロープ",
+      "smm_section": "L30"
+    },
+    "IfcRampFlight": {
+      "rate": 130000,
+      "unit": "EA",
+      "desc": "スロープフライト",
+      "smm_section": "L30"
+    },
+    "IfcBuildingElementPart": {
+      "rate": 0,
+      "unit": "EA",
+      "desc": "建築部品",
+      "smm_section": ""
+    }
+  },
+  "labor": {
+    "HVAC_TECH": {
+      "rate_per_day": 28500,
+      "crew_size": 2,
+      "trade": "空調技能者（熟練）",
+      "productivity": {
+        "IfcDuct": 16,
+        "IfcDuctSegment": 16,
+        "IfcDuctFitting": 10,
+        "IfcFlowMovingDevice": 4,
+        "IfcEnergyConversionDevice": 3,
+        "IfcFlowTerminal": 12,
+        "IfcAirTerminal": 20
+      }
+    },
+    "PLUMBER": {
+      "rate_per_day": 26000,
+      "crew_size": 2,
+      "trade": "配管工（熟練）",
+      "productivity": {
+        "IfcPipe": 22,
+        "IfcPipeSegment": 22,
+        "IfcPipeFitting": 14,
+        "IfcFlowSegment": 20,
+        "IfcFlowFitting": 15,
+        "IfcFlowStorageDevice": 4,
+        "IfcFlowTreatmentDevice": 4,
+        "IfcDistributionElement": 8,
+        "IfcValve": 20,
+        "IfcFireSuppressionTerminal": 25
+      }
+    },
+    "ELECTRICIAN": {
+      "rate_per_day": 27000,
+      "crew_size": 2,
+      "trade": "電気工（熟練）",
+      "productivity": {
+        "IfcCableCarrier": 28,
+        "IfcCableCarrierSegment": 28,
+        "IfcLightFixture": 18,
+        "IfcOutlet": 22,
+        "IfcElectricAppliance": 15,
+        "IfcFlowController": 10,
+        "IfcAlarm": 25,
+        "IfcController": 10
+      }
+    },
+    "STEEL_ERECTOR": {
+      "rate_per_day": 30000,
+      "crew_size": 4,
+      "trade": "鉄骨工（熟練）",
+      "productivity": {
+        "IfcBeam": 7,
+        "IfcColumn": 5,
+        "IfcPlate": 12,
+        "IfcMember": 10
+      }
+    },
+    "CONCRETE_GANG": {
+      "rate_per_day": 22000,
+      "crew_size": 6,
+      "trade": "コンクリート打設班",
+      "productivity": {
+        "IfcSlab": 30,
+        "IfcFooting": 6,
+        "IfcPile": 4,
+        "IfcReinforcingBar": 50,
+        "IfcRamp": 3,
+        "IfcRampFlight": 3
+      }
+    },
+    "MASON": {
+      "rate_per_day": 24000,
+      "crew_size": 3,
+      "trade": "左官・ブロック工（熟練）+ 普通作業員",
+      "productivity": {
+        "IfcWall": 10,
+        "IfcWallStandardCase": 10,
+        "IfcOpeningElement": 20,
+        "IfcBuildingElementPart": 15
+      }
+    },
+    "CARPENTER": {
+      "rate_per_day": 26000,
+      "crew_size": 2,
+      "trade": "型枠大工（熟練）",
+      "productivity": {
+        "IfcDoor": 6,
+        "IfcWindow": 6,
+        "IfcStair": 2,
+        "IfcStairFlight": 3,
+        "IfcRailing": 15,
+        "IfcCurtainWall": 8
+      }
+    },
+    "ROOFER": {
+      "rate_per_day": 27000,
+      "crew_size": 3,
+      "trade": "屋根工（熟練）",
+      "productivity": {
+        "IfcRoof": 25
+      }
+    },
+    "FINISHER": {
+      "rate_per_day": 22000,
+      "crew_size": 2,
+      "trade": "内装工（熟練）",
+      "productivity": {
+        "IfcCovering": 20,
+        "IfcFurniture": 8,
+        "IfcFurnishingElement": 8
+      }
+    },
+    "LABORER": {
+      "rate_per_day": 17000,
+      "crew_size": 1,
+      "trade": "普通作業員",
+      "productivity": {}
+    }
+  },
+  "equipment": {
+    "MOBILE_CRANE_20T": {
+      "rate_per_day": 85000,
+      "desc": "移動式クレーン 20トン"
+    },
+    "TOWER_CRANE": {
+      "rate_per_day": 120000,
+      "desc": "タワークレーン"
+    },
+    "CONCRETE_PUMP": {
+      "rate_per_day": 65000,
+      "desc": "コンクリートポンプ車"
+    },
+    "SCISSOR_LIFT_8M": {
+      "rate_per_day": 15000,
+      "desc": "シザースリフト 8m"
+    },
+    "WELDING_MACHINE": {
+      "rate_per_day": 4500,
+      "desc": "溶接機 300A"
+    },
+    "GENERATOR_5KVA": {
+      "rate_per_day": 6500,
+      "desc": "発電機 5KVA"
+    }
+  },
+  "equipment_allocation": {
+    "IfcBeam": {
+      "equipment": "MOBILE_CRANE_20T",
+      "duration_factor": 0.5
+    },
+    "IfcColumn": {
+      "equipment": "MOBILE_CRANE_20T",
+      "duration_factor": 0.5
+    },
+    "IfcSlab": {
+      "equipment": "CONCRETE_PUMP",
+      "duration_factor": 0.3
+    },
+    "IfcDuct": {
+      "equipment": "SCISSOR_LIFT_8M",
+      "duration_factor": 0.4
+    },
+    "IfcCableCarrier": {
+      "equipment": "SCISSOR_LIFT_8M",
+      "duration_factor": 0.3
+    }
+  },
+  "sequence": {
+    "IfcFooting": {
+      "phase": "Substructure",
+      "sequence": 1,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcReinforcingBar": {
+      "phase": "Substructure",
+      "sequence": 1,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcColumn": {
+      "phase": "Superstructure",
+      "sequence": 2,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcBeam": {
+      "phase": "Superstructure",
+      "sequence": 3,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcSlab": {
+      "phase": "Superstructure",
+      "sequence": 4,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcPlate": {
+      "phase": "Superstructure",
+      "sequence": 4,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcMember": {
+      "phase": "Superstructure",
+      "sequence": 3,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcDuct": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcDuctSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcDuctFitting": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcPipe": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcPipeSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcPipeFitting": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcCableCarrier": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcCableCarrierSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFlowFitting": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFlowController": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowMovingDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcFlowStorageDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFlowTreatmentDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcEnergyConversionDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcDistributionElement": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcValve": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFireSuppressionTerminal": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "PLUMBER"
+    },
+    "IfcAirTerminal": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "HVAC_TECH"
+    },
+    "IfcAlarm": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcController": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcWall": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcWallStandardCase": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcOpeningElement": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcBuildingElementPart": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcDoor": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcWindow": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcStair": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcStairFlight": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcRailing": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcRamp": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcRampFlight": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcRoof": {
+      "phase": "Architecture",
+      "sequence": 8,
+      "resource": "ROOFER"
+    },
+    "IfcBuildingElementProxy": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": null
+    },
+    "IfcCurtainWall": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcLightFixture": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcOutlet": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcElectricAppliance": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowTerminal": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "HVAC_TECH"
+    },
+    "IfcCovering": {
+      "phase": "Finishes",
+      "sequence": 10,
+      "resource": "FINISHER"
+    },
+    "IfcFurniture": {
+      "phase": "Finishes",
+      "sequence": 11,
+      "resource": "FINISHER"
+    },
+    "IfcFurnishingElement": {
+      "phase": "Finishes",
+      "sequence": 11,
+      "resource": "FINISHER"
+    }
+  },
+  "work_packages": [
+    {
+      "id": "PACKAGE 1",
+      "name": "基礎工事",
+      "color": "8E44AD",
+      "classes": [
+        "IfcFooting",
+        "IfcPile",
+        "IfcReinforcingBar"
+      ]
+    },
+    {
+      "id": "PACKAGE 2",
+      "name": "躯体工事",
+      "color": "2980B9",
+      "classes": [
+        "IfcColumn",
+        "IfcBeam",
+        "IfcSlab",
+        "IfcPlate",
+        "IfcMember"
+      ]
+    },
+    {
+      "id": "PACKAGE 3",
+      "name": "設備粗工事",
+      "color": "D35400",
+      "classes": [
+        "IfcDuct",
+        "IfcDuctSegment",
+        "IfcDuctFitting",
+        "IfcPipe",
+        "IfcPipeSegment",
+        "IfcPipeFitting",
+        "IfcCableCarrier",
+        "IfcCableCarrierSegment",
+        "IfcFlowSegment",
+        "IfcFlowFitting",
+        "IfcFlowController",
+        "IfcFlowMovingDevice",
+        "IfcFlowStorageDevice",
+        "IfcFlowTreatmentDevice",
+        "IfcEnergyConversionDevice",
+        "IfcDistributionElement",
+        "IfcValve"
+      ]
+    },
+    {
+      "id": "PACKAGE 4",
+      "name": "建築工事",
+      "color": "ED7D31",
+      "classes": [
+        "IfcWall",
+        "IfcWallStandardCase",
+        "IfcCurtainWall",
+        "IfcDoor",
+        "IfcWindow",
+        "IfcStair",
+        "IfcStairFlight",
+        "IfcRailing",
+        "IfcRoof",
+        "IfcRamp",
+        "IfcRampFlight"
+      ]
+    },
+    {
+      "id": "PACKAGE 5",
+      "name": "仕上工事",
+      "color": "27AE60",
+      "classes": [
+        "IfcCovering",
+        "IfcFurniture",
+        "IfcFurnishingElement"
+      ]
+    },
+    {
+      "id": "PACKAGE 6",
+      "name": "設備仕上工事",
+      "color": "C0392B",
+      "classes": [
+        "IfcFlowTerminal",
+        "IfcLightFixture",
+        "IfcOutlet",
+        "IfcElectricAppliance",
+        "IfcFireSuppressionTerminal",
+        "IfcAirTerminal",
+        "IfcAlarm",
+        "IfcController"
+      ]
+    }
+  ],
+  "smm_sections": {
+    "A": "仮設工事",
+    "C": "既存建物",
+    "D": "地業工事",
+    "E": "コンクリート工事",
+    "F": "組積工事",
+    "G": "鉄骨工事",
+    "H": "屋根・外壁工事",
+    "J": "防水工事",
+    "K": "内装下地工事",
+    "L": "建具・階段工事",
+    "M": "仕上工事",
+    "N": "家具・什器",
+    "P": "雑工事",
+    "Q": "外構工事",
+    "R": "排水設備",
+    "S": "給排水衛生設備",
+    "T": "空気調和設備",
+    "U": "換気設備",
+    "V": "電気設備",
+    "W": "防災・通信設備",
+    "X": "昇降機設備",
+    "Y": "設備工事（総合）"
+  },
+  "provisions": {
+    "preliminaries_pct": 10,
+    "professional_fees_pct": 8,
+    "contingency_pct": 5,
+    "demolition_pct": 3
+  }
+}

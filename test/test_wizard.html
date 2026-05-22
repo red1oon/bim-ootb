@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>S229 Wizard — Pure Function Tests</title>
+<style>
+  body { background: #1a1a2e; color: #e0e0e0; font-family: monospace; padding: 20px; }
+  .section { padding: 4px 8px; margin: 2px 0; border-radius: 4px; font-size: 13px; }
+  .pass { background: rgba(68,204,68,0.1); color: #44cc44; }
+  .fail { background: rgba(204,68,68,0.1); color: #cc4444; }
+  .info { background: rgba(79,195,247,0.1); color: #4fc3f7; }
+  h3 { color: #4fc3f7; margin: 16px 0 8px; font-size: 14px; }
+  #summary { padding: 12px; text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; border-radius: 8px; }
+  #summary.all-pass { background: rgba(68,204,68,0.15); color: #44cc44; }
+  #summary.has-fail { background: rgba(204,68,68,0.15); color: #cc4444; }
+</style>
+</head>
+<body>
+<h2>S229 Wizard Tests</h2>
+<div id="results"></div>
+<div id="summary"></div>
+
+<!-- Load sql.js for DB creation -->
+<script src="https://sql.js.org/dist/sql-wasm.js"></script>
+<!-- Load wizard sub-modules first (must precede wizard.js orchestrator) -->
+<script src="../wizard_orientation.js"></script>
+<script src="../wizard_storeys.js"></script>
+<script src="../wizard_classify.js"></script>
+<!-- Load wizard.js (the orchestrator under test) -->
+<script src="../wizard.js"></script>
+
+<script>
+var results = document.getElementById('results');
+var passCount = 0, failCount = 0;
+
+function log(msg, cls) {
+  var d = document.createElement('div');
+  d.className = 'section ' + (cls || 'info');
+  d.textContent = msg;
+  results.appendChild(d);
+}
+
+function assert(cond, label) {
+  if (cond) { passCount++; log('PASS: ' + label, 'pass'); }
+  else { failCount++; log('FAIL: ' + label, 'fail'); }
+}
+
+function heading(text) {
+  var h = document.createElement('h3');
+  h.textContent = text;
+  results.appendChild(h);
+}
+
+// Build a synthetic DB matching the import schema
+async function buildTestDb() {
+  var SQL = await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+  var db = new SQL.Database();
+
+  db.run("CREATE TABLE elements_meta (guid TEXT PRIMARY KEY, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT)");
+  db.run("CREATE TABLE element_transforms (guid TEXT PRIMARY KEY, center_x REAL, center_y REAL, center_z REAL, rot_x REAL, rot_y REAL, rot_z REAL)");
+  db.run("CREATE TABLE element_instances (guid TEXT, geometry_hash TEXT)");
+  db.run("CREATE TABLE component_geometries (geometry_hash TEXT PRIMARY KEY, vertices BLOB, indices BLOB)");
+
+  // 15 elements across 3 storeys, mixed classification
+  var elements = [
+    // Ground Floor (z=1.5) — 6 elements
+    { guid: 'W001', cls: 'IfcWall',     name: 'Exterior_Wall_N',  storey: 'Ground Floor', disc: 'ARC', z: 1.5, hash: 'H_WALL_EXT' },
+    { guid: 'W002', cls: 'IfcWall',     name: 'Exterior_Wall_S',  storey: 'Ground Floor', disc: 'ARC', z: 1.5, hash: 'H_WALL_EXT' },
+    { guid: 'W003', cls: 'IfcWall',     name: 'Exterior_Wall_E',  storey: 'Ground Floor', disc: 'ARC', z: 1.5, hash: 'H_WALL_EXT' },
+    { guid: 'D001', cls: 'IfcDoor',     name: 'Front_Door',       storey: 'Ground Floor', disc: 'ARC', z: 1.0, hash: 'H_DOOR' },
+    { guid: 'S001', cls: 'IfcSlab',     name: 'Ground_Slab',      storey: 'Ground Floor', disc: 'ARC', z: 0.0, hash: 'H_SLAB' },
+    { guid: 'L001', cls: 'IfcLightFixture', name: 'Light_01',     storey: 'Ground Floor', disc: 'ELEC', z: 2.8, hash: 'H_LIGHT' },
+    // Level 1 (z=4.5) — 5 elements
+    { guid: 'W101', cls: 'IfcWall',     name: 'Wall_L1_N',        storey: 'Level 1', disc: 'ARC', z: 4.5, hash: 'H_WALL_INT' },
+    { guid: 'W102', cls: 'IfcWall',     name: 'Wall_L1_S',        storey: 'Level 1', disc: 'ARC', z: 4.5, hash: 'H_WALL_INT' },
+    { guid: 'WN01', cls: 'IfcWindow',   name: 'Window_01',        storey: 'Level 1', disc: 'ARC', z: 5.0, hash: 'H_WIN' },
+    { guid: 'WN02', cls: 'IfcWindow',   name: 'Window_02',        storey: 'Level 1', disc: 'ARC', z: 5.0, hash: 'H_WIN' },
+    { guid: 'C101', cls: 'IfcColumn',   name: 'Column_01',        storey: 'Level 1', disc: 'STR', z: 4.5, hash: 'H_COL' },
+    // Roof (z=8.0) — 4 elements
+    { guid: 'R001', cls: 'IfcRoof',     name: 'Roof_Main',        storey: 'Upper Levels', disc: 'ARC', z: 8.0, hash: 'H_ROOF' },
+    { guid: 'P001', cls: 'IfcBuildingElementProxy', name: 'palm_tree',   storey: 'Ground Floor', disc: 'ARC', z: 0.0, hash: 'H_PALM' },
+    { guid: 'P002', cls: 'IfcBuildingElementProxy', name: 'terrain_01',  storey: 'Ground Floor', disc: 'ARC', z: -0.5, hash: 'H_TERRAIN' },
+    { guid: 'P003', cls: 'IfcBuildingElementProxy', name: 'cocos',       storey: 'Ground Floor', disc: 'ARC', z: 0.0, hash: 'H_COCOS' },
+  ];
+
+  for (var i = 0; i < elements.length; i++) {
+    var el = elements[i];
+    db.run("INSERT INTO elements_meta VALUES (?,?,?,?,?,?,?,?)",
+      [el.guid, el.cls, el.name, el.storey, el.disc, null, '0.7,0.7,0.7,1.0', 'TestBuilding']);
+    db.run("INSERT INTO element_transforms VALUES (?,?,?,?,?,?,?)",
+      [el.guid, 5.0, 10.0, el.z, 0, 0, 0]);
+    db.run("INSERT INTO element_instances VALUES (?,?)", [el.guid, el.hash]);
+  }
+
+  // Add dummy geometry blobs
+  var dummyVerts = new Float32Array([0,0,0, 1,0,0, 0,1,0]).buffer;
+  var dummyIdx = new Int32Array([0,1,2]).buffer;
+  var hashes = ['H_WALL_EXT','H_WALL_INT','H_DOOR','H_SLAB','H_LIGHT','H_WIN','H_COL','H_ROOF','H_PALM','H_TERRAIN','H_COCOS'];
+  for (var i = 0; i < hashes.length; i++) {
+    db.run("INSERT INTO component_geometries VALUES (?,?,?)",
+      [hashes[i], new Uint8Array(dummyVerts), new Uint8Array(dummyIdx)]);
+  }
+
+  return db;
+}
+
+async function runTests() {
+  heading('Test 1: Wizard API exists');
+  assert(typeof startWizard === 'function', 'startWizard is a function');
+  assert(typeof dismissWizard === 'function', 'dismissWizard is a function');
+  assert(typeof window._wizardAnswer === 'function', '_wizardAnswer is a function');
+
+  heading('Test 2: Build test DB and export');
+  var db = await buildTestDb();
+  var r = db.exec("SELECT COUNT(*) FROM elements_meta");
+  assert(r[0].values[0][0] === 15, 'Test DB has 15 elements');
+  r = db.exec("SELECT COUNT(DISTINCT storey) FROM elements_meta");
+  assert(r[0].values[0][0] === 3, 'Test DB has 3 storeys');
+  r = db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class = 'IfcBuildingElementProxy'");
+  assert(r[0].values[0][0] === 3, 'Test DB has 3 proxies');
+
+  heading('Test 3: Wizard panel renders');
+  var dbData = db.export();
+  var dbBuf = dbData.buffer;
+
+  // Mock getProject/saveProject/renderImportCards so wizard doesn't crash on save
+  window.getProject = function() { return Promise.resolve(null); };
+  window.saveProject = function() { return Promise.resolve(); };
+  window.renderImportCards = function() {};
+
+  var wizardDone = false;
+  await startWizard('test_key', dbBuf, { elementCount: 15, sourceFormat: '.obj' }, function() {
+    wizardDone = true;
+  });
+
+  var panel = document.getElementById('wizard-panel');
+  assert(panel !== null, 'Wizard panel injected into DOM');
+  assert(panel.querySelector('#wizard-question') !== null, 'Question element exists');
+  assert(panel.querySelector('#wizard-evidence') !== null, 'Evidence element exists');
+  assert(panel.querySelector('#wizard-buttons') !== null, 'Buttons element exists');
+  assert(panel.querySelector('#wizard-progress') !== null, 'Progress dots exist');
+
+  heading('Test 4: Step 0 — Orientation');
+  var question = panel.querySelector('#wizard-question').textContent;
+  assert(question.includes('upright'), 'Step 0 asks about orientation');
+  var evidence = panel.querySelector('#wizard-evidence').textContent;
+  assert(evidence.includes('15 meshes'), 'Evidence shows mesh count');
+  log('Step 0 question: ' + question, 'info');
+  log('Step 0 evidence: ' + evidence, 'info');
+
+  // Count progress dots — 3 steps (orient + storeys + summary) for IFC-like DB
+  // S234: Classify step only appears when >50% elements are IfcBuildingElementProxy
+  var dots = panel.querySelectorAll('#wizard-progress .dot');
+  assert(dots.length === 3, 'Exactly 3 progress dots (classify skipped for IFC-like DB). Got: ' + dots.length);
+  log('Total steps: ' + dots.length, 'info');
+
+  // Answer Yes to orientation
+  window._wizardAnswer(true);
+  await new Promise(function(r) { setTimeout(r, 200); });
+
+  heading('Test 5: Step 1 — Storeys');
+  question = panel.querySelector('#wizard-question').textContent;
+  assert(question.includes('storey'), 'Step 1 asks about storeys. Got: ' + question);
+  log('Step 1 question: ' + question, 'info');
+
+  // Accept storeys → goes to picker step
+  window._wizardAnswer(true);
+  await new Promise(function(r) { setTimeout(r, 200); });
+
+  heading('Test 6: Step 2 — Summary (classify skipped for IFC-like DB)');
+  // S234: No picker/classify step for IFC-like DB (only 20% proxies)
+  question = panel.querySelector('#wizard-question') ? panel.querySelector('#wizard-question').textContent : '';
+  log('Summary question: ' + question, 'info');
+  assert(question.includes('complete') || question.includes('Complete'), 'Summary step says complete. Got: ' + question);
+
+  // Done on summary → finishWizard (waits for IndexedDB saves or 5s timeout)
+  window._wizardAnswer('done');
+  await new Promise(function(r) { setTimeout(r, 6000); });
+
+  heading('Test 10: Wizard dismissed');
+  panel = document.getElementById('wizard-panel');
+  assert(panel === null, 'Wizard panel removed from DOM after Done');
+
+  heading('Test 11: Orientation flip');
+  // Start a fresh wizard and test the flip
+  var db2 = await buildTestDb();
+  var dbData2 = db2.export();
+  await startWizard('test_key_2', dbData2.buffer, { elementCount: 15, sourceFormat: '.obj' }, null);
+  panel = document.getElementById('wizard-panel');
+  assert(panel !== null, 'Second wizard panel rendered');
+
+  // Flip orientation
+  window._wizardAnswer(false);
+  await new Promise(function(r) { setTimeout(r, 200); });
+
+  // Panel should still be on orientation step (re-rendered with updated evidence)
+  question = panel.querySelector('#wizard-question').textContent;
+  assert(question.includes('upright'), 'After flip, still on orientation step');
+  log('After flip evidence: ' + panel.querySelector('#wizard-evidence').textContent, 'info');
+
+  // Accept flipped orientation
+  window._wizardAnswer(true);
+  await new Promise(function(r) { setTimeout(r, 200); });
+
+  // Dismiss
+  dismissWizard();
+  await new Promise(function(r) { setTimeout(r, 400); });
+  panel = document.getElementById('wizard-panel');
+  assert(panel === null, 'dismissWizard removes panel');
+
+  heading('Test 12: wizard_complete flag prevents re-entry');
+  // Start wizard, walk through, verify it sets wizard_complete in DB
+  var db3 = await buildTestDb();
+  var dbData3 = db3.export();
+  var completeCalled = false;
+  await startWizard('test_key_3', dbData3.buffer, { elementCount: 15, sourceFormat: '.obj' }, function() {
+    completeCalled = true;
+  });
+  panel = document.getElementById('wizard-panel');
+  assert(panel !== null, 'Third wizard panel rendered');
+  // S234: Walk through: Yes → Yes → Done (no picker, classify skipped for IFC-like DB)
+  window._wizardAnswer(true);
+  await new Promise(function(r) { setTimeout(r, 300); });
+  window._wizardAnswer(true);
+  await new Promise(function(r) { setTimeout(r, 300); });
+  window._wizardAnswer('done');  // done summary → finish
+  await new Promise(function(r) { setTimeout(r, 6000); });
+  panel = document.getElementById('wizard-panel');
+  assert(panel === null, 'Panel dismissed after wizard complete');
+
+  // Re-open the same DB — should have wizard_complete marker
+  // Export from the wizard's internal state isn't accessible, so build a DB with the marker
+  var db4 = await buildTestDb();
+  db4.run("CREATE TABLE IF NOT EXISTS project_metadata (key TEXT PRIMARY KEY, value TEXT)");
+  db4.run("INSERT OR REPLACE INTO project_metadata (key, value) VALUES ('wizard_complete', '1')");
+  var dbData4 = db4.export();
+  var skipCalled = false;
+  await startWizard('test_key_4', dbData4.buffer, { elementCount: 15, sourceFormat: '.obj' }, function() {
+    skipCalled = true;
+  });
+  panel = document.getElementById('wizard-panel');
+  assert(panel === null, 'Wizard panel NOT shown for already-complete DB');
+  assert(skipCalled === true, 'onComplete callback fired on skip');
+  db4.close();
+
+  heading('Test 13: Storey legend has colored dots');
+  var db5 = await buildTestDb();
+  var dbData5 = db5.export();
+  await startWizard('test_key_5', dbData5.buffer, { elementCount: 15, sourceFormat: '.obj' }, null);
+  panel = document.getElementById('wizard-panel');
+  // Advance to storeys step
+  window._wizardAnswer(true);
+  await new Promise(function(r) { setTimeout(r, 300); });
+  var evidence = panel.querySelector('#wizard-evidence');
+  var colorDots = evidence ? evidence.querySelectorAll('span[style*="border-radius"]').length : 0;
+  assert(colorDots > 0, 'Storey evidence has colored legend dots. Got: ' + colorDots);
+  log('Color dots in storey legend: ' + colorDots, 'info');
+  dismissWizard();
+  await new Promise(function(r) { setTimeout(r, 300); });
+  db5.close();
+
+  // ── Summary ──
+  db.close();
+  var summary = document.getElementById('summary');
+  summary.textContent = 'TOTAL: ' + passCount + ' PASS, ' + failCount + ' FAIL';
+  summary.className = (failCount === 0) ? 'all-pass' : 'has-fail';
+}
+
+runTests().catch(function(err) {
+  log('FATAL: ' + err.message, 'fail');
+  failCount++;
+  var summary = document.getElementById('summary');
+  summary.textContent = 'TOTAL: ' + passCount + ' PASS, ' + failCount + ' FAIL';
+  summary.className = 'has-fail';
+});
+</script>
+</body>
+</html>

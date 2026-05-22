@@ -1,0 +1,1762 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ffffff">
+<title>BIM OOTB — DEV</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #f5f0e8; color: #1a1a2e;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  .header {
+    text-align: center; padding: 30px 20px 10px;
+  }
+  .header h1 {
+    font-size: 28px; color: #0277bd; margin-bottom: 4px;
+    letter-spacing: 1px;
+  }
+  .header .tagline {
+    font-size: 14px; color: #888; font-style: italic;
+  }
+  /* Loading overlay */
+  .loading {
+    text-align: center; padding: 60px 20px;
+  }
+  .loading .spinner {
+    display: inline-block; width: 30px; height: 30px;
+    border: 3px solid #ccc; border-top-color: #0277bd;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading .elapsed { color: #666; font-size: 12px; margin-top: 8px; }
+
+  /* Building grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px; padding: 16px 20px;
+    max-width: 1200px; margin: 0 auto;
+  }
+  .card {
+    background: #1a1a2e;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; padding: 14px 16px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .card:hover {
+    background: #1e2840;
+    border-color: rgba(79,195,247,0.3);
+    transform: translateY(-1px);
+  }
+  .card .name { font-size: 15px; font-weight: 600; color: #e0e0e0; margin-bottom: 6px; }
+  .card .meta { font-size: 12px; color: #888; line-height: 1.6; }
+  .card .meta b { color: #ccc; }
+  .card .instances {
+    display: inline-block; background: #0277bd; color: #000;
+    font-size: 11px; font-weight: 700; padding: 1px 6px;
+    border-radius: 3px; margin-left: 6px;
+  }
+  .card .disc-bars { margin-top: 6px; }
+  .card .disc-bar {
+    display: inline-block; height: 6px; border-radius: 2px;
+    margin-right: 1px; min-width: 3px;
+  }
+  .card .open-btn {
+    display: block; width: 100%; margin-top: 10px;
+    padding: 6px; background: rgba(79,195,247,0.15);
+    border: 1px solid rgba(79,195,247,0.3);
+    border-radius: 4px; color: #0277bd;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .card .open-btn:hover { background: rgba(79,195,247,0.3); }
+  .card.viewed { border-color: rgba(68,204,68,0.3); }
+  .card.viewed .name { color: #44cc44; }
+  /* S229: Export triangle */
+  .card { position: relative; }
+  .export-triangle {
+    position: absolute; top: 0; right: 0;
+    width: 0; height: 0;
+    border-top: 36px solid #0277bd;
+    border-left: 36px solid transparent;
+    cursor: pointer; opacity: 0.7;
+    transition: opacity 0.15s;
+    border-radius: 0 8px 0 0;
+  }
+  .export-triangle:hover { opacity: 1; }
+  .export-triangle .arrow {
+    position: absolute; top: -32px; right: 2px;
+    color: #1a1a2e; font-size: 14px;
+    pointer-events: none;
+  }
+  .export-flyout {
+    position: absolute; top: 40px; right: 4px; z-index: 50;
+    background: #1a1a2e; border: 1px solid rgba(79,195,247,0.3);
+    border-radius: 8px; padding: 12px 16px; min-width: 200px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+  .export-flyout label { display: block; color: #ccc; font-size: 12px; cursor: pointer; padding: 4px 0; }
+  .export-flyout label:hover { color: #0277bd; }
+  .export-flyout input[type=radio] { margin-right: 6px; }
+  .export-flyout .ef-row { display: flex; gap: 6px; margin-top: 10px; }
+  .export-flyout .ef-btn {
+    flex: 1; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+    font-size: 12px; font-weight: 600; border: 1px solid;
+  }
+
+  /* Open tabs tracker */
+  .tabs-panel {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding: 8px 20px; display: none; z-index: 100;
+  }
+  .tabs-panel .tab-label { font-size: 11px; color: #666; margin-bottom: 4px; }
+  .tabs-panel .tab-list { display: flex; gap: 8px; overflow-x: auto; }
+  .tabs-panel .tab-item {
+    padding: 4px 12px; background: rgba(79,195,247,0.15);
+    border: 1px solid rgba(79,195,247,0.3); border-radius: 4px;
+    color: #0277bd; font-size: 12px; cursor: pointer;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .tabs-panel .tab-item:hover { background: rgba(79,195,247,0.3); }
+
+  /* Section headers */
+  .section-header {
+    padding: 16px 20px 4px; max-width: 1200px; margin: 0 auto;
+    font-size: 13px; color: #666; text-transform: uppercase;
+    letter-spacing: 1px; border-top: 1px solid rgba(0,0,0,0.08);
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center; padding: 20px; font-size: 11px; color: #555;
+    padding-bottom: 60px; /* space for tabs panel */
+  }
+  .footer a { color: #0277bd; text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
+    .card { padding: 10px 12px; }
+    .card .name { font-size: 13px; }
+    .header h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div style="background:#ff8c00;color:#000;text-align:center;padding:8px;font-weight:bold;font-size:14px;font-family:Segoe UI,sans-serif;letter-spacing:1px">DEVELOPMENT SITE FOR BACK UP TESTING</div>
+
+<div class="header">
+  <a href="https://www.sysnova.co.uk/" target="_blank" style="display:block;margin:0 auto 16px;text-decoration:none"><img src="Sysnova.png" alt="Sysnova Information Systems Limited" style="display:block;margin:0 auto;height:80px;width:auto"></a>
+  <div style="display:flex;justify-content:center;align-items:baseline;gap:32px;flex-wrap:wrap">
+    <h1 style="color:#0277bd;margin-bottom:0"><span style="font-size:64px;display:block;margin-bottom:-8px;line-height:0.8;font-family:'Arial Black',Impact,sans-serif;letter-spacing:16px;margin-left:16px">BIM</span><span data-trl="landing_ootb" style="font-size:16px;font-weight:400;font-family:'Arial Black',Impact,sans-serif;letter-spacing:6px;margin-left:6px;color:#0277bdaa;text-transform:lowercase">outofthebox</span></h1>
+    <a href="viewer/erp.html" target="_blank" style="text-decoration:none"><h1 style="color:#e8a735;margin-bottom:0"><span style="font-size:64px;display:block;margin-bottom:-8px;line-height:0.8;font-family:'Arial Black',Impact,sans-serif;letter-spacing:16px;margin-left:16px">ERP</span><span style="font-size:16px;font-weight:400;font-family:'Arial Black',Impact,sans-serif;letter-spacing:6px;margin-left:6px;color:#e8a735aa;text-transform:lowercase">outofthebox</span></h1></a>
+  </div>
+  <div style="display:flex;justify-content:center;align-items:center;gap:14px;margin-top:10px">
+    <a href="https://youtu.be/bSyuLQ_c4rw" target="_blank" style="display:inline-flex;align-items:center;gap:6px;color:#0277bd;font-size:13px;text-decoration:none;padding:4px 8px"><img src="viewer/YT.png" alt="YouTube" style="height:20px;vertical-align:middle"> <span data-trl="landing_watch_demo">Watch Demo</span></a>
+    <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.toggle('active')" style="display:inline-flex;align-items:center;gap:5px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px">&#10067; <span data-trl="landing_about">About</span></a>
+    <a href="javascript:void(0)" id="header-flag-btn" onclick="if(window._TRL_LOADER)_TRL_LOADER.openFlagPicker()" style="display:inline-flex;align-items:center;gap:4px;color:#444;font-size:16px;text-decoration:none;padding:4px 8px;cursor:pointer" title="Language">&#127760;</a>
+    <a href="javascript:void(0)" onclick="if(window.APP&&APP.reportBug)APP.reportBug();else window.open('https://github.com/red1oon/BIMCompiler/issues/new?labels=bug','_blank')" style="display:inline-flex;align-items:center;gap:4px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px;cursor:pointer" title="Send to GitHub Issues Tracker"><img src="submit.png" alt="Submit" style="height:18px;vertical-align:middle"> <span style="font-size:10px">Send to GitHub Issues Tracker</span></a>
+  </div>
+</div>
+
+
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div style="margin-top:12px; color:#aaa"><span data-trl="landing_loading">Loading building manifest...</span></div>
+  <div class="elapsed" id="elapsed">0:00</div>
+</div>
+
+<div id="content" style="display:none">
+  <!-- S222: Hero Import Panel -->
+  <div style="max-width:720px;margin:0 auto;padding:24px 20px 8px">
+    <div id="import-zone" style="border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:40px 32px 28px;text-align:center;cursor:pointer;transition:all 0.15s;background:#1a1a2e">
+
+      <!-- Headline — Leo Burnett big -->
+      <div onclick="event.stopPropagation()" style="pointer-events:auto;cursor:default">
+        <div style="font-size:20px;font-weight:300;color:#e0e0e0;letter-spacing:0.2px;line-height:1.1;margin-bottom:0"><span data-trl="landing_headline" style="font-size:20px">In <b style="font-size:44px">60</b> seconds, the way you <b style="font-size:44px">BIM</b><br><span style="font-weight:700;color:#ff9800">will never be the same.</span></span></div>
+
+        <!-- Steps — pure visual, no interaction -->
+        <div style="display:flex;justify-content:center;align-items:center;gap:12px;margin:32px 0 28px;flex-wrap:wrap;opacity:0.7">
+          <span data-trl="landing_step_import" style="color:#4fc3f7;font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase">Import</span>
+          <span style="color:#888;font-size:9px">&mdash;</span>
+          <span data-trl="landing_step_view" style="color:#4fc3f7;font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase">View</span>
+          <span style="color:#888;font-size:9px">&mdash;</span>
+          <span data-trl="landing_step_compare" style="color:#4fc3f7;font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase">Compare</span>
+          <span style="color:#888;font-size:9px">&mdash;</span>
+          <span data-trl="landing_step_costed" style="color:#4fc3f7;font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase">Costed</span>
+          <span style="color:#888;font-size:9px">&mdash;</span>
+          <span data-trl="landing_step_done" style="color:#44cc44;font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase">Done</span>
+        </div>
+      </div>
+
+      <!-- Drop target — this is the only clickable part -->
+      <div style="border:2px dashed rgba(79,195,247,0.4);border-radius:10px;padding:20px;margin:0 auto;max-width:380px;transition:border-color 0.15s">
+        <div style="color:#4fc3f7;font-size:14px;font-weight:600;letter-spacing:0.3px"><span data-trl="landing_drop_ifc">Drop IFC or 3D file here</span></div>
+        <div style="color:#888;font-size:11px;margin-top:4px">or tap to browse</div>
+      </div>
+      <div id="import-status" style="color:#e0e0e0;font-size:12px;margin-top:10px"></div>
+      <div style="display:none;margin-top:8px;height:4px;background:#222;border-radius:2px;overflow:hidden;max-width:400px;margin-left:auto;margin-right:auto">
+        <div id="import-progress-bar" style="height:100%;width:0%;background:#0277bd;border-radius:2px;transition:width 0.3s"></div>
+      </div>
+      <input type="file" id="import-file-input" accept=".ifc,.dae,.obj,.glb,.gltf,.3ds,.fbx,.stl" multiple style="display:none">
+
+      <!-- Footer — quiet -->
+      <div style="margin-top:16px;color:#444;font-size:10px;letter-spacing:0.3px">
+        <a href="https://red1oon.github.io/BIMCompiler/StrategicIndustryPositioning/" target="_blank" onclick="event.stopPropagation()" style="color:#0277bd;text-decoration:none"><span data-trl="landing_theory">Theory</span> 👁️</a>
+        &middot; <a href="https://youtu.be/hv0kcc_TKvY" target="_blank" onclick="event.stopPropagation()" style="color:#0277bd;text-decoration:none"><span data-trl="landing_practical">Practical</span> 👌</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- S220: My Buildings (imported) -->
+  <div id="my-buildings-section" style="display:none">
+    <div class="section-header" data-trl="landing_my_buildings">My Buildings</div>
+    <div class="grid" id="my-buildings-grid"></div>
+  </div>
+
+  <!-- S250 §9: Community Projects (contributed buildings) -->
+  <div id="community-section" style="display:none">
+    <div class="section-header">Community Projects</div>
+    <div class="grid" id="community-grid"></div>
+  </div>
+
+  <!-- S224: Merge/New modal -->
+  <div id="merge-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+    <div style="background:#1a1a2e;border:1px solid rgba(79,195,247,0.2);border-radius:12px;padding:28px 32px;max-width:400px;width:90%;text-align:center">
+      <div style="color:#0277bd;font-size:15px;font-weight:600;margin-bottom:12px">Add to existing project?</div>
+      <div id="merge-target" style="color:#ccc;font-size:13px;margin-bottom:16px"></div>
+      <select id="merge-select" style="display:none;width:100%;padding:8px;background:#222;color:#fff;border:1px solid #555;border-radius:4px;font-size:13px;margin-bottom:16px"></select>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button id="merge-btn" style="flex:1;padding:12px 20px;background:#0277bd;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;min-height:44px">Merge</button>
+        <button id="merge-new-btn" style="flex:1;padding:12px 20px;background:#333;color:#ccc;border:1px solid #555;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;min-height:44px">New</button>
+      </div>
+      <div style="color:#555;font-size:10px;margin-top:10px">Enter = Merge · Escape = New</div>
+    </div>
+  </div>
+
+  <!-- S224: Compare version picker modal -->
+  <div id="compare-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+    <div style="background:#1a1a2e;border:1px solid rgba(79,195,247,0.2);border-radius:12px;padding:28px 32px;max-width:400px;width:90%;text-align:center">
+      <div style="color:#0277bd;font-size:15px;font-weight:600;margin-bottom:12px">Compare Versions</div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;justify-content:center;align-items:center">
+        <select id="compare-a" style="flex:1;padding:8px;background:#222;color:#fff;border:1px solid #555;border-radius:4px;font-size:12px"></select>
+        <span style="color:#0277bd;font-weight:700">vs</span>
+        <select id="compare-b" style="flex:1;padding:8px;background:#222;color:#fff;border:1px solid #555;border-radius:4px;font-size:12px"></select>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button id="compare-go-btn" style="flex:1;padding:12px 20px;background:#0277bd;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;min-height:44px">Compare</button>
+        <button id="compare-cancel-btn" style="flex:0;padding:12px 20px;background:#333;color:#ccc;border:1px solid #555;border-radius:8px;font-size:14px;cursor:pointer;min-height:44px">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="city-progress" style="display:none; padding:12px 20px; max-width:1200px; margin:0 auto">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px">
+      <span data-trl="landing_complete_city" style="font-size:14px; font-weight:700; color:#0277bd; letter-spacing:1px">COMPLETE THE CITY</span>
+      <span id="city-count" style="font-size:12px; color:#888">0 / 30 <span data-trl="landing_buildings_explored">buildings explored</span></span>
+    </div>
+    <div style="height:8px; background:#222; border-radius:4px; overflow:hidden">
+      <div id="city-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#0277bd,#44cc44); border-radius:4px; transition:width 0.4s ease"></div>
+    </div>
+    <div id="city-complete" style="display:none; text-align:center; padding:10px; margin-top:8px; background:rgba(68,204,68,0.1); border:1px solid rgba(68,204,68,0.3); border-radius:6px">
+      <span data-trl="landing_city_unlocked" style="color:#44cc44; font-weight:700; font-size:14px; letter-spacing:1px">CITY UNLOCKED</span>
+      <button id="city-launch-btn" onclick="launchCity()" style="margin-left:16px; padding:6px 20px; background:linear-gradient(90deg,#0277bd,#44cc44); border:none; border-radius:4px; color:#000; font-weight:700; font-size:13px; cursor:pointer; letter-spacing:1px" data-trl="landing_launch_city">LAUNCH CITY 1M</button>
+    </div>
+  </div>
+
+  <div class="section-header" id="instant-header" data-trl="landing_city">City Buildings</div>
+  <div class="grid" id="instant-grid"></div>
+  <div class="section-header" id="large-header" data-trl="landing_landmark">Landmark Buildings</div>
+  <div class="grid" id="large-grid"></div>
+</div>
+
+<div class="footer">
+  <a href="https://red1oon.github.io/BIMCompiler/StrategicIndustryPositioning/" target="_blank">Documentation</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://github.com/red1oon/BIMCompiler" target="_blank">GitHub</a>
+  &nbsp;&middot;&nbsp;
+  BIM OOTB &mdash; FOSS &middot; No account &middot; No vendor lock-in
+  &nbsp;&middot;&nbsp;
+  <a href="https://red1oon.goatcounter.com" target="_blank">📊 <span data-trl="landing_live_stats">Live Stats</span></a>
+  &nbsp;&middot;&nbsp;
+  <a href="javascript:clearAllCache()" style="color:#ff8a65">Clear Cache</a>
+  <div style="margin-top:20px;color:#555;font-size:11px">
+    <span data-trl="landing_created_by">Created by</span> <a href="mailto:red1org@gmail.com" style="color:#0277bd;text-decoration:none">Redhuan D. OON</a> (red1) — October 2025
+  </div>
+  <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.1);font-size:13px;color:#333;letter-spacing:0.5px">
+    <a href="https://www.sysnova.co.uk/" target="_blank" style="text-decoration:none"><strong style="color:#0277bd;font-size:14px;display:block;margin-bottom:3px">Sysnova Information Systems Limited</strong></a>
+    UNITED KINGDOM
+  </div>
+</div>
+
+<div class="tabs-panel" id="tabs-panel">
+  <div class="tab-label" data-trl="landing_open_tabs">Open Tabs</div>
+  <div class="tab-list" id="tab-list"></div>
+</div>
+
+<script src="viewer/import_db_builder.js?v=3"></script>
+<!-- wizard.js now loads in viewer via ?wizard=1 param (S230) -->
+<script>
+// ── Config ──
+const _ociMatch = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
+const _base = _ociMatch ? _ociMatch[1] : '';
+
+// All buildings use full-download viewer (no httpvfs — too slow over network)
+const viewerFile = 'viewer/viewer.html?_v=' + Date.now();
+
+const DISC_COLORS = {
+  ARC: '#4488ff', STR: '#44cccc', MEP: '#44cc44',
+  ELEC: '#cccc44', FP: '#cc8844', ACMV: '#cc4444',
+  PLB: '#8844cc', HEAT: '#ff6644', HVAC: '#44aacc',
+};
+
+// ── Timer ──
+const loadStart = performance.now();
+const elapsedEl = document.getElementById('elapsed');
+const timerInterval = setInterval(() => {
+  const s = Math.floor((performance.now() - loadStart) / 1000);
+  elapsedEl.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}, 1000);
+
+// ── Open tab tracking ──
+const openTabs = {};  // name → window reference
+
+function trackTab(name, type, win) {
+  const key = name + '_' + type;
+  openTabs[key] = { name, type, win };
+  renderTabs();
+}
+
+function renderTabs() {
+  const panel = document.getElementById('tabs-panel');
+  const list = document.getElementById('tab-list');
+  // Clean closed tabs
+  for (const [key, tab] of Object.entries(openTabs)) {
+    if (tab.win && tab.win.closed) delete openTabs[key];
+  }
+  const entries = Object.values(openTabs);
+  if (entries.length === 0) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  list.innerHTML = entries.map(tab => {
+    const label = tab.type === '3D' ? tab.name : `${tab.name} ${tab.type}`;
+    const focusCall = tab.win ? `openTabs['${tab.name}_${tab.type}'].win.focus()` : '';
+    return `<div class="tab-item" onclick="${focusCall}">${label}</div>`;
+  }).join('');
+}
+// Poll for closed tabs
+setInterval(renderTabs, 3000);
+
+// All per-building DBs — single DB per building (S242), no separate library
+const BUILDINGS = {
+  'SampleHouse': { db: 'SampleHouse_extracted.db' },
+  'BimWhale_Tall': { db: 'BimWhale_Tall_extracted.db' },
+  'AC90_Jasmin': { db: 'AC90_Jasmin_extracted.db' },
+  'FZKHaus': { db: 'FZKHaus_extracted.db' },
+  'Ifc4_FZKHaus': { db: 'FZKHaus_extracted.db' },
+  'AC90_Niedriha': { db: 'AC90_Niedriha_extracted.db' },
+  'BimWhale_Basic': { db: 'BimWhale_Basic_extracted.db' },
+  'VogelGesamt': { db: 'VogelGesamt_extracted.db' },
+  'BimWhale_Large': { db: 'BimWhale_Large_extracted.db' },
+  'AC9_HausGH': { db: 'AC9_HausGH_extracted.db' },
+  'HospitalAuckland': { db: 'Ifc4_Revit_extracted.db' },
+  'SmileyWest': { db: 'SmileyWest_extracted.db' },
+  'Jesse': { db: 'Jesse_extracted.db' },
+  'AC11Institute': { db: 'AC11Institute_extracted.db' },
+  'Ifc2x3_AC11Institute': { db: 'AC11Institute_extracted.db' },
+  'Duplex': { db: 'Duplex_extracted.db' },
+  'LTU_AHouse': { db: 'LTU_AHouse_extracted.db' },
+  'Hospital': { db: 'Hospital_extracted.db' },
+  'Hospital_3': { db: 'Hospital_3_extracted.db' },
+  'Terminal': { db: 'Terminal_extracted.db' },
+  'Clinic': { db: 'Clinic_extracted.db' },
+  'Ifc4_Revit': { db: 'Ifc4_Revit_extracted.db' },
+  'WBDG_Office': { db: 'WBDG_Office_extracted.db' },
+  'HHS_Office_Federated': { db: 'HHS_Office_Federated_extracted.db' },
+  'HITOS': { db: 'HITOS_extracted.db' },
+  'Esplanades': { db: 'Esplanades_extracted.db' },
+  'HospitalGarage': { db: 'HospitalGarage_extracted.db' },
+  'HospitalGarage_2': { db: 'HospitalGarage_2_extracted.db' },
+  'Schependomlaan': { db: 'Schependomlaan_extracted.db' },
+  'SampleCastle': { db: 'SampleCastle_extracted.db' },
+  'Molio': { db: 'Molio_extracted.db' },
+  'BimWhale_Advanced': { db: 'BimWhale_Advanced_extracted.db' },
+};
+
+// Track which buildings the user has viewed (persist in localStorage)
+const _stored = localStorage.getItem('bim_ootb_viewed');
+const viewedBuildings = new Set(_stored ? JSON.parse(_stored) : []);
+
+function saveViewed() {
+  localStorage.setItem('bim_ootb_viewed', JSON.stringify([...viewedBuildings]));
+}
+
+// DB files served from production bucket — dev only overrides viewer/JS
+const _prodBase = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
+
+function openViewer(archName, repBuilding) {
+  const bld = BUILDINGS[archName];
+  if (!bld) { alert(`No DB for ${archName}`); return; }
+  const bldBase = _prodBase + 'buildings/';
+  const viewerUrl = _base ? _base + 'viewer/viewer.html' : 'viewer/viewer.html';
+  const url = viewerUrl + `?db=${bldBase}${bld.db}`; // single DB — lib param retired (S242)
+  const win = window.open(url, 'bim_' + archName);
+  // window.open returns null if popup is blocked (some mobile browsers)
+  if (!win) { location.href = url; return; }
+  trackTab(archName, '3D', win);
+  const isNew = !viewedBuildings.has(archName);
+  viewedBuildings.add(archName);
+  saveViewed();
+  updateCityProgress();
+  // Mark card as viewed
+  const cardEl = document.querySelector(`[data-arch="${archName}"]`);
+  if (cardEl) cardEl.classList.add('viewed');
+}
+
+// ── Build cards ──
+function buildCard(arch, container) {
+  const card = document.createElement('div');
+  card.className = 'card' + (viewedBuildings.has(arch.name) ? ' viewed' : '');
+  card.setAttribute('data-arch', arch.name);
+
+  const discBars = Object.entries(arch.disciplines || {}).map(([d, c]) => {
+    const color = DISC_COLORS[d] || '#888';
+    const pct = (c / arch.count) * 100;
+    return `<span class="disc-bar" style="background:${color};width:${Math.max(pct * 1.5, 3)}px" title="${d}: ${c.toLocaleString()}"></span>`;
+  }).join('');
+
+  const instancesBadge = ''  // removed — city instances not useful on landing page
+  const _unused = arch.instances > 1
+    ? `<span class="instances">&times;${arch.instances}</span>`
+    : '';
+
+  const viewedBadge = viewedBuildings.has(arch.name)
+    ? '<span style="color:#44cc44;font-size:11px;margin-left:6px">&#10003;</span>'
+    : '';
+
+  card.innerHTML = `
+    <div class="name">${arch.name}${instancesBadge}${viewedBadge}</div>
+    <div class="meta">
+      <b>${arch.count.toLocaleString()}</b> ${_TRL.ui_elements||'elements'}<br>
+      ${Object.keys(arch.disciplines || {}).join(' &middot; ')}
+    </div>
+    <div class="disc-bars">${discBars}</div>
+    <button class="open-btn" onclick="event.stopPropagation(); openViewer('${arch.name}', '${arch.representative}')">${_TRL.landing_open_viewer||'Open 3D Viewer'} &#9889;</button>
+  `;
+  card.addEventListener('click', () => openViewer(arch.name, arch.representative));
+  container.appendChild(card);
+}
+
+// ── City completion progress ──
+let cityUnlocked = false;
+function updateCityProgress() {
+  const total = window._totalArchetypes || Object.keys(BUILDINGS).length;
+  const done = viewedBuildings.size;
+  const pct = Math.round((done / total) * 100);
+  document.getElementById('city-count').textContent = `${done} / ${total} ${_TRL.landing_buildings_explored||'buildings explored'}`;
+  document.getElementById('city-bar').style.width = pct + '%';
+  if (done >= total && !cityUnlocked) {
+    cityUnlocked = true;
+    document.getElementById('city-complete').style.display = 'block';
+    document.getElementById('city-bar').style.background = 'linear-gradient(90deg,#44cc44,#ffdd44)';
+    // Show launch button — user clicks when ready
+  }
+}
+
+// ── Clear all cached data ──
+function clearAllCache() {
+  indexedDB.deleteDatabase('bim_ootb_cache');
+  localStorage.removeItem('bim_ootb_viewed');
+  viewedBuildings.clear();
+  updateCityProgress();
+  alert('Cache cleared. Page will reload.');
+  location.reload();
+}
+
+// ── Launch city viewer (all 786 buildings from cached DBs) ──
+function launchCity() {
+  const bldBase = _prodBase + 'buildings/';
+  const viewerUrl = _base ? _base + 'viewer/viewer.html' : 'viewer/viewer.html';
+  const url = viewerUrl + `?city=${bldBase}city_index.db&bldbase=${bldBase}`;
+  const win = window.open(url, 'bim_city_1M');
+  trackTab('City 1M', '3D', win);
+}
+
+// ── Ensure _TRL is always defined (locale_loader.js may not have run yet) ──
+window._TRL = window._TRL || {};
+
+// ── Load manifest ──
+async function loadManifest() {
+  const loadingEl = document.getElementById('loading');
+  try {
+    const url = (_base || '') + 'manifest.json';
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 10000);
+    let resp;
+    try {
+      resp = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(tid);
+    } catch(e) {
+      clearTimeout(tid);
+      throw new Error(e.name === 'AbortError' ? 'Timed out — check connection' : e.message);
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!data || !Array.isArray(data.archetypes)) throw new Error('Manifest missing archetypes');
+
+    clearInterval(timerInterval);
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+
+    // Split: landmark (>5000 elements or flagged) vs city
+    const landmark = data.archetypes.filter(a => a.count >= 5000 || a.landmark);
+    const city = data.archetypes.filter(a => a.count < 5000 && !a.landmark);
+
+    const largeGrid = document.getElementById('large-grid');
+    const instantGrid = document.getElementById('instant-grid');
+
+    // Keep manifest order (smallest first, SH+DX at top)
+    landmark.forEach(a => buildCard(a, largeGrid));
+    city.forEach(a => buildCard(a, instantGrid));
+
+    if (landmark.length === 0) document.getElementById('large-header').style.display = 'none';
+    if (city.length === 0) document.getElementById('instant-header').style.display = 'none';
+
+    // Show city progress bar
+    window._totalArchetypes = data.archetypes.length;
+    document.getElementById('city-progress').style.display = 'block';
+    updateCityProgress();
+
+    // ── Health check: verify viewer is reachable ──
+    const _viewerCheck = (_base || '') + 'viewer/viewer.html';
+    fetch(_viewerCheck, { method: 'HEAD' }).then(r => {
+      if (!r.ok) {
+        document.body.insertAdjacentHTML('afterbegin',
+          '<div style="background:#cc0000;color:#fff;text-align:center;padding:10px;font-weight:bold">' +
+          '⚠ Viewer unavailable (HTTP ' + r.status + ') — buildings may not load. Admin notified.</div>');
+        fetch('https://ntfy.sh/bim-ootb-alert', { method: 'POST',
+          body: 'BIM OOTB BROKEN: Viewer returned HTTP ' + r.status + ' at ' + new Date().toISOString()
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+
+  } catch (e) {
+    clearInterval(timerInterval);
+    // Show error inside #content so it's visible even if #loading was already hidden
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+    ['instant-grid','large-grid'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.children.length === 0) {
+        el.innerHTML = '<div style="padding:20px;color:#ff8844;font-size:13px">&#9888; ' +
+          e.message + ' &nbsp;<a href="javascript:location.reload()" ' +
+          'style="color:#0277bd">Reload</a></div>';
+      }
+    });
+  }
+}
+
+loadManifest();
+
+// ── Discipline from filename (landing-side override for prod worker) ──
+var _VALID_DISCS = ['ARC','STR','MEP','PLB','ACMV','ELEC','FP','VENT','HEAT','SAN','COOL','VOID'];
+var _DISC_ALIAS = {
+  // Short forms from real-world IFC filenames
+  ELE:'ELEC', ELECTRICAL:'ELEC',
+  FIRE:'FP', SPR:'FP', SPRINKLER:'FP',
+  AIR:'ACMV', DUCT:'ACMV', HVAC:'ACMV', MECH:'ACMV', MECHANICAL:'ACMV',
+  ARCHITECTURAL:'ARC', STRUCTURAL:'STR', PLUMBING:'PLB',
+};
+function _discFromFilename(fname) {
+  var stem = fname.replace(/\.(ifc|obj|stl|dae|glb|gltf|3ds|fbx)$/i, '');
+  var parts = stem.split(/[_\-]/);
+  for (var i = parts.length - 1; i >= 0; i--) {
+    var p = parts[i].toUpperCase();
+    if (_VALID_DISCS.indexOf(p) >= 0) return p;
+    if (_DISC_ALIAS[p]) return _DISC_ALIAS[p];
+  }
+  return null;
+}
+
+// ── S224: IFC Import — Versioned IndexedDB, Merge/New, Compare ──
+const IMPORT_DB_NAME = 'bim_ootb_imports';
+const IMPORT_STORE = 'buildings';
+const IMPORT_DB_VERSION = 2;  // v2: versioned storage model
+
+function openImportDB() {
+  return new Promise(resolve => {
+    const req = indexedDB.open(IMPORT_DB_NAME, IMPORT_DB_VERSION);
+    req.onupgradeneeded = function(e) {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IMPORT_STORE)) {
+        db.createObjectStore(IMPORT_STORE);
+      }
+      // Migrate v1 → v2: wrap old per-file records into versioned format
+      if (e.oldVersion < 2) {
+        const tx = req.transaction;
+        const store = tx.objectStore(IMPORT_STORE);
+        const getAll = store.getAllKeys();
+        getAll.onsuccess = function() {
+          const keys = getAll.result;
+          for (const key of keys) {
+            const gr = store.get(key);
+            gr.onsuccess = function() {
+              const old = gr.result;
+              if (old && !old.versions) {
+                // Old format: { meta, extractedDb, libraryDb } → new: { meta, versions[], latestVersion }
+                const migrated = {
+                  meta: old.meta,
+                  versions: [{ key: key, importDate: new Date().toISOString(), db: old.extractedDb }],
+                  latestVersion: 0
+                };
+                store.put(migrated, key);
+                console.log('[S224] §MIGRATE_V1 key=' + key);
+              }
+            };
+          }
+        };
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+// Cache DB helper (same as viewer scene.js)
+const CACHE_DB_NAME = 'bim_ootb_cache';
+const CACHE_STORE = 'dbs';
+function openCacheDB() {
+  return new Promise(resolve => {
+    const req = indexedDB.open(CACHE_DB_NAME, 2);
+    req.onupgradeneeded = function() {
+      var db = req.result;
+      if (!db.objectStoreNames.contains(CACHE_STORE)) db.createObjectStore(CACHE_STORE);
+      if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+// List all projects (versioned records)
+async function listProjects() {
+  const db = await openImportDB();
+  if (!db) return [];
+  return new Promise(resolve => {
+    const tx = db.transaction(IMPORT_STORE, 'readonly');
+    const store = tx.objectStore(IMPORT_STORE);
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      const keys = req.result;
+      if (keys.length === 0) { resolve([]); return; }
+      const items = [];
+      let done = 0;
+      for (const key of keys) {
+        const r2 = store.get(key);
+        r2.onsuccess = () => {
+          const val = r2.result;
+          if (val) items.push({ key, meta: val.meta, versions: val.versions || [], latestVersion: val.latestVersion || 0 });
+          done++;
+          if (done === keys.length) resolve(items);
+        };
+        r2.onerror = () => { done++; if (done === keys.length) resolve(items); };
+      }
+    };
+    req.onerror = () => resolve([]);
+  });
+}
+
+// Get a single project record
+async function getProject(key) {
+  const db = await openImportDB();
+  if (!db) return null;
+  return new Promise(resolve => {
+    const tx = db.transaction(IMPORT_STORE, 'readonly');
+    const req = tx.objectStore(IMPORT_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+// Save a project record
+async function saveProject(key, record) {
+  const db = await openImportDB();
+  if (!db) return;
+  return new Promise(resolve => {
+    const tx = db.transaction(IMPORT_STORE, 'readwrite');
+    tx.objectStore(IMPORT_STORE).put(record, key);
+    tx.oncomplete = resolve;
+  });
+}
+
+// Delete a project and its cache entries
+async function deleteProject(key) {
+  const db = await openImportDB();
+  if (!db) return;
+  const record = await getProject(key);
+  await new Promise(resolve => {
+    const tx = db.transaction(IMPORT_STORE, 'readwrite');
+    tx.objectStore(IMPORT_STORE).delete(key);
+    tx.oncomplete = resolve;
+  });
+  // Clear viewer cache for all versions
+  const cacheDb = await openCacheDB();
+  if (cacheDb && record && record.versions) {
+    try {
+      const tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+      const store = tx.objectStore(CACHE_STORE);
+      for (var i = 0; i < record.versions.length; i++) {
+        store.delete('import://' + key + '/v' + i);
+      }
+      // Legacy keys
+      store.delete('import://' + key + '/extracted');
+      store.delete('import://' + key + '/library');
+    } catch(e) {}
+  }
+  var bar = document.getElementById('import-progress-bar');
+  if (bar) { bar.style.width = '0%'; bar.style.background = '#0277bd'; bar.parentElement.style.display = 'none'; }
+  var st = document.getElementById('import-status');
+  if (st) st.textContent = '';
+  console.log('[S224] §VERSION_DELETE key=' + key + ' versions=' + (record ? record.versions.length : 0));
+  renderImportCards();
+}
+
+// Open latest version of a project in viewer
+// opts: { wizard: true } to launch classification wizard in viewer
+async function openProject(key, btnEl, opts) {
+  if (btnEl) { btnEl.textContent = 'Opening...'; btnEl.disabled = true; }
+  const record = await getProject(key);
+  if (!record || !record.versions.length) {
+    alert('Building not found');
+    if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; }
+    return;
+  }
+  // Always open v0 (combined DB with all merged disciplines)
+  const base = record.versions[0];
+  const cacheDb = await openCacheDB();
+  if (!cacheDb) { if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; } return; }
+
+  const dbUrl = 'import://' + key + '/v0';
+  const libUrl = dbUrl;  // single DB — geometry + metadata in one
+  await new Promise(resolve => {
+    const tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+    tx.objectStore(CACHE_STORE).put(base.db, dbUrl);
+    tx.objectStore(CACHE_STORE).put(base.db, libUrl);
+    tx.oncomplete = resolve;
+  });
+
+  // Variance: only if a 'revised' version exists — diff v0 (combined) against revision snapshot
+  var diffParam = '';
+  if (record.versions.length > 1) {
+    for (var vi = 1; vi < record.versions.length; vi++) {
+      if (/revised/i.test(record.versions[vi].key || '')) {
+        var revUrl = 'import://' + key + '/v' + vi;
+        await new Promise(resolve => {
+          const tx2 = cacheDb.transaction(CACHE_STORE, 'readwrite');
+          tx2.objectStore(CACHE_STORE).put(record.versions[vi].db, revUrl);
+          tx2.oncomplete = resolve;
+        });
+        diffParam = '&diffdb=' + encodeURIComponent(revUrl);
+        console.log('[S225] §OPEN_DIFF key=' + key + ' base=v0(combined) diff=v' + vi + '(revised)');
+        break;
+      }
+    }
+  }
+
+  // S230: Add wizard param for mesh imports (S230b: skip if already completed)
+  var wizardParam = '';
+  var isMesh = record.meta && record.meta.sourceFormat && record.meta.sourceFormat !== '.ifc';
+  var wizardDone = record.meta && record.meta.wizard_complete;
+  if (((opts && opts.wizard) || isMesh) && !wizardDone) {
+    wizardParam = '&wizard=1&wizardKey=' + encodeURIComponent(key);
+  }
+  const viewerUrl = (_base || '') + 'viewer/viewer.html?db=' +
+    encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(libUrl) + diffParam + wizardParam;
+  const win = window.open(viewerUrl, '_blank');
+  trackTab(record.meta.name || key, '3D', win);
+  if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; }
+}
+
+// Export latest version DB as file download — Save = Accept (collapse versions)
+async function exportProjectDb(key) {
+  const record = await getProject(key);
+  if (!record || !record.versions.length) return;
+  const latest = record.versions[record.latestVersion];
+  const blob = new Blob([latest.db], { type: 'application/x-sqlite3' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = key.replace(/\.ifc$/i, '') + '.db';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  console.log('[S225] §EXPORT_DB key=' + key + ' size=' + (latest.db.byteLength / 1024).toFixed(0) + 'KB');
+  // S225: Collapse versions — Save = Accept. Latest becomes new v0, variance cleared.
+  if (record.versions.length > 1) {
+    record.versions = [{ key: key, importDate: new Date().toISOString(), db: latest.db, note: 'Accepted' }];
+    record.latestVersion = 0;
+    record.meta.elements = null;  // will refresh on next render
+    await saveProject(key, record);
+    renderImportCards();
+    console.log('[S225] §ACCEPT key=' + key + ' — versions collapsed to v0');
+  }
+}
+
+// Compare two versions — opens viewer with base + diff
+async function openCompare(key, idxA, idxB) {
+  const record = await getProject(key);
+  if (!record || !record.versions[idxA] || !record.versions[idxB]) return;
+  const cacheDb = await openCacheDB();
+  if (!cacheDb) return;
+
+  const urlA = 'import://' + key + '/v' + idxA;
+  const urlB = 'import://' + key + '/v' + idxB;
+  await new Promise(resolve => {
+    const tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+    const store = tx.objectStore(CACHE_STORE);
+    store.put(record.versions[idxA].db, urlA);
+    store.put(record.versions[idxA].db, urlA);  // lib = same as db
+    store.put(record.versions[idxB].db, urlB);
+    tx.oncomplete = resolve;
+  });
+
+  const viewerUrl = (_base || '') + 'viewer/viewer.html?db=' +
+    encodeURIComponent(urlA) + '&lib=' + encodeURIComponent(urlA) +
+    '&diffdb=' + encodeURIComponent(urlB);
+  window.open(viewerUrl, '_blank');
+  console.log('[S224] §COMPARE_OPEN key=' + key + ' v' + idxA + ' vs v' + idxB);
+}
+
+// Show compare picker modal (for 3+ versions) or auto-compare (for 2)
+function showComparePicker(key, versions) {
+  if (versions.length === 2) {
+    openCompare(key, 0, 1);
+    return;
+  }
+  const modal = document.getElementById('compare-modal');
+  const selA = document.getElementById('compare-a');
+  const selB = document.getElementById('compare-b');
+  selA.innerHTML = '';
+  selB.innerHTML = '';
+  for (var i = 0; i < versions.length; i++) {
+    var label = 'v' + (i + 1) + ' — ' + (versions[i].key || '').replace(/\.ifc$/i, '');
+    selA.innerHTML += '<option value="' + i + '">' + label + '</option>';
+    selB.innerHTML += '<option value="' + i + '">' + label + '</option>';
+  }
+  selA.value = '0';
+  selB.value = String(versions.length - 1);
+  modal.style.display = 'flex';
+  modal._projectKey = key;
+}
+
+document.getElementById('compare-go-btn').onclick = function() {
+  var modal = document.getElementById('compare-modal');
+  var a = parseInt(document.getElementById('compare-a').value);
+  var b = parseInt(document.getElementById('compare-b').value);
+  if (a === b) { alert('Pick two different versions'); return; }
+  modal.style.display = 'none';
+  openCompare(modal._projectKey, a, b);
+};
+document.getElementById('compare-cancel-btn').onclick = function() {
+  document.getElementById('compare-modal').style.display = 'none';
+};
+
+// ── Merge/New modal logic ──
+var _pendingMerge = null;  // { dbBuf, meta, filename, resolve }
+
+function showMergeModal(projects, filename) {
+  return new Promise(function(resolve) {
+    const modal = document.getElementById('merge-modal');
+    const target = document.getElementById('merge-target');
+    const sel = document.getElementById('merge-select');
+
+    if (projects.length === 1) {
+      target.textContent = 'Merge "' + filename + '" into "' + projects[0].key + '"?';
+      sel.style.display = 'none';
+    } else {
+      target.textContent = 'Merge "' + filename + '" into:';
+      sel.style.display = 'block';
+      sel.innerHTML = '';
+      for (var i = 0; i < projects.length; i++) {
+        sel.innerHTML += '<option value="' + projects[i].key + '">' + projects[i].key +
+          ' (v' + projects[i].versions.length + ', ' +
+          (projects[i].meta.elementCount || 0).toLocaleString() + ' el)</option>';
+      }
+    }
+    modal.style.display = 'flex';
+
+    function cleanup() {
+      modal.style.display = 'none';
+      document.removeEventListener('keydown', onKey);
+    }
+    function onKey(e) {
+      if (e.key === 'Enter') { cleanup(); resolve({ action: 'merge', target: projects.length === 1 ? projects[0].key : sel.value }); }
+      if (e.key === 'Escape') { cleanup(); resolve({ action: 'new' }); }
+    }
+    document.addEventListener('keydown', onKey);
+    document.getElementById('merge-btn').onclick = function() {
+      cleanup();
+      resolve({ action: 'merge', target: projects.length === 1 ? projects[0].key : sel.value });
+    };
+    document.getElementById('merge-new-btn').onclick = function() {
+      cleanup();
+      resolve({ action: 'new' });
+    };
+  });
+}
+
+// ── Render import cards (versioned) ──
+async function renderImportCards() {
+  const container = document.getElementById('my-buildings-grid');
+  const section = document.getElementById('my-buildings-section');
+  if (!container || !section) return;
+  const projects = await listProjects();
+  if (projects.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  container.innerHTML = '';
+
+  for (const proj of projects) {
+    if (!proj.meta) continue;
+    const card = document.createElement('div');
+    card.className = 'card';
+    const discs = proj.meta.disciplines || {};
+    const total = proj.meta.elementCount || 0;
+    const discBars = Object.entries(discs).map(([d, c]) => {
+      const pct = Math.max(3, (c / total) * 100);
+      const color = DISC_COLORS[d] || '#888';
+      return '<span class="disc-bar" style="width:' + pct + '%;background:' + color + '"></span>';
+    }).join('');
+    var displayName = proj.key.replace(/\.ifc$/i, '');
+    var vCount = proj.versions.length;
+    var vBadge = vCount > 1 ? '<span style="color:#cccc44;font-size:10px;margin-left:4px">v' + vCount + '</span>' : '';
+
+    // Build button row — S230b: Save opens export flyout (IFC or DB), triangle removed
+    var buttons = '<button class="open-btn" style="flex:1" data-open="' + proj.key + '">Open</button>';
+    buttons += '<button class="open-btn" style="flex:0;padding:6px 10px;background:rgba(76,175,80,0.15);border-color:rgba(76,175,80,0.3);color:#4caf50;font-size:10px" data-share="' + proj.key + '">Share</button>';
+    buttons += '<button class="open-btn" style="flex:0;padding:6px 10px;background:rgba(204,68,68,0.15);border-color:rgba(204,68,68,0.3);color:#cc4444" data-del="' + proj.key + '">x</button>';
+
+    card.innerHTML =
+      '<div class="name">' + displayName + vBadge + '</div>' +
+      '<div class="meta"><b>' + total.toLocaleString() + '</b> elements · ' + Object.keys(discs).join(', ') + '</div>' +
+      '<div class="disc-bars">' + discBars + '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">' + buttons + '</div>';
+
+    card.querySelector('[data-open]').onclick = function() { openProject(this.dataset.open, this); };
+    card.querySelector('[data-share]').onclick = function(e) {
+      e.stopPropagation();
+      var shareKey = this.dataset.share;
+      window.A = window.A || {};
+      A._getImport = getProject;
+      A.CONTRIBUTE_PAR = A.CONTRIBUTE_PAR || '';
+      A.exportIFC = function(k) { exportProjectIFC(k); };
+      if (!document._shareLoaded) {
+        var script = document.createElement('script');
+        script.src = 'viewer/share.js?v=1';
+        script.onload = function() { setupShare(A); document._shareLoaded = true; A.openShareSheet(shareKey); };
+        script.onerror = function() { alert('Failed to load share module'); };
+        document.head.appendChild(script);
+      } else { A.openShareSheet(shareKey); }
+    };
+    card.querySelector('[data-del]').onclick = function(e) {
+      e.stopPropagation();
+      var k = this.dataset.del;
+      var p = projects.find(function(x) { return x.key === k; });
+      var n = p ? p.versions.length : 1;
+      if (confirm('Delete ' + displayName + (n > 1 ? ' (all ' + n + ' versions)?' : '?'))) deleteProject(k);
+    };
+    container.appendChild(card);
+  }
+}
+
+// S228: Format detection for multi-format drop zone
+var LANDING_FORMAT_ROUTES = { ifc:'ifc', dae:'mesh', obj:'mesh', glb:'mesh', gltf:'mesh', '3ds':'mesh', fbx:'mesh', stl:'mesh' };
+function detectLandingFormat(filename) {
+  var ext = filename.split('.').pop().toLowerCase();
+  return { ext: ext, route: LANDING_FORMAT_ROUTES[ext] || null };
+}
+
+// ── Import handler (with Merge/New prompt) ──
+async function handleImportFile(file) {
+  if (!file) return;
+  var fmt = detectLandingFormat(file.name);
+  if (!fmt.route) {
+    document.getElementById('import-status').textContent = 'Unsupported: .' + fmt.ext + ' — Accepted: IFC, OBJ, DAE, GLB, STL, FBX, 3DS';
+    return;
+  }
+  const status = document.getElementById('import-status');
+  const progressBar = document.getElementById('import-progress-bar');
+  const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+  status.textContent = 'Reading ' + file.name + ' (' + sizeMB + 'MB)...';
+  progressBar.parentElement.style.display = 'block';
+  progressBar.style.width = '0%';
+  progressBar.style.background = '#0277bd';
+
+  if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
+
+  const arrayBuffer = await file.arrayBuffer();
+  // S228: Route to IFC or mesh worker based on format
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=8' : 'viewer/mesh_import_worker.js?v=2';
+  var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
+  const worker = new Worker(workerFile);
+
+  worker.onmessage = async function(e) {
+    const msg = e.data;
+    if (msg.type === 'progress') {
+      status.textContent = msg.phase;
+      progressBar.style.width = msg.pct + '%';
+      return;
+    }
+    if (msg.type === 'error') {
+      status.textContent = 'Failed: ' + msg.message;
+      progressBar.style.background = '#cc4444';
+      worker.terminate();
+      return;
+    }
+    if (msg.type === 'done') {
+      status.textContent = 'Building databases...';
+      try {
+        if (typeof initSqlJs === 'undefined') {
+          await new Promise(resolve => {
+            const s = document.createElement('script');
+            s.src = 'https://sql.js.org/dist/sql-wasm.js';
+            s.onload = resolve;
+            document.head.appendChild(s);
+          });
+        }
+        const SQL = await initSqlJs({ locateFile: f => 'https://sql.js.org/dist/' + f });
+
+        // Implementing DropIFCMergeNoVarianceDISC.md §3 — discipline from filename override
+        var _fnDisc = _discFromFilename(file.name);
+        if (_fnDisc && msg.elements) {
+          var discBefore = Object.assign({}, msg.meta.disciplines || {});
+          msg.meta.disciplines = {};
+          for (var ei = 0; ei < msg.elements.length; ei++) {
+            msg.elements[ei].discipline = _fnDisc;
+          }
+          msg.meta.disciplines[_fnDisc] = msg.elements.length;
+          console.log('[S224] §DISC_OVERRIDE filename=' + file.name + ' disc=' + _fnDisc + ' elements=' + msg.elements.length);
+        }
+
+        const dbs = buildImportDBs(SQL, msg);
+        const dbBuf = dbs.extractedDb;
+
+        // S224: Check existing projects — prompt Merge/New if any exist
+        const existingProjects = await listProjects();
+        var projectKey = file.name;  // default: new project keyed by filename
+
+        if (existingProjects.length > 0) {
+          console.log('[S224] §MERGE_PROMPT existing=' + existingProjects.length + ' file=' + file.name);
+          const choice = await showMergeModal(existingProjects, file.name);
+
+          if (choice.action === 'merge') {
+            var targetKey = choice.target;
+            var existing = await getProject(targetKey);
+            if (existing) {
+              // Always combine new elements into existing DB (multi-disc merge)
+              var baseIdx = existing.latestVersion || 0;
+              var existBuf = existing.versions[baseIdx].db;
+              var existDb = new SQL.Database(new Uint8Array(existBuf));
+              var newDb = new SQL.Database(new Uint8Array(dbBuf));
+
+              // Normalize building name: new file must match existing project's building
+              // Without this, viewer's WHERE building=? never finds merged elements
+              var existBldRows = existDb.exec("SELECT DISTINCT building FROM elements_meta LIMIT 1");
+              var existBldName = (existBldRows.length && existBldRows[0].values.length) ? existBldRows[0].values[0][0] : targetKey.replace(/\.ifc$/i,'');
+              newDb.run("UPDATE elements_meta SET building = ?", [existBldName]);
+              newDb.run("UPDATE component_geometries SET building = ?", [existBldName]);
+              console.log('[S224] §MERGE_NORMALIZE building=' + existBldName + ' file=' + file.name);
+
+              var _mergeTables = [
+                { name: 'elements_meta', cols: 'guid, ifc_class, element_name, storey, discipline, material_name, material_rgba, building' },
+                { name: 'element_transforms', cols: 'guid, center_x, center_y, center_z, rotation_x, rotation_y, rotation_z, bbox_x, bbox_y, bbox_z' },
+                { name: 'element_instances', cols: 'guid, geometry_hash' },
+                { name: 'component_geometries', cols: 'geometry_hash, vertices, faces, normals, building' },
+              ];
+              for (var ti = 0; ti < _mergeTables.length; ti++) {
+                var tbl = _mergeTables[ti];
+                var placeholders = tbl.cols.split(', ').map(function() { return '?'; }).join(',');
+                try {
+                  var rows = newDb.exec('SELECT ' + tbl.cols + ' FROM ' + tbl.name);
+                  if (rows.length > 0) {
+                    var ins = existDb.prepare('INSERT OR IGNORE INTO ' + tbl.name + ' VALUES (' + placeholders + ')');
+                    for (var ri = 0; ri < rows[0].values.length; ri++) ins.run(rows[0].values[ri]);
+                    ins.free();
+                  }
+                } catch(mergeErr) { console.log('[S224] §MERGE_TABLE_SKIP ' + tbl.name + ': ' + mergeErr.message); }
+              }
+              newDb.close();
+              var combinedBuf = existDb.export().buffer;
+              existDb.close();
+              existing.versions[baseIdx].db = combinedBuf;
+
+              // If 'revised', also keep the new file's DB as a separate version for variance
+              var isRevised = /revised/i.test(file.name);
+              if (isRevised) {
+                existing.versions.push({ key: file.name, importDate: new Date().toISOString(), db: dbBuf });
+                existing.latestVersion = existing.versions.length - 1;
+                console.log('[S224] §MERGE_REVISION target=' + targetKey + ' version=v' + existing.versions.length);
+              }
+              console.log('[S224] §MERGE_COMBINE target=' + targetKey + ' added=' + msg.meta.elementCount + ' elements from ' + file.name);
+              // Aggregate meta
+              var newDiscs = msg.meta.disciplines || {};
+              var oldDiscs = existing.meta.disciplines || {};
+              for (var d in newDiscs) { oldDiscs[d] = (oldDiscs[d] || 0) + newDiscs[d]; }
+              existing.meta.disciplines = oldDiscs;
+              existing.meta.elementCount = (existing.meta.elementCount || 0) + (msg.meta.elementCount || 0);
+              await saveProject(targetKey, existing);
+              status.textContent = 'Merged ' + (msg.meta.elementCount || 0) + ' elements into ' + targetKey;
+              progressBar.style.width = '100%';
+              progressBar.style.background = '#44cc44';
+              setTimeout(function() { status.textContent = ''; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; }, 3000);
+              renderImportCards();
+              worker.terminate();
+              return;
+            }
+          }
+          // action === 'new' → fall through to create new project
+          console.log('[S224] §MERGE_REJECT file=' + file.name);
+        }
+
+        // New project: single version
+        var newRecord = {
+          meta: msg.meta,
+          versions: [{ key: file.name, importDate: new Date().toISOString(), db: dbBuf }],
+          latestVersion: 0
+        };
+        await saveProject(projectKey, newRecord);
+        console.log('[S224] §IMPORT_SAVED key=' + projectKey + ' elements=' + msg.meta.elementCount);
+
+        status.textContent = 'Imported ' + msg.meta.elementCount + ' elements — see your building below \u2193';
+        progressBar.style.width = '100%';
+        progressBar.style.background = '#44cc44';
+        setTimeout(function() { status.textContent = ''; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; }, 3000);
+
+        renderImportCards();
+      } catch(dbErr) {
+        status.textContent = 'DB error: ' + dbErr.message;
+        progressBar.style.background = '#cc4444';
+        console.log('[S224] §IMPORT_DB_ERROR ' + dbErr.message);
+      }
+      worker.terminate();
+    }
+  };
+
+  worker.onerror = function(err) {
+    status.textContent = 'Worker error: ' + err.message;
+    progressBar.style.background = '#cc4444';
+    worker.terminate();
+  };
+
+  worker.postMessage(workerMsg, [arrayBuffer]);
+}
+
+// ── Multi-IFC one-shot merge: select N discipline files → one building ──
+async function handleImportMultiIFC(files) {
+  const status = document.getElementById('import-status');
+  const progressBar = document.getElementById('import-progress-bar');
+  if (progressBar) { progressBar.style.width = '0%'; progressBar.parentElement.style.display = 'block'; progressBar.style.background = '#0277bd'; }
+
+  // Common prefix for building name: LTU_AHouse_ARC + LTU_AHouse_STR → LTU_AHouse
+  var stems = [];
+  for (var i = 0; i < files.length; i++) stems.push(files[i].name.replace(/\.(ifc|IFC)$/, ''));
+  var prefix = stems[0];
+  for (var i = 1; i < stems.length; i++) {
+    while (stems[i].indexOf(prefix) !== 0) { prefix = prefix.substring(0, prefix.length - 1); if (!prefix) break; }
+  }
+  var buildingName = prefix.replace(/[_\-]+$/, '') || stems[0];
+
+  console.log('[S224] §MULTI_IMPORT_START files=' + files.length + ' building=' + buildingName);
+  if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
+
+  var allElements = [], allGeometries = [], allTransforms = [];
+  var allDiscs = {}, allStoreys = [];
+
+  for (var fi = 0; fi < files.length; fi++) {
+    var file = files[fi];
+    var fileLabel = (fi + 1) + '/' + files.length + ': ' + file.name;
+    if (status) status.textContent = 'Parsing ' + fileLabel;
+
+    try {
+      var result = await new Promise(function(resolve, reject) {
+        file.arrayBuffer().then(function(arrayBuffer) {
+          var worker = new Worker('viewer/import_worker.js?v=8');
+          worker.onmessage = function(e) {
+            var msg = e.data;
+            if (msg.type === 'progress') {
+              var filePct = (fi / files.length + msg.pct / 100 / files.length) * 90;
+              if (progressBar) progressBar.style.width = filePct.toFixed(1) + '%';
+              if (status) status.textContent = fileLabel + ' — ' + msg.phase;
+              return;
+            }
+            if (msg.type === 'error') { worker.terminate(); reject(new Error(msg.message)); return; }
+            if (msg.type === 'done') {
+              // Apply discipline from filename
+              var fnDisc = _discFromFilename(file.name);
+              if (fnDisc && msg.elements) {
+                msg.meta.disciplines = {};
+                for (var ei = 0; ei < msg.elements.length; ei++) msg.elements[ei].discipline = fnDisc;
+                msg.meta.disciplines[fnDisc] = msg.elements.length;
+              }
+              worker.terminate();
+              resolve(msg);
+            }
+          };
+          worker.onerror = function(err) { worker.terminate(); reject(err); };
+          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name }, [arrayBuffer]);
+        });
+      });
+
+      allElements = allElements.concat(result.elements);
+      allGeometries = allGeometries.concat(result.geometries);
+      allTransforms = allTransforms.concat(result.transforms);
+      for (var d in (result.meta.disciplines || {})) { allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d]; }
+      (result.meta.storeys || []).forEach(function(s) { if (allStoreys.indexOf(s) < 0) allStoreys.push(s); });
+      console.log('[S224] §MULTI_FILE_DONE ' + fileLabel + ' elements=' + result.meta.elementCount);
+
+    } catch (err) {
+      console.log('[S224] §MULTI_FILE_ERROR ' + fileLabel + ' err=' + err.message);
+      if (status) status.textContent = 'Failed: ' + fileLabel + ' — ' + err.message;
+      if (progressBar) progressBar.style.background = '#cc4444';
+      return;
+    }
+  }
+
+  // Build merged DB
+  if (status) status.textContent = 'Building merged database (' + allElements.length + ' elements)...';
+  if (progressBar) progressBar.style.width = '92%';
+
+  try {
+    if (typeof initSqlJs === 'undefined') {
+      await new Promise(function(resolve) {
+        var s = document.createElement('script'); s.src = 'https://sql.js.org/dist/sql-wasm.js';
+        s.onload = resolve; document.head.appendChild(s);
+      });
+    }
+    var SQL = await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+    var mergedData = {
+      meta: { name: buildingName, filename: buildingName, elementCount: allElements.length, geomCount: allGeometries.length, disciplines: allDiscs, storeys: allStoreys.sort() },
+      elements: allElements, geometries: allGeometries, transforms: allTransforms
+    };
+    // §S260b: Yield to UI before heavy DB build (16K+ geometries = seconds of blocking)
+    await new Promise(function(r) { setTimeout(r, 50); });
+    var dbs = buildImportDBs(SQL, mergedData);
+
+    var projectKey = buildingName + '.ifc';
+    var newRecord = {
+      meta: mergedData.meta,
+      versions: [{ key: projectKey, importDate: new Date().toISOString(), db: dbs.extractedDb }],
+      latestVersion: 0
+    };
+    if (dbs.metaDb) newRecord.metaDb = dbs.metaDb;
+    if (dbs.geoDb) newRecord.geoDb = dbs.geoDb;
+    await saveProject(projectKey, newRecord);
+
+    console.log('[S224] §MULTI_IMPORT_DONE building=' + buildingName + ' elements=' + allElements.length +
+      ' files=' + files.length + ' discs=' + Object.keys(allDiscs).join(','));
+    if (status) status.textContent = 'Merged ' + files.length + ' files → ' + allElements.length + ' elements';
+    if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#44cc44'; }
+    setTimeout(function() { status.textContent = ''; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; }, 3000);
+    renderImportCards();
+  } catch (dbErr) {
+    console.log('[S224] §MULTI_DB_ERROR ' + dbErr.message);
+    if (status) status.textContent = 'DB merge failed: ' + dbErr.message;
+    if (progressBar) progressBar.style.background = '#cc4444';
+  }
+}
+
+// Wire drop zone
+const dropZone = document.getElementById('import-zone');
+const fileInput = document.getElementById('import-file-input');
+if (dropZone) {
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#0277bd'; });
+  dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = 'rgba(79,195,247,0.3)'; });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.style.borderColor = 'rgba(79,195,247,0.3)';
+    var files = e.dataTransfer.files;
+    var ifcFiles = [];
+    for (var i = 0; i < files.length; i++) { if (detectLandingFormat(files[i].name).route === 'ifc') ifcFiles.push(files[i]); }
+    if (ifcFiles.length > 1) { handleImportMultiIFC(ifcFiles); }
+    else { handleImportFile(files[0]); }
+  });
+  dropZone.addEventListener('click', () => { if (fileInput) fileInput.click(); });
+}
+if (fileInput) {
+  fileInput.addEventListener('change', () => {
+    var files = fileInput.files;
+    var ifcFiles = [];
+    for (var i = 0; i < files.length; i++) { if (detectLandingFormat(files[i].name).route === 'ifc') ifcFiles.push(files[i]); }
+    if (ifcFiles.length > 1) { handleImportMultiIFC(ifcFiles); }
+    else if (files.length) { handleImportFile(files[0]); }
+    fileInput.value = '';
+  });
+}
+
+// Render existing imports
+renderImportCards();
+
+// ── S229: IFC Export — DB → .ifc download ──
+function showExportFlyout(triggerEl, projectKey) {
+  // Close any existing flyout
+  var old = document.querySelector('.export-flyout');
+  if (old) { old.remove(); return; }
+
+  var card = triggerEl.closest('.card');
+  var flyout = document.createElement('div');
+  flyout.className = 'export-flyout';
+  flyout.innerHTML =
+    '<div style="color:#0277bd;font-size:11px;font-weight:600;margin-bottom:8px">Export as:</div>' +
+    '<label><input type="radio" name="ef" value="ifc" checked> IFC (.ifc)</label>' +
+    '<label><input type="radio" name="ef" value="db"> SQLite (.db)</label>' +
+    '<div class="ef-row">' +
+      '<button class="ef-btn" style="background:rgba(79,195,247,0.15);border-color:rgba(79,195,247,0.3);color:#0277bd" data-go>Download</button>' +
+      '<button class="ef-btn" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.1);color:#888" data-cancel>Cancel</button>' +
+    '</div>' +
+    '<div class="ef-status" style="color:#aaa;font-size:10px;margin-top:6px"></div>';
+
+  card.appendChild(flyout);
+
+  flyout.querySelector('[data-cancel]').onclick = function(e) { e.stopPropagation(); flyout.remove(); };
+  flyout.querySelector('[data-go]').onclick = function(e) {
+    e.stopPropagation();
+    var format = flyout.querySelector('input[name=ef]:checked').value;
+    if (format === 'db') {
+      flyout.remove();
+      exportProjectDb(projectKey);
+    } else {
+      exportProjectIFC(projectKey, flyout);
+    }
+  };
+  flyout.onclick = function(e) { e.stopPropagation(); };
+
+  // Close on outside click
+  setTimeout(function() {
+    document.addEventListener('click', function closer() {
+      flyout.remove();
+      document.removeEventListener('click', closer);
+    }, { once: true });
+  }, 0);
+}
+
+async function exportProjectIFC(projectKey, flyout) {
+  var statusEl = flyout.querySelector('.ef-status');
+  var goBtn = flyout.querySelector('[data-go]');
+  goBtn.disabled = true;
+  goBtn.textContent = 'Exporting...';
+  statusEl.textContent = 'Reading database...';
+
+  var record = await getProject(projectKey);
+  if (!record || !record.versions.length) {
+    statusEl.textContent = 'No data found';
+    goBtn.disabled = false; goBtn.textContent = 'Download';
+    return;
+  }
+
+  // Load sql.js if needed
+  if (typeof initSqlJs === 'undefined') {
+    await new Promise(function(resolve) {
+      var s = document.createElement('script');
+      s.src = 'https://sql.js.org/dist/sql-wasm.js';
+      s.onload = resolve;
+      document.head.appendChild(s);
+    });
+  }
+  var SQL = await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+
+  // Read latest version DB
+  var latest = record.versions[record.latestVersion || 0];
+  var db = new SQL.Database(new Uint8Array(latest.db));
+
+  // Extract all data from DB
+  statusEl.textContent = 'Extracting elements...';
+  var elements = [], transforms = [], geometries = [];
+  var meta = {
+    buildingName: projectKey.replace(/\.(ifc|obj|stl|dae|glb|gltf|3ds|fbx)$/i, ''),
+    projectName: projectKey.replace(/\.(ifc|obj|stl|dae|glb|gltf|3ds|fbx)$/i, ''),
+    elementCount: record.meta.elementCount || 0
+  };
+
+  // Read project_metadata
+  try {
+    var pmRows = db.exec("SELECT key, value FROM project_metadata");
+    if (pmRows.length > 0) {
+      for (var r = 0; r < pmRows[0].values.length; r++) {
+        if (pmRows[0].values[r][0] === 'building_name') meta.buildingName = pmRows[0].values[r][1];
+        if (pmRows[0].values[r][0] === 'project_name') meta.projectName = pmRows[0].values[r][1];
+      }
+    }
+  } catch(e) {}
+
+  // Read elements
+  try {
+    var elRows = db.exec("SELECT guid, ifc_class, element_name, storey, discipline, material_rgba FROM elements_meta");
+    if (elRows.length > 0) {
+      for (var r = 0; r < elRows[0].values.length; r++) {
+        var row = elRows[0].values[r];
+        elements.push({ guid: row[0], ifcClass: row[1], name: row[2], storey: row[3], discipline: row[4], material: row[5] });
+      }
+    }
+  } catch(e) { statusEl.textContent = 'Error reading elements: ' + e.message; return; }
+
+  // Read transforms
+  try {
+    var txRows = db.exec("SELECT guid, center_x, center_y, center_z FROM element_transforms");
+    if (txRows.length > 0) {
+      for (var r = 0; r < txRows[0].values.length; r++) {
+        var row = txRows[0].values[r];
+        transforms.push({ guid: row[0], cx: row[1], cy: row[2], cz: row[3] });
+      }
+    }
+  } catch(e) {}
+
+  // Read guid→hash map + geometries in batches (avoids OOM on large buildings)
+  var guidHashMap = {};
+  try {
+    var instRows = db.exec("SELECT guid, geometry_hash FROM element_instances WHERE geometry_hash IS NOT NULL");
+    if (instRows.length > 0) {
+      for (var r = 0; r < instRows[0].values.length; r++) {
+        guidHashMap[instRows[0].values[r][0]] = instRows[0].values[r][1];
+      }
+    }
+    // Load unique geometries in batches using exec (compatible with all sql.js versions)
+    var usedHashes = Object.values(guidHashMap).filter(function(v,i,a) { return a.indexOf(v) === i; });
+    statusEl.textContent = 'Loading ' + usedHashes.length + ' unique geometries...';
+    var BATCH = 200;
+    for (var bi = 0; bi < usedHashes.length; bi += BATCH) {
+      var chunk = usedHashes.slice(bi, bi + BATCH);
+      var ph = chunk.map(function(h) { return "'" + h + "'"; }).join(',');
+      var geoRows = db.exec("SELECT geometry_hash, vertices, faces FROM component_geometries WHERE geometry_hash IN (" + ph + ")");
+      if (geoRows.length > 0) {
+        for (var r = 0; r < geoRows[0].values.length; r++) {
+          var row = geoRows[0].values[r];
+          geometries.push({ hash: row[0], vertices: row[1], faces: row[2] });
+        }
+      }
+      if (bi % 2000 === 0 && bi > 0) statusEl.textContent = 'Loading geometries... ' + Math.round(bi/usedHashes.length*100) + '%';
+    }
+  } catch(e) { console.error('Geo load error:', e); }
+
+  db.close();
+
+  statusEl.textContent = 'Building IFC (' + elements.length + ' elements)...';
+
+  // Send to export worker
+  var worker = new Worker('viewer/ifc_export_worker.js?v=2');
+  worker.onmessage = function(e) {
+    var msg = e.data;
+    if (msg.type === 'progress') {
+      statusEl.textContent = msg.phase;
+      return;
+    }
+    if (msg.type === 'error') {
+      statusEl.textContent = 'Export failed: ' + msg.message;
+      goBtn.disabled = false; goBtn.textContent = 'Download';
+      worker.terminate();
+      return;
+    }
+    if (msg.type === 'done') {
+      var blob = new Blob([msg.ifcData], { type: 'application/octet-stream' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = meta.buildingName + '.ifc';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      statusEl.textContent = 'Downloaded ' + meta.buildingName + '.ifc (' + (msg.ifcData.byteLength / 1024).toFixed(0) + ' KB)';
+      goBtn.textContent = 'Done';
+      console.log('[S229] §EXPORT_IFC key=' + projectKey + ' size=' + (msg.ifcData.byteLength / 1024).toFixed(0) + 'KB elements=' + elements.length);
+      worker.terminate();
+      setTimeout(function() { flyout.remove(); }, 2000);
+    }
+  };
+  worker.onerror = function(err) {
+    statusEl.textContent = 'Worker error: ' + err.message;
+    goBtn.disabled = false; goBtn.textContent = 'Download';
+    worker.terminate();
+  };
+
+  worker.postMessage({ elements: elements, transforms: transforms, geometries: geometries, guidHashMap: guidHashMap, meta: meta });
+}
+</script>
+<script>if(new URLSearchParams(location.search).has('ignore-me'))localStorage.setItem('goatcounter-ignore','t')</script>
+<script data-goatcounter="https://red1oon.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+<!-- About dialog -->
+<div id="about-dialog" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);justify-content:center;align-items:center" onclick="if(event.target===this)this.classList.remove('active')">
+  <div style="background:rgba(10,10,30,0.97);border-radius:14px;padding:24px 28px;border:1px solid rgba(79,195,247,0.3);font-family:'Segoe UI',sans-serif;color:#e0e0e0;max-width:380px;width:90%;max-height:85vh;overflow-y:auto;text-align:center">
+    <img src="Sysnova.png" alt="Sysnova" style="height:50px;margin-bottom:8px;background:#f5f0e0;border-radius:6px;padding:4px 10px">
+    <div style="font-size:20px;font-weight:700;color:#e0e0e0">BIM</div>
+    <div style="font-size:12px;letter-spacing:3px;color:#888;margin-bottom:6px">Out Of The Box</div>
+    <div style="color:#888;font-size:11px;margin-bottom:8px">Version 0.6 alpha (October 2025 &#8211; April 2026)</div>
+    <div style="color:#aaa;font-size:11px;font-style:italic;margin-bottom:4px">Frictionless BIM. Two DBs. One browser. Zero install.</div>
+    <div style="color:#e8a735;font-size:10px;font-style:italic;margin-bottom:12px">Probably the lightest BIM app ever made.</div>
+
+    <table style="margin:0 auto 12px;font-size:10px;color:#999;border-collapse:collapse;text-align:left">
+      <tr><td style="padding:2px 8px 2px 0;color:#666">Three.js</td><td>r128</td></tr>
+      <tr><td style="padding:2px 8px 2px 0;color:#666">SQLite</td><td>3.44.2 (sql.js 1.10.3 WASM)</td></tr>
+      <tr><td style="padding:2px 8px 2px 0;color:#666">web-ifc</td><td>0.0.77 (IFC2x3 + IFC4)</td></tr>
+      <tr><td style="padding:2px 8px 2px 0;color:#666">SheetJS</td><td>0.20.3</td></tr>
+    </table>
+
+    <div style="margin-bottom:10px;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:4px">
+      <div style="color:#666;font-size:9px;text-transform:uppercase;margin-bottom:3px">Browser Compatibility</div>
+      <div style="color:#999;font-size:10px;line-height:1.5">Chrome 90+ &#8226; Firefox 90+ &#8226; Safari 15+ &#8226; Edge 90+<br>Mobile: iOS Safari 15+ &#8226; Chrome Android<br>Requires: WebAssembly, WebGL 2, Web Workers</div>
+    </div>
+
+    <div style="margin-bottom:10px;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:4px">
+      <div style="color:#666;font-size:9px;text-transform:uppercase;margin-bottom:3px">Stage 1 &#8212; Pure Browser (current)</div>
+      <div style="color:#999;font-size:10px;line-height:1.5">17K lines vanilla JS. No server, no APIs.<br>IFC parsed client-side. SQLite DBs ARE the app.</div>
+    </div>
+
+    <div style="margin-bottom:10px;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:4px">
+      <div style="color:#666;font-size:9px;text-transform:uppercase;margin-bottom:3px">Stage 2 &#8212; DAGCompiler Backend (planned)</div>
+      <div style="color:#999;font-size:10px;line-height:1.5">Java BOM engine: 2.1M lines &#8226; Python: 2.7M lines<br>SQL rules: 644K lines. Same two-DB output format.</div>
+    </div>
+
+    <div style="color:#888;font-size:10px;margin-bottom:4px">Copyright &#169; 2006 Redhuan D. Oon. MIT License.</div>
+    <div style="color:#666;font-size:9px;line-height:1.4;margin-bottom:10px;padding:4px 8px;background:rgba(255,255,255,0.03);border-radius:4px">Permission is hereby granted, free of charge, to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software, subject to the above copyright notice and this permission notice.</div>
+    <div style="display:flex;justify-content:center;gap:12px;font-size:11px;margin-bottom:8px">
+      <a href="mailto:red1org@gmail.com" style="color:#0277bd;text-decoration:none">&#9993; Email</a>
+      <a href="https://github.com/red1oon/BIMCompiler" target="_blank" style="color:#0277bd;text-decoration:none">&#11088; GitHub</a>
+      <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.remove('active');if(window.APP&&APP.reportBug)APP.reportBug();else window.open('https://github.com/red1oon/BIMCompiler/issues/new?labels=bug','_blank')" style="color:#ff8a65;text-decoration:none">&#128027; Report Bug</a>
+    </div>
+    <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.remove('active');document.getElementById('diy-dialog').classList.add('active')" style="color:#e8a735;font-size:11px;text-decoration:none;cursor:pointer">&#128736; DIY Downloader</a>
+  </div>
+</div>
+<style>#about-dialog.active{display:flex!important}#diy-dialog.active{display:flex!important}</style>
+
+<!-- DIY Self-Host dialog -->
+<div id="diy-dialog" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);justify-content:center;align-items:center" onclick="if(event.target===this)this.classList.remove('active')">
+  <div style="background:rgba(10,10,30,0.97);border-radius:14px;padding:24px 28px;border:1px solid rgba(232,167,53,0.4);font-family:'Segoe UI',sans-serif;color:#e0e0e0;max-width:420px;width:90%;max-height:85vh;overflow-y:auto;text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">&#128736;&#65039;</div>
+    <div style="font-size:18px;font-weight:700;color:#e8a735;margin-bottom:4px">DIY Downloader</div>
+    <div style="color:#aaa;font-size:12px;font-style:italic;margin-bottom:16px">Download everything and run on your own machine!</div>
+
+    <div style="text-align:left;margin-bottom:16px;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px">
+      <div style="color:#e8a735;font-size:11px;font-weight:700;margin-bottom:8px">WHAT YOU GET:</div>
+      <div style="color:#ccc;font-size:11px;line-height:1.8">
+        &#10003; Complete BIM viewer (~49MB download, ~4MB viewer)<br>
+        &#10003; Libraries loaded from CDN on first use, then cached<br>
+        &#10003; Drop IFC / OBJ / DAE / GLB files to view<br>
+        &#10003; BOQ, 2D Plans, Section Cut, Walk Mode<br>
+        &#10003; Your own domain, your own branding<br>
+        &#10003; Still loads cloud buildings via URL if needed
+      </div>
+    </div>
+
+    <div style="text-align:left;margin-bottom:16px;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px">
+      <div style="color:#e8a735;font-size:11px;font-weight:700;margin-bottom:8px">THE SCRIPT WILL:</div>
+      <div style="color:#ccc;font-size:11px;line-height:1.8">
+        1. Check your system (Windows / Mac / Linux)<br>
+        2. Install Python 3 if not found<br>
+        3. Download BIM OOTB viewer + all libraries<br>
+        4. Start a local server on port 8080<br>
+        5. Open your browser &#8212; ready to use!
+      </div>
+    </div>
+
+    <a id="diy-download-btn" href="javascript:void(0)" onclick="downloadDIYScript()" style="display:inline-block;padding:10px 24px;background:#e8a735;color:#000;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;margin-bottom:12px;width:80%">&#11015; Download Install Script</a>
+
+    <div style="color:#666;font-size:9px;margin-top:8px">
+      Requires: Python 3 &#8226; Any modern browser<br>
+      No npm. No Node.js. No build tools.
+    </div>
+
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1)">
+      <div style="color:#555;font-size:9px;margin-bottom:8px">
+        &#169; 2025-2026 <a href="mailto:red1org@gmail.com" style="color:#0277bd;text-decoration:none">Redhuan D. Oon</a> (red1). MIT Licensed.<br>
+        Supported by <a href="https://www.sysnova.co.uk" target="_blank" style="color:#0277bd;text-decoration:none">Sysnova Information Systems Limited</a>
+      </div>
+      <a href="javascript:void(0)" onclick="document.getElementById('diy-dialog').classList.remove('active')" style="color:#888;font-size:11px;text-decoration:none;cursor:pointer">Close</a>
+    </div>
+  </div>
+</div>
+
+<script>
+function downloadDIYScript() {
+  var isWin = navigator.platform.indexOf('Win') > -1;
+  var script, filename, mime;
+
+  if (isWin) {
+    filename = 'bim-ootb-install.bat';
+    mime = 'application/x-bat';
+    script = [
+      '@echo off',
+      'echo ============================================',
+      'echo   BIM OOTB - Self-Host Installer (Windows)',
+      'echo   Copyright (c) 2025-2026 Redhuan D. Oon',
+      'echo ============================================',
+      'echo.',
+      '',
+      'REM Check Python',
+      'python --version >nul 2>&1',
+      'if errorlevel 1 (',
+      '  echo [!] Python not found. Installing via winget...',
+      '  winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements',
+      '  if errorlevel 1 (',
+      '    echo [!] winget failed. Please install Python from https://python.org/downloads',
+      '    pause',
+      '    exit /b 1',
+      '  )',
+      '  echo [OK] Python installed. You may need to restart this script.',
+      ') else (',
+      '  echo [OK] Python found.',
+      ')',
+      '',
+      'set DEST=%USERPROFILE%\\bim-ootb',
+      'if not exist "%DEST%" mkdir "%DEST%"',
+      'cd /d "%DEST%"',
+      '',
+      'echo Downloading BIM OOTB viewer...',
+      'curl -sL -o bim-ootb.zip "https://github.com/red1oon/BIMCompiler/archive/refs/heads/full.zip"',
+      'if errorlevel 1 (',
+      '  echo [!] Download failed. Check your internet connection.',
+      '  pause',
+      '  exit /b 1',
+      ')',
+      '',
+      'echo Extracting...',
+      'powershell -Command "Expand-Archive -Path bim-ootb.zip -DestinationPath _tmp -Force"',
+      'xcopy /s /e /y _tmp\\BIMCompiler-full\\deploy\\dev\\* . >nul',
+      'rmdir /s /q _tmp',
+      'del bim-ootb.zip',
+      '',
+      'echo.',
+      'echo   BIM OOTB installed to: %DEST%',
+      'echo   Starting server on http://localhost:8080',
+      'echo.',
+      'start http://localhost:8080',
+      'python -m http.server 8080',
+    ].join('\r\n');
+  } else {
+    filename = 'bim-ootb-install.sh';
+    mime = 'application/x-sh';
+    script = [
+      '#!/usr/bin/env bash',
+      '# BIM OOTB - Self-Host Installer (Mac/Linux)',
+      '# Copyright (c) 2025-2026 Redhuan D. Oon. MIT Licensed.',
+      'set -e',
+      'echo ""',
+      'echo "============================================"',
+      'echo "  BIM OOTB - Self-Host Installer"',
+      'echo "  Copyright (c) 2025-2026 Redhuan D. Oon"',
+      'echo "============================================"',
+      'echo ""',
+      '',
+      'if command -v python3 &>/dev/null; then',
+      '  echo "[OK] Python 3 found: $(python3 --version)"',
+      'else',
+      '  echo "[!] Python 3 not found. Installing..."',
+      '  if [[ "$OSTYPE" == "darwin"* ]]; then',
+      '    if command -v brew &>/dev/null; then brew install python3',
+      '    else echo "[!] Install Homebrew first: https://brew.sh"; exit 1; fi',
+      '  else',
+      '    sudo apt-get update && sudo apt-get install -y python3 || \\',
+      '    sudo dnf install -y python3 || sudo pacman -S --noconfirm python',
+      '  fi',
+      '  echo "[OK] Python 3 installed."',
+      'fi',
+      '',
+      'DEST="$HOME/bim-ootb"',
+      'mkdir -p "$DEST" && cd "$DEST"',
+      'echo "Downloading BIM OOTB viewer..."',
+      'curl -sL -o bim-ootb.zip "https://github.com/red1oon/BIMCompiler/archive/refs/heads/full.zip"',
+      'echo "Extracting..."',
+      'unzip -qo bim-ootb.zip "BIMCompiler-full/deploy/dev/*" -d _tmp',
+      'cp -r _tmp/BIMCompiler-full/deploy/dev/* . && rm -rf _tmp bim-ootb.zip',
+      '',
+      'echo ""',
+      'echo "  BIM OOTB installed to: $DEST"',
+      'echo "  Starting server on http://localhost:8080"',
+      'echo ""',
+      'if [[ "$OSTYPE" == "darwin"* ]]; then open http://localhost:8080 &',
+      'elif command -v xdg-open &>/dev/null; then xdg-open http://localhost:8080 &; fi',
+      'python3 -m http.server 8080',
+    ].join('\n');
+  }
+
+  var blob = new Blob([script], { type: mime });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  document.getElementById('diy-download-btn').textContent = '\u2705 Downloaded! Run the script to install.';
+  document.getElementById('diy-download-btn').style.background = '#44cc44';
+}
+</script>
+<script>
+// ── S250 §9: Load Community Projects from contributed/index.json ──
+(async function() {
+  var section = document.getElementById('community-section');
+  var grid = document.getElementById('community-grid');
+  if (!section || !grid) return;
+  var indexUrl = (_base || '') + 'contributed/index.json';
+  try {
+    var resp = await fetch(indexUrl);
+    if (!resp.ok) { console.log('§COMMUNITY skip — index.json HTTP ' + resp.status); return; }
+    var entries = await resp.json();
+    if (!Array.isArray(entries) || entries.length === 0) { console.log('§COMMUNITY skip — empty'); return; }
+    console.log('§COMMUNITY loaded entries=' + entries.length);
+    section.style.display = 'block';
+    grid.innerHTML = '';
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var card = document.createElement('div');
+      card.className = 'card';
+      var discs = entry.disciplines || [];
+      var discBars = discs.map(function(d) {
+        var color = DISC_COLORS[d] || '#888';
+        return '<span class="disc-bar" style="width:' + Math.max(20, 100 / discs.length) + '%;background:' + color + '" title="' + d + '"></span>';
+      }).join('');
+      var region = '';
+      if (entry.timezone) {
+        var parts = entry.timezone.split('/');
+        region = parts.length > 1 ? parts[0] : entry.timezone;
+      }
+      var dateStr = entry.date ? new Date(entry.date).toLocaleDateString() : '';
+      var displayName = (entry.filename || '').replace(/_extracted\.db$/i, '').replace(/\.[^.]+$/, '');
+      card.innerHTML =
+        '<div class="name">' + displayName + '</div>' +
+        '<div class="meta">' +
+          '<b>' + ((entry.elements || 0).toLocaleString()) + '</b> elements' +
+          (discs.length ? ' &middot; ' + discs.join(', ') : '') +
+          (region ? '<br>' + region : '') +
+          (dateStr ? ' &middot; ' + dateStr : '') +
+        '</div>' +
+        '<div class="disc-bars">' + discBars + '</div>' +
+        '<button class="open-btn" data-contributed="' + entry.filename + '">Open 3D Viewer &#9889;</button>';
+      card.querySelector('[data-contributed]').onclick = function() {
+        var fname = this.dataset.contributed;
+        var bldBase = _prodBase + 'contributed/';
+        var viewerUrl = (_base || '') + 'viewer/viewer.html';
+        var url = viewerUrl + '?db=' + encodeURIComponent(bldBase + fname);
+        console.log('§COMMUNITY open file=' + fname);
+        window.open(url, '_blank');
+      };
+      grid.appendChild(card);
+    }
+  } catch(e) {
+    console.log('§COMMUNITY error ' + e.message);
+  }
+})();
+</script>
+<script src="viewer/locale_loader.js?v=7"></script>
+<script>
+window.addEventListener('trl-ready', function() {
+  var btn = document.getElementById('header-flag-btn');
+  if (btn && window._TRL_LOADER) {
+    var code = _TRL_LOADER.detectLocale();
+    _TRL_LOADER.AVAILABLE_LOCALES.forEach(function(loc) {
+      if (loc.code === code) btn.textContent = _TRL_LOADER.isoToFlag(loc.iso);
+    });
+  }
+});
+</script>
+
+
+</body>
+</html>

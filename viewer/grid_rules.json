@@ -1,0 +1,98 @@
+{
+  "grid_move": {
+    "min_bay_m":    0.5,
+    "max_extend_m": 5.0,
+    "snap_m":       0.05,
+    "max_step_m":   2.0
+  },
+  "floor_plan": {
+    "cut_offset_m":          1.0,
+    "band_min_above_floor":  0.05,
+    "band_max_below_next":   0.10,
+    "band_fallback_height":  3.5,
+    "opening_z_range":       [0.50, 2.40],
+    "exclude_above_band": [
+      "IfcRoof", "IfcCovering", "IfcRoofing"
+    ],
+    "exclude_below_band": [
+      "IfcFoundation", "IfcPile", "IfcFooting"
+    ],
+    "opening_label_offset_m": 0.15,
+    "opening_label_font_px":  9
+  },
+  "grid_detection": {
+    "min_structural_span_m":  1.80,
+    "face_cluster_tol_m":     0.30,
+    "opening_cluster_tol_m":  0.15,
+    "opening_vote_weight":    2,
+    "min_votes":              2,
+    "structural_classes": [
+      "IfcWall", "IfcWallStandardCase", "IfcColumn", "IfcBeam", "IfcMember"
+    ],
+    "opportunity_classes": [
+      "IfcDoor", "IfcWindow"
+    ],
+    "wall_length_ref_m":      3.0,
+    "wall_weight_min":        0.5,
+    "wall_weight_max":        8.0,
+    "snap_face_tol_m":        0.30,
+    "min_openings_for_grid":  2,
+    "min_bay_opening_m":      0.90
+  },
+  "clearance": [
+    {
+      "class": "IfcFurnishingElement",
+      "wall_min_m":  0.1,
+      "grid_min_m":  0.3,
+      "strategy":    "proportional"
+    },
+    {
+      "class": "IfcSwitchingDevice",
+      "wall_min_m":  0.15,
+      "grid_min_m":  0.0,
+      "strategy":    "pin_to_wall"
+    },
+    {
+      "class": "IfcOutlet",
+      "wall_min_m":  0.05,
+      "grid_min_m":  0.0,
+      "strategy":    "pin_to_wall"
+    },
+    {
+      "class": "IfcLightFixture",
+      "ceiling_min_m": 0.0,
+      "grid_min_m":    0.5,
+      "strategy":      "center_bay"
+    },
+    {
+      "class": "IfcFlowTerminal",
+      "wall_min_m":  0.05,
+      "grid_min_m":  0.0,
+      "strategy":    "pin_to_wall"
+    },
+    {
+      "class": "IfcSanitaryTerminal",
+      "wall_min_m":  0.1,
+      "grid_min_m":  0.0,
+      "strategy":    "pin_to_wall"
+    }
+  ],
+  "plane_3d": {
+    "plane_opacity":  0.12,
+    "plane_color_x":  "#ff4444",
+    "plane_color_y":  "#4444ff",
+    "show_on_drag":   true
+  },
+  "shadow": {
+    "color":   "#ff6600",
+    "opacity":  0.35,
+    "dash_m":   0.3
+  },
+  "smart_save": {
+    "dwell_threshold_s":  1.0,
+    "gesture_timeout_s":  5.0,
+    "proximity_tol_m":    0.3,
+    "max_dwells":         3,
+    "lock_after_hits":    3
+  }
+}

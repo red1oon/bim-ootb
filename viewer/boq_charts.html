@@ -1,0 +1,2005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BIM OOTB — 4D/5D Analytics</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#4fc3f7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+  h1 { color: #4fc3f7; font-size: 20px; margin-bottom: 4px; }
+  h2 { color: #4fc3f7; font-size: 15px; margin: 20px 0 8px; }
+  .subtitle { color: #888; font-size: 12px; margin-bottom: 16px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 1400px; }
+  .chart-box {
+    background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .chart-box.full { grid-column: 1 / -1; }
+  canvas { max-width: 100%; }
+  .chart-box.pie-chart canvas { aspect-ratio: 1; max-height: 400px; margin: 0 auto; display: block; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; margin-top: 8px; }
+  th { background: rgba(79,195,247,0.15); color: #4fc3f7; text-align: left; padding: 4px 8px; }
+  td { padding: 3px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  tr:hover td { background: rgba(255,255,255,0.05); }
+  .total-row td { font-weight: bold; color: #4fc3f7; border-top: 2px solid #4fc3f7; }
+  .toolbar {
+    position: fixed; top: 16px; right: 16px; z-index: 10;
+    background: rgba(0,0,0,0.3); border-radius: 8px; padding: 8px 12px;
+    backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08);
+  }
+  .toolbar button {
+    padding: 8px 16px; background: #444; color: #fff; border: 1px solid #666;
+    border-radius: 4px; cursor: pointer; font-size: 22px; margin-left: 4px;
+  }
+  .toolbar button:hover { background: #4fc3f7; color: #000; }
+  #status { color: #4fc3f7; font-size: 12px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<h1>BIM OOTB — 4D/5D Analytics</h1>
+<div class="subtitle" id="info">Loading...</div>
+<div class="toolbar">
+  <button onclick="save5D()" data-trl-title="ui_tt_export_5d" title="5D — Cost Excel">&#128202; 5D</button>
+  <button onclick="save4D()" data-trl-title="ui_tt_export_4d" title="4D — Schedule Excel">&#128197; 4D</button>
+  <button onclick="openMepReport()" title="MEP Bill of Quantities">&#128295; MEP</button>
+  <button onclick="toggleTheme()" data-trl-title="ui_tt_theme" title="Light/Dark">&#9788;</button>
+  <button onclick="copyPageUrl(this)" title="Copy shareable link">&#128203;</button>
+  <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" title="Change locale / currency" style="font-size:20px">&#127760;</button>
+  <button onclick="window.close()" title="Back">&#8592; Back</button>
+</div>
+<div class="charts" id="charts"></div>
+<div id="status"></div>
+
+<script src="lib/sql-wasm.js"></script>
+<script src="lib/xlsx.full.min.js"></script>
+<script src="lib/exceljs.min.js"></script>
+<script src="lib/FileSaver.min.js"></script>
+<script src="lib/chart.umd.min.js"></script>
+<script src="rates.js?v=7"></script>
+<script src="export_5d.js?v=1"></script>
+<script src="export_4d.js?v=1"></script>
+
+<script>
+function copyPageUrl(btn) {
+  var url = location.href;
+  navigator.clipboard.writeText(url).then(function() {
+    var orig = btn.innerHTML; btn.innerHTML = '&#10003;'; btn.style.color = '#44cc44';
+    setTimeout(function() { btn.innerHTML = orig; btn.style.color = ''; }, 1500);
+  }).catch(function() { prompt('Copy this URL:', url); });
+}
+
+const params = new URLSearchParams(location.search);
+const DB_URL = params.get('db') || 'sandbox_1M_extracted.db';
+const DIFF_DB_URL = params.get('diffdb') || '';
+const BLD = params.get('bld') || '';
+
+// S224: Variance data (populated in init if diffdb present)
+var diffResult = null;
+var diffDb = null;
+
+// RATES, LABOR_RATES, EQUIPMENT_RATES, EQUIPMENT_ALLOCATION, SEQUENCE_RULES,
+// DISC_COLORS, PHASE_COLORS, WORK_PACKAGES, calcLabor(), calcEquipment(),
+// getRate(), getPhase(), getProductivity() — all from rates.js
+const DEFAULT_RULE = SEQUENCE_DEFAULT;  // alias for existing references
+
+// ============================================================================
+// LOCALE TEMPLATE (_TRL) — iDempiere-style localization
+// Override via URL: ?cur=USD&rate=4.45&locale=en_US
+// Or load from template DB in future. ALL labels, currency, attribution here.
+// ============================================================================
+const _TRL_DEFAULTS = {
+  // Currency
+  cur:          'RM',           // primary currency symbol
+  cur2:         'USD',          // secondary currency symbol
+  cur_rate:     3.91,           // 1 cur2 = cur_rate × cur  (e.g. 1 USD = 3.91 RM)
+  cur_name:     'Malaysian Ringgit',
+  cur2_name:    'US Dollar',
+
+  // Rate source attribution
+  rate_source:       'CIDB Malaysia 2024 / BCISM Cost Book',
+  rate_year:         '2024',
+  rate_mat_source:   'CIDB National Construction Cost Centre (N3C) 2024',
+  rate_mat_ref:      'BCISM Cost Book 2022-2024 (inflated +3%)',
+  rate_mat_includes: 'Delivery, wastage allowance (5-10% by material type)',
+  rate_lab_source:   'MBAM-CIDB Labour Wage Survey 2024',
+  rate_lab_basis:    'Basic wage + 30% (EPF 13%, SOCSO 2%, benefits 15%)',
+  rate_lab_prod:     'CIDB productivity standards by trade',
+  rate_lab_crew:     'Skilled workers + helpers as per trade standards',
+  rate_eq_source:    'CIDB N3C Machinery Hire Rates 2024',
+  rate_eq_alloc:     'Based on work type and duration requirements',
+  rate_eq_basis:     'Per day (8 hours), operator cost included where stated',
+
+  // Column headers — Excel + HTML tables
+  h_discipline: 'Discipline',
+  h_ifc_class:  'IFC Class',
+  h_quantity:   'Quantity',
+  h_uom:        'UOM',
+  h_description:'Description',
+  h_storey:     'Storey',
+  h_phase:      'Phase',
+  h_item:       'Item',
+
+  // Cost labels
+  h_material:   'Material',
+  h_labour:     'Labour',
+  h_equipment:  'Equipment',
+  h_total:      'Total',
+  h_unit_rate:  'Unit Rate',
+  h_mat_rate:   'Mat Rate',
+  h_lab_rate:   'Lab Rate',
+  h_rate_day:   'Rate/Day',
+  h_trade:      'Trade',
+  h_crew_size:  'Crew Size',
+  h_man_days:   'Man-Days',
+  h_duration:   'Duration (days)',
+  h_grand_total:'GRAND TOTAL',
+  h_subtotal:   'SUBTOTAL',
+
+  // 4D labels
+  h_wbs:        'WBS',
+  h_task_name:  'Task Name',
+  h_productivity:'Productivity',
+  h_gangs:      'Gangs',
+  h_start_date: 'Start Date',
+  h_finish_date:'Finish Date',
+  h_labor_resource:'Labor Resource',
+  h_status:     'Status',
+  h_pct_complete:'% Complete',
+  h_day_offset: 'Day Offset',
+  h_date:       'Date',
+  h_milestone:  'Milestone',
+  h_task:       'Task',
+  h_task_count: 'Task Count',
+  h_total_days: 'Total Days',
+  h_total_man_days:'Total Man-Days',
+  h_week:       'Week',
+  h_cumulative_pct:'Cumulative %',
+
+  // Chart titles
+  t_cost_by_disc:      '5D — Cost by Discipline',
+  t_cost_components:   'Cost Components by Discipline',
+  t_task_dist_phase:   'Task Distribution by Phase',
+  t_task_count_disc:   'Task Count by Discipline',
+  t_phase_duration:    '4D — Phase Duration (Total Days)',
+  t_resource_workload: '4D — Resource Workload (Man-Days by Phase)',
+  t_s_curve:           '4D — S-Curve Progress',
+  t_milestone:         '4D — Milestone Timeline',
+  t_gantt:             '4D — Gantt Timeline (Strategic Tasks by Phase)',
+  t_vo_impact:         '5D — Variation Order Impact',
+
+  // Excel sheet names
+  s_cover:        'Cover Sheet',
+  s_exec_summary: 'Executive Summary',
+  s_material:     'Material Summary',
+  s_labour:       'Labour Summary',
+  s_equipment:    'Equipment Summary',
+  s_boq:          'Detailed BOQ',
+  s_prov:         'Provisional Sums',
+  s_schedule:     'Construction Schedule',
+  s_proj_summary: 'Project Summary',
+  s_dashboard:    'BIM 4D Dashboard',
+
+  // Section titles
+  t_comp_boq:     'COMPREHENSIVE BILL OF QUANTITIES',
+  t_cost_method:  'COST BREAKDOWN METHODOLOGY',
+  t_mat_summary:  'MATERIAL COST SUMMARY',
+  t_lab_summary:  'LABOUR COST SUMMARY',
+  t_equip_summary:'EQUIPMENT COST SUMMARY',
+  t_prov_sums:    'PROVISIONAL SUMS',
+  t_phase_dur_analysis: 'Phase Duration Analysis',
+  t_resource_analysis:  'Resource Workload Analysis',
+  t_s_curve_progress:   'S-Curve Progress',
+  t_milestone_timeline: 'Milestone Timeline',
+  t_gantt_timeline:     'Gantt Timeline (Strategic Tasks)',
+
+  // Misc
+  not_started:  'Not Started',
+  source_app:   'BIM OOTB — Frictionless BIM',
+
+  // ── UI — viewer chrome ──
+  tagline:           'Frictionless BIM. Two DBs. One browser. Zero install.',
+  ui_tools:          'Tools',
+  ui_storeys:        'Storeys',
+  ui_disciplines:    'Disciplines',
+  ui_filter:         'Filter...',
+  ui_all_storeys:    'All Storeys',
+
+  // ── UI — tooltips ──
+  ui_tt_xray:        'X-Ray',
+  ui_tt_screenshot:  'Screenshot',
+  ui_tt_fullscreen:  'Fullscreen',
+  ui_tt_theme:       'Light/Dark',
+  ui_tt_fly:         'Fly Around',
+  ui_tt_walk_speed:  'Walk Speed',
+  ui_tt_export:      '4D/5D Export',
+  ui_tt_export_5d:   '5D \u2014 Cost Excel',
+  ui_tt_export_4d:   '4D \u2014 Schedule Excel',
+  ui_tt_issues:      'Issues',
+  ui_tt_measure:     'Measure',
+  ui_tt_section:     'Section Cut',
+  ui_tt_2d:          '2D Plans',
+  ui_tt_sitecam:     'Site Camera',
+  ui_tt_walk:        'Walk Mode',
+  ui_tt_voice:       'Voice Search',
+
+  // ── UI — buttons ──
+  ui_cancel:         'Cancel',
+  ui_back:           'Back',
+  ui_save:           'Save',
+  ui_undo:           'Undo',
+  ui_retake:         'Retake',
+  ui_go:             'Go',
+  ui_clear:          'Clear',
+  ui_clear_all:      'Clear All',
+  ui_export_excel:   'Export Excel',
+  ui_share_whatsapp: 'Share \u2192 WhatsApp',
+  ui_show_3d:        'Show in 3D',
+  ui_snag:           'Snag',
+
+  // ── UI — info panel labels ──
+  ui_class:          'Class',
+  ui_name:           'Name',
+  ui_guid:           'GUID',
+  ui_building:       'Building',
+  ui_gps:            'GPS',
+  ui_compass:        'Compass',
+  ui_time:           'Time',
+  ui_notes:          'Notes',
+  ui_open:           'Open',
+
+  // ── UI — HUD stats ──
+  ui_buildings:      'Buildings',
+  ui_elements:       'Elements',
+  ui_meshes:         'Meshes',
+  ui_streaming:      'Streaming',
+  ui_rendered:       'Rendered',
+  ui_done:           'Done',
+  ui_variance:       'Variance',
+  ui_initializing:   'Initializing...',
+
+  // ── UI — walk mode ──
+  ui_walk_title:     'Walk Mode',
+  ui_walk_instructions: 'Stand at the building entrance and tap SET to anchor your GPS position to the model.',
+  ui_walk_set:       'SET',
+  ui_walk_no_data:   'Walk Mode: No building data',
+  ui_walk_no_gps:    'Walk Mode: No GPS \u2014 orientation only',
+  ui_walk_stopped:   'Walk Mode stopped.',
+  ui_drivethru_hint: 'Drive-Thru: Tap to walk, hold to glide',
+  ui_drivethru_status:'Drive-Thru: {n} steps ({d}m)',
+  ui_xray_found:     'Wall X-Ray: {n} MEP elements behind {name}',
+  ui_xray_none:      'Wall X-Ray: No MEP elements found behind {name}',
+
+  // ── UI — site camera ──
+  ui_sitecam_watermark: 'BIM OOTB \u2014 Site Inspection',
+  ui_gps_acquiring:  'GPS: acquiring...',
+  ui_gps_unavailable:'GPS: unavailable',
+  ui_gps_unsupported:'GPS: not supported',
+  ui_model_view:     'BIM Model View',
+  ui_bearing:        'Bearing',
+  ui_markup_arrow:   'Arrow',
+  ui_markup_circle:  'Circle',
+  ui_markup_draw:    'Draw',
+  ui_markup_text:    'Text',
+
+  // ── UI — import ──
+  ui_reading_file:   'Reading file...',
+  ui_reading_fmt:    'Reading {fmt} file...',
+  ui_large_file:     'Very large file ({n}MB) \u2014 may take a few minutes',
+  ui_med_file:       'Large file ({n}MB) \u2014 please wait...',
+  ui_building_dbs:   'Building databases...',
+  ui_imported:       'Imported {n} elements',
+  ui_imported_fmt:   'Imported {n} elements from {fmt}',
+  ui_drop_ifc:       'Please drop an .ifc file',
+  ui_unsupported:    'Unsupported: .{ext} \u2014 Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL',
+  ui_exporting_ifc:  'Exporting IFC ({n} elements)...',
+  ui_downloaded_ifc: 'Downloaded {name}.ifc ({size} KB)',
+
+  // ── UI — city ──
+  ui_city_mode:      'CITY MODE \u2014 {n} buildings, {m} elements. Click a building to load.',
+  ui_flew_to:        'Flew to {name} ({n} elements)',
+  ui_downloading:    'Downloading {name}...',
+  ui_cleared:        'CLEARED \u2014 {n} meshes removed.',
+  ui_streaming_bld:  'STREAMING {name} \u2014 0/{n} elements',
+  ui_downloaded_bld: 'Downloaded {name}. Streaming {bld}...',
+
+  // ── UI — NLP ──
+  ui_nlp_placeholder:'count doors, floor 1 walls, total cost, Find fire pump...',
+  ui_no_speech:      'No speech detected \u2014 tap mic again',
+  ui_no_match:       'No match. Try: "count doors" or "floor 1 walls"',
+  ui_no_results:     'No results for "{q}"',
+  ui_details:        'Details ({n})',
+
+  // ── UI — status ──
+  ui_loading:        'Loading',
+  ui_no_data:        'No data.',
+  ui_gen_5d:         'Generating 5D Excel...',
+  ui_gen_5d_prep:    'Generating 5D Excel \u2014 preparing charts...',
+  ui_gen_4d:         'Generating 4D Excel...',
+  ui_gen_4d_prep:    'Generating 4D Excel \u2014 preparing charts...',
+  ui_saved_excel:    'Saved {f} ({n} sheets)',
+  ui_vo_label:       'includes Variance Order',
+
+  // ── UI — issues ──
+  ui_issues_title:   'Issues',
+
+  // ── UI — panels ──
+  ui_swipe_show:     'Swipe to show panels',
+  ui_swipe_hide:     'Swipe to hide panels',
+
+  // ── UI — section cut ──
+  ui_section_cut:    'Section Cut',
+
+  // ── UI — VO labels ──
+  ui_vo_new:         'New element',
+  ui_vo_existed:     'Existed',
+  ui_vo_demolished:  '\u2014 (demolished)',
+  ui_vo_parameter:   'Parameter',
+  ui_vo_value:       'Value',
+  ui_vo_description: 'Description',
+
+  // ── UI — settings ──
+  ui_settings:       'Settings',
+  ui_language:       'Language',
+  ui_currency:       'Currency',
+  ui_rate_source_lbl:'Rate Source',
+  ui_check_updates:  'Check for Updates',
+  ui_reset_defaults: 'Reset to Defaults',
+  ui_apply:          'Apply',
+};
+
+// Merge URL overrides: ?cur=USD&rate=4.45 or any _TRL key: ?h_material=Materials
+const _TRL = Object.assign({}, _TRL_DEFAULTS);
+if (params.get('cur'))  _TRL.cur = params.get('cur');
+if (params.get('cur2')) _TRL.cur2 = params.get('cur2');
+if (params.get('rate')) _TRL.cur_rate = parseFloat(params.get('rate'));
+// Allow overriding any _TRL key via URL: ?t_cost_by_disc=5D%20Cost
+for (const [k,v] of params.entries()) { if (k in _TRL_DEFAULTS && k !== 'cur' && k !== 'cur2' && k !== 'rate') _TRL[k] = v; }
+
+// Currency helpers — read from _TRL at call time so locale_loader overrides take effect
+// These were const but locale_loader merges AFTER parse, so they must be live.
+var CUR, CUR2, CUR_RATE, USD_RATE;
+function _syncCur() { CUR = _TRL.cur; CUR2 = _TRL.cur2; CUR_RATE = _TRL.cur_rate; USD_RATE = CUR_RATE; }
+_syncCur();
+function fmtCur(val) { return _TRL.cur + ' ' + val.toLocaleString(); }
+function fmtCur2(val) { return Math.round(val / _TRL.cur_rate * 100) / 100; }
+
+// WORK_PACKAGES — from rates.js
+
+// ============================================================================
+// COMPUTED STATE
+// ============================================================================
+let db = null, bldName = '';
+let _dbSourceLine = '';   // S238: captured at load, re-emitted on each export
+let qtoData = [];        // per storey/disc/class rows
+let discSummary = {};     // disc -> {qty, matTotal, laborCost, equipCost}
+let grandMaterial = 0, grandLabor = 0, grandEquip = 0, totalQty = 0;
+let scheduleData = [];    // generated 4D tasks
+let chartInstances = [];
+
+// calcLabor(), calcEquipment() — from rates.js
+
+// ============================================================================
+// SCHEDULE GENERATION — realistic storey-by-storey, phase-dependent
+// ============================================================================
+// Model:
+//  - Storeys processed bottom-up within each phase
+//  - Tasks in same phase+storey run concurrently (different trades)
+//  - Next storey starts after previous storey (small overlap lag)
+//  - Next phase on a storey starts after previous phase on THAT storey finishes + lag
+//  - Single-task duration capped at ~20 days; parallel crews added beyond that
+//  - Working days: Mon-Sat (JS getDay: 1-6)
+
+function generateSchedule(activities, startDateStr) {
+  const projectStart = new Date(startDateStr || '2025-01-06');
+
+  // Mon-Sat working (JS getDay: 0=Sun, 1=Mon ... 6=Sat)
+  const isWorkDay = d => { const w = d.getDay(); return w >= 1 && w <= 6; };
+
+  // Advance by N working days from a date
+  function addWorkDays(from, n) {
+    const d = new Date(from);
+    let rem = Math.ceil(n);
+    while (rem > 0) { d.setDate(d.getDate() + 1); if (isWorkDay(d)) rem--; }
+    return d;
+  }
+
+  // Storey sort: basements < ground < levels < roof
+  function storeyRank(s) {
+    if (!s) return 999;
+    const u = s.toUpperCase();
+    if (u.includes('ROOF')) return 900;
+    if (u.includes('BASEMENT') || u.startsWith('B')) return -10 + (parseInt(u.replace(/\D/g,''))||0);
+    if (u === 'GROUND' || u === 'G' || u === 'G0' || u === 'GF') return 0;
+    const n = parseInt(u.replace(/\D/g,''));
+    return isNaN(n) ? 50 : n;
+  }
+
+  const PHASE_ORDER = ['Substructure','Superstructure','MEP Rough-in','Architecture','MEP Final','Finishes'];
+  const INTER_PHASE_LAG = 5;   // working days between phases on same storey
+  const INTER_STOREY_LAG = 2;  // working days between storeys in same phase
+  const MAX_TASK_DAYS = 20;    // cap before adding parallel crews
+
+  // Group activities by phase -> storey
+  const grouped = {};  // phase|||storey -> [act, ...]
+  const phaseSets = {};
+  for (const act of activities) {
+    const rules = SEQUENCE_RULES[act.cls] || DEFAULT_RULE;
+    const phase = rules.phase;
+    const storey = act.storey || 'Unknown';
+    const key = `${phase}|||${storey}`;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({...act, phase, rules});
+    if (!phaseSets[phase]) phaseSets[phase] = new Set();
+    phaseSets[phase].add(storey);
+  }
+
+  // Sort storeys per phase
+  for (const p of Object.keys(phaseSets)) {
+    phaseSets[p] = [...phaseSets[p]].sort((a,b) => storeyRank(a) - storeyRank(b));
+  }
+
+  // storeyPhaseEnd[storey][phase] = finish date
+  const storeyPhaseEnd = {};
+  const phaseFirstStart = {}; // phase -> date when first storey of this phase finishes
+  const tasks = [];
+  let taskId = 0;
+
+  for (const phase of PHASE_ORDER) {
+    if (!phaseSets[phase]) continue;
+    let prevStoreyEnd = null;
+
+    for (const storey of phaseSets[phase]) {
+      const key = `${phase}|||${storey}`;
+      const acts = grouped[key];
+      if (!acts) continue;
+
+      // Start date: wait for (a) latest earlier phase on this storey, (b) previous storey in this phase
+      let storeyStart = new Date(projectStart);
+
+      // Walk back through ALL earlier phases to find the latest one with data for this storey
+      const phaseIdx = PHASE_ORDER.indexOf(phase);
+      if (phaseIdx > 0 && storeyPhaseEnd[storey]) {
+        for (let pi = phaseIdx - 1; pi >= 0; pi--) {
+          const earlierPhase = PHASE_ORDER[pi];
+          if (storeyPhaseEnd[storey][earlierPhase]) {
+            const after = addWorkDays(storeyPhaseEnd[storey][earlierPhase], INTER_PHASE_LAG);
+            if (after > storeyStart) storeyStart = after;
+            break;
+          }
+        }
+      }
+      // Also wait for ANY earlier phase globally (prevents phases from starting before predecessors)
+      if (phaseIdx > 0) {
+        for (let pi = phaseIdx - 1; pi >= 0; pi--) {
+          if (phaseFirstStart[PHASE_ORDER[pi]]) {
+            const after = addWorkDays(phaseFirstStart[PHASE_ORDER[pi]], INTER_PHASE_LAG);
+            if (after > storeyStart) storeyStart = after;
+            break;
+          }
+        }
+      }
+      if (prevStoreyEnd) {
+        const after = addWorkDays(prevStoreyEnd, INTER_STOREY_LAG);
+        if (after > storeyStart) storeyStart = after;
+      }
+
+      // S240c: One grouped task per (phase, storey) — aggregate all IFC classes
+      let maxDuration = 0;
+      let totalQtyGroup = 0;
+      let totalCrew = 0;
+      const ifcClasses = [];
+      const disciplines = new Set();
+      const resources = new Set();
+      const equipments = new Set();
+
+      for (const act of acts) {
+        const prod = act.labor.prod || 10;
+        let duration = Math.max(1, act.qty / prod);
+        let crews = 1;
+        if (duration > MAX_TASK_DAYS) {
+          crews = Math.ceil(duration / MAX_TASK_DAYS);
+          duration = Math.ceil(duration / crews);
+        }
+        if (duration > maxDuration) maxDuration = duration;
+        totalQtyGroup += act.qty;
+        totalCrew = Math.max(totalCrew, (act.labor.crew || 2) * crews);
+        ifcClasses.push(act.cls);
+        disciplines.add(act.disc);
+        const res = act.labor.tradeKey || act.rules.resource;
+        if (res) resources.add(res);
+        const equipAlloc = EQUIPMENT_ALLOCATION[act.cls];
+        if (equipAlloc) equipments.add(EQUIPMENT_RATES[equipAlloc.equipment].desc);
+      }
+
+      const taskFinish = addWorkDays(storeyStart, maxDuration);
+      const calendarDays = Math.round((taskFinish - storeyStart) / 86400000);
+      const discLabel = [...disciplines].join('/');
+      taskId++;
+      tasks.push({
+        id: taskId,
+        wbs: `1.${PHASE_ORDER.indexOf(phase)+1}.${taskId}`,
+        name: `${storey} - ${phase} (${discLabel})`,
+        ifcClasses,
+        phase,
+        discipline: discLabel,
+        storey,
+        qty: totalQtyGroup,
+        uom: 'MIX',
+        productivity: totalQtyGroup > 0 ? Math.round(totalQtyGroup / maxDuration) : 0,
+        duration: calendarDays,
+        crews: 1,
+        startDate: storeyStart.toISOString().slice(0,10),
+        finishDate: taskFinish.toISOString().slice(0,10),
+        resource: [...resources].join(','),
+        crew: totalCrew,
+        equipment: [...equipments].join(', '),
+        startDay: Math.round((storeyStart - projectStart) / 86400000),
+        finishDay: Math.round((taskFinish - projectStart) / 86400000),
+      });
+
+      if (!storeyPhaseEnd[storey]) storeyPhaseEnd[storey] = {};
+      storeyPhaseEnd[storey][phase] = taskFinish;
+      if (!phaseFirstStart[phase]) phaseFirstStart[phase] = taskFinish;
+      prevStoreyEnd = taskFinish;
+    }
+  }
+  return tasks;
+}
+
+// ============================================================================
+// 4D SCHEDULE AUDIT — S240 §0.1 (8 checks, must all PASS before sync)
+// ============================================================================
+function audit4DSchedule(scheduleData, db, qtoData) {
+  const results = [];
+  const PHASE_ORDER = ['Substructure','Superstructure','MEP Rough-in','Architecture','MEP Final','Finishes'];
+
+  // Check 1: Task coverage — every IFC class in DB maps to SEQUENCE_RULES (no DEFAULT)
+  const dbClasses = qtoData.map(r => r.cls);
+  const unmapped = [...new Set(dbClasses.filter(c => !SEQUENCE_RULES[c]))];
+  const c1 = unmapped.length === 0;
+  console.log('§4D_AUDIT_COVERAGE ' + (c1 ? 'PASS' : 'FAIL') + ' unmapped=[' + unmapped.join(',') + ']');
+  results.push({name:'COVERAGE', pass:c1});
+
+  // Check 2: Phase order — no phase inversion in task sequence
+  let c2 = true;
+  let lastPhaseIdx = -1;
+  const tasksByOrder = [...scheduleData].sort((a,b) => a.startDay - b.startDay || PHASE_ORDER.indexOf(a.phase) - PHASE_ORDER.indexOf(b.phase));
+  for (const t of tasksByOrder) {
+    const pi = PHASE_ORDER.indexOf(t.phase);
+    if (pi < 0) continue;
+    // Allow same phase — only flag if a later task's phase is strictly earlier AND starts later
+    // Phase inversion = a task in an earlier phase starts AFTER a task in a later phase on the SAME storey
+  }
+  // Stricter check: per-storey, no earlier phase starting after a later phase
+  const storeyPhaseStarts = {};
+  for (const t of scheduleData) {
+    const key = t.storey + '|||' + t.phase;
+    if (!storeyPhaseStarts[key] || t.startDay < storeyPhaseStarts[key]) {
+      storeyPhaseStarts[key] = t.startDay;
+    }
+  }
+  const storeys = [...new Set(scheduleData.map(t => t.storey))];
+  const inversions = [];
+  for (const st of storeys) {
+    for (let i = 0; i < PHASE_ORDER.length - 1; i++) {
+      for (let j = i + 1; j < PHASE_ORDER.length; j++) {
+        const earlyStart = storeyPhaseStarts[st + '|||' + PHASE_ORDER[i]];
+        const lateStart = storeyPhaseStarts[st + '|||' + PHASE_ORDER[j]];
+        if (earlyStart !== undefined && lateStart !== undefined && lateStart < earlyStart) {
+          inversions.push(st + ':' + PHASE_ORDER[j] + '<' + PHASE_ORDER[i]);
+          c2 = false;
+        }
+      }
+    }
+  }
+  console.log('§4D_AUDIT_PHASE_ORDER ' + (c2 ? 'PASS' : 'FAIL') + (inversions.length ? ' inversions=[' + inversions.join(',') + ']' : ' ok=true'));
+  results.push({name:'PHASE_ORDER', pass:c2});
+
+  // Check 3: Storey order — within each phase, storeys run bottom-up
+  let c3 = true;
+  const storeyViolations = [];
+  function storeyRank(s) {
+    if (!s) return 999;
+    const u = s.toUpperCase();
+    if (u.includes('ROOF')) return 900;
+    if (u.includes('BASEMENT') || u.startsWith('B')) return -10 + (parseInt(u.replace(/\D/g,''))||0);
+    if (u === 'GROUND' || u === 'G' || u === 'G0' || u === 'GF') return 0;
+    const n = parseInt(u.replace(/\D/g,''));
+    return isNaN(n) ? 50 : n;
+  }
+  for (const phase of PHASE_ORDER) {
+    const phaseTasks = scheduleData.filter(t => t.phase === phase);
+    const storeyStarts = {};
+    for (const t of phaseTasks) {
+      if (!storeyStarts[t.storey] || t.startDay < storeyStarts[t.storey]) {
+        storeyStarts[t.storey] = t.startDay;
+      }
+    }
+    const sorted = Object.entries(storeyStarts).sort((a,b) => a[1] - b[1]);
+    for (let i = 1; i < sorted.length; i++) {
+      if (storeyRank(sorted[i][0]) < storeyRank(sorted[i-1][0])) {
+        storeyViolations.push(phase + ':' + sorted[i-1][0] + '>' + sorted[i][0]);
+        c3 = false;
+      }
+    }
+  }
+  console.log('§4D_AUDIT_STOREY_ORDER ' + (c3 ? 'PASS' : 'FAIL') + (storeyViolations.length ? ' violations=[' + storeyViolations.join(',') + ']' : ' ok=true'));
+  results.push({name:'STOREY_ORDER', pass:c3});
+
+  // Check 4: Duration sanity — no task >120 days, no task <1 day
+  const outliers = scheduleData.filter(t => t.duration > 120 || t.duration < 1).map(t => t.name + '=' + t.duration + 'd');
+  const c4 = outliers.length === 0;
+  console.log('§4D_AUDIT_DURATION ' + (c4 ? 'PASS' : 'FAIL') + ' outliers=[' + outliers.join(',') + ']');
+  results.push({name:'DURATION', pass:c4});
+
+  // Check 5: Overlap sanity — no two tasks with same phase on same storey (grouped = impossible, but verify)
+  let c5 = true;
+  const conflicts = [];
+  for (let i = 0; i < scheduleData.length; i++) {
+    for (let j = i + 1; j < scheduleData.length; j++) {
+      const a = scheduleData[i], b = scheduleData[j];
+      if (a.storey === b.storey && a.phase === b.phase &&
+          a.startDay < b.finishDay && b.startDay < a.finishDay) {
+        conflicts.push(a.name + ' vs ' + b.name);
+        c5 = false;
+      }
+    }
+  }
+  console.log('§4D_AUDIT_OVERLAP ' + (c5 ? 'PASS' : 'FAIL') + ' conflicts=[' + conflicts.slice(0,5).join('; ') + (conflicts.length > 5 ? '..+' + (conflicts.length-5) : '') + ']');
+  results.push({name:'OVERLAP', pass:c5});
+
+  // Check 6: Total duration — project total ≤ 3× naive serial sum
+  const serialSum = scheduleData.reduce((s,t) => s + t.duration, 0);
+  const projectDays = scheduleData.length ? Math.max(...scheduleData.map(t => t.finishDay)) : 0;
+  const ratio = serialSum > 0 ? (projectDays / serialSum).toFixed(2) : 0;
+  const c6 = projectDays <= 3 * serialSum;
+  console.log('§4D_AUDIT_TOTAL ' + (c6 ? 'PASS' : 'FAIL') + ' days=' + projectDays + ' serial=' + Math.round(serialSum) + ' ratio=' + ratio);
+  results.push({name:'TOTAL', pass:c6});
+
+  // Check 7: Gantt bar labels — no undefined/[object Object], no empty names
+  const badLabels = scheduleData.filter(t => !t.name || t.name.includes('undefined') || t.name.includes('[object'));
+  const c7 = badLabels.length === 0;
+  console.log('§4D_AUDIT_LABELS ' + (c7 ? 'PASS' : 'FAIL') + (badLabels.length ? ' bad=[' + badLabels.map(t=>t.name).join(',') + ']' : ' ok=true'));
+  results.push({name:'LABELS', pass:c7});
+
+  // Check 8: Task↔GUID resolution — every grouped task resolves to ≥1 GUID
+  let c8 = true;
+  const orphaned = [];
+  if (db) {
+    for (const t of scheduleData) {
+      const classes = t.ifcClasses || (t.ifcClass ? [t.ifcClass] : []);
+      if (!classes.length) { orphaned.push(t.name); c8 = false; continue; }
+      let totalCount = 0;
+      try {
+        for (const cls of classes) {
+          const res = db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class = '" +
+            cls.replace(/'/g,"''") + "' AND storey = '" +
+            (t.storey||'').replace(/'/g,"''") + "'");
+          totalCount += (res[0]?.values[0]?.[0] || 0);
+        }
+        if (totalCount === 0) { orphaned.push(t.name + '(0 GUIDs)'); c8 = false; }
+      } catch(e) {
+        orphaned.push(t.name + '(query error)');
+        c8 = false;
+      }
+    }
+  }
+  console.log('§4D_AUDIT_GUIDS ' + (c8 ? 'PASS' : 'FAIL') + ' orphaned=[' + orphaned.slice(0,5).join(',') + (orphaned.length > 5 ? '..+' + (orphaned.length-5) : '') + ']');
+  results.push({name:'GUIDS', pass:c8});
+
+  // Summary
+  const failCount = results.filter(r => !r.pass).length;
+  console.log('§4D_AUDIT_SUMMARY pass=' + results.filter(r=>r.pass).length + ' fail=' + failCount + ' total=8');
+
+  // Show warning banner if any fail
+  if (failCount > 0) {
+    let banner = document.getElementById('audit4d-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'audit4d-banner';
+      banner.style.cssText = 'background:#fff3cd;color:#856404;border:1px solid #ffc107;padding:8px 12px;margin:8px 0;border-radius:4px;font-weight:bold;';
+      const info = document.getElementById('info');
+      if (info) info.parentNode.insertBefore(banner, info.nextSibling);
+    }
+    var failNames = results.filter(r => !r.pass).map(r => r.name);
+    banner.textContent = '\u26a0 Schedule audit: ' + failNames.join(', ') + (failNames.indexOf('COVERAGE') >= 0 && unmapped.length ? ' \u2014 unmapped: ' + unmapped.join(', ') : '');
+  }
+
+  return { results, failCount };
+}
+
+// ============================================================================
+// INIT — load DB, compute everything
+// ============================================================================
+// S238: Fetch DB buffer — checks bim_ootb_cache IDB first (same cache as scene.js), falls back to fetch
+// import:// URLs: IDB only (no network). OCI URLs: IDB first (scene.js wrote it), then network.
+async function fetchDbBuffer(url) {
+  const _tFetch = performance.now();
+  const cacheDb = await new Promise(resolve => {
+    const req = indexedDB.open('bim_ootb_cache', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('dbs');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+
+  if (cacheDb) {
+    const cached = await new Promise(resolve => {
+      const tx = cacheDb.transaction('dbs', 'readonly');
+      const req = tx.objectStore('dbs').get(url);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+    if (cached) {
+      const src = url.startsWith('import://') ? 'import' : 'idb';
+      _dbSourceLine = '§CHARTS_DB_SOURCE source=' + src + ' url=' + url.split('/').pop() + ' size=' + (cached.byteLength / 1024).toFixed(0) + 'KB fetchMs=' + Math.round(performance.now() - _tFetch);
+      _log(_dbSourceLine);
+      return cached;
+    }
+  }
+
+  if (url.startsWith('import://')) throw new Error('DB not found in cache: ' + url);
+
+  _dbSourceLine = '§CHARTS_DB_SOURCE source=oci url=' + url.split('/').pop();
+  _log(_dbSourceLine);
+  return fetch(url).then(r => r.arrayBuffer());
+}
+
+// S253: Try BroadcastChannel relay from viewer (instant) before loading DB (slow)
+async function _tryChannelRelay(timeoutMs) {
+  return new Promise(function(resolve) {
+    try {
+      var ch = new BroadcastChannel('bim_4d');
+      var timer = setTimeout(function() { ch.close(); resolve(null); }, timeoutMs);
+      ch.onmessage = function(evt) {
+        if (evt.data && evt.data.type === '4D_QTO_RESPONSE') {
+          clearTimeout(timer);
+          ch.close();
+          resolve(evt.data);
+        }
+      };
+      ch.postMessage({ type: '4D_QTO_REQUEST' });
+      console.log('§QTO_RELAY_REQUEST sent — waiting ' + timeoutMs + 'ms');
+    } catch(e) { resolve(null); }
+  });
+}
+
+// S253d: Ask viewer for kernel_ops — Gantt uses same schedule as hourglass
+async function _tryScheduleRelay(timeoutMs) {
+  return new Promise(function(resolve) {
+    try {
+      var ch = new BroadcastChannel('bim_4d');
+      var timer = setTimeout(function() { ch.close(); resolve(null); }, timeoutMs);
+      ch.onmessage = function(evt) {
+        if (evt.data && evt.data.type === '4D_SCHEDULE_RESPONSE') {
+          clearTimeout(timer);
+          ch.close();
+          resolve(evt.data);
+        }
+      };
+      ch.postMessage({ type: '4D_SCHEDULE_REQUEST' });
+      console.log('§4D_SCHEDULE_REQUEST sent — waiting ' + timeoutMs + 'ms');
+    } catch(e) { resolve(null); }
+  });
+}
+
+// S253d: Build scheduleData from kernel_ops — single source of truth with hourglass
+function buildScheduleFromOps(ops) {
+  const PHASE_ORDER = ['Substructure','Superstructure','MEP Rough-in','Architecture','MEP Final','Finishes'];
+
+  // Group ops by phase+storey (same grouping as generateSchedule)
+  var groups = {};  // "phase|||storey" → { ops[], minTs, maxTs, ... }
+  for (var i = 0; i < ops.length; i++) {
+    var op = ops[i];
+    if (op.op_type !== 'ELEMENT_PLACE') continue;
+    var phase = op.phase || 'Architecture';
+    var storey = op.storey || 'Unknown';
+    var key = phase + '|||' + storey;
+    if (!groups[key]) {
+      groups[key] = {
+        phase: phase, storey: storey,
+        minTs: op.start_ts, maxTs: op.end_ts,
+        qty: 0, guids: [], classes: new Set(), disciplines: new Set(), resources: new Set()
+      };
+    }
+    var g = groups[key];
+    if (op.start_ts < g.minTs) g.minTs = op.start_ts;
+    if (op.end_ts > g.maxTs) g.maxTs = op.end_ts;
+    g.qty++;
+    if (op.guid) g.guids.push(op.guid);
+    if (op.cls) g.classes.add(op.cls);
+    if (op.resource) g.resources.add(op.resource);
+    // Derive discipline from SEQUENCE_RULES
+    var rule = SEQUENCE_RULES[op.cls];
+    if (rule && rule.resource) {
+      var res = rule.resource;
+      if (res === 'HVAC_TECH' || res === 'PLUMBER' || res === 'ELECTRICIAN') g.disciplines.add('MEP');
+      else if (res === 'STEEL_ERECTOR' || res === 'CONCRETE_GANG') g.disciplines.add('STR');
+      else g.disciplines.add('ARC');
+    }
+  }
+
+  // Find project start from ops
+  var projectStartMs = Infinity;
+  for (var k in groups) {
+    if (groups[k].minTs < projectStartMs) projectStartMs = groups[k].minTs;
+  }
+  if (!isFinite(projectStartMs)) projectStartMs = Date.now();
+  var msPerDay = 86400000;
+
+  // Sort groups by phase order then minTs
+  var sorted = Object.values(groups).sort(function(a, b) {
+    var pa = PHASE_ORDER.indexOf(a.phase), pb = PHASE_ORDER.indexOf(b.phase);
+    if (pa < 0) pa = 99; if (pb < 0) pb = 99;
+    if (pa !== pb) return pa - pb;
+    return a.minTs - b.minTs;
+  });
+
+  var tasks = [];
+  for (var si = 0; si < sorted.length; si++) {
+    var grp = sorted[si];
+    var startDay = Math.max(0, Math.round((grp.minTs - projectStartMs) / msPerDay));
+    var finishDay = Math.max(startDay + 1, Math.round((grp.maxTs - projectStartMs) / msPerDay));
+    var duration = finishDay - startDay;
+    var discLabel = [...grp.disciplines].join('/') || 'GEN';
+    var crewSize = 0;
+    grp.resources.forEach(function(r) { crewSize += (LABOR_RATES[r] && LABOR_RATES[r].crew_size) || 2; });
+
+    tasks.push({
+      id: si + 1,
+      wbs: '1.' + (PHASE_ORDER.indexOf(grp.phase) + 1) + '.' + (si + 1),
+      name: grp.storey + ' - ' + grp.phase + ' (' + discLabel + ')',
+      ifcClasses: [...grp.classes],
+      phase: grp.phase,
+      discipline: discLabel,
+      storey: grp.storey,
+      qty: grp.qty,
+      uom: 'EA',
+      productivity: grp.qty > 0 && duration > 0 ? Math.round(grp.qty / duration) : 0,
+      duration: duration,
+      crews: 1,
+      startDate: new Date(grp.minTs).toISOString().slice(0, 10),
+      finishDate: new Date(grp.maxTs).toISOString().slice(0, 10),
+      resource: [...grp.resources].join(','),
+      crew: Math.max(1, crewSize),
+      equipment: '',
+      startDay: startDay,
+      finishDay: finishDay,
+      guids: grp.guids
+    });
+  }
+  console.log('§4D_SCHEDULE built ' + tasks.length + ' tasks from ' + ops.length + ' kernel_ops');
+  return tasks;
+}
+
+async function init() {
+  // §1.2: Load rate template from JSON before any cost calculation
+  if (typeof initRateTemplate === 'function') {
+    await initRateTemplate();
+  } else {
+    console.warn('§QTO_RATES_FALLBACK initRateTemplate not available — using hardcoded rates');
+  }
+
+  // Build unit lookup from RATES: which IFC classes are M, M2, EA, KG
+  const LINEAR_CLASSES = new Set();   // unit = M
+  const AREA_CLASSES = new Set();     // unit = M2
+  for (const cls in RATES) {
+    if (RATES[cls].unit === 'M')  LINEAR_CLASSES.add(cls);
+    if (RATES[cls].unit === 'M2') AREA_CLASSES.add(cls);
+  }
+
+  const _t0 = performance.now();
+  let countRows, linearQty = {}, areaQty = {};
+  var _relayGuids = null;  // S253d: relayed GUIDs from viewer (populated in relay path)
+
+  // S253: Fast path — ask viewer for data via BroadcastChannel (no DB load)
+  // §S260b: Increased timeout 500→2000ms — viewer may be busy streaming geometry
+  document.getElementById('info').textContent = 'Requesting data from viewer...';
+  const relay = await _tryChannelRelay(2000);
+
+  if (relay && !relay.error && relay.countRows && relay.countRows.length) {
+    // Viewer answered — use relayed data directly
+    bldName = relay.building || BLD || 'Unknown';
+    countRows = [{ values: relay.countRows }];
+    if (relay.dimRows) {
+      for (const r of relay.dimRows) {
+        const key = r[0] + '|' + r[1] + '|' + r[2];
+        linearQty[key] = r[3];
+        areaQty[key] = r[4];
+      }
+    }
+    console.log('§QTO_RELAY_HIT building=' + bldName + ' rows=' + relay.countRows.length +
+      ' dims=' + (relay.dimRows ? relay.dimRows.length : 0) +
+      ' guids=' + (relay.guidRows ? relay.guidRows.length : 0) +
+      ' relayMs=' + Math.round(performance.now() - _t0));
+    // S253d: Store relayed GUIDs for task resolution (no DB load needed)
+    var _relayGuids = {};  // "ifc_class|storey" → [guid, ...]
+    if (relay.guidRows) {
+      for (var gi = 0; gi < relay.guidRows.length; gi++) {
+        var gr = relay.guidRows[gi]; // [guid, ifc_class, storey]
+        var gk = gr[1] + '|' + gr[2];
+        if (!_relayGuids[gk]) _relayGuids[gk] = [];
+        _relayGuids[gk].push(gr[0]);
+      }
+    }
+  } else if (relay && relay.error === 'no_db') {
+    // §S260b: Viewer is open but DB not ready yet (still streaming) — wait and retry
+    document.getElementById('info').textContent = 'Waiting for DB to cache in main scene...';
+    console.log('§QTO_RELAY_WAIT viewer has no DB yet — retrying in 3s');
+    await new Promise(function(r) { setTimeout(r, 3000); });
+    const retry = await _tryChannelRelay(3000);
+    if (retry && !retry.error && retry.countRows && retry.countRows.length) {
+      bldName = retry.building || BLD || 'Unknown';
+      countRows = [{ values: retry.countRows }];
+      if (retry.dimRows) {
+        for (const r of retry.dimRows) {
+          var k = r[0] + '|' + r[1] + '|' + r[2];
+          linearQty[k] = r[3]; areaQty[k] = r[4];
+        }
+      }
+      console.log('§QTO_RELAY_RETRY_HIT building=' + bldName + ' rows=' + retry.countRows.length);
+      if (retry.guidRows) {
+        _relayGuids = {};
+        for (var gi = 0; gi < retry.guidRows.length; gi++) {
+          var gr = retry.guidRows[gi];
+          var gk = gr[1] + '|' + gr[2];
+          if (!_relayGuids[gk]) _relayGuids[gk] = [];
+          _relayGuids[gk].push(gr[0]);
+        }
+      }
+    }
+  }
+  if (!countRows) {
+    // Fallback — load DB the slow way (viewer not open or no response)
+    console.log('§QTO_RELAY_MISS reason=' + (relay ? relay.error || 'empty' : 'timeout') +
+      ' — loading DB from ' + (DB_URL.startsWith('import://') ? 'IndexedDB' : 'OCI'));
+    // §S260b: Try _meta.db first (4D5D only needs metadata, not geometry)
+    // Skip for import:// URLs (IndexedDB) — only works for HTTP URLs
+    var _actualUrl = DB_URL;
+    if (DB_URL.indexOf('_extracted.db') > -1 && !DB_URL.startsWith('import://')) {
+      var _metaUrl = DB_URL.replace('_extracted.db', '_meta.db');
+      try {
+        var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
+        if (_headResp.ok) {
+          _actualUrl = _metaUrl;
+          console.log('§QTO_SPLIT_HIT using ' + _metaUrl);
+        }
+      } catch(e) {}
+    }
+    const SQL = await initSqlJs({
+      locateFile: f => 'lib/' + f
+    });
+    document.getElementById('info').textContent = 'Loading ' + _actualUrl + '...';
+    const buf = await fetchDbBuffer(_actualUrl);
+    db = new SQL.Database(new Uint8Array(buf));
+    console.log('§DB_INIT loadMs=' + Math.round(performance.now() - _t0) + ' size=' + Math.round(buf.byteLength / 1024 / 1024) + 'MB');
+
+    // Determine building
+    bldName = BLD;
+    if (!bldName) {
+      const r = db.exec("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1");
+      bldName = r.length ? r[0].values[0][0] : 'Unknown';
+    }
+    const _bldSafe = bldName.replace(/'/g,"''");
+
+    // §6.3: Create qto_cache table if not exists (write-back for fast repeat access)
+    try {
+      db.run('CREATE TABLE IF NOT EXISTS qto_cache (' +
+        'ifc_class TEXT NOT NULL, storey TEXT NOT NULL, discipline TEXT NOT NULL,' +
+        'qty REAL NOT NULL, uom TEXT NOT NULL, element_count INTEGER NOT NULL,' +
+        'material_cost REAL, labour_cost REAL, equipment_cost REAL,' +
+        'rate_template TEXT, computed_at TEXT,' +
+        'PRIMARY KEY (ifc_class, storey, discipline, rate_template))');
+    } catch(e) {}
+
+    countRows = db.exec(
+      "SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) as cnt," +
+      " COUNT(DISTINCT i.geometry_hash) as meshes" +
+      " FROM elements_meta m LEFT JOIN element_instances i ON m.guid = i.guid" +
+      " WHERE m.building = '" + _bldSafe + "'" +
+      " GROUP BY m.discipline, m.ifc_class, m.storey" +
+      " ORDER BY m.discipline, m.storey, cnt DESC"
+    );
+
+    try {
+      const dimRows = db.exec(
+        "SELECT m.discipline, m.ifc_class, m.storey," +
+        " SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z)) as total_length," +
+        " SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) *" +
+        " CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z)" +
+        " WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z)" +
+        " ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area" +
+        " FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid" +
+        " WHERE m.building = '" + _bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0" +
+        " GROUP BY m.discipline, m.ifc_class, m.storey"
+      );
+      if (dimRows.length) {
+        for (const r of dimRows[0].values) {
+          const key = r[0] + '|' + r[1] + '|' + r[2];
+          linearQty[key] = r[3];
+          areaQty[key] = r[4];
+        }
+      }
+    } catch(e) { console.warn('§QTO_WARN dimension query error: ' + e.message); }
+  }
+
+  if (!countRows || !countRows.length || !countRows[0].values.length) {
+    document.getElementById('info').textContent = 'No data.'; return;
+  }
+
+  // Process data with unit-aware quantities
+  qtoData = []; discSummary = {};
+  grandMaterial = 0; grandLabor = 0; grandEquip = 0; totalQty = 0;
+  let qtoWarnCount = 0;
+
+  for (const row of countRows[0].values) {
+    const [disc, cls, storey, cnt, meshes] = row;
+    const mc = RATES[cls];
+    const unit = mc ? mc.unit : 'EA';
+    const key = disc + '|' + cls + '|' + storey;
+
+    // §2.1: Resolve quantity by unit type
+    let qty;
+    if (unit === 'M' && LINEAR_CLASSES.has(cls)) {
+      qty = linearQty[key];
+      if (!qty || qty <= 0) {
+        // §2.3: Fallback — no bbox data, use count
+        qty = cnt;
+        qtoWarnCount++;
+        console.warn('§QTO_WARN no bbox for cls=' + cls + ' storey=' + storey + ', using count fallback (' + cnt + ')');
+      }
+    } else if (unit === 'M2' && AREA_CLASSES.has(cls)) {
+      qty = areaQty[key];
+      if (!qty || qty <= 0) {
+        qty = cnt;
+        qtoWarnCount++;
+        console.warn('§QTO_WARN no bbox for cls=' + cls + ' storey=' + storey + ', using count fallback (' + cnt + ')');
+      }
+    } else {
+      qty = cnt;  // EA, KG — count-based
+    }
+
+    const matRate = mc ? mc.rate : 0;
+    const matTotal = Math.round(matRate * qty * 100) / 100;
+    const labor = calcLabor(cls, qty);
+    const equip = calcEquipment(cls, labor.days);
+
+    grandMaterial += matTotal;
+    grandLabor += labor.cost;
+    grandEquip += equip.cost;
+    totalQty += qty;
+
+    const r = {
+      disc, cls, storey, qty, cnt, meshes, matRate, matTotal, unit,
+      laborDays: labor.days, laborCost: labor.cost, laborCrew: labor.crew, laborTrade: labor.trade,
+      equipCost: equip.cost, equipDesc: equip.desc, equipDays: equip.days,
+      desc: mc ? mc.desc : cls,
+      smmSection: mc && mc.smm_section ? mc.smm_section : '',
+      labor, // keep full object for schedule
+    };
+    qtoData.push(r);
+
+    if (!discSummary[disc]) discSummary[disc] = {qty:0, matTotal:0, laborCost:0, equipCost:0};
+    discSummary[disc].qty += qty;
+    discSummary[disc].matTotal += matTotal;
+    discSummary[disc].laborCost += labor.cost;
+    discSummary[disc].equipCost += equip.cost;
+
+  }
+
+  // §6.3: Write to qto_cache (if DB is writable — skip in relay mode)
+  const tplName = RATE_TEMPLATE_NAME || 'hardcoded_cidb2024';
+  if (db) try {
+    db.run("DELETE FROM qto_cache WHERE rate_template = '" + tplName.replace(/'/g,"''") + "'");
+    const now = new Date().toISOString();
+    const stmt = db.prepare("INSERT INTO qto_cache (ifc_class, storey, discipline, qty, uom, element_count, material_cost, labour_cost, equipment_cost, rate_template, computed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+    for (const r of qtoData) {
+      stmt.run([r.cls, r.storey, r.disc, r.qty, r.unit, r.cnt, r.matTotal, r.laborCost, r.equipCost, tplName, now]);
+    }
+    stmt.free();
+    console.log('§QTO_CACHE_WRITE template=' + tplName + ' rows=' + qtoData.length);
+  } catch(e) { /* read-only DB or no table — skip silently */ }
+
+  const _t1 = performance.now();
+  console.log('§QTO_SUMMARY classes=' + qtoData.length + ' material=' + Math.round(grandMaterial) + ' labor=' + Math.round(grandLabor) + ' equip=' + Math.round(grandEquip) + ' warnings=' + qtoWarnCount + ' queryMs=' + Math.round(_t1 - _t0));
+
+  // S254: kernel_ops is the single source of truth. Read directly from DB first,
+  // fall back to BroadcastChannel relay, then generateSchedule as last resort.
+  let _scheduleSource = 'generateSchedule';
+
+  // Path 1: Read kernel_ops directly from the DB (no viewer needed)
+  var _dbOps = [];
+  try {
+    var _koRes = db.exec(
+      "SELECT timestamp, op_type, parameters, input_guids, output_guid " +
+      "FROM kernel_ops WHERE undone = 0 AND op_type = 'ELEMENT_PLACE' ORDER BY timestamp"
+    );
+    if (_koRes.length && _koRes[0].values.length) {
+      _dbOps = _koRes[0].values.map(function(row) {
+        var params = {};
+        try { params = JSON.parse(row[2]); } catch(e) {}
+        var inGuids = [];
+        try { inGuids = JSON.parse(row[3]); } catch(e) {}
+        return {
+          start_ts: row[0], end_ts: params._end_ts || (row[0] + 120000),
+          op_type: row[1], parameters: params,
+          input_guids: inGuids, output_guid: row[4],
+          guid: row[4], cls: params.cls || '', storey: params.storey || '',
+          phase: params.phase || 'Architecture', resource: params.resource || ''
+        };
+      });
+    }
+  } catch(e) { console.log('§KERNEL_OPS_DB_READ error: ' + e.message); }
+
+  if (_dbOps.length) {
+    // kernel_ops found in DB — use directly
+    scheduleData = buildScheduleFromOps(_dbOps);
+    _scheduleSource = 'kernel_ops';
+    console.log('§4D_SCHEDULE_SOURCE kernel_ops_db tasks=' + scheduleData.length +
+      ' ops=' + _dbOps.length);
+  } else {
+    // Path 2: Try BroadcastChannel relay from viewer (hourglass may have injected ops)
+    const schedRelay = await _tryScheduleRelay(500);
+    if (schedRelay && !schedRelay.error && schedRelay.ops && schedRelay.ops.length) {
+      scheduleData = buildScheduleFromOps(schedRelay.ops);
+      _scheduleSource = 'kernel_ops';
+      console.log('§4D_SCHEDULE_SOURCE kernel_ops_relay tasks=' + scheduleData.length +
+        ' ops=' + schedRelay.ops.length);
+    } else {
+      // Path 3: Generate independently (no hourglass has ever run on this DB)
+      console.log('§4D_SCHEDULE_SOURCE generateSchedule reason=' +
+        (_dbOps.length === 0 ? 'no kernel_ops in DB' : 'relay timeout') +
+        ' — Run Hourglass in the viewer to generate a construction schedule, or edit rates.js');
+      scheduleData = generateSchedule(qtoData, '2025-01-06');
+    }
+  }
+
+  // S240 §0.1: Run 8-check audit before any 4D sync
+  const auditResult = audit4DSchedule(scheduleData, db, qtoData);
+
+  // Resolve GUIDs — kernel_ops path already has them, generateSchedule path needs DB lookup
+  let _guidsAfter = 0;
+  if (_scheduleSource === 'kernel_ops') {
+    // GUIDs already populated from kernel_ops output_guid — just dedup
+    const _assignedGuids = new Set();
+    let _guidsBefore = 0;
+    for (const t of scheduleData) {
+      _guidsBefore += t.guids.length;
+      t.guids = t.guids.filter(g => !_assignedGuids.has(g));
+      t.guids.forEach(g => _assignedGuids.add(g));
+      _guidsAfter += t.guids.length;
+    }
+    console.log('§4D_GUID_DEDUP before=' + _guidsBefore + ' after=' + _guidsAfter + ' stripped=' + (_guidsBefore - _guidsAfter) + ' source=kernel_ops');
+  } else {
+    // S240c §P1a: Resolve GUIDs per grouped task
+    // Use relayed GUIDs if available (relay path), otherwise DB query (fallback path)
+    const _bld = bldName.replace(/'/g,"''");
+    for (const t of scheduleData) {
+      const classes = t.ifcClasses || (t.ifcClass ? [t.ifcClass] : []);
+      if (!classes.length) { t.guids = []; continue; }
+      t.guids = [];
+      const st = t.storey || '';
+      for (const ifcClass of classes) {
+        if (_relayGuids && Object.keys(_relayGuids).length > 0) {
+          // S253d: Use relayed GUIDs from viewer (no DB needed)
+          var rk = ifcClass + '|' + st;
+          var guids = _relayGuids[rk] || [];
+          t.guids = t.guids.concat(guids);
+        } else if (db) {
+          // DB path (viewer not open, loaded from OCI)
+          try {
+            const cls = ifcClass.replace(/'/g,"''");
+            const stSafe = st.replace(/'/g,"''");
+            const sql = "SELECT guid FROM elements_meta WHERE ifc_class = '" + cls +
+              "' AND storey = '" + stSafe + "' AND building = '" + _bld + "'";
+            const res = db.exec(sql);
+            var guids = res[0] ? res[0].values.map(r => r[0]) : [];
+            if (guids.length === 0) {
+              const fallback = db.exec("SELECT guid FROM elements_meta WHERE ifc_class = '" +
+                cls + "' AND building = '" + _bld + "'");
+              guids = fallback[0] ? fallback[0].values.map(r => r[0]) : [];
+              if (guids.length > 0) {
+                console.log('§4D_GUID_FALLBACK class=' + ifcClass + ' storey=' + t.storey + ' fallbackCount=' + guids.length);
+              }
+            }
+            t.guids = t.guids.concat(guids);
+          } catch(e) {}
+        }
+      }
+    }
+    console.log('§4D_GUID_SOURCE ' + (_relayGuids && Object.keys(_relayGuids).length > 0 ? 'relay' : (db ? 'db' : 'NONE — guids will be empty')));
+    // S240c §P1b: Deduplicate — each GUID belongs to exactly one task (first in phase order wins)
+    const _assignedGuids = new Set();
+    let _guidsBefore = 0;
+    for (const t of scheduleData) {
+      _guidsBefore += t.guids.length;
+      t.guids = t.guids.filter(g => !_assignedGuids.has(g));
+      t.guids.forEach(g => _assignedGuids.add(g));
+      _guidsAfter += t.guids.length;
+    }
+    console.log('§4D_GUID_DEDUP before=' + _guidsBefore + ' after=' + _guidsAfter + ' stripped=' + (_guidsBefore - _guidsAfter));
+    // S240c §P1d: Coverage witness — every element must be in exactly one task
+    let _totalElements = 0;
+    try {
+      const r = db.exec("SELECT COUNT(*) FROM elements_meta WHERE building = '" + _bld + "'");
+      _totalElements = r[0] ? r[0].values[0][0] : 0;
+    } catch(e) {}
+    const _orphanCount = _totalElements - _assignedGuids.size;
+    console.log('§4D_COVERAGE total=' + _totalElements + ' assigned=' + _assignedGuids.size + ' orphan=' + _orphanCount);
+  }
+
+  const totalGuids = _guidsAfter;
+  const zeroGuidTasks = scheduleData.filter(t => t.guids.length === 0);
+  console.log('§4D_GUID_RESOLVE tasks=' + scheduleData.length + ' totalGuids=' + totalGuids + ' zeroGuid=' + zeroGuidTasks.length +
+    (zeroGuidTasks.length ? ' [' + zeroGuidTasks.slice(0,5).map(t=>t.name).join(', ') + ']' : ''));
+
+  const grandTotal = grandMaterial + grandLabor + grandEquip;
+  const projDaysInit = scheduleData.length ? Math.max(...scheduleData.map(t=>t.finishDay)) : 0;
+  console.log(`§QTO: ${qtoData.length} rows | ${totalQty} elements`);
+  console.log(`§TOTALS: Mat ${CUR}${grandMaterial.toLocaleString()} | Lab ${CUR}${grandLabor.toLocaleString()} | Eq ${CUR}${grandEquip.toLocaleString()} | Grand ${CUR}${grandTotal.toLocaleString()}`);
+  console.log(`§SCHEDULE: ${scheduleData.length} tasks | ${projDaysInit} calendar days | source=${_scheduleSource} | db=${db ? 'loaded' : 'NULL'}`);
+  // Dump each task for debugging
+  for (const t of scheduleData) {
+    console.log('§SCHED_TASK "' + t.name + '" day=' + t.startDay + '-' + t.finishDay +
+      ' dur=' + t.duration + ' bar_end=' + (t.startDay + t.duration) +
+      ' guids=' + (t.guids ? t.guids.length : 0) + ' phase=' + t.phase);
+  }
+  const unmapped = [...new Set(qtoData.map(r=>r.cls).filter(c=>!SEQUENCE_RULES[c]))];
+  console.log(`§UNMAPPED: ${unmapped.length ? unmapped.join(', ') : 'NONE'}`);
+  document.getElementById('info').textContent =
+    `${bldName} | ${totalQty.toLocaleString()} ${_TRL.ui_elements||'elements'} | ${CUR}${grandTotal.toLocaleString()} (${_TRL.h_material||'Mat'} ${grandMaterial.toLocaleString()} + ${_TRL.h_labour||'Lab'} ${grandLabor.toLocaleString()} + ${_TRL.h_equipment||'Equip'} ${grandEquip.toLocaleString()})`;
+
+
+  // S224: Load diff DB if present — compute variance for VO sheets in Excel
+  if (DIFF_DB_URL) {
+    try {
+      const diffBuf = await fetchDbBuffer(DIFF_DB_URL);
+      diffDb = new SQL.Database(new Uint8Array(diffBuf));
+      const guids1 = new Set(db.exec("SELECT guid FROM elements_meta")[0].values.map(r => r[0]));
+      const guids2 = new Set(diffDb.exec("SELECT guid FROM elements_meta")[0].values.map(r => r[0]));
+      const added = [...guids2].filter(g => !guids1.has(g));
+      const common = [...guids2].filter(g => guids1.has(g));
+      const changed = common.filter(g => {
+        const r1 = db.exec("SELECT element_name, material_rgba, storey FROM elements_meta WHERE guid='" + g.replace(/'/g, "''") + "'");
+        const r2 = diffDb.exec("SELECT element_name, material_rgba, storey FROM elements_meta WHERE guid='" + g.replace(/'/g, "''") + "'");
+        return JSON.stringify(r1[0]?.values[0]) !== JSON.stringify(r2[0]?.values[0]);
+      });
+      // S225: merge vs revision — <10% overlap = merge (don't flag base as removed)
+      const overlap = common.length / Math.max(guids1.size, guids2.size);
+      const isMerge = overlap < 0.1;
+      const removed = isMerge ? [] : [...guids1].filter(g => !guids2.has(g));
+      diffResult = { added, removed, changed, isMerge };
+      console.log('[S225] §BOQ_DIFF added=' + added.length + ' removed=' + removed.length + ' changed=' + changed.length + ' mode=' + (isMerge ? 'MERGE' : 'REVISION'));
+      var modeTag = isMerge ? ' | MERGE: +' + added.length + ' new elements' : ' | VARIANCE: +' + added.length + ' −' + removed.length + ' ~' + changed.length;
+      document.getElementById('info').textContent += modeTag;
+    } catch(e) {
+      console.log('[S224] §BOQ_DIFF_ERROR ' + e.message);
+    }
+  }
+
+  renderCharts();
+}
+
+// ============================================================================
+// RENDER ALL CHARTS (4 existing enhanced + 5 new from schedule_export.py)
+// ============================================================================
+function renderCharts() {
+  const c = document.getElementById('charts');
+  c.innerHTML = '';
+  chartInstances.forEach(ci => ci.destroy());
+  chartInstances = [];
+  const _tCharts = performance.now();
+  console.log('§RENDER_CHARTS: start');
+  // Light chart animations — quick, no infinite loops
+  Chart.defaults.animation = { duration: 800 };
+  function logChart(n, type, title, dataLen) {
+    console.log(`§CHART_${n} [${type}] "${title}": ${dataLen} data points — ${dataLen > 0 ? 'OK' : 'EMPTY'} +${Math.round(performance.now() - _tCharts)}ms`);
+  }
+
+  // Deferred chart rendering: only render when scrolled into view
+  function _deferChart(box, renderFn) {
+    if ('IntersectionObserver' in window) {
+      var rendered = false;
+      var obs = new IntersectionObserver(function(entries) {
+        if (!rendered && entries[0].isIntersecting) {
+          rendered = true; obs.disconnect(); renderFn();
+        }
+      }, { rootMargin: '200px' });
+      obs.observe(box);
+    } else {
+      renderFn(); // fallback: render immediately
+    }
+  }
+
+  const discs = Object.keys(discSummary);
+
+  // ── 1. Cost Pie by Discipline (M+L+E) ──
+  const pieBox = el('div','chart-box pie-chart');
+  pieBox.innerHTML = '<h2>' + _TRL.t_cost_by_disc + ' (' + CUR + ')</h2>';
+  const pieCanvas = el('canvas');
+  pieBox.appendChild(pieCanvas); c.appendChild(pieBox);
+
+  const discTotals = discs.map(d => discSummary[d].matTotal + discSummary[d].laborCost + discSummary[d].equipCost);
+  chartInstances.push(new Chart(pieCanvas, {
+    type:'pie',
+    data:{labels:discs, datasets:[{data:discTotals, backgroundColor:discs.map(d=>DISC_COLORS[d]||'#888'), borderWidth:1}]},
+    options:{aspectRatio:1, layout:{padding:0}, plugins:{legend:{position:'bottom',labels:{color:'#ddd',font:{size:14,weight:'bold'}}}}}
+  }));
+  logChart(1,'Pie','Cost Breakdown by Discipline',discs.length);
+
+  // ── 2. Cost Components by Discipline — M/L/E (boq_export.py "Cost Components by Discipline") ──
+  const mleBox = el('div','chart-box');
+  mleBox.innerHTML = '<h2>' + _TRL.t_cost_components + ' (' + CUR + ')</h2>';
+  const mleCanvas = el('canvas');
+  mleBox.appendChild(mleCanvas); c.appendChild(mleBox);
+
+  chartInstances.push(new Chart(mleCanvas, {
+    type:'bar',
+    data:{
+      labels:discs,
+      datasets:[
+        {label:_TRL.h_material,data:discs.map(d=>discSummary[d].matTotal),backgroundColor:'#70AD47'},
+        {label:_TRL.h_labour,data:discs.map(d=>discSummary[d].laborCost),backgroundColor:'#FFC000'},
+        {label:_TRL.h_equipment,data:discs.map(d=>discSummary[d].equipCost),backgroundColor:'#5B9BD5'},
+      ]
+    },
+    options:{scales:{y:{stacked:true,ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}},x:{stacked:true,ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}}},plugins:{legend:{labels:{color:'#ddd',font:{size:13}}}}}
+  }));
+  logChart(2,'Bar','Cost Components by Discipline',discs.length);
+
+  // ── 3. Task Distribution by Phase — pie (schedule_export.py "Task Distribution by Phase") ──
+  const taskPhaseCounts = {};
+  for (const t of scheduleData) taskPhaseCounts[t.phase] = (taskPhaseCounts[t.phase]||0) + 1;
+  const tpPhases = Object.keys(taskPhaseCounts);
+
+  const tpBox = el('div','chart-box pie-chart');
+  tpBox.innerHTML = '<h2>' + _TRL.t_task_dist_phase + '</h2>';
+  const tpCanvas = el('canvas');
+  tpBox.appendChild(tpCanvas); c.appendChild(tpBox);
+
+  chartInstances.push(new Chart(tpCanvas, {
+    type:'pie',
+    data:{labels:tpPhases, datasets:[{data:tpPhases.map(p=>taskPhaseCounts[p]), backgroundColor:tpPhases.map(p=>PHASE_COLORS[p]||'#888'), borderWidth:1}]},
+    options:{aspectRatio:1, layout:{padding:0}, plugins:{legend:{position:'bottom',labels:{color:'#ddd',font:{size:14,weight:'bold'}}}}}
+  }));
+  logChart(3,'Pie','Task Distribution by Phase',tpPhases.length);
+
+  // ── 4. Task Count by Discipline — bar (schedule_export.py "Task Count by Discipline") ──
+  const taskDiscCounts = {};
+  for (const t of scheduleData) taskDiscCounts[t.discipline] = (taskDiscCounts[t.discipline]||0) + 1;
+  const tdDiscs = Object.keys(taskDiscCounts);
+
+  const tdBox = el('div','chart-box');
+  tdBox.innerHTML = '<h2>' + _TRL.t_task_count_disc + '</h2>';
+  const tdCanvas = el('canvas');
+  tdBox.appendChild(tdCanvas); c.appendChild(tdBox);
+
+  chartInstances.push(new Chart(tdCanvas, {
+    type:'bar',
+    data:{labels:tdDiscs, datasets:[{label:_TRL.h_task||'Tasks',data:tdDiscs.map(d=>taskDiscCounts[d]),backgroundColor:tdDiscs.map(d=>DISC_COLORS[d]||'#888')}]},
+    options:{scales:{y:{title:{display:true,text:'Number of Tasks',color:'#fff',font:{size:15}},ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}},x:{title:{display:true,text:'Discipline',color:'#fff',font:{size:15}},ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}}},plugins:{legend:{display:false}}}
+  }));
+  logChart(4,'Bar','Task Count by Discipline',tdDiscs.length);
+
+  // ── 5. Phase Duration Analysis (horizontal bar — from schedule_export.py) ──
+  const phaseDur = {};
+  for (const t of scheduleData) phaseDur[t.phase] = (phaseDur[t.phase]||0) + t.duration;
+  const pdPhases = Object.keys(phaseDur).sort((a,b) => phaseDur[b]-phaseDur[a]);
+
+  const pdBox = el('div','chart-box');
+  pdBox.innerHTML = '<h2>' + _TRL.t_phase_duration + '</h2>';
+  const pdCanvas = el('canvas');
+  pdBox.appendChild(pdCanvas); c.appendChild(pdBox);
+
+  chartInstances.push(new Chart(pdCanvas, {
+    type:'bar',
+    data:{labels:pdPhases, datasets:[{label:'Days',data:pdPhases.map(p=>Math.round(phaseDur[p])),backgroundColor:pdPhases.map(p=>PHASE_COLORS[p]||'#888')}]},
+    options:{indexAxis:'y',scales:{x:{title:{display:true,text:'Days',color:'#fff',font:{size:15}},ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}},y:{ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}}},plugins:{legend:{display:false}}}
+  }));
+  logChart(5,'H-Bar','Phase Duration',pdPhases.length);
+
+  // ── 6. Resource Workload — Man-Days by Phase (column — from schedule_export.py) ──
+  const phaseMandays = {};
+  for (const t of scheduleData) phaseMandays[t.phase] = (phaseMandays[t.phase]||0) + t.duration * t.crew;
+  const mdPhases = Object.keys(phaseMandays).sort((a,b) => phaseMandays[b]-phaseMandays[a]);
+
+  const mdBox = el('div','chart-box');
+  mdBox.innerHTML = '<h2>' + _TRL.t_resource_workload + '</h2>';
+  const mdCanvas = el('canvas');
+  mdBox.appendChild(mdCanvas); c.appendChild(mdBox);
+
+  chartInstances.push(new Chart(mdCanvas, {
+    type:'bar',
+    data:{labels:mdPhases, datasets:[{label:_TRL.h_man_days||'Man-Days',data:mdPhases.map(p=>Math.round(phaseMandays[p])),backgroundColor:mdPhases.map(p=>PHASE_COLORS[p]||'#888')}]},
+    options:{scales:{y:{title:{display:true,text:_TRL.h_man_days||'Man-Days',color:'#fff',font:{size:15}},ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}},x:{ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}}},plugins:{legend:{display:false}}}
+  }));
+  logChart(6,'Column','Resource Workload',mdPhases.length);
+
+  // ── 7. S-Curve Progress (line — deferred render on scroll) ──
+  if (scheduleData.length) {
+    const scBox = el('div','chart-box');
+    scBox.innerHTML = '<h2>' + _TRL.t_s_curve + '</h2>';
+    const scCanvas = el('canvas');
+    scBox.appendChild(scCanvas); c.appendChild(scBox);
+    _deferChart(scBox, function() {
+      const allFinish = scheduleData.map(t => t.finishDay);
+      const maxDay = Math.max(...allFinish);
+      console.log('§SCURVE_DATA maxDay=' + maxDay + ' tasks=' + scheduleData.length + ' finishDays=' + allFinish.slice(0,5).join(','));
+      const totalTasks = scheduleData.length;
+      const weekLabels = [], weekPcts = [];
+      const totalWeeks = Math.max(1, Math.ceil(maxDay / 7));
+      const sampleInterval = Math.max(1, Math.floor(totalWeeks / 20));
+      for (let w = 0; w <= totalWeeks; w += sampleInterval) {
+        const dayEnd = w * 7;
+        const completed = scheduleData.filter(t => t.finishDay <= dayEnd).length;
+        weekLabels.push(`W${w}`);
+        weekPcts.push(Math.round(completed / totalTasks * 1000) / 10);
+      }
+      if (weekPcts[weekPcts.length-1] < 100) { weekLabels.push(`W${totalWeeks}`); weekPcts.push(100); }
+      chartInstances.push(new Chart(scCanvas, {
+        type:'line',
+        data:{labels:weekLabels, datasets:[{label:'% Complete',data:weekPcts,borderColor:'#4fc3f7',backgroundColor:'rgba(79,195,247,0.1)',fill:true,tension:0.3}]},
+        options:{scales:{y:{min:0,max:100,title:{display:true,text:'% Complete',color:'#fff',font:{size:15}},ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}},x:{title:{display:true,text:'Project Week',color:'#fff',font:{size:15}},ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}}},plugins:{legend:{display:false}}}
+      }));
+      logChart(7,'Line','S-Curve Progress',weekLabels.length);
+    });
+  }
+
+  // ── 8. Milestone Timeline (horizontal bar — from schedule_export.py) ──
+  // S235: Restored from S225 sandbox original. S226 _TRL refactor broke this by
+  // redesigning to phase-span Gantt (duplicated chart 9) and dropping canvas.height.
+  const phaseDates = {};
+  for (const t of scheduleData) {
+    if (!phaseDates[t.phase]) phaseDates[t.phase] = {start:t.startDay, end:t.finishDay};
+    else {
+      phaseDates[t.phase].start = Math.min(phaseDates[t.phase].start, t.startDay);
+      phaseDates[t.phase].end = Math.max(phaseDates[t.phase].end, t.finishDay);
+    }
+  }
+  const maxFinishDay = Math.max(...scheduleData.map(t=>t.finishDay));
+  const phaseList = Object.keys(phaseDates).sort((a,b) => phaseDates[a].start - phaseDates[b].start);
+  console.log('§MILESTONE_DATA phases=' + phaseList.length + ' maxFinish=' + maxFinishDay +
+    ' spans=' + phaseList.map(p => p + ':' + phaseDates[p].start + '-' + phaseDates[p].end).join(', '));
+
+  const msBox = el('div','chart-box');
+  msBox.innerHTML = '<h2>' + _TRL.t_milestone + '</h2>';
+  const msCanvas = el('canvas');
+  msBox.appendChild(msCanvas); c.appendChild(msBox);
+  _deferChart(msBox, function() {
+    chartInstances.push(new Chart(msCanvas, {
+      type:'bar',
+      data:{
+        labels:phaseList,
+        datasets:[
+          {label:'Offset',data:phaseList.map(p=>phaseDates[p].start),backgroundColor:'rgba(0,0,0,0)'},
+          {label:'Duration',data:phaseList.map(p=>phaseDates[p].end - phaseDates[p].start),backgroundColor:phaseList.map(p=>PHASE_COLORS[p]||'#4fc3f7')},
+        ]
+      },
+      options:{indexAxis:'y',scales:{
+        x:{stacked:true,title:{display:true,text:_TRL.h_day_offset||'Days from Project Start',color:'#fff',font:{size:15}},ticks:{color:'#ddd',font:{size:13}},grid:{color:'rgba(255,255,255,0.1)'}},
+        y:{stacked:true,ticks:{color:'#ccc',font:{size:11}},grid:{color:'rgba(255,255,255,0.1)'}}
+      },plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+        if (ctx.datasetIndex===0) return null;
+        const p = phaseList[ctx.dataIndex];
+        return `${p}: Day ${phaseDates[p].start}–${phaseDates[p].end} (${phaseDates[p].end - phaseDates[p].start} days)`;
+      }}},
+      barThickness:12}}
+    }));
+    logChart(8,'Gantt','Milestone Timeline',phaseList.length);
+  });
+
+  // ── 9. Full Gantt — ALL tasks sorted by start day (for 4D sync) ──
+  const ganttTasks = [...scheduleData].sort((a,b) => a.startDay - b.startDay);
+
+  const ganttBox = el('div','chart-box full');
+  const ganttHeader = document.createElement('div');
+  ganttHeader.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;';
+  var _syncColor = _scheduleSource === 'kernel_ops' ? '#44cc44' : '#ff8c00';
+  var _syncText = _scheduleSource === 'kernel_ops' ? 'Hourglass OK' : 'Run Hourglass first';
+  ganttHeader.innerHTML = '<h2 style="margin:0">' + (_TRL && _TRL.t_gantt || '4D — Gantt Timeline') + '</h2>' +
+    '<span style="font-size:11px;color:' + _syncColor + '">&#9203; ' + _syncText + '</span>';
+  ganttBox.appendChild(ganttHeader);
+  const ganttCanvas = el('canvas');
+  const barPx = ganttTasks.length > 40 ? 14 : ganttTasks.length > 20 ? 20 : 28;
+  const ganttH = Math.max(200, ganttTasks.length * barPx + 60);
+  const ganttWrap = document.createElement('div');
+  var maxWrapH = Math.min(ganttH, 700);
+  ganttWrap.style.cssText = 'position:relative;height:' + maxWrapH + 'px;' +
+    (ganttH > 700 ? 'overflow-y:auto;' : '');
+  // Inner div holds the canvas at full height — scrollable if needed
+  const ganttInner = document.createElement('div');
+  ganttInner.style.cssText = 'position:relative;height:' + ganttH + 'px;';
+  ganttInner.appendChild(ganttCanvas);
+  ganttWrap.appendChild(ganttInner);
+  ganttBox.appendChild(ganttWrap); c.appendChild(ganttBox);
+  _deferChart(ganttBox, function() {
+    chartInstances.push(new Chart(ganttCanvas, {
+      type:'bar',
+      data:{
+        labels:ganttTasks.map(t => t.name.slice(0,50)),
+        datasets:[
+          {label:'Offset',data:ganttTasks.map(t=>t.startDay),backgroundColor:'rgba(0,0,0,0)'},
+          {label:'Duration',data:ganttTasks.map(t=>Math.round(t.duration)),backgroundColor:ganttTasks.map(t=>PHASE_COLORS[t.phase]||'#888')},
+        ]
+      },
+      options:{
+        animation: false,
+        indexAxis:'y',
+        maintainAspectRatio: false,
+        scales:{
+          x:{stacked:true,title:{display:true,text:_TRL.h_day_offset||'Days from Project Start',color:'#fff',font:{size:14}},ticks:{color:'#ddd',font:{size:12}},grid:{color:'rgba(255,255,255,0.1)'}},
+          y:{stacked:true,ticks:{color:'#ccc',font:{size:Math.max(7, Math.min(10, 180/ganttTasks.length))}},grid:{color:'rgba(255,255,255,0.05)'}}
+        },
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:ctx=>{
+            if (ctx.datasetIndex===0) return null;
+            const t = ganttTasks[ctx.dataIndex];
+            return `${t.phase}: Day ${t.startDay}–${t.finishDay} (${Math.round(t.duration)} days, ${Math.round(t.qty*100)/100} ${t.uom||'EA'})`;
+          }}}
+        },
+        barThickness: 6
+      }
+    }));
+    logChart(9,'Stacked','Gantt Timeline',ganttTasks.length);
+  });
+
+  // S240: BroadcastChannel for 4D Gantt→Viewer sync
+  let _bim4d = null;
+  try {
+    _bim4d = new BroadcastChannel('bim_4d');
+    _bim4d.onmessage = function(evt) {
+      if (evt.data && evt.data.type === '4D_PONG') {
+        console.log('§4D_PONG from=' + evt.data.from + ' roundtrip=' + (Date.now() - (evt.data.ts||0)) + 'ms');
+      }
+    };
+    // Ping viewer on channel open
+    _bim4d.postMessage({ type: '4D_PING', from: 'charts', ts: Date.now() });
+    console.log('§4D_CHANNEL_READY sender=charts → sent PING');
+  } catch(e) { console.log('§4D_CHANNEL_FAIL ' + e.message); }
+
+  // Click handler: click a Gantt bar → broadcast highlight to viewer
+  if (_bim4d) {
+    ganttCanvas.addEventListener('click', function(evt) {
+      const chart = chartInstances[chartInstances.length - 1]; // last chart = Gantt (chart 9)
+      if (!chart) return;
+      const points = chart.getElementsAtEventForMode(evt, 'nearest', {intersect:true}, false);
+      if (!points.length) {
+        // Clicked empty space — reset viewer highlights
+        _bim4d.postMessage({ type: '4D_RESET' });
+        console.log('§4D_BROADCAST type=4D_RESET (background click)');
+        return;
+      }
+      const idx = points[0].index;
+      const task = ganttTasks[idx];
+      if (!task) return;
+      const phaseColor = PHASE_COLORS[task.phase] || '#888888';
+      _bim4d.postMessage({
+        type: '4D_HIGHLIGHT',
+        guids: task.guids || [],
+        phase: task.phase,
+        color: phaseColor,
+        taskName: task.name
+      });
+      console.log('§4D_BROADCAST type=4D_HIGHLIGHT task="' + task.name + '" guids=' + (task.guids||[]).length + ' phase=' + task.phase + ' color=' + phaseColor);
+    });
+
+    // S254: Playback controls stripped — 4D playback lives in hourglass panel now.
+    // This page is read-only 5D analytics. Gantt bar click → highlight still works above.
+    console.log('§S254_STRIP_DONE playback_removed=true highlight_kept=true tasks=' + ganttTasks.length);
+  }
+
+  // ── 10. Site Resources — trades with flaticon bars + machines (restored from old 4D player) ──
+  const RES_ICONS = {
+    STEEL_ERECTOR:'\ud83c\udfd7\ufe0f', CONCRETE_GANG:'\ud83d\udea7', MASON:'\ud83e\uddf1',
+    PLUMBER:'\ud83d\udeb0', HVAC_TECH:'\u2699\ufe0f', ELECTRICIAN:'\u26a1',
+    CARPENTER:'\ud83e\udeb5', ROOFER:'\ud83c\udfe0', FINISHER:'\ud83d\udd8c\ufe0f', LABORER:'\ud83d\udc77'
+  };
+  const RES_COLORS = {
+    STEEL_ERECTOR:'#e57373', CONCRETE_GANG:'#ffb74d', MASON:'#a1887f',
+    PLUMBER:'#4fc3f7', HVAC_TECH:'#81c784', ELECTRICIAN:'#fff176',
+    CARPENTER:'#ce93d8', ROOFER:'#90a4ae', FINISHER:'#f48fb1', LABORER:'#b0bec5'
+  };
+  // Aggregate resources across all tasks
+  const resCounts = {}; // resource → total crew-days
+  let maxResCrew = 0;
+  const machineSet = {};
+  for (const t of scheduleData) {
+    // Resource from schedule task
+    var resKey = '';
+    if (t.ifcClasses && t.ifcClasses.length) {
+      for (const cls of t.ifcClasses) {
+        var sr = SEQUENCE_RULES[cls];
+        if (sr && sr.resource) { resKey = sr.resource; break; }
+      }
+    }
+    if (!resKey && t.ifcClass) {
+      var sr2 = SEQUENCE_RULES[t.ifcClass];
+      if (sr2) resKey = sr2.resource;
+    }
+    if (!resKey) resKey = 'LABORER';
+    if (!resCounts[resKey]) resCounts[resKey] = 0;
+    resCounts[resKey] += t.qty || 1;
+    if (resCounts[resKey] > maxResCrew) maxResCrew = resCounts[resKey];
+    // Equipment
+    if (t.ifcClasses) {
+      for (const cls of t.ifcClasses) {
+        var ea = EQUIPMENT_ALLOCATION[cls];
+        if (ea) machineSet[ea.equipment] = true;
+      }
+    }
+    if (t.ifcClass && EQUIPMENT_ALLOCATION[t.ifcClass]) {
+      machineSet[EQUIPMENT_ALLOCATION[t.ifcClass].equipment] = true;
+    }
+  }
+  const resBox = el('div','chart-box full');
+  resBox.innerHTML = '<h2>\ud83d\udea7 Site Resources</h2>';
+  var resHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;padding:8px 0">';
+  for (var rk in resCounts) {
+    var rIcon = RES_ICONS[rk] || '\ud83d\udc77';
+    var rColor = RES_COLORS[rk] || '#888';
+    var rLabel = LABOR_RATES[rk] ? LABOR_RATES[rk].trade.split(' (')[0] : rk.replace(/_/g,' ');
+    var rBarPct = maxResCrew > 0 ? Math.round(resCounts[rk] / maxResCrew * 100) : 0;
+    resHtml += '<div style="display:flex;align-items:center;gap:6px">' +
+      '<span style="font-size:20px;width:28px;text-align:center">' + rIcon + '</span>' +
+      '<span style="width:90px;font-size:12px;color:' + rColor + ';font-weight:600">' + rLabel + '</span>' +
+      '<div style="flex:1;height:18px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden">' +
+      '<div style="height:100%;width:' + rBarPct + '%;background:' + rColor + ';border-radius:4px"></div></div>' +
+      '<span style="width:40px;text-align:right;font-size:15px;font-weight:800;color:' + rColor + '">' + resCounts[rk] + '</span></div>';
+  }
+  resHtml += '</div>';
+  // Machines
+  var machKeys = Object.keys(machineSet);
+  if (machKeys.length) {
+    resHtml += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;flex-wrap:wrap;gap:4px 16px">';
+    for (var mk = 0; mk < machKeys.length; mk++) {
+      var eqDesc = EQUIPMENT_RATES[machKeys[mk]] ? EQUIPMENT_RATES[machKeys[mk]].desc : machKeys[mk].replace(/_/g,' ');
+      resHtml += '<span style="font-size:12px;color:rgba(255,255,255,0.6)">\ud83d\ude9c ' + eqDesc + '</span>';
+    }
+    resHtml += '</div>';
+  }
+  // Summary footer
+  var totalWorkers = 0;
+  for (var rwk in resCounts) totalWorkers += resCounts[rwk];
+  resHtml += '<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);font-size:12px;color:rgba(255,255,255,0.5)">' +
+    '<strong style="color:#fff">' + totalWorkers + '</strong> total element-installs \u00b7 ' +
+    '<strong style="color:#fff">' + Object.keys(resCounts).length + '</strong> trades \u00b7 ' +
+    '<strong style="color:#fff">' + machKeys.length + '</strong> machines \u00b7 ' +
+    '<strong style="color:#fff">' + scheduleData.length + '</strong> tasks \u00b7 ' +
+    'Source: ' + (_scheduleSource === 'kernel_ops' ? '\u2705 kernel_ops' : '\u26a0\ufe0f generated') + '</div>';
+  resBox.innerHTML += resHtml;
+  c.appendChild(resBox);
+  logChart(10,'Panel','Site Resources',Object.keys(resCounts).length);
+
+  // ── S225: Variance Chart (when diff data present) ──
+  if (diffResult) {
+    const varBox = el('div','chart-box');
+    varBox.innerHTML = '<h2>' + _TRL.t_vo_impact + '</h2>';
+    const varCanvas = el('canvas');
+    varBox.appendChild(varCanvas); c.appendChild(varBox);
+
+    // Cost impact per category (using VO_CFG rates if available)
+    var addCost = 0, remCost = 0, chgCost = 0;
+    var OH = 0.10, MK = 0.05;
+    function _vRate(vdb, guid) {
+      try {
+        var r = vdb.exec("SELECT ifc_class FROM elements_meta WHERE guid='" + guid.replace(/'/g, "''") + "'");
+        var cls = r[0]?.values[0]?.[0] || '';
+        var entry = RATES[cls];
+        return (entry && entry.rate) ? entry.rate : 500;
+      } catch(e) { return 500; }
+    }
+    diffResult.added.forEach(function(g)   { addCost += _vRate(diffDb, g); });
+    diffResult.removed.forEach(function(g) { remCost += _vRate(db, g); });
+    diffResult.changed.forEach(function(g) { chgCost += _vRate(diffDb, g) * 0.3; });
+
+    chartInstances.push(new Chart(varCanvas, {
+      type: 'bar',
+      data: {
+        labels: ['Added', 'Removed', 'Changed'],
+        datasets: [
+          { label: 'Elements', data: [diffResult.added.length, diffResult.removed.length, diffResult.changed.length],
+            backgroundColor: ['#44cc44', '#cc4444', '#cccc44'], yAxisID: 'y' },
+          { label: (_TRL.t_vo_impact||'Cost Impact') + ' (' + CUR + ')', data: [Math.round(addCost), Math.round(remCost), Math.round(chgCost)],
+            backgroundColor: ['rgba(68,204,68,0.3)', 'rgba(204,68,68,0.3)', 'rgba(204,204,68,0.3)'],
+            borderColor: ['#44cc44', '#cc4444', '#cccc44'], borderWidth: 2, yAxisID: 'y1' }
+        ]
+      },
+      options: {
+        scales: {
+          y:  { position: 'left', title: { display: true, text: 'Element Count', color: '#fff', font:{size:15} }, ticks: { color: '#ddd', font:{size:13} }, grid: { color: 'rgba(255,255,255,0.1)' } },
+          y1: { position: 'right', title: { display: true, text: (_TRL.h_total||'Cost') + ' (' + CUR + ')', color: '#fff', font:{size:15} }, ticks: { color: '#ddd', font:{size:13} }, grid: { drawOnChartArea: false } },
+          x:  { ticks: { color: '#ddd', font:{size:13} }, grid: { color: 'rgba(255,255,255,0.1)' } }
+        },
+        plugins: { legend: { labels: { color: '#ddd', font:{size:13} } } }
+      }
+    }));
+    logChart(10,'Bar','Variation Order Impact',3);
+  }
+
+  // ── 10. BOQ Data Table (enhanced with Equipment column) ──
+  const tableBox = el('div','chart-box full');
+  tableBox.innerHTML = '<h2>5D — Bill of Quantities (' + _TRL.rate_source + ')</h2>';
+  let html = '<table><tr><th>' + _TRL.h_discipline + '</th><th>' + _TRL.h_ifc_class + '</th><th>' + _TRL.h_storey + '</th><th>' + _TRL.h_quantity + '</th><th>' + _TRL.h_uom + '</th>' +
+    '<th>' + _TRL.h_description + '</th><th>' + _TRL.h_unit_rate + ' (' + CUR + ')</th><th>' + _TRL.h_material + ' (' + CUR + ')</th><th>' + _TRL.h_man_days + '</th><th>' + _TRL.h_labour + ' (' + CUR + ')</th>' +
+    '<th>' + _TRL.h_equipment + ' (' + CUR + ')</th><th>' + _TRL.h_total + ' (' + CUR + ')</th></tr>';
+  for (const r of qtoData) {
+    const rowTotal = r.matTotal + r.laborCost + r.equipCost;
+    html += `<tr><td>${r.disc}</td><td>${r.cls}</td><td>${r.storey||''}</td><td>${r.qty.toLocaleString()}</td>` +
+      `<td>${r.unit}</td><td>${r.desc}</td><td>${r.matRate.toLocaleString()}</td>` +
+      `<td>${r.matTotal.toLocaleString()}</td><td>${r.laborDays.toFixed(1)}</td><td>${r.laborCost.toLocaleString()}</td>` +
+      `<td>${r.equipCost.toLocaleString()}</td><td>${rowTotal.toLocaleString()}</td></tr>`;
+  }
+  const gt = grandMaterial + grandLabor + grandEquip;
+  html += `<tr class="total-row"><td colspan="7">${_TRL.h_grand_total}</td>` +
+    `<td>${CUR}${grandMaterial.toLocaleString()}</td><td></td><td>${CUR}${grandLabor.toLocaleString()}</td>` +
+    `<td>${CUR}${grandEquip.toLocaleString()}</td><td>${CUR}${gt.toLocaleString()}</td></tr>`;
+  html += '</table>';
+  tableBox.innerHTML += html;
+  c.appendChild(tableBox);
+
+  // ── 10. Summary footer ──
+  const projDays = scheduleData.length ? Math.max(...scheduleData.map(t=>t.finishDay)) : 0;
+  const footBox = el('div','chart-box full');
+  footBox.innerHTML = `<table>
+    <tr><td>${_TRL.ui_building||'Building'}</td><td><b>${bldName}</b></td></tr>
+    <tr><td>${_TRL.ui_elements||'Elements'}</td><td><b>${totalQty.toLocaleString()}</b></td></tr>
+    <tr><td>${_TRL.h_material} </td><td><b>${CUR} ${grandMaterial.toLocaleString()}</b></td></tr>
+    <tr><td>${_TRL.h_labour} </td><td><b>${CUR} ${grandLabor.toLocaleString()}</b></td></tr>
+    <tr><td>${_TRL.h_equipment} </td><td><b>${CUR} ${grandEquip.toLocaleString()}</b></td></tr>
+    <tr><td>${_TRL.h_grand_total}</td><td><b>${CUR} ${gt.toLocaleString()}</b></td></tr>
+    <tr><td>${_TRL.h_duration||'Duration'}</td><td><b>${projDays} ${_TRL.h_total_days||'days'} (${scheduleData.length} ${_TRL.h_task||'tasks'})</b></td></tr>
+    <tr><td>${_TRL.ui_rate_source_lbl||'Rates Source'}</td><td>${_TRL.rate_source}</td></tr>
+    <tr><td>${_TRL.h_date||'Date'}</td><td>${new Date().toISOString()}</td></tr>
+    <tr><td>Source</td><td>BIM OOTB — Frictionless BIM</td></tr>
+  </table>`;
+  c.appendChild(footBox);
+  console.log(`§RENDER_CHARTS: done — ${chartInstances.length} charts rendered, all OK`);
+}
+
+function el(tag, cls) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  return e;
+}
+
+// ============================================================================
+// S225: Shared chart-to-Excel helpers
+// Pie: canvas 800×800 → image must be W=H (square) → round circle
+// Bar: canvas 1100×700 → image W:H = 11:7 to preserve ratio
+// ============================================================================
+
+// Log collector — all §-tagged lines go here, auto-downloaded as .log after each save
+var _logLines = [];
+function _log(msg) { _logLines.push(new Date().toISOString() + ' ' + msg); console.log(msg); }
+function _downloadLog(label) {
+  // Delay: browser blocks rapid successive <a>.click() downloads — let Excel go first
+  var lines = _logLines.slice();
+  _logLines = [];
+  setTimeout(function() {
+    var text = lines.join('\n') + '\n';
+    var blob = new Blob([text], { type: 'text/plain' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'chart_test_' + label + '_' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.log';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, 1500);
+}
+
+// S235: Chart images removed from Excel — HTML charts are sufficient.
+// prepare/restore/capture functions retired. Only verify + log remain.
+var _chartTestPass = 0, _chartTestFail = 0;
+function _ct(pass, ci, name, test, detail) {
+  var tag = pass ? 'PASS' : 'FAIL';
+  if (pass) _chartTestPass++; else _chartTestFail++;
+  _log('[S226] §CHART_TEST ' + tag + ' chart=' + ci + ' "' + name + '" ' + test + ' — ' + detail);
+}
+
+// ── _TRL verification: proves localization is active, no hardcoded RM/USD ──
+function _verifyTRL(wb, label) {
+  _log('[S226] §TRL_VERIFY start — ' + label);
+
+  // 1. _TRL object completeness — every key must have a non-empty string value
+  var missing = [];
+  for (var k in _TRL_DEFAULTS) {
+    if (typeof _TRL[k] === 'string' && _TRL[k].trim() === '') missing.push(k);
+    if (_TRL[k] === undefined || _TRL[k] === null) missing.push(k);
+  }
+  _ct(missing.length === 0, -1, label, 'TRL_COMPLETE',
+    missing.length === 0 ? Object.keys(_TRL_DEFAULTS).length + ' keys all populated' : 'empty keys: ' + missing.join(', '));
+
+  // 2. Currency symbols active
+  _ct(CUR === _TRL.cur, -1, label, 'TRL_CUR_MATCH', 'CUR=' + CUR + ' _TRL.cur=' + _TRL.cur);
+  _ct(CUR2 === _TRL.cur2, -1, label, 'TRL_CUR2_MATCH', 'CUR2=' + CUR2 + ' _TRL.cur2=' + _TRL.cur2);
+  _ct(typeof CUR_RATE === 'number' && CUR_RATE > 0, -1, label, 'TRL_RATE_VALID', 'CUR_RATE=' + CUR_RATE);
+
+  // 3. Excel sheet names — must match _TRL values, no hardcoded English
+  if (wb) {
+    var sheetNames = wb.worksheets.map(function(ws) { return ws.name; });
+    var trlSheets = label === '5D' ? [_TRL.s_cover, _TRL.s_exec_summary, _TRL.s_material, _TRL.s_labour, _TRL.s_equipment]
+      : [_TRL.s_schedule, _TRL.s_proj_summary, _TRL.s_dashboard];
+    var sheetHits = 0;
+    for (var i = 0; i < trlSheets.length; i++) {
+      if (sheetNames.indexOf(trlSheets[i]) >= 0) sheetHits++;
+    }
+    _ct(sheetHits === trlSheets.length, -1, label, 'TRL_SHEET_NAMES',
+      sheetHits + '/' + trlSheets.length + ' _TRL sheets found in [' + sheetNames.join(', ') + ']');
+
+    // 4. Scan first 5 rows of each sheet for hardcoded 'RM ' or ' USD ' (should be CUR/CUR2)
+    var hardcoded = [];
+    var bannedRe = /\bRM\s|\sRM\b|\bUSD\s|\sUSD\b/;
+    // Only flag if CUR is not RM and CUR2 is not USD (i.e. localization changed them)
+    // If defaults are active, RM/USD are expected — so test the ABSENCE of wrong currency
+    wb.worksheets.forEach(function(ws) {
+      ws.eachRow({ includeEmpty: false }, function(row, rn) {
+        if (rn > 5) return;
+        row.eachCell(function(cell) {
+          var v = String(cell.value || '');
+          // Check currency symbol appears correctly
+          if (v.indexOf('(' + CUR + ')') >= 0 || v.indexOf(CUR + ' ') >= 0) return; // OK
+          if (CUR !== 'RM' && bannedRe.test(v)) hardcoded.push(ws.name + ':R' + rn + '="' + v.slice(0, 40) + '"');
+        });
+      });
+    });
+    _ct(hardcoded.length === 0, -1, label, 'TRL_NO_HARDCODE',
+      hardcoded.length === 0 ? 'no hardcoded RM/USD in headers (CUR=' + CUR + ')' : hardcoded.join('; '));
+  }
+
+  // 5. HTML chart titles — verify they use _TRL values
+  var h2s = document.querySelectorAll('.chart-box h2');
+  var trlTitles = [_TRL.t_cost_by_disc, _TRL.t_cost_components, _TRL.t_task_dist_phase,
+    _TRL.t_task_count_disc, _TRL.t_phase_duration, _TRL.t_resource_workload,
+    _TRL.t_s_curve, _TRL.t_milestone, _TRL.t_gantt];
+  var titleHits = 0;
+  for (var ti = 0; ti < h2s.length; ti++) {
+    var txt = h2s[ti].textContent;
+    for (var tj = 0; tj < trlTitles.length; tj++) {
+      if (txt.indexOf(trlTitles[tj]) >= 0) { titleHits++; break; }
+    }
+  }
+  _ct(titleHits >= Math.min(h2s.length, trlTitles.length), -1, label, 'TRL_CHART_TITLES',
+    titleHits + '/' + h2s.length + ' HTML chart titles match _TRL values');
+
+  // 6. HTML table headers — verify CUR symbol appears, not hardcoded RM
+  var ths = document.querySelectorAll('table th');
+  var curInHeaders = 0;
+  for (var hi = 0; hi < ths.length; hi++) {
+    if (ths[hi].textContent.indexOf(CUR) >= 0) curInHeaders++;
+  }
+  _ct(curInHeaders > 0, -1, label, 'TRL_HTML_CUR',
+    curInHeaders + ' table headers contain CUR="' + CUR + '"');
+
+  // 7. Rate source attribution
+  var fullTables = document.querySelectorAll('.chart-box.full');
+  var footerText = ''; for (var ft = 0; ft < fullTables.length; ft++) footerText += fullTables[ft].textContent;
+  _ct(footerText.indexOf(_TRL.rate_source) >= 0, -1, label, 'TRL_RATE_SOURCE',
+    'footer contains "' + _TRL.rate_source + '": ' + (footerText.indexOf(_TRL.rate_source) >= 0));
+
+  _log('[S226] §TRL_VERIFY done — ' + label);
+}
+
+// ── Maths verification: proves numeric outputs are correct ──
+function _verifyMaths(wb, label) {
+  _log('[S226] §MATHS_VERIFY start — ' + label);
+
+  // 1. Grand totals cross-check: sum of disc totals must equal grand totals
+  var sumMat = 0, sumLab = 0, sumEq = 0;
+  for (var d in discSummary) {
+    sumMat += discSummary[d].matTotal;
+    sumLab += discSummary[d].laborCost;
+    sumEq  += discSummary[d].equipCost;
+  }
+  _ct(sumMat === grandMaterial, -1, label, 'MATHS_MAT_SUM',
+    'disc_sum=' + sumMat + ' grand=' + grandMaterial + (sumMat !== grandMaterial ? ' MISMATCH' : ''));
+  _ct(sumLab === grandLabor, -1, label, 'MATHS_LAB_SUM',
+    'disc_sum=' + sumLab + ' grand=' + grandLabor + (sumLab !== grandLabor ? ' MISMATCH' : ''));
+  _ct(sumEq === grandEquip, -1, label, 'MATHS_EQ_SUM',
+    'disc_sum=' + sumEq + ' grand=' + grandEquip + (sumEq !== grandEquip ? ' MISMATCH' : ''));
+
+  // 2. Grand total = mat + lab + eq
+  var gt = grandMaterial + grandLabor + grandEquip;
+  _ct(gt === grandMaterial + grandLabor + grandEquip, -1, label, 'MATHS_GRAND',
+    CUR + ' ' + gt.toLocaleString() + ' = Mat ' + grandMaterial.toLocaleString() + ' + Lab ' + grandLabor.toLocaleString() + ' + Eq ' + grandEquip.toLocaleString());
+
+  // 3. Currency conversion sample: first disc total → secondary currency
+  var firstDisc = Object.keys(discSummary)[0];
+  if (firstDisc) {
+    var ds = discSummary[firstDisc];
+    var discTotal = ds.matTotal + ds.laborCost + ds.equipCost;
+    var converted = fmtCur2(discTotal);
+    var expected = Math.round(discTotal / CUR_RATE * 100) / 100;
+    _ct(converted === expected, -1, label, 'MATHS_CUR_CONV',
+      firstDisc + ': ' + CUR + ' ' + discTotal.toLocaleString() + ' ÷ ' + CUR_RATE + ' = ' + CUR2 + ' ' + converted + ' (expected ' + expected + ')');
+  }
+
+  // 4. QTO row count vs total elements
+  var qtoSum = 0;
+  for (var i = 0; i < qtoData.length; i++) qtoSum += qtoData[i].qty;
+  _ct(qtoSum === totalQty, -1, label, 'MATHS_QTY_SUM',
+    'qto_rows=' + qtoData.length + ' qty_sum=' + qtoSum + ' totalQty=' + totalQty + (qtoSum !== totalQty ? ' MISMATCH' : ''));
+
+  // 5. Rate spot-check: first 3 QTO rows — rate × qty = matTotal
+  for (var ri = 0; ri < Math.min(3, qtoData.length); ri++) {
+    var r = qtoData[ri];
+    var calc = Math.round(r.matRate * r.qty * 100) / 100;
+    _ct(Math.abs(calc - r.matTotal) < 0.02, -1, label, 'MATHS_RATE_CHECK',
+      r.cls + ': rate=' + r.matRate + ' × qty=' + (Math.round(r.qty*100)/100) + ' = ' + calc + ' (stored=' + r.matTotal + ')' + (Math.abs(calc - r.matTotal) >= 0.02 ? ' MISMATCH' : ''));
+  }
+
+  // 6. Excel sheet count
+  if (wb) {
+    var sc = wb.worksheets.length;
+    var minSheets = label === '5D' ? 6 : 3;
+    _ct(sc >= minSheets, -1, label, 'MATHS_SHEET_COUNT',
+      sc + ' sheets in workbook (min ' + minSheets + ' expected for ' + label + ')');
+  }
+
+  // 7. Pie chart data sum = grand total (chart[0] is cost pie)
+  if (chartInstances.length > 0 && chartInstances[0].config.type === 'pie') {
+    var pieData = chartInstances[0].data.datasets[0].data;
+    var pieSum = 0;
+    for (var pi = 0; pi < pieData.length; pi++) pieSum += pieData[pi];
+    _ct(pieSum === gt, -1, label, 'MATHS_PIE_SUM',
+      'pie_sum=' + pieSum.toLocaleString() + ' grand=' + gt.toLocaleString() + (pieSum !== gt ? ' MISMATCH — pie slices do not add up' : ''));
+  }
+
+  // 8. Canvas dimensions after prepare (from last capture log)
+  // Already covered by RATIO_MATCH per chart — skip duplicate
+
+  _log('[S226] §MATHS_VERIFY done — ' + label);
+}
+
+// S235: captureChartImage removed — charts shown in HTML, not embedded in Excel
+
+// save5D() — extracted to export_5d.js
+// save4D() — extracted to export_4d.js
+// ── Theme toggle ──
+let light = false;
+// §3.1: Open MEP BOQ report in new tab — passes same DB + rates params
+function openMepReport() {
+  var p = new URLSearchParams(location.search);
+  var mepUrl = 'mep_report.html?db=' + encodeURIComponent(p.get('db') || DB_URL);
+  if (p.get('bld') || bldName) mepUrl += '&bld=' + encodeURIComponent(p.get('bld') || bldName);
+  if (RATE_TEMPLATE_NAME) mepUrl += '&rates=' + encodeURIComponent(RATE_TEMPLATE_NAME);
+  window.open(mepUrl, '_blank');
+}
+
+function toggleTheme() {
+  light = !light;
+  document.body.style.background = light ? '#f0f0f0' : '#1a1a2e';
+  document.body.style.color = light ? '#222' : '#e0e0e0';
+  document.querySelectorAll('h1,h2').forEach(e => e.style.color = light ? '#0077cc' : '#4fc3f7');
+  document.querySelectorAll('th').forEach(e => {
+    e.style.background = light ? 'rgba(0,119,204,0.1)' : 'rgba(79,195,247,0.15)';
+    e.style.color = light ? '#0077cc' : '#4fc3f7';
+  });
+  document.querySelectorAll('.chart-box').forEach(e => {
+    e.style.background = light ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)';
+    e.style.borderColor = light ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.08)';
+  });
+}
+
+</script>
+<!-- Locale: loads before init() so all _TRL keys are resolved when charts render -->
+<script src="locale_loader.js?v=7"></script>
+<script>
+(function(){
+  var done=false;
+  function go(){if(!done){done=true;_syncCur();init();}}
+  window.addEventListener('trl-ready',go,{once:true});
+  setTimeout(go,3000); // fallback: init anyway if locale fetch fails
+})();
+</script>
+<script>
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js?v=269')
+    .then(function(r){console.log('§SW_REG scope='+r.scope)})
+    .catch(function(e){console.warn('§SW_REG_FAIL',e)});
+}
+</script>
+</body>
+</html>

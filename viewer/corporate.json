@@ -1,0 +1,10 @@
+{
+  "firmName": "BIM OOTB",
+  "tagline": "Frictionless BIM",
+  "logoText": "BIM OOTB",
+  "subtitle": "Two DBs. One browser. Zero install.",
+  "defaultProjectRef": "",
+  "defaultDrawingRef": "DR-001",
+  "defaultRevision": "P1",
+  "defaultPreparedBy": ""
+}

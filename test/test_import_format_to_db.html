@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>S228 — ImportFormatToDB Tests</title>
+<style>
+body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+h2 { color: #0f3460; background: #e0e0e0; padding: 6px 12px; margin-top: 24px; }
+.pass { color: #4ade80; }
+.fail { color: #f87171; font-weight: bold; }
+.section { margin-left: 16px; }
+#summary { font-size: 1.3em; margin-top: 24px; padding: 12px; border: 2px solid; }
+#summary.all-pass { border-color: #4ade80; color: #4ade80; }
+#summary.has-fail { border-color: #f87171; color: #f87171; }
+pre { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>S228 — ImportFormatToDB Test Suite</h1>
+<div id="log"></div>
+<div id="summary"></div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="../semantic_enrichment.js"></script>
+<script src="../scene_to_db.js"></script>
+
+<script>
+var totalPass = 0, totalFail = 0;
+var logEl = document.getElementById('log');
+
+function log(msg, cls) {
+  var div = document.createElement('div');
+  div.className = (cls || '') + ' section';
+  div.textContent = msg;
+  logEl.appendChild(div);
+}
+
+function heading(msg) {
+  var h = document.createElement('h2');
+  h.textContent = msg;
+  logEl.appendChild(h);
+}
+
+function assert(cond, label) {
+  if (cond) { totalPass++; log('PASS: ' + label, 'pass'); }
+  else { totalFail++; log('FAIL: ' + label, 'fail'); }
+}
+
+function assertEq(actual, expected, label) {
+  var l = (label || '') + ' — expected ' + JSON.stringify(expected) + ', got ' + JSON.stringify(actual);
+  if (actual === expected) { totalPass++; log('PASS: ' + l, 'pass'); }
+  else { totalFail++; log('FAIL: ' + l, 'fail'); }
+}
+
+// ═══════════════════════════════════════════════
+// TEST 1: Semantic Enrichment (pure string logic)
+// Issue: verify 4-tier classification cascade
+// ═══════════════════════════════════════════════
+heading('Test 1: Semantic Enrichment — Classification');
+
+var SE = self.SemanticEnrichment;
+
+// Name classification
+assertEq(SE.classify('Exterior_Wall_01', null, null).ifcClass, 'IfcWall', 'exterior wall by name');
+assertEq(SE.classify('Front_Door', null, null).ifcClass, 'IfcDoor', 'door by name');
+assertEq(SE.classify('Window_Bay', null, null).ifcClass, 'IfcWindow', 'window by name');
+assertEq(SE.classify('Roof_Main', null, null).ifcClass, 'IfcRoof', 'roof by name');
+assertEq(SE.classify('Ground_Floor_Slab', null, null).ifcClass, 'IfcSlab', 'slab by name');
+assertEq(SE.classify('Column_A1', null, null).ifcClass, 'IfcColumn', 'column by name');
+assertEq(SE.classify('Column_A1', null, null).disc, 'STR', 'column discipline = STR');
+assertEq(SE.classify('Light_Kitchen', null, null).ifcClass, 'IfcLightFixture', 'light by name');
+
+// Fallback → IfcBuildingElementProxy
+assertEq(SE.classify('geo_54', null, null).ifcClass, 'IfcBuildingElementProxy', 'unknown → proxy');
+assertEq(SE.classify('geo_54', null, null).disc, 'ARC', 'unknown disc → ARC');
+
+// Material fallback
+assertEq(SE.classify('geo_54', 'Concrete_Grey', null).ifcClass, 'IfcSlab', 'concrete material → slab');
+assertEq(SE.classify('geo_54', 'Glass_Clear', null).ifcClass, 'IfcWindow', 'glass material → window');
+
+// Parent fallback
+assertEq(SE.classify('geo_54', null, 'Wall_Group').ifcClass, 'IfcWall', 'parent wall → wall');
+
+// Cascade: node wins over material
+assertEq(SE.classify('Door_Front', 'Steel_Frame', null).ifcClass, 'IfcDoor', 'node wins over material');
+
+heading('Test 1b: Storey Banding');
+
+assertEq(SE.classifyStorey(-2.0), 'Basement', 'z=-2 → Basement');
+assertEq(SE.classifyStorey(0.0), 'Ground Floor', 'z=0 → Ground Floor');
+assertEq(SE.classifyStorey(1.5), 'Ground Floor', 'z=1.5 → Ground Floor');
+assertEq(SE.classifyStorey(4.5), 'Level 1', 'z=4.5 → Level 1');
+assertEq(SE.classifyStorey(7.0), 'Level 2', 'z=7.0 → Level 2');
+assertEq(SE.classifyStorey(15.0), 'Upper Levels', 'z=15 → Upper Levels');
+
+heading('Test 1c: GUID Determinism + Uniqueness');
+
+var g1 = SE.generateGUID('DAE', 'Wall', 100, [0,0,0], [5,3,0.2]);
+var g2 = SE.generateGUID('DAE', 'Wall', 100, [0,0,0], [5,3,0.2]);
+assertEq(g1, g2, 'GUID deterministic');
+assert(g1.startsWith('DAE_'), 'GUID prefix');
+
+var g3 = SE.generateGUID('DAE', 'Door', 100, [0,0,0], [1,2,0.05]);
+assert(g1 !== g3, 'GUID unique for different inputs');
+
+heading('Test 1d: RGBA Extraction');
+
+assertEq(SE.extractRGBA(null), '0.700,0.700,0.700,1.000', 'null material → grey');
+
+var testMat = { color: { r: 0.5, g: 0.3, b: 0.1 }, opacity: 0.8 };
+assertEq(SE.extractRGBA(testMat), '0.500,0.300,0.100,0.800', 'material color extracted');
+
+// ═══════════════════════════════════════════════
+// TEST 2: Scene-to-DB (geometry extraction)
+// Issue: verify scene traversal produces DB contract
+// ═══════════════════════════════════════════════
+heading('Test 2: Scene-to-DB — Synthetic Scene');
+
+var STD = self.SceneToDb;
+
+// Build a minimal Three.js scene programmatically
+var scene = new THREE.Group();
+
+// Wall: box at z=1.5 (Ground Floor)
+var wallGeom = new THREE.BoxGeometry(5, 3, 0.2);
+var wallMat  = new THREE.MeshBasicMaterial({ color: 0x884422 });
+var wall     = new THREE.Mesh(wallGeom, wallMat);
+wall.name    = 'Exterior_Wall_North';
+wall.position.set(0, 1.5, 0);
+scene.add(wall);
+
+// Door: box at z=1.0 (Ground Floor)
+var doorGeom = new THREE.BoxGeometry(0.9, 2.1, 0.05);
+var doorMat  = new THREE.MeshBasicMaterial({ color: 0x443322 });
+var door     = new THREE.Mesh(doorGeom, doorMat);
+door.name    = 'Front_Door';
+door.position.set(2, 1.05, 0.1);
+scene.add(door);
+
+// Roof: box at z=6.0 (Level 1)
+var roofGeom = new THREE.BoxGeometry(6, 0.3, 4);
+var roofMat  = new THREE.MeshBasicMaterial({ color: 0x882222 });
+var roof     = new THREE.Mesh(roofGeom, roofMat);
+roof.name    = 'Roof';
+roof.position.set(0, 6.0, 0);
+scene.add(roof);
+
+// Generic unnamed: fallback
+var genGeom = new THREE.BoxGeometry(1, 1, 1);
+var gen     = new THREE.Mesh(genGeom);
+gen.name    = 'geo_54';
+gen.position.set(3, 0.5, 2);
+scene.add(gen);
+
+// Run conversion (skip Y-up rotation for this test — already Z-up)
+var result = STD.sceneToDb(scene, 'test_house.dae', 'dae', { yUpToZUp: false });
+
+// Verify output contract shape
+assertEq(result.elements.length, 4, 'element count');
+assertEq(result.transforms.length, 4, 'transform count');
+assertEq(result.geometries.length, 4, 'geometry count');
+assertEq(result.meta.elementCount, 4, 'meta.elementCount');
+assertEq(result.meta.sourceFormat, '.dae', 'meta.sourceFormat');
+assertEq(result.meta.name, 'test_house', 'meta.name strips extension');
+
+// Verify classification
+var wallEl = result.elements.find(function(e) { return e.name === 'Exterior_Wall_North'; });
+assertEq(wallEl.ifcClass, 'IfcWall', 'wall classified');
+assertEq(wallEl.discipline, 'ARC', 'wall discipline');
+
+var doorEl = result.elements.find(function(e) { return e.name === 'Front_Door'; });
+assertEq(doorEl.ifcClass, 'IfcDoor', 'door classified');
+
+var roofEl = result.elements.find(function(e) { return e.name === 'Roof'; });
+assertEq(roofEl.ifcClass, 'IfcRoof', 'roof classified');
+
+var genEl = result.elements.find(function(e) { return e.name === 'geo_54'; });
+assertEq(genEl.ifcClass, 'IfcBuildingElementProxy', 'generic → proxy');
+
+// Verify storey assignment
+assertEq(wallEl.storey, 'Ground Floor', 'wall storey');
+assertEq(roofEl.storey, 'Level 1', 'roof storey');
+
+// Verify GUIDs are unique
+var guids = result.elements.map(function(e) { return e.guid; });
+assertEq(new Set(guids).size, guids.length, 'GUIDs unique');
+
+// Verify geometry has data
+for (var gi = 0; gi < result.geometries.length; gi++) {
+  var g = result.geometries[gi];
+  assert(g.vertices.byteLength > 0, 'geometry[' + gi + '] vertices not empty');
+  assert(g.indices.byteLength > 0, 'geometry[' + gi + '] indices not empty');
+}
+
+// Verify disciplines in meta
+assert(result.meta.disciplines.ARC >= 3, 'meta disciplines ARC >= 3');
+
+// ═══════════════════════════════════════════════
+// TEST 2b: Auto-scale (mm → m)
+// Issue: verify mm-scale models get auto-scaled
+// ═══════════════════════════════════════════════
+heading('Test 2b: Auto-scale height-based');
+
+// mm model: height > 5000 → ÷1000. Y-up box: wide Z (footprint), narrow Y (height=9000mm)
+var mmScene = new THREE.Group();
+var mmBox = new THREE.BoxGeometry(20000, 9000, 20000);  // 20m×9m×20m in mm
+var mmMesh = new THREE.Mesh(mmBox);
+mmMesh.name = 'Wall_mm';
+mmMesh.position.set(0, 4500, 0);  // Y=4500mm centroid
+mmScene.add(mmMesh);
+
+var mmResult = STD.sceneToDb(mmScene, 'mm_model.obj', 'obj', { yUpToZUp: true });
+var mmTransform = mmResult.transforms[0];
+
+// Height range Y=9000 → mm → scale=0.001. After Y-up swap, cz = original Y * 0.001 = 4.5m
+assert(Math.abs(mmTransform.cz - 4.5) < 0.1, 'mm auto-scaled cz ~4.5m (got ' + mmTransform.cz.toFixed(3) + ')');
+
+// cm model: height 500-5000 → ÷100. Y-up: narrow Y (height=800cm), wide Z
+var cmScene = new THREE.Group();
+var cmBox = new THREE.BoxGeometry(5000, 800, 5000);  // 50m×8m×50m in cm
+var cmMesh = new THREE.Mesh(cmBox);
+cmMesh.name = 'Wall_cm';
+cmMesh.position.set(0, 400, 0);  // Y=400cm centroid
+cmScene.add(cmMesh);
+
+var cmResult = STD.sceneToDb(cmScene, 'cm_model.obj', 'obj', { yUpToZUp: true });
+var cmTransform = cmResult.transforms[0];
+
+// Height range Y=800 → cm → scale=0.01. After swap, cz = 400 * 0.01 = 4.0m
+assert(Math.abs(cmTransform.cz - 4.0) < 0.1, 'cm auto-scaled cz ~4.0m (got ' + cmTransform.cz.toFixed(3) + ')');
+
+// ═══════════════════════════════════════════════
+// TEST 2c: Y-up → Z-up rotation
+// Issue: verify OBJ/DAE Y-up correction
+// ═══════════════════════════════════════════════
+heading('Test 2c: Y-up → Z-up Per-Vertex Swap (auto-detect)');
+
+// Simulate Y-up data: tall in Y, wide in Z (like Blender OBJ)
+var yUpScene = new THREE.Group();
+var yUpBox = new THREE.BoxGeometry(10, 1, 20);  // narrow Y (height), wide Z (footprint)
+var yUpMesh = new THREE.Mesh(yUpBox);
+yUpMesh.name = 'TestBox_YUp';
+yUpMesh.position.set(0, 5, 0);  // Y=5 = height in Y-up
+yUpScene.add(yUpMesh);
+
+var yUpResult = STD.sceneToDb(yUpScene, 'yup.obj', 'obj', { yUpToZUp: true });
+var yUpT = yUpResult.transforms[0];
+
+// S228c: auto-detected Y-up → per-vertex swap (x,y,z)→(x,-z,y). Y=5 → Z=5 (IFC elevation)
+assert(Math.abs(yUpT.cz - 5) < 0.1, 'Y-up → Z-up: centroid Z ~5 (got ' + yUpT.cz.toFixed(3) + ')');
+// cy should be ~0 (original Z=0 → new Y=-Z=0)
+assert(Math.abs(yUpT.cy) < 0.1, 'Y-up → Z-up: centroid Y ~0 (got ' + yUpT.cy.toFixed(3) + ')');
+
+// Simulate Z-up data: tall in Z, wide in Y (like Rhino OBJ) — should NOT swap
+var zUpScene = new THREE.Group();
+var zUpBox = new THREE.BoxGeometry(10, 20, 1);  // wide Y (footprint), narrow Z (height)
+var zUpMesh = new THREE.Mesh(zUpBox);
+zUpMesh.name = 'TestBox_ZUp';
+zUpMesh.position.set(0, 0, 5);  // Z=5 = height in Z-up
+zUpScene.add(zUpMesh);
+
+var zUpResult = STD.sceneToDb(zUpScene, 'zup.obj', 'obj', { yUpToZUp: true });
+var zUpT = zUpResult.transforms[0];
+
+// Auto-detected Z-up → NO swap. Z stays Z.
+assert(Math.abs(zUpT.cz - 5) < 0.1, 'Z-up (no swap): centroid Z ~5 (got ' + zUpT.cz.toFixed(3) + ')');
+assert(Math.abs(zUpT.cy) < 0.1, 'Z-up (no swap): centroid Y ~0 (got ' + zUpT.cy.toFixed(3) + ')');
+
+// ═══════════════════════════════════════════════
+// TEST 3: OBJ file load (live test with test files)
+// Issue: verify real OBJ files produce valid DB contracts
+// ═══════════════════════════════════════════════
+heading('Test 3: OBJ File Load — engel-house.obj');
+
+(async function() {
+  try {
+    // Load OBJLoader dynamically
+    var loaderModule = await import('https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js');
+    var OBJLoader = loaderModule.OBJLoader;
+
+    // Load MTLLoader for seaside-villa
+    var mtlModule = await import('https://unpkg.com/three@0.160.0/examples/jsm/loaders/MTLLoader.js');
+    var MTLLoader = mtlModule.MTLLoader;
+
+    // --- engel-house.obj ---
+    var loader1 = new OBJLoader();
+    var resp1 = await fetch('engel-house.obj');
+    var text1 = await resp1.text();
+    var engelScene = loader1.parse(text1);
+
+    var engelResult = STD.sceneToDb(engelScene, 'engel-house.obj', 'obj', { yUpToZUp: true });
+
+    assert(engelResult.elements.length > 0, 'engel-house: has elements (' + engelResult.elements.length + ')');
+    assert(engelResult.geometries.length > 0, 'engel-house: has geometries');
+    assertEq(engelResult.meta.sourceFormat, '.obj', 'engel-house: format is .obj');
+    assertEq(engelResult.meta.name, 'engel-house', 'engel-house: name extracted');
+    assert(engelResult.meta.storeys.length >= 1, 'engel-house: has storeys (' + engelResult.meta.storeys.join(', ') + ')');
+
+    // All GUIDs unique
+    var engelGuids = engelResult.elements.map(function(e) { return e.guid; });
+    assertEq(new Set(engelGuids).size, engelGuids.length, 'engel-house: GUIDs unique');
+
+    log('  Elements: ' + engelResult.elements.length + ', Storeys: ' + engelResult.meta.storeys.join(', '));
+    log('  Disciplines: ' + JSON.stringify(engelResult.meta.disciplines));
+
+    // --- seaside-villa.obj (with MTL) ---
+    heading('Test 3b: OBJ File Load — seaside-villa.obj');
+
+    var loader2 = new OBJLoader();
+    var resp2 = await fetch('seaside-villa.obj');
+    var text2 = await resp2.text();
+    var villaScene = loader2.parse(text2);
+
+    var villaResult = STD.sceneToDb(villaScene, 'seaside-villa.obj', 'obj', { yUpToZUp: true });
+
+    assert(villaResult.elements.length > 0, 'seaside-villa: has elements (' + villaResult.elements.length + ')');
+    assert(villaResult.geometries.length > 0, 'seaside-villa: has geometries');
+    assertEq(villaResult.meta.sourceFormat, '.obj', 'seaside-villa: format is .obj');
+
+    // seaside-villa is in mm (~1300mm coords) — should auto-scale
+    var villaT0 = villaResult.transforms[0];
+    assert(Math.abs(villaT0.cx) < 10, 'seaside-villa: auto-scaled (cx < 10m, got ' + villaT0.cx.toFixed(3) + ')');
+
+    // All GUIDs unique
+    var villaGuids = villaResult.elements.map(function(e) { return e.guid; });
+    assertEq(new Set(villaGuids).size, villaGuids.length, 'seaside-villa: GUIDs unique');
+
+    log('  Elements: ' + villaResult.elements.length + ', Storeys: ' + villaResult.meta.storeys.join(', '));
+    log('  Disciplines: ' + JSON.stringify(villaResult.meta.disciplines));
+
+  } catch (err) {
+    totalFail++;
+    log('FAIL: OBJ load error — ' + err.message, 'fail');
+    console.error(err);
+  }
+
+  // ═══════════════════════════════════════════════
+  // SUMMARY
+  // ═══════════════════════════════════════════════
+  var summaryEl = document.getElementById('summary');
+  summaryEl.textContent = 'TOTAL: ' + totalPass + ' PASS, ' + totalFail + ' FAIL';
+  summaryEl.className = (totalFail === 0) ? 'all-pass' : 'has-fail';
+  console.log('S228 Tests: ' + totalPass + ' PASS, ' + totalFail + ' FAIL');
+})();
+</script>
+</body>
+</html>

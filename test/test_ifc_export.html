@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>S229 — IFC Export Round-Trip Test</title>
+<style>
+body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+h2 { color: #0f3460; background: #e0e0e0; padding: 6px 12px; margin-top: 24px; }
+.pass { color: #4ade80; }
+.fail { color: #f87171; font-weight: bold; }
+.section { margin-left: 16px; }
+.info { color: #888; margin-left: 16px; }
+#summary { font-size: 1.3em; margin-top: 24px; padding: 12px; border: 2px solid; }
+#summary.all-pass { border-color: #4ade80; color: #4ade80; }
+#summary.has-fail { border-color: #f87171; color: #f87171; }
+pre { white-space: pre-wrap; color: #ccc; margin-left: 16px; font-size: 11px; max-height: 200px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>S229 — IFC Export: DB &rarr; .ifc Round-Trip Test</h1>
+<div id="log"></div>
+<div id="summary"></div>
+
+<script src="https://sql.js.org/dist/sql-wasm.js"></script>
+<script src="../import_db_builder.js"></script>
+
+<script>
+var totalPass = 0, totalFail = 0;
+var logEl = document.getElementById('log');
+
+function log(msg, cls) {
+  var div = document.createElement('div');
+  div.className = (cls || 'info') + ' section';
+  div.textContent = msg;
+  logEl.appendChild(div);
+}
+
+function heading(msg) {
+  var h = document.createElement('h2');
+  h.textContent = msg;
+  logEl.appendChild(h);
+}
+
+function assert(cond, label) {
+  if (cond) { totalPass++; log('PASS: ' + label, 'pass'); }
+  else { totalFail++; log('FAIL: ' + label, 'fail'); }
+}
+
+function assertEq(actual, expected, label) {
+  var l = (label || '') + ' — expected ' + JSON.stringify(expected) + ', got ' + JSON.stringify(actual);
+  if (actual === expected) { totalPass++; log('PASS: ' + l, 'pass'); }
+  else { totalFail++; log('FAIL: ' + l, 'fail'); }
+}
+
+function showSummary() {
+  var summaryEl = document.getElementById('summary');
+  summaryEl.textContent = 'S229 Export: ' + totalPass + ' PASS, ' + totalFail + ' FAIL';
+  summaryEl.className = (totalFail === 0) ? 'all-pass' : 'has-fail';
+  console.log('S229 Export: ' + totalPass + ' PASS, ' + totalFail + ' FAIL');
+}
+
+(async function() {
+  var SQL;
+  try {
+    SQL = await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+    log('sql.js loaded');
+  } catch(err) {
+    log('FATAL: sql.js failed: ' + err.message, 'fail');
+    totalFail++;
+    showSummary();
+    return;
+  }
+
+  // ═══════════════════════════════════════════════
+  // TEST 1: Export worker produces valid STEP text
+  // Issue: verify buildIFC generates ISO-10303-21
+  // ═══════════════════════════════════════════════
+  heading('Test 1: Export Worker — STEP Text Generation');
+
+  // Create synthetic data (a box = 12 triangles)
+  var boxVerts = new Float32Array([
+    // 8 vertices of a 1m cube
+    0,0,0,  1,0,0,  1,1,0,  0,1,0,  // bottom
+    0,0,1,  1,0,1,  1,1,1,  0,1,1,  // top
+  ]);
+  var boxFaces = new Int32Array([
+    0,1,2, 0,2,3,  // bottom
+    4,6,5, 4,7,6,  // top
+    0,4,5, 0,5,1,  // front
+    2,6,7, 2,7,3,  // back
+    0,3,7, 0,7,4,  // left
+    1,5,6, 1,6,2,  // right
+  ]);
+
+  var testElements = [
+    { guid: 'aabb00112233', ifcClass: 'IfcWall', name: 'TestWall', storey: 'Ground Floor', discipline: 'ARC', material: '0.8,0.7,0.6,1' },
+    { guid: 'ccdd44556677', ifcClass: 'IfcDoor', name: 'TestDoor', storey: 'Ground Floor', discipline: 'ARC', material: '0.4,0.3,0.2,1' },
+    { guid: 'eeff8899aabb', ifcClass: 'IfcSlab', name: 'TestSlab', storey: 'Level 1', discipline: 'ARC', material: '0.9,0.9,0.9,1' },
+  ];
+  var testTransforms = [
+    { guid: 'aabb00112233', cx: 0, cy: 0, cz: 1.5 },
+    { guid: 'ccdd44556677', cx: 2, cy: 0, cz: 0 },
+    { guid: 'eeff8899aabb', cx: 0, cy: 0, cz: 3.0 },
+  ];
+  var testGeometries = [
+    { guid: 'aabb00112233', vertices: boxVerts, faces: boxFaces },
+    { guid: 'ccdd44556677', vertices: boxVerts, faces: boxFaces },
+    { guid: 'eeff8899aabb', vertices: boxVerts, faces: boxFaces },
+  ];
+  var testMeta = { buildingName: 'TestHouse', projectName: 'TestProject', elementCount: 3 };
+
+  // Run export worker
+  var exportResult = await new Promise(function(resolve, reject) {
+    var worker = new Worker('../ifc_export_worker.js?v=1');
+    var lastProgress = '';
+    worker.onmessage = function(e) {
+      if (e.data.type === 'progress') { lastProgress = e.data.phase; return; }
+      if (e.data.type === 'error') { reject(new Error(e.data.message)); worker.terminate(); return; }
+      if (e.data.type === 'done') { resolve({ ifcData: e.data.ifcData, lastProgress: lastProgress }); worker.terminate(); }
+    };
+    worker.onerror = function(err) { reject(err); worker.terminate(); };
+    worker.postMessage({ elements: testElements, transforms: testTransforms, geometries: testGeometries, meta: testMeta });
+  });
+
+  var ifcText = new TextDecoder().decode(exportResult.ifcData);
+  log('Generated IFC: ' + (exportResult.ifcData.byteLength / 1024).toFixed(1) + ' KB, ' + ifcText.split('\n').length + ' lines');
+
+  // Verify STEP structure
+  assert(ifcText.startsWith('ISO-10303-21;'), 'starts with ISO-10303-21');
+  assert(ifcText.indexOf('ENDSEC;') > 0, 'contains ENDSEC');
+  assert(ifcText.indexOf('END-ISO-10303-21;') > 0, 'ends with END-ISO-10303-21');
+  assert(ifcText.indexOf("FILE_SCHEMA(('IFC4'))") > 0, 'schema is IFC4');
+
+  // Verify spatial structure
+  assert(ifcText.indexOf('IFCPROJECT') > 0, 'has IfcProject');
+  assert(ifcText.indexOf('IFCSITE') > 0, 'has IfcSite');
+  assert(ifcText.indexOf('IFCBUILDING') > 0, 'has IfcBuilding');
+  assert(ifcText.indexOf('IFCBUILDINGSTOREY') > 0, 'has IfcBuildingStorey');
+  assert(ifcText.indexOf("'TestHouse'") > 0, 'building name in IFC');
+
+  // Verify elements
+  assert(ifcText.indexOf('IFCWALL') > 0, 'has IfcWall');
+  assert(ifcText.indexOf('IFCDOOR') > 0, 'has IfcDoor');
+  assert(ifcText.indexOf('IFCSLAB') > 0, 'has IfcSlab');
+
+  // Verify geometry
+  assert(ifcText.indexOf('IFCTRIANGULATEDFACESET') > 0, 'has IfcTriangulatedFaceSet');
+  assert(ifcText.indexOf('IFCCARTESIANPOINTLIST3D') > 0, 'has IfcCartesianPointList3D');
+
+  // Verify containment
+  assert(ifcText.indexOf('IFCRELCONTAINEDINSPATIALSTRUCTURE') > 0, 'has spatial containment');
+  assert(ifcText.indexOf('IFCRELAGGREGATES') > 0, 'has aggregates');
+
+  // Verify materials/colours
+  assert(ifcText.indexOf('IFCCOLOURRGB') > 0, 'has colour');
+  assert(ifcText.indexOf('IFCSURFACESTYLERENDERING') > 0, 'has surface style');
+
+  // Verify units
+  assert(ifcText.indexOf('IFCUNITASSIGNMENT') > 0, 'has unit assignment');
+  assert(ifcText.indexOf('.METRE.') > 0, 'units are metres');
+
+  // Verify storeys — should have 2 (Ground Floor + Level 1)
+  var storeyMatches = ifcText.match(/IFCBUILDINGSTOREY/g);
+  assertEq(storeyMatches ? storeyMatches.length : 0, 2, 'storey count');
+
+  // Verify element count (3 walls/doors/slabs → 3 entities)
+  var wallCount = (ifcText.match(/IFCWALL\(/g) || []).length;
+  var doorCount = (ifcText.match(/IFCDOOR\(/g) || []).length;
+  var slabCount = (ifcText.match(/IFCSLAB\(/g) || []).length;
+  assertEq(wallCount + doorCount + slabCount, 3, 'exported element count');
+
+  // Show first/last lines
+  var ifcLines = ifcText.split('\n');
+  var pre = document.createElement('pre');
+  pre.textContent = ifcLines.slice(0, 15).join('\n') + '\n...\n' + ifcLines.slice(-10).join('\n');
+  logEl.appendChild(pre);
+
+  // ═══════════════════════════════════════════════
+  // TEST 2: DB → Export → verify STEP round-trip
+  // Issue: verify buildImportDBs output feeds export
+  // ═══════════════════════════════════════════════
+  heading('Test 2: DB Round-Trip — buildImportDBs → export');
+
+  // Build a DB using the same builder as import
+  var importData = {
+    meta: { name: 'RoundTrip.obj', filename: 'RoundTrip.obj', elementCount: 2, geomCount: 2,
+      disciplines: { ARC: 1, STR: 1 }, sourceFormat: '.obj' },
+    elements: [
+      { guid: 'rt_wall_001', ifcClass: 'IfcWall', name: 'Wall_1', storey: 'Ground Floor', discipline: 'ARC', material: '200,180,160,255' },
+      { guid: 'rt_beam_001', ifcClass: 'IfcBeam', name: 'Beam_1', storey: 'Ground Floor', discipline: 'STR', material: '100,100,120,255' },
+    ],
+    transforms: [
+      { guid: 'rt_wall_001', cx: 0, cy: 0, cz: 1.5, rx: 0, ry: 0, rz: 0 },
+      { guid: 'rt_beam_001', cx: 3, cy: 0, cz: 2.8, rx: 0, ry: 0, rz: 0 },
+    ],
+    geometries: [
+      { guid: 'rt_wall_001', geomHash: 'gh_wall', vertices: boxVerts.buffer, indices: boxFaces.buffer },
+      { guid: 'rt_beam_001', geomHash: 'gh_beam', vertices: boxVerts.buffer, indices: boxFaces.buffer },
+    ],
+  };
+
+  var dbs = buildImportDBs(SQL, importData);
+  assert(dbs.extractedDb.byteLength > 0, 'DB built successfully');
+
+  // Read back from DB
+  var db = new SQL.Database(new Uint8Array(dbs.extractedDb));
+  var elRows = db.exec("SELECT guid, ifc_class, element_name, storey, material_rgba FROM elements_meta");
+  assertEq(elRows[0].values.length, 2, 'DB has 2 elements');
+
+  var txRows = db.exec("SELECT guid, center_x, center_y, center_z FROM element_transforms");
+  assertEq(txRows[0].values.length, 2, 'DB has 2 transforms');
+
+  var geoRows = db.exec("SELECT ei.guid, cg.vertices, cg.faces FROM element_instances ei JOIN component_geometries cg ON ei.geometry_hash = cg.geometry_hash");
+  assertEq(geoRows[0].values.length, 2, 'DB has 2 geometry instances');
+
+  // Feed DB data to export worker
+  var elements2 = [], transforms2 = [], geometries2 = [];
+  for (var r = 0; r < elRows[0].values.length; r++) {
+    var row = elRows[0].values[r];
+    elements2.push({ guid: row[0], ifcClass: row[1], name: row[2], storey: row[3], material: row[4] });
+  }
+  for (var r = 0; r < txRows[0].values.length; r++) {
+    var row = txRows[0].values[r];
+    transforms2.push({ guid: row[0], cx: row[1], cy: row[2], cz: row[3] });
+  }
+  for (var r = 0; r < geoRows[0].values.length; r++) {
+    var row = geoRows[0].values[r];
+    geometries2.push({ guid: row[0], vertices: row[1], faces: row[2] });
+  }
+  db.close();
+
+  var result2 = await new Promise(function(resolve, reject) {
+    var w = new Worker('../ifc_export_worker.js?v=1');
+    w.onmessage = function(e) {
+      if (e.data.type === 'progress') return;
+      if (e.data.type === 'error') { reject(new Error(e.data.message)); w.terminate(); return; }
+      if (e.data.type === 'done') { resolve(e.data); w.terminate(); }
+    };
+    w.onerror = function(err) { reject(err); w.terminate(); };
+    w.postMessage({ elements: elements2, transforms: transforms2, geometries: geometries2, meta: { buildingName: 'RoundTrip' } });
+  });
+
+  var ifc2 = new TextDecoder().decode(result2.ifcData);
+  assert(ifc2.indexOf('IFCWALL') > 0, 'round-trip has IfcWall');
+  assert(ifc2.indexOf('IFCBEAM') > 0, 'round-trip has IfcBeam');
+  assert(ifc2.indexOf("'RoundTrip'") > 0, 'round-trip has building name');
+  assert(ifc2.indexOf('IFCTRIANGULATEDFACESET') > 0, 'round-trip has geometry');
+
+  var triSets = (ifc2.match(/IFCTRIANGULATEDFACESET/g) || []).length;
+  assertEq(triSets, 2, 'round-trip geometry count');
+
+  log('Round-trip IFC: ' + (result2.ifcData.byteLength / 1024).toFixed(1) + ' KB');
+
+  // ═══════════════════════════════════════════════
+  // TEST 3: Edge cases
+  // Issue: verify export handles missing data gracefully
+  // ═══════════════════════════════════════════════
+  heading('Test 3: Edge Cases — empty/missing data');
+
+  // Empty elements list
+  var result3 = await new Promise(function(resolve, reject) {
+    var w = new Worker('../ifc_export_worker.js?v=1');
+    w.onmessage = function(e) {
+      if (e.data.type === 'progress') return;
+      if (e.data.type === 'error') { reject(new Error(e.data.message)); w.terminate(); return; }
+      if (e.data.type === 'done') { resolve(e.data); w.terminate(); }
+    };
+    w.onerror = function(err) { reject(err); w.terminate(); };
+    w.postMessage({ elements: [], transforms: [], geometries: [], meta: { buildingName: 'Empty' } });
+  });
+
+  var ifc3 = new TextDecoder().decode(result3.ifcData);
+  assert(ifc3.indexOf('IFCPROJECT') > 0, 'empty export still has project');
+  assert(ifc3.indexOf('IFCBUILDING') > 0, 'empty export still has building');
+  assert(ifc3.indexOf('ISO-10303-21') >= 0, 'empty export is valid STEP');
+  log('Empty export: ' + result3.ifcData.byteLength + ' bytes — valid skeleton');
+
+  // Element without geometry (should be skipped)
+  var result4 = await new Promise(function(resolve, reject) {
+    var w = new Worker('../ifc_export_worker.js?v=1');
+    w.onmessage = function(e) {
+      if (e.data.type === 'progress') return;
+      if (e.data.type === 'error') { reject(new Error(e.data.message)); w.terminate(); return; }
+      if (e.data.type === 'done') { resolve(e.data); w.terminate(); }
+    };
+    w.onerror = function(err) { reject(err); w.terminate(); };
+    w.postMessage({
+      elements: [{ guid: 'no_geo', ifcClass: 'IfcWall', name: 'NoGeo', storey: 'Default' }],
+      transforms: [{ guid: 'no_geo', cx: 0, cy: 0, cz: 0 }],
+      geometries: [],
+      meta: { buildingName: 'NoGeo' }
+    });
+  });
+
+  var ifc4 = new TextDecoder().decode(result4.ifcData);
+  assert(ifc4.indexOf('IFCWALL') === -1, 'element without geometry is skipped');
+  assert(ifc4.indexOf('IFCPROJECT') > 0, 'skeleton still valid without elements');
+
+  // ═══════════════════════════════════════════════
+  // TEST 4: STEP text correctness (no malformed lines)
+  // Issue: verify no syntax errors in generated STEP
+  // ═══════════════════════════════════════════════
+  heading('Test 4: STEP Syntax Validation');
+
+  var dataLines = ifcText.split('\n').filter(function(l) { return l.startsWith('#'); });
+  log('Data lines: ' + dataLines.length);
+
+  // Every data line should match #N=TYPE(...)
+  var badLines = 0;
+  for (var i = 0; i < dataLines.length; i++) {
+    if (!/^#\d+=\w+\(.*\);$/.test(dataLines[i].trim())) {
+      badLines++;
+      if (badLines <= 3) log('Bad STEP line: ' + dataLines[i], 'fail');
+    }
+  }
+  assertEq(badLines, 0, 'all data lines are valid STEP syntax');
+
+  // Entity IDs should be unique
+  var ids = {};
+  var dupes = 0;
+  for (var i = 0; i < dataLines.length; i++) {
+    var m = dataLines[i].match(/^#(\d+)=/);
+    if (m) {
+      if (ids[m[1]]) dupes++;
+      ids[m[1]] = true;
+    }
+  }
+  assertEq(dupes, 0, 'no duplicate entity IDs');
+
+  // Forward references check — every #ref in a line should exist
+  var maxId = 0;
+  for (var k in ids) { var n = parseInt(k); if (n > maxId) maxId = n; }
+  var missingRefs = 0;
+  for (var i = 0; i < dataLines.length; i++) {
+    var refs = dataLines[i].match(/#(\d+)/g);
+    if (refs) {
+      for (var j = 1; j < refs.length; j++) {  // skip first (the entity's own ID)
+        var refId = refs[j].substring(1);
+        if (!ids[refId]) { missingRefs++; if (missingRefs <= 3) log('Missing ref ' + refs[j] + ' in: ' + dataLines[i].substring(0, 60), 'fail'); }
+      }
+    }
+  }
+  assertEq(missingRefs, 0, 'no dangling references');
+
+  showSummary();
+})();
+</script>
+</body>
+</html>

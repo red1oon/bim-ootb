@@ -1,0 +1,608 @@
+{
+  "total_elements": 1063911,
+  "archetype_count": 25,
+  "building_count": 786,
+  "archetypes": [
+    {
+      "name": "SampleHouse",
+      "count": 65,
+      "instances": 43,
+      "center": [
+        25.0,
+        223.8,
+        0.4
+      ],
+      "bbox": [
+        13.2,
+        215.8,
+        0.0,
+        37.9,
+        232.3,
+        6.2
+      ],
+      "representative": "S0_0_SampleHouse",
+      "disciplines": {
+        "ARC": 39,
+        "STR": 26
+      }
+    },
+    {
+      "name": "Duplex",
+      "count": 1169,
+      "instances": 43,
+      "center": [
+        4.5,
+        233.3,
+        2.0
+      ],
+      "bbox": [
+        -5.0,
+        215.0,
+        -1.2,
+        14.2,
+        247.2,
+        9.5
+      ],
+      "representative": "S0_0_Duplex",
+      "disciplines": {
+        "MEP": 904,
+        "ARC": 253,
+        "STR": 12
+      }
+    },
+    {
+      "name": "BimWhale_Tall",
+      "count": 81,
+      "instances": 43,
+      "center": [
+        773.3,
+        224.4,
+        5.1
+      ],
+      "bbox": [
+        764.5,
+        215.0,
+        0.0,
+        782.6,
+        233.1,
+        19.0
+      ],
+      "representative": "S0_0_BimWhale_Tall",
+      "disciplines": {
+        "ARC": 81
+      }
+    },
+    {
+      "name": "Ifc4_FZKHaus",
+      "count": 98,
+      "instances": 43,
+      "center": [
+        110.1,
+        225.5,
+        3.1
+      ],
+      "bbox": [
+        98.7,
+        215.7,
+        -0.1,
+        121.6,
+        235.4,
+        9.0
+      ],
+      "representative": "S0_0_Ifc4_FZKHaus",
+      "disciplines": {
+        "ARC": 52,
+        "STR": 46
+      }
+    },
+    {
+      "name": "AC90_Niedriha",
+      "count": 136,
+      "instances": 43,
+      "center": [
+        64.7,
+        226.1,
+        2.2
+      ],
+      "bbox": [
+        55.0,
+        215.6,
+        -2.9,
+        76.7,
+        236.6,
+        9.7
+      ],
+      "representative": "S0_0_AC90_Niedriha",
+      "disciplines": {
+        "ARC": 119,
+        "STR": 17
+      }
+    },
+    {
+      "name": "BimWhale_Basic",
+      "count": 153,
+      "instances": 43,
+      "center": [
+        214.2,
+        227.8,
+        1.0
+      ],
+      "bbox": [
+        198.9,
+        215.4,
+        -0.1,
+        231.3,
+        237.6,
+        5.9
+      ],
+      "representative": "S0_0_BimWhale_Basic",
+      "disciplines": {
+        "ARC": 146,
+        "MEP": 7
+      }
+    },
+    {
+      "name": "BimWhale_Large",
+      "count": 174,
+      "instances": 43,
+      "center": [
+        728.8,
+        239.9,
+        2.1
+      ],
+      "bbox": [
+        707.4,
+        219.1,
+        -0.1,
+        762.4,
+        260.0,
+        9.6
+      ],
+      "representative": "S0_0_BimWhale_Large",
+      "disciplines": {
+        "ARC": 174
+      }
+    },
+    {
+      "name": "HospitalAuckland",
+      "count": 442,
+      "instances": 43,
+      "center": [
+        660.3,
+        246.2,
+        2.2
+      ],
+      "bbox": [
+        630.5,
+        218.0,
+        -4.1,
+        702.4,
+        278.2,
+        13.8
+      ],
+      "representative": "S0_0_HospitalAuckland",
+      "disciplines": {
+        "ARC": 275,
+        "STR": 148,
+        "MEP": 19
+      }
+    },
+    {
+      "name": "SmileyWest",
+      "count": 531,
+      "instances": 43,
+      "center": [
+        602.1,
+        223.3,
+        2.3
+      ],
+      "bbox": [
+        577.3,
+        174.3,
+        -2.6,
+        635.1,
+        236.0,
+        11.2
+      ],
+      "representative": "S0_0_SmileyWest",
+      "disciplines": {
+        "ARC": 520,
+        "STR": 11
+      }
+    },
+    {
+      "name": "Jesse",
+      "count": 676,
+      "instances": 43,
+      "center": [
+        142.7,
+        231.0,
+        2.5
+      ],
+      "bbox": [
+        120.2,
+        215.1,
+        -1.4,
+        167.4,
+        250.6,
+        9.0
+      ],
+      "representative": "S0_0_Jesse",
+      "disciplines": {
+        "ARC": 381,
+        "STR": 295
+      }
+    },
+    {
+      "name": "Ifc2x3_AC11Institute",
+      "count": 986,
+      "instances": 43,
+      "center": [
+        807.3,
+        229.8,
+        2.9
+      ],
+      "bbox": [
+        781.9,
+        215.6,
+        -3.1,
+        833.6,
+        242.8,
+        14.9
+      ],
+      "representative": "S0_0_Ifc2x3_AC11Institute",
+      "disciplines": {
+        "ARC": 984,
+        "STR": 2
+      }
+    },
+    {
+      "name": "HospitalGarage",
+      "count": 1471,
+      "instances": 1,
+      "center": [
+        84.6,
+        68.9,
+        -5.5
+      ],
+      "bbox": [
+        -4.9,
+        -4.9,
+        -164.0,
+        147.5,
+        135.4,
+        27.1
+      ],
+      "representative": "T0_HospitalGarage",
+      "disciplines": {
+        "STR": 824,
+        "ARC": 647
+      },
+      "landmark": true
+    },
+    {
+      "name": "BimWhale_Advanced",
+      "count": 2176,
+      "instances": 43,
+      "center": [
+        437.9,
+        304.9,
+        6.4
+      ],
+      "bbox": [
+        201.2,
+        -28.5,
+        0.0,
+        577.2,
+        385.9,
+        27.2
+      ],
+      "representative": "S0_0_BimWhale_Advanced",
+      "disciplines": {
+        "ARC": 2044,
+        "STR": 83,
+        "MEP": 49
+      }
+    },
+    {
+      "name": "Esplanades",
+      "count": 2544,
+      "instances": 1,
+      "center": [
+        1633.6,
+        24.2,
+        9.9
+      ],
+      "bbox": [
+        1599.0,
+        -3.9,
+        0.0,
+        1667.3,
+        48.0,
+        22.2
+      ],
+      "representative": "T0_Esplanades",
+      "disciplines": {
+        "ARC": 2470,
+        "STR": 74
+      }
+    },
+    {
+      "name": "HITOS",
+      "count": 2593,
+      "instances": 1,
+      "center": [
+        1491.7,
+        50.7,
+        10.0
+      ],
+      "bbox": [
+        1219.2,
+        -4.0,
+        0.0,
+        1527.4,
+        104.4,
+        25.7
+      ],
+      "representative": "T0_HITOS",
+      "disciplines": {
+        "ARC": 2232,
+        "STR": 294,
+        "MEP": 67
+      }
+    },
+    {
+      "name": "Molio",
+      "count": 2791,
+      "instances": 43,
+      "center": [
+        315.9,
+        232.6,
+        9.1
+      ],
+      "bbox": [
+        294.0,
+        215.3,
+        -3.1,
+        333.3,
+        247.1,
+        25.4
+      ],
+      "representative": "S0_0_Molio",
+      "disciplines": {
+        "ARC": 2728,
+        "MEP": 42,
+        "STR": 21
+      }
+    },
+    {
+      "name": "SampleCastle",
+      "count": 3284,
+      "instances": 43,
+      "center": [
+        280.0,
+        230.4,
+        5.1
+      ],
+      "bbox": [
+        262.5,
+        215.5,
+        -1.5,
+        295.8,
+        249.4,
+        16.0
+      ],
+      "representative": "S0_0_SampleCastle",
+      "disciplines": {
+        "ARC": 3018,
+        "STR": 206,
+        "MEP": 60
+      }
+    },
+    {
+      "name": "Schependomlaan",
+      "count": 3284,
+      "instances": 43,
+      "center": [
+        248.1,
+        230.4,
+        5.1
+      ],
+      "bbox": [
+        230.5,
+        215.5,
+        -1.5,
+        263.9,
+        249.4,
+        16.0
+      ],
+      "representative": "S0_0_Schependomlaan",
+      "disciplines": {
+        "ARC": 3018,
+        "STR": 206,
+        "MEP": 60
+      }
+    },
+    {
+      "name": "HHS_Office_Federated",
+      "count": 7057,
+      "instances": 1,
+      "center": [
+        1552.8,
+        23.5,
+        5.4
+      ],
+      "bbox": [
+        1523.4,
+        -4.8,
+        -4.7,
+        1602.2,
+        59.6,
+        17.5
+      ],
+      "representative": "T0_HHS_Office_Federated",
+      "disciplines": {
+        "MEP": 3390,
+        "STR": 2336,
+        "ARC": 1331
+      }
+    },
+    {
+      "name": "WBDG_Office",
+      "count": 7180,
+      "instances": 1,
+      "center": [
+        1188.6,
+        17.7,
+        3.9
+      ],
+      "bbox": [
+        1158.9,
+        -4.5,
+        -1.4,
+        1219.1,
+        45.8,
+        17.1
+      ],
+      "representative": "T0_WBDG_Office",
+      "disciplines": {
+        "MEP": 5699,
+        "ARC": 992,
+        "STR": 489
+      }
+    },
+    {
+      "name": "Ifc4_Revit",
+      "count": 11505,
+      "instances": 1,
+      "center": [
+        1050.7,
+        125.8,
+        3.2
+      ],
+      "bbox": [
+        1001.4,
+        75.1,
+        -2.7,
+        1104.6,
+        167.6,
+        17.5
+      ],
+      "representative": "T0_Ifc4_Revit",
+      "disciplines": {
+        "STR": 6487,
+        "MEP": 2818,
+        "ARC": 1431,
+        "ELEC": 454,
+        "ACMV": 309,
+        "FP": 6
+      }
+    },
+    {
+      "name": "Clinic",
+      "count": 16480,
+      "instances": 1,
+      "center": [
+        943.7,
+        41.5,
+        2.8
+      ],
+      "bbox": [
+        904.3,
+        -4.3,
+        -2.2,
+        969.2,
+        81.6,
+        16.5
+      ],
+      "representative": "T0_Clinic",
+      "disciplines": {
+        "MEP": 12460,
+        "ARC": 2382,
+        "STR": 1638
+      }
+    },
+    {
+      "name": "Terminal",
+      "count": 48428,
+      "instances": 1,
+      "center": [
+        654.2,
+        34.7,
+        31.8
+      ],
+      "bbox": [
+        540.6,
+        -4.8,
+        0.0,
+        705.4,
+        60.7,
+        45.1
+      ],
+      "representative": "T0_Terminal",
+      "disciplines": {
+        "STR": 34356,
+        "MEP": 9733,
+        "ARC": 2222,
+        "FP": 995,
+        "ELEC": 833,
+        "ACMV": 289
+      }
+    },
+    {
+      "name": "Hospital",
+      "count": 63917,
+      "instances": 1,
+      "center": [
+        138.5,
+        82.5,
+        14.7
+      ],
+      "bbox": [
+        80.5,
+        -4.6,
+        -7.3,
+        192.6,
+        145.9,
+        40.0
+      ],
+      "representative": "T0_Hospital",
+      "disciplines": {
+        "MEP": 38099,
+        "STR": 11912,
+        "ARC": 10131,
+        "ELEC": 2421,
+        "FP": 1354
+      }
+    },
+    {
+      "name": "LTU_AHouse",
+      "count": 125698,
+      "instances": 1,
+      "center": [
+        446.1,
+        110.9,
+        7.8
+      ],
+      "bbox": [
+        194.6,
+        -167.4,
+        -45.6,
+        630.1,
+        291.5,
+        20.1
+      ],
+      "representative": "T0_LTU_AHouse",
+      "disciplines": {
+        "PLB": 31343,
+        "HEAT": 22503,
+        "HVAC": 20979,
+        "VENT": 20637,
+        "SAN": 12678,
+        "ARC": 9712,
+        "STR": 6666,
+        "VOID": 1180
+      }
+    }
+  ]
+}

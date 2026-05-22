@@ -1,0 +1,6 @@
+*.db
+*.bin
+node_modules/
+test-results/
+buildings/
+*.log

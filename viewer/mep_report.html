@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BIM OOTB — MEP Bill of Quantities</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="lib/chart.umd.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a1a2e; color:#e0e0e0; font-family:Segoe UI,sans-serif; padding:20px; }
+  h1 { color:#4fc3f7; font-size:20px; margin-bottom:4px; }
+  .subtitle { color:#888; font-size:12px; margin-bottom:16px; }
+  .header-block { background:rgba(79,195,247,0.08); border:1px solid rgba(79,195,247,0.25); border-radius:8px; padding:16px 20px; margin-bottom:20px; max-width:1200px; }
+  .header-block h2 { color:#4fc3f7; font-size:16px; margin-bottom:8px; }
+  .header-block .row { display:flex; justify-content:space-between; color:#ccc; font-size:13px; margin-bottom:2px; }
+  .header-block .row span { color:#fff; }
+  .section-block { max-width:1200px; margin-bottom:24px; }
+  .section-block h3 { color:#4fc3f7; font-size:14px; margin-bottom:8px; border-bottom:1px solid rgba(79,195,247,0.2); padding-bottom:4px; }
+  .section-total { text-align:right; color:#4fc3f7; font-weight:bold; font-size:13px; padding:4px 8px; }
+  .summary-block { background:rgba(79,195,247,0.06); border:1px solid rgba(79,195,247,0.2); border-radius:8px; padding:16px 20px; margin-bottom:20px; max-width:1200px; }
+  .summary-block h3 { color:#4fc3f7; font-size:15px; margin-bottom:12px; }
+  .summary-row { display:flex; justify-content:space-between; font-size:13px; padding:3px 0; }
+  .summary-row.total { border-top:1px solid rgba(79,195,247,0.3); margin-top:8px; padding-top:8px; font-weight:bold; color:#4fc3f7; }
+  .summary-row.grand { border-top:2px solid #4fc3f7; margin-top:8px; padding-top:8px; font-weight:bold; font-size:15px; color:#fff; }
+  .charts { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; max-width:1200px; margin-bottom:20px; }
+  .chart-box { background:rgba(255,255,255,0.05); border-radius:8px; padding:16px; border:1px solid rgba(255,255,255,0.08); }
+  .chart-box h2 { color:#4fc3f7; font-size:13px; margin-bottom:8px; }
+  canvas { max-width:100%; }
+  table { border-collapse:collapse; width:100%; font-size:11px; margin-top:4px; }
+  th { background:rgba(79,195,247,0.15); color:#4fc3f7; text-align:left; padding:4px 8px; position:sticky; top:0; }
+  td { padding:3px 8px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  td.num { text-align:right; font-family:Consolas,monospace; }
+  tr:hover td { background:rgba(255,255,255,0.05); }
+  .toolbar { position:fixed; top:16px; right:16px; z-index:10; display:flex; gap:8px; }
+  .toolbar button { background:#333; color:#fff; border:1px solid #555; border-radius:4px; padding:6px 12px; cursor:pointer; font-size:12px; }
+  .toolbar button:hover { background:#4fc3f7; color:#000; }
+  .stat-cards { display:flex; gap:12px; margin-bottom:16px; max-width:1200px; }
+  .stat-card { background:rgba(255,255,255,0.05); border-radius:8px; padding:12px 20px; text-align:center; border:1px solid rgba(255,255,255,0.08); flex:1; }
+  .stat-card .num { font-size:24px; font-weight:bold; }
+  .stat-card .lbl { font-size:11px; color:#888; }
+  #status { color:#4fc3f7; font-size:12px; margin-top:12px; }
+  .empty-msg { color:#888; font-size:14px; padding:40px; text-align:center; }
+  @media (max-width:800px) { .charts { grid-template-columns:1fr; } .stat-cards { flex-wrap:wrap; } }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button onclick="_shareReport()" data-trl="mep_share">Share Report</button>
+  <button onclick="_csvExport()">&#128196; CSV</button>
+  <button onclick="_copyUrl(this)" title="Copy shareable link">&#128203;</button>
+  <button onclick="window.close()" title="Back">&#8592; Back</button>
+</div>
+
+<div id="report-content">Loading...</div>
+<div id="status"></div>
+
+<script src="lib/sql-wasm.js"></script>
+<script src="rates.js?v=7"></script>
+<script src="locale_loader.js?v=7"></script>
+
+<script>
+var params = new URLSearchParams(location.search);
+var DB_URL = params.get('db') || '';
+var BLD = params.get('bld') || '';
+var RATES_PARAM = params.get('rates') || 'cidb2024_my';
+
+// SMM MEP sections of interest
+var _MEP_SECTIONS_EN = {
+  R: 'Disposal Systems', S: 'Piped Supply Systems', T: 'Mechanical Heating / Cooling',
+  U: 'Ventilation / Air Conditioning', V: 'Electrical Supply / Power / Lighting',
+  W: 'Communications / Security / Controls', Y: 'Mechanical / Electrical Services (General)'
+};
+var MEP_SECTIONS = {}; // populated in init() after trl-ready
+var MEP_SECTION_ORDER = ['R','S','T','U','V','W','Y'];
+
+// Global report data
+var reportData = null;
+var csvRows = [];
+
+function _copyUrl(btn) {
+  navigator.clipboard.writeText(location.href).then(function() {
+    var orig = btn.innerHTML; btn.innerHTML = '\u2713'; btn.style.color = '#44cc44';
+    setTimeout(function() { btn.innerHTML = orig; btn.style.color = ''; }, 1500);
+  }).catch(function() { prompt('Copy this URL:', location.href); });
+}
+
+function _shareReport() {
+  var html = document.documentElement.outerHTML;
+  var blob = new Blob([html], { type: 'text/html' });
+  var a = document.createElement('a');
+  a.download = 'MEP_BOQ_' + (BLD || 'building').replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().slice(0, 10) + '.html';
+  a.href = URL.createObjectURL(blob);
+  a.click();
+}
+
+function _csvExport() {
+  if (!csvRows || csvRows.length === 0) { alert('No data to export'); return; }
+  var bom = '\uFEFF';
+  var header = 'Section,Item,Description,Qty,UOM,Rate,Amount_' + _cur() + ',Discipline,IFC_Class,Storey\n';
+  var body = csvRows.map(function(r) {
+    return [r.section, r.item, '"' + r.desc + '"', r.qty, r.uom, r.rate, r.amount, r.disc, r.cls, '"' + r.storey + '"'].join(',');
+  }).join('\n');
+  var blob = new Blob([bom + header + body], { type: 'text/csv;charset=utf-8' });
+  var a = document.createElement('a');
+  a.download = 'MEP_BOQ_' + (BLD || 'building').replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  console.log('§MEP_CSV rows=' + csvRows.length + ' file=' + a.download);
+}
+
+function _cur() { return (RATE_TEMPLATE_META && RATE_TEMPLATE_META.currency) ? RATE_TEMPLATE_META.currency : 'RM'; }
+function _cur2() { return (RATE_TEMPLATE_META && RATE_TEMPLATE_META.currency2) ? RATE_TEMPLATE_META.currency2 : 'USD'; }
+function _xrate() { return (RATE_TEMPLATE_META && RATE_TEMPLATE_META.exchange_rate) ? RATE_TEMPLATE_META.exchange_rate : 4.45; }
+function _fmt(n) { return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+// _TRL-safe helper: returns translated string or English fallback
+function _t(key, fallback) { return (typeof _TRL !== 'undefined' && _TRL[key]) ? _TRL[key] : fallback; }
+
+// DB loader with IDB cache
+async function fetchDbBuffer(url) {
+  var cacheDb = await new Promise(function(resolve) {
+    var req = indexedDB.open('bim_ootb_cache', 1);
+    req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+    req.onsuccess = function() { resolve(req.result); };
+    req.onerror = function() { resolve(null); };
+  });
+  if (cacheDb) {
+    try {
+      var cached = await new Promise(function(ok, fail) {
+        var tx = cacheDb.transaction('dbs', 'readonly');
+        var req = tx.objectStore('dbs').get(url);
+        req.onsuccess = function() { ok(req.result); };
+        req.onerror = function() { fail(); };
+      });
+      if (cached) return cached;
+    } catch(e) {}
+  }
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error('DB fetch failed: ' + resp.status);
+  var buf = await resp.arrayBuffer();
+  if (cacheDb) {
+    try {
+      var tx = cacheDb.transaction('dbs', 'readwrite');
+      tx.objectStore('dbs').put(buf, url);
+    } catch(e) {}
+  }
+  return buf;
+}
+
+async function init() {
+  // Load rate template — uses locale→rate mapping from rates.js
+  if (typeof initRateTemplate === 'function') {
+    await initRateTemplate();
+  }
+  // Populate MEP section names from _TRL (locale merged by now)
+  for (var _k in _MEP_SECTIONS_EN) MEP_SECTIONS[_k] = _t('mep_sec_' + _k, _MEP_SECTIONS_EN[_k]);
+
+  if (!DB_URL) {
+    document.getElementById('report-content').innerHTML = '<div class="empty-msg">' + _t('ui_no_db_specified','No database specified. Open from 4D/5D Analytics page.') + '</div>';
+    return;
+  }
+
+  document.getElementById('report-content').innerHTML = _t('ui_loading','Loading') + ' ' + DB_URL.split('/').pop() + '...';
+
+  // §S260b: Try _meta.db first (sufficient for MEP — no geometry needed)
+  // Skip for import:// URLs (IndexedDB) — only works for HTTP URLs
+  var _actualUrl = DB_URL;
+  if (DB_URL.indexOf('_extracted.db') > -1 && !DB_URL.startsWith('import://')) {
+    var _metaUrl = DB_URL.replace('_extracted.db', '_meta.db');
+    try {
+      var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
+      if (_headResp.ok) {
+        _actualUrl = _metaUrl;
+        console.log('§MEP_SPLIT_HIT using ' + _metaUrl + ' (' + Math.round(parseInt(_headResp.headers.get('content-length')||'0')/1024/1024) + 'MB)');
+      }
+    } catch(e) {}
+  }
+
+  var SQL = await initSqlJs({
+    locateFile: function(f) { return 'lib/' + f; }
+  });
+  var buf = await fetchDbBuffer(_actualUrl);
+  console.log('§MEP_DB_LOADED url=' + _actualUrl.split('/').pop() + ' size=' + Math.round(buf.byteLength/1024/1024) + 'MB');
+  var db = new SQL.Database(new Uint8Array(buf));
+
+  // Determine building
+  var bldName = BLD;
+  if (!bldName) {
+    var r = db.exec("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1");
+    bldName = r.length ? r[0].values[0][0] : 'Unknown';
+  }
+  var bldSafe = bldName.replace(/'/g, "''");
+
+  // Build unit sets from RATES
+  var LINEAR = new Set(), AREA = new Set();
+  for (var cls in RATES) {
+    if (RATES[cls].unit === 'M') LINEAR.add(cls);
+    if (RATES[cls].unit === 'M2') AREA.add(cls);
+  }
+
+  // Count query
+  var countRows = db.exec("SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) as cnt FROM elements_meta m WHERE m.building = '" + bldSafe + "' GROUP BY m.discipline, m.ifc_class, m.storey");
+  if (!countRows.length || !countRows[0].values.length) {
+    document.getElementById('report-content').innerHTML = '<div class="empty-msg">' + _t('ui_no_elements_bld','No elements found for building:') + ' ' + bldName + '</div>';
+    return;
+  }
+
+  // Linear query
+  var linearMap = {};
+  try {
+    var linR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z)) FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
+    if (linR.length) for (var i = 0; i < linR[0].values.length; i++) { var v = linR[0].values[i]; linearMap[v[0]+'|'+v[1]+'|'+v[2]] = v[3]; }
+  } catch(e) {}
+
+  // Area query
+  var areaMap = {};
+  try {
+    var aR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) * CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z) WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z) ELSE MAX(t.bbox_x, t.bbox_y) END) FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
+    if (aR.length) for (var i = 0; i < aR[0].values.length; i++) { var v = aR[0].values[i]; areaMap[v[0]+'|'+v[1]+'|'+v[2]] = v[3]; }
+  } catch(e) {}
+
+  // Total building cost (all disciplines)
+  var grandBuildingMat = 0, grandBuildingLab = 0, grandBuildingEq = 0;
+
+  // Process all rows — compute QTO, filter MEP for report
+  var mepItems = [];    // items for MEP sections
+  var allItems = [];    // all items for building total
+  var tradeAgg = {};    // trade → {days, crew, cost}
+
+  for (var ri = 0; ri < countRows[0].values.length; ri++) {
+    var row = countRows[0].values[ri];
+    var disc = row[0], cls = row[1], storey = row[2], cnt = row[3];
+    var mc = RATES[cls] || { rate: 0, unit: 'EA', desc: cls };
+    var unit = mc.unit || 'EA';
+    var key = disc + '|' + cls + '|' + storey;
+
+    var qty;
+    if (unit === 'M' && LINEAR.has(cls)) {
+      qty = linearMap[key] || cnt;
+    } else if (unit === 'M2' && AREA.has(cls)) {
+      qty = areaMap[key] || cnt;
+    } else {
+      qty = cnt;
+    }
+
+    var matTotal = Math.round(mc.rate * qty * 100) / 100;
+    var labor = calcLabor(cls, qty);
+    var equip = calcEquipment(cls, labor.days);
+
+    grandBuildingMat += matTotal;
+    grandBuildingLab += labor.cost;
+    grandBuildingEq += equip.cost;
+
+    var smmSection = mc.smm_section || '';
+    var smmLetter = smmSection ? smmSection.charAt(0) : '';
+
+    var item = {
+      disc: disc, cls: cls, storey: storey || '', cnt: cnt,
+      qty: qty, unit: unit, rate: mc.rate, matTotal: matTotal,
+      laborCost: labor.cost, laborDays: labor.days, laborCrew: labor.crew,
+      laborTrade: labor.trade, tradeKey: labor.tradeKey,
+      equipCost: equip.cost, desc: mc.desc || cls,
+      smmSection: smmSection, smmLetter: smmLetter
+    };
+
+    allItems.push(item);
+
+    // MEP disciplines only
+    if (['MEP','ELEC','PLB','ACMV','FP','HVAC','SAN','VENT'].indexOf(disc) >= 0 && smmLetter && MEP_SECTIONS[smmLetter]) {
+      mepItems.push(item);
+
+      // Aggregate labour by trade
+      if (item.tradeKey) {
+        if (!tradeAgg[item.tradeKey]) tradeAgg[item.tradeKey] = { trade: item.laborTrade, days: 0, crew: item.laborCrew, cost: 0 };
+        tradeAgg[item.tradeKey].days += item.laborDays;
+        tradeAgg[item.tradeKey].cost += item.laborCost;
+      }
+    }
+  }
+
+  // Group MEP items by SMM section letter
+  var sectionData = {};
+  for (var si = 0; si < mepItems.length; si++) {
+    var it = mepItems[si];
+    var sl = it.smmLetter;
+    if (!sectionData[sl]) sectionData[sl] = { items: [], matTotal: 0, labTotal: 0, eqTotal: 0 };
+    sectionData[sl].items.push(it);
+    sectionData[sl].matTotal += it.matTotal;
+    sectionData[sl].labTotal += it.laborCost;
+    sectionData[sl].eqTotal += it.equipCost;
+  }
+
+  // MEP totals
+  var mepMatTotal = 0, mepLabTotal = 0, mepEqTotal = 0;
+  for (var sk in sectionData) {
+    mepMatTotal += sectionData[sk].matTotal;
+    mepLabTotal += sectionData[sk].labTotal;
+    mepEqTotal += sectionData[sk].eqTotal;
+  }
+  var mepTotal = mepMatTotal + mepLabTotal + mepEqTotal;
+  var buildingTotal = grandBuildingMat + grandBuildingLab + grandBuildingEq;
+  var mepPct = buildingTotal > 0 ? (mepTotal / buildingTotal * 100) : 0;
+
+  // Provisions
+  var prov = (RATE_TEMPLATE_META && RATE_TEMPLATE_META.provisions) ? RATE_TEMPLATE_META.provisions : {};
+  // Fallback: check top-level provisions from loaded template
+  if (!prov || !prov.preliminaries_pct) {
+    // Try global — loaded by rates.js from JSON
+    prov = { preliminaries_pct: 10, professional_fees_pct: 8, contingency_pct: 5 };
+  }
+  var prelim = mepTotal * (prov.preliminaries_pct || 10) / 100;
+  var profFees = mepTotal * (prov.professional_fees_pct || 8) / 100;
+  var contingency = mepTotal * (prov.contingency_pct || 5) / 100;
+  var insuredValue = mepTotal + prelim + profFees + contingency;
+
+  var cur = _cur();
+  var activeSections = MEP_SECTION_ORDER.filter(function(s) { return sectionData[s]; });
+
+  // ── Build HTML ──
+  var html = '';
+
+  // Header
+  var meta = RATE_TEMPLATE_META || {};
+  html += '<h1>BIM OOTB — MEP ' + _t('t_comp_boq', 'Bill of Quantities') + '</h1>';
+  html += '<div class="header-block" style="display:flex;gap:24px;align-items:flex-start">';
+  html += '<div style="flex:1"><h2>MEP ' + _t('t_comp_boq', 'BILL OF QUANTITIES') + '</h2>';
+  html += '<div class="row">' + _t('ui_building', 'Building') + ': <span>' + bldName + '</span></div>';
+  html += '<div class="row">' + _t('h_date', 'Date') + ': <span>' + new Date().toISOString().slice(0, 10) + '</span></div>';
+  html += '<div class="row">' + _t('ui_rate_source_lbl', 'Rate Source') + ': <span>' + (meta.source || 'CIDB 2024') + '</span></div>';
+  html += '<div class="row">' + _t('ui_currency', 'Currency') + ': <span>' + cur + '</span></div>';
+  html += '</div>';
+  html += '<div style="flex:0 0 340px;font-size:11px;color:#999;line-height:1.6;border-left:1px solid rgba(79,195,247,0.15);padding-left:16px">';
+  html += '<div style="color:#4fc3f7;font-weight:bold;font-size:12px;margin-bottom:4px">' + _t('mep_guide_title', 'MEP BOQ Guide') + '</div>';
+  html += _t('mep_guide_body', 'SMM2 \u00a7R\u2013V \u00b7 IFC\u2192classify by discipline (PLB\u00b7ELEC\u00b7ACMV\u00b7FP)<br>Pipes/ducts \u2192 length (m) \u00b7 slabs \u2192 area (m\u00b2) \u00b7 fittings \u2192 count<br>17 country rate templates from national publications<br>Section totals + labour trades + charts + reinstatement value<br>CSV (UTF-8 BOM) or shareable self-contained HTML');
+  html += '</div></div>';
+
+  // Stat cards
+  html += '<div class="stat-cards">';
+  html += '<div class="stat-card"><div class="num" style="color:#4fc3f7">' + activeSections.length + '</div><div class="lbl">SMM</div></div>';
+  html += '<div class="stat-card"><div class="num" style="color:#4caf50">' + mepItems.length + '</div><div class="lbl">MEP ' + _t('h_item', 'Items') + '</div></div>';
+  html += '<div class="stat-card"><div class="num" style="color:#ff8c00">' + cur + ' ' + _fmt(mepTotal) + '</div><div class="lbl">MEP ' + _t('h_total', 'Total') + '</div></div>';
+  html += '<div class="stat-card"><div class="num" style="color:#e040fb">' + mepPct.toFixed(1) + '%</div><div class="lbl">MEP %</div></div>';
+  html += '</div>';
+
+  if (mepItems.length === 0) {
+    html += '<div class="empty-msg">' + _t('ui_no_data','No data.') + '<br>MEP (PLB, ELEC, ACMV, FP) — ' + _t('ui_no_results','not found') + '</div>';
+    console.log('§MEP_BOQ sections=0 total=0');
+    document.getElementById('report-content').innerHTML = html;
+    return;
+  }
+
+  // Charts — first thing the user sees after stat cards
+  html += '<div class="charts">';
+  html += '<div class="chart-box"><h2>MEP — ' + _t('t_cost_by_disc', 'Cost by Section') + '</h2><canvas id="chart1"></canvas></div>';
+  html += '<div class="chart-box"><h2>' + _t('h_material', 'Material') + ' / ' + _t('h_labour', 'Labour') + ' / ' + _t('h_equipment', 'Equipment') + '</h2><canvas id="chart2"></canvas></div>';
+  html += '<div class="chart-box"><h2>MEP % ' + _t('ui_building', 'Building') + '</h2><canvas id="chart3"></canvas></div>';
+  html += '</div>';
+
+  // Section tables
+  csvRows = [];
+  var itemCounter = {};
+
+  for (var si2 = 0; si2 < MEP_SECTION_ORDER.length; si2++) {
+    var secKey = MEP_SECTION_ORDER[si2];
+    var sec = sectionData[secKey];
+    if (!sec) continue;
+
+    html += '<div class="section-block">';
+    html += '<h3>' + _t('mep_section_lbl','Section') + ' ' + secKey + ' \u2014 ' + MEP_SECTIONS[secKey] + '</h3>';
+    html += '<table><tr><th>' + _t('h_item','Item') + '</th><th>' + _t('h_description','Description') + '</th><th>' + _t('h_quantity','Qty') + '</th><th>' + _t('h_uom','UOM') + '</th><th>' + _t('h_unit_rate','Rate') + ' (' + cur + ')</th><th>' + _t('h_total','Amount') + ' (' + cur + ')</th></tr>';
+
+    // Sort items by smm_section then cls
+    sec.items.sort(function(a, b) { return (a.smmSection + a.cls).localeCompare(b.smmSection + b.cls); });
+
+    // Aggregate by smm_section + cls (merge storeys)
+    var merged = {};
+    for (var mi = 0; mi < sec.items.length; mi++) {
+      var it2 = sec.items[mi];
+      var mkey = it2.smmSection + '|' + it2.cls;
+      if (!merged[mkey]) {
+        merged[mkey] = { smmSection: it2.smmSection, cls: it2.cls, desc: it2.desc, unit: it2.unit, rate: it2.rate, qty: 0, matTotal: 0, cnt: 0, storeys: [] };
+      }
+      merged[mkey].qty += it2.qty;
+      merged[mkey].matTotal += it2.matTotal;
+      merged[mkey].cnt += it2.cnt;
+      if (merged[mkey].storeys.indexOf(it2.storey) < 0) merged[mkey].storeys.push(it2.storey);
+    }
+
+    if (!itemCounter[secKey]) itemCounter[secKey] = 0;
+    var mergedKeys = Object.keys(merged).sort();
+    for (var mk = 0; mk < mergedKeys.length; mk++) {
+      var m = merged[mergedKeys[mk]];
+      itemCounter[secKey]++;
+      var itemId = m.smmSection + '.' + itemCounter[secKey];
+      var qtyDisplay = m.unit === 'EA' || m.unit === 'KG' ? Math.round(m.qty) : Math.round(m.qty * 100) / 100;
+
+      html += '<tr><td>' + itemId + '</td><td>' + m.desc + '</td>';
+      html += '<td class="num">' + qtyDisplay.toLocaleString() + '</td><td>' + m.unit + '</td>';
+      html += '<td class="num">' + _fmt(m.rate) + '</td><td class="num">' + _fmt(m.matTotal) + '</td></tr>';
+
+      // CSV row per storey
+      for (var sti = 0; sti < sec.items.length; sti++) {
+        var csv_it = sec.items[sti];
+        if (csv_it.smmSection === m.smmSection && csv_it.cls === m.cls) {
+          csvRows.push({
+            section: secKey, item: itemId, desc: csv_it.desc,
+            qty: Math.round(csv_it.qty * 100) / 100, uom: csv_it.unit,
+            rate: csv_it.rate, amount: Math.round(csv_it.matTotal * 100) / 100,
+            disc: csv_it.disc, cls: csv_it.cls, storey: csv_it.storey
+          });
+        }
+      }
+    }
+
+    html += '<tr><td colspan="5" class="section-total">' + _t('mep_section_lbl','Section') + ' ' + secKey + ' ' + _t('h_total','Total') + ':</td><td class="num section-total">' + _fmt(sec.matTotal) + '</td></tr>';
+    html += '</table></div>';
+  }
+
+  // Summary block
+  html += '<div class="summary-block"><h3>MEP ' + _t('s_exec_summary', 'COST SUMMARY') + '</h3>';
+  for (var si3 = 0; si3 < activeSections.length; si3++) {
+    var sk2 = activeSections[si3];
+    html += '<div class="summary-row"><span>Section ' + sk2 + ' — ' + MEP_SECTIONS[sk2] + '</span><span>' + cur + ' ' + _fmt(sectionData[sk2].matTotal) + '</span></div>';
+  }
+  html += '<div class="summary-row total"><span>MEP ' + _t('h_material','Material') + ' ' + _t('h_subtotal','Subtotal') + '</span><span>' + cur + ' ' + _fmt(mepMatTotal) + '</span></div>';
+  html += '<div class="summary-row"><span>MEP ' + _t('h_labour','Labour') + '</span><span>' + cur + ' ' + _fmt(mepLabTotal) + '</span></div>';
+  html += '<div class="summary-row"><span>MEP ' + _t('h_equipment','Equipment') + '</span><span>' + cur + ' ' + _fmt(mepEqTotal) + '</span></div>';
+  html += '<div class="summary-row grand"><span>MEP ' + _t('h_grand_total','TOTAL') + '</span><span>' + cur + ' ' + _fmt(mepTotal) + '</span></div>';
+  html += '<div class="summary-row"><span>MEP % ' + _t('ui_building','Building') + '</span><span>' + mepPct.toFixed(1) + '%</span></div>';
+  html += '</div>';
+
+  // Reinstatement block
+  html += '<div class="summary-block"><h3>' + _t('mep_reinstatement','REINSTATEMENT VALUE') + ' (MEP)</h3>';
+  html += '<div class="summary-row"><span>MEP ' + _t('h_subtotal','Subtotal') + '</span><span>' + cur + ' ' + _fmt(mepTotal) + '</span></div>';
+  html += '<div class="summary-row"><span>+ ' + _t('t_prov_sums','Preliminaries') + ' (' + (prov.preliminaries_pct || 10) + '%)</span><span>' + cur + ' ' + _fmt(prelim) + '</span></div>';
+  html += '<div class="summary-row"><span>+ ' + _t('s_prov','Professional Fees') + ' (' + (prov.professional_fees_pct || 8) + '%)</span><span>' + cur + ' ' + _fmt(profFees) + '</span></div>';
+  html += '<div class="summary-row"><span>+ ' + _t('mep_contingency','Contingency') + ' (' + (prov.contingency_pct || 5) + '%)</span><span>' + cur + ' ' + _fmt(contingency) + '</span></div>';
+  html += '<div class="summary-row grand"><span>' + _t('mep_insured','INSURED VALUE') + ' (MEP)</span><span>' + cur + ' ' + _fmt(insuredValue) + '</span></div>';
+  html += '</div>';
+
+  // Labour trade breakdown
+  var tradeKeys = Object.keys(tradeAgg).sort();
+  if (tradeKeys.length > 0) {
+    html += '<div class="section-block"><h3>' + _t('h_labour','Labour') + ' — ' + _t('h_trade','Trade') + '</h3>';
+    html += '<table><tr><th>' + _t('h_trade','Trade') + '</th><th>' + _t('h_man_days','Man-Days') + '</th><th>' + _t('h_crew_size','Crew') + '</th><th>' + _t('h_total','Cost') + ' (' + cur + ')</th></tr>';
+    var totalTradeCost = 0;
+    for (var ti = 0; ti < tradeKeys.length; ti++) {
+      var t = tradeAgg[tradeKeys[ti]];
+      totalTradeCost += t.cost;
+      html += '<tr><td>' + t.trade + '</td><td class="num">' + t.days.toFixed(1) + '</td><td class="num">' + t.crew + '</td><td class="num">' + _fmt(t.cost) + '</td></tr>';
+    }
+    html += '<tr><td colspan="3" class="section-total">' + _t('h_total','Total') + ':</td><td class="num section-total">' + _fmt(totalTradeCost) + '</td></tr>';
+    html += '</table></div>';
+  }
+
+  document.getElementById('report-content').innerHTML = html;
+
+  // Render charts
+  var secColors = ['#e040fb','#4fc3f7','#ff8c00','#4caf50','#ff4444','#90caf9','#aaa'];
+  var secLabels = activeSections.map(function(s) { return s + ' — ' + MEP_SECTIONS[s]; });
+  var secValues = activeSections.map(function(s) { return Math.round(sectionData[s].matTotal); });
+
+  new Chart(document.getElementById('chart1'), {
+    type: 'doughnut',
+    data: { labels: secLabels, datasets: [{ data: secValues, backgroundColor: secColors.slice(0, secLabels.length) }] },
+    options: { plugins: { legend: { position: 'bottom', labels: { color: '#ccc', font: { size: 10 } } } } }
+  });
+
+  var barLabels = activeSections.map(function(s) { return 'Section ' + s; });
+  new Chart(document.getElementById('chart2'), {
+    type: 'bar',
+    data: {
+      labels: barLabels,
+      datasets: [
+        { label: _t('h_material','Material'), data: activeSections.map(function(s) { return Math.round(sectionData[s].matTotal); }), backgroundColor: '#4fc3f7' },
+        { label: _t('h_labour','Labour'), data: activeSections.map(function(s) { return Math.round(sectionData[s].labTotal); }), backgroundColor: '#ff8c00' },
+        { label: _t('h_equipment','Equipment'), data: activeSections.map(function(s) { return Math.round(sectionData[s].eqTotal); }), backgroundColor: '#4caf50' }
+      ]
+    },
+    options: { scales: { x: { ticks: { color: '#ccc' } }, y: { ticks: { color: '#ccc' } } }, plugins: { legend: { labels: { color: '#ccc' } } } }
+  });
+
+  new Chart(document.getElementById('chart3'), {
+    type: 'doughnut',
+    data: {
+      labels: ['MEP', _t('ui_vo_existed','Other')],
+      datasets: [{ data: [Math.round(mepTotal), Math.round(buildingTotal - mepTotal)], backgroundColor: ['#e040fb', '#444'] }]
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { color: '#ccc', font: { size: 10 } } } } }
+  });
+
+  var sectionCount = activeSections.length;
+  console.log('§MEP_BOQ sections=' + sectionCount + ' items=' + mepItems.length + ' total=' + Math.round(mepTotal));
+  console.log('§REINSTATEMENT mep=' + Math.round(insuredValue) + ' building=' + Math.round(buildingTotal));
+  document.getElementById('status').textContent = _t('mep_complete','MEP BOQ complete') + ' \u2014 ' + sectionCount + ' ' + _t('mep_sections_lbl','sections') + ', ' + mepItems.length + ' ' + _t('h_item','items');
+
+  reportData = { mepTotal: mepTotal, buildingTotal: buildingTotal, insuredValue: insuredValue, sections: activeSections.length, items: mepItems.length };
+}
+
+// Wait for locale_loader to merge _TRL before rendering
+(function(){
+  var done = false;
+  function go() {
+    if (done) return; done = true;
+    init().catch(function(e) {
+      document.getElementById('report-content').innerHTML = '<div class="empty-msg">Error: ' + e.message + '</div>';
+      console.error('§MEP_ERROR ' + e.message);
+    });
+  }
+  window.addEventListener('trl-ready', go, {once:true});
+  setTimeout(go, 3000); // fallback if locale fetch fails
+})();
+</script>
+</body>
+</html>

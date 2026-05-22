@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>S228 — Mesh Import End-to-End Test</title>
+<style>
+body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+h2 { color: #0f3460; background: #e0e0e0; padding: 6px 12px; margin-top: 24px; }
+.pass { color: #4ade80; }
+.fail { color: #f87171; font-weight: bold; }
+.section { margin-left: 16px; }
+.info { color: #888; margin-left: 16px; }
+#summary { font-size: 1.3em; margin-top: 24px; padding: 12px; border: 2px solid; }
+#summary.all-pass { border-color: #4ade80; color: #4ade80; }
+#summary.has-fail { border-color: #f87171; color: #f87171; }
+</style>
+</head>
+<body>
+<h1>S228 — Mesh Import E2E: OBJ → sceneToDb → buildImportDBs → SQL</h1>
+<div id="log"></div>
+<div id="summary"></div>
+
+<!-- Three.js r128 (same as viewer) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- OBJLoader for r128 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<!-- sql.js for DB round-trip -->
+<script src="https://sql.js.org/dist/sql-wasm.js"></script>
+<!-- S228a pure layer -->
+<script src="../semantic_enrichment.js"></script>
+<script src="../scene_to_db.js"></script>
+<!-- DB builder (shared with IFC) -->
+<script src="../import_db_builder.js"></script>
+
+<script>
+var totalPass = 0, totalFail = 0;
+var logEl = document.getElementById('log');
+
+function log(msg, cls) {
+  var div = document.createElement('div');
+  div.className = (cls || 'info') + ' section';
+  div.textContent = msg;
+  logEl.appendChild(div);
+}
+
+function heading(msg) {
+  var h = document.createElement('h2');
+  h.textContent = msg;
+  logEl.appendChild(h);
+}
+
+function assert(cond, label) {
+  if (cond) { totalPass++; log('PASS: ' + label, 'pass'); }
+  else { totalFail++; log('FAIL: ' + label, 'fail'); }
+}
+
+function assertEq(actual, expected, label) {
+  var l = (label || '') + ' — expected ' + JSON.stringify(expected) + ', got ' + JSON.stringify(actual);
+  if (actual === expected) { totalPass++; log('PASS: ' + l, 'pass'); }
+  else { totalFail++; log('FAIL: ' + l, 'fail'); }
+}
+
+function showSummary() {
+  var summaryEl = document.getElementById('summary');
+  summaryEl.textContent = 'TOTAL: ' + totalPass + ' PASS, ' + totalFail + ' FAIL';
+  summaryEl.className = (totalFail === 0) ? 'all-pass' : 'has-fail';
+  console.log('S228 E2E: ' + totalPass + ' PASS, ' + totalFail + ' FAIL');
+}
+
+(async function() {
+  var STD = self.SceneToDb;
+  var SE = self.SemanticEnrichment;
+  var SQL;
+
+  try {
+    SQL = await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+    log('sql.js loaded');
+  } catch(err) {
+    log('FATAL: sql.js failed to load: ' + err.message, 'fail');
+    totalFail++;
+    showSummary();
+    return;
+  }
+
+  // ═══════════════════════════════════════════════
+  // TEST 1: engel-house.obj → full pipeline
+  // Issue: verify real OBJ parses into valid DB
+  // ═══════════════════════════════════════════════
+  heading('Test 1: engel-house.obj — Full Pipeline');
+
+  try {
+    var resp1 = await fetch('engel-house.obj');
+    var text1 = await resp1.text();
+    log('Loaded engel-house.obj: ' + (text1.length / 1024).toFixed(0) + 'KB');
+
+    var loader1 = new THREE.OBJLoader();
+    var engelScene = loader1.parse(text1);
+    log('Parsed OBJ scene');
+
+    // Step 1: sceneToDb
+    var engelResult = STD.sceneToDb(engelScene, 'engel-house.obj', 'obj', { yUpToZUp: true });
+
+    assert(engelResult.elements.length > 0, '§9.2-COUNT has elements (' + engelResult.elements.length + ')');
+    assertEq(engelResult.meta.sourceFormat, '.obj', 'sourceFormat is .obj');
+    assertEq(engelResult.meta.name, 'engel-house', 'name extracted');
+
+    // §9.2-GUID: all unique
+    var engelGuids = engelResult.elements.map(function(e) { return e.guid; });
+    assertEq(new Set(engelGuids).size, engelGuids.length, '§9.2-GUID all unique');
+
+    // §9.2-STOREY: has storeys
+    assert(engelResult.meta.storeys.length >= 1, '§9.2-STOREY has storeys (' + engelResult.meta.storeys.join(', ') + ')');
+
+    // Step 2: buildImportDBs
+    var engelDbs = buildImportDBs(SQL, engelResult);
+    assert(engelDbs.extractedDb.byteLength > 0, 'DB produced');
+
+    // Step 3: SQL queries
+    var db1 = new SQL.Database(new Uint8Array(engelDbs.extractedDb));
+
+    var count1 = db1.exec('SELECT COUNT(*) FROM elements_meta')[0].values[0][0];
+    assertEq(count1, engelResult.elements.length, '§9.2-COUNT DB row count matches');
+
+    var guidCount1 = db1.exec('SELECT COUNT(DISTINCT guid) FROM elements_meta')[0].values[0][0];
+    assertEq(guidCount1, count1, '§9.2-GUID distinct count matches total');
+
+    var storeys1 = db1.exec('SELECT DISTINCT storey FROM elements_meta WHERE storey IS NOT NULL');
+    assert(storeys1[0].values.length >= 1, '§9.2-STOREY DB has storey rows');
+
+    var building1 = db1.exec('SELECT DISTINCT building FROM elements_meta')[0].values[0][0];
+    assertEq(building1, 'engel-house', 'building name = engel-house');
+
+    var geomCount1 = db1.exec('SELECT COUNT(*) FROM component_geometries')[0].values[0][0];
+    assert(geomCount1 > 0, 'component_geometries has rows (' + geomCount1 + ')');
+
+    var transforms1 = db1.exec('SELECT COUNT(*) FROM element_transforms')[0].values[0][0];
+    assertEq(transforms1, count1, 'element_transforms matches element count');
+
+    var instances1 = db1.exec('SELECT COUNT(*) FROM element_instances')[0].values[0][0];
+    assertEq(instances1, count1, 'element_instances matches element count');
+
+    // §9.2-SCALE: coordinates in metres (should be < 100m for a house)
+    var maxCoord1 = db1.exec('SELECT MAX(ABS(center_x)), MAX(ABS(center_y)), MAX(ABS(center_z)) FROM element_transforms')[0].values[0];
+    var maxC = Math.max(maxCoord1[0], maxCoord1[1], maxCoord1[2]);
+    assert(maxC < 100, '§9.2-SCALE coordinates in metres (max=' + maxC.toFixed(1) + 'm)');
+
+    log('Elements: ' + count1 + ', Geometries: ' + geomCount1 + ', Storeys: ' + storeys1[0].values.map(function(r){return r[0]}).join(', '));
+    log('Disciplines: ' + JSON.stringify(engelResult.meta.disciplines));
+    log('DB size: ' + (engelDbs.extractedDb.byteLength / 1024).toFixed(0) + 'KB');
+
+    db1.close();
+  } catch(err) {
+    totalFail++;
+    log('FAIL: engel-house pipeline error — ' + err.message, 'fail');
+    console.error(err);
+  }
+
+  // ═══════════════════════════════════════════════
+  // TEST 2: seaside-villa.obj — auto-scale (mm → m)
+  // Issue: verify mm-scale model gets auto-scaled
+  // ═══════════════════════════════════════════════
+  heading('Test 2: seaside-villa.obj — Auto-Scale + Full Pipeline');
+
+  try {
+    var resp2 = await fetch('seaside-villa.obj');
+    var text2 = await resp2.text();
+    log('Loaded seaside-villa.obj: ' + (text2.length / 1024).toFixed(0) + 'KB');
+
+    var loader2 = new THREE.OBJLoader();
+    var villaScene = loader2.parse(text2);
+    log('Parsed OBJ scene');
+
+    var villaResult = STD.sceneToDb(villaScene, 'seaside-villa.obj', 'obj', { yUpToZUp: true });
+
+    assert(villaResult.elements.length > 0, '§9.2-COUNT has elements (' + villaResult.elements.length + ')');
+    assertEq(villaResult.meta.sourceFormat, '.obj', 'sourceFormat is .obj');
+
+    // §9.2-SCALE: seaside-villa is in cm (height ~800), auto-scale ÷100 → coords < 100m
+    var villaT = villaResult.transforms[0];
+    assert(Math.abs(villaT.cx) < 100, '§9.2-SCALE auto-scaled cx (got ' + villaT.cx.toFixed(3) + 'm)');
+    assert(Math.abs(villaT.cy) < 100, '§9.2-SCALE auto-scaled cy (got ' + villaT.cy.toFixed(3) + 'm)');
+
+    // GUIDs unique
+    var villaGuids = villaResult.elements.map(function(e) { return e.guid; });
+    assertEq(new Set(villaGuids).size, villaGuids.length, '§9.2-GUID all unique');
+
+    // Build DB
+    var villaDbs = buildImportDBs(SQL, villaResult);
+    var db2 = new SQL.Database(new Uint8Array(villaDbs.extractedDb));
+
+    var count2 = db2.exec('SELECT COUNT(*) FROM elements_meta')[0].values[0][0];
+    assertEq(count2, villaResult.elements.length, '§9.2-COUNT DB matches');
+
+    var building2 = db2.exec('SELECT DISTINCT building FROM elements_meta')[0].values[0][0];
+    assertEq(building2, 'seaside-villa', 'building name = seaside-villa');
+
+    // Scale check via DB
+    var maxCoord2 = db2.exec('SELECT MAX(ABS(center_x)), MAX(ABS(center_y)), MAX(ABS(center_z)) FROM element_transforms')[0].values[0];
+    var maxC2 = Math.max(maxCoord2[0], maxCoord2[1], maxCoord2[2]);
+    assert(maxC2 < 100, '§9.2-SCALE DB coords in metres (max=' + maxC2.toFixed(1) + 'm)');
+
+    log('Elements: ' + count2 + ', Storeys: ' + villaResult.meta.storeys.join(', '));
+    log('Disciplines: ' + JSON.stringify(villaResult.meta.disciplines));
+    log('DB size: ' + (villaDbs.extractedDb.byteLength / 1024).toFixed(0) + 'KB');
+
+    db2.close();
+  } catch(err) {
+    totalFail++;
+    log('FAIL: seaside-villa pipeline error — ' + err.message, 'fail');
+    console.error(err);
+  }
+
+  // ═══════════════════════════════════════════════
+  // TEST 3: Worker integration (if available)
+  // Issue: verify worker round-trip matches main-thread result
+  // ═══════════════════════════════════════════════
+  heading('Test 3: Worker Integration');
+
+  try {
+    var resp3 = await fetch('engel-house.obj');
+    var workerBuf = await resp3.arrayBuffer();
+
+    var workerResult = await new Promise(function(resolve, reject) {
+      var w = new Worker('../mesh_import_worker.js');
+      var timeout = setTimeout(function() {
+        w.terminate();
+        reject(new Error('Worker timed out after 30s'));
+      }, 30000);
+
+      w.onmessage = function(e) {
+        if (e.data.type === 'progress') {
+          log('  Worker: ' + e.data.phase + ' (' + e.data.pct + '%)');
+          return;
+        }
+        clearTimeout(timeout);
+        w.terminate();
+        if (e.data.type === 'error') reject(new Error(e.data.message));
+        else resolve(e.data);
+      };
+      w.onerror = function(err) {
+        clearTimeout(timeout);
+        w.terminate();
+        reject(err);
+      };
+      w.postMessage({ arrayBuffer: workerBuf, filename: 'engel-house.obj', ext: 'obj' }, [workerBuf]);
+    });
+
+    assertEq(workerResult.type, 'done', 'worker returned done');
+    assert(workerResult.elements.length > 0, 'worker has elements (' + workerResult.elements.length + ')');
+    assertEq(workerResult.meta.sourceFormat, '.obj', 'worker sourceFormat');
+    assertEq(workerResult.meta.name, 'engel-house', 'worker name');
+
+    // Build DB from worker result
+    var workerDbs = buildImportDBs(SQL, workerResult);
+    assert(workerDbs.extractedDb.byteLength > 0, 'worker DB produced');
+
+    var db3 = new SQL.Database(new Uint8Array(workerDbs.extractedDb));
+    var count3 = db3.exec('SELECT COUNT(*) FROM elements_meta')[0].values[0][0];
+    assertEq(count3, workerResult.elements.length, 'worker DB count matches');
+    db3.close();
+
+    log('Worker produced ' + workerResult.elements.length + ' elements, DB=' +
+      (workerDbs.extractedDb.byteLength / 1024).toFixed(0) + 'KB');
+
+  } catch(err) {
+    totalFail++;
+    log('FAIL: Worker test — ' + err.message, 'fail');
+    log('  (Worker tests require serving from http:// not file://)', 'info');
+    console.error(err);
+  }
+
+  showSummary();
+})();
+</script>
+</body>
+</html>

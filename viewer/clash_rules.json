@@ -1,0 +1,99 @@
+{
+  "clash_rules": [
+    {
+      "name": "ARC vs STR",
+      "source": { "discipline": "ARC" },
+      "target": { "discipline": "STR" },
+      "tolerance_m": 0.025,
+      "ignore_classes": ["IfcOpeningElement", "IfcSpace", "IfcBuildingElementProxy"]
+    },
+    {
+      "name": "MEP vs STR",
+      "source": { "discipline": "MEP" },
+      "target": { "discipline": "STR" },
+      "tolerance_m": 0.050,
+      "ignore_classes": ["IfcOpeningElement", "IfcSpace"]
+    },
+    {
+      "name": "MEP vs ARC",
+      "source": { "discipline": "MEP" },
+      "target": { "discipline": "ARC" },
+      "tolerance_m": 0.025,
+      "ignore_classes": ["IfcOpeningElement", "IfcSpace", "IfcCovering"]
+    },
+    {
+      "name": "ELEC vs ARC",
+      "source": { "discipline": "ELEC" },
+      "target": { "discipline": "ARC" },
+      "tolerance_m": 0.025,
+      "ignore_classes": ["IfcOpeningElement", "IfcSpace"]
+    },
+    {
+      "name": "ELEC vs STR",
+      "source": { "discipline": "ELEC" },
+      "target": { "discipline": "STR" },
+      "tolerance_m": 0.050,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "ELEC vs MEP",
+      "source": { "discipline": "ELEC" },
+      "target": { "discipline": "MEP" },
+      "tolerance_m": 0.025,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "FP vs ARC",
+      "source": { "discipline": "FP" },
+      "target": { "discipline": "ARC" },
+      "tolerance_m": 0.025,
+      "ignore_classes": ["IfcOpeningElement", "IfcSpace"]
+    },
+    {
+      "name": "FP vs STR",
+      "source": { "discipline": "FP" },
+      "target": { "discipline": "STR" },
+      "tolerance_m": 0.050,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "FP vs MEP",
+      "source": { "discipline": "FP" },
+      "target": { "discipline": "MEP" },
+      "tolerance_m": 0.050,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "ACMV vs ARC",
+      "source": { "discipline": "ACMV" },
+      "target": { "discipline": "ARC" },
+      "tolerance_m": 0.050,
+      "ignore_classes": ["IfcOpeningElement", "IfcCovering"]
+    },
+    {
+      "name": "ACMV vs STR",
+      "source": { "discipline": "ACMV" },
+      "target": { "discipline": "STR" },
+      "tolerance_m": 0.075,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "ACMV vs MEP",
+      "source": { "discipline": "ACMV" },
+      "target": { "discipline": "MEP" },
+      "tolerance_m": 0.050,
+      "ignore_classes": ["IfcOpeningElement"]
+    }
+  ],
+  "severity": {
+    "hard":      { "min_overlap_m": 0.050, "color": "#ff0000", "label": "Hard clash" },
+    "soft":      { "min_overlap_m": 0.010, "color": "#ff8c00", "label": "Soft clash" },
+    "clearance": { "max_gap_m":     0.100, "color": "#ffff00", "label": "Clearance violation" }
+  },
+  "display": {
+    "max_visible": 20,
+    "max_report": 200,
+    "dim_opacity": 0.1,
+    "pulse_speed_s": 1.5
+  }
+}

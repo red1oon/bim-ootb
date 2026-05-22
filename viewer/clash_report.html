@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BIM OOTB — Clash Coordination Report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a1a2e; color:#e0e0e0; font-family:Segoe UI,sans-serif; padding:20px; }
+  h1 { color:#4fc3f7; font-size:20px; margin-bottom:4px; }
+  .subtitle { color:#888; font-size:12px; margin-bottom:16px; }
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:1200px; }
+  .chart-box { background:rgba(255,255,255,0.05); border-radius:8px; padding:16px; border:1px solid rgba(255,255,255,0.08); }
+  .chart-box h2 { color:#4fc3f7; font-size:14px; margin-bottom:8px; }
+  .chart-box.full { grid-column:1/-1; }
+  canvas { max-width:100%; }
+  table { border-collapse:collapse; width:100%; font-size:11px; margin-top:8px; }
+  th { background:rgba(79,195,247,0.15); color:#4fc3f7; text-align:left; padding:4px 8px; position:sticky; top:0; }
+  td { padding:3px 8px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  tr:hover td { background:rgba(255,255,255,0.05); }
+  .toolbar { position:fixed; top:16px; right:16px; z-index:10; display:flex; gap:8px; }
+  .toolbar button { background:#333; color:#fff; border:1px solid #555; border-radius:4px; padding:6px 12px; cursor:pointer; font-size:12px; }
+  .toolbar button:hover { background:#4fc3f7; color:#000; }
+  .stat-cards { display:flex; gap:12px; margin-bottom:16px; }
+  .stat-card { background:rgba(255,255,255,0.05); border-radius:8px; padding:12px 20px; text-align:center; border:1px solid rgba(255,255,255,0.08); flex:1; }
+  .stat-card .num { font-size:28px; font-weight:bold; }
+  .stat-card .lbl { font-size:11px; color:#888; }
+  #status { color:#4fc3f7; font-size:12px; margin-top:12px; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button onclick="_shareReport()">Share Report</button>
+  <button onclick="_copyUrl(this)" title="Copy shareable link">&#128203;</button>
+  <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" title="Change locale" style="font-size:18px">&#127760;</button>
+  <button onclick="location.href='/'" title="Home" style="font-size:18px">&#127968;</button>
+</div>
+
+<div id="report-content">Loading...</div>
+<div id="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
+<script src="locale_loader.js?v=6"></script>
+
+<script>
+var params = new URLSearchParams(location.search);
+var DB_URL = params.get('db') || '';
+var BLD = params.get('bld') || '';
+var RULES_URL = params.get('rules') || '';
+
+function _log(msg) { console.log(msg); }
+
+function _copyUrl(btn) {
+  navigator.clipboard.writeText(location.href).then(function() {
+    var orig = btn.innerHTML; btn.innerHTML = '\u2713'; btn.style.color = '#44cc44';
+    setTimeout(function() { btn.innerHTML = orig; btn.style.color = ''; }, 1500);
+  }).catch(function() { prompt('Copy this URL:', location.href); });
+}
+
+function _shareReport() {
+  var html = document.documentElement.outerHTML;
+  var blob = new Blob([html], { type: 'text/html' });
+  var a = document.createElement('a');
+  a.download = 'ClashReport_' + (BLD || 'building').replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().slice(0, 10) + '.html';
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:rgba(30,30,50,0.97);border-radius:12px;padding:24px 32px;border:1px solid rgba(79,195,247,0.5);text-align:center;font-family:Segoe UI,sans-serif';
+  d.innerHTML = '<div style="color:#4fc3f7;font-size:16px;font-weight:bold;margin-bottom:12px">Report Downloaded</div>' +
+    '<div style="color:#ccc;font-size:13px;margin-bottom:16px;max-width:360px">HTML file saved. Share via WhatsApp, Email, or any medium.<br>Recipient opens it in any browser — full charts, no setup needed.</div>' +
+    '<button onclick="this.parentElement.remove()" style="padding:8px 24px;background:#4fc3f7;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">OK</button>';
+  document.body.appendChild(d);
+}
+
+// ── DB loader (IDB cache first, then network) ──
+async function fetchDbBuffer(url) {
+  var cacheDb = await new Promise(function(resolve) {
+    var req = indexedDB.open('bim_ootb_cache', 1);
+    req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+    req.onsuccess = function() { resolve(req.result); };
+    req.onerror = function() { resolve(null); };
+  });
+  if (cacheDb) {
+    var cached = await new Promise(function(resolve) {
+      var tx = cacheDb.transaction('dbs', 'readonly');
+      var r = tx.objectStore('dbs').get(url);
+      r.onsuccess = function() { resolve(r.result || null); };
+      r.onerror = function() { resolve(null); };
+    });
+    if (cached) {
+      _log('§CLASH_DB_SOURCE source=idb url=' + url.split('/').pop() + ' size=' + (cached.byteLength / 1024).toFixed(0) + 'KB');
+      return cached;
+    }
+  }
+  _log('§CLASH_DB_SOURCE source=oci url=' + url.split('/').pop());
+  return fetch(url).then(function(r) { return r.arrayBuffer(); });
+}
+
+// ── DB query helper ──
+var db = null;
+function dbQuery(sql) {
+  var result = [];
+  try {
+    var stmt = db.prepare(sql);
+    while (stmt.step()) result.push(stmt.get());
+    stmt.free();
+  } catch (e) { _log('§CLASH_SQL_ERR ' + e.message); }
+  return result;
+}
+
+// ── Severity classifier ──
+function clashSeverity(overlap, rules) {
+  var sev = rules.severity;
+  if (overlap >= sev.hard.min_overlap_m) return { level: 'hard', color: sev.hard.color, label: sev.hard.label };
+  if (overlap >= sev.soft.min_overlap_m) return { level: 'soft', color: sev.soft.color, label: sev.soft.label };
+  return { level: 'clearance', color: sev.clearance.color, label: sev.clearance.label };
+}
+
+// ── R-tree clash counter (count only) ──
+function countClashesRtree(rules, discA, discB) {
+  var ignoreSet = {};
+  rules.clash_rules.forEach(function(r) {
+    (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
+  });
+  var ignoreFilter = Object.keys(ignoreSet).length ?
+    ' AND m.ifc_class NOT IN (' + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ')' : '';
+
+  var bMap = {};
+  dbQuery(
+    'SELECT t.rowid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, m.guid' +
+    ' FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid' +
+    " WHERE m.discipline = '" + discB + "'" + ignoreFilter + ' AND t.bbox_x IS NOT NULL'
+  ).forEach(function(r) { bMap[r[0]] = r; });
+
+  var rowsA = dbQuery(
+    'SELECT t.rowid, m.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z' +
+    ' FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid' +
+    " WHERE m.discipline = '" + discA + "'" + ignoreFilter + ' AND t.bbox_x IS NOT NULL'
+  );
+
+  var count = 0, seen = {};
+  for (var i = 0; i < rowsA.length; i++) {
+    var ra = rowsA[i];
+    var minX = ra[2] - ra[5] / 2, maxX = ra[2] + ra[5] / 2;
+    var minY = ra[3] - ra[6] / 2, maxY = ra[3] + ra[6] / 2;
+    var minZ = ra[4] - ra[7] / 2, maxZ = ra[4] + ra[7] / 2;
+    var cands;
+    try {
+      cands = dbQuery('SELECT r.id FROM elements_rtree r WHERE ' +
+        'r.maxX >= ' + minX + ' AND r.minX <= ' + maxX + ' AND ' +
+        'r.maxY >= ' + minY + ' AND r.minY <= ' + maxY + ' AND ' +
+        'r.maxZ >= ' + minZ + ' AND r.minZ <= ' + maxZ);
+    } catch (e) { continue; }
+    for (var ci = 0; ci < cands.length; ci++) {
+      var rb = bMap[cands[ci][0]];
+      if (!rb || rb[7] === ra[1]) continue;
+      var key = ra[1] < rb[7] ? ra[1] + '|' + rb[7] : rb[7] + '|' + ra[1];
+      if (seen[key]) continue;
+      seen[key] = 1;
+      var bMinX = rb[1] - rb[4] / 2, bMaxX = rb[1] + rb[4] / 2;
+      var bMinY = rb[2] - rb[5] / 2, bMaxY = rb[2] + rb[5] / 2;
+      var bMinZ = rb[3] - rb[6] / 2, bMaxZ = rb[3] + rb[6] / 2;
+      if (maxX > bMinX && minX < bMaxX && maxY > bMinY && minY < bMaxY && maxZ > bMinZ && minZ < bMaxZ) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+// ── R-tree clash query (returns rows with details) ──
+function queryClashesRtree(rules, discA, discB, maxRows) {
+  var ignoreSet = {};
+  rules.clash_rules.forEach(function(r) {
+    (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
+  });
+  var ignoreFilter = Object.keys(ignoreSet).length ?
+    ' AND m.ifc_class NOT IN (' + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ')' : '';
+
+  var bMap = {};
+  dbQuery(
+    'SELECT t.rowid, m.guid, m.ifc_class, m.element_name,' +
+    ' t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z' +
+    ' FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid' +
+    " WHERE m.discipline = '" + discB + "'" + ignoreFilter + ' AND t.bbox_x IS NOT NULL'
+  ).forEach(function(r) { bMap[r[0]] = r; });
+
+  var rowsA = dbQuery(
+    'SELECT t.rowid, m.guid, m.ifc_class, m.element_name, m.storey,' +
+    ' t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z' +
+    ' FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid' +
+    " WHERE m.discipline = '" + discA + "'" + ignoreFilter + ' AND t.bbox_x IS NOT NULL'
+  );
+
+  var results = [], seen = {};
+  for (var i = 0; i < rowsA.length && results.length < maxRows; i++) {
+    var ra = rowsA[i];
+    var minX = ra[5] - ra[8] / 2, maxX = ra[5] + ra[8] / 2;
+    var minY = ra[6] - ra[9] / 2, maxY = ra[6] + ra[9] / 2;
+    var minZ = ra[7] - ra[10] / 2, maxZ = ra[7] + ra[10] / 2;
+    var cands;
+    try {
+      cands = dbQuery('SELECT r.id FROM elements_rtree r WHERE ' +
+        'r.maxX >= ' + minX + ' AND r.minX <= ' + maxX + ' AND ' +
+        'r.maxY >= ' + minY + ' AND r.minY <= ' + maxY + ' AND ' +
+        'r.maxZ >= ' + minZ + ' AND r.minZ <= ' + maxZ);
+    } catch (e) { continue; }
+    for (var ci = 0; ci < cands.length && results.length < maxRows; ci++) {
+      var rb = bMap[cands[ci][0]];
+      if (!rb) continue;
+      if (rb[1] === ra[1]) continue;
+      var key = ra[1] < rb[1] ? ra[1] + '|' + rb[1] : rb[1] + '|' + ra[1];
+      if (seen[key]) continue;
+      seen[key] = 1;
+      var bMinX = rb[4] - rb[7] / 2, bMaxX = rb[4] + rb[7] / 2;
+      var bMinY = rb[5] - rb[8] / 2, bMaxY = rb[5] + rb[8] / 2;
+      var bMinZ = rb[6] - rb[9] / 2, bMaxZ = rb[6] + rb[9] / 2;
+      if (maxX <= bMinX || minX >= bMaxX) continue;
+      if (maxY <= bMinY || minY >= bMaxY) continue;
+      if (maxZ <= bMinZ || minZ >= bMaxZ) continue;
+      var ox = Math.min(maxX, bMaxX) - Math.max(minX, bMinX);
+      var oy = Math.min(maxY, bMaxY) - Math.max(minY, bMinY);
+      var oz = Math.min(maxZ, bMaxZ) - Math.max(minZ, bMinZ);
+      var overlap = Math.min(ox, oy, oz);
+      results.push([ra[1], rb[1], ra[2], rb[2], discA, discB, ra[3], rb[3], overlap]);
+    }
+  }
+  _log('§CLASH_QUERY ' + discA + ' vs ' + discB + ' A=' + rowsA.length + ' B=' + Object.keys(bMap).length + ' hits=' + results.length);
+  return results;
+}
+
+// ── Main init ──
+async function init() {
+  var contentEl = document.getElementById('report-content');
+  var statusEl = document.getElementById('status');
+
+  if (!DB_URL) {
+    contentEl.textContent = 'No ?db= parameter \u2014 append ?db=URL&bld=NAME to the URL.';
+    return;
+  }
+
+  contentEl.textContent = 'Loading DB...';
+  var SQL = await initSqlJs({
+    locateFile: function(f) { return 'https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/' + f; }
+  });
+  var buf = await fetchDbBuffer(DB_URL);
+  db = new SQL.Database(new Uint8Array(buf));
+  _log('§CLASH_DB_OPEN size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
+
+  var bldName = BLD;
+  if (!bldName) {
+    var r = db.exec("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1");
+    bldName = r.length ? r[0].values[0][0] : 'Unknown';
+  }
+
+  contentEl.textContent = 'Loading clash rules...';
+  var rulesUrl = RULES_URL || (function() {
+    var m = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
+    return m ? m[1] + 'viewer/clash_rules.json' : 'clash_rules.json';
+  })();
+  var rulesResp = await fetch(rulesUrl);
+  if (!rulesResp.ok) { contentEl.textContent = 'Failed to load clash_rules.json (' + rulesResp.status + ')'; return; }
+  var rules = await rulesResp.json();
+  _log('§CLASH_RULES loaded ' + rules.clash_rules.length + ' rules');
+
+  var MAX_REPORT = (rules.display && rules.display.max_report) || 200;
+  var date = new Date().toISOString().slice(0, 10);
+  var pairLabel = 'All Pairs';
+  var storey = 'All';
+
+  // ── Compute envelopes per discipline ──
+  contentEl.textContent = 'Computing discipline envelopes...';
+  var envs = {};
+  dbQuery(
+    'SELECT m.discipline, MIN(t.center_x-t.bbox_x/2), MAX(t.center_x+t.bbox_x/2),' +
+    ' MIN(t.center_y-t.bbox_y/2), MAX(t.center_y+t.bbox_y/2),' +
+    ' MIN(t.center_z-t.bbox_z/2), MAX(t.center_z+t.bbox_z/2)' +
+    ' FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid' +
+    ' WHERE m.discipline IS NOT NULL GROUP BY m.discipline'
+  ).forEach(function(r) {
+    envs[r[0]] = { minX: r[1], maxX: r[2], minY: r[3], maxY: r[4], minZ: r[5], maxZ: r[6] };
+  });
+
+  // ── Count clashes per pair ──
+  var pairCounts = {};
+  var pairQueue = [];
+  rules.clash_rules.forEach(function(r) {
+    var key = r.source.discipline + '|' + r.target.discipline;
+    var eA = envs[r.source.discipline], eB = envs[r.target.discipline];
+    if (!eA || !eB ||
+        eA.minX >= eB.maxX || eA.maxX <= eB.minX ||
+        eA.minY >= eB.maxY || eA.maxY <= eB.minY ||
+        eA.minZ >= eB.maxZ || eA.maxZ <= eB.minZ) {
+      pairCounts[key] = 0; return;
+    }
+    pairQueue.push({ key: key, discA: r.source.discipline, discB: r.target.discipline });
+  });
+
+  var total = rules.clash_rules.length;
+  var done = total - pairQueue.length;
+  for (var qi = 0; qi < pairQueue.length; qi++) {
+    var p = pairQueue[qi];
+    statusEl.textContent = 'Counting ' + p.discA + ' vs ' + p.discB + '\u2026 ' + (done + qi + 1) + '/' + total;
+    pairCounts[p.key] = countClashesRtree(rules, p.discA, p.discB);
+    if (qi % 2 === 1) await new Promise(function(r) { setTimeout(r, 5); });
+  }
+
+  // ── Load sample clashes for detail charts ──
+  statusEl.textContent = 'Loading clash details...';
+  var allClashes = [];
+  var perPairCap = Math.max(20, Math.floor(MAX_REPORT / Math.max(Object.keys(pairCounts).length, 1)));
+  rules.clash_rules.forEach(function(r) {
+    var key = r.source.discipline + '|' + r.target.discipline;
+    if (!pairCounts[key]) return;
+    var rows = queryClashesRtree(rules, r.source.discipline, r.target.discipline, perPairCap);
+    rows.forEach(function(row) { allClashes.push(row); });
+  });
+  // Sort by overlap desc
+  allClashes.sort(function(a, b) { return (b[8] || 0) - (a[8] || 0); });
+  if (allClashes.length > MAX_REPORT) allClashes = allClashes.slice(0, MAX_REPORT);
+  _log('§CLASH_LOADED total_clashes=' + allClashes.length);
+
+  var totalCount = 0;
+  Object.keys(pairCounts).forEach(function(k) { totalCount += pairCounts[k]; });
+  if (!totalCount) totalCount = allClashes.length;
+
+  // ── Build pair summary (same 8-column structure) ──
+  var pairMap = {};
+  rules.clash_rules.forEach(function(r) {
+    var key = r.source.discipline + '|' + r.target.discipline;
+    var count = pairCounts[key] || 0;
+    var tol = (r.tolerance_m * 1000).toFixed(0);
+    if (!pairMap[key]) pairMap[key] = { src: r.source.discipline, tgt: r.target.discipline, count: count, tolMm: tol, reviewed: 0, resolved: 0, accepted: 0 };
+  });
+  var pairSummary = [];
+  Object.keys(pairMap).forEach(function(k) { pairSummary.push(pairMap[k]); });
+
+  // ── Compute chart data ──
+  var sc = { 'New': 0, 'Reviewed': 0, 'Resolved': 0, 'Accepted': 0 };
+  var sevCounts = {};
+  var classCounts = {};
+  var discPairCounts = {};
+  var discInvolvement = {};
+  var elementFreq = {};
+  allClashes.forEach(function(c) {
+    var overlap = (typeof c[8] === 'number') ? c[8] : 0;
+    var sev = clashSeverity(overlap, rules);
+    sc['New']++;
+    sevCounts[sev.label] = (sevCounts[sev.label] || 0) + 1;
+    var clsA = (c[2] || '?').replace('Ifc', '').replace('StandardCase', '');
+    var clsB = (c[3] || '?').replace('Ifc', '').replace('StandardCase', '');
+    classCounts[clsA + ' vs ' + clsB] = (classCounts[clsA + ' vs ' + clsB] || 0) + 1;
+    var discPair = (c[4] || '?') + ' vs ' + (c[5] || '?');
+    discPairCounts[discPair] = (discPairCounts[discPair] || 0) + 1;
+    discPairCounts['_listed_' + (c[4] || '') + '|' + (c[5] || '')] = 1;
+    var dA = c[4] || '?', dB = c[5] || '?';
+    discInvolvement[dA] = (discInvolvement[dA] || 0) + 1;
+    discInvolvement[dB] = (discInvolvement[dB] || 0) + 1;
+    var nameA = (c[6] || '').replace('Ifc', '') || c[0];
+    var nameB = (c[7] || '').replace('Ifc', '') || c[1];
+    elementFreq[nameA] = (elementFreq[nameA] || 0) + 1;
+    elementFreq[nameB] = (elementFreq[nameB] || 0) + 1;
+  });
+
+  // Merge R-tree counts for pairs not in loaded clashes
+  Object.keys(pairCounts).forEach(function(k) {
+    var parts = k.split('|');
+    var label = parts[0] + ' vs ' + parts[1];
+    if (!discPairCounts[label]) discPairCounts[label] = pairCounts[k];
+    else if (!discPairCounts['_listed_' + k]) discPairCounts[label] = pairCounts[k];
+  });
+  Object.keys(discPairCounts).forEach(function(k) { if (k.indexOf('_listed_') === 0) delete discPairCounts[k]; });
+
+  var classPairs = Object.keys(classCounts).sort(function(a, b) { return classCounts[b] - classCounts[a]; });
+  var discPairs = Object.keys(discPairCounts).sort(function(a, b) { return discPairCounts[b] - discPairCounts[a]; });
+
+  // Radar data
+  var discElCounts = {};
+  dbQuery('SELECT discipline, COUNT(*) FROM elements_meta WHERE discipline IS NOT NULL GROUP BY discipline')
+    .forEach(function(r) { discElCounts[r[0]] = r[1]; });
+  var allDiscs = Object.keys(discElCounts).sort();
+  var radarDiscs = [], radarElements = [], radarOverlaps = [], radarRules = [];
+  allDiscs.forEach(function(d) {
+    radarDiscs.push(d);
+    radarElements.push(discElCounts[d] || 0);
+    var overlapN = 0;
+    var eA = envs[d];
+    if (eA) allDiscs.forEach(function(d2) {
+      if (d2 === d) return;
+      var eB = envs[d2];
+      if (eB && eA.minX < eB.maxX && eA.maxX > eB.minX &&
+          eA.minY < eB.maxY && eA.maxY > eB.minY &&
+          eA.minZ < eB.maxZ && eA.maxZ > eB.minZ) overlapN++;
+    });
+    radarOverlaps.push(overlapN);
+    radarRules.push(rules.clash_rules.filter(function(r) {
+      return r.source.discipline === d || r.target.discipline === d;
+    }).length);
+  });
+  var topOffenders = Object.keys(elementFreq).sort(function(a, b) { return elementFreq[b] - elementFreq[a]; }).slice(0, 10);
+  var topOffenderCounts = topOffenders.map(function(e) { return elementFreq[e]; });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // RENDER — same layout as measure.js _buildExportHtml
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Header: title left + compliance right (flex row)
+  var headerHtml =
+    '<div style="display:flex;gap:20px;margin-bottom:16px;align-items:stretch">' +
+    '<div style="flex:0 0 auto;max-width:280px">' +
+    '<h1 style="font-size:24px;margin-bottom:6px;color:#4fc3f7">Clash Coordination Report</h1>' +
+    '<div class="subtitle">' + pairLabel + '<br>' + bldName + '<br>' + date + '<br>Storey: ' + storey +
+    '<br>' + totalCount + ' clashes' + (totalCount > allClashes.length ? ' (top ' + allClashes.length + ')' : '') + '</div>' +
+    '</div>' +
+    '<div style="flex:1;background:rgba(79,195,247,0.06);border:1px solid rgba(79,195,247,0.15);border-radius:8px;padding:20px 24px;line-height:2.2">' +
+    '<b style="color:#4fc3f7;font-size:26px;display:block;margin-bottom:12px">Compliance &amp; Reference Standards</b>' +
+    '<span style="font-size:18px;color:#ccc">' +
+    'ISO 19650-1:2018 &mdash; Organization &amp; digitization of building information<br>' +
+    'ISO 19650-2:2018 &mdash; Delivery phase clash avoidance &amp; coordination<br>' +
+    'buildingSMART IFC4 &mdash; Spatial &amp; geometric intersection semantics<br>' +
+    'BCF 3.0 &mdash; Clash topic exchange, viewpoint, GUID referencing<br>' +
+    'PAS 1192-2 / BS EN ISO 19650 &mdash; UK BIM Level 2 coordination<br>' +
+    'Singapore BIM Guide v2.0 &mdash; BCA/CORENET submission requirements<br>' +
+    'NATSPEC BIM Reference Schedule &mdash; Tolerance definitions per discipline pair</span><br>' +
+    '<span style="color:#888;font-size:11px">R-tree spatial index, O(n log N) per pair. Tolerances per clash_rules.json.</span>' +
+    '</div>' +
+    '</div>';
+
+  // Stat cards: same 4 as original
+  var statHtml =
+    '<div class="stat-cards">' +
+    '<div class="stat-card" title="Total bbox overlaps detected across all discipline pairs"><div class="num" style="color:#ff4444">' + totalCount + '</div><div class="lbl">Total Clashes</div></div>' +
+    '<div class="stat-card" title="Acknowledged clashes under investigation"><div class="num" style="color:#FFD700">' + sc['Reviewed'] + '</div><div class="lbl">Reviewed</div></div>' +
+    '<div class="stat-card" title="Clashes fixed in the model — ready for re-check"><div class="num" style="color:#4caf50">' + sc['Resolved'] + '</div><div class="lbl">Resolved</div></div>' +
+    '<div class="stat-card" title="Risk accepted — no design change needed"><div class="num" style="color:#888">' + sc['Accepted'] + '</div><div class="lbl">Accepted</div></div>' +
+    '</div>';
+
+  // Charts: same 6 as original
+  var chartsHtml =
+    '<div class="charts">' +
+    '<div class="chart-box"><h2>By Discipline Pair</h2><canvas id="discChart"></canvas></div>' +
+    '<div class="chart-box"><h2>Discipline Risk Profile</h2><canvas id="radarChart"></canvas></div>' +
+    '<div class="chart-box"><h2>By Severity</h2><canvas id="sevChart"></canvas></div>' +
+    '<div class="chart-box"><h2>By Status</h2><canvas id="statusChart"></canvas></div>' +
+    '<div class="chart-box"><h2>Top Offenders \u2014 Fix These First</h2><canvas id="offenderChart"></canvas></div>' +
+    '<div class="chart-box"><h2>By Element Class</h2><canvas id="classChart"></canvas></div>' +
+    '<div class="chart-box full"><h2>Discipline Matrix Summary</h2><div id="matrixTable"></div></div>' +
+    '</div>';
+
+  contentEl.innerHTML = headerHtml + statHtml + chartsHtml;
+
+  // ── Charts (same as original) ──
+  new Chart(document.getElementById('discChart'), {
+    type: 'bar',
+    data: { labels: discPairs, datasets: [{ label: 'Clashes', data: discPairs.map(function(p) { return discPairCounts[p]; }), backgroundColor: '#ff8c00' }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#ccc' } }, y: { ticks: { color: '#ccc' } } } }
+  });
+
+  var maxEl = Math.max.apply(null, radarElements) || 1;
+  new Chart(document.getElementById('radarChart'), {
+    type: 'radar',
+    data: {
+      labels: radarDiscs,
+      datasets: [
+        { label: 'Spatial overlaps', data: radarOverlaps, backgroundColor: 'rgba(255,68,68,0.15)', borderColor: '#ff4444', pointBackgroundColor: '#ff4444' },
+        { label: 'Clash rules', data: radarRules, backgroundColor: 'rgba(255,140,0,0.15)', borderColor: '#ff8c00', pointBackgroundColor: '#ff8c00' },
+        { label: 'Elements (scaled)', data: radarElements.map(function(e) { return Math.round(e / maxEl * 6); }), backgroundColor: 'rgba(79,195,247,0.1)', borderColor: '#4fc3f7', pointBackgroundColor: '#4fc3f7' }
+      ]
+    },
+    options: { scales: { r: { ticks: { color: '#888', backdropColor: 'transparent' }, grid: { color: 'rgba(255,255,255,0.1)' }, pointLabels: { color: '#ccc', font: { size: 13 } } } }, plugins: { legend: { labels: { color: '#ccc' } } } }
+  });
+
+  new Chart(document.getElementById('sevChart'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(sevCounts), datasets: [{ data: Object.values(sevCounts), backgroundColor: ['#ff4444', '#ff8c00', '#4fc3f7'] }] },
+    options: { cutout: '45%', plugins: { legend: { position: 'top', align: 'end', labels: { color: '#ccc', font: { size: 14 }, padding: 10 } } } }
+  });
+
+  new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(sc), datasets: [{ data: Object.values(sc), backgroundColor: ['#ff4444', '#FFD700', '#4caf50', '#888'] }] },
+    options: { cutout: '45%', plugins: { legend: { position: 'top', align: 'end', labels: { color: '#ccc', font: { size: 14 }, padding: 10 } } } }
+  });
+
+  new Chart(document.getElementById('offenderChart'), {
+    type: 'bar',
+    data: { labels: topOffenders, datasets: [{ label: 'Appears in N clashes', data: topOffenderCounts, backgroundColor: '#ff4444' }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#ccc' } }, y: { ticks: { color: '#ccc', font: { size: 10 } } } } }
+  });
+
+  new Chart(document.getElementById('classChart'), {
+    type: 'bar',
+    data: { labels: classPairs, datasets: [{ label: 'Clashes', data: classPairs.map(function(p) { return classCounts[p]; }), backgroundColor: '#4fc3f7' }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#ccc' } }, y: { ticks: { color: '#ccc' } } } }
+  });
+
+  // Matrix summary table — same 8 columns as original
+  var tableHtml = '<table><thead><tr><th>Source</th><th>Target</th><th>Tolerance</th><th>Clashes</th><th>Reviewed</th><th>Resolved</th><th>Accepted</th><th>Open</th></tr></thead><tbody>';
+  pairSummary.forEach(function(ps) {
+    var open = ps.count - ps.reviewed - ps.resolved - ps.accepted;
+    var openColor = open > 0 ? '#ff4444' : '#4caf50';
+    var pct = ps.count > 0 ? ((ps.resolved + ps.accepted) * 100 / ps.count).toFixed(0) : 100;
+    var tip = ps.src + ' vs ' + ps.tgt + ': ' + ps.count + ' clashes found (tolerance ' + ps.tolMm + 'mm). ' +
+      pct + '% resolved/accepted. ' + open + ' still need attention.';
+    tableHtml += '<tr title="' + tip + '"><td>' + ps.src + '</td><td>' + ps.tgt + '</td><td>' + ps.tolMm + 'mm</td>' +
+      '<td>' + ps.count + '</td><td>' + ps.reviewed + '</td><td>' + ps.resolved + '</td><td>' + ps.accepted + '</td>' +
+      '<td style="color:' + openColor + ';font-weight:bold">' + open + '</td></tr>';
+  });
+  tableHtml += '</tbody></table>';
+  document.getElementById('matrixTable').innerHTML = tableHtml;
+
+  statusEl.textContent = 'Clash report opened \u2014 ' + totalCount + ' clashes';
+  _log('§CLASH_REPORT_DONE total=' + totalCount + ' pairs=' + rules.clash_rules.length);
+}
+
+init().catch(function(e) {
+  document.getElementById('report-content').textContent = 'Error: ' + e.message;
+  console.error('§CLASH_INIT_ERR', e);
+});
+</script>
+</body>
+</html>

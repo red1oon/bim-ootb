@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "name": "Custom Rate Template",
+    "region": "",
+    "currency": "",
+    "currency2": "USD",
+    "exchange_rate": 1.0,
+    "source": "User-defined rates — fill in your own values",
+    "validity_days": 60,
+    "measurement_standard": ""
+  },
+  "materials": {},
+  "labor": {},
+  "equipment": {},
+  "equipment_allocation": {},
+  "sequence": {},
+  "work_packages": [],
+  "smm_sections": {
+    "A": "Preliminaries",
+    "C": "Existing Site / Buildings",
+    "D": "Groundwork",
+    "E": "In Situ Concrete / Large Precast",
+    "F": "Masonry",
+    "G": "Structural / Carcassing Metal",
+    "H": "Cladding / Covering",
+    "J": "Waterproofing",
+    "K": "Linings / Sheathing / Dry Partitioning",
+    "L": "Windows / Doors / Stairs",
+    "M": "Surface Finishes",
+    "N": "Furniture / Equipment",
+    "P": "Building Fabric Sundries",
+    "Q": "Paving / Planting / Fencing",
+    "R": "Disposal Systems",
+    "S": "Piped Supply Systems",
+    "T": "Mechanical Heating / Cooling",
+    "U": "Ventilation / Air Conditioning",
+    "V": "Electrical Supply / Power / Lighting",
+    "W": "Communications / Security / Controls",
+    "X": "Transport Systems",
+    "Y": "Mechanical / Electrical Services (General)"
+  },
+  "provisions": {
+    "preliminaries_pct": 10,
+    "professional_fees_pct": 8,
+    "contingency_pct": 5,
+    "demolition_pct": 3
+  }
+}

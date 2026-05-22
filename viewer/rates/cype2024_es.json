@@ -1,0 +1,850 @@
+{
+  "meta": {
+    "name": "CYPE / ITeC Spain 2024",
+    "region": "ES",
+    "currency": "EUR",
+    "currency2": "USD",
+    "exchange_rate": 0.85,
+    "source": "Base de Precios CYPE / ITeC 2024",
+    "validity_days": 60,
+    "measurement_standard": "Norma UNE / CTE"
+  },
+  "materials": {
+    "IfcDuct": {
+      "rate": 38,
+      "unit": "M",
+      "desc": "Conducto chapa galvanizada (400mm medio)",
+      "smm_section": "U10"
+    },
+    "IfcDuctSegment": {
+      "rate": 38,
+      "unit": "M",
+      "desc": "Tramo de conducto",
+      "smm_section": "U10"
+    },
+    "IfcDuctFitting": {
+      "rate": 85,
+      "unit": "EA",
+      "desc": "Accesorios de conducto",
+      "smm_section": "U10"
+    },
+    "IfcPipe": {
+      "rate": 12,
+      "unit": "M",
+      "desc": "Tuberia PVC/HDPE (100mm medio)",
+      "smm_section": "S10"
+    },
+    "IfcPipeSegment": {
+      "rate": 12,
+      "unit": "M",
+      "desc": "Tramo de tuberia",
+      "smm_section": "S10"
+    },
+    "IfcPipeFitting": {
+      "rate": 22,
+      "unit": "EA",
+      "desc": "Accesorios de tuberia",
+      "smm_section": "S10"
+    },
+    "IfcCableCarrier": {
+      "rate": 18,
+      "unit": "M",
+      "desc": "Bandeja portacables (300mm)",
+      "smm_section": "V20"
+    },
+    "IfcCableCarrierSegment": {
+      "rate": 18,
+      "unit": "M",
+      "desc": "Tramo bandeja portacables",
+      "smm_section": "V20"
+    },
+    "IfcBeam": {
+      "rate": 155,
+      "unit": "M",
+      "desc": "Viga acero laminado IPE/HEB",
+      "smm_section": "G10"
+    },
+    "IfcColumn": {
+      "rate": 285,
+      "unit": "M",
+      "desc": "Pilar acero laminado HEB",
+      "smm_section": "G10"
+    },
+    "IfcSlab": {
+      "rate": 65,
+      "unit": "M2",
+      "desc": "Forjado HA-25 canto 25+5 cm",
+      "smm_section": "E10"
+    },
+    "IfcWall": {
+      "rate": 34,
+      "unit": "M2",
+      "desc": "Tabique ladrillo hueco doble 15cm",
+      "smm_section": "F10"
+    },
+    "IfcWallStandardCase": {
+      "rate": 34,
+      "unit": "M2",
+      "desc": "Tabique estandar",
+      "smm_section": "F10"
+    },
+    "IfcCurtainWall": {
+      "rate": 175,
+      "unit": "M2",
+      "desc": "Muro cortina aluminio-vidrio",
+      "smm_section": "H10"
+    },
+    "IfcCovering": {
+      "rate": 42,
+      "unit": "M2",
+      "desc": "Revestimiento suelo/techo",
+      "smm_section": "M10"
+    },
+    "IfcRoof": {
+      "rate": 55,
+      "unit": "M2",
+      "desc": "Cubierta metalica",
+      "smm_section": "H60"
+    },
+    "IfcLightFixture": {
+      "rate": 110,
+      "unit": "EA",
+      "desc": "Luminaria LED",
+      "smm_section": "V40"
+    },
+    "IfcOutlet": {
+      "rate": 28,
+      "unit": "EA",
+      "desc": "Toma de corriente",
+      "smm_section": "V20"
+    },
+    "IfcDoor": {
+      "rate": 650,
+      "unit": "EA",
+      "desc": "Puerta interior completa",
+      "smm_section": "L20"
+    },
+    "IfcWindow": {
+      "rate": 360,
+      "unit": "EA",
+      "desc": "Ventana aluminio RPT",
+      "smm_section": "L10"
+    },
+    "IfcBuildingElementProxy": {
+      "rate": 195,
+      "unit": "EA",
+      "desc": "Elemento generico",
+      "smm_section": "P10"
+    },
+    "IfcFlowTerminal": {
+      "rate": 800,
+      "unit": "EA",
+      "desc": "Terminal climatizacion",
+      "smm_section": "U10"
+    },
+    "IfcFurnishingElement": {
+      "rate": 275,
+      "unit": "EA",
+      "desc": "Mobiliario",
+      "smm_section": "N10"
+    },
+    "IfcPlate": {
+      "rate": 22,
+      "unit": "M2",
+      "desc": "Chapa de acero",
+      "smm_section": "G10"
+    },
+    "IfcMember": {
+      "rate": 73,
+      "unit": "M",
+      "desc": "Perfil de acero",
+      "smm_section": "G10"
+    },
+    "IfcRailing": {
+      "rate": 65,
+      "unit": "M",
+      "desc": "Barandilla",
+      "smm_section": "L30"
+    },
+    "IfcStair": {
+      "rate": 1025,
+      "unit": "EA",
+      "desc": "Escalera completa",
+      "smm_section": "L30"
+    },
+    "IfcStairFlight": {
+      "rate": 500,
+      "unit": "EA",
+      "desc": "Tramo de escalera",
+      "smm_section": "L30"
+    },
+    "IfcFooting": {
+      "rate": 73,
+      "unit": "EA",
+      "desc": "Zapata de cimentacion",
+      "smm_section": "D20"
+    },
+    "IfcPile": {
+      "rate": 195,
+      "unit": "EA",
+      "desc": "Pilote de cimentacion",
+      "smm_section": "D30"
+    },
+    "IfcReinforcingBar": {
+      "rate": 1.05,
+      "unit": "KG",
+      "desc": "Acero corrugado B500S",
+      "smm_section": "E30"
+    },
+    "IfcFlowSegment": {
+      "rate": 28,
+      "unit": "M",
+      "desc": "Tramo de instalacion",
+      "smm_section": "Y10"
+    },
+    "IfcFlowFitting": {
+      "rate": 46,
+      "unit": "EA",
+      "desc": "Accesorio de instalacion",
+      "smm_section": "Y10"
+    },
+    "IfcFlowController": {
+      "rate": 105,
+      "unit": "EA",
+      "desc": "Valvula/controlador de flujo",
+      "smm_section": "Y10"
+    },
+    "IfcEnergyConversionDevice": {
+      "rate": 1950,
+      "unit": "EA",
+      "desc": "Equipo conversion energetica",
+      "smm_section": "T10"
+    },
+    "IfcFlowTreatmentDevice": {
+      "rate": 275,
+      "unit": "EA",
+      "desc": "Equipo de tratamiento",
+      "smm_section": "Y10"
+    },
+    "IfcFlowMovingDevice": {
+      "rate": 800,
+      "unit": "EA",
+      "desc": "Bomba/ventilador",
+      "smm_section": "T10"
+    },
+    "IfcFlowStorageDevice": {
+      "rate": 1150,
+      "unit": "EA",
+      "desc": "Deposito/acumulador",
+      "smm_section": "Y10"
+    },
+    "IfcElectricAppliance": {
+      "rate": 110,
+      "unit": "EA",
+      "desc": "Aparato electrico",
+      "smm_section": "V20"
+    },
+    "IfcFurniture": {
+      "rate": 340,
+      "unit": "EA",
+      "desc": "Mobiliario",
+      "smm_section": "N10"
+    },
+    "IfcOpeningElement": {
+      "rate": 0,
+      "unit": "EA",
+      "desc": "Hueco (vacio)",
+      "smm_section": ""
+    },
+    "IfcDistributionElement": {
+      "rate": 105,
+      "unit": "EA",
+      "desc": "Elemento de distribucion",
+      "smm_section": "Y10"
+    },
+    "IfcFireSuppressionTerminal": {
+      "rate": 95,
+      "unit": "EA",
+      "desc": "Rociador contra incendios",
+      "smm_section": "S60"
+    },
+    "IfcAirTerminal": {
+      "rate": 82,
+      "unit": "EA",
+      "desc": "Difusor / rejilla",
+      "smm_section": "U10"
+    },
+    "IfcValve": {
+      "rate": 65,
+      "unit": "EA",
+      "desc": "Valvula",
+      "smm_section": "S10"
+    },
+    "IfcAlarm": {
+      "rate": 75,
+      "unit": "EA",
+      "desc": "Detector de incendios",
+      "smm_section": "W50"
+    },
+    "IfcController": {
+      "rate": 275,
+      "unit": "EA",
+      "desc": "Controlador de edificio",
+      "smm_section": "W60"
+    },
+    "IfcRamp": {
+      "rate": 680,
+      "unit": "EA",
+      "desc": "Rampa",
+      "smm_section": "L30"
+    },
+    "IfcRampFlight": {
+      "rate": 750,
+      "unit": "EA",
+      "desc": "Tramo de rampa",
+      "smm_section": "L30"
+    },
+    "IfcBuildingElementPart": {
+      "rate": 0,
+      "unit": "EA",
+      "desc": "Parte de elemento",
+      "smm_section": ""
+    }
+  },
+  "labor": {
+    "HVAC_TECH": {
+      "rate_per_day": 52,
+      "crew_size": 2,
+      "trade": "Instalador climatizacion (Oficial 1a)",
+      "productivity": {
+        "IfcDuct": 16,
+        "IfcDuctSegment": 16,
+        "IfcDuctFitting": 10,
+        "IfcFlowMovingDevice": 4,
+        "IfcEnergyConversionDevice": 3,
+        "IfcFlowTerminal": 12,
+        "IfcAirTerminal": 20
+      }
+    },
+    "PLUMBER": {
+      "rate_per_day": 48,
+      "crew_size": 2,
+      "trade": "Fontanero (Oficial 1a)",
+      "productivity": {
+        "IfcPipe": 22,
+        "IfcPipeSegment": 22,
+        "IfcPipeFitting": 14,
+        "IfcFlowSegment": 20,
+        "IfcFlowFitting": 15,
+        "IfcFlowStorageDevice": 4,
+        "IfcFlowTreatmentDevice": 4,
+        "IfcDistributionElement": 8,
+        "IfcValve": 20,
+        "IfcFireSuppressionTerminal": 25
+      }
+    },
+    "ELECTRICIAN": {
+      "rate_per_day": 50,
+      "crew_size": 2,
+      "trade": "Electricista (Oficial 1a)",
+      "productivity": {
+        "IfcCableCarrier": 28,
+        "IfcCableCarrierSegment": 28,
+        "IfcLightFixture": 18,
+        "IfcOutlet": 22,
+        "IfcElectricAppliance": 15,
+        "IfcFlowController": 10,
+        "IfcAlarm": 25,
+        "IfcController": 10
+      }
+    },
+    "STEEL_ERECTOR": {
+      "rate_per_day": 55,
+      "crew_size": 4,
+      "trade": "Montador estructura metalica (Oficial 1a)",
+      "productivity": {
+        "IfcBeam": 7,
+        "IfcColumn": 5,
+        "IfcPlate": 12,
+        "IfcMember": 10
+      }
+    },
+    "CONCRETE_GANG": {
+      "rate_per_day": 42,
+      "crew_size": 6,
+      "trade": "Cuadrilla de hormigon",
+      "productivity": {
+        "IfcSlab": 30,
+        "IfcFooting": 6,
+        "IfcPile": 4,
+        "IfcReinforcingBar": 50,
+        "IfcRamp": 3,
+        "IfcRampFlight": 3
+      }
+    },
+    "MASON": {
+      "rate_per_day": 45,
+      "crew_size": 3,
+      "trade": "Albanil (Oficial 1a) + peones",
+      "productivity": {
+        "IfcWall": 10,
+        "IfcWallStandardCase": 10,
+        "IfcOpeningElement": 20,
+        "IfcBuildingElementPart": 15
+      }
+    },
+    "CARPENTER": {
+      "rate_per_day": 48,
+      "crew_size": 2,
+      "trade": "Carpintero (Oficial 1a)",
+      "productivity": {
+        "IfcDoor": 6,
+        "IfcWindow": 6,
+        "IfcStair": 2,
+        "IfcStairFlight": 3,
+        "IfcRailing": 15,
+        "IfcCurtainWall": 8
+      }
+    },
+    "ROOFER": {
+      "rate_per_day": 50,
+      "crew_size": 3,
+      "trade": "Techador (Oficial 1a)",
+      "productivity": {
+        "IfcRoof": 25
+      }
+    },
+    "FINISHER": {
+      "rate_per_day": 40,
+      "crew_size": 2,
+      "trade": "Solador / Pintor (Oficial 1a)",
+      "productivity": {
+        "IfcCovering": 20,
+        "IfcFurniture": 8,
+        "IfcFurnishingElement": 8
+      }
+    },
+    "LABORER": {
+      "rate_per_day": 32,
+      "crew_size": 1,
+      "trade": "Peon ordinario",
+      "productivity": {}
+    }
+  },
+  "equipment": {
+    "MOBILE_CRANE_20T": {
+      "rate_per_day": 420,
+      "desc": "Grua movil autopropulsada 20t"
+    },
+    "TOWER_CRANE": {
+      "rate_per_day": 500,
+      "desc": "Grua torre"
+    },
+    "CONCRETE_PUMP": {
+      "rate_per_day": 215,
+      "desc": "Bomba de hormigon sobre camion"
+    },
+    "SCISSOR_LIFT_8M": {
+      "rate_per_day": 65,
+      "desc": "Plataforma elevadora de tijera 8m"
+    },
+    "WELDING_MACHINE": {
+      "rate_per_day": 15,
+      "desc": "Equipo de soldadura 300A"
+    },
+    "GENERATOR_5KVA": {
+      "rate_per_day": 22,
+      "desc": "Grupo electrogeno 5KVA"
+    }
+  },
+  "equipment_allocation": {
+    "IfcBeam": {
+      "equipment": "MOBILE_CRANE_20T",
+      "duration_factor": 0.5
+    },
+    "IfcColumn": {
+      "equipment": "MOBILE_CRANE_20T",
+      "duration_factor": 0.5
+    },
+    "IfcSlab": {
+      "equipment": "CONCRETE_PUMP",
+      "duration_factor": 0.3
+    },
+    "IfcDuct": {
+      "equipment": "SCISSOR_LIFT_8M",
+      "duration_factor": 0.4
+    },
+    "IfcCableCarrier": {
+      "equipment": "SCISSOR_LIFT_8M",
+      "duration_factor": 0.3
+    }
+  },
+  "sequence": {
+    "IfcFooting": {
+      "phase": "Substructure",
+      "sequence": 1,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcReinforcingBar": {
+      "phase": "Substructure",
+      "sequence": 1,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcColumn": {
+      "phase": "Superstructure",
+      "sequence": 2,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcBeam": {
+      "phase": "Superstructure",
+      "sequence": 3,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcSlab": {
+      "phase": "Superstructure",
+      "sequence": 4,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcPlate": {
+      "phase": "Superstructure",
+      "sequence": 4,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcMember": {
+      "phase": "Superstructure",
+      "sequence": 3,
+      "resource": "STEEL_ERECTOR"
+    },
+    "IfcDuct": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcDuctSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcDuctFitting": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcPipe": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcPipeSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcPipeFitting": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcCableCarrier": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcCableCarrierSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowSegment": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFlowFitting": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFlowController": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowMovingDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcFlowStorageDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFlowTreatmentDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcEnergyConversionDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "HVAC_TECH"
+    },
+    "IfcDistributionElement": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcValve": {
+      "phase": "MEP Rough-in",
+      "sequence": 5,
+      "resource": "PLUMBER"
+    },
+    "IfcFireSuppressionTerminal": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "PLUMBER"
+    },
+    "IfcAirTerminal": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "HVAC_TECH"
+    },
+    "IfcAlarm": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcController": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcWall": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcWallStandardCase": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcOpeningElement": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcBuildingElementPart": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": "MASON"
+    },
+    "IfcDoor": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcWindow": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcStair": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcStairFlight": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcRailing": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcRamp": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcRampFlight": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CONCRETE_GANG"
+    },
+    "IfcRoof": {
+      "phase": "Architecture",
+      "sequence": 8,
+      "resource": "ROOFER"
+    },
+    "IfcBuildingElementProxy": {
+      "phase": "Architecture",
+      "sequence": 6,
+      "resource": null
+    },
+    "IfcCurtainWall": {
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER"
+    },
+    "IfcLightFixture": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcOutlet": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcElectricAppliance": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowTerminal": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "HVAC_TECH"
+    },
+    "IfcCovering": {
+      "phase": "Finishes",
+      "sequence": 10,
+      "resource": "FINISHER"
+    },
+    "IfcFurniture": {
+      "phase": "Finishes",
+      "sequence": 11,
+      "resource": "FINISHER"
+    },
+    "IfcFurnishingElement": {
+      "phase": "Finishes",
+      "sequence": 11,
+      "resource": "FINISHER"
+    }
+  },
+  "work_packages": [
+    {
+      "id": "PACKAGE 1",
+      "name": "CIMENTACION",
+      "color": "8E44AD",
+      "classes": [
+        "IfcFooting",
+        "IfcPile",
+        "IfcReinforcingBar"
+      ]
+    },
+    {
+      "id": "PACKAGE 2",
+      "name": "ESTRUCTURA",
+      "color": "2980B9",
+      "classes": [
+        "IfcColumn",
+        "IfcBeam",
+        "IfcSlab",
+        "IfcPlate",
+        "IfcMember"
+      ]
+    },
+    {
+      "id": "PACKAGE 3",
+      "name": "INSTALACIONES FASE 1",
+      "color": "D35400",
+      "classes": [
+        "IfcDuct",
+        "IfcDuctSegment",
+        "IfcDuctFitting",
+        "IfcPipe",
+        "IfcPipeSegment",
+        "IfcPipeFitting",
+        "IfcCableCarrier",
+        "IfcCableCarrierSegment",
+        "IfcFlowSegment",
+        "IfcFlowFitting",
+        "IfcFlowController",
+        "IfcFlowMovingDevice",
+        "IfcFlowStorageDevice",
+        "IfcFlowTreatmentDevice",
+        "IfcEnergyConversionDevice",
+        "IfcDistributionElement",
+        "IfcValve"
+      ]
+    },
+    {
+      "id": "PACKAGE 4",
+      "name": "CERRAMIENTOS Y ACABADOS",
+      "color": "ED7D31",
+      "classes": [
+        "IfcWall",
+        "IfcWallStandardCase",
+        "IfcCurtainWall",
+        "IfcDoor",
+        "IfcWindow",
+        "IfcStair",
+        "IfcStairFlight",
+        "IfcRailing",
+        "IfcRoof",
+        "IfcRamp",
+        "IfcRampFlight"
+      ]
+    },
+    {
+      "id": "PACKAGE 5",
+      "name": "ACABADOS",
+      "color": "27AE60",
+      "classes": [
+        "IfcCovering",
+        "IfcFurniture",
+        "IfcFurnishingElement"
+      ]
+    },
+    {
+      "id": "PACKAGE 6",
+      "name": "INSTALACIONES FASE 2",
+      "color": "C0392B",
+      "classes": [
+        "IfcFlowTerminal",
+        "IfcLightFixture",
+        "IfcOutlet",
+        "IfcElectricAppliance",
+        "IfcFireSuppressionTerminal",
+        "IfcAirTerminal",
+        "IfcAlarm",
+        "IfcController"
+      ]
+    }
+  ],
+  "smm_sections": {
+    "A": "Preliminares",
+    "C": "Derribos",
+    "D": "Movimiento de tierras / Cimentacion",
+    "E": "Hormigon armado",
+    "F": "Albanileria",
+    "G": "Estructura metalica",
+    "H": "Cubiertas / Fachadas",
+    "J": "Impermeabilizacion",
+    "K": "Tabiqueria / Trasdosados",
+    "L": "Carpinteria / Escaleras",
+    "M": "Revestimientos",
+    "N": "Mobiliario / Equipamiento",
+    "P": "Varios",
+    "Q": "Urbanizacion",
+    "R": "Saneamiento",
+    "S": "Fontaneria",
+    "T": "Climatizacion",
+    "U": "Ventilacion",
+    "V": "Electricidad",
+    "W": "Telecomunicaciones / Seguridad",
+    "X": "Aparatos elevadores",
+    "Y": "Instalaciones (general)"
+  },
+  "provisions": {
+    "preliminaries_pct": 13,
+    "professional_fees_pct": 10,
+    "contingency_pct": 8,
+    "demolition_pct": 3
+  }
+}
