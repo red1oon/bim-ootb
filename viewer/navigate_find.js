@@ -205,7 +205,7 @@
     var _SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     var _recognition = null, _listening = false;
     if (_SR && elMicBtn) {
-      elMicBtn.addEventListener('pointerup', function(e) {
+      elMicBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         if (_listening) { _recognition.stop(); return; }
         _recognition = new _SR();

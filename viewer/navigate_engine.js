@@ -36,12 +36,17 @@
 
     // S275: Delegated stop button listener — survives innerHTML replacements
     if (elBar) {
-      elBar.addEventListener('pointerup', function(e) {
-        if (e.target.id === 'nav-stop-btn' || (e.target.closest && e.target.closest('#nav-stop-btn'))) {
+      function _handleNavStop(e) {
+        var btn = e.target.closest ? e.target.closest('#nav-stop-btn') : null;
+        if (e.target.id === 'nav-stop-btn' || btn) {
           e.stopPropagation();
+          e.preventDefault();
+          console.log('§NAV_STOP_BTN clicked');
           stopNavigation();
         }
-      });
+      }
+      elBar.addEventListener('pointerup', _handleNavStop);
+      elBar.addEventListener('click', _handleNavStop);
     }
 
     // ── Voice output (modality-matched) — used by engine functions ──
