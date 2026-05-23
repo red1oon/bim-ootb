@@ -9,6 +9,22 @@ function setupScene(A) {
   A.canvas = canvas;
 
   // §S258: ColorManagement.enabled=false set in loader.js (before any THREE.Color created)
+  // §S271b: Suppress WEBGL_multi_draw warning spam — r160 BatchedMesh logs it per draw call.
+  // Cache the null result so console.warn fires only once, not 117K times per frame.
+  var _origWarn = console.warn;
+  var _multiDrawWarned = false;
+  console.warn = function() {
+    if (!_multiDrawWarned && arguments[0] && typeof arguments[0] === 'string' &&
+        arguments[0].indexOf('WEBGL_multi_draw') !== -1) {
+      _multiDrawWarned = true;
+      _origWarn.apply(console, arguments);
+      return;
+    }
+    if (_multiDrawWarned && arguments[0] && typeof arguments[0] === 'string' &&
+        arguments[0].indexOf('WEBGL_multi_draw') !== -1) return;
+    _origWarn.apply(console, arguments);
+  };
+
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
   const renderer = new THREE.WebGLRenderer({

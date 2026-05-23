@@ -86,15 +86,20 @@ function setupTools(A) {
     btn.style.color = A.xrayOn ? '#000' : '#fff';
 
     // §S271b: Update unique materials only (via _matCache) — O(unique mats) not O(all meshes)
+    // No scene.traverse — _matCache has all streaming materials, ground/helpers are negligible.
     var updated = 0;
-    var mats = A._matCache ? Object.values(A._matCache) : [];
-    // Also collect materials from meshes not in _matCache (ground, helpers etc)
-    A.collectMeshes(o => o.isMesh).forEach(obj => {
-      if (mats.indexOf(obj.material) === -1) mats.push(obj.material);
-    });
-    // Deduplicate
     var seen = new Set();
-    mats = mats.filter(function(m) { if (!m || seen.has(m)) return false; seen.add(m); return true; });
+    var mats = [];
+    if (A._matCache) {
+      for (var k in A._matCache) {
+        var m = A._matCache[k];
+        if (m && !seen.has(m)) { seen.add(m); mats.push(m); }
+      }
+    }
+    // Ground material
+    if (A.ground && A.ground.material && !seen.has(A.ground.material)) {
+      mats.push(A.ground.material);
+    }
 
     for (var i = 0; i < mats.length; i++) {
       var mat = mats[i];
