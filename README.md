@@ -77,7 +77,18 @@ cd tests && npm install && npx playwright test
 
 ## History
 
-Built in 30 days (April--May 2026) via vibe coding. Extracted from [BIMCompiler](https://github.com/red1oon/BIMCompiler) -- a Java/Python BOM compilation engine that proved the BOM-based approach. The browser viewer outgrew the backend and became the product.
+This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) -- a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend.
+
+The browser sprint (S200--S271, April 20 -- May 23) produced 552 commits and 92 JS modules in 33 days, but the BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power it were built over the preceding 6 months in the parent project.
+
+## Links
+
+| | URL |
+|---|---|
+| **Live viewer** | [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) |
+| **Documentation** | [red1oon.github.io/BIMCompiler](https://red1oon.github.io/BIMCompiler/) |
+| **Parent project** | [github.com/red1oon/BIMCompiler](https://github.com/red1oon/BIMCompiler) |
+| **OCI backup** | [ootb-dev bucket](https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/index.html) |
 
 ## License
 
