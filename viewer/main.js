@@ -539,7 +539,7 @@ function initViewer() {
     if (APP.ground && APP.ground.visible) {
       APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
-    if (_needsRender || APP._streaming) {
+    if (_needsRender || APP._streaming || APP.walkModeActive) {
       APP.renderer.render(APP.scene, APP.camera);
       _needsRender = false;
     }
