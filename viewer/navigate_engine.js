@@ -34,6 +34,16 @@
     var elBar  = document.getElementById('nav-bottom-bar');
     var panel  = document.getElementById('find-panel');
 
+    // S275: Delegated stop button listener — survives innerHTML replacements
+    if (elBar) {
+      elBar.addEventListener('pointerup', function(e) {
+        if (e.target.id === 'nav-stop-btn' || (e.target.closest && e.target.closest('#nav-stop-btn'))) {
+          e.stopPropagation();
+          stopNavigation();
+        }
+      });
+    }
+
     // ── Voice output (modality-matched) — used by engine functions ──
     function speak(text) {
       if (!nav.voiceMode) return;
@@ -386,9 +396,7 @@
       var total = nav.waypoints.length;
       var step = nav.stepIdx + 1;
       elBar.innerHTML = '<span>' + nav.targetName + '  \u2022  ' + remaining.toFixed(0) + 'm  \u2022  ' + step + '/' + total +
-        '</span> <button id="nav-stop-btn" style="background:rgba(255,60,60,0.6);border:none;color:#fff;border-radius:6px;padding:4px 10px;margin-left:8px;cursor:pointer;font-size:12px;font-weight:600;min-width:36px;min-height:36px">\u2715</button>';
-      var stopBtn = document.getElementById('nav-stop-btn');
-      if (stopBtn) stopBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); stopNavigation(); });
+        '</span> <button id="nav-stop-btn" style="background:rgba(255,60,60,0.6);border:none;color:#fff;border-radius:6px;padding:4px 10px;margin-left:8px;cursor:pointer;font-size:12px;font-weight:600;min-width:36px;min-height:36px;pointer-events:auto">\u2715</button>';
     }
 
     function computeDirectDistance() {
