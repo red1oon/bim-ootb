@@ -614,8 +614,8 @@
       return '\u25C6';
     }
 
-    // ── Select result → highlight only (no camera jump) ──
-    // Camera stays put. Navigate button handles the walk-to experience.
+    // ── Select result → highlight + fly-to (S275) ──
+    // Camera flies to element. Navigate button handles the walk-to experience (from main door).
     function selectResult(idx) {
       nav.activeIdx = idx;
       // Update active class
@@ -625,10 +625,35 @@
       var r = nav.results[idx];
       if (!r) return;
 
-      // Yellow highlight on element — no camera movement
+      // Yellow highlight on element
       var pos = A.ifc2three(r.cx, r.cy, r.cz);
-      var target = new THREE.Vector3(pos.x, pos.y, pos.z);
-      highlightElement(r.guid, target);
+      var center = new THREE.Vector3(pos.x, pos.y, pos.z);
+      highlightElement(r.guid, center);
+
+      // S275: Fly camera to element — smooth cubic ease-out (same as zoomToGuid)
+      // Try mesh bbox for accurate framing; fall back to DB position
+      var mesh = typeof A.findMeshByGuid === 'function' ? A.findMeshByGuid(r.guid) : null;
+      var dist = 8; // default distance for fallback
+      if (mesh && mesh.geometry) {
+        var box3 = new THREE.Box3().setFromObject(mesh);
+        var sz = box3.getSize(new THREE.Vector3());
+        center = box3.getCenter(new THREE.Vector3());
+        dist = Math.max(sz.x, sz.y, sz.z) * 3 + 2;
+      }
+      var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
+      var start = A.camera.position.clone();
+      var t = 0;
+      if (_flyAnim) cancelAnimationFrame(_flyAnim);
+      function animFly() {
+        t += 0.04;
+        if (t > 1) t = 1;
+        var e = 1 - Math.pow(1 - t, 3); // cubic ease-out
+        A.camera.position.lerpVectors(start, end, e);
+        A.controls.target.copy(center);
+        A.controls.update();
+        if (t < 1) { _flyAnim = requestAnimationFrame(animFly); } else { _flyAnim = null; }
+      }
+      animFly();
 
       // Update navigate button
       elNavBtn.textContent = typeof _TRL!=='undefined'&&_TRL.ui_find_navigate||'\u25B6 Navigate';
@@ -638,12 +663,13 @@
       var dispName = friendlyName(r.element_name, r.ifc_class);
       if (A.status) A.status.textContent = dispName + ' · ' + (r.storey || '?');
 
-      console.log('[S233] §NAV_FIND_SELECT idx=' + idx + ' guid=' + (nav.results[idx]||{}).guid);
+      console.log('[S275] §NAV_FIND_SELECT idx=' + idx + ' guid=' + (nav.results[idx]||{}).guid + ' flyTo=(' + center.x.toFixed(1) + ',' + center.y.toFixed(1) + ',' + center.z.toFixed(1) + ')');
     }
 
     // ── Highlight element (yellow wireframe box + pulse) ──
     var _highlight = null;
     var _highlightPulse = null;
+    var _flyAnim = null; // S275: running fly-to animation frame
     function highlightElement(guid, worldPos) {
       clearHighlight();
       var hlMat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
