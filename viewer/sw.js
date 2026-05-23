@@ -13,10 +13,9 @@ const CACHE_NAME = 'bim-ootb-' + CACHE_VERSION;
 
 // Local copies of vendor libs — single-origin, no CDN dependency
 const LOCAL_LIBS = [
-  'lib/three.module.min.js',  // §S260: r160 ESM
-  'lib/OrbitControls.module.js',  // §S260: r160 ESM
-  'lib/three.min.js',  // §S260: fallback r156 UMD (kept for graceful degrade)
-  'lib/OrbitControls.js',  // §S260: fallback legacy IIFE
+  'lib/three.module.min.js',  // §S276: r184 ESM (imports three.core.min.js)
+  'lib/three.core.min.js',   // §S276: r184 core (split build)
+  'lib/OrbitControls.module.js',  // §S276: r184 ESM
   'lib/sql-wasm.js',
   'lib/sql-wasm.wasm',
   'lib/xlsx.full.min.js',

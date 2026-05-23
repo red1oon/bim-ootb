@@ -1,5 +1,5 @@
 // loader.js — Progressive script loader: local-first, CDN fallback
-// §S260: Three.js r160 ESM upgrade — import map + window.THREE shim
+// §S276: Three.js r184 ESM upgrade — import map + window.THREE shim
 // WASM binary fetch starts immediately — downloads in parallel with JS libs
 const _wasmBinaryPromise = fetch('lib/sql-wasm.wasm')
   .then(r => r.ok ? r.arrayBuffer().then(b => new Uint8Array(b)) : null)
@@ -24,7 +24,7 @@ const LIBS = [
 ];
 
 // Create progress rows — 4 items: Three.js(0), OrbitControls(1), SQLite(2), SheetJS(3)
-const _PROGRESS_NAMES = ['Three.js r160', 'OrbitControls', 'SQLite (WASM+RTree)', 'SheetJS (Excel)'];
+const _PROGRESS_NAMES = ['Three.js r184', 'OrbitControls', 'SQLite (WASM+RTree)', 'SheetJS (Excel)'];
 const loadItems = document.getElementById('load-items');
 _PROGRESS_NAMES.forEach((name, i) => {
   const row = document.createElement('div');
@@ -105,9 +105,9 @@ async function loadLibAt(libIdx, progressIdx) {
 }
 
 async function loadAllLibs() {
-  // ── §S260: Three.js r160 ESM bootstrap ──────────────────────────────────────
+  // ── §S276: Three.js r184 ESM bootstrap ──────────────────────────────────────
   // Load Three.js as ESM module, expose as window.THREE for all existing scripts.
-  // Local-first, CDN fallback (same principle as before).
+  // Local-first, CDN fallback. r184 splits into three.module.min.js + three.core.min.js.
   var _threeT0 = performance.now();
   var _threeStatusEl = document.getElementById('lib-0-status');
   var _threeBarEl = document.getElementById('lib-0-bar');
@@ -124,16 +124,16 @@ async function loadAllLibs() {
   } catch(e) {
     console.warn('§UPGRADE_THREE_LOCAL_FAIL ' + e.message + ' — trying CDN');
     try {
-      const _esm = await import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js');
+      const _esm = await import('https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.min.js');
       const _three = {};
       for (const k of Object.keys(_esm)) _three[k] = _esm[k];
       window.THREE = _three;
       console.log('§UPGRADE_THREE CDN ESM loaded r=' + THREE.REVISION);
     } catch(e2) {
-      // §S260: Ultimate fallback — try legacy r156 UMD if ESM completely fails
-      console.error('§UPGRADE_THREE_FAIL ESM unavailable, falling back to r156 UMD: ' + e2.message);
-      await fetchWithProgress('lib/three.min.js', 0);
-      console.log('§UPGRADE_THREE_FALLBACK r156 UMD loaded r=' + (window.THREE && THREE.REVISION));
+      // §S276: No UMD fallback — r161+ removed UMD builds. ESM required.
+      console.error('§UPGRADE_THREE_FAIL ESM unavailable: ' + e2.message);
+      document.getElementById('status').textContent = 'Three.js failed — requires modern browser with ESM support';
+      throw e2;
     }
   }
   var _threeMs = (performance.now() - _threeT0).toFixed(0);
@@ -159,15 +159,14 @@ async function loadAllLibs() {
   } catch(e) {
     console.warn('§UPGRADE_ORBIT_LOCAL_FAIL ' + e.message + ' — trying CDN');
     try {
-      const OC = await import('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js');
+      const OC = await import('https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/controls/OrbitControls.js');
       THREE.OrbitControls = OC.OrbitControls;
       window.OrbitControls = OC.OrbitControls;
       console.log('§UPGRADE_ORBIT CDN ESM loaded');
     } catch(e2) {
-      // Fallback to legacy IIFE OrbitControls
-      console.warn('§UPGRADE_ORBIT_FAIL falling back to legacy: ' + e2.message);
-      await fetchWithProgress('lib/OrbitControls.js', 1);
-      console.log('§UPGRADE_ORBIT_FALLBACK legacy IIFE loaded');
+      // §S276: No IIFE fallback — r184 OrbitControls is ESM only
+      console.error('§UPGRADE_ORBIT_FAIL ESM unavailable: ' + e2.message);
+      throw e2;
     }
   }
   var _ocMs = (performance.now() - _ocT0).toFixed(0);
@@ -184,10 +183,11 @@ async function loadAllLibs() {
     ' SRGBColorSpace=' + THREE.SRGBColorSpace);
 
   // §6.5 BVH acceleration — three-mesh-bvh monkey-patch
-  console.log('§BVH_LOADING importing three-mesh-bvh@0.7.8 from CDN...');
+  // §S276: Upgrade 0.7.8→0.8.0 (0.8.x targets Three.js r170+)
+  console.log('§BVH_LOADING importing three-mesh-bvh@0.8.0 from CDN...');
   var _bvhT0 = performance.now();
   try {
-    const bvh = await import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/+esm');
+    const bvh = await import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.0/+esm');
     var _bvhMs = (performance.now() - _bvhT0).toFixed(0);
     console.log('§BVH_FETCHED ms=' + _bvhMs + ' exports=' + Object.keys(bvh).join(','));
     if (!bvh.computeBoundsTree) throw new Error('computeBoundsTree not exported');
@@ -196,7 +196,7 @@ async function loadAllLibs() {
     THREE.BufferGeometry.prototype.disposeBoundsTree = bvh.disposeBoundsTree;
     THREE.Mesh.prototype.raycast = bvh.acceleratedRaycast;
     window._bvhReady = true;
-    console.log('§BVH_INIT three-mesh-bvh v0.7.8 monkey-patch applied in ' + _bvhMs + 'ms');
+    console.log('§BVH_INIT three-mesh-bvh v0.8.0 monkey-patch applied in ' + _bvhMs + 'ms');
     // Verify: test raycast on a dummy geometry
     try {
       var _testGeo = new THREE.BufferGeometry();

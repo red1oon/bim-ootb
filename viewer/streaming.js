@@ -706,7 +706,9 @@ function setupStreaming(A) {
           const geo = items[i].geo;
           var slotId;
           try {
-            slotId = bm.addGeometry(geo);
+            // §S276: r166+ requires addInstance() after addGeometry() to enable rendering
+            var geoId = bm.addGeometry(geo);
+            slotId = bm.addInstance(geoId);
           } catch(e) {
             console.warn('§BATCHED_ADDGEO_FAIL bucket=' + key + ' i=' + i + ' err=' + e.message);
             continue;
@@ -979,7 +981,9 @@ function setupStreaming(A) {
         // §S262: Start with REAL geometry — looks correct immediately.
         // DLOD demotes far elements to bbox later as an optimization.
         try {
-          slotId = bm.addGeometry(realGeo, sr.rv, sr.ri);
+          // §S276: r166+ requires addInstance() after addGeometry()
+          var geoId = bm.addGeometry(realGeo, sr.rv, sr.ri);
+          slotId = bm.addInstance(geoId);
         } catch(e) {
           console.warn('§S261_ADDGEO_FAIL bucket=' + key + ' i=' + si + ' err=' + e.message);
           continue;
@@ -1153,7 +1157,8 @@ function setupStreaming(A) {
         var el = items[ji];
         var geo = A.meshCache[el.hash];
         var slotId;
-        try { slotId = newBM.addGeometry(geo); } catch(e) { continue; }
+        // §S276: r166+ requires addInstance() after addGeometry()
+        try { var geoId = newBM.addGeometry(geo); slotId = newBM.addInstance(geoId); } catch(e) { continue; }
 
         var pos = A.ifc2three(el.cx, el.cy, el.cz);
         _pos.set(pos.x, pos.y, pos.z);
