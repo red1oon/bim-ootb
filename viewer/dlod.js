@@ -25,10 +25,8 @@ function setupDLOD(A) {
   var _lastTargX = 0, _lastTargY = 0, _lastTargZ = 0;
 
   // ── §S274: Direct refs built once after streaming ──
-  var _batchedMeshes = [];   // [{obj, meta}, ...]
-  var _instancedMeshes = []; // [{obj, meta}, ...]
+  var _instancedMeshes = []; // [{obj, meta}, ...] — IM only, BM handled by r160 native
   var _refsBuilt = false;
-  var _totalBMSlots = 0;
   var _totalIMInstances = 0;
 
   function _buildRefs() {
@@ -43,27 +41,7 @@ function setupDLOD(A) {
     var _pos = new THREE.Vector3();
 
     A.scene.traverse(function(obj) {
-      // ── BatchedMesh: extract world position per slot (desktop only) ──
-      // §S274: On mobile, Three.js r160 perObjectFrustumCulled handles BM natively
-      if (!A._isMobile && obj.isBatchedMesh && A._batchMeta[obj.id]) {
-        var meta = A._batchMeta[obj.id];
-        for (var i = 0; i < meta.length; i++) {
-          var m = meta[i];
-          try {
-            obj.getMatrixAt(m.slotId, _m4);
-            _pos.setFromMatrixPosition(_m4);
-            m._wx = _pos.x;
-            m._wy = _pos.y;
-            m._wz = _pos.z;
-            var bx = m.bx || 0.3, by = m.by || 0.3, bz = m.bz || 0.3;
-            m._radius = Math.sqrt(bx * bx + by * by + bz * bz) * 0.5;
-          } catch(e) {
-            m._wx = 0; m._wy = 0; m._wz = 0; m._radius = 5.0;
-          }
-        }
-        _batchedMeshes.push({ obj: obj, meta: meta });
-        _totalBMSlots += meta.length;
-      }
+      // BatchedMesh: Three.js r160 perObjectFrustumCulled handles natively — no indexing needed.
 
       // ── InstancedMesh: extract world position per instance (desktop only) ──
       // §S274: On mobile, skip IM indexing entirely — saves 35K Matrix4 allocations
@@ -90,10 +68,9 @@ function setupDLOD(A) {
       }
     });
 
-    console.log('[DLOD] §DLOD_REFS built batched=' + _batchedMeshes.length +
-      ' instanced=' + _instancedMeshes.length +
-      ' bmSlots=' + _totalBMSlots + ' imInstances=' + _totalIMInstances +
-      ' total=' + (_totalBMSlots + _totalIMInstances));
+    console.log('[DLOD] §DLOD_REFS built instanced=' + _instancedMeshes.length +
+      ' imInstances=' + _totalIMInstances +
+      ' (BM handled by r160 perObjectFrustumCulled)');
   }
 
   // ── Enable/disable ──
@@ -148,52 +125,12 @@ function setupDLOD(A) {
     _projScreenMatrix.multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_projScreenMatrix);
 
-    var bmVis = 0, bmHid = 0, imVis = 0, imHid = 0, skipCount = 0;
+    var imVis = 0, imHid = 0, skipCount = 0;
     var storeyFilter = A.activeStoreyFilter;
     var hiddenDiscs = A.hiddenDiscs;
 
-    // ── BatchedMesh: per-slot setVisibleAt ──
-    // §S274: On mobile, skip — Three.js r160 perObjectFrustumCulled does this natively
-    // inside renderer.render(). Our tick is redundant 3-5ms overhead.
-    if (A._isMobile) { /* Three.js handles BM frustum natively */ }
-    else for (var bi = 0; bi < _batchedMeshes.length; bi++) {
-      var bm = _batchedMeshes[bi];
-      var obj = bm.obj;
-      if (!obj.parent) continue;
-
-      var meta = bm.meta;
-      var anyVis = false;
-
-      for (var i = 0; i < meta.length; i++) {
-        var m = meta[i];
-
-        if (storeyFilter !== null && storeyFilter !== undefined &&
-            m.storey !== storeyFilter) { skipCount++; continue; }
-        if (hiddenDiscs && hiddenDiscs.size > 0 &&
-            hiddenDiscs.has(m.disc)) { skipCount++; continue; }
-        if (A._dlodPaused && m._dlodHid) { skipCount++; continue; }
-
-        _sphere.center.set(m._wx, m._wy, m._wz);
-        _sphere.radius = m._radius;
-
-        if (!_frustum.intersectsSphere(_sphere)) {
-          if (!m._dlodHid) {
-            obj.setVisibleAt(m.slotId, false);
-            m._dlodHid = true;
-          }
-          bmHid++;
-        } else {
-          if (m._dlodHid) {
-            obj.setVisibleAt(m.slotId, true);
-            m._dlodHid = false;
-          }
-          anyVis = true;
-          bmVis++;
-        }
-      }
-
-      obj.visible = anyVis || obj.visible;
-    }
+    // ── BatchedMesh: Three.js r160 perObjectFrustumCulled handles per-slot frustum natively.
+    // No JS tick needed — renderer.render() does it at zero cost. ──
 
     // ── InstancedMesh: per-instance zero-scale (desktop only) ──
     // §S274: On mobile, instanceMatrix.needsUpdate re-uploads entire buffer to GPU per tick.
@@ -245,26 +182,13 @@ function setupDLOD(A) {
 
     // Log every 10th evaluation (~once per second at 60fps)
     if (A._dlodFrame % (EVAL_EVERY * 10) === 0) {
-      console.log('[DLOD] §DLOD_FRUSTUM bm=' + bmVis + '/' + (bmVis + bmHid) +
-        ' im=' + imVis + '/' + (imVis + imHid) +
+      console.log('[DLOD] §DLOD_FRUSTUM im=' + imVis + '/' + (imVis + imHid) +
         ' skip=' + skipCount + ' ms=' + ms);
     }
   };
 
   // ── Restore all hidden elements ──
   function _restoreAll() {
-    // BatchedMesh
-    for (var bi = 0; bi < _batchedMeshes.length; bi++) {
-      var bm = _batchedMeshes[bi];
-      var meta = bm.meta;
-      for (var i = 0; i < meta.length; i++) {
-        if (meta[i]._dlodHid) {
-          bm.obj.setVisibleAt(meta[i].slotId, true);
-          meta[i]._dlodHid = false;
-        }
-      }
-      bm.obj.visible = true;
-    }
     // InstancedMesh
     for (var ii = 0; ii < _instancedMeshes.length; ii++) {
       var im = _instancedMeshes[ii];
