@@ -273,39 +273,41 @@ function setupDLOD(A) {
       }
     }
 
-    // ── BatchedMesh: direct iteration (no traverse) ──
-    // §S262: visStoreys always null — storey culling disabled. Skip per-slot loop entirely.
-    // BatchedMesh frustumCulled is handled by Three.js automatically (whole-mesh level).
-    // Only enter per-slot loop if storey culling is re-enabled in future.
-    if (visStoreys) {
-      for (var bi = 0; bi < _batchedMeshes.length; bi++) {
-        var bm = _batchedMeshes[bi];
-        var obj = bm.obj;
-        if (!obj.parent) continue;
-        var meta = bm.meta;
-        var anyVis = false;
-        for (var i = 0; i < meta.length; i++) {
-          var m = meta[i];
-          if (storeyFilter !== null && storeyFilter !== undefined &&
-              m.storey !== storeyFilter) continue;
-          if (hiddenDiscs && hiddenDiscs.size > 0 &&
-              hiddenDiscs.has(m.disc)) continue;
-
-          if (!visStoreys[m.storey]) {
-            obj.setVisibleAt(m.slotId, false);
-            m._dlodHid = true;
-            hidCount++;
-          } else {
-            if (m._dlodHid) { obj.setVisibleAt(m.slotId, true); m._dlodHid = false; }
-            anyVis = true;
-            visCount++;
-          }
-        }
-        obj.visible = anyVis;
+    // ── BatchedMesh: direct refs (no traverse) ──
+    // §S271b: When visStoreys=null, just ensure all BatchedMesh are visible (no per-slot work).
+    // Only enter per-slot loop when storey culling is active.
+    for (var bi = 0; bi < _batchedMeshes.length; bi++) {
+      var bm = _batchedMeshes[bi];
+      var obj = bm.obj;
+      if (!obj.parent) continue;
+      if (!visStoreys) {
+        // No storey culling — ensure mesh is visible, skip per-slot iteration
+        obj.visible = true;
+        continue;
       }
+      var meta = bm.meta;
+      var anyVis = false;
+      for (var i = 0; i < meta.length; i++) {
+        var m = meta[i];
+        if (storeyFilter !== null && storeyFilter !== undefined &&
+            m.storey !== storeyFilter) continue;
+        if (hiddenDiscs && hiddenDiscs.size > 0 &&
+            hiddenDiscs.has(m.disc)) continue;
+
+        if (!visStoreys[m.storey]) {
+          obj.setVisibleAt(m.slotId, false);
+          m._dlodHid = true;
+          hidCount++;
+        } else {
+          if (m._dlodHid) { obj.setVisibleAt(m.slotId, true); m._dlodHid = false; }
+          anyVis = true;
+          visCount++;
+        }
+      }
+      obj.visible = anyVis;
     }
 
-    // ── InstancedMesh: direct iteration (no traverse) ──
+    // ── InstancedMesh: direct refs (no traverse) ──
     if (visStoreys) {
       for (var ii = 0; ii < _instancedMeshes.length; ii++) {
         var im = _instancedMeshes[ii];
