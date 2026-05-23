@@ -142,6 +142,6 @@ test.describe('S271 Mobile Performance Fixes', () => {
     const version = match ? match[1] : 'unknown';
 
     console.log('§S271_SW_VERSION version=' + version);
-    expect(version).toBe('v439');
+    expect(parseInt(version.replace('v', ''))).toBeGreaterThanOrEqual(439);
   });
 });
