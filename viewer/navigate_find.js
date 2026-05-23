@@ -351,12 +351,18 @@
     }
     A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
     elClose.onclick = closeFindPanel;
-    // §S265: Tap outside find panel to close (mobile UX)
+    // §S275: Tap (not drag) outside find panel to close
+    var _findPointerDown = { x: 0, y: 0 };
+    document.addEventListener('pointerdown', function(e) {
+      _findPointerDown.x = e.clientX; _findPointerDown.y = e.clientY;
+    });
     document.addEventListener('pointerup', function(e) {
       if (panel.style.display === 'none') return;
       if (panel.contains(e.target)) return;
-      // Don't close if tapping the Find pill button itself (it toggles)
       if (e.target.closest && e.target.closest('[title="Find"]')) return;
+      // Only close on tap — ignore drags (orbit/pan)
+      var dx = e.clientX - _findPointerDown.x, dy = e.clientY - _findPointerDown.y;
+      if (Math.sqrt(dx * dx + dy * dy) > 10) return;
       closeFindPanel();
     });
 
