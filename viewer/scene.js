@@ -28,23 +28,24 @@ async function setupScene(A) {
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
-  // §S276 Phase 2: WebGPURenderer with compatibility mode — auto WebGPU or WebGL2 fallback.
-  // Falls back to WebGLRenderer if WebGPURenderer not available (loader failed).
+  // §S276 Phase 2: WebGPURenderer with compatibility mode.
+  // compileAsync() must be called after streaming to pre-warm shader pipelines,
+  // otherwise first render blocks main thread compiling 100+ material pipelines.
   var _RendererClass = THREE.WebGPURenderer || THREE.WebGLRenderer;
   var _isWebGPU = (_RendererClass === THREE.WebGPURenderer);
   const renderer = new _RendererClass({
     canvas,
     antialias: !_isMobileRenderer,
     preserveDrawingBuffer: true,
-    forceWebGL: false  // §S276: try WebGPU first, auto-fallback to WebGL2
+    forceWebGL: false
   });
-  // §S276: WebGPURenderer requires async init before first render
   if (_isWebGPU && renderer.init) {
     await renderer.init();
     console.log('§S276_RENDERER WebGPURenderer init complete backend=' + (renderer.backend ? renderer.backend.constructor.name : 'unknown'));
   } else {
     console.log('§S276_RENDERER WebGLRenderer (no WebGPU)');
   }
+  A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(_isMobileRenderer ? 1 : Math.min(window.devicePixelRatio, 2));  // §S271: mobile=1x, desktop=cap 2x
   renderer.setClearColor(0x1a1a2e);

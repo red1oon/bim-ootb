@@ -411,6 +411,8 @@ function setupStreaming(A) {
         A.updateHash();
         const iCount = Object.keys(A._instanceMeta).length;
         A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_done||'DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.').replace('{name}',A.activeBuilding).replace('{n}',A.streamedCount.toLocaleString()).replace('{g}',iCount).replace('{b}',A.buildingsRendered.size);
+        // §S276: Pre-compile WebGPU pipelines after all materials in scene
+        if (A._onStreamDone) A._onStreamDone();
         // §S265: Force render after stream-complete — DLOD/consolidation/bbox-clear happen after streaming=false
         if (A.markDirty) A.markDirty();
       }

@@ -5,12 +5,11 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v21 loaded — S276 WebGPU async init');
-// §S276: async for WebGPURenderer.init() in setupScene
+console.log('§MAIN_JS v22 loaded — S276 WebGPU + compileAsync');
 async function initViewer() {
   const APP = window.APP = {};
 
-  // §S276: setupScene is async (WebGPURenderer.init), run it first then sync the rest
+  // §S276: setupScene is async (WebGPURenderer.init), run first
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
@@ -528,6 +527,23 @@ async function initViewer() {
   });
 
   var _rafId;
+  // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
+  // materials, synchronous compilation during render() times out the main thread.
+  // Fix: after streaming adds all materials, call compileAsync() to pre-warm pipelines
+  // asynchronously, then allow render. During streaming bbox phase, rendering is fine
+  // (only 8 simple MeshBasicMaterial pipelines).
+  var _pipelinesCompiling = false;
+  APP._onStreamDone = function() {
+    if (!APP._isWebGPU || !APP.renderer.compileAsync) return;
+    _pipelinesCompiling = true;
+    console.log('§S276_COMPILE_ASYNC starting pipeline pre-compilation...');
+    var t0 = performance.now();
+    APP.renderer.compileAsync(APP.scene, APP.camera).then(function() {
+      _pipelinesCompiling = false;
+      _needsRender = true;
+      console.log('§S276_COMPILE_ASYNC done ms=' + (performance.now() - t0).toFixed(0));
+    });
+  };
   function animate() {
     _rafId = requestAnimationFrame(animate);
     if (!APP.walkModeActive) {
@@ -542,13 +558,12 @@ async function initViewer() {
     APP.walkModeGpsTick();
     // Device orientation LAST — nothing may overwrite the quaternion after this
     if (APP.walkModeActive) APP.walkOrientTick();
-    // §S274: On-demand render gate — mobile only.
-    // Desktop: unconditional (too many paths skip markDirty — panels, sliders, palette).
-    // Mobile: fewer UI paths, and GPU savings from skipping idle frames are critical.
     APP.updateMeasureLabels();
     if (APP.ground && APP.ground.visible) {
       APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
+    // §S276: Skip render while compileAsync in progress (prevents main-thread pipeline timeout)
+    if (_pipelinesCompiling) return;
     if (window._isMobile) {
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
         APP.renderer.render(APP.scene, APP.camera);
