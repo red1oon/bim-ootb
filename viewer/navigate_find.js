@@ -241,11 +241,12 @@
         _recognition.start();
       });
     } else if (elMicBtn) {
-      // No Web Speech API — show mic as passive icon (visual consistency)
-      elMicBtn.style.opacity = '0.3';
+      elMicBtn.style.opacity = '0.4';
       elMicBtn.style.cursor = 'default';
       elMicBtn.title = 'Voice not supported';
     }
+    // S275: Mic icon bright blue to match navigate button
+    if (elMicBtn) elMicBtn.style.color = '#4fc3f7';
 
     // ── S265 Phase 5: Dual-purpose input — NLP queries vs element search ──
     // If input matches NLP pattern (count/cost/show/total), run NLP. Otherwise, element search.
