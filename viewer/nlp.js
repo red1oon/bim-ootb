@@ -420,8 +420,10 @@ function setupNlp(A) {
     xBtn.textContent = '\u00d7';
     xBtn.style.cssText = 'position:absolute;top:4px;right:4px;cursor:pointer;color:#fff;font-size:16px;' +
       'background:#c33;border:none;border-radius:4px;padding:8px 14px;min-width:44px;min-height:44px;font-weight:700';
-    xBtn.onclick = function(e) { e.stopPropagation(); dismissToast(true); };
+    xBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); dismissToast(true); });
     _toast.appendChild(xBtn);
+    // S275: Prevent toast pointerup from closing Find panel
+    _toast.addEventListener('pointerup', function(e) { e.stopPropagation(); });
     document.body.appendChild(_toast);
     // No auto-dismiss — user closes with × button
   }
