@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 // scene.js — Three.js scene, camera, controls, lighting, ground
-function setupScene(A) {
+// §S276: async for WebGPURenderer.init()
+async function setupScene(A) {
   const canvas = document.getElementById('canvas');
   A.canvas = canvas;
 
@@ -27,11 +28,23 @@ function setupScene(A) {
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
-  const renderer = new THREE.WebGLRenderer({
+  // §S276 Phase 2: WebGPURenderer with compatibility mode — auto WebGPU or WebGL2 fallback.
+  // Falls back to WebGLRenderer if WebGPURenderer not available (loader failed).
+  var _RendererClass = THREE.WebGPURenderer || THREE.WebGLRenderer;
+  var _isWebGPU = (_RendererClass === THREE.WebGPURenderer);
+  const renderer = new _RendererClass({
     canvas,
     antialias: !_isMobileRenderer,
-    preserveDrawingBuffer: true
+    preserveDrawingBuffer: true,
+    forceWebGL: false  // §S276: try WebGPU first, auto-fallback to WebGL2
   });
+  // §S276: WebGPURenderer requires async init before first render
+  if (_isWebGPU && renderer.init) {
+    await renderer.init();
+    console.log('§S276_RENDERER WebGPURenderer init complete backend=' + (renderer.backend ? renderer.backend.constructor.name : 'unknown'));
+  } else {
+    console.log('§S276_RENDERER WebGLRenderer (no WebGPU)');
+  }
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(_isMobileRenderer ? 1 : Math.min(window.devicePixelRatio, 2));  // §S271: mobile=1x, desktop=cap 2x
   renderer.setClearColor(0x1a1a2e);

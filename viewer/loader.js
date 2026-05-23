@@ -113,27 +113,36 @@ async function loadAllLibs() {
   var _threeBarEl = document.getElementById('lib-0-bar');
   if (_threeStatusEl) { _threeStatusEl.textContent = 'importing ESM...'; _threeStatusEl.style.color = '#4fc3f7'; }
 
+  // §S276 Phase 2: Load WebGPU build (includes WebGPURenderer + TSL + compat mode)
+  // Falls back to standard ESM if WebGPU build unavailable
   try {
-    const _esm = await import('./lib/three.module.min.js');
-    // §S260: ESM namespace is frozen — copy all exports into mutable object
-    // so we can attach OrbitControls, monkey-patch prototypes, etc.
+    const _esm = await import('./lib/three.webgpu.min.js');
     const _three = {};
     for (const k of Object.keys(_esm)) _three[k] = _esm[k];
     window.THREE = _three;
-    console.log('§UPGRADE_THREE local ESM loaded r=' + THREE.REVISION);
+    console.log('§UPGRADE_THREE local WebGPU ESM loaded r=' + THREE.REVISION + ' WebGPURenderer=' + (typeof THREE.WebGPURenderer));
   } catch(e) {
     console.warn('§UPGRADE_THREE_LOCAL_FAIL ' + e.message + ' — trying CDN');
     try {
-      const _esm = await import('https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.min.js');
+      const _esm = await import('https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.webgpu.min.js');
       const _three = {};
       for (const k of Object.keys(_esm)) _three[k] = _esm[k];
       window.THREE = _three;
-      console.log('§UPGRADE_THREE CDN ESM loaded r=' + THREE.REVISION);
+      console.log('§UPGRADE_THREE CDN WebGPU ESM loaded r=' + THREE.REVISION);
     } catch(e2) {
-      // §S276: No UMD fallback — r161+ removed UMD builds. ESM required.
-      console.error('§UPGRADE_THREE_FAIL ESM unavailable: ' + e2.message);
-      document.getElementById('status').textContent = 'Three.js failed — requires modern browser with ESM support';
-      throw e2;
+      // §S276: Fallback to standard ESM (no WebGPU, WebGLRenderer only)
+      console.warn('§UPGRADE_THREE WebGPU build failed, trying standard ESM: ' + e2.message);
+      try {
+        const _esm = await import('./lib/three.module.min.js');
+        const _three = {};
+        for (const k of Object.keys(_esm)) _three[k] = _esm[k];
+        window.THREE = _three;
+        console.log('§UPGRADE_THREE standard ESM fallback loaded r=' + THREE.REVISION);
+      } catch(e3) {
+        console.error('§UPGRADE_THREE_FAIL all ESM unavailable: ' + e3.message);
+        document.getElementById('status').textContent = 'Three.js failed — requires modern browser with ESM support';
+        throw e3;
+      }
     }
   }
   var _threeMs = (performance.now() - _threeT0).toFixed(0);
@@ -223,11 +232,12 @@ async function loadAllLibs() {
   // Critical path done — wait for main.js to define initViewer (may still be loading on mobile)
   clearInterval(_timerIv);
 
-  function _startViewer() {
+  // §S276: initViewer is async (WebGPURenderer.init)
+  async function _startViewer() {
     document.getElementById('load-overlay').style.display = 'none';
     document.getElementById('canvas').style.display = 'block';
     try {
-      initViewer();
+      await initViewer();
     } catch(e) {
       document.getElementById('status').textContent = `Init error: ${e.message}`;
       console.error('[S205] §INIT_VIEWER_ERROR', e);
