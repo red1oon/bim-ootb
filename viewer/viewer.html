@@ -753,11 +753,11 @@
   <span style="color:#aaa;font-size:9px;margin-left:4px;vertical-align:middle">Report Bug</span>
 </div>
 
-<!-- §S276: Import map for Three.js r184 ESM — resolves bare 'three' specifier -->
+<!-- §S276: Import map for Three.js r184 WebGPU — includes WebGPURenderer + TSL + compat mode -->
 <script type="importmap">
-{ "imports": { "three": "./lib/three.module.min.js" } }
+{ "imports": { "three": "./lib/three.webgpu.min.js" } }
 </script>
-<script src="loader.js?v=11"></script>
+<script src="loader.js?v=12"></script>
 <script src="lib/httpvfs.js?v=1" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
@@ -864,7 +864,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=474')
+  navigator.serviceWorker.register('sw.js?v=475')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

@@ -8,13 +8,14 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v474';
+const CACHE_VERSION = 'v475';
 const CACHE_NAME = 'bim-ootb-' + CACHE_VERSION;
 
 // Local copies of vendor libs — single-origin, no CDN dependency
 const LOCAL_LIBS = [
-  'lib/three.module.min.js',  // §S276: r184 ESM (imports three.core.min.js)
-  'lib/three.core.min.js',   // §S276: r184 core (split build)
+  'lib/three.webgpu.min.js', // §S276: r184 WebGPU (imports three.core.min.js)
+  'lib/three.module.min.js', // §S276: r184 standard ESM fallback
+  'lib/three.core.min.js',  // §S276: r184 core (split build)
   'lib/OrbitControls.module.js',  // §S276: r184 ESM
   'lib/sql-wasm.js',
   'lib/sql-wasm.wasm',

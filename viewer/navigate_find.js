@@ -340,8 +340,9 @@
       populateDropdowns();
       buildChips();
       if (searchTerm) { _handleInput(searchTerm); } else { runSearch(); }
-      // S275: Auto-focus search input so keyboard works immediately
-      setTimeout(function() { elName.focus(); }, 50);
+      // S275: Auto-focus — panel system + input
+      if (typeof window._focusPanel === 'function') window._focusPanel('find');
+      elName.focus();
       console.log('[S233] §NAV_FIND_OPEN term="' + (searchTerm || '') + '" voice=' + nav.voiceMode);
     };
 
@@ -1037,7 +1038,12 @@
       if (navBtn && elSelected.style.display !== 'none') items.push(navBtn);
       return items;
     };
-    panel.addEventListener('keydown', function(e) {
+    // S275: Unified keyboard nav — document-level so it works regardless of focus target
+    document.addEventListener('keydown', function(e) {
+      if (panel.style.display === 'none') return;
+      // Only handle when focus is inside the panel
+      if (!panel.contains(document.activeElement)) return;
+
       var cycle = _focusCycle();
       var cur = cycle.indexOf(document.activeElement);
 
@@ -1046,17 +1052,17 @@
         if (document.activeElement === elName && elName.value.length > 0) {
           var atEdge = (e.key === 'ArrowLeft' && elName.selectionStart === 0) ||
                        (e.key === 'ArrowRight' && elName.selectionStart === elName.value.length);
-          if (!atEdge) return; // let text cursor move
+          if (!atEdge) return;
         }
         e.preventDefault();
         if (cur < 0) cur = 0;
         var next = e.key === 'ArrowRight' ? (cur + 1) % cycle.length : (cur - 1 + cycle.length) % cycle.length;
         cycle[next].focus();
         cycle.forEach(function(el, i) { el.style.outline = (i === next) ? '2px solid #4fc3f7' : ''; });
+        console.log('§FIND_NAV ' + e.key + ' → ' + next + '/' + cycle.length);
         return;
       }
 
-      // Tab cycles same as Left/Right
       if (e.key === 'Tab') {
         e.preventDefault();
         if (cur < 0) cur = 0;

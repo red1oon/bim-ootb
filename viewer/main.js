@@ -5,12 +5,15 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v20 loaded — 4D_QTO_REQUEST relay enabled');
-function initViewer() {
+console.log('§MAIN_JS v21 loaded — S276 WebGPU async init');
+// §S276: async for WebGPURenderer.init() in setupScene
+async function initViewer() {
   const APP = window.APP = {};
 
-  // Initialize modules in order — guarded so a single script load failure doesn't kill the viewer
-  var _mods = [setupConfig, setupScene, setupHelpers, setupStreaming, setupPanels, setupTools,
+  // §S276: setupScene is async (WebGPURenderer.init), run it first then sync the rest
+  if (typeof setupConfig === 'function') setupConfig(APP);
+  if (typeof setupScene === 'function') await setupScene(APP);
+  var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
     setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   if (typeof setupDLOD === 'function') setupDLOD(APP);
