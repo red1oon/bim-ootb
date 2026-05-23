@@ -306,17 +306,25 @@
         if (name) {
           var mtSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta WHERE' +
             ' (LOWER(element_name) LIKE LOWER(?) OR LOWER(ifc_class) LIKE LOWER(?))' +
-            (bld ? ' AND building = ?' : '') + ' GROUP BY ifc_class';
+            (bld ? ' AND building = ?' : '') +
+            (savedStorey ? ' AND storey = ?' : '') + ' GROUP BY ifc_class';
           var mtParams = ['%' + name + '%', '%' + name + '%'];
           if (bld) mtParams.push(bld);
+          if (savedStorey) mtParams.push(savedStorey);
           var mtRows = A.db.exec(mtSql, mtParams);
           if (mtRows.length > 0) mtRows[0].values.forEach(function(r) { matchByType[r[0]] = r[1]; });
         }
 
-        // All types in building, sorted by match count (matches first)
+        // S275: Types filtered by selected storey (cross-filter)
+        var typeWhere = bld || savedStorey ? ' WHERE' : '';
+        var typeClauses = [];
+        var typeParams = [];
+        if (bld) { typeClauses.push('building = ?'); typeParams.push(bld); }
+        if (savedStorey) { typeClauses.push('storey = ?'); typeParams.push(savedStorey); }
+        if (typeClauses.length) typeWhere += ' ' + typeClauses.join(' AND ');
         var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
-          (bld ? ' WHERE building = ?' : '') + ' GROUP BY ifc_class ORDER BY cnt DESC';
-        var types = A.db.exec(typeSql, bld ? [bld] : []);
+          typeWhere + ' GROUP BY ifc_class ORDER BY cnt DESC';
+        var types = A.db.exec(typeSql, typeParams);
         elType.innerHTML = '<option value="">All types</option>';
         if (types.length > 0) {
           // Sort: types with matches first, then the rest
