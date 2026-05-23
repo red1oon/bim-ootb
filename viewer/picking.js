@@ -456,4 +456,21 @@ function setupPicking(A) {
       console.log(`§PICK_ERR ${err.message}`);
     }
   });
+
+  // S275: Info panel close button — pointerup for mobile (onclick doesn't fire on touch)
+  var infoClose = document.getElementById('info-panel-close');
+  if (infoClose) {
+    infoClose.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      document.getElementById('info-panel').style.display = 'none';
+      // Clear highlight bbox on panel close
+      if (window._pickHighlight) {
+        if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
+        window._pickHighlight.geometry.dispose();
+        window._pickHighlight.material.dispose();
+        window._pickHighlight = null;
+        if (A.markDirty) A.markDirty();
+      }
+    });
+  }
 }

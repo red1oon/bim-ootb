@@ -614,7 +614,7 @@
       return '\u25C6';
     }
 
-    // ── Select result → highlight + fly-to (S275) ──
+    // ── Select result → IFC bbox highlight + info panel + fly-to (S275) ──
     // Camera flies to element. Navigate button handles the walk-to experience (from main door).
     function selectResult(idx) {
       nav.activeIdx = idx;
@@ -625,31 +625,36 @@
       var r = nav.results[idx];
       if (!r) return;
 
-      // Yellow highlight on element
+      // S275: IFC bbox highlight from DB (same as picking.js — works for merged/batched)
+      highlightElement(r.guid);
+
+      // S275: Show standard IFC info panel (same as picking.js pointerup)
+      showInfoPanel(r.guid);
+
+      // S275: Fly camera to element — preserve viewing direction, just re-target
       var pos = A.ifc2three(r.cx, r.cy, r.cz);
       var center = new THREE.Vector3(pos.x, pos.y, pos.z);
-      highlightElement(r.guid, center);
-
-      // S275: Fly camera to element — smooth cubic ease-out (same as zoomToGuid)
-      // Try mesh bbox for accurate framing; fall back to DB position
-      var mesh = typeof A.findMeshByGuid === 'function' ? A.findMeshByGuid(r.guid) : null;
-      var dist = 8; // default distance for fallback
-      if (mesh && mesh.geometry) {
-        var box3 = new THREE.Box3().setFromObject(mesh);
-        var sz = box3.getSize(new THREE.Vector3());
-        center = box3.getCenter(new THREE.Vector3());
-        dist = Math.max(sz.x, sz.y, sz.z) * 3 + 2;
-      }
-      var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
-      var start = A.camera.position.clone();
+      var dist = 8;
+      try {
+        var bboxRows = A.dbQuery(
+          'SELECT bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid = ?', [r.guid]);
+        if (bboxRows.length && bboxRows[0][0] != null) {
+          dist = Math.max(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]) * 3 + 2;
+        }
+      } catch(e) { /* use default dist */ }
+      // Keep camera's current viewing direction — just move to frame the new element
+      var camDir = A.camera.position.clone().sub(A.controls.target).normalize();
+      var end = center.clone().add(camDir.multiplyScalar(dist));
+      var startPos = A.camera.position.clone();
+      var startTarget = A.controls.target.clone();
       var t = 0;
       if (_flyAnim) cancelAnimationFrame(_flyAnim);
       function animFly() {
         t += 0.04;
         if (t > 1) t = 1;
         var e = 1 - Math.pow(1 - t, 3); // cubic ease-out
-        A.camera.position.lerpVectors(start, end, e);
-        A.controls.target.copy(center);
+        A.camera.position.lerpVectors(startPos, end, e);
+        A.controls.target.lerpVectors(startTarget, center, e);
         A.controls.update();
         if (t < 1) { _flyAnim = requestAnimationFrame(animFly); } else { _flyAnim = null; }
       }
@@ -663,55 +668,94 @@
       var dispName = friendlyName(r.element_name, r.ifc_class);
       if (A.status) A.status.textContent = dispName + ' · ' + (r.storey || '?');
 
-      console.log('[S275] §NAV_FIND_SELECT idx=' + idx + ' guid=' + (nav.results[idx]||{}).guid + ' flyTo=(' + center.x.toFixed(1) + ',' + center.y.toFixed(1) + ',' + center.z.toFixed(1) + ')');
+      console.log('[S275] §NAV_FIND_SELECT idx=' + idx + ' guid=' + r.guid +
+        ' flyTo=(' + center.x.toFixed(1) + ',' + center.y.toFixed(1) + ',' + center.z.toFixed(1) + ')');
     }
 
-    // ── Highlight element (yellow wireframe box + pulse) ──
+    // ── S275: Show IFC info panel — same data as picking.js ──
+    function showInfoPanel(guid) {
+      try {
+        var rows = A.dbQuery(
+          'SELECT m.ifc_class, m.element_name, m.guid, m.building, m.storey, m.discipline, m.material_rgba' +
+          ' FROM elements_meta m WHERE m.guid = ?', [guid]);
+        if (!rows.length) return;
+        document.getElementById('info-class').textContent = rows[0][0] || '—';
+        document.getElementById('info-name').textContent = rows[0][1] || '—';
+        document.getElementById('info-guid').textContent = rows[0][2] || '—';
+        document.getElementById('info-building').textContent = rows[0][3] || '—';
+        document.getElementById('info-storey').textContent = rows[0][4] || '—';
+        document.getElementById('info-disc').textContent = rows[0][5] || '—';
+        document.getElementById('info-material').textContent = rows[0][6] || '—';
+        document.getElementById('info-panel').style.display = 'block';
+        var snagRow = document.getElementById('snag-btn-row');
+        if (snagRow) snagRow.style.display = A.walkModeActive ? 'block' : 'none';
+        console.log('[S275] §FIND_INFO ' + rows[0][0] + ' "' + rows[0][1] + '" ' + rows[0][5] + ' ' + rows[0][4]);
+      } catch(e) {
+        console.log('[S275] §FIND_INFO_ERR ' + e.message);
+      }
+    }
+
+    // ── Highlight element (yellow IFC bbox from DB — same as picking.js) ──
     var _highlight = null;
     var _highlightPulse = null;
     var _flyAnim = null; // S275: running fly-to animation frame
-    function highlightElement(guid, worldPos) {
+    function highlightElement(guid) {
       clearHighlight();
-      var hlMat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
-      // Find mesh by guid (works on desktop, fails on mobile merged meshes)
-      var mesh = null;
-      if (typeof A.findMeshByGuid === 'function') mesh = A.findMeshByGuid(guid);
-      if (mesh && mesh.geometry) {
-        mesh.geometry.computeBoundingBox();
-        var bb = mesh.geometry.boundingBox;
-        var size = new THREE.Vector3(); bb.getSize(size);
-        var center = new THREE.Vector3(); bb.getCenter(center);
-        var hlGeo = new THREE.BoxGeometry(size.x || 1, size.y || 1, size.z || 1);
-        var hlEdges = new THREE.EdgesGeometry(hlGeo);
-        var hlLine = new THREE.LineSegments(hlEdges, hlMat);
-        hlLine.position.copy(center);
-        mesh.add(hlLine);
-        _highlight = hlLine;
-      } else if (worldPos) {
-        // Fallback: visible 2m marker box at element position (for mobile merged meshes)
-        var hlGeo2 = new THREE.BoxGeometry(2, 2, 2);
-        var hlEdges2 = new THREE.EdgesGeometry(hlGeo2);
-        var hlLine2 = new THREE.LineSegments(hlEdges2, hlMat);
-        hlLine2.position.copy(worldPos);
-        A.scene.add(hlLine2);
-        _highlight = hlLine2;
+      // Clear picking.js highlight too (shared global)
+      if (window._pickHighlight) {
+        if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
+        window._pickHighlight.geometry.dispose();
+        window._pickHighlight.material.dispose();
+        window._pickHighlight = null;
       }
+      // DB-based bbox (works for merged/batched/instanced — same as picking.js)
+      var hlPos = new THREE.Vector3();
+      var hlSizeX = 0.3, hlSizeY = 0.3, hlSizeZ = 0.3;
+      try {
+        var bboxRows = A.dbQuery(
+          'SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid = ?',
+          [guid]);
+        if (bboxRows.length && bboxRows[0][0] != null) {
+          var dbC = A.ifc2three(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]);
+          hlPos.set(dbC.x, dbC.y, dbC.z);
+          hlSizeX = bboxRows[0][3] || 0.3;  // IFC X → Three X
+          hlSizeY = bboxRows[0][5] || 0.3;  // IFC Z → Three Y
+          hlSizeZ = bboxRows[0][4] || 0.3;  // IFC Y → Three Z
+        }
+      } catch(e) { /* fallback to 0.3 cube at origin */ }
+
+      var hlGeo = new THREE.BoxGeometry(
+        Math.max(hlSizeX, 0.01), Math.max(hlSizeY, 0.01), Math.max(hlSizeZ, 0.01));
+      var hlEdges = new THREE.EdgesGeometry(hlGeo);
+      hlGeo.dispose();
+      var hlMesh = new THREE.LineSegments(hlEdges,
+        new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false }));
+      hlMesh.renderOrder = 999;
+      hlMesh.position.copy(hlPos);
+      A.scene.add(hlMesh);
+      _highlight = hlMesh;
+      window._pickHighlight = hlMesh; // share with picking.js so next pick clears it
+      if (A.markDirty) A.markDirty();
+
       // Pulse animation — blink the highlight for visibility
-      if (_highlight) {
+      clearInterval(_highlightPulse);
+      var vis = true;
+      _highlightPulse = setInterval(function() {
+        if (!_highlight) { clearInterval(_highlightPulse); return; }
+        vis = !vis;
+        _highlight.visible = vis;
+        if (A.markDirty) A.markDirty();
+      }, 400);
+      // Stop pulsing after 6s — stay visible
+      setTimeout(function() {
         clearInterval(_highlightPulse);
-        var vis = true;
-        _highlightPulse = setInterval(function() {
-          if (!_highlight) { clearInterval(_highlightPulse); return; }
-          vis = !vis;
-          _highlight.visible = vis;
-        }, 400);
-        // Stop pulsing after 6s — stay visible
-        setTimeout(function() {
-          clearInterval(_highlightPulse);
-          if (_highlight) _highlight.visible = true;
-        }, 6000);
-      }
-      console.log('[S233] §NAV_FIND_HIGHLIGHT guid=' + guid);
+        if (_highlight) _highlight.visible = true;
+        if (A.markDirty) A.markDirty();
+      }, 6000);
+
+      console.log('[S275] §NAV_FIND_HIGHLIGHT guid=' + guid +
+        ' pos=(' + hlPos.x.toFixed(1) + ',' + hlPos.y.toFixed(1) + ',' + hlPos.z.toFixed(1) + ')' +
+        ' size=(' + hlSizeX.toFixed(2) + ',' + hlSizeY.toFixed(2) + ',' + hlSizeZ.toFixed(2) + ')');
     }
     function clearHighlight() {
       clearInterval(_highlightPulse);
@@ -719,7 +763,9 @@
         if (_highlight.parent) _highlight.parent.remove(_highlight);
         if (_highlight.geometry) _highlight.geometry.dispose();
         if (_highlight.material) _highlight.material.dispose();
+        if (window._pickHighlight === _highlight) window._pickHighlight = null;
         _highlight = null;
+        if (A.markDirty) A.markDirty();
       }
     }
 
