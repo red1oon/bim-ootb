@@ -570,8 +570,12 @@ async function initViewer() {
     if (APP.ground && APP.ground.visible) {
       APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
-    // §S276: Skip render while compileAsync in progress (prevents main-thread pipeline timeout)
+    // §S276: On WebGPU, skip render() during streaming AND during compileAsync.
+    // WebGPU compiles shader pipelines synchronously inside render() — with 100+ materials
+    // from progressive flushes, this blocks the main thread for 10+ seconds causing timeout.
+    // Bboxes are already on screen from pre-streaming render. Real geometry appears after compileAsync.
     if (_pipelinesCompiling) return;
+    if (APP._isWebGPU && APP.streaming) return;
     if (window._isMobile) {
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
         APP.renderer.render(APP.scene, APP.camera);
