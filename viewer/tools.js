@@ -101,6 +101,9 @@ function setupTools(A) {
       mats.push(A.ground.material);
     }
 
+    // §S276b: Batch material updates across frames to avoid GPU shader recompile stutter.
+    // Set properties immediately (cheap), but stagger needsUpdate in batches via rAF.
+    var BATCH = Math.ceil(mats.length / 3);
     for (var i = 0; i < mats.length; i++) {
       var mat = mats[i];
       if (A.xrayOn) {
@@ -120,15 +123,21 @@ function setupTools(A) {
           delete mat.userData.origSide;
         }
       }
-      mat.needsUpdate = true;
       updated++;
     }
+    // Stagger needsUpdate across 3 frames
+    function _batchNeedsUpdate(start) {
+      var end = Math.min(start + BATCH, mats.length);
+      for (var j = start; j < end; j++) mats[j].needsUpdate = true;
+      if (end < mats.length) requestAnimationFrame(function() { _batchNeedsUpdate(end); });
+    }
+    _batchNeedsUpdate(0);
 
     // §S271b: Disable transparent sort during X-Ray — uniform opacity doesn't need back-to-front order.
     // Saves O(n log n) sort per frame on 122K elements.
     A.renderer.sortObjects = !A.xrayOn;
 
-    console.log(`[S200] §XRAY ${A.xrayOn ? 'ON' : 'OFF'} materials=${updated} sortObjects=${A.renderer.sortObjects}`);
+    console.log(`[S200] §XRAY ${A.xrayOn ? 'ON' : 'OFF'} materials=${updated} sortObjects=${A.renderer.sortObjects} batch=${BATCH}`);
     if (A.markDirty) A.markDirty();
   };
 
@@ -517,9 +526,9 @@ function setupTools(A) {
       // §S260: Full shadow setup on first enable — r160 needs this before any shadow render
       if (!A._shadowInited) {
         A.renderer.shadowMap.enabled = true;
-        A.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        A.renderer.shadowMap.type = THREE.PCFShadowMap;
         A._shadowInited = true;
-        console.log('§SHADOW_INIT shadowMap enabled + PCFSoft');
+        console.log('§SHADOW_INIT shadowMap enabled + PCF');
       }
       A.sun.castShadow = true;
     } else {

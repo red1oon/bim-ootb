@@ -182,6 +182,12 @@ async function loadAllLibs() {
 
   // §6.5 BVH acceleration — three-mesh-bvh monkey-patch
   // §S276: Upgrade 0.7.8→0.8.0 (0.8.x targets Three.js r170+)
+  // §S276b: Suppress "Multiple instances of Three.js" warning from BVH CDN bundle
+  var _origWarn = console.warn;
+  console.warn = function() {
+    if (arguments[0] && typeof arguments[0] === 'string' && arguments[0].indexOf('Multiple instances of Three.js') >= 0) return;
+    _origWarn.apply(console, arguments);
+  };
   console.log('§BVH_LOADING importing three-mesh-bvh@0.8.0 from CDN...');
   var _bvhT0 = performance.now();
   try {
@@ -213,6 +219,7 @@ async function loadAllLibs() {
     window._bvhReady = false;
     console.warn('§BVH_INIT_FAIL ' + e.message + ' — raycasting at normal speed');
   }
+  console.warn = _origWarn;  // §S276b: restore after BVH import
 
   // sql.js is needed for DB; load it before starting viewer
   // LIBS[0]=SQLite, but progress bar = lib-2
