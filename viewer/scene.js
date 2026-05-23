@@ -28,22 +28,42 @@ async function setupScene(A) {
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
-  // §S276 Phase 2: WebGPURenderer with compatibility mode.
-  // compileAsync() must be called after streaming to pre-warm shader pipelines,
-  // otherwise first render blocks main thread compiling 100+ material pipelines.
-  var _RendererClass = THREE.WebGPURenderer || THREE.WebGLRenderer;
-  var _isWebGPU = (_RendererClass === THREE.WebGPURenderer);
-  const renderer = new _RendererClass({
-    canvas,
-    antialias: !_isMobileRenderer,
-    preserveDrawingBuffer: true,
-    forceWebGL: false
-  });
-  if (_isWebGPU && renderer.init) {
+  // §S276: Only use WebGPURenderer when NATIVE WebGPU is available (navigator.gpu).
+  // Compat mode (WebGL2 backend via WebGPURenderer) is SLOWER than direct WebGLRenderer
+  // because TSL transpiles shader node graphs → GLSL — adds compilation overhead that
+  // causes script timeout on 48K-122K element scenes. Direct WebGLRenderer skips TSL.
+  var _hasNativeWebGPU = !!navigator.gpu && !!THREE.WebGPURenderer;
+  var _isWebGPU = false;
+  var renderer;
+  if (_hasNativeWebGPU) {
+    renderer = new THREE.WebGPURenderer({
+      canvas,
+      antialias: !_isMobileRenderer,
+      preserveDrawingBuffer: true
+    });
     await renderer.init();
-    console.log('§S276_RENDERER WebGPURenderer init complete backend=' + (renderer.backend ? renderer.backend.constructor.name : 'unknown'));
+    // Check if we actually got native WebGPU or WebGL fallback
+    var _backend = renderer.backend ? renderer.backend.constructor.name : 'unknown';
+    if (_backend === 'WebGPUBackend') {
+      _isWebGPU = true;
+      console.log('§S276_RENDERER WebGPURenderer native WebGPU backend');
+    } else {
+      // Got WebGL compat — dispose and use direct WebGLRenderer (faster, no TSL overhead)
+      console.log('§S276_RENDERER WebGPURenderer got ' + _backend + ' — switching to direct WebGLRenderer');
+      renderer.dispose();
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: !_isMobileRenderer,
+        preserveDrawingBuffer: true
+      });
+    }
   } else {
-    console.log('§S276_RENDERER WebGLRenderer (no WebGPU)');
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: !_isMobileRenderer,
+      preserveDrawingBuffer: true
+    });
+    console.log('§S276_RENDERER WebGLRenderer (no navigator.gpu)');
   }
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
