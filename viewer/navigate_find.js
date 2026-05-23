@@ -871,7 +871,7 @@
       var hlEdges = new THREE.EdgesGeometry(hlGeo);
       hlGeo.dispose();
       var hlMesh = new THREE.LineSegments(hlEdges,
-        new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false }));
+        A._bboxMaterial);
       hlMesh.renderOrder = 999;
       hlMesh.position.copy(hlPos);
       A.scene.add(hlMesh);
@@ -879,21 +879,7 @@
       window._pickHighlight = hlMesh; // share with picking.js so next pick clears it
       if (A.markDirty) A.markDirty();
 
-      // Pulse animation — blink the highlight for visibility
-      clearInterval(_highlightPulse);
-      var vis = true;
-      _highlightPulse = setInterval(function() {
-        if (!_highlight) { clearInterval(_highlightPulse); return; }
-        vis = !vis;
-        _highlight.visible = vis;
-        if (A.markDirty) A.markDirty();
-      }, 400);
-      // Stop pulsing after 6s — stay visible
-      setTimeout(function() {
-        clearInterval(_highlightPulse);
-        if (_highlight) _highlight.visible = true;
-        if (A.markDirty) A.markDirty();
-      }, 6000);
+      // S275: Solid highlight — no flashing, consistent with picking.js
 
       console.log('[S275] §NAV_FIND_HIGHLIGHT guid=' + guid +
         ' pos=(' + hlPos.x.toFixed(1) + ',' + hlPos.y.toFixed(1) + ',' + hlPos.z.toFixed(1) + ')' +

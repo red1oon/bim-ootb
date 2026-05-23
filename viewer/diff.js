@@ -202,7 +202,7 @@ function setupDiff(A) {
     var ctr = new THREE.Vector3(); bb.getCenter(ctr);
     var hlGeo = new THREE.BoxGeometry(sz.x, sz.y, sz.z);
     var hlEdges = new THREE.EdgesGeometry(hlGeo);
-    var hlLine = new THREE.LineSegments(hlEdges, new THREE.LineBasicMaterial({ color: 0xffff00 }));
+    var hlLine = new THREE.LineSegments(hlEdges, A._bboxMaterial || new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2, depthTest: false }));
     hlLine.position.copy(ctr);
     target.add(hlLine);
     window._pickHighlight = hlLine;

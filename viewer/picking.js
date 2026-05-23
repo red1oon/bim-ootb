@@ -478,7 +478,7 @@ function setupPicking(A) {
     const hlEdges = new THREE.EdgesGeometry(hlGeo);
     hlGeo.dispose();
     const hlMesh = new THREE.LineSegments(hlEdges,
-      new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false }));
+      A._bboxMaterial);
     hlMesh.renderOrder = 999;
     hlMesh.position.copy(hlPos);
     hlMesh.quaternion.copy(hlQuat);

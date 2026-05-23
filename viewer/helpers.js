@@ -473,5 +473,8 @@ function setupHelpers(A) {
     console.log('§SNAG_CREATE label=' + (opts.label || 'none') + ' guid=' + (opts.guid || 'none'));
   };
 
+  // ── S275: Shared yellow bbox highlight material — one definition for all callers ──
+  A._bboxMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2, depthTest: false });
+
   console.log('§HELPERS_READY collectMeshes+filterInstancedMesh+dbQuery+reportBug+QR+snags');
 }
