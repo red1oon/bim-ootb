@@ -642,12 +642,12 @@
       // S275: Fly camera to element — preserve viewing direction, just re-target
       var pos = A.ifc2three(r.cx, r.cy, r.cz);
       var center = new THREE.Vector3(pos.x, pos.y, pos.z);
-      var dist = 8;
+      var dist = 5;
       try {
         var bboxRows = A.dbQuery(
           'SELECT bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid = ?', [r.guid]);
         if (bboxRows.length && bboxRows[0][0] != null) {
-          dist = Math.max(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]) * 3 + 2;
+          dist = Math.max(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]) * 2 + 1;
         }
       } catch(e) { /* use default dist */ }
       // Keep camera's current viewing direction — just move to frame the new element
@@ -658,9 +658,10 @@
       var t = 0;
       if (_flyAnim) cancelAnimationFrame(_flyAnim);
       function animFly() {
-        t += 0.04;
+        t += 0.02; // slower steps → smoother
         if (t > 1) t = 1;
-        var e = 1 - Math.pow(1 - t, 3); // cubic ease-out
+        // ease-in-out: slow departure, fast middle, slow arrival
+        var e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         A.camera.position.lerpVectors(startPos, end, e);
         A.controls.target.lerpVectors(startTarget, center, e);
         A.controls.update();
