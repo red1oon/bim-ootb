@@ -466,7 +466,7 @@ function setupScene(A) {
       var b = document.getElementById('section-btn'); if (b) b.click();
     },
     '4':  function() { if (typeof A.export4D5D === 'function') A.export4D5D(); },
-    'f':  function() { if (typeof A.openFindPanel === 'function') A.openFindPanel(''); },
+    'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
     't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },

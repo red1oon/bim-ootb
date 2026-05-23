@@ -58,9 +58,15 @@ function initViewer() {
   // Proxy so nlp.js "typeof A.openFindPanel === 'function'" finds it immediately.
   // setupNavigate() overwrites APP.openFindPanel with the real implementation.
   var _navProxy = function(searchTerm) {
+    console.log('[S275] §FIND_PROXY loading navigate modules…');
+    if (APP.status) APP.status.textContent = 'Loading Find…';
     APP.loadNavigate().then(function() {
       // After load, APP.openFindPanel is the real function (set by setupNavigate)
       if (APP.openFindPanel !== _navProxy) APP.openFindPanel(searchTerm);
+      else console.warn('[S275] §FIND_PROXY_FAIL openFindPanel still proxy after load');
+    }).catch(function(e) {
+      console.warn('[S275] §FIND_PROXY_ERR', e);
+      if (APP.status) APP.status.textContent = 'Find failed to load';
     });
   };
   APP.openFindPanel = _navProxy;
