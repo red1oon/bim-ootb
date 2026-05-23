@@ -521,6 +521,43 @@ function setupPicking(A) {
     }
   });
 
+  // S275: Tap info panel → re-highlight the displayed element's bbox
+  var infoPanel = document.getElementById('info-panel');
+  if (infoPanel) {
+    infoPanel.addEventListener('pointerup', function(e) {
+      // Don't re-highlight if tapping the close button or snag button
+      if (e.target.closest('#info-panel-close') || e.target.closest('#snag-btn-row')) return;
+      var guid = document.getElementById('info-guid').textContent;
+      if (!guid || guid === '—') return;
+      // Clear previous highlight
+      if (window._pickHighlight) {
+        if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
+        window._pickHighlight.geometry.dispose();
+        window._pickHighlight = null;
+      }
+      // DB bbox highlight (same as picking)
+      try {
+        var bboxRows = A.dbQuery(
+          'SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid = ?', [guid]);
+        if (bboxRows.length && bboxRows[0][0] != null) {
+          var dbC = A.ifc2three(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]);
+          var sx = bboxRows[0][3] || 0.3, sy = bboxRows[0][5] || 0.3, sz = bboxRows[0][4] || 0.3;
+          var hlGeo = new THREE.BoxGeometry(Math.max(sx, 0.01), Math.max(sy, 0.01), Math.max(sz, 0.01));
+          var hlEdges = new THREE.EdgesGeometry(hlGeo);
+          hlGeo.dispose();
+          var hlMesh = new THREE.LineSegments(hlEdges, A._bboxMaterial);
+          hlMesh.renderOrder = 999;
+          hlMesh.position.set(dbC.x, dbC.y, dbC.z);
+          A.scene.add(hlMesh);
+          window._pickHighlight = hlMesh;
+          A._lastPickGuid = guid;
+          if (A.markDirty) A.markDirty();
+          console.log('§INFO_REHIGHLIGHT guid=' + guid.substring(0, 12));
+        }
+      } catch(e) { /* silent */ }
+    });
+  }
+
   // S275: Info panel close button — pointerup for mobile (onclick doesn't fire on touch)
   var infoClose = document.getElementById('info-panel-close');
   if (infoClose) {
