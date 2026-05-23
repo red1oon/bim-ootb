@@ -1038,41 +1038,6 @@
       if (navBtn && elSelected.style.display !== 'none') items.push(navBtn);
       return items;
     };
-    // S275: Unified keyboard nav — document-level so it works regardless of focus target
-    document.addEventListener('keydown', function(e) {
-      if (panel.style.display === 'none') return;
-      // Only handle when focus is inside the panel
-      if (!panel.contains(document.activeElement)) return;
-
-      var cycle = _focusCycle();
-      var cur = cycle.indexOf(document.activeElement);
-
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        // Allow Left/Right for text cursor when input has text and cursor isn't at edge
-        if (document.activeElement === elName && elName.value.length > 0) {
-          var atEdge = (e.key === 'ArrowLeft' && elName.selectionStart === 0) ||
-                       (e.key === 'ArrowRight' && elName.selectionStart === elName.value.length);
-          if (!atEdge) return;
-        }
-        e.preventDefault();
-        if (cur < 0) cur = 0;
-        var next = e.key === 'ArrowRight' ? (cur + 1) % cycle.length : (cur - 1 + cycle.length) % cycle.length;
-        cycle[next].focus();
-        cycle.forEach(function(el, i) { el.style.outline = (i === next) ? '2px solid #4fc3f7' : ''; });
-        console.log('§FIND_NAV ' + e.key + ' → ' + next + '/' + cycle.length);
-        return;
-      }
-
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        if (cur < 0) cur = 0;
-        var nt = e.shiftKey ? (cur - 1 + cycle.length) % cycle.length : (cur + 1) % cycle.length;
-        cycle[nt].focus();
-        cycle.forEach(function(el, i) { el.style.outline = (i === nt) ? '2px solid #4fc3f7' : ''; });
-        return;
-      }
-    });
-
     // S275: Register Find panel with global keyboard nav system
     // Custom onKey wraps makeListKeyNav for Up/Down results + Left/Right focus cycle
     if (typeof window.makeListKeyNav === 'function' && typeof window._registerPanel === 'function') {
