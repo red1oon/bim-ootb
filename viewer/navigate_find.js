@@ -340,6 +340,8 @@
       populateDropdowns();
       buildChips();
       if (searchTerm) { _handleInput(searchTerm); } else { runSearch(); }
+      // S275: Auto-focus search input so keyboard works immediately
+      setTimeout(function() { elName.focus(); }, 50);
       console.log('[S233] §NAV_FIND_OPEN term="' + (searchTerm || '') + '" voice=' + nav.voiceMode);
     };
 
@@ -991,27 +993,17 @@
         elSelected.style.display = 'none';
         return;
       }
-      // Tab/Left/Right — move focus between search, storey, type
-      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); elStoreyHdr.focus(); return; }
-      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); elTypeHdr.focus(); return; }
+      // Tab/Left/Right handled at panel level
     });
     // Make accordion headers focusable
     elStoreyHdr.tabIndex = 0;
     elTypeHdr.tabIndex = 0;
     elStoreyHdr.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elStoreyRow); }
-      if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); elTypeHdr.focus(); }
-      if (e.key === 'ArrowLeft' || (e.key === 'Tab' && e.shiftKey)) { e.preventDefault(); elName.focus(); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); elTypeHdr.focus(); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); elName.focus(); }
       if (e.key === 'Escape') closeFindPanel();
     });
     elTypeHdr.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elTypeRow); }
-      if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); elName.focus(); }
-      if (e.key === 'ArrowLeft' || (e.key === 'Tab' && e.shiftKey)) { e.preventDefault(); elStoreyHdr.focus(); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); elName.focus(); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); elStoreyHdr.focus(); }
       if (e.key === 'Escape') closeFindPanel();
     });
 
@@ -1037,34 +1029,41 @@
     A.findMainEntrance = findMainEntrance; // called by startNavigation in navigate.js
     A.friendlyName = friendlyName;         // called by startNavigation (nav.targetName)
 
-    // S275: Panel-level Left/Right navigation between major interactive elements
-    // Focusable cycle: search → storey → type → (navigate if visible) → search
+    // S275: Panel-level Left/Right/Up/Down/Tab navigation between interactive elements
+    // Focusable cycle: search → storey → type → (navigate if visible)
     var _focusCycle = function() {
       var items = [elName, elStoreyHdr, elTypeHdr];
       var navBtn = document.getElementById('find-navigate-btn');
       if (navBtn && elSelected.style.display !== 'none') items.push(navBtn);
       return items;
     };
-    var _focusIdx = 0;
     panel.addEventListener('keydown', function(e) {
+      var cycle = _focusCycle();
+      var cur = cycle.indexOf(document.activeElement);
+
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        // Don't intercept Left/Right when typing in the search input
-        if (document.activeElement === elName) return;
-        e.preventDefault();
-        var cycle = _focusCycle();
-        // Find current position in cycle
-        var cur = cycle.indexOf(document.activeElement);
-        if (cur < 0) cur = 0;
-        if (e.key === 'ArrowRight') {
-          _focusIdx = (cur + 1) % cycle.length;
-        } else {
-          _focusIdx = (cur - 1 + cycle.length) % cycle.length;
+        // Allow Left/Right for text cursor when input has text and cursor isn't at edge
+        if (document.activeElement === elName && elName.value.length > 0) {
+          var atEdge = (e.key === 'ArrowLeft' && elName.selectionStart === 0) ||
+                       (e.key === 'ArrowRight' && elName.selectionStart === elName.value.length);
+          if (!atEdge) return; // let text cursor move
         }
-        cycle[_focusIdx].focus();
-        // Highlight the focused item
-        cycle.forEach(function(el, i) {
-          el.style.outline = (i === _focusIdx) ? '2px solid #4fc3f7' : '';
-        });
+        e.preventDefault();
+        if (cur < 0) cur = 0;
+        var next = e.key === 'ArrowRight' ? (cur + 1) % cycle.length : (cur - 1 + cycle.length) % cycle.length;
+        cycle[next].focus();
+        cycle.forEach(function(el, i) { el.style.outline = (i === next) ? '2px solid #4fc3f7' : ''; });
+        return;
+      }
+
+      // Tab cycles same as Left/Right
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (cur < 0) cur = 0;
+        var nt = e.shiftKey ? (cur - 1 + cycle.length) % cycle.length : (cur + 1) % cycle.length;
+        cycle[nt].focus();
+        cycle.forEach(function(el, i) { el.style.outline = (i === nt) ? '2px solid #4fc3f7' : ''; });
+        return;
       }
     });
 
