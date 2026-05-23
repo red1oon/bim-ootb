@@ -187,6 +187,7 @@ function setupPicking(A) {
 
     if (!hits.length) {
       document.getElementById('info-panel').style.display = 'none';
+      A._lastPickGuid = null;
       // §S265: Clear highlight bbox on empty-spot tap (deselect)
       if (window._pickHighlight) {
         if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
@@ -348,6 +349,22 @@ function setupPicking(A) {
       console.log(`§PICK no guid for mesh.id=${hit.object.id}`);
       return;
     }
+
+    // S275: Toggle — clicking same element again deselects (closes info panel + clears highlight)
+    if (guid === A._lastPickGuid) {
+      document.getElementById('info-panel').style.display = 'none';
+      if (window._pickHighlight) {
+        if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
+        window._pickHighlight.geometry.dispose();
+        window._pickHighlight.material.dispose();
+        window._pickHighlight = null;
+        if (A.markDirty) A.markDirty();
+      }
+      A._lastPickGuid = null;
+      console.log('§PICK_DESELECT guid=' + guid.substring(0, 12));
+      return;
+    }
+    A._lastPickGuid = guid;
 
     // Wall X-Ray in Walk Mode
     if (A.walkModeActive) {
