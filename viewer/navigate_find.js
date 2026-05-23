@@ -1031,6 +1031,32 @@
     A.findMainEntrance = findMainEntrance; // called by startNavigation in navigate.js
     A.friendlyName = friendlyName;         // called by startNavigation (nav.targetName)
 
+    // S275: Register Find panel with global keyboard nav system (Tab/Arrow like other panels)
+    if (typeof window.makeListKeyNav === 'function' && typeof window._registerPanel === 'function') {
+      var _findNav = window.makeListKeyNav(
+        function() {
+          // Navigable items: accordion headers + visible result items + navigate button
+          var items = [];
+          items.push(elStoreyHdr, elTypeHdr);
+          elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
+          var navBtn = document.getElementById('find-navigate-btn');
+          if (navBtn && navBtn.offsetParent) items.push(navBtn);
+          return items;
+        },
+        function() { /* no multi-select */ },
+        function(idx) {
+          var items = [];
+          items.push(elStoreyHdr, elTypeHdr);
+          elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
+          var navBtn = document.getElementById('find-navigate-btn');
+          if (navBtn && navBtn.offsetParent) items.push(navBtn);
+          if (items[idx]) items[idx].click();
+        }
+      );
+      window._registerPanel('find', panel, _findNav, closeFindPanel);
+      console.log('§LISTNAV_WIRE panel=find');
+    }
+
     console.log('[S233] §NAV_FIND_MODULE_LOADED panel=' + !!document.getElementById('find-panel'));
   }
 
