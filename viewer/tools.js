@@ -76,16 +76,29 @@ function setupTools(A) {
   };
 
   // X-Ray
+  // §S271b: Optimized — update unique materials via _matCache, disable sortObjects during X-Ray.
+  // Old approach iterated all meshes (120K) and set mat.needsUpdate on each = GPU stall + per-frame sort.
   A.xrayOn = false;
   A.toggleXray = function() {
     A.xrayOn = !A.xrayOn;
     const btn = document.getElementById('xray-btn');
     btn.style.background = A.xrayOn ? '#4fc3f7' : '#444';
     btn.style.color = A.xrayOn ? '#000' : '#fff';
+
+    // §S271b: Update unique materials only (via _matCache) — O(unique mats) not O(all meshes)
+    var updated = 0;
+    var mats = A._matCache ? Object.values(A._matCache) : [];
+    // Also collect materials from meshes not in _matCache (ground, helpers etc)
     A.collectMeshes(o => o.isMesh).forEach(obj => {
-      const mat = obj.material;
+      if (mats.indexOf(obj.material) === -1) mats.push(obj.material);
+    });
+    // Deduplicate
+    var seen = new Set();
+    mats = mats.filter(function(m) { if (!m || seen.has(m)) return false; seen.add(m); return true; });
+
+    for (var i = 0; i < mats.length; i++) {
+      var mat = mats[i];
       if (A.xrayOn) {
-        // Save originals before modifying
         if (mat.userData.origOpacity === undefined) mat.userData.origOpacity = mat.opacity;
         if (mat.userData.origTransparent === undefined) mat.userData.origTransparent = mat.transparent;
         if (mat.userData.origSide === undefined) mat.userData.origSide = mat.side;
@@ -93,7 +106,6 @@ function setupTools(A) {
         mat.opacity = 0.15;
         mat.side = THREE.DoubleSide;
       } else {
-        // Restore originals — only if we saved them (skip late-streamed meshes)
         if (mat.userData.origOpacity !== undefined) {
           mat.opacity = mat.userData.origOpacity;
           mat.transparent = mat.userData.origTransparent;
@@ -104,8 +116,14 @@ function setupTools(A) {
         }
       }
       mat.needsUpdate = true;
-    });
-    console.log(`[S200] §XRAY ${A.xrayOn ? 'ON' : 'OFF'}`);
+      updated++;
+    }
+
+    // §S271b: Disable transparent sort during X-Ray — uniform opacity doesn't need back-to-front order.
+    // Saves O(n log n) sort per frame on 122K elements.
+    A.renderer.sortObjects = !A.xrayOn;
+
+    console.log(`[S200] §XRAY ${A.xrayOn ? 'ON' : 'OFF'} materials=${updated} sortObjects=${A.renderer.sortObjects}`);
     if (A.markDirty) A.markDirty();
   };
 
