@@ -182,12 +182,12 @@ function setupStreaming(A) {
   A._bboxPlaceholder = null;
 
   // Per-element wireframe cubes, one InstancedMesh per discipline for disc-based coloring
-  // Capped at MAX_PLACEHOLDERS by sampling — prevents mobile JS block on large buildings
+  // §S276b: Mobile cap at 20K + chunked matrix build (yields to main thread via setTimeout)
   A._bboxPlaceholders = [];
   A._drawBboxPlaceholders = function(rows) {
     A._clearBboxPlaceholders();
     if (!rows.length) return;
-    const MAX_PLACEHOLDERS = 200000;  // §S260: InstancedMesh handles 122K+ easily (1 draw call per disc)
+    var MAX_PLACEHOLDERS = A._isMobile ? 20000 : 200000;
     // Sample evenly if building has more elements than cap
     const step = rows.length > MAX_PLACEHOLDERS ? Math.ceil(rows.length / MAX_PLACEHOLDERS) : 1;
     // row: [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifc_class, bbox_x, bbox_y, bbox_z]
@@ -202,28 +202,48 @@ function setupStreaming(A) {
     const _pos = new THREE.Vector3();
     const _scl = new THREE.Vector3();
     const _quat = new THREE.Quaternion();
-    for (const [disc, drows] of Object.entries(byDisc)) {
-      const color = A.DISC_COLORS[disc] || A.DEFAULT_COLOR;
-      const mat = new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.4 });
-      const iMesh = new THREE.InstancedMesh(geo, mat, drows.length);
+    var CHUNK = A._isMobile ? 5000 : 999999;  // §S276b: mobile yields every 5K matrices
+    var discEntries = Object.entries(byDisc);
+    var di = 0;
+    function _buildNextDisc() {
+      if (di >= discEntries.length) {
+        var shown = Object.values(byDisc).reduce((s, a) => s + a.length, 0);
+        console.log(`[BBOX] §BBOX_PLACEHOLDERS total=${rows.length} shown=${shown} step=${step} discs=${discEntries.length} mobile=${A._isMobile}`);
+        return;
+      }
+      var disc = discEntries[di][0], drows = discEntries[di][1];
+      var color = A.DISC_COLORS[disc] || A.DEFAULT_COLOR;
+      var mat = new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.4 });
+      var iMesh = new THREE.InstancedMesh(geo, mat, drows.length);
       iMesh.frustumCulled = false;
       iMesh.userData.isBboxPlaceholder = true;
-      for (let i = 0; i < drows.length; i++) {
-        const r = drows[i];
-        const p = A.ifc2three(r[4], r[5], r[6]);
-        const bx = r[12] || 0.3, by = r[13] || 0.3, bz = r[14] || 0.3;
-        _pos.set(p.x, p.y, p.z);
-        _scl.set(bx, bz, by);
-        _m4.compose(_pos, _quat, _scl);
-        iMesh.setMatrixAt(i, _m4);
-      }
-      iMesh.instanceMatrix.needsUpdate = true;
       A.scene.add(iMesh);
       A._bboxPlaceholders.push(iMesh);
+      var ri = 0;
+      function _buildChunk() {
+        var end = Math.min(ri + CHUNK, drows.length);
+        for (var j = ri; j < end; j++) {
+          var r = drows[j];
+          var p = A.ifc2three(r[4], r[5], r[6]);
+          var bx = r[12] || 0.3, by = r[13] || 0.3, bz = r[14] || 0.3;
+          _pos.set(p.x, p.y, p.z);
+          _scl.set(bx, bz, by);
+          _m4.compose(_pos, _quat, _scl);
+          iMesh.setMatrixAt(j, _m4);
+        }
+        ri = end;
+        iMesh.instanceMatrix.needsUpdate = true;
+        if (ri < drows.length) {
+          setTimeout(_buildChunk, 0);  // yield to main thread
+        } else {
+          di++;
+          if (A._isMobile) setTimeout(_buildNextDisc, 0);
+          else _buildNextDisc();
+        }
+      }
+      _buildChunk();
     }
-    // geo is shared across all InstancedMeshes — do NOT dispose here, dispose in _clearBboxPlaceholders
-    const shown = Object.values(byDisc).reduce((s, a) => s + a.length, 0);
-    console.log(`[BBOX] §BBOX_PLACEHOLDERS total=${rows.length} shown=${shown} step=${step} discs=${Object.keys(byDisc).length}`);
+    _buildNextDisc();
   };
 
   A._clearBboxPlaceholders = function() {
