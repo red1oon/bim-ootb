@@ -16,56 +16,76 @@
 
   function init(A, nav, getStartNavigation) {
 
-    // ── S265 Phase 5: CSS injection — uses .bim-panel base, find-specific overrides ──
+    // ── S275: CSS — slim accordion layout ──
     var style = document.createElement('style');
     style.textContent = [
       '#find-panel { top: 50%; right: 70px; transform: translateY(-50%);',
-      '  width: 320px; max-width: 40vw; padding: 0; max-height: 70vh; overflow: hidden; }',
+      '  width: 280px; max-width: 35vw; padding: 0; max-height: 70vh; overflow: hidden; }',
+      // Search bar
       '#find-panel .find-search-bar {',
-      '  display: flex; align-items: center; gap: 6px; padding: 10px 14px 8px;',
+      '  display: flex; align-items: center; gap: 4px; padding: 8px 10px 6px;',
       '  border-bottom: 1px solid rgba(255,255,255,0.08);',
       '}',
       '#find-panel .find-search-bar button { background: none; border: none; color: #888;',
       '  cursor: pointer; padding: 4px; flex-shrink: 0; display: flex; align-items: center; }',
       '#find-panel .find-search-bar button:hover { color: #4fc3f7; }',
       '#find-panel .find-search-bar button.listening { color: #f44336; }',
-      '#find-panel .find-search-bar button svg { width: 18px; height: 18px; pointer-events: none; }',
+      '#find-panel .find-search-bar button svg { width: 16px; height: 16px; pointer-events: none; }',
       '#find-panel #find-name {',
       '  flex: 1; border: none; background: transparent; color: #e0e0e0;',
-      '  font-size: 14px; outline: none; padding: 4px 0;',
+      '  font-size: 13px; outline: none; padding: 2px 0;',
       '  font-family: system-ui, sans-serif;',
       '}',
       '#find-panel #find-name::placeholder { color: rgba(255,255,255,0.25); }',
-      '#find-panel .find-filters {',
-      '  display: flex; gap: 6px; padding: 6px 14px;',
+      // Accordion rows — collapsed = single line, expanded = scrollable list
+      '.find-acc-row {',
       '  border-bottom: 1px solid rgba(255,255,255,0.06);',
+      '  overflow: hidden; transition: max-height 0.2s ease;',
       '}',
-      '#find-panel select {',
-      '  flex: 1; padding: 5px 6px; background: rgba(0,0,0,0.3); color: #ccc;',
-      '  border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; font-size: 11px;',
+      '.find-acc-header {',
+      '  display: flex; align-items: center; justify-content: space-between;',
+      '  padding: 5px 10px; cursor: pointer; font-size: 11px; color: #aaa;',
+      '  user-select: none;',
       '}',
-      '#find-panel select option { background: #1a1a2e; color: #ccc; }',
-      '#find-results { max-height: 280px; overflow-y: auto; }',
+      '.find-acc-header:hover { color: #4fc3f7; }',
+      '.find-acc-header .fa-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
+      '.find-acc-header .fa-chevron { font-size: 9px; opacity: 0.4; transition: transform 0.2s; margin-left: 4px; }',
+      '.find-acc-row.expanded .fa-chevron { transform: rotate(180deg); }',
+      '.find-acc-body { max-height: 0; overflow-y: auto; transition: max-height 0.2s ease; }',
+      '.find-acc-row.expanded .find-acc-body { max-height: 180px; }',
+      '.find-acc-item {',
+      '  padding: 5px 10px; cursor: pointer; font-size: 11px; color: #ccc;',
+      '  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;',
+      '}',
+      '.find-acc-item:hover { background: rgba(79,195,247,0.1); color: #fff; }',
+      '.find-acc-item.active { background: rgba(79,195,247,0.15); color: #4fc3f7; }',
+      // Results — same accordion
+      '#find-results { max-height: 0; overflow-y: auto; transition: max-height 0.2s ease; }',
+      '#find-panel.results-expanded #find-results { max-height: 220px; }',
       '.find-result-item {',
-      '  padding: 7px 14px; cursor: pointer;',
+      '  padding: 5px 10px; cursor: pointer;',
       '  border-bottom: 1px solid rgba(255,255,255,0.04);',
-      '  transition: background 0.1s; font-size: 12px; display: flex; align-items: center; gap: 8px;',
+      '  transition: background 0.1s; font-size: 11px; display: flex; align-items: center; gap: 6px;',
       '}',
       '.find-result-item:hover { background: rgba(79,195,247,0.1); }',
       '.find-result-item.active { background: rgba(79,195,247,0.18); }',
-      '.find-result-item .ri-icon { font-size: 13px; opacity: 0.4; flex-shrink: 0; }',
+      '.find-result-item .ri-icon { font-size: 12px; opacity: 0.4; flex-shrink: 0; }',
       '.find-result-item .ri-body { flex: 1; min-width: 0; }',
-      '.find-result-item .ri-name { color: #e0e0e0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
-      '.find-result-item .ri-meta { color: #888; font-size: 10px; }',
-      '#find-actions { padding: 8px 14px; display: flex; gap: 8px; border-top: 1px solid rgba(255,255,255,0.08); }',
-      '#find-actions button { flex: 1; padding: 7px 0; border-radius: 8px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; }',
+      '.find-result-item .ri-name { color: #e0e0e0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }',
+      '.find-result-item .ri-meta { color: #888; font-size: 9px; }',
+      // Selected summary — shows when results collapsed
+      '#find-selected { padding: 5px 10px; font-size: 11px; color: #4fc3f7; cursor: pointer;',
+      '  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;',
+      '  border-bottom: 1px solid rgba(255,255,255,0.06); display: none; }',
+      '#find-selected:hover { color: #fff; }',
+      // Actions
+      '#find-actions { padding: 6px 10px; display: flex; gap: 6px; border-top: 1px solid rgba(255,255,255,0.08); }',
+      '#find-actions button { flex: 1; padding: 5px 0; border-radius: 6px; border: none; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; }',
       '.find-nav-btn { background: rgba(79,195,247,0.2); color: #4fc3f7; }',
       '.find-nav-btn:hover { background: rgba(79,195,247,0.35); }',
-      '#find-count { font-size: 10px; color: #666; padding: 3px 14px 1px; }',
-      '#find-chips { display: flex; gap: 4px; padding: 4px 14px 6px; flex-wrap: wrap; }',
-      '#find-chips button { background: rgba(255,255,255,0.06); color: #888; border: 1px solid rgba(255,255,255,0.08);',
-      '  border-radius: 10px; padding: 2px 8px; font-size: 10px; cursor: pointer; white-space: nowrap; }',
-      '#find-chips button:hover { color: #4fc3f7; border-color: rgba(79,195,247,0.3); }',
+      '#find-count { font-size: 9px; color: #666; padding: 2px 10px 0; }',
+      // Chips hidden by default — too bulky for slim layout
+      '#find-chips { display: none; }',
       // Nav HUD
       '#nav-hud {',
       '  position: fixed; top: 0; left: 0; width: 100%; height: 100%;',
@@ -108,15 +128,26 @@
       '<span class="bim-panel-close" id="find-close">&times;</span>',
       '<div class="find-search-bar">',
       '  <button id="find-search-icon" title="Search">' + _searchSvg + '</button>',
-      '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Search or ask: count doors, find pump...') + '">',
+      '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Search elements…') + '">',
       '  <button id="find-mic-btn" title="' + _t('ui_tt_voice', 'Voice search') + '">' + _micSvg + '</button>',
       '</div>',
       '<div id="find-chips"></div>',
-      '<div class="find-filters">',
-      '  <select id="find-type"><option value="">' + _t('ui_find_all_types', 'All types') + '</option></select>',
-      '  <select id="find-storey"><option value="">' + _t('ui_all_storeys', 'All Storeys') + '</option></select>',
+      // Hidden selects — still used for data, but UI is accordion rows
+      '<select id="find-type" style="display:none"><option value="">' + _t('ui_find_all_types', 'All types') + '</option></select>',
+      '<select id="find-storey" style="display:none"><option value="">' + _t('ui_all_storeys', 'All Storeys') + '</option></select>',
+      // S275: Storey accordion
+      '<div class="find-acc-row" id="find-storey-row">',
+      '  <div class="find-acc-header" id="find-storey-hdr"><span class="fa-label">All Storeys</span><span class="fa-chevron">\u25BC</span></div>',
+      '  <div class="find-acc-body" id="find-storey-body"></div>',
+      '</div>',
+      // S275: Type accordion
+      '<div class="find-acc-row" id="find-type-row">',
+      '  <div class="find-acc-header" id="find-type-hdr"><span class="fa-label">All Types</span><span class="fa-chevron">\u25BC</span></div>',
+      '  <div class="find-acc-body" id="find-type-body"></div>',
       '</div>',
       '<div id="find-count"></div>',
+      // S275: Selected item summary (shown when results collapsed)
+      '<div id="find-selected"></div>',
       '<div id="find-results"></div>',
       '<div id="find-actions">',
       '  <button class="find-nav-btn" id="find-navigate-btn" data-action="navigate">' + _t('ui_find_navigate', '\u25B6 Navigate') + '</button>',
@@ -145,6 +176,33 @@
     var elClose = document.getElementById('find-close');
     var elChips = document.getElementById('find-chips');
     var elMicBtn = document.getElementById('find-mic-btn');
+    var elSelected = document.getElementById('find-selected');
+
+    // ── S275: Accordion row logic ──
+    var elStoreyRow = document.getElementById('find-storey-row');
+    var elStoreyHdr = document.getElementById('find-storey-hdr');
+    var elStoreyBody = document.getElementById('find-storey-body');
+    var elTypeRow = document.getElementById('find-type-row');
+    var elTypeHdr = document.getElementById('find-type-hdr');
+    var elTypeBody = document.getElementById('find-type-body');
+
+    function toggleAccRow(row) {
+      // Close other rows
+      [elStoreyRow, elTypeRow].forEach(function(r) { if (r !== row) r.classList.remove('expanded'); });
+      // Toggle results closed when opening a filter
+      panel.classList.remove('results-expanded');
+      row.classList.toggle('expanded');
+    }
+    elStoreyHdr.addEventListener('pointerup', function(e) { e.stopPropagation(); toggleAccRow(elStoreyRow); });
+    elTypeHdr.addEventListener('pointerup', function(e) { e.stopPropagation(); toggleAccRow(elTypeRow); });
+
+    // Tap selected summary → re-expand results
+    elSelected.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      panel.classList.add('results-expanded');
+      elSelected.style.display = 'none';
+      [elStoreyRow, elTypeRow].forEach(function(r) { r.classList.remove('expanded'); });
+    });
 
     // ── S265 Phase 5: Voice mic inside Find panel ──
     var _SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -266,6 +324,9 @@
       elStorey.value = '';
       elResults.innerHTML = '';
       elCount.textContent = '';
+      elSelected.style.display = 'none';
+      panel.classList.remove('results-expanded');
+      [elStoreyRow, elTypeRow].forEach(function(r) { r.classList.remove('expanded'); });
       clearHighlight();
       // Set search term and open
       panel.style.display = 'block';
@@ -375,6 +436,68 @@
           });
         }
         if (savedStorey) elStorey.value = savedStorey;
+
+        // S275: Populate accordion bodies from the same data
+        // Storey accordion
+        elStoreyBody.innerHTML = '';
+        var stAll = document.createElement('div');
+        stAll.className = 'find-acc-item' + (!savedStorey ? ' active' : '');
+        stAll.textContent = 'All Storeys';
+        stAll.addEventListener('pointerup', function(e) {
+          e.stopPropagation(); elStorey.value = ''; elStoreyRow.classList.remove('expanded');
+          elStoreyHdr.querySelector('.fa-label').textContent = 'All Storeys';
+          populateDropdowns(); runSearch();
+        });
+        elStoreyBody.appendChild(stAll);
+        if (storeys.length > 0) {
+          storeys[0].values.forEach(function(r) {
+            if (!r[0]) return;
+            var div = document.createElement('div');
+            div.className = 'find-acc-item' + (savedStorey === r[0] ? ' active' : '');
+            var mc = matchByStorey[r[0]];
+            div.textContent = r[0] + (mc ? ' \u2714' + mc : '') + ' (' + r[1] + ')';
+            div.addEventListener('pointerup', function(e) {
+              e.stopPropagation(); elStorey.value = r[0]; elStoreyRow.classList.remove('expanded');
+              elStoreyHdr.querySelector('.fa-label').textContent = r[0];
+              populateDropdowns(); runSearch();
+            });
+            elStoreyBody.appendChild(div);
+          });
+        }
+        elStoreyHdr.querySelector('.fa-label').textContent = savedStorey || 'All Storeys';
+
+        // Type accordion
+        elTypeBody.innerHTML = '';
+        var tyAll = document.createElement('div');
+        tyAll.className = 'find-acc-item' + (!savedType ? ' active' : '');
+        tyAll.textContent = 'All Types';
+        tyAll.addEventListener('pointerup', function(e) {
+          e.stopPropagation(); elType.value = ''; elTypeRow.classList.remove('expanded');
+          elTypeHdr.querySelector('.fa-label').textContent = 'All Types';
+          populateDropdowns(); runSearch();
+        });
+        elTypeBody.appendChild(tyAll);
+        if (types.length > 0) {
+          var tSorted = types[0].values.slice().sort(function(a, b) {
+            var ma = matchByType[a[0]] || 0, mb = matchByType[b[0]] || 0;
+            if (mb !== ma) return mb - ma;
+            return b[1] - a[1];
+          });
+          tSorted.forEach(function(r) {
+            var div = document.createElement('div');
+            div.className = 'find-acc-item' + (savedType === r[0] ? ' active' : '');
+            var mc = matchByType[r[0]];
+            div.textContent = friendlyClass(r[0]) + (mc ? ' \u2714' + mc : '') + ' (' + r[1] + ')';
+            div.addEventListener('pointerup', function(e) {
+              e.stopPropagation(); elType.value = r[0]; elTypeRow.classList.remove('expanded');
+              elTypeHdr.querySelector('.fa-label').textContent = friendlyClass(r[0]);
+              populateDropdowns(); runSearch();
+            });
+            elTypeBody.appendChild(div);
+          });
+        }
+        elTypeHdr.querySelector('.fa-label').textContent = savedType ? friendlyClass(savedType) : 'All Types';
+
       } catch(e) { console.warn('[S233] dropdown error', e); }
     }
 
@@ -531,6 +654,8 @@
     // ── Render result list ──
     function renderResults() {
       elResults.innerHTML = '';
+      elSelected.style.display = 'none';
+      panel.classList.add('results-expanded'); // expand to show results
       nav.results.forEach(function(r, i) {
         var div = document.createElement('div');
         div.className = 'find-result-item';
@@ -669,12 +794,19 @@
       }
       animFly();
 
+      // S275: Collapse results to selected summary — slim panel
+      var dispName = friendlyName(r.element_name, r.ifc_class);
+      var dispClass = friendlyClass(r.ifc_class);
+      elSelected.textContent = classIcon(r.ifc_class) + ' ' + dispName + ' · ' + dispClass + ' · ' + (r.storey || '?');
+      elSelected.style.display = 'block';
+      panel.classList.remove('results-expanded');
+      [elStoreyRow, elTypeRow].forEach(function(row) { row.classList.remove('expanded'); });
+
       // Update navigate button
       elNavBtn.textContent = typeof _TRL!=='undefined'&&_TRL.ui_find_navigate||'\u25B6 Navigate';
       elNavBtn.style.display = '';
 
       // Status feedback
-      var dispName = friendlyName(r.element_name, r.ifc_class);
       if (A.status) A.status.textContent = dispName + ' · ' + (r.storey || '?');
 
       console.log('[S275] §NAV_FIND_SELECT idx=' + idx + ' guid=' + r.guid +
