@@ -29,6 +29,8 @@ var _activeDisc = 'ARC'; // active discipline for Next — default ARC
 var _shownCount = 0;     // running count of elements revealed by Next
 var _appRef = null;      // §S268: reference to A for mesh traversal in helpers
 
+// §S272 BOM engine state — moved to grid_recompose.js
+
 // ── IFC class → grid strategy table (data, not code) ────────────────────────
 // Each entry: { axes: 'XZ'|'long'|'none', desc: string }
 //   'XZ'   = add grid lines on both X and Z axes (intersection marker)
@@ -42,10 +44,10 @@ var GRID_STRATEGY = {
   // Explicitly no grid lines:
   IfcSlab:               { axes: 'none', desc: 'slab → no grid lines' },
   IfcBeam:               { axes: 'none', desc: 'beam → no grid lines (per user Q6)' },
-  IfcDoor:               { axes: 'long', desc: 'door → opening grid line (child of wall)' },
-  IfcWindow:             { axes: 'long', desc: 'window → opening grid line (child of wall)' },
-  IfcOpening:            { axes: 'long', desc: 'opening → child of wall' },
-  IfcOpeningElement:     { axes: 'long', desc: 'opening → child of wall' },
+  IfcDoor:               { axes: 'none', desc: 'door → no grid (opening, not structural)' },
+  IfcWindow:             { axes: 'none', desc: 'window → no grid (opening, not structural)' },
+  IfcOpening:            { axes: 'none', desc: 'opening → no grid (child of wall)' },
+  IfcOpeningElement:     { axes: 'none', desc: 'opening → no grid (child of wall)' },
   IfcStair:              { axes: 'none', desc: 'stair → no grid' },
   IfcStairFlight:        { axes: 'none', desc: 'stairflight → no grid' },
   IfcRailing:            { axes: 'none', desc: 'railing → no grid' },
@@ -86,6 +88,11 @@ function activate(A) {
   }
   _active = true;
   _appRef = A;
+
+  // §S272 Phase 4c: lazy-load discipline rules on first activate
+  if (window.BomRules) {
+    _loadDiscRules();
+  }
 
   // Create root group
   _group = new THREE.Group();
@@ -148,6 +155,17 @@ function activate(A) {
       _hiddenMeshes.push(obj);
     }
   });
+
+  // §S270: Wire GridRecompose with scene references
+  if (_GR) {
+    _GR.init({
+      guidToSlot: _guidToSlot,
+      guidToInstance: _guidToInstance,
+      appRef: A,
+      db: A.db,
+      getShownGuids: _getShownGuids
+    });
+  }
 
   // Build envelope wireframe
   _buildEnvelope(A);
@@ -234,6 +252,8 @@ function deactivate(A) {
   _group = _envGroup = _gridGroup = _phaseGroup = null;
   _phaseIndex = -1;
   _phases = [];
+  if (_GR) _GR.resetAll();   // §S270 BUG-1: reset engine + deltas on deactivate
+  _GS.reset();              // §S270: reset grid state
 
   console.log('§DOC_CANVAS deactivate');
 }
@@ -270,7 +290,10 @@ function nextPhase(A) {
   }
   var phase = filtered[_phaseIndex];
   _materializePhase(A, phase);
-  _kinEngineDirty = true; // §S270: new elements revealed, rebuild engine on next drag
+  if (_GR) _GR.markDirty(); // §S270: new elements revealed, rebuild engine on next drag
+
+  // §S272 Phase 3b: materialize BOM level on Next
+  if (_GR) _GR.materializeBomLevel(A);
 
   // §S270: Ceiling grid auto-placement — when Phase 3 (Finishes) reveals IfcRoof,
   // auto-place a Y-axis grid line at eave height for roof lift handle.
@@ -302,10 +325,10 @@ function nextPhase(A) {
  * _collectGridLines() is called. A visible horizontal plane indicator is
  * rendered as a translucent disc at the eave height.
  */
-var _ceilingGridY = null; // Y-axis grid position (eave height), null = not placed
+// _ceilingGridY delegated to GridState.getCeilingY() / setCeilingY()
 
 function _autoCeilingGrid(A, phase) {
-  if (_ceilingGridY !== null) return; // already placed
+  if (_GS.getCeilingY() !== null) return; // already placed
   if (!A.scene) return;
 
   // Check if this phase has IfcRoof elements
@@ -368,8 +391,8 @@ function _autoCeilingGrid(A, phase) {
 
   if (roofCount === 0 || !isFinite(eaveY)) return;
 
-  _ceilingGridY = eaveY;
-  _kinEngineDirty = true; // engine needs to know about the new Y-axis grid
+  _GS.setCeilingY(eaveY);
+  if (_GR) _GR.markDirty(); // engine needs to know about the new Y-axis grid
 
   // Render a visual indicator — translucent disc at eave height
   if (_gridGroup && typeof THREE !== 'undefined') {
@@ -478,21 +501,7 @@ function _autoGridFromPhase(A, phase) {
 }
 
 function _resortLabels() {
-  // Re-sort X positions and regenerate labels (A, B, C...)
-  var xPairs = _xPositions.map(function(p, i) { return { pos: p, lbl: _xLabels[i] }; });
-  xPairs.sort(function(a, b) { return a.pos - b.pos; });
-  _xPositions = xPairs.map(function(p) { return p.pos; });
-  // Regenerate clean labels
-  var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  _xLabels = _xPositions.map(function(_, i) {
-    return i < 26 ? letters[i] : letters[Math.floor(i / 26) - 1] + letters[i % 26];
-  });
-
-  // Re-sort Z positions and regenerate labels (1, 2, 3...)
-  var zPairs = _zPositions.map(function(p, i) { return { pos: p, lbl: _zLabels[i] }; });
-  zPairs.sort(function(a, b) { return a.pos - b.pos; });
-  _zPositions = zPairs.map(function(p) { return p.pos; });
-  _zLabels = _zPositions.map(function(_, i) { return String(i + 1); });
+  _GS.resortLabels();
 }
 
 // ── Envelope wireframe ──────────────────────────────────────────────────────
@@ -564,10 +573,10 @@ function _buildEnvelope(A) {
 // Implementing NEW_FROM_REFERENCE.md §6.4 — grid follows BOM hierarchy, top-down.
 // Step zero (envelope): 2 X-lines (A,B), 2 Z-lines (1,2), 4 bubbles, 2 span dims.
 // Grid refines ONLY as Next reveals elements. Extract, not invent.
-var _xPositions = [];   // current committed X grid line positions (Three.js coords)
-var _zPositions = [];   // current committed Z grid line positions (Three.js coords)
-var _xLabels = [];      // labels for X lines (A, B, C...)
-var _zLabels = [];      // labels for Z lines (1, 2, 3...)
+// Grid state delegated to GridState module (grid_state.js)
+var _GS = typeof GridState !== 'undefined' ? GridState : null;
+// Grid recompose delegated to GridRecompose module (grid_recompose.js)
+var _GR = typeof GridRecompose !== 'undefined' ? GridRecompose : null;
 var _extend = 8;        // grid lines extend beyond envelope (fixed, not relative)
 var _rosettaExtend = 14; // Rosetta template lines pulled further out for clarity
 var _lineColor = 0xff4444;
@@ -581,10 +590,7 @@ function _buildGrid(A) {
   // §6.4 Step zero — BUILDING level: envelope AABB only
   // 2 X-lines at envelope minX, maxX. 2 Z-lines at envelope minZ, maxZ.
   // No cadence, no subdivision, no internal structure. Nothing is invented.
-  _xPositions = [e.x0, e.x1];
-  _xLabels = ['A', 'B'];
-  _zPositions = [e.z0, e.z1];
-  _zLabels = ['1', '2'];
+  _GS.init([e.x0, e.x1], [e.z0, e.z1], ['A', 'B'], ['1', '2']);
 
   _renderGrid(A);
 
@@ -613,34 +619,36 @@ function _renderGrid(A) {
   }
 
   // ── Draw X grid lines (lettered) with bubbles at both ends ──
-  for (var a = 0; a < _xPositions.length; a++) {
-    var xp = _xPositions[a];
-    var lbl = _xLabels[a] || String.fromCharCode(65 + a);
+  var xCount = _GS.getCount('x');
+  for (var a = 0; a < xCount; a++) {
+    var xp = _GS.getPosition('x', a);
+    var lbl = _GS.getLabel('x', a) || String.fromCharCode(65 + a);
     _addGridLine(xp, e.y0, e.z0 - _extend, xp, e.y0, e.z1 + _extend, _lineColor, 'X', a);
     _addBubble(lbl, xp, e.y0, e.z0 - _extend - 5, _bubbleColor, 'X', a, 'start');
     _addBubble(lbl, xp, e.y0, e.z1 + _extend + 5, _bubbleColor, 'X', a, 'end');
   }
 
   // ── Draw Z grid lines (numbered) with bubbles at both ends ──
-  for (var b = 0; b < _zPositions.length; b++) {
-    var zp = _zPositions[b];
-    var zlbl = _zLabels[b] || String(b + 1);
+  var zCount = _GS.getCount('z');
+  for (var b = 0; b < zCount; b++) {
+    var zp = _GS.getPosition('z', b);
+    var zlbl = _GS.getLabel('z', b) || String(b + 1);
     _addGridLine(e.x0 - _extend, e.y0, zp, e.x1 + _extend, e.y0, zp, _lineColor, 'Z', b);
     _addBubble(zlbl, e.x0 - _extend - 5, e.y0, zp, _bubbleColor, 'Z', b, 'start');
     _addBubble(zlbl, e.x1 + _extend + 5, e.y0, zp, _bubbleColor, 'Z', b, 'end');
   }
 
   // ── Span dimensions between X lines ──
-  for (var sx = 1; sx < _xPositions.length; sx++) {
-    var span = Math.abs(_xPositions[sx] - _xPositions[sx - 1]);
-    var midX = (_xPositions[sx] + _xPositions[sx - 1]) / 2;
+  for (var sx = 1; sx < xCount; sx++) {
+    var span = Math.abs(_GS.getPosition('x', sx) - _GS.getPosition('x', sx - 1));
+    var midX = (_GS.getPosition('x', sx) + _GS.getPosition('x', sx - 1)) / 2;
     _addDimLabel(span.toFixed(2) + 'm', midX, e.y0, e.z0 - _extend - 2, _dimColor);
   }
 
   // ── Span dimensions between Z lines ──
-  for (var sz = 1; sz < _zPositions.length; sz++) {
-    var spanZ = Math.abs(_zPositions[sz] - _zPositions[sz - 1]);
-    var midZ = (_zPositions[sz] + _zPositions[sz - 1]) / 2;
+  for (var sz = 1; sz < zCount; sz++) {
+    var spanZ = Math.abs(_GS.getPosition('z', sz) - _GS.getPosition('z', sz - 1));
+    var midZ = (_GS.getPosition('z', sz) + _GS.getPosition('z', sz - 1)) / 2;
     _addDimLabel(spanZ.toFixed(2) + 'm', e.x0 - _extend - 2, e.y0, midZ, _dimColor);
   }
 
@@ -652,55 +660,34 @@ function _renderGrid(A) {
 }
 
 /**
- * addGridLine(axis, position, label) — add a new grid line at runtime
- * Called by nextPhase when elements justify a new line.
- * Returns true if line was added, false if position is too close to existing.
+ * _addGridPosition(axis, position, label) — thin wrapper around GridState.addLine.
+ * Handles uppercase axis convention and calibration-mode gap.
+ * Returns true if line was added, false if rejected.
  */
 function _addGridPosition(axis, position, label) {
-  var arr = axis === 'X' ? _xPositions : _zPositions;
-  var labels = axis === 'X' ? _xLabels : _zLabels;
-
-  // Skip if too close to an existing line.
-  // 2m dedup for auto-grid (walls/columns within 2m merge to same grid line).
-  // 0.3m dedup for Rosetta manual placement (user controls fine positioning).
+  var gsAxis = axis === 'X' ? 'x' : (axis === 'Z' ? 'z' : axis);
   var minGap = _calibrationMode ? 0.3 : 2.0;
-  for (var i = 0; i < arr.length; i++) {
-    if (Math.abs(arr[i] - position) < minGap) return false;
-  }
-
-  // Cap at 15 lines per axis — structural bays, not every partition
-  if (arr.length >= 15) return false;
-
-  // Insert in sorted order
-  var idx = 0;
-  while (idx < arr.length && arr[idx] < position) idx++;
-  arr.splice(idx, 0, position);
-
-  // Generate label if not provided
-  if (!label) {
-    if (axis === 'X') {
-      label = _nextXLabel(idx);
-    } else {
-      label = String(idx + 1);
-      // renumber all Z labels
-      for (var j = 0; j < labels.length; j++) labels[j] = String(j + 1);
-    }
-  }
-  labels.splice(idx, 0, label);
-
-  return true;
+  var result = _GS.addLine(gsAxis, position, label, minGap);
+  return !!result;
 }
 
-function _nextXLabel(idx) {
-  // Generate label like A, A', A'', B, B', etc.
-  // If inserting between A and B, use A'
-  if (idx > 0 && idx < _xLabels.length) {
-    var prev = _xLabels[idx - 1];
-    return prev + "'";
-  }
-  var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  return idx < 26 ? letters[idx] : letters[Math.floor(idx / 26) - 1] + letters[idx % 26];
+/**
+ * _removeGridPosition(axis, idx) — thin wrapper around GridState.removeLine.
+ * Guards envelope lines (first/last). Returns removed label or null.
+ */
+function _removeGridPosition(axis, idx) {
+  var gsAxis = axis === 'X' ? 'x' : (axis === 'Z' ? 'z' : axis);
+  var count = _GS.getCount(gsAxis);
+  // Don't remove envelope lines (first and last)
+  if (idx <= 0 || idx >= count - 1) return null;
+
+  var label = _GS.getLabel(gsAxis, idx);
+  _GS.removeLine(gsAxis, label);
+  delete _userGrids[label];  // §S273 F3
+  return label;
 }
+
+// _nextXLabel removed — handled by GridState.addLine() internally
 
 function _addGridLine(x0, y0, z0, x1, y1, z1, color, axis, idx) {
   var geo = new THREE.BufferGeometry().setFromPoints([
@@ -942,18 +929,19 @@ function _updateHud() {
   var body = typeof document !== 'undefined' && document.getElementById('gridbays-body');
   if (section && body) {
     var html = '';
+    var hxc = _GS.getCount('x'), hzc = _GS.getCount('z');
     // X-axis bays (A-B, B-C, ...)
-    for (var i = 0; i < _xPositions.length - 1; i++) {
-      var span = Math.abs(_xPositions[i + 1] - _xPositions[i]);
+    for (var i = 0; i < hxc - 1; i++) {
+      var span = Math.abs(_GS.getPosition('x', i + 1) - _GS.getPosition('x', i));
       html += '<div style="display:flex;justify-content:space-between;padding:1px 4px">' +
-        '<span style="color:#4fc3f7">' + _xLabels[i] + '–' + _xLabels[i + 1] + '</span>' +
+        '<span style="color:#4fc3f7">' + _GS.getLabel('x', i) + '–' + _GS.getLabel('x', i + 1) + '</span>' +
         '<span>' + (span * 1000).toFixed(0) + ' mm</span></div>';
     }
     // Z-axis bays (1-2, 2-3, ...)
-    for (var j = 0; j < _zPositions.length - 1; j++) {
-      var zSpan = Math.abs(_zPositions[j + 1] - _zPositions[j]);
+    for (var j = 0; j < hzc - 1; j++) {
+      var zSpan = Math.abs(_GS.getPosition('z', j + 1) - _GS.getPosition('z', j));
       html += '<div style="display:flex;justify-content:space-between;padding:1px 4px">' +
-        '<span style="color:#81c784">' + _zLabels[j] + '–' + _zLabels[j + 1] + '</span>' +
+        '<span style="color:#81c784">' + _GS.getLabel('z', j) + '–' + _GS.getLabel('z', j + 1) + '</span>' +
         '<span>' + (zSpan * 1000).toFixed(0) + ' mm</span></div>';
     }
     body.innerHTML = html || '<div style="padding:2px 4px;color:#666">Envelope only</div>';
@@ -971,7 +959,7 @@ function _updateHud() {
     APP.status.textContent = phaseInfo + ' | ' + _shownCount + ' elements';
   }
 
-  console.log('§DOC_HUD bays=' + (_xPositions.length - 1 + _zPositions.length - 1) +
+  console.log('§DOC_HUD bays=' + (hxc - 1 + hzc - 1) +
     ' elements=' + _shownCount + ' disc=' + _activeDisc +
     ' phase=' + (_phaseIndex < 0 ? 'zero' : _phaseIndex + 1));
 }
@@ -1182,10 +1170,19 @@ function handleRosettaDrag(axis, position, A) {
         }), null, null);
       } catch(e) { /* kernel_ops optional */ }
     }
-    _kinEngineDirty = true; // new grid line → rebuild engine
-    var placedLabel = axis === 'X'
-      ? _xLabels[_xLabels.length - 1]
-      : _zLabels[_zLabels.length - 1];
+    if (_GR) _GR.markDirty(); // new grid line → rebuild engine
+    // Find the placed label by matching position (after resort, index may differ)
+    var placedLabel;
+    var gsRAxis = axis === 'X' ? 'x' : 'z';
+    var rCount = _GS.getCount(gsRAxis);
+    for (var pi = 0; pi < rCount; pi++) {
+      if (Math.abs(_GS.getPosition(gsRAxis, pi) - position) < 0.01) {
+        placedLabel = _GS.getLabel(gsRAxis, pi); break;
+      }
+    }
+    if (!placedLabel) placedLabel = _GS.getLabel(gsRAxis, rCount - 1);
+    // §S273 F3: Track user-placed grid for scrub preservation
+    _userGrids[placedLabel] = { axis: axis, position: position };
     if (window.APP && APP.status) {
       APP.status.textContent = 'Rosetta placed grid ' + (axis === 'X' ? placedLabel : placedLabel) +
         ' at ' + (axis === 'X' ? 'X' : 'Z') + '=' + position.toFixed(2) + 'm — ready to drag';
@@ -1204,6 +1201,9 @@ function setActiveDisc(disc, A) {
   var prev = _activeDisc;
   _activeDisc = disc;
   _phaseIndex = -1;  // reset phase stepper for new discipline
+
+  // §S272 Phase 3b: DISC switch resets BOM depth to 0, clears all level grids
+  if (_GR) _GR.resetBomDepth();
   // Log discipline switch — enables per-discipline sequence recall
   if (window.KernelOps && A && A.db) {
     try {
@@ -1217,6 +1217,24 @@ function setActiveDisc(disc, A) {
     APP.status.textContent = disc + ' selected — press Next to step through';
   }
 }
+
+// ── §S272 Phase 4c: Lazy-load discipline rules ───────────────────────────
+function _loadDiscRules() {
+  if (typeof fetch !== 'undefined' && _GR) {
+    fetch('rules/disc_rules.json')
+      .then(function(r) { return r.json(); })
+      .then(function(json) {
+        var rules = BomRules.loadFromJSON(json);
+        _GR.setDiscRules(rules);
+        console.log('§BOM_RULES loaded=' + rules.length + ' rules');
+      })
+      .catch(function(e) {
+        console.log('§BOM_RULES_ERR ' + e.message);
+      });
+  }
+}
+
+// _materializeBomLevel, _dematerializeBomLevel, _resetBomDepth — moved to grid_recompose.js
 
 // ── User-initiated grid lines — double-click to add/remove ──────────────────
 // §17.9B: minimal envelope grid (2+2). User double-clicks element → grid line
@@ -1306,13 +1324,14 @@ function _toggleGridAtPosition(A, pt, bx, by, strategy) {
   if (strategy.axes === 'XZ' || strategy.axes === 'long') {
     // Check X positions
     if (strategy.axes === 'XZ' || by > bx * 1.5 || (bx <= by * 1.5 && by <= bx * 1.5)) {
-      for (var i = _xPositions.length - 1; i >= 0; i--) {
-        // Don't remove envelope lines (first and last)
-        if (i === 0 && _xPositions.length <= 2) continue;
-        if (i === _xPositions.length - 1 && _xPositions.length <= 2) continue;
-        if (Math.abs(_xPositions[i] - pt.x) < tolerance) {
-          _xPositions.splice(i, 1);
-          _xLabels.splice(i, 1);
+      var xc = _GS.getCount('x');
+      for (var i = xc - 1; i >= 0; i--) {
+        if (i === 0 && xc <= 2) continue;
+        if (i === xc - 1 && xc <= 2) continue;
+        if (Math.abs(_GS.getPosition('x', i) - pt.x) < tolerance) {
+          var xLbl = _GS.getLabel('x', i);
+          _GS.removeLine('x', xLbl);
+          delete _userGrids[xLbl];
           removed = true;
           break;
         }
@@ -1320,12 +1339,14 @@ function _toggleGridAtPosition(A, pt, bx, by, strategy) {
     }
     // Check Z positions
     if (strategy.axes === 'XZ' || bx > by * 1.5 || (bx <= by * 1.5 && by <= bx * 1.5)) {
-      for (var j = _zPositions.length - 1; j >= 0; j--) {
-        if (j === 0 && _zPositions.length <= 2) continue;
-        if (j === _zPositions.length - 1 && _zPositions.length <= 2) continue;
-        if (Math.abs(_zPositions[j] - pt.z) < tolerance) {
-          _zPositions.splice(j, 1);
-          _zLabels.splice(j, 1);
+      var zc = _GS.getCount('z');
+      for (var j = zc - 1; j >= 0; j--) {
+        if (j === 0 && zc <= 2) continue;
+        if (j === zc - 1 && zc <= 2) continue;
+        if (Math.abs(_GS.getPosition('z', j) - pt.z) < tolerance) {
+          var zLbl = _GS.getLabel('z', j);
+          _GS.removeLine('z', zLbl);
+          delete _userGrids[zLbl];
           removed = true;
           break;
         }
@@ -1401,17 +1422,30 @@ function _initInteraction(A) {
       // Bubble grab → rotation mode (other end is pivot)
       _selected = { axis: axis, idx: idx, mode: 'rotate', pivotEnd: ud.end === 'start' ? 'end' : 'start' };
       _highlightGrid(A, axis, idx, 0x00ffff);
-      _origPos = axis === 'X' ? _xPositions[idx] : _zPositions[idx];
+      _origPos = _GS.getPosition(axis === 'X' ? 'x' : 'z', idx);
       if (window.APP && APP.status) {
-        var lbl = axis === 'X' ? _xLabels[idx] : _zLabels[idx];
+        var lbl = _GS.getLabel(axis === 'X' ? 'x' : 'z', idx);
         APP.status.textContent = 'Rotate grid ' + lbl + ' — drag bubble arc';
       }
       console.log('§DOC_GRID_SELECT mode=rotate axis=' + axis + ' idx=' + idx + ' pivot=' + _selected.pivotEnd);
     } else if (_selected && _selected.axis === axis && _selected.idx === idx) {
-      // Already selected → start drag
+      // Already selected → start drag (with attachment guard)
+      var dragLbl = _GS.getLabel(axis === 'X' ? 'x' : 'z', idx);
+      if (_GR && _GR.getEngine()) {
+        var attachMap = _GR.getAttachMap();
+        var attachItems = attachMap[dragLbl];
+        if (!attachItems || !attachItems.length) {
+          // §S273 F5: Block drag on grid with no attachments
+          if (window.APP && APP.status) {
+            APP.status.textContent = 'Grid ' + dragLbl + ' has no attached elements — place elements first';
+          }
+          console.log('§DOC_GRID_DRAG_BLOCKED label=' + dragLbl + ' reason=no_attachments');
+          return;
+        }
+      }
       _dragging = true;
       _dragStart = _worldXZ(hit.point);
-      _origPos = axis === 'X' ? _xPositions[idx] : _zPositions[idx];
+      _origPos = _GS.getPosition(axis === 'X' ? 'x' : 'z', idx);
       // Disable orbit controls during grid drag
       if (A.controls) A.controls.enabled = false;
       console.log('§DOC_GRID_DRAG start axis=' + axis + ' idx=' + idx + ' pos=' + _origPos.toFixed(3));
@@ -1420,9 +1454,9 @@ function _initInteraction(A) {
       if (_selected) _deselectGrid(A);
       _selected = { axis: axis, idx: idx, mode: 'drag' };
       _highlightGrid(A, axis, idx, 0x00ffff);
-      _origPos = axis === 'X' ? _xPositions[idx] : _zPositions[idx];
+      _origPos = _GS.getPosition(axis === 'X' ? 'x' : 'z', idx);
       if (window.APP && APP.status) {
-        var lbl2 = axis === 'X' ? _xLabels[idx] : _zLabels[idx];
+        var lbl2 = _GS.getLabel(axis === 'X' ? 'x' : 'z', idx);
         var dir = axis === 'X' ? 'left/right' : 'forward/back';
         var attachInfo = _getGridAttachInfo(lbl2);
         APP.status.textContent = 'Grid ' + lbl2 + ' selected' + attachInfo + ' — click again to drag ' + dir;
@@ -1442,20 +1476,20 @@ function _initInteraction(A) {
     if (!_raycaster.ray.intersectPlane(plane, intersection)) return;
 
     // Constrained movement: X lines move along X axis, Z lines along Z axis
+    var gsAxis = _selected.axis === 'X' ? 'x' : 'z';
     var newPos;
     if (_selected.axis === 'X') {
       newPos = intersection.x;
-      _xPositions[_selected.idx] = newPos;
     } else {
       newPos = intersection.z;
-      _zPositions[_selected.idx] = newPos;
     }
+    _GS.setPosition(gsAxis, _selected.idx, newPos);
 
     // Live re-render grid
     _renderGrid(A);
     _highlightGrid(A, _selected.axis, _selected.idx, 0x00ffff);
 
-    var lbl = _selected.axis === 'X' ? _xLabels[_selected.idx] : _zLabels[_selected.idx];
+    var lbl = _GS.getLabel(gsAxis, _selected.idx);
     var delta = newPos - _origPos;
     if (window.APP && APP.status) {
       APP.status.textContent = 'Dragging ' + lbl + ': ' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + 'm';
@@ -1469,8 +1503,42 @@ function _initInteraction(A) {
 
     var axis = _selected.axis;
     var idx = _selected.idx;
-    var newPos = axis === 'X' ? _xPositions[idx] : _zPositions[idx];
+    var gsAx = axis === 'X' ? 'x' : 'z';
+    var newPos = _GS.getPosition(gsAx, idx);
     var delta = newPos - _origPos;
+
+    // §S273 F4: Drag beyond envelope → delete grid line
+    if (A._docEnv && idx > 0) {
+      var env = A._docEnv;
+      var beyondEnvelope = false;
+      if (axis === 'X') {
+        beyondEnvelope = newPos < env.x0 - 2 || newPos > env.x1 + 2;
+      } else {
+        beyondEnvelope = newPos < env.z0 - 2 || newPos > env.z1 + 2;
+      }
+      var posCount = _GS.getCount(gsAx);
+      if (beyondEnvelope && idx < posCount - 1) {
+        var delLabel = _removeGridPosition(axis, idx);
+        if (delLabel) {
+          _renderGrid(A);
+          _updateHud();
+          if (_GR) _GR.markDirty();
+          if (window.KernelOps && A.db) {
+            try {
+              KernelOps.commitOp(A.db, 'GRID_DELETE', JSON.stringify({
+                axis: axis, label: delLabel, pos_m: Math.round(_origPos * 1000) / 1000
+              }), null, null);
+            } catch(e) { /* kernel_ops optional */ }
+          }
+          console.log('§DOC_ROSETTA_DELETE axis=' + axis + ' label=' + delLabel);
+          if (window.APP && APP.status) {
+            APP.status.textContent = 'Grid ' + delLabel + ' removed (dragged beyond envelope)';
+          }
+          _deselectGrid(A);
+          return;
+        }
+      }
+    }
 
     if (Math.abs(delta) > 0.01) {
       // Commit the move
@@ -1480,7 +1548,7 @@ function _initInteraction(A) {
 
       // Log GRID_MOVE kernel_op
       if (window.KernelOps && A.db) {
-        var lbl = axis === 'X' ? _xLabels[idx] : _zLabels[idx];
+        var lbl = _GS.getLabel(gsAx, idx);
         try {
           KernelOps.commitOp(A.db, 'GRID_MOVE', JSON.stringify({
             axis: axis, label: lbl,
@@ -1497,7 +1565,7 @@ function _initInteraction(A) {
 
       // §S270: Status feedback after drag
       if (window.APP && APP.status) {
-        var moveLbl = axis === 'X' ? _xLabels[idx] : _zLabels[idx];
+        var moveLbl = _GS.getLabel(gsAx, idx);
         APP.status.textContent = 'Grid ' + moveLbl + ' moved ' +
           (delta >= 0 ? '+' : '') + delta.toFixed(2) + 'm — elements recomposed';
       }
@@ -1511,8 +1579,7 @@ function _initInteraction(A) {
     if (ev.key === 'Escape' && _selected && _active) {
       if (_dragging) {
         // Cancel drag — restore original position
-        if (_selected.axis === 'X') _xPositions[_selected.idx] = _origPos;
-        else _zPositions[_selected.idx] = _origPos;
+        _GS.setPosition(_selected.axis === 'X' ? 'x' : 'z', _selected.idx, _origPos);
         _dragging = false;
         if (A.controls) A.controls.enabled = true;
         _renderGrid(A);
@@ -1563,18 +1630,7 @@ function _highlightGrid(A, axis, idx, color) {
  * e.g. " (5 walls, 2 slabs)" or "" if engine not built yet.
  */
 function _getGridAttachInfo(gridLabel) {
-  if (!_kinEngine) return '';
-  var map = _kinEngine.getAttachMap();
-  var items = map[gridLabel];
-  if (!items || !items.length) return ' (no attached elements)';
-  var counts = {};
-  for (var i = 0; i < items.length; i++) {
-    var rel = items[i].relation;
-    counts[rel] = (counts[rel] || 0) + 1;
-  }
-  var parts = [];
-  for (var k in counts) parts.push(counts[k] + ' ' + k);
-  return ' (' + parts.join(', ') + ')';
+  return _GR ? _GR.getAttachInfo(gridLabel) : '';
 }
 
 function _deselectGrid(A) {
@@ -1694,20 +1750,29 @@ function _scrubToPhase(A, targetIdx) {
   _phaseIndex = targetIdx;
 
   // Re-add grid lines from all shown phases
-  _xPositions = [A._docEnv.x0, A._docEnv.x1];
-  _xLabels = ['A', 'B'];
-  _zPositions = [A._docEnv.z0, A._docEnv.z1];
-  _zLabels = ['1', '2'];
+  _GS.init([A._docEnv.x0, A._docEnv.x1], [A._docEnv.z0, A._docEnv.z1], ['A', 'B'], ['1', '2']);
   for (var g = 0; g <= targetIdx && g < filtered.length; g++) {
     _autoGridFromPhase(A, filtered[g]);
   }
+
+  // §S273 F3: Re-add user-placed grids (Rosetta) that were lost during reset
+  var preservedCount = 0;
+  for (var ugLabel in _userGrids) {
+    var ug = _userGrids[ugLabel];
+    if (_addGridPosition(ug.axis, ug.position, ugLabel)) {
+      preservedCount++;
+    }
+  }
+  _resortLabels();
+
   _renderGrid(A);
   _updateHud();
   _updateTimeline();
-  _kinEngineDirty = true; // §S270: phases changed, rebuild engine
+  if (_GR) _GR.markDirty(); // §S270: phases changed, rebuild engine
 
   console.log('§DOC_SCRUB to=' + (targetIdx + 1) + '/' + filtered.length +
-    ' elements=' + _shownCount);
+    ' elements=' + _shownCount +
+    (preservedCount > 0 ? ' §DOC_SCRUB preserved=' + preservedCount + ' userGrids' : ''));
 }
 
 // Zero matrix for hiding instanced meshes during scrub (lazy-init)
@@ -1725,6 +1790,10 @@ function _getZeroMatrix() {
  */
 function prevPhase(A) {
   if (!_active || !A || _phaseIndex < 0) return;
+
+  // §S272 Phase 3b: dematerialize BOM level on Prev
+  if (_GR) _GR.dematerializeBomLevel();
+
   _scrubToPhase(A, _phaseIndex - 1);
   console.log('§DOC_PREV phase=' + (_phaseIndex + 1));
 }
@@ -1737,64 +1806,21 @@ function prevPhase(A) {
 //   4. _applyCommand(cmd)      → writes to Three.js meshes
 // Only _collectElementData and _applyCommand touch Three.js.
 
-var _gridOriginals = { x: [], z: [] };
-var _kinEngine = null;       // GridKinematicEngine instance (lazy, rebuilt when dirty)
-var _kinEngineDirty = true;  // rebuild on next drag (phases changed, etc.)
+// _gridOriginals and _gridOrigByLabel delegated to GridState
+var _userGrids = {};  // §S273 F3: label → { axis, position } for user-placed grids (Rosetta)
+// _kinEngine, _kinEngineDirty, _lastAppliedDeltas delegated to GridRecompose
 
 /**
- * _snapshotGridOriginals() — called once at activate, records the initial grid positions.
- * All deltas are computed as (current - original).
+ * _snapshotGridOriginals() — delegates to GridState.snapshotOriginals().
  */
 function _snapshotGridOriginals() {
-  _gridOriginals.x = _xPositions.slice();
-  _gridOriginals.z = _zPositions.slice();
-  _kinEngineDirty = true;
+  _GS.snapshotOriginals();
+  if (_GR) _GR.markDirty();
 }
 
-/**
- * _computeGridDeltas() — compute per-axis deltas from original grid positions.
- * Returns { x: [{pos, orig, delta, idx}], z: [{pos, orig, delta, idx}] }
- */
-function _computeGridDeltas() {
-  var deltas = { x: [], z: [] };
-  for (var i = 0; i < _xPositions.length; i++) {
-    var orig = i < _gridOriginals.x.length ? _gridOriginals.x[i] : _xPositions[i];
-    deltas.x.push({ pos: _xPositions[i], orig: orig, delta: _xPositions[i] - orig, idx: i });
-  }
-  for (var j = 0; j < _zPositions.length; j++) {
-    var origZ = j < _gridOriginals.z.length ? _gridOriginals.z[j] : _zPositions[j];
-    deltas.z.push({ pos: _zPositions[j], orig: origZ, delta: _zPositions[j] - origZ, idx: j });
-  }
-  return deltas;
-}
+// _computeGridDeltas — moved to grid_recompose.js (uses GridState.getDeltas directly)
 
-/**
- * _getMeshPosition(guid) — read current mesh position for a GUID.
- * Returns {x, y, z, scaleX, scaleY, scaleZ} or null.
- */
-function _getMeshPosition(guid) {
-  var slot = _guidToSlot[guid];
-  if (slot) {
-    var mat = new THREE.Matrix4();
-    slot.mesh.getMatrixAt(slot.slotId, mat);
-    var pos = new THREE.Vector3();
-    var scale = new THREE.Vector3();
-    pos.setFromMatrixPosition(mat);
-    scale.setFromMatrixScale(mat);
-    return { x: pos.x, y: pos.y, z: pos.z, scaleX: scale.x, scaleY: scale.y, scaleZ: scale.z };
-  }
-  var inst = _guidToInstance[guid];
-  if (inst) {
-    var imat = new THREE.Matrix4();
-    inst.mesh.getMatrixAt(inst.index, imat);
-    var ipos = new THREE.Vector3();
-    var iscale = new THREE.Vector3();
-    ipos.setFromMatrixPosition(imat);
-    iscale.setFromMatrixScale(imat);
-    return { x: ipos.x, y: ipos.y, z: ipos.z, scaleX: iscale.x, scaleY: iscale.y, scaleZ: iscale.z };
-  }
-  return null;
-}
+// _getMeshPosition — moved to grid_recompose.js
 
 /**
  * _getShownGuids() — collect all GUIDs currently revealed by the phase stepper.
@@ -1808,319 +1834,203 @@ function _getShownGuids() {
   return shownGuids;
 }
 
-/**
- * _collectElementData(A) — read mesh positions + DB bbox for all shown GUIDs.
- * Builds the elementData array that GridKinematicEngine needs.
- * This is the ONLY place that reads Three.js state for the engine.
- */
-function _collectElementData(A) {
-  var shownGuids = _getShownGuids();
-  if (!shownGuids.length) return [];
+// _collectElementData — moved to grid_recompose.js
 
-  // Read bbox + ifcClass from extracted DB
-  var bboxLookup = {};
-  var classLookup = {};
-  if (A.db) {
-    try {
-      var rows = A.db.exec("SELECT guid, bbox_x, bbox_y, bbox_z FROM element_transforms");
-      if (rows.length && rows[0].values) {
-        for (var ri = 0; ri < rows[0].values.length; ri++) {
-          var r = rows[0].values[ri];
-          bboxLookup[r[0]] = { bboxX: r[1] || 0, bboxY: r[2] || 0, bboxZ: r[3] || 0 };
-        }
-      }
-    } catch(e) { /* bbox optional — columns may not exist */ }
-    try {
-      var crows = A.db.exec("SELECT guid, ifc_class FROM elements_meta");
-      if (crows.length && crows[0].values) {
-        for (var ci = 0; ci < crows[0].values.length; ci++) {
-          classLookup[crows[0].values[ci][0]] = crows[0].values[ci][1] || '';
-        }
-      }
-    } catch(e2) { /* class optional */ }
-  }
-
-  var elements = [];
-  for (var gi = 0; gi < shownGuids.length; gi++) {
-    var guid = shownGuids[gi];
-    var mpos = _getMeshPosition(guid);
-    if (!mpos) continue;
-
-    var bbox = bboxLookup[guid] || { bboxX: 0, bboxY: 0, bboxZ: 0 };
-    elements.push({
-      guid: guid,
-      x: mpos.x,
-      y: mpos.y,
-      z: mpos.z,
-      bboxX: bbox.bboxX,
-      bboxY: bbox.bboxY,
-      bboxZ: bbox.bboxZ,
-      ifcClass: classLookup[guid] || '',
-      scaleX: mpos.scaleX,
-      scaleY: mpos.scaleY,
-      scaleZ: mpos.scaleZ
-    });
-  }
-  return elements;
-}
+// _collectGridLines — moved to grid_recompose.js (uses GridState.getLines directly)
 
 /**
- * _collectGridLines() — build gridLines array from current grid state.
- * Uses grid labels as IDs (e.g. 'A', 'B', '1', '2').
- */
-function _collectGridLines() {
-  var lines = [];
-  for (var xi = 0; xi < _gridOriginals.x.length; xi++) {
-    lines.push({
-      id: _xLabels[xi] || ('X' + xi),
-      axis: 'x',
-      pos: _gridOriginals.x[xi]
-    });
-  }
-  for (var zi = 0; zi < _gridOriginals.z.length; zi++) {
-    lines.push({
-      id: _zLabels[zi] || ('Z' + zi),
-      axis: 'z',
-      pos: _gridOriginals.z[zi]
-    });
-  }
-  // §S270: Y-axis ceiling grid
-  if (_ceilingGridY !== null) {
-    lines.push({ id: 'CEIL', axis: 'y', pos: _ceilingGridY });
-  }
-  return lines;
-}
-
-/**
- * _rebuildEngine(A) — construct a fresh GridKinematicEngine from current state.
+ * _rebuildEngine(A) — delegates to GridRecompose.rebuild().
  */
 function _rebuildEngine(A) {
-  if (typeof GridKinematics === 'undefined' || !GridKinematics.GridKinematicEngine) {
-    console.warn('§RECOMPOSE grid_kinematics.js not loaded — falling back');
-    _kinEngine = null;
-    return;
-  }
-  var elementData = _collectElementData(A);
-  var gridLines = _collectGridLines();
-  _kinEngine = new GridKinematics.GridKinematicEngine(elementData, gridLines);
-  _kinEngine.attachGridToElements();
-  _kinEngineDirty = false;
-
-  var map = _kinEngine.getAttachMap();
-  var totalAttached = 0;
-  for (var k in map) {
-    totalAttached += map[k].length;
-  }
-  console.log('§RECOMPOSE_ENGINE built elements=' + elementData.length +
-    ' grids=' + gridLines.length + ' attached=' + totalAttached +
-    ' interior=' + _kinEngine.getInteriorElements().length);
+  if (!_GR) return;
+  // Re-init context in case scene refs changed
+  _GR.init({
+    guidToSlot: _guidToSlot, guidToInstance: _guidToInstance,
+    appRef: A, db: A ? A.db : null, getShownGuids: _getShownGuids
+  });
+  _GR.rebuild();
 }
 
-/**
- * _applyCommand(cmd) — apply one engine command to Three.js meshes.
- * This is the ONLY place that writes to Three.js from recomposition.
- */
-function _applyCommand(cmd) {
-  switch (cmd.action) {
-    case 'TRANSLATE':
-      _translateMesh(cmd.guid, cmd.axis, cmd.delta);
-      break;
-    case 'SCALE':
-      _scaleMeshFromCommand(cmd);
-      break;
-    case 'ROOF_VERTICES':
-      _applyRoofVertices(cmd);
-      break;
-    case 'ROOF_LIFT':
-      _applyRoofLift(cmd);
-      break;
-  }
-}
+// _applyCommand, _scaleMeshFromCommand, _applyRoofVertices, _applyRoofLift,
+// _findMeshByGuid — moved to grid_recompose.js
 
 /**
- * _scaleMeshFromCommand — apply SCALE command from engine.
- * Engine provides newScale and translateDelta directly.
- */
-function _scaleMeshFromCommand(cmd) {
-  var matIdx = cmd.axis === 'x' ? 12 : (cmd.axis === 'z' ? 14 : 13);
-  var scaleIdx = cmd.axis === 'x' ? 0 : (cmd.axis === 'z' ? 10 : 5);
-
-  var slot = _guidToSlot[cmd.guid];
-  if (slot) {
-    var mat = new THREE.Matrix4();
-    slot.mesh.getMatrixAt(slot.slotId, mat);
-    mat.elements[scaleIdx] = cmd.newScale;
-    if (cmd.translateDelta) mat.elements[matIdx] += cmd.translateDelta;
-    slot.mesh.setMatrixAt(slot.slotId, mat);
-    if (slot.mesh.instanceMatrix) slot.mesh.instanceMatrix.needsUpdate = true;
-    return;
-  }
-  var inst = _guidToInstance[cmd.guid];
-  if (inst) {
-    var imat = new THREE.Matrix4();
-    inst.mesh.getMatrixAt(inst.index, imat);
-    imat.elements[scaleIdx] = cmd.newScale;
-    if (cmd.translateDelta) imat.elements[matIdx] += cmd.translateDelta;
-    inst.mesh.setMatrixAt(inst.index, imat);
-    if (inst.mesh.instanceMatrix) inst.mesh.instanceMatrix.needsUpdate = true;
-    return;
-  }
-}
-
-/**
- * _applyRoofVertices — apply per-vertex deltas to a roof mesh's BufferGeometry.
- */
-function _applyRoofVertices(cmd) {
-  if (!cmd.vertexDeltas) return;
-  var mesh = _findMeshByGuid(cmd.guid);
-  if (!mesh || !mesh.geometry || !mesh.geometry.attributes.position) return;
-  var positions = mesh.geometry.attributes.position.array;
-  var vd = cmd.vertexDeltas;
-  for (var i = 0; i < vd.length && i < positions.length; i++) {
-    positions[i] += vd[i];
-  }
-  mesh.geometry.attributes.position.needsUpdate = true;
-  mesh.geometry.computeBoundingBox();
-  mesh.geometry.computeBoundingSphere();
-}
-
-/**
- * _applyRoofLift — translate all vertices of a roof mesh on Y axis.
- */
-function _applyRoofLift(cmd) {
-  var mesh = _findMeshByGuid(cmd.guid);
-  if (!mesh || !mesh.geometry || !mesh.geometry.attributes.position) return;
-  var positions = mesh.geometry.attributes.position.array;
-  var nVerts = positions.length / 3;
-  for (var i = 0; i < nVerts; i++) {
-    positions[i * 3 + 1] += cmd.deltaY; // Y component
-  }
-  mesh.geometry.attributes.position.needsUpdate = true;
-  mesh.geometry.computeBoundingBox();
-  mesh.geometry.computeBoundingSphere();
-}
-
-/**
- * _findMeshByGuid — find a Three.js mesh for a GUID (for vertex-level ops).
- */
-function _findMeshByGuid(guid) {
-  // BatchedMesh / InstancedMesh don't have per-instance geometry — roof vertex
-  // ops only work on single-mesh path. In practice, roofs are typically single meshes.
-  if (_appRef && _appRef.scene) {
-    var found = null;
-    _appRef.scene.traverse(function(obj) {
-      if (!found && obj.userData && obj.userData.guid === guid && obj.isMesh) {
-        found = obj;
-      }
-    });
-    return found;
-  }
-  return null;
-}
-
-/**
- * recomposeAfterGridDrag(A) — §S270 engine-driven recompose.
- * Delegates all math to GridKinematicEngine. Only applies commands to meshes.
+ * recomposeAfterGridDrag(A) — delegates to GridRecompose.applyDrag().
  */
 function recomposeAfterGridDrag(A) {
-  if (!_active || !A) return;
+  if (!_active || !A || !_GR) return;
+  _GR.applyDrag(A);
+}
 
-  var deltas = _computeGridDeltas();
-  var anyDelta = deltas.x.some(function(d) { return Math.abs(d.delta) > 0.01; }) ||
-                 deltas.z.some(function(d) { return Math.abs(d.delta) > 0.01; });
-  if (!anyDelta) return;
+// _fireBomRecompose, _logBomRecomposeOp, _translateMesh, _applyBomDiffCommand,
+// _findRootBom — moved to grid_recompose.js
 
-  // Rebuild engine if dirty (phases changed since last build)
-  if (_kinEngineDirty || !_kinEngine) _rebuildEngine(A);
-  if (!_kinEngine) return; // grid_kinematics.js not loaded
+// ── §S273 F1/F2: Save/Open Design via IndexedDB ────────────────────────────
+var DESIGN_IDB_NAME = 'bim-designs';
+var DESIGN_IDB_VERSION = 1;
+var DESIGN_STORE = 'designs';
 
-  var translated = 0, scaled = 0, roofOps = 0, bayMoved = 0;
-
-  // For each grid line that moved, call engine and apply commands
-  for (var xi = 0; xi < deltas.x.length; xi++) {
-    var dx = deltas.x[xi];
-    if (Math.abs(dx.delta) < 0.01) continue;
-    var gridId = _xLabels[dx.idx] || ('X' + dx.idx);
-    var cmds = _kinEngine.dragGrid(gridId, dx.delta);
-    for (var ci = 0; ci < cmds.length; ci++) {
-      _applyCommand(cmds[ci]);
-      if (cmds[ci].action === 'TRANSLATE') translated++;
-      else if (cmds[ci].action === 'SCALE') scaled++;
-      else if (cmds[ci].action === 'ROOF_VERTICES' || cmds[ci].action === 'ROOF_LIFT') roofOps++;
+function _openDesignDB(callback) {
+  var req = indexedDB.open(DESIGN_IDB_NAME, DESIGN_IDB_VERSION);
+  req.onupgradeneeded = function(e) {
+    var db = e.target.result;
+    if (!db.objectStoreNames.contains(DESIGN_STORE)) {
+      db.createObjectStore(DESIGN_STORE, { keyPath: 'key' });
     }
-    console.log('§RECOMPOSE_GRID id=' + gridId +
-      ' delta=' + (dx.delta > 0 ? '+' : '') + dx.delta.toFixed(3) +
-      ' commands=' + cmds.length);
-  }
-
-  for (var zi = 0; zi < deltas.z.length; zi++) {
-    var dz = deltas.z[zi];
-    if (Math.abs(dz.delta) < 0.01) continue;
-    var zGridId = _zLabels[dz.idx] || ('Z' + dz.idx);
-    var zCmds = _kinEngine.dragGrid(zGridId, dz.delta);
-    for (var zci = 0; zci < zCmds.length; zci++) {
-      _applyCommand(zCmds[zci]);
-      if (zCmds[zci].action === 'TRANSLATE') translated++;
-      else if (zCmds[zci].action === 'SCALE') scaled++;
-      else if (zCmds[zci].action === 'ROOF_VERTICES' || zCmds[zci].action === 'ROOF_LIFT') roofOps++;
-    }
-    console.log('§RECOMPOSE_GRID id=' + zGridId +
-      ' delta=' + (dz.delta > 0 ? '+' : '') + dz.delta.toFixed(3) +
-      ' commands=' + zCmds.length);
-  }
-
-  console.log('§RECOMPOSE_DONE translated=' + translated + ' scaled=' + scaled +
-    ' roofOps=' + roofOps);
+  };
+  req.onsuccess = function(e) { callback(null, e.target.result); };
+  req.onerror = function(e) { callback(e.target.error); };
 }
 
 /**
- * _translateMesh — shift a mesh by delta on the given axis (x, y, or z).
+ * saveDesign(A, designKey) — serialize grid state + kernel_ops to IndexedDB.
+ * §-log: §DOC_SAVE key=<key> ops=<n> grids=<n>
  */
-function _translateMesh(guid, axis, delta) {
-  var matIdx = axis === 'x' ? 12 : (axis === 'z' ? 14 : 13); // 12=X, 13=Y, 14=Z
+function saveDesign(A, designKey) {
+  if (!designKey) {
+    designKey = 'Design_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  }
 
-  var slot = _guidToSlot[guid];
-  if (slot) {
-    var mat = new THREE.Matrix4();
-    slot.mesh.getMatrixAt(slot.slotId, mat);
-    mat.elements[matIdx] += delta;
-    slot.mesh.setMatrixAt(slot.slotId, mat);
-    if (slot.mesh.instanceMatrix) slot.mesh.instanceMatrix.needsUpdate = true;
-    return;
-  }
-  var inst = _guidToInstance[guid];
-  if (inst) {
-    var imat = new THREE.Matrix4();
-    inst.mesh.getMatrixAt(inst.index, imat);
-    imat.elements[matIdx] += delta;
-    inst.mesh.setMatrixAt(inst.index, imat);
-    if (inst.mesh.instanceMatrix) inst.mesh.instanceMatrix.needsUpdate = true;
-    return;
-  }
-  // Single-mesh path
-  if (_appRef && _appRef.scene) {
-    _appRef.scene.traverse(function(obj) {
-      if (obj.userData && obj.userData.guid === guid && obj.isMesh) {
-        if (axis === 'x') obj.position.x += delta;
-        else if (axis === 'y') obj.position.y += delta;
-        else obj.position.z += delta;
+  // Collect kernel_ops from DB
+  var ops = [];
+  if (A && A.db) {
+    try {
+      var r = A.db.exec('SELECT id, timestamp, op_type, parameters, input_guids, output_guid, undone FROM kernel_ops ORDER BY id');
+      if (r.length) {
+        for (var i = 0; i < r[0].values.length; i++) {
+          var v = r[0].values[i];
+          ops.push({ id: v[0], timestamp: v[1], op_type: v[2], parameters: v[3], input_guids: v[4], output_guid: v[5], undone: v[6] });
+        }
       }
-    });
+    } catch(e) { /* kernel_ops table may not exist */ }
   }
+
+  var gsPos = _GS.getPositions();
+  var gsLbl = _GS.getLabels();
+  var gridCount = gsPos.x.length + gsPos.z.length - 4; // minus 4 envelope lines
+  var design = {
+    key: designKey,
+    savedAt: Date.now(),
+    phaseIndex: _phaseIndex,
+    activeDisc: _activeDisc,
+    xPositions: gsPos.x,
+    zPositions: gsPos.z,
+    xLabels: gsLbl.x,
+    zLabels: gsLbl.z,
+    userGrids: JSON.parse(JSON.stringify(_userGrids)),
+    kernelOps: ops
+  };
+
+  _openDesignDB(function(err, db) {
+    if (err) {
+      console.log('§DOC_SAVE ERROR: ' + err);
+      return;
+    }
+    var tx = db.transaction(DESIGN_STORE, 'readwrite');
+    tx.objectStore(DESIGN_STORE).put(design);
+    tx.oncomplete = function() {
+      console.log('§DOC_SAVE key=' + designKey + ' ops=' + ops.length + ' grids=' + gridCount);
+      if (window.APP && APP.status) {
+        APP.status.textContent = 'Design saved: ' + designKey + ' (' + ops.length + ' ops, ' + gridCount + ' user grids)';
+      }
+    };
+    tx.onerror = function(e) {
+      console.log('§DOC_SAVE ERROR: ' + e.target.error);
+    };
+    db.close();
+  });
 }
 
 /**
- * _findRootBom(bomDb) — find the BUILDING-level root BOM in the database.
+ * listDesigns(callback) — list saved designs from IndexedDB.
+ * callback(err, [{key, savedAt, ops, grids}])
  */
-function _findRootBom(bomDb) {
-  if (!bomDb) return null;
-  try {
-    var boms = BOMWalker.listBoms(bomDb);
-  } catch(e) { return null; } // DB may not have m_bom table
-  for (var i = 0; i < boms.length; i++) {
-    if (boms[i].bomType === 'BUILDING') return boms[i].bomId;
-  }
-  return boms.length ? boms[0].bomId : null;
+function listDesigns(callback) {
+  _openDesignDB(function(err, db) {
+    if (err) return callback(err);
+    var tx = db.transaction(DESIGN_STORE, 'readonly');
+    var req = tx.objectStore(DESIGN_STORE).getAll();
+    req.onsuccess = function(e) {
+      var designs = e.target.result || [];
+      var list = designs.map(function(d) {
+        return {
+          key: d.key,
+          savedAt: d.savedAt,
+          ops: d.kernelOps ? d.kernelOps.length : 0,
+          grids: (d.xPositions ? d.xPositions.length : 0) + (d.zPositions ? d.zPositions.length : 0) - 4
+        };
+      });
+      callback(null, list);
+    };
+    req.onerror = function(e) { callback(e.target.error); };
+    db.close();
+  });
+}
+
+/**
+ * openDesign(A, designKey) — restore a saved design from IndexedDB.
+ * §-log: §DOC_OPEN key=<key> ops=<n> grids=<n> restored=true
+ */
+function openDesign(A, designKey) {
+  _openDesignDB(function(err, db) {
+    if (err) {
+      console.log('§DOC_OPEN ERROR: ' + err);
+      return;
+    }
+    var tx = db.transaction(DESIGN_STORE, 'readonly');
+    var req = tx.objectStore(DESIGN_STORE).get(designKey);
+    req.onsuccess = function(e) {
+      var design = e.target.result;
+      if (!design) {
+        console.log('§DOC_OPEN key=' + designKey + ' NOT_FOUND');
+        if (window.APP && APP.status) {
+          APP.status.textContent = 'Design not found: ' + designKey;
+        }
+        return;
+      }
+
+      // Restore grid state
+      var rxPos = design.xPositions || [A._docEnv.x0, A._docEnv.x1];
+      var rzPos = design.zPositions || [A._docEnv.z0, A._docEnv.z1];
+      var rxLbl = design.xLabels || ['A', 'B'];
+      var rzLbl = design.zLabels || ['1', '2'];
+      _GS.init(rxPos, rzPos, rxLbl, rzLbl);
+      _GS.snapshotOriginals();
+      _userGrids = design.userGrids || {};
+      _phaseIndex = design.phaseIndex || -1;
+      _activeDisc = design.activeDisc || null;
+
+      // Replay kernel_ops into DB
+      if (A.db && design.kernelOps && design.kernelOps.length) {
+        try {
+          A.db.run('DELETE FROM kernel_ops');
+          for (var i = 0; i < design.kernelOps.length; i++) {
+            var op = design.kernelOps[i];
+            A.db.run(
+              'INSERT INTO kernel_ops (id, timestamp, op_type, parameters, input_guids, output_guid, undone) VALUES (?,?,?,?,?,?,?)',
+              [op.id, op.timestamp, op.op_type, op.parameters, op.input_guids, op.output_guid, op.undone]
+            );
+          }
+        } catch(e) { /* kernel_ops replay optional */ }
+      }
+
+      if (_GR) _GR.markDirty();
+      _renderGrid(A);
+      _updateHud();
+      _updateTimeline();
+
+      var gridCount = rxPos.length + rzPos.length - 4;
+      var opCount = design.kernelOps ? design.kernelOps.length : 0;
+      console.log('§DOC_OPEN key=' + designKey + ' ops=' + opCount + ' grids=' + gridCount + ' restored=true');
+      if (window.APP && APP.status) {
+        APP.status.textContent = 'Design loaded: ' + designKey + ' (' + opCount + ' ops, ' + gridCount + ' user grids)';
+      }
+    };
+    req.onerror = function(e) {
+      console.log('§DOC_OPEN ERROR: ' + e.target.error);
+    };
+    db.close();
+  });
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -2136,26 +2046,43 @@ window.DocCanvas = {
   handleRosettaDrag: handleRosettaDrag,
   setActiveDisc: setActiveDisc,
   // Test-only: inject phases without BOM.db (materialize tests)
-  _setPhases: function(p) { _phases = p; _kinEngineDirty = true; },
+  _setPhases: function(p) { _phases = p; if (_GR) _GR.markDirty(); },
   isActive: function() { return _active; },
   isCalibrating: function() { return _calibrationMode; },
   getCalibrations: function() { return _calibrations.slice(); },
   getActiveDisc: function() { return _activeDisc; },
   recompose: recomposeAfterGridDrag,
+  saveDesign: saveDesign,
+  openDesign: openDesign,
+  listDesigns: listDesigns,
   getGridState: function() {
-    return {
-      xPositions: _xPositions.slice(),
-      zPositions: _zPositions.slice(),
-      xLabels: _xLabels.slice(),
-      zLabels: _zLabels.slice()
-    };
+    var p = _GS.getPositions(), l = _GS.getLabels();
+    return { xPositions: p.x, zPositions: p.z, xLabels: l.x, zLabels: l.z };
   },
   // §S270 test-only: expose engine internals for verification
-  _getKinEngine: function() { return _kinEngine; },
+  _getKinEngine: function() { return _GR ? _GR.getEngine() : null; },
   _rebuildEngine: _rebuildEngine,
   _getShownGuids: _getShownGuids,
-  _setGridPositions: function(x, z) { _xPositions = x; _zPositions = z; },
-  _setGridOriginals: function(x, z) { _gridOriginals = { x: x, z: z }; _kinEngineDirty = true; }
+  _setGridPositions: function(x, z) {
+    // Update positions without resetting originals (test-only)
+    for (var i = 0; i < x.length; i++) _GS.setPosition('x', i, x[i]);
+    for (var j = 0; j < z.length; j++) _GS.setPosition('z', j, z[j]);
+  },
+  _setGridLabels: function(x, z) {
+    // Re-init with same positions but new labels (test-only)
+    var p = _GS.getPositions();
+    _GS.init(p.x, p.z, x, z);
+  },
+  _addGridPosition: _addGridPosition,
+  _removeGridPosition: _removeGridPosition,
+  _setGridOriginals: function(x, z) {
+    // Re-init GridState with these as positions and snapshot them
+    var l = _GS.getLabels();
+    _GS.init(x, z, l.x, l.z);
+    _GS.snapshotOriginals();
+    if (_GR) _GR.markDirty();
+  },
+  _getLastAppliedDeltas: function() { return _GR ? _GR.getLastAppliedDeltas() : {}; }
 };
 
 })(window);

@@ -92,7 +92,9 @@ const PRECACHE_ASSETS = [
   'bom_extract.js',
   'verb_expand.js',
   'bom_walker.js',
+  'grid_state.js',
   'grid_kinematics.js',
+  'grid_recompose.js',
   'doc_canvas.js',
   'route_walker.js',
   // Feature modules loaded by index.html
