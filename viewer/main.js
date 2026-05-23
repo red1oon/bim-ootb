@@ -577,9 +577,9 @@ async function initViewer() {
     if (_pipelinesCompiling) return;
     if (APP._isWebGPU && APP.streaming) return;
     if (window._isMobile) {
-      // §S276b: Throttle render during streaming — every 10th frame only.
-      // Prevents mobile GPU saturation from 20K bbox instances + progressive meshes.
-      if (APP.streaming) {
+      // §S276b: Throttle continuous streaming renders — every 10th frame only.
+      // But always honor explicit _needsRender (bbox chunks, user interaction).
+      if (APP.streaming && !_needsRender && !_orbiting) {
         if (!APP._mobileRenderSkip) APP._mobileRenderSkip = 0;
         if (++APP._mobileRenderSkip < 10) return;
         APP._mobileRenderSkip = 0;

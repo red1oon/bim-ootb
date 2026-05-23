@@ -233,6 +233,7 @@ function setupStreaming(A) {
         }
         ri = end;
         iMesh.instanceMatrix.needsUpdate = true;
+        if (A.markDirty) A.markDirty();  // §S276b: trigger render after each chunk
         if (ri < drows.length) {
           setTimeout(_buildChunk, 0);  // yield to main thread
         } else {
