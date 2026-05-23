@@ -127,9 +127,8 @@
     panel.innerHTML = [
       '<span class="bim-panel-close" id="find-close">&times;</span>',
       '<div class="find-search-bar">',
-      '  <button id="find-search-icon" title="Search">' + _searchSvg + '</button>',
-      '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Search elements…') + '">',
       '  <button id="find-mic-btn" title="' + _t('ui_tt_voice', 'Voice search') + '">' + _micSvg + '</button>',
+      '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Search elements…') + '">',
       '</div>',
       '<div id="find-chips"></div>',
       // Hidden selects — still used for data, but UI is accordion rows

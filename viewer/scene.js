@@ -44,9 +44,8 @@ function setupScene(A) {
   console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
   renderer.localClippingEnabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;  // §S259: proper gamma curve for web display
-  // §S258: r156 defaults to physically-correct lights (lux/candela) — intensity 1.0 is near-dark.
-  // r128 used legacy multiplier mode. Restore it.
-  renderer.useLegacyLights = true;
+  // §S276: r184 uses physically-correct lights by default (useLegacyLights removed in r165).
+  // Intensities re-tuned: legacy I × π = physically-correct equivalent.
   A.renderer = renderer;
 
   const scene = new THREE.Scene();
@@ -90,19 +89,18 @@ function setupScene(A) {
   });
 
   // Lighting
-  // §S258: Light intensities bumped to compensate for r156 Phong shader differences
-  // §S260d: PBR lighting — neutral ambient, warm earth hemisphere, warm sun
-  const ambient = new THREE.AmbientLight(0xffffff, 0.25);
+  // §S276: Physically-correct intensities (legacy × π). Tuned with ACESFilmic @ exposure 0.45.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.785);
   scene.add(ambient);
   A.ambient = ambient;
 
-  const sun = new THREE.DirectionalLight(0xfff0dd, 1.4);
+  const sun = new THREE.DirectionalLight(0xfff0dd, 4.4);
   sun.position.set(200, 400, 300);
   sun.castShadow = false;
   scene.add(sun);
   A.sun = sun;
 
-  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 0.40);
+  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 1.257);
   scene.add(hemi);
   A.hemi = hemi;
 
