@@ -210,10 +210,10 @@ function setupScene(A) {
         console.warn('[S203] §QUOTA_LOW — possible private/incognito mode. IDB cache disabled.');
         A._cacheDisabled = true;
       }
-      // §S260b: If storage is full (>95%), nuke our IDB cache to reclaim space
+      // §S271b: Log quota but do NOT auto-delete — usage includes all sites, not just ours.
+      // Old code nuked our IDB at 95% total quota, killing imported IFCs unnecessarily.
       if (e.usage > 0 && e.usage >= e.quota * 0.95) {
-        console.warn('[S203] §QUOTA_FULL usage=' + uMB + '/' + qMB + 'MB — deleting IDB cache to reclaim space');
-        try { indexedDB.deleteDatabase(A.CACHE_DB_NAME); } catch(x) {}
+        console.warn('[S203] §QUOTA_HIGH usage=' + uMB + '/' + qMB + 'MB — browser storage nearly full (other sites). Our cache preserved.');
       }
     }).catch(function() {});
   }
