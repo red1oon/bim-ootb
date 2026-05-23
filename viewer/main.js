@@ -533,16 +533,14 @@ function initViewer() {
     APP.walkModeGpsTick();
     // Device orientation LAST — nothing may overwrite the quaternion after this
     if (APP.walkModeActive) APP.walkOrientTick();
-    // §S271: Re-enable on-demand render — streaming/DLOD/sliders all call markDirty().
-    // S265c broke this; fixed by ensuring all mutation paths mark dirty.
+    // §S271b: Unconditional render restored — on-demand gate caused scene flicker.
+    // Too many code paths (panels, sliders, filters, picks) modify scene without markDirty().
+    // Battery savings come from visibilitychange tab pause, not render gate.
     APP.updateMeasureLabels();
     if (APP.ground && APP.ground.visible) {
       APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
-    if (_needsRender || APP._streaming || APP.walkModeActive) {
-      APP.renderer.render(APP.scene, APP.camera);
-      _needsRender = false;
-    }
+    APP.renderer.render(APP.scene, APP.camera);
   }
 
   // Go
