@@ -241,7 +241,10 @@
         _recognition.start();
       });
     } else if (elMicBtn) {
-      elMicBtn.style.display = 'none'; // no Web Speech API
+      // No Web Speech API — show mic as passive icon (visual consistency)
+      elMicBtn.style.opacity = '0.3';
+      elMicBtn.style.cursor = 'default';
+      elMicBtn.title = 'Voice not supported';
     }
 
     // ── S265 Phase 5: Dual-purpose input — NLP queries vs element search ──
@@ -958,10 +961,63 @@
     elName.addEventListener('input', debounce(function() {
       _handleInput(elName.value);
     }, 300));
-    // Enter key triggers immediate search/NLP
+    // S275: Keyboard navigation — Enter/Escape/Arrow keys
     elName.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') { e.preventDefault(); _handleInput(elName.value); }
-      if (e.key === 'Escape') { closeFindPanel(); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        // If results visible and one is highlighted, select it; else search
+        if (nav.results.length > 0 && nav.activeIdx >= 0) {
+          selectResult(nav.activeIdx);
+        } else {
+          _handleInput(elName.value);
+        }
+        return;
+      }
+      if (e.key === 'Escape') { closeFindPanel(); return; }
+      // Arrow Up/Down — navigate results list
+      if (e.key === 'ArrowDown' && nav.results.length > 0) {
+        e.preventDefault();
+        var next = nav.activeIdx < 0 ? 0 : Math.min(nav.activeIdx + 1, nav.results.length - 1);
+        nav.activeIdx = next;
+        var items = elResults.querySelectorAll('.find-result-item');
+        items.forEach(function(el, i) { el.classList.toggle('active', i === next); });
+        if (items[next]) items[next].scrollIntoView({ block: 'nearest' });
+        // Show results if collapsed
+        panel.classList.add('results-expanded');
+        elSelected.style.display = 'none';
+        return;
+      }
+      if (e.key === 'ArrowUp' && nav.results.length > 0) {
+        e.preventDefault();
+        var prev = nav.activeIdx <= 0 ? 0 : nav.activeIdx - 1;
+        nav.activeIdx = prev;
+        var items2 = elResults.querySelectorAll('.find-result-item');
+        items2.forEach(function(el, i) { el.classList.toggle('active', i === prev); });
+        if (items2[prev]) items2[prev].scrollIntoView({ block: 'nearest' });
+        panel.classList.add('results-expanded');
+        elSelected.style.display = 'none';
+        return;
+      }
+      // Tab — move focus to storey/type accordions
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (!e.shiftKey) { elStoreyHdr.focus(); } else { elName.blur(); }
+      }
+    });
+    // Make accordion headers focusable
+    elStoreyHdr.tabIndex = 0;
+    elTypeHdr.tabIndex = 0;
+    elStoreyHdr.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elStoreyRow); }
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); elTypeHdr.focus(); }
+      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); elName.focus(); }
+      if (e.key === 'Escape') closeFindPanel();
+    });
+    elTypeHdr.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elTypeRow); }
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); elName.focus(); }
+      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); elStoreyHdr.focus(); }
+      if (e.key === 'Escape') closeFindPanel();
     });
 
     function debounce(fn, ms) {
