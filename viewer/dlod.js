@@ -3,10 +3,11 @@
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
  * SPDX-License-Identifier: MIT
  *
- * dlod.js — §6.8 Per-slot Frustum DLOD (Dynamic Level of Detail)
- * §S274: Rewired from empty spatial grid to per-slot setVisibleAt on BatchedMesh.
- * BatchedMesh slots hidden outside frustum → GPU skips their triangles entirely.
- * Terminal 48K: 32% triangle reduction. Hospital 63K: 22% reduction. Proven by bench.
+ * dlod.js — §6.8 Per-slot/instance Frustum DLOD (Dynamic Level of Detail)
+ * §S274: Per-slot setVisibleAt on BatchedMesh + zero-scale on InstancedMesh.
+ * Both mesh types hidden outside frustum → GPU skips their triangles entirely.
+ * Terminal 48K (80% IM): now culls all element types.
+ * Hospital 63K (64% IM): full coverage.
  */
 function setupDLOD(A) {
   // ── State ──
@@ -19,29 +20,32 @@ function setupDLOD(A) {
   var _frustum = new THREE.Frustum();
   var _projScreenMatrix = new THREE.Matrix4();
   var _sphere = new THREE.Sphere();
+  var _zeroScale = new THREE.Matrix4().makeScale(0, 0, 0);
   var _lastCamX = 0, _lastCamY = 0, _lastCamZ = 0;  // §S260b: skip tick when camera idle
   var _lastTargX = 0, _lastTargY = 0, _lastTargZ = 0;
 
-  // ── §S274: Direct refs to BatchedMesh + InstancedMesh (built once after streaming) ──
-  var _batchedMeshes = [];   // [{obj, meta}, ...] — meta has per-slot world position + radius
-  var _instancedMeshes = []; // [{obj, meta}, ...] — direct references
+  // ── §S274: Direct refs built once after streaming ──
+  var _batchedMeshes = [];   // [{obj, meta}, ...]
+  var _instancedMeshes = []; // [{obj, meta}, ...]
   var _refsBuilt = false;
+  var _totalBMSlots = 0;
+  var _totalIMInstances = 0;
 
   function _buildRefs() {
     if (_refsBuilt) return;
     _refsBuilt = true;
     _batchedMeshes = [];
     _instancedMeshes = [];
+    _totalBMSlots = 0;
+    _totalIMInstances = 0;
 
-    // §S274: Enrich BatchedMesh meta with world positions for frustum testing.
-    // Positions are baked into slot matrices during _flushInstanced — extract them.
     var _m4 = new THREE.Matrix4();
     var _pos = new THREE.Vector3();
 
     A.scene.traverse(function(obj) {
+      // ── BatchedMesh: extract world position per slot from matrices ──
       if (obj.isBatchedMesh && A._batchMeta[obj.id]) {
         var meta = A._batchMeta[obj.id];
-        // Extract world position + bounding radius per slot
         for (var i = 0; i < meta.length; i++) {
           var m = meta[i];
           try {
@@ -50,7 +54,6 @@ function setupDLOD(A) {
             m._wx = _pos.x;
             m._wy = _pos.y;
             m._wz = _pos.z;
-            // §S274: Bounding radius from element bbox dims (bx,by,bz added to meta by streaming.js)
             var bx = m.bx || 0.3, by = m.by || 0.3, bz = m.bz || 0.3;
             m._radius = Math.sqrt(bx * bx + by * by + bz * bz) * 0.5;
           } catch(e) {
@@ -58,16 +61,38 @@ function setupDLOD(A) {
           }
         }
         _batchedMeshes.push({ obj: obj, meta: meta });
+        _totalBMSlots += meta.length;
       }
 
+      // ── InstancedMesh: extract world position per instance from matrices ──
       if (obj.isInstancedMesh && A._instanceMeta[obj.id]) {
-        _instancedMeshes.push({ obj: obj, meta: A._instanceMeta[obj.id] });
+        var meta = A._instanceMeta[obj.id];
+        for (var i = 0; i < meta.length; i++) {
+          var m = meta[i];
+          try {
+            obj.getMatrixAt(m.instanceIndex, _m4);
+            _pos.setFromMatrixPosition(_m4);
+            m._wx = _pos.x;
+            m._wy = _pos.y;
+            m._wz = _pos.z;
+            var bx = m.bx || 0.3, by = m.by || 0.3, bz = m.bz || 0.3;
+            m._radius = Math.sqrt(bx * bx + by * by + bz * bz) * 0.5;
+            // Save original matrix for restore
+            m._origMatrix = new THREE.Matrix4().copy(_m4);
+          } catch(e) {
+            m._wx = 0; m._wy = 0; m._wz = 0; m._radius = 5.0;
+            m._origMatrix = null;
+          }
+        }
+        _instancedMeshes.push({ obj: obj, meta: meta });
+        _totalIMInstances += meta.length;
       }
     });
 
     console.log('[DLOD] §DLOD_REFS built batched=' + _batchedMeshes.length +
       ' instanced=' + _instancedMeshes.length +
-      ' totalSlots=' + _batchedMeshes.reduce(function(s, b) { return s + b.meta.length; }, 0));
+      ' bmSlots=' + _totalBMSlots + ' imInstances=' + _totalIMInstances +
+      ' total=' + (_totalBMSlots + _totalIMInstances));
   }
 
   // ── Enable/disable ──
@@ -77,7 +102,7 @@ function setupDLOD(A) {
       return;
     }
     A._dlodEnabled = true;
-    A._dlodFrame = EVAL_EVERY - 1;  // next dlodTick fires immediately
+    A._dlodFrame = EVAL_EVERY - 1;
     _refsBuilt = false;
     console.log('[DLOD] §DLOD_ENABLE count=' + A.streamedCount + ' mode=per_slot_frustum');
   };
@@ -89,14 +114,11 @@ function setupDLOD(A) {
     console.log('[DLOD] §DLOD_DISABLE reason=' + (reason || 'unknown'));
   };
 
-  // §S261: Demote ALL promoted slots back — called by Time Machine on activate
   A.dlodDemoteAll = function() {
-    // §S274: No geometry swap — just restore visibility
     _restoreAll();
   };
 
   // ── Main tick — called from animate loop ──
-  // §S274: Per-slot frustum culling on BatchedMesh via setVisibleAt
   A.dlodTick = function() {
     if (!A._dlodEnabled) return;
     A._dlodFrame++;
@@ -115,16 +137,15 @@ function setupDLOD(A) {
     _buildRefs();
     var t0 = performance.now();
 
-    // Build camera frustum
     A.camera.updateMatrixWorld();
     _projScreenMatrix.multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_projScreenMatrix);
 
-    var visCount = 0, hidCount = 0, skipCount = 0;
+    var bmVis = 0, bmHid = 0, imVis = 0, imHid = 0, skipCount = 0;
     var storeyFilter = A.activeStoreyFilter;
     var hiddenDiscs = A.hiddenDiscs;
 
-    // ── §S274: Per-slot frustum culling on BatchedMesh ──
+    // ── BatchedMesh: per-slot setVisibleAt ──
     for (var bi = 0; bi < _batchedMeshes.length; bi++) {
       var bm = _batchedMeshes[bi];
       var obj = bm.obj;
@@ -132,63 +153,94 @@ function setupDLOD(A) {
 
       var meta = bm.meta;
       var anyVis = false;
+
+      for (var i = 0; i < meta.length; i++) {
+        var m = meta[i];
+
+        if (storeyFilter !== null && storeyFilter !== undefined &&
+            m.storey !== storeyFilter) { skipCount++; continue; }
+        if (hiddenDiscs && hiddenDiscs.size > 0 &&
+            hiddenDiscs.has(m.disc)) { skipCount++; continue; }
+        if (A._dlodPaused && m._dlodHid) { skipCount++; continue; }
+
+        _sphere.center.set(m._wx, m._wy, m._wz);
+        _sphere.radius = m._radius;
+
+        if (!_frustum.intersectsSphere(_sphere)) {
+          if (!m._dlodHid) {
+            obj.setVisibleAt(m.slotId, false);
+            m._dlodHid = true;
+          }
+          bmHid++;
+        } else {
+          if (m._dlodHid) {
+            obj.setVisibleAt(m.slotId, true);
+            m._dlodHid = false;
+          }
+          anyVis = true;
+          bmVis++;
+        }
+      }
+
+      obj.visible = anyVis || obj.visible;
+    }
+
+    // ── InstancedMesh: per-instance zero-scale ──
+    for (var ii = 0; ii < _instancedMeshes.length; ii++) {
+      var im = _instancedMeshes[ii];
+      var obj = im.obj;
+      if (!obj.parent) continue;
+
+      var meta = im.meta;
       var changed = false;
 
       for (var i = 0; i < meta.length; i++) {
         var m = meta[i];
 
-        // Skip elements already filtered by storey/discipline
         if (storeyFilter !== null && storeyFilter !== undefined &&
             m.storey !== storeyFilter) { skipCount++; continue; }
         if (hiddenDiscs && hiddenDiscs.size > 0 &&
             hiddenDiscs.has(m.disc)) { skipCount++; continue; }
-
-        // Time Machine cooperation — don't unhide TM-hidden elements
         if (A._dlodPaused && m._dlodHid) { skipCount++; continue; }
+        if (!m._origMatrix) { skipCount++; continue; }
 
-        // Frustum test — sphere at slot world position
         _sphere.center.set(m._wx, m._wy, m._wz);
         _sphere.radius = m._radius;
 
         if (!_frustum.intersectsSphere(_sphere)) {
-          // Outside frustum — hide
           if (!m._dlodHid) {
-            obj.setVisibleAt(m.slotId, false);
+            obj.setMatrixAt(m.instanceIndex, _zeroScale);
             m._dlodHid = true;
             changed = true;
           }
-          hidCount++;
+          imHid++;
         } else {
-          // Inside frustum — show
           if (m._dlodHid) {
-            obj.setVisibleAt(m.slotId, true);
+            obj.setMatrixAt(m.instanceIndex, m._origMatrix);
             m._dlodHid = false;
             changed = true;
           }
-          anyVis = true;
-          visCount++;
+          imVis++;
         }
       }
 
-      obj.visible = anyVis || obj.visible;  // don't hide entire BM if some filtered slots exist
+      if (changed) obj.instanceMatrix.needsUpdate = true;
     }
 
-    // ── InstancedMesh: frustumCulled stays false (boundingSphere is base geometry only).
-    // Per-instance frustum culling would require zero-scale trick — skip for now,
-    // InstancedMesh already batches well (few draw calls). ──
-
     var ms = (performance.now() - t0).toFixed(1);
-    if ((hidCount > 0 || visCount > 0) && A.markDirty) A.markDirty();
+    if ((bmHid > 0 || imHid > 0 || bmVis > 0 || imVis > 0) && A.markDirty) A.markDirty();
 
     // Log every 10th evaluation (~once per second at 60fps)
     if (A._dlodFrame % (EVAL_EVERY * 10) === 0) {
-      console.log('[DLOD] §DLOD_FRUSTUM vis=' + visCount +
-        ' hid=' + hidCount + ' skip=' + skipCount + ' ms=' + ms);
+      console.log('[DLOD] §DLOD_FRUSTUM bm=' + bmVis + '/' + (bmVis + bmHid) +
+        ' im=' + imVis + '/' + (imVis + imHid) +
+        ' skip=' + skipCount + ' ms=' + ms);
     }
   };
 
-  // ── Restore all DLOD-hidden slots ──
+  // ── Restore all hidden elements ──
   function _restoreAll() {
+    // BatchedMesh
     for (var bi = 0; bi < _batchedMeshes.length; bi++) {
       var bm = _batchedMeshes[bi];
       var meta = bm.meta;
@@ -200,6 +252,20 @@ function setupDLOD(A) {
       }
       bm.obj.visible = true;
     }
-    console.log('[DLOD] §DLOD_RESTORE all slots visible');
+    // InstancedMesh
+    for (var ii = 0; ii < _instancedMeshes.length; ii++) {
+      var im = _instancedMeshes[ii];
+      var meta = im.meta;
+      var changed = false;
+      for (var i = 0; i < meta.length; i++) {
+        if (meta[i]._dlodHid && meta[i]._origMatrix) {
+          im.obj.setMatrixAt(meta[i].instanceIndex, meta[i]._origMatrix);
+          meta[i]._dlodHid = false;
+          changed = true;
+        }
+      }
+      if (changed) im.obj.instanceMatrix.needsUpdate = true;
+    }
+    console.log('[DLOD] §DLOD_RESTORE all visible');
   }
 }

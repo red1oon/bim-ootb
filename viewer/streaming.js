@@ -631,7 +631,7 @@ function setupStreaming(A) {
           _m4.compose(_pos, _quat, _scale);
           iMesh.setMatrixAt(i, _m4);
 
-          meta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', instanceIndex: i });
+          meta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', instanceIndex: i, bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3 });
           A._instanceGuids[el.guid] = { meshId: iMesh.id, instanceIndex: i };
           A.guidMap[iMesh.id + '_' + i] = el.guid;
         }
