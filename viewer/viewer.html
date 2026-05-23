@@ -761,7 +761,7 @@
 <script src="lib/httpvfs.js?v=1" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
-<script src="scene.js?v=42" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=41" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="helpers.js?v=4" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="streaming.js?v=43" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=6" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
@@ -824,7 +824,7 @@
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=2" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
 <script src="time_machine.js?v=44" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
-<script src="main.js?v=31"></script>
+<script src="main.js?v=30"></script>
 <!-- Styled tooltip bubbles for [data-trl-title] buttons — appended to body, not clipped by overflow:hidden -->
 <style>#ootb-tip{display:none;position:fixed;z-index:9990;background:rgba(10,10,30,0.92);color:#4fc3f7;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(79,195,247,0.35);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.4)}</style>
 <script>
@@ -864,7 +864,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=475')
+  navigator.serviceWorker.register('sw.js?v=476')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

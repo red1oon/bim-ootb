@@ -1074,21 +1074,43 @@
     });
 
     // S275: Register Find panel with global keyboard nav system
+    // Custom onKey wraps makeListKeyNav for Up/Down results + Left/Right focus cycle
     if (typeof window.makeListKeyNav === 'function' && typeof window._registerPanel === 'function') {
-      var _findNav = window.makeListKeyNav(
+      var _resultNav = window.makeListKeyNav(
         function() {
-          // Up/Down navigable: result items
           var items = [];
           elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
           return items;
         },
-        function() { /* no multi-select */ },
+        function() {},
         function(idx) {
           var items = [];
           elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
           if (items[idx]) items[idx].click();
         }
       );
+      var _findNav = {
+        onKey: function(e) {
+          // Left/Right: cycle focus between search → storey → type → navigate
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            var cycle = _focusCycle();
+            var cur = cycle.indexOf(document.activeElement);
+            if (cur < 0) cur = 0;
+            var next = e.key === 'ArrowRight' ? (cur + 1) % cycle.length : (cur - 1 + cycle.length) % cycle.length;
+            cycle[next].focus();
+            cycle.forEach(function(el, i) { el.style.outline = (i === next) ? '2px solid #4fc3f7' : ''; });
+            console.log('§FIND_NAV ' + e.key + ' → ' + next + '/' + cycle.length + ' el=' + (cycle[next].id || cycle[next].tagName));
+            return;
+          }
+          // Enter on accordion header: expand/collapse
+          if (e.key === 'Enter' || e.key === ' ') {
+            if (document.activeElement === elStoreyHdr) { toggleAccRow(elStoreyRow); return; }
+            if (document.activeElement === elTypeHdr) { toggleAccRow(elTypeRow); return; }
+          }
+          // Up/Down + Enter: delegate to result list nav
+          _resultNav.onKey(e);
+        }
+      };
       window._registerPanel('find', panel, _findNav, closeFindPanel);
       console.log('§LISTNAV_WIRE panel=find');
     }
