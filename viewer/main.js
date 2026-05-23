@@ -536,12 +536,20 @@ async function initViewer() {
   APP._onStreamDone = function() {
     if (!APP._isWebGPU || !APP.renderer.compileAsync) return;
     _pipelinesCompiling = true;
+    if (APP.status) APP.status.textContent = 'Compiling GPU shaders — please wait...';
     console.log('§S276_COMPILE_ASYNC starting pipeline pre-compilation...');
     var t0 = performance.now();
     APP.renderer.compileAsync(APP.scene, APP.camera).then(function() {
+      var ms = (performance.now() - t0).toFixed(0);
       _pipelinesCompiling = false;
+      // §S276: Now safe to clear bboxes — real geometry pipelines are warm
+      if (APP._clearBboxPlaceholders) {
+        APP._clearBboxPlaceholders();
+        console.log('§S276_BBOX_CLEAR bboxes removed after pipeline compilation');
+      }
       _needsRender = true;
-      console.log('§S276_COMPILE_ASYNC done ms=' + (performance.now() - t0).toFixed(0));
+      if (APP.status) APP.status.textContent = 'GPU shaders compiled in ' + ms + 'ms — rendering';
+      console.log('§S276_COMPILE_ASYNC done ms=' + ms);
     });
   };
   function animate() {

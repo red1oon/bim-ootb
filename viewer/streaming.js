@@ -346,8 +346,14 @@ function setupStreaming(A) {
           A._pendingBboxBuckets = null;
         }
         // §S261: Keep bbox placeholders if no real geometry was rendered (all BLOB_MISS)
+        // §S276: On WebGPU, defer bbox clear until compileAsync completes (prevents blank gap)
         if (A.streamedCount > 0) {
-          A._clearBboxPlaceholders();
+          if (A._isWebGPU && A._onStreamDone) {
+            // Bboxes stay visible while pipelines compile — cleared in _onStreamDone callback
+            console.log('§S276_BBOX_DEFER keeping bboxes until compileAsync completes');
+          } else {
+            A._clearBboxPlaceholders();
+          }
           A._bboxCleared = true;
         } else {
           console.warn('§BBOX_KEEP placeholders=' + A._bboxPlaceholders.length + ' — no real geometry, keeping bboxes visible');
