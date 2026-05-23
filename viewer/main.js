@@ -493,7 +493,7 @@ function initViewer() {
 
   // §S260b: Reduce pixel ratio during orbit for smoother interaction on heavy scenes
   var _fullDPR = Math.min(window.devicePixelRatio || 1, 2);
-  var _orbitDPR = Math.min(_fullDPR, 1);  // render at 1x during drag
+  var _orbitDPR = window._isMobile ? 0.75 : Math.min(_fullDPR, 1);  // §S274: mobile=0.75x during drag
   var _orbiting = false;
   APP.controls.addEventListener('start', function() {
     if (!_orbiting && APP.streamedCount > 5000) {
@@ -533,14 +533,21 @@ function initViewer() {
     APP.walkModeGpsTick();
     // Device orientation LAST — nothing may overwrite the quaternion after this
     if (APP.walkModeActive) APP.walkOrientTick();
-    // §S271b: Unconditional render restored — on-demand gate caused scene flicker.
-    // Too many code paths (panels, sliders, filters, picks) modify scene without markDirty().
-    // Battery savings come from visibilitychange tab pause, not render gate.
+    // §S274: On-demand render gate — mobile only.
+    // Desktop: unconditional (too many paths skip markDirty — panels, sliders, palette).
+    // Mobile: fewer UI paths, and GPU savings from skipping idle frames are critical.
     APP.updateMeasureLabels();
     if (APP.ground && APP.ground.visible) {
       APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
-    APP.renderer.render(APP.scene, APP.camera);
+    if (window._isMobile) {
+      if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
+        APP.renderer.render(APP.scene, APP.camera);
+        _needsRender = false;
+      }
+    } else {
+      APP.renderer.render(APP.scene, APP.camera);
+    }
   }
 
   // Go
