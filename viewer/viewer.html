@@ -317,6 +317,9 @@
     #site-cam-btn { display: none !important; }
     #walk-mode-btn { display: none !important; }
     #nlp-btn { display: none !important; }
+    /* §S271: Mobile pill — Walk replaces Red Pill (RP too heavy for mobile) */
+    #pill-walk { display: flex !important; }
+    #doc-btn { display: none !important; }
     /* §S265: NLP bar — fit beside HUD, don't span full width */
     #nlp-bar { left: auto !important; right: 0 !important; max-width: 55vw !important; border-radius: 0 0 0 8px !important; }
     #nlp-chips { left: auto !important; right: 0 !important; max-width: 55vw !important; }
@@ -369,6 +372,8 @@
     #site-cam-btn { display: none !important; }
     #walk-mode-btn { display: none !important; }
     #nlp-btn { display: none !important; }
+    #pill-walk { display: flex !important; }
+    #doc-btn { display: none !important; }
     /* §S265: NLP bar — fit beside HUD in landscape */
     #nlp-bar { left: auto !important; right: 0 !important; max-width: 55vw !important; border-radius: 0 0 0 8px !important; }
     #nlp-chips { left: auto !important; right: 0 !important; max-width: 55vw !important; }
@@ -421,11 +426,11 @@
 </div>
 <!-- ── Icon Pill: 5 primary icons, right edge, vertical ── -->
 <div id="icon-pill">
-  <button id="pill-walk" onclick="toggleWalkMode();event.stopPropagation()" data-trl-title="ui_tt_walk" title="Walk Mode"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="3" r="2"/><path d="M10 9l1-4 4 1v6"/><path d="M10 9l-3 8 4 1"/><path d="M15 12l3 9"/><path d="M11 18l-1 4"/></svg></button>
+  <button id="pill-walk" onclick="toggleWalkMode();event.stopPropagation()" data-trl-title="ui_tt_walk" title="Walk Mode" style="display:none"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="3" r="2"/><path d="M10 9l1-4 4 1v6"/><path d="M10 9l-3 8 4 1"/><path d="M15 12l3 9"/><path d="M11 18l-1 4"/></svg></button>
+  <button id="doc-btn" onclick="if(typeof toggleDocPill==='function')toggleDocPill();event.stopPropagation()" title="Red Pill"><img src="redpill.png" width="24" height="24" alt="Red Pill" style="pointer-events:none"></button>
   <button id="pill-measure" onclick="toggleMeasure();event.stopPropagation()" data-trl-title="ui_tt_measure" title="Measure"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg></button>
   <button onclick="if(typeof APP!=='undefined'&&APP.openFindPanel)APP.openFindPanel();event.stopPropagation()" data-trl-title="ui_tt_find" title="Find"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
   <button onclick="if(typeof APP!=='undefined'&&APP.quickShare)APP.quickShare();event.stopPropagation()" data-trl-title="ui_tt_share" title="Share"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></button>
-  <button id="doc-btn" onclick="if(typeof toggleDocPill==='function')toggleDocPill();event.stopPropagation()" title="Red Pill"><img src="redpill.png" width="24" height="24" alt="Red Pill" style="pointer-events:none"></button>
   <button onclick="if(typeof showCommandPalette==='function')showCommandPalette();event.stopPropagation()" data-trl-title="ui_tt_help" title="Help"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg></button>
   <button id="more-btn" onclick="toggleOverflow();event.stopPropagation()" title="More"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
 </div>
@@ -849,7 +854,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=439')
+  navigator.serviceWorker.register('sw.js?v=440')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
