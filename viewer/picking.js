@@ -414,13 +414,19 @@ function setupPicking(A) {
         console.log('§BBOX_DEBUG MERGED err=' + e.message);
       }
     } else if (hit.object.isBatchedMesh && guid) {
-      // S275: Try getBoundingBoxAt for accurate per-slot bbox (r160+)
+      // S275: Try getBoundingBoxAt + per-slot matrix for accurate world-space bbox (r160+)
       var bmSlotResolved = false;
       if (hit.batchId !== undefined && typeof hit.object.getBoundingBoxAt === 'function') {
         try {
           var slotBox = new THREE.Box3();
           hit.object.getBoundingBoxAt(hit.batchId, slotBox);
           if (!slotBox.isEmpty()) {
+            // getBoundingBoxAt returns local-space — apply per-slot matrix to get world-space
+            if (typeof hit.object.getMatrixAt === 'function') {
+              var slotMatrix = new THREE.Matrix4();
+              hit.object.getMatrixAt(hit.batchId, slotMatrix);
+              slotBox.applyMatrix4(slotMatrix);
+            }
             var slotCenter = slotBox.getCenter(new THREE.Vector3());
             var slotSize = slotBox.getSize(new THREE.Vector3());
             hlPos.copy(slotCenter);
