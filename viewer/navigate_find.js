@@ -1063,7 +1063,10 @@
             if (cur < 0) cur = 0;
             var next = e.key === 'ArrowRight' ? (cur + 1) % cycle.length : (cur - 1 + cycle.length) % cycle.length;
             cycle[next].focus();
-            cycle.forEach(function(el, i) { el.style.outline = (i === next) ? '2px solid #4fc3f7' : ''; });
+            cycle.forEach(function(el, i) {
+              el.style.outline = (i === next) ? '2px solid #4fc3f7' : '';
+              el.style.background = (i === next) ? 'rgba(79,195,247,0.2)' : '';
+            });
             console.log('§FIND_NAV ' + e.key + ' → ' + next + '/' + cycle.length + ' el=' + (cycle[next].id || cycle[next].tagName));
             return;
           }
