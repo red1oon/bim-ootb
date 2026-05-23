@@ -991,25 +991,27 @@
         elSelected.style.display = 'none';
         return;
       }
-      // Tab — move focus to storey/type accordions
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        if (!e.shiftKey) { elStoreyHdr.focus(); } else { elName.blur(); }
-      }
+      // Tab/Left/Right — move focus between search, storey, type
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); elStoreyHdr.focus(); return; }
+      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); elTypeHdr.focus(); return; }
     });
     // Make accordion headers focusable
     elStoreyHdr.tabIndex = 0;
     elTypeHdr.tabIndex = 0;
     elStoreyHdr.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elStoreyRow); }
-      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); elTypeHdr.focus(); }
-      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); elName.focus(); }
+      if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); elTypeHdr.focus(); }
+      if (e.key === 'ArrowLeft' || (e.key === 'Tab' && e.shiftKey)) { e.preventDefault(); elName.focus(); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); elTypeHdr.focus(); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); elName.focus(); }
       if (e.key === 'Escape') closeFindPanel();
     });
     elTypeHdr.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elTypeRow); }
-      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); elName.focus(); }
-      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); elStoreyHdr.focus(); }
+      if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); elName.focus(); }
+      if (e.key === 'ArrowLeft' || (e.key === 'Tab' && e.shiftKey)) { e.preventDefault(); elStoreyHdr.focus(); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); elName.focus(); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); elStoreyHdr.focus(); }
       if (e.key === 'Escape') closeFindPanel();
     });
 
