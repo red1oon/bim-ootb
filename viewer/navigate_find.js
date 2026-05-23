@@ -1020,12 +1020,16 @@
     }
 
     // ── Wire navigate button — calls startNavigation from navigate.js ──
+    elNavBtn.tabIndex = 0;
     elNavBtn.onclick = function() {
       if (nav.activeIdx < 0 && nav.results.length > 0) nav.activeIdx = 0;
       if (nav.activeIdx < 0) return;
       var startNav = getStartNavigation();
       if (startNav) startNav(nav.results[nav.activeIdx]);
     };
+    elNavBtn.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeFindPanel();
+    });
 
     // ── Expose for navigate.js Section D and external callers ──
     A.clearHighlight = clearHighlight;
@@ -1033,25 +1037,50 @@
     A.findMainEntrance = findMainEntrance; // called by startNavigation in navigate.js
     A.friendlyName = friendlyName;         // called by startNavigation (nav.targetName)
 
-    // S275: Register Find panel with global keyboard nav system (Tab/Arrow like other panels)
+    // S275: Panel-level Left/Right navigation between major interactive elements
+    // Focusable cycle: search → storey → type → (navigate if visible) → search
+    var _focusCycle = function() {
+      var items = [elName, elStoreyHdr, elTypeHdr];
+      var navBtn = document.getElementById('find-navigate-btn');
+      if (navBtn && elSelected.style.display !== 'none') items.push(navBtn);
+      return items;
+    };
+    var _focusIdx = 0;
+    panel.addEventListener('keydown', function(e) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        // Don't intercept Left/Right when typing in the search input
+        if (document.activeElement === elName) return;
+        e.preventDefault();
+        var cycle = _focusCycle();
+        // Find current position in cycle
+        var cur = cycle.indexOf(document.activeElement);
+        if (cur < 0) cur = 0;
+        if (e.key === 'ArrowRight') {
+          _focusIdx = (cur + 1) % cycle.length;
+        } else {
+          _focusIdx = (cur - 1 + cycle.length) % cycle.length;
+        }
+        cycle[_focusIdx].focus();
+        // Highlight the focused item
+        cycle.forEach(function(el, i) {
+          el.style.outline = (i === _focusIdx) ? '2px solid #4fc3f7' : '';
+        });
+      }
+    });
+
+    // S275: Register Find panel with global keyboard nav system
     if (typeof window.makeListKeyNav === 'function' && typeof window._registerPanel === 'function') {
       var _findNav = window.makeListKeyNav(
         function() {
-          // Navigable items: accordion headers + visible result items + navigate button
+          // Up/Down navigable: result items
           var items = [];
-          items.push(elStoreyHdr, elTypeHdr);
           elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
-          var navBtn = document.getElementById('find-navigate-btn');
-          if (navBtn && navBtn.offsetParent) items.push(navBtn);
           return items;
         },
         function() { /* no multi-select */ },
         function(idx) {
           var items = [];
-          items.push(elStoreyHdr, elTypeHdr);
           elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
-          var navBtn = document.getElementById('find-navigate-btn');
-          if (navBtn && navBtn.offsetParent) items.push(navBtn);
           if (items[idx]) items[idx].click();
         }
       );
