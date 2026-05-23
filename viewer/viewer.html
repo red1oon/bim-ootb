@@ -761,7 +761,7 @@
 <script src="lib/httpvfs.js?v=1" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
-<script src="scene.js?v=45" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=46" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="helpers.js?v=4" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="streaming.js?v=47" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=8" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
@@ -864,7 +864,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=479')
+  navigator.serviceWorker.register('sw.js?v=480')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

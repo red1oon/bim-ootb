@@ -28,33 +28,34 @@ async function setupScene(A) {
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
-  // §S276: Native WebGPU when available, WebGLRenderer fallback.
-  // compileAsync takes 9s/44 materials (Intel iGPU), ~30s for LTU 122K — acceptable one-time cost.
-  // render() must be skipped during streaming (synchronous pipeline compile blocks main thread).
-  // compileAsync is truly async (no timeout). Chunked compilation for safety.
-  var _hasNativeWebGPU = !!navigator.gpu && !!THREE.WebGPURenderer;
+  // §S276: Native WebGPU when adapter available, WebGLRenderer fallback.
+  // three.webgpu.min.js does NOT export WebGLRenderer — must import from three.module.min.js.
+  // Minified backend class names differ from source (e.g. "GR" not "WebGLBackend") — check adapter instead.
   var _isWebGPU = false;
   var renderer;
-  if (_hasNativeWebGPU) {
+  var _adapter = null;
+  if (navigator.gpu && THREE.WebGPURenderer) {
+    try { _adapter = await navigator.gpu.requestAdapter(); } catch(e) {}
+  }
+  if (_adapter) {
+    // Native WebGPU adapter found — use WebGPURenderer
     renderer = new THREE.WebGPURenderer({
       canvas,
       antialias: !_isMobileRenderer,
       preserveDrawingBuffer: true
     });
     await renderer.init();
-    var _backend = renderer.backend ? renderer.backend.constructor.name : 'unknown';
-    if (_backend === 'WebGPUBackend') {
-      _isWebGPU = true;
-      console.log('§S276_RENDERER WebGPURenderer native backend=' + _backend);
-    } else {
-      // Compat mode — TSL overhead makes it slower than direct WebGL
-      console.log('§S276_RENDERER compat backend=' + _backend + ' — using WebGLRenderer');
-      renderer.dispose();
-      renderer = new THREE.WebGLRenderer({ canvas, antialias: !_isMobileRenderer, preserveDrawingBuffer: true });
-    }
+    _isWebGPU = true;
+    console.log('§S276_RENDERER WebGPURenderer native adapter=' + _adapter.name);
   } else {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: !_isMobileRenderer, preserveDrawingBuffer: true });
-    console.log('§S276_RENDERER WebGLRenderer (no navigator.gpu)');
+    // No native WebGPU — import WebGLRenderer from standard build
+    var _std = await import('./lib/three.module.min.js');
+    renderer = new _std.WebGLRenderer({
+      canvas,
+      antialias: !_isMobileRenderer,
+      preserveDrawingBuffer: true
+    });
+    console.log('§S276_RENDERER WebGLRenderer (adapter=' + _adapter + ')');
   }
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
