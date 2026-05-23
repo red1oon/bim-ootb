@@ -64,8 +64,9 @@ function setupDLOD(A) {
         _totalBMSlots += meta.length;
       }
 
-      // ── InstancedMesh: extract world position per instance from matrices ──
-      if (obj.isInstancedMesh && A._instanceMeta[obj.id]) {
+      // ── InstancedMesh: extract world position per instance (desktop only) ──
+      // §S274: On mobile, skip IM indexing entirely — saves 35K Matrix4 allocations
+      if (!A._isMobile && obj.isInstancedMesh && A._instanceMeta[obj.id]) {
         var meta = A._instanceMeta[obj.id];
         for (var i = 0; i < meta.length; i++) {
           var m = meta[i];
@@ -77,7 +78,6 @@ function setupDLOD(A) {
             m._wz = _pos.z;
             var bx = m.bx || 0.3, by = m.by || 0.3, bz = m.bz || 0.3;
             m._radius = Math.sqrt(bx * bx + by * by + bz * bz) * 0.5;
-            // Save original matrix for restore
             m._origMatrix = new THREE.Matrix4().copy(_m4);
           } catch(e) {
             m._wx = 0; m._wy = 0; m._wz = 0; m._radius = 5.0;
@@ -185,8 +185,11 @@ function setupDLOD(A) {
       obj.visible = anyVis || obj.visible;
     }
 
-    // ── InstancedMesh: per-instance zero-scale ──
-    for (var ii = 0; ii < _instancedMeshes.length; ii++) {
+    // ── InstancedMesh: per-instance zero-scale (desktop only) ──
+    // §S274: On mobile, instanceMatrix.needsUpdate re-uploads entire buffer to GPU per tick.
+    // Cost exceeds savings. BatchedMesh setVisibleAt is cheap (indirect draw flag only).
+    if (A._isMobile) { /* skip IM culling on mobile */ }
+    else for (var ii = 0; ii < _instancedMeshes.length; ii++) {
       var im = _instancedMeshes[ii];
       var obj = im.obj;
       if (!obj.parent) continue;
