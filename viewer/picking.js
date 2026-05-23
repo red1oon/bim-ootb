@@ -199,16 +199,15 @@ function setupPicking(A) {
     }
 
     // §S260d: WYSIWYG — skip non-pickable hits (outlines, low-opacity, invisible)
-    var hit = null;
+    var validHits = [];
     for (var hi = 0; hi < hits.length; hi++) {
       var h = hits[hi];
-      if (h.object.userData && h.object.userData._isOutline) continue; // TM outline wireframe
-      if (h.object.material && h.object.material.opacity < 0.3) continue; // nearly invisible
-      if (h.object.userData && h.object.userData.isBboxPlaceholder) continue; // bbox placeholder
-      hit = h;
-      break;
+      if (h.object.userData && h.object.userData._isOutline) continue;
+      if (h.object.material && h.object.material.opacity < 0.3) continue;
+      if (h.object.userData && h.object.userData.isBboxPlaceholder) continue;
+      validHits.push(h);
     }
-    if (!hit) {
+    if (!validHits.length) {
       document.getElementById('info-panel').style.display = 'none';
       if (window._pickHighlight) {
         if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
@@ -219,14 +218,62 @@ function setupPicking(A) {
       }
       return;
     }
+
+    // S275: Prefer smallest element among nearby hits — walls should not steal
+    // picks from doors/windows/furniture embedded in them
+    var hit = validHits[0];
+    var DEPTH_BAND = 0.5; // metres — hits within this band compete on bbox volume
+    if (validHits.length > 1 && A.db) {
+      var candidates = [];
+      var baseD = validHits[0].distance;
+      for (var ci = 0; ci < Math.min(validHits.length, 8); ci++) {
+        if (validHits[ci].distance - baseD > DEPTH_BAND) break;
+        // Resolve guid for this candidate
+        var cHit = validHits[ci];
+        var cGuid = null;
+        if (cHit.object.isBatchedMesh && cHit.batchId !== undefined && A._batchMeta && A._batchMeta[cHit.object.id]) {
+          var bm = A._batchMeta[cHit.object.id];
+          var be = bm.find(function(m) { return m.slotId === cHit.batchId; });
+          if (be) cGuid = be.guid;
+        }
+        if (!cGuid && cHit.object.isInstancedMesh && cHit.instanceId !== undefined && A._instanceMeta[cHit.object.id]) {
+          var im = A._instanceMeta[cHit.object.id][cHit.instanceId];
+          if (im) cGuid = im.guid;
+        }
+        if (!cGuid) cGuid = A.guidMap[cHit.object.id];
+        if (!cGuid && cHit.object.userData && cHit.object.userData.guid) cGuid = cHit.object.userData.guid;
+        if (cGuid) candidates.push({ hit: cHit, guid: cGuid });
+      }
+      if (candidates.length > 1) {
+        // Look up bbox volumes — pick smallest
+        var guidList = candidates.map(function(c) { return "'" + c.guid.replace(/'/g, "''") + "'"; }).join(',');
+        try {
+          var volRows = A.dbQuery(
+            'SELECT guid, bbox_x * bbox_y * bbox_z AS vol FROM element_transforms WHERE guid IN (' + guidList + ')');
+          var volMap = {};
+          volRows.forEach(function(r) { volMap[r[0]] = r[1] || 999999; });
+          candidates.sort(function(a, b) { return (volMap[a.guid] || 999999) - (volMap[b.guid] || 999999); });
+          hit = candidates[0].hit;
+          if (candidates[0].guid !== candidates[candidates.length-1].guid) {
+            var chosenVol = volMap[candidates[0].guid] || 0;
+            var loserVol = volMap[candidates[candidates.length-1].guid] || 0;
+            console.log('§PICK_PREFER_SMALL chose=' + candidates[0].guid.substring(0, 12) +
+              ' vol=' + chosenVol.toFixed(2) +
+              ' over=' + candidates[candidates.length-1].guid.substring(0, 12) +
+              ' vol=' + loserVol.toFixed(2));
+          }
+        } catch(e) { /* fall back to closest hit */ }
+      }
+    }
+
     // §S260d: WYSIWYG pick diagnostic — log first 3 hits to trace accuracy
-    var pickInfo = hits.slice(0, 3).map(function(h, i) {
+    var pickInfo = validHits.slice(0, 3).map(function(h, i) {
       var t = h.object.isBatchedMesh ? 'BM' : h.object.isInstancedMesh ? 'IM' : 'M';
       var g = h.object.userData && h.object.userData.guid || (h.batchId !== undefined ? 'slot:' + h.batchId : '?');
       var op = h.object.material ? h.object.material.opacity.toFixed(1) : '?';
       return i + ':' + t + ' d=' + h.distance.toFixed(2) + ' op=' + op + ' g=' + String(g).substring(0, 12);
     });
-    console.log('§PICK hits=' + hits.length + ' chosen=' + hits.indexOf(hit) + ' ' + pickInfo.join(' | '));
+    console.log('§PICK hits=' + hits.length + ' chosen=' + validHits.indexOf(hit) + ' ' + pickInfo.join(' | '));
     let guid = null;
     // §S260: BatchedMesh — use batchId to look up guid from _batchMeta
     if (!guid && hit.object.isBatchedMesh && hit.batchId !== undefined && A._batchMeta && A._batchMeta[hit.object.id]) {
