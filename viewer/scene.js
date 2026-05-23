@@ -48,14 +48,17 @@ async function setupScene(A) {
     _isWebGPU = true;
     console.log('§S276_RENDERER WebGPURenderer native adapter=' + _adapter.name);
   } else {
-    // No native WebGPU — import WebGLRenderer from standard build
+    // No native WebGPU — reload THREE entirely from standard build.
+    // WebGPU build's PMREMGenerator/Scene/etc expect WebGPURenderer internals
+    // (e.g. hasInitialized()) — mixing builds causes ENV_MAP_FAIL and dark night mode.
     var _std = await import('./lib/three.module.min.js');
-    renderer = new _std.WebGLRenderer({
+    for (var _k of Object.keys(_std)) THREE[_k] = _std[_k];
+    renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: !_isMobileRenderer,
       preserveDrawingBuffer: true
     });
-    console.log('§S276_RENDERER WebGLRenderer (adapter=' + _adapter + ')');
+    console.log('§S276_RENDERER WebGLRenderer r184 (adapter=' + _adapter + ')');
   }
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
