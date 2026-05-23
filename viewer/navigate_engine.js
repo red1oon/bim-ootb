@@ -163,6 +163,9 @@
       A.navActive = false;
       A.navCurrentStep = 0;
       if (navHud) navHud.style.display = 'none';
+      // S275: Force-hide direction cue + clear pending timer
+      if (nav._cueTimer) { clearTimeout(nav._cueTimer); nav._cueTimer = null; }
+      if (elCue) elCue.className = '';
 
       restoreDriveButton();
 
