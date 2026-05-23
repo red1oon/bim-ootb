@@ -1070,12 +1070,45 @@
             console.log('§FIND_NAV ' + e.key + ' → ' + next + '/' + cycle.length + ' el=' + (cycle[next].id || cycle[next].tagName));
             return;
           }
-          // Enter on accordion header: expand/collapse
+          // Enter/Space on accordion header: expand/collapse
           if (e.key === 'Enter' || e.key === ' ') {
             if (document.activeElement === elStoreyHdr) { toggleAccRow(elStoreyRow); return; }
             if (document.activeElement === elTypeHdr) { toggleAccRow(elTypeRow); return; }
           }
-          // Up/Down + Enter: delegate to result list nav
+          // Up/Down on storey header: expand and navigate storey items
+          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && document.activeElement === elStoreyHdr) {
+            if (!elStoreyRow.classList.contains('expanded')) toggleAccRow(elStoreyRow);
+            var items = elStoreyBody.querySelectorAll('.find-acc-item');
+            if (!items.length) return;
+            var active = elStoreyBody.querySelector('.find-acc-item.active');
+            var idx = active ? Array.from(items).indexOf(active) : -1;
+            var next = e.key === 'ArrowDown' ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+            items.forEach(function(el, i) { el.classList.toggle('active', i === next); });
+            items[next].scrollIntoView({ block: 'nearest' });
+            console.log('§FIND_NAV storey ' + e.key + ' → ' + next + '/' + items.length);
+            return;
+          }
+          // Up/Down on type header: expand and navigate type items
+          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && document.activeElement === elTypeHdr) {
+            if (!elTypeRow.classList.contains('expanded')) toggleAccRow(elTypeRow);
+            var items2 = elTypeBody.querySelectorAll('.find-acc-item');
+            if (!items2.length) return;
+            var active2 = elTypeBody.querySelector('.find-acc-item.active');
+            var idx2 = active2 ? Array.from(items2).indexOf(active2) : -1;
+            var next2 = e.key === 'ArrowDown' ? Math.min(idx2 + 1, items2.length - 1) : Math.max(idx2 - 1, 0);
+            items2.forEach(function(el, i) { el.classList.toggle('active', i === next2); });
+            items2[next2].scrollIntoView({ block: 'nearest' });
+            console.log('§FIND_NAV type ' + e.key + ' → ' + next2 + '/' + items2.length);
+            return;
+          }
+          // Enter on highlighted accordion item: select it
+          if (e.key === 'Enter') {
+            var activeStorey = elStoreyBody.querySelector('.find-acc-item.active');
+            if (activeStorey && elStoreyRow.classList.contains('expanded')) { activeStorey.click(); return; }
+            var activeType = elTypeBody.querySelector('.find-acc-item.active');
+            if (activeType && elTypeRow.classList.contains('expanded')) { activeType.click(); return; }
+          }
+          // Up/Down on search input: delegate to result list nav
           _resultNav.onKey(e);
         }
       };
