@@ -73,16 +73,16 @@
       '.find-result-item .ri-body { flex: 1; min-width: 0; }',
       '.find-result-item .ri-name { color: #e0e0e0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }',
       '.find-result-item .ri-meta { color: #888; font-size: 9px; }',
-      // Selected summary — shows when results collapsed
-      '#find-selected { padding: 5px 10px; font-size: 11px; color: #4fc3f7; cursor: pointer;',
-      '  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;',
-      '  border-bottom: 1px solid rgba(255,255,255,0.06); display: none; }',
-      '#find-selected:hover { color: #fff; }',
-      // Actions
-      '#find-actions { padding: 6px 10px; display: flex; gap: 6px; border-top: 1px solid rgba(255,255,255,0.08); }',
-      '#find-actions button { flex: 1; padding: 5px 0; border-radius: 6px; border: none; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; }',
-      '.find-nav-btn { background: rgba(79,195,247,0.2); color: #4fc3f7; }',
-      '.find-nav-btn:hover { background: rgba(79,195,247,0.35); }',
+      // Selected summary — inline with navigate icon
+      '#find-selected { display: none; align-items: center; padding: 5px 10px;',
+      '  border-bottom: 1px solid rgba(255,255,255,0.06); gap: 6px; }',
+      '#find-selected-text { flex: 1; font-size: 11px; color: #4fc3f7; cursor: pointer;',
+      '  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
+      '#find-selected-text:hover { color: #fff; }',
+      '.find-nav-inline { background: rgba(79,195,247,0.25); color: #4fc3f7; border: none;',
+      '  border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;',
+      '  flex-shrink: 0; min-width: 32px; min-height: 32px; transition: background 0.15s; }',
+      '.find-nav-inline:hover { background: rgba(79,195,247,0.45); }',
       '#find-count { font-size: 9px; color: #666; padding: 2px 10px 0; }',
       // Chips hidden by default — too bulky for slim layout
       '#find-chips { display: none; }',
@@ -146,12 +146,9 @@
       '  <div class="find-acc-body" id="find-type-body"></div>',
       '</div>',
       '<div id="find-count"></div>',
-      // S275: Selected item summary (shown when results collapsed)
-      '<div id="find-selected"></div>',
+      // S275: Selected item summary + inline navigate button
+      '<div id="find-selected"><span id="find-selected-text"></span><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
       '<div id="find-results"></div>',
-      '<div id="find-actions">',
-      '  <button class="find-nav-btn" id="find-navigate-btn" data-action="navigate">' + _t('ui_find_navigate', '\u25B6 Navigate') + '</button>',
-      '</div>',
     ].join('');
     document.body.appendChild(panel);
     // S265 Phase 5: make Find panel draggable
@@ -196,8 +193,9 @@
     elStoreyHdr.addEventListener('pointerup', function(e) { e.stopPropagation(); toggleAccRow(elStoreyRow); });
     elTypeHdr.addEventListener('pointerup', function(e) { e.stopPropagation(); toggleAccRow(elTypeRow); });
 
-    // Tap selected summary → re-expand results
-    elSelected.addEventListener('pointerup', function(e) {
+    // Tap selected text → re-expand results list
+    var elSelText = document.getElementById('find-selected-text');
+    if (elSelText) elSelText.addEventListener('pointerup', function(e) {
       e.stopPropagation();
       panel.classList.add('results-expanded');
       elSelected.style.display = 'none';
@@ -304,6 +302,11 @@
 
     // ── Open find panel (called from pill, nlp.js, or directly) ──
     A.openFindPanel = function(searchTerm) {
+      // S275: Toggle — if already open with no search term, close it
+      if (!searchTerm && panel.style.display === 'block') {
+        closeFindPanel();
+        return;
+      }
       nav.voiceMode = !!A.inputWasVoice;
       // Exit walk mode from previous navigation — ensures next Navigate starts from main entrance
       if (A.walkModeActive) {
@@ -684,11 +687,7 @@
         });
         elResults.appendChild(div);
       });
-      // Show navigate hint if results exist
-      if (nav.results.length > 0) {
-        elNavBtn.style.display = '';
-        elNavBtn.textContent = typeof _TRL!=='undefined'&&_TRL.ui_find_navigate_sel||'\u25B6 Navigate to selected';
-      }
+      // Navigate button is inside #find-selected — no separate hint needed
     }
 
     function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -797,14 +796,14 @@
       // S275: Collapse results to selected summary — slim panel
       var dispName = friendlyName(r.element_name, r.ifc_class);
       var dispClass = friendlyClass(r.ifc_class);
-      elSelected.textContent = classIcon(r.ifc_class) + ' ' + dispName + ' · ' + dispClass + ' · ' + (r.storey || '?');
-      elSelected.style.display = 'block';
+      var elSelText = document.getElementById('find-selected-text');
+      if (elSelText) elSelText.textContent = classIcon(r.ifc_class) + ' ' + dispName + ' · ' + dispClass;
+      elSelected.style.display = 'flex';
       panel.classList.remove('results-expanded');
       [elStoreyRow, elTypeRow].forEach(function(row) { row.classList.remove('expanded'); });
 
       // Update navigate button
-      elNavBtn.textContent = typeof _TRL!=='undefined'&&_TRL.ui_find_navigate||'\u25B6 Navigate';
-      elNavBtn.style.display = '';
+      // Navigate ▶ is inline in selected row — always visible when selected
 
       // Status feedback
       if (A.status) A.status.textContent = dispName + ' · ' + (r.storey || '?');
