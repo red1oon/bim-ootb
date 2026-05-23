@@ -43,8 +43,9 @@ function setupDLOD(A) {
     var _pos = new THREE.Vector3();
 
     A.scene.traverse(function(obj) {
-      // ── BatchedMesh: extract world position per slot from matrices ──
-      if (obj.isBatchedMesh && A._batchMeta[obj.id]) {
+      // ── BatchedMesh: extract world position per slot (desktop only) ──
+      // §S274: On mobile, Three.js r160 perObjectFrustumCulled handles BM natively
+      if (!A._isMobile && obj.isBatchedMesh && A._batchMeta[obj.id]) {
         var meta = A._batchMeta[obj.id];
         for (var i = 0; i < meta.length; i++) {
           var m = meta[i];
@@ -101,6 +102,12 @@ function setupDLOD(A) {
       console.log('[DLOD] §DLOD_SKIP count=' + A.streamedCount + ' < ' + MIN_ELEMENTS);
       return;
     }
+    // §S274: On mobile, Three.js r160 perObjectFrustumCulled handles BatchedMesh natively.
+    // InstancedMesh zero-scale is too expensive (buffer re-upload). Skip DLOD entirely.
+    if (A._isMobile) {
+      console.log('[DLOD] §DLOD_SKIP_MOBILE count=' + A.streamedCount + ' — r160 perObjectFrustumCulled handles BM natively');
+      return;
+    }
     A._dlodEnabled = true;
     A._dlodFrame = EVAL_EVERY - 1;
     _refsBuilt = false;
@@ -146,7 +153,10 @@ function setupDLOD(A) {
     var hiddenDiscs = A.hiddenDiscs;
 
     // ── BatchedMesh: per-slot setVisibleAt ──
-    for (var bi = 0; bi < _batchedMeshes.length; bi++) {
+    // §S274: On mobile, skip — Three.js r160 perObjectFrustumCulled does this natively
+    // inside renderer.render(). Our tick is redundant 3-5ms overhead.
+    if (A._isMobile) { /* Three.js handles BM frustum natively */ }
+    else for (var bi = 0; bi < _batchedMeshes.length; bi++) {
       var bm = _batchedMeshes[bi];
       var obj = bm.obj;
       if (!obj.parent) continue;
