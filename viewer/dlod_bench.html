@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>DLOD Baseline Benchmark</title>
+<style>
+  body { background:#111; color:#eee; font:13px/1.6 monospace; margin:20px; }
+  #log { white-space:pre-wrap; background:#1a1a2e; padding:12px; border-radius:8px; max-height:80vh; overflow-y:auto; }
+  .pass { color:#4c4; } .fail { color:#e44; } .info { color:#6af; } .warn { color:#fa3; }
+  h2 { color:#6af; margin:20px 0 8px; }
+  #controls { margin-bottom:12px; }
+  button { padding:6px 14px; margin:4px; font:13px monospace; cursor:pointer; background:#333; color:#eee; border:1px solid #555; border-radius:4px; }
+  button:hover { background:#444; }
+  #canvas-wrap { position:fixed; top:0; left:0; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none; }
+</style>
+</head><body>
+<h1>DLOD Baseline Benchmark</h1>
+<div id="controls">
+  <b>Building:</b>
+  <button onclick="run('Terminal')">Terminal (48K)</button>
+  <button onclick="run('Hospital')">Hospital (63K)</button>
+  <button onclick="run('LTU')">LTU (122K)</button>
+  <button onclick="runAll()">Run All</button>
+</div>
+<div id="log"></div>
+<div id="canvas-wrap"><iframe id="viewer" width="800" height="600"></iframe></div>
+
+<script>
+const BUILDINGS = {
+  Terminal: {
+    url: '/bim-ootb/viewer/viewer.html?db=/bim-compiler/deploy/dev/buildings/Terminal_extracted.db&lib=/bim-compiler/deploy/dev/buildings/Terminal_geo.db&bld=Terminal',
+    elements: 48428
+  },
+  Hospital: {
+    url: '/bim-ootb/viewer/viewer.html?db=/bim-compiler/deploy/buildings/Hospital_extracted.db&lib=/bim-compiler/deploy/buildings/Hospital_geo.db&bld=Hospital',
+    elements: 63415
+  },
+  LTU: {
+    url: '/bim-ootb/viewer/viewer.html?db=/bim-compiler/deploy/dev/buildings/LTU_AHouse_extracted.db&lib=/bim-compiler/deploy/dev/buildings/LTU_AHouse_geo.db&bld=LTU_AHouse',
+    elements: 122667
+  }
+};
+
+const logEl = document.getElementById('log');
+function log(msg, cls) {
+  const line = document.createElement('div');
+  line.className = cls || '';
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function waitForDone(iframe, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const check = setInterval(() => {
+      try {
+        const win = iframe.contentWindow;
+        const APP = win && win.APP;
+        if (APP && !APP.streaming && APP.streamedCount > 0) {
+          clearInterval(check);
+          // Give DLOD grid time to build
+          setTimeout(() => resolve(APP), 3000);
+        }
+        if (Date.now() - t0 > timeoutMs) {
+          clearInterval(check);
+          reject(new Error('Timeout waiting for streaming to finish'));
+        }
+      } catch(e) {
+        // Cross-origin or not ready yet
+      }
+    }, 1000);
+  });
+}
+
+async function run(name) {
+  const bld = BUILDINGS[name];
+  if (!bld) { log('Unknown building: ' + name, 'fail'); return; }
+
+  log('\n══════════════════════════════════════════', 'info');
+  log('§BENCH_START ' + name + ' (' + bld.elements.toLocaleString() + ' elements)', 'info');
+  log('══════════════════════════════════════════', 'info');
+
+  const iframe = document.getElementById('viewer');
+  iframe.src = bld.url;
+
+  try {
+    log('Loading... (timeout 5min)', 'warn');
+    const APP = await waitForDone(iframe, 300000);
+
+    // 1. DLOD grid stats
+    log('\n── §DLOD Grid ──', 'info');
+    const dlodEnabled = APP._dlodEnabled;
+    log('DLOD enabled: ' + dlodEnabled);
+
+    // 2. BatchedMesh / InstancedMesh breakdown
+    log('\n── §Mesh Breakdown ──', 'info');
+    let bmCount = 0, totalSlots = 0;
+    for (const bmId in APP._batchMeta) { bmCount++; totalSlots += APP._batchMeta[bmId].length; }
+    let imCount = 0, totalInstances = 0;
+    for (const imId in APP._instanceMeta) { imCount++; totalInstances += APP._instanceMeta[imId].length; }
+
+    let individualMeshes = 0;
+    APP.scene.traverse(obj => {
+      if (obj.isMesh && obj.userData.guid && !obj.isBatchedMesh && !obj.isInstancedMesh) individualMeshes++;
+    });
+
+    log('Streamed:          ' + APP.streamedCount.toLocaleString());
+    log('BatchedMesh:       ' + bmCount + ' objects, ' + totalSlots.toLocaleString() + ' slots');
+    log('InstancedMesh:     ' + imCount + ' objects, ' + totalInstances.toLocaleString() + ' instances');
+    log('Individual Mesh:   ' + individualMeshes + ' (these are what DLOD grid indexes)');
+    log('Coverage:          ' + ((totalSlots + totalInstances + individualMeshes) / APP.streamedCount * 100).toFixed(1) + '% of streamed');
+
+    // 3. Renderer triangle baseline
+    log('\n── §GPU Baseline (all visible) ──', 'info');
+    APP.renderer.render(APP.scene, APP.camera);
+    const info = APP.renderer.info;
+    const baseTriangles = info.render.triangles;
+    const baseCalls = info.render.calls;
+    log('Triangles:         ' + baseTriangles.toLocaleString());
+    log('Draw calls:        ' + baseCalls);
+    log('Geometries (GPU):  ' + info.memory.geometries);
+    log('Textures (GPU):    ' + info.memory.textures);
+
+    // 4. setVisibleAt 50% hide test
+    log('\n── §setVisibleAt Test (hide 50% of BatchedMesh slots) ──', 'info');
+    let hidden = 0, total = 0;
+    const bmRefs = [];
+    APP.scene.traverse(obj => {
+      if (obj.isBatchedMesh && APP._batchMeta[obj.id]) {
+        bmRefs.push({ obj, meta: APP._batchMeta[obj.id] });
+      }
+    });
+
+    for (const bm of bmRefs) {
+      for (let i = 0; i < bm.meta.length; i++) {
+        total++;
+        if (i % 2 === 0) {
+          bm.obj.setVisibleAt(bm.meta[i].slotId, false);
+          hidden++;
+        }
+      }
+    }
+
+    APP.renderer.render(APP.scene, APP.camera);
+    const halfTriangles = APP.renderer.info.render.triangles;
+    const halfCalls = APP.renderer.info.render.calls;
+    const reduction = ((1 - halfTriangles / baseTriangles) * 100).toFixed(1);
+
+    log('Hidden slots:      ' + hidden + '/' + total);
+    log('Triangles after:   ' + halfTriangles.toLocaleString());
+    log('Draw calls after:  ' + halfCalls);
+    log('Triangle reduction: ' + reduction + '%', reduction > 10 ? 'pass' : 'fail');
+
+    // Restore
+    for (const bm of bmRefs) {
+      for (let i = 0; i < bm.meta.length; i++) {
+        bm.obj.setVisibleAt(bm.meta[i].slotId, true);
+      }
+    }
+
+    // 5. Storey-based hide test (show only 1 storey)
+    log('\n── §Storey Test (show only 1 storey) ──', 'info');
+    const storeys = {};
+    for (const bm of bmRefs) {
+      for (const m of bm.meta) {
+        storeys[m.storey || '(none)'] = (storeys[m.storey || '(none)'] || 0) + 1;
+      }
+    }
+    const storeyNames = Object.keys(storeys).sort((a, b) => storeys[b] - storeys[a]);
+    log('Storeys: ' + storeyNames.map(s => s + '=' + storeys[s]).join(', '));
+
+    if (storeyNames.length > 1) {
+      const keepStorey = storeyNames[0]; // keep the biggest storey
+      let storeyHidden = 0, storeyTotal = 0;
+      for (const bm of bmRefs) {
+        for (const m of bm.meta) {
+          storeyTotal++;
+          if ((m.storey || '(none)') !== keepStorey) {
+            bm.obj.setVisibleAt(m.slotId, false);
+            storeyHidden++;
+          }
+        }
+      }
+
+      APP.renderer.render(APP.scene, APP.camera);
+      const storeyTriangles = APP.renderer.info.render.triangles;
+      const storeyReduction = ((1 - storeyTriangles / baseTriangles) * 100).toFixed(1);
+
+      log('Keeping storey:    "' + keepStorey + '" (' + storeys[keepStorey] + ' slots)');
+      log('Hidden:            ' + storeyHidden + '/' + storeyTotal);
+      log('Triangles after:   ' + storeyTriangles.toLocaleString());
+      log('Storey reduction:  ' + storeyReduction + '%', storeyReduction > 30 ? 'pass' : 'warn');
+
+      // Restore
+      for (const bm of bmRefs) {
+        for (const m of bm.meta) bm.obj.setVisibleAt(m.slotId, true);
+      }
+    }
+
+    // 6. §S274: Live DLOD frustum test — zoom camera into a corner, then trigger dlodTick
+    log('\n── §S274 Live DLOD Frustum Test ──', 'info');
+    const dlodResult = await new Promise(resolve => {
+      const win = document.getElementById('viewer').contentWindow;
+      const dlodLogs = [];
+      const origLog = win.console.log;
+      win.console.log = function() {
+        var msg = Array.prototype.join.call(arguments, ' ');
+        if (msg.includes('§DLOD_')) dlodLogs.push(msg);
+        origLog.apply(win.console, arguments);
+      };
+
+      // Zoom camera into a corner with narrow FOV — forces most elements outside frustum
+      var firstSlot = null;
+      for (var bmId in APP._batchMeta) {
+        var meta = APP._batchMeta[bmId];
+        if (meta.length > 0 && meta[0]._wx !== undefined) { firstSlot = meta[0]; break; }
+      }
+      if (firstSlot) {
+        APP.camera.position.set(firstSlot._wx + 2, firstSlot._wy + 1, firstSlot._wz + 2);
+        if (APP.controls) APP.controls.target.set(firstSlot._wx, firstSlot._wy, firstSlot._wz);
+        APP.camera.fov = 30;  // narrow FOV — like zoomed in on a phone
+        APP.camera.updateProjectionMatrix();
+        APP.camera.updateMatrixWorld();
+      }
+
+      // Re-enable DLOD (bench_restore disabled it) and force tick
+      APP._dlodEnabled = true;
+      APP._dlodFrame = 5;
+      APP.dlodTick();
+      APP._dlodFrame = (6 * 10) - 1;
+      APP.dlodTick();
+      win.console.log = origLog;
+
+      APP.renderer.render(APP.scene, APP.camera);
+      const triAfterDLOD = APP.renderer.info.render.triangles;
+      resolve({ logs: dlodLogs, triangles: triAfterDLOD });
+    });
+
+    for (const l of dlodResult.logs) log('  ' + l);
+    const dlodReduction = ((1 - dlodResult.triangles / baseTriangles) * 100).toFixed(1);
+    log('Triangles after DLOD: ' + dlodResult.triangles.toLocaleString() + ' (reduction: ' + dlodReduction + '%)',
+      dlodReduction > 5 ? 'pass' : 'warn');
+
+    // Restore
+    if (APP.dlodDisable) APP.dlodDisable('bench_restore');
+
+    // Re-render baseline
+    APP.renderer.render(APP.scene, APP.camera);
+    const restoredTri = APP.renderer.info.render.triangles;
+    log('Triangles restored:  ' + restoredTri.toLocaleString(), Math.abs(restoredTri - baseTriangles) < 100 ? 'pass' : 'fail');
+
+    // VERDICT
+    log('\n── §VERDICT ──', 'info');
+    log(name + ': ' + APP.streamedCount.toLocaleString() + ' elements → ' +
+        baseTriangles.toLocaleString() + ' triangles in ' + baseCalls + ' draw calls', 'pass');
+    log('setVisibleAt 50% → ' + reduction + '% triangle reduction — EFFECTIVE', reduction > 10 ? 'pass' : 'fail');
+    log('DLOD frustum → ' + dlodReduction + '% triangle reduction' +
+      (dlodReduction > 5 ? ' — WORKING' : ' — needs tuning'), dlodReduction > 5 ? 'pass' : 'warn');
+
+  } catch(e) {
+    log('ERROR: ' + e.message, 'fail');
+  }
+}
+
+async function runAll() {
+  for (const name of ['Terminal', 'Hospital', 'LTU']) {
+    await run(name);
+  }
+  log('\n\n════════ ALL DONE ════════', 'pass');
+}
+</script>
+</body></html>

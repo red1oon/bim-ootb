@@ -727,7 +727,7 @@ function setupStreaming(A) {
           if (!vis) bm.setVisibleAt(slotId, false);
 
           // Metadata for pick + filter
-          meta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', slotId: slotId });
+          meta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', slotId: slotId, bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3 });
           A.guidMap[bm.id + '_' + slotId] = el.guid;
 
           // Reverse maps for filter
