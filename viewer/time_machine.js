@@ -1449,6 +1449,7 @@
 
   function restoreVisibility() {
     clearHighlight();
+    var app = A();
     // Restore InstancedMesh matrices and visibility from saved state
     for (var meshId in _savedInstanceState) {
       var state = _savedInstanceState[meshId];
