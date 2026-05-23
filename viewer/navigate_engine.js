@@ -143,6 +143,8 @@
         wp.map(function(w, i) { return i + ':(' + w.x.toFixed(0) + ',' + w.y.toFixed(0) + (w.label ? ',"' + w.label + '"' : '') + ')'; }).join(' → ') + ']');
 
       if (navHud) navHud.style.display = 'block';
+      if (elCue) elCue.style.display = '';
+      if (elBar) elBar.style.display = '';
       if (panel) panel.style.display = 'none';
       updateNavHud();
 
@@ -163,9 +165,10 @@
       A.navActive = false;
       A.navCurrentStep = 0;
       if (navHud) navHud.style.display = 'none';
-      // S275: Force-hide direction cue + clear pending timer
+      // S275: Force-hide direction cue + bottom bar (position:fixed ignores parent display:none)
       if (nav._cueTimer) { clearTimeout(nav._cueTimer); nav._cueTimer = null; }
-      if (elCue) elCue.className = '';
+      if (elCue) { elCue.className = ''; elCue.style.display = 'none'; }
+      if (elBar) elBar.style.display = 'none';
 
       restoreDriveButton();
 
@@ -322,6 +325,8 @@
         nav.active = false;
         A.navActive = false;
         if (navHud) navHud.style.display = 'none';
+        if (elCue) { elCue.className = ''; elCue.style.display = 'none'; }
+        if (elBar) elBar.style.display = 'none';
         restoreDriveButton();
         document.removeEventListener('keydown', navKeyHandler);
         if (A.status) A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_find_arrived||'Arrived \u2014 walk freely or Find again';
