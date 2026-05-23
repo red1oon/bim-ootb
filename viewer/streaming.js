@@ -530,7 +530,10 @@ function setupStreaming(A) {
         if (!A._normalsPrecomputed) A._normalsPrecomputed = 0;
         if (!A._normalsComputed) A._normalsComputed = 0;
         const bvhCount = window._bvhReady ? Object.values(A.meshCache).filter(g => g && g.boundsTree).length : 0;
-        console.log(`[S231] §BLOB_FETCH new=${fetched} total_cached=${Object.keys(A.meshCache).length} normals_pre=${A._normalsPrecomputed} normals_cpu=${A._normalsComputed} bvh=${bvhCount}`);
+        // §S276: log first, every 50K, and final only — suppress intermediate spam
+        var _cacheSize = Object.keys(A.meshCache).length;
+        if (_cacheSize <= fetched || _cacheSize % 50000 < fetched || A.streamIdx >= A.streamQueue.length - 1)
+          console.log(`[S231] §BLOB_FETCH new=${fetched} total_cached=${_cacheSize} normals_pre=${A._normalsPrecomputed} normals_cpu=${A._normalsComputed} bvh=${bvhCount}`);
       }
       if (fetched === 0 && hashesNeeded.size > 0) {
         console.warn(`[S231] §BLOB_MISS hashes=${hashesNeeded.size} — no geometry found in library`);
@@ -568,7 +571,9 @@ function setupStreaming(A) {
       A._flushInstanced();
       if (!A._bboxCleared) A._bboxCleared = true;  // §S260c: switch to 5000 after first flush
       A._lastFlushIdx = A.streamIdx;
-      console.log(`[S260] §PROGRESSIVE_FLUSH at=${A.streamIdx}/${A.streamQueue.length} drawCalls=${A.scene.children.length}`);
+      // §S276: log first flush + every 50K only — suppress intermediate spam
+      if (A.streamIdx <= _flushAt + 1 || A.streamIdx % 50000 < _flushAt)
+        console.log(`[S260] §PROGRESSIVE_FLUSH at=${A.streamIdx}/${A.streamQueue.length} drawCalls=${A.scene.children.length}`);
     }
 
     document.getElementById('s-streamed').textContent = A.streamedCount.toLocaleString();
@@ -867,9 +872,14 @@ function setupStreaming(A) {
     }
 
     A._pendingInstances = {};
-    console.log(`[S260] §BATCHED_FLUSH instanced=${instancedCount} batched=${batchedCount} drawCalls=${drawCalls} (was ${instancedCount + batchedCount}) mobile=${A._isMobile}`);
-    if (batchedCount > 0) {
-      console.log(`§BATCHED_DETAIL buckets=${Object.keys(batchBuckets).length} elements=${batchedCount} saved=${_prevDrawCalls - Object.keys(batchBuckets).length} drawCalls`);
+    // §S276: suppress intermediate flush logs — final summary logged at stream end
+    if (!A._batchFlushCount) A._batchFlushCount = 0;
+    A._batchFlushCount++;
+    if (A._batchFlushCount <= 1 || A.streamIdx >= A.streamQueue.length - 1) {
+      console.log(`[S260] §BATCHED_FLUSH instanced=${instancedCount} batched=${batchedCount} drawCalls=${drawCalls} (was ${instancedCount + batchedCount}) mobile=${A._isMobile}`);
+      if (batchedCount > 0) {
+        console.log(`§BATCHED_DETAIL buckets=${Object.keys(batchBuckets).length} elements=${batchedCount} saved=${_prevDrawCalls - Object.keys(batchBuckets).length} drawCalls`);
+      }
     }
     document.getElementById('s-meshes').textContent = drawCalls.toLocaleString() + ' draw calls';
   };

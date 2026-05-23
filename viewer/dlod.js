@@ -70,7 +70,7 @@ function setupDLOD(A) {
 
     console.log('[DLOD] §DLOD_REFS built instanced=' + _instancedMeshes.length +
       ' imInstances=' + _totalIMInstances +
-      ' (BM handled by r160 perObjectFrustumCulled)');
+      ' (BM handled by r184 perObjectFrustumCulled)');
   }
 
   // ── Enable/disable ──
