@@ -414,25 +414,45 @@ function setupPicking(A) {
         console.log('§BBOX_DEBUG MERGED err=' + e.message);
       }
     } else if (hit.object.isBatchedMesh && guid) {
-      // §S260d: BatchedMesh geometry bbox covers ALL slots — use DB per-element bbox
-      try {
-        const bboxRows = A.dbQuery(
-          'SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid = ?',
-          [guid]
-        );
-        if (bboxRows.length && bboxRows[0][0] != null) {
-          const dbC = A.ifc2three(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]);
-          hlPos.set(dbC.x, dbC.y, dbC.z);
-          hlSizeX = bboxRows[0][3] || 0.3;
-          hlSizeY = bboxRows[0][5] || 0.3;
-          hlSizeZ = bboxRows[0][4] || 0.3;
-        } else {
+      // S275: Try getBoundingBoxAt for accurate per-slot bbox (r160+)
+      var bmSlotResolved = false;
+      if (hit.batchId !== undefined && typeof hit.object.getBoundingBoxAt === 'function') {
+        try {
+          var slotBox = new THREE.Box3();
+          hit.object.getBoundingBoxAt(hit.batchId, slotBox);
+          if (!slotBox.isEmpty()) {
+            var slotCenter = slotBox.getCenter(new THREE.Vector3());
+            var slotSize = slotBox.getSize(new THREE.Vector3());
+            hlPos.copy(slotCenter);
+            hlSizeX = slotSize.x; hlSizeY = slotSize.y; hlSizeZ = slotSize.z;
+            bmSlotResolved = true;
+            console.log('§BBOX_DEBUG BM_SLOT batchId=' + hit.batchId +
+              ' pos=(' + hlPos.x.toFixed(2) + ',' + hlPos.y.toFixed(2) + ',' + hlPos.z.toFixed(2) + ')' +
+              ' size=(' + hlSizeX.toFixed(2) + ',' + hlSizeY.toFixed(2) + ',' + hlSizeZ.toFixed(2) + ')');
+          }
+        } catch(e) { /* fall through to DB */ }
+      }
+      // Fallback: DB per-element bbox
+      if (!bmSlotResolved) {
+        try {
+          const bboxRows = A.dbQuery(
+            'SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid = ?',
+            [guid]
+          );
+          if (bboxRows.length && bboxRows[0][0] != null) {
+            const dbC = A.ifc2three(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]);
+            hlPos.set(dbC.x, dbC.y, dbC.z);
+            hlSizeX = bboxRows[0][3] || 0.3;
+            hlSizeY = bboxRows[0][5] || 0.3;
+            hlSizeZ = bboxRows[0][4] || 0.3;
+          } else {
+            hlPos.copy(hit.point);
+            hlSizeX = hlSizeY = hlSizeZ = 0.5;
+          }
+        } catch(e) {
           hlPos.copy(hit.point);
           hlSizeX = hlSizeY = hlSizeZ = 0.5;
         }
-      } catch(e) {
-        hlPos.copy(hit.point);
-        hlSizeX = hlSizeY = hlSizeZ = 0.5;
       }
     } else {
       // Individual Mesh or InstancedMesh: geometry bbox is per-element — correct
