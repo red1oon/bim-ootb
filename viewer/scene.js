@@ -316,7 +316,11 @@ function setupScene(A) {
     }
 
     // import:// URLs live only in IndexedDB — no network fallback
-    if (url.startsWith('import://')) throw new Error('DB not found in cache: ' + url);
+    if (url.startsWith('import://')) {
+      A.status.textContent = 'Imported IFC not found — browser storage was cleared. Please re-import the file.';
+      console.log('§IMPORT_CACHE_MISS url=' + url + ' — IDB cleared or quota reclaimed');
+      throw new Error('DB not found in cache: ' + url);
+    }
 
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
