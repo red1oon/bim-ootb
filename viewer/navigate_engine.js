@@ -182,8 +182,11 @@
       if (navHud) navHud.style.display = 'none';
       // S275: Force-hide direction cue + bottom bar (position:fixed ignores parent display:none)
       if (nav._cueTimer) { clearTimeout(nav._cueTimer); nav._cueTimer = null; }
-      if (elCue) { elCue.className = ''; elCue.style.display = 'none'; }
-      if (elBar) elBar.style.display = 'none';
+      // Re-acquire in case elCue/elBar were null at init time
+      var cue = elCue || document.getElementById('nav-direction-cue');
+      var bar = elBar || document.getElementById('nav-bottom-bar');
+      if (cue) { cue.className = ''; cue.style.opacity = '0'; cue.style.display = 'none'; }
+      if (bar) bar.style.display = 'none';
 
       restoreDriveButton();
 
@@ -340,8 +343,10 @@
         nav.active = false;
         A.navActive = false;
         if (navHud) navHud.style.display = 'none';
-        if (elCue) { elCue.className = ''; elCue.style.display = 'none'; }
-        if (elBar) elBar.style.display = 'none';
+        var cue2 = elCue || document.getElementById('nav-direction-cue');
+        var bar2 = elBar || document.getElementById('nav-bottom-bar');
+        if (cue2) { cue2.className = ''; cue2.style.opacity = '0'; cue2.style.display = 'none'; }
+        if (bar2) bar2.style.display = 'none';
         restoreDriveButton();
         document.removeEventListener('keydown', navKeyHandler);
         if (A.status) A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_find_arrived||'Arrived \u2014 walk freely or Find again';

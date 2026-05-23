@@ -177,14 +177,7 @@ function setupDLOD(A) {
       if (changed) obj.instanceMatrix.needsUpdate = true;
     }
 
-    var ms = (performance.now() - t0).toFixed(1);
-    if ((bmHid > 0 || imHid > 0 || bmVis > 0 || imVis > 0) && A.markDirty) A.markDirty();
-
-    // Log every 10th evaluation (~once per second at 60fps)
-    if (A._dlodFrame % (EVAL_EVERY * 10) === 0) {
-      console.log('[DLOD] §DLOD_FRUSTUM im=' + imVis + '/' + (imVis + imHid) +
-        ' skip=' + skipCount + ' ms=' + ms);
-    }
+    if ((imHid > 0 || imVis > 0) && A.markDirty) A.markDirty();
   };
 
   // ── Restore all hidden elements ──
