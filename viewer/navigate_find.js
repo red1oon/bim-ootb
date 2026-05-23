@@ -539,8 +539,7 @@
       if (nav.results.length > 0) {
         elCount.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_find_matches||'{n} found').replace('{n}', nav.results.length);
         renderResults();
-        // Auto-select first result so Navigate works immediately after filter change
-        if (nav.activeIdx < 0) selectResult(0);
+        // No auto-select — user picks from the list. Navigate auto-selects first if needed.
       } else {
         // No results — find nearest suggestions
         var suggestions = findSuggestions(bld, name);
