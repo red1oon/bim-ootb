@@ -377,7 +377,10 @@
       var direct = computeDirectDistance();
       var total = nav.waypoints.length;
       var step = nav.stepIdx + 1;
-      elBar.textContent = nav.targetName + '  \u2022  ' + remaining.toFixed(0) + 'm (' + direct.toFixed(0) + 'm direct)  \u2022  ' + step + '/' + total;
+      elBar.innerHTML = '<span>' + nav.targetName + '  \u2022  ' + remaining.toFixed(0) + 'm  \u2022  ' + step + '/' + total +
+        '</span> <button id="nav-stop-btn" style="background:rgba(255,60,60,0.6);border:none;color:#fff;border-radius:6px;padding:4px 10px;margin-left:8px;cursor:pointer;font-size:12px;font-weight:600;min-width:36px;min-height:36px">\u2715</button>';
+      var stopBtn = document.getElementById('nav-stop-btn');
+      if (stopBtn) stopBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); stopNavigation(); });
     }
 
     function computeDirectDistance() {
