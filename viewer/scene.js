@@ -234,51 +234,39 @@ async function setupScene(A) {
   // Single textured quad at Y=5000m. Near-zero GPU cost.
   var _cloudPlane = null;
   try {
-    // Generate Perlin noise texture on canvas (128x128 is enough for clouds)
+    // §S277b: Soft cloud puffs — 512×512 canvas, 80 Gaussian blobs, no tiling.
+    // Overlapping radial gradients create natural cloud clusters.
     var _cloudCanvas = document.createElement('canvas');
-    _cloudCanvas.width = 256; _cloudCanvas.height = 256;
+    _cloudCanvas.width = 512; _cloudCanvas.height = 512;
     var _cloudCtx = _cloudCanvas.getContext('2d');
-    var _cloudImgData = _cloudCtx.createImageData(256, 256);
-    // Simple 2D value noise — multiple octaves for cloud-like pattern
-    var _noiseHash = new Uint8Array(512);
-    for (var ni = 0; ni < 256; ni++) _noiseHash[ni] = _noiseHash[ni + 256] = (ni * 131 + 17) & 255;
-    function _valNoise(x, y) {
-      var xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
-      var xf = x - Math.floor(x), yf = y - Math.floor(y);
-      var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
-      var aa = _noiseHash[_noiseHash[xi] + yi] / 255;
-      var ab = _noiseHash[_noiseHash[xi] + yi + 1] / 255;
-      var ba = _noiseHash[_noiseHash[xi + 1] + yi] / 255;
-      var bb = _noiseHash[_noiseHash[xi + 1] + yi + 1] / 255;
-      return aa + u * (ba - aa) + v * (ab - aa) + u * v * (aa - ba - ab + bb);
-    }
-    // §S277b: Soft cloud puffs — scatter circular Gaussian blobs, not blocky noise
-    // Each puff is a radial gradient drawn at a random position. 40 puffs = natural scatter.
-    _cloudCtx.clearRect(0, 0, 256, 256);
-    for (var ci = 0; ci < 40; ci++) {
-      var cx = Math.random() * 256, cy = Math.random() * 256;
-      var cr = 30 + Math.random() * 50;  // radius 30-80px — soft varied puffs
+    _cloudCtx.clearRect(0, 0, 512, 512);
+    // Seed for consistent clouds across reloads
+    var _cseed = 42;
+    function _crand() { _cseed = (_cseed * 16807 + 0) % 2147483647; return _cseed / 2147483647; }
+    for (var ci = 0; ci < 80; ci++) {
+      var cx = _crand() * 512, cy = _crand() * 512;
+      var cr = 40 + _crand() * 100;  // radius 40-140px — large soft varied puffs
+      var ca = 0.06 + _crand() * 0.12;  // alpha 0.06-0.18 — very subtle per puff
       var cg = _cloudCtx.createRadialGradient(cx, cy, 0, cx, cy, cr);
-      cg.addColorStop(0, 'rgba(255,255,255,0.25)');
-      cg.addColorStop(0.4, 'rgba(255,255,255,0.12)');
+      cg.addColorStop(0, 'rgba(255,255,255,' + ca.toFixed(3) + ')');
+      cg.addColorStop(0.5, 'rgba(255,255,255,' + (ca * 0.4).toFixed(3) + ')');
       cg.addColorStop(1, 'rgba(255,255,255,0)');
       _cloudCtx.fillStyle = cg;
-      _cloudCtx.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
+      _cloudCtx.fillRect(0, 0, 512, 512);
     }
     var _cloudTex = new THREE.CanvasTexture(_cloudCanvas);
-    _cloudTex.wrapS = _cloudTex.wrapT = THREE.RepeatWrapping;
-    _cloudTex.repeat.set(3, 3);  // fewer repeats — larger puffs
+    _cloudTex.wrapS = _cloudTex.wrapT = THREE.ClampToEdgeWrapping;  // no tiling — single stretched texture
     _cloudPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(60000, 60000),
-      new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide })
+      new THREE.PlaneGeometry(8000, 8000),  // 8km — covers building envelope with margin
+      new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide })
     );
     _cloudPlane.rotation.x = -Math.PI / 2;
-    _cloudPlane.position.y = 700;  // §S277b: 700m — visible drift, soft shadow, inside frustum
+    _cloudPlane.position.y = 500;  // §S277b: 500m — visible, soft shadow, inside frustum
     _cloudPlane.castShadow = true;
     _cloudPlane.receiveShadow = false;
     _cloudPlane.visible = false;  // shown during shadow/TM
     scene.add(_cloudPlane);
-    console.log('§CLOUD_LAYER loaded — 60km quad at Y=2000m, 40 soft puffs');
+    console.log('§CLOUD_LAYER loaded — 8km quad at Y=500m, 80 soft puffs, no tiling');
   } catch(e) { console.warn('§CLOUD_LAYER_FAIL ' + e.message); }
   A._cloudPlane = _cloudPlane;
   A._cloudTex = _cloudPlane ? _cloudPlane.material.map : null;
@@ -1180,8 +1168,12 @@ async function setupScene(A) {
         _blurPanel();
         return;
       }
+      // §S277b: Shortcuts take priority over typeahead — h/n/etc must not be swallowed
+      if (noMod && notInput && e.key.length === 1 && _shortcuts[e.key.toLowerCase()]) {
+        // Fall through to shortcut engine below — don't consume as typeahead
+      }
       // Typeahead within focused panel (single printable char, no modifier)
-      if (noMod && notInput && e.key.length === 1 && e.key !== '?' && _focusedPanel.nav.onTypeahead) {
+      else if (noMod && notInput && e.key.length === 1 && e.key !== '?' && _focusedPanel.nav.onTypeahead) {
         console.log('§KBD_ROUTE typeahead panel=' + _focusedPanel.id + ' char=' + e.key);
         _focusedPanel.nav.onTypeahead(e.key);
         return;

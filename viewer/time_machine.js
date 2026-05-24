@@ -1465,32 +1465,35 @@
       }
     }
 
-    // §S277b: Night floodlight — warm emissive on all visible meshes during TM night
-    // Construction sites have floodlights at night — boost emissive on placed+frontier meshes.
+    // §S277b: Night floodlight — warm emissive on cached materials (not scene traverse).
+    // _matCache has ~100-150 entries vs 122K scene objects. Zero freeze.
     if (elDeg <= -15 && !app._tmBloomActive) {
       app._tmBloomActive = true;
       var _bloomCount = 0;
-      app.scene.traverse(function(obj) {
-        if (!obj.visible || !obj.isMesh || !obj.material || !obj.material.emissive) return;
-        if (obj.material.userData._origEmissive !== undefined) return;  // already boosted
-        obj.material.userData._origEmissive = obj.material.emissive.getHex();
-        obj.material.userData._origEmissiveI = obj.material.emissiveIntensity || 0;
-        obj.material.emissive.setHex(0xffaa44);
-        obj.material.emissiveIntensity = 0.2;  // §S277b: warm floodlight glow (was 0.15)
-        obj.material.needsUpdate = true;
+      var _mc = app._matCache || {};
+      for (var _mk in _mc) {
+        var _mm = _mc[_mk];
+        if (!_mm || !_mm.emissive || _mm.userData._origEmissive !== undefined) continue;
+        _mm.userData._origEmissive = _mm.emissive.getHex();
+        _mm.userData._origEmissiveI = _mm.emissiveIntensity || 0;
+        _mm.emissive.setHex(0xffaa44);
+        _mm.emissiveIntensity = 0.2;
+        _mm.needsUpdate = true;
         _bloomCount++;
-      });
-      console.log('§TM_BLOOM_ON meshes=' + _bloomCount);
+      }
+      console.log('§TM_BLOOM_ON materials=' + _bloomCount);
     }
     if (elDeg > -10 && app._tmBloomActive) {
-      app.scene.traverse(function(obj) {
-        if (!obj.isMesh || !obj.material || obj.material.userData._origEmissive === undefined) return;
-        obj.material.emissive.setHex(obj.material.userData._origEmissive);
-        obj.material.emissiveIntensity = obj.material.userData._origEmissiveI;
-        delete obj.material.userData._origEmissive;
-        delete obj.material.userData._origEmissiveI;
-        obj.material.needsUpdate = true;
-      });
+      var _mc2 = app._matCache || {};
+      for (var _mk2 in _mc2) {
+        var _mm2 = _mc2[_mk2];
+        if (!_mm2 || _mm2.userData._origEmissive === undefined) continue;
+        _mm2.emissive.setHex(_mm2.userData._origEmissive);
+        _mm2.emissiveIntensity = _mm2.userData._origEmissiveI;
+        delete _mm2.userData._origEmissive;
+        delete _mm2.userData._origEmissiveI;
+        _mm2.needsUpdate = true;
+      }
       app._tmBloomActive = false;
       console.log('§TM_BLOOM_OFF');
     }
@@ -1506,16 +1509,18 @@
     if (app._cloudPlane && !app._shadowOn) app._cloudPlane.visible = false;
     // §S277f: Hide lensflare
     if (app._lensflare) { app._lensflare.visible = false; if (app._lensflare.userData._halo) app._lensflare.userData._halo.visible = false; }
-    // §S277b: Clear bloom emissive on all meshes
+    // §S277b: Clear bloom emissive via matCache (not scene traverse — avoids 122K freeze)
     if (app._tmBloomActive) {
-      app.scene.traverse(function(obj) {
-        if (!obj.isMesh || !obj.material || obj.material.userData._origEmissive === undefined) return;
-        obj.material.emissive.setHex(obj.material.userData._origEmissive);
-        obj.material.emissiveIntensity = obj.material.userData._origEmissiveI;
-        delete obj.material.userData._origEmissive;
-        delete obj.material.userData._origEmissiveI;
-        obj.material.needsUpdate = true;
-      });
+      var _rmc = app._matCache || {};
+      for (var _rmk in _rmc) {
+        var _rmm = _rmc[_rmk];
+        if (!_rmm || _rmm.userData._origEmissive === undefined) continue;
+        _rmm.emissive.setHex(_rmm.userData._origEmissive);
+        _rmm.emissiveIntensity = _rmm.userData._origEmissiveI;
+        delete _rmm.userData._origEmissive;
+        delete _rmm.userData._origEmissiveI;
+        _rmm.needsUpdate = true;
+      }
       app._tmBloomActive = false;
     }
     if (app.updateSky) app.updateSky(45, 180);
