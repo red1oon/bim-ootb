@@ -1354,23 +1354,18 @@
     // §S276b: Sky transitions — Preetham for day/dusk/dawn, starfield for night.
     var _nearHorizon = Math.abs(elDeg) < 25;
     var _skyInterval = _nearHorizon ? 1 : 3;
+    // §S276b: Sky always visible — Preetham goes dark naturally at low sun, no flash.
     if (app._sky && applySunCycle._count % _skyInterval === 0) {
-      if (elDeg > -8) {
-        // Day/dusk/dawn — Preetham sky, clamp sun near horizon for smooth dusk
-        app._sky.visible = true;
-        var _clampedSy = Math.max(sy, -0.03);
-        app._sky.material.uniforms['sunPosition'].value.set(sx, _clampedSy, sz);
-        // Adjust turbidity near horizon for richer dusk colors
-        app._sky.material.uniforms['turbidity'].value = elDeg < 5 ? 8 : 4;
-        app._sky.material.uniforms['rayleigh'].value = elDeg < 5 ? 4 : 2;
-      } else {
-        // Night — hide Preetham, show starfield
-        app._sky.visible = false;
-        app.renderer.setClearColor(0x050510);
-      }
+      app._sky.visible = true;
+      // Clamp sun slightly below horizon — Preetham darkens to deep blue/purple
+      var _clampedSy = Math.max(sy, -0.08);
+      app._sky.material.uniforms['sunPosition'].value.set(sx, _clampedSy, sz);
+      // Richer dusk/dawn: boost turbidity + rayleigh near horizon
+      app._sky.material.uniforms['turbidity'].value = elDeg < 10 ? 8 : 4;
+      app._sky.material.uniforms['rayleigh'].value = elDeg < 10 ? 4 : 2;
     }
-    // §S276b: Night starfield — small bright points on a dark canvas
-    if (elDeg <= -8 && !app._nightStars) {
+    // §S276b: Night starfield — appears when sun is well below horizon
+    if (elDeg <= -15 && !app._nightStars) {
       var _starGeo = new THREE.BufferGeometry();
       var _starPos = new Float32Array(600 * 3);  // 600 stars
       for (var si = 0; si < 600; si++) {
@@ -1397,7 +1392,7 @@
       // Dim ambient for moonlight feel
       console.log('§TM_NIGHT stars=600 moon=1');
     }
-    if (elDeg > -5 && app._nightStars) {
+    if (elDeg > -10 && app._nightStars) {
       // Dawn — remove stars and moon
       app.scene.remove(app._nightStars);
       app._nightStars.geometry.dispose();
@@ -2935,7 +2930,9 @@
   function _finishActivate(app) {
     _active = true;
     _isLargeBuilding = (app.activeBuildingTotal || 0) > LARGE_BUILDING;
-    if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks/sunCycle disabled (>50K)');
+    if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
+    // §S276b: Always enable sun cycle when shadows are on — Sky shader is near-zero cost
+    if (app._shadowOn || app._sky) { _sunCycle = true; console.log('§TM_SUNCYCLE_ON shadow=' + !!app._shadowOn + ' sky=' + !!app._sky); }
     console.log('§TM_SHADOW_INHERIT shadowOn=' + !!app._shadowOn + ' groundVisible=' + (app.ground ? app.ground.visible : 'n/a'));
     computeDays();
     saveVisibility();
