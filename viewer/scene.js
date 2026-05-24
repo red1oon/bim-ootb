@@ -199,7 +199,8 @@ async function setupScene(A) {
     }
     // Update directional light to match sky sun
     sun.position.copy(_sunVec).multiplyScalar(5000);
-    // Update env map from sky (throttled — expensive, ~5ms)
+    // Update env map from sky (throttled — expensive, ~5ms per call)
+    // §S276b: 2s throttle to avoid rapid flicker during TM sun cycle
     if (_sky && _sky.visible && !A._envMapThrottle) {
       A._envMapThrottle = true;
       setTimeout(function() {
@@ -209,7 +210,7 @@ async function setupScene(A) {
           A._envMap = envRT.texture;
         } catch(e) {}
         A._envMapThrottle = false;
-      }, 200);
+      }, 2000);
     }
   };
 
@@ -251,7 +252,7 @@ async function setupScene(A) {
   // Ground plane — positioned after DB load to sit below the lowest building
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(50000, 50000),
-    new THREE.MeshLambertMaterial({ color: 0x5C4033, side: THREE.DoubleSide })  // §S260e: earth brown — not too bright for shadows, not too dark
+    new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 1.0, metalness: 0.0, envMapIntensity: 0, side: THREE.DoubleSide })  // §S276b: earth brown, no env map reflection (was too white with Sky)
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;

@@ -1329,12 +1329,14 @@
     var dayFactor = Math.max(0, elevation); // 0 at night, 1 at noon
 
     // §S276b: Drive Sky shader from Time Machine — real atmospheric scattering.
-    // elevation in degrees: -90 midnight → +90 noon. azimuth: 0-360.
-    var elDeg = elevation * 90;  // map sine(-1..+1) to degrees(-90..+90)
-    var azDeg = (azimuth * 0.5 + 0.5) * 360; // map cosine to 0-360
-    if (app.updateSky) {
+    // Throttled: update sky every 10th call to avoid rapid flicker during fast playback.
+    if (!applySunCycle._count) applySunCycle._count = 0;
+    applySunCycle._count++;
+    var elDeg = elevation * 90;
+    var azDeg = (azimuth * 0.5 + 0.5) * 360;
+    if (app.updateSky && applySunCycle._count % 10 === 0) {
       app.updateSky(elDeg, azDeg);
-    } else {
+    } else if (!app.updateSky) {
       // Fallback: direct sun position (no Sky shader)
       var cx = 0, cz = 0;
       if (app.controls && app.controls.target) {
