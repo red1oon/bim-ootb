@@ -1351,17 +1351,15 @@
     // throttle to every 5th tick during midday/midnight (less visual change).
     if (!applySunCycle._count) applySunCycle._count = 0;
     applySunCycle._count++;
-    var _nearHorizon = Math.abs(elDeg) < 20;  // within 20° of horizon = dawn/dusk
-    var _skyInterval = _nearHorizon ? 1 : 5;
+    // §S276b: Sky always visible during sun cycle — Preetham shader handles night naturally.
+    // Update every tick near horizon (smooth dawn/dusk), every 3rd tick midday/midnight.
+    var _nearHorizon = Math.abs(elDeg) < 25;
+    var _skyInterval = _nearHorizon ? 1 : 3;
     if (app._sky && applySunCycle._count % _skyInterval === 0) {
-      if (elDeg < -5) {
-        // Night — hide sky, dark background
-        app._sky.visible = false;
-        app.renderer.setClearColor(0x0a0a2e);
-      } else {
-        app._sky.visible = true;
-        app._sky.material.uniforms['sunPosition'].value.set(sx, sy, sz);
-      }
+      app._sky.visible = true;
+      // Clamp sun to just below horizon for night — Preetham goes dark blue, no flash
+      var _clampedSy = Math.max(sy, -0.05);
+      app._sky.material.uniforms['sunPosition'].value.set(sx, _clampedSy, sz);
     }
 
     // Smooth lighting — intensity follows day/night
@@ -1430,10 +1428,10 @@
     // Outline forms, dust/sparks play out (~1.2s per element at 80ms/tick = 15 ticks)
     // §S260e: Opening = construction plays while camera orbits wide for context
     // §S260f: DAY/HR/MIN mode always respected — drone uses same speed as manual playback
-    // §S276b: Reduced by 2x from original — sun/shadow watchable
-    if (_mode === 'DAY') return 1800000;  // 30 min per tick (48 ticks = 1 day)
-    if (_mode === 'HR') return 30000;     // 30 sec per tick (120 ticks = 1 hour)
-    return 5000;                          // 5 seconds per tick (fine grain)
+    // §S276b: 1.5x slower than original — sun/shadow watchable
+    if (_mode === 'DAY') return 2400000;  // 40 min per tick (36 ticks = 1 day)
+    if (_mode === 'HR') return 40000;     // 40 sec per tick (90 ticks = 1 hour)
+    return 7000;                          // 7 seconds per tick
   }
 
   // ── Scene state save/restore ──
@@ -1917,7 +1915,7 @@
   var _playing = false;
   var _playDir = 0;
   var _playTimer = null;
-  function TICK_MS() { return _isLargeBuilding ? 400 : 160; }  // §S276b: 2x slower than original (was 200/80, then 600/240, now 400/160)
+  function TICK_MS() { return _isLargeBuilding ? 300 : 120; }  // §S276b: 1.5x original (was 200/80)
 
   function startPlayback(dir) {
     if (_playing && _playDir === dir) { stopPlayback(); return; }
