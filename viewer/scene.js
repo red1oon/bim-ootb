@@ -186,16 +186,9 @@ async function setupScene(A) {
     var phi = THREE.MathUtils.degToRad(90 - elevation);
     var theta = THREE.MathUtils.degToRad(azimuth);
     _sunVec.setFromSphericalCoords(1, phi, theta);
-    // Update sky shader (only visible when shadow or TM sun cycle is active)
-    if (_sky) {
+    // §S276b: Update sky shader — never hide, Preetham darkens naturally below horizon.
+    if (_sky && _sky.visible) {
       _sky.material.uniforms['sunPosition'].value.copy(_sunVec);
-      if (_sky.visible) {
-        // Night: hide sky below horizon, set dark clear color
-        if (elevation < -2) {
-          _sky.visible = false;
-          renderer.setClearColor(0x0a0a2e);
-        }
-      }
     }
     // Update directional light to match sky sun
     sun.position.copy(_sunVec).multiplyScalar(5000);
