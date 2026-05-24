@@ -511,10 +511,35 @@
       d: child.childSize || this.currentAABB.d,
       h: child.childSize || this.currentAABB.h
     };
+
+    // §S270e: Edge-anchored children follow the parent's edge on resize.
+    // If the child's original tack placed it at the far edge of the original
+    // host, recompute tack to follow the current host's far edge.
+    var dx = child.tack.dx;
+    var dy = child.tack.dy;
+    var dz = child.tack.dz;
+
+    if (child._anchorFace === 'RIGHT' || (child._originalHostW && dx + sz.w >= child._originalHostW - 5)) {
+      dx = this.currentAABB.w - sz.w;
+    }
+    if (child._anchorFace === 'FRONT' || (child._originalHostD && dy + sz.d >= child._originalHostD - 5)) {
+      dy = this.currentAABB.d - sz.d;
+    }
+    if (child._anchorFace === 'TOP' || (child._originalHostH && dz + sz.h >= child._originalHostH - 5)) {
+      dz = this.currentAABB.h - sz.h;
+    }
+
+    // Record original host dims on first call — used for edge detection
+    if (!child._originalHostW) {
+      child._originalHostW = this.currentAABB.w;
+      child._originalHostD = this.currentAABB.d;
+      child._originalHostH = this.currentAABB.h;
+    }
+
     var aabb = {
-      x: this.currentAABB.x + child.tack.dx,
-      y: this.currentAABB.y + child.tack.dy,
-      z: this.currentAABB.z + child.tack.dz,
+      x: this.currentAABB.x + dx,
+      y: this.currentAABB.y + dy,
+      z: this.currentAABB.z + dz,
       w: sz.w, d: sz.d, h: sz.h
     };
     child.currentAABB = aabb;

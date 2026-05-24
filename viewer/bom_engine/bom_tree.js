@@ -165,6 +165,9 @@
         productId:     r.child_product_id
       });
 
+      // Anchor face — for edge-following on resize
+      child._anchorFace    = r.anchor_face || 'BACK';
+
       // Grid metadata (for bom_grid.js)
       child._bomLineId     = r.M_BOM_Line_ID;
       child._createsGrid   = !!(r.creates_grid);
