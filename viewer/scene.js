@@ -72,7 +72,7 @@ async function setupScene(A) {
   };
   A.scene = scene;
 
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 50000);
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 50000);  // §S277c: near=0.1m (was 0.5) — get within 10cm of surfaces without clipping
   camera.position.set(300, 200, 400);
   A.camera = camera;
 
