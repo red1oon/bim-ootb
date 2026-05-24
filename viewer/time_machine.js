@@ -1346,7 +1346,12 @@
     app.sun.position.set(_ctr.x + sx * _env * 2, Math.max(sy * _env * 2, 10), _ctr.z + sz * _env * 2);
     app.sun.target.position.copy(_ctr);
     app.sun.target.updateMatrixWorld();
-    if (app.sun.shadow) app.renderer.shadowMap.needsUpdate = true;
+    app.sun.updateMatrixWorld();
+    if (app.sun.shadow && app.sun.shadow.camera) {
+      app.sun.shadow.camera.updateProjectionMatrix();
+      app.sun.shadow.camera.updateMatrixWorld();
+    }
+    if (app.renderer && app.renderer.shadowMap) app.renderer.shadowMap.needsUpdate = true;
     // §S276b: Sky shader visual — update every tick near horizon (dawn/dusk fade),
     // throttle to every 5th tick during midday/midnight (less visual change).
     if (!applySunCycle._count) applySunCycle._count = 0;
