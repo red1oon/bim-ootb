@@ -81,6 +81,7 @@
 
   var _prevCursor = 0; // track previous cursor for frontier detection
   var _sunCycle = false;  // day/night toggle
+  var _lastElDeg = undefined;  // §S277b: last sun elevation for adaptive tick speed
   var _camFollow = false; // camera follow toggle
   var _camTarget = null;  // smoothed follow target (persists across ticks)
   var _camAngle = 0;      // slow orbit azimuth (radians), cinematic drift
@@ -1312,8 +1313,6 @@
 
     // §S276b: Show Sky shader during sun cycle
     if (app._sky && !app._sky.visible) app._sky.visible = true;
-    // §S277d: Show cloud layer during sun cycle
-    if (app._cloudPlane && !app._cloudPlane.visible) app._cloudPlane.visible = true;
     app._sunCycleActive = true;
 
     // §S277b: Save full lighting state once on TM entry — restore on exit
@@ -1347,6 +1346,7 @@
     // §S276b: Sun position moves every tick (shadows follow smoothly).
     // Sky shader visual update throttled to every 10th tick (avoids rapid sky flicker).
     var elDeg = elevation * 90;
+    _lastElDeg = elDeg;  // §S277b: expose for adaptive TICK_MS
     var azDeg = (azimuth * 0.5 + 0.5) * 360;
     // Always move sun — shadows must track every tick
     var phi = (90 - elDeg) * Math.PI / 180;
@@ -1433,17 +1433,6 @@
     if (app.ambient) app.ambient.intensity = 0.15 + dayFactor * 0.6;
     if (app.hemi) app.hemi.intensity = 0.1 + dayFactor * 1.1;
 
-    // §S277d: Cloud drift during TM — speed up for dramatic time-lapse
-    if (app._cloudTex) {
-      app._cloudTex.offset.x += 0.002;  // 10x faster than static shadow mode
-      app._cloudTex.offset.y += 0.0008;
-    }
-    // §S277d: Cloud opacity — more clouds at dawn/dusk, fewer at noon, none at night
-    if (app._cloudPlane) {
-      var _cloudOp = dayFactor > 0.1 ? (0.12 + (1 - dayFactor) * 0.18) : 0;  // §S277b: gentle 0.12-0.30
-      app._cloudPlane.material.opacity = _cloudOp;
-      app._cloudPlane.visible = _cloudOp > 0.01;
-    }
     // §S277f: Lensflare — track sun position directly (don't call updateSky, it conflicts with TM sun)
     if (app._lensflare) {
       var _lfSunPos = app.sun.position;
@@ -1505,8 +1494,6 @@
     // §S277b: Full lighting restore — sun/ambient/hemi/exposure back to pre-TM values
     app._sunCycleActive = false;
     if (app._sky && !app._shadowOn) app._sky.visible = false;  // keep sky if shadows still on
-    // §S277d: Hide cloud layer (keep if shadows still on)
-    if (app._cloudPlane && !app._shadowOn) app._cloudPlane.visible = false;
     // §S277f: Hide lensflare
     if (app._lensflare) { app._lensflare.visible = false; if (app._lensflare.userData._halo) app._lensflare.userData._halo.visible = false; }
     // §S277b: Clear bloom emissive via matCache (not scene traverse — avoids 122K freeze)
@@ -1598,14 +1585,16 @@
 
   // ── Tick size in ms based on mode ──
   function tickMs() {
-    // §S260c v2: Cinematic slowdown during close-up — each element gets visible screen time
-    // Outline forms, dust/sparks play out (~1.2s per element at 80ms/tick = 15 ticks)
-    // §S260e: Opening = construction plays while camera orbits wide for context
-    // §S260f: DAY/HR/MIN mode always respected — drone uses same speed as manual playback
-    // §S276b: ~1.2x slower than original — sun/shadow watchable
-    if (_mode === 'DAY') return 3200000;  // ~53 min per tick (27 ticks = 1 day)
-    if (_mode === 'HR') return 52000;     // 52 sec per tick (69 ticks = 1 hour)
-    return 9000;                          // 9 seconds per tick
+    // §S277b: Smaller time steps during dawn/dusk — more frames in the golden hour
+    var base;
+    if (_mode === 'DAY') base = 3200000;       // ~53 min per tick
+    else if (_mode === 'HR') base = 52000;     // 52 sec per tick
+    else base = 9000;                          // 9 seconds per tick
+    // §S277b: During dawn/dusk, halve the time step so transitions get 2x more frames
+    if (_sunCycle && _lastElDeg !== undefined && Math.abs(_lastElDeg) < 20) {
+      base = Math.floor(base * 0.5);
+    }
+    return base;
   }
 
   // ── Scene state save/restore ──
@@ -1840,7 +1829,6 @@
         // §S277b: Sun toggle off — restore lighting but keep _savedLighting for re-toggle
         app._sunCycleActive = false;
         if (app._sky && !app._shadowOn) app._sky.visible = false;
-        if (app._cloudPlane && !app._shadowOn) app._cloudPlane.visible = false;
         if (app._lensflare) { app._lensflare.visible = false; if (app._lensflare.userData._halo) app._lensflare.userData._halo.visible = false; }
         if (app.updateSky) app.updateSky(45, 180);
         if (_savedLighting) {
@@ -2106,7 +2094,22 @@
   var _playing = false;
   var _playDir = 0;
   var _playTimer = null;
-  function TICK_MS() { return _isLargeBuilding ? 220 : 90; }  // §S276b: ~1.1x original (tuned for sky/shadow)
+  // §S277b: Adaptive tick interval — auto-speed by building size + dramatic slowdown at dawn/dusk
+  var _activeBuildingCount = 0;  // set in _finishActivate
+  function TICK_MS() {
+    // Base speed scales with building size: 3.5K→200ms, 48K→150ms, 122K→220ms
+    var base = _isLargeBuilding ? 220 : Math.max(140, Math.min(200, 200 - (_activeBuildingCount / 1000)));
+    // §S277b: Dramatic slowdown during dawn/dusk transitions — 3x slower when sun near horizon
+    if (_sunCycle && _lastElDeg !== undefined) {
+      var absEl = Math.abs(_lastElDeg);
+      if (absEl < 20) {
+        // Golden hour: smooth ramp from 1x at |20°| to 3x at |0°| (horizon)
+        var slowFactor = 1 + 2 * (1 - absEl / 20);
+        base = Math.floor(base * slowFactor);
+      }
+    }
+    return base;
+  }
 
   function startPlayback(dir) {
     if (_playing && _playDir === dir) { stopPlayback(); return; }
@@ -3075,7 +3078,8 @@
 
   function _finishActivate(app) {
     _active = true;
-    _isLargeBuilding = (app.activeBuildingTotal || 0) > LARGE_BUILDING;
+    _activeBuildingCount = app.activeBuildingTotal || 0;
+    _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
     // §S276b: Always enable sun cycle when shadows are on — Sky shader is near-zero cost
     if (app._shadowOn || app._sky) {

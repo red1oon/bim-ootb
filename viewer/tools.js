@@ -533,14 +533,10 @@ function setupTools(A) {
       A.sun.castShadow = true;
       // §S276b: Show Sky shader when shadows enabled
       if (A._sky) { A._sky.visible = true; if (A.updateSky) A.updateSky(45, 180); }
-      // §S277d: Show cloud layer with shadows
-      if (A._cloudPlane) A._cloudPlane.visible = true;
     } else {
       A.sun.castShadow = false;
       // §S276b: Hide Sky when shadows off (unless TM sun cycle active)
       if (A._sky && !A._sunCycleActive) A._sky.visible = false;
-      // §S277d: Hide cloud layer with shadows (unless TM active)
-      if (A._cloudPlane && !A._sunCycleActive) A._cloudPlane.visible = false;
     }
     if (A._shadowOn) {
       // §S276b: Scale shadow frustum to full building envelope — no reduction.

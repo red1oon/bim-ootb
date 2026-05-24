@@ -153,11 +153,6 @@ async function setupScene(A) {
     }
     // Update directional light to match sky sun
     sun.position.copy(_sunVec).multiplyScalar(5000);
-    // §S277d: Cloud drift — scroll UV offset for moving cloud shadows
-    if (_cloudPlane && _cloudPlane.visible && A._cloudTex) {
-      A._cloudTex.offset.x += 0.0002;
-      A._cloudTex.offset.y += 0.00008;
-    }
     // §S277f: Lensflare tracks sun position — visible when sun above horizon + in camera view
     if (_lensflare) {
       var _sunPos = sun.position;
@@ -230,46 +225,10 @@ async function setupScene(A) {
     console.warn('§ENV_MAP_FAIL ' + e.message);
   }
 
-  // ── §S277d: Cloud Layer — scrolling Perlin noise plane, casts shadows via sun ──
-  // Single textured quad at Y=5000m. Near-zero GPU cost.
-  var _cloudPlane = null;
-  try {
-    // §S277b: Soft cloud puffs — 512×512 canvas, 80 Gaussian blobs, no tiling.
-    // Overlapping radial gradients create natural cloud clusters.
-    var _cloudCanvas = document.createElement('canvas');
-    _cloudCanvas.width = 512; _cloudCanvas.height = 512;
-    var _cloudCtx = _cloudCanvas.getContext('2d');
-    _cloudCtx.clearRect(0, 0, 512, 512);
-    // Seed for consistent clouds across reloads
-    var _cseed = 42;
-    function _crand() { _cseed = (_cseed * 16807 + 0) % 2147483647; return _cseed / 2147483647; }
-    for (var ci = 0; ci < 80; ci++) {
-      var cx = _crand() * 512, cy = _crand() * 512;
-      var cr = 40 + _crand() * 100;  // radius 40-140px — large soft varied puffs
-      var ca = 0.06 + _crand() * 0.12;  // alpha 0.06-0.18 — very subtle per puff
-      var cg = _cloudCtx.createRadialGradient(cx, cy, 0, cx, cy, cr);
-      cg.addColorStop(0, 'rgba(255,255,255,' + ca.toFixed(3) + ')');
-      cg.addColorStop(0.5, 'rgba(255,255,255,' + (ca * 0.4).toFixed(3) + ')');
-      cg.addColorStop(1, 'rgba(255,255,255,0)');
-      _cloudCtx.fillStyle = cg;
-      _cloudCtx.fillRect(0, 0, 512, 512);
-    }
-    var _cloudTex = new THREE.CanvasTexture(_cloudCanvas);
-    _cloudTex.wrapS = _cloudTex.wrapT = THREE.ClampToEdgeWrapping;  // no tiling — single stretched texture
-    _cloudPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(8000, 8000),  // 8km — covers building envelope with margin
-      new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide })
-    );
-    _cloudPlane.rotation.x = -Math.PI / 2;
-    _cloudPlane.position.y = 500;  // §S277b: 500m — visible, soft shadow, inside frustum
-    _cloudPlane.castShadow = true;
-    _cloudPlane.receiveShadow = false;
-    _cloudPlane.visible = false;  // shown during shadow/TM
-    scene.add(_cloudPlane);
-    console.log('§CLOUD_LAYER loaded — 8km quad at Y=500m, 80 soft puffs, no tiling');
-  } catch(e) { console.warn('§CLOUD_LAYER_FAIL ' + e.message); }
-  A._cloudPlane = _cloudPlane;
-  A._cloudTex = _cloudPlane ? _cloudPlane.material.map : null;
+  // §S277b: Cloud layer removed — blocky shadows detracted from sky beauty.
+  // Dawn/dusk Preetham sky transitions are the real spectacle.
+  A._cloudPlane = null;
+  A._cloudTex = null;
 
   // ── §S277f: Lensflare — billboard sprite on sun position ──
   var _lensflare = null;
