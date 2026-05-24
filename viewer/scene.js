@@ -199,17 +199,15 @@ async function setupScene(A) {
     }
     // Update directional light to match sky sun
     sun.position.copy(_sunVec).multiplyScalar(5000);
-    // Update env map from sky (throttled — expensive, ~5ms per call)
-    // §S276b: 2s throttle to avoid rapid flicker during TM sun cycle
+    // §S276b: Update env map from sky — apply per-material, NOT scene.environment.
+    // scene.environment overrides ALL MeshStandardMaterial (including ground → white flash).
+    // Instead: store texture in A._envMap, streaming.js applies it to building materials only.
     if (_sky && _sky.visible && !A._envMapThrottle) {
       A._envMapThrottle = true;
       setTimeout(function() {
         try {
           var envRT = _pmrem.fromScene(_sky);
-          scene.environment = envRT.texture;
           A._envMap = envRT.texture;
-          // §S276b: Ground must not reflect sky — null its envMap after scene.environment update
-          if (A.ground) A.ground.material.envMap = null;
         } catch(e) {}
         A._envMapThrottle = false;
       }, 2000);
@@ -222,9 +220,10 @@ async function setupScene(A) {
   try {
     if (_sky) {
       var _initRT = _pmrem.fromScene(_sky);
-      scene.environment = _initRT.texture;
       A._envMap = _initRT.texture;
-      console.log('§ENV_MAP Sky-based atmospheric env map applied');
+      // §S276b: Don't set scene.environment — it overrides ground material.
+      // Building materials get envMap via streaming.js _getMaterial().
+      console.log('§ENV_MAP Sky-based atmospheric env map ready (per-material, not scene.environment)');
     } else {
       // Fallback: simple gradient env map (no Sky shader)
       var envScene2 = new THREE.Scene();
@@ -242,7 +241,6 @@ async function setupScene(A) {
       envScene2.add(new THREE.Mesh(envGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
       envScene2.add(new THREE.AmbientLight(0xffffff, 1));
       var envRT2 = _pmrem.fromScene(envScene2, 0.04);
-      scene.environment = envRT2.texture;
       A._envMap = envRT2.texture;
       envGeo.dispose();
       console.log('§ENV_MAP vertex-color gradient fallback applied');

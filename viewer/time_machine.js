@@ -1898,7 +1898,7 @@
   var _playing = false;
   var _playDir = 0;
   var _playTimer = null;
-  function TICK_MS() { return _isLargeBuilding ? 200 : 80; }  // §S260b: slower TM ticks on large scenes
+  function TICK_MS() { return _isLargeBuilding ? 600 : 240; }  // §S276b: 3x slower — sun/shadow needs time to be visible
 
   function startPlayback(dir) {
     if (_playing && _playDir === dir) { stopPlayback(); return; }
