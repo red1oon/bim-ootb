@@ -539,26 +539,27 @@ function setupTools(A) {
       if (A._sky && !A._sunCycleActive) A._sky.visible = false;
     }
     if (A._shadowOn) {
-      // §S260: Scale shadow frustum to building envelope + sun distance
+      // §S276b: Scale shadow frustum to full building envelope — no reduction.
+      // LTU is 426m wide — 0.7x was clipping shadow edges.
       var _env = 300;
       var _bc = Object.values(A.buildingCentres)[0];
-      if (_bc && _bc.envelope) _env = Math.ceil(_bc.envelope * 0.7);
+      if (_bc && _bc.envelope) _env = Math.ceil(_bc.envelope);
       _env = Math.max(_env, 50);  // minimum 50m frustum
-      // Position sun relative to building centre for tighter shadow
+      // Position sun relative to building centre — high enough for full coverage
       var _ctr = A.controls.target;
-      A.sun.position.set(_ctr.x + _env * 1.5, _ctr.y + _env * 3, _ctr.z + _env * 2);
+      A.sun.position.set(_ctr.x + _env * 0.8, _ctr.y + _env * 2, _ctr.z + _env * 0.6);
       A.sun.target.position.copy(_ctr);
       A.sun.target.updateMatrixWorld();
       var _sunDist = A.sun.position.distanceTo(_ctr);
       A.sun.shadow.mapSize.width = 4096;
       A.sun.shadow.mapSize.height = 4096;
-      A.sun.shadow.camera.near = _sunDist * 0.1;
-      A.sun.shadow.camera.far = _sunDist * 3;
+      A.sun.shadow.camera.near = _sunDist * 0.05;
+      A.sun.shadow.camera.far = _sunDist * 4;
       A.sun.shadow.camera.left = -_env;
       A.sun.shadow.camera.right = _env;
       A.sun.shadow.camera.top = _env;
       A.sun.shadow.camera.bottom = -_env;
-      A.sun.shadow.bias = -0.001;
+      A.sun.shadow.bias = -0.0005;
       A.sun.shadow.camera.updateProjectionMatrix();
       console.log('§SHADOW_FRUSTUM env=' + _env + ' sunDist=' + _sunDist.toFixed(0) + ' near=' + (A.sun.shadow.camera.near).toFixed(0) + ' far=' + (A.sun.shadow.camera.far).toFixed(0));
       // Show ground plane at building base
