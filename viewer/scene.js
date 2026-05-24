@@ -153,34 +153,93 @@ async function setupScene(A) {
   scene.add(hemi);
   A.hemi = hemi;
 
-  // §S260c: Procedural environment map — gives all materials subtle reflections.
-  // Uses vertex-colored sphere (no shader hacking) for r160 compatibility.
+  // §S276b: r184 Sky shader (Preetham atmospheric scattering) — realistic sky + env map.
+  // Replaces vertex-color gradient sphere. Near-zero GPU cost (single fullscreen quad).
+  // Drives env map reflections on all PBR materials via PMREMGenerator.fromScene(sky).
+  var _pmrem = new THREE.PMREMGenerator(renderer);
+  _pmrem.compileCubemapShader();
+  var _sky = null;
+  var _sunVec = new THREE.Vector3();
   try {
-    var pmrem = new THREE.PMREMGenerator(renderer);
-    var envScene = new THREE.Scene();
-    var envGeo = new THREE.SphereGeometry(500, 32, 16);
-    // Paint vertices: brown at bottom → blue at top (outdoor IBL gradient)
-    var posAttr = envGeo.attributes.position;
-    var colors = new Float32Array(posAttr.count * 3);
-    for (var vi = 0; vi < posAttr.count; vi++) {
-      var ny = posAttr.getY(vi) / 500; // -1 (bottom) to +1 (top)
-      var t = ny * 0.5 + 0.5; // 0 (bottom) to 1 (top)
-      // Ground brown → horizon warm → sky blue
-      colors[vi * 3]     = 0.7 - t * 0.3;  // R: brown→blue
-      colors[vi * 3 + 1] = 0.65 + t * 0.1; // G: warm→cool
-      colors[vi * 3 + 2] = 0.55 + t * 0.35; // B: tan→sky
+    var _skyMod = await import('https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/objects/Sky.js');
+    _sky = new _skyMod.Sky();
+    _sky.scale.setScalar(100000);
+    scene.add(_sky);
+    var _skyUni = _sky.material.uniforms;
+    _skyUni['turbidity'].value = 4;
+    _skyUni['rayleigh'].value = 2;
+    _skyUni['mieCoefficient'].value = 0.005;
+    _skyUni['mieDirectionalG'].value = 0.8;
+    console.log('§SKY_SHADER loaded — Preetham atmospheric model');
+  } catch(e) {
+    console.warn('§SKY_SHADER_FAIL ' + e.message + ' — falling back to gradient');
+  }
+
+  // §S276b: updateSky(elevation, azimuth) — call from Time Machine or UI.
+  // elevation: degrees (0=horizon, 90=zenith, negative=below horizon for night)
+  // azimuth: degrees (0=north, 180=south)
+  A.updateSky = function(elevation, azimuth) {
+    var phi = THREE.MathUtils.degToRad(90 - elevation);
+    var theta = THREE.MathUtils.degToRad(azimuth);
+    _sunVec.setFromSphericalCoords(1, phi, theta);
+    // Update sky shader
+    if (_sky) {
+      _sky.material.uniforms['sunPosition'].value.copy(_sunVec);
+      // Night: hide sky below horizon, set dark clear color
+      if (elevation < -2) {
+        _sky.visible = false;
+        renderer.setClearColor(0x0a0a2e);
+      } else {
+        _sky.visible = true;
+      }
     }
-    envGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    var envMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide });
-    envScene.add(new THREE.Mesh(envGeo, envMat));
-    // Add a dim light so PMREMGenerator produces usable irradiance
-    envScene.add(new THREE.AmbientLight(0xffffff, 1));
-    var envRT = pmrem.fromScene(envScene, 0.04);
-    scene.environment = envRT.texture;
-    A._envMap = envRT.texture;
-    pmrem.dispose();
-    envGeo.dispose(); envMat.dispose();
-    console.log('§ENV_MAP vertex-color gradient sky — applied to scene.environment');
+    // Update directional light to match sky sun
+    sun.position.copy(_sunVec).multiplyScalar(5000);
+    // Update env map from sky (throttled — expensive, ~5ms)
+    if (_sky && _sky.visible && !A._envMapThrottle) {
+      A._envMapThrottle = true;
+      setTimeout(function() {
+        try {
+          var envRT = _pmrem.fromScene(_sky);
+          scene.environment = envRT.texture;
+          A._envMap = envRT.texture;
+        } catch(e) {}
+        A._envMapThrottle = false;
+      }, 200);
+    }
+  };
+
+  // Initial sky: mid-afternoon
+  A.updateSky(45, 180);
+  // Also generate initial env map synchronously
+  try {
+    if (_sky) {
+      var _initRT = _pmrem.fromScene(_sky);
+      scene.environment = _initRT.texture;
+      A._envMap = _initRT.texture;
+      console.log('§ENV_MAP Sky-based atmospheric env map applied');
+    } else {
+      // Fallback: simple gradient env map (no Sky shader)
+      var envScene2 = new THREE.Scene();
+      var envGeo = new THREE.SphereGeometry(500, 32, 16);
+      var posAttr = envGeo.attributes.position;
+      var colors = new Float32Array(posAttr.count * 3);
+      for (var vi = 0; vi < posAttr.count; vi++) {
+        var ny = posAttr.getY(vi) / 500;
+        var t2 = ny * 0.5 + 0.5;
+        colors[vi * 3] = 0.7 - t2 * 0.3;
+        colors[vi * 3 + 1] = 0.65 + t2 * 0.1;
+        colors[vi * 3 + 2] = 0.55 + t2 * 0.35;
+      }
+      envGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      envScene2.add(new THREE.Mesh(envGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+      envScene2.add(new THREE.AmbientLight(0xffffff, 1));
+      var envRT2 = _pmrem.fromScene(envScene2, 0.04);
+      scene.environment = envRT2.texture;
+      A._envMap = envRT2.texture;
+      envGeo.dispose();
+      console.log('§ENV_MAP vertex-color gradient fallback applied');
+    }
   } catch(e) {
     console.warn('§ENV_MAP_FAIL ' + e.message);
   }

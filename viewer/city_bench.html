@@ -248,9 +248,11 @@ function drawBboxForBuilding(idx, bld) {
 
 // ── Load a building's extracted DB and stream geometry ──
 async function loadBuilding(idx) {
-  const bld = BUILDINGS[idx];
-  if (loadedBuildings.has(bld.name)) return;
-  loadedBuildings.add(bld.name);
+  const bld = CITY[idx];
+  if (!bld) return;
+  var bldKey = bld.name + '_' + bld.strip;
+  if (loadedBuildings.has(bldKey)) return;
+  loadedBuildings.add(bldKey);
 
   const rowEl = document.getElementById('bld-' + idx);
   if (rowEl) { rowEl.className = 'bld-row loading'; rowEl.textContent = bld.name + ' (' + bld.elements.toLocaleString() + ') -- LOADING...'; }
@@ -319,11 +321,15 @@ async function loadBuilding(idx) {
       geoCache = {};
       var hashes = [...hashSet];
       var batchSize = 500;
+      // Probe for normals column (some DBs don't have it)
+      var hasNormals = false;
+      try { libDb.exec("SELECT normals FROM component_geometries LIMIT 0"); hasNormals = true; } catch(e) {}
+      var geoCols = hasNormals ? 'geometry_hash, vertices, faces, normals' : 'geometry_hash, vertices, faces';
       for (var bi = 0; bi < hashes.length; bi += batchSize) {
         var batch = hashes.slice(bi, bi + batchSize);
         var placeholders = batch.map(() => '?').join(',');
         var geoRows = libDb.exec(
-          `SELECT geometry_hash, vertices, indices, normals FROM component_geometries WHERE geometry_hash IN (${placeholders})`,
+          `SELECT ${geoCols} FROM component_geometries WHERE geometry_hash IN (${placeholders})`,
           batch
         );
         if (geoRows.length) {
@@ -331,7 +337,7 @@ async function loadBuilding(idx) {
             var hash = gr[0];
             var verts = new Float32Array(gr[1].buffer, gr[1].byteOffset, gr[1].byteLength / 4);
             var indices = gr[2] ? new Uint32Array(gr[2].buffer, gr[2].byteOffset, gr[2].byteLength / 4) : null;
-            var normals = gr[3] ? new Float32Array(gr[3].buffer, gr[3].byteOffset, gr[3].byteLength / 4) : null;
+            var normals = (hasNormals && gr[3]) ? new Float32Array(gr[3].buffer, gr[3].byteOffset, gr[3].byteLength / 4) : null;
             var geo = new THREE.BufferGeometry();
             geo.setAttribute('position', new THREE.BufferAttribute(verts.slice(), 3));
             if (indices) geo.setIndex(new THREE.BufferAttribute(indices.slice(), 1));

@@ -1324,38 +1324,37 @@
     var azimuth = Math.cos(angle);
     var dayFactor = Math.max(0, elevation); // 0 at night, 1 at noon
 
-    // Sun position — orbit around scene center
-    var cx = 0, cy = 0, cz = 0;
-    if (app.controls && app.controls.target) {
-      cx = app.controls.target.x; cy = app.controls.target.y; cz = app.controls.target.z;
-    }
-    app.sun.position.set(cx + azimuth * 400, Math.max(elevation * 400, 5), cz + 200);
-
-    // Smooth lighting
-    app.sun.intensity = 0.05 + dayFactor * 1.2;
-    if (app.ambient) app.ambient.intensity = 0.15 + dayFactor * 0.5;
-    if (app.hemi) app.hemi.intensity = 0.1 + dayFactor * 0.3;
-
-    // Smooth sky: interpolate through 4 key colors based on dayFactor
-    // 0.0 = night (dark blue), 0.3 = dawn/dusk (warm), 0.6 = day (pale blue), 1.0 = noon (bright)
-    var NIGHT = 0x0a0a2e, DAWN = 0x664433, DAY = 0x88aacc, NOON = 0xaaccee;
-    var skyColor;
-    if (dayFactor < 0.3) {
-      skyColor = lerpColor(NIGHT, DAWN, dayFactor / 0.3);
-    } else if (dayFactor < 0.6) {
-      skyColor = lerpColor(DAWN, DAY, (dayFactor - 0.3) / 0.3);
+    // §S276b: Drive Sky shader from Time Machine — real atmospheric scattering.
+    // elevation in degrees: -90 midnight → +90 noon. azimuth: 0-360.
+    var elDeg = elevation * 90;  // map sine(-1..+1) to degrees(-90..+90)
+    var azDeg = (azimuth * 0.5 + 0.5) * 360; // map cosine to 0-360
+    if (app.updateSky) {
+      app.updateSky(elDeg, azDeg);
     } else {
-      skyColor = lerpColor(DAY, NOON, (dayFactor - 0.6) / 0.4);
+      // Fallback: direct sun position (no Sky shader)
+      var cx = 0, cz = 0;
+      if (app.controls && app.controls.target) {
+        cx = app.controls.target.x; cz = app.controls.target.z;
+      }
+      app.sun.position.set(cx + azimuth * 400, Math.max(elevation * 400, 5), cz + 200);
     }
-    if (app.renderer) app.renderer.setClearColor(skyColor);
+
+    // Smooth lighting — intensity follows day/night
+    app.sun.intensity = 0.05 + dayFactor * 4.4;
+    if (app.ambient) app.ambient.intensity = 0.15 + dayFactor * 0.6;
+    if (app.hemi) app.hemi.intensity = 0.1 + dayFactor * 1.1;
   }
 
   function restoreSky() {
     var app = A();
-    if (app && app.renderer && _savedClearColor !== null) {
+    if (!app) return;
+    // §S276b: Restore default sky (mid-afternoon)
+    if (app.updateSky) {
+      app.updateSky(45, 180);
+    } else if (app.renderer && _savedClearColor !== null) {
       app.renderer.setClearColor(_savedClearColor);
-      _savedClearColor = null;
     }
+    _savedClearColor = null;
   }
 
   function updateStatus() {
