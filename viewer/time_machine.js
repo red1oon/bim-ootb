@@ -1590,9 +1590,18 @@
     if (_mode === 'DAY') base = 3200000;       // ~53 min per tick
     else if (_mode === 'HR') base = 52000;     // 52 sec per tick
     else base = 9000;                          // 9 seconds per tick
-    // §S277b: During dawn/dusk, halve the time step so transitions get 2x more frames
-    if (_sunCycle && _lastElDeg !== undefined && Math.abs(_lastElDeg) < 20) {
-      base = Math.floor(base * 0.5);
+    // §S277b: During twilight, shrink time step — more frames across the color transition
+    // Widened zone: 30° above to 20° below horizon. Finest at horizon crossing.
+    if (_sunCycle && _lastElDeg !== undefined) {
+      var el = _lastElDeg;
+      if (el > -20 && el < 30) {
+        var dist = Math.abs(el);
+        var range = el >= 0 ? 30 : 20;
+        var t = 1 - dist / range;  // 1 at horizon, 0 at edge
+        // Time step shrinks to 0.25x at horizon (4x more frames)
+        var stepScale = 1 - 0.75 * t * t;
+        base = Math.floor(base * stepScale);
+      }
     }
     return base;
   }
@@ -2099,12 +2108,17 @@
   function TICK_MS() {
     // Base speed scales with building size: 3.5K→200ms, 48K→150ms, 122K→220ms
     var base = _isLargeBuilding ? 220 : Math.max(140, Math.min(200, 200 - (_activeBuildingCount / 1000)));
-    // §S277b: Dramatic slowdown during dawn/dusk transitions — 3x slower when sun near horizon
+    // §S277b: Dramatic slowdown during twilight — widened zone, steeper ramp at horizon
+    // Zone: |30°| to |-20°| covers full sunset→dark and dark→sunrise
     if (_sunCycle && _lastElDeg !== undefined) {
-      var absEl = Math.abs(_lastElDeg);
-      if (absEl < 20) {
-        // Golden hour: smooth ramp from 1x at |20°| to 3x at |0°| (horizon)
-        var slowFactor = 1 + 2 * (1 - absEl / 20);
+      var el = _lastElDeg;
+      if (el > -20 && el < 30) {
+        // Proximity to horizon (0°): peaks at el=0, fades at edges
+        var dist = Math.abs(el);
+        var range = el >= 0 ? 30 : 20;  // asymmetric: 30° above, 20° below
+        var t = 1 - dist / range;  // 1 at horizon, 0 at edge
+        // Smooth ease-in: slow factor 1x→5x with cubic ramp at center
+        var slowFactor = 1 + 4 * t * t;
         base = Math.floor(base * slowFactor);
       }
     }
