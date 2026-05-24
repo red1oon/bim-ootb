@@ -533,10 +533,14 @@ function setupTools(A) {
       A.sun.castShadow = true;
       // §S276b: Show Sky shader when shadows enabled
       if (A._sky) { A._sky.visible = true; if (A.updateSky) A.updateSky(45, 180); }
+      // §S277c: Enable SSAO with shadows
+      if (A.toggleSSAO) A.toggleSSAO(true);
     } else {
       A.sun.castShadow = false;
       // §S276b: Hide Sky when shadows off (unless TM sun cycle active)
       if (A._sky && !A._sunCycleActive) A._sky.visible = false;
+      // §S277c: Disable SSAO with shadows
+      if (A.toggleSSAO) A.toggleSSAO(false);
     }
     if (A._shadowOn) {
       // §S276b: Scale shadow frustum to full building envelope — no reduction.
@@ -653,6 +657,8 @@ function setupTools(A) {
       A.hemi.color.setHex(0x222244);
       A.renderer.toneMappingExposure = 0.8;
       A.renderer.setClearColor(0x080818);
+      // §S277c: Night fog — dark blue
+      if (A.scene.fog) A.scene.fog.color.setRGB(0.03, 0.03, 0.09);
       // Show ground plane for night scene
       if (A.ground) {
         A.ground.visible = true;
@@ -734,6 +740,8 @@ function setupTools(A) {
         A.hemi.color.setHex(A._nightSaved.hemiSky);
         A.renderer.toneMappingExposure = A._nightSaved.exposure;
         A.renderer.setClearColor(A._nightSaved.clearColor);
+        // §S277c: Restore fog color to default
+        if (A.scene.fog) A.scene.fog.color.setHex(0x1a1a2e);
         // Restore sliders
         document.getElementById('sl-sun').value = A._nightSaved.sunI;
         document.getElementById('sl-sun-val').textContent = A._nightSaved.sunI.toFixed(1);

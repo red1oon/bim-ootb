@@ -59,6 +59,17 @@ async function setupScene(A) {
   A.renderer = renderer;
 
   const scene = new THREE.Scene();
+  // §S277c: Distance fog — atmospheric depth on large buildings. Near-zero GPU cost.
+  scene.fog = new THREE.FogExp2(0x1a1a2e, 0.00015);  // default: very light, auto-scaled on building load
+  // §S277c: Auto-scale fog density after building loads — called from streaming.js
+  A._updateFogDensity = function() {
+    var env = 100;
+    var bc = Object.values(A.buildingCentres || {})[0];
+    if (bc && bc.envelope) env = bc.envelope;
+    // Larger envelope = lighter fog (LTU 426m→0.0004, Castle 23m→0.003)
+    scene.fog.density = Math.max(0.00015, Math.min(0.004, 1.5 / env));
+    console.log('§FOG_DENSITY env=' + env.toFixed(0) + 'm density=' + scene.fog.density.toFixed(5));
+  };
   A.scene = scene;
 
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 50000);
@@ -188,6 +199,14 @@ async function setupScene(A) {
         A._envMapThrottle = false;
       }, 2000);
     }
+    // §S277c: Fog color follows sky — blend from dark (night) to light blue (day)
+    if (scene.fog) {
+      var dayT = Math.max(0, Math.min(1, (elevation + 10) / 55));  // 0 at -10°, 1 at 45°
+      var fogR = 0.10 + dayT * 0.55;  // 0.10→0.65
+      var fogG = 0.10 + dayT * 0.60;  // 0.10→0.70
+      var fogB = 0.18 + dayT * 0.55;  // 0.18→0.73
+      scene.fog.color.setRGB(fogR, fogG, fogB);
+    }
   };
 
   // Initial sky: mid-afternoon
@@ -288,6 +307,78 @@ async function setupScene(A) {
   ground.visible = false;
   scene.add(ground);
   A.ground = ground;
+
+  // ── §S277c: EffectComposer — post-processing pipeline ──
+  // Render → SSAO → Outline → Output. Each pass toggle-able.
+  A._composer = null;
+  A._ssaoPass = null;
+  A._outlinePass = null;
+  A._composerEnabled = false;
+  try {
+    var _ecMod = await import('./lib/EffectComposer.js');
+    var _rpMod = await import('./lib/RenderPass.js');
+    var _ssaoMod = await import('./lib/SSAOPass.js');
+    var _outMod = await import('./lib/OutlinePass.js');
+    var _opMod = await import('./lib/OutputPass.js');
+
+    var _composer = new _ecMod.EffectComposer(renderer);
+    _composer.setSize(window.innerWidth, window.innerHeight);
+    _composer.setPixelRatio(renderer.getPixelRatio());
+
+    // Pass 1: Base scene render
+    var _renderPass = new _rpMod.RenderPass(scene, camera);
+    _composer.addPass(_renderPass);
+
+    // Pass 2: SSAO — contact shadows in room corners, pipe junctions
+    var _ssaoPass = new _ssaoMod.SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+    _ssaoPass.kernelRadius = 0.5;    // 0.5m — architectural scale
+    _ssaoPass.minDistance = 0.001;
+    _ssaoPass.maxDistance = 0.1;
+    _ssaoPass.enabled = false;  // off by default — toggled with Shadow or UI
+    _composer.addPass(_ssaoPass);
+
+    // Pass 3: Outline — mesh silhouette on pick/clash/find
+    var _outlinePass = new _outMod.OutlinePass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera
+    );
+    _outlinePass.edgeStrength = 3;
+    _outlinePass.edgeGlow = 0;
+    _outlinePass.edgeThickness = 1.5;
+    _outlinePass.visibleEdgeColor.set(0xff8c00);  // orange pick
+    _outlinePass.hiddenEdgeColor.set(0xff4400);
+    _outlinePass.enabled = false;  // enabled on demand by pick/clash
+    _composer.addPass(_outlinePass);
+
+    // Pass 4: Output — tone mapping + color space
+    var _outputPass = new _opMod.OutputPass();
+    _composer.addPass(_outputPass);
+
+    A._composer = _composer;
+    A._ssaoPass = _ssaoPass;
+    A._outlinePass = _outlinePass;
+    A._renderPass = _renderPass;
+    console.log('§EFFECT_COMPOSER loaded — RenderPass + SSAO + Outline + Output');
+  } catch(e) {
+    console.warn('§EFFECT_COMPOSER_FAIL ' + e.message + ' — falling back to direct render');
+    A._composer = null;
+  }
+
+  // §S277c: Toggle SSAO (called from Shadow toggle or UI)
+  A.toggleSSAO = function(on) {
+    if (!A._ssaoPass) return;
+    A._ssaoPass.enabled = on;
+    A._composerEnabled = on || (A._outlinePass && A._outlinePass.enabled);
+    console.log('§SSAO toggle=' + on);
+  };
+
+  // §S277c: Set outline targets (called from pick/clash/find)
+  A.setOutline = function(objects, color) {
+    if (!A._outlinePass) return;
+    A._outlinePass.selectedObjects = objects || [];
+    if (color) A._outlinePass.visibleEdgeColor.set(color);
+    A._outlinePass.enabled = objects && objects.length > 0;
+    A._composerEnabled = A._outlinePass.enabled || (A._ssaoPass && A._ssaoPass.enabled);
+  };
 
   // State
   A.db = null;
@@ -576,6 +667,9 @@ async function setupScene(A) {
     A.camera.aspect = window.innerWidth / window.innerHeight;
     A.camera.updateProjectionMatrix();
     A.renderer.setSize(window.innerWidth, window.innerHeight);
+    // §S277c: Resize EffectComposer
+    if (A._composer) A._composer.setSize(window.innerWidth, window.innerHeight);
+    if (A._ssaoPass) { A._ssaoPass.width = window.innerWidth; A._ssaoPass.height = window.innerHeight; }
   };
   window.addEventListener('resize', A._onResize);
 

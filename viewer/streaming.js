@@ -1490,6 +1490,8 @@ function setupStreaming(A) {
       }
     }
     console.log(`[S192] §BOOTSTRAP centres=${Object.keys(A.buildingCentres).length}`);
+    // §S277c: Auto-scale fog density to building envelope
+    if (A._updateFogDensity) A._updateFogDensity();
 
     // §S261b: Populate building name + element count for all paths (single-DB was missing this)
     if (!A.activeBuilding && Object.keys(A.buildingCentres).length > 0) {
