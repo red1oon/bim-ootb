@@ -531,8 +531,12 @@ function setupTools(A) {
         console.log('§SHADOW_INIT shadowMap enabled + PCF');
       }
       A.sun.castShadow = true;
+      // §S276b: Show Sky shader when shadows enabled
+      if (A._sky) { A._sky.visible = true; if (A.updateSky) A.updateSky(45, 180); }
     } else {
       A.sun.castShadow = false;
+      // §S276b: Hide Sky when shadows off (unless TM sun cycle active)
+      if (A._sky && !A._sunCycleActive) A._sky.visible = false;
     }
     if (A._shadowOn) {
       // §S260: Scale shadow frustum to building envelope + sun distance

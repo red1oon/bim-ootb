@@ -170,10 +170,12 @@ async function setupScene(A) {
     _skyUni['rayleigh'].value = 2;
     _skyUni['mieCoefficient'].value = 0.005;
     _skyUni['mieDirectionalG'].value = 0.8;
-    console.log('§SKY_SHADER loaded — Preetham atmospheric model');
+    _sky.visible = false;  // §S276b: Sky hidden by default — shown on Shadow toggle (H) or Time Machine sun cycle
+    console.log('§SKY_SHADER loaded — Preetham atmospheric model (hidden until Shadow/TM)');
   } catch(e) {
     console.warn('§SKY_SHADER_FAIL ' + e.message + ' — falling back to gradient');
   }
+  A._sky = _sky;  // expose for tools.js shadow toggle
 
   // §S276b: updateSky(elevation, azimuth) — call from Time Machine or UI.
   // elevation: degrees (0=horizon, 90=zenith, negative=below horizon for night)
@@ -182,15 +184,15 @@ async function setupScene(A) {
     var phi = THREE.MathUtils.degToRad(90 - elevation);
     var theta = THREE.MathUtils.degToRad(azimuth);
     _sunVec.setFromSphericalCoords(1, phi, theta);
-    // Update sky shader
+    // Update sky shader (only visible when shadow or TM sun cycle is active)
     if (_sky) {
       _sky.material.uniforms['sunPosition'].value.copy(_sunVec);
-      // Night: hide sky below horizon, set dark clear color
-      if (elevation < -2) {
-        _sky.visible = false;
-        renderer.setClearColor(0x0a0a2e);
-      } else {
-        _sky.visible = true;
+      if (_sky.visible) {
+        // Night: hide sky below horizon, set dark clear color
+        if (elevation < -2) {
+          _sky.visible = false;
+          renderer.setClearColor(0x0a0a2e);
+        }
       }
     }
     // Update directional light to match sky sun

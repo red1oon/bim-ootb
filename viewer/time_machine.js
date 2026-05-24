@@ -1309,6 +1309,10 @@
     var app = A();
     if (!app || !app.sun) return;
 
+    // §S276b: Show Sky shader during sun cycle
+    if (app._sky && !app._sky.visible) app._sky.visible = true;
+    app._sunCycleActive = true;
+
     // Save original sky color once
     if (_savedClearColor === null && app.renderer) {
       _savedClearColor = app.renderer.getClearColor(new THREE.Color()).getHex();
@@ -1348,10 +1352,11 @@
   function restoreSky() {
     var app = A();
     if (!app) return;
-    // §S276b: Restore default sky (mid-afternoon)
-    if (app.updateSky) {
-      app.updateSky(45, 180);
-    } else if (app.renderer && _savedClearColor !== null) {
+    // §S276b: Hide Sky and restore default state
+    app._sunCycleActive = false;
+    if (app._sky && !app._shadowOn) app._sky.visible = false;  // keep sky if shadows still on
+    if (app.updateSky) app.updateSky(45, 180);
+    if (app.renderer && _savedClearColor !== null) {
       app.renderer.setClearColor(_savedClearColor);
     }
     _savedClearColor = null;
