@@ -34,7 +34,8 @@ async function setupScene(A) {
   var _isWebGPU = false;
   var renderer;
   var _adapter = null;
-  if (navigator.gpu && THREE.WebGPURenderer) {
+  // §S276b: Skip WebGPU on mobile — compileAsync hangs on mobile GPU, WebGL+DPR is proven.
+  if (!_isMobileRenderer && navigator.gpu && THREE.WebGPURenderer) {
     try {
       _adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       // §S276b: Reject SwiftShader (software) — it poisons the canvas on context creation failure
@@ -44,6 +45,7 @@ async function setupScene(A) {
       }
     } catch(e) {}
   }
+  if (_isMobileRenderer) console.log('§S276_MOBILE_SKIP WebGPU skipped — mobile uses WebGL');
   if (_adapter) {
     // Native WebGPU adapter found — use WebGPURenderer
     try {
