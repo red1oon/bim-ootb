@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html><head>
+<title>PointsMaterial r184 Test</title>
+<style>body{margin:0;background:#111}canvas{display:block}#info{position:fixed;top:10px;left:10px;color:#0f0;font:14px monospace;background:rgba(0,0,0,0.7);padding:10px;white-space:pre}</style>
+</head><body>
+<div id="info">Loading...</div>
+<script type="importmap">
+{ "imports": { "three": "../lib/three.module.min.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// §S277b: PointsMaterial r184 test — do particles still cause white square artifacts?
+// Tests: sizeAttenuation on/off, transparent, blending modes, distance range.
+
+const info = document.getElementById('info');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x111122);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
+camera.position.set(0, 5, 20);
+
+// ── Test 1: sizeAttenuation=true (default — size shrinks with distance) ──
+const geo1 = new THREE.BufferGeometry();
+const pos1 = new Float32Array(200 * 3);
+for (let i = 0; i < 200; i++) {
+  pos1[i*3]   = (Math.random()-0.5) * 10 - 15;
+  pos1[i*3+1] = Math.random() * 10;
+  pos1[i*3+2] = (Math.random()-0.5) * 10;
+}
+geo1.setAttribute('position', new THREE.BufferAttribute(pos1, 3));
+const mat1 = new THREE.PointsMaterial({
+  color: 0xff8800, size: 0.3, sizeAttenuation: true,
+  transparent: true, opacity: 0.8, depthWrite: false
+});
+scene.add(new THREE.Points(geo1, mat1));
+
+// ── Test 2: sizeAttenuation=false (screen-space — fixed pixel size) ──
+const geo2 = new THREE.BufferGeometry();
+const pos2 = new Float32Array(200 * 3);
+for (let i = 0; i < 200; i++) {
+  pos2[i*3]   = (Math.random()-0.5) * 10;
+  pos2[i*3+1] = Math.random() * 10;
+  pos2[i*3+2] = (Math.random()-0.5) * 10;
+}
+geo2.setAttribute('position', new THREE.BufferAttribute(pos2, 3));
+const mat2 = new THREE.PointsMaterial({
+  color: 0x44ffff, size: 3, sizeAttenuation: false,
+  transparent: true, opacity: 0.7, depthWrite: false
+});
+scene.add(new THREE.Points(geo2, mat2));
+
+// ── Test 3: AdditiveBlending (sparks/fire) ──
+const geo3 = new THREE.BufferGeometry();
+const pos3 = new Float32Array(200 * 3);
+for (let i = 0; i < 200; i++) {
+  pos3[i*3]   = (Math.random()-0.5) * 10 + 15;
+  pos3[i*3+1] = Math.random() * 10;
+  pos3[i*3+2] = (Math.random()-0.5) * 10;
+}
+geo3.setAttribute('position', new THREE.BufferAttribute(pos3, 3));
+const mat3 = new THREE.PointsMaterial({
+  color: 0xffcc00, size: 0.5, sizeAttenuation: true,
+  transparent: true, opacity: 0.9, depthWrite: false,
+  blending: THREE.AdditiveBlending
+});
+scene.add(new THREE.Points(geo3, mat3));
+
+// ── Test 4: Large points at distance (the white square test) ──
+const geo4 = new THREE.BufferGeometry();
+const pos4 = new Float32Array(50 * 3);
+for (let i = 0; i < 50; i++) {
+  pos4[i*3]   = (Math.random()-0.5) * 200;
+  pos4[i*3+1] = Math.random() * 50 + 20;
+  pos4[i*3+2] = (Math.random()-0.5) * 200 - 100;
+}
+geo4.setAttribute('position', new THREE.BufferAttribute(pos4, 3));
+const mat4 = new THREE.PointsMaterial({
+  color: 0xffffff, size: 30, sizeAttenuation: true,
+  transparent: true, opacity: 0.6, depthWrite: false
+});
+scene.add(new THREE.Points(geo4, mat4));
+
+// Reference cube for scale
+scene.add(new THREE.Mesh(
+  new THREE.BoxGeometry(2,2,2),
+  new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true })
+));
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+let frame = 0;
+const logs = [];
+function log(msg) { logs.push(msg); console.log(msg); }
+
+log('§POINTS_TEST r=' + THREE.REVISION);
+log('§POINTS_TEST renderer=' + (renderer.constructor.name || 'WebGLRenderer'));
+
+// Check for white square artifacts via readPixels on distant points
+const readBuf = new Uint8Array(4);
+function samplePixel(x, y) {
+  const gl = renderer.getContext();
+  gl.readPixels(x, renderer.domElement.height - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, readBuf);
+  return { r: readBuf[0], g: readBuf[1], b: readBuf[2], a: readBuf[3] };
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  frame++;
+  // Slow orbit
+  const t = frame * 0.005;
+  camera.position.x = Math.cos(t) * 30;
+  camera.position.z = Math.sin(t) * 30;
+  camera.position.y = 10 + Math.sin(t * 0.3) * 5;
+  camera.lookAt(0, 5, 0);
+  renderer.render(scene, camera);
+
+  // Sample center pixel every 60 frames for artifact detection
+  if (frame % 60 === 0) {
+    const cx = Math.floor(renderer.domElement.width / 2);
+    const cy = Math.floor(renderer.domElement.height / 2);
+    const px = samplePixel(cx, cy);
+    // White square = pixel is bright white (r>240, g>240, b>240) where it shouldn't be
+    const isWhite = px.r > 240 && px.g > 240 && px.b > 240;
+    if (isWhite) log('§POINTS_ARTIFACT frame=' + frame + ' pixel=' + px.r + ',' + px.g + ',' + px.b);
+  }
+
+  info.textContent = 'PointsMaterial r184 Test — frame ' + frame + '\n' +
+    'Left (orange): sizeAttenuation=true, size=0.3\n' +
+    'Center (cyan): sizeAttenuation=false, size=3px\n' +
+    'Right (yellow): AdditiveBlending, size=0.5\n' +
+    'Distant (white): size=30, sizeAttenuation=true\n' +
+    '---\n' +
+    'Look for white squares on distant points.\n' +
+    'If circles → r184 fixed it. If squares → still broken.\n' +
+    '---\n' +
+    logs.slice(-5).join('\n');
+}
+animate();
+</script>
+</body></html>

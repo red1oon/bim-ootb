@@ -1476,7 +1476,7 @@
         obj.material.userData._origEmissive = obj.material.emissive.getHex();
         obj.material.userData._origEmissiveI = obj.material.emissiveIntensity || 0;
         obj.material.emissive.setHex(0xffaa44);
-        obj.material.emissiveIntensity = 0.15;  // subtle warm glow, not blinding
+        obj.material.emissiveIntensity = 0.2;  // §S277b: warm floodlight glow (was 0.15)
         obj.material.needsUpdate = true;
         _bloomCount++;
       });

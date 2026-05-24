@@ -625,8 +625,8 @@ function setupTools(A) {
   A._nightLights = [];       // active THREE.PointLight objects
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
-  var NIGHT_MAX_LIGHTS = 12; // proximity-culled limit
-  var NIGHT_LIGHT_RANGE = 15; // metres radius per fixture
+  var NIGHT_MAX_LIGHTS = 16; // §S277b: proximity-culled limit (was 12)
+  var NIGHT_LIGHT_RANGE = 20; // §S277b: metres radius per fixture (was 15)
   var NIGHT_LIGHT_INTENSITY = 2.0;
 
   A.toggleNightMode = function() {

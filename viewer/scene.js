@@ -272,12 +272,12 @@ async function setupScene(A) {
       new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide })
     );
     _cloudPlane.rotation.x = -Math.PI / 2;
-    _cloudPlane.position.y = 5000;
+    _cloudPlane.position.y = 600;  // §S277b: lowered from 5000m — visible drift + inside shadow frustum
     _cloudPlane.castShadow = true;
     _cloudPlane.receiveShadow = false;
     _cloudPlane.visible = false;  // shown during shadow/TM
     scene.add(_cloudPlane);
-    console.log('§CLOUD_LAYER loaded — 80km quad at Y=5000m');
+    console.log('§CLOUD_LAYER loaded — 80km quad at Y=600m');
   } catch(e) { console.warn('§CLOUD_LAYER_FAIL ' + e.message); }
   A._cloudPlane = _cloudPlane;
   A._cloudTex = _cloudPlane ? _cloudPlane.material.map : null;
