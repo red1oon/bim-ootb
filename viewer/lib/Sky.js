@@ -1,11 +1,5 @@
-import {
-	BackSide,
-	BoxGeometry,
-	Mesh,
-	ShaderMaterial,
-	UniformsUtils,
-	Vector3
-} from 'three';
+// §S276b: Use window.THREE instead of ES import — avoids WebGPU build missing UniformsUtils
+const { BackSide, BoxGeometry, Mesh, ShaderMaterial, UniformsUtils, Vector3 } = window.THREE;
 
 /**
  * Represents a skydome for scene backgrounds. Based on [A Practical Analytic Model for Daylight](https://www.researchgate.net/publication/220720443_A_Practical_Analytic_Model_for_Daylight)
