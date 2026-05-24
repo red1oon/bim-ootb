@@ -1351,15 +1351,65 @@
     // throttle to every 5th tick during midday/midnight (less visual change).
     if (!applySunCycle._count) applySunCycle._count = 0;
     applySunCycle._count++;
-    // §S276b: Sky always visible during sun cycle — Preetham shader handles night naturally.
-    // Update every tick near horizon (smooth dawn/dusk), every 3rd tick midday/midnight.
+    // §S276b: Sky transitions — Preetham for day/dusk/dawn, starfield for night.
     var _nearHorizon = Math.abs(elDeg) < 25;
     var _skyInterval = _nearHorizon ? 1 : 3;
     if (app._sky && applySunCycle._count % _skyInterval === 0) {
-      app._sky.visible = true;
-      // Clamp sun to just below horizon for night — Preetham goes dark blue, no flash
-      var _clampedSy = Math.max(sy, -0.05);
-      app._sky.material.uniforms['sunPosition'].value.set(sx, _clampedSy, sz);
+      if (elDeg > -8) {
+        // Day/dusk/dawn — Preetham sky, clamp sun near horizon for smooth dusk
+        app._sky.visible = true;
+        var _clampedSy = Math.max(sy, -0.03);
+        app._sky.material.uniforms['sunPosition'].value.set(sx, _clampedSy, sz);
+        // Adjust turbidity near horizon for richer dusk colors
+        app._sky.material.uniforms['turbidity'].value = elDeg < 5 ? 8 : 4;
+        app._sky.material.uniforms['rayleigh'].value = elDeg < 5 ? 4 : 2;
+      } else {
+        // Night — hide Preetham, show starfield
+        app._sky.visible = false;
+        app.renderer.setClearColor(0x050510);
+      }
+    }
+    // §S276b: Night starfield — small bright points on a dark canvas
+    if (elDeg <= -8 && !app._nightStars) {
+      var _starGeo = new THREE.BufferGeometry();
+      var _starPos = new Float32Array(600 * 3);  // 600 stars
+      for (var si = 0; si < 600; si++) {
+        // Random positions on a large sphere
+        var _sth = Math.random() * Math.PI * 2;
+        var _sph = Math.acos(2 * Math.random() - 1);
+        var _sr = 40000;
+        _starPos[si * 3]     = _sr * Math.sin(_sph) * Math.cos(_sth);
+        _starPos[si * 3 + 1] = Math.abs(_sr * Math.cos(_sph));  // upper hemisphere only
+        _starPos[si * 3 + 2] = _sr * Math.sin(_sph) * Math.sin(_sth);
+      }
+      _starGeo.setAttribute('position', new THREE.BufferAttribute(_starPos, 3));
+      var _starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 30, sizeAttenuation: true });
+      app._nightStars = new THREE.Points(_starGeo, _starMat);
+      app._nightStars.userData.isTmEffect = true;
+      app.scene.add(app._nightStars);
+      // Moon — simple bright sphere
+      var _moonGeo = new THREE.SphereGeometry(200, 16, 16);
+      var _moonMat = new THREE.MeshBasicMaterial({ color: 0xeeeedd });
+      app._moon = new THREE.Mesh(_moonGeo, _moonMat);
+      app._moon.position.set(15000, 25000, -10000);
+      app._moon.userData.isTmEffect = true;
+      app.scene.add(app._moon);
+      // Dim ambient for moonlight feel
+      console.log('§TM_NIGHT stars=600 moon=1');
+    }
+    if (elDeg > -5 && app._nightStars) {
+      // Dawn — remove stars and moon
+      app.scene.remove(app._nightStars);
+      app._nightStars.geometry.dispose();
+      app._nightStars.material.dispose();
+      app._nightStars = null;
+      if (app._moon) {
+        app.scene.remove(app._moon);
+        app._moon.geometry.dispose();
+        app._moon.material.dispose();
+        app._moon = null;
+      }
+      console.log('§TM_DAWN stars removed');
     }
 
     // Smooth lighting — intensity follows day/night
@@ -1428,10 +1478,10 @@
     // Outline forms, dust/sparks play out (~1.2s per element at 80ms/tick = 15 ticks)
     // §S260e: Opening = construction plays while camera orbits wide for context
     // §S260f: DAY/HR/MIN mode always respected — drone uses same speed as manual playback
-    // §S276b: 1.5x slower than original — sun/shadow watchable
-    if (_mode === 'DAY') return 2400000;  // 40 min per tick (36 ticks = 1 day)
-    if (_mode === 'HR') return 40000;     // 40 sec per tick (90 ticks = 1 hour)
-    return 7000;                          // 7 seconds per tick
+    // §S276b: ~1.2x slower than original — sun/shadow watchable
+    if (_mode === 'DAY') return 3200000;  // ~53 min per tick (27 ticks = 1 day)
+    if (_mode === 'HR') return 52000;     // 52 sec per tick (69 ticks = 1 hour)
+    return 9000;                          // 9 seconds per tick
   }
 
   // ── Scene state save/restore ──
@@ -1915,7 +1965,7 @@
   var _playing = false;
   var _playDir = 0;
   var _playTimer = null;
-  function TICK_MS() { return _isLargeBuilding ? 300 : 120; }  // §S276b: 1.5x original (was 200/80)
+  function TICK_MS() { return _isLargeBuilding ? 220 : 90; }  // §S276b: ~1.1x original (tuned for sky/shadow)
 
   function startPlayback(dir) {
     if (_playing && _playDir === dir) { stopPlayback(); return; }
