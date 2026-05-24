@@ -350,6 +350,8 @@
       panel.style.display = 'none';
       if (nav.active) { if (A.stopNavigation) A.stopNavigation(); }
       clearHighlight();
+      // S275: Release panel focus so other panels (Clash, etc.) work
+      if (typeof window._blurPanel === 'function') window._blurPanel();
       console.log('[S233] §FIND_CLOSE');
     }
     A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close

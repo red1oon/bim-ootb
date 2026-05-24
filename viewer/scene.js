@@ -985,6 +985,7 @@ async function setupScene(A) {
   A._registerPanel = _registerPanel;
   window._registerPanel = _registerPanel;
   window._focusPanel = _focusPanel;
+  window._blurPanel = _blurPanel;
   window._panels = _panels;
 
   // ── Keyboard handler ──────────────────────────────────────────
