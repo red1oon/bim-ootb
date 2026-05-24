@@ -208,6 +208,8 @@ async function setupScene(A) {
           var envRT = _pmrem.fromScene(_sky);
           scene.environment = envRT.texture;
           A._envMap = envRT.texture;
+          // §S276b: Ground must not reflect sky — null its envMap after scene.environment update
+          if (A.ground) A.ground.material.envMap = null;
         } catch(e) {}
         A._envMapThrottle = false;
       }, 2000);
@@ -252,7 +254,7 @@ async function setupScene(A) {
   // Ground plane — positioned after DB load to sit below the lowest building
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(50000, 50000),
-    new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 1.0, metalness: 0.0, envMapIntensity: 0, side: THREE.DoubleSide })  // §S276b: earth brown, no env map reflection (was too white with Sky)
+    new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 1.0, metalness: 0.0, envMapIntensity: 0, side: THREE.DoubleSide })  // §S276b: ground — envMapIntensity=0 + envMap nulled after sky updates
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;

@@ -1328,21 +1328,22 @@
     var azimuth = Math.cos(angle);
     var dayFactor = Math.max(0, elevation); // 0 at night, 1 at noon
 
-    // §S276b: Drive Sky shader from Time Machine — real atmospheric scattering.
-    // Throttled: update sky every 10th call to avoid rapid flicker during fast playback.
-    if (!applySunCycle._count) applySunCycle._count = 0;
-    applySunCycle._count++;
+    // §S276b: Sun position moves every tick (shadows follow smoothly).
+    // Sky shader visual update throttled to every 10th tick (avoids rapid sky flicker).
     var elDeg = elevation * 90;
     var azDeg = (azimuth * 0.5 + 0.5) * 360;
-    if (app.updateSky && applySunCycle._count % 10 === 0) {
-      app.updateSky(elDeg, azDeg);
-    } else if (!app.updateSky) {
-      // Fallback: direct sun position (no Sky shader)
-      var cx = 0, cz = 0;
-      if (app.controls && app.controls.target) {
-        cx = app.controls.target.x; cz = app.controls.target.z;
-      }
-      app.sun.position.set(cx + azimuth * 400, Math.max(elevation * 400, 5), cz + 200);
+    // Always move sun — shadows must track every tick
+    var phi = (90 - elDeg) * Math.PI / 180;
+    var theta = azDeg * Math.PI / 180;
+    var sx = Math.sin(phi) * Math.cos(theta);
+    var sy = Math.cos(phi);
+    var sz = Math.sin(phi) * Math.sin(theta);
+    app.sun.position.set(sx * 5000, sy * 5000, sz * 5000);
+    // Sky shader visual — throttled
+    if (!applySunCycle._count) applySunCycle._count = 0;
+    applySunCycle._count++;
+    if (app._sky && app._sky.visible && applySunCycle._count % 10 === 0) {
+      app._sky.material.uniforms['sunPosition'].value.set(sx, sy, sz);
     }
 
     // Smooth lighting — intensity follows day/night
