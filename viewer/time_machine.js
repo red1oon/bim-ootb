@@ -1440,7 +1440,7 @@
     }
     // §S277d: Cloud opacity — more clouds at dawn/dusk, fewer at noon, none at night
     if (app._cloudPlane) {
-      var _cloudOp = dayFactor > 0.1 ? (0.25 + (1 - dayFactor) * 0.35) : 0;
+      var _cloudOp = dayFactor > 0.1 ? (0.35 + (1 - dayFactor) * 0.35) : 0;
       app._cloudPlane.material.opacity = _cloudOp;
       app._cloudPlane.visible = _cloudOp > 0.01;
     }
@@ -1454,9 +1454,9 @@
       app.camera.getWorldDirection(_lfCamDir);
       var _lfDot = _lfSunDir.dot(_lfCamDir);
       var _lfAbove = _lfSunPos.y > 50;
-      var _lfShow = _lfAbove && _lfDot > 0.7 && dayFactor > 0.1;
+      var _lfShow = _lfAbove && _lfDot > 0.3 && dayFactor > 0.1;
       var _lfElev = Math.max(0, Math.min(1, _lfSunPos.y / (_env * 2)));
-      var _lfI = _lfShow ? (1 - _lfElev * 0.6) * Math.max(0, (_lfDot - 0.7) / 0.3) : 0;
+      var _lfI = _lfShow ? (1 - _lfElev * 0.6) * Math.max(0, (_lfDot - 0.3) / 0.7) : 0;
       app._lensflare.material.opacity = _lfI * 0.9;
       app._lensflare.visible = _lfI > 0.01;
       if (app._lensflare.userData._halo) {
@@ -1465,29 +1465,31 @@
       }
     }
 
-    // §S277b: Bloom — emissive boost on frontier elements during TM night
+    // §S277b: Night floodlight — warm emissive on all visible meshes during TM night
+    // Construction sites have floodlights at night — boost emissive on placed+frontier meshes.
     if (elDeg <= -15 && !app._tmBloomActive) {
-      // Night: boost emissive on frontier (active construction) meshes
       app._tmBloomActive = true;
-      _highlightMeshes.forEach(function(m) {
-        if (m.material && !m.material.userData._origEmissive) {
-          m.material.userData._origEmissive = m.material.emissive ? m.material.emissive.getHex() : 0;
-          m.material.userData._origEmissiveI = m.material.emissiveIntensity || 0;
-          m.material.emissive = new THREE.Color(0xff6600);
-          m.material.emissiveIntensity = 0.5;
-        }
+      var _bloomCount = 0;
+      app.scene.traverse(function(obj) {
+        if (!obj.visible || !obj.isMesh || !obj.material || !obj.material.emissive) return;
+        if (obj.material.userData._origEmissive !== undefined) return;  // already boosted
+        obj.material.userData._origEmissive = obj.material.emissive.getHex();
+        obj.material.userData._origEmissiveI = obj.material.emissiveIntensity || 0;
+        obj.material.emissive.setHex(0xffaa44);
+        obj.material.emissiveIntensity = 0.15;  // subtle warm glow, not blinding
+        obj.material.needsUpdate = true;
+        _bloomCount++;
       });
-      console.log('§TM_BLOOM_ON frontier=' + _highlightMeshes.length);
+      console.log('§TM_BLOOM_ON meshes=' + _bloomCount);
     }
     if (elDeg > -10 && app._tmBloomActive) {
-      // Dawn: remove emissive boost
-      _highlightMeshes.forEach(function(m) {
-        if (m.material && m.material.userData._origEmissive !== undefined) {
-          m.material.emissive.setHex(m.material.userData._origEmissive);
-          m.material.emissiveIntensity = m.material.userData._origEmissiveI;
-          delete m.material.userData._origEmissive;
-          delete m.material.userData._origEmissiveI;
-        }
+      app.scene.traverse(function(obj) {
+        if (!obj.isMesh || !obj.material || obj.material.userData._origEmissive === undefined) return;
+        obj.material.emissive.setHex(obj.material.userData._origEmissive);
+        obj.material.emissiveIntensity = obj.material.userData._origEmissiveI;
+        delete obj.material.userData._origEmissive;
+        delete obj.material.userData._origEmissiveI;
+        obj.material.needsUpdate = true;
       });
       app._tmBloomActive = false;
       console.log('§TM_BLOOM_OFF');
@@ -1504,15 +1506,15 @@
     if (app._cloudPlane && !app._shadowOn) app._cloudPlane.visible = false;
     // §S277f: Hide lensflare
     if (app._lensflare) { app._lensflare.visible = false; if (app._lensflare.userData._halo) app._lensflare.userData._halo.visible = false; }
-    // §S277b: Clear bloom emissive on all frontier meshes
+    // §S277b: Clear bloom emissive on all meshes
     if (app._tmBloomActive) {
-      _highlightMeshes.forEach(function(m) {
-        if (m.material && m.material.userData._origEmissive !== undefined) {
-          m.material.emissive.setHex(m.material.userData._origEmissive);
-          m.material.emissiveIntensity = m.material.userData._origEmissiveI;
-          delete m.material.userData._origEmissive;
-          delete m.material.userData._origEmissiveI;
-        }
+      app.scene.traverse(function(obj) {
+        if (!obj.isMesh || !obj.material || obj.material.userData._origEmissive === undefined) return;
+        obj.material.emissive.setHex(obj.material.userData._origEmissive);
+        obj.material.emissiveIntensity = obj.material.userData._origEmissiveI;
+        delete obj.material.userData._origEmissive;
+        delete obj.material.userData._origEmissiveI;
+        obj.material.needsUpdate = true;
       });
       app._tmBloomActive = false;
     }

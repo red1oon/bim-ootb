@@ -169,10 +169,10 @@ async function setupScene(A) {
       camera.getWorldDirection(_camDir);
       var _sunDot = _sunDir.dot(_camDir);
       var _sunAbove = _sunPos.y > 50;
-      var _lfVisible = _sunAbove && _sunDot > 0.7 && _sky && _sky.visible;
+      var _lfVisible = _sunAbove && _sunDot > 0.3 && _sky && _sky.visible;
       // Intensity: strongest near horizon (sunrise/sunset), fade at zenith
       var _sunElev = Math.max(0, Math.min(1, _sunPos.y / 5000));
-      var _lfIntensity = _lfVisible ? (1 - _sunElev * 0.6) * Math.max(0, (_sunDot - 0.7) / 0.3) : 0;
+      var _lfIntensity = _lfVisible ? (1 - _sunElev * 0.6) * Math.max(0, (_sunDot - 0.3) / 0.7) : 0;
       _lensflare.material.opacity = _lfIntensity * 0.9;
       _lensflare.visible = _lfIntensity > 0.01;
       if (_lensflare.userData._halo) {
