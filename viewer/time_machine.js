@@ -1338,7 +1338,15 @@
     var sx = Math.sin(phi) * Math.cos(theta);
     var sy = Math.cos(phi);
     var sz = Math.sin(phi) * Math.sin(theta);
-    app.sun.position.set(sx * 5000, sy * 5000, sz * 5000);
+    // §S276b: Position sun relative to building center (not origin) for shadow coverage
+    var _ctr = app.controls ? app.controls.target : { x: 0, y: 0, z: 0 };
+    var _env = 300;
+    var _bc = Object.values(app.buildingCentres || {})[0];
+    if (_bc && _bc.envelope) _env = Math.ceil(_bc.envelope);
+    app.sun.position.set(_ctr.x + sx * _env * 2, Math.max(sy * _env * 2, 10), _ctr.z + sz * _env * 2);
+    app.sun.target.position.copy(_ctr);
+    app.sun.target.updateMatrixWorld();
+    if (app.sun.shadow) app.renderer.shadowMap.needsUpdate = true;
     // Sky shader visual — throttled
     if (!applySunCycle._count) applySunCycle._count = 0;
     applySunCycle._count++;
@@ -1412,9 +1420,10 @@
     // Outline forms, dust/sparks play out (~1.2s per element at 80ms/tick = 15 ticks)
     // §S260e: Opening = construction plays while camera orbits wide for context
     // §S260f: DAY/HR/MIN mode always respected — drone uses same speed as manual playback
-    if (_mode === 'DAY') return 3600000;  // 1 hour per tick (24 ticks = 1 day)
-    if (_mode === 'HR') return 60000;     // 1 minute per tick (60 ticks = 1 hour)
-    return 10000;                         // 10 seconds per tick (fine grain)
+    // §S276b: Reduced by 3x — sun/shadow movement needs to be watchable
+    if (_mode === 'DAY') return 1200000;  // 20 min per tick (72 ticks = 1 day)
+    if (_mode === 'HR') return 20000;     // 20 sec per tick (180 ticks = 1 hour)
+    return 3000;                          // 3 seconds per tick (fine grain)
   }
 
   // ── Scene state save/restore ──

@@ -252,7 +252,7 @@ async function setupScene(A) {
   // Ground plane — positioned after DB load to sit below the lowest building
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(50000, 50000),
-    new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 1.0, metalness: 0.0, envMapIntensity: 0, side: THREE.DoubleSide })  // §S276b: ground — envMapIntensity=0 + envMap nulled after sky updates
+    new THREE.MeshStandardMaterial({ color: 0x2a1f17, roughness: 1.0, metalness: 0.0, envMapIntensity: 0, side: THREE.DoubleSide })  // §S276b: dark earth — compensates for r184 high sun intensity (4.4)
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
