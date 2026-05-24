@@ -252,32 +252,33 @@ async function setupScene(A) {
       var bb = _noiseHash[_noiseHash[xi + 1] + yi + 1] / 255;
       return aa + u * (ba - aa) + v * (ab - aa) + u * v * (aa - ba - ab + bb);
     }
-    for (var py = 0; py < 256; py++) {
-      for (var px = 0; px < 256; px++) {
-        var v = _valNoise(px * 0.02, py * 0.02) * 0.5 +
-                _valNoise(px * 0.04, py * 0.04) * 0.3 +
-                _valNoise(px * 0.08, py * 0.08) * 0.2;
-        v = Math.max(0, (v - 0.35) * 2.5);  // threshold — only dense areas become clouds
-        var idx = (py * 256 + px) * 4;
-        _cloudImgData.data[idx] = _cloudImgData.data[idx + 1] = _cloudImgData.data[idx + 2] = 255;
-        _cloudImgData.data[idx + 3] = Math.floor(v * 180);  // semi-transparent white
-      }
+    // §S277b: Soft cloud puffs — scatter circular Gaussian blobs, not blocky noise
+    // Each puff is a radial gradient drawn at a random position. 40 puffs = natural scatter.
+    _cloudCtx.clearRect(0, 0, 256, 256);
+    for (var ci = 0; ci < 40; ci++) {
+      var cx = Math.random() * 256, cy = Math.random() * 256;
+      var cr = 30 + Math.random() * 50;  // radius 30-80px — soft varied puffs
+      var cg = _cloudCtx.createRadialGradient(cx, cy, 0, cx, cy, cr);
+      cg.addColorStop(0, 'rgba(255,255,255,0.25)');
+      cg.addColorStop(0.4, 'rgba(255,255,255,0.12)');
+      cg.addColorStop(1, 'rgba(255,255,255,0)');
+      _cloudCtx.fillStyle = cg;
+      _cloudCtx.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
     }
-    _cloudCtx.putImageData(_cloudImgData, 0, 0);
     var _cloudTex = new THREE.CanvasTexture(_cloudCanvas);
     _cloudTex.wrapS = _cloudTex.wrapT = THREE.RepeatWrapping;
-    _cloudTex.repeat.set(4, 4);
+    _cloudTex.repeat.set(3, 3);  // fewer repeats — larger puffs
     _cloudPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(80000, 80000),
-      new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide })
+      new THREE.PlaneGeometry(60000, 60000),
+      new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide })
     );
     _cloudPlane.rotation.x = -Math.PI / 2;
-    _cloudPlane.position.y = 600;  // §S277b: lowered from 5000m — visible drift + inside shadow frustum
+    _cloudPlane.position.y = 2000;  // §S277b: mid-altitude — visible drift, softer shadow projection
     _cloudPlane.castShadow = true;
     _cloudPlane.receiveShadow = false;
     _cloudPlane.visible = false;  // shown during shadow/TM
     scene.add(_cloudPlane);
-    console.log('§CLOUD_LAYER loaded — 80km quad at Y=600m');
+    console.log('§CLOUD_LAYER loaded — 60km quad at Y=2000m, 40 soft puffs');
   } catch(e) { console.warn('§CLOUD_LAYER_FAIL ' + e.message); }
   A._cloudPlane = _cloudPlane;
   A._cloudTex = _cloudPlane ? _cloudPlane.material.map : null;

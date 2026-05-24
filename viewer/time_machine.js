@@ -1440,7 +1440,7 @@
     }
     // §S277d: Cloud opacity — more clouds at dawn/dusk, fewer at noon, none at night
     if (app._cloudPlane) {
-      var _cloudOp = dayFactor > 0.1 ? (0.35 + (1 - dayFactor) * 0.35) : 0;
+      var _cloudOp = dayFactor > 0.1 ? (0.12 + (1 - dayFactor) * 0.18) : 0;  // §S277b: gentle 0.12-0.30
       app._cloudPlane.material.opacity = _cloudOp;
       app._cloudPlane.visible = _cloudOp > 0.01;
     }
