@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIM OOTB — City Benchmark (1M+ elements, suburb strip)</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a1a; color: #ccc; font-family: monospace; overflow: hidden; }
+canvas { display: block; width: 100vw; height: 100vh; }
+#hud {
+  position: fixed; top: 10px; left: 10px; z-index: 10;
+  background: rgba(10,10,30,0.85); padding: 12px 16px; border-radius: 8px;
+  font-size: 13px; line-height: 1.6; max-width: 360px;
+  backdrop-filter: blur(8px);
+}
+#hud h2 { color: #4fc3f7; font-size: 15px; margin-bottom: 6px; }
+#status { color: #88cc88; }
+#stats { color: #aaa; margin-top: 8px; }
+#bldlist { margin-top: 8px; max-height: 300px; overflow-y: auto; }
+.bld-row { padding: 2px 0; cursor: pointer; }
+.bld-row:hover { color: #4fc3f7; }
+.bld-row.loaded { color: #44cc44; }
+.bld-row.loading { color: #cccc44; }
+#sky-controls {
+  position: fixed; bottom: 10px; left: 10px; z-index: 10;
+  background: rgba(10,10,30,0.85); padding: 8px 14px; border-radius: 8px;
+  backdrop-filter: blur(8px);
+}
+#sky-controls label { color: #aaa; font-size: 12px; }
+#sky-controls input { width: 200px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <h2>BIM OOTB — City Benchmark</h2>
+  <div id="status">Initializing...</div>
+  <div id="stats"></div>
+  <div id="bldlist"></div>
+</div>
+<div id="sky-controls">
+  <label>Sun elevation: <input type="range" id="sun-el" min="0" max="90" value="45"></label>
+  <label>Sun azimuth: <input type="range" id="sun-az" min="0" max="360" value="180"></label>
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "./lib/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from './lib/OrbitControls.module.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+// ── Buildings (19 real, sorted by element count) ──
+const OCI = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/buildings/';
+const BUILDINGS = [
+  { name: 'LTU_AHouse',          elements: 125698 },
+  { name: 'Hospital',            elements: 63415 },
+  { name: 'Terminal',            elements: 48428 },
+  { name: 'Clinic',              elements: 16114 },
+  { name: 'Ifc4_Revit',          elements: 11388 },
+  { name: 'WBDG_Office',         elements: 7000 },
+  { name: 'HHS_Office_Federated',elements: 6871 },
+  { name: 'Molio',               elements: 3675 },
+  { name: 'SampleCastle',        elements: 3621 },
+  { name: 'Schependomlaan',      elements: 3284 },
+  { name: 'HITOS',               elements: 2079 },
+  { name: 'Esplanades',          elements: 1964 },
+  { name: 'BimWhale_Advanced',   elements: 1762 },
+  { name: 'HospitalGarage',      elements: 1271 },
+  { name: 'AC11Institute',       elements: 986 },
+  { name: 'Jesse',               elements: 676 },
+  { name: 'SmileyWest',          elements: 531 },
+  { name: 'Duplex',              elements: 218 },
+  { name: 'SampleHouse',         elements: 60 },
+];
+// ── Suburb strip: replicate buildings 4x to reach 1M+ elements ──
+const STRIPS = 4;  // 4 strips × 299K = ~1.2M elements
+const STRIP_OFFSET = 2800; // metres between strips (Z axis)
+var CITY = [];
+for (var strip = 0; strip < STRIPS; strip++) {
+  for (var bi = 0; bi < BUILDINGS.length; bi++) {
+    CITY.push({ ...BUILDINGS[bi], strip, origIdx: bi });
+  }
+}
+const TOTAL = CITY.reduce((s, b) => s + b.elements, 0);
+
+// ── Renderer ──
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.5;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
+camera.position.set(800, 600, 800);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxDistance = 50000;
+
+// ── Sky (r184 Sky shader — Preetham model) ──
+const sky = new Sky();
+sky.scale.setScalar(100000);
+scene.add(sky);
+
+const sunPos = new THREE.Vector3();
+function updateSun(elevation, azimuth) {
+  const phi = THREE.MathUtils.degToRad(90 - elevation);
+  const theta = THREE.MathUtils.degToRad(azimuth);
+  sunPos.setFromSphericalCoords(1, phi, theta);
+  sky.material.uniforms['sunPosition'].value.copy(sunPos);
+  // Update directional light to match
+  sun.position.copy(sunPos).multiplyScalar(5000);
+  sun.shadow.camera.updateProjectionMatrix();
+}
+
+const skyUniforms = sky.material.uniforms;
+skyUniforms['turbidity'].value = 4;
+skyUniforms['rayleigh'].value = 2;
+skyUniforms['mieCoefficient'].value = 0.005;
+skyUniforms['mieDirectionalG'].value = 0.8;
+
+// ── Lighting ──
+const sun = new THREE.DirectionalLight(0xffffff, 4.4);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 4096;
+sun.shadow.mapSize.height = 4096;
+sun.shadow.camera.left = -2000;
+sun.shadow.camera.right = 2000;
+sun.shadow.camera.top = 2000;
+sun.shadow.camera.bottom = -2000;
+sun.shadow.camera.near = 100;
+sun.shadow.camera.far = 15000;
+sun.shadow.bias = -0.0002;
+scene.add(sun);
+scene.add(sun.target);
+
+const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 1.2);
+scene.add(hemi);
+
+const ambient = new THREE.AmbientLight(0x404040, 0.5);
+scene.add(ambient);
+
+// ── PMREMGenerator for env map from Sky ──
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileCubemapShader();
+
+function updateEnvMap() {
+  const envRT = pmrem.fromScene(sky);
+  scene.environment = envRT.texture;
+}
+
+// Initial sun position
+updateSun(45, 180);
+updateEnvMap();
+
+// Sun sliders
+document.getElementById('sun-el').addEventListener('input', function(e) {
+  updateSun(parseFloat(e.target.value), parseFloat(document.getElementById('sun-az').value));
+  updateEnvMap();
+});
+document.getElementById('sun-az').addEventListener('input', function(e) {
+  updateSun(parseFloat(document.getElementById('sun-el').value), parseFloat(e.target.value));
+  updateEnvMap();
+});
+
+// ── Ground ──
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(50000, 50000),
+  new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 0.9 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ── sql.js ──
+const statusEl = document.getElementById('status');
+const statsEl = document.getElementById('stats');
+const bldlistEl = document.getElementById('bldlist');
+
+statusEl.textContent = 'Loading SQLite WASM...';
+const sqlPromise = initSqlJs({ locateFile: f => `lib/${f}` });
+
+// ── Layout: suburb strip — 4 rows of 19 buildings ──
+const SPACING = 500;  // metres between buildings within a strip
+const COLS = 5;
+function gridPos(idx) {
+  var bld = CITY[idx];
+  var withinStrip = bld.origIdx;
+  var col = withinStrip % COLS;
+  var row = Math.floor(withinStrip / COLS);
+  var stripZ = bld.strip * STRIP_OFFSET;
+  return {
+    x: col * SPACING - (COLS * SPACING / 2),
+    z: row * SPACING - (Math.ceil(BUILDINGS.length / COLS) * SPACING / 2) + stripZ
+  };
+}
+
+// ── State ──
+var totalDrawCalls = 0;
+var totalRendered = 0;
+var loadedCount = 0;
+var bboxMeshes = [];  // for bbox display
+var loadedBuildings = new Set();
+var cachedGeoData = {};  // name → { elements, geoCache, cx, cy, cz } — reuse across strips
+var SQL;
+
+// ── Bbox placeholders for each building ──
+function drawBboxForBuilding(idx, bld) {
+  const gp = gridPos(idx);
+  // Simple cube representing building envelope
+  const scale = Math.pow(bld.elements, 0.33) * 3;  // cube-root scaling
+  const geo = new THREE.BoxGeometry(scale, scale * 1.5, scale);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x4488ff, wireframe: true, transparent: true, opacity: 0.3 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(gp.x, scale * 0.75, gp.z);
+  mesh.userData.bldIdx = idx;
+  mesh.userData.bldName = bld.name;
+  scene.add(mesh);
+  bboxMeshes.push(mesh);
+
+  // Label (simple sprite)
+  const cvs = document.createElement('canvas');
+  cvs.width = 512; cvs.height = 64;
+  const ctx = cvs.getContext('2d');
+  ctx.fillStyle = '#4fc3f7';
+  ctx.font = 'bold 28px monospace';
+  ctx.fillText(bld.name + ' (' + bld.elements.toLocaleString() + ')', 10, 42);
+  const tex = new THREE.CanvasTexture(cvs);
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.position.set(gp.x, scale * 1.8, gp.z);
+  sprite.scale.set(200, 25, 1);
+  scene.add(sprite);
+}
+
+// ── Load a building's extracted DB and stream geometry ──
+async function loadBuilding(idx) {
+  const bld = BUILDINGS[idx];
+  if (loadedBuildings.has(bld.name)) return;
+  loadedBuildings.add(bld.name);
+
+  const rowEl = document.getElementById('bld-' + idx);
+  if (rowEl) { rowEl.className = 'bld-row loading'; rowEl.textContent = bld.name + ' (' + bld.elements.toLocaleString() + ') -- LOADING...'; }
+  statusEl.textContent = 'Downloading ' + bld.name + '...';
+
+  const gp = gridPos(idx);
+  const t0 = performance.now();
+
+  try {
+    // Reuse cached data for replicated buildings (download once, place N times)
+    var cached = cachedGeoData[bld.name];
+    var elements, geoCache, cx, cy, cz;
+
+    if (cached) {
+      elements = cached.elements;
+      geoCache = cached.geoCache;
+      cx = cached.cx; cy = cached.cy; cz = cached.cz;
+      statusEl.textContent = 'Placing ' + bld.name + ' strip ' + bld.strip + ' (from cache)...';
+    } else {
+      // First time: download and parse
+      var metaUrl = OCI + bld.name + '_meta.db';
+      var hasSplit = false;
+      try {
+        var headR = await fetch(metaUrl, { method: 'HEAD' });
+        hasSplit = headR.ok;
+      } catch(e) {}
+
+      var db, libDb;
+      if (hasSplit) {
+        statusEl.textContent = 'Downloading ' + bld.name + ' metadata...';
+        var metaBuf = await fetch(metaUrl).then(r => r.arrayBuffer());
+        db = new SQL.Database(new Uint8Array(metaBuf));
+        statusEl.textContent = 'Downloading ' + bld.name + ' geometry...';
+        var geoBuf = await fetch(OCI + bld.name + '_geo.db').then(r => r.arrayBuffer());
+        libDb = new SQL.Database(new Uint8Array(geoBuf));
+      } else {
+        statusEl.textContent = 'Downloading ' + bld.name + ' (' + bld.elements.toLocaleString() + ')...';
+        var buf = await fetch(OCI + bld.name + '_extracted.db').then(r => r.arrayBuffer());
+        db = new SQL.Database(new Uint8Array(buf));
+        libDb = db;
+      }
+
+      var rows = db.exec(`
+        SELECT i.guid, i.geometry_hash, m.material_rgba, m.discipline,
+          t.center_x, t.center_y, t.center_z,
+          t.bbox_x, t.bbox_y, t.bbox_z, m.ifc_class
+        FROM elements_meta m
+        JOIN element_instances i ON m.guid = i.guid
+        JOIN element_transforms t ON t.guid = m.guid
+        WHERE i.geometry_hash IS NOT NULL AND m.ifc_class != 'IfcOpeningElement'
+      `);
+      if (!rows.length) { statusEl.textContent = bld.name + ': no elements'; return; }
+      elements = rows[0].values;
+
+      var sumX = 0, sumY = 0, sumZ = 0;
+      for (var ei = 0; ei < elements.length; ei++) {
+        sumX += elements[ei][4]; sumY += elements[ei][5]; sumZ += elements[ei][6];
+      }
+      cx = sumX / elements.length; cy = sumY / elements.length; cz = sumZ / elements.length;
+
+      var hashSet = new Set();
+      for (var ei = 0; ei < elements.length; ei++) {
+        if (elements[ei][1]) hashSet.add(elements[ei][1]);
+      }
+
+      geoCache = {};
+      var hashes = [...hashSet];
+      var batchSize = 500;
+      for (var bi = 0; bi < hashes.length; bi += batchSize) {
+        var batch = hashes.slice(bi, bi + batchSize);
+        var placeholders = batch.map(() => '?').join(',');
+        var geoRows = libDb.exec(
+          `SELECT geometry_hash, vertices, indices, normals FROM component_geometries WHERE geometry_hash IN (${placeholders})`,
+          batch
+        );
+        if (geoRows.length) {
+          for (var gr of geoRows[0].values) {
+            var hash = gr[0];
+            var verts = new Float32Array(gr[1].buffer, gr[1].byteOffset, gr[1].byteLength / 4);
+            var indices = gr[2] ? new Uint32Array(gr[2].buffer, gr[2].byteOffset, gr[2].byteLength / 4) : null;
+            var normals = gr[3] ? new Float32Array(gr[3].buffer, gr[3].byteOffset, gr[3].byteLength / 4) : null;
+            var geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(verts.slice(), 3));
+            if (indices) geo.setIndex(new THREE.BufferAttribute(indices.slice(), 1));
+            if (normals) geo.setAttribute('normal', new THREE.BufferAttribute(normals.slice(), 3));
+            else geo.computeVertexNormals();
+            geoCache[hash] = geo;
+          }
+        }
+        if (bi % 2000 === 0) {
+          statusEl.textContent = 'Streaming ' + bld.name + '... ' + Math.min(bi + batchSize, hashes.length) + '/' + hashes.length + ' shapes';
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      // Cache for reuse by other strips
+      cachedGeoData[bld.name] = { elements, geoCache, cx, cy, cz };
+      db.close();
+      if (libDb !== db) libDb.close();
+    }
+
+    // Group by hash for instancing
+    var byHash = {};
+    for (var ei = 0; ei < elements.length; ei++) {
+      var hash = elements[ei][1];
+      if (!hash || !geoCache[hash]) continue;
+      if (!byHash[hash]) byHash[hash] = [];
+      byHash[hash].push(elements[ei]);
+    }
+
+    var drawCalls = 0;
+    var rendered = 0;
+    var _m4 = new THREE.Matrix4();
+    var _pos = new THREE.Vector3();
+    var _scl = new THREE.Vector3(1, 1, 1);
+    var _quat = new THREE.Quaternion();
+
+    for (var [hash, elems] of Object.entries(byHash)) {
+      var geo = geoCache[hash];
+      // Parse color from first element
+      var rgba = elems[0][2] || '180,180,180,255';
+      var parts = rgba.split(',').map(Number);
+      var color = new THREE.Color(parts[0] / 255, parts[1] / 255, parts[2] / 255);
+      var mat = new THREE.MeshStandardMaterial({
+        color, roughness: 0.7, metalness: 0.05, side: THREE.DoubleSide
+      });
+
+      if (elems.length === 1) {
+        // Single mesh
+        var mesh = new THREE.Mesh(geo, mat);
+        var e = elems[0];
+        // IFC→Three: swap Y/Z, offset to grid position
+        mesh.position.set(e[4] - cx + gp.x, e[6] - cz, -(e[5] - cy) + gp.z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+      } else {
+        // InstancedMesh
+        var iMesh = new THREE.InstancedMesh(geo, mat, elems.length);
+        iMesh.castShadow = true;
+        iMesh.receiveShadow = true;
+        for (var ii = 0; ii < elems.length; ii++) {
+          var e = elems[ii];
+          _pos.set(e[4] - cx + gp.x, e[6] - cz, -(e[5] - cy) + gp.z);
+          _m4.compose(_pos, _quat, _scl);
+          iMesh.setMatrixAt(ii, _m4);
+        }
+        iMesh.instanceMatrix.needsUpdate = true;
+        scene.add(iMesh);
+      }
+      drawCalls++;
+      rendered += elems.length;
+    }
+
+    totalDrawCalls += drawCalls;
+    totalRendered += rendered;
+    loadedCount++;
+
+    var ms = (performance.now() - t0).toFixed(0);
+    console.log(`§CITY_BENCH ${bld.name} elements=${rendered} draws=${drawCalls} ms=${ms} split=${hasSplit}`);
+
+    if (rowEl) { rowEl.className = 'bld-row loaded'; rowEl.textContent = bld.name + ' (' + rendered.toLocaleString() + ') -- ' + drawCalls + ' draws, ' + ms + 'ms'; }
+    statusEl.textContent = bld.name + ' loaded: ' + rendered.toLocaleString() + ' elements, ' + drawCalls + ' draw calls in ' + (ms/1000).toFixed(1) + 's';
+    updateStats();
+
+    // Remove bbox wireframe for this building
+    var bboxToRemove = bboxMeshes.filter(m => m.userData.bldIdx === idx);
+    bboxToRemove.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+
+  } catch(err) {
+    console.error('§CITY_BENCH_FAIL ' + bld.name + ': ' + err.message);
+    statusEl.textContent = bld.name + ' FAILED: ' + err.message;
+    if (rowEl) { rowEl.className = 'bld-row'; rowEl.textContent = bld.name + ' FAILED'; }
+  }
+}
+
+function updateStats() {
+  statsEl.innerHTML =
+    'Buildings loaded: ' + loadedCount + '/' + BUILDINGS.length + '<br>' +
+    'Elements rendered: ' + totalRendered.toLocaleString() + '/' + TOTAL.toLocaleString() + '<br>' +
+    'GPU draw calls: ' + totalDrawCalls.toLocaleString() + '<br>' +
+    'Scene objects: ' + scene.children.length;
+}
+
+// ── Build UI ──
+function buildList() {
+  var html = '';
+  // Show unique buildings (click loads all 4 copies)
+  for (var i = 0; i < BUILDINGS.length; i++) {
+    html += '<div class="bld-row" id="bld-' + i + '" data-name="' + BUILDINGS[i].name + '">' +
+      BUILDINGS[i].name + ' (' + BUILDINGS[i].elements.toLocaleString() + ' x' + STRIPS + ')' +
+      '</div>';
+  }
+  html += '<div class="bld-row" style="color:#ff8844;margin-top:8px" id="load-all">LOAD ALL (' + TOTAL.toLocaleString() + ' elements)</div>';
+  bldlistEl.innerHTML = html;
+
+  // Click loads all strips of that building
+  bldlistEl.querySelectorAll('.bld-row[data-name]').forEach(el => {
+    el.addEventListener('click', () => {
+      var name = el.dataset.name;
+      for (var ci = 0; ci < CITY.length; ci++) {
+        if (CITY[ci].name === name) loadBuilding(ci);
+      }
+    });
+  });
+  document.getElementById('load-all').addEventListener('click', loadAll);
+}
+
+async function loadAll() {
+  document.getElementById('load-all').textContent = 'LOADING ALL ' + TOTAL.toLocaleString() + '...';
+  for (var i = 0; i < CITY.length; i++) {
+    await loadBuilding(i);
+  }
+  statusEl.textContent = 'ALL LOADED: ' + totalRendered.toLocaleString() + ' elements, ' + totalDrawCalls + ' draw calls';
+}
+
+// ── Click-to-load via raycasting ──
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+canvas.addEventListener('click', function(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  var hits = raycaster.intersectObjects(bboxMeshes);
+  if (hits.length > 0 && hits[0].object.userData.bldIdx !== undefined) {
+    loadBuilding(hits[0].object.userData.bldIdx);
+  }
+});
+
+// ── Animate ──
+var frameCount = 0, fpsT0 = performance.now(), fps = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+  frameCount++;
+  var now = performance.now();
+  if (now - fpsT0 > 1000) {
+    fps = Math.round(frameCount * 1000 / (now - fpsT0));
+    frameCount = 0; fpsT0 = now;
+    document.title = 'BIM OOTB City — ' + totalRendered.toLocaleString() + ' elements — ' + fps + ' FPS';
+  }
+}
+
+// ── Init ──
+async function init() {
+  SQL = await sqlPromise;
+  statusEl.textContent = 'Suburb strip — ' + CITY.length + ' buildings (' + STRIPS + ' strips), ' + TOTAL.toLocaleString() + ' elements. Click a building or LOAD ALL.';
+
+  // Draw bboxes for all buildings in all strips
+  for (var i = 0; i < CITY.length; i++) {
+    drawBboxForBuilding(i, CITY[i]);
+  }
+  buildList();
+  updateStats();
+
+  // Camera looks at center of grid
+  controls.target.set(0, 50, 0);
+  camera.position.set(1200, 800, 1200);
+  controls.update();
+}
+
+animate();
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+init();
+</script>
+<script src="lib/sql-wasm.js"></script>
+</body>
+</html>
