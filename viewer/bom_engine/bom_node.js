@@ -317,9 +317,21 @@
       if (rEnd > maxReservedEnd) maxReservedEnd = rEnd;
     }
     var available = dimOnAxis(this.currentAABB, axis) - totalReserved;
-    // Offset fill origin past reserved children
+    // §S270e BUG-2 fix: fill origin = after leftmost reserved child, not rightmost.
+    // When reserved children sit at both edges (left wall + right wall), the optionals
+    // must fill the space BETWEEN them, not after the rightmost one.
     var parentOriginRaw = originOnAxis(this.currentAABB, axis);
-    var parentOrigin = reserved.length > 0 ? maxReservedEnd : parentOriginRaw;
+    var parentOrigin = parentOriginRaw;
+    if (reserved.length > 0) {
+      // Find the earliest end of a reserved child — that's where fill space begins
+      var minReservedEnd = Infinity;
+      for (var rei = 0; rei < reserved.length; rei++) {
+        var reOrigin = originOnAxis(reserved[rei].aabb, axis);
+        var reEnd = reOrigin + dimOnAxis(reserved[rei].aabb, axis);
+        if (reEnd < minReservedEnd) minReservedEnd = reEnd;
+      }
+      parentOrigin = minReservedEnd;
+    }
 
     // All optionals share the same strategy (parent's strategy drives)
     var strat = this.strategy;
@@ -396,6 +408,14 @@
     for (var pi = 0; pi < positions.length && pi < optionals.length; pi++) {
       var opt = optionals[pi];
       var sz = opt.allocatedSize || { w: childSz, d: childSz, h: childSz };
+      // §S270e BUG-1 fix: SPAN strategy returns size = available space.
+      // Child dimension on fill axis must use stratResult.size, not allocatedSize.
+      if (strat === 'SPAN' && stratResult.size) {
+        sz = { w: sz.w, d: sz.d, h: sz.h }; // clone
+        if (axis === 'x') sz.w = stratResult.size;
+        else if (axis === 'y') sz.d = stratResult.size;
+        else sz.h = stratResult.size;
+      }
       var aabb = {
         x: this.currentAABB.x + opt.tack.dx,
         y: this.currentAABB.y + opt.tack.dy,
