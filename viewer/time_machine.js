@@ -1347,11 +1347,21 @@
     app.sun.target.position.copy(_ctr);
     app.sun.target.updateMatrixWorld();
     if (app.sun.shadow) app.renderer.shadowMap.needsUpdate = true;
-    // Sky shader visual — throttled
+    // §S276b: Sky shader visual — update every tick near horizon (dawn/dusk fade),
+    // throttle to every 5th tick during midday/midnight (less visual change).
     if (!applySunCycle._count) applySunCycle._count = 0;
     applySunCycle._count++;
-    if (app._sky && app._sky.visible && applySunCycle._count % 10 === 0) {
-      app._sky.material.uniforms['sunPosition'].value.set(sx, sy, sz);
+    var _nearHorizon = Math.abs(elDeg) < 20;  // within 20° of horizon = dawn/dusk
+    var _skyInterval = _nearHorizon ? 1 : 5;
+    if (app._sky && applySunCycle._count % _skyInterval === 0) {
+      if (elDeg < -5) {
+        // Night — hide sky, dark background
+        app._sky.visible = false;
+        app.renderer.setClearColor(0x0a0a2e);
+      } else {
+        app._sky.visible = true;
+        app._sky.material.uniforms['sunPosition'].value.set(sx, sy, sz);
+      }
     }
 
     // Smooth lighting — intensity follows day/night
@@ -1420,10 +1430,10 @@
     // Outline forms, dust/sparks play out (~1.2s per element at 80ms/tick = 15 ticks)
     // §S260e: Opening = construction plays while camera orbits wide for context
     // §S260f: DAY/HR/MIN mode always respected — drone uses same speed as manual playback
-    // §S276b: Reduced by 3x — sun/shadow movement needs to be watchable
-    if (_mode === 'DAY') return 1200000;  // 20 min per tick (72 ticks = 1 day)
-    if (_mode === 'HR') return 20000;     // 20 sec per tick (180 ticks = 1 hour)
-    return 3000;                          // 3 seconds per tick (fine grain)
+    // §S276b: Reduced by 2x from original — sun/shadow watchable
+    if (_mode === 'DAY') return 1800000;  // 30 min per tick (48 ticks = 1 day)
+    if (_mode === 'HR') return 30000;     // 30 sec per tick (120 ticks = 1 hour)
+    return 5000;                          // 5 seconds per tick (fine grain)
   }
 
   // ── Scene state save/restore ──
@@ -1907,7 +1917,7 @@
   var _playing = false;
   var _playDir = 0;
   var _playTimer = null;
-  function TICK_MS() { return _isLargeBuilding ? 600 : 240; }  // §S276b: 3x slower — sun/shadow needs time to be visible
+  function TICK_MS() { return _isLargeBuilding ? 400 : 160; }  // §S276b: 2x slower than original (was 200/80, then 600/240, now 400/160)
 
   function startPlayback(dir) {
     if (_playing && _playDir === dir) { stopPlayback(); return; }
