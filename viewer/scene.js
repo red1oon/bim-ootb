@@ -273,7 +273,7 @@ async function setupScene(A) {
       new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide })
     );
     _cloudPlane.rotation.x = -Math.PI / 2;
-    _cloudPlane.position.y = 1000;  // §S277b: 1km — visible drift, soft shadow, inside frustum
+    _cloudPlane.position.y = 700;  // §S277b: 700m — visible drift, soft shadow, inside frustum
     _cloudPlane.castShadow = true;
     _cloudPlane.receiveShadow = false;
     _cloudPlane.visible = false;  // shown during shadow/TM

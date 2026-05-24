@@ -572,19 +572,25 @@ function setupTools(A) {
         A.ground.receiveShadow = true;
         A._calcGroundY();
       }
-      // §S260: Enable castShadow on ALL mesh types (Mesh, InstancedMesh, BatchedMesh)
-      A.scene.traverse(function(o) {
-        if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible) {
-          o.castShadow = true; o.receiveShadow = true;
-        }
-      });
-      A.renderer.shadowMap.needsUpdate = true;
+      // §S277b: Chunked shadow traverse — don't block main thread on 122K scenes
+      var _shadowList = [];
+      A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _shadowList.push(o); });
+      var _si = 0;
+      (function _shadowChunk() {
+        var end = Math.min(_si + 5000, _shadowList.length);
+        for (; _si < end; _si++) { var o = _shadowList[_si]; if (o.visible) { o.castShadow = true; o.receiveShadow = true; } }
+        if (_si < _shadowList.length) setTimeout(_shadowChunk, 0);
+        else { A.renderer.shadowMap.needsUpdate = true; console.log('§SHADOW_TRAVERSE done count=' + _shadowList.length); }
+      })();
     } else {
-      A.scene.traverse(function(o) {
-        if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) {
-          o.castShadow = false; o.receiveShadow = false;
-        }
-      });
+      var _unshadowList = [];
+      A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _unshadowList.push(o); });
+      var _ui = 0;
+      (function _unshadowChunk() {
+        var end = Math.min(_ui + 5000, _unshadowList.length);
+        for (; _ui < end; _ui++) { _unshadowList[_ui].castShadow = false; _unshadowList[_ui].receiveShadow = false; }
+        if (_ui < _unshadowList.length) setTimeout(_unshadowChunk, 0);
+      })();
       if (A.ground) A.ground.visible = false;
     }
     var btn = document.getElementById('shadow-btn');
