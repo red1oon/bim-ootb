@@ -1070,10 +1070,18 @@
             console.log('§FIND_NAV ' + e.key + ' → ' + next + '/' + cycle.length + ' el=' + (cycle[next].id || cycle[next].tagName));
             return;
           }
-          // Enter/Space on accordion header: expand/collapse
+          // Enter/Space on accordion header: select highlighted item, or toggle expand/collapse
           if (e.key === 'Enter' || e.key === ' ') {
-            if (document.activeElement === elStoreyHdr) { toggleAccRow(elStoreyRow); return; }
-            if (document.activeElement === elTypeHdr) { toggleAccRow(elTypeRow); return; }
+            if (document.activeElement === elStoreyHdr) {
+              var activeS = elStoreyBody.querySelector('.find-acc-item.active');
+              if (activeS && elStoreyRow.classList.contains('expanded')) { activeS.click(); return; }
+              toggleAccRow(elStoreyRow); return;
+            }
+            if (document.activeElement === elTypeHdr) {
+              var activeT = elTypeBody.querySelector('.find-acc-item.active');
+              if (activeT && elTypeRow.classList.contains('expanded')) { activeT.click(); return; }
+              toggleAccRow(elTypeRow); return;
+            }
           }
           // Up/Down on storey header: expand and navigate storey items
           if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && document.activeElement === elStoreyHdr) {
