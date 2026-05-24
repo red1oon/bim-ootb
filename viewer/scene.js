@@ -35,19 +35,37 @@ async function setupScene(A) {
   var renderer;
   var _adapter = null;
   if (navigator.gpu && THREE.WebGPURenderer) {
-    try { _adapter = await navigator.gpu.requestAdapter(); } catch(e) {}
+    try {
+      _adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      // §S276b: Reject SwiftShader (software) — it poisons the canvas on context creation failure
+      if (_adapter && _adapter.info && _adapter.info.architecture === 'swiftshader') {
+        console.log('§S276_ADAPTER_REJECT SwiftShader detected — falling back to WebGL');
+        _adapter = null;
+      }
+    } catch(e) {}
   }
   if (_adapter) {
     // Native WebGPU adapter found — use WebGPURenderer
-    renderer = new THREE.WebGPURenderer({
-      canvas,
-      antialias: !_isMobileRenderer,
-      preserveDrawingBuffer: true
-    });
-    await renderer.init();
-    _isWebGPU = true;
-    console.log('§S276_RENDERER WebGPURenderer native adapter=' + _adapter.name);
-  } else {
+    try {
+      renderer = new THREE.WebGPURenderer({
+        canvas,
+        antialias: !_isMobileRenderer,
+        preserveDrawingBuffer: true
+      });
+      await renderer.init();
+      _isWebGPU = true;
+      console.log('§S276_RENDERER WebGPURenderer native adapter=' + (_adapter.info?.device || _adapter.name));
+    } catch(e) {
+      // §S276b: WebGPU init failed — canvas may be poisoned. Replace it.
+      console.warn('§S276_WEBGPU_FAIL ' + e.message + ' — replacing canvas, falling back to WebGL');
+      _adapter = null;
+      var newCanvas = canvas.cloneNode();
+      canvas.parentNode.replaceChild(newCanvas, canvas);
+      canvas = newCanvas;
+      A.canvas = canvas;
+    }
+  }
+  if (!_adapter) {
     // No native WebGPU — reload THREE entirely from standard build.
     // WebGPU build's PMREMGenerator/Scene/etc expect WebGPURenderer internals
     // (e.g. hasInitialized()) — mixing builds causes ENV_MAP_FAIL and dark night mode.
@@ -58,7 +76,7 @@ async function setupScene(A) {
       antialias: !_isMobileRenderer,
       preserveDrawingBuffer: true
     });
-    console.log('§S276_RENDERER WebGLRenderer r184 (adapter=' + _adapter + ')');
+    console.log('§S276_RENDERER WebGLRenderer r184 (adapter=null)');
   }
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
