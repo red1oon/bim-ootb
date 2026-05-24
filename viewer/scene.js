@@ -161,7 +161,8 @@ async function setupScene(A) {
   var _sky = null;
   var _sunVec = new THREE.Vector3();
   try {
-    var _skyMod = await import('https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/objects/Sky.js');
+    var _skyMod = await import('./lib/Sky.js');
+    if (!_skyMod.Sky) throw new Error('Sky class not exported');
     _sky = new _skyMod.Sky();
     _sky.scale.setScalar(100000);
     scene.add(_sky);
@@ -171,9 +172,10 @@ async function setupScene(A) {
     _skyUni['mieCoefficient'].value = 0.005;
     _skyUni['mieDirectionalG'].value = 0.8;
     _sky.visible = false;  // §S276b: Sky hidden by default — shown on Shadow toggle (H) or Time Machine sun cycle
-    console.log('§SKY_SHADER loaded — Preetham atmospheric model (hidden until Shadow/TM)');
+    console.log('§SKY_SHADER loaded — Preetham r184 (hidden until Shadow H or TM sun)');
   } catch(e) {
-    console.warn('§SKY_SHADER_FAIL ' + e.message + ' — falling back to gradient');
+    console.warn('§SKY_SHADER_FAIL ' + e.message);
+    _sky = null;
   }
   A._sky = _sky;  // expose for tools.js shadow toggle
 
