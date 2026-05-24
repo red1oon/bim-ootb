@@ -1293,6 +1293,7 @@
 
   // ── Day/night — smooth sky + lighting, no shadow plumbing ──
   var _savedClearColor = null;
+  var _savedLighting = null;  // §S277b: save full lighting state on TM entry
 
   // Smooth color lerp between two hex colors
   function lerpColor(a, b, t) {
@@ -1311,9 +1312,24 @@
 
     // §S276b: Show Sky shader during sun cycle
     if (app._sky && !app._sky.visible) app._sky.visible = true;
+    // §S277d: Show cloud layer during sun cycle
+    if (app._cloudPlane && !app._cloudPlane.visible) app._cloudPlane.visible = true;
     app._sunCycleActive = true;
 
-    // Save original sky color once
+    // §S277b: Save full lighting state once on TM entry — restore on exit
+    if (_savedLighting === null) {
+      _savedLighting = {
+        clearColor: app.renderer ? app.renderer.getClearColor(new THREE.Color()).getHex() : 0x1a1a2e,
+        sunI: app.sun.intensity,
+        ambI: app.ambient ? app.ambient.intensity : 0.785,
+        hemiI: app.hemi ? app.hemi.intensity : 1.257,
+        exposure: app.renderer ? app.renderer.toneMappingExposure : 0.45
+      };
+      console.log('§TM_SAVE_LIGHTING sunI=' + _savedLighting.sunI.toFixed(2) +
+        ' ambI=' + _savedLighting.ambI.toFixed(2) + ' hemiI=' + _savedLighting.hemiI.toFixed(2) +
+        ' exposure=' + _savedLighting.exposure.toFixed(2));
+    }
+    // Save original sky color once (legacy compat)
     if (_savedClearColor === null && app.renderer) {
       _savedClearColor = app.renderer.getClearColor(new THREE.Color()).getHex();
     }
@@ -1416,19 +1432,120 @@
     app.sun.intensity = 0.05 + dayFactor * 4.4;
     if (app.ambient) app.ambient.intensity = 0.15 + dayFactor * 0.6;
     if (app.hemi) app.hemi.intensity = 0.1 + dayFactor * 1.1;
+
+    // §S277d: Cloud drift during TM — speed up for dramatic time-lapse
+    if (app._cloudTex) {
+      app._cloudTex.offset.x += 0.002;  // 10x faster than static shadow mode
+      app._cloudTex.offset.y += 0.0008;
+    }
+    // §S277d: Cloud opacity — more clouds at dawn/dusk, fewer at noon, none at night
+    if (app._cloudPlane) {
+      var _cloudOp = dayFactor > 0.1 ? (0.25 + (1 - dayFactor) * 0.35) : 0;
+      app._cloudPlane.material.opacity = _cloudOp;
+      app._cloudPlane.visible = _cloudOp > 0.01;
+    }
+    // §S277f: Lensflare — track sun position directly (don't call updateSky, it conflicts with TM sun)
+    if (app._lensflare) {
+      var _lfSunPos = app.sun.position;
+      app._lensflare.position.copy(_lfSunPos);
+      if (app._lensflare.userData._halo) app._lensflare.userData._halo.position.copy(_lfSunPos);
+      var _lfSunDir = _lfSunPos.clone().sub(app.camera.position).normalize();
+      var _lfCamDir = new THREE.Vector3();
+      app.camera.getWorldDirection(_lfCamDir);
+      var _lfDot = _lfSunDir.dot(_lfCamDir);
+      var _lfAbove = _lfSunPos.y > 50;
+      var _lfShow = _lfAbove && _lfDot > 0.7 && dayFactor > 0.1;
+      var _lfElev = Math.max(0, Math.min(1, _lfSunPos.y / (_env * 2)));
+      var _lfI = _lfShow ? (1 - _lfElev * 0.6) * Math.max(0, (_lfDot - 0.7) / 0.3) : 0;
+      app._lensflare.material.opacity = _lfI * 0.9;
+      app._lensflare.visible = _lfI > 0.01;
+      if (app._lensflare.userData._halo) {
+        app._lensflare.userData._halo.material.opacity = _lfI * 0.4;
+        app._lensflare.userData._halo.visible = app._lensflare.visible;
+      }
+    }
+
+    // §S277b: Bloom — emissive boost on frontier elements during TM night
+    if (elDeg <= -15 && !app._tmBloomActive) {
+      // Night: boost emissive on frontier (active construction) meshes
+      app._tmBloomActive = true;
+      _highlightMeshes.forEach(function(m) {
+        if (m.material && !m.material.userData._origEmissive) {
+          m.material.userData._origEmissive = m.material.emissive ? m.material.emissive.getHex() : 0;
+          m.material.userData._origEmissiveI = m.material.emissiveIntensity || 0;
+          m.material.emissive = new THREE.Color(0xff6600);
+          m.material.emissiveIntensity = 0.5;
+        }
+      });
+      console.log('§TM_BLOOM_ON frontier=' + _highlightMeshes.length);
+    }
+    if (elDeg > -10 && app._tmBloomActive) {
+      // Dawn: remove emissive boost
+      _highlightMeshes.forEach(function(m) {
+        if (m.material && m.material.userData._origEmissive !== undefined) {
+          m.material.emissive.setHex(m.material.userData._origEmissive);
+          m.material.emissiveIntensity = m.material.userData._origEmissiveI;
+          delete m.material.userData._origEmissive;
+          delete m.material.userData._origEmissiveI;
+        }
+      });
+      app._tmBloomActive = false;
+      console.log('§TM_BLOOM_OFF');
+    }
   }
 
   function restoreSky() {
     var app = A();
     if (!app) return;
-    // §S276b: Hide Sky and restore default state
+    // §S277b: Full lighting restore — sun/ambient/hemi/exposure back to pre-TM values
     app._sunCycleActive = false;
     if (app._sky && !app._shadowOn) app._sky.visible = false;  // keep sky if shadows still on
+    // §S277d: Hide cloud layer (keep if shadows still on)
+    if (app._cloudPlane && !app._shadowOn) app._cloudPlane.visible = false;
+    // §S277f: Hide lensflare
+    if (app._lensflare) { app._lensflare.visible = false; if (app._lensflare.userData._halo) app._lensflare.userData._halo.visible = false; }
+    // §S277b: Clear bloom emissive on all frontier meshes
+    if (app._tmBloomActive) {
+      _highlightMeshes.forEach(function(m) {
+        if (m.material && m.material.userData._origEmissive !== undefined) {
+          m.material.emissive.setHex(m.material.userData._origEmissive);
+          m.material.emissiveIntensity = m.material.userData._origEmissiveI;
+          delete m.material.userData._origEmissive;
+          delete m.material.userData._origEmissiveI;
+        }
+      });
+      app._tmBloomActive = false;
+    }
     if (app.updateSky) app.updateSky(45, 180);
-    if (app.renderer && _savedClearColor !== null) {
+    if (_savedLighting) {
+      app.sun.intensity = _savedLighting.sunI;
+      if (app.ambient) app.ambient.intensity = _savedLighting.ambI;
+      if (app.hemi) app.hemi.intensity = _savedLighting.hemiI;
+      if (app.renderer) {
+        app.renderer.toneMappingExposure = _savedLighting.exposure;
+        app.renderer.setClearColor(_savedLighting.clearColor);
+      }
+      console.log('§TM_RESTORE_LIGHTING sunI=' + _savedLighting.sunI.toFixed(2) +
+        ' ambI=' + _savedLighting.ambI.toFixed(2) + ' hemiI=' + _savedLighting.hemiI.toFixed(2) +
+        ' exposure=' + _savedLighting.exposure.toFixed(2));
+      _savedLighting = null;
+    } else if (app.renderer && _savedClearColor !== null) {
       app.renderer.setClearColor(_savedClearColor);
     }
     _savedClearColor = null;
+    // §S277b: Remove night stars/moon if still present
+    if (app._nightStars) {
+      app.scene.remove(app._nightStars);
+      app._nightStars.geometry.dispose();
+      app._nightStars.material.dispose();
+      app._nightStars = null;
+    }
+    if (app._moon) {
+      app.scene.remove(app._moon);
+      app._moon.geometry.dispose();
+      app._moon.material.dispose();
+      app._moon = null;
+    }
   }
 
   function updateStatus() {
@@ -1710,10 +1827,27 @@
       _sunCycle = !_sunCycle;
       var btn = document.getElementById('tm-sun');
       if (btn) btn.classList.toggle('tm-active', _sunCycle);
-      if (_sunCycle) applySunCycle(_cursor);
-      else restoreSky();
-      var app = A();
-      if (app && app.renderer && app.scene && app.camera) app.renderer.render(app.scene, app.camera);
+      if (_sunCycle) {
+        applySunCycle(_cursor);
+      } else {
+        // §S277b: Sun toggle off — restore lighting but keep _savedLighting for re-toggle
+        app._sunCycleActive = false;
+        if (app._sky && !app._shadowOn) app._sky.visible = false;
+        if (app._cloudPlane && !app._shadowOn) app._cloudPlane.visible = false;
+        if (app._lensflare) { app._lensflare.visible = false; if (app._lensflare.userData._halo) app._lensflare.userData._halo.visible = false; }
+        if (app.updateSky) app.updateSky(45, 180);
+        if (_savedLighting) {
+          app.sun.intensity = _savedLighting.sunI;
+          if (app.ambient) app.ambient.intensity = _savedLighting.ambI;
+          if (app.hemi) app.hemi.intensity = _savedLighting.hemiI;
+          if (app.renderer) {
+            app.renderer.toneMappingExposure = _savedLighting.exposure;
+            app.renderer.setClearColor(_savedLighting.clearColor);
+          }
+        }
+        _savedClearColor = null;
+      }
+      if (app.renderer && app.scene && app.camera) app.renderer.render(app.scene, app.camera);
     });
     document.getElementById('tm-eye').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -2937,7 +3071,11 @@
     _isLargeBuilding = (app.activeBuildingTotal || 0) > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
     // §S276b: Always enable sun cycle when shadows are on — Sky shader is near-zero cost
-    if (app._shadowOn || app._sky) { _sunCycle = true; console.log('§TM_SUNCYCLE_ON shadow=' + !!app._shadowOn + ' sky=' + !!app._sky); }
+    if (app._shadowOn || app._sky) {
+      _sunCycle = true;
+      app._sunCycleActive = true;  // §S277b: set early so toggleShadow knows TM owns the sky
+      console.log('§TM_SUNCYCLE_ON shadow=' + !!app._shadowOn + ' sky=' + !!app._sky);
+    }
     console.log('§TM_SHADOW_INHERIT shadowOn=' + !!app._shadowOn + ' groundVisible=' + (app.ground ? app.ground.visible : 'n/a'));
     computeDays();
     saveVisibility();

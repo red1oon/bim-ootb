@@ -343,6 +343,33 @@ function setupStreaming(A) {
     opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
     if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = 0.3; }
     const mat = new THREE.MeshStandardMaterial(opts);
+    // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
+    // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
+    // Rough surfaces (concrete, slabs, walls): coarse pebble texture.
+    // Zero geometry cost. Reduces temporal aliasing shimmer on flat-color surfaces.
+    var _perturbScale = 0;
+    if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
+    else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
+    if (_perturbScale > 0) {
+      var _ps = _perturbScale;
+      mat.onBeforeCompile = function(shader) {
+        // Inject hash function + normal perturbation into fragment shader
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <normal_fragment_maps>',
+          [
+            '#include <normal_fragment_maps>',
+            '{',
+            '  vec3 wp = vViewPosition;',
+            '  float nx = fract(sin(dot(wp.xy, vec2(12.9898, 78.233))) * 43758.5453);',
+            '  float ny = fract(sin(dot(wp.yz, vec2(93.989, 67.345))) * 24634.6345);',
+            '  float nz = fract(sin(dot(wp.xz, vec2(45.164, 38.927))) * 63251.1274);',
+            '  normal += normalize(vec3(nx - 0.5, ny - 0.5, nz - 0.5)) * ' + _ps.toFixed(3) + ';',
+            '  normal = normalize(normal);',
+            '}'
+          ].join('\n')
+        );
+      };
+    }
     mat.userData.origOpacity = a;
     mat.userData.origSide = a < 1.0 ? THREE.DoubleSide : THREE.FrontSide;
     if (A.xrayOn) { mat.transparent = true; mat.opacity = 0.3; mat.side = THREE.DoubleSide; }

@@ -5,7 +5,7 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v22 loaded — S276 WebGPU + compileAsync');
+console.log('§MAIN_JS v23 loaded — S277b WebGL-only + cinematic effects');
 async function initViewer() {
   const APP = window.APP = {};
 
@@ -570,12 +570,8 @@ async function initViewer() {
     if (APP.ground && APP.ground.visible) {
       APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
-    // §S276: On WebGPU, skip render() during streaming AND during compileAsync.
-    // WebGPU compiles shader pipelines synchronously inside render() — with 100+ materials
-    // from progressive flushes, this blocks the main thread for 10+ seconds causing timeout.
-    // Bboxes are already on screen from pre-streaming render. Real geometry appears after compileAsync.
+    // §S277b: WebGL only — no pipeline compilation gate needed
     if (_pipelinesCompiling) return;
-    if (APP._isWebGPU && APP.streaming) return;
     if (window._isMobile) {
       // §S276b: Throttle continuous streaming renders — every 10th frame only.
       // But always honor explicit _needsRender (bbox chunks, user interaction).

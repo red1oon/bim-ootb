@@ -28,58 +28,19 @@ async function setupScene(A) {
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
-  // §S276: Native WebGPU when adapter available, WebGLRenderer fallback.
-  // three.webgpu.min.js does NOT export WebGLRenderer — must import from three.module.min.js.
-  // Minified backend class names differ from source (e.g. "GR" not "WebGLBackend") — check adapter instead.
+  // §S277b: WebGL only — WebGPU deferred to future (unsafe usage warnings, canvas poisoning, compileAsync hangs).
+  // Firefox and Chrome both run smooth on WebGL r184. No adapter probing needed.
   var _isWebGPU = false;
   var renderer;
-  var _adapter = null;
-  // §S276b: Skip WebGPU on mobile — compileAsync hangs on mobile GPU, WebGL+DPR is proven.
-  if (!_isMobileRenderer && navigator.gpu && THREE.WebGPURenderer) {
-    try {
-      _adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-      // §S276b: Reject SwiftShader (software) — it poisons the canvas on context creation failure
-      if (_adapter && _adapter.info && _adapter.info.architecture === 'swiftshader') {
-        console.log('§S276_ADAPTER_REJECT SwiftShader detected — falling back to WebGL');
-        _adapter = null;
-      }
-    } catch(e) {}
-  }
-  if (_isMobileRenderer) console.log('§S276_MOBILE_SKIP WebGPU skipped — mobile uses WebGL');
-  if (_adapter) {
-    // Native WebGPU adapter found — use WebGPURenderer
-    try {
-      renderer = new THREE.WebGPURenderer({
-        canvas,
-        antialias: !_isMobileRenderer,
-        preserveDrawingBuffer: true
-      });
-      await renderer.init();
-      _isWebGPU = true;
-      console.log('§S276_RENDERER WebGPURenderer native adapter=' + (_adapter.info?.device || _adapter.name));
-    } catch(e) {
-      // §S276b: WebGPU init failed — canvas may be poisoned. Replace it.
-      console.warn('§S276_WEBGPU_FAIL ' + e.message + ' — replacing canvas, falling back to WebGL');
-      _adapter = null;
-      var newCanvas = canvas.cloneNode();
-      canvas.parentNode.replaceChild(newCanvas, canvas);
-      canvas = newCanvas;
-      A.canvas = canvas;
-    }
-  }
-  if (!_adapter) {
-    // No native WebGPU — reload THREE entirely from standard build.
-    // WebGPU build's PMREMGenerator/Scene/etc expect WebGPURenderer internals
-    // (e.g. hasInitialized()) — mixing builds causes ENV_MAP_FAIL and dark night mode.
-    var _std = await import('./lib/three.module.min.js');
-    for (var _k of Object.keys(_std)) THREE[_k] = _std[_k];
-    renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: !_isMobileRenderer,
-      preserveDrawingBuffer: true
-    });
-    console.log('§S276_RENDERER WebGLRenderer r184 (adapter=null)');
-  }
+  // Load standard WebGL build — WebGPU build's PMREMGenerator/Scene expect WebGPURenderer internals
+  var _std = await import('./lib/three.module.min.js');
+  for (var _k of Object.keys(_std)) THREE[_k] = _std[_k];
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: !_isMobileRenderer,
+    preserveDrawingBuffer: true
+  });
+  console.log('§S277b_RENDERER WebGLRenderer r184 (WebGPU deferred)');
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(_isMobileRenderer ? 1 : Math.min(window.devicePixelRatio, 2));  // §S271: mobile=1x, desktop=cap 2x
@@ -192,6 +153,33 @@ async function setupScene(A) {
     }
     // Update directional light to match sky sun
     sun.position.copy(_sunVec).multiplyScalar(5000);
+    // §S277d: Cloud drift — scroll UV offset for moving cloud shadows
+    if (_cloudPlane && _cloudPlane.visible && A._cloudTex) {
+      A._cloudTex.offset.x += 0.0002;
+      A._cloudTex.offset.y += 0.00008;
+    }
+    // §S277f: Lensflare tracks sun position — visible when sun above horizon + in camera view
+    if (_lensflare) {
+      var _sunPos = sun.position;
+      _lensflare.position.copy(_sunPos);
+      if (_lensflare.userData._halo) _lensflare.userData._halo.position.copy(_sunPos);
+      // Sun is above horizon if y > 0, and check angle to camera
+      var _sunDir = _sunPos.clone().sub(camera.position).normalize();
+      var _camDir = new THREE.Vector3();
+      camera.getWorldDirection(_camDir);
+      var _sunDot = _sunDir.dot(_camDir);
+      var _sunAbove = _sunPos.y > 50;
+      var _lfVisible = _sunAbove && _sunDot > 0.7 && _sky && _sky.visible;
+      // Intensity: strongest near horizon (sunrise/sunset), fade at zenith
+      var _sunElev = Math.max(0, Math.min(1, _sunPos.y / 5000));
+      var _lfIntensity = _lfVisible ? (1 - _sunElev * 0.6) * Math.max(0, (_sunDot - 0.7) / 0.3) : 0;
+      _lensflare.material.opacity = _lfIntensity * 0.9;
+      _lensflare.visible = _lfIntensity > 0.01;
+      if (_lensflare.userData._halo) {
+        _lensflare.userData._halo.material.opacity = _lfIntensity * 0.4;
+        _lensflare.userData._halo.visible = _lensflare.visible;
+      }
+    }
     // §S276b: Update env map from sky — apply per-material, NOT scene.environment.
     // scene.environment overrides ALL MeshStandardMaterial (including ground → white flash).
     // Instead: store texture in A._envMap, streaming.js applies it to building materials only.
@@ -241,6 +229,106 @@ async function setupScene(A) {
   } catch(e) {
     console.warn('§ENV_MAP_FAIL ' + e.message);
   }
+
+  // ── §S277d: Cloud Layer — scrolling Perlin noise plane, casts shadows via sun ──
+  // Single textured quad at Y=5000m. Near-zero GPU cost.
+  var _cloudPlane = null;
+  try {
+    // Generate Perlin noise texture on canvas (128x128 is enough for clouds)
+    var _cloudCanvas = document.createElement('canvas');
+    _cloudCanvas.width = 256; _cloudCanvas.height = 256;
+    var _cloudCtx = _cloudCanvas.getContext('2d');
+    var _cloudImgData = _cloudCtx.createImageData(256, 256);
+    // Simple 2D value noise — multiple octaves for cloud-like pattern
+    var _noiseHash = new Uint8Array(512);
+    for (var ni = 0; ni < 256; ni++) _noiseHash[ni] = _noiseHash[ni + 256] = (ni * 131 + 17) & 255;
+    function _valNoise(x, y) {
+      var xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+      var xf = x - Math.floor(x), yf = y - Math.floor(y);
+      var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+      var aa = _noiseHash[_noiseHash[xi] + yi] / 255;
+      var ab = _noiseHash[_noiseHash[xi] + yi + 1] / 255;
+      var ba = _noiseHash[_noiseHash[xi + 1] + yi] / 255;
+      var bb = _noiseHash[_noiseHash[xi + 1] + yi + 1] / 255;
+      return aa + u * (ba - aa) + v * (ab - aa) + u * v * (aa - ba - ab + bb);
+    }
+    for (var py = 0; py < 256; py++) {
+      for (var px = 0; px < 256; px++) {
+        var v = _valNoise(px * 0.02, py * 0.02) * 0.5 +
+                _valNoise(px * 0.04, py * 0.04) * 0.3 +
+                _valNoise(px * 0.08, py * 0.08) * 0.2;
+        v = Math.max(0, (v - 0.35) * 2.5);  // threshold — only dense areas become clouds
+        var idx = (py * 256 + px) * 4;
+        _cloudImgData.data[idx] = _cloudImgData.data[idx + 1] = _cloudImgData.data[idx + 2] = 255;
+        _cloudImgData.data[idx + 3] = Math.floor(v * 180);  // semi-transparent white
+      }
+    }
+    _cloudCtx.putImageData(_cloudImgData, 0, 0);
+    var _cloudTex = new THREE.CanvasTexture(_cloudCanvas);
+    _cloudTex.wrapS = _cloudTex.wrapT = THREE.RepeatWrapping;
+    _cloudTex.repeat.set(4, 4);
+    _cloudPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(80000, 80000),
+      new THREE.MeshBasicMaterial({ map: _cloudTex, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide })
+    );
+    _cloudPlane.rotation.x = -Math.PI / 2;
+    _cloudPlane.position.y = 5000;
+    _cloudPlane.castShadow = true;
+    _cloudPlane.receiveShadow = false;
+    _cloudPlane.visible = false;  // shown during shadow/TM
+    scene.add(_cloudPlane);
+    console.log('§CLOUD_LAYER loaded — 80km quad at Y=5000m');
+  } catch(e) { console.warn('§CLOUD_LAYER_FAIL ' + e.message); }
+  A._cloudPlane = _cloudPlane;
+  A._cloudTex = _cloudPlane ? _cloudPlane.material.map : null;
+
+  // ── §S277f: Lensflare — billboard sprite on sun position ──
+  var _lensflare = null;
+  try {
+    // Generate lensflare texture on canvas — radial gradient disc
+    var _lfCanvas = document.createElement('canvas');
+    _lfCanvas.width = 128; _lfCanvas.height = 128;
+    var _lfCtx = _lfCanvas.getContext('2d');
+    var _lfGrad = _lfCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    _lfGrad.addColorStop(0, 'rgba(255,250,230,1.0)');
+    _lfGrad.addColorStop(0.15, 'rgba(255,220,150,0.8)');
+    _lfGrad.addColorStop(0.4, 'rgba(255,180,80,0.3)');
+    _lfGrad.addColorStop(1, 'rgba(255,150,50,0)');
+    _lfCtx.fillStyle = _lfGrad;
+    _lfCtx.fillRect(0, 0, 128, 128);
+    var _lfTex = new THREE.CanvasTexture(_lfCanvas);
+    // Main sun disc
+    _lensflare = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: _lfTex, transparent: true, depthWrite: false, depthTest: false,
+      blending: THREE.AdditiveBlending
+    }));
+    _lensflare.scale.set(800, 800, 1);
+    _lensflare.visible = false;
+    _lensflare.renderOrder = 999;
+    scene.add(_lensflare);
+    // Secondary halo — larger, softer
+    var _haloCanvas = document.createElement('canvas');
+    _haloCanvas.width = 64; _haloCanvas.height = 64;
+    var _haloCtx = _haloCanvas.getContext('2d');
+    var _haloGrad = _haloCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    _haloGrad.addColorStop(0, 'rgba(255,200,100,0.15)');
+    _haloGrad.addColorStop(0.5, 'rgba(255,180,80,0.05)');
+    _haloGrad.addColorStop(1, 'rgba(255,150,50,0)');
+    _haloCtx.fillStyle = _haloGrad;
+    _haloCtx.fillRect(0, 0, 64, 64);
+    var _haloTex = new THREE.CanvasTexture(_haloCanvas);
+    var _halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: _haloTex, transparent: true, depthWrite: false, depthTest: false,
+      blending: THREE.AdditiveBlending
+    }));
+    _halo.scale.set(2000, 2000, 1);
+    _halo.visible = false;
+    _halo.renderOrder = 998;
+    scene.add(_halo);
+    _lensflare.userData._halo = _halo;
+    console.log('§LENSFLARE loaded — disc + halo sprites');
+  } catch(e) { console.warn('§LENSFLARE_FAIL ' + e.message); }
+  A._lensflare = _lensflare;
 
   // Ground plane — positioned after DB load to sit below the lowest building
   const ground = new THREE.Mesh(
