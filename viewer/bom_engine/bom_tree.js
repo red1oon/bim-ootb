@@ -101,7 +101,7 @@
     // Query children — the §8.3 one-level query
     var rows = _queryRows(db,
       "SELECT " +
-      "  bl.bom_child_id, bl.bom_id, " +
+      "  bl.M_BOM_Line_ID, bl.bom_id, " +
       "  bl.child_product_id, bl.qty, bl.qty_type, bl.sequence, " +
       "  bl.layout_strategy, bl.min_space_mm, " +
       "  bl.anchor_face, bl.fit_priority, " +
@@ -144,7 +144,7 @@
       var dzMm = (r.dz || 0) * 1000;
 
       var child = new BOMNode({
-        id:            r.child_product_id || ('line_' + r.bom_child_id),
+        id:            r.child_product_id || ('line_' + r.M_BOM_Line_ID),
         strategy:      strategy,
         mandatory:     !!(r.mandatory),
         spacing:       r.min_space_mm || 0,
@@ -166,7 +166,7 @@
       });
 
       // Grid metadata (for bom_grid.js)
-      child._bomLineId     = r.bom_child_id;
+      child._bomLineId     = r.M_BOM_Line_ID;
       child._createsGrid   = !!(r.creates_grid);
       child._dragAxis      = r.drag_axis || null;
       child._gridSharedKey = r.grid_shared_key || null;
