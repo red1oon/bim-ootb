@@ -768,17 +768,20 @@ function setupTools(A) {
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
       var _glowCount = 0;
       A._nightGlowMats = [];
-      // Determine which IFC classes to glow
+      // §S279: Glow ALL classes that contain light/LED/lamp elements — not just IfcLightFixture
       var _glowClasses = ['IfcLightFixture'];
-      // Check if building has any IfcLightFixture — if not, fallback to FlowTerminal
-      var _hasNamedLights = false;
       if (A.db) {
         try {
-          var lr = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%'");
-          _hasNamedLights = lr.length && lr[0].values[0][0] > 0;
+          var lr = A.db.exec("SELECT DISTINCT ifc_class FROM elements_meta WHERE LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%' OR LOWER(element_name) LIKE '%ceiling fan%'");
+          if (lr.length && lr[0].values.length > 0) {
+            lr[0].values.forEach(function(row) {
+              if (row[0] && _glowClasses.indexOf(row[0]) < 0) _glowClasses.push(row[0]);
+            });
+          }
         } catch(e) {}
       }
-      if (!_hasNamedLights) {
+      // Fallback if no named lights found at all
+      if (_glowClasses.length === 1) {
         _glowClasses.push('IfcFlowTerminal', 'IfcElectricAppliance');
         source += '+fallback';
       }
