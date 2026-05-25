@@ -236,14 +236,17 @@ function setupPicking(A) {
 
     // §S260d: WYSIWYG — skip non-pickable hits (outlines, low-opacity, invisible)
     var validHits = [];
+    var _hitClashViz = false;
     for (var hi = 0; hi < hits.length; hi++) {
       var h = hits[hi];
       if (h.object.userData && h.object.userData._isOutline) continue;
-      if (h.object.userData && h.object.userData._isClashViz) continue; // §S278: skip clash overlays
+      if (h.object.userData && h.object.userData._isClashViz) { _hitClashViz = true; continue; }
       if (h.object.material && h.object.material.opacity < 0.3) continue;
       if (h.object.userData && h.object.userData.isBboxPlaceholder) continue;
       validHits.push(h);
     }
+    // §S278: If ray hit a clash overlay, suppress picking entirely — user is viewing clash, not picking
+    if (_hitClashViz) validHits = [];
     if (!validHits.length) {
       document.getElementById('info-panel').style.display = 'none';
       A._lastPickGuid = null;
