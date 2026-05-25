@@ -362,6 +362,8 @@ function setupPicking(A) {
         window._pickHighlight = null;
         if (A.markDirty) A.markDirty();
       }
+      // §S277c: Clear outline on deselect toggle
+      if (A.setOutline) A.setOutline([], 0xff8c00);
       A._lastPickGuid = null;
       console.log('§PICK_DESELECT guid=' + guid.substring(0, 12));
       return;
@@ -485,9 +487,16 @@ function setupPicking(A) {
     hlMesh.position.copy(hlPos);
     hlMesh.quaternion.copy(hlQuat);
     A.scene.add(hlMesh);
+    // §S277c: OutlinePass for single Mesh only — InstancedMesh/BatchedMesh would highlight ALL instances
+    if (A.setOutline && hit.object && hit.object.isMesh && !hit.object.isInstancedMesh && !hit.object.isBatchedMesh) {
+      A.setOutline([hit.object], 0xff8c00);
+      // OutlinePass gives real silhouette — skip bbox wireframe for single meshes
+      hlMesh.visible = false;
+    } else {
+      // InstancedMesh/BatchedMesh: use bbox wireframe, no outline
+      if (A.setOutline) A.setOutline([], 0xff8c00);
+    }
     window._pickHighlight = hlMesh;
-    // §S277c: OutlinePass — mesh silhouette on picked object
-    if (A.setOutline && hit.object && hit.object.isMesh) A.setOutline([hit.object], 0xff8c00);
     if (A.markDirty) A.markDirty();
     console.log('§PICK_BBOX pos=' + hlPos.x.toFixed(1) + ',' + hlPos.y.toFixed(1) + ',' + hlPos.z.toFixed(1) +
       ' size=' + (hlSizeX||0).toFixed(2) + '×' + (hlSizeY||0).toFixed(2) + '×' + (hlSizeZ||0).toFixed(2) +
