@@ -644,10 +644,10 @@ function setupTools(A) {
   A._nightLights = [];       // active THREE.PointLight objects
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
-  var NIGHT_MAX_LIGHTS = 40; // §S277d: 40 lights — enough to cover visible storey
-  var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range, decay handles falloff
-  var NIGHT_LIGHT_INTENSITY = 5.0; // §S277d: fixed at fixture, no cam fade
-  var NIGHT_LIGHT_DECAY = 1.2; // §S277d: gentle decay — lights reach far across halls
+  var NIGHT_MAX_LIGHTS = 4; // §S277d: 4 POL — subtle ambient, not flashlight
+  var NIGHT_LIGHT_RANGE = 25; // §S277d: 25m radius — room-scale
+  var NIGHT_LIGHT_INTENSITY = 0.4; // §S277d: very subtle — fixtures glow does the visual
+  var NIGHT_LIGHT_DECAY = 2; // §S277d: physics default — inverse-square
 
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
@@ -727,41 +727,64 @@ function setupTools(A) {
           } catch(e) { console.warn('§NIGHT fallback query failed', e); }
         }
       }
-      // §S277d: Make ALL lighting fixture materials emissive — they glow at any distance.
-      // Uses _matCache keys which contain ifcClass (e.g. "0.8,0.75,0.5|IfcLightFixture")
+      // §S277d: Make light fixture materials emissive — glow at any distance, zero cost.
+      // Match by: IfcLightFixture class OR element_name containing 'light','lamp','led','luminaire'
       var _glowCount = 0;
       A._nightGlowMats = [];
-      var _lightClasses = ['IfcLightFixture', 'IfcFlowTerminal', 'IfcElectricAppliance'];
+      // 1. Collect GUIDs of light elements from DB
+      var _lightGuids = {};
+      if (A.db) {
+        try {
+          var lr = A.db.exec("SELECT guid FROM elements_meta WHERE ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%'");
+          if (lr.length) lr[0].values.forEach(function(row) { _lightGuids[row[0]] = true; });
+        } catch(e) {}
+      }
+      // 2. Also match matCache keys with IfcLightFixture (catches shared materials)
+      var _lightMatsFromCache = {};
       var mc = A._matCache || {};
-      for (var mk in mc) {
+      for (var mk in mc) { if (mk.indexOf('IfcLightFixture') >= 0) _lightMatsFromCache[mk] = true; }
+      // 3. Apply emissive: traverse scene for guid-matched + matCache-matched
+      var _glowedMats = {};
+      A.scene.traverse(function(obj) {
+        if (!obj.isMesh && !obj.isInstancedMesh) return;
+        if (!obj.material || !obj.material.emissive) return;
+        var matId = obj.material.uuid;
+        if (_glowedMats[matId]) return;  // already done
         var isLight = false;
-        for (var li = 0; li < _lightClasses.length; li++) {
-          if (mk.indexOf(_lightClasses[li]) >= 0) { isLight = true; break; }
+        // Check guid match
+        if (obj.userData && obj.userData.guid && _lightGuids[obj.userData.guid]) isLight = true;
+        // Check InstancedMesh — if ANY instance is a light, glow the whole mesh
+        if (!isLight && obj.isInstancedMesh && A._instanceMeta && A._instanceMeta[obj.id]) {
+          var imeta = A._instanceMeta[obj.id];
+          for (var ii = 0; ii < imeta.length && !isLight; ii++) {
+            if (_lightGuids[imeta[ii].guid]) isLight = true;
+          }
         }
-        if (!isLight) continue;
-        var m = mc[mk];
-        if (m && m.emissive) {
-          A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
-          m.emissive.setHex(0xffe4b5);
-          m.emissiveIntensity = 0.8;
-          m.needsUpdate = true;
-          _glowCount++;
-        }
-      }
+        if (!isLight) return;
+        _glowedMats[matId] = true;
+        A._nightGlowMats.push({ mat: obj.material, origE: obj.material.emissive.getHex(), origEI: obj.material.emissiveIntensity });
+        obj.material.emissive.setHex(0xffe4b5);
+        obj.material.emissiveIntensity = 0.8;
+        obj.material.needsUpdate = true;
+        _glowCount++;
+      });
       console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source + ' glowMeshes=' + _glowCount);
-      // Place proximity PointLights for actual illumination (nearby walls/floors)
-      A._nightUpdateLights();
-      // Hook camera change to update proximity lights
-      if (A.controls && !A._nightControlsListener) {
-        var _nightLastCamPos = A.camera.position.clone();
-        A._nightControlsListener = function() {
-          var d2 = A.camera.position.distanceToSquared(_nightLastCamPos);
-          if (d2 < 25) return;  // only update when camera moves >5m
-          _nightLastCamPos.copy(A.camera.position);
-          A._nightUpdateLights();
-        };
-        A.controls.addEventListener('change', A._nightControlsListener);
+      // §S277d: Place PointLights at fixture positions ONCE — never follow camera.
+      // Stride-sample to max 40 lights (GPU limit), evenly distributed across all fixtures.
+      A._nightLights.forEach(function(l) { A.scene.remove(l); l.dispose(); });
+      A._nightLights = [];
+      if (A._nightFixturePositions) {
+        var allPos = A._nightFixturePositions;
+        var stride = Math.max(1, Math.floor(allPos.length / NIGHT_MAX_LIGHTS));
+        for (var ni = 0; ni < allPos.length && A._nightLights.length < NIGHT_MAX_LIGHTS; ni += stride) {
+          var light = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+          light.position.copy(allPos[ni]);
+          A.scene.add(light);
+          A._nightLights.push(light);
+        }
+        console.log('§NIGHT_LIGHTS placed=' + A._nightLights.length + ' stride=' + stride + ' total=' + allPos.length);
       }
+      // No camera hook — lights stay at fixture positions permanently
       btn.style.background = '#ff8c00';
       btn.style.color = '#000';
       label.textContent = 'On — ' + A._nightFixtures.length + ' fixtures';
