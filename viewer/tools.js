@@ -804,21 +804,20 @@ function setupTools(A) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
-      // Large building — camera-facing priority culling
-      var camDir = new THREE.Vector3();
-      A.camera.getWorldDirection(camDir);
-      // §S277d: Score by distance + direction. Nearby lights always prioritised (fill the room).
-      // Forward bias weaker — behind-camera lights at <30m still included (room fill).
-      var scored = allPos.map(function(p) {
+      // §S277d: Spatial spread — pick evenly distributed fixtures, not just nearest to camera.
+      // Sort by distance, then stride-sample so lights spread across the building.
+      var sorted = allPos.map(function(p) {
         var dx = p.x - camPos.x, dy = p.y - camPos.y, dz = p.z - camPos.z;
-        var dist2 = dx*dx + dy*dy + dz*dz;
-        var dist = Math.sqrt(dist2) || 1;
-        var dot = (dx * camDir.x + dy * camDir.y + dz * camDir.z) / dist;
-        // Close lights (<30m) always score well regardless of direction
-        var score = dist < 30 ? dist2 : (dot > 0 ? dist2 : dist2 * 3);
-        return { pos: p, score: score };
-      }).sort(function(a, b) { return a.score - b.score; });
-      needed = scored.slice(0, NIGHT_MAX_LIGHTS);
+        return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
+      }).sort(function(a, b) { return a.dist2 - b.dist2; });
+      // Take 10 nearest (room fill) + stride-sample the rest for distant coverage
+      var nearCount = Math.min(10, sorted.length);
+      needed = sorted.slice(0, nearCount);
+      var remaining = sorted.slice(nearCount);
+      var stride = Math.max(1, Math.floor(remaining.length / (NIGHT_MAX_LIGHTS - nearCount)));
+      for (var si = 0; si < remaining.length && needed.length < NIGHT_MAX_LIGHTS; si += stride) {
+        needed.push(remaining[si]);
+      }
     }
     // Remove old lights
     A._nightLights.forEach(function(l) { A.scene.remove(l); l.dispose(); });
