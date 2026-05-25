@@ -8,8 +8,7 @@ function setupTour(A) {
       A.walkMode = false;
       A.walkLastTime = 0;
       A.flyActive = false;
-      btn.style.background = '#444';
-      btn.style.color = '#fff';
+      btn.classList.remove('active');
       A.status.textContent = `Walk paused at action ${A.walkActionIdx}/${A.walkActions.length} — tap ✈ to resume`;
       A.wlog(`PAUSED at action ${A.walkActionIdx}`);
       return;
@@ -19,8 +18,7 @@ function setupTour(A) {
       A.walkMode = true;
       A.flyActive = true;
       A.walkLastTime = 0;
-      btn.style.background = '#4fc3f7';
-      btn.style.color = '#000';
+      btn.classList.add('active');
       document.getElementById('walk-speed-btn').style.display = '';
       A.status.textContent = `Walk resumed at action ${A.walkActionIdx}/${A.walkActions.length}`;
       A.wlog(`RESUMED at action ${A.walkActionIdx}`);
@@ -28,8 +26,7 @@ function setupTour(A) {
     }
 
     A.flyActive = !A.flyActive;
-    btn.style.background = A.flyActive ? '#4fc3f7' : '#444';
-    btn.style.color = A.flyActive ? '#000' : '#fff';
+    btn.classList.toggle('active', A.flyActive);
 
     if (A.flyActive) {
       const tour = A.buildTour();
@@ -73,7 +70,7 @@ function setupTour(A) {
         const radius = Math.max(80, (bc.envelope || Math.sqrt(bc.count) * 2) * 1.2);
         A.flyTargets.push({ x: t.x, y: t.y, z: t.z, radius, name });
       }
-      if (A.flyTargets.length === 0) { A.flyActive = false; btn.style.background = '#444'; btn.style.color = '#fff'; return; }
+      if (A.flyTargets.length === 0) { A.flyActive = false; btn.classList.remove('active'); return; }
       A.flyTargetIdx = 0;
       A.flyAngle = 0;
       A.flyTransitioning = false;
@@ -367,7 +364,7 @@ function setupTour(A) {
       A.walkActionT = 0;
       A.walkPanAngle = 0;
       const btn = document.getElementById('fly-btn');
-      if (btn) { btn.style.background = '#444'; btn.style.color = '#fff'; }
+      if (btn) btn.classList.remove('active');
       A.status.textContent = 'Tour complete.';
       A.wlog('Tour complete');
       return;

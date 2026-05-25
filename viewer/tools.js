@@ -81,9 +81,9 @@ function setupTools(A) {
   A.xrayOn = false;
   A.toggleXray = function() {
     A.xrayOn = !A.xrayOn;
-    const btn = document.getElementById('xray-btn');
-    btn.style.background = A.xrayOn ? '#4fc3f7' : '#444';
-    btn.style.color = A.xrayOn ? '#000' : '#fff';
+    // §S279: Use .active class — CSS handles styling (overflow has !important)
+    var btn = document.getElementById('xray-btn');
+    if (btn) btn.classList.toggle('active', A.xrayOn);
 
     // §S271b: Update unique materials only (via _matCache) — O(unique mats) not O(all meshes)
     // No scene.traverse — _matCache has all streaming materials, ground/helpers are negligible.
@@ -150,9 +150,8 @@ function setupTools(A) {
 
   A.toggleSection = function() {
     A.sectionOn = !A.sectionOn;
-    const btn = document.getElementById('section-btn');
-    btn.style.background = A.sectionOn ? '#4fc3f7' : '#444';
-    btn.style.color = A.sectionOn ? '#000' : '#fff';
+    var btn = document.getElementById('section-btn');
+    if (btn) btn.classList.toggle('active', A.sectionOn);
     const panel = document.getElementById('section-slider-panel');
     panel.style.display = A.sectionOn ? 'block' : 'none';
     if (A.sectionOn) {
@@ -318,9 +317,8 @@ function setupTools(A) {
     var visible = panel.style.display !== 'none';
     panel.style.display = visible ? 'none' : 'block';
     var btn = document.getElementById('sunglass-btn');
-    btn.style.background = visible ? '#444' : '#ff8c00';
-    btn.style.color = visible ? '#fff' : '#000';
     A.sunglassOn = !visible;
+    if (btn) btn.classList.toggle('active', A.sunglassOn);
   };
 
   A._sunglassBackups = [];
@@ -644,8 +642,9 @@ function setupTools(A) {
       if (A.ground) A.ground.visible = false;
     }
     var btn = document.getElementById('shadow-btn');
-    btn.style.background = A._shadowOn ? '#ff8c00' : '#333';
-    btn.style.color = A._shadowOn ? '#000' : '#aaa';
+    if (btn) btn.classList.toggle('active', A._shadowOn);
+    var btn2 = document.getElementById('shadow-overflow-btn');
+    if (btn2) btn2.classList.toggle('active', A._shadowOn);
     if (A.markDirty) A.markDirty();
     console.log('§SHADOW toggle=' + A._shadowOn);
   };
@@ -815,8 +814,7 @@ function setupTools(A) {
         };
         A.controls.addEventListener('change', A._nightControlsListener);
       }
-      btn.style.background = '#ff8c00';
-      btn.style.color = '#000';
+      if (btn) btn.classList.add('active');
       label.textContent = 'On — ' + A._nightFixtures.length + ' fixtures';
     } else {
       // §S277d: Restore fixture emissive glow
@@ -869,8 +867,7 @@ function setupTools(A) {
         A.ground.material.color.setHex(A._whiteBg ? 0xffffff : 0x222233);
       }
       console.log('§NIGHT_MODE off');
-      btn.style.background = '#1a1a3e';
-      btn.style.color = '#aac';
+      if (btn) btn.classList.remove('active');
       label.textContent = 'Off';
     }
     if (A.markDirty) A.markDirty();

@@ -103,8 +103,7 @@ function setupPicking(A) {
       A.flyActive = false;
       A.walkMode = false;
       A.walkPath = [];
-      document.getElementById('fly-btn').style.background = '#444';
-      document.getElementById('fly-btn').style.color = '#fff';
+      var _fb = document.getElementById('fly-btn'); if (_fb) _fb.classList.remove('active');
       document.getElementById('walk-speed-btn').style.display = 'none';
     }
     // Long-press (500ms) → volume info card (mobile-friendly right-click)

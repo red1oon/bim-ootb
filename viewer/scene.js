@@ -795,10 +795,10 @@ async function setupScene(A) {
             };
             _registerPanel('clash', A._clashMatrixDiv, matNav, matClose);
             _focusPanel('clash');
-            // Watch for clash list popup — re-arms when list changes (new cell clicked)
+            // §S279: Event-driven clash list wiring — replaces 300ms setInterval polling
             var _lastClashList = null;
-            var _clashListWatcher = setInterval(function() {
-              if (!A._clashMatrixDiv) { clearInterval(_clashListWatcher); return; }
+            document.addEventListener('clashListChanged', function _onClashList() {
+              if (!A._clashMatrixDiv) { document.removeEventListener('clashListChanged', _onClashList); return; }
               if (A._clashListDiv && A._clashListDiv !== _lastClashList) {
                 _lastClashList = A._clashListDiv;
                 A._clashListDiv._kbdWired = true;
@@ -905,7 +905,7 @@ async function setupScene(A) {
                 // BUG-5 fix: delay focus to allow DOM layout before offsetWidth check
                 setTimeout(function() { _focusPanel('clashlist'); }, 50);
               }
-            }, 300);
+            });
           }
         }, 200);
       });

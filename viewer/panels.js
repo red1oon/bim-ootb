@@ -738,6 +738,7 @@ function setupPanels(A) {
       _s('sunglass-btn', A.sunglassOn);
       _s('fly-btn', A.flyActive);
       _s('shadow-overflow-btn', A._shadowOn);
+      _s('night-btn', A._nightMode);
       _s('bg-overflow-btn', A._whiteBg);
       _s('grid-2d-btn', A._gridOverlayState && A._gridOverlayState.active);
     }
@@ -751,15 +752,26 @@ function setupPanels(A) {
     pillBtns.forEach(function(b) { if (b.offsetParent !== null) visCount++; });
     console.log('§UI_PILL rendered=true icons=' + visCount + ' total=' + pillBtns.length);
   }
-  // Sync pill-measure active state with overflow measure-btn
+  // §S279: Sync pill button active states with toggle functions
   var pillMeasure = document.getElementById('pill-measure');
   if (pillMeasure) {
     var origToggleMeasure = window.toggleMeasure;
     if (origToggleMeasure) {
       window.toggleMeasure = function() {
         origToggleMeasure();
-        var active = A.measureActive;
-        pillMeasure.classList.toggle('active', !!active);
+        pillMeasure.classList.toggle('active', !!A.measureActive);
+      };
+    }
+  }
+  var pillTM = document.getElementById('pill-tm');
+  if (pillTM) {
+    var origToggleTM = window.toggleTimeMachine;
+    if (origToggleTM) {
+      window.toggleTimeMachine = function() {
+        origToggleTM();
+        // TM exposes state via tmGetState
+        var tmState = typeof window.tmGetState === 'function' ? window.tmGetState() : null;
+        pillTM.classList.toggle('active', !!(tmState && tmState.active));
       };
     }
   }

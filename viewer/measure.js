@@ -914,6 +914,8 @@ function setupMeasure(A) {
       '<div id="clash-list-body" style="padding:0 10px 8px;overflow-y:auto;flex:1;touch-action:pan-y">' + rendered.body + '</div>';
     document.body.appendChild(listDiv);
     A._clashListDiv = listDiv;
+    // §S279: Notify scene.js that clash list changed — replaces 300ms polling
+    document.dispatchEvent(new CustomEvent('clashListChanged'));
     A._makeDraggable(listDiv);
     A.measureLabels.push({ div: listDiv, mid: null });
 
@@ -1452,9 +1454,8 @@ function setupMeasure(A) {
       return;
     }
     A.measureActive = !A.measureActive;
-    const btn = document.getElementById('measure-btn');
-    btn.style.background = A.measureActive ? '#4fc3f7' : '#444';
-    btn.style.color = A.measureActive ? '#000' : '#fff';
+    var btn = document.getElementById('measure-btn');
+    if (btn) btn.classList.toggle('active', A.measureActive);
     // Grey out / restore 2D button
     var g2d = document.getElementById('grid-2d-btn');
     if (g2d) { g2d.style.opacity = A.measureActive ? '0.3' : '1'; }
