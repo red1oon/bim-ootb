@@ -779,14 +779,45 @@
       // S275: Fly camera to element — preserve viewing direction, just re-target
       var pos = A.ifc2three(r.cx, r.cy, r.cz);
       var center = new THREE.Vector3(pos.x, pos.y, pos.z);
-      var dist = 5;
+      var dist = 3;
       try {
         var bboxRows = A.dbQuery(
           'SELECT bbox_x, bbox_y, bbox_z FROM element_transforms WHERE guid = ?', [r.guid]);
         if (bboxRows.length && bboxRows[0][0] != null) {
-          dist = Math.max(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]) * 2 + 1;
+          dist = Math.max(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]) * 1.5 + 0.5;  // §S277d: tighter zoom
         }
       } catch(e) { /* use default dist */ }
+      // §S277d: Isolation on Find — dim everything else, highlight found element
+      if (typeof _restoreIsolation === 'function') _restoreIsolation(A);
+      var _findMesh = null;
+      A.scene.traverse(function(obj) {
+        if (_findMesh) return;
+        if (obj.userData && obj.userData.guid === r.guid) _findMesh = obj;
+      });
+      if (_findMesh) {
+        var _fIso = [];
+        var _fMat = _findMesh.material;
+        A.scene.traverse(function(obj) {
+          if (!obj.isMesh && !obj.isInstancedMesh && !obj.isBatchedMesh) return;
+          if (!obj.material || obj === A.ground || obj.material === _fMat) return;
+          if (obj.material.userData._pickDimmed) return;
+          _fIso.push({ mat: obj.material, origOp: obj.material.opacity, origTr: obj.material.transparent });
+          obj.material.transparent = true;
+          obj.material.opacity = 0.15;
+          obj.material.userData._pickDimmed = true;
+          obj.material.needsUpdate = true;
+        });
+        A._pickIsolated = _fIso;
+        if (_fMat) {
+          _fMat.userData._pickTarget = true;
+          _fMat.userData._pickOrigOp = _fMat.opacity;
+          _fMat.userData._pickOrigTr = _fMat.transparent;
+          _fMat.transparent = true;
+          _fMat.opacity = 0.7;
+          _fMat.needsUpdate = true;
+        }
+        if (A.setOutline) A.setOutline([_findMesh], 0x4fc3f7);  // blue for find
+      }
       // Keep camera's current viewing direction — just move to frame the new element
       var camDir = A.camera.position.clone().sub(A.controls.target).normalize();
       var end = center.clone().add(camDir.multiplyScalar(dist));
