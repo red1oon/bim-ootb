@@ -728,53 +728,40 @@ function setupTools(A) {
         }
       }
       // §S277d: Make light fixture materials emissive — glow at any distance, zero cost.
-      // Match by: IfcLightFixture class OR element_name containing 'light','lamp','led','luminaire'
+      // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
       var _glowCount = 0;
       A._nightGlowMats = [];
-      // 1. Collect GUIDs of light elements from DB
-      var _lightGuids = {};
+      // Determine which IFC classes to glow
+      var _glowClasses = ['IfcLightFixture'];
+      // Check if building has any IfcLightFixture — if not, fallback to FlowTerminal
+      var _hasNamedLights = false;
       if (A.db) {
         try {
-          // First: try named lights (IfcLightFixture or name contains light/lamp/led)
-          var lr = A.db.exec("SELECT guid FROM elements_meta WHERE ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%'");
-          if (lr.length) lr[0].values.forEach(function(row) { _lightGuids[row[0]] = true; });
-          // Fallback: if zero named lights, use ALL IfcFlowTerminal (generic IFC models)
-          if (Object.keys(_lightGuids).length === 0) {
-            var lr2 = A.db.exec("SELECT guid FROM elements_meta WHERE ifc_class IN ('IfcFlowTerminal','IfcElectricAppliance')");
-            if (lr2.length) lr2[0].values.forEach(function(row) { _lightGuids[row[0]] = true; });
-            if (Object.keys(_lightGuids).length > 0) source += '+fallback';
-          }
+          var lr = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%'");
+          _hasNamedLights = lr.length && lr[0].values[0][0] > 0;
         } catch(e) {}
       }
-      // 2. Also match matCache keys with IfcLightFixture (catches shared materials)
-      var _lightMatsFromCache = {};
+      if (!_hasNamedLights) {
+        _glowClasses.push('IfcFlowTerminal', 'IfcElectricAppliance');
+        source += '+fallback';
+      }
+      // Apply emissive to ALL matCache entries matching glow classes
       var mc = A._matCache || {};
-      for (var mk in mc) { if (mk.indexOf('IfcLightFixture') >= 0) _lightMatsFromCache[mk] = true; }
-      // 3. Apply emissive: traverse scene for guid-matched + matCache-matched
-      var _glowedMats = {};
-      A.scene.traverse(function(obj) {
-        if (!obj.isMesh && !obj.isInstancedMesh) return;
-        if (!obj.material || !obj.material.emissive) return;
-        var matId = obj.material.uuid;
-        if (_glowedMats[matId]) return;  // already done
+      for (var mk in mc) {
         var isLight = false;
-        // Check guid match
-        if (obj.userData && obj.userData.guid && _lightGuids[obj.userData.guid]) isLight = true;
-        // Check InstancedMesh — if ANY instance is a light, glow the whole mesh
-        if (!isLight && obj.isInstancedMesh && A._instanceMeta && A._instanceMeta[obj.id]) {
-          var imeta = A._instanceMeta[obj.id];
-          for (var ii = 0; ii < imeta.length && !isLight; ii++) {
-            if (_lightGuids[imeta[ii].guid]) isLight = true;
-          }
+        for (var gi = 0; gi < _glowClasses.length; gi++) {
+          if (mk.indexOf(_glowClasses[gi]) >= 0) { isLight = true; break; }
         }
-        if (!isLight) return;
-        _glowedMats[matId] = true;
-        A._nightGlowMats.push({ mat: obj.material, origE: obj.material.emissive.getHex(), origEI: obj.material.emissiveIntensity });
-        obj.material.emissive.setHex(0xffe4b5);
-        obj.material.emissiveIntensity = 0.8;
-        obj.material.needsUpdate = true;
-        _glowCount++;
-      });
+        if (!isLight) continue;
+        var m = mc[mk];
+        if (m && m.emissive) {
+          A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
+          m.emissive.setHex(0xffe4b5);
+          m.emissiveIntensity = 0.8;
+          m.needsUpdate = true;
+          _glowCount++;
+        }
+      }
       console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source + ' glowMeshes=' + _glowCount);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
