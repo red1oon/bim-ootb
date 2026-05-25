@@ -727,8 +727,29 @@ function setupTools(A) {
           } catch(e) { console.warn('§NIGHT fallback query failed', e); }
         }
       }
-      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source);
-      // Place initial proximity lights
+      // §S277d: Make ALL lighting fixture materials emissive — they glow at any distance.
+      // Uses _matCache keys which contain ifcClass (e.g. "0.8,0.75,0.5|IfcLightFixture")
+      var _glowCount = 0;
+      A._nightGlowMats = [];
+      var _lightClasses = ['IfcLightFixture', 'IfcFlowTerminal', 'IfcElectricAppliance'];
+      var mc = A._matCache || {};
+      for (var mk in mc) {
+        var isLight = false;
+        for (var li = 0; li < _lightClasses.length; li++) {
+          if (mk.indexOf(_lightClasses[li]) >= 0) { isLight = true; break; }
+        }
+        if (!isLight) continue;
+        var m = mc[mk];
+        if (m && m.emissive) {
+          A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
+          m.emissive.setHex(0xffe4b5);
+          m.emissiveIntensity = 0.8;
+          m.needsUpdate = true;
+          _glowCount++;
+        }
+      }
+      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source + ' glowMeshes=' + _glowCount);
+      // Place proximity PointLights for actual illumination (nearby walls/floors)
       A._nightUpdateLights();
       // Hook camera change to update proximity lights
       if (A.controls && !A._nightControlsListener) {
@@ -745,6 +766,15 @@ function setupTools(A) {
       btn.style.color = '#000';
       label.textContent = 'On — ' + A._nightFixtures.length + ' fixtures';
     } else {
+      // §S277d: Restore fixture emissive glow
+      if (A._nightGlowMats) {
+        A._nightGlowMats.forEach(function(g) {
+          g.mat.emissive.setHex(g.origE);
+          g.mat.emissiveIntensity = g.origEI;
+          g.mat.needsUpdate = true;
+        });
+        A._nightGlowMats = null;
+      }
       // Restore day
       if (A._nightSaved) {
         A.sun.intensity = A._nightSaved.sunI;
