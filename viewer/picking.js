@@ -239,7 +239,6 @@ function setupPicking(A) {
     for (var hi = 0; hi < hits.length; hi++) {
       var h = hits[hi];
       if (h.object.userData && h.object.userData._isOutline) continue;
-      if (h.object.userData && h.object.userData._isClashViz) continue;
       if (h.object.material && h.object.material.opacity < 0.3) continue;
       if (h.object.userData && h.object.userData.isBboxPlaceholder) continue;
       validHits.push(h);
