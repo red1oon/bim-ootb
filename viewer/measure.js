@@ -989,12 +989,18 @@ function setupMeasure(A) {
     });
     listDiv.addEventListener('pointerup', function(ev) {
       if (statusLongPress) { clearTimeout(statusLongPress); statusLongPress = null; }
-      // Quick tap (not long-press, not moved) → fly to clash immediately (no 300ms click delay)
       if (!statusLongFired && !statusMovedTooFar) {
         var target = ev.target.closest('[data-clash-idx]');
         if (target) {
           var idx = parseInt(target.getAttribute('data-clash-idx'));
-          A._flyToClash(idx);
+          var rows = Array.from(listDiv.querySelectorAll('[data-clash-idx]'));
+          var rowIdx = rows.indexOf(target);
+          if ((ev.shiftKey || ev.ctrlKey || ev.metaKey) && A._clashListNav) {
+            // §S278: Shift/Ctrl+click → route through LISTNAV for multi-select
+            A._clashListNav.onClick(rowIdx >= 0 ? rowIdx : idx, ev);
+          } else {
+            A._flyToClash(idx);
+          }
         }
       }
     });
