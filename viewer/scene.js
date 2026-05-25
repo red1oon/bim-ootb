@@ -308,13 +308,16 @@ async function setupScene(A) {
   scene.add(ground);
   A.ground = ground;
 
-  // ── §S277c: EffectComposer — post-processing pipeline ──
+  // ── §S277c: EffectComposer — post-processing pipeline (desktop only) ──
   // Render → SSAO → Outline → Output. Each pass toggle-able.
   A._composer = null;
   A._ssaoPass = null;
   A._outlinePass = null;
   A._composerEnabled = false;
-  try {
+  if (window._isMobile) {
+    // §S278: Skip composer entirely on mobile — render targets + passes cost GPU memory
+    console.log('§EFFECT_COMPOSER skip — mobile');
+  } else try {
     // §S277c: Parallel import — all 5 addons load concurrently, not sequentially
     var [_ecMod, _rpMod, _ssaoMod, _outMod, _opMod] = await Promise.all([
       import('./lib/EffectComposer.js'),
