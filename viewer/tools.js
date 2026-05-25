@@ -645,8 +645,8 @@ function setupTools(A) {
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
   var NIGHT_MAX_LIGHTS = 24; // §S277d: fill halls — 24 proximity-culled lights
-  var NIGHT_LIGHT_RANGE = 40; // §S277d: 40m radius — fills large open halls
-  var NIGHT_LIGHT_INTENSITY = 1.5; // §S277d: slightly lower intensity, wider coverage
+  var NIGHT_LIGHT_RANGE = 100; // §S277d: 100m radius — actually reaches across halls
+  var NIGHT_LIGHT_INTENSITY = 3.0; // §S277d: higher intensity to compensate for inverse-square decay
 
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
