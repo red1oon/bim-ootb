@@ -3096,7 +3096,11 @@
       _ops = loadOps();
       if (!_ops.length) { injectGantt(); _ops = loadOps(); }
       if (_ops.length) { _finishActivate(app); resolve(true); }
-      else resolve(false);
+      else {
+        console.warn('§TM_ACTIVATE_FAIL no kernel_ops / no ELEMENT_PLACE ops — TM cannot open');
+        viewerStatus('Time Machine: no construction timeline data');
+        resolve(false);
+      }
     });
     });
   }
@@ -3168,6 +3172,7 @@
   }
 
   function toggle() {
+    console.log('§TM_TOGGLE active=' + _active);
     if (_active) deactivate(); else activate();
   }
 
