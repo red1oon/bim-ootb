@@ -806,7 +806,7 @@ async function setupScene(A) {
                 for (var pi = _panels.length - 1; pi >= 0; pi--) {
                   if (_panels[pi].id === 'clashlist') { _panels.splice(pi, 1); break; }
                 }
-                var clashListNav = A._clashListNav = window.makeListKeyNav(
+                var clashListNav = window.makeListKeyNav(
                   function() { return Array.from(A._clashListDiv.querySelectorAll('[data-clash-idx]')); },
                   function(indices) {
                     // Multi-select: highlight all selected, zoom to frame them all
