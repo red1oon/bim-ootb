@@ -735,8 +735,15 @@ function setupTools(A) {
       var _lightGuids = {};
       if (A.db) {
         try {
+          // First: try named lights (IfcLightFixture or name contains light/lamp/led)
           var lr = A.db.exec("SELECT guid FROM elements_meta WHERE ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%'");
           if (lr.length) lr[0].values.forEach(function(row) { _lightGuids[row[0]] = true; });
+          // Fallback: if zero named lights, use ALL IfcFlowTerminal (generic IFC models)
+          if (Object.keys(_lightGuids).length === 0) {
+            var lr2 = A.db.exec("SELECT guid FROM elements_meta WHERE ifc_class IN ('IfcFlowTerminal','IfcElectricAppliance')");
+            if (lr2.length) lr2[0].values.forEach(function(row) { _lightGuids[row[0]] = true; });
+            if (Object.keys(_lightGuids).length > 0) source += '+fallback';
+          }
         } catch(e) {}
       }
       // 2. Also match matCache keys with IfcLightFixture (catches shared materials)
@@ -769,22 +776,18 @@ function setupTools(A) {
         _glowCount++;
       });
       console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source + ' glowMeshes=' + _glowCount);
-      // §S277d: Place PointLights at fixture positions ONCE — never follow camera.
-      // Stride-sample to max 40 lights (GPU limit), evenly distributed across all fixtures.
-      A._nightLights.forEach(function(l) { A.scene.remove(l); l.dispose(); });
-      A._nightLights = [];
-      if (A._nightFixturePositions) {
-        var allPos = A._nightFixturePositions;
-        var stride = Math.max(1, Math.floor(allPos.length / NIGHT_MAX_LIGHTS));
-        for (var ni = 0; ni < allPos.length && A._nightLights.length < NIGHT_MAX_LIGHTS; ni += stride) {
-          var light = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
-          light.position.copy(allPos[ni]);
-          A.scene.add(light);
-          A._nightLights.push(light);
-        }
-        console.log('§NIGHT_LIGHTS placed=' + A._nightLights.length + ' stride=' + stride + ' total=' + allPos.length);
+      // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
+      A._nightUpdateLights();
+      if (A.controls && !A._nightControlsListener) {
+        var _nightLastCamPos = A.camera.position.clone();
+        A._nightControlsListener = function() {
+          var d2 = A.camera.position.distanceToSquared(_nightLastCamPos);
+          if (d2 < 25) return;
+          _nightLastCamPos.copy(A.camera.position);
+          A._nightUpdateLights();
+        };
+        A.controls.addEventListener('change', A._nightControlsListener);
       }
-      // No camera hook — lights stay at fixture positions permanently
       btn.style.background = '#ff8c00';
       btn.style.color = '#000';
       label.textContent = 'On — ' + A._nightFixtures.length + ' fixtures';
@@ -857,20 +860,12 @@ function setupTools(A) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
-      // §S277d: Spatial spread — pick evenly distributed fixtures, not just nearest to camera.
-      // Sort by distance, then stride-sample so lights spread across the building.
+      // §S277d: Nearest 4 fixtures — subtle ambient on nearby walls
       var sorted = allPos.map(function(p) {
         var dx = p.x - camPos.x, dy = p.y - camPos.y, dz = p.z - camPos.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
-      // Take 10 nearest (room fill) + stride-sample the rest for distant coverage
-      var nearCount = Math.min(10, sorted.length);
-      needed = sorted.slice(0, nearCount);
-      var remaining = sorted.slice(nearCount);
-      var stride = Math.max(1, Math.floor(remaining.length / (NIGHT_MAX_LIGHTS - nearCount)));
-      for (var si = 0; si < remaining.length && needed.length < NIGHT_MAX_LIGHTS; si += stride) {
-        needed.push(remaining[si]);
-      }
+      needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
     }
     // Remove old lights
     A._nightLights.forEach(function(l) { A.scene.remove(l); l.dispose(); });
