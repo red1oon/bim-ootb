@@ -34,11 +34,13 @@
   var _ganttTasks = [];  // computed task groups for click detection
   var _sCurveData = null;  // cached S-curve points (computed once)
 
-  // §S278: Cached temp objects — reused per renderAtTime/cinematic tick to avoid GC pressure
-  var _tmV1 = new THREE.Vector3(), _tmV2 = new THREE.Vector3(), _tmV3 = new THREE.Vector3();
-  var _tmM4 = new THREE.Matrix4();
-  var _tmColor = new THREE.Color();
-  var _tmRay = new THREE.Raycaster();
+  // §S278: Cached temp objects — lazy-init on first use (THREE may not be loaded at parse time)
+  var _tmV1, _tmV2, _tmV3, _tmM4, _tmColor, _tmRay;
+  function _tmInit() {
+    if (_tmV1) return;
+    _tmV1 = new THREE.Vector3(); _tmV2 = new THREE.Vector3(); _tmV3 = new THREE.Vector3();
+    _tmM4 = new THREE.Matrix4(); _tmColor = new THREE.Color(); _tmRay = new THREE.Raycaster();
+  }
 
   // ── Query ops from DB ──
   function loadOps() {
@@ -2996,6 +2998,7 @@
 
   function activate() {
     if (_active) return;
+    _tmInit();  // §S279: lazy-init THREE objects (THREE may not exist at parse time)
     // Mobile merged meshes have no guid — re-stream as individual meshes
     var app = A();
     if (app && app._isMobile) {
@@ -3220,11 +3223,10 @@
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
-    try { init(); } catch(e) { console.error('§TM_INIT_FAIL', e); }
+    init();
   }
 
   window.toggleTimeMachine = toggle;
-  console.log('§TM_REGISTERED toggleTimeMachine assigned');
 
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
