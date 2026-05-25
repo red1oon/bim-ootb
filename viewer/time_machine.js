@@ -3220,10 +3220,11 @@
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
-    init();
+    try { init(); } catch(e) { console.error('§TM_INIT_FAIL', e); }
   }
 
   window.toggleTimeMachine = toggle;
+  console.log('§TM_REGISTERED toggleTimeMachine assigned');
 
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
