@@ -791,12 +791,25 @@
           dist = Math.max(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]) * 1.5 + 0.5;  // §S277d: tighter zoom
         }
       } catch(e) { /* use default dist */ }
-      // §S277d: Isolation on Find — dim everything else, highlight found element
+      // §S278: Isolation on Find — dim everything else, highlight found element
+      // Search individual Mesh, then BatchedMesh/InstancedMesh meta
       if (typeof _restoreIsolation === 'function') _restoreIsolation(A);
       var _findMesh = null;
       A.scene.traverse(function(obj) {
         if (_findMesh) return;
-        if (obj.userData && obj.userData.guid === r.guid) _findMesh = obj;
+        if (obj.userData && obj.userData.guid === r.guid && obj.isMesh) { _findMesh = obj; return; }
+        // BatchedMesh: guid in _batchMeta
+        if (obj.isBatchedMesh && A._batchMeta && A._batchMeta[obj.id]) {
+          for (var bi = 0; bi < A._batchMeta[obj.id].length; bi++) {
+            if (A._batchMeta[obj.id][bi].guid === r.guid) { _findMesh = obj; return; }
+          }
+        }
+        // InstancedMesh: guid in _instanceMeta
+        if (obj.isInstancedMesh && A._instanceMeta && A._instanceMeta[obj.id]) {
+          for (var ii = 0; ii < A._instanceMeta[obj.id].length; ii++) {
+            if (A._instanceMeta[obj.id][ii].guid === r.guid) { _findMesh = obj; return; }
+          }
+        }
       });
       if (_findMesh) {
         var _fIso = [];

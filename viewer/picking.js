@@ -428,7 +428,7 @@ function setupPicking(A) {
     // Highlight: compute bbox position + size per mesh type
     let hlSizeX, hlSizeY, hlSizeZ;
     const hlPos = _pickV1;
-    const hlQuat = _pickQ1.identity();
+    const hlQuat = _pickQ1.set(0, 0, 0, 1);
 
     if (hit.object.userData.isMerged && guid) {
       // S250 BUG-1: merged mesh geometry bbox covers entire group — use per-element DB data
