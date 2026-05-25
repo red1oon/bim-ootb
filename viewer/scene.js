@@ -783,7 +783,7 @@ async function setupScene(A) {
                         if (clashMid.z < minV.z) minV.z = clashMid.z; if (clashMid.z > maxV.z) maxV.z = clashMid.z;
                       });
                       if (!A._clashHighlights.length) return;
-                      // Fly camera to frame the bounding box
+                      // Fly camera to frame all selected clash dots (overview)
                       var mid = new THREE.Vector3(
                         (minV.x + maxV.x) / 2, (minV.y + maxV.y) / 2, (minV.z + maxV.z) / 2
                       );
@@ -791,7 +791,6 @@ async function setupScene(A) {
                       var camDir = A.camera.position.clone().sub(A.controls.target).normalize();
                       var dist = span * 1.5;
                       var targetPos = mid.clone().add(camDir.multiplyScalar(dist));
-                      // Animate (20 frames)
                       var startPos = A.camera.position.clone();
                       var startTarget = A.controls.target.clone();
                       var frame = 0;
@@ -828,6 +827,7 @@ async function setupScene(A) {
                   console.log('§CLASHLIST_CLOSE unregistered, watcher reset');
                 };
                 _registerPanel('clashlist', A._clashListDiv, clashListNav, clashListClose);
+                A._clashListNav = clashListNav;
                 // BUG-5 fix: delay focus to allow DOM layout before offsetWidth check
                 setTimeout(function() { _focusPanel('clashlist'); }, 50);
               }
