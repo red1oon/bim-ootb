@@ -85,7 +85,7 @@ self.onmessage = async function(e) {
   const { arrayBuffer, filename } = e.data;
   try {
     // Phase 1: Initialize web-ifc (10%)
-    post('progress', 5, 'Initializing parser...');
+    post('progress', 5, 'Starting IFC parser...');
     const ifcApi = new WebIFC.IfcAPI();
     console.log('[S220] §WASM_INIT starting with CDN locateFile...');
     await ifcApi.Init(function(path) {
@@ -94,7 +94,7 @@ self.onmessage = async function(e) {
       return resolved;
     }, true);
     console.log('[S220] §WASM_INIT done');
-    post('progress', 10, 'Parsing IFC...');
+    post('progress', 10, 'Reading building structure...');
 
     // Phase 2: Parse IFC (10-30%)
     const data = new Uint8Array(arrayBuffer);
@@ -202,7 +202,7 @@ self.onmessage = async function(e) {
     // Make prodDefColour available to element loop
     var _prodDefColour = (typeof prodDefColour !== 'undefined') ? prodDefColour : {};
 
-    post('progress', 30, 'Extracting elements...');
+    post('progress', 30, 'Extracting building elements...');
 
     // Phase 3: Extract spatial structure + elements (30-70%)
     const lines = ifcApi.GetAllLines(modelID);
@@ -384,7 +384,8 @@ self.onmessage = async function(e) {
 
     console.log('[S220] §ELEMENTS_FOUND count=' + elements.length + ' storeys=' + Object.keys(storeyMap).length);
     console.log('[S252] §ELEM_COLORS icm_mapped=' + Object.keys(_colorMap).length + '/' + elements.length);
-    post('progress', 50, 'Tessellating ' + elements.length + ' elements...');
+    post('progress', 45, 'Found ' + elements.length + ' elements across ' + Object.keys(storeyMap).length + ' storeys');
+    post('progress', 50, 'Building 3D shapes — this may take a minute for large buildings...');
 
     // Phase 4: Tessellate geometry (50-90%)
     // Same pipeline as Java: apply 4x4 transform → compute centroid → re-center at origin
@@ -535,7 +536,7 @@ self.onmessage = async function(e) {
       geomDone++;
       if (geomDone % 50 === 0 || geomDone === geomTotal) {
         const pct = 50 + Math.floor((geomDone / geomTotal) * 40);
-        post('progress', pct, 'Tessellating ' + geomDone + '/' + geomTotal + '...');
+        post('progress', pct, 'Building 3D shapes — ' + geomDone + ' of ' + geomTotal + ' done...');
       }
     }
 
@@ -555,7 +556,7 @@ self.onmessage = async function(e) {
     if (_skipCount) console.log('[S220] §GEOM_FAST_SKIP classes=' + Object.keys(_SKIP_GEOM).join(',') + ' count=' + _skipCount + ' (no GetFlatMesh call — saves OOM cycles)');
     console.log('[S220] §GEOM_SUMMARY elements=' + elements.length + ' renderable=' + renderableElements.length + ' ghosts=' + ghosts.length + ' materials=' + matCount);
 
-    post('progress', 92, 'Building databases...');
+    post('progress', 92, 'Building database — almost done...');
 
     // Phase 5: Build sql.js databases (90-100%)
     // We send raw data back to main thread — it builds sql.js DBs there
@@ -591,7 +592,7 @@ self.onmessage = async function(e) {
     }
     console.log('[S220] §UNITS autoScale=' + autoScale + (autoScale !== 1.0 ? ' (mm→m heuristic)' : ' (already metres)'));
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
-    post('progress', 95, 'Packaging...');
+    post('progress', 95, 'Packaging results...');
 
     const result = {
       type: 'done',

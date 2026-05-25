@@ -160,6 +160,7 @@ function setupImport(A) {
           console.log('[S220] §IMPORT_ERROR ' + msg.message);
           if (status) status.textContent = 'Import failed: ' + msg.message;
           if (progressBar) { progressBar.style.background = '#cc4444'; }
+          if (A.reportError) A.reportError(new Error('IFC import failed: ' + msg.message));
           worker.terminate();
           reject(new Error(msg.message));
           return;

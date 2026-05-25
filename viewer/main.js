@@ -15,6 +15,7 @@ async function initViewer() {
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
     setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
+  if (typeof setupErrorReporter === 'function') setupErrorReporter(APP);
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
