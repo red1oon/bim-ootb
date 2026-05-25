@@ -381,6 +381,9 @@ function setupMeasure(A) {
     return results;
   };
 
+  // §S278: Cache discipline element lists — reused across matrix count calls
+  A._clashDiscCache = {};
+
   A._countClashesRtree = function(storey, rules, discA, discB) {
     var ignoreSet = {};
     rules.clash_rules.forEach(function(r) {
@@ -390,18 +393,33 @@ function setupMeasure(A) {
     var ignoreFilter = Object.keys(ignoreSet).length ?
       " AND m.ifc_class NOT IN (" + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ")" : "";
 
-    var bMap = {};
-    A.dbQuery(
-      "SELECT t.rowid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, m.guid" +
-      " FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid" +
-      " WHERE m.discipline = '" + discB + "'" + storeyFilter + ignoreFilter + " AND t.bbox_x IS NOT NULL"
-    ).forEach(function(r) { bMap[r[0]] = r; });
+    // §S278: Cache per-discipline element lists to avoid re-querying
+    var cacheKey = discB + '|' + storeyFilter + ignoreFilter;
+    var bMap;
+    if (A._clashDiscCache[cacheKey]) {
+      bMap = A._clashDiscCache[cacheKey];
+    } else {
+      bMap = {};
+      A.dbQuery(
+        "SELECT t.rowid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, m.guid" +
+        " FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid" +
+        " WHERE m.discipline = '" + discB + "'" + storeyFilter + ignoreFilter + " AND t.bbox_x IS NOT NULL"
+      ).forEach(function(r) { bMap[r[0]] = r; });
+      A._clashDiscCache[cacheKey] = bMap;
+    }
 
-    var rowsA = A.dbQuery(
-      "SELECT t.rowid, m.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z" +
-      " FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid" +
-      " WHERE m.discipline = '" + discA + "'" + storeyFilter + ignoreFilter + " AND t.bbox_x IS NOT NULL"
-    );
+    var cacheKeyA = discA + '|' + storeyFilter + ignoreFilter;
+    var rowsA;
+    if (A._clashDiscCache[cacheKeyA + '_rows']) {
+      rowsA = A._clashDiscCache[cacheKeyA + '_rows'];
+    } else {
+      rowsA = A.dbQuery(
+        "SELECT t.rowid, m.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z" +
+        " FROM element_transforms t JOIN elements_meta m ON t.guid = m.guid" +
+        " WHERE m.discipline = '" + discA + "'" + storeyFilter + ignoreFilter + " AND t.bbox_x IS NOT NULL"
+      );
+      A._clashDiscCache[cacheKeyA + '_rows'] = rowsA;
+    }
 
     var count = 0;
     var seen = {};
@@ -726,12 +744,13 @@ function setupMeasure(A) {
         }
         fullMesh.frustumCulled = false;
         fullMesh.renderOrder = 996 + hi;
+        fullMesh.userData._isClashViz = true; // §S278: exclude from picking
         A.measureGroup.add(fullMesh);
         A._clashHighlights.push(fullMesh);
 
-        // Clipped mesh at overlap — bright red/blue, both always visible
+        // Clipped mesh at overlap — bright red/blue, shine through everything
         var mat = new THREE.MeshBasicMaterial({
-          color: meshColors[hi], transparent: true, opacity: 0.6,
+          color: meshColors[hi], transparent: true, opacity: 0.7,
           side: THREE.DoubleSide, depthTest: false, depthWrite: false,
           clippingPlanes: clipPlanes, clipShadows: true
         });
@@ -742,6 +761,7 @@ function setupMeasure(A) {
         }
         mesh.frustumCulled = false;
         mesh.renderOrder = 998 + hi; // A=998, B=999 — both draw, B on top
+        mesh.userData._isClashViz = true; // §S278: exclude from picking
         A.measureGroup.add(mesh);
         A._clashHighlights.push(mesh);
       });
@@ -1275,8 +1295,11 @@ function setupMeasure(A) {
       if (!rule) return;
       // Dismiss previous list if any (keep matrix open)
       if (A._clashRevealActive) A._dismissClashes(true);
-      // Query this pair with LIMIT 30 — the only place real work happens
+      // §S278: Reset offset when clicking a different pair
       var storey = A._currentClashStorey;
+      var prevPair = A._currentClashPairLabel || '';
+      var thisPair = discA + ' vs ' + discB;
+      if (thisPair !== prevPair) A._clashPairOffset = 0;
       var offset = A._clashPairOffset || 0;
       var clashes = A._queryClashesPair(storey, rules, discA, discB, offset);
       if (!clashes.length && offset > 0) {
@@ -1424,6 +1447,7 @@ function setupMeasure(A) {
     if (!keepMatrix && A._clashMatrixDiv) {
       A._clashMatrixDiv.remove();
       A._clashMatrixDiv = null;
+      A._clashDiscCache = {}; // §S278: clear discipline element cache
       if (A._clashModeActive && A._exitClashMode) A._exitClashMode();
     }
     if (A.markDirty) A.markDirty();

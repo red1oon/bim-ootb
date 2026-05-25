@@ -811,7 +811,11 @@ function setupTools(A) {
         document.getElementById('sl-exposure-val').textContent = A._nightSaved.exposure.toFixed(1);
       }
       // Remove point lights
-      A._nightLights.forEach(function(l) { A.scene.remove(l); l.dispose(); });
+      A._nightLights.forEach(function(l) {
+        A.scene.remove(l);
+        if (l.shadow && l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
+        l.dispose();
+      });
       A._nightLights = [];
       A._nightFixturePositions = null;
       // Unhook
@@ -856,7 +860,11 @@ function setupTools(A) {
       needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
     }
     // Remove old lights
-    A._nightLights.forEach(function(l) { A.scene.remove(l); l.dispose(); });
+    A._nightLights.forEach(function(l) {
+      A.scene.remove(l);
+      if (l.shadow && l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
+      l.dispose();
+    });
     A._nightLights = [];
     // §S277d: Fixed intensity at fixture positions — no camera-distance fade
     needed.forEach(function(f) {

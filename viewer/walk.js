@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 // walk.js — Walk Mode (GPS blue dot, step detection, wall X-ray)
+var _walkDir = new THREE.Vector3(); // §S278: cached — reused per step
 function setupWalk(A) {
   // Walk Mode compass/tilt state
   A.walkCompassReadings = [];
@@ -454,7 +455,7 @@ function setupWalk(A) {
   };
 
   A.advanceWalkStep = function() {
-    const dir = new THREE.Vector3();
+    var dir = _walkDir;
     A.camera.getWorldDirection(dir);
     // Keep full direction including Y — tilt phone up to climb, down to descend
     dir.normalize();

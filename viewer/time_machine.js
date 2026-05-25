@@ -34,6 +34,12 @@
   var _ganttTasks = [];  // computed task groups for click detection
   var _sCurveData = null;  // cached S-curve points (computed once)
 
+  // §S278: Cached temp objects — reused per renderAtTime/cinematic tick to avoid GC pressure
+  var _tmV1 = new THREE.Vector3(), _tmV2 = new THREE.Vector3(), _tmV3 = new THREE.Vector3();
+  var _tmM4 = new THREE.Matrix4();
+  var _tmColor = new THREE.Color();
+  var _tmRay = new THREE.Raycaster();
+
   // ── Query ops from DB ──
   function loadOps() {
     var app = A();
@@ -120,12 +126,14 @@
     for (var i = 0; i < _cinePeeled.length; i++) {
       var obj = _cinePeeled[i];
       if (obj._cinePeeled) {
-        obj.material.transparent = obj._cinePeelTransparent;
-        obj.material.opacity = obj._cinePeelOpacity;
-        obj.material.needsUpdate = true;
+        // §S278: dispose clone, restore original material (prevents leak per peel cycle)
+        if (obj._cinePeelOrigMat) {
+          var clone = obj.material;
+          obj.material = obj._cinePeelOrigMat;
+          clone.dispose();
+          delete obj._cinePeelOrigMat;
+        }
         delete obj._cinePeeled;
-        delete obj._cinePeelOpacity;
-        delete obj._cinePeelTransparent;
       }
     }
     _cinePeeled = [];
@@ -709,8 +717,8 @@
         var bmetas = app._batchMeta[obj.id];
         var anyVis = false;
         var _bmHasFrontier = false;
-        var _bmM4 = new THREE.Matrix4();
-        var _bmPos = new THREE.Vector3();
+        var _bmM4 = _tmM4;
+        var _bmPos = _tmV1;
         for (var bi = 0; bi < bmetas.length; bi++) {
           var bg = bmetas[bi].guid;
           var sid = bmetas[bi].slotId;
@@ -805,10 +813,9 @@
       var stride = Math.max(1, Math.floor(_placedMeshes.length / 1000));
       for (var spi = 0; spi < _placedMeshes.length && maxExtra > 0; spi += stride) {
         var sobj = _placedMeshes[spi];
-        var sowp = new THREE.Vector3();
-        sobj.getWorldPosition(sowp);
+        sobj.getWorldPosition(_tmV2);
         for (var si = 0; si < _frontierCentroids.length; si++) {
-          if (sowp.distanceToSquared(_frontierCentroids[si]) < 400) {
+          if (_tmV2.distanceToSquared(_frontierCentroids[si]) < 400) {
             sobj.castShadow = true;
             _shadowCasters++;
             maxExtra--;
@@ -843,21 +850,19 @@
         if (_isMobileCine) return; // no peel on mobile
         // Restore anything peeled last tick
         restorePeeled();
-        var ray = new THREE.Raycaster();
-        var dir = new THREE.Vector3().subVectors(tgtPos, camPos).normalize();
+        _tmV2.subVectors(tgtPos, camPos).normalize();
         var dist = camPos.distanceTo(tgtPos);
-        ray.set(camPos, dir);
-        ray.far = dist * 0.9; // only hide things between cam and 90% of target
+        _tmRay.set(camPos, _tmV2);
+        _tmRay.far = dist * 0.9; // only hide things between cam and 90% of target
         var meshes = [];
         app.scene.traverse(function(o) { if (o.isMesh && o.visible) meshes.push(o); });
-        var hits = ray.intersectObjects(meshes, false);
+        var hits = _tmRay.intersectObjects(meshes, false);
         // Hide up to 5 obstructing meshes (walls, slabs blocking the view)
         for (var hi = 0; hi < Math.min(hits.length, 5); hi++) {
           var obj = hits[hi].object;
           if (obj.userData && obj.userData.guid) {
             obj._cinePeeled = true;
-            obj._cinePeelOpacity = obj.material.opacity;
-            obj._cinePeelTransparent = obj.material.transparent;
+            obj._cinePeelOrigMat = obj.material; // §S278: save original to restore + dispose clone
             obj.material = obj.material.clone();
             obj.material.transparent = true;
             obj.material.opacity = 0.08;
@@ -936,7 +941,7 @@
         var openT = Math.min(1, _cineTick / _BEAT_OPENING);
         if (_cineOpenStart && _cineOpenTarget) {
           var openAz = openT * Math.PI; // 180° sweep
-          var openOff = new THREE.Vector3().subVectors(_cineOpenStart, _cineOpenTarget);
+          var openOff = _tmV2.subVectors(_cineOpenStart, _cineOpenTarget);
           var openR = Math.sqrt(openOff.x * openOff.x + openOff.z * openOff.z);
           var openBaseAz = Math.atan2(openOff.z, openOff.x);
           // §S260e: Look-at target — lerp from first scene (foundation) to building center
@@ -1016,15 +1021,15 @@
             var camDist = app.camera.position.distanceTo(target);
             var minDist = desiredDist * 0.5;
             if (camDist < minDist) {
-              var pushDir = new THREE.Vector3().subVectors(app.camera.position, target).normalize();
-              app.camera.position.copy(target).addScaledVector(pushDir, minDist);
+              _tmV2.subVectors(app.camera.position, target).normalize();
+              app.camera.position.copy(target).addScaledVector(_tmV2, minDist);
               camDist = minDist;
             }
             var diff = camDist - desiredDist;
             if (Math.abs(diff) > 0.5) {
               var spd = diff > 0 ? 0.08 : 0.04;
-              var dir = new THREE.Vector3().subVectors(target, app.camera.position).normalize();
-              app.camera.position.addScaledVector(dir, diff * spd);
+              _tmV2.subVectors(target, app.camera.position).normalize();
+              app.camera.position.addScaledVector(_tmV2, diff * spd);
             }
           }
 
@@ -1032,12 +1037,12 @@
           if (_playing && _userIdle) {
             var orbitSpd = sc.type === 'hero' ? (Math.PI * 2 / _BEAT_CLOSEUP) : 0.006;
             _camAngle += orbitSpd;
-            var camOff = new THREE.Vector3().subVectors(app.camera.position, target);
-            var dist2D = Math.sqrt(camOff.x * camOff.x + camOff.z * camOff.z);
-            var curAz = Math.atan2(camOff.z, camOff.x);
-            camOff.x = Math.cos(curAz + orbitSpd) * dist2D;
-            camOff.z = Math.sin(curAz + orbitSpd) * dist2D;
-            app.camera.position.copy(target).add(camOff);
+            _tmV2.subVectors(app.camera.position, target);
+            var dist2D = Math.sqrt(_tmV2.x * _tmV2.x + _tmV2.z * _tmV2.z);
+            var curAz = Math.atan2(_tmV2.z, _tmV2.x);
+            _tmV2.x = Math.cos(curAz + orbitSpd) * dist2D;
+            _tmV2.z = Math.sin(curAz + orbitSpd) * dist2D;
+            app.camera.position.copy(target).add(_tmV2);
           }
 
           // Peel obstructions
@@ -1058,7 +1063,7 @@
       // ── ESTABLISHING: wide pull-back, full building orbit, shadow sweep ──
       } else if (_cineBeat === 'establishing') {
         _sunCycle = true;
-        var bldCenter = new THREE.Vector3(0, 10, 0);
+        var bldCenter = _tmV2.set(0, 10, 0);
         if (app.buildingCentres && app.activeBuilding && app.buildingCentres[app.activeBuilding]) {
           var bc = app.buildingCentres[app.activeBuilding];
           var p = app.ifc2three(bc.ix, bc.iy, bc.iz);
@@ -1073,17 +1078,17 @@
         var wideDesired = 80;
         var camDist = app.camera.position.distanceTo(target);
         if (camDist < wideDesired) {
-          var dir = new THREE.Vector3().subVectors(app.camera.position, target).normalize();
-          app.camera.position.addScaledVector(dir, (wideDesired - camDist) * 0.04);
+          _tmV3.subVectors(app.camera.position, target).normalize();
+          app.camera.position.addScaledVector(_tmV3, (wideDesired - camDist) * 0.04);
         }
         if (_playing && (nowPerf - _camUserInteracted > 2000)) {
           _camAngle += 0.012;
-          var camOff = new THREE.Vector3().subVectors(app.camera.position, target);
-          var dist2D = Math.sqrt(camOff.x * camOff.x + camOff.z * camOff.z);
-          var curAz = Math.atan2(camOff.z, camOff.x);
-          camOff.x = Math.cos(curAz + 0.012) * dist2D;
-          camOff.z = Math.sin(curAz + 0.012) * dist2D;
-          app.camera.position.copy(target).add(camOff);
+          _tmV3.subVectors(app.camera.position, target);
+          var dist2D = Math.sqrt(_tmV3.x * _tmV3.x + _tmV3.z * _tmV3.z);
+          var curAz = Math.atan2(_tmV3.z, _tmV3.x);
+          _tmV3.x = Math.cos(curAz + 0.012) * dist2D;
+          _tmV3.z = Math.sin(curAz + 0.012) * dist2D;
+          app.camera.position.copy(target).add(_tmV3);
         }
 
         if (_cineTick > _BEAT_ESTAB) {
@@ -1318,7 +1323,7 @@
     // §S277b: Save full lighting state once on TM entry — restore on exit
     if (_savedLighting === null) {
       _savedLighting = {
-        clearColor: app.renderer ? app.renderer.getClearColor(new THREE.Color()).getHex() : 0x1a1a2e,
+        clearColor: app.renderer ? app.renderer.getClearColor(_tmColor).getHex() : 0x1a1a2e,
         sunI: app.sun.intensity,
         ambI: app.ambient ? app.ambient.intensity : 0.785,
         hemiI: app.hemi ? app.hemi.intensity : 1.257,
@@ -1330,7 +1335,7 @@
     }
     // Save original sky color once (legacy compat)
     if (_savedClearColor === null && app.renderer) {
-      _savedClearColor = app.renderer.getClearColor(new THREE.Color()).getHex();
+      _savedClearColor = app.renderer.getClearColor(_tmColor).getHex();
     }
 
     var h = new Date(cursorMs).getHours();
@@ -1432,16 +1437,22 @@
     app.sun.intensity = 0.05 + dayFactor * 4.4;
     if (app.ambient) app.ambient.intensity = 0.15 + dayFactor * 0.6;
     if (app.hemi) app.hemi.intensity = 0.1 + dayFactor * 1.1;
+    // §S277c: Fog color follows sun cycle — dark at night, warm at dawn/dusk, light blue at day
+    if (app.scene && app.scene.fog) {
+      var fogT = Math.max(0, Math.min(1, (elDeg + 10) / 55));
+      // Dawn/dusk: warm orange tint when near horizon
+      var warmT = (Math.abs(elDeg) < 15) ? (1 - Math.abs(elDeg) / 15) * 0.3 : 0;
+      app.scene.fog.color.setRGB(0.10 + fogT * 0.55 + warmT, 0.10 + fogT * 0.55, 0.18 + fogT * 0.50);
+    }
 
     // §S277f: Lensflare — track sun position directly (don't call updateSky, it conflicts with TM sun)
     if (app._lensflare) {
       var _lfSunPos = app.sun.position;
       app._lensflare.position.copy(_lfSunPos);
       if (app._lensflare.userData._halo) app._lensflare.userData._halo.position.copy(_lfSunPos);
-      var _lfSunDir = _lfSunPos.clone().sub(app.camera.position).normalize();
-      var _lfCamDir = new THREE.Vector3();
-      app.camera.getWorldDirection(_lfCamDir);
-      var _lfDot = _lfSunDir.dot(_lfCamDir);
+      var _lfSunDir = _tmV2.copy(_lfSunPos).sub(app.camera.position).normalize();
+      app.camera.getWorldDirection(_tmV3);
+      var _lfDot = _lfSunDir.dot(_tmV3);
       var _lfAbove = _lfSunPos.y > 50;
       var _lfShow = _lfAbove && _lfDot > 0.3 && dayFactor > 0.1;
       var _lfElev = Math.max(0, Math.min(1, _lfSunPos.y / (_env * 2)));

@@ -339,7 +339,8 @@
       elName.value = searchTerm || '';
       populateDropdowns();
       buildChips();
-      if (searchTerm) { _handleInput(searchTerm); } else { runSearch(); }
+      // §S278: Only search if user provided a term — skip unfiltered 48K query on open
+      if (searchTerm) { _handleInput(searchTerm); }
       // S275: Auto-focus — panel system + input
       if (typeof window._focusPanel === 'function') window._focusPanel('find');
       elName.focus();
@@ -434,12 +435,15 @@
           if (msRows.length > 0) msRows[0].values.forEach(function(r) { matchByStorey[r[0]] = r[1]; });
         }
 
-        // All storeys, sorted by elevation
-        var storeySql = 'SELECT m.storey, COUNT(*) as cnt FROM elements_meta m' +
-          ' JOIN element_transforms t ON m.guid = t.guid' +
-          ' WHERE m.storey IS NOT NULL' + (bld ? ' AND m.building = ?' : '') +
-          ' GROUP BY m.storey ORDER BY MIN(t.center_z)';
-        var storeys = A.db.exec(storeySql, bld ? [bld] : []);
+        // §S278: Cache storey list — JOIN to transforms is expensive, storeys don't change
+        if (!nav._storeyCache || nav._storeyCache.bld !== bld) {
+          var storeySql = 'SELECT m.storey, COUNT(*) as cnt FROM elements_meta m' +
+            ' JOIN element_transforms t ON m.guid = t.guid' +
+            ' WHERE m.storey IS NOT NULL' + (bld ? ' AND m.building = ?' : '') +
+            ' GROUP BY m.storey ORDER BY MIN(t.center_z)';
+          nav._storeyCache = { bld: bld, data: A.db.exec(storeySql, bld ? [bld] : []) };
+        }
+        var storeys = nav._storeyCache.data;
         elStorey.innerHTML = '<option value="">All storeys</option>';
         if (storeys.length > 0) {
           storeys[0].values.forEach(function(r) {
@@ -770,8 +774,8 @@
       var r = nav.results[idx];
       if (!r) return;
 
-      // S275: IFC bbox highlight from DB (same as picking.js — works for merged/batched)
-      highlightElement(r.guid);
+      // §S278: Skip bbox wireframe — pick-style isolation + outline is clearer
+      clearHighlight();
 
       // S275: Show standard IFC info panel (same as picking.js pointerup)
       showInfoPanel(r.guid);
