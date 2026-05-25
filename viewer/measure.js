@@ -715,7 +715,7 @@ function setupMeasure(A) {
       ];
 
       var hashRows = A.dbQuery("SELECT i.guid, i.geometry_hash, m.discipline FROM element_instances i JOIN elements_meta m ON i.guid = m.guid WHERE i.guid IN (?, ?)", [c[0], c[1]]);
-      var meshColors = [0xff2222, 0x2266ff];  // §S278: red A + blue B (was orange)
+      var meshColors = [0xff0000, 0x0044ff];  // §S278: pure red A + blue B
       hashRows.forEach(function(hr, hi) {
         var geo = A.meshCache[hr[1]];
         if (!geo) {
@@ -749,7 +749,7 @@ function setupMeasure(A) {
 
         // Clipped mesh at overlap — bright red/blue, both always visible
         var mat = new THREE.MeshBasicMaterial({
-          color: meshColors[hi], transparent: true, opacity: 0.6,
+          color: meshColors[hi], transparent: true, opacity: 0.85,
           side: THREE.DoubleSide, depthTest: false, depthWrite: false,
           clippingPlanes: clipPlanes, clipShadows: true
         });
