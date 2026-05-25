@@ -632,14 +632,32 @@ function setupStreaming(A) {
         console.log(`[S260] §PROGRESSIVE_FLUSH at=${A.streamIdx}/${A.streamQueue.length} drawCalls=${A.scene.children.length}`);
     }
 
-    document.getElementById('s-streamed').textContent = A.streamedCount.toLocaleString();
-    document.getElementById('s-meshes').textContent = Object.keys(A.meshCache).length.toLocaleString();
-    if (A.activeBuildingTotal > 0) {
-      document.getElementById('s-progress').style.width = Math.min(100, (A.streamIdx / A.streamQueue.length) * 100).toFixed(1) + '%';
+    // §S279: Cache DOM refs — avoid 4x getElementById per tick during streaming
+    if (!A._streamDom) {
+      A._streamDom = {
+        streamed: document.getElementById('s-streamed'),
+        meshes: document.getElementById('s-meshes'),
+        progress: document.getElementById('s-progress'),
+        current: document.getElementById('s-current-element'),
+        lastCount: -1, lastMeshCount: -1
+      };
     }
-    const lastRow = A.streamQueue[A.streamIdx - 1];
-    if (lastRow) {
-      document.getElementById('s-current-element').textContent = lastRow[11] || '';
+    var sd = A._streamDom;
+    if (sd.streamed && A.streamedCount !== sd.lastCount) {
+      sd.streamed.textContent = A.streamedCount.toLocaleString();
+      sd.lastCount = A.streamedCount;
+    }
+    var mc = Object.keys(A.meshCache).length;
+    if (sd.meshes && mc !== sd.lastMeshCount) {
+      sd.meshes.textContent = mc.toLocaleString();
+      sd.lastMeshCount = mc;
+    }
+    if (sd.progress && A.activeBuildingTotal > 0) {
+      sd.progress.style.width = Math.min(100, (A.streamIdx / A.streamQueue.length) * 100).toFixed(1) + '%';
+    }
+    var lastRow = A.streamQueue[A.streamIdx - 1];
+    if (sd.current && lastRow) {
+      sd.current.textContent = lastRow[11] || '';
     }
   };
 
@@ -853,6 +871,7 @@ function setupStreaming(A) {
         let vOff = 0, iOff = 0, vBase = 0;
         const _v = new THREE.Vector3();
         const _n = new THREE.Vector3();
+        const _nm = new THREE.Matrix3();  // §S279: reuse across items — avoids alloc per element
 
         for (const item of items) {
           const el = item.el;
@@ -869,7 +888,7 @@ function setupStreaming(A) {
           _m4.compose(_pos, _quat, _scale);
 
           // Normal matrix (inverse transpose of upper 3x3)
-          const _nm = new THREE.Matrix3().getNormalMatrix(_m4);
+          _nm.getNormalMatrix(_m4);
 
           // Bake positions
           for (let v = 0; v < count; v++) {

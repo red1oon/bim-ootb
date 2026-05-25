@@ -703,7 +703,7 @@ function setupTools(A) {
       // Moonlight: original values — worked well for SH
       A.sun.intensity = 0.15;
       A.sun.color.setHex(0x8899cc);
-      A.ambient.intensity = 0.2;  // §S277d: brighter moonlight — walls/floors visible everywhere
+      A.ambient.intensity = 0.35;  // §S279: brighter moonlight — exterior surfaces visible from outside
       A.hemi.intensity = 0.08;
       A.hemi.color.setHex(0x222244);
       A.renderer.toneMappingExposure = 0.8;
@@ -719,8 +719,8 @@ function setupTools(A) {
       // Update sliders to reflect
       document.getElementById('sl-sun').value = 0.15;
       document.getElementById('sl-sun-val').textContent = '0.2';
-      document.getElementById('sl-ambient').value = 0.2;
-      document.getElementById('sl-ambient-val').textContent = '0.2';
+      document.getElementById('sl-ambient').value = 0.35;
+      document.getElementById('sl-ambient-val').textContent = '0.4';
       document.getElementById('sl-hemi').value = 0.08;
       document.getElementById('sl-hemi-val').textContent = '0.1';
       document.getElementById('sl-exposure').value = 0.8;
@@ -912,7 +912,7 @@ function setupTools(A) {
     });
     // §S279: Camera-near POL — lights what you're staring at (exterior and interior)
     // Place at orbit target = the surface you're looking at
-    var tgtLight = new THREE.PointLight(0xffe4b5, 1.0, 15, 1.2);
+    var tgtLight = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
     tgtLight.position.copy(_tgt);
     A.scene.add(tgtLight);
     A._nightLights.push(tgtLight);
