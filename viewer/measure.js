@@ -679,7 +679,16 @@ function setupMeasure(A) {
     ).multiplyScalar(0.5);
 
     // §S278: Clear any pick isolation — clash view needs full-opacity scene
+    // §S278: Clear pick highlight (yellow bbox) + isolation + outline
     if (typeof _restoreIsolation === 'function') _restoreIsolation(A);
+    if (window._pickHighlight) {
+      if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
+      window._pickHighlight.geometry.dispose();
+      window._pickHighlight.material.dispose();
+      window._pickHighlight = null;
+    }
+    if (A.setOutline) A.setOutline([], 0xff8c00);
+    document.getElementById('info-panel').style.display = 'none';
     // Remove previous clash highlights
     if (A._clashHighlights) {
       A._clashHighlights.forEach(function(h) { A.measureGroup.remove(h); });
@@ -842,6 +851,16 @@ function setupMeasure(A) {
   A._revealClashes = function(clashes, rules, cardX, cardY, pairLabel, pairRule) {
     if (A._clashRevealActive) A._dismissClashes(true);
     A._clashRevealActive = true;
+    // §S278: Clear any existing pick state (yellow bbox, isolation, outline, info panel)
+    if (typeof _restoreIsolation === 'function') _restoreIsolation(A);
+    if (window._pickHighlight) {
+      if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
+      window._pickHighlight.geometry.dispose();
+      window._pickHighlight.material.dispose();
+      window._pickHighlight = null;
+    }
+    if (A.setOutline) A.setOutline([], 0xff8c00);
+    document.getElementById('info-panel').style.display = 'none';
     A._loadClashStatuses();
     A._currentClashes = clashes;
     A._currentClashRules = rules;
