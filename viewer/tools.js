@@ -644,7 +644,7 @@ function setupTools(A) {
   A._nightLights = [];       // active THREE.PointLight objects
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
-  var NIGHT_MAX_LIGHTS = 4; // §S277d: 4 POL — ambient without flashlight
+  var NIGHT_MAX_LIGHTS = 12; // §S277d: 12 POL — fills rooms properly
   var NIGHT_LIGHT_RANGE = 30; // §S277d: 30m radius
   var NIGHT_LIGHT_INTENSITY = 1.5; // §S277d: brighter — 4 lights need to cover more
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: gentler decay — reaches further per light
@@ -666,7 +666,7 @@ function setupTools(A) {
       // Moonlight: original values — worked well for SH
       A.sun.intensity = 0.15;
       A.sun.color.setHex(0x8899cc);
-      A.ambient.intensity = 0.1;
+      A.ambient.intensity = 0.2;  // §S277d: brighter moonlight — walls/floors visible everywhere
       A.hemi.intensity = 0.08;
       A.hemi.color.setHex(0x222244);
       A.renderer.toneMappingExposure = 0.8;
@@ -682,8 +682,8 @@ function setupTools(A) {
       // Update sliders to reflect
       document.getElementById('sl-sun').value = 0.15;
       document.getElementById('sl-sun-val').textContent = '0.2';
-      document.getElementById('sl-ambient').value = 0.1;
-      document.getElementById('sl-ambient-val').textContent = '0.1';
+      document.getElementById('sl-ambient').value = 0.2;
+      document.getElementById('sl-ambient-val').textContent = '0.2';
       document.getElementById('sl-hemi').value = 0.08;
       document.getElementById('sl-hemi-val').textContent = '0.1';
       document.getElementById('sl-exposure').value = 0.8;
@@ -847,9 +847,10 @@ function setupTools(A) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
-      // §S277d: Nearest 4 fixtures — subtle ambient on nearby walls
+      // §S277d: Nearest 4 fixtures to orbit target (stable) — not camera (jumps on orbit)
+      var _tgt = A.controls ? A.controls.target : camPos;
       var sorted = allPos.map(function(p) {
-        var dx = p.x - camPos.x, dy = p.y - camPos.y, dz = p.z - camPos.z;
+        var dx = p.x - _tgt.x, dy = p.y - _tgt.y, dz = p.z - _tgt.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
       needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
