@@ -678,6 +678,8 @@ function setupMeasure(A) {
       new THREE.Vector3(pB.x, pB.y, pB.z)
     ).multiplyScalar(0.5);
 
+    // §S278: Clear any pick isolation — clash view needs full-opacity scene
+    if (typeof _restoreIsolation === 'function') _restoreIsolation(A);
     // Remove previous clash highlights
     if (A._clashHighlights) {
       A._clashHighlights.forEach(function(h) { A.measureGroup.remove(h); });
@@ -732,10 +734,10 @@ function setupMeasure(A) {
         var disc = hr[2] || '';
         var discColor = (A.DISC_COLORS && A.DISC_COLORS[disc]) || meshColors[hi];
 
-        // Full unclipped mesh — discipline color, shows full pipe/slab length
-        var fullMat = new THREE.MeshPhongMaterial({
-          color: discColor, transparent: true, opacity: 0.25,
-          side: THREE.DoubleSide, depthWrite: false, flatShading: true
+        // §S278: Full unclipped mesh — red/blue tint (not discipline color) so pair is obvious
+        var fullMat = new THREE.MeshBasicMaterial({
+          color: meshColors[hi], transparent: true, opacity: 0.2,
+          side: THREE.DoubleSide, depthWrite: false, depthTest: false
         });
         var fullMesh = new THREE.Mesh(geo.clone(), fullMat);
         fullMesh.position.set(pos.x, pos.y, pos.z);
