@@ -927,8 +927,9 @@ function setupMeasure(A) {
         var target = ev.target.closest('[data-clash-idx]');
         if (target) {
           var idx = parseInt(target.getAttribute('data-clash-idx'));
-          // §S278: Ctrl/Shift+click → multi-select via ListKeyNav
-          if ((ev.ctrlKey || ev.metaKey || ev.shiftKey) && A._clashListNav) {
+          // §S278: ALL clicks route through ListKeyNav so anchor/cursor track correctly
+          // onToggle handles single (fly-to) vs multi (red dots + zoom)
+          if (A._clashListNav) {
             var rows = Array.from(A._clashListDiv.querySelectorAll('[data-clash-idx]'));
             var rowIdx = rows.indexOf(target);
             if (rowIdx >= 0) A._clashListNav.onClick(rowIdx, ev);
@@ -972,8 +973,8 @@ function setupMeasure(A) {
       if (!_isMobile) {
         var target = ev.target.closest('[data-clash-idx]');
         if (target) {
-          // §S278: Ctrl/Shift+click → multi-select (don't fly-to)
-          if ((ev.ctrlKey || ev.metaKey || ev.shiftKey) && A._clashListNav) {
+          // §S278: ALL clicks route through ListKeyNav
+          if (A._clashListNav) {
             var rows = Array.from(A._clashListDiv.querySelectorAll('[data-clash-idx]'));
             var rowIdx = rows.indexOf(target);
             if (rowIdx >= 0) A._clashListNav.onClick(rowIdx, ev);
