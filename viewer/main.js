@@ -566,9 +566,12 @@ async function initViewer() {
     APP.walkModeGpsTick();
     // Device orientation LAST — nothing may overwrite the quaternion after this
     if (APP.walkModeActive) APP.walkOrientTick();
-    APP.updateMeasureLabels();
-    if (APP.ground && APP.ground.visible) {
-      APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
+    // §S279: Skip label projection + ground check on mobile when idle (saves per-frame work)
+    if (!window._isMobile || _needsRender || APP.streaming || _orbiting || APP.walkModeActive) {
+      APP.updateMeasureLabels();
+      if (APP.ground && APP.ground.visible) {
+        APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
+      }
     }
     // §S277b: WebGL only — no pipeline compilation gate needed
     if (_pipelinesCompiling) return;

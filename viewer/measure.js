@@ -1911,11 +1911,14 @@ function setupMeasure(A) {
     return true;
   };
 
+  // §S279: Reuse static Vector3 — avoids GC allocation per label per frame
+  var _labelVec3 = null;
   A.updateMeasureLabels = function() {
     if (!A.measureActive && !A.measureLabels.length && !A.measureGroup.children.length) return;
+    if (!_labelVec3) _labelVec3 = new THREE.Vector3();
     A.measureLabels.forEach(m => {
       if (!m.mid) return;  // fixed-position labels (info cards)
-      const projected = m.mid.clone().project(A.camera);
+      const projected = _labelVec3.copy(m.mid).project(A.camera);
       if (projected.z > 1) {
         m.div.style.display = 'none';
         return;

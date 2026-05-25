@@ -324,8 +324,10 @@ function setupTools(A) {
   };
 
   A._sunglassBackups = [];
+  // §S279: Restore original materials — clear isolation first so origMats are clean
   A._restoreSunglass = function() {
-    A._sunglassBackups.forEach(b => { b.mesh.material = b.origMat; });
+    if (A._pickIsolated && A._restoreIsolation) A._restoreIsolation();
+    A._sunglassBackups.forEach(function(b) { b.mesh.material = b.origMat; });
     A._sunglassBackups = [];
   };
 
@@ -339,17 +341,24 @@ function setupTools(A) {
   // Golden-angle hue for index — max contrast between neighbors
   A._goldenHue = function(idx) { return ((idx * 137.508) % 360) / 360; };
 
+  // §S279: Single-pass collection — one scene traverse instead of two
   A._collectAllMeshes = function() {
-    var all = [];
-    A.collectMeshes(function(o) { return o.isMesh && !o.userData.isInstanced; }).forEach(function(m) { all.push(m); });
-    A.collectMeshes(function(o) { return o.isInstancedMesh; }).forEach(function(m) { all.push(m); });
-    return all;
+    return A.collectMeshes(function(o) {
+      return (o.isMesh && !o.userData.isInstanced) || o.isInstancedMesh;
+    });
   };
 
+  // §S279: Clone material for palette — reset isolation dimming on clone so colors show
   A._recolorMesh = function(mesh, color) {
     A._sunglassBackups.push({ mesh: mesh, origMat: mesh.material });
     var newMat = mesh.material.clone();
     newMat.color.copy(color);
+    // If source was isolation-dimmed, restore full opacity on the palette clone
+    if (newMat.userData && newMat.userData._pickDimmed) {
+      newMat.opacity = 1;
+      newMat.transparent = false;
+      delete newMat.userData._pickDimmed;
+    }
     newMat.needsUpdate = true;
     mesh.material = newMat;
   };
@@ -377,88 +386,112 @@ function setupTools(A) {
     var label = document.getElementById('sunglass-val');
     var strategy, phase;
 
-    // ── Professional warm/cool palettes (no purple) ──
+    // §S279: Boosted saturation palettes — visible from tick 1 on white/grey buildings
     var warmPastel = [
-      [0.05, 0.25, 0.82], [0.12, 0.25, 0.78], [0.08, 0.30, 0.75],  // peach, sand, cream
-      [0.55, 0.20, 0.80], [0.42, 0.25, 0.76], [0.15, 0.22, 0.84],  // sage, olive, wheat
-      [0.02, 0.20, 0.70], [0.58, 0.28, 0.72], [0.10, 0.35, 0.68],  // coral, teal, amber
-      [0.48, 0.22, 0.78]                                              // moss
+      [0.05, 0.40, 0.78], [0.12, 0.40, 0.74], [0.08, 0.45, 0.71],  // peach, sand, cream
+      [0.55, 0.35, 0.76], [0.42, 0.40, 0.72], [0.15, 0.37, 0.80],  // sage, olive, wheat
+      [0.02, 0.35, 0.66], [0.58, 0.43, 0.68], [0.10, 0.50, 0.64],  // coral, teal, amber
+      [0.48, 0.37, 0.74]                                              // moss
     ];
     var coolPastel = [
-      [0.55, 0.30, 0.78], [0.62, 0.25, 0.75], [0.50, 0.35, 0.72],  // sky, steel, seafoam
-      [0.45, 0.28, 0.80], [0.58, 0.32, 0.70], [0.68, 0.22, 0.76],  // mint, teal, slate
-      [0.52, 0.25, 0.68], [0.60, 0.30, 0.74], [0.48, 0.35, 0.66],  // ocean, mist, stone
-      [0.65, 0.28, 0.72]                                              // ice
+      [0.55, 0.45, 0.74], [0.62, 0.40, 0.71], [0.50, 0.50, 0.68],  // sky, steel, seafoam
+      [0.45, 0.43, 0.76], [0.58, 0.47, 0.66], [0.68, 0.37, 0.72],  // mint, teal, slate
+      [0.52, 0.40, 0.64], [0.60, 0.45, 0.70], [0.48, 0.50, 0.62],  // ocean, mist, stone
+      [0.65, 0.43, 0.68]                                              // ice
     ];
     var earthTone = [
-      [0.08, 0.45, 0.65], [0.05, 0.50, 0.55], [0.10, 0.40, 0.70],  // terracotta, sienna, tan
-      [0.12, 0.55, 0.50], [0.15, 0.38, 0.60], [0.03, 0.48, 0.58],  // rust, clay, bronze
-      [0.07, 0.42, 0.62], [0.55, 0.35, 0.58], [0.20, 0.50, 0.52],  // copper, olive, khaki
-      [0.02, 0.60, 0.45]                                              // mahogany
+      [0.08, 0.55, 0.62], [0.05, 0.60, 0.52], [0.10, 0.50, 0.67],  // terracotta, sienna, tan
+      [0.12, 0.65, 0.47], [0.15, 0.48, 0.57], [0.03, 0.58, 0.55],  // rust, clay, bronze
+      [0.07, 0.52, 0.59], [0.55, 0.45, 0.55], [0.20, 0.60, 0.49],  // copper, olive, khaki
+      [0.02, 0.70, 0.42]                                              // mahogany
     ];
 
+    // §S279: sub starts at 2 so tick=1 already has visible contrast
     function applyPalette(groups, keys, palette, sub) {
+      sub = sub + 2;
       keys.forEach(function(k, i) {
         var p = palette[i % palette.length];
-        var color = new THREE.Color().setHSL(p[0], p[1] + sub * 0.05, p[2] - sub * 0.03);
+        var color = new THREE.Color().setHSL(p[0], Math.min(p[1] + sub * 0.04, 1), Math.max(p[2] - sub * 0.025, 0.3));
         groups[k].forEach(function(m) { A._recolorMesh(m, color); });
       });
     }
 
-    if (tick <= 10) {
-      // ── 1-10: Warm pastels by IFC class, subtle contrast growing ──
-      phase = 'Warm';
+    // §S279: Compressed ranges — every tick position visually distinct
+    //  1-8   Warm/class     9-16  Cool/class    17-24 Earth/class
+    // 25-32  Warm/storey   33-40  Cool/storey   41-48 Earth/storey
+    // 49-56  Warm/disc     57-64  Cool/disc     65-72 Earth/disc
+    // 73-82  Zebra         83-90  Mono          91-96 Gradient
+    // 97-100 HARD
+
+    if (tick <= 8) {
+      phase = 'Warm'; strategy = 'type';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
       applyPalette(g, keys, warmPastel, tick - 1);
       strategy = keys.length + ' types';
 
-    } else if (tick <= 20) {
-      // ── 11-20: Cool pastels by IFC class ──
-      phase = 'Cool';
+    } else if (tick <= 16) {
+      phase = 'Cool'; strategy = 'type';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      applyPalette(g, keys, coolPastel, tick - 11);
+      applyPalette(g, keys, coolPastel, tick - 9);
       strategy = keys.length + ' types';
 
-    } else if (tick <= 30) {
-      // ── 21-30: Earth tones by IFC class ──
-      phase = 'Earth';
+    } else if (tick <= 24) {
+      phase = 'Earth'; strategy = 'type';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      applyPalette(g, keys, earthTone, tick - 21);
+      applyPalette(g, keys, earthTone, tick - 17);
       strategy = keys.length + ' types';
 
-    } else if (tick <= 45) {
-      // ── 31-45: Warm pastels by storey ──
+    } else if (tick <= 32) {
       phase = 'Storey warm';
       var g = A._groupBy(allMeshes, 'storey');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, warmPastel, tick - 31);
+      applyPalette(g, keys, warmPastel, tick - 25);
       strategy = keys.length + ' storeys';
 
-    } else if (tick <= 55) {
-      // ── 46-55: Cool pastels by storey ──
+    } else if (tick <= 40) {
       phase = 'Storey cool';
       var g = A._groupBy(allMeshes, 'storey');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, coolPastel, tick - 46);
+      applyPalette(g, keys, coolPastel, tick - 33);
       strategy = keys.length + ' storeys';
 
-    } else if (tick <= 65) {
-      // ── 56-65: Earth by discipline ──
-      phase = 'Discipline';
+    } else if (tick <= 48) {
+      phase = 'Storey earth';
+      var g = A._groupBy(allMeshes, 'storey');
+      var keys = Object.keys(g).sort();
+      applyPalette(g, keys, earthTone, tick - 41);
+      strategy = keys.length + ' storeys';
+
+    } else if (tick <= 56) {
+      phase = 'Disc warm';
       var g = A._groupBy(allMeshes, 'disc');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, earthTone, tick - 56);
+      applyPalette(g, keys, warmPastel, tick - 49);
       strategy = keys.length + ' discs';
 
-    } else if (tick <= 80) {
-      // ── 66-80: Zebra — IFC class alternates warm/cool ──
+    } else if (tick <= 64) {
+      phase = 'Disc cool';
+      var g = A._groupBy(allMeshes, 'disc');
+      var keys = Object.keys(g).sort();
+      applyPalette(g, keys, coolPastel, tick - 57);
+      strategy = keys.length + ' discs';
+
+    } else if (tick <= 72) {
+      phase = 'Disc earth';
+      var g = A._groupBy(allMeshes, 'disc');
+      var keys = Object.keys(g).sort();
+      applyPalette(g, keys, earthTone, tick - 65);
+      strategy = keys.length + ' discs';
+
+    } else if (tick <= 82) {
+      // ── Zebra — IFC class alternates warm/cool ──
       phase = 'Zebra';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      var t = (tick - 66) / 14;
+      var t = (tick - 73) / 9;
       keys.forEach(function(k, i) {
         var w = warmPastel[i % warmPastel.length];
         var c = coolPastel[i % coolPastel.length];
@@ -471,30 +504,33 @@ function setupTools(A) {
       strategy = keys.length + ' types';
 
     } else if (tick <= 90) {
-      // ── 81-90: Monochrome — single hue, IFC class by lightness ──
+      // ── Monochrome — single hue, IFC class by lightness ──
       phase = 'Mono';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      var hue = ((tick - 81) / 9) * 0.15;  // cycle through warm hues only
+      var hue = ((tick - 83) / 7) * 0.15;
       keys.forEach(function(k, i) {
-        var l = 0.35 + (i / Math.max(keys.length - 1, 1)) * 0.45;
-        var color = new THREE.Color().setHSL(hue, 0.4, l);
+        var l = 0.30 + (i / Math.max(keys.length - 1, 1)) * 0.50;
+        var color = new THREE.Color().setHSL(hue, 0.50, l);
         g[k].forEach(function(m) { A._recolorMesh(m, color); });
       });
       strategy = keys.length + ' types';
 
-    } else if (tick <= 97) {
-      // ── 91-97: Random pastel per mesh ──
-      phase = 'Random';
-      allMeshes.forEach(function(m) {
-        var h = Math.random();
-        var color = new THREE.Color().setHSL(h, 0.3, 0.65 + Math.random() * 0.15);
-        A._recolorMesh(m, color);
+    } else if (tick <= 96) {
+      // ── Gradient — smooth hue sweep across all classes ──
+      phase = 'Gradient';
+      var g = A._groupBy(allMeshes, 'ifcClass');
+      var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
+      var hueStart = (tick - 91) * 0.17;  // each tick shifts base hue
+      keys.forEach(function(k, i) {
+        var h = (hueStart + i / Math.max(keys.length, 1)) % 1;
+        var color = new THREE.Color().setHSL(h, 0.55, 0.60);
+        g[k].forEach(function(m) { A._recolorMesh(m, color); });
       });
-      strategy = allMeshes.length + ' meshes';
+      strategy = keys.length + ' types';
 
     } else {
-      // ── 98-100: HARD — full saturation, dark, punchy ──
+      // ── 97-100: HARD — full saturation, dark, punchy, golden-angle spacing ──
       phase = 'HARD';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });

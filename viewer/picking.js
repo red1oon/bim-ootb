@@ -38,6 +38,8 @@ function _restoreIsolation(A) {
 var _pickV1, _pickV2, _pickV3, _pickQ1, _pickM4;
 
 function setupPicking(A) {
+  // §S279: Expose isolation restore for palette coordination
+  A._restoreIsolation = function() { _restoreIsolation(A); };
   _pickV1 = new THREE.Vector3(); _pickV2 = new THREE.Vector3(); _pickV3 = new THREE.Vector3();
   _pickQ1 = new THREE.Quaternion(); _pickM4 = new THREE.Matrix4();
   // Walk/Wall state (hoisted before first use in pointerdown/animate)
