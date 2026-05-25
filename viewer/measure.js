@@ -734,10 +734,10 @@ function setupMeasure(A) {
         var disc = hr[2] || '';
         var discColor = (A.DISC_COLORS && A.DISC_COLORS[disc]) || meshColors[hi];
 
-        // §S278: Full unclipped mesh — red/blue tint (not discipline color) so pair is obvious
-        var fullMat = new THREE.MeshBasicMaterial({
-          color: meshColors[hi], transparent: true, opacity: 0.2,
-          side: THREE.DoubleSide, depthWrite: false, depthTest: false
+        // Full unclipped mesh — discipline color, shows full pipe/slab length
+        var fullMat = new THREE.MeshPhongMaterial({
+          color: discColor, transparent: true, opacity: 0.25,
+          side: THREE.DoubleSide, depthWrite: false, flatShading: true
         });
         var fullMesh = new THREE.Mesh(geo.clone(), fullMat);
         fullMesh.position.set(pos.x, pos.y, pos.z);
@@ -750,9 +750,9 @@ function setupMeasure(A) {
         A.measureGroup.add(fullMesh);
         A._clashHighlights.push(fullMesh);
 
-        // Clipped mesh at overlap — bright red/blue, shine through everything
+        // Clipped mesh at overlap — bright red/blue, both always visible
         var mat = new THREE.MeshBasicMaterial({
-          color: meshColors[hi], transparent: true, opacity: 0.7,
+          color: meshColors[hi], transparent: true, opacity: 0.6,
           side: THREE.DoubleSide, depthTest: false, depthWrite: false,
           clippingPlanes: clipPlanes, clipShadows: true
         });
@@ -849,8 +849,26 @@ function setupMeasure(A) {
     var dimOpacity = display.dim_opacity || 0.1;
     var maxVisible = display.max_visible || 20;
 
-    // Dimming removed — was cloning every mesh material (expensive, didn't visibly work).
-    // Clash elements are shown via red/blue overlap meshes + fly-to camera instead.
+    // §S278: Place red spheres at ALL clash overlap centres — big-picture spatial view
+    if (A._clashDots) { A._clashDots.forEach(function(d) { A.measureGroup.remove(d); }); }
+    A._clashDots = [];
+    var _dotGeo = new THREE.SphereGeometry(0.3, 8, 6);
+    var _dotMat = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false, transparent: true, opacity: 0.9 });
+    for (var ci = 0; ci < clashes.length; ci++) {
+      try {
+        var cp = A.dbQuery("SELECT t.center_x, t.center_y, t.center_z FROM element_transforms t WHERE t.guid IN (?,?)", [clashes[ci][0], clashes[ci][1]]);
+        if (cp.length >= 2) {
+          var mp = A.ifc2three((cp[0][0]+cp[1][0])/2, (cp[0][1]+cp[1][1])/2, (cp[0][2]+cp[1][2])/2);
+          var dot = new THREE.Mesh(_dotGeo, _dotMat);
+          dot.position.set(mp.x, mp.y, mp.z);
+          dot.renderOrder = 995;
+          dot.userData._isClashViz = true;
+          A.measureGroup.add(dot);
+          A._clashDots.push(dot);
+        }
+      } catch(e) {}
+    }
+    console.log('§CLASH_DOTS placed=' + A._clashDots.length + '/' + clashes.length);
 
     // Build itemised list
     var shown = Math.min(A._currentClashes.length, maxVisible);
@@ -1442,6 +1460,11 @@ function setupMeasure(A) {
     if (A._clashHighlights) {
       A._clashHighlights.forEach(function(h) { A.measureGroup.remove(h); });
       A._clashHighlights = [];
+    }
+    // §S278: Remove clash location dots
+    if (A._clashDots) {
+      A._clashDots.forEach(function(d) { A.measureGroup.remove(d); });
+      A._clashDots = [];
     }
     // §S277c: Clear outline on clash dismiss
     if (A.setOutline) A.setOutline([], 0xff8c00);
