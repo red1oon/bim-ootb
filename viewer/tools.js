@@ -644,10 +644,10 @@ function setupTools(A) {
   A._nightLights = [];       // active THREE.PointLight objects
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
-  var NIGHT_MAX_LIGHTS = 24; // §S277d: fill halls — 24 proximity-culled lights
-  var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics
-  var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
-  var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
+  var NIGHT_MAX_LIGHTS = 40; // §S277d: 40 lights — enough to cover visible storey
+  var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range, decay handles falloff
+  var NIGHT_LIGHT_INTENSITY = 5.0; // §S277d: fixed at fixture, no cam fade
+  var NIGHT_LIGHT_DECAY = 1.2; // §S277d: gentle decay — lights reach far across halls
 
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
@@ -823,12 +823,9 @@ function setupTools(A) {
     // Remove old lights
     A._nightLights.forEach(function(l) { A.scene.remove(l); l.dispose(); });
     A._nightLights = [];
-    // Add new — intensity fades when camera is close (avoid blowout inside rooms)
+    // §S277d: Fixed intensity at fixture positions — no camera-distance fade
     needed.forEach(function(f) {
-      var dist = camPos.distanceTo(f.pos);
-      var fade = Math.min(1.0, dist / 15);  // ramp from 0 at point to full at 15m
-      var intensity = NIGHT_LIGHT_INTENSITY * (0.3 + 0.7 * fade);  // never below 30%
-      var light = new THREE.PointLight(0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+      var light = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
       light.position.copy(f.pos);
       A.scene.add(light);
       A._nightLights.push(light);
