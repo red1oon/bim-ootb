@@ -668,13 +668,17 @@ function setupStreaming(A) {
   if (!A._batchStoreyMap) A._batchStoreyMap = {};
   if (!A._batchDiscMap) A._batchDiscMap = {};
 
+  // §S279: Reuse flush temp objects across calls — avoids alloc per flush (every 500-5000 elements)
+  var _flushM4, _flushEuler, _flushQuat, _flushPos, _flushScale;
   A._flushInstanced = function() {
     if (!A._pendingInstances) return;
-    const _m4 = new THREE.Matrix4();
-    const _euler = new THREE.Euler();
-    const _quat = new THREE.Quaternion();
-    const _pos = new THREE.Vector3();
-    const _scale = new THREE.Vector3(1, 1, 1);
+    if (!_flushM4) {
+      _flushM4 = new THREE.Matrix4(); _flushEuler = new THREE.Euler();
+      _flushQuat = new THREE.Quaternion(); _flushPos = new THREE.Vector3();
+      _flushScale = new THREE.Vector3(1, 1, 1);
+    }
+    const _m4 = _flushM4, _euler = _flushEuler, _quat = _flushQuat;
+    const _pos = _flushPos, _scale = _flushScale;
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
