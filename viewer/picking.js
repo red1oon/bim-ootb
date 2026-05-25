@@ -487,9 +487,10 @@ function setupPicking(A) {
     hlMesh.position.copy(hlPos);
     hlMesh.quaternion.copy(hlQuat);
     A.scene.add(hlMesh);
-    // §S277c: OutlinePass on picked object — always try, bbox as fallback
+    // §S277c: OutlinePass on picked object — Bonsai-style silhouette, no bbox
     if (A.setOutline && hit.object) {
       A.setOutline([hit.object], 0xff8c00);
+      hlMesh.visible = false;  // hide bbox — outline is the highlight
     }
     window._pickHighlight = hlMesh;
     if (A.markDirty) A.markDirty();
