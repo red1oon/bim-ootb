@@ -611,7 +611,10 @@ self.onmessage = async function(e) {
     post('progress', 100, 'Done');
     self.postMessage(result, transferables);
 
-    ifcApi.CloseModel(modelID);
+    // §S274: Do NOT call ifcApi.CloseModel() — on large buildings (>40K elements)
+    // it hits the 4GB WASM memory ceiling and throws, which would send a spurious
+    // error message after the result is already posted. Worker.terminate() from the
+    // main thread reclaims all WASM + JS memory cleanly. No leak.
   } catch(err) {
     console.log('[S220] §IMPORT_FATAL ' + (err.message || String(err)));
     console.log('[S220] §IMPORT_STACK ' + (err.stack || 'no stack'));
