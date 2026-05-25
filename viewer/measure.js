@@ -717,7 +717,7 @@ function setupMeasure(A) {
       ];
 
       var hashRows = A.dbQuery("SELECT i.guid, i.geometry_hash, m.discipline FROM element_instances i JOIN elements_meta m ON i.guid = m.guid WHERE i.guid IN (?, ?)", [c[0], c[1]]);
-      var meshColors = [0xff2222, 0x2266ff];  // §S277c: red A + blue B (was orange)
+      var meshColors = [0xff0000, 0x0044ff];  // §S278: solid red A + solid blue B
       hashRows.forEach(function(hr, hi) {
         var geo = A.meshCache[hr[1]];
         if (!geo) {
@@ -848,27 +848,6 @@ function setupMeasure(A) {
     var display = rules.display || {};
     var dimOpacity = display.dim_opacity || 0.1;
     var maxVisible = display.max_visible || 20;
-
-    // §S278: Place red spheres at ALL clash overlap centres — big-picture spatial view
-    if (A._clashDots) { A._clashDots.forEach(function(d) { A.measureGroup.remove(d); }); }
-    A._clashDots = [];
-    var _dotGeo = new THREE.SphereGeometry(0.3, 8, 6);
-    var _dotMat = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false, transparent: true, opacity: 0.9 });
-    for (var ci = 0; ci < clashes.length; ci++) {
-      try {
-        var cp = A.dbQuery("SELECT t.center_x, t.center_y, t.center_z FROM element_transforms t WHERE t.guid IN (?,?)", [clashes[ci][0], clashes[ci][1]]);
-        if (cp.length >= 2) {
-          var mp = A.ifc2three((cp[0][0]+cp[1][0])/2, (cp[0][1]+cp[1][1])/2, (cp[0][2]+cp[1][2])/2);
-          var dot = new THREE.Mesh(_dotGeo, _dotMat);
-          dot.position.set(mp.x, mp.y, mp.z);
-          dot.renderOrder = 995;
-          dot.userData._isClashViz = true;
-          A.measureGroup.add(dot);
-          A._clashDots.push(dot);
-        }
-      } catch(e) {}
-    }
-    console.log('§CLASH_DOTS placed=' + A._clashDots.length + '/' + clashes.length);
 
     // Build itemised list
     var shown = Math.min(A._currentClashes.length, maxVisible);
@@ -1460,11 +1439,6 @@ function setupMeasure(A) {
     if (A._clashHighlights) {
       A._clashHighlights.forEach(function(h) { A.measureGroup.remove(h); });
       A._clashHighlights = [];
-    }
-    // §S278: Remove clash location dots
-    if (A._clashDots) {
-      A._clashDots.forEach(function(d) { A.measureGroup.remove(d); });
-      A._clashDots = [];
     }
     // §S277c: Clear outline on clash dismiss
     if (A.setOutline) A.setOutline([], 0xff8c00);
