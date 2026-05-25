@@ -34,12 +34,12 @@ function _restoreIsolation(A) {
   }
 }
 
-// §S278: Cached temp objects — reused per pick to avoid GC pressure
-var _pickV1 = new THREE.Vector3(), _pickV2 = new THREE.Vector3(), _pickV3 = new THREE.Vector3();
-var _pickQ1 = new THREE.Quaternion();
-var _pickM4 = new THREE.Matrix4();
+// §S278: Cached temp objects — reused per pick to avoid GC pressure (lazy-init, THREE may not be loaded yet)
+var _pickV1, _pickV2, _pickV3, _pickQ1, _pickM4;
 
 function setupPicking(A) {
+  _pickV1 = new THREE.Vector3(); _pickV2 = new THREE.Vector3(); _pickV3 = new THREE.Vector3();
+  _pickQ1 = new THREE.Quaternion(); _pickM4 = new THREE.Matrix4();
   // Walk/Wall state (hoisted before first use in pointerdown/animate)
   A.walkMode = false;
   A.walkModeActive = false;

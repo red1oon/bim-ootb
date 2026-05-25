@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: MIT
  */
 // walk.js — Walk Mode (GPS blue dot, step detection, wall X-ray)
-var _walkDir = new THREE.Vector3(); // §S278: cached — reused per step
+var _walkDir; // §S278: cached — reused per step (lazy-init)
 function setupWalk(A) {
+  _walkDir = new THREE.Vector3();
   // Walk Mode compass/tilt state
   A.walkCompassReadings = [];
   A.walkLockedHeading = null;
