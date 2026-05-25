@@ -240,6 +240,7 @@ function setupPicking(A) {
     }
     if (!validHits.length) {
       document.getElementById('info-panel').style.display = 'none';
+      A._lastPickGuid = null;
       if (window._pickHighlight) {
         if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
         window._pickHighlight.geometry.dispose();
@@ -247,6 +248,8 @@ function setupPicking(A) {
         window._pickHighlight = null;
         if (A.markDirty) A.markDirty();
       }
+      if (A.setOutline) A.setOutline([], 0xff8c00);
+      _restoreIsolation(A);
       return;
     }
 
