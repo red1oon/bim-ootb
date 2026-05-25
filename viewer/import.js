@@ -481,14 +481,38 @@ function setupImport(A) {
 
     const cacheDb = await A.openCacheDB();
     if (cacheDb) {
-      const importDbUrl = 'import://' + key + '/extracted';
-      const importLibUrl = 'import://' + key + '/library';
-      await new Promise(resolve => {
-        const tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
-        tx.objectStore(A.CACHE_STORE).put(dbBuf, importDbUrl);
-        tx.objectStore(A.CACHE_STORE).put(dbBuf, importLibUrl);
-        tx.oncomplete = resolve;
-      });
+      // §S274: Use split DBs if available — meta (15MB) loads instantly, geo (200MB) streams on demand.
+      // Falls back to monolith for legacy imports that don't have split DBs.
+      var hasSplit = record.metaDb && record.geoDb;
+      var importDbUrl, importLibUrl;
+
+      if (hasSplit) {
+        // Store split DBs — viewer's split-DB detection in streaming.js picks these up
+        importDbUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
+        importLibUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
+        var metaUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_meta.db');
+        var geoUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_geo.db');
+        await new Promise(resolve => {
+          var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
+          var store = tx.objectStore(A.CACHE_STORE);
+          store.put(record.metaDb, metaUrl);
+          store.put(record.geoDb, geoUrl);
+          store.put(record.metaDb, importDbUrl);   // meta as primary — fast load
+          store.put(record.metaDb, importLibUrl);
+          tx.oncomplete = resolve;
+        });
+        console.log('[S274] §IMPORT_OPEN_SPLIT meta=' + (record.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB');
+      } else {
+        importDbUrl = 'import://' + key + '/extracted';
+        importLibUrl = 'import://' + key + '/library';
+        await new Promise(resolve => {
+          var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
+          tx.objectStore(A.CACHE_STORE).put(dbBuf, importDbUrl);
+          tx.objectStore(A.CACHE_STORE).put(dbBuf, importLibUrl);
+          tx.oncomplete = resolve;
+        });
+        console.log('[S274] §IMPORT_OPEN_MONOLITH size=' + (dbBuf.byteLength/1024/1024).toFixed(1) + 'MB (no split DBs)');
+      }
 
       const viewerBase = location.href.replace(/[^/]*$/, '');
       const viewerUrl = viewerBase + 'viewer.html?db=' +

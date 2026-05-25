@@ -308,83 +308,9 @@ async function setupScene(A) {
   scene.add(ground);
   A.ground = ground;
 
-  // ── §S277c: EffectComposer — post-processing pipeline (desktop only) ──
-  // Render → SSAO → Outline → Output. Each pass toggle-able.
-  A._composer = null;
-  A._ssaoPass = null;
-  A._outlinePass = null;
-  A._composerEnabled = false;
-  if (window._isMobile) {
-    // §S278: Skip composer entirely on mobile — render targets + passes cost GPU memory
-    console.log('§EFFECT_COMPOSER skip — mobile');
-  } else try {
-    // §S277c: Parallel import — all 5 addons load concurrently, not sequentially
-    var [_ecMod, _rpMod, _ssaoMod, _outMod, _opMod] = await Promise.all([
-      import('./lib/EffectComposer.js'),
-      import('./lib/RenderPass.js'),
-      import('./lib/SSAOPass.js'),
-      import('./lib/OutlinePass.js'),
-      import('./lib/OutputPass.js')
-    ]);
-
-    var _composer = new _ecMod.EffectComposer(renderer);
-    _composer.setSize(window.innerWidth, window.innerHeight);
-    _composer.setPixelRatio(renderer.getPixelRatio());
-
-    // Pass 1: Base scene render
-    var _renderPass = new _rpMod.RenderPass(scene, camera);
-    _composer.addPass(_renderPass);
-
-    // Pass 2: SSAO — contact shadows in room corners, pipe junctions
-    var _ssaoPass = new _ssaoMod.SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
-    _ssaoPass.kernelRadius = 0.5;    // 0.5m — architectural scale
-    _ssaoPass.minDistance = 0.001;
-    _ssaoPass.maxDistance = 0.1;
-    _ssaoPass.enabled = false;  // off by default — toggled with Shadow or UI
-    _composer.addPass(_ssaoPass);
-
-    // Pass 3: Outline — mesh silhouette on pick/clash/find
-    var _outlinePass = new _outMod.OutlinePass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera
-    );
-    _outlinePass.edgeStrength = 3;
-    _outlinePass.edgeGlow = 0;
-    _outlinePass.edgeThickness = 1.5;
-    _outlinePass.visibleEdgeColor.set(0xff8c00);  // orange pick
-    _outlinePass.hiddenEdgeColor.set(0xff4400);
-    _outlinePass.enabled = false;  // enabled on demand by pick/clash
-    _composer.addPass(_outlinePass);
-
-    // Pass 4: Output — tone mapping + color space
-    var _outputPass = new _opMod.OutputPass();
-    _composer.addPass(_outputPass);
-
-    A._composer = _composer;
-    A._ssaoPass = _ssaoPass;
-    A._outlinePass = _outlinePass;
-    A._renderPass = _renderPass;
-    console.log('§EFFECT_COMPOSER loaded — RenderPass + SSAO + Outline + Output');
-  } catch(e) {
-    console.warn('§EFFECT_COMPOSER_FAIL ' + e.message + ' — falling back to direct render');
-    A._composer = null;
-  }
-
-  // §S277c: Toggle SSAO (called from Shadow toggle or UI)
-  A.toggleSSAO = function(on) {
-    if (!A._ssaoPass) return;
-    A._ssaoPass.enabled = on;
-    A._composerEnabled = on || (A._outlinePass && A._outlinePass.enabled);
-    console.log('§SSAO toggle=' + on);
-  };
-
-  // §S277c: Set outline targets (called from pick/clash/find)
-  A.setOutline = function(objects, color) {
-    if (!A._outlinePass) return;
-    A._outlinePass.selectedObjects = objects || [];
-    if (color) A._outlinePass.visibleEdgeColor.set(color);
-    A._outlinePass.enabled = objects && objects.length > 0;
-    A._composerEnabled = A._outlinePass.enabled || (A._ssaoPass && A._ssaoPass.enabled);
-  };
+  // §S278 Phase 3: EffectComposer extracted to effects.js
+  // setupEffects(A, renderer, scene, camera) — loads SSAO/Outline/Output on desktop, skips on mobile
+  if (typeof setupEffects === 'function') await setupEffects(A, renderer, scene, camera);
 
   // State
   A.db = null;
@@ -554,7 +480,7 @@ async function setupScene(A) {
 
     // import:// URLs live only in IndexedDB — no network fallback
     if (url.startsWith('import://')) {
-      A.status.textContent = 'Imported IFC not found — browser storage was cleared. Please re-import the file.';
+      A.status.textContent = 'Imported building not found — browser storage may have been cleared. Please re-import the IFC file.';
       console.log('§IMPORT_CACHE_MISS url=' + url + ' — IDB cleared or quota reclaimed');
       throw new Error('DB not found in cache: ' + url);
     }

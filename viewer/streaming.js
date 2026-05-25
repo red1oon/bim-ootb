@@ -1316,17 +1316,24 @@ function setupStreaming(A) {
     // §S260b: Also handle plain names like "hospital.db" → "hospital_meta.db"
     if (metaUrl === A.DB_URL) metaUrl = A.DB_URL.replace(/\.db$/, '_meta.db');
     if (metaUrl !== A.DB_URL) {
-      try {
-        var headResp = await fetch(metaUrl, { method: 'HEAD' });
-        _splitMode = headResp.ok;
-      } catch(e) { _splitMode = false; }
+      // §S274: import:// URLs live in IDB — check cache store, not network
+      if (A.DB_URL.startsWith('import://')) {
+        var _cached = await A._checkCache(metaUrl);
+        _splitMode = !!_cached;
+      } else {
+        try {
+          var headResp = await fetch(metaUrl, { method: 'HEAD' });
+          _splitMode = headResp.ok;
+        } catch(e) { _splitMode = false; }
+      }
     }
     console.log(`[S192] §DB_SPLIT_DETECT meta=${metaUrl} found=${_splitMode}`);
 
     if (_splitMode) {
       // ── §S260b: Three-phase — positions.bin (instant bboxes) → meta.db (panels) → geo.db (meshes) ──
       var geoUrl = A.DB_URL.replace('_extracted.db', '_geo.db');
-      var _geoAbsUrl = new URL(geoUrl, location.href).href;
+      // §S274: import:// URLs are IDB keys, not real URLs — don't try new URL()
+      var _geoAbsUrl = geoUrl.startsWith('import://') ? geoUrl : new URL(geoUrl, location.href).href;
       var posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
 
       // Phase 0: Try positions.bin for instant bboxes (< 3MB, loads in <1s)
