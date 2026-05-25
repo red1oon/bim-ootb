@@ -395,7 +395,14 @@ self.onmessage = async function(e) {
     const geomTotal = elements.length;
     let matCount = 0;
 
+    // §S274: Skip classes that never have renderable geometry — avoids 607 OOM-throw-catch cycles
+    // on TerminalMerged.ifc (527 IfcFireSuppressionTerminal + 80 IfcAlarm = ~30s wasted).
+    var _SKIP_GEOM = { IfcFireSuppressionTerminal: 1, IfcAlarm: 1, IfcSensor: 1, IfcActuator: 1,
+      IfcController: 1, IfcFlowInstrument: 1, IfcProtectiveDeviceTrippingUnit: 1 };
+    var _skipCount = 0;
+
     for (const el of elements) {
+      if (_SKIP_GEOM[el.ifcClass]) { _skipCount++; geomDone++; continue; }
       try {
         const flatMesh = ifcApi.GetFlatMesh(modelID, el.expressID);
         // Try all geometries in flatMesh, merge vertices
@@ -545,6 +552,7 @@ self.onmessage = async function(e) {
         ' (no geometry → not a spatial element)');
     }
     const skipped = elements.length - geometries.length;
+    if (_skipCount) console.log('[S220] §GEOM_FAST_SKIP classes=' + Object.keys(_SKIP_GEOM).join(',') + ' count=' + _skipCount + ' (no GetFlatMesh call — saves OOM cycles)');
     console.log('[S220] §GEOM_SUMMARY elements=' + elements.length + ' renderable=' + renderableElements.length + ' ghosts=' + ghosts.length + ' materials=' + matCount);
 
     post('progress', 92, 'Building databases...');
