@@ -843,7 +843,7 @@ async function setupScene(A) {
                         );
                         // Highlight sphere at clash midpoint
                         var sGeo = new THREE.SphereGeometry(0.3, 8, 8);
-                        var sMat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.7, depthTest: false });
+                        var sMat = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
                         var sphere = new THREE.Mesh(sGeo, sMat);
                         sphere.position.copy(clashMid);
                         A.measureGroup.add(sphere);

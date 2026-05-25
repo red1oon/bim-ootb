@@ -652,7 +652,7 @@ function setupMeasure(A) {
   A._clashPairKey = function(guidA, guidB) { return guidA + '|' + guidB; };
 
   // Fly to a specific clash by index — extracted for pointerup (mobile) and click (desktop)
-  A._flyToClash = function(idx, keepPrevious) {
+  A._flyToClash = function(idx) {
     var c = (A._currentClashes || [])[idx];
     if (!c) return;
     A._currentClashViewIdx = idx;
@@ -661,7 +661,7 @@ function setupMeasure(A) {
     // Full scene stays — S232 InstancedMesh batching, no DLOD needed
     // Highlight selected row
     if (A._clashListDiv) {
-      if (!keepPrevious) A._clashListDiv.querySelectorAll('[data-clash-idx]').forEach(function(el) { el.style.background = ''; });
+      A._clashListDiv.querySelectorAll('[data-clash-idx]').forEach(function(el) { el.style.background = ''; });
       var rowEl = A._clashListDiv.querySelector('[data-clash-idx="' + idx + '"]');
       if (rowEl) rowEl.style.background = 'rgba(79,195,247,0.25)';
     }
@@ -678,13 +678,11 @@ function setupMeasure(A) {
       new THREE.Vector3(pB.x, pB.y, pB.z)
     ).multiplyScalar(0.5);
 
-    // Remove previous clash highlights (unless multi-select)
-    if (!keepPrevious) {
-      if (A._clashHighlights) {
-        A._clashHighlights.forEach(function(h) { A.measureGroup.remove(h); });
-      }
-      A._clashHighlights = [];
+    // Remove previous clash highlights
+    if (A._clashHighlights) {
+      A._clashHighlights.forEach(function(h) { A.measureGroup.remove(h); });
     }
+    A._clashHighlights = [];
 
     // Overlap zone
     var rA = posRows[0], rB = posRows[1];
@@ -751,7 +749,7 @@ function setupMeasure(A) {
 
         // Clipped mesh at overlap — bright red/blue, both always visible
         var mat = new THREE.MeshBasicMaterial({
-          color: meshColors[hi], transparent: false, opacity: 1.0,
+          color: meshColors[hi], transparent: true, opacity: 0.6,
           side: THREE.DoubleSide, depthTest: false, depthWrite: false,
           clippingPlanes: clipPlanes, clipShadows: true
         });
@@ -989,7 +987,6 @@ function setupMeasure(A) {
         }
       }
     });
-    var _clashSelAnchor = -1; // §S278: shift-click range anchor
     listDiv.addEventListener('pointerup', function(ev) {
       if (statusLongPress) { clearTimeout(statusLongPress); statusLongPress = null; }
       // Quick tap (not long-press, not moved) → fly to clash immediately (no 300ms click delay)
@@ -997,19 +994,7 @@ function setupMeasure(A) {
         var target = ev.target.closest('[data-clash-idx]');
         if (target) {
           var idx = parseInt(target.getAttribute('data-clash-idx'));
-          if (ev.shiftKey && _clashSelAnchor >= 0) {
-            // §S278: Shift+click — range select from anchor to clicked
-            var lo = Math.min(_clashSelAnchor, idx), hi = Math.max(_clashSelAnchor, idx);
-            for (var si = lo; si <= hi; si++) A._flyToClash(si, true);
-          } else if (ev.ctrlKey || ev.metaKey) {
-            // §S278: Ctrl+click — add this pair without clearing previous
-            A._flyToClash(idx, true);
-            _clashSelAnchor = idx;
-          } else {
-            // Normal click — single pair, clear previous
-            A._flyToClash(idx);
-            _clashSelAnchor = idx;
-          }
+          A._flyToClash(idx);
         }
       }
     });
