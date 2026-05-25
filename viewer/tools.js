@@ -692,7 +692,8 @@ function setupTools(A) {
       var source = 'none';
       if (A.db) {
         try {
-          var r = A.db.exec("SELECT t.center_x, t.center_y, t.center_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class='IfcLightFixture'");
+          // §S277c: Include IfcFlowTerminal + IfcElectricAppliance — most models lack IfcLightFixture
+          var r = A.db.exec("SELECT t.center_x, t.center_y, t.center_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance')");
           if (r.length && r[0].values.length > 0) {
             r[0].values.forEach(function(row) {
               A._nightFixtures.push({ x: row[0], y: row[1], z: row[2] });

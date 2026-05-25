@@ -676,6 +676,58 @@ async function setupScene(A) {
   };
   window.addEventListener('resize', A._onResize);
 
+  // ── §S277d: Movie Maker — canvas recording to MP4 ──
+  // Desktop only. MediaRecorder + canvas.captureStream.
+  A._recording = false;
+  A._mediaRecorder = null;
+  A._recordChunks = [];
+  // Show record button on desktop only
+  var _recBtn = document.getElementById('pill-record');
+  if (_recBtn && !window._isMobile && typeof MediaRecorder !== 'undefined') {
+    _recBtn.style.display = '';
+    console.log('§RECORD_READY MediaRecorder available');
+  }
+  window.toggleRecord = function() {
+    if (A._recording) {
+      // Stop recording
+      if (A._mediaRecorder && A._mediaRecorder.state !== 'inactive') A._mediaRecorder.stop();
+      return;
+    }
+    // Start recording
+    try {
+      var stream = A.canvas.captureStream(30);  // 30fps
+      var options = { mimeType: 'video/webm;codecs=vp9' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm;codecs=vp8' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options = { mimeType: 'video/webm' };
+        }
+      }
+      A._recordChunks = [];
+      A._mediaRecorder = new MediaRecorder(stream, options);
+      A._mediaRecorder.ondataavailable = function(e) { if (e.data.size > 0) A._recordChunks.push(e.data); };
+      A._mediaRecorder.onstop = function() {
+        A._recording = false;
+        if (_recBtn) { _recBtn.style.background = ''; _recBtn.style.color = ''; _recBtn.classList.remove('active'); }
+        var blob = new Blob(A._recordChunks, { type: options.mimeType });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'bim-ootb-' + new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19) + '.webm';
+        a.click();
+        URL.revokeObjectURL(url);
+        console.log('§RECORD_STOP chunks=' + A._recordChunks.length + ' size=' + (blob.size / 1024 / 1024).toFixed(1) + 'MB');
+        A._recordChunks = [];
+      };
+      A._mediaRecorder.start(100);  // collect data every 100ms
+      A._recording = true;
+      if (_recBtn) { _recBtn.style.background = '#ff2222'; _recBtn.style.color = '#fff'; _recBtn.classList.add('active'); }
+      console.log('§RECORD_START mime=' + options.mimeType + ' fps=30');
+    } catch(e) {
+      console.warn('§RECORD_FAIL ' + e.message);
+    }
+  };
+
   // ══════════════════════════════════════════════════════════════
   // S251: Key Sequence Engine + Command Palette + Panel Focus
   // Implementing S251_keyboard_modes.md — Witness: W-KBD
