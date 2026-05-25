@@ -644,10 +644,10 @@ function setupTools(A) {
   A._nightLights = [];       // active THREE.PointLight objects
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
-  var NIGHT_MAX_LIGHTS = 4; // §S277d: 4 POL — subtle ambient, not flashlight
-  var NIGHT_LIGHT_RANGE = 25; // §S277d: 25m radius — room-scale
-  var NIGHT_LIGHT_INTENSITY = 0.4; // §S277d: very subtle — fixtures glow does the visual
-  var NIGHT_LIGHT_DECAY = 2; // §S277d: physics default — inverse-square
+  var NIGHT_MAX_LIGHTS = 4; // §S277d: 4 POL — ambient without flashlight
+  var NIGHT_LIGHT_RANGE = 30; // §S277d: 30m radius
+  var NIGHT_LIGHT_INTENSITY = 1.5; // §S277d: brighter — 4 lights need to cover more
+  var NIGHT_LIGHT_DECAY = 1.5; // §S277d: gentler decay — reaches further per light
 
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
