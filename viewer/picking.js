@@ -182,8 +182,6 @@ function setupPicking(A) {
       if (A.handleMeasureClick(e)) return;
     }
     if (e.shiftKey || e.button !== 0) return;
-    // §S278: Clash view active — no picking at all (no yellow bbox, no isolation)
-    if (A._clashRevealActive) return;
 
     A.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     A.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
