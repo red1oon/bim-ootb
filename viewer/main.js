@@ -581,9 +581,8 @@ async function initViewer() {
         APP._mobileRenderSkip = 0;
       }
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
-        // §S277c: EffectComposer replaces direct render when enabled (SSAO/Outline active)
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
-        else APP.renderer.render(APP.scene, APP.camera);
+        // §S278: Mobile — ALWAYS direct render, never EffectComposer (SSAO/Outline too expensive)
+        APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
       }
     } else {
