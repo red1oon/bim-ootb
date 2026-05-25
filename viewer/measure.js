@@ -1412,9 +1412,9 @@ function setupMeasure(A) {
       var n = A._countClashesRtree(null, rules, p.discA, p.discB);
       // Dot size: small=8px (1-10), mid=14px (11-50), max=20px (51+)
       var sz = n > 50 ? 20 : n > 10 ? 14 : 8;
-      var color = n > 50 ? '#ff0000' : n > 10 ? '#ff8c00' : '#ffcc00';
+      var color = n > 50 ? '#ff0000' : n > 10 ? '#ff4400' : '#ff8c00';
       var sphere = '<span title="' + n + ' clashes" style="display:inline-block;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;' +
-        'background:radial-gradient(circle at 35% 35%,#fff,' + color + ' 60%,#111);vertical-align:middle"></span>';
+        'background:' + color + ';box-shadow:0 0 4px ' + color + ';vertical-align:middle"></span>';
       var cell1 = matDiv.querySelector('[data-pair="' + p.discA + '|' + p.discB + '"]');
       var cell2 = matDiv.querySelector('[data-pair="' + p.discB + '|' + p.discA + '"]');
       if (cell1) cell1.innerHTML = sphere;

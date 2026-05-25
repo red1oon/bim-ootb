@@ -182,6 +182,8 @@ function setupPicking(A) {
       if (A.handleMeasureClick(e)) return;
     }
     if (e.shiftKey || e.button !== 0) return;
+    // §S278: Clash view active — no picking at all (no yellow bbox, no isolation)
+    if (A._clashRevealActive) return;
 
     A.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     A.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -236,17 +238,14 @@ function setupPicking(A) {
 
     // §S260d: WYSIWYG — skip non-pickable hits (outlines, low-opacity, invisible)
     var validHits = [];
-    var _hitClashViz = false;
     for (var hi = 0; hi < hits.length; hi++) {
       var h = hits[hi];
       if (h.object.userData && h.object.userData._isOutline) continue;
-      if (h.object.userData && h.object.userData._isClashViz) { _hitClashViz = true; continue; }
+      if (h.object.userData && h.object.userData._isClashViz) continue;
       if (h.object.material && h.object.material.opacity < 0.3) continue;
       if (h.object.userData && h.object.userData.isBboxPlaceholder) continue;
       validHits.push(h);
     }
-    // §S278: If ray hit a clash overlay, suppress picking entirely — user is viewing clash, not picking
-    if (_hitClashViz) validHits = [];
     if (!validHits.length) {
       document.getElementById('info-panel').style.display = 'none';
       A._lastPickGuid = null;
