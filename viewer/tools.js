@@ -186,12 +186,25 @@ function setupTools(A) {
 
   A.applySectionAxis = function() {
     let axMin = Infinity, axMax = -Infinity;
-    A.collectMeshes(o => o.isMesh).forEach(obj => {
-      const box = new THREE.Box3().setFromObject(obj);
-      if (A.sectionAxis === 'Y') { axMin = Math.min(axMin, box.min.y); axMax = Math.max(axMax, box.max.y); }
-      else if (A.sectionAxis === 'X') { axMin = Math.min(axMin, box.min.x); axMax = Math.max(axMax, box.max.x); }
-      else { axMin = Math.min(axMin, box.min.z); axMax = Math.max(axMax, box.max.z); }
-    });
+    // §S277c: Use building centres envelope for section range — reliable, no ground/sky contamination
+    var _bc = Object.values(A.buildingCentres || {})[0];
+    if (_bc) {
+      var _ctr = A.ifc2three(_bc.ix, _bc.iy, _bc.iz);
+      var _env = _bc.envelope || 50;
+      if (A.sectionAxis === 'Y') { axMin = _ctr.y - _env * 0.3; axMax = _ctr.y + _env * 0.6; }
+      else if (A.sectionAxis === 'X') { axMin = _ctr.x - _env; axMax = _ctr.x + _env; }
+      else { axMin = _ctr.z - _env; axMax = _ctr.z + _env; }
+    } else {
+      // Fallback: scan meshes, exclude ground/sky
+      A.collectMeshes(o => o.isMesh && o !== A.ground && o.visible).forEach(obj => {
+        if (obj.geometry && obj.geometry.parameters && obj.geometry.parameters.width >= 10000) return;
+        const box = new THREE.Box3().setFromObject(obj);
+        if (!isFinite(box.min.x)) return;
+        if (A.sectionAxis === 'Y') { axMin = Math.min(axMin, box.min.y); axMax = Math.max(axMax, box.max.y); }
+        else if (A.sectionAxis === 'X') { axMin = Math.min(axMin, box.min.x); axMax = Math.max(axMax, box.max.x); }
+        else { axMin = Math.min(axMin, box.min.z); axMax = Math.max(axMax, box.max.z); }
+      });
+    }
     if (!isFinite(axMin)) { axMin = -100; axMax = 200; }
     A.sectionMin = axMin;
     A.sectionMax = axMax;

@@ -196,6 +196,8 @@ function setupPicking(A) {
         window._pickHighlight = null;
         if (A.markDirty) A.markDirty();
       }
+      // §S277c: Clear outline on deselect
+      if (A.setOutline) A.setOutline([], 0xff8c00);
       return;
     }
 
@@ -484,6 +486,8 @@ function setupPicking(A) {
     hlMesh.quaternion.copy(hlQuat);
     A.scene.add(hlMesh);
     window._pickHighlight = hlMesh;
+    // §S277c: OutlinePass — mesh silhouette on picked object
+    if (A.setOutline && hit.object && hit.object.isMesh) A.setOutline([hit.object], 0xff8c00);
     if (A.markDirty) A.markDirty();
     console.log('§PICK_BBOX pos=' + hlPos.x.toFixed(1) + ',' + hlPos.y.toFixed(1) + ',' + hlPos.z.toFixed(1) +
       ' size=' + (hlSizeX||0).toFixed(2) + '×' + (hlSizeY||0).toFixed(2) + '×' + (hlSizeZ||0).toFixed(2) +
