@@ -697,7 +697,7 @@ function setupMeasure(A) {
       ];
 
       var hashRows = A.dbQuery("SELECT i.guid, i.geometry_hash, m.discipline FROM element_instances i JOIN elements_meta m ON i.guid = m.guid WHERE i.guid IN (?, ?)", [c[0], c[1]]);
-      var meshColors = [0xff2222, 0xff8800];
+      var meshColors = [0xff2222, 0x2266ff];  // §S277c: red A + blue B (was orange)
       hashRows.forEach(function(hr, hi) {
         var geo = A.meshCache[hr[1]];
         if (!geo) {
@@ -786,6 +786,10 @@ function setupMeasure(A) {
         if (t < 1) requestAnimationFrame(_animFly);
       }
       _animFly();
+    }
+    // §S277c: OutlinePass on clash meshes — white edge on both for crisp silhouette
+    if (A.setOutline && A._clashHighlights && A._clashHighlights.length) {
+      A.setOutline(A._clashHighlights.filter(function(m) { return m.isMesh; }), 0xffffff);
     }
     console.log('§CLASH_DETAIL guidA=' + c[0] + ' guidB=' + c[1] + ' overlap=' + ((typeof c[8] === 'number') ? c[8].toFixed(3) : '?') + 'm');
   };
@@ -1414,6 +1418,8 @@ function setupMeasure(A) {
       A._clashHighlights.forEach(function(h) { A.measureGroup.remove(h); });
       A._clashHighlights = [];
     }
+    // §S277c: Clear outline on clash dismiss
+    if (A.setOutline) A.setOutline([], 0xff8c00);
     // Only remove matrix when not keeping it
     if (!keepMatrix && A._clashMatrixDiv) {
       A._clashMatrixDiv.remove();
