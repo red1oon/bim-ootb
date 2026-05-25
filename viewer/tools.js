@@ -350,6 +350,7 @@ function setupTools(A) {
 
   // §S279: Clone material for palette — reset isolation dimming on clone so colors show
   A._recolorMesh = function(mesh, color) {
+    if (!mesh.material || !mesh.material.color) return;  // skip ShaderMaterial, lines, etc.
     A._sunglassBackups.push({ mesh: mesh, origMat: mesh.material });
     var newMat = mesh.material.clone();
     newMat.color.copy(color);
@@ -882,18 +883,18 @@ function setupTools(A) {
     }
     var allPos = A._nightFixturePositions;
     var camPos = A.camera.position;
+    var _tgt = A.controls ? A.controls.target : camPos;
     var needed;
-    if (allPos.length <= NIGHT_MAX_LIGHTS) {
+    if (allPos.length <= NIGHT_MAX_LIGHTS - 2) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
-      // §S277d: Nearest 4 fixtures to orbit target (stable) — not camera (jumps on orbit)
-      var _tgt = A.controls ? A.controls.target : camPos;
+      // §S277d: Nearest 10 fixtures to orbit target (stable)
       var sorted = allPos.map(function(p) {
         var dx = p.x - _tgt.x, dy = p.y - _tgt.y, dz = p.z - _tgt.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
-      needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
+      needed = sorted.slice(0, NIGHT_MAX_LIGHTS - 2);
     }
     // Remove old lights
     A._nightLights.forEach(function(l) {
@@ -902,13 +903,27 @@ function setupTools(A) {
       l.dispose();
     });
     A._nightLights = [];
-    // §S277d: Fixed intensity at fixture positions — no camera-distance fade
+    // §S277d: Fixed intensity at fixture positions
     needed.forEach(function(f) {
       var light = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
       light.position.copy(f.pos);
       A.scene.add(light);
       A._nightLights.push(light);
     });
+    // §S279: Camera-near POL — lights what you're staring at (exterior and interior)
+    // Place at orbit target = the surface you're looking at
+    var tgtLight = new THREE.PointLight(0xffe4b5, 1.0, 15, 1.2);
+    tgtLight.position.copy(_tgt);
+    A.scene.add(tgtLight);
+    A._nightLights.push(tgtLight);
+    // §S279: Cam-room POL — 2m ahead of camera toward target, lights the room you're in
+    var camLight = new THREE.PointLight(0xffe4b5, 0.8, 12, 1.5);
+    var dir = _tgt.clone().sub(camPos);
+    var len = dir.length();
+    if (len > 2) dir.multiplyScalar(2 / len);  // clamp to 2m ahead
+    camLight.position.copy(camPos).add(dir);
+    A.scene.add(camLight);
+    A._nightLights.push(camLight);
     if (A.markDirty) A.markDirty();
   };
 
