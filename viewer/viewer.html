@@ -815,7 +815,7 @@
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="streaming.js?v=45" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=6" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=22" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=23" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=25" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=24" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="tour.js?v=3" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
@@ -915,7 +915,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=487')
+  navigator.serviceWorker.register('sw.js?v=488')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

@@ -1174,6 +1174,9 @@ function setupPanels(A) {
       capBot.addEventListener('pointerleave', _stopScroll);
     }
 
+    // Pre-build once at startup
+    _buildPill();
+
     var _pillOpen = false;
     function _closePill() {
       pill.style.display = 'none';
@@ -1183,9 +1186,9 @@ function setupPanels(A) {
     window.toggleMobilePill = function() {
       _pillOpen = !_pillOpen;
       if (_pillOpen) {
-        _buildPill();
         pill.style.display = 'flex';
-        setTimeout(_updateCaps, 10);
+        scroll.scrollTop = scroll.scrollHeight;
+        setTimeout(_updateCaps, 0);
       } else {
         _closePill();
       }
