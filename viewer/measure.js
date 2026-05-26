@@ -891,6 +891,10 @@ function setupMeasure(A) {
           }
           A._loadRemainingStoreys();
           if (!A._currentClashStorey) A._countClashesAsync(rules, parts[0], parts[1]);
+          // §S278: Re-focus clashlist panel after rebuild so arrow keys work
+          if (typeof window._focusPanel === 'function') {
+            setTimeout(function() { window._focusPanel('clashlist'); }, 100);
+          }
         }
       });
     }
