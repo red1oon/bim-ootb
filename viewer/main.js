@@ -587,12 +587,10 @@ async function initViewer() {
         _needsRender = false;
       }
     } else {
-      // §S280b: Desktop render gate — skip render when idle (saves GPU + battery)
-      if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
-        else APP.renderer.render(APP.scene, APP.camera);
-        _needsRender = false;
-      }
+      // §S280c: Desktop renders unconditionally — same as smooth R184 era.
+      // Render gate removed: was S280b scope drift (perf change in UI session).
+      if (APP._composer && APP._composerEnabled) APP._composer.render();
+      else APP.renderer.render(APP.scene, APP.camera);
     }
   }
 
