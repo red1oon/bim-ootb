@@ -280,16 +280,48 @@
         // Otherwise children===true means lazy — onExpand fills the container
       }
 
-      row.addEventListener('pointerup', function(e) {
-        e.stopPropagation();
-        if (childContainer) {
+      // §S280b: Arrow = expand/collapse (search mode). Label = instant 3D filter only.
+      if (childContainer) {
+        arrow.style.cursor = 'pointer';
+        arrow.addEventListener('pointerup', function(e) {
+          e.stopPropagation();
           expanded = !expanded;
           if (expanded && opts.onExpand) opts.onExpand(childContainer);
           childContainer.style.display = expanded ? 'block' : 'none';
           arrow.textContent = expanded ? '\u25BE' : '\u25B8';
+          // Expanding = user entering search mode — restore full scene
+          if (expanded && opts.onRestore) opts.onRestore();
+        });
+      }
+      // Click on label/badge = instant filter (no expand, no SQL search)
+      function _doTap(e) {
+        e.stopPropagation();
+        // §S280b: Highlight active row, deselect siblings
+        if (isParent && row.parentNode) {
+          row.parentNode.querySelectorAll('[data-active]').forEach(function(el) {
+            el.removeAttribute('data-active');
+            el.style.background = '';
+            el.querySelector('span:nth-child(2)').style.color = '#fff';
+          });
+          // Toggle: click same storey again = deselect (show all)
+          if (row._isActive) {
+            row._isActive = false;
+            if (opts.onDeselect) opts.onDeselect();
+            return;
+          }
+          row.setAttribute('data-active', '1');
+          row._isActive = true;
+          row.style.background = 'rgba(79,195,247,0.15)';
+          text.style.color = '#4fc3f7';
+          // Clear other rows' active state
+          row.parentNode.querySelectorAll('div').forEach(function(el) {
+            if (el !== row) el._isActive = false;
+          });
         }
         if (opts.onTap) opts.onTap();
-      });
+      }
+      text.addEventListener('pointerup', _doTap);
+      badge.addEventListener('pointerup', _doTap);
 
       var frag = document.createDocumentFragment();
       frag.appendChild(row);
@@ -314,12 +346,16 @@
         var node = _treeNode(storey, storeyCnt, 0, {
           children: true, // signal: has children, loaded lazily
           onTap: function() {
-            // §S280: Storey tap = 3D filter (isolate storey in scene)
+            // §S280b: Storey tap = instant 3D filter only — no SQL search
             if (A.filterStorey) A.filterStorey(storey);
-            elStorey.value = storey;
-            elType.value = '';
-            elName.value = '';
-            runSearch();
+          },
+          onDeselect: function() {
+            // §S280b: Click same storey again = show all
+            if (A.filterStorey) A.filterStorey(null);
+          },
+          onRestore: function() {
+            // §S280b: Expanding = restore full scene (user entering search mode)
+            if (A.filterStorey) A.filterStorey(null);
           },
           onExpand: function(container) {
             if (container._loaded) return;
@@ -374,7 +410,16 @@
         var node = _treeNode(disc, discCnt, 0, {
           children: true,
           onTap: function() {
+            // §S280b: Disc tap = instant 3D toggle — no SQL search
             if (A.toggleDisc) A.toggleDisc(disc);
+          },
+          onDeselect: function() {
+            // §S280b: Click same disc again = restore (toggleDisc handles the toggle)
+            if (A.toggleDisc) A.toggleDisc(disc);
+          },
+          onRestore: function() {
+            // §S280b: Expanding = restore all discs visible (user entering search mode)
+            if (A.hiddenDiscs) { A.hiddenDiscs.clear(); A.filterStorey(A.activeStoreyFilter); }
           },
           onExpand: function(container) {
             if (container._loaded) return;

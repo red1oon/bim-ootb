@@ -424,7 +424,7 @@ function setupStreaming(A) {
           var _bvhIdx = 0;
           var _bvhT0 = performance.now();
           (function _bvhBatch() {
-            var end = Math.min(_bvhIdx + 500, _bvhHashes.length);
+            var end = Math.min(_bvhIdx + 50, _bvhHashes.length);
             for (var bi = _bvhIdx; bi < end; bi++) {
               var geo = A.meshCache[_bvhHashes[bi]];
               if (geo && geo.computeBoundsTree && !geo.boundsTree) {
@@ -433,7 +433,7 @@ function setupStreaming(A) {
             }
             _bvhIdx = end;
             if (_bvhIdx < _bvhHashes.length) {
-              setTimeout(_bvhBatch, 0);
+              (window.requestIdleCallback || setTimeout)(_bvhBatch);
             } else {
               console.log('[S258] §BVH_DEFERRED built=' + _bvhHashes.length +
                 ' ms=' + (performance.now() - _bvhT0).toFixed(0));
