@@ -743,14 +743,36 @@ async function openProject(key, btnEl, opts) {
   const cacheDb = await openCacheDB();
   if (!cacheDb) { if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; } return; }
 
-  const dbUrl = 'import://' + key + '/v0';
-  const libUrl = dbUrl;  // single DB — geometry + metadata in one
-  await new Promise(resolve => {
-    const tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
-    tx.objectStore(CACHE_STORE).put(base.db, dbUrl);
-    tx.objectStore(CACHE_STORE).put(base.db, libUrl);
-    tx.oncomplete = resolve;
-  });
+  // §S274: Use split-DB path if available — meta (15MB) loads instantly, geo streams on demand.
+  // URL must contain _extracted.db so streaming.js can derive _meta.db/_geo.db.
+  var hasSplit = record.metaDb && record.geoDb;
+  var dbUrl, libUrl;
+  if (hasSplit) {
+    dbUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
+    libUrl = dbUrl;
+    var metaUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_meta.db');
+    var geoUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_geo.db');
+    await new Promise(resolve => {
+      var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+      var store = tx.objectStore(CACHE_STORE);
+      store.put(record.metaDb, metaUrl);
+      store.put(record.geoDb, geoUrl);
+      store.put(record.metaDb, dbUrl);   // meta as primary — fast load
+      store.put(record.metaDb, libUrl);
+      tx.oncomplete = resolve;
+    });
+    console.log('[S274] §OPEN_PROJECT_SPLIT key=' + key + ' meta=' + (record.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB');
+  } else {
+    dbUrl = 'import://' + key + '/v0';
+    libUrl = dbUrl;
+    await new Promise(resolve => {
+      var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+      tx.objectStore(CACHE_STORE).put(base.db, dbUrl);
+      tx.objectStore(CACHE_STORE).put(base.db, libUrl);
+      tx.oncomplete = resolve;
+    });
+    console.log('[S274] §OPEN_PROJECT_MONOLITH key=' + key + ' size=' + (base.db.byteLength/1024/1024).toFixed(1) + 'MB');
+  }
 
   // Variance: only if a 'revised' version exists — diff v0 (combined) against revision snapshot
   var diffParam = '';
