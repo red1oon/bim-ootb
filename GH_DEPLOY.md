@@ -9,11 +9,14 @@
 ### Workflow
 
 ```
-1. Edit files in bim-ootb/ (viewer/*.js or index.html)
-2. Test locally: python3 -m http.server 8000
-3. Bump viewer/sw.js CACHE_VERSION (e.g. v438 -> v439)
-4. git add <changed files> && git commit && git push
-5. Verify: https://red1oon.github.io/bim-ootb/
+1. Edit files in bim-compiler/deploy/dev/ (source of truth)
+2. Copy changed files to bim-ootb/viewer/ (viewer.html for HTML, *.js for JS)
+   NOTE: The viewer HTML is viewer/viewer.html, NOT viewer/index.html
+   (sandbox/index.html redirects old bookmarks → viewer/viewer.html)
+3. Bump viewer/sw.js CACHE_VERSION (e.g. v483 -> v484)
+4. Bump ?v=N on changed script tags in viewer/viewer.html
+5. git add <changed files> && git commit && git push
+6. Verify: https://red1oon.github.io/bim-ootb/
 ```
 
 ### Cache busting
