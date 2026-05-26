@@ -563,7 +563,7 @@ function setupPanels(A) {
   A.storeyMeshGroups = {};
 
   A.populateStoreys = function(building) {
-    if (!A.db || !building) return;
+    return; // §S280: HUD removed — storey/disc in Find outliner
     const rows = A.dbQuery(`
       SELECT DISTINCT storey FROM elements_meta
       WHERE building = ? AND storey IS NOT NULL
@@ -613,7 +613,7 @@ function setupPanels(A) {
   A.hiddenDiscs = new Set();
 
   A.populateDiscs = function(building) {
-    if (!A.db || !building) return;
+    return; // §S280: HUD removed — storey/disc in Find outliner
     const rows = A.dbQuery(`
       SELECT discipline, COUNT(*) FROM elements_meta
       WHERE building = ? AND discipline IS NOT NULL
@@ -954,8 +954,9 @@ function setupPanels(A) {
 
   // Panel toggle (S250 §5 — hides ALL UI chrome for clean screenshots)
   // S265 Phase 4: HUD auto-collapse on mobile (5s after last interaction)
+  // §S280: HUD removed — no-op stubs to avoid errors from callers
   var _hudAutoCollapseTimer = null;
-  window.resetHudAutoCollapse = function() {
+  window.resetHudAutoCollapse = function() { return;
     if (_hudAutoCollapseTimer) clearTimeout(_hudAutoCollapseTimer);
     if (!window._isMobile) return; // desktop: no auto-collapse
     _hudAutoCollapseTimer = setTimeout(function() {

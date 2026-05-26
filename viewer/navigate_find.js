@@ -136,8 +136,8 @@
       '<select id="find-storey" style="display:none"><option value="">' + _t('ui_all_storeys', 'All Storeys') + '</option></select>',
       // §S280: Outliner — Storey/Disc toggle + tree
       '<div id="find-outliner-bar" style="display:flex;padding:4px 10px;gap:2px;border-bottom:1px solid rgba(255,255,255,0.06)">',
-      '  <button id="find-mode-storey" class="find-mode-btn active" style="flex:1;padding:4px;font-size:10px;border:1px solid rgba(79,195,247,0.3);border-radius:4px 0 0 4px;background:rgba(79,195,247,0.15);color:#4fc3f7;cursor:pointer">Storey</button>',
-      '  <button id="find-mode-disc" class="find-mode-btn" style="flex:1;padding:4px;font-size:10px;border:1px solid rgba(255,255,255,0.1);border-radius:0 4px 4px 0;background:transparent;color:#888;cursor:pointer">Discipline</button>',
+      '  <button id="find-mode-storey" class="find-mode-btn active" style="flex:1;padding:6px;font-size:12px;font-weight:700;border:1px solid rgba(79,195,247,0.4);border-radius:6px 0 0 6px;background:rgba(79,195,247,0.2);color:#4fc3f7;cursor:pointer;letter-spacing:0.5px">Storey</button>',
+      '  <button id="find-mode-disc" class="find-mode-btn" style="flex:1;padding:6px;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,0.1);border-radius:0 6px 6px 0;background:transparent;color:#666;cursor:pointer;letter-spacing:0.5px">Discipline</button>',
       '</div>',
       '<div id="find-tree" style="max-height:200px;overflow-y:auto;scrollbar-width:thin"></div>',
       // Legacy accordion rows — hidden, kept for backward compat
@@ -202,13 +202,13 @@
     function _setTreeMode(mode) {
       _treeMode = mode;
       elModeStorey.classList.toggle('active', mode === 'storey');
-      elModeStorey.style.background = mode === 'storey' ? 'rgba(79,195,247,0.15)' : 'transparent';
-      elModeStorey.style.color = mode === 'storey' ? '#4fc3f7' : '#888';
-      elModeStorey.style.borderColor = mode === 'storey' ? 'rgba(79,195,247,0.3)' : 'rgba(255,255,255,0.1)';
+      elModeStorey.style.background = mode === 'storey' ? 'rgba(79,195,247,0.2)' : 'transparent';
+      elModeStorey.style.color = mode === 'storey' ? '#4fc3f7' : '#666';
+      elModeStorey.style.borderColor = mode === 'storey' ? 'rgba(79,195,247,0.4)' : 'rgba(255,255,255,0.1)';
       elModeDisc.classList.toggle('active', mode === 'disc');
-      elModeDisc.style.background = mode === 'disc' ? 'rgba(79,195,247,0.15)' : 'transparent';
-      elModeDisc.style.color = mode === 'disc' ? '#4fc3f7' : '#888';
-      elModeDisc.style.borderColor = mode === 'disc' ? 'rgba(79,195,247,0.3)' : 'rgba(255,255,255,0.1)';
+      elModeDisc.style.background = mode === 'disc' ? 'rgba(79,195,247,0.2)' : 'transparent';
+      elModeDisc.style.color = mode === 'disc' ? '#4fc3f7' : '#666';
+      elModeDisc.style.borderColor = mode === 'disc' ? 'rgba(79,195,247,0.4)' : 'rgba(255,255,255,0.1)';
       buildTree();
     }
     if (elModeStorey) elModeStorey.addEventListener('pointerup', function(e) { e.stopPropagation(); _setTreeMode('storey'); });
@@ -228,16 +228,21 @@
     function _treeNode(label, count, level, opts) {
       opts = opts || {};
       var row = document.createElement('div');
-      row.style.cssText = 'padding:4px ' + (10 + level * 12) + 'px;cursor:pointer;font-size:11px;color:#ccc;' +
-        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px';
+      var isParent = level === 0;
+      row.style.cssText = 'padding:' + (isParent ? '8px 10px' : '4px 10px 4px ' + (22 + level * 12) + 'px') +
+        ';cursor:pointer;font-size:' + (isParent ? '13px' : '11px') +
+        ';color:' + (isParent ? '#fff' : '#aaa') +
+        ';font-weight:' + (isParent ? '600' : '400') +
+        ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px' +
+        (isParent ? ';border-bottom:1px solid rgba(255,255,255,0.06)' : '');
       var arrow = document.createElement('span');
-      arrow.style.cssText = 'font-size:8px;opacity:0.5;width:10px;text-align:center;flex-shrink:0';
+      arrow.style.cssText = 'font-size:' + (isParent ? '10px' : '8px') + ';opacity:0.5;width:12px;text-align:center;flex-shrink:0';
       arrow.textContent = opts.children ? '\u25B8' : '';
       var text = document.createElement('span');
       text.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis';
       text.textContent = label;
       var badge = document.createElement('span');
-      badge.style.cssText = 'font-size:9px;color:#666;flex-shrink:0';
+      badge.style.cssText = 'font-size:' + (isParent ? '10px' : '9px') + ';color:' + (isParent ? '#4fc3f7' : '#666') + ';flex-shrink:0;font-weight:400';
       badge.textContent = '(' + count + ')';
       row.appendChild(arrow);
       row.appendChild(text);
