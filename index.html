@@ -1128,6 +1128,9 @@ async function handleImportFile(file) {
           versions: [{ key: file.name, importDate: new Date().toISOString(), db: dbBuf }],
           latestVersion: 0
         };
+        // §S274: Persist split DBs for fast open (streaming.js picks these up)
+        if (dbs.metaDb) newRecord.metaDb = dbs.metaDb;
+        if (dbs.geoDb) newRecord.geoDb = dbs.geoDb;
         await saveProject(projectKey, newRecord);
         console.log('[S224] §IMPORT_SAVED key=' + projectKey + ' elements=' + msg.meta.elementCount);
 
