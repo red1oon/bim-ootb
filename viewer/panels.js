@@ -562,30 +562,8 @@ function setupPanels(A) {
   A.activeStoreyFilter = null;
   A.storeyMeshGroups = {};
 
-  A.populateStoreys = function(building) {
-    return; // §S280: HUD removed — storey/disc in Find outliner
-    const rows = A.dbQuery(`
-      SELECT DISTINCT storey FROM elements_meta
-      WHERE building = ? AND storey IS NOT NULL
-      ORDER BY storey
-    `, [building]);
-    const section = document.getElementById('hud-storey-section');
-    const body = document.getElementById('storey-body');
-    if (!rows.length) { if (section) section.style.display = 'none'; return; }
-
-    const storeys = rows.map(r => r[0]);
-    body.innerHTML = `<button class="${A.activeStoreyFilter === null ? 'active' : ''}"
-      onclick="filterStorey(null);resetHudAutoCollapse()" style="margin-top:4px">${typeof _TRL!=='undefined'&&_TRL.ui_all_storeys||'All Storeys'}</button>` +
-      storeys.map(s => `<button class="${A.activeStoreyFilter === s ? 'active' : ''}"
-        onclick="filterStorey('${s}');resetHudAutoCollapse()">${s}</button>`).join('');
-    if (section) section.style.display = 'block';
-
-    // Start with storey body collapsed inside HUD accordion
-    setTimeout(() => { if (body) body.classList.add('collapsed'); }, 100);
-    // S251: Wire ListKeyNav after buttons are populated
-    if (A._wireListKeyNav) A._wireListKeyNav();
-    console.log('§HUD_STOREY populated storeys=' + storeys.length);
-  };
+  // §S280: HUD removed — storey/disc now in Find outliner
+  A.populateStoreys = function() {};
 
   A.filterStorey = function(storey) {
     A.activeStoreyFilter = storey;
@@ -612,32 +590,7 @@ function setupPanels(A) {
   // Discipline toggle
   A.hiddenDiscs = new Set();
 
-  A.populateDiscs = function(building) {
-    return; // §S280: HUD removed — storey/disc in Find outliner
-    const rows = A.dbQuery(`
-      SELECT discipline, COUNT(*) FROM elements_meta
-      WHERE building = ? AND discipline IS NOT NULL
-      GROUP BY discipline ORDER BY COUNT(*) DESC
-    `, [building]);
-    const section = document.getElementById('hud-disc-section');
-    const body = document.getElementById('disc-body');
-    if (!rows.length) { if (section) section.style.display = 'none'; return; }
-
-    body.innerHTML = rows.map(([d, cnt]) => {
-      const hex = '#' + (A.DISC_COLORS[d] || A.DEFAULT_COLOR).toString(16).padStart(6, '0');
-      const on = !A.hiddenDiscs.has(d);
-      return `<button class="${on ? 'active' : ''}" onclick="toggleDisc('${d}');resetHudAutoCollapse()" style="margin-top:2px">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${hex};margin-right:4px"></span>
-        ${d} <span style="color:#888;font-size:10px">${cnt.toLocaleString()}</span></button>`;
-    }).join('');
-    if (section) section.style.display = 'block';
-
-    // Start with disc body collapsed inside HUD accordion
-    setTimeout(() => { if (body) body.classList.add('collapsed'); }, 100);
-    // S251: Wire ListKeyNav after buttons are populated
-    if (A._wireListKeyNav) A._wireListKeyNav();
-    console.log('§HUD_DISC populated disciplines=' + rows.length);
-  };
+  A.populateDiscs = function() {};
 
   A.toggleDisc = function(disc) {
     if (A.hiddenDiscs.has(disc)) {
@@ -955,21 +908,8 @@ function setupPanels(A) {
     }
   };
 
-  // Panel toggle (S250 §5 — hides ALL UI chrome for clean screenshots)
-  // S265 Phase 4: HUD auto-collapse on mobile (5s after last interaction)
-  // §S280: HUD removed — no-op stubs to avoid errors from callers
-  var _hudAutoCollapseTimer = null;
-  window.resetHudAutoCollapse = function() { return;
-    if (_hudAutoCollapseTimer) clearTimeout(_hudAutoCollapseTimer);
-    if (!window._isMobile) return; // desktop: no auto-collapse
-    _hudAutoCollapseTimer = setTimeout(function() {
-      var hudBody = document.getElementById('hud-body');
-      if (hudBody && !hudBody.classList.contains('collapsed')) {
-        hudBody.classList.add('collapsed');
-        console.log('§HUD_AUTOCOLLAPSE 5s idle');
-      }
-    }, 5000);
-  };
+  // §S280: HUD removed — no-op stubs
+  window.resetHudAutoCollapse = function() {};
 
   // S265 Phase 4: storey-panel/disc-panel removed (now inside HUD accordion)
   var panelIds = ['hud','search-box','icon-pill','info-panel',
