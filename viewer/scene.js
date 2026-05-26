@@ -1181,20 +1181,12 @@ async function setupScene(A) {
     // §S280: Backspace = undo, \ = redo (kernel_ops)
     if (noMod && notInput && e.key === 'Backspace') {
       e.preventDefault();
-      if (window.KernelOps && A.db) {
-        var op = KernelOps.undoOp(A.db);
-        if (op) { A.status.textContent = 'Undo: ' + op.op_type; console.log('§KBD_UNDO type=' + op.op_type + ' id=' + op.id); }
-        else { A.status.textContent = 'Nothing to undo'; }
-      }
+      if (window._doSceneUndo) window._doSceneUndo();
       return;
     }
     if (noMod && notInput && e.key === '\\') {
       e.preventDefault();
-      if (window.KernelOps && A.db) {
-        var op = KernelOps.redoOp(A.db);
-        if (op) { A.status.textContent = 'Redo: ' + op.op_type; console.log('§KBD_REDO type=' + op.op_type + ' id=' + op.id); }
-        else { A.status.textContent = 'Nothing to redo'; }
-      }
+      if (window._doSceneRedo) window._doSceneRedo();
       return;
     }
 
@@ -1323,4 +1315,57 @@ async function setupScene(A) {
     _seq = '';
     _showSeqHint('');
   });
+
+  // §S280: Undo/Redo — shared by keyboard + buttons
+  var _undoBtn = document.getElementById('undo-btn');
+  var _redoBtn = document.getElementById('redo-btn');
+
+  function _updateUrButtons() {
+    if (!A.db || !window.KernelOps) return;
+    // Check if undo is available
+    var hasUndo = false, hasRedo = false;
+    try {
+      var u = A.db.exec('SELECT id FROM kernel_ops WHERE undone = 0 ORDER BY id DESC LIMIT 1');
+      hasUndo = u.length > 0 && u[0].values.length > 0;
+      var r = A.db.exec('SELECT id FROM kernel_ops WHERE undone = 1 ORDER BY id ASC LIMIT 1');
+      hasRedo = r.length > 0 && r[0].values.length > 0;
+    } catch(e) {}
+    if (_undoBtn) { _undoBtn.classList.toggle('active-undo', hasUndo); }
+    if (_redoBtn) { _redoBtn.classList.toggle('active-redo', hasRedo); }
+  }
+
+  window._doSceneUndo = function() {
+    if (!window.KernelOps || !A.db) { A.status.textContent = 'No ops to undo'; return; }
+    var op = KernelOps.undoOp(A.db);
+    if (op) {
+      A.status.textContent = 'Undo: ' + op.op_type;
+      console.log('§UNDO type=' + op.op_type + ' id=' + op.id);
+    } else {
+      A.status.textContent = 'Nothing to undo';
+    }
+    _updateUrButtons();
+  };
+  window._doSceneRedo = function() {
+    if (!window.KernelOps || !A.db) { A.status.textContent = 'No ops to redo'; return; }
+    var op = KernelOps.redoOp(A.db);
+    if (op) {
+      A.status.textContent = 'Redo: ' + op.op_type;
+      console.log('§REDO type=' + op.op_type + ' id=' + op.id);
+    } else {
+      A.status.textContent = 'Nothing to redo';
+    }
+    _updateUrButtons();
+  };
+
+  // Update button state when any kernel_op is committed
+  var _origCommitOp = window.KernelOps ? KernelOps.commitOp : null;
+  if (_origCommitOp) {
+    KernelOps.commitOp = function() {
+      var result = _origCommitOp.apply(this, arguments);
+      _updateUrButtons();
+      return result;
+    };
+  }
+  // Initial state
+  setTimeout(_updateUrButtons, 2000);
 }

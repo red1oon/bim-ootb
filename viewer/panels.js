@@ -699,14 +699,17 @@ function setupPanels(A) {
     }
   };
 
-  // Search filter
-  const searchInput = document.getElementById('search');
-  searchInput.addEventListener('input', () => {
-    const q = searchInput.value.trim().toLowerCase();
-    for (const card of A.allBuildingCards) {
-      card.el.style.display = (!q || card.name.includes(q)) ? '' : 'none';
-    }
-  });
+  // §S280: Search filter — guard against missing #search (overflow removed)
+  var searchInput = document.getElementById('search');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      var q = searchInput.value.trim().toLowerCase();
+      for (var ci = 0; ci < (A.allBuildingCards || []).length; ci++) {
+        var card = A.allBuildingCards[ci];
+        card.el.style.display = (!q || card.name.includes(q)) ? '' : 'none';
+      }
+    });
+  }
 
   // HUD
   A.updateHUD = function() {
@@ -970,14 +973,14 @@ function setupPanels(A) {
 
   // S265 Phase 4: storey-panel/disc-panel removed (now inside HUD accordion)
   var panelIds = ['hud','search-box','icon-pill','info-panel',
-                  'status','grid-overlay-panel','dev-banner',
+                  'status-bar-wrap','grid-overlay-panel','dev-banner',
                   'section-slider-panel'];
   var panelsHidden = false;
   // §S280: toggleAllPanels = old +/- behavior, now triggered by double-tap []
   window.toggleAllPanels = function() {
     panelsHidden = !panelsHidden;
     panelIds.forEach(function(pid) {
-      if (pid === 'status' && panelsHidden && A._clashMatrixDiv) return;
+      if (pid === 'status-bar-wrap' && panelsHidden && A._clashMatrixDiv) return;
       var el = document.getElementById(pid);
       if (el) el.classList.toggle('swipe-hidden', panelsHidden);
     });
