@@ -653,13 +653,17 @@ function setupStreaming(A) {
   if (!A._batchStoreyMap) A._batchStoreyMap = {};
   if (!A._batchDiscMap) A._batchDiscMap = {};
 
+  // §S279: Reuse flush temp objects across calls — avoids alloc per flush (every 500-5000 elements)
+  var _flushM4, _flushEuler, _flushQuat, _flushPos, _flushScale;
   A._flushInstanced = function() {
     if (!A._pendingInstances) return;
-    const _m4 = new THREE.Matrix4();
-    const _euler = new THREE.Euler();
-    const _quat = new THREE.Quaternion();
-    const _pos = new THREE.Vector3();
-    const _scale = new THREE.Vector3(1, 1, 1);
+    if (!_flushM4) {
+      _flushM4 = new THREE.Matrix4(); _flushEuler = new THREE.Euler();
+      _flushQuat = new THREE.Quaternion(); _flushPos = new THREE.Vector3();
+      _flushScale = new THREE.Vector3(1, 1, 1);
+    }
+    const _m4 = _flushM4, _euler = _flushEuler, _quat = _flushQuat;
+    const _pos = _flushPos, _scale = _flushScale;
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
@@ -673,14 +677,18 @@ function setupStreaming(A) {
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
-      if (elements.length === 1) {
-        // §S260: Desktop — bucket for BatchedMesh (single-instance hashes only)
-        const el = elements[0];
-        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
-        if (!batchBuckets[key]) batchBuckets[key] = [];
-        batchBuckets[key].push({ el, geo });
+      if (elements.length <= 5) {
+        // §S280b: ≤5 instances → BatchedMesh bucket (saves thousands of draw calls)
+        // Hospital: 5,463 hashes with 2-5 instances → 5,463 draw calls as InstancedMesh
+        // Batched into ~52 buckets instead. 6+ instances stay as InstancedMesh.
+        for (var ei = 0; ei < elements.length; ei++) {
+          var el = elements[ei];
+          var key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
+          if (!batchBuckets[key]) batchBuckets[key] = [];
+          batchBuckets[key].push({ el: el, geo: geo });
+        }
       } else {
-        // 2+ instances — InstancedMesh (both desktop and mobile)
+        // 6+ instances — InstancedMesh (amortized draw call cost worthwhile)
         const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
