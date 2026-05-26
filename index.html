@@ -732,83 +732,100 @@ async function deleteProject(key) {
 // opts: { wizard: true } to launch classification wizard in viewer
 async function openProject(key, btnEl, opts) {
   if (btnEl) { btnEl.textContent = 'Opening...'; btnEl.disabled = true; }
-  const record = await getProject(key);
-  if (!record || !record.versions.length) {
-    alert('Building not found');
-    if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; }
-    return;
-  }
-  // Always open v0 (combined DB with all merged disciplines)
-  const base = record.versions[0];
+
+  // §S274: Check cache store FIRST (lightweight key check, no 760MB record read).
+  // If split-DB was pre-populated during import, skip reading the heavy project record entirely.
   const cacheDb = await openCacheDB();
-  if (!cacheDb) { if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; } return; }
-
-  // §S274: Use split-DB path if available — meta (15MB) loads instantly, geo streams on demand.
-  // Write meta first (fast), open viewer immediately, write geo in background.
-  var hasSplit = record.metaDb && record.geoDb;
   var dbUrl, libUrl;
-  if (hasSplit) {
-    dbUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
-    libUrl = dbUrl;
-    var metaUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_meta.db');
-    var geoUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_geo.db');
-    // Write meta only (17MB, 2 keys) — fast, viewer opens immediately
-    await new Promise(resolve => {
-      var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
-      var store = tx.objectStore(CACHE_STORE);
-      store.put(record.metaDb, metaUrl);
-      store.put(record.metaDb, dbUrl);   // fallback path + split detect base
-      tx.oncomplete = resolve;
+  var _splitUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
+  var _geoUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_geo.db');
+
+  // IDB getKey() doesn't exist everywhere — use count() to check presence without loading data
+  var _hasCachedGeo = false;
+  if (cacheDb) {
+    _hasCachedGeo = await new Promise(function(resolve) {
+      var tx = cacheDb.transaction(CACHE_STORE, 'readonly');
+      var req = tx.objectStore(CACHE_STORE).count(IDBKeyRange.only(_geoUrl));
+      req.onsuccess = function() { resolve(req.result > 0); };
+      req.onerror = function() { resolve(false); };
     });
-    // Write geo (363MB) in background — streaming.js will find it when it needs it
-    var _geoT0 = performance.now();
-    var _geoTx = cacheDb.transaction(CACHE_STORE, 'readwrite');
-    _geoTx.objectStore(CACHE_STORE).put(record.geoDb, geoUrl);
-    _geoTx.oncomplete = function() {
-      console.log('[S274] §OPEN_PROJECT_GEO_CACHED key=' + key + ' geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB ms=' + (performance.now()-_geoT0).toFixed(0));
-    };
-    console.log('[S274] §OPEN_PROJECT_SPLIT key=' + key + ' meta=' + (record.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB (geo writing in background)');
-  } else {
-    dbUrl = 'import://' + key + '/v0';
-    libUrl = dbUrl;
-    await new Promise(resolve => {
-      var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
-      tx.objectStore(CACHE_STORE).put(base.db, dbUrl);
-      tx.objectStore(CACHE_STORE).put(base.db, libUrl);
-      tx.oncomplete = resolve;
-    });
-    console.log('[S274] §OPEN_PROJECT_MONOLITH key=' + key + ' size=' + (base.db.byteLength/1024/1024).toFixed(1) + 'MB');
   }
 
-  // Variance: only if a 'revised' version exists — diff v0 (combined) against revision snapshot
-  var diffParam = '';
-  if (record.versions.length > 1) {
-    for (var vi = 1; vi < record.versions.length; vi++) {
-      if (/revised/i.test(record.versions[vi].key || '')) {
-        var revUrl = 'import://' + key + '/v' + vi;
-        await new Promise(resolve => {
-          const tx2 = cacheDb.transaction(CACHE_STORE, 'readwrite');
-          tx2.objectStore(CACHE_STORE).put(record.versions[vi].db, revUrl);
-          tx2.oncomplete = resolve;
-        });
-        diffParam = '&diffdb=' + encodeURIComponent(revUrl);
-        console.log('[S225] §OPEN_DIFF key=' + key + ' base=v0(combined) diff=v' + vi + '(revised)');
-        break;
-      }
+  if (_hasCachedGeo) {
+    // Fast path — cache already populated during import. Just open.
+    dbUrl = _splitUrl;
+    libUrl = _splitUrl;
+    console.log('[S274] §OPEN_PROJECT_INSTANT key=' + key + ' (cache pre-populated)');
+  } else {
+    // Slow path — read full record for legacy imports or monolith fallback
+    var record = await getProject(key);
+    if (!record || !record.versions.length) {
+      alert('Building not found');
+      if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; }
+      return;
+    }
+    var base = record.versions[0];
+    if (!cacheDb) { if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; } return; }
+
+    if (record.metaDb && record.geoDb) {
+      // Split-DB but cache not populated — legacy import, populate now
+      dbUrl = _splitUrl;
+      libUrl = _splitUrl;
+      var _metaUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_meta.db');
+      await new Promise(function(resolve) {
+        var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+        var store = tx.objectStore(CACHE_STORE);
+        store.put(record.metaDb, _metaUrl);
+        store.put(record.metaDb, dbUrl);
+        store.put(record.geoDb, _geoUrl);
+        tx.oncomplete = resolve;
+      });
+      console.log('[S274] §OPEN_PROJECT_CACHE_FILL key=' + key + ' (legacy, populating cache)');
+    } else {
+      // Monolith — no split DBs available
+      dbUrl = 'import://' + key + '/v0';
+      libUrl = dbUrl;
+      await new Promise(resolve => {
+        var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+        tx.objectStore(CACHE_STORE).put(base.db, dbUrl);
+        tx.objectStore(CACHE_STORE).put(base.db, libUrl);
+        tx.oncomplete = resolve;
+      });
+      console.log('[S274] §OPEN_PROJECT_MONOLITH key=' + key + ' size=' + (base.db.byteLength/1024/1024).toFixed(1) + 'MB');
     }
   }
 
-  // S230: Add wizard param for mesh imports (S230b: skip if already completed)
+  // Variance/wizard — only needed on slow path (record already loaded).
+  // Fast path skips: IFC imports have no variance or wizard.
+  var diffParam = '';
   var wizardParam = '';
-  var isMesh = record.meta && record.meta.sourceFormat && record.meta.sourceFormat !== '.ifc';
-  var wizardDone = record.meta && record.meta.wizard_complete;
-  if (((opts && opts.wizard) || isMesh) && !wizardDone) {
-    wizardParam = '&wizard=1&wizardKey=' + encodeURIComponent(key);
+  if (typeof record !== 'undefined' && record) {
+    if (record.versions && record.versions.length > 1) {
+      for (var vi = 1; vi < record.versions.length; vi++) {
+        if (/revised/i.test(record.versions[vi].key || '')) {
+          var revUrl = 'import://' + key + '/v' + vi;
+          await new Promise(resolve => {
+            var tx2 = cacheDb.transaction(CACHE_STORE, 'readwrite');
+            tx2.objectStore(CACHE_STORE).put(record.versions[vi].db, revUrl);
+            tx2.oncomplete = resolve;
+          });
+          diffParam = '&diffdb=' + encodeURIComponent(revUrl);
+          console.log('[S225] §OPEN_DIFF key=' + key + ' base=v0(combined) diff=v' + vi + '(revised)');
+          break;
+        }
+      }
+    }
+    var isMesh = record.meta && record.meta.sourceFormat && record.meta.sourceFormat !== '.ifc';
+    var wizardDone = record.meta && record.meta.wizard_complete;
+    if (((opts && opts.wizard) || isMesh) && !wizardDone) {
+      wizardParam = '&wizard=1&wizardKey=' + encodeURIComponent(key);
+    }
   }
-  const viewerUrl = (_base || '') + 'viewer/viewer.html?db=' +
+
+  var viewerUrl = (_base || '') + 'viewer/viewer.html?db=' +
     encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(libUrl) + diffParam + wizardParam;
-  const win = window.open(viewerUrl, '_blank');
-  trackTab(record.meta.name || key, '3D', win);
+  var win = window.open(viewerUrl, '_blank');
+  trackTab((record && record.meta && record.meta.name) || key, '3D', win);
   if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; }
 }
 
@@ -1162,12 +1179,36 @@ async function handleImportFile(file) {
         await saveProject(projectKey, newRecord);
         console.log('[S224] §IMPORT_SAVED key=' + projectKey + ' elements=' + msg.meta.elementCount);
 
-        status.textContent = 'Imported ' + msg.meta.elementCount + ' elements — see your building below \u2193';
+        // §S274: Pre-populate cache store during import — card click opens instantly.
+        // Same keys streaming.js expects: _extracted.db (primary), _meta.db, _geo.db.
+        var _cacheDb = await openCacheDB();
+        if (_cacheDb && dbs.metaDb && dbs.geoDb) {
+          var _ck = projectKey;
+          var _cDbUrl = 'import://' + _ck + '/' + _ck.replace(/\.ifc$/i, '_extracted.db');
+          var _cMetaUrl = 'import://' + _ck + '/' + _ck.replace(/\.ifc$/i, '_meta.db');
+          var _cGeoUrl = 'import://' + _ck + '/' + _ck.replace(/\.ifc$/i, '_geo.db');
+          await new Promise(function(resolve) {
+            var tx = _cacheDb.transaction(CACHE_STORE, 'readwrite');
+            var store = tx.objectStore(CACHE_STORE);
+            store.put(dbs.metaDb, _cMetaUrl);
+            store.put(dbs.metaDb, _cDbUrl);
+            store.put(dbs.geoDb, _cGeoUrl);
+            tx.oncomplete = resolve;
+          });
+          console.log('[S274] §IMPORT_CACHE_PRELOAD meta=' + (dbs.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (dbs.geoDb.byteLength/1024/1024).toFixed(1) + 'MB');
+        }
+
+        status.textContent = 'Imported ' + msg.meta.elementCount + ' elements — opening viewer...';
         progressBar.style.width = '100%';
         progressBar.style.background = '#44cc44';
-        setTimeout(function() { status.textContent = ''; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; }, 3000);
 
         renderImportCards();
+
+        // §S274: Auto-open viewer immediately after import — cache is already populated.
+        // User sees the building without needing to click the card.
+        openProject(projectKey);
+        console.log('[S274] §IMPORT_AUTO_OPEN key=' + projectKey);
+        setTimeout(function() { status.textContent = ''; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; }, 3000);
       } catch(dbErr) {
         status.textContent = 'DB error: ' + dbErr.message;
         progressBar.style.background = '#cc4444';
