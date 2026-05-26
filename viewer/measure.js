@@ -860,6 +860,8 @@ function setupMeasure(A) {
       slider.addEventListener('change', function() {
         pairRule.tolerance_m = parseInt(slider.value) / 1000;
         console.log('§CLASH_TOL_SLIDER ' + (pairLabel || '') + ' to ' + slider.value + 'mm');
+        // §S278: Save list position before rebuild (preserves drag state)
+        var prevRect = listDiv.getBoundingClientRect();
         // Re-query with new tolerance (keep matrix open)
         A._dismissClashes(true);
         A._clashPairOffset = 0;
@@ -868,8 +870,14 @@ function setupMeasure(A) {
           var newClashes = A._queryClashesPair(A._currentClashStorey, rules, parts[0], parts[1], 0);
           A._currentClashes = newClashes;
           A._clashPairOffset = A._CLASH_PAGE_SIZE;
-          var rect = A._clashMatrixDiv ? A._clashMatrixDiv.getBoundingClientRect() : { left: cardX, top: cardY };
-          A._revealClashes(newClashes, rules, rect.left, rect.top, pairLabel, pairRule);
+          A._revealClashes(newClashes, rules, prevRect.left, prevRect.top, pairLabel, pairRule);
+          // §S278: Restore position to where list was before slider change
+          if (A._clashListDiv) {
+            A._clashListDiv.style.top = prevRect.top + 'px';
+            A._clashListDiv.style.bottom = 'auto';
+            A._clashListDiv.style.right = 'auto';
+            A._clashListDiv.style.left = prevRect.left + 'px';
+          }
           A._loadRemainingStoreys();
           if (!A._currentClashStorey) A._countClashesAsync(rules, parts[0], parts[1]);
         }

@@ -814,7 +814,10 @@ async function setupScene(A) {
                   },
                   function(idx) {
                     var rows = Array.from(A._clashListDiv.querySelectorAll('[data-clash-idx]'));
-                    if (rows[idx]) rows[idx].click();
+                    if (rows[idx] && A._flyToClash) {
+                      var ci = parseInt(rows[idx].getAttribute('data-clash-idx'));
+                      if (!isNaN(ci)) A._flyToClash(ci);
+                    }
                   }
                 );
                 var clashListClose = function() {
