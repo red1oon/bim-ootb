@@ -667,7 +667,9 @@ function setupStreaming(A) {
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
-    // ── S232: On mobile, bucket single-instance elements for merge ──
+    // §S280c/S280d: Use merge path on mobile OR when multi_draw unavailable
+    var _useMerge = A._isMobile || !A._hasMultiDraw;
+    // ── S232: On mobile/no-multi_draw, bucket single-instance elements for merge ──
     const mergeBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
     // ── S260: On desktop, bucket single-instance elements for BatchedMesh ──
     // §S261: When _useDlodPath, these buckets are passed to _flushBboxBatched instead
@@ -679,13 +681,13 @@ function setupStreaming(A) {
 
       if (elements.length <= 5) {
         // §S280b: ≤5 instances → BatchedMesh bucket (saves thousands of draw calls)
-        // Hospital: 5,463 hashes with 2-5 instances → 5,463 draw calls as InstancedMesh
-        // Batched into ~52 buckets instead. 6+ instances stay as InstancedMesh.
+        // §S280d: When _useMerge (mobile/no-multi_draw), route to mergeBuckets instead
+        var _target = _useMerge ? mergeBuckets : batchBuckets;
         for (var ei = 0; ei < elements.length; ei++) {
           var el = elements[ei];
           var key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
-          if (!batchBuckets[key]) batchBuckets[key] = [];
-          batchBuckets[key].push({ el: el, geo: geo });
+          if (!_target[key]) _target[key] = [];
+          _target[key].push({ el: el, geo: geo });
         }
       } else {
         // 6+ instances — InstancedMesh (amortized draw call cost worthwhile)
