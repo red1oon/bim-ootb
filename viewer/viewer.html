@@ -295,39 +295,27 @@
   #mobile-bar button:active { background: rgba(79,195,247,0.3); }
   #mobile-bar button svg { width: 22px; height: 22px; pointer-events: none; }
   /* §S280: Scrollable pill — rises from bottom, 3 icons visible, drag to reveal */
+  /* §S280: Full-height scrollable pill — right edge, glass, native scroll */
   #mobile-pill {
-    position: fixed; bottom: 72px; right: 16px; z-index: 499;
-    background: rgba(10,10,30,0.85); border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 28px; padding: 0;
+    position: fixed; top: 16px; bottom: 72px; right: 16px; z-index: 499;
+    background: rgba(10,10,30,0.50); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 24px; padding: 8px 6px;
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    max-height: 220px; overflow: hidden;
-    display: flex; flex-direction: column;
-  }
-  /* §S280: Scroll caps — semi-circle, blue=up red=down */
-  .pill-cap {
-    width: 56px; height: 14px; display: block; cursor: pointer; flex-shrink: 0;
-    transition: opacity 0.2s; opacity: 0.3; user-select: none;
-  }
-  .pill-cap.has-more { opacity: 1; }
-  .pill-cap-top { border-radius: 28px 28px 0 0; background: #4fc3f7; }
-  .pill-cap-bottom { border-radius: 0 0 28px 28px; background: #ff5252; }
-  #mobile-pill-scroll {
     overflow-y: auto; overflow-x: hidden;
-    max-height: 168px; flex: 1;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
-  #mobile-pill-scroll::-webkit-scrollbar { display: none; }
-  #mobile-pill-scroll button {
-    width: 44px; height: 44px; border: none; border-radius: 50%;
+  #mobile-pill::-webkit-scrollbar { display: none; }
+  #mobile-pill button {
+    width: 36px; height: 36px; border: none; border-radius: 50%;
     background: transparent; color: #fff; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    padding: 0; margin: 4px 6px; transition: background 0.15s;
+    padding: 0; margin: 2px 0; transition: background 0.15s;
   }
-  #mobile-pill-scroll button:hover { background: rgba(255,255,255,0.1); }
-  #mobile-pill-scroll button:active { background: rgba(255,255,255,0.15); }
-  #mobile-pill-scroll button.active { background: #4fc3f7; color: #000; }
-  #mobile-pill-scroll button svg { width: 22px; height: 22px; pointer-events: none; }
+  #mobile-pill button:hover { background: rgba(255,255,255,0.1); }
+  #mobile-pill button:active { background: rgba(255,255,255,0.15); }
+  #mobile-pill button.active { background: #4fc3f7; color: #000; }
+  #mobile-pill button svg { width: 20px; height: 20px; pointer-events: none; }
   /* §S280: [] min/max button */
   #minmax-btn {
     position: fixed; bottom: 8px; left: 8px; z-index: 501;
@@ -339,9 +327,11 @@
 
   /* ── Mobile: tight panels, tap-to-toggle ── */
   @media (max-width: 600px) {
-    /* §S280: Mobile adjustments for ⋯ trigger + pill */
+    /* §S280: Mobile adjustments */
     #mobile-bar { bottom: 8px; right: 8px; }
-    #mobile-pill { bottom: 64px; right: 8px; }
+    #mobile-pill { top: 8px; bottom: 64px; right: 8px; padding: 6px 4px; }
+    #mobile-pill button { width: 44px; height: 44px; }
+    #mobile-pill button svg { width: 24px; height: 24px; }
     /* Overflow: bottom drawer instead of dropdown */
     #search-box { top: auto !important; bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important; left: 0 !important; right: 0 !important;
       transform: none !important; max-width: none; border-radius: 16px 16px 0 0;
@@ -558,11 +548,7 @@
     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
   </button>
 </div>
-<div id="mobile-pill" style="display:none">
-  <div class="pill-cap pill-cap-top" id="pill-cap-top"></div>
-  <div id="mobile-pill-scroll"></div>
-  <div class="pill-cap pill-cap-bottom" id="pill-cap-bottom"></div>
-</div>
+<div id="mobile-pill" style="display:none"></div>
 <!-- S266: Timeline slider — Doc mode phase scrubber -->
 <div id="doc-timeline" style="display:none;position:fixed;bottom:52px;left:10%;right:10%;z-index:11;
   background:rgba(10,10,30,0.6);border-radius:8px;padding:6px 12px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
@@ -815,7 +801,7 @@
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="streaming.js?v=45" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=6" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=23" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=24" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=25" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=24" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="tour.js?v=3" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
@@ -915,7 +901,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=488')
+  navigator.serviceWorker.register('sw.js?v=489')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

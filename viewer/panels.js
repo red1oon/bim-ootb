@@ -1064,12 +1064,11 @@ function setupPanels(A) {
 
   // §S280: Mobile + Desktop — ESC cascades close, panels stack normally
 
-  // §S280: Scrollable pill — ⋯ trigger + drag-to-reveal icons (both platforms)
+  // §S280: Scrollable pill — ⋯ trigger, full-height, native scroll (both platforms)
   (function() {
     var pill = document.getElementById('mobile-pill');
-    var scroll = document.getElementById('mobile-pill-scroll');
     var trigger = document.getElementById('mobile-trigger');
-    if (!pill || !scroll || !trigger) return;
+    if (!pill || !trigger) return;
 
     // Icon actions — sorted by last-used (most recent at bottom, nearest to thumb)
     var _LS_KEY = 'bim_mobile_pill_order';
@@ -1111,9 +1110,8 @@ function setupPanels(A) {
     }
 
     function _buildPill() {
-      scroll.innerHTML = '';
+      pill.innerHTML = '';
       var order = _getOrder();
-      // Sort _actions by order (items not in order go to start)
       var sorted = _actions.slice().sort(function(a, b) {
         var ai = order.indexOf(a.id), bi = order.indexOf(b.id);
         if (ai < 0) ai = -1;
@@ -1123,75 +1121,29 @@ function setupPanels(A) {
       sorted.forEach(function(act) {
         var btn = document.createElement('button');
         btn.title = act.id;
-        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
         btn.addEventListener('pointerup', function(e) {
           e.stopPropagation();
           _bumpAction(act.id);
           act.fn();
-          // Close pill after action (except undo — user may want multiple)
           if (act.id !== 'undo') _closePill();
-          console.log('§MOBILE_PILL action=' + act.id);
+          console.log('§PILL action=' + act.id);
         });
-        scroll.appendChild(btn);
+        pill.appendChild(btn);
       });
-      // Scroll to bottom (most-used icons near thumb)
-      scroll.scrollTop = scroll.scrollHeight;
-      _updateCaps();
     }
 
-    // §S280: Scroll caps — glow blue when more content in that direction
-    var capTop = document.getElementById('pill-cap-top');
-    var capBot = document.getElementById('pill-cap-bottom');
-    var _scrollInterval = 0;
-
-    function _updateCaps() {
-      if (!capTop || !capBot) return;
-      var atTop = scroll.scrollTop <= 2;
-      var atBot = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
-      capTop.classList.toggle('has-more', !atTop);
-      capBot.classList.toggle('has-more', !atBot);
-    }
-    scroll.addEventListener('scroll', _updateCaps);
-
-    function _startScroll(dir) {
-      _stopScroll();
-      _scrollInterval = setInterval(function() {
-        scroll.scrollTop += dir * 40;
-        _updateCaps();
-      }, 100);
-    }
-    function _stopScroll() {
-      if (_scrollInterval) { clearInterval(_scrollInterval); _scrollInterval = 0; }
-    }
-    if (capTop) {
-      capTop.addEventListener('pointerdown', function(e) { e.stopPropagation(); _startScroll(-1); });
-      capTop.addEventListener('pointerup', _stopScroll);
-      capTop.addEventListener('pointerleave', _stopScroll);
-    }
-    if (capBot) {
-      capBot.addEventListener('pointerdown', function(e) { e.stopPropagation(); _startScroll(1); });
-      capBot.addEventListener('pointerup', _stopScroll);
-      capBot.addEventListener('pointerleave', _stopScroll);
-    }
-
-    // Pre-build once at startup
+    // Build once at startup
     _buildPill();
 
     var _pillOpen = false;
     function _closePill() {
       pill.style.display = 'none';
       _pillOpen = false;
-      _stopScroll();
     }
     window.toggleMobilePill = function() {
       _pillOpen = !_pillOpen;
-      if (_pillOpen) {
-        pill.style.display = 'flex';
-        scroll.scrollTop = scroll.scrollHeight;
-        setTimeout(_updateCaps, 0);
-      } else {
-        _closePill();
-      }
+      pill.style.display = _pillOpen ? 'block' : 'none';
       console.log('§PILL open=' + _pillOpen);
     };
     // Close on tap outside
