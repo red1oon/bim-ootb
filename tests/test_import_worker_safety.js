@@ -60,11 +60,16 @@ assert(sendsError, 'T6', 'Catch block still sends error message for real import 
 var tryAfterPost = betweenPostAndCatch.match(/try\s*\{[\s\S]*?CloseModel/);
 assert(!tryAfterPost, 'T7', 'No try{CloseModel} pattern after postMessage — no race condition possible');
 
-// ── Test 5: Verify large IFC files exist for manual testing ──
-var terminalExists = fs.existsSync(path.resolve(process.env.HOME, 'Downloads', 'TerminalMerged.ifc'));
-var clinicExists = fs.existsSync(path.resolve(process.env.HOME, 'Downloads', 'Clinic.ifc'));
-assert(terminalExists, 'T8', 'TerminalMerged.ifc (567MB, 48K elements) available for manual browser test');
-assert(clinicExists, 'T9', 'Clinic.ifc (3KB, small) available for manual browser test');
+// ── Test 5: Verify large IFC files exist for manual testing (skip in CI) ──
+var isCI = !!process.env.CI || !!process.env.GITHUB_ACTIONS;
+if (!isCI) {
+  var terminalExists = fs.existsSync(path.resolve(process.env.HOME, 'Downloads', 'TerminalMerged.ifc'));
+  var clinicExists = fs.existsSync(path.resolve(process.env.HOME, 'Downloads', 'Clinic.ifc'));
+  assert(terminalExists, 'T8', 'TerminalMerged.ifc (567MB, 48K elements) available for manual browser test');
+  assert(clinicExists, 'T9', 'Clinic.ifc (3KB, small) available for manual browser test');
+} else {
+  console.log('  §IMPORT_SAFETY SKIP T8/T9: large IFC files not available in CI');
+}
 
 // ── Summary ──
 console.log('\n§IMPORT_SAFETY_SUMMARY ' + pass + ' passed, ' + fail + ' failed, ' + (pass + fail) + ' total');
