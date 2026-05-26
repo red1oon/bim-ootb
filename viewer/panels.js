@@ -454,20 +454,35 @@ function setupPanels(A) {
     } else {
       A.hiddenDiscs.add(disc);
     }
-    // S239: Regular meshes — show/hide by disc + storey
+    A._applyDiscVisibility();
+  };
+
+  // §S280d: Show only this discipline (null = show all). Counterpart to filterStorey.
+  A.filterDisc = function(disc) {
+    A.hiddenDiscs.clear();
+    if (disc !== null) {
+      // Build hiddenDiscs from scene — hide everything except target disc
+      A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
+        if (obj.userData.disc !== disc) A.hiddenDiscs.add(obj.userData.disc);
+      });
+    }
+    A._applyDiscVisibility();
+    console.log('[S200] §DISC_FILTER ' + (disc || 'ALL'));
+  };
+
+  // §S280d: shared traversal for disc + storey combined visibility
+  A._applyDiscVisibility = function() {
     A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
       const discVisible = !A.hiddenDiscs.has(obj.userData.disc);
       const storeyVisible = A.activeStoreyFilter === null || obj.userData.storey === A.activeStoreyFilter;
       obj.visible = discVisible && storeyVisible;
     });
-    // S232/S239: InstancedMesh — per-instance disc+storey filter
     A.collectMeshes(o => o.isInstancedMesh).forEach(mesh => {
       A.filterInstancedMesh(mesh, meta => {
         return !A.hiddenDiscs.has(meta.disc) &&
           (A.activeStoreyFilter === null || meta.storey === A.activeStoreyFilter);
       });
     });
-    // §S260: BatchedMesh — per-element disc+storey filter
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
       A.filterBatchedMesh(mesh, meta => {
         return !A.hiddenDiscs.has(meta.disc) &&

@@ -413,29 +413,11 @@ function setupStreaming(A) {
           A.populateStoreys(A.activeBuilding);
           A.populateDiscs(A.activeBuilding);
         }
-        // §S280c: Perf diagnostics — count draw calls, VRAM, mesh types
-        var _bmCount = 0, _imCount = 0, _bmSlots = 0, _imInstances = 0, _otherMesh = 0;
-        var _bmVerts = 0, _imVerts = 0;
-        A.scene.traverse(function(obj) {
-          if (obj.isBatchedMesh) {
-            _bmCount++;
-            if (A._batchMeta && A._batchMeta[obj.id]) _bmSlots += A._batchMeta[obj.id].length;
-            if (obj.geometry && obj.geometry.attributes.position) _bmVerts += obj.geometry.attributes.position.count;
-          } else if (obj.isInstancedMesh) {
-            _imCount++;
-            _imInstances += obj.count;
-            if (obj.geometry && obj.geometry.attributes.position) _imVerts += obj.geometry.attributes.position.count;
-          } else if (obj.isMesh) {
-            _otherMesh++;
-          }
-        });
-        console.log('§S280c_PERF_REPORT ──────────────────────────────');
-        console.log('§S280c  BatchedMesh:  ' + _bmCount + ' objects, ' + _bmSlots + ' slots, ' + (_bmVerts/1000).toFixed(0) + 'K verts');
-        console.log('§S280c  InstancedMesh: ' + _imCount + ' objects, ' + _imInstances + ' instances, ' + (_imVerts/1000).toFixed(0) + 'K unique verts');
-        console.log('§S280c  Other meshes: ' + _otherMesh);
-        console.log('§S280c  TOTAL draw calls: ' + (_bmCount + _imCount + _otherMesh));
-        console.log('§S280c  GPU verts/frame: ~' + ((_bmVerts + _imVerts)/1000).toFixed(0) + 'K (BM copied + IM shared)');
-        console.log('§S280c ──────────────────────────────────────────');
+        // §S280b: Consolidate fragmented BatchedMesh from progressive flushes
+        // 14 flushes × ~30 buckets = ~420 draw calls → consolidated to ~30
+        if (A._consolidateBatched) {
+          try { A._consolidateBatched(); } catch(e) { console.warn('§CONSOLIDATE_ERR ' + e.message); }
+        }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices
           A.dlodEnable();
@@ -685,32 +667,28 @@ function setupStreaming(A) {
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
-    // ── S232/S280c: Bucket single-instance elements for merge or batch ──
-    // §S280c: Without WEBGL_multi_draw, BatchedMesh = 1 draw per slot (70K on LTU).
-    // MergedMesh concatenates geometry = 1 draw per bucket (197 on LTU). Always safe.
+    // ── S232: On mobile, bucket single-instance elements for merge ──
     const mergeBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
+    // ── S260: On desktop, bucket single-instance elements for BatchedMesh ──
+    // §S261: When _useDlodPath, these buckets are passed to _flushBboxBatched instead
     const batchBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
-    // §S280c: Use merge path on mobile OR when multi_draw unavailable
-    var _useMerge = A._isMobile || !A._hasMultiDraw;
 
     for (const [hash, elements] of Object.entries(A._pendingInstances)) {
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
-      if (elements.length === 1) {
-        const el = elements[0];
-        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
-        if (_useMerge) {
-          // MergedMesh: concatenate geometry into one buffer per bucket (1 draw call)
-          if (!mergeBuckets[key]) mergeBuckets[key] = [];
-          mergeBuckets[key].push({ el: el, geo: geo });
-        } else {
-          // BatchedMesh: multi_draw renders all slots in 1 call per BM object
+      if (elements.length <= 5) {
+        // §S280b: ≤5 instances → BatchedMesh bucket (saves thousands of draw calls)
+        // Hospital: 5,463 hashes with 2-5 instances → 5,463 draw calls as InstancedMesh
+        // Batched into ~52 buckets instead. 6+ instances stay as InstancedMesh.
+        for (var ei = 0; ei < elements.length; ei++) {
+          var el = elements[ei];
+          var key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
           if (!batchBuckets[key]) batchBuckets[key] = [];
           batchBuckets[key].push({ el: el, geo: geo });
         }
       } else {
-        // 2+ instances — InstancedMesh (shared geometry buffer, GPU instancing)
+        // 6+ instances — InstancedMesh (amortized draw call cost worthwhile)
         const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
@@ -752,10 +730,7 @@ function setupStreaming(A) {
       console.log('§S261_DEFER_BBOX buckets=' + Object.keys(A._pendingBboxBuckets).length);
     }
     // ── S260: Build BatchedMesh per desktop bucket (non-DLOD path) ──────────────
-    // §S280c: BatchedMesh only when WEBGL_multi_draw is available.
-    // Without multi_draw, each BM slot = separate draw call (70K on LTU).
-    // Fallback: MergedMesh (mobile path) — 197 draws instead of 70K.
-    else if (THREE.BatchedMesh && A._hasMultiDraw) {
+    else if (THREE.BatchedMesh) {  // §S265: BatchedMesh on all devices
       for (const [key, items] of Object.entries(batchBuckets)) {
         if (items.length === 0) continue;
         const [storey, disc, rgba] = key.split('|');
@@ -869,8 +844,8 @@ function setupStreaming(A) {
       _prevDrawCalls = batchedCount;
     }
 
-    // ── S232: Merge single-instance buckets on mobile ──
-    if (A._isMobile) {
+    // ── S232/S280c: Merge single-instance buckets (mobile OR desktop without multi_draw) ──
+    if (_useMerge) {
       for (const [key, items] of Object.entries(mergeBuckets)) {
         if (items.length === 0) continue;
         const [storey, disc, rgba] = key.split('|');
@@ -1156,10 +1131,148 @@ function setupStreaming(A) {
   // After streaming ends, this removes them and rebuilds ONE BatchedMesh per bucket
   // from streamQueue + meshCache. r160 has no getGeometryIdAt, so we rebuild from source.
   // LTU 122K: 26 flushes × 40 buckets = 1040 draw calls → consolidated to ~40.
-  // §S280c: _consolidateBatched removed — progressive BMs from flushes are fine.
-  // Was: rebuild all BMs from streamQueue after streaming ends.
-  // Problem: synchronous 63K iteration + 14K addGeometry = 1-5s main thread block.
-  // The 420 progressive BMs + 6K IMs rendered fast without consolidation.
+  A._consolidateBatched = function() {
+    if (!THREE.BatchedMesh) return;  // §S265: consolidation on all devices
+    var t0 = performance.now();
+
+    // Count existing BatchedMesh — if already compact, skip
+    var oldBMs = [];
+    A.scene.traverse(function(obj) { if (obj.isBatchedMesh) oldBMs.push(obj); });
+    if (oldBMs.length <= 40) {
+      console.log('§CONSOLIDATE_SKIP batched=' + oldBMs.length + ' — already compact');
+      return;
+    }
+
+    // Remove all old BatchedMesh + their metadata
+    var oldBMIds = new Set();
+    for (var bi = 0; bi < oldBMs.length; bi++) {
+      oldBMIds.add(oldBMs[bi].id);
+      delete A._batchMeta[oldBMs[bi].id];
+      A.scene.remove(oldBMs[bi]);
+      if (oldBMs[bi].dispose) oldBMs[bi].dispose();
+    }
+    A._batchStoreyMap = {};
+    A._batchDiscMap = {};
+    // Clean guidMap entries from old BMs
+    for (var gk in A.guidMap) {
+      if (gk.indexOf('_') > 0) {
+        var prefix = parseInt(gk.split('_')[0], 10);
+        if (oldBMIds.has(prefix)) delete A.guidMap[gk];
+      }
+    }
+
+    // Build set of guids in InstancedMesh (6+ instances, stay untouched)
+    var instancedGuids = new Set();
+    for (var imId in A._instanceMeta) {
+      var imMeta = A._instanceMeta[imId];
+      for (var imi = 0; imi < imMeta.length; imi++) {
+        instancedGuids.add(imMeta[imi].guid);
+      }
+    }
+
+    // Rebuild buckets from streamQueue (the original source of truth)
+    var buckets = {};  // "storey|disc|rgba" → [{el, geo}, ...]
+    var _m4 = new THREE.Matrix4();
+    var _euler = new THREE.Euler();
+    var _quat = new THREE.Quaternion();
+    var _pos = new THREE.Vector3();
+    var _scale = new THREE.Vector3(1, 1, 1);
+
+    for (var qi = 0; qi < A.streamQueue.length; qi++) {
+      var row = A.streamQueue[qi];
+      var guid = row[0], hash = row[1], rgba = row[2], disc = row[3];
+      var cx = row[4], cy = row[5], cz = row[6];
+      var rotX = row[7] || 0, rotY = row[8] || 0, rotZ = row[9] || 0;
+      var storey = row[10] || '', ifcClass = row[11] || '';
+      if (!hash || !A.meshCache[hash]) continue;
+      // Skip elements already in InstancedMesh
+      if (instancedGuids.has(guid)) continue;
+
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default');
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
+        cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
+        storey: storey, ifcClass: ifcClass });
+    }
+
+    // Build consolidated BatchedMesh per bucket
+    var newDrawCalls = 0, totalElements = 0;
+    for (var key in buckets) {
+      var items = buckets[key];
+      if (items.length === 0) continue;
+
+      if (items.length === 0) continue;
+
+      var totalVerts = 0, totalIdx = 0;
+      for (var vi = 0; vi < items.length; vi++) {
+        var geo = A.meshCache[items[vi].hash];
+        var p = geo.attributes.position;
+        totalVerts += p ? p.count : 0;
+        totalIdx += geo.index ? geo.index.count : (p ? p.count : 0);
+      }
+
+      var parts = key.split('|');
+      var rgbaKey = parts[2];
+      var batchCls = items[0].ifcClass;
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls);
+      var newBM;
+      try {
+        newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
+      } catch(e) {
+        console.warn('§CONSOLIDATE_FAIL bucket=' + key + ' count=' + items.length + ' err=' + e.message);
+        continue;
+      }
+
+      newBM.frustumCulled = true;
+      newBM.userData.isBatched = true;
+      newBM.userData.storey = parts[0] === '_' ? '' : parts[0];
+      newBM.userData.disc = parts[1] === '_' ? '' : parts[1];
+      newBM.matrixAutoUpdate = false;
+      var newMeta = [];
+
+      for (var ji = 0; ji < items.length; ji++) {
+        var el = items[ji];
+        var geo = A.meshCache[el.hash];
+        var slotId;
+        // §S276: r166+ requires addInstance() after addGeometry()
+        try { var geoId = newBM.addGeometry(geo); slotId = newBM.addInstance(geoId); } catch(e) { continue; }
+
+        var pos = A.ifc2three(el.cx, el.cy, el.cz);
+        _pos.set(pos.x, pos.y, pos.z);
+        _euler.set(el.rotX, el.rotZ, -el.rotY);
+        _quat.setFromEuler(_euler);
+        _m4.compose(_pos, _quat, _scale);
+        newBM.setMatrixAt(slotId, _m4);
+
+        var vis = true;
+        if (A.activeStoreyFilter !== null && el.storey !== A.activeStoreyFilter) vis = false;
+        if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
+        if (!vis) newBM.setVisibleAt(slotId, false);
+
+        newMeta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass, slotId: slotId });
+        A.guidMap[newBM.id + '_' + slotId] = el.guid;
+
+        var sk = el.storey || '';
+        if (!A._batchStoreyMap[sk]) A._batchStoreyMap[sk] = [];
+        A._batchStoreyMap[sk].push({ mesh: newBM, slotId: slotId });
+        var dk = el.disc || '';
+        if (!A._batchDiscMap[dk]) A._batchDiscMap[dk] = [];
+        A._batchDiscMap[dk].push({ mesh: newBM, slotId: slotId });
+      }
+
+      A._batchMeta[newBM.id] = newMeta;
+      newBM.updateMatrix();
+      A.scene.add(newBM);
+      newDrawCalls++;
+      totalElements += items.length;
+    }
+
+    var ms = (performance.now() - t0).toFixed(0);
+    console.log('§CONSOLIDATE old_bm=' + oldBMs.length + ' new_bm=' + newDrawCalls +
+      ' elements=' + totalElements + ' ms=' + ms);
+    document.getElementById('s-meshes').textContent = newDrawCalls.toLocaleString() + ' draw calls';
+    if (A.markDirty) A.markDirty();
+  };
 
   // DB init
   A.init = async function() {

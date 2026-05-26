@@ -44,10 +44,12 @@
       '}',
       '.find-acc-header {',
       '  display: flex; align-items: center; justify-content: space-between;',
-      '  padding: 5px 10px; cursor: pointer; font-size: 11px; color: #aaa;',
+      '  padding: 6px 10px; cursor: pointer; font-size: 11px; color: #ccc;',
       '  user-select: none;',
+      '  background: linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%);',
+      '  border-left: 3px solid rgba(79,195,247,0.3);',
       '}',
-      '.find-acc-header:hover { color: #4fc3f7; }',
+      '.find-acc-header:hover { color: #4fc3f7; border-left-color: rgba(79,195,247,0.7); }',
       '.find-acc-header .fa-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
       '.find-acc-header .fa-chevron { font-size: 9px; opacity: 0.4; transition: transform 0.2s; margin-left: 4px; }',
       '.find-acc-row.expanded .fa-chevron { transform: rotate(180deg); }',
@@ -138,7 +140,7 @@
       '<div id="find-outliner-bar" style="display:flex;justify-content:center;padding:4px 10px;border-bottom:1px solid rgba(255,255,255,0.06)">',
       '  <button id="find-mode-toggle" style="padding:6px 16px;font-size:12px;font-weight:700;border:1px solid rgba(79,195,247,0.4);border-radius:6px;background:rgba(79,195,247,0.2);color:#4fc3f7;cursor:pointer;letter-spacing:0.5px;min-width:120px">Storey</button>',
       '</div>',
-      '<div id="find-tree" style="max-height:200px;overflow-y:auto;scrollbar-width:thin"></div>',
+      '<div id="find-tree" style="max-height:200px;overflow-y:auto;scrollbar-width:thin;display:none"></div>',
       // Legacy accordion rows — hidden, kept for backward compat
       '<div class="find-acc-row" id="find-storey-row" style="display:none">',
       '  <div class="find-acc-header" id="find-storey-hdr"><span class="fa-label">All Storeys</span><span class="fa-chevron">\u25BC</span></div>',
@@ -196,6 +198,7 @@
     var elTree = document.getElementById('find-tree');
     var elModeToggle = document.getElementById('find-mode-toggle');
     var _treeMode = 'storey'; // 'storey' or 'disc'
+    var _treeRevealed = false; // §S280d: tree hidden until mode toggle pressed
 
     // §S280: Audio thump — short click on mode toggle (lightweight, no file load)
     var _audioCtx = null;
@@ -216,11 +219,12 @@
     function _setTreeMode(mode) {
       _treeMode = mode;
       if (elModeToggle) elModeToggle.textContent = mode === 'storey' ? 'Storey' : 'Discipline';
-      // §S280: Restore full scene visibility on toggle — reset filters
+      // §S280d: Restore full scene visibility on toggle — reset both filters
       if (A.filterStorey) A.filterStorey(null);
-      if (A.hiddenDiscs) A.hiddenDiscs.clear();
-      if (A.markDirty) A.markDirty();
+      if (A.filterDisc) A.filterDisc(null);
       _thump();
+      // §S280d: Reveal tree on first toggle press
+      if (!_treeRevealed && elTree) { elTree.style.display = ''; _treeRevealed = true; }
       buildTree();
       console.log('§FIND_MODE_TOGGLE mode=' + mode);
     }
@@ -244,12 +248,14 @@
       opts = opts || {};
       var row = document.createElement('div');
       var isParent = level === 0;
-      row.style.cssText = 'padding:' + (isParent ? '8px 10px' : '4px 10px 4px ' + (22 + level * 12) + 'px') +
-        ';cursor:pointer;font-size:' + (isParent ? '13px' : '11px') +
-        ';color:' + (isParent ? '#fff' : '#aaa') +
+      row.style.cssText = 'padding:' + (isParent ? '7px 10px' : '4px 10px 4px ' + (22 + level * 12) + 'px') +
+        ';cursor:pointer;font-size:' + (isParent ? '12px' : '11px') +
+        ';color:' + (isParent ? '#ddd' : '#aaa') +
         ';font-weight:' + (isParent ? '600' : '400') +
         ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px' +
-        (isParent ? ';border-bottom:1px solid rgba(255,255,255,0.06)' : '');
+        (isParent ? ';border-bottom:1px solid rgba(255,255,255,0.06)' +
+          ';background:linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)' +
+          ';border-left:3px solid rgba(79,195,247,0.3)' : '');
       var arrow = document.createElement('span');
       arrow.style.cssText = 'font-size:' + (isParent ? '10px' : '8px') + ';opacity:0.5;width:12px;text-align:center;flex-shrink:0';
       arrow.textContent = opts.children ? '\u25B8' : '';
@@ -264,8 +270,18 @@
       row.appendChild(badge);
 
       // Hover
-      row.addEventListener('pointerenter', function() { row.style.background = 'rgba(79,195,247,0.08)'; });
-      row.addEventListener('pointerleave', function() { row.style.background = ''; });
+      row.addEventListener('pointerenter', function() {
+        if (!row.getAttribute('data-active')) {
+          row.style.background = isParent ? 'linear-gradient(180deg,rgba(79,195,247,0.12) 0%,rgba(79,195,247,0.04) 100%)' : 'rgba(79,195,247,0.08)';
+          if (isParent) row.style.borderLeftColor = 'rgba(79,195,247,0.7)';
+        }
+      });
+      row.addEventListener('pointerleave', function() {
+        if (!row.getAttribute('data-active')) {
+          row.style.background = isParent ? 'linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)' : '';
+          if (isParent) row.style.borderLeftColor = 'rgba(79,195,247,0.3)';
+        }
+      });
 
       // Expand/collapse children — lazy-loaded on first expand
       var childContainer = null;
@@ -300,11 +316,13 @@
           // Deselect all siblings
           row.parentNode.querySelectorAll('[data-active]').forEach(function(el) {
             el.removeAttribute('data-active');
-            el.style.background = '';
-            el.querySelector('span:nth-child(2)').style.color = '#fff';
+            el.style.background = 'linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)';
+            el.style.borderLeftColor = 'rgba(79,195,247,0.3)';
+            el.querySelector('span:nth-child(2)').style.color = '#ddd';
           });
           row.setAttribute('data-active', '1');
-          row.style.background = 'rgba(79,195,247,0.15)';
+          row.style.background = 'linear-gradient(180deg,rgba(79,195,247,0.2) 0%,rgba(79,195,247,0.08) 100%)';
+          row.style.borderLeftColor = '#4fc3f7';
           text.style.color = '#4fc3f7';
         }
         if (opts.onTap) opts.onTap();
@@ -391,8 +409,8 @@
         var node = _treeNode(disc, discCnt, 0, {
           children: true,
           onTap: function() {
-            // §S280b: Disc tap = instant 3D toggle. Sticky — close panel restores.
-            if (A.toggleDisc) A.toggleDisc(disc);
+            // §S280d: Disc tap = show only this discipline (like storey). Sticky — close restores.
+            if (A.filterDisc) A.filterDisc(disc);
           },
           onExpand: function(container) {
             if (container._loaded) return;
@@ -577,13 +595,12 @@
       panel.style.display = 'none';
       if (nav.active) { if (A.stopNavigation) A.stopNavigation(); }
       clearHighlight();
-      // §S280b: Restore full scene — clear storey + disc filters
+      // §S280d: Restore full scene — clear storey + disc filters
       if (A.filterStorey) A.filterStorey(null);
-      if (A.hiddenDiscs && A.hiddenDiscs.size > 0) {
-        A.hiddenDiscs.clear();
-        // Refresh visibility with no disc filter
-        if (A.filterStorey) A.filterStorey(null);
-      }
+      if (A.filterDisc) A.filterDisc(null);
+      // §S280d: Reset tree visibility for next open
+      _treeRevealed = false;
+      if (elTree) elTree.style.display = 'none';
       // S275: Release panel focus so other panels (Clash, etc.) work
       if (typeof window._blurPanel === 'function') window._blurPanel();
       console.log('[S233] §FIND_CLOSE restored=full');
@@ -1014,9 +1031,9 @@
       var r = nav.results[idx];
       if (!r) return;
 
-      // §S280: Restore full scene visibility before fly-to (undo storey/disc filter)
+      // §S280d: Restore full scene visibility before fly-to (undo storey/disc filter)
       if (A.filterStorey) A.filterStorey(null);
-      if (A.hiddenDiscs) A.hiddenDiscs.clear();
+      if (A.filterDisc) A.filterDisc(null);
 
       // S275: IFC bbox highlight from DB (same as picking.js — works for merged/batched)
       highlightElement(r.guid);
