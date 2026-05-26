@@ -969,18 +969,12 @@ function setupMeasure(A) {
         A._exportClashReport();
         return;
       }
-      // On desktop, click also triggers fly-to (mobile uses pointerup above)
+      // §S278: Desktop click suppressed — pointerup already routed through ListKeyNav.
+      // Without this guard, Ctrl+click would toggle twice (on→off = no change).
       if (!_isMobile) {
         var target = ev.target.closest('[data-clash-idx]');
-        if (target) {
-          // §S278: ALL clicks route through ListKeyNav
-          if (A._clashListNav) {
-            var rows = Array.from(A._clashListDiv.querySelectorAll('[data-clash-idx]'));
-            var rowIdx = rows.indexOf(target);
-            if (rowIdx >= 0) A._clashListNav.onClick(rowIdx, ev);
-          } else {
-            A._flyToClash(parseInt(target.getAttribute('data-clash-idx')));
-          }
+        if (target && !A._clashListNav) {
+          A._flyToClash(parseInt(target.getAttribute('data-clash-idx')));
         }
       }
     });
