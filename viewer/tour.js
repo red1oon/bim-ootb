@@ -2,13 +2,13 @@
 function setupTour(A) {
 
   A.toggleFlyAround = function() {
-    const btn = document.getElementById('fly-btn');
+    const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
 
     if (A.walkMode) {
       A.walkMode = false;
       A.walkLastTime = 0;
       A.flyActive = false;
-      btn.classList.remove('active');
+      if (btn) btn.classList.remove('active');
       A.status.textContent = `Walk paused at action ${A.walkActionIdx}/${A.walkActions.length} — tap ✈ to resume`;
       A.wlog(`PAUSED at action ${A.walkActionIdx}`);
       return;
@@ -18,15 +18,16 @@ function setupTour(A) {
       A.walkMode = true;
       A.flyActive = true;
       A.walkLastTime = 0;
-      btn.classList.add('active');
-      document.getElementById('walk-speed-btn').style.display = '';
+      if (btn) btn.classList.add('active');
+      var _speedBtn = document.getElementById('walk-speed-btn');
+      if (_speedBtn) _speedBtn.style.display = '';
       A.status.textContent = `Walk resumed at action ${A.walkActionIdx}/${A.walkActions.length}`;
       A.wlog(`RESUMED at action ${A.walkActionIdx}`);
       return;
     }
 
     A.flyActive = !A.flyActive;
-    btn.classList.toggle('active', A.flyActive);
+    if (btn) btn.classList.toggle('active', A.flyActive);
 
     if (A.flyActive) {
       const tour = A.buildTour();
@@ -70,7 +71,7 @@ function setupTour(A) {
         const radius = Math.max(80, (bc.envelope || Math.sqrt(bc.count) * 2) * 1.2);
         A.flyTargets.push({ x: t.x, y: t.y, z: t.z, radius, name });
       }
-      if (A.flyTargets.length === 0) { A.flyActive = false; btn.classList.remove('active'); return; }
+      if (A.flyTargets.length === 0) { A.flyActive = false; if (btn) btn.classList.remove('active'); return; }
       A.flyTargetIdx = 0;
       A.flyAngle = 0;
       A.flyTransitioning = false;
