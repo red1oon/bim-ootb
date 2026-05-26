@@ -413,11 +413,6 @@ function setupStreaming(A) {
           A.populateStoreys(A.activeBuilding);
           A.populateDiscs(A.activeBuilding);
         }
-        // §S280b: Consolidate fragmented BatchedMesh from progressive flushes
-        // 14 flushes × ~30 buckets = ~420 draw calls → consolidated to ~30
-        if (A._consolidateBatched) {
-          try { A._consolidateBatched(); } catch(e) { console.warn('§CONSOLIDATE_ERR ' + e.message); }
-        }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices
           A.dlodEnable();
@@ -666,9 +661,7 @@ function setupStreaming(A) {
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
-    // §S280c/S280d: Use merge path on mobile OR when multi_draw unavailable
-    var _useMerge = A._isMobile || !A._hasMultiDraw;
-    // ── S232: On mobile/no-multi_draw, bucket single-instance elements for merge ──
+    // ── S232: On mobile, bucket single-instance elements for merge ──
     const mergeBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
     // ── S260: On desktop, bucket single-instance elements for BatchedMesh ──
     // §S261: When _useDlodPath, these buckets are passed to _flushBboxBatched instead
@@ -678,18 +671,14 @@ function setupStreaming(A) {
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
-      if (elements.length <= 5) {
-        // §S280b: ≤5 instances → BatchedMesh bucket (saves thousands of draw calls)
-        // §S280d: When _useMerge (mobile/no-multi_draw), route to mergeBuckets instead
-        var _target = _useMerge ? mergeBuckets : batchBuckets;
-        for (var ei = 0; ei < elements.length; ei++) {
-          var el = elements[ei];
-          var key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
-          if (!_target[key]) _target[key] = [];
-          _target[key].push({ el: el, geo: geo });
-        }
+      if (elements.length === 1) {
+        // §S260: Desktop — bucket for BatchedMesh (single-instance hashes only)
+        const el = elements[0];
+        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
+        if (!batchBuckets[key]) batchBuckets[key] = [];
+        batchBuckets[key].push({ el, geo });
       } else {
-        // 6+ instances — InstancedMesh (amortized draw call cost worthwhile)
+        // 2+ instances — InstancedMesh (both desktop and mobile)
         const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
@@ -845,8 +834,8 @@ function setupStreaming(A) {
       _prevDrawCalls = batchedCount;
     }
 
-    // ── S232/S280c: Merge single-instance buckets (mobile OR desktop without multi_draw) ──
-    if (_useMerge) {
+    // ── S232: Merge single-instance buckets on mobile ──
+    if (A._isMobile) {
       for (const [key, items] of Object.entries(mergeBuckets)) {
         if (items.length === 0) continue;
         const [storey, disc, rgba] = key.split('|');
