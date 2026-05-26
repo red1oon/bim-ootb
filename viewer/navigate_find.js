@@ -280,7 +280,8 @@
         // Otherwise children===true means lazy — onExpand fills the container
       }
 
-      // §S280b: Arrow = expand/collapse (search mode). Label = instant 3D filter only.
+      // §S280b: Arrow = expand/collapse only. Label = sticky 3D filter. No toggle-off.
+      // Close panel = restore full scene.
       if (childContainer) {
         arrow.style.cursor = 'pointer';
         arrow.addEventListener('pointerup', function(e) {
@@ -289,34 +290,22 @@
           if (expanded && opts.onExpand) opts.onExpand(childContainer);
           childContainer.style.display = expanded ? 'block' : 'none';
           arrow.textContent = expanded ? '\u25BE' : '\u25B8';
-          // Expanding = user entering search mode — restore full scene
-          if (expanded && opts.onRestore) opts.onRestore();
+          // Arrow never touches 3D — neutral action
         });
       }
-      // Click on label/badge = instant filter (no expand, no SQL search)
+      // Click on label/badge = sticky filter (switching storeys replaces, no toggle-off)
       function _doTap(e) {
         e.stopPropagation();
-        // §S280b: Highlight active row, deselect siblings
         if (isParent && row.parentNode) {
+          // Deselect all siblings
           row.parentNode.querySelectorAll('[data-active]').forEach(function(el) {
             el.removeAttribute('data-active');
             el.style.background = '';
             el.querySelector('span:nth-child(2)').style.color = '#fff';
           });
-          // Toggle: click same storey again = deselect (show all)
-          if (row._isActive) {
-            row._isActive = false;
-            if (opts.onDeselect) opts.onDeselect();
-            return;
-          }
           row.setAttribute('data-active', '1');
-          row._isActive = true;
           row.style.background = 'rgba(79,195,247,0.15)';
           text.style.color = '#4fc3f7';
-          // Clear other rows' active state
-          row.parentNode.querySelectorAll('div').forEach(function(el) {
-            if (el !== row) el._isActive = false;
-          });
         }
         if (opts.onTap) opts.onTap();
       }
@@ -346,16 +335,8 @@
         var node = _treeNode(storey, storeyCnt, 0, {
           children: true, // signal: has children, loaded lazily
           onTap: function() {
-            // §S280b: Storey tap = instant 3D filter only — no SQL search
+            // §S280b: Storey tap = instant 3D filter. Sticky — close panel restores.
             if (A.filterStorey) A.filterStorey(storey);
-          },
-          onDeselect: function() {
-            // §S280b: Click same storey again = show all
-            if (A.filterStorey) A.filterStorey(null);
-          },
-          onRestore: function() {
-            // §S280b: Expanding = restore full scene (user entering search mode)
-            if (A.filterStorey) A.filterStorey(null);
           },
           onExpand: function(container) {
             if (container._loaded) return;
@@ -410,16 +391,8 @@
         var node = _treeNode(disc, discCnt, 0, {
           children: true,
           onTap: function() {
-            // §S280b: Disc tap = instant 3D toggle — no SQL search
+            // §S280b: Disc tap = instant 3D toggle. Sticky — close panel restores.
             if (A.toggleDisc) A.toggleDisc(disc);
-          },
-          onDeselect: function() {
-            // §S280b: Click same disc again = restore (toggleDisc handles the toggle)
-            if (A.toggleDisc) A.toggleDisc(disc);
-          },
-          onRestore: function() {
-            // §S280b: Expanding = restore all discs visible (user entering search mode)
-            if (A.hiddenDiscs) { A.hiddenDiscs.clear(); A.filterStorey(A.activeStoreyFilter); }
           },
           onExpand: function(container) {
             if (container._loaded) return;
@@ -604,9 +577,16 @@
       panel.style.display = 'none';
       if (nav.active) { if (A.stopNavigation) A.stopNavigation(); }
       clearHighlight();
+      // §S280b: Restore full scene — clear storey + disc filters
+      if (A.filterStorey) A.filterStorey(null);
+      if (A.hiddenDiscs && A.hiddenDiscs.size > 0) {
+        A.hiddenDiscs.clear();
+        // Refresh visibility with no disc filter
+        if (A.filterStorey) A.filterStorey(null);
+      }
       // S275: Release panel focus so other panels (Clash, etc.) work
       if (typeof window._blurPanel === 'function') window._blurPanel();
-      console.log('[S233] §FIND_CLOSE');
+      console.log('[S233] §FIND_CLOSE restored=full');
     }
     A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
     elClose.onclick = closeFindPanel;

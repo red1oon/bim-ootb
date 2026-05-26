@@ -587,8 +587,12 @@ async function initViewer() {
         _needsRender = false;
       }
     } else {
-      if (APP._composer && APP._composerEnabled) APP._composer.render();
-      else APP.renderer.render(APP.scene, APP.camera);
+      // §S280b: Desktop render gate — skip render when idle (saves GPU + battery)
+      if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
+        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        else APP.renderer.render(APP.scene, APP.camera);
+        _needsRender = false;
+      }
     }
   }
 
