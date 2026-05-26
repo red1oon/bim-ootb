@@ -5,7 +5,7 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v33 loaded — S280b instant filter + render gate + consolidation');
+console.log('§MAIN_JS v34 loaded — S280c revert ≤5→===1, remove consolidation block');
 async function initViewer() {
   const APP = window.APP = {};
 
