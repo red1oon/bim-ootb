@@ -162,18 +162,25 @@ async function init() {
 
   document.getElementById('report-content').innerHTML = _t('ui_loading','Loading') + ' ' + DB_URL.split('/').pop() + '...';
 
-  // §S260b: Try _meta.db first (sufficient for MEP — no geometry needed)
-  // Skip for import:// URLs (IndexedDB) — only works for HTTP URLs
+  // §S260b+S274: Try _meta.db first (sufficient for MEP — no geometry needed)
   var _actualUrl = DB_URL;
-  if (DB_URL.indexOf('_extracted.db') > -1 && !DB_URL.startsWith('import://')) {
+  if (DB_URL.indexOf('_extracted.db') > -1) {
     var _metaUrl = DB_URL.replace('_extracted.db', '_meta.db');
-    try {
-      var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
-      if (_headResp.ok) {
-        _actualUrl = _metaUrl;
-        console.log('§MEP_SPLIT_HIT using ' + _metaUrl + ' (' + Math.round(parseInt(_headResp.headers.get('content-length')||'0')/1024/1024) + 'MB)');
-      }
-    } catch(e) {}
+    if (DB_URL.startsWith('import://')) {
+      // §S274: import:// URLs live in IDB — check cache via fetchDbBuffer
+      try {
+        var _metaBuf = await fetchDbBuffer(_metaUrl);
+        if (_metaBuf) { _actualUrl = _metaUrl; console.log('§MEP_SPLIT_HIT_IDB using ' + _metaUrl + ' (' + Math.round(_metaBuf.byteLength/1024/1024) + 'MB)'); }
+      } catch(e) {}
+    } else {
+      try {
+        var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
+        if (_headResp.ok) {
+          _actualUrl = _metaUrl;
+          console.log('§MEP_SPLIT_HIT using ' + _metaUrl + ' (' + Math.round(parseInt(_headResp.headers.get('content-length')||'0')/1024/1024) + 'MB)');
+        }
+      } catch(e) {}
+    }
   }
 
   var SQL = await initSqlJs({

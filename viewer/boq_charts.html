@@ -956,18 +956,25 @@ async function init() {
     // Fallback — load DB the slow way (viewer not open or no response)
     console.log('§QTO_RELAY_MISS reason=' + (relay ? relay.error || 'empty' : 'timeout') +
       ' — loading DB from ' + (DB_URL.startsWith('import://') ? 'IndexedDB' : 'OCI'));
-    // §S260b: Try _meta.db first (4D5D only needs metadata, not geometry)
-    // Skip for import:// URLs (IndexedDB) — only works for HTTP URLs
+    // §S260b+S274: Try _meta.db first (4D5D only needs metadata, not geometry)
     var _actualUrl = DB_URL;
-    if (DB_URL.indexOf('_extracted.db') > -1 && !DB_URL.startsWith('import://')) {
+    if (DB_URL.indexOf('_extracted.db') > -1) {
       var _metaUrl = DB_URL.replace('_extracted.db', '_meta.db');
-      try {
-        var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
-        if (_headResp.ok) {
-          _actualUrl = _metaUrl;
-          console.log('§QTO_SPLIT_HIT using ' + _metaUrl);
-        }
-      } catch(e) {}
+      if (DB_URL.startsWith('import://')) {
+        // §S274: import:// URLs live in IDB — check cache via fetchDbBuffer
+        try {
+          var _metaBuf = await fetchDbBuffer(_metaUrl);
+          if (_metaBuf) { _actualUrl = _metaUrl; console.log('§QTO_SPLIT_HIT_IDB using ' + _metaUrl + ' (' + Math.round(_metaBuf.byteLength/1024/1024) + 'MB)'); }
+        } catch(e) {}
+      } else {
+        try {
+          var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
+          if (_headResp.ok) {
+            _actualUrl = _metaUrl;
+            console.log('§QTO_SPLIT_HIT using ' + _metaUrl);
+          }
+        } catch(e) {}
+      }
     }
     const SQL = await initSqlJs({
       locateFile: f => 'lib/' + f
