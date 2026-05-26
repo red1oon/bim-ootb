@@ -413,6 +413,11 @@ function setupStreaming(A) {
           A.populateStoreys(A.activeBuilding);
           A.populateDiscs(A.activeBuilding);
         }
+        // §S280b: Consolidate fragmented BatchedMesh from progressive flushes
+        // 14 flushes × ~30 buckets = ~420 draw calls → consolidated to ~30
+        if (A._consolidateBatched) {
+          try { A._consolidateBatched(); } catch(e) { console.warn('§CONSOLIDATE_ERR ' + e.message); }
+        }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices
           A.dlodEnable();
@@ -424,14 +429,15 @@ function setupStreaming(A) {
           var _bvhIdx = 0;
           var _bvhT0 = performance.now();
           (function _bvhBatch() {
-            var end = Math.min(_bvhIdx + 50, _bvhHashes.length);
-            for (var bi = _bvhIdx; bi < end; bi++) {
-              var geo = A.meshCache[_bvhHashes[bi]];
+            // §S280b: Time-budgeted — max 8ms per batch to stay under 16ms frame budget
+            var _batchT0 = performance.now();
+            while (_bvhIdx < _bvhHashes.length && (performance.now() - _batchT0) < 8) {
+              var geo = A.meshCache[_bvhHashes[_bvhIdx]];
               if (geo && geo.computeBoundsTree && !geo.boundsTree) {
                 try { geo.computeBoundsTree(); } catch(e) {}
               }
+              _bvhIdx++;
             }
-            _bvhIdx = end;
             if (_bvhIdx < _bvhHashes.length) {
               (window.requestIdleCallback || setTimeout)(_bvhBatch);
             } else {
