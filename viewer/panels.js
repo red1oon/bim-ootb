@@ -1136,22 +1136,60 @@ function setupPanels(A) {
       });
       // Scroll to bottom (most-used icons near thumb)
       scroll.scrollTop = scroll.scrollHeight;
+      _updateCaps();
+    }
+
+    // §S280: Scroll caps — glow blue when more content in that direction
+    var capTop = document.getElementById('pill-cap-top');
+    var capBot = document.getElementById('pill-cap-bottom');
+    var _scrollInterval = 0;
+
+    function _updateCaps() {
+      if (!capTop || !capBot) return;
+      var atTop = scroll.scrollTop <= 2;
+      var atBot = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
+      capTop.classList.toggle('has-more', !atTop);
+      capBot.classList.toggle('has-more', !atBot);
+    }
+    scroll.addEventListener('scroll', _updateCaps);
+
+    function _startScroll(dir) {
+      _stopScroll();
+      _scrollInterval = setInterval(function() {
+        scroll.scrollTop += dir * 40;
+        _updateCaps();
+      }, 100);
+    }
+    function _stopScroll() {
+      if (_scrollInterval) { clearInterval(_scrollInterval); _scrollInterval = 0; }
+    }
+    if (capTop) {
+      capTop.addEventListener('pointerdown', function(e) { e.stopPropagation(); _startScroll(-1); });
+      capTop.addEventListener('pointerup', _stopScroll);
+      capTop.addEventListener('pointerleave', _stopScroll);
+    }
+    if (capBot) {
+      capBot.addEventListener('pointerdown', function(e) { e.stopPropagation(); _startScroll(1); });
+      capBot.addEventListener('pointerup', _stopScroll);
+      capBot.addEventListener('pointerleave', _stopScroll);
     }
 
     var _pillOpen = false;
     function _closePill() {
       pill.style.display = 'none';
       _pillOpen = false;
+      _stopScroll();
     }
     window.toggleMobilePill = function() {
       _pillOpen = !_pillOpen;
       if (_pillOpen) {
         _buildPill();
-        pill.style.display = 'block';
+        pill.style.display = 'flex';
+        setTimeout(_updateCaps, 10);
       } else {
         _closePill();
       }
-      console.log('§MOBILE_PILL open=' + _pillOpen);
+      console.log('§PILL open=' + _pillOpen);
     };
     // Close on tap outside
     document.addEventListener('pointerdown', function(e) {
