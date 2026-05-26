@@ -744,7 +744,7 @@ async function openProject(key, btnEl, opts) {
   if (!cacheDb) { if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; } return; }
 
   // §S274: Use split-DB path if available — meta (15MB) loads instantly, geo streams on demand.
-  // URL must contain _extracted.db so streaming.js can derive _meta.db/_geo.db.
+  // Write meta first (fast), open viewer immediately, write geo in background.
   var hasSplit = record.metaDb && record.geoDb;
   var dbUrl, libUrl;
   if (hasSplit) {
@@ -752,16 +752,22 @@ async function openProject(key, btnEl, opts) {
     libUrl = dbUrl;
     var metaUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_meta.db');
     var geoUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_geo.db');
+    // Write meta only (17MB, 2 keys) — fast, viewer opens immediately
     await new Promise(resolve => {
       var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
       var store = tx.objectStore(CACHE_STORE);
       store.put(record.metaDb, metaUrl);
-      store.put(record.geoDb, geoUrl);
-      store.put(record.metaDb, dbUrl);   // meta as primary — fast load
-      store.put(record.metaDb, libUrl);
+      store.put(record.metaDb, dbUrl);   // fallback path + split detect base
       tx.oncomplete = resolve;
     });
-    console.log('[S274] §OPEN_PROJECT_SPLIT key=' + key + ' meta=' + (record.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB');
+    // Write geo (363MB) in background — streaming.js will find it when it needs it
+    var _geoT0 = performance.now();
+    var _geoTx = cacheDb.transaction(CACHE_STORE, 'readwrite');
+    _geoTx.objectStore(CACHE_STORE).put(record.geoDb, geoUrl);
+    _geoTx.oncomplete = function() {
+      console.log('[S274] §OPEN_PROJECT_GEO_CACHED key=' + key + ' geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB ms=' + (performance.now()-_geoT0).toFixed(0));
+    };
+    console.log('[S274] §OPEN_PROJECT_SPLIT key=' + key + ' meta=' + (record.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB (geo writing in background)');
   } else {
     dbUrl = 'import://' + key + '/v0';
     libUrl = dbUrl;
