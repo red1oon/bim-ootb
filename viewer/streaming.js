@@ -429,17 +429,16 @@ function setupStreaming(A) {
           var _bvhIdx = 0;
           var _bvhT0 = performance.now();
           (function _bvhBatch() {
-            // §S280b: Time-budgeted — max 8ms per batch to stay under 16ms frame budget
-            var _batchT0 = performance.now();
-            while (_bvhIdx < _bvhHashes.length && (performance.now() - _batchT0) < 8) {
-              var geo = A.meshCache[_bvhHashes[_bvhIdx]];
+            var end = Math.min(_bvhIdx + 500, _bvhHashes.length);
+            for (var bi = _bvhIdx; bi < end; bi++) {
+              var geo = A.meshCache[_bvhHashes[bi]];
               if (geo && geo.computeBoundsTree && !geo.boundsTree) {
                 try { geo.computeBoundsTree(); } catch(e) {}
               }
-              _bvhIdx++;
             }
+            _bvhIdx = end;
             if (_bvhIdx < _bvhHashes.length) {
-              (window.requestIdleCallback || setTimeout)(_bvhBatch);
+              setTimeout(_bvhBatch, 0);
             } else {
               console.log('[S258] §BVH_DEFERRED built=' + _bvhHashes.length +
                 ' ms=' + (performance.now() - _bvhT0).toFixed(0));
