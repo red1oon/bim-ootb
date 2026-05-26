@@ -1445,22 +1445,29 @@ function setupStreaming(A) {
         catch(e) { A._hasBbox = false; }
       }
 
-      // §S260b: Phase 2 ��� Download geo.db fully (with progress). Sync streaming = fast.
+      // §S274: Phase 2 — geo.db. Skip _checkCache for import:// (avoids loading 363MB twice).
       // Bboxes keep user engaged during download. Cached on second visit = instant.
       var _geoT0 = performance.now();
       var _geoOk = false;
       try {
-        var _geoCached = await A._checkCache(geoUrl);
-        console.log(`[S260b] §GEO_CACHE_CHECK url=${geoUrl.split('/').pop()} hit=${!!_geoCached}`);
-        A.status.textContent = _geoCached
+        var _geoCached = null;
+        if (!geoUrl.startsWith('import://')) {
+          _geoCached = await A._checkCache(geoUrl);
+        }
+        console.log(`[S260b] §GEO_CACHE_CHECK url=${geoUrl.split('/').pop()} hit=${!!_geoCached} import=${geoUrl.startsWith('import://')}`);
+        A.status.textContent = (_geoCached || geoUrl.startsWith('import://'))
           ? `Loading geometry from cache...`
           : `First visit — downloading geometry (${_posLoaded ? 'bboxes visible' : 'please wait'})...`;
         var geoBuf = _geoCached || await A.cachedFetch(geoUrl);
-        A.libDb = new SQL.Database(new Uint8Array(geoBuf));
+        // §S274: Yield to UI before heavy sql.js parse — prevents browser freeze on 300MB+ geo
+        A.status.textContent = `Parsing geometry (${(geoBuf.byteLength / 1024 / 1024).toFixed(0)}MB)...`;
+        await new Promise(function(r) { setTimeout(r, 0); });
+        var _geoArr = (geoBuf instanceof Uint8Array) ? geoBuf : new Uint8Array(geoBuf);
+        A.libDb = new SQL.Database(_geoArr);
         A._splitHasMeta = false;  // use sync streaming path (libDb has geometry)
         var _geoMs = (performance.now() - _geoT0).toFixed(0);
         var _geoMB = (geoBuf.byteLength / 1024 / 1024).toFixed(0);
-        var _src = _geoCached ? 'cache' : 'download';
+        var _src = (_geoCached || geoUrl.startsWith('import://')) ? 'cache' : 'download';
         console.log(`§SPLIT_GEO_LOADED src=${_src} size=${_geoMB}MB ms=${_geoMs}`);
         A.status.textContent = `Geometry ready (${_geoMB}MB, ${(_geoMs/1000).toFixed(1)}s). Streaming meshes...`;
         _geoOk = true;
