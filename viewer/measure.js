@@ -107,6 +107,16 @@ function setupMeasure(A) {
     function _startRtree() {
       if (A._clashRtreeReady || A._clashRtreeBuilding) return;
       try {
+        // §S280: Check if R-tree already exists in DB (pre-built by extractor)
+        var existing = A.db.exec("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='elements_rtree'");
+        if (existing.length && existing[0].values[0][0] > 0) {
+          var cnt = A.db.exec("SELECT COUNT(*) FROM elements_rtree");
+          if (cnt.length && cnt[0].values[0][0] > 0) {
+            A._clashRtreeReady = true;
+            console.log('§CLASH_RTREE reuse existing rows=' + cnt[0].values[0][0]);
+            return;
+          }
+        }
         A.db.run("DROP TABLE IF EXISTS elements_rtree");
         A.db.run("CREATE VIRTUAL TABLE elements_rtree USING rtree(id, minX, maxX, minY, maxY, minZ, maxZ)");
         A._clashRtreeBuilding = true;
