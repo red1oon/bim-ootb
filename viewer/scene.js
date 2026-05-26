@@ -1261,8 +1261,30 @@ async function setupScene(A) {
     // ? — command palette
     if (e.key === '?') { e.preventDefault(); console.log('§KBD_ROUTE ? → palette'); showCommandPalette(); return; }
 
-    // Esc with no panel focused — no-op
-    if (e.key === 'Escape') { console.log('§KBD_ROUTE esc no panel → no-op'); return; }
+    // §S280: Esc universal — close pill, then close any visible panel
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      // Close pill if open
+      if (document.getElementById('mobile-pill') && document.getElementById('mobile-pill').style.display !== 'none') {
+        if (typeof window.toggleMobilePill === 'function') window.toggleMobilePill();
+        console.log('§KBD_ESC → close pill');
+        return;
+      }
+      // Close last visible dynamic panel (find, clash, issues, etc.)
+      var _dynPanels = document.querySelectorAll('#find-panel, #issues-panel, .glass-panel, #cmd-palette');
+      for (var _di = _dynPanels.length - 1; _di >= 0; _di--) {
+        var _dp = _dynPanels[_di];
+        if (_dp.style.display !== 'none' && _dp.offsetWidth > 0) {
+          var closeBtn = _dp.querySelector('.bim-panel-close, .panel-toggle, [id$="-close"]');
+          if (closeBtn) closeBtn.click();
+          else _dp.style.display = 'none';
+          console.log('§KBD_ESC → close ' + (_dp.id || 'panel'));
+          return;
+        }
+      }
+      console.log('§KBD_ESC no-op (nothing to close)');
+      return;
+    }
 
     // Key sequence engine
     clearTimeout(_seqTimer);

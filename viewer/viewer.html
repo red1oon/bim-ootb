@@ -303,15 +303,14 @@
     max-height: 220px; overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* §S280: Scroll caps — tap/hold to scroll, glow blue when more content */
+  /* §S280: Scroll caps — semi-circle, blue=up red=down */
   .pill-cap {
-    width: 56px; height: 20px; display: flex; align-items: center; justify-content: center;
-    cursor: pointer; flex-shrink: 0; transition: background 0.2s;
-    color: rgba(255,255,255,0.2); font-size: 10px; user-select: none;
+    width: 56px; height: 14px; display: block; cursor: pointer; flex-shrink: 0;
+    transition: opacity 0.2s; opacity: 0.3; user-select: none;
   }
-  .pill-cap.has-more { color: #4fc3f7; background: rgba(79,195,247,0.1); }
-  .pill-cap-top { border-radius: 28px 28px 0 0; }
-  .pill-cap-bottom { border-radius: 0 0 28px 28px; }
+  .pill-cap.has-more { opacity: 1; }
+  .pill-cap-top { border-radius: 28px 28px 0 0; background: #4fc3f7; }
+  .pill-cap-bottom { border-radius: 0 0 28px 28px; background: #ff5252; }
   #mobile-pill-scroll {
     overflow-y: auto; overflow-x: hidden;
     max-height: 168px; flex: 1;
@@ -560,9 +559,9 @@
   </button>
 </div>
 <div id="mobile-pill" style="display:none">
-  <div class="pill-cap pill-cap-top" id="pill-cap-top">▲</div>
+  <div class="pill-cap pill-cap-top" id="pill-cap-top"></div>
   <div id="mobile-pill-scroll"></div>
-  <div class="pill-cap pill-cap-bottom" id="pill-cap-bottom">▼</div>
+  <div class="pill-cap pill-cap-bottom" id="pill-cap-bottom"></div>
 </div>
 <!-- S266: Timeline slider — Doc mode phase scrubber -->
 <div id="doc-timeline" style="display:none;position:fixed;bottom:52px;left:10%;right:10%;z-index:11;
@@ -812,7 +811,7 @@
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="effects.js?v=1" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
-<script src="scene.js?v=45" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=46" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="streaming.js?v=45" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=6" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
@@ -916,7 +915,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=486')
+  navigator.serviceWorker.register('sw.js?v=487')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
