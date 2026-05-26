@@ -1328,12 +1328,35 @@ async function handleImportMultiIFC(files) {
     if (dbs.geoDb) newRecord.geoDb = dbs.geoDb;
     await saveProject(projectKey, newRecord);
 
+    // §S274: Pre-populate cache store for instant open (same as single-file path)
+    var _cacheDb2 = await openCacheDB();
+    if (_cacheDb2 && dbs.metaDb && dbs.geoDb) {
+      var _ck2 = projectKey;
+      var _cDbUrl2 = 'import://' + _ck2 + '/' + _ck2.replace(/\.ifc$/i, '_extracted.db');
+      var _cMetaUrl2 = 'import://' + _ck2 + '/' + _ck2.replace(/\.ifc$/i, '_meta.db');
+      var _cGeoUrl2 = 'import://' + _ck2 + '/' + _ck2.replace(/\.ifc$/i, '_geo.db');
+      await new Promise(function(resolve) {
+        var tx = _cacheDb2.transaction(CACHE_STORE, 'readwrite');
+        var store = tx.objectStore(CACHE_STORE);
+        store.put(dbs.metaDb, _cMetaUrl2);
+        store.put(dbs.metaDb, _cDbUrl2);
+        store.put(dbs.geoDb, _cGeoUrl2);
+        tx.oncomplete = resolve;
+      });
+      console.log('[S274] §MULTI_IMPORT_CACHE_PRELOAD meta=' + (dbs.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (dbs.geoDb.byteLength/1024/1024).toFixed(1) + 'MB');
+    }
+
     console.log('[S224] §MULTI_IMPORT_DONE building=' + buildingName + ' elements=' + allElements.length +
       ' files=' + files.length + ' discs=' + Object.keys(allDiscs).join(','));
-    if (status) status.textContent = 'Merged ' + files.length + ' files → ' + allElements.length + ' elements';
+    if (status) status.textContent = 'Merged ' + files.length + ' files → ' + allElements.length + ' elements — opening viewer...';
     if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#44cc44'; }
-    setTimeout(function() { status.textContent = ''; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; }, 3000);
+
     renderImportCards();
+
+    // §S274: Auto-open viewer after multi-import
+    openProject(projectKey);
+    console.log('[S274] §MULTI_IMPORT_AUTO_OPEN key=' + projectKey);
+    setTimeout(function() { if (status) { status.textContent = ''; } if (progressBar) { progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; } }, 3000);
   } catch (dbErr) {
     console.log('[S224] §MULTI_DB_ERROR ' + dbErr.message);
     if (status) status.textContent = 'DB merge failed: ' + dbErr.message;
@@ -1415,16 +1438,16 @@ function showExportFlyout(triggerEl, projectKey) {
 }
 
 async function exportProjectIFC(projectKey, flyout) {
-  var statusEl = flyout.querySelector('.ef-status');
-  var goBtn = flyout.querySelector('[data-go]');
-  goBtn.disabled = true;
-  goBtn.textContent = 'Exporting...';
-  statusEl.textContent = 'Reading database...';
+  // §S274: flyout may be undefined when called from share.js via A.exportIFC(key)
+  var statusEl = flyout ? flyout.querySelector('.ef-status') : null;
+  var goBtn = flyout ? flyout.querySelector('[data-go]') : null;
+  if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Exporting...'; }
+  if (statusEl) statusEl.textContent = 'Reading database...';
 
   var record = await getProject(projectKey);
   if (!record || !record.versions.length) {
-    statusEl.textContent = 'No data found';
-    goBtn.disabled = false; goBtn.textContent = 'Download';
+    if (statusEl) statusEl.textContent = 'No data found';
+    if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Download'; }
     return;
   }
 
@@ -1444,7 +1467,7 @@ async function exportProjectIFC(projectKey, flyout) {
   var db = new SQL.Database(new Uint8Array(latest.db));
 
   // Extract all data from DB
-  statusEl.textContent = 'Extracting elements...';
+  if (statusEl) statusEl.textContent = 'Extracting elements...';
   var elements = [], transforms = [], geometries = [];
   var meta = {
     buildingName: projectKey.replace(/\.(ifc|obj|stl|dae|glb|gltf|3ds|fbx)$/i, ''),
@@ -1472,7 +1495,7 @@ async function exportProjectIFC(projectKey, flyout) {
         elements.push({ guid: row[0], ifcClass: row[1], name: row[2], storey: row[3], discipline: row[4], material: row[5] });
       }
     }
-  } catch(e) { statusEl.textContent = 'Error reading elements: ' + e.message; return; }
+  } catch(e) { if (statusEl) statusEl.textContent = 'Error reading elements: ' + e.message; return; }
 
   // Read transforms
   try {
@@ -1496,7 +1519,7 @@ async function exportProjectIFC(projectKey, flyout) {
     }
     // Load unique geometries in batches using exec (compatible with all sql.js versions)
     var usedHashes = Object.values(guidHashMap).filter(function(v,i,a) { return a.indexOf(v) === i; });
-    statusEl.textContent = 'Loading ' + usedHashes.length + ' unique geometries...';
+    if (statusEl) statusEl.textContent = 'Loading ' + usedHashes.length + ' unique geometries...';
     var BATCH = 200;
     for (var bi = 0; bi < usedHashes.length; bi += BATCH) {
       var chunk = usedHashes.slice(bi, bi + BATCH);
@@ -1514,19 +1537,19 @@ async function exportProjectIFC(projectKey, flyout) {
 
   db.close();
 
-  statusEl.textContent = 'Building IFC (' + elements.length + ' elements)...';
+  if (statusEl) statusEl.textContent = 'Building IFC (' + elements.length + ' elements)...';
 
   // Send to export worker
   var worker = new Worker('viewer/ifc_export_worker.js?v=2');
   worker.onmessage = function(e) {
     var msg = e.data;
     if (msg.type === 'progress') {
-      statusEl.textContent = msg.phase;
+      if (statusEl) statusEl.textContent = msg.phase;
       return;
     }
     if (msg.type === 'error') {
-      statusEl.textContent = 'Export failed: ' + msg.message;
-      goBtn.disabled = false; goBtn.textContent = 'Download';
+      if (statusEl) statusEl.textContent = 'Export failed: ' + msg.message;
+      if (goBtn) goBtn.disabled = false; goBtn.textContent = 'Download';
       worker.terminate();
       return;
     }
@@ -1537,16 +1560,16 @@ async function exportProjectIFC(projectKey, flyout) {
       a.download = meta.buildingName + '.ifc';
       a.click();
       URL.revokeObjectURL(a.href);
-      statusEl.textContent = 'Downloaded ' + meta.buildingName + '.ifc (' + (msg.ifcData.byteLength / 1024).toFixed(0) + ' KB)';
-      goBtn.textContent = 'Done';
+      if (statusEl) statusEl.textContent = 'Downloaded ' + meta.buildingName + '.ifc (' + (msg.ifcData.byteLength / 1024).toFixed(0) + ' KB)';
+      if (goBtn) goBtn.textContent = 'Done';
       console.log('[S229] §EXPORT_IFC key=' + projectKey + ' size=' + (msg.ifcData.byteLength / 1024).toFixed(0) + 'KB elements=' + elements.length);
       worker.terminate();
-      setTimeout(function() { flyout.remove(); }, 2000);
+      setTimeout(function() { if (flyout) flyout.remove(); }, 2000);
     }
   };
   worker.onerror = function(err) {
-    statusEl.textContent = 'Worker error: ' + err.message;
-    goBtn.disabled = false; goBtn.textContent = 'Download';
+    if (statusEl) statusEl.textContent = 'Worker error: ' + err.message;
+    if (goBtn) goBtn.disabled = false; goBtn.textContent = 'Download';
     worker.terminate();
   };
 
