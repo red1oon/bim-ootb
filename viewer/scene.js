@@ -57,6 +57,12 @@ async function setupScene(A) {
   // §S276: r184 uses physically-correct lights by default (useLegacyLights removed in r165).
   // Intensities re-tuned: legacy I × π = physically-correct equivalent.
   A.renderer = renderer;
+  // §S280c: Detect WEBGL_multi_draw — without it, BatchedMesh = 1 draw per slot (70K on LTU).
+  // Fallback to MergedMesh (mobile path) which concatenates geometry = 197 draws.
+  var _gl = renderer.getContext();
+  A._hasMultiDraw = !!(_gl && _gl.getExtension && _gl.getExtension('WEBGL_multi_draw'));
+  console.log('§S280c_MULTI_DRAW ' + (A._hasMultiDraw ? 'YES — BatchedMesh optimal' : 'NO — fallback to MergedMesh'));
+
 
   const scene = new THREE.Scene();
   // §S277c: Distance fog — atmospheric depth on large buildings. Near-zero GPU cost.

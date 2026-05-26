@@ -685,24 +685,30 @@ function setupStreaming(A) {
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
-    // ── S232: On mobile, bucket single-instance elements for merge ──
+    // ── S232/S280c: Bucket single-instance elements for merge or batch ──
+    // §S280c: Without WEBGL_multi_draw, BatchedMesh = 1 draw per slot (70K on LTU).
+    // MergedMesh concatenates geometry = 1 draw per bucket (197 on LTU). Always safe.
     const mergeBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
-    // ── S260: On desktop, bucket single-instance elements for BatchedMesh ──
-    // §S261: When _useDlodPath, these buckets are passed to _flushBboxBatched instead
     const batchBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
+    // §S280c: Use merge path on mobile OR when multi_draw unavailable
+    var _useMerge = A._isMobile || !A._hasMultiDraw;
 
     for (const [hash, elements] of Object.entries(A._pendingInstances)) {
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
       if (elements.length === 1) {
-        // §S260: Single-instance hash → BatchedMesh bucket (one draw call per bucket)
-        // ≤5 threshold reverted: IM shares geometry buffer, BM copies it per addGeometry.
-        // 5 instances of 100-vert mesh: IM=100 verts, BM=500 verts. 3× VRAM inflation.
         const el = elements[0];
         const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
-        if (!batchBuckets[key]) batchBuckets[key] = [];
-        batchBuckets[key].push({ el: el, geo: geo });
+        if (_useMerge) {
+          // MergedMesh: concatenate geometry into one buffer per bucket (1 draw call)
+          if (!mergeBuckets[key]) mergeBuckets[key] = [];
+          mergeBuckets[key].push({ el: el, geo: geo });
+        } else {
+          // BatchedMesh: multi_draw renders all slots in 1 call per BM object
+          if (!batchBuckets[key]) batchBuckets[key] = [];
+          batchBuckets[key].push({ el: el, geo: geo });
+        }
       } else {
         // 2+ instances — InstancedMesh (shared geometry buffer, GPU instancing)
         const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass);
@@ -746,7 +752,10 @@ function setupStreaming(A) {
       console.log('§S261_DEFER_BBOX buckets=' + Object.keys(A._pendingBboxBuckets).length);
     }
     // ── S260: Build BatchedMesh per desktop bucket (non-DLOD path) ──────────────
-    else if (THREE.BatchedMesh) {  // §S265: BatchedMesh on all devices
+    // §S280c: BatchedMesh only when WEBGL_multi_draw is available.
+    // Without multi_draw, each BM slot = separate draw call (70K on LTU).
+    // Fallback: MergedMesh (mobile path) — 197 draws instead of 70K.
+    else if (THREE.BatchedMesh && A._hasMultiDraw) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         if (items.length === 0) continue;
         const [storey, disc, rgba] = key.split('|');
