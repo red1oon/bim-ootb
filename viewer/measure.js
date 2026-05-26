@@ -368,6 +368,10 @@ function setupMeasure(A) {
         var oz = Math.min(maxZ, bMaxZ) - Math.max(minZ, bMinZ);
         var overlap = Math.min(ox, oy, oz);
 
+        // §S278: Filter by tolerance — only report clashes above the threshold
+        var tol = rules._activeTolerance || 0.025;
+        if (overlap < tol) continue;
+
         if (skip > 0) { skip--; continue; }
         results.push([ra[1], rb[1], ra[2], rb[2], discA, discB, ra[3], rb[3], overlap]);
       }
@@ -440,9 +444,10 @@ function setupMeasure(A) {
         if (el) el.textContent = 'Total: ' + total;
       }
       if (!A._cachedPairCounts) A._cachedPairCounts = {};
-      var key = [discA, discB].sort().join('|');
+      var tol = rules._activeTolerance || 0;
+      var key = [discA, discB].sort().join('|') + '@' + tol.toFixed(3);
       A._cachedPairCounts[key] = total;
-      console.log('§CLASH_COUNT total=' + total + ' rtree=true cached=' + key);
+      console.log('§CLASH_COUNT total=' + total + ' tol=' + (tol*1000).toFixed(0) + 'mm rtree=true cached=' + key);
       return;
     }
     // Fallback: storey-by-storey cross-join (R-tree not ready)
@@ -646,7 +651,7 @@ function setupMeasure(A) {
       ];
 
       var hashRows = A.dbQuery("SELECT i.guid, i.geometry_hash, m.discipline FROM element_instances i JOIN elements_meta m ON i.guid = m.guid WHERE i.guid IN (?, ?)", [c[0], c[1]]);
-      var meshColors = [0xff0000, 0x0044ff];  // §S278: pure red A + blue B
+      var meshColors = [0xff2222, 0x2266ff];  // §S277c: red A + blue B (was orange)
       hashRows.forEach(function(hr, hi) {
         var geo = A.meshCache[hr[1]];
         if (!geo) {
@@ -736,6 +741,10 @@ function setupMeasure(A) {
       }
       _animFly();
     }
+    // §S277c: OutlinePass on clash meshes — white edge on both for crisp silhouette
+    if (A.setOutline && A._clashHighlights && A._clashHighlights.length) {
+      A.setOutline(A._clashHighlights.filter(function(m) { return m.isMesh; }), 0xffffff);
+    }
     console.log('§CLASH_DETAIL guidA=' + c[0] + ' guidB=' + c[1] + ' overlap=' + ((typeof c[8] === 'number') ? c[8].toFixed(3) : '?') + 'm');
   };
 
@@ -771,6 +780,9 @@ function setupMeasure(A) {
     var display = rules.display || {};
     var dimOpacity = display.dim_opacity || 0.1;
     var maxVisible = display.max_visible || 20;
+
+    // Dimming removed — was cloning every mesh material (expensive, didn't visibly work).
+    // Clash elements are shown via red/blue overlap meshes + fly-to camera instead.
 
     // Build itemised list
     var shown = Math.min(A._currentClashes.length, maxVisible);
@@ -845,8 +857,6 @@ function setupMeasure(A) {
       '<div id="clash-list-body" style="padding:0 10px 8px;overflow-y:auto;flex:1;touch-action:pan-y">' + rendered.body + '</div>';
     document.body.appendChild(listDiv);
     A._clashListDiv = listDiv;
-    // §S279: Notify scene.js that clash list changed — replaces 300ms polling
-    document.dispatchEvent(new CustomEvent('clashListChanged'));
     A._makeDraggable(listDiv);
     A.measureLabels.push({ div: listDiv, mid: null });
 
@@ -859,6 +869,7 @@ function setupMeasure(A) {
       });
       slider.addEventListener('change', function() {
         pairRule.tolerance_m = parseInt(slider.value) / 1000;
+        rules._activeTolerance = pairRule.tolerance_m;
         console.log('§CLASH_TOL_SLIDER ' + (pairLabel || '') + ' to ' + slider.value + 'mm');
         // §S278: Save list position before rebuild (preserves drag state)
         var prevRect = listDiv.getBoundingClientRect();
@@ -1036,6 +1047,9 @@ function setupMeasure(A) {
 
   // Clash report functions loaded from clash_report.js via setupClashReporter(A)
 
+  // ── Clash Matrix — visual grid of discipline pair rules ──
+  A._clashMatrixDiv = null;
+
   // §S278 Phase 2: _showClashMatrix + _countClashesRtree extracted to clash_matrix.js
   if (typeof setupClashMatrix === 'function') setupClashMatrix(A);
 
@@ -1060,7 +1074,6 @@ function setupMeasure(A) {
     if (!keepMatrix && A._clashMatrixDiv) {
       A._clashMatrixDiv.remove();
       A._clashMatrixDiv = null;
-      A._clashDiscCache = {}; // §S278: clear discipline element cache
       if (A._clashModeActive && A._exitClashMode) A._exitClashMode();
     }
     if (A.markDirty) A.markDirty();
@@ -1074,8 +1087,9 @@ function setupMeasure(A) {
       return;
     }
     A.measureActive = !A.measureActive;
-    var btn = document.getElementById('measure-btn');
-    if (btn) btn.classList.toggle('active', A.measureActive);
+    const btn = document.getElementById('measure-btn');
+    btn.style.background = A.measureActive ? '#4fc3f7' : '#444';
+    btn.style.color = A.measureActive ? '#000' : '#fff';
     // Grey out / restore 2D button
     var g2d = document.getElementById('grid-2d-btn');
     if (g2d) { g2d.style.opacity = A.measureActive ? '0.3' : '1'; }
@@ -1532,14 +1546,11 @@ function setupMeasure(A) {
     return true;
   };
 
-  // §S279: Reuse static Vector3 — avoids GC allocation per label per frame
-  var _labelVec3 = null;
   A.updateMeasureLabels = function() {
     if (!A.measureActive && !A.measureLabels.length && !A.measureGroup.children.length) return;
-    if (!_labelVec3) _labelVec3 = new THREE.Vector3();
     A.measureLabels.forEach(m => {
       if (!m.mid) return;  // fixed-position labels (info cards)
-      const projected = _labelVec3.copy(m.mid).project(A.camera);
+      const projected = m.mid.clone().project(A.camera);
       if (projected.z > 1) {
         m.div.style.display = 'none';
         return;

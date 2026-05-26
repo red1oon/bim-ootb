@@ -14,6 +14,7 @@ function setupClashMatrix(A) {
   A._clashDiscCache = {};
 
   A._countClashesRtree = function(storey, rules, discA, discB) {
+    var tol = rules._activeTolerance || 0;
     var ignoreSet = {};
     rules.clash_rules.forEach(function(r) {
       (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
@@ -74,6 +75,13 @@ function setupClashMatrix(A) {
         var bMinY = rb[2] - rb[5]/2, bMaxY = rb[2] + rb[5]/2;
         var bMinZ = rb[3] - rb[6]/2, bMaxZ = rb[3] + rb[6]/2;
         if (maxX > bMinX && minX < bMaxX && maxY > bMinY && minY < bMaxY && maxZ > bMinZ && minZ < bMaxZ) {
+          // §S278: Filter by tolerance if set
+          if (tol > 0) {
+            var ox = Math.min(maxX, bMaxX) - Math.max(minX, bMinX);
+            var oy = Math.min(maxY, bMaxY) - Math.max(minY, bMinY);
+            var oz = Math.min(maxZ, bMaxZ) - Math.max(minZ, bMinZ);
+            if (Math.min(ox, oy, oz) < tol) continue;
+          }
           count++;
         }
       }
@@ -285,6 +293,8 @@ function setupClashMatrix(A) {
       var prevPair = A._currentClashPairLabel || '';
       var thisPair = discA + ' vs ' + discB;
       if (thisPair !== prevPair) A._clashPairOffset = 0;
+      // §S278: Set active tolerance for query filtering
+      rules._activeTolerance = rule.tolerance_m || 0.025;
       var offset = A._clashPairOffset || 0;
       var clashes = A._queryClashesPair(storey, rules, discA, discB, offset);
       if (!clashes.length && offset > 0) {
