@@ -366,149 +366,9 @@ function setupPanels(A) {
   window.makeListKeyNav = makeListKeyNav;
 
   // Wire ListKeyNav to storey + DISC panels after populate
-  var _storeyNav = null, _discNav = null;
+  // §S280: _storeyNav/_discNav removed — storey/disc now in Find outliner
   A._wireListKeyNav = function() {
-    // S265 Phase 4: storey/disc now inside HUD accordion sections
-    var storeyPanel = document.getElementById('hud-storey-section');
-    var discPanel = document.getElementById('hud-disc-section');
-
-    if (storeyPanel && !_storeyNav) {
-      _storeyNav = makeListKeyNav(
-        function() { return Array.from(document.querySelectorAll('#storey-body button')); },
-        function(indices) {
-          var btns = Array.from(document.querySelectorAll('#storey-body button'));
-          // Multi-select: show all selected storeys, hide the rest
-          if (indices.length >= 1) {
-            // Extract storey names from button onclick
-            var selectedStoreys = [];
-            indices.forEach(function(i) {
-              if (!btns[i]) { console.log('§STOREY_TOGGLE btn[' + i + '] missing, total=' + btns.length); return; }
-              var m = btns[i].onclick ? btns[i].onclick.toString().match(/filterStorey\('(.+?)'\)/) : null;
-              if (m) selectedStoreys.push(m[1]);
-              else selectedStoreys.push(null); // "All Storeys" button
-            });
-            console.log('§STOREY_TOGGLE indices=[' + indices.join(',') + '] storeys=[' + selectedStoreys.join(',') + ']');
-            // If "All Storeys" is in selection, show all
-            if (selectedStoreys.indexOf(null) >= 0) {
-              console.log('§STOREY_TOGGLE → all (null in selection)');
-              A.filterStorey(null);
-            } else if (selectedStoreys.length === 1) {
-              console.log('§STOREY_TOGGLE → single: ' + selectedStoreys[0]);
-              A.filterStorey(selectedStoreys[0]);
-              if (window.KernelOps && A.db) KernelOps.commitOp(A.db, 'VIEW_FILTER', {type:'storey',storeys:selectedStoreys});
-            } else {
-              // Multi-storey: show meshes matching any selected storey
-              A.activeStoreyFilter = selectedStoreys;
-              A.collectMeshes(function(o) { return o.isMesh && o.userData.storey !== undefined; }).forEach(function(obj) {
-                obj.visible = selectedStoreys.indexOf(obj.userData.storey) >= 0;
-              });
-              A.collectMeshes(function(o) { return o.isInstancedMesh; }).forEach(function(mesh) {
-                A.filterInstancedMesh(mesh, function(meta) {
-                  return selectedStoreys.indexOf(meta.storey) >= 0;
-                });
-              });
-              // §S260: BatchedMesh multi-storey filter
-              A.collectMeshes(function(o) { return o.isBatchedMesh; }).forEach(function(mesh) {
-                A.filterBatchedMesh(mesh, function(meta) {
-                  return selectedStoreys.indexOf(meta.storey) >= 0;
-                });
-              });
-              // Highlight selected buttons
-              btns.forEach(function(btn, j) { btn.className = indices.indexOf(j) >= 0 ? 'active' : ''; });
-              console.log('§STOREY_MULTI storeys=' + selectedStoreys.join(','));
-              if (window.KernelOps && A.db) KernelOps.commitOp(A.db, 'VIEW_FILTER', {type:'storey',storeys:selectedStoreys});
-              if (A.markDirty) A.markDirty();
-            }
-          }
-        },
-        function(idx) {
-          var btns = Array.from(document.querySelectorAll('#storey-body button'));
-          if (btns[idx]) btns[idx].click();
-        }
-      );
-      if (typeof _registerPanel === 'function') _registerPanel('storey', storeyPanel, _storeyNav);
-      // §S260c: Intercept Shift+click on storey buttons for accumulating multi-select.
-      // Shift+click = toggle individual storeys (accumulate). Without this, inline
-      // onclick="filterStorey('...')" fires directly, replacing the selection.
-      var stBody = document.getElementById('storey-body');
-      if (stBody && !stBody._s260cWired) {
-        stBody._s260cWired = true;
-        stBody.addEventListener('click', function(e) {
-          var btn = e.target.closest('button');
-          if (!btn) return;
-          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) return;
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          var btns = Array.from(stBody.querySelectorAll('button'));
-          var idx = btns.indexOf(btn);
-          if (idx < 0) return;
-          // Accumulate: treat Shift as Ctrl (toggle individual item)
-          _storeyNav.onClick(idx, { shiftKey: false, ctrlKey: true, metaKey: false });
-          console.log('§STOREY_SHIFT_CLICK idx=' + idx + ' accumulate selected=' + _storeyNav.getSelected().join(','));
-        }, true);
-      }
-      console.log('§LISTNAV_WIRE panel=storey');
-    }
-
-    if (discPanel && !_discNav) {
-      _discNav = makeListKeyNav(
-        function() { return Array.from(document.querySelectorAll('#disc-body button')); },
-        function(indices) {
-          var btns = Array.from(document.querySelectorAll('#disc-body button'));
-          // Multi-select: toggle each selected disc
-          if (indices.length >= 1) {
-            // Get all disc names
-            var allDiscs = [];
-            btns.forEach(function(btn) {
-              var m = btn.onclick ? btn.onclick.toString().match(/toggleDisc\('(.+?)'\)/) : null;
-              if (m) allDiscs.push(m[1]);
-            });
-            // Show only selected, hide rest
-            var selectedDiscs = [];
-            indices.forEach(function(i) {
-              if (allDiscs[i]) selectedDiscs.push(allDiscs[i]);
-            });
-            // Reset all hidden, then hide non-selected
-            A.hiddenDiscs = new Set();
-            allDiscs.forEach(function(d) {
-              if (selectedDiscs.indexOf(d) < 0) A.hiddenDiscs.add(d);
-            });
-            // Apply visibility
-            A.collectMeshes(function(o) { return o.isMesh && o.userData.disc; }).forEach(function(obj) {
-              var discVisible = !A.hiddenDiscs.has(obj.userData.disc);
-              var storeyVisible = A.activeStoreyFilter === null ||
-                (Array.isArray(A.activeStoreyFilter) ? A.activeStoreyFilter.indexOf(obj.userData.storey) >= 0 : obj.userData.storey === A.activeStoreyFilter);
-              obj.visible = discVisible && storeyVisible;
-            });
-            A.collectMeshes(function(o) { return o.isInstancedMesh; }).forEach(function(mesh) {
-              A.filterInstancedMesh(mesh, function(meta) {
-                return !A.hiddenDiscs.has(meta.disc) &&
-                  (A.activeStoreyFilter === null ||
-                   (Array.isArray(A.activeStoreyFilter) ? A.activeStoreyFilter.indexOf(meta.storey) >= 0 : meta.storey === A.activeStoreyFilter));
-              });
-            });
-            // §S260: BatchedMesh multi-disc filter
-            A.collectMeshes(function(o) { return o.isBatchedMesh; }).forEach(function(mesh) {
-              A.filterBatchedMesh(mesh, function(meta) {
-                return !A.hiddenDiscs.has(meta.disc) &&
-                  (A.activeStoreyFilter === null ||
-                   (Array.isArray(A.activeStoreyFilter) ? A.activeStoreyFilter.indexOf(meta.storey) >= 0 : meta.storey === A.activeStoreyFilter));
-              });
-            });
-            btns.forEach(function(btn, j) { btn.className = indices.indexOf(j) >= 0 ? 'active' : ''; });
-            console.log('§DISC_MULTI selected=' + selectedDiscs.join(',') + ' hidden=' + A.hiddenDiscs.size);
-            if (window.KernelOps && A.db) KernelOps.commitOp(A.db, 'VIEW_FILTER', {type:'disc',discs:selectedDiscs});
-            if (A.markDirty) A.markDirty();
-          }
-        },
-        function(idx) {
-          var btns = Array.from(document.querySelectorAll('#disc-body button'));
-          if (btns[idx]) btns[idx].click();
-        }
-      );
-      if (typeof _registerPanel === 'function') _registerPanel('disc', discPanel, _discNav);
-      console.log('§LISTNAV_WIRE panel=disc');
-    }
+    // §S280: Old storey/disc HUD panels removed — now in Find outliner (navigate_find.js)
 
     // Toolbar — horizontal, ←→ traversal, Space/Enter clicks
     var toolbox = document.getElementById('search-box');
@@ -579,10 +439,6 @@ function setupPanels(A) {
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
       A.filterBatchedMesh(mesh, meta => storey === null || meta.storey === storey);
     });
-    document.querySelectorAll('#storey-body button').forEach(btn => {
-      const btnStorey = btn.onclick.toString().match(/filterStorey\('(.+?)'\)/)?.[1] || null;
-      btn.className = (btnStorey === storey || (storey === null && !btn.onclick.toString().includes("'"))) ? 'active' : '';
-    });
     console.log(`[S200] §STOREY_FILTER ${storey || 'ALL'}`);
     if (A.markDirty) A.markDirty();
   };
@@ -617,10 +473,6 @@ function setupPanels(A) {
         return !A.hiddenDiscs.has(meta.disc) &&
           (A.activeStoreyFilter === null || meta.storey === A.activeStoreyFilter);
       });
-    });
-    document.querySelectorAll('#disc-body button').forEach(btn => {
-      const m = btn.onclick.toString().match(/toggleDisc\('(.+?)'\)/);
-      if (m) btn.className = A.hiddenDiscs.has(m[1]) ? '' : 'active';
     });
     if (A.markDirty) A.markDirty();
   };

@@ -154,12 +154,8 @@ function setupMeasure(A) {
     setTimeout(_nextIndex, 5);
   };
 
-  // §S260b: Build R-tree eagerly once A.db has element_transforms (meta.db loaded)
-  // Uses setTimeout batches so it yields to geo.db download in parallel
-  setTimeout(function _waitForDb() {
-    if (A.db) { A._ensureClashIndexes(); }
-    else { setTimeout(_waitForDb, 500); }
-  }, 1000);
+  // §S280: R-tree deferred to first clash open (was eager on load — too heavy for 48K+ buildings)
+  // _ensureClashIndexes() is called by _clashWhereParts() and openClashPanel() on demand.
 
   // Build the shared WHERE clause parts (also ensures indexes)
   A._clashWhereParts = function(rules) {

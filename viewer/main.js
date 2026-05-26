@@ -32,11 +32,11 @@ async function initViewer() {
       }
       // Load sub-modules in dependency order, then the bootstrap
       var modules = [
-        'navigate_find.js?v=11',
+        'navigate_find.js?v=12',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
-        'navigate_controls.js?v=1',
+        'navigate_controls.js?v=2',
         'navigate.js?v=10'
       ];
       function loadNext(i) {

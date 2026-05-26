@@ -107,20 +107,7 @@
     .bim-panel .bim-slider-row button svg { width: 22px; height: 22px; }
   }
 
-  /* S265 Phase 4: HUD accordion sections (storey + disc inside HUD) */
-  .hud-accordion { margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 4px; }
-  .hud-accordion-header { display: block; width: 100%; padding: 4px 0; color: #4fc3f7; font-size: 11px; cursor: pointer; user-select: none; }
-  .hud-accordion-header::before { content: '▸ '; font-size: 10px; }
-  .hud-accordion:has(.panel-body:not(.collapsed)) .hud-accordion-header::before { content: '▾ '; }
-  #hud #storey-body button, #hud #disc-body button {
-    display: block; width: 100%; text-align: left;
-    padding: 3px 8px; margin: 2px 0; background: #333; color: #ccc;
-    border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 11px;
-  }
-  #hud #storey-body button:hover, #hud #disc-body button:hover { background: #444; color: #4fc3f7; }
-  #hud #storey-body button.active, #hud #disc-body button.active { background: #4fc3f7; color: #000; border-color: #4fc3f7; }
-  #hud #disc-body button { opacity: 0.3; text-decoration: line-through; }
-  #hud #disc-body button.active { opacity: 1.0; text-decoration: none; }
+  /* §S280: HUD accordion CSS removed — storey/disc now in Find outliner */
   #info-panel {
     position: fixed; bottom: 50px; right: 70px; z-index: 10;
     background: rgba(10,10,30,0.50); border-radius: 12px; padding: 12px 16px;
@@ -364,7 +351,6 @@
     #hud { top: 8px !important; bottom: auto !important; left: 8px; right: auto; max-width: 50vw; font-size: 12px; z-index: 19 !important; max-height: 70vh; overflow-y: auto; }
     #hud h2 { font-size: 13px; }
     #hud .stat { font-size: 11px; }
-    #hud #storey-body button, #hud #disc-body button { padding: 4px 8px; font-size: 12px; min-height: 32px; }
     #hud .hud-accordion-header { font-size: 12px; padding: 6px 0; }
 
     /* Info panel: above bottom bar */
@@ -419,7 +405,6 @@
     #hud h2 { font-size: 11px !important; }
     #hud .stat { font-size: 10px !important; }
     #hud:has(> .panel-body.collapsed) { padding: 2px 6px !important; max-width: 80px !important; }
-    #hud #storey-body button, #hud #disc-body button { padding: 3px 6px !important; font-size: 11px !important; min-height: 24px !important; }
     #hud .hud-accordion-header { font-size: 10px !important; padding: 3px 0 !important; }
     #status { bottom: 2px; font-size: 9px !important; padding: 2px 6px !important; }
     #info-panel { max-width: 120px !important; font-size: 9px !important; padding: 4px 6px !important; }
@@ -443,16 +428,7 @@
     </div>
     <div class="stat"><span data-trl="ui_done">Done</span>: <b id="s-buildings-done">0</b></div>
     <div id="disc-bars" style="margin-top:4px"></div>
-    <!-- S265 Phase 4: Storey accordion inside HUD -->
-    <div id="hud-storey-section" class="hud-accordion" style="display:none">
-      <b class="hud-accordion-header" onclick="togglePanel('storey-body');resetHudAutoCollapse()" data-trl="ui_storeys">Storeys</b>
-      <div id="storey-body" class="panel-body"></div>
-    </div>
-    <!-- S265 Phase 4: Discipline accordion inside HUD -->
-    <div id="hud-disc-section" class="hud-accordion" style="display:none">
-      <b class="hud-accordion-header" onclick="togglePanel('disc-body');resetHudAutoCollapse()" data-trl="ui_disciplines">Disciplines</b>
-      <div id="disc-body" class="panel-body"></div>
-    </div>
+    <!-- §S280: Storey/Disc HUD removed — now in Find outliner -->
     <!-- S266: Grid bays accordion — shown only in Doc mode -->
     <div id="hud-gridbays-section" class="hud-accordion" style="display:none">
       <b class="hud-accordion-header" onclick="togglePanel('gridbays-body');resetHudAutoCollapse()">Grid Bays</b>
@@ -790,16 +766,16 @@
 <script src="effects.js?v=1" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
 <script src="scene.js?v=47" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
-<script src="streaming.js?v=45" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="streaming.js?v=46" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=6" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=27" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=28" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=25" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=24" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="tour.js?v=3" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
 <script src="clash_report.js?v=1" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=1" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
 <script src="clash_matrix.js?v=1" onerror="console.warn('§LOAD_FAIL clash_matrix.js')"></script>
-<script src="measure.js?v=43" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
+<script src="measure.js?v=44" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=7" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=2" onerror="console.warn('§LOAD_FAIL share.js')"></script>
 <script src="issues.js?v=5" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
@@ -851,7 +827,7 @@
 <script src="wizard_storeys.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_storeys.js')"></script>
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=2" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
-<script src="time_machine.js?v=47" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="time_machine.js?v=48" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="main.js?v=32"></script>
 <!-- Styled tooltip bubbles for [data-trl-title] buttons — appended to body, not clipped by overflow:hidden -->
 <style>#ootb-tip{display:none;position:fixed;z-index:9990;background:rgba(10,10,30,0.92);color:#4fc3f7;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(79,195,247,0.35);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.4)}</style>
@@ -892,7 +868,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=493')
+  navigator.serviceWorker.register('sw.js?v=494')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

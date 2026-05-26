@@ -632,33 +632,12 @@ function setupStreaming(A) {
         console.log(`[S260] §PROGRESSIVE_FLUSH at=${A.streamIdx}/${A.streamQueue.length} drawCalls=${A.scene.children.length}`);
     }
 
-    // §S279: Cache DOM refs — avoid 4x getElementById per tick during streaming
-    if (!A._streamDom) {
-      A._streamDom = {
-        streamed: document.getElementById('s-streamed'),
-        meshes: document.getElementById('s-meshes'),
-        progress: document.getElementById('s-progress'),
-        current: document.getElementById('s-current-element'),
-        lastCount: -1, lastMeshCount: -1
-      };
-    }
-    var sd = A._streamDom;
-    if (sd.streamed && A.streamedCount !== sd.lastCount) {
-      sd.streamed.textContent = A.streamedCount.toLocaleString();
-      sd.lastCount = A.streamedCount;
-    }
-    var mc = Object.keys(A.meshCache).length;
-    if (sd.meshes && mc !== sd.lastMeshCount) {
-      sd.meshes.textContent = mc.toLocaleString();
-      sd.lastMeshCount = mc;
-    }
-    if (sd.progress && A.activeBuildingTotal > 0) {
-      sd.progress.style.width = Math.min(100, (A.streamIdx / A.streamQueue.length) * 100).toFixed(1) + '%';
-    }
-    var lastRow = A.streamQueue[A.streamIdx - 1];
-    if (sd.current && lastRow) {
-      sd.current.textContent = lastRow[11] || '';
-    }
+    // §S280: Streaming progress in status bar (HUD hidden)
+    var _pct = A.activeBuildingTotal > 0 ? Math.min(100, (A.streamIdx / A.streamQueue.length) * 100).toFixed(0) : '?';
+    A.status.textContent = (A.activeBuilding || '?') + ' — ' + A.streamedCount.toLocaleString() + '/' + A.streamQueue.length.toLocaleString() + ' (' + _pct + '%)';
+    // Legacy HUD writes (hidden but referenced by tests)
+    var _sStr = document.getElementById('s-streamed');
+    if (_sStr) _sStr.textContent = A.streamedCount.toLocaleString();
   };
 
   // ── S231+S232+S260: Flush pending → BatchedMesh (desktop single) or InstancedMesh (2+) or MergedMesh (mobile) ──
@@ -668,17 +647,13 @@ function setupStreaming(A) {
   if (!A._batchStoreyMap) A._batchStoreyMap = {};
   if (!A._batchDiscMap) A._batchDiscMap = {};
 
-  // §S279: Reuse flush temp objects across calls — avoids alloc per flush (every 500-5000 elements)
-  var _flushM4, _flushEuler, _flushQuat, _flushPos, _flushScale;
   A._flushInstanced = function() {
     if (!A._pendingInstances) return;
-    if (!_flushM4) {
-      _flushM4 = new THREE.Matrix4(); _flushEuler = new THREE.Euler();
-      _flushQuat = new THREE.Quaternion(); _flushPos = new THREE.Vector3();
-      _flushScale = new THREE.Vector3(1, 1, 1);
-    }
-    const _m4 = _flushM4, _euler = _flushEuler, _quat = _flushQuat;
-    const _pos = _flushPos, _scale = _flushScale;
+    const _m4 = new THREE.Matrix4();
+    const _euler = new THREE.Euler();
+    const _quat = new THREE.Quaternion();
+    const _pos = new THREE.Vector3();
+    const _scale = new THREE.Vector3(1, 1, 1);
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
@@ -875,7 +850,6 @@ function setupStreaming(A) {
         let vOff = 0, iOff = 0, vBase = 0;
         const _v = new THREE.Vector3();
         const _n = new THREE.Vector3();
-        const _nm = new THREE.Matrix3();  // §S279: reuse across items — avoids alloc per element
 
         for (const item of items) {
           const el = item.el;
@@ -892,7 +866,7 @@ function setupStreaming(A) {
           _m4.compose(_pos, _quat, _scale);
 
           // Normal matrix (inverse transpose of upper 3x3)
-          _nm.getNormalMatrix(_m4);
+          const _nm = new THREE.Matrix3().getNormalMatrix(_m4);
 
           // Bake positions
           for (let v = 0; v < count; v++) {
@@ -1316,24 +1290,17 @@ function setupStreaming(A) {
     // §S260b: Also handle plain names like "hospital.db" → "hospital_meta.db"
     if (metaUrl === A.DB_URL) metaUrl = A.DB_URL.replace(/\.db$/, '_meta.db');
     if (metaUrl !== A.DB_URL) {
-      // §S274: import:// URLs live in IDB — check cache store, not network
-      if (A.DB_URL.startsWith('import://')) {
-        var _cached = await A._checkCache(metaUrl);
-        _splitMode = !!_cached;
-      } else {
-        try {
-          var headResp = await fetch(metaUrl, { method: 'HEAD' });
-          _splitMode = headResp.ok;
-        } catch(e) { _splitMode = false; }
-      }
+      try {
+        var headResp = await fetch(metaUrl, { method: 'HEAD' });
+        _splitMode = headResp.ok;
+      } catch(e) { _splitMode = false; }
     }
     console.log(`[S192] §DB_SPLIT_DETECT meta=${metaUrl} found=${_splitMode}`);
 
     if (_splitMode) {
       // ── §S260b: Three-phase — positions.bin (instant bboxes) → meta.db (panels) → geo.db (meshes) ──
       var geoUrl = A.DB_URL.replace('_extracted.db', '_geo.db');
-      // §S274: import:// URLs are IDB keys, not real URLs — don't try new URL()
-      var _geoAbsUrl = geoUrl.startsWith('import://') ? geoUrl : new URL(geoUrl, location.href).href;
+      var _geoAbsUrl = new URL(geoUrl, location.href).href;
       var posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
 
       // Phase 0: Try positions.bin for instant bboxes (< 3MB, loads in <1s)
@@ -1445,29 +1412,22 @@ function setupStreaming(A) {
         catch(e) { A._hasBbox = false; }
       }
 
-      // §S274: Phase 2 — geo.db. Skip _checkCache for import:// (avoids loading 363MB twice).
+      // §S260b: Phase 2 ��� Download geo.db fully (with progress). Sync streaming = fast.
       // Bboxes keep user engaged during download. Cached on second visit = instant.
       var _geoT0 = performance.now();
       var _geoOk = false;
       try {
-        var _geoCached = null;
-        if (!geoUrl.startsWith('import://')) {
-          _geoCached = await A._checkCache(geoUrl);
-        }
-        console.log(`[S260b] §GEO_CACHE_CHECK url=${geoUrl.split('/').pop()} hit=${!!_geoCached} import=${geoUrl.startsWith('import://')}`);
-        A.status.textContent = (_geoCached || geoUrl.startsWith('import://'))
+        var _geoCached = await A._checkCache(geoUrl);
+        console.log(`[S260b] §GEO_CACHE_CHECK url=${geoUrl.split('/').pop()} hit=${!!_geoCached}`);
+        A.status.textContent = _geoCached
           ? `Loading geometry from cache...`
           : `First visit — downloading geometry (${_posLoaded ? 'bboxes visible' : 'please wait'})...`;
         var geoBuf = _geoCached || await A.cachedFetch(geoUrl);
-        // §S274: Yield to UI before heavy sql.js parse — prevents browser freeze on 300MB+ geo
-        A.status.textContent = `Parsing geometry (${(geoBuf.byteLength / 1024 / 1024).toFixed(0)}MB)...`;
-        await new Promise(function(r) { setTimeout(r, 0); });
-        var _geoArr = (geoBuf instanceof Uint8Array) ? geoBuf : new Uint8Array(geoBuf);
-        A.libDb = new SQL.Database(_geoArr);
+        A.libDb = new SQL.Database(new Uint8Array(geoBuf));
         A._splitHasMeta = false;  // use sync streaming path (libDb has geometry)
         var _geoMs = (performance.now() - _geoT0).toFixed(0);
         var _geoMB = (geoBuf.byteLength / 1024 / 1024).toFixed(0);
-        var _src = (_geoCached || geoUrl.startsWith('import://')) ? 'cache' : 'download';
+        var _src = _geoCached ? 'cache' : 'download';
         console.log(`§SPLIT_GEO_LOADED src=${_src} size=${_geoMB}MB ms=${_geoMs}`);
         A.status.textContent = `Geometry ready (${_geoMB}MB, ${(_geoMs/1000).toFixed(1)}s). Streaming meshes...`;
         _geoOk = true;

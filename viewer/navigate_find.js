@@ -135,9 +135,8 @@
       '<select id="find-type" style="display:none"><option value="">' + _t('ui_find_all_types', 'All types') + '</option></select>',
       '<select id="find-storey" style="display:none"><option value="">' + _t('ui_all_storeys', 'All Storeys') + '</option></select>',
       // §S280: Outliner — Storey/Disc toggle + tree
-      '<div id="find-outliner-bar" style="display:flex;padding:4px 10px;gap:2px;border-bottom:1px solid rgba(255,255,255,0.06)">',
-      '  <button id="find-mode-storey" class="find-mode-btn active" style="flex:1;padding:6px;font-size:12px;font-weight:700;border:1px solid rgba(79,195,247,0.4);border-radius:6px 0 0 6px;background:rgba(79,195,247,0.2);color:#4fc3f7;cursor:pointer;letter-spacing:0.5px">Storey</button>',
-      '  <button id="find-mode-disc" class="find-mode-btn" style="flex:1;padding:6px;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,0.1);border-radius:0 6px 6px 0;background:transparent;color:#666;cursor:pointer;letter-spacing:0.5px">Discipline</button>',
+      '<div id="find-outliner-bar" style="display:flex;justify-content:center;padding:4px 10px;border-bottom:1px solid rgba(255,255,255,0.06)">',
+      '  <button id="find-mode-toggle" style="padding:6px 16px;font-size:12px;font-weight:700;border:1px solid rgba(79,195,247,0.4);border-radius:6px;background:rgba(79,195,247,0.2);color:#4fc3f7;cursor:pointer;letter-spacing:0.5px;min-width:120px">Storey</button>',
       '</div>',
       '<div id="find-tree" style="max-height:200px;overflow-y:auto;scrollbar-width:thin"></div>',
       // Legacy accordion rows — hidden, kept for backward compat
@@ -195,24 +194,40 @@
 
     // §S280: Outliner tree — Storey/Disc toggle
     var elTree = document.getElementById('find-tree');
-    var elModeStorey = document.getElementById('find-mode-storey');
-    var elModeDisc = document.getElementById('find-mode-disc');
+    var elModeToggle = document.getElementById('find-mode-toggle');
     var _treeMode = 'storey'; // 'storey' or 'disc'
+
+    // §S280: Audio thump — short click on mode toggle (lightweight, no file load)
+    var _audioCtx = null;
+    function _thump() {
+      try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = _audioCtx.createOscillator();
+        var gain = _audioCtx.createGain();
+        osc.connect(gain); gain.connect(_audioCtx.destination);
+        osc.frequency.value = 220;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.15, _audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.08);
+        osc.start(); osc.stop(_audioCtx.currentTime + 0.08);
+      } catch(e) { /* audio not available */ }
+    }
 
     function _setTreeMode(mode) {
       _treeMode = mode;
-      elModeStorey.classList.toggle('active', mode === 'storey');
-      elModeStorey.style.background = mode === 'storey' ? 'rgba(79,195,247,0.2)' : 'transparent';
-      elModeStorey.style.color = mode === 'storey' ? '#4fc3f7' : '#666';
-      elModeStorey.style.borderColor = mode === 'storey' ? 'rgba(79,195,247,0.4)' : 'rgba(255,255,255,0.1)';
-      elModeDisc.classList.toggle('active', mode === 'disc');
-      elModeDisc.style.background = mode === 'disc' ? 'rgba(79,195,247,0.2)' : 'transparent';
-      elModeDisc.style.color = mode === 'disc' ? '#4fc3f7' : '#666';
-      elModeDisc.style.borderColor = mode === 'disc' ? 'rgba(79,195,247,0.4)' : 'rgba(255,255,255,0.1)';
+      if (elModeToggle) elModeToggle.textContent = mode === 'storey' ? 'Storey' : 'Discipline';
+      // §S280: Restore full scene visibility on toggle — reset filters
+      if (A.filterStorey) A.filterStorey(null);
+      if (A.hiddenDiscs) A.hiddenDiscs.clear();
+      if (A.markDirty) A.markDirty();
+      _thump();
       buildTree();
+      console.log('§FIND_MODE_TOGGLE mode=' + mode);
     }
-    if (elModeStorey) elModeStorey.addEventListener('pointerup', function(e) { e.stopPropagation(); _setTreeMode('storey'); });
-    if (elModeDisc) elModeDisc.addEventListener('pointerup', function(e) { e.stopPropagation(); _setTreeMode('disc'); });
+    if (elModeToggle) elModeToggle.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      _setTreeMode(_treeMode === 'storey' ? 'disc' : 'storey');
+    });
 
     function buildTree() {
       if (!elTree || !A.db) return;
@@ -299,6 +314,8 @@
         var node = _treeNode(storey, storeyCnt, 0, {
           children: true, // signal: has children, loaded lazily
           onTap: function() {
+            // §S280: Storey tap = 3D filter (isolate storey in scene)
+            if (A.filterStorey) A.filterStorey(storey);
             elStorey.value = storey;
             elType.value = '';
             elName.value = '';
@@ -971,6 +988,10 @@
 
       var r = nav.results[idx];
       if (!r) return;
+
+      // §S280: Restore full scene visibility before fly-to (undo storey/disc filter)
+      if (A.filterStorey) A.filterStorey(null);
+      if (A.hiddenDiscs) A.hiddenDiscs.clear();
 
       // S275: IFC bbox highlight from DB (same as picking.js — works for merged/batched)
       highlightElement(r.guid);

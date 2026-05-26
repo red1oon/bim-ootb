@@ -34,11 +34,16 @@
   var _ganttTasks = [];  // computed task groups for click detection
   var _sCurveData = null;  // cached S-curve points (computed once)
 
-  // §S278: Cached temp objects — reused per renderAtTime/cinematic tick to avoid GC pressure
-  var _tmV1 = new THREE.Vector3(), _tmV2 = new THREE.Vector3(), _tmV3 = new THREE.Vector3();
-  var _tmM4 = new THREE.Matrix4();
-  var _tmColor = new THREE.Color();
-  var _tmRay = new THREE.Raycaster();
+  // §S278: Cached temp objects — lazy-init on first use (THREE may not be loaded yet)
+  var _tmV1, _tmV2, _tmV3, _tmM4, _tmColor, _tmRay;
+  function _tmEnsure() {
+    if (_tmV1) return;
+    _tmV1 = new THREE.Vector3(); _tmV2 = new THREE.Vector3(); _tmV3 = new THREE.Vector3();
+    _tmM4 = new THREE.Matrix4();
+    _tmColor = new THREE.Color();
+    _tmRay = new THREE.Raycaster();
+    console.log('§TM_LAZY_INIT cached THREE objects created');
+  }
 
   // ── Query ops from DB ──
   function loadOps() {
@@ -561,6 +566,7 @@
   function renderAtTime(cursorMs) {
     var app = A();
     if (!app || !app.scene) return;
+    _tmEnsure();
     if (!_zeroMatrix) _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
     if (!_whiteColor) _whiteColor = new THREE.Color(1, 1, 1);
     _prevCursor = _cursor;
