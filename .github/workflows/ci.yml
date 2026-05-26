@@ -1,0 +1,41 @@
+name: CI
+on: push
+
+jobs:
+  fast-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JS syntax check
+        run: find viewer -name '*.js' ! -path '*/lib/*' -exec node --check {} +
+
+      - name: Import worker safety
+        run: node tests/test_import_worker_safety.js
+
+      - name: SW precache audit
+        run: node tests/audit_sw_precache.js
+
+      - name: Script tag audit
+        run: node tests/audit_script_tags.js
+
+      - name: Split-DB wiring
+        run: node tests/test_s274_split_db_wiring.js
+
+  golden-path:
+    runs-on: ubuntu-latest
+    needs: fast-checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        working-directory: tests
+        run: npm ci && npx playwright install chromium
+
+      - name: Golden path — drop + open + stream + save
+        working-directory: tests
+        run: npx playwright test --project=desktop s274-golden-path
