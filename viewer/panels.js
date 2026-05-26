@@ -1064,9 +1064,8 @@ function setupPanels(A) {
 
   // §S280: Mobile + Desktop — ESC cascades close, panels stack normally
 
-  // §S280: Mobile scrollable pill — ⋯ trigger + drag-to-reveal icons
+  // §S280: Scrollable pill — ⋯ trigger + drag-to-reveal icons (both platforms)
   (function() {
-    if (!window._isMobile) return;
     var pill = document.getElementById('mobile-pill');
     var scroll = document.getElementById('mobile-pill-scroll');
     var trigger = document.getElementById('mobile-trigger');
