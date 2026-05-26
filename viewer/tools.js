@@ -244,7 +244,17 @@ function setupTools(A) {
 
     var cacheBust = '&v=' + Date.now();
     var chartsUrl = 'boq_charts.html?db=' + encodeURIComponent(dbParam) + '&bld=' + bld + diffParam + cacheBust;
-    window.open(chartsUrl, '_blank');
+    // §S274: On mobile, navigate same tab — two tabs = double RAM, causes slow 4D5D load.
+    // Dispose Three.js scene first to free GPU memory for the charts page.
+    var _isMobile = navigator.maxTouchPoints > 0 && window.screen.width < 1024;
+    if (_isMobile) {
+      if (A.renderer) { A.renderer.dispose(); A.renderer.forceContextLoss(); }
+      if (A.scene) { A.scene.traverse(function(o) { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); }
+      console.log('[S274] §4D5D_MOBILE_DISPOSE scene freed, navigating same tab');
+      location.href = chartsUrl;
+    } else {
+      window.open(chartsUrl, '_blank');
+    }
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_analytics_opened||'4D/5D analytics opened for {name}').replace('{name}', bld);
   };
 

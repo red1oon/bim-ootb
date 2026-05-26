@@ -49,7 +49,7 @@
   <button onclick="toggleTheme()" data-trl-title="ui_tt_theme" title="Light/Dark">&#9788;</button>
   <button onclick="copyPageUrl(this)" title="Copy shareable link">&#128203;</button>
   <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" title="Change locale / currency" style="font-size:20px">&#127760;</button>
-  <button onclick="window.close()" title="Back">&#8592; Back</button>
+  <button onclick="if(history.length>1){history.back()}else{window.close()}" title="Back">&#8592; Back</button>
 </div>
 <div class="charts" id="charts"></div>
 <div id="status"></div>
