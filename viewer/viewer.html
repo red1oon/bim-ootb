@@ -102,7 +102,7 @@
     border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 11px;
   }
   #hud #storey-body button:hover, #hud #disc-body button:hover { background: #444; color: #4fc3f7; }
-  #hud #storey-body button.active, #hud #disc-body button.active { background: #ff2222; color: #fff; border-color: #ff2222; }
+  #hud #storey-body button.active, #hud #disc-body button.active { background: #4fc3f7; color: #000; border-color: #4fc3f7; }
   #hud #disc-body button { opacity: 0.3; text-decoration: line-through; }
   #hud #disc-body button.active { opacity: 1.0; text-decoration: none; }
   #info-panel {
@@ -299,26 +299,73 @@
   }
   #walk-anchor-prompt button.cancel { background: #555; }
 
+  /* §S280: Mobile bottom — single ⋯ trigger */
+  #mobile-bar {
+    display: none; /* shown only on mobile via media query */
+    position: fixed; bottom: 0; right: 0; z-index: 500;
+    padding: 8px calc(8px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) 8px;
+  }
+  #mobile-bar button {
+    width: 48px; height: 48px; border: none; border-radius: 50%;
+    background: rgba(10,10,30,0.70); color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; border: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  #mobile-bar button:active { background: rgba(79,195,247,0.3); }
+  #mobile-bar button svg { width: 22px; height: 22px; pointer-events: none; }
+  /* §S280: Scrollable pill — rises from bottom, 3 icons visible, drag to reveal */
+  #mobile-pill {
+    position: fixed; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); right: 8px; z-index: 499;
+    background: rgba(10,10,30,0.85); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 24px; padding: 6px;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    max-height: 168px; /* ~3 icons × 52px + padding */
+    overflow: hidden;
+  }
+  #mobile-pill-scroll {
+    overflow-y: auto; overflow-x: hidden;
+    max-height: 156px; /* inner scroll area */
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+  }
+  #mobile-pill-scroll::-webkit-scrollbar { display: none; }
+  #mobile-pill-scroll button {
+    width: 44px; height: 44px; border: none; border-radius: 50%;
+    background: transparent; color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; margin: 4px 0; transition: background 0.15s;
+  }
+  #mobile-pill-scroll button:active { background: rgba(255,255,255,0.15); }
+  #mobile-pill-scroll button.active { background: #4fc3f7; color: #000; }
+  #mobile-pill-scroll button svg { width: 22px; height: 22px; pointer-events: none; }
+  /* §S280: [] min/max button */
+  #minmax-btn {
+    position: fixed; bottom: 8px; left: 8px; z-index: 501;
+    width: 36px; height: 36px; border: 1px solid #666; border-radius: 8px;
+    background: rgba(40,40,40,0.85); color: #4fc3f7; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #minmax-btn svg { width: 18px; height: 18px; pointer-events: none; }
+
   /* ── Mobile: tight panels, tap-to-toggle ── */
   @media (max-width: 600px) {
-    /* Icon pill: right edge, larger tap targets, TM hidden */
-    #icon-pill { right: 8px; padding: 6px 4px; }
-    #icon-pill button { width: 44px; height: 44px; }
-    #icon-pill button svg { width: 24px; height: 24px; }
+    /* §S280: Hide right-edge pill on mobile — bottom ⋯ trigger replaces it */
+    #icon-pill { display: none !important; }
+    #mobile-bar { display: block !important; }
     /* Overflow: bottom drawer instead of dropdown */
-    #search-box { top: auto !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+    #search-box { top: auto !important; bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important; left: 0 !important; right: 0 !important;
       transform: none !important; max-width: none; border-radius: 16px 16px 0 0;
-      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 490 !important; }
+      padding: 12px 16px 12px; z-index: 490 !important; }
     #search-box input { display: none !important; }
     #search-box button { padding: 6px 8px !important; font-size: 12px !important; min-height: 44px; }
     #overflow-scrim.active { background: rgba(0,0,0,0.4); }
 
-    /* §S271: Walk/Site/NLP moved into icon-pill — no standalone buttons on mobile */
+    /* §S271: Walk/Site/NLP moved into bottom bar — no standalone buttons on mobile */
     #site-cam-btn { display: none !important; }
     #walk-mode-btn { display: none !important; }
     #nlp-btn { display: none !important; }
-    /* §S271: Mobile pill — Walk replaces Red Pill (RP too heavy for mobile) */
-    #pill-walk { display: flex !important; }
+    /* §S280: Red Pill hidden on mobile (too heavy — Walk is in mobile pill) */
     #doc-btn { display: none !important; }
     /* §S265: NLP bar — fit beside HUD, don't span full width */
     #nlp-bar { left: auto !important; right: 0 !important; max-width: 55vw !important; border-radius: 0 0 0 8px !important; }
@@ -331,18 +378,18 @@
     #hud #storey-body button, #hud #disc-body button { padding: 4px 8px; font-size: 12px; min-height: 32px; }
     #hud .hud-accordion-header { font-size: 12px; padding: 6px 0; }
 
-    /* Info panel: right side — z15 */
-    #info-panel { bottom: 50px !important; left: auto !important; right: 8px !important; max-width: 180px; min-width: auto; font-size: 11px; z-index: 15 !important; }
+    /* Info panel: above bottom bar */
+    #info-panel { bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important; left: auto !important; right: 8px !important; max-width: 180px; min-width: auto; font-size: 11px; z-index: 15 !important; }
 
-    /* Status bar: bottom, z10 */
-    #status { bottom: 8px; left: 8px; right: 8px; transform: none; text-align: center; font-size: 12px; z-index: 10 !important; }
+    /* Status bar: above bottom bar */
+    #status { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; transform: none; text-align: center; font-size: 12px; z-index: 10 !important; }
 
     /* Issues panel */
     #issues-panel { top: 8px; left: 8px; right: 8px; width: auto; max-height: 80vh; }
 
     /* Section slider */
-    #section-slider-panel { top: auto !important; bottom: 80px; left: 8px; right: 8px; min-width: auto; z-index: 12 !important; }
-    #sunglass-slider-panel { top: auto !important; bottom: 80px; left: 8px; right: 8px; min-width: auto; max-width: none; z-index: 200 !important; }
+    #section-slider-panel { top: auto !important; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; min-width: auto; z-index: 12 !important; }
+    #sunglass-slider-panel { top: auto !important; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; min-width: auto; max-width: none; z-index: 200 !important; }
 
     /* §S265: Larger close/× targets on mobile for all panels */
     .panel-toggle { font-size: 22px !important; padding: 8px 12px !important; min-width: 44px; min-height: 44px; display: inline-flex !important; align-items: center; justify-content: center; }
@@ -353,10 +400,10 @@
     /* Swipe-hidden: overrides everything */
     .swipe-hidden, #hud.swipe-hidden, #search-box.swipe-hidden, #info-panel.swipe-hidden { display: none !important; }
 
-    /* Hide building list + search on mobile */
+    /* Hide building list + search on mobile, old panel toggle replaced by minmax */
     #building-list { display: none !important; }
     .desktop-only { display: none !important; }
-    #panel-toggle-btn { display: block !important; }
+    #panel-toggle-btn { display: none !important; }
   }
 
   /* ── Landscape: everything tight, persist Walk/Site ── */
@@ -428,12 +475,14 @@
 <div id="icon-pill">
   <button id="pill-walk" onclick="toggleWalkMode();event.stopPropagation()" data-trl-title="ui_tt_walk" title="Walk Mode" style="display:none"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-3.9 2.5-4.5a5.32 5.32 0 0 1 3-1c3 0 4.5 2.02 5 4 1.12 0 1.44.93 1.44 2H14a3 3 0 0 1 3 3v2"/><path d="M2 22h20"/><path d="M7.5 22v-1.5a2.5 2.5 0 0 1 5 0V22"/><path d="M14.5 22v-1.5a2.5 2.5 0 0 1 5 0V22"/></svg></button>
   <button id="doc-btn" onclick="if(typeof toggleDocPill==='function')toggleDocPill();event.stopPropagation()" title="Red Pill"><img src="redpill.png" width="24" height="24" alt="Red Pill" style="pointer-events:none"></button>
-  <button id="pill-tm" onclick="if(typeof toggleTimeMachine==='function')toggleTimeMachine();event.stopPropagation()" data-trl-title="ui_tt_tm" title="Time Machine"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>
+  <!-- pill-tm: removed from pill, now in Help palette (T) -->
+  <button id="pill-tm" style="display:none!important"></button>
   <button id="pill-measure" onclick="toggleMeasure();event.stopPropagation()" data-trl-title="ui_tt_measure" title="Measure"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg></button>
   <button onclick="if(typeof APP!=='undefined'&&APP.openFindPanel)APP.openFindPanel();event.stopPropagation()" data-trl-title="ui_tt_find" title="Find"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
   <button onclick="if(typeof APP!=='undefined'&&APP.quickShare)APP.quickShare();event.stopPropagation()" data-trl-title="ui_tt_share" title="Share"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></button>
   <button onclick="if(typeof showCommandPalette==='function')showCommandPalette();event.stopPropagation()" data-trl-title="ui_tt_help" title="Help"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg></button>
-  <button id="pill-record" onclick="if(typeof toggleRecord==='function')toggleRecord();event.stopPropagation()" title="Record" style="display:none"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg></button>
+  <!-- pill-record: removed from pill, now in Help palette (R) -->
+  <button id="pill-record" style="display:none!important"></button>
   <button id="more-btn" onclick="toggleOverflow();event.stopPropagation()" title="More"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
 </div>
 <div id="overflow-scrim" onclick="toggleOverflow()"></div>
@@ -444,13 +493,13 @@
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:4px">
       <button onclick="toggleMeasure();toggleOverflow();event.stopPropagation()" title="Measure" data-trl-title="ui_tt_measure" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg></button>
       <button id="section-btn" onclick="toggleSection();toggleOverflow();event.stopPropagation()" title="Section Cut" data-trl-title="ui_tt_section" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg></button>
-      <button id="xray-btn" onclick="toggleXray();toggleOverflow();event.stopPropagation()" title="X-Ray" data-trl-title="ui_tt_xray" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/></svg></button>
+      <!-- §S280: X-Ray removed — OutlinePass replaces it -->
       <button onclick="toggleIssues();toggleOverflow();event.stopPropagation()" title="Issues" data-trl-title="ui_tt_issues" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></button>
       <button onclick="toggleOverflow();setTimeout(function(){if(APP&&APP._loadClashRules)APP._loadClashRules(function(r){APP._currentClashRules=r;APP._showClashMatrix(r,document.body)})},100);event.stopPropagation()" title="Clash Matrix" data-trl-title="ui_tt_clash" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></button>
       <button id="fly-btn" onclick="toggleFlyAround();toggleOverflow();event.stopPropagation()" title="Fly Tour" data-trl-title="ui_tt_fly" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></button>
       <button id="grid-2d-btn" onclick="if(window._isMobile){APP.status.textContent='2D Plans — Desktop only';toggleOverflow();return}open2DPlans();toggleOverflow();event.stopPropagation()" title="2D Plans" data-trl-title="ui_tt_2d" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/></svg></button>
       <button id="sunglass-btn" onclick="toggleOverflow();toggleSunglass();event.stopPropagation()" title="Palette" data-trl-title="ui_tt_sunglass" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>
-      <button id="night-btn" onclick="toggleNightMode();toggleOverflow();event.stopPropagation()" title="Night" data-trl-title="ui_tt_night" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg></button>
+      <button onclick="toggleNightMode();toggleOverflow();event.stopPropagation()" title="Night" data-trl-title="ui_tt_night" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg></button>
       <button id="shadow-overflow-btn" onclick="toggleShadow();toggleOverflow();event.stopPropagation()" title="Shadow" data-trl-title="ui_tt_shadow" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></button>
       <button id="bg-overflow-btn" onclick="toggleBackground();toggleOverflow();event.stopPropagation()" title="Background" data-trl-title="ui_tt_bg" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/></svg></button>
       <button onclick="toggleFullscreen();toggleOverflow();event.stopPropagation()" title="Fullscreen" data-trl-title="ui_tt_fullscreen" style="background:transparent;color:#ddd;border:none;border-radius:8px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
@@ -509,12 +558,20 @@
     <button id="issue-d-status-btn" style="margin-top:8px;padding:8px 16px;border:none;border-radius:6px;color:#fff;font-size:13px;cursor:pointer;width:100%">🔴 <span data-trl="ui_open">Open</span></button>
   </div>
 </div>
-<button id="panel-toggle-btn" onclick="toggleAllPanels()"
-        style="position:fixed;bottom:16px;left:16px;z-index:100;
-               background:rgba(40,40,40,0.85);color:#4fc3f7;border:1px solid #666;
-               border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer">
-  −
+<!-- §S280: [] min/max replaces (-) toggle -->
+<button id="panel-toggle-btn" style="display:none">−</button>
+<button id="minmax-btn" onclick="toggleAllPanels()" title="Min/Max">
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
 </button>
+<!-- §S280: Mobile bottom — single ⋯ trigger + scrollable pill -->
+<div id="mobile-bar">
+  <button id="mobile-trigger" onclick="toggleMobilePill();event.stopPropagation()" title="Menu">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+  </button>
+</div>
+<div id="mobile-pill" style="display:none">
+  <div id="mobile-pill-scroll"></div>
+</div>
 <!-- S266: Timeline slider — Doc mode phase scrubber -->
 <div id="doc-timeline" style="display:none;position:fixed;bottom:52px;left:10%;right:10%;z-index:11;
   background:rgba(10,10,30,0.6);border-radius:8px;padding:6px 12px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
@@ -692,7 +749,7 @@
 <!-- Hidden legacy buttons referenced by tools.js -->
 <button id="bg-btn" style="display:none"></button>
 <button id="shadow-btn" style="display:none"></button>
-<!-- night-btn is now on the overflow button (line 453) -->
+<button id="night-btn" style="display:none"></button>
 <span class="section-val" id="night-val" style="display:none">Off</span>
 
 <!-- Site Camera Overlay (mobile only) -->
@@ -764,23 +821,22 @@
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="effects.js?v=1" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
 <script src="scene.js?v=45" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
-<script src="helpers.js?v=4" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
-<script src="error_reporter.js?v=1" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>
-<script src="streaming.js?v=46" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
+<script src="streaming.js?v=45" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=6" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=19" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=20" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=25" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
-<script src="picking.js?v=25" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
+<script src="picking.js?v=24" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="tour.js?v=3" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
 <script src="clash_report.js?v=1" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=1" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
 <script src="clash_matrix.js?v=1" onerror="console.warn('§LOAD_FAIL clash_matrix.js')"></script>
-<script src="measure.js?v=44" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
+<script src="measure.js?v=43" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=7" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=2" onerror="console.warn('§LOAD_FAIL share.js')"></script>
 <script src="issues.js?v=5" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
 <script src="excel.js?v=4" onerror="console.warn('§LOAD_FAIL excel.js')"></script>
-<script src="walk.js?v=8" onerror="console.warn('§LOAD_FAIL walk.js')"></script>
+<script src="walk.js?v=7" onerror="console.warn('§LOAD_FAIL walk.js')"></script>
 <!-- navigate.js lazy-loaded on demand by main.js A.loadNavigate() -->
 <script src="city.js?v=7"></script>
 <script src="rates.js?v=7"></script>
@@ -791,7 +847,7 @@
 <script src="import_db_builder.js?v=2"></script>
 <script src="diff.js?v=3"></script>
 <script src="variation_order.js?v=2"></script>
-<script src="import.js?v=4"></script>
+<script src="import.js?v=3"></script>
 <script src="routewalker.js?v=1" onerror="console.warn('§LOAD_FAIL routewalker.js — MEP generation disabled')"></script>
 <script src="grid_dims.js?v=6"></script>
 <script src="grid_config.js?v=2" onerror="console.warn('[GridConfig] grid_config.js skipped')"></script>
@@ -828,7 +884,7 @@
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=2" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
 <script src="time_machine.js?v=47" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
-<script src="main.js?v=33"></script>
+<script src="main.js?v=32"></script>
 <!-- Styled tooltip bubbles for [data-trl-title] buttons — appended to body, not clipped by overflow:hidden -->
 <style>#ootb-tip{display:none;position:fixed;z-index:9990;background:rgba(10,10,30,0.92);color:#4fc3f7;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(79,195,247,0.35);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.4)}</style>
 <script>
@@ -868,7 +924,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=482')
+  navigator.serviceWorker.register('sw.js?v=484')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
