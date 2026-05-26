@@ -504,7 +504,8 @@ async function initViewer() {
   var _orbitDPR = window._isMobile ? 0.75 : Math.min(_fullDPR, 1);  // §S274: mobile=0.75x during drag
   var _orbiting = false;
   APP.controls.addEventListener('start', function() {
-    if (!_orbiting && APP.streamedCount > 5000) {
+    // §S280c: DPR reduction during bbox phase too (streamedCount=0 but 122K wireframes)
+    if (!_orbiting && (APP.streamedCount > 5000 || APP._bboxPlaceholders.length > 0)) {
       _orbiting = true;
       APP.renderer.setPixelRatio(_orbitDPR);
     }
