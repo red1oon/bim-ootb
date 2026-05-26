@@ -295,7 +295,8 @@ function setupHelpers(A) {
                 '&body=' + encodeURIComponent(body) + '&labels=bug';
         }
 
-        window.open(url, '_blank');
+        // §S280: Use location.href — window.open is popup-blocked on mobile
+        window.location.href = url;
       }
     };
 

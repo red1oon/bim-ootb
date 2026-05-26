@@ -131,16 +131,21 @@
       '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Search elements…') + '">',
       '</div>',
       '<div id="find-chips"></div>',
-      // Hidden selects — still used for data, but UI is accordion rows
+      // Hidden selects — still used for data binding
       '<select id="find-type" style="display:none"><option value="">' + _t('ui_find_all_types', 'All types') + '</option></select>',
       '<select id="find-storey" style="display:none"><option value="">' + _t('ui_all_storeys', 'All Storeys') + '</option></select>',
-      // S275: Storey accordion
-      '<div class="find-acc-row" id="find-storey-row">',
+      // §S280: Outliner — Storey/Disc toggle + tree
+      '<div id="find-outliner-bar" style="display:flex;padding:4px 10px;gap:2px;border-bottom:1px solid rgba(255,255,255,0.06)">',
+      '  <button id="find-mode-storey" class="find-mode-btn active" style="flex:1;padding:4px;font-size:10px;border:1px solid rgba(79,195,247,0.3);border-radius:4px 0 0 4px;background:rgba(79,195,247,0.15);color:#4fc3f7;cursor:pointer">Storey</button>',
+      '  <button id="find-mode-disc" class="find-mode-btn" style="flex:1;padding:4px;font-size:10px;border:1px solid rgba(255,255,255,0.1);border-radius:0 4px 4px 0;background:transparent;color:#888;cursor:pointer">Discipline</button>',
+      '</div>',
+      '<div id="find-tree" style="max-height:200px;overflow-y:auto;scrollbar-width:thin"></div>',
+      // Legacy accordion rows — hidden, kept for backward compat
+      '<div class="find-acc-row" id="find-storey-row" style="display:none">',
       '  <div class="find-acc-header" id="find-storey-hdr"><span class="fa-label">All Storeys</span><span class="fa-chevron">\u25BC</span></div>',
       '  <div class="find-acc-body" id="find-storey-body"></div>',
       '</div>',
-      // S275: Type accordion
-      '<div class="find-acc-row" id="find-type-row">',
+      '<div class="find-acc-row" id="find-type-row" style="display:none">',
       '  <div class="find-acc-header" id="find-type-hdr"><span class="fa-label">All Types</span><span class="fa-chevron">\u25BC</span></div>',
       '  <div class="find-acc-body" id="find-type-body"></div>',
       '</div>',
@@ -183,14 +188,193 @@
     var elTypeBody = document.getElementById('find-type-body');
 
     function toggleAccRow(row) {
-      // Close other rows
       [elStoreyRow, elTypeRow].forEach(function(r) { if (r !== row) r.classList.remove('expanded'); });
-      // Toggle results closed when opening a filter
       panel.classList.remove('results-expanded');
       row.classList.toggle('expanded');
     }
-    elStoreyHdr.addEventListener('pointerup', function(e) { e.stopPropagation(); toggleAccRow(elStoreyRow); });
-    elTypeHdr.addEventListener('pointerup', function(e) { e.stopPropagation(); toggleAccRow(elTypeRow); });
+
+    // §S280: Outliner tree — Storey/Disc toggle
+    var elTree = document.getElementById('find-tree');
+    var elModeStorey = document.getElementById('find-mode-storey');
+    var elModeDisc = document.getElementById('find-mode-disc');
+    var _treeMode = 'storey'; // 'storey' or 'disc'
+
+    function _setTreeMode(mode) {
+      _treeMode = mode;
+      elModeStorey.classList.toggle('active', mode === 'storey');
+      elModeStorey.style.background = mode === 'storey' ? 'rgba(79,195,247,0.15)' : 'transparent';
+      elModeStorey.style.color = mode === 'storey' ? '#4fc3f7' : '#888';
+      elModeStorey.style.borderColor = mode === 'storey' ? 'rgba(79,195,247,0.3)' : 'rgba(255,255,255,0.1)';
+      elModeDisc.classList.toggle('active', mode === 'disc');
+      elModeDisc.style.background = mode === 'disc' ? 'rgba(79,195,247,0.15)' : 'transparent';
+      elModeDisc.style.color = mode === 'disc' ? '#4fc3f7' : '#888';
+      elModeDisc.style.borderColor = mode === 'disc' ? 'rgba(79,195,247,0.3)' : 'rgba(255,255,255,0.1)';
+      buildTree();
+    }
+    if (elModeStorey) elModeStorey.addEventListener('pointerup', function(e) { e.stopPropagation(); _setTreeMode('storey'); });
+    if (elModeDisc) elModeDisc.addEventListener('pointerup', function(e) { e.stopPropagation(); _setTreeMode('disc'); });
+
+    function buildTree() {
+      if (!elTree || !A.db) return;
+      var bld = A.activeBuilding || '';
+      var filter = elName.value.trim().toLowerCase();
+      elTree.innerHTML = '';
+      try {
+        if (_treeMode === 'storey') _buildStoreyTree(bld, filter);
+        else _buildDiscTree(bld, filter);
+      } catch(e) { console.warn('§FIND_TREE error', e); }
+    }
+
+    function _treeNode(label, count, level, opts) {
+      opts = opts || {};
+      var row = document.createElement('div');
+      row.style.cssText = 'padding:4px ' + (10 + level * 12) + 'px;cursor:pointer;font-size:11px;color:#ccc;' +
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px';
+      var arrow = document.createElement('span');
+      arrow.style.cssText = 'font-size:8px;opacity:0.5;width:10px;text-align:center;flex-shrink:0';
+      arrow.textContent = opts.children ? '\u25B8' : '';
+      var text = document.createElement('span');
+      text.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis';
+      text.textContent = label;
+      var badge = document.createElement('span');
+      badge.style.cssText = 'font-size:9px;color:#666;flex-shrink:0';
+      badge.textContent = '(' + count + ')';
+      row.appendChild(arrow);
+      row.appendChild(text);
+      row.appendChild(badge);
+
+      // Hover
+      row.addEventListener('pointerenter', function() { row.style.background = 'rgba(79,195,247,0.08)'; });
+      row.addEventListener('pointerleave', function() { row.style.background = ''; });
+
+      // Expand/collapse children — lazy-loaded on first expand
+      var childContainer = null;
+      var expanded = false;
+      if (opts.children) {
+        childContainer = document.createElement('div');
+        childContainer.style.display = 'none';
+        // If children is an array (pre-built), append them
+        if (Array.isArray(opts.children)) {
+          opts.children.forEach(function(c) { childContainer.appendChild(c); });
+        }
+        // Otherwise children===true means lazy — onExpand fills the container
+      }
+
+      row.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        if (childContainer) {
+          expanded = !expanded;
+          if (expanded && opts.onExpand) opts.onExpand(childContainer);
+          childContainer.style.display = expanded ? 'block' : 'none';
+          arrow.textContent = expanded ? '\u25BE' : '\u25B8';
+        }
+        if (opts.onTap) opts.onTap();
+      });
+
+      var frag = document.createDocumentFragment();
+      frag.appendChild(row);
+      if (childContainer) frag.appendChild(childContainer);
+      return frag;
+    }
+
+    // §S280: Storey mode — parent nodes instant, children lazy-load on expand
+    function _buildStoreyTree(bld, filter) {
+      var storeySql = 'SELECT storey, COUNT(*) as cnt FROM elements_meta' +
+        ' WHERE storey IS NOT NULL' + (bld ? ' AND building = ?' : '') +
+        ' GROUP BY storey ORDER BY storey';
+      var storeys = A.db.exec(storeySql, bld ? [bld] : []);
+      if (!storeys.length) return;
+
+      storeys[0].values.forEach(function(sr) {
+        var storey = sr[0];
+        var storeyCnt = sr[1];
+        if (!storey) return;
+        if (filter && storey.toLowerCase().indexOf(filter) < 0) return;
+
+        var node = _treeNode(storey, storeyCnt, 0, {
+          children: true, // signal: has children, loaded lazily
+          onTap: function() {
+            elStorey.value = storey;
+            elType.value = '';
+            elName.value = '';
+            runSearch();
+          },
+          onExpand: function(container) {
+            if (container._loaded) return;
+            container._loaded = true;
+            // Lazy: spaces/rooms (large→small), fallback to types
+            var spaceSql = 'SELECT element_name, COUNT(*) as cnt FROM elements_meta' +
+              ' WHERE storey = ? AND ifc_class IN (\'IfcSpace\',\'IfcRoom\',\'IfcZone\')' +
+              (bld ? ' AND building = ?' : '') +
+              ' GROUP BY element_name ORDER BY cnt DESC';
+            var spaces = A.db.exec(spaceSql, bld ? [storey, bld] : [storey]);
+            if (spaces.length && spaces[0].values.length) {
+              spaces[0].values.forEach(function(sp) {
+                container.appendChild(_treeNode(sp[0] || '(unnamed)', sp[1], 1, {
+                  onTap: function() { elStorey.value = storey; elName.value = sp[0] || ''; runSearch(); }
+                }));
+              });
+            } else {
+              var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
+                ' WHERE storey = ?' + (bld ? ' AND building = ?' : '') +
+                ' GROUP BY ifc_class ORDER BY cnt DESC LIMIT 10';
+              var types = A.db.exec(typeSql, bld ? [storey, bld] : [storey]);
+              if (types.length) {
+                types[0].values.forEach(function(tp) {
+                  container.appendChild(_treeNode(friendlyClass(tp[0]), tp[1], 1, {
+                    onTap: function() { elStorey.value = storey; elType.value = tp[0]; runSearch(); }
+                  }));
+                });
+              }
+            }
+            console.log('§FIND_TREE_LAZY storey=' + storey + ' children=' + container.childElementCount);
+          }
+        });
+        elTree.appendChild(node);
+      });
+      console.log('§FIND_TREE mode=storey storeys=' + storeys[0].values.length);
+    }
+
+    // §S280: Disc mode — parent nodes instant, children lazy-load on expand
+    function _buildDiscTree(bld, filter) {
+      var discSql = 'SELECT discipline, COUNT(*) as cnt FROM elements_meta' +
+        ' WHERE discipline IS NOT NULL' + (bld ? ' AND building = ?' : '') +
+        ' GROUP BY discipline ORDER BY cnt DESC';
+      var discs = A.db.exec(discSql, bld ? [bld] : []);
+      if (!discs.length) return;
+
+      discs[0].values.forEach(function(dr) {
+        var disc = dr[0];
+        var discCnt = dr[1];
+        if (!disc) return;
+        if (filter && disc.toLowerCase().indexOf(filter) < 0) return;
+
+        var node = _treeNode(disc, discCnt, 0, {
+          children: true,
+          onTap: function() {
+            if (A.toggleDisc) A.toggleDisc(disc);
+          },
+          onExpand: function(container) {
+            if (container._loaded) return;
+            container._loaded = true;
+            var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
+              ' WHERE discipline = ?' + (bld ? ' AND building = ?' : '') +
+              ' GROUP BY ifc_class ORDER BY cnt DESC';
+            var types = A.db.exec(typeSql, bld ? [disc, bld] : [disc]);
+            if (types.length) {
+              types[0].values.forEach(function(tp) {
+                container.appendChild(_treeNode(friendlyClass(tp[0]), tp[1], 1, {
+                  onTap: function() { elType.value = tp[0]; elStorey.value = ''; runSearch(); }
+                }));
+              });
+            }
+            console.log('§FIND_TREE_LAZY disc=' + disc + ' children=' + container.childElementCount);
+          }
+        });
+        elTree.appendChild(node);
+      });
+      console.log('§FIND_TREE mode=disc discs=' + discs[0].values.length);
+    }
 
     // Tap selected text → re-expand results list
     var elSelText = document.getElementById('find-selected-text');
@@ -262,6 +446,7 @@
       }
       // Regular element search
       populateDropdowns();
+      buildTree();
       runSearch();
     }
 
@@ -338,12 +523,13 @@
       panel.style.display = 'block';
       elName.value = searchTerm || '';
       populateDropdowns();
+      buildTree();
       buildChips();
-      // §S278: Only search if user provided a term — skip unfiltered 48K query on open
-      if (searchTerm) { _handleInput(searchTerm); }
+      if (searchTerm) { _handleInput(searchTerm); } else { runSearch(); }
       // S275: Auto-focus — panel system + input
       if (typeof window._focusPanel === 'function') window._focusPanel('find');
-      elName.focus();
+      // §S280: Mobile — don't steal focus (triggers virtual keyboard). User taps searchbox when ready.
+      if (!window._isMobile) elName.focus();
       console.log('[S233] §NAV_FIND_OPEN term="' + (searchTerm || '') + '" voice=' + nav.voiceMode);
     };
 
@@ -373,6 +559,9 @@
     });
 
     // ── Populate dropdowns — show all types/storeys, with match counts when searching ──
+    // §S280: Two-phase dropdowns — storeys appear instantly, types load in background
+    var _typesTimer = 0;
+
     function populateDropdowns() {
       if (!A.db) return;
       var bld = A.activeBuilding || '';
@@ -380,50 +569,7 @@
       var savedType = elType.value;
       var savedStorey = elStorey.value;
       try {
-        // Get match counts per type (only if there's a search term)
-        var matchByType = {};
-        if (name) {
-          var mtSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta WHERE' +
-            ' (LOWER(element_name) LIKE LOWER(?) OR LOWER(ifc_class) LIKE LOWER(?))' +
-            (bld ? ' AND building = ?' : '') +
-            (savedStorey ? ' AND storey = ?' : '') + ' GROUP BY ifc_class';
-          var mtParams = ['%' + name + '%', '%' + name + '%'];
-          if (bld) mtParams.push(bld);
-          if (savedStorey) mtParams.push(savedStorey);
-          var mtRows = A.db.exec(mtSql, mtParams);
-          if (mtRows.length > 0) mtRows[0].values.forEach(function(r) { matchByType[r[0]] = r[1]; });
-        }
-
-        // S275: Types filtered by selected storey (cross-filter)
-        var typeWhere = bld || savedStorey ? ' WHERE' : '';
-        var typeClauses = [];
-        var typeParams = [];
-        if (bld) { typeClauses.push('building = ?'); typeParams.push(bld); }
-        if (savedStorey) { typeClauses.push('storey = ?'); typeParams.push(savedStorey); }
-        if (typeClauses.length) typeWhere += ' ' + typeClauses.join(' AND ');
-        var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
-          typeWhere + ' GROUP BY ifc_class ORDER BY cnt DESC';
-        var types = A.db.exec(typeSql, typeParams);
-        elType.innerHTML = '<option value="">All types</option>';
-        if (types.length > 0) {
-          // Sort: types with matches first, then the rest
-          var sorted = types[0].values.slice().sort(function(a, b) {
-            var ma = matchByType[a[0]] || 0, mb = matchByType[b[0]] || 0;
-            if (mb !== ma) return mb - ma; // matches first
-            return b[1] - a[1]; // then by total count
-          });
-          sorted.forEach(function(r) {
-            var opt = document.createElement('option');
-            opt.value = r[0];
-            var mc = matchByType[r[0]];
-            opt.textContent = friendlyClass(r[0]) + (mc ? ' \u2714 ' + mc + ' matches' : '') + ' (' + r[1] + ')';
-            if (mc) opt.style.fontWeight = 'bold';
-            elType.appendChild(opt);
-          });
-        }
-        if (savedType) elType.value = savedType;
-
-        // Get match counts per storey
+        // ── Phase 1 (sync): Storeys — fast query, no JOIN ──
         var matchByStorey = {};
         if (name) {
           var msSql = 'SELECT storey, COUNT(*) as cnt FROM elements_meta WHERE storey IS NOT NULL' +
@@ -435,15 +581,11 @@
           if (msRows.length > 0) msRows[0].values.forEach(function(r) { matchByStorey[r[0]] = r[1]; });
         }
 
-        // §S278: Cache storey list — JOIN to transforms is expensive, storeys don't change
-        if (!nav._storeyCache || nav._storeyCache.bld !== bld) {
-          var storeySql = 'SELECT m.storey, COUNT(*) as cnt FROM elements_meta m' +
-            ' JOIN element_transforms t ON m.guid = t.guid' +
-            ' WHERE m.storey IS NOT NULL' + (bld ? ' AND m.building = ?' : '') +
-            ' GROUP BY m.storey ORDER BY MIN(t.center_z)';
-          nav._storeyCache = { bld: bld, data: A.db.exec(storeySql, bld ? [bld] : []) };
-        }
-        var storeys = nav._storeyCache.data;
+        // Storeys — simple GROUP BY, no JOIN to element_transforms
+        var storeySql = 'SELECT storey, COUNT(*) as cnt FROM elements_meta' +
+          ' WHERE storey IS NOT NULL' + (bld ? ' AND building = ?' : '') +
+          ' GROUP BY storey ORDER BY storey';
+        var storeys = A.db.exec(storeySql, bld ? [bld] : []);
         elStorey.innerHTML = '<option value="">All storeys</option>';
         if (storeys.length > 0) {
           storeys[0].values.forEach(function(r) {
@@ -458,7 +600,6 @@
         }
         if (savedStorey) elStorey.value = savedStorey;
 
-        // S275: Populate accordion bodies from the same data
         // Storey accordion
         elStoreyBody.innerHTML = '';
         var stAll = document.createElement('div');
@@ -486,6 +627,57 @@
           });
         }
         elStoreyHdr.querySelector('.fa-label').textContent = savedStorey || 'All Storeys';
+        console.log('§FIND_DD_STOREYS count=' + (storeys.length > 0 ? storeys[0].values.length : 0));
+
+      } catch(e) { console.warn('[S233] storey dropdown error', e); }
+
+      // ── Phase 2 (deferred): Types — heavier queries run after paint ──
+      clearTimeout(_typesTimer);
+      _typesTimer = setTimeout(function() { _populateTypes(bld, name, savedType, savedStorey); }, 0);
+    }
+
+    function _populateTypes(bld, name, savedType, savedStorey) {
+      if (!A.db) return;
+      try {
+        var matchByType = {};
+        if (name) {
+          var mtSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta WHERE' +
+            ' (LOWER(element_name) LIKE LOWER(?) OR LOWER(ifc_class) LIKE LOWER(?))' +
+            (bld ? ' AND building = ?' : '') +
+            (savedStorey ? ' AND storey = ?' : '') + ' GROUP BY ifc_class';
+          var mtParams = ['%' + name + '%', '%' + name + '%'];
+          if (bld) mtParams.push(bld);
+          if (savedStorey) mtParams.push(savedStorey);
+          var mtRows = A.db.exec(mtSql, mtParams);
+          if (mtRows.length > 0) mtRows[0].values.forEach(function(r) { matchByType[r[0]] = r[1]; });
+        }
+
+        var typeWhere = bld || savedStorey ? ' WHERE' : '';
+        var typeClauses = [];
+        var typeParams = [];
+        if (bld) { typeClauses.push('building = ?'); typeParams.push(bld); }
+        if (savedStorey) { typeClauses.push('storey = ?'); typeParams.push(savedStorey); }
+        if (typeClauses.length) typeWhere += ' ' + typeClauses.join(' AND ');
+        var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
+          typeWhere + ' GROUP BY ifc_class ORDER BY cnt DESC';
+        var types = A.db.exec(typeSql, typeParams);
+        elType.innerHTML = '<option value="">All types</option>';
+        if (types.length > 0) {
+          var sorted = types[0].values.slice().sort(function(a, b) {
+            var ma = matchByType[a[0]] || 0, mb = matchByType[b[0]] || 0;
+            if (mb !== ma) return mb - ma;
+            return b[1] - a[1];
+          });
+          sorted.forEach(function(r) {
+            var opt = document.createElement('option');
+            opt.value = r[0];
+            var mc = matchByType[r[0]];
+            opt.textContent = friendlyClass(r[0]) + (mc ? ' \u2714 ' + mc + ' matches' : '') + ' (' + r[1] + ')';
+            if (mc) opt.style.fontWeight = 'bold';
+            elType.appendChild(opt);
+          });
+        }
+        if (savedType) elType.value = savedType;
 
         // Type accordion
         elTypeBody.innerHTML = '';
@@ -518,8 +710,9 @@
           });
         }
         elTypeHdr.querySelector('.fa-label').textContent = savedType ? friendlyClass(savedType) : 'All Types';
+        console.log('§FIND_DD_TYPES count=' + (types.length > 0 ? types[0].values.length : 0));
 
-      } catch(e) { console.warn('[S233] dropdown error', e); }
+      } catch(e) { console.warn('[S233] type dropdown error', e); }
     }
 
     // ── Run search query ──
@@ -774,8 +967,8 @@
       var r = nav.results[idx];
       if (!r) return;
 
-      // §S278: Skip bbox wireframe — pick-style isolation + outline is clearer
-      clearHighlight();
+      // S275: IFC bbox highlight from DB (same as picking.js — works for merged/batched)
+      highlightElement(r.guid);
 
       // S275: Show standard IFC info panel (same as picking.js pointerup)
       showInfoPanel(r.guid);
@@ -791,50 +984,14 @@
           dist = Math.max(bboxRows[0][0], bboxRows[0][1], bboxRows[0][2]) * 1.5 + 0.5;  // §S277d: tighter zoom
         }
       } catch(e) { /* use default dist */ }
-      // §S278: Isolation on Find — dim everything else, highlight found element
-      // Search individual Mesh, then BatchedMesh/InstancedMesh meta
+      // §S280: Find highlight — OutlinePass only, no dim/transparency (GPU-friendly)
       if (typeof _restoreIsolation === 'function') _restoreIsolation(A);
       var _findMesh = null;
       A.scene.traverse(function(obj) {
         if (_findMesh) return;
-        if (obj.userData && obj.userData.guid === r.guid && obj.isMesh) { _findMesh = obj; return; }
-        // BatchedMesh: guid in _batchMeta
-        if (obj.isBatchedMesh && A._batchMeta && A._batchMeta[obj.id]) {
-          for (var bi = 0; bi < A._batchMeta[obj.id].length; bi++) {
-            if (A._batchMeta[obj.id][bi].guid === r.guid) { _findMesh = obj; return; }
-          }
-        }
-        // InstancedMesh: guid in _instanceMeta
-        if (obj.isInstancedMesh && A._instanceMeta && A._instanceMeta[obj.id]) {
-          for (var ii = 0; ii < A._instanceMeta[obj.id].length; ii++) {
-            if (A._instanceMeta[obj.id][ii].guid === r.guid) { _findMesh = obj; return; }
-          }
-        }
+        if (obj.userData && obj.userData.guid === r.guid) _findMesh = obj;
       });
-      if (_findMesh) {
-        var _fIso = [];
-        var _fMat = _findMesh.material;
-        A.scene.traverse(function(obj) {
-          if (!obj.isMesh && !obj.isInstancedMesh && !obj.isBatchedMesh) return;
-          if (!obj.material || obj === A.ground || obj.material === _fMat) return;
-          if (obj.material.userData._pickDimmed) return;
-          _fIso.push({ mat: obj.material, origOp: obj.material.opacity, origTr: obj.material.transparent });
-          obj.material.transparent = true;
-          obj.material.opacity = 0.15;
-          obj.material.userData._pickDimmed = true;
-          obj.material.needsUpdate = true;
-        });
-        A._pickIsolated = _fIso;
-        if (_fMat) {
-          _fMat.userData._pickTarget = true;
-          _fMat.userData._pickOrigOp = _fMat.opacity;
-          _fMat.userData._pickOrigTr = _fMat.transparent;
-          _fMat.transparent = true;
-          _fMat.opacity = 0.7;
-          _fMat.needsUpdate = true;
-        }
-        if (A.setOutline) A.setOutline([_findMesh], 0x4fc3f7);  // blue for find
-      }
+      if (_findMesh && A.setOutline) A.setOutline([_findMesh], 0x4fc3f7);  // blue outline through geometry
       // Keep camera's current viewing direction — just move to frame the new element
       var camDir = A.camera.position.clone().sub(A.controls.target).normalize();
       var end = center.clone().add(camDir.multiplyScalar(dist));

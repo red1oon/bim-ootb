@@ -34,13 +34,11 @@
   var _ganttTasks = [];  // computed task groups for click detection
   var _sCurveData = null;  // cached S-curve points (computed once)
 
-  // §S278: Cached temp objects — lazy-init on first use (THREE may not be loaded at parse time)
-  var _tmV1, _tmV2, _tmV3, _tmM4, _tmColor, _tmRay;
-  function _tmInit() {
-    if (_tmV1) return;
-    _tmV1 = new THREE.Vector3(); _tmV2 = new THREE.Vector3(); _tmV3 = new THREE.Vector3();
-    _tmM4 = new THREE.Matrix4(); _tmColor = new THREE.Color(); _tmRay = new THREE.Raycaster();
-  }
+  // §S278: Cached temp objects — reused per renderAtTime/cinematic tick to avoid GC pressure
+  var _tmV1 = new THREE.Vector3(), _tmV2 = new THREE.Vector3(), _tmV3 = new THREE.Vector3();
+  var _tmM4 = new THREE.Matrix4();
+  var _tmColor = new THREE.Color();
+  var _tmRay = new THREE.Raycaster();
 
   // ── Query ops from DB ──
   function loadOps() {
@@ -456,8 +454,7 @@
   var _zeroMatrix = null; // lazy init
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
   var _tmEdgeGeo = null;  // §S260f: shared 3m EdgesGeometry for frontier boxes
-  var _tmEdgeCyan = null; // §S260f: shared cyan material
-  var _tmEdgeOrange = null; // §S260f: shared orange material
+  var _tmEdgeYellow = null; // §S280: shared bright yellow material for frontier cubes
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
 
   // §S260d: Audio removed — can't hear on most browsers anyway
@@ -737,18 +734,15 @@
               }
               // §S260f: Edge box at frontier position — 3m, cyan/orange, depthTest:false
               // §S260f: Shared geometry + shared materials — no allocation per tick
-              if (!_isMobileTM) {
-                if (!_tmEdgeGeo) _tmEdgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(3, 3, 3));
-                if (!_tmEdgeCyan) _tmEdgeCyan = new THREE.LineBasicMaterial({ color: 0x44ffff, depthTest: false });
-                if (!_tmEdgeOrange) _tmEdgeOrange = new THREE.LineBasicMaterial({ color: 0xff8c00, depthTest: false });
-                var _ft = frontier[bg].t;
-                var _el = new THREE.LineSegments(_tmEdgeGeo, _ft < 0.15 ? _tmEdgeCyan : _tmEdgeOrange);
-                _el.position.copy(_bmPos);
-                _el.renderOrder = 10;
-                _el.userData._isTmFrontier = true;
-                app.scene.add(_el);
-                _outlineMeshes.push(_el);
-              }
+              // §S280: Frontier cubes on ALL platforms (mobile + desktop) — bright yellow
+              if (!_tmEdgeGeo) _tmEdgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(3, 3, 3));
+              if (!_tmEdgeYellow) _tmEdgeYellow = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false });
+              var _el = new THREE.LineSegments(_tmEdgeGeo, _tmEdgeYellow);
+              _el.position.copy(_bmPos);
+              _el.renderOrder = 10;
+              _el.userData._isTmFrontier = true;
+              app.scene.add(_el);
+              _outlineMeshes.push(_el);
             } else if (_camFollow && _previewGuids && _previewGuids[bg]) {
               obj.getMatrixAt(sid, _bmM4);
               _bmPos.setFromMatrixPosition(_bmM4);
@@ -2998,7 +2992,6 @@
 
   function activate() {
     if (_active) return;
-    _tmInit();  // §S279: lazy-init THREE objects (THREE may not exist at parse time)
     // Mobile merged meshes have no guid — re-stream as individual meshes
     var app = A();
     if (app && app._isMobile) {
@@ -3099,11 +3092,7 @@
       _ops = loadOps();
       if (!_ops.length) { injectGantt(); _ops = loadOps(); }
       if (_ops.length) { _finishActivate(app); resolve(true); }
-      else {
-        console.warn('§TM_ACTIVATE_FAIL no kernel_ops / no ELEMENT_PLACE ops — TM cannot open');
-        viewerStatus('Time Machine: no construction timeline data');
-        resolve(false);
-      }
+      else resolve(false);
     });
     });
   }
@@ -3113,12 +3102,9 @@
     _activeBuildingCount = app.activeBuildingTotal || 0;
     _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
-    // §S276b: Always enable sun cycle when shadows are on — Sky shader is near-zero cost
-    if (app._shadowOn || app._sky) {
-      _sunCycle = true;
-      app._sunCycleActive = true;  // §S277b: set early so toggleShadow knows TM owns the sky
-      console.log('§TM_SUNCYCLE_ON shadow=' + !!app._shadowOn + ' sky=' + !!app._sky);
-    }
+    // §S280: Don't force sun cycle — respect user's shadow/sky choice
+    // User can toggle shadow (H) independently. TM just plays construction.
+    console.log('§TM_SUN_INHERIT shadowOn=' + !!app._shadowOn + ' sky=' + !!app._sky + ' sunCycle=user-choice');
     console.log('§TM_SHADOW_INHERIT shadowOn=' + !!app._shadowOn + ' groundVisible=' + (app.ground ? app.ground.visible : 'n/a'));
     computeDays();
     saveVisibility();
@@ -3175,7 +3161,6 @@
   }
 
   function toggle() {
-    console.log('§TM_TOGGLE active=' + _active);
     if (_active) deactivate(); else activate();
   }
 

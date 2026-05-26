@@ -15,7 +15,6 @@ async function initViewer() {
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
     setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
-  if (typeof setupErrorReporter === 'function') setupErrorReporter(APP);
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
@@ -33,7 +32,7 @@ async function initViewer() {
       }
       // Load sub-modules in dependency order, then the bootstrap
       var modules = [
-        'navigate_find.js?v=9',
+        'navigate_find.js?v=10',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -567,12 +566,9 @@ async function initViewer() {
     APP.walkModeGpsTick();
     // Device orientation LAST — nothing may overwrite the quaternion after this
     if (APP.walkModeActive) APP.walkOrientTick();
-    // §S279: Skip label projection + ground check on mobile when idle (saves per-frame work)
-    if (!window._isMobile || _needsRender || APP.streaming || _orbiting || APP.walkModeActive) {
-      APP.updateMeasureLabels();
-      if (APP.ground && APP.ground.visible) {
-        APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
-      }
+    APP.updateMeasureLabels();
+    if (APP.ground && APP.ground.visible) {
+      APP.ground.material.visible = APP.camera.position.y > APP.ground.position.y;
     }
     // §S277b: WebGL only — no pipeline compilation gate needed
     if (_pipelinesCompiling) return;
@@ -585,8 +581,9 @@ async function initViewer() {
         APP._mobileRenderSkip = 0;
       }
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
-        // §S278: Mobile — ALWAYS direct render, never EffectComposer (SSAO/Outline too expensive)
-        APP.renderer.render(APP.scene, APP.camera);
+        // §S277c: EffectComposer replaces direct render when enabled (SSAO/Outline active)
+        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
       }
     } else {

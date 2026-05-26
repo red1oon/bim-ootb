@@ -77,69 +77,10 @@ function setupTools(A) {
 
   // X-Ray
   // §S271b: Optimized — update unique materials via _matCache, disable sortObjects during X-Ray.
-  // Old approach iterated all meshes (120K) and set mat.needsUpdate on each = GPU stall + per-frame sort.
+  // §S280: X-Ray removed — too costly (transparent blending on all materials).
+  // Find uses OutlinePass to highlight through geometry instead.
   A.xrayOn = false;
-  A.toggleXray = function() {
-    A.xrayOn = !A.xrayOn;
-    // §S279: Use .active class — CSS handles styling (overflow has !important)
-    var btn = document.getElementById('xray-btn');
-    if (btn) btn.classList.toggle('active', A.xrayOn);
-
-    // §S271b: Update unique materials only (via _matCache) — O(unique mats) not O(all meshes)
-    // No scene.traverse — _matCache has all streaming materials, ground/helpers are negligible.
-    var updated = 0;
-    var seen = new Set();
-    var mats = [];
-    if (A._matCache) {
-      for (var k in A._matCache) {
-        var m = A._matCache[k];
-        if (m && !seen.has(m)) { seen.add(m); mats.push(m); }
-      }
-    }
-    // Ground material
-    if (A.ground && A.ground.material && !seen.has(A.ground.material)) {
-      mats.push(A.ground.material);
-    }
-
-    // §S276b: Batch material updates across frames to avoid GPU shader recompile stutter.
-    // Set properties immediately (cheap), but stagger needsUpdate in batches via rAF.
-    var BATCH = Math.ceil(mats.length / 3);
-    for (var i = 0; i < mats.length; i++) {
-      var mat = mats[i];
-      if (A.xrayOn) {
-        if (mat.userData.origOpacity === undefined) mat.userData.origOpacity = mat.opacity;
-        if (mat.userData.origTransparent === undefined) mat.userData.origTransparent = mat.transparent;
-        if (mat.userData.origSide === undefined) mat.userData.origSide = mat.side;
-        mat.transparent = true;
-        mat.opacity = 0.15;
-        mat.side = THREE.DoubleSide;
-      } else {
-        if (mat.userData.origOpacity !== undefined) {
-          mat.opacity = mat.userData.origOpacity;
-          mat.transparent = mat.userData.origTransparent;
-          mat.side = mat.userData.origSide;
-          delete mat.userData.origOpacity;
-          delete mat.userData.origTransparent;
-          delete mat.userData.origSide;
-        }
-      }
-      updated++;
-    }
-    // Stagger needsUpdate across 3 frames
-    function _batchNeedsUpdate(start) {
-      var end = Math.min(start + BATCH, mats.length);
-      for (var j = start; j < end; j++) mats[j].needsUpdate = true;
-      if (end < mats.length) requestAnimationFrame(function() { _batchNeedsUpdate(end); });
-    }
-    _batchNeedsUpdate(0);
-
-    // §S271b: Disable transparent sort during X-Ray — uniform opacity doesn't need back-to-front order.
-    // Saves O(n log n) sort per frame on 122K elements.
-    A.renderer.sortObjects = !A.xrayOn;
-
-    console.log(`[S200] §XRAY ${A.xrayOn ? 'ON' : 'OFF'} materials=${updated} sortObjects=${A.renderer.sortObjects} batch=${BATCH}`);
-    if (A.markDirty) A.markDirty();
-  };
+  A.toggleXray = function() { console.log('§XRAY removed — use Find (F) + OutlinePass'); };
 
   // Section Cut
   A.sectionOn = false;
@@ -150,8 +91,9 @@ function setupTools(A) {
 
   A.toggleSection = function() {
     A.sectionOn = !A.sectionOn;
-    var btn = document.getElementById('section-btn');
-    if (btn) btn.classList.toggle('active', A.sectionOn);
+    const btn = document.getElementById('section-btn');
+    btn.style.background = A.sectionOn ? '#4fc3f7' : '#444';
+    btn.style.color = A.sectionOn ? '#000' : '#fff';
     const panel = document.getElementById('section-slider-panel');
     panel.style.display = A.sectionOn ? 'block' : 'none';
     if (A.sectionOn) {
@@ -244,17 +186,7 @@ function setupTools(A) {
 
     var cacheBust = '&v=' + Date.now();
     var chartsUrl = 'boq_charts.html?db=' + encodeURIComponent(dbParam) + '&bld=' + bld + diffParam + cacheBust;
-    // §S274: On mobile, navigate same tab — two tabs = double RAM, causes slow 4D5D load.
-    // Dispose Three.js scene first to free GPU memory for the charts page.
-    var _isMobile = navigator.maxTouchPoints > 0 && window.screen.width < 1024;
-    if (_isMobile) {
-      if (A.renderer) { A.renderer.dispose(); A.renderer.forceContextLoss(); }
-      if (A.scene) { A.scene.traverse(function(o) { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); }
-      console.log('[S274] §4D5D_MOBILE_DISPOSE scene freed, navigating same tab');
-      location.href = chartsUrl;
-    } else {
-      window.open(chartsUrl, '_blank');
-    }
+    window.open(chartsUrl, '_blank');
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_analytics_opened||'4D/5D analytics opened for {name}').replace('{name}', bld);
   };
 
@@ -327,15 +259,14 @@ function setupTools(A) {
     var visible = panel.style.display !== 'none';
     panel.style.display = visible ? 'none' : 'block';
     var btn = document.getElementById('sunglass-btn');
+    btn.style.background = visible ? '#444' : '#ff8c00';
+    btn.style.color = visible ? '#fff' : '#000';
     A.sunglassOn = !visible;
-    if (btn) btn.classList.toggle('active', A.sunglassOn);
   };
 
   A._sunglassBackups = [];
-  // §S279: Restore original materials — clear isolation first so origMats are clean
   A._restoreSunglass = function() {
-    if (A._pickIsolated && A._restoreIsolation) A._restoreIsolation();
-    A._sunglassBackups.forEach(function(b) { b.mesh.material = b.origMat; });
+    A._sunglassBackups.forEach(b => { b.mesh.material = b.origMat; });
     A._sunglassBackups = [];
   };
 
@@ -349,25 +280,17 @@ function setupTools(A) {
   // Golden-angle hue for index — max contrast between neighbors
   A._goldenHue = function(idx) { return ((idx * 137.508) % 360) / 360; };
 
-  // §S279: Single-pass collection — one scene traverse instead of two
   A._collectAllMeshes = function() {
-    return A.collectMeshes(function(o) {
-      return (o.isMesh && !o.userData.isInstanced) || o.isInstancedMesh;
-    });
+    var all = [];
+    A.collectMeshes(function(o) { return o.isMesh && !o.userData.isInstanced; }).forEach(function(m) { all.push(m); });
+    A.collectMeshes(function(o) { return o.isInstancedMesh; }).forEach(function(m) { all.push(m); });
+    return all;
   };
 
-  // §S279: Clone material for palette — reset isolation dimming on clone so colors show
   A._recolorMesh = function(mesh, color) {
-    if (!mesh.material || !mesh.material.color) return;  // skip ShaderMaterial, lines, etc.
     A._sunglassBackups.push({ mesh: mesh, origMat: mesh.material });
     var newMat = mesh.material.clone();
     newMat.color.copy(color);
-    // If source was isolation-dimmed, restore full opacity on the palette clone
-    if (newMat.userData && newMat.userData._pickDimmed) {
-      newMat.opacity = 1;
-      newMat.transparent = false;
-      delete newMat.userData._pickDimmed;
-    }
     newMat.needsUpdate = true;
     mesh.material = newMat;
   };
@@ -395,112 +318,88 @@ function setupTools(A) {
     var label = document.getElementById('sunglass-val');
     var strategy, phase;
 
-    // §S279: Boosted saturation palettes — visible from tick 1 on white/grey buildings
+    // ── Professional warm/cool palettes (no purple) ──
     var warmPastel = [
-      [0.05, 0.40, 0.78], [0.12, 0.40, 0.74], [0.08, 0.45, 0.71],  // peach, sand, cream
-      [0.55, 0.35, 0.76], [0.42, 0.40, 0.72], [0.15, 0.37, 0.80],  // sage, olive, wheat
-      [0.02, 0.35, 0.66], [0.58, 0.43, 0.68], [0.10, 0.50, 0.64],  // coral, teal, amber
-      [0.48, 0.37, 0.74]                                              // moss
+      [0.05, 0.25, 0.82], [0.12, 0.25, 0.78], [0.08, 0.30, 0.75],  // peach, sand, cream
+      [0.55, 0.20, 0.80], [0.42, 0.25, 0.76], [0.15, 0.22, 0.84],  // sage, olive, wheat
+      [0.02, 0.20, 0.70], [0.58, 0.28, 0.72], [0.10, 0.35, 0.68],  // coral, teal, amber
+      [0.48, 0.22, 0.78]                                              // moss
     ];
     var coolPastel = [
-      [0.55, 0.45, 0.74], [0.62, 0.40, 0.71], [0.50, 0.50, 0.68],  // sky, steel, seafoam
-      [0.45, 0.43, 0.76], [0.58, 0.47, 0.66], [0.68, 0.37, 0.72],  // mint, teal, slate
-      [0.52, 0.40, 0.64], [0.60, 0.45, 0.70], [0.48, 0.50, 0.62],  // ocean, mist, stone
-      [0.65, 0.43, 0.68]                                              // ice
+      [0.55, 0.30, 0.78], [0.62, 0.25, 0.75], [0.50, 0.35, 0.72],  // sky, steel, seafoam
+      [0.45, 0.28, 0.80], [0.58, 0.32, 0.70], [0.68, 0.22, 0.76],  // mint, teal, slate
+      [0.52, 0.25, 0.68], [0.60, 0.30, 0.74], [0.48, 0.35, 0.66],  // ocean, mist, stone
+      [0.65, 0.28, 0.72]                                              // ice
     ];
     var earthTone = [
-      [0.08, 0.55, 0.62], [0.05, 0.60, 0.52], [0.10, 0.50, 0.67],  // terracotta, sienna, tan
-      [0.12, 0.65, 0.47], [0.15, 0.48, 0.57], [0.03, 0.58, 0.55],  // rust, clay, bronze
-      [0.07, 0.52, 0.59], [0.55, 0.45, 0.55], [0.20, 0.60, 0.49],  // copper, olive, khaki
-      [0.02, 0.70, 0.42]                                              // mahogany
+      [0.08, 0.45, 0.65], [0.05, 0.50, 0.55], [0.10, 0.40, 0.70],  // terracotta, sienna, tan
+      [0.12, 0.55, 0.50], [0.15, 0.38, 0.60], [0.03, 0.48, 0.58],  // rust, clay, bronze
+      [0.07, 0.42, 0.62], [0.55, 0.35, 0.58], [0.20, 0.50, 0.52],  // copper, olive, khaki
+      [0.02, 0.60, 0.45]                                              // mahogany
     ];
 
-    // §S279: sub starts at 2 so tick=1 already has visible contrast
     function applyPalette(groups, keys, palette, sub) {
-      sub = sub + 2;
       keys.forEach(function(k, i) {
         var p = palette[i % palette.length];
-        var color = new THREE.Color().setHSL(p[0], Math.min(p[1] + sub * 0.04, 1), Math.max(p[2] - sub * 0.025, 0.3));
+        var color = new THREE.Color().setHSL(p[0], p[1] + sub * 0.05, p[2] - sub * 0.03);
         groups[k].forEach(function(m) { A._recolorMesh(m, color); });
       });
     }
 
-    // §S279: Compressed ranges — every tick position visually distinct
-    //  1-8   Warm/class     9-16  Cool/class    17-24 Earth/class
-    // 25-32  Warm/storey   33-40  Cool/storey   41-48 Earth/storey
-    // 49-56  Warm/disc     57-64  Cool/disc     65-72 Earth/disc
-    // 73-82  Zebra         83-90  Mono          91-96 Gradient
-    // 97-100 HARD
-
-    if (tick <= 8) {
-      phase = 'Warm'; strategy = 'type';
+    if (tick <= 10) {
+      // ── 1-10: Warm pastels by IFC class, subtle contrast growing ──
+      phase = 'Warm';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
       applyPalette(g, keys, warmPastel, tick - 1);
       strategy = keys.length + ' types';
 
-    } else if (tick <= 16) {
-      phase = 'Cool'; strategy = 'type';
+    } else if (tick <= 20) {
+      // ── 11-20: Cool pastels by IFC class ──
+      phase = 'Cool';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      applyPalette(g, keys, coolPastel, tick - 9);
+      applyPalette(g, keys, coolPastel, tick - 11);
       strategy = keys.length + ' types';
 
-    } else if (tick <= 24) {
-      phase = 'Earth'; strategy = 'type';
+    } else if (tick <= 30) {
+      // ── 21-30: Earth tones by IFC class ──
+      phase = 'Earth';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      applyPalette(g, keys, earthTone, tick - 17);
+      applyPalette(g, keys, earthTone, tick - 21);
       strategy = keys.length + ' types';
 
-    } else if (tick <= 32) {
+    } else if (tick <= 45) {
+      // ── 31-45: Warm pastels by storey ──
       phase = 'Storey warm';
       var g = A._groupBy(allMeshes, 'storey');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, warmPastel, tick - 25);
+      applyPalette(g, keys, warmPastel, tick - 31);
       strategy = keys.length + ' storeys';
 
-    } else if (tick <= 40) {
+    } else if (tick <= 55) {
+      // ── 46-55: Cool pastels by storey ──
       phase = 'Storey cool';
       var g = A._groupBy(allMeshes, 'storey');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, coolPastel, tick - 33);
+      applyPalette(g, keys, coolPastel, tick - 46);
       strategy = keys.length + ' storeys';
 
-    } else if (tick <= 48) {
-      phase = 'Storey earth';
-      var g = A._groupBy(allMeshes, 'storey');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, earthTone, tick - 41);
-      strategy = keys.length + ' storeys';
-
-    } else if (tick <= 56) {
-      phase = 'Disc warm';
+    } else if (tick <= 65) {
+      // ── 56-65: Earth by discipline ──
+      phase = 'Discipline';
       var g = A._groupBy(allMeshes, 'disc');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, warmPastel, tick - 49);
+      applyPalette(g, keys, earthTone, tick - 56);
       strategy = keys.length + ' discs';
 
-    } else if (tick <= 64) {
-      phase = 'Disc cool';
-      var g = A._groupBy(allMeshes, 'disc');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, coolPastel, tick - 57);
-      strategy = keys.length + ' discs';
-
-    } else if (tick <= 72) {
-      phase = 'Disc earth';
-      var g = A._groupBy(allMeshes, 'disc');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, earthTone, tick - 65);
-      strategy = keys.length + ' discs';
-
-    } else if (tick <= 82) {
-      // ── Zebra — IFC class alternates warm/cool ──
+    } else if (tick <= 80) {
+      // ── 66-80: Zebra — IFC class alternates warm/cool ──
       phase = 'Zebra';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      var t = (tick - 73) / 9;
+      var t = (tick - 66) / 14;
       keys.forEach(function(k, i) {
         var w = warmPastel[i % warmPastel.length];
         var c = coolPastel[i % coolPastel.length];
@@ -513,33 +412,30 @@ function setupTools(A) {
       strategy = keys.length + ' types';
 
     } else if (tick <= 90) {
-      // ── Monochrome — single hue, IFC class by lightness ──
+      // ── 81-90: Monochrome — single hue, IFC class by lightness ──
       phase = 'Mono';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      var hue = ((tick - 83) / 7) * 0.15;
+      var hue = ((tick - 81) / 9) * 0.15;  // cycle through warm hues only
       keys.forEach(function(k, i) {
-        var l = 0.30 + (i / Math.max(keys.length - 1, 1)) * 0.50;
-        var color = new THREE.Color().setHSL(hue, 0.50, l);
+        var l = 0.35 + (i / Math.max(keys.length - 1, 1)) * 0.45;
+        var color = new THREE.Color().setHSL(hue, 0.4, l);
         g[k].forEach(function(m) { A._recolorMesh(m, color); });
       });
       strategy = keys.length + ' types';
 
-    } else if (tick <= 96) {
-      // ── Gradient — smooth hue sweep across all classes ──
-      phase = 'Gradient';
-      var g = A._groupBy(allMeshes, 'ifcClass');
-      var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
-      var hueStart = (tick - 91) * 0.17;  // each tick shifts base hue
-      keys.forEach(function(k, i) {
-        var h = (hueStart + i / Math.max(keys.length, 1)) % 1;
-        var color = new THREE.Color().setHSL(h, 0.55, 0.60);
-        g[k].forEach(function(m) { A._recolorMesh(m, color); });
+    } else if (tick <= 97) {
+      // ── 91-97: Random pastel per mesh ──
+      phase = 'Random';
+      allMeshes.forEach(function(m) {
+        var h = Math.random();
+        var color = new THREE.Color().setHSL(h, 0.3, 0.65 + Math.random() * 0.15);
+        A._recolorMesh(m, color);
       });
-      strategy = keys.length + ' types';
+      strategy = allMeshes.length + ' meshes';
 
     } else {
-      // ── 97-100: HARD — full saturation, dark, punchy, golden-angle spacing ──
+      // ── 98-100: HARD — full saturation, dark, punchy ──
       phase = 'HARD';
       var g = A._groupBy(allMeshes, 'ifcClass');
       var keys = Object.keys(g).sort(function(a, b) { return g[b].length - g[a].length; });
@@ -652,9 +548,8 @@ function setupTools(A) {
       if (A.ground) A.ground.visible = false;
     }
     var btn = document.getElementById('shadow-btn');
-    if (btn) btn.classList.toggle('active', A._shadowOn);
-    var btn2 = document.getElementById('shadow-overflow-btn');
-    if (btn2) btn2.classList.toggle('active', A._shadowOn);
+    btn.style.background = A._shadowOn ? '#ff8c00' : '#333';
+    btn.style.color = A._shadowOn ? '#000' : '#aaa';
     if (A.markDirty) A.markDirty();
     console.log('§SHADOW toggle=' + A._shadowOn);
   };
@@ -712,7 +607,7 @@ function setupTools(A) {
       // Moonlight: original values — worked well for SH
       A.sun.intensity = 0.15;
       A.sun.color.setHex(0x8899cc);
-      A.ambient.intensity = 0.35;  // §S279: brighter moonlight — exterior surfaces visible from outside
+      A.ambient.intensity = 0.2;  // §S277d: brighter moonlight — walls/floors visible everywhere
       A.hemi.intensity = 0.08;
       A.hemi.color.setHex(0x222244);
       A.renderer.toneMappingExposure = 0.8;
@@ -728,8 +623,8 @@ function setupTools(A) {
       // Update sliders to reflect
       document.getElementById('sl-sun').value = 0.15;
       document.getElementById('sl-sun-val').textContent = '0.2';
-      document.getElementById('sl-ambient').value = 0.35;
-      document.getElementById('sl-ambient-val').textContent = '0.4';
+      document.getElementById('sl-ambient').value = 0.2;
+      document.getElementById('sl-ambient-val').textContent = '0.2';
       document.getElementById('sl-hemi').value = 0.08;
       document.getElementById('sl-hemi-val').textContent = '0.1';
       document.getElementById('sl-exposure').value = 0.8;
@@ -777,20 +672,17 @@ function setupTools(A) {
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
       var _glowCount = 0;
       A._nightGlowMats = [];
-      // §S279: Glow ALL classes that contain light/LED/lamp elements — not just IfcLightFixture
+      // Determine which IFC classes to glow
       var _glowClasses = ['IfcLightFixture'];
+      // Check if building has any IfcLightFixture — if not, fallback to FlowTerminal
+      var _hasNamedLights = false;
       if (A.db) {
         try {
-          var lr = A.db.exec("SELECT DISTINCT ifc_class FROM elements_meta WHERE LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%' OR LOWER(element_name) LIKE '%ceiling fan%'");
-          if (lr.length && lr[0].values.length > 0) {
-            lr[0].values.forEach(function(row) {
-              if (row[0] && _glowClasses.indexOf(row[0]) < 0) _glowClasses.push(row[0]);
-            });
-          }
+          var lr = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%'");
+          _hasNamedLights = lr.length && lr[0].values[0][0] > 0;
         } catch(e) {}
       }
-      // Fallback if no named lights found at all
-      if (_glowClasses.length === 1) {
+      if (!_hasNamedLights) {
         _glowClasses.push('IfcFlowTerminal', 'IfcElectricAppliance');
         source += '+fallback';
       }
@@ -824,7 +716,8 @@ function setupTools(A) {
         };
         A.controls.addEventListener('change', A._nightControlsListener);
       }
-      if (btn) btn.classList.add('active');
+      btn.style.background = '#ff8c00';
+      btn.style.color = '#000';
       label.textContent = 'On — ' + A._nightFixtures.length + ' fixtures';
     } else {
       // §S277d: Restore fixture emissive glow
@@ -877,7 +770,8 @@ function setupTools(A) {
         A.ground.material.color.setHex(A._whiteBg ? 0xffffff : 0x222233);
       }
       console.log('§NIGHT_MODE off');
-      if (btn) btn.classList.remove('active');
+      btn.style.background = '#1a1a3e';
+      btn.style.color = '#aac';
       label.textContent = 'Off';
     }
     if (A.markDirty) A.markDirty();
@@ -893,18 +787,18 @@ function setupTools(A) {
     }
     var allPos = A._nightFixturePositions;
     var camPos = A.camera.position;
-    var _tgt = A.controls ? A.controls.target : camPos;
     var needed;
-    if (allPos.length <= NIGHT_MAX_LIGHTS - 2) {
+    if (allPos.length <= NIGHT_MAX_LIGHTS) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
-      // §S277d: Nearest 10 fixtures to orbit target (stable)
+      // §S277d: Nearest 4 fixtures to orbit target (stable) — not camera (jumps on orbit)
+      var _tgt = A.controls ? A.controls.target : camPos;
       var sorted = allPos.map(function(p) {
         var dx = p.x - _tgt.x, dy = p.y - _tgt.y, dz = p.z - _tgt.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
-      needed = sorted.slice(0, NIGHT_MAX_LIGHTS - 2);
+      needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
     }
     // Remove old lights
     A._nightLights.forEach(function(l) {
@@ -913,27 +807,13 @@ function setupTools(A) {
       l.dispose();
     });
     A._nightLights = [];
-    // §S277d: Fixed intensity at fixture positions
+    // §S277d: Fixed intensity at fixture positions — no camera-distance fade
     needed.forEach(function(f) {
       var light = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
       light.position.copy(f.pos);
       A.scene.add(light);
       A._nightLights.push(light);
     });
-    // §S279: Camera-near POL — lights what you're staring at (exterior and interior)
-    // Place at orbit target = the surface you're looking at
-    var tgtLight = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
-    tgtLight.position.copy(_tgt);
-    A.scene.add(tgtLight);
-    A._nightLights.push(tgtLight);
-    // §S279: Cam-room POL — 2m ahead of camera toward target, lights the room you're in
-    var camLight = new THREE.PointLight(0xffe4b5, 0.8, 12, 1.5);
-    var dir = _tgt.clone().sub(camPos);
-    var len = dir.length();
-    if (len > 2) dir.multiplyScalar(2 / len);  // clamp to 2m ahead
-    camLight.position.copy(camPos).add(dir);
-    A.scene.add(camLight);
-    A._nightLights.push(camLight);
     if (A.markDirty) A.markDirty();
   };
 
