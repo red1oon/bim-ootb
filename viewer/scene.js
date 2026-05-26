@@ -480,7 +480,7 @@ async function setupScene(A) {
 
     // import:// URLs live only in IndexedDB — no network fallback
     if (url.startsWith('import://')) {
-      A.status.textContent = 'Imported building not found — browser storage may have been cleared. Please re-import the IFC file.';
+      A.status.textContent = 'Imported IFC not found — browser storage was cleared. Please re-import the file.';
       console.log('§IMPORT_CACHE_MISS url=' + url + ' — IDB cleared or quota reclaimed');
       throw new Error('DB not found in cache: ' + url);
     }
@@ -721,10 +721,10 @@ async function setupScene(A) {
             };
             _registerPanel('clash', A._clashMatrixDiv, matNav, matClose);
             _focusPanel('clash');
-            // §S279: Event-driven clash list wiring — replaces 300ms setInterval polling
+            // Watch for clash list popup — re-arms when list changes (new cell clicked)
             var _lastClashList = null;
-            document.addEventListener('clashListChanged', function _onClashList() {
-              if (!A._clashMatrixDiv) { document.removeEventListener('clashListChanged', _onClashList); return; }
+            var _clashListWatcher = setInterval(function() {
+              if (!A._clashMatrixDiv) { clearInterval(_clashListWatcher); return; }
               if (A._clashListDiv && A._clashListDiv !== _lastClashList) {
                 _lastClashList = A._clashListDiv;
                 A._clashListDiv._kbdWired = true;
@@ -772,7 +772,7 @@ async function setupScene(A) {
                         );
                         // Highlight sphere at clash midpoint
                         var sGeo = new THREE.SphereGeometry(0.3, 8, 8);
-                        var sMat = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
+                        var sMat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.7, depthTest: false });
                         var sphere = new THREE.Mesh(sGeo, sMat);
                         sphere.position.copy(clashMid);
                         A.measureGroup.add(sphere);
@@ -834,7 +834,7 @@ async function setupScene(A) {
                 // BUG-5 fix: delay focus to allow DOM layout before offsetWidth check
                 setTimeout(function() { _focusPanel('clashlist'); }, 50);
               }
-            });
+            }, 100);
           }
         }, 200);
       });

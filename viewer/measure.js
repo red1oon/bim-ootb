@@ -891,11 +891,6 @@ function setupMeasure(A) {
           }
           A._loadRemainingStoreys();
           if (!A._currentClashStorey) A._countClashesAsync(rules, parts[0], parts[1]);
-          // §S278: Re-focus clashlist panel after rebuild so arrow keys work
-          // Delay 400ms — the 300ms watcher in scene.js must detect + register the new div first
-          if (typeof window._focusPanel === 'function') {
-            setTimeout(function() { window._focusPanel('clashlist'); }, 400);
-          }
         }
       });
     }
