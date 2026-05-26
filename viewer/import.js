@@ -467,6 +467,7 @@ function setupImport(A) {
 
   // ── Open imported building in viewer (S224: versioned) ──
   A.openImported = async function(key) {
+    console.log('[S274] §OPEN_IMPORTED key=' + key + ' sw=v517');
     const record = await getImport(key);
     if (!record) { alert('Building not found in storage'); return; }
 
