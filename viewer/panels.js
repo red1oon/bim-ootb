@@ -883,11 +883,12 @@ function setupPanels(A) {
       { id: 'palette',   icon: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>', fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); } },
       { id: 'shadow',    icon: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); } },
       { id: 'fly',       icon: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); } },
+      { id: 'report',    icon: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13H8"/><path d="M16 17H8"/><path d="M16 13h-2"/>', fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'home',      icon: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', fn: function() { location.href = '../index.html'; } }
     ];
 
     // Default order: undo, find, help at bottom (nearest thumb), rest above
-    var _defaultOrder = ['home','fly','shadow','palette','night','screenshot','section','tm','clash','measure','share','walk','help','find','undo'];
+    var _defaultOrder = ['home','fly','shadow','palette','night','screenshot','report','section','tm','clash','measure','share','walk','help','find','undo'];
 
     function _getOrder() {
       try {
