@@ -647,6 +647,35 @@ function setupStreaming(A) {
   if (!A._batchStoreyMap) A._batchStoreyMap = {};
   if (!A._batchDiscMap) A._batchDiscMap = {};
 
+  // ── §S280d: Streaming Contract ────────────────────────────────────────────
+  // ROUTING RULE (sacred — do NOT change without testing TM, picking, storey/disc filter):
+  //   elements.length === 1  → BatchedMesh  → metadata in _batchMeta
+  //   elements.length >= 2   → InstancedMesh → metadata in _instanceMeta
+  //   mobile single-instance → MergedMesh    → no per-GUID metadata (merged)
+  // CONSUMERS (16 files): time_machine, picking, helpers, walk, dlod, ghostglass,
+  //   grid_views, scene, doc_canvas, city, wizard_classify, nlp, tools, main
+  // CONTRACT: every non-merged element must appear in exactly ONE of _batchMeta or
+  //   _instanceMeta, AND have a guidMap entry. Violation = TM/picking/filter breakage.
+
+  // §S280d: Shared metadata registration — used by _flushInstanced AND _flushBboxBatched.
+  // Ensures both paths populate the same 4 structures (the contract surface).
+  A._registerBatchSlot = function(bm, el, slotId) {
+    A.guidMap[bm.id + '_' + slotId] = el.guid;
+    var sk = el.storey || '';
+    if (!A._batchStoreyMap[sk]) A._batchStoreyMap[sk] = [];
+    A._batchStoreyMap[sk].push({ mesh: bm, slotId: slotId });
+    var dk = el.disc || '';
+    if (!A._batchDiscMap[dk]) A._batchDiscMap[dk] = [];
+    A._batchDiscMap[dk].push({ mesh: bm, slotId: slotId });
+    return { guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', slotId: slotId, bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3 };
+  };
+
+  A._registerInstanceSlot = function(iMesh, el, instanceIndex) {
+    A._instanceGuids[el.guid] = { meshId: iMesh.id, instanceIndex: instanceIndex };
+    A.guidMap[iMesh.id + '_' + instanceIndex] = el.guid;
+    return { guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', instanceIndex: instanceIndex, bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3 };
+  };
+
   // §S279: Reuse flush temp objects across calls — avoids alloc per flush (every 500-5000 elements)
   var _flushM4, _flushEuler, _flushQuat, _flushPos, _flushScale;
   A._flushInstanced = function() {
@@ -693,9 +722,7 @@ function setupStreaming(A) {
           _m4.compose(_pos, _quat, _scale);
           iMesh.setMatrixAt(i, _m4);
 
-          meta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', instanceIndex: i, bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3 });
-          A._instanceGuids[el.guid] = { meshId: iMesh.id, instanceIndex: i };
-          A.guidMap[iMesh.id + '_' + i] = el.guid;
+          meta.push(A._registerInstanceSlot(iMesh, el, i));
         }
         iMesh.instanceMatrix.needsUpdate = true;
         iMesh.userData.isInstanced = true;
@@ -790,17 +817,8 @@ function setupStreaming(A) {
           if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
           if (!vis) bm.setVisibleAt(slotId, false);
 
-          // Metadata for pick + filter
-          meta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', slotId: slotId, bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3 });
-          A.guidMap[bm.id + '_' + slotId] = el.guid;
-
-          // Reverse maps for filter
-          var sk = el.storey || '';
-          if (!A._batchStoreyMap[sk]) A._batchStoreyMap[sk] = [];
-          A._batchStoreyMap[sk].push({ mesh: bm, slotId: slotId });
-          var dk = el.disc || '';
-          if (!A._batchDiscMap[dk]) A._batchDiscMap[dk] = [];
-          A._batchDiscMap[dk].push({ mesh: bm, slotId: slotId });
+          // §S280d: Metadata via shared contract function
+          meta.push(A._registerBatchSlot(bm, el, slotId));
         }
 
         A._batchMeta[bm.id] = meta;
@@ -939,6 +957,33 @@ function setupStreaming(A) {
       }
     }
     document.getElementById('s-meshes').textContent = drawCalls.toLocaleString() + ' draw calls';
+
+    // §S280d: Contract assertion — verify metadata integrity at final flush
+    if (A.streamIdx >= A.streamQueue.length) {
+      var _ca_batch = 0, _ca_inst = 0, _ca_guid = 0, _ca_orphan = 0;
+      for (var _bmId in A._batchMeta) _ca_batch += A._batchMeta[_bmId].length;
+      for (var _imId in A._instanceMeta) _ca_inst += A._instanceMeta[_imId].length;
+      _ca_guid = Object.keys(A.guidMap).length;
+      var _ca_registered = _ca_batch + _ca_inst;
+      if (!A._isMobile && _ca_registered === 0 && A.streamedCount > 0) {
+        console.error('§CONTRACT_FAIL zero metadata entries but streamedCount=' + A.streamedCount +
+          ' — routing broke: no GUIDs in _batchMeta or _instanceMeta. TM/picking will fail.');
+      }
+      if (_ca_guid < _ca_registered) {
+        _ca_orphan = _ca_registered - _ca_guid;
+        console.error('§CONTRACT_FAIL guidMap=' + _ca_guid + ' but meta=' + _ca_registered +
+          ' — ' + _ca_orphan + ' orphaned GUIDs. Picking will miss elements.');
+      }
+      for (var _ciId in A._instanceMeta) {
+        var _ciMeta = A._instanceMeta[_ciId];
+        if (_ciMeta.length < 2) {
+          console.error('§CONTRACT_FAIL InstancedMesh id=' + _ciId + ' has ' + _ciMeta.length +
+            ' instances — should be >=2. Single-instance belongs in BatchedMesh.');
+        }
+      }
+      console.log('§CONTRACT_CHECK batch=' + _ca_batch + ' instanced=' + _ca_inst +
+        ' guidMap=' + _ca_guid + ' streamed=' + A.streamedCount + ' orphans=' + _ca_orphan);
+    }
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
@@ -1075,15 +1120,8 @@ function setupStreaming(A) {
         if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
         if (!vis) bm.setVisibleAt(slotId, false);
 
-        // Metadata (same as _flushInstanced)
-        meta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', slotId: slotId });
-        A.guidMap[bm.id + '_' + slotId] = el.guid;
-        var sk = el.storey || '';
-        if (!A._batchStoreyMap[sk]) A._batchStoreyMap[sk] = [];
-        A._batchStoreyMap[sk].push({ mesh: bm, slotId: slotId });
-        var dk = el.disc || '';
-        if (!A._batchDiscMap[dk]) A._batchDiscMap[dk] = [];
-        A._batchDiscMap[dk].push({ mesh: bm, slotId: slotId });
+        // §S280d: Metadata via shared contract function (same as _flushInstanced)
+        meta.push(A._registerBatchSlot(bm, el, slotId));
 
         // DLOD slot data — starts promoted (real geometry), demotes to bbox when far
         dlodSlots.push({
