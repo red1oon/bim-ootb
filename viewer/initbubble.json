@@ -1,0 +1,116 @@
+{
+  "nodes": [
+    {
+      "table": "C_BPartner",
+      "label": "Partners",
+      "count": 18,
+      "color": "#7bed9f",
+      "windowId": 123
+    },
+    {
+      "table": "M_Product",
+      "label": "Products",
+      "count": 55,
+      "color": "#4fc3f7",
+      "windowId": 140
+    },
+    {
+      "table": "C_Order",
+      "label": "Orders",
+      "count": 8,
+      "color": "#7bed9f",
+      "windowId": 143
+    },
+    {
+      "table": "C_Invoice",
+      "label": "Invoices",
+      "count": 8,
+      "color": "#7bed9f",
+      "windowId": 167
+    },
+    {
+      "table": "C_Payment",
+      "label": "Payments",
+      "count": 2,
+      "color": "#ffd93d",
+      "windowId": 195
+    },
+    {
+      "table": "M_InOut",
+      "label": "Shipments",
+      "count": 9,
+      "color": "#7bed9f",
+      "windowId": 169
+    },
+    {
+      "table": "C_Project",
+      "label": "Projects",
+      "count": 2,
+      "color": "#ffd93d",
+      "windowId": 130
+    },
+    {
+      "table": "M_Product_Category",
+      "label": "Categories",
+      "count": 14,
+      "color": "#7bed9f",
+      "windowId": 401
+    },
+    {
+      "table": "M_Warehouse",
+      "label": "Warehouses",
+      "count": 11,
+      "color": "#7bed9f",
+      "windowId": 139
+    },
+    {
+      "table": "C_ElementValue",
+      "label": "Accounts",
+      "count": 379,
+      "color": "#4fc3f7",
+      "windowId": 158
+    },
+    {
+      "table": "AD_User",
+      "label": "Contacts",
+      "count": 8,
+      "color": "#6c9fff",
+      "windowId": 123
+    },
+    {
+      "table": "M_ProductPrice",
+      "label": "Prices",
+      "count": 114,
+      "color": "#4fc3f7",
+      "windowId": null
+    },
+    {
+      "table": "C_BP_Group",
+      "label": "BP Groups",
+      "count": 3,
+      "color": "#ffd93d",
+      "windowId": null
+    },
+    {
+      "table": "AD_Window",
+      "label": "Windows",
+      "count": 370,
+      "color": "#6c9fff",
+      "windowId": 102
+    },
+    {
+      "table": "AD_Table",
+      "label": "Tables",
+      "count": 1003,
+      "color": "#6c9fff",
+      "windowId": 100
+    },
+    {
+      "table": "AD_Menu",
+      "label": "Menus",
+      "count": 587,
+      "color": "#6c9fff",
+      "windowId": 105
+    }
+  ]
+}

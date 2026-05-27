@@ -69,37 +69,40 @@
 <div id="content"></div>
 <div id="bottom-nav"></div>
 
-<!-- §INSTANT Phase 1: menu seed + ad_ui.js — renders shell in <200ms -->
-<script src="menu_seed.js?v=21"></script>
-<script src="ad_ui.js?v=21"></script>
+<!-- §INSTANT Phase 1: globe renders from initbubble.json in <300ms -->
+<script src="ad_graph.js?v=22"></script>
+<script src="ad_ui.js?v=22"></script>
 <script>
-// Phase 1: Instant shell — menu tree from MENU_SEED, no DB, no WASM
+// Phase 1: Instant constellation — initbubble.json (2KB) + ad_graph + ad_ui
 (function () {
   'use strict';
   var _tBoot = performance.now();
-  var params = new URLSearchParams(window.location.search);
 
-  // §19 Apply client from URL before first render
-  var clientParam = params.get('client');
-  if (clientParam && typeof ADUI !== 'undefined') {
-    ADUI.setClient(clientParam);
-  }
+  fetch('initbubble.json?v=22').then(function(r) { return r.json(); }).then(function(data) {
+    window.INIT_BUBBLES = data;
 
-  // Init shell — null DB triggers instant mode
-  if (typeof ADUI !== 'undefined') {
-    ADUI.init(null,
-      document.getElementById('content'),
-      document.getElementById('bottom-nav'),
-      document.getElementById('breadcrumb')
-    );
-  }
+    var params = new URLSearchParams(window.location.search);
+    var clientParam = params.get('client');
+    if (clientParam && typeof ADUI !== 'undefined') {
+      ADUI.setClient(clientParam);
+    }
 
-  // Hide loading spinner — menu is already visible
-  var loadingEl = document.getElementById('loading');
-  if (loadingEl) loadingEl.style.display = 'none';
+    if (typeof ADUI !== 'undefined') {
+      ADUI.init(null,
+        document.getElementById('content'),
+        document.getElementById('bottom-nav'),
+        document.getElementById('breadcrumb')
+      );
+    }
 
-  var shellMs = Math.round(performance.now() - _tBoot);
-  console.log('§BENCH shell_render=' + shellMs + 'ms (instant)');
+    var loadingEl = document.getElementById('loading');
+    if (loadingEl) loadingEl.style.display = 'none';
+
+    var shellMs = Math.round(performance.now() - _tBoot);
+    console.log('§BENCH shell_render=' + shellMs + 'ms (instant globe)');
+  }).catch(function(e) {
+    console.log('§BENCH initbubble fetch failed: ' + e.message);
+  });
 })();
 </script>
 
@@ -133,14 +136,13 @@
     });
   }
 
-  var V = '?v=21';
-  // Modules NOT loaded in Phase 1 (ad_ui.js already loaded, menu_seed.js already loaded)
+  var V = '?v=22';
+  // Modules NOT loaded in Phase 1 (ad_graph.js + ad_ui.js already loaded)
   var MODULES = [
     'kernel_ops.js' + V,
     'ad_parser.js' + V,
     'ad_data.js' + V,
     'ad_charts.js' + V,
-    'ad_graph.js' + V,
     'erp_search.js' + V,
     'qrcode.min.js' + V
   ];
@@ -313,7 +315,7 @@
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=507')
+  navigator.serviceWorker.register('sw.js?v=508')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

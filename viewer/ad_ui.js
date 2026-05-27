@@ -114,38 +114,15 @@
     }
     _contentEl.appendChild(switcher);
 
-    // §INSTANT — if DB not ready, render from MENU_SEED (no KPI, no graph)
+    // §INSTANT — if DB not ready, render globe from initbubble.json
     if (!_dbReady) {
-      var seedTree = (typeof MENU_SEED !== 'undefined' && MENU_SEED.menuTree) ? MENU_SEED.menuTree : [];
-      if (seedTree.length) {
-        _loadRecent();
-        if (_recentWindows.length) {
-          var recentEl = document.createElement('div');
-          recentEl.style.cssText = 'margin-bottom:12px;font-size:13px;color:#888;';
-          recentEl.textContent = 'Recent: ';
-          for (var r = 0; r < _recentWindows.length && r < 5; r++) {
-            var rw = _recentWindows[r];
-            var rLink = document.createElement('a');
-            rLink.href = '#';
-            rLink.textContent = rw.name;
-            rLink.style.cssText = 'color:#4fc3f7;text-decoration:none;margin-right:8px;';
-            rLink.dataset.windowId = rw.id;
-            rLink.addEventListener('pointerup', function (ev) {
-              ev.preventDefault();
-              if (_dbReady) openWindow(Number(this.dataset.windowId));
-              else _showHydrating();
-            });
-            recentEl.appendChild(rLink);
-          }
-          _contentEl.appendChild(recentEl);
-        }
-        var treeEl = document.createElement('div');
-        _renderMenuNodes(treeEl, seedTree, null);  // no windowSet filter — show all
-        _contentEl.appendChild(treeEl);
-        console.log('§AD_UI showMenu INSTANT seed roots=' + seedTree.length);
+      if (typeof ADGraph !== 'undefined' && typeof INIT_BUBBLES !== 'undefined') {
+        _renderHomeGraph();  // will use initFromBubbles path
+        console.log('§AD_UI showMenu INSTANT bubbles');
       } else {
         _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
-          'Loading ERP data\u2026</div>';
+          'Loading ERP\u2026</div>';
+        console.log('§AD_UI showMenu INSTANT waiting');
       }
       return;
     }
@@ -955,7 +932,85 @@
       var parentAcc = row.closest('.acc');
       var accIdx = Array.prototype.indexOf.call(accs, parentAcc);
       if (accIdx === 0 && row.dataset.pk !== undefined) { drillRecord(row.dataset.pk); }
-      else if (accIdx > 0 && accIdx < accs.length - 1) { openAcc(accIdx + 1); console.log('§TABLE_CASCADE from=' + accIdx + ' to=' + (accIdx + 1)); }
+      else if (accIdx > 0) {
+        // §CASCADE — drill child row: collapse upper, re-filter next level by this FK
+        var childTable = parentAcc.dataset.table;
+        var childPk = row.dataset.pk;
+        if (childTable && childPk) {
+          // Collapse current accordion to single row (focused)
+          var allRows = parentAcc.querySelectorAll('tr');
+          for (var ri = 0; ri < allRows.length; ri++) {
+            if (allRows[ri].querySelector('th')) continue;
+            allRows[ri].style.display = (allRows[ri].dataset.pk === childPk) ? '' : 'none';
+          }
+          parentAcc.querySelector('.hd .lbl').style.color = '#fff';
+          parentAcc.querySelector('.hd .lbl').style.fontWeight = '600';
+
+          // Collapse all tabs above this one to single-line summaries
+          for (var ai = 0; ai < accIdx; ai++) {
+            var upperBd = accs[ai].querySelector('.bd');
+            if (upperBd) { upperBd.style.maxHeight = '0'; upperBd.classList.remove('open'); }
+            var upperHd = accs[ai].querySelector('.hd');
+            if (upperHd) upperHd.classList.remove('open');
+          }
+
+          // Discover and show FK children of this child record
+          var childKeyCol = childTable + '_ID';
+          var childFkTables = [];
+          try {
+            var cfk = _db.exec(
+              "SELECT DISTINCT t.TableName, c.ColumnName FROM AD_Column c " +
+              "JOIN AD_Table t ON c.AD_Table_ID = t.AD_Table_ID " +
+              "WHERE c.AD_Reference_ID IN (19, 30) AND c.ColumnName LIKE '%" + childTable + "_ID%' " +
+              "AND t.TableName != '" + childTable + "' AND t.IsActive = 'Y' ORDER BY t.TableName");
+            if (cfk.length) {
+              for (var cf = 0; cf < cfk[0].values.length; cf++) {
+                var cftName = cfk[0].values[cf][0], cftFk = cfk[0].values[cf][1];
+                try {
+                  var cfc = _db.exec("SELECT COUNT(*) FROM [" + cftName + "] WHERE " + cftFk + " = " + childPk);
+                  var cfTotal = (cfc.length && cfc[0].values.length) ? Number(cfc[0].values[0][0]) : 0;
+                  if (cfTotal > 0) childFkTables.push({ tableName: cftName, fkColumn: cftFk, count: cfTotal });
+                } catch(ex) {}
+              }
+            }
+          } catch(ex) {}
+
+          // Remove existing child tabs below current
+          var existAccs = ov.querySelectorAll('.acc');
+          for (var rem = existAccs.length - 1; rem > accIdx; rem--) {
+            ov.removeChild(existAccs[rem]);
+          }
+
+          // Add new filtered child tabs
+          for (var nci = 0; nci < childFkTables.length; nci++) {
+            var nft = childFkTables[nci];
+            var nLabel = nft.tableName.replace(/^[A-Z]_/, '').replace(/_/g, ' ');
+            var ntDiv = document.createElement('div');
+            ntDiv.className = 'acc';
+            ntDiv.dataset.table = nft.tableName;
+            ntDiv.dataset.fk = nft.fkColumn;
+            ntDiv.dataset.fkVal = childPk;
+            ntDiv.innerHTML =
+              '<div class="hd"><span class="lbl"><span class="chv">\u25B6</span> ' +
+              _escHtml(nLabel) + '</span><span class="cnt">' + nft.count + '</span></div>' +
+              '<div class="bd"></div>';
+            ov.appendChild(ntDiv);
+          }
+          accs = ov.querySelectorAll('.acc');
+
+          // Add breadcrumb level
+          var cRecLabel = '';
+          try { var cn = _db.exec("SELECT Name FROM [" + childTable + "] WHERE " + childKeyCol + " = " + childPk + " LIMIT 1"); cRecLabel = cn.length ? String(cn[0].values[0][0]) : childPk; } catch(ex) { cRecLabel = childPk; }
+          _breadcrumbs.push({ label: cRecLabel, pk: childPk });
+          _updateBreadcrumb();
+
+          // Auto-open first new child tab if any
+          if (childFkTables.length > 0) {
+            openAcc(accIdx + 1);
+          }
+          console.log('§TABLE_CASCADE_DEEP from=' + childTable + ' pk=' + childPk + ' newTabs=' + childFkTables.length);
+        }
+      }
     });
 
     // §S262 §6 Double-tap → zoom edit
@@ -1577,9 +1632,14 @@
 
     _contentEl.appendChild(container);
 
-    // Init graph
-    ADGraph.init(canvas, _db, _currentClient,
-      _graphDrillCallback, _graphLongPressCallback);
+    // Init graph — use initFromBubbles if DB not ready
+    if (!_dbReady && typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
+      ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
+        _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+    } else {
+      ADGraph.init(canvas, _db, _currentClient,
+        _graphDrillCallback, _graphLongPressCallback);
+    }
 
     // Auto-maximize globe — first load or if was maximized before client switch
     if (!_graphAutoMaxed || _graphIsMaxed) {
@@ -1884,6 +1944,11 @@
     // Load records for header tab
     _loadTabRecords();
     _renderWindow();
+
+    // §HELP auto-show on window open (desktop only, >768px)
+    if (typeof window !== 'undefined' && window.innerWidth > 768 && !_helpVisible) {
+      _toggleHelp();
+    }
 
     console.log('§AD_UI openWindow name=' + win.name + ' tabs=' + win.tabs.length);
   }
@@ -3242,6 +3307,11 @@
     _db = db;
     _dbReady = true;
     ADParser.init(db);
+
+    // Upgrade graph with real DB (enables drill into records)
+    if (typeof ADGraph !== 'undefined' && ADGraph.graphHydrate) {
+      ADGraph.graphHydrate(db);
+    }
 
     // Build FTS5 search index
     if (typeof ERPSearch !== 'undefined') {
