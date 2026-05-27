@@ -613,6 +613,7 @@ function setupPanels(A) {
 
   // ── S266: Doc Pill — swap icon-pill between main mode and doc (red) mode ──
   var _docMode = false;
+  window._docMode = false; // §S281: exposed for InputReg isActive callback
   var _mainPillHTML = ''; // stash main pill innerHTML for restore
   window.toggleDocPill = function() {
     var pill = document.getElementById('mobile-pill');
@@ -624,7 +625,7 @@ function setupPanels(A) {
       pill.classList.remove('doc-mode');
       if (A._buildPill) A._buildPill(); // rebuild _actions-based pill
       else pill.innerHTML = _mainPillHTML; // fallback
-      _docMode = false;
+      _docMode = false; window._docMode = false;
       console.log('§DOC_PILL mode=main');
     } else {
       // stash and swap to doc mode
@@ -780,7 +781,7 @@ function setupPanels(A) {
       }});
       btnRosetta.id = 'doc-rosetta-btn';
       pill.appendChild(btnRosetta);
-      _docMode = true;
+      _docMode = true; window._docMode = true;
       console.log('§DOC_PILL mode=doc icons=9');
       // S266: extract BOM on Doc pill entry, then activate canvas
       if (window.BOMExtract && A.db) {
@@ -916,28 +917,31 @@ function setupPanels(A) {
     // Icon actions — sorted by last-used (most recent at bottom, nearest to thumb)
     var _LS_KEY = 'bim_mobile_pill_order';
     var _actions = [
-      { id: 'redpill',   platform: 'desktop', icon: '<defs><clipPath id="rpTop"><rect x="6" y="2" width="12" height="10"/></clipPath><clipPath id="rpBot"><rect x="6" y="12" width="12" height="10"/></clipPath></defs><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#d32f2f" clip-path="url(#rpTop)"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#f5f5f5" clip-path="url(#rpBot)"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1"/><ellipse cx="11" cy="6.5" rx="1.5" ry="2.5" fill="rgba(255,255,255,0.3)" transform="rotate(-15 11 6.5)"/>', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); } }, // §S281: red/white capsule SVG, calls toggleDocPill (doc mode); desktop-only
+      { id: 'redpill',   platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); }, isActive: function() { return !!window._docMode; } },
       { id: 'find',      icon: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', fn: function() { if (A.openFindPanel) A.openFindPanel(''); } },
       { id: 'help',      icon: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
-      { id: 'walk',      platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); } }, // §S281: mobile-only (GPS+orientation)
+      { id: 'walk',      platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
       { id: 'share',     icon: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', fn: function() { if (A.quickShare) A.quickShare(); } },
-      { id: 'measure',   keepOpen: true, icon: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>', // §S281 #1: Measure (parent) + Clash (sibling)
-        fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); }, // tap = Measure toggle
-        hold: function(btn) { _revealChip(btn, 'clash', '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); } }, // long-press = Clash matrix (reuses working 'c' handler; restores pill access)
-      { id: 'xray',      icon: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', fn: function() { if (typeof toggleXray === 'function') toggleXray(); } },
-      { id: 'tm',        icon: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); } },
-      { id: 'section',   icon: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', fn: function() { if (A.toggleSection) A.toggleSection(); } },
-      { id: 'background', keepOpen: true, icon: '<circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/>', // §S281 #2: White BG + Screenshot pair
-        fn: function() { if (typeof window.toggleBackground === 'function') { window.toggleBackground(); var b=document.getElementById('pill-background'); if(b) b.classList.toggle('active', !!A._whiteBg); } }, // tap = white background (prep)
-        hold: function(btn) { _revealChip(btn, 'screenshot', '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', function(){ if (A.screenshot) A.screenshot(); }); } }, // long-press = reveal Screenshot
-      { id: 'night',     icon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>', fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); } },
-      { id: 'palette',   icon: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>', fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); } },
-      { id: 'shadow',    icon: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); } },
-      { id: 'fly',       icon: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); } },
+      { id: 'measure',   keepOpen: true, icon: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+        fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
+        hold: function(btn) { _revealChip(btn, 'clash', '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
+        isActive: function() { return !!A._measureOn; } },
+      { id: 'xray',      icon: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', fn: function() { if (typeof toggleXray === 'function') toggleXray(); }, isActive: function() { return !!A._xrayOn; } },
+      { id: 'tm',        icon: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; } },
+      { id: 'section',   icon: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; } },
+      { id: 'background', keepOpen: true, icon: '<circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/>',
+        fn: function() { if (typeof window.toggleBackground === 'function') window.toggleBackground(); },
+        hold: function(btn) { _revealChip(btn, 'screenshot', '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', function(){ if (A.screenshot) A.screenshot(); }); },
+        isActive: function() { return !!A._whiteBg; } },
+      { id: 'night',     icon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>', fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightOn; } },
+      { id: 'palette',   icon: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>', fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A._sunglassOn; } },
+      { id: 'shadow',    icon: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
+      { id: 'fly',       icon: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A._flyOn; } },
       { id: 'report',    icon: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'precision', keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
-        fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); }, // tap = toggle Fine
-        hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); } }, // long-press = reveal Reset sideways
+        fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); },
+        hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); },
+        isActive: function() { return !!window._precisionFine; } },
       { id: 'home',      icon: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', fn: function() { location.href = '../index.html'; } },
       { id: 'settings',  icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', fn: function() { if (A.status) A.status.textContent = 'UNDER CONSTRUCTION'; console.log('§PILL_SETTINGS under_construction'); } }
     ];
@@ -986,6 +990,23 @@ function setupPanels(A) {
       console.log('§PILL_CHIP reveal=' + id);
     }
 
+    // §S281: centralised highlight — reads isActive from each action, sets .active on pill-{id}
+    function _syncPillHighlights() {
+      var n = 0;
+      _actions.forEach(function(act) {
+        if (!act.isActive) return;
+        var btn = document.getElementById('pill-' + act.id);
+        if (!btn) return;
+        var on = false;
+        try { on = !!act.isActive(); } catch(e) {}
+        btn.classList.toggle('active', on);
+        n++;
+      });
+      console.log('§PILL_SYNC synced=' + n);
+    }
+    // Expose for InputReg
+    window._syncPillHighlights = _syncPillHighlights;
+
     function _buildPill() {
       pill.innerHTML = '';
       var order = _getOrder();
@@ -1032,7 +1053,7 @@ function setupPanels(A) {
           btn.addEventListener('pointerup', function(e) {
             e.stopPropagation(); _cancelHold();
             if (_held) { _held = false; return; } // long-press already handled
-            _bumpAction(act.id); act.fn();
+            _bumpAction(act.id); act.fn(); _syncPillHighlights();
             // §S281: pill stays open — user dismisses via ⋯ or outside tap
             console.log('§PILL action=' + act.id);
           });
@@ -1042,7 +1063,7 @@ function setupPanels(A) {
           btn.addEventListener('pointerup', function(e) {
             e.stopPropagation();
             _bumpAction(act.id);
-            act.fn();
+            act.fn(); _syncPillHighlights();
             // §S281: pill stays open — user dismisses via ⋯ or outside tap
             console.log('§PILL action=' + act.id);
           });
