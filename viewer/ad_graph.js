@@ -1727,8 +1727,97 @@
     _buildEntityNodes(tableName);
   }
 
+  /**
+   * §INSTANT — init globe from initbubble.json, no DB needed.
+   * Renders immediately. Call hydrate(db) later for full interactivity.
+   */
+  function initFromBubbles(canvas, bubbles, client, onDrill, onLongPress, onLongPressEmpty) {
+    _canvas = canvas;
+    _ctx = canvas.getContext('2d');
+    _db = null;
+    _W = canvas.width;
+    _H = canvas.height;
+    _cx = _W / 2;
+    _cy = _H / 2;
+    _radius = Math.min(_W, _H) * 0.38;
+    _onDrill = onDrill || function(){};
+    _onLongPress = onLongPress || function(){};
+    _onLongPressEmpty = onLongPressEmpty || function(){};
+    _lastClient = client || 'gardenworld';
+    _currentView = 'home';
+    _viewStack = [];
+    _rotY = 0;
+    _rotX = -0.3;
+    _fkCache = {};
+
+    // Build nodes from bubbles JSON (same layout as _buildHomeNodes)
+    _nodes = [];
+    _edges = [];
+    _activeExpandedNode = null;
+    var items = bubbles.nodes || [];
+    items.sort(function(a,b) { return b.count - a.count; });
+    var maxCnt = items.length ? items[0].count : 1;
+
+    for (var j = 0; j < items.length; j++) {
+      var c = items[j];
+      var ratio = c.count / maxCnt;
+      var golden = (1 + Math.sqrt(5)) / 2;
+      var theta = 2 * Math.PI * j / golden;
+      var phi = Math.acos(1 - 2 * (j + 0.5) / items.length);
+      phi = phi * (1 - ratio * 0.4);
+
+      var tSx = _radius * Math.sin(phi) * Math.cos(theta);
+      var tSy = _radius * Math.cos(phi) * 0.85;
+      var tSz = _radius * Math.sin(phi) * Math.sin(theta);
+      var cfg = ENTITY_CFG[c.table] || SYS_CFG[c.table] || { icon: 'table', colour: c.color || '#888', label: c.label };
+      _nodes.push({
+        id: c.table, label: cfg.label, count: c.count,
+        icon: cfg.icon, colour: c.color || cfg.colour,
+        homeSx: tSx, homeSy: tSy, homeSz: tSz,
+        sx: 0, sy: 0, sz: 0,
+        _startSx: 0, _startSy: 0, _startSz: 0,
+        _targetSx: tSx, _targetSy: tSy, _targetSz: tSz,
+        _animT: 0,
+        size: 18 + ratio * 36, activity: ratio,
+        pulse: Math.random() * Math.PI * 2,
+        pulseSpeed: 0.003 + ratio * 0.004,
+        screenX: 0, screenY: 0, screenScale: 1, screenZ: 0,
+        tableName: c.table, windowId: c.windowId || WIN_MAP[c.table] || null,
+        type: 'TABLE', children: [], parent: null, expanded: false
+      });
+    }
+    for (var a = 0; a < _nodes.length; a++) {
+      for (var b = a + 1; b < _nodes.length; b++) {
+        _edges.push({ from: a, to: b });
+      }
+    }
+
+    // Attach input events
+    canvas.addEventListener('pointerdown', _onPointerDown);
+    canvas.addEventListener('pointermove', _onPointerMove);
+    canvas.addEventListener('pointerup', _onPointerUp);
+    canvas.addEventListener('wheel', _onWheel, { passive: false });
+    canvas.addEventListener('touchstart', _onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', _onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', _onTouchEnd);
+
+    if (_animId) cancelAnimationFrame(_animId);
+    _animate();
+    console.log('§AD_GRAPH initFromBubbles nodes=' + _nodes.length + ' radius=' + Math.round(_radius));
+  }
+
+  /**
+   * §INSTANT — upgrade globe with real DB. Enables drill, entity view, FTS5.
+   */
+  function graphHydrate(db) {
+    _db = db;
+    console.log('§AD_GRAPH hydrated — drill enabled');
+  }
+
   var ADGraph = {
     init: init,
+    initFromBubbles: initFromBubbles,
+    graphHydrate: graphHydrate,
     destroy: destroy,
     showEntity: showEntity,
     focusNode: focusNode,
