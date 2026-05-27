@@ -4,7 +4,11 @@
 
 **URL:** `https://red1oon.github.io/bim-ootb/`
 
-**Deploy:** `git push` to `main`. GitHub Pages rebuilds automatically (~60 seconds).
+**Deploy:** `git push` to `main`. CI runs (~95s), then GitHub Pages rebuilds automatically (~60s).
+
+**CI Status:** Check https://github.com/red1oon/bim-ootb/actions
+- ✅ Green check → Safe to deploy
+- ❌ Red X → Fix before deploying (see logs)
 
 ### Workflow
 
