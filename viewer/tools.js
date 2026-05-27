@@ -80,7 +80,6 @@ function setupTools(A) {
   A.xrayOn = false;
   A.toggleXray = function() {
     A.xrayOn = !A.xrayOn;
-    // Walk through unique materials in _matCache (set by streaming.js)
     var cache = A._matCache || {};
     var keys = Object.keys(cache);
     if (keys.length) {
@@ -102,7 +101,6 @@ function setupTools(A) {
         mat.needsUpdate = true;
       }
     }
-    // Fallback: scene traversal for meshes without _matCache
     if (!keys.length && A.scene) {
       A.scene.traverse(function(obj) {
         if (!obj.isMesh || !obj.material) return;

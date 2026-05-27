@@ -504,7 +504,6 @@
       // NLP query detection
       if (_nlpRe.test(trimmed) && A._nlpExecute) {
         if (explicit) {
-          // Enter/chip/voice → fire NLP
           A._nlpExecute(trimmed);
           return;
         }
@@ -572,11 +571,9 @@
       panel.style.display = 'block';
       elName.value = searchTerm || '';
       // §S281: Defer item queries — only build tree (fast GROUP BY) on open.
-      // populateDropdowns + runSearch only when user clicks a type/storey or types a search.
       buildTree();
       buildChips();
       if (searchTerm) { _handleInput(searchTerm, true); }
-      // No runSearch() on empty open — saves seconds of load time
       // S275: Auto-focus — panel system + input
       if (typeof window._focusPanel === 'function') window._focusPanel('find');
       // §S280: Mobile — don't steal focus (triggers virtual keyboard). User taps searchbox when ready.
