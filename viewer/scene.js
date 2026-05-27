@@ -845,7 +845,12 @@ async function setupScene(A) {
     },
     // §S280: -/+/= panel toggle removed — [] button replaces (single=F11, double=toggle panels)
     'r':  function() { if (typeof toggleRecord === 'function') toggleRecord(); },
-    'e':  function() { if (typeof toggleDocPill === 'function') toggleDocPill(); },
+    ',':  function() { if (typeof toggleDocPill === 'function') toggleDocPill(); }, // §S281: comma = Doc mode (was 'e')
+    '=':  function() { // §S281: settings panel toggle
+      var btn = document.getElementById('pill-settings');
+      if (btn) btn.click();
+      else if (A.status) A.status.textContent = 'UNDER CONSTRUCTION';
+    },
     '/':  function() { if (A.quickShare) A.quickShare(); },
     '.':  function() { // §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow
       if (typeof window.toggleMobilePill === 'function') window.toggleMobilePill();
@@ -953,7 +958,8 @@ async function setupScene(A) {
       { name: 'Share ?tm=play link', icon: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>' }
     ] },
     { seq: 'R',  name: 'Record',          icon: _ic('<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/>') },
-    { seq: 'E',  name: 'Red Pill',        icon: _ic('<rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#d32f2f"/><rect x="8" y="12" width="8" height="10" rx="0" ry="0" fill="#f5f5f5"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1"/>') },
+    { seq: ',',  name: 'Doc Mode',         icon: _ic('<rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#d32f2f"/><rect x="8" y="12" width="8" height="10" rx="0" ry="0" fill="#f5f5f5"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1"/>') },
+    { seq: '=',  name: 'Settings',        icon: _ic('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>') },
     { seq: '/',  name: 'Share',           icon: _ic('<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>'), action: function() { if (A.quickShare) A.quickShare(); } },
     { seq: '',   name: 'Home',            icon: _ic('<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'), action: function() { location.href='../index.html'; } },
     { seq: 'F1', name: 'Help',            icon: _ic('<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>') }
