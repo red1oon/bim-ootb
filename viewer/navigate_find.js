@@ -471,7 +471,7 @@
               elName.value = t;
               elName.style.fontStyle = 'normal';
               A.inputWasVoice = true;
-              _handleInput(t);
+              _handleInput(t, true);
               console.log('§FIND_VOICE_FINAL "' + t + '"');
             } else {
               elName.value = t;
@@ -496,15 +496,21 @@
     if (elMicBtn) elMicBtn.style.color = '#4fc3f7';
 
     // ── S265 Phase 5: Dual-purpose input — NLP queries vs element search ──
-    // If input matches NLP pattern (count/cost/show/total), run NLP. Otherwise, element search.
+    // NLP only fires on Enter or chip click (explicit=true), never on live typing.
     var _nlpRe = /^(count|how many|number of|total|cost|show|list|what|find|search)\b/i;
-    function _handleInput(text) {
+    function _handleInput(text, explicit) {
       var trimmed = (text || '').trim();
-      if (!trimmed) { runSearch(); return; }
+      if (!trimmed) { elResults.innerHTML = ''; elCount.textContent = ''; return; }
       // NLP query detection
       if (_nlpRe.test(trimmed) && A._nlpExecute) {
-        A._nlpExecute(trimmed);
-        // If NLP handled it (e.g. "find pump" opens this same panel), don't double-search
+        if (explicit) {
+          // Enter/chip/voice → fire NLP
+          A._nlpExecute(trimmed);
+          return;
+        }
+        // Live typing of NLP phrase → show hint, don't run element search
+        elResults.innerHTML = '<div style="color:#4fc3f7;font-size:11px;padding:8px 10px;opacity:0.7">Press Enter \u21B5</div>';
+        elCount.textContent = '';
         return;
       }
       // Regular element search
@@ -524,7 +530,7 @@
           chip.addEventListener('pointerup', function(e) {
             e.stopPropagation();
             elName.value = ex;
-            _handleInput(ex);
+            _handleInput(ex, true);
           });
           elChips.appendChild(chip);
         });
@@ -569,7 +575,7 @@
       // populateDropdowns + runSearch only when user clicks a type/storey or types a search.
       buildTree();
       buildChips();
-      if (searchTerm) { _handleInput(searchTerm); }
+      if (searchTerm) { _handleInput(searchTerm, true); }
       // No runSearch() on empty open — saves seconds of load time
       // S275: Auto-focus — panel system + input
       if (typeof window._focusPanel === 'function') window._focusPanel('find');
@@ -1227,7 +1233,7 @@
         if (nav.results.length > 0 && nav.activeIdx >= 0) {
           selectResult(nav.activeIdx);
         } else {
-          _handleInput(elName.value);
+          _handleInput(elName.value, true);
         }
         return;
       }
