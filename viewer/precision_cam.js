@@ -22,7 +22,7 @@
     c.minDistance = 0.001;
     _indicator.style.display = 'block';
     var fb = document.getElementById('prec-fine-btn');
-    if (fb) fb.style.background = '#1a6b8a';
+    if (fb) { fb.style.background = '#4fc3f7'; fb.style.color = '#000'; } // active highlight (matches pill)
     console.log('§precision FINE on');
   }
 
@@ -37,7 +37,7 @@
     c.minDistance = 0.1;
     _indicator.style.display = 'none';
     var fb = document.getElementById('prec-fine-btn');
-    if (fb) fb.style.background = 'rgba(255,255,255,0.1)';
+    if (fb) { fb.style.background = 'rgba(255,255,255,0.1)'; fb.style.color = '#e0e0e0'; } // back to inactive
     console.log('§precision FINE off');
   }
 
@@ -104,13 +104,21 @@
       'border:1px solid rgba(79,195,247,0.3);border-radius:10px;' +
       'box-shadow:0 4px 20px rgba(0,0,0,0.4);';
 
-    var btnCss = 'display:flex;align-items:center;gap:6px;padding:8px 12px;border:none;' +
-      'border-radius:6px;background:rgba(255,255,255,0.1);color:#e0e0e0;' +
-      'font-size:14px;cursor:pointer;white-space:nowrap;min-height:40px;';
-
+    // §S281: icon-only chooser — no word labels. Two icons, highlight when active.
+    var btnCss = 'display:flex;align-items:center;justify-content:center;border:none;' +
+      'border-radius:8px;width:44px;height:44px;background:rgba(255,255,255,0.1);' +
+      'color:#e0e0e0;cursor:pointer;';
+    var _svg = function(paths) {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" ' +
+        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+    };
+    // Fine = crosshair (precision); Reset = recenter/locate target
+    var _fineIcon = '<line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><circle cx="12" cy="12" r="3"/>';
+    var _resetIcon = '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/>';
     _panel.innerHTML =
-      '<button id="prec-fine-btn" style="' + btnCss + '">🪶 <span style="font-size:11px">Fine</span></button>' +
-      '<button id="prec-reset-btn" style="' + btnCss + '">🎯 <span style="font-size:11px">Reset</span></button>';
+      '<button id="prec-fine-btn" title="Fine precision" style="' + btnCss + '">' + _svg(_fineIcon) + '</button>' +
+      '<button id="prec-reset-btn" title="Reset camera" style="' + btnCss + '">' + _svg(_resetIcon) + '</button>';
+    _panel.style.flexDirection = 'row'; // icons side by side
     document.body.appendChild(_panel);
 
     // Button handlers
@@ -150,4 +158,49 @@
 
   window.togglePrecisionCam = toggleFine;
   window.resetCamOrbit = resetOrbit;
+
+  // §S281: feather interaction — tap toggles Fine (button highlights); long-press
+  // expands a Reset icon sideways from the feather. Standard tap/hold pattern.
+  window.togglePrecisionFine = function() {
+    toggleFine();
+    var b = document.getElementById('pill-precision');
+    if (b) { b.classList.toggle('active', _fine); }
+  };
+
+  var _resetChip = null;
+  window.revealPrecisionReset = function(btn) {
+    if (!btn) return;
+    if (_resetChip) { _resetChip.remove(); _resetChip = null; return; } // toggle off if showing
+    _resetChip = document.createElement('button');
+    _resetChip.id = 'prec-reset-chip';
+    _resetChip.title = 'Reset camera';
+    _resetChip.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" ' +
+      'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/>' +
+      '<line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>';
+    var r = btn.getBoundingClientRect();
+    _resetChip.style.cssText =
+      'position:fixed;z-index:10000;width:44px;height:44px;display:flex;align-items:center;justify-content:center;' +
+      'border:none;border-radius:8px;background:rgba(20,20,40,0.85);color:#4fc3f7;cursor:pointer;' +
+      'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);' +
+      // expand sideways: place just left of the feather (pill sits at right edge)
+      'top:' + r.top + 'px;left:' + (r.left - 52) + 'px;';
+    _resetChip.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      resetOrbit();
+      if (_resetChip) { _resetChip.remove(); _resetChip = null; }
+    });
+    document.body.appendChild(_resetChip);
+    // Auto-dismiss on any tap elsewhere
+    setTimeout(function() {
+      var _dismiss = function(ev) {
+        if (_resetChip && ev.target !== _resetChip && !_resetChip.contains(ev.target)) {
+          _resetChip.remove(); _resetChip = null;
+          document.removeEventListener('pointerdown', _dismiss, true);
+        }
+      };
+      document.addEventListener('pointerdown', _dismiss, true);
+    }, 0);
+    console.log('§precision RESET revealed (long-press)');
+  };
 })();

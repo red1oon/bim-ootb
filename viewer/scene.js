@@ -677,7 +677,9 @@ async function setupScene(A) {
         if (A.toggleSection) A.toggleSection();
         return;
       }
-      var b = document.getElementById('section-btn'); if (b) b.click();
+      // §S281 fix: section-btn is display:none + empty (dead) — call the real toggle directly
+      // (clicking the hidden button was a no-op, same class as the '.' bug).
+      if (A.toggleSection) A.toggleSection();
     },
     '4':  function() { if (typeof A.export4D5D === 'function') A.export4D5D(); },
     'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
@@ -844,12 +846,32 @@ async function setupScene(A) {
     // §S280: -/+/= panel toggle removed — [] button replaces (single=F11, double=toggle panels)
     'r':  function() { if (typeof toggleRecord === 'function') toggleRecord(); },
     'e':  function() { if (typeof toggleDocPill === 'function') toggleDocPill(); },
-    '/':  function() { if (A.quickShare) A.quickShare(); }
+    '/':  function() { if (A.quickShare) A.quickShare(); },
+    '.':  function() { // §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow
+      if (typeof window.toggleMobilePill === 'function') window.toggleMobilePill();
+      else if (typeof window.toggleOverflow === 'function') window.toggleOverflow();
+    }
   };
+
+  // §S281 Layer 2: press-time shortcut firing — single place all dispatch routes through.
+  // Announces what it fires, and if the handler throws it names the key loudly WITHOUT
+  // taking down the keydown handler ("let it break so we know which"). Returns true if fired.
+  function _fireShortcut(key) {
+    var fn = _shortcuts[key];
+    if (!fn) return false;
+    console.log('§SHORTCUT_FIRE key=' + key);
+    try {
+      fn();
+      return true;
+    } catch (err) {
+      console.error('§SHORTCUT_FAIL key=' + key + ' error=' + (err && err.message));
+      return true; // it fired (and failed loudly) — don't fall through to other handling
+    }
+  }
 
   function _dispatchSeq(seq) {
     if (_shortcuts[seq]) {
-      _shortcuts[seq]();
+      _fireShortcut(seq);
       console.log('§KBD_SEQ seq=' + seq);
       return true;
     }
@@ -1159,8 +1181,13 @@ async function setupScene(A) {
   window._registerPanel = _registerPanel;
   window._focusPanel = _focusPanel;
   window._blurPanel = _blurPanel;
+  window._cyclePanel = _cyclePanel;
+  window._shortcuts = _shortcuts; // §S281: exposed so InputReg.checkShortcuts() can self-audit
   window._panels = _panels;
   window._focusStack = _focusStack; // §S280: exposed for [] double-tap
+  // §S281 P0: expose CURRENT focused panel (a reassigned var, so via getter) for the
+  // input registry facade + focusOnlyLatest. _focusStack only holds PREVIOUS focuses.
+  window._getFocusedPanel = function() { return _focusedPanel; };
 
   // ── Keyboard handler ──────────────────────────────────────────
   // ORIGINAL shortcuts preserved. Sequence engine + panel focus added on top.

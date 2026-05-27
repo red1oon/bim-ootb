@@ -12,7 +12,7 @@ var ICONS = {
   search:    { svg: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', trl: 'ui_tt_find', key: null, desc: 'Find' },
   share:     { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', trl: 'ui_tt_share', key: null, desc: 'Share' },
   lifeBuoy:  { svg: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', trl: 'ui_tt_help', key: 'F1', desc: 'Help' },
-  moreVert:  { svg: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>', trl: null, key: null, desc: 'More' },
+  moreVert:  { svg: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>', trl: null, key: '.', desc: 'More' },
   scissors:  { svg: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', trl: 'ui_tt_section', key: null, desc: 'Section Cut' },
   eye:       { svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', trl: 'ui_tt_xray', key: 'X', desc: 'X-Ray' },
   clipboard: { svg: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>', trl: 'ui_tt_issues', key: 'I', desc: 'Issues' },
@@ -543,6 +543,23 @@ function setupPanels(A) {
       Object.entries(A.discCounts).slice(0, 6).map(([d, c]) => `${d}:${c.toLocaleString()}`).join(' ') + '</small>';
   };
 
+  // §S281 P3: register overflow pill icons with InputReg once (idempotent).
+  // Exact same 7 button/flag pairs the old inline _s() block synced — pure refactor.
+  var _overflowIconsRegistered = false;
+  function _registerOverflowIcons() {
+    if (_overflowIconsRegistered || !window.InputReg) return;
+    var R = window.InputReg;
+    R.register({ id: 'xray',     kind: 'icon', btnId: 'xray-btn',           isActive: function() { return A.xrayOn; },     release: function() { if (A.xrayOn && A.toggleXray) A.toggleXray(); } });
+    R.register({ id: 'section',  kind: 'icon', btnId: 'section-btn',        isActive: function() { return A.sectionOn; },  release: function() { if (A.sectionOn && A.toggleSection) A.toggleSection(); } });
+    R.register({ id: 'sunglass', kind: 'icon', btnId: 'sunglass-btn',       isActive: function() { return A.sunglassOn; }, release: function() { if (A.sunglassOn && window.toggleSunglass) window.toggleSunglass(); } });
+    R.register({ id: 'fly',      kind: 'icon', btnId: 'fly-btn',            isActive: function() { return !!A.flyActive; }, release: function() { if (A.flyActive && window.toggleFlyAround) window.toggleFlyAround(); } });
+    R.register({ id: 'shadow',   kind: 'icon', btnId: 'shadow-overflow-btn', isActive: function() { return A._shadowOn; }, release: function() { if (A._shadowOn && window.toggleShadow) window.toggleShadow(); } });
+    R.register({ id: 'bg',       kind: 'icon', btnId: 'bg-overflow-btn',     isActive: function() { return A._whiteBg; },  release: function() { if (A._whiteBg && window.toggleBackground) window.toggleBackground(); } });
+    R.register({ id: 'grid2d',   kind: 'icon', btnId: 'grid-2d-btn',         isActive: function() { return !!(A._gridOverlayState && A._gridOverlayState.active); }, release: function() {} });
+    _overflowIconsRegistered = true;
+    console.log('§S281 overflow icons registered with InputReg');
+  }
+
   // ── S265: Icon Pill overflow toggle + §-tags ──
   window.toggleOverflow = function() {
     var box = document.getElementById('search-box');
@@ -553,16 +570,23 @@ function setupPanels(A) {
     box.classList.toggle('overflow-open', opening);
     if (scrim) scrim.classList.toggle('active', opening);
     if (moreBtn) moreBtn.classList.toggle('active', opening);
-    // S265: sync active state on open
+    // S265: sync active state on open. §S281 P3: InputReg.syncActiveButtons() is the
+    // single highlight authority (icons registered once below). Identical button/flag
+    // mapping to the prior inline _s() block; falls back to inline if registry absent.
     if (opening) {
-      var _s = function(id, on) { var b = document.getElementById(id); if (b) b.classList.toggle('active', !!on); };
-      _s('xray-btn', A.xrayOn);
-      _s('section-btn', A.sectionOn);
-      _s('sunglass-btn', A.sunglassOn);
-      _s('fly-btn', A.flyActive);
-      _s('shadow-overflow-btn', A._shadowOn);
-      _s('bg-overflow-btn', A._whiteBg);
-      _s('grid-2d-btn', A._gridOverlayState && A._gridOverlayState.active);
+      if (window.InputReg) {
+        _registerOverflowIcons();
+        window.InputReg.syncActiveButtons();
+      } else {
+        var _s = function(id, on) { var b = document.getElementById(id); if (b) b.classList.toggle('active', !!on); };
+        _s('xray-btn', A.xrayOn);
+        _s('section-btn', A.sectionOn);
+        _s('sunglass-btn', A.sunglassOn);
+        _s('fly-btn', A.flyActive);
+        _s('shadow-overflow-btn', A._shadowOn);
+        _s('bg-overflow-btn', A._whiteBg);
+        _s('grid-2d-btn', A._gridOverlayState && A._gridOverlayState.active);
+      }
     }
     console.log('§UI_OVERFLOW ' + (opening ? 'open' : 'close'));
   };
@@ -811,10 +835,15 @@ function setupPanels(A) {
       _focusOnlyHidden = [];
       return;
     }
-    // Find the latest visible panel (last in focus stack or currently focused)
+    // Find the latest visible panel. §S281 P1: prefer the CURRENT focused panel
+    // (InputReg.focusTop) — the prior bug walked _focusStack, which never holds the
+    // currently-focused panel, so latestId came out wrong/null. Fall back to the old
+    // stack walk only if the registry isn't loaded.
     var latestId = null;
-    if (window._panels) {
-      // Use focus stack — last entry is the most recent
+    var _top = (window.InputReg && window.InputReg.focusTop()) || null;
+    if (_top && _top.id) latestId = _top.id;
+    if (!latestId && window._panels) {
+      // Fallback: focus stack — last entry is the most recent
       var stack = window._focusStack || [];
       for (var si = stack.length - 1; si >= 0; si--) {
         for (var pi = 0; pi < window._panels.length; pi++) {
@@ -884,27 +913,34 @@ function setupPanels(A) {
     // Icon actions — sorted by last-used (most recent at bottom, nearest to thumb)
     var _LS_KEY = 'bim_mobile_pill_order';
     var _actions = [
-      { id: 'redpill',   icon: '<rect x="8" y="2" width="8" height="20" rx="4"/><line x1="8" y1="12" x2="16" y2="12"/><circle cx="12" cy="7" r="1.5" fill="currentColor"/>', fn: function() { if (typeof toggleDocMode === 'function') toggleDocMode(); else if (A._enterRedPill) A._enterRedPill(); } },
+      { id: 'redpill',   platform: 'desktop', icon: '<rect x="8" y="2" width="8" height="20" rx="4"/><line x1="8" y1="12" x2="16" y2="12"/><circle cx="12" cy="7" r="1.5" fill="currentColor"/>', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); } }, // §S281: connect to the working doc-mode scene change (toggleDocMode/_enterRedPill were undefined); desktop-only → greyed on mobile
       { id: 'find',      icon: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', fn: function() { if (A.openFindPanel) A.openFindPanel(''); } },
       { id: 'help',      icon: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
-      { id: 'walk',      icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); } },
+      { id: 'walk',      platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); } }, // §S281: mobile-only (GPS+orientation)
       { id: 'share',     icon: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', fn: function() { if (A.quickShare) A.quickShare(); } },
-      { id: 'measure',   icon: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>', fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); } },
+      { id: 'measure',   keepOpen: true, icon: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>', // §S281 #1: Measure (parent) + Clash (sibling)
+        fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); }, // tap = Measure toggle
+        hold: function(btn) { _revealChip(btn, 'clash', '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); } }, // long-press = Clash matrix (reuses working 'c' handler; restores pill access)
       { id: 'xray',      icon: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', fn: function() { if (typeof toggleXray === 'function') toggleXray(); } },
       { id: 'tm',        icon: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); } },
       { id: 'section',   icon: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', fn: function() { if (A.toggleSection) A.toggleSection(); } },
-      { id: 'screenshot', icon: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', fn: function() { if (A.screenshot) A.screenshot(); } },
+      { id: 'background', keepOpen: true, icon: '<circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/>', // §S281 #2: White BG + Screenshot pair
+        fn: function() { if (typeof window.toggleBackground === 'function') { window.toggleBackground(); var b=document.getElementById('pill-background'); if(b) b.classList.toggle('active', !!A._whiteBg); } }, // tap = white background (prep)
+        hold: function(btn) { _revealChip(btn, 'screenshot', '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', function(){ if (A.screenshot) A.screenshot(); }); } }, // long-press = reveal Screenshot
       { id: 'night',     icon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>', fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); } },
       { id: 'palette',   icon: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>', fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); } },
       { id: 'shadow',    icon: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); } },
       { id: 'fly',       icon: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); } },
       { id: 'report',    icon: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', fn: function() { if (A.export4D5D) A.export4D5D(); } },
+      { id: 'precision', keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
+        fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); }, // tap = toggle Fine
+        hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); } }, // long-press = reveal Reset sideways
       { id: 'home',      icon: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', fn: function() { location.href = '../index.html'; } }
     ];
 
     // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
     // Usefulness: frequent tools near bottom (thumb reach), rare at top
-    var _defaultOrder = ['redpill','report','fly','shadow','night','screenshot','palette','tm','section','xray','share','measure','walk','help','find','home'];
+    var _defaultOrder = ['redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
 
     function _getOrder() {
       try {
@@ -922,6 +958,30 @@ function setupPanels(A) {
       return order;
     }
 
+    // §S281: reusable sideways-chip reveal for long-press secondaries (the standard).
+    // Shows one icon-only chip left of the source button; tap runs onTap; auto-dismiss.
+    var _activeChip = null;
+    function _revealChip(srcBtn, id, iconSvg, onTap) {
+      if (!srcBtn) return;
+      if (_activeChip) { _activeChip.remove(); _activeChip = null; return; } // toggle off
+      var chip = document.createElement('button');
+      chip.id = 'chip-' + id;
+      chip.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + iconSvg + '</svg>';
+      var r = srcBtn.getBoundingClientRect();
+      chip.style.cssText =
+        'position:fixed;z-index:10000;width:44px;height:44px;display:flex;align-items:center;justify-content:center;' +
+        'border:none;border-radius:8px;background:rgba(20,20,40,0.85);color:#4fc3f7;cursor:pointer;' +
+        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);' +
+        'top:' + r.top + 'px;left:' + (r.left - 52) + 'px;';
+      chip.addEventListener('pointerup', function(e) { e.stopPropagation(); onTap(); if (_activeChip){ _activeChip.remove(); _activeChip=null; } });
+      document.body.appendChild(chip); _activeChip = chip;
+      setTimeout(function() {
+        var d = function(ev){ if (_activeChip && ev.target !== _activeChip && !_activeChip.contains(ev.target)) { _activeChip.remove(); _activeChip=null; document.removeEventListener('pointerdown', d, true); } };
+        document.addEventListener('pointerdown', d, true);
+      }, 0);
+      console.log('§PILL_CHIP reveal=' + id);
+    }
+
     function _buildPill() {
       pill.innerHTML = '';
       var order = _getOrder();
@@ -934,14 +994,54 @@ function setupPanels(A) {
       sorted.forEach(function(act) {
         var btn = document.createElement('button');
         btn.title = act.id;
+        btn.id = 'pill-' + act.id; // §S281: stable id so tools (e.g. precision) can target their button
         btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
-        btn.addEventListener('pointerup', function(e) {
-          e.stopPropagation();
-          _bumpAction(act.id);
-          act.fn();
-          _closePill();
-          console.log('§PILL action=' + act.id);
-        });
+        // §S281: platform gating — grey out + status toast when tool is wrong-platform.
+        // act.platform: 'mobile' | 'desktop' | undefined(both). Standard for P4 surface flags.
+        var _onMobile = !!window._isMobile;
+        var _wrongPlatform = (act.platform === 'mobile' && !_onMobile) ||
+                             (act.platform === 'desktop' && _onMobile);
+        if (_wrongPlatform) {
+          btn.style.opacity = '0.35';
+          btn.style.cursor = 'not-allowed';
+          var _msg = act.platform === 'mobile' ? 'Mobile use' : 'Desktop use';
+          btn.title = act.id + ' — ' + _msg;
+          btn.addEventListener('pointerup', function(e) {
+            e.stopPropagation();
+            if (A.status) A.status.textContent = _msg;
+            console.log('§PILL_BLOCKED action=' + act.id + ' platform=' + act.platform + ' msg=' + _msg);
+          });
+          pill.appendChild(btn);
+          return; // skip normal tap/hold wiring
+        }
+        // §S281: optional long-press (act.hold) + keep-open (act.keepOpen) — reusable
+        // framework hook for expandable icons. tap = act.fn, hold = act.hold.
+        if (act.hold) {
+          var _holdTimer = 0, _held = false;
+          var HOLD_MS = 450;
+          btn.addEventListener('pointerdown', function(e) {
+            e.stopPropagation(); _held = false;
+            _holdTimer = setTimeout(function() { _held = true; act.hold(btn); }, HOLD_MS);
+          });
+          var _cancelHold = function() { if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = 0; } };
+          btn.addEventListener('pointerup', function(e) {
+            e.stopPropagation(); _cancelHold();
+            if (_held) { _held = false; return; } // long-press already handled
+            _bumpAction(act.id); act.fn();
+            if (!act.keepOpen) _closePill();
+            console.log('§PILL action=' + act.id);
+          });
+          btn.addEventListener('pointerleave', _cancelHold);
+          btn.addEventListener('pointercancel', _cancelHold);
+        } else {
+          btn.addEventListener('pointerup', function(e) {
+            e.stopPropagation();
+            _bumpAction(act.id);
+            act.fn();
+            if (!act.keepOpen) _closePill();
+            console.log('§PILL action=' + act.id);
+          });
+        }
         pill.appendChild(btn);
       });
     }

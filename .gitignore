@@ -4,3 +4,13 @@ node_modules/
 test-results/
 buildings/
 *.log
+
+# OCI deploy staging (artifacts, not source) — §S281
+oci-deploy/
+# Safety: never commit OCI creds or the quick-push helper
+*.pem
+.oci/
+quick-push.sh
+
+# Reference context from HP machine (not source) — §S281
+BIM_CONTEXT/
