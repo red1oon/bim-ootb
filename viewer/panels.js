@@ -908,14 +908,12 @@ function setupPanels(A) {
 
   // §S280: Mobile + Desktop — ESC cascades close, panels stack normally
 
-  // §S280: Scrollable pill — ⋯ trigger, full-height, native scroll (both platforms)
+  // §S281: Scrollable pill — uses PillBuilder for declarative icon+panel wiring
   (function() {
     var pill = document.getElementById('mobile-pill');
     var trigger = document.getElementById('mobile-trigger');
     if (!pill || !trigger) return;
-
-    // Icon actions — sorted by last-used (most recent at bottom, nearest to thumb)
-    var _LS_KEY = 'bim_mobile_pill_order';
+    if (typeof PillBuilder !== 'function') { console.warn('§PILL pill_builder.js not loaded'); return; }
     var _actions = [
       { id: 'redpill',   platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); }, isActive: function() { return !!window._docMode; } },
       { id: 'find',      icon: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', fn: function() { if (A.openFindPanel) A.openFindPanel(''); } },
@@ -961,146 +959,17 @@ function setupPanels(A) {
     // Usefulness: frequent tools near bottom (thumb reach), rare at top
     var _defaultOrder = ['settings','redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
 
-    function _getOrder() {
-      try {
-        var saved = localStorage.getItem(_LS_KEY);
-        if (saved) return JSON.parse(saved);
-      } catch(e) {}
-      return _defaultOrder.slice();
-    }
-    function _bumpAction(id) {
-      var order = _getOrder();
-      var idx = order.indexOf(id);
-      if (idx >= 0) order.splice(idx, 1);
-      order.push(id); // most recent = bottom
-      try { localStorage.setItem(_LS_KEY, JSON.stringify(order)); } catch(e) {}
-      return order;
-    }
-
-    // §S281: reusable sideways-chip reveal for long-press secondaries (the standard).
-    // Shows one icon-only chip left of the source button; tap runs onTap; auto-dismiss.
-    var _activeChip = null;
-    function _revealChip(srcBtn, id, iconSvg, onTap) {
-      if (!srcBtn) return;
-      if (_activeChip) { _activeChip.remove(); _activeChip = null; return; } // toggle off
-      var chip = document.createElement('button');
-      chip.id = 'chip-' + id;
-      chip.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + iconSvg + '</svg>';
-      var r = srcBtn.getBoundingClientRect();
-      chip.style.cssText =
-        'position:fixed;z-index:10000;width:44px;height:44px;display:flex;align-items:center;justify-content:center;' +
-        'border:none;border-radius:8px;background:rgba(20,20,40,0.85);color:#4fc3f7;cursor:pointer;' +
-        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);' +
-        'top:' + r.top + 'px;left:' + (r.left - 52) + 'px;';
-      chip.addEventListener('pointerup', function(e) { e.stopPropagation(); onTap(); if (_activeChip){ _activeChip.remove(); _activeChip=null; } });
-      document.body.appendChild(chip); _activeChip = chip;
-      setTimeout(function() {
-        var d = function(ev){ if (_activeChip && ev.target !== _activeChip && !_activeChip.contains(ev.target)) { _activeChip.remove(); _activeChip=null; document.removeEventListener('pointerdown', d, true); } };
-        document.addEventListener('pointerdown', d, true);
-      }, 0);
-      console.log('§PILL_CHIP reveal=' + id);
-    }
-
-    // §S281: centralised highlight — reads isActive from each action, sets .active on pill-{id}
-    function _syncPillHighlights() {
-      var n = 0;
-      _actions.forEach(function(act) {
-        if (!act.isActive) return;
-        var btn = document.getElementById('pill-' + act.id);
-        if (!btn) return;
-        var on = false;
-        try { on = !!act.isActive(); } catch(e) {}
-        btn.classList.toggle('active', on);
-        n++;
-      });
-      console.log('§PILL_SYNC synced=' + n);
-    }
-    // Expose for InputReg
-    window._syncPillHighlights = _syncPillHighlights;
-
-    function _buildPill() {
-      pill.innerHTML = '';
-      var order = _getOrder();
-      var sorted = _actions.slice().sort(function(a, b) {
-        var ai = order.indexOf(a.id), bi = order.indexOf(b.id);
-        if (ai < 0) ai = -1;
-        if (bi < 0) bi = -1;
-        return ai - bi;
-      });
-      sorted.forEach(function(act) {
-        var btn = document.createElement('button');
-        btn.title = act.id;
-        btn.id = 'pill-' + act.id; // §S281: stable id so tools (e.g. precision) can target their button
-        if (act.img) btn.innerHTML = '<img src="' + act.img + '" width="20" height="20" style="pointer-events:none">';
-        else btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
-        // §S281: platform gating — grey out + status toast when tool is wrong-platform.
-        // act.platform: 'mobile' | 'desktop' | undefined(both). Standard for P4 surface flags.
-        var _onMobile = !!window._isMobile;
-        var _wrongPlatform = (act.platform === 'mobile' && !_onMobile) ||
-                             (act.platform === 'desktop' && _onMobile);
-        if (_wrongPlatform) {
-          btn.style.opacity = '0.35';
-          btn.style.cursor = 'not-allowed';
-          var _msg = act.platform === 'mobile' ? 'Mobile use' : 'Desktop use';
-          btn.title = act.id + ' — ' + _msg;
-          btn.addEventListener('pointerup', function(e) {
-            e.stopPropagation();
-            if (A.status) A.status.textContent = _msg;
-            console.log('§PILL_BLOCKED action=' + act.id + ' platform=' + act.platform + ' msg=' + _msg);
-          });
-          pill.appendChild(btn);
-          return; // skip normal tap/hold wiring
-        }
-        // §S281: optional long-press (act.hold) + keep-open (act.keepOpen) — reusable
-        // framework hook for expandable icons. tap = act.fn, hold = act.hold.
-        if (act.hold) {
-          var _holdTimer = 0, _held = false;
-          var HOLD_MS = 450;
-          btn.addEventListener('pointerdown', function(e) {
-            e.stopPropagation(); _held = false;
-            _holdTimer = setTimeout(function() { _held = true; act.hold(btn); }, HOLD_MS);
-          });
-          var _cancelHold = function() { if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = 0; } };
-          btn.addEventListener('pointerup', function(e) {
-            e.stopPropagation(); _cancelHold();
-            if (_held) { _held = false; return; } // long-press already handled
-            _bumpAction(act.id); act.fn(); _syncPillHighlights();
-            // §S281: pill stays open — user dismisses via ⋯ or outside tap
-            console.log('§PILL action=' + act.id);
-          });
-          btn.addEventListener('pointerleave', _cancelHold);
-          btn.addEventListener('pointercancel', _cancelHold);
-        } else {
-          btn.addEventListener('pointerup', function(e) {
-            e.stopPropagation();
-            _bumpAction(act.id);
-            act.fn(); _syncPillHighlights();
-            // §S281: pill stays open — user dismisses via ⋯ or outside tap
-            console.log('§PILL action=' + act.id);
-          });
-        }
-        pill.appendChild(btn);
-      });
-    }
-
-    // Build once at startup — expose so toggleDocPill can restore after doc mode
-    A._buildPill = _buildPill;
-    _buildPill();
-
-    var _pillOpen = false;
-    function _closePill() {
-      pill.style.display = 'none';
-      _pillOpen = false;
-    }
-    window.toggleMobilePill = function() {
-      _pillOpen = !_pillOpen;
-      pill.style.display = _pillOpen ? 'block' : 'none';
-      console.log('§PILL open=' + _pillOpen);
-    };
-    // Close on tap outside
-    document.addEventListener('pointerdown', function(e) {
-      if (_pillOpen && !pill.contains(e.target) && e.target !== trigger) _closePill();
+    // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
+    var _mainPill = PillBuilder({
+      pill: pill, trigger: trigger, APP: A,
+      actions: _actions, order: _defaultOrder,
+      storageKey: 'bim_mobile_pill_order'
     });
+
+    // Expose for toggleDocPill restore + keyboard shortcut
+    A._buildPill = _mainPill.build;
+    window._syncPillHighlights = _mainPill.sync;
+    window.toggleMobilePill = _mainPill.toggle;
 
     // §S280: Undo via kernel_ops
     var _redoBtn = null;
