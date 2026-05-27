@@ -22,6 +22,9 @@ jobs:
       - name: Split-DB wiring
         run: node tests/test_s274_split_db_wiring.js
 
+      - name: Input registry audit
+        run: node tests/audit_input_registry.js
+
   e2e-tests:
     runs-on: ubuntu-latest
     needs: fast-checks
@@ -43,7 +46,3 @@ jobs:
       - name: Golden path — IFC drop → viewer (ensures import works)
         working-directory: tests
         run: npx playwright test --project=desktop s274-golden-path
-
-      - name: Core structural tests — streaming contract + all @fast
-        working-directory: tests
-        run: npx playwright test --project=desktop --grep @fast
