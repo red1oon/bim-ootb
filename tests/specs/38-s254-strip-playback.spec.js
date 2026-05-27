@@ -12,8 +12,8 @@ const { ConsoleLogs } = require('../helpers/console-capture');
 const fs = require('fs');
 const path = require('path');
 
-const BOQ_URL = '/dev/boq_charts.html?db=/buildings/Duplex_extracted.db&lib=/buildings/Duplex_library.db&bld=Ifc2x3_Duplex_Architecture';
-const BOQ_SRC = fs.readFileSync(path.join(__dirname, '../../boq_charts.html'), 'utf8');
+const BOQ_URL = '/bim-ootb/viewer/boq_charts.html?db=/buildings/Duplex_extracted.db&lib=/buildings/Duplex_library.db&bld=Ifc2x3_Duplex_Architecture';
+const BOQ_SRC = fs.readFileSync(path.join(__dirname, '../../viewer/boq_charts.html'), 'utf8');
 
 async function waitForCharts(page) {
   await page.waitForFunction(() => {
