@@ -22,7 +22,7 @@ jobs:
       - name: Split-DB wiring
         run: node tests/test_s274_split_db_wiring.js
 
-  golden-path:
+  e2e-tests:
     runs-on: ubuntu-latest
     needs: fast-checks
     steps:
@@ -36,6 +36,14 @@ jobs:
         working-directory: tests
         run: npm ci && npx playwright install chromium
 
-      - name: Golden path — drop + open + stream + save
+      - name: Download test data
+        working-directory: tests
+        run: ./setup-test-data.sh
+
+      - name: Golden path — IFC drop → viewer (ensures import works)
         working-directory: tests
         run: npx playwright test --project=desktop s274-golden-path
+
+      - name: Core structural tests — streaming contract + all @fast
+        working-directory: tests
+        run: npx playwright test --project=desktop --grep @fast
