@@ -469,9 +469,45 @@
           var val = _caseGet(recs[ri], flds[hi].columnName);
           tr.appendChild(_renderEditableCell(flds[hi], val, recs[ri], tblName));
         }
+        // §18 Swipe-left-to-delete on table overlay rows
+        _attachRowSwipe(tr, tblName, kc);
         table.appendChild(tr);
       }
       container.innerHTML = ''; container.appendChild(table);
+    }
+
+    // §18 Swipe gesture on overlay rows — left = delete with confirm
+    function _attachRowSwipe(tr, tblName, keyCol) {
+      var sx = 0, sy = 0;
+      tr.addEventListener('pointerdown', function(e) { sx = e.clientX; sy = e.clientY; });
+      tr.addEventListener('pointerup', function(e) {
+        var dx = e.clientX - sx, dy = e.clientY - sy;
+        if (dx < -80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          var pk = this.dataset.pk;
+          var row = this;
+          row.style.background = 'rgba(255,50,50,0.15)';
+          row.style.transition = 'background 200ms';
+          var confirmBtn = document.createElement('button');
+          confirmBtn.textContent = 'Delete';
+          confirmBtn.style.cssText = 'position:absolute;right:4px;top:50%;transform:translateY(-50%);' +
+            'background:#c0392b;color:#fff;border:none;border-radius:6px;padding:6px 14px;' +
+            'font-size:12px;font-weight:600;cursor:pointer;z-index:2;min-height:36px;';
+          row.style.position = 'relative';
+          row.appendChild(confirmBtn);
+          confirmBtn.addEventListener('pointerup', function(ev) {
+            ev.stopPropagation();
+            ADData.deleteRecord(_db, tblName, keyCol, pk);
+            row.style.opacity = '0'; row.style.transition = 'opacity 300ms';
+            setTimeout(function() { if (row.parentNode) row.parentNode.removeChild(row); }, 300);
+            _ovToast('Deleted', '#c0392b');
+            console.log('§OV_SWIPE_DEL table=' + tblName + ' pk=' + pk);
+          });
+          setTimeout(function() {
+            if (confirmBtn.parentNode) confirmBtn.parentNode.removeChild(confirmBtn);
+            row.style.background = '';
+          }, 3000);
+        }
+      });
     }
 
     // Build child tab headers — skip empty tables (no records for any PK)
@@ -2570,6 +2606,22 @@
     console.log('§AD_UI showCharts window=' + (_currentWindow ? _currentWindow.name : 'home'));
   }
 
+  // §19 Build shareable URL with window, record, and client params
+  function _buildShareUrl() {
+    var url = location.origin + location.pathname;
+    var parts = [];
+    if (_currentWindow) parts.push('window=' + _currentWindow.id);
+    if (_currentWindow && _currentRecords.length > 0 && _currentRecordIdx >= 0) {
+      var tab = _currentWindow.tabs[_currentTabIdx];
+      var keyCol = tab.tableName + '_ID';
+      var rec = _currentRecords[_currentRecordIdx];
+      var pk = rec ? _caseGet(rec, keyCol) : null;
+      if (pk !== null && pk !== undefined) parts.push('record=' + pk);
+    }
+    if (_currentClient !== 'system') parts.push('client=' + _currentClient);
+    return parts.length ? url + '?' + parts.join('&') : url;
+  }
+
   function _showMore() {
     _contentEl.innerHTML = '';
     _breadcrumbEl.innerHTML = '';
@@ -2588,8 +2640,7 @@
 
     var items = [
       { label: 'Share Link', action: function () {
-        var url = location.origin + location.pathname;
-        if (_currentWindow) url += '?window=' + _currentWindow.id;
+        var url = _buildShareUrl();
         if (navigator.clipboard) navigator.clipboard.writeText(url);
         console.log('§AD_UI share url=' + url);
       }},
@@ -2613,6 +2664,41 @@
         'font-size:14px;cursor:pointer;min-height:44px;';
       btn.addEventListener('pointerup', items[i].action);
       _contentEl.appendChild(btn);
+    }
+
+    // §19 QR code canvas — renders current share URL as scannable code
+    if (typeof qrcode === 'function') {
+      var url = _buildShareUrl();
+      try {
+        var qr = qrcode(0, 'M');
+        qr.addData(url);
+        qr.make();
+        var modCount = qr.getModuleCount();
+        var cellSize = Math.floor(200 / modCount);
+        var size = cellSize * modCount;
+        var qrCanvas = document.createElement('canvas');
+        qrCanvas.width = size; qrCanvas.height = size;
+        qrCanvas.style.cssText = 'display:block;margin:20px auto;border-radius:8px;' +
+          'background:#fff;padding:8px;';
+        var qCtx = qrCanvas.getContext('2d');
+        qCtx.fillStyle = '#fff';
+        qCtx.fillRect(0, 0, size, size);
+        qCtx.fillStyle = '#000';
+        for (var r = 0; r < modCount; r++) {
+          for (var c = 0; c < modCount; c++) {
+            if (qr.isDark(r, c)) qCtx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+          }
+        }
+        _contentEl.appendChild(qrCanvas);
+        var qrLabel = document.createElement('div');
+        qrLabel.textContent = url;
+        qrLabel.style.cssText = 'text-align:center;font-size:11px;color:#666;word-break:break-all;' +
+          'padding:0 16px 16px;';
+        _contentEl.appendChild(qrLabel);
+        console.log('§AD_UI qr rendered url=' + url + ' modules=' + modCount);
+      } catch (e) {
+        console.log('§AD_UI qr error: ' + e.message);
+      }
     }
     console.log('§AD_UI showMore');
   }
@@ -3098,10 +3184,38 @@
 
   // ── Public API ─────────────────────────────────────────────────────
 
+  // §19 Navigate to a specific record by PK after openWindow
+  function _navToRecordByPk(pk) {
+    if (!_currentWindow || !_currentRecords.length) return false;
+    var tab = _currentWindow.tabs[_currentTabIdx];
+    var keyCol = tab.tableName + '_ID';
+    for (var i = 0; i < _currentRecords.length; i++) {
+      if (String(_caseGet(_currentRecords[i], keyCol)) === String(pk)) {
+        _currentRecordIdx = i;
+        _renderWindow();
+        console.log('§AD_UI navToRecord pk=' + pk + ' idx=' + i);
+        return true;
+      }
+    }
+    console.log('§AD_UI navToRecord pk=' + pk + ' NOT FOUND in ' + _currentRecords.length + ' records');
+    return false;
+  }
+
+  // §19 Set client before showMenu (for URL param)
+  function _setClient(client) {
+    if (_clients.indexOf(client) >= 0 && client !== _currentClient) {
+      _currentClient = client;
+      console.log('§AD_UI setClient client=' + client);
+    }
+  }
+
   var ADUI = {
     init:       init,
     showMenu:   showMenu,
     openWindow: openWindow,
+    // §19 Deep-link helpers
+    setClient:  _setClient,
+    navToRecord: _navToRecordByPk,
     // Exposed for testing — CRUD toolbar / arrow keys
     navRecord:  _navRecord,
     getRecordIdx: function () { return _currentRecordIdx; },

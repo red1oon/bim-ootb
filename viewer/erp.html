@@ -100,7 +100,7 @@
   }
 
   // ── 2. Module list — §8 step 3 ────────────────────────────────────
-  var V = '?v=20';
+  var V = '?v=21';
   var MODULES = [
     'kernel_ops.js' + V,
     'ad_parser.js' + V,
@@ -108,6 +108,7 @@
     'ad_charts.js' + V,
     'ad_graph.js' + V,
     'erp_search.js' + V,
+    'qrcode.min.js' + V,
     'ad_ui.js' + V
   ];
 
@@ -298,11 +299,21 @@
     _bench.ui_init = Math.round(performance.now() - _t0);
     console.log('§BENCH ui_init=' + _bench.ui_init + 'ms');
 
-    // ── 7. Auto-open window from URL — §8 step 6 ────────────────────
+    // ── 7. Auto-open from URL — §8 step 6 + §19 deep links ────────
+    var clientParam = params.get('client');
+    if (clientParam && typeof ADUI !== 'undefined') {
+      console.log('§ERP_HTML auto-client=' + clientParam);
+      ADUI.setClient(clientParam);
+    }
     var windowParam = params.get('window');
     if (windowParam && typeof ADUI !== 'undefined') {
       console.log('§ERP_HTML auto-open window=' + windowParam);
       ADUI.openWindow(Number(windowParam));
+      var recordParam = params.get('record');
+      if (recordParam) {
+        console.log('§ERP_HTML auto-record=' + recordParam);
+        ADUI.navToRecord(recordParam);
+      }
     }
 
     // Hide loading screen
