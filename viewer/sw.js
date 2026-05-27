@@ -119,6 +119,7 @@ const PRECACHE_ASSETS = [
   'clash_snag.js',
   'precision_cam.js',
   'time_machine.js',
+  'error_reporter.js',
   'print_sheet.js',
   'ghostglass.js',
   'qrcode.min.js',

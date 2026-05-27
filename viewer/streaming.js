@@ -1333,8 +1333,13 @@ function setupStreaming(A) {
     if (metaUrl === A.DB_URL) metaUrl = A.DB_URL.replace(/\.db$/, '_meta.db');
     if (metaUrl !== A.DB_URL) {
       try {
-        var headResp = await fetch(metaUrl, { method: 'HEAD' });
-        _splitMode = headResp.ok;
+        // For import:// URLs, use IDB _checkCache instead of HEAD fetch
+        if (A.DB_URL.startsWith('import://')) {
+          _splitMode = await A._checkCache(metaUrl);
+        } else {
+          var headResp = await fetch(metaUrl, { method: 'HEAD' });
+          _splitMode = headResp.ok;
+        }
       } catch(e) { _splitMode = false; }
     }
     console.log(`[S192] §DB_SPLIT_DETECT meta=${metaUrl} found=${_splitMode}`);
@@ -1342,7 +1347,8 @@ function setupStreaming(A) {
     if (_splitMode) {
       // ── §S260b: Three-phase — positions.bin (instant bboxes) → meta.db (panels) → geo.db (meshes) ──
       var geoUrl = A.DB_URL.replace('_extracted.db', '_geo.db');
-      var _geoAbsUrl = new URL(geoUrl, location.href).href;
+      // Bypass new URL() for import:// URLs (would throw)
+      var _geoAbsUrl = geoUrl.startsWith('import://') ? geoUrl : new URL(geoUrl, location.href).href;
       var posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
 
       // Phase 0: Try positions.bin for instant bboxes (< 3MB, loads in <1s)
