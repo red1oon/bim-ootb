@@ -994,7 +994,19 @@ async function setupScene(A) {
 
     function renderList(filter) {
       var f = (filter || '').toLowerCase();
-      var matches = _paletteEntries.filter(function(e) {
+      // §S281: merge static palette entries with dynamic pill actions
+      var all = _paletteEntries.slice();
+      var seenIds = {};
+      all.forEach(function(e) { if (e.seq) seenIds[e.seq.toLowerCase()] = true; if (e.name) seenIds[e.name.toLowerCase()] = true; });
+      // Read pill actions from PillBuilder (if available)
+      if (window._mainPillActions) {
+        window._mainPillActions.forEach(function(act) {
+          if (seenIds[act.id]) return; // skip if already in palette
+          var title = act.id.charAt(0).toUpperCase() + act.id.slice(1);
+          all.push({ seq: '', name: title, icon: act.icon ? _ic(act.icon) : '', action: act.fn });
+        });
+      }
+      var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
       listEl.innerHTML = '';

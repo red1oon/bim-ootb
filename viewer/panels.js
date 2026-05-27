@@ -970,6 +970,7 @@ function setupPanels(A) {
     A._buildPill = _mainPill.build;
     window._syncPillHighlights = _mainPill.sync;
     window.toggleMobilePill = _mainPill.toggle;
+    window._mainPillActions = _mainPill.actions; // §S281: exposed for Help panel dynamic merge
 
     // §S280: Undo via kernel_ops
     var _redoBtn = null;
