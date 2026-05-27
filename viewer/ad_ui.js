@@ -1586,8 +1586,13 @@
         fsBtn.style.fontSize = '16px';
       }
       ADGraph.destroy();
-      ADGraph.init(canvas, _db, _currentClient,
-        _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+      if (!_dbReady && typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
+        ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
+          _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+      } else {
+        ADGraph.init(canvas, _db, _currentClient,
+          _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+      }
       console.log('§AD_UI graphFullscreen=' + fullscreen +
         ' w=' + canvas.width + ' h=' + canvas.height);
     }

@@ -1695,9 +1695,10 @@
 
     console.log('§AD_GRAPH init client=' + client + ' nodes=' + _nodes.length + ' radius=' + Math.round(_radius));
 
-    // Defer FTS5 index build — don't block first paint
-    if (typeof ERPSearch !== 'undefined' && ERPSearch.buildIndex && !ERPSearch.isIndexed()) {
+    // Defer FTS5 index build — don't block first paint, skip if no DB
+    if (_db && typeof ERPSearch !== 'undefined' && ERPSearch.buildIndex && !ERPSearch.isIndexed()) {
       setTimeout(function () {
+        if (!_db) return; // guard against race
         var _tFts = typeof performance !== 'undefined' ? performance.now() : Date.now();
         ERPSearch.buildIndex(_db);
         console.log('§BENCH fts5_build=' + Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - _tFts) + 'ms (deferred)');
