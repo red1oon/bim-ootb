@@ -86,8 +86,11 @@
       '  flex-shrink: 0; min-width: 32px; min-height: 32px; transition: background 0.15s; }',
       '.find-nav-inline:hover { background: rgba(79,195,247,0.45); }',
       '#find-count { font-size: 9px; color: #666; padding: 2px 10px 0; }',
-      // Chips hidden by default — too bulky for slim layout
-      '#find-chips { display: none; }',
+      // §S281: Chips visible as slim hint row
+      '#find-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }',
+      '#find-chips button { background: rgba(79,195,247,0.12); border: 1px solid rgba(79,195,247,0.25); border-radius: 10px;',
+      '  color: #4fc3f7; font-size: 10px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }',
+      '#find-chips button:hover { background: rgba(79,195,247,0.25); }',
       // Nav HUD
       '#nav-hud {',
       '  position: fixed; top: 0; left: 0; width: 100%; height: 100%;',
@@ -510,34 +513,14 @@
       runSearch();
     }
 
-    // ── S265 Phase 5: Context-aware chips from current building ──
+    // §S281: Three diverse hint chips — NLP examples only, no DB query
     function buildChips() {
-      if (!elChips || !A.db) return;
+      if (!elChips) return;
       elChips.innerHTML = '';
-      var bld = A.activeBuilding || '';
       try {
-        // Top 4 IFC classes by count
-        var sql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
-          (bld ? ' WHERE building = ?' : '') + ' GROUP BY ifc_class ORDER BY cnt DESC LIMIT 4';
-        var rows = A.db.exec(sql, bld ? [bld] : []);
-        if (rows.length > 0) {
-          rows[0].values.forEach(function(r) {
-            var chip = document.createElement('button');
-            chip.textContent = friendlyClass(r[0]);
-            chip.addEventListener('pointerup', function(e) {
-              e.stopPropagation();
-              elType.value = r[0];
-              populateDropdowns();
-              runSearch();
-            });
-            elChips.appendChild(chip);
-          });
-        }
-        // NLP quick-actions
-        ['count doors', 'total cost'].forEach(function(ex) {
+        ['count doors', 'total cost', 'show structure'].forEach(function(ex) {
           var chip = document.createElement('button');
           chip.textContent = ex;
-          chip.style.color = '#4fc3f7';
           chip.addEventListener('pointerup', function(e) {
             e.stopPropagation();
             elName.value = ex;
