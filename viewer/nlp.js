@@ -375,7 +375,7 @@ function setupNlp(A) {
     _toast.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       ${mobile ? 'width:85vw' : 'width:420px'};
       background:${bg};color:#e0e0e0;border:2px solid ${border};border-radius:12px;padding:20px 24px;
-      z-index:25;font-size:16px;font-family:'Segoe UI',sans-serif;backdrop-filter:blur(12px);
+      z-index:300;font-size:16px;font-family:'Segoe UI',sans-serif;backdrop-filter:blur(12px);
       box-shadow:0 8px 32px rgba(0,0,0,0.6);cursor:default;animation:nlpFadeIn 0.2s ease-out;
       text-align:center`;
     // Summary line
