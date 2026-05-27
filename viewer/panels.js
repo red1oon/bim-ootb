@@ -615,20 +615,23 @@ function setupPanels(A) {
   var _docMode = false;
   var _mainPillHTML = ''; // stash main pill innerHTML for restore
   window.toggleDocPill = function() {
-    var pill = document.getElementById('icon-pill');
+    var pill = document.getElementById('mobile-pill');
+    if (!pill) pill = document.getElementById('icon-pill'); // fallback
     if (!pill) return;
     if (_docMode) {
-      // restore main pill + deactivate canvas
+      // restore main pill via _buildPill + deactivate canvas
       if (window.DocCanvas) DocCanvas.deactivate(A);
-      pill.innerHTML = _mainPillHTML;
       pill.classList.remove('doc-mode');
+      if (A._buildPill) A._buildPill(); // rebuild _actions-based pill
+      else pill.innerHTML = _mainPillHTML; // fallback
       _docMode = false;
       console.log('§DOC_PILL mode=main');
     } else {
-      // stash main pill and swap to doc mode
+      // stash and swap to doc mode
       _mainPillHTML = pill.innerHTML;
       pill.innerHTML = '';
       pill.classList.add('doc-mode');
+      pill.style.display = 'block'; // ensure visible
       // 1. Home — return to main pill
       var btnHome = A.icon('home', { size: 24, title: 'Home', onClick: function() { toggleDocPill(); } });
       btnHome.id = 'doc-home-btn';
@@ -913,7 +916,7 @@ function setupPanels(A) {
     // Icon actions — sorted by last-used (most recent at bottom, nearest to thumb)
     var _LS_KEY = 'bim_mobile_pill_order';
     var _actions = [
-      { id: 'redpill',   platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); } }, // §S281: slanted red/blue pill PNG, calls toggleDocPill (doc mode); desktop-only → greyed on mobile
+      { id: 'redpill',   platform: 'desktop', icon: '<defs><clipPath id="rpTop"><rect x="6" y="2" width="12" height="10"/></clipPath><clipPath id="rpBot"><rect x="6" y="12" width="12" height="10"/></clipPath></defs><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#d32f2f" clip-path="url(#rpTop)"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#f5f5f5" clip-path="url(#rpBot)"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1"/><ellipse cx="11" cy="6.5" rx="1.5" ry="2.5" fill="rgba(255,255,255,0.3)" transform="rotate(-15 11 6.5)"/>', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); } }, // §S281: red/white capsule SVG, calls toggleDocPill (doc mode); desktop-only
       { id: 'find',      icon: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', fn: function() { if (A.openFindPanel) A.openFindPanel(''); } },
       { id: 'help',      icon: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
       { id: 'walk',      platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); } }, // §S281: mobile-only (GPS+orientation)
@@ -935,12 +938,13 @@ function setupPanels(A) {
       { id: 'precision', keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
         fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); }, // tap = toggle Fine
         hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); } }, // long-press = reveal Reset sideways
-      { id: 'home',      icon: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', fn: function() { location.href = '../index.html'; } }
+      { id: 'home',      icon: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', fn: function() { location.href = '../index.html'; } },
+      { id: 'settings',  icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', fn: function() { if (A.status) A.status.textContent = 'UNDER CONSTRUCTION'; console.log('§PILL_SETTINGS under_construction'); } }
     ];
 
     // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
     // Usefulness: frequent tools near bottom (thumb reach), rare at top
-    var _defaultOrder = ['redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
+    var _defaultOrder = ['settings','redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
 
     function _getOrder() {
       try {
@@ -1029,7 +1033,7 @@ function setupPanels(A) {
             e.stopPropagation(); _cancelHold();
             if (_held) { _held = false; return; } // long-press already handled
             _bumpAction(act.id); act.fn();
-            if (!act.keepOpen) _closePill();
+            // §S281: pill stays open — user dismisses via ⋯ or outside tap
             console.log('§PILL action=' + act.id);
           });
           btn.addEventListener('pointerleave', _cancelHold);
@@ -1039,7 +1043,7 @@ function setupPanels(A) {
             e.stopPropagation();
             _bumpAction(act.id);
             act.fn();
-            if (!act.keepOpen) _closePill();
+            // §S281: pill stays open — user dismisses via ⋯ or outside tap
             console.log('§PILL action=' + act.id);
           });
         }
@@ -1047,7 +1051,8 @@ function setupPanels(A) {
       });
     }
 
-    // Build once at startup
+    // Build once at startup — expose so toggleDocPill can restore after doc mode
+    A._buildPill = _buildPill;
     _buildPill();
 
     var _pillOpen = false;
