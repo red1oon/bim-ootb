@@ -115,7 +115,7 @@ test.describe('Terminal Large Building — GF Contour Verification', () => {
   });
 
   test('T_3404: grid_contours.js buildRibbon uses minOutlineW for large buildings', async ({ page }) => {
-    const src = fs.readFileSync(path.join(__dirname, '../../grid_contours.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '../../viewer/grid_contours.js'), 'utf8');
     expect(src).toContain('minOutlineW');
     expect(src).toContain('MIN_WALL_SCREEN_PX');
     expect(src).toContain('buildRibbon');

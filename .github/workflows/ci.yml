@@ -25,6 +25,9 @@ jobs:
       - name: Input registry audit
         run: node tests/audit_input_registry.js
 
+      - name: Spec file paths audit
+        run: node tests/audit_spec_paths.js
+
   e2e-tests:
     runs-on: ubuntu-latest
     needs: fast-checks
@@ -35,13 +38,17 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Playwright
+      - name: Install deps
         working-directory: tests
         run: npm ci && npx playwright install chromium
 
       - name: Download test data
         working-directory: tests
         run: ./setup-test-data.sh
+
+      - name: DB integrity audit
+        working-directory: tests
+        run: node audit_db_integrity.js
 
       - name: Golden path — IFC drop → viewer (ensures import works)
         working-directory: tests

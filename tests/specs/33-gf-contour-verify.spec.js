@@ -98,7 +98,7 @@ test.describe('GF Contour + Grid Verification', () => {
   test('T_3304: grid_contours.js fill uses white/black reverse — no invented colors', async ({ page }) => {
     const fs = require('fs');
     const path = require('path');
-    const src = fs.readFileSync(path.join(__dirname, '../../grid_contours.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '../../viewer/grid_contours.js'), 'utf8');
 
     // White on dark, black on light — true reverse for print
     expect(src).toContain("isDark ? '#ffffff' : '#000000'");
