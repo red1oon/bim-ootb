@@ -63,7 +63,7 @@
       '.find-acc-item.active { background: rgba(79,195,247,0.15); color: #4fc3f7; }',
       // Results — same accordion
       '#find-results { max-height: 0; overflow-y: auto; transition: max-height 0.2s ease; }',
-      '#find-panel.results-expanded #find-results { max-height: 220px; }',
+      '#find-panel.results-expanded #find-results { max-height: 140px; }',
       '.find-result-item {',
       '  padding: 5px 10px; cursor: pointer;',
       '  border-bottom: 1px solid rgba(255,255,255,0.04);',
@@ -110,7 +110,9 @@
       '  text-align: center;',
       '}',
       '@media (max-width: 600px) {',
-      '  #find-panel { right: 8px; left: 8px; max-width: none; width: auto; top: auto; bottom: 60px; transform: none; }',
+      '  #find-panel { right: 8px; left: 8px; max-width: none; width: auto; top: 60px; bottom: auto; transform: none; max-height: 50vh; }',
+      '  #find-panel.results-expanded #find-results { max-height: 140px; }',
+      '  #find-tree { max-height: 120px !important; }',
       '}',
     ].join('\n');
     document.head.appendChild(style);
@@ -130,7 +132,7 @@
       '<span class="bim-panel-close" id="find-close">&times;</span>',
       '<div class="find-search-bar">',
       '  <button id="find-mic-btn" title="' + _t('ui_tt_voice', 'Voice search') + '">' + _micSvg + '</button>',
-      '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Search elements…') + '">',
+      '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Count doors, Total cost…') + '">',
       '</div>',
       '<div id="find-chips"></div>',
       // Hidden selects — still used for data binding
@@ -580,10 +582,12 @@
       // Set search term and open
       panel.style.display = 'block';
       elName.value = searchTerm || '';
-      populateDropdowns();
+      // §S281: Defer item queries — only build tree (fast GROUP BY) on open.
+      // populateDropdowns + runSearch only when user clicks a type/storey or types a search.
       buildTree();
       buildChips();
-      if (searchTerm) { _handleInput(searchTerm); } else { runSearch(); }
+      if (searchTerm) { _handleInput(searchTerm); }
+      // No runSearch() on empty open — saves seconds of load time
       // S275: Auto-focus — panel system + input
       if (typeof window._focusPanel === 'function') window._focusPanel('find');
       // §S280: Mobile — don't steal focus (triggers virtual keyboard). User taps searchbox when ready.

@@ -75,12 +75,56 @@ function setupTools(A) {
     if (A.markDirty) A.markDirty();
   };
 
-  // X-Ray
+  // X-Ray — transparent blending on all materials
   // §S271b: Optimized — update unique materials via _matCache, disable sortObjects during X-Ray.
-  // §S280: X-Ray removed — too costly (transparent blending on all materials).
-  // Find uses OutlinePass to highlight through geometry instead.
   A.xrayOn = false;
-  A.toggleXray = function() { console.log('§XRAY removed — use Find (F) + OutlinePass'); };
+  A.toggleXray = function() {
+    A.xrayOn = !A.xrayOn;
+    // Walk through unique materials in _matCache (set by streaming.js)
+    var cache = A._matCache || {};
+    var keys = Object.keys(cache);
+    if (keys.length) {
+      for (var i = 0; i < keys.length; i++) {
+        var mat = cache[keys[i]];
+        if (!mat) continue;
+        if (A.xrayOn) {
+          mat._origTransparent = mat.transparent;
+          mat._origOpacity = mat.opacity;
+          mat._origSide = mat.side;
+          mat.transparent = true;
+          mat.opacity = 0.3;
+          mat.side = THREE.DoubleSide;
+        } else {
+          mat.transparent = mat._origTransparent !== undefined ? mat._origTransparent : false;
+          mat.opacity = mat._origOpacity !== undefined ? mat._origOpacity : 1;
+          mat.side = mat._origSide !== undefined ? mat._origSide : THREE.FrontSide;
+        }
+        mat.needsUpdate = true;
+      }
+    }
+    // Fallback: scene traversal for meshes without _matCache
+    if (!keys.length && A.scene) {
+      A.scene.traverse(function(obj) {
+        if (!obj.isMesh || !obj.material) return;
+        var m = obj.material;
+        if (A.xrayOn) {
+          m._origTransparent = m.transparent;
+          m._origOpacity = m.opacity;
+          m._origSide = m.side;
+          m.transparent = true; m.opacity = 0.3; m.side = THREE.DoubleSide;
+        } else {
+          m.transparent = m._origTransparent !== undefined ? m._origTransparent : false;
+          m.opacity = m._origOpacity !== undefined ? m._origOpacity : 1;
+          m.side = m._origSide !== undefined ? m._origSide : THREE.FrontSide;
+        }
+        m.needsUpdate = true;
+      });
+    }
+    if (A.renderer) A.renderer.sortObjects = !A.xrayOn;
+    if (A.markDirty) A.markDirty();
+    A.status.textContent = A.xrayOn ? 'X-Ray ON' : 'X-Ray OFF';
+    console.log('§XRAY on=' + A.xrayOn + ' mats=' + (keys.length || 'scene'));
+  };
 
   // Section Cut
   A.sectionOn = false;
