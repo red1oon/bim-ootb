@@ -1,4 +1,5 @@
 *.db
+!viewer/ad_seed.db
 *.bin
 node_modules/
 test-results/
