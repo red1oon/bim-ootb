@@ -7,6 +7,7 @@
   'use strict';
 
   var _db = null;
+  var _dbReady = false;           // true after hydrate() completes
   var _contentEl = null;
   var _navEl = null;
   var _breadcrumbEl = null;
@@ -113,29 +114,67 @@
     }
     _contentEl.appendChild(switcher);
 
+    // §INSTANT — if DB not ready, render from MENU_SEED (no KPI, no graph)
+    if (!_dbReady) {
+      var seedTree = (typeof MENU_SEED !== 'undefined' && MENU_SEED.menuTree) ? MENU_SEED.menuTree : [];
+      if (seedTree.length) {
+        _loadRecent();
+        if (_recentWindows.length) {
+          var recentEl = document.createElement('div');
+          recentEl.style.cssText = 'margin-bottom:12px;font-size:13px;color:#888;';
+          recentEl.textContent = 'Recent: ';
+          for (var r = 0; r < _recentWindows.length && r < 5; r++) {
+            var rw = _recentWindows[r];
+            var rLink = document.createElement('a');
+            rLink.href = '#';
+            rLink.textContent = rw.name;
+            rLink.style.cssText = 'color:#4fc3f7;text-decoration:none;margin-right:8px;';
+            rLink.dataset.windowId = rw.id;
+            rLink.addEventListener('pointerup', function (ev) {
+              ev.preventDefault();
+              if (_dbReady) openWindow(Number(this.dataset.windowId));
+              else _showHydrating();
+            });
+            recentEl.appendChild(rLink);
+          }
+          _contentEl.appendChild(recentEl);
+        }
+        var treeEl = document.createElement('div');
+        _renderMenuNodes(treeEl, seedTree, null);  // no windowSet filter — show all
+        _contentEl.appendChild(treeEl);
+        console.log('§AD_UI showMenu INSTANT seed roots=' + seedTree.length);
+      } else {
+        _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
+          'Loading ERP data\u2026</div>';
+      }
+      return;
+    }
+
+    // ── Full mode (DB ready) ──────────────────────────────────────────
+
     // Data constellation — interactive graph replaces KPI cards
     _renderHomeGraph();
 
     // Recent windows
     _loadRecent();
     if (_recentWindows.length) {
-      var recentEl = document.createElement('div');
-      recentEl.style.cssText = 'margin-bottom:12px;font-size:13px;color:#888;';
-      recentEl.textContent = 'Recent: ';
-      for (var r = 0; r < _recentWindows.length && r < 5; r++) {
-        var rw = _recentWindows[r];
-        var rLink = document.createElement('a');
-        rLink.href = '#';
-        rLink.textContent = rw.name;
-        rLink.style.cssText = 'color:#4fc3f7;text-decoration:none;margin-right:8px;';
-        rLink.dataset.windowId = rw.id;
-        rLink.addEventListener('pointerup', function (ev) {
+      var recentEl2 = document.createElement('div');
+      recentEl2.style.cssText = 'margin-bottom:12px;font-size:13px;color:#888;';
+      recentEl2.textContent = 'Recent: ';
+      for (var r2 = 0; r2 < _recentWindows.length && r2 < 5; r2++) {
+        var rw2 = _recentWindows[r2];
+        var rLink2 = document.createElement('a');
+        rLink2.href = '#';
+        rLink2.textContent = rw2.name;
+        rLink2.style.cssText = 'color:#4fc3f7;text-decoration:none;margin-right:8px;';
+        rLink2.dataset.windowId = rw2.id;
+        rLink2.addEventListener('pointerup', function (ev) {
           ev.preventDefault();
           openWindow(Number(this.dataset.windowId));
         });
-        recentEl.appendChild(rLink);
+        recentEl2.appendChild(rLink2);
       }
-      _contentEl.appendChild(recentEl);
+      _contentEl.appendChild(recentEl2);
     }
 
     // Build set of windows that have browsable data
@@ -143,10 +182,10 @@
 
     // Menu tree — filtered by client
     var tree = ADParser.getMenuTree(_db);
-    var treeEl = document.createElement('div');
+    var treeEl2 = document.createElement('div');
     var windowSet = (_currentClient === 'system') ? _systemWindowSet : GW_WINDOW_SET;
-    _renderMenuNodes(treeEl, tree, windowSet);
-    _contentEl.appendChild(treeEl);
+    _renderMenuNodes(treeEl2, tree, windowSet);
+    _contentEl.appendChild(treeEl2);
 
     // (Search is now a floating overlay — see _toggleSearchOverlay / Alt+S)
 
@@ -1806,7 +1845,22 @@
 
   // ── §4. Window screen (List + Card) ────────────────────────────────
 
+  // §INSTANT — shimmer toast when DB still loading
+  function _showHydrating() {
+    var t = document.createElement('div');
+    t.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:80;' +
+      'padding:16px 28px;border-radius:14px;font-size:14px;font-weight:600;color:#fff;' +
+      'background:rgba(12,12,18,0.8);backdrop-filter:blur(12px);' +
+      '-webkit-backdrop-filter:blur(12px);border:1px solid rgba(108,159,255,0.3);' +
+      'box-shadow:0 0 24px rgba(108,159,255,0.15);pointer-events:none;' +
+      'animation:fadeInOut 1.5s ease forwards;';
+    t.textContent = 'Loading data\u2026';
+    document.body.appendChild(t);
+    setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 1500);
+  }
+
   function openWindow(windowId) {
+    if (!_dbReady) { _showHydrating(); return; }
     // Destroy graph animation when leaving home
     if (typeof ADGraph !== 'undefined' && _currentScreen === 'home') {
       ADGraph.destroy();
@@ -3154,32 +3208,52 @@
   // ── Init ──────────────────────────────────────────────────────────
 
   /**
-   * Init AD UI renderer.
-   * @param {Object}  db         sql.js database
-   * @param {Element} contentEl  main content container
-   * @param {Element} navEl      bottom nav container
-   * @param {Element} breadcrumbEl  breadcrumb bar
+   * Init AD UI renderer — instant shell mode (no DB required).
+   * Renders menu from MENU_SEED immediately. Call hydrate(db) when DB is ready.
+   * @param {Object|null} db         sql.js database (null for instant shell)
+   * @param {Element}     contentEl  main content container
+   * @param {Element}     navEl      bottom nav container
+   * @param {Element}     breadcrumbEl  breadcrumb bar
    */
   function init(db, contentEl, navEl, breadcrumbEl) {
-    _db = db;
     _contentEl = contentEl;
     _navEl = navEl;
     _breadcrumbEl = breadcrumbEl;
 
-    ADParser.init(db);
     _initBroadcast();
     _initKeyboard();
     _initEdgeSwipe();
 
-    // Build FTS5 search index (R1)
+    if (db) {
+      // Legacy full-init path (DB already available)
+      _hydrate(db);
+    } else {
+      // §INSTANT shell — render from MENU_SEED, no DB
+      showMenu();
+      console.log('§AD_UI init INSTANT (no db, shell only)');
+    }
+  }
+
+  /**
+   * Hydrate with full database — called when WASM + DB are ready.
+   * If user is still on home screen, silently refreshes with full data.
+   */
+  function _hydrate(db) {
+    _db = db;
+    _dbReady = true;
+    ADParser.init(db);
+
+    // Build FTS5 search index
     if (typeof ERPSearch !== 'undefined') {
       var idx = ERPSearch.buildIndex(db);
       console.log('§AD_UI fts5 indexed rows=' + idx.rows + ' ms=' + idx.ms);
     }
 
-    showMenu();
-
-    console.log('§AD_UI init done');
+    // If still on home, refresh with full data (graph, KPIs, window sets)
+    if (_currentScreen === 'home') {
+      showMenu();
+    }
+    console.log('§AD_UI hydrate done — db ready');
   }
 
   // ── Public API ─────────────────────────────────────────────────────
@@ -3211,6 +3285,7 @@
 
   var ADUI = {
     init:       init,
+    hydrate:    _hydrate,
     showMenu:   showMenu,
     openWindow: openWindow,
     // §19 Deep-link helpers

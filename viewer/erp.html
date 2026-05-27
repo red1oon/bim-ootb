@@ -69,17 +69,51 @@
 <div id="content"></div>
 <div id="bottom-nav"></div>
 
-<!-- sql.js WASM — local first, CDN fallback -->
+<!-- §INSTANT Phase 1: menu seed + ad_ui.js — renders shell in <200ms -->
+<script src="menu_seed.js?v=21"></script>
+<script src="ad_ui.js?v=21"></script>
+<script>
+// Phase 1: Instant shell — menu tree from MENU_SEED, no DB, no WASM
+(function () {
+  'use strict';
+  var _tBoot = performance.now();
+  var params = new URLSearchParams(window.location.search);
+
+  // §19 Apply client from URL before first render
+  var clientParam = params.get('client');
+  if (clientParam && typeof ADUI !== 'undefined') {
+    ADUI.setClient(clientParam);
+  }
+
+  // Init shell — null DB triggers instant mode
+  if (typeof ADUI !== 'undefined') {
+    ADUI.init(null,
+      document.getElementById('content'),
+      document.getElementById('bottom-nav'),
+      document.getElementById('breadcrumb')
+    );
+  }
+
+  // Hide loading spinner — menu is already visible
+  var loadingEl = document.getElementById('loading');
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  var shellMs = Math.round(performance.now() - _tBoot);
+  console.log('§BENCH shell_render=' + shellMs + 'ms (instant)');
+})();
+</script>
+
+<!-- §INSTANT Phase 2: background hydration — WASM + DB + full modules -->
 <script>
 (function () {
   'use strict';
-  var statusEl = document.getElementById('load-status');
+  var _bench = {};
+  var _tHydrate = performance.now();
+
   function log(msg) {
     console.log('§ERP_HTML ' + msg);
-    if (statusEl) statusEl.textContent = msg;
   }
 
-  // ── 1. Script loader ───────────────────────────────────────────────
   function loadScript(url, cdn) {
     return new Promise(function (resolve) {
       var s = document.createElement('script');
@@ -99,8 +133,8 @@
     });
   }
 
-  // ── 2. Module list — §8 step 3 ────────────────────────────────────
   var V = '?v=21';
+  // Modules NOT loaded in Phase 1 (ad_ui.js already loaded, menu_seed.js already loaded)
   var MODULES = [
     'kernel_ops.js' + V,
     'ad_parser.js' + V,
@@ -108,28 +142,47 @@
     'ad_charts.js' + V,
     'ad_graph.js' + V,
     'erp_search.js' + V,
-    'qrcode.min.js' + V,
-    'ad_ui.js' + V
+    'qrcode.min.js' + V
   ];
 
-  async function boot() {
-    var _bench = {};  // §BENCH timing collection
-    var _tBoot = performance.now();
+  // IndexedDB helpers
+  function idbGet(key) {
+    return new Promise(function (resolve) {
+      try {
+        var req = indexedDB.open('erp_cache', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
+        req.onsuccess = function () {
+          var tx = req.result.transaction('blobs', 'readonly');
+          var get = tx.objectStore('blobs').get(key);
+          get.onsuccess = function () { resolve(get.result || null); };
+          get.onerror = function () { resolve(null); };
+        };
+        req.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }
+  function idbPut(key, value) {
+    try {
+      var req = indexedDB.open('erp_cache', 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
+      req.onsuccess = function () {
+        var tx = req.result.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').put(value, key);
+      };
+    } catch (e) { /* silent */ }
+  }
 
-    log('Loading sql.js (FTS5)...');
+  async function hydrate() {
+    // ── Load WASM + modules in parallel ─────────────────────────────
     var _t0 = performance.now();
-    await loadScript('lib/sql-wasm-fts5.js',
+    var wasmPromise = loadScript('lib/sql-wasm-fts5.js',
       'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js');
-    _bench.wasm_load = Math.round(performance.now() - _t0);
-    console.log('§BENCH wasm_load=' + _bench.wasm_load + 'ms');
+    var modulesPromise = Promise.all(MODULES.map(function(m) { return loadScript(m); }));
+    await Promise.all([wasmPromise, modulesPromise]);
+    _bench.parallel_load = Math.round(performance.now() - _t0);
+    console.log('§BENCH parallel_load=' + _bench.parallel_load + 'ms (wasm+modules)');
 
-    log('Loading ERP modules...');
-    _t0 = performance.now();
-    await Promise.all(MODULES.map(function(m) { return loadScript(m); }));
-    _bench.modules_load = Math.round(performance.now() - _t0);
-    console.log('§BENCH modules_load=' + _bench.modules_load + 'ms (parallel)');
-
-    log('Initialising database...');
+    // ── Init SQL engine ─────────────────────────────────────────────
     _t0 = performance.now();
     var SQL;
     try {
@@ -144,34 +197,7 @@
     _bench.sql_init = Math.round(performance.now() - _t0);
     console.log('§BENCH sql_init=' + _bench.sql_init + 'ms');
 
-    // ── IndexedDB cache for ad_seed.db ────────────────────────────────
-    function idbGet(key) {
-      return new Promise(function (resolve) {
-        try {
-          var req = indexedDB.open('erp_cache', 1);
-          req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
-          req.onsuccess = function () {
-            var tx = req.result.transaction('blobs', 'readonly');
-            var get = tx.objectStore('blobs').get(key);
-            get.onsuccess = function () { resolve(get.result || null); };
-            get.onerror = function () { resolve(null); };
-          };
-          req.onerror = function () { resolve(null); };
-        } catch (e) { resolve(null); }
-      });
-    }
-    function idbPut(key, value) {
-      try {
-        var req = indexedDB.open('erp_cache', 1);
-        req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
-        req.onsuccess = function () {
-          var tx = req.result.transaction('blobs', 'readwrite');
-          tx.objectStore('blobs').put(value, key);
-        };
-      } catch (e) { /* silent */ }
-    }
-
-    // ── 3. Load database — §8 step 7: ?db= or ad_seed.db ───────────
+    // ── Load database ───────────────────────────────────────────────
     var params = new URLSearchParams(window.location.search);
     var dbUrl = params.get('db');
     var db;
@@ -186,7 +212,6 @@
         _bench.db_fetch = Math.round(performance.now() - _t0);
         _bench.db_size = Math.round(buf.byteLength / 1024);
         _bench.db_source = 'url';
-        log('Database loaded from ' + dbUrl);
       } catch (e) {
         log('Fetch failed: ' + e.message + ' — using seed');
         db = new SQL.Database();
@@ -195,7 +220,7 @@
       db = new SQL.Database();
     }
 
-    // ── 4. Load AD seed data (cached in IndexedDB) ─────────────────
+    // ── Load AD seed (IndexedDB cache → network) ────────────────────
     var hasAD = false;
     try {
       var chk = db.exec("SELECT COUNT(*) FROM AD_Menu");
@@ -204,49 +229,34 @@
 
     if (!hasAD) {
       _t0 = performance.now();
-      // Try IndexedDB cache first (v13 = full 378-table GW export, S259)
       var cached = await idbGet('ad_seed_v13');
       var cacheValid = false;
       if (cached && cached.byteLength > 1000) {
-        // Validate: must be a real SQLite DB (header = "SQLite format 3")
         var header = new Uint8Array(cached, 0, 16);
         var sig = String.fromCharCode.apply(null, header.slice(0, 6));
         if (sig === 'SQLite') {
-          log('Loading from cache...');
           db.close();
           db = new SQL.Database(new Uint8Array(cached));
           _bench.db_fetch = Math.round(performance.now() - _t0);
           _bench.db_size = Math.round(cached.byteLength / 1024);
           _bench.db_source = 'idb_cache';
           cacheValid = true;
-          log('Cached (' + (cached.byteLength / 1024 / 1024).toFixed(1) + 'MB)');
-        } else {
-          console.log('§ERP_HTML cache corrupt (bad header), re-fetching');
         }
-      } else if (cached) {
-        console.log('§ERP_HTML cache empty (' + (cached ? cached.byteLength : 0) + 'B), re-fetching');
       }
       if (!cacheValid) {
-        // Network fetch with progress — progressive first-time experience
-        log('Downloading AD seed (13MB, 378 tables)...');
         try {
           var seedResp = await fetch('ad_seed.db');
           var contentLen = seedResp.headers.get('content-length');
           var total = contentLen ? parseInt(contentLen, 10) : 0;
           var reader = seedResp.body ? seedResp.body.getReader() : null;
           var seedBuf;
-
           if (reader && total > 0) {
-            // Progressive fetch with % readout
-            var chunks = [];
-            var received = 0;
+            var chunks = [], received = 0;
             while (true) {
               var rd = await reader.read();
               if (rd.done) break;
               chunks.push(rd.value);
               received += rd.value.length;
-              var pct = Math.round(received / total * 100);
-              log('Downloading... ' + pct + '% (' + (received / 1024 / 1024).toFixed(1) + 'MB)');
             }
             var merged = new Uint8Array(received);
             var offset = 0;
@@ -256,55 +266,28 @@
             }
             seedBuf = merged.buffer;
           } else {
-            // Fallback: non-streaming fetch
             seedBuf = await seedResp.arrayBuffer();
           }
           db.close();
           db = new SQL.Database(new Uint8Array(seedBuf));
-          // Cache for instant revisits
           idbPut('ad_seed_v13', seedBuf);
           _bench.db_fetch = Math.round(performance.now() - _t0);
           _bench.db_size = Math.round(seedBuf.byteLength / 1024);
           _bench.db_source = 'network';
-          log('Loaded + cached (' + (seedBuf.byteLength / 1024 / 1024).toFixed(1) + 'MB)');
         } catch (e) {
           log('AD seed failed: ' + e.message);
         }
       }
     }
-    console.log('§BENCH db_fetch=' + (_bench.db_fetch || 0) + 'ms source=' + (_bench.db_source || 'existing') + ' size=' + (_bench.db_size || 0) + 'KB');
+    console.log('§BENCH db_fetch=' + (_bench.db_fetch || 0) + 'ms source=' + (_bench.db_source || 'existing') +
+                ' size=' + (_bench.db_size || 0) + 'KB');
 
-    // ── 5. Verify AD loaded — §8 step 4 ─────────────────────────────
-    var counts = {};
-    ['AD_Menu', 'AD_Window', 'AD_Tab', 'AD_Field'].forEach(function (t) {
-      try {
-        var r = db.exec('SELECT COUNT(*) FROM ' + t);
-        counts[t] = r.length ? Number(r[0].values[0][0]) : 0;
-      } catch (e) { counts[t] = -1; }
-    });
-    console.log('§ERP_HTML ad_counts menu=' + counts.AD_Menu +
-                ' windows=' + counts.AD_Window +
-                ' tabs=' + counts.AD_Tab +
-                ' fields=' + counts.AD_Field);
-
-    // ── 6. Init AD UI — §8 step 5 ──────────────────────────────────
-    _t0 = performance.now();
+    // ── Hydrate ADUI — silently upgrades the shell ──────────────────
     if (typeof ADUI !== 'undefined') {
-      ADUI.init(db,
-        document.getElementById('content'),
-        document.getElementById('bottom-nav'),
-        document.getElementById('breadcrumb')
-      );
+      ADUI.hydrate(db);
     }
-    _bench.ui_init = Math.round(performance.now() - _t0);
-    console.log('§BENCH ui_init=' + _bench.ui_init + 'ms');
 
-    // ── 7. Auto-open from URL — §8 step 6 + §19 deep links ────────
-    var clientParam = params.get('client');
-    if (clientParam && typeof ADUI !== 'undefined') {
-      console.log('§ERP_HTML auto-client=' + clientParam);
-      ADUI.setClient(clientParam);
-    }
+    // §19 Deep links (now that DB is ready)
     var windowParam = params.get('window');
     if (windowParam && typeof ADUI !== 'undefined') {
       console.log('§ERP_HTML auto-open window=' + windowParam);
@@ -316,28 +299,15 @@
       }
     }
 
-    // Hide loading screen
-    var loadingEl = document.getElementById('loading');
-    if (loadingEl) loadingEl.style.display = 'none';
-
-    _bench.total_boot = Math.round(performance.now() - _tBoot);
-    console.log('§BENCH SUMMARY total=' + _bench.total_boot + 'ms wasm=' + _bench.wasm_load +
-                'ms modules=' + _bench.modules_load + 'ms sql_init=' + _bench.sql_init +
-                'ms db_fetch=' + (_bench.db_fetch||0) + 'ms(' + (_bench.db_source||'-') +
-                ') ui_init=' + _bench.ui_init + 'ms db_size=' + (_bench.db_size||0) + 'KB');
-    // Extrapolation: log estimated time for 1GB DB
-    if (_bench.db_size > 0 && _bench.db_fetch > 0) {
-      var perMB = _bench.db_fetch / (_bench.db_size / 1024);
-      console.log('§BENCH EXTRAPOLATE 1GB_est=' + Math.round(perMB * 1024) + 'ms' +
-                  ' (' + perMB.toFixed(1) + 'ms/MB from ' + (_bench.db_source||'-') + ')');
-    }
-    console.log('§ERP_HTML boot complete');
+    _bench.total_hydrate = Math.round(performance.now() - _tHydrate);
+    console.log('§BENCH HYDRATE total=' + _bench.total_hydrate + 'ms parallel=' + _bench.parallel_load +
+                'ms sql=' + _bench.sql_init + 'ms db=' + (_bench.db_fetch||0) + 'ms(' + (_bench.db_source||'-') +
+                ') size=' + (_bench.db_size||0) + 'KB');
+    console.log('§ERP_HTML hydrate complete');
   }
 
-  boot().catch(function (e) {
-    console.error('§ERP_HTML boot error: ' + e.message);
-    var s = document.getElementById('load-status');
-    if (s) s.textContent = 'Error: ' + e.message;
+  hydrate().catch(function (e) {
+    console.error('§ERP_HTML hydrate error: ' + e.message);
   });
 })();
 </script>
