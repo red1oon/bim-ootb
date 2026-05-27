@@ -77,7 +77,6 @@
 
   function showMenu() {
     _currentScreen = 'home';
-    _renderBottomNav();
     _contentEl.innerHTML = '';
 
     // Breadcrumb — reset style from window view
@@ -87,6 +86,22 @@
       'padding:12px 16px;min-height:48px;display:flex;align-items:center;gap:8px;';
     _breadcrumbEl.innerHTML = '<span style="font-size:16px;font-weight:bold;color:#eee">' +
       '\u2630 ERP OOTB</span>';
+
+    // §INSTANT — if DB not ready, render globe only (no switcher, no nav)
+    if (!_dbReady) {
+      if (typeof ADGraph !== 'undefined' && typeof INIT_BUBBLES !== 'undefined') {
+        _renderHomeGraph();  // will use initFromBubbles path
+        console.log('§AD_UI showMenu INSTANT bubbles');
+      } else {
+        _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
+          'Loading ERP\u2026</div>';
+        console.log('§AD_UI showMenu INSTANT waiting');
+      }
+      return;
+    }
+
+    // ── Full mode below (DB ready) ────────────────────────────────────
+    _renderBottomNav();
 
     // Client switcher — pill toggle
     var switcher = document.createElement('div');
@@ -113,19 +128,6 @@
       switcher.appendChild(cBtn);
     }
     _contentEl.appendChild(switcher);
-
-    // §INSTANT — if DB not ready, render globe from initbubble.json
-    if (!_dbReady) {
-      if (typeof ADGraph !== 'undefined' && typeof INIT_BUBBLES !== 'undefined') {
-        _renderHomeGraph();  // will use initFromBubbles path
-        console.log('§AD_UI showMenu INSTANT bubbles');
-      } else {
-        _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
-          'Loading ERP\u2026</div>';
-        console.log('§AD_UI showMenu INSTANT waiting');
-      }
-      return;
-    }
 
     // ── Full mode (DB ready) ──────────────────────────────────────────
 
@@ -3308,7 +3310,7 @@
     _dbReady = true;
     ADParser.init(db);
 
-    // Upgrade graph with real DB (enables drill into records)
+    // Upgrade graph with real DB — NO destroy/rebuild, just enable drill
     if (typeof ADGraph !== 'undefined' && ADGraph.graphHydrate) {
       ADGraph.graphHydrate(db);
     }
@@ -3319,10 +3321,9 @@
       console.log('§AD_UI fts5 indexed rows=' + idx.rows + ' ms=' + idx.ms);
     }
 
-    // If still on home, refresh with full data (graph, KPIs, window sets)
-    if (_currentScreen === 'home') {
-      showMenu();
-    }
+    // Build window sets silently — don't rebuild the globe (no flash)
+    _buildWindowSets();
+
     console.log('§AD_UI hydrate done — db ready');
   }
 

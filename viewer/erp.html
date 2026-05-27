@@ -73,7 +73,8 @@
 <script src="ad_graph.js?v=22"></script>
 <script src="ad_ui.js?v=22"></script>
 <script>
-// Phase 1: Instant constellation — initbubble.json (2KB) + ad_graph + ad_ui
+// Phase 1: Instant constellation — fetch initbubble.json, then init
+var _shellReady = false;
 (function () {
   'use strict';
   var _tBoot = performance.now();
@@ -98,10 +99,12 @@
     var loadingEl = document.getElementById('loading');
     if (loadingEl) loadingEl.style.display = 'none';
 
+    _shellReady = true;
     var shellMs = Math.round(performance.now() - _tBoot);
     console.log('§BENCH shell_render=' + shellMs + 'ms (instant globe)');
   }).catch(function(e) {
     console.log('§BENCH initbubble fetch failed: ' + e.message);
+    _shellReady = true; // let Phase 2 proceed anyway
   });
 })();
 </script>
@@ -284,9 +287,16 @@
     console.log('§BENCH db_fetch=' + (_bench.db_fetch || 0) + 'ms source=' + (_bench.db_source || 'existing') +
                 ' size=' + (_bench.db_size || 0) + 'KB');
 
-    // ── Hydrate ADUI — silently upgrades the shell ──────────────────
+    // ── Wait for Phase 1 shell, then hydrate silently ────────────────
+    function _waitAndHydrate() {
+      if (typeof _shellReady !== 'undefined' && _shellReady) {
+        ADUI.hydrate(db);
+      } else {
+        setTimeout(_waitAndHydrate, 50);
+      }
+    }
     if (typeof ADUI !== 'undefined') {
-      ADUI.hydrate(db);
+      _waitAndHydrate();
     }
 
     // §19 Deep links (now that DB is ready)
