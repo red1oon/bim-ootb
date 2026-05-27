@@ -913,7 +913,7 @@ function setupPanels(A) {
     // Icon actions — sorted by last-used (most recent at bottom, nearest to thumb)
     var _LS_KEY = 'bim_mobile_pill_order';
     var _actions = [
-      { id: 'redpill',   platform: 'desktop', icon: '<defs><clipPath id="rpTop"><rect x="6" y="2" width="12" height="10"/></clipPath><clipPath id="rpBot"><rect x="6" y="12" width="12" height="10"/></clipPath></defs><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#d32f2f" clip-path="url(#rpTop)"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="#f5f5f5" clip-path="url(#rpBot)"/><rect x="8" y="2" width="8" height="20" rx="4" ry="4" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1"/><ellipse cx="11" cy="6.5" rx="1.5" ry="2.5" fill="rgba(255,255,255,0.3)" transform="rotate(-15 11 6.5)"/>', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); } }, // §S281: realistic red pill — red top, white bottom, calls toggleDocPill (doc mode); desktop-only → greyed on mobile
+      { id: 'redpill',   platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); } }, // §S281: slanted red/blue pill PNG, calls toggleDocPill (doc mode); desktop-only → greyed on mobile
       { id: 'find',      icon: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', fn: function() { if (A.openFindPanel) A.openFindPanel(''); } },
       { id: 'help',      icon: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
       { id: 'walk',      platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); } }, // §S281: mobile-only (GPS+orientation)
@@ -995,7 +995,8 @@ function setupPanels(A) {
         var btn = document.createElement('button');
         btn.title = act.id;
         btn.id = 'pill-' + act.id; // §S281: stable id so tools (e.g. precision) can target their button
-        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
+        if (act.img) btn.innerHTML = '<img src="' + act.img + '" width="20" height="20" style="pointer-events:none">';
+        else btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
         // §S281: platform gating — grey out + status toast when tool is wrong-platform.
         // act.platform: 'mobile' | 'desktop' | undefined(both). Standard for P4 surface flags.
         var _onMobile = !!window._isMobile;
