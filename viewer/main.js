@@ -5,7 +5,7 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v34 loaded — S280c revert ≤5→===1, remove consolidation block');
+console.log('§MAIN_JS v35 loaded — S281 wire setupErrorReporter(APP)');
 async function initViewer() {
   const APP = window.APP = {};
 
@@ -18,6 +18,7 @@ async function initViewer() {
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
+  if (typeof setupErrorReporter === 'function') setupErrorReporter(APP);
   // navigate.js lazy-loaded on demand (78KB saved on first paint)
   APP._navigateLoaded = false;
   APP.loadNavigate = function() {
