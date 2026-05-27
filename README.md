@@ -1,5 +1,7 @@
 # BIM OOTB
 
+[![CI](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg)](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml)
+
 **Frictionless BIM. One browser. Zero install.**
 
 Drop an IFC file. Get a full BIM environment in 60 seconds. No server, no signup, no plugins.
@@ -47,7 +49,7 @@ The gallery includes 30 IFC buildings from public datasets -- from a simple hous
 
 ## Deploy
 
-`git push` to `main` deploys to GitHub Pages. No CI, no build step.
+`git push` triggers CI (badge above). Merge to `main` deploys to GitHub Pages.
 
 Building databases (.db files) are hosted on OCI Object Storage (`bim-ootb` bucket) and are not in this repo.
 
