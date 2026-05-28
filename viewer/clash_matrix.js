@@ -7,8 +7,7 @@
  */
 // Implementing S278_REFACTOR_CLASH_PANELS.md §Phase 2 — Witness: W-CLASH_MATRIX
 function setupClashMatrix(A) {
-  var _isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  var _panelBgStrong = _isMobile ? 'background:rgba(15,45,80,0.95);' : 'background:rgba(20,60,100,0.65);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);';
+  var _panelBgStrong = window._isMobile ? 'background:rgba(15,45,80,0.95);' : 'background:rgba(20,60,100,0.65);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);';
 
   // §S278: Cache discipline element lists — reused across matrix count calls
   A._clashDiscCache = {};
@@ -139,8 +138,8 @@ function setupClashMatrix(A) {
 
     // Build table — pulsing sphere = pending check, green = clear
     // S251: mobile → true triangle: X top-right, export bottom-right, collapse green rows
-    var cellSz = _isMobile ? 28 : 36;
-    var triMode = _isMobile;
+    var cellSz = window._isMobile ? 28 : 36;
+    var triMode = window._isMobile;
     var activePairs = [];
     var _buildCellHtml = function(rowDisc, colDisc, sz) {
       var key = rowDisc + '|' + colDisc;
@@ -214,12 +213,12 @@ function setupClashMatrix(A) {
     }
 
     var matDiv = document.createElement('div');
-    matDiv.style.cssText = 'position:fixed;z-index:350;' + (_isMobile ? '' : _panelBgStrong) + 'color:#fff;padding:' + (_isMobile ? '0' : '10px') + ';border-radius:8px;' + (_isMobile ? 'background:transparent;border:none;pointer-events:none;' : 'border:1px solid rgba(79,195,247,0.5);pointer-events:auto;') + 'font-family:Segoe UI,sans-serif';
+    matDiv.style.cssText = 'position:fixed;z-index:350;' + (window._isMobile ? '' : _panelBgStrong) + 'color:#fff;padding:' + (window._isMobile ? '0' : '10px') + ';border-radius:8px;' + (window._isMobile ? 'background:transparent;border:none;pointer-events:none;' : 'border:1px solid rgba(79,195,247,0.5);pointer-events:auto;') + 'font-family:Segoe UI,sans-serif';
 
     // Position: mobile → left-side bottom corner (triangle layout, not draggable);
     //           desktop → below info card, draggable
     var anchorRect = anchorDiv.getBoundingClientRect();
-    if (_isMobile) {
+    if (window._isMobile) {
       matDiv.style.right = '4px';
       matDiv.style.bottom = '4px';
       matDiv.style.maxHeight = '60vh';
@@ -228,7 +227,7 @@ function setupClashMatrix(A) {
       matDiv.style.right = '10px';
     }
     var scopeLabel = storey ? storey : 'Whole Building';
-    if (_isMobile) {
+    if (window._isMobile) {
       // Mobile: X and export are inside the triangle layout itself
       matDiv.innerHTML = html;
     } else {
@@ -241,7 +240,7 @@ function setupClashMatrix(A) {
     }
     document.body.appendChild(matDiv);
     // Adjust vertical to fit (desktop only — mobile uses bottom:6px)
-    if (!_isMobile) {
+    if (!window._isMobile) {
       var matH = matDiv.offsetHeight;
       var topPos = anchorRect.bottom + 6;
       if (topPos + matH > window.innerHeight - 10) topPos = window.innerHeight - matH - 10;
