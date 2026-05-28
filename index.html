@@ -262,7 +262,7 @@
     <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px">
       <span data-trl="landing_complete_city" style="font-size:14px; font-weight:700; color:#0277bd; letter-spacing:1px">COMPLETE THE CITY</span>
       <span id="city-count" style="font-size:12px; color:#888">0 / 30 <span data-trl="landing_buildings_explored">buildings explored</span></span>
-      <a href="LargeCity.html" data-trl="landing_cannot_wait" style="margin-left:auto; font-size:14px; font-weight:700; color:#44cc44; letter-spacing:1px; text-decoration:none">I CANNOT WAIT!</a>
+      <a href="LargeCity.html" target="_blank" rel="noopener" data-trl="landing_cannot_wait" style="margin-left:auto; font-size:14px; font-weight:700; color:#44cc44; letter-spacing:1px; text-decoration:none">I CANNOT WAIT!</a>
     </div>
     <div style="height:8px; background:#222; border-radius:4px; overflow:hidden">
       <div id="city-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#0277bd,#44cc44); border-radius:4px; transition:width 0.4s ease"></div>
@@ -1792,7 +1792,28 @@ async function packageLandingPage() {
       'window._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\n' +
       'window._WORKER_SOURCES = ' + workerJSON + ';\n' +
       (sqlWasmJs ? 'window._SQL_WASM_JS = ' + JSON.stringify(sqlWasmJs) + ';\n' : '') +
-      (sqlWasmB64 ? 'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' : '');
+      (sqlWasmB64 ? 'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' : '') +
+      // §S284c: Blob viewer opener — same-origin as landing page → shares IndexedDB after IFC import
+      'window._openViewerBlob = function(qs) {\n' +
+      '  var el = document.getElementById("viewer-html-src");\n' +
+      '  if (!el) return null;\n' +
+      '  var vHtml = el.textContent.split("<\\/script>").join("</script>");\n' +
+      '  var blob = new Blob([vHtml], {type: "text/html"});\n' +
+      '  var bUrl = URL.createObjectURL(blob);\n' +
+      '  var win = (window._origOpen||window.open)(bUrl + qs, "_blank");\n' +
+      '  setTimeout(function(){URL.revokeObjectURL(bUrl);}, 20000);\n' +
+      '  return win;\n' +
+      '};\n' +
+      '(function(){\n' +
+      '  var _o=window.open; window._origOpen=_o;\n' +
+      '  window.open=function(url,t,f){\n' +
+      '    if(url&&typeof url==="string"&&url.indexOf("viewer/viewer.html")>=0){\n' +
+      '      var qs=url.indexOf("?")>=0?url.slice(url.indexOf("?")):"";\n' +
+      '      return window._openViewerBlob(qs)||_o.apply(this,arguments);\n' +
+      '    }\n' +
+      '    return _o.apply(this,arguments);\n' +
+      '  };\n' +
+      '})();\n';
     // §S284b: Use function replacement to avoid $' $& $` corruption in worker/WASM sources
     html = html.replace('// \u2500\u2500 Config \u2500\u2500', function() { return standaloneBlock + '// \u2500\u2500 Config \u2500\u2500'; });
 
@@ -1809,6 +1830,94 @@ async function packageLandingPage() {
       /const viewerFile = [^;]+;/,
       "const viewerFile = '" + ghBase + "viewer/viewer.html';"
     );
+
+    // 9b. Replace online CI badge with static "offline" badge
+    html = html.replace(
+      /<img[^>]*github\.com\/red1oon\/bim-ootb\/actions[^>]*>/g,
+      '<span style="display:inline-flex;align-items:center;padding:2px 7px;background:#2a7;border-radius:3px;font-size:10px;font-family:sans-serif;color:#fff;letter-spacing:.5px">&#10003; offline</span>'
+    );
+
+    // 9c. §S284c: Embed viewer HTML + scripts so IFC drop → 3D works fully offline
+    // The blob viewer opens from same origin as landing page → shares IndexedDB. No internet needed.
+    setStatus('Embedding viewer (Three.js + viewer scripts)…');
+    try {
+      var viewerHtml = await fetch('viewer/viewer.html').then(function(r) { return r.ok ? r.text() : ''; }).catch(function() { return ''; });
+      if (viewerHtml) {
+        // A. Fetch Three.js + OrbitControls as data: URIs (absolute → works in blob URL context)
+        function _toDataUri(src) {
+          return 'data:application/javascript;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(src)));
+        }
+        var threeSrc = await fetch('viewer/lib/three.webgpu.min.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
+        if (!threeSrc) threeSrc = await fetch('viewer/lib/three.module.min.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
+        var ocSrc = await fetch('viewer/lib/OrbitControls.module.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
+        var threeUri = threeSrc ? _toDataUri(threeSrc) : null;
+        var ocUri    = ocSrc    ? _toDataUri(ocSrc)    : null;
+
+        // B. Inline all <script src="..."> viewer files
+        var smRe = /<script src="([^"]+)"([^>]*)><\/script>/g;
+        var smList = [];
+        var _m; while ((_m = smRe.exec(viewerHtml)) !== null) smList.push([_m[0], _m[1]]);
+        for (var si = 0; si < smList.length; si++) {
+          var fullTag = smList[si][0], srcAttr = smList[si][1];
+          var cleanPath = srcAttr.replace(/\?.*$/, '');
+          var src = await fetch('viewer/' + cleanPath).then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
+          if (!src) continue;
+          // C. Patch loader.js: replace relative ESM import paths with data: URIs
+          if (cleanPath === 'loader.js') {
+            if (threeUri) {
+              src = src.replace(/await import\('\.\/lib\/three\.webgpu\.min\.js'\)/g, function(){ return "await import('" + threeUri + "')"; });
+              src = src.replace(/await import\('\.\/lib\/three\.module\.min\.js'\)/g, function(){ return "await import('" + threeUri + "')"; });
+            }
+            if (ocUri) {
+              src = src.replace(/await import\('\.\/lib\/OrbitControls\.module\.js'\)/g, function(){ return "await import('" + ocUri + "')"; });
+            }
+            // BVH stays as CDN — graceful failure if offline (no raycasting BVH, standard fallback)
+          }
+          // Function replacement avoids $' $& $` corruption
+          (function(_tag, _src) {
+            viewerHtml = viewerHtml.replace(_tag, function() { return '<script>\n' + _src + '\n<\/script>'; });
+          })(fullTag, src);
+        }
+
+        // D. Inject sql-wasm WASM wrapper + _STANDALONE flag into viewer HTML
+        // Intercepts window.initSqlJs assignment and wraps it to use embedded wasmBinary
+        var sqlWrap = '<script>\n' +
+          'window._STANDALONE=true;\n' +
+          (sqlWasmB64 ? 'window._SQL_WASM_B64="' + sqlWasmB64 + '";\n' : '') +
+          '(function(){\n' +
+          '  var _d=Object.defineProperty;\n' +
+          '  _d(window,"initSqlJs",{configurable:true,set:function(fn){\n' +
+          '    var _raw=fn;\n' +
+          '    _d(window,"initSqlJs",{configurable:true,writable:true,value:function(opts){\n' +
+          '      opts=opts||{};\n' +
+          '      if(window._SQL_WASM_B64){\n' +
+          '        var b=Uint8Array.from(atob(window._SQL_WASM_B64),function(c){return c.charCodeAt(0);});\n' +
+          '        opts.wasmBinary=b.buffer; delete opts.locateFile;\n' +
+          '      }\n' +
+          '      return _raw(opts);\n' +
+          '    }});\n' +
+          '  },get:function(){return undefined;}});\n' +
+          '})();\n' +
+          '<\/script>\n';
+        viewerHtml = viewerHtml.replace('<head>', function() { return '<head>\n' + sqlWrap; });
+
+        // E. Inline viewer icon
+        viewerHtml = viewerHtml.replace(/src="icons\/icon-192\.png"/g, 'src="' + iconB64 + '"');
+
+        // F. Strip service worker + manifest link (fails in blob context, not critical)
+        viewerHtml = viewerHtml.replace(/<link rel="manifest"[^>]*>/g, '');
+
+        // G. Embed complete viewer HTML as type="text/plain" (same pattern as web-ifc)
+        var safeViewerHtml = viewerHtml.replace(/<\/script>/gi, '<\\/script>');
+        html = html.replace('<body>', function() { return '<script type="text/plain" id="viewer-html-src">\n' + safeViewerHtml + '\n<\/script>\n<body>'; });
+
+        setStatus('Viewer embedded ✓  Building download…');
+        console.log('§S284c VIEWER_EMBED size=' + viewerHtml.length);
+      }
+    } catch(ve) {
+      console.warn('§S284c VIEWER_EMBED_FAIL', ve.message, '— viewer will fall back to GitHub Pages');
+      setStatus('Viewer embed failed — will use GitHub Pages viewer');
+    }
 
     // 10. Download
     var blob = new Blob([html], {type: 'text/html;charset=utf-8'});

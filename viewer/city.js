@@ -92,35 +92,24 @@ function setupCity(A) {
     }
 
     // §S285: City mode — treat ground/sky exactly like a normal building viewer.
-    // Position the ground plane, but let the pills drive visibility: ground shows only
-    // when Shadow/Night is on (matches streaming.js §GROUND_INIT), and the Shadow pill
-    // owns the realistic sky. No city-specific overrides — the old code forced the
-    // ground visible at too-high a Y, occluding the bottom pill.
-    const zRange = A.cityDb.exec(`SELECT MIN(min_z), MAX(max_z) FROM building_summary`);
-    if (zRange.length > 0) {
-      A.ground.position.y = (zRange[0].values[0][0] - A.modelOffset.z) - 2;
+    // Ground at the MEDIAN building base, not global MIN(min_z): a single outlier
+    // element (the city has one at z=-164) otherwise drags the ground ~164m below the
+    // city so every bbox floats. Median ignores outliers. Visibility is pill-controlled
+    // (Shadow/Night), matching streaming.js §GROUND_INIT, and the Shadow pill owns the sky.
+    const baseRows = A.cityDb.exec(`SELECT MIN(min_z) AS b FROM building_summary GROUP BY building`);
+    if (baseRows.length && baseRows[0].values.length) {
+      const bases = baseRows[0].values.map(r => r[0]).sort((a, b) => a - b);
+      const medianBase = bases[Math.floor(bases.length / 2)];
+      A.ground.position.y = (medianBase - A.modelOffset.z) - 2;
     }
     A.ground.visible = !!(A._shadowOn || A._nightMode);
-    console.log('[S285] §CITY_GROUND y=' + A.ground.position.y.toFixed(1) + ' visible=' + A.ground.visible + ' (pill-controlled, like buildings)');
+    console.log('[S285] §CITY_GROUND y=' + A.ground.position.y.toFixed(1) + ' visible=' + A.ground.visible + ' (median base, pill-controlled)');
 
     A.updateHUD();
     A.populateBuildingList();
-
-    // §S285: Show building list in city mode — was hidden by S280 UI overhaul.
-    // viewer.html has `#building-list { display:none !important }`, so a plain inline
-    // display:block loses to the stylesheet !important and the list never appears.
-    // Use setProperty(...'important') so the city-mode list beats the stylesheet rule.
-    var bldList = document.getElementById('building-list');
-    if (bldList) {
-      bldList.style.cssText = 'position:fixed;top:60px;left:12px;z-index:20;' +
-        'background:rgba(17,17,17,0.95);border:1px solid #333;border-radius:10px;' +
-        'padding:8px;max-height:70vh;overflow-y:auto;width:220px;' +
-        'backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.5)';
-      bldList.style.setProperty('display', 'block', 'important');
-      // Also show parent if hidden
-      if (bldList.parentElement) bldList.parentElement.style.display = 'block';
-      console.log(`[S285] §CITY_LIST shown cards=${(A.allBuildingCards||[]).length} display=${getComputedStyle(bldList).display}`);
-    }
+    // §S285: No building-list panel in city mode — a Viewer behaves apples-to-apples
+    // with every other viewer: click a building's AABB to stream it (picking.js §CITY_PICK).
+    // The #building-list stays hidden (S280); populateBuildingList still feeds search/HUD.
 
     // §S285: Draw individual element AABBs from cached building DBs (not big building bboxes)
     // For each archetype: read element_transforms from cached _extracted.db in IDB,
