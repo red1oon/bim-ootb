@@ -67,12 +67,23 @@ var workerJSON = JSON.stringify({
 });
 var manifestJSON = JSON.stringify({archetypes: [{name: 'Test', db: 'test.db'}]});
 
+// Simulate fetching web-ifc.wasm from local cache if available
+var webIfcWasmB64 = '';
+var wasmPath = path.join(viewerDir, 'lib', 'web-ifc.wasm');
+if (fs.existsSync(wasmPath)) {
+  webIfcWasmB64 = fs.readFileSync(wasmPath).toString('base64');
+  console.log('  web-ifc.wasm (base64): ' + webIfcWasmB64.length + ' bytes');
+} else {
+  console.log('  web-ifc.wasm: not found locally — §S284b WASM offline test skipped');
+}
+
 var standaloneBlock = '// §S284b: Standalone offline copy\n' +
   'window._STANDALONE = true;\n' +
   'window._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\n' +
   'window._WORKER_SOURCES = ' + workerJSON + ';\n' +
   'window._SQL_WASM_JS = ' + JSON.stringify(sqlWasmJs) + ';\n' +
-  'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n';
+  'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' +
+  (webIfcWasmB64 ? 'window._WEBIFC_WASM_B64 = "' + webIfcWasmB64 + '";\n' : '');
 
 var configMarker = '// \u2500\u2500 Config \u2500\u2500';
 check('3.1 config marker found', html.indexOf(configMarker) >= 0);
@@ -200,6 +211,14 @@ check('10.6 NO _WEBIFC_SRC variable (replaced by DOM element)',
   !/window\._WEBIFC_SRC\s*=/.test(output));
 check('10.7 GitHub Pages viewer URL present',
   output.indexOf('red1oon.github.io/bim-ootb/viewer/viewer.html') >= 0);
+if (webIfcWasmB64) {
+  check('10.8 _WEBIFC_WASM_B64 present when WASM available',
+    output.indexOf('_WEBIFC_WASM_B64') >= 0);
+}
+check('10.9 _createWorker injects _WEBIFC_WASM_URL into import worker',
+  output.indexOf('_WEBIFC_WASM_URL') >= 0);
+check('10.10 import_worker.js uses _WEBIFC_WASM_URL in locateFile',
+  importWorkerSrc.indexOf('_WEBIFC_WASM_URL') >= 0);
 
 // ── Step 11: _createWorker reads from DOM ──
 console.log('\n§S284b_FULL_PACKAGE _createWorker DOM read');
