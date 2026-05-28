@@ -13,6 +13,7 @@ function setupCity(A) {
   // building's own bbox instances in the merged per-discipline meshes (zero-scale), so the
   // detailed building replaces its boxes while every other building keeps its bbox. Keeps
   // the city context visible instead of blanking the whole scene.
+  A._cityHidden = [];  // {mesh, i, m} originals of bboxes hidden by loaded buildings (for restore on Clear)
   A._cityHideBuildingBboxes = function(buildingName) {
     if (!buildingName) return;
     var _z = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -21,12 +22,27 @@ function setupCity(A) {
     meshes.forEach(function(o){
       var ib = o.userData.instanceBuilding, changed = false;
       for (var i = 0; i < ib.length; i++) {
-        if (ib[i] === buildingName) { o.setMatrixAt(i, _z); hidden++; changed = true; }
+        if (ib[i] === buildingName) {
+          var orig = new THREE.Matrix4(); o.getMatrixAt(i, orig);
+          A._cityHidden.push({ mesh: o, i: i, m: orig });  // remember so Clear can restore
+          o.setMatrixAt(i, _z); hidden++; changed = true;
+        }
       }
       if (changed) o.instanceMatrix.needsUpdate = true;
     });
     if (hidden && A.markDirty) A.markDirty();
     console.log('[S285] §CITY_BBOX_HIDE building=' + buildingName + ' instances=' + hidden);
+  };
+
+  // Restore all bboxes hidden by previously-loaded buildings → the full bbox city returns.
+  A._cityRestoreBboxes = function() {
+    if (!A._cityHidden || !A._cityHidden.length) return;
+    var n = A._cityHidden.length, dirty = {};
+    A._cityHidden.forEach(function(h){ h.mesh.setMatrixAt(h.i, h.m); dirty[h.mesh.uuid] = h.mesh; });
+    for (var k in dirty) { if (dirty[k].instanceMatrix) dirty[k].instanceMatrix.needsUpdate = true; }
+    A._cityHidden = [];
+    if (A.markDirty) A.markDirty();
+    console.log('[S285] §CITY_BBOX_RESTORE instances=' + n);
   };
 
   // §S285: log JS heap (Chromium-only performance.memory) around heavy loads — superweight POC.
@@ -459,7 +475,10 @@ function setupCity(A) {
     A.streaming = false;
     A.streamQueue = [];
     A.streamIdx = 0;
-    const toRemove = A.collectMeshes(o => o.isMesh);
+    // §S285: free ONLY streamed building geometry — KEEP the bbox layer. InstancedMesh
+    // IS a Mesh, so the bare `o.isMesh` filter was also wiping the 12 bbox placeholders
+    // → everything blank. Exclude isBboxPlaceholder so the city bboxes survive Clear.
+    const toRemove = A.collectMeshes(o => o.isMesh && !(o.userData && o.userData.isBboxPlaceholder));
     toRemove.forEach(obj => {
       A.scene.remove(obj);
       if (obj.geometry) obj.geometry.dispose();
@@ -468,6 +487,7 @@ function setupCity(A) {
     A.streamedCount = 0;
     if (A.buildingsRendered) A.buildingsRendered.clear();
     A.guidMap = {};
+    A._cityRestoreBboxes();  // bring back the bboxes of buildings that were streamed
     var el;
     if ((el = document.getElementById('s-streamed'))) el.textContent = '0';
     if ((el = document.getElementById('s-buildings-done'))) el.textContent = '0';
