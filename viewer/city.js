@@ -91,25 +91,43 @@ function setupCity(A) {
       A.modelOffset.z = (Math.min(...allIZ) + Math.max(...allIZ)) / 2;
     }
 
+    // §S285: City mode — keep the ground positioned but hidden. The default plane sat
+    // too high (occluding the bottom pill / blocking interaction). The Shadow toggle
+    // re-adds a ground plane when the user wants one.
     const zRange = A.cityDb.exec(`SELECT MIN(min_z), MAX(max_z) FROM building_summary`);
     if (zRange.length > 0) {
       const groundY = (zRange[0].values[0][0] - A.modelOffset.z) - 2;
       A.ground.position.y = groundY;
-      A.ground.visible = true;
+    }
+    A.ground.visible = false;
+    console.log('[S285] §CITY_GROUND hidden (Shadow toggle restores a ground)');
+
+    // §S285: City mode — realistic Preetham sky on by default (mid-afternoon).
+    // Same path the Shadow toggle uses (tools.js); gives an outdoor horizon instead
+    // of the flat dark clear-color, and drives env-map reflections on buildings.
+    if (A._sky) {
+      A._sky.visible = true;
+      if (A.updateSky) A.updateSky(45, 180);
+      console.log('[S285] §CITY_SKY realistic Preetham sky enabled');
     }
 
     A.updateHUD();
     A.populateBuildingList();
 
-    // §S285: Show building list in city mode — was hidden by S280 UI overhaul
+    // §S285: Show building list in city mode — was hidden by S280 UI overhaul.
+    // viewer.html has `#building-list { display:none !important }`, so a plain inline
+    // display:block loses to the stylesheet !important and the list never appears.
+    // Use setProperty(...'important') so the city-mode list beats the stylesheet rule.
     var bldList = document.getElementById('building-list');
     if (bldList) {
-      bldList.style.cssText = 'display:block;position:fixed;top:60px;left:12px;z-index:20;' +
+      bldList.style.cssText = 'position:fixed;top:60px;left:12px;z-index:20;' +
         'background:rgba(17,17,17,0.95);border:1px solid #333;border-radius:10px;' +
         'padding:8px;max-height:70vh;overflow-y:auto;width:220px;' +
         'backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.5)';
+      bldList.style.setProperty('display', 'block', 'important');
       // Also show parent if hidden
       if (bldList.parentElement) bldList.parentElement.style.display = 'block';
+      console.log(`[S285] §CITY_LIST shown cards=${(A.allBuildingCards||[]).length} display=${getComputedStyle(bldList).display}`);
     }
 
     // §S285: Draw individual element AABBs from cached building DBs (not big building bboxes)
