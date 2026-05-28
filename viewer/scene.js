@@ -1242,7 +1242,11 @@ async function setupScene(A) {
         } else {
           ov.setText('Cancelled. Files are still cached for offline use.');
         }
-        setTimeout(function() { ov.close(); }, 3000);
+        ov.showButtons(
+          '<button id="pwa-done-ok" style="padding:8px 24px;background:#4fc3f7;color:#000;border:none;' +
+          'border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">OK</button>'
+        );
+        document.getElementById('pwa-done-ok').addEventListener('click', function() { ov.close(); });
       });
       return;
     }
@@ -1254,8 +1258,18 @@ async function setupScene(A) {
     }
     // No prompt available — prompt was consumed or browser doesn't support install
     console.log('§PWA_INSTALL no_prompt available. consumed=' + !window._installPrompt + ' iOS=false');
-    ov.setText('Files cached for offline use. Reload page to retry install.');
-    setTimeout(function() { ov.close(); }, 4000);
+    var statusEl = document.getElementById('pwa-status');
+    if (statusEl) {
+      statusEl.innerHTML = '<div style="color:#4caf50;font-weight:700;margin-bottom:8px">All files cached for offline use!</div>' +
+        '<div style="font-size:12px;color:#ccc;line-height:1.6">' +
+        'Look for the install icon <b style="color:#4fc3f7;font-size:16px">\u229E</b> in your browser\'s address bar.<br>' +
+        'Or close this tab, wait 30 seconds, and revisit to get the install prompt.</div>';
+    }
+    ov.showButtons(
+      '<button id="pwa-fallback-ok" style="padding:8px 24px;background:#4fc3f7;color:#000;border:none;' +
+      'border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">OK</button>'
+    );
+    document.getElementById('pwa-fallback-ok').addEventListener('click', function() { ov.close(); });
   }
 
   // §S283 1.7: iOS guided install overlay
