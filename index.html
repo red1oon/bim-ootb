@@ -543,8 +543,9 @@ async function loadManifest() {
     document.getElementById('city-progress').style.display = 'block';
     updateCityProgress();
 
-    // ── Health check: verify viewer is reachable ──
-    const _viewerCheck = (_base || '') + 'viewer/viewer.html';
+    // ── Health check: verify viewer is reachable (skip offline) ──
+    if (window._STANDALONE) { console.log('§HEALTH_CHECK skip — standalone'); }
+    else { const _viewerCheck = (_base || '') + 'viewer/viewer.html';
     fetch(_viewerCheck, { method: 'HEAD' }).then(r => {
       if (!r.ok) {
         document.body.insertAdjacentHTML('afterbegin',
@@ -554,7 +555,7 @@ async function loadManifest() {
           body: 'BIM OOTB BROKEN: Viewer returned HTTP ' + r.status + ' at ' + new Date().toISOString()
         }).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(() => {}); }
 
   } catch (e) {
     clearInterval(timerInterval);
@@ -1051,6 +1052,16 @@ async function handleImportFile(file) {
   progressBar.style.background = '#0277bd';
 
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
+
+  // §S284: Standalone offline — Worker blocked on file://, redirect to online viewer
+  if (window._STANDALONE) {
+    status.textContent = 'Opening online viewer for IFC import...';
+    var ghViewer = 'https://red1oon.github.io/bim-ootb/viewer/viewer.html';
+    window.open(ghViewer, '_blank');
+    status.textContent = 'IFC import requires the online viewer. File not uploaded — drop it there.';
+    progressBar.parentElement.style.display = 'none';
+    return;
+  }
 
   const arrayBuffer = await file.arrayBuffer();
   // S228: Route to IFC or mesh worker based on format
@@ -1858,6 +1869,7 @@ function downloadDIYScript() {
 <script>
 // ── S250 §9: Load Community Projects from contributed/index.json ──
 (async function() {
+  if (window._STANDALONE) { console.log('§COMMUNITY skip — standalone'); return; }
   var section = document.getElementById('community-section');
   var grid = document.getElementById('community-grid');
   if (!section || !grid) return;

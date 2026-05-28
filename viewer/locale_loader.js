@@ -124,6 +124,13 @@
       }
     } catch(e) { /* cache miss */ }
 
+    // §S284: Skip fetch from file:// (standalone offline HTML)
+    if (window._STANDALONE) {
+      console.log('§TRL_STANDALONE using defaults, locale=' + code);
+      callback(null, {});
+      return;
+    }
+
     // Fetch from OCI
     var url = LOCALE_BASE + code + '.js';
     fetch(url).then(function(resp) {
