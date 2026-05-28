@@ -1,6 +1,10 @@
 name: CI
 on: push
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   fast-checks:
     runs-on: ubuntu-latest
