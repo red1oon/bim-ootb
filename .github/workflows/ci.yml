@@ -53,3 +53,9 @@ jobs:
       - name: Golden path — IFC drop → viewer (ensures import works)
         working-directory: tests
         run: npx playwright test --project=desktop s274-golden-path
+
+      - name: Auto-merge PR when all checks pass
+        if: github.ref != 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "${{ github.ref_name }}" || true

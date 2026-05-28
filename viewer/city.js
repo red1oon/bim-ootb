@@ -145,22 +145,25 @@ function setupCity(A) {
     var _scl = new THREE.Vector3();
     var _quat = new THREE.Quaternion();
 
-    // §S285: No building-level fallback boxes. The city rests ONLY on exact per-element
-    // IFC AABBs from cached DBs — apples-to-apples with a normal viewer. The old big
-    // building-block boxes (drawn from city_index min/max, which include outlier elements
-    // down to z=-164) were what dragged the apparent floor low; removed. Uncached or
-    // old-schema archetypes draw nothing here; they appear once their DB is cached.
+    // §S285 A+C: ONE merged InstancedMesh per DISCIPLINE across the whole city — not one
+    // per building×discipline (that was hundreds of meshes, heavy RAM + draw calls). We
+    // accumulate every element's transform into per-discipline buffers, YIELDING to the
+    // event loop between archetypes (C) so the ~900k-element build never freezes the tab,
+    // then create ~8 meshes total. instanceBuilding[] maps instanceId → building for picking.
+    // No building-level fallback: city rests only on exact per-element IFC AABBs.
+    var _yield = function(){ return new Promise(function(r){ setTimeout(r, 0); }); };
+    var discAccum = {};  // disc -> { px,py,pz,sx,sy,sz: number[], blds: string[] }
+    function _accum(disc) {
+      if (!discAccum[disc]) discAccum[disc] = { px:[], py:[], pz:[], sx:[], sy:[], sz:[], blds:[] };
+      return discAccum[disc];
+    }
 
     for (var archName in archInstances) {
       var instances = archInstances[archName];
-      var bldEntry = null;
-      // Look up the BUILDINGS map for the DB filename
-      for (var bk in A.cityArchetypes) {
-        if (bk === archName) { bldEntry = A.cityArchetypes[bk]; break; }
-      }
-      if (!bldEntry) continue;
+      var bldEntry = A.cityArchetypes[archName] || null;
+      if (!bldEntry) { _skippedArch++; continue; }
 
-      // Try to read cached _extracted.db from IDB
+      // Read cached _extracted.db from IDB (bbox layer is cache-only — never fetches)
       var dbUrl = A.BLD_BASE + bldEntry.db;
       var cachedBuf = null;
       if (cacheDb) {
@@ -173,88 +176,81 @@ function setupCity(A) {
           });
         } catch(e) { cachedBuf = null; }
       }
+      if (!cachedBuf) { _skippedArch++; continue; }
 
-      if (cachedBuf) {
-        // ── Individual element AABBs from cached DB ──
-        // §S285: Older extractions lack bbox_* columns in element_transforms. Probe the
-        // schema first; if absent (or any query throws) degrade gracefully to building-level
-        // bboxes instead of throwing an uncaught error that would abort the whole city init
-        // (no §CITY_BBOX / §CITY_READY, blank scene).
-        var archDb = new SQL.Database(new Uint8Array(cachedBuf));
-        var elemRows = null, arcCen = null, _hasBbox = false;
-        try {
-          var _cols = archDb.exec(`PRAGMA table_info(element_transforms)`);
-          _hasBbox = _cols.length && _cols[0].values.some(function(c){ return c[1] === 'bbox_x'; });
-          if (_hasBbox) {
-            elemRows = archDb.exec(`
-              SELECT m.discipline, t.center_x, t.center_y, t.center_z,
-                     t.bbox_x, t.bbox_y, t.bbox_z
-              FROM element_transforms t
-              JOIN elements_meta m ON t.guid = m.guid
-            `);
-            arcCen = archDb.exec(`SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms`);
-          }
-        } catch (e) {
-          console.warn(`[S285] §CITY_BBOX_DEGRADE archetype=${archName} reason=${e.message}`);
-          elemRows = null;
+      // §S285: Older extractions lack bbox_* columns — probe + skip gracefully (no crash).
+      var archDb = new SQL.Database(new Uint8Array(cachedBuf));
+      var elemRows = null, arcCen = null, _hasBbox = false;
+      try {
+        var _cols = archDb.exec(`PRAGMA table_info(element_transforms)`);
+        _hasBbox = _cols.length && _cols[0].values.some(function(c){ return c[1] === 'bbox_x'; });
+        if (_hasBbox) {
+          elemRows = archDb.exec(`
+            SELECT m.discipline, t.center_x, t.center_y, t.center_z,
+                   t.bbox_x, t.bbox_y, t.bbox_z
+            FROM element_transforms t
+            JOIN elements_meta m ON t.guid = m.guid
+          `);
+          arcCen = archDb.exec(`SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms`);
         }
-        archDb.close();
-
-        if (!_hasBbox || !elemRows || !elemRows.length || !elemRows[0].values.length || !arcCen || !arcCen.length) {
-          console.warn(`[S285] §CITY_BBOX_SKIP archetype=${archName} reason=${!_hasBbox ? 'no bbox_* columns' : 'no rows'} (exact AABBs only, no fallback)`);
-          _skippedArch++;
-          continue;
-        }
-        _cachedArchetypes++;
-        var arcX = arcCen[0].values[0][0];
-        var arcY = arcCen[0].values[0][1];
-        var arcZ = arcCen[0].values[0][2];
-
-        // Group by discipline for coloring
-        var byDisc = {};
-        for (var ei = 0; ei < elemRows[0].values.length; ei++) {
-          var er = elemRows[0].values[ei];
-          var disc = er[0] || '_';
-          if (!byDisc[disc]) byDisc[disc] = [];
-          byDisc[disc].push(er);
-        }
-
-        // For each city instance of this archetype, draw offset element bboxes
-        for (var ii = 0; ii < instances.length; ii++) {
-          var inst = instances[ii];
-          var offX = inst.ix - arcX;
-          var offY = inst.iy - arcY;
-          var offZ = inst.iz - arcZ;
-
-          for (var dName in byDisc) {
-            var drows = byDisc[dName];
-            var color = A.DISC_COLORS[dName] || A.DEFAULT_COLOR;
-            var mat = new THREE.MeshBasicMaterial({ color: color, wireframe: true, transparent: true, opacity: 0.35 });
-            var iMesh = new THREE.InstancedMesh(geo, mat, drows.length);
-            iMesh.frustumCulled = false;
-            iMesh.userData = { isBboxPlaceholder: true, building: inst.building };
-
-            for (var di = 0; di < drows.length; di++) {
-              var dr = drows[di];
-              var p = A.ifc2three(dr[1] + offX, dr[2] + offY, dr[3] + offZ);
-              var bx = dr[4] || 0.3, by = dr[5] || 0.3, bz = dr[6] || 0.3;
-              _pos.set(p.x, p.y, p.z);
-              _scl.set(bx, bz, by);  // IFC→Three: swap Y/Z
-              _m4.compose(_pos, _quat, _scl);
-              iMesh.setMatrixAt(di, _m4);
-            }
-            iMesh.instanceMatrix.needsUpdate = true;
-            A.scene.add(iMesh);
-            _totalBboxes += drows.length;
-          }
-        }
-      } else {
-        // §S285: Uncached archetype — no fallback box; it appears once its DB is cached.
-        _skippedArch++;
+      } catch (e) {
+        console.warn(`[S285] §CITY_BBOX_DEGRADE archetype=${archName} reason=${e.message}`);
+        elemRows = null;
       }
+      archDb.close();
+
+      if (!_hasBbox || !elemRows || !elemRows.length || !elemRows[0].values.length || !arcCen || !arcCen.length) {
+        console.warn(`[S285] §CITY_BBOX_SKIP archetype=${archName} reason=${!_hasBbox ? 'no bbox_* columns' : 'no rows'} (exact AABBs only, no fallback)`);
+        _skippedArch++;
+        continue;
+      }
+      _cachedArchetypes++;
+      var arcX = arcCen[0].values[0][0];
+      var arcY = arcCen[0].values[0][1];
+      var arcZ = arcCen[0].values[0][2];
+      var vals = elemRows[0].values;
+
+      // Accumulate every element of every city instance into per-discipline buffers.
+      for (var ii = 0; ii < instances.length; ii++) {
+        var inst = instances[ii];
+        var offX = inst.ix - arcX, offY = inst.iy - arcY, offZ = inst.iz - arcZ;
+        for (var ei = 0; ei < vals.length; ei++) {
+          var er = vals[ei];
+          var acc = _accum(er[0] || '_');
+          var p = A.ifc2three(er[1] + offX, er[2] + offY, er[3] + offZ);
+          acc.px.push(p.x); acc.py.push(p.y); acc.pz.push(p.z);
+          acc.sx.push(er[4] || 0.3); acc.sy.push(er[6] || 0.3); acc.sz.push(er[5] || 0.3);  // IFC→Three swap Y/Z
+          acc.blds.push(inst.building);
+          _totalBboxes++;
+        }
+      }
+      await _yield();  // (C) breathe between archetypes — keeps the tab responsive
+    }
+
+    // (A) Build ONE InstancedMesh per discipline (~8 meshes instead of hundreds).
+    var _meshCount = 0;
+    for (var dName in discAccum) {
+      var dacc = discAccum[dName];
+      var n = dacc.px.length;
+      if (!n) continue;
+      var color = A.DISC_COLORS[dName] || A.DEFAULT_COLOR;
+      var mat = new THREE.MeshBasicMaterial({ color: color, wireframe: true, transparent: true, opacity: 0.35 });
+      var iMesh = new THREE.InstancedMesh(geo, mat, n);
+      iMesh.frustumCulled = false;
+      // Merged mesh spans many buildings → instanceBuilding maps instanceId → building (picking.js).
+      iMesh.userData = { isBboxPlaceholder: true, discipline: dName, instanceBuilding: dacc.blds };
+      for (var k = 0; k < n; k++) {
+        _pos.set(dacc.px[k], dacc.py[k], dacc.pz[k]);
+        _scl.set(dacc.sx[k], dacc.sy[k], dacc.sz[k]);
+        _m4.compose(_pos, _quat, _scl);
+        iMesh.setMatrixAt(k, _m4);
+      }
+      iMesh.instanceMatrix.needsUpdate = true;
+      A.scene.add(iMesh);
+      _meshCount++;
     }
     var _dt = (performance.now() - _t0).toFixed(0);
-    console.log(`[S285] §CITY_BBOX individual=${_totalBboxes.toLocaleString()} cachedArch=${_cachedArchetypes} skippedArch=${_skippedArch} ms=${_dt}`);
+    console.log(`[S285] §CITY_BBOX individual=${_totalBboxes.toLocaleString()} cachedArch=${_cachedArchetypes} skippedArch=${_skippedArch} meshes=${_meshCount} ms=${_dt}`);
     if (A.markDirty) A.markDirty();
 
     document.getElementById('s-buildings').textContent =
