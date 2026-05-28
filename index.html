@@ -262,6 +262,7 @@
     <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px">
       <span data-trl="landing_complete_city" style="font-size:14px; font-weight:700; color:#0277bd; letter-spacing:1px">COMPLETE THE CITY</span>
       <span id="city-count" style="font-size:12px; color:#888">0 / 30 <span data-trl="landing_buildings_explored">buildings explored</span></span>
+      <a href="LargeCity.html" data-trl="landing_cannot_wait" style="margin-left:auto; font-size:14px; font-weight:700; color:#44cc44; letter-spacing:1px; text-decoration:none">I CANNOT WAIT!</a>
     </div>
     <div style="height:8px; background:#222; border-radius:4px; overflow:hidden">
       <div id="city-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#0277bd,#44cc44); border-radius:4px; transition:width 0.4s ease"></div>
@@ -1619,22 +1620,23 @@ async function exportProjectIFC(projectKey, flyout) {
 <!-- About dialog -->
 <div id="about-dialog" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);justify-content:center;align-items:center" onclick="if(event.target===this)this.classList.remove('active')">
   <div style="background:rgba(10,10,30,0.97);border-radius:14px;padding:28px 32px;border:1px solid rgba(79,195,247,0.3);font-family:'Segoe UI',sans-serif;color:#e0e0e0;max-width:380px;width:90%;max-height:85vh;overflow-y:auto;text-align:center">
-    <img src="Sysnova.png" alt="Sysnova" style="height:54px;margin-bottom:12px;filter:brightness(1.1)">
-    <div style="font-size:28px;font-weight:800;color:#e0e0e0;font-family:'Arial Black',Impact,sans-serif;letter-spacing:6px;line-height:1">BIM</div>
+    <img id="about-icon" src="viewer/icons/icon-192.png" alt="BIM/ERP OOTB" style="height:72px;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto">
+    <div style="font-size:28px;font-weight:800;color:#e0e0e0;font-family:'Arial Black',Impact,sans-serif;letter-spacing:6px;line-height:1">BIM/ERP</div>
     <div style="font-size:11px;letter-spacing:4px;color:#4fc3f7;margin-bottom:14px;text-transform:uppercase">Out Of The Box</div>
 
-    <div style="font-size:15px;color:#ccc;line-height:1.5;margin-bottom:6px">Frictionless BIM. Two DBs.<br>One browser. Zero install.</div>
-    <div style="color:#e8a735;font-size:12px;font-style:italic;margin-bottom:18px">Probably the lightest BIM app ever made.</div>
+    <div style="font-size:15px;color:#ccc;line-height:1.5;margin-bottom:6px">Frictionless BIM/ERP. Two DBs.<br>One browser. Zero install.</div>
+    <div style="color:#e8a735;font-size:12px;font-style:italic;margin-bottom:14px">Probably the lightest BIM/ERP app ever made. ISO Pending.</div>
 
-    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:18px">
-      <div style="padding:8px 14px;background:rgba(79,195,247,0.08);border:1px solid rgba(79,195,247,0.2);border-radius:8px">
-        <div style="font-size:13px;font-weight:700;color:#4fc3f7">BIM</div>
-        <div style="font-size:9px;color:#888;margin-top:2px">3D Viewer</div>
-      </div>
-      <div style="padding:8px 14px;background:rgba(232,167,53,0.08);border:1px solid rgba(232,167,53,0.2);border-radius:8px">
-        <div style="font-size:13px;font-weight:700;color:#e8a735">ERP</div>
-        <div style="font-size:9px;color:#888;margin-top:2px">Spatial ERP</div>
-      </div>
+    <div style="text-align:left;margin-bottom:14px;font-size:10.5px;line-height:1.85;color:#ccc">
+      &#127963; <b style="color:#4fc3f7">3D IFC Viewer</b> &middot; 125K elements &middot; offline &middot; &lt;1s load<br>
+      &#9201; <b style="color:#4fc3f7">4D Time Machine</b> &middot; sequence &middot; drone tour &middot; Gantt<br>
+      &#128176; <b style="color:#4fc3f7">5D Cost &amp; BOQ</b> &middot; auto-extracted &middot; 17 country rates<br>
+      &#9889; <b style="color:#4fc3f7">Clash Detection</b> &middot; R-tree spatial &middot; QR snag reports<br>
+      &#128208; <b style="color:#4fc3f7">2D Plans &amp; Grids</b> &middot; section cut &middot; elevations &middot; AABBCC<br>
+      &#127758; <b style="color:#e8a735">Spatial ERP</b> &middot; iDempiere AD &middot; full CRUD &middot; globe<br>
+      &#128694; <b style="color:#4fc3f7">Walk Mode</b> &middot; GPS blue-dot &middot; device orientation<br>
+      &#128266; <b style="color:#4fc3f7">Voice &amp; NLP Search</b> &middot; natural language &middot; mic<br>
+      &#128279; <b style="color:#4fc3f7">Deep-link Share</b> &middot; URL &middot; QR &middot; native share sheet
     </div>
 
     <div style="color:#999;font-size:10px;line-height:1.6;margin-bottom:14px">Chrome 90+ &#8226; Firefox 90+ &#8226; Safari 15+ &#8226; Edge 90+<br>Mobile: iOS Safari 15+ &#8226; Chrome Android</div>
@@ -1644,10 +1646,10 @@ async function exportProjectIFC(projectKey, flyout) {
       <a href="https://github.com/red1oon/bim-ootb" target="_blank" style="color:#4fc3f7;text-decoration:none;padding:6px 12px;border:1px solid rgba(79,195,247,0.25);border-radius:6px">&#11088; GitHub</a>
     </div>
 
-    <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.remove('active');document.getElementById('diy-dialog').classList.add('active')" style="color:#e8a735;font-size:11px;text-decoration:none;cursor:pointer">&#128736; DIY Downloader</a>
-    <br><a href="javascript:void(0)" onclick="packageLandingPage()" style="color:#4fc3f7;font-size:11px;text-decoration:none;cursor:pointer">&#128190; Save Offline Copy</a>
+    <a href="javascript:void(0)" onclick="packageLandingPage()" style="color:#4fc3f7;font-size:11px;text-decoration:none;cursor:pointer">&#128190; Save Offline Copy <span style="color:#888;font-size:10px">— viewer &plus; serve script &plus; README</span></a>
+    <div id="pack-status" style="color:#4fc3f7;font-size:10px;min-height:14px;margin-top:4px"></div>
 
-    <div style="color:#666;font-size:9px;margin-top:14px">&#169; 2026 Redhuan D. Oon &#8226; MIT License</div>
+    <div style="color:#666;font-size:9px;margin-top:10px">&#169; 2026 Redhuan D. Oon &#8226; MIT License</div>
   </div>
 </div>
 <style>#about-dialog.active{display:flex!important}#diy-dialog.active{display:flex!important}</style>
@@ -1702,15 +1704,21 @@ async function exportProjectIFC(projectKey, flyout) {
 <script>
 // §S284: Package landing page as self-contained offline HTML
 async function packageLandingPage() {
-  var statusEl = document.getElementById('import-status');
-  if (statusEl) statusEl.textContent = 'Packaging offline copy...';
+  var statusEl = document.getElementById('pack-status');
+  function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+  if (window._STANDALONE) {
+    setStatus('Already offline — open via serve.sh then re-package from there.');
+    return;
+  }
+  setStatus('Packaging…');
   try {
     // 1. Fetch external JS files that need inlining
+    setStatus('Inlining scripts…');
     var dbBuilderSrc = await fetch('viewer/import_db_builder.js?v=3').then(function(r) { return r.text(); });
     var localeSrc = await fetch('viewer/locale_loader.js?v=7').then(function(r) { return r.text(); });
 
     // 1b. Fetch Worker scripts for Blob URL in standalone mode
-    if (statusEl) statusEl.textContent = 'Fetching worker scripts...';
+    setStatus('Fetching worker scripts…');
     var importWorkerSrc = await fetch('viewer/import_worker.js?v=8').then(function(r) { return r.text(); });
     var meshWorkerSrc = await fetch('viewer/mesh_import_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
     var exportWorkerSrc = await fetch('viewer/ifc_export_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
@@ -1721,7 +1729,7 @@ async function packageLandingPage() {
     });
 
     // 1c. Fetch sql-wasm.js + sql-wasm.wasm (base64) + web-ifc for fully offline IFC import
-    if (statusEl) statusEl.textContent = 'Fetching SQLite WASM (~700KB)...';
+    setStatus('Fetching SQLite WASM (~700KB)…');
     var sqlWasmJs = await fetch('viewer/lib/sql-wasm.js').then(function(r) { return r.text(); }).catch(function() { return ''; });
     var sqlWasmBuf = await fetch('viewer/lib/sql-wasm.wasm').then(function(r) { return r.arrayBuffer(); }).catch(function() { return null; });
     var sqlWasmB64 = '';
@@ -1731,33 +1739,48 @@ async function packageLandingPage() {
       for (var wi = 0; wi < bytes.length; wi++) binary += String.fromCharCode(bytes[wi]);
       sqlWasmB64 = btoa(binary);
     }
-    if (statusEl) statusEl.textContent = 'Fetching web-ifc (~6MB)...';
+    setStatus('Fetching IFC engine (~6MB)…');
     var webIfcSrc = '';
     try {
-      webIfcSrc = await fetch('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js').then(function(r) { return r.text(); });
+      // Local cached copy first (instant if service worker has it), fall back to unpkg
+      var webIfcRes = await fetch('viewer/lib/web-ifc-api-iife.js').catch(function() { return null; });
+      if (webIfcRes && webIfcRes.ok) {
+        webIfcSrc = await webIfcRes.text();
+        setStatus('IFC engine loaded from cache ✓');
+      } else {
+        setStatus('Fetching IFC engine from CDN (~6MB)… please wait');
+        webIfcSrc = await fetch('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js').then(function(r) { return r.text(); });
+        setStatus('IFC engine loaded ✓');
+      }
     } catch(e) {
+      setStatus('IFC engine unavailable — IFC import will need internet');
       console.warn('§S284b web-ifc fetch failed — IFC import will need internet');
     }
-    // 2. Fetch Sysnova.png as base64 data URI
-    var pngBlob = await fetch('Sysnova.png').then(function(r) { return r.blob(); });
-    var pngB64 = await new Promise(function(cb) {
-      var rd = new FileReader(); rd.onload = function() { cb(rd.result); }; rd.readAsDataURL(pngBlob);
-    });
+    // 2. Fetch about-icon (icon-192.png) + Sysnova.png as base64 data URIs
+    async function fetchB64(url) {
+      var blob = await fetch(url).then(function(r) { return r.blob(); });
+      return new Promise(function(cb) {
+        var rd = new FileReader(); rd.onload = function() { cb(rd.result); }; rd.readAsDataURL(blob);
+      });
+    }
+    var iconB64 = await fetchB64('viewer/icons/icon-192.png');
+    var pngB64  = await fetchB64('Sysnova.png').catch(function() { return ''; });
 
     // 3. Snapshot manifest (already in memory from init)
     var manifestJSON = JSON.stringify(window._manifestData || {archetypes:[]});
 
     // 4. Fetch the ORIGINAL index.html source (not innerHTML — browser DOM re-serialization
     //    breaks script tags, normalizes whitespace, and loses comments)
-    if (statusEl) statusEl.textContent = 'Building HTML...';
+    setStatus('Building HTML…');
     var html = await fetch(location.href.replace(/[?#].*$/, '')).then(function(r) { return r.text(); });
 
     // 5. Inline external scripts (function replacement avoids $' $& corruption in sources)
     html = html.replace(/<script src="viewer\/import_db_builder\.js[^"]*"><\/script>/, function() { return '<script>\n' + dbBuilderSrc + '\n<\/script>'; });
     html = html.replace(/<script src="viewer\/locale_loader\.js[^"]*"><\/script>/, function() { return '<script>\n' + localeSrc + '\n<\/script>'; });
 
-    // 6. Sysnova.png → base64
-    html = html.replace(/src="Sysnova\.png"/g, 'src="' + pngB64 + '"');
+    // 6. Inline images → base64
+    html = html.replace(/src="viewer\/icons\/icon-192\.png"/g, 'src="' + iconB64 + '"');
+    if (pngB64) html = html.replace(/src="Sysnova\.png"/g, 'src="' + pngB64 + '"');
 
     // 7. Strip analytics (goatcounter)
     html = html.replace(/<script[^>]*goatcounter[^>]*><\/script>/g, '');
@@ -1796,10 +1819,109 @@ async function packageLandingPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
-    if (statusEl) statusEl.textContent = '';
     console.log('\u00a7PACK_DOWNLOAD size=' + blob.size + ' bytes');
+
+    // Also download serve scripts + README so users can self-host immediately
+    function _dlText(content, filename, mimeType, delayMs) {
+      setTimeout(function() {
+        var b = new Blob([content], {type: mimeType});
+        var el = document.createElement('a');
+        el.href = URL.createObjectURL(b);
+        el.download = filename;
+        document.body.appendChild(el);
+        el.click();
+        document.body.removeChild(el);
+        setTimeout(function() { URL.revokeObjectURL(el.href); }, 1000);
+      }, delayMs);
+    }
+
+    var readme = [
+      '# BIM/ERP OOTB \u2014 Self-Host Guide',
+      '',
+      'Downloaded from https://red1oon.github.io/bim-ootb',
+      '',
+      '## What you have',
+      '  BIM-OOTB.html  \u2014 the full viewer (all code inline)',
+      '  serve.sh       \u2014 local server for Mac / Linux',
+      '  serve.bat      \u2014 local server for Windows',
+      '  README.md      \u2014 this file',
+      '',
+      '## Run locally',
+      '',
+      'Mac / Linux',
+      '  1. Open Terminal in this folder',
+      '  2. Run:  bash serve.sh',
+      '  3. Browser opens at http://localhost:8080',
+      '',
+      'Windows',
+      '  1. Double-click serve.bat',
+      '  2. Browser opens at http://localhost:8080',
+      '',
+      'Requires Python 3 \u2014 free from https://python.org',
+      '',
+      '## Host on the web',
+      '',
+      'Netlify (free, 30 seconds)',
+      '  netlify.com \u2192 Add new site \u2192 Deploy manually',
+      '  Drag this folder into the upload zone.',
+      '  Done \u2014 you get a public HTTPS URL instantly.',
+      '',
+      'GitHub Pages (free)',
+      '  New repo \u2192 upload BIM-OOTB.html \u2192 rename to index.html',
+      '  Settings \u2192 Pages \u2192 Deploy from branch: main',
+      '  Live at https://yourusername.github.io/yourrepo',
+      '',
+      'Any web server',
+      '  Upload BIM-OOTB.html to any static host (nginx, S3, VPS).',
+      '  No backend needed. Rename to index.html for clean URLs.',
+      '',
+      '## Load a building',
+      '',
+      '  Drop an IFC file onto the viewer \u2014 parsed locally, nothing uploaded.',
+      '  Or append ?db=https://yourhost/building.db to open a cloud building.',
+      '',
+      '## Questions?',
+      '  GitHub : https://github.com/red1oon/bim-ootb',
+      '  Email  : red1org@gmail.com',
+      '  License: MIT \u2014 free to use, modify, host, share',
+      '',
+      '\u00a9 2026 Redhuan D. Oon \u00b7 Sysnova Information Systems Limited'
+    ].join('\n');
+
+    var serveSh = [
+      '#!/bin/bash',
+      '# BIM/ERP OOTB \u2014 local server (Mac / Linux)',
+      'cd "$(dirname "$0")"',
+      'echo ""',
+      'echo "  BIM/ERP OOTB \u2014 starting at http://localhost:8080"',
+      'echo "  Press Ctrl+C to stop."',
+      'echo ""',
+      '(sleep 1 && (open "http://localhost:8080/BIM-OOTB.html" 2>/dev/null || xdg-open "http://localhost:8080/BIM-OOTB.html" 2>/dev/null)) &',
+      'python3 -m http.server 8080'
+    ].join('\n');
+
+    var serveBat = [
+      '@echo off',
+      'cd /d "%~dp0"',
+      'echo.',
+      'echo   BIM/ERP OOTB \u2014 starting at http://localhost:8080',
+      'echo   Close this window to stop.',
+      'echo.',
+      'start "" "http://localhost:8080/BIM-OOTB.html"',
+      'python -m http.server 8080',
+      'pause'
+    ].join('\r\n');
+
+    _dlText(readme,   'README.md',  'text/markdown',               600);
+    _dlText(serveSh,  'serve.sh',   'application/x-sh',           1200);
+    _dlText(serveBat, 'serve.bat',  'application/x-bat',          1800);
+
+    if (statusEl) statusEl.textContent = '';
+    setStatus('Done \u2014 4 files downloading \u2713');
+    setTimeout(function() { if (statusEl) statusEl.textContent = ''; }, 4000);
+    console.log('\u00a7PACK_BUNDLE readme+serve.sh+serve.bat queued');
   } catch(e) {
-    if (statusEl) statusEl.textContent = 'Package failed: ' + e.message;
+    setStatus('Package failed: ' + e.message);
     console.error('\u00a7PACK_FAIL', e);
   }
 }

@@ -190,11 +190,19 @@ function setupPicking(A) {
     A.raycaster.firstHitOnly = false;  // §S260d: WYSIWYG — check all hits, pick best match (was BVH early termination)
 
     // City mode: check bbox wireframes first
+    // §S285: S285 PR#24 changed cached-archetype bboxes from LineSegments → InstancedMesh
+    // placeholders. The original filter only matched LineSegments, so the 22 cached
+    // archetypes (the bulk of the AABBs) became unclickable — only the fallback
+    // LineSegments buildings could be selected. Match both so every AABB renders on click.
     if (A.CITY_URL) {
-      const bboxes = A.collectMeshes(o => o.isLineSegments && o.userData.building);
+      const bboxes = A.collectMeshes(o =>
+        (o.isLineSegments && o.userData.building) ||
+        (o.isInstancedMesh && o.userData.isBboxPlaceholder && o.userData.building));
       const bboxHits = A.raycaster.intersectObjects(bboxes, false);
       if (bboxHits.length > 0) {
-        const bldName = bboxHits[0].object.userData.building;
+        const hitObj = bboxHits[0].object;
+        const bldName = hitObj.userData.building;
+        console.log(`[S285] §CITY_PICK building=${bldName} kind=${hitObj.isInstancedMesh ? 'instanced' : 'line'}`);
         A.flyTo(bldName);
         return;
       }
