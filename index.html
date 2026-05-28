@@ -1620,7 +1620,7 @@ async function exportProjectIFC(projectKey, flyout) {
 <!-- About dialog -->
 <div id="about-dialog" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);justify-content:center;align-items:center" onclick="if(event.target===this)this.classList.remove('active')">
   <div style="background:rgba(10,10,30,0.97);border-radius:14px;padding:28px 32px;border:1px solid rgba(79,195,247,0.3);font-family:'Segoe UI',sans-serif;color:#e0e0e0;max-width:380px;width:90%;max-height:85vh;overflow-y:auto;text-align:center">
-    <div style="background:rgba(2,119,189,0.13);border-radius:10px;padding:10px 20px;margin-bottom:12px;display:inline-block"><img src="Sysnova.png" alt="Sysnova" style="height:54px;display:block"></div>
+    <img id="about-icon" src="viewer/icons/icon-192.png" alt="BIM/ERP OOTB" style="height:72px;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto">
     <div style="font-size:28px;font-weight:800;color:#e0e0e0;font-family:'Arial Black',Impact,sans-serif;letter-spacing:6px;line-height:1">BIM/ERP</div>
     <div style="font-size:11px;letter-spacing:4px;color:#4fc3f7;margin-bottom:14px;text-transform:uppercase">Out Of The Box</div>
 
@@ -1706,6 +1706,10 @@ async function exportProjectIFC(projectKey, flyout) {
 async function packageLandingPage() {
   var statusEl = document.getElementById('pack-status');
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+  if (window._STANDALONE) {
+    setStatus('Already offline — open via serve.sh then re-package from there.');
+    return;
+  }
   setStatus('Packaging…');
   try {
     // 1. Fetch external JS files that need inlining
@@ -1752,11 +1756,15 @@ async function packageLandingPage() {
       setStatus('IFC engine unavailable — IFC import will need internet');
       console.warn('§S284b web-ifc fetch failed — IFC import will need internet');
     }
-    // 2. Fetch Sysnova.png as base64 data URI
-    var pngBlob = await fetch('Sysnova.png').then(function(r) { return r.blob(); });
-    var pngB64 = await new Promise(function(cb) {
-      var rd = new FileReader(); rd.onload = function() { cb(rd.result); }; rd.readAsDataURL(pngBlob);
-    });
+    // 2. Fetch about-icon (icon-192.png) + Sysnova.png as base64 data URIs
+    async function fetchB64(url) {
+      var blob = await fetch(url).then(function(r) { return r.blob(); });
+      return new Promise(function(cb) {
+        var rd = new FileReader(); rd.onload = function() { cb(rd.result); }; rd.readAsDataURL(blob);
+      });
+    }
+    var iconB64 = await fetchB64('viewer/icons/icon-192.png');
+    var pngB64  = await fetchB64('Sysnova.png').catch(function() { return ''; });
 
     // 3. Snapshot manifest (already in memory from init)
     var manifestJSON = JSON.stringify(window._manifestData || {archetypes:[]});
@@ -1770,8 +1778,9 @@ async function packageLandingPage() {
     html = html.replace(/<script src="viewer\/import_db_builder\.js[^"]*"><\/script>/, function() { return '<script>\n' + dbBuilderSrc + '\n<\/script>'; });
     html = html.replace(/<script src="viewer\/locale_loader\.js[^"]*"><\/script>/, function() { return '<script>\n' + localeSrc + '\n<\/script>'; });
 
-    // 6. Sysnova.png → base64
-    html = html.replace(/src="Sysnova\.png"/g, 'src="' + pngB64 + '"');
+    // 6. Inline images → base64
+    html = html.replace(/src="viewer\/icons\/icon-192\.png"/g, 'src="' + iconB64 + '"');
+    if (pngB64) html = html.replace(/src="Sysnova\.png"/g, 'src="' + pngB64 + '"');
 
     // 7. Strip analytics (goatcounter)
     html = html.replace(/<script[^>]*goatcounter[^>]*><\/script>/g, '');
