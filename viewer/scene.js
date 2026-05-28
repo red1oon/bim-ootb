@@ -1172,16 +1172,16 @@ async function setupScene(A) {
   function _cacheAllAssets(assets, ov) {
     ov.setText('Downloading ' + assets.length + ' files...');
     var cacheName = 'bim-ootb-' + (window._pwaVersion || 'v515');
+    var _skipped = [];
     caches.open(cacheName).then(function(cache) {
       var done = 0;
       var total = assets.length;
-      // Cache assets sequentially in small batches to avoid flooding
       var queue = assets.slice();
       function batch() {
         var chunk = queue.splice(0, 6);
         if (chunk.length === 0) {
-          // All JS/assets cached — now cache building DB
-          _ensureBuildingCached(ov);
+          // §S283: Verify — read cache back, count actual entries
+          _verifyCacheWrite(cacheName, total, _skipped, ov);
           return;
         }
         Promise.all(chunk.map(function(url) {
@@ -1191,11 +1191,32 @@ async function setupScene(A) {
             ov.setText('Cached ' + done + '/' + total + '  ' + url.split('/').pop());
           }).catch(function(err) {
             done++;
+            _skipped.push(url.split('/').pop());
             console.warn('§PWA_CACHE skip ' + url, err.message);
           });
         })).then(batch);
       }
       batch();
+    });
+  }
+
+  // §S283: Verify cache write — read back and count
+  function _verifyCacheWrite(cacheName, expected, skipped, ov) {
+    ov.setProgress(82);
+    ov.setText('Verifying cache...');
+    caches.open(cacheName).then(function(cache) {
+      return cache.keys();
+    }).then(function(keys) {
+      var actual = keys.length;
+      var ok = actual >= (expected - skipped.length);
+      console.log('§PWA_VERIFY cache=' + cacheName + ' expected=' + expected +
+        ' actual=' + actual + ' skipped=' + skipped.length + ' ok=' + ok);
+      if (skipped.length > 0) {
+        console.warn('§PWA_VERIFY skipped: ' + skipped.join(', '));
+      }
+      // Store result for display in the install overlay
+      window._pwaCacheResult = { expected: expected, actual: actual, skipped: skipped, ok: ok };
+      _ensureBuildingCached(ov);
     });
   }
 
@@ -1258,9 +1279,17 @@ async function setupScene(A) {
     }
     // No prompt available — prompt was consumed or browser doesn't support install
     console.log('§PWA_INSTALL no_prompt available. consumed=' + !window._installPrompt + ' iOS=false');
+    var cr = window._pwaCacheResult || {};
     var statusEl = document.getElementById('pwa-status');
     if (statusEl) {
-      statusEl.innerHTML = '<div style="color:#4caf50;font-weight:700;margin-bottom:8px">All files cached for offline use!</div>' +
+      var verifyLine = cr.ok
+        ? '<div style="color:#4caf50;font-size:11px;margin-bottom:8px">\u2714 ' + cr.actual + ' files cached' +
+          (cr.skipped && cr.skipped.length ? ', ' + cr.skipped.length + ' skipped' : '') + '</div>'
+        : (cr.actual != null
+          ? '<div style="color:#ff8a65;font-size:11px;margin-bottom:8px">\u26A0 ' + cr.actual + '/' + cr.expected + ' files cached</div>'
+          : '');
+      statusEl.innerHTML = verifyLine +
+        '<div style="color:#4caf50;font-weight:700;margin-bottom:8px">Ready for offline use!</div>' +
         '<div style="font-size:12px;color:#ccc;line-height:1.6">' +
         'Look for the install icon <b style="color:#4fc3f7;font-size:16px">\u229E</b> in your browser\'s address bar.<br>' +
         'Or close this tab, wait 30 seconds, and revisit to get the install prompt.</div>';
