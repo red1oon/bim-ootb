@@ -1512,6 +1512,8 @@ function setupStreaming(A) {
       var dbBuf = await A.cachedFetch(A.DB_URL);
       A.db = new SQL.Database(new Uint8Array(dbBuf));
       console.log(`[S192] §DB_LOADED size=${(dbBuf.byteLength/1024/1024).toFixed(0)}MB`);
+      // §S283: Remember last building URL for PWA resume
+      try { localStorage.setItem('pwa_last_db', A.DB_URL); } catch(e) {}
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_db_loaded||'DB loaded ({size}MB). Querying...').replace('{size}',(dbBuf.byteLength/1024/1024).toFixed(0));
     }
 
