@@ -87,8 +87,12 @@ self.onmessage = async function(e) {
     // Phase 1: Initialize web-ifc (10%)
     post('progress', 5, 'Starting IFC parser...');
     const ifcApi = new WebIFC.IfcAPI();
-    console.log('[S220] §WASM_INIT starting with CDN locateFile...');
+    console.log('[S220] §WASM_INIT starting...');
     await ifcApi.Init(function(path) {
+      if (self._WEBIFC_WASM_URL) {
+        console.log('[S220] §WASM_LOCATE ' + path + ' → blob (embedded offline)');
+        return self._WEBIFC_WASM_URL;
+      }
       var resolved = 'https://unpkg.com/web-ifc@0.0.77/' + path;
       console.log('[S220] §WASM_LOCATE ' + path + ' → ' + resolved);
       return resolved;

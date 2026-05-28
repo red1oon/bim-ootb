@@ -1077,6 +1077,15 @@ function _createWorker(scriptUrl) {
         src = webIfcSrc + '\n' + src;
         console.log('§STANDALONE_WEBIFC size=' + webIfcSrc.length);
       }
+      // §S284b: Decode WASM on main thread → Blob URL → pass to import worker (avoids 5MB string in worker src)
+      if (window._WEBIFC_WASM_B64 && key === 'import_worker.js') {
+        var wasmBin = atob(window._WEBIFC_WASM_B64);
+        var wasmArr = new Uint8Array(wasmBin.length);
+        for (var _wi = 0; _wi < wasmBin.length; _wi++) wasmArr[_wi] = wasmBin.charCodeAt(_wi);
+        var wasmBlobUrl = URL.createObjectURL(new Blob([wasmArr], {type: 'application/wasm'}));
+        src = 'self._WEBIFC_WASM_URL = "' + wasmBlobUrl + '";\n' + src;
+        console.log('§STANDALONE_WASM_URL embedded');
+      }
       console.log('§STANDALONE_WORKER blob key=' + key + ' size=' + src.length);
       return new Worker(URL.createObjectURL(new Blob([src], {type: 'application/javascript'})));
     }
@@ -1756,6 +1765,25 @@ async function packageLandingPage() {
       setStatus('IFC engine unavailable — IFC import will need internet');
       console.warn('§S284b web-ifc fetch failed — IFC import will need internet');
     }
+    // 1d. Fetch web-ifc.wasm as base64 for fully offline WASM init
+    setStatus('Fetching IFC WASM (~4MB)…');
+    var webIfcWasmB64 = '';
+    try {
+      var wasmUrl = 'https://unpkg.com/web-ifc@0.0.77/web-ifc.wasm';
+      var wasmBuf = await fetch(wasmUrl).then(function(r) { return r.arrayBuffer(); });
+      var wasmBytes = new Uint8Array(wasmBuf);
+      var wasmBinary = '';
+      var CHUNK = 8192;
+      for (var wi = 0; wi < wasmBytes.length; wi += CHUNK) {
+        wasmBinary += String.fromCharCode.apply(null, wasmBytes.subarray(wi, wi + CHUNK));
+      }
+      webIfcWasmB64 = btoa(wasmBinary);
+      setStatus('IFC WASM loaded ✓');
+      console.log('§S284b WASM_FETCHED size=' + wasmBytes.length);
+    } catch(e) {
+      setStatus('IFC WASM unavailable — IFC import will need internet');
+      console.warn('§S284b WASM fetch failed', e.message);
+    }
     // 2. Fetch about-icon (icon-192.png) + Sysnova.png as base64 data URIs
     async function fetchB64(url) {
       var blob = await fetch(url).then(function(r) { return r.blob(); });
@@ -1793,6 +1821,7 @@ async function packageLandingPage() {
       'window._WORKER_SOURCES = ' + workerJSON + ';\n' +
       (sqlWasmJs ? 'window._SQL_WASM_JS = ' + JSON.stringify(sqlWasmJs) + ';\n' : '') +
       (sqlWasmB64 ? 'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' : '') +
+      (webIfcWasmB64 ? 'window._WEBIFC_WASM_B64 = "' + webIfcWasmB64 + '";\n' : '') +
       // §S284c: Blob viewer opener — same-origin as landing page → shares IndexedDB after IFC import
       'window._openViewerBlob = function(qs) {\n' +
       '  var el = document.getElementById("viewer-html-src");\n' +
