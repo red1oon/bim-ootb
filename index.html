@@ -1251,6 +1251,14 @@ async function handleImportFile(file) {
 async function handleImportMultiIFC(files) {
   const status = document.getElementById('import-status');
   const progressBar = document.getElementById('import-progress-bar');
+  // §S284: Standalone offline — Worker blocked on file://
+  if (window._STANDALONE) {
+    if (status) status.textContent = 'IFC import requires the online viewer.';
+    var ghViewer = 'https://red1oon.github.io/bim-ootb/viewer/viewer.html';
+    window.open(ghViewer, '_blank');
+    if (status) status.textContent = 'Opened online viewer — drop your files there.';
+    return;
+  }
   if (progressBar) { progressBar.style.width = '0%'; progressBar.parentElement.style.display = 'block'; progressBar.style.background = '#0277bd'; }
 
   // Common prefix for building name: LTU_AHouse_ARC + LTU_AHouse_STR → LTU_AHouse
@@ -1458,6 +1466,8 @@ function showExportFlyout(triggerEl, projectKey) {
 }
 
 async function exportProjectIFC(projectKey, flyout) {
+  // §S284: Worker blocked on file://
+  if (window._STANDALONE) { alert('IFC export requires the online viewer.'); return; }
   // §S274: flyout may be undefined when called from share.js via A.exportIFC(key)
   var statusEl = flyout ? flyout.querySelector('.ef-status') : null;
   var goBtn = flyout ? flyout.querySelector('[data-go]') : null;
