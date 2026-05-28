@@ -1068,11 +1068,14 @@ function _createWorker(scriptUrl) {
     var key = scriptUrl.replace(/\?.*$/, '').replace(/^.*\//, '');
     var src = window._WORKER_SOURCES[key];
     if (src) {
-      // §S284: Prepend web-ifc source to import workers (replaces importScripts CDN call)
-      if (window._WEBIFC_SRC && (key === 'import_worker.js' || key === 'ifc_export_worker.js')) {
+      // §S284b: Read web-ifc from <script type="text/plain" id="webifc-src"> DOM element
+      var webIfcEl = document.getElementById('webifc-src');
+      if (webIfcEl && (key === 'import_worker.js' || key === 'ifc_export_worker.js')) {
+        var webIfcSrc = webIfcEl.textContent;
         // Replace the importScripts line with the actual source
-        src = src.replace(/importScripts\([^)]*web-ifc[^)]*\);?/, '// §S284: web-ifc inlined by packager');
-        src = window._WEBIFC_SRC + '\n' + src;
+        src = src.replace(/importScripts\([^)]*web-ifc[^)]*\);?/, '// §S284b: web-ifc inlined by packager');
+        src = webIfcSrc + '\n' + src;
+        console.log('§STANDALONE_WEBIFC size=' + webIfcSrc.length);
       }
       console.log('§STANDALONE_WORKER blob key=' + key + ' size=' + src.length);
       return new Worker(URL.createObjectURL(new Blob([src], {type: 'application/javascript'})));
@@ -1746,8 +1749,13 @@ async function packageLandingPage() {
       for (var wi = 0; wi < bytes.length; wi++) binary += String.fromCharCode(bytes[wi]);
       sqlWasmB64 = btoa(binary);
     }
-    if (statusEl) statusEl.textContent = 'Fetching web-ifc (~200KB)...';
-    var webIfcSrc = await fetch('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js').then(function(r) { return r.text(); }).catch(function() { return ''; });
+    if (statusEl) statusEl.textContent = 'Fetching web-ifc (~6MB)...';
+    var webIfcSrc = '';
+    try {
+      webIfcSrc = await fetch('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js').then(function(r) { return r.text(); });
+    } catch(e) {
+      console.warn('§S284b web-ifc fetch failed — IFC import will need internet');
+    }
     // 2. Fetch Sysnova.png as base64 data URI
     var pngBlob = await fetch('Sysnova.png').then(function(r) { return r.blob(); });
     var pngB64 = await new Promise(function(cb) {
@@ -1762,9 +1770,9 @@ async function packageLandingPage() {
     if (statusEl) statusEl.textContent = 'Building HTML...';
     var html = await fetch(location.href.replace(/[?#].*$/, '')).then(function(r) { return r.text(); });
 
-    // 5. Inline external scripts
-    html = html.replace(/<script src="viewer\/import_db_builder\.js[^"]*"><\/script>/, '<script>\n' + dbBuilderSrc + '\n<\/script>');
-    html = html.replace(/<script src="viewer\/locale_loader\.js[^"]*"><\/script>/, '<script>\n' + localeSrc + '\n<\/script>');
+    // 5. Inline external scripts (function replacement avoids $' $& corruption in sources)
+    html = html.replace(/<script src="viewer\/import_db_builder\.js[^"]*"><\/script>/, function() { return '<script>\n' + dbBuilderSrc + '\n<\/script>'; });
+    html = html.replace(/<script src="viewer\/locale_loader\.js[^"]*"><\/script>/, function() { return '<script>\n' + localeSrc + '\n<\/script>'; });
 
     // 6. Sysnova.png → base64
     html = html.replace(/src="Sysnova\.png"/g, 'src="' + pngB64 + '"');
@@ -1774,14 +1782,22 @@ async function packageLandingPage() {
 
     // 8. Inject standalone flag + manifest + workers + WASM into config script block
     var ghBase = 'https://red1oon.github.io/bim-ootb/';
-    var standaloneBlock = '// \u00a7S284: Standalone offline copy\n' +
+    var standaloneBlock = '// \u00a7S284b: Standalone offline copy\n' +
       'window._STANDALONE = true;\n' +
       'window._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\n' +
       'window._WORKER_SOURCES = ' + workerJSON + ';\n' +
       (sqlWasmJs ? 'window._SQL_WASM_JS = ' + JSON.stringify(sqlWasmJs) + ';\n' : '') +
-      (sqlWasmB64 ? 'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' : '') +
-      (webIfcSrc ? 'window._WEBIFC_SRC = ' + JSON.stringify(webIfcSrc) + ';\n' : '');
-    html = html.replace('// \u2500\u2500 Config \u2500\u2500', standaloneBlock + '// \u2500\u2500 Config \u2500\u2500');
+      (sqlWasmB64 ? 'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' : '');
+    // §S284b: Use function replacement to avoid $' $& $` corruption in worker/WASM sources
+    html = html.replace('// \u2500\u2500 Config \u2500\u2500', function() { return standaloneBlock + '// \u2500\u2500 Config \u2500\u2500'; });
+
+    // 8b. §S284b: Embed web-ifc as inert text/plain block (NOT a JS string literal)
+    // The browser stores type="text/plain" as inert text — no 6MB parse buffer issue.
+    // Must escape closing script tags inside the source (only tag that closes the block).
+    if (webIfcSrc) {
+      var safeWebIfc = webIfcSrc.replace(/<\/script>/gi, '<\\/script>');
+      html = html.replace('<body>', function() { return '<script type="text/plain" id="webifc-src">\n' + safeWebIfc + '\n<\/script>\n<body>'; });
+    }
 
     // 9. Fix relative URLs to absolute GitHub Pages (so cards open viewer online)
     html = html.replace(

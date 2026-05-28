@@ -102,6 +102,7 @@ function setupErrorReporter(A) {
     // Ignore benign: AbortError (fetch cancelled), navigation
     if (msg.indexOf('AbortError') >= 0) return;
     if (msg.indexOf('navigation') >= 0) return;
+    if (msg.indexOf('Fullscreen request denied') >= 0) return;
     console.error('[S274] §ERR_PROMISE ' + msg);
     _showToast(msg);
   });

@@ -284,14 +284,14 @@ function setupHelpers(A) {
         ].join('\n');
 
         var title = encodeURIComponent('Bug: ' + (userDesc ? userDesc.slice(0, 60) : ''));
-        var url = 'https://github.com/red1oon/BIMCompiler/issues/new?title=' + title +
+        var url = 'https://github.com/red1oon/bim-ootb/issues/new?title=' + title +
                   '&body=' + encodeURIComponent(body) + '&labels=bug';
 
         // GitHub URL limit ~8KB — truncate logs if needed
         if (url.length > 8000) {
           var shortLogs = logs.split('\n').slice(-20).join('\n');
           body = body.replace(/```[\s\S]*?```/, '```\n' + shortLogs + '\n```');
-          url = 'https://github.com/red1oon/BIMCompiler/issues/new?title=' + title +
+          url = 'https://github.com/red1oon/bim-ootb/issues/new?title=' + title +
                 '&body=' + encodeURIComponent(body) + '&labels=bug';
         }
 
