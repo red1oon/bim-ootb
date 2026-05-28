@@ -103,39 +103,37 @@ var PROD_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2
 var BLD_BASE = PROD_BASE + 'buildings/';
 var LARGE_THRESHOLD = 10000;
 
+// Matches manifest.json archetypes → OCI building DB filenames (25 buildings)
 var BUILDINGS = {
-  'SampleHouse': { db: 'SampleHouse_extracted.db' },
-  'BimWhale_Tall': { db: 'BimWhale_Tall_extracted.db' },
-  'AC90_Jasmin': { db: 'AC90_Jasmin_extracted.db' },
-  'FZKHaus': { db: 'FZKHaus_extracted.db' },
-  'Ifc4_FZKHaus': { db: 'FZKHaus_extracted.db' },
-  'AC90_Niedriha': { db: 'AC90_Niedriha_extracted.db' },
-  'BimWhale_Basic': { db: 'BimWhale_Basic_extracted.db' },
-  'VogelGesamt': { db: 'VogelGesamt_extracted.db' },
-  'BimWhale_Large': { db: 'BimWhale_Large_extracted.db' },
-  'AC9_HausGH': { db: 'AC9_HausGH_extracted.db' },
-  'HospitalAuckland': { db: 'Ifc4_Revit_extracted.db' },
-  'SmileyWest': { db: 'SmileyWest_extracted.db' },
-  'Jesse': { db: 'Jesse_extracted.db' },
-  'AC11Institute': { db: 'AC11Institute_extracted.db' },
-  'Ifc2x3_AC11Institute': { db: 'AC11Institute_extracted.db' },
-  'Duplex': { db: 'Duplex_extracted.db' },
-  'LTU_AHouse': { db: 'LTU_AHouse_extracted.db' },
-  'Hospital': { db: 'Hospital_extracted.db' },
-  'Hospital_3': { db: 'Hospital_3_extracted.db' },
-  'Terminal': { db: 'Terminal_extracted.db' },
-  'Clinic': { db: 'Clinic_extracted.db' },
-  'Ifc4_Revit': { db: 'Ifc4_Revit_extracted.db' },
-  'WBDG_Office': { db: 'WBDG_Office_extracted.db' },
+  // ── Landmarks (>10k elements) ──
+  'LTU_AHouse':           { db: 'LTU_AHouse_extracted.db' },           // 125k — LTU Architecture House
+  'Hospital':             { db: 'Hospital_extracted.db' },              // 64k  — Auckland Hospital
+  'Terminal':             { db: 'Terminal_extracted.db' },              // 48k  — Airport Terminal
+  'Clinic':               { db: 'Clinic_extracted.db' },               // 16k  — Medical Clinic
+  'Ifc4_Revit':           { db: 'Ifc4_Revit_extracted.db' },           // 12k  — Revit IFC4 Sample
+  // ── Medium (2k-10k) ──
+  'WBDG_Office':          { db: 'WBDG_Office_extracted.db' },
   'HHS_Office_Federated': { db: 'HHS_Office_Federated_extracted.db' },
-  'HITOS': { db: 'HITOS_extracted.db' },
-  'Esplanades': { db: 'Esplanades_extracted.db' },
-  'HospitalGarage': { db: 'HospitalGarage_extracted.db' },
-  'HospitalGarage_2': { db: 'HospitalGarage_2_extracted.db' },
-  'Schependomlaan': { db: 'Schependomlaan_extracted.db' },
-  'SampleCastle': { db: 'SampleCastle_extracted.db' },
-  'Molio': { db: 'Molio_extracted.db' },
-  'BimWhale_Advanced': { db: 'BimWhale_Advanced_extracted.db' },
+  'Schependomlaan':       { db: 'Schependomlaan_extracted.db' },
+  'SampleCastle':         { db: 'SampleCastle_extracted.db' },
+  'Molio':                { db: 'Molio_extracted.db' },
+  'HITOS':                { db: 'HITOS_extracted.db' },
+  'Esplanades':           { db: 'Esplanades_extracted.db' },
+  'BimWhale_Advanced':    { db: 'BimWhale_Advanced_extracted.db' },
+  // ── Small (500-2k) ──
+  'HospitalGarage':       { db: 'HospitalGarage_extracted.db' },
+  'Ifc2x3_AC11Institute': { db: 'AC11Institute_extracted.db' },
+  'Duplex':               { db: 'Duplex_extracted.db' },
+  'Jesse':                { db: 'Jesse_extracted.db' },
+  'SmileyWest':           { db: 'SmileyWest_extracted.db' },
+  'HospitalAuckland':     { db: 'Ifc4_Revit_extracted.db' },
+  // ── Tiny (<500) ──
+  'BimWhale_Large':       { db: 'BimWhale_Large_extracted.db' },
+  'BimWhale_Basic':       { db: 'BimWhale_Basic_extracted.db' },
+  'AC90_Niedriha':        { db: 'AC90_Niedriha_extracted.db' },
+  'Ifc4_FZKHaus':         { db: 'FZKHaus_extracted.db' },
+  'BimWhale_Tall':        { db: 'BimWhale_Tall_extracted.db' },
+  'SampleHouse':          { db: 'SampleHouse_extracted.db' },
 };
 
 var _cacheDb = null;
