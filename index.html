@@ -1101,15 +1101,7 @@ async function handleImportFile(file) {
 
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
 
-  // §S284: Standalone offline — Worker blocked on file://, redirect to online viewer
-  if (window._STANDALONE) {
-    status.textContent = 'Opening online viewer for IFC import...';
-    var ghViewer = 'https://red1oon.github.io/bim-ootb/viewer/viewer.html';
-    window.open(ghViewer, '_blank');
-    status.textContent = 'IFC import requires the online viewer. File not uploaded — drop it there.';
-    progressBar.parentElement.style.display = 'none';
-    return;
-  }
+  // §S284b: Standalone offline — Blob Workers + embedded web-ifc handle IFC import locally
 
   const arrayBuffer = await file.arrayBuffer();
   // S228: Route to IFC or mesh worker based on format
