@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v514';
+const CACHE_VERSION = 'v515';
 const CACHE_NAME = 'bim-ootb-' + CACHE_VERSION;
 
 // Local copies of vendor libs — single-origin, no CDN dependency
@@ -125,6 +125,8 @@ const PRECACHE_ASSETS = [
   'ghostglass.js',
   'qrcode.min.js',
   'pill_builder.js',
+  'list_builder.js',
+  'panel_nav.js',
   'redpill.png',
   // Lazy-loaded modules
   'navigate.js',
@@ -258,3 +260,14 @@ function cacheFirst(request) {
     }).catch(() => new Response('', { status: 503, statusText: 'Offline' }));
   });
 }
+
+// §S283: Message handler — SKIP_WAITING for update flow, GET_PRECACHE for install flow
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data && event.data.type === 'GET_PRECACHE') {
+    // Return the full precache list so the install flow can force-cache all assets
+    event.ports[0].postMessage({ assets: PRECACHE_ASSETS, libs: LOCAL_LIBS, version: CACHE_VERSION });
+  }
+});

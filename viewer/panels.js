@@ -863,6 +863,8 @@ function setupPanels(A) {
     panelIds.forEach(function(pid) {
       var el = document.getElementById(pid);
       if (!el) return;
+      // §S282b: status bar persists in maxed mode — always visible for feedback
+      if (pid === 'status-bar-wrap') return;
       // Don't hide if this is the latest panel's container
       if (latestId && el.querySelector && el.contains(document.getElementById(latestId))) return;
       if (el.style.display === 'none' || el.classList.contains('swipe-hidden')) return;
@@ -960,7 +962,15 @@ function setupPanels(A) {
         fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); },
         hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); },
         isActive: function() { return !!window._precisionFine; } },
-      { id: 'home',       name: 'Home',            icon: I.home.svg, fn: function() { location.href = '../index.html'; } },
+      { id: 'home',       name: 'Home',            icon: I.home.svg, fn: function() {
+          // §S283: In standalone PWA, open online hub in system browser (backdoor)
+          if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+            window.open('https://red1oon.github.io/bim-ootb/', '_blank');
+            console.log('§PWA_HOME opened');
+          } else {
+            location.href = '../index.html';
+          }
+        } },
       { id: 'settings',   name: 'Settings',        key: '=', icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
         fn: function() { _openSettingsPanel(); },
         isActive: function() { var p = document.getElementById('settings-panel'); return p && p.style.display !== 'none'; } }
@@ -999,6 +1009,23 @@ function setupPanels(A) {
         onClose: function() { _syncPillHighlights(); } });
       document.body.appendChild(p);
       if (window.InputReg) InputReg.register({ id: 'settings', el: p, kind: 'panel', release: function() { p.style.display = 'none'; } });
+      // §S282b: PanelNav for Settings — arrows traverse pill rows, Enter toggles visibility
+      if (typeof window.PanelNav === 'function') {
+        PanelNav({
+          id: 'settings',
+          panel: p,
+          zones: [
+            { id: 'pillRows',
+              items: function() { return p.querySelectorAll('[data-action-id]'); },
+              onSelect: function(el) {
+                var tog = el.querySelector('button');
+                if (tog) tog.click();
+              }
+            }
+          ],
+          onClose: function() { p.style.display = 'none'; _syncPillHighlights(); }
+        });
+      }
       console.log('§SETTINGS_PANEL created');
     }
 
@@ -1045,7 +1072,7 @@ function setupPanels(A) {
       return sec;
     }
 
-    // §S282: Build pill icon rows — drag-reorder + toggle + key badge
+    // §S282b: Build pill icon rows — ListBuilder handles drag-reorder
     function _buildPillRows() {
       var container = document.createElement('div');
       if (!_mainPill) return container;
@@ -1060,114 +1087,78 @@ function setupPanels(A) {
         return ai - bi;
       });
 
-      // Drag state
-      var _dragEl = null, _dragId = null, _placeholder = null;
-
-      sorted.forEach(function(act) {
-        var row = document.createElement('div');
-        row.setAttribute('data-action-id', act.id);
-        row.style.cssText = 'display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:grab;user-select:none;transition:background 150ms;';
-
-        // Drag handle
-        var handle = document.createElement('span');
-        handle.textContent = '\u2261'; // ≡
-        handle.style.cssText = 'font-size:16px;color:#555;margin-right:10px;cursor:grab;';
-
-        // Icon preview
-        var iconWrap = document.createElement('span');
-        iconWrap.style.cssText = 'width:20px;height:20px;margin-right:8px;display:inline-flex;align-items:center;justify-content:center;opacity:0.7;';
-        if (act.img) iconWrap.innerHTML = '<img src="' + act.img + '" width="16" height="16">';
-        else if (act.icon) iconWrap.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
-
-        // Label
-        var label = document.createElement('span');
-        label.textContent = act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1));
-        label.style.cssText = 'flex:1;font-size:12px;color:#ccc;';
-
-        // Key badge
-        if (act.key) {
-          var badge = document.createElement('span');
-          badge.textContent = act.key.toUpperCase();
-          badge.style.cssText = 'font-size:10px;color:#6c9fff;background:rgba(108,159,255,0.1);padding:2px 6px;border-radius:4px;margin-right:8px;font-family:monospace;';
-          label.appendChild(document.createTextNode(' '));
-          label.appendChild(badge);
-        }
-
-        // Toggle (show/hide)
-        var tog = document.createElement('button');
-        var isHidden = hidden.indexOf(act.id) >= 0;
-        tog.textContent = isHidden ? '\u25CB' : '\u25CF'; // ○ or ●
-        tog.title = isHidden ? 'Hidden' : 'Visible';
-        tog.style.cssText = 'border:none;background:none;font-size:14px;cursor:pointer;padding:4px 6px;color:' + (isHidden ? '#555' : '#4fc3f7') + ';';
-        if (isHidden) row.style.opacity = '0.5';
-        tog.addEventListener('pointerup', function(e) {
-          e.stopPropagation();
-          var c = _mainPill.getConfig();
-          var h = c.hidden || [];
-          var idx = h.indexOf(act.id);
-          if (idx >= 0) { h.splice(idx, 1); tog.textContent = '\u25CF'; tog.style.color = '#4fc3f7'; row.style.opacity = '1'; tog.title = 'Visible'; }
-          else { h.push(act.id); tog.textContent = '\u25CB'; tog.style.color = '#555'; row.style.opacity = '0.5'; tog.title = 'Hidden'; }
-          c.hidden = h;
-          _mainPill.setConfig(c);
-        });
-
-        row.appendChild(handle);
-        row.appendChild(iconWrap);
-        row.appendChild(label);
-        row.appendChild(tog);
-        container.appendChild(row);
-
-        // ── Drag-to-reorder via pointer events ──
-        row.addEventListener('pointerdown', function(e) {
-          if (e.target === tog) return; // don't drag on toggle click
-          e.preventDefault();
-          _dragEl = row; _dragId = act.id;
-          row.style.background = 'rgba(108,159,255,0.1)';
-          row.setPointerCapture(e.pointerId);
-
-          // Create placeholder
-          _placeholder = document.createElement('div');
-          _placeholder.style.cssText = 'height:2px;background:#4fc3f7;margin:0 12px;border-radius:1px;';
-
-          var _lastY = e.clientY;
-          function onMove(ev) {
-            var rows = Array.from(container.querySelectorAll('[data-action-id]'));
-            // Remove old placeholder
-            if (_placeholder.parentNode) _placeholder.parentNode.removeChild(_placeholder);
-            // Find insertion point
-            var insertBefore = null;
-            for (var i = 0; i < rows.length; i++) {
-              var rect = rows[i].getBoundingClientRect();
-              if (ev.clientY < rect.top + rect.height / 2) { insertBefore = rows[i]; break; }
-            }
-            if (insertBefore && insertBefore !== _dragEl) container.insertBefore(_placeholder, insertBefore);
-            else if (!insertBefore) container.appendChild(_placeholder);
-          }
-          function onUp(ev) {
-            row.releasePointerCapture(ev.pointerId);
-            row.removeEventListener('pointermove', onMove);
-            row.removeEventListener('pointerup', onUp);
-            row.style.background = '';
-            // Determine new position
-            if (_placeholder && _placeholder.parentNode) {
-              container.insertBefore(_dragEl, _placeholder);
-              _placeholder.parentNode.removeChild(_placeholder);
-            }
-            // Read new order from DOM
-            var newOrder = [];
-            var rows = container.querySelectorAll('[data-action-id]');
-            for (var i = 0; i < rows.length; i++) newOrder.push(rows[i].getAttribute('data-action-id'));
-            // Persist
+      if (typeof window.ListBuilder === 'function') {
+        ListBuilder({
+          container: container,
+          items: sorted,
+          getId: function(act) { return act.id; },
+          idAttr: 'data-action-id',
+          render: function(act) { return _renderPillRow(act, hidden); },
+          onReorder: function(newOrder) {
             var c = _mainPill.getConfig();
             c.order = newOrder;
             _mainPill.setConfig(c);
-            _dragEl = null; _dragId = null; _placeholder = null;
           }
-          row.addEventListener('pointermove', onMove);
-          row.addEventListener('pointerup', onUp);
         });
-      });
+      } else {
+        // Fallback: render without drag-reorder (list_builder.js not loaded)
+        sorted.forEach(function(act) {
+          var row = _renderPillRow(act, hidden);
+          row.setAttribute('data-action-id', act.id);
+          container.appendChild(row);
+        });
+      }
       return container;
+    }
+
+    // §S282b: Render a single pill settings row (extracted for ListBuilder)
+    function _renderPillRow(act, hidden) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:grab;user-select:none;transition:background 150ms;';
+
+      var handle = document.createElement('span');
+      handle.textContent = '\u2261';
+      handle.style.cssText = 'font-size:16px;color:#555;margin-right:10px;cursor:grab;';
+
+      var iconWrap = document.createElement('span');
+      iconWrap.style.cssText = 'width:20px;height:20px;margin-right:8px;display:inline-flex;align-items:center;justify-content:center;opacity:0.7;';
+      if (act.img) iconWrap.innerHTML = '<img src="' + act.img + '" width="16" height="16">';
+      else if (act.icon) iconWrap.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
+
+      var label = document.createElement('span');
+      label.textContent = act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1));
+      label.style.cssText = 'flex:1;font-size:12px;color:#ccc;';
+
+      if (act.key) {
+        var badge = document.createElement('span');
+        badge.textContent = act.key.toUpperCase();
+        badge.style.cssText = 'font-size:10px;color:#6c9fff;background:rgba(108,159,255,0.1);padding:2px 6px;border-radius:4px;margin-right:8px;font-family:monospace;';
+        label.appendChild(document.createTextNode(' '));
+        label.appendChild(badge);
+      }
+
+      var tog = document.createElement('button');
+      var isHidden = hidden.indexOf(act.id) >= 0;
+      tog.textContent = isHidden ? '\u25CB' : '\u25CF';
+      tog.title = isHidden ? 'Hidden' : 'Visible';
+      tog.style.cssText = 'border:none;background:none;font-size:14px;cursor:pointer;padding:4px 6px;color:' + (isHidden ? '#555' : '#4fc3f7') + ';';
+      if (isHidden) row.style.opacity = '0.5';
+      tog.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        var c = _mainPill.getConfig();
+        var h = c.hidden || [];
+        var idx = h.indexOf(act.id);
+        if (idx >= 0) { h.splice(idx, 1); tog.textContent = '\u25CF'; tog.style.color = '#4fc3f7'; row.style.opacity = '1'; tog.title = 'Visible'; }
+        else { h.push(act.id); tog.textContent = '\u25CB'; tog.style.color = '#555'; row.style.opacity = '0.5'; tog.title = 'Hidden'; }
+        c.hidden = h;
+        _mainPill.setConfig(c);
+      });
+
+      row.appendChild(handle);
+      row.appendChild(iconWrap);
+      row.appendChild(label);
+      row.appendChild(tog);
+      return row;
     }
 
     // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)

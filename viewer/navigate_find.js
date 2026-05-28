@@ -1235,43 +1235,17 @@
         return;
       }
       if (e.key === 'Escape') { closeFindPanel(); return; }
-      // Arrow Up/Down — navigate results list
-      if (e.key === 'ArrowDown' && nav.results.length > 0) {
+      // §S282b: ArrowDown/Up → delegate to PanelNav (fixes ArrowDown-from-input bug)
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && window._findPanelNav) {
         e.preventDefault();
-        var next = nav.activeIdx < 0 ? 0 : Math.min(nav.activeIdx + 1, nav.results.length - 1);
-        nav.activeIdx = next;
-        var items = elResults.querySelectorAll('.find-result-item');
-        items.forEach(function(el, i) { el.classList.toggle('active', i === next); });
-        if (items[next]) items[next].scrollIntoView({ block: 'nearest' });
-        // Show results if collapsed
-        panel.classList.add('results-expanded');
-        elSelected.style.display = 'none';
+        e.stopPropagation(); // prevent global handler double-fire
+        window._findPanelNav.onKey(e);
         return;
       }
-      if (e.key === 'ArrowUp' && nav.results.length > 0) {
-        e.preventDefault();
-        var prev = nav.activeIdx <= 0 ? 0 : nav.activeIdx - 1;
-        nav.activeIdx = prev;
-        var items2 = elResults.querySelectorAll('.find-result-item');
-        items2.forEach(function(el, i) { el.classList.toggle('active', i === prev); });
-        if (items2[prev]) items2[prev].scrollIntoView({ block: 'nearest' });
-        panel.classList.add('results-expanded');
-        elSelected.style.display = 'none';
-        return;
-      }
-      // Tab/Left/Right handled at panel level
     });
-    // Make accordion headers focusable
+    // Make accordion headers focusable (PanelNav handles Enter/Space/Escape)
     elStoreyHdr.tabIndex = 0;
     elTypeHdr.tabIndex = 0;
-    elStoreyHdr.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elStoreyRow); }
-      if (e.key === 'Escape') closeFindPanel();
-    });
-    elTypeHdr.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccRow(elTypeRow); }
-      if (e.key === 'Escape') closeFindPanel();
-    });
 
     function debounce(fn, ms) {
       var t; return function() { clearTimeout(t); t = setTimeout(fn, ms); };
@@ -1295,98 +1269,42 @@
     A.findMainEntrance = findMainEntrance; // called by startNavigation in navigate.js
     A.friendlyName = friendlyName;         // called by startNavigation (nav.targetName)
 
-    // S275: Panel-level Left/Right/Up/Down/Tab navigation between interactive elements
-    // Focusable cycle: search → storey → type → (navigate if visible)
-    var _focusCycle = function() {
-      var items = [elName, elStoreyHdr, elTypeHdr];
-      var navBtn = document.getElementById('find-navigate-btn');
-      if (navBtn && elSelected.style.display !== 'none') items.push(navBtn);
-      return items;
-    };
-    // S275: Register Find panel with global keyboard nav system
-    // Custom onKey wraps makeListKeyNav for Up/Down results + Left/Right focus cycle
-    if (typeof window.makeListKeyNav === 'function' && typeof window._registerPanel === 'function') {
-      var _resultNav = window.makeListKeyNav(
-        function() {
-          var items = [];
-          elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
-          return items;
-        },
-        function() {},
-        function(idx) {
-          var items = [];
-          elResults.querySelectorAll('.find-result-item').forEach(function(el) { items.push(el); });
-          if (items[idx]) items[idx].click();
-        }
-      );
-      var _findNav = {
-        onKey: function(e) {
-          // Left/Right: cycle focus between search → storey → type → navigate
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            var cycle = _focusCycle();
-            var cur = cycle.indexOf(document.activeElement);
-            if (cur < 0) cur = 0;
-            var next = e.key === 'ArrowRight' ? (cur + 1) % cycle.length : (cur - 1 + cycle.length) % cycle.length;
-            cycle[next].focus();
-            cycle.forEach(function(el, i) {
-              el.style.outline = (i === next) ? '2px solid #4fc3f7' : '';
-              el.style.background = (i === next) ? 'rgba(79,195,247,0.2)' : '';
-            });
-            console.log('§FIND_NAV ' + e.key + ' → ' + next + '/' + cycle.length + ' el=' + (cycle[next].id || cycle[next].tagName));
-            return;
-          }
-          // Enter/Space on accordion header: select highlighted item, or toggle expand/collapse
-          if (e.key === 'Enter' || e.key === ' ') {
-            if (document.activeElement === elStoreyHdr) {
-              var activeS = elStoreyBody.querySelector('.find-acc-item.active');
-              if (activeS && elStoreyRow.classList.contains('expanded')) { activeS.click(); return; }
-              toggleAccRow(elStoreyRow); return;
+    // §S282b: _focusCycle removed — PanelNav handles zone cycling
+    // §S282b: PanelNav replaces _findNav — universal zone-based keyboard nav
+    // Fixes ArrowDown-from-input bug: input → storey header (not empty result list)
+    if (typeof window.PanelNav === 'function') {
+      window._findPanelNav = PanelNav({
+        id: 'find',
+        panel: panel,
+        zones: [
+          { id: 'search', el: elName, type: 'input' },
+          { id: 'storeys', header: elStoreyHdr,
+            items: function() { return elStoreyBody.querySelectorAll('.find-acc-item'); },
+            onSelect: function(el) { el.click(); },
+            onExpand: function(z, open) {
+              if (open === true && !elStoreyRow.classList.contains('expanded')) toggleAccRow(elStoreyRow);
+              else if (open !== true) toggleAccRow(elStoreyRow);
             }
-            if (document.activeElement === elTypeHdr) {
-              var activeT = elTypeBody.querySelector('.find-acc-item.active');
-              if (activeT && elTypeRow.classList.contains('expanded')) { activeT.click(); return; }
-              toggleAccRow(elTypeRow); return;
+          },
+          { id: 'types', header: elTypeHdr,
+            items: function() { return elTypeBody.querySelectorAll('.find-acc-item'); },
+            onSelect: function(el) { el.click(); },
+            onExpand: function(z, open) {
+              if (open === true && !elTypeRow.classList.contains('expanded')) toggleAccRow(elTypeRow);
+              else if (open !== true) toggleAccRow(elTypeRow);
             }
+          },
+          { id: 'results',
+            items: function() { return elResults.querySelectorAll('.find-result-item'); },
+            onSelect: function(el) { el.click(); }
           }
-          // Up/Down on storey header: expand and navigate storey items
-          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && document.activeElement === elStoreyHdr) {
-            if (!elStoreyRow.classList.contains('expanded')) toggleAccRow(elStoreyRow);
-            var items = elStoreyBody.querySelectorAll('.find-acc-item');
-            if (!items.length) return;
-            var active = elStoreyBody.querySelector('.find-acc-item.active');
-            var idx = active ? Array.from(items).indexOf(active) : -1;
-            var next = e.key === 'ArrowDown' ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
-            items.forEach(function(el, i) { el.classList.toggle('active', i === next); });
-            items[next].scrollIntoView({ block: 'nearest' });
-            console.log('§FIND_NAV storey ' + e.key + ' → ' + next + '/' + items.length);
-            return;
-          }
-          // Up/Down on type header: expand and navigate type items
-          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && document.activeElement === elTypeHdr) {
-            if (!elTypeRow.classList.contains('expanded')) toggleAccRow(elTypeRow);
-            var items2 = elTypeBody.querySelectorAll('.find-acc-item');
-            if (!items2.length) return;
-            var active2 = elTypeBody.querySelector('.find-acc-item.active');
-            var idx2 = active2 ? Array.from(items2).indexOf(active2) : -1;
-            var next2 = e.key === 'ArrowDown' ? Math.min(idx2 + 1, items2.length - 1) : Math.max(idx2 - 1, 0);
-            items2.forEach(function(el, i) { el.classList.toggle('active', i === next2); });
-            items2[next2].scrollIntoView({ block: 'nearest' });
-            console.log('§FIND_NAV type ' + e.key + ' → ' + next2 + '/' + items2.length);
-            return;
-          }
-          // Enter on highlighted accordion item: select it
-          if (e.key === 'Enter') {
-            var activeStorey = elStoreyBody.querySelector('.find-acc-item.active');
-            if (activeStorey && elStoreyRow.classList.contains('expanded')) { activeStorey.click(); return; }
-            var activeType = elTypeBody.querySelector('.find-acc-item.active');
-            if (activeType && elTypeRow.classList.contains('expanded')) { activeType.click(); return; }
-          }
-          // Up/Down on search input: delegate to result list nav
-          _resultNav.onKey(e);
-        }
-      };
-      window._registerPanel('find', panel, _findNav, closeFindPanel);
-      console.log('§LISTNAV_WIRE panel=find');
+        ],
+        onClose: closeFindPanel
+      });
+      console.log('§PANEL_NAV_FIND wired zones=4');
+    } else if (typeof window._registerPanel === 'function') {
+      // Fallback: register without PanelNav (panel_nav.js not loaded)
+      window._registerPanel('find', panel, null, closeFindPanel);
     }
 
     console.log('[S233] §NAV_FIND_MODULE_LOADED panel=' + !!document.getElementById('find-panel'));

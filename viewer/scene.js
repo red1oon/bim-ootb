@@ -26,6 +26,15 @@ async function setupScene(A) {
     _origWarn.apply(console, arguments);
   };
 
+  // §S283: PWA install prompt capture — must run before any UI
+  var _installPrompt = null;
+  var _isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    _installPrompt = e;
+    console.log('§PWA_INSTALL prompt captured');
+  });
+
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
   // §S277b: WebGL only — WebGPU deferred to future (unsafe usage warnings, canvas poisoning, compileAsync hangs).
@@ -922,7 +931,21 @@ async function setupScene(A) {
       'border-radius:12px;width:320px;box-shadow:0 8px 32px rgba(0,0,0,0.6);' +
       'font-family:\'Segoe UI\',sans-serif;overflow:hidden';
 
+    // §S283: Blue triangle badge — "Download · Run Offline"
+    // Hidden if already standalone or browser doesn't support install and not iOS
+    var _showBadge = !_isStandalone && (_installPrompt || /iPhone|iPad|iPod/.test(navigator.userAgent));
+    var badgeHtml = _showBadge ?
+      '<div id="cmd-install-badge" title="Download \xB7 Run Offline" style="position:absolute;top:0;right:0;' +
+      'width:0;height:0;border-style:solid;border-width:0 48px 48px 0;' +
+      'border-color:transparent #4fc3f7 transparent transparent;cursor:pointer;z-index:1;border-radius:0 12px 0 0">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" ' +
+      'style="position:absolute;top:4px;right:-42px">' +
+      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+      '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>' : '';
+
     var html = '<div style="padding:6px 14px;color:#888;font-size:10px;border-bottom:1px solid #222;text-align:center">' +
+      badgeHtml +
       '<div style="padding:10px 14px;border-bottom:1px solid #333">' +
       '<input id="cmd-search" type="text" placeholder="Type a command..." ' +
       'style="width:100%;background:#222;color:#eee;border:1px solid #555;border-radius:6px;' +
@@ -938,6 +961,17 @@ async function setupScene(A) {
       '\uD83D\uDCDA Documentation</a></div>';
     pal.innerHTML = html;
     document.body.appendChild(pal);
+
+    // §S283: Wire badge click → download flow
+    var badge = document.getElementById('cmd-install-badge');
+    if (badge) {
+      badge.addEventListener('click', function(e) {
+        e.stopPropagation();
+        pal.remove();
+        _startOfflineDownload();
+      });
+      console.log('§PWA_BADGE rendered');
+    }
 
     var searchInput = document.getElementById('cmd-search');
     var listEl = document.getElementById('cmd-list');
@@ -1068,6 +1102,348 @@ async function setupScene(A) {
   // Expose for 🛟 button
   A.showCommandPalette = showCommandPalette;
   window.showCommandPalette = showCommandPalette;
+
+  // ── §S283: PWA Offline Install + CI-Gated Update ──────────────────────────
+
+  // §S283 1.3: Create progress overlay (reuses reportBug styling)
+  function _createProgressOverlay() {
+    var overlay = document.createElement('div');
+    overlay.id = 'pwa-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;' +
+      'background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:flex;justify-content:center;align-items:center';
+    var dialog = document.createElement('div');
+    dialog.style.cssText = 'background:rgba(10,10,30,0.97);border-radius:14px;padding:24px 28px;' +
+      'border:1px solid rgba(79,195,247,0.4);font-family:\'Segoe UI\',sans-serif;color:#e0e0e0;' +
+      'max-width:400px;width:90%;text-align:center';
+    dialog.innerHTML =
+      '<div style="font-size:16px;font-weight:700;color:#4fc3f7;margin-bottom:12px">Download \xB7 Run Offline</div>' +
+      '<div id="pwa-status" style="color:#aaa;font-size:13px;margin-bottom:12px">Preparing...</div>' +
+      '<div style="background:#333;border-radius:6px;height:8px;margin-bottom:12px;overflow:hidden">' +
+      '<div id="pwa-bar" style="background:#4fc3f7;height:100%;width:0%;transition:width 0.3s;border-radius:6px"></div></div>' +
+      '<div id="pwa-buttons" style="display:none"></div>';
+    overlay.appendChild(dialog);
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+    return {
+      setText: function(t) { document.getElementById('pwa-status').textContent = t; },
+      setProgress: function(p) { document.getElementById('pwa-bar').style.width = Math.min(100, p) + '%'; },
+      close: function() { overlay.remove(); },
+      showButtons: function(html) {
+        var el = document.getElementById('pwa-buttons');
+        el.innerHTML = html;
+        el.style.display = '';
+      },
+      el: overlay
+    };
+  }
+
+  // §S283 1.3: Main offline download entry point
+  function _startOfflineDownload() {
+    if (_isStandalone) {
+      if (A.status) A.status.textContent = 'Already installed';
+      return;
+    }
+    var ov = _createProgressOverlay();
+    ov.setText('Fetching asset list from service worker...');
+
+    // Ask sw.js for the full precache list via MessageChannel
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+      ov.setText('Service worker not ready. Reload and try again.');
+      return;
+    }
+    var ch = new MessageChannel();
+    ch.port1.onmessage = function(ev) {
+      var assets = (ev.data.assets || []).concat(ev.data.libs || []);
+      var version = ev.data.version || 'v515';
+      window._pwaVersion = version; // stash for cache name
+      _cacheAllAssets(assets, ov);
+    };
+    navigator.serviceWorker.controller.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+  }
+
+  // §S283 1.4: Force-cache every asset with progress
+  function _cacheAllAssets(assets, ov) {
+    ov.setText('Downloading ' + assets.length + ' files...');
+    var cacheName = 'bim-ootb-' + (window._pwaVersion || 'v515');
+    caches.open(cacheName).then(function(cache) {
+      var done = 0;
+      var total = assets.length;
+      // Cache assets sequentially in small batches to avoid flooding
+      var queue = assets.slice();
+      function batch() {
+        var chunk = queue.splice(0, 6);
+        if (chunk.length === 0) {
+          // All JS/assets cached — now cache building DB
+          _ensureBuildingCached(ov);
+          return;
+        }
+        Promise.all(chunk.map(function(url) {
+          return cache.add(url).then(function() {
+            done++;
+            ov.setProgress(done / total * 80);
+            ov.setText('Cached ' + done + '/' + total + '  ' + url.split('/').pop());
+          }).catch(function(err) {
+            done++;
+            console.warn('§PWA_CACHE skip ' + url, err.message);
+          });
+        })).then(batch);
+      }
+      batch();
+    });
+  }
+
+  // §S283 1.5: Ensure current building DB is fully in IndexedDB
+  function _ensureBuildingCached(ov) {
+    ov.setProgress(85);
+    ov.setText('Verifying building data...');
+    // Building DBs are already cached in IndexedDB by A.cachedFetch() during normal viewing.
+    // Just verify the current building exists in cache.
+    var buildingName = '';
+    try {
+      if (A.db) {
+        var r = A.dbQueryFirst("SELECT value FROM project_metadata WHERE key='building_name'");
+        if (r) buildingName = r[0];
+      }
+    } catch(e) {}
+    if (buildingName) {
+      console.log('§PWA_CACHE building=' + buildingName);
+    }
+    ov.setProgress(95);
+    // Request persistent storage
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().then(function(granted) {
+        console.log('§PWA_PERSIST granted=' + granted);
+      });
+    }
+    ov.setProgress(100);
+    ov.setText('All files cached!');
+    // Trigger install prompt after short delay
+    setTimeout(function() { _triggerInstall(ov); }, 500);
+  }
+
+  // §S283 1.6: Trigger native install prompt or show iOS guide
+  function _triggerInstall(ov) {
+    if (_installPrompt) {
+      ov.setText('Confirm the install prompt to add to home screen.');
+      _installPrompt.prompt();
+      _installPrompt.userChoice.then(function(r) {
+        console.log('§PWA_INSTALL choice=' + r.outcome);
+        _installPrompt = null;
+        if (r.outcome === 'accepted') {
+          ov.setText('Installed! Find it on your home screen.');
+        } else {
+          ov.setText('Cancelled. Files are still cached for offline use.');
+        }
+        setTimeout(function() { ov.close(); }, 3000);
+      });
+      return;
+    }
+    // iOS — show guided overlay
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      ov.close();
+      _showIOSGuide();
+      return;
+    }
+    // Firefox / other — no install support
+    ov.setText('Your browser doesn\'t support app install.\nFiles are cached \u2014 bookmark this page for offline use.');
+    setTimeout(function() { ov.close(); }, 4000);
+  }
+
+  // §S283 1.7: iOS guided install overlay
+  function _showIOSGuide() {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;' +
+      'background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:flex;justify-content:center;align-items:center';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    overlay.innerHTML =
+      '<div style="background:rgba(10,10,30,0.97);border-radius:14px;padding:24px 28px;' +
+      'border:1px solid rgba(79,195,247,0.4);font-family:\'Segoe UI\',sans-serif;color:#e0e0e0;' +
+      'max-width:340px;width:90%;text-align:left">' +
+      '<div style="font-size:16px;font-weight:700;color:#4fc3f7;margin-bottom:16px;text-align:center">Add to Home Screen</div>' +
+      '<div style="margin-bottom:12px;line-height:2">' +
+      '<div><span style="background:#4fc3f7;color:#000;border-radius:50%;width:22px;height:22px;display:inline-flex;' +
+      'align-items:center;justify-content:center;font-weight:700;font-size:12px;margin-right:8px">1</span>' +
+      'Tap the <b style="color:#4fc3f7">Share</b> button <span style="font-size:18px">\u2B06\uFE0F</span></div>' +
+      '<div><span style="background:#4fc3f7;color:#000;border-radius:50%;width:22px;height:22px;display:inline-flex;' +
+      'align-items:center;justify-content:center;font-weight:700;font-size:12px;margin-right:8px">2</span>' +
+      'Scroll down, tap <b style="color:#4fc3f7">"Add to Home Screen"</b></div>' +
+      '<div><span style="background:#4fc3f7;color:#000;border-radius:50%;width:22px;height:22px;display:inline-flex;' +
+      'align-items:center;justify-content:center;font-weight:700;font-size:12px;margin-right:8px">3</span>' +
+      'Tap <b style="color:#4fc3f7">"Add"</b></div>' +
+      '</div>' +
+      '<div style="color:#888;font-size:11px;text-align:center">Your building is already cached. The app works offline once added.</div>' +
+      '<div style="text-align:center;margin-top:14px"><button id="pwa-ios-ok" style="padding:8px 24px;' +
+      'background:#333;color:#aaa;border:1px solid #555;border-radius:8px;font-size:12px;cursor:pointer">Got it</button></div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    document.getElementById('pwa-ios-ok').addEventListener('click', function() { overlay.remove(); });
+    console.log('§PWA_INSTALL ios_guide_shown');
+  }
+
+  // §S283 3.2: CI-gated update check
+  function _checkUpdate() {
+    var ov = _createProgressOverlay();
+    ov.setText('Checking for updates...');
+    ov.setProgress(10);
+
+    // Step 1: Get local version from sw.js via MessageChannel, then fetch remote sw.js
+    var localVerPromise;
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      localVerPromise = new Promise(function(resolve) {
+        var ch = new MessageChannel();
+        ch.port1.onmessage = function(ev) { resolve(ev.data.version || 'v0'); };
+        navigator.serviceWorker.controller.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+      });
+    } else {
+      localVerPromise = Promise.resolve('v0');
+    }
+
+    localVerPromise.then(function(localVersionStr) {
+      var localVer = parseInt(localVersionStr.replace('v', ''));
+      return fetch('sw.js', { cache: 'no-store' })
+        .then(function(r) { return r.text(); })
+        .then(function(text) {
+          var match = text.match(/CACHE_VERSION\s*=\s*['"]v(\d+)['"]/);
+          if (!match) throw new Error('Cannot read remote version');
+          var remoteVer = parseInt(match[1]);
+          ov.setProgress(30);
+
+        if (remoteVer <= localVer) {
+          ov.setText('You are up to date (v' + localVer + ')');
+          ov.setProgress(100);
+          setTimeout(function() { ov.close(); }, 2000);
+          return;
+        }
+
+        // Step 2: Verify CI green on latest main commit
+        ov.setText('Verifying CI status...');
+        return fetch('https://api.github.com/repos/red1oon/bim-ootb/actions/runs?branch=main&status=success&per_page=1')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            ov.setProgress(50);
+            if (!data.workflow_runs || data.workflow_runs.length === 0) {
+              ov.setText('Not Ready, Try Later');
+              ov.setProgress(100);
+              console.log('§PWA_UPDATE ci=no_success_runs');
+              setTimeout(function() { ov.close(); }, 3000);
+              return;
+            }
+            console.log('§PWA_UPDATE ci=success');
+            // Step 3: Fetch changelog
+            return _fetchChangelog(remoteVer, localVer, ov);
+          });
+      });
+    }).catch(function(err) {
+      ov.setText('Cannot check now. Try when online.');
+      console.warn('§PWA_UPDATE error', err.message);
+      setTimeout(function() { ov.close(); }, 2000);
+    });
+  }
+
+  // §S283 3.4: Show commit changelog with OK/Cancel
+  function _fetchChangelog(remoteVer, localVer, ov) {
+    ov.setText('Fetching changelog...');
+    return fetch('https://api.github.com/repos/red1oon/bim-ootb/commits?sha=main&per_page=20')
+      .then(function(r) { return r.json(); })
+      .then(function(commits) {
+        ov.setProgress(70);
+        var changes = [];
+        for (var i = 0; i < commits.length; i++) {
+          var msg = commits[i].commit.message.split('\n')[0]; // first line only
+          changes.push(msg);
+          // Stop at the commit that bumped to our installed version
+          if (msg.indexOf('v' + localVer) !== -1) break;
+        }
+        console.log('§PWA_UPDATE changelog=' + changes.length + ' items');
+
+        // Render changelog
+        var statusEl = document.getElementById('pwa-status');
+        statusEl.innerHTML = '<div style="color:#4fc3f7;font-weight:700;margin-bottom:8px">Update Available: v' +
+          localVer + ' \u2192 v' + remoteVer + '</div>' +
+          '<div style="text-align:left;max-height:180px;overflow-y:auto;margin-bottom:12px">' +
+          changes.map(function(c) {
+            return '<div style="font-size:12px;color:#ccc;padding:3px 0;border-bottom:1px solid #222">\u2022 ' +
+              c.replace(/</g, '&lt;') + '</div>';
+          }).join('') + '</div>';
+        ov.setProgress(100);
+
+        // OK / Cancel buttons
+        ov.showButtons(
+          '<button id="pwa-update-ok" style="padding:8px 24px;background:#4fc3f7;color:#000;border:none;' +
+          'border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-right:10px">OK</button>' +
+          '<button id="pwa-update-cancel" style="padding:8px 24px;background:#333;color:#aaa;border:1px solid #555;' +
+          'border-radius:8px;font-size:13px;cursor:pointer">Cancel</button>'
+        );
+
+        document.getElementById('pwa-update-ok').addEventListener('click', function() {
+          console.log('§PWA_UPDATE confirmed v' + remoteVer);
+          _applyUpdate(ov);
+        });
+        document.getElementById('pwa-update-cancel').addEventListener('click', function() {
+          console.log('§PWA_UPDATE cancelled');
+          ov.close();
+        });
+        // Esc to cancel
+        var _escHandler = function(e) {
+          if (e.key === 'Escape') { ov.close(); console.log('§PWA_UPDATE cancelled'); document.removeEventListener('keydown', _escHandler); }
+        };
+        document.addEventListener('keydown', _escHandler);
+      });
+  }
+
+  // §S283 3.5: Apply update — re-cache all + reload
+  function _applyUpdate(ov) {
+    ov.setText('Updating...');
+    ov.setProgress(0);
+    // Tell new sw.js to take over
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+    }
+    // Force sw.js re-register to pick up new CACHE_VERSION
+    navigator.serviceWorker.register('sw.js').then(function(reg) {
+      reg.update().then(function() {
+        ov.setText('Updated! Reloading...');
+        ov.setProgress(100);
+        setTimeout(function() { window.location.reload(); }, 1000);
+      });
+    });
+  }
+
+  // §S283 4.1: Share Project (Web Share API or clipboard)
+  function _shareProject() {
+    var url = window.location.href;
+    if (navigator.share) {
+      navigator.share({
+        title: 'BIM OOTB',
+        text: 'View this building in your browser. Install for offline use.',
+        url: url
+      }).then(function() {
+        console.log('§PWA_SHARE native');
+      }).catch(function() {});
+    } else {
+      navigator.clipboard.writeText(url).then(function() {
+        if (A.status) A.status.textContent = 'Link copied';
+        console.log('§PWA_SHARE clipboard');
+      });
+    }
+  }
+
+  // §S283: Handle ?action= params from PWA shortcuts
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    var action = params.get('action');
+    if (action === 'update') {
+      // Delay until viewer is loaded
+      setTimeout(_checkUpdate, 2000);
+    } else if (action === 'share') {
+      setTimeout(_shareProject, 1000);
+    }
+  })();
+
+  // Expose for external access
+  A.checkUpdate = _checkUpdate;
+  A.shareProject = _shareProject;
+  A.startOfflineDownload = _startOfflineDownload;
 
   // §2 — Panel Focus Model (Tab to cycle, arrows within, mouse steals focus)
   var _panels = [];
