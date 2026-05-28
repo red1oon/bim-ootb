@@ -38,7 +38,7 @@ const CDN_ASSETS = [
 // DB files are NOT here — they're cached in IndexedDB by A.cachedFetch().
 const PRECACHE_ASSETS = [
   // Entry points
-  'index.html',
+  'viewer.html',
   'boq_charts.html',
   'mep_report.html',
   'erp.html',
@@ -74,7 +74,6 @@ const PRECACHE_ASSETS = [
   'variation_order.js',
   'import.js',
   'routewalker.js',
-  'mep_rw.db',
   'main.js',
   // Workers (fetched on demand by import/export flows)
   'import_worker.js',

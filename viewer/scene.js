@@ -26,14 +26,8 @@ async function setupScene(A) {
     _origWarn.apply(console, arguments);
   };
 
-  // §S283: PWA install prompt capture — must run before any UI
-  var _installPrompt = null;
-  var _isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  window.addEventListener('beforeinstallprompt', function(e) {
-    e.preventDefault();
-    _installPrompt = e;
-    console.log('§PWA_INSTALL prompt captured');
-  });
+  // §S283: beforeinstallprompt captured in viewer.html (early). Read from window.window._installPrompt.
+  var _isStandalone = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
   var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
@@ -941,7 +935,7 @@ async function setupScene(A) {
       : '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>';  // download arrow
     console.log('§PWA_BADGE state=' + (_pwaInstalled ? 'green' : 'blue') +
       ' standalone=' + _isStandalone + ' accepted=' + !!window._pwaAccepted +
-      ' prompt=' + !!_installPrompt);
+      ' prompt=' + !!window._installPrompt);
     var badgeHtml =
       '<div id="cmd-install-badge" title="' + _badgeTitle + '" style="position:absolute;top:0;right:0;' +
       'width:0;height:0;border-style:solid;border-width:0 48px 48px 0;' +
@@ -1236,12 +1230,12 @@ async function setupScene(A) {
 
   // §S283 1.6: Trigger native install prompt or show iOS guide
   function _triggerInstall(ov) {
-    if (_installPrompt) {
+    if (window._installPrompt) {
       ov.setText('Confirm the install prompt to add to home screen.');
-      _installPrompt.prompt();
-      _installPrompt.userChoice.then(function(r) {
+      window._installPrompt.prompt();
+      window._installPrompt.userChoice.then(function(r) {
         console.log('§PWA_INSTALL choice=' + r.outcome);
-        _installPrompt = null;
+        window._installPrompt = null;
         if (r.outcome === 'accepted') {
           window._pwaAccepted = true;  // §S283: badge turns green on next Help open
           ov.setText('Installed! Find it on your home screen.');
@@ -1259,7 +1253,7 @@ async function setupScene(A) {
       return;
     }
     // No prompt available — prompt was consumed or browser doesn't support install
-    console.log('§PWA_INSTALL no_prompt available. consumed=' + !_installPrompt + ' iOS=false');
+    console.log('§PWA_INSTALL no_prompt available. consumed=' + !window._installPrompt + ' iOS=false');
     ov.setText('Files cached for offline use. Reload page to retry install.');
     setTimeout(function() { ov.close(); }, 4000);
   }

@@ -877,6 +877,13 @@ if('serviceWorker' in navigator){
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
+// §S283: Capture beforeinstallprompt early — scene.js reads window._installPrompt
+window._installPrompt = null;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  window._installPrompt = e;
+  console.log('§PWA_INSTALL prompt captured (early)');
+});
 </script>
 </body>
 </html>

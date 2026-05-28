@@ -21,7 +21,7 @@ console.log('\n=== 1. Manifest ===');
 const manifest = JSON.parse(fs.readFileSync(path.join(VIEWER, 'manifest.webmanifest'), 'utf8'));
 
 ok('1.1', 'display=standalone', manifest.display === 'standalone');
-ok('1.2', 'start_url=index.html', manifest.start_url === 'index.html');
+ok('1.2', 'start_url=viewer.html', manifest.start_url === 'viewer.html');
 ok('1.3', 'has name', !!manifest.name);
 ok('1.4', 'has theme_color', !!manifest.theme_color);
 ok('1.5', 'icons array has 192 and 512', manifest.icons.length >= 2 &&
@@ -119,10 +119,11 @@ console.log('\n=== 5. scene.js — PWA install code ===');
 
 var sceneSrc = fs.readFileSync(path.join(VIEWER, 'scene.js'), 'utf8');
 
-// 5.1 beforeinstallprompt capture
-ok('5.1', 'beforeinstallprompt listener', sceneSrc.includes("'beforeinstallprompt'"));
-ok('5.2', '_installPrompt stashed', sceneSrc.includes('_installPrompt = e'));
-ok('5.3', '§PWA_INSTALL prompt captured log', sceneSrc.includes("§PWA_INSTALL prompt captured"));
+// 5.1 beforeinstallprompt capture (moved to viewer.html for early capture)
+var viewerHtml = fs.readFileSync(path.join(VIEWER, 'viewer.html'), 'utf8');
+ok('5.1', 'beforeinstallprompt listener in viewer.html', viewerHtml.includes("'beforeinstallprompt'"));
+ok('5.2', 'window._installPrompt stashed in viewer.html', viewerHtml.includes('window._installPrompt = e'));
+ok('5.3', '§PWA_INSTALL prompt captured log in viewer.html', viewerHtml.includes('§PWA_INSTALL prompt captured'));
 
 // 5.2 Badge rendering
 ok('5.4', 'badge element id=cmd-install-badge', sceneSrc.includes('cmd-install-badge'));
