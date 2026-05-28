@@ -1099,6 +1099,16 @@ async function handleImportFile(file) {
 
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
 
+  // §S284: Standalone offline — Worker blocked on file://, redirect to online viewer
+  if (window._STANDALONE) {
+    status.textContent = 'Opening online viewer for IFC import...';
+    var ghViewer = 'https://red1oon.github.io/bim-ootb/viewer/viewer.html';
+    window.open(ghViewer, '_blank');
+    status.textContent = 'IFC import requires the online viewer. File not uploaded — drop it there.';
+    progressBar.parentElement.style.display = 'none';
+    return;
+  }
+
   const arrayBuffer = await file.arrayBuffer();
   // S228: Route to IFC or mesh worker based on format
   var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=8' : 'viewer/mesh_import_worker.js?v=2';
@@ -1738,7 +1748,6 @@ async function packageLandingPage() {
     }
     if (statusEl) statusEl.textContent = 'Fetching web-ifc (~200KB)...';
     var webIfcSrc = await fetch('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js').then(function(r) { return r.text(); }).catch(function() { return ''; });
-
     // 2. Fetch Sysnova.png as base64 data URI
     var pngBlob = await fetch('Sysnova.png').then(function(r) { return r.blob(); });
     var pngB64 = await new Promise(function(cb) {
