@@ -1757,8 +1757,10 @@ async function packageLandingPage() {
     // 3. Snapshot manifest (already in memory from init)
     var manifestJSON = JSON.stringify(window._manifestData || {archetypes:[]});
 
-    // 4. Get the full page HTML
-    var html = '<!DOCTYPE html>\n<html>' + document.documentElement.innerHTML + '</html>';
+    // 4. Fetch the ORIGINAL index.html source (not innerHTML — browser DOM re-serialization
+    //    breaks script tags, normalizes whitespace, and loses comments)
+    if (statusEl) statusEl.textContent = 'Building HTML...';
+    var html = await fetch(location.href.replace(/[?#].*$/, '')).then(function(r) { return r.text(); });
 
     // 5. Inline external scripts
     html = html.replace(/<script src="viewer\/import_db_builder\.js[^"]*"><\/script>/, '<script>\n' + dbBuilderSrc + '\n<\/script>');
@@ -1770,23 +1772,18 @@ async function packageLandingPage() {
     // 7. Strip analytics (goatcounter)
     html = html.replace(/<script[^>]*goatcounter[^>]*><\/script>/g, '');
 
-    // 8. Inject standalone flag + manifest snapshot before first inline script body
-    // Find the config script block and inject after the opening <script>
-    var configTag = '<script>\n// \u2500\u2500 Config \u2500\u2500';
-    if (statusEl) statusEl.textContent = 'Building HTML...';
-    var standaloneBlock = '// \u00a7S284: Standalone offline copy\n' +
+    // 8. Inject standalone flag + manifest + workers + WASM into config script block
+    var ghBase = 'https://red1oon.github.io/bim-ootb/';
+    var standaloneBlock = '// §S284: Standalone offline copy\n' +
       'window._STANDALONE = true;\n' +
       'window._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\n' +
       'window._WORKER_SOURCES = ' + workerJSON + ';\n' +
       (sqlWasmJs ? 'window._SQL_WASM_JS = ' + JSON.stringify(sqlWasmJs) + ';\n' : '') +
       (sqlWasmB64 ? 'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' : '') +
       (webIfcSrc ? 'window._WEBIFC_SRC = ' + JSON.stringify(webIfcSrc) + ';\n' : '');
-    html = html.replace(configTag, '<script>\n' + standaloneBlock + '// \u2500\u2500 Config \u2500\u2500');
+    html = html.replace('// \u2500\u2500 Config \u2500\u2500', standaloneBlock + '// \u2500\u2500 Config \u2500\u2500');
 
     // 9. Fix relative URLs to absolute GitHub Pages (so cards open viewer online)
-    var ghBase = 'https://red1oon.github.io/bim-ootb/';
-    // openViewer builds: viewerUrl + '?db=' + bldBase + bld.db
-    // _prodBase already absolute (OCI). viewerFile is relative — fix it.
     html = html.replace(
       /const viewerFile = [^;]+;/,
       "const viewerFile = '" + ghBase + "viewer/viewer.html';"
