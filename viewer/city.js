@@ -55,6 +55,37 @@ function setupCity(A) {
     }
   };
 
+  // §S285 Bug1: per-archetype GROUND-FLOOR z (sql.js Database). Mirrors tools.js
+  // _calcGroundY's slab logic: largest IfcSlab (bbox_z<1) → lowest center_z among the
+  // top-5 by area. Fallback = 5th-percentile center_z (skips underground piling). We
+  // anchor instances to THIS, not AVG(center_z) — the centroid floats tall garages /
+  // deep-piled Terminals half a km up. Returns null only if the DB has no transforms.
+  A._archGroundZ = function(db) {
+    try {
+      var zr = db.exec(
+        "SELECT t.center_z FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid " +
+        "WHERE m.ifc_class='IfcSlab' AND t.bbox_z IS NOT NULL AND t.bbox_z<1.0 " +
+        "AND t.bbox_x IS NOT NULL AND t.bbox_y IS NOT NULL " +
+        "ORDER BY (t.bbox_x*t.bbox_y) DESC LIMIT 5");
+      if (zr.length && zr[0].values.length) {
+        var lowest = Infinity;
+        for (var i = 0; i < zr[0].values.length; i++) {
+          var v = zr[0].values[i][0];
+          if (v != null && v < lowest) lowest = v;
+        }
+        if (lowest !== Infinity) return { z: lowest, src: 'slab-top5' };
+      }
+    } catch (e) {}
+    try {  // fallback: 5th-percentile center_z — ignores underground piling at the bottom
+      var cr = db.exec("SELECT center_z FROM element_transforms WHERE center_z IS NOT NULL ORDER BY center_z");
+      if (cr.length && cr[0].values.length) {
+        var vals = cr[0].values;
+        return { z: vals[Math.floor(vals.length * 0.05)][0], src: 'p5' };
+      }
+    } catch (e) {}
+    return null;
+  };
+
   // ── Clear button (free RAM) — city mode only ──
   if (A.CITY_URL) {
   const clearBtn = document.createElement('button');
@@ -225,7 +256,7 @@ function setupCity(A) {
 
       // §S285: Older extractions lack bbox_* columns — probe + skip gracefully (no crash).
       var archDb = new SQL.Database(new Uint8Array(cachedBuf));
-      var elemRows = null, arcCen = null, _hasBbox = false;
+      var elemRows = null, arcCen = null, arcGround = null, _hasBbox = false;
       try {
         var _cols = archDb.exec(`PRAGMA table_info(element_transforms)`);
         _hasBbox = _cols.length && _cols[0].values.some(function(c){ return c[1] === 'bbox_x'; });
@@ -237,6 +268,7 @@ function setupCity(A) {
             JOIN elements_meta m ON t.guid = m.guid
           `);
           arcCen = archDb.exec(`SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms`);
+          arcGround = A._archGroundZ(archDb);  // §S285 Bug1: ground-floor z (not centroid)
         }
       } catch (e) {
         console.warn(`[S285] §CITY_BBOX_DEGRADE archetype=${archName} reason=${e.message}`);
@@ -253,12 +285,16 @@ function setupCity(A) {
       var arcX = arcCen[0].values[0][0];
       var arcY = arcCen[0].values[0][1];
       var arcZ = arcCen[0].values[0][2];
+      // §S285 Bug1: anchor on ground-floor z (fallback centroid) so the building sits ON
+      // the ground instead of floating by its centroid (tall garages / deep-piled Terminals).
+      var arcGroundZ = (arcGround && arcGround.z != null) ? arcGround.z : arcZ;
       var vals = elemRows[0].values;
 
       // Accumulate every element of every city instance into per-discipline buffers.
       for (var ii = 0; ii < instances.length; ii++) {
         var inst = instances[ii];
-        var offX = inst.ix - arcX, offY = inst.iy - arcY, offZ = inst.iz - arcZ;
+        // offZ anchors the detected GROUND floor to modelOffset.z (all buildings share ground).
+        var offX = inst.ix - arcX, offY = inst.iy - arcY, offZ = A.modelOffset.z - arcGroundZ;
         for (var ei = 0; ei < vals.length; ei++) {
           var er = vals[ei];
           var acc = _accum(er[0] || '_');
@@ -417,13 +453,18 @@ function setupCity(A) {
     const arcX = arcCentre[0][0];
     const arcY = arcCentre[0][1];
     const arcZ = arcCentre[0][2];
+    // §S285 Bug1: same ground-anchoring as the bbox layer, so the streamed real mesh lines
+    // up with the bbox it replaces (and Terminal piling levels to ground, not floats).
+    const arcG = A._archGroundZ(A.db);
+    const arcGroundZ = (arcG && arcG.z != null) ? arcG.z : arcZ;
 
     const bc = A.buildingCentres[buildingName];
     const tgtX = bc.ix, tgtY = bc.iy, tgtZ = bc.iz;
 
     const offX = tgtX - arcX;
     const offY = tgtY - arcY;
-    const offZ = tgtZ - arcZ;
+    const offZ = A.modelOffset.z - arcGroundZ;
+    console.log(`[S285] §CITY_GROUND_ANCHOR building=${buildingName} groundZ=${arcGroundZ.toFixed(2)} src=${arcG ? arcG.src : 'centroid'} offZ=${offZ.toFixed(2)}`);
 
     const rows = A.dbQuery(`
       SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
@@ -456,9 +497,10 @@ function setupCity(A) {
     A.streaming = true;
     A.activeBuilding = buildingName;
     A.activeBuildingTotal = A.streamQueue.length;
-    // §S285 unified scene: hide this building's bboxes (real geometry now replaces them);
-    // surrounding city bboxes stay so the building renders in context, not on a blank stage.
-    A._cityHideBuildingBboxes(buildingName);
+    // §S285 Bug2: do NOT hide the bboxes here — that left a blank gap until streaming
+    // finished. The building keeps its own bboxes until its real geometry has fully
+    // streamed in; the hide now fires at stream-complete (streaming.js, §CITY_BBOX_HIDE),
+    // matching how the normal viewer keeps its placeholder until the mesh is ready.
     document.getElementById('s-active').textContent = buildingName;
     document.getElementById('s-active').style.color = '#4fc3f7';
     document.getElementById('s-building-total').textContent = A.activeBuildingTotal.toLocaleString();

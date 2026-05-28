@@ -412,6 +412,9 @@ function setupStreaming(A) {
           A.buildingsRendered.add(A.activeBuilding);
           A.populateStoreys(A.activeBuilding);
           A.populateDiscs(A.activeBuilding);
+          // §S285 Bug2: city mode — now that the real mesh is fully streamed, hide THIS
+          // building's bbox placeholders (no blank gap; surrounding city bboxes stay).
+          if (A.CITY_URL && A._cityHideBuildingBboxes) A._cityHideBuildingBboxes(A.activeBuilding);
         }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices
