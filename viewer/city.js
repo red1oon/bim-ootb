@@ -9,6 +9,36 @@ function setupCity(A) {
   A.citySQL = null;
   A.cityArchetypes = {};
   A.cityBuildingDbs = {};
+  A._cityBboxReleased = false;
+
+  // §S285 superweight: free the city bbox layer (the ~912k-instance per-discipline meshes)
+  // to reclaim RAM before streaming a heavy split-DB building (geo.db ~400MB). Idempotent.
+  A._cityReleaseBboxes = function(reason) {
+    if (A._cityBboxReleased) return;
+    var freed = 0, insts = 0;
+    var toRemove = A.collectMeshes(function(o){ return o.isInstancedMesh && o.userData && o.userData.isBboxPlaceholder; });
+    toRemove.forEach(function(o){
+      insts += (o.count || 0);
+      A.scene.remove(o);
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+      if (o.userData) o.userData.instanceBuilding = null;  // drop instanceId→building array
+      freed++;
+    });
+    A._cityBboxReleased = true;
+    if (A.markDirty) A.markDirty();
+    console.log('[S285] §CITY_BBOX_RELEASE meshes=' + freed + ' instances=' + insts.toLocaleString() + ' reason=' + (reason || ''));
+  };
+
+  // §S285: log JS heap (Chromium-only performance.memory) around heavy loads — superweight POC.
+  A._cityLogMem = function(label) {
+    var m = (typeof performance !== 'undefined') && performance.memory;
+    if (m) {
+      console.log('[S285] §CITY_MEM ' + label + ' usedHeap=' + (m.usedJSHeapSize/1048576).toFixed(0) + 'MB / limit=' + (m.jsHeapSizeLimit/1048576).toFixed(0) + 'MB');
+    } else {
+      console.log('[S285] §CITY_MEM ' + label + ' (performance.memory unavailable — non-Chromium)');
+    }
+  };
 
   // ── Clear button (free RAM) — city mode only ──
   if (A.CITY_URL) {
@@ -310,25 +340,43 @@ function setupCity(A) {
       const extUrl = A.BLD_BASE + files.db;
       const libUrl = A.BLD_BASE + files.lib;
 
-      // §S285: A missing companion DB (e.g. library.db 404 for a split-DB building) must
-      // NOT throw an uncaught promise rejection. Catch, log §CITY_DL_FAIL, surface a
-      // status, and abort cleanly so the rest of city mode keeps working.
-      let extBuf, libBuf;
+      // §S285 split-DB: large buildings (LTU etc.) are deployed as {arch}_meta.db (panels +
+      // transforms — same tables as extracted.db) + {arch}_geo.db (component_geometries — same
+      // role as library.db). HEAD-probe meta.db; if present, load meta+geo instead of
+      // extracted+library. Same downstream query/stream — we only swap which two files feed
+      // A.db (main) and A.libDb (geometry). Mirrors streaming.js §DB_SPLIT_DETECT.
+      const metaUrl = extUrl.replace('_extracted.db', '_meta.db');
+      const geoUrl  = extUrl.replace('_extracted.db', '_geo.db');
+      let _split = false;
+      if (metaUrl !== extUrl) {
+        try { const h = await fetch(metaUrl, { method: 'HEAD' }); _split = h.ok; } catch (e) { _split = false; }
+      }
+      const mainUrl = _split ? metaUrl : extUrl;
+      const auxUrl  = _split ? geoUrl  : libUrl;
+      console.log(`[S285] §CITY_DL_DETECT archetype=${archetype} split=${_split} main=${mainUrl.split('/').pop()} aux=${auxUrl.split('/').pop()}`);
+
+      // §S285 superweight: a split geo.db can be ~400MB. Free the city bbox layer FIRST so
+      // that RAM is available, and log heap before/after so we can see if the PWA copes.
+      if (_split) { A._cityReleaseBboxes('split-DB heavy load: ' + archetype); A._cityLogMem('before ' + archetype); }
+
+      // A missing companion DB (e.g. library.db 404) must NOT throw an uncaught rejection.
+      let mainBuf, auxBuf;
       try {
-        [extBuf, libBuf] = await Promise.all([
-          A.cachedFetch(extUrl),
-          A.cachedFetch(libUrl),
+        [mainBuf, auxBuf] = await Promise.all([
+          A.cachedFetch(mainUrl),
+          A.cachedFetch(auxUrl),
         ]);
       } catch (e) {
-        console.warn(`[S285] §CITY_DL_FAIL archetype=${archetype} ${e.message}`);
+        console.warn(`[S285] §CITY_DL_FAIL archetype=${archetype} split=${_split} ${e.message}`);
         A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_dl_failed||'Could not load {name} — {err}').replace('{name}', archetype).replace('{err}', e.message);
         return;
       }
 
-      const extDb = new A.citySQL.Database(new Uint8Array(extBuf));
-      const libDb2 = new A.citySQL.Database(new Uint8Array(libBuf));
-      A.cityBuildingDbs[archetype] = { db: extDb, libDb: libDb2 };
-      console.log(`[S203] §CITY_DL archetype=${archetype} ext=${(extBuf.byteLength/1024/1024).toFixed(1)}MB lib=${(libBuf.byteLength/1024/1024).toFixed(1)}MB`);
+      const mainDb = new A.citySQL.Database(new Uint8Array(mainBuf));
+      const auxDb = new A.citySQL.Database(new Uint8Array(auxBuf));
+      A.cityBuildingDbs[archetype] = { db: mainDb, libDb: auxDb };
+      console.log(`[S285] §CITY_DL archetype=${archetype} split=${_split} main=${(mainBuf.byteLength/1024/1024).toFixed(1)}MB aux=${(auxBuf.byteLength/1024/1024).toFixed(1)}MB`);
+      if (_split) A._cityLogMem('after ' + archetype);
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_downloaded_bld||'Downloaded {name}. Streaming {bld}...').replace('{name}', archetype).replace('{bld}', buildingName);
     }
 
