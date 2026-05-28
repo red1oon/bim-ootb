@@ -13,8 +13,17 @@
 // Input:  postMessage({ arrayBuffer, filename })
 // Output: postMessage({ type: 'progress', pct, phase }) or { type: 'done', extracted, library, meta }
 
-console.log('[S220] §WORKER_START loading web-ifc from CDN...');
-importScripts('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js');
+// §S284c: Local-first — load web-ifc from same-origin lib/ so the service worker
+// can serve it offline (PWA imports IFC with no internet). CDN is fallback only.
+console.log('[S220] §WORKER_START loading web-ifc (local-first)...');
+try {
+  importScripts('lib/web-ifc-api-iife.js');
+  console.log('[S220] §WORKER_SRC local lib/web-ifc-api-iife.js');
+} catch (e) {
+  console.warn('[S220] §WORKER_SRC_FALLBACK local failed (' + e.message + '), trying CDN');
+  importScripts('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js');
+  console.log('[S220] §WORKER_SRC cdn unpkg');
+}
 console.log('[S220] §WORKER_LOADED web-ifc IIFE loaded, WebIFC=' + typeof WebIFC);
 
 // Discipline classification (same as Python pipeline)
@@ -89,13 +98,21 @@ self.onmessage = async function(e) {
     const ifcApi = new WebIFC.IfcAPI();
     console.log('[S220] §WASM_INIT starting...');
     await ifcApi.Init(function(path) {
-      if (self._WEBIFC_WASM_URL) {
-        console.log('[S220] §WASM_LOCATE ' + path + ' → blob (embedded offline)');
-        return self._WEBIFC_WASM_URL;
+      // 1. Standalone HTML — decode embedded base64 wasm HERE (in-worker) so the Blob URL
+      // is minted in the worker's own context. Main-thread blob URLs aren't fetchable from
+      // a null-origin (file://) blob worker — that silently aborts the wasm fetch.
+      if (self._WEBIFC_WASM_B64) {
+        var _bin = atob(self._WEBIFC_WASM_B64);
+        var _arr = new Uint8Array(_bin.length);
+        for (var _i = 0; _i < _bin.length; _i++) _arr[_i] = _bin.charCodeAt(_i);
+        var _url = URL.createObjectURL(new Blob([_arr], { type: 'application/wasm' }));
+        console.log('[S220] §WASM_LOCATE ' + path + ' → blob (decoded in-worker, offline)');
+        return _url;
       }
-      var resolved = 'https://unpkg.com/web-ifc@0.0.77/' + path;
-      console.log('[S220] §WASM_LOCATE ' + path + ' → ' + resolved);
-      return resolved;
+      // 2. PWA / online — same-origin lib/ so the service worker serves it offline
+      var local = 'lib/' + path;
+      console.log('[S220] §WASM_LOCATE ' + path + ' → ' + local + ' (local, SW-cached)');
+      return local;
     }, true);
     console.log('[S220] §WASM_INIT done');
     post('progress', 10, 'Reading building structure...');
