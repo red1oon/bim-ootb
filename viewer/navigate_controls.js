@@ -26,7 +26,7 @@
 
     // ── Desktop pointer lock (FPS mouse look) ──
     function setupPointerLock() {
-      if ('ontouchstart' in window) return;
+      if (window._isMobile) return;
       var canvas = document.getElementById('canvas') || document.querySelector('canvas');
       if (!canvas) return;
 

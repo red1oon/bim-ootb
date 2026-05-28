@@ -4,18 +4,18 @@ function setupMeasure(A) {
   console.log('§MEASURE_VERSION S245e-v1');
 
   // Mobile detection — disable backdrop-filter blur (GPU-expensive on mobile)
-  var _isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  var _panelBg = _isMobile ? 'background:rgba(15,45,80,0.92);' : 'background:rgba(20,60,100,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);';
-  var _panelBgStrong = _isMobile ? 'background:rgba(15,45,80,0.95);' : 'background:rgba(20,60,100,0.65);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);';
+  // §S282b: window._isMobile set in config.js — no local copy
+  var _panelBg = window._isMobile ? 'background:rgba(15,45,80,0.92);' : 'background:rgba(20,60,100,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);';
+  var _panelBgStrong = window._isMobile ? 'background:rgba(15,45,80,0.95);' : 'background:rgba(20,60,100,0.65);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);';
 
   // ── Draggable panels ──
   A._makeDraggable = function(el) {
     var ox, oy, sx, sy, dragging = false;
-    var dragStrip = _isMobile ? 50 : 30;
+    var dragStrip = window._isMobile ? 50 : 30;
     el.style.cursor = 'grab';
     // On mobile, intercept touch BEFORE the browser claims it for scroll/pan.
     // Only preventDefault in the drag zone; elsewhere let browser handle normally.
-    if (_isMobile) {
+    if (window._isMobile) {
       el.addEventListener('touchstart', function(e) {
         if (e.target.tagName === 'INPUT') return;
         if (e.target.closest('[data-clash-idx]') || e.target.closest('[data-pair]')) return;
@@ -795,7 +795,7 @@ function setupMeasure(A) {
     var listDiv = document.createElement('div');
     listDiv.style.cssText = 'position:fixed;z-index:400;' + _panelBg + 'color:#fff;font-size:11px;padding:0;border-radius:8px;border:1px solid rgba(255,140,0,0.6);font-family:Segoe UI,sans-serif;line-height:1.5;min-width:180px;max-width:240px;max-height:40vh;display:flex;flex-direction:column;pointer-events:auto';
     // Position: right-aligned, above matrix corner on both mobile and desktop
-    listDiv.style.right = _isMobile ? '6px' : '10px';
+    listDiv.style.right = window._isMobile ? '6px' : '10px';
     if (A._clashMatrixDiv) {
       var matRect = A._clashMatrixDiv.getBoundingClientRect();
       listDiv.style.bottom = (window.innerHeight - matRect.top + 6) + 'px';
@@ -996,7 +996,7 @@ function setupMeasure(A) {
       }
       // §S278: Desktop click suppressed — pointerup already routed through ListKeyNav.
       // Without this guard, Ctrl+click would toggle twice (on→off = no change).
-      if (!_isMobile) {
+      if (!window._isMobile) {
         var target = ev.target.closest('[data-clash-idx]');
         if (target && !A._clashListNav) {
           A._flyToClash(parseInt(target.getAttribute('data-clash-idx')));
@@ -1099,9 +1099,8 @@ function setupMeasure(A) {
     // Grey out / restore 2D button
     var g2d = document.getElementById('grid-2d-btn');
     if (g2d) { g2d.style.opacity = A.measureActive ? '0.3' : '1'; }
-    var isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     A.status.textContent = A.measureActive
-      ? (isMobile ? (typeof _TRL!=='undefined'&&_TRL.ui_measure_hint_mobile||'Tap for dimensions. Long-press for Info. Tap here to exit.') : (typeof _TRL!=='undefined'&&_TRL.ui_measure_hint||'Click for dimensions. Right-click for Info'))
+      ? (window._isMobile ? (typeof _TRL!=='undefined'&&_TRL.ui_measure_hint_mobile||'Tap for dimensions. Long-press for Info. Tap here to exit.') : (typeof _TRL!=='undefined'&&_TRL.ui_measure_hint||'Click for dimensions. Right-click for Info'))
       : '';
     // Mobile: tap status bar to exit measure mode
     if (A.measureActive && isMobile) {
@@ -1494,7 +1493,7 @@ function setupMeasure(A) {
       var _openMatrix = function() { A._showClashMatrix(rules, cardDiv); };
       var _updateSphere = function(color) {
         clashEl.innerHTML = '<span id="clash-tap-trigger" style="cursor:pointer;padding:6px 0">' +
-          'CLASHES ' + _sphere(color, _isMobile ? 22 : 18) + '</span>';
+          'CLASHES ' + _sphere(color, window._isMobile ? 22 : 18) + '</span>';
         var trigger = cardDiv.querySelector('#clash-tap-trigger');
         if (trigger) {
           trigger.addEventListener('pointerup', _openMatrix);

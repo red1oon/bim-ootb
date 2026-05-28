@@ -145,7 +145,7 @@ async function initViewer() {
   if (APP.toggleNlp) window.toggleNlp = APP.toggleNlp;
   window.toggleVariance = function() { if (APP.toggleVariance) APP.toggleVariance(); };
   // 2D button: toggle grid overlay in same scene (no new tab)
-  window._isMobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+  // §S282b: _isMobile now set in config.js (before pill_builder reads it)
   window.open2DPlans = function() {
     if (window._isMobile) { APP.status.textContent = '2D views are desktop-only'; console.log('§2D_GATE skip — mobile'); return; }
     // Block if Measure is active
