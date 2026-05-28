@@ -1035,6 +1035,20 @@ function detectLandingFormat(filename) {
   return { ext: ext, route: LANDING_FORMAT_ROUTES[ext] || null };
 }
 
+// §S284: Create Worker from Blob URL in standalone mode (file:// blocks script URLs)
+function _createWorker(scriptUrl) {
+  if (window._STANDALONE && window._WORKER_SOURCES) {
+    // Strip query params to get the key: 'viewer/import_worker.js?v=8' → 'import_worker.js'
+    var key = scriptUrl.replace(/\?.*$/, '').replace(/^.*\//, '');
+    var src = window._WORKER_SOURCES[key];
+    if (src) {
+      console.log('§STANDALONE_WORKER blob key=' + key + ' size=' + src.length);
+      return new Worker(URL.createObjectURL(new Blob([src], {type: 'application/javascript'})));
+    }
+  }
+  return new Worker(scriptUrl);
+}
+
 // ── Import handler (with Merge/New prompt) ──
 async function handleImportFile(file) {
   if (!file) return;
@@ -1053,21 +1067,11 @@ async function handleImportFile(file) {
 
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
 
-  // §S284: Standalone offline — Worker blocked on file://, redirect to online viewer
-  if (window._STANDALONE) {
-    status.textContent = 'Opening online viewer for IFC import...';
-    var ghViewer = 'https://red1oon.github.io/bim-ootb/viewer/viewer.html';
-    window.open(ghViewer, '_blank');
-    status.textContent = 'IFC import requires the online viewer. File not uploaded — drop it there.';
-    progressBar.parentElement.style.display = 'none';
-    return;
-  }
-
   const arrayBuffer = await file.arrayBuffer();
   // S228: Route to IFC or mesh worker based on format
   var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=8' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
-  const worker = new Worker(workerFile);
+  const worker = _createWorker(workerFile);
 
   worker.onmessage = async function(e) {
     const msg = e.data;
@@ -1251,14 +1255,6 @@ async function handleImportFile(file) {
 async function handleImportMultiIFC(files) {
   const status = document.getElementById('import-status');
   const progressBar = document.getElementById('import-progress-bar');
-  // §S284: Standalone offline — Worker blocked on file://
-  if (window._STANDALONE) {
-    if (status) status.textContent = 'IFC import requires the online viewer.';
-    var ghViewer = 'https://red1oon.github.io/bim-ootb/viewer/viewer.html';
-    window.open(ghViewer, '_blank');
-    if (status) status.textContent = 'Opened online viewer — drop your files there.';
-    return;
-  }
   if (progressBar) { progressBar.style.width = '0%'; progressBar.parentElement.style.display = 'block'; progressBar.style.background = '#0277bd'; }
 
   // Common prefix for building name: LTU_AHouse_ARC + LTU_AHouse_STR → LTU_AHouse
@@ -1284,7 +1280,7 @@ async function handleImportMultiIFC(files) {
     try {
       var result = await new Promise(function(resolve, reject) {
         file.arrayBuffer().then(function(arrayBuffer) {
-          var worker = new Worker('viewer/import_worker.js?v=8');
+          var worker = _createWorker('viewer/import_worker.js?v=8');
           worker.onmessage = function(e) {
             var msg = e.data;
             if (msg.type === 'progress') {
@@ -1466,8 +1462,6 @@ function showExportFlyout(triggerEl, projectKey) {
 }
 
 async function exportProjectIFC(projectKey, flyout) {
-  // §S284: Worker blocked on file://
-  if (window._STANDALONE) { alert('IFC export requires the online viewer.'); return; }
   // §S274: flyout may be undefined when called from share.js via A.exportIFC(key)
   var statusEl = flyout ? flyout.querySelector('.ef-status') : null;
   var goBtn = flyout ? flyout.querySelector('[data-go]') : null;
@@ -1570,7 +1564,7 @@ async function exportProjectIFC(projectKey, flyout) {
   if (statusEl) statusEl.textContent = 'Building IFC (' + elements.length + ' elements)...';
 
   // Send to export worker
-  var worker = new Worker('viewer/ifc_export_worker.js?v=2');
+  var worker = _createWorker('viewer/ifc_export_worker.js?v=2');
   worker.onmessage = function(e) {
     var msg = e.data;
     if (msg.type === 'progress') {
@@ -1711,6 +1705,16 @@ async function packageLandingPage() {
     var dbBuilderSrc = await fetch('viewer/import_db_builder.js?v=3').then(function(r) { return r.text(); });
     var localeSrc = await fetch('viewer/locale_loader.js?v=7').then(function(r) { return r.text(); });
 
+    // 1b. Fetch Worker scripts for Blob URL in standalone mode
+    var importWorkerSrc = await fetch('viewer/import_worker.js?v=8').then(function(r) { return r.text(); });
+    var meshWorkerSrc = await fetch('viewer/mesh_import_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
+    var exportWorkerSrc = await fetch('viewer/ifc_export_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
+    var workerJSON = JSON.stringify({
+      'import_worker.js': importWorkerSrc,
+      'mesh_import_worker.js': meshWorkerSrc,
+      'ifc_export_worker.js': exportWorkerSrc
+    });
+
     // 2. Fetch Sysnova.png as base64 data URI
     var pngBlob = await fetch('Sysnova.png').then(function(r) { return r.blob(); });
     var pngB64 = await new Promise(function(cb) {
@@ -1736,7 +1740,7 @@ async function packageLandingPage() {
     // 8. Inject standalone flag + manifest snapshot before first inline script body
     // Find the config script block and inject after the opening <script>
     var configTag = '<script>\n// \u2500\u2500 Config \u2500\u2500';
-    html = html.replace(configTag, '<script>\n// \u00a7S284: Standalone offline copy\nwindow._STANDALONE = true;\nwindow._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\n// \u2500\u2500 Config \u2500\u2500');
+    html = html.replace(configTag, '<script>\n// \u00a7S284: Standalone offline copy\nwindow._STANDALONE = true;\nwindow._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\nwindow._WORKER_SOURCES = ' + workerJSON + ';\n// \u2500\u2500 Config \u2500\u2500');
 
     // 9. Fix relative URLs to absolute GitHub Pages (so cards open viewer online)
     var ghBase = 'https://red1oon.github.io/bim-ootb/';

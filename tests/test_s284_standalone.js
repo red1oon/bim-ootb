@@ -158,28 +158,28 @@ check('6.2 community fetch has _STANDALONE skip', communityGuarded);
 // ══════════════════════════════════════════════
 // PART 7: handleImportMultiIFC guarded
 // ══════════════════════════════════════════════
-console.log('\n§S284_TEST Multi-file import guard');
+console.log('\n§S284_TEST Multi-file import uses _createWorker');
 
 var multiIdx = getLineOf('function handleImportMultiIFC');
 check('7.1 handleImportMultiIFC found', multiIdx > 0);
-var multiGuarded = false;
-for (var i = multiIdx; i < multiIdx + 15; i++) {
-  if (/_STANDALONE/.test(indexLines[i])) { multiGuarded = true; break; }
+var multiUsesHelper = false;
+for (var i = multiIdx; i < multiIdx + 60; i++) {
+  if (/_createWorker/.test(indexLines[i])) { multiUsesHelper = true; break; }
 }
-check('7.2 handleImportMultiIFC has _STANDALONE guard', multiGuarded);
+check('7.2 handleImportMultiIFC uses _createWorker (Blob URL in standalone)', multiUsesHelper);
 
 // ══════════════════════════════════════════════
-// PART 8: handleImportFile guarded
+// PART 8: handleImportFile uses _createWorker
 // ══════════════════════════════════════════════
-console.log('\n§S284_TEST Single-file import guard');
+console.log('\n§S284_TEST Single-file import uses _createWorker');
 
 var singleIdx = getLineOf('function handleImportFile');
 check('8.1 handleImportFile found', singleIdx > 0);
-var singleGuarded = false;
-for (var i = singleIdx; i < singleIdx + 30; i++) {
-  if (/_STANDALONE/.test(indexLines[i])) { singleGuarded = true; break; }
+var singleUsesHelper = false;
+for (var i = singleIdx; i < singleIdx + 40; i++) {
+  if (/_createWorker/.test(indexLines[i])) { singleUsesHelper = true; break; }
 }
-check('8.2 handleImportFile has _STANDALONE guard', singleGuarded);
+check('8.2 handleImportFile uses _createWorker (Blob URL in standalone)', singleUsesHelper);
 
 // ══════════════════════════════════════════════
 // PART 9: External script src inlined by packager
@@ -194,6 +194,16 @@ for (var i = pStart; i < indexLines.length; i++) {
   if (i > pStart && /^\}$/.test(indexLines[i].trim())) { pEnd = i; break; }
 }
 
+check('9.0a _createWorker helper exists',
+  indexSrc.indexOf('function _createWorker') >= 0);
+check('9.0b _createWorker reads _WORKER_SOURCES',
+  indexSrc.indexOf('_WORKER_SOURCES') >= 0);
+check('9.0c packager embeds _WORKER_SOURCES',
+  packagerSrc.indexOf('_WORKER_SOURCES') >= 0);
+check('9.0d packager fetches import_worker.js',
+  packagerSrc.indexOf('import_worker.js') >= 0);
+check('9.0e packager fetches ifc_export_worker.js',
+  packagerSrc.indexOf('ifc_export_worker') >= 0);
 check('9.1 packager fetches import_db_builder.js',
   packagerSrc.indexOf('import_db_builder') >= 0);
 check('9.2 packager fetches locale_loader.js',
