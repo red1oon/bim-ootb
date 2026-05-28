@@ -118,7 +118,7 @@ function setupCity(A) {
     var _t0 = performance.now();
     var _totalBboxes = 0;
     var _cachedArchetypes = 0;
-    var _fallbackBuildings = 0;
+    var _skippedArch = 0;
     var cacheDb = await A.openCacheDB();
 
     // Group city instances by archetype: { archetype → [{ building, offsetX/Y/Z }] }
@@ -145,30 +145,11 @@ function setupCity(A) {
     var _scl = new THREE.Vector3();
     var _quat = new THREE.Quaternion();
 
-    // ── Fallback: building-level bboxes from city_index (LineSegments, clickable) ──
-    function _drawBuildingFallback(insts) {
-      for (var fi = 0; fi < insts.length; fi++) {
-        _fallbackBuildings++;
-        var fb = insts[fi];
-        var fbRows = A.cityDb.exec(`SELECT discipline, min_x, min_y, min_z, max_x, max_y, max_z FROM building_summary WHERE building = ?`, [fb.building]);
-        if (!fbRows.length) continue;
-        for (var fri = 0; fri < fbRows[0].values.length; fri++) {
-          var fr = fbRows[0].values[fri];
-          var fColor = A.DISC_COLORS[fr[0]] || A.DEFAULT_COLOR;
-          var fc = A.ifc2three((fr[1]+fr[4])/2, (fr[2]+fr[5])/2, (fr[3]+fr[6])/2);
-          var fsx = fr[4]-fr[1], fsy = (fr[6]-fr[3]), fsz = fr[5]-fr[2];
-          if (fsx < 0.1 || fsy < 0.1 || fsz < 0.1) continue;
-          var fGeo = new THREE.BoxGeometry(fsx, fsy, fsz);
-          var fEdges = new THREE.EdgesGeometry(fGeo);
-          fGeo.dispose();
-          var fLine = new THREE.LineSegments(fEdges,
-            new THREE.LineBasicMaterial({ color: fColor, opacity: 0.6, transparent: true }));
-          fLine.position.set(fc.x, fc.y, fc.z);
-          fLine.userData = { building: fb.building, discipline: fr[0] };
-          A.scene.add(fLine);
-        }
-      }
-    }
+    // §S285: No building-level fallback boxes. The city rests ONLY on exact per-element
+    // IFC AABBs from cached DBs — apples-to-apples with a normal viewer. The old big
+    // building-block boxes (drawn from city_index min/max, which include outlier elements
+    // down to z=-164) were what dragged the apparent floor low; removed. Uncached or
+    // old-schema archetypes draw nothing here; they appear once their DB is cached.
 
     for (var archName in archInstances) {
       var instances = archInstances[archName];
@@ -220,8 +201,8 @@ function setupCity(A) {
         archDb.close();
 
         if (!_hasBbox || !elemRows || !elemRows.length || !elemRows[0].values.length || !arcCen || !arcCen.length) {
-          if (!_hasBbox) console.warn(`[S285] §CITY_BBOX_DEGRADE archetype=${archName} no bbox_* columns — building-level fallback`);
-          _drawBuildingFallback(instances);
+          console.warn(`[S285] §CITY_BBOX_SKIP archetype=${archName} reason=${!_hasBbox ? 'no bbox_* columns' : 'no rows'} (exact AABBs only, no fallback)`);
+          _skippedArch++;
           continue;
         }
         _cachedArchetypes++;
@@ -268,12 +249,12 @@ function setupCity(A) {
           }
         }
       } else {
-        // ── Fallback: building-level bboxes from city_index ──
-        _drawBuildingFallback(instances);
+        // §S285: Uncached archetype — no fallback box; it appears once its DB is cached.
+        _skippedArch++;
       }
     }
     var _dt = (performance.now() - _t0).toFixed(0);
-    console.log(`[S285] §CITY_BBOX individual=${_totalBboxes.toLocaleString()} cachedArch=${_cachedArchetypes} fallback=${_fallbackBuildings} ms=${_dt}`);
+    console.log(`[S285] §CITY_BBOX individual=${_totalBboxes.toLocaleString()} cachedArch=${_cachedArchetypes} skippedArch=${_skippedArch} ms=${_dt}`);
     if (A.markDirty) A.markDirty();
 
     document.getElementById('s-buildings').textContent =
@@ -333,10 +314,20 @@ function setupCity(A) {
       const extUrl = A.BLD_BASE + files.db;
       const libUrl = A.BLD_BASE + files.lib;
 
-      const [extBuf, libBuf] = await Promise.all([
-        A.cachedFetch(extUrl),
-        A.cachedFetch(libUrl),
-      ]);
+      // §S285: A missing companion DB (e.g. library.db 404 for a split-DB building) must
+      // NOT throw an uncaught promise rejection. Catch, log §CITY_DL_FAIL, surface a
+      // status, and abort cleanly so the rest of city mode keeps working.
+      let extBuf, libBuf;
+      try {
+        [extBuf, libBuf] = await Promise.all([
+          A.cachedFetch(extUrl),
+          A.cachedFetch(libUrl),
+        ]);
+      } catch (e) {
+        console.warn(`[S285] §CITY_DL_FAIL archetype=${archetype} ${e.message}`);
+        A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_dl_failed||'Could not load {name} — {err}').replace('{name}', archetype).replace('{err}', e.message);
+        return;
+      }
 
       const extDb = new A.citySQL.Database(new Uint8Array(extBuf));
       const libDb2 = new A.citySQL.Database(new Uint8Array(libBuf));
