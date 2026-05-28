@@ -338,46 +338,55 @@ function setupCity(A) {
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_downloading||'Downloading {name}...').replace('{name}', archetype);
       const extUrl = A.BLD_BASE + files.db;
       const libUrl = A.BLD_BASE + files.lib;
-
-      // §S285 split-DB: large buildings (LTU etc.) are deployed as {arch}_meta.db (panels +
-      // transforms — same tables as extracted.db) + {arch}_geo.db (component_geometries — same
-      // role as library.db). HEAD-probe meta.db; if present, load meta+geo instead of
-      // extracted+library. Same downstream query/stream — we only swap which two files feed
-      // A.db (main) and A.libDb (geometry). Mirrors streaming.js §DB_SPLIT_DETECT.
       const metaUrl = extUrl.replace('_extracted.db', '_meta.db');
       const geoUrl  = extUrl.replace('_extracted.db', '_geo.db');
+
+      // §S285: three deployment formats — detect, don't assume:
+      //   (1) SPLIT     {arch}_meta.db + {arch}_geo.db        (large: LTU/Terminal/Clinic)
+      //   (2) SINGLE-DB {arch}_extracted.db w/ component_geometries inline  (SmileyWest, BimWhale…)
+      //   (3) OLD SPLIT {arch}_extracted.db + {arch}_library.db
+      // HEAD-probe meta.db → (1). Else fetch extracted.db, and if it has component_geometries
+      // inline → (2) libDb = db (mirrors streaming.js A.libDb = A.db). Else → (3) fetch library.
       let _split = false;
       if (metaUrl !== extUrl) {
         try { const h = await fetch(metaUrl, { method: 'HEAD' }); _split = h.ok; } catch (e) { _split = false; }
       }
-      const mainUrl = _split ? metaUrl : extUrl;
-      const auxUrl  = _split ? geoUrl  : libUrl;
-      console.log(`[S285] §CITY_DL_DETECT archetype=${archetype} split=${_split} main=${mainUrl.split('/').pop()} aux=${auxUrl.split('/').pop()}`);
-
-      // §S285: keep the bbox scene intact for a UNIFIED view — the streamed building should
-      // appear AMONG the surrounding city bboxes, not on a blanked stage. (We hide only the
-      // loaded building's own boxes once it streams; see _cityHideBuildingBboxes below.)
-      // Still log heap before/after a heavy split load so we can watch how the PWA copes.
-      if (_split) A._cityLogMem('before ' + archetype);
-
-      // A missing companion DB (e.g. library.db 404) must NOT throw an uncaught rejection.
-      let mainBuf, auxBuf;
+      let _mode, _mainDb, _auxDb, _mainMB = 0, _auxMB = 0;
       try {
-        [mainBuf, auxBuf] = await Promise.all([
-          A.cachedFetch(mainUrl),
-          A.cachedFetch(auxUrl),
-        ]);
+        if (_split) {
+          _mode = 'split-meta-geo';
+          A._cityLogMem('before ' + archetype);   // heavy split (geo.db can be ~400MB)
+          const [mb, gb] = await Promise.all([A.cachedFetch(metaUrl), A.cachedFetch(geoUrl)]);
+          _mainDb = new A.citySQL.Database(new Uint8Array(mb));
+          _auxDb  = new A.citySQL.Database(new Uint8Array(gb));
+          _mainMB = mb.byteLength/1048576; _auxMB = gb.byteLength/1048576;
+          A._cityLogMem('after ' + archetype);
+        } else {
+          const eb = await A.cachedFetch(extUrl);
+          _mainDb = new A.citySQL.Database(new Uint8Array(eb));
+          _mainMB = eb.byteLength/1048576;
+          // Inline geometry? → single-DB, no companion needed (libDb = db).
+          let _inline = false;
+          try { _inline = _mainDb.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='component_geometries'").length > 0; } catch (e) {}
+          if (_inline) {
+            _mode = 'single-db';
+            _auxDb = _mainDb;
+          } else {
+            _mode = 'extracted-library';
+            const lb = await A.cachedFetch(libUrl);
+            _auxDb = new A.citySQL.Database(new Uint8Array(lb));
+            _auxMB = lb.byteLength/1048576;
+          }
+        }
       } catch (e) {
-        console.warn(`[S285] §CITY_DL_FAIL archetype=${archetype} split=${_split} ${e.message}`);
+        // A missing/404 companion DB must NOT throw an uncaught rejection.
+        console.warn(`[S285] §CITY_DL_FAIL archetype=${archetype} ${e.message}`);
         A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_dl_failed||'Could not load {name} — {err}').replace('{name}', archetype).replace('{err}', e.message);
         return;
       }
 
-      const mainDb = new A.citySQL.Database(new Uint8Array(mainBuf));
-      const auxDb = new A.citySQL.Database(new Uint8Array(auxBuf));
-      A.cityBuildingDbs[archetype] = { db: mainDb, libDb: auxDb };
-      console.log(`[S285] §CITY_DL archetype=${archetype} split=${_split} main=${(mainBuf.byteLength/1024/1024).toFixed(1)}MB aux=${(auxBuf.byteLength/1024/1024).toFixed(1)}MB`);
-      if (_split) A._cityLogMem('after ' + archetype);
+      A.cityBuildingDbs[archetype] = { db: _mainDb, libDb: _auxDb };
+      console.log(`[S285] §CITY_DL archetype=${archetype} mode=${_mode} main=${_mainMB.toFixed(1)}MB aux=${_auxMB.toFixed(1)}MB`);
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_downloaded_bld||'Downloaded {name}. Streaming {bld}...').replace('{name}', archetype).replace('{bld}', buildingName);
     }
 
