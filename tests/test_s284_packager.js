@@ -77,11 +77,24 @@ check('5.2 sql-wasm.js assignment is single line (no unescaped breaks)',
   lines.length === 1,
   lines.length > 1 ? 'has ' + lines.length + ' lines — will cause SyntaxError' : '');
 
-// ── Step 6: web-ifc source check ──
-// web-ifc is fetched from CDN at package time — simulate with a mock
-var mockWebIfc = 'var WebIFC = {}; // mock\nconsole.log("web-ifc loaded");';
-var webIfcStringified = JSON.stringify(mockWebIfc);
-check('6.1 web-ifc JSON.stringify safe', webIfcStringified.indexOf('</script>') < 0);
+// ── Step 6: web-ifc source check (§S284b: now embedded as <script type="text/plain">) ──
+var mockWebIfc = 'var WebIFC = {}; // mock\nconsole.log("web-ifc loaded");\nvar x = "</script>";';
+// §S284b: escape </script> inside the source
+var safeWebIfc = mockWebIfc.replace(/<\/script>/gi, '<\\/script>');
+check('6.1 web-ifc </script> escaped for type=text/plain',
+  safeWebIfc.indexOf('</script>') < 0,
+  safeWebIfc.indexOf('</script>') >= 0 ? 'DANGER: unescaped </script> will close the block' : '');
+check('6.2 escaped form preserves content (reversible)',
+  safeWebIfc.replace(/<\\\/script>/gi, '</script>') === mockWebIfc);
+
+// §S284b: Simulate embedding as <script type="text/plain">
+var webIfcBlock = '<script type="text/plain" id="webifc-src">\n' + safeWebIfc + '\n<\/script>';
+check('6.3 webifc block has type=text/plain', /type="text\/plain"/.test(webIfcBlock));
+check('6.4 webifc block has id=webifc-src', /id="webifc-src"/.test(webIfcBlock));
+// Verify no literal </script> inside the content (between opening and closing tags)
+var innerContent = webIfcBlock.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
+check('6.5 no literal </script> inside webifc block content',
+  innerContent.indexOf('</script>') < 0);
 
 // ── Step 7: WASM base64 check ──
 var wasmBuf = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'lib', 'sql-wasm.wasm'));

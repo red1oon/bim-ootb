@@ -67,6 +67,6 @@ function setupConfig(A) {
   A.WALK_STEP_DISTANCE = 0.6;
   A.WALK_STEP_COOLDOWN_MS = 300;
 
-  // S250 §8: Contributed IFC Upload — set to OCI PAR URL for contributed/ prefix
+  // S250 §8: Contributed IFC Upload — OCI PAR URL for contributed/ prefix
   A.CONTRIBUTE_PAR = '';
 }

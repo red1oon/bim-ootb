@@ -221,8 +221,12 @@ check('9.0i _loadSqlJs helper exists',
   indexSrc.indexOf('function _loadSqlJs') >= 0);
 check('9.0j _loadSqlJs reads _SQL_WASM_B64',
   indexSrc.indexOf('_SQL_WASM_B64') >= 0);
-check('9.0k _createWorker prepends _WEBIFC_SRC',
-  indexSrc.indexOf('_WEBIFC_SRC') >= 0);
+check('9.0k _createWorker reads webifc-src DOM element',
+  indexSrc.indexOf("getElementById('webifc-src')") >= 0);
+check('9.0l packager embeds webifc as <script type="text/plain">',
+  packagerSrc.indexOf('type="text/plain" id="webifc-src"') >= 0);
+check('9.0m packager escapes </script> in web-ifc source',
+  packagerSrc.indexOf('<\\/script>') >= 0 || packagerSrc.indexOf("'<\\\\/script>'") >= 0);
 check('9.1 packager fetches import_db_builder.js',
   packagerSrc.indexOf('import_db_builder') >= 0);
 check('9.2 packager fetches locale_loader.js',
