@@ -1624,8 +1624,8 @@ async function exportProjectIFC(projectKey, flyout) {
     <div style="font-size:28px;font-weight:800;color:#e0e0e0;font-family:'Arial Black',Impact,sans-serif;letter-spacing:6px;line-height:1">BIM/ERP</div>
     <div style="font-size:11px;letter-spacing:4px;color:#4fc3f7;margin-bottom:14px;text-transform:uppercase">Out Of The Box</div>
 
-    <div style="font-size:15px;color:#ccc;line-height:1.5;margin-bottom:6px">Frictionless BIM/ERP. Two DBs.<br>One browser. Zero install.</div>
-    <div style="color:#e8a735;font-size:12px;font-style:italic;margin-bottom:14px">Probably the lightest BIM/ERP app ever made. ISO Pending.</div>
+    <div style="font-size:15px;color:#ccc;line-height:1.5;margin-bottom:6px">Frictionless BIM/ERP. PWA (Progressive Web Application)<br>Offline browser capable.</div>
+    <div style="color:#e8a735;font-size:12px;font-style:italic;margin-bottom:14px">Probably the best BIM5D/ERP in existence. ISO minded creator.</div>
 
     <div style="text-align:left;margin-bottom:14px;font-size:10.5px;line-height:1.85;color:#ccc">
       &#127963; <b style="color:#4fc3f7">3D IFC Viewer</b> &middot; 125K elements &middot; offline &middot; &lt;1s load<br>
@@ -1797,7 +1797,7 @@ async function packageLandingPage() {
       'window._openViewerBlob = function(qs) {\n' +
       '  var el = document.getElementById("viewer-html-src");\n' +
       '  if (!el) return null;\n' +
-      '  var vHtml = el.textContent.split("<\\/script>").join("</script>");\n' +
+      '  var vHtml = el.textContent.split("<\\/script>").join("</" + "script>");\n' +
       '  var blob = new Blob([vHtml], {type: "text/html"});\n' +
       '  var bUrl = URL.createObjectURL(blob);\n' +
       '  var win = (window._origOpen||window.open)(bUrl + qs, "_blank");\n' +
