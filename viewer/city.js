@@ -91,25 +91,17 @@ function setupCity(A) {
       A.modelOffset.z = (Math.min(...allIZ) + Math.max(...allIZ)) / 2;
     }
 
-    // §S285: City mode — keep the ground positioned but hidden. The default plane sat
-    // too high (occluding the bottom pill / blocking interaction). The Shadow toggle
-    // re-adds a ground plane when the user wants one.
+    // §S285: City mode — treat ground/sky exactly like a normal building viewer.
+    // Position the ground plane, but let the pills drive visibility: ground shows only
+    // when Shadow/Night is on (matches streaming.js §GROUND_INIT), and the Shadow pill
+    // owns the realistic sky. No city-specific overrides — the old code forced the
+    // ground visible at too-high a Y, occluding the bottom pill.
     const zRange = A.cityDb.exec(`SELECT MIN(min_z), MAX(max_z) FROM building_summary`);
     if (zRange.length > 0) {
-      const groundY = (zRange[0].values[0][0] - A.modelOffset.z) - 2;
-      A.ground.position.y = groundY;
+      A.ground.position.y = (zRange[0].values[0][0] - A.modelOffset.z) - 2;
     }
-    A.ground.visible = false;
-    console.log('[S285] §CITY_GROUND hidden (Shadow toggle restores a ground)');
-
-    // §S285: City mode — realistic Preetham sky on by default (mid-afternoon).
-    // Same path the Shadow toggle uses (tools.js); gives an outdoor horizon instead
-    // of the flat dark clear-color, and drives env-map reflections on buildings.
-    if (A._sky) {
-      A._sky.visible = true;
-      if (A.updateSky) A.updateSky(45, 180);
-      console.log('[S285] §CITY_SKY realistic Preetham sky enabled');
-    }
+    A.ground.visible = !!(A._shadowOn || A._nightMode);
+    console.log('[S285] §CITY_GROUND y=' + A.ground.position.y.toFixed(1) + ' visible=' + A.ground.visible + ' (pill-controlled, like buildings)');
 
     A.updateHUD();
     A.populateBuildingList();
