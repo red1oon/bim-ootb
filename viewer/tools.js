@@ -4,6 +4,15 @@ function setupTools(A) {
   // Strategy: find the ground-floor slab by storey name, fall back to lowest-storey largest slab.
   // Never picks roof/upper slabs. Ground = bottom face of the GF slab.
   A._calcGroundY = function() {
+    // §S285: city mode anchors every building's ground floor to y=0 (offZ = modelOffset.z
+    // - arcGroundZ in city.js). The per-building slab probe below uses the old
+    // (z - modelOffset.z) convention, which would place the shadow/night ground plane at
+    // the wrong height → buildings float above it. In city mode the plane is just y=0.
+    if (A.CITY_URL) {
+      if (A.ground) A.ground.position.y = 0;
+      console.log('§GROUND_Y city y=0 (ground-anchored)');
+      return;
+    }
     if (!A.db || !A.ground) return;
     var _gLvl = 0, _gSrc = '?';
     try {

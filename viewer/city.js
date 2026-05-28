@@ -167,19 +167,13 @@ function setupCity(A) {
       A.modelOffset.z = (Math.min(...allIZ) + Math.max(...allIZ)) / 2;
     }
 
-    // §S285: City mode — treat ground/sky exactly like a normal building viewer.
-    // Ground at the MEDIAN building base, not global MIN(min_z): a single outlier
-    // element (the city has one at z=-164) otherwise drags the ground ~164m below the
-    // city so every bbox floats. Median ignores outliers. Visibility is pill-controlled
-    // (Shadow/Night), matching streaming.js §GROUND_INIT, and the Shadow pill owns the sky.
-    const baseRows = A.cityDb.exec(`SELECT MIN(min_z) AS b FROM building_summary GROUP BY building`);
-    if (baseRows.length && baseRows[0].values.length) {
-      const bases = baseRows[0].values.map(r => r[0]).sort((a, b) => a - b);
-      const medianBase = bases[Math.floor(bases.length / 2)];
-      A.ground.position.y = (medianBase - A.modelOffset.z) - 2;
-    }
+    // §S285: every building is ground-anchored (its ground floor → y=0 via
+    // offZ = modelOffset.z - arcGroundZ), so the city ground plane is simply y=0.
+    // (The old median-of-min_z derivation was the pre-anchor convention and left
+    // buildings floating above the shadow/night ground plane.) Pill-controlled visibility.
+    A.ground.position.y = 0;
     A.ground.visible = !!(A._shadowOn || A._nightMode);
-    console.log('[S285] §CITY_GROUND y=' + A.ground.position.y.toFixed(1) + ' visible=' + A.ground.visible + ' (median base, pill-controlled)');
+    console.log('[S285] §CITY_GROUND y=0 visible=' + A.ground.visible + ' (ground-anchored)');
 
     A.updateHUD();
     A.populateBuildingList();

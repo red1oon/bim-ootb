@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v525';
+const CACHE_VERSION = 'v526';
 const CACHE_NAME = 'bim-ootb-' + CACHE_VERSION;
 
 // Local copies of vendor libs — single-origin, no CDN dependency
@@ -19,6 +19,8 @@ const LOCAL_LIBS = [
   'lib/OrbitControls.module.js',  // §S276: r184 ESM
   'lib/sql-wasm.js',
   'lib/sql-wasm.wasm',
+  'lib/web-ifc-api-iife.js',  // §S284c: IFC parser — precached so PWA imports IFC offline
+  'lib/web-ifc.wasm',          // §S284c: IFC parser WASM — local, no CDN dependency
   'lib/xlsx.full.min.js',
   'lib/chart.umd.min.js',
   'lib/exceljs.min.js',
