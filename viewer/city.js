@@ -146,6 +146,31 @@ function setupCity(A) {
     var _scl = new THREE.Vector3();
     var _quat = new THREE.Quaternion();
 
+    // ── Fallback: building-level bboxes from city_index (LineSegments, clickable) ──
+    function _drawBuildingFallback(insts) {
+      for (var fi = 0; fi < insts.length; fi++) {
+        _fallbackBuildings++;
+        var fb = insts[fi];
+        var fbRows = A.cityDb.exec(`SELECT discipline, min_x, min_y, min_z, max_x, max_y, max_z FROM building_summary WHERE building = ?`, [fb.building]);
+        if (!fbRows.length) continue;
+        for (var fri = 0; fri < fbRows[0].values.length; fri++) {
+          var fr = fbRows[0].values[fri];
+          var fColor = A.DISC_COLORS[fr[0]] || A.DEFAULT_COLOR;
+          var fc = A.ifc2three((fr[1]+fr[4])/2, (fr[2]+fr[5])/2, (fr[3]+fr[6])/2);
+          var fsx = fr[4]-fr[1], fsy = (fr[6]-fr[3]), fsz = fr[5]-fr[2];
+          if (fsx < 0.1 || fsy < 0.1 || fsz < 0.1) continue;
+          var fGeo = new THREE.BoxGeometry(fsx, fsy, fsz);
+          var fEdges = new THREE.EdgesGeometry(fGeo);
+          fGeo.dispose();
+          var fLine = new THREE.LineSegments(fEdges,
+            new THREE.LineBasicMaterial({ color: fColor, opacity: 0.6, transparent: true }));
+          fLine.position.set(fc.x, fc.y, fc.z);
+          fLine.userData = { building: fb.building, discipline: fr[0] };
+          A.scene.add(fLine);
+        }
+      }
+    }
+
     for (var archName in archInstances) {
       var instances = archInstances[archName];
       var bldEntry = null;
@@ -171,21 +196,36 @@ function setupCity(A) {
 
       if (cachedBuf) {
         // ── Individual element AABBs from cached DB ──
-        _cachedArchetypes++;
+        // §S285: Older extractions lack bbox_* columns in element_transforms. Probe the
+        // schema first; if absent (or any query throws) degrade gracefully to building-level
+        // bboxes instead of throwing an uncaught error that would abort the whole city init
+        // (no §CITY_BBOX / §CITY_READY, blank scene).
         var archDb = new SQL.Database(new Uint8Array(cachedBuf));
-
-        // Get element positions + bboxes + discipline
-        var elemRows = archDb.exec(`
-          SELECT m.discipline, t.center_x, t.center_y, t.center_z,
-                 t.bbox_x, t.bbox_y, t.bbox_z
-          FROM element_transforms t
-          JOIN elements_meta m ON t.guid = m.guid
-        `);
-        // Compute archetype centre for offset calculation
-        var arcCen = archDb.exec(`SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms`);
+        var elemRows = null, arcCen = null, _hasBbox = false;
+        try {
+          var _cols = archDb.exec(`PRAGMA table_info(element_transforms)`);
+          _hasBbox = _cols.length && _cols[0].values.some(function(c){ return c[1] === 'bbox_x'; });
+          if (_hasBbox) {
+            elemRows = archDb.exec(`
+              SELECT m.discipline, t.center_x, t.center_y, t.center_z,
+                     t.bbox_x, t.bbox_y, t.bbox_z
+              FROM element_transforms t
+              JOIN elements_meta m ON t.guid = m.guid
+            `);
+            arcCen = archDb.exec(`SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms`);
+          }
+        } catch (e) {
+          console.warn(`[S285] §CITY_BBOX_DEGRADE archetype=${archName} reason=${e.message}`);
+          elemRows = null;
+        }
         archDb.close();
 
-        if (!elemRows.length || !elemRows[0].values.length || !arcCen.length) continue;
+        if (!_hasBbox || !elemRows || !elemRows.length || !elemRows[0].values.length || !arcCen || !arcCen.length) {
+          if (!_hasBbox) console.warn(`[S285] §CITY_BBOX_DEGRADE archetype=${archName} no bbox_* columns — building-level fallback`);
+          _drawBuildingFallback(instances);
+          continue;
+        }
+        _cachedArchetypes++;
         var arcX = arcCen[0].values[0][0];
         var arcY = arcCen[0].values[0][1];
         var arcZ = arcCen[0].values[0][2];
@@ -230,27 +270,7 @@ function setupCity(A) {
         }
       } else {
         // ── Fallback: building-level bboxes from city_index ──
-        for (var fi = 0; fi < instances.length; fi++) {
-          _fallbackBuildings++;
-          var fb = instances[fi];
-          var fbRows = A.cityDb.exec(`SELECT discipline, min_x, min_y, min_z, max_x, max_y, max_z FROM building_summary WHERE building = ?`, [fb.building]);
-          if (!fbRows.length) continue;
-          for (var fri = 0; fri < fbRows[0].values.length; fri++) {
-            var fr = fbRows[0].values[fri];
-            var fColor = A.DISC_COLORS[fr[0]] || A.DEFAULT_COLOR;
-            var fc = A.ifc2three((fr[1]+fr[4])/2, (fr[2]+fr[5])/2, (fr[3]+fr[6])/2);
-            var fsx = fr[4]-fr[1], fsy = (fr[6]-fr[3]), fsz = fr[5]-fr[2];
-            if (fsx < 0.1 || fsy < 0.1 || fsz < 0.1) continue;
-            var fGeo = new THREE.BoxGeometry(fsx, fsy, fsz);
-            var fEdges = new THREE.EdgesGeometry(fGeo);
-            fGeo.dispose();
-            var fLine = new THREE.LineSegments(fEdges,
-              new THREE.LineBasicMaterial({ color: fColor, opacity: 0.6, transparent: true }));
-            fLine.position.set(fc.x, fc.y, fc.z);
-            fLine.userData = { building: fb.building, discipline: fr[0] };
-            A.scene.add(fLine);
-          }
-        }
+        _drawBuildingFallback(instances);
       }
     }
     var _dt = (performance.now() - _t0).toFixed(0);
