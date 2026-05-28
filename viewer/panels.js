@@ -914,46 +914,261 @@ function setupPanels(A) {
     var trigger = document.getElementById('mobile-trigger');
     if (!pill || !trigger) return;
     if (typeof PillBuilder !== 'function') { console.warn('§PILL pill_builder.js not loaded'); return; }
+    // §S282: ONE list — icon + shortcut + Help description + Settings toggle.
+    // Icons reference ICONS registry (no inline SVG duplication).
+    // pill:false entries appear in Help/Settings but not in the pill strip.
+    var I = ICONS; // shorthand
     var _actions = [
-      { id: 'redpill',   platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); }, isActive: function() { return !!window._docMode; } },
-      { id: 'find',      icon: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', fn: function() { if (A.openFindPanel) A.openFindPanel(''); } },
-      { id: 'help',      icon: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
-      { id: 'walk',      platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
-      { id: 'share',     icon: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', fn: function() { if (A.quickShare) A.quickShare(); } },
-      { id: 'measure',   keepOpen: true, icon: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+      { id: 'redpill',    name: 'Doc Mode',       key: ',', platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); }, isActive: function() { return !!window._docMode; } },
+      { id: 'find',       name: 'Find / Navigate', key: 'f', icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
+        children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
+      { id: 'help',       name: 'Help',            key: 'F1', icon: I.lifeBuoy.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
+      { id: 'walk',       name: 'Walk',            platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
+      { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
+      { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
-        hold: function(btn) { _revealChip(btn, 'clash', '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
+        hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
         isActive: function() { return !!A._measureOn; } },
-      { id: 'xray',      icon: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', fn: function() { if (typeof toggleXray === 'function') toggleXray(); }, isActive: function() { return !!A._xrayOn; } },
-      { id: 'tm',        icon: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; } },
-      { id: 'section',   icon: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; } },
-      { id: 'background', keepOpen: true, icon: '<circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/>',
+      { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
+        fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
+        children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1\u2013100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
+      { id: 'xray',       name: 'X-Ray',           key: 'Alt+Z', icon: I.eye.svg, fn: function() { if (typeof toggleXray === 'function') toggleXray(); }, isActive: function() { return !!A._xrayOn; } },
+      { id: 'tm',         name: 'Time Machine',    key: 't', icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
+        children: [ { name: 'Gantt timeline' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
+      { id: 'section',    name: 'Section Cut',     key: 'x', icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
+        children: [ { name: 'Y axis (vertical)' }, { name: 'X axis (lateral)' }, { name: 'Z axis (depth)' }, { name: 'Slider 0\u2013100%' }, { name: 'Bookmarks' } ] },
+      { id: 'background', name: 'Background',      key: 'b', keepOpen: true, icon: I.contrast.svg,
         fn: function() { if (typeof window.toggleBackground === 'function') window.toggleBackground(); },
-        hold: function(btn) { _revealChip(btn, 'screenshot', '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', function(){ if (A.screenshot) A.screenshot(); }); },
+        hold: function(btn) { _revealChip(btn, 'screenshot', I.camera.svg, function(){ if (A.screenshot) A.screenshot(); }); },
         isActive: function() { return !!A._whiteBg; } },
-      { id: 'night',     icon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>', fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightOn; } },
-      { id: 'palette',   icon: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>', fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A._sunglassOn; } },
-      { id: 'shadow',    icon: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
-      { id: 'fly',       icon: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A._flyOn; } },
-      { id: 'report',    icon: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', fn: function() { if (A.export4D5D) A.export4D5D(); } },
-      { id: 'precision', keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
+      { id: 'screenshot', name: 'Screenshot',      key: 's', pill: false, icon: I.camera.svg, fn: function() { if (A.screenshot) A.screenshot(); } },
+      { id: 'night',      name: 'Night',           key: 'n', icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightOn; } },
+      { id: 'palette',    name: 'Palette',         key: 'p', icon: I.palette.svg, fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A._sunglassOn; },
+        children: [ { name: 'Ambience 0\u2013100' }, { name: 'Sun 0\u20135' }, { name: 'Exposure 0.1\u20133' }, { name: 'Ambient 0\u20132' }, { name: 'Hemisphere 0\u20132' } ] },
+      { id: 'shadow',     name: 'Shadow',          key: 'h', icon: I.cloud.svg, fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
+      { id: 'fly',        name: 'Fly Tour',        key: 'l', icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A._flyOn; } },
+      { id: 'report',     name: '4D / 5D',         key: '4', icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
+      { id: '2d',         name: '2D Grid',         key: '2', pill: false, icon: I.layout.svg, fn: function() { if (typeof window.open2DPlans === 'function') window.open2DPlans(); } },
+      { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
+        fn: function() { if (typeof toggleIssues === 'function') toggleIssues(); },
+        children: [ { name: 'Snag photo + annotation' }, { name: 'Fly to clash deep-link' }, { name: 'Export Excel' } ] },
+      { id: 'record',     name: 'Record',          key: 'r', pill: false, icon: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+        fn: function() { if (typeof toggleRecord === 'function') toggleRecord(); } },
+      { id: 'fullscreen', name: 'Fullscreen',      key: 'F11', pill: false, icon: I.maximize.svg,
+        fn: function() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } },
+      { id: 'precision',  name: 'Precision',       keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
         fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); },
         hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); },
         isActive: function() { return !!window._precisionFine; } },
-      { id: 'home',      icon: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', fn: function() { location.href = '../index.html'; } },
-      { id: 'settings',  icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
-        fn: function() {
-          var p = document.getElementById('settings-panel');
-          if (p) { p.style.display = p.style.display === 'none' ? '' : 'none'; return; }
-          p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'60px', right:'60px', zIndex:'1100', width:'260px', padding:'16px' },
-            content: '<h3 style="margin:0 0 12px;color:#4fc3f7;font-size:14px">Settings</h3><p style="color:#888;font-size:12px;margin:0">UNDER CONSTRUCTION</p>',
-            onClose: function() { _syncPillHighlights(); } });
-          document.body.appendChild(p);
-          if (window.InputReg) InputReg.register({ id: 'settings', el: p, kind: 'panel', release: function() { p.style.display = 'none'; } });
-          console.log('§SETTINGS_PANEL created');
-        },
+      { id: 'home',       name: 'Home',            icon: I.home.svg, fn: function() { location.href = '../index.html'; } },
+      { id: 'settings',   name: 'Settings',        key: '=', icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+        fn: function() { _openSettingsPanel(); },
         isActive: function() { var p = document.getElementById('settings-panel'); return p && p.style.display !== 'none'; } }
     ];
+
+    // §S282: Settings property sheet — accordion sections → rows → fields
+    function _openSettingsPanel() {
+      var p = document.getElementById('settings-panel');
+      if (p) { p.style.display = p.style.display === 'none' ? '' : 'none'; return; }
+
+      // Build property sheet content
+      var content = document.createElement('div');
+      content.style.cssText = 'font-size:13px;color:#ccc;';
+
+      // ── Section: Pill Icons ──
+      var sec = _buildSection('Pill Icons', true, function() { return _buildPillRows(); });
+      content.appendChild(sec);
+
+      // ── Reset button ──
+      var resetBtn = document.createElement('button');
+      resetBtn.textContent = 'Reset to Defaults';
+      resetBtn.style.cssText = 'margin:12px 0 0;padding:8px 16px;border:1px solid rgba(108,159,255,0.2);border-radius:8px;background:transparent;color:#6c9fff;font-size:12px;cursor:pointer;width:100%;';
+      resetBtn.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        if (!_mainPill) return;
+        _mainPill.resetConfig();
+        // Rebuild Settings panel content
+        var bd = sec.querySelector('.settings-bd');
+        if (bd) { bd.innerHTML = ''; bd.appendChild(_buildPillRows()); }
+        if (A.status) A.status.textContent = 'Defaults restored';
+      });
+      content.appendChild(resetBtn);
+
+      p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'60px', right:'60px', zIndex:'1100', width:'300px', padding:'0' },
+        content: content,
+        onClose: function() { _syncPillHighlights(); } });
+      document.body.appendChild(p);
+      if (window.InputReg) InputReg.register({ id: 'settings', el: p, kind: 'panel', release: function() { p.style.display = 'none'; } });
+      console.log('§SETTINGS_PANEL created');
+    }
+
+    // §S282: Accordion section — ERP .acc pattern (chevron, expand/collapse)
+    function _buildSection(title, startOpen, buildContent) {
+      var sec = document.createElement('div');
+      sec.style.cssText = 'margin:0;border-radius:0;overflow:hidden;background:transparent;';
+
+      // Header
+      var hd = document.createElement('div');
+      hd.style.cssText = 'padding:14px 18px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:rgba(108,159,255,0.03);transition:background 150ms;';
+      var chv = document.createElement('span');
+      chv.textContent = '\u25B6';
+      chv.style.cssText = 'font-size:11px;color:#6c9fff;margin-right:8px;display:inline-block;transition:transform 250ms;';
+      if (startOpen) chv.style.transform = 'rotate(90deg)';
+      var lbl = document.createElement('span');
+      lbl.style.cssText = 'font-weight:600;color:#8ab4ff;font-size:13px;';
+      lbl.textContent = title;
+      var left = document.createElement('span');
+      left.appendChild(chv); left.appendChild(lbl);
+      hd.appendChild(left);
+      sec.appendChild(hd);
+
+      // Body
+      var bd = document.createElement('div');
+      bd.className = 'settings-bd';
+      bd.style.cssText = 'max-height:' + (startOpen ? '70vh' : '0') + ';overflow:hidden;transition:max-height 300ms ease;padding:0 4px;';
+      if (startOpen) { bd.style.overflowY = 'auto'; bd.appendChild(buildContent()); }
+      sec.appendChild(bd);
+
+      // Toggle
+      hd.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        var open = bd.style.maxHeight !== '0px' && bd.style.maxHeight !== '0';
+        if (open) {
+          bd.style.maxHeight = '0'; bd.style.overflowY = 'hidden';
+          chv.style.transform = 'rotate(0deg)';
+        } else {
+          if (!bd.children.length) bd.appendChild(buildContent());
+          bd.style.maxHeight = '70vh'; bd.style.overflowY = 'auto';
+          chv.style.transform = 'rotate(90deg)';
+        }
+      });
+      return sec;
+    }
+
+    // §S282: Build pill icon rows — drag-reorder + toggle + key badge
+    function _buildPillRows() {
+      var container = document.createElement('div');
+      if (!_mainPill) return container;
+      var cfg = _mainPill.getConfig();
+      var order = cfg.order;
+      var hidden = cfg.hidden || [];
+
+      // Sort actions by current order
+      var sorted = _actions.slice().sort(function(a, b) {
+        var ai = order.indexOf(a.id), bi = order.indexOf(b.id);
+        if (ai < 0) ai = 9999; if (bi < 0) bi = 9999;
+        return ai - bi;
+      });
+
+      // Drag state
+      var _dragEl = null, _dragId = null, _placeholder = null;
+
+      sorted.forEach(function(act) {
+        var row = document.createElement('div');
+        row.setAttribute('data-action-id', act.id);
+        row.style.cssText = 'display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:grab;user-select:none;transition:background 150ms;';
+
+        // Drag handle
+        var handle = document.createElement('span');
+        handle.textContent = '\u2261'; // ≡
+        handle.style.cssText = 'font-size:16px;color:#555;margin-right:10px;cursor:grab;';
+
+        // Icon preview
+        var iconWrap = document.createElement('span');
+        iconWrap.style.cssText = 'width:20px;height:20px;margin-right:8px;display:inline-flex;align-items:center;justify-content:center;opacity:0.7;';
+        if (act.img) iconWrap.innerHTML = '<img src="' + act.img + '" width="16" height="16">';
+        else if (act.icon) iconWrap.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
+
+        // Label
+        var label = document.createElement('span');
+        label.textContent = act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1));
+        label.style.cssText = 'flex:1;font-size:12px;color:#ccc;';
+
+        // Key badge
+        if (act.key) {
+          var badge = document.createElement('span');
+          badge.textContent = act.key.toUpperCase();
+          badge.style.cssText = 'font-size:10px;color:#6c9fff;background:rgba(108,159,255,0.1);padding:2px 6px;border-radius:4px;margin-right:8px;font-family:monospace;';
+          label.appendChild(document.createTextNode(' '));
+          label.appendChild(badge);
+        }
+
+        // Toggle (show/hide)
+        var tog = document.createElement('button');
+        var isHidden = hidden.indexOf(act.id) >= 0;
+        tog.textContent = isHidden ? '\u25CB' : '\u25CF'; // ○ or ●
+        tog.title = isHidden ? 'Hidden' : 'Visible';
+        tog.style.cssText = 'border:none;background:none;font-size:14px;cursor:pointer;padding:4px 6px;color:' + (isHidden ? '#555' : '#4fc3f7') + ';';
+        if (isHidden) row.style.opacity = '0.5';
+        tog.addEventListener('pointerup', function(e) {
+          e.stopPropagation();
+          var c = _mainPill.getConfig();
+          var h = c.hidden || [];
+          var idx = h.indexOf(act.id);
+          if (idx >= 0) { h.splice(idx, 1); tog.textContent = '\u25CF'; tog.style.color = '#4fc3f7'; row.style.opacity = '1'; tog.title = 'Visible'; }
+          else { h.push(act.id); tog.textContent = '\u25CB'; tog.style.color = '#555'; row.style.opacity = '0.5'; tog.title = 'Hidden'; }
+          c.hidden = h;
+          _mainPill.setConfig(c);
+        });
+
+        row.appendChild(handle);
+        row.appendChild(iconWrap);
+        row.appendChild(label);
+        row.appendChild(tog);
+        container.appendChild(row);
+
+        // ── Drag-to-reorder via pointer events ──
+        row.addEventListener('pointerdown', function(e) {
+          if (e.target === tog) return; // don't drag on toggle click
+          e.preventDefault();
+          _dragEl = row; _dragId = act.id;
+          row.style.background = 'rgba(108,159,255,0.1)';
+          row.setPointerCapture(e.pointerId);
+
+          // Create placeholder
+          _placeholder = document.createElement('div');
+          _placeholder.style.cssText = 'height:2px;background:#4fc3f7;margin:0 12px;border-radius:1px;';
+
+          var _lastY = e.clientY;
+          function onMove(ev) {
+            var rows = Array.from(container.querySelectorAll('[data-action-id]'));
+            // Remove old placeholder
+            if (_placeholder.parentNode) _placeholder.parentNode.removeChild(_placeholder);
+            // Find insertion point
+            var insertBefore = null;
+            for (var i = 0; i < rows.length; i++) {
+              var rect = rows[i].getBoundingClientRect();
+              if (ev.clientY < rect.top + rect.height / 2) { insertBefore = rows[i]; break; }
+            }
+            if (insertBefore && insertBefore !== _dragEl) container.insertBefore(_placeholder, insertBefore);
+            else if (!insertBefore) container.appendChild(_placeholder);
+          }
+          function onUp(ev) {
+            row.releasePointerCapture(ev.pointerId);
+            row.removeEventListener('pointermove', onMove);
+            row.removeEventListener('pointerup', onUp);
+            row.style.background = '';
+            // Determine new position
+            if (_placeholder && _placeholder.parentNode) {
+              container.insertBefore(_dragEl, _placeholder);
+              _placeholder.parentNode.removeChild(_placeholder);
+            }
+            // Read new order from DOM
+            var newOrder = [];
+            var rows = container.querySelectorAll('[data-action-id]');
+            for (var i = 0; i < rows.length; i++) newOrder.push(rows[i].getAttribute('data-action-id'));
+            // Persist
+            var c = _mainPill.getConfig();
+            c.order = newOrder;
+            _mainPill.setConfig(c);
+            _dragEl = null; _dragId = null; _placeholder = null;
+          }
+          row.addEventListener('pointermove', onMove);
+          row.addEventListener('pointerup', onUp);
+        });
+      });
+      return container;
+    }
 
     // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
     // Usefulness: frequent tools near bottom (thumb reach), rare at top
@@ -963,7 +1178,7 @@ function setupPanels(A) {
     var _mainPill = PillBuilder({
       pill: pill, trigger: trigger, APP: A,
       actions: _actions, order: _defaultOrder,
-      storageKey: 'bim_mobile_pill_order'
+      storageKey: 'bim_pill_config'
     });
 
     // Expose for toggleDocPill restore + keyboard shortcut
@@ -971,6 +1186,19 @@ function setupPanels(A) {
     window._syncPillHighlights = _mainPill.sync;
     window.toggleMobilePill = _mainPill.toggle;
     window._mainPillActions = _mainPill.actions; // §S281: exposed for Help panel dynamic merge
+
+    // §S282: Shortcut audit — cross-check key props vs scene.js _shortcuts at init
+    setTimeout(function() {
+      var sc = window._shortcuts;
+      if (!sc) { console.log('§SHORTCUT_AUDIT skipped — _shortcuts not available'); return; }
+      var ok = 0, miss = 0;
+      _actions.forEach(function(act) {
+        if (!act.key) return;
+        if (sc[act.key]) ok++;
+        else { miss++; console.warn('§SHORTCUT_AUDIT MISS action=' + act.id + ' key=' + act.key + ' — no scene.js shortcut'); }
+      });
+      console.log('§SHORTCUT_AUDIT matched=' + ok + ' missing=' + miss);
+    }, 2000);
 
     // §S280: Undo via kernel_ops
     var _redoBtn = null;

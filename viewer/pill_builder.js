@@ -76,22 +76,39 @@
     var A = opts.APP || {};
     var _actions = opts.actions || [];
     var _defaultOrder = opts.order || _actions.map(function(a) { return a.id; });
-    var _LS_KEY = opts.storageKey || 'bim_pill_order';
+    var _CFG_KEY = opts.storageKey || 'bim_pill_config';
     var _pillOpen = false;
     var HOLD_MS = 450;
 
-    // ── Order persistence ──
-    function _getOrder() {
-      try { var s = localStorage.getItem(_LS_KEY); if (s) return JSON.parse(s); } catch(e) {}
-      return _defaultOrder.slice();
+    // ── Config persistence: { order: [], hidden: [] } ──
+    function _getConfig() {
+      try {
+        var s = localStorage.getItem(_CFG_KEY);
+        if (s) {
+          var cfg = JSON.parse(s);
+          // Migration: old format was plain array (order only)
+          if (Array.isArray(cfg)) return { order: cfg, hidden: [] };
+          return { order: cfg.order || _defaultOrder.slice(), hidden: cfg.hidden || [] };
+        }
+      } catch(e) {}
+      return { order: _defaultOrder.slice(), hidden: [] };
     }
+    function _setConfig(cfg) {
+      try { localStorage.setItem(_CFG_KEY, JSON.stringify(cfg)); } catch(e) {}
+      console.log('§SETTINGS_SAVE items=' + cfg.order.length + ' hidden=' + (cfg.hidden ? cfg.hidden.length : 0));
+    }
+    function _getOrder() { return _getConfig().order; }
     function _bumpAction(id) {
-      var order = _getOrder();
-      var idx = order.indexOf(id);
-      if (idx >= 0) order.splice(idx, 1);
-      order.push(id);
-      try { localStorage.setItem(_LS_KEY, JSON.stringify(order)); } catch(e) {}
-      return order;
+      var cfg = _getConfig();
+      var idx = cfg.order.indexOf(id);
+      if (idx >= 0) cfg.order.splice(idx, 1);
+      cfg.order.push(id);
+      _setConfig(cfg);
+      return cfg.order;
+    }
+    function _resetConfig() {
+      try { localStorage.removeItem(_CFG_KEY); } catch(e) {}
+      console.log('§SETTINGS_RESET defaults restored');
     }
 
     // ── Chip (long-press secondary) ──
@@ -169,7 +186,9 @@
     // ── Build pill DOM ──
     function _build() {
       pill.innerHTML = '';
-      var order = _getOrder();
+      var cfg = _getConfig();
+      var order = cfg.order;
+      var hidden = cfg.hidden || [];
       var sorted = _actions.slice().sort(function(a, b) {
         var ai = order.indexOf(a.id), bi = order.indexOf(b.id);
         if (ai < 0) ai = -1; if (bi < 0) bi = -1;
@@ -177,6 +196,9 @@
       });
       var _onMobile = !!window._isMobile;
       sorted.forEach(function(act) {
+        // §S282: skip hidden actions and pill:false entries
+        if (act.pill === false) return;
+        if (hidden.indexOf(act.id) >= 0) return;
         var btn = document.createElement('button');
         btn.title = act.id;
         btn.id = 'pill-' + act.id;
@@ -251,7 +273,10 @@
       isOpen:  function() { return _pillOpen; },
       toggle:  _toggle,
       close:   _close,
-      revealChip: _revealChip
+      revealChip: _revealChip,
+      getConfig:   _getConfig,
+      setConfig:   function(cfg) { _setConfig(cfg); _build(); _sync(); },
+      resetConfig: function() { _resetConfig(); _build(); _sync(); }
     };
   }
 
