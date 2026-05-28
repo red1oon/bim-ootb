@@ -101,6 +101,17 @@ function setupCity(A) {
     A.updateHUD();
     A.populateBuildingList();
 
+    // §S285: Show building list in city mode — was hidden by S280 UI overhaul
+    var bldList = document.getElementById('building-list');
+    if (bldList) {
+      bldList.style.cssText = 'display:block;position:fixed;top:60px;left:12px;z-index:20;' +
+        'background:rgba(17,17,17,0.95);border:1px solid #333;border-radius:10px;' +
+        'padding:8px;max-height:70vh;overflow-y:auto;width:220px;' +
+        'backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.5)';
+      // Also show parent if hidden
+      if (bldList.parentElement) bldList.parentElement.style.display = 'block';
+    }
+
     const bboxRows = A.cityDb.exec(`
       SELECT building, discipline,
         min_x, min_y, min_z, max_x, max_y, max_z
