@@ -931,18 +931,25 @@ async function setupScene(A) {
       'border-radius:12px;width:320px;box-shadow:0 8px 32px rgba(0,0,0,0.6);' +
       'font-family:\'Segoe UI\',sans-serif;overflow:hidden';
 
-    // §S283: Blue triangle badge — "Download · Run Offline"
-    // Hidden if already standalone or browser doesn't support install and not iOS
-    var _showBadge = !_isStandalone && (_installPrompt || /iPhone|iPad|iPod/.test(navigator.userAgent));
-    var badgeHtml = _showBadge ?
-      '<div id="cmd-install-badge" title="Download \xB7 Run Offline" style="position:absolute;top:0;right:0;' +
+    // §S283: Blue/Green triangle badge — always visible
+    // Blue (#4fc3f7) = not installed, Green (#4caf50) = installed/standalone
+    var _pwaInstalled = _isStandalone || window._pwaAccepted;
+    var _badgeColor = _pwaInstalled ? '#4caf50' : '#4fc3f7';
+    var _badgeTitle = _pwaInstalled ? 'Installed \u2714' : 'Download \xB7 Run Offline';
+    var _badgeIcon = _pwaInstalled
+      ? '<polyline points="20 6 9 17 4 12"/>'  // checkmark
+      : '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>';  // download arrow
+    console.log('§PWA_BADGE state=' + (_pwaInstalled ? 'green' : 'blue') +
+      ' standalone=' + _isStandalone + ' accepted=' + !!window._pwaAccepted +
+      ' prompt=' + !!_installPrompt);
+    var badgeHtml =
+      '<div id="cmd-install-badge" title="' + _badgeTitle + '" style="position:absolute;top:0;right:0;' +
       'width:0;height:0;border-style:solid;border-width:0 48px 48px 0;' +
-      'border-color:transparent #4fc3f7 transparent transparent;cursor:pointer;z-index:1;border-radius:0 12px 0 0">' +
+      'border-color:transparent ' + _badgeColor + ' transparent transparent;cursor:pointer;z-index:1;border-radius:0 12px 0 0">' +
       '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
       'stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" ' +
       'style="position:absolute;top:4px;right:-42px">' +
-      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
-      '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>' : '';
+      _badgeIcon + '</svg></div>';
 
     var html = '<div style="padding:6px 14px;color:#888;font-size:10px;border-bottom:1px solid #222;text-align:center">' +
       badgeHtml +
@@ -962,15 +969,21 @@ async function setupScene(A) {
     pal.innerHTML = html;
     document.body.appendChild(pal);
 
-    // §S283: Wire badge click → download flow
+    // §S283: Wire badge click — blue=download, green=check update
     var badge = document.getElementById('cmd-install-badge');
     if (badge) {
       badge.addEventListener('click', function(e) {
         e.stopPropagation();
         pal.remove();
-        _startOfflineDownload();
+        if (_pwaInstalled) {
+          console.log('§PWA_BADGE click=update (green)');
+          _checkUpdate();
+        } else {
+          console.log('§PWA_BADGE click=download (blue)');
+          _startOfflineDownload();
+        }
       });
-      console.log('§PWA_BADGE rendered');
+      console.log('§PWA_BADGE rendered color=' + _badgeColor);
     }
 
     var searchInput = document.getElementById('cmd-search');
@@ -1230,6 +1243,7 @@ async function setupScene(A) {
         console.log('§PWA_INSTALL choice=' + r.outcome);
         _installPrompt = null;
         if (r.outcome === 'accepted') {
+          window._pwaAccepted = true;  // §S283: badge turns green on next Help open
           ov.setText('Installed! Find it on your home screen.');
         } else {
           ov.setText('Cancelled. Files are still cached for offline use.');
@@ -1244,8 +1258,9 @@ async function setupScene(A) {
       _showIOSGuide();
       return;
     }
-    // Firefox / other — no install support
-    ov.setText('Your browser doesn\'t support app install.\nFiles are cached \u2014 bookmark this page for offline use.');
+    // No prompt available — prompt was consumed or browser doesn't support install
+    console.log('§PWA_INSTALL no_prompt available. consumed=' + !_installPrompt + ' iOS=false');
+    ov.setText('Files cached for offline use. Reload page to retry install.');
     setTimeout(function() { ov.close(); }, 4000);
   }
 
