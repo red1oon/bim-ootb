@@ -1184,6 +1184,89 @@ console.log('\n§S282b_TEST Shortcut function wiring — _shortcuts dispatch');
 
 
 // ══════════════════════════════════════════════
+// PART 7: _isMobile registry — single source in config.js, no re-detection
+// ══════════════════════════════════════════════
+console.log('\n§S282b_TEST _isMobile registry — single source, no re-detection');
+
+(function() {
+  var uiFiles = [
+    'pill_builder.js', 'clash_matrix.js', 'measure.js', 'navigate_controls.js',
+    'panels.js', 'time_machine.js', 'main.js'
+  ];
+  var rendererFiles = ['effects.js', 'streaming.js', 'scene.js'];
+
+  var configSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'config.js'), 'utf8');
+  var setMatches = configSrc.match(/window\._isMobile\s*=/g) || [];
+  check('21.1 config.js sets window._isMobile exactly once', setMatches.length === 1);
+  check('21.2 config.js uses ontouchstart', configSrc.indexOf('ontouchstart') >= 0);
+  check('21.3 config.js uses maxTouchPoints', configSrc.indexOf('maxTouchPoints') >= 0);
+
+  var reDetectPattern = /('ontouchstart'\s*in\s*window|navigator\.maxTouchPoints\s*>)/;
+  var violations = [];
+  uiFiles.forEach(function(f) {
+    var src;
+    try { src = fs.readFileSync(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
+    src.split('\n').forEach(function(line, idx) {
+      if (reDetectPattern.test(line)) {
+        violations.push(f + ':' + (idx + 1) + ' → ' + line.trim().slice(0, 80));
+      }
+    });
+  });
+  check('21.4 no UI file re-detects mobile (' + uiFiles.length + ' files checked)',
+    violations.length === 0,
+    violations.length ? violations.join(' | ') : '');
+
+  var localCopyPattern = /var\s+_isMobile\s*=/;
+  var copies = [];
+  uiFiles.forEach(function(f) {
+    var src;
+    try { src = fs.readFileSync(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
+    src.split('\n').forEach(function(line, idx) {
+      if (localCopyPattern.test(line)) {
+        copies.push(f + ':' + (idx + 1));
+      }
+    });
+  });
+  check('21.5 no UI file has var _isMobile local copy', copies.length === 0,
+    copies.length ? copies.join(', ') : '');
+
+  rendererFiles.forEach(function(f) {
+    var src;
+    try { src = fs.readFileSync(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
+    var hasScreenWidth = src.indexOf('screen.width') >= 0;
+    check('21.7.' + f + ' has screen.width threshold (renderer-specific)', hasScreenWidth);
+  });
+
+  var mainSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'main.js'), 'utf8');
+  var mainSets = (mainSrc.match(/window\._isMobile\s*=/g) || []);
+  check('21.8 main.js does NOT set window._isMobile', mainSets.length === 0);
+
+  var pbSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'pill_builder.js'), 'utf8');
+  check('21.9 pill_builder.js reads window._isMobile', pbSrc.indexOf('window._isMobile') >= 0);
+
+  var viewerHtml = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'viewer.html'), 'utf8');
+  var configPos = viewerHtml.indexOf('src="config.js');
+  var pillPos = viewerHtml.indexOf('src="pill_builder.js');
+  var panelsPos = viewerHtml.indexOf('src="panels.js');
+  var mainPos = viewerHtml.indexOf('src="main.js');
+  check('21.10 load order: config.js before pill_builder.js', configPos > 0 && configPos < pillPos);
+  check('21.11 load order: pill_builder.js before panels.js', pillPos > 0 && pillPos < panelsPos);
+  check('21.12 load order: panels.js before main.js', panelsPos > 0 && panelsPos < mainPos);
+
+  var sb = buildSandbox();
+  sb.window.ontouchstart = true;
+  sb.navigator = { maxTouchPoints: 5, userAgent: '' };
+  vm.runInContext(configSrc, sb);
+  check('21.13 mobile sim: window._isMobile = true', sb.window._isMobile === true);
+
+  var sb2 = buildSandbox();
+  sb2.navigator = { maxTouchPoints: 0, userAgent: '' };
+  vm.runInContext(configSrc, sb2);
+  check('21.14 desktop sim: window._isMobile = false', sb2.window._isMobile === false);
+})();
+
+
+// ══════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════
 console.log('\n' + pass + ' PASS, ' + fail + ' FAIL — ' + (pass + fail) + ' total');
