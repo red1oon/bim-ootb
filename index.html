@@ -1774,7 +1774,7 @@ async function packageLandingPage() {
 
     // 8. Inject standalone flag + manifest + workers + WASM into config script block
     var ghBase = 'https://red1oon.github.io/bim-ootb/';
-    var standaloneBlock = '// §S284: Standalone offline copy\n' +
+    var standaloneBlock = '// \u00a7S284: Standalone offline copy\n' +
       'window._STANDALONE = true;\n' +
       'window._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\n' +
       'window._WORKER_SOURCES = ' + workerJSON + ';\n' +
