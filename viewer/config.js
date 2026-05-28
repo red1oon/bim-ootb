@@ -1,10 +1,19 @@
 // config.js — URL params, discipline colours, constants
+
+// §S282b: Platform detection — set once, before any UI module reads it.
+// pill_builder.js, scene.js, time_machine.js all read window._isMobile at init.
+window._isMobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
 function setupConfig(A) {
   const _params = new URLSearchParams(location.search);
   // Auto-resolve: if hosted on OCI Object Storage, use same bucket base for DB URLs
   const _ociMatch = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
   const _base = _ociMatch ? _ociMatch[1] : '';
-  A.DB_URL = _params.get('db') || (_base ? _base + 'Duplex_extracted.db' : 'buildings/Duplex_extracted.db');
+  // §S283: If no ?db= param, try last building from localStorage (PWA resume), then default
+  var _lastDb = null;
+  try { _lastDb = localStorage.getItem('pwa_last_db'); } catch(e) {}
+  A.DB_URL = _params.get('db') || _lastDb || (_base ? _base + 'Duplex_extracted.db' : 'buildings/Duplex_extracted.db');
+  if (_lastDb && !_params.get('db')) console.log('§PWA_RESUME db=' + _lastDb);
   A.CITY_URL = _params.get('city') || null;
   A.BLD_BASE = _params.get('bldbase') || '';
 
