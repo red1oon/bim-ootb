@@ -9,25 +9,24 @@ function setupCity(A) {
   A.citySQL = null;
   A.cityArchetypes = {};
   A.cityBuildingDbs = {};
-  A._cityBboxReleased = false;
-
-  // §S285 superweight: free the city bbox layer (the ~912k-instance per-discipline meshes)
-  // to reclaim RAM before streaming a heavy split-DB building (geo.db ~400MB). Idempotent.
-  A._cityReleaseBboxes = function(reason) {
-    if (A._cityBboxReleased) return;
-    var freed = 0, insts = 0;
-    var toRemove = A.collectMeshes(function(o){ return o.isInstancedMesh && o.userData && o.userData.isBboxPlaceholder; });
-    toRemove.forEach(function(o){
-      insts += (o.count || 0);
-      A.scene.remove(o);
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) o.material.dispose();
-      if (o.userData) o.userData.instanceBuilding = null;  // drop instanceId→building array
-      freed++;
+  // §S285 unified scene: when a building streams its real geometry, hide ONLY that
+  // building's own bbox instances in the merged per-discipline meshes (zero-scale), so the
+  // detailed building replaces its boxes while every other building keeps its bbox. Keeps
+  // the city context visible instead of blanking the whole scene.
+  A._cityHideBuildingBboxes = function(buildingName) {
+    if (!buildingName) return;
+    var _z = new THREE.Matrix4().makeScale(0, 0, 0);
+    var hidden = 0;
+    var meshes = A.collectMeshes(function(o){ return o.isInstancedMesh && o.userData && o.userData.isBboxPlaceholder && o.userData.instanceBuilding; });
+    meshes.forEach(function(o){
+      var ib = o.userData.instanceBuilding, changed = false;
+      for (var i = 0; i < ib.length; i++) {
+        if (ib[i] === buildingName) { o.setMatrixAt(i, _z); hidden++; changed = true; }
+      }
+      if (changed) o.instanceMatrix.needsUpdate = true;
     });
-    A._cityBboxReleased = true;
-    if (A.markDirty) A.markDirty();
-    console.log('[S285] §CITY_BBOX_RELEASE meshes=' + freed + ' instances=' + insts.toLocaleString() + ' reason=' + (reason || ''));
+    if (hidden && A.markDirty) A.markDirty();
+    console.log('[S285] §CITY_BBOX_HIDE building=' + buildingName + ' instances=' + hidden);
   };
 
   // §S285: log JS heap (Chromium-only performance.memory) around heavy loads — superweight POC.
@@ -355,9 +354,11 @@ function setupCity(A) {
       const auxUrl  = _split ? geoUrl  : libUrl;
       console.log(`[S285] §CITY_DL_DETECT archetype=${archetype} split=${_split} main=${mainUrl.split('/').pop()} aux=${auxUrl.split('/').pop()}`);
 
-      // §S285 superweight: a split geo.db can be ~400MB. Free the city bbox layer FIRST so
-      // that RAM is available, and log heap before/after so we can see if the PWA copes.
-      if (_split) { A._cityReleaseBboxes('split-DB heavy load: ' + archetype); A._cityLogMem('before ' + archetype); }
+      // §S285: keep the bbox scene intact for a UNIFIED view — the streamed building should
+      // appear AMONG the surrounding city bboxes, not on a blanked stage. (We hide only the
+      // loaded building's own boxes once it streams; see _cityHideBuildingBboxes below.)
+      // Still log heap before/after a heavy split load so we can watch how the PWA copes.
+      if (_split) A._cityLogMem('before ' + archetype);
 
       // A missing companion DB (e.g. library.db 404) must NOT throw an uncaught rejection.
       let mainBuf, auxBuf;
@@ -430,6 +431,9 @@ function setupCity(A) {
     A.streaming = true;
     A.activeBuilding = buildingName;
     A.activeBuildingTotal = A.streamQueue.length;
+    // §S285 unified scene: hide this building's bboxes (real geometry now replaces them);
+    // surrounding city bboxes stay so the building renders in context, not on a blank stage.
+    A._cityHideBuildingBboxes(buildingName);
     document.getElementById('s-active').textContent = buildingName;
     document.getElementById('s-active').style.color = '#4fc3f7';
     document.getElementById('s-building-total').textContent = A.activeBuildingTotal.toLocaleString();

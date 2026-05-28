@@ -1707,7 +1707,7 @@ async function packageLandingPage() {
   var statusEl = document.getElementById('pack-status');
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
   if (window._STANDALONE) {
-    setStatus('Already offline — open via serve.sh then re-package from there.');
+    setStatus('Already offline — this is the standalone copy.');
     return;
   }
   setStatus('Packaging…');
@@ -1930,105 +1930,10 @@ async function packageLandingPage() {
     URL.revokeObjectURL(a.href);
     console.log('\u00a7PACK_DOWNLOAD size=' + blob.size + ' bytes');
 
-    // Also download serve scripts + README so users can self-host immediately
-    function _dlText(content, filename, mimeType, delayMs) {
-      setTimeout(function() {
-        var b = new Blob([content], {type: mimeType});
-        var el = document.createElement('a');
-        el.href = URL.createObjectURL(b);
-        el.download = filename;
-        document.body.appendChild(el);
-        el.click();
-        document.body.removeChild(el);
-        setTimeout(function() { URL.revokeObjectURL(el.href); }, 1000);
-      }, delayMs);
-    }
-
-    var readme = [
-      '# BIM/ERP OOTB \u2014 Self-Host Guide',
-      '',
-      'Downloaded from https://red1oon.github.io/bim-ootb',
-      '',
-      '## What you have',
-      '  BIM-OOTB.html  \u2014 the full viewer (all code inline)',
-      '  serve.sh       \u2014 local server for Mac / Linux',
-      '  serve.bat      \u2014 local server for Windows',
-      '  README.md      \u2014 this file',
-      '',
-      '## Run locally',
-      '',
-      'Mac / Linux',
-      '  1. Open Terminal in this folder',
-      '  2. Run:  bash serve.sh',
-      '  3. Browser opens at http://localhost:8080',
-      '',
-      'Windows',
-      '  1. Double-click serve.bat',
-      '  2. Browser opens at http://localhost:8080',
-      '',
-      'Requires Python 3 \u2014 free from https://python.org',
-      '',
-      '## Host on the web',
-      '',
-      'Netlify (free, 30 seconds)',
-      '  netlify.com \u2192 Add new site \u2192 Deploy manually',
-      '  Drag this folder into the upload zone.',
-      '  Done \u2014 you get a public HTTPS URL instantly.',
-      '',
-      'GitHub Pages (free)',
-      '  New repo \u2192 upload BIM-OOTB.html \u2192 rename to index.html',
-      '  Settings \u2192 Pages \u2192 Deploy from branch: main',
-      '  Live at https://yourusername.github.io/yourrepo',
-      '',
-      'Any web server',
-      '  Upload BIM-OOTB.html to any static host (nginx, S3, VPS).',
-      '  No backend needed. Rename to index.html for clean URLs.',
-      '',
-      '## Load a building',
-      '',
-      '  Drop an IFC file onto the viewer \u2014 parsed locally, nothing uploaded.',
-      '  Or append ?db=https://yourhost/building.db to open a cloud building.',
-      '',
-      '## Questions?',
-      '  GitHub : https://github.com/red1oon/bim-ootb',
-      '  Email  : red1org@gmail.com',
-      '  License: MIT \u2014 free to use, modify, host, share',
-      '',
-      '\u00a9 2026 Redhuan D. Oon \u00b7 Sysnova Information Systems Limited'
-    ].join('\n');
-
-    var serveSh = [
-      '#!/bin/bash',
-      '# BIM/ERP OOTB \u2014 local server (Mac / Linux)',
-      'cd "$(dirname "$0")"',
-      'echo ""',
-      'echo "  BIM/ERP OOTB \u2014 starting at http://localhost:8080"',
-      'echo "  Press Ctrl+C to stop."',
-      'echo ""',
-      '(sleep 1 && (open "http://localhost:8080/BIM-OOTB.html" 2>/dev/null || xdg-open "http://localhost:8080/BIM-OOTB.html" 2>/dev/null)) &',
-      'python3 -m http.server 8080'
-    ].join('\n');
-
-    var serveBat = [
-      '@echo off',
-      'cd /d "%~dp0"',
-      'echo.',
-      'echo   BIM/ERP OOTB \u2014 starting at http://localhost:8080',
-      'echo   Close this window to stop.',
-      'echo.',
-      'start "" "http://localhost:8080/BIM-OOTB.html"',
-      'python -m http.server 8080',
-      'pause'
-    ].join('\r\n');
-
-    _dlText(readme,   'README.md',  'text/markdown',               600);
-    _dlText(serveSh,  'serve.sh',   'application/x-sh',           1200);
-    _dlText(serveBat, 'serve.bat',  'application/x-bat',          1800);
-
     if (statusEl) statusEl.textContent = '';
-    setStatus('Done \u2014 4 files downloading \u2713');
+    setStatus('Done \u2014 BIM-OOTB.html saved \u2713');
     setTimeout(function() { if (statusEl) statusEl.textContent = ''; }, 4000);
-    console.log('\u00a7PACK_BUNDLE readme+serve.sh+serve.bat queued');
+    console.log('\u00a7PACK_DONE size=' + blob.size);
   } catch(e) {
     setStatus('Package failed: ' + e.message);
     console.error('\u00a7PACK_FAIL', e);
