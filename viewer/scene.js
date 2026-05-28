@@ -1288,11 +1288,17 @@ async function setupScene(A) {
         : (cr.actual != null
           ? '<div style="color:#ff8a65;font-size:11px;margin-bottom:8px">\u26A0 ' + cr.actual + '/' + cr.expected + ' files cached</div>'
           : '');
-      statusEl.innerHTML = verifyLine +
-        '<div style="color:#4caf50;font-weight:700;margin-bottom:8px">Ready for offline use!</div>' +
-        '<div style="font-size:12px;color:#ccc;line-height:1.6">' +
-        'Look for the install icon <b style="color:#4fc3f7;font-size:16px">\u229E</b> in your browser\'s address bar.<br>' +
-        'Or close this tab, wait 30 seconds, and revisit to get the install prompt.</div>';
+      var _isFirefox = /Firefox\//.test(navigator.userAgent);
+      var instructionHtml = _isFirefox
+        ? '<div style="color:#4caf50;font-weight:700;margin-bottom:8px">Works offline in this tab!</div>' +
+          '<div style="font-size:12px;color:#ccc;line-height:1.6">' +
+          'Firefox does not support home screen install.<br>' +
+          'For home screen shortcut, open in <b style="color:#4fc3f7">Chrome</b> or <b style="color:#4fc3f7">Edge</b>.</div>'
+        : '<div style="color:#4caf50;font-weight:700;margin-bottom:8px">Ready for offline use!</div>' +
+          '<div style="font-size:12px;color:#ccc;line-height:1.6">' +
+          'Look for the install icon <b style="color:#4fc3f7;font-size:16px">\u229E</b> in your browser\'s address bar.<br>' +
+          'Or close this tab, wait 30 seconds, and revisit to get the install prompt.</div>';
+      statusEl.innerHTML = verifyLine + instructionHtml;
     }
     ov.showButtons(
       '<button id="pwa-fallback-ok" style="padding:8px 24px;background:#4fc3f7;color:#000;border:none;' +
