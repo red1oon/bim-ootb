@@ -26,7 +26,7 @@ async function setupScene(A) {
     _origWarn.apply(console, arguments);
   };
 
-  // §S283: beforeinstallprompt captured in viewer.html (early). Read from window.window._installPrompt.
+  // §S283: beforeinstallprompt captured in viewer.html (early). Read from window._installPrompt.
   var _isStandalone = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
