@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BIM OOTB — Large City</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0a; color: #ddd; font-family: system-ui, sans-serif; overflow-x: hidden; }
+
+  /* ── Header ── */
+  .header { padding: 16px 24px; background: #111; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 18px; color: #fff; }
+  .header h1 span { color: #4fc3f7; font-weight: 400; }
+  .header-stats { font-size: 12px; color: #888; text-align: right; }
+  .header-bar-bg { width: 200px; height: 4px; background: #222; border-radius: 2px; margin-top: 4px; }
+  .header-bar { height: 100%; background: #0277bd; border-radius: 2px; transition: width 0.4s; }
+  .btn-all { background: #0277bd; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 12px; }
+  .btn-all:hover { background: #039be5; }
+  .btn-all:disabled { background: #222; color: #555; cursor: not-allowed; }
+
+  /* ── City canvas ── */
+  .city { padding: 24px; }
+  .zone-label { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #555; margin: 20px 0 10px 4px; }
+  .zone-label:first-child { margin-top: 0; }
+
+  /* ── Landmarks — large buildings ── */
+  .landmarks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .landmark { background: #141418; border: 2px solid #222; border-radius: 12px; padding: 16px; position: relative; overflow: hidden; min-height: 120px; transition: border-color 0.3s, box-shadow 0.3s; }
+  .landmark.cached { border-color: #2e7d32; box-shadow: 0 0 20px rgba(46,125,50,0.15); }
+  .landmark.downloading { border-color: #0277bd; box-shadow: 0 0 20px rgba(2,119,189,0.2); }
+  .landmark .name { font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 2px; }
+  .landmark .count { font-size: 22px; font-weight: 800; color: #4fc3f7; }
+  .landmark .count span { font-size: 11px; font-weight: 400; color: #666; }
+  .landmark .discs { font-size: 11px; color: #888; margin: 4px 0 8px; }
+  .landmark .disc-bars { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 10px; }
+
+  /* ── Suburb row ── */
+  .suburbs { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+  .suburb { background: #141418; border: 1px solid #282828; border-radius: 8px; width: 110px; padding: 8px; text-align: center; transition: all 0.3s; cursor: default; position: relative; }
+  .suburb.cached { border-color: #2e7d32; background: #0f1a0f; }
+  .suburb.downloading { border-color: #0277bd; }
+  .suburb .s-name { font-size: 10px; font-weight: 700; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .suburb .s-count { font-size: 13px; font-weight: 800; color: #888; margin: 2px 0; }
+  .suburb.cached .s-count { color: #66bb6a; }
+  .suburb .s-disc { display: flex; gap: 1px; height: 3px; border-radius: 2px; overflow: hidden; margin: 4px 0; }
+  .suburb .s-disc span { height: 100%; border-radius: 1px; }
+
+  /* ── Shared ── */
+  .disc-bar, .s-disc span { min-width: 3px; }
+  .D-ARC { background: #4488ff; } .D-STR { background: #44cccc; } .D-MEP { background: #44cc44; }
+  .D-ELEC { background: #cccc44; } .D-PLB { background: #8844cc; } .D-ACMV { background: #cc4444; }
+  .D-FP { background: #cc8844; } .D-HVAC { background: #44aacc; } .D-HEAT { background: #ff6644; }
+  .D-VENT { background: #88ccaa; } .D-SAN { background: #aa44aa; } .D-VOID { background: #666; }
+
+  /* ── Progress bar (shared) ── */
+  .prog-bg { background: #222; border-radius: 3px; height: 4px; overflow: hidden; }
+  .prog { height: 100%; width: 0; border-radius: 3px; transition: width 0.2s; background: #4fc3f7; }
+  .prog.done { background: #66bb6a; }
+
+  /* ── Status + button ── */
+  .bld-status { font-size: 10px; color: #666; min-height: 14px; margin-top: 4px; }
+  .bld-status.ok { color: #66bb6a; }
+  .bld-status.err { color: #ef5350; }
+  .dl-btn { background: #1e3a5f; color: #4fc3f7; border: 1px solid #0277bd44; border-radius: 5px; padding: 4px 10px; font-size: 10px; font-weight: 700; cursor: pointer; margin-top: 4px; }
+  .dl-btn:hover { background: #0277bd; color: #fff; }
+  .dl-btn:disabled { background: #1a1a1a; color: #444; border-color: #222; cursor: not-allowed; }
+  .dl-btn.done { background: #1b3a1b; color: #66bb6a; border-color: #2e7d3244; cursor: default; }
+
+  /* ── Footer ── */
+  .footer { padding: 16px 24px; text-align: center; color: #444; font-size: 11px; border-top: 1px solid #1a1a1a; margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Large City <span>BIM OOTB</span></h1>
+  </div>
+  <div style="display:flex;align-items:center">
+    <div class="header-stats">
+      <span id="h-label">Loading...</span>
+      <div class="header-bar-bg"><div class="header-bar" id="h-bar"></div></div>
+    </div>
+    <button class="btn-all" id="btn-all" disabled onclick="downloadAll()">Download All</button>
+  </div>
+</div>
+
+<div class="city" id="city"></div>
+
+<div class="footer">Buildings cached in IndexedDB — same cache the viewer uses. Close and reopen anytime.</div>
+
+<script>
+'use strict';
+
+var CACHE_DB_NAME = 'bim_ootb_cache';
+var CACHE_STORE = 'dbs';
+var PROD_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
+var BLD_BASE = PROD_BASE + 'buildings/';
+var LARGE_THRESHOLD = 10000;
+
+var BUILDINGS = {
+  'SampleHouse': { db: 'SampleHouse_extracted.db' },
+  'BimWhale_Tall': { db: 'BimWhale_Tall_extracted.db' },
+  'AC90_Jasmin': { db: 'AC90_Jasmin_extracted.db' },
+  'FZKHaus': { db: 'FZKHaus_extracted.db' },
+  'Ifc4_FZKHaus': { db: 'FZKHaus_extracted.db' },
+  'AC90_Niedriha': { db: 'AC90_Niedriha_extracted.db' },
+  'BimWhale_Basic': { db: 'BimWhale_Basic_extracted.db' },
+  'VogelGesamt': { db: 'VogelGesamt_extracted.db' },
+  'BimWhale_Large': { db: 'BimWhale_Large_extracted.db' },
+  'AC9_HausGH': { db: 'AC9_HausGH_extracted.db' },
+  'HospitalAuckland': { db: 'Ifc4_Revit_extracted.db' },
+  'SmileyWest': { db: 'SmileyWest_extracted.db' },
+  'Jesse': { db: 'Jesse_extracted.db' },
+  'AC11Institute': { db: 'AC11Institute_extracted.db' },
+  'Ifc2x3_AC11Institute': { db: 'AC11Institute_extracted.db' },
+  'Duplex': { db: 'Duplex_extracted.db' },
+  'LTU_AHouse': { db: 'LTU_AHouse_extracted.db' },
+  'Hospital': { db: 'Hospital_extracted.db' },
+  'Hospital_3': { db: 'Hospital_3_extracted.db' },
+  'Terminal': { db: 'Terminal_extracted.db' },
+  'Clinic': { db: 'Clinic_extracted.db' },
+  'Ifc4_Revit': { db: 'Ifc4_Revit_extracted.db' },
+  'WBDG_Office': { db: 'WBDG_Office_extracted.db' },
+  'HHS_Office_Federated': { db: 'HHS_Office_Federated_extracted.db' },
+  'HITOS': { db: 'HITOS_extracted.db' },
+  'Esplanades': { db: 'Esplanades_extracted.db' },
+  'HospitalGarage': { db: 'HospitalGarage_extracted.db' },
+  'HospitalGarage_2': { db: 'HospitalGarage_2_extracted.db' },
+  'Schependomlaan': { db: 'Schependomlaan_extracted.db' },
+  'SampleCastle': { db: 'SampleCastle_extracted.db' },
+  'Molio': { db: 'Molio_extracted.db' },
+  'BimWhale_Advanced': { db: 'BimWhale_Advanced_extracted.db' },
+};
+
+var _cacheDb = null;
+var _entries = {};
+var _totalCount = 0;
+var _totalCached = 0;
+var _totalSizeMB = 0;
+var _downloading = false;
+
+// ── IndexedDB ──
+function openCacheDB() {
+  return new Promise(function(resolve) {
+    var req = indexedDB.open(CACHE_DB_NAME, 2);
+    req.onupgradeneeded = function() {
+      var db = req.result;
+      if (!db.objectStoreNames.contains(CACHE_STORE)) db.createObjectStore(CACHE_STORE);
+      if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+    };
+    req.onsuccess = function() { resolve(req.result); };
+    req.onerror = function() { resolve(null); };
+  });
+}
+
+function checkCached(url) {
+  return new Promise(function(resolve) {
+    if (!_cacheDb) { resolve(0); return; }
+    var tx = _cacheDb.transaction(CACHE_STORE, 'readonly');
+    var req = tx.objectStore(CACHE_STORE).get(url);
+    req.onsuccess = function() { resolve(req.result ? (req.result.byteLength || 0) : 0); };
+    req.onerror = function() { resolve(0); };
+  });
+}
+
+function writeCache(url, buf) {
+  return new Promise(function(resolve) {
+    if (!_cacheDb) { resolve(false); return; }
+    var tx = _cacheDb.transaction([CACHE_STORE, 'timestamps'], 'readwrite');
+    tx.objectStore('timestamps').put(Date.now(), url);
+    var req = tx.objectStore(CACHE_STORE).put(buf, url);
+    req.onsuccess = function() { resolve(true); };
+    req.onerror = function() { resolve(false); };
+    tx.onabort = function() { resolve(false); };
+  });
+}
+
+// ── Download with progress ──
+async function downloadBuilding(name) {
+  var e = _entries[name];
+  if (!e || e.cached) return;
+
+  e.el.classList.add('downloading');
+  e.progBgEl.style.display = 'block';
+  e.progEl.style.width = '0%';
+  e.progEl.className = 'prog';
+  e.btnEl.disabled = true;
+  e.statusEl.textContent = 'Connecting...';
+  e.statusEl.className = 'bld-status';
+
+  try {
+    var resp = await fetch(e.url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    var contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
+    var reader = resp.body.getReader();
+    var chunks = [], received = 0;
+
+    while (true) {
+      var result = await reader.read();
+      if (result.done) break;
+      chunks.push(result.value);
+      received += result.value.length;
+      if (contentLength > 0) {
+        var pct = Math.round((received / contentLength) * 100);
+        e.progEl.style.width = pct + '%';
+        e.statusEl.textContent = (received / 1024 / 1024).toFixed(1) + ' / ' + (contentLength / 1024 / 1024).toFixed(0) + ' MB';
+      } else {
+        e.statusEl.textContent = (received / 1024 / 1024).toFixed(1) + ' MB...';
+      }
+    }
+
+    var full = new Uint8Array(received);
+    var offset = 0;
+    for (var i = 0; i < chunks.length; i++) { full.set(chunks[i], offset); offset += chunks[i].length; }
+
+    e.statusEl.textContent = 'Caching...';
+    var ok = await writeCache(e.url, full.buffer);
+    if (!ok) throw new Error('IDB write failed');
+
+    markCached(name, received / 1024 / 1024);
+
+  } catch (err) {
+    e.el.classList.remove('downloading');
+    e.statusEl.textContent = err.message;
+    e.statusEl.className = 'bld-status err';
+    e.btnEl.disabled = false;
+    e.btnEl.textContent = 'Retry';
+  }
+}
+
+function markCached(name, sizeMB) {
+  var e = _entries[name];
+  e.cached = true;
+  e.sizeMB = sizeMB;
+  e.el.classList.remove('downloading');
+  e.el.classList.add('cached');
+  e.progEl.style.width = '100%';
+  e.progEl.className = 'prog done';
+  e.statusEl.textContent = sizeMB.toFixed(1) + ' MB';
+  e.statusEl.className = 'bld-status ok';
+  e.btnEl.textContent = '\u2713';
+  e.btnEl.className = 'dl-btn done';
+  _totalCached++;
+  _totalSizeMB += sizeMB;
+  updateHeader();
+}
+
+async function downloadAll() {
+  if (_downloading) return;
+  _downloading = true;
+  var btn = document.getElementById('btn-all');
+  btn.disabled = true;
+  btn.textContent = 'Downloading...';
+
+  var names = Object.keys(_entries);
+  names.sort(function(a, b) { return (_entries[a].large ? 1 : 0) - (_entries[b].large ? 1 : 0); });
+
+  for (var i = 0; i < names.length; i++) {
+    if (!_entries[names[i]].cached) {
+      btn.textContent = (i + 1) + '/' + names.length + '...';
+      await downloadBuilding(names[i]);
+    }
+  }
+
+  _downloading = false;
+  updateHeader();
+}
+
+function updateHeader() {
+  var lbl = document.getElementById('h-label');
+  var bar = document.getElementById('h-bar');
+  var btn = document.getElementById('btn-all');
+  var pct = _totalCount > 0 ? Math.round((_totalCached / _totalCount) * 100) : 0;
+  lbl.textContent = _totalCached + '/' + _totalCount + ' buildings \u00b7 ' + _totalSizeMB.toFixed(0) + ' MB';
+  bar.style.width = pct + '%';
+  if (_totalCached >= _totalCount) {
+    bar.style.background = '#66bb6a';
+    btn.textContent = 'All cached';
+    btn.disabled = true;
+  } else if (!_downloading) {
+    btn.disabled = false;
+    btn.textContent = 'Download All (' + (_totalCount - _totalCached) + ')';
+  }
+}
+
+function discBarsHTML(discs, total, height) {
+  return Object.entries(discs).map(function(d) {
+    var pct = Math.max((d[1] / total) * 100, 3);
+    return '<span class="D-' + d[0] + '" style="flex:' + pct + ';height:' + (height || 6) + 'px"></span>';
+  }).join('');
+}
+
+function buildLandmark(arch, url, container) {
+  var el = document.createElement('div');
+  el.className = 'landmark';
+  el.innerHTML =
+    '<div class="name">' + arch.name.replace(/_/g, ' ') + '</div>' +
+    '<div class="count">' + arch.count.toLocaleString() + ' <span>elements</span></div>' +
+    '<div class="discs">' + Object.keys(arch.disciplines || {}).join(' \u00b7 ') + '</div>' +
+    '<div class="disc-bars" style="display:flex;gap:2px">' + discBarsHTML(arch.disciplines || {}, arch.count, 6) + '</div>' +
+    '<div class="prog-bg" style="margin-top:8px;display:none"><div class="prog"></div></div>' +
+    '<div class="bld-status"></div>' +
+    '<button class="dl-btn" onclick="downloadBuilding(\'' + arch.name + '\')">Download</button>';
+  container.appendChild(el);
+
+  _entries[arch.name] = {
+    el: el, url: url, cached: false, sizeMB: 0, large: true,
+    statusEl: el.querySelector('.bld-status'),
+    progEl: el.querySelector('.prog'),
+    progBgEl: el.querySelector('.prog-bg'),
+    btnEl: el.querySelector('.dl-btn')
+  };
+}
+
+function buildSuburb(arch, url, container) {
+  var el = document.createElement('div');
+  el.className = 'suburb';
+  el.onclick = function() { if (!_entries[arch.name].cached) downloadBuilding(arch.name); };
+  el.title = arch.name + ' \u2014 ' + arch.count.toLocaleString() + ' elements \u2014 click to download';
+  el.innerHTML =
+    '<div class="s-name">' + arch.name.replace(/_/g, ' ') + '</div>' +
+    '<div class="s-count">' + (arch.count >= 1000 ? (arch.count / 1000).toFixed(1) + 'k' : arch.count) + '</div>' +
+    '<div class="s-disc" style="display:flex;gap:1px">' + discBarsHTML(arch.disciplines || {}, arch.count, 3) + '</div>' +
+    '<div class="prog-bg" style="display:none"><div class="prog"></div></div>' +
+    '<div class="bld-status"></div>' +
+    '<button class="dl-btn" onclick="event.stopPropagation(); downloadBuilding(\'' + arch.name + '\')" style="font-size:9px;padding:2px 8px">DL</button>';
+  container.appendChild(el);
+
+  _entries[arch.name] = {
+    el: el, url: url, cached: false, sizeMB: 0, large: false,
+    statusEl: el.querySelector('.bld-status'),
+    progEl: el.querySelector('.prog'),
+    progBgEl: el.querySelector('.prog-bg'),
+    btnEl: el.querySelector('.dl-btn')
+  };
+}
+
+async function init() {
+  _cacheDb = await openCacheDB();
+  var city = document.getElementById('city');
+
+  var resp = await fetch('manifest.json');
+  if (!resp.ok) { city.textContent = 'Failed to load manifest.json'; return; }
+  var data = await resp.json();
+  if (!data || !Array.isArray(data.archetypes)) { city.textContent = 'Invalid manifest'; return; }
+
+  var seen = new Set();
+  var large = [], suburbs = [];
+  for (var i = 0; i < data.archetypes.length; i++) {
+    var arch = data.archetypes[i];
+    var bld = BUILDINGS[arch.name];
+    if (!bld) continue;
+    if (seen.has(bld.db)) continue;
+    seen.add(bld.db);
+    if (arch.count >= LARGE_THRESHOLD) large.push(arch);
+    else suburbs.push(arch);
+  }
+
+  // ── Landmarks ──
+  var lbl1 = document.createElement('div');
+  lbl1.className = 'zone-label';
+  lbl1.textContent = 'Landmarks \u2014 ' + large.length + ' buildings (' + large.reduce(function(s, a) { return s + a.count; }, 0).toLocaleString() + ' elements)';
+  city.appendChild(lbl1);
+
+  var lmGrid = document.createElement('div');
+  lmGrid.className = 'landmarks';
+  city.appendChild(lmGrid);
+  for (var j = 0; j < large.length; j++) {
+    buildLandmark(large[j], BLD_BASE + BUILDINGS[large[j].name].db, lmGrid);
+  }
+
+  // ── Suburbs by size band ──
+  var bands = [
+    { label: 'Medium', min: 2000, max: LARGE_THRESHOLD, items: [] },
+    { label: 'Small', min: 500, max: 2000, items: [] },
+    { label: 'Tiny', min: 0, max: 500, items: [] }
+  ];
+  for (var k = 0; k < suburbs.length; k++) {
+    for (var b = 0; b < bands.length; b++) {
+      if (suburbs[k].count >= bands[b].min && suburbs[k].count < bands[b].max) {
+        bands[b].items.push(suburbs[k]);
+        break;
+      }
+    }
+  }
+
+  for (var bn = 0; bn < bands.length; bn++) {
+    if (bands[bn].items.length === 0) continue;
+    var total = bands[bn].items.reduce(function(s, a) { return s + a.count; }, 0);
+    var lbl = document.createElement('div');
+    lbl.className = 'zone-label';
+    lbl.textContent = bands[bn].label + ' \u2014 ' + bands[bn].items.length + ' buildings (' + total.toLocaleString() + ' elements)';
+    city.appendChild(lbl);
+
+    var row = document.createElement('div');
+    row.className = 'suburbs';
+    city.appendChild(row);
+    for (var si = 0; si < bands[bn].items.length; si++) {
+      var sa = bands[bn].items[si];
+      buildSuburb(sa, BLD_BASE + BUILDINGS[sa.name].db, row);
+    }
+  }
+
+  _totalCount = Object.keys(_entries).length;
+
+  // ── Check cache ──
+  var names = Object.keys(_entries);
+  for (var ci = 0; ci < names.length; ci++) {
+    var cachedSize = await checkCached(_entries[names[ci]].url);
+    if (cachedSize > 0) {
+      markCached(names[ci], cachedSize / 1024 / 1024);
+    }
+  }
+
+  _totalCached = Object.keys(_entries).filter(function(n) { return _entries[n].cached; }).length;
+  _totalSizeMB = Object.keys(_entries).reduce(function(s, n) { return s + _entries[n].sizeMB; }, 0);
+  updateHeader();
+}
+
+init();
+</script>
+</body>
+</html>
