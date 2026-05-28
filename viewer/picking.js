@@ -189,22 +189,26 @@ function setupPicking(A) {
     A.raycaster.setFromCamera(A.mouse, A.camera);
     A.raycaster.firstHitOnly = false;  // §S260d: WYSIWYG — check all hits, pick best match (was BVH early termination)
 
-    // City mode: check bbox wireframes first
-    // §S285: S285 PR#24 changed cached-archetype bboxes from LineSegments → InstancedMesh
-    // placeholders. The original filter only matched LineSegments, so the 22 cached
-    // archetypes (the bulk of the AABBs) became unclickable — only the fallback
-    // LineSegments buildings could be selected. Match both so every AABB renders on click.
+    // City mode: check bbox placeholders first → click streams that building.
+    // §S285 A+C: bboxes are now ONE merged InstancedMesh per discipline (city-wide), so a
+    // hit's building comes from userData.instanceBuilding[instanceId], not userData.building.
+    // (Older per-building meshes / any LineSegments still resolve via userData.building.)
     if (A.CITY_URL) {
       const bboxes = A.collectMeshes(o =>
-        (o.isLineSegments && o.userData.building) ||
-        (o.isInstancedMesh && o.userData.isBboxPlaceholder && o.userData.building));
+        (o.isInstancedMesh && o.userData.isBboxPlaceholder) ||
+        (o.isLineSegments && o.userData.building));
       const bboxHits = A.raycaster.intersectObjects(bboxes, false);
       if (bboxHits.length > 0) {
-        const hitObj = bboxHits[0].object;
-        const bldName = hitObj.userData.building;
-        console.log(`[S285] §CITY_PICK building=${bldName} kind=${hitObj.isInstancedMesh ? 'instanced' : 'line'}`);
-        A.flyTo(bldName);
-        return;
+        const hit = bboxHits[0];
+        const ud = hit.object.userData;
+        const bldName = (ud.instanceBuilding && hit.instanceId != null)
+          ? ud.instanceBuilding[hit.instanceId]
+          : ud.building;
+        if (bldName) {
+          console.log(`[S285] §CITY_PICK building=${bldName} kind=${hit.object.isInstancedMesh ? 'instanced' : 'line'} inst=${hit.instanceId}`);
+          A.flyTo(bldName);
+          return;
+        }
       }
     }
 
