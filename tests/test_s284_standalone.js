@@ -186,12 +186,19 @@ check('8.2 handleImportFile uses _createWorker (Blob URL in standalone)', single
 // ══════════════════════════════════════════════
 console.log('\n§S284_TEST packager inlines external scripts');
 
+// Extract full packageLandingPage function — find matching closing brace
 var packagerSrc = '';
 var pStart = getLineOf('function packageLandingPage');
 var pEnd = pStart;
-for (var i = pStart; i < indexLines.length; i++) {
-  packagerSrc += indexLines[i] + '\n';
-  if (i > pStart && /^\}$/.test(indexLines[i].trim())) { pEnd = i; break; }
+var braceDepth = 0;
+for (var i = pStart - 1; i < indexLines.length; i++) {
+  var line = indexLines[i];
+  packagerSrc += line + '\n';
+  for (var ci = 0; ci < line.length; ci++) {
+    if (line[ci] === '{') braceDepth++;
+    if (line[ci] === '}') braceDepth--;
+  }
+  if (braceDepth === 0 && i > pStart) { pEnd = i; break; }
 }
 
 check('9.0a _createWorker helper exists',
@@ -204,6 +211,18 @@ check('9.0d packager fetches import_worker.js',
   packagerSrc.indexOf('import_worker.js') >= 0);
 check('9.0e packager fetches ifc_export_worker.js',
   packagerSrc.indexOf('ifc_export_worker') >= 0);
+check('9.0f packager fetches sql-wasm.js',
+  packagerSrc.indexOf('sql-wasm.js') >= 0);
+check('9.0g packager fetches sql-wasm.wasm (base64)',
+  packagerSrc.indexOf('sql-wasm.wasm') >= 0);
+check('9.0h packager fetches web-ifc',
+  packagerSrc.indexOf('web-ifc') >= 0);
+check('9.0i _loadSqlJs helper exists',
+  indexSrc.indexOf('function _loadSqlJs') >= 0);
+check('9.0j _loadSqlJs reads _SQL_WASM_B64',
+  indexSrc.indexOf('_SQL_WASM_B64') >= 0);
+check('9.0k _createWorker prepends _WEBIFC_SRC',
+  indexSrc.indexOf('_WEBIFC_SRC') >= 0);
 check('9.1 packager fetches import_db_builder.js',
   packagerSrc.indexOf('import_db_builder') >= 0);
 check('9.2 packager fetches locale_loader.js',

@@ -1035,13 +1035,45 @@ function detectLandingFormat(filename) {
   return { ext: ext, route: LANDING_FORMAT_ROUTES[ext] || null };
 }
 
+// §S284: Load sql.js — standalone uses embedded sources, online uses CDN
+async function _loadSqlJs() {
+  if (typeof initSqlJs === 'undefined') {
+    if (window._STANDALONE && window._SQL_WASM_JS) {
+      // Inject embedded sql-wasm.js
+      var fn = new Function(window._SQL_WASM_JS + '\n; window.initSqlJs = initSqlJs;');
+      fn();
+      console.log('§STANDALONE_SQL inline initSqlJs loaded');
+    } else {
+      await new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'https://sql.js.org/dist/sql-wasm.js';
+        s.onload = resolve;
+        document.head.appendChild(s);
+      });
+    }
+  }
+  if (window._STANDALONE && window._SQL_WASM_B64) {
+    // Decode base64 WASM → ArrayBuffer
+    var raw = atob(window._SQL_WASM_B64);
+    var buf = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+    return await initSqlJs({ wasmBinary: buf.buffer });
+  }
+  return await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+}
+
 // §S284: Create Worker from Blob URL in standalone mode (file:// blocks script URLs)
 function _createWorker(scriptUrl) {
   if (window._STANDALONE && window._WORKER_SOURCES) {
-    // Strip query params to get the key: 'viewer/import_worker.js?v=8' → 'import_worker.js'
     var key = scriptUrl.replace(/\?.*$/, '').replace(/^.*\//, '');
     var src = window._WORKER_SOURCES[key];
     if (src) {
+      // §S284: Prepend web-ifc source to import workers (replaces importScripts CDN call)
+      if (window._WEBIFC_SRC && (key === 'import_worker.js' || key === 'ifc_export_worker.js')) {
+        // Replace the importScripts line with the actual source
+        src = src.replace(/importScripts\([^)]*web-ifc[^)]*\);?/, '// §S284: web-ifc inlined by packager');
+        src = window._WEBIFC_SRC + '\n' + src;
+      }
       console.log('§STANDALONE_WORKER blob key=' + key + ' size=' + src.length);
       return new Worker(URL.createObjectURL(new Blob([src], {type: 'application/javascript'})));
     }
@@ -1089,15 +1121,7 @@ async function handleImportFile(file) {
     if (msg.type === 'done') {
       status.textContent = 'Building databases...';
       try {
-        if (typeof initSqlJs === 'undefined') {
-          await new Promise(resolve => {
-            const s = document.createElement('script');
-            s.src = 'https://sql.js.org/dist/sql-wasm.js';
-            s.onload = resolve;
-            document.head.appendChild(s);
-          });
-        }
-        const SQL = await initSqlJs({ locateFile: f => 'https://sql.js.org/dist/' + f });
+        const SQL = await _loadSqlJs();
 
         // Implementing DropIFCMergeNoVarianceDISC.md §3 — discipline from filename override
         var _fnDisc = _discFromFilename(file.name);
@@ -1327,13 +1351,7 @@ async function handleImportMultiIFC(files) {
   if (progressBar) progressBar.style.width = '92%';
 
   try {
-    if (typeof initSqlJs === 'undefined') {
-      await new Promise(function(resolve) {
-        var s = document.createElement('script'); s.src = 'https://sql.js.org/dist/sql-wasm.js';
-        s.onload = resolve; document.head.appendChild(s);
-      });
-    }
-    var SQL = await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+    var SQL = await _loadSqlJs();
     var mergedData = {
       meta: { name: buildingName, filename: buildingName, elementCount: allElements.length, geomCount: allGeometries.length, disciplines: allDiscs, storeys: allStoreys.sort() },
       elements: allElements, geometries: allGeometries, transforms: allTransforms
@@ -1475,16 +1493,7 @@ async function exportProjectIFC(projectKey, flyout) {
     return;
   }
 
-  // Load sql.js if needed
-  if (typeof initSqlJs === 'undefined') {
-    await new Promise(function(resolve) {
-      var s = document.createElement('script');
-      s.src = 'https://sql.js.org/dist/sql-wasm.js';
-      s.onload = resolve;
-      document.head.appendChild(s);
-    });
-  }
-  var SQL = await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+  var SQL = await _loadSqlJs();
 
   // Read latest version DB
   var latest = record.versions[record.latestVersion || 0];
@@ -1706,6 +1715,7 @@ async function packageLandingPage() {
     var localeSrc = await fetch('viewer/locale_loader.js?v=7').then(function(r) { return r.text(); });
 
     // 1b. Fetch Worker scripts for Blob URL in standalone mode
+    if (statusEl) statusEl.textContent = 'Fetching worker scripts...';
     var importWorkerSrc = await fetch('viewer/import_worker.js?v=8').then(function(r) { return r.text(); });
     var meshWorkerSrc = await fetch('viewer/mesh_import_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
     var exportWorkerSrc = await fetch('viewer/ifc_export_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
@@ -1714,6 +1724,20 @@ async function packageLandingPage() {
       'mesh_import_worker.js': meshWorkerSrc,
       'ifc_export_worker.js': exportWorkerSrc
     });
+
+    // 1c. Fetch sql-wasm.js + sql-wasm.wasm (base64) + web-ifc for fully offline IFC import
+    if (statusEl) statusEl.textContent = 'Fetching SQLite WASM (~700KB)...';
+    var sqlWasmJs = await fetch('viewer/lib/sql-wasm.js').then(function(r) { return r.text(); }).catch(function() { return ''; });
+    var sqlWasmBuf = await fetch('viewer/lib/sql-wasm.wasm').then(function(r) { return r.arrayBuffer(); }).catch(function() { return null; });
+    var sqlWasmB64 = '';
+    if (sqlWasmBuf) {
+      var bytes = new Uint8Array(sqlWasmBuf);
+      var binary = '';
+      for (var wi = 0; wi < bytes.length; wi++) binary += String.fromCharCode(bytes[wi]);
+      sqlWasmB64 = btoa(binary);
+    }
+    if (statusEl) statusEl.textContent = 'Fetching web-ifc (~200KB)...';
+    var webIfcSrc = await fetch('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js').then(function(r) { return r.text(); }).catch(function() { return ''; });
 
     // 2. Fetch Sysnova.png as base64 data URI
     var pngBlob = await fetch('Sysnova.png').then(function(r) { return r.blob(); });
@@ -1740,7 +1764,15 @@ async function packageLandingPage() {
     // 8. Inject standalone flag + manifest snapshot before first inline script body
     // Find the config script block and inject after the opening <script>
     var configTag = '<script>\n// \u2500\u2500 Config \u2500\u2500';
-    html = html.replace(configTag, '<script>\n// \u00a7S284: Standalone offline copy\nwindow._STANDALONE = true;\nwindow._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\nwindow._WORKER_SOURCES = ' + workerJSON + ';\n// \u2500\u2500 Config \u2500\u2500');
+    if (statusEl) statusEl.textContent = 'Building HTML...';
+    var standaloneBlock = '// \u00a7S284: Standalone offline copy\n' +
+      'window._STANDALONE = true;\n' +
+      'window._MANIFEST_SNAPSHOT = ' + manifestJSON + ';\n' +
+      'window._WORKER_SOURCES = ' + workerJSON + ';\n' +
+      (sqlWasmJs ? 'window._SQL_WASM_JS = ' + JSON.stringify(sqlWasmJs) + ';\n' : '') +
+      (sqlWasmB64 ? 'window._SQL_WASM_B64 = "' + sqlWasmB64 + '";\n' : '') +
+      (webIfcSrc ? 'window._WEBIFC_SRC = ' + JSON.stringify(webIfcSrc) + ';\n' : '');
+    html = html.replace(configTag, '<script>\n' + standaloneBlock + '// \u2500\u2500 Config \u2500\u2500');
 
     // 9. Fix relative URLs to absolute GitHub Pages (so cards open viewer online)
     var ghBase = 'https://red1oon.github.io/bim-ootb/';
