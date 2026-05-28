@@ -300,6 +300,12 @@ function setupHelpers(A) {
       }
     };
 
+    // Email must stay synchronous — mailto: needs user-gesture context (lost in async IndexedDB callback)
+    if (mode === 'email') {
+      _openIssue((window._bimLogBuffer || []).slice(-50).join('\n'));
+      return;
+    }
+
     // Try IndexedDB for full history (includes previous sessions)
     if (window._bimLogDb) {
       try {
