@@ -112,30 +112,150 @@ function setupCity(A) {
       if (bldList.parentElement) bldList.parentElement.style.display = 'block';
     }
 
-    const bboxRows = A.cityDb.exec(`
-      SELECT building, discipline,
-        min_x, min_y, min_z, max_x, max_y, max_z
-      FROM building_summary
+    // §S285: Draw individual element AABBs from cached building DBs (not big building bboxes)
+    // For each archetype: read element_transforms from cached _extracted.db in IDB,
+    // then for each city instance, offset element positions and draw as InstancedMesh wireframe.
+    // Falls back to building-level bboxes for uncached buildings.
+    var _t0 = performance.now();
+    var _totalBboxes = 0;
+    var _cachedArchetypes = 0;
+    var _fallbackBuildings = 0;
+    var cacheDb = await A.openCacheDB();
+
+    // Group city instances by archetype: { archetype → [{ building, offsetX/Y/Z }] }
+    var archInstances = {};
+    var archCentreRows = A.cityDb.exec(`
+      SELECT ba.building, ba.archetype,
+        AVG(bs.center_x), AVG(bs.center_y), AVG(bs.center_z)
+      FROM building_archetype ba
+      JOIN building_summary bs ON ba.building = bs.building
+      GROUP BY ba.building
     `);
-    if (bboxRows.length > 0) {
-      for (const row of bboxRows[0].values) {
-        const [bld, disc, minX, minY, minZ, maxX, maxY, maxZ] = row;
-        const color = A.DISC_COLORS[disc] || A.DEFAULT_COLOR;
-        const c = A.ifc2three((minX+maxX)/2, (minY+maxY)/2, (minZ+maxZ)/2);
-        const sx = maxX - minX;
-        const sy = maxZ - minZ;
-        const sz = maxY - minY;
-        if (sx < 0.1 || sy < 0.1 || sz < 0.1) continue;
-        const geo = new THREE.BoxGeometry(sx, sy, sz);
-        const edges = new THREE.EdgesGeometry(geo);
-        geo.dispose(); // intermediate geometry no longer needed
-        const line = new THREE.LineSegments(edges,
-          new THREE.LineBasicMaterial({ color, opacity: 0.6, transparent: true }));
-        line.position.set(c.x, c.y, c.z);
-        line.userData = { building: bld, discipline: disc };
-        A.scene.add(line);
+    if (archCentreRows.length > 0) {
+      for (var ai = 0; ai < archCentreRows[0].values.length; ai++) {
+        var r = archCentreRows[0].values[ai];
+        var arch = r[1];
+        if (!archInstances[arch]) archInstances[arch] = [];
+        archInstances[arch].push({ building: r[0], ix: r[2], iy: r[3], iz: r[4] });
       }
     }
+
+    var geo = new THREE.BoxGeometry(1, 1, 1);
+    var _m4 = new THREE.Matrix4();
+    var _pos = new THREE.Vector3();
+    var _scl = new THREE.Vector3();
+    var _quat = new THREE.Quaternion();
+
+    for (var archName in archInstances) {
+      var instances = archInstances[archName];
+      var bldEntry = null;
+      // Look up the BUILDINGS map for the DB filename
+      for (var bk in A.cityArchetypes) {
+        if (bk === archName) { bldEntry = A.cityArchetypes[bk]; break; }
+      }
+      if (!bldEntry) continue;
+
+      // Try to read cached _extracted.db from IDB
+      var dbUrl = A.BLD_BASE + bldEntry.db;
+      var cachedBuf = null;
+      if (cacheDb) {
+        try {
+          cachedBuf = await new Promise(function(resolve) {
+            var tx = cacheDb.transaction('dbs', 'readonly');
+            var req = tx.objectStore('dbs').get(dbUrl);
+            req.onsuccess = function() { resolve(req.result || null); };
+            req.onerror = function() { resolve(null); };
+          });
+        } catch(e) { cachedBuf = null; }
+      }
+
+      if (cachedBuf) {
+        // ── Individual element AABBs from cached DB ──
+        _cachedArchetypes++;
+        var archDb = new SQL.Database(new Uint8Array(cachedBuf));
+
+        // Get element positions + bboxes + discipline
+        var elemRows = archDb.exec(`
+          SELECT m.discipline, t.center_x, t.center_y, t.center_z,
+                 t.bbox_x, t.bbox_y, t.bbox_z
+          FROM element_transforms t
+          JOIN elements_meta m ON t.guid = m.guid
+        `);
+        // Compute archetype centre for offset calculation
+        var arcCen = archDb.exec(`SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms`);
+        archDb.close();
+
+        if (!elemRows.length || !elemRows[0].values.length || !arcCen.length) continue;
+        var arcX = arcCen[0].values[0][0];
+        var arcY = arcCen[0].values[0][1];
+        var arcZ = arcCen[0].values[0][2];
+
+        // Group by discipline for coloring
+        var byDisc = {};
+        for (var ei = 0; ei < elemRows[0].values.length; ei++) {
+          var er = elemRows[0].values[ei];
+          var disc = er[0] || '_';
+          if (!byDisc[disc]) byDisc[disc] = [];
+          byDisc[disc].push(er);
+        }
+
+        // For each city instance of this archetype, draw offset element bboxes
+        for (var ii = 0; ii < instances.length; ii++) {
+          var inst = instances[ii];
+          var offX = inst.ix - arcX;
+          var offY = inst.iy - arcY;
+          var offZ = inst.iz - arcZ;
+
+          for (var dName in byDisc) {
+            var drows = byDisc[dName];
+            var color = A.DISC_COLORS[dName] || A.DEFAULT_COLOR;
+            var mat = new THREE.MeshBasicMaterial({ color: color, wireframe: true, transparent: true, opacity: 0.35 });
+            var iMesh = new THREE.InstancedMesh(geo, mat, drows.length);
+            iMesh.frustumCulled = false;
+            iMesh.userData = { isBboxPlaceholder: true, building: inst.building };
+
+            for (var di = 0; di < drows.length; di++) {
+              var dr = drows[di];
+              var p = A.ifc2three(dr[1] + offX, dr[2] + offY, dr[3] + offZ);
+              var bx = dr[4] || 0.3, by = dr[5] || 0.3, bz = dr[6] || 0.3;
+              _pos.set(p.x, p.y, p.z);
+              _scl.set(bx, bz, by);  // IFC→Three: swap Y/Z
+              _m4.compose(_pos, _quat, _scl);
+              iMesh.setMatrixAt(di, _m4);
+            }
+            iMesh.instanceMatrix.needsUpdate = true;
+            A.scene.add(iMesh);
+            _totalBboxes += drows.length;
+          }
+        }
+      } else {
+        // ── Fallback: building-level bboxes from city_index ──
+        for (var fi = 0; fi < instances.length; fi++) {
+          _fallbackBuildings++;
+          var fb = instances[fi];
+          var fbRows = A.cityDb.exec(`SELECT discipline, min_x, min_y, min_z, max_x, max_y, max_z FROM building_summary WHERE building = ?`, [fb.building]);
+          if (!fbRows.length) continue;
+          for (var fri = 0; fri < fbRows[0].values.length; fri++) {
+            var fr = fbRows[0].values[fri];
+            var fColor = A.DISC_COLORS[fr[0]] || A.DEFAULT_COLOR;
+            var fc = A.ifc2three((fr[1]+fr[4])/2, (fr[2]+fr[5])/2, (fr[3]+fr[6])/2);
+            var fsx = fr[4]-fr[1], fsy = (fr[6]-fr[3]), fsz = fr[5]-fr[2];
+            if (fsx < 0.1 || fsy < 0.1 || fsz < 0.1) continue;
+            var fGeo = new THREE.BoxGeometry(fsx, fsy, fsz);
+            var fEdges = new THREE.EdgesGeometry(fGeo);
+            fGeo.dispose();
+            var fLine = new THREE.LineSegments(fEdges,
+              new THREE.LineBasicMaterial({ color: fColor, opacity: 0.6, transparent: true }));
+            fLine.position.set(fc.x, fc.y, fc.z);
+            fLine.userData = { building: fb.building, discipline: fr[0] };
+            A.scene.add(fLine);
+          }
+        }
+      }
+    }
+    var _dt = (performance.now() - _t0).toFixed(0);
+    console.log(`[S285] §CITY_BBOX individual=${_totalBboxes.toLocaleString()} cachedArch=${_cachedArchetypes} fallback=${_fallbackBuildings} ms=${_dt}`);
+    if (A.markDirty) A.markDirty();
 
     document.getElementById('s-buildings').textContent =
       Object.keys(A.buildingCentres).length.toLocaleString();
