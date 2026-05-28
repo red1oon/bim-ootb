@@ -485,7 +485,7 @@ function clearAllCache() {
 function launchCity() {
   const bldBase = _prodBase + 'buildings/';
   const viewerUrl = _base ? _base + 'viewer/viewer.html' : 'viewer/viewer.html';
-  const url = viewerUrl + `?city=${bldBase}city_index.db&bldbase=${bldBase}`;
+  const url = viewerUrl + `?city=${bldBase}city_index_v2.db&bldbase=${bldBase}`;
   const win = window.open(url, 'bim_city_1M');
   trackTab('City 1M', '3D', win);
 }
