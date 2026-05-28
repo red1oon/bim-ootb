@@ -18,6 +18,9 @@
   .btn-all { background: #0277bd; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 12px; }
   .btn-all:hover { background: #039be5; }
   .btn-all:disabled { background: #222; color: #555; cursor: not-allowed; }
+  .btn-launch { background: linear-gradient(135deg, #ff6f00, #ff8f00); color: #fff; border: none; border-radius: 8px; padding: 12px 28px; font-size: 15px; font-weight: 800; cursor: pointer; margin-left: 16px; letter-spacing: 0.5px; box-shadow: 0 0 20px rgba(255,111,0,0.3); transition: all 0.3s; }
+  .btn-launch:hover { background: linear-gradient(135deg, #ff8f00, #ffab00); box-shadow: 0 0 30px rgba(255,111,0,0.5); transform: scale(1.02); }
+  .btn-launch:disabled { background: #333; color: #666; box-shadow: none; cursor: not-allowed; transform: none; }
 
   /* ── City canvas ── */
   .city { padding: 24px; }
@@ -83,6 +86,7 @@
       <div class="header-bar-bg"><div class="header-bar" id="h-bar"></div></div>
     </div>
     <button class="btn-all" id="btn-all" disabled onclick="downloadAll()">Download All</button>
+    <button class="btn-launch" id="btn-launch" onclick="launchCity()">Launch City 3D</button>
   </div>
 </div>
 
@@ -336,6 +340,12 @@ function buildSuburb(arch, url, container) {
     progBgEl: el.querySelector('.prog-bg'),
     btnEl: el.querySelector('.dl-btn')
   };
+}
+
+function launchCity() {
+  var viewerUrl = 'viewer/viewer.html';
+  var url = viewerUrl + '?city=' + BLD_BASE + 'city_index.db&bldbase=' + BLD_BASE;
+  window.open(url, 'bim_city_1M');
 }
 
 async function init() {
