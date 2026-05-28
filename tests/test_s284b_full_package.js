@@ -215,10 +215,10 @@ if (webIfcWasmB64) {
   check('10.8 _WEBIFC_WASM_B64 present when WASM available',
     output.indexOf('_WEBIFC_WASM_B64') >= 0);
 }
-check('10.9 _createWorker injects _WEBIFC_WASM_URL into import worker',
-  output.indexOf('_WEBIFC_WASM_URL') >= 0);
-check('10.10 import_worker.js uses _WEBIFC_WASM_URL in locateFile',
-  importWorkerSrc.indexOf('_WEBIFC_WASM_URL') >= 0);
+check('10.9 _createWorker injects _WEBIFC_WASM_B64 string into import worker',
+  output.indexOf('self._WEBIFC_WASM_B64 = "') >= 0);
+check('10.10 import_worker.js decodes _WEBIFC_WASM_B64 in-worker (not main-thread blob)',
+  importWorkerSrc.indexOf('self._WEBIFC_WASM_B64') >= 0 && importWorkerSrc.indexOf('createObjectURL') >= 0);
 
 // ── Step 11: _createWorker reads from DOM ──
 console.log('\n§S284b_FULL_PACKAGE _createWorker DOM read');

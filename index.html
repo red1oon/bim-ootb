@@ -1035,7 +1035,18 @@ function detectLandingFormat(filename) {
   return { ext: ext, route: LANDING_FORMAT_ROUTES[ext] || null };
 }
 
-// §S284: Load sql.js — standalone uses embedded sources, online uses CDN
+// §S284c: Get a same-origin resource — network first, then the SW Cache Storage.
+// The landing page is root-scoped and NOT controlled by the viewer/ service worker, so an
+// offline fetch() rejects; but caches.match() reads the precache directly, working offline.
+async function _fetchLocalOrCache(url) {
+  try { var r = await fetch(url); if (r && r.ok) return r; } catch (e) {}
+  var c = await caches.match(url);
+  if (c) { console.log('§SQL_FROM_CACHE ' + url); return c; }
+  throw new Error('unavailable offline: ' + url);
+}
+
+// §S284c: Load sql.js from LOCAL precached files (no CDN) so DB-build works offline.
+// Standalone uses embedded base64 sources; PWA/online uses viewer/lib/ + Cache Storage.
 async function _loadSqlJs() {
   if (typeof initSqlJs === 'undefined') {
     if (window._STANDALONE && window._SQL_WASM_JS) {
@@ -1044,12 +1055,11 @@ async function _loadSqlJs() {
       fn();
       console.log('§STANDALONE_SQL inline initSqlJs loaded');
     } else {
-      await new Promise(function(resolve) {
-        var s = document.createElement('script');
-        s.src = 'https://sql.js.org/dist/sql-wasm.js';
-        s.onload = resolve;
-        document.head.appendChild(s);
-      });
+      // Load local sql-wasm.js text (network or SW cache), then eval to define initSqlJs
+      var jsResp = await _fetchLocalOrCache('viewer/lib/sql-wasm.js');
+      var jsText = await jsResp.text();
+      (new Function(jsText + '\n; if (typeof initSqlJs !== "undefined") window.initSqlJs = initSqlJs;'))();
+      console.log('§SQL_LOCAL initSqlJs loaded from viewer/lib');
     }
   }
   if (window._STANDALONE && window._SQL_WASM_B64) {
@@ -1059,7 +1069,10 @@ async function _loadSqlJs() {
     for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
     return await initSqlJs({ wasmBinary: buf.buffer });
   }
-  return await initSqlJs({ locateFile: function(f) { return 'https://sql.js.org/dist/' + f; } });
+  // PWA / online: feed the local WASM binary directly (works offline via Cache Storage)
+  var wasmResp = await _fetchLocalOrCache('viewer/lib/sql-wasm.wasm');
+  var wasmBuf = await wasmResp.arrayBuffer();
+  return await initSqlJs({ wasmBinary: wasmBuf });
 }
 
 // §S284: Create Worker from Blob URL in standalone mode (file:// blocks script URLs)
@@ -1077,14 +1090,12 @@ function _createWorker(scriptUrl) {
         src = webIfcSrc + '\n' + src;
         console.log('§STANDALONE_WEBIFC size=' + webIfcSrc.length);
       }
-      // §S284b: Decode WASM on main thread → Blob URL → pass to import worker (avoids 5MB string in worker src)
+      // §S284c: Pass the base64 WASM STRING into the worker — the worker decodes it and
+      // mints the Blob URL in its OWN context. A blob URL minted on the main thread is NOT
+      // fetchable from a null-origin (file://) blob worker, which silently aborted IFC parse.
       if (window._WEBIFC_WASM_B64 && key === 'import_worker.js') {
-        var wasmBin = atob(window._WEBIFC_WASM_B64);
-        var wasmArr = new Uint8Array(wasmBin.length);
-        for (var _wi = 0; _wi < wasmBin.length; _wi++) wasmArr[_wi] = wasmBin.charCodeAt(_wi);
-        var wasmBlobUrl = URL.createObjectURL(new Blob([wasmArr], {type: 'application/wasm'}));
-        src = 'self._WEBIFC_WASM_URL = "' + wasmBlobUrl + '";\n' + src;
-        console.log('§STANDALONE_WASM_URL embedded');
+        src = 'self._WEBIFC_WASM_B64 = "' + window._WEBIFC_WASM_B64 + '";\n' + src;
+        console.log('§STANDALONE_WASM_B64 injected len=' + window._WEBIFC_WASM_B64.length);
       }
       console.log('§STANDALONE_WORKER blob key=' + key + ' size=' + src.length);
       return new Worker(URL.createObjectURL(new Blob([src], {type: 'application/javascript'})));
@@ -2149,6 +2160,18 @@ window.addEventListener('trl-ready', function() {
     });
   }
 });
+</script>
+
+<script>
+// §S284c: Register the viewer service worker from the landing page so the offline
+// cache (incl. web-ifc parser + WASM) populates on first visit. The IFC import worker
+// lives under viewer/ scope, so its web-ifc fetches are SW-served → IFC import works
+// offline. Skipped in standalone file:// (the saved HTML embeds everything inline).
+if (!window._STANDALONE && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('viewer/sw.js?v=526', { scope: 'viewer/' })
+    .then(function(r){ console.log('§SW_REG_LANDING scope=' + r.scope); })
+    .catch(function(e){ console.warn('§SW_REG_LANDING_FAIL', e.message); });
+}
 </script>
 
 
