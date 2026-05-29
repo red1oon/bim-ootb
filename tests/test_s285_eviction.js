@@ -315,6 +315,31 @@ A._cityDiscGate = null;
 A._cityHideBuildingBboxes('BX');
 assert(b1._hidden === 1 && b2._hidden === 1, 'gate off -> all disciplines hidden (legacy)');
 
+L('T14: small-first sprout + enter-focus (blow-far ARC, chunked detail)');
+// small-first ordering
+A.buildingCentres = { big: { count: 1000 }, small: { count: 10 }, mid: { count: 100 } };
+assert(JSON.stringify(A._citySmallFirst()) === JSON.stringify(['small','mid','big']), 'small buildings queued first (count ascending)');
+
+// blow-far: evict ALL resident except the focused building
+const _realEv = A._cityEvictVictims;
+let _blown = null;
+A._cityEvictVictims = function(v){ _blown = new Set(v); };
+A._cityResidentOrder = ['farA', 'focus', 'farB'];
+A._cityBlowFarARC('focus');
+assert(_blown && _blown.has('farA') && _blown.has('farB') && !_blown.has('focus'), 'blow-far evicts all far buildings, keeps the focused one');
+A._cityEvictVictims = _realEv;
+
+// focus detail: chunk the focused building's stash (never a 100k dump)
+A._cityMemBudgetMB = 400; A.streaming = false;
+A.cityBuildingDbs = { archF: { db: 'D', libDb: 'L' } };
+A._cityBuildingBytes = { focus: 10 * MB };          // plenty of room
+A._citySneak = { focus: { archetype: 'archF', rows: Array.from({length: 10000}, (_, i) => [i]) } };
+const _fr = [];
+A._cityStreamRows = (function(o){ return function(n,a,r){ _fr.push(r.length); return o.call(A,n,a,r); }; })(A._cityStreamRows);
+A._cityFocusSneak('focus');
+assert(_fr.length === 1 && _fr[0] === 4000, 'focus detail streams a 4000-row CHUNK (not the 10000 dump)');
+assert(A._citySneak.focus && A._citySneak.focus.rows.length === 6000, 'remainder (6000) re-stashed for the next chunk');
+
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);
 
