@@ -1707,7 +1707,7 @@ function setupMeasure(A) {
     }).forEach(function(o) {
       delete o.userData._clashHidden;
       // Respect storey/disc filters
-      var storeyOk = A.activeStoreyFilter === null || o.userData.storey === A.activeStoreyFilter;
+      var storeyOk = A._storeyVisible(o.userData.storey);
       var discOk = !A.hiddenDiscs.has(o.userData.disc);
       o.visible = storeyOk && discOk;
     });

@@ -126,7 +126,6 @@ function setupDLOD(A) {
     _frustum.setFromProjectionMatrix(_projScreenMatrix);
 
     var imVis = 0, imHid = 0, skipCount = 0;
-    var storeyFilter = A.activeStoreyFilter;
     var hiddenDiscs = A.hiddenDiscs;
 
     // ── BatchedMesh: Three.js r160 perObjectFrustumCulled handles per-slot frustum natively.
@@ -147,8 +146,7 @@ function setupDLOD(A) {
       for (var i = 0; i < meta.length; i++) {
         var m = meta[i];
 
-        if (storeyFilter !== null && storeyFilter !== undefined &&
-            m.storey !== storeyFilter) { skipCount++; continue; }
+        if (!A._storeyVisible(m.storey)) { skipCount++; continue; }
         if (hiddenDiscs && hiddenDiscs.size > 0 &&
             hiddenDiscs.has(m.disc)) { skipCount++; continue; }
         if (A._dlodPaused && m._dlodHid) { skipCount++; continue; }
