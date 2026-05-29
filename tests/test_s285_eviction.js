@@ -62,7 +62,7 @@ function batchedMesh(vertBytes, idxBytes) {  // owns merged geometry buffers
 
 const A = {
   CITY_URL: 'x', scene: makeScene(), _cityHidden: [],
-  _instanceMeta: {}, guidMap: {}, buildingsRendered: new Set(), savedStreams: {},
+  _instanceMeta: {}, _batchMeta: {}, guidMap: {}, buildingsRendered: new Set(), savedStreams: {},
   markDirty() {}, dlodEnable: null,
   collectMeshes(fn) { return A.scene.children.filter(fn); },
 };
@@ -76,10 +76,11 @@ function streamBuilding(name, objs) {
   A._cityPreStreamIds = new Set(A.scene.children.map(c => c.id));   // pre-stream snapshot
   objs.forEach(o => {
     A.scene.add(o);
-    // register guidMap + instanceMeta as the real streamer would, to prove teardown
+    // register guidMap + meta as the real streamer would, to prove teardown
     A.guidMap[o.id] = name + '_guid';
     A.guidMap[o.id + '_0'] = name + '_slot0';
-    A._instanceMeta[o.id] = [{ guid: name }];
+    if (o.isBatchedMesh) A._batchMeta[o.id] = [{ guid: name }];     // batched slots → _batchMeta
+    else A._instanceMeta[o.id] = [{ guid: name }];                   // instanced → _instanceMeta
   });
   A._cityTagAndBudget(name);
 }
@@ -104,6 +105,7 @@ assert(aObjs.every(o => A.scene.children.indexOf(o) === -1), 'A objects removed 
 assert(!A.buildingsRendered.has('A'), 'A dropped from buildingsRendered (re-click re-streams)');
 assert(Object.keys(A.guidMap).filter(k => A.guidMap[k].startsWith('A_')).length === 0, 'A guidMap entries cleaned');
 assert(!A._instanceMeta[aObjs[0].id], 'A _instanceMeta cleaned');
+assert(!A._batchMeta[aObjs[1].id], 'A _batchMeta cleaned (else §CONTRACT_FAIL phantom orphans)');
 assert(A._cityBuildingBytes['A'] === undefined, 'A byte tally removed');
 
 // T3 — active building alone exceeds budget: NOT evicted (never evict the just-streamed one)
@@ -120,6 +122,28 @@ const im = instMesh(2);                       // 2*16*4 = 128 bytes
 assert(A._cityObjBytes(im) === 128, 'InstancedMesh ownedBytes = instanceMatrix only (128B, geometry shared)');
 const bm = batchedMesh(1000, 400);
 assert(A._cityObjBytes(bm) === 1400, 'BatchedMesh ownedBytes = vert+index buffers (1400B, owned)');
+
+// T5 — HANG REGRESSION: guidMap teardown must be ONE sweep, not O(objects × guidMap).
+// Old per-object inner loop froze FF ~1min evicting Hospital (7.8k objs × 190k keys).
+L('T5: guidMap teardown scale — evict a 4000-object building against a 200k-key guidMap');
+A._cityBuildingBytes = {}; A._cityResidentOrder = []; A._cityHidden = [];
+A.guidMap = {}; A.scene.children.length = 0; A.buildingsRendered = new Set();
+A._cityMemBudgetMB = 1;                                  // force eviction of the older building
+// 200k guidMap entries belonging to a RESIDENT building (mesh id 999999) — must be PRESERVED
+for (let n = 0; n < 200000; n++) A.guidMap['999999_' + n] = 'resident_slot';
+// Building D: 4000 objects (the one we'll evict)
+const dObjs = []; for (let n = 0; n < 4000; n++) dObjs.push(instMesh(8));
+streamBuilding('D', dObjs);
+const guidBefore = Object.keys(A.guidMap).length;
+// Building E (active) pushes over the 1MB budget → evicts D; times the cascade + sweep
+const t0 = process.hrtime.bigint();
+streamBuilding('E', [instMesh(8)]);
+const elapsedMs = Number(process.hrtime.bigint() - t0) / 1e6;
+assert(!A._cityResidentOrder.includes('D'), 'D evicted (oldest), E kept');
+assert(Object.keys(A.guidMap).filter(k => k.startsWith('999999_')).length === 200000, 'resident 200k guidMap entries preserved');
+assert(Object.keys(A.guidMap).filter(k => dObjs.some(o => k === String(o.id) || k.startsWith(o.id + '_'))).length === 0, 'D guidMap entries removed');
+assert(elapsedMs < 1000, 'eviction+guidMap sweep completed fast (' + elapsedMs.toFixed(0) + 'ms; old O(N×M) path took seconds)');
+L('  (guidMap ' + guidBefore + '→' + Object.keys(A.guidMap).length + ' keys, ' + elapsedMs.toFixed(0) + 'ms)');
 
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);

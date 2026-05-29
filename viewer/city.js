@@ -122,29 +122,37 @@ function setupCity(A) {
 
   A._cityEvictToBudget = function(keepBuilding) {
     var budgetBytes = (A._cityMemBudgetMB || 384) * 1048576;
-    var guard = 0;
+    var guard = 0, evictIds = new Set(), evicted = 0;
     while (A._cityResidentBytes() > budgetBytes && A._cityResidentOrder.length > 1 && guard++ < 200) {
       var victim = null;
       for (var i = 0; i < A._cityResidentOrder.length; i++) {
         if (A._cityResidentOrder[i] !== keepBuilding) { victim = A._cityResidentOrder[i]; break; }
       }
       if (!victim) break;
-      A._cityEvictBuilding(victim);
+      A._cityEvictBuilding(victim, evictIds);   // accumulates evicted object ids; NO guidMap loop here
+      evicted++;
+    }
+    // §S285 HOTFIX: clean guidMap in ONE sweep for the whole cascade. The previous per-object
+    // inner loop (`for gk in guidMap` PER evicted object) was O(objects × guidMap): evicting
+    // Hospital (~7.8k objects × ~190k keys ≈ 1.5B string checks) froze the main thread ~a minute.
+    // guidMap keys are `meshId` or `meshId_slot` → match by leading id against the evicted set.
+    if (evicted && A.guidMap) {
+      for (var gk in A.guidMap) {
+        var us = gk.indexOf('_');
+        if (evictIds.has(us >= 0 ? gk.substring(0, us) : gk)) delete A.guidMap[gk];
+      }
     }
     // DLOD refs are rebuilt by the dlodEnable() call that runs right after this in streaming.js.
   };
 
-  A._cityEvictBuilding = function(name) {
+  A._cityEvictBuilding = function(name, evictIds) {
     var objs = A.collectMeshes(function(o){ return o.userData && o.userData.building === name && !o.userData.isBboxPlaceholder; });
     var freed = A._cityBuildingBytes[name] || 0;
     objs.forEach(function(o){
       A.scene.remove(o);
+      if (evictIds) evictIds.add(String(o.id));                      // guidMap cleaned in ONE sweep by caller
       if (A._instanceMeta) delete A._instanceMeta[o.id];
-      if (A.guidMap) {                                   // keyed by o.id or o.id + '_' + slot
-        var pfx = o.id + '_';
-        delete A.guidMap[o.id];
-        for (var gk in A.guidMap) { if (gk.indexOf(pfx) === 0) delete A.guidMap[gk]; }
-      }
+      if (A._batchMeta) delete A._batchMeta[o.id];                    // else stale → §CONTRACT_FAIL phantom orphans + leak
       if (o.isBatchedMesh) { if (o.dispose) o.dispose(); }          // frees owned buffers + its BVH
       else if (o.isInstancedMesh) { if (o.dispose) o.dispose(); }    // frees instanceMatrix; geometry SHARED — keep
       else if (o.geometry) { o.geometry.dispose(); }                 // fallback/merged Mesh owns geometry
