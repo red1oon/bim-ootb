@@ -42,11 +42,12 @@ vm.runInContext(src + '\n;this.setupCity = setupCity;', sandbox);
 // ── Mock APP ──
 let _idSeq = 1;
 function makeScene() {
-  const children = [];
+  // Mirror THREE: add/remove read `this.children` dynamically, so a bulk
+  // `scene.children = filtered` reassignment (the eviction fast-path) is honoured.
   return {
-    children,
-    add(o) { children.push(o); },
-    remove(o) { const i = children.indexOf(o); if (i >= 0) children.splice(i, 1); },
+    children: [],
+    add(o) { this.children.push(o); },
+    remove(o) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); },
   };
 }
 function instMesh(elementCount) {        // instance buffer = elementCount * 16 floats * 4 bytes
@@ -144,6 +145,32 @@ assert(Object.keys(A.guidMap).filter(k => k.startsWith('999999_')).length === 20
 assert(Object.keys(A.guidMap).filter(k => dObjs.some(o => k === String(o.id) || k.startsWith(o.id + '_'))).length === 0, 'D guidMap entries removed');
 assert(elapsedMs < 1000, 'eviction+guidMap sweep completed fast (' + elapsedMs.toFixed(0) + 'ms; old O(N×M) path took seconds)');
 L('  (guidMap ' + guidBefore + '→' + Object.keys(A.guidMap).length + ' keys, ' + elapsedMs.toFixed(0) + 'ms)');
+
+// T6 — TIMEOUT REGRESSION (sw v528): a cascade evicting MANY buildings at once must be ONE
+// pass over scene.children + _cityHidden, not per-building (collectMeshes + scene.remove +
+// _cityHidden scan PER building was O(victims × scene) and timed out evicting ~18 at once
+// with Terminal/LTU bbox layers ≈170k hidden entries).
+L('T6: multi-building cascade + 100k _cityHidden — the v528 timeout scenario');
+A._cityBuildingBytes = {}; A._cityResidentOrder = []; A.guidMap = {};
+A.scene.children.length = 0; A.buildingsRendered = new Set(); A._cityHidden = [];
+const bbox = { isInstancedMesh: true, userData: { isBboxPlaceholder: true },
+  instanceMatrix: { needsUpdate: false }, setMatrixAt() {}, getMatrixAt() {} };
+A._cityMemBudgetMB = 1e9;                                  // no eviction during setup
+for (let b = 0; b < 20; b++) {                            // 20 buildings × (15MB + 200 objects)
+  const objs = [batchedMesh(14 * MB, 1 * MB)];
+  for (let n = 0; n < 200; n++) objs.push(instMesh(8));
+  streamBuilding('B' + b, objs);
+  for (let hi = 0; hi < 5000; hi++) A._cityHidden.push({ mesh: bbox, i: hi, m: 0, building: 'B' + b });  // 100k total
+}
+A._cityMemBudgetMB = 30;                                   // now force a big cascade
+const t6 = process.hrtime.bigint();
+streamBuilding('ACT', [batchedMesh(28 * MB, 2 * MB)]);    // active building → evicts ~all 20
+const t6ms = Number(process.hrtime.bigint() - t6) / 1e6;
+assert(A._cityResidentOrder.includes('ACT'), 'active building kept through the cascade');
+assert(A._cityResidentOrder.length <= 3, 'cascade evicted down toward budget (resident=' + A._cityResidentOrder.length + ')');
+assert(A._cityHidden.every(h => h.building === 'ACT' || A._cityResidentOrder.includes(h.building)), 'evicted buildings _cityHidden entries restored (removed)');
+assert(t6ms < 1000, 'whole multi-building cascade completed fast (' + t6ms.toFixed(0) + 'ms; v528 per-building path timed out)');
+L('  (evicted ' + (21 - A._cityResidentOrder.length) + ' buildings, _cityHidden→' + A._cityHidden.length + ', ' + t6ms.toFixed(0) + 'ms)');
 
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);
