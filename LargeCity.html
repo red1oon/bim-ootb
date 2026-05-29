@@ -167,6 +167,44 @@ function checkCached(url) {
   });
 }
 
+// §S285: a building is a SET of files, not one. extracted.db is meta-only for split
+// buildings (LTU/Terminal/Hospital) — the geometry lives in a separate geo.db. Resolve
+// the real set the viewer fetches so the card downloads + sizes the WHOLE building.
+//   (1) SPLIT     : {arch}_meta.db + {arch}_geo.db   (HEAD-probe meta.db → present)
+//   (2) SINGLE-DB : {arch}_extracted.db              (geometry inline)
+//   (3) OLD SPLIT : {arch}_extracted.db + {arch}_library.db
+async function resolveFiles(extUrl) {
+  var metaUrl = extUrl.replace('_extracted.db', '_meta.db');
+  var geoUrl  = extUrl.replace('_extracted.db', '_geo.db');
+  if (metaUrl !== extUrl) {
+    try { var h = await fetch(metaUrl, { method: 'HEAD' }); if (h.ok) return [metaUrl, geoUrl]; } catch (e) {}
+  }
+  var files = [extUrl];                                   // single-db (geometry inline)
+  var libUrl = extUrl.replace('_extracted.db', '_library.db');
+  if (libUrl !== extUrl) {
+    try { var hl = await fetch(libUrl, { method: 'HEAD' }); if (hl.ok) files.push(libUrl); } catch (e) {}
+  }
+  return files;
+}
+
+// Sum the cached bytes of every part of the set that's present in IDB (local, no network).
+async function checkCachedSet(extUrl) {
+  var parts = [extUrl,
+    extUrl.replace('_extracted.db', '_meta.db'),
+    extUrl.replace('_extracted.db', '_geo.db'),
+    extUrl.replace('_extracted.db', '_library.db')];
+  var total = 0, geoUrl = extUrl.replace('_extracted.db', '_geo.db');
+  var geoPresent = false, anyPresent = false;
+  for (var i = 0; i < parts.length; i++) {
+    var sz = await checkCached(parts[i]);
+    if (sz > 0) { total += sz; anyPresent = true; if (parts[i] === geoUrl) geoPresent = true; }
+  }
+  // "cached" only if the heavy geometry is present (geo.db for split, or extracted for single/old).
+  // A stale meta-only extracted.db should NOT count as a complete building.
+  var hasGeo = geoPresent || (await checkCached(extUrl)) > 0;
+  return hasGeo && anyPresent ? total : 0;
+}
+
 function writeCache(url, buf) {
   return new Promise(function(resolve) {
     if (!_cacheDb) { resolve(false); return; }
@@ -193,36 +231,47 @@ async function downloadBuilding(name) {
   e.statusEl.className = 'bld-status';
 
   try {
-    var resp = await fetch(e.url);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    // §S285: a building is a SET of files (split = meta.db + geo.db). Download + cache ALL of
+    // them and sum their sizes. The old code fetched only extracted.db — which is META-ONLY for
+    // split buildings (LTU/Terminal/Hospital) → it reported ~68MB instead of ~419MB and cached
+    // a geometry-less DB (broken offline). Each file is cached under its own URL so the viewer's
+    // cachedFetch (split path) finds meta.db + geo.db.
+    var files = await resolveFiles(e.url);
 
-    var contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
-    var reader = resp.body.getReader();
-    var chunks = [], received = 0;
-
-    while (true) {
-      var result = await reader.read();
-      if (result.done) break;
-      chunks.push(result.value);
-      received += result.value.length;
-      if (contentLength > 0) {
-        var pct = Math.round((received / contentLength) * 100);
-        e.progEl.style.width = pct + '%';
-        e.statusEl.textContent = (received / 1024 / 1024).toFixed(1) + ' / ' + (contentLength / 1024 / 1024).toFixed(0) + ' MB';
-      } else {
-        e.statusEl.textContent = (received / 1024 / 1024).toFixed(1) + ' MB...';
-      }
+    // Total size up front (HEAD sum) so the bar + reported MB cover the WHOLE building.
+    var totalBytes = 0;
+    for (var hi = 0; hi < files.length; hi++) {
+      try { var hr = await fetch(files[hi], { method: 'HEAD' }); totalBytes += parseInt(hr.headers.get('Content-Length') || '0', 10); } catch (eh) {}
     }
 
-    var full = new Uint8Array(received);
-    var offset = 0;
-    for (var i = 0; i < chunks.length; i++) { full.set(chunks[i], offset); offset += chunks[i].length; }
+    var receivedAll = 0;
+    for (var fi = 0; fi < files.length; fi++) {
+      var resp = await fetch(files[fi]);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status + ' (' + files[fi].split('/').pop() + ')');
+      var reader = resp.body.getReader();
+      var chunks = [], got = 0;
+      while (true) {
+        var result = await reader.read();
+        if (result.done) break;
+        chunks.push(result.value);
+        got += result.value.length;
+        var shown = receivedAll + got;
+        if (totalBytes > 0) {
+          e.progEl.style.width = Math.round((shown / totalBytes) * 100) + '%';
+          e.statusEl.textContent = (shown / 1048576).toFixed(1) + ' / ' + (totalBytes / 1048576).toFixed(0) + ' MB';
+        } else {
+          e.statusEl.textContent = (shown / 1048576).toFixed(1) + ' MB...';
+        }
+      }
+      var buf = new Uint8Array(got), off = 0;
+      for (var ci = 0; ci < chunks.length; ci++) { buf.set(chunks[ci], off); off += chunks[ci].length; }
+      e.statusEl.textContent = (files.length > 1 ? 'Caching ' + (fi + 1) + '/' + files.length + '...' : 'Caching...');
+      var ok = await writeCache(files[fi], buf.buffer);
+      if (!ok) throw new Error('IDB write failed');
+      receivedAll += got;
+    }
 
-    e.statusEl.textContent = 'Caching...';
-    var ok = await writeCache(e.url, full.buffer);
-    if (!ok) throw new Error('IDB write failed');
-
-    markCached(name, received / 1024 / 1024);
+    markCached(name, receivedAll / 1048576);
 
   } catch (err) {
     e.el.classList.remove('downloading');
@@ -417,7 +466,7 @@ async function init() {
   // ── Check cache ──
   var names = Object.keys(_entries);
   for (var ci = 0; ci < names.length; ci++) {
-    var cachedSize = await checkCached(_entries[names[ci]].url);
+    var cachedSize = await checkCachedSet(_entries[names[ci]].url);   // §S285: sum the whole set (meta+geo), not just extracted.db
     if (cachedSize > 0) {
       markCached(names[ci], cachedSize / 1024 / 1024);
     }
