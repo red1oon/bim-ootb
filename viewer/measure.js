@@ -58,7 +58,11 @@ function setupMeasure(A) {
     if (A._clashRules) { cb(A._clashRules); return; }
     if (A._clashRulesLoading) return;
     A._clashRulesLoading = true;
-    fetch('clash_rules.json?v=2').then(function(r) { return r.json(); }).then(function(j) {
+    // §S282c: route through loadJsonWithOverrides so Settings edits (json_clash_rules) apply.
+    var clashLoader = (typeof window.loadJsonWithOverrides === 'function')
+      ? window.loadJsonWithOverrides('clash_rules.json?v=2', 'json_clash_rules')
+      : fetch('clash_rules.json?v=2').then(function(r) { return r.json(); });
+    clashLoader.then(function(j) {
       A._clashRules = j;
       A._clashRulesLoading = false;
       if (j.display && j.display.max_report) A._CLASH_PAGE_SIZE = j.display.max_report;
