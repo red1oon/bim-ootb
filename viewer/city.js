@@ -533,7 +533,7 @@ function setupCity(A) {
     // §S285: 'Elements' now shows CUMULATIVE RENDERED (starts 0, grows as buildings finish) — not
     // the 1.3M city total (that's the whole index, scary + meaningless mid-stream).
     A._cityDoneElements = 0; A._cityCounted = new Set();
-    A._cityFacadeTotal = (A.discCounts['ARC'] || 0) + (A.discCounts['STR'] || 0);   // overall target = facade, not the 1.3M city total
+    A._cityFacadeTotal = (A.discCounts['ARC'] || 0);   // overall target = ARC facade (matches the gate), not the 1.3M city total
     document.getElementById('s-elements').textContent = '0 / ' + A._cityFacadeTotal.toLocaleString();
 
     const extentX = allIX.length ? Math.max(...allIX) - Math.min(...allIX) : 500;
@@ -557,7 +557,7 @@ function setupCity(A) {
     // to nearest-first-by-centre if the blast is empty (camera not yet aimed / bbox not ready).
     if (!A._isMobile && A.CITY_URL) {
       A._cityAutoLoad = true;                       // wave-front stop gate in _cityStreamNext
-      A._cityDiscGate = ['ARC', 'STR'];            // §S285: city streams the ARC/STR shell first
+      A._cityDiscGate = ['ARC'];                   // §S285: facade = ARC ONLY (145k < 250k knee → whole city builds). STR+MEP load on enter-focus.
       A._citySneak = A._citySneak || {};           // building -> {archetype, rows} (the rest, to sneak)
       A._citySneakEnabled = false;
       A._citySmallThreshold = 5000;                 // buildings below this element count are never evicted (cheap context)
@@ -578,9 +578,11 @@ function setupCity(A) {
           } else {
             A._cityFocus = null;
             A._cityEvictNonVisible(visSet, A.activeBuilding);   // overview wave: gentle far eviction
+            // §S285: build ALL ARC (whole facade fits under the element budget) — queue EVERY
+            // remaining building small-first, not just the visible ones, so the city completes.
+            A._cityPendingQueue = A._citySmallFirst().filter(function(n){ return !(A.buildingsRendered && A.buildingsRendered.has(n)); });
+            A._cityStreamNext();
           }
-          A._cityPendingQueue = vis.filter(function(n){ return !(A.buildingsRendered && A.buildingsRendered.has(n)); });
-          A._cityStreamNext();
         });
       }
       A._cityPendingQueue = A._citySmallFirst();   // launch: sprout ALL buildings, SMALL first
