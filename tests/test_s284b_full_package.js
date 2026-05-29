@@ -111,6 +111,18 @@ check('4.3 webifc-src block inserted before <body>',
 // ── Step 5: Strip analytics + fix URLs ──
 html = html.replace(/<script[^>]*goatcounter[^>]*><\/script>/g, '');
 html = html.replace(/src="Sysnova\.png"/g, 'src="data:image/png;base64,MOCK"');
+// §S284c: Inline icon-192 + YT.png as real base64 — mirrors the browser Save-Offline path
+// (index.html §S284c). Without this the Node test build leaves relative file:// refs that
+// 404 offline, masking whether the real saved file is asset-complete.
+function _imgDataUri(rel) {
+  var p = path.join(root, rel);
+  if (!fs.existsSync(p)) return '';
+  return 'data:image/png;base64,' + fs.readFileSync(p).toString('base64');
+}
+var iconUri = _imgDataUri('viewer/icons/icon-192.png');
+var ytUri   = _imgDataUri('viewer/YT.png');
+if (iconUri) html = html.replace(/src="viewer\/icons\/icon-192\.png"/g, 'src="' + iconUri + '"');
+if (ytUri)   html = html.replace(/src="viewer\/YT\.png"/g, 'src="' + ytUri + '"');
 var ghBase = 'https://red1oon.github.io/bim-ootb/';
 html = html.replace(
   /const viewerFile = [^;]+;/,
