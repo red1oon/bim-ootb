@@ -559,19 +559,25 @@ function setupCity(A) {
           if (!A.CITY_URL || A._isMobile || !A._cityAutoLoad) return;
           var vis = A._cityRayBlast();
           if (!vis.length) return;
+          vis.sort(function(a, b){ return ((A.buildingCentres[a]||{}).count||0) - ((A.buildingCentres[b]||{}).count||0); });  // small-first
           var visSet = new Set(vis);
-          A._cityEvictNonVisible(visSet, A.activeBuilding);   // free the trailing edge (left-the-view)
+          // ENTER-FOCUS: camera close to the nearest building (dist < ~0.7 of its size) → going in.
+          var _near = A._cityBlastNearest, _nd = A._cityBlastNearestDist;
+          var _bb = _near && A._cityBuildingAABB && A._cityBuildingAABB[_near];
+          var _diag = _bb ? Math.sqrt((_bb.x1-_bb.x0)*(_bb.x1-_bb.x0)+(_bb.y1-_bb.y0)*(_bb.y1-_bb.y0)+(_bb.z1-_bb.z0)*(_bb.z1-_bb.z0)) : 120;
+          if (_near && _nd < _diag * 0.7) {
+            if (A._cityFocus !== _near) { A._cityFocus = _near; A._cityBlowFarARC(_near); }   // dive in → blow far ARC
+            A._cityFocusSneak(_near);                                                          // load this building's detail
+          } else {
+            A._cityFocus = null;
+            A._cityEvictNonVisible(visSet, A.activeBuilding);   // overview wave: gentle far eviction
+          }
           A._cityPendingQueue = vis.filter(function(n){ return !(A.buildingsRendered && A.buildingsRendered.has(n)); });
-          A._cityStreamNext();                    // stream the now-visible, room freed by the eviction above
+          A._cityStreamNext();
         });
       }
-      var _visible = A._cityRayBlast();
-      if (!_visible.length) {
-        _visible = A._cityNearestFirst();
-        console.log('[S285] §AUTOLOAD fallback=distance-sort (ray-blast empty)');
-      }
-      A._cityPendingQueue = _visible;
-      console.log('[S285] §AUTOLOAD queued=' + _visible.length + ' nearest=' + (_visible[0] || '\u2014') + ' budgetMB=' + (A._cityMemBudgetMB || 384));
+      A._cityPendingQueue = A._citySmallFirst();   // launch: sprout ALL buildings, SMALL first
+      console.log('[S285] §AUTOLOAD queued=' + A._cityPendingQueue.length + ' (small-first sprout) budgetMB=' + (A._cityMemBudgetMB || 384));
       A._cityStreamNext();
     }
   };
@@ -818,6 +824,36 @@ function setupCity(A) {
     }
     return Object.keys(nearest).sort(function(a, b) { return nearest[a] - nearest[b]; });
   };
+  // §S285: SMALL buildings first — they render fast and are visibly spread out, so the city page
+  // launch shows buildings 'busy sprouting' everywhere (big buildings have lower city-impression
+  // value + are slow; they fill in last, never left out).
+  A._citySmallFirst = function() {
+    return Object.keys(A.buildingCentres).sort(function(a, b){
+      return ((A.buildingCentres[a]||{}).count || 0) - ((A.buildingCentres[b]||{}).count || 0);
+    });
+  };
+  // §S285 enter-focus: when the camera nears a building (about to go in), blow ALL far ARC to free
+  // the budget, then stream that building's stashed full detail (STR/MEP) in chunks.
+  A._cityBlowFarARC = function(keep) {
+    if (!A._cityResidentOrder) return;
+    var victims = new Set();
+    A._cityResidentOrder.forEach(function(nm){ if (nm !== keep) victims.add(nm); });
+    if (!victims.size) return;
+    console.log('[S285] §CITY_BLOWFAR keep=' + keep + ' evicted=' + victims.size);
+    A._cityEvictVictims(victims);
+  };
+  A._cityFocusSneak = function(name) {
+    if (A.streaming || !A._citySneak) return;
+    var job = A._citySneak[name];
+    if (!job || !job.rows || !job.rows.length) return;
+    if (A._cityResidentBytes && A._cityResidentBytes() >= (A._cityMemBudgetMB||384)*1048576*0.85) return;  // budget full
+    var CHUNK = 4000;                                    // chunked → never a 100k dump / BVH storm
+    var batch = job.rows.length > CHUNK ? job.rows.slice(0, CHUNK) : job.rows;
+    var rest  = job.rows.length > CHUNK ? job.rows.slice(CHUNK) : null;
+    if (rest && rest.length) A._citySneak[name] = { archetype: job.archetype, rows: rest }; else delete A._citySneak[name];
+    console.log('[S285] §CITY_FOCUS_DETAIL building=' + name + ' rows=' + batch.length + ' remaining=' + (rest ? rest.length : 0));
+    A._cityStreamRows(name, job.archetype, batch);
+  };
   A._cityNearestFirst = function() {            // fallback: ALL buildings by centre distance to camera
     if (!A.camera) return Object.keys(A.buildingCentres);
     var cam = A.camera.position;
@@ -861,6 +897,9 @@ function setupCity(A) {
         if (bestName) hitList.push({building:bestName, distance:bestT});
       }
     }
+    var _nd = Infinity, _nn = null;
+    for (var hj = 0; hj < hitList.length; hj++) { if (hitList[hj].distance < _nd) { _nd = hitList[hj].distance; _nn = hitList[hj].building; } }
+    A._cityBlastNearest = _nn; A._cityBlastNearestDist = _nd;   // §S285: for enter-focus detection
     var ordered = A._cityOrderBlastHits(hitList);
     var _ms = _t0 ? (((typeof performance!=='undefined'&&performance.now)?performance.now():0)-_t0).toFixed(1) : '?';
     console.log('[S285] §RAYBLAST rays=' + rays + ' hits=' + hitList.length + ' buildings=' + ordered.length + ' ms=' + _ms);
@@ -905,7 +944,7 @@ function setupCity(A) {
       var n = A._cityPendingQueue.shift();
       if (n && !(A.buildingsRendered && A.buildingsRendered.has(n))) { next = n; break; }
     }
-    if (!next) { if (A._cityAutoLoad && A._citySneakEnabled) A._citySneakNext(); return; }  // §S285: visible all loaded → sneak the rest
+    if (!next) { if (A._cityFocus) A._cityFocusSneak(A._cityFocus); return; }   // idle → keep loading focused building's detail  // §S285: visible all loaded → sneak the rest
     A.status.textContent = (A._cityAutoLoad ? 'Loading city \u2014 ' : 'Marquee \u2014 streaming ') + next + ' (' + A._cityPendingQueue.length + ' queued)';
     A.cityLoadBuilding(next);
   };
