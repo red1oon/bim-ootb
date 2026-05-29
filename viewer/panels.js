@@ -422,24 +422,35 @@ function setupPanels(A) {
   A.activeStoreyFilter = null;
   A.storeyMeshGroups = {};
 
+  // §NAV_FIND_002: ONE storey-visibility predicate. activeStoreyFilter may be
+  // null (all) | string (one) | Array<string> (multi). All appliers route here.
+  A._storeyVisible = function(s) {
+    var f = A.activeStoreyFilter;
+    if (f === null || f === undefined) return true;
+    if (Array.isArray(f)) return f.indexOf(s) >= 0;
+    return s === f;
+  };
+
   // §S280: HUD removed — storey/disc now in Find outliner
   A.populateStoreys = function() {};
 
+  // §NAV_FIND_002: accepts null | string | Array<string>. Empty array → all.
   A.filterStorey = function(storey) {
+    if (Array.isArray(storey)) storey = storey.length ? (storey.length === 1 ? storey[0] : storey.slice()) : null;
     A.activeStoreyFilter = storey;
     // S239: Regular meshes — show/hide by storey
     A.collectMeshes(o => o.isMesh && o.userData.storey !== undefined).forEach(obj => {
-      obj.visible = storey === null || obj.userData.storey === storey;
+      obj.visible = A._storeyVisible(obj.userData.storey);
     });
     // S232/S239: InstancedMesh — per-instance storey filter via zero-scale matrix
     A.collectMeshes(o => o.isInstancedMesh).forEach(mesh => {
-      A.filterInstancedMesh(mesh, meta => storey === null || meta.storey === storey);
+      A.filterInstancedMesh(mesh, meta => A._storeyVisible(meta.storey));
     });
     // §S260: BatchedMesh — per-element storey filter via setVisibleAt
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
-      A.filterBatchedMesh(mesh, meta => storey === null || meta.storey === storey);
+      A.filterBatchedMesh(mesh, meta => A._storeyVisible(meta.storey));
     });
-    console.log(`[S200] §STOREY_FILTER ${storey || 'ALL'}`);
+    console.log(`[S200] §STOREY_FILTER ${Array.isArray(storey) ? '[' + storey.join(',') + ']' : (storey || 'ALL')}`);
     if (A.markDirty) A.markDirty();
   };
 
@@ -459,34 +470,37 @@ function setupPanels(A) {
 
   // §S280d: Show only this discipline (null = show all). Counterpart to filterStorey.
   A.filterDisc = function(disc) {
+    A.filterDiscs(disc === null ? null : [disc]);
+  };
+
+  // §NAV_FIND_002: Show ONLY the disciplines in `list` (empty/null → all). Multi-select.
+  A.filterDiscs = function(list) {
     A.hiddenDiscs.clear();
-    if (disc !== null) {
-      // Build hiddenDiscs from scene — hide everything except target disc
+    if (list && list.length) {
+      var keep = new Set(list);
+      // Build hiddenDiscs from scene — hide everything not in the keep set
       A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
-        if (obj.userData.disc !== disc) A.hiddenDiscs.add(obj.userData.disc);
+        if (!keep.has(obj.userData.disc)) A.hiddenDiscs.add(obj.userData.disc);
       });
     }
     A._applyDiscVisibility();
-    console.log('[S200] §DISC_FILTER ' + (disc || 'ALL'));
+    console.log('[S200] §DISC_FILTER ' + (list && list.length ? '[' + list.join(',') + ']' : 'ALL'));
   };
 
   // §S280d: shared traversal for disc + storey combined visibility
   A._applyDiscVisibility = function() {
     A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
       const discVisible = !A.hiddenDiscs.has(obj.userData.disc);
-      const storeyVisible = A.activeStoreyFilter === null || obj.userData.storey === A.activeStoreyFilter;
-      obj.visible = discVisible && storeyVisible;
+      obj.visible = discVisible && A._storeyVisible(obj.userData.storey);
     });
     A.collectMeshes(o => o.isInstancedMesh).forEach(mesh => {
       A.filterInstancedMesh(mesh, meta => {
-        return !A.hiddenDiscs.has(meta.disc) &&
-          (A.activeStoreyFilter === null || meta.storey === A.activeStoreyFilter);
+        return !A.hiddenDiscs.has(meta.disc) && A._storeyVisible(meta.storey);
       });
     });
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
       A.filterBatchedMesh(mesh, meta => {
-        return !A.hiddenDiscs.has(meta.disc) &&
-          (A.activeStoreyFilter === null || meta.storey === A.activeStoreyFilter);
+        return !A.hiddenDiscs.has(meta.disc) && A._storeyVisible(meta.storey);
       });
     });
     if (A.markDirty) A.markDirty();

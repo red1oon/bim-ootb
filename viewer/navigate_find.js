@@ -205,6 +205,38 @@
     var _treeMode = 'storey'; // 'storey' or 'disc'
     var _treeRevealed = false; // §S280d: tree hidden until mode toggle pressed
 
+    // §NAV_FIND_002: multi-select state (parent rows only). Plain=replace,
+    // Ctrl/Cmd=toggle, Shift=range. Sets cleared only on Storey/Disc toggle.
+    var _selStoreys = new Set();
+    var _selDiscs = new Set();
+    var _anchor = null; // last plain/ctrl-tapped label, for Shift-range
+    function _orderedParentLabels() {
+      return Array.prototype.map.call(
+        elTree ? elTree.querySelectorAll('[data-find-parent]') : [],
+        function(r) { return r.getAttribute('data-find-parent'); });
+    }
+    function _setParentRowStyle(row, active) {
+      var text = row.querySelector('span:nth-child(2)');
+      if (active) {
+        row.setAttribute('data-active', '1');
+        row.style.background = 'linear-gradient(180deg,rgba(79,195,247,0.2) 0%,rgba(79,195,247,0.08) 100%)';
+        row.style.borderLeftColor = '#4fc3f7';
+        if (text) text.style.color = '#4fc3f7';
+      } else {
+        row.removeAttribute('data-active');
+        row.style.background = 'linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)';
+        row.style.borderLeftColor = 'rgba(79,195,247,0.3)';
+        if (text) text.style.color = '#ddd';
+      }
+    }
+    function _applyParentHighlight() {
+      if (!elTree) return;
+      var sel = (_treeMode === 'storey') ? _selStoreys : _selDiscs;
+      elTree.querySelectorAll('[data-find-parent]').forEach(function(row) {
+        _setParentRowStyle(row, sel.has(row.getAttribute('data-find-parent')));
+      });
+    }
+
     // §S280: Audio thump — short click on mode toggle (lightweight, no file load)
     var _audioCtx = null;
     function _thump() {
@@ -225,6 +257,8 @@
       _treeMode = mode;
       if (elModeToggle) elModeToggle.textContent = mode === 'storey' ? 'Storey' : 'Discipline';
       // §S280d: Restore full scene visibility on toggle — reset both filters
+      // §NAV_FIND_002: toggling Storey/Disc is the ONLY restore path — also clear selection.
+      _selStoreys.clear(); _selDiscs.clear(); _anchor = null;
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
       _thump();
@@ -246,6 +280,8 @@
       try {
         if (_treeMode === 'storey') _buildStoreyTree(bld, filter);
         else _buildDiscTree(bld, filter);
+        // §NAV_FIND_002: re-apply multi-select highlight after rebuild (filter typing)
+        _applyParentHighlight();
       } catch(e) { console.warn('§FIND_TREE error', e); }
     }
 
@@ -273,6 +309,8 @@
       row.appendChild(arrow);
       row.appendChild(text);
       row.appendChild(badge);
+      // §NAV_FIND_002: tag parent rows so multi-select range/highlight can read DOM order
+      if (isParent) row.setAttribute('data-find-parent', label);
 
       // Hover
       row.addEventListener('pointerenter', function() {
@@ -314,21 +352,34 @@
           // Arrow never touches 3D — neutral action
         });
       }
-      // Click on label/badge = sticky filter (switching storeys replaces, no toggle-off)
+      // §NAV_FIND_002: parent rows = multi-select layer (storey/disc).
+      // Plain=replace, Ctrl/Cmd=toggle, Shift=range. Children → opts.onTap.
       function _doTap(e) {
         e.stopPropagation();
-        if (isParent && row.parentNode) {
-          // Deselect all siblings
-          row.parentNode.querySelectorAll('[data-active]').forEach(function(el) {
-            el.removeAttribute('data-active');
-            el.style.background = 'linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)';
-            el.style.borderLeftColor = 'rgba(79,195,247,0.3)';
-            el.querySelector('span:nth-child(2)').style.color = '#ddd';
-          });
-          row.setAttribute('data-active', '1');
-          row.style.background = 'linear-gradient(180deg,rgba(79,195,247,0.2) 0%,rgba(79,195,247,0.08) 100%)';
-          row.style.borderLeftColor = '#4fc3f7';
-          text.style.color = '#4fc3f7';
+        if (isParent && opts.multiSelect) {
+          var sel = (_treeMode === 'storey') ? _selStoreys : _selDiscs;
+          var ctrl = e.ctrlKey || e.metaKey;
+          var shift = e.shiftKey;
+          var mod = shift ? 'shift' : (ctrl ? 'ctrl' : 'plain');
+          if (shift && _anchor !== null) {
+            var labels = _orderedParentLabels();
+            var ai = labels.indexOf(_anchor), bi = labels.indexOf(label);
+            if (ai >= 0 && bi >= 0) {
+              sel.clear();
+              for (var k = Math.min(ai, bi); k <= Math.max(ai, bi); k++) sel.add(labels[k]);
+            } else { sel.clear(); sel.add(label); _anchor = label; }
+          } else if (ctrl) {
+            if (sel.has(label)) sel.delete(label); else sel.add(label);
+            _anchor = label;
+          } else {
+            sel.clear(); sel.add(label); _anchor = label;
+          }
+          _applyParentHighlight();
+          var arr = Array.from(sel);
+          if (_treeMode === 'storey') { if (A.filterStorey) A.filterStorey(arr.length ? arr : null); }
+          else { if (A.filterDiscs) A.filterDiscs(arr.length ? arr : null); }
+          console.log('§FIND_MULTISEL mode=' + _treeMode + ' sel=[' + arr.join(',') + '] n=' + arr.length + ' mod=' + mod);
+          return;
         }
         if (opts.onTap) opts.onTap();
       }
@@ -357,10 +408,7 @@
 
         var node = _treeNode(storey, storeyCnt, 0, {
           children: true, // signal: has children, loaded lazily
-          onTap: function() {
-            // §S280b: Storey tap = instant 3D filter. Sticky — close panel restores.
-            if (A.filterStorey) A.filterStorey(storey);
-          },
+          multiSelect: true, // §NAV_FIND_002: _doTap manages selection + filter
           onExpand: function(container) {
             if (container._loaded) return;
             container._loaded = true;
@@ -413,10 +461,7 @@
 
         var node = _treeNode(disc, discCnt, 0, {
           children: true,
-          onTap: function() {
-            // §S280d: Disc tap = show only this discipline (like storey). Sticky — close restores.
-            if (A.filterDisc) A.filterDisc(disc);
-          },
+          multiSelect: true, // §NAV_FIND_002: _doTap manages selection + filter
           onExpand: function(container) {
             if (container._loaded) return;
             container._loaded = true;
@@ -585,15 +630,15 @@
       panel.style.display = 'none';
       if (nav.active) { if (A.stopNavigation) A.stopNavigation(); }
       clearHighlight();
-      // §S280d: Restore full scene — clear storey + disc filters
-      if (A.filterStorey) A.filterStorey(null);
-      if (A.filterDisc) A.filterDisc(null);
+      // §NAV_FIND_002: exit KEEPS the storey/disc filter applied. Only the
+      // Storey/Disc toggle restores full scene. (was: filterStorey/Disc(null))
       // §S280d: Reset tree visibility for next open
       _treeRevealed = false;
       if (elTree) elTree.style.display = 'none';
       // S275: Release panel focus so other panels (Clash, etc.) work
       if (typeof window._blurPanel === 'function') window._blurPanel();
-      console.log('[S233] §FIND_CLOSE restored=full');
+      var _kept = Array.from(_treeMode === 'storey' ? _selStoreys : _selDiscs);
+      console.log('[S233] §FIND_CLOSE restored=none kept=[' + _kept.join(',') + ']');
     }
     A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
     elClose.onclick = closeFindPanel;
