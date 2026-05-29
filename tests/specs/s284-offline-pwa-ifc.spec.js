@@ -81,12 +81,17 @@ test.describe('S284c — PWA offline IFC import', () => {
     console.log('§OFF_IFC ' + saved.text);
     expect(saved.text).toContain(KEY);
 
-    // web-ifc must have resolved LOCAL (SW-cached), not from CDN
+    // §S284d: web-ifc wasm must resolve from the offline-safe in-worker blob (bytes transferred
+    // from the main thread) or the local SW-cached lib/ — never from CDN. emscripten no longer
+    // fetches the wasm itself, which is what aborted offline imports.
     const locate = logs.entries.find(e => e.text.includes('§WASM_LOCATE'));
     expect(locate, '§WASM_LOCATE log expected').toBeTruthy();
     console.log('§OFF_IFC ' + locate.text);
-    expect(locate.text).toContain('local');
+    expect(locate.text).toMatch(/blob \(from main-thread bytes|local/);
     expect(locate.text).not.toContain('unpkg.com');
+    // The cryptic abort must NOT appear.
+    expect(logs.entries.some(e => /both async and sync|IMPORT_FATAL/.test(e.text)),
+      'offline import must not hit the wasm-fetch abort').toBe(false);
 
     // worker source loaded from local lib/, not CDN
     const src = logs.entries.find(e => e.text.includes('§WORKER_SRC'));

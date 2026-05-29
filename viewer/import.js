@@ -23,6 +23,18 @@ function detectFormat(filename) {
   return { ext: ext, route: FORMAT_ROUTES[ext] || null };
 }
 
+// §S284d: get the web-ifc WASM bytes (offline-safe) and transfer them into the import worker,
+// so emscripten never does its own fetch — which aborts offline ("both async and sync ... failed")
+// whenever the 1.3MB binary isn't in a cache layer. The viewer is SW-controlled, so caches.match
+// reads the precache offline. Throws a CLEAR error if genuinely unavailable.
+async function _getWebIfcWasmBytes() {
+  var url = 'lib/web-ifc.wasm';
+  try { var hit = await caches.match(url); if (hit) { console.log('[S220] §IFC_WASM_FROM_CACHE'); return await hit.arrayBuffer(); } } catch (e) {}
+  try { var r = await fetch(url); if (r && r.ok) { console.log('[S220] §IFC_WASM_FROM_NET'); return await r.arrayBuffer(); } } catch (e) {}
+  console.warn('[S220] §IFC_ENGINE_UNAVAILABLE web-ifc.wasm not cached and offline');
+  throw new Error('IFC engine not available offline — connect to the internet once to enable offline IFC import.');
+}
+
 function setupImport(A) {
   const IMPORT_DB_NAME = 'bim_ootb_imports';
   const IMPORT_STORE = 'buildings';
@@ -223,7 +235,14 @@ function setupImport(A) {
         reject(err);
       };
 
-      worker.postMessage({ arrayBuffer, filename: file.name }, [arrayBuffer]);
+      // §S284d: transfer the wasm bytes so the worker never fetches the binary itself.
+      _getWebIfcWasmBytes().then(function(wasmBytes){
+        worker.postMessage({ arrayBuffer, filename: file.name, wasmBytes: wasmBytes }, [arrayBuffer]);
+      }).catch(function(engineErr){
+        if (status) status.textContent = engineErr.message;
+        if (progressBar) progressBar.style.background = '#cc4444';
+        worker.terminate(); reject(engineErr);
+      });
     });
   };
 
@@ -357,7 +376,10 @@ function setupImport(A) {
           worker.terminate();
           reject(err);
         };
-        worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name }, [arrayBuffer]);
+        // §S284d: transfer the wasm bytes so the worker never fetches the binary itself.
+        _getWebIfcWasmBytes().then(function(wasmBytes){
+          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: wasmBytes }, [arrayBuffer]);
+        }).catch(function(engineErr){ worker.terminate(); reject(engineErr); });
       });
     });
   }

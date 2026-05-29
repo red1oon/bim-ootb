@@ -92,12 +92,24 @@ function classifyDisc(ifcClass, filenameDisc) {
 
 self.onmessage = async function(e) {
   const { arrayBuffer, filename } = e.data;
+  // §S284d: main thread transfers the web-ifc WASM bytes here (offline-safe source of truth).
+  // Stash them so locateFile mints the Blob URL in-worker — emscripten never fetches the wasm
+  // itself, which is what aborted offline imports ("both async and sync fetching ... failed").
+  if (e.data.wasmBytes) self._WEBIFC_WASM_BYTES = e.data.wasmBytes;
   try {
     // Phase 1: Initialize web-ifc (10%)
     post('progress', 5, 'Starting IFC parser...');
     const ifcApi = new WebIFC.IfcAPI();
     console.log('[S220] §WASM_INIT starting...');
     await ifcApi.Init(function(path) {
+      // 0. §S284d: bytes transferred from the main thread (PWA + offline). Mint the Blob URL
+      // IN-worker — emscripten never does its own fetch, so it can't abort offline.
+      if (self._WEBIFC_WASM_BYTES) {
+        var _b = new Uint8Array(self._WEBIFC_WASM_BYTES);
+        var _u = URL.createObjectURL(new Blob([_b], { type: 'application/wasm' }));
+        console.log('[S220] §WASM_LOCATE ' + path + ' → blob (from main-thread bytes, size=' + _b.length + ')');
+        return _u;
+      }
       // 1. Standalone HTML — decode embedded base64 wasm HERE (in-worker) so the Blob URL
       // is minted in the worker's own context. Main-thread blob URLs aren't fetchable from
       // a null-origin (file://) blob worker — that silently aborts the wasm fetch.
