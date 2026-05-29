@@ -16,10 +16,15 @@ function setupCity(A) {
   A._cityHidden = [];  // {mesh, i, m} originals of bboxes hidden by loaded buildings (for restore on Clear)
   A._cityHideBuildingBboxes = function(buildingName) {
     if (!buildingName) return;
+    // §S285: when GATED (ARC-only wave), hide ONLY the streamed disciplines' bboxes. The non-gated
+    // (MEP/etc.) bboxes STAY as placeholders for geometry not yet meshed — so a building never loses
+    // its boxes before the real mesh is seen (was: all bboxes vanished at ARC-complete → sparse gap).
+    var _gate = A._cityDiscGate;
     var _z = new THREE.Matrix4().makeScale(0, 0, 0);
     var hidden = 0;
     var meshes = A.collectMeshes(function(o){ return o.isInstancedMesh && o.userData && o.userData.isBboxPlaceholder && o.userData.instanceBuilding; });
     meshes.forEach(function(o){
+      if (_gate && _gate.length && o.userData.discipline && _gate.indexOf(o.userData.discipline) < 0) return;  // keep non-gated bboxes
       var ib = o.userData.instanceBuilding, changed = false;
       for (var i = 0; i < ib.length; i++) {
         if (ib[i] === buildingName) {
@@ -116,6 +121,11 @@ function setupCity(A) {
     });
     A._cityBuildingBytes[buildingName] = (A._cityBuildingBytes[buildingName] || 0) + bytes;
     if (A._cityResidentOrder.indexOf(buildingName) === -1) A._cityResidentOrder.push(buildingName);
+    if (A.CITY_URL && A._cityCounted && !A._cityCounted.has(buildingName)) {   // §S285: cumulative rendered elements (distinct, no re-count on re-stream)
+      A._cityCounted.add(buildingName);
+      A._cityDoneElements = (A._cityDoneElements || 0) + (A.activeBuildingTotal || 0);
+      var _se = document.getElementById('s-elements'); if (_se) _se.textContent = A._cityDoneElements.toLocaleString() + ' / ' + (A._cityFacadeTotal || 0).toLocaleString();
+    }
     console.log('[S285] §CITY_TAG building=' + buildingName + ' objects=' + tagged + ' ownedMB=' + (bytes/1048576).toFixed(1) + ' residentMB=' + (A._cityResidentBytes()/1048576).toFixed(1));
     A._cityEvictToBudget(buildingName);
   };
@@ -175,6 +185,7 @@ function setupCity(A) {
       if (A.savedStreams) delete A.savedStreams[name];
       delete A._cityBuildingBytes[name];
       if (A._citySneak) delete A._citySneak[name];   // §S285: don't sneak-resurrect an evicted building
+      if (A._cityMiss) delete A._cityMiss[name];
       var idx = A._cityResidentOrder.indexOf(name); if (idx >= 0) A._cityResidentOrder.splice(idx, 1);
     });
     if (A.markDirty) A.markDirty();
@@ -206,6 +217,13 @@ function setupCity(A) {
   // cached below the line). This turns the fill-and-hold wave-front into a camera-FOLLOWING wave.
   A._cityEvictNonVisible = function(visibleSet, keepBuilding) {
     if (!A._cityResidentOrder || A._cityResidentOrder.length <= 1) return;
+    // §S285 anti-churn: track a MISS STREAK per resident. The 24-ray blast is sparse, so a still-
+    // visible building can be missed on a single frame; evicting it then re-streaming = "pop off /
+    // pop back". Only evict after a building is missed on >=2 CONSECUTIVE blasts (visible resets it).
+    A._cityMiss = A._cityMiss || {};
+    A._cityResidentOrder.forEach(function(nm){
+      if (visibleSet && visibleSet.has(nm)) A._cityMiss[nm] = 0; else A._cityMiss[nm] = (A._cityMiss[nm] || 0) + 1;
+    });
     var watermark = (A._cityMemBudgetMB || 384) * 1048576 * 0.6;
     if (A._cityResidentBytes() <= watermark) return;                 // under pressure threshold → no thrash
     var cam = A.camera && A.camera.position;
@@ -217,7 +235,7 @@ function setupCity(A) {
       return dx*dx + dy*dy + dz*dz;
     };
     var cands = A._cityResidentOrder.filter(function(nm){
-      return nm !== keepBuilding && !(visibleSet && visibleSet.has(nm));
+      return nm !== keepBuilding && !(visibleSet && visibleSet.has(nm)) && (A._cityMiss[nm] || 0) >= 2;  // missed >=2 blasts
     });
     if (cam) cands.sort(function(a, b){ return _bd2(b) - _bd2(a); });  // farthest-first
     var victims = new Set();
@@ -505,7 +523,11 @@ function setupCity(A) {
 
     document.getElementById('s-buildings').textContent =
       Object.keys(A.buildingCentres).length.toLocaleString();
-    document.getElementById('s-elements').textContent = A.totalElements.toLocaleString();
+    // §S285: 'Elements' now shows CUMULATIVE RENDERED (starts 0, grows as buildings finish) — not
+    // the 1.3M city total (that's the whole index, scary + meaningless mid-stream).
+    A._cityDoneElements = 0; A._cityCounted = new Set();
+    A._cityFacadeTotal = (A.discCounts['ARC'] || 0) + (A.discCounts['STR'] || 0);   // overall target = facade, not the 1.3M city total
+    document.getElementById('s-elements').textContent = '0 / ' + A._cityFacadeTotal.toLocaleString();
 
     const extentX = allIX.length ? Math.max(...allIX) - Math.min(...allIX) : 500;
     const extentY = allIY.length ? Math.max(...allIY) - Math.min(...allIY) : 500;
@@ -530,6 +552,7 @@ function setupCity(A) {
       A._cityAutoLoad = true;                       // wave-front stop gate in _cityStreamNext
       A._cityDiscGate = ['ARC', 'STR'];            // §S285: city streams the ARC/STR shell first
       A._citySneak = A._citySneak || {};           // building -> {archetype, rows} (the rest, to sneak)
+      A._citySneakEnabled = false;                 // §S285: wave stays ARC-only — MEP sneak OFF (was flooding budget → 42s BVH + marquee deadlock). Re-enable for focus-mode later.
       if (!A._cityFollowHooked && A.controls && A.controls.addEventListener) {
         A._cityFollowHooked = true;               // §S285: re-blast on camera-stop → set follows the view
         A.controls.addEventListener('end', function() {
@@ -557,15 +580,16 @@ function setupCity(A) {
   A.flyTo = function(buildingName) {
     const bc = A.buildingCentres[buildingName];
     if (!bc) return;
-    const t = A.ifc2three(bc.ix, bc.iy, bc.iz);
-    const dist = Math.max(50, Math.sqrt(bc.count) * 1.5);
-    A.camera.position.set(t.x + dist * 0.7, t.y + dist * 1.0, t.z + dist * 0.7);
-    A.controls.target.set(t.x, t.y, t.z);
-    A.camera.far = Math.max(5000, dist * 10);
-    A.camera.updateProjectionMatrix();
-    A.controls.update();
 
     if (!A.CITY_URL) {
+      // single-building viewer: keep the zoom-to-building behaviour
+      const t = A.ifc2three(bc.ix, bc.iy, bc.iz);
+      const dist = Math.max(50, Math.sqrt(bc.count) * 1.5);
+      A.camera.position.set(t.x + dist * 0.7, t.y + dist * 1.0, t.z + dist * 0.7);
+      A.controls.target.set(t.x, t.y, t.z);
+      A.camera.far = Math.max(5000, dist * 10);
+      A.camera.updateProjectionMatrix();
+      A.controls.update();
       document.getElementById('s-active').style.color = '#4fc3f7';
       document.getElementById('s-progress').style.width = '0%';
       document.getElementById('s-progress').style.background = '#4fc3f7';
@@ -574,6 +598,8 @@ function setupCity(A) {
       return;
     }
 
+    // §S285: city mode — do NOT move the camera. Tapping a building streams it IN PLACE so the
+    // other buildings stay in frame for successive picking (was: zoom framed it high / out of view).
     if (A.buildingsRendered.has(buildingName)) {
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_already_loaded||'{name} already loaded ({n} elements)').replace('{name}', buildingName).replace('{n}', bc.count);
       return;
@@ -759,6 +785,9 @@ function setupCity(A) {
     A._cityBuildingBytes = {};   // §S285: reset eviction tally — fresh working set
     A._cityResidentOrder = [];
     A._citySneak = {};
+    A._cityMiss = {};
+    A._cityDoneElements = 0; A._cityCounted = new Set();
+    var _se2 = document.getElementById('s-elements'); if (_se2) _se2.textContent = '0 / ' + (A._cityFacadeTotal || 0).toLocaleString();
     A._cityRestoreBboxes();  // bring back the bboxes of buildings that were streamed
     var el;
     if ((el = document.getElementById('s-streamed'))) el.textContent = '0';
@@ -876,7 +905,7 @@ function setupCity(A) {
       var n = A._cityPendingQueue.shift();
       if (n && !(A.buildingsRendered && A.buildingsRendered.has(n))) { next = n; break; }
     }
-    if (!next) { if (A._cityAutoLoad) A._citySneakNext(); return; }  // §S285: visible all loaded → sneak the rest
+    if (!next) { if (A._cityAutoLoad && A._citySneakEnabled) A._citySneakNext(); return; }  // §S285: visible all loaded → sneak the rest
     A.status.textContent = (A._cityAutoLoad ? 'Loading city \u2014 ' : 'Marquee \u2014 streaming ') + next + ' (' + A._cityPendingQueue.length + ' queued)';
     A.cityLoadBuilding(next);
   };

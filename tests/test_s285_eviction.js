@@ -246,12 +246,15 @@ A._cityMemBudgetMB = 100;                                        // watermark = 
 A.camera = undefined; A.buildingCentres = undefined;             // no camera → falls back to resident order
 A._cityResidentOrder = ['v1', 'n1', 'n2', 'act'];
 A._cityBuildingBytes = { v1: 30*MB, n1: 30*MB, n2: 30*MB, act: 30*MB };  // resident 120MB > watermark
-A._cityEvictNonVisible(new Set(['v1']), 'act');                  // v1 visible, act active
-assert(_captured && !_captured.has('v1'), 'visible building (v1) is NOT evicted');
+A._cityMiss = {};
+A._cityEvictNonVisible(new Set(['v1']), 'act');                  // blast 1: n1,n2 missed once (miss=1)
+assert(!_captured || _captured.size === 0, 'miss-count hysteresis: 1 missed blast does NOT evict (anti pop-off/pop-back)');
+A._cityEvictNonVisible(new Set(['v1']), 'act');                  // blast 2: miss=2 → now evictable
+assert(_captured && !_captured.has('v1'), 'visible building (v1) is NOT evicted (miss reset)');
 assert(_captured && !_captured.has('act'), 'active building (act) is NOT evicted');
-assert(_captured && _captured.has('n1') && _captured.has('n2'), 'non-visible buildings (n1,n2) evicted down to watermark');
+assert(_captured && _captured.has('n1') && _captured.has('n2'), 'non-visible (n1,n2) evicted after 2 missed blasts');
 
-_captured = null;                                                // under watermark → no eviction (no thrash)
+_captured = null; A._cityMiss = {};                               // under watermark → no eviction (no thrash)
 A._cityBuildingBytes = { v1: 30*MB, act: 20*MB };                // resident 50MB ≤ 60MB watermark
 A._cityResidentOrder = ['v1', 'act'];
 A._cityEvictNonVisible(new Set(['v1']), 'act');
@@ -291,6 +294,26 @@ A._cityBuildingBytes = { B2: 90 * MB };   // 90 ≥ 85 → no room
 const _before = A.streaming;
 A._citySneakNext();
 assert(A.streaming === _before && A._citySneak.B2, 'over 85% budget → sneak deferred (stash kept)');
+
+L('T13: gated bbox hide — hide ONLY streamed-discipline boxes, keep MEP placeholders');
+function bboxMesh(disc) {
+  return { id: _idSeq++, isInstancedMesh: true,
+    userData: { isBboxPlaceholder: true, discipline: disc, instanceBuilding: ['BX'] },
+    getMatrixAt() {}, setMatrixAt(i) { this._hidden = (this._hidden||0) + 1; },
+    instanceMatrix: { needsUpdate: false } };
+}
+A.scene.children.length = 0; A._cityHidden = [];
+const arcBox = bboxMesh('ARC'), strBox = bboxMesh('STR'), plbBox = bboxMesh('PLB'), mepBox = bboxMesh('MEP');
+[arcBox, strBox, plbBox, mepBox].forEach(m => A.scene.add(m));
+A._cityDiscGate = ['ARC', 'STR'];
+A._cityHideBuildingBboxes('BX');
+assert(arcBox._hidden === 1 && strBox._hidden === 1, 'ARC + STR bboxes hidden (their meshes are now streamed)');
+assert(!plbBox._hidden && !mepBox._hidden, 'PLB + MEP bboxes KEPT (geometry not meshed -> placeholder stays)');
+A.scene.children.length = 0; A._cityHidden = [];
+const b1 = bboxMesh('ARC'), b2 = bboxMesh('MEP'); A.scene.add(b1); A.scene.add(b2);
+A._cityDiscGate = null;
+A._cityHideBuildingBboxes('BX');
+assert(b1._hidden === 1 && b2._hidden === 1, 'gate off -> all disciplines hidden (legacy)');
 
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);

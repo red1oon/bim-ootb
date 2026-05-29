@@ -426,37 +426,43 @@ function setupStreaming(A) {
           A.dlodEnable();
           if (A.dlodTick) A.dlodTick();
         }
-        // §S258: Deferred BVH build — batch in background so streaming isn't blocked
+        // §S258/§S285: Deferred BVH — build ONLY newly-added geometries (drain A._bvhPending) in a
+        // SINGLE background chain. WAS Object.keys(meshCache) re-walked every stream-complete, with
+        // overlapping chains → §BVH_DEFERRED built=141878 re-scanned 8× at ~50s each = frozen tab.
+        // Now O(new), one chain (the _bvhRunning guard), already-built geometries never re-touched.
         if (window._bvhReady) {
-          var _bvhHashes = Object.keys(A.meshCache);
-          var _bvhIdx = 0;
-          var _bvhT0 = performance.now();
-          (function _bvhBatch() {
-            var end = Math.min(_bvhIdx + 500, _bvhHashes.length);
-            for (var bi = _bvhIdx; bi < end; bi++) {
-              var geo = A.meshCache[_bvhHashes[bi]];
-              if (geo && geo.computeBoundsTree && !geo.boundsTree) {
-                try { geo.computeBoundsTree(); } catch(e) {}
+          A._bvhPending = A._bvhPending || [];
+          if (!A._bvhRunning && A._bvhPending.length) {
+            A._bvhRunning = true;
+            var _bvhT0 = performance.now();
+            var _bvhDone = 0;
+            (function _bvhBatch() {
+              var n = 0;
+              while (A._bvhPending.length && n < 500) {
+                var geo = A.meshCache[A._bvhPending.shift()];
+                if (geo && geo.computeBoundsTree && !geo.boundsTree) {
+                  try { geo.computeBoundsTree(); _bvhDone++; } catch(e) {}
+                }
+                n++;
               }
-            }
-            _bvhIdx = end;
-            if (_bvhIdx < _bvhHashes.length) {
-              setTimeout(_bvhBatch, 0);
-            } else {
-              console.log('[S258] §BVH_DEFERRED built=' + _bvhHashes.length +
-                ' ms=' + (performance.now() - _bvhT0).toFixed(0));
-              // §S260b: BVH for BatchedMesh — per-slot frustum culling
-              if (typeof window.computeBatchedBoundsTree === 'function') {
-                var _bmT0 = performance.now();
-                A.scene.traverse(function(obj) {
-                  if (obj.isBatchedMesh) {
-                    try { window.computeBatchedBoundsTree(obj); } catch(e) {}
-                  }
-                });
-                console.log('[S260b] §BATCHED_BVH ms=' + (performance.now() - _bmT0).toFixed(0));
+              if (A._bvhPending.length) {
+                setTimeout(_bvhBatch, 0);
+              } else {
+                A._bvhRunning = false;
+                console.log('[S258] §BVH_DEFERRED built=' + _bvhDone + ' ms=' + (performance.now() - _bvhT0).toFixed(0) + ' (incremental)');
+                // §S260b: BatchedMesh BVH — only NEW batched meshes (marked _bmBvhDone), not all every time.
+                if (typeof window.computeBatchedBoundsTree === 'function') {
+                  var _bmT0 = performance.now();
+                  A.scene.traverse(function(obj) {
+                    if (obj.isBatchedMesh && !obj._bmBvhDone) {
+                      try { window.computeBatchedBoundsTree(obj); obj._bmBvhDone = true; } catch(e) {}
+                    }
+                  });
+                  console.log('[S260b] §BATCHED_BVH ms=' + (performance.now() - _bmT0).toFixed(0));
+                }
               }
-            }
-          })();
+            })();
+          }
         }
         // §S260b: Disable matrixAutoUpdate on all static meshes (only camera moves)
         A.scene.traverse(function(obj) {
@@ -531,7 +537,7 @@ function setupStreaming(A) {
                     var nBlob = A._libHasNormals ? (row[3] || null) : null;
                     if (vBlob && fBlob) {
                       var geo = A.blobToGeometry(vBlob, fBlob, nBlob);
-                      if (geo) { A.meshCache[ghash] = geo; fetched++; }
+                      if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
                     }
                   }
                 }
@@ -581,7 +587,7 @@ function setupStreaming(A) {
               const nBlob = A._libHasNormals ? (row[3] || null) : null;
               if (vBlob && fBlob) {
                 const geo = A.blobToGeometry(vBlob, fBlob, nBlob);
-                if (geo) { A.meshCache[ghash] = geo; fetched++; }
+                if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
               }
             }
             stmt.free();
