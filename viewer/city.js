@@ -143,13 +143,21 @@ function setupCity(A) {
   // victim count — ONE pass over scene.children / guidMap / _cityHidden. Victim SELECTION is the
   // caller's job (LRU+budget via _cityEvictToBudget, or visibility via _cityEvictNonVisible).
   A._cityEvictVictims = function(victims) {
-    if (!victims || !victims.size) return;
-    // ONE pass over scene.children: dispose + bulk-remove victims' owned objects.
+    victims = victims || new Set();
+    // §S285 GHOST SWEEP: ride this same pass to also remove ORPHANS — building-tagged meshes whose
+    // building is no longer resident (a straggler from a prior eviction: its async stream/focus-detail
+    // landed AFTER the building was evicted → leaked "ghost"). NOT the active (mid-stream) building.
+    var residentSet = new Set(A._cityResidentOrder);
     var evictIds = new Set();
-    var kids = A.scene.children, keepKids = [];
+    var kids = A.scene.children, keepKids = [], orphans = 0;
     for (var ki = 0; ki < kids.length; ki++) {
       var o = kids[ki];
-      if (o.userData && o.userData.building && victims.has(o.userData.building) && !o.userData.isBboxPlaceholder) {
+      var ud = o.userData;
+      var isBld = ud && ud.building && !ud.isBboxPlaceholder;
+      var isVictim = isBld && victims.has(ud.building);
+      var isOrphan = isBld && !isVictim && !residentSet.has(ud.building) && ud.building !== A.activeBuilding;
+      if (isVictim || isOrphan) {
+        if (isOrphan) orphans++;
         evictIds.add(String(o.id));
         if (A._instanceMeta) delete A._instanceMeta[o.id];
         if (A._batchMeta) delete A._batchMeta[o.id];                  // else stale → §CONTRACT_FAIL phantom orphans + leak
@@ -161,6 +169,8 @@ function setupCity(A) {
         keepKids.push(o);
       }
     }
+    if (!evictIds.size) return;                                      // nothing to remove (no victims, no ghosts)
+    if (orphans) console.log('[S285] §CITY_ORPHAN swept=' + orphans + ' (ghost meshes from prior evictions)');
     A.scene.children = keepKids;                                     // single bulk removal (was O(objects × children))
     // ONE guidMap sweep for the whole cascade (keys are `meshId` or `meshId_slot`).
     if (A.guidMap) {
