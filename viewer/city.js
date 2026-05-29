@@ -19,7 +19,7 @@ function setupCity(A) {
     // §S285: when GATED (ARC-only wave), hide ONLY the streamed disciplines' bboxes. The non-gated
     // (MEP/etc.) bboxes STAY as placeholders for geometry not yet meshed — so a building never loses
     // its boxes before the real mesh is seen (was: all bboxes vanished at ARC-complete → sparse gap).
-    var _gate = A._cityDiscGate;
+    var _gate = (buildingName === A._cityFocus) ? null : A._cityDiscGate;   // focus → hide ALL disciplines (fully meshed)
     var _z = new THREE.Matrix4().makeScale(0, 0, 0);
     var hidden = 0;
     var meshes = A.collectMeshes(function(o){ return o.isInstancedMesh && o.userData && o.userData.isBboxPlaceholder && o.userData.instanceBuilding; });
@@ -83,7 +83,9 @@ function setupCity(A) {
   // (geometry already in meshCache). Budget is bytes, not a count (one LTU ≠ one SampleHouse).
   A._cityBuildingBytes = {};   // building -> owned buffer bytes (the part that grows)
   A._cityResidentOrder = [];   // resident buildings, oldest first (LRU order)
-  A._cityMemBudgetMB = 384;    // aggressive default; live-tunable from console (re-stream is fast)
+  A._cityMemBudgetMB = 384;    // BYTE safety net (raised to 2048 in city; element budget is the real control)
+  A._cityElemBudget = 250000;  // §S285 PRIMARY budget = element count (user's ~290k OOM knee, 250k margin). ARC=145k fits → never evicted in overview.
+  A._cityBuildingElems = {};   // building -> resident element count (subtracts on evict)
 
   A._cityGeoBytes = function(g) {
     var b = 0;
@@ -101,6 +103,7 @@ function setupCity(A) {
     return A._cityGeoBytes(o.geometry);  // BatchedMesh + fallback/merged Mesh own their geometry
   };
   A._cityResidentBytes = function() { var s = 0; for (var k in A._cityBuildingBytes) s += A._cityBuildingBytes[k]; return s; };
+  A._cityResidentElems = function() { var s = 0; for (var k in A._cityBuildingElems) s += A._cityBuildingElems[k]; return s; };
 
   // Tag the just-streamed building's NEW scene objects (children added since the pre-stream
   // snapshot), tally owned bytes, then evict oldest while over budget. Single site — no
@@ -120,11 +123,11 @@ function setupCity(A) {
       tagged++;
     });
     A._cityBuildingBytes[buildingName] = (A._cityBuildingBytes[buildingName] || 0) + bytes;
+    A._cityBuildingElems = A._cityBuildingElems || {};
+    A._cityBuildingElems[buildingName] = (A._cityBuildingElems[buildingName] || 0) + (A.activeBuildingTotal || 0);
     if (A._cityResidentOrder.indexOf(buildingName) === -1) A._cityResidentOrder.push(buildingName);
-    if (A.CITY_URL && A._cityCounted && !A._cityCounted.has(buildingName)) {   // §S285: cumulative rendered elements (distinct, no re-count on re-stream)
-      A._cityCounted.add(buildingName);
-      A._cityDoneElements = (A._cityDoneElements || 0) + (A.activeBuildingTotal || 0);
-      var _se = document.getElementById('s-elements'); if (_se) _se.textContent = A._cityDoneElements.toLocaleString() + ' / ' + (A._cityFacadeTotal || 0).toLocaleString();
+    if (A.CITY_URL) {   // §S285: HUD = RESIDENT element count (rises AND falls — subtracts when buildings are let off)
+      var _se = document.getElementById('s-elements'); if (_se) _se.textContent = A._cityResidentElems().toLocaleString() + ' / ' + (A._cityFacadeTotal || 0).toLocaleString();
     }
     console.log('[S285] §CITY_TAG building=' + buildingName + ' objects=' + tagged + ' ownedMB=' + (bytes/1048576).toFixed(1) + ' residentMB=' + (A._cityResidentBytes()/1048576).toFixed(1));
     A._cityEvictToBudget(buildingName);
@@ -186,9 +189,11 @@ function setupCity(A) {
       delete A._cityBuildingBytes[name];
       if (A._citySneak) delete A._citySneak[name];   // §S285: don't sneak-resurrect an evicted building
       if (A._cityMiss) delete A._cityMiss[name];
+      if (A._cityBuildingElems) delete A._cityBuildingElems[name];
       var idx = A._cityResidentOrder.indexOf(name); if (idx >= 0) A._cityResidentOrder.splice(idx, 1);
     });
     if (A.markDirty) A.markDirty();
+    if (A.CITY_URL) { var _seE = document.getElementById('s-elements'); if (_seE) _seE.textContent = A._cityResidentElems().toLocaleString() + ' / ' + (A._cityFacadeTotal || 0).toLocaleString(); }
     console.log('[S285] §CITY_EVICT buildings=' + victims.size + ' objects=' + evictIds.size + ' freedMB=' + (freedTotal/1048576).toFixed(1) + ' residentNow=' + A._cityResidentOrder.length + ' bytesNow=' + (A._cityResidentBytes()/1048576).toFixed(1));
     // DLOD refs are rebuilt by the dlodEnable() call that runs right after this in streaming.js.
   };
@@ -196,16 +201,17 @@ function setupCity(A) {
   // §S285 HOTFIX2: whole cascade in ONE pass (scissors-rule). LRU+budget victim selection.
   A._cityEvictToBudget = function(keepBuilding) {
     var budgetBytes = (A._cityMemBudgetMB || 384) * 1048576;
-    // Pick ALL victims first — bookkeeping only, oldest-first, never the active building, keep ≥1.
+    var elemBudget = A._cityElemBudget || Infinity;
     var victims = new Set();
-    var running = A._cityResidentBytes();
+    var runB = A._cityResidentBytes(), runE = A._cityResidentElems();
     var order = A._cityResidentOrder;
-    for (var oi = 0; oi < order.length && running > budgetBytes; oi++) {
+    for (var oi = 0; oi < order.length && (runB > budgetBytes || runE > elemBudget); oi++) {
       var nm = order[oi];
       if (nm === keepBuilding) continue;
       if (order.length - victims.size <= 1) break;   // keep at least the active building
       victims.add(nm);
-      running -= (A._cityBuildingBytes[nm] || 0);
+      runB -= (A._cityBuildingBytes[nm] || 0);
+      runE -= (A._cityBuildingElems[nm] || 0);
     }
     A._cityEvictVictims(victims);
   };
@@ -224,8 +230,8 @@ function setupCity(A) {
     A._cityResidentOrder.forEach(function(nm){
       if (visibleSet && visibleSet.has(nm)) A._cityMiss[nm] = 0; else A._cityMiss[nm] = (A._cityMiss[nm] || 0) + 1;
     });
-    var watermark = (A._cityMemBudgetMB || 384) * 1048576 * 0.6;
-    if (A._cityResidentBytes() <= watermark) return;                 // under pressure threshold → no thrash
+    var watermark = (A._cityElemBudget || 250000) * 0.85;        // ELEMENT watermark: ARC(145k) < this → NO overview eviction
+    if (A._cityResidentElems() <= watermark) return;                 // under pressure → no thrash, ARC retained
     var cam = A.camera && A.camera.position;
     var _bd2 = function(nm) {
       var bc = A.buildingCentres && A.buildingCentres[nm];
@@ -235,15 +241,16 @@ function setupCity(A) {
       return dx*dx + dy*dy + dz*dz;
     };
     var cands = A._cityResidentOrder.filter(function(nm){
-      return nm !== keepBuilding && !(visibleSet && visibleSet.has(nm)) && (A._cityMiss[nm] || 0) >= 2;  // missed >=2 blasts
+      return nm !== keepBuilding && !(visibleSet && visibleSet.has(nm)) && (A._cityMiss[nm] || 0) >= 2
+        && ((A.buildingCentres[nm]||{}).count || 0) >= (A._citySmallThreshold || 5000);  // skip smalls (too low to bother)
     });
     if (cam) cands.sort(function(a, b){ return _bd2(b) - _bd2(a); });  // farthest-first
     var victims = new Set();
-    var running = A._cityResidentBytes();
+    var running = A._cityResidentElems();
     for (var i = 0; i < cands.length && running > watermark; i++) {
       if (A._cityResidentOrder.length - victims.size <= 1) break;     // keep ≥1 resident
       victims.add(cands[i]);
-      running -= (A._cityBuildingBytes[cands[i]] || 0);
+      running -= (A._cityBuildingElems[cands[i]] || 0);
     }
     A._cityEvictVictims(victims);
   };
@@ -552,7 +559,9 @@ function setupCity(A) {
       A._cityAutoLoad = true;                       // wave-front stop gate in _cityStreamNext
       A._cityDiscGate = ['ARC', 'STR'];            // §S285: city streams the ARC/STR shell first
       A._citySneak = A._citySneak || {};           // building -> {archetype, rows} (the rest, to sneak)
-      A._citySneakEnabled = false;                 // §S285: wave stays ARC-only — MEP sneak OFF (was flooding budget → 42s BVH + marquee deadlock). Re-enable for focus-mode later.
+      A._citySneakEnabled = false;
+      A._citySmallThreshold = 5000;                 // buildings below this element count are never evicted (cheap context)
+      A._cityMemBudgetMB = 2048;                    // BYTE budget = high safety net; A._cityElemBudget (250k) is the real control                 // §S285: wave stays ARC-only — MEP sneak OFF (was flooding budget → 42s BVH + marquee deadlock). Re-enable for focus-mode later.
       if (!A._cityFollowHooked && A.controls && A.controls.addEventListener) {
         A._cityFollowHooked = true;               // §S285: re-blast on camera-stop → set follows the view
         A.controls.addEventListener('end', function() {
@@ -561,13 +570,11 @@ function setupCity(A) {
           if (!vis.length) return;
           vis.sort(function(a, b){ return ((A.buildingCentres[a]||{}).count||0) - ((A.buildingCentres[b]||{}).count||0); });  // small-first
           var visSet = new Set(vis);
-          // ENTER-FOCUS: camera close to the nearest building (dist < ~0.7 of its size) → going in.
-          var _near = A._cityBlastNearest, _nd = A._cityBlastNearestDist;
-          var _bb = _near && A._cityBuildingAABB && A._cityBuildingAABB[_near];
-          var _diag = _bb ? Math.sqrt((_bb.x1-_bb.x0)*(_bb.x1-_bb.x0)+(_bb.y1-_bb.y0)*(_bb.y1-_bb.y0)+(_bb.z1-_bb.z0)*(_bb.z1-_bb.z0)) : 120;
-          if (_near && _nd < _diag * 0.7) {
-            if (A._cityFocus !== _near) { A._cityFocus = _near; A._cityBlowFarARC(_near); }   // dive in → blow far ARC
-            A._cityFocusSneak(_near);                                                          // load this building's detail
+          // ENTER-FOCUS: one building fills >=70% of the view (clicked + zoomed onto it) → going in → full mesh.
+          var _dom = A._cityBlastDominant, _frac = A._cityBlastDominantFrac || 0;
+          if (_dom && _frac >= 0.7) {
+            if (A._cityFocus !== _dom) { A._cityFocus = _dom; A._cityBlowFarARC(_dom); console.log('[S285] §CITY_ENTER building=' + _dom + ' coverage=' + (_frac*100).toFixed(0) + '%'); }
+            A._cityFocusSneak(_dom);                                                            // stream its full detail (STR/MEP)
           } else {
             A._cityFocus = null;
             A._cityEvictNonVisible(visSet, A.activeBuilding);   // overview wave: gentle far eviction
@@ -836,17 +843,21 @@ function setupCity(A) {
   // the budget, then stream that building's stashed full detail (STR/MEP) in chunks.
   A._cityBlowFarARC = function(keep) {
     if (!A._cityResidentOrder) return;
+    var thr = A._citySmallThreshold || 5000;
     var victims = new Set();
-    A._cityResidentOrder.forEach(function(nm){ if (nm !== keep) victims.add(nm); });
+    A._cityResidentOrder.forEach(function(nm){
+      if (nm !== keep && ((A.buildingCentres[nm]||{}).count || 0) >= thr) victims.add(nm);   // offload large; keep smalls
+    });
     if (!victims.size) return;
-    console.log('[S285] §CITY_BLOWFAR keep=' + keep + ' evicted=' + victims.size);
+    console.log('[S285] §CITY_BLOWFAR keep=' + keep + ' evicted=' + victims.size + ' (smalls kept)');
     A._cityEvictVictims(victims);
   };
   A._cityFocusSneak = function(name) {
     if (A.streaming || !A._citySneak) return;
     var job = A._citySneak[name];
     if (!job || !job.rows || !job.rows.length) return;
-    if (A._cityResidentBytes && A._cityResidentBytes() >= (A._cityMemBudgetMB||384)*1048576*0.85) return;  // budget full
+    // §S285: NO byte-budget guard — the focused building (<=122k < 290k knee) renders IN FULL;
+    // blow-far already cleared the field, so it's effectively the sole heavy resident.
     var CHUNK = 4000;                                    // chunked → never a 100k dump / BVH storm
     var batch = job.rows.length > CHUNK ? job.rows.slice(0, CHUNK) : job.rows;
     var rest  = job.rows.length > CHUNK ? job.rows.slice(CHUNK) : null;
@@ -897,9 +908,14 @@ function setupCity(A) {
         if (bestName) hitList.push({building:bestName, distance:bestT});
       }
     }
-    var _nd = Infinity, _nn = null;
-    for (var hj = 0; hj < hitList.length; hj++) { if (hitList[hj].distance < _nd) { _nd = hitList[hj].distance; _nn = hitList[hj].building; } }
-    A._cityBlastNearest = _nn; A._cityBlastNearestDist = _nd;   // §S285: for enter-focus detection
+    var _nd = Infinity, _nn = null, _cnt = {}, _domN = null, _domH = 0;
+    for (var hj = 0; hj < hitList.length; hj++) {
+      var _hb = hitList[hj].building;
+      if (hitList[hj].distance < _nd) { _nd = hitList[hj].distance; _nn = _hb; }
+      _cnt[_hb] = (_cnt[_hb] || 0) + 1; if (_cnt[_hb] > _domH) { _domH = _cnt[_hb]; _domN = _hb; }
+    }
+    A._cityBlastNearest = _nn; A._cityBlastNearestDist = _nd;
+    A._cityBlastDominant = _domN; A._cityBlastDominantFrac = rays ? _domH / rays : 0;   // §S285: view-coverage → enter-focus when >=70%
     var ordered = A._cityOrderBlastHits(hitList);
     var _ms = _t0 ? (((typeof performance!=='undefined'&&performance.now)?performance.now():0)-_t0).toFixed(1) : '?';
     console.log('[S285] §RAYBLAST rays=' + rays + ' hits=' + hitList.length + ' buildings=' + ordered.length + ' ms=' + _ms);
@@ -932,7 +948,7 @@ function setupCity(A) {
     // nearest cluster fills ~85% of budget. Queue is nearest-first, so this keeps the NEAREST
     // resident and never forces eviction (no churn-to-farthest, no OOM). Marquee leaves the
     // flag falsy \u2192 unchanged "stream + evict" behaviour.
-    if (A._cityAutoLoad && A._cityResidentBytes) {
+    if (A._cityAutoLoad && !A._cityFocus && A._cityResidentBytes) {   // focusing → load the building fully, ignore wave budget
       var _budget = (A._cityMemBudgetMB || 384) * 1048576 * 0.85;
       if (A._cityResidentBytes() >= _budget) {
         console.log('[S285] \u00a7AUTOLOAD_STOP residentMB=' + (A._cityResidentBytes()/1048576).toFixed(1) + ' budgetMB=' + (A._cityMemBudgetMB || 384) + ' remaining=' + (A._cityPendingQueue ? A._cityPendingQueue.length : 0));

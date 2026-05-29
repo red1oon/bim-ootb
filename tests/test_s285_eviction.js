@@ -242,23 +242,25 @@ L('T10: AUTOLOAD trailing-edge — evict resident buildings that LEFT the view, 
 const _realEvict = A._cityEvictVictims;
 let _captured = null;
 A._cityEvictVictims = function(v) { _captured = new Set(v); };   // record, skip real scene ops
-A._cityMemBudgetMB = 100;                                        // watermark = 60MB
-A.camera = undefined; A.buildingCentres = undefined;             // no camera → falls back to resident order
+A._cityElemBudget = 100000;                                      // watermark = 85,000 elements
+A._citySmallThreshold = 5000;
+A.camera = undefined;                                            // no camera → resident order
+A.buildingCentres = { v1:{count:30000}, n1:{count:30000}, n2:{count:30000}, act:{count:30000} };
 A._cityResidentOrder = ['v1', 'n1', 'n2', 'act'];
-A._cityBuildingBytes = { v1: 30*MB, n1: 30*MB, n2: 30*MB, act: 30*MB };  // resident 120MB > watermark
+A._cityBuildingElems = { v1: 30000, n1: 30000, n2: 30000, act: 30000 };  // resident 120k > 85k watermark
 A._cityMiss = {};
 A._cityEvictNonVisible(new Set(['v1']), 'act');                  // blast 1: n1,n2 missed once (miss=1)
 assert(!_captured || _captured.size === 0, 'miss-count hysteresis: 1 missed blast does NOT evict (anti pop-off/pop-back)');
 A._cityEvictNonVisible(new Set(['v1']), 'act');                  // blast 2: miss=2 → now evictable
 assert(_captured && !_captured.has('v1'), 'visible building (v1) is NOT evicted (miss reset)');
 assert(_captured && !_captured.has('act'), 'active building (act) is NOT evicted');
-assert(_captured && _captured.has('n1') && _captured.has('n2'), 'non-visible (n1,n2) evicted after 2 missed blasts');
+assert(_captured && _captured.has('n1') && _captured.has('n2'), 'non-visible (n1,n2) evicted after 2 missed blasts (element watermark)');
 
 _captured = null; A._cityMiss = {};                               // under watermark → no eviction (no thrash)
-A._cityBuildingBytes = { v1: 30*MB, act: 20*MB };                // resident 50MB ≤ 60MB watermark
+A._cityBuildingElems = { v1: 30000, act: 20000 };                // resident 50k <= 85k watermark
 A._cityResidentOrder = ['v1', 'act'];
 A._cityEvictNonVisible(new Set(['v1']), 'act');
-assert(_captured === null, 'under 60% watermark → no eviction (hysteresis, no turn-around thrash)');
+assert(_captured === null, 'under element watermark → no eviction (ARC retained in overview)');
 
 A._cityEvictVictims = _realEvict;                                // restore
 
@@ -324,9 +326,13 @@ assert(JSON.stringify(A._citySmallFirst()) === JSON.stringify(['small','mid','bi
 const _realEv = A._cityEvictVictims;
 let _blown = null;
 A._cityEvictVictims = function(v){ _blown = new Set(v); };
-A._cityResidentOrder = ['farA', 'focus', 'farB'];
+A.buildingCentres = { farA:{count:50000}, focus:{count:60000}, farB:{count:40000}, tinyC:{count:100} };
+A._citySmallThreshold = 5000;
+A._cityResidentOrder = ['farA', 'focus', 'farB', 'tinyC'];
 A._cityBlowFarARC('focus');
-assert(_blown && _blown.has('farA') && _blown.has('farB') && !_blown.has('focus'), 'blow-far evicts all far buildings, keeps the focused one');
+assert(_blown && _blown.has('farA') && _blown.has('farB'), 'blow-far evicts large far buildings');
+assert(_blown && !_blown.has('focus'), 'blow-far keeps the focused building');
+assert(_blown && !_blown.has('tinyC'), 'blow-far KEEPS small buildings (too low to bother — context)');
 A._cityEvictVictims = _realEv;
 
 // focus detail: chunk the focused building's stash (never a 100k dump)
