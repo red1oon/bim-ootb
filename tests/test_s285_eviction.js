@@ -188,6 +188,77 @@ assert(loaded.length === 2 && loaded[1] === 'Z', 'skips already-rendered Y, stre
 A.streaming = false; A._cityStreamNext();                     // queue empty → no-op
 assert(loaded.length === 2, 'queue drained, no extra streams');
 
+L('T8: AUTOLOAD wave-front stop — under auto-load, stop pulling at ~85% budget (keeps nearest, no churn)');
+// pin budget (earlier sections mutate it): 100MB → stop threshold = 0.85×100 = 85MB.
+A._cityMemBudgetMB = 100;
+const loaded8 = [];
+A.cityLoadBuilding = function(n) { loaded8.push(n); A.streaming = true; };
+A.buildingsRendered = new Set();
+A.streaming = false;
+A._cityBuildingBytes = { near: 90 * MB };       // resident 90MB ≥ 85MB threshold
+A._cityResidentOrder = ['near'];
+A._cityAutoLoad = true;
+A._cityPendingQueue = ['far1', 'far2'];
+const _logLenBefore = lines.length;
+A._cityStreamNext();                            // over threshold → STOP, no stream
+assert(loaded8.length === 0, 'auto-load STOPS pulling when resident ≥ 85% budget (no churn-to-farthest)');
+assert(lines.slice(_logLenBefore).some(s => s.indexOf('§AUTOLOAD_STOP') >= 0), 'logs §AUTOLOAD_STOP witness');
+assert(A._cityPendingQueue.length === 2, 'queue left intact (not drained past the wave-front)');
+
+A._cityBuildingBytes = { near: 40 * MB };       // resident 40MB < 85MB → keep streaming
+A.streaming = false;
+A._cityStreamNext();
+assert(loaded8.length === 1 && loaded8[0] === 'far1', 'auto-load CONTINUES below threshold (streams nearest queued)');
+
+// Marquee path (flag off) must be unaffected: high resident does NOT trigger the stop.
+const loaded8b = [];
+A.cityLoadBuilding = function(n) { loaded8b.push(n); A.streaming = true; };
+A._cityAutoLoad = false;
+A._cityBuildingBytes = { near: 90 * MB };        // would stop IF auto-load — but flag off
+A.streaming = false;
+A._cityPendingQueue = ['m1'];
+A._cityStreamNext();
+assert(loaded8b.length === 1 && loaded8b[0] === 'm1', 'marquee (flag off) is unaffected by the wave-front stop');
+
+L('T9: RAYBLAST ordering — hits → unique buildings, nearest-first, occlusion-by-absence');
+// pure reduction (no raycaster/camera needed). Out-of-order, duplicate-per-building hits.
+const _ord = A._cityOrderBlastHits([
+  { building: 'far',  distance: 100 },
+  { building: 'near', distance: 10 },
+  { building: 'near', distance: 5 },   // duplicate, closer → wins
+  { building: 'mid',  distance: 50 },
+  { building: null,   distance: 1 },   // no building → ignored
+  null,                                 // junk → ignored
+]);
+assert(JSON.stringify(_ord) === JSON.stringify(['near', 'mid', 'far']), 'orders unique buildings nearest-first (dedupes by min distance)');
+assert(A._cityOrderBlastHits([]).length === 0, 'empty hit list → empty queue');
+// a building never hit (occluded / off-screen) simply never appears → not streamed
+assert(_ord.indexOf('hidden') < 0, 'un-hit (occluded/off-screen) building is absent → not queued');
+// _cityRayBlast bails safely with no raycaster/camera (mock A has neither)
+assert(Array.isArray(A._cityRayBlast()) && A._cityRayBlast().length === 0, 'ray-blast returns [] safely without raycaster/camera');
+
+L('T10: AUTOLOAD trailing-edge — evict resident buildings that LEFT the view, keep visible+active');
+// Spy on the cascade so we test SELECTION only (the cascade itself is proven by T1–T7).
+const _realEvict = A._cityEvictVictims;
+let _captured = null;
+A._cityEvictVictims = function(v) { _captured = new Set(v); };   // record, skip real scene ops
+A._cityMemBudgetMB = 100;                                        // watermark = 60MB
+A.camera = undefined; A.buildingCentres = undefined;             // no camera → falls back to resident order
+A._cityResidentOrder = ['v1', 'n1', 'n2', 'act'];
+A._cityBuildingBytes = { v1: 30*MB, n1: 30*MB, n2: 30*MB, act: 30*MB };  // resident 120MB > watermark
+A._cityEvictNonVisible(new Set(['v1']), 'act');                  // v1 visible, act active
+assert(_captured && !_captured.has('v1'), 'visible building (v1) is NOT evicted');
+assert(_captured && !_captured.has('act'), 'active building (act) is NOT evicted');
+assert(_captured && _captured.has('n1') && _captured.has('n2'), 'non-visible buildings (n1,n2) evicted down to watermark');
+
+_captured = null;                                                // under watermark → no eviction (no thrash)
+A._cityBuildingBytes = { v1: 30*MB, act: 20*MB };                // resident 50MB ≤ 60MB watermark
+A._cityResidentOrder = ['v1', 'act'];
+A._cityEvictNonVisible(new Set(['v1']), 'act');
+assert(_captured === null, 'under 60% watermark → no eviction (hysteresis, no turn-around thrash)');
+
+A._cityEvictVictims = _realEvict;                                // restore
+
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);
 

@@ -126,22 +126,12 @@ function setupCity(A) {
   // _cityHidden scan PER building) was O(victims × scene): evicting ~18 buildings at once
   // (with Terminal/LTU bbox layers ~174k hidden entries) timed out the script. Same
   // scissors-rule: never loop per-object/per-building over a global structure.
-  A._cityEvictToBudget = function(keepBuilding) {
-    var budgetBytes = (A._cityMemBudgetMB || 384) * 1048576;
-    // 1) Pick ALL victims first — pure bookkeeping (≤ resident count), oldest-first, never the
-    //    active building, always keep ≥1 resident.
-    var victims = new Set();
-    var running = A._cityResidentBytes();
-    var order = A._cityResidentOrder;
-    for (var oi = 0; oi < order.length && running > budgetBytes; oi++) {
-      var nm = order[oi];
-      if (nm === keepBuilding) continue;
-      if (order.length - victims.size <= 1) break;   // keep at least the active building
-      victims.add(nm);
-      running -= (A._cityBuildingBytes[nm] || 0);
-    }
-    if (!victims.size) return;
-    // 2) ONE pass over scene.children: dispose + bulk-remove victims' owned objects.
+  // §S285: run the one-pass eviction cascade over a chosen victims Set. Cost is independent of
+  // victim count — ONE pass over scene.children / guidMap / _cityHidden. Victim SELECTION is the
+  // caller's job (LRU+budget via _cityEvictToBudget, or visibility via _cityEvictNonVisible).
+  A._cityEvictVictims = function(victims) {
+    if (!victims || !victims.size) return;
+    // ONE pass over scene.children: dispose + bulk-remove victims' owned objects.
     var evictIds = new Set();
     var kids = A.scene.children, keepKids = [];
     for (var ki = 0; ki < kids.length; ki++) {
@@ -159,14 +149,14 @@ function setupCity(A) {
       }
     }
     A.scene.children = keepKids;                                     // single bulk removal (was O(objects × children))
-    // 3) ONE guidMap sweep for the whole cascade (keys are `meshId` or `meshId_slot`).
+    // ONE guidMap sweep for the whole cascade (keys are `meshId` or `meshId_slot`).
     if (A.guidMap) {
       for (var gk in A.guidMap) {
         var us = gk.indexOf('_');
         if (evictIds.has(us >= 0 ? gk.substring(0, us) : gk)) delete A.guidMap[gk];
       }
     }
-    // 4) ONE pass over _cityHidden: restore victims' bboxes, keep the rest.
+    // ONE pass over _cityHidden: restore victims' bboxes, keep the rest.
     if (A._cityHidden && A._cityHidden.length) {
       var dirty = {}, keepHidden = [];
       for (var hi = 0; hi < A._cityHidden.length; hi++) {
@@ -177,7 +167,7 @@ function setupCity(A) {
       for (var uk in dirty) { if (dirty[uk].instanceMatrix) dirty[uk].instanceMatrix.needsUpdate = true; }
       A._cityHidden = keepHidden;
     }
-    // 5) Bookkeeping per victim (cheap — ≤ resident count).
+    // Bookkeeping per victim (cheap — ≤ resident count).
     var freedTotal = 0;
     victims.forEach(function(name){
       freedTotal += (A._cityBuildingBytes[name] || 0);
@@ -189,6 +179,54 @@ function setupCity(A) {
     if (A.markDirty) A.markDirty();
     console.log('[S285] §CITY_EVICT buildings=' + victims.size + ' objects=' + evictIds.size + ' freedMB=' + (freedTotal/1048576).toFixed(1) + ' residentNow=' + A._cityResidentOrder.length + ' bytesNow=' + (A._cityResidentBytes()/1048576).toFixed(1));
     // DLOD refs are rebuilt by the dlodEnable() call that runs right after this in streaming.js.
+  };
+
+  // §S285 HOTFIX2: whole cascade in ONE pass (scissors-rule). LRU+budget victim selection.
+  A._cityEvictToBudget = function(keepBuilding) {
+    var budgetBytes = (A._cityMemBudgetMB || 384) * 1048576;
+    // Pick ALL victims first — bookkeeping only, oldest-first, never the active building, keep ≥1.
+    var victims = new Set();
+    var running = A._cityResidentBytes();
+    var order = A._cityResidentOrder;
+    for (var oi = 0; oi < order.length && running > budgetBytes; oi++) {
+      var nm = order[oi];
+      if (nm === keepBuilding) continue;
+      if (order.length - victims.size <= 1) break;   // keep at least the active building
+      victims.add(nm);
+      running -= (A._cityBuildingBytes[nm] || 0);
+    }
+    A._cityEvictVictims(victims);
+  };
+
+  // §S285 AUTOLOAD wave trailing-edge: evict resident buildings that LEFT the view (not in the
+  // ray-blast's visible set), FARTHEST-first, down to a 60% watermark so newly-visible can stream.
+  // Keeps the active building + everything still visible. Watermark = hysteresis: only frees under
+  // real pressure (>60% budget), so turning the camera back doesn't thrash (recently-seen stays
+  // cached below the line). This turns the fill-and-hold wave-front into a camera-FOLLOWING wave.
+  A._cityEvictNonVisible = function(visibleSet, keepBuilding) {
+    if (!A._cityResidentOrder || A._cityResidentOrder.length <= 1) return;
+    var watermark = (A._cityMemBudgetMB || 384) * 1048576 * 0.6;
+    if (A._cityResidentBytes() <= watermark) return;                 // under pressure threshold → no thrash
+    var cam = A.camera && A.camera.position;
+    var _bd2 = function(nm) {
+      var bc = A.buildingCentres && A.buildingCentres[nm];
+      if (!bc || !cam || !A.ifc2three) return 0;
+      var t = A.ifc2three(bc.ix, bc.iy, bc.iz);
+      var dx = t.x - cam.x, dy = t.y - cam.y, dz = t.z - cam.z;
+      return dx*dx + dy*dy + dz*dz;
+    };
+    var cands = A._cityResidentOrder.filter(function(nm){
+      return nm !== keepBuilding && !(visibleSet && visibleSet.has(nm));
+    });
+    if (cam) cands.sort(function(a, b){ return _bd2(b) - _bd2(a); });  // farthest-first
+    var victims = new Set();
+    var running = A._cityResidentBytes();
+    for (var i = 0; i < cands.length && running > watermark; i++) {
+      if (A._cityResidentOrder.length - victims.size <= 1) break;     // keep ≥1 resident
+      victims.add(cands[i]);
+      running -= (A._cityBuildingBytes[cands[i]] || 0);
+    }
+    A._cityEvictVictims(victims);
   };
 
   // §S285 Bug1: per-archetype GROUND-FLOOR z (sql.js Database). Mirrors tools.js
@@ -222,16 +260,10 @@ function setupCity(A) {
     return null;
   };
 
-  // ── Clear button (free RAM) — city mode only ──
-  if (A.CITY_URL) {
-  const clearBtn = document.createElement('button');
-  clearBtn.id = 'city-clear-btn';
-  clearBtn.title = 'Clear loaded meshes (free RAM)';
-  clearBtn.textContent = '\uD83D\uDDD1 ' + (typeof _TRL!=='undefined'&&_TRL.ui_clear||'Clear');
-  clearBtn.style.cssText = 'position:fixed;bottom:40px;right:16px;z-index:15;padding:8px 16px;background:#cc4444;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:1px;box-shadow:0 2px 8px rgba(204,68,68,0.4)';
-  clearBtn.onclick = function() { A.cityClear(); };
-  document.body.appendChild(clearBtn);
-  }
+  // §S285 AUTOLOAD: Clear (trash) button REMOVED — the city auto-streams on load like the
+  // single-building viewer, and memory is bounded automatically (wave-front stop now,
+  // distance-eviction next). A.cityClear() stays as the cascade/reset engine (used by
+  // eviction + queue reset), just no longer surfaced as a button. See S285_CITY_AUTOLOAD.md.
 
   // S250 §6: Manual trigger for deferred mobile city load
   A.loadCityManual = async function() {
@@ -479,6 +511,37 @@ function setupCity(A) {
 
     console.log(`[S203] §CITY_READY buildings=${Object.keys(A.buildingCentres).length} archetypes=${Object.keys(A.cityArchetypes).length} elements=${A.totalElements}`);
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_city_mode||'CITY MODE \u2014 {n} buildings, {m} elements. Click a building to load.').replace('{n}', Object.keys(A.buildingCentres).length).replace('{m}', A.totalElements.toLocaleString());
+
+    // §S285 AUTOLOAD: stream the city automatically on load (like the single-building viewer
+    // auto-loads its ?db=). The stream SET is chosen by a RAY-BLAST from the camera POV
+    // (A._cityRayBlast): a grid of rays hits the bbox layer, first-hit per ray → we stream
+    // only what is VISIBLE and UN-OCCLUDED (a building behind another isn't hit), nearest
+    // first. Re-blasts on camera-stop (controls 'end') so the streamed set follows the view.
+    // Wave-front stop in _cityStreamNext bounds RAM. Desktop only (mobile = demo). Falls back
+    // to nearest-first-by-centre if the blast is empty (camera not yet aimed / bbox not ready).
+    if (!A._isMobile && A.CITY_URL) {
+      A._cityAutoLoad = true;                       // wave-front stop gate in _cityStreamNext
+      if (!A._cityFollowHooked && A.controls && A.controls.addEventListener) {
+        A._cityFollowHooked = true;               // §S285: re-blast on camera-stop → set follows the view
+        A.controls.addEventListener('end', function() {
+          if (!A.CITY_URL || A._isMobile || !A._cityAutoLoad) return;
+          var vis = A._cityRayBlast();
+          if (!vis.length) return;
+          var visSet = new Set(vis);
+          A._cityEvictNonVisible(visSet, A.activeBuilding);   // free the trailing edge (left-the-view)
+          A._cityPendingQueue = vis.filter(function(n){ return !(A.buildingsRendered && A.buildingsRendered.has(n)); });
+          A._cityStreamNext();                    // stream the now-visible, room freed by the eviction above
+        });
+      }
+      var _visible = A._cityRayBlast();
+      if (!_visible.length) {
+        _visible = A._cityNearestFirst();
+        console.log('[S285] §AUTOLOAD fallback=distance-sort (ray-blast empty)');
+      }
+      A._cityPendingQueue = _visible;
+      console.log('[S285] §AUTOLOAD queued=' + _visible.length + ' nearest=' + (_visible[0] || '\u2014') + ' budgetMB=' + (A._cityMemBudgetMB || 384));
+      A._cityStreamNext();
+    }
   };
 
   // Override flyTo for city mode
@@ -680,16 +743,81 @@ function setupCity(A) {
   // sequence (one-by-one is too slow). The pick handler bails on shiftKey (picking.js:185)
   // so Shift is free; we disable OrbitControls during the drag. Streams via the normal
   // pipeline; the memory budget evicts older ones as newer load ("stream + evict").
+  // §S285 AUTOLOAD ray-blast: choose the stream set by VISIBILITY. Spray a grid of rays from
+  // the camera through the viewport, first-hit each against the bbox layer, resolve the hit
+  // building (userData.instanceBuilding[instanceId] — same resolve as the click pick), order
+  // unique buildings nearest-first. First-hit = free occlusion: a building behind another isn't
+  // hit, so we never stream what we can't see. Re-run on camera-stop → the set follows the view.
+  A._cityRayBlastCols = 6;
+  A._cityRayBlastRows = 4;
+  A._cityOrderBlastHits = function(hitList) {   // pure: [{building,distance}] → nearest-first unique
+    var nearest = {};
+    for (var i = 0; i < hitList.length; i++) {
+      var h = hitList[i];
+      if (!h || !h.building) continue;
+      if (nearest[h.building] === undefined || h.distance < nearest[h.building]) nearest[h.building] = h.distance;
+    }
+    return Object.keys(nearest).sort(function(a, b) { return nearest[a] - nearest[b]; });
+  };
+  A._cityNearestFirst = function() {            // fallback: ALL buildings by centre distance to camera
+    if (!A.camera) return Object.keys(A.buildingCentres);
+    var cam = A.camera.position;
+    return Object.keys(A.buildingCentres).map(function(name) {
+      var bc = A.buildingCentres[name]; var t = A.ifc2three(bc.ix, bc.iy, bc.iz);
+      var dx = t.x - cam.x, dy = t.y - cam.y, dz = t.z - cam.z;
+      return { name: name, d2: dx*dx + dy*dy + dz*dz };
+    }).sort(function(a, b) { return a.d2 - b.d2; }).map(function(o) { return o.name; });
+  };
+  A._cityRayBlast = function() {
+    if (!A.raycaster || !A.camera) return [];
+    var bboxes = A.collectMeshes(function(o){ return o.isInstancedMesh && o.userData && o.userData.isBboxPlaceholder && o.userData.instanceBuilding; });
+    if (!bboxes.length) return [];
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var prevFHO = A.raycaster.firstHitOnly;
+    A.raycaster.firstHitOnly = true;            // nearest hit per object — fast
+    var cols = A._cityRayBlastCols, rows = A._cityRayBlastRows;
+    var coord = { x: 0, y: 0 }, hitList = [], rays = 0;
+    for (var ci = 0; ci < cols; ci++) {
+      for (var ri = 0; ri < rows; ri++) {
+        coord.x = -1 + (ci + 0.5) * (2 / cols);
+        coord.y = -1 + (ri + 0.5) * (2 / rows);
+        A.raycaster.setFromCamera(coord, A.camera);
+        var hits = A.raycaster.intersectObjects(bboxes, false);
+        rays++;
+        if (hits.length) {
+          var ud = hits[0].object.userData;
+          var bld = (ud.instanceBuilding && hits[0].instanceId != null) ? ud.instanceBuilding[hits[0].instanceId] : null;
+          if (bld) hitList.push({ building: bld, distance: hits[0].distance });
+        }
+      }
+    }
+    A.raycaster.firstHitOnly = prevFHO;
+    var ordered = A._cityOrderBlastHits(hitList);
+    var _ms = _t0 ? (((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - _t0).toFixed(1) : '?';
+    console.log('[S285] §RAYBLAST rays=' + rays + ' hits=' + hitList.length + ' buildings=' + ordered.length + ' ms=' + _ms);
+    return ordered;
+  };
   A._cityPendingQueue = [];
   A._cityStreamNext = function() {
     if (A.streaming) return;                                   // chained again at next stream-complete
+    // §S285 AUTOLOAD wave-front stop: under auto-load (NOT marquee), stop pulling once the
+    // nearest cluster fills ~85% of budget. Queue is nearest-first, so this keeps the NEAREST
+    // resident and never forces eviction (no churn-to-farthest, no OOM). Marquee leaves the
+    // flag falsy \u2192 unchanged "stream + evict" behaviour.
+    if (A._cityAutoLoad && A._cityResidentBytes) {
+      var _budget = (A._cityMemBudgetMB || 384) * 1048576 * 0.85;
+      if (A._cityResidentBytes() >= _budget) {
+        console.log('[S285] \u00a7AUTOLOAD_STOP residentMB=' + (A._cityResidentBytes()/1048576).toFixed(1) + ' budgetMB=' + (A._cityMemBudgetMB || 384) + ' remaining=' + (A._cityPendingQueue ? A._cityPendingQueue.length : 0));
+        return;
+      }
+    }
     var next = null;
     while (A._cityPendingQueue && A._cityPendingQueue.length) {
       var n = A._cityPendingQueue.shift();
       if (n && !(A.buildingsRendered && A.buildingsRendered.has(n))) { next = n; break; }
     }
     if (!next) return;
-    A.status.textContent = 'Marquee \u2014 streaming ' + next + ' (' + A._cityPendingQueue.length + ' queued)';
+    A.status.textContent = (A._cityAutoLoad ? 'Loading city \u2014 ' : 'Marquee \u2014 streaming ') + next + ' (' + A._cityPendingQueue.length + ' queued)';
     A.cityLoadBuilding(next);
   };
   if (A.canvas) {
