@@ -34,6 +34,7 @@ const IFC_FILE = '/tmp/test_wall.ifc';
   const logs = [];
   const errors = [];
   const pageErrors = [];
+  const failedResources = [];  // §S284c: file:// resource loads that 404 (missing offline asset)
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
@@ -45,6 +46,13 @@ const IFC_FILE = '/tmp/test_wall.ifc';
     if (msg.type() === 'error') errors.push(text);
   });
   page.on('pageerror', err => pageErrors.push(err.message));
+  // §S284c: any file:// resource that fails to load offline = a missing embedded asset.
+  // The old leak-check (5.1) only matched "Fetch API cannot load file" and silently passed
+  // ERR_FILE_NOT_FOUND image/asset loads (icon-192.png, YT.png). This is the regression tripwire.
+  page.on('requestfailed', r => {
+    var err = (r.failure() && r.failure().errorText) || '';
+    if (r.url().startsWith('file://')) failedResources.push(r.url() + ' [' + err + ']');
+  });
 
   // ── Step 1: Open packaged HTML from file:// ──
   console.log('\n§S284b_SANDBOX Opening ' + OUTPUT + ' from file://');
@@ -227,6 +235,13 @@ const IFC_FILE = '/tmp/test_wall.ifc';
   check('5.1 no unexpected file:// fetch leaks',
     fetchErrors.length === 0,
     fetchErrors.length ? fetchErrors.join(' | ') : '');
+
+  // §S284c W-284c-4: zero missing offline assets — any file:// resource 404 fails the test.
+  // Locale JSONs are fetched-then-handled (standalone uses inline defaults), so exclude them.
+  var missingAssets = failedResources.filter(u => !/locales?\//.test(u) && !/\.json\b/.test(u));
+  check('5.1b no missing file:// assets (404)',
+    missingAssets.length === 0,
+    missingAssets.length ? missingAssets.join(' | ') : '');
 
   // Verify _STANDALONE guards are working
   check('5.2 health check skipped',

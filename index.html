@@ -1804,6 +1804,8 @@ async function packageLandingPage() {
     }
     var iconB64 = await fetchB64('viewer/icons/icon-192.png');
     var pngB64  = await fetchB64('Sysnova.png').catch(function() { return ''; });
+    // §S284c W-284c-4: YT.png was never inlined → broken image offline. Inline it.
+    var ytB64   = await fetchB64('viewer/YT.png').catch(function() { return ''; });
 
     // 3. Snapshot manifest (already in memory from init)
     var manifestJSON = JSON.stringify(window._manifestData || {archetypes:[]});
@@ -1820,6 +1822,7 @@ async function packageLandingPage() {
     // 6. Inline images → base64
     html = html.replace(/src="viewer\/icons\/icon-192\.png"/g, 'src="' + iconB64 + '"');
     if (pngB64) html = html.replace(/src="Sysnova\.png"/g, 'src="' + pngB64 + '"');
+    if (ytB64) html = html.replace(/src="viewer\/YT\.png"/g, 'src="' + ytB64 + '"');
 
     // 7. Strip analytics (goatcounter)
     html = html.replace(/<script[^>]*goatcounter[^>]*><\/script>/g, '');
@@ -1946,6 +1949,8 @@ async function packageLandingPage() {
 
         // F. Strip service worker + manifest link (fails in blob context, not critical)
         viewerHtml = viewerHtml.replace(/<link rel="manifest"[^>]*>/g, '');
+        // §S284c: apple-touch-icon href is relative → 404 in blob:// viewer offline. Strip it.
+        viewerHtml = viewerHtml.replace(/<link rel="apple-touch-icon"[^>]*>/g, '');
 
         // G. Embed complete viewer HTML as type="text/plain" (same pattern as web-ifc)
         var safeViewerHtml = viewerHtml.replace(/<\/script>/gi, '<\\/script>');
