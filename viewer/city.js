@@ -651,6 +651,7 @@ function setupCity(A) {
     A.streaming = false;
     A.streamQueue = [];
     A.streamIdx = 0;
+    A._cityPendingQueue = [];   // §S285: stop any in-flight marquee stream sequence
     // §S285: free ONLY streamed building geometry — KEEP the bbox layer. InstancedMesh
     // IS a Mesh, so the bare `o.isMesh` filter was also wiping the 12 bbox placeholders
     // → everything blank. Exclude isBboxPlaceholder so the city bboxes survive Clear.
@@ -674,4 +675,74 @@ function setupCity(A) {
     console.log(`[S210] §CITY_CLEAR removed=${toRemove.length} meshes freed`);
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_cleared||'CLEARED \u2014 {n} meshes removed.').replace('{n}', toRemove.length);
   };
+
+  // \u2500\u2500 \u00a7S285: Shift+drag marquee \u2014 stream every building inside a screen rectangle, in
+  // sequence (one-by-one is too slow). The pick handler bails on shiftKey (picking.js:185)
+  // so Shift is free; we disable OrbitControls during the drag. Streams via the normal
+  // pipeline; the memory budget evicts older ones as newer load ("stream + evict").
+  A._cityPendingQueue = [];
+  A._cityStreamNext = function() {
+    if (A.streaming) return;                                   // chained again at next stream-complete
+    var next = null;
+    while (A._cityPendingQueue && A._cityPendingQueue.length) {
+      var n = A._cityPendingQueue.shift();
+      if (n && !(A.buildingsRendered && A.buildingsRendered.has(n))) { next = n; break; }
+    }
+    if (!next) return;
+    A.status.textContent = 'Marquee \u2014 streaming ' + next + ' (' + A._cityPendingQueue.length + ' queued)';
+    A.cityLoadBuilding(next);
+  };
+  if (A.canvas) {
+    var _mq = null, _mqEl = null;
+    var _mqBox = function(s) { return { l: Math.min(s.x, s.cx), t: Math.min(s.y, s.cy), r: Math.max(s.x, s.cx), b: Math.max(s.y, s.cy) }; };
+    A.canvas.addEventListener('pointerdown', function(e) {
+      if (!A.CITY_URL || !e.shiftKey || e.button !== 0) return;
+      _mq = { x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY };
+      if (A.controls) A.controls.enabled = false;              // don't rotate the camera during marquee
+      if (!_mqEl) {
+        _mqEl = document.createElement('div');
+        _mqEl.style.cssText = 'position:fixed;border:1.5px dashed #4fc3f7;background:rgba(79,195,247,0.12);pointer-events:none;z-index:9999;display:none';
+        document.body.appendChild(_mqEl);
+      }
+      _mqEl.style.display = 'block';
+      e.preventDefault();
+    });
+    A.canvas.addEventListener('pointermove', function(e) {
+      if (!_mq) return;
+      _mq.cx = e.clientX; _mq.cy = e.clientY;
+      var r = _mqBox(_mq);
+      _mqEl.style.left = r.l + 'px'; _mqEl.style.top = r.t + 'px';
+      _mqEl.style.width = (r.r - r.l) + 'px'; _mqEl.style.height = (r.b - r.t) + 'px';
+    });
+    var _mqEnd = function() {
+      if (!_mq) return;
+      var s = _mq; _mq = null;
+      if (_mqEl) _mqEl.style.display = 'none';
+      if (A.controls) A.controls.enabled = true;
+      var r = _mqBox(s);
+      if ((r.r - r.l) < 6 && (r.b - r.t) < 6) return;          // too small \u2014 not a real drag
+      var cr = A.canvas.getBoundingClientRect();
+      var _v = new THREE.Vector3();                            // lazy \u2014 THREE ready by city interaction
+      var picked = [];
+      for (var name in A.buildingCentres) {
+        if (A.buildingsRendered && A.buildingsRendered.has(name)) continue;
+        var bc = A.buildingCentres[name];
+        var t = A.ifc2three(bc.ix, bc.iy, bc.iz);
+        _v.set(t.x, t.y, t.z).project(A.camera);
+        if (_v.z > 1) continue;                                // behind camera / beyond far plane
+        var sx = cr.left + (_v.x * 0.5 + 0.5) * cr.width;
+        var sy = cr.top + (-_v.y * 0.5 + 0.5) * cr.height;
+        if (sx >= r.l && sx <= r.r && sy >= r.t && sy <= r.b) picked.push({ name: name, d: _v.z });
+      }
+      picked.sort(function(a, b) { return a.d - b.d; });        // nearest first
+      var MAX = 50, capped = picked.length > MAX;
+      var names = picked.slice(0, MAX).map(function(p) { return p.name; });
+      console.log('[S285] \u00a7CITY_MARQUEE selected=' + picked.length + (capped ? ' (capped to ' + MAX + ')' : '') + ' queued=' + names.length);
+      if (!names.length) { A.status.textContent = 'Marquee \u2014 no unloaded buildings in selection'; return; }
+      A._cityPendingQueue = names;
+      A._cityStreamNext();                                      // kick off if idle; else chained at stream-complete
+    };
+    A.canvas.addEventListener('pointerup', _mqEnd);
+    A.canvas.addEventListener('pointercancel', _mqEnd);
+  }
 }
