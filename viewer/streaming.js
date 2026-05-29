@@ -415,6 +415,9 @@ function setupStreaming(A) {
           // §S285 Bug2: city mode — now that the real mesh is fully streamed, hide THIS
           // building's bbox placeholders (no blank gap; surrounding city bboxes stay).
           if (A.CITY_URL && A._cityHideBuildingBboxes) A._cityHideBuildingBboxes(A.activeBuilding);
+          // §S285: tag this building's streamed objects + evict oldest if over memory budget.
+          // Runs BEFORE dlodEnable() below so DLOD refs are rebuilt over the post-eviction scene.
+          if (A.CITY_URL && A._cityTagAndBudget) A._cityTagAndBudget(A.activeBuilding);
         }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices

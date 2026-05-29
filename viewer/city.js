@@ -24,7 +24,7 @@ function setupCity(A) {
       for (var i = 0; i < ib.length; i++) {
         if (ib[i] === buildingName) {
           var orig = new THREE.Matrix4(); o.getMatrixAt(i, orig);
-          A._cityHidden.push({ mesh: o, i: i, m: orig });  // remember so Clear can restore
+          A._cityHidden.push({ mesh: o, i: i, m: orig, building: buildingName });  // building stamp → per-building restore on evict
           o.setMatrixAt(i, _z); hidden++; changed = true;
         }
       }
@@ -53,6 +53,109 @@ function setupCity(A) {
     } else {
       console.log('[S285] §CITY_MEM ' + label + ' (performance.memory unavailable — non-Chromium)');
     }
+  };
+
+  // §S285: per-building bbox restore — bring back ONE building's bboxes (evict path),
+  // leaving every other loaded building's bboxes hidden. (cityClear still uses the all-restore.)
+  A._cityRestoreBuildingBboxes = function(name) {
+    if (!A._cityHidden || !A._cityHidden.length) return;
+    var dirty = {}, restored = 0, keep = [];
+    A._cityHidden.forEach(function(h){
+      if (h.building === name) { h.mesh.setMatrixAt(h.i, h.m); dirty[h.mesh.uuid] = h.mesh; restored++; }
+      else keep.push(h);
+    });
+    for (var k in dirty) { if (dirty[k].instanceMatrix) dirty[k].instanceMatrix.needsUpdate = true; }
+    A._cityHidden = keep;
+    if (restored && A.markDirty) A.markDirty();
+    console.log('[S285] §CITY_BBOX_RESTORE_ONE building=' + name + ' instances=' + restored);
+  };
+
+  // §S285: bounded working set — memory-budget LRU eviction of streamed buildings.
+  // Buildings are arbitrary; the viewer must scale to ANY combination. We dispose only
+  // per-building-OWNED scene objects (InstancedMesh instanceMatrix; BatchedMesh / merged-Mesh
+  // owned buffers). SHARED meshCache geometry + BVH + cached materials are NEVER disposed
+  // → no refcounting needed, same-archetype repeats keep working, and re-stream is cheap
+  // (geometry already in meshCache). Budget is bytes, not a count (one LTU ≠ one SampleHouse).
+  A._cityBuildingBytes = {};   // building -> owned buffer bytes (the part that grows)
+  A._cityResidentOrder = [];   // resident buildings, oldest first (LRU order)
+  A._cityMemBudgetMB = 384;    // aggressive default; live-tunable from console (re-stream is fast)
+
+  A._cityGeoBytes = function(g) {
+    var b = 0;
+    if (g && g.attributes) for (var k in g.attributes) { var a = g.attributes[k]; if (a && a.array) b += a.array.byteLength; }
+    if (g && g.index && g.index.array) b += g.index.array.byteLength;
+    return b;
+  };
+  A._cityObjBytes = function(o) {
+    if (o.isInstancedMesh) {  // geometry is SHARED in meshCache — count only the instance buffers
+      var b = 0;
+      if (o.instanceMatrix && o.instanceMatrix.array) b += o.instanceMatrix.array.byteLength;
+      if (o.instanceColor && o.instanceColor.array) b += o.instanceColor.array.byteLength;
+      return b;
+    }
+    return A._cityGeoBytes(o.geometry);  // BatchedMesh + fallback/merged Mesh own their geometry
+  };
+  A._cityResidentBytes = function() { var s = 0; for (var k in A._cityBuildingBytes) s += A._cityBuildingBytes[k]; return s; };
+
+  // Tag the just-streamed building's NEW scene objects (children added since the pre-stream
+  // snapshot), tally owned bytes, then evict oldest while over budget. Single site — no
+  // per-creation-site edits, no userData sniffing: scene-children delta is the tag source.
+  A._cityTagAndBudget = function(buildingName) {
+    if (!buildingName) return;
+    var pre = A._cityPreStreamIds || new Set();
+    var bytes = 0, tagged = 0;
+    A.scene.children.forEach(function(o){
+      if (pre.has(o.id)) return;                                // existed before this building streamed
+      if (o.userData && o.userData.isBboxPlaceholder) return;    // bbox layer, not streamed geometry
+      if (o.userData && o.userData.building) return;             // already tagged (defensive)
+      if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
+      o.userData = o.userData || {};
+      o.userData.building = buildingName;
+      bytes += A._cityObjBytes(o);
+      tagged++;
+    });
+    A._cityBuildingBytes[buildingName] = (A._cityBuildingBytes[buildingName] || 0) + bytes;
+    if (A._cityResidentOrder.indexOf(buildingName) === -1) A._cityResidentOrder.push(buildingName);
+    console.log('[S285] §CITY_TAG building=' + buildingName + ' objects=' + tagged + ' ownedMB=' + (bytes/1048576).toFixed(1) + ' residentMB=' + (A._cityResidentBytes()/1048576).toFixed(1));
+    A._cityEvictToBudget(buildingName);
+  };
+
+  A._cityEvictToBudget = function(keepBuilding) {
+    var budgetBytes = (A._cityMemBudgetMB || 384) * 1048576;
+    var guard = 0;
+    while (A._cityResidentBytes() > budgetBytes && A._cityResidentOrder.length > 1 && guard++ < 200) {
+      var victim = null;
+      for (var i = 0; i < A._cityResidentOrder.length; i++) {
+        if (A._cityResidentOrder[i] !== keepBuilding) { victim = A._cityResidentOrder[i]; break; }
+      }
+      if (!victim) break;
+      A._cityEvictBuilding(victim);
+    }
+    // DLOD refs are rebuilt by the dlodEnable() call that runs right after this in streaming.js.
+  };
+
+  A._cityEvictBuilding = function(name) {
+    var objs = A.collectMeshes(function(o){ return o.userData && o.userData.building === name && !o.userData.isBboxPlaceholder; });
+    var freed = A._cityBuildingBytes[name] || 0;
+    objs.forEach(function(o){
+      A.scene.remove(o);
+      if (A._instanceMeta) delete A._instanceMeta[o.id];
+      if (A.guidMap) {                                   // keyed by o.id or o.id + '_' + slot
+        var pfx = o.id + '_';
+        delete A.guidMap[o.id];
+        for (var gk in A.guidMap) { if (gk.indexOf(pfx) === 0) delete A.guidMap[gk]; }
+      }
+      if (o.isBatchedMesh) { if (o.dispose) o.dispose(); }          // frees owned buffers + its BVH
+      else if (o.isInstancedMesh) { if (o.dispose) o.dispose(); }    // frees instanceMatrix; geometry SHARED — keep
+      else if (o.geometry) { o.geometry.dispose(); }                 // fallback/merged Mesh owns geometry
+      // material is shared via _getMaterial cache — NEVER dispose here
+    });
+    A._cityRestoreBuildingBboxes(name);                              // its bboxes return → city context intact
+    if (A.buildingsRendered) A.buildingsRendered.delete(name);       // re-click re-streams (DB still cached)
+    if (A.savedStreams) delete A.savedStreams[name];
+    delete A._cityBuildingBytes[name];
+    var idx = A._cityResidentOrder.indexOf(name); if (idx >= 0) A._cityResidentOrder.splice(idx, 1);
+    console.log('[S285] §CITY_EVICT building=' + name + ' objects=' + objs.length + ' freedMB=' + (freed/1048576).toFixed(1) + ' residentNow=' + A._cityResidentOrder.length + ' bytesNow=' + (A._cityResidentBytes()/1048576).toFixed(1));
   };
 
   // §S285 Bug1: per-archetype GROUND-FLOOR z (sql.js Database). Mirrors tools.js
@@ -486,6 +589,10 @@ function setupCity(A) {
       return r;
     });
 
+    // §S285: snapshot current scene children so stream-complete can tag THIS building's
+    // new objects by delta (anything added during streaming, minus the bbox layer).
+    A._cityPreStreamIds = new Set(A.scene.children.map(function(c){ return c.id; }));
+
     A.streamQueue = offsetRows;
     A.streamIdx = 0;
     A.streaming = true;
@@ -523,6 +630,8 @@ function setupCity(A) {
     A.streamedCount = 0;
     if (A.buildingsRendered) A.buildingsRendered.clear();
     A.guidMap = {};
+    A._cityBuildingBytes = {};   // §S285: reset eviction tally — fresh working set
+    A._cityResidentOrder = [];
     A._cityRestoreBboxes();  // bring back the bboxes of buildings that were streamed
     var el;
     if ((el = document.getElementById('s-streamed'))) el.textContent = '0';
