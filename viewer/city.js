@@ -120,50 +120,75 @@ function setupCity(A) {
     A._cityEvictToBudget(buildingName);
   };
 
+  // §S285 HOTFIX2: the WHOLE eviction cascade runs in ONE pass over each big structure
+  // (scene.children, guidMap, _cityHidden) — cost is independent of how many buildings are
+  // evicted. The previous per-building version (collectMeshes + scene.remove PER object +
+  // _cityHidden scan PER building) was O(victims × scene): evicting ~18 buildings at once
+  // (with Terminal/LTU bbox layers ~174k hidden entries) timed out the script. Same
+  // scissors-rule: never loop per-object/per-building over a global structure.
   A._cityEvictToBudget = function(keepBuilding) {
     var budgetBytes = (A._cityMemBudgetMB || 384) * 1048576;
-    var guard = 0, evictIds = new Set(), evicted = 0;
-    while (A._cityResidentBytes() > budgetBytes && A._cityResidentOrder.length > 1 && guard++ < 200) {
-      var victim = null;
-      for (var i = 0; i < A._cityResidentOrder.length; i++) {
-        if (A._cityResidentOrder[i] !== keepBuilding) { victim = A._cityResidentOrder[i]; break; }
-      }
-      if (!victim) break;
-      A._cityEvictBuilding(victim, evictIds);   // accumulates evicted object ids; NO guidMap loop here
-      evicted++;
+    // 1) Pick ALL victims first — pure bookkeeping (≤ resident count), oldest-first, never the
+    //    active building, always keep ≥1 resident.
+    var victims = new Set();
+    var running = A._cityResidentBytes();
+    var order = A._cityResidentOrder;
+    for (var oi = 0; oi < order.length && running > budgetBytes; oi++) {
+      var nm = order[oi];
+      if (nm === keepBuilding) continue;
+      if (order.length - victims.size <= 1) break;   // keep at least the active building
+      victims.add(nm);
+      running -= (A._cityBuildingBytes[nm] || 0);
     }
-    // §S285 HOTFIX: clean guidMap in ONE sweep for the whole cascade. The previous per-object
-    // inner loop (`for gk in guidMap` PER evicted object) was O(objects × guidMap): evicting
-    // Hospital (~7.8k objects × ~190k keys ≈ 1.5B string checks) froze the main thread ~a minute.
-    // guidMap keys are `meshId` or `meshId_slot` → match by leading id against the evicted set.
-    if (evicted && A.guidMap) {
+    if (!victims.size) return;
+    // 2) ONE pass over scene.children: dispose + bulk-remove victims' owned objects.
+    var evictIds = new Set();
+    var kids = A.scene.children, keepKids = [];
+    for (var ki = 0; ki < kids.length; ki++) {
+      var o = kids[ki];
+      if (o.userData && o.userData.building && victims.has(o.userData.building) && !o.userData.isBboxPlaceholder) {
+        evictIds.add(String(o.id));
+        if (A._instanceMeta) delete A._instanceMeta[o.id];
+        if (A._batchMeta) delete A._batchMeta[o.id];                  // else stale → §CONTRACT_FAIL phantom orphans + leak
+        if (o.isBatchedMesh) { if (o.dispose) o.dispose(); }         // frees owned buffers + its BVH
+        else if (o.isInstancedMesh) { if (o.dispose) o.dispose(); }   // frees instanceMatrix; geometry SHARED — keep
+        else if (o.geometry) { o.geometry.dispose(); }               // fallback/merged Mesh owns geometry
+        o.parent = null;                                             // material shared via cache — NEVER dispose
+      } else {
+        keepKids.push(o);
+      }
+    }
+    A.scene.children = keepKids;                                     // single bulk removal (was O(objects × children))
+    // 3) ONE guidMap sweep for the whole cascade (keys are `meshId` or `meshId_slot`).
+    if (A.guidMap) {
       for (var gk in A.guidMap) {
         var us = gk.indexOf('_');
         if (evictIds.has(us >= 0 ? gk.substring(0, us) : gk)) delete A.guidMap[gk];
       }
     }
-    // DLOD refs are rebuilt by the dlodEnable() call that runs right after this in streaming.js.
-  };
-
-  A._cityEvictBuilding = function(name, evictIds) {
-    var objs = A.collectMeshes(function(o){ return o.userData && o.userData.building === name && !o.userData.isBboxPlaceholder; });
-    var freed = A._cityBuildingBytes[name] || 0;
-    objs.forEach(function(o){
-      A.scene.remove(o);
-      if (evictIds) evictIds.add(String(o.id));                      // guidMap cleaned in ONE sweep by caller
-      if (A._instanceMeta) delete A._instanceMeta[o.id];
-      if (A._batchMeta) delete A._batchMeta[o.id];                    // else stale → §CONTRACT_FAIL phantom orphans + leak
-      if (o.isBatchedMesh) { if (o.dispose) o.dispose(); }          // frees owned buffers + its BVH
-      else if (o.isInstancedMesh) { if (o.dispose) o.dispose(); }    // frees instanceMatrix; geometry SHARED — keep
-      else if (o.geometry) { o.geometry.dispose(); }                 // fallback/merged Mesh owns geometry
-      // material is shared via _getMaterial cache — NEVER dispose here
+    // 4) ONE pass over _cityHidden: restore victims' bboxes, keep the rest.
+    if (A._cityHidden && A._cityHidden.length) {
+      var dirty = {}, keepHidden = [];
+      for (var hi = 0; hi < A._cityHidden.length; hi++) {
+        var h = A._cityHidden[hi];
+        if (victims.has(h.building)) { h.mesh.setMatrixAt(h.i, h.m); dirty[h.mesh.uuid] = h.mesh; }
+        else keepHidden.push(h);
+      }
+      for (var uk in dirty) { if (dirty[uk].instanceMatrix) dirty[uk].instanceMatrix.needsUpdate = true; }
+      A._cityHidden = keepHidden;
+    }
+    // 5) Bookkeeping per victim (cheap — ≤ resident count).
+    var freedTotal = 0;
+    victims.forEach(function(name){
+      freedTotal += (A._cityBuildingBytes[name] || 0);
+      if (A.buildingsRendered) A.buildingsRendered.delete(name);     // re-click re-streams (DB still cached)
+      if (A.savedStreams) delete A.savedStreams[name];
+      delete A._cityBuildingBytes[name];
+      var idx = A._cityResidentOrder.indexOf(name); if (idx >= 0) A._cityResidentOrder.splice(idx, 1);
     });
-    A._cityRestoreBuildingBboxes(name);                              // its bboxes return → city context intact
-    if (A.buildingsRendered) A.buildingsRendered.delete(name);       // re-click re-streams (DB still cached)
-    if (A.savedStreams) delete A.savedStreams[name];
-    delete A._cityBuildingBytes[name];
-    var idx = A._cityResidentOrder.indexOf(name); if (idx >= 0) A._cityResidentOrder.splice(idx, 1);
-    console.log('[S285] §CITY_EVICT building=' + name + ' objects=' + objs.length + ' freedMB=' + (freed/1048576).toFixed(1) + ' residentNow=' + A._cityResidentOrder.length + ' bytesNow=' + (A._cityResidentBytes()/1048576).toFixed(1));
+    if (A.markDirty) A.markDirty();
+    console.log('[S285] §CITY_EVICT buildings=' + victims.size + ' objects=' + evictIds.size + ' freedMB=' + (freedTotal/1048576).toFixed(1) + ' residentNow=' + A._cityResidentOrder.length + ' bytesNow=' + (A._cityResidentBytes()/1048576).toFixed(1));
+    // DLOD refs are rebuilt by the dlodEnable() call that runs right after this in streaming.js.
   };
 
   // §S285 Bug1: per-archetype GROUND-FLOOR z (sql.js Database). Mirrors tools.js
