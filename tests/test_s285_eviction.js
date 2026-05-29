@@ -346,6 +346,21 @@ A._cityFocusSneak('focus');
 assert(_fr.length === 1 && _fr[0] === 4000, 'focus detail streams a 4000-row CHUNK (not the 10000 dump)');
 assert(A._citySneak.focus && A._citySneak.focus.rows.length === 6000, 'remainder (6000) re-stashed for the next chunk');
 
+L('T15: ghost orphan sweep — building-tagged meshes whose building is gone get freed');
+A.scene.children.length = 0; A.guidMap = {}; A._instanceMeta = {}; A._batchMeta = {};
+A._cityResidentOrder = ['Live'];
+A.activeBuilding = 'Streaming';                                  // mid-stream → must be spared
+function taggedMesh(bld, bbox) { var m = instMesh(8); m.userData = { building: bld }; if (bbox) m.userData.isBboxPlaceholder = true; return m; }
+const ghost   = taggedMesh('Gone');        A.scene.add(ghost);   // building evicted earlier → ghost
+const live    = taggedMesh('Live');        A.scene.add(live);    // resident → keep
+const active  = taggedMesh('Streaming');   A.scene.add(active);  // mid-stream → keep
+const ghostBox= taggedMesh('Gone', true);  A.scene.add(ghostBox);// bbox layer → keep (not real geometry)
+A._cityEvictVictims(new Set());                                  // no victims — pure ghost sweep
+assert(ghost._disposed && A.scene.children.indexOf(ghost) === -1, 'ghost mesh (building Gone, not resident) disposed + removed');
+assert(!live._disposed && A.scene.children.indexOf(live) !== -1, 'resident building mesh kept');
+assert(!active._disposed && A.scene.children.indexOf(active) !== -1, 'active (mid-stream) building mesh spared');
+assert(!ghostBox._disposed && A.scene.children.indexOf(ghostBox) !== -1, 'bbox placeholder kept (not swept as ghost)');
+
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);
 
