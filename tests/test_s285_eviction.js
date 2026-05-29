@@ -64,7 +64,7 @@ function batchedMesh(vertBytes, idxBytes) {  // owns merged geometry buffers
 const A = {
   CITY_URL: 'x', scene: makeScene(), _cityHidden: [],
   _instanceMeta: {}, _batchMeta: {}, guidMap: {}, buildingsRendered: new Set(), savedStreams: {},
-  markDirty() {}, dlodEnable: null,
+  markDirty() {}, dlodEnable: null, streaming: false, status: { textContent: '' },
   collectMeshes(fn) { return A.scene.children.filter(fn); },
 };
 sandbox.setupCity(A);
@@ -171,6 +171,22 @@ assert(A._cityResidentOrder.length <= 3, 'cascade evicted down toward budget (re
 assert(A._cityHidden.every(h => h.building === 'ACT' || A._cityResidentOrder.includes(h.building)), 'evicted buildings _cityHidden entries restored (removed)');
 assert(t6ms < 1000, 'whole multi-building cascade completed fast (' + t6ms.toFixed(0) + 'ms; v528 per-building path timed out)');
 L('  (evicted ' + (21 - A._cityResidentOrder.length) + ' buildings, _cityHidden→' + A._cityHidden.length + ', ' + t6ms.toFixed(0) + 'ms)');
+
+// T7 — marquee sequential queue: drains in order, skips already-rendered, idle-guarded.
+L('T7: marquee queue — sequential drain, skip already-rendered, no overlap');
+const loaded = [];
+A.cityLoadBuilding = function(n) { loaded.push(n); A.streaming = true; };   // mock: record + mark busy
+A.buildingsRendered = new Set(['Y']);                                       // Y already rendered → skip
+A.streaming = false;
+A._cityPendingQueue = ['X', 'Y', 'Z'];
+A._cityStreamNext();                                          // → loads X
+assert(loaded.length === 1 && loaded[0] === 'X', 'streams first queued (X)');
+A._cityStreamNext();                                          // streaming=true → no-op (no overlap)
+assert(loaded.length === 1, 'idle-guard: no second stream while one is in flight');
+A.streaming = false; A._cityStreamNext();                     // X done → skips Y (rendered) → loads Z
+assert(loaded.length === 2 && loaded[1] === 'Z', 'skips already-rendered Y, streams Z');
+A.streaming = false; A._cityStreamNext();                     // queue empty → no-op
+assert(loaded.length === 2, 'queue drained, no extra streams');
 
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);

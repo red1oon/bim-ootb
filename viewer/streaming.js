@@ -418,6 +418,8 @@ function setupStreaming(A) {
           // §S285: tag this building's streamed objects + evict oldest if over memory budget.
           // Runs BEFORE dlodEnable() below so DLOD refs are rebuilt over the post-eviction scene.
           if (A.CITY_URL && A._cityTagAndBudget) A._cityTagAndBudget(A.activeBuilding);
+          // §S285: marquee — stream the next queued building (sequential drain).
+          if (A.CITY_URL && A._cityStreamNext) A._cityStreamNext();
         }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices
