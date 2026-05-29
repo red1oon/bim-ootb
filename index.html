@@ -1088,6 +1088,66 @@ async function _loadSqlJs() {
   return await initSqlJs({ wasmBinary: wasmBuf });
 }
 
+// §S284d: Obtain the web-ifc WASM bytes on the MAIN thread, then transfer them into the
+// import worker — emscripten's own in-worker fetch of lib/web-ifc.wasm is fragile offline
+// (it aborts with "both async and sync fetching of the wasm failed" when the 1.3MB binary
+// isn't in a cache layer). The main thread CAN read Cache Storage offline (same as _loadSqlJs),
+// so this is the single offline-safe source of truth for the binary.
+var _IFC_ENGINE_CACHE = 'bim-ifc-engine';
+var _IFC_WASM_URL = 'viewer/lib/web-ifc.wasm';
+async function _getWebIfcWasm() {
+  // 1. Standalone HTML — bytes embedded as base64.
+  if (window._WEBIFC_WASM_B64) {
+    var raw = atob(window._WEBIFC_WASM_B64);
+    var buf = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+    console.log('§IFC_WASM_FROM_B64 size=' + buf.length);
+    return buf.buffer;
+  }
+  // 2. Page-owned cache (survives SW purge / version skew) — offline-safe.
+  try {
+    var pc = await caches.open(_IFC_ENGINE_CACHE);
+    var hit = await pc.match(_IFC_WASM_URL);
+    if (hit) { console.log('§IFC_WASM_FROM_CACHE page-cache'); return await hit.arrayBuffer(); }
+  } catch (e) {}
+  // 3. SW Cache Storage (precache) — offline-safe; caches.match reads across all caches.
+  try {
+    var swHit = await caches.match(_IFC_WASM_URL);
+    if (swHit) {
+      console.log('§IFC_WASM_FROM_CACHE sw-precache');
+      var swBuf = await swHit.arrayBuffer();
+      try { (await caches.open(_IFC_ENGINE_CACHE)).put(_IFC_WASM_URL, new Response(swBuf.slice(0), { headers: { 'Content-Type': 'application/wasm' } })); } catch (e) {}
+      return swBuf;
+    }
+  } catch (e) {}
+  // 4. Network (online only) — then warm the page cache for next time.
+  try {
+    var r = await fetch(_IFC_WASM_URL);
+    if (r && r.ok) {
+      var netBuf = await r.arrayBuffer();
+      console.log('§IFC_WASM_FROM_NET size=' + netBuf.byteLength);
+      try { (await caches.open(_IFC_ENGINE_CACHE)).put(_IFC_WASM_URL, new Response(netBuf.slice(0), { headers: { 'Content-Type': 'application/wasm' } })); } catch (e) {}
+      return netBuf;
+    }
+  } catch (e) {}
+  // 5. Genuinely unavailable — clear, honest error (NOT the cryptic emscripten abort).
+  console.warn('§IFC_ENGINE_UNAVAILABLE web-ifc.wasm not cached and offline');
+  throw new Error('IFC engine not available offline — connect to the internet once to enable offline IFC import.');
+}
+
+// §S284d: Warm the IFC engine into the page cache on first online landing load so a later
+// offline session is ready. Best-effort, non-blocking.
+async function _warmIfcEngine() {
+  if (window._STANDALONE) return;
+  try {
+    var pc = await caches.open(_IFC_ENGINE_CACHE);
+    if (await pc.match(_IFC_WASM_URL)) return; // already warm
+    if (!navigator.onLine) return;
+    var r = await fetch(_IFC_WASM_URL);
+    if (r && r.ok) { await pc.put(_IFC_WASM_URL, r.clone()); console.log('§IFC_ENGINE_WARMED page-cache'); }
+  } catch (e) {}
+}
+
 // §S284: Create Worker from Blob URL in standalone mode (file:// blocks script URLs)
 function _createWorker(scriptUrl) {
   if (window._STANDALONE && window._WORKER_SOURCES) {
@@ -1141,6 +1201,17 @@ async function handleImportFile(file) {
   // S228: Route to IFC or mesh worker based on format
   var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=8' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
+  // §S284d: for the IFC route, fetch the wasm bytes (offline-safe) and transfer them into the
+  // worker so emscripten never does its own fragile fetch. Honest error if truly unavailable.
+  if (fmt.route === 'ifc') {
+    try {
+      workerMsg.wasmBytes = await _getWebIfcWasm();
+    } catch (engineErr) {
+      status.textContent = engineErr.message;
+      progressBar.style.background = '#cc4444';
+      return;
+    }
+  }
   const worker = _createWorker(workerFile);
 
   worker.onmessage = async function(e) {
@@ -1334,6 +1405,17 @@ async function handleImportMultiIFC(files) {
   var allElements = [], allGeometries = [], allTransforms = [];
   var allDiscs = {}, allStoreys = [];
 
+  // §S284d: obtain web-ifc WASM bytes once (offline-safe), transfer into each worker.
+  var _webIfcWasm;
+  try {
+    _webIfcWasm = await _getWebIfcWasm();
+  } catch (engineErr) {
+    console.log('[S224] §MULTI_FILE_ERROR ' + engineErr.message);
+    if (status) status.textContent = engineErr.message;
+    if (progressBar) progressBar.style.background = '#cc4444';
+    return;
+  }
+
   for (var fi = 0; fi < files.length; fi++) {
     var file = files[fi];
     var fileLabel = (fi + 1) + '/' + files.length + ': ' + file.name;
@@ -1365,7 +1447,8 @@ async function handleImportMultiIFC(files) {
             }
           };
           worker.onerror = function(err) { worker.terminate(); reject(err); };
-          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name }, [arrayBuffer]);
+          // §S284d: wasmBytes is structured-cloned (not transferred) so it survives across files.
+          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: _webIfcWasm }, [arrayBuffer]);
         });
       });
 
@@ -2187,8 +2270,8 @@ window.addEventListener('trl-ready', function() {
 // offline. Skipped in standalone file:// (the saved HTML embeds everything inline).
 if (!window._STANDALONE && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('viewer/sw.js?v=526', { scope: 'viewer/' })
-    .then(function(r){ console.log('§SW_REG_LANDING scope=' + r.scope); })
-    .catch(function(e){ console.warn('§SW_REG_LANDING_FAIL', e.message); });
+    .then(function(r){ console.log('§SW_REG_LANDING scope=' + r.scope); _warmIfcEngine(); })
+    .catch(function(e){ console.warn('§SW_REG_LANDING_FAIL', e.message); _warmIfcEngine(); });
 }
 </script>
 
