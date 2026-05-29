@@ -7,6 +7,19 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ffffff">
 <title>BIM OOTB — DEV</title>
+<script>
+// §S284c image failsafe: a missing DECORATIVE image (logo, YouTube, Sysnova, CI badge)
+// must never show a broken-image icon — just hide it. The functional path (code/workers/
+// wasm/sql, the drop-IFC UI, the card→viewer flow) is not image-dependent, so hiding a
+// broken <img> is always safe. (img 'error' events don't bubble → capture phase.)
+window.addEventListener('error', function(e){
+  var t = e.target;
+  if (t && t.tagName === 'IMG') {
+    t.style.display = 'none';
+    console.warn('§IMG_FAILSAFE hid missing image: ' + (t.getAttribute('src') || '').slice(0, 80));
+  }
+}, true);
+</script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
