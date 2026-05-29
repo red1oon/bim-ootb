@@ -827,7 +827,7 @@ function setupStreaming(A) {
 
           // Storey/disc visibility filter
           var vis = true;
-          if (A.activeStoreyFilter !== null && el.storey !== A.activeStoreyFilter) vis = false;
+          if (!A._storeyVisible(el.storey)) vis = false;
           if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
           if (!vis) bm.setVisibleAt(slotId, false);
 
@@ -856,7 +856,7 @@ function setupStreaming(A) {
           mesh.userData.storey = el.storey; mesh.userData.disc = el.disc;
           mesh.userData.guid = el.guid; mesh.userData.ifcClass = el.ifcClass || '';
           A.guidMap[mesh.id] = el.guid;
-          if (A.activeStoreyFilter !== null && el.storey !== A.activeStoreyFilter) mesh.visible = false;
+          if (!A._storeyVisible(el.storey)) mesh.visible = false;
           if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) mesh.visible = false;
           A.scene.add(mesh);
           batchedCount++;
@@ -952,7 +952,7 @@ function setupStreaming(A) {
         mesh.userData.disc = disc === '_' ? '' : disc;
         mesh.userData.isMerged = true;
         mesh.userData.mergedCount = items.length;
-        if (A.activeStoreyFilter !== null && mesh.userData.storey !== A.activeStoreyFilter) mesh.visible = false;
+        if (!A._storeyVisible(mesh.userData.storey)) mesh.visible = false;
         if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(mesh.userData.disc)) mesh.visible = false;
         A.scene.add(mesh);
         mergedCount += items.length;
@@ -1071,7 +1071,7 @@ function setupStreaming(A) {
           m.userData.storey = el.storey; m.userData.disc = el.disc;
           m.userData.guid = el.guid; m.userData.ifcClass = el.ifcClass || '';
           A.guidMap[m.id] = el.guid;
-          if (A.activeStoreyFilter !== null && el.storey !== A.activeStoreyFilter) m.visible = false;
+          if (!A._storeyVisible(el.storey)) m.visible = false;
           if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) m.visible = false;
           A.scene.add(m);
           drawCalls++;
@@ -1130,7 +1130,7 @@ function setupStreaming(A) {
 
         // Storey/disc visibility filter
         var vis = true;
-        if (A.activeStoreyFilter !== null && el.storey !== A.activeStoreyFilter) vis = false;
+        if (!A._storeyVisible(el.storey)) vis = false;
         if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
         if (!vis) bm.setVisibleAt(slotId, false);
 
@@ -1287,7 +1287,7 @@ function setupStreaming(A) {
         newBM.setMatrixAt(slotId, _m4);
 
         var vis = true;
-        if (A.activeStoreyFilter !== null && el.storey !== A.activeStoreyFilter) vis = false;
+        if (!A._storeyVisible(el.storey)) vis = false;
         if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
         if (!vis) newBM.setVisibleAt(slotId, false);
 

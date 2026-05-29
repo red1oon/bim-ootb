@@ -33,7 +33,7 @@ async function initViewer() {
       }
       // Load sub-modules in dependency order, then the bootstrap
       var modules = [
-        'navigate_find.js?v=13',
+        'navigate_find.js?v=14',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -739,16 +739,10 @@ async function initViewer() {
           var storeyParam = hashParams.storey;
           if (storeyParam) {
             var storeys = decodeURIComponent(storeyParam).split(',');
-            APP.activeStoreyFilter = storeys.length === 1 ? storeys[0] : storeys;
-            // Re-apply visibility
-            APP.scene.traverse(function(obj) {
-              if (obj.isMesh && obj.userData && obj.userData.storey) {
-                var vis = Array.isArray(APP.activeStoreyFilter)
-                  ? APP.activeStoreyFilter.indexOf(obj.userData.storey) >= 0
-                  : obj.userData.storey === APP.activeStoreyFilter;
-                obj.visible = vis;
-              }
-            });
+            // §NAV_FIND_002: filterStorey now accepts an array and covers
+            // regular + instanced + batched meshes via A._storeyVisible.
+            if (APP.filterStorey) APP.filterStorey(storeys);
+            else APP.activeStoreyFilter = storeys.length === 1 ? storeys[0] : storeys;
             restored.push('storey=' + storeyParam);
           }
 

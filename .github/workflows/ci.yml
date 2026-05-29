@@ -32,6 +32,9 @@ jobs:
       - name: Spec file paths audit
         run: node tests/audit_spec_paths.js
 
+      - name: Find multi-select logic (NAV_FIND_002)
+        run: node tests/test_find_multiselect.js
+
   e2e-tests:
     runs-on: ubuntu-latest
     needs: fast-checks
