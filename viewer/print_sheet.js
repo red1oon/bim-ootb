@@ -60,11 +60,15 @@ var PrintSheet = (function() {
   // ── Corporate JSON ────────────────────────────────────────────────
   // Implementing 2D_027 §3.2 — Witness: W-2D27
 
-  /** Load corporate.json once and cache. Calls cb(corp). Falls back gracefully. */
+  /** Load corporate.json once and cache. Calls cb(corp). Falls back gracefully.
+   *  §S282c: routes through loadJsonWithOverrides so Settings edits (localStorage
+   *  json_corporate) apply on top of the shipped file. */
   function loadCorporate(callback) {
     if (_corp) { callback(_corp); return; }
-    fetch('corporate.json')
-      .then(function(r) { return r.json(); })
+    var loader = (typeof window.loadJsonWithOverrides === 'function')
+      ? window.loadJsonWithOverrides('corporate.json', 'json_corporate')
+      : fetch('corporate.json').then(function(r) { return r.json(); });
+    loader
       .then(function(data) {
         _corp = data;
         callback(_corp);

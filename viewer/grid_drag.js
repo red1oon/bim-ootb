@@ -802,12 +802,16 @@ var GridDrag = (function() {
     canvas.addEventListener('pointerup', onPointerUp);
 
     // Auto-load rules from grid_rules.json via fetch
+    // §S282c: route through loadJsonWithOverrides so Settings edits (json_grid_rules) apply.
     if (!R) {
       var rulesUrl = 'grid_rules.json?v=2';
-      fetch(rulesUrl).then(function(resp) {
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        return resp.json();
-      }).then(function(json) {
+      var rulesLoader = (typeof window.loadJsonWithOverrides === 'function')
+        ? window.loadJsonWithOverrides(rulesUrl, 'json_grid_rules')
+        : fetch(rulesUrl).then(function(resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.json();
+          });
+      rulesLoader.then(function(json) {
         loadRules(json);
         // Implementing 2D_028 §5.1 — Witness: W-2D28
         // Share loaded rules globally so grid_overlay + section_cut can consume them

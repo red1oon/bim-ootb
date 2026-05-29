@@ -999,21 +999,23 @@ function setupPanels(A) {
       var content = document.createElement('div');
       content.style.cssText = 'font-size:13px;color:#ccc;';
 
-      // ── Section: Pill Icons ──
-      var sec = _buildSection('Pill Icons', true, function() { return _buildPillRows(); });
-      content.appendChild(sec);
+      // ── Section: Pill Icons — rendered by the shared SettingsEditor ──
+      var pillBox = document.createElement('div');
+      content.appendChild(pillBox);
+      _renderPillEditor(pillBox);
 
-      // ── Reset button ──
+      // ── JSON registry hub: open ANY registered project JSON in the same editor ──
+      _buildJsonHub(content);
+
+      // ── Reset button (Pill Icons defaults) ──
       var resetBtn = document.createElement('button');
-      resetBtn.textContent = 'Reset to Defaults';
+      resetBtn.textContent = 'Reset Pill Icons';
       resetBtn.style.cssText = 'margin:12px 0 0;padding:8px 16px;border:1px solid rgba(108,159,255,0.2);border-radius:8px;background:transparent;color:#6c9fff;font-size:12px;cursor:pointer;width:100%;';
       resetBtn.addEventListener('pointerup', function(e) {
         e.stopPropagation();
         if (!_mainPill) return;
         _mainPill.resetConfig();
-        // Rebuild Settings panel content
-        var bd = sec.querySelector('.settings-bd');
-        if (bd) { bd.innerHTML = ''; bd.appendChild(_buildPillRows()); }
+        _renderPillEditor(pillBox);   // rebuild schema from fresh config
         if (A.status) A.status.textContent = 'Defaults restored';
       });
       content.appendChild(resetBtn);
@@ -1030,7 +1032,7 @@ function setupPanels(A) {
           panel: p,
           zones: [
             { id: 'pillRows',
-              items: function() { return p.querySelectorAll('[data-action-id]'); },
+              items: function() { return p.querySelectorAll('[data-row-id]'); },
               onSelect: function(el) {
                 var tog = el.querySelector('button');
                 if (tog) tog.click();
@@ -1086,93 +1088,149 @@ function setupPanels(A) {
       return sec;
     }
 
-    // §S282b: Build pill icon rows — ListBuilder handles drag-reorder
-    function _buildPillRows() {
-      var container = document.createElement('div');
-      if (!_mainPill) return container;
+    // §S282c: Pill Icons as a SettingsEditor SCHEMA (reorderable rows, visible
+    // toggle + readonly shortcut). Replaces the bespoke _buildPillRows/_renderPillRow.
+    function _pillIconSchema() {
+      if (!_mainPill) return [];
       var cfg = _mainPill.getConfig();
-      var order = cfg.order;
-      var hidden = cfg.hidden || [];
-
-      // Sort actions by current order
+      var order = cfg.order, hidden = cfg.hidden || [];
       var sorted = _actions.slice().sort(function(a, b) {
         var ai = order.indexOf(a.id), bi = order.indexOf(b.id);
         if (ai < 0) ai = 9999; if (bi < 0) bi = 9999;
         return ai - bi;
       });
-
-      if (typeof window.ListBuilder === 'function') {
-        ListBuilder({
-          container: container,
-          items: sorted,
-          getId: function(act) { return act.id; },
-          idAttr: 'data-action-id',
-          render: function(act) { return _renderPillRow(act, hidden); },
-          onReorder: function(newOrder) {
-            var c = _mainPill.getConfig();
-            c.order = newOrder;
-            _mainPill.setConfig(c);
-          }
-        });
-      } else {
-        // Fallback: render without drag-reorder (list_builder.js not loaded)
-        sorted.forEach(function(act) {
-          var row = _renderPillRow(act, hidden);
-          row.setAttribute('data-action-id', act.id);
-          container.appendChild(row);
-        });
-      }
-      return container;
+      var rows = sorted.map(function(act) {
+      var icon = act.img ? '<img src="' + act.img + '" width="16" height="16">'
+        : act.icon ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>'
+        : '';
+      var fields = [ { key: 'visible', type: 'toggle', value: hidden.indexOf(act.id) < 0 } ];
+      if (act.key) fields.push({ key: 'shortcut', type: 'readonly', value: act.key.toUpperCase() });
+      return { id: act.id, label: act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1)),
+        icon: icon, fields: fields };
+      });
+      return [ { section: 'Pill Icons', reorderable: true, _key: 'pill', _array: true, rows: rows } ];
     }
 
-    // §S282b: Render a single pill settings row (extracted for ListBuilder)
-    function _renderPillRow(act, hidden) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:grab;user-select:none;transition:background 150ms;';
-
-      var handle = document.createElement('span');
-      handle.textContent = '\u2261';
-      handle.style.cssText = 'font-size:16px;color:#555;margin-right:10px;cursor:grab;';
-
-      var iconWrap = document.createElement('span');
-      iconWrap.style.cssText = 'width:20px;height:20px;margin-right:8px;display:inline-flex;align-items:center;justify-content:center;opacity:0.7;';
-      if (act.img) iconWrap.innerHTML = '<img src="' + act.img + '" width="16" height="16">';
-      else if (act.icon) iconWrap.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
-
-      var label = document.createElement('span');
-      label.textContent = act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1));
-      label.style.cssText = 'flex:1;font-size:12px;color:#ccc;';
-
-      if (act.key) {
-        var badge = document.createElement('span');
-        badge.textContent = act.key.toUpperCase();
-        badge.style.cssText = 'font-size:10px;color:#6c9fff;background:rgba(108,159,255,0.1);padding:2px 6px;border-radius:4px;margin-right:8px;font-family:monospace;';
-        label.appendChild(document.createTextNode(' '));
-        label.appendChild(badge);
-      }
-
-      var tog = document.createElement('button');
-      var isHidden = hidden.indexOf(act.id) >= 0;
-      tog.textContent = isHidden ? '\u25CB' : '\u25CF';
-      tog.title = isHidden ? 'Hidden' : 'Visible';
-      tog.style.cssText = 'border:none;background:none;font-size:14px;cursor:pointer;padding:4px 6px;color:' + (isHidden ? '#555' : '#4fc3f7') + ';';
-      if (isHidden) row.style.opacity = '0.5';
-      tog.addEventListener('pointerup', function(e) {
-        e.stopPropagation();
-        var c = _mainPill.getConfig();
-        var h = c.hidden || [];
-        var idx = h.indexOf(act.id);
-        if (idx >= 0) { h.splice(idx, 1); tog.textContent = '\u25CF'; tog.style.color = '#4fc3f7'; row.style.opacity = '1'; tog.title = 'Visible'; }
-        else { h.push(act.id); tog.textContent = '\u25CB'; tog.style.color = '#555'; row.style.opacity = '0.5'; tog.title = 'Hidden'; }
-        c.hidden = h;
-        _mainPill.setConfig(c);
+    // Render Pill Icons into a box via SettingsEditor. persist:false \u2014 the pill's
+    // own setConfig is the source of truth; onChange maps edits back to it.
+    function _renderPillEditor(box) {
+      box.innerHTML = '';
+      if (typeof window.SettingsEditor !== 'function') { box.textContent = 'editor unavailable'; return null; }
+      return SettingsEditor({
+        container: box,
+        schema: _pillIconSchema(),
+        persist: false,
+        onChange: function(rowId, key, value) {
+          if (!_mainPill) return;
+          var c = _mainPill.getConfig();
+          if (rowId === '(order)') {
+            c.order = String(value).split(',');
+          } else if (key === 'visible') {
+            var h = c.hidden || [];
+            var idx = h.indexOf(rowId);
+            if (value && idx >= 0) h.splice(idx, 1);
+            else if (!value && idx < 0) h.push(rowId);
+            c.hidden = h;
+          } else { return; }
+          _mainPill.setConfig(c);
+          console.log('\u00A7SETTINGS_SAVE pill ' + rowId + '.' + key + '=' + value);
+        }
       });
+    }
 
-      row.appendChild(handle);
-      row.appendChild(iconWrap);
-      row.appendChild(label);
-      row.appendChild(tog);
-      return row;
+    // \u00A7S282c: registry of project JSONs editable from Settings (pure data).
+    // overrides refine auto-inferred field types per file. manifest.json is
+    // EXCLUDED (254KB machine-generated AD compile \u2014 not hand-editable).
+    var _jsonRegistry = [
+      { id: 'corporate',   label: 'Corporate / Branding', url: 'corporate.json',   storageKey: 'json_corporate' },
+      { id: 'grid_rules',  label: 'Grid Rules',           url: 'grid_rules.json',  storageKey: 'json_grid_rules' },
+      { id: 'clash_rules', label: 'Clash Rules',          url: 'clash_rules.json', storageKey: 'json_clash_rules' },
+      { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: 'initbubble.json',  storageKey: 'json_initbubble',
+        overrides: { color: { type: 'color' } } }
+    ];
+
+    // Build the "Edit project JSON" hub: a picker that opens any registered file
+    // in the SAME SettingsEditor (auto-inferred schema), with Download + Reset.
+    function _buildJsonHub(content) {
+      var hub = _buildSection('Edit Project JSON', false, function() {
+        var box = document.createElement('div');
+        box.style.cssText = 'padding:4px 0;';
+        _jsonRegistry.forEach(function(entry) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;';
+          var lbl = document.createElement('span');
+          lbl.textContent = entry.label;
+          lbl.style.cssText = 'font-size:12px;color:#ccc;';
+          var arrow = document.createElement('span');
+          arrow.textContent = '\u270E';
+          arrow.style.cssText = 'font-size:12px;color:#6c9fff;';
+          row.appendChild(lbl); row.appendChild(arrow);
+          row.addEventListener('pointerup', function(e) {
+            e.stopPropagation();
+            _openJsonEditor(entry);
+          });
+          box.appendChild(row);
+        });
+        return box;
+      });
+      content.appendChild(hub);
+    }
+
+    // Open one registered JSON in a SettingsEditor sub-panel.
+    function _openJsonEditor(entry) {
+      var id = 'json-editor-' + entry.id;
+      var existing = document.getElementById(id);
+      if (existing) { existing.style.display = ''; return; }
+      if (typeof window.loadJsonWithOverrides !== 'function') return;
+
+      loadJsonWithOverrides(entry.url, entry.storageKey).then(function(raw) {
+        var schema = SettingsEditor.jsonToSchema(raw, entry.overrides || {});
+        var content = document.createElement('div');
+        content.style.cssText = 'font-size:13px;color:#ccc;';
+
+        var hdr = document.createElement('h3');
+        hdr.textContent = entry.label + ' — ' + entry.url;
+        hdr.style.cssText = 'margin:0 0 10px;color:#4fc3f7;font-size:14px;';
+        content.appendChild(hdr);
+
+        var box = document.createElement('div');
+        content.appendChild(box);
+        var editor = SettingsEditor({
+          container: box, schema: schema, storageKey: entry.storageKey,
+          onChange: function() {}   // editor write-through persists to storageKey
+        });
+
+        // Download edited JSON (so the user can commit it back to the repo)
+        var dl = document.createElement('button');
+        dl.textContent = '\u2B07 Download ' + entry.url;
+        dl.style.cssText = 'margin:12px 0 0;padding:8px 16px;border:1px solid rgba(108,159,255,0.2);border-radius:8px;background:transparent;color:#6c9fff;font-size:12px;cursor:pointer;width:100%;';
+        dl.addEventListener('pointerup', function(e) {
+          e.stopPropagation();
+          var blob = new Blob([JSON.stringify(editor.getState(), null, 2)], { type: 'application/json' });
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob); a.download = entry.url;
+          a.click(); URL.revokeObjectURL(a.href);
+          console.log('\u00A7JSON_DOWNLOAD ' + entry.url);
+        });
+        content.appendChild(dl);
+
+        // Reset this file's overrides
+        var rs = document.createElement('button');
+        rs.textContent = 'Reset ' + entry.label;
+        rs.style.cssText = 'margin:8px 0 0;padding:8px 16px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:transparent;color:#999;font-size:12px;cursor:pointer;width:100%;';
+        rs.addEventListener('pointerup', function(e) { e.stopPropagation(); editor.reset(); });
+        content.appendChild(rs);
+
+        var p = A.createPanel(id, { closable: true,
+          style: { position:'fixed', top:'80px', right:'80px', zIndex:'1101', width:'320px', padding:'16px' },
+          content: content });
+        document.body.appendChild(p);
+        p.style.display = '';   // createPanel returns hidden; reveal this fresh panel
+        if (window.InputReg) InputReg.register({ id: 'json-editor', el: p, kind: 'panel', release: function() { p.style.display = 'none'; } });
+        console.log('\u00A7JSON_EDITOR_OPEN ' + entry.id);
+      }).catch(function(err) {
+        console.warn('\u00A7JSON_EDITOR_FAIL ' + entry.id + ' ' + err);
+      });
     }
 
     // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
