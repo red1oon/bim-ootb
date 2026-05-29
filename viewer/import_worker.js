@@ -106,6 +106,14 @@ self.onmessage = async function(e) {
       // IN-worker — emscripten never does its own fetch, so it can't abort offline.
       if (self._WEBIFC_WASM_BYTES) {
         var _b = new Uint8Array(self._WEBIFC_WASM_BYTES);
+        // §S284e: a file:// standalone runs in a null-origin blob worker, where Firefox refuses
+        // to fetch a blob: URL ("both async and sync fetching of the wasm failed"). A data: URL is
+        // self-contained and fetchable in any origin, so use it when the worker origin is null.
+        var _nullOrigin = (typeof self.location !== 'undefined') && String(self.location.href).indexOf('blob:null') === 0;
+        if (_nullOrigin && self._WEBIFC_WASM_B64) {
+          console.log('[S220] §WASM_LOCATE ' + path + ' → data: (null-origin worker, size=' + _b.length + ')');
+          return 'data:application/wasm;base64,' + self._WEBIFC_WASM_B64;
+        }
         var _u = URL.createObjectURL(new Blob([_b], { type: 'application/wasm' }));
         console.log('[S220] §WASM_LOCATE ' + path + ' → blob (from main-thread bytes, size=' + _b.length + ')');
         return _u;
