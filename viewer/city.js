@@ -174,6 +174,7 @@ function setupCity(A) {
       if (A.buildingsRendered) A.buildingsRendered.delete(name);     // re-click re-streams (DB still cached)
       if (A.savedStreams) delete A.savedStreams[name];
       delete A._cityBuildingBytes[name];
+      if (A._citySneak) delete A._citySneak[name];   // §S285: don't sneak-resurrect an evicted building
       var idx = A._cityResidentOrder.indexOf(name); if (idx >= 0) A._cityResidentOrder.splice(idx, 1);
     });
     if (A.markDirty) A.markDirty();
@@ -391,6 +392,7 @@ function setupCity(A) {
     // No building-level fallback: city rests only on exact per-element IFC AABBs.
     var _yield = function(){ return new Promise(function(r){ setTimeout(r, 0); }); };
     var discAccum = {};  // disc -> { px,py,pz,sx,sy,sz: number[], blds: string[] }
+    A._cityBuildingAABB = {};  // §S285: per-building WORLD AABB (one box/bldg) for the cheap ray-blast
     function _accum(disc) {
       if (!discAccum[disc]) discAccum[disc] = { px:[], py:[], pz:[], sx:[], sy:[], sz:[], blds:[] };
       return discAccum[disc];
@@ -464,6 +466,11 @@ function setupCity(A) {
           acc.px.push(p.x); acc.py.push(p.y); acc.pz.push(p.z);
           acc.sx.push(er[4] || 0.3); acc.sy.push(er[6] || 0.3); acc.sz.push(er[5] || 0.3);  // IFC→Three swap Y/Z
           acc.blds.push(inst.building);
+          var _hx=(er[4]||0.3)*0.5, _hy=(er[6]||0.3)*0.5, _hz=(er[5]||0.3)*0.5;  // half-extents (Y/Z swap as above)
+          var _bb=A._cityBuildingAABB[inst.building]||(A._cityBuildingAABB[inst.building]={x0:Infinity,y0:Infinity,z0:Infinity,x1:-Infinity,y1:-Infinity,z1:-Infinity});
+          if(p.x-_hx<_bb.x0)_bb.x0=p.x-_hx; if(p.x+_hx>_bb.x1)_bb.x1=p.x+_hx;
+          if(p.y-_hy<_bb.y0)_bb.y0=p.y-_hy; if(p.y+_hy>_bb.y1)_bb.y1=p.y+_hy;
+          if(p.z-_hz<_bb.z0)_bb.z0=p.z-_hz; if(p.z+_hz>_bb.z1)_bb.z1=p.z+_hz;
           _totalBboxes++;
         }
       }
@@ -521,6 +528,8 @@ function setupCity(A) {
     // to nearest-first-by-centre if the blast is empty (camera not yet aimed / bbox not ready).
     if (!A._isMobile && A.CITY_URL) {
       A._cityAutoLoad = true;                       // wave-front stop gate in _cityStreamNext
+      A._cityDiscGate = ['ARC', 'STR'];            // §S285: city streams the ARC/STR shell first
+      A._citySneak = A._citySneak || {};           // building -> {archetype, rows} (the rest, to sneak)
       if (!A._cityFollowHooked && A.controls && A.controls.addEventListener) {
         A._cityFollowHooked = true;               // §S285: re-blast on camera-stop → set follows the view
         A.controls.addEventListener('end', function() {
@@ -689,7 +698,27 @@ function setupCity(A) {
     // new objects by delta (anything added during streaming, minus the bbox layer).
     A._cityPreStreamIds = new Set(A.scene.children.map(function(c){ return c.id; }));
 
-    A.streamQueue = offsetRows;
+    // §S285 ARC gate + ARC-first: in city mode stream the ARC/STR shell FIRST (light → small BVH/
+    // build → the loop breathes for movement + pills), and stash the rest to SNEAK in after the
+    // visible wave is idle, so the building finally gets everything (bounded by the 290k budget).
+    var _gate = A._cityDiscGate;
+    if (_gate && _gate.length) {
+      var _gi = {}; for (var _gk=0; _gk<_gate.length; _gk++) _gi[_gate[_gk]] = _gk;
+      var _arcRows = [], _restRows = [];
+      for (var _rr=0; _rr<offsetRows.length; _rr++) {
+        if (_gi[offsetRows[_rr][3]] !== undefined) _arcRows.push(offsetRows[_rr]); else _restRows.push(offsetRows[_rr]);
+      }
+      _arcRows.sort(function(a, b){ return (_gi[a[3]]||0) - (_gi[b[3]]||0); });   // ARC before STR
+      if (_arcRows.length) {
+        A.streamQueue = _arcRows;
+        if (_restRows.length) { A._citySneak = A._citySneak || {}; A._citySneak[buildingName] = { archetype: archetype, rows: _restRows }; }
+        console.log('[S285] §CITY_GATE building=' + buildingName + ' arc=' + _arcRows.length + ' sneak=' + _restRows.length);
+      } else {
+        A.streamQueue = offsetRows;            // archetype has no ARC/STR → stream all (don't gate to empty)
+      }
+    } else {
+      A.streamQueue = offsetRows;              // single-building / gate off → unchanged
+    }
     A.streamIdx = 0;
     A.streaming = true;
     A.activeBuilding = buildingName;
@@ -729,6 +758,7 @@ function setupCity(A) {
     A.guidMap = {};
     A._cityBuildingBytes = {};   // §S285: reset eviction tally — fresh working set
     A._cityResidentOrder = [];
+    A._citySneak = {};
     A._cityRestoreBboxes();  // bring back the bboxes of buildings that were streamed
     var el;
     if ((el = document.getElementById('s-streamed'))) el.textContent = '0';
@@ -768,36 +798,66 @@ function setupCity(A) {
       return { name: name, d2: dx*dx + dy*dy + dz*dz };
     }).sort(function(a, b) { return a.d2 - b.d2; }).map(function(o) { return o.name; });
   };
+  // §S285: pure ray-vs-AABB (slab method). Returns nearest t>=0 of intersection, else -1.
+  // Origin inside the box → tmin<0, returns tmax (still a hit). No THREE, Node-testable.
+  A._rayAABB = function(ox,oy,oz, dx,dy,dz, b) {
+    var tmin=-Infinity, tmax=Infinity, t1, t2, tt;
+    if (dx!==0){ t1=(b.x0-ox)/dx; t2=(b.x1-ox)/dx; if(t1>t2){tt=t1;t1=t2;t2=tt;} if(t1>tmin)tmin=t1; if(t2<tmax)tmax=t2; } else if(ox<b.x0||ox>b.x1) return -1;
+    if (dy!==0){ t1=(b.y0-oy)/dy; t2=(b.y1-oy)/dy; if(t1>t2){tt=t1;t1=t2;t2=tt;} if(t1>tmin)tmin=t1; if(t2<tmax)tmax=t2; } else if(oy<b.y0||oy>b.y1) return -1;
+    if (dz!==0){ t1=(b.z0-oz)/dz; t2=(b.z1-oz)/dz; if(t1>t2){tt=t1;t1=t2;t2=tt;} if(t1>tmin)tmin=t1; if(t2<tmax)tmax=t2; } else if(oz<b.z0||oz>b.z1) return -1;
+    if (tmax<0 || tmin>tmax) return -1;
+    return tmin>=0 ? tmin : tmax;
+  };
+  // §S285: ray-blast over ~52 per-building AABBs (was 24 rays × ~67k per-element instances = 3.5s
+  // freeze). First-hit per ray = free occlusion; hits LOADED buildings too (AABB never zero-scaled),
+  // fixing the old thin-coverage. Pure math via raycaster.ray → microseconds.
   A._cityRayBlast = function() {
-    if (!A.raycaster || !A.camera) return [];
-    var bboxes = A.collectMeshes(function(o){ return o.isInstancedMesh && o.userData && o.userData.isBboxPlaceholder && o.userData.instanceBuilding; });
-    if (!bboxes.length) return [];
-    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-    var prevFHO = A.raycaster.firstHitOnly;
-    A.raycaster.firstHitOnly = true;            // nearest hit per object — fast
-    var cols = A._cityRayBlastCols, rows = A._cityRayBlastRows;
-    var coord = { x: 0, y: 0 }, hitList = [], rays = 0;
-    for (var ci = 0; ci < cols; ci++) {
-      for (var ri = 0; ri < rows; ri++) {
-        coord.x = -1 + (ci + 0.5) * (2 / cols);
-        coord.y = -1 + (ri + 0.5) * (2 / rows);
+    if (!A.raycaster || !A.camera || !A._cityBuildingAABB) return [];
+    var boxes = A._cityBuildingAABB, names = Object.keys(boxes);
+    if (!names.length) return [];
+    var _t0 = (typeof performance!=='undefined'&&performance.now)?performance.now():0;
+    var cols=A._cityRayBlastCols, rows=A._cityRayBlastRows;
+    var coord={x:0,y:0}, hitList=[], rays=0;
+    for (var ci=0; ci<cols; ci++){
+      for (var ri=0; ri<rows; ri++){
+        coord.x=-1+(ci+0.5)*(2/cols); coord.y=-1+(ri+0.5)*(2/rows);
         A.raycaster.setFromCamera(coord, A.camera);
-        var hits = A.raycaster.intersectObjects(bboxes, false);
+        var o=A.raycaster.ray.origin, d=A.raycaster.ray.direction;
         rays++;
-        if (hits.length) {
-          var ud = hits[0].object.userData;
-          var bld = (ud.instanceBuilding && hits[0].instanceId != null) ? ud.instanceBuilding[hits[0].instanceId] : null;
-          if (bld) hitList.push({ building: bld, distance: hits[0].distance });
+        var bestT=Infinity, bestName=null;
+        for (var ni=0; ni<names.length; ni++){
+          var t=A._rayAABB(o.x,o.y,o.z, d.x,d.y,d.z, boxes[names[ni]]);
+          if (t>=0 && t<bestT){ bestT=t; bestName=names[ni]; }
         }
+        if (bestName) hitList.push({building:bestName, distance:bestT});
       }
     }
-    A.raycaster.firstHitOnly = prevFHO;
     var ordered = A._cityOrderBlastHits(hitList);
-    var _ms = _t0 ? (((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - _t0).toFixed(1) : '?';
+    var _ms = _t0 ? (((typeof performance!=='undefined'&&performance.now)?performance.now():0)-_t0).toFixed(1) : '?';
     console.log('[S285] §RAYBLAST rays=' + rays + ' hits=' + hitList.length + ' buildings=' + ordered.length + ' ms=' + _ms);
     return ordered;
   };
   A._cityPendingQueue = [];
+  // §S285 SNEAK: once the visible wave is idle and there's budget headroom, stream a resident
+  // building's stashed non-ARC disciplines (the 'next level'). Render loop drives streamTick.
+  A._cityStreamRows = function(buildingName, archetype, rows) {
+    var entry = A.cityBuildingDbs && A.cityBuildingDbs[archetype];
+    if (!entry) return;
+    A.db = entry.db; A.libDb = entry.libDb;
+    A._cityPreStreamIds = new Set(A.scene.children.map(function(c){ return c.id; }));
+    A.streamQueue = rows; A.streamIdx = 0; A.streaming = true; A.activeBuilding = buildingName;
+    A.activeBuildingTotal = rows.length;
+    console.log('[S285] §CITY_SNEAK building=' + buildingName + ' rows=' + rows.length);
+  };
+  A._citySneakNext = function() {
+    if (A.streaming || !A._citySneak) return;
+    if (A._cityResidentBytes && A._cityResidentBytes() >= (A._cityMemBudgetMB||384)*1048576*0.85) return;  // no room
+    var name = null;
+    for (var k in A._citySneak) { if (A._citySneak[k] && A._citySneak[k].rows && A._citySneak[k].rows.length) { name = k; break; } }
+    if (!name) return;
+    var job = A._citySneak[name]; delete A._citySneak[name];
+    A._cityStreamRows(name, job.archetype, job.rows);
+  };
   A._cityStreamNext = function() {
     if (A.streaming) return;                                   // chained again at next stream-complete
     // §S285 AUTOLOAD wave-front stop: under auto-load (NOT marquee), stop pulling once the
@@ -816,7 +876,7 @@ function setupCity(A) {
       var n = A._cityPendingQueue.shift();
       if (n && !(A.buildingsRendered && A.buildingsRendered.has(n))) { next = n; break; }
     }
-    if (!next) return;
+    if (!next) { if (A._cityAutoLoad) A._citySneakNext(); return; }  // §S285: visible all loaded → sneak the rest
     A.status.textContent = (A._cityAutoLoad ? 'Loading city \u2014 ' : 'Marquee \u2014 streaming ') + next + ' (' + A._cityPendingQueue.length + ' queued)';
     A.cityLoadBuilding(next);
   };

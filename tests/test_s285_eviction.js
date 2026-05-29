@@ -259,6 +259,39 @@ assert(_captured === null, 'under 60% watermark → no eviction (hysteresis, no 
 
 A._cityEvictVictims = _realEvict;                                // restore
 
+L('T11: RAYBLAST geometry — pure ray-vs-AABB (the 3.5s→µs fix); occlusion = nearest box wins');
+const boxA = { x0: 0, y0: -1, z0: -1, x1: 2, y1: 1, z1: 1 };   // box ahead on +x
+assert(A._rayAABB(-5,0,0, 1,0,0, boxA) === 5, 'ray hits box front face at t=5');
+assert(A._rayAABB(-5,5,0, 1,0,0, boxA) === -1, 'ray parallel & outside (y=5) → miss (-1)');
+assert(A._rayAABB(1,0,0, 1,0,0, boxA) === 1, 'origin INSIDE box → returns exit t=1 (still a hit)');
+assert(A._rayAABB(5,0,0, 1,0,0, boxA) === -1, 'box entirely BEHIND ray → miss (-1)');
+// occlusion: near box (t=5) shadows far box (t=20) for the same ray → ordering keeps nearest
+const near = A._rayAABB(-5,0,0,1,0,0, { x0:0,y0:-1,z0:-1,x1:2,y1:1,z1:1 });
+const far  = A._rayAABB(-5,0,0,1,0,0, { x0:20,y0:-1,z0:-1,x1:22,y1:1,z1:1 });
+assert(near < far && near >= 0, 'nearest box has smaller t → first-hit occlusion preserved');
+
+L('T12: SNEAK — after the visible wave, stream a resident building\'s stashed non-ARC rows (budget-guarded)');
+A._cityMemBudgetMB = 100;
+A.streaming = false;
+A.cityBuildingDbs = { archX: { db: 'DB_X', libDb: 'LIB_X' } };
+A._citySneak = { B1: { archetype: 'archX', rows: [[1],[2],[3]] } };
+A._cityBuildingBytes = { B1: 30 * MB };   // resident 30MB < 85MB → room to sneak
+const _rows = [];
+A._cityStreamRows = (function(orig){ return function(n, a, r){ _rows.push({n:n,a:a,len:r.length}); return orig.call(A, n, a, r); }; })(A._cityStreamRows);
+A._citySneakNext();
+assert(A.db === 'DB_X' && A.libDb === 'LIB_X', 'sneak set DB context from cityBuildingDbs[archetype]');
+assert(A.streaming === true && A.activeBuildingTotal === 3, 'sneak set streamQueue + streaming (render loop drives streamTick)');
+assert(_rows.length === 1 && _rows[0].n === 'B1' && _rows[0].len === 3, 'streamed the stashed rest-rows for B1');
+assert(A._citySneak.B1 === undefined, 'consumed stash (no double-sneak)');
+
+// budget guard: at/over 85% → no sneak
+A.streaming = false;
+A._citySneak = { B2: { archetype: 'archX', rows: [[9]] } };
+A._cityBuildingBytes = { B2: 90 * MB };   // 90 ≥ 85 → no room
+const _before = A.streaming;
+A._citySneakNext();
+assert(A.streaming === _before && A._citySneak.B2, 'over 85% budget → sneak deferred (stash kept)');
+
 L('');
 L('RESULT pass=' + pass + ' fail=' + fail);
 
