@@ -1214,6 +1214,50 @@ test('share_clash_text_format', () => {
   };
 });
 
+// ─── S224 IndexedDB structured-clone overflow (multi-discipline import) ───────
+// Issue PROVEN/DISPROVEN: dropping 8–9 discipline IFCs failed with
+//   §MULTI_DB_ERROR The structured clone is too large (size=1376548048, max=1092616192)
+// because the project record stored BOTH the full monolith (extractedDb) AND the
+// split (meta+geo) — the same ~656MB twice. Fix: when split exists, omit the monolith.
+// This test proves (a) the pre-fix size model reproduces the overflow, (b) the post-fix
+// record (split only) fits, and (c) the guards + split-aware open gate are present in source.
+test('s224_idb_split_overflow', () => {
+  const IDB_LIMIT = 1092616192;            // observed IndexedDB max from the failure log
+  const MB = 1024 * 1024;
+  // Observed sizes from the failing run (§DB_EXPORT_DONE / §DB_SPLIT):
+  const fullMB = 656.4, metaMB = 40.9, geoMB = 615.5;
+  const preFix  = (fullMB + metaMB + geoMB) * MB;   // monolith + split = same data stored twice
+  const postFix = (metaMB + geoMB) * MB;            // split only (monolith dropped)
+
+  const idxSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const impSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'import.js'), 'utf8');
+
+  const issues = [];
+  // (a) arithmetic: pre-fix overflows, post-fix fits → fix resolves the exact error
+  if (preFix <= IDB_LIMIT) issues.push('pre-fix model does not reproduce the overflow');
+  if (postFix >= IDB_LIMIT) issues.push('post-fix record still exceeds IDB limit');
+  // (b) guards present: builders must NOT store monolith alongside split
+  if (!/db:\s*_recSplit\s*\?\s*null\s*:/.test(idxSrc)) issues.push('index.html missing _recSplit null-guard on versions[].db');
+  if (idxSrc.split('§STORE_RECORD').length - 1 < 2) issues.push('index.html missing §STORE_RECORD proof logs (need 2)');
+  if (impSrc.split('§STORE_RECORD').length - 1 < 3) issues.push('import.js missing §STORE_RECORD proof logs (need 3)');
+  // (c) open gate must not abort when monolith absent but split present
+  if (!/!dbBuf\s*&&\s*!\(record\.metaDb\s*&&\s*record\.geoDb\)/.test(impSrc)) issues.push('import.js open gate not split-aware');
+  // (d) downstream null-deref guards
+  if (!idxSrc.includes('§EXPORT_DB_SPLIT')) issues.push('index.html export not split-aware');
+  if (!idxSrc.includes('§MERGE_BLOCK_SPLIT')) issues.push('index.html merge missing null-monolith guard');
+
+  const ok = issues.length === 0;
+  return {
+    ok,
+    log: '§WB_IDB_OVERFLOW preFixMB=' + (preFix / MB).toFixed(0) + ' postFixMB=' + (postFix / MB).toFixed(0) +
+      ' limitMB=' + (IDB_LIMIT / MB).toFixed(0) +
+      ' preOverflows=' + (preFix > IDB_LIMIT) + ' postFits=' + (postFix < IDB_LIMIT) +
+      ' guard=' + /db:\s*_recSplit\s*\?\s*null\s*:/.test(idxSrc) +
+      ' openGate=' + /!dbBuf\s*&&\s*!\(record\.metaDb/.test(impSrc),
+    reason: issues.join('; ')
+  };
+});
+
 // ─── Summary ─────────────────────────────────────────────────────────────────
 console.log(`§WB_SUMMARY pass=${pass} fail=${fail} total=${pass + fail}`);
 process.exit(fail > 0 ? 1 : 0);
