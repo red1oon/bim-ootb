@@ -1191,15 +1191,87 @@ function setupPanels(A) {
       });
     }
 
+    // \u00A7SETTINGS_JSON: CAPTURED provider \u2014 project the active building's native IFC
+    // IfcWorkSchedule (tasks/task_elements tables in A.db) into the schedule_instance
+    // contract shape (internal/schedule_instance.template.json): Project + Phases[].
+    // Phases collapse Ceiling/TOS into their Level; each span = its own structural span
+    // (min start\u2192max finish of its tasks). source='captured' (IFC verbatim). The generated
+    // provider (rules session) emits the SAME shape for elements IFC has no 4D for.
+    // Returns null when the building carries no native 4D \u2192 caller shows a fallback note.
+    function _projectSchedule() {
+      var db = A.db;
+      if (!db) return null;
+      function rows(sql) {
+        var r; try { r = db.exec(sql); } catch (e) { return []; }
+        if (!r.length) return [];
+        var cols = r[0].columns, out = [];
+        r[0].values.forEach(function(v) { var o = {}; cols.forEach(function(c, i) { o[c] = v[i]; }); out.push(o); });
+        return out;
+      }
+      function meta(k, d) { var r = rows("SELECT value FROM project_metadata WHERE key='" + k + "'"); return r.length ? r[0].value : d; }
+      function day(iso) { return (iso || '').slice(0, 10); }
+      function weeksBetween(s, e) { return Math.max(1, Math.round((Date.parse(e) - Date.parse(s)) / (7 * 86400000))); }
+      function collapseLevel(name) { var m = /^(Level\s*\S+?)(?:\s+(?:Ceiling|TOS|Top of Steel))?$/i.exec(name || ''); return m ? m[1] : name; }
+
+      var tasks = rows("SELECT task_id,wbs_parent,name,is_summary,schedule_start,schedule_finish FROM tasks");
+      if (!tasks.length) return null;
+      var byId = {}; tasks.forEach(function(t) { byId[t.task_id] = t; });
+      function phaseOf(t) {
+        var cur = t, levelName = null, rootName = null, guard = 0;
+        while (cur && guard++ < 64) {
+          if (/^Level\b/i.test(cur.name)) levelName = collapseLevel(cur.name);
+          rootName = cur.name;
+          if (!cur.wbs_parent || !byId[cur.wbs_parent]) break;
+          cur = byId[cur.wbs_parent];
+        }
+        if (levelName) return levelName;
+        if (/site/i.test(rootName)) return 'Site Works';
+        if (/structure/i.test(rootName)) return 'Substructure';
+        return rootName || 'Other';
+      }
+      var teCount = {};
+      rows("SELECT task_id, COUNT(*) n FROM task_elements GROUP BY task_id").forEach(function(r) { teCount[r.task_id] = r.n; });
+
+      var ph = {};
+      tasks.forEach(function(t) {
+        if (t.is_summary || !t.schedule_start || !t.schedule_finish) return;
+        var name = phaseOf(t);
+        var p = ph[name] || (ph[name] = { phase: name, start: t.schedule_start, finish: t.schedule_finish, elements: 0 });
+        if (t.schedule_start < p.start) p.start = t.schedule_start;
+        if (t.schedule_finish > p.finish) p.finish = t.schedule_finish;
+        p.elements += (teCount[t.task_id] || 0);
+      });
+      var ordered = Object.keys(ph).map(function(k) { return ph[k]; })
+        .sort(function(a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; });
+      if (!ordered.length) return null;
+      var phases = ordered.map(function(p, i) {
+        return { id: 'p' + i, phase: p.phase, start: day(p.start), weeks: weeksBetween(p.start, p.finish), elements: p.elements, source: 'captured' };
+      });
+      var cal = rows("SELECT name FROM calendars LIMIT 1")[0] || {};
+      var out = {
+        Project: { building: meta('building_name', meta('project_name', '?')), start: day(ordered[0].start), calendar: cal.name || '', source: 'captured' },
+        Phases: phases
+      };
+      var totalEl = phases.reduce(function(s, p) { return s + p.elements; }, 0);
+      console.log('\u00A7SCHEDULE_INSTANCE building=' + out.Project.building + ' provider=captured phases=' +
+        phases.length + ' captured=' + totalEl + ' generated=0 start=' + out.Project.start);
+      return out;
+    }
+
     // \u00A7S282c: registry of project JSONs editable from Settings (pure data).
     // overrides refine auto-inferred field types per file. manifest.json is
     // EXCLUDED (254KB machine-generated AD compile \u2014 not hand-editable).
+    // schedule = source:'db' READ-ONLY (Phase 1): projects the captured 4D for viewing.
     var _jsonRegistry = [
       { id: 'corporate',   label: 'Corporate / Branding', url: 'corporate.json',   storageKey: 'json_corporate' },
       { id: 'grid_rules',  label: 'Grid Rules',           url: 'grid_rules.json',  storageKey: 'json_grid_rules' },
       { id: 'clash_rules', label: 'Clash Rules',          url: 'clash_rules.json', storageKey: 'json_clash_rules' },
       { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: 'initbubble.json',  storageKey: 'json_initbubble',
-        overrides: { color: { type: 'color' } } }
+        overrides: { color: { type: 'color' } } },
+      { id: 'schedule',    label: '4D Schedule (this building)', source: 'db', storageKey: 'json_schedule',
+        readonly: true, project: _projectSchedule,
+        // compact read-only view: phase name as row label + one "start · Nwk · elements" line
+        overrides: { __labelKey: 'phase', __summary: ['start', 'weeks', 'elements'] } }
     ];
 
     // Build the "Edit project JSON" hub: a picker that opens any registered file
@@ -1230,49 +1302,73 @@ function setupPanels(A) {
     }
 
     // Open one registered JSON in a SettingsEditor sub-panel.
+    // source:'url' (default) -> fetch + localStorage override (editable).
+    // source:'db'           -> entry.project() returns the JSON (e.g. captured 4D).
+    // readonly:true         -> whole-file viewer: no Download / no Reset, fields display-only.
     function _openJsonEditor(entry) {
       var id = 'json-editor-' + entry.id;
       var existing = document.getElementById(id);
       if (existing) { existing.style.display = ''; return; }
-      if (typeof window.loadJsonWithOverrides !== 'function') return;
 
-      loadJsonWithOverrides(entry.url, entry.storageKey).then(function(raw) {
-        var schema = SettingsEditor.jsonToSchema(raw, entry.overrides || {});
+      // resolve the raw JSON by source (db = projected, url = fetched+override)
+      var rawP;
+      if (entry.source === 'db') {
+        if (typeof entry.project !== 'function') return;
+        try { rawP = Promise.resolve(entry.project()); } catch (e) { rawP = Promise.reject(e); }
+      } else {
+        if (typeof window.loadJsonWithOverrides !== 'function') return;
+        rawP = loadJsonWithOverrides(entry.url, entry.storageKey);
+      }
+
+      rawP.then(function(raw) {
         var content = document.createElement('div');
         content.style.cssText = 'font-size:13px;color:#ccc;';
 
         var hdr = document.createElement('h3');
-        hdr.textContent = entry.label + ' — ' + entry.url;
+        hdr.textContent = entry.label + (entry.url ? ' — ' + entry.url : '');
         hdr.style.cssText = 'margin:0 0 10px;color:#4fc3f7;font-size:14px;';
         content.appendChild(hdr);
 
-        var box = document.createElement('div');
-        content.appendChild(box);
-        var editor = SettingsEditor({
-          container: box, schema: schema, storageKey: entry.storageKey,
-          onChange: function() {}   // editor write-through persists to storageKey
-        });
+        if (raw == null) {                            // building carries no native 4D
+          var note = document.createElement('div');
+          note.textContent = 'No 4D schedule captured for this building. Open Time Machine to generate one, or import an IFC IfcWorkSchedule / MS Project export.';
+          note.style.cssText = 'font-size:12px;color:#999;padding:8px 0;';
+          content.appendChild(note);
+          console.log('§JSON_EDITOR_EMPTY ' + entry.id);
+        } else {
+          var schema = SettingsEditor.jsonToSchema(raw, entry.overrides || {});
+          var box = document.createElement('div');
+          content.appendChild(box);
+          var editor = SettingsEditor({
+            container: box, schema: schema, storageKey: entry.storageKey,
+            readonly: !!entry.readonly,
+            persist: !entry.readonly,                 // read-only view never writes localStorage
+            onChange: function() {}
+          });
 
-        // Download edited JSON (so the user can commit it back to the repo)
-        var dl = document.createElement('button');
-        dl.textContent = '\u2B07 Download ' + entry.url;
-        dl.style.cssText = 'margin:12px 0 0;padding:8px 16px;border:1px solid rgba(108,159,255,0.2);border-radius:8px;background:transparent;color:#6c9fff;font-size:12px;cursor:pointer;width:100%;';
-        dl.addEventListener('pointerup', function(e) {
-          e.stopPropagation();
-          var blob = new Blob([JSON.stringify(editor.getState(), null, 2)], { type: 'application/json' });
-          var a = document.createElement('a');
-          a.href = URL.createObjectURL(blob); a.download = entry.url;
-          a.click(); URL.revokeObjectURL(a.href);
-          console.log('\u00A7JSON_DOWNLOAD ' + entry.url);
-        });
-        content.appendChild(dl);
+          if (!entry.readonly) {
+            // Download edited JSON (so the user can commit it back to the repo)
+            var dl = document.createElement('button');
+            dl.textContent = '⬇ Download ' + entry.url;
+            dl.style.cssText = 'margin:12px 0 0;padding:8px 16px;border:1px solid rgba(108,159,255,0.2);border-radius:8px;background:transparent;color:#6c9fff;font-size:12px;cursor:pointer;width:100%;';
+            dl.addEventListener('pointerup', function(e) {
+              e.stopPropagation();
+              var blob = new Blob([JSON.stringify(editor.getState(), null, 2)], { type: 'application/json' });
+              var a = document.createElement('a');
+              a.href = URL.createObjectURL(blob); a.download = entry.url;
+              a.click(); URL.revokeObjectURL(a.href);
+              console.log('§JSON_DOWNLOAD ' + entry.url);
+            });
+            content.appendChild(dl);
 
-        // Reset this file's overrides
-        var rs = document.createElement('button');
-        rs.textContent = 'Reset ' + entry.label;
-        rs.style.cssText = 'margin:8px 0 0;padding:8px 16px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:transparent;color:#999;font-size:12px;cursor:pointer;width:100%;';
-        rs.addEventListener('pointerup', function(e) { e.stopPropagation(); editor.reset(); });
-        content.appendChild(rs);
+            // Reset this file's overrides
+            var rs = document.createElement('button');
+            rs.textContent = 'Reset ' + entry.label;
+            rs.style.cssText = 'margin:8px 0 0;padding:8px 16px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:transparent;color:#999;font-size:12px;cursor:pointer;width:100%;';
+            rs.addEventListener('pointerup', function(e) { e.stopPropagation(); editor.reset(); });
+            content.appendChild(rs);
+          }
+        }
 
         var p = A.createPanel(id, { closable: true,
           style: { position:'fixed', top:'80px', right:'80px', zIndex:'1101', width:'320px', padding:'16px' },
@@ -1280,9 +1376,9 @@ function setupPanels(A) {
         document.body.appendChild(p);
         p.style.display = '';   // createPanel returns hidden; reveal this fresh panel
         if (window.InputReg) InputReg.register({ id: 'json-editor', el: p, kind: 'panel', release: function() { p.style.display = 'none'; } });
-        console.log('\u00A7JSON_EDITOR_OPEN ' + entry.id);
+        console.log('§JSON_EDITOR_OPEN ' + entry.id);
       }).catch(function(err) {
-        console.warn('\u00A7JSON_EDITOR_FAIL ' + entry.id + ' ' + err);
+        console.warn('§JSON_EDITOR_FAIL ' + entry.id + ' ' + err);
       });
     }
 
