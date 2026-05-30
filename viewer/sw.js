@@ -120,6 +120,7 @@ const PRECACHE_ASSETS = [
   'clash_report.js',
   'clash_snag.js',
   'precision_cam.js',
+  'schedule_gate.js',
   'time_machine.js',
   'error_reporter.js',
   'print_sheet.js',
