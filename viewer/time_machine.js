@@ -2010,8 +2010,14 @@
       if (bar) {
         var dayStart = Math.round((bar.startTs - _projectStart) / 86400000);
         var dayEnd = Math.round((bar.endTs - _projectStart) / 86400000);
-        tip.textContent = bar.storey + ' \u2014 ' + bar.phase + ' (' + bar.count + ' elements, Day ' + dayStart + '\u2013' + dayEnd + ')';
-        tip.style.left = Math.min(e.offsetX + 8, e.target.clientWidth - 200) + 'px';
+        // \u00a7gate: source label so you can tell preset IFC 4D from generated fallback
+        var src = (bar.cap === bar.count) ? 'IFC 4D' : (bar.cap > 0 ? (bar.cap + '/' + bar.count + ' IFC 4D') : 'generated');
+        tip.textContent = bar.storey + ' \u2014 ' + bar.phase + ' (' + bar.count + ' el, Day ' + dayStart + '\u2013' + dayEnd + ', ' + src + ')';
+        tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
+        // \u00a7gate: follow the pointer/touch Y so the tip stays visible when the Gantt is scrolled
+        // (was pinned at top:4px \u2192 off-screen once scrolled down). Just above the tip; flip below near the top.
+        var ty = e.offsetY - 22; if (ty < 2) ty = e.offsetY + 16;
+        tip.style.top = ty + 'px';
         tip.style.display = 'block';
       } else {
         tip.style.display = 'none';
@@ -2313,7 +2319,9 @@
     try {
       r = db.exec(
         'SELECT m.guid, m.ifc_class, m.element_name, m.storey, m.discipline, ' +
-        'COALESCE(t.center_z, 0) as cz, COALESCE(t.bbox_z, 0) as bz ' +
+        'COALESCE(t.center_z, 0) as cz, COALESCE(t.bbox_z, 0) as bz, ' +
+        'COALESCE(t.center_x, 0) as cx, COALESCE(t.center_y, 0) as cy, ' +
+        'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
         "WHERE m.ifc_class != 'IfcOpeningElement' " +
@@ -2357,6 +2365,7 @@
     var roofOverrides = 0;
     var elements = r[0].values.map(function(row) {
       var cls = row[1], storey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
+      var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
       var rule = matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
 
@@ -2369,7 +2378,8 @@
       return {
         guid: row[0], cls: cls, name: row[2] || '', storey: storey,
         cz: cz, band: Math.floor(cz / 3),  // §S260e: Z-quantized band (3m = ~one floor)
-        base_z: cz - bz / 2, top_z: cz + bz / 2,  // §gate: support-gate geometry (base = underside, top = where it tops out)
+        base_z: cz - bz / 2, top_z: cz + bz / 2,  // §gate: Z geometry (base = underside, top = where it tops out)
+        x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
         seq: seq, phase: phase,
         resource: rule.resource || '_DEFAULT',
         installSecs: getInstallSecs(cls)
@@ -2456,11 +2466,13 @@
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
 
-    // §SUPPORT_CHECK: independent runtime audit — a beam must not start before the column topping
-    // within ±TOL of its base finishes. floatingBeams=0 ⇒ Z order solved (was ~1127/1970 pre-fix).
-    var _beamN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (elements[_bi].cls === 'IfcBeam') _beamN++;
-    var _float = ScheduleGate.auditFloating(elements, _sched, function(e){ return e.cls === 'IfcBeam'; });
-    console.log('§SUPPORT_CHECK floatingBeams=' + _float + '/' + _beamN + ' gated=' + elements.length + ' (0=Z solved)');
+    // §SUPPORT_CHECK: independent XY-aware audit — a beam/member/slab must not start before the
+    // structure UNDER its XY footprint finishes. 0 ⇒ nothing floats over its support (was, on
+    // Hospital: 84 beams + 765 members + 3 slabs under the Z-only gate; XY-aware → 0).
+    var _isStruct = function(e){ return e.cls === 'IfcBeam' || e.cls === 'IfcMember' || e.cls === 'IfcSlab'; };
+    var _structN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_isStruct(elements[_bi])) _structN++;
+    var _float = ScheduleGate.auditFloating(elements, _sched, _isStruct);
+    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _structN + ' (beams+members+slabs over their XY support) gated=' + elements.length + ' (0=solved)');
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     var _first20 = [];
@@ -2557,11 +2569,12 @@
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
       var key = storey + '|' + phase;
-      if (!groups[key]) groups[key] = { storey: storey, phase: phase, startTs: op.start_ts, endTs: op.end_ts, count: 0 };
+      if (!groups[key]) groups[key] = { storey: storey, phase: phase, startTs: op.start_ts, endTs: op.end_ts, count: 0, cap: 0 };
       var g = groups[key];
       if (op.start_ts < g.startTs) g.startTs = op.start_ts;
       if (op.end_ts > g.endTs) g.endTs = op.end_ts;
       g.count++;
+      if (p._captured) g.cap++;   // §gate: captured = preset IFC 4D (verbatim) — drives the yellow frame
     }
 
     // Convert to array and sort by start time
@@ -2636,6 +2649,15 @@
       ctx.globalAlpha = 0.8;
       ctx.fillStyle = color;
       ctx.fillRect(x, y, w, barH);
+
+      // §gate: captured (preset IFC 4D) bars get a bright-yellow frame so you can tell the real
+      // programme from the generated fallback. cap = #captured ops in this storey|phase group.
+      if (task.cap > 0) {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#ffeb3b';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, Math.max(1, w - 1), barH - 1);
+      }
 
       if (isActive) {
         ctx.globalAlpha = 1;
