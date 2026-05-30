@@ -55,15 +55,6 @@
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-  /* Companion Glassbowl views (served from BIMCompiler GitHub Pages) */
-  #gbviews { position: fixed; top: 9px; right: 12px; z-index: 11; display: flex; gap: 6px; }
-  #gbviews a {
-    font-size: 12px; font-weight: 600; color: #cdd6e4; text-decoration: none;
-    background: rgba(40,44,58,0.82); border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px; padding: 6px 11px; min-height: 0; line-height: 1;
-    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-  }
-  #gbviews a:hover { border-color: #56d6e0; color: #56d6e0; }
 </style>
 </head>
 <body>
@@ -72,14 +63,6 @@
   <div class="spinner"></div>
   <div>Loading ERP OOTB&hellip;</div>
   <div id="load-status" style="margin-top:8px;font-size:11px;color:#555;"></div>
-</div>
-
-<!-- Companion Glassbowl views — the same model, seen two ways (read-only) -->
-<div id="gbviews">
-  <a href="https://red1oon.github.io/BIMCompiler/glassbowl.html" target="_blank" rel="noopener"
-     title="Glassbowl — the engine mapped from its own data (FK spines, trace, dossier)">🫧 Glassbowl</a>
-  <a href="https://red1oon.github.io/BIMCompiler/glassbowl_gravity.html" target="_blank" rel="noopener"
-     title="Glassbowl Gravity — pivot &amp; weigh the model (live GROUP BY, AD↔GW depth dial)">✦ Gravity</a>
 </div>
 
 <div id="breadcrumb"></div>
