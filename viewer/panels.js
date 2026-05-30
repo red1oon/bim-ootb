@@ -1215,7 +1215,7 @@ function setupPanels(A) {
       function collapseLevel(name) { var m = /^(Level\s*\S+?)(?:\s+(?:Ceiling|TOS|Top of Steel))?$/i.exec(name || ''); return m ? m[1] : name; }
 
       var tasks = rows("SELECT task_id,wbs_parent,name,is_summary,schedule_start,schedule_finish FROM tasks");
-      if (!tasks.length) return null;
+      // no native IFC tasks table → fall through to the generated (kernel_ops) path below
       var byId = {}; tasks.forEach(function(t) { byId[t.task_id] = t; });
       function phaseOf(t) {
         var cur = t, levelName = null, rootName = null, guard = 0;
@@ -1244,7 +1244,7 @@ function setupPanels(A) {
       });
       var ordered = Object.keys(ph).map(function(k) { return ph[k]; })
         .sort(function(a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; });
-      if (!ordered.length) return null;
+      if (!ordered.length) return _projectGenerated();   // no captured phases → try the TM-generated schedule
       var phases = ordered.map(function(p, i) {
         return { id: 'p' + i, phase: p.phase, start: day(p.start), weeks: weeksBetween(p.start, p.finish), elements: p.elements, source: 'captured' };
       });
@@ -1257,6 +1257,46 @@ function setupPanels(A) {
       console.log('\u00A7SCHEDULE_INSTANCE building=' + out.Project.building + ' provider=captured phases=' +
         phases.length + ' captured=' + totalEl + ' generated=0 start=' + out.Project.start);
       return out;
+
+      // GENERATED provider: no native IFC 4D, but TM ran \u2192 project the runtime kernel_ops
+      // schedule (generative bands grouped by storey; captured-overlaid rows flagged). Same
+      // contract shape (Project + Phases[]) so the same read-only viewer renders it.
+      function _projectGenerated() {
+        var ke = rows("SELECT timestamp, parameters FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE' AND undone = 0");
+        if (!ke.length) return null;                 // no schedule at all (Time Machine not run yet)
+        function dayMs(ms) { try { return new Date(Number(ms)).toISOString().slice(0, 10); } catch (e) { return ''; } }
+        function weeksMs(s, e) { return Math.max(1, Math.round((Number(e) - Number(s)) / (7 * 86400000))); }
+        var g = {};
+        ke.forEach(function(op) {
+          var p; try { p = JSON.parse(op.parameters); } catch (e) { p = {}; }
+          var key = collapseLevel(p.storey || p.phase || 'Unspecified');   // storey-banded, Ceiling/TOS collapsed
+          var s = Number(op.timestamp), e = Number(p._end_ts != null ? p._end_ts : op.timestamp);
+          if (!isFinite(s)) return;
+          if (!isFinite(e) || e < s) e = s;
+          var b = g[key] || (g[key] = { phase: key, start: s, finish: e, elements: 0, cap: 0 });
+          if (s < b.start) b.start = s;
+          if (e > b.finish) b.finish = e;
+          b.elements++;
+          if (p._captured) b.cap++;
+        });
+        var ord = Object.keys(g).map(function(k) { return g[k]; }).sort(function(a, b) { return a.start - b.start; });
+        if (!ord.length) return null;
+        var gphases = ord.map(function(b, i) {
+          var src = b.cap === 0 ? 'generated' : (b.cap === b.elements ? 'captured' : 'mixed');
+          return { id: 'p' + i, phase: b.phase, start: dayMs(b.start), weeks: weeksMs(b.start, b.finish), elements: b.elements, source: src };
+        });
+        var capTot = ord.reduce(function(s, b) { return s + b.cap; }, 0);
+        var elTot = ord.reduce(function(s, b) { return s + b.elements; }, 0);
+        var projSrc = capTot === 0 ? 'generated' : (capTot === elTot ? 'captured' : 'mixed');
+        var cal = rows("SELECT name FROM calendars LIMIT 1")[0] || {};
+        var gout = {
+          Project: { building: meta('building_name', meta('project_name', '?')), start: dayMs(ord[0].start), calendar: cal.name || '', source: projSrc },
+          Phases: gphases
+        };
+        console.log('\u00A7SCHEDULE_INSTANCE building=' + gout.Project.building + ' provider=' + projSrc + ' phases=' +
+          gphases.length + ' captured=' + capTot + ' generated=' + (elTot - capTot) + ' start=' + gout.Project.start);
+        return gout;
+      }
     }
 
     // \u00A7S282c: registry of project JSONs editable from Settings (pure data).
