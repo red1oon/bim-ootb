@@ -1637,6 +1637,22 @@
     });
     container.appendChild(searchBtn);
 
+    // Companion links — sit in the HUD row next to Search/Max so they ride with the graph (never buried by
+    // min/max). 🫧 Glassbowl + ✦ Gravity (the engine-as-data views) + 📖 Read (the ERP.md narrative).
+    var gbHud = document.createElement('div');
+    gbHud.style.cssText = 'position:absolute;top:6px;right:74px;z-index:5;display:flex;gap:6px;';
+    [['🫧 Glassbowl', 'https://red1oon.github.io/BIMCompiler/glassbowl.html', 'glassbowl'],
+     ['✦ Gravity', 'https://red1oon.github.io/BIMCompiler/glassbowl_gravity.html', 'glassbowl'],
+     ['📖 Read', 'https://red1oon.github.io/BIMCompiler/ERP/', 'erpdoc']].forEach(function (L) {
+      var a = document.createElement('a');
+      a.href = L[1]; a.target = L[2]; a.rel = 'noopener'; a.textContent = L[0];
+      a.style.cssText = 'background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);color:#cdd6e4;' +
+        'font-size:12px;font-weight:600;text-decoration:none;padding:5px 9px;border-radius:6px;line-height:1;white-space:nowrap;';
+      a.addEventListener('pointerup', function (e) { e.stopPropagation(); });
+      gbHud.appendChild(a);
+    });
+    container.appendChild(gbHud);
+
     _contentEl.appendChild(container);
 
     // Init graph — use initFromBubbles if DB not ready
