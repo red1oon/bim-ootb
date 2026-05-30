@@ -96,11 +96,33 @@
     return fields;
   }
 
+  // Optional DISPLAY directives (pure data, any JSON may pass them in `overrides`):
+  //   __labelKey : field key whose value becomes the row label (and is hidden as a field)
+  //   __summary  : array of field keys combined into ONE readonly "a · b · c" line
+  //                (the other fields are dropped — a compact, read-only-friendly view)
+  //   __hide     : array of field keys to omit
+  // No __* directive -> behaves exactly as before (every key a field).
+  function fmtSummary(key, val) {
+    if (val == null) return '';
+    if (key === 'weeks') return val + 'wk';
+    return String(val);
+  }
   function arrayToSection(name, arr, overrides) {
+    var labelKey = overrides.__labelKey, summary = overrides.__summary, hide = overrides.__hide || [];
     var rows = arr.map(function(el, i) {
       var id = (el && el.id != null) ? String(el.id) : String(i);
-      var label = (el && (el.label || el.name)) || id;
-      return { id: id, label: label, _index: i, fields: rowToFields(el, overrides, id, '') };
+      var label = (labelKey && el && el[labelKey] != null) ? String(el[labelKey])
+        : ((el && (el.label || el.name)) || id);
+      var fields;
+      if (summary && summary.length) {
+        var parts = summary.map(function(k) { return fmtSummary(k, el[k]); });
+        fields = [{ key: 'summary', type: 'readonly', value: parts.join(' · '), _wide: true }];
+      } else {
+        fields = rowToFields(el, overrides, id, '').filter(function(f) {
+          return f.key !== labelKey && hide.indexOf(f.key) < 0;
+        });
+      }
+      return { id: id, label: label, _index: i, fields: fields };
     });
     return { section: name, reorderable: true, _key: name, _array: true, rows: rows };
   }
@@ -186,6 +208,16 @@
   // Each returns a DOM element and calls commit(newValue) on edit.
   function renderField(field, commit) {
     var t = field.type;
+    // readonly wins over the type branch — a display span, never an editable control.
+    // (Must precede number/toggle/choice/color, which would otherwise return an input.)
+    if (field.readonly || t === 'readonly') {
+      var ro = document.createElement('span');
+      ro.textContent = field._list ? field.value : String(field.value);
+      ro.style.cssText = 'font-size:12px;color:#888;font-family:monospace;max-width:' +
+        (field._wide ? '210px' : '140px') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      ro.title = ro.textContent;
+      return ro;
+    }
     if (t === 'toggle') {
       var btn = document.createElement('button');
       var paint = function() {
@@ -234,13 +266,6 @@
       });
       return num;
     }
-    if (t === 'readonly' || field.readonly) {
-      var span = document.createElement('span');
-      span.textContent = field._list ? field.value : String(field.value);
-      span.style.cssText = 'font-size:12px;color:#888;font-family:monospace;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      span.title = span.textContent;
-      return span;
-    }
     // text (default)
     var txt = document.createElement('input');
     txt.type = 'text';
@@ -258,9 +283,25 @@
     var persist = opts.persist !== false;        // default true (write-through)
     var onChange = opts.onChange || function() {};
     var onReset = opts.onReset;
+    var readonly = !!opts.readonly;              // §SETTINGS_JSON: whole-file view — no write path
 
     // Live model = a clone of the input schema; values + order mutate in place.
     var model = clone(input);
+
+    // Read-only mode: force every field display-only, kill reorder, log writable=0.
+    // renderField already renders a span for field.readonly (no input wiring).
+    if (readonly) {
+      var _fields = 0;
+      var markRow = function(r) {                 // recurse into nested children too
+        (r.fields || []).forEach(function(f) { _fields++; f.readonly = true; });
+        (r.children || []).forEach(markRow);
+      };
+      model.forEach(function(sec) {
+        sec.reorderable = false;
+        (sec.rows || []).forEach(markRow);
+      });
+      console.log('§PROPSHEET_READONLY id=' + (storageKey || '?') + ' fields=' + _fields + ' writable=0');
+    }
 
     function getState() { return schemaToJson(model); }
 
@@ -273,10 +314,17 @@
       onChange(rowId, fieldKey, value, full);
     }
 
-    function buildRow(row, reorderable) {
+    // depth = nesting level (0 = top). A row carrying a non-empty `children` array is a
+    // COLLAPSED bar: it renders a chevron and a default-collapsed container of its child
+    // rows, rendered RECURSIVELY (handles arbitrarily deep WBS — Level → sub-storey → task).
+    // Rows with no `children` render exactly as before (backward compatible).
+    function buildRow(row, reorderable, depth) {
+      depth = depth || 0;
+      var hasKids = !!(row.children && row.children.length);
       var el = document.createElement('div');
-      el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);user-select:none;' +
-        (reorderable ? 'cursor:grab;' : '');
+      el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;padding-left:' +
+        (12 + depth * 16) + 'px;border-bottom:1px solid rgba(255,255,255,0.04);user-select:none;' +
+        (reorderable ? 'cursor:grab;' : (hasKids ? 'cursor:pointer;' : ''));
 
       // generic drag-handle affordance for reorderable sections (app-agnostic)
       if (reorderable) {
@@ -284,6 +332,14 @@
         handle.textContent = '≡';
         handle.style.cssText = 'font-size:16px;color:#555;cursor:grab;';
         el.appendChild(handle);
+      }
+      // collapse/expand chevron for a parent (collapsed) bar
+      var chev = null;
+      if (hasKids) {
+        chev = document.createElement('span');
+        chev.textContent = '▶';
+        chev.style.cssText = 'font-size:10px;color:#6c9fff;display:inline-block;transition:transform 200ms;';
+        el.appendChild(chev);
       }
       // optional per-row icon: a pure HTML string (e.g. <img> / <svg>) — any app may pass it
       if (row.icon) {
@@ -309,7 +365,23 @@
         }
         el.appendChild(renderField(field, function(v) { save(row.id, field.key, v); }));
       });
-      return el;
+      if (!hasKids) return el;
+
+      // wrapper = this bar + its default-collapsed children, rendered recursively
+      var wrap = document.createElement('div');
+      wrap.appendChild(el);
+      var kids = document.createElement('div');
+      kids.style.cssText = 'max-height:0;overflow:hidden;transition:max-height 300ms ease;';
+      row.children.forEach(function(child) { kids.appendChild(buildRow(child, false, depth + 1)); });
+      wrap.appendChild(kids);
+      var open = false;
+      el.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        open = !open;
+        kids.style.maxHeight = open ? 'none' : '0';
+        if (chev) chev.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
+      });
+      return wrap;
     }
 
     function buildSection(sec) {
