@@ -186,14 +186,20 @@ function setupImport(A) {
             const SQL = await initSqlJs({ locateFile: f => 'lib/' + f });
             const dbs = buildImportDBs(SQL, msg);
 
-            // Save to IndexedDB — single DB (geometry + metadata in one)
-            const record = {
-              meta: msg.meta,
-              extractedDb: dbs.extractedDb,
-              libraryDb: dbs.extractedDb,  // same buffer — viewer reads libDb from here
-            };
-            if (dbs.metaDb) record.metaDb = dbs.metaDb;
-            if (dbs.geoDb) record.geoDb = dbs.geoDb;
+            // Save to IndexedDB. S224: when split (meta+geo) exists, store ONLY the split.
+            // Storing the full monolith too duplicates the same ~656MB and overflows
+            // IndexedDB's ~1GB structured-clone limit (§MULTI_DB_ERROR). Open path loads
+            // meta as primary, so the monolith is redundant. Monolith kept only when no split.
+            const _recSplit = dbs.metaDb && dbs.geoDb;
+            const record = { meta: msg.meta };
+            if (_recSplit) {
+              record.metaDb = dbs.metaDb;
+              record.geoDb = dbs.geoDb;
+            } else {
+              record.extractedDb = dbs.extractedDb;
+              record.libraryDb = dbs.extractedDb;  // same buffer — viewer reads libDb from here
+            }
+            console.log('[S224] §STORE_RECORD key=' + file.name + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbs.extractedDb.byteLength) / 1048576).toFixed(1));
             await saveImport(file.name, record);
 
             // S260b: Download split DBs for large buildings
@@ -322,14 +328,18 @@ function setupImport(A) {
       };
       var dbs = buildImportDBs(SQL, mergedData);
 
-      var record = {
-        meta: mergedData.meta,
-        extractedDb: dbs.extractedDb,
-        libraryDb: dbs.extractedDb,
-      };
-      if (dbs.metaDb) record.metaDb = dbs.metaDb;
-      if (dbs.geoDb) record.geoDb = dbs.geoDb;
+      // S224: split present → store split only (monolith would overflow IDB ~1GB limit)
+      var _recSplit = dbs.metaDb && dbs.geoDb;
+      var record = { meta: mergedData.meta };
+      if (_recSplit) {
+        record.metaDb = dbs.metaDb;
+        record.geoDb = dbs.geoDb;
+      } else {
+        record.extractedDb = dbs.extractedDb;
+        record.libraryDb = dbs.extractedDb;
+      }
       var key = buildingName + '.ifc';
+      console.log('[S224] §STORE_RECORD key=' + key + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbs.extractedDb.byteLength) / 1048576).toFixed(1));
       await saveImport(key, record);
 
       // S260b: Download split DBs for large merged buildings
@@ -437,13 +447,17 @@ function setupImport(A) {
             var SQL = await initSqlJs({ locateFile: function(f) { return 'lib/' + f; } });
             var dbs = buildImportDBs(SQL, msg);
 
-            var record = {
-              meta: msg.meta,
-              extractedDb: dbs.extractedDb,
-              libraryDb: dbs.extractedDb,
-            };
-            if (dbs.metaDb) record.metaDb = dbs.metaDb;
-            if (dbs.geoDb) record.geoDb = dbs.geoDb;
+            // S224: split present → store split only (monolith would overflow IDB ~1GB limit)
+            var _recSplit = dbs.metaDb && dbs.geoDb;
+            var record = { meta: msg.meta };
+            if (_recSplit) {
+              record.metaDb = dbs.metaDb;
+              record.geoDb = dbs.geoDb;
+            } else {
+              record.extractedDb = dbs.extractedDb;
+              record.libraryDb = dbs.extractedDb;
+            }
+            console.log('[S224] §STORE_RECORD key=' + file.name + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbs.extractedDb.byteLength) / 1048576).toFixed(1));
             await saveImport(file.name, record);
 
             // S260b: Download split DBs for large mesh imports
@@ -500,7 +514,8 @@ function setupImport(A) {
     } else {
       dbBuf = record.extractedDb;  // legacy v1 format
     }
-    if (!dbBuf) { alert('No DB data in storage'); return; }
+    // S224: split-only records have no monolith dbBuf — that is valid (open path uses meta+geo).
+    if (!dbBuf && !(record.metaDb && record.geoDb)) { alert('No DB data in storage'); return; }
 
     const cacheDb = await A.openCacheDB();
     if (cacheDb) {

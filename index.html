@@ -857,6 +857,23 @@ async function exportProjectDb(key) {
   const record = await getProject(key);
   if (!record || !record.versions.length) return;
   const latest = record.versions[record.latestVersion];
+  // S224: large split buildings store no monolith db (it overflows IDB). Export the split instead.
+  if (!latest.db) {
+    if (record.metaDb && record.geoDb) {
+      [['_meta.db', record.metaDb], ['_geo.db', record.geoDb]].forEach(function(pair) {
+        var b = new Blob([pair[1]], { type: 'application/x-sqlite3' });
+        var el = document.createElement('a');
+        el.href = URL.createObjectURL(b);
+        el.download = key.replace(/\.ifc$/i, '') + pair[0];
+        el.click();
+        URL.revokeObjectURL(el.href);
+      });
+      console.log('[S224] §EXPORT_DB_SPLIT key=' + key + ' meta+geo (split building, no monolith)');
+    } else {
+      alert('No database available to export for this building.');
+    }
+    return;
+  }
   const blob = new Blob([latest.db], { type: 'application/x-sqlite3' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -879,6 +896,11 @@ async function exportProjectDb(key) {
 async function openCompare(key, idxA, idxB) {
   const record = await getProject(key);
   if (!record || !record.versions[idxA] || !record.versions[idxB]) return;
+  // S224: version compare needs in-memory monoliths; large split buildings don't store them.
+  if (!record.versions[idxA].db || !record.versions[idxB].db) {
+    alert('Version compare is not available for large streamed buildings.');
+    return;
+  }
   const cacheDb = await openCacheDB();
   if (!cacheDb) return;
 
@@ -1262,6 +1284,13 @@ async function handleImportFile(file) {
               // Always combine new elements into existing DB (multi-disc merge)
               var baseIdx = existing.latestVersion || 0;
               var existBuf = existing.versions[baseIdx].db;
+              // S224: large split buildings store no monolith — in-memory merge isn't possible.
+              if (!existBuf) {
+                alert('Cannot merge into "' + targetKey + '" — it is a large streamed building stored without an in-memory database. Import as a new project instead.');
+                console.log('[S224] §MERGE_BLOCK_SPLIT target=' + targetKey + ' (no monolith db)');
+                worker.terminate();
+                return;
+              }
               var existDb = new SQL.Database(new Uint8Array(existBuf));
               var newDb = new SQL.Database(new Uint8Array(dbBuf));
 
@@ -1324,15 +1353,17 @@ async function handleImportFile(file) {
           console.log('[S224] §MERGE_REJECT file=' + file.name);
         }
 
-        // New project: single version
+        // New project: single version. S224: split present → omit the monolith db
+        // (open path uses meta+geo). Storing both overflows IndexedDB's ~1GB
+        // structured-clone limit (§MULTI_DB_ERROR). Monolith kept only when no split.
+        var _recSplit = dbs.metaDb && dbs.geoDb;
         var newRecord = {
           meta: msg.meta,
-          versions: [{ key: file.name, importDate: new Date().toISOString(), db: dbBuf }],
+          versions: [{ key: file.name, importDate: new Date().toISOString(), db: _recSplit ? null : dbBuf }],
           latestVersion: 0
         };
-        // §S274: Persist split DBs for fast open (streaming.js picks these up)
-        if (dbs.metaDb) newRecord.metaDb = dbs.metaDb;
-        if (dbs.geoDb) newRecord.geoDb = dbs.geoDb;
+        if (_recSplit) { newRecord.metaDb = dbs.metaDb; newRecord.geoDb = dbs.geoDb; }
+        console.log('[S224] §STORE_RECORD key=' + projectKey + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbBuf.byteLength) / 1048576).toFixed(1));
         await saveProject(projectKey, newRecord);
         console.log('[S224] §IMPORT_SAVED key=' + projectKey + ' elements=' + msg.meta.elementCount);
 
@@ -1482,13 +1513,17 @@ async function handleImportMultiIFC(files) {
     var dbs = buildImportDBs(SQL, mergedData);
 
     var projectKey = buildingName + '.ifc';
+    // S224: split present → omit the monolith db; storing both the full extractedDb AND
+    // the meta+geo split overflows IndexedDB's ~1GB structured-clone limit (§MULTI_DB_ERROR
+    // on 8–9 discipline drops). Open path loads meta as primary, so the monolith is redundant.
+    var _recSplit = dbs.metaDb && dbs.geoDb;
     var newRecord = {
       meta: mergedData.meta,
-      versions: [{ key: projectKey, importDate: new Date().toISOString(), db: dbs.extractedDb }],
+      versions: [{ key: projectKey, importDate: new Date().toISOString(), db: _recSplit ? null : dbs.extractedDb }],
       latestVersion: 0
     };
-    if (dbs.metaDb) newRecord.metaDb = dbs.metaDb;
-    if (dbs.geoDb) newRecord.geoDb = dbs.geoDb;
+    if (_recSplit) { newRecord.metaDb = dbs.metaDb; newRecord.geoDb = dbs.geoDb; }
+    console.log('[S224] §STORE_RECORD key=' + projectKey + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbs.extractedDb.byteLength) / 1048576).toFixed(1));
     await saveProject(projectKey, newRecord);
 
     // §S274: Pre-populate cache store for instant open (same as single-file path)
