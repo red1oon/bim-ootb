@@ -1077,6 +1077,7 @@ function setupPanels(A) {
         content: content,
         onClose: function() { _syncPillHighlights(); } });
       document.body.appendChild(p);
+      p.style.display = '';   // createPanel returns hidden — reveal on first open (matches _openJsonEditor)
       if (window.InputReg) InputReg.register({ id: 'settings', el: p, kind: 'panel', release: function() { p.style.display = 'none'; } });
       // §S282b: PanelNav for Settings — arrows traverse pill rows, Enter toggles visibility
       if (typeof window.PanelNav === 'function') {
