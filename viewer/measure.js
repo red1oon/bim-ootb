@@ -43,8 +43,13 @@ function setupMeasure(A) {
       sx = rect.left; sy = rect.top;
       pid = e.pointerId;
     });
+    function _endDrag() {
+      if (pid != null) { try { if (el.hasPointerCapture(pid)) el.releasePointerCapture(pid); } catch (err) {} }
+      pending = false; dragging = false; moved = false; pid = null;
+    }
     el.addEventListener('pointermove', function(e) {
       if (!pending) return;
+      if (e.buttons === 0) { _endDrag(); return; }   // button already released — never hover-drag
       if (!moved) {
         if (Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy) < 4) return;  // still a tap
         moved = true; dragging = true;
@@ -56,7 +61,10 @@ function setupMeasure(A) {
       el.style.right = 'auto';
       el.style.bottom = 'auto';
     });
-    el.addEventListener('pointerup', function() { pending = false; dragging = false; moved = false; });
+    // Capture phase so a child's stopPropagation (e.g. a section-header collapse handler)
+    // can't swallow the release — otherwise pending stays true and the panel sticks to the cursor.
+    el.addEventListener('pointerup', _endDrag, true);
+    el.addEventListener('pointercancel', _endDrag, true);
   };
 
   // ── Clash detection (bbox overlap from DB, rules from clash_rules.json) ──
