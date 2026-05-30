@@ -339,6 +339,7 @@ function setupTools(A) {
   };
 
   A._recolorMesh = function(mesh, color) {
+    if (!mesh.material || !mesh.material.color) return;  // §S280f: restore S279 guard — skip ShaderMaterial (Sky), lines, colorless mats
     A._sunglassBackups.push({ mesh: mesh, origMat: mesh.material });
     var newMat = mesh.material.clone();
     newMat.color.copy(color);
