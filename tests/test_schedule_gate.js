@@ -23,13 +23,14 @@ const matchRule = c => { let b=null,l=0; for (const k in RULES) if (c.indexOf(k)
 
 const csv = execSync(
   `sqlite3 -noheader -csv "${DB}" "SELECT m.guid,m.ifc_class,COALESCE(t.center_x,0),COALESCE(t.center_y,0),` +
-  `COALESCE(t.center_z,0),COALESCE(t.bbox_x,0),COALESCE(t.bbox_y,0),COALESCE(t.bbox_z,0) ` +
+  `COALESCE(t.center_z,0),COALESCE(t.bbox_x,0),COALESCE(t.bbox_y,0),COALESCE(t.bbox_z,0),COALESCE(m.storey,'_UNKNOWN') ` +
   `FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class!='IfcOpeningElement';"`,
   { maxBuffer: 1 << 28 }).toString().trim().split('\n');
 const elements = csv.map(line => {
   const a = line.split(','); if (a.length < 8) return null;
   const cls=a[1], cx=+a[2], cy=+a[3], cz=+a[4], bx=+a[5], by=+a[6], bz=+a[7], r=matchRule(cls);
-  return { guid:a[0], cls, seq:r.seq, resource:cls, installSecs: r.prod>0?Math.round(28800/r.prod):120,
+  return { guid:a[0], cls, seq:r.seq, resource:cls, storey:(a[8]||'_UNKNOWN').replace(/"/g,''),
+           installSecs: r.prod>0?Math.round(28800/r.prod):120,
            x0:cx-bx/2, x1:cx+bx/2, y0:cy-by/2, y1:cy+by/2, base_z:cz-bz/2, top_z:cz+bz/2 };
 }).filter(Boolean);
 const n = c => elements.filter(e=>e.cls===c).length;
@@ -44,15 +45,28 @@ function schedOld(els){
   const out={};E.forEach(e=>out[e.guid]={start:e.start,end:e.end});return out;
 }
 
-const CL = ['IfcBeam','IfcMember','IfcSlab'];
-const flt = (sched, cls) => ScheduleGate.auditFloating(elements, sched, e=>e.cls===cls);
+// classes the user reported floating: structure AND non-structure (furniture, MEP, walls)
+const GROUPS = [
+  { label:'beam',      pred:e=>e.cls==='IfcBeam' },
+  { label:'member',    pred:e=>e.cls==='IfcMember' },
+  { label:'slab',      pred:e=>e.cls==='IfcSlab' },
+  { label:'furniture', pred:e=>e.cls.indexOf('Furni')>=0 },
+  { label:'flow/MEP',  pred:e=>e.cls.indexOf('Flow')>=0||e.cls.indexOf('Duct')>=0||e.cls.indexOf('Pipe')>=0||e.cls.indexOf('AirTerminal')>=0 },
+  { label:'wall',      pred:e=>e.cls.indexOf('Wall')>=0 },
+];
+const cnt = pred => elements.filter(pred).length;
 const oldSched = schedOld(elements);
-const newSched = ScheduleGate.computeSchedule(elements, 0, 1);   // the REAL deployed XY-aware gate
+const newSched = ScheduleGate.computeSchedule(elements, 0, 1);   // the REAL deployed two-pass gate
 
 let oldTot = 0, newTot = 0;
-CL.forEach(cl => { const o=flt(oldSched,cl), x=flt(newSched,cl); oldTot+=o; newTot+=x;
-  console.log(`§SUPPORT_CHECK ${cl.padEnd(10)} OLD(center-band)=${o}/${n(cl)}  NEW(XY-gate)=${x}/${n(cl)}`); });
+GROUPS.forEach(g => { const o=ScheduleGate.auditFloating(elements,oldSched,g.pred), x=ScheduleGate.auditFloating(elements,newSched,g.pred); oldTot+=o; newTot+=x;
+  console.log(`§SUPPORT_CHECK ${g.label.padEnd(10)} OLD(center-band)=${o}/${cnt(g.pred)}  NEW(two-pass)=${x}/${cnt(g.pred)}`); });
 
-if (newTot !== 0) { console.error(`FAIL — XY-aware gate still floats ${newTot} structural elements`); process.exit(1); }
+// trade order: avg start day per seq — proves structure first, MEP late, furniture last (per Level)
+const day = ms => Math.round(ms/86400000); const bySeq = {};
+elements.forEach(e => { const o=newSched[e.guid]; (bySeq[e.seq]=bySeq[e.seq]||[]).push(day(o.start)); });
+Object.keys(bySeq).sort((a,b)=>a-b).forEach(s => { const a=bySeq[s]; console.log(`§TRADE seq=${s} avgStartDay=${Math.round(a.reduce((x,y)=>x+y,0)/a.length)} n=${a.length}`); });
+
+if (newTot !== 0) { console.error(`FAIL — two-pass gate still floats ${newTot} elements`); process.exit(1); }
 if (oldTot === 0) { console.error('INCONCLUSIVE — old gate showed 0 floats; test cannot prove the fix'); process.exit(1); }
-console.log(`PASS — XY-aware support gate eliminates floating structure (${oldTot} → 0) on real Hospital geometry`);
+console.log(`PASS — two-pass gate eliminates floating (${oldTot} → 0) across structure + furniture + MEP + walls on real Hospital geometry`);

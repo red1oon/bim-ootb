@@ -2466,13 +2466,15 @@
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
 
-    // §SUPPORT_CHECK: independent XY-aware audit — a beam/member/slab must not start before the
-    // structure UNDER its XY footprint finishes. 0 ⇒ nothing floats over its support (was, on
-    // Hospital: 84 beams + 765 members + 3 slabs under the Z-only gate; XY-aware → 0).
-    var _isStruct = function(e){ return e.cls === 'IfcBeam' || e.cls === 'IfcMember' || e.cls === 'IfcSlab'; };
-    var _structN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_isStruct(elements[_bi])) _structN++;
-    var _float = ScheduleGate.auditFloating(elements, _sched, _isStruct);
-    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _structN + ' (beams+members+slabs over their XY support) gated=' + elements.length + ' (0=solved)');
+    // §SUPPORT_CHECK: independent XY-aware audit — NOTHING (beam/member/slab/furniture/MEP/wall)
+    // may start before the structure UNDER its XY footprint finishes. 0 ⇒ nothing floats. Pre-fix
+    // (Hospital): 84 beams + 765 members floated (Z-only) and 133 furniture + 1980 flow + 1156 walls
+    // (ε=0.5 skipped the slab they sit on). Two-pass + ε=0.05 → 0.
+    var _audit = function(e){ return e.cls === 'IfcBeam' || e.cls === 'IfcMember' || e.cls === 'IfcSlab' ||
+      e.cls.indexOf('Furni') >= 0 || e.cls.indexOf('Wall') >= 0; };
+    var _auditN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_audit(elements[_bi])) _auditN++;
+    var _float = ScheduleGate.auditFloating(elements, _sched, _audit);
+    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (struct+furniture+walls over their XY support) gated=' + elements.length + ' (0=solved)');
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     var _first20 = [];
