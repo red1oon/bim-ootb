@@ -2313,7 +2313,7 @@
     try {
       r = db.exec(
         'SELECT m.guid, m.ifc_class, m.element_name, m.storey, m.discipline, ' +
-        'COALESCE(t.center_z, 0) as cz ' +
+        'COALESCE(t.center_z, 0) as cz, COALESCE(t.bbox_z, 0) as bz ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
         "WHERE m.ifc_class != 'IfcOpeningElement' " +
@@ -2356,7 +2356,7 @@
     // ── Build elements with storey-aware overrides ──
     var roofOverrides = 0;
     var elements = r[0].values.map(function(row) {
-      var cls = row[1], storey = row[3] || '_UNKNOWN', cz = row[5] || 0;
+      var cls = row[1], storey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var rule = matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
 
@@ -2369,6 +2369,7 @@
       return {
         guid: row[0], cls: cls, name: row[2] || '', storey: storey,
         cz: cz, band: Math.floor(cz / 3),  // §S260e: Z-quantized band (3m = ~one floor)
+        base_z: cz - bz / 2, top_z: cz + bz / 2,  // §gate: support-gate geometry (base = underside, top = where it tops out)
         seq: seq, phase: phase,
         resource: rule.resource || '_DEFAULT',
         installSecs: getInstallSecs(cls)
@@ -2425,109 +2426,41 @@
 
     // ── Schedule ──
     var resourceCursor = {};  // "resource|band" → next ms
-    var bandSeqDone    = {};  // "band|seq"      → end ms
-    var bandDone       = {};  // band (int)      → end ms (structural seq 1-4)
     var count = 0;
 
-    // §S260c v2: TWO-PASS scheduling — structural first (all bands), then non-structural.
-    // This ensures bandDone[] is fully populated before any MEP/finishes are scheduled.
-    // Pass 1: structural (seq 1-4) = foundations, columns, beams, slabs
-    // Pass 2: non-structural (seq > 4) = MEP, architecture, finishes
-    var structuralElements = elements.filter(function(el) { return el.seq <= 4; });
-    var nonStructuralElements = elements.filter(function(el) { return el.seq > 4; });
+    // §gate (2026-05-30): support-gate FALLBACK scheduler — REPLACES the old center-Z band gate
+    // ("band N waits N-1") that floated beams over still-building tall columns (Hospital cols avg
+    // 6.87m vs 3m bands → the band under a beam was often empty, so its gate found no support).
+    // Each element is gated by the structure topping within ±TOL of its base_z. Pure logic lives in
+    // schedule_gate.js (unit-tested: tests/test_schedule_gate.js → 0/1970 floating on real Hospital
+    // geometry vs 1127/1970 before). Captured IFC 4D still OVERWRITES the covered subset VERBATIM in
+    // the overlay pass below — this governs only the GENERATED fallback timing. No CPM/deps (planner's).
+    var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
+      ? ScheduleGate.computeSchedule(elements, baseMs, scaleFactor) : null;
+    if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
 
-    // §S280h: wrap both build passes in ONE transaction + prepared statement (mirrors the
-    // cache-hit path ~:3128). 39,853 un-transactioned db.run INSERTs were the multi-second
-    // TM-on freeze. Behaviour-identical — same rows, just batched.
+    // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
     db.run('BEGIN');
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
-    // Pass 1: Schedule all structural
-    structuralElements.forEach(function(el) {
-      var rcKey = el.resource + '|' + el.band;
-      var earliest = resourceCursor[rcKey] || baseMs;
-
-      // Phase dependency within band
-      for (var ps = 1; ps < el.seq; ps++) {
-        var pk = el.band + '|' + ps;
-        if (bandSeqDone[pk] && bandSeqDone[pk] > earliest) earliest = bandSeqDone[pk];
-      }
-
-      // Z dependency: structural on band N waits for structural on band N-1
-      if (el.band > 0) {
-        var belowDone = bandDone[el.band - 1];
-        if (belowDone && belowDone > earliest) earliest = belowDone;
-      }
-
-      var durMs = Math.round(el.installSecs * scaleFactor * 1000);
-      var endMs = earliest + durMs;
-
-      _gStmt.run([earliest, 'ELEMENT_PLACE',
+    var _projEnd = baseMs;
+    elements.forEach(function(el) {
+      var s = _sched[el.guid] || { start: baseMs, end: baseMs + 60000 };
+      _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _end_ts:endMs}),
+           resource:el.resource, _end_ts:s.end}),
          JSON.stringify([el.guid]), el.guid]);
       count++;
-
-      resourceCursor[rcKey] = endMs;
-      var seqKey = el.band + '|' + el.seq;
-      if (!bandSeqDone[seqKey] || endMs > bandSeqDone[seqKey]) bandSeqDone[seqKey] = endMs;
-      if (!bandDone[el.band] || endMs > bandDone[el.band]) bandDone[el.band] = endMs;
+      if (s.end > _projEnd) _projEnd = s.end;
     });
-
-    // §S260c: Compute earliest structural completion across ANY band.
-    // Non-structural on bands with no structural must still wait for at least ONE
-    // storey's frame to be erected before MEP can start anywhere.
-    var earliestStructDone = Infinity;
-    for (var bdk in bandDone) {
-      if (bandDone[bdk] < earliestStructDone) earliestStructDone = bandDone[bdk];
-    }
-    if (earliestStructDone === Infinity) earliestStructDone = baseMs; // no structural at all
-    console.log('§GANTT_PASS1 structural=' + structuralElements.length +
-      ' bandDone_keys=' + Object.keys(bandDone).length +
-      ' earliestStructDone=day' + Math.round((earliestStructDone - baseMs) / 86400000));
-
-    // Pass 2: Schedule non-structural (MEP, Architecture, Finishes)
-    // Now bandDone[] is fully populated — non-structural waits for its band's structural.
-    nonStructuralElements.forEach(function(el) {
-      var rcKey = el.resource + '|' + el.band;
-      var earliest = resourceCursor[rcKey] || baseMs;
-
-      // Phase dependency within band
-      for (var ps = 1; ps < el.seq; ps++) {
-        var pk = el.band + '|' + ps;
-        if (bandSeqDone[pk] && bandSeqDone[pk] > earliest) earliest = bandSeqDone[pk];
-      }
-
-      // Must wait for structural on same band or nearest lower band.
-      // If no bandDone found walking down, use earliestStructDone (any band).
-      var foundStruct = false;
-      for (var wb = el.band; wb >= 0; wb--) {
-        if (bandDone[wb]) {
-          if (bandDone[wb] > earliest) earliest = bandDone[wb];
-          foundStruct = true;
-          break;
-        }
-      }
-      if (!foundStruct && earliestStructDone > earliest) {
-        earliest = earliestStructDone; // wait for at least ONE band's structural
-      }
-
-      var durMs = Math.round(el.installSecs * scaleFactor * 1000);
-      var endMs = earliest + durMs;
-
-      _gStmt.run([earliest, 'ELEMENT_PLACE',
-         JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _end_ts:endMs}),
-         JSON.stringify([el.guid]), el.guid]);
-      count++;
-
-      resourceCursor[rcKey] = endMs;
-      var seqKey = el.band + '|' + el.seq;
-      if (!bandSeqDone[seqKey] || endMs > bandSeqDone[seqKey]) bandSeqDone[seqKey] = endMs;
-    });
-
-    // §S280h: close the single transaction (all ELEMENT_PLACE rows committed together)
     _gStmt.free();
     db.run('COMMIT');
+    resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
+
+    // §SUPPORT_CHECK: independent runtime audit — a beam must not start before the column topping
+    // within ±TOL of its base finishes. floatingBeams=0 ⇒ Z order solved (was ~1127/1970 pre-fix).
+    var _beamN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (elements[_bi].cls === 'IfcBeam') _beamN++;
+    var _float = ScheduleGate.auditFloating(elements, _sched, function(e){ return e.cls === 'IfcBeam'; });
+    console.log('§SUPPORT_CHECK floatingBeams=' + _float + '/' + _beamN + ' gated=' + elements.length + ' (0=Z solved)');
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     var _first20 = [];
