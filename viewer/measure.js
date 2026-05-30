@@ -9,7 +9,7 @@ function setupMeasure(A) {
 
   // ── Draggable panels ──
   A._makeDraggable = function(el) {
-    var ox, oy, sx, sy, dragging = false;
+    var ox, oy, sx, sy, dragging = false, pending = false, moved = false, pid = null;
     var dragStrip = window._isMobile ? 50 : 30;
     el.style.cursor = 'grab';
     // On mobile, intercept touch BEFORE the browser claims it for scroll/pan.
@@ -34,20 +34,29 @@ function setupMeasure(A) {
       if (e.target.closest('[data-clash-idx]') || e.target.closest('[data-pair]')) return;
       var rect = el.getBoundingClientRect();
       if (e.clientY - rect.top > dragStrip) return;
-      dragging = true;
+      // Arm a potential drag, but DON'T capture the pointer yet — a stationary tap
+      // in the drag strip must still reach child controls (e.g. a section-header
+      // collapse). Capture happens on first real move (pointermove below). Without
+      // this, setPointerCapture swallowed the header's pointerup → couldn't fold.
+      pending = true; moved = false; dragging = false;
       ox = e.clientX; oy = e.clientY;
       sx = rect.left; sy = rect.top;
-      el.setPointerCapture(e.pointerId);
-      e.preventDefault();
+      pid = e.pointerId;
     });
     el.addEventListener('pointermove', function(e) {
-      if (!dragging) return;
+      if (!pending) return;
+      if (!moved) {
+        if (Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy) < 4) return;  // still a tap
+        moved = true; dragging = true;
+        try { el.setPointerCapture(pid); } catch (err) {}                      // now a real drag
+        e.preventDefault();
+      }
       el.style.left = (sx + e.clientX - ox) + 'px';
       el.style.top = (sy + e.clientY - oy) + 'px';
       el.style.right = 'auto';
       el.style.bottom = 'auto';
     });
-    el.addEventListener('pointerup', function() { dragging = false; });
+    el.addEventListener('pointerup', function() { pending = false; dragging = false; moved = false; });
   };
 
   // ── Clash detection (bbox overlap from DB, rules from clash_rules.json) ──
