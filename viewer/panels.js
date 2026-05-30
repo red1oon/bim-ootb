@@ -959,7 +959,7 @@ function setupPanels(A) {
         isActive: function() { return !!A._whiteBg; } },
       { id: 'screenshot', name: 'Screenshot',      key: 's', pill: false, icon: I.camera.svg, fn: function() { if (A.screenshot) A.screenshot(); } },
       { id: 'night',      name: 'Night',           key: 'n', icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightOn; } },
-      { id: 'palette',    name: 'Palette',         key: 'p', icon: I.palette.svg, fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A._sunglassOn; },
+      { id: 'palette',    name: 'Palette',         key: 'p', icon: I.palette.svg, fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A.sunglassOn; },
         children: [ { name: 'Ambience 0\u2013100' }, { name: 'Sun 0\u20135' }, { name: 'Exposure 0.1\u20133' }, { name: 'Ambient 0\u20132' }, { name: 'Hemisphere 0\u20132' } ] },
       { id: 'shadow',     name: 'Shadow',          key: 'h', icon: I.cloud.svg, fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
       { id: 'fly',        name: 'Fly Tour',        key: 'l', icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A._flyOn; } },

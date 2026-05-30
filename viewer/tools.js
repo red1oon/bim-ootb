@@ -309,9 +309,12 @@ function setupTools(A) {
     var panel = document.getElementById('sunglass-slider-panel');
     var visible = panel.style.display !== 'none';
     panel.style.display = visible ? 'none' : 'block';
+    // §S281: legacy toolbar btn removed — pill registry now owns highlight (isActive→A.sunglassOn). Guard for null.
     var btn = document.getElementById('sunglass-btn');
-    btn.style.background = visible ? '#444' : '#ff8c00';
-    btn.style.color = visible ? '#fff' : '#000';
+    if (btn) {
+      btn.style.background = visible ? '#444' : '#ff8c00';
+      btn.style.color = visible ? '#fff' : '#000';
+    }
     A.sunglassOn = !visible;
   };
 
