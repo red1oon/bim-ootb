@@ -1471,23 +1471,33 @@
       }
     }
 
-    // §S277b: Night floodlight — warm emissive on cached materials (not scene traverse).
+    // §S277b/§TM-NIGHT-TONE: Night floodlight — warm emissive on cached materials (not scene traverse).
     // _matCache has ~100-150 entries vs 122K scene objects. Zero freeze.
+    // FIX (W-TM-NIGHT-TONE): was 0xffaa44@0.2 on ALL matCache → whole building self-lit brown,
+    // burying moonlight and killing natural night. Now glow ONLY lit sources (fixtures/windows);
+    // walls/floors stay dark. Soft peach 0xffe4b5 matches Night mode (tools.js toggleNightMode).
+    // matCache key is 'rgba|IfcClass' — match class via key suffix, same as toggleNightMode.
+    var _tmGlowClasses = ['IfcLightFixture', 'IfcFlowTerminal', 'IfcElectricAppliance', 'IfcWindow'];
     if (elDeg <= -15 && !app._tmBloomActive) {
       app._tmBloomActive = true;
-      var _bloomCount = 0;
+      var _bloomCount = 0, _bloomSkip = 0;
       var _mc = app._matCache || {};
       for (var _mk in _mc) {
         var _mm = _mc[_mk];
         if (!_mm || !_mm.emissive || _mm.userData._origEmissive !== undefined) continue;
+        var _isLit = false;
+        for (var _gi = 0; _gi < _tmGlowClasses.length; _gi++) {
+          if (_mk.indexOf(_tmGlowClasses[_gi]) >= 0) { _isLit = true; break; }
+        }
+        if (!_isLit) { _bloomSkip++; continue; }   // surface material — stays dark
         _mm.userData._origEmissive = _mm.emissive.getHex();
         _mm.userData._origEmissiveI = _mm.emissiveIntensity || 0;
-        _mm.emissive.setHex(0xffaa44);
+        _mm.emissive.setHex(0xffe4b5);    // soft peach, not brown 0xffaa44
         _mm.emissiveIntensity = 0.2;
         _mm.needsUpdate = true;
         _bloomCount++;
       }
-      console.log('§TM_BLOOM_ON materials=' + _bloomCount);
+      console.log('§TM_BLOOM_ON lit=' + _bloomCount + ' darkSurfaces=' + _bloomSkip + ' color=0xffe4b5');
     }
     if (elDeg > -10 && app._tmBloomActive) {
       var _mc2 = app._matCache || {};
