@@ -1936,7 +1936,28 @@ async function packageLandingPage() {
       'window._openViewerBlob = function(qs) {\n' +
       '  var el = document.getElementById("viewer-html-src");\n' +
       '  if (!el) return null;\n' +
-      '  var vHtml = el.textContent.split("<\\/script>").join("</" + "script>");\n' +
+      // S284f: step 8b/9c store the closing script tags ESCAPED with a backslash. Split must
+      // target that escaped form (runtime value carries the backslash) and rejoin a real one.
+      // The previous source emitted a split arg whose runtime value had NO backslash -> no match
+      // -> NO-OP -> backslash closers survived -> the first script element swallowed the 4.4MB doc.
+      '  var vHtml = el.textContent.split("<\\\\/script>").join("</" + "script>");\n' +
+      '  // §S284e-B: file:// is a unique opaque origin — window.open(blob:null) is blocked, srcdoc\n' +
+      '  // cannot carry a 4MB doc, and document.write on the top frame does not run the ESM chain.\n' +
+      '  // Mount the viewer in a SAME-ORIGIN about:blank iframe and stream it via contentDocument.write\n' +
+      '  // (no attribute size cap; runs scripts; shares the file:// IndexedDB the import just wrote).\n' +
+      '  // Overlay (no body wipe) so the landing page DOM stays intact. ?db=&lib= via iframe.name.\n' +
+      '  if (location.protocol === "file:") {\n' +
+      '    try {\n' +
+      '      console.log("§S284e_B VIEWER_INPLACE iframe.write qs=" + (qs||"").slice(0,80));\n' +
+      '      var ifr = document.createElement("iframe");\n' +
+      '      ifr.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;border:0;margin:0;z-index:2147483647;background:#000";\n' +
+      '      ifr.name = qs || "";\n' +
+      '      document.body.appendChild(ifr);\n' +
+      '      var _d = ifr.contentDocument;\n' +
+      '      _d.open(); _d.write(vHtml); _d.close();\n' +
+      '      return ifr.contentWindow || window;\n' +
+      '    } catch(e) { console.warn("§S284e_B INPLACE_FAIL " + e.message); }\n' +
+      '  }\n' +
       '  var blob = new Blob([vHtml], {type: "text/html"});\n' +
       '  var bUrl = URL.createObjectURL(blob);\n' +
       '  var win = (window._origOpen||window.open)(bUrl + qs, "_blank");\n' +
@@ -1986,10 +2007,25 @@ async function packageLandingPage() {
         function _toDataUri(src) {
           return 'data:application/javascript;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(src)));
         }
+        // §S284f: r184 THREE is SPLIT — three.webgpu/module.min.js do a RELATIVE import of
+        // './three.core.min.js', and OrbitControls does a BARE import of 'three'. A data: (or
+        // blob:) URL has no hierarchical base, so neither specifier resolves → the viewer never
+        // gets THREE → no renderer. BOTH builds are needed offline: loader.js boots the WebGPU
+        // build (BatchedMesh etc.), but scene.js separately imports the STANDARD build for
+        // THREE.WebGLRenderer (the WebGPU build has none). Inline core ONCE as a data: URI and
+        // rewrite the relative ref inside BOTH builds; rewrite OrbitControls' bare 'three' to the
+        // WebGPU uri. Same data: string → module dedup → one shared core instance (mirrors online).
+        var coreSrc = await fetch('viewer/lib/three.core.min.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
+        var coreUri = coreSrc ? _toDataUri(coreSrc) : null;
         var threeSrc = await fetch('viewer/lib/three.webgpu.min.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
-        if (!threeSrc) threeSrc = await fetch('viewer/lib/three.module.min.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
+        var threeStdSrc = await fetch('viewer/lib/three.module.min.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
+        if (!threeSrc) threeSrc = threeStdSrc;  // webgpu missing → fall back to standard for loader too
         var ocSrc = await fetch('viewer/lib/OrbitControls.module.js').then(function(r){ return r.ok?r.text():''; }).catch(function(){return '';});
-        var threeUri = threeSrc ? _toDataUri(threeSrc) : null;
+        if (threeSrc && coreUri) threeSrc = threeSrc.split('./three.core.min.js').join(coreUri);
+        if (threeStdSrc && coreUri) threeStdSrc = threeStdSrc.split('./three.core.min.js').join(coreUri);
+        var threeUri = threeSrc ? _toDataUri(threeSrc) : null;            // WebGPU build — loader.js boot
+        var threeStdUri = threeStdSrc ? _toDataUri(threeStdSrc) : threeUri; // standard build — scene.js WebGLRenderer
+        if (ocSrc && threeUri) ocSrc = ocSrc.replace(/from\s*['"]three['"]/g, function(){ return "from '" + threeUri + "'"; });
         var ocUri    = ocSrc    ? _toDataUri(ocSrc)    : null;
 
         // B. Inline all <script src="..."> viewer files
@@ -2003,14 +2039,27 @@ async function packageLandingPage() {
           if (!src) continue;
           // C. Patch loader.js: replace relative ESM import paths with data: URIs
           if (cleanPath === 'loader.js') {
-            if (threeUri) {
-              src = src.replace(/await import\('\.\/lib\/three\.webgpu\.min\.js'\)/g, function(){ return "await import('" + threeUri + "')"; });
-              src = src.replace(/await import\('\.\/lib\/three\.module\.min\.js'\)/g, function(){ return "await import('" + threeUri + "')"; });
-            }
+            if (threeUri) src = src.replace(/await import\('\.\/lib\/three\.webgpu\.min\.js'\)/g, function(){ return "await import('" + threeUri + "')"; });
+            // loader's standard-build fallback must hit the STANDARD uri, not the WebGPU one.
+            if (threeStdUri) src = src.replace(/await import\('\.\/lib\/three\.module\.min\.js'\)/g, function(){ return "await import('" + threeStdUri + "')"; });
             if (ocUri) {
               src = src.replace(/await import\('\.\/lib\/OrbitControls\.module\.js'\)/g, function(){ return "await import('" + ocUri + "')"; });
             }
+            // §S284f: sql.js loads via loadLibAt(fetch 'lib/sql-wasm.js') → 404 on file://, then
+            // CDN fallback is network-blocked → throws OUT of loadAllLibs BEFORE initViewer (line
+            // ~226 is not try/caught) → viewer never boots. Point LIBS[0].url at a data: URI of the
+            // embedded sql-wasm.js (fetch() resolves data: even on a null origin; the head sqlWrap
+            // supplies the wasm via _SQL_WASM_B64, so no sql-wasm.wasm fetch is needed).
+            if (sqlWasmJs) {
+              src = src.replace("url: 'lib/sql-wasm.js'", function(){ return "url: '" + _toDataUri(sqlWasmJs) + "'"; });
+            }
             // BVH stays as CDN — graceful failure if offline (no raycasting BVH, standard fallback)
+          }
+          // §S284f: scene.js imports the STANDARD WebGL build directly for THREE.WebGLRenderer
+          // (the WebGPU build loader boots has none). Same file:// resolution failure — point it
+          // at the standard-build data: URI so the renderer is created and §S277b_RENDERER fires.
+          if (cleanPath === 'scene.js' && threeStdUri) {
+            src = src.replace(/await import\('\.\/lib\/three\.module\.min\.js'\)/g, function(){ return "await import('" + threeStdUri + "')"; });
           }
           // Function replacement avoids $' $& $` corruption
           (function(_tag, _src) {

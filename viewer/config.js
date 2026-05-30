@@ -5,7 +5,15 @@
 window._isMobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
 function setupConfig(A) {
-  const _params = new URLSearchParams(location.search);
+  // §S284e-B: standalone file:// mounts the viewer in a same-origin iframe via
+  // contentDocument.write (no URL query). The opener stashes "?db=…&lib=…" in the iframe's
+  // name (window.name); fall back to it so the import:// DB still loads.
+  var _search = location.search;
+  if (!_search && typeof window.name === 'string' && window.name.charAt(0) === '?') {
+    _search = window.name;
+    console.log('§STANDALONE_INPLACE params from window.name=' + _search.slice(0, 80));
+  }
+  const _params = new URLSearchParams(_search);
   // Auto-resolve: if hosted on OCI Object Storage, use same bucket base for DB URLs
   const _ociMatch = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
   const _base = _ociMatch ? _ociMatch[1] : '';
