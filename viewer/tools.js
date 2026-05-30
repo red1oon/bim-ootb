@@ -70,6 +70,99 @@ function setupTools(A) {
     } catch(e) { console.warn('§GROUND_Y error', e); }
   };
 
+  // §S280g: Ground texture engine — config-driven (ground_config.json), selectable in the
+  // Palette/Sunglass panel. Default applies when Shadow is turned ON. Static photo on the
+  // existing ground plane → zero per-frame cost. See docs/GROUND_SHADOW_BAKING.md §2.A.
+  A._groundCfgDefault = {
+    default: 'grass', repeat: 64, anisotropy: 8,
+    options: [
+      { key: 'none',  label: 'None',  src: null },
+      { key: 'grass', label: 'Grass', src: 'textures/ground/grass_1k.jpg' },
+      { key: 'earth', label: 'Earth', src: 'textures/ground/earth_1k.jpg' },
+      { key: 'paved', label: 'Paved', src: 'textures/ground/paved_1k.jpg' }
+    ]
+  };
+  A._groundConfig = null;
+  A._groundTexCache = {};        // key -> THREE.Texture (lazy, cached after first load)
+  A._groundTexKey = 'none';      // active option
+  A._groundUserPicked = false;   // true once user clicks a Ground option (suppresses auto-default)
+  A._groundSolidColor = 0x222233;// last mode-intended flat color (for 'none' / night dimming)
+
+  A._loadGroundConfig = function() {
+    if (A._groundConfig) return Promise.resolve(A._groundConfig);
+    return fetch('ground_config.json?v=1')
+      .then(function(r) { return r.json(); })
+      .then(function(j) { A._groundConfig = j; return j; })
+      .catch(function(e) {
+        console.warn('§GROUND_CFG fallback (fetch failed: ' + (e && e.message) + ')');
+        A._groundConfig = A._groundCfgDefault; return A._groundConfig;
+      });
+  };
+
+  // Set ground flat color, but respect an active photo texture: color MULTIPLIES the map,
+  // so keep it white (photo true) and only dim — never blacken — for night-dark targets.
+  A._setGroundColor = function(hex) {
+    if (!A.ground) return;
+    A._groundSolidColor = hex;   // remember the mode's intended flat color (for 'none')
+    var hasMap = A._groundTexKey && A._groundTexKey !== 'none';
+    if (hasMap) {
+      var sum = (hex & 0xff) + ((hex >> 8) & 0xff) + ((hex >> 16) & 0xff);
+      A.ground.material.color.setHex(sum < 0x60 ? 0x555566 : 0xffffff);  // dim at night, else true
+    } else {
+      A.ground.material.color.setHex(hex);
+    }
+    A.ground.material.needsUpdate = true;
+  };
+
+  A._applyGroundTexture = function(key) {
+    if (!A.ground) return;
+    A._groundTexKey = key;
+    var cfg = A._groundConfig || A._groundCfgDefault;
+    var opt = (cfg.options || []).filter(function(o) { return o.key === key; })[0];
+    if (!opt || !opt.src) {                 // 'none' → clear map, restore flat color
+      A.ground.material.map = null;
+      A._setGroundColor(A._groundSolidColor);
+      console.log('§GROUND_MAP key=none map=cleared color=0x' + A._groundSolidColor.toString(16));
+      if (A._refreshGroundBtns) A._refreshGroundBtns();
+      if (A.markDirty) A.markDirty();
+      return;
+    }
+    var repeat = cfg.repeat || 64, aniso = cfg.anisotropy || 8;
+    function applyTex(tex) {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(repeat, repeat);
+      if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+      else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+      try { tex.anisotropy = Math.min(aniso, A.renderer.capabilities.getMaxAnisotropy()); } catch(e) {}
+      A.ground.material.map = tex;
+      A._setGroundColor(A._groundSolidColor);  // photo true (or dimmed at night)
+      A.ground.material.needsUpdate = true;
+      A.ground.visible = true;                 // preview even if shadow is off
+      A._calcGroundY();
+      console.log('§GROUND_MAP key=' + key + ' src=' + opt.src + ' repeat=' + repeat + ' aniso=' + (tex.anisotropy || 0));
+      if (A._refreshGroundBtns) A._refreshGroundBtns();
+      if (A.markDirty) A.markDirty();
+    }
+    if (A._groundTexCache[key]) { applyTex(A._groundTexCache[key]); return; }
+    var loader = new THREE.TextureLoader();
+    loader.load(opt.src, function(tex) { A._groundTexCache[key] = tex; applyTex(tex); },
+      undefined, function() { console.warn('§GROUND_MAP load FAIL key=' + key + ' src=' + opt.src); });
+  };
+
+  // Public: pick a ground texture by key (Palette panel buttons call this).
+  A.setGroundTexture = function(key) {
+    A._groundUserPicked = (key != null);
+    A._loadGroundConfig().then(function() { A._applyGroundTexture(key); });
+  };
+
+  // Apply config default (called when Shadow turns ON, unless user already picked).
+  A.applyDefaultGroundTexture = function() {
+    A._loadGroundConfig().then(function(cfg) {
+      if (A._groundUserPicked) return;
+      A._applyGroundTexture(cfg.default || 'grass');
+    });
+  };
+
   // Wireframe
   A.wireOn = false;
   A.toggleWireframe = function() {
@@ -284,7 +377,7 @@ function setupTools(A) {
     document.body.style.background = '#' + bg.toString(16).padStart(6, '0');
     document.body.style.color = textColor;
     A.renderer.setClearColor(bg);
-    if (!A._whiteBg) A.ground.material.color.setHex(A.lightTheme ? 0xdddddd : 0x222233);
+    if (!A._whiteBg) A._setGroundColor(A.lightTheme ? 0xdddddd : 0x222233);
     document.querySelectorAll('#hud,#search-box,#icon-pill,#info-panel,#status').forEach(el => {
       el.style.background = panelBg;
       el.style.borderColor = A.lightTheme ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.08)';
@@ -580,6 +673,8 @@ function setupTools(A) {
         A.ground.visible = true;
         A.ground.receiveShadow = true;
         A._calcGroundY();
+        // §S280g: default ground texture appears with shadows (user retunes in Palette panel)
+        if (!A._groundUserPicked) A.applyDefaultGroundTexture();
       }
       // §S277b: Chunked shadow traverse — don't block main thread on 122K scenes
       var _shadowList = [];
@@ -620,12 +715,12 @@ function setupTools(A) {
       // §S260b: Ground also white for seamless print look, shadow still visible
       if (A.ground) {
         A._savedGroundColor = A.ground.material.color.getHex();
-        A.ground.material.color.setHex(0xffffff);
+        A._setGroundColor(0xffffff);
       }
     } else {
       A.renderer.setClearColor(A._savedClearColor != null ? A._savedClearColor : 0x1a1a2e);
       if (A.ground) {
-        A.ground.material.color.setHex(A._savedGroundColor != null ? A._savedGroundColor : 0x222233);
+        A._setGroundColor(A._savedGroundColor != null ? A._savedGroundColor : 0x222233);
       }
     }
     var btn = document.getElementById('bg-btn');
@@ -672,7 +767,7 @@ function setupTools(A) {
       // Show ground plane for night scene
       if (A.ground) {
         A.ground.visible = true;
-        if (!A._whiteBg) A.ground.material.color.setHex(0x0a0a15);
+        if (!A._whiteBg) A._setGroundColor(0x0a0a15);
         A._calcGroundY();
       }
       // Update sliders to reflect
@@ -822,7 +917,7 @@ function setupTools(A) {
       // Restore ground
       if (A.ground && !A._shadowOn) {
         A.ground.visible = false;
-        A.ground.material.color.setHex(A._whiteBg ? 0xffffff : 0x222233);
+        A._setGroundColor(A._whiteBg ? 0xffffff : 0x222233);
       }
       console.log('§NIGHT_MODE off');
       btn.style.background = '#1a1a3e';

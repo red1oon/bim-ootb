@@ -189,6 +189,48 @@ function setupPanels(A) {
       if (typeof updateLighting === 'function') updateLighting('hemi', v);
     }));
 
+    // Separator
+    var sep2 = document.createElement('hr');
+    sep2.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:4px 0';
+    existing.appendChild(sep2);
+
+    // Row 6: Ground texture (config-driven via ground_config.json). §S280g.
+    // Appears with Shadow (default applied on shadow-ON); retune live here.
+    var groundRow = document.createElement('div');
+    groundRow.className = 'bim-slider-row';
+    groundRow.style.cssText = 'flex-wrap:wrap;gap:4px;align-items:center';
+    var glabel = document.createElement('span');
+    glabel.textContent = 'Ground';
+    glabel.style.cssText = 'font-size:11px;color:#aaa;width:46px;flex-shrink:0';
+    groundRow.appendChild(glabel);
+    existing.appendChild(groundRow);
+
+    (A._loadGroundConfig ? A._loadGroundConfig() : Promise.resolve(A._groundCfgDefault)).then(function(cfg) {
+      var opts = (cfg && cfg.options) || [];
+      A._groundBtns = {};
+      A._refreshGroundBtns = function() {
+        Object.keys(A._groundBtns).forEach(function(k) {
+          var on = (A._groundTexKey || 'none') === k;
+          A._groundBtns[k].style.background = on ? 'rgba(79,195,247,0.30)' : 'rgba(255,255,255,0.06)';
+          A._groundBtns[k].style.color = on ? '#4fc3f7' : '#ccc';
+        });
+      };
+      opts.forEach(function(o) {
+        var b = document.createElement('button');
+        b.textContent = o.label;
+        b.style.cssText = 'flex:0 0 auto;padding:3px 8px;border:none;border-radius:5px;font-size:11px;cursor:pointer;background:rgba(255,255,255,0.06);color:#ccc';
+        b.addEventListener('pointerup', function(e) {
+          e.stopPropagation();
+          if (A.setGroundTexture) A.setGroundTexture(o.key);
+          A._refreshGroundBtns();
+        });
+        A._groundBtns[o.key] = b;
+        groundRow.appendChild(b);
+      });
+      A._refreshGroundBtns();
+      console.log('§GROUND_ROW built opts=' + opts.length);
+    });
+
     // Draggable + pointer isolation
     if (A._makeDraggable) A._makeDraggable(existing);
     existing.addEventListener('pointerdown', function(e) { e.stopPropagation(); });

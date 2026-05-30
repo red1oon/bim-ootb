@@ -1,0 +1,12 @@
+Ground textures — sourced from Poly Haven (https://polyhaven.com), license CC0 1.0
+(public domain, no attribution required). Vendored 2026-05-30 via the Poly Haven API.
+
+  grass_1k.jpg  <- aerial_grass_rock   (1024x1024 diffuse)
+  earth_1k.jpg  <- aerial_ground_rock  (1024x1024 diffuse)
+  paved_1k.jpg  <- concrete_floor_01   (1024x1024 diffuse)
+
+Source URL pattern:
+  https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/<slug>/<slug>_diff_1k.jpg
+
+CC0: free for any use, commercial or private, no permission/credit needed. This NOTICE
+is courtesy attribution only.
