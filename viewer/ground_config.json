@@ -1,0 +1,12 @@
+{
+  "_comment": "Ground texture options for the Shadow/Palette panel. Edit to add textures (no code change). 'src' is relative to viewer/. 'repeat' tiles across the 50000m plane.",
+  "default": "grass",
+  "repeat": 64,
+  "anisotropy": 8,
+  "options": [
+    { "key": "none",  "label": "None",  "src": null },
+    { "key": "grass", "label": "Grass", "src": "textures/ground/grass_1k.jpg" },
+    { "key": "earth", "label": "Earth", "src": "textures/ground/earth_1k.jpg" },
+    { "key": "paved", "label": "Paved", "src": "textures/ground/paved_1k.jpg" }
+  ]
+}

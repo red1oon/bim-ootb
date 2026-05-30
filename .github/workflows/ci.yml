@@ -38,6 +38,9 @@ jobs:
       - name: Sunglass recolor guard (S280f — colorless-material crash)
         run: node tests/test_recolor_guard.js
 
+      - name: Ground texture engine (S280g)
+        run: node tests/test_ground_texture.js
+
   e2e-tests:
     runs-on: ubuntu-latest
     needs: fast-checks

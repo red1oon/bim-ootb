@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v543';
+const CACHE_VERSION = 'v544';
 const CACHE_NAME = 'bim-ootb-' + CACHE_VERSION;
 
 // Local copies of vendor libs — single-origin, no CDN dependency
@@ -148,6 +148,10 @@ const PRECACHE_ASSETS = [
   'clash_rules.json',
   'grid_rules.json',
   'rates/cidb2024_my.json',
+  // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
+  // earth/paved are lazy (cacheFirst caches on first selection).
+  'ground_config.json',
+  'textures/ground/grass_1k.jpg',
 ];
 
 self.addEventListener('install', (event) => {
