@@ -205,8 +205,10 @@ function setupPanels(A) {
     groundRow.appendChild(glabel);
     existing.appendChild(groundRow);
 
-    (A._loadGroundConfig ? A._loadGroundConfig() : Promise.resolve(A._groundCfgDefault)).then(function(cfg) {
-      var opts = (cfg && cfg.options) || [];
+    // §S280g-fix: setupPanels runs BEFORE setupTools (main.js), so A._loadGroundConfig is
+    // not defined yet at build time → zero buttons. Defer one tick so tools.js is ready,
+    // and fall back to a built-in option list if config can't load.
+    function _buildGroundButtons(opts) {
       A._groundBtns = {};
       A._refreshGroundBtns = function() {
         Object.keys(A._groundBtns).forEach(function(k) {
@@ -229,7 +231,16 @@ function setupPanels(A) {
       });
       A._refreshGroundBtns();
       console.log('§GROUND_ROW built opts=' + opts.length);
-    });
+    }
+    var _GROUND_FALLBACK = [
+      { key: 'none', label: 'None' }, { key: 'grass', label: 'Grass' },
+      { key: 'earth', label: 'Earth' }, { key: 'paved', label: 'Paved' }
+    ];
+    setTimeout(function() {
+      var p = (typeof A._loadGroundConfig === 'function') ? A._loadGroundConfig() : Promise.resolve(null);
+      p.then(function(cfg) { _buildGroundButtons((cfg && cfg.options) || _GROUND_FALLBACK); })
+       .catch(function() { _buildGroundButtons(_GROUND_FALLBACK); });
+    }, 0);
 
     // Draggable + pointer isolation
     if (A._makeDraggable) A._makeDraggable(existing);

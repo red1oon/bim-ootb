@@ -2426,6 +2426,11 @@
     var structuralElements = elements.filter(function(el) { return el.seq <= 4; });
     var nonStructuralElements = elements.filter(function(el) { return el.seq > 4; });
 
+    // §S280h: wrap both build passes in ONE transaction + prepared statement (mirrors the
+    // cache-hit path ~:3128). 39,853 un-transactioned db.run INSERTs were the multi-second
+    // TM-on freeze. Behaviour-identical — same rows, just batched.
+    db.run('BEGIN');
+    var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     // Pass 1: Schedule all structural
     structuralElements.forEach(function(el) {
       var rcKey = el.resource + '|' + el.band;
@@ -2446,13 +2451,10 @@
       var durMs = Math.round(el.installSecs * scaleFactor * 1000);
       var endMs = earliest + durMs;
 
-      db.run(
-        'INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)',
-        [earliest, 'ELEMENT_PLACE',
+      _gStmt.run([earliest, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
            resource:el.resource, _end_ts:endMs}),
-         JSON.stringify([el.guid]), el.guid]
-      );
+         JSON.stringify([el.guid]), el.guid]);
       count++;
 
       resourceCursor[rcKey] = endMs;
@@ -2502,19 +2504,20 @@
       var durMs = Math.round(el.installSecs * scaleFactor * 1000);
       var endMs = earliest + durMs;
 
-      db.run(
-        'INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)',
-        [earliest, 'ELEMENT_PLACE',
+      _gStmt.run([earliest, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
            resource:el.resource, _end_ts:endMs}),
-         JSON.stringify([el.guid]), el.guid]
-      );
+         JSON.stringify([el.guid]), el.guid]);
       count++;
 
       resourceCursor[rcKey] = endMs;
       var seqKey = el.band + '|' + el.seq;
       if (!bandSeqDone[seqKey] || endMs > bandSeqDone[seqKey]) bandSeqDone[seqKey] = endMs;
     });
+
+    // §S280h: close the single transaction (all ELEMENT_PLACE rows committed together)
+    _gStmt.free();
+    db.run('COMMIT');
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     var _first20 = [];
