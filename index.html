@@ -316,7 +316,7 @@ window.addEventListener('error', function(e){
   <div class="tab-list" id="tab-list"></div>
 </div>
 
-<script src="viewer/import_db_builder.js?v=3"></script>
+<script src="viewer/import_db_builder.js?v=4"></script>
 <!-- wizard.js now loads in viewer via ?wizard=1 param (S230) -->
 <script>
 // ── Config ──
@@ -1199,7 +1199,7 @@ async function handleImportFile(file) {
 
   const arrayBuffer = await file.arrayBuffer();
   // S228: Route to IFC or mesh worker based on format
-  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=8' : 'viewer/mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=9' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   // §S284d: for the IFC route, fetch the wasm bytes (offline-safe) and transfer them into the
   // worker so emscripten never does its own fragile fetch. Honest error if truly unavailable.
@@ -1424,7 +1424,7 @@ async function handleImportMultiIFC(files) {
     try {
       var result = await new Promise(function(resolve, reject) {
         file.arrayBuffer().then(function(arrayBuffer) {
-          var worker = _createWorker('viewer/import_worker.js?v=8');
+          var worker = _createWorker('viewer/import_worker.js?v=9');
           worker.onmessage = function(e) {
             var msg = e.data;
             if (msg.type === 'progress') {
@@ -1830,12 +1830,12 @@ async function packageLandingPage() {
   try {
     // 1. Fetch external JS files that need inlining
     setStatus('Inlining scripts…');
-    var dbBuilderSrc = await fetch('viewer/import_db_builder.js?v=3').then(function(r) { return r.text(); });
+    var dbBuilderSrc = await fetch('viewer/import_db_builder.js?v=4').then(function(r) { return r.text(); });
     var localeSrc = await fetch('viewer/locale_loader.js?v=7').then(function(r) { return r.text(); });
 
     // 1b. Fetch Worker scripts for Blob URL in standalone mode
     setStatus('Fetching worker scripts…');
-    var importWorkerSrc = await fetch('viewer/import_worker.js?v=8').then(function(r) { return r.text(); });
+    var importWorkerSrc = await fetch('viewer/import_worker.js?v=9').then(function(r) { return r.text(); });
     var meshWorkerSrc = await fetch('viewer/mesh_import_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
     var exportWorkerSrc = await fetch('viewer/ifc_export_worker.js?v=2').then(function(r) { return r.text(); }).catch(function() { return ''; });
     var workerJSON = JSON.stringify({

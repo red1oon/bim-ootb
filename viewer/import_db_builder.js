@@ -77,6 +77,67 @@ function buildImportDBs(SQL, data) {
     console.log('[S267] §BOM_TREE_TABLE rows=' + data.bomTree.length);
   }
 
+  // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB).
+  // Widened DDL (§5.2): CPM dates, float, is_critical, WBS (wbs_parent+is_summary),
+  // predefined_type, nullable resource (OUR template concept, captured=null), + a thin
+  // calendars carrier. schedule_*/float fields are RAW ISO-8601 strings (verbatim, never
+  // re-derived). Tables always created (empty if no programme) so Time Machine probes a
+  // stable schema. The split-DB path below copies these into metaDb automatically.
+  db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
+  db.run('CREATE TABLE IF NOT EXISTS tasks (task_id TEXT PRIMARY KEY, schedule_id TEXT, wbs_parent TEXT, name TEXT, predefined_type TEXT, is_summary INTEGER, schedule_start TEXT, schedule_finish TEXT, schedule_duration TEXT, early_start TEXT, early_finish TEXT, late_start TEXT, late_finish TEXT, free_float TEXT, total_float TEXT, is_critical INTEGER, resource TEXT, status TEXT)');
+  db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+  db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+  db.run('CREATE TABLE IF NOT EXISTS calendars (name TEXT, recurrence_type TEXT, raw TEXT)');
+
+  var _schedId = (data.schedules && data.schedules[0] && data.schedules[0].id) || null;
+  var _nSched = 0, _nTask = 0, _nSeq = 0, _nTE = 0, _nCal = 0;
+  if (data.schedules && data.schedules.length) {
+    var stmtSc = db.prepare('INSERT OR IGNORE INTO schedules VALUES (?,?,?,?)');
+    for (var si = 0; si < data.schedules.length; si++) {
+      var sc = data.schedules[si];
+      stmtSc.run([sc.id, sc.name, sc.status, sc.created]); _nSched++;
+    }
+    stmtSc.free();
+  }
+  if (data.tasks && data.tasks.length) {
+    // Column order matches the widened DDL above. resource is always null on capture (§5.2).
+    var stmtTk = db.prepare('INSERT OR IGNORE INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    for (var ti2 = 0; ti2 < data.tasks.length; ti2++) {
+      var tk = data.tasks[ti2];
+      stmtTk.run([tk.id, _schedId, tk.wbsParent || null, tk.name, tk.predefinedType || null,
+        (tk.isSummary != null ? tk.isSummary : 0), tk.scheduleStart || null, tk.scheduleFinish || null,
+        tk.scheduleDuration || null, tk.earlyStart || null, tk.earlyFinish || null,
+        tk.lateStart || null, tk.lateFinish || null, tk.freeFloat || null, tk.totalFloat || null,
+        (tk.isCritical != null ? tk.isCritical : null), null, tk.status || null]); _nTask++;
+    }
+    stmtTk.free();
+  }
+  if (data.taskSequences && data.taskSequences.length) {
+    var stmtSq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    for (var qi = 0; qi < data.taskSequences.length; qi++) {
+      var sq = data.taskSequences[qi];
+      stmtSq.run([sq.predId, sq.succId, sq.type, sq.lag]); _nSeq++;
+    }
+    stmtSq.free();
+  }
+  if (data.taskElements && data.taskElements.length) {
+    var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
+    for (var tei = 0; tei < data.taskElements.length; tei++) {
+      var te = data.taskElements[tei];
+      stmtTe.run([te.taskId, te.guid]); _nTE++;
+    }
+    stmtTe.free();
+  }
+  if (data.calendars && data.calendars.length) {
+    var stmtCal = db.prepare('INSERT INTO calendars VALUES (?,?,?)');
+    for (var cli = 0; cli < data.calendars.length; cli++) {
+      var cal = data.calendars[cli];
+      stmtCal.run([cal.name || null, cal.recurrenceType || null, cal.raw || null]); _nCal++;
+    }
+    stmtCal.free();
+  }
+  console.log('[4D] §4D_TABLES schedules=' + _nSched + ' tasks=' + _nTask + ' sequences=' + _nSeq + ' taskElements=' + _nTE + ' calendars=' + _nCal);
+
   db.run('COMMIT');
 
   console.log('[S220] §DB_BUILD single_db: elements=' + data.elements.length + ' transforms=' + data.transforms.length + ' instances=' + data.geometries.length + ' geometries=' + data.geometries.length);

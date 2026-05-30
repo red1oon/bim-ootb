@@ -627,6 +627,191 @@ self.onmessage = async function(e) {
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 
+    // ── 4D extraction (if present) ──────────────────────────────────────────
+    // Implementing 4D_CAPTURE_AND_FALLBACK.md T1/T1b — Witness W-CAPTURE / W-VOCAB.
+    // Dual-direction task↔element links (IfcRelAssignsToProduct is the Hospital/Bonsai fix).
+    // Widened (§5.2): CPM dates, float, is_critical, WBS (wbs_parent+is_summary), calendar.
+    // ifcApi + modelID are still valid here (S274: this worker never calls CloseModel).
+    var schedules = [], tasks = [], taskSequences = [], taskElements = [], calendars = [];
+    try {
+      var schedIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCWORKSCHEDULE);
+      for (var sci = 0; sci < schedIds.size(); sci++) {
+        try {
+          var sch = ifcApi.GetLine(modelID, schedIds.get(sci));
+          schedules.push({
+            id: sch.GlobalId ? sch.GlobalId.value : 'SCHED_' + sci,
+            name: sch.Name ? sch.Name.value : 'Schedule ' + sci,
+            status: sch.Status ? sch.Status.value : null,
+            created: sch.CreationDate ? sch.CreationDate.value : null,
+          });
+        } catch(e) {}
+      }
+    } catch(e) {}
+
+    // WBS hierarchy (§5.2): IfcRelNests parent→children. wbs_parent (parent GUID) +
+    // is_summary (a task that HAS children — NOT reliable from PredefinedType, per W-VOCAB).
+    var _childToParentEx = {}, _hasKids = {};
+    try {
+      var nestIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELNESTS);
+      for (var ni = 0; ni < nestIds.size(); ni++) {
+        try {
+          var nst = ifcApi.GetLine(modelID, nestIds.get(ni));
+          var parentEx = nst.RelatingObject ? nst.RelatingObject.value : null;
+          if (parentEx == null || !nst.RelatedObjects) continue;
+          _hasKids[parentEx] = true;
+          for (var nj = 0; nj < nst.RelatedObjects.length; nj++) {
+            var kidEx = nst.RelatedObjects[nj] ? nst.RelatedObjects[nj].value : null;
+            if (kidEx != null) _childToParentEx[kidEx] = parentEx;
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+
+    var _exToGuid = {};
+    try {
+      var taskIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCTASK);
+      for (var tki = 0; tki < taskIds.size(); tki++) {
+        try {
+          var _ex = taskIds.get(tki);
+          var tsk = ifcApi.GetLine(modelID, _ex);
+          var taskTime = tsk.TaskTime ? ifcApi.GetLine(modelID, tsk.TaskTime.value) : null;
+          var _guid = tsk.GlobalId ? tsk.GlobalId.value : 'TASK_' + tki;
+          _exToGuid[_ex] = _guid;
+          tasks.push({
+            _ex: _ex,
+            id: _guid,
+            name: tsk.Name ? tsk.Name.value : 'Task ' + tki,
+            predefinedType: tsk.PredefinedType ? tsk.PredefinedType.value : null,
+            // EXTRACT VERBATIM — ISO-8601 durations/floats ("P15D"/"P0D"); never re-derive (PRIME RULE).
+            scheduleStart: taskTime && taskTime.ScheduleStart ? taskTime.ScheduleStart.value : null,
+            scheduleFinish: taskTime && taskTime.ScheduleFinish ? taskTime.ScheduleFinish.value : null,
+            scheduleDuration: taskTime && taskTime.ScheduleDuration ? taskTime.ScheduleDuration.value : null,
+            earlyStart: taskTime && taskTime.EarlyStart ? taskTime.EarlyStart.value : null,
+            earlyFinish: taskTime && taskTime.EarlyFinish ? taskTime.EarlyFinish.value : null,
+            lateStart: taskTime && taskTime.LateStart ? taskTime.LateStart.value : null,
+            lateFinish: taskTime && taskTime.LateFinish ? taskTime.LateFinish.value : null,
+            freeFloat: taskTime && taskTime.FreeFloat ? taskTime.FreeFloat.value : null,
+            totalFloat: taskTime && taskTime.TotalFloat ? taskTime.TotalFloat.value : null,
+            isCritical: (taskTime && taskTime.IsCritical != null) ? (taskTime.IsCritical.value ? 1 : 0) : null,
+            status: tsk.Status ? tsk.Status.value : null,
+          });
+        } catch(e) {}
+      }
+    } catch(e) {}
+    for (var twi = 0; twi < tasks.length; twi++) {
+      var _pex = _childToParentEx[tasks[twi]._ex];
+      tasks[twi].wbsParent = (_pex != null && _exToGuid[_pex]) ? _exToGuid[_pex] : null;
+      tasks[twi].isSummary = _hasKids[tasks[twi]._ex] ? 1 : 0;
+    }
+
+    try {
+      var seqIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELSEQUENCE);
+      for (var sqi = 0; sqi < seqIds.size(); sqi++) {
+        try {
+          var sq = ifcApi.GetLine(modelID, seqIds.get(sqi));
+          var pred = sq.RelatingProcess ? ifcApi.GetLine(modelID, sq.RelatingProcess.value) : null;
+          var succ = sq.RelatedProcess ? ifcApi.GetLine(modelID, sq.RelatedProcess.value) : null;
+          if (pred && succ) {
+            taskSequences.push({
+              predId: pred.GlobalId ? pred.GlobalId.value : null,
+              succId: succ.GlobalId ? succ.GlobalId.value : null,
+              type: sq.SequenceType ? sq.SequenceType.value : 'FINISH_START',
+              lag: sq.TimeLag ? (parseFloat(sq.TimeLag.value) || 0) : 0,
+            });
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+
+    // Work calendar (§5.2): thin {name, recurrence_type, raw} carrier. Conversion DEFERRED
+    // (round-the-clock for now) — capture the carrier so a later Settings option can use it.
+    try {
+      var calIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCWORKCALENDAR);
+      for (var cIx = 0; cIx < calIds.size(); cIx++) {
+        try {
+          var cal = ifcApi.GetLine(modelID, calIds.get(cIx));
+          var calName = cal.Name ? cal.Name.value : null;
+          var wts = cal.WorkingTimes ? (Array.isArray(cal.WorkingTimes) ? cal.WorkingTimes : [cal.WorkingTimes]) : [];
+          var wtName = null, recType = null;
+          if (wts.length) {
+            try {
+              var wkt = ifcApi.GetLine(modelID, wts[0].value);
+              wtName = wkt.Name ? wkt.Name.value : null;
+              if (wkt.RecurrencePattern) {
+                var rp = ifcApi.GetLine(modelID, wkt.RecurrencePattern.value);
+                recType = (rp && rp.RecurrenceType) ? rp.RecurrenceType.value : null;
+              }
+            } catch(e) {}
+          }
+          calendars.push({
+            name: wtName || calName,
+            recurrenceType: recType,
+            raw: JSON.stringify({ calendarName: calName, workingTimeName: wtName, recurrenceType: recType, workingTimes: wts.length }),
+          });
+        } catch(e) {}
+      }
+    } catch(e) {}
+
+    // task→element links — read BOTH directions, dedupe on taskId|guid
+    var _seenTE = {};
+    var _pushTE = function(taskId, guid) {
+      if (!taskId || !guid) return;
+      var k = taskId + '|' + guid;
+      if (_seenTE[k]) return;
+      _seenTE[k] = 1;
+      taskElements.push({ taskId: taskId, guid: guid });
+    };
+    // Direction 1 — IfcRelAssignsToProcess: RelatingProcess=task, RelatedObjects=elements
+    try {
+      var assignIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELASSIGNSTOPROCESS);
+      for (var apx = 0; apx < assignIds.size(); apx++) {
+        try {
+          var asg = ifcApi.GetLine(modelID, assignIds.get(apx));
+          var process = asg.RelatingProcess ? ifcApi.GetLine(modelID, asg.RelatingProcess.value) : null;
+          if (process && process.GlobalId && asg.RelatedObjects) {
+            var taskGuid = process.GlobalId.value;
+            for (var aj = 0; aj < asg.RelatedObjects.length; aj++) {
+              try {
+                var obj = ifcApi.GetLine(modelID, asg.RelatedObjects[aj].value);
+                if (obj && obj.GlobalId) _pushTE(taskGuid, obj.GlobalId.value);
+              } catch(e) {}
+            }
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+    // Direction 2 — IfcRelAssignsToProduct: RelatingProduct=element, RelatedObjects=tasks (Bonsai)
+    try {
+      var prodIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELASSIGNSTOPRODUCT);
+      for (var pri = 0; pri < prodIds.size(); pri++) {
+        try {
+          var rpr = ifcApi.GetLine(modelID, prodIds.get(pri));
+          var product = rpr.RelatingProduct ? ifcApi.GetLine(modelID, rpr.RelatingProduct.value) : null;
+          if (product && product.GlobalId && rpr.RelatedObjects) {
+            var elemGuid = product.GlobalId.value;
+            for (var pj = 0; pj < rpr.RelatedObjects.length; pj++) {
+              try {
+                var tobj = ifcApi.GetLine(modelID, rpr.RelatedObjects[pj].value);
+                if (tobj && tobj.GlobalId) _pushTE(tobj.GlobalId.value, elemGuid);
+              } catch(e) {}
+            }
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+
+    if (schedules.length || tasks.length) {
+      console.log('§4D_FOUND schedules=' + schedules.length + ' tasks=' + tasks.length + ' sequences=' + taskSequences.length + ' taskElements=' + taskElements.length);
+      // T1b W-VOCAB witness — widened fields populated at the §5.2 evidence rates.
+      var _cnt4d = function(f) { var n = 0; for (var z = 0; z < tasks.length; z++) if (tasks[z][f] != null) n++; return n; };
+      var _nSummary = 0; for (var z2 = 0; z2 < tasks.length; z2++) if (tasks[z2].isSummary) _nSummary++;
+      console.log('§4D_WIDE earlyStart=' + _cnt4d('earlyStart') + ' totalFloat=' + _cnt4d('totalFloat') +
+        ' isCritical=' + _cnt4d('isCritical') + ' wbsParent=' + _cnt4d('wbsParent') +
+        ' summary=' + _nSummary + ' calendars=' + calendars.length);
+    } else {
+      console.log('§4D_NONE no scheduling data in this IFC');
+    }
+
     const result = {
       type: 'done',
       meta: {
@@ -641,6 +826,12 @@ self.onmessage = async function(e) {
       geometries: geometries,
       bomTree: bomTree,  // §S267: parent→child IFC relationships for bom_tree table
       transforms: transforms,
+      // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB)
+      schedules: schedules,
+      tasks: tasks,
+      taskSequences: taskSequences,
+      taskElements: taskElements,
+      calendars: calendars,  // T1b §5.2 — thin work-calendar carrier
     };
 
     // Transfer array buffers for zero-copy
