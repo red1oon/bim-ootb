@@ -32,6 +32,10 @@
   var _ganttVisible = false;
   var _dashVisible = false;
   var _ganttTasks = [];  // computed task groups for click detection
+  // T3 (4D_CAPTURE_AND_FALLBACK §3.1): native-4D coverage of the active schedule.
+  var _capActive = false;   // true when the timeline used a captured IFC schedule
+  var _coveredCount = 0;    // elements driven by real captured task dates
+  var _coveragePct = 0;     // covered / total * 100 (for the coverage badge)
   var _sCurveData = null;  // cached S-curve points (computed once)
 
   // §S278: Cached temp objects — lazy-init on first use (THREE may not be loaded yet)
@@ -2234,6 +2238,42 @@
       'op_type TEXT NOT NULL, parameters TEXT NOT NULL,' +
       'input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0)');
 
+    // ── T3 (§3.1): probe for a usable captured native IFC 4D schedule ──────────
+    // If present + parseable, the generative timeline is rebased onto the real
+    // project_start (baseMs below) and covered elements get their real task dates +
+    // names (overlay at the end of this function). If absent/empty/unparseable,
+    // _cap stays null → the generative path runs EXACTLY as before
+    // (W-TM-FALLBACK regression guard — no behavioural change for no-4D buildings).
+    var _cap = (function() {
+      try {
+        var tr = db.exec("SELECT task_id, name, schedule_start, schedule_finish FROM tasks " +
+          "WHERE schedule_start IS NOT NULL AND schedule_finish IS NOT NULL " +
+          "AND (is_summary IS NULL OR is_summary = 0)");
+        if (!tr.length || !tr[0].values.length) return null;
+        var win = {}, minS = Infinity, maxE = -Infinity, n = 0;
+        tr[0].values.forEach(function(row) {
+          var s = Date.parse(row[2]), e = Date.parse(row[3]);
+          if (!isFinite(s) || !isFinite(e) || e < s) return;   // skip unparseable / inverted
+          win[row[0]] = { s: s, e: e, name: row[1] || row[0] };
+          if (s < minS) minS = s;
+          if (e > maxE) maxE = e;
+          n++;
+        });
+        if (!n) return null;                                    // no parseable dated leaf task
+        // guid → task (earliest-starting task wins if an element links to several)
+        var guidTask = {}, te = null;
+        try { te = db.exec("SELECT task_id, guid FROM task_elements"); } catch(e) { te = null; }
+        if (te && te.length && te[0].values.length) {
+          te[0].values.forEach(function(row) {
+            var tid = row[0], g = row[1];
+            if (!win[tid]) return;                              // link points at summary/undated task
+            if (!guidTask[g] || win[tid].s < win[guidTask[g]].s) guidTask[g] = tid;
+          });
+        }
+        return { base: minS, projEnd: maxE, win: win, guidTask: guidTask, taskCount: n };
+      } catch(e) { return null; }                               // no tasks table → fallback
+    })();
+
     var SR = window.SEQUENCE_RULES || {};
     var LR = window.LABOR_RATES || {};
     var SD = window.SEQUENCE_DEFAULT || {phase:'Architecture',sequence:6,resource:null};
@@ -2369,7 +2409,9 @@
     var startDate = new Date();
     startDate.setDate(startDate.getDate() - projectDays);
     startDate.setHours(0, 0, 0, 0);
-    var baseMs = startDate.getTime();
+    // T3 §3.3: when a captured schedule exists, anchor the generated timeline onto the
+    // REAL project_start so covered (real-date) and uncovered (generated) share one epoch.
+    var baseMs = _cap ? _cap.base : startDate.getTime();
 
     // ── Schedule ──
     var resourceCursor = {};  // "resource|band" → next ms
@@ -2501,6 +2543,45 @@
       ' sceneMeshGUIDs=' + sceneGuids +
       ', bands=' + storeyNames.length + ', ' + projectDays + ' days, scale=' + scaleFactor.toFixed(2) +
       ', start=' + startDate.toLocaleDateString() + ' end=' + endDate.toLocaleDateString());
+
+    // ── T3 §3.1/§3.3: overlay captured REAL dates + task names onto covered elements ──
+    // The generative pass above already laid every element on the real-start epoch (baseMs).
+    // Now patch the covered subset to their exact captured task window + real name, and flag
+    // them _captured=1. Uncovered elements keep their generated timing (honest estimate).
+    _capActive = false; _coveredCount = 0; _coveragePct = 0;
+    if (_cap) {
+      var _covered = 0;
+      db.run('BEGIN');
+      var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+        "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+      var _allOps = db.exec("SELECT output_guid, parameters FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
+      if (_allOps.length && _allOps[0].values.length) {
+        _allOps[0].values.forEach(function(row) {
+          var g = row[0], tid = _cap.guidTask[g];
+          if (!tid) return;                         // uncovered → keep generative timing
+          var w = _cap.win[tid];
+          var p; try { p = JSON.parse(row[1]); } catch(e) { p = {}; }
+          p.phase = w.name;                         // real task name → shows in mini-Gantt
+          p._end_ts = w.e;                          // real task finish
+          p._captured = 1;                          // visual distinction + coverage flag
+          p._task = tid;
+          _upd.run([w.s, JSON.stringify(p), g]);    // real task start
+          _covered++;
+        });
+      }
+      _upd.free();
+      db.run('COMMIT');
+      _capActive = true;
+      _coveredCount = _covered;
+      _coveragePct = totalDbElements ? Math.round(_covered / totalDbElements * 100) : 0;
+      console.log('§GANTT_SOURCE captured tasks=' + _cap.taskCount + ' covered=' + _covered +
+        ' generated=' + (totalDbElements - _covered) + ' total=' + totalDbElements + ' pct=' + _coveragePct);
+      console.log('§4D_COVERAGE captured=' + _covered + ' generated=' + (totalDbElements - _covered) +
+        ' total=' + totalDbElements + ' pct=' + _coveragePct +
+        ' window=' + new Date(_cap.base).toISOString().slice(0,10) + '..' + new Date(_cap.projEnd).toISOString().slice(0,10));
+    } else {
+      console.log('§GANTT_SOURCE generated');       // W-TM-FALLBACK: no native 4D, pure generative
+    }
     return count > 0;
   }
 
