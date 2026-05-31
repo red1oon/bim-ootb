@@ -1,0 +1,13 @@
+{
+  "name": "bim-ootb",
+  "version": "1.0.0",
+  "description": "BIM OOTB viewer — static browser app (no build).",
+  "private": true,
+  "scripts": {
+    "lint": "eslint viewer"
+  },
+  "devDependencies": {
+    "eslint": "^9.13.0",
+    "globals": "^15.11.0"
+  }
+}
