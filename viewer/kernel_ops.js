@@ -12,7 +12,10 @@
     '  parameters TEXT NOT NULL,' +
     '  input_guids TEXT,' +
     '  output_guid TEXT,' +
-    '  undone INTEGER DEFAULT 0' +
+    '  undone INTEGER DEFAULT 0,' +
+    '  prev_hash TEXT,' +   // W-CHAIN: tip this op chains onto (NULL until sealed)
+    '  op_hash TEXT,' +     // W-CHAIN: SHA-256(prev_hash | canonical(op))
+    '  sig TEXT' +          // W-SIGN: edge signature over op_hash (NULL unless a signer is set)
     ')';
   var IDX_TYPE_SQL =
     'CREATE INDEX IF NOT EXISTS idx_kernel_ops_type ON kernel_ops(op_type)';
@@ -30,6 +33,10 @@
       // §2.3: add user_tag column (idempotent — ALTER fails silently if exists)
       try { db.run("ALTER TABLE kernel_ops ADD COLUMN user_tag TEXT DEFAULT 'local'"); }
       catch (ignore) { /* column already exists */ }
+      // W-CHAIN/W-SIGN: chain + signature columns on pre-existing DBs (idempotent)
+      try { db.run("ALTER TABLE kernel_ops ADD COLUMN prev_hash TEXT"); } catch (ignore) {}
+      try { db.run("ALTER TABLE kernel_ops ADD COLUMN op_hash TEXT"); }  catch (ignore) {}
+      try { db.run("ALTER TABLE kernel_ops ADD COLUMN sig TEXT"); }      catch (ignore) {}
       _tableCreated = true;
     } catch (e) {
       console.log('§KERNEL_OP ensureTable ERROR: ' + e.message);
@@ -63,24 +70,97 @@
     return opId;
   }
 
-  // Debounced IDB write — avoids hammering IndexedDB on rapid ops (e.g. drag)
+  // Debounced IDB write — avoids hammering IndexedDB on rapid ops (e.g. drag).
+  // The at-rest copy is hash-chain SEALED first (W-CHAIN) so a persisted log is tamper-evident.
+  // Sealing happens HERE (the persistence seam, business-time) — never on the hot commit path,
+  // so the 0ms UI is untouched. See docs/DistributedERP.md §0 (the two-domain split).
   var _persistTimer = null;
   function _persistToIdb(db) {
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
-      try {
-        var dbUrl = window.APP && APP.DB_URL;
-        if (!dbUrl) return;
-        var buf = db.export().buffer;
-        var req = indexedDB.open('bim_ootb_cache', 1);
-        req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
-        req.onsuccess = function() {
-          var tx = req.result.transaction('dbs', 'readwrite');
-          tx.objectStore('dbs').put(buf, dbUrl);
-          console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB');
-        };
-      } catch(e) { console.warn('§KRN_PERSIST_ERR', e); }
+      sealChain(db).then(function() {
+        try {
+          var dbUrl = window.APP && APP.DB_URL;
+          if (!dbUrl) return;
+          var buf = db.export().buffer;
+          var req = indexedDB.open('bim_ootb_cache', 1);
+          req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+          req.onsuccess = function() {
+            var tx = req.result.transaction('dbs', 'readwrite');
+            tx.objectStore('dbs').put(buf, dbUrl);
+            console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB');
+          };
+        } catch(e) { console.warn('§KRN_PERSIST_ERR', e); }
+      }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
     }, 2000);
+  }
+
+  // ── W-CHAIN / W-SIGN — tamper-evident, optionally-signed op-log ──────────────
+  // Proven in scripts/poc_chain.js (W-CHAIN) + scripts/poc_sign.js (W-SIGN). The hash chain
+  // is DETERMINISTIC (integrity + order); the signature attests OVER op_hash (authenticity) and
+  // is NOT part of the hash, so the chain stays byte-identical across devices while sigs vary.
+  var GENESIS = '0'.repeat(64);
+  var _signer = null;   // optional { sign: async(hashHex)->sigHex, verify: async(hashHex,sigHex)->bool }
+
+  // Set an edge signer to turn on W-SIGN. Key custody lives at the edge (the device/merchant),
+  // never in this module. Leave unset for W-CHAIN-only (tamper-evidence without signatures).
+  function setSigner(signer) { _signer = signer; }
+
+  function _canonical(op) {   // stable serialisation — every mutating field, fixed order
+    return op.id + '|' + op.timestamp + '|' + op.op_type + '|' +
+           (op.parameters || '') + '|' + (op.input_guids || '') + '|' + (op.output_guid || '');
+  }
+
+  async function _sha256(str) {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    }
+    throw new Error('crypto.subtle unavailable — cannot seal chain');
+  }
+
+  // sealChain — (re)compute prev_hash/op_hash for the WHOLE log in id order, idempotently.
+  // Full recompute (not incremental) because compact() may delete/collapse ops; re-sealing after
+  // compaction keeps the chain correct over the current log. Signs ops lacking a sig if a signer is set.
+  async function sealChain(db) {
+    ensureTable(db);
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig FROM kernel_ops ORDER BY id');
+    if (!r.length) return { sealed: 0, tip: GENESIS };
+    var rows = r[0].values, prev = GENESIS, sealed = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
+                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5] };
+      var sig = rows[i][6];
+      var h = await _sha256(prev + '|' + _canonical(op));
+      if (_signer && !sig) { try { sig = await _signer.sign(h); } catch (e) { sig = null; } }
+      db.run('UPDATE kernel_ops SET prev_hash=?, op_hash=?, sig=? WHERE id=?', [prev, h, sig || null, op.id]);
+      prev = h; sealed++;
+    }
+    console.log('§KRN_CHAIN sealed=' + sealed + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
+    return { sealed: sealed, tip: prev };
+  }
+
+  // verifyChain — walk the ordered log, recompute each op_hash, check the prev_hash link, and (if a
+  // signer is set) the signature. Returns {ok, len, tip} or {ok:false, brokeAt, why} — proving
+  // "tamper at op N" exactly as scripts/poc_chain.js does.
+  async function verifyChain(db) {
+    ensureTable(db);
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig FROM kernel_ops ORDER BY id');
+    if (!r.length) return { ok: true, len: 0, tip: GENESIS };
+    var rows = r[0].values, prev = GENESIS;
+    for (var i = 0; i < rows.length; i++) {
+      var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
+                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5] };
+      var storedPrev = rows[i][6], storedHash = rows[i][7], sig = rows[i][8];
+      if (storedHash == null) { console.log('§KRN_CHAIN verify unsealed at id=' + op.id); return { ok: false, brokeAt: op.id, why: 'unsealed' }; }
+      if (storedPrev !== prev) return { ok: false, brokeAt: op.id, why: 'prev_hash link' };
+      var h = await _sha256(prev + '|' + _canonical(op));
+      if (h !== storedHash) { console.log('§KRN_CHAIN tamper at id=' + op.id); return { ok: false, brokeAt: op.id, why: 'payload altered' }; }
+      if (_signer && !(await _signer.verify(storedHash, sig))) return { ok: false, brokeAt: op.id, why: 'signature' };
+      prev = h;
+    }
+    console.log('§KRN_CHAIN verify OK len=' + rows.length + ' tip=' + prev.slice(0, 12) + '…');
+    return { ok: true, len: rows.length, tip: prev };
   }
 
   /**
@@ -220,8 +300,11 @@
     redoOp:       redoOp,
     replayOps:    replayOps,
     compact:      compact,
-    sessionStart: sessionStart
+    sessionStart: sessionStart,
+    sealChain:    sealChain,     // W-CHAIN: (re)seal the log's hash chain (async)
+    verifyChain:  verifyChain,   // W-CHAIN/W-SIGN: prove tamper-evidence (async)
+    setSigner:    setSigner      // W-SIGN: install an edge signer (opt-in)
   };
 
-  console.log('§KERNEL_OPS_LOADED v4');
+  console.log('§KERNEL_OPS_LOADED v5 (W-CHAIN/W-SIGN)');
 })();
