@@ -11,8 +11,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install lint deps
+        run: npm ci
+
       - name: JS syntax check
         run: find viewer -name '*.js' ! -path '*/lib/*' -exec node --check {} +
+
+      - name: Undefined-reference gate (no-undef)
+        run: npx eslint viewer
 
       - name: Import worker safety
         run: node tests/test_import_worker_safety.js
