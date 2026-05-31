@@ -6,6 +6,9 @@
   "scripts": {
     "lint": "eslint viewer"
   },
+  "dependencies": {
+    "sql.js": "^1.14.1"
+  },
   "devDependencies": {
     "eslint": "^9.13.0",
     "globals": "^15.11.0"
