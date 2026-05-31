@@ -1123,7 +1123,7 @@ function setupMeasure(A) {
       ? (window._isMobile ? (typeof _TRL!=='undefined'&&_TRL.ui_measure_hint_mobile||'Tap for dimensions. Long-press for Info. Tap here to exit.') : (typeof _TRL!=='undefined'&&_TRL.ui_measure_hint||'Click for dimensions. Right-click for Info'))
       : '';
     // Mobile: tap status bar to exit measure mode
-    if (A.measureActive && isMobile) {
+    if (A.measureActive && window._isMobile) {
       A.status.style.cursor = 'pointer';
       A.status.onclick = function() { if (A.measureActive) A.toggleMeasure(); };
     } else {
