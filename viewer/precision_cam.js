@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 /* precision_cam.js — Precision Camera
    👁 toolbar button opens mini-panel with:
      🪶 Fine (toggle slow controls) — Caps Lock shortcut on desktop

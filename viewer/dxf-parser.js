@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 /**
  * dxf-parser — MIT License, Copyright (c) gdsestimating
  * https://github.com/gdsestimating/dxf-parser

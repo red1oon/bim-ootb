@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // tools.js — X-Ray, wireframe, section cut, screenshot, fullscreen, theme, 4D/5D export
 function setupTools(A) {
   // §S260c: Ground Y calculation — shared by shadow + night mode

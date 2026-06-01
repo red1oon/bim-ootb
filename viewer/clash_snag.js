@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // clash_snag.js — Clash snag/annotation system (extracted from measure.js)
 // S246 v1 — snap viewport, annotate, share deep-link, save to IndexedDB
 function setupClashSnag(A) {

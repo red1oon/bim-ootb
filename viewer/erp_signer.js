@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // erp_signer.js — W-SIGN (A2): the edge signer that turns the live W-CHAIN from tamper-EVIDENT
 // into un-FORGEABLE. Spec: scripts/poc_sign.js (ECDSA P-256 / SHA-256, present-but-not-forge) +
 // docs/ERP.md §0.20 / §9-B. The kernel (kernel_ops.js) only ever sees {sign, verify}; the private

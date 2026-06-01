@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // ad_table_map.js — PB bridge: every AD business table -> a 5-table slot.
 // Implementing docs/ERP.md §0 + §0.1 — Witness: PB gate §BRIDGE (scripts/test_bridge.js).
 //

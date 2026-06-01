@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // erp_replay.js — W-OWNER + CAS (A3): the GUARDED replay path for the ERP `documents` projection.
 // Spec: scripts/poc_distributed.js (G-SINGLE-WRITER owner-gate + set-if-unset CAS) + ERP.md §9-C/D/E,
 // §4 (the guard set). This lives in the ERP layer — NOT in the BIM-shared kernel_ops.js — because

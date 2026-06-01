@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // clash_report.js — Clash report HTML export and CSV background export (extracted from measure.js)
 // S246b: async with progress bar, caches envelopes + pair counts
 function setupClashReporter(A) {

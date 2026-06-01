@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // S208 — Walk orientation math test
 //
 // KNOWN FACTS (W3C spec + Three.js source + Chrome docs):
