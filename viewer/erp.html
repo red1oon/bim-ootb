@@ -55,6 +55,15 @@
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  /* Companion Glassbowl views (served from BIMCompiler GitHub Pages) */
+  #gbviews { position: fixed; top: 9px; right: 12px; z-index: 11; display: flex; gap: 6px; }
+  #gbviews a {
+    font-size: 12px; font-weight: 600; color: #cdd6e4; text-decoration: none;
+    background: rgba(40,44,58,0.82); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 6px 11px; min-height: 0; line-height: 1;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  #gbviews a:hover { border-color: #56d6e0; color: #56d6e0; }
 </style>
 </head>
 <body>
@@ -63,6 +72,14 @@
   <div class="spinner"></div>
   <div>Loading ERP OOTB&hellip;</div>
   <div id="load-status" style="margin-top:8px;font-size:11px;color:#555;"></div>
+</div>
+
+<!-- Companion Glassbowl views — the same model, seen two ways (read-only) -->
+<div id="gbviews">
+  <a href="https://red1oon.github.io/BIMCompiler/glassbowl.html" target="_blank" rel="noopener"
+     title="Glassbowl — the engine mapped from its own data (FK spines, trace, dossier)">🫧 Glassbowl</a>
+  <a href="https://red1oon.github.io/BIMCompiler/glassbowl_gravity.html" target="_blank" rel="noopener"
+     title="Glassbowl Gravity — pivot &amp; weigh the model (live GROUP BY, AD↔GW depth dial)">✦ Gravity</a>
 </div>
 
 <div id="breadcrumb"></div>
@@ -78,6 +95,12 @@ var _shellReady = false;
 (function () {
   'use strict';
   var _tBoot = performance.now();
+
+  // Compiled manifest — structure for the 7 curated windows (parallel, non-blocking).
+  fetch('manifest.json?v=22').then(function(r) { return r.json(); }).then(function(mf) {
+    window.AD_MANIFEST = mf;
+    console.log('§BENCH manifest loaded windows=' + Object.keys(mf.windows || {}).length);
+  }).catch(function(e) { console.log('§BENCH manifest fetch failed: ' + e.message); });
 
   fetch('initbubble.json?v=22').then(function(r) { return r.json(); }).then(function(data) {
     window.INIT_BUBBLES = data;
@@ -147,6 +170,9 @@ var _shellReady = false;
     'ad_data.js' + V,
     'ad_charts.js' + V,
     'erp_search.js' + V,
+    'erp_signer.js' + V,    // A2 W-SIGN — edge ECDSA-P256 signer (scripts/test_kernel_sign.js)
+    'erp_replay.js' + V,    // A3 W-OWNER/CAS — guarded ERP replay (scripts/test_kernel_owner.js)
+    'erp_persist.js' + V,   // A4 W-PERSIST — durable local + signed-snapshot hook (scripts/test_kernel_persist.js)
     'qrcode.min.js' + V
   ];
 
@@ -186,6 +212,14 @@ var _shellReady = false;
     await Promise.all([wasmPromise, modulesPromise]);
     _bench.parallel_load = Math.round(performance.now() - _t0);
     console.log('§BENCH parallel_load=' + _bench.parallel_load + 'ms (wasm+modules)');
+
+    // ── Phase A wiring (modules now loaded) — edge concerns, proven in scripts/test_kernel_*.js;
+    //    see prompts/ERP_PHASE_A_SETTLE.md. A2: install the edge signer on the live W-CHAIN.
+    //    A4: request durable storage. Both are best-effort + non-blocking (never fail hydrate).
+    if (window.ErpSigner && window.KernelOps) {
+      ErpSigner.installSigner(window.KernelOps).catch(function (e) { console.warn('§SIGN install error', e); });
+    }
+    if (window.ErpPersist) { ErpPersist.requestPersist(); }   // §PERSIST persisted=<granted>
 
     // ── Init SQL engine ─────────────────────────────────────────────
     _t0 = performance.now();
@@ -287,6 +321,9 @@ var _shellReady = false;
     console.log('§BENCH db_fetch=' + (_bench.db_fetch || 0) + 'ms source=' + (_bench.db_source || 'existing') +
                 ' size=' + (_bench.db_size || 0) + 'KB');
 
+    // A5: expose the live DB so the Verify-ledger control can read the kernel op-log (window.KernelOps).
+    window.__erpDb = db;
+
     // ── Wait for Phase 1 shell, then hydrate silently ────────────────
     function _waitAndHydrate() {
       if (typeof _shellReady !== 'undefined' && _shellReady) {
@@ -325,7 +362,7 @@ var _shellReady = false;
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=508')
+  navigator.serviceWorker.register('sw.js?v=558')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
@@ -368,6 +405,46 @@ if('serviceWorker' in navigator){
   window.addEventListener('offline', function () { _offlineBadge(true); });
   window.addEventListener('online', function () { _offlineBadge(false); _onlineRestore(); });
   if (!navigator.onLine) _offlineBadge(true);
+})();
+</script>
+<script>
+// ── A5 Verify ledger — surface KernelOps.verifyChain() (W-CHAIN/W-SIGN). Reads the live kernel op-log
+//    on window.__erpDb; shows "Ledger OK — N ops" or "Tamper at op N". Logic proven in
+//    scripts/test_kernel_chain.js + test_kernel_sign.js. See prompts/ERP_PHASE_A_SETTLE.md §A5.
+(function () {
+  'use strict';
+  function _toast(msg, good) {
+    var t = document.createElement('div');
+    t.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999;' +
+      'padding:10px 24px;border-radius:8px;font-size:13px;font-family:system-ui,sans-serif;transition:opacity .5s;' +
+      'background:' + (good ? 'rgba(39,174,96,0.92)' : 'rgba(200,30,30,0.92)') + ';color:#fff;pointer-events:none;';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(function () { t.style.opacity = '0'; }, 3000);
+    setTimeout(function () { if (t.parentNode) t.remove(); }, 3500);
+  }
+  function verifyLedger() {
+    var db = window.__erpDb;
+    if (!db || !window.KernelOps || !KernelOps.verifyChain) { _toast('Ledger not ready', false); return; }
+    return KernelOps.verifyChain(db).then(function (r) {
+      console.log('§VERIFY_LEDGER ok=' + r.ok + (r.ok ? ' len=' + r.len : ' brokeAt=' + r.brokeAt + ' why=' + r.why));
+      _toast(r.ok ? ('Ledger OK — ' + r.len + ' ops sealed') : ('Tamper at op ' + r.brokeAt + ' (' + r.why + ')'), r.ok);
+      return r;
+    }).catch(function (e) { console.warn('§VERIFY_LEDGER error', e); _toast('Verify error', false); });
+  }
+  window.ErpVerifyLedger = verifyLedger;
+  // Unobtrusive control — bottom-left, clear of #gbviews (top-right) and the offline badge (top).
+  var b = document.createElement('button');
+  b.id = 'verify-ledger-pill';
+  b.type = 'button';
+  b.textContent = '⛓ Verify ledger';
+  b.style.cssText = 'position:fixed;bottom:10px;left:12px;z-index:9999;min-height:0;' +
+    'font-size:12px;font-weight:600;color:#cdd6e4;background:rgba(40,44,58,0.82);' +
+    'border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:6px 11px;line-height:1;' +
+    'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer;';
+  b.addEventListener('click', verifyLedger);
+  document.body.appendChild(b);
+  console.log('§VERIFY_LEDGER control mounted');
 })();
 </script>
 </body>

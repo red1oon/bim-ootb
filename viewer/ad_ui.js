@@ -1365,6 +1365,16 @@
     16:'datetime',17:'list',19:'tableDirect',20:'table',22:'number',28:'button',
     29:'quantity',30:'search',38:'yesno'};
   function _getFieldsForTable(tableName) {
+    // Manifest-first (curated windows) — same fields the DB path would return,
+    // mapped through ADParser.REF_TYPES. Falls through to the DB query below.
+    if (typeof ADParser !== 'undefined' && ADParser.getManifestFields) {
+      var mfields = ADParser.getManifestFields(tableName);
+      if (mfields && mfields.length) {
+        console.log('§FIELDS table=' + tableName + ' count=' + mfields.length +
+                    ' source=manifest');
+        return mfields;
+      }
+    }
     try {
       var r = _db.exec(
         "SELECT DISTINCT f.Name, c.ColumnName, f.SeqNo, " +
@@ -3330,6 +3340,11 @@
     _db = db;
     _dbReady = true;
     ADParser.init(db);
+
+    // Wire the compiled manifest (curated windows render from manifest, not DB).
+    if (typeof window !== 'undefined' && window.AD_MANIFEST && ADParser.setManifest) {
+      ADParser.setManifest(window.AD_MANIFEST);
+    }
 
     // Upgrade graph with real DB — NO destroy/rebuild, just enable drill
     if (typeof ADGraph !== 'undefined' && ADGraph.graphHydrate) {
