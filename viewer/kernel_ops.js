@@ -6,7 +6,8 @@
 
   var TABLE_SQL =
     'CREATE TABLE IF NOT EXISTS kernel_ops (' +
-    '  id INTEGER PRIMARY KEY,' +
+    '  id INTEGER PRIMARY KEY,' +       // local total-order — W-CHAIN seals/verifies in id order
+    '  op_uuid TEXT,' +                 // G-IDENTITY (§0.21): edge-minted cross-device id; NOT the PK
     '  timestamp INTEGER NOT NULL,' +
     '  op_type TEXT NOT NULL,' +
     '  parameters TEXT NOT NULL,' +
@@ -33,6 +34,8 @@
       // §2.3: add user_tag column (idempotent — ALTER fails silently if exists)
       try { db.run("ALTER TABLE kernel_ops ADD COLUMN user_tag TEXT DEFAULT 'local'"); }
       catch (ignore) { /* column already exists */ }
+      // G-IDENTITY (§0.21): op_uuid identity column on pre-existing DBs (idempotent)
+      try { db.run("ALTER TABLE kernel_ops ADD COLUMN op_uuid TEXT"); } catch (ignore) {}
       // W-CHAIN/W-SIGN: chain + signature columns on pre-existing DBs (idempotent)
       try { db.run("ALTER TABLE kernel_ops ADD COLUMN prev_hash TEXT"); } catch (ignore) {}
       try { db.run("ALTER TABLE kernel_ops ADD COLUMN op_hash TEXT"); }  catch (ignore) {}
@@ -52,19 +55,26 @@
    * @param {string} [outputGuid] created/modified entity ID
    * @returns {number} op id
    */
-  function commitOp(db, opType, params, inputGuids, outputGuid) {
+  function commitOp(db, opType, params, inputGuids, outputGuid, opUuid) {
     ensureTable(db);
+    // G-IDENTITY (§0.21 D1/D4): identity is an edge-minted INPUT, recorded — never recomputed on
+    // replay (replayOps re-reads it). Honour a caller-supplied op_uuid verbatim (the New-doc seam);
+    // otherwise mint one here at COMMIT time. op_uuid is cross-device clash-free, unlike the local
+    // `id` rowid which collides 1,2,3… across devices. It is NOT part of _canonical, so W-CHAIN's
+    // hash stays byte-identical (the chain still totals over `id`).
+    var uuid = opUuid ||
+               ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null);
     db.run(
-      'INSERT INTO kernel_ops (timestamp, op_type, parameters, input_guids, output_guid) ' +
-      'VALUES (?, ?, ?, ?, ?)',
-      [Date.now(), opType, JSON.stringify(params),
+      'INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid) ' +
+      'VALUES (?, ?, ?, ?, ?, ?)',
+      [uuid, Date.now(), opType, JSON.stringify(params),
        inputGuids ? JSON.stringify(inputGuids) : null,
        outputGuid || null]
     );
     var r = db.exec('SELECT last_insert_rowid()');
     var opId = r[0].values[0][0];
-    console.log('§KERNEL_OP committed id=' + opId + ' type=' + opType +
-                ' params=' + JSON.stringify(params));
+    console.log('§KERNEL_OP committed id=' + opId + ' uuid=' + (uuid ? uuid.slice(0, 8) : 'null') +
+                ' type=' + opType + ' params=' + JSON.stringify(params));
     // S243 §3.7: persist modified DB back to IndexedDB so refresh survives
     _persistToIdb(db);
     return opId;
@@ -204,14 +214,15 @@
    */
   function replayOps(db, opType) {
     ensureTable(db);
-    var sql = 'SELECT id, op_type, parameters FROM kernel_ops WHERE undone = 0';
+    // G-IDENTITY (§0.21 D2/D3): replay RE-READS the recorded op_uuid — identity is never recomputed.
+    var sql = 'SELECT id, op_uuid, op_type, parameters FROM kernel_ops WHERE undone = 0';
     var args = [];
     if (opType) { sql += ' AND op_type = ?'; args.push(opType); }
     sql += ' ORDER BY id';
     var r = db.exec(sql, args);
     if (!r.length) return [];
     var ops = r[0].values.map(function (row) {
-      return { id: row[0], op_type: row[1], parameters: JSON.parse(row[2]) };
+      return { id: row[0], op_uuid: row[1], op_type: row[2], parameters: JSON.parse(row[3]) };
     });
     console.log('§KERNEL_OP replay type=' + (opType || 'ALL') + ' count=' + ops.length);
     return ops;
@@ -306,5 +317,5 @@
     setSigner:    setSigner      // W-SIGN: install an edge signer (opt-in)
   };
 
-  console.log('§KERNEL_OPS_LOADED v5 (W-CHAIN/W-SIGN)');
+  console.log('§KERNEL_OPS_LOADED v6 (W-CHAIN/W-SIGN/G-IDENTITY)');
 })();
