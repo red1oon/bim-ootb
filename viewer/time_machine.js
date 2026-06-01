@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 /* time_machine.js — 4D Construction Timeline
    ⏳ toolbar → draggable panel with weighted construction playback.
 

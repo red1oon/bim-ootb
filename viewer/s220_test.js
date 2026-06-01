@@ -1,9 +1,9 @@
+#!/usr/bin/env node
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
  * SPDX-License-Identifier: MIT
  */
-#!/usr/bin/env node
 // s220_test.js — S220 IFC Import Pipeline Test Harness
 // Usage: node deploy/dev/s220_test.js
 // Output: deploy/dev/s220_test.log

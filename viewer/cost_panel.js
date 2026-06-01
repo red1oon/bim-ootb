@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // cost_panel.js — Implementing 2D_029 §5 — Witness: W-2D29
 // Live BOQ panel: spatial query scoped to current grid positions.
 // Refreshes on grid drag; shows element counts + VARIANCE from previous state.

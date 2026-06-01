@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // kernel_ops.js — Implementing 2D_029 §2 — Witness: W-2D29
 // First transactional write path for the BIM Modeller kernel-op log.
 // See: docs/BIM_Modeller_OOTB.md §The Modelling Inversion
