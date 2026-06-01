@@ -4,9 +4,9 @@
 
 **Frictionless BIM. One browser. Zero install.**
 
-Drop an IFC file. Get a full BIM environment in 60 seconds. No server, no signup, no plugins.
+Drop an IFC file. Get a full BIM environment in 60 seconds. No server, no signup, no plugins. Beside the model, an ERP kernel forked from iDempiere runs in the same browser -- a building folds into a procurement order through one operation log.
 
-**Live:** [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/)
+**Live:** [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) -- **Film:** [BIM and ERP, one engine](https://youtu.be/hnLYNcRihzs)
 
 ## What it does
 
@@ -16,7 +16,7 @@ Drop an IFC file. Get a full BIM environment in 60 seconds. No server, no signup
 - **5D Cost Estimation** -- 17 country rate templates, Excel export
 - **BOM Engine** -- Bill of Materials extraction and verb expansion, fully in JavaScript
 - **Grid System** -- Drag grids, scissors cuts, kinematics, door arcs, dimension chains
-- **ERP** -- iDempiere Application Dictionary rendered in-browser from SQLite
+- **ERP (Op-Log Engine)** -- iDempiere's model forked into the browser: state as a deterministic fold over a signed operation log. [Glassbowl](https://red1oon.github.io/BIMCompiler/glassbowl.html) renders the engine from its own data; [technical abstract](https://red1oon.github.io/BIMCompiler/OpLogERP/)
 - **City Mode** -- 786 buildings loaded simultaneously
 - **PWA** -- Works offline after first visit
 - **18 Languages** -- Auto-detected from browser locale
@@ -42,6 +42,16 @@ viewer/
   locales/          -- 18 language packs
   rates/            -- 17 country rate templates
 ```
+
+## ERP -- Op-Log Engine
+
+Beside the BIM model, the same browser runs an ERP kernel forked from the iDempiere lineage (Compiere -> ADempiere -> iDempiere). State is a *deterministic fold over a signed operation log* -- a fact is computed by replaying the log, not stored as a guarded scalar -- so it runs serverless, over SQLite, and works offline. iDempiere's Application Dictionary (~925 tables) is re-expressed as five relations plus verbs; the same operation log that drives the BIM model folds a building into a procurement order.
+
+A proven kernel and architecture, not a finished ERP. The constituent techniques are established (event sourcing, hash-chained ledgers, single-writer-at-the-edge, local-first); the contribution is their composition under ERP semantics and the BIM<->ERP unification. No head-to-head benchmark against iDempiere is claimed.
+
+- **Explore:** [Glassbowl](https://red1oon.github.io/BIMCompiler/glassbowl.html) -- the engine rendered from its own data
+- **Read:** [Op-Log ERP technical abstract](https://red1oon.github.io/BIMCompiler/OpLogERP/)
+- **Code:** `viewer/erp.html`, `viewer/ad_*.js`, `viewer/kernel_ops.js`
 
 ## 30 Pre-loaded Buildings
 
@@ -88,6 +98,9 @@ The browser sprint (S200--S271, April 20 -- May 23) produced 552 commits and 92 
 | | URL |
 |---|---|
 | **Live viewer** | [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) |
+| **Film -- BIM and ERP, one engine** | [youtu.be/hnLYNcRihzs](https://youtu.be/hnLYNcRihzs) |
+| **Glassbowl** -- ERP engine as data | [red1oon.github.io/BIMCompiler/glassbowl.html](https://red1oon.github.io/BIMCompiler/glassbowl.html) |
+| **Op-Log ERP abstract** | [red1oon.github.io/BIMCompiler/OpLogERP](https://red1oon.github.io/BIMCompiler/OpLogERP/) |
 | **Documentation** | [red1oon.github.io/BIMCompiler](https://red1oon.github.io/BIMCompiler/) |
 | **Parent project** | [github.com/red1oon/BIMCompiler](https://github.com/red1oon/BIMCompiler) |
 | **OCI backup** | [ootb-dev bucket](https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/index.html) |
