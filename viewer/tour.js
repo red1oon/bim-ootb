@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
 

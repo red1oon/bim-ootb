@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // measure.js — Measurement tool (two-point distance, area, clash detection)
 // S246 v1 — Clash Snag: snap viewport, annotate, share deep-link
 function setupMeasure(A) {

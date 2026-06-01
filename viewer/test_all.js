@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // BIM OOTB — Full test suite
 // Run: node deploy/sandbox/test_all.js
 // Checks: syntax, wiring, z-index, OCI live, walk math

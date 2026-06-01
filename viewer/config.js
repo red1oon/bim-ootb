@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // config.js — URL params, discipline colours, constants
 
 // §S282b: Platform detection — set once, before any UI module reads it.

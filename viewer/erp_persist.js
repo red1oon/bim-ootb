@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // erp_persist.js — W-PERSIST (A4): durable-local + the recoverable-signed-snapshot hook. Spec:
 // scripts/poc_persist.js + ERP.md §9-A, §5.2b. Doctrine: "secure the FACT, not the container" — the
 // local DB is DISPOSABLE (export→import round-trips byte-for-byte), and the recoverable log is a

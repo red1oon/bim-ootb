@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 // loader.js — Progressive script loader: local-first, CDN fallback
 // §S276: Three.js r184 ESM upgrade — import map + window.THREE shim
 // WASM binary fetch starts immediately — downloads in parallel with JS libs

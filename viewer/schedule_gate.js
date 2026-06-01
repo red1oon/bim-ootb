@@ -1,3 +1,5 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 /* schedule_gate.js — §gate (2026-05-30, two-pass: geometry + trade order)
  * Support-gate FALLBACK scheduler for generated 4D (Time Machine) = "synthetic 4D" organised by
  * phase/task, the same shape a captured MS Project / IFC programme would have. Pure + app-agnostic

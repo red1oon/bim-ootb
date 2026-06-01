@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
 /**
  * mep_qto_populate.js — Compute unit-aware MEP QTO and write qto_cache to extracted DBs
  * Implementing MEP_5D_QTO.md §2.1–2.3, §6.3 — Witness: W-QTO_CACHE_WRITE
