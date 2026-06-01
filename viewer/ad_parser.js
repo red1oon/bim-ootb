@@ -27,6 +27,75 @@
     38: 'yesno'       // Yes-No (checkbox)
   };
 
+  // ── Compiled manifest (prompts/ERP_KERNEL_MONSTERS.md §4) ───────────
+  // When set, getWindow() / per-table field lookups for the 7 curated windows
+  // come from manifest.json (~17KB gz) instead of querying ad_seed.db.
+  // BEHAVIOR-PRESERVING: fields are mapped through the SAME REF_TYPES map used
+  // by getFields(), so rendering is byte-identical to the DB path. Windows and
+  // tables absent from the manifest fall through to the DB transparently.
+  var _manifest = null;
+  var _winById = {};        // windowId(Number) -> getWindow-shaped object
+  var _fieldsByTable = {};  // tableName -> getFields-shaped fields[]
+
+  function _mapField(mf) {
+    var ref = Number(mf.ref) || 10;
+    return {
+      id: null, name: mf.label, description: '', seqNo: mf.seq,
+      isDisplayed: true,
+      displayLogic: mf.dl || null,
+      isMandatory: !!mf.mandatory,
+      isReadOnly: !!mf.readonly,
+      defaultValue: mf.def || null,
+      columnId: null, columnName: mf.col,
+      referenceId: ref,
+      referenceType: REF_TYPES[ref] || 'string',
+      fieldLength: mf.len || null,
+      isKey: !!mf.key,
+      isIdentifier: !!mf.identifier
+    };
+  }
+
+  function _mapTab(mt) {
+    return {
+      id: null, name: mt.name, description: '', help: '',
+      tableId: null, tabLevel: mt.level, seqNo: mt.seq,
+      isSingleRow: !!mt.singleRow, isReadOnly: !!mt.readonly,
+      whereClause: mt.where || null, orderByClause: mt.orderBy || null,
+      tableName: mt.table,
+      fk: mt.fk || null,
+      fields: (mt.fields || []).map(_mapField)
+    };
+  }
+
+  function setManifest(m) {
+    if (!m || !m.windows) { console.log('§AD_PARSER setManifest: empty/invalid'); return; }
+    _manifest = m;
+    _winById = {};
+    _fieldsByTable = {};
+    var nWin = 0, nTab = 0, nFld = 0;
+    Object.keys(m.windows).forEach(function (id) {
+      var mw = m.windows[id];
+      var tabs = (mw.tabs || []).map(_mapTab);
+      _winById[Number(id)] = {
+        id: Number(id), name: mw.name, description: '', help: '',
+        windowType: 'M', tabs: tabs
+      };
+      nWin++;
+      tabs.forEach(function (t) {
+        nTab++; nFld += t.fields.length;
+        // header tab (level 0) wins over a child tab of the same table
+        if (!_fieldsByTable[t.tableName]) _fieldsByTable[t.tableName] = t.fields;
+      });
+    });
+    console.log('§AD_PARSER setManifest windows=' + nWin + ' tabs=' + nTab +
+                ' fields=' + nFld + ' v' + (m.version || '?'));
+  }
+
+  // getFields-shaped fields for a table from the manifest only (null if absent).
+  function getManifestFields(tableName) {
+    return _fieldsByTable[tableName] || null;
+  }
+
   /**
    * Init: log AD table counts.
    * @param {Object} db  sql.js database
@@ -108,7 +177,15 @@
    * @returns {Object|null} { id, name, description, windowType, tabs: [...] }
    */
   function getWindow(db, windowId) {
-    console.log('§AD_PARSER getWindow id=' + windowId);
+    // Manifest-first (curated windows) — clone so callers can't mutate the cache.
+    var mw = _winById[Number(windowId)];
+    if (mw) {
+      console.log('§AD_PARSER getWindow id=' + windowId + ' name=' + mw.name +
+                  ' tabs=' + mw.tabs.length + ' source=manifest');
+      return JSON.parse(JSON.stringify(mw));
+    }
+
+    console.log('§AD_PARSER getWindow id=' + windowId + ' source=db');
 
     var winR = db.exec(
       'SELECT AD_Window_ID, Name, Description, Help, WindowType ' +
@@ -325,6 +402,8 @@
 
   var ADParser = {
     init:                 init,
+    setManifest:          setManifest,
+    getManifestFields:    getManifestFields,
     getMenuTree:          getMenuTree,
     getWindow:            getWindow,
     getTabs:              getTabs,
