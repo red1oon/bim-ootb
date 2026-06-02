@@ -8,8 +8,9 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v561';
-const CACHE_NAME = 'bim-ootb-' + CACHE_VERSION;
+const CACHE_VERSION = 'v562';
+const CACHE_PREFIX = 'bim-ootb-';
+const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
 // Local copies of vendor libs — single-origin, no CDN dependency
 const LOCAL_LIBS = [
@@ -111,13 +112,6 @@ const PRECACHE_ASSETS = [
   'route_walker.js',
   // Feature modules loaded by index.html
   'kernel_ops.js',
-  'ad_parser.js',
-  'ad_data.js',
-  'idmp_session.js',
-  'ad_graph.js',
-  'ad_ui.js',
-  'ad_charts.js',
-  'erp_search.js',
   'cost_panel.js',
   'clash_report.js',
   'clash_snag.js',
@@ -128,15 +122,13 @@ const PRECACHE_ASSETS = [
   'print_sheet.js',
   'ghostglass.js',
   'qrcode.min.js',
-  'pill_builder.js',
-  // idempiereUI.md I1 — ERP pill bar + renderer #1 (idempiere.html)
-  'icons.js',
-  'erp_pills.js',
+  'pill_builder.js',   // shared with the ERP app (ERP keeps its own copy at /erp/)
+  // NOTE: the ERP app (erp.html, idempiere.html, ad_*/erp_* modules, icons.js, erp_pills.js,
+  // pills.json, redpill/aplus.png) moved to /erp/ with its own sw — see ERP_FOLDER_HOME.md.
+  // erp.html/idempiere.html below are now reroute STUBS that live in viewer/.
   'list_builder.js',
   'settings_editor.js',
   'panel_nav.js',
-  'redpill.png',
-  'aplus.png',
   // Lazy-loaded modules
   'navigate.js',
   'wizard.js',
@@ -152,7 +144,6 @@ const PRECACHE_ASSETS = [
   // Vendor libs not in LOCAL_LIBS (loaded by index.html)
   'lib/httpvfs.js',
   // Config files
-  'pills.json',
   'clash_rules.json',
   'grid_rules.json',
   'rates/cidb2024_my.json',
@@ -176,10 +167,13 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  // Purge ALL caches that don't match current CACHE_VERSION
+  // Purge ONLY this app's old caches (prefix-scoped) — the ERP app at /erp/ owns its own
+  // 'erp-ootb-' caches and must not be deleted here (docs/ERP_FOLDER_HOME.md).
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys
+        .filter(k => k.indexOf(CACHE_PREFIX) === 0 && k !== CACHE_NAME)
+        .map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
