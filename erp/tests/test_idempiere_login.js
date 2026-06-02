@@ -8,7 +8,7 @@
 //   AD_Window_Access). No hand-authored identity. This test runs the SAME idmp_session.js folds the
 //   page uses, over the SAME ad_seed.db, and asserts each step + that role scope HIDES windows.
 //   §-log first — READ the log before any conclusion.
-// Run:  node tests/test_idempiere_login.js 2>&1 | tee tests/test_idempiere_login.log   (cwd = bim-ootb/viewer)
+// Run:  node tests/test_idempiere_login.js 2>&1 | tee tests/test_idempiere_login.log   (cwd = bim-ootb/erp)
 'use strict';
 var fs = require('fs'), path = require('path');
 var initSqlJs = require('sql.js');

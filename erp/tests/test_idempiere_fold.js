@@ -7,7 +7,7 @@
 //   ADParser/ADData fold calls idempiere.html makes, over the SAME ad_seed.db, and asserts the
 //   menu + a window fold come from SQLite (handAuthored=0). If this passes, "SQLite WASM is up to it".
 //   §-log first — READ the log before any conclusion.
-// Run:  node tests/test_idempiere_fold.js 2>&1 | tee tests/test_idempiere_fold.log   (cwd = bim-ootb/viewer)
+// Run:  node tests/test_idempiere_fold.js 2>&1 | tee tests/test_idempiere_fold.log   (cwd = bim-ootb/erp)
 'use strict';
 var fs = require('fs'), path = require('path');
 var initSqlJs = require('sql.js');
