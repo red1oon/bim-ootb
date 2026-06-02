@@ -16,7 +16,7 @@
     { "id": "settings",  "name": "Settings",     "key": "=",   "icon": "@bim",        "order": 10, "reuse": "bim" },
     { "id": "help",      "name": "Need Help",    "key": "F1",  "icon": "@bim",        "order": 11, "reuse": "bim" },
     { "id": "idempiere", "name": "iDempiere-like UI", "key": "", "img": "aplus.png", "order": 12, "reuse": "new", "nav": "idempiere.html", "note": "ETHICS: the user's neutral A+ raster (aplus.png) — NEVER the trademarked iDempiere logo (IDEMPIERE_PILL_HANDOFF.md, IDEMPIERE_2.md §Guardrails 3). Renderer #1 = idempiere.html." },
-    { "id": "glassbowl", "name": "Glassbowl",    "key": "",    "icon": "rosetta",     "order": 13, "reuse": "new", "nav": "glassbowl.html", "note": "on-brand crystal/gem (existing 'rosetta' glyph repurposed) — the engine-as-data lens / glass bowl" },
-    { "id": "gravity",   "name": "Gravity",      "key": "",    "icon": "disciplines", "order": 14, "reuse": "new", "nav": "glassbowl_gravity.html", "note": "central mass + orbiting satellites (existing 'disciplines' glyph repurposed) = a gravity / orbit system" }
+    { "id": "glassbowl", "name": "Glassbowl",    "key": "",    "icon": "rosetta",     "order": 13, "reuse": "new", "nav": "https://red1oon.github.io/BIMCompiler/glassbowl.html", "note": "on-brand crystal/gem (existing 'rosetta' glyph repurposed) — the engine-as-data lens / glass bowl. Companion view on BIMCompiler GitHub Pages (replaces the old #gbviews text link)." },
+    { "id": "gravity",   "name": "Gravity",      "key": "",    "icon": "disciplines", "order": 14, "reuse": "new", "nav": "https://red1oon.github.io/BIMCompiler/glassbowl_gravity.html", "note": "central mass + orbiting satellites (existing 'disciplines' glyph repurposed) = a gravity / orbit system. Companion view on BIMCompiler GitHub Pages (replaces the old #gbviews text link)." }
   ]
 }

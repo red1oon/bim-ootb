@@ -88,9 +88,18 @@
         var act = { id: p.id, name: p.name, key: p.key || '' };
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
 
-        // fn: nav pills navigate; the rest bind by id (handler or honest toast)
+        // fn: nav pills navigate; the rest bind by id (handler or honest toast).
+        // Absolute (external) URLs open in a new tab — companion views (glassbowl/gravity) on
+        // BIMCompiler GitHub Pages, matching the old #gbviews target="_blank". Local nav replaces in place.
         if (p.nav) {
-          act.fn = (function (url, id) { return function () { console.log('§PILL-NAV ' + id + '->' + url); location.href = url; }; })(p.nav, p.id);
+          act.fn = (function (url, id) {
+            return function () {
+              var external = /^https?:\/\//i.test(url);
+              console.log('§PILL-NAV ' + id + '->' + url + (external ? ' (new tab)' : ''));
+              if (external) window.open(url, '_blank', 'noopener');
+              else location.href = url;
+            };
+          })(p.nav, p.id);
         } else {
           act.fn = BINDINGS[p.id] || function () { _toast(p.name); };
         }
