@@ -32,25 +32,31 @@
 
   // ── @bim id → the icon name the BIM registry binds for that id (verified vs panels.js) ──
   var BIM_ICON = {
-    home: 'home', settings: 'settings', find: 'search', share: 'share', tm: 'clock', help: 'lifeBuoy'
+    home: 'home', settings: 'settings', find: 'search', share: 'share', help: 'lifeBuoy'
   };
 
   // ── id → real handler (no behaviour change) OR honest "arrives in Ix" toast ──
   var BINDINGS = {
     home:      function () { if (window.ADUI && ADUI.showMenu) ADUI.showMenu(); else _toast('Home'); },
-    settings:  function () { _toast('Settings — JSON editor wires in a later task'); },
+    find:      function () { _toast('Search — record/account search wires in a later task'); },
+    read:      function () { _toast('Read — record view wires in a later task'); },
     ledger:    function () { _toast('Report — Receipt · Trial Balance · P&L arrive in I2'); },
     graphs:    function () { _toast('Graphs — chart overlay arrives in I4'); },
     edit:      function () { _toast('Editable — CRUD ring arrives with CRUD-P'); },
     process:   function () { _toast('Process — DocAction arrives with CRUD-P'); },
-    find:      function () { _toast('Find — record/account search wires in a later task'); },
+    maximize:  function () {                                  // real now — fullscreen the ERP surface
+      try {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+      } catch (e) { _toast('Fullscreen not available'); }
+    },
     share:     function () {
       try {
         if (navigator.clipboard) { navigator.clipboard.writeText(location.href); _toast('Link copied'); }
         else _toast('Share: ' + location.href);
       } catch (e) { _toast('Share: ' + location.href); }
     },
-    tm:        function () { _toast('Time Machine — op-log playback arrives later'); },
+    settings:  function () { _toast('Settings — JSON editor wires in a later task'); },
     help:      function () { _toast('Need Help? — ShowMe overlay arrives later'); }
   };
 
@@ -104,7 +110,10 @@
       var trigger = document.createElement('button');
       trigger.id = 'erp-pill-trigger';
       trigger.title = 'Pills';
-      trigger.innerHTML = '&#8942;';                          // ⋮ vertical ellipsis (text, not art)
+      // canonical vertical kebab (moreVert) from the verbatim icon set — same glyph as the BIM viewer trigger
+      var _mv = (window.ICONS && window.ICONS.moreVert) ? window.ICONS.moreVert.svg
+        : '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>';
+      trigger.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _mv + '</svg>';
       wrap.appendChild(pill);
       wrap.appendChild(trigger);
       document.body.appendChild(wrap);
