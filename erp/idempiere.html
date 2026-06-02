@@ -180,6 +180,12 @@
     cursor:pointer; font-size:13px; font-weight:600; }
   .idmp-login-actions .primary { background:var(--idmp-blue); color:#fff; border-color:var(--idmp-blue); }
   .idmp-login-note { font-size:11px; color:var(--idmp-muted); margin-top:12px; text-align:center; }
+  /* §0.10a — first-mile Migrate ShowMe CTA on the login card */
+  .idmp-login-migrate { margin-top:18px; padding-top:14px; border-top:1px dashed var(--idmp-border); text-align:center; }
+  .idmp-login-migrate span { display:block; font-size:11.5px; color:var(--idmp-muted); margin-bottom:7px; }
+  #idmp-login-migrate-btn { width:100%; height:34px; border:1px solid var(--idmp-blue); border-radius:6px;
+    background:var(--idmp-hover); color:var(--idmp-blue); font-size:12.5px; font-weight:600; cursor:pointer; }
+  #idmp-login-migrate-btn:hover { background:var(--idmp-sel); }
   /* ── Mobile adaptation (desktop is exact; mobile may adapt) ── */
   @media (max-width:760px) {
     #idmp-burger { display:flex; }
@@ -221,6 +227,12 @@
       </div>
       <div id="idmp-login-note" class="idmp-login-note"></div>
     </div>
+    <!-- §0.10a first-mile: before you have data, the first task is bringing it IN. -->
+    <div class="idmp-login-migrate">
+      <span>New here — your data still in a Docker Postgres?</span>
+      <button id="idmp-login-migrate-btn" type="button"
+        onclick="window.MigrateShowMe &amp;&amp; MigrateShowMe.open()">↓ Migrate your iDempiere data (ShowMe)</button>
+    </div>
   </div>
 </div>
 
@@ -257,6 +269,8 @@
 <script src="ad_parser.js?v=22"></script>
 <script src="ad_data.js?v=22"></script>
 <script src="idmp_session.js?v=22"></script>
+<!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
+<script src="migrate_showme.js?v=22"></script>
 <script>
 (function () {
   'use strict';
@@ -692,7 +706,7 @@
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=562')
+  navigator.serviceWorker.register('sw.js?v=563')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
