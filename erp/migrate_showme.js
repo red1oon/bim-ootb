@@ -69,12 +69,20 @@
         + '<textarea id="ms-clients-json" class="ms-ta" placeholder=\'{"clients":[...],"auto":11}\'></textarea>'
         + '<button id="ms-parse-clients" class="ms-btn">Show clients</button>'
         + '<div id="ms-clients"></div></details>' },
-    { key: 'run', title: '2 · Run the agent',
-      body: '<p>Run this <b>once, locally</b> (it reads your DB with those creds and writes a '
-        + 'master/metadata-only SQLite + a progress log):</p>'
-        + '<pre id="ms-cmd" class="ms-cmd"></pre><button id="ms-copy" class="ms-btn">Copy</button>'
-        + '<p class="ms-dim">Master/metadata only — documents, transactions, postings and logs are '
-        + 'excluded; plugin <i>logic</i> is a later step. All clients\' masters come along.</p>' },
+    { key: 'run', title: '2 · Install & run (once, on a desktop)',
+      body: '<p>Three steps, on the machine that has Docker (your laptop/server):</p>'
+        + '<p><b>1.</b> Download the agent:</p>'
+        + '<a class="ms-btn ms-primary" href="migrate_agent.js" download="migrate_agent.js">⬇ Download migrate_agent.js</a>'
+        + '<p><b>2.</b> Run it (needs Node + Docker) — installs one dependency, reads your Docker PG, '
+        + 'writes <code>ad_masters.db</code>:</p>'
+        + '<pre id="ms-cmd" class="ms-cmd"></pre><button id="ms-copy" class="ms-btn">Copy command</button>'
+        + '<p><b>3.</b> Load that <code>ad_masters.db</code> in step 3 — the masters land here.</p>'
+        + '<p class="ms-dim">Master/metadata only — documents/transactions/postings/logs excluded; plugin '
+        + '<i>logic</i> is a later step. PG container not named "postgres"? prefix '
+        + '<code>ERP_PG_CONTAINER=&lt;name&gt;</code>.</p>'
+        + '<p class="ms-dim">📱 <b>On a phone?</b> Migrating reads a Docker Postgres, so it runs on a '
+        + 'desktop — a phone can\'t reach Postgres. On mobile you take this tour and open a DB someone '
+        + 'already migrated (step 3); the file browses fine everywhere.</p>' },
     { key: 'watch', title: '3 · Watch masters stream in',
       body: '<p>When the agent finishes, load the <b>ad_masters_&lt;n&gt;.db</b> it produced — the '
         + 'masters land here, read straight from your file (real counts, nothing invented):</p>'
@@ -169,12 +177,13 @@
   }
   function _wireRun() {
     var c = _credVals();
-    var cmd = 'ERP_PG_DB=' + c.db + ' ERP_PG_USER=' + c.user
-      + ' node scripts/migrate_pg_to_sqlite.js --masters';
+    // One paste: install the single dep, then migrate masters with the entered creds.
+    var cmd = 'npm install better-sqlite3 && ERP_PG_DB=' + c.db + ' ERP_PG_USER=' + c.user
+      + ' node migrate_agent.js --masters';
     _$('ms-cmd').textContent = cmd;
     _$('ms-copy').onclick = function () {
       navigator.clipboard && navigator.clipboard.writeText(cmd);
-      _$('ms-copy').textContent = 'Copied';
+      _$('ms-copy').textContent = 'Copied ✓';
     };
   }
   function _wireWatch() {
