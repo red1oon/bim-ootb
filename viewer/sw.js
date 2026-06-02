@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v558';
+const CACHE_VERSION = 'v559';
 const CACHE_NAME = 'bim-ootb-' + CACHE_VERSION;
 
 // Local copies of vendor libs — single-origin, no CDN dependency
@@ -44,6 +44,7 @@ const PRECACHE_ASSETS = [
   'boq_charts.html',
   'mep_report.html',
   'erp.html',
+  'idempiere.html',
   '2d.html',
   'offline.html',
   'manifest.webmanifest',
@@ -127,10 +128,14 @@ const PRECACHE_ASSETS = [
   'ghostglass.js',
   'qrcode.min.js',
   'pill_builder.js',
+  // idempiereUI.md I1 — ERP pill bar + renderer #1 (idempiere.html)
+  'icons.js',
+  'erp_pills.js',
   'list_builder.js',
   'settings_editor.js',
   'panel_nav.js',
   'redpill.png',
+  'aplus.png',
   // Lazy-loaded modules
   'navigate.js',
   'wizard.js',
@@ -146,6 +151,7 @@ const PRECACHE_ASSETS = [
   // Vendor libs not in LOCAL_LIBS (loaded by index.html)
   'lib/httpvfs.js',
   // Config files
+  'pills.json',
   'clash_rules.json',
   'grid_rules.json',
   'rates/cidb2024_my.json',
