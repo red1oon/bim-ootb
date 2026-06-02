@@ -212,6 +212,7 @@
   var _records = [];
   var _recIdx = 0;
   var _viewMode = 'grid';    // 'grid' | 'form'
+  var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
@@ -324,7 +325,7 @@
       _openWins[windowId] = { win: win, name: name || win.name };
       console.log('§IDEMPIERE window=' + win.name + '(' + windowId + ') tabs=' + (win.tabs ? win.tabs.length : 0) + ' source=sqlite');
     }
-    _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid';
+    _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {};
     renderWinTabs(); renderToolbar(); renderTabStrip(); renderActiveTab();
   }
   function closeWindow(windowId) {
@@ -382,7 +383,10 @@
   function renderTabStrip() {
     var w = _curWin(); var strip = $('idmp-tabstrip'); strip.style.display = 'flex'; strip.innerHTML = '';
     (w.tabs || []).forEach(function (tab, i) {
-      var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), tab.name + (tab.tabLevel ? '' : ''));
+      var lvl = tab.tabLevel || 0;
+      var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), (lvl ? '└ ' : '') + tab.name);
+      if (lvl) t.style.paddingLeft = (14 + lvl * 12) + 'px';
+      t.title = 'TabLevel ' + lvl + (tab.tableName ? ' · ' + tab.tableName : '');
       t.addEventListener('click', function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); });
       strip.appendChild(t);
     });
@@ -392,6 +396,27 @@
   function _tableExists(t) {
     try { var r = db.exec("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND lower(name)=lower('" + t.replace(/'/g, "") + "') LIMIT 1"); return r.length > 0; }
     catch (e) { return true; }
+  }
+  // The tab table's primary key column (the FK a child references) — AD key field, else iDempiere TableName+'_ID'.
+  function _keyCol(tab) {
+    var k = (tab.fields || []).filter(function (f) { return f.isKey; })[0];
+    return k ? k.columnName : (tab.tableName ? tab.tableName + '_ID' : null);
+  }
+  function _colExists(table, col) {
+    try {
+      var r = db.exec('PRAGMA table_info(' + table + ')'); if (!r.length) return false;
+      var ci = r[0].columns.indexOf('name');
+      return r[0].values.some(function (v) { return String(v[ci]).toLowerCase() === String(col).toLowerCase(); });
+    } catch (e) { return false; }
+  }
+  // SQL literal for a parent key value (numeric pk unquoted, else quoted+escaped).
+  function _lit(v) { return (typeof v === 'number' || /^[0-9]+$/.test(String(v))) ? String(v) : "'" + String(v).replace(/'/g, "''") + "'"; }
+  // Record the currently-selected record's key at this tab's level; clear stale deeper selections.
+  function _setSel(tab) {
+    var lvl = tab.tabLevel || 0;
+    var rec = _records[_recIdx];
+    _selByLevel[lvl] = rec ? recVal(rec, _keyCol(tab)) : null;
+    Object.keys(_selByLevel).forEach(function (L) { if (Number(L) > lvl) delete _selByLevel[L]; });
   }
   function renderActiveTab() {
     var tab = _curTab(); if (!tab) return;
@@ -409,12 +434,28 @@
       status(_curWin().name + ' › ' + tab.name + '  ·  table ' + tab.tableName + ' not in curated seed');
       return;
     }
-    var where = tab.whereClause && tab.whereClause.indexOf('@') < 0 ? tab.whereClause : null; // skip context-var clauses in I1
+    var clauses = [];
+    if (tab.whereClause && tab.whereClause.indexOf('@') < 0) clauses.push('(' + tab.whereClause + ')'); // skip context-var clauses in I1
+    // ── Master-detail: a child tab (tabLevel>0) filters by its parent record's key (the iDempiere drill) ──
+    var level = tab.tabLevel || 0, mdNote = '';
+    if (level > 0) {
+      var w = _curWin(), pIdx = -1;
+      for (var pi = _activeTabIdx - 1; pi >= 0; pi--) { if ((w.tabs[pi].tabLevel || 0) === level - 1) { pIdx = pi; break; } }
+      if (pIdx >= 0) {
+        var pTab = w.tabs[pIdx], pKey = _keyCol(pTab), pPk = _selByLevel[level - 1];
+        if (pPk != null && pKey && _colExists(tab.tableName, pKey)) {
+          clauses.push(pKey + '=' + _lit(pPk));
+          mdNote = pTab.tableName + '.' + pKey + '=' + pPk;
+          console.log('§IDEMPIERE-MD tab=' + tab.name + ' level=' + level + ' parent=' + pTab.tableName + ' filter=' + pKey + '=' + pPk);
+        }
+      }
+    }
+    var where = clauses.length ? clauses.join(' AND ') : null;
     var orderBy = tab.orderByClause && tab.orderByClause.indexOf('@') < 0 ? tab.orderByClause : null;
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
-    _recIdx = 0;
-    console.log('§IDEMPIERE tab=' + tab.name + ' table=' + tab.tableName + ' rows=' + _records.length + ' fields=' + (tab.fields ? tab.fields.length : 0));
+    _recIdx = 0; _setSel(tab);
+    console.log('§IDEMPIERE tab=' + tab.name + ' table=' + tab.tableName + ' rows=' + _records.length + ' fields=' + (tab.fields ? tab.fields.length : 0) + (mdNote ? ' parentFilter=' + mdNote : ''));
     renderBody();
   }
   function _displayFields(tab) {
@@ -456,7 +497,7 @@
     _records.forEach(function (rec, i) {
       var tr = el('tr'); tr.dataset.i = i;
       cols.forEach(function (f) { tr.appendChild(el('td', null, fmt(f, recVal(rec, f.columnName)))); });
-      tr.addEventListener('click', function () { _recIdx = i; _viewMode = 'form'; renderBody(); renderToolbar(); });
+      tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); });
       tb.appendChild(tr);
     });
     table.appendChild(tb);
@@ -479,7 +520,7 @@
     var nav = $('idmp-recnav');
     if (nav) nav.textContent = _records.length ? ('Record ' + (_recIdx + 1) + ' of ' + _records.length) : '0 records';
     if (_viewMode === 'form') { var tab = _curTab(); if (tab) { $('idmp-content').innerHTML = ''; $('idmp-content').appendChild(buildForm(tab)); } }
-    var t = _curTab(); if (t) updateStatus(t);
+    var t = _curTab(); if (t) { _setSel(t); updateStatus(t); }
   }
   function updateStatus(tab) {
     var w = _curWin();
@@ -514,7 +555,7 @@
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data + ad_seed.db are precached (sw v559).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=559')
+  navigator.serviceWorker.register('sw.js?v=560')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
