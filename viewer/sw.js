@@ -113,6 +113,7 @@ const PRECACHE_ASSETS = [
   'kernel_ops.js',
   'ad_parser.js',
   'ad_data.js',
+  'idmp_session.js',
   'ad_graph.js',
   'ad_ui.js',
   'ad_charts.js',
