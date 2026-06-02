@@ -37,6 +37,7 @@ const PRECACHE_ASSETS = [
   'erp_replay.js',
   'erp_search.js',
   'erp_signer.js',
+  'migrate_showme.js',
   'idmp_session.js',
   'menu_seed.js',
   'role_band.js',

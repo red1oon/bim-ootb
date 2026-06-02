@@ -57,7 +57,10 @@
       } catch (e) { _toast('Share: ' + location.href); }
     },
     settings:  function () { _toast('Settings — JSON editor wires in a later task'); },
-    help:      function () { _toast('Need Help? — ShowMe overlay arrives later'); }
+    help:      function () {                                  // §0.10a — first-mile Migrate ShowMe
+      if (window.MigrateShowMe && MigrateShowMe.open) MigrateShowMe.open();
+      else _toast('Need Help? — ShowMe overlay loading…');
+    }
   };
 
   // ── hold (long-press) drawers land in I3 — honest stub now ──
