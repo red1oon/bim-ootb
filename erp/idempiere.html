@@ -292,6 +292,7 @@
   var _recIdx = 0;
   var _viewMode = 'grid';    // 'grid' | 'form'
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
+  var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
@@ -444,6 +445,7 @@
       row.addEventListener('click', function () { wrap.classList.toggle('open'); tw.textContent = wrap.classList.contains('open') ? '▾' : '▸'; });
     } else {
       leaves++;
+      if (node.action === 'W' && node.windowId) _winByName[(node.name || '').toLowerCase()] = Number(node.windowId);  // name->id for IdmpHost.focus
       row.addEventListener('click', function () {
         document.querySelectorAll('.idmp-row.leaf.active').forEach(function (e) { e.classList.remove('active'); });
         row.classList.add('active');
@@ -641,6 +643,7 @@
     if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = cols.length || 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
     _records.forEach(function (rec, i) {
       var tr = el('tr'); tr.dataset.i = i;
+      tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
       cols.forEach(function (f) { tr.appendChild(el('td', null, fmt(f, recVal(rec, f.columnName)))); });
       tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); });
       tb.appendChild(tr);
@@ -651,8 +654,10 @@
   function buildForm(tab) {
     var form = el('div', 'idmp-form'); form.id = 'idmp-form';
     var rec = _records[_recIdx];
+    if (rec) { form.setAttribute('data-ad-table', tab.tableName); form.setAttribute('data-ad-record', recVal(rec, _keyCol(tab))); }  // AD-key tag (host contract)
     _displayFields(tab).forEach(function (f) {
       var fld = el('div', 'idmp-fld' + (f.isMandatory ? ' mand' : ''));
+      fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', f.columnName);
       fld.appendChild(el('label', null, f.name));
       var v = el('div', 'val' + (f.referenceType === 'yesno' ? ' bool' : ''), fmt(f, recVal(rec, f.columnName)));
       v.title = f.columnName + ' · ' + f.referenceType;
@@ -686,13 +691,62 @@
     });
   }
 
+  // ── Host contract — the STEP-0 freeze (docs/TourGuideHostContract.md §2; IDEMPIERE_RECORD_PANEL.md).
+  // Publishes the agreed nav/locate globals over THIS chrome so the Tour overlay + lens lenses bind BY KEY,
+  // unforked. data-ad-* tags are added at render (buildGrid/buildForm). SEAM #2 (host contract). SEAM #1
+  // (write: real dispatch + ctx) awaits the engine C0 wrapper — marked TODO(STEP-0) below, not invented here.
+  function _adMatch(elTable, key) { return elTable != null && String(elTable).toLowerCase() === String(key).toLowerCase(); }
+  function _firstByTable(key) {
+    var els = document.querySelectorAll('[data-ad-table]');
+    for (var i = 0; i < els.length; i++) if (_adMatch(els[i].getAttribute('data-ad-table'), key)) return els[i];
+    return null;
+  }
+  function _selectTabByTable(table) {
+    var w = _curWin(); if (!w || !w.tabs) return false;
+    for (var i = 0; i < w.tabs.length; i++) {
+      if (_adMatch(w.tabs[i].tableName, table)) { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); return true; }
+    }
+    return false;
+  }
+  window.IdmpHost = {
+    // trace(on): enter/leave the record's flow view (a soft view hint — idempiere has no separate flow pane).
+    trace: function (on) { document.body.classList.toggle('idmp-tracing', !!on); },
+    // focus(key, map): open the keymap window BY NAME, then select the tab whose tableName matches. Record-level
+    //   selection + cold data degrade honestly per map.coverage — non-invent: it never fabricates a row.
+    focus: function (key, map) {
+      if (!map || !map.window) return;
+      var wid = _winByName[String(map.window).toLowerCase()];
+      if (wid == null) { status('ShowMe: "' + map.window + '" not in this menu (coverage ' + (map.coverage || 'partial') + ')'); return; }
+      openWindow(wid, map.window);
+      if (map.table) _selectTabByTable(map.table);
+    },
+    // openTab(key, tab): switch the focused window to the tab named `tab`.
+    openTab: function (key, tab) {
+      var w = _curWin(); if (!w || !w.tabs || !tab) return;
+      for (var i = 0; i < w.tabs.length; i++) if ((w.tabs[i].name || '').toLowerCase() === String(tab).toLowerCase()) { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); return; }
+    },
+    // has(key): does THIS chrome currently render the AD table `key` (a [data-ad-table] is in the DOM)?
+    has: function (key) { return !!key && !!_firstByTable(key); },
+    // locate(key): on-screen rect of the keyed element (centre + badge radius), or null if off-screen.
+    locate: function (key) {
+      var e = _firstByTable(key); if (!e) return null;
+      var r = e.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return null;
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: 14, rRaw: 14 };
+    }
+    // TODO(STEP-0 seam#1 — write path): inject the engine C0 dispatch(intent, ctx) + populated ctx
+    //   {actor,pubKey,roleId,allowOrgs} so the lens chromes can commit (kanban drag / chat send). The kernel
+    //   write path is PROVEN (W-CRUD-WRITELOOP 11/11); only the C0 wrapper + ctx wiring remain (ENGINE_CONTRACT §6).
+  };
+  console.log('§SEAM-FROZEN seam=host-contract globals=IdmpHost methods=trace,focus,openTab,has,locate mount=#idmp-content');
+
   // ── Wire chrome ──
   document.addEventListener('DOMContentLoaded', function () {
     $('idmp-menu-filter').addEventListener('input', function (e) { applyFilter(e.target.value); });
     $('idmp-search').addEventListener('input', function (e) { $('idmp-menu-filter').value = e.target.value; applyFilter(e.target.value); });
     $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
-    $('idmp-help-btn').addEventListener('click', function () { status('Help / ShowMe overlay — arrives once the UI is confirmed'); });
+    $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
     $('idmp-login-back').addEventListener('click', loginStep1);
@@ -703,6 +757,22 @@
   });
 })();
 </script>
+<!-- §SEAM-FROZEN seam#2 — Tour Guide host overlay (record-panel host-conformance, IDEMPIERE_RECORD_PANEL.md).
+     window.IdmpHost + data-ad-* tagging are published by the script above; here we load the SHARED, UNFORKED
+     help_overlay.js + its init-only idempiere adapter (help_idmp.js), with the agreed key vocabulary inlined
+     (mirrors build/erp/help_idmp_keymap.json verbatim — the Tour drift gate). -->
+<script>
+window.__helpIdmpKeymap = {
+  "o2c":             { "kind": "overview", "window": null,               "coverage": "n/a" },
+  "c_order":         { "window": "Sales Order",         "table": "c_order",          "record": "#80001", "coverage": "partial" },
+  "m_inout":         { "window": "Shipment (Customer)", "table": "m_inout",          "coverage": "partial" },
+  "c_invoice":       { "window": "Sales Invoice",       "table": "c_invoice",        "coverage": "partial" },
+  "c_payment":       { "window": "Payment",             "table": "c_payment",        "coverage": "partial" },
+  "c_allocationline":{ "window": "Allocation",          "table": "c_allocationline", "coverage": "partial" }
+};
+</script>
+<script src="help_overlay.js?v=22"></script>
+<script src="help_idmp.js?v=22"></script>
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
