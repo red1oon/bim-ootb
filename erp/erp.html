@@ -83,8 +83,6 @@
 <script src="icons.js?v=22"></script>
 <script src="pill_builder.js?v=22"></script>
 <script src="erp_pills.js?v=22"></script>
-<!-- ERP §0.10a — first-mile Migrate ShowMe overlay (master/metadata data only). -->
-<script src="migrate_showme.js?v=22"></script>
 <script>
 // Phase 1: Instant constellation — fetch initbubble.json, then init
 var _shellReady = false;
@@ -358,7 +356,7 @@ var _shellReady = false;
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=562')
+  navigator.serviceWorker.register('sw.js?v=563')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
