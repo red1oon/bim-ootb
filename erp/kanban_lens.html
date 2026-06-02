@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<!--
+  kanban_lens.html — LENS-FAMILY lane-3 (F2): the KANBAN CHROME page.
+  Implementing prompts/LENS_FAMILY.md §F2 — Witness: §KANBAN-CHROME-FOLD/-DRAG/-LEGALITY.
+  A gated page that folds a Kanban board out of glassbowl_data.db (doc_status fold) with NO server.
+  Mirrors erp.html's sql-wasm WASM boot; the board view-model + drag→dispatch are kanban_lens.js.
+  No fork of the engine — the board is a lens (a fold); dispatch (ENGINE_CONTRACT §1) is the write path.
+  Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+  SPDX-License-Identifier: MIT
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP OOTB — Kanban Lens (doc_status fold)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #121218; color: #e8e8ed; font-family: 'Inter', system-ui, sans-serif; font-size: 14px; }
+  header { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .sub { font-size: 11px; color: #888; margin-top: 2px; }
+  #gate { padding: 16px; color: #888; font-size: 13px; }
+  #kanban-root { padding: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kanban Lens — a doc_status fold over glassbowl_data.db</h1>
+  <div class="sub">Columns = wfmc states · cards = real docs grouped by docstatus · drag = dispatch(SET_STATUS) (SEND==DRAG==VERB)</div>
+</header>
+<div id="gate">Loading kanban lens&hellip;</div>
+<div id="kanban-root"></div>
+
+<script src="kanban_lens.js?v=1"></script>
+<script>
+(function () {
+  'use strict';
+  function log(m) { console.log('§KANBAN_HTML ' + m); }
+
+  function loadScript(url, cdn) {
+    return new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.src = url; s.onload = resolve;
+      s.onerror = function () {
+        if (cdn) { var s2 = document.createElement('script'); s2.src = cdn; s2.onload = resolve; s2.onerror = function(){resolve();}; document.head.appendChild(s2); }
+        else resolve();
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  // status-grouped fold over the resident mock DataSource (the §KANBAN-FOLD shape from poc_kanban.js):
+  // COUNT(*) GROUP BY docstatus across the document tables. Pure read — no write here.
+  function foldDocStatus(db) {
+    var folds = [];
+    ['c_invoice', 'c_order', 'c_payment'].forEach(function (tb) {
+      try {
+        var r = db.exec("SELECT docstatus, COUNT(*) AS n FROM " + tb + " GROUP BY docstatus");
+        if (!r.length) return;
+        var T = tb.replace(/^c_/, 'C_').replace(/^c_o/, 'C_O'); // C_Invoice / C_Order / C_Payment
+        T = tb === 'c_invoice' ? 'C_Invoice' : tb === 'c_order' ? 'C_Order' : 'C_Payment';
+        r[0].values.forEach(function (row) {
+          folds.push({ table: T, doc_status: row[0], count: Number(row[1]) });
+        });
+      } catch (e) { log('fold skip ' + tb + ': ' + e.message); }
+    });
+    log('foldDocStatus rows=' + folds.length);
+    return folds;
+  }
+
+  async function boot() {
+    await loadScript('lib/sql-wasm-fts5.js', 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js');
+    var SQL;
+    try { SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }); }
+    catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
+
+    var params = new URLSearchParams(location.search);
+    var dbUrl = params.get('db') || 'glassbowl_data.db';
+    var db;
+    try {
+      var buf = await (await fetch(dbUrl)).arrayBuffer();
+      db = new SQL.Database(new Uint8Array(buf));
+      log('db loaded ' + dbUrl + ' size=' + Math.round(buf.byteLength / 1024) + 'KB');
+    } catch (e) { document.getElementById('gate').textContent = 'DB load failed: ' + e.message; return; }
+
+    // wfmc state machine — folded from manifest.json (the SAME engine state machine the kernel uses).
+    var wfmc = {};
+    try { wfmc = (await (await fetch('manifest.json?v=1')).json()).wfmc || {}; }
+    catch (e) { log('manifest load failed: ' + e.message); }
+    window.__kanbanDb = db; window.__wfmc = wfmc;   // exposed for the witness/host
+
+    var folds = foldDocStatus(db);
+    var board = KanbanLens.buildBoard(folds, wfmc, { showEmptyStates: false });
+    log('board columns=' + board.columns.length + ' cards=' + board.totalCards + ' sparse=' + board.sparse);
+
+    document.getElementById('gate').style.display = 'none';
+    KanbanLens.mount({
+      root: document.getElementById('kanban-root'),
+      board: board,
+      wfmc: wfmc,
+      // TODO(STEP-0): bind the live engine dispatch + ctx here once the host lane pins exposed-globals
+      //   (ENGINE_CONTRACT §1 dispatch(intent, ctx) = the ONLY write path; SEND==DRAG==VERB). Until then
+      //   drops resolve + log but do NOT write (the lens never invents a write path).
+      dispatch: (typeof window !== 'undefined' && window.ERP && window.ERP.dispatch) ? window.ERP.dispatch : null,
+      ctx: (typeof window !== 'undefined' && window.ERP && window.ERP.ctx) ? window.ERP.ctx : null
+    });
+  }
+  boot().catch(function (e) { document.getElementById('gate').textContent = 'Boot error: ' + e.message; console.error(e); });
+})();
+</script>
+</body>
+</html>

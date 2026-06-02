@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<!--
+  chat_lens.html — LENS lane-3 F1 — the CHAT CHROME page (mobile-first), GATED + its OWN page so it
+    never collides with the desktop iDempiere renderer / login / record-panel work.
+  THE LENS: the ERP rendered as a WhatsApp/Telegram thread — kernel_ops IS the message stream.
+  Spec: prompts/MOBILE_CHAT_LENS.md · seam: docs/ENGINE_CONTRACT.md · witness: tests/poc_chat_chrome.js.
+  Boots sql-wasm + glassbowl_data.db exactly as erp.html does, builds the doc's op-log THE PROVEN WAY
+    (scripts/poc_chat.js construction), then mounts chat_lens.js's pure view-model. NO server. NO deploy.
+  Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+  SPDX-License-Identifier: MIT
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ERP Chat Lens — the op-log as a conversation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0b141a; color: #e9edef; font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 15px; line-height: 1.4; min-height: 100vh; }
+  /* mobile-first chat shell */
+  .chatlens { max-width: 520px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+  .chatlens__inbox { background: #111b21; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 8px 12px; }
+  .chatlens__thread { padding: 10px 8px; border-radius: 8px; cursor: pointer; color: #aebac1; font-size: 13px; }
+  .chatlens__thread:active { background: rgba(255,255,255,0.05); }
+  .chatlens__header { position: sticky; top: 0; z-index: 5; background: #202c33; padding: 14px 16px; font-weight: 600; font-size: 14px; box-shadow: 0 1px 0 rgba(0,0,0,0.3); }
+  /* posting strip — honest coverage degrade shown IN the lens */
+  .chatlens__posting { padding: 8px 16px; font-size: 12px; color: #8696a0; background: #182229; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .chatlens__posting--partial { color: #d9b35a; }
+  .chatlens__posting--absent { color: #8696a0; font-style: italic; }
+  .chatlens__thread-body { flex: 1; padding: 14px 12px 80px; display: flex; flex-direction: column; gap: 8px; background:
+    linear-gradient(rgba(11,20,26,0.96), rgba(11,20,26,0.96)); }
+  .chatlens__bubble { max-width: 78%; padding: 8px 10px 6px; border-radius: 10px; word-wrap: break-word; animation: pop .18s ease; }
+  .chatlens__bubble--in { align-self: flex-start; background: #202c33; }
+  .chatlens__bubble--out { align-self: flex-end; background: #005c4b; }
+  .chatlens__meta { font-size: 11px; color: #8696a0; margin-bottom: 2px; }
+  .chatlens__body { font-size: 14px; }
+  .chatlens__pills { position: fixed; bottom: 0; left: 0; right: 0; max-width: 520px; margin: 0 auto;
+    display: flex; gap: 8px; padding: 10px 12px; background: #111b21; border-top: 1px solid rgba(255,255,255,0.06); }
+  .chatlens__pill { flex: 1; min-height: 44px; border: none; border-radius: 20px; background: #2a3942; color: #e9edef; font-size: 13px; cursor: pointer; }
+  .chatlens__pill:active { background: #005c4b; }
+  @keyframes pop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  #cl-loading, #cl-error { padding: 40px 20px; text-align: center; color: #8696a0; }
+  #cl-error { color: #f08a8a; }
+</style>
+</head>
+<body>
+  <div id="cl-loading">Loading the op-log…</div>
+  <div id="cl-root"></div>
+
+  <!-- sql-wasm (same bundle erp.html boots) -->
+  <script src="lib/sql-wasm-fts5.js"></script>
+  <!-- the chat chrome (this lane's file) -->
+  <script src="chat_lens.js"></script>
+
+  <script>
+  'use strict';
+  // money helper (mirrors chat_lens.js / poc_chat.js)
+  function money(n) { return (Math.round(Number(n || 0) * 100) / 100).toFixed(2); }
+  function rows(db, sql) { var r = db.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); }
+  function one(db, sql) { var r = rows(db, sql); return r.length ? r[0] : null; }
+
+  (async function () {
+    var loading = document.getElementById('cl-loading');
+    try {
+      // ── boot sql-wasm exactly as erp.html (local wasm, cdn fallback) ──
+      var SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } });
+      // ── load the resident mock DataSource (document data) ──
+      var resp = await fetch('glassbowl_data.db');
+      var buf = await resp.arrayBuffer();
+      var db = new SQL.Database(new Uint8Array(buf));
+
+      // ── source a REAL document (C_Invoice#103) — non-invent: every value from a row ──
+      var INV = 103;
+      var inv = one(db, 'SELECT * FROM c_invoice WHERE c_invoice_id=' + INV);
+      var bp = one(db, 'SELECT name FROM c_bpartner WHERE c_bpartner_id=' + inv.c_bpartner_id);
+      var lines = rows(db, 'SELECT * FROM c_invoiceline WHERE c_invoice_id=' + INV + ' ORDER BY line');
+      var bpName = bp ? bp.name : ('BPartner#' + inv.c_bpartner_id);
+
+      // ════════════════════════════════════════════════════════════════════════════
+      // SEAM STUB — build the doc's op-log rows in the EXACT shape the engine `read`
+      //   (docs/ENGINE_CONTRACT.md §1) returns kernel_ops: { op_uuid, timestamp, op_type,
+      //   parameters(rich JSON), output_guid, user_tag }. This mirrors the PROVEN construction in
+      //   scripts/poc_chat.js (CREATE_DOCUMENT, CREATE_LINE×N, SET_STATUS DR→CO) over the REAL rows —
+      //   deterministic pre-stamped uuids, audit actors folded from createdby/updatedby. The browser
+      //   does NOT carry the node-only erp_kernel.js (read-only backend); this stub stands in until
+      //   the host engine exposes `read` here.
+      // TODO(STEP-0): replace this block with `read(kernel_ops, ctx)` once the host engine is mounted.
+      // ════════════════════════════════════════════════════════════════════════════
+      var ops = [];
+      ops.push({ op_uuid: 'user:' + inv.createdby + ':1000', timestamp: 1000, op_type: 'CREATE_DOCUMENT', output_guid: 'DOC:C_Invoice#' + INV, user_tag: 'user:' + inv.createdby,
+        parameters: JSON.stringify({ payload: { table: 'C_Invoice', documentno: inv.documentno, bpartner: bpName, grandtotal: inv.grandtotal } }) });
+      lines.forEach(function (l, i) {
+        ops.push({ op_uuid: 'user:' + inv.createdby + ':' + (1001 + i), timestamp: 1001 + i, op_type: 'CREATE_LINE', output_guid: 'LINE:C_InvoiceLine#' + l.c_invoiceline_id, user_tag: 'user:' + inv.createdby,
+          parameters: JSON.stringify({ payload: { line_no: l.line, product: l.m_product_id, linenetamt: l.linenetamt } }) });
+      });
+      ops.push({ op_uuid: 'user:' + inv.updatedby + ':' + (2000 + 1 + lines.length), timestamp: 2000 + 1 + lines.length, op_type: 'SET_STATUS', output_guid: 'DOC:C_Invoice#' + INV, user_tag: 'user:' + inv.updatedby,
+        parameters: JSON.stringify({ payload: { table: 'C_Invoice', id: INV }, before: 'DR', after: 'CO' }) });
+
+      // ── source labels for the thread header (folded; absent → "absent", never fabricated) ──
+      var humanTime = { CREATE_DOCUMENT: inv.created, CREATE_LINE: inv.created, SET_STATUS: inv.updated };
+
+      // ── COVERAGE read — the posted-message degrade, folded the PROVEN way (§CHAT-COVERAGE / poc_chat.js).
+      //    Read the client-level books aggregate from REAL fact_acct rows; per-doc link present ONLY if
+      //    fact_acct carries record_id + ad_table_id. NEVER fabricate a per-doc journal. Absent table →
+      //    factAcct stays null → chat_lens.foldCoverage labels coverage 'absent'.
+      // TODO(STEP-0): replace with `read(books(ctx))` once the host engine exposes the books read here. ──
+      var factAcct = null;
+      try {
+        var faCols = rows(db, 'PRAGMA table_info(fact_acct)').map(function (c) { return String(c.name).toLowerCase(); });
+        var docLinkable = faCols.indexOf('record_id') >= 0 && faCols.indexOf('ad_table_id') >= 0;
+        var fa = one(db, 'SELECT COUNT(*) AS c, ROUND(SUM(amtacctdr),2) AS dr, ROUND(SUM(amtacctcr),2) AS cr FROM fact_acct');
+        if (fa) factAcct = { rows: fa.c, dr: fa.dr, cr: fa.cr, docLinkable: docLinkable };
+      } catch (faErr) { factAcct = null; /* absent → labelled, never fabricated */ }
+
+      var srcLabels = { doc: 'DOC:C_Invoice#' + INV, invoiceNo: inv.documentno, bpartner: bpName, grandtotal: inv.grandtotal, lines: lines.length, humanTime: humanTime, factAcct: factAcct };
+
+      // ── build the pure view-model + mount the chat chrome ──
+      var vm = window.ChatLens.buildThreadVM(ops, srcLabels);
+      console.log('§CHAT-CHROME-PAGE doc=C_Invoice#' + INV + ' bubbles=' + vm.bubbles.length + ' handAuthored=' + vm.handAuthored + ' viewport=' + vm.mobile.viewport);
+      console.log('§CHAT-CHROME-PAGE-COVERAGE source=' + vm.coverage.source + ' coverage=' + vm.coverage.coverage + ' clientDr=' + vm.coverage.clientDr + ' clientCr=' + vm.coverage.clientCr + ' balanced=' + (vm.coverage.balanced ? 'Y' : 'N') + ' fabricated=' + vm.coverage.fabricated);
+
+      // ── anchor fold is ENGINE-supplied (read over FKs) — non-invent. Lined up for the Anchor pill. ──
+      // TODO(STEP-0): replace with `read(relatedDocs(bpartner), ctx)` once the host engine is mounted.
+      var rel = [];
+      rows(db, 'SELECT documentno, docstatus FROM c_order WHERE c_bpartner_id=' + inv.c_bpartner_id).forEach(function (r) { rel.push('C_Order ' + r.documentno + ' (' + r.docstatus + ')'); });
+      rows(db, 'SELECT documentno, docstatus FROM c_invoice WHERE c_bpartner_id=' + inv.c_bpartner_id).forEach(function (r) { rel.push('C_Invoice ' + r.documentno + ' (' + r.docstatus + ')'); });
+      vm.anchor = { entity: bpName, relatedDocs: rel, lastAction: 'SET_STATUS@' + inv.updated, outstanding: rel.length };
+
+      loading.style.display = 'none';
+      window.ChatLens.mountChat(document.getElementById('cl-root'), vm);
+    } catch (e) {
+      loading.style.display = 'none';
+      var err = document.createElement('div'); err.id = 'cl-error';
+      err.textContent = 'Chat lens failed to load: ' + e.message;
+      document.body.appendChild(err);
+      console.log('§CHAT-CHROME-PAGE error=' + e.message);
+    }
+  })();
+  </script>
+</body>
+</html>
