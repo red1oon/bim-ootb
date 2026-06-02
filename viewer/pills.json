@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "spec": "docs/PILL_MANIFEST_SPEC.md (idempiereUI I1)",
+  "registry": "pill_builder.js (used as-is — no second framework)",
+  "note": "Tier-1 ERP pill manifest for erp.html. fn/isActive are bound BY ID in code at mount (functions are not JSON). icon: '@bim' = adopt the icon the BIM registry already binds for that id (reuse, not reinvent); a bare name = a glyph that EXISTS in the panels.js I.<name> set; 'NEEDS-ICON:<hint>' = a glyph the set lacks, to be ADDED + reviewed, never inlined as raw SVG (PILL_MANIFEST_SPEC §0.3).",
+  "pills": [
+    { "id": "home",      "name": "Home",         "key": "",   "icon": "@bim",                "order": 1,  "reuse": "bim", "hold": "admenu" },
+    { "id": "settings",  "name": "Settings",     "key": "=",  "icon": "@bim",                "order": 2,  "reuse": "bim" },
+    { "id": "ledger",    "name": "Report",       "key": "4",  "icon": "clipboard",           "order": 3,  "reuse": "new", "hold": "reports", "note": "ERP financial Report (Receipt/Trial Balance/P&L). DISTINCT id — NOT BIM report=4D/5D." },
+    { "id": "graphs",    "name": "Graphs",       "key": "g",  "icon": "grid",                "order": 4,  "reuse": "new", "hold": "charts" },
+    { "id": "edit",      "name": "Editable",     "key": "e",  "icon": "doc",                 "order": 5,  "reuse": "new", "note": "placeholder glyph (closest existing) — a 'pencil' glyph TBD" },
+    { "id": "process",   "name": "Process",      "key": "p",  "icon": "next",                "order": 6,  "reuse": "new", "note": "DocAction advances state -> 'next' glyph" },
+    { "id": "find",      "name": "Find",         "key": "f",  "icon": "@bim",                "order": 7,  "reuse": "bim" },
+    { "id": "share",     "name": "Share",        "key": "/",  "icon": "@bim",                "order": 8,  "reuse": "bim" },
+    { "id": "tm",        "name": "Time Machine", "key": "t",  "icon": "@bim",                "order": 9,  "reuse": "bim", "note": "toggles the bottom timeline" },
+    { "id": "help",      "name": "Need Help",    "key": "F1", "icon": "@bim",                "order": 10, "reuse": "bim" },
+    { "id": "idempiere", "name": "iDempiere-like UI", "key": "", "img": "aplus.png", "order": 11, "reuse": "new", "nav": "idempiere.html", "note": "ETHICS: the user's neutral A+ raster (aplus.png) — supersedes erp_mark.svg; NEVER the trademarked iDempiere logo (prompts/IDEMPIERE_PILL_HANDOFF.md, docs/IDEMPIERE_2.md §Guardrails 3). Renderer #1 = idempiere.html, built idempiereUI.md I1." },
+    { "id": "glassbowl", "name": "Glassbowl",    "key": "",   "icon": "eye",                 "order": 12, "reuse": "new", "nav": "glassbowl.html" },
+    { "id": "gravity",   "name": "Gravity",      "key": "",   "icon": "sun",                 "order": 13, "reuse": "new", "nav": "glassbowl_gravity.html", "note": "placeholder glyph (existing 'sun' = gravity well) — a 'gravity' glyph TBD" }
+  ]
+}
