@@ -1,5 +1,6 @@
 *.db
 !viewer/ad_seed.db
+!erp/glassbowl_data.db
 *.bin
 node_modules/
 test-results/
