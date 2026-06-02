@@ -149,6 +149,37 @@
   }
   #idmp-loading .sp { width:34px; height:34px; border:3px solid #cfd8e3; border-top-color:var(--idmp-blue); border-radius:50%; animation:sp .8s linear infinite; }
   @keyframes sp { to { transform:rotate(360deg); } }
+  /* ── Login / Role·Client·Org selection (docs §3b) — identity SELECTION, not auth ── */
+  #idmp-login {
+    position:fixed; inset:0; z-index:120; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,var(--idmp-header),#0f2f57);
+  }
+  .idmp-login-card {
+    background:#fff; border-radius:10px; width:384px; max-width:92vw; padding:26px 28px;
+    box-shadow:0 14px 44px rgba(0,0,0,0.4); max-height:92vh; overflow:auto;
+  }
+  .idmp-login-mark { width:42px; height:42px; border-radius:8px; background:var(--idmp-blue); color:#fff;
+    font-weight:800; font-size:17px; letter-spacing:-.5px; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; }
+  .idmp-login-title { text-align:center; font-size:18px; font-weight:700; }
+  .idmp-login-sub { text-align:center; font-size:11.5px; color:var(--idmp-muted); margin:5px 0 16px; }
+  .idmp-login-label { font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--idmp-muted); margin:13px 0 5px; }
+  .idmp-login-list { display:flex; flex-direction:column; gap:6px; max-height:48vh; overflow:auto; }
+  .idmp-login-user { display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--idmp-border);
+    border-radius:6px; cursor:pointer; background:#fbfcfe; font-size:14px; }
+  .idmp-login-user:hover { background:var(--idmp-hover); border-color:var(--idmp-blue); }
+  .idmp-login-user .av { width:26px; height:26px; border-radius:50%; background:var(--idmp-blue); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex:0 0 auto; }
+  .idmp-login-user.disabled { opacity:.5; cursor:not-allowed; }
+  .idmp-login-user.disabled:hover { background:#fbfcfe; border-color:var(--idmp-border); }
+  .idmp-login-user .tag { margin-left:auto; font-size:11px; color:var(--idmp-muted); }
+  #idmp-login select, #idmp-login input { width:100%; height:34px; border:1px solid var(--idmp-border);
+    border-radius:5px; padding:0 9px; font-size:13px; background:#fff; color:var(--idmp-text); }
+  #idmp-login input[readonly] { background:#eef1f5; color:var(--idmp-muted); }
+  .idmp-login-actions { display:flex; gap:8px; margin-top:18px; }
+  .idmp-login-actions button { flex:1; height:36px; border-radius:6px; border:1px solid var(--idmp-border);
+    cursor:pointer; font-size:13px; font-weight:600; }
+  .idmp-login-actions .primary { background:var(--idmp-blue); color:#fff; border-color:var(--idmp-blue); }
+  .idmp-login-note { font-size:11px; color:var(--idmp-muted); margin-top:12px; text-align:center; }
   /* ── Mobile adaptation (desktop is exact; mobile may adapt) ── */
   @media (max-width:760px) {
     #idmp-burger { display:flex; }
@@ -167,14 +198,41 @@
 
 <div id="idmp-loading"><div class="sp"></div><div id="idmp-load-msg">Loading iDempiere — folding the Application Dictionary from SQLite&hellip;</div></div>
 
+<!-- Login / Role·Client·Org selection (docs §3b) — folded from AD_User/AD_Role/AD_Org; SELECTION, not auth -->
+<div id="idmp-login" style="display:none">
+  <div class="idmp-login-card">
+    <div class="idmp-login-mark">A+</div>
+    <div class="idmp-login-title">iDempiere&#8209;like — Sign In</div>
+    <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
+    <div id="idmp-login-step1">
+      <div class="idmp-login-label">Select a user</div>
+      <div id="idmp-login-users" class="idmp-login-list"></div>
+    </div>
+    <div id="idmp-login-step2" style="display:none">
+      <div class="idmp-login-label">Role</div>
+      <select id="idmp-login-role"></select>
+      <div class="idmp-login-label">Client</div>
+      <input id="idmp-login-client" readonly>
+      <div class="idmp-login-label">Organisation</div>
+      <select id="idmp-login-org"></select>
+      <div class="idmp-login-actions">
+        <button id="idmp-login-back" class="ghost">&lsaquo; Back</button>
+        <button id="idmp-login-ok" class="primary">Log In &rsaquo;</button>
+      </div>
+      <div id="idmp-login-note" class="idmp-login-note"></div>
+    </div>
+  </div>
+</div>
+
 <div id="idmp-header">
   <button id="idmp-burger" class="hbtns"><button title="Menu">&#9776;</button></button>
   <span id="idmp-logo">A+</span>
   <span id="idmp-title">iDempiere&#8209;like</span>
   <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
   <span class="spacer"></span>
-  <span class="ctx" id="idmp-ctx">GardenWorld · System Administrator</span>
+  <span class="ctx" id="idmp-ctx">&mdash;</span>
   <span class="hbtns">
+    <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
     <button id="idmp-home-btn" title="Home / Engine view (erp.html)">&#8962;</button>
     <button title="Help" id="idmp-help-btn">?</button>
   </span>
@@ -198,12 +256,19 @@
 
 <script src="ad_parser.js?v=22"></script>
 <script src="ad_data.js?v=22"></script>
+<script src="idmp_session.js?v=22"></script>
 <script>
 (function () {
   'use strict';
   var _t0 = performance.now();
   var db = null;
-  var ADP = window.ADParser, ADD = window.ADData;
+  var ADP = window.ADParser, ADD = window.ADData, SES = window.IdmpSession;
+
+  // ── Session (docs §3b): identity + Role·Client·Org context SELECTION (no server, no auth) ──
+  var _session = null;       // { user, role, client, org, roles, orgs, winSet } — null until login
+  var _loginUser = null;     // the user picked at login step 1 (drives step 2)
+  var _lastMenu = { visible: 0, total: 0 };  // last scopeMenu counts (for the §witness)
+  var _pendingWid = null;    // ?window=<id> deep link, opened AFTER login
 
   // open-window state (a faithful single-window desktop; MDI tabs track opened windows)
   var _openWins = {};        // windowId -> { win, name }
@@ -269,22 +334,82 @@
     if (ADP && ADP.init) ADP.init(db);
     console.log('§IDEMPIERE boot db=' + src + ' ms=' + Math.round(performance.now() - _t0));
 
-    buildMenu();
+    // Menu builds only AFTER login — it is role-scoped (docs §3b). Defer the deep link too.
+    _pendingWid = new URLSearchParams(location.search).get('window');
     $('idmp-loading').style.display = 'none';
+    showLogin('user');
+  }
 
-    // deep link ?window=<id>
-    var wid = new URLSearchParams(location.search).get('window');
-    if (wid) openWindow(Number(wid));
+  // ── Login flow (docs §3b/§3b.1): pick user → Role/Client/Org → role-scoped session ──
+  function showLogin(step) {
+    $('idmp-login').style.display = 'flex';
+    if (step === 'role' && _loginUser) loginStep2(_loginUser); else loginStep1();
+  }
+  function loginStep1() {
+    $('idmp-login-step2').style.display = 'none';
+    $('idmp-login-step1').style.display = '';
+    var host = $('idmp-login-users'); host.innerHTML = '';
+    SES.listUsers(db).forEach(function (u) {
+      var row = el('div', 'idmp-login-user' + (u.hasRoles ? '' : ' disabled'));
+      row.appendChild(el('span', 'av', (u.name || '?').charAt(0).toUpperCase()));
+      row.appendChild(el('span', 'nm', u.name));
+      if (!u.hasRoles) row.appendChild(el('span', 'tag', '(no roles)'));   // seed reality — named, not dropped
+      else row.addEventListener('click', function () { _loginUser = u; loginStep2(u); });
+      host.appendChild(row);
+    });
+  }
+  function loginStep2(u) {
+    $('idmp-login-step1').style.display = 'none';
+    $('idmp-login-step2').style.display = '';
+    var roleSel = $('idmp-login-role'); roleSel.innerHTML = '';
+    var roles = SES.rolesForUser(db, u.id);
+    roles.forEach(function (r) { var o = el('option', null, r.name); o.value = r.id; roleSel.appendChild(o); });
+    function syncRole() {
+      var rid = Number(roleSel.value);
+      var client = SES.clientFor(db, rid);
+      $('idmp-login-client').value = client ? (client.name + ' (' + client.id + ')') : '';
+      var orgSel = $('idmp-login-org'); orgSel.innerHTML = '';
+      SES.orgsForRole(db, rid).forEach(function (o) { var op = el('option', null, o.name); op.value = o.id; orgSel.appendChild(op); });
+    }
+    roleSel.onchange = syncRole; syncRole();
+    $('idmp-login-note').textContent = u.name + ' · ' + roles.length + ' role(s) — context selection, not authentication';
+  }
+  function doLogin() {
+    var rid = Number($('idmp-login-role').value);
+    var oid = Number($('idmp-login-org').value);
+    _session = SES.buildContext(db, _loginUser.id, { roleId: rid, orgId: oid });
+    if (!_session) { $('idmp-login-note').textContent = 'That user has no roles — cannot log in.'; return; }
+    $('idmp-login').style.display = 'none';
+    applySession();
+  }
+  function applySession() {
+    // header context bar — live Client · Role · Org (replaces the old static string)
+    var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
+    $('idmp-ctx').textContent = _session.client.name + ' · ' + _session.role.name + ' · ' + orgLabel;
+    // a role change can revoke window access — close any open windows, reset to placeholder
+    _openWins = {}; _activeWin = null; renderWinTabs();
+    $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
+    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>';
+    buildMenu();   // role-scoped
+    console.log('§IDEMPIERE-LOGIN user=' + _session.user.name + ' roles=' + (_session.roles ? _session.roles.length : '?') +
+      ' client=' + _session.client.name + '(' + _session.client.id + ')' +
+      ' org=' + (_session.org ? _session.org.name.replace(/\s.*/, '') : '-') +
+      ' menu-visible=' + _lastMenu.visible + '/' + _lastMenu.total +
+      ' source=ad_user/ad_role/ad_window_access handAuthored=0');
+    if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) openWindow(w); }
   }
 
   // ── Left menu tree (folded from AD_Menu) ──
   function buildMenu() {
     var roots = (ADP && ADP.getMenuTree) ? ADP.getMenuTree(db) : [];
+    // Role-scope: prune W leaves the role can't open + empty folders (docs §3b.1). winSet from AD_Window_Access.
+    var scoped = (_session && SES && SES.scopeMenu) ? SES.scopeMenu(roots, _session.winSet) : { tree: roots, visible: 0, total: 0 };
+    _lastMenu = scoped;
     var tree = $('idmp-tree'); tree.innerHTML = '';
     var groups = 0, leaves = 0;
-    roots.forEach(function (n) { var r = renderNode(n); tree.appendChild(r.dom); groups += r.groups; leaves += r.leaves; });
-    console.log('§IDEMPIERE menu groups=' + groups + ' leaves=' + leaves + ' source=ad_menu handAuthored=0');
-    status('Menu: ' + groups + ' groups · ' + leaves + ' items — folded from AD_Menu');
+    scoped.tree.forEach(function (n) { var r = renderNode(n); tree.appendChild(r.dom); groups += r.groups; leaves += r.leaves; });
+    console.log('§IDEMPIERE menu groups=' + groups + ' leaves=' + leaves + ' visibleWindows=' + scoped.visible + '/' + scoped.total + ' source=ad_menu handAuthored=0');
+    status('Menu: ' + groups + ' groups · ' + leaves + ' items' + (_session ? ' · scoped to ' + _session.role.name : '') + ' — folded from AD_Menu');
   }
   function renderNode(node) {
     var groups = 0, leaves = 0;
@@ -436,6 +561,12 @@
     }
     var clauses = [];
     if (tab.whereClause && tab.whereClause.indexOf('@') < 0) clauses.push('(' + tab.whereClause + ')'); // skip context-var clauses in I1
+    // ── Session data scope (docs §3b.1): client always; specific org narrows; org 0=* means no org narrowing.
+    // Applied ONLY when the column exists on this table — same clause layer as master-detail's parent FK.
+    if (_session) {
+      if (_session.client && _colExists(tab.tableName, 'AD_Client_ID')) clauses.push('AD_Client_ID IN (0,' + _session.client.id + ')');
+      if (_session.org && _session.org.id !== 0 && _colExists(tab.tableName, 'AD_Org_ID')) clauses.push('AD_Org_ID IN (0,' + _session.org.id + ')');
+    }
     // ── Master-detail: a child tab (tabLevel>0) filters by its parent record's key (the iDempiere drill) ──
     var level = tab.tabLevel || 0, mdNote = '';
     if (level > 0) {
@@ -548,14 +679,20 @@
     $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
     $('idmp-help-btn').addEventListener('click', function () { status('Help / ShowMe overlay — arrives once the UI is confirmed'); });
+    // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
+    // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
+    $('idmp-login-back').addEventListener('click', loginStep1);
+    $('idmp-login-ok').addEventListener('click', doLogin);
+    $('idmp-switch-btn').addEventListener('click', function () { showLogin('role'); });
+    $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
     boot().catch(function (e) { console.error('§IDEMPIERE boot error: ' + e.message); $('idmp-load-msg').textContent = 'Boot error: ' + e.message; });
   });
 })();
 </script>
 <script>
-// Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data + ad_seed.db are precached (sw v559).
+// Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=560')
+  navigator.serviceWorker.register('sw.js?v=561')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
