@@ -245,7 +245,6 @@
   <span class="ctx" id="idmp-ctx">&mdash;</span>
   <span class="hbtns">
     <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
-    <button id="idmp-posted-btn" title="Accts Posted (this record)">&#128210;</button>
     <button id="idmp-home-btn" title="Home / Engine view (erp.html)">&#8962;</button>
     <button title="Help" id="idmp-help-btn">?</button>
   </span>
@@ -806,13 +805,76 @@
     document.head.appendChild(s);
   }
 
+  // ── Pill rail (mobile-style, right edge) — Posted · Graph · Kanban · Install · Migrate (Odoo effects). ──
+  function _overlay(title, node) {
+    _injectPostedCSS(); _injectPillCSS();
+    var prev = $('posted-overlay'); if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+    var ov = el('div'); ov.id = 'posted-overlay';
+    var hd = el('div', 'posted-ov-hd', title);
+    var x = el('span', 'posted-ov-x', '✕');
+    var unbind = window.AcctsPosted.bindBack(close);
+    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); }
+    x.addEventListener('click', close); hd.appendChild(x);
+    ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
+  }
+  function _groupRecs() {
+    var tab = _curTab(); if (!tab || !_records.length) return null;
+    var flds = _displayFields(tab) || [], pick = null;
+    for (var i = 0; i < flds.length; i++) { var cn = (flds[i].columnName || '').toLowerCase(); if (cn.indexOf('docstatus') >= 0 || cn.indexOf('status') >= 0) { pick = flds[i]; break; } }
+    if (!pick) pick = flds[0]; if (!pick) return null;
+    var g = {}; _records.forEach(function (r) { var v = String(fmt(pick, recVal(r, pick.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
+    return { col: pick, label: pick.name, groups: g, tab: tab };
+  }
+  function openGraphFor() {
+    if (!_session) { status('Log in first'); return; }
+    var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
+    var keys = Object.keys(gr.groups), max = 1; keys.forEach(function (k) { max = Math.max(max, gr.groups[k].length); });
+    var wrap = el('div', 'chart-wrap'); wrap.appendChild(el('div', 'chart-title', 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)'));
+    keys.forEach(function (k) { var n = gr.groups[k].length, row = el('div', 'chart-row');
+      row.appendChild(el('span', 'chart-lbl', k)); var bw = el('div', 'chart-barw'), b = el('div', 'chart-bar', String(n));
+      b.style.width = Math.round(n / max * 100) + '%'; bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row); });
+    _overlay('Graph', wrap); console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + keys.length + ' table=' + gr.tab.tableName);
+  }
+  function openKanbanFor() {
+    if (!_session) { status('Log in first'); return; }
+    var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
+    var board = el('div', 'kb-board');
+    Object.keys(gr.groups).forEach(function (k) { var col = el('div', 'kb-col');
+      col.appendChild(el('div', 'kb-colhd', k + ' · ' + gr.groups[k].length));
+      gr.groups[k].slice(0, 25).forEach(function (r) { col.appendChild(el('div', 'kb-card', String(recVal(r, _keyCol(gr.tab))))); });
+      board.appendChild(col); });
+    _overlay('Kanban — ' + gr.tab.name, board); console.log('§KANBAN-PILL cols=' + Object.keys(gr.groups).length + ' table=' + gr.tab.tableName);
+  }
+  function openInstallFor() { status('Install: pull the full DB to this device, or pair via QR to your machine — POC'); console.log('§INSTALL-PILL action=install-stub'); }
+  function openMigrateFor() { status('Migrate: run the local extractor on your machine, mirror here (QR pairing) — POC'); console.log('§MIGRATE-PILL action=migrate-stub'); }
+  function buildPillRail() {
+    _injectPillCSS();
+    var rail = el('div'); rail.id = 'idmp-pillrail';
+    [['📒', 'Posted', openPostedFor], ['📊', 'Graph', openGraphFor], ['🗂', 'Kanban', openKanbanFor],
+     ['⬇', 'Install', openInstallFor], ['🔌', 'Migrate', openMigrateFor]].forEach(function (p) {
+      var b = el('button', 'idmp-pill'); b.title = p[1];
+      b.appendChild(el('span', 'idmp-pill-ic', p[0])); b.appendChild(el('span', 'idmp-pill-lb', p[1]));
+      b.addEventListener('click', p[2]); rail.appendChild(b);
+    });
+    document.body.appendChild(rail); console.log('§PILL-RAIL pills=5 [Posted,Graph,Kanban,Install,Migrate]');
+  }
+  function _injectPillCSS() {
+    if (window._pillCSSDone) return; window._pillCSSDone = true;
+    var s = document.createElement('style');
+    s.textContent = '#idmp-pillrail{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;display:flex;flex-direction:column;gap:8px;max-height:82vh;overflow:auto;padding:8px;border-radius:18px;background:rgba(20,22,32,.82);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px)}' +
+      '.idmp-pill{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;min-height:48px;border:none;border-radius:14px;background:rgba(255,255,255,.06);color:#dfe6f2;cursor:pointer;padding:6px 2px}.idmp-pill:hover{background:rgba(108,159,255,.25)}.idmp-pill-ic{font-size:18px;line-height:1}.idmp-pill-lb{font-size:9px;opacity:.85}' +
+      '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
+      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}';
+    document.head.appendChild(s);
+  }
+
   // ── Wire chrome ──
   document.addEventListener('DOMContentLoaded', function () {
     $('idmp-menu-filter').addEventListener('input', function (e) { applyFilter(e.target.value); });
     $('idmp-search').addEventListener('input', function (e) { $('idmp-menu-filter').value = e.target.value; applyFilter(e.target.value); });
     $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
-    $('idmp-posted-btn').addEventListener('click', openPostedFor);
+    buildPillRail();
     $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
