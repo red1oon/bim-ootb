@@ -737,10 +737,10 @@ function setupTools(A) {
   A._nightLights = [];       // active THREE.PointLight objects
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
-  var NIGHT_MAX_LIGHTS = 12; // §S277d: 12 POL — fills rooms properly
-  var NIGHT_LIGHT_RANGE = 30; // §S277d: 30m radius
-  var NIGHT_LIGHT_INTENSITY = 1.5; // §S277d: brighter — 4 lights need to cover more
-  var NIGHT_LIGHT_DECAY = 1.5; // §S277d: gentler decay — reaches further per light
+  var NIGHT_MAX_LIGHTS = 12; // §S277d: 12 proximity-culled lights — perf cap (each light = per-pixel cost/frame)
+  var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
+  var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
+  var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
 
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
