@@ -245,6 +245,7 @@
   <span class="ctx" id="idmp-ctx">&mdash;</span>
   <span class="hbtns">
     <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
+    <button id="idmp-posted-btn" title="Accts Posted (this record)">&#128210;</button>
     <button id="idmp-home-btn" title="Home / Engine view (erp.html)">&#8962;</button>
     <button title="Help" id="idmp-help-btn">?</button>
   </span>
@@ -269,6 +270,9 @@
 <script src="ad_parser.js?v=22"></script>
 <script src="ad_data.js?v=22"></script>
 <script src="idmp_session.js?v=22"></script>
+<!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
+<script src="erp_postings.js?v=23"></script>
+<script src="accts_posted.js?v=23"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=22"></script>
 <script>
@@ -335,15 +339,22 @@
     try { SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }); }
     catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
 
-    var src = 'network';
-    var cached = await idbGet('ad_seed_v13');
-    if (cached && cached.byteLength > 1000) {
-      var sig = String.fromCharCode.apply(null, new Uint8Array(cached, 0, 6));
-      if (sig === 'SQLite') { db = new SQL.Database(new Uint8Array(cached)); src = 'idb_cache'; }
+    // ?seed=<file>.db loads a generated AD-gen seed (scripts/gen_ad.js) — bypasses the idb cache so it
+    // never clobbers the real ad_seed.db cache and always loads fresh (§AD-RENDER). Default = ad_seed.db.
+    var seedParam = new URLSearchParams(location.search).get('seed');
+    var seedFile = (seedParam && /^[\w.-]+\.db$/.test(seedParam)) ? seedParam : 'ad_seed.db';
+    var src = seedParam ? 'gen:' + seedFile : 'network';
+    if (!seedParam) {
+      var cached = await idbGet('ad_seed_v13');
+      if (cached && cached.byteLength > 1000) {
+        var sig = String.fromCharCode.apply(null, new Uint8Array(cached, 0, 6));
+        if (sig === 'SQLite') { db = new SQL.Database(new Uint8Array(cached)); src = 'idb_cache'; }
+      }
     }
     if (!db) {
-      var resp = await fetch('ad_seed.db'); var buf = await resp.arrayBuffer();
-      db = new SQL.Database(new Uint8Array(buf)); idbPut('ad_seed_v13', buf);
+      var resp = await fetch(seedFile); var buf = await resp.arrayBuffer();
+      db = new SQL.Database(new Uint8Array(buf));
+      if (!seedParam) idbPut('ad_seed_v13', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
     if (ADP && ADP.init) ADP.init(db);
@@ -740,12 +751,68 @@
   };
   console.log('§SEAM-FROZEN seam=host-contract globals=IdmpHost methods=trace,focus,openTab,has,locate mount=#idmp-content');
 
+  // ── Accts Posted (FRONTEND_LANE_MASTER §2 Item C) — pill-alongside, read-only, consumes the seam. ──
+  // window.ERPPostings (frozen read-fold) + window.AcctsPosted (the lens). The browser has no posted
+  // op-log yet (read-only until install) → projQ is empty → honest "install local data first" card;
+  // the role gate + org scope still apply over the loaded ad_seed.db. After install/migrate brings the
+  // posted history, the SAME call renders the balanced fold. NO fork, NO new verb.
+  function _adQ(sql, p) {
+    var r = db.exec(sql, p || []); if (!r.length) return [];
+    return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; });
+  }
+  function openPostedFor() {
+    if (!_session) { status('Log in first to see Accts Posted'); return; }
+    var tab = _curTab(), rec = _records[_recIdx];
+    if (!tab || !rec) { status('Open a record first — Accts Posted is per record'); return; }
+    var ref = { table: tab.tableName, record_id: recVal(rec, _keyCol(tab)),
+                ad_org_id: recVal(rec, 'AD_Org_ID') || recVal(rec, 'ad_org_id') };
+    var ctx = window.AcctsPosted.buildCtx(_session);
+    var result = window.ERPPostings.readPostings(ref, ctx, { adQ: _adQ, projQ: function () { return []; }, factQ: null });
+    var vm = window.AcctsPosted.buildPostedVM(result);
+    var ui = window.AcctsPosted.mountAccordion(vm, { doc: document, open: true,
+      onInstall: function () { status('Install: run the local install on your machine (QR pairing) — POC'); },
+      onShare: function () { if (navigator.share) navigator.share({ title: 'Accts Posted', text: 'Posted ' + ref.table + ' #' + ref.record_id }); else status('Share not supported on this device'); },
+      onVerify: function () { status('Verify: chain trust arrives with the write path (window.ERP.verify)'); } });
+    _showPosted(ui);
+    console.log('§POSTED-LIVE table=' + ref.table + ' rec=' + ref.record_id + ' visible=' + result.visible + ' source=' + result.source + ' coverage=' + result.coverage);
+  }
+  function _showPosted(ui) {
+    _injectPostedCSS();
+    var prev = $('posted-overlay'); if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+    var ov = el('div'); ov.id = 'posted-overlay';
+    var hd = el('div', 'posted-ov-hd', 'Accts Posted');
+    var x = el('span', 'posted-ov-x', '✕');
+    var unbind = window.AcctsPosted.bindBack(close);
+    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); }
+    x.addEventListener('click', close); hd.appendChild(x);
+    ov.appendChild(hd); ov.appendChild(ui.node); document.body.appendChild(ov);
+  }
+  var _postedCSSDone = false;
+  function _injectPostedCSS() {
+    if (_postedCSSDone) return; _postedCSSDone = true;
+    var s = document.createElement('style');
+    s.textContent = '#posted-overlay{position:fixed;inset:0;z-index:9000;background:#0f1420;color:#dfe6f2;overflow:auto;padding:16px;animation:postedUp .25s ease-out}' +
+      '@keyframes postedUp{from{transform:translateY(18px);opacity:.5}to{transform:none;opacity:1}}' +
+      '.posted-ov-hd{font-size:16px;font-weight:700;margin-bottom:12px;color:#fff}.posted-ov-x{float:right;color:#6c9fff;font-size:20px;cursor:pointer}' +
+      '#posted-overlay .acc{border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;background:#1a1f2e}' +
+      '#posted-overlay .hd{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer}' +
+      '#posted-overlay .hd .lbl{display:flex;gap:10px;align-items:center}.posted-hd-meta{display:flex;gap:8px;align-items:center;font-size:12px}' +
+      '.posted-balance.is-balanced{color:#5fd08a}.posted-balance.is-unbalanced{color:#e88}.posted-cov-chip{background:rgba(108,159,255,.12);color:#6c9fff;border-radius:8px;padding:2px 8px}' +
+      '#posted-overlay .bd{max-height:0;overflow:hidden;transition:max-height .3s ease}#posted-overlay .bd.open{max-height:60vh;overflow:auto;padding:6px 16px 12px}' +
+      '.posted-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}' +
+      '.posted-acct{flex:1}.posted-dr,.posted-cr{width:90px;text-align:right;font-variant-numeric:tabular-nums}.posted-note,.posted-empty,.posted-refused{font-size:12px;color:#9fb0c8;padding:10px 0}' +
+      '.posted-pills{display:flex;gap:8px;padding:10px 16px;border-top:1px solid rgba(255,255,255,.06)}' +
+      '.posted-pill{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:20px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#dfe6f2;font-size:13px;cursor:pointer}';
+    document.head.appendChild(s);
+  }
+
   // ── Wire chrome ──
   document.addEventListener('DOMContentLoaded', function () {
     $('idmp-menu-filter').addEventListener('input', function (e) { applyFilter(e.target.value); });
     $('idmp-search').addEventListener('input', function (e) { $('idmp-menu-filter').value = e.target.value; applyFilter(e.target.value); });
     $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
+    $('idmp-posted-btn').addEventListener('click', openPostedFor);
     $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
