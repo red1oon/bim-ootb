@@ -944,13 +944,19 @@ function setupTools(A) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
-      // §S277d: nearest fixtures to CAMERA — lights the façade/overhangs/doorways you're
-      // looking at from outside (and the room around you when inside). Orbit-target scoring
-      // clustered all lights at building centre, starving the perimeter. Debounced by the
-      // controls 'change' listener (>5m move) so small orbits don't thrash the set.
-      var _eye = camPos;
+      // §S277d: MIXED selection — score by a point BETWEEN the eye and the look-at, so the
+      // active lights sit near you AND extend down the hall you're flying toward (they
+      // transfer ahead as you move). Pure camera-nearest clustered them all at the eye; pure
+      // orbit-target clustered them at building centre. Debounced by the controls 'change'
+      // listener (>5m move) so small orbits don't thrash the set.
+      var _tgt = A.controls ? A.controls.target : camPos;
+      var _aim = {
+        x: camPos.x + (_tgt.x - camPos.x) * 0.5,
+        y: camPos.y + (_tgt.y - camPos.y) * 0.5,
+        z: camPos.z + (_tgt.z - camPos.z) * 0.5
+      };
       var sorted = allPos.map(function(p) {
-        var dx = p.x - _eye.x, dy = p.y - _eye.y, dz = p.z - _eye.z;
+        var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
       needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
@@ -962,9 +968,14 @@ function setupTools(A) {
       l.dispose();
     });
     A._nightLights = [];
-    // §S277d: Fixed intensity at fixture positions — no camera-distance fade
+    // §S277d: camera-distance fade — lights near the eye (you're inside, next to them) dim to
+    // 30%; lights far away (you're outside looking in) stay full strength for façade throw.
+    // Fixes "inside too bright" without losing the exterior overhang/doorway spillover.
     needed.forEach(function(f) {
-      var light = new THREE.PointLight(0xffe4b5, NIGHT_LIGHT_INTENSITY, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+      var dist = camPos.distanceTo(f.pos);
+      var fade = Math.min(1.0, dist / 15);              // 0 at the light, full at 15m+
+      var intensity = NIGHT_LIGHT_INTENSITY * (0.3 + 0.7 * fade);  // never below 30%
+      var light = new THREE.PointLight(0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
       light.position.copy(f.pos);
       A.scene.add(light);
       A._nightLights.push(light);
