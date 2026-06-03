@@ -338,10 +338,14 @@ function setupStreaming(A) {
     const opts = { color: new THREE.Color(r, g, b), flatShading: false };
     if (a < 1.0) { opts.transparent = true; opts.opacity = a; opts.side = THREE.DoubleSide; }
     // §S265: PBR roughness + metalness from standard material (or defaults)
-    opts.roughness = stdMat ? stdMat.rough : 0.7;
-    opts.metalness = stdMat ? stdMat.metal : 0.05;
+    // §refl: ease matte surfaces toward a soft sheen so walls/floors/concrete CATCH the lights
+    // (realistic emphasis) instead of reading as flat pale fills. Scale all roughness down ~25%;
+    // metals/glass stay glossy by ratio. Floor at 0.08 so nothing becomes a mirror artefact.
+    var _rough = stdMat ? stdMat.rough : 0.55;
+    opts.roughness = Math.max(0.08, _rough * 0.75);
+    opts.metalness = stdMat ? stdMat.metal : 0.08; // §refl: slight metal lift gives surfaces real specular response
     opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
-    if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = 0.3; }
+    if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = 0.6; } // §refl: 0.3->0.6 — more realistic reflection emphasis
     const mat = new THREE.MeshStandardMaterial(opts);
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
