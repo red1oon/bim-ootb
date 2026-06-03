@@ -944,10 +944,13 @@ function setupTools(A) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
-      // §S277d: Nearest 4 fixtures to orbit target (stable) — not camera (jumps on orbit)
-      var _tgt = A.controls ? A.controls.target : camPos;
+      // §S277d: nearest fixtures to CAMERA — lights the façade/overhangs/doorways you're
+      // looking at from outside (and the room around you when inside). Orbit-target scoring
+      // clustered all lights at building centre, starving the perimeter. Debounced by the
+      // controls 'change' listener (>5m move) so small orbits don't thrash the set.
+      var _eye = camPos;
       var sorted = allPos.map(function(p) {
-        var dx = p.x - _tgt.x, dy = p.y - _tgt.y, dz = p.z - _tgt.z;
+        var dx = p.x - _eye.x, dy = p.y - _eye.y, dz = p.z - _eye.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
       needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
