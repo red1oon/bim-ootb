@@ -79,7 +79,8 @@
     return loadOrMint(opts.dbName).then(function (kp) {
       KernelOps.setSigner(makeSigner(kp));
       return subtle.exportKey('spki', kp.publicKey).then(function (pub) {
-        console.log('§SIGN installed alg=ECDSA-P256 pubkey=' + _hex(pub).slice(0, 16) + '… custody=idb-nonextractable');
+        API.pubKeyHex = _hex(pub);   // expose the edge pubKey so ctx can carry identity (ENGINE_CONTRACT §2)
+        console.log('§SIGN installed alg=ECDSA-P256 pubkey=' + API.pubKeyHex.slice(0, 16) + '… custody=idb-nonextractable');
         return kp;
       }).catch(function () { console.log('§SIGN installed alg=ECDSA-P256 custody=idb-nonextractable'); return kp; });
     });
