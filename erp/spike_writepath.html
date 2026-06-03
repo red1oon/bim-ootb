@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<!-- SPIKE (STEP-0 seam#1, live write path) — see it run in a REAL browser: window.ERP.dispatch over the
+     proven ERPKernel + sql.js + glassbowl_data.db, metered for CLOCK SPEED + BLOAT (real crypto.subtle
+     seal + real IndexedDB persist). Self-contained; touches no existing chrome. NOT deployed.
+     Open ?auto=1&n=300 to auto-run (puppeteer capture); else click "fire ×N".
+     Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX: MIT -->
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>spike — live write path (clock + bloat)</title>
+<style>
+  body{font:13px/1.5 ui-monospace,Menlo,monospace;margin:0;background:#0e1116;color:#d6deeb}
+  header{padding:10px 14px;background:#161b22;border-bottom:1px solid #30363d}
+  header b{color:#7ee787}
+  .wrap{display:flex;gap:14px;padding:14px}
+  .board{display:flex;gap:10px}
+  .col{min-width:90px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px;text-align:center}
+  .col .h{color:#79c0ff;font-weight:bold} .col .n{font-size:26px;margin-top:4px}
+  button{font:inherit;background:#238636;color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+  button:disabled{opacity:.5}
+  #log{flex:1;white-space:pre-wrap;background:#0a0d12;border:1px solid #30363d;border-radius:8px;padding:10px;height:62vh;overflow:auto;font-size:12px}
+  .meter{color:#79c0ff}.bloat{color:#ffa657}.seal{color:#f778ba}.sum{color:#7ee787;font-weight:bold}.err{color:#ff7b72}
+  input{width:70px;font:inherit;background:#0a0d12;color:#d6deeb;border:1px solid #30363d;border-radius:6px;padding:5px}
+</style>
+<header>SPIKE · live <b>window.ERP.dispatch</b> (STEP-0 seam#1) — metered for clock-speed + bloat · <span id="status">booting…</span></header>
+<div class="wrap">
+  <div>
+    <div class="board" id="board"></div>
+    <div style="margin-top:12px">
+      writes: <input id="n" value="300"> <button id="fire" disabled>fire ×N</button>
+      <button id="clear">clear log</button>
+    </div>
+    <div style="margin-top:10px;color:#768390;max-width:240px">Each write: create a DR card → <b>dispatch(SET_STATUS)</b> DR→CO (gated, signed-capable, committed) → re-fold the board. Watch §METER (ms) and §BLOAT (bytes) climb.</div>
+  </div>
+  <pre id="log"></pre>
+</div>
+
+<script src="lib/sql-wasm-fts5.js"></script>
+<script src="kernel_ops.js"></script>
+<script src="erp_signer.js"></script>
+<script src="erp_kernel.js"></script>
+<script src="erp_seam.js"></script>
+<script src="erp_postings.js"></script>
+<script>
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+var logEl = $('log');
+function emit(cls, msg) { var s = document.createElement('span'); s.className = cls; s.textContent = msg + '\n'; logEl.appendChild(s); logEl.scrollTop = logEl.scrollHeight; (console.log)(msg); }
+function status(t) { $('status').textContent = t; }
+function pct(a, p) { var b = a.slice().sort(function (x, y) { return x - y; }); return b[Math.min(b.length - 1, Math.floor(b.length * p))]; }
+function avg(a) { return a.reduce(function (s, x) { return s + x; }, 0) / a.length; }
+function kb(n) { return (n / 1024).toFixed(1) + 'KB'; }
+function nowms() { return performance.now(); }
+
+var K = window.ERPKernel, Seam = window.ERPSeam, Post = window.ERPPostings;
+var SQL, projDb, adDb, gbDb, seam, ctx, gbQ, adQ;
+
+async function fetchDb(url) { var r = await fetch(url); var b = await r.arrayBuffer(); return new SQL.Database(new Uint8Array(b)); }
+
+// real IndexedDB persist (the browser bloat cost the node harness can't see) — put the projection blob.
+function idbPut(key, bytes) {
+  return new Promise(function (res) {
+    var rq = indexedDB.open('spike_writepath', 1);
+    rq.onupgradeneeded = function () { rq.result.createObjectStore('proj'); };
+    rq.onsuccess = function () { var db = rq.result; var tx = db.transaction('proj', 'readwrite'); tx.objectStore('proj').put(bytes, key); tx.oncomplete = function () { db.close(); res(bytes.byteLength); }; tx.onerror = function () { db.close(); res(-1); }; };
+    rq.onerror = function () { res(-1); };
+  });
+}
+
+async function boot() {
+  SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } });
+  adDb = await fetchDb('ad_seed.db');          // ad_role / c_validcombination / c_elementvalue (gate + names)
+  gbDb = await fetchDb('glassbowl_data.db');   // fact_acct (degrade) + masters
+  adQ = function (s, p) { var r = adDb.exec(s, p || []); return rows(r); };
+  gbQ = function (s, p) { var r = gbDb.exec(s, p || []); return rows(r); };
+  projDb = new SQL.Database(); K.initProjection(projDb);
+
+  // real signer (W-SIGN) — load-or-mint the edge keypair; expose pubKey for ctx.
+  try { await window.ErpSigner.installSigner(window.KernelOps, { dbName: 'bim_erp_signer' }); } catch (e) { emit('err', '§SIGN skip ' + e.message); }
+
+  K.register('C_Invoice', 'CO', function (doc, c) { return [{ op_type: 'SET_STATUS', table: doc.table, id: doc.id, doc_status: c.to, uuid: doc.uuid }]; });
+  var wfmc = { states: ['DR', 'CO'], transitions: [['DR', 'CO', 'CO']] };  // the real iDempiere DR→CO Complete edge
+  seam = Seam.makeSeam({ projDb: projDb, adQ: adQ, factQ: gbQ, wfmc: wfmc, newDb: function () { return new SQL.Database(); } });
+
+  ctx = buildCtx(102);   // GardenWorld Admin
+  window.ERP = { dispatch: seam.dispatch, ctx: ctx, read: seam.read, readPostings: function (ref, c) { return Post.readPostings(ref, c || ctx, { adQ: adQ, projQ: function (s, p) { return K.query(projDb, s, p); }, factQ: gbQ }); }, verify: seam.verify };
+
+  emit('sum', '§SEAM-LIVE window.ERP published: dispatch,read,readPostings,verify · ctx.actor=' + ctx.actor + ' pubKey=' + (ctx.pubKey ? ctx.pubKey.slice(0, 12) + '…' : 'none') + ' isshowacct=' + ctx.isshowacct + ' allowOrgs=' + ctx.allowOrgs);
+  refold();
+  status('ready — window.ERP live. Click fire ×N.');
+  $('fire').disabled = false;
+
+  var auto = new URLSearchParams(location.search);
+  if (auto.has('auto')) { await runSpike(parseInt(auto.get('n') || '300', 10)); window.__SPIKE_DONE = true; }
+}
+
+// buildCtx — augment the session fold with the engine-scope fields (real ad_seed rows, non-invent).
+function buildCtx(roleId) {
+  var sa = adQ('SELECT isshowacct FROM ad_role WHERE ad_role_id=?', [roleId]);
+  var orgs = adQ('SELECT ad_org_id FROM ad_role_orgaccess WHERE ad_role_id=? AND isactive=\'Y\'', [roleId]).map(function (r) { return r.ad_org_id; });
+  return { actor: 'device:' + (localStorage.spikeActor || (localStorage.spikeActor = 'd' + Math.floor(performance.now()))),
+           pubKey: window.ErpSigner && window.ErpSigner.pubKeyHex || null, roleId: roleId, role: { id: roleId, actions: ['C_Invoice:CO'] },
+           allowOrgs: orgs.length ? orgs : '*', isshowacct: sa.length ? sa[0].isshowacct : null };
+}
+
+function rows(res) { if (!res.length) return []; return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); }
+
+function refold() {
+  var f = K.query(projDb, "SELECT doc_status, COUNT(*) AS n FROM documents GROUP BY doc_status");
+  var by = {}; f.forEach(function (r) { by[r.doc_status] = r.n; });
+  var b = $('board'); b.innerHTML = '';
+  ['DR', 'CO'].forEach(function (s) { var d = document.createElement('div'); d.className = 'col'; d.innerHTML = '<div class="h">' + s + '</div><div class="n">' + (by[s] || 0) + '</div>'; b.appendChild(d); });
+}
+
+async function runSpike(N) {
+  $('fire').disabled = true; status('firing ×' + N + '…');
+  emit('sum', '\n═══ live dispatch ×' + N + ' (real crypto.subtle seal + real IndexedDB persist) ═══');
+  var dms = [], rms = [], rejected = 0, bytes0 = projDb.export().length;
+  var t0 = nowms();
+  for (var i = 0; i < N; i++) {
+    var uuid = 'DOC:C_Invoice#SPIKE' + i;
+    K.apply(projDb, [{ op_type: 'CREATE_DOCUMENT', table: 'C_Invoice', source_id: 'S' + i, doc_status: 'DR', uuid: uuid }], { actor: ctx.actor, baseTs: 1000 });
+    var ds = nowms();
+    var r = window.ERP.dispatch({ docType: 'C_Invoice', table: 'C_Invoice', action: 'CO', status: 'DR', id: 'SPIKE' + i, uuid: uuid }, ctx);
+    dms.push(nowms() - ds); if (!r.ok) rejected++;
+    var rs = nowms(); refold(); rms.push(nowms() - rs);
+    if ((i + 1) % 25 === 0 || i === N - 1) {
+      var es = nowms(); var blob = projDb.export(); var exportMs = nowms() - es;
+      var idbMs0 = nowms(); var idbBytes = await idbPut('proj', blob); var idbMs = nowms() - idbMs0;
+      var ops = K.query(projDb, 'SELECT COUNT(*) AS c FROM kernel_ops')[0].c;
+      emit('meter', '§METER iter=' + (i + 1) + ' dispatch_ms=' + dms[i].toFixed(3) + ' refold_ms=' + rms[i].toFixed(3) + ' export_ms=' + exportMs.toFixed(2) + ' idbPut_ms=' + idbMs.toFixed(2));
+      emit('bloat', '§BLOAT iter=' + (i + 1) + ' opLogRows=' + ops + ' projBytes=' + kb(blob.length) + ' idbBytes=' + kb(idbBytes < 0 ? 0 : idbBytes) + ' bytesPerOp=' + (ops ? (blob.length / ops).toFixed(0) : 0) + 'B');
+      await new Promise(function (r) { setTimeout(r, 0); });  // yield so the board paints (you can watch it climb)
+    }
+  }
+  var wall = nowms() - t0, bytesEnd = projDb.export().length;
+  emit('sum', '§METER-SUMMARY n=' + N + ' rejected=' + rejected + ' dispatch_ms[p50=' + pct(dms, 0.5).toFixed(3) + ' p95=' + pct(dms, 0.95).toFixed(3) + ' max=' + pct(dms, 1).toFixed(3) + '] refold_ms[p50=' + pct(rms, 0.5).toFixed(3) + '] wall=' + wall.toFixed(0) + 'ms throughput=' + (N / (wall / 1000)).toFixed(0) + 'op/s');
+  emit('sum', '§BLOAT-SUMMARY projBytes ' + kb(bytes0) + '→' + kb(bytesEnd) + ' Δ=' + kb(bytesEnd - bytes0) + ' dispatchDrift(p50→last10)=' + (avg(dms.slice(-10)) / pct(dms, 0.5)).toFixed(2) + 'x');
+
+  // seal/verify cost as the SIGNED log grows (real crypto.subtle, kernel_ops.js native schema).
+  emit('seal', '── seal/verify cost vs log length (real crypto.subtle W-CHAIN/W-SIGN) ──');
+  var sdb = new SQL.Database(); window.KernelOps.ensureTable(sdb);
+  for (var j = 0; j < N; j++) {
+    window.KernelOps.commitOp(sdb, 'SET_STATUS', { id: 'SPIKE' + j }, null, 'DOC#' + j, 'op-' + j);
+    if ((j + 1) % 50 === 0 || j === N - 1) {
+      var ss = nowms(); var sealr = await window.KernelOps.sealChain(sdb); var sealMs = nowms() - ss;
+      var vs = nowms(); var ver = await window.KernelOps.verifyChain(sdb); var verMs = nowms() - vs;
+      emit('seal', '§METER-SEAL ops=' + (j + 1) + ' seal_ms=' + sealMs.toFixed(2) + ' verify_ms=' + verMs.toFixed(2) + ' chainOk=' + (ver.ok ? 'Y' : 'N') + ' signed=' + (sealr.tip ? 'Y' : '?'));
+    }
+  }
+  // readPostings liveness over the live data.
+  var pa = window.ERP.readPostings({ table: 'C_Invoice', record_id: 'SPIKE0', ad_org_id: 11 }, buildCtx(102));
+  emit('sum', '§POSTED-READ(live) role=102 visible=' + (pa.visible ? 'Y' : 'N') + ' posted=' + (pa.posted ? 'Y' : 'N') + ' source=' + pa.source + ' coverage=' + pa.coverage);
+  var pu = window.ERP.readPostings({ table: 'C_Invoice', record_id: 'SPIKE0', ad_org_id: 11 }, buildCtx(103));
+  emit('sum', '§POSTED-GATE(live) role=103 visible=' + (pu.visible ? 'Y' : 'N') + ' reason=' + pu.reason + ' rows=' + pu.lines.length);
+  emit('sum', '═══ SPIKE DONE — read §METER-SUMMARY / §BLOAT-SUMMARY / §METER-SEAL above ═══');
+  status('done ×' + N); $('fire').disabled = false;
+}
+
+$('fire').addEventListener('click', function () { runSpike(parseInt($('n').value || '300', 10)); });
+$('clear').addEventListener('click', function () { logEl.innerHTML = ''; });
+boot().catch(function (e) { emit('err', 'BOOT FATAL ' + e.message + '\n' + e.stack); status('boot error'); });
+</script>
