@@ -3,7 +3,9 @@
 /* precision_cam.js — Precision Camera
    👁 toolbar button opens mini-panel with:
      🪶 Fine (toggle slow controls) — Caps Lock shortcut on desktop
-     🎯 Reset (re-anchor orbit center so zoom resets) */
+     🎯 Reset (re-anchor orbit center so zoom resets)
+     🛰 Pivot (sticky toggle — auto re-centre orbit pivot on the scene centre each drag)
+   Long-press the feather pill expands Reset + Pivot chips sideways (§S281). */
 
 (function() {
   'use strict';
@@ -71,6 +73,94 @@
     console.log('§precision RESET — target replanted 10 units ahead');
   }
 
+  // PRECISION_PIVOT — Auto-Pivot: re-anchor orbit target to the scene centre on drag-end.
+  // Same mechanism as resetOrbit (move controls.target + update → no view jump), but the target
+  // lands on the NEAREST surface to screen-centre — sampled over concentric NDC rings so a
+  // dead-centre miss still captures something just off-centre.
+  var _pivot = false, _onEnd = null;
+
+  // Lucide "orbit" — a satellite circling a centre = pivot around the scene centre
+  function _orbitIcon(sz) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + sz + '" height="' + sz + '" viewBox="0 0 24 24" ' +
+      'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"/><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"/>' +
+      '<circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/></svg>';
+  }
+
+  function _pivotPaint() {
+    ['prec-pivot-btn', 'prec-pivot-chip'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) {
+        el.style.background = _pivot ? '#4fc3f7' : 'rgba(255,255,255,0.1)';
+        el.style.color = _pivot ? '#000' : (id === 'prec-pivot-chip' ? '#4fc3f7' : '#e0e0e0');
+      }
+    });
+  }
+
+  function recenterPivot() {
+    if (!A() || !A().controls) return;
+    var c = A().controls;
+    var cam = c.object;
+    var scene = A().scene;
+    var mode = null, hitR = -1;
+    if (scene) {
+      var ray = new THREE.Raycaster();
+      var hit = null;
+      // Radiate outward from screen-centre; first ring that hits wins (nearest-to-centre).
+      var samples = [[0, 0, 0]];
+      var rings = [0.06, 0.12, 0.18];
+      for (var ri = 0; ri < rings.length; ri++) {
+        for (var a = 0; a < 8; a++) {
+          var ang = a * Math.PI / 4;
+          samples.push([Math.cos(ang) * rings[ri], Math.sin(ang) * rings[ri], rings[ri]]);
+        }
+      }
+      for (var s = 0; s < samples.length && !hit; s++) {
+        ray.setFromCamera(new THREE.Vector2(samples[s][0], samples[s][1]), cam);
+        var hh = ray.intersectObjects(scene.children, true);
+        if (hh.length) { hit = hh[0]; hitR = samples[s][2]; }
+      }
+      if (hit) { c.target.copy(hit.point); mode = 'mesh'; }
+      else {
+        var box = new THREE.Box3().setFromObject(scene);
+        if (!box.isEmpty()) { box.getCenter(c.target); mode = 'bbox'; }
+      }
+    }
+    if (!mode) {  // empty view → fall back to Reset's point-ahead so it never throws
+      var dir = new THREE.Vector3();
+      cam.getWorldDirection(dir);
+      c.target.copy(cam.position).addScaledVector(dir, 10);
+      mode = 'ahead';
+    }
+    c.update();
+    if (A().markDirty) A().markDirty();
+    console.log('§pivot recenter target=(' + c.target.x.toFixed(2) + ',' +
+      c.target.y.toFixed(2) + ',' + c.target.z.toFixed(2) + ') hit=' + mode +
+      (mode === 'mesh' ? ' r=' + hitR.toFixed(2) : ''));
+  }
+
+  function pivotOn() {
+    if (_pivot) return;
+    if (!A() || !A().controls) return;
+    _pivot = true;
+    _onEnd = function() { if (_pivot) recenterPivot(); };
+    A().controls.addEventListener('end', _onEnd);
+    _pivotPaint();
+    recenterPivot();  // anchor immediately
+    console.log('§pivot ON');
+  }
+
+  function pivotOff() {
+    if (!_pivot) return;
+    _pivot = false;
+    if (A() && A().controls && _onEnd) A().controls.removeEventListener('end', _onEnd);
+    _onEnd = null;
+    _pivotPaint();
+    console.log('§pivot OFF');
+  }
+
+  function togglePivot() { _pivot ? pivotOff() : pivotOn(); }
+
   // Caps Lock toggles fine mode (desktop)
   document.addEventListener('keydown', function(e) {
     if (e.code === 'CapsLock') toggleFine();
@@ -119,7 +209,8 @@
     var _resetIcon = '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/>';
     _panel.innerHTML =
       '<button id="prec-fine-btn" title="Fine precision" style="' + btnCss + '">' + _svg(_fineIcon) + '</button>' +
-      '<button id="prec-reset-btn" title="Reset camera" style="' + btnCss + '">' + _svg(_resetIcon) + '</button>';
+      '<button id="prec-reset-btn" title="Reset camera" style="' + btnCss + '">' + _svg(_resetIcon) + '</button>' +
+      '<button id="prec-pivot-btn" title="Auto-pivot on scene centre" style="' + btnCss + '">' + _orbitIcon(22) + '</button>';
     _panel.style.flexDirection = 'row'; // icons side by side
     document.body.appendChild(_panel);
 
@@ -130,9 +221,13 @@
     document.getElementById('prec-reset-btn').addEventListener('pointerup', function(e) {
       e.stopPropagation(); resetOrbit();
     });
+    document.getElementById('prec-pivot-btn').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); togglePivot();
+    });
 
     // If fine is active, reflect in panel button
     if (_fine) document.getElementById('prec-fine-btn').style.background = '#1a6b8a';
+    if (_pivot) _pivotPaint();
 
     // S265: Precision Camera button — Lucide focus icon, matches overflow grid style
     var toolbar = document.querySelector('#search-body > div');
@@ -169,40 +264,52 @@
     if (b) { b.classList.toggle('active', _fine); }
   };
 
-  var _resetChip = null;
+  var _chips = [];
+  function _clearChips() { _chips.forEach(function(c) { c.remove(); }); _chips = []; }
+  var _resetIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" ' +
+    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/>' +
+    '<line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>';
+
+  // §S281 long-press drawer — expands chips sideways from the feather. Reset (one-shot) +
+  // Pivot (sticky toggle: auto-re-centre orbit on the scene centre each drag).
   window.revealPrecisionReset = function(btn) {
     if (!btn) return;
-    if (_resetChip) { _resetChip.remove(); _resetChip = null; return; } // toggle off if showing
-    _resetChip = document.createElement('button');
-    _resetChip.id = 'prec-reset-chip';
-    _resetChip.title = 'Reset camera';
-    _resetChip.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" ' +
-      'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-      '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/>' +
-      '<line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>';
+    if (_chips.length) { _clearChips(); return; } // toggle off if showing
     var r = btn.getBoundingClientRect();
-    _resetChip.style.cssText =
-      'position:fixed;z-index:10000;width:44px;height:44px;display:flex;align-items:center;justify-content:center;' +
-      'border:none;border-radius:8px;background:rgba(20,20,40,0.85);color:#4fc3f7;cursor:pointer;' +
-      'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);' +
-      // expand sideways: place just left of the feather (pill sits at right edge)
-      'top:' + r.top + 'px;left:' + (r.left - 52) + 'px;';
-    _resetChip.addEventListener('pointerup', function(e) {
-      e.stopPropagation();
-      resetOrbit();
-      if (_resetChip) { _resetChip.remove(); _resetChip = null; }
+    var defs = [
+      { id: 'prec-reset-chip', title: 'Reset camera', icon: _resetIconSvg,
+        tap: function() { resetOrbit(); _clearChips(); } },
+      { id: 'prec-pivot-chip', title: 'Auto-pivot on scene centre', icon: _orbitIcon(20),
+        tap: function() { togglePivot(); } }  // sticky — stay open, chip recolours via _pivotPaint
+    ];
+    defs.forEach(function(d, i) {
+      var chip = document.createElement('button');
+      chip.id = d.id;
+      chip.title = d.title;
+      chip.innerHTML = d.icon;
+      chip.style.cssText =
+        'position:fixed;z-index:10000;width:44px;height:44px;display:flex;align-items:center;justify-content:center;' +
+        'border:none;border-radius:8px;background:rgba(20,20,40,0.85);color:#4fc3f7;cursor:pointer;' +
+        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);' +
+        'top:' + r.top + 'px;left:' + (r.left - 52 * (i + 1)) + 'px;';  // stack leftward
+      chip.addEventListener('pointerup', function(e) { e.stopPropagation(); d.tap(); });
+      document.body.appendChild(chip);
+      _chips.push(chip);
     });
-    document.body.appendChild(_resetChip);
+    if (_pivot) _pivotPaint();  // reflect active pivot state on the freshly-built chip
     // Auto-dismiss on any tap elsewhere
     setTimeout(function() {
       var _dismiss = function(ev) {
-        if (_resetChip && ev.target !== _resetChip && !_resetChip.contains(ev.target)) {
-          _resetChip.remove(); _resetChip = null;
+        if (_chips.length && !_chips.some(function(c) { return c === ev.target || c.contains(ev.target); })) {
+          _clearChips();
           document.removeEventListener('pointerdown', _dismiss, true);
         }
       };
       document.addEventListener('pointerdown', _dismiss, true);
     }, 0);
-    console.log('§precision RESET revealed (long-press)');
+    console.log('§precision DRAWER revealed (long-press) chips=' + _chips.length);
   };
+
+  window.toggleCamPivot = togglePivot;
 })();
