@@ -5,7 +5,7 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v35 loaded — S281 wire setupErrorReporter(APP)');
+console.log('§MAIN_JS v36 loaded — S286 desktop on-demand render gate (idle fan fix)');
 async function initViewer() {
   const APP = window.APP = {};
 
@@ -497,6 +497,7 @@ async function initViewer() {
 
   // Render loop — on-demand: only render when camera moves or streaming is active
   let _needsRender = true;
+  let _idleLogged = false; // §S286: whitebox — true once the desktop loop has parked idle
   APP.controls.addEventListener('change', () => { _needsRender = true; });
   APP.markDirty = () => { _needsRender = true; };
 
@@ -588,10 +589,21 @@ async function initViewer() {
         _needsRender = false;
       }
     } else {
-      // §S280c: Desktop renders unconditionally — same as smooth R184 era.
-      // Render gate removed: was S280b scope drift (perf change in UI session).
-      if (APP._composer && APP._composerEnabled) APP._composer.render();
-      else APP.renderer.render(APP.scene, APP.camera);
+      // §S286: Desktop on-demand render — restores the gate S280c reverted. Memory
+      // (project_s280c_perf.md) traced that era's sluggishness to an NVIDIA/Intel driver
+      // mismatch, NOT this gate. Idle static scene now parks at 0 GPU frames (was ~60 fps
+      // forever → fans). No TM exception: Time Machine self-renders via its own setTimeout
+      // timer → renderAtTime() (markDirty + direct render), so the loop is redundant even
+      // for TM. Every other camera path already calls markDirty.
+      if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
+        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        else APP.renderer.render(APP.scene, APP.camera);
+        _needsRender = false;
+        if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }
+      } else if (!_idleLogged) {
+        console.log('§IDLE_GATE park — desktop loop idle, 0 GPU frames (static scene)');
+        _idleLogged = true;
+      }
     }
   }
 
