@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v578';
+const CACHE_VERSION = 'v590';
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -119,8 +119,6 @@ const PRECACHE_ASSETS = [
   'schedule_gate.js',
   'time_machine.js',
   'error_reporter.js',
-  'sfx.js',
-  'sfx.json',
   'print_sheet.js',
   'ghostglass.js',
   'qrcode.min.js',
@@ -195,6 +193,7 @@ function isNetworkFirst(url) {
   }
   // Precached local files — cache-first (CACHE_VERSION bump purges + refreshes)
   var filename = base.split('/').pop();
+  if (filename === 'sfx.json') return true;   // sfx config — always fresh (network-first) during tuning
   if (_PRECACHE_SET.has(filename)) return false;
   // Unknown JS/HTML not in precache list — network-first (safe default)
   if (base.endsWith('.html') || base.endsWith('.js')) return true;

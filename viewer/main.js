@@ -33,7 +33,7 @@ async function initViewer() {
       }
       // Load sub-modules in dependency order, then the bootstrap
       var modules = [
-        'navigate_find.js?v=16',
+        'navigate_find.js?v=17',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -501,14 +501,18 @@ async function initViewer() {
   // Render loop — on-demand: only render when camera moves or streaming is active
   let _needsRender = true;
   let _idleLogged = false; // §S286: whitebox — true once the desktop loop has parked idle
-  APP.controls.addEventListener('change', () => { _needsRender = true; });
-  APP.markDirty = () => { _needsRender = true; };
+  // §IDLE-PARK: these are the wake points. markDirty/controls-change now also REVIVE the
+  // rAF chain (the loop self-parks when idle — see animate()). _startLoop is hoisted + guarded
+  // (no-op if already running), so calling it on every change is cheap.
+  APP.controls.addEventListener('change', () => { _needsRender = true; _startLoop(); });
+  APP.markDirty = () => { _needsRender = true; _startLoop(); };
 
   // §S260b: Reduce pixel ratio during orbit for smoother interaction on heavy scenes
   var _fullDPR = Math.min(window.devicePixelRatio || 1, 2);
   var _orbitDPR = window._isMobile ? 0.75 : Math.min(_fullDPR, 1);  // §S274: mobile=0.75x during drag
   var _orbiting = false;
   APP.controls.addEventListener('start', function() {
+    _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
     if (!_orbiting && APP.streamedCount > 5000) {
       _orbiting = true;
       APP.renderer.setPixelRatio(_orbitDPR);
@@ -519,6 +523,7 @@ async function initViewer() {
       _orbiting = false;
       APP.renderer.setPixelRatio(_fullDPR);
       _needsRender = true;
+      _startLoop(); // §IDLE-PARK: keep painting through the damping tail
     }
   });
 
@@ -546,6 +551,12 @@ async function initViewer() {
   // Both go through _startLoop's guard, so they can never start a second chain.
   window.addEventListener('focus', _ensureLoop);
   window.addEventListener('pageshow', function(e) { if (e.persisted) _ensureLoop(); });
+  // §IDLE-PARK: belt-and-suspenders — ANY user input revives a parked loop, regardless of
+  // which feature it triggers (fly/walk/streaming started by a click after idle). _startLoop
+  // is guarded, and these fire only on real interaction, so a truly idle scene stays parked.
+  window.addEventListener('pointerdown', _startLoop);
+  window.addEventListener('wheel', _startLoop, { passive: true });
+  window.addEventListener('keydown', _startLoop);
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
   // materials, synchronous compilation during render() times out the main thread.
   // Fix: after streaming adds all materials, call compileAsync() to pre-warm pipelines
@@ -572,6 +583,17 @@ async function initViewer() {
     });
   };
   function animate() {
+    // §IDLE-PARK: self-parking loop. The §S286 gate only skipped the GPU paint — the rAF chain
+    // still ran ~60×/s, executing controls.update() + the tick fan-out on a static scene (idle
+    // CPU, worst on the large Terminal model). Now: when nothing needs CONTINUOUS frames, STOP
+    // the chain (null _rafId, no reschedule). markDirty()/controls/input revive it via _startLoop.
+    var _awake = _needsRender || APP.streaming || APP.walkModeActive || APP.walkMode ||
+                 APP.flyActive || _orbiting || _pipelinesCompiling;
+    if (!_awake) {
+      _rafId = null;
+      if (!_idleLogged) { console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames)'); _idleLogged = true; }
+      return;
+    }
     _rafId = requestAnimationFrame(animate);
     if (!APP.walkModeActive) {
       APP.controls.update();

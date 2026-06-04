@@ -666,7 +666,25 @@ async function setupScene(A) {
   var _seqTimer = null;
   var _SEQ_MS = 600;
 
+  // §RP-ZOOM-TIER — global "+ / −" context-zoom stepper (keyboard; consistent everywhere so users
+  // build muscle memory). A feature PUBLISHES an ordered stack of framing thunks via
+  // window.zoomTierSet (tightest→widest); "+" steps OUT a context ring, "−" steps IN. With no
+  // stack (general context) +/− fall back to a plain camera dolly, so the keys ALWAYS do the same
+  // gesture. Owner = scene.js (camera-level global); consumers call the window.* fns — same
+  // convention as the other shortcuts (behaviour in owner, _shortcuts just dispatches).
+  function _zoomStep(dir) {                          // +/- = standard zoom in/out (dolly to target)
+    if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
+    var off = A.camera.position.clone().sub(A.controls.target);
+    off.multiplyScalar(dir > 0 ? 0.8 : 1.25);        // + = in (closer), − = out (farther)
+    A.camera.position.copy(A.controls.target.clone().add(off));
+    A.controls.update();
+    if (A.markDirty) A.markDirty();
+    console.log('§ZOOM dir=' + dir + ' ' + (dir > 0 ? 'in' : 'out'));
+  }
+
   var _shortcuts = {
+    '+':  function() { _zoomStep(1); },             // zoom in
+    '-':  function() { _zoomStep(-1); },            // zoom out
     '2':  function() {
       if (A.measureActive || A._clashMatrixDiv) {
         A.status.textContent = 'Close Measure/Clash first'; return;
@@ -700,7 +718,17 @@ async function setupScene(A) {
       if (A._gridOverlayState && A._gridOverlayState.active) {
         A.status.textContent = 'Exit 2D first'; return;
       }
-      if (A._clashMatrixDiv) { A._clashMatrixDiv.remove(); A._clashMatrixDiv = null; return; }
+      if (A._clashMatrixDiv) {
+        A._clashMatrixDiv.remove(); A._clashMatrixDiv = null;
+        // §BUG116: tear down panel registration + focus so a stale nav callback
+        // can't fire against the now-null _clashMatrixDiv (TypeError at the getter).
+        for (var _ci = _panels.length - 1; _ci >= 0; _ci--) {
+          if (_panels[_ci].id === 'clash') { _panels.splice(_ci, 1); break; }
+        }
+        if (_focusedPanel && _focusedPanel.id === 'clash') _blurPanel();
+        console.log('§CLASH_CLOSE_C unregistered, focus cleared');
+        return;
+      }
       console.log('§CLASH_KEY_C loadClashRules=' + !!A._loadClashRules);
       if (A._loadClashRules) A._loadClashRules(function(r) {
         A._currentClashRules = r;
@@ -709,9 +737,12 @@ async function setupScene(A) {
         setTimeout(function() {
           if (A._clashMatrixDiv && typeof window.makeListKeyNav === 'function') {
             var matNav = window.makeListKeyNav(
-              function() { return Array.from(A._clashMatrixDiv.querySelectorAll('[data-pair]')); },
+              // §BUG116: guard against a stale nav callback firing after the matrix
+              // div was removed/nulled (e.g. closed by another path) — return empty.
+              function() { return A._clashMatrixDiv ? Array.from(A._clashMatrixDiv.querySelectorAll('[data-pair]')) : []; },
               function() {},
               function(idx) {
+                if (!A._clashMatrixDiv) return;
                 var cells = Array.from(A._clashMatrixDiv.querySelectorAll('[data-pair]'));
                 if (cells[idx]) cells[idx].click();
               }
@@ -720,6 +751,10 @@ async function setupScene(A) {
               if (A._clashRevealActive && A._dismissClashes) A._dismissClashes();
               if (A._clashMatrixDiv) { A._clashMatrixDiv.remove(); A._clashMatrixDiv = null; }
               if (A._clashModeActive && A._exitClashMode) A._exitClashMode();
+              // §BUG116: unregister so reopen doesn't accumulate a duplicate 'clash' panel
+              for (var _mi = _panels.length - 1; _mi >= 0; _mi--) {
+                if (_panels[_mi].id === 'clash') { _panels.splice(_mi, 1); break; }
+              }
             };
             _registerPanel('clash', A._clashMatrixDiv, matNav, matClose);
             _focusPanel('clash');
@@ -852,9 +887,9 @@ async function setupScene(A) {
     'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
     'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
     ',':  function() { if (typeof toggleDocPill === 'function') toggleDocPill(); }, // §S281: comma = Doc mode (was 'e')
-    '=':  function() { // §S281: settings panel toggle
-      var btn = document.getElementById('pill-settings');
-      if (btn) btn.click();
+    '=':  function() { // §S281: settings panel toggle — call action directly (pill wires
+      // pointerup, so a synthetic btn.click() never reached it; don't depend on the DOM button).
+      if (typeof window._openSettingsPanel === 'function') { window._openSettingsPanel(); console.log('§SETTINGS_TOGGLE via=keyboard'); }
       else if (A.status) A.status.textContent = 'UNDER CONSTRUCTION';
     },
     '/':  function() { if (A.quickShare) A.quickShare(); },
@@ -1002,6 +1037,9 @@ async function setupScene(A) {
           });
         });
       }
+      // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
+      all.push({ seq: '+', name: 'Zoom In',  icon: '', action: function() { _shortcuts['+'](); }, children: null });
+      all.push({ seq: '-', name: 'Zoom Out', icon: '', action: function() { _shortcuts['-'](); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
