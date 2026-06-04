@@ -598,6 +598,7 @@ function setupTools(A) {
     }
 
     label.textContent = phase + ' — ' + strategy;
+    if (A.markDirty) A.markDirty();  // §S287: palette recolor must wake the on-demand render gate (S286)
     console.log('[S200] §SUNGLASS tick=' + tick + ' phase=' + phase + ' ' + strategy);
   };
 
