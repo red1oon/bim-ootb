@@ -274,6 +274,13 @@
 <script src="accts_posted.js?v=23"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=22"></script>
+<!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
+<script src="kernel_ops.js?v=1"></script>
+<script src="erp_signer.js?v=1"></script>
+<script src="erp_kernel.js?v=1"></script>
+<script src="erp_seam.js?v=1"></script>
+<script src="kanban_lens.js?v=2"></script>
+<script src="kanban_host.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -337,6 +344,7 @@
     var SQL;
     try { SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }); }
     catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
+    window.SQL = SQL;   // exposed for the Kanban host (KanbanHost.publish needs a SQL.Database factory)
 
     // ?seed=<file>.db loads a generated AD-gen seed (scripts/gen_ad.js) — bypasses the idb cache so it
     // never clobbers the real ad_seed.db cache and always loads fresh (§AD-RENDER). Default = ad_seed.db.
@@ -835,15 +843,53 @@
       b.style.width = Math.round(n / max * 100) + '%'; bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row); });
     _overlay('Graph', wrap); console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + keys.length + ' table=' + gr.tab.tableName);
   }
-  function openKanbanFor() {
+  // Kanban write-path host state (gap c) — lazy: publish window.ERP once, then mount the REAL draggable board.
+  var _kanbanWfmc = null, _kanbanProj = null, _KPROJ = 'idmp_kanban_proj';
+  var KDOC_TABLES = ['C_Order', 'C_Invoice', 'C_Payment', 'M_InOut'];   // doc tables with a docstatus lifecycle
+  async function _ensureKanbanERP() {
+    if (window.ERP && _kanbanProj) return true;
+    if (!window.KanbanHost || !window.SQL) { return false; }
+    if (!_kanbanWfmc) {
+      try { _kanbanWfmc = (await (await fetch('manifest.json?v=22')).json()).wfmc || {}; }
+      catch (e) { status('Kanban: wfmc load failed'); return false; }
+    }
+    var allowOrgs = (_session.orgs && _session.orgs.length) ? _session.orgs.map(function (o) { return o.id; }) : '*';
+    var pub = await window.KanbanHost.publish({ SQL: window.SQL, adDb: db, gbDb: db, wfmc: _kanbanWfmc,
+      tables: KDOC_TABLES, roleId: _session.role && _session.role.id, allowOrgs: allowOrgs, projKey: _KPROJ });
+    if (!pub) return false;
+    _kanbanProj = pub.projDb; return true;
+  }
+  async function openKanbanFor() {
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
-    var board = el('div', 'kb-board');
-    Object.keys(gr.groups).forEach(function (k) { var col = el('div', 'kb-col');
-      col.appendChild(el('div', 'kb-colhd', k + ' · ' + gr.groups[k].length));
-      gr.groups[k].slice(0, 25).forEach(function (r) { col.appendChild(el('div', 'kb-card', String(recVal(r, _keyCol(gr.tab))))); });
-      board.appendChild(col); });
-    _overlay('Kanban — ' + gr.tab.name, board); console.log('§KANBAN-PILL cols=' + Object.keys(gr.groups).length + ' table=' + gr.tab.tableName);
+    var ok = await _ensureKanbanERP();
+    var tab = gr.tab, T = tab.tableName, kc = _keyCol(tab), statusCol = gr.col.columnName;
+    if (!ok || !window.KanbanLens) {   // engine/lens absent → honest fall back to the read-only board
+      var rb = el('div', 'kb-board');
+      Object.keys(gr.groups).forEach(function (k) { var c = el('div', 'kb-col'); c.appendChild(el('div', 'kb-colhd', k + ' · ' + gr.groups[k].length));
+        gr.groups[k].slice(0, 25).forEach(function (r) { c.appendChild(el('div', 'kb-card', String(recVal(r, kc)))); }); rb.appendChild(c); });
+      _overlay('Kanban — ' + tab.name + ' (read-only)', rb); console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T); return;
+    }
+    // fold the OPEN window's records PER-ROW by RAW docstatus (codes, not labels), overlaying the op-log tip.
+    var tip = window.KanbanHost.tip(_kanbanProj), byS = {};
+    _records.forEach(function (r) {
+      var id = recVal(r, kc), s = String(recVal(r, statusCol) || '');
+      var t = tip['DOC:' + T + '#' + id]; if (t) s = t;
+      (byS[s] = byS[s] || []).push(id);
+    });
+    var folds = Object.keys(byS).map(function (s) { return { table: T, doc_status: s, count: byS[s].length, ids: byS[s].slice(0, 30) }; });
+    var board = window.KanbanLens.buildBoard(folds, _kanbanWfmc, { showEmptyStates: true });
+    var root = el('div'); root.style.cssText = 'overflow:auto;max-height:78vh';
+    _overlay('Kanban — ' + tab.name, root);
+    window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc,
+      dispatch: window.ERP.dispatch, ctx: window.ERP.ctx,
+      onResult: function (res, dr) {
+        if (dr && dr.ok) { var v = window.ERP.verify();
+          console.log('§KANBAN-WRITE ok ' + res.table + '#' + res.id + ' to=' + dr.to + ' chainOk=' + v.chainOk + ' len=' + v.len);
+          window.KanbanHost.persist(_kanbanProj, _KPROJ);
+        } else if (dr && dr.rejected) { console.log('§KANBAN-WRITE rejected why=' + dr.why); }
+      } });
+    console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
   }
   function openInstallFor() { status('Install: pull the full DB to this device, or pair via QR to your machine — POC'); console.log('§INSTALL-PILL action=install-stub'); }
   function openMigrateFor() { status('Migrate: run the local extractor on your machine, mirror here (QR pairing) — POC'); console.log('§MIGRATE-PILL action=migrate-stub'); }
