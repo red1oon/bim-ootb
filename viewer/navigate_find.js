@@ -213,6 +213,8 @@
     var elAxisBar = document.getElementById('find-outliner-bar');
     var _treeMode = 'storey'; // 'storey' | 'disc' | 'room' | 'material' | 'phase'
     var _treeRevealed = false; // §S280d: tree hidden until mode toggle pressed
+    var _roomGroupBy = 'storey'; // §RP Room sub-toggle: 'storey' (default) | 'type'
+    var _matGroupBy = 'material'; // §RP Material sub-toggle: 'material' (default) | 'category'
 
     // §NAV_FIND_002: multi-select state (parent rows only). Plain=replace,
     // Ctrl/Cmd=toggle, Shift=range. Sets cleared only on Storey/Disc toggle.
@@ -249,6 +251,14 @@
     // §S280: Audio thump — short click on mode toggle (lightweight, no file load)
     var _audioCtx = null;
     function _thump() {
+      // §AUDIO: honour the global audio toggle (sfx.js). When audio is OFF, purge our own
+      // context — close() frees the hardware audio resource (zero cost), and it is recreated
+      // lazily on the next thump once audio is back on. Was: played + leaked a ctx regardless.
+      var sfxOn = !(window.__sfx && typeof window.__sfx.isOn === 'function') || window.__sfx.isOn();
+      if (!sfxOn) {
+        if (_audioCtx) { try { _audioCtx.close(); } catch (e) {} _audioCtx = null; }
+        return;
+      }
       try {
         if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         var osc = _audioCtx.createOscillator();
@@ -353,34 +363,53 @@
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
+    // §A NEVER-BLANK: Storey+Disc are unconditional — built before any DB probe so the
+    // axis bar can never empty (the cause of the shipped blank bar). When A.db isn't ready
+    // yet, return just the two base pills; the data-gated pills fill in once probed.
     function _axes() {
-      var present = _probeLenses();
       var ax = [{ key: 'storey', label: _t('ui_axis_storey', 'Storey') },
                 { key: 'disc', label: _t('ui_axis_disc', 'Discipline') }];
+      if (!A.db) return ax;
+      var present = _probeLenses();
       if (present.room) ax.push({ key: 'room', label: _t('ui_lens_room', 'Room') });
       if (present.material) ax.push({ key: 'material', label: _t('ui_lens_material', 'Material') });
       if (present.phase) ax.push({ key: 'phase', label: _t('ui_lens_phase', 'Phase') });
       return ax;
     }
 
+    // §RULE1 SINGLE TOGGLE: the axis is ONE button, not a row of pills. It shows the current
+    // axis and cycles to the next available one on each tap (storey→disc→[room]→[material]→
+    // [phase]→storey). Room/Material/Phase only join the cycle when their data is present
+    // (data-gated, §A never-blank keeps storey+disc always). One control, never multiple buttons.
     function _renderAxes() {
       if (!elAxisBar) return;
       elAxisBar.innerHTML = '';
-      if (!A.db) return;
+      // §A NEVER-BLANK: _axes() always yields at least Storey+Disc, even before A.db.
       var ax = _axes();
-      ax.forEach(function(a) {
-        var on = (a.key === _treeMode);
-        var pill = document.createElement('button');
-        pill.id = 'find-axis-' + a.key;
-        pill.setAttribute('data-axis', a.key);
-        pill.textContent = a.label;
-        pill.style.cssText = 'padding:5px 12px;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;' +
-          'white-space:nowrap;border:1px solid rgba(79,195,247,' + (on ? '0.7' : '0.3') + ');' +
-          'background:rgba(79,195,247,' + (on ? '0.28' : '0.10') + ');color:' + (on ? '#fff' : '#4fc3f7') + ';';
-        pill.addEventListener('pointerup', function(e) { e.stopPropagation(); _setTreeMode(a.key); });
-        elAxisBar.appendChild(pill);
+      if (!ax.length) return;
+      var idx = 0;
+      for (var i = 0; i < ax.length; i++) { if (ax[i].key === _treeMode) { idx = i; break; } }
+      var cur = ax[idx];
+      var nxt = ax[(idx + 1) % ax.length];
+      var btn = document.createElement('button');
+      btn.id = 'find-axis-toggle';
+      btn.setAttribute('data-axis', cur.key);
+      // Current axis prominent; subtle hint of the next on tap. ONE button.
+      btn.innerHTML = '<span style="font-size:9px;opacity:.55">' + (idx + 1) + '/' + ax.length + '</span>' +
+        ' <span style="font-weight:800">' + cur.label + '</span>' +
+        (ax.length > 1 ? ' <span style="font-size:9px;opacity:.5">⇄ ' + nxt.label + '</span>' : '');
+      btn.style.cssText = 'min-width:160px;padding:6px 14px;font-size:12px;border-radius:7px;cursor:pointer;' +
+        'white-space:nowrap;border:1px solid rgba(79,195,247,0.7);background:rgba(79,195,247,0.22);color:#fff;';
+      btn.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        var a2 = _axes(); // re-probe in case data changed
+        var ci = 0;
+        for (var k = 0; k < a2.length; k++) { if (a2[k].key === _treeMode) { ci = k; break; } }
+        _setTreeMode(a2[(ci + 1) % a2.length].key);
       });
-      console.log('[RP-T3] §LENS_AXES count=' + ax.length + ' axes=' + ax.map(function(a){ return a.key; }).join(','));
+      elAxisBar.appendChild(btn);
+      console.log('[RP-T3] §LENS_AXES toggle cur=' + cur.key + ' next=' + nxt.key +
+        ' available=' + ax.map(function(a){ return a.key; }).join(','));
     }
 
     function _isolateLensGroup(lens, g) {
@@ -415,36 +444,77 @@
     var _roomXrayWasOff = false;
     var _hlXrayWasOff = false; // true → the Phase/Material highlight lens turned X-Ray on
 
-    // Tear down the element-highlight lens: clear outline + restore opacity.
+    // §C ELEMENT-PRECISE: the Phase/Material highlight overlay. ONE InstancedMesh of unit
+    // boxes — one box per matched element, positioned+scaled from element_transforms (same
+    // bbox→Three mapping as the picker). Replaces the old whole-BatchedMesh OutlinePass,
+    // which lit every neighbour in a batch when any one slot matched.
+    var _hlOverlay = null;   // THREE.InstancedMesh | null
+    var _HL_CAP = 4000;      // hard cap on highlighted boxes (no silent truncation — §-logged)
+
+    function _clearHlOverlay() {
+      if (_hlOverlay) {
+        if (_hlOverlay.parent) _hlOverlay.parent.remove(_hlOverlay);
+        if (_hlOverlay.geometry) _hlOverlay.geometry.dispose();
+        if (_hlOverlay.material) _hlOverlay.material.dispose();
+        _hlOverlay = null;
+      }
+    }
+
+    // Tear down the element-highlight lens: drop overlay + outline, restore opacity.
     function _highlightLensReset() {
+      _clearHlOverlay();
       if (A.setOutline) A.setOutline([]);
       if (A.xrayOn && _hlXrayWasOff && A.toggleXray) A.toggleXray(); // restore opacity
       _hlXrayWasOff = false;
       if (A.markDirty) A.markDirty();
     }
 
-    // Highlight a guid set: x-ray the rest (dim) + outline the set's scene meshes.
+    // Highlight a guid set: x-ray the rest (dim) + draw an element-precise box per match.
+    // Returns the number of boxes drawn (element-precise meshes), capped at _HL_CAP.
     function _highlightGuids(set) {
+      _clearHlOverlay();
       if (A.setOutline) A.setOutline([]);
-      if (!A.scene) return 0;
+      if (!A.scene || typeof THREE === 'undefined' || !A.ifc2three) return 0;
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; }
-      var meshes = [];
-      A.scene.traverse(function(obj) {
-        if (!obj.visible) return;
-        if (obj.isBatchedMesh && A._batchMeta && A._batchMeta[obj.id]) {
-          var bm = A._batchMeta[obj.id];
-          for (var i = 0; i < bm.length; i++) {
-            if (bm[i] && bm[i].guid != null && set.has(bm[i].guid)) { meshes.push(obj); break; }
-          }
-          return;
+      // Pull transforms for the matched guids (one query, filter in JS — ≤ few k rows).
+      var rows = [];
+      try {
+        rows = A.dbQuery("SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z" +
+          " FROM element_transforms");
+      } catch (e) { console.log('[RP-C] §HL_OVERLAY_ERR ' + e.message); }
+      var hits = [];
+      for (var i = 0; i < rows.length && hits.length < _HL_CAP; i++) {
+        if (rows[i][1] != null && set.has(rows[i][0])) hits.push(rows[i]);
+      }
+      var capped = (rows.filter(function (r) { return r[1] != null && set.has(r[0]); }).length > hits.length);
+      if (hits.length) {
+        var geo = new THREE.BoxGeometry(1, 1, 1);
+        var mat = new THREE.MeshBasicMaterial({
+          color: 0x4fc3f7, transparent: true, opacity: 0.55,
+          depthWrite: false, side: THREE.DoubleSide
+        });
+        var inst = new THREE.InstancedMesh(geo, mat, hits.length);
+        var m = new THREE.Matrix4(), q = new THREE.Quaternion(),
+            p = new THREE.Vector3(), s = new THREE.Vector3();
+        for (var j = 0; j < hits.length; j++) {
+          var r = hits[j];
+          var c = A.ifc2three(r[1], r[2], r[3]);
+          p.set(c.x, c.y, c.z);
+          // IFC bbox → Three: X→X, Z→Y, Y→Z (parity with picking.js bbox highlight).
+          s.set(Math.max(r[4] || 0.05, 0.05), Math.max(r[6] || 0.05, 0.05), Math.max(r[5] || 0.05, 0.05));
+          m.compose(p, q, s);
+          inst.setMatrixAt(j, m);
         }
-        var g = (obj.userData && obj.userData.guid);
-        if (g == null && A.guidMap) g = A.guidMap[obj.id];
-        if (g != null && set.has(g)) meshes.push(obj);
-      });
-      if (A.setOutline && meshes.length) A.setOutline(meshes, 0x4fc3f7);
+        inst.instanceMatrix.needsUpdate = true;
+        inst.renderOrder = 999;
+        inst.userData._hlOverlay = true;
+        A.scene.add(inst);
+        _hlOverlay = inst;
+      }
+      console.log('[RP-C] §HL_OVERLAY boxes=' + hits.length + ' setSize=' + set.size +
+        (capped ? ' CAPPED@' + _HL_CAP : '') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
       if (A.markDirty) A.markDirty();
-      return meshes.length;
+      return hits.length;
     }
 
     function _clearRoomBoxes() {
@@ -495,14 +565,36 @@
         mesh.renderOrder = 998;
         mesh.userData._roomBox = true;
         A.scene.add(mesh);
-        _roomBoxes.push({ guid: r[0], name: r[1] || '(unnamed)', mesh: mesh, center: c });
+        _roomBoxes.push({ guid: r[0], name: r[1] || '(unnamed)', mesh: mesh, center: c, size: { x: sx, y: sy, z: sz } });
       });
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; }
       if (A.markDirty) A.markDirty();
       console.log('[RP-TA] §ROOM_LENS rooms=' + _roomBoxes.length + ' xray=' + (A.xrayOn ? 'on' : 'off'));
     }
 
-    // Tap a room: brighten its box, dim the others, keep x-ray.
+    // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
+    // proven camera-lerp from diff.js zoomToGuid, but is box-based (works for rooms/phases/
+    // elements that live in batched/instanced meshes, which zoomToGuid can't find). markDirty
+    // every frame — the §S286 idle gate parks the loop, so the move won't render without it.
+    function _zoomToBox(center, size) {
+      if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
+      var dist = Math.max(size.x, size.y, size.z) * 3 + 2;
+      var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
+      var start = A.camera.position.clone();
+      var t = 0;
+      function anim() {
+        t += 0.04; if (t > 1) t = 1;
+        var e = 1 - Math.pow(1 - t, 3);
+        A.camera.position.lerpVectors(start, end, e);
+        A.controls.target.copy(center);
+        A.controls.update();
+        if (A.markDirty) A.markDirty();
+        if (t < 1) requestAnimationFrame(anim);
+      }
+      anim();
+    }
+
+    // Tap a room: brighten its box, dim the others, keep x-ray, ZOOM-TO-FIT that room.
     function _roomSelect(guid) {
       var sel = null;
       _roomBoxes.forEach(function(rb) {
@@ -515,17 +607,45 @@
         }
       });
       if (sel && A.setOutline) A.setOutline([sel.mesh], 0x4fc3f7);
+      if (sel) {
+        _zoomToBox(new THREE.Vector3(sel.center.x, sel.center.y, sel.center.z),
+                   new THREE.Vector3(sel.size.x, sel.size.y, sel.size.z));
+      }
       if (A.markDirty) A.markDirty();
       if (sel) {
         console.log('[RP-TA] §ROOM_SELECT room="' + sel.name + '" box=(' +
-          sel.center.x.toFixed(2) + ',' + sel.center.y.toFixed(2) + ',' + sel.center.z.toFixed(2) + ')');
+          sel.center.x.toFixed(2) + ',' + sel.center.y.toFixed(2) + ',' + sel.center.z.toFixed(2) + ') zoom=fit');
       }
+    }
+
+    // §RP sub-toggle row [A | B] — a small two-pill regroup control inside a lens tree.
+    function _subToggleRow(labelA, valA, labelB, valB, current, onPick) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;padding:6px 10px;align-items:center;border-bottom:1px solid rgba(255,255,255,0.05)';
+      var hint = document.createElement('span');
+      hint.style.cssText = 'font-size:10px;color:#888;margin-right:2px';
+      hint.textContent = _t('ui_lens_group', 'group:');
+      row.appendChild(hint);
+      [[labelA, valA], [labelB, valB]].forEach(function(o) {
+        var on = (current === o[1]);
+        var b = document.createElement('button');
+        b.textContent = o[0];
+        b.style.cssText = 'padding:3px 10px;font-size:10px;font-weight:700;border-radius:5px;cursor:pointer;white-space:nowrap;' +
+          'border:1px solid rgba(79,195,247,' + (on ? '0.7' : '0.25') + ');' +
+          'background:rgba(79,195,247,' + (on ? '0.25' : '0.08') + ');color:' + (on ? '#fff' : '#4fc3f7') + ';';
+        b.addEventListener('pointerup', function(e) { e.stopPropagation(); onPick(o[1]); });
+        row.appendChild(b);
+      });
+      return row;
     }
 
     // §RP-T3 axis builders — list the groups for Room / Material / Phase.
     function _buildRoomTree() {
       // §RP Task A: with volume data the Room axis is a HIGHLIGHT lens (rooms glow,
-      // model x-rayed) — NOT a contents isolate. Tapping focuses a room.
+      // model x-rayed) — NOT a contents isolate. Tapping focuses a room (box + zoom-to-fit).
+      // §RP Room sub-toggle: group rooms [Storey | Type]. Storey (default) nests rooms under
+      // their IfcBuildingStorey (spatial_structure.parent_guid). Type nests by object_type/
+      // predefined_type (null → "(untyped)" — non-invent; populates on DBs that carry it).
       if (_roomHasVol) {
         _roomLensOn();
         if (elIsoBar) {
@@ -533,16 +653,31 @@
           if (elIsoBtn) elIsoBtn.style.display = 'none';
           if (elShowAllBtn) elShowAllBtn.style.display = '';
         }
+        elTree.appendChild(_subToggleRow(
+          _t('ui_axis_storey', 'Storey'), 'storey', _t('ui_room_type', 'Type'), 'type',
+          _roomGroupBy, function(v) { if (v !== _roomGroupBy) { _roomGroupBy = v; buildTree(); } }));
         var rooms = [];
         try {
-          rooms = A.dbQuery("SELECT guid, name FROM spatial_structure" +
-            " WHERE type='IfcSpace' AND center_x IS NOT NULL ORDER BY name")
-            .map(function(r) { return { key: r[0], label: r[1] || '(unnamed)' }; });
+          rooms = A.dbQuery("SELECT s.guid, s.name, p.name, s.object_type, s.predefined_type" +
+            " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid" +
+            " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL ORDER BY p.name, s.name");
         } catch(e) { console.warn('[RP-TA] §ROOM_TREE_ERR', e.message); }
-        rooms.forEach(function(g) {
-          elTree.appendChild(_treeNode(g.label, '', 0, { onTap: function() { _roomSelect(g.key); } }));
+        var byGroup = {}, order = [], typed = 0;
+        rooms.forEach(function(r) {
+          var gk = (_roomGroupBy === 'type') ? (r[3] || r[4] || '(untyped)') : (r[2] || '(no storey)');
+          if (_roomGroupBy === 'type' && (r[3] || r[4])) typed++;
+          if (!byGroup[gk]) { byGroup[gk] = []; order.push(gk); }
+          byGroup[gk].push({ key: r[0], label: r[1] || '(unnamed)' });
         });
-        console.log('[RP-T3] §LENS_GROUPS lens=room mode=volume groups=' + rooms.length);
+        order.forEach(function(gk) {
+          var kids = byGroup[gk].map(function(rm) {
+            return _treeNode(rm.label, '', 1, { onTap: function() { _roomSelect(rm.key); } });
+          });
+          elTree.appendChild(_treeNode(gk, byGroup[gk].length, 0, { children: kids }));
+        });
+        console.log('[RP-T3] §LENS_GROUPS lens=room mode=volume groupBy=' + _roomGroupBy +
+          ' groups=' + order.length + ' rooms=' + rooms.length +
+          (_roomGroupBy === 'type' ? ' typed=' + typed + '/' + rooms.length : ''));
         return;
       }
       // Fallback (DB without bbox columns): contents-isolate, the prior behaviour.
@@ -560,37 +695,93 @@
     }
 
     // §MAT_SELECT: Material axis is a HIGHLIGHT lens (parity with Room/Phase).
-    function _buildMaterialTree() {
-      var groups = [];
-      try {
-        groups = A.dbQuery("SELECT material_name, COUNT(*) FROM elements_meta" +
-          " WHERE material_name IS NOT NULL GROUP BY material_name ORDER BY 2 DESC")
-          .map(function(r) { return { key: r[0], label: r[0], count: r[1] }; });
-      } catch(e) { console.warn('[RP-T3] §MAT_TREE_ERR', e.message); }
-      groups.forEach(function(g) {
-        elTree.appendChild(_treeNode(g.label, g.count, 0, { onTap: function() { _materialSelect(g); } }));
-      });
-      console.log('[RP-T3] §LENS_GROUPS lens=material groups=' + groups.length);
+    // §RP Material category — SQL-DERIVED (heuristic, deterministic) from material_name
+    // keywords. Labelled "(derived)" in the UI/§-log per the resolved decision — this is NOT
+    // an extracted IfcMaterial.Category. Coarse construction buckets; "Other" = no keyword hit.
+    function _deriveCategory(name) {
+      var n = (name || '').toLowerCase();
+      if (/concrete|cast-in|footing|foundation|grout|screed/.test(n)) return 'Concrete';
+      if (/steel|metal|rebar|alumin|iron|brass|copper/.test(n)) return 'Metal';
+      if (/wood|timber|plywood|mdf|oak|pine|lumber/.test(n)) return 'Wood';
+      if (/glass|glazing|glazed/.test(n)) return 'Glass';
+      if (/gypsum|plaster|drywall|stud|partition|sheathing/.test(n)) return 'Drywall/Partition';
+      if (/brick|masonry|block|cmu|stone/.test(n)) return 'Masonry';
+      if (/insulation|insul|rockwool|fiberglass/.test(n)) return 'Insulation';
+      if (/tile|ceramic|porcelain/.test(n)) return 'Tile';
+      if (/paint|finish|coating|render|stucco/.test(n)) return 'Finish';
+      if (/membrane|waterproof|vapou?r|roofing|bitumen/.test(n)) return 'Membrane';
+      if (/carpet|vinyl|laminate|flooring/.test(n)) return 'Flooring';
+      if (/default|generic|unnamed/.test(n)) return 'Generic';
+      return 'Other';
     }
 
-    function _materialSelect(g) {
+    // §MAT_SELECT: Material axis is a HIGHLIGHT lens (parity with Room/Phase). Sub-toggle
+    // [Material | Category]: Material (default) = flat list by name; Category = SQL-derived
+    // buckets, each expandable to its materials. Tap = element-precise highlight + x-ray rest.
+    function _buildMaterialTree() {
+      elTree.appendChild(_subToggleRow(
+        _t('ui_lens_material', 'Material'), 'material', _t('ui_lens_category', 'Category') + ' *', 'category',
+        _matGroupBy, function(v) { if (v !== _matGroupBy) { _matGroupBy = v; buildTree(); } }));
+      var rows = [];
+      try { rows = A.dbQuery("SELECT guid, material_name FROM elements_meta WHERE material_name IS NOT NULL"); }
+      catch(e) { console.warn('[RP-T3] §MAT_TREE_ERR', e.message); }
+      if (_matGroupBy === 'category') {
+        var byCat = {}, catOrder = [];
+        rows.forEach(function(r) {
+          var cat = _deriveCategory(r[1]);
+          if (!byCat[cat]) { byCat[cat] = { count: 0, mats: {} }; catOrder.push(cat); }
+          byCat[cat].count++; byCat[cat].mats[r[1]] = (byCat[cat].mats[r[1]] || 0) + 1;
+        });
+        catOrder.sort(function(a, b) { return byCat[b].count - byCat[a].count; });
+        catOrder.forEach(function(cat) {
+          var kids = Object.keys(byCat[cat].mats).sort().map(function(mn) {
+            return _treeNode(mn, byCat[cat].mats[mn], 1, { onTap: function() { _materialSelectByName(mn); } });
+          });
+          elTree.appendChild(_treeNode(cat + ' (derived)', byCat[cat].count, 0,
+            { children: kids, onTap: function() { _materialSelectByCategory(cat); } }));
+        });
+        console.log('[RP-T3] §LENS_GROUPS lens=material groupBy=category source=SQL-derived cats=' +
+          catOrder.length + ' mats=' + new Set(rows.map(function(r) { return r[1]; })).size);
+        return;
+      }
+      var counts = {}, matOrder = [];
+      rows.forEach(function(r) { if (counts[r[1]] == null) { counts[r[1]] = 0; matOrder.push(r[1]); } counts[r[1]]++; });
+      matOrder.sort(function(a, b) { return counts[b] - counts[a]; });
+      matOrder.forEach(function(mn) {
+        elTree.appendChild(_treeNode(mn, counts[mn], 0, { onTap: function() { _materialSelectByName(mn); } }));
+      });
+      console.log('[RP-T3] §LENS_GROUPS lens=material groupBy=material groups=' + matOrder.length);
+    }
+
+    function _materialHighlight(label, set) {
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
       if (A.filterByGuids) A.filterByGuids(null); // never isolate — highlight only
-      var set = new Set();
-      try {
-        A.dbQuery("SELECT guid FROM elements_meta WHERE material_name = ?", [g.key])
-          .forEach(function(r) { set.add(r[0]); });
-      } catch(e) { console.warn('[RP-T3] §MAT_SELECT_ERR', e.message); }
-      if (!set.size) { console.log('[RP-T3] §MAT_SELECT material="' + g.label + '" elems=0 xray=off'); return; }
+      if (!set.size) { console.log('[RP-T3] §MAT_SELECT sel="' + label + '" elems=0 xray=off'); return; }
       var matched = _highlightGuids(set);
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
         if (elShowAllBtn) elShowAllBtn.style.display = '';
       }
-      console.log('[RP-T3] §MAT_SELECT material="' + g.label + '" elems=' + set.size +
-        ' meshes=' + matched + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+      console.log('[RP-T3] §MAT_SELECT sel="' + label + '" elems=' + set.size +
+        ' boxes=' + matched + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+    }
+
+    function _materialSelectByName(name) {
+      var set = new Set();
+      try { A.dbQuery("SELECT guid FROM elements_meta WHERE material_name = ?", [name]).forEach(function(r) { set.add(r[0]); }); }
+      catch(e) { console.warn('[RP-T3] §MAT_SELECT_ERR', e.message); }
+      _materialHighlight(name, set);
+    }
+
+    function _materialSelectByCategory(cat) {
+      var set = new Set();
+      try {
+        A.dbQuery("SELECT guid, material_name FROM elements_meta WHERE material_name IS NOT NULL")
+          .forEach(function(r) { if (_deriveCategory(r[1]) === cat) set.add(r[0]); });
+      } catch(e) { console.warn('[RP-T3] §MAT_SELECT_ERR', e.message); }
+      _materialHighlight(cat + ' (derived)', set);
     }
 
     // ══ §RP Task B: Phase axis = Time Machine's REAL timeline generator ══
@@ -672,32 +863,131 @@
       }, 0);
     }
 
-    function _renderPhaseList(pc, status) {
-      elTree.innerHTML = '';
-      pc.order.forEach(function(name) {
-        var b = pc.byPhase[name];
-        elTree.appendChild(_treeNode(name, b.count, 0, { onTap: function() { _phaseSelect(name); } }));
-      });
-      console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops phases=' + pc.order.length + ' status=' + status);
+    // §D drill helpers ───────────────────────────────────────────────────────────
+    var _PHASE_ELEM_CAP = 250;     // max element leaves listed per phase/task (no silent cap)
+    var _elMetaMap = null;         // guid → {name, cls}, lazily cached per Find-open
+
+    function _elMeta() {
+      if (_elMetaMap) return _elMetaMap;
+      _elMetaMap = {};
+      try {
+        A.dbQuery("SELECT guid, element_name, ifc_class FROM elements_meta")
+          .forEach(function(r) { _elMetaMap[r[0]] = { name: r[1], cls: r[2] }; });
+      } catch(e) { /* map stays empty */ }
+      return _elMetaMap;
+    }
+    function _elLabel(g) {
+      var em = _elMeta()[g];
+      return (em && em.name) || (em && em.cls && friendlyClass(em.cls)) || (g ? g.substring(0, 10) : '?');
     }
 
-    // Tap a phase → HIGHLIGHT its elements + X-RAY (dim) the rest. Never isolate.
-    function _phaseSelect(name) {
-      var pc = _phaseCache;
-      if (!pc || !pc.byPhase[name]) return;
+    // World-space bbox (Three units) enclosing a guid set, from element_transforms.
+    function _bboxOfGuids(set) {
+      if (!set || !set.size || typeof THREE === 'undefined' || !A.ifc2three) return null;
+      var rows = [];
+      try { rows = A.dbQuery("SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms"); }
+      catch(e) { return null; }
+      var minx = Infinity, miny = Infinity, minz = Infinity, maxx = -Infinity, maxy = -Infinity, maxz = -Infinity, n = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r[1] == null || !set.has(r[0])) continue;
+        var c = A.ifc2three(r[1], r[2], r[3]);
+        var hx = Math.max(r[4] || 0.05, 0.05) / 2, hy = Math.max(r[6] || 0.05, 0.05) / 2, hz = Math.max(r[5] || 0.05, 0.05) / 2;
+        if (c.x - hx < minx) minx = c.x - hx; if (c.y - hy < miny) miny = c.y - hy; if (c.z - hz < minz) minz = c.z - hz;
+        if (c.x + hx > maxx) maxx = c.x + hx; if (c.y + hy > maxy) maxy = c.y + hy; if (c.z + hz > maxz) maxz = c.z + hz;
+        n++;
+      }
+      if (!n) return null;
+      return { center: new THREE.Vector3((minx + maxx) / 2, (miny + maxy) / 2, (minz + maxz) / 2),
+               size: new THREE.Vector3(maxx - minx, maxy - miny, maxz - minz) };
+    }
+    function _zoomToGuids(set) { var bb = _bboxOfGuids(set); if (bb) _zoomToBox(bb.center, bb.size); return !!bb; }
+
+    // Shared darken+highlight+zoom for any drill level (phase / task / element). Never hides.
+    function _drillSelect(set, label, tag) {
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
-      if (A.filterByGuids) A.filterByGuids(null); // never isolate — highlight only
-      var set = pc.byPhase[name].guids;
-      if (!set || !set.size) { console.log('[RP-TB] §PHASE_SELECT phase="' + name + '" elems=0 xray=off'); return; }
-      var matched = _highlightGuids(set);
+      if (A.filterByGuids) A.filterByGuids(null); // never isolate — darken (x-ray) + highlight only
+      if (!set || !set.size) { console.log('[RP-TB] §' + tag + ' "' + label + '" elems=0'); return; }
+      var boxes = _highlightGuids(set);   // element-precise highlight + x-ray the rest (darken)
+      var zoomed = _zoomToGuids(set);     // zoom-to-fit the set
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
         if (elShowAllBtn) elShowAllBtn.style.display = '';
       }
-      console.log('[RP-TB] §PHASE_SELECT phase="' + name + '" elems=' + set.size +
-        ' meshes=' + matched + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+      console.log('[RP-TB] §' + tag + ' "' + label + '" elems=' + set.size + ' boxes=' + boxes +
+        ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+    }
+    function _phaseSelect(name) {
+      var pc = _phaseCache;
+      if (!pc || !pc.byPhase[name]) return;
+      _drillSelect(pc.byPhase[name].guids, name, 'PHASE_SELECT');
+    }
+    function _taskSelect(set, label) { _drillSelect(set, label, 'TASK_SELECT'); }
+    function _elementSelect(guid) { _drillSelect(new Set([guid]), _elLabel(guid), 'ELEM_SELECT'); }
+
+    // Lazy children for a phase node: Phase → task → element when task_elements is populated,
+    // else Phase → element directly (kernel-only timelines, e.g. tasks table empty). Never hide.
+    function _buildPhaseChildren(container, phaseName, hasTasks) {
+      var b = _phaseCache && _phaseCache.byPhase[phaseName];
+      if (!b) return;
+      var guids = Array.from(b.guids);
+      if (hasTasks) {
+        var tmap = {}, tnames = {};
+        try { A.dbQuery("SELECT guid, task_id FROM task_elements").forEach(function(r) { tmap[r[0]] = r[1]; }); } catch(e) {}
+        try { A.dbQuery("SELECT task_id, name FROM tasks").forEach(function(r) { tnames[r[0]] = r[1]; }); } catch(e) {}
+        var byTask = {}, taskOrder = [];
+        guids.forEach(function(g) {
+          var tid = tmap[g];
+          var tk = (tid != null) ? (tnames[tid] || ('Task ' + tid)) : '(no task)';
+          if (!byTask[tk]) { byTask[tk] = []; taskOrder.push(tk); }
+          byTask[tk].push(g);
+        });
+        taskOrder.forEach(function(tk) {
+          var tg = byTask[tk];
+          var elKids = tg.slice(0, _PHASE_ELEM_CAP).map(function(g) {
+            return _treeNode(_elLabel(g), '', 2, { onTap: function() { _elementSelect(g); } });
+          });
+          container.appendChild(_treeNode(tk, tg.length, 1,
+            { children: elKids, onTap: function() { _taskSelect(new Set(tg), tk); } }));
+        });
+        console.log('[RP-TB] §PHASE_CHILDREN phase="' + phaseName + '" tasks=' + taskOrder.length + ' elems=' + guids.length);
+        return;
+      }
+      var capped = guids.length > _PHASE_ELEM_CAP;
+      guids.slice(0, _PHASE_ELEM_CAP).forEach(function(g) {
+        container.appendChild(_treeNode(_elLabel(g), '', 1, { onTap: function() { _elementSelect(g); } }));
+      });
+      if (capped) {
+        var more = document.createElement('div');
+        more.style.cssText = 'padding:4px 22px;font-size:10px;color:#888';
+        more.textContent = '… ' + (guids.length - _PHASE_ELEM_CAP) + ' more (list capped at ' + _PHASE_ELEM_CAP + ')';
+        container.appendChild(more);
+      }
+      console.log('[RP-TB] §PHASE_CHILDREN phase="' + phaseName + '" elems=' + guids.length +
+        (capped ? ' shown=' + _PHASE_ELEM_CAP + ' CAPPED' : ''));
+    }
+
+    function _renderPhaseList(pc, status) {
+      elTree.innerHTML = '';
+      var hasTasks = false;
+      try { var tc = A.dbQuery("SELECT COUNT(*) FROM task_elements"); hasTasks = !!(tc.length && tc[0][0] > 0); } catch(e) {}
+      pc.order.forEach(function(name) {
+        var b = pc.byPhase[name];
+        // Phase parent: label tap = darken+highlight+zoom the whole phase; arrow = drill open.
+        elTree.appendChild(_treeNode(name, b.count, 0, {
+          children: true,
+          onTap: function() { _phaseSelect(name); },
+          onExpand: function(container) {
+            if (container._loaded) return;
+            container._loaded = true;
+            _buildPhaseChildren(container, name, hasTasks);
+          }
+        }));
+      });
+      console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops phases=' + pc.order.length +
+        ' tasks=' + (hasTasks ? 'yes' : 'none(kernel-only)') + ' status=' + status);
     }
 
     // ── §RevitParity A1: Isolate the current drill — hide everything except the matched set ──
@@ -1129,11 +1419,14 @@
       _highlightLensReset();
       if (elIsoBar) elIsoBar.style.display = 'none';
       _phaseCache = null; // fresh timeline per open (building may have changed)
+      _elMetaMap = null;  // §D drill: re-cache element labels for the (possibly new) building
       // Set search term and open
       panel.style.display = 'block';
       elName.value = searchTerm || '';
       // §S281: Defer item queries — only build tree (fast GROUP BY) on open.
-      _renderAxes(); // §RP-T3: data-gated axis pills (Storey·Discipline·Room·Material·Phase)
+      _renderAxes(); // §RULE1: single axis toggle (cycles storey→disc→room→material→phase)
+      // §RULE1: with one toggle, the CURRENT axis tree is shown immediately (no hide-until-tap).
+      if (elTree) { elTree.style.display = ''; _treeRevealed = true; }
       buildTree();
       buildChips();
       if (searchTerm) { _handleInput(searchTerm, true); }
