@@ -276,8 +276,8 @@
     // data-gated axis row. Tears down any active lens, clears multi-select + all filters
     // (unify engine), then lists the new axis groups.
     function _setTreeMode(mode) {
-      // §RP Task A: leaving the Room axis tears down room boxes + restores opacity.
-      if (_treeMode === 'room') _roomLensReset();
+      // §RP Task A: leaving the Room axis tears down room boxes + shape overlays + restores opacity.
+      if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); }
       // §PHASE_LENS/§MAT_SELECT: leaving Phase/Material tears down element highlight.
       if (_treeMode === 'phase' || _treeMode === 'material') _highlightLensReset();
       _treeMode = mode;
@@ -450,6 +450,7 @@
     // which lit every neighbour in a batch when any one slot matched.
     var _hlOverlay = null;   // THREE.InstancedMesh | null
     var _HL_CAP = 4000;      // hard cap on highlighted boxes (no silent truncation — §-logged)
+    var _shapeOverlays = []; // §RP-SHAPE: real-geometry overlays [{mesh, disposeMat}]
 
     function _clearHlOverlay() {
       if (_hlOverlay) {
@@ -463,6 +464,7 @@
     // Tear down the element-highlight lens: drop overlay + outline, restore opacity.
     function _highlightLensReset() {
       _clearHlOverlay();
+      _clearShapeOverlays();
       if (A.setOutline) A.setOutline([]);
       if (A.xrayOn && _hlXrayWasOff && A.toggleXray) A.toggleXray(); // restore opacity
       _hlXrayWasOff = false;
@@ -517,6 +519,90 @@
       return hits.length;
     }
 
+    // §RP-SHAPE: real-geometry highlight (NOT a box). Reuses the renderer's decoded geometry
+    // (A.meshCache[hash]) + its exact placement (ifc2three + euler(rotX,rotZ,-rotY), scale 1),
+    // so the actual LOD mesh SHAPE lights up. Geometry is SHARED with the scene — NEVER dispose
+    // it; materials here are fresh/cloned (opaque, so x-ray can't dim them) and ARE disposed.
+    function _clearShapeOverlays() {
+      _shapeOverlays.forEach(function(o) {
+        if (o.mesh && o.mesh.parent) o.mesh.parent.remove(o.mesh);
+        if (o.disposeMat && o.mesh && o.mesh.material) o.mesh.material.dispose();
+      });
+      _shapeOverlays = [];
+    }
+    // Build InstancedMeshes of the real geometry for `set`. color!=null → one cyan opaque
+    // material (the highlighted item); color==null → opaque CLONE of each element's real
+    // material (so the phase reads solid over the x-rayed base). Returns elements drawn.
+    function _buildShapeMeshes(set, color) {
+      if (!A.scene || typeof THREE === 'undefined' || !A.ifc2three || !A.meshCache || !set || !set.size) return 0;
+      var rows = [];
+      try {
+        rows = A.dbQuery("SELECT i.guid, i.geometry_hash, t.center_x, t.center_y, t.center_z," +
+          " t.rotation_x, t.rotation_y, t.rotation_z, m.material_rgba, m.ifc_class" +
+          " FROM element_instances i JOIN element_transforms t ON t.guid=i.guid" +
+          " JOIN elements_meta m ON m.guid=i.guid");
+      } catch (e) { console.log('[RP-C] §SHAPE_ERR ' + e.message); return 0; }
+      var groups = {}, total = 0, missing = 0;
+      for (var i = 0; i < rows.length && total < _HL_CAP; i++) {
+        var r = rows[i];
+        if (r[2] == null || !set.has(r[0])) continue;
+        var hash = r[1];
+        if (!hash || !A.meshCache[hash]) { missing++; continue; }
+        var key = color != null ? hash : (hash + '|' + (r[8] || '_'));
+        if (!groups[key]) groups[key] = { hash: hash, rgba: r[8], ifc: r[9], els: [] };
+        groups[key].els.push(r); total++;
+      }
+      var cyan = color != null ? new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide }) : null;
+      var made = 0, m4 = new THREE.Matrix4(), eu = new THREE.Euler(),
+          q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
+      for (var k in groups) {
+        var g = groups[k], geo = A.meshCache[g.hash];
+        var mat;
+        if (cyan) mat = cyan;
+        else {
+          var base = A._getMaterial ? A._getMaterial(g.rgba, g.ifc) : null;
+          mat = base ? base.clone() : new THREE.MeshStandardMaterial({ color: 0xcccccc });
+          mat.transparent = false; mat.opacity = 1; mat.depthWrite = true;
+        }
+        var inst = new THREE.InstancedMesh(geo, mat, g.els.length);
+        inst.frustumCulled = false;
+        for (var j = 0; j < g.els.length; j++) {
+          var e = g.els[j], p = A.ifc2three(e[2], e[3], e[4]);
+          pos.set(p.x, p.y, p.z);
+          eu.set(e[5] || 0, e[7] || 0, -(e[6] || 0));
+          q.setFromEuler(eu); m4.compose(pos, q, sc);
+          inst.setMatrixAt(j, m4);
+        }
+        inst.instanceMatrix.needsUpdate = true;
+        inst.renderOrder = color != null ? 3 : 2;
+        inst.userData._shapeOverlay = true;
+        A.scene.add(inst);
+        _shapeOverlays.push({ mesh: inst, disposeMat: true }); // cyan + clones are ours to dispose
+        made += g.els.length;
+      }
+      if (missing) console.log('[RP-C] §SHAPE_MISS hashes_not_streamed=' + missing + ' (set=' + set.size + ')');
+      return made;
+    }
+
+    // §RP: drop the x-rayed rest to a given opacity (phase drill wants 0.2, harder than the
+    // default 0.3). toggleXray already stored _origOpacity, so X-Ray OFF still restores to 1.
+    // Our shape overlays use fresh materials (not in _matCache / flagged) → unaffected.
+    function _dimXrayTo(op) {
+      if (!A.xrayOn) return;
+      var c = A._matCache || {}, ks = Object.keys(c), n = 0;
+      if (ks.length) {
+        ks.forEach(function(k) { var m = c[k]; if (m) { m.opacity = op; m.needsUpdate = true; n++; } });
+      } else if (A.scene) {
+        A.scene.traverse(function(o) {
+          if (o.isMesh && o.material && !(o.userData && (o.userData._shapeOverlay || o.userData._hlOverlay))) {
+            o.material.opacity = op; o.material.needsUpdate = true; n++;
+          }
+        });
+      }
+      console.log('[RP-TB] §XRAY_DIM opacity=' + op + ' mats=' + (ks.length ? n : 'scene:' + n));
+      if (A.markDirty) A.markDirty();
+    }
+
     function _clearRoomBoxes() {
       _roomBoxes.forEach(function(rb) {
         if (rb.mesh) {
@@ -537,48 +623,22 @@
       if (A.markDirty) A.markDirty();
     }
 
-    // Draw the translucent room boxes + x-ray everything else.
+    // §RP-SHAPE: the Room axis no longer paints translucent volume boxes (the old "ghost
+    // over all storeys"). It shows the per-storey tree; tapping a room lights its real
+    // CONTENTS (rel_contained_in_space) + keeps that storey solid + rest at 0.2 — the same
+    // drill as Phase/Material. Nothing is drawn until a room is tapped.
     function _roomLensOn() {
       _clearRoomBoxes();
-      if (!A.scene || typeof THREE === 'undefined' || !A.ifc2three) {
-        console.log('[RP-TA] §ROOM_LENS_ERR scene/THREE/ifc2three missing');
-        return;
-      }
-      var rows = [];
-      try {
-        rows = A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z" +
-          " FROM spatial_structure WHERE type='IfcSpace'" +
-          " AND center_x IS NOT NULL AND size_x IS NOT NULL ORDER BY name");
-      } catch(e) { console.log('[RP-TA] §ROOM_LENS_ERR ' + e.message); return; }
-      rows.forEach(function(r) {
-        var c = A.ifc2three(r[2], r[3], r[4]); // IFC center → Three world
-        var sx = Math.max(r[5] || 0.05, 0.05);
-        var sy = Math.max(r[7] || 0.05, 0.05); // IFC Z (height) → Three Y
-        var sz = Math.max(r[6] || 0.05, 0.05); // IFC Y → Three Z
-        var geo = new THREE.BoxGeometry(sx, sy, sz);
-        var mat = new THREE.MeshBasicMaterial({
-          color: 0x4fc3f7, transparent: true, opacity: 0.25,
-          depthWrite: false, side: THREE.DoubleSide
-        });
-        var mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(c.x, c.y, c.z);
-        mesh.renderOrder = 998;
-        mesh.userData._roomBox = true;
-        A.scene.add(mesh);
-        _roomBoxes.push({ guid: r[0], name: r[1] || '(unnamed)', mesh: mesh, center: c, size: { x: sx, y: sy, z: sz } });
-      });
-      if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; }
-      if (A.markDirty) A.markDirty();
-      console.log('[RP-TA] §ROOM_LENS rooms=' + _roomBoxes.length + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+      console.log('[RP-TA] §ROOM_LENS mode=shape (no volume boxes; highlight on room tap)');
     }
 
     // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
     // proven camera-lerp from diff.js zoomToGuid, but is box-based (works for rooms/phases/
     // elements that live in batched/instanced meshes, which zoomToGuid can't find). markDirty
     // every frame — the §S286 idle gate parks the loop, so the move won't render without it.
-    function _zoomToBox(center, size) {
+    function _zoomToBox(center, size, factor) {
       if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
-      var dist = Math.max(size.x, size.y, size.z) * 3 + 2;
+      var dist = Math.max(size.x, size.y, size.z) * (factor || 3) + 2;
       var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
       var start = A.camera.position.clone();
       var t = 0;
@@ -594,28 +654,21 @@
       anim();
     }
 
-    // Tap a room: brighten its box, dim the others, keep x-ray, ZOOM-TO-FIT that room.
+    // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
+    // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
     function _roomSelect(guid) {
-      var sel = null;
-      _roomBoxes.forEach(function(rb) {
-        var on = (rb.guid === guid);
-        if (on) sel = rb;
-        if (rb.mesh && rb.mesh.material) {
-          rb.mesh.material.opacity = on ? 0.5 : 0.12;
-          rb.mesh.material.color.set(on ? 0x7fe0ff : 0x4fc3f7);
-          rb.mesh.material.needsUpdate = true;
-        }
-      });
-      if (sel && A.setOutline) A.setOutline([sel.mesh], 0x4fc3f7);
-      if (sel) {
-        _zoomToBox(new THREE.Vector3(sel.center.x, sel.center.y, sel.center.z),
-                   new THREE.Vector3(sel.size.x, sel.size.y, sel.size.z));
-      }
-      if (A.markDirty) A.markDirty();
-      if (sel) {
-        console.log('[RP-TA] §ROOM_SELECT room="' + sel.name + '" box=(' +
-          sel.center.x.toFixed(2) + ',' + sel.center.y.toFixed(2) + ',' + sel.center.z.toFixed(2) + ') zoom=fit');
-      }
+      var set = new Set(), name = guid, storeySet = null;
+      try {
+        var nm = A.dbQuery("SELECT s.name, p.name FROM spatial_structure s" +
+          " LEFT JOIN spatial_structure p ON p.guid = s.parent_guid WHERE s.guid = ?", [guid]);
+        if (nm.length) { name = nm[0][0] || guid; var storey = nm[0][1];
+          if (storey) { storeySet = new Set();
+            A.dbQuery("SELECT guid FROM elements_meta WHERE storey = ?", [storey])
+              .forEach(function(r) { storeySet.add(r[0]); }); } }
+        A.dbQuery("SELECT element_guid FROM rel_contained_in_space WHERE space_guid = ?", [guid])
+          .forEach(function(r) { set.add(r[0]); });
+      } catch (e) { console.warn('[RP-TA] §ROOM_SELECT_ERR', e.message); }
+      _drillSelect(set, name, 'ROOM_SELECT', storeySet);
     }
 
     // §RP sub-toggle row [A | B] — a small two-pill regroup control inside a lens tree.
@@ -754,18 +807,9 @@
     }
 
     function _materialHighlight(label, set) {
-      if (A.filterStorey) A.filterStorey(null);
-      if (A.filterDisc) A.filterDisc(null);
-      if (A.filterByGuids) A.filterByGuids(null); // never isolate — highlight only
-      if (!set.size) { console.log('[RP-T3] §MAT_SELECT sel="' + label + '" elems=0 xray=off'); return; }
-      var matched = _highlightGuids(set);
-      if (elIsoBar) {
-        elIsoBar.style.display = 'flex';
-        if (elIsoBtn) elIsoBtn.style.display = 'none';
-        if (elShowAllBtn) elShowAllBtn.style.display = '';
-      }
-      console.log('[RP-T3] §MAT_SELECT sel="' + label + '" elems=' + set.size +
-        ' boxes=' + matched + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+      // §RP-SHAPE: material select now lights the elements' REAL shapes (cyan) + rest at 0.2,
+      // same as the phase drill. No parent group to keep solid → phaseSet null.
+      _drillSelect(set, label, 'MAT_SELECT', null);
     }
 
     function _materialSelectByName(name) {
@@ -901,31 +945,60 @@
       return { center: new THREE.Vector3((minx + maxx) / 2, (miny + maxy) / 2, (minz + maxz) / 2),
                size: new THREE.Vector3(maxx - minx, maxy - miny, maxz - minz) };
     }
-    function _zoomToGuids(set) { var bb = _bboxOfGuids(set); if (bb) _zoomToBox(bb.center, bb.size); return !!bb; }
+    function _zoomToGuids(set, factor) { var bb = _bboxOfGuids(set); if (bb) _zoomToBox(bb.center, bb.size, factor); return !!bb; }
 
-    // Shared darken+highlight+zoom for any drill level (phase / task / element). Never hides.
-    function _drillSelect(set, label, tag) {
+    // §RP-SHAPE drill: x-ray the rest (transparent), keep the WHOLE PHASE solid (real-geometry
+    // opaque overlay), and light the SELECTED item's real SHAPE in cyan. Never hides. `phaseSet`
+    // (optional) is the parent phase's guids — the part kept solid; `set` is what's lit.
+    function _drillSelect(set, label, tag, phaseSet) {
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
-      if (A.filterByGuids) A.filterByGuids(null); // never isolate — darken (x-ray) + highlight only
+      if (A.filterByGuids) A.filterByGuids(null); // never isolate — x-ray + shape highlight only
       if (!set || !set.size) { console.log('[RP-TB] §' + tag + ' "' + label + '" elems=0'); return; }
-      var boxes = _highlightGuids(set);   // element-precise highlight + x-ray the rest (darken)
-      var zoomed = _zoomToGuids(set);     // zoom-to-fit the set
+      _clearShapeOverlays();
+      _clearHlOverlay();
+      if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // rest → transparent
+      _dimXrayTo(0.2);  // §RP phase drill: dim the rest harder than default 0.3 → 0.2 for contrast
+      // phase stays solid = the phase minus the lit item (avoid z-fight with the cyan shape)
+      var solidSet = null, solid = 0;
+      if (phaseSet && phaseSet.size) {
+        solidSet = new Set(); phaseSet.forEach(function(g) { if (!set.has(g)) solidSet.add(g); });
+        solid = _buildShapeMeshes(solidSet, null);
+      }
+      var lit = _buildShapeMeshes(set, 0x4fc3f7);   // selected item's real shape, cyan
+      var zoomed = _zoomToGuids(set, 1.6);          // tight frame on the lit item (was zooming too far)
+      if (A.markDirty) A.markDirty();
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
         if (elShowAllBtn) elShowAllBtn.style.display = '';
       }
-      console.log('[RP-TB] §' + tag + ' "' + label + '" elems=' + set.size + ' boxes=' + boxes +
+      console.log('[RP-TB] §' + tag + ' "' + label + '" elems=' + set.size + ' lit=' + lit +
+        ' phaseSolid=' + solid + ' overlays=' + _shapeOverlays.length +
         ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+    }
+    function _phaseGuids(name) {
+      return (_phaseCache && _phaseCache.byPhase[name]) ? _phaseCache.byPhase[name].guids : null;
     }
     function _phaseSelect(name) {
       var pc = _phaseCache;
       if (!pc || !pc.byPhase[name]) return;
-      _drillSelect(pc.byPhase[name].guids, name, 'PHASE_SELECT');
+      _drillSelect(pc.byPhase[name].guids, name, 'PHASE_SELECT', null); // tap phase = light whole phase
     }
-    function _taskSelect(set, label) { _drillSelect(set, label, 'TASK_SELECT'); }
-    function _elementSelect(guid) { _drillSelect(new Set([guid]), _elLabel(guid), 'ELEM_SELECT'); }
+    function _taskSelect(set, label, phaseName) { _drillSelect(set, label, 'TASK_SELECT', _phaseGuids(phaseName)); }
+    function _elementSelect(guid, phaseName) { _drillSelect(new Set([guid]), _elLabel(guid), 'ELEM_SELECT', _phaseGuids(phaseName)); }
+    // §RP-SHAPE: storey/disc Type-leaf tap → light that type's real shapes (cyan), keep the
+    // whole storey/disc solid, rest at 0.2. (col is a fixed identifier: 'storey' | 'discipline'.)
+    function _typeShapeDrill(col, val, ifc, label) {
+      var iset = new Set(), gset = new Set();
+      try {
+        A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " = ? AND ifc_class = ?", [val, ifc])
+          .forEach(function(r) { iset.add(r[0]); });
+        A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " = ?", [val])
+          .forEach(function(r) { gset.add(r[0]); });
+      } catch (e) { console.warn('[RP-TB] §TYPE_DRILL_ERR', e.message); }
+      _drillSelect(iset, label, 'TYPE_SELECT', gset);
+    }
 
     // Lazy children for a phase node: Phase → task → element when task_elements is populated,
     // else Phase → element directly (kernel-only timelines, e.g. tasks table empty). Never hide.
@@ -947,17 +1020,17 @@
         taskOrder.forEach(function(tk) {
           var tg = byTask[tk];
           var elKids = tg.slice(0, _PHASE_ELEM_CAP).map(function(g) {
-            return _treeNode(_elLabel(g), '', 2, { onTap: function() { _elementSelect(g); } });
+            return _treeNode(_elLabel(g), '', 2, { onTap: function() { _elementSelect(g, phaseName); } });
           });
           container.appendChild(_treeNode(tk, tg.length, 1,
-            { children: elKids, onTap: function() { _taskSelect(new Set(tg), tk); } }));
+            { children: elKids, onTap: function() { _taskSelect(new Set(tg), tk, phaseName); } }));
         });
         console.log('[RP-TB] §PHASE_CHILDREN phase="' + phaseName + '" tasks=' + taskOrder.length + ' elems=' + guids.length);
         return;
       }
       var capped = guids.length > _PHASE_ELEM_CAP;
       guids.slice(0, _PHASE_ELEM_CAP).forEach(function(g) {
-        container.appendChild(_treeNode(_elLabel(g), '', 1, { onTap: function() { _elementSelect(g); } }));
+        container.appendChild(_treeNode(_elLabel(g), '', 1, { onTap: function() { _elementSelect(g, phaseName); } }));
       });
       if (capped) {
         var more = document.createElement('div');
@@ -1231,8 +1304,8 @@
               if (types.length) {
                 types[0].values.forEach(function(tp) {
                   container.appendChild(_treeNode(friendlyClass(tp[0]), tp[1], 1, {
-                    // §W-LEAF-ISOLATE: tap a Type leaf → isolate that storey's type, hide the rest
-                    onTap: function() { isolateLeaf({ storey: storey, type: tp[0] }, 'storey="' + storey + '",type="' + tp[0] + '"'); }
+                    // §RP-SHAPE: tap a Type leaf → light that type's shapes, storey solid, rest 0.2
+                    onTap: function() { _typeShapeDrill('storey', storey, tp[0], friendlyClass(tp[0]) + ' @ ' + storey); }
                   }));
                 });
               }
@@ -1272,8 +1345,8 @@
             if (types.length) {
               types[0].values.forEach(function(tp) {
                 container.appendChild(_treeNode(friendlyClass(tp[0]), tp[1], 1, {
-                  // §W-LEAF-ISOLATE: tap a Type leaf → isolate that discipline's type, hide the rest
-                  onTap: function() { isolateLeaf({ disc: disc, type: tp[0] }, 'disc="' + disc + '",type="' + tp[0] + '"'); }
+                  // §RP-SHAPE: tap a Type leaf → light that type's shapes, discipline solid, rest 0.2
+                  onTap: function() { _typeShapeDrill('discipline', disc, tp[0], friendlyClass(tp[0]) + ' @ ' + disc); }
                 }));
               });
             }
