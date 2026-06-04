@@ -93,6 +93,25 @@ function clone(db, t, whereSql, overrides) {
   });
   L('   cloned frame: Client ' + CL + ', Org ' + ORG + ', Role ' + ROLE + ', User ' + USER + ', window-grants=' + nWA);
 
+  // ── 3b. PROPER PRACTICE — a System Administrator role (client 0) is where tenant SETUP/migration happens
+  //    (cross-client). The seed had none (SuperUser defaulted into GardenWorld); add it and grant it to the
+  //    existing System user (id 10, client 0) so ?login=System lands in real SystemAdmin mode. ──
+  // the seed has no AD_Client row for id 0 (the System client) — clientFor() on a client-0 role needs it.
+  if (!rowObj(db, 'SELECT 1 FROM AD_Client WHERE AD_Client_ID=0'))
+    clone(db, 'AD_Client', 'AD_Client_ID=11', { AD_Client_ID: 0, Value: 'System', Name: 'System', Description: 'System (cross-client)' });
+  var SAROLE = 1000000;
+  clone(db, 'AD_Role', 'AD_Role_ID=102', { AD_Role_ID: SAROLE, AD_Client_ID: 0, Name: 'System Administrator',
+    Description: 'System Administrator', UserLevel: 'S  ', IsAccessAllOrgs: 'Y', IsClientAdministrator: 'N' });
+  var saUR = rowObj(db, 'SELECT * FROM AD_User_Roles LIMIT 1');
+  saUR.AD_User_ID = 10; saUR.AD_Role_ID = SAROLE; saUR.AD_Client_ID = 0; saUR.AD_Org_ID = 0; saUR.IsActive = 'Y';
+  insert(db, 'AD_User_Roles', saUR);
+  var saOA = rowObj(db, 'SELECT * FROM AD_Role_OrgAccess LIMIT 1');
+  saOA.AD_Role_ID = SAROLE; saOA.AD_Org_ID = 0; saOA.AD_Client_ID = 0; saOA.IsActive = 'Y';
+  insert(db, 'AD_Role_OrgAccess', saOA);
+  if (waRows.length) waRows[0].values.forEach(function (vals) { var o = {}; waCols.forEach(function (c, i) { o[c] = vals[i]; });
+    o.AD_Role_ID = SAROLE; if ('AD_Client_ID' in o) o.AD_Client_ID = 0; insert(db, 'AD_Window_Access', o); });
+  L('   SystemAdmin: role ' + SAROLE + ' (client 0) granted to System user 10 — the proper migration mode');
+
   // ── 4. real Odoo DATA under Client 12 ──
   // 4a. categories (distinct Odoo leaf categ → one M_Product_Category)
   var catId = {}, nextCat = 12001;

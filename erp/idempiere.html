@@ -377,7 +377,27 @@
     // Menu builds only AFTER login — it is role-scoped (docs §3b). Defer the deep link too.
     _pendingWid = new URLSearchParams(location.search).get('window');
     $('idmp-loading').style.display = 'none';
-    showLogin('user');
+    // ?login=<AD_User_ID | name-substring> auto-logs-in (demo/kiosk wow — zero clicks to the opening screen).
+    // Proper practice: tenant SETUP/migration is a SystemAdmin act (System, client 0 — ?login=SuperUser); a
+    // migrated tenant is then entered directly (?login=Odoo). Config-in-pill (iDempiere-style) comes later.
+    var loginParam = new URLSearchParams(location.search).get('login');
+    if (!(loginParam && _tryAutoLogin(loginParam))) showLogin('user');
+  }
+  function _tryAutoLogin(q) {
+    var ql = String(q).toLowerCase();
+    var users = SES.listUsers(db).filter(function (u) { return u.hasRoles; });
+    var m = /^\d+$/.test(q) ? users.filter(function (u) { return String(u.id) === q; })[0]
+                            : users.filter(function (u) { return (u.name || '').toLowerCase().indexOf(ql) >= 0; })[0];
+    if (!m) { console.log('§IDEMPIERE-AUTOLOGIN miss q=' + q); return false; }
+    var roles = SES.rolesForUser(db, m.id); if (!roles.length) return false;
+    var rid = roles[0].id, orgs = SES.orgsForRole(db, rid), oid = orgs.length ? orgs[0].id : 0;
+    _loginUser = m;
+    _session = SES.buildContext(db, m.id, { roleId: rid, orgId: oid });
+    if (!_session) return false;
+    $('idmp-login').style.display = 'none';
+    console.log('§IDEMPIERE-AUTOLOGIN user=' + m.name + ' role=' + rid + ' via=' + q);
+    applySession();
+    return true;
   }
 
   // ── Login flow (docs §3b/§3b.1): pick user → Role/Client/Org → role-scoped session ──
