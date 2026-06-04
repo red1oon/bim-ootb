@@ -5,7 +5,7 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v37 loaded — S287 render-loop resume on focus/pageshow');
+console.log('§MAIN_JS v38 loaded — S287b single-owner render loop');
 async function initViewer() {
   const APP = window.APP = {};
 
@@ -521,23 +521,28 @@ async function initViewer() {
 
   // §S271: Pause rAF when tab backgrounded — saves battery, avoids WebGL context kill
   var _tabVisible = true;
-  // §S287: never leave the loop dead. Restart only if not already running (no double-loop).
-  function _ensureLoop() {
-    _tabVisible = true;
-    if (!_rafId) { _needsRender = true; _rafId = requestAnimationFrame(animate); console.log('§RENDER_LOOP resumed'); }
+  var _rafId, _loopStarts = 0;
+  // §S287b: SINGLE-OWNER render loop. Every (re)start routes through here; the _rafId guard
+  // guarantees exactly ONE rAF chain — fixes the S287 focus/pageshow + async-init double-loop
+  // (which ran render twice per frame). Witness: §RENDER_LOOP start total= must stay 1.
+  function _startLoop() {
+    if (_rafId) return;                       // already running — never double
+    _loopStarts++;
+    _needsRender = true;
+    _rafId = requestAnimationFrame(animate);
+    console.log('§RENDER_LOOP start total=' + _loopStarts);
   }
+  function _ensureLoop() { _tabVisible = true; _startLoop(); }
   document.addEventListener('visibilitychange', function() {
     _tabVisible = !document.hidden;
-    if (_tabVisible) { _needsRender = true; if (!_rafId) _rafId = requestAnimationFrame(animate); }
+    if (_tabVisible) _startLoop();
     else if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
     console.log('§TAB_VISIBILITY visible=' + _tabVisible);
   });
-  // §S287: background-load / bfcache safety net — refocusing or re-showing the tab
-  // must revive a loop that was cancelled while hidden (the "stuck after reload" case).
+  // §S287: revive a loop cancelled while hidden — refocus, or bfcache restore (persisted).
+  // Both go through _startLoop's guard, so they can never start a second chain.
   window.addEventListener('focus', _ensureLoop);
-  window.addEventListener('pageshow', _ensureLoop);
-
-  var _rafId;
+  window.addEventListener('pageshow', function(e) { if (e.persisted) _ensureLoop(); });
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
   // materials, synchronous compilation during render() times out the main thread.
   // Fix: after streaming adds all materials, call compileAsync() to pre-warm pipelines
@@ -616,8 +621,8 @@ async function initViewer() {
     }
   }
 
-  // Go
-  animate();
+  // Go — §S287b: single guarded kickoff (no double loop if focus/pageshow fired during init)
+  _startLoop();
   APP.init().then(async function() {
     // S223: Load diff DB if ?diffdb= param present (variation comparison)
     const diffDbUrl = new URLSearchParams(location.search).get('diffdb');
