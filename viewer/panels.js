@@ -559,6 +559,55 @@ function setupPanels(A) {
     if (A.markDirty) A.markDirty();
   };
 
+  // §RevitParity A1 (W-FILTER-ISOLATE): Isolate an arbitrary element set by GUID.
+  // guidSet = Set of guids to KEEP visible; null = restore all. Generic counterpart
+  // to filterStorey/filterDisc — works across regular, instanced and batched meshes
+  // because every element carries userData.guid / meta.guid. Mutually exclusive with
+  // the storey/disc filters: callers clear those (filterStorey(null)/filterDisc(null))
+  // before isolating so a single mechanism governs visibility.
+  A.filterByGuids = function(guidSet) {
+    A.activeGuidFilter = guidSet;
+    const keep = g => guidSet === null || (g != null && guidSet.has(g));
+    A.collectMeshes(o => o.isMesh && o.userData && o.userData.guid !== undefined).forEach(obj => {
+      obj.visible = keep(obj.userData.guid);
+    });
+    A.collectMeshes(o => o.isInstancedMesh).forEach(mesh => {
+      A.filterInstancedMesh(mesh, meta => keep(meta.guid));
+    });
+    A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
+      A.filterBatchedMesh(mesh, meta => keep(meta.guid));
+    });
+    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)));
+    if (A.markDirty) A.markDirty();
+  };
+
+  // §RevitParity A2 (room reuse of A1): rooms live in spatial_structure (IfcSpace),
+  // NOT elements_meta. Both tables are optional — absent in DBs built before the
+  // pipeline preserved them, so every accessor degrades to empty.
+  A.listRooms = function() {
+    if (!A.db) return [];
+    try {
+      var has = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'");
+      if (!has.length) return [];
+    } catch(e) { return []; }
+    return A.dbQuery("SELECT guid, name FROM spatial_structure WHERE type='IfcSpace' AND name IS NOT NULL ORDER BY name")
+      .map(function(r) { return { guid: r[0], name: r[1] }; });
+  };
+
+  // Isolate a room's CONTENTS — reuses filterByGuids with the GUID set from
+  // rel_contained_in_space. Returns the contents count (0 = nothing to isolate, no-op).
+  A.isolateRoom = function(spaceGuid) {
+    if (!A.db || !A.filterByGuids) return 0;
+    var rows = A.dbQuery("SELECT element_guid FROM rel_contained_in_space WHERE space_guid = ?", [spaceGuid]);
+    var set = new Set(rows.map(function(r) { return r[0]; }));
+    if (!set.size) { console.log('[RP-A1] §ROOM_ISOLATE space=' + spaceGuid + ' contents=0 noop'); return 0; }
+    if (A.filterStorey) A.filterStorey(null);
+    if (A.filterDisc) A.filterDisc(null);
+    A.filterByGuids(set);
+    console.log('[RP-A1] §ROOM_ISOLATE space=' + spaceGuid + ' contents=' + set.size);
+    return set.size;
+  };
+
   // Building list
   A.allBuildingCards = [];
 
