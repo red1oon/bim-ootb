@@ -3276,4 +3276,9 @@
   window.tmGetState = function() {
     return { active: _active, cursor: _cursor };
   };
+
+  // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
+  // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
+  // just exposes it. Returns its boolean (count>0 / false); callers cache.
+  window.tmGenerateTimeline = function() { return injectGantt(); };
 })();
