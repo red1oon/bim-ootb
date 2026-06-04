@@ -58,23 +58,39 @@
   // status-grouped fold over the resident DataSource. PER-ROW (real doc ids) so each card is a REAL
   // document a drag can SET_STATUS — not a count placeholder. Pure read; no write here. (§KANBAN-FOLD)
   var TMAP = { c_invoice: 'C_Invoice', c_order: 'C_Order', c_payment: 'C_Payment' };
-  function foldDocStatus(db) {
-    var folds = [], CAP = 30;   // cap cards/(table,status) so the board stays legible (logged, not silent)
+  // read-the-tip: latest persisted status per doc from the projection's `documents` table (id='DOC:table#id').
+  // gap #2 — a reloaded board shows the op-log result, not the stale bundle status; absent ⇒ bundle (honest).
+  function tipStatus(projDb) {
+    var tip = {};
+    try {
+      var r = projDb && projDb.exec("SELECT id, doc_status FROM documents");
+      if (r && r.length) r[0].values.forEach(function (row) { tip[row[0]] = row[1]; });
+    } catch (e) { /* no documents yet */ }
+    return tip;
+  }
+  function foldDocStatus(db, projDb) {
+    var folds = [], CAP = 30, tip = tipStatus(projDb), overlaid = 0;
     Object.keys(TMAP).forEach(function (tb) {
       try {
-        var pk = tb + '_id';
+        var T = TMAP[tb], pk = tb + '_id';
         var r = db.exec("SELECT " + pk + " AS id, docstatus FROM " + tb + " WHERE docstatus IS NOT NULL");
         if (!r.length) return;
         var byS = {};
-        r[0].values.forEach(function (row) { var s = row[1]; (byS[s] = byS[s] || []).push(row[0]); });
+        r[0].values.forEach(function (row) {
+          var id = row[0], s = row[1];
+          var t = tip['DOC:' + T + '#' + id];               // op-log tip wins over the bundle status
+          if (t && t !== s) { s = t; overlaid++; }
+          (byS[s] = byS[s] || []).push(id);
+        });
         Object.keys(byS).forEach(function (s) {
           var ids = byS[s], capped = ids.slice(0, CAP);
-          if (ids.length > CAP) log('fold cap ' + TMAP[tb] + '/' + s + ' ' + ids.length + '->' + CAP);
-          folds.push({ table: TMAP[tb], doc_status: s, count: ids.length, ids: capped });
+          if (ids.length > CAP) log('fold cap ' + T + '/' + s + ' ' + ids.length + '->' + CAP);
+          folds.push({ table: T, doc_status: s, count: ids.length, ids: capped });
         });
       } catch (e) { log('fold skip ' + tb + ': ' + e.message); }
     });
-    log('foldDocStatus folds=' + folds.length + ' cards=' + folds.reduce(function (a, f) { return a + f.ids.length; }, 0));
+    log('foldDocStatus folds=' + folds.length + ' cards=' + folds.reduce(function (a, f) { return a + f.ids.length; }, 0) +
+      ' tipOverlaid=' + overlaid);
     return folds;
   }
 
@@ -102,7 +118,7 @@
     // ── STEP-0: publish window.ERP (the seam) — drag→dispatch becomes a REAL signed SET_STATUS. ──
     await publishERP(SQL, db, wfmc);
 
-    var folds = foldDocStatus(db);
+    var folds = foldDocStatus(db, window.__kanbanProj);   // overlay the op-log tip (gap #2 persistence)
     // showEmptyStates: render ALL wfmc stages as columns (Odoo-style pipeline) so a drag to ANY legal
     // target stage has a column to land in — else _moveCardDom can't place the card (col absent).
     var board = KanbanLens.buildBoard(folds, wfmc, { showEmptyStates: true });
@@ -121,6 +137,13 @@
           var v = window.ERP.verify();
           console.log('§KANBAN-WRITE ok action=' + res.action + ' ' + res.table + '#' + res.id +
             ' to=' + dr.to + ' op=' + (dr.op_uuid || '-') + ' chainOk=' + v.chainOk + ' len=' + v.len);
+          // gap #2 — persist the op-LOG blob so the edit survives reload (boot restores + reads-the-tip).
+          try {
+            var buf = window.__kanbanProj.export().buffer;
+            idbPutBlob('bim_ootb_cache', 'dbs', 'kanban_proj', buf).then(function () {
+              console.log('§KANBAN-PERSIST saved bytes=' + buf.byteLength);
+            }).catch(function (e) { console.log('§KANBAN-PERSIST err ' + e.message); });
+          } catch (e) { console.log('§KANBAN-PERSIST export err ' + e.message); }
         } else if (dr && dr.rejected) {
           console.log('§KANBAN-WRITE rejected why=' + dr.why);
         }
@@ -129,6 +152,40 @@
   }
 
   function _rows(res) { if (!res.length) return []; return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); }
+
+  function idbGetBlob(dbName, store, key) {
+    return new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open(dbName, 1);
+        rq.onupgradeneeded = function () { try { rq.result.createObjectStore(store); } catch (e) {} };
+        rq.onsuccess = function () {
+          var db = rq.result;
+          if (!db.objectStoreNames.contains(store)) { db.close(); return resolve(null); }
+          var tx = db.transaction(store, 'readonly'); var g = tx.objectStore(store).get(key);
+          g.onsuccess = function () { db.close(); resolve(g.result || null); };
+          g.onerror = function () { db.close(); resolve(null); };
+        };
+        rq.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  function idbPutBlob(dbName, store, key, buf) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var rq = indexedDB.open(dbName, 1);
+        rq.onupgradeneeded = function () { try { rq.result.createObjectStore(store); } catch (e) {} };
+        rq.onsuccess = function () {
+          var db = rq.result;
+          if (!db.objectStoreNames.contains(store)) { db.close(); return reject(new Error('no store')); }
+          var tx = db.transaction(store, 'readwrite'); tx.objectStore(store).put(buf, key);
+          tx.oncomplete = function () { db.close(); resolve(true); };
+          tx.onerror = function () { db.close(); reject(tx.error || new Error('put failed')); };
+        };
+        rq.onerror = function () { reject(rq.error || new Error('open failed')); };
+      } catch (e) { reject(e); }
+    });
+  }
 
   // publishERP — mirror spike_writepath.html: projection + real signer + makeSeam + role-gated ctx → window.ERP.
   // The lens NEVER forks a verb; it consumes this seam. Role grants exactly the (table:action) edges in wfmc.
@@ -142,7 +199,18 @@
       var adQ = adDb ? function (s, p) { return _rows(adDb.exec(s, p || [])); } : function () { return []; };
       var gbQ = function (s, p) { return _rows(gbDb.exec(s, p || [])); };
 
-      var projDb = new SQL.Database(); K.initProjection(projDb);
+      // gap #2 — DURABILITY: persist the signed op-LOG and replay on boot (write-path spine: persist the
+      // log, never the edited projection). Restore the prior projection blob from IDB; set APP.DB_URL so
+      // kernel_ops._persistToIdb writes (it no-ops on unset DB_URL). The board then reads-the-tip (documents).
+      var PROJ_KEY = 'kanban_proj';
+      var prior = await idbGetBlob('bim_ootb_cache', 'dbs', PROJ_KEY);
+      var projDb;
+      if (prior && prior.byteLength > 100) {
+        try { projDb = new SQL.Database(new Uint8Array(prior)); log('§KANBAN-RESTORE ops from IDB bytes=' + prior.byteLength); }
+        catch (e) { projDb = new SQL.Database(); K.initProjection(projDb); log('§KANBAN-RESTORE failed, fresh: ' + e.message); }
+      } else { projDb = new SQL.Database(); K.initProjection(projDb); }
+      window.APP = window.APP || {}; window.APP.DB_URL = PROJ_KEY;   // unlock _persistToIdb (gap #2)
+      window.__kanbanProj = projDb;                                  // exposed for the fold overlay + witness
       try { await window.ErpSigner.installSigner(window.KernelOps, { dbName: 'bim_erp_signer' }); }
       catch (e) { log('§SIGN skip ' + e.message); }
 
