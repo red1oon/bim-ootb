@@ -3358,6 +3358,41 @@
     }
   }
 
+  // §SHARE — capture the live context as the SAME deep-link params erp.html restores on load
+  // (client/window/record). Capture is the mirror of the existing restore — non-invent. (docs/ERP_SHARE_SPEC.md)
+  function _currentRecordPk() {
+    if (_currentScreen !== 'window' || !_currentWindow || !_currentRecords.length) return null;
+    var tab = _currentWindow.tabs[_currentTabIdx];
+    if (!tab) return null;
+    var rec = _currentRecords[_currentRecordIdx];
+    if (!rec) return null;
+    var pk = _caseGet(rec, tab.tableName + '_ID');
+    return (pk === undefined || pk === null) ? null : pk;
+  }
+
+  function _getContext() {
+    var ctx = { client: _currentClient, screen: _currentScreen };
+    if (_currentScreen === 'window' && _currentWindow) {
+      ctx.window = _currentWindow.id;
+      var pk = _currentRecordPk();
+      if (pk !== null) ctx.record = pk;
+    }
+    return ctx;
+  }
+
+  function _buildShareUrl() {
+    var ctx = _getContext();
+    var base = (typeof location !== 'undefined') ? (location.origin + location.pathname) : 'erp.html';
+    var qs = [];
+    if (ctx.client) qs.push('client=' + encodeURIComponent(ctx.client));
+    if (ctx.window !== undefined && ctx.window !== null) qs.push('window=' + encodeURIComponent(ctx.window));
+    if (ctx.record !== undefined && ctx.record !== null) qs.push('record=' + encodeURIComponent(ctx.record));
+    var url = base + (qs.length ? '?' + qs.join('&') : '');
+    console.log('§AD_UI buildShareUrl ' + url + ' (client=' + (ctx.client || '') +
+      ' window=' + (ctx.window != null ? ctx.window : '-') + ' record=' + (ctx.record != null ? ctx.record : '-') + ')');
+    return url;
+  }
+
   var ADUI = {
     init:       init,
     hydrate:    _hydrate,
@@ -3366,6 +3401,9 @@
     // §19 Deep-link helpers
     setClient:  _setClient,
     navToRecord: _navToRecordByPk,
+    // §SHARE — capture/restore full context (docs/ERP_SHARE_SPEC.md)
+    getContext: _getContext,
+    buildShareUrl: _buildShareUrl,
     // Exposed for testing — CRUD toolbar / arrow keys
     navRecord:  _navRecord,
     getRecordIdx: function () { return _currentRecordIdx; },

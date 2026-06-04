@@ -75,14 +75,14 @@
 <div id="bottom-nav"></div>
 
 <!-- §INSTANT Phase 1: globe renders from initbubble.json in <300ms -->
-<script src="ad_graph.js?v=23"></script>
-<script src="ad_ui.js?v=23"></script>
+<script src="ad_graph.js?v=24"></script>
+<script src="ad_ui.js?v=24"></script>
 
 <!-- idempiereUI.md I1 — BIM pill bar, registry-driven from pills.json (the idempiere pill launches
      idempiere.html, renderer #1). icons.js = verbatim icon set; pill_builder.js used as-is. -->
-<script src="icons.js?v=23"></script>
-<script src="pill_builder.js?v=23"></script>
-<script src="erp_pills.js?v=23"></script>
+<script src="icons.js?v=24"></script>
+<script src="pill_builder.js?v=24"></script>
+<script src="erp_pills.js?v=24"></script>
 <script>
 // Phase 1: Instant constellation — fetch initbubble.json, then init
 var _shellReady = false;
@@ -91,12 +91,12 @@ var _shellReady = false;
   var _tBoot = performance.now();
 
   // Compiled manifest — structure for the 7 curated windows (parallel, non-blocking).
-  fetch('manifest.json?v=23').then(function(r) { return r.json(); }).then(function(mf) {
+  fetch('manifest.json?v=24').then(function(r) { return r.json(); }).then(function(mf) {
     window.AD_MANIFEST = mf;
     console.log('§BENCH manifest loaded windows=' + Object.keys(mf.windows || {}).length);
   }).catch(function(e) { console.log('§BENCH manifest fetch failed: ' + e.message); });
 
-  fetch('initbubble.json?v=23').then(function(r) { return r.json(); }).then(function(data) {
+  fetch('initbubble.json?v=24').then(function(r) { return r.json(); }).then(function(data) {
     window.INIT_BUBBLES = data;
 
     var params = new URLSearchParams(window.location.search);
@@ -156,7 +156,7 @@ var _shellReady = false;
     });
   }
 
-  var V = '?v=23';
+  var V = '?v=24';
   // Modules NOT loaded in Phase 1 (ad_graph.js + ad_ui.js already loaded)
   var MODULES = [
     'kernel_ops.js' + V,
@@ -319,27 +319,30 @@ var _shellReady = false;
     window.__erpDb = db;
 
     // ── Wait for Phase 1 shell, then hydrate silently ────────────────
+    // §SHARE restore — deep-link (?window/?record) MUST run AFTER hydrate (db ready), else openWindow
+    // hits the not-ready guard and the shared context silently fails to restore. (docs/ERP_SHARE_SPEC.md)
+    function _restoreDeepLink() {
+      var windowParam = params.get('window');
+      if (windowParam && typeof ADUI !== 'undefined') {
+        console.log('§ERP_HTML auto-open window=' + windowParam);
+        ADUI.openWindow(Number(windowParam));
+        var recordParam = params.get('record');
+        if (recordParam) {
+          console.log('§ERP_HTML auto-record=' + recordParam);
+          ADUI.navToRecord(recordParam);
+        }
+      }
+    }
     function _waitAndHydrate() {
       if (typeof _shellReady !== 'undefined' && _shellReady) {
         ADUI.hydrate(db);
+        _restoreDeepLink();   // db is ready now — restore the shared context
       } else {
         setTimeout(_waitAndHydrate, 50);
       }
     }
     if (typeof ADUI !== 'undefined') {
       _waitAndHydrate();
-    }
-
-    // §19 Deep links (now that DB is ready)
-    var windowParam = params.get('window');
-    if (windowParam && typeof ADUI !== 'undefined') {
-      console.log('§ERP_HTML auto-open window=' + windowParam);
-      ADUI.openWindow(Number(windowParam));
-      var recordParam = params.get('record');
-      if (recordParam) {
-        console.log('§ERP_HTML auto-record=' + recordParam);
-        ADUI.navToRecord(recordParam);
-      }
     }
 
     _bench.total_hydrate = Math.round(performance.now() - _tHydrate);
