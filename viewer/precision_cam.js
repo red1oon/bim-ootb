@@ -112,6 +112,11 @@
     if (!mode && scene) {
       var ray = new THREE.Raycaster();
       var hit = null;
+      // Building geometry only (same filter the picker uses) — never the hidden sky dome /
+      // ground at ~50000, which would fling the pivot far away. Collect once, not per ray.
+      var meshes = (A().collectMeshes
+        ? A().collectMeshes(function(o) { return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible; })
+        : scene.children);
       // Radiate outward from screen-centre; first ring that hits wins (nearest-to-centre).
       var samples = [[0, 0, 0]];
       var rings = [0.06, 0.12, 0.18];
@@ -123,7 +128,7 @@
       }
       for (var s = 0; s < samples.length && !hit; s++) {
         ray.setFromCamera(new THREE.Vector2(samples[s][0], samples[s][1]), cam);
-        var hh = ray.intersectObjects(scene.children, true);
+        var hh = ray.intersectObjects(meshes, false);
         if (hh.length) { hit = hh[0]; hitR = samples[s][2]; }
       }
       if (hit) { c.target.copy(hit.point); mode = 'mesh'; }
