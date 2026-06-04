@@ -5,7 +5,7 @@
  */
 // main.js — initViewer() orchestrator: creates APP, calls each module's setup, starts render loop
 // DEV version — adds setupNlp (S211 voice command / NLP query)
-console.log('§MAIN_JS v36 loaded — S286 desktop on-demand render gate (idle fan fix)');
+console.log('§MAIN_JS v37 loaded — S287 render-loop resume on focus/pageshow');
 async function initViewer() {
   const APP = window.APP = {};
 
@@ -521,12 +521,21 @@ async function initViewer() {
 
   // §S271: Pause rAF when tab backgrounded — saves battery, avoids WebGL context kill
   var _tabVisible = true;
+  // §S287: never leave the loop dead. Restart only if not already running (no double-loop).
+  function _ensureLoop() {
+    _tabVisible = true;
+    if (!_rafId) { _needsRender = true; _rafId = requestAnimationFrame(animate); console.log('§RENDER_LOOP resumed'); }
+  }
   document.addEventListener('visibilitychange', function() {
     _tabVisible = !document.hidden;
-    if (_tabVisible) { _needsRender = true; _rafId = requestAnimationFrame(animate); }
+    if (_tabVisible) { _needsRender = true; if (!_rafId) _rafId = requestAnimationFrame(animate); }
     else if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
     console.log('§TAB_VISIBILITY visible=' + _tabVisible);
   });
+  // §S287: background-load / bfcache safety net — refocusing or re-showing the tab
+  // must revive a loop that was cancelled while hidden (the "stuck after reload" case).
+  window.addEventListener('focus', _ensureLoop);
+  window.addEventListener('pageshow', _ensureLoop);
 
   var _rafId;
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
