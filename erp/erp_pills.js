@@ -57,6 +57,10 @@
       } catch (e) { _toast('Share: ' + location.href); }
     },
     settings:  function () { _toast('Settings — JSON editor wires in a later task'); },
+    verify:    function () {                                  // chain-integrity check — was a floating button, now a pill
+      if (window.ErpVerifyLedger) window.ErpVerifyLedger();
+      else _toast('Verify ledger — not ready');
+    },
     help:      function () { _toast('Need Help? — guided ShowMe tours arrive per task'); }
   };
 
@@ -78,7 +82,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=22').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=23').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];

@@ -75,14 +75,14 @@
 <div id="bottom-nav"></div>
 
 <!-- §INSTANT Phase 1: globe renders from initbubble.json in <300ms -->
-<script src="ad_graph.js?v=22"></script>
-<script src="ad_ui.js?v=22"></script>
+<script src="ad_graph.js?v=23"></script>
+<script src="ad_ui.js?v=23"></script>
 
 <!-- idempiereUI.md I1 — BIM pill bar, registry-driven from pills.json (the idempiere pill launches
      idempiere.html, renderer #1). icons.js = verbatim icon set; pill_builder.js used as-is. -->
-<script src="icons.js?v=22"></script>
-<script src="pill_builder.js?v=22"></script>
-<script src="erp_pills.js?v=22"></script>
+<script src="icons.js?v=23"></script>
+<script src="pill_builder.js?v=23"></script>
+<script src="erp_pills.js?v=23"></script>
 <script>
 // Phase 1: Instant constellation — fetch initbubble.json, then init
 var _shellReady = false;
@@ -91,12 +91,12 @@ var _shellReady = false;
   var _tBoot = performance.now();
 
   // Compiled manifest — structure for the 7 curated windows (parallel, non-blocking).
-  fetch('manifest.json?v=22').then(function(r) { return r.json(); }).then(function(mf) {
+  fetch('manifest.json?v=23').then(function(r) { return r.json(); }).then(function(mf) {
     window.AD_MANIFEST = mf;
     console.log('§BENCH manifest loaded windows=' + Object.keys(mf.windows || {}).length);
   }).catch(function(e) { console.log('§BENCH manifest fetch failed: ' + e.message); });
 
-  fetch('initbubble.json?v=22').then(function(r) { return r.json(); }).then(function(data) {
+  fetch('initbubble.json?v=23').then(function(r) { return r.json(); }).then(function(data) {
     window.INIT_BUBBLES = data;
 
     var params = new URLSearchParams(window.location.search);
@@ -156,7 +156,7 @@ var _shellReady = false;
     });
   }
 
-  var V = '?v=22';
+  var V = '?v=23';
   // Modules NOT loaded in Phase 1 (ad_graph.js + ad_ui.js already loaded)
   var MODULES = [
     'kernel_ops.js' + V,
@@ -427,18 +427,9 @@ if('serviceWorker' in navigator){
     }).catch(function (e) { console.warn('§VERIFY_LEDGER error', e); _toast('Verify error', false); });
   }
   window.ErpVerifyLedger = verifyLedger;
-  // Unobtrusive control — bottom-left, clear of the right-edge pill bar and the offline badge (top).
-  var b = document.createElement('button');
-  b.id = 'verify-ledger-pill';
-  b.type = 'button';
-  b.textContent = '⛓ Verify ledger';
-  b.style.cssText = 'position:fixed;bottom:10px;left:12px;z-index:9999;min-height:0;' +
-    'font-size:12px;font-weight:600;color:#cdd6e4;background:rgba(40,44,58,0.82);' +
-    'border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:6px 11px;line-height:1;' +
-    'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer;';
-  b.addEventListener('click', verifyLedger);
-  document.body.appendChild(b);
-  console.log('§VERIFY_LEDGER control mounted');
+  // No free-floating button — Verify ledger is now a registered pill (pills.json id=verify,
+  // bound to window.ErpVerifyLedger in erp_pills.js). All controls live in the pill rail.
+  console.log('§VERIFY_LEDGER exposed=window.ErpVerifyLedger pill=verify (no floating button)');
 })();
 </script>
 </body>

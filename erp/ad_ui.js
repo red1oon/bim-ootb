@@ -103,31 +103,10 @@
     // ── Full mode below (DB ready) ────────────────────────────────────
     _renderBottomNav();
 
-    // Client switcher — pill toggle
-    var switcher = document.createElement('div');
-    switcher.style.cssText = 'display:flex;margin-bottom:16px;background:#1a1a24;' +
-      'border-radius:12px;padding:3px;gap:3px;';
-    var clients = [
-      { id: 'system', label: 'System', colour: '#6c9fff' },
-      { id: 'gardenworld', label: 'GardenWorld', colour: '#ff9f43' }
-    ];
-    for (var ci = 0; ci < clients.length; ci++) {
-      var cBtn = document.createElement('button');
-      cBtn.textContent = clients[ci].label;
-      cBtn.dataset.client = clients[ci].id;
-      var isActive = (_currentClient === clients[ci].id);
-      cBtn.style.cssText = 'flex:1;padding:10px;border:none;font-size:13px;font-weight:600;' +
-        'cursor:pointer;min-height:44px;border-radius:10px;transition:all 0.2s;background:' +
-        (isActive ? clients[ci].colour : 'transparent') + ';color:' +
-        (isActive ? '#121218' : '#666') + ';';
-      cBtn.addEventListener('pointerup', function () {
-        _currentClient = this.dataset.client;
-        console.log('§AD_UI switchClient client=' + _currentClient);
-        showMenu();
-      });
-      switcher.appendChild(cBtn);
-    }
-    _contentEl.appendChild(switcher);
+    // Client switcher REMOVED (§OUTSTANDING two-top-buttons) — the System/GardenWorld
+    // toggle was redundant: client still switches via swipe (_switchClient, line ~2443)
+    // + _showClientToast, and deep-links via _setClient. _currentClient defaults to 'gardenworld'.
+    console.log('§AD_UI switcher-removed redundant=System/GardenWorld client=' + _currentClient);
 
     // ── Full mode (DB ready) ──────────────────────────────────────────
 
@@ -1647,21 +1626,10 @@
     });
     container.appendChild(searchBtn);
 
-    // Companion links — sit in the HUD row next to Search/Max so they ride with the graph (never buried by
-    // min/max). 🫧 Glassbowl + ✦ Gravity (the engine-as-data views) + 📖 Read (the ERP.md narrative).
-    var gbHud = document.createElement('div');
-    gbHud.style.cssText = 'position:absolute;top:6px;right:74px;z-index:5;display:flex;gap:6px;';
-    [['🫧 Glassbowl', 'https://red1oon.github.io/BIMCompiler/glassbowl.html', 'glassbowl'],
-     ['✦ Gravity', 'https://red1oon.github.io/BIMCompiler/glassbowl_gravity.html', 'glassbowl'],
-     ['📖 Read', 'https://red1oon.github.io/BIMCompiler/ERP/', 'erpdoc']].forEach(function (L) {
-      var a = document.createElement('a');
-      a.href = L[1]; a.target = L[2]; a.rel = 'noopener'; a.textContent = L[0];
-      a.style.cssText = 'background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);color:#cdd6e4;' +
-        'font-size:12px;font-weight:600;text-decoration:none;padding:5px 9px;border-radius:6px;line-height:1;white-space:nowrap;';
-      a.addEventListener('pointerup', function (e) { e.stopPropagation(); });
-      gbHud.appendChild(a);
-    });
-    container.appendChild(gbHud);
+    // Companion links (🫧 Glassbowl · ✦ Gravity · 📖 Read) REMOVED from the graph HUD — they were
+    // buttons OUTSIDE the pill rail. All in the pill now: glassbowl/gravity already in pills.json;
+    // the ERP-doc link moved to the registry as id=erpdoc. No controls live outside the pill.
+    console.log('§AD_UI gbHud-removed movedToPill=[glassbowl,gravity,erpdoc]');
 
     _contentEl.appendChild(container);
 
