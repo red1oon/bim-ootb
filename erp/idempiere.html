@@ -74,7 +74,9 @@
   .idmp-children { display:none; }
   .idmp-node.open > .idmp-children { display:block; }
   /* ── Main content ── */
-  #idmp-main { flex:1; display:flex; flex-direction:column; min-height:0; background:var(--idmp-bg); }
+  /* min-width:0 lets the flex item shrink below the grid's intrinsic width so the grid scrolls INSIDE
+     #idmp-content (overflow:auto) instead of ballooning #idmp-main past the viewport (mobile overflow fix). */
+  #idmp-main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; background:var(--idmp-bg); }
   /* window MDI tabs */
   #idmp-wintabs {
     flex:0 0 auto; display:flex; align-items:flex-end; gap:2px; padding:6px 8px 0; background:var(--idmp-bg);
@@ -197,6 +199,9 @@
     body.menu-open #idmp-menu { transform:translateX(0); }
     .idmp-form { grid-template-columns:1fr; }
     .idmp-fld label { flex-basis:110px; }
+    /* the header breadcrumb (#idmp-ctx) is nowrap and shoved the role/home/help buttons off the right edge at
+       390px; it duplicates the bottom status bar, so drop it on mobile and keep the buttons reachable. */
+    #idmp-header .ctx { display:none; }
   }
 </style>
 </head>
