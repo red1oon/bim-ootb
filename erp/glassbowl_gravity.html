@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<!--
+  Glassbowl · Gravity — a focused concept demo (NOT glassbowl.html; that one stays untouched).
+  Three knobs: PIVOT lens · MEASURE (gravity) · AD↔GW depth dial.
+  EVERY number is a live GROUP BY over the 8 real GardenWorld orders extracted from
+  build/erp/glassbowl_data.db on 2026-05-30. 0 invented. Tables/values not carried say so.
+  Chain lights exactly as far as the FKs link it (80001 → allocation; others stop at invoice).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Glassbowl · Gravity</title>
+<style>
+  :root{
+    --bg0:#0b0f17; --bg1:#060810; --ink:#cdd6e4; --dim:#6c7a90; --line:#1c2433;
+    --flow:#5ad07f; --settle:#f2b85a; --vendor:#5aa9e0; --cust:#5ad07f; --accent:#56d6e0;
+    --panel:rgba(14,20,32,.92);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; height:100%; overflow:hidden; background:radial-gradient(120% 100% at 50% 30%, var(--bg0), var(--bg1) 80%); color:var(--ink); font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  #bowl{position:fixed; inset:0; width:100%; height:100%; touch-action:none}
+  .edge{stroke-width:1.5; fill:none; opacity:.5}
+  .node circle{cursor:pointer; transition:filter .2s}
+  .node text{pointer-events:none; text-anchor:middle; dominant-baseline:middle; font-weight:600}
+  .node .nm{fill:var(--ink)}
+  .node .sub{fill:var(--dim); font-weight:500}
+  .node:hover circle{filter:brightness(1.25)}
+
+  /* top: lens + measure */
+  #top{position:fixed; top:10px; left:50%; transform:translateX(-50%); display:flex; gap:18px; align-items:center; z-index:5; flex-wrap:wrap; justify-content:center; max-width:96vw}
+  .grp{display:flex; gap:6px; align-items:center; background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:5px 8px; backdrop-filter:blur(6px)}
+  .grp .lbl{color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.08em; padding:0 6px}
+  .chip{border:0; background:transparent; color:var(--dim); padding:6px 12px; border-radius:16px; cursor:pointer; font:inherit; font-weight:600; transition:.15s}
+  .chip:hover{color:var(--ink)}
+  .chip.on{background:var(--accent); color:#04121a; box-shadow:0 0 16px -2px var(--accent)}
+  .chip:disabled{opacity:.3; cursor:default; color:var(--dim); box-shadow:none}
+
+  /* bottom view-log scrubber */
+  #vbar{position:fixed; left:50%; bottom:8px; transform:translateX(-50%); display:flex; align-items:center; gap:8px; z-index:6;
+        width:min(560px,92vw); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:5px 10px; backdrop-filter:blur(6px)}
+  #vbar button{border:0; background:transparent; color:var(--ink); font-size:17px; cursor:pointer; padding:3px 9px; border-radius:10px; line-height:1}
+  #vbar button:disabled{opacity:.28; cursor:default}
+  #vbar button:hover:not(:disabled){background:#1a2433}
+  #scrub{position:relative; flex:1; height:26px; cursor:pointer; touch-action:none}
+  #scrubline{position:absolute; left:4px; right:4px; top:50%; height:2px; background:var(--line); transform:translateY(-50%)}
+  #scrubticks{position:absolute; left:4px; right:4px; top:0; bottom:0}
+  .vtick{position:absolute; top:50%; width:9px; height:9px; margin:-4.5px 0 0 -4.5px; border-radius:50%; background:#3a4a5a; cursor:pointer; transition:transform .12s, background .12s}
+  .vtick:hover{background:var(--ink); transform:scale(1.35)}
+  .vtick.cur{background:var(--accent); width:13px; height:13px; margin:-6.5px 0 0 -6.5px; box-shadow:0 0 10px -1px var(--accent)}
+
+  /* depth dial (right) */
+  #dial{position:fixed; right:18px; top:50%; transform:translateY(-50%); height:54vh; width:64px; display:flex; flex-direction:column; align-items:center; z-index:5}
+  #track{position:relative; flex:1; width:6px; background:linear-gradient(var(--line),#0c1420); border-radius:3px; margin:8px 0}
+  #ball{position:absolute; left:50%; width:34px; height:34px; margin-left:-17px; border-radius:50%; cursor:grab; touch-action:none;
+        background:radial-gradient(circle at 35% 30%, #b9f0ff, var(--accent) 60%, #1c6b7a);
+        box-shadow:0 0 22px -2px var(--accent), inset 0 0 8px rgba(255,255,255,.4); transition:box-shadow .2s}
+  #ball:active{cursor:grabbing}
+  .dl{font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; text-align:center; line-height:1.2}
+  .dl b{display:block; color:var(--ink); font-size:11px}
+  #dlTop,#dlBot{height:30px; display:flex; align-items:center}
+
+  /* lifecycle strip (bottom) */
+  #strip{position:fixed; left:50%; bottom:50px; transform:translateX(-50%) translateY(160%); display:flex; gap:0; align-items:stretch; background:var(--panel); border:1px solid var(--line); border-bottom:0; border-radius:14px 14px 0 0; padding:10px 14px; z-index:6; transition:transform .35s cubic-bezier(.2,.8,.2,1); max-width:96vw; overflow-x:auto}
+  #strip.on{transform:translateX(-50%) translateY(0)}
+  .step{display:flex; align-items:center; gap:10px; padding:2px 4px}
+  .step .dot{width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-weight:700; color:#04121a; flex:0 0 auto}
+  .step .meta{white-space:nowrap}
+  .step .t{font-size:11px; color:var(--dim)}
+  .step .v{font-weight:700}
+  .arrow{align-self:center; color:var(--dim); padding:0 4px; font-size:18px}
+  .stop{align-self:center; color:var(--settle); font-size:11px; padding:0 8px; max-width:120px; white-space:normal; line-height:1.2}
+  #stripClose{align-self:center; margin-left:8px; border:0; background:transparent; color:var(--dim); font-size:20px; cursor:pointer}
+
+  /* floating dossier card */
+  #card{position:fixed; z-index:7; width:230px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; backdrop-filter:blur(8px); box-shadow:0 10px 40px -8px #000; display:none}
+  #card h3{margin:0 0 2px; font-size:15px}
+  #card .who{color:var(--dim); font-size:12px; margin-bottom:8px}
+  #card .row{display:flex; justify-content:space-between; padding:3px 0; border-top:1px solid var(--line); font-size:13px}
+  #card .row span:first-child{color:var(--dim)}
+  #card .act{margin-top:10px; display:flex; gap:6px; flex-wrap:wrap}
+  #card .b{border:1px solid var(--line); background:#0e1626; color:var(--ink); border-radius:8px; padding:6px 10px; cursor:pointer; font:inherit; font-weight:600; font-size:12px}
+  #card .b.go{border-color:var(--accent); color:var(--accent)}
+  #card .b.off{opacity:.4; cursor:not-allowed}
+
+  /* footer provenance */
+  #foot{position:fixed; left:12px; bottom:46px; color:var(--dim); font-size:11px; z-index:5; max-width:42vw}
+  #foot b{color:var(--flow)}
+  #title{position:fixed; left:14px; top:12px; z-index:5; font-weight:800; letter-spacing:.02em; font-size:16px}
+  #title small{color:var(--dim); font-weight:500; font-size:11px; display:block; letter-spacing:0}
+  #hint{position:fixed; left:50%; bottom:46px; transform:translateX(-50%); color:var(--dim); font-size:12px; z-index:4; text-align:center; pointer-events:none; transition:opacity .4s}
+</style>
+</head>
+<body>
+<script>/* offline SW — register on load, but warm the cache LATER (on idle) so there's no load lag */
+/* SYNC-POINT: keep SW-update toast identical to glassbowl.html (generator VIEWER_JS, line ~520).
+   Same behaviour: updatefound -> installed+controller -> #swToast (hidden at rest) -> tap posts
+   skipWaiting -> single guarded reload on controllerchange. Never auto-reload. */
+if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').then(function(reg){
+  var warm=function(){var a=reg.active||navigator.serviceWorker.controller;if(a)a.postMessage({type:'precache'});else navigator.serviceWorker.ready.then(function(r){r.active&&r.active.postMessage({type:'precache'});});};
+  if('requestIdleCallback' in window)requestIdleCallback(warm,{timeout:7000});else setTimeout(warm,4000);
+  /* W-SWUPDATE: a small non-blocking pill, bottom-centre, HIDDEN at rest; body tap = refresh, ✕ = dismiss */
+  var toast=document.createElement('div');toast.id='swToast';toast.setAttribute('role','status');
+  toast.style.cssText='position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:none;align-items:center;gap:10px;z-index:99999;background:rgba(16,22,30,.96);border:1px solid #3a5a7a;color:#ffd479;border-radius:22px;padding:8px 14px;font:13px/1.3 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.45);cursor:pointer';
+  var msg=document.createElement('span');msg.id='swToastMsg';msg.textContent='Glassbowl updated — tap to refresh';
+  var x=document.createElement('span');x.id='swToastX';x.textContent='✕';x.title='dismiss';x.style.cssText='color:#8aa;cursor:pointer;padding:0 2px;font-size:14px';
+  toast.appendChild(msg);toast.appendChild(x);(document.body||document.documentElement).appendChild(toast);
+  window.__swReloaded=false;
+  window.__swApply=function(){if(reg.waiting)reg.waiting.postMessage({type:'skipWaiting'});window.__swPostCount=(window.__swPostCount||0)+1;};
+  window.__swShowToast=function(){toast.style.display='flex';if(typeof beep==='function'){try{beep();}catch(e){}}};
+  toast.addEventListener('click',function(ev){if(ev.target===x)return;window.__swApply();});
+  x.addEventListener('click',function(ev){ev.stopPropagation();toast.style.display='none';});
+  reg.addEventListener('updatefound',function(){var nw=reg.installing;if(!nw)return;nw.addEventListener('statechange',function(){if(nw.state==='installed'&&navigator.serviceWorker.controller){window.__swShowToast();}});});
+  navigator.serviceWorker.addEventListener('controllerchange',function(){if(window.__swReloaded)return;window.__swReloaded=true;location.reload();});
+  console.log('§SWUPDATE wired=Y toast=1 reload-guard=Y');
+}).catch(function(){});});}</script>
+<svg id="bowl"></svg>
+
+<div id="title">Glassbowl · Gravity<small>GardenWorld — engine presenting itself</small></div>
+
+<div id="top">
+  <div class="grp"><span class="lbl">Pivot</span>
+    <button class="chip on" data-lens="partner">Partner</button>
+    <button class="chip" data-lens="month">Month</button>
+    <button class="chip" data-lens="status">Status</button>
+    <button class="chip" data-lens="type">Type</button>
+  </div>
+  <div class="grp"><span class="lbl">Gravity</span>
+    <button class="chip" data-measure="count"># count</button>
+    <button class="chip on" data-measure="value">$ value</button>
+  </div>
+</div>
+
+<div id="dial">
+  <div id="dlTop" class="dl"><div><b>Lines</b>detail</div></div>
+  <div id="track"><div id="ball"></div></div>
+  <div id="dlBot" class="dl"><div><b>Dictionary</b>AD model</div></div>
+</div>
+
+<div id="strip"></div>
+
+<div id="card"></div>
+
+<!-- view-log scrubber (Red Pill TM pattern): ↶ · timeline of views · ↷ -->
+<div id="vbar">
+  <button id="undoBtn" title="back to the last view — Ctrl+Z">↶</button>
+  <div id="scrub" title="scrub the view-log — the kernel-log magic, on views"><div id="scrubline"></div><div id="scrubticks"></div></div>
+  <button id="redoBtn" title="forward — Ctrl+Shift+Z">↷</button>
+</div>
+
+<div id="foot">Every number is a live <b>GROUP BY</b> over 8 real GardenWorld orders ·
+  <span id="prov">extracted from glassbowl_data.db · 0 invented</span></div>
+<div id="hint">drag the <b>gravity ball</b> ↑ down to the AD dictionary · up into a record's lines &nbsp;·&nbsp; tap a bubble</div>
+
+<script>
+"use strict";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   GLASSBOWL_LAYOUT — the ONE positioning module (prompts/GLASSBOWL_LAYOUT.md, W-LAYOUT).
+   ⚠ SYNC POINT: this block is a VERBATIM copy of scripts/glassbowl_layout.js between its
+   @@LAYOUT_INLINE_START@@ / @@LAYOUT_INLINE_END@@ sentinels. glassbowl.html inlines the SAME
+   body from that file via system_explorer.js, so the two pages can never drift. If you change
+   the module, re-run:  node scripts/system_explorer.js  AND re-paste this block (the generator
+   prints nothing here — this static page is updated by hand). DO NOT edit the body below in place.
+   ───────────────────────────────────────────────────────────────────────────── */
+var Layout = (function () {
+  'use strict';
+  var GOLDEN = 2.39996322972865332;   // golden angle (radians) — the deterministic spiral step.
+
+  // default accessor: a node carries {x,y} and a numeric .r (render/layout radius).
+  function defAcc(acc) {
+    acc = acc || {};
+    return {
+      gx: acc.getX || function (n) { return n.x; },
+      gy: acc.getY || function (n) { return n.y; },
+      gr: acc.getR || function (n) { return n.r || 0; },
+      sx: acc.setX || function (n, v) { n.x = v; },
+      sy: acc.setY || function (n, v) { n.y = v; }
+    };
+  }
+
+  // ── seed: deterministic initial positions on a circle, by index (the existing glassbowl seed).
+  //    No Math.random — index→angle. cx/cy default to the frame centre; spread is the ring radius.
+  function seed(nodes, opt) {
+    opt = opt || {};
+    var W = opt.W || 0, H = opt.H || 0;
+    var cx = opt.cx != null ? opt.cx : W / 2;
+    var cy = opt.cy != null ? opt.cy : H / 2;
+    var spread = opt.spread != null ? opt.spread : Math.min(W, H) * 0.32;
+    var A = defAcc(opt.acc), n = nodes.length;
+    for (var i = 0; i < n; i++) {
+      var a = i / n * 6.283185307179586;
+      A.sx(nodes[i], cx + Math.cos(a) * spread);
+      A.sy(nodes[i], cy + Math.sin(a) * spread);
+    }
+    return nodes;
+  }
+
+  // ── countOverlaps: pairs whose centre-distance < r_a + r_b + pad (the bunching metric).
+  function countOverlaps(nodes, opt) {
+    opt = opt || {};
+    var pad = opt.pad != null ? opt.pad : 0, A = defAcc(opt.acc), c = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) {
+        var dx = A.gx(nodes[j]) - A.gx(nodes[i]), dy = A.gy(nodes[j]) - A.gy(nodes[i]);
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d < A.gr(nodes[i]) + A.gr(nodes[j]) + pad) c++;
+      }
+    }
+    return c;
+  }
+
+  // ── nudge: gentle anti-overlap relaxation. Any pair closer than r_a+r_b+pad is pushed apart a
+  //    SMALL fraction of the overlap; EVERY per-node displacement is clamped to maxMove ("not too
+  //    much"); `iters` small. Deterministic (fixed iteration order, no random) so a second run on
+  //    the same input is identical → preserves the at-rest invariant (Reset re-homes to this).
+  //    Returns {overlapsBefore, overlapsAfter, maxMove, maxMoveApplied}.
+  function nudge(nodes, opt) {
+    opt = opt || {};
+    var pad = opt.pad != null ? opt.pad : 6;
+    var maxMove = opt.maxMove != null ? opt.maxMove : 8;
+    var iters = opt.iters != null ? opt.iters : 6;
+    var frac = opt.frac != null ? opt.frac : 0.5;   // fraction of the overlap each side takes
+    var A = defAcc(opt.acc);
+    var before = countOverlaps(nodes, { pad: pad, acc: opt.acc });
+    var maxApplied = 0, n = nodes.length;
+    for (var it = 0; it < iters; it++) {
+      var dx = new Array(n), dy = new Array(n);
+      for (var a = 0; a < n; a++) { dx[a] = 0; dy[a] = 0; }
+      for (var i = 0; i < n; i++) {
+        for (var j = i + 1; j < n; j++) {
+          var ddx = A.gx(nodes[j]) - A.gx(nodes[i]), ddy = A.gy(nodes[j]) - A.gy(nodes[i]);
+          var dist = Math.sqrt(ddx * ddx + ddy * ddy);
+          var want = A.gr(nodes[i]) + A.gr(nodes[j]) + pad;
+          if (dist < want) {
+            // direction i→j; if exactly coincident, use a deterministic axis from the index pair.
+            var ux, uy;
+            if (dist > 1e-6) { ux = ddx / dist; uy = ddy / dist; }
+            else { var th = (i * 7 + j * 13) * 0.5; ux = Math.cos(th); uy = Math.sin(th); }
+            var push = (want - dist) * frac * 0.5;   // each side moves half the corrected overlap
+            dx[i] -= ux * push; dy[i] -= uy * push;
+            dx[j] += ux * push; dy[j] += uy * push;
+          }
+        }
+      }
+      for (var k = 0; k < n; k++) {
+        var mvx = clamp(dx[k], -maxMove, maxMove), mvy = clamp(dy[k], -maxMove, maxMove);
+        var mag = Math.sqrt(mvx * mvx + mvy * mvy);
+        if (mag > maxApplied) maxApplied = mag;
+        if (mvx) A.sx(nodes[k], A.gx(nodes[k]) + mvx);
+        if (mvy) A.sy(nodes[k], A.gy(nodes[k]) + mvy);
+      }
+    }
+    var after = countOverlaps(nodes, { pad: pad, acc: opt.acc });
+    return { overlapsBefore: before, overlapsAfter: after, maxMove: maxMove, maxMoveApplied: maxApplied };
+  }
+
+  // ── dockLens: macOS-dock hover MAGNIFY. Returns a per-node RENDER radius — restR grown toward
+  //    maxR by closeness to the cursor (within `reach`), cosine dock falloff. VISUAL ONLY — never
+  //    mutates a node's x/y or data. cursor null/undefined → every node sits at its rest radius.
+  //    restR/maxR may be numbers OR functions of the node (so a per-bubble rest size can drive it).
+  function dockLens(nodes, cursor, opt) {
+    opt = opt || {};
+    var reach = opt.reach != null ? opt.reach : 130;
+    var A = defAcc(opt.acc);
+    var restFn = asFn(opt.restR != null ? opt.restR : A.gr);
+    var maxFn = asFn(opt.maxR != null ? opt.maxR : function (n) { return restFn(n) * 1.8; });
+    var out = new Array(nodes.length);
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i], rest = restFn(n), peak = maxFn(n);
+      if (!cursor) { out[i] = rest; continue; }
+      var dx = A.gx(n) - cursor.x, dy = A.gy(n) - cursor.y;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d >= reach) { out[i] = rest; continue; }
+      // dock falloff: 1 at the cursor, 0 at `reach`, smooth cosine in between.
+      var t = 0.5 * (1 + Math.cos(Math.PI * (d / reach)));   // 1→0
+      out[i] = rest + (peak - rest) * t;
+    }
+    return out;
+  }
+
+  // ── STRATEGIES (deterministic target builders) ────────────────────────────────────────────
+  // orbitPlanes: classification → z depth plane (spine=0, settlement=+ZD shell, reference=-ZD shell)
+  //   with a deterministic per-index jitter so each plane has THICKNESS. Mirrors the generator math;
+  //   z stays 0-contributing to the head-on (yaw=pitch=0) projection, so the at-rest layout is flat.
+  function orbitPlanes(nodes, opt) {
+    opt = opt || {};
+    var ZD = opt.ZD != null ? opt.ZD : 220;
+    var si = 0, ri = 0, planes = { spine: 0, settlement: 0, reference: 0 };
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.settlement) { n.z = ZD + ((si++ % 5) - 2) * 26; planes.settlement++; }
+      else if (n.kind === 'master') { n.z = -ZD + ((ri++ % 9) - 4) * 34; planes.reference++; }
+      else { n.z = 0; planes.spine++; }
+    }
+    return planes;
+  }
+
+  // diagonal: spread bubbles evenly by index along the screen diagonal axis (1,1)/√2, centred on the
+  //   centroid, with a tiny deterministic perpendicular zig so they don't sit on one infinitely-thin
+  //   line. Returns per-node {x,y} TARGETS (caller eases to them); does not mutate.
+  function diagonal(nodes, opt) {
+    opt = opt || {};
+    var A = defAcc(opt.acc), n = nodes.length, inv = 1 / Math.sqrt(2);
+    var cx = 0, cy = 0;
+    for (var a = 0; a < n; a++) { cx += A.gx(nodes[a]); cy += A.gy(nodes[a]); }
+    cx /= (n || 1); cy /= (n || 1);
+    var L = opt.length != null ? opt.length : 800;        // total span along the diagonal
+    var perp = opt.perp != null ? opt.perp : 26;          // alternating perpendicular offset
+    var out = new Array(n);
+    for (var i = 0; i < n; i++) {
+      var t = n > 1 ? (i / (n - 1) - 0.5) : 0;            // -0.5 … +0.5 by index
+      var along = t * L, side = (i % 2 ? 1 : -1) * perp * (i % 3) / 2;
+      out[i] = { x: cx + along * inv - side * inv, y: cy + along * inv + side * inv };
+    }
+    return out;
+  }
+
+  // gravitySpiral: heaviest → biggest & nearest centre (golden-angle spiral). Mass-driven radius +
+  //   spiral placement. Writes tr/tx/ty onto each item (gravity page's target fields) and returns it.
+  function gravitySpiral(items, opt) {
+    opt = opt || {};
+    var maxMass = opt.maxMass || 1, cx0 = opt.cx || 0, cy0 = opt.cy || 0, spread = opt.spread || 100;
+    var rMin = opt.rMin != null ? opt.rMin : 16, rRange = opt.rRange != null ? opt.rRange : 48;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i], mn = maxMass ? it.mass / maxMass : 0;
+      it.tr = rMin + rRange * Math.sqrt(mn);
+      if (i === 0 && items.length > 1 && it._center) { it.tx = cx0; it.ty = cy0; continue; }
+      var rad = spread * Math.sqrt(i + (it._center ? 0 : 0.6)), ang = i * GOLDEN;
+      it.tx = cx0 + rad * Math.cos(ang);
+      it.ty = cy0 + rad * Math.sin(ang);
+    }
+    return items;
+  }
+
+  // dictionaryRow: lay N cells out in ONE horizontal row spanning the usable width (the AD spine).
+  //   This is the crowded view the dock-lens declutters: cells rest small (capped cr), evenly gapped.
+  //   Writes tr/tx/ty and returns the items; cy is the row's y.
+  function dictionaryRow(items, opt) {
+    opt = opt || {};
+    var cx0 = opt.cx || 0, cy0 = opt.cy || 0, halfW = opt.halfW || 200, n = items.length || 1;
+    var cr = clamp(halfW * 2 / (n * 1.7), opt.rMin != null ? opt.rMin : 20, opt.rMax != null ? opt.rMax : 38);
+    var gap = Math.min((halfW * 2 - 2 * cr) / Math.max(1, n - 1), opt.gapMax != null ? opt.gapMax : 170);
+    for (var i = 0; i < items.length; i++) {
+      items[i].tr = cr;
+      items[i].tx = cx0 + (i - (n - 1) / 2) * gap;
+      items[i].ty = cy0;
+    }
+    return items;
+  }
+
+  // helpers
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+  function asFn(v) { return typeof v === 'function' ? v : function () { return v; }; }
+
+  return {
+    GOLDEN: GOLDEN,
+    seed: seed,
+    nudge: nudge,
+    dockLens: dockLens,
+    countOverlaps: countOverlaps,
+    orbitPlanes: orbitPlanes,
+    diagonal: diagonal,
+    gravitySpiral: gravitySpiral,
+    dictionaryRow: dictionaryRow,
+    clamp: clamp
+  };
+})();
+/* end GLASSBOWL_LAYOUT verbatim copy */
+/* ── REAL DATA (extracted 2026-05-30 from build/erp/glassbowl_data.db) ───────────── */
+const ORDERS = [
+  {no:'800000', typ:'PO', partner:'Tree Farm Inc.',   st:'CO', total:3657.50, dt:'2003-01-22'},
+  {no:'800001', typ:'PO', partner:'Seed Farm Inc.',   st:'CO', total:2895.55, dt:'2003-01-22'},
+  {no:'800002', typ:'PO', partner:'Patio Fun, Inc.',  st:'CO', total:2160.00, dt:'2003-01-22'},
+  {no:'8000',   typ:'PO', partner:'Tree Farm Inc.',   st:'CO', total:660.00,  dt:'2002-02-22'},
+  {no:'60000',  typ:'SO', partner:'Joe Block',        st:'CO', total:228.85,  dt:'2003-11-01'},
+  {no:'80002',  typ:'SO', partner:'C&W Construction', st:'CL', total:161.12,  dt:'2002-08-01'},
+  {no:'80001',  typ:'SO', partner:'Standard',         st:'CO', total:100.70,  dt:'2002-02-22'},
+  {no:'80000',  typ:'SO', partner:'Standard',         st:'CO', total:50.35,   dt:'2002-02-22'},
+];
+// order lines (all 27 real rows), keyed by order documentno
+const LINES = {
+  '60000':[['Azalea Bush',10,215.90]],
+  '8000':[['Oak Tree',10,360.00],['Plum Tree',10,300.00]],
+  '80000':[['Plum Tree',1,47.50]],
+  '80001':[['Plum Tree',2,95.00]],
+  '80002':[['Planting Service',1,42.75],['Plum Tree',1,47.50],['Oak Tree',1,61.75]],
+  '800000':[['Azalea Bush',15,356.25],['Elm Tree',15,855.00],['Holly Bush',10,380.00],['Oak Tree',15,926.25],['Plum Tree',12,570.00],['Rose Bush',20,570.00]],
+  '800001':[['Fertilizer #50',40,720.00],['Grass Seed Container',12,576.00],['Hoe 4 ft',20,255.00],['Mulch 10#',50,135.00],['Rake Bamboo',15,114.75],['Rake Metal',20,204.00],['Grass Seeder',8,204.00],['Lawn Tiller',12,357.00],['Transplanter',30,89.40],['Weeder',30,76.50]],
+  '800002':[['Patio Chair',30,1012.50],['Patio Table',12,810.00],['Patio Sun Screen',15,337.50]],
+};
+// lifecycle chain per SO — lights exactly as far as the FKs actually link (verified by join)
+const CHAINS = {
+  '60000':{steps:[['C_Order','60000',228.85,'flow'],['M_InOut','600003',null,'flow'],['C_Invoice','100000',228.85,'flow']], stop:'invoice unpaid — no payment FK in this dataset'},
+  '80000':{steps:[['C_Order','80000',50.35,'flow'],['M_InOut','600000',null,'flow'],['C_Invoice','200000',50.35,'flow']], stop:'paid, but payment not FK-linked by c_invoice_id here'},
+  '80001':{steps:[['C_Order','80001',100.70,'flow'],['M_InOut','600001',null,'flow'],['C_Invoice','200001',100.70,'flow'],['C_Payment','400000',98.50,'settle'],['C_AllocationLine','13208',98.50,'settle']], stop:null},
+  '80002':{steps:[['C_Order','80002',161.12,'flow'],['M_InOut','600002',null,'flow'],['C_Invoice','200002',161.12,'flow']], stop:'closed (CL) — invoice unpaid'},
+};
+// the AD dictionary spine (5 type cells) — what the engine IS, with its real population counts
+const SPINE = [
+  {id:'t_order', nm:'C_Order',          sub:'8 records',  kind:'flow'},
+  {id:'t_inout', nm:'M_InOut',          sub:'9 records',  kind:'flow'},
+  {id:'t_inv',   nm:'C_Invoice',        sub:'8 records',  kind:'flow'},
+  {id:'t_pay',   nm:'C_Payment',        sub:'2 records',  kind:'settle'},
+  {id:'t_alloc', nm:'C_AllocationLine', sub:'2 records',  kind:'settle'},
+];
+// AD model per spine type-cell (real ad_column metadata, extracted from ad_full.db) — a GLANCE,
+// not Glassbowl's full dossier: counts + key columns + FK targets, with a link out to the deep view.
+const AD_MODEL={
+  t_order:{cols:94,mand:49, key:[['DocumentNo','String'],['GrandTotal','Amount'],['DocStatus','List'],['DateOrdered','Date'],['IsSOTrx','YesNo']], fk:['C_BPartner_ID','C_Payment_ID']},
+  t_inout:{cols:80,mand:31, key:[['DocumentNo','String'],['MovementDate','Date'],['DocStatus','List']], fk:['C_Order_ID','C_Invoice_ID','C_BPartner_ID']},
+  t_inv:{cols:76,mand:37, key:[['DocumentNo','String'],['GrandTotal','Amount'],['DateInvoiced','Date'],['DocStatus','List']], fk:['C_Order_ID','C_Payment_ID','C_BPartner_ID']},
+  t_pay:{cols:105,mand:32, key:[['DocumentNo','String'],['PayAmt','Amount'],['DocStatus','List']], fk:['C_Invoice_ID','C_Order_ID','C_BPartner_ID']},
+  t_alloc:{cols:23,mand:12, key:[['Amount','Amount']], fk:['C_Invoice_ID','C_Payment_ID','C_Order_ID','C_BPartner_ID']},
+};
+const NS='http://www.w3.org/2000/svg';
+const money=v=> v==null?'' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const colorFor=k=> k==='settle'?'var(--settle)':k==='vendor'?'var(--vendor)':k==='cust'?'var(--cust)':k==='flow'?'var(--flow)':'var(--accent)';
+const isCust=p=> ORDERS.some(o=>o.partner===p && o.typ==='SO');
+console.log('§GRAVITY orders=%d lines-orders=%d chains=%d source=glassbowl_data.db hand=0',
+  ORDERS.length, Object.keys(LINES).length, Object.keys(CHAINS).length);
+// W-LAYOUT: this page shares the ONE Layout module (inlined verbatim above) with glassbowl.html.
+console.log('§LAYOUT module=1 callers=[gravitySpiral,dictionaryRow,nudge,dockLens] strategies=[orbitPlanes,diagonal,gravitySpiral,dictionaryRow]');
+
+/* ── ENGINE ──────────────────────────────────────────────────────────────────── */
+const bowl=document.getElementById('bowl');
+const gEdges=document.createElementNS(NS,'g'), gNodes=document.createElementNS(NS,'g');
+bowl.append(gEdges,gNodes);
+// the trace comet (sits above everything)
+const comet=document.createElementNS(NS,'circle');
+comet.setAttribute('r','6'); comet.setAttribute('opacity','0'); comet.setAttribute('fill','#eaffff');
+comet.style.filter='drop-shadow(0 0 8px #ffffff)'; bowl.append(comet);
+let W=0,H=0,cx=0,cy=0,Rmax=0,frameHX=0,frameHY=0;
+function resize(){
+  W=innerWidth; H=innerHeight;
+  const mobile=W<600;
+  const padL=14, padR=92 /* reserve the depth-dial column */, padT=mobile?104:64, padB=30;
+  const uW=Math.max(140,W-padL-padR), uH=Math.max(180,H-padT-padB);
+  cx=padL+uW/2; cy=padT+uH/2; frameHX=uW/2; frameHY=uH/2;
+  Rmax=Math.min(uW,uH)/2;
+  bowl.setAttribute('viewBox',`0 0 ${W} ${H}`);
+}
+addEventListener('resize',()=>{resize(); positionBall(); relayout();}); resize();
+/* uniformly scale a layout so EVERY bubble stays inside the usable frame (mobile-safe) */
+function fitToFrame(nodes){
+  let exX=1, exY=1;
+  for(const n of nodes){ exX=Math.max(exX, Math.abs(n.tx-cx)+n.tr+4); exY=Math.max(exY, Math.abs(n.ty-cy)+n.tr+4); }
+  const s=Math.min(1, frameHX/exX, frameHY/exY);
+  if(s<1) for(const n of nodes){ n.tx=cx+(n.tx-cx)*s; n.ty=cy+(n.ty-cy)*s; }
+  return nodes;
+}
+
+const state={lens:'partner', measure:'value', depth:1, focusGroup:null, focusOrder:null, trace:null, cometT:0};
+const live=new Map();           // id -> {el,circle,nm,sub, x,y,r, tx,ty,tr, op,top, kind, data}
+const measVal=o=> state.measure==='count'?1:o.total;
+
+/* group the 8 real orders by the chosen lens — a literal GROUP BY */
+function groups(){
+  const key={partner:o=>o.partner, type:o=>o.typ, status:o=>o.st, month:o=>o.dt.slice(0,7)}[state.lens];
+  const m=new Map();
+  for(const o of ORDERS){ const k=key(o); (m.get(k)||m.set(k,[]).get(k)).push(o); }
+  const out=[];
+  for(const [k,members] of m){
+    const mass=members.reduce((s,o)=>s+measVal(o),0);
+    let nm=k, kind='flow';
+    if(state.lens==='partner'){ kind=isCust(k)?'cust':'vendor'; }
+    if(state.lens==='type'){ nm=k==='SO'?'Sales':'Purchase'; kind=k==='SO'?'cust':'vendor'; }
+    if(state.lens==='status'){ nm=k==='CO'?'Completed':k==='CL'?'Closed':k; kind=k==='CO'?'flow':'settle'; }
+    out.push({id:'g_'+state.lens+'_'+k, nm, kind, mass, members,
+      sub:(members.length+' ord · '+money(members.reduce((s,o)=>s+o.total,0)))});
+  }
+  out.sort((a,b)=>b.mass-a.mass);
+  return out;
+}
+
+/* deterministic gravity placement: heaviest → biggest & nearest centre (golden-angle spiral).
+   W-LAYOUT: routed THROUGH the shared Layout module (same strategy as glassbowl.html). */
+function placeGravity(items, maxMass, cx0, cy0, spread){
+  Layout.gravitySpiral(items, {maxMass:maxMass, cx:cx0, cy:cy0, spread:spread, rMin:16, rRange:48});
+}
+
+/* build the desired node list for the current state */
+function desired(){
+  if(state.trace){ // TRACE: the lifecycle journey lit on the AD type-spine (comet runs it)
+    const st=state.trace.steps, stop=state.trace.stop, slots=st.length+(stop?1:0);
+    const cr=Math.max(17,Math.min(34, frameHX*2/(slots*1.7)));
+    const gap=Math.min((frameHX*2-2*cr)/Math.max(1,slots-1), 150);
+    const X=k=>cx+(k-(slots-1)/2)*gap;
+    const out=st.map((s,i)=>({id:'tr_'+i, nm:s[1], sub:s[0]+(s[2]!=null?' · '+money(s[2]):''),
+      kind:s[3], tr:cr, tx:X(i), ty:cy, op:(i<=state.trace.lit?1:0.22), data:{trace:true}}));
+    if(stop) out.push({id:'tr_stop', nm:'✕', sub:stop, kind:'settle', tr:cr*0.72,
+      tx:X(st.length), ty:cy, op:0.3, data:{}});
+    return out;
+  }
+  const d=Math.round(state.depth);
+  if(d===0){ // AD dictionary spine — span the usable width, never overflow.
+    // W-LAYOUT: the dictionary ROW is owned by Layout.dictionaryRow (the same crowded layout the
+    //   dock-lens declutters). It writes tx/ty/tr; we keep the cell's display fields.
+    const items=SPINE.map(c=>({id:c.id, nm:c.nm, sub:c.sub, kind:c.kind, data:{spine:true}}));
+    Layout.dictionaryRow(items, {cx:cx, cy:cy, halfW:frameHX, rMin:20, rMax:38, gapMax:170});
+    return items;
+  }
+  if(d===2){ // dive into a record's real lines
+    const o=state.focusOrder || ORDERS[0];
+    const ls=LINES[o.no]||[];
+    const maxNet=Math.max(...ls.map(l=>l[2]),1);
+    const headR=40;
+    const items=ls.map((l,i)=>{ const mn=l[2]/maxNet;
+      return {id:'ln_'+o.no+'_'+i, nm:l[0], sub:l[1]+'× · '+money(l[2]), kind:'flow',
+        mass:l[2], tr:13+23*Math.sqrt(mn), data:{line:true}}; });
+    // sunflower spread sized to the bubbles so they never overlap (spacing ≈ bubble Ø)
+    const maxR=Math.max(...items.map(x=>x.tr),18);
+    const c=Math.max(2.4*maxR, Rmax*0.17), minRad=headR+maxR+14;
+    items.forEach((it,i)=>{ const ang=i*2.39996323;
+      const rad=Math.min(Math.max(minRad, c*Math.sqrt(i+0.7)), Rmax*0.96);
+      it.tx=cx+rad*Math.cos(ang); it.ty=cy+rad*Math.sin(ang); });
+    const head={id:'ln_head', nm:o.no, sub:ls.length+' lines · '+money(o.total),
+      kind:o.typ==='SO'?'cust':'vendor', tr:headR, tx:cx, ty:cy, data:{head:true}};
+    return [head,...items];
+  }
+  // d===1 : GW records pivot
+  const gs=groups();
+  const maxMass=Math.max(...gs.map(g=>g.mass),1);
+  if(state.focusGroup){
+    const g=gs.find(x=>x.id===state.focusGroup)||gs[0];
+    const head={id:g.id, nm:g.nm, sub:g.sub, kind:g.kind, tr:46, tx:cx, ty:cy, mass:g.mass, data:{group:true,g}};
+    const maxT=Math.max(...g.members.map(measVal),1);
+    const mem=g.members.map((o,i)=>{ const mn=measVal(o)/maxT;
+      const ang=i*2.39996323+0.6, rad=Rmax*(0.42+0.22*(1-mn));
+      return {id:'o_'+o.no, nm:o.no, sub:money(o.total), kind:o.typ==='SO'?'cust':'vendor',
+        tr:16+34*Math.sqrt(mn), tx:cx+rad*Math.cos(ang), ty:cy+rad*Math.sin(ang), data:{order:o}};});
+    return [head,...mem];
+  }
+  gs.forEach((g,i)=> g._center=(i===0));
+  placeGravity(gs, maxMass, cx, cy, Rmax*0.52);
+  return gs.map(g=>({id:g.id, nm:g.nm, sub:g.sub, kind:g.kind, tr:g.tr, tx:g.tx, ty:g.ty, mass:g.mass, data:{group:true,g}}));
+}
+
+function mkEdge(a,b,color,dashed){
+  const e=document.createElementNS(NS,'line'); e.setAttribute('class','edge');
+  e.setAttribute('stroke',color); if(dashed) e.setAttribute('stroke-dasharray','5 6');
+  e.dataset.a=a; e.dataset.b=b; return e;
+}
+/* W-NUDGE: one gentle DETERMINISTIC anti-overlap pass over the TARGET positions (tx/ty,r=tr) before
+   they reach the screen. Pairs closer than r_a+r_b+pad ease apart, every move clamped to maxMove. Run
+   only when it can help (>1 bubble); deterministic so replay/resize is stable. Reports the §NUDGE line
+   once per distinct view-shape so the witness has real before/after counts from this page too. */
+let __lastNudgeKey=null;
+function nudgeTargets(want){
+  const acc={getX:n=>n.tx,getY:n=>n.ty,getR:n=>n.tr,setX:(n,v)=>{n.tx=v;},setY:(n,v)=>{n.ty=v;}};
+  const res=Layout.nudge(want,{pad:6,maxMove:8,iters:6,acc});
+  const key=Math.round(state.depth)+'|'+state.lens+'|'+state.measure+'|'+(state.focusGroup||'')+'|'+want.length;
+  if(key!==__lastNudgeKey){ __lastNudgeKey=key;
+    console.log('§NUDGE overlapsBefore=%d after=%d maxMove=%d maxMoveApplied=%s view=%s',
+      res.overlapsBefore,res.overlapsAfter,res.maxMove,res.maxMoveApplied.toFixed(2),key); }
+  return want;
+}
+/* diff desired into live DOM, ease toward targets */
+function relayout(){
+  const want=nudgeTargets(fitToFrame(desired())); const wantIds=new Set(want.map(w=>w.id));
+  gEdges.textContent='';
+  if(state.trace){ // light the spine up to where the FKs actually link; dashed past the stop
+    const st=state.trace.steps;
+    for(let i=0;i<st.length-1;i++) gEdges.append(mkEdge('tr_'+i,'tr_'+(i+1), colorFor(st[i+1][3]), false));
+    if(state.trace.stop) gEdges.append(mkEdge('tr_'+(st.length-1),'tr_stop','var(--settle)', true));
+  } else if(Math.round(state.depth)===0){ // AD dictionary FK spine
+    for(let i=0;i<SPINE.length-1;i++) gEdges.append(mkEdge(SPINE[i].id, SPINE[i+1].id, colorFor(SPINE[i+1].kind), false));
+  }
+  for(const w of want){
+    let n=live.get(w.id);
+    if(!n){
+      const el=document.createElementNS(NS,'g'); el.setAttribute('class','node');
+      const c=document.createElementNS(NS,'circle');
+      const nm=document.createElementNS(NS,'text'); nm.setAttribute('class','nm');
+      const sub=document.createElementNS(NS,'text'); sub.setAttribute('class','sub');
+      el.append(c,nm,sub); gNodes.append(el);
+      n={el,c,nm,sub, x:cx,y:cy,r:0, op:0};
+      el.addEventListener('pointerdown',ev=>{ev.stopPropagation(); onPick(w.id);});
+      live.set(w.id,n);
+    }
+    Object.assign(n,{tx:w.tx,ty:w.ty,tr:w.tr,top:(w.op!==undefined?w.op:1), kind:w.kind, data:w.data});
+    n.nm.textContent=w.nm; n.sub.textContent=w.sub;
+    n.c.setAttribute('fill', colorFor(w.kind));
+    n.c.setAttribute('fill-opacity','.18'); n.c.setAttribute('stroke',colorFor(w.kind)); n.c.setAttribute('stroke-width','2');
+  }
+  for(const [id,n] of live){ if(!wantIds.has(id)){ n.tr=0; n.top=0; n._kill=true; } }
+}
+
+/* W-DOCKLENS: macOS-dock hover magnify for the crowded views (esp. the Dictionary row). Each live
+   bubble's RENDER radius eases toward tr GROWN toward tr×peak by proximity (within reach) to the
+   pointer. VISUAL ONLY — Layout.dockLens never touches tx/ty/data; we only change the eased n.r. The
+   #bowl SVG uses viewBox 0 0 W H so client coords == bubble coords. cursor null → every bubble rests. */
+let lensCursor=null;window.__lensCursor=null;
+function lensTargets(){
+  const arr=[...live.values()];
+  const radii=Layout.dockLens(arr,lensCursor,
+    {acc:{getX:n=>n.x,getY:n=>n.y,getR:n=>n.tr},restR:n=>n.tr,maxR:n=>n.tr*1.85,reach:130});
+  arr.forEach((n,i)=>{ n.lr=radii[i]; });
+}
+window.__dockLensProbe=function(){lensTargets();var o={};live.forEach((n,id)=>{o[id]={rest:n.tr,lens:n.lr};});return o;};
+function tick(){
+  lensTargets();
+  for(const [id,n] of live){
+    n.x+=(n.tx-n.x)*0.18; n.y+=(n.ty-n.y)*0.18; n.r+=(((n.lr!=null?n.lr:n.tr))-n.r)*0.2; n.op+=((n.top??1)-n.op)*0.2;
+    n.el.setAttribute('transform',`translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`);
+    n.el.setAttribute('opacity', n.op.toFixed(2));
+    n.c.setAttribute('r', Math.max(n.r,0.1).toFixed(1));
+    n.nm.setAttribute('y', n.r>26?-4:0); n.nm.setAttribute('font-size', Math.min(15,9+n.r*0.18).toFixed(0));
+    n.sub.setAttribute('y', 12); n.sub.setAttribute('font-size','10');
+    n.sub.setAttribute('opacity', n.r>22?1:0);
+    if(n._kill && n.r<0.6){ n.el.remove(); live.delete(id); }
+  }
+  // route edges to live node centres
+  for(const e of gEdges.children){
+    const a=live.get(e.dataset.a), b=live.get(e.dataset.b); if(!a||!b)continue;
+    e.setAttribute('x1',a.x);e.setAttribute('y1',a.y);e.setAttribute('x2',b.x);e.setAttribute('y2',b.y);
+  }
+  // the comet: travels the lit trace path, green→amber, lighting each hop as it arrives
+  if(state.trace){
+    const st=state.trace.steps, last=st.length-1;
+    if(state.trace.lit<last){
+      state.cometT+=0.04;
+      const a=live.get('tr_'+state.trace.lit), b=live.get('tr_'+(state.trace.lit+1));
+      if(a&&b){ const t=state.cometT, e=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+        comet.setAttribute('cx',(a.x+(b.x-a.x)*e).toFixed(1));
+        comet.setAttribute('cy',(a.y+(b.y-a.y)*e).toFixed(1));
+        comet.setAttribute('fill', colorFor(st[state.trace.lit+1][3])); comet.setAttribute('opacity','1');
+      }
+      if(state.cometT>=1){ state.cometT=0; state.trace.lit++; relayout(); }
+    } else {
+      const ln=live.get('tr_'+last); if(ln){ comet.setAttribute('cx',ln.x.toFixed(1)); comet.setAttribute('cy',ln.y.toFixed(1)); }
+      comet.setAttribute('opacity',(Math.max(0,parseFloat(comet.getAttribute('opacity')||0)-0.03)).toFixed(2));
+    }
+  } else comet.setAttribute('opacity','0');
+  requestAnimationFrame(tick);
+}
+
+/* ── interactions ───────────────────────────────────────────────────────────── */
+function onPick(id){
+  const n=live.get(id); if(!n)return;
+  if(n.data?.group){ state.focusGroup = state.focusGroup===id? null : id; hideCard(); relayout(); recordView(); return; }
+  if(n.data?.order){ openCard(n.data.order, n); return; }
+  if(n.data?.spine){ openModelCard(id, n); return; }
+}
+const card=document.getElementById('card');
+card.addEventListener('pointerdown',e=>e.stopPropagation()); // clicks inside the card don't dismiss it
+function hideCard(){ card.style.display='none'; }
+/* dictionary type-cell → its AD model AT A GLANCE (not Glassbowl's full dossier — link out for that) */
+function openModelCard(id,n){
+  const m=AD_MODEL[id], sp=SPINE.find(s=>s.id===id); if(!m||!sp)return;
+  card.innerHTML=`<h3>${sp.nm}</h3><div class="who">AD model · ${sp.sub}</div>`+
+    `<div class="row"><span>Columns</span><span>${m.cols} · ${m.mand} mandatory</span></div>`+
+    m.key.map(k=>`<div class="row"><span>${k[0]}</span><span>${k[1]}</span></div>`).join('')+
+    `<div class="row"><span>Foreign keys</span><span>${m.fk.length}</span></div>`+
+    `<div class="who" style="margin-top:5px;font-size:11px">→ ${m.fk.join(' · ')}</div>`+
+    `<div class="act"><a class="b go" style="text-decoration:none;display:inline-block" `+
+      `href="glassbowl.html" target="glassbowl" rel="noopener">⊞ Full dossier in Glassbowl</a></div>`;
+  const px=Math.min(Math.max(n.x+n.r+12,12), W-242), py=Math.min(Math.max(n.y-40,12), H-230);
+  card.style.left=px+'px'; card.style.top=py+'px'; card.style.display='block';
+}
+function openCard(o,n){
+  const ch=CHAINS[o.no];
+  card.innerHTML=`<h3>${o.no}</h3><div class="who">${o.typ==='SO'?'Sales order':'Purchase order'} · ${o.partner}</div>`+
+    `<div class="row"><span>Status</span><span>${o.st==='CO'?'Completed':o.st==='CL'?'Closed':o.st}</span></div>`+
+    `<div class="row"><span>Total</span><span>${money(o.total)}</span></div>`+
+    `<div class="row"><span>Ordered</span><span>${o.dt}</span></div>`+
+    `<div class="row"><span>Lines</span><span>${(LINES[o.no]||[]).length}</span></div>`+
+    `<div class="act">`+
+      (ch?`<button class="b go" id="cTrace">▸ Trace flow</button>`:'')+
+      `<button class="b" id="cDive">▦ View lines</button>`+
+      `<button class="b off" title="editing — coming later (T3)">✎ Edit</button>`+
+    `</div>`;
+  const px=Math.min(Math.max(n.x+ n.r+12, 12), W-242), py=Math.min(Math.max(n.y-40,12), H-160);
+  card.style.left=px+'px'; card.style.top=py+'px'; card.style.display='block';
+  const t=card.querySelector('#cTrace'); if(t) t.onclick=()=>{ trace(o.no); };
+  card.querySelector('#cDive').onclick=()=>{ state.focusOrder=o; setDepth(2); hideCard(); recordView(); };
+}
+addEventListener('pointerdown',()=>{ hideCard(); });
+
+const strip=document.getElementById('strip');
+function trace(no){
+  const ch=CHAINS[no]; if(!ch)return;
+  hideCard();
+  state.trace={no:no, steps:ch.steps, stop:ch.stop, lit:0}; state.cometT=0;  // spine view + comet
+  let html='';
+  ch.steps.forEach((s,i)=>{
+    const [type,n,amt,kind]=s;
+    if(i) html+='<div class="arrow">→</div>';
+    html+=`<div class="step"><div class="dot" style="background:${colorFor(kind)}">${type[2]}</div>`+
+      `<div class="meta"><div class="t">${type}</div><div class="v">${n}${amt!=null?' · '+money(amt):''}</div></div></div>`;
+  });
+  if(ch.stop) html+=`<div class="stop">▢ stops here — ${ch.stop}</div>`;
+  html+=`<button id="stripClose">×</button>`;
+  strip.innerHTML=html; strip.classList.add('on');
+  strip.querySelector('#stripClose').onclick=()=>{ strip.classList.remove('on'); state.trace=null; relayout(); recordView(); };
+  relayout();
+  console.log('§TRACE order=%s hops=%d stop=%s', no, ch.steps.length, ch.stop?'dashed@'+(ch.steps.length):'full→allocation');
+  recordView();
+}
+
+/* depth ball drag */
+const track=document.getElementById('track'), ball=document.getElementById('ball');
+function setDepth(d){ state.depth=Math.max(0,Math.min(2,d)); state.trace=null; positionBall(); hideCard(); strip.classList.remove('on'); relayout(); }
+function positionBall(){ const t=track.getBoundingClientRect(); const frac=1-(state.depth/2); ball.style.top=(frac*(t.height-34))+'px'; }
+let dragging=false;
+ball.addEventListener('pointerdown',e=>{dragging=true; state.trace=null; ball.setPointerCapture(e.pointerId); e.stopPropagation();});
+ball.addEventListener('pointermove',e=>{ if(!dragging)return; const t=track.getBoundingClientRect();
+  let frac=(e.clientY-t.top)/(t.height); frac=Math.max(0,Math.min(1,frac)); state.depth=(1-frac)*2;
+  const fr2=1-(state.depth/2); ball.style.top=(fr2*(t.height-34))+'px'; relayout(); });
+ball.addEventListener('pointerup',e=>{ dragging=false; setDepth(Math.round(state.depth)); recordView(); });
+ball.style.position='absolute';
+
+/* chips */
+document.querySelectorAll('[data-lens]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('[data-lens]').forEach(x=>x.classList.toggle('on',x===b));
+  state.lens=b.dataset.lens; state.focusGroup=null; state.trace=null; if(Math.round(state.depth)!==1) setDepth(1); else relayout();
+  console.log('§PIVOT lens=%s measure=%s groups=%d', state.lens, state.measure, groups().length);
+  recordView();
+});
+document.querySelectorAll('[data-measure]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('[data-measure]').forEach(x=>x.classList.toggle('on',x===b));
+  state.measure=b.dataset.measure; relayout(); recordView();
+});
+const hint=document.getElementById('hint'); let hintT;
+function flashHint(t){ hint.textContent=t; hint.style.opacity=1; clearTimeout(hintT); hintT=setTimeout(()=>hint.style.opacity=0,2600); }
+
+/* ── VIEW HISTORY (undo/redo) — showcases the kernel-log "step back in time" magic, applied to VIEWS:
+      read-only navigation of where you've looked, NOT data transactions (those are T3). Each distinct view
+      is logged like an op; ↶/↷ (or Ctrl+Z / Ctrl+Shift+Z) walk the log. The seam to a real kernel_ops feed. */
+let viewHist=[], viewIdx=-1, restoring=false;
+const undoBtn=document.getElementById('undoBtn'), redoBtn=document.getElementById('redoBtn');
+function captureView(){ return {lens:state.lens, measure:state.measure, depth:Math.round(state.depth),
+  focusGroup:state.focusGroup, focusOrderNo:state.focusOrder?state.focusOrder.no:null, traceNo:state.trace?state.trace.no:null}; }
+function recordView(){ if(restoring) return; const v=captureView();
+  if(viewIdx>=0 && JSON.stringify(viewHist[viewIdx])===JSON.stringify(v)) return;
+  viewHist=viewHist.slice(0,viewIdx+1); viewHist.push(v); viewIdx=viewHist.length-1; syncUndo();
+  console.log('§VIEWLOG idx=%d depth=%d total=%d', viewIdx, viewHist.length-1, viewHist.length); }
+function applyView(v){ restoring=true;
+  state.lens=v.lens; state.measure=v.measure; state.depth=v.depth; state.focusGroup=v.focusGroup;
+  state.focusOrder=v.focusOrderNo?ORDERS.find(o=>o.no===v.focusOrderNo):null;
+  document.querySelectorAll('[data-lens]').forEach(x=>x.classList.toggle('on',x.dataset.lens===state.lens));
+  document.querySelectorAll('[data-measure]').forEach(x=>x.classList.toggle('on',x.dataset.measure===state.measure));
+  hideCard(); positionBall();
+  if(v.traceNo){ trace(v.traceNo); } else { state.trace=null; strip.classList.remove('on'); relayout(); }
+  restoring=false; syncUndo(); }
+function syncUndo(){ if(undoBtn) undoBtn.disabled=viewIdx<=0; if(redoBtn) redoBtn.disabled=viewIdx>=viewHist.length-1; renderScrub(); }
+/* the view-log drawn as a timeline of clickable ticks (Red Pill TM scrubber) */
+function viewLabel(v){ if(v.traceNo) return 'trace '+v.traceNo; if(v.depth===0) return 'dictionary'; if(v.depth===2) return 'lines'+(v.focusOrderNo?' '+v.focusOrderNo:''); if(v.focusGroup) return 'focus'; return v.lens+' · '+(v.measure==='count'?'#':'$'); }
+function renderScrub(){ const t=document.getElementById('scrubticks'); if(!t) return; t.innerHTML=''; const N=viewHist.length;
+  viewHist.forEach((v,i)=>{ const d=document.createElement('div'); d.className='vtick'+(i===viewIdx?' cur':'');
+    d.style.left=(N<=1?50:(i/(N-1))*100)+'%'; d.title=(i+1)+'. '+viewLabel(v);
+    d.onclick=ev=>{ ev.stopPropagation(); if(i!==viewIdx){ viewIdx=i; applyView(viewHist[i]); } }; t.appendChild(d); }); }
+(function(){ const scrub=document.getElementById('scrub'); if(!scrub) return; let scrubbing=false;
+  function scrubTo(cx){ const r=scrub.getBoundingClientRect(); let f=(cx-r.left)/r.width; f=Math.max(0,Math.min(1,f));
+    const N=viewHist.length; if(N<1) return; const i=Math.round(f*(N-1)); if(i!==viewIdx){ viewIdx=i; applyView(viewHist[i]); } }
+  scrub.addEventListener('pointerdown',e=>{ scrubbing=true; try{scrub.setPointerCapture(e.pointerId);}catch(x){} scrubTo(e.clientX); });
+  scrub.addEventListener('pointermove',e=>{ if(scrubbing) scrubTo(e.clientX); });
+  scrub.addEventListener('pointerup',()=>{ scrubbing=false; });
+})();
+function undoView(){ if(viewIdx>0){ viewIdx--; applyView(viewHist[viewIdx]); flashHint('↶ stepped back through the view-log (the kernel-log magic, read-only)'); } }
+function redoView(){ if(viewIdx<viewHist.length-1){ viewIdx++; applyView(viewHist[viewIdx]); } }
+if(undoBtn) undoBtn.onclick=undoView; if(redoBtn) redoBtn.onclick=redoView;
+addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){ e.preventDefault(); e.shiftKey?redoView():undoView(); } });
+
+/* W-DOCKLENS: track the pointer over the bowl (desktop hover AND mobile touch-drag) so tick()'s
+   lensTargets() swells the bubble under it + neighbours. #bowl uses viewBox 0 0 W H, so the raw
+   client coords are already bubble coords. Pure-visual: only lensCursor changes (no tx/ty/data). */
+bowl.addEventListener('pointermove',e=>{ lensCursor={x:e.clientX,y:e.clientY}; window.__lensCursor=lensCursor; });
+bowl.addEventListener('pointerleave',()=>{ lensCursor=null; window.__lensCursor=null; });
+bowl.addEventListener('pointercancel',()=>{ lensCursor=null; window.__lensCursor=null; });
+// W-DOCKLENS startup witness: report rest→peak swell + the resting Dictionary overlap count (the
+//   dock-lens lets the dictionary rest small so there are 0 overlaps until you hover). EXTRACT-only.
+(function(){ const dictItems=SPINE.map(c=>({id:c.id,kind:c.kind,data:{}}));
+  Layout.dictionaryRow(dictItems,{cx:cx,cy:cy,halfW:frameHX,rMin:20,rMax:38,gapMax:170});
+  const restR=dictItems[0]?dictItems[0].tr:0;
+  const lensAcc={getX:n=>n.tx,getY:n=>n.ty,getR:n=>n.tr};
+  const overlapsRest=Layout.countOverlaps(dictItems,{pad:0,acc:lensAcc});
+  const peak=Layout.dockLens([{x:0,y:0,tx:0,ty:0,tr:restR}],{x:0,y:0},
+    {acc:lensAcc,restR:restR,maxR:restR*1.85,reach:130})[0];
+  console.log('§DOCKLENS rest=%s peak=%s reach=130 overlaps-at-rest=%d',
+    restR.toFixed(1),peak.toFixed(1),overlapsRest); })();
+
+positionBall(); relayout(); tick();
+recordView();  // log the opening view as the first entry
+setTimeout(()=>hint.style.opacity=0,5000);
+</script>
+</body>
+</html>
