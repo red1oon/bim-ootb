@@ -15,7 +15,7 @@ const server=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')
 (async()=>{await new Promise(r=>server.listen(0,r));const port=server.address().port;
 const logs=[],errs=[];const br=await chromium.launch();const pg=await br.newPage();
 pg.on('console',m=>logs.push(m.text()));pg.on('pageerror',e=>errs.push(e.message));
-await pg.goto(`http://localhost:${port}/idempiere.html?seed=ad_odoo.db&window=140`,{waitUntil:'networkidle'});
+await pg.goto(`http://localhost:${port}/idempiere.html?seed=ad_seed.db&shard=12-odoo.db&window=140`,{waitUntil:'networkidle'});
 await pg.waitForSelector('#idmp-login-users .idmp-login-user',{timeout:15000});
 // pick the Odoo tenant user specifically (not System/GardenWorld)
 const odooUser=await pg.$$eval('#idmp-login-users .idmp-login-user',els=>{var i=els.findIndex(e=>/Odoo Admin/.test(e.textContent));return i;});

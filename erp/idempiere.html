@@ -371,6 +371,25 @@
       if (!seedParam) idbPut('ad_seed_v13', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
+    // ?shard=<file>.db — SHARD-IN: merge an overlay tenant/data shard's rows into the base (doctrine: AD data
+    // is sharded/installed in, never a baked monolith). INSERT OR IGNORE so re-loads never duplicate.
+    var shardParam = new URLSearchParams(location.search).get('shard');
+    if (shardParam && /^[\w.-]+\.db$/.test(shardParam)) {
+      try {
+        var sbuf = await (await fetch(shardParam)).arrayBuffer();
+        var sdb = new SQL.Database(new Uint8Array(sbuf));
+        var stbls = sdb.exec("SELECT name FROM sqlite_master WHERE type='table'");
+        var mTbl = 0, mRow = 0;
+        if (stbls.length) stbls[0].values.forEach(function (tv) {
+          var t = tv[0], r = sdb.exec('SELECT * FROM "' + t + '"'); if (!r.length) return;
+          var cs = r[0].columns, ins = 'INSERT OR IGNORE INTO "' + t + '" (' + cs.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + cs.map(function () { return '?'; }).join(',') + ')';
+          r[0].values.forEach(function (vals) { try { db.run(ins, vals); mRow++; } catch (e) {} });
+          mTbl++;
+        });
+        sdb.close();
+        console.log('§IDEMPIERE shard-in ' + shardParam + ' tables=' + mTbl + ' rows=' + mRow);
+      } catch (e) { console.warn('§IDEMPIERE shard-in failed ' + e.message); }
+    }
     if (ADP && ADP.init) ADP.init(db);
     console.log('§IDEMPIERE boot db=' + src + ' ms=' + Math.round(performance.now() - _t0));
 
