@@ -231,7 +231,7 @@ function setupPicking(A) {
 
     if (!hits.length) {
       document.getElementById('info-panel').style.display = 'none';
-      A._lastPickGuid = null;
+      A._lastPickGuid = null; A._lastPickCenter = null;
       // §S265: Clear highlight bbox on empty-spot tap (deselect)
       if (window._pickHighlight) {
         if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
@@ -258,7 +258,7 @@ function setupPicking(A) {
     }
     if (!validHits.length) {
       document.getElementById('info-panel').style.display = 'none';
-      A._lastPickGuid = null;
+      A._lastPickGuid = null; A._lastPickCenter = null;
       if (window._pickHighlight) {
         if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
         window._pickHighlight.geometry.dispose();
@@ -415,7 +415,7 @@ function setupPicking(A) {
       if (A.setOutline) A.setOutline([], 0xff8c00);
       // §S277d: Restore isolation
       _restoreIsolation(A);
-      A._lastPickGuid = null;
+      A._lastPickGuid = null; A._lastPickCenter = null;
       console.log('§PICK_DESELECT guid=' + guid.substring(0, 12));
       return;
     }
@@ -568,6 +568,7 @@ function setupPicking(A) {
     console.log('§PICK_BBOX pos=' + hlPos.x.toFixed(1) + ',' + hlPos.y.toFixed(1) + ',' + hlPos.z.toFixed(1) +
       ' size=' + (hlSizeX||0).toFixed(2) + '×' + (hlSizeY||0).toFixed(2) + '×' + (hlSizeZ||0).toFixed(2) +
       ' guid=' + (guid || '?').substring(0, 12));
+    A._lastPickCenter = hlPos.clone();  // Auto-Pivot homes the orbit pivot on the picked element
 
     try {
       // S239: parameterized query (was string interpolation — SQL injection risk)

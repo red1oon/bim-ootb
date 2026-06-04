@@ -103,7 +103,13 @@
     var cam = c.object;
     var scene = A().scene;
     var mode = null, hitR = -1;
-    if (scene) {
+    // Prefer the SELECTED element — deterministic, no aiming (Revit/Navisworks-style).
+    // hit=pick. Falls through to the screen-centre ring-raycast when nothing is selected.
+    if (A()._lastPickGuid && A()._lastPickCenter) {
+      c.target.copy(A()._lastPickCenter);
+      mode = 'pick';
+    }
+    if (!mode && scene) {
       var ray = new THREE.Raycaster();
       var hit = null;
       // Radiate outward from screen-centre; first ring that hits wins (nearest-to-centre).
