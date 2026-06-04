@@ -143,6 +143,7 @@
     if (_pivot) return;
     if (!A() || !A().controls) return;
     _pivot = true;
+    window._autoPivot = true;  // exposed for Help-row isActive highlight
     _onEnd = function() { if (_pivot) recenterPivot(); };
     A().controls.addEventListener('end', _onEnd);
     _pivotPaint();
@@ -153,6 +154,7 @@
   function pivotOff() {
     if (!_pivot) return;
     _pivot = false;
+    window._autoPivot = false;
     if (A() && A().controls && _onEnd) A().controls.removeEventListener('end', _onEnd);
     _onEnd = null;
     _pivotPaint();
