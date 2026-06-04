@@ -27,12 +27,12 @@ async function visit(browser, port, query) {
 
 (async()=>{await new Promise(r=>server.listen(0,r));const port=server.address().port;const br=await chromium.launch();
   // 1) tenant auto-login (the wow)
-  const o=await visit(br,port,'seed=ad_odoo.db&login=Odoo&window=140');
+  const o=await visit(br,port,'seed=ad_seed.db&shard=12-odoo.db&login=Odoo&window=140');
   const oAuto=o.logs.find(l=>l.startsWith('§IDEMPIERE-AUTOLOGIN'))||'(no autologin)';
   const oLogin=o.logs.find(l=>l.startsWith('§IDEMPIERE-LOGIN'))||'(no login)';
   console.log('§AL-ODOO loginCardShown='+o.loginShown+' '+oAuto+' | client12='+/client=Odoo\(12\)/.test(oLogin)+' productsRendered='+/Large Desk|Storage Box|Cabinet/.test(o.grid)+' errs='+(o.errs.length?o.errs.join('|'):0));
   // 2) SystemAdmin mode (proper migration practice) — the System user (client 0) now has a System Administrator role
-  const s=await visit(br,port,'seed=ad_odoo.db&login=System');
+  const s=await visit(br,port,'seed=ad_seed.db&shard=12-odoo.db&login=System');
   const sLogin=s.logs.find(l=>l.startsWith('§IDEMPIERE-LOGIN'))||'(no login)';
   console.log('§AL-SYSADMIN loginCardShown='+s.loginShown+' '+(/client=System\(0\)/.test(sLogin)?'client=System(0)':sLogin)+' errs='+(s.errs.length?s.errs.join('|'):0));
 

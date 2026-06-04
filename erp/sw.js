@@ -7,7 +7,7 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v576';
+const CACHE_VERSION = 'v577';
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
