@@ -102,7 +102,7 @@
     var c = A().controls;
     var cam = c.object;
     var scene = A().scene;
-    var mode = null, hitR = -1;
+    var mode = null;
     // Prefer the SELECTED element — deterministic, no aiming (Revit/Navisworks-style).
     // hit=pick. Falls through to the screen-centre ring-raycast when nothing is selected.
     if (A()._lastPickGuid && A()._lastPickCenter) {
@@ -111,28 +111,25 @@
     }
     if (!mode && scene) {
       var ray = new THREE.Raycaster();
-      var hit = null;
       // Building geometry only (same filter the picker uses) — never the hidden sky dome /
       // ground at ~50000, which would fling the pivot far away. Collect once, not per ray.
       var meshes = (A().collectMeshes
         ? A().collectMeshes(function(o) { return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible; })
         : scene.children);
-      // Radiate outward from screen-centre; first ring that hits wins (nearest-to-centre).
-      var samples = [[0, 0, 0]];
-      var rings = [0.06, 0.12, 0.18];
-      for (var ri = 0; ri < rings.length; ri++) {
-        for (var a = 0; a < 8; a++) {
-          var ang = a * Math.PI / 4;
-          samples.push([Math.cos(ang) * rings[ri], Math.sin(ang) * rings[ri], rings[ri]]);
-        }
-      }
-      for (var s = 0; s < samples.length && !hit; s++) {
-        ray.setFromCamera(new THREE.Vector2(samples[s][0], samples[s][1]), cam);
+      // Fixed cheap fan: centre + one ring (9 rays, once per drag-end — no loop, no fan).
+      // Centre hit → orbit what you point at. Centre empty but walls around → centroid of the
+      // surrounding hits = the enclosure centre ("the walls tell you the centre").
+      var dirs = [[0, 0]];
+      for (var a = 0; a < 8; a++) { var ang = a * Math.PI / 4; dirs.push([Math.cos(ang) * 0.14, Math.sin(ang) * 0.14]); }
+      var centreHit = null, sx = 0, sy = 0, sz = 0, n = 0;
+      for (var s = 0; s < dirs.length; s++) {
+        ray.setFromCamera(new THREE.Vector2(dirs[s][0], dirs[s][1]), cam);
         var hh = ray.intersectObjects(meshes, false);
-        if (hh.length) { hit = hh[0]; hitR = samples[s][2]; }
+        if (hh.length) { var pt = hh[0].point; sx += pt.x; sy += pt.y; sz += pt.z; n++; if (s === 0) centreHit = pt; }
       }
-      if (hit) { c.target.copy(hit.point); mode = 'mesh'; }
-      else {
+      if (centreHit) { c.target.copy(centreHit); mode = 'mesh'; }
+      else if (n) { c.target.set(sx / n, sy / n, sz / n); mode = 'room'; }  // enclosure centre
+      if (!mode) {
         var box = new THREE.Box3().setFromObject(scene);
         if (!box.isEmpty()) { box.getCenter(c.target); mode = 'bbox'; }
       }
@@ -146,8 +143,7 @@
     c.update();
     if (A().markDirty) A().markDirty();
     console.log('§pivot recenter target=(' + c.target.x.toFixed(2) + ',' +
-      c.target.y.toFixed(2) + ',' + c.target.z.toFixed(2) + ') hit=' + mode +
-      (mode === 'mesh' ? ' r=' + hitR.toFixed(2) : ''));
+      c.target.y.toFixed(2) + ',' + c.target.z.toFixed(2) + ') hit=' + mode);
   }
 
   function pivotOn() {
