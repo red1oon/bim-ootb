@@ -377,10 +377,12 @@
       return ax;
     }
 
-    // §RULE1 SINGLE TOGGLE: the axis is ONE button, not a row of pills. It shows the current
-    // axis and cycles to the next available one on each tap (storey→disc→[room]→[material]→
-    // [phase]→storey). Room/Material/Phase only join the cycle when their data is present
-    // (data-gated, §A never-blank keeps storey+disc always). One control, never multiple buttons.
+    // §RULE1 SINGLE TOGGLE (+ all axes visible): ONE button, not a row of separate pills, but it
+    // shows EVERY available axis inline with the active one highlighted — so Storey & Disc are
+    // never lost from view when the lens is on Room/Material/Phase. Tapping the button cycles to
+    // the next axis (storey→disc→[room]→[material]→[phase]→storey). Tapping a specific axis name
+    // jumps straight to it. Storey+Disc always present (§A never-blank); Room/Material/Phase are
+    // data-gated. It reads as one toggle control showing its options, never N floating buttons.
     function _renderAxes() {
       if (!elAxisBar) return;
       elAxisBar.innerHTML = '';
@@ -389,27 +391,44 @@
       if (!ax.length) return;
       var idx = 0;
       for (var i = 0; i < ax.length; i++) { if (ax[i].key === _treeMode) { idx = i; break; } }
-      var cur = ax[idx];
-      var nxt = ax[(idx + 1) % ax.length];
       var btn = document.createElement('button');
       btn.id = 'find-axis-toggle';
-      btn.setAttribute('data-axis', cur.key);
-      // Current axis prominent; subtle hint of the next on tap. ONE button.
-      btn.innerHTML = '<span style="font-size:9px;opacity:.55">' + (idx + 1) + '/' + ax.length + '</span>' +
-        ' <span style="font-weight:800">' + cur.label + '</span>' +
-        (ax.length > 1 ? ' <span style="font-size:9px;opacity:.5">⇄ ' + nxt.label + '</span>' : '');
-      btn.style.cssText = 'min-width:160px;padding:6px 14px;font-size:12px;border-radius:7px;cursor:pointer;' +
-        'white-space:nowrap;border:1px solid rgba(79,195,247,0.7);background:rgba(79,195,247,0.22);color:#fff;';
+      btn.setAttribute('data-axis', ax[idx].key);
+      btn.style.cssText = 'display:inline-flex;align-items:center;gap:2px;padding:4px 6px;border-radius:7px;cursor:pointer;' +
+        'white-space:nowrap;border:1px solid rgba(79,195,247,0.7);background:rgba(79,195,247,0.12);';
+      // Display-only segments (NOT individually clickable) — the whole pill is ONE toggle.
+      ax.forEach(function(a, i) {
+        var on = (i === idx);
+        var seg = document.createElement('span');
+        seg.setAttribute('data-axis-seg', a.key);
+        seg.textContent = a.label;
+        seg.style.cssText = 'padding:3px 9px;border-radius:5px;font-size:11.5px;pointer-events:none;' +
+          (on ? 'background:#4fc3f7;color:#06222e;font-weight:800;' : 'color:#4fc3f7;font-weight:600;opacity:.65;');
+        btn.appendChild(seg);
+        if (i < ax.length - 1) {
+          var sep = document.createElement('span');
+          sep.textContent = '›'; sep.style.cssText = 'opacity:.3;font-size:10px;pointer-events:none;';
+          btn.appendChild(sep);
+        }
+      });
+      // ONE toggle: a single tap anywhere on the pill cycles to the next axis.
       btn.addEventListener('pointerup', function(e) {
         e.stopPropagation();
-        var a2 = _axes(); // re-probe in case data changed
-        var ci = 0;
+        var a2 = _axes(); var ci = 0;
         for (var k = 0; k < a2.length; k++) { if (a2[k].key === _treeMode) { ci = k; break; } }
-        _setTreeMode(a2[(ci + 1) % a2.length].key);
+        var from = _treeMode, to = a2[(ci + 1) % a2.length].key;
+        // §TOGGLE whitebox: proves it's DYNAMIC — one tap moves state from→to (and wraps).
+        console.log('[RP-T3] §TOGGLE_TICK tap → from=' + from + ' to=' + to +
+          ' (one tap-target, cycles, wraps=' + (to === a2[0].key && from === a2[a2.length-1].key) + ')');
+        _setTreeMode(to);
       });
       elAxisBar.appendChild(btn);
-      console.log('[RP-T3] §LENS_AXES toggle cur=' + cur.key + ' next=' + nxt.key +
-        ' available=' + ax.map(function(a){ return a.key; }).join(','));
+      // §TOGGLE whitebox: proves it's SINGULAR — exactly ONE segment active, rest are display-only.
+      var clickable = ax.filter(function(a){ var el = btn.querySelector('[data-axis-seg="'+a.key+'"]'); return el && el.style.pointerEvents !== 'none'; }).length;
+      console.log('[RP-T3] §TOGGLE_STATE cur=' + ax[idx].key + ' active=1/' + ax.length +
+        ' shown=' + ax.map(function(a){ return a.key; }).join(',') +
+        ' tapTargets=1 clickableSegs=' + clickable + ' → ' +
+        (clickable === 0 ? 'IS-A-TOGGLE(singular,one-tap-cycles)' : 'NOT-A-TOGGLE(segments clickable!)'));
     }
 
     function _isolateLensGroup(lens, g) {
@@ -578,7 +597,9 @@
     // every frame — the §S286 idle gate parks the loop, so the move won't render without it.
     function _zoomToBox(center, size) {
       if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
-      var dist = Math.max(size.x, size.y, size.z) * 3 + 2;
+      // Snug fit: ~1.4× the largest dim frames the bbox in view. Was ×3 → a building-spanning
+      // phase (e.g. Superstructure across all storeys) zoomed way too far out.
+      var dist = Math.max(size.x, size.y, size.z) * 1.4 + 3;
       var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
       var start = A.camera.position.clone();
       var t = 0;
