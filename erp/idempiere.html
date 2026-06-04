@@ -833,11 +833,21 @@
     var g = {}; _records.forEach(function (r) { var v = String(fmt(pick, recVal(r, pick.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
     return { col: pick, label: pick.name, groups: g, tab: tab };
   }
+  // one-tap switch between the two lenses of the SAME data (Graph bars ⇆ Kanban board) — proper UX:
+  // the graph icon's view launches the interactive board, and the board switches back to the chart.
+  function _viewSwitch(label, fn) {
+    var bar = el('div'); bar.style.cssText = 'display:flex;gap:8px;margin:0 0 12px;';
+    var b = el('button', null, label);
+    b.style.cssText = 'background:#1f6feb;color:#fff;border:none;border-radius:7px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer';
+    b.addEventListener('click', fn); bar.appendChild(b); return bar;
+  }
   function openGraphFor() {
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
     var keys = Object.keys(gr.groups), max = 1; keys.forEach(function (k) { max = Math.max(max, gr.groups[k].length); });
-    var wrap = el('div', 'chart-wrap'); wrap.appendChild(el('div', 'chart-title', 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)'));
+    var wrap = el('div', 'chart-wrap');
+    wrap.appendChild(_viewSwitch('🗂 View as Kanban', openKanbanFor));   // 🗂 launch the board from the graph
+    wrap.appendChild(el('div', 'chart-title', 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)'));
     keys.forEach(function (k) { var n = gr.groups[k].length, row = el('div', 'chart-row');
       row.appendChild(el('span', 'chart-lbl', k)); var bw = el('div', 'chart-barw'), b = el('div', 'chart-bar', String(n));
       b.style.width = Math.round(n / max * 100) + '%'; bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row); });
@@ -865,10 +875,11 @@
     var ok = await _ensureKanbanERP();
     var tab = gr.tab, T = tab.tableName, kc = _keyCol(tab), statusCol = gr.col.columnName;
     if (!ok || !window.KanbanLens) {   // engine/lens absent → honest fall back to the read-only board
-      var rb = el('div', 'kb-board');
+      var rbc = el('div'); rbc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+      var rb = el('div', 'kb-board'); rbc.appendChild(rb);
       Object.keys(gr.groups).forEach(function (k) { var c = el('div', 'kb-col'); c.appendChild(el('div', 'kb-colhd', k + ' · ' + gr.groups[k].length));
         gr.groups[k].slice(0, 25).forEach(function (r) { c.appendChild(el('div', 'kb-card', String(recVal(r, kc)))); }); rb.appendChild(c); });
-      _overlay('Kanban — ' + tab.name + ' (read-only)', rb); console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T); return;
+      _overlay('Kanban — ' + tab.name + ' (read-only)', rbc); console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T); return;
     }
     // fold the OPEN window's records PER-ROW by RAW docstatus (codes, not labels), overlaying the op-log tip.
     var tip = window.KanbanHost.tip(_kanbanProj), byS = {};
@@ -879,8 +890,11 @@
     });
     var folds = Object.keys(byS).map(function (s) { return { table: T, doc_status: s, count: byS[s].length, ids: byS[s].slice(0, 30) }; });
     var board = window.KanbanLens.buildBoard(folds, _kanbanWfmc, { showEmptyStates: true });
-    var root = el('div'); root.style.cssText = 'overflow:auto;max-height:78vh';
-    _overlay('Kanban — ' + tab.name, root);
+    var container = el('div');
+    container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));   // switch back to the chart lens
+    var root = el('div'); root.style.cssText = 'overflow:auto;max-height:72vh';
+    container.appendChild(root);
+    _overlay('Kanban — ' + tab.name, container);
     window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc,
       dispatch: window.ERP.dispatch, ctx: window.ERP.ctx,
       onResult: function (res, dr) {
