@@ -1094,6 +1094,10 @@ function setupPanels(A) {
             location.href = '../index.html';
           }
         } },
+      { id: 'audio',      name: 'Sound FX',        key: 'v', icon: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
+        fn: function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
+        isActive: function() { return !!(window.__sfx && window.__sfx.isOn()); },
+        children: [ { name: 'Time Machine: earcon per construction phase' }, { name: 'Fly Tour: positional waypoint cues' }, { name: 'UI: soft tap tick' }, { name: 'Synthesized — no audio files, default OFF' } ] },
       { id: 'settings',   name: 'Settings',        key: '=', icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
         fn: function() { _openSettingsPanel(); },
         isActive: function() { var p = document.getElementById('settings-panel'); return p && p.style.display !== 'none'; } }
@@ -1365,6 +1369,7 @@ function setupPanels(A) {
       { id: 'clash_rules', label: 'Clash Rules',          url: 'clash_rules.json', storageKey: 'json_clash_rules' },
       { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: 'initbubble.json',  storageKey: 'json_initbubble',
         overrides: { color: { type: 'color' } } },
+      { id: 'sfx',         label: 'Sound Effects',        url: 'sfx.json',         storageKey: 'json_sfx' },
       { id: 'schedule',    label: '4D Schedule (this building)', source: 'db', storageKey: 'json_schedule',
         readonly: true, project: _projectSchedule,
         // compact read-only view: phase name as row label + one "start · Nwk · elements" line
@@ -1481,7 +1486,7 @@ function setupPanels(A) {
 
     // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
     // Usefulness: frequent tools near bottom (thumb reach), rare at top
-    var _defaultOrder = ['settings','redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
+    var _defaultOrder = ['settings','audio','redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({

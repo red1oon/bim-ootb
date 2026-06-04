@@ -586,6 +586,7 @@
     var frontier = {};  // guid → {t: 0-1 progress, isSteel: bool}
     var recent = {};    // guid → fade 0-1 (1 = just finished)
     var arrival = {};   // guid → true (just appeared this tick — white flash)
+    var _sfxPhases = null; // §SFX: phase set at the frontier this tick (built only when sfx.js present)
     var lingerMs = tickMs() * 3; // linger for 3 ticks after completion
     var _isMobileTM = !!(window._isMobile || window._isMobileTM);
 
@@ -610,6 +611,9 @@
         frontier[guid] = { t: progress, isSteel: isSteel };
         // Arrival = first 15% of install time (white flash)
         if (progress < 0.15) arrival[guid] = true;
+        // §SFX seam (sfx.js): collect the construction phase(s) at the frontier. No-op
+        // when sfx.js absent or audio OFF — sfx decides whether/what to play (SoC).
+        if (window.__sfxTM && p.phase) { if (!_sfxPhases) _sfxPhases = {}; _sfxPhases[p.phase] = (_sfxPhases[p.phase] || 0) + 1; }
       }
     }
 
@@ -1177,6 +1181,23 @@
     }
 
     // §S260d: Distant particles REMOVED — PointsMaterial white square artifacts
+
+    // §SFX seam (sfx.js): report frontier phases + a representative world centroid (→ stereo
+    // pan) + progress/activity (→ the cinematic bed's two dials). No-op when audio off/absent.
+    if (window.__sfxTM) {
+      // most-active phase first (by element count) — stable dominant, not alphabetical flicker
+      var _sfxArr = _sfxPhases ? Object.keys(_sfxPhases).sort(function (a, b) { return _sfxPhases[b] - _sfxPhases[a]; }) : [];
+      var _sfxCen = null;
+      if (_frontierPositions.length) {
+        var _sx = 0, _sy = 0, _sz = 0;
+        for (var _spi = 0; _spi < _frontierPositions.length; _spi++) { _sx += _frontierPositions[_spi].x; _sy += _frontierPositions[_spi].y; _sz += _frontierPositions[_spi].z; }
+        _sfxCen = { x: _sx / _frontierPositions.length, y: _sy / _frontierPositions.length, z: _sz / _frontierPositions.length };
+      }
+      var _sfxSpan = _projectEnd - _projectStart;
+      var _sfxProg = _sfxSpan > 0 ? Math.max(0, Math.min(1, (_cursor - _projectStart) / _sfxSpan)) : 0;
+      window.__sfxTM(_sfxArr, _sfxCen, { progress: _sfxProg, active: _frontierPositions.length });
+      _sfxPhases = null;
+    }
 
     applySunCycle(cursorMs);
     if (_ganttVisible) drawGanttMini();
