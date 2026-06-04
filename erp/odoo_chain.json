@@ -1,0 +1,234 @@
+{
+  "meta": {
+    "source": "odoodemo (Odoo 17) live via odoo_agent.js",
+    "so": "S00023",
+    "so_id": 23,
+    "invoice": "INV/2026/00005",
+    "invoice_id": 25,
+    "payment_state": "paid",
+    "host": "localhost:8069",
+    "db": "odoodemo"
+  },
+  "wfmc": {
+    "transitions": [
+      [
+        "DR",
+        "CO",
+        "CO"
+      ],
+      [
+        "CO",
+        "POST",
+        "CO"
+      ]
+    ]
+  },
+  "KNOWN_VERBS": [
+    "CREATE_DOCUMENT",
+    "CREATE_LINE",
+    "SET_STATUS",
+    "ALLOCATE",
+    "MATCH",
+    "POST"
+  ],
+  "events": [
+    {
+      "name": "confirm SO",
+      "d": {
+        "docType": "C_Order",
+        "action": "CO",
+        "status": "DR"
+      },
+      "ops": [
+        {
+          "op_type": "SET_STATUS",
+          "table": "C_Order",
+          "id": 23,
+          "doc_status": "CO",
+          "uuid": "DOC:C_Order#23",
+          "op_uuid": "odoo:agent:1000"
+        }
+      ]
+    },
+    {
+      "name": "deliver",
+      "d": {
+        "docType": "M_InOut",
+        "action": "CO",
+        "status": "DR"
+      },
+      "ops": [
+        {
+          "op_type": "CREATE_DOCUMENT",
+          "table": "M_InOut",
+          "source_id": 23,
+          "doc_status": "CO",
+          "uuid": "DOC:M_InOut@from23",
+          "op_uuid": "odoo:agent:1101"
+        },
+        {
+          "op_type": "CREATE_LINE",
+          "table": "M_InOutLine",
+          "source_line_id": "21",
+          "line_no": 1,
+          "m_product_id": 21,
+          "movementqty": 10,
+          "uuid": "LINE:M_InOutLine@from21",
+          "op_uuid": "odoo:agent:1102"
+        },
+        {
+          "op_type": "CREATE_LINE",
+          "table": "M_InOutLine",
+          "source_line_id": "31",
+          "line_no": 2,
+          "m_product_id": 31,
+          "movementqty": 10,
+          "uuid": "LINE:M_InOutLine@from31",
+          "op_uuid": "odoo:agent:1103"
+        }
+      ]
+    },
+    {
+      "name": "invoice",
+      "d": {
+        "docType": "C_Invoice",
+        "action": "CO",
+        "status": "DR"
+      },
+      "ops": [
+        {
+          "op_type": "CREATE_DOCUMENT",
+          "table": "C_Invoice",
+          "source_id": 23,
+          "doc_status": "CO",
+          "uuid": "DOC:C_Invoice@from23",
+          "op_uuid": "odoo:agent:1204"
+        },
+        {
+          "op_type": "CREATE_LINE",
+          "table": "C_InvoiceLine",
+          "source_line_id": "31",
+          "line_no": 1,
+          "m_product_id": 31,
+          "qtyinvoiced": 10,
+          "linenetamt": 2950,
+          "uuid": "LINE:C_InvoiceLine@from31",
+          "op_uuid": "odoo:agent:1205"
+        },
+        {
+          "op_type": "CREATE_LINE",
+          "table": "C_InvoiceLine",
+          "source_line_id": "21",
+          "line_no": 2,
+          "m_product_id": 21,
+          "qtyinvoiced": 10,
+          "linenetamt": 1400,
+          "uuid": "LINE:C_InvoiceLine@from21",
+          "op_uuid": "odoo:agent:1206"
+        }
+      ]
+    },
+    {
+      "name": "post GL",
+      "d": {
+        "docType": "C_Invoice",
+        "action": "POST",
+        "status": "CO"
+      },
+      "ops": [
+        {
+          "op_type": "POST",
+          "table": "C_Invoice",
+          "id": 25,
+          "lines": [
+            {
+              "account_id": "400000 Product Sales",
+              "amtacctdr": 0,
+              "amtacctcr": 2950,
+              "role": "REV"
+            },
+            {
+              "account_id": "400000 Product Sales",
+              "amtacctdr": 0,
+              "amtacctcr": 1400,
+              "role": "REV"
+            },
+            {
+              "account_id": "251000 Tax Received",
+              "amtacctdr": 0,
+              "amtacctcr": 652.5,
+              "role": "TAX"
+            },
+            {
+              "account_id": "121000 Account Receivable",
+              "amtacctdr": 5002.5,
+              "amtacctcr": 0,
+              "role": "AR"
+            }
+          ],
+          "acctschema": 1,
+          "uuid": "POST:C_Invoice#25",
+          "op_uuid": "odoo:agent:1307"
+        }
+      ]
+    },
+    {
+      "name": "reconcile",
+      "d": {
+        "docType": "C_AllocationHdr",
+        "action": "CO",
+        "status": "DR"
+      },
+      "ops": [
+        {
+          "op_type": "ALLOCATE",
+          "payment_id": "pay25",
+          "invoice_id": 25,
+          "amount": 5002.5,
+          "uuid": "ALLOC:pay25:inv25",
+          "op_uuid": "odoo:agent:1408"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "untaxed": 4350,
+    "tax": 652.5,
+    "total": 5002.5,
+    "reconcile": 5002.5
+  },
+  "gl": {
+    "lines": [
+      {
+        "name": "[FURN_6666] Acoustic Bloc Screens",
+        "account": "400000 Product Sales",
+        "debit": 0,
+        "credit": 2950,
+        "is_tax": false
+      },
+      {
+        "name": "[E-COM11] Cabinet with Doors",
+        "account": "400000 Product Sales",
+        "debit": 0,
+        "credit": 1400,
+        "is_tax": false
+      },
+      {
+        "name": "15%",
+        "account": "251000 Tax Received",
+        "debit": 0,
+        "credit": 652.5,
+        "is_tax": true
+      },
+      {
+        "name": "INV/2026/00005",
+        "account": "121000 Account Receivable",
+        "debit": 5002.5,
+        "credit": 0,
+        "is_tax": false
+      }
+    ],
+    "dr": 5002.5,
+    "cr": 5002.5
+  }
+}

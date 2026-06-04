@@ -274,6 +274,8 @@
 <script src="accts_posted.js?v=23"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=22"></script>
+<!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
+<script src="erp_picker.js?v=1"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
 <script src="kernel_ops.js?v=1"></script>
 <script src="erp_signer.js?v=1"></script>
@@ -905,8 +907,8 @@
       } });
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
   }
-  function openInstallFor() { status('Install: pull the full DB to this device, or pair via QR to your machine — POC'); console.log('§INSTALL-PILL action=install-stub'); }
-  function openMigrateFor() { status('Migrate: run the local extractor on your machine, mirror here (QR pairing) — POC'); console.log('§MIGRATE-PILL action=migrate-stub'); }
+  function openInstallFor() { console.log('§INSTALL-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'install', status: status }); else status('ERP picker not loaded.'); }
+  function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
   function buildPillRail() {
     _injectPillCSS();
     var rail = el('div'); rail.id = 'idmp-pillrail';
