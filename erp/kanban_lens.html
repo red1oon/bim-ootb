@@ -31,7 +31,13 @@
 <div id="gate">Loading kanban lens&hellip;</div>
 <div id="kanban-root"></div>
 
-<script src="kanban_lens.js?v=1"></script>
+<!-- STEP-0 host engine — publish window.ERP (the ENGINE_CONTRACT §1 seam) so drag→dispatch is a REAL
+     signed write. Same modules + boot as spike_writepath.html (consume the seam, never fork a verb). -->
+<script src="kernel_ops.js?v=1"></script>
+<script src="erp_signer.js?v=1"></script>
+<script src="erp_kernel.js?v=1"></script>
+<script src="erp_seam.js?v=1"></script>
+<script src="kanban_lens.js?v=2"></script>
 <script>
 (function () {
   'use strict';
@@ -49,22 +55,26 @@
     });
   }
 
-  // status-grouped fold over the resident mock DataSource (the §KANBAN-FOLD shape from poc_kanban.js):
-  // COUNT(*) GROUP BY docstatus across the document tables. Pure read — no write here.
+  // status-grouped fold over the resident DataSource. PER-ROW (real doc ids) so each card is a REAL
+  // document a drag can SET_STATUS — not a count placeholder. Pure read; no write here. (§KANBAN-FOLD)
+  var TMAP = { c_invoice: 'C_Invoice', c_order: 'C_Order', c_payment: 'C_Payment' };
   function foldDocStatus(db) {
-    var folds = [];
-    ['c_invoice', 'c_order', 'c_payment'].forEach(function (tb) {
+    var folds = [], CAP = 30;   // cap cards/(table,status) so the board stays legible (logged, not silent)
+    Object.keys(TMAP).forEach(function (tb) {
       try {
-        var r = db.exec("SELECT docstatus, COUNT(*) AS n FROM " + tb + " GROUP BY docstatus");
+        var pk = tb + '_id';
+        var r = db.exec("SELECT " + pk + " AS id, docstatus FROM " + tb + " WHERE docstatus IS NOT NULL");
         if (!r.length) return;
-        var T = tb.replace(/^c_/, 'C_').replace(/^c_o/, 'C_O'); // C_Invoice / C_Order / C_Payment
-        T = tb === 'c_invoice' ? 'C_Invoice' : tb === 'c_order' ? 'C_Order' : 'C_Payment';
-        r[0].values.forEach(function (row) {
-          folds.push({ table: T, doc_status: row[0], count: Number(row[1]) });
+        var byS = {};
+        r[0].values.forEach(function (row) { var s = row[1]; (byS[s] = byS[s] || []).push(row[0]); });
+        Object.keys(byS).forEach(function (s) {
+          var ids = byS[s], capped = ids.slice(0, CAP);
+          if (ids.length > CAP) log('fold cap ' + TMAP[tb] + '/' + s + ' ' + ids.length + '->' + CAP);
+          folds.push({ table: TMAP[tb], doc_status: s, count: ids.length, ids: capped });
         });
       } catch (e) { log('fold skip ' + tb + ': ' + e.message); }
     });
-    log('foldDocStatus rows=' + folds.length);
+    log('foldDocStatus folds=' + folds.length + ' cards=' + folds.reduce(function (a, f) { return a + f.ids.length; }, 0));
     return folds;
   }
 
@@ -89,21 +99,73 @@
     catch (e) { log('manifest load failed: ' + e.message); }
     window.__kanbanDb = db; window.__wfmc = wfmc;   // exposed for the witness/host
 
+    // ── STEP-0: publish window.ERP (the seam) — drag→dispatch becomes a REAL signed SET_STATUS. ──
+    await publishERP(SQL, db, wfmc);
+
     var folds = foldDocStatus(db);
-    var board = KanbanLens.buildBoard(folds, wfmc, { showEmptyStates: false });
+    // showEmptyStates: render ALL wfmc stages as columns (Odoo-style pipeline) so a drag to ANY legal
+    // target stage has a column to land in — else _moveCardDom can't place the card (col absent).
+    var board = KanbanLens.buildBoard(folds, wfmc, { showEmptyStates: true });
     log('board columns=' + board.columns.length + ' cards=' + board.totalCards + ' sparse=' + board.sparse);
 
     document.getElementById('gate').style.display = 'none';
-    KanbanLens.mount({
+    window.__kanban = KanbanLens.mount({
       root: document.getElementById('kanban-root'),
       board: board,
       wfmc: wfmc,
-      // TODO(STEP-0): bind the live engine dispatch + ctx here once the host lane pins exposed-globals
-      //   (ENGINE_CONTRACT §1 dispatch(intent, ctx) = the ONLY write path; SEND==DRAG==VERB). Until then
-      //   drops resolve + log but do NOT write (the lens never invents a write path).
-      dispatch: (typeof window !== 'undefined' && window.ERP && window.ERP.dispatch) ? window.ERP.dispatch : null,
-      ctx: (typeof window !== 'undefined' && window.ERP && window.ERP.ctx) ? window.ERP.ctx : null
+      // STEP-0 DONE — live engine dispatch + ctx pinned by publishERP() (ENGINE_CONTRACT §1; SEND==DRAG==VERB).
+      dispatch: (window.ERP && window.ERP.dispatch) ? window.ERP.dispatch : null,
+      ctx: (window.ERP && window.ERP.ctx) ? window.ERP.ctx : null,
+      onResult: function (res, dr) {
+        if (dr && dr.ok && window.ERP && window.ERP.verify) {
+          var v = window.ERP.verify();
+          console.log('§KANBAN-WRITE ok action=' + res.action + ' ' + res.table + '#' + res.id +
+            ' to=' + dr.to + ' op=' + (dr.op_uuid || '-') + ' chainOk=' + v.chainOk + ' len=' + v.len);
+        } else if (dr && dr.rejected) {
+          console.log('§KANBAN-WRITE rejected why=' + dr.why);
+        }
+      }
     });
+  }
+
+  function _rows(res) { if (!res.length) return []; return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); }
+
+  // publishERP — mirror spike_writepath.html: projection + real signer + makeSeam + role-gated ctx → window.ERP.
+  // The lens NEVER forks a verb; it consumes this seam. Role grants exactly the (table:action) edges in wfmc.
+  async function publishERP(SQL, gbDb, wfmc) {
+    try {
+      var K = window.ERPKernel, Seam = window.ERPSeam;
+      if (!K || !Seam) { log('§SEAM-LIVE skip — engine modules absent (drag stays read-only)'); return; }
+      var adDb;
+      try { adDb = new SQL.Database(new Uint8Array(await (await fetch('ad_seed.db')).arrayBuffer())); }
+      catch (e) { adDb = null; log('ad_seed load failed: ' + e.message); }
+      var adQ = adDb ? function (s, p) { return _rows(adDb.exec(s, p || [])); } : function () { return []; };
+      var gbQ = function (s, p) { return _rows(gbDb.exec(s, p || [])); };
+
+      var projDb = new SQL.Database(); K.initProjection(projDb);
+      try { await window.ErpSigner.installSigner(window.KernelOps, { dbName: 'bim_erp_signer' }); }
+      catch (e) { log('§SIGN skip ' + e.message); }
+
+      // register a generic SET_STATUS handler for every (table, action) edge the board can drag.
+      var tables = ['C_Invoice', 'C_Order', 'C_Payment'];
+      var actions = {}; (wfmc.transitions || []).forEach(function (t) { actions[t[1]] = 1; });
+      var grants = [];
+      tables.forEach(function (T) {
+        Object.keys(actions).forEach(function (a) {
+          K.register(T, a, function (doc, c) { return [{ op_type: 'SET_STATUS', table: doc.table, id: doc.id, doc_status: c.to, uuid: doc.uuid }]; });
+          grants.push(T + ':' + a);
+        });
+      });
+
+      var seam = Seam.makeSeam({ projDb: projDb, adQ: adQ, factQ: gbQ, wfmc: wfmc, newDb: function () { return new SQL.Database(); } });
+      var orgs = adQ("SELECT ad_org_id FROM ad_role_orgaccess WHERE ad_role_id=102 AND isactive='Y'").map(function (r) { return r.ad_org_id; });
+      var ctx = { actor: 'device:' + (localStorage.kanbanActor || (localStorage.kanbanActor = 'k' + Math.floor(performance.now()))),
+        pubKey: (window.ErpSigner && window.ErpSigner.pubKeyHex) || null, roleId: 102,
+        role: { id: 102, actions: grants }, allowOrgs: orgs.length ? orgs : '*' };
+      window.ERP = { dispatch: seam.dispatch, ctx: ctx, read: seam.read, verify: seam.verify };
+      log('§SEAM-LIVE window.ERP published: dispatch,verify · actor=' + ctx.actor +
+        ' grants=' + grants.length + ' pubKey=' + (ctx.pubKey ? 'Y' : 'none'));
+    } catch (e) { log('§SEAM-LIVE boot error ' + e.message + ' (drag stays read-only)'); }
   }
   boot().catch(function (e) { document.getElementById('gate').textContent = 'Boot error: ' + e.message; console.error(e); });
 })();
