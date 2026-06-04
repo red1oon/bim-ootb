@@ -1000,6 +1000,33 @@
       _drillSelect(iset, label, 'TYPE_SELECT', gset);
     }
 
+    // §RP-SHAPE L4: storey/disc → type → INDIVIDUAL ITEM. Lazy children for a Type leaf.
+    // Tap an item → light just that item's real shape (cyan), keep the WHOLE TYPE solid, rest 0.2.
+    // (The user's literal "Level1 > Fixture > item" spec.) Mirrors Phase → task → element.
+    function _typeItemChildren(container, col, val, ifc) {
+      var guids = [];
+      try {
+        A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " = ? AND ifc_class = ?", [val, ifc])
+          .forEach(function(r) { guids.push(r[0]); });
+      } catch (e) { console.warn('[RP-TB] §TYPE_ITEMS_ERR', e.message); }
+      var typeSet = new Set(guids);   // whole type = the solid group kept opaque
+      var capped = guids.length > _PHASE_ELEM_CAP;
+      guids.slice(0, _PHASE_ELEM_CAP).forEach(function(g) {
+        container.appendChild(_treeNode(_elLabel(g), '', 2, {
+          // single item lit, the whole type stays solid (typeSet passed as the solid group)
+          onTap: function() { _drillSelect(new Set([g]), _elLabel(g), 'ITEM_SELECT', typeSet); }
+        }));
+      });
+      if (capped) {
+        var more = document.createElement('div');
+        more.style.cssText = 'padding:4px 34px;font-size:10px;color:#888';
+        more.textContent = '… ' + (guids.length - _PHASE_ELEM_CAP) + ' more (list capped at ' + _PHASE_ELEM_CAP + ')';
+        container.appendChild(more);
+      }
+      console.log('[RP-TB] §TYPE_ITEMS ' + col + '="' + val + '" ifc=' + ifc + ' items=' + guids.length +
+        (capped ? ' shown=' + _PHASE_ELEM_CAP + ' CAPPED' : ''));
+    }
+
     // Lazy children for a phase node: Phase → task → element when task_elements is populated,
     // else Phase → element directly (kernel-only timelines, e.g. tasks table empty). Never hide.
     function _buildPhaseChildren(container, phaseName, hasTasks) {
@@ -1303,9 +1330,12 @@
               var types = A.db.exec(typeSql, bld ? [storey, bld] : [storey]);
               if (types.length) {
                 types[0].values.forEach(function(tp) {
-                  container.appendChild(_treeNode(friendlyClass(tp[0]), tp[1], 1, {
+                  var ifc = tp[0];
+                  container.appendChild(_treeNode(friendlyClass(ifc), tp[1], 1, {
+                    children: true, // §RP-SHAPE L4: arrow expands → individual items
                     // §RP-SHAPE: tap a Type leaf → light that type's shapes, storey solid, rest 0.2
-                    onTap: function() { _typeShapeDrill('storey', storey, tp[0], friendlyClass(tp[0]) + ' @ ' + storey); }
+                    onTap: function() { _typeShapeDrill('storey', storey, ifc, friendlyClass(ifc) + ' @ ' + storey); },
+                    onExpand: function(c) { if (c._loaded) return; c._loaded = true; _typeItemChildren(c, 'storey', storey, ifc); }
                   }));
                 });
               }
@@ -1344,9 +1374,12 @@
             var types = A.db.exec(typeSql, bld ? [disc, bld] : [disc]);
             if (types.length) {
               types[0].values.forEach(function(tp) {
-                container.appendChild(_treeNode(friendlyClass(tp[0]), tp[1], 1, {
+                var ifc = tp[0];
+                container.appendChild(_treeNode(friendlyClass(ifc), tp[1], 1, {
+                  children: true, // §RP-SHAPE L4: arrow expands → individual items
                   // §RP-SHAPE: tap a Type leaf → light that type's shapes, discipline solid, rest 0.2
-                  onTap: function() { _typeShapeDrill('discipline', disc, tp[0], friendlyClass(tp[0]) + ' @ ' + disc); }
+                  onTap: function() { _typeShapeDrill('discipline', disc, ifc, friendlyClass(ifc) + ' @ ' + disc); },
+                  onExpand: function(c) { if (c._loaded) return; c._loaded = true; _typeItemChildren(c, 'discipline', disc, ifc); }
                 }));
               });
             }
