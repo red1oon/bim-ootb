@@ -827,13 +827,46 @@
     x.addEventListener('click', close); hd.appendChild(x);
     ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
   }
+  // distinct-value count of a column across the open window's records (heat-map cardinality scoring).
+  function _distinctCount(col) { var s = {}; _records.forEach(function (r) { s[String(recVal(r, col))] = 1; }); return Object.keys(s).length; }
+  // Pick the best CATEGORICAL/lookup column for a heat map when there is no docstatus lifecycle: prefer
+  // declared FK/list references (tableDirect/table/search/list/yesno) or *_ID columns, with cardinality in a
+  // useful band (≥2, < rows — never constant, never unique-per-row). Falls back to any usable column.
+  function _bestPivot(tab) {
+    var flds = _displayFields(tab) || [], rows = _records.length, best = null, bestScore = -1;
+    var LOOKUP = { tableDirect: 1, table: 1, search: 1, list: 1, yesno: 1 };
+    var ideal = Math.min(24, Math.max(3, Math.ceil(rows / 4)));
+    function consider(f, declared) {
+      var c = _distinctCount(f.columnName); if (c < 2 || c >= rows) return;
+      var score = 1000 - Math.abs(c - ideal) - (declared ? 0 : 6);
+      if (score > bestScore) { bestScore = score; best = f; }
+    }
+    flds.forEach(function (f) { var cn = f.columnName || ''; if (LOOKUP[f.referenceType] || /_id$/i.test(cn)) consider(f, true); });
+    if (!best) flds.forEach(function (f) { consider(f, false); });          // last resort: any usable column
+    return best;
+  }
   function _groupRecs() {
     var tab = _curTab(); if (!tab || !_records.length) return null;
-    var flds = _displayFields(tab) || [], pick = null;
-    for (var i = 0; i < flds.length; i++) { var cn = (flds[i].columnName || '').toLowerCase(); if (cn.indexOf('docstatus') >= 0 || cn.indexOf('status') >= 0) { pick = flds[i]; break; } }
-    if (!pick) pick = flds[0]; if (!pick) return null;
+    var flds = _displayFields(tab) || [], pick = null, hasStatus = false;
+    for (var i = 0; i < flds.length; i++) { var cn = (flds[i].columnName || '').toLowerCase(); if (cn.indexOf('docstatus') >= 0 || cn.indexOf('status') >= 0) { pick = flds[i]; hasStatus = true; break; } }
+    if (!pick) pick = _bestPivot(tab) || flds[0];   // no lifecycle → a sensible lookup, NOT a blind flds[0]
+    if (!pick) return null;
     var g = {}; _records.forEach(function (r) { var v = String(fmt(pick, recVal(r, pick.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
-    return { col: pick, label: pick.name, groups: g, tab: tab };
+    return { col: pick, label: pick.name, groups: g, tab: tab, hasStatus: hasStatus };
+  }
+  // Heat map = the no-pivot fallback for the Kanban (a board with no wfmc states has no drop-zones, so an
+  // empty board is useless): tiles per distinct lookup value, intensity ∝ count. Counts are REAL row folds.
+  function _renderHeatMap(gr, container) {
+    var keys = Object.keys(gr.groups).map(function (k) { return { k: k, n: gr.groups[k].length }; }).sort(function (a, b) { return b.n - a.n; });
+    var max = 1; keys.forEach(function (e) { max = Math.max(max, e.n); });
+    container.appendChild(el('div', 'kb-note', 'No lifecycle (docstatus) in ' + gr.tab.name + ' — heat map by ' + gr.label + ' · ' + keys.length + ' values, ' + _records.length + ' rows.'));
+    var grid = el('div', 'hm-grid');
+    keys.forEach(function (e) { var t = e.n / max, cell = el('div', 'hm-cell');
+      cell.style.background = 'rgba(108,159,255,' + (0.14 + 0.78 * t).toFixed(3) + ')';
+      cell.appendChild(el('div', 'hm-k', e.k)); cell.appendChild(el('div', 'hm-n', String(e.n)));
+      cell.title = e.k + ' · ' + e.n + ' rows'; grid.appendChild(cell); });
+    container.appendChild(grid);
+    console.log('§HEATMAP by=' + gr.col.columnName + ' values=' + keys.length + ' max=' + max + ' rows=' + _records.length + ' table=' + gr.tab.tableName);
   }
   // one-tap switch between the two lenses of the SAME data (Graph bars ⇆ Kanban board) — proper UX:
   // the graph icon's view launches the interactive board, and the board switches back to the chart.
@@ -874,6 +907,14 @@
   async function openKanbanFor() {
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
+    if (!gr.hasStatus) {                          // no wfmc lifecycle → heat map (a drop-zone board would be empty)
+      var hc = el('div'); hc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+      var hroot = el('div'); hroot.style.cssText = 'overflow:auto;max-height:72vh'; hc.appendChild(hroot);
+      _renderHeatMap(gr, hroot);
+      _overlay('Heat map — ' + gr.tab.name, hc);
+      console.log('§KANBAN-PILL heatmap by=' + gr.col.columnName + ' table=' + gr.tab.tableName);
+      return;
+    }
     var ok = await _ensureKanbanERP();
     var tab = gr.tab, T = tab.tableName, kc = _keyCol(tab), statusCol = gr.col.columnName;
     if (!ok || !window.KanbanLens) {   // engine/lens absent → honest fall back to the read-only board
@@ -926,7 +967,8 @@
     s.textContent = '#idmp-pillrail{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;display:flex;flex-direction:column;gap:8px;max-height:82vh;overflow:auto;padding:8px;border-radius:18px;background:rgba(20,22,32,.82);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px)}' +
       '.idmp-pill{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;min-height:48px;border:none;border-radius:14px;background:rgba(255,255,255,.06);color:#dfe6f2;cursor:pointer;padding:6px 2px}.idmp-pill:hover{background:rgba(108,159,255,.25)}.idmp-pill-ic{font-size:18px;line-height:1}.idmp-pill-lb{font-size:9px;opacity:.85}' +
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
-      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}';
+      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}' +
+      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
     document.head.appendChild(s);
   }
 
