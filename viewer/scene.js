@@ -848,6 +848,8 @@ async function setupScene(A) {
     },
     // §S280: -/+/= panel toggle removed — [] button replaces (single=F11, double=toggle panels)
     'r':  function() { if (typeof toggleRecord === 'function') toggleRecord(); },
+    'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
+    'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
     ',':  function() { if (typeof toggleDocPill === 'function') toggleDocPill(); }, // §S281: comma = Doc mode (was 'e')
     '=':  function() { // §S281: settings panel toggle
       var btn = document.getElementById('pill-settings');

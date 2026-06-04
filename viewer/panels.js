@@ -1025,10 +1025,17 @@ function setupPanels(A) {
         fn: function() { if (typeof toggleRecord === 'function') toggleRecord(); } },
       { id: 'fullscreen', name: 'Fullscreen',      key: 'F11', pill: false, icon: I.maximize.svg,
         fn: function() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } },
-      { id: 'precision',  name: 'Precision',       keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
+      { id: 'precision',  name: 'Precision (Fine)', key: 'Caps Lock', keepOpen: true, icon: '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/>',
         fn: function() { if (typeof window.togglePrecisionFine === 'function') window.togglePrecisionFine(); },
         hold: function(btn) { if (typeof window.revealPrecisionReset === 'function') window.revealPrecisionReset(btn); },
         isActive: function() { return !!window._precisionFine; } },
+      { id: 'cam-reset',  name: 'Reset Camera',    key: 'a', pill: false,
+        icon: '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/>',
+        fn: function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); } },
+      { id: 'cam-pivot',  name: 'Auto-Pivot',      key: 'q', pill: false,
+        icon: '<path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"/><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"/><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/>',
+        fn: function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },
+        isActive: function() { return !!window._autoPivot; } },
       { id: 'home',       name: 'Home',            icon: I.home.svg, fn: function() {
           // §S283: In standalone PWA, open online hub in system browser (backdoor)
           if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
