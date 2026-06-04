@@ -13,7 +13,7 @@
   var _fine = false;
   var _defaults = { rotateSpeed: 0.8, zoomSpeed: 1.2, panSpeed: 1.5 };
   var _slow = { rotateSpeed: 0.15, zoomSpeed: 0.2, panSpeed: 0.15 };
-  var _indicator, _panel;
+  var _indicator, _panel, _pivotInd;
 
   function fineOn() {
     if (_fine) return;
@@ -24,7 +24,7 @@
     c.zoomSpeed = _slow.zoomSpeed;
     c.panSpeed = _slow.panSpeed;
     c.minDistance = 0.001;
-    _indicator.style.display = 'block';
+    _indicator.style.display = 'flex';
     var fb = document.getElementById('prec-fine-btn');
     if (fb) { fb.style.background = '#4fc3f7'; fb.style.color = '#000'; } // active highlight (matches pill)
     console.log('§precision FINE on');
@@ -153,6 +153,7 @@
     _onEnd = function() { if (_pivot) recenterPivot(); };
     A().controls.addEventListener('end', _onEnd);
     _pivotPaint();
+    if (_pivotInd) _pivotInd.style.display = 'flex';  // top-centre orbit-icon notice
     recenterPivot();  // anchor immediately
     console.log('§pivot ON');
   }
@@ -164,6 +165,7 @@
     if (A() && A().controls && _onEnd) A().controls.removeEventListener('end', _onEnd);
     _onEnd = null;
     _pivotPaint();
+    if (_pivotInd) _pivotInd.style.display = 'none';
     console.log('§pivot OFF');
   }
 
@@ -184,15 +186,28 @@
   }
 
   function init() {
-    // Indicator badge (top center when fine is active)
-    _indicator = document.createElement('div');
-    _indicator.id = 'precision-indicator';
-    _indicator.style.cssText =
+    // §S287c: top-centre active-mode notices — ICON ONLY, no words. Fine = feather, Pivot = orbit.
+    var _indWrap = document.createElement('div');
+    _indWrap.id = 'precision-indwrap';
+    _indWrap.style.cssText =
       'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:300;' +
-      'background:rgba(79,195,247,0.85);color:#000;font-size:10px;font-weight:bold;' +
-      'padding:2px 8px;border-radius:8px;display:none;pointer-events:none;';
-    _indicator.textContent = '🪶 FINE';
-    document.body.appendChild(_indicator);
+      'display:flex;gap:6px;pointer-events:none;';
+    var _badgeCss = 'display:none;align-items:center;justify-content:center;width:28px;height:22px;' +
+      'background:rgba(79,195,247,0.9);color:#002;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.3);';
+    var _featherSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" ' +
+      'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/></svg>';
+    _indicator = document.createElement('div');   // Fine notice — feather icon, no word
+    _indicator.id = 'precision-indicator';
+    _indicator.style.cssText = _badgeCss;
+    _indicator.innerHTML = _featherSvg;
+    _pivotInd = document.createElement('div');     // Pivot notice — orbit icon, no word
+    _pivotInd.id = 'pivot-indicator';
+    _pivotInd.style.cssText = _badgeCss;
+    _pivotInd.innerHTML = _orbitIcon(15);
+    _indWrap.appendChild(_indicator);
+    _indWrap.appendChild(_pivotInd);
+    document.body.appendChild(_indWrap);
 
     // Mini panel — two buttons, glassmorphism
     _panel = document.createElement('div');
