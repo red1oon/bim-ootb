@@ -1,0 +1,38 @@
+{
+  "master": {
+    "enabled": false,
+    "volume": 1.7,
+    "fly_positional": true,
+    "ui_clicks": true,
+    "style": "cinematic",
+    "musical": true,
+    "scale": "minor",
+    "root_hz": 87.31,
+    "scene_bed": true,
+    "hit_min_ms": 450,
+    "hit_random": 0.6,
+    "hit_pool": ["knock", "steel", "creak", "harp", "pluck", "stinger", "impact", "boom", "knock"],
+    "fly_heli": true,
+    "live_groove": true
+  },
+  "construction_sounds": [
+    { "id": "substructure",   "phase": "Substructure",   "voice": "boom",    "freq": 60,  "ms": 1600 },
+    { "id": "superstructure", "phase": "Superstructure", "voice": "steel",   "freq": 330, "ms": 400, "repeat": 4, "gap_ms": 150 },
+    { "id": "architecture",   "phase": "Architecture",   "voice": "knock",   "freq": 220, "ms": 160, "repeat": 3, "gap_ms": 130 },
+    { "id": "mep_rough",      "phase": "MEP Rough-in",   "voice": "stinger", "freq": 110, "ms": 800 },
+    { "id": "mep_final",      "phase": "MEP Final",      "voice": "creak",   "freq": 200, "ms": 700 },
+    { "id": "finishes",       "phase": "Finishes",       "voice": "harp",    "freq": 330, "ms": 500 },
+    { "id": "default",        "phase": "*",              "voice": "knock",   "freq": 200, "ms": 160, "repeat": 2, "gap_ms": 130 }
+  ],
+  "ui_sounds": [
+    { "id": "tap",      "voice": "pluck",  "freq": 880,  "ms": 100, "label": "Pill / button tap" },
+    { "id": "touch",    "voice": "pluck",  "freq": 1200, "ms": 50,  "label": "Touch scene (pointer down)" },
+    { "id": "select",   "voice": "bell",   "freq": 660,  "ms": 180, "label": "Select element (click)" },
+    { "id": "key",        "voice": "tone",   "freq": 880,  "ms": 55,  "label": "Shortcut key press" },
+    { "id": "arrow_up",   "voice": "bell",   "freq": 880,  "ms": 320, "label": "Arrow up (bell)" },
+    { "id": "arrow_down", "voice": "bell",   "freq": 587,  "ms": 320, "label": "Arrow down (bell)" },
+    { "id": "arrow_side", "voice": "cymbal", "freq": 6000, "ms": 380, "label": "Arrow left/right (cymbal)" },
+    { "id": "fly_spot", "voice": "whoosh", "freq": 600, "ms": 350, "label": "Fly waypoint pass" },
+    { "id": "toggle",   "voice": "harp",   "freq": 330, "ms": 500, "label": "Audio on confirm" }
+  ]
+}

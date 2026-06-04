@@ -689,6 +689,7 @@ async function setupScene(A) {
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
     't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },
+    'v':  function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
     's':  function() { if (typeof A.screenshot === 'function') A.screenshot(); },
     'n':  function() { if (typeof window.toggleNightMode === 'function') window.toggleNightMode(); },
     'b':  function() { if (typeof window.toggleBackground === 'function') window.toggleBackground(); },
