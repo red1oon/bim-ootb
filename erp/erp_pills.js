@@ -51,10 +51,17 @@
       } catch (e) { _toast('Fullscreen not available'); }
     },
     share:     function () {
+      // §SHARE — capture full context (client/window/record) and share it; recipient restores via
+      // the same params erp.html reads on load. (docs/ERP_SHARE_SPEC.md)
+      var url = (window.ADUI && ADUI.buildShareUrl) ? ADUI.buildShareUrl() : location.href;
+      console.log('§SHARE url=' + url);
       try {
-        if (navigator.clipboard) { navigator.clipboard.writeText(location.href); _toast('Link copied'); }
-        else _toast('Share: ' + location.href);
-      } catch (e) { _toast('Share: ' + location.href); }
+        if (navigator.share) {
+          navigator.share({ title: 'ERP OOTB', text: 'ERP context', url: url }).catch(function () {});
+        } else if (navigator.clipboard) {
+          navigator.clipboard.writeText(url); _toast('Context link copied');
+        } else { _toast(url); }
+      } catch (e) { _toast(url); }
     },
     settings:  function () { _toast('Settings — JSON editor wires in a later task'); },
     verify:    function () {                                  // chain-integrity check — was a floating button, now a pill
@@ -82,7 +89,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=23').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=24').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];
