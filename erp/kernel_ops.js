@@ -57,7 +57,7 @@
    * @param {string} [outputGuid] created/modified entity ID
    * @returns {number} op id
    */
-  function commitOp(db, opType, params, inputGuids, outputGuid, opUuid) {
+  function commitOp(db, opType, params, inputGuids, outputGuid, opUuid, ts) {
     ensureTable(db);
     // G-IDENTITY (§0.21 D1/D4): identity is an edge-minted INPUT, recorded — never recomputed on
     // replay (replayOps re-reads it). Honour a caller-supplied op_uuid verbatim (the New-doc seam);
@@ -66,10 +66,14 @@
     // hash stays byte-identical (the chain still totals over `id`).
     var uuid = opUuid ||
                ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null);
+    // DETERMINISM (ERP.md §0.16): timestamp IS part of _canonical, so an op path that must replay
+    // byte-stable supplies its own deterministic `ts` (no Date.now). Default keeps existing callers
+    // (the BIM grid log) unchanged. Passed-in ts → reproducible op_hash across a rebuild.
+    var stamp = (ts != null) ? ts : Date.now();
     db.run(
       'INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid) ' +
       'VALUES (?, ?, ?, ?, ?, ?)',
-      [uuid, Date.now(), opType, JSON.stringify(params),
+      [uuid, stamp, opType, JSON.stringify(params),
        inputGuids ? JSON.stringify(inputGuids) : null,
        outputGuid || null]
     );
