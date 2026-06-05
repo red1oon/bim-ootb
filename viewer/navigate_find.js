@@ -216,6 +216,155 @@
     var _roomGroupBy = 'storey'; // §RP Room sub-toggle: 'storey' (default) | 'type'
     var _matGroupBy = 'material'; // §RP Material sub-toggle: 'material' (default) | 'category'
 
+    // ══ §VIEWLOG: Find-lens VIEW-HISTORY (standard undo/redo, read-only) ══════════
+    // A sibling view-log — its OWN array + DOM. It records only SEMANTIC view moments
+    // (axis change, group select, item select) so "back" steps through real moves, not
+    // 20 hover micro-nudges. It NEVER touches kernel_ops or the grid undo: restore =
+    // replay the stored params (_setTreeMode for axis, _drillSelect for group/item) then
+    // lerp the camera to the stored pose. The _restoring guard stops a replay from
+    // recording a new entry. Off-toggle persists in localStorage (default ON); when off,
+    // recording stops AND the bar hides. Spec: prompts/FIND_VIEW_HISTORY.md.
+    var _viewHist = [];      // [{kind:'axis'|'group'|'item', tag,label,mode, litGuids,groupGuids,ctxOpacity, axis, cam}]
+    var _viewIdx = -1;       // index of the current view in _viewHist
+    var _restoring = false;  // true while replaying — suppresses _pushView
+    var _vhBar = null, _vhBack = null, _vhFwd = null, _vhMarks = null, _vhOffBtn = null;
+    var VH_KEY = 'bim.findViewHist.on';
+    var _vhEnabled = (function() {
+      try { return localStorage.getItem(VH_KEY) !== 'off'; } catch(e) { return true; } // default ON
+    })();
+    var _vhCamTimer = null;
+
+    // Snapshot the live camera pose (after a zoom settles) into the current view entry,
+    // so restore lerps back to exactly where the user was looking.
+    function _vhSnapCam(entry) {
+      if (!entry || !A.camera || !A.controls) return;
+      var p = A.camera.position, t = A.controls.target;
+      entry.cam = { pos: { x: p.x, y: p.y, z: p.z }, target: { x: t.x, y: t.y, z: t.z } };
+    }
+    // Record a semantic view. Skipped while restoring or when the log is off.
+    function _pushView(v) {
+      if (_restoring || !_vhEnabled) return;
+      // Standard undo/redo: a new move after stepping back drops the redo tail.
+      if (_viewIdx < _viewHist.length - 1) _viewHist.length = _viewIdx + 1;
+      _viewHist.push(v);
+      _viewIdx = _viewHist.length - 1;
+      // The deferred (rAF) zoom hasn't settled yet — snapshot the camera shortly after.
+      if (_vhCamTimer) clearTimeout(_vhCamTimer);
+      var entry = v;
+      _vhCamTimer = setTimeout(function() { _vhSnapCam(entry); }, 450);
+      _vhRender();
+      console.log('§VIEWLOG_PUSH n=' + _viewHist.length + ' idx=' + _viewIdx +
+        ' kind=' + v.kind + ' label="' + (v.label || v.axis || '') + '"');
+    }
+    // Replay the view at idx deterministically (no new push), then lerp camera to its pose.
+    function _restoreView(idx) {
+      if (idx < 0 || idx >= _viewHist.length) return;
+      var v = _viewHist[idx];
+      _viewIdx = idx;
+      _restoring = true;
+      try {
+        if (v.kind === 'axis') {
+          _setTreeMode(v.axis);
+        } else {
+          var litSet = (v.litGuids && v.litGuids.length) ? new Set(v.litGuids) : null;
+          var grpSet = (v.groupGuids && v.groupGuids.length) ? new Set(v.groupGuids) : null;
+          _drillSelect(litSet, v.label, v.tag, grpSet, v.ctxOpacity);
+        }
+      } finally { _restoring = false; }
+      // Replay re-zooms via _drillSelect; for axis (no zoom) or to land exactly, lerp to
+      // the stored pose. Defer so it runs after the replay's own rAF zoom is queued.
+      if (v.cam) {
+        var cam = v.cam;
+        setTimeout(function() {
+          if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
+          var end = new THREE.Vector3(cam.pos.x, cam.pos.y, cam.pos.z);
+          var tgt = new THREE.Vector3(cam.target.x, cam.target.y, cam.target.z);
+          var start = A.camera.position.clone(), st = A.controls.target.clone(), t = 0;
+          (function anim() {
+            t += 0.04; if (t > 1) t = 1; var e = 1 - Math.pow(1 - t, 3);
+            A.camera.position.lerpVectors(start, end, e);
+            A.controls.target.lerpVectors(st, tgt, e);
+            A.controls.update(); if (A.markDirty) A.markDirty();
+            if (t < 1) requestAnimationFrame(anim);
+          })();
+        }, 80);
+      }
+      _vhRender();
+      console.log('§VIEWLOG_RESTORE idx=' + idx + ' kind=' + v.kind +
+        ' label="' + (v.label || v.axis || '') + '" cam=' + (v.cam ? 'yes' : 'no'));
+    }
+    function _vhFwd2() { if (_viewIdx < _viewHist.length - 1) _restoreView(_viewIdx + 1); }
+    function _vhClear() {
+      _viewHist = []; _viewIdx = -1;
+      if (_vhCamTimer) { clearTimeout(_vhCamTimer); _vhCamTimer = null; }
+      _vhRender();
+    }
+    function _vhSetEnabled(on) {
+      _vhEnabled = on;
+      try { localStorage.setItem(VH_KEY, on ? 'on' : 'off'); } catch(e) {}
+      _vhRender();
+      console.log('§VIEWLOG_TOGGLE enabled=' + on);
+    }
+    // Build/refresh the view-history bar — mirrors the grid undo/redo bar look
+    // (#undo-redo-btns, ↶ ↷). Shown only while the Find panel is open AND
+    // recording is on AND ≥1 view exists; the off-icon (◷) is always visible.
+    function _vhRender() {
+      var open = panel && panel.style.display === 'block';
+      if (!_vhBar) {
+        _vhBar = document.createElement('div');
+        _vhBar.id = 'find-viewhist-btns';
+        _vhBar.style.cssText = 'position:fixed;bottom:32px;left:16px;z-index:25;display:flex;' +
+          'gap:4px;align-items:center';
+        var btnStyle = 'background:rgba(30,50,80,0.7);color:#4fc3f7;border:1px solid rgba(255,255,255,0.15);' +
+          'border-radius:6px;padding:6px 10px;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);' +
+          'min-width:36px;text-align:center';
+        _vhBack = document.createElement('button');
+        _vhBack.id = 'find-vh-back'; _vhBack.title = 'View back'; _vhBack.textContent = '↶';
+        _vhBack.style.cssText = btnStyle;
+        _vhBack.addEventListener('pointerup', function(e) { e.stopPropagation(); _vhBack_fn(); });
+        _vhFwd = document.createElement('button');
+        _vhFwd.id = 'find-vh-fwd'; _vhFwd.title = 'View forward'; _vhFwd.textContent = '↷';
+        _vhFwd.style.cssText = btnStyle;
+        _vhFwd.addEventListener('pointerup', function(e) { e.stopPropagation(); _vhFwd2(); });
+        _vhMarks = document.createElement('div');
+        _vhMarks.id = 'find-vh-marks';
+        _vhMarks.style.cssText = 'display:flex;gap:3px;align-items:center;padding:0 4px';
+        _vhOffBtn = document.createElement('button');
+        _vhOffBtn.id = 'find-vh-off'; _vhOffBtn.style.cssText = btnStyle + ';font-size:13px';
+        _vhOffBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); _vhSetEnabled(!_vhEnabled); });
+        _vhBar.appendChild(_vhBack); _vhBar.appendChild(_vhFwd);
+        _vhBar.appendChild(_vhMarks); _vhBar.appendChild(_vhOffBtn);
+        document.body.appendChild(_vhBar);
+        console.log('§VIEWLOG_BAR added');
+      }
+      // off-icon reflects state: ◉ on (click to turn off), ◯ off (click to turn on)
+      _vhOffBtn.textContent = _vhEnabled ? '◉' : '◯';
+      _vhOffBtn.title = _vhEnabled ? 'View history ON — tap to turn off' : 'View history OFF — tap to turn on';
+      _vhOffBtn.style.color = _vhEnabled ? '#4fc3f7' : '#888';
+      // Bar visible only when panel open + recording on + something to step through.
+      var showSteps = open && _vhEnabled && _viewHist.length > 0;
+      _vhBar.style.display = (open && _vhEnabled) ? 'flex' : 'none';
+      _vhBack.style.display = showSteps ? '' : 'none';
+      _vhFwd.style.display = showSteps ? '' : 'none';
+      _vhMarks.style.display = showSteps ? 'flex' : 'none';
+      _vhBack.style.opacity = (_viewIdx > 0) ? '1' : '0.35';
+      _vhFwd.style.opacity = (_viewIdx < _viewHist.length - 1) ? '1' : '0.35';
+      if (showSteps) {
+        _vhMarks.innerHTML = '';
+        for (var i = 0; i < _viewHist.length; i++) {
+          var dot = document.createElement('button');
+          var on = (i === _viewIdx);
+          dot.title = _viewHist[i].label || _viewHist[i].axis || ('view ' + (i + 1));
+          dot.style.cssText = 'width:9px;height:9px;border-radius:50%;padding:0;cursor:pointer;' +
+            'border:1px solid rgba(79,195,247,0.6);background:' +
+            (on ? '#4fc3f7' : 'rgba(79,195,247,0.18)');
+          (function(idx) { dot.addEventListener('pointerup', function(e) { e.stopPropagation(); _restoreView(idx); }); })(i);
+          _vhMarks.appendChild(dot);
+        }
+      }
+    }
+    function _vhBack_fn() { if (_viewIdx > 0) _restoreView(_viewIdx - 1); }
+
     // §NAV_FIND_002: multi-select state (parent rows only). Plain=replace,
     // Ctrl/Cmd=toggle, Shift=range. Sets cleared only on Storey/Disc toggle.
     var _selStoreys = new Set();
@@ -292,6 +441,8 @@
       if (elTree) { elTree.style.display = ''; _treeRevealed = true; }
       buildTree();
       console.log('§FIND_MODE_TOGGLE mode=' + mode);
+      // §VIEWLOG: an axis change is a semantic view moment. Record it (skipped on replay/off).
+      _pushView({ kind: 'axis', axis: mode, label: 'Axis: ' + mode, mode: 'axis' });
     }
 
     function buildTree() {
@@ -1008,6 +1159,14 @@
       if (A.filterByGuids) A.filterByGuids(null); // never isolate — x-ray + shape highlight only
       var litN = set ? set.size : 0, grpN = groupSet ? groupSet.size : 0;
       if (!litN && !grpN) { console.log('[RP-TB] §' + tag + ' "' + label + '" elems=0'); return; }
+      // §VIEWLOG: a real select (group or item) is a semantic view moment — record the
+      // params needed to REPLAY it. Skipped while restoring (so replay pushes nothing) or
+      // when the view-log is off. _drillSelect is only called on real selects, never hover.
+      _pushView({
+        kind: litN ? 'item' : 'group', tag: tag, label: label, mode: _treeMode,
+        litGuids: set ? Array.from(set) : [], groupGuids: groupSet ? Array.from(groupSet) : [],
+        ctxOpacity: (ctxOpacity != null ? ctxOpacity : null)
+      });
       _clearShapeOverlays();
       _clearHlOverlay();
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // rest → transparent
@@ -1647,6 +1806,9 @@
       if (typeof window._focusPanel === 'function') window._focusPanel('find');
       // §S280: Mobile — don't steal focus (triggers virtual keyboard). User taps searchbox when ready.
       if (!window._isMobile) elName.focus();
+      // §VIEWLOG: fresh view-history per open (building may have changed); show the bar.
+      _vhClear();
+      _vhRender();
       console.log('[S233] §NAV_FIND_OPEN term="' + (searchTerm || '') + '" voice=' + nav.voiceMode);
     };
 
@@ -1667,6 +1829,9 @@
       // S275: Release panel focus so other panels (Clash, etc.) work
       if (typeof window._blurPanel === 'function') window._blurPanel();
       var _kept = Array.from(_treeMode === 'storey' ? _selStoreys : _selDiscs);
+      // §VIEWLOG: tear down the view-history with the panel (sibling layer, read-only).
+      _vhClear();
+      _vhRender();
       console.log('[S233] §FIND_CLOSE restored=none kept=[' + _kept.join(',') + ']');
     }
     A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
