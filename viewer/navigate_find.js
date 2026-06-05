@@ -807,7 +807,11 @@
           var base = A._getMaterial ? A._getMaterial(g.rgba, g.ifc) : null;
           mat = base ? base.clone() : new THREE.MeshStandardMaterial({ color: 0xcccccc });
           if (solidOpacity != null && solidOpacity < 1) {
-            mat.transparent = true; mat.opacity = solidOpacity; mat.depthWrite = false; // context shows the lit item through it
+            // §DEPTH ghost (0.2 ancestor): SHINE THROUGH the hidden base. The dimmed base is opacity-0
+            // but still writes depth → it OCCLUDED this 0.2 overlay (deeper group "showed only solid,
+            // no 0.2"). depthTest off + low renderOrder draws it under the solid focus, through the
+            // invisible base. (Witnessed: ghost 0.20 dT0 dW0 ro1; Hospital intermediate anc=[0.2×N].)
+            mat.transparent = true; mat.opacity = solidOpacity; mat.depthWrite = false; mat.depthTest = false;
           } else {
             mat.transparent = false; mat.opacity = 1; mat.depthWrite = true;
           }
@@ -822,7 +826,8 @@
           inst.setMatrixAt(j, m4);
         }
         inst.instanceMatrix.needsUpdate = true;
-        inst.renderOrder = color != null ? 3 : 2;
+        // ghost(0.2)=1 draws first (under), solid focus=2, cyan shine=3 on top
+        inst.renderOrder = color != null ? 3 : ((solidOpacity != null && solidOpacity < 1) ? 1 : 2);
         inst.userData._shapeOverlay = true;
         A.scene.add(inst);
         _shapeOverlays.push({ mesh: inst, disposeMat: true }); // cyan + clones are ours to dispose
