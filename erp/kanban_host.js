@@ -75,7 +75,10 @@
       });
     });
 
-    var seam = Seam.makeSeam({ projDb: projDb, adQ: adQ, factQ: gbQ, wfmc: cfg.wfmc, newDb: function () { return new cfg.SQL.Database(); } });
+    // admissionRules (gated lifecycle): the editable, signed L1 rule "an order may Complete iff GrandTotal ≤ T"
+    // gates the C_Order CO transition engine-side. No rule set → ungated (existing completes unaffected).
+    var admissionRules = { 'C_Order:CO': { ruleId: 'maycomplete', table: 'C_Order', key: 'C_Order_ID', col: 'GrandTotal', cmp: 'lte' } };
+    var seam = Seam.makeSeam({ projDb: projDb, adQ: adQ, factQ: gbQ, wfmc: cfg.wfmc, admissionRules: admissionRules, newDb: function () { return new cfg.SQL.Database(); } });
     var ctx = { actor: 'device:' + (localStorage.kanbanActor || (localStorage.kanbanActor = 'k' + Math.floor(performance.now()))),
       pubKey: (global.ErpSigner && global.ErpSigner.pubKeyHex) || null, roleId: cfg.roleId || null,
       role: { id: cfg.roleId || null, actions: grants }, allowOrgs: (cfg.allowOrgs && cfg.allowOrgs.length) ? cfg.allowOrgs : '*' };

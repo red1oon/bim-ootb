@@ -27,6 +27,9 @@
 var fs = (typeof require !== 'undefined') ? require('fs') : null;
 var K = (typeof require !== 'undefined') ? require('./erp_kernel')
         : (typeof window !== 'undefined' ? window.ERPKernel : null);
+// BigDecimal for EXACT money/qty compare in the admission guard (never raw JS Number). Browser: window.BigDecimal.
+var BD = (typeof window !== 'undefined' && window.BigDecimal) ? window.BigDecimal
+       : ((typeof require !== 'undefined') ? (function () { try { return require('./bigdecimal'); } catch (e) { return null; } })() : null);
 
 function projQ(db, sql, params) { return K.query(db, sql, params || []); }
 
@@ -63,6 +66,14 @@ function makeSeam(cfg) {
 
   // ── dispatch(intent, ctx) — the SOLE write path; gated engine-side, deterministic+signed (I4) ────
   // Returns {ok, op_uuid, before, after} or {rejected, why}. ctx{actor,pubKey,roleId,allowOrgs,role}.
+  // current threshold of an admission rule = the last SET_RULE for that rule on the SAME signed op-log.
+  function currentRuleT(ruleId) {
+    var rows = projQ(projDb, "SELECT parameters FROM kernel_ops WHERE op_type='SET_RULE' AND undone=0 ORDER BY rowid");
+    var T = null;
+    rows.forEach(function (r) { try { var p = JSON.parse(r.parameters); var pl = p.payload || p; if (pl && pl.rule === ruleId && pl.T != null) T = pl.T; } catch (e) {} });
+    return T;
+  }
+
   function dispatch(intent, ctx) {
     ctx = ctx || {};
     var table = intent.table, action = intent.action;
@@ -70,6 +81,24 @@ function makeSeam(cfg) {
     if (ctx.role && ctx.role.actions) {
       var key = table + ':' + action;
       if (ctx.role.actions.indexOf(key) < 0) return { rejected: true, why: 'role-no-grant', detail: key };
+    }
+    // (a2) ADMISSION RULE (gated lifecycle): an editable, SIGNED rule may gate this transition. Read the
+    // rule's current threshold from the SAME signed op-log (last SET_RULE) and compare the doc's attribute
+    // EXACTLY (BigDecimal). Engine-side → the UI cannot bypass it. No rule set → ungated (default-allow).
+    var ar = cfg.admissionRules && cfg.admissionRules[table + ':' + action];
+    if (ar) {
+      var T = currentRuleT(ar.ruleId);
+      if (T != null) {
+        var vr = adQ('SELECT ' + ar.col + ' AS v FROM ' + ar.table + ' WHERE ' + ar.key + ' = ?', [intent.id]);
+        var val = vr.length ? vr[0].v : null;
+        if (val != null) {
+          var pass = BD ? (ar.cmp === 'lte' ? BD.of(String(val)).compareTo(BD.of(String(T))) <= 0
+                                            : BD.of(String(val)).compareTo(BD.of(String(T))) >= 0)
+                        : (ar.cmp === 'lte' ? Number(val) <= Number(T) : Number(val) >= Number(T));
+          if (!pass) return { rejected: true, why: 'rule-guard',
+            detail: ar.ruleId + ' ' + ar.col + '=' + val + (ar.cmp === 'lte' ? ' > T=' : ' < T=') + T };
+        }
+      }
     }
     // (b) owner-gate (G-SINGLE-WRITER): a mutation on an already-owned doc by a different actor is refused.
     if (intent.uuid) {
