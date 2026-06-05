@@ -1555,6 +1555,10 @@ function setupGridOverlay(APP) {
   var undoRedoDiv = null;
 
   function showUndoRedo() {
+    // §UHIST: the grid-only undo/redo bar (#undo-redo-btns) is RETIRED — replaced by the
+    // ONE universal timeline (universal_history.js, #universal-hist-btns) that spans the
+    // whole kernel_ops log AND all panels. Open it via the pill or Ctrl+Z. No-op here.
+    if (window.UniversalHistory) return;
     if (undoRedoDiv) { undoRedoDiv.style.display = 'flex'; return; }
     undoRedoDiv = document.createElement('div');
     undoRedoDiv.id = 'undo-redo-btns';
