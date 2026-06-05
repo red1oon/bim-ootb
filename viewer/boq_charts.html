@@ -1323,7 +1323,10 @@ function renderCharts() {
   const _tCharts = performance.now();
   console.log('§RENDER_CHARTS: start');
   // Light chart animations — quick, no infinite loops
-  Chart.defaults.animation = { duration: 800 };
+  // Mutate duration on the existing v4 animation defaults — do NOT replace the whole
+  // object (that drops the interpolator config → "this._fn is not a function" in the
+  // animator tick, which also kills tooltip fade → invisible tooltips). Migration 818ae9f.
+  Chart.defaults.animation.duration = 800;
   function logChart(n, type, title, dataLen) {
     console.log(`§CHART_${n} [${type}] "${title}": ${dataLen} data points — ${dataLen > 0 ? 'OK' : 'EMPTY'} +${Math.round(performance.now() - _tCharts)}ms`);
   }
@@ -2025,7 +2028,7 @@ function toggleTheme() {
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=592')
+  navigator.serviceWorker.register('sw.js?v=593')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
