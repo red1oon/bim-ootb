@@ -533,15 +533,31 @@
     // Build InstancedMeshes of the real geometry for `set`. color!=null → one cyan opaque
     // material (the highlighted item); color==null → opaque CLONE of each element's real
     // material (so the phase reads solid over the x-rayed base). Returns elements drawn.
-    function _buildShapeMeshes(set, color) {
-      if (!A.scene || typeof THREE === 'undefined' || !A.ifc2three || !A.meshCache || !set || !set.size) return 0;
-      var rows = [];
+    // §PERF: the element_instances⋈transforms⋈meta join is STATIC per building but was
+    // re-run on EVERY drill (twice — solid+lit), marshalling the whole table through sql.js
+    // each tap → the "panel responds late / unresponsive to touch". Cache it per activeBuilding;
+    // the first drill pays the query, every subsequent tap reuses the rows.
+    var _instRows = null, _instRowsBld = null;
+    function _getInstanceRows() {
+      if (_instRows && _instRowsBld === A.activeBuilding) return _instRows;
       try {
-        rows = A.dbQuery("SELECT i.guid, i.geometry_hash, t.center_x, t.center_y, t.center_z," +
+        _instRows = A.dbQuery("SELECT i.guid, i.geometry_hash, t.center_x, t.center_y, t.center_z," +
           " t.rotation_x, t.rotation_y, t.rotation_z, m.material_rgba, m.ifc_class" +
           " FROM element_instances i JOIN element_transforms t ON t.guid=i.guid" +
-          " JOIN elements_meta m ON m.guid=i.guid");
-      } catch (e) { console.log('[RP-C] §SHAPE_ERR ' + e.message); return 0; }
+          " JOIN elements_meta m ON m.guid=i.guid") || [];
+        _instRowsBld = A.activeBuilding;
+        console.log('[RP-C] §INSTROWS_CACHED rows=' + _instRows.length + ' bld=' + A.activeBuilding);
+      } catch (e) { console.log('[RP-C] §SHAPE_ERR ' + e.message); _instRows = []; }
+      return _instRows;
+    }
+
+    // solidOpacity (optional): for the kept-solid CONTEXT build (color==null), render it at this
+    // opacity instead of fully opaque. Room lens passes 0.3 so the selected room shows THROUGH its
+    // enclosing floor; Material/Type/Phase drills omit it → context stays solid (1.0), as before.
+    function _buildShapeMeshes(set, color, solidOpacity) {
+      if (!A.scene || typeof THREE === 'undefined' || !A.ifc2three || !A.meshCache || !set || !set.size) return 0;
+      var rows = _getInstanceRows();
+      if (!rows.length) return 0;
       var groups = {}, total = 0, missing = 0;
       for (var i = 0; i < rows.length && total < _HL_CAP; i++) {
         var r = rows[i];
@@ -562,7 +578,11 @@
         else {
           var base = A._getMaterial ? A._getMaterial(g.rgba, g.ifc) : null;
           mat = base ? base.clone() : new THREE.MeshStandardMaterial({ color: 0xcccccc });
-          mat.transparent = false; mat.opacity = 1; mat.depthWrite = true;
+          if (solidOpacity != null && solidOpacity < 1) {
+            mat.transparent = true; mat.opacity = solidOpacity; mat.depthWrite = false; // context shows the lit item through it
+          } else {
+            mat.transparent = false; mat.opacity = 1; mat.depthWrite = true;
+          }
         }
         var inst = new THREE.InstancedMesh(geo, mat, g.els.length);
         inst.frustumCulled = false;
@@ -636,10 +656,11 @@
     // proven camera-lerp from diff.js zoomToGuid, but is box-based (works for rooms/phases/
     // elements that live in batched/instanced meshes, which zoomToGuid can't find). markDirty
     // every frame — the §S286 idle gate parks the loop, so the move won't render without it.
-    function _zoomToBox(center, size, factor) {
+    // Shared camera fly-to: lerp to `dist` units from `center` along the standard iso offset,
+    // easing over ~0.3s. markDirty each frame — the §S286 idle gate parks the loop otherwise.
+    function _lerpCam(center, dist) {
       if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
-      var dist = Math.max(size.x, size.y, size.z) * (factor || 3) + 1;  // §FILL: small pad so item fills the frame
-      var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
+      var end = center.clone().add(new THREE.Vector3(0.5, 0.5, 0.7).normalize().multiplyScalar(dist));
       var start = A.camera.position.clone();
       var t = 0;
       function anim() {
@@ -652,6 +673,22 @@
         if (t < 1) requestAnimationFrame(anim);
       }
       anim();
+    }
+    // Item zoom: maxDim*factor heuristic — a tight frame on a small lit item.
+    function _zoomToBox(center, size, factor) {
+      _lerpCam(center, Math.max(size.x, size.y, size.z) * (factor || 3) + 1);  // §FILL: small pad
+    }
+    // §DEPTH group zoom: fit the group's bounding SPHERE to the frame via the camera FOV, so a
+    // whole storey/phase/material FILLS the screen (the old maxDim*factor sat too far away).
+    function _zoomToGroup(set) {
+      var bb = _bboxOfGuids(set); if (!bb || !A.camera) return false;
+      var fov = (A.camera.fov || 50) * Math.PI / 180;
+      var radius = 0.5 * Math.sqrt(bb.size.x * bb.size.x + bb.size.y * bb.size.y + bb.size.z * bb.size.z);
+      var dist = (radius / Math.sin(fov / 2)) * 1.12;  // 1.12 = snug margin so it fills, not clips
+      var aspect = A.camera.aspect || 1; if (aspect < 1) dist /= aspect;  // portrait: fit the narrower FOV
+      _lerpCam(bb.center, dist);
+      console.log('[RP-TB] §GROUP_ZOOM radius=' + radius.toFixed(1) + ' dist=' + dist.toFixed(1) + ' fov=' + (A.camera.fov || 50));
+      return true;
     }
 
     // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
@@ -668,6 +705,7 @@
         A.dbQuery("SELECT element_guid FROM rel_contained_in_space WHERE space_guid = ?", [guid])
           .forEach(function(r) { set.add(r[0]); });
       } catch (e) { console.warn('[RP-TA] §ROOM_SELECT_ERR', e.message); }
+      // §DEPTH item: room CONTENTS = cyan item; enclosing storey = the 0.5 group (uniform default).
       _drillSelect(set, name, 'ROOM_SELECT', storeySet);
     }
 
@@ -809,7 +847,7 @@
     function _materialHighlight(label, set) {
       // §RP-SHAPE: material select now lights the elements' REAL shapes (cyan) + rest at 0.2,
       // same as the phase drill. No parent group to keep solid → phaseSet null.
-      _drillSelect(set, label, 'MAT_SELECT', null);
+      _drillSelect(null, label, 'MAT_SELECT', set); // §DEPTH group: whole material = 1.0 solid + fit-zoom
     }
 
     function _materialSelectByName(name) {
@@ -950,32 +988,72 @@
     // §RP-SHAPE drill: x-ray the rest (transparent), keep the WHOLE PHASE solid (real-geometry
     // opaque overlay), and light the SELECTED item's real SHAPE in cyan. Never hides. `phaseSet`
     // (optional) is the parent phase's guids — the part kept solid; `set` is what's lit.
-    function _drillSelect(set, label, tag, phaseSet) {
+    // §DEPTH — ONE uniform model across every lens (Storey·Disc·Room·Material·Phase). The view is
+    // a pure function of selection depth; NO per-lens custom rendering:
+    //   • rest of building = 0.1 GHOST, always (never hidden).
+    //   • GROUP selected (litSet empty, only groupSet) → group = 1.0 SOLID natural material +
+    //     zoom-to-FIT the group (fills the frame). No cyan — solid IS the "you are here".
+    //   • ITEM selected (litSet present) → item = bright cyan, its group drops to 0.5 (semi),
+    //     item zoom 1.1. The 0.1↔0.5 gap + colour (not another opacity step) carries the hierarchy.
+    // Callers: group-select passes (null, …, groupSet); item-select passes (itemSet, …, groupSet).
+    // ctxOpacity overrides the item-mode group opacity (default 0.5); group mode is always 1.0.
+    var _drillRAF1 = null, _drillRAF2 = null;
+    function _drillSelect(set, label, tag, groupSet, ctxOpacity) {
+      // §PERF: a rapid tap cancels any in-flight build so only the LATEST selection renders —
+      // keeps the panel responsive to touch instead of queuing a backlog of heavy mesh builds.
+      if (_drillRAF1) { cancelAnimationFrame(_drillRAF1); _drillRAF1 = null; }
+      if (_drillRAF2) { cancelAnimationFrame(_drillRAF2); _drillRAF2 = null; }
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
       if (A.filterByGuids) A.filterByGuids(null); // never isolate — x-ray + shape highlight only
-      if (!set || !set.size) { console.log('[RP-TB] §' + tag + ' "' + label + '" elems=0'); return; }
+      var litN = set ? set.size : 0, grpN = groupSet ? groupSet.size : 0;
+      if (!litN && !grpN) { console.log('[RP-TB] §' + tag + ' "' + label + '" elems=0'); return; }
       _clearShapeOverlays();
       _clearHlOverlay();
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // rest → transparent
-      _dimXrayTo(0.1);  // §RP drill: dim the rest hard (0.1) — user wants a strong "where is X in the whole building" sense
-      // phase stays solid = the phase minus the lit item (avoid z-fight with the cyan shape)
-      var solidSet = null, solid = 0;
-      if (phaseSet && phaseSet.size) {
-        solidSet = new Set(); phaseSet.forEach(function(g) { if (!set.has(g)) solidSet.add(g); });
-        solid = _buildShapeMeshes(solidSet, null);
-      }
-      var lit = _buildShapeMeshes(set, 0x4fc3f7);   // selected item's real shape, cyan
-      var zoomed = _zoomToGuids(set, 1.1);          // §FILL: tight frame — item fills screen end-to-end (was 1.6, too far)
-      if (A.markDirty) A.markDirty();
+      _dimXrayTo(0.1);  // §DEPTH: rest of building = 0.1 ghost, ALWAYS (group or item)
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
         if (elShowAllBtn) elShowAllBtn.style.display = '';
       }
-      console.log('[RP-TB] §' + tag + ' "' + label + '" elems=' + set.size + ' lit=' + lit +
-        ' phaseSolid=' + solid + ' overlays=' + _shapeOverlays.length +
-        ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+      if (A.markDirty) A.markDirty(); // immediate: the rest dims THIS frame → the tap is acknowledged at once
+
+      var isGroup = !litN;                                  // no lit item → GROUP depth
+      var grpOp = isGroup ? 1.0 : (ctxOpacity != null ? ctxOpacity : 0.5);
+
+      // §PERF: build the heavy shape overlays OFF the pointer thread (next frames) so the tap
+      // returns instantly. Group: frame1 = group solid 1.0 + fit-zoom. Item: frame1 = cyan item
+      // + zoom, frame2 = (group − item) solid at 0.5. Was synchronous → "respond late" report.
+      _drillRAF1 = requestAnimationFrame(function() {
+        _drillRAF1 = null;
+        if (isGroup) {
+          var gsolid = _buildShapeMeshes(groupSet, null, 1.0);  // whole group solid, natural material
+          var gz = _zoomToGroup(groupSet);                      // §DEPTH: fit the group to the frame
+          if (A.markDirty) A.markDirty();
+          console.log('[RP-TB] §' + tag + ' "' + label + '" GROUP grp=' + grpN + ' solid=' + gsolid +
+            ' grpOp=1.0 overlays=' + _shapeOverlays.length + ' zoom=' + (gz ? 'fit' : 'none') +
+            ' xray=' + (A.xrayOn ? 'on' : 'off'));
+          return;
+        }
+        var lit = _buildShapeMeshes(set, 0x4fc3f7);   // selected item's real shape, cyan
+        var zoomed = _zoomToGuids(set, 1.1);          // §FILL: tight frame — item fills screen end-to-end
+        if (A.markDirty) A.markDirty();
+        var litLog = function(solid) {
+          console.log('[RP-TB] §' + tag + ' "' + label + '" ITEM elems=' + set.size + ' lit=' + lit +
+            ' grpSolid=' + solid + ' grpOp=' + grpOp + ' overlays=' + _shapeOverlays.length +
+            ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+        };
+        if (!grpN) { litLog(0); return; }
+        // group stays semi-solid = the group minus the lit item (avoid z-fight with the cyan shape)
+        _drillRAF2 = requestAnimationFrame(function() {
+          _drillRAF2 = null;
+          var solidSet = new Set(); groupSet.forEach(function(g) { if (!set.has(g)) solidSet.add(g); });
+          var solid = _buildShapeMeshes(solidSet, null, grpOp);  // §DEPTH item: group → 0.5, item shines through
+          if (A.markDirty) A.markDirty();
+          litLog(solid);
+        });
+      });
     }
     function _phaseGuids(name) {
       return (_phaseCache && _phaseCache.byPhase[name]) ? _phaseCache.byPhase[name].guids : null;
@@ -983,7 +1061,7 @@
     function _phaseSelect(name) {
       var pc = _phaseCache;
       if (!pc || !pc.byPhase[name]) return;
-      _drillSelect(pc.byPhase[name].guids, name, 'PHASE_SELECT', null); // tap phase = light whole phase
+      _drillSelect(null, name, 'PHASE_SELECT', pc.byPhase[name].guids); // §DEPTH group: whole phase = 1.0 solid + fit-zoom
     }
     function _taskSelect(set, label, phaseName) { _drillSelect(set, label, 'TASK_SELECT', _phaseGuids(phaseName)); }
     function _elementSelect(guid, phaseName) { _drillSelect(new Set([guid]), _elLabel(guid), 'ELEM_SELECT', _phaseGuids(phaseName)); }
@@ -998,6 +1076,28 @@
           .forEach(function(r) { gset.add(r[0]); });
       } catch (e) { console.warn('[RP-TB] §TYPE_DRILL_ERR', e.message); }
       _drillSelect(iset, label, 'TYPE_SELECT', gset);
+    }
+
+    // §DEPTH storey/disc axis (find-lens-local, decision B): route the multi-select union through
+    // the uniform group depth — selected storeys/discs = 1.0 SOLID + fit-zoom, REST = 0.1 ghost
+    // (was A.filterStorey/Diss which HID the rest). Empty selection restores the full scene. The
+    // SHARED A.filterStorey/filterDisc (the storey side-panel's isolate) are deliberately untouched.
+    function _axisGroupSelect(mode, labels) {
+      if (!labels || !labels.length) {
+        if (A.filterStorey) A.filterStorey(null);
+        if (A.filterDisc) A.filterDisc(null);
+        _highlightLensReset();
+        console.log('[RP-TB] §AXIS_GROUP_CLEAR mode=' + mode);
+        return;
+      }
+      var col = (mode === 'storey') ? 'storey' : 'discipline';
+      var set = new Set();
+      try {
+        var ph = labels.map(function() { return '?'; }).join(',');
+        A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " IN (" + ph + ")", labels)
+          .forEach(function(r) { set.add(r[0]); });
+      } catch (e) { console.warn('[RP-TB] §AXIS_GROUP_ERR', e.message); }
+      _drillSelect(null, labels.join(', '), (mode === 'storey' ? 'STOREY' : 'DISC') + '_SELECT', set);
     }
 
     // §RP-SHAPE L4: storey/disc → type → INDIVIDUAL ITEM. Lazy children for a Type leaf.
@@ -1275,8 +1375,7 @@
           }
           _applyParentHighlight();
           var arr = Array.from(sel);
-          if (_treeMode === 'storey') { if (A.filterStorey) A.filterStorey(arr.length ? arr : null); }
-          else { if (A.filterDiscs) A.filterDiscs(arr.length ? arr : null); }
+          _axisGroupSelect(_treeMode, arr); // §DEPTH: ghost rest 0.1 + selected solid (was filterStorey hide)
           console.log('§FIND_MULTISEL mode=' + _treeMode + ' sel=[' + arr.join(',') + '] n=' + arr.length + ' mod=' + mod);
           return;
         }
