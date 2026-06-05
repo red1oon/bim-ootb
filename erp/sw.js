@@ -7,7 +7,10 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v582';   // v582: I-4 — ONE signed op-log: the live write path (a doc Complete via the
+const CACHE_VERSION = 'v583';   // v583: GATED COMPLETE — the editable, signed L1 rule "order may Complete iff
+                                //       GrandTotal ≤ T" now GATES the real CO transition engine-side (dispatch
+                                //       admission guard); edit the rule → a blocked order completes, signed;
+                                // v582: I-4 — ONE signed op-log: the live write path (a doc Complete via the
                                 //       seam) is now a genuinely SIGNED op (W-CHAIN+W-SIGN), on the SAME chain
                                 //       as the ⚖ rule edit (erp_kernel unified to kernel_ops's schema);
                                 // v581: ⚖ Rule — L1 lifecycle rule "may this Order Complete iff GrandTotal ≤ T"

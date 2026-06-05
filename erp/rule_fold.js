@@ -94,6 +94,18 @@
     return ops[ops.length - 1].parameters.T;
   }
 
+  // setT — commit ONE signed SET_RULE edit (no full gesture). Used to drive the gated-Complete demo: change
+  // the admission threshold the seam's dispatch guard reads. Returns {ok,uuid,chainOk,from,to}.
+  async function setT(ruleId, toT, opts) {
+    opts = opts || {};
+    var R = RULES[ruleId]; if (!R) return { ok: false, why: 'unknown-rule' };
+    var opDb = await ensureOpLog(opts.SQL || global.SQL);
+    var fromT = rebuildT(opDb, ruleId);
+    var res = await commitEdit(opDb, R, fromT, toT, []);
+    console.log('§RULE-SET rule=' + ruleId + ' T:' + fromT + '→' + toT + ' signedOp=' + res.uuid.slice(0, 8) + ' chainOk=' + (res.chainOk ? 'Y' : 'N'));
+    return { ok: true, uuid: res.uuid, chainOk: res.chainOk, from: fromT, to: toT };
+  }
+
   function _sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   // ── runGesture — the full witnessed gesture for one rule; emits the §-line contract (RULE_EDIT_SPEC §8) ──
@@ -209,6 +221,6 @@
     console.log('§RULE-OPEN rules=[premium(L2),maycomplete(L1)] tenant=Odoo(12)');
   }
 
-  global.RuleFold = { open: open, runGesture: runGesture, fold: fold, _RULES: RULES };
+  global.RuleFold = { open: open, runGesture: runGesture, setT: setT, fold: fold, _RULES: RULES };
   console.log('§RULE_FOLD_LOADED rule_fold.js (the ONE gesture — L2 premium + L1 may-complete, signed, reversible)');
 })(typeof window !== 'undefined' ? window : this);
