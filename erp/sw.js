@@ -7,7 +7,10 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v581';   // v581: ⚖ Rule — L1 lifecycle rule "may this Order Complete iff GrandTotal ≤ T"
+const CACHE_VERSION = 'v582';   // v582: I-4 — ONE signed op-log: the live write path (a doc Complete via the
+                                //       seam) is now a genuinely SIGNED op (W-CHAIN+W-SIGN), on the SAME chain
+                                //       as the ⚖ rule edit (erp_kernel unified to kernel_ops's schema);
+                                // v581: ⚖ Rule — L1 lifecycle rule "may this Order Complete iff GrandTotal ≤ T"
                                 //       (rule registry: L2 premium + L1 may-complete; 26 real Odoo orders in shard);
                                 // v580: ⚖ Rule pill — THE ONE GESTURE (rule_fold.js + bigdecimal.js): edit one
                                 //       rule → K Odoo products re-fold live, signed (ECDSA) + reversible;
