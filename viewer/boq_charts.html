@@ -60,6 +60,7 @@
 <script src="lib/FileSaver.min.js"></script>
 <script src="lib/chart.umd.min.js"></script>
 <script src="rates.js?v=7"></script>
+<script src="analysis_sidecar.js?v=1"></script>
 <script src="export_5d.js?v=1"></script>
 <script src="export_4d.js?v=1"></script>
 
@@ -378,6 +379,7 @@ let qtoData = [];        // per storey/disc/class rows
 let discSummary = {};     // disc -> {qty, matTotal, laborCost, equipCost}
 let grandMaterial = 0, grandLabor = 0, grandEquip = 0, totalQty = 0;
 let scheduleData = [];    // generated 4D tasks
+let _scheduleSource = 'generateSchedule';  // module-scope: read by init() AND renderCharts()
 let chartInstances = [];
 
 // calcLabor(), calcEquipment() — from rates.js
@@ -1113,9 +1115,19 @@ async function init() {
   const _t1 = performance.now();
   console.log('§QTO_SUMMARY classes=' + qtoData.length + ' material=' + Math.round(grandMaterial) + ' labor=' + Math.round(grandLabor) + ' equip=' + Math.round(grandEquip) + ' warnings=' + qtoWarnCount + ' queryMs=' + Math.round(_t1 - _t0));
 
+  // §T5 ANALYSIS_SIDECAR — establish/refresh the currency-free 5D quantity sidecar
+  // in OPFS: first open computes+persists, repeat opens read it (§5D_SIDECAR source=
+  // opfs|computed). Additive — does NOT alter qtoData; consumed by the staged render
+  // (T6) to skip the DB load on repeat opens.
+  if (window.AnalysisSidecar && db && bldName) {
+    try { await window.AnalysisSidecar.get5D(db, bldName); }
+    catch (e) { console.warn('§5D_SIDECAR error=' + e.message); }
+  }
+
   // S254: kernel_ops is the single source of truth. Read directly from DB first,
   // fall back to BroadcastChannel relay, then generateSchedule as last resort.
-  let _scheduleSource = 'generateSchedule';
+  // (_scheduleSource declared at module scope so renderCharts() can read it.)
+  _scheduleSource = 'generateSchedule';
 
   // Path 1: Read kernel_ops directly from the DB (no viewer needed)
   var _dbOps = [];
@@ -1141,27 +1153,37 @@ async function init() {
     }
   } catch(e) { console.log('§KERNEL_OPS_DB_READ error: ' + e.message); }
 
-  if (_dbOps.length) {
-    // kernel_ops found in DB — use directly
-    scheduleData = buildScheduleFromOps(_dbOps);
-    _scheduleSource = 'kernel_ops';
-    console.log('§4D_SCHEDULE_SOURCE kernel_ops_db tasks=' + scheduleData.length +
-      ' ops=' + _dbOps.length);
-  } else {
-    // Path 2: Try BroadcastChannel relay from viewer (hourglass may have injected ops)
+  // §T4 ANALYSIS_SIDECAR — DECOUPLE from kernel_ops. The deterministic default
+  // (captured-or-CPM) is the always-valid BASE; kernel_ops is an OVERRIDE applied
+  // only if it yields tasks. A broken/empty/throwing kernel_ops (e.g. TM's drone
+  // regenerate drift) falls back to the default → the Gantt is never broken.
+  // capturedFn=null until the native-tasks→Gantt mapping lands (no served DB
+  // carries IfcWorkSchedule yet — non-invent).
+  // §T5: get4D = lazy OPFS bake of the default (first open computes+persists,
+  // repeat opens read OPFS → §4D_SIDECAR source=opfs). resolve4D still applies the
+  // live kernel_ops override on top, so edits are never stale-cached.
+  const _default4D = window.AnalysisSidecar
+    ? await window.AnalysisSidecar.get4D(bldName, null, generateSchedule, qtoData, '2025-01-06')
+    : { source: 'generated', tasks: generateSchedule(qtoData, '2025-01-06') };
+
+  // Gather kernel_ops to OVERRIDE with: DB first, else BroadcastChannel relay.
+  let _ops = _dbOps;
+  if (!_ops.length) {
     const schedRelay = await _tryScheduleRelay(500);
-    if (schedRelay && !schedRelay.error && schedRelay.ops && schedRelay.ops.length) {
-      scheduleData = buildScheduleFromOps(schedRelay.ops);
-      _scheduleSource = 'kernel_ops';
-      console.log('§4D_SCHEDULE_SOURCE kernel_ops_relay tasks=' + scheduleData.length +
-        ' ops=' + schedRelay.ops.length);
-    } else {
-      // Path 3: Generate independently (no hourglass has ever run on this DB)
-      console.log('§4D_SCHEDULE_SOURCE generateSchedule reason=' +
-        (_dbOps.length === 0 ? 'no kernel_ops in DB' : 'relay timeout') +
-        ' — Run Hourglass in the viewer to generate a construction schedule, or edit rates.js');
-      scheduleData = generateSchedule(qtoData, '2025-01-06');
-    }
+    if (schedRelay && !schedRelay.error && schedRelay.ops) _ops = schedRelay.ops;
+  }
+
+  if (window.AnalysisSidecar) {
+    const _r = window.AnalysisSidecar.resolve4D(_default4D, _ops, buildScheduleFromOps);
+    scheduleData = _r.tasks;
+    _scheduleSource = _r.source;
+    console.log('§4D_SCHEDULE_SOURCE ' + _r.source + ' tasks=' + scheduleData.length +
+      ' overridden=' + _r.overridden + ' ops=' + (_ops ? _ops.length : 0));
+  } else {
+    scheduleData = _default4D.tasks;
+    _scheduleSource = _default4D.source;
+    console.log('§4D_SCHEDULE_SOURCE ' + _default4D.source + ' tasks=' + scheduleData.length +
+      ' (sidecar unavailable — CPM default)');
   }
 
   // S240 §0.1: Run 8-check audit before any 4D sync
@@ -2003,7 +2025,7 @@ function toggleTheme() {
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=269')
+  navigator.serviceWorker.register('sw.js?v=592')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
