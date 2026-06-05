@@ -391,6 +391,15 @@
         });
         sdb.close();
         console.log('§IDEMPIERE shard-in ' + shardParam + ' tables=' + mTbl + ' rows=' + mRow);
+        // INSTALL = make it STICK: persist the merged tenant into the resident cache so the migrated client
+        // survives a plain reload WITHOUT the ?shard= param (the migration is now actual, not a transient
+        // overlay). Guarded: only the real ad_seed.db is the resident base (never clobber a ?seed= gen db),
+        // and only when rows actually merged. INSERT OR IGNORE upstream keeps a re-install idempotent.
+        if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
+          try { idbPut('ad_seed_v13', db.export().buffer);
+            console.log('§IDEMPIERE shard-persist key=ad_seed_v13 rows=' + mRow + ' resident=Y'); }
+          catch (e) { console.warn('§IDEMPIERE shard-persist failed ' + e.message); }
+        }
       } catch (e) { console.warn('§IDEMPIERE shard-in failed ' + e.message); }
     }
     if (ADP && ADP.init) ADP.init(db);
