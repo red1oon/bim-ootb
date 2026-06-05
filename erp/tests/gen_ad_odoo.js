@@ -117,6 +117,16 @@ function tableCols(db, t) { return exec(db, "SELECT name FROM pragma_table_info(
   var pidMap = {}, nextP = 1200000;
   prods.forEach(function (p) { var leaf = (p.categ_id && p.categ_id[1] || 'Odoo').split('/').pop().trim(); var pid = nextP++; pidMap[p.id] = pid;
     ins('M_Product', stamp7({ M_Product_ID: pid, Value: 'ODOO-' + p.id, Name: p.name, M_Product_Category_ID: catId[leaf], ProductType: (p.type === 'service' ? 'S' : 'I'), C_UOM_ID: 100 }, CL, ORG)); });
+  // ── 5b. real Odoo list_price → M_ProductPrice (iDempiere-faithful: a Client-12 sales price list + version,
+  //        one price row per product carrying the RECORDED Odoo list_price). NON-INVENT: every price is real Odoo.
+  var PL = 1200001, PLV = 1200001;                                  // Odoo sales price list + its current version
+  ins('M_PriceList', stamp7({ M_PriceList_ID: PL, Name: 'Odoo Sales', Description: 'Migrated Odoo sales price list', C_Currency_ID: 100, IsSOPriceList: 'Y' }, CL, ORG));
+  ins('M_PriceList_Version', stamp7({ M_PriceList_Version_ID: PLV, M_PriceList_ID: PL, Name: 'Odoo Sales (current)', Description: 'Migrated from odoodemo list_price', ValidFrom: MIG_TS }, CL, ORG));
+  var priced = 0, pmin = null, pmax = null;
+  prods.forEach(function (p) { var pid = pidMap[p.id]; var lp = p.list_price;   // RECORDED Odoo value (may be 0; kept real)
+    ins('M_ProductPrice', stamp7({ M_Product_ID: pid, M_PriceList_Version_ID: PLV, PriceList: lp, PriceStd: lp, PriceLimit: lp }, CL, ORG));
+    priced++; if (pmin === null || lp < pmin) pmin = lp; if (pmax === null || lp > pmax) pmax = lp; });
+  L('§RULE-DATA products=' + prods.length + ' priced=' + priced + ' min=' + pmin + ' max=' + pmax + ' (all real Odoo list_price, 0 invented)');
   var BP = 1200001;
   ins('C_BPartner', stamp7({ C_BPartner_ID: BP, Value: 'ODOO-BP-' + so.partner_id[0], Name: so.partner_id[1], IsCustomer: 'Y', IsVendor: 'N', IsEmployee: 'N' }, CL, ORG));
   var ORD = 1200001;

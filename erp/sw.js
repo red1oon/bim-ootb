@@ -7,7 +7,9 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v579';   // v579: removed top-right ⛶ maximize + 🔍 search HUD icons (dup of pill rail);
+const CACHE_VERSION = 'v580';   // v580: ⚖ Rule pill — THE ONE GESTURE (rule_fold.js + bigdecimal.js): edit one
+                                //       rule → K Odoo products re-fold live, signed (ECDSA) + reversible;
+                                // v579: removed top-right ⛶ maximize + 🔍 search HUD icons (dup of pill rail);
                                 // v578: glassbowl/gravity pills → LOCAL nav (was remote BIMCompiler GH Pages);
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -53,6 +55,8 @@ const PRECACHE_ASSETS = [
   'erp_seam.js',       // engine seam (window.ERPSeam.makeSeam) — ENGINE_CONTRACT §1 write path
   'kanban_lens.js',    // Kanban board chrome (buildBoard/resolveDrag/mount) — lens + idempiere
   'kanban_host.js',    // reusable Kanban host: publish window.ERP + persist/restore the op-log
+  'bigdecimal.js',     // exact decimal compare for the rule fold (never raw JS Number) — window.BigDecimal
+  'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'qrcode.min.js',
   'manifest.json',
   'pills.json',
