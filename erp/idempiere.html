@@ -138,6 +138,25 @@
   .idmp-grid tr:nth-child(even) td { background:#f6f8fb; }
   .idmp-grid tr:hover td { background:var(--idmp-hover); }
   .idmp-grid tr.sel td { background:var(--idmp-sel); }
+  /* MOBILE_CARDS.md §2/§3 — mobile .acc card list (HIDDEN on desktop; the grid is canonical >760px). */
+  .idmp-cards { display:none; }
+  .idmp-cards-empty { color:#888; padding:18px; text-align:center; }
+  .idmp-cards .acc { margin-bottom:10px; border-radius:12px; overflow:hidden; background:var(--idmp-panel);
+    border:1px solid var(--idmp-border); box-shadow:0 1px 6px rgba(0,0,0,0.06); }
+  .idmp-cards .acc .hd { padding:13px 14px; display:flex; justify-content:space-between; align-items:center;
+    min-height:50px; cursor:pointer; gap:10px; }
+  .idmp-cards .acc .hd:active { background:var(--idmp-hover); }
+  .idmp-cards .acc .hd .lbl { display:flex; align-items:center; gap:9px; min-width:0; flex:1; }
+  .idmp-cards .acc .hd .lbl .chv { color:var(--idmp-blue); font-size:11px; transition:transform .2s ease; flex:0 0 auto; }
+  .idmp-cards .acc .hd.open .lbl .chv { transform:rotate(90deg); }
+  .idmp-cards .acc .hd .idmp-card-title { font-size:14px; font-weight:600; color:var(--idmp-text);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .idmp-cards .acc .hd .idmp-card-open { font-size:11px; color:var(--idmp-blue); flex:0 0 auto; }
+  .idmp-cards .acc .bd { max-height:0; overflow:hidden; transition:max-height .28s ease; }
+  .idmp-cards .acc .bd.open { max-height:70vh; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 0 8px; }
+  .idmp-cardfld { display:flex; gap:10px; padding:6px 14px; font-size:12.5px; border-top:1px solid var(--idmp-border); }
+  .idmp-cardfld-lbl { flex:0 0 42%; color:var(--idmp-muted); overflow:hidden; text-overflow:ellipsis; }
+  .idmp-cardfld-val { flex:1; color:var(--idmp-text); overflow-wrap:anywhere; }
   /* status bar */
   #idmp-status {
     flex:0 0 auto; height:26px; display:flex; align-items:center; gap:10px; padding:0 12px;
@@ -202,6 +221,11 @@
     /* the header breadcrumb (#idmp-ctx) is nowrap and shoved the role/home/help buttons off the right edge at
        390px; it duplicates the bottom status bar, so drop it on mobile and keep the buttons reachable. */
     #idmp-header .ctx { display:none; }
+    /* MOBILE_CARDS.md §2 — the multi-column grid is the DESKTOP surface; on phone show the .acc cards instead. */
+    .idmp-grid { display:none; }
+    .idmp-cards { display:block; }
+    /* MOBILE_CARDS.md §4 — leave room for the bottom-docked pill bar so the last card isn't covered. */
+    #idmp-content { padding-bottom:66px; }
   }
 </style>
 </head>
@@ -704,7 +728,20 @@
   function renderBody() {
     var tab = _curTab(); if (!tab) return;
     var host = $('idmp-content'); host.innerHTML = '';
-    if (_viewMode === 'grid') host.appendChild(buildGrid(tab));
+    if (_viewMode === 'grid') {
+      host.appendChild(buildGrid(tab));
+      // MOBILE_CARDS.md §5 — whitebox witness: cards rendered, table hidden ≤760, table shown on desktop.
+      var mq = window.matchMedia('(max-width:760px)').matches;
+      var tbl = host.querySelector('.idmp-grid'), cds = host.querySelector('.idmp-cards');
+      var cardN = cds ? cds.querySelectorAll('.acc').length : 0;
+      var tblHidden = tbl ? getComputedStyle(tbl).display === 'none' : true;
+      var cdsShown = cds ? getComputedStyle(cds).display !== 'none' : false;
+      console.log('§MOBILE-VIEW cards=' + cardN + ' rows=' + _records.length +
+        ' tableHidden@≤760=' + (mq ? (tblHidden ? 'Y' : 'N') : 'n/a') +
+        ' cardsShown@≤760=' + (mq ? (cdsShown ? 'Y' : 'N') : 'n/a') +
+        ' desktopTable=' + (!mq ? (!tblHidden ? 'Y' : 'N') : 'n/a') +
+        ' pillRail=bottom@≤760');
+    }
     else host.appendChild(buildForm(tab));
     updateStatus(tab);
     refreshForm();
@@ -725,7 +762,50 @@
       tb.appendChild(tr);
     });
     table.appendChild(tb);
-    return table;
+
+    // MOBILE_CARDS.md §2/§3 — ONE DOM, two skins: the desktop table (UNCHANGED above) + a mobile .acc card
+    // list. CSS toggles which shows (.idmp-cards{display:none} desktop; @≤760 .idmp-grid hidden, cards shown).
+    var wrap = el('div', 'idmp-listwrap');
+    wrap.appendChild(table);
+    wrap.appendChild(_buildCards(tab));
+    return wrap;
+  }
+  // MOBILE_CARDS.md §3 — one .acc card per record (reuses the ad_ui.js/accts_posted .acc/.hd/.bd/.lbl/.chv idiom):
+  //   .hd tap = open the record in FORM view (same handler as the desktop row click — NON-INVENT);
+  //   .chv tap = expand .bd to peek the SAME _displayFields fields (label:value), no new query.
+  function _buildCards(tab) {
+    var cols = _displayFields(tab);                       // all display fields (same data the grid samples)
+    // Card title = the AD IDENTIFIER field(s) (iDempiere's record name), falling back to the first display field.
+    var identFields = (tab.fields || []).filter(function (f) { return f.isIdentifier; });
+    if (!identFields.length && cols[0]) identFields = [cols[0]];
+    var cards = el('div', 'idmp-cards');
+    if (!_records.length) { cards.appendChild(el('div', 'idmp-cards-empty', 'No records')); return cards; }
+    _records.forEach(function (rec, i) {
+      var acc = el('div', 'acc'); acc.dataset.i = i;
+      acc.setAttribute('data-ad-table', tab.tableName); acc.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // host contract holds on mobile
+      var title = identFields.map(function (f) { return fmt(f, recVal(rec, f.columnName)); })
+        .filter(function (v) { return v != null && v !== ''; }).join(' · ') || ('Record ' + (i + 1));
+      var hd = el('div', 'hd');
+      var lbl = el('span', 'lbl');
+      var chv = el('span', 'chv', '▶'); lbl.appendChild(chv);
+      lbl.appendChild(el('span', 'idmp-card-title', title));
+      hd.appendChild(lbl);
+      hd.appendChild(el('span', 'idmp-card-open', 'Open ›'));
+      acc.appendChild(hd);
+      var bd = el('div', 'bd');
+      cols.forEach(function (f) {
+        var row = el('div', 'idmp-cardfld');
+        row.appendChild(el('span', 'idmp-cardfld-lbl', f.name));
+        row.appendChild(el('span', 'idmp-cardfld-val', fmt(f, recVal(rec, f.columnName))));
+        bd.appendChild(row);
+      });
+      acc.appendChild(bd);
+      // chevron / label-region tap = expand body (peek); "Open ›" or the rest of the header = open form view.
+      lbl.addEventListener('click', function (e) { e.stopPropagation(); hd.classList.toggle('open'); bd.classList.toggle('open'); });
+      hd.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); });
+      cards.appendChild(acc);
+    });
+    return cards;
   }
   function buildForm(tab) {
     var form = el('div', 'idmp-form'); form.id = 'idmp-form';
@@ -1038,7 +1118,9 @@
       '.idmp-pill{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;min-height:48px;border:none;border-radius:14px;background:rgba(255,255,255,.06);color:#dfe6f2;cursor:pointer;padding:6px 2px}.idmp-pill:hover{background:rgba(108,159,255,.25)}.idmp-pill-ic{font-size:18px;line-height:1}.idmp-pill-lb{font-size:9px;opacity:.85}' +
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
       '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}' +
-      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
+      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}' +
+      // MOBILE_CARDS.md §4 — dock the vertical right rail as a BOTTOM bar on phone so it stops covering records.
+      '@media (max-width:760px){#idmp-pillrail{right:0;left:0;bottom:0;top:auto;transform:none;flex-direction:row;justify-content:space-around;max-height:none;border-radius:0;padding:6px 4px;gap:4px}.idmp-pill{width:auto;flex:1;max-width:64px}}';
     document.head.appendChild(s);
   }
 
