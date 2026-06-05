@@ -632,8 +632,15 @@ function setupTools(A) {
       if (!A._shadowInited) {
         A.renderer.shadowMap.enabled = true;
         A.renderer.shadowMap.type = THREE.PCFShadowMap;
+        // §S288 STATIC-SHADOW GATE: sun + building are static, yet THREE's default
+        // shadowMap.autoUpdate=true re-rendered the 4096² shadow map as a full extra
+        // geometry pass EVERY awake frame (orbit/damping/fly) → the CPU/GPU fan. Gate it
+        // OFF so shadows render only when needsUpdate fires (toggle-on traverse §690,
+        // TM sun-move/scene-step). window._shadowAutoUpdate=true restores the old
+        // per-frame behavior for A/B measurement (§SHADOW_PERF).
+        A.renderer.shadowMap.autoUpdate = (window._shadowAutoUpdate === true);
         A._shadowInited = true;
-        console.log('§SHADOW_INIT shadowMap enabled + PCF');
+        console.log('§SHADOW_INIT shadowMap enabled + PCF autoUpdate=' + A.renderer.shadowMap.autoUpdate);
       }
       A.sun.castShadow = true;
       // §S276b: Show Sky shader when shadows enabled
@@ -660,8 +667,11 @@ function setupTools(A) {
       A.sun.target.position.copy(_ctr);
       A.sun.target.updateMatrixWorld();
       var _sunDist = A.sun.position.distanceTo(_ctr);
-      A.sun.shadow.mapSize.width = 4096;
-      A.sun.shadow.mapSize.height = 4096;
+      // §S288: 2048² — quarters the texel cost of every shadow render (toggle-on +
+      // TM sun-cycle, where the sun moves each tick so the map DOES re-render per frame).
+      // Architecturally indistinguishable from 4096² at building scale.
+      A.sun.shadow.mapSize.width = 2048;
+      A.sun.shadow.mapSize.height = 2048;
       A.sun.shadow.camera.near = _sunDist * 0.05;
       A.sun.shadow.camera.far = _sunDist * 4;
       A.sun.shadow.camera.left = -_env;
@@ -687,7 +697,7 @@ function setupTools(A) {
         var end = Math.min(_si + 5000, _shadowList.length);
         for (; _si < end; _si++) { var o = _shadowList[_si]; if (o.visible) { o.castShadow = true; o.receiveShadow = true; } }
         if (_si < _shadowList.length) setTimeout(_shadowChunk, 0);
-        else { A.renderer.shadowMap.needsUpdate = true; console.log('§SHADOW_TRAVERSE done count=' + _shadowList.length); }
+        else { A.renderer.shadowMap.needsUpdate = true; if (A.markDirty) A.markDirty(); console.log('§SHADOW_TRAVERSE done count=' + _shadowList.length); }
       })();
     } else {
       var _unshadowList = [];
