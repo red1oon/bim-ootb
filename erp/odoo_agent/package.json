@@ -1,0 +1,15 @@
+{
+  "name": "odoo-migrate-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Install-side Odoo → BIM-OOTB ERP migration agent. Runs natively on the machine that has Odoo; emits odoo_chain.json for the browser to re-fold. The browser never connects to Odoo (delegate-to-install).",
+  "license": "MIT",
+  "author": "Redhuan D. Oon <red1org@gmail.com>",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1"
+  }
+}

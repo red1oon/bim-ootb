@@ -5,8 +5,11 @@
  *   ONE dialog family: Install + Migrate both call open({mode}). It (S1) lists ALL five ERPs always,
  *   (S2) best-effort DETECTS what is present and highlights it / greys the rest, (S3) defaults to the
  *   detected source and asks "migrate your <X> data?", (S4) routes on confirm:
- *     iDempiere → MigrateShowMe (real PG agent) · Odoo → the real delegate-to-install fold (download the
- *     install-side agent → load odoo_chain.json → RE-FOLD through window.ERPKernel) · others → honest "coming".
+ *     iDempiere → MigrateShowMe (real PG agent) · Odoo → the real delegate-to-install fold, presented as a
+ *     STAGED panel: ① download the self-sufficient odoo_agent.zip bundle (agent + engine + adapter +
+ *     package.json — runs `npm install && node agent.js` from a fresh dir, no repo) → ② run it natively
+ *     (copy-button command) → ③ drop the produced odoo_chain.json (validated) → RE-FOLD through
+ *     window.ERPKernel · others → honest "coming".
  *   NON-INVENT: detection is a liveness probe only (no-cors, opaque) — the browser never reads ERP data
  *   cross-origin; extraction is delegate-to-install. Absent adapter ⇒ honest "coming", never a faked migrate.
  *
@@ -16,6 +19,7 @@
  *     §ERP-PICKER highlight=<key> greyed=[sap,oracle,dynamics]
  *     §ERP-PICKER default=<key>
  *     §ERP-PICKER confirm erp=<key> route=<route>   |   §ERP-PICKER coming erp=<key>
+ *     §MIGRATE-INSTR clear=Y selfsufficient=Y design=staged erp=odoo artifact=odoo_agent.zip
  *     §ODOO-MIGRATE-BROWSER loaded events=5 mapped=5/5 verbs=[…] newVerbs=[] glDr==glCr verify chainOk=Y
  */
 (function (global) {
@@ -161,26 +165,88 @@
     if (e.route === 'odoo') { _renderOdoo(); return; }
   }
 
-  // ── Odoo sub-flow (delegate-to-install): run the agent → load chain → re-fold via ERPKernel ──
+  // ── Odoo sub-flow (delegate-to-install): a STAGED panel — download bundle → run natively → load chain ──
+  //    The 🔒 doctrine is stated up front; each step shows a done-state; the run command is copy-able; the
+  //    drop-zone validates the produced file (✓ N events / ✗ wrong file) before re-folding via ERPKernel.
+  var ODOO_CMD = 'cd odoo_agent && npm install && node agent.js   # → ./odoo_chain.json';
   function _renderOdoo() {
     var body = _$('ep-body'); if (!body) return;
     body.innerHTML =
-      '<p class="ep-dim">The browser never connects to Odoo directly (delegate-to-install). Run the '
-      + 'extractor on the machine that has Odoo — it pulls the chain and writes <code>odoo_chain.json</code>, '
-      + 'which you load here. Every value below is a recorded Odoo row.</p>'
-      + '<p><b>1.</b> Get the install-side agent and run it (needs Node + sql.js + the adapter):</p>'
-      + '<a class="ep-btn ep-primary" href="odoo_agent.js" download="odoo_agent.js">⬇ Download odoo_agent.js</a>'
-      + '<pre class="ep-cmd">node odoo_agent.js   # → build/erp/odoo_chain.json</pre>'
-      + '<p><b>2.</b> Load the <code>odoo_chain.json</code> it produced:</p>'
-      + '<input type="file" id="ep-chain" accept=".json,application/json" class="ep-file">'
+      '<div class="ep-lock">🔒 <b>The browser cannot reach your Odoo / Postgres / Docker.</b> '
+      + 'YOU run the agent <b>natively</b> on the machine that has Odoo — it writes one file '
+      + '(<code>odoo_chain.json</code>) that you then load back here. Your credentials never leave that machine; '
+      + 'every value is a recorded Odoo row (nothing is invented).</div>'
+      + '<div class="ep-steps">'
+      // ① download the self-sufficient bundle
+      + '<div class="ep-step" id="ep-s1"><div class="ep-sn">1</div><div class="ep-sc">'
+      + '<div class="ep-st">Download the agent bundle</div>'
+      + '<div class="ep-sd">A self-contained zip — agent + engine + adapter + <code>package.json</code>. '
+      + 'No repo needed.</div>'
+      + '<a id="ep-dl" class="ep-btn ep-primary" href="odoo_agent.zip" download="odoo_agent.zip">⬇ odoo_agent.zip</a>'
+      + '</div></div>'
+      // ② run it natively
+      + '<div class="ep-step" id="ep-s2"><div class="ep-sn">2</div><div class="ep-sc">'
+      + '<div class="ep-st">Run it natively (Node)</div>'
+      + '<div class="ep-sd">Unzip, then — on the machine that has Odoo — install the one dependency and run. '
+      + 'Defaults to <code>odoodemo</code> @ <code>localhost:8069</code>; override creds via env (see the bundle README).</div>'
+      + '<div class="ep-cmdrow"><pre class="ep-cmd" id="ep-cmd">' + ODOO_CMD + '</pre>'
+      + '<button id="ep-copy" class="ep-btn ep-copy" title="Copy command">⧉ Copy</button></div>'
+      + '</div></div>'
+      // ③ load the produced file
+      + '<div class="ep-step" id="ep-s3"><div class="ep-sn">3</div><div class="ep-sc">'
+      + '<div class="ep-st">Load the file it produced</div>'
+      + '<div class="ep-sd">Drop or pick the <code>odoo_chain.json</code> the agent wrote.</div>'
+      + '<label id="ep-drop" class="ep-drop"><input type="file" id="ep-chain" accept=".json,application/json" hidden>'
+      + '<span id="ep-droptxt">⬑ Drop <code>odoo_chain.json</code> here, or click to choose</span></label>'
+      + '</div></div>'
+      + '</div>'
       + '<div id="ep-result" class="ep-result"></div>'
       + '<div class="ep-foot"><button id="ep-back" class="ep-btn">&larr; Back</button></div>';
+
+    console.log('§MIGRATE-INSTR clear=Y selfsufficient=Y design=staged erp=odoo artifact=odoo_agent.zip');
+
     _$('ep-back').onclick = function () { _renderPicker(); _select(_sel); };
-    _$('ep-chain').onchange = function () {
-      var f = this.files && this.files[0]; if (!f) return;
-      f.text().then(function (txt) { _foldChain(JSON.parse(txt)); })
-        .catch(function (err) { _$('ep-result').innerHTML = '<div class="ep-err">Load failed: ' + err.message + '</div>'; });
+    _$('ep-dl').onclick = function () { _stepDone('ep-s1'); };
+    _$('ep-copy').onclick = function () {
+      if (navigator.clipboard) navigator.clipboard.writeText(ODOO_CMD);
+      _$('ep-copy').textContent = 'Copied ✓'; _stepDone('ep-s2');
     };
+    var drop = _$('ep-drop'), inp = _$('ep-chain');
+    function _take(f) {
+      if (!f) return;
+      f.text().then(function (txt) { _onChainFile(txt, f.name); })
+        .catch(function (err) { _dropBad(err.message); });
+    }
+    inp.onchange = function () { _take(this.files && this.files[0]); };
+    ['dragover', 'dragenter'].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('ep-dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('ep-dragover'); });
+    });
+    drop.addEventListener('drop', function (e) {
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; _take(f);
+    });
+  }
+
+  function _stepDone(id) { var s = _$(id); if (s) s.classList.add('ep-done'); }
+  function _dropBad(msg) {
+    var t = _$('ep-droptxt'); if (t) t.innerHTML = '✗ Not a valid chain file — ' + msg + '. Re-run step 2.';
+    var d = _$('ep-drop'); if (d) { d.classList.add('ep-drop-bad'); d.classList.remove('ep-drop-ok'); }
+    var s = _$('ep-s3'); if (s) s.classList.remove('ep-done');
+  }
+  // Validate the file BEFORE folding — must parse to JSON with an events[] array (the chain shape).
+  function _onChainFile(txt, name) {
+    var chain;
+    try { chain = JSON.parse(txt); } catch (e) { return _dropBad('not JSON'); }
+    if (!chain || !Array.isArray(chain.events) || !chain.events.length) {
+      return _dropBad('no events[] — is this the agent output?');
+    }
+    var t = _$('ep-droptxt'); if (t) t.innerHTML = '✓ <b>' + (name || 'odoo_chain.json') + '</b> — parsed '
+      + chain.events.length + ' events';
+    var d = _$('ep-drop'); if (d) { d.classList.add('ep-drop-ok'); d.classList.remove('ep-drop-bad'); }
+    _stepDone('ep-s3');
+    _foldChain(chain);
   }
 
   function _ensureSql() {
@@ -246,8 +312,21 @@
       + '.ep-q{font-size:15px;margin:6px 0 12px}.ep-foot{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}'
       + '.ep-btn{padding:9px 16px;border:1px solid #ccc;background:#f5f5f5;border-radius:8px;cursor:pointer;font-size:13px}.ep-btn[disabled]{opacity:.5;cursor:not-allowed}'
       + '.ep-primary{background:#0b6;color:#fff;border-color:#0b6}.ep-comingnote{margin-top:4px;flex-basis:100%}'
-      + '.ep-cmd{background:#0d1117;color:#9be29b;padding:10px;border-radius:8px;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:8px 0}'
+      + '.ep-cmd{background:#0d1117;color:#9be29b;padding:10px;border-radius:8px;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0;flex:1}'
       + '.ep-file{margin:8px 0}.ep-result{margin-top:12px}'
+      // staged Odoo panel
+      + '.ep-lock{background:#fff8e6;border:1px solid #f0e0a8;border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.5;color:#5a4a16;margin:0 0 14px}.ep-lock code{background:#fdeec2;padding:1px 4px;border-radius:4px}'
+      + '.ep-steps{display:flex;flex-direction:column;gap:10px}'
+      + '.ep-step{display:flex;gap:12px;border:1px solid #e6e6ea;border-radius:12px;padding:12px 14px;transition:.15s}'
+      + '.ep-step.ep-done{border-color:#0b6;background:#f6faf7}'
+      + '.ep-sn{flex:none;width:26px;height:26px;border-radius:50%;background:#e6e6ea;color:#555;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}'
+      + '.ep-step.ep-done .ep-sn{background:#0b6;color:#fff}.ep-step.ep-done .ep-sn::after{content:"✓"}.ep-step.ep-done .ep-sn{font-size:0}.ep-step.ep-done .ep-sn::after{font-size:14px}'
+      + '.ep-sc{flex:1;min-width:0}.ep-st{font-weight:600;font-size:13.5px;margin-bottom:3px}.ep-sd{color:#777;font-size:12px;line-height:1.45;margin-bottom:9px}.ep-sd code{background:#f0f0f3;padding:1px 4px;border-radius:4px}'
+      + '.ep-cmdrow{display:flex;gap:8px;align-items:stretch}.ep-copy{flex:none;font-size:12px;white-space:nowrap}'
+      + '.ep-drop{display:block;border:2px dashed #ccd;border-radius:10px;padding:16px;text-align:center;color:#789;font-size:12.5px;cursor:pointer;transition:.12s}'
+      + '.ep-drop:hover,.ep-drop.ep-dragover{border-color:#0b6;background:#f2fbf6;color:#0b6}'
+      + '.ep-drop.ep-drop-ok{border-style:solid;border-color:#0b6;background:#f2fbf6;color:#0b6}'
+      + '.ep-drop.ep-drop-bad{border-style:solid;border-color:#d66;background:#fdf3f3;color:#c33}.ep-drop code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}'
       + '.ep-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}.ep-tbl th,.ep-tbl td{text-align:left;padding:5px 8px;border-bottom:1px solid #f0f0f0}.ep-tbl th{color:#888;font-weight:600}.ep-bad{color:#c33}'
       + '.ep-sum{font-size:13px;line-height:1.7;background:#f6faf7;border:1px solid #d8efe2;border-radius:8px;padding:10px 12px}'
       + '.ep-err{color:#c33;font-size:13px}';

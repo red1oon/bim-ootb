@@ -61,7 +61,21 @@ const server = http.createServer((req, res) => {
   const subFlow = await page.$('#ep-chain');
   console.log('§PICKER-CONFIRM ' + confirmLog + ' subFlowShown=' + (subFlow ? 'Y' : 'N'));
 
-  // 3) load the LIVE chain → re-fold through the engine
+  // 2b) the redesigned STAGED box: 🔒 doctrine banner + 3 numbered steps + copy cmd + bundle download + drop-zone
+  const instrLog = logs.find(l => l.startsWith('§MIGRATE-INSTR')) || '(no instr)';
+  const boxParts = await page.evaluate(() => ({
+    lock:  !!document.querySelector('.ep-lock'),
+    steps: document.querySelectorAll('.ep-steps .ep-step').length,
+    cmd:   (document.querySelector('#ep-cmd') || {}).textContent || '',
+    dl:    ((document.querySelector('#ep-dl') || {}).getAttribute && document.querySelector('#ep-dl').getAttribute('href')) || '',
+    drop:  !!document.querySelector('#ep-drop')
+  }));
+  const staged = boxParts.lock && boxParts.steps === 3 && boxParts.drop
+    && /npm install/.test(boxParts.cmd) && boxParts.dl === 'odoo_agent.zip';
+  console.log('§PICKER-STAGED ' + instrLog + ' | lock=' + (boxParts.lock?'Y':'N')
+    + ' steps=' + boxParts.steps + ' dl=' + boxParts.dl + ' drop=' + (boxParts.drop?'Y':'N') + ' staged=' + (staged?'Y':'N'));
+
+  // 3) load the LIVE chain → validate (parse feedback) → re-fold through the engine
   await page.setInputFiles('#ep-chain', path.join(ROOT, 'odoo_chain.json'));
   await page.waitForTimeout(1500);
   const foldLog = logs.find(l => l.startsWith('§ODOO-MIGRATE-BROWSER')) || '(no fold)';
@@ -76,8 +90,9 @@ const server = http.createServer((req, res) => {
               && /glDr==glCr/.test(foldLog) && /chainOk=Y/.test(foldLog);
 
   console.log('§ERP-PICKER-WITNESS allFive=' + allFive + ' detectedOdoo=' + detectedOdoo
-    + ' confirmed=' + confirmed + ' folded=' + folded + ' pageErrors=' + (errs.length ? errs.join('|') : 0));
-  const pass = allFive && confirmed && folded && errs.length === 0;   // detectedOdoo soft (env-dependent)
+    + ' confirmed=' + confirmed + ' staged=' + staged + ' folded=' + folded
+    + ' pageErrors=' + (errs.length ? errs.join('|') : 0));
+  const pass = allFive && confirmed && staged && folded && errs.length === 0;   // detectedOdoo soft (env-dependent)
   console.log('§ERP-PICKER ' + (pass ? 'PASS' : 'FAIL'));
 
   await browser.close();

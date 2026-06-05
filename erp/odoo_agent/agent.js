@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
 //
-// odoo_agent.js — the INSTALL-SIDE Odoo migration extractor (delegate-to-install). It runs on the machine
-//   that has Odoo (Node, like poc_odoo_fold_live), re-pulls SO S00023's O2C chain LIVE from the running
-//   odoodemo (Odoo 17, :8069) via JSON-RPC, folds it through the SAME pure adapter (odoo_adapter.js) + the
-//   6 kernel verbs, SELF-VERIFIES (every hop commits, newVerbs=[], invoice GL ΣDr==ΣCr), then EMITS
-//   build/erp/odoo_chain.json = { meta, wfmc, KNOWN_VERBS, events:[{name,d,ops}], totals, gl }. The BROWSER
-//   (erp_picker.js Odoo sub-flow) loads that file and re-folds through window.ERPKernel — the browser never
-//   CORSes into Odoo; this agent is the recorded bridge (ERP.md delegate-to-install doctrine). NON-INVENT:
-//   every value is a recorded Odoo row.  §-log first.
-//   Run:  node scripts/odoo_agent.js 2>&1 | tee build/erp/odoo_agent.log
+// agent.js — the SELF-CONTAINED, INSTALL-SIDE Odoo migration extractor (delegate-to-install). This is the
+//   `odoo_agent.zip` bundle entry-point: it carries its own `erp_kernel.js` + `odoo_adapter.js` siblings and a
+//   `package.json` declaring the only external dep (sql.js), so a fresh user runs `npm install && node agent.js`
+//   with nothing from the repo. It runs on the machine that HAS Odoo (Node), re-pulls SO S00023's O2C chain LIVE
+//   from the running Odoo (default odoodemo, Odoo 17, :8069) via JSON-RPC, folds it through the SAME pure adapter
+//   (odoo_adapter.js) + the 6 kernel verbs, SELF-VERIFIES (every hop commits, newVerbs=[], invoice GL ΣDr==ΣCr),
+//   then EMITS ./odoo_chain.json = { meta, wfmc, KNOWN_VERBS, events:[{name,d,ops}], totals, gl } into the CURRENT
+//   directory. You then load that file back in the browser (Migrate ▸ Odoo) and it re-folds through
+//   window.ERPKernel — the browser NEVER reaches Odoo; this agent is the recorded bridge (ERP.md
+//   delegate-to-install doctrine). NON-INVENT: every value is a recorded Odoo row.  §-log first.
+//   Run:  npm install && node agent.js          # → ./odoo_chain.json   (override creds via env, see README)
 'use strict';
 var path = require('path'), fs = require('fs'), http = require('http');
 var initSqlJs = require('sql.js');
@@ -19,7 +21,7 @@ var A = require('./odoo_adapter');
 var HOST = process.env.ODOO_HOST || 'localhost', PORT = Number(process.env.ODOO_PORT || 8069);
 var DB = process.env.ODOO_DB || 'odoodemo', LOGIN = process.env.ODOO_LOGIN || 'admin', PASSWORD = process.env.ODOO_PASSWORD || 'admin';
 var SO = process.env.ODOO_SO || 'S00023';
-var OUT = path.join(__dirname, '..', 'build', 'erp', 'odoo_chain.json');
+var OUT = path.join(process.cwd(), 'odoo_chain.json');
 
 function rpc(service, method, args) {
   return new Promise(function (resolve, reject) {
@@ -107,7 +109,7 @@ function n2(x) { return Number(x).toFixed(2); }
   fs.writeFileSync(OUT, JSON.stringify(chain, null, 2));
   console.log('\n§ODOO-AGENT events=' + chain.events.length + ' mapped=' + mapped + '/' + built.events.length +
     ' verbs=[' + used.join(',') + '] newVerbs=[' + newVerbs.join(',') + '] gl Dr==Cr=' + (n2(dr) === n2(cr)) +
-    ' total=' + n2(chain.totals.total) + ' wrote ' + path.relative(path.join(__dirname, '..'), OUT) + ' bytes=' + fs.statSync(OUT).size);
+    ' total=' + n2(chain.totals.total) + ' wrote ' + path.relative(process.cwd(), OUT) + ' bytes=' + fs.statSync(OUT).size);
 
   var pass = fails === 0;
   console.log('\n§ODOO-AGENT ' + (pass ? 'PASS' : 'FAIL') + ' (' + fails + ' fails)\n');
