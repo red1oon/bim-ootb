@@ -82,3 +82,30 @@ same K). Witness `§RULE-EDIT-ORACLE rebuilt==live K=<k> chainOk=Y`.
 The witness attests **the rule edit + the re-folded derived classification, signed (ECDSA) and
 reversible** — NOT a GL posting (Completed ≠ posted, §I-K/§13.6). State exactly what reflowed: a
 derived PREMIUM classification over real Odoo prices.
+
+## 10. L1 — lifecycle-as-data (the stretch): "when may this Order complete"
+The same engine carries a SECOND rule, promoting from L2 (a classification guard) to **L1 — a guard on
+a document's lifecycle transition**, the most valuable rule a user edits.
+
+- **Rule (DATA):** *an order (DocStatus ∈ {DR,IP}) may **Complete (`CO`) without approval iff
+  `GrandTotal ≤ T`** (an approval ceiling).* This is a guard on the wfmc `CO` transition (the manifest's
+  `["DR","CO","CO"]`/`["IP","CO","CO"]`), so editing `T` is **lifecycle-as-data**.
+- **Population (non-invent):** all real Odoo sale orders carried into the shard as `C_Order` (Client 12)
+  with real `GrandTotal` + `DocStatus` mapped from the Odoo state (draft/sent→DR, sale→IP, done→CO,
+  cancel→VO). `gen_ad_odoo.js §5c` → `§RULE-DATA-L1 orders=26 DR+IP=26 min=434.13 max=5002.5`.
+- **Fold:** `cmp='lte'` → "MAY COMPLETE: K of 26". Default `T0=1500` (K=12) → edited `T1=3000` (K=21).
+- Same signed op (`SET_RULE`, now carrying `layer/gate`), same oracle, same reverse. Witness:
+```
+§RULE-FOLD layer=L1 rule=maycomplete gate=Complete(CO) T=1500 population=26 affected=12
+§RULE-EDIT layer=L1 rule=maycomplete tenant=Odoo(12) gate=Complete(CO) edit=T:1500→3000 \
+           population=26 affected=9 refold=ok signedOp=… chainOk=Y reversible=Y
+§RULE-EDIT-ORACLE layer=L1 rule=maycomplete rebuilt==live K=21 chainOk=Y
+§RULE-EDIT layer=L1 … edit=T:3000→1500 … reversible=Y
+§RULE-GESTURE layer=L1 rule=maycomplete PASS N=26 K0=12 K1=21 affected=9 signed=Y
+```
+- **Honesty:** L1 attests *which orders the lifecycle rule WOULD admit to Complete under the current
+  signed guard* — it does NOT itself post the Complete (no GL/status write here); it makes the
+  admission rule editable, signed, and reversible. The closed-verb membrane holds: the guard is DATA.
+
+Both rules share ONE generalized engine (`RULES` registry in `rule_fold.js`) and ONE signed op-log
+(rule-tagged `SET_RULE` ops); the ⚖ Rule overlay switches between them.

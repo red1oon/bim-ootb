@@ -50,7 +50,9 @@ function tableCols(db, t) { return exec(db, "SELECT name FROM pragma_table_info(
   var so = (await ex('sale.order', 'search_read', [[['name', '=', 'S00023']]], { fields: ['id', 'name', 'state', 'date_order', 'amount_untaxed', 'amount_total', 'partner_id'] }))[0];
   var sol = await ex('sale.order.line', 'search_read', [[['order_id', '=', so.id], ['display_type', '=', false]]], { fields: ['product_id', 'product_uom_qty', 'qty_delivered', 'qty_invoiced', 'price_unit', 'price_subtotal'] });
   var inv = (await ex('account.move', 'search_read', [[['invoice_origin', '=', so.name], ['move_type', '=', 'out_invoice']]], { fields: ['id', 'name', 'invoice_date', 'amount_untaxed', 'amount_total', 'payment_state'] }))[0];
-  L('   live: products=' + prods.length + ' SO=' + so.name + ' lines=' + sol.length + ' invoice=' + (inv && inv.name));
+  // L1 lifecycle rule population — ALL sale orders (real amount_total + state), gated by "may Complete iff total ≤ T".
+  var orders = await ex('sale.order', 'search_read', [[]], { fields: ['id', 'name', 'state', 'date_order', 'amount_total', 'amount_untaxed', 'partner_id'], order: 'amount_total desc', limit: 200 });
+  L('   live: products=' + prods.length + ' SO=' + so.name + ' lines=' + sol.length + ' invoice=' + (inv && inv.name) + ' orders=' + orders.length);
 
   // ── 2. base (framework) + a fresh SHARD db (only the new rows live here) ──
   var SQL = await initSqlJs();
@@ -134,6 +136,23 @@ function tableCols(db, t) { return exec(db, "SELECT name FROM pragma_table_info(
   sol.forEach(function (l, i) { ins('C_OrderLine', stamp7({ C_OrderLine_ID: ORD * 100 + i + 1, C_Order_ID: ORD, Line: (i + 1) * 10, M_Product_ID: pidMap[l.product_id[0]] || null, QtyOrdered: l.product_uom_qty, QtyDelivered: l.qty_delivered, QtyInvoiced: l.qty_invoiced, PriceActual: l.price_unit, LineNetAmt: l.price_subtotal, C_UOM_ID: 100 }, CL, ORG)); });
   if (inv) ins('C_Invoice', stamp7({ C_Invoice_ID: 1200001, DocumentNo: inv.name, DocStatus: 'CO', IsSOTrx: 'Y', DateInvoiced: String(inv.invoice_date).slice(0, 10), C_BPartner_ID: BP, C_Currency_ID: 100, GrandTotal: inv.amount_total, TotalLines: inv.amount_untaxed, Description: 'Migrated from odoodemo · ' + inv.payment_state, C_Order_ID: ORD }, CL, ORG));
   L('   data: products=' + prods.length + ' categories=' + Object.keys(catId).length + ' SO=' + so.name + ' customer="' + so.partner_id[1] + '"');
+
+  // ── 5c. real Odoo ORDER population for the L1 lifecycle rule ("when may this Order complete"). Insert every
+  //        sale order as C_Order (Client 12) with its real GrandTotal + DocStatus mapped from the Odoo state
+  //        (draft/sent→DR, sale→IP — both completable to CO; done→CO; cancel→VO). S00023 stays the detailed CO
+  //        showcase above (skipped here, not duplicated). Distinct partners → C_BPartner rows. NON-INVENT.
+  var ST = { draft: 'DR', sent: 'DR', sale: 'IP', done: 'CO', cancel: 'VO' };
+  var bpMap = {}; bpMap[so.partner_id[0]] = BP;                       // S00023's partner already inserted as BP
+  var nextBP = 1200002, nextOrd = 1200002, omin = null, omax = null, ocount = 0;
+  orders.forEach(function (o) {
+    if (o.name === so.name) return;                                  // the detailed showcase order — keep it CO above
+    var ppid = o.partner_id && o.partner_id[0];
+    if (ppid && !bpMap[ppid]) { bpMap[ppid] = nextBP++; ins('C_BPartner', stamp7({ C_BPartner_ID: bpMap[ppid], Value: 'ODOO-BP-' + ppid, Name: o.partner_id[1], IsCustomer: 'Y', IsVendor: 'N', IsEmployee: 'N' }, CL, ORG)); }
+    var ds = ST[o.state] || 'DR';
+    ins('C_Order', stamp7({ C_Order_ID: nextOrd++, DocumentNo: o.name, DocStatus: ds, IsSOTrx: 'Y', DateOrdered: String(o.date_order).slice(0, 10), C_BPartner_ID: bpMap[ppid] || BP, C_Currency_ID: 100, GrandTotal: o.amount_total, TotalLines: o.amount_untaxed, Description: 'Migrated from odoodemo · state=' + o.state }, CL, ORG));
+    if (ds === 'DR' || ds === 'IP') { ocount++; var t = o.amount_total; if (omin === null || t < omin) omin = t; if (omax === null || t > omax) omax = t; }
+  });
+  L('§RULE-DATA-L1 orders=' + ocount + ' DR+IP=' + ocount + ' min=' + omin + ' max=' + omax + ' (real Odoo order totals, 0 invented)');
 
   // ── 6. 7-field audit + write the SHARD ──
   var has7 = ['AD_Client_ID', 'AD_Org_ID', 'IsActive', 'Created', 'CreatedBy', 'Updated', 'UpdatedBy'];
