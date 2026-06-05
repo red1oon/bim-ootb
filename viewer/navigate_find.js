@@ -946,8 +946,30 @@
         A.dbQuery("SELECT element_guid FROM rel_contained_in_space WHERE space_guid = ?", [guid])
           .forEach(function(r) { set.add(r[0]); });
       } catch (e) { console.warn('[RP-TA] §ROOM_SELECT_ERR', e.message); }
-      // §DEPTH item: room CONTENTS = cyan item; enclosing storey = the 0.5 group; zoom frames the room VOLUME.
+      // §DEPTH item: room CONTENTS = cyan item; enclosing storey = the 0.1 parent ghost; zoom frames the room VOLUME.
       _drillSelect(set, name, 'ROOM_SELECT', storeySet, null, zoomBox);
+    }
+
+    // §DEPTH consistency: a Room-tree floor/type HEADER tap is a GROUP select — route it through the
+    // SAME B|G|I entry every other lens uses (was expand-only). Storey grouping → the floor's elements;
+    // Type grouping → the union of that type's rooms' contents. Group depth = 1.0 solid + fit-zoom,
+    // building(parent) = 0.1. (groupRooms = [{key,label}] for this header, captured at build time.)
+    function _roomGroupSelect(gk, groupRooms) {
+      var set = new Set();
+      try {
+        if (_roomGroupBy === 'type') {
+          var keys = (groupRooms || []).map(function(r) { return r.key; });
+          if (keys.length) {
+            var ph = keys.map(function() { return '?'; }).join(',');
+            A.dbQuery("SELECT element_guid FROM rel_contained_in_space WHERE space_guid IN (" + ph + ")", keys)
+              .forEach(function(r) { set.add(r[0]); });
+          }
+        } else {
+          A.dbQuery("SELECT guid FROM elements_meta WHERE storey = ?", [gk])
+            .forEach(function(r) { set.add(r[0]); });
+        }
+      } catch (e) { console.warn('[RP-TA] §ROOM_GROUP_ERR', e.message); }
+      _drillSelect(null, gk, 'ROOM_GROUP', set); // group mode: floor/type solid 1.0 + fit-zoom, building 0.1
     }
 
     // §RP sub-toggle row [A | B] — a small two-pill regroup control inside a lens tree.
@@ -1002,10 +1024,15 @@
           byGroup[gk].push({ key: r[0], label: r[1] || '(unnamed)' });
         });
         order.forEach(function(gk) {
-          var kids = byGroup[gk].map(function(rm) {
+          var groupRooms = byGroup[gk];
+          var kids = groupRooms.map(function(rm) {
             return _treeNode(rm.label, '', 1, { onTap: function() { _roomSelect(rm.key); } });
           });
-          elTree.appendChild(_treeNode(gk, byGroup[gk].length, 0, { children: kids }));
+          // §DEPTH consistency: a floor/type header tap is a GROUP select (like Storey/Phase/Material) —
+          // render it solid via the same B|G|I entry. (Was expand-only → "doesn't treat it as Group".)
+          // Arrow still expands the children.
+          elTree.appendChild(_treeNode(gk, groupRooms.length, 0,
+            { children: kids, onTap: function() { _roomGroupSelect(gk, groupRooms); } }));
         });
         console.log('[RP-T3] §LENS_GROUPS lens=room mode=volume groupBy=' + _roomGroupBy +
           ' groups=' + order.length + ' rooms=' + rooms.length +
@@ -1262,7 +1289,11 @@
       _clearShapeOverlays();
       _clearHlOverlay();
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // rest → transparent
-      _dimXrayTo(0.1);  // §DEPTH: rest of building = 0.1 ghost, ALWAYS (group or item)
+      // §DEPTH (parent-relative): the selection's IMMEDIATE PARENT = 0.1 ghost, everything BEYOND = 0.
+      //  • GROUP select → parent IS the building → keep the building at 0.1 (e.g. Material, whose only
+      //    parent is the building, stays 0.1). • ITEM select → parent is the group (kept at 0.1 via the
+      //    group overlay below) → the building is BEYOND the parent → send it to 0 (gone).
+      _dimXrayTo(litN ? 0 : 0.1);
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
@@ -1271,7 +1302,9 @@
       if (A.markDirty) A.markDirty(); // immediate: the rest dims THIS frame → the tap is acknowledged at once
 
       var isGroup = !litN;                                  // no lit item → GROUP depth
-      var grpOp = isGroup ? 1.0 : (ctxOpacity != null ? ctxOpacity : 0.5);
+      // ITEM mode: the group is the selection's PARENT → faint 0.1 ghost (was 0.5; user: 0.5 "doesn't
+      // help" against a still-visible building — now building is 0 so 0.1 reads as the local context).
+      var grpOp = isGroup ? 1.0 : (ctxOpacity != null ? ctxOpacity : 0.1);
 
       // §PERF: build the heavy shape overlays OFF the pointer thread (next frames) so the tap
       // returns instantly. Group: frame1 = group solid 1.0 + fit-zoom. Item: frame1 = cyan item
