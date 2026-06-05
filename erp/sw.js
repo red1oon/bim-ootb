@@ -7,7 +7,8 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v583';   // v583: GATED COMPLETE — the editable, signed L1 rule "order may Complete iff
+const CACHE_VERSION = 'v584';   // v584: Migrate▸Odoo staged box + self-sufficient odoo_agent.zip bundle (P0);
+                                // v583: GATED COMPLETE — the editable, signed L1 rule "order may Complete iff
                                 //       GrandTotal ≤ T" now GATES the real CO transition engine-side (dispatch
                                 //       admission guard); edit the rule → a blocked order completes, signed;
                                 // v582: I-4 — ONE signed op-log: the live write path (a doc Complete via the
