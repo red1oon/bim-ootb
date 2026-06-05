@@ -243,18 +243,72 @@
     }
     // Record a semantic view. Skipped while restoring or when the log is off.
     function _pushView(v) {
-      if (_restoring || !_vhEnabled) return;
+      if (_restoring) return;
+      // §UHIST: the universal timeline is now the system of record. We keep the local
+      // _viewHist as the replay source-of-truth (its restore logic), but the user-facing
+      // bar + undo/redo live in UniversalHistory. Honour ITS off-toggle (the old per-lens
+      // _vhEnabled toggle is retired — one toggle now).
+      var on = !window.UniversalHistory || UniversalHistory.isEnabled();
+      if (!on) return;
       // Standard undo/redo: a new move after stepping back drops the redo tail.
       if (_viewIdx < _viewHist.length - 1) _viewHist.length = _viewIdx + 1;
       _viewHist.push(v);
       _viewIdx = _viewHist.length - 1;
       // The deferred (rAF) zoom hasn't settled yet — snapshot the camera shortly after.
+      // We snapshot into the SAME object `v` that UniversalHistory holds, so its restore
+      // gets the settled camera pose too.
       if (_vhCamTimer) clearTimeout(_vhCamTimer);
       var entry = v;
       _vhCamTimer = setTimeout(function() { _vhSnapCam(entry); }, 450);
-      _vhRender();
+      // §UHIST: feed the universal merged timeline (kind:'view').
+      if (window.UniversalHistory && UniversalHistory.pushView) UniversalHistory.pushView(v);
       console.log('§VIEWLOG_PUSH n=' + _viewHist.length + ' idx=' + _viewIdx +
         ' kind=' + v.kind + ' label="' + (v.label || v.axis || '') + '"');
+    }
+    // §UHIST: Replay a view OBJECT deterministically (no new push). Used by both the local
+    // index restore AND the UniversalHistory view-restore callback (entry-based). A null v
+    // means "no earlier view" → clear the lens overlays back to the plain scene.
+    function _replayViewObj(v) {
+      if (!v) { // undo past the first view → tear the lens down to plain scene
+        _restoring = true;
+        try { _highlightLensReset(); _roomLensReset(); _clearShapeOverlays && _clearShapeOverlays();
+              if (A.xrayOn && _hlXrayWasOff && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = false; } }
+        catch (e) {} finally { _restoring = false; }
+        console.log('§VIEWLOG_RESTORE_NULL cleared lens');
+        return;
+      }
+      _restoring = true;
+      try {
+        if (v.kind === 'axis') {
+          _setTreeMode(v.axis);
+        } else {
+          var litSet = (v.litGuids && v.litGuids.length) ? new Set(v.litGuids) : null;
+          var grpSet = (v.groupGuids && v.groupGuids.length) ? new Set(v.groupGuids) : null;
+          _drillSelect(litSet, v.label, v.tag, grpSet, v.ctxOpacity);
+        }
+      } finally { _restoring = false; }
+      if (v.cam) {
+        var cam = v.cam;
+        setTimeout(function() {
+          if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
+          var end = new THREE.Vector3(cam.pos.x, cam.pos.y, cam.pos.z);
+          var tgt = new THREE.Vector3(cam.target.x, cam.target.y, cam.target.z);
+          var start = A.camera.position.clone(), st = A.controls.target.clone(), t = 0;
+          (function anim() {
+            t += 0.04; if (t > 1) t = 1; var e = 1 - Math.pow(1 - t, 3);
+            A.camera.position.lerpVectors(start, end, e);
+            A.controls.target.lerpVectors(st, tgt, e);
+            A.controls.update(); if (A.markDirty) A.markDirty();
+            if (t < 1) requestAnimationFrame(anim);
+          })();
+        }, 80);
+      }
+      console.log('§VIEWLOG_RESTORE kind=' + v.kind + ' label="' + (v.label || v.axis || '') +
+        '" cam=' + (v.cam ? 'yes' : 'no'));
+    }
+    // §UHIST: register HOW the universal timeline restores a Find view moment.
+    if (window.UniversalHistory && UniversalHistory.registerViewRestore) {
+      UniversalHistory.registerViewRestore(_replayViewObj);
     }
     // Replay the view at idx deterministically (no new push), then lerp camera to its pose.
     function _restoreView(idx) {
@@ -309,6 +363,13 @@
     // (#undo-redo-btns, ↶ ↷). Shown only while the Find panel is open AND
     // recording is on AND ≥1 view exists; the off-icon (◷) is always visible.
     function _vhRender() {
+      // §UHIST: the old find-only bar (#find-viewhist-btns) is RETIRED — the universal
+      // timeline (universal_history.js, #universal-hist-btns) is the one bar now. Keep this
+      // function as a no-op so all existing callers are harmless. Replay logic + _viewHist
+      // remain (UniversalHistory delegates view-restore back to _replayViewObj).
+      return;
+    }
+    function _vhRender_RETIRED() {
       var open = panel && panel.style.display === 'block';
       if (!_vhBar) {
         _vhBar = document.createElement('div');
