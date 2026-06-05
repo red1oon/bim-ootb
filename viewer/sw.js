@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v590';
+const CACHE_VERSION = 'v592';
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -69,6 +69,7 @@ const PRECACHE_ASSETS = [
   'walk.js',
   'city.js',
   'rates.js',
+  'analysis_sidecar.js',
   'locale_loader.js',
   'nlp.js',
   'semantic_enrichment.js',
@@ -147,6 +148,9 @@ const PRECACHE_ASSETS = [
   'clash_rules.json',
   'grid_rules.json',
   'rates/cidb2024_my.json',
+  // Shared sequence/labour rules — one source for 4D schedule baker + drone order.
+  // Precached so loadSequenceRules() resolves offline (else falls to hardcoded).
+  'rates/sequence_rules.json',
   // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',
