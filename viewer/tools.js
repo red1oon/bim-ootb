@@ -696,8 +696,16 @@ function setupTools(A) {
       (function _shadowChunk() {
         var end = Math.min(_si + 5000, _shadowList.length);
         for (; _si < end; _si++) { var o = _shadowList[_si]; if (o.visible) { o.castShadow = true; o.receiveShadow = true; } }
+        // §S288b: refresh the static shadow map after EVERY chunk, not just the last.
+        // With autoUpdate=false the depth texture is only (re)rendered on needsUpdate;
+        // a frame that renders mid-traverse — casters already tagged castShadow, materials
+        // compiled with a shadow sampler — would otherwise sample an unrendered shadow map
+        // ("not a depth texture with TEXTURE_COMPARE_MODE" WebGL warning, one frame of bad
+        // shading). Setting needsUpdate per chunk guarantees the texture exists before sampling.
+        A.renderer.shadowMap.needsUpdate = true;
+        if (A.markDirty) A.markDirty();
         if (_si < _shadowList.length) setTimeout(_shadowChunk, 0);
-        else { A.renderer.shadowMap.needsUpdate = true; if (A.markDirty) A.markDirty(); console.log('§SHADOW_TRAVERSE done count=' + _shadowList.length); }
+        else { console.log('§SHADOW_TRAVERSE done count=' + _shadowList.length); }
       })();
     } else {
       var _unshadowList = [];
