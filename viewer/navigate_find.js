@@ -282,9 +282,8 @@
         if (v.kind === 'axis') {
           _setTreeMode(v.axis);
         } else {
-          var litSet = (v.litGuids && v.litGuids.length) ? new Set(v.litGuids) : null;
-          var grpSet = (v.groupGuids && v.groupGuids.length) ? new Set(v.groupGuids) : null;
-          _drillSelect(litSet, v.label, v.tag, grpSet, v.ctxOpacity);
+          var d = _viewToDrill(v);
+          if (d.focus) _drillSelect(d.focus, v.label, v.tag, d.opts);
         }
       } finally { _restoring = false; }
       if (v.cam) {
@@ -320,9 +319,8 @@
         if (v.kind === 'axis') {
           _setTreeMode(v.axis);
         } else {
-          var litSet = (v.litGuids && v.litGuids.length) ? new Set(v.litGuids) : null;
-          var grpSet = (v.groupGuids && v.groupGuids.length) ? new Set(v.groupGuids) : null;
-          _drillSelect(litSet, v.label, v.tag, grpSet, v.ctxOpacity);
+          var d = _viewToDrill(v);
+          if (d.focus) _drillSelect(d.focus, v.label, v.tag, d.opts);
         }
       } finally { _restoring = false; }
       // Replay re-zooms via _drillSelect; for axis (no zoom) or to land exactly, lerp to
@@ -678,7 +676,16 @@
       _clearHlOverlay();
       _clearShapeOverlays();
       if (A.setOutline) A.setOutline([]);
-      if (A.xrayOn && _hlXrayWasOff && A.toggleXray) A.toggleXray(); // restore opacity
+      if (A.xrayOn && _hlXrayWasOff && A.toggleXray) {
+        A.toggleXray(); // WE turned x-ray on for the lens → turn it off (restores _origOpacity = 1)
+        console.log('[RP-TB] §XRAY_RESTORE mode=off (lens-owned) xrayOn=' + A.xrayOn);
+      } else if (A.xrayOn) {
+        // §XRAY_UNDISTURB: the user had Alt+Z x-ray ON before the lens, and our _dimXrayTo overwrote
+        // its normal 0.3 with the depth value (0.1/0). Put the normal x-ray opacity BACK so Alt+Z is
+        // left exactly as the user had it — the depth lens must not disturb the manual x-ray.
+        _dimXrayTo(0.3);
+        console.log('[RP-TB] §XRAY_RESTORE mode=undisturb→0.3 (user-owned) xrayOn=' + A.xrayOn);
+      }
       _hlXrayWasOff = false;
       if (A.markDirty) A.markDirty();
     }
@@ -766,7 +773,10 @@
     // solidOpacity (optional): for the kept-solid CONTEXT build (color==null), render it at this
     // opacity instead of fully opaque. Room lens passes 0.3 so the selected room shows THROUGH its
     // enclosing floor; Material/Type/Phase drills omit it → context stays solid (1.0), as before.
-    function _buildShapeMeshes(set, color, solidOpacity) {
+    // colorOpacity (optional, color path): render the highlight colour SEE-THROUGH at this opacity
+    // (transparent, depthWrite off) instead of flat opaque — the "usual mesh highlight" look so the
+    // item's real material reads through it. null → opaque (legacy).
+    function _buildShapeMeshes(set, color, solidOpacity, colorOpacity) {
       if (!A.scene || typeof THREE === 'undefined' || !A.ifc2three || !A.meshCache || !set || !set.size) return 0;
       var rows = _getInstanceRows();
       if (!rows.length) return 0;
@@ -780,7 +790,11 @@
         if (!groups[key]) groups[key] = { hash: hash, rgba: r[8], ifc: r[9], els: [] };
         groups[key].els.push(r); total++;
       }
-      var cyan = color != null ? new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide }) : null;
+      // colorOpacity set → see-through highlight that SHINES THROUGH occluders (depthTest off) so the
+      // small final item stays visible even zoomed-out / behind other geometry.
+      var cyan = color != null ? new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide,
+        transparent: colorOpacity != null, opacity: colorOpacity != null ? colorOpacity : 1,
+        depthWrite: colorOpacity == null, depthTest: colorOpacity == null }) : null;
       var made = 0, m4 = new THREE.Matrix4(), eu = new THREE.Euler(),
           q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
       for (var k in groups) {
@@ -821,17 +835,21 @@
     // Our shape overlays use fresh materials (not in _matCache / flagged) → unaffected.
     function _dimXrayTo(op) {
       if (!A.xrayOn) return;
-      var c = A._matCache || {}, ks = Object.keys(c), n = 0;
+      var c = A._matCache || {}, ks = Object.keys(c), n = 0, samp = [];
       if (ks.length) {
-        ks.forEach(function(k) { var m = c[k]; if (m) { m.opacity = op; m.needsUpdate = true; n++; } });
+        ks.forEach(function(k) { var m = c[k]; if (m) { m.transparent = true; m.opacity = op; m.needsUpdate = true; n++; } });
+        for (var z = 0; z < Math.min(4, ks.length); z++) { var mm = c[ks[z]]; if (mm) samp.push(mm.opacity.toFixed(2) + (mm.transparent ? 'T' : 'F')); }
       } else if (A.scene) {
         A.scene.traverse(function(o) {
           if (o.isMesh && o.material && !(o.userData && (o.userData._shapeOverlay || o.userData._hlOverlay))) {
-            o.material.opacity = op; o.material.needsUpdate = true; n++;
+            o.material.transparent = true; o.material.opacity = op; o.material.needsUpdate = true; n++;
+            if (samp.length < 4) samp.push(o.material.opacity.toFixed(2) + (o.material.transparent ? 'T' : 'F'));
           }
         });
       }
-      console.log('[RP-TB] §XRAY_DIM opacity=' + op + ' mats=' + (ks.length ? n : 'scene:' + n));
+      // §-log the READBACK (actual post-set opacity) — proves the dim really took to `op` (test reads this).
+      console.log('[RP-TB] §XRAY_DIM opacity=' + op + ' mats=' + (ks.length ? n : 'scene:' + n) +
+        ' readback=[' + samp.join(',') + '] cache=' + ks.length + ' xrayOn=' + A.xrayOn);
       if (A.markDirty) A.markDirty();
     }
 
@@ -947,7 +965,9 @@
           .forEach(function(r) { set.add(r[0]); });
       } catch (e) { console.warn('[RP-TA] §ROOM_SELECT_ERR', e.message); }
       // §DEPTH item: room CONTENTS = cyan item; enclosing storey = the 0.1 parent ghost; zoom frames the room VOLUME.
-      _drillSelect(set, name, 'ROOM_SELECT', storeySet, null, zoomBox);
+      // §DEPTH item: room CONTENTS = focus (solid + shine-thru) · enclosing storey = parent (solid) ·
+      // building = grandparent → 0.2. Zoom frames the room VOLUME.
+      _drillSelect(set, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox });
     }
 
     // §DEPTH consistency: a Room-tree floor/type HEADER tap is a GROUP select — route it through the
@@ -969,7 +989,7 @@
             .forEach(function(r) { set.add(r[0]); });
         }
       } catch (e) { console.warn('[RP-TA] §ROOM_GROUP_ERR', e.message); }
-      _drillSelect(null, gk, 'ROOM_GROUP', set); // group mode: floor/type solid 1.0 + fit-zoom, building 0.1
+      _drillSelect(set, gk, 'ROOM_GROUP', { isItem: false }); // top-level group: floor solid, building 0.2
     }
 
     // §RP sub-toggle row [A | B] — a small two-pill regroup control inside a lens tree.
@@ -1115,7 +1135,7 @@
     function _materialHighlight(label, set) {
       // §RP-SHAPE: material select now lights the elements' REAL shapes (cyan) + rest at 0.2,
       // same as the phase drill. No parent group to keep solid → phaseSet null.
-      _drillSelect(null, label, 'MAT_SELECT', set); // §DEPTH group: whole material = 1.0 solid + fit-zoom
+      _drillSelect(set, label, 'MAT_SELECT', { isItem: false }); // top-level group: material solid, building 0.2
     }
 
     function _materialSelectByName(name) {
@@ -1268,77 +1288,88 @@
     // zoomBox (optional, item mode): a {center,size} to FRAME instead of the lit set — e.g. a Room
     // frames its whole VOLUME (its 2 contained elements would zoom to a tiny erroneous frame).
     var _drillRAF1 = null, _drillRAF2 = null;
-    function _drillSelect(set, label, tag, groupSet, ctxOpacity, zoomBox) {
-      // §PERF: a rapid tap cancels any in-flight build so only the LATEST selection renders —
-      // keeps the panel responsive to touch instead of queuing a backlog of heavy mesh builds.
+    // §DEPTH — ONE windowed model (user-designed), uniform across every lens. Reading OUTWARD from
+    // the focus (the thing you tapped):
+    //   focus  = solid  (+ a SEE-THROUGH cyan mesh-highlight if it's the FINAL ITEM — the item is the
+    //            smallest thing, so solid alone vanishes when zoomed out; the shine-thru keeps it found)
+    //   1 out  = 0.2     ── EXCEPT a final item keeps its parent SOLID and pushes 0.2 to the grandparent
+    //   beyond = hidden (0)
+    // So GROUP focus: [solid] [parent 0.2] [hidden…].  ITEM focus: [solid+shine] [parent solid] [grand 0.2] [hidden…].
+    // When the outermost visible layer IS the building (shallow focus), it is the 0.2 (base) and there
+    // is no "hidden" beyond it. Callers pass opts = { isItem, parentSet, grandSet, zoomBox }.
+    function _drillSelect(focusSet, label, tag, opts) {
+      opts = opts || {};
       if (_drillRAF1) { cancelAnimationFrame(_drillRAF1); _drillRAF1 = null; }
       if (_drillRAF2) { cancelAnimationFrame(_drillRAF2); _drillRAF2 = null; }
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
       if (A.filterByGuids) A.filterByGuids(null); // never isolate — x-ray + shape highlight only
-      var litN = set ? set.size : 0, grpN = groupSet ? groupSet.size : 0;
-      if (!litN && !grpN) { console.log('[RP-TB] §' + tag + ' "' + label + '" elems=0'); return; }
-      // §VIEWLOG: a real select (group or item) is a semantic view moment — record the
-      // params needed to REPLAY it. Skipped while restoring (so replay pushes nothing) or
-      // when the view-log is off. _drillSelect is only called on real selects, never hover.
+      var focusN = focusSet ? focusSet.size : 0;
+      if (!focusN) { console.log('[RP-TB] §' + tag + ' "' + label + '" elems=0'); return; }
+      var isItem = !!opts.isItem, parentSet = opts.parentSet || null, grandSet = opts.grandSet || null, zoomBox = opts.zoomBox || null;
+
+      // §VIEWLOG: record the focus + ancestor chain so the timeline can REPLAY this exact view.
       _pushView({
-        kind: litN ? 'item' : 'group', tag: tag, label: label, mode: _treeMode,
-        litGuids: set ? Array.from(set) : [], groupGuids: groupSet ? Array.from(groupSet) : [],
-        ctxOpacity: (ctxOpacity != null ? ctxOpacity : null)
+        kind: isItem ? 'item' : 'group', tag: tag, label: label, mode: _treeMode, isItem: isItem,
+        focusGuids: Array.from(focusSet),
+        parentGuids: parentSet ? Array.from(parentSet) : [],
+        grandGuids: grandSet ? Array.from(grandSet) : []
       });
+
       _clearShapeOverlays();
       _clearHlOverlay();
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // rest → transparent
-      // §DEPTH (parent-relative): the selection's IMMEDIATE PARENT = 0.1 ghost, everything BEYOND = 0.
-      //  • GROUP select → parent IS the building → keep the building at 0.1 (e.g. Material, whose only
-      //    parent is the building, stays 0.1). • ITEM select → parent is the group (kept at 0.1 via the
-      //    group overlay below) → the building is BEYOND the parent → send it to 0 (gone).
-      _dimXrayTo(litN ? 0 : 0.1);
+
+      // Build the visible window (inner→outer) + decide the building base (0.2 if it IS the next layer, else hidden).
+      var layers = [], baseOp;
+      if (isItem) {
+        if (parentSet) layers.push({ set: parentSet, op: 1.0 });        // immediate parent: SOLID
+        if (grandSet) { layers.push({ set: grandSet, op: 0.2 }); baseOp = 0; } // grandparent 0.2, building hidden
+        else baseOp = 0.2;                                              // no grandparent → building IS the 0.2
+      } else {
+        if (parentSet) { layers.push({ set: parentSet, op: 0.2 }); baseOp = 0; } // nested group: parent 0.2, building hidden
+        else baseOp = 0.2;                                             // top-level group → building IS the 0.2
+      }
+      _dimXrayTo(baseOp);
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
         if (elShowAllBtn) elShowAllBtn.style.display = '';
       }
-      if (A.markDirty) A.markDirty(); // immediate: the rest dims THIS frame → the tap is acknowledged at once
+      if (A.markDirty) A.markDirty(); // immediate: the base dims THIS frame → the tap is acknowledged at once
 
-      var isGroup = !litN;                                  // no lit item → GROUP depth
-      // ITEM mode: the group is the selection's PARENT → faint 0.1 ghost (was 0.5; user: 0.5 "doesn't
-      // help" against a still-visible building — now building is 0 so 0.1 reads as the local context).
-      var grpOp = isGroup ? 1.0 : (ctxOpacity != null ? ctxOpacity : 0.1);
-
-      // §PERF: build the heavy shape overlays OFF the pointer thread (next frames) so the tap
-      // returns instantly. Group: frame1 = group solid 1.0 + fit-zoom. Item: frame1 = cyan item
-      // + zoom, frame2 = (group − item) solid at 0.5. Was synchronous → "respond late" report.
+      // §PERF: build the heavy overlays OFF the pointer thread so the tap returns instantly.
       _drillRAF1 = requestAnimationFrame(function() {
         _drillRAF1 = null;
-        if (isGroup) {
-          var gsolid = _buildShapeMeshes(groupSet, null, 1.0);  // whole group solid, natural material
-          var gz = _zoomToGroup(groupSet);                      // §DEPTH: fit the group to the frame
-          if (A.markDirty) A.markDirty();
-          console.log('[RP-TB] §' + tag + ' "' + label + '" GROUP grp=' + grpN + ' solid=' + gsolid +
-            ' grpOp=1.0 overlays=' + _shapeOverlays.length + ' zoom=' + (gz ? 'fit' : 'none') +
-            ' xray=' + (A.xrayOn ? 'on' : 'off'));
-          return;
+        // ancestors inner→outer, each excluding all inner sets (avoid z-fight / double-draw)
+        var excl = new Set(focusSet), ancLog = [];
+        for (var li = 0; li < layers.length; li++) {
+          var L = layers[li], s = new Set();
+          L.set.forEach(function(g) { if (!excl.has(g)) s.add(g); });
+          L.set.forEach(function(g) { excl.add(g); });
+          var nn = _buildShapeMeshes(s, null, L.op >= 1 ? 1.0 : L.op);
+          ancLog.push(L.op + '×' + nn);
         }
-        var lit = _buildShapeMeshes(set, 0x4fc3f7);   // selected item's real shape, cyan
-        // §FILL: zoom the lit item tight, OR a caller-supplied box (Room → its whole volume)
-        var zoomed = zoomBox ? _zoomToBoxFill(zoomBox.center, zoomBox.size, tag + '_ZOOM') : _zoomToGuids(set, 1.1);
+        var solid = _buildShapeMeshes(focusSet, null, 1.0);                       // focus in its real material, solid
+        var hl = isItem ? _buildShapeMeshes(focusSet, 0x4fc3f7, null, 0.5) : 0;   // see-thru cyan shine (shines through)
+        var zoomed = zoomBox ? _zoomToBoxFill(zoomBox.center, zoomBox.size, tag + '_ZOOM')
+                   : (isItem ? _zoomToGuids(focusSet, 1.1) : _zoomToGroup(focusSet));
         if (A.markDirty) A.markDirty();
-        var litLog = function(solid) {
-          console.log('[RP-TB] §' + tag + ' "' + label + '" ITEM elems=' + set.size + ' lit=' + lit +
-            ' grpSolid=' + solid + ' grpOp=' + grpOp + ' overlays=' + _shapeOverlays.length +
-            ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
-        };
-        if (!grpN) { litLog(0); return; }
-        // group stays semi-solid = the group minus the lit item (avoid z-fight with the cyan shape)
-        _drillRAF2 = requestAnimationFrame(function() {
-          _drillRAF2 = null;
-          var solidSet = new Set(); groupSet.forEach(function(g) { if (!set.has(g)) solidSet.add(g); });
-          var solid = _buildShapeMeshes(solidSet, null, grpOp);  // §DEPTH item: group → 0.5, item shines through
-          if (A.markDirty) A.markDirty();
-          litLog(solid);
-        });
+        console.log('[RP-TB] §' + tag + ' "' + label + '" ' + (isItem ? 'ITEM' : 'GROUP') + ' focus=' + focusN +
+          ' solid=' + solid + ' hl=' + hl + ' anc=[' + ancLog.join(',') + '] base=' + baseOp +
+          ' overlays=' + _shapeOverlays.length + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
       });
+    }
+    // Build the (focusSet, opts) pair for _drillSelect from a recorded view object (timeline replay).
+    function _viewToDrill(v) {
+      var focus = (v.focusGuids && v.focusGuids.length) ? new Set(v.focusGuids)
+        : (v.litGuids && v.litGuids.length) ? new Set(v.litGuids)
+        : (v.groupGuids && v.groupGuids.length) ? new Set(v.groupGuids) : null;
+      var isItem = (v.isItem != null) ? v.isItem : !!(v.litGuids && v.litGuids.length);
+      var parent = (v.parentGuids && v.parentGuids.length) ? new Set(v.parentGuids)
+        : (!v.focusGuids && v.groupGuids && v.groupGuids.length) ? new Set(v.groupGuids) : null; // legacy
+      var grand = (v.grandGuids && v.grandGuids.length) ? new Set(v.grandGuids) : null;
+      return { focus: focus, opts: { isItem: isItem, parentSet: parent, grandSet: grand } };
     }
     function _phaseGuids(name) {
       return (_phaseCache && _phaseCache.byPhase[name]) ? _phaseCache.byPhase[name].guids : null;
@@ -1346,10 +1377,12 @@
     function _phaseSelect(name) {
       var pc = _phaseCache;
       if (!pc || !pc.byPhase[name]) return;
-      _drillSelect(null, name, 'PHASE_SELECT', pc.byPhase[name].guids); // §DEPTH group: whole phase = 1.0 solid + fit-zoom
+      _drillSelect(pc.byPhase[name].guids, name, 'PHASE_SELECT', { isItem: false }); // top-level group: phase solid, building 0.2
     }
-    function _taskSelect(set, label, phaseName) { _drillSelect(set, label, 'TASK_SELECT', _phaseGuids(phaseName)); }
-    function _elementSelect(guid, phaseName) { _drillSelect(new Set([guid]), _elLabel(guid), 'ELEM_SELECT', _phaseGuids(phaseName)); }
+    // task = nested group in phase → task solid, phase 0.2, building hidden.
+    function _taskSelect(set, label, phaseName) { _drillSelect(set, label, 'TASK_SELECT', { isItem: false, parentSet: _phaseGuids(phaseName) }); }
+    // element = final item in phase → element solid+shine, phase solid (parent), building 0.2 (grandparent).
+    function _elementSelect(guid, phaseName) { _drillSelect(new Set([guid]), _elLabel(guid), 'ELEM_SELECT', { isItem: true, parentSet: _phaseGuids(phaseName) }); }
     // §RP-SHAPE: storey/disc Type-leaf tap → light that type's real shapes (cyan), keep the
     // whole storey/disc solid, rest at 0.2. (col is a fixed identifier: 'storey' | 'discipline'.)
     function _typeShapeDrill(col, val, ifc, label) {
@@ -1360,7 +1393,8 @@
         A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " = ?", [val])
           .forEach(function(r) { gset.add(r[0]); });
       } catch (e) { console.warn('[RP-TB] §TYPE_DRILL_ERR', e.message); }
-      _drillSelect(iset, label, 'TYPE_SELECT', gset);
+      // Type = nested group within a storey/disc → type solid, storey/disc 0.2 (parent), building hidden.
+      _drillSelect(iset, label, 'TYPE_SELECT', { isItem: false, parentSet: gset });
     }
 
     // §DEPTH storey/disc axis (find-lens-local, decision B): route the multi-select union through
@@ -1382,7 +1416,8 @@
         A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " IN (" + ph + ")", labels)
           .forEach(function(r) { set.add(r[0]); });
       } catch (e) { console.warn('[RP-TB] §AXIS_GROUP_ERR', e.message); }
-      _drillSelect(null, labels.join(', '), (mode === 'storey' ? 'STOREY' : 'DISC') + '_SELECT', set);
+      // top-level group: storey/disc solid, building 0.2.
+      _drillSelect(set, labels.join(', '), (mode === 'storey' ? 'STOREY' : 'DISC') + '_SELECT', { isItem: false });
     }
 
     // §RP-SHAPE L4: storey/disc → type → INDIVIDUAL ITEM. Lazy children for a Type leaf.
@@ -1394,12 +1429,15 @@
         A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " = ? AND ifc_class = ?", [val, ifc])
           .forEach(function(r) { guids.push(r[0]); });
       } catch (e) { console.warn('[RP-TB] §TYPE_ITEMS_ERR', e.message); }
-      var typeSet = new Set(guids);   // whole type = the solid group kept opaque
+      var typeSet = new Set(guids);   // whole type = the item's PARENT (solid)
+      // grandparent = the whole storey/disc → rendered 0.2; building beyond = hidden.
+      var storeySet = new Set();
+      try { A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " = ?", [val]).forEach(function(r) { storeySet.add(r[0]); }); } catch (e) {}
       var capped = guids.length > _PHASE_ELEM_CAP;
       guids.slice(0, _PHASE_ELEM_CAP).forEach(function(g) {
         container.appendChild(_treeNode(_elLabel(g), '', 2, {
-          // single item lit, the whole type stays solid (typeSet passed as the solid group)
-          onTap: function() { _drillSelect(new Set([g]), _elLabel(g), 'ITEM_SELECT', typeSet); }
+          // §DEPTH item: item solid+shine · type=parent solid · storey=grandparent 0.2 · building hidden
+          onTap: function() { _drillSelect(new Set([g]), _elLabel(g), 'ITEM_SELECT', { isItem: true, parentSet: typeSet, grandSet: storeySet }); }
         }));
       });
       if (capped) {
@@ -1545,7 +1583,9 @@
     function clearIsolate() {
       if (A.filterByGuids) A.filterByGuids(null);
       if (_roomBoxes.length || _roomXrayWasOff) _roomLensReset();
-      if (_hlXrayWasOff || (A._outlinePass && A._outlinePass.enabled)) _highlightLensReset();
+      // §XRAY_UNDISTURB: reset whenever x-ray is on — not just when WE turned it on — so a lens exit
+      // restores the user's manual Alt+Z x-ray to its normal 0.3 (was: left at the depth 0.1/0).
+      if (_hlXrayWasOff || A.xrayOn || (A._outlinePass && A._outlinePass.enabled)) _highlightLensReset();
       if (elIsoBar) elIsoBar.style.display = 'none';
       updateIsolateBar();
       console.log('[RP-A1] §FILTER_RESET');
