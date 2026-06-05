@@ -252,13 +252,23 @@ self.onmessage = async function(e) {
       } catch(e) { /* use filename */ }
     }
 
+    // §STOREY_NORMALIZE: Revit exports reference PLANES (Ceiling, Top-of-Steel…) as IfcBuildingStorey,
+    // so MEP/STR elements land on "Level 2 Ceiling"/"Level 2 TOS" — junk sibling storeys that pollute
+    // the Find Storey/Room trees. Fold into the base level. Mirrors tools/extract.py normalize_storey.
+    const REF_LEVEL_SUFFIXES = [' Ceiling', ' TOS', ' T.O.S.', ' Top of Steel', ' Soffit'];
+    const normalizeStorey = (nm) => {
+      if (!nm) return nm;
+      const s = String(nm).trim(), low = s.toLowerCase();
+      for (const suf of REF_LEVEL_SUFFIXES) { if (low.endsWith(suf.toLowerCase())) return s.slice(0, -suf.length).trim(); }
+      return s;
+    };
     // Get storeys
-    const storeyMap = {}; // expressID → storey name
+    const storeyMap = {}; // expressID → storey name (normalized)
     const storeyLines = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCBUILDINGSTOREY);
     for (let i = 0; i < storeyLines.size(); i++) {
       try {
         const s = ifcApi.GetLine(modelID, storeyLines.get(i));
-        storeyMap[storeyLines.get(i)] = s.Name ? s.Name.value : 'Level ' + i;
+        storeyMap[storeyLines.get(i)] = normalizeStorey(s.Name ? s.Name.value : 'Level ' + i);
       } catch(e) { /* skip */ }
     }
 
