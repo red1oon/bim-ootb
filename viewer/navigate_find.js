@@ -829,35 +829,64 @@
     function _zoomToBox(center, size, factor) {
       _lerpCam(center, Math.max(size.x, size.y, size.z) * (factor || 3) + 1);  // §FILL: small pad
     }
-    // §DEPTH group zoom: fit the group's bounding SPHERE to the frame via the camera FOV, so a
-    // whole storey/phase/material FILLS the screen (the old maxDim*factor sat too far away).
+    // §DEPTH box-fit: distance so the box's PROJECTED extent fills the frame from the iso view
+    // angle. The old bounding-SPHERE fit overshot (the box sits small inside its sphere → "doesn't
+    // fill the screen"); this projects the 8 corners onto the camera right/up/forward basis and fits
+    // width AND height to the frustum — so a whole storey/phase/material/room actually FILLS the view.
+    function _fitDistForBox(size) {
+      var dir = new THREE.Vector3(0.5, 0.5, 0.7).normalize();   // matches _lerpCam offset direction
+      var fwd = dir.clone().negate();
+      var right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+      var up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+      var hx = size.x / 2, hy = size.y / 2, hz = size.z / 2, hW = 0, hH = 0, hD = 0, c = new THREE.Vector3();
+      for (var sx = -1; sx <= 1; sx += 2) for (var sy = -1; sy <= 1; sy += 2) for (var sz = -1; sz <= 1; sz += 2) {
+        c.set(sx * hx, sy * hy, sz * hz);
+        hW = Math.max(hW, Math.abs(c.dot(right))); hH = Math.max(hH, Math.abs(c.dot(up))); hD = Math.max(hD, Math.abs(c.dot(fwd)));
+      }
+      var tanV = Math.tan((A.camera.fov || 50) * Math.PI / 360);  // tan(fov/2)
+      var tanH = tanV * (A.camera.aspect || 1);
+      // Fit the box's CENTER cross-section so it FILLS the frame. Only a SMALL fraction of the
+      // half-depth is added (full hD pushed the camera way back on elongated storeys → "doesn't
+      // fill"); 0.3·hD keeps the near face off the near-plane without losing the fill. 1.03 breathing.
+      return (Math.max(hH / tanV, hW / tanH) + hD * 0.3) * 1.03;
+    }
+    function _zoomToBoxFill(center, size, tag) {
+      if (!A.camera || !size) return false;
+      var dist = _fitDistForBox(size); _lerpCam(center, dist);
+      console.log('[RP-TB] §' + (tag || 'GROUP_ZOOM') + ' fill dist=' + dist.toFixed(1) +
+        ' size=' + size.x.toFixed(1) + 'x' + size.y.toFixed(1) + 'x' + size.z.toFixed(1));
+      return true;
+    }
     function _zoomToGroup(set) {
       var bb = _bboxOfGuids(set); if (!bb || !A.camera) return false;
-      var fov = (A.camera.fov || 50) * Math.PI / 180;
-      var radius = 0.5 * Math.sqrt(bb.size.x * bb.size.x + bb.size.y * bb.size.y + bb.size.z * bb.size.z);
-      var dist = (radius / Math.sin(fov / 2)) * 1.12;  // 1.12 = snug margin so it fills, not clips
-      var aspect = A.camera.aspect || 1; if (aspect < 1) dist /= aspect;  // portrait: fit the narrower FOV
-      _lerpCam(bb.center, dist);
-      console.log('[RP-TB] §GROUP_ZOOM radius=' + radius.toFixed(1) + ' dist=' + dist.toFixed(1) + ' fov=' + (A.camera.fov || 50));
-      return true;
+      return _zoomToBoxFill(bb.center, bb.size, 'GROUP_ZOOM');
     }
 
     // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
     // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
     function _roomSelect(guid) {
-      var set = new Set(), name = guid, storeySet = null;
+      var set = new Set(), name = guid, storeySet = null, zoomBox = null;
       try {
-        var nm = A.dbQuery("SELECT s.name, p.name FROM spatial_structure s" +
-          " LEFT JOIN spatial_structure p ON p.guid = s.parent_guid WHERE s.guid = ?", [guid]);
+        var nm = A.dbQuery("SELECT s.name, p.name, s.center_x, s.center_y, s.center_z, s.size_x, s.size_y, s.size_z" +
+          " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid WHERE s.guid = ?", [guid]);
         if (nm.length) { name = nm[0][0] || guid; var storey = nm[0][1];
           if (storey) { storeySet = new Set();
             A.dbQuery("SELECT guid FROM elements_meta WHERE storey = ?", [storey])
-              .forEach(function(r) { storeySet.add(r[0]); }); } }
+              .forEach(function(r) { storeySet.add(r[0]); }); }
+          // §ROOM_ZOOM: frame the room's VOLUME (center+size from spatial_structure), not its few
+          // contained elements — a 2-element room would otherwise zoom to a tiny erroneous frame.
+          var rw = nm[0];
+          if (rw[2] != null && rw[5] != null && A.ifc2three && typeof THREE !== 'undefined') {
+            var cc = A.ifc2three(rw[2], rw[3], rw[4]);  // IFC size → Three: x→x, z→y, y→z (bbox parity)
+            zoomBox = { center: new THREE.Vector3(cc.x, cc.y, cc.z),
+              size: new THREE.Vector3(Math.max(rw[5] || 0.5, 0.5), Math.max(rw[7] || 0.5, 0.5), Math.max(rw[6] || 0.5, 0.5)) };
+          }
+        }
         A.dbQuery("SELECT element_guid FROM rel_contained_in_space WHERE space_guid = ?", [guid])
           .forEach(function(r) { set.add(r[0]); });
       } catch (e) { console.warn('[RP-TA] §ROOM_SELECT_ERR', e.message); }
-      // §DEPTH item: room CONTENTS = cyan item; enclosing storey = the 0.5 group (uniform default).
-      _drillSelect(set, name, 'ROOM_SELECT', storeySet);
+      // §DEPTH item: room CONTENTS = cyan item; enclosing storey = the 0.5 group; zoom frames the room VOLUME.
+      _drillSelect(set, name, 'ROOM_SELECT', storeySet, null, zoomBox);
     }
 
     // §RP sub-toggle row [A | B] — a small two-pill regroup control inside a lens tree.
@@ -1148,8 +1177,10 @@
     //     item zoom 1.1. The 0.1↔0.5 gap + colour (not another opacity step) carries the hierarchy.
     // Callers: group-select passes (null, …, groupSet); item-select passes (itemSet, …, groupSet).
     // ctxOpacity overrides the item-mode group opacity (default 0.5); group mode is always 1.0.
+    // zoomBox (optional, item mode): a {center,size} to FRAME instead of the lit set — e.g. a Room
+    // frames its whole VOLUME (its 2 contained elements would zoom to a tiny erroneous frame).
     var _drillRAF1 = null, _drillRAF2 = null;
-    function _drillSelect(set, label, tag, groupSet, ctxOpacity) {
+    function _drillSelect(set, label, tag, groupSet, ctxOpacity, zoomBox) {
       // §PERF: a rapid tap cancels any in-flight build so only the LATEST selection renders —
       // keeps the panel responsive to touch instead of queuing a backlog of heavy mesh builds.
       if (_drillRAF1) { cancelAnimationFrame(_drillRAF1); _drillRAF1 = null; }
@@ -1196,7 +1227,8 @@
           return;
         }
         var lit = _buildShapeMeshes(set, 0x4fc3f7);   // selected item's real shape, cyan
-        var zoomed = _zoomToGuids(set, 1.1);          // §FILL: tight frame — item fills screen end-to-end
+        // §FILL: zoom the lit item tight, OR a caller-supplied box (Room → its whole volume)
+        var zoomed = zoomBox ? _zoomToBoxFill(zoomBox.center, zoomBox.size, tag + '_ZOOM') : _zoomToGuids(set, 1.1);
         if (A.markDirty) A.markDirty();
         var litLog = function(solid) {
           console.log('[RP-TB] §' + tag + ' "' + label + '" ITEM elems=' + set.size + ' lit=' + lit +
