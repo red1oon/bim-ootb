@@ -12,7 +12,10 @@ function setupMeasure(A) {
   // ── Draggable panels ──
   A._makeDraggable = function(el) {
     var ox, oy, sx, sy, dragging = false, pending = false, moved = false, pid = null;
-    var dragStrip = window._isMobile ? 50 : 30;
+    // Top grab-zone height. Per-panel override via el._dragStrip (the Find panel sets a bigger one —
+    // "give me more margin to hold onto"). Backward-compatible: panels that don't set it are unchanged.
+    // A stationary tap inside the zone still reaches child controls (only a real move starts a drag).
+    var dragStrip = el._dragStrip || (window._isMobile ? 50 : 30);
     el.style.cursor = 'grab';
     // On mobile, intercept touch BEFORE the browser claims it for scroll/pan.
     // Only preventDefault in the drag zone; elsewhere let browser handle normally.

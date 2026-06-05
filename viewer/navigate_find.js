@@ -166,7 +166,9 @@
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
-    // S265 Phase 5: make Find panel draggable
+    // S265 Phase 5: make Find panel draggable — with a GENEROUS top grab-zone (user: the thin
+    // default strip was "hard to drag, give me more margin to hold onto"). Taps inside still work.
+    panel._dragStrip = window._isMobile ? 96 : 64;  // ~2× the default 50/30
     if (A._makeDraggable) A._makeDraggable(panel);
     // Pointer isolation
     panel.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
