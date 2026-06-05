@@ -59,11 +59,18 @@
     a.forEach(function (x) { if (!sb[x]) out.push(x); }); b.forEach(function (x) { if (!sa[x]) out.push(x); }); return out;
   }
 
-  // ── the genuinely-signed op-log (a dedicated sql.js db; W-CHAIN hash + W-SIGN ECDSA), shared by both rules ──
+  // ── the genuinely-signed op-log (W-CHAIN hash + W-SIGN ECDSA), shared by both rules ──
+  // I-4 (prompts/I4_OPLOG_RECONCILE.md): when the seam is live (window.ERP.opDb), append to THAT chain so
+  // rule edits + doc transitions share ONE signed log; else a dedicated standalone db (the pure gesture).
   var _opDb = null, _ts = 5000, _signed = false;
   function nextTs() { return ++_ts; }      // deterministic monotone stamp — NO Date.now in the op path
   async function ensureOpLog(SQL) {
     if (_opDb) return _opDb;
+    if (global.ERP && global.ERP.opDb) {                         // shared chain (seam live) — signer already installed
+      _opDb = global.ERP.opDb; _signed = !!(global.ERP.ctx && global.ERP.ctx.pubKey);
+      console.log('§RULE-CHAIN shared=window.ERP.opDb signed=' + (_signed ? 'Y' : 'N'));
+      return _opDb;
+    }
     _opDb = new SQL.Database();
     global.KernelOps.ensureTable(_opDb);
     try { await global.ErpSigner.installSigner(global.KernelOps, { dbName: 'bim_erp_signer' }); _signed = true; }
