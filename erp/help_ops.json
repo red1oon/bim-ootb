@@ -1,0 +1,79 @@
+{
+ "__meta": {
+  "version": 2,
+  "spec": "prompts/READSHOWME_DYNAMIC_SPEC.md",
+  "ops": {
+   "o2c": {
+    "title": "Order to Cash",
+    "seed": 101,
+    "lineage": true
+   }
+  },
+  "note": "Keyed _TRL-style help store. key = on-screen element id. The ON-SCREEN card shows only {title, tip} (minimal, screen is crowded) + ShowMe/Read more. The DETAIL + figure live in the ReadMe doc (readmeAnchor → HelpO2C page, same corresponding step). paraHTML/figure here are the SOURCE that generates that doc, not shown on screen."
+ },
+ "o2c": {
+  "op": "o2c",
+  "ordinal": 0,
+  "target": null,
+  "kind": "overview",
+  "title": "Order to Cash",
+  "tip": "The everyday flow: order → ship → invoice → pay → reconcile.",
+  "paraHTML": "<p>The most common journey in any business: a customer <b>orders</b>, you <b>ship</b>, you <b>invoice</b>, they <b>pay</b>, and the payment is <b>reconciled</b> to the invoice. Below, one real order &mdash; Sales Order <b>#80001</b> ($100.70) &mdash; is traced end to end from the actual data.</p>[[FIG 1.0: the whole lit O2C chain on the map]]",
+  "readmeAnchor": "HelpO2C.md#o2c"
+ },
+ "c_order": {
+  "op": "o2c",
+  "ordinal": 1,
+  "target": "c_order",
+  "kind": "process",
+  "tab": "Data",
+  "title": "Order",
+  "tip": "What the customer committed to buy — SO #80001, $100.70.",
+  "paraHTML": "<p>The <b>Order</b> records what the customer committed to buy. Here it is Sales Order <b>#80001</b>, total <b>$100.70</b>. Everything downstream &mdash; shipment, invoice, payment &mdash; references this one document. It needs no server: the order is a single signed entry appended at the edge.</p>[[FIG 1.1: the Order bubble focused, Data tab showing #80001]]",
+  "readmeAnchor": "HelpO2C.md#c_order"
+ },
+ "m_inout": {
+  "op": "o2c",
+  "ordinal": 2,
+  "target": "m_inout",
+  "kind": "process",
+  "tab": "Data",
+  "title": "Shipment",
+  "tip": "The goods shipped against the order.",
+  "paraHTML": "<p>The <b>Shipment</b> (Material In/Out) is the goods leaving the warehouse against the order. It points back at the order it fulfils, so the link lives in the data &mdash; not in a session.</p>[[FIG 1.2: the Shipment bubble focused, Data tab]]",
+  "readmeAnchor": "HelpO2C.md#m_inout"
+ },
+ "c_invoice": {
+  "op": "o2c",
+  "ordinal": 3,
+  "target": "c_invoice",
+  "kind": "process",
+  "tab": "Data",
+  "title": "Invoice",
+  "tip": "The bill — $100.70, matching the order.",
+  "paraHTML": "<p>The <b>Invoice</b> bills the customer &mdash; <b>$100.70</b>, the same figure as the order: what was ordered, shipped and billed all agree. The amount is <i>derived</i> by replaying the log, not stored twice.</p>[[FIG 1.3: the Invoice bubble focused, Data tab showing $100.70]]",
+  "readmeAnchor": "HelpO2C.md#c_invoice"
+ },
+ "c_payment": {
+  "op": "o2c",
+  "ordinal": 4,
+  "target": "c_payment",
+  "kind": "process",
+  "tab": "Data",
+  "title": "Payment",
+  "tip": "The customer's payment, ready to be matched.",
+  "paraHTML": "<p>The <b>Payment</b> is the customer settling up. It is recorded as its own document, ready to be matched against the invoice.</p>[[FIG 1.4: the Payment bubble focused, Data tab]]",
+  "readmeAnchor": "HelpO2C.md#c_payment"
+ },
+ "c_allocationline": {
+  "op": "o2c",
+  "ordinal": 5,
+  "target": "c_allocationline",
+  "kind": "bubble",
+  "tab": "Data",
+  "title": "Reconciled (Allocation)",
+  "tip": "Payment reconciled to the invoice — $98.50.",
+  "paraHTML": "<p>The <b>Allocation</b> reconciles the payment to the invoice &mdash; here <b>$98.50</b>. This is the careful step a bookkeeper double-checks, and it is the <i>one matcher</i> that folds receivable against receipt for every kind of match.</p>[[FIG 1.5: the Allocation bubble focused, Data tab showing $98.50]]",
+  "readmeAnchor": "HelpO2C.md#c_allocationline"
+ }
+}
