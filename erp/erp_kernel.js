@@ -39,11 +39,23 @@ var PROJECTION_SQL =
   'CREATE TABLE IF NOT EXISTS containers (id TEXT PRIMARY KEY, parent_id TEXT, type TEXT, metadata TEXT DEFAULT \'{}\');' +
   // §13.1: journal extended from settlement-edge to double-entry — account_id/amtacctdr/amtacctcr
   // mirror gl_journalline. NULL/0 defaults keep ALLOCATE (5-col insert) backward-compatible.
-  'CREATE TABLE IF NOT EXISTS journal (id TEXT PRIMARY KEY, batch_id TEXT, journal_id TEXT, source TEXT, account_id TEXT, amtacctdr REAL DEFAULT 0, amtacctcr REAL DEFAULT 0, metadata TEXT DEFAULT \'{}\');' +
-  'CREATE TABLE IF NOT EXISTS kernel_ops (op_uuid TEXT PRIMARY KEY, timestamp INTEGER, op_type TEXT, parameters TEXT, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0, user_tag TEXT DEFAULT \'local\');';
+  'CREATE TABLE IF NOT EXISTS journal (id TEXT PRIMARY KEY, batch_id TEXT, journal_id TEXT, source TEXT, account_id TEXT, amtacctdr REAL DEFAULT 0, amtacctcr REAL DEFAULT 0, metadata TEXT DEFAULT \'{}\');';
+// I-4 (prompts/I4_OPLOG_RECONCILE.md): the seam's op-log IS the genuinely-signed W-CHAIN/W-SIGN log —
+// ONE schema, the superset owned by kernel_ops.js (id PK total-order + op_uuid cross-device identity +
+// prev_hash/op_hash/sig). apply() below still inserts only the shared columns (id auto-fills, chain cols
+// stay NULL until sealChain signs them); replay() reads op_type/parameters verbatim. In the browser
+// kernel_ops.js is the canonical owner; in node (no window) we create the identical shape here.
+var KERNEL_OPS_SQL =
+  'CREATE TABLE IF NOT EXISTS kernel_ops (id INTEGER PRIMARY KEY, op_uuid TEXT, timestamp INTEGER, op_type TEXT, parameters TEXT, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0, prev_hash TEXT, op_hash TEXT, sig TEXT, user_tag TEXT DEFAULT \'local\');';
 var PROJECTION_TABLES = ['documents', 'document_lines', 'items', 'containers', 'journal'];
 
-function initProjection(db) { db.run(PROJECTION_SQL); }
+function initProjection(db) {
+  db.run(PROJECTION_SQL);
+  // unified signed op-log (I-4): kernel_ops.js owns the canonical table in the browser; create the same
+  // shape in node. Either way `id` is the PRIMARY KEY (rowid alias) the W-CHAIN totals over — see D1.
+  if (typeof window !== 'undefined' && window.KernelOps && window.KernelOps.ensureTable) window.KernelOps.ensureTable(db);
+  else db.run(KERNEL_OPS_SQL);
+}
 
 // host query helper over a sql.js db -> rows[] of plain objects.
 function query(db, sql, params) {

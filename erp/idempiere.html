@@ -988,9 +988,17 @@
     window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc,
       dispatch: window.ERP.dispatch, ctx: window.ERP.ctx,
       onResult: function (res, dr) {
-        if (dr && dr.ok) { var v = window.ERP.verify();
-          console.log('§KANBAN-WRITE ok ' + res.table + '#' + res.id + ' to=' + dr.to + ' chainOk=' + v.chainOk + ' len=' + v.len);
-          window.KanbanHost.persist(_kanbanProj, _KPROJ);
+        if (dr && dr.ok) {
+          var v = window.ERP.verify();                          // A: effects determinism (replay×2 equal)
+          // I-4: SEAL the op so the live SET_STATUS write is genuinely SIGNED (W-CHAIN+W-SIGN), then verify
+          // the chain (incl. ECDSA signature). This is the same signed log the ⚖ rule edit rides.
+          Promise.resolve(window.ERP.seal ? window.ERP.seal() : null).then(function () {
+            return window.ERP.chainVerify ? window.ERP.chainVerify() : { ok: v.chainOk, len: v.len };
+          }).then(function (cv) {
+            console.log('§KANBAN-WRITE ok ' + res.table + '#' + res.id + ' to=' + dr.to +
+              ' effects=' + v.chainOk + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N') + ' signed=' + (window.ERP.ctx && window.ERP.ctx.pubKey ? 'Y' : 'N') + ' len=' + (cv && cv.len));
+            window.KanbanHost.persist(_kanbanProj, _KPROJ);
+          });
         } else if (dr && dr.rejected) { console.log('§KANBAN-WRITE rejected why=' + dr.why); }
       } });
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
