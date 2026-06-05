@@ -1680,7 +1680,7 @@ function renderCharts() {
       '<span style="width:90px;font-size:12px;color:' + rColor + ';font-weight:600">' + rLabel + '</span>' +
       '<div style="flex:1;height:18px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden">' +
       '<div style="height:100%;width:' + rBarPct + '%;background:' + rColor + ';border-radius:4px"></div></div>' +
-      '<span style="width:40px;text-align:right;font-size:15px;font-weight:800;color:' + rColor + '">' + resCounts[rk] + '</span></div>';
+      '<span style="min-width:56px;text-align:right;font-size:14px;font-weight:800;color:' + rColor + '">' + Math.round(resCounts[rk]).toLocaleString() + '</span></div>';
   }
   resHtml += '</div>';
   // Machines
@@ -1697,7 +1697,7 @@ function renderCharts() {
   var totalWorkers = 0;
   for (var rwk in resCounts) totalWorkers += resCounts[rwk];
   resHtml += '<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);font-size:12px;color:rgba(255,255,255,0.5)">' +
-    '<strong style="color:#fff">' + totalWorkers + '</strong> total element-installs \u00b7 ' +
+    '<strong style="color:#fff">' + Math.round(totalWorkers).toLocaleString() + '</strong> total element-installs \u00b7 ' +
     '<strong style="color:#fff">' + Object.keys(resCounts).length + '</strong> trades \u00b7 ' +
     '<strong style="color:#fff">' + machKeys.length + '</strong> machines \u00b7 ' +
     '<strong style="color:#fff">' + scheduleData.length + '</strong> tasks \u00b7 ' +
@@ -2028,7 +2028,7 @@ function toggleTheme() {
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=593')
+  navigator.serviceWorker.register('sw.js?v=594')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
