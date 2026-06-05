@@ -288,6 +288,9 @@
 <script src="erp_seam.js?v=1"></script>
 <script src="kanban_lens.js?v=2"></script>
 <script src="kanban_host.js?v=1"></script>
+<!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
+<script src="bigdecimal.js?v=1"></script>
+<script src="rule_fold.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -992,18 +995,24 @@
       } });
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
   }
+  // ⚖ Rule — THE ONE GESTURE: edit one rule → K records re-fold live, signed + reversible (RuleFold).
+  function openRuleFor() {
+    console.log('§RULE-PILL action=open');
+    if (!window.RuleFold) { status('Rule gesture not loaded.'); return; }
+    RuleFold.open({ db: db, SQL: window.SQL, status: status, mount: _overlay });
+  }
   function openInstallFor() { console.log('§INSTALL-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'install', status: status }); else status('ERP picker not loaded.'); }
   function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
   function buildPillRail() {
     _injectPillCSS();
     var rail = el('div'); rail.id = 'idmp-pillrail';
     [['📒', 'Posted', openPostedFor], ['📊', 'Graph', openGraphFor], ['🗂', 'Kanban', openKanbanFor],
-     ['⬇', 'Install', openInstallFor], ['🔌', 'Migrate', openMigrateFor]].forEach(function (p) {
+     ['⚖', 'Rule', openRuleFor], ['⬇', 'Install', openInstallFor], ['🔌', 'Migrate', openMigrateFor]].forEach(function (p) {
       var b = el('button', 'idmp-pill'); b.title = p[1];
       b.appendChild(el('span', 'idmp-pill-ic', p[0])); b.appendChild(el('span', 'idmp-pill-lb', p[1]));
       b.addEventListener('click', p[2]); rail.appendChild(b);
     });
-    document.body.appendChild(rail); console.log('§PILL-RAIL pills=5 [Posted,Graph,Kanban,Install,Migrate]');
+    document.body.appendChild(rail); console.log('§PILL-RAIL pills=6 [Posted,Graph,Kanban,Rule,Install,Migrate]');
   }
   function _injectPillCSS() {
     if (window._pillCSSDone) return; window._pillCSSDone = true;
