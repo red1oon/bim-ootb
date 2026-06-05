@@ -1610,21 +1610,11 @@
       }
     });
 
-    container.appendChild(fsBtn);
-
-    // Search button — mobile access (no Alt+S on touch devices)
-    var searchBtn = document.createElement('button');
-    searchBtn.textContent = '\uD83D\uDD0D'; // 🔍
-    searchBtn.title = 'Search (Alt+S)';
-    searchBtn.style.cssText = 'position:absolute;top:6px;right:40px;background:rgba(0,0,0,0.5);' +
-      'border:1px solid rgba(255,255,255,0.15);color:#aaa;font-size:14px;' +
-      'cursor:pointer;width:28px;height:28px;border-radius:6px;z-index:5;' +
-      'display:flex;align-items:center;justify-content:center;line-height:1;';
-    searchBtn.addEventListener('pointerup', function (e) {
-      e.stopPropagation();
-      _toggleSearchOverlay();
-    });
-    container.appendChild(searchBtn);
+    // §HUD-DEDUP — top-right ⛶ maximize + 🔍 search icons REMOVED from the graph HUD.
+    // Both live in the pill rail now (erp_pills.js: id=find → search, id=maximize → fullscreen),
+    // so the in-container duplicates are gone. fsBtn stays DEFINED (not appended) because
+    // _resizeGraph mutates its label/style during the globe auto-maximize; it's just no longer shown.
+    console.log('§AD_UI hud-dedup removed=[maximize,search] keptInPill=[find,maximize]');
 
     // Companion links (🫧 Glassbowl · ✦ Gravity · 📖 Read) REMOVED from the graph HUD — they were
     // buttons OUTSIDE the pill rail. All in the pill now: glassbowl/gravity already in pills.json;
