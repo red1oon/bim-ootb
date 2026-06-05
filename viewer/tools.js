@@ -360,11 +360,16 @@ function setupTools(A) {
 
   // Fullscreen
   A.toggleFullscreen = function() {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
+    // §FULLSCREEN: requestFullscreen()/exitFullscreen() return promises. F11 is
+    // browser-reserved (Firefox does native fullscreen), so the programmatic request
+    // from that same handler is denied → unhandled rejection ("Uncaught (in promise)
+    // TypeError: Fullscreen request denied"). Swallow it — native F11 still works.
+    try {
+      var p = !document.fullscreenElement
+        ? document.documentElement.requestFullscreen()
+        : document.exitFullscreen();
+      if (p && p.catch) p.catch(function(e) { console.warn('§FULLSCREEN denied: ' + (e && e.message)); });
+    } catch (e) { console.warn('§FULLSCREEN error: ' + (e && e.message)); }
   };
 
   // Theme — reverse background (light/dark)
