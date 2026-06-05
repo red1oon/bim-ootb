@@ -638,7 +638,7 @@
     // every frame — the §S286 idle gate parks the loop, so the move won't render without it.
     function _zoomToBox(center, size, factor) {
       if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
-      var dist = Math.max(size.x, size.y, size.z) * (factor || 3) + 2;
+      var dist = Math.max(size.x, size.y, size.z) * (factor || 3) + 1;  // §FILL: small pad so item fills the frame
       var end = center.clone().add(new THREE.Vector3(dist * 0.5, dist * 0.5, dist * 0.7));
       var start = A.camera.position.clone();
       var t = 0;
@@ -958,7 +958,7 @@
       _clearShapeOverlays();
       _clearHlOverlay();
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // rest → transparent
-      _dimXrayTo(0.2);  // §RP phase drill: dim the rest harder than default 0.3 → 0.2 for contrast
+      _dimXrayTo(0.1);  // §RP drill: dim the rest hard (0.1) — user wants a strong "where is X in the whole building" sense
       // phase stays solid = the phase minus the lit item (avoid z-fight with the cyan shape)
       var solidSet = null, solid = 0;
       if (phaseSet && phaseSet.size) {
@@ -966,7 +966,7 @@
         solid = _buildShapeMeshes(solidSet, null);
       }
       var lit = _buildShapeMeshes(set, 0x4fc3f7);   // selected item's real shape, cyan
-      var zoomed = _zoomToGuids(set, 1.6);          // tight frame on the lit item (was zooming too far)
+      var zoomed = _zoomToGuids(set, 1.1);          // §FILL: tight frame — item fills screen end-to-end (was 1.6, too far)
       if (A.markDirty) A.markDirty();
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
@@ -1280,7 +1280,15 @@
           console.log('§FIND_MULTISEL mode=' + _treeMode + ' sel=[' + arr.join(',') + '] n=' + arr.length + ' mod=' + mod);
           return;
         }
-        if (opts.onTap) opts.onTap();
+        if (opts.onTap) { opts.onTap(); return; }
+        // §FIX-ROOMSTUCK: a group row with children but no onTap/multiSelect (the Room lens
+        // Storey/Type groups) must expand on LABEL tap too. Previously only the 12px arrow
+        // toggled it, so tapping the room-group row did nothing — the Room lens "got stuck".
+        // Route the label tap to the arrow's existing expand handler.
+        if (childContainer && arrow) {
+          arrow.dispatchEvent(new PointerEvent('pointerup', { bubbles: false }));
+          console.log('[RP-TA] §GROUP_EXPAND_VIA_LABEL "' + label + '"');
+        }
       }
       text.addEventListener('pointerup', _doTap);
       badge.addEventListener('pointerup', _doTap);
