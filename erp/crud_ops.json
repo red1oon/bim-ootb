@@ -1,0 +1,92 @@
+{
+  "__meta": {
+    "version": 1,
+    "spec": "prompts/CRUD_OVERLAY.md",
+    "governance": "prompts/UI_OVERLAY_GOVERNANCE.md",
+    "ops": { "o2c": { "title": "Order to Cash" } },
+    "note": "Keyed CRUD store — sibling to help_ops.json. key = on-screen element id (a glassbowl bubble's table id; later an erp.html AD field = its column id). The CRUD overlay reads this by key; devs edit ONLY this file. Each entry IS the iDempiere AD model for that element: verbs[] = AD_Table/AD_Window actions (drives which ring icon is enabled vs greyed); fields[] = AD_Column (col=ColumnName, type=AD_Reference, readonly=!IsUpdateable, required=IsMandatory, default=DefaultValue, ref=AD_Reference_Value FK table) + validation = AD_Val_Rule. The overlay renders/enforces type/readonly/required/default + validation BEFORE kernel.apply(). Field VALUES are NOT here — Edit pre-fills from the live bundle DB (truth-bound); only New uses default. default expr vocab: 'today' -> ISO date, 'auto' -> server/seq docno placeholder, else literal.",
+    "verbVocab": ["create", "update", "delete", "process"],
+    "docStatus": { "DR": "Drafted", "IP": "In Progress", "CO": "Completed", "CL": "Closed" }
+  },
+
+  "c_order": {
+    "op": "o2c", "ordinal": 1, "kind": "bubble", "tab": "Data",
+    "title": "Order",
+    "verbs": ["create", "update", "delete", "process"],
+    "docAction": { "action": "CO", "from": "DR", "to": "CO", "requires": ["c_bpartner_id", "grandtotal"], "oracle": "org.compiere.model.MOrder.completeIt()" },
+    "ownerGated": true,
+    "cas": "claimed_by",
+    "fields": [
+      { "col": "documentno", "label": "Document No", "type": "string", "required": true, "default": "auto",
+        "validation": { "regex": "^[0-9]+$", "valRule": "docno_numeric" } },
+      { "col": "c_bpartner_id", "label": "Business Partner", "type": "fk", "ref": "c_bpartner", "required": true },
+      { "col": "dateordered", "label": "Date Ordered", "type": "date", "required": true, "default": "today" },
+      { "col": "grandtotal", "label": "Grand Total", "type": "number", "required": true, "default": 0,
+        "validation": { "min": 0, "valRule": "non_negative_amt" } },
+      { "col": "description", "label": "Description", "type": "string", "required": false, "default": "" },
+      { "col": "docstatus", "label": "Status", "type": "list", "ref": "docStatus", "required": true, "default": "DR" }
+    ]
+  },
+
+  "m_inout": {
+    "op": "o2c", "ordinal": 2, "kind": "bubble", "tab": "Data",
+    "title": "Shipment",
+    "verbs": ["create", "update", "delete", "process"],
+    "docAction": { "action": "CO", "from": "DR", "to": "CO", "requires": ["movementdate"], "oracle": "org.compiere.model.MInOut.completeIt()" },
+    "ownerGated": true,
+    "fields": [
+      { "col": "documentno", "label": "Document No", "type": "string", "required": true, "default": "auto",
+        "validation": { "regex": "^[0-9]+$", "valRule": "docno_numeric" } },
+      { "col": "movementdate", "label": "Movement Date", "type": "date", "required": true, "default": "today" },
+      { "col": "description", "label": "Description", "type": "string", "required": false, "default": "" },
+      { "col": "docstatus", "label": "Status", "type": "list", "ref": "docStatus", "required": true, "default": "DR" }
+    ]
+  },
+
+  "c_invoice": {
+    "op": "o2c", "ordinal": 3, "kind": "bubble", "tab": "Data",
+    "title": "Invoice",
+    "verbs": ["update", "delete", "process"],
+    "docAction": { "action": "CO", "from": "DR", "to": "CO", "requires": ["dateinvoiced"], "oracle": "org.compiere.model.MInvoice.completeIt()" },
+    "ownerGated": true,
+    "fields": [
+      { "col": "documentno", "label": "Document No", "type": "string", "required": true, "default": "auto",
+        "validation": { "regex": "^[0-9]+$", "valRule": "docno_numeric" } },
+      { "col": "dateinvoiced", "label": "Date Invoiced", "type": "date", "required": true, "default": "today" },
+      { "col": "grandtotal", "label": "Grand Total", "type": "number", "readonly": true,
+        "note": "derived by replaying the log against the order/shipment — not entered (help_ops c_invoice: 'derived by replaying the log, not stored twice')" },
+      { "col": "description", "label": "Description", "type": "string", "required": false, "default": "" },
+      { "col": "docstatus", "label": "Status", "type": "list", "ref": "docStatus", "required": true, "default": "DR" }
+    ]
+  },
+
+  "c_payment": {
+    "op": "o2c", "ordinal": 4, "kind": "bubble", "tab": "Data",
+    "title": "Payment",
+    "verbs": ["create", "update", "delete", "process"],
+    "docAction": { "action": "CO", "from": "DR", "to": "CO", "requires": ["payamt", "datetrx"], "oracle": "org.compiere.model.MPayment.completeIt()" },
+    "ownerGated": true,
+    "fields": [
+      { "col": "documentno", "label": "Document No", "type": "string", "required": true, "default": "auto",
+        "validation": { "regex": "^[0-9]+$", "valRule": "docno_numeric" } },
+      { "col": "payamt", "label": "Pay Amount", "type": "number", "required": true, "default": 0,
+        "validation": { "min": 0, "valRule": "non_negative_amt" } },
+      { "col": "datetrx", "label": "Transaction Date", "type": "date", "required": true, "default": "today" },
+      { "col": "docstatus", "label": "Status", "type": "list", "ref": "docStatus", "required": true, "default": "DR" }
+    ]
+  },
+
+  "c_allocationline": {
+    "op": "o2c", "ordinal": 5, "kind": "bubble", "tab": "Data",
+    "title": "Reconciled (Allocation)",
+    "verbs": ["create", "delete"],
+    "ownerGated": true,
+    "fields": [
+      { "col": "amount", "label": "Amount", "type": "number", "required": true, "default": 0,
+        "validation": { "min": 0, "valRule": "non_negative_amt" } },
+      { "col": "c_invoice_id", "label": "Invoice", "type": "fk", "ref": "c_invoice", "required": true },
+      { "col": "c_payment_id", "label": "Payment", "type": "fk", "ref": "c_payment", "required": true },
+      { "col": "datetrx", "label": "Transaction Date", "type": "date", "required": true, "default": "today" }
+    ]
+  }
+}
