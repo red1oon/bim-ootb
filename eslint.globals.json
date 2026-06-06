@@ -4,6 +4,7 @@
   "APP": "readonly",
   "_batchedMeshes": "readonly",
   "bldName": "readonly",
+  "BimDecoder": "readonly",
   "BomDiff": "readonly",
   "BOMExtract": "readonly",
   "BomGrid": "readonly",

@@ -270,8 +270,36 @@ function setupNlp(A) {
     return null;
   }
 
+  // distinct storey strings of the loaded building — lets decoder.js resolve "level 3"
+  // exactly against ANY naming (Level 3 / Aras 03 / VÅNING 3). Cached per building.
+  let _storeyCache = null, _storeyBld = null;
+  function _nlpStoreys() {
+    if (!A.db) return [];
+    if (_storeyCache && _storeyBld === A.activeBuilding) return _storeyCache;
+    try { const r = A.db.exec('SELECT DISTINCT storey FROM elements_meta WHERE storey IS NOT NULL');
+      _storeyCache = r[0] ? r[0].values.map(v => v[0]) : []; } catch (e) { _storeyCache = []; }
+    _storeyBld = A.activeBuilding; return _storeyCache;
+  }
+
   function executeQuery(text) {
     if (!A.db) { showToast('No building loaded', null, 'warn'); return; }
+    // NLP2026: typed natural-language decoder (decoder.js). Tries first; on no-match it
+    // falls through to the legacy regex PATTERNS below. See decoder.js "HOW TO USE".
+    if (typeof BimDecoder !== 'undefined') {
+      try {
+        const d = BimDecoder.decode(text, { storeys: _nlpStoreys() });
+        if (d && d.kind !== 'none') {
+          const cur = typeof _TRL!=='undefined'&&_TRL.cur||'RM',
+                cur2 = typeof _TRL!=='undefined'&&_TRL.cur2||'USD',
+                rate = typeof _TRL!=='undefined'&&_TRL.cur_rate||3.91;
+          const f = BimDecoder.formatResult(d, (s, p) => A.db.exec(s, p || []), { cur, cur2, rate });
+          showToast(f.summary, { cols: f.table.cols, vals: f.table.vals, parsed: { desc: d.desc } }, 'ok');
+          if (f.guids && f.guids.length) highlightGuids(f.guids); else clearHighlights();
+          console.log('[NLP2026] §NLP_DEC kind=' + d.kind + ' guids=' + (f.guids ? f.guids.length : 0) + ' "' + f.summary.substring(0, 80) + '"');
+          return;
+        }
+      } catch (e) { console.log('[NLP2026] §NLP_DEC_ERR ' + e.message + ' — legacy fallback'); }
+    }
     const parsed = parseQuery(text);
     if (!parsed) {
       // Unknown query — suggest closest
