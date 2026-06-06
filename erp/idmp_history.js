@@ -126,9 +126,13 @@
       '#idmp-scrub.bloom .scrubdot{width:auto;height:auto;border-radius:10px;padding:3px 9px;font-size:11px;' +
         'color:#cdd6e4;white-space:nowrap;line-height:1.2;}' +
       '#idmp-scrub.bloom .scrubdot.on{color:#1a1205;font-weight:600;}' +
-      // Mobile coexistence (§A bottom pill dock + §B scrubber): the scrubber owns the very bottom in-flow; lift
-      // the fixed pill dock to sit directly ABOVE it (only when the scrubber is showing).
-      '@media (max-width:760px){body.idmp-has-scrub #idmp-pillbar{bottom:28px;}}';
+      // Mobile coexistence (§A bottom pill dock + §B scrubber). Spec §B stack order: content / status / scrubber /
+      // pills(very bottom). So the §A pill dock stays FLUSH at bottom:0 and the scrubber becomes a fixed strip
+      // sitting directly ABOVE it (~52px pill-dock height). Desktop keeps the scrubber in-flow under #idmp-status.
+      '@media (max-width:760px){' +
+        '#idmp-scrub.show{position:fixed;left:0;right:0;bottom:54px;z-index:1190;height:28px;}' +    // 53px dock + 1px gap
+        'body.idmp-has-scrub #idmp-content{padding-bottom:90px;}' +    // clear pills(53)+scrubber(28)+gap
+      '}';
     document.head.appendChild(s);
   }
 
