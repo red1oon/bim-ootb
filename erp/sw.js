@@ -7,7 +7,8 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v587';   // v587: §MOBILE-LANDING — phone post-login lands on the menu drawer (was empty canvas) + tap-to-close backdrop;
+const CACHE_VERSION = 'v588';   // v588: ⚖ Rule pill client-scoping (RULE_EDIT_SPEC §11) — fold over the LOGGED-IN client (window.__idmpClient), honest tenant label + honest-disable on no-population (was hardcoded Odoo Client-12);
+                                // v587: §MOBILE-LANDING — phone post-login lands on the menu drawer (was empty canvas) + tap-to-close backdrop;
                                 // v586: §MOBILE-VIEW — record LIST renders as .acc cards @≤760px (table = desktop only) + bottom pill rail;
                                 // v585: Migrate INSTALL persists the merged tenant (shard-in → idbPut) so a
                                 //       migrated client (e.g. Odoo 12) survives a plain reload — actual, not transient;
