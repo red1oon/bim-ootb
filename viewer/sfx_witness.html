@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>SFX witness harness</title></head>
+<body>
+<!-- Minimal harness: loads the REAL sfx.js and stubs just enough viewer state
+     (A.controls.target for stereo pan, A._tmOn for bed lifecycle) to drive the
+     Time-Machine seam window.__sfxTM exactly as time_machine.js does. -->
+<div id="mobile-pill"></div>
+<script>
+  window.A = { controls: { target: { x: 0, y: 0, z: 0 } }, _tmOn: true, flyActive: false, walkActionIdx: 0, walkActions: [] };
+</script>
+<script src="sfx.js?v=1" onerror="console.warn('§LOAD_FAIL sfx.js')"></script>
+</body></html>

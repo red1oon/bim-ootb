@@ -252,32 +252,131 @@ self.onmessage = async function(e) {
       } catch(e) { /* use filename */ }
     }
 
+    // §STOREY_NORMALIZE: Revit exports reference PLANES (Ceiling, Top-of-Steel…) as IfcBuildingStorey,
+    // so MEP/STR elements land on "Level 2 Ceiling"/"Level 2 TOS" — junk sibling storeys that pollute
+    // the Find Storey/Room trees. Fold them into the base level. Mirrors tools/extract.py normalize_storey.
+    const REF_LEVEL_SUFFIXES = [' Ceiling', ' TOS', ' T.O.S.', ' Top of Steel', ' Soffit'];
+    const normalizeStorey = (nm) => {
+      if (!nm) return nm;
+      const s = String(nm).trim(), low = s.toLowerCase();
+      for (const suf of REF_LEVEL_SUFFIXES) {
+        if (low.endsWith(suf.toLowerCase())) return s.slice(0, -suf.length).trim();
+      }
+      return s;
+    };
     // Get storeys
-    const storeyMap = {}; // expressID → storey name
+    const storeyMap = {}; // expressID → storey name (normalized)
+    // §LENS_SPATIAL: collect spatial_structure rows (IfcBuilding / IfcBuildingStorey /
+    // IfcSpace) for the Find Room lens. Keyed by expressID so IfcRelAggregates can wire
+    // parent_guid (building→storey→space) the way the served _extracted.db files do.
+    const spatialById = {}; // expressID → { guid, type, name, parentGuid, objectType, predefinedType, cx.. }
     const storeyLines = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCBUILDINGSTOREY);
     for (let i = 0; i < storeyLines.size(); i++) {
       try {
-        const s = ifcApi.GetLine(modelID, storeyLines.get(i));
-        storeyMap[storeyLines.get(i)] = s.Name ? s.Name.value : 'Level ' + i;
+        const _sid = storeyLines.get(i);
+        const s = ifcApi.GetLine(modelID, _sid);
+        storeyMap[_sid] = normalizeStorey(s.Name ? s.Name.value : 'Level ' + i);
+        spatialById[_sid] = {
+          guid: s.GlobalId ? s.GlobalId.value : 'GUID_' + _sid,
+          type: 'IfcBuildingStorey',
+          name: normalizeStorey(s.Name ? s.Name.value : 'Level ' + i),
+          parentGuid: null,
+          objectType: s.ObjectType ? s.ObjectType.value : null,
+          predefinedType: null,
+        };
       } catch(e) { /* skip */ }
     }
 
+    // §LENS_SPATIAL: IfcBuilding rows (parent of storeys in the served schema).
+    try {
+      const bldgLines = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCBUILDING);
+      for (let bi = 0; bi < bldgLines.size(); bi++) {
+        try {
+          const _bid = bldgLines.get(bi);
+          const b = ifcApi.GetLine(modelID, _bid);
+          spatialById[_bid] = {
+            guid: b.GlobalId ? b.GlobalId.value : 'GUID_' + _bid,
+            type: 'IfcBuilding',
+            name: b.Name ? b.Name.value : '',
+            parentGuid: null,
+            objectType: b.ObjectType ? b.ObjectType.value : null,
+            predefinedType: null,
+          };
+        } catch(e) { /* skip */ }
+      }
+    } catch(e) { /* IFCBUILDING not in schema */ }
+
+    // §LENS_SPATIAL: native IfcSpace rows → spatial_structure (type='IfcSpace').
+    // We do NOT add IfcSpace to PRODUCT_TYPES (its solid box still obscures render);
+    // we only capture it as METADATA here. Geometry bbox (center/size) is tessellated
+    // below in a dedicated pass so the lens can highlight the room volume.
+    const spaceExpressIds = []; // expressIDs of IfcSpace, for the bbox pass
+    try {
+      const spaceLines = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSPACE);
+      for (let spi = 0; spi < spaceLines.size(); spi++) {
+        try {
+          const _spid = spaceLines.get(spi);
+          const sp = ifcApi.GetLine(modelID, _spid);
+          spatialById[_spid] = {
+            guid: sp.GlobalId ? sp.GlobalId.value : 'GUID_' + _spid,
+            type: 'IfcSpace',
+            name: sp.Name ? sp.Name.value : (sp.LongName ? sp.LongName.value : 'Space_' + _spid),
+            parentGuid: null,
+            objectType: sp.ObjectType ? sp.ObjectType.value : null,
+            predefinedType: sp.PredefinedType ? sp.PredefinedType.value : null,
+          };
+          spaceExpressIds.push(_spid);
+        } catch(e) { /* skip */ }
+      }
+    } catch(e) { /* IFCSPACE not in schema */ }
+
     // Get containment (element → storey)
     const elementToStorey = {};
+    // §LENS_SPATIAL: element → space containment (RelatingStructure is an IfcSpace).
+    // Keyed by expressIDs here; resolved to GUIDs after elements are collected.
+    const relContainedRaw = []; // { elementId, spaceId } where spaceId ∈ spatialById(IfcSpace)
     const relLines = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELCONTAINEDINSPATIALSTRUCTURE);
     for (let i = 0; i < relLines.size(); i++) {
       try {
         const rel = ifcApi.GetLine(modelID, relLines.get(i));
         const storeyId = rel.RelatingStructure ? rel.RelatingStructure.value : null;
         const storeyName = storeyMap[storeyId] || 'Unknown';
+        const _isSpace = storeyId != null && spatialById[storeyId] && spatialById[storeyId].type === 'IfcSpace';
         if (rel.RelatedElements) {
           for (let j = 0; j < rel.RelatedElements.length; j++) {
             const elId = rel.RelatedElements[j].value;
-            elementToStorey[elId] = storeyName;
+            if (storeyName !== 'Unknown') elementToStorey[elId] = storeyName;
+            if (_isSpace) relContainedRaw.push({ elementId: elId, spaceId: storeyId });
           }
         }
       } catch(e) { /* skip */ }
     }
+
+    // §LENS_SPATIAL: parent_guid wiring + space→element containment via IfcRelAggregates.
+    // Aggregates nests building→storey→space (RelatingObject parent, RelatedObjects kids)
+    // AND, in some authoring tools, space→furnishing. We set parent_guid on spatial rows
+    // and treat space→element aggregation as containment for the lens (same as the served DB).
+    try {
+      const aggSpId = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELAGGREGATES);
+      for (let agi = 0; agi < aggSpId.size(); agi++) {
+        try {
+          const agg = ifcApi.GetLine(modelID, aggSpId.get(agi));
+          const parentEx = agg.RelatingObject ? agg.RelatingObject.value : null;
+          if (parentEx == null || !agg.RelatedObjects) continue;
+          const parentSp = spatialById[parentEx];
+          for (let agj = 0; agj < agg.RelatedObjects.length; agj++) {
+            const kidEx = agg.RelatedObjects[agj] ? agg.RelatedObjects[agj].value : null;
+            if (kidEx == null) continue;
+            // wire parent_guid for nested spatial rows (storey under building, space under storey)
+            if (parentSp && spatialById[kidEx]) spatialById[kidEx].parentGuid = parentSp.guid;
+            // space → element containment (parent is an IfcSpace, kid is a product)
+            if (parentSp && parentSp.type === 'IfcSpace' && !spatialById[kidEx]) {
+              relContainedRaw.push({ elementId: kidEx, spaceId: parentEx });
+            }
+          }
+        } catch(e) { /* skip */ }
+      }
+    } catch(e) { /* IFCRELAGGREGATES not in schema */ }
 
     // §S267: Extract IFC relationships for bom_tree (parent→child hierarchy)
     // Implementing S267_BOM_TREE_EXTRACTION.md §B — Witness: W-BOM-IFC-REL
@@ -331,6 +430,62 @@ self.onmessage = async function(e) {
       bomTreeRels.filter(r => r.relType === 'VOIDS').length +
       ' fills=' + bomTreeRels.filter(r => r.relType === 'FILLS').length +
       ' aggregates=' + bomTreeRels.filter(r => r.relType === 'AGGREGATES').length);
+
+    // §LENS_MATERIAL: element expressID → IfcMaterial.Name via IfcRelAssociatesMaterial.
+    // Populates elements_meta.material_name (the Material lens groups on it). NON-INVENT:
+    // if the IFC carries no IfcMaterial association, the entry is absent → material_name
+    // stays NULL (the viewer's colour-naming falls back). Handles the common relating types:
+    // IfcMaterial (.Name), IfcMaterialLayerSetUsage/LayerSet (first layer's material),
+    // IfcMaterialList (first), IfcMaterialConstituentSet (first constituent).
+    const materialNameById = {}; // element expressID → material name string
+    function _matNameFrom(relMatId) {
+      if (relMatId == null) return null;
+      try {
+        var rm = ifcApi.GetLine(modelID, relMatId);
+        if (!rm) return null;
+        // Direct IfcMaterial
+        if (rm.Name && typeof rm.Name.value === 'string') return rm.Name.value;
+        // IfcMaterialLayerSetUsage → ForLayerSet, or IfcMaterialLayerSet directly
+        var layerSet = rm.ForLayerSet ? ifcApi.GetLine(modelID, rm.ForLayerSet.value) : rm;
+        if (layerSet && layerSet.MaterialLayers && layerSet.MaterialLayers.length) {
+          var lyr = ifcApi.GetLine(modelID, layerSet.MaterialLayers[0].value);
+          if (lyr && lyr.Material) {
+            var lm = ifcApi.GetLine(modelID, lyr.Material.value);
+            if (lm && lm.Name && typeof lm.Name.value === 'string') return lm.Name.value;
+          }
+        }
+        // IfcMaterialList → Materials[]
+        if (rm.Materials && rm.Materials.length) {
+          var fm = ifcApi.GetLine(modelID, rm.Materials[0].value);
+          if (fm && fm.Name && typeof fm.Name.value === 'string') return fm.Name.value;
+        }
+        // IfcMaterialConstituentSet → MaterialConstituents[]
+        if (rm.MaterialConstituents && rm.MaterialConstituents.length) {
+          var con = ifcApi.GetLine(modelID, rm.MaterialConstituents[0].value);
+          if (con && con.Material) {
+            var cm = ifcApi.GetLine(modelID, con.Material.value);
+            if (cm && cm.Name && typeof cm.Name.value === 'string') return cm.Name.value;
+          }
+        }
+      } catch(e) { /* unreadable association → leave NULL */ }
+      return null;
+    }
+    try {
+      var matRelIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELASSOCIATESMATERIAL);
+      for (var mri = 0; mri < matRelIds.size(); mri++) {
+        try {
+          var mrel = ifcApi.GetLine(modelID, matRelIds.get(mri));
+          var nm = _matNameFrom(mrel.RelatingMaterial ? mrel.RelatingMaterial.value : null);
+          if (nm && mrel.RelatedObjects) {
+            for (var mrj = 0; mrj < mrel.RelatedObjects.length; mrj++) {
+              var moid = mrel.RelatedObjects[mrj] ? mrel.RelatedObjects[mrj].value : null;
+              if (moid != null) materialNameById[moid] = nm;
+            }
+          }
+        } catch(e) { /* skip */ }
+      }
+    } catch(e) { /* IFCRELASSOCIATESMATERIAL not in schema */ }
+    console.log('[LENS] §MATERIAL_NAMES associations=' + Object.keys(materialNameById).length);
 
     // Collect product types to extract
     const PRODUCT_TYPES = [
@@ -396,6 +551,8 @@ self.onmessage = async function(e) {
             storey: elementToStorey[id] || 'Unknown',
             discipline: classifyDisc(ifcClass, discFromFilename(filename)),
             material: '',
+            // §LENS_MATERIAL: IfcMaterial.Name (null if no association — non-invent)
+            materialName: materialNameById[id] || null,
           });
         } catch(e) { /* skip unreadable */ }
       }
@@ -414,6 +571,75 @@ self.onmessage = async function(e) {
       }
     }
     console.log('[S267] §BOM_TREE_RESOLVED raw=' + bomTreeRels.length + ' resolved=' + bomTree.length);
+
+    // §LENS_SPATIAL: IfcSpace bbox pass — tessellate each space ONLY to derive center/size
+    // (world Z-up, mm→m heuristic applied later with the rest). Space geometry is NOT added
+    // to `geometries` (render stays clean); we only read extents for the room highlight.
+    var _spaceBboxOk = 0;
+    for (var sbi = 0; sbi < spaceExpressIds.length; sbi++) {
+      var _spEx = spaceExpressIds[sbi];
+      var _row = spatialById[_spEx];
+      if (!_row) continue;
+      try {
+        var _fm = ifcApi.GetFlatMesh(modelID, _spEx);
+        var _minX = Infinity, _minY = Infinity, _minZ = Infinity;
+        var _maxX = -Infinity, _maxY = -Infinity, _maxZ = -Infinity;
+        var _gc = _fm.geometries.size();
+        for (var _gi = 0; _gi < _gc; _gi++) {
+          var _geo = _fm.geometries.get(_gi);
+          var _md = ifcApi.GetGeometry(modelID, _geo.geometryExpressID);
+          var _vs = _md.GetVertexDataSize();
+          if (_vs === 0) continue;
+          var _vts = ifcApi.GetVertexArray(_md.GetVertexData(), _vs);
+          var _m = _geo.flatTransformation;
+          var _vc = _vts.length / 6;
+          for (var _vi = 0; _vi < _vc; _vi++) {
+            var _lx = _vts[_vi*6], _ly = _vts[_vi*6+1], _lz = _vts[_vi*6+2];
+            var _wx = _m[0]*_lx + _m[4]*_ly + _m[8]*_lz  + _m[12];
+            var _wy = _m[1]*_lx + _m[5]*_ly + _m[9]*_lz  + _m[13];
+            var _wz = _m[2]*_lx + _m[6]*_ly + _m[10]*_lz + _m[14];
+            // same Y-up → Z-up swap the element loop uses: (wx, -wz, wy)
+            var _px = _wx, _py = -_wz, _pz = _wy;
+            if (_px < _minX) _minX = _px; if (_px > _maxX) _maxX = _px;
+            if (_py < _minY) _minY = _py; if (_py > _maxY) _maxY = _py;
+            if (_pz < _minZ) _minZ = _pz; if (_pz > _maxZ) _maxZ = _pz;
+          }
+        }
+        if (_minX !== Infinity) {
+          _row.cx = (_minX + _maxX) / 2; _row.cy = (_minY + _maxY) / 2; _row.cz = (_minZ + _maxZ) / 2;
+          _row.sx = _maxX - _minX; _row.sy = _maxY - _minY; _row.sz = _maxZ - _minZ;
+          _spaceBboxOk++;
+        }
+      } catch(e) { /* space without geometry → center/size stay null */ }
+    }
+
+    // §LENS_SPATIAL: assemble spatial_structure rows + element→space containment (GUID-keyed).
+    var spatialStructure = [];
+    for (var _sk in spatialById) {
+      var _r = spatialById[_sk];
+      spatialStructure.push({
+        guid: _r.guid, type: _r.type, name: _r.name, parentGuid: _r.parentGuid,
+        objectType: _r.objectType, predefinedType: _r.predefinedType,
+        cx: _r.cx, cy: _r.cy, cz: _r.cz, sx: _r.sx, sy: _r.sy, sz: _r.sz,
+      });
+    }
+    // expressID → guid for the lens: products (elements) + spatial rows
+    var _spaceExToGuid = {};
+    for (var _sk2 in spatialById) _spaceExToGuid[_sk2] = spatialById[_sk2].guid;
+    var relContainedInSpace = [];
+    var _seenRC = {};
+    for (var rcx = 0; rcx < relContainedRaw.length; rcx++) {
+      var _eGuid = _idToGuid[relContainedRaw[rcx].elementId];
+      var _sGuid = _spaceExToGuid[relContainedRaw[rcx].spaceId];
+      if (!_eGuid || !_sGuid) continue;
+      var _rk = _sGuid + '|' + _eGuid;
+      if (_seenRC[_rk]) continue;
+      _seenRC[_rk] = 1;
+      relContainedInSpace.push({ elementGuid: _eGuid, spaceGuid: _sGuid });
+    }
+    var _nSpaces = spatialStructure.filter(function(r){ return r.type === 'IfcSpace'; }).length;
+    console.log('[LENS] §SPATIAL_EXTRACT spatial_rows=' + spatialStructure.length + ' spaces=' + _nSpaces +
+      ' spaceBbox=' + _spaceBboxOk + ' rel_contained=' + relContainedInSpace.length);
 
     console.log('[S220] §ELEMENTS_FOUND count=' + elements.length + ' storeys=' + Object.keys(storeyMap).length);
     console.log('[S252] §ELEM_COLORS icm_mapped=' + Object.keys(_colorMap).length + '/' + elements.length);
@@ -587,7 +813,9 @@ self.onmessage = async function(e) {
     }
     const skipped = elements.length - geometries.length;
     if (_skipCount) console.log('[S220] §GEOM_FAST_SKIP classes=' + Object.keys(_SKIP_GEOM).join(',') + ' count=' + _skipCount + ' (no GetFlatMesh call — saves OOM cycles)');
+    var _namedMatCount = renderableElements.filter(function(el){ return el.materialName != null; }).length;
     console.log('[S220] §GEOM_SUMMARY elements=' + elements.length + ' renderable=' + renderableElements.length + ' ghosts=' + ghosts.length + ' materials=' + matCount);
+    console.log('[LENS] §NAMED_MATERIALS renderable_with_material_name=' + _namedMatCount + '/' + renderableElements.length);
 
     post('progress', 92, 'Building database — almost done...');
 
@@ -620,6 +848,12 @@ self.onmessage = async function(e) {
           var vBuf = new Float32Array(geometries[gi].vertices);
           for (var vi = 0; vi < vBuf.length; vi++) vBuf[vi] *= 0.001;
           geometries[gi].vertices = vBuf.buffer;
+        }
+        // §LENS_SPATIAL: scale IfcSpace bbox center/size to match (mm→m heuristic)
+        for (var ssx = 0; ssx < spatialStructure.length; ssx++) {
+          var _ssr = spatialStructure[ssx];
+          if (_ssr.cx != null) { _ssr.cx *= 0.001; _ssr.cy *= 0.001; _ssr.cz *= 0.001; }
+          if (_ssr.sx != null) { _ssr.sx *= 0.001; _ssr.sy *= 0.001; _ssr.sz *= 0.001; }
         }
       }
     }
@@ -825,6 +1059,9 @@ self.onmessage = async function(e) {
       elements: renderableElements,
       geometries: geometries,
       bomTree: bomTree,  // §S267: parent→child IFC relationships for bom_tree table
+      // §LENS_SPATIAL: Find Room lens — IfcBuilding/Storey/Space rows + element→space links
+      spatialStructure: spatialStructure,
+      relContainedInSpace: relContainedInSpace,
       transforms: transforms,
       // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB)
       schedules: schedules,

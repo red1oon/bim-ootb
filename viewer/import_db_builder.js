@@ -38,7 +38,8 @@ function buildImportDBs(SQL, data) {
   var stmtEl = db.prepare('INSERT OR IGNORE INTO elements_meta VALUES (?,?,?,?,?,?,?,?)');
   for (var i = 0; i < data.elements.length; i++) {
     var el = data.elements[i];
-    stmtEl.run([el.guid, el.ifcClass, el.name, el.storey, el.discipline, null, el.material, buildingName]);
+    // §LENS_MATERIAL: material_name = IfcMaterial.Name (null if no IFC association — non-invent)
+    stmtEl.run([el.guid, el.ifcClass, el.name, el.storey, el.discipline, el.materialName || null, el.material, buildingName]);
   }
   stmtEl.free();
 
@@ -76,6 +77,37 @@ function buildImportDBs(SQL, data) {
     stmtBom.free();
     console.log('[S267] §BOM_TREE_TABLE rows=' + data.bomTree.length);
   }
+
+  // §LENS_SPATIAL: spatial_structure + rel_contained_in_space — feeds the Find Room
+  // lens (panels.js / navigate_find.js query type='IfcSpace' + center_x/size_x for the
+  // room bbox highlight). Column shape mirrors the served _extracted.db files EXACTLY
+  // (guid,type,name,parent_guid,object_type,predefined_type,center_*,size_*). Tables are
+  // ALWAYS created (empty if the IFC has no IfcSpace) so the lens probes a stable schema.
+  db.run('CREATE TABLE IF NOT EXISTS spatial_structure (guid TEXT, type TEXT, name TEXT, parent_guid TEXT, object_type TEXT, predefined_type TEXT, center_x REAL, center_y REAL, center_z REAL, size_x REAL, size_y REAL, size_z REAL)');
+  db.run('CREATE TABLE IF NOT EXISTS rel_contained_in_space (element_guid TEXT, space_guid TEXT)');
+  var _nSpatial = 0, _nRel = 0;
+  if (data.spatialStructure && data.spatialStructure.length > 0) {
+    var stmtSS = db.prepare('INSERT INTO spatial_structure VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+    for (var ssi = 0; ssi < data.spatialStructure.length; ssi++) {
+      var ss = data.spatialStructure[ssi];
+      stmtSS.run([ss.guid, ss.type, ss.name, ss.parentGuid || null, ss.objectType || null,
+        ss.predefinedType || null,
+        ss.cx != null ? ss.cx : null, ss.cy != null ? ss.cy : null, ss.cz != null ? ss.cz : null,
+        ss.sx != null ? ss.sx : null, ss.sy != null ? ss.sy : null, ss.sz != null ? ss.sz : null]);
+      _nSpatial++;
+    }
+    stmtSS.free();
+  }
+  if (data.relContainedInSpace && data.relContainedInSpace.length > 0) {
+    var stmtRC = db.prepare('INSERT INTO rel_contained_in_space VALUES (?,?)');
+    for (var rci = 0; rci < data.relContainedInSpace.length; rci++) {
+      var rc = data.relContainedInSpace[rci];
+      stmtRC.run([rc.elementGuid, rc.spaceGuid]);
+      _nRel++;
+    }
+    stmtRC.free();
+  }
+  console.log('[LENS] §SPATIAL_TABLES spatial_structure=' + _nSpatial + ' rel_contained_in_space=' + _nRel);
 
   // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB).
   // Widened DDL (§5.2): CPM dates, float, is_critical, WBS (wbs_parent+is_summary),

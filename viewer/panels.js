@@ -1041,6 +1041,10 @@ function setupPanels(A) {
       { id: 'find',       name: 'Find / Navigate', key: 'f', icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
       { id: 'help',       name: 'Help',            key: 'F1', icon: I.lifeBuoy.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
+      { id: 'history',    name: 'History',         key: 'z', icon: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+        fn: function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); },
+        isActive: function() { var b = document.getElementById('universal-hist-btns'); return !!(b && b.style.display !== 'none'); },
+        children: [ { name: 'Universal undo/redo (Ctrl+Z / Ctrl+Shift+Z)' }, { name: 'Merges model ops (grid moves, places) + view navigation' }, { name: 'Dots: round = view, square = model op' }, { name: 'Tap a dot to jump to that step' }, { name: '◉ / ◯ toggle: recording ON/OFF (persisted)' } ] },
       { id: 'walk',       name: 'Walk',            platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
       { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
@@ -1158,6 +1162,10 @@ function setupPanels(A) {
       }
       console.log('§SETTINGS_PANEL created');
     }
+    // §S281 fix: expose so the '=' shortcut calls the action directly (pill buttons
+    // wire pointerup, not click — a synthetic btn.click() never fired this). Idiomatic
+    // window export like _revealChip / toggleDocPill.
+    window._openSettingsPanel = _openSettingsPanel;
 
     // §S282: Accordion section — ERP .acc pattern (chevron, expand/collapse)
     function _buildSection(title, startOpen, buildContent) {

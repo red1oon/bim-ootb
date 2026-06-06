@@ -12,7 +12,7 @@ function setupMeasure(A) {
   // ── Draggable panels ──
   A._makeDraggable = function(el) {
     var ox, oy, sx, sy, dragging = false, pending = false, moved = false, pid = null;
-    var dragStrip = window._isMobile ? 50 : 30;
+    var dragStrip = el._dragStrip || (window._isMobile ? 50 : 30);  // honour the panel's intended grab-zone (e.g. Find = 64)
     el.style.cursor = 'grab';
     // On mobile, intercept touch BEFORE the browser claims it for scroll/pan.
     // Only preventDefault in the drag zone; elsewhere let browser handle normally.

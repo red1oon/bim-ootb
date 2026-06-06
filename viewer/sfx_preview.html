@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIM Viewer — Sound FX preview</title>
+<style>
+  body { background:#0a0a1e; color:#e0e0e0; font-family:'Segoe UI',sans-serif; max-width:720px; margin:0 auto; padding:24px; }
+  h1 { color:#4fc3f7; font-size:20px; }
+  h2 { color:#6c9fff; font-size:14px; margin-top:26px; border-bottom:1px solid #222; padding-bottom:6px; }
+  .row { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  .meta { color:#888; font-size:12px; font-family:monospace; }
+  .name { font-size:14px; }
+  button { background:#1c2440; color:#4fc3f7; border:1px solid #3a4a7a; border-radius:6px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  button:hover { background:#26304f; }
+  .big { display:block; width:100%; margin:10px 0; padding:12px; font-size:15px; font-weight:600; }
+  .note { color:#888; font-size:12px; line-height:1.5; }
+  kbd { background:#333; color:#4fc3f7; padding:1px 6px; border-radius:3px; font-family:monospace; }
+</style>
+</head>
+<body>
+<h1>🔊 BIM Viewer — Sound FX preview</h1>
+<p class="note">Same WebAudio synthesis the viewer's <code>sfx.js</code> uses — no audio files, pure oscillators.
+Tones come straight from <code>sfx.json</code>, so this previews exactly what ships. Click any row, or use the
+big buttons to feel the 4D Time-Machine sequence. In the viewer this is <b>default OFF</b>, toggled by the
+speaker pill / <kbd>v</kbd>.</p>
+
+<button class="big" id="playTM">▶ Play the 4D build sequence (Substructure → Finishes)</button>
+<button class="big" id="playAll">▶ Play every sound once</button>
+
+<h2>Construction phase earcons (Time Machine)</h2>
+<div id="construction"></div>
+
+<h2>UI / interaction sounds</h2>
+<div id="ui"></div>
+
+<p class="note" id="status">Loading sfx.json…</p>
+
+<script>
+// ── beep(): identical envelope to viewer/sfx.js ──────────────────────────────
+var _ctx = null, _master = null, _vol = 0.5;
+function ctx() {
+  if (_ctx) { if (_ctx.state === 'suspended') _ctx.resume(); return _ctx; }
+  var AC = window.AudioContext || window.webkitAudioContext;
+  _ctx = new AC();
+  _master = _ctx.createGain();
+  _master.gain.value = _vol;
+  _master.connect(_ctx.destination);
+  return _ctx;
+}
+function beep(freq, ms, wave, gainMul, pan, atTime) {
+  var c = ctx();
+  var t0 = (atTime != null ? atTime : c.currentTime);
+  var dur = Math.max(0.02, (ms || 120) / 1000);
+  var osc = c.createOscillator();
+  osc.type = wave || 'sine';
+  osc.frequency.value = freq || 330;
+  var g = c.createGain();
+  var peak = 0.9 * (gainMul == null ? 1 : gainMul);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  var tail = g;
+  if (pan != null && c.createStereoPanner) { var p = c.createStereoPanner(); p.pan.value = pan; g.connect(p); tail = p; }
+  osc.connect(g); tail.connect(_master);
+  osc.start(t0); osc.stop(t0 + dur + 0.02);
+}
+
+var CFG = null;
+function rowEl(target, r, kind) {
+  var d = document.createElement('div'); d.className = 'row';
+  var left = document.createElement('div');
+  left.innerHTML = '<div class="name">' + (r.label || r.phase || r.id) + '</div>' +
+    '<div class="meta">' + r.wave + ' · ' + r.freq + 'Hz · ' + r.ms + 'ms</div>';
+  var btn = document.createElement('button'); btn.textContent = '▶ Play';
+  btn.onclick = function () { beep(r.freq, r.ms, r.wave, kind === 'ui' ? 0.8 : 1, 0); };
+  d.appendChild(left); d.appendChild(btn); target.appendChild(d);
+}
+
+fetch('sfx.json').then(function (r) { return r.json(); }).then(function (cfg) {
+  CFG = cfg;
+  _vol = (cfg.master && typeof cfg.master.volume === 'number') ? cfg.master.volume : 0.5;
+  var cs = document.getElementById('construction'), ui = document.getElementById('ui');
+  (cfg.construction_sounds || []).forEach(function (r) { if (r.phase !== '*') rowEl(cs, r, 'tm'); });
+  (cfg.ui_sounds || []).forEach(function (r) { rowEl(ui, r, 'ui'); });
+  document.getElementById('status').textContent = 'Loaded sfx.json — master volume ' + _vol + ', default enabled=' + (cfg.master && cfg.master.enabled) + '. Click to hear.';
+}).catch(function (e) { document.getElementById('status').textContent = 'Failed to load sfx.json: ' + e.message; });
+
+document.getElementById('playTM').onclick = function () {
+  if (!CFG) return;
+  var c = ctx(), t = c.currentTime + 0.05, gap = 0.55;
+  (CFG.construction_sounds || []).forEach(function (r) {
+    if (r.phase === '*') return;
+    var pan = Math.sin((t * 1.7)) * 0.5; // gentle drift so phases feel placed in space
+    beep(r.freq, r.ms, r.wave, 1, pan, t);
+    t += gap;
+  });
+};
+document.getElementById('playAll').onclick = function () {
+  if (!CFG) return;
+  var c = ctx(), t = c.currentTime + 0.05;
+  var all = (CFG.construction_sounds || []).filter(function (r) { return r.phase !== '*'; })
+            .concat(CFG.ui_sounds || []);
+  all.forEach(function (r) { beep(r.freq, r.ms, r.wave, 1, 0, t); t += 0.45; });
+};
+</script>
+</body>
+</html>

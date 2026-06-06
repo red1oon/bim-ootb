@@ -74,7 +74,9 @@
   .idmp-children { display:none; }
   .idmp-node.open > .idmp-children { display:block; }
   /* ── Main content ── */
-  #idmp-main { flex:1; display:flex; flex-direction:column; min-height:0; background:var(--idmp-bg); }
+  /* min-width:0 lets the flex item shrink below the grid's intrinsic width so the grid scrolls INSIDE
+     #idmp-content (overflow:auto) instead of ballooning #idmp-main past the viewport (mobile overflow fix). */
+  #idmp-main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; background:var(--idmp-bg); }
   /* window MDI tabs */
   #idmp-wintabs {
     flex:0 0 auto; display:flex; align-items:flex-end; gap:2px; padding:6px 8px 0; background:var(--idmp-bg);
@@ -197,6 +199,9 @@
     body.menu-open #idmp-menu { transform:translateX(0); }
     .idmp-form { grid-template-columns:1fr; }
     .idmp-fld label { flex-basis:110px; }
+    /* the header breadcrumb (#idmp-ctx) is nowrap and shoved the role/home/help buttons off the right edge at
+       390px; it duplicates the bottom status bar, so drop it on mobile and keep the buttons reachable. */
+    #idmp-header .ctx { display:none; }
   }
 </style>
 </head>
@@ -274,6 +279,8 @@
 <script src="accts_posted.js?v=23"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=22"></script>
+<!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
+<script src="erp_picker.js?v=1"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
 <script src="kernel_ops.js?v=1"></script>
 <script src="erp_signer.js?v=1"></script>
@@ -281,6 +288,9 @@
 <script src="erp_seam.js?v=1"></script>
 <script src="kanban_lens.js?v=2"></script>
 <script src="kanban_host.js?v=1"></script>
+<!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
+<script src="bigdecimal.js?v=1"></script>
+<script src="rule_fold.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -364,13 +374,52 @@
       if (!seedParam) idbPut('ad_seed_v13', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
+    // ?shard=<file>.db — SHARD-IN: merge an overlay tenant/data shard's rows into the base (doctrine: AD data
+    // is sharded/installed in, never a baked monolith). INSERT OR IGNORE so re-loads never duplicate.
+    var shardParam = new URLSearchParams(location.search).get('shard');
+    if (shardParam && /^[\w.-]+\.db$/.test(shardParam)) {
+      try {
+        var sbuf = await (await fetch(shardParam)).arrayBuffer();
+        var sdb = new SQL.Database(new Uint8Array(sbuf));
+        var stbls = sdb.exec("SELECT name FROM sqlite_master WHERE type='table'");
+        var mTbl = 0, mRow = 0;
+        if (stbls.length) stbls[0].values.forEach(function (tv) {
+          var t = tv[0], r = sdb.exec('SELECT * FROM "' + t + '"'); if (!r.length) return;
+          var cs = r[0].columns, ins = 'INSERT OR IGNORE INTO "' + t + '" (' + cs.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + cs.map(function () { return '?'; }).join(',') + ')';
+          r[0].values.forEach(function (vals) { try { db.run(ins, vals); mRow++; } catch (e) {} });
+          mTbl++;
+        });
+        sdb.close();
+        console.log('§IDEMPIERE shard-in ' + shardParam + ' tables=' + mTbl + ' rows=' + mRow);
+      } catch (e) { console.warn('§IDEMPIERE shard-in failed ' + e.message); }
+    }
     if (ADP && ADP.init) ADP.init(db);
     console.log('§IDEMPIERE boot db=' + src + ' ms=' + Math.round(performance.now() - _t0));
 
     // Menu builds only AFTER login — it is role-scoped (docs §3b). Defer the deep link too.
     _pendingWid = new URLSearchParams(location.search).get('window');
     $('idmp-loading').style.display = 'none';
-    showLogin('user');
+    // ?login=<AD_User_ID | name-substring> auto-logs-in (demo/kiosk wow — zero clicks to the opening screen).
+    // Proper practice: tenant SETUP/migration is a SystemAdmin act (System, client 0 — ?login=SuperUser); a
+    // migrated tenant is then entered directly (?login=Odoo). Config-in-pill (iDempiere-style) comes later.
+    var loginParam = new URLSearchParams(location.search).get('login');
+    if (!(loginParam && _tryAutoLogin(loginParam))) showLogin('user');
+  }
+  function _tryAutoLogin(q) {
+    var ql = String(q).toLowerCase();
+    var users = SES.listUsers(db).filter(function (u) { return u.hasRoles; });
+    var m = /^\d+$/.test(q) ? users.filter(function (u) { return String(u.id) === q; })[0]
+                            : users.filter(function (u) { return (u.name || '').toLowerCase().indexOf(ql) >= 0; })[0];
+    if (!m) { console.log('§IDEMPIERE-AUTOLOGIN miss q=' + q); return false; }
+    var roles = SES.rolesForUser(db, m.id); if (!roles.length) return false;
+    var rid = roles[0].id, orgs = SES.orgsForRole(db, rid), oid = orgs.length ? orgs[0].id : 0;
+    _loginUser = m;
+    _session = SES.buildContext(db, m.id, { roleId: rid, orgId: oid });
+    if (!_session) return false;
+    $('idmp-login').style.display = 'none';
+    console.log('§IDEMPIERE-AUTOLOGIN user=' + m.name + ' role=' + rid + ' via=' + q);
+    applySession();
+    return true;
   }
 
   // ── Login flow (docs §3b/§3b.1): pick user → Role/Client/Org → role-scoped session ──
@@ -825,13 +874,46 @@
     x.addEventListener('click', close); hd.appendChild(x);
     ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
   }
+  // distinct-value count of a column across the open window's records (heat-map cardinality scoring).
+  function _distinctCount(col) { var s = {}; _records.forEach(function (r) { s[String(recVal(r, col))] = 1; }); return Object.keys(s).length; }
+  // Pick the best CATEGORICAL/lookup column for a heat map when there is no docstatus lifecycle: prefer
+  // declared FK/list references (tableDirect/table/search/list/yesno) or *_ID columns, with cardinality in a
+  // useful band (≥2, < rows — never constant, never unique-per-row). Falls back to any usable column.
+  function _bestPivot(tab) {
+    var flds = _displayFields(tab) || [], rows = _records.length, best = null, bestScore = -1;
+    var LOOKUP = { tableDirect: 1, table: 1, search: 1, list: 1, yesno: 1 };
+    var ideal = Math.min(24, Math.max(3, Math.ceil(rows / 4)));
+    function consider(f, declared) {
+      var c = _distinctCount(f.columnName); if (c < 2 || c >= rows) return;
+      var score = 1000 - Math.abs(c - ideal) - (declared ? 0 : 6);
+      if (score > bestScore) { bestScore = score; best = f; }
+    }
+    flds.forEach(function (f) { var cn = f.columnName || ''; if (LOOKUP[f.referenceType] || /_id$/i.test(cn)) consider(f, true); });
+    if (!best) flds.forEach(function (f) { consider(f, false); });          // last resort: any usable column
+    return best;
+  }
   function _groupRecs() {
     var tab = _curTab(); if (!tab || !_records.length) return null;
-    var flds = _displayFields(tab) || [], pick = null;
-    for (var i = 0; i < flds.length; i++) { var cn = (flds[i].columnName || '').toLowerCase(); if (cn.indexOf('docstatus') >= 0 || cn.indexOf('status') >= 0) { pick = flds[i]; break; } }
-    if (!pick) pick = flds[0]; if (!pick) return null;
+    var flds = _displayFields(tab) || [], pick = null, hasStatus = false;
+    for (var i = 0; i < flds.length; i++) { var cn = (flds[i].columnName || '').toLowerCase(); if (cn.indexOf('docstatus') >= 0 || cn.indexOf('status') >= 0) { pick = flds[i]; hasStatus = true; break; } }
+    if (!pick) pick = _bestPivot(tab) || flds[0];   // no lifecycle → a sensible lookup, NOT a blind flds[0]
+    if (!pick) return null;
     var g = {}; _records.forEach(function (r) { var v = String(fmt(pick, recVal(r, pick.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
-    return { col: pick, label: pick.name, groups: g, tab: tab };
+    return { col: pick, label: pick.name, groups: g, tab: tab, hasStatus: hasStatus };
+  }
+  // Heat map = the no-pivot fallback for the Kanban (a board with no wfmc states has no drop-zones, so an
+  // empty board is useless): tiles per distinct lookup value, intensity ∝ count. Counts are REAL row folds.
+  function _renderHeatMap(gr, container) {
+    var keys = Object.keys(gr.groups).map(function (k) { return { k: k, n: gr.groups[k].length }; }).sort(function (a, b) { return b.n - a.n; });
+    var max = 1; keys.forEach(function (e) { max = Math.max(max, e.n); });
+    container.appendChild(el('div', 'kb-note', 'No lifecycle (docstatus) in ' + gr.tab.name + ' — heat map by ' + gr.label + ' · ' + keys.length + ' values, ' + _records.length + ' rows.'));
+    var grid = el('div', 'hm-grid');
+    keys.forEach(function (e) { var t = e.n / max, cell = el('div', 'hm-cell');
+      cell.style.background = 'rgba(108,159,255,' + (0.14 + 0.78 * t).toFixed(3) + ')';
+      cell.appendChild(el('div', 'hm-k', e.k)); cell.appendChild(el('div', 'hm-n', String(e.n)));
+      cell.title = e.k + ' · ' + e.n + ' rows'; grid.appendChild(cell); });
+    container.appendChild(grid);
+    console.log('§HEATMAP by=' + gr.col.columnName + ' values=' + keys.length + ' max=' + max + ' rows=' + _records.length + ' table=' + gr.tab.tableName);
   }
   // one-tap switch between the two lenses of the SAME data (Graph bars ⇆ Kanban board) — proper UX:
   // the graph icon's view launches the interactive board, and the board switches back to the chart.
@@ -872,6 +954,14 @@
   async function openKanbanFor() {
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
+    if (!gr.hasStatus) {                          // no wfmc lifecycle → heat map (a drop-zone board would be empty)
+      var hc = el('div'); hc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+      var hroot = el('div'); hroot.style.cssText = 'overflow:auto;max-height:72vh'; hc.appendChild(hroot);
+      _renderHeatMap(gr, hroot);
+      _overlay('Heat map — ' + gr.tab.name, hc);
+      console.log('§KANBAN-PILL heatmap by=' + gr.col.columnName + ' table=' + gr.tab.tableName);
+      return;
+    }
     var ok = await _ensureKanbanERP();
     var tab = gr.tab, T = tab.tableName, kc = _keyCol(tab), statusCol = gr.col.columnName;
     if (!ok || !window.KanbanLens) {   // engine/lens absent → honest fall back to the read-only board
@@ -898,25 +988,39 @@
     window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc,
       dispatch: window.ERP.dispatch, ctx: window.ERP.ctx,
       onResult: function (res, dr) {
-        if (dr && dr.ok) { var v = window.ERP.verify();
-          console.log('§KANBAN-WRITE ok ' + res.table + '#' + res.id + ' to=' + dr.to + ' chainOk=' + v.chainOk + ' len=' + v.len);
-          window.KanbanHost.persist(_kanbanProj, _KPROJ);
+        if (dr && dr.ok) {
+          var v = window.ERP.verify();                          // A: effects determinism (replay×2 equal)
+          // I-4: SEAL the op so the live SET_STATUS write is genuinely SIGNED (W-CHAIN+W-SIGN), then verify
+          // the chain (incl. ECDSA signature). This is the same signed log the ⚖ rule edit rides.
+          Promise.resolve(window.ERP.seal ? window.ERP.seal() : null).then(function () {
+            return window.ERP.chainVerify ? window.ERP.chainVerify() : { ok: v.chainOk, len: v.len };
+          }).then(function (cv) {
+            console.log('§KANBAN-WRITE ok ' + res.table + '#' + res.id + ' to=' + dr.to +
+              ' effects=' + v.chainOk + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N') + ' signed=' + (window.ERP.ctx && window.ERP.ctx.pubKey ? 'Y' : 'N') + ' len=' + (cv && cv.len));
+            window.KanbanHost.persist(_kanbanProj, _KPROJ);
+          });
         } else if (dr && dr.rejected) { console.log('§KANBAN-WRITE rejected why=' + dr.why); }
       } });
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
   }
-  function openInstallFor() { status('Install: pull the full DB to this device, or pair via QR to your machine — POC'); console.log('§INSTALL-PILL action=install-stub'); }
-  function openMigrateFor() { status('Migrate: run the local extractor on your machine, mirror here (QR pairing) — POC'); console.log('§MIGRATE-PILL action=migrate-stub'); }
+  // ⚖ Rule — THE ONE GESTURE: edit one rule → K records re-fold live, signed + reversible (RuleFold).
+  function openRuleFor() {
+    console.log('§RULE-PILL action=open');
+    if (!window.RuleFold) { status('Rule gesture not loaded.'); return; }
+    RuleFold.open({ db: db, SQL: window.SQL, status: status, mount: _overlay });
+  }
+  function openInstallFor() { console.log('§INSTALL-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'install', status: status }); else status('ERP picker not loaded.'); }
+  function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
   function buildPillRail() {
     _injectPillCSS();
     var rail = el('div'); rail.id = 'idmp-pillrail';
     [['📒', 'Posted', openPostedFor], ['📊', 'Graph', openGraphFor], ['🗂', 'Kanban', openKanbanFor],
-     ['⬇', 'Install', openInstallFor], ['🔌', 'Migrate', openMigrateFor]].forEach(function (p) {
+     ['⚖', 'Rule', openRuleFor], ['⬇', 'Install', openInstallFor], ['🔌', 'Migrate', openMigrateFor]].forEach(function (p) {
       var b = el('button', 'idmp-pill'); b.title = p[1];
       b.appendChild(el('span', 'idmp-pill-ic', p[0])); b.appendChild(el('span', 'idmp-pill-lb', p[1]));
       b.addEventListener('click', p[2]); rail.appendChild(b);
     });
-    document.body.appendChild(rail); console.log('§PILL-RAIL pills=5 [Posted,Graph,Kanban,Install,Migrate]');
+    document.body.appendChild(rail); console.log('§PILL-RAIL pills=6 [Posted,Graph,Kanban,Rule,Install,Migrate]');
   }
   function _injectPillCSS() {
     if (window._pillCSSDone) return; window._pillCSSDone = true;
@@ -924,7 +1028,8 @@
     s.textContent = '#idmp-pillrail{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;display:flex;flex-direction:column;gap:8px;max-height:82vh;overflow:auto;padding:8px;border-radius:18px;background:rgba(20,22,32,.82);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px)}' +
       '.idmp-pill{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;min-height:48px;border:none;border-radius:14px;background:rgba(255,255,255,.06);color:#dfe6f2;cursor:pointer;padding:6px 2px}.idmp-pill:hover{background:rgba(108,159,255,.25)}.idmp-pill-ic{font-size:18px;line-height:1}.idmp-pill-lb{font-size:9px;opacity:.85}' +
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
-      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}';
+      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}' +
+      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
     document.head.appendChild(s);
   }
 

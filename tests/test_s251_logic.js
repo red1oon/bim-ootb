@@ -15,7 +15,10 @@ function check(id, desc, ok) {
 console.log('═══ S251 Logic Tests — Execute & Verify ═══\n');
 
 // ── Extract makeListKeyNav from panels.js ──
-var panelsSrc = fs.readFileSync(path.join(__dirname, '../panels.js'), 'utf8');
+// Resolve panels.js across layouts: deploy/dev/tests/ (../panels.js) and bim-ootb/tests/ (../viewer/panels.js)
+var _panelsPath = [path.join(__dirname, '../panels.js'), path.join(__dirname, '../viewer/panels.js')]
+  .find(function(p) { return fs.existsSync(p); });
+var panelsSrc = fs.readFileSync(_panelsPath, 'utf8');
 // Pull out the function body
 var fnMatch = panelsSrc.match(/function makeListKeyNav\(getItems, onToggle, onActivate, onCursorMove\) \{([\s\S]*?)\n  \}/);
 if (!fnMatch) { console.log('FATAL: cannot extract makeListKeyNav'); process.exit(1); }
@@ -878,6 +881,44 @@ console.log('\n── S251b: BUG-5 Clash list panel unregister+reregister ──
   // Register new panel
   panels.push({ id: 'clashlist', el: newDiv });
   check('B64', 'BUG-5: new clashlist registered', panels.length === 2);
+})();
+
+// ══════════════════════════════════════════════════
+console.log('\n── BUG116: Clash matrix "c" toggle-off must not leave a stale focused nav ──');
+// Issue (gh#116): pressing "c" to close the matrix removed _clashMatrixDiv but left
+// _focusedPanel pointing at the dead 'clash' panel. The next ArrowDown routed to its
+// nav getter → Array.from(null.querySelectorAll(...)) → §ERR_GLOBAL TypeError at scene.js.
+// Proves: (a) c-toggle-off unregisters 'clash' + clears focus, (b) guarded getter no-throws.
+// ══════════════════════════════════════════════════
+(function() {
+  // (a) Teardown — mirror the scene.js c-toggle-off path
+  var panels = [{ id: 'clash', el: mockEl('div', 'Matrix') }];
+  var focused = panels[0];          // 'clash' is the focused panel
+  var clashDiv = panels[0].el;      // A._clashMatrixDiv
+
+  // c pressed again → toggle-off teardown
+  clashDiv = null;                  // .remove() + null
+  for (var ci = panels.length - 1; ci >= 0; ci--) {
+    if (panels[ci].id === 'clash') { panels.splice(ci, 1); break; }
+  }
+  if (focused && focused.id === 'clash') focused = null; // _blurPanel clears focus
+
+  check('B74', 'BUG116: clash unregistered from _panels on c-toggle-off', panels.length === 0);
+  check('B75', 'BUG116: _focusedPanel cleared (no stale clash)', focused === null);
+
+  // (b) Defensive getter — guarded matNav getItems must return [] (not throw) when div null
+  var liveDiv = null;               // A._clashMatrixDiv is null after close
+  var guardedGetItems = function() {
+    return liveDiv ? Array.from(liveDiv.querySelectorAll('[data-pair]')) : [];
+  };
+  var threw = false, items = null;
+  try {
+    var nav = makeListKeyNav(guardedGetItems, function() {}, function() {});
+    items = guardedGetItems();
+    nav.onKey(mockEvent('ArrowDown')); // the keystroke that used to crash
+  } catch (e) { threw = true; }
+  check('B76', 'BUG116: guarded getter returns [] when _clashMatrixDiv null', Array.isArray(items) && items.length === 0);
+  check('B77', 'BUG116: ArrowDown after close does NOT throw (was TypeError @ scene.js)', threw === false);
 })();
 
 // ══════════════════════════════════════════════════

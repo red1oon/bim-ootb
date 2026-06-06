@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIM Viewer — Sound FX Lab (imaginative voices)</title>
+<style>
+  body { background:#0a0a1e; color:#e0e0e0; font-family:'Segoe UI',sans-serif; max-width:780px; margin:0 auto; padding:24px; }
+  h1 { color:#4fc3f7; font-size:21px; }
+  h2 { color:#6c9fff; font-size:14px; margin-top:28px; border-bottom:1px solid #222; padding-bottom:6px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .voice { background:#121833; border:1px solid #283154; border-radius:8px; padding:10px 12px; }
+  .voice .n { font-size:14px; color:#e8e8e8; }
+  .voice .d { font-size:11px; color:#8a93b8; margin:3px 0 8px; line-height:1.35; }
+  button { background:#1c2440; color:#7fd4ff; border:1px solid #3a4a7a; border-radius:6px; padding:7px 12px; font-size:13px; cursor:pointer; }
+  button:hover { background:#26304f; }
+  .big { display:inline-block; margin:6px 6px 6px 0; padding:11px 16px; font-size:14px; font-weight:600; }
+  .note { color:#8a93b8; font-size:12px; line-height:1.55; }
+  .tag { display:inline-block; font-size:10px; color:#0a0a1e; background:#7fd4ff; border-radius:3px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<h1>🎛️ Sound FX Lab — imaginative voices</h1>
+<p class="note">All <b>pure WebAudio synthesis, zero files</b>. This is a sandbox to find a vibe — not the
+shipping config. Click voices to audition. The <b>style rows</b> play the 4D build sequence
+(Substructure → Finishes) rendered in different aesthetics so you can feel each. The <b>motion</b> row
+demos "light-vectored" sound — pitch + stereo that follow movement (doppler / pan). Tell me which voices
+or which whole style you like and I'll wire those into <code>sfx.json</code>.</p>
+
+<h2>▶ Hear the 4D build sequence in different styles</h2>
+<div>
+  <button class="big" onclick="seq('arcade')">🎮 Arcade / playful</button>
+  <button class="big" onclick="seq('cinematic')">🎬 Cinematic / whoosh</button>
+  <button class="big" onclick="seq('organic')">🪵 Organic / material</button>
+  <button class="big" onclick="seq('ambient')">🌌 Ambient / loopy</button>
+  <button class="big" onclick="seq('current')">🔉 Current (plain beeps)</button>
+</div>
+
+<h2>✨ Motion / vector demos ("light-vectored, loopy")</h2>
+<div>
+  <button class="big" onclick="V.doppler()">✈ Doppler fly-by (L→R)</button>
+  <button class="big" onclick="V.vectorRise()">⬆ Vector rise (pitch follows height)</button>
+  <button class="big" onclick="V.orbitPad()">🛰 Loopy orbit pad (3s)</button>
+  <button class="big" onclick="V.mepLoop()">⚙ MEP machinery loop (LFO)</button>
+  <button class="big" id="heliBtn" onclick="heliToggle()">🚁 Helicopter overhead (loop)</button>
+  <button class="big" onclick="spurt('steel')">🔩 Steel rivets (ta-ta-ta)</button>
+  <button class="big" onclick="spurt('knock')">🪵 Wood hammer (ta-ta-ta)</button>
+</div>
+
+<h2>🎻 Scene Violin — a living bed the viewer drives (parameter-mapping)</h2>
+<p class="note">A sustained bowed-string drone. Imagine the viewer feeding it: build <b>progress</b> → pitch,
+how much is being installed right now (<b>activity</b>) → emphasis (louder + brighter + more vibrato).
+Start it, then drag the sliders to feel "the model playing itself."</p>
+<div>
+  <button class="big" id="vioStart">🎻 Start violin</button>
+  <button class="big" id="vioStop">⏹ Stop</button>
+</div>
+<div style="margin:8px 0">
+  <label class="note">Build progress (→ pitch): </label><input type="range" id="vioProg" min="0" max="100" value="0" style="width:60%">
+</div>
+<div style="margin:8px 0">
+  <label class="note">Site activity (→ emphasis): </label><input type="range" id="vioAct" min="0" max="100" value="20" style="width:60%">
+</div>
+
+<h2>🎼 Musical mode — orchestrate events over the drone (wind-chime principle)</h2>
+<p class="note">The violin holds the <b>key</b>; every phase earcon is <b>snapped to that scale</b>, so any
+combination is consonant — never cacophony. This plays a loose "construction day" with overlapping events,
+all in tune over the bed.</p>
+<div>
+  <button class="big" onclick="musicalDay('minor_pentatonic')">🎼 Musical day — D minor pentatonic</button>
+  <button class="big" onclick="musicalDay('major_pentatonic')">🎼 Musical day — D major pentatonic</button>
+  <button class="big" onclick="musicalDay(null)">🔇 Same events, NO key (hear the mud)</button>
+</div>
+
+<h2>🎬 Cinematic theme — deep score (strings + drums + hollow space + original motif)</h2>
+<p class="note">A generative film-style bed: low <b>cello strings</b>, <b>timpani + sub-boom</b> drums on a slow
+pulse, a <b>hollow reverb space</b> (synthesized impulse response — the "theatre" depth), and an
+<b>invented motif</b> (original minor-scale note sequence — no film material). Drag <b>Intensity</b> (drums +
+brightness) and <b>Progress</b> (key rises as the build grows). This is the "scene bed" for style=cinematic.</p>
+<div>
+  <button class="big" id="cinPlay">🎬 Play cinematic theme</button>
+  <button class="big" id="cinStop">⏹ Stop</button>
+  <button class="big" onclick="medley()">🎞 Play medley (bed + interjections, stereo)</button>
+</div>
+<div style="margin:8px 0"><label class="note">Intensity (→ drums / brightness): </label><input id="cinInt" type="range" min="0" max="100" value="45" style="width:55%"></div>
+<div style="margin:8px 0"><label class="note">Build progress (→ key rises): </label><input id="cinProg" type="range" min="0" max="100" value="0" style="width:55%"></div>
+
+<h2>🎬 Cinematic SFX elements — discrete one-shots (royalty-free by construction)</h2>
+<p class="note">The "sound-effects pack" elements from those refs — <b>impacts, braams, risers, whooshes,
+sub-drops, stingers</b> — but synthesized, so they're free &amp; original (nothing to license or store).
+These map to discrete viewer ops (phase change, fly waypoint, isolate, milestone). Click to audition.</p>
+<div class="grid" id="cinfx"></div>
+
+<h2>Voice library</h2>
+<div class="grid" id="lib"></div>
+
+<p class="note" id="status" style="margin-top:18px">Tap anything to start audio.</p>
+
+<script>
+// ── Engine ───────────────────────────────────────────────────────────────────
+var AC = window.AudioContext || window.webkitAudioContext;
+var ctx = null, master = null;
+function audio() {
+  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return ctx; }
+  ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.5; master.connect(ctx.destination);
+  return ctx;
+}
+function panNode(c, p0, p1, t0, dur) {
+  if (!c.createStereoPanner) return null;
+  var p = c.createStereoPanner();
+  p.pan.setValueAtTime(p0 == null ? 0 : p0, t0);
+  if (p1 != null) p.pan.linearRampToValueAtTime(p1, t0 + dur);
+  return p;
+}
+function env(g, t0, peak, dur, atk) {
+  atk = atk || 0.008;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+}
+// A single shaped oscillator with optional pitch glide + vibrato + pan automation.
+function tone(o) {
+  var c = audio(), t0 = (o.at != null ? o.at : c.currentTime);
+  var dur = o.dur || 0.2;
+  var osc = c.createOscillator();
+  osc.type = o.wave || 'sine';
+  osc.frequency.setValueAtTime(o.freq, t0);
+  if (o.glideTo != null) osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.glideTo), t0 + dur);
+  if (o.detune) osc.detune.value = o.detune;
+  var g = c.createGain(); env(g, t0, o.gain == null ? 0.8 : o.gain, dur, o.atk);
+  // vibrato / tremolo LFO ("loopy")
+  if (o.vibHz) { var lfo = c.createOscillator(), la = c.createGain(); lfo.frequency.value = o.vibHz; la.gain.value = o.vibDepth || 8; lfo.connect(la); la.connect(osc.frequency); lfo.start(t0); lfo.stop(t0 + dur + 0.05); }
+  var chain = g; osc.connect(g);
+  if (o.lp) { var f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; g.connect(f); chain = f; }
+  var pn = panNode(c, o.pan, o.panTo, t0, dur);
+  if (pn) { chain.connect(pn); pn.connect(master); } else chain.connect(master);
+  osc.start(t0); osc.stop(t0 + dur + 0.05);
+  return t0 + dur;
+}
+// Filtered-noise burst with a sweeping band → whooshes, impacts, sparkle texture.
+function noise(o) {
+  var c = audio(), t0 = (o.at != null ? o.at : c.currentTime), dur = o.dur || 0.3;
+  var n = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+  for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  var src = c.createBufferSource(); src.buffer = buf;
+  var f = c.createBiquadFilter(); f.type = o.filter || 'bandpass'; f.Q.value = o.q || 4;
+  f.frequency.setValueAtTime(o.f0 || 600, t0);
+  if (o.f1 != null) f.frequency.exponentialRampToValueAtTime(o.f1, t0 + dur);
+  var g = c.createGain(); env(g, t0, o.gain == null ? 0.5 : o.gain, dur, o.atk || 0.01);
+  src.connect(f); f.connect(g);
+  var pn = panNode(c, o.pan, o.panTo, t0, dur);
+  if (pn) { g.connect(pn); pn.connect(master); } else g.connect(master);
+  src.start(t0); src.stop(t0 + dur + 0.02);
+  return t0 + dur;
+}
+// FM bell/metallic: modulator oscillator drives carrier frequency.
+function fm(o) {
+  var c = audio(), t0 = (o.at != null ? o.at : c.currentTime), dur = o.dur || 0.5;
+  var car = c.createOscillator(); car.type = 'sine'; car.frequency.value = o.freq;
+  var mod = c.createOscillator(); mod.type = 'sine'; mod.frequency.value = o.freq * (o.ratio || 2);
+  var mg = c.createGain(); mg.gain.setValueAtTime(o.freq * (o.index || 5), t0);
+  mg.gain.exponentialRampToValueAtTime(1, t0 + dur);  // index decays → bell-like
+  mod.connect(mg); mg.connect(car.frequency);
+  var g = c.createGain(); env(g, t0, o.gain == null ? 0.6 : o.gain, dur, 0.005);
+  car.connect(g);
+  var pn = panNode(c, o.pan, o.panTo, t0, dur);
+  if (pn) { g.connect(pn); pn.connect(master); } else g.connect(master);
+  mod.start(t0); car.start(t0); mod.stop(t0 + dur + 0.05); car.stop(t0 + dur + 0.05);
+  return t0 + dur;
+}
+function chord(freqs, dur, wave, at) { var t = at || audio().currentTime; freqs.forEach(function (f) { tone({ freq: f, dur: dur, wave: wave || 'triangle', gain: 0.4, at: t }); }); return t + dur; }
+function arp(freqs, step, wave, at) { var t = at || audio().currentTime; freqs.forEach(function (f, i) { tone({ freq: f, dur: step * 1.6, wave: wave || 'sine', gain: 0.5, at: t + i * step }); }); return t + freqs.length * step; }
+
+// ── Named voices ─────────────────────────────────────────────────────────────
+var V = {
+  riser:   function (at) { return tone({ freq: 200, glideTo: 900, dur: 0.22, wave: 'triangle', gain: 0.7, at: at }); },
+  drop:    function (at) { return tone({ freq: 800, glideTo: 180, dur: 0.25, wave: 'sawtooth', gain: 0.6, lp: 3000, at: at }); },
+  whoosh:  function (at) { return noise({ f0: 400, f1: 3500, dur: 0.35, q: 2, gain: 0.45, pan: -0.7, panTo: 0.7, at: at }); },
+  bell:    function (at) { return fm({ freq: 440, ratio: 2.0, index: 7, dur: 0.6, gain: 0.55, at: at }); },
+  steel:   function (at) { return fm({ freq: 660, ratio: 3.1, index: 9, dur: 0.5, gain: 0.5, at: at }); },
+  knock:   function (at) { tone({ freq: 220, glideTo: 120, dur: 0.09, wave: 'triangle', gain: 0.7, lp: 1200, at: at }); return noise({ f0: 1800, f1: 600, dur: 0.05, filter: 'lowpass', gain: 0.3, at: at }); },
+  thud:    function (at) { tone({ freq: 70, glideTo: 45, dur: 0.4, wave: 'sine', gain: 0.9, at: at }); return noise({ f0: 220, f1: 80, dur: 0.35, filter: 'lowpass', q: 1, gain: 0.4, at: at }); },
+  pluck:   function (at) { return noise({ f0: 1500, f1: 1200, dur: 0.16, filter: 'bandpass', q: 10, gain: 0.5, at: at }); },
+  sparkle: function (at) { var t = at || audio().currentTime; var base = 660; for (var i = 0; i < 7; i++) tone({ freq: base * Math.pow(1.18, i), dur: 0.12, wave: 'sine', gain: 0.35, at: t + i * 0.045 }); return t + 0.4; },
+  stab:    function (at) { return chord([392, 494, 587], 0.18, 'square', at); },
+  wobble:  function (at) { return tone({ freq: 90, dur: 0.5, wave: 'sine', gain: 0.8, vibHz: 5, vibDepth: 25, at: at }); },
+  pad:     function (at) { var t = at || audio().currentTime; tone({ freq: 196, dur: 2.0, wave: 'sawtooth', gain: 0.25, detune: -6, lp: 1200, at: t }); tone({ freq: 196, dur: 2.0, wave: 'sawtooth', gain: 0.25, detune: 6, lp: 1200, at: t }); tone({ freq: 294, dur: 2.0, wave: 'sine', gain: 0.18, at: t }); return t + 2.0; },
+  // Motion / vector demos
+  doppler: function () { var c = audio(), t = c.currentTime; tone({ freq: 760, glideTo: 480, dur: 0.7, wave: 'sawtooth', gain: 0.6, lp: 4000, pan: -1, panTo: 1, at: t }); },
+  vectorRise: function () { var c = audio(), t = c.currentTime; for (var i = 0; i < 6; i++) tone({ freq: 220 + i * 90, dur: 0.16, wave: 'triangle', gain: 0.5, pan: -0.3 + i * 0.12, at: t + i * 0.13 }); },
+  orbitPad: function () { var c = audio(), t = c.currentTime; tone({ freq: 147, dur: 3.0, wave: 'sawtooth', gain: 0.22, detune: -8, lp: 900, pan: -0.8, panTo: 0.8, at: t }); tone({ freq: 220, dur: 3.0, wave: 'sine', gain: 0.16, vibHz: 0.4, vibDepth: 4, pan: 0.8, panTo: -0.8, at: t }); },
+  mepLoop: function () { var c = audio(), t = c.currentTime; tone({ freq: 130, dur: 1.4, wave: 'sawtooth', gain: 0.5, vibHz: 7, vibDepth: 12, lp: 1500, at: t }); noise({ f0: 2000, f1: 2000, dur: 1.4, filter: 'bandpass', q: 8, gain: 0.12, at: t }); }
+};
+
+// ── Style renderings of the 6-phase build sequence ───────────────────────────
+var PHASES = ['Substructure', 'Superstructure', 'Architecture', 'MEP Rough-in', 'MEP Final', 'Finishes'];
+function seq(style) {
+  var c = audio(), t = c.currentTime + 0.05, gap = 0.6;
+  PHASES.forEach(function (ph, i) {
+    var pan = Math.sin(i * 1.1) * 0.6;
+    if (style === 'arcade')      [V.thud, V.stab, V.riser, V.pluck, V.pluck, V.sparkle][i]( t );
+    else if (style === 'cinematic') { V.whoosh(t); [V.thud, V.bell, V.drop, V.steel, V.steel, V.riser][i](t + 0.12); }
+    else if (style === 'organic')   [V.thud, V.steel, V.knock, V.wobble, V.bell, V.sparkle][i]( t );
+    else if (style === 'ambient')   { if (i === 0) V.pad(t); tone({ freq: [147, 196, 262, 330, 392, 523][i], dur: 0.5, wave: 'sine', gain: 0.4, vibHz: 3, vibDepth: 5, pan: pan, at: t }); }
+    else /* current */              tone({ freq: [110, 196, 262, 392, 523, 659][i], dur: [240,200,170,150,150,200][i]/1000, wave: ['sine','triangle','square','sawtooth','sawtooth','sine'][i], gain: 0.8, at: t });
+    t += gap;
+  });
+  document.getElementById('status').textContent = 'Played "' + style + '" build sequence.';
+}
+
+// ── Scale quantizer (wind-chime principle) ───────────────────────────────────
+var SCALES = { major_pentatonic:[0,2,4,7,9], minor_pentatonic:[0,3,5,7,10], major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10] };
+var ROOT = 146.83; // D3
+function scaleSemis(name){ var b=SCALES[name]||SCALES.minor_pentatonic, all=[]; for(var o=-1;o<=3;o++) for(var i=0;i<b.length;i++) all.push(b[i]+o*12); return all; }
+function quantize(hz, scale){ if(!scale) return hz; var semis=12*Math.log(hz/ROOT)/Math.log(2), allowed=scaleSemis(scale), best=allowed[0], bd=1e9; allowed.forEach(function(s){var d=Math.abs(s-semis); if(d<bd){bd=d;best=s;}}); return ROOT*Math.pow(2,best/12); }
+
+// ── Scene Violin (sustained, live pitch + emphasis) ───────────────────────────
+var violin = null;
+function startViolin(base){
+  var c=audio(); if(violin) return violin; var t=c.currentTime;
+  var mix=c.createGain(); mix.gain.value=0.0001;
+  var lp=c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=900;
+  var form=c.createBiquadFilter(); form.type='bandpass'; form.frequency.value=1100; form.Q.value=1.1;
+  var oscs=[]; [-7,6].forEach(function(d){var o=c.createOscillator();o.type='sawtooth';o.detune.value=d;o.frequency.value=base;o.connect(mix);o.start(t);oscs.push(o);});
+  var sub=c.createOscillator(); sub.type='sine'; sub.frequency.value=base/2; sub.connect(mix); sub.start(t); oscs.push(sub);
+  var vib=c.createOscillator(); vib.frequency.value=5; var vg=c.createGain(); vg.gain.value=3; vib.connect(vg); oscs.forEach(function(o){vg.connect(o.detune);}); vib.start(t);
+  mix.connect(lp); lp.connect(form); form.connect(master);
+  violin={ setPitch:function(hz){var n=c.currentTime; oscs.forEach(function(o){o.frequency.setTargetAtTime(hz,n,0.15);}); sub.frequency.setTargetAtTime(hz/2,n,0.15);},
+    setEmphasis:function(e){e=Math.max(0,Math.min(1,e));var n=c.currentTime; mix.gain.setTargetAtTime(0.0001+e*0.32,n,0.2); lp.frequency.setTargetAtTime(500+e*2800,n,0.25); vg.gain.setTargetAtTime(2+e*8,n,0.2);},
+    stop:function(){var n=c.currentTime; mix.gain.setTargetAtTime(0.0001,n,0.3); setTimeout(function(){try{oscs.forEach(function(o){o.stop();});vib.stop();}catch(e){}},700); violin=null;} };
+  violin.setEmphasis(0.2); return violin;
+}
+document.getElementById('vioStart').onclick=function(){ var v=startViolin(ROOT); v.setPitch(quantize(ROOT*Math.pow(2,document.getElementById('vioProg').value/100),'minor_pentatonic')); v.setEmphasis(document.getElementById('vioAct').value/100); };
+document.getElementById('vioStop').onclick=function(){ if(violin) violin.stop(); };
+document.getElementById('vioProg').oninput=function(){ if(violin) violin.setPitch(quantize(ROOT*Math.pow(2,this.value/100),'minor_pentatonic')); };
+document.getElementById('vioAct').oninput=function(){ if(violin) violin.setEmphasis(this.value/100); };
+
+// ── Musical "construction day": overlapping events, all snapped to the key ─────
+function musicalDay(scale){
+  var c=audio(); var v=startViolin(ROOT); v.setEmphasis(0.25);
+  var voices=[ {f:73,fn:V.thud}, {f:587,fn:V.steel}, {f:220,fn:V.knock}, {f:330,fn:V.pluck}, {f:523,fn:V.pluck}, {f:880,fn:V.sparkle}, {f:440,fn:V.bell} ];
+  var t=c.currentTime+0.1, beat=0.4;
+  for(var i=0;i<16;i++){ var pick=voices[(i*3+ (i%2?2:0))%voices.length]; var f=quantize(pick.f*(1+((i%3)*0.0)), scale); var pan=Math.sin(i*0.9)*0.6;
+    (function(ff,fn,at,pn){ var orig=ff; // play tonal voices at the quantized pitch
+      if(fn===V.thud) V.thud(at); else if(fn===V.steel) fmAt(orig,at,pn); else if(fn===V.bell) fmAt(orig,at,pn);
+      else if(fn===V.pluck) noiseAt(orig,at,pn); else if(fn===V.knock) toneAt(orig,at,pn,'triangle');
+      else if(fn===V.sparkle) sparkleAt(orig,at); else toneAt(orig,at,pn,'sine');
+    })(f,pick.fn,t,pan);
+    // ramp the bed up over the "day"
+    v.setPitch(quantize(ROOT*Math.pow(2,i/16),scale||'minor_pentatonic'));
+    v.setEmphasis(0.2+0.5*(i/16));
+    t+=beat*(0.6+ (i%3?0.4:0));
+  }
+  setTimeout(function(){ if(violin) violin.setEmphasis(0.15); }, 7000);
+  document.getElementById('status').textContent = scale ? ('Musical day in '+scale+' — all events snapped to the key.') : 'Same events with NO key — note the dissonance.';
+}
+// pitch-specified one-shots used by musicalDay
+function toneAt(f,at,pan,wave){ tone({freq:f,dur:0.22,wave:wave||'sine',gain:0.5,pan:pan,at:at}); }
+function noiseAt(f,at,pan){ noise({f0:f*1.7,f1:f*1.4,dur:0.16,filter:'bandpass',q:10,gain:0.5,pan:pan,at:at}); }
+function fmAt(f,at,pan){ fm({freq:f,ratio:2.0,index:7,dur:0.5,gain:0.45,pan:pan,at:at}); }
+function sparkleAt(f,at){ for(var i=0;i<6;i++) tone({freq:f*Math.pow(1.18,i),dur:0.12,wave:'sine',gain:0.3,at:at+i*0.045}); }
+
+// ── Cinematic theme — generative film-style score (all original, synthesized) ──
+function makeIR(c, sec, decay) {
+  var len = Math.floor(c.sampleRate * sec), buf = c.createBuffer(2, len, c.sampleRate);
+  for (var ch = 0; ch < 2; ch++) { var d = buf.getChannelData(ch); for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay); }
+  return buf;
+}
+var cin = null;
+function startCinematic() {
+  var c = audio(); if (cin) return cin; var t = c.currentTime;
+  // Hollow theatre space: convolution reverb from a synthesized decaying-noise IR.
+  // Deeper hollow hall: longer IR + short pre-delay → bigger room.
+  var conv = c.createConvolver(); conv.buffer = makeIR(c, 4.2, 2.6);
+  var pre = c.createDelay(); pre.delayTime.value = 0.035;
+  var wet = c.createGain(); wet.gain.value = 0.72; pre.connect(conv); conv.connect(wet); wet.connect(master);
+  var bus = c.createGain(); bus.gain.value = 0.8; bus.connect(master); bus.connect(pre); // dry + reverb send
+  var ROOTC = 87.31; // F2 — lower root for depth
+  var curHz = ROOTC; function curRoot() { return curHz; }
+  var MINOR = [0, 2, 3, 5, 7, 8, 10];
+  function deg(n) { var oct = Math.floor(n / 7), idx = ((n % 7) + 7) % 7; return ROOTC * Math.pow(2, (MINOR[idx] + oct * 12) / 12); }
+  // ── Orchestral bed: octave-stacked, detuned, panned ensemble = power chord (root+fifth+oct) ──
+  var bed = c.createGain(); bed.gain.value = 0.0001;
+  var bedLP = c.createBiquadFilter(); bedLP.type = 'lowpass'; bedLP.frequency.value = 480;
+  var voices = []; // {o, ratio} — ratio relative to current root, so Progress retunes all at once
+  function ens(ratio, pan, wave, det) { var o = c.createOscillator(); o.type = wave || 'sawtooth'; o.frequency.value = ROOTC * ratio; o.detune.value = det || 0; var g = c.createGain(); g.gain.value = (wave === 'sine' ? 0.9 : 0.45); o.connect(g); var p = c.createStereoPanner ? c.createStereoPanner() : null; if (p) { p.pan.value = pan; g.connect(p); p.connect(bed); } else g.connect(bed); o.start(t); voices.push({ o: o, ratio: ratio }); }
+  ens(0.25, 0, 'sine'); ens(0.5, 0, 'sine');                              // sub + bass — felt depth
+  ens(1, -0.25, 'sawtooth', -7); ens(1, 0.25, 'sawtooth', 7); ens(1, 0, 'sawtooth', 0);  // root section
+  ens(1.4983, -0.5, 'sawtooth', -5); ens(1.4983, 0.5, 'sawtooth', 6);     // the fifth (power chord)
+  ens(2, 0, 'sawtooth', 3);                                                // octave shimmer
+  var vib = c.createOscillator(); vib.frequency.value = 0.25; var vg = c.createGain(); vg.gain.value = 5; vib.connect(vg); voices.forEach(function (v) { vg.connect(v.o.detune); }); vib.start(t);
+  bed.connect(bedLP); bedLP.connect(bus); bed.gain.setTargetAtTime(0.15, t, 2.0);
+  // ── Low brass layer — swells in with intensity for orchestral weight ──
+  var brass = c.createGain(); brass.gain.value = 0.0001;
+  var brassF = c.createBiquadFilter(); brassF.type = 'bandpass'; brassF.frequency.value = 260; brassF.Q.value = 0.7;
+  var brassV = []; [0.5, 0.75].forEach(function (r) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = ROOTC * r; o.connect(brass); o.start(t); brassV.push({ o: o, ratio: r }); });
+  brass.connect(brassF); brassF.connect(bus);
+  // ── Braam — original low-brass cluster swell (the cinematic "hit") ──
+  function braam(at, mul) { [0.5, 0.75, 1].forEach(function (r) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = curRoot() * r; var bf = c.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.setValueAtTime(280, at); bf.frequency.linearRampToValueAtTime(1100, at + 1.1); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.16 * mul, at + 0.9); g.gain.exponentialRampToValueAtTime(0.001, at + 2.2); o.connect(bf); bf.connect(g); g.connect(bus); o.start(at); o.stop(at + 2.3); }); }
+  // ── Riser — filtered-noise tension build into a hit ──
+  function riser(at, dur, g) { var n = Math.floor(c.sampleRate * dur), nb = c.createBuffer(1, n, c.sampleRate), nd = nb.getChannelData(0); for (var i = 0; i < n; i++) nd[i] = Math.random() * 2 - 1; var ns = c.createBufferSource(); ns.buffer = nb; var f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.1; f.frequency.setValueAtTime(300, at); f.frequency.exponentialRampToValueAtTime(4500, at + dur); var ga = c.createGain(); ga.gain.setValueAtTime(0.0001, at); ga.gain.exponentialRampToValueAtTime(g, at + dur * 0.95); ga.gain.exponentialRampToValueAtTime(0.001, at + dur + 0.1); ns.connect(f); f.connect(ga); ga.connect(bus); ns.start(at); ns.stop(at + dur + 0.12); }
+  // Drum + motif voices
+  function timpani(at, f, g) { var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f * 1.6, at); o.frequency.exponentialRampToValueAtTime(f, at + 0.14); var ga = c.createGain(); ga.gain.setValueAtTime(0.0001, at); ga.gain.exponentialRampToValueAtTime(g, at + 0.008); ga.gain.exponentialRampToValueAtTime(0.001, at + 0.7); o.connect(ga); ga.connect(bus); o.start(at); o.stop(at + 0.75);
+    var n = Math.floor(c.sampleRate * 0.05), nb = c.createBuffer(1, n, c.sampleRate), nd = nb.getChannelData(0); for (var i = 0; i < n; i++) nd[i] = Math.random() * 2 - 1; var ns = c.createBufferSource(); ns.buffer = nb; var nf = c.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 900; var ng = c.createGain(); ng.gain.setValueAtTime(g * 0.5, at); ng.gain.exponentialRampToValueAtTime(0.001, at + 0.05); ns.connect(nf); nf.connect(ng); ng.connect(bus); ns.start(at); ns.stop(at + 0.06); }
+  function boom(at, f, g) { var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f * 0.5, at); o.frequency.exponentialRampToValueAtTime(f * 0.38, at + 1.2); var ga = c.createGain(); ga.gain.setValueAtTime(0.0001, at); ga.gain.exponentialRampToValueAtTime(g, at + 0.02); ga.gain.exponentialRampToValueAtTime(0.001, at + 1.6); o.connect(ga); ga.connect(bus); o.start(at); o.stop(at + 1.7); }
+  function lead(at, f, g) { var car = c.createOscillator(); car.type = 'triangle'; car.frequency.value = f; var mod = c.createOscillator(); mod.type = 'sine'; mod.frequency.value = f * 2; var mgn = c.createGain(); mgn.gain.value = f * 1.5; mod.connect(mgn); mgn.connect(car.frequency); var ga = c.createGain(); ga.gain.setValueAtTime(0.0001, at); ga.gain.exponentialRampToValueAtTime(g, at + 0.05); ga.gain.exponentialRampToValueAtTime(0.001, at + 1.0); car.connect(ga); ga.connect(bus); mod.start(at); car.start(at); mod.stop(at + 1.1); car.stop(at + 1.1); }
+  var intensity = 0.45, prog = 0, step = 0;
+  var MOTIF = [0, 3, 7, 5, 3, 0, 5, 7]; // invented original phrase (scale degrees)
+  var beatMs = 1150;
+  var timer = setInterval(function () {
+    var now = c.currentTime + 0.06;
+    timpani(now, curHz / 2, 0.4 + 0.5 * intensity);
+    if (step % 4 === 0) boom(now, curHz / 2, 0.5 * intensity);
+    if (step % 8 === 5 && intensity > 0.4) riser(now, beatMs / 1000 * 3, 0.18 * intensity); // build...
+    if (step % 8 === 0 && step > 0 && intensity > 0.45) braam(now, intensity);             // ...into the hit
+    if (step % 2 === 1 && intensity > 0.2) lead(now, deg(MOTIF[step % MOTIF.length] + 14) * (curHz / ROOTC), 0.13 * intensity);
+    bedLP.frequency.setTargetAtTime(360 + 1500 * intensity, c.currentTime, 0.5);
+    brass.gain.setTargetAtTime(0.0001 + 0.16 * intensity, c.currentTime, 0.6);
+    step++;
+  }, beatMs);
+  cin = {
+    setIntensity: function (v) { intensity = Math.max(0, Math.min(1, v)); },
+    setProgress: function (p) { prog = p; curHz = ROOTC * Math.pow(2, Math.floor(p * 7) / 12); var n = c.currentTime; voices.forEach(function (v) { v.o.frequency.setTargetAtTime(curHz * v.ratio, n, 0.7); }); brassV.forEach(function (v) { v.o.frequency.setTargetAtTime(curHz * v.ratio, n, 0.7); }); },
+    stop: function () { clearInterval(timer); var n = c.currentTime; bed.gain.setTargetAtTime(0.0001, n, 0.5); brass.gain.setTargetAtTime(0.0001, n, 0.5); setTimeout(function () { try { voices.forEach(function (v) { v.o.stop(); }); brassV.forEach(function (v) { v.o.stop(); }); vib.stop(); } catch (e) {} }, 800); cin = null; }
+  };
+  document.getElementById('status').textContent = 'Cinematic theme playing — drag Intensity / Progress.';
+  return cin;
+}
+document.getElementById('cinPlay').onclick = function () { var s = startCinematic(); s.setIntensity(document.getElementById('cinInt').value / 100); s.setProgress(document.getElementById('cinProg').value / 100); };
+document.getElementById('cinStop').onclick = function () { if (cin) cin.stop(); };
+document.getElementById('cinInt').oninput = function () { if (cin) cin.setIntensity(this.value / 100); };
+document.getElementById('cinProg').oninput = function () { if (cin) cin.setProgress(this.value / 100); };
+// Medley — bed + scripted interjections (tension → build → hits → downlift → rollup finale), panned.
+function medley() {
+  var s = startCinematic(); s.setIntensity(0.3); s.setProgress(0);
+  var P = function (fn, ms, pan) { setTimeout(function () { if (FX[fn]) FX[fn](); }, ms); };
+  setTimeout(function(){ FX.tension(); }, 300);
+  setTimeout(function(){ s.setIntensity(0.5); FX.riser(); }, 2600);
+  setTimeout(function(){ FX.impact(); s.setProgress(0.3); }, 4900);
+  setTimeout(function(){ FX.braam(); }, 5300);
+  setTimeout(function(){ spurt('steel'); }, 7000);
+  setTimeout(function(){ s.setIntensity(0.7); s.setProgress(0.6); FX.downlift(); }, 9200);
+  setTimeout(function(){ FX.whoosh(); }, 10600);
+  setTimeout(function(){ s.setProgress(1); FX.rollup(); }, 12200);
+  setTimeout(function(){ s.setIntensity(0.25); }, 15500);
+  document.getElementById('status').textContent = 'Medley playing — bed + stereo interjections over ~16s.';
+}
+
+// ── Cinematic SFX element kit — discrete one-shots through a shared reverb hall ──
+var CB = null;
+function cinBus() { var c = audio(); if (CB) return CB; var conv = c.createConvolver(); conv.buffer = makeIR(c, 3.5, 2.5); var wet = c.createGain(); wet.gain.value = 0.6; conv.connect(wet); wet.connect(master); var bus = c.createGain(); bus.gain.value = 0.9; bus.connect(master); bus.connect(conv); CB = bus; return CB; }
+function _nz(c, dur) { var n = Math.floor(c.sampleRate * dur), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0); for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; var s = c.createBufferSource(); s.buffer = b; return s; }
+var FX = {
+  impact: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus();
+    var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(140, at); o.frequency.exponentialRampToValueAtTime(38, at + 0.28); var g = c.createGain(); g.gain.setValueAtTime(0.95, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.7); o.connect(g); g.connect(b); o.start(at); o.stop(at + 0.75);
+    var s = _nz(c, 0.12), f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1800; f.Q.value = 0.8; var ng = c.createGain(); ng.gain.setValueAtTime(0.6, at); ng.gain.exponentialRampToValueAtTime(0.001, at + 0.12); s.connect(f); f.connect(ng); ng.connect(b); s.start(at); s.stop(at + 0.13); },
+  braam: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); [55, 82.4, 110].forEach(function (fr) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = fr; var bf = c.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.setValueAtTime(260, at); bf.frequency.linearRampToValueAtTime(1300, at + 1.1); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.22, at + 0.85); g.gain.exponentialRampToValueAtTime(0.001, at + 2.3); o.connect(bf); bf.connect(g); g.connect(b); o.start(at); o.stop(at + 2.4); }); },
+  riser: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); var dur = 2.2; var s = _nz(c, dur), f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.0; f.frequency.setValueAtTime(280, at); f.frequency.exponentialRampToValueAtTime(5000, at + dur); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.32, at + dur * 0.96); g.gain.exponentialRampToValueAtTime(0.001, at + dur + 0.1); s.connect(f); f.connect(g); g.connect(b); s.start(at); s.stop(at + dur + 0.12); },
+  downlift: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); var dur = 1.6; var s = _nz(c, dur), f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.0; f.frequency.setValueAtTime(5000, at); f.frequency.exponentialRampToValueAtTime(260, at + dur); var g = c.createGain(); g.gain.setValueAtTime(0.3, at); g.gain.exponentialRampToValueAtTime(0.001, at + dur); s.connect(f); f.connect(g); g.connect(b); s.start(at); s.stop(at + dur + 0.1); },
+  subdrop: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(90, at); o.frequency.exponentialRampToValueAtTime(24, at + 1.2); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.9, at + 0.05); g.gain.exponentialRampToValueAtTime(0.001, at + 1.4); o.connect(g); g.connect(b); o.start(at); o.stop(at + 1.5); },
+  boom: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(60, at); o.frequency.exponentialRampToValueAtTime(42, at + 1.0); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.8, at + 0.02); g.gain.exponentialRampToValueAtTime(0.001, at + 1.7); o.connect(g); g.connect(b); o.start(at); o.stop(at + 1.8); },
+  stinger: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); [110, 130.8, 164.8].forEach(function (fr) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = fr; var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.18, at + 0.02); g.gain.exponentialRampToValueAtTime(0.001, at + 0.8); o.connect(lp); lp.connect(g); g.connect(b); o.start(at); o.stop(at + 0.85); }); },
+  whoosh: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); var dur = 0.5; var s = _nz(c, dur), f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.5; f.frequency.setValueAtTime(500, at); f.frequency.exponentialRampToValueAtTime(4000, at + dur); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(0.4, at + dur * 0.5); g.gain.exponentialRampToValueAtTime(0.001, at + dur); var p = c.createStereoPanner ? c.createStereoPanner() : null; s.connect(f); if (p) { p.pan.setValueAtTime(-1, at); p.pan.linearRampToValueAtTime(1, at + dur); f.connect(g); g.connect(p); p.connect(b); } else { f.connect(g); g.connect(b); } s.start(at); s.stop(at + dur + 0.05); },
+  tension: function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); [110, 116.5].forEach(function (fr) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = fr; var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(0.14, at + 0.4); g.gain.setValueAtTime(0.14, at + 1.2); g.gain.exponentialRampToValueAtTime(0.001, at + 2.0); var trem = c.createOscillator(); trem.frequency.value = 6; var tg = c.createGain(); tg.gain.value = 0.05; trem.connect(tg); tg.connect(g.gain); o.connect(lp); lp.connect(g); g.connect(b); trem.start(at); o.start(at); trem.stop(at + 2.0); o.stop(at + 2.05); }); }
+};
+FX.rollup = function (at) { var c = audio(); at = at || c.currentTime + 0.02; var b = cinBus(); var base = 45, tt = at, gap = 0.17; for (var i = 0; i < 14; i++) { (function (ht, amp) { var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(base * 1.5, ht); o.frequency.exponentialRampToValueAtTime(base, ht + 0.1); var g = c.createGain(); g.gain.setValueAtTime(amp, ht); g.gain.exponentialRampToValueAtTime(0.001, ht + 0.18); o.connect(g); g.connect(b); o.start(ht); o.stop(ht + 0.2); })(tt, 0.12 + 0.5 * (i / 14)); tt += gap; gap *= 0.92; } var ha = tt + 0.05; var oo = c.createOscillator(); oo.type = 'sine'; oo.frequency.setValueAtTime(base * 2, ha); oo.frequency.exponentialRampToValueAtTime(base * 0.6, ha + 0.4); var gg = c.createGain(); gg.gain.setValueAtTime(0.9, ha); gg.gain.exponentialRampToValueAtTime(0.001, ha + 1.9); oo.connect(gg); gg.connect(b); oo.start(ha); oo.stop(ha + 2); [1, 1.5].forEach(function (r) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = base * r; var bf = c.createBiquadFilter(); bf.type = 'lowpass'; bf.frequency.setValueAtTime(300, ha); bf.frequency.linearRampToValueAtTime(1200, ha + 1); var g = c.createGain(); g.gain.setValueAtTime(0.0001, ha); g.gain.exponentialRampToValueAtTime(0.18, ha + 0.6); g.gain.exponentialRampToValueAtTime(0.001, ha + 2.2); o.connect(bf); bf.connect(g); g.connect(b); o.start(ha); o.stop(ha + 2.3); }); };
+
+// Helicopter rotor — short chop loop, orbited in stereo + distance
+var heli = null;
+function heliToggle() {
+  var c = audio(); var btn = document.getElementById('heliBtn');
+  if (heli) { heli.stop(); if (btn) btn.textContent = '🚁 Helicopter overhead (loop)'; document.getElementById('status').textContent = 'Helicopter stopped.'; return; }
+  var b = cinBus();
+  var n = Math.floor(c.sampleRate), bb = c.createBuffer(1, n, c.sampleRate), d = bb.getChannelData(0); for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; var src = c.createBufferSource(); src.buffer = bb; src.loop = true;
+  var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380;
+  var chop = c.createGain(); chop.gain.value = 0.18; var lfo = c.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 12; var lg = c.createGain(); lg.gain.value = 0.16; lfo.connect(lg); lg.connect(chop.gain);
+  var dist = c.createGain(); dist.gain.value = 0.35; var pan = c.createStereoPanner ? c.createStereoPanner() : null;
+  var thr = c.createOscillator(); thr.type = 'sawtooth'; thr.frequency.value = 55; var tg = c.createGain(); tg.gain.value = 0.05; thr.connect(tg); tg.connect(dist);
+  src.connect(lp); lp.connect(chop); chop.connect(dist); if (pan) { dist.connect(pan); pan.connect(b); } else dist.connect(b);
+  src.start(); lfo.start(); thr.start();
+  var ang = 0, timer = setInterval(function () { ang += 0.25; var nn = c.currentTime; if (pan) pan.pan.setTargetAtTime(Math.sin(ang), nn, 0.2); dist.gain.setTargetAtTime(0.2 + 0.22 * (0.5 + 0.5 * Math.cos(ang)), nn, 0.2); lp.frequency.setTargetAtTime(300 + 300 * (0.5 + 0.5 * Math.cos(ang)), nn, 0.2); }, 200);
+  heli = { stop: function () { clearInterval(timer); var nn = c.currentTime; dist.gain.setTargetAtTime(0.0001, nn, 0.4); setTimeout(function () { try { src.stop(); lfo.stop(); thr.stop(); } catch (e) {} }, 600); heli = null; } };
+  if (btn) btn.textContent = '🚁 Helicopter — STOP';
+  document.getElementById('status').textContent = 'Helicopter orbiting overhead — stereo + distance loop.';
+}
+// Rhythmic spurts — ta-ta-ta riveting / hammering
+function spurt(name) { var c = audio(), t = c.currentTime + 0.05; for (var i = 0; i < 5; i++) V[name](t + i * 0.14); document.getElementById('status').textContent = name + ' spurt — ta-ta-ta.'; }
+
+var CINFX = [
+  ['Impact', 'sub thump + crack → phase placed / big set', 'impact'],
+  ['Roll-up', 'accelerating drum roll → hit + reverb tail', 'rollup'],
+  ['Braam', 'low brass cluster swell → the trailer hit', 'braam'],
+  ['Riser', 'tension build up → start of a sequence', 'riser'],
+  ['Downlifter', 'reverse fall → close / exit', 'downlift'],
+  ['Sub-drop', 'pitch plummets → heavy impact', 'subdrop'],
+  ['Boom', 'long low hit → milestone', 'boom'],
+  ['Stinger', 'short minor chord stab → alert / clash', 'stinger'],
+  ['Whoosh', 'noise sweep, pans L→R → fly-by / transition', 'whoosh'],
+  ['Tension', 'dissonant tremolo drone → suspense', 'tension']
+];
+(function () { var box = document.getElementById('cinfx'); CINFX.forEach(function (v) { var d = document.createElement('div'); d.className = 'voice'; d.innerHTML = '<div class="n">' + v[0] + '</div><div class="d">' + v[1] + '</div>'; var btn = document.createElement('button'); btn.textContent = '▶ Play'; btn.onclick = function () { FX[v[2]](); }; d.appendChild(btn); box.appendChild(d); }); })();
+
+// ── Voice library UI ─────────────────────────────────────────────────────────
+var LIB = [
+  ['Riser', 'exp pitch ramp up → anticipation / lift', 'riser'],
+  ['Drop', 'pitch falls + filter close → place / settle', 'drop'],
+  ['Whoosh', 'band-swept noise, pans across → transition / fly-by', 'whoosh'],
+  ['FM Bell', 'FM metallic ring with decaying index → chime / done', 'bell'],
+  ['Steel ring', 'brighter FM → steel beam / column set', 'steel'],
+  ['Wood knock', 'short filtered tri + click → timber / tap', 'knock'],
+  ['Concrete thud', 'sub-sine + low noise rumble → footing / pour', 'thud'],
+  ['Pluck', 'resonant noise pluck → light tap / select', 'pluck'],
+  ['Sparkle', 'ascending grain shimmer → completion / milestone', 'sparkle'],
+  ['Chord stab', 'triad hit → phase complete', 'stab'],
+  ['Wobble bass', 'sub-sine with vibrato LFO → machinery (loopy)', 'wobble'],
+  ['Ambient pad', 'detuned saws under lowpass → background bed', 'pad']
+];
+var lib = document.getElementById('lib');
+LIB.forEach(function (v) {
+  var d = document.createElement('div'); d.className = 'voice';
+  d.innerHTML = '<div class="n">' + v[0] + '</div><div class="d">' + v[1] + '</div>';
+  var b = document.createElement('button'); b.textContent = '▶ Play'; b.onclick = function () { V[v[2]](); };
+  d.appendChild(b); lib.appendChild(d);
+});
+</script>
+</body>
+</html>

@@ -706,6 +706,7 @@ async function setupScene(A) {
     'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
     't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
+    'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the universal timeline (Ctrl+Z = undo, bound in universal_history.js)
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },
     'v':  function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
     's':  function() { if (typeof A.screenshot === 'function') A.screenshot(); },
@@ -1639,6 +1640,12 @@ async function setupScene(A) {
     // Always-on modifier shortcuts
     // §S282: Alt+Z = X-Ray (Blender convention) — restored
     if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (typeof toggleXray === 'function') toggleXray(); console.log('§KBD_ROUTE Alt+Z → xray'); return; }
+    // §GHOST-XRAY: Alt+X = ghost shell x-ray (cached light shell). Lazy-load the lens if needed, then toggle.
+    if (e.altKey && (e.key === 'x' || e.key === 'X')) { e.preventDefault();
+      console.log('§KBD_ROUTE Alt+X → ghost-xray');
+      if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray();
+      else if (A.loadNavigate) A.loadNavigate().then(function(){ if (window.toggleGhostXray) window.toggleGhostXray(); });
+      return; }
     if (e.key === 'F1') { e.preventDefault(); console.log('§KBD_ROUTE F1 → help'); showCommandPalette(); return; }
     if (e.key === 'F11') { e.preventDefault(); console.log('§KBD_ROUTE F11 → fullscreen'); A.toggleFullscreen(); return; }
 

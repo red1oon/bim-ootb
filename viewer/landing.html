@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIM OOTB — localhost (Sound FX test)</title>
+<style>
+  body { background:#0a0a1e; color:#e0e0e0; font-family:'Segoe UI',sans-serif; max-width:740px; margin:0 auto; padding:30px; }
+  h1 { color:#4fc3f7; font-size:22px; }
+  .note { color:#8a93b8; font-size:13px; line-height:1.6; }
+  .card { display:flex; align-items:center; gap:13px; background:#121833; border:1px solid #283154; border-radius:11px; padding:13px 16px; margin:10px 0; }
+  .ico { font-size:28px; width:38px; text-align:center; }
+  .meta { min-width:0; }
+  .t { font-size:15px; font-weight:600; }
+  .d { font-size:11.5px; color:#8a93b8; margin-top:2px; }
+  .sz { font-size:11px; color:#6c9fff; font-family:monospace; margin-left:6px; }
+  .acts { margin-left:auto; display:flex; gap:8px; white-space:nowrap; }
+  a.btn { text-decoration:none; border-radius:7px; padding:7px 12px; font-size:12.5px; font-weight:600; }
+  a.explore { background:#16224a; color:#7fd4ff; border:1px solid #2f4a8a; }
+  a.explore:hover { background:#1d2c5e; }
+  a.fourd { background:#2a1840; color:#d6a6ff; border:1px solid #5a3a8a; }
+  a.fourd:hover { background:#36205a; }
+  kbd { background:#333; color:#4fc3f7; padding:1px 7px; border-radius:4px; font-family:monospace; }
+  .steps { background:#0f1430; border:1px solid #222; border-radius:10px; padding:13px 18px; margin:16px 0; font-size:12.5px; line-height:1.6; }
+  h2 { font-size:12px; color:#6c9fff; text-transform:uppercase; letter-spacing:.05em; margin:20px 0 4px; }
+  .lab { color:#7fd4ff; font-size:13px; }
+</style>
+</head>
+<body>
+<h1>🏗️ BIM OOTB — localhost · Sound FX test</h1>
+<p class="note">Press <kbd>v</kbd> (or the 🔊 pill) to toggle sound in either mode.</p>
+
+<div class="steps">
+  <b>Explore</b> = building loads and stays — test 🎵 <b>Live groove</b> (orbit/zoom = movement pitch) and 🚁 <b>fly-through</b> (press <kbd>l</kbd>).<br>
+  <b>4D</b> = opens Time Machine playing — the 🏗️ <b>construction score</b> (noisy phase hits over the cinematic bed).<br>
+  ⚠️ After a code change, <b>hard-reload</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>) once for the fresh audio engine.
+</div>
+
+<h2>Small · fast</h2>
+<div class="card"><span class="ico">🏙️</span><span class="meta"><div class="t">Esplanades<span class="sz">4 MB</span></div><div class="d">quickest to load</div></span><span class="acts"><a class="btn explore" href="viewer.html?db=buildings/Esplanades_extracted.db">Explore</a><a class="btn fourd" href="viewer.html?db=buildings/Esplanades_extracted.db&tm=play">▶ 4D</a></span></div>
+<div class="card"><span class="ico">🏠</span><span class="meta"><div class="t">Duplex<span class="sz">10 MB</span></div><div class="d">house</div></span><span class="acts"><a class="btn explore" href="viewer.html?db=buildings/Duplex_extracted.db">Explore</a><a class="btn fourd" href="viewer.html?db=buildings/Duplex_extracted.db&tm=play">▶ 4D</a></span></div>
+<div class="card"><span class="ico">🏢</span><span class="meta"><div class="t">HITOS<span class="sz">10 MB</span></div><div class="d">office block</div></span><span class="acts"><a class="btn explore" href="viewer.html?db=buildings/HITOS_extracted.db">Explore</a><a class="btn fourd" href="viewer.html?db=buildings/HITOS_extracted.db&tm=play">▶ 4D</a></span></div>
+
+<h2>Medium</h2>
+<div class="card"><span class="ico">🐋</span><span class="meta"><div class="t">BimWhale Advanced<span class="sz">40 MB</span></div><div class="d">multi-discipline</div></span><span class="acts"><a class="btn explore" href="viewer.html?db=buildings/BimWhale_Advanced_extracted.db">Explore</a><a class="btn fourd" href="viewer.html?db=buildings/BimWhale_Advanced_extracted.db&tm=play">▶ 4D</a></span></div>
+<div class="card"><span class="ico">📐</span><span class="meta"><div class="t">IFC4 Revit<span class="sz">42 MB</span></div><div class="d">Revit export</div></span><span class="acts"><a class="btn explore" href="viewer.html?db=buildings/Ifc4_Revit_extracted.db">Explore</a><a class="btn fourd" href="viewer.html?db=buildings/Ifc4_Revit_extracted.db&tm=play">▶ 4D</a></span></div>
+
+<h2>Large · full 4D</h2>
+<div class="card"><span class="ico">🩺</span><span class="meta"><div class="t">Clinic<span class="sz">122 MB</span></div><div class="d">split-streamed</div></span><span class="acts"><a class="btn explore" href="viewer.html?db=buildings/Clinic_extracted.db">Explore</a><a class="btn fourd" href="viewer.html?db=buildings/Clinic_extracted.db&tm=play">▶ 4D</a></span></div>
+<div class="card"><span class="ico">🏥</span><span class="meta"><div class="t">Hospital<span class="sz">251 MB</span></div><div class="d">63,415 elements · 21 storeys</div></span><span class="acts"><a class="btn explore" href="viewer.html?db=buildings/Hospital_extracted.db">Explore</a><a class="btn fourd" href="viewer.html?db=buildings/Hospital_extracted.db&tm=play">▶ 4D</a></span></div>
+
+<p style="margin-top:24px"><a class="lab" href="sfx_lab.html">🎛️ Sound FX Lab →</a> &nbsp;·&nbsp; <a class="lab" href="sfx_preview.html">🔊 Shipping cues →</a></p>
+</body>
+</html>

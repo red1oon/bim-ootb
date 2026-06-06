@@ -75,12 +75,23 @@
       });
     });
 
-    var seam = Seam.makeSeam({ projDb: projDb, adQ: adQ, factQ: gbQ, wfmc: cfg.wfmc, newDb: function () { return new cfg.SQL.Database(); } });
+    // admissionRules (gated lifecycle): the editable, signed L1 rule "an order may Complete iff GrandTotal ≤ T"
+    // gates the C_Order CO transition engine-side. No rule set → ungated (existing completes unaffected).
+    var admissionRules = { 'C_Order:CO': { ruleId: 'maycomplete', table: 'C_Order', key: 'C_Order_ID', col: 'GrandTotal', cmp: 'lte' } };
+    var seam = Seam.makeSeam({ projDb: projDb, adQ: adQ, factQ: gbQ, wfmc: cfg.wfmc, admissionRules: admissionRules, newDb: function () { return new cfg.SQL.Database(); } });
     var ctx = { actor: 'device:' + (localStorage.kanbanActor || (localStorage.kanbanActor = 'k' + Math.floor(performance.now()))),
       pubKey: (global.ErpSigner && global.ErpSigner.pubKeyHex) || null, roleId: cfg.roleId || null,
       role: { id: cfg.roleId || null, actions: grants }, allowOrgs: (cfg.allowOrgs && cfg.allowOrgs.length) ? cfg.allowOrgs : '*' };
-    global.ERP = { dispatch: seam.dispatch, ctx: ctx, read: seam.read, verify: seam.verify };
-    log('§SEAM-LIVE window.ERP published: dispatch,verify · actor=' + ctx.actor + ' grants=' + grants.length + ' pubKey=' + (ctx.pubKey ? 'Y' : 'none'));
+    // I-4 (prompts/I4_OPLOG_RECONCILE.md): the seam's op-LOG is the ONE genuinely-signed chain. Expose the
+    // op-log db + seal/chainVerify so a write through dispatch becomes a SIGNED op (W-CHAIN+W-SIGN), and so
+    // OTHER op producers on this page (the ⚖ rule edit) append to the SAME chain. seal() is async (ECDSA).
+    global.ERP = {
+      dispatch: seam.dispatch, ctx: ctx, read: seam.read, verify: seam.verify,
+      opDb: projDb,
+      seal: function () { return global.KernelOps.sealChain(projDb); },                 // sign every unsigned op
+      chainVerify: function () { return global.KernelOps.verifyChain(projDb); }          // {ok,len,tip} incl. sig
+    };
+    log('§SEAM-LIVE window.ERP published: dispatch,verify,seal,chainVerify · actor=' + ctx.actor + ' grants=' + grants.length + ' pubKey=' + (ctx.pubKey ? 'Y' : 'none'));
     return { projDb: projDb, ctx: ctx };
   }
 

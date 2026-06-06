@@ -78,7 +78,14 @@ const URL = `http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_ex
     return { group: g.getAttribute('data-find-parent'), leaf: label };
   });
   console.log('ROOM_TAP: ' + JSON.stringify(tap));
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(400);
+  const early = await page.evaluate(() => {
+    const A = window.A || window.APP; const op = A._outlinePass || {};
+    let so = 0; A.scene.traverse(o => { if (o.userData && o.userData._shapeOverlay) so++; });
+    return { sel: (op.selectedObjects || []).length, en: !!op.enabled, vis: op.visibleEdgeColor && op.visibleEdgeColor.getHexString(), hid: op.hiddenEdgeColor && op.hiddenEdgeColor.getHexString(), thick: op.edgeThickness, shapeOverlays: so };
+  });
+  console.log('EARLY_OUTLINE(400ms): ' + JSON.stringify(early));
+  await page.waitForTimeout(1400);
   // ground truth: contents count for the tapped room
   const contents = await page.evaluate(() => {
     const A = window.A || window.APP;
@@ -95,7 +102,11 @@ const URL = `http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_ex
       if (o.userData && o.userData._roomShell) { shells++; const op = +o.material.opacity.toFixed(3); if (op >= 0.18) { lit++; litOp = op; } else dim.push(op); }
       if (o.userData && o.userData._shapeOverlay) shapeOverlays++;
     });
-    return { shells, litShells: lit, litOpacity: litOp, dimShellSample: dim.slice(0, 2), shapeOverlays, xrayOn: !!A.xrayOn };
+    var op = A._outlinePass || {};
+    var outline = { sel: (op.selectedObjects || []).length, enabled: !!op.enabled,
+      vis: op.visibleEdgeColor ? op.visibleEdgeColor.getHexString() : '?',
+      hid: op.hiddenEdgeColor ? op.hiddenEdgeColor.getHexString() : '?', thick: op.edgeThickness };
+    return { shells, litShells: lit, litOpacity: litOp, dimShellSample: dim.slice(0, 2), shapeOverlays, xrayOn: !!A.xrayOn, outline };
   });
   console.log('SELECT_PROBE: ' + JSON.stringify(sel));
   await page.screenshot({ path: '/tmp/room_select_' + BLD + '.png', timeout: 8000, animations: 'disabled' }).catch(e => console.log('SHOT_SKIP select ' + e.message.split('\n')[0]));

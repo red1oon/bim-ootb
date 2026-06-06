@@ -186,7 +186,21 @@ async function init() {
   var SQL = await initSqlJs({
     locateFile: function(f) { return 'lib/' + f; }
   });
-  var buf = await fetchDbBuffer(_actualUrl);
+  // §S260b+S274: the _meta.db split is an OPTIMIZATION, never a hard dependency.
+  // The HEAD probe above can succeed from HTTP cache while the GET body fetch
+  // fails offline / CORS — and _meta.db is NOT in the IndexedDB cache (the viewer
+  // cached the full _extracted.db). Fall back to DB_URL, which the viewer already
+  // cached → MEP works offline. The full DB carries elements_meta, so output is identical.
+  var buf;
+  try {
+    buf = await fetchDbBuffer(_actualUrl);
+  } catch (e) {
+    if (_actualUrl !== DB_URL) {
+      console.warn('§MEP_SPLIT_FALLBACK meta fetch failed (' + e.message + ') — falling back to ' + DB_URL.split('/').pop());
+      _actualUrl = DB_URL;
+      buf = await fetchDbBuffer(DB_URL);
+    } else { throw e; }
+  }
   console.log('§MEP_DB_LOADED url=' + _actualUrl.split('/').pop() + ' size=' + Math.round(buf.byteLength/1024/1024) + 'MB');
   var db = new SQL.Database(new Uint8Array(buf));
 

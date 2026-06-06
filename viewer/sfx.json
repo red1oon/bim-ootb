@@ -13,6 +13,7 @@
     "hit_random": 0.6,
     "hit_pool": ["knock", "steel", "creak", "harp", "pluck", "stinger", "impact", "boom", "knock"],
     "fly_heli": true,
+    "fly_rayblast": true,
     "live_groove": true
   },
   "construction_sounds": [
