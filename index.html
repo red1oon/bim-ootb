@@ -420,7 +420,7 @@ function openViewer(archName, repBuilding) {
   if (!bld) { alert(`No DB for ${archName}`); return; }
   const bldBase = _prodBase + 'buildings/';
   const viewerUrl = _base ? _base + 'viewer/viewer.html' : 'viewer/viewer.html';
-  const url = viewerUrl + `?db=${bldBase}${bld.db}`; // single DB — lib param retired (S242)
+  const url = viewerUrl + `?db=${bldBase}${bld.db}&ghost=1`; // single DB — lib param retired (S242); &ghost=1 auto-builds the merged glass shell (navigate_find.js auto-trigger)
   const win = window.open(url, 'bim_' + archName);
   // window.open returns null if popup is blocked (some mobile browsers)
   if (!win) { location.href = url; return; }
@@ -846,7 +846,7 @@ async function openProject(key, btnEl, opts) {
   }
 
   var viewerUrl = (_base || '') + 'viewer/viewer.html?db=' +
-    encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(libUrl) + diffParam + wizardParam;
+    encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(libUrl) + diffParam + wizardParam + '&ghost=1';
   var win = window.open(viewerUrl, '_blank');
   trackTab((record && record.meta && record.meta.name) || key, '3D', win);
   if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; }
@@ -2274,7 +2274,7 @@ function downloadDIYScript() {
         var fname = this.dataset.contributed;
         var bldBase = _prodBase + 'contributed/';
         var viewerUrl = (_base || '') + 'viewer/viewer.html';
-        var url = viewerUrl + '?db=' + encodeURIComponent(bldBase + fname);
+        var url = viewerUrl + '?db=' + encodeURIComponent(bldBase + fname) + '&ghost=1';
         console.log('§COMMUNITY open file=' + fname);
         window.open(url, '_blank');
       };
