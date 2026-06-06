@@ -3097,6 +3097,39 @@
     A.findMainEntrance = findMainEntrance; // called by startNavigation in navigate.js
     A.friendlyName = friendlyName;         // called by startNavigation (nav.targetName)
 
+    // §FOCUS-ELEM (HISTORY_SCRUB_FIX §1): the NEUTRAL shared focus primitive. Lights a guid set as
+    // its real SHAPE MESH — cyan shine-through (depthTest off → visible through occluders) — with
+    // the rest ghosted to 0.1 (the depth model), and (optionally) frames it. DECOUPLED from Find:
+    // a 3D tap (picking.js), a Find drill, and a read-only history-restore all route HERE — none
+    // "pretends to be Find". NEVER the legacy yellow bbox box. Read-only: mutates nothing.
+    //   guids: a guid string, an array of guids, or a Set.
+    //   opts.item  (default true)  → single-element/item focus (1.1 tight zoom); false → group frame.
+    //   opts.frame (default true)  → also move the camera to frame it. picking.js passes false on a
+    //                                LIVE tap (don't hijack the camera); history-restore frames.
+    A.focusElement = function (guids, opts) {
+      opts = opts || {};
+      if (!A.scene || typeof THREE === 'undefined') { console.log('[RP-TB] §FOCUS_ELEM skip=no-scene'); return 0; }
+      var set = (guids instanceof Set) ? guids
+              : new Set((Array.isArray(guids) ? guids : [guids]).filter(Boolean));
+      if (!set.size) { console.log('[RP-TB] §FOCUS_ELEM skip=empty'); return 0; }
+      // Clear any prior lens/highlight, ghost the rest, light the focus as a cyan shine-through mesh.
+      _clearShapeOverlays();
+      _clearHlOverlay();
+      if (A.setOutline) A.setOutline([]);
+      if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
+      _dimXrayTo(0.1);                                                          // §DEPTH: rest = 0.1 ghost
+      // colorOpacity path → MeshBasicMaterial cyan, depthTest off → SHINES THROUGH occluders.
+      var lit = _buildShapeMeshes(set, 0x00e5ff, null, 0.9);
+      var zoomed = false;
+      if (opts.frame !== false) zoomed = (opts.item === false) ? _zoomToGroup(set) : _zoomToGuids(set, 1.1);
+      if (A.markDirty) A.markDirty();
+      console.log('[RP-TB] §FOCUS_ELEM guids=' + set.size + ' lit=' + lit +
+        ' frame=' + (opts.frame !== false) + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+      return lit;
+    };
+    // Read-only teardown — drop the focus overlay + restore x-ray (same path as a lens reset).
+    A.clearFocusElement = function () { _highlightLensReset(); console.log('[RP-TB] §FOCUS_ELEM_CLEAR'); };
+
     // §S282b: _focusCycle removed — PanelNav handles zone cycling
     // §S282b: PanelNav replaces _findNav — universal zone-based keyboard nav
     // Fixes ArrowDown-from-input bug: input → storey header (not empty result list)

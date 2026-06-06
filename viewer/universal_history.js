@@ -40,7 +40,11 @@
   //   but the gate still names them so curation lives in one place.
   var UNDOABLE_OPS = { 'GRID_MOVE': true, 'ELEMENT_PLACE': true }; // back-compat export
   var SIGNIFICANCE = {
-    op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true },           // qualifying model ops
+    // ELEMENT_PICK QUALIFIES (HISTORY_SCRUB_FIX §1): a direct 3D tap is a SELECTION moment —
+    // semantically identical to a Find-lens item-select, which is already recorded. It is read-
+    // only (mutates nothing) → recorded as a 'pick' entry that restores via A.focusElement, NOT
+    // via undo/redo flag-flip (it is NOT in UNDOABLE_OPS). Audit ops stay dropped (below).
+    op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'ELEMENT_PICK': true }, // qualifying model ops
     view: { 'axis': true, 'group': true, 'item': true }           // qualifying view moments
   };
   var COALESCE_MS = 700; // rapid same-signature repeats inside this window fold into one entry
@@ -68,6 +72,8 @@
   function _sig(entry) {
     if (entry.kind === 'op') return 'op:' + entry.opType + ':' +
       (entry.replay && (entry.replay.axis + '/' + entry.replay.label) || '');
+    // pick signature = the guid set → re-tapping the SAME element fast coalesces into one step.
+    if (entry.kind === 'pick') return 'pick:' + ((entry.guids && entry.guids.join(',')) || entry.label || '');
     return 'view:' + (entry.view && (entry.view.kind + ':' + (entry.view.label || entry.view.axis)) || '');
   }
 
@@ -82,7 +88,9 @@
       var tip = _stream[_cursor];
       if (_sig(tip) === _sig(entry) && (entry.ts - (tip.ts || 0)) <= COALESCE_MS) {
         // Keep the single step; absorb the newer payload so undo lands on the latest pose/view.
-        if (entry.kind === 'op') tip.replay = entry.replay; else tip.view = entry.view;
+        if (entry.kind === 'op') tip.replay = entry.replay;
+        else if (entry.kind === 'pick') tip.guids = entry.guids;
+        else tip.view = entry.view;
         tip.ts = entry.ts; tip.label = entry.label;
         _render();
         console.log('§HIST_DROP source=' + entry.kind + ' type=' +
@@ -104,18 +112,38 @@
 
   // Record a MODEL op the moment it is committed (called from the commitOp wrapper, below).
   // Passes through the ONE significance gate; non-significant ops are dropped (§-logged).
-  function _recordOp(opId, opType, params) {
-    if (!significant({ source: 'op', type: opType, label: _opLabel(opType, params) })) return;
+  function _recordOp(opId, opType, params, guids) {
+    var label = _opLabel(opType, params);
+    if (!significant({ source: 'op', type: opType, label: label })) return;
+    // ELEMENT_PICK is a read-only SELECTION moment, not a model mutation. Record it as a view-
+    // class 'pick' entry carrying the guid(s); restore re-lights it via the neutral A.focusElement
+    // shape-mesh primitive (NOT a kernel flag-flip, NOT a Find replay). HISTORY_SCRUB_FIX §1.
+    if (opType === 'ELEMENT_PICK') {
+      var g = guids || (params && params.guids) || [];
+      if (!Array.isArray(g)) g = [g];
+      g = g.filter(Boolean);
+      _push({ kind: 'pick', opId: opId, opType: opType, undoable: false,
+        guids: g, label: label, params: params || {} });
+      return;
+    }
     _push({
       kind: 'op', opId: opId, opType: opType,
-      undoable: true, label: _opLabel(opType, params),
+      undoable: true, label: label,
       replay: params || {}
     });
+  }
+
+  // Humanise an IFC class for a label: "IfcDoor" → "door", "IfcFlowTerminal" → "flow terminal".
+  function _humanClass(cls) {
+    if (!cls) return 'element';
+    return String(cls).replace(/^Ifc/, '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
   }
 
   function _opLabel(opType, p) {
     if (opType === 'GRID_MOVE') return 'Grid ' + (p && p.label ? p.label : '') + ' move';
     if (opType === 'ELEMENT_PLACE') return 'Place ' + ((p && (p.cls || p.name)) || 'element');
+    // §1: label a pick by the ELEMENT, not the op — "merk H · door" (name + humanised class).
+    if (opType === 'ELEMENT_PICK') return ((p && p.name) || 'element') + ' · ' + _humanClass(p && p.cls);
     return opType;
   }
 
@@ -170,22 +198,41 @@
   function _applyEntry(e, forward) {
     if (e.kind === 'op') {
       _applyOp(e, forward);
-    } else { // view
-      if (forward) {
-        // Redo a view = restore THIS entry's view.
-        if (_viewRestore) _viewRestore(e.view);
-      } else {
-        // Undo a view = restore the PREVIOUS view entry (or clear if none).
-        var prevView = _findPrevView(_cursor - 1);
-        if (_viewRestore) _viewRestore(prevView); // null → callback clears overlays
-      }
+      return;
+    }
+    // Read-only entries (view-nav + element picks): forward shows THIS state, backward shows the
+    // previous read-only state (or clears). Never mutates the model / the signed kernel chain.
+    if (forward) {
+      _restoreReadOnly(e);
+    } else {
+      _restoreReadOnly(_findPrevReadOnly(_cursor - 1)); // null → clears overlays
     }
   }
 
-  // Walk back from idx to find the nearest VIEW entry at/below it (the view to fall back to on undo).
-  function _findPrevView(idx) {
+  // Restore a read-only entry's visual state. A 'pick' re-lights via the NEUTRAL A.focusElement
+  // shape-mesh primitive (NOT Find — a tap and a Find drill are independent routes to the same
+  // focus); a 'view' replays through navigate_find's registered callback. null → clear focus.
+  function _restoreReadOnly(e) {
+    var A = window.A || window.APP;
+    if (!e) {
+      if (A && A.clearFocusElement) A.clearFocusElement();
+      else if (_viewRestore) _viewRestore(null);
+      return;
+    }
+    if (e.kind === 'pick') {
+      // A.focusElement lives in the lazily-loaded navigate module — ensure it's present, then focus.
+      if (A && A.focusElement) A.focusElement(e.guids, { item: true });
+      else if (A && A.loadNavigate) A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(e.guids, { item: true }); });
+      else console.warn('§HIST_RESTORE_NOFN A.focusElement missing');
+    } else { // view
+      if (_viewRestore) _viewRestore(e.view);
+    }
+  }
+
+  // Walk back from idx to find the nearest read-only (view|pick) entry at/below it.
+  function _findPrevReadOnly(idx) {
     for (var i = idx; i >= 0; i--) {
-      if (_stream[i].kind === 'view') return _stream[i].view;
+      if (_stream[i].kind === 'view' || _stream[i].kind === 'pick') return _stream[i];
     }
     return null;
   }
@@ -312,9 +359,9 @@
     for (var i = 0; i < _stream.length; i++) {
       var dot = document.createElement('button');
       var applied = (i <= _cursor);
-      var isView = _stream[i].kind === 'view';
+      var isView = _stream[i].kind === 'view' || _stream[i].kind === 'pick';
       dot.title = _stream[i].label || ('step ' + (i + 1));
-      // view = round dot, model-op = square dot — the two streams stay visually distinct.
+      // view/pick = round dot, model-op = square dot — the two streams stay visually distinct.
       dot.style.cssText = 'width:9px;height:9px;padding:0;cursor:pointer;' +
         'border:1px solid rgba(79,195,247,0.6);border-radius:' + (isView ? '50%' : '2px') + ';' +
         'background:' + (applied ? '#4fc3f7' : 'rgba(79,195,247,0.18)');
@@ -335,12 +382,13 @@
     }
     if (KernelOps.__uhistWrapped) return;
     var orig = KernelOps.commitOp;
-    KernelOps.commitOp = function (db, opType, params) {
+    KernelOps.commitOp = function (db, opType, params, guids) {
       var id = orig.apply(this, arguments);
       // params may be a JSON string (some callers stringify) or an object — normalise.
       var p = params;
       if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) { p = {}; } }
-      try { _recordOp(id, opType, p); } catch (e) { console.warn('§HIST_REC_ERR', e); }
+      // guids (4th arg) carry the element(s) for an ELEMENT_PICK read-only restore.
+      try { _recordOp(id, opType, p, guids); } catch (e) { console.warn('§HIST_REC_ERR', e); }
       return id;
     };
     KernelOps.__uhistWrapped = true;

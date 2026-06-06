@@ -1,7 +1,9 @@
 // BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
 //
 // rule_fold.js — THE ONE GESTURE (window.RuleFold): edit ONE rule → K records re-fold live, signed +
-//   reversible, on the migrated Odoo Client-12 tenant. Implements docs/RULE_EDIT_SPEC.md (and
+//   reversible, on the LOGGED-IN client (the honest tenant — read from window.__idmpClient, never
+//   hardcoded; e.g. the migrated Odoo Client-12 tenant, or GardenWorld-11). §11 client-scoping.
+//   Implements docs/RULE_EDIT_SPEC.md (and
 //   bim-compiler prompts/RULE_EDIT_ONE_GESTURE.md). Engine-as-data: the rule is DATA (a SET_RULE op on
 //   the genuinely-signed W-CHAIN/W-SIGN op-log), the "K reflow" is the re-FOLD of a derived classification
 //   — NOT a per-record rewrite. NON-INVENT (real Odoo data), §-log first.
@@ -19,6 +21,13 @@
   'use strict';
 
   function bd(v) { return global.BigDecimal.of(String(v)); }
+  // the live login client (the honest tenant) — NON-INVENT: from the session, never a hardcoded default.
+  // idempiere.html applySession() sets window.__idmpClient = _session.client ({id,name}); opts.client overrides (tests).
+  function curClient(opts) {
+    var c = (opts && opts.client) || global.__idmpClient || null;
+    return (c && c.id != null) ? { id: Number(c.id), name: c.name || ('Client ' + c.id) } : null;
+  }
+  function clientLabel(c) { return c ? (c.name + '(' + c.id + ')') : 'no-client'; }
   function rows(adDb, sql) {
     var r; try { r = adDb.exec(sql); } catch (e) { return []; }
     if (!r.length) return [];
@@ -31,18 +40,18 @@
       id: 'premium', layer: 'L2', title: 'L2 · PREMIUM (products)', gate: 'PREMIUM-tag', cmp: 'gte',
       T0: 100, T1: 500, attr: 'PriceStd',
       desc: 'a product is PREMIUM iff PriceStd ≥ T  (a classification guard)',
-      load: function (adDb) { return rows(adDb,
+      load: function (adDb, cid) { return rows(adDb,
         'SELECT p.M_Product_ID id, p.Name name, pp.PriceStd v FROM M_ProductPrice pp ' +
-        'JOIN M_Product p ON p.M_Product_ID = pp.M_Product_ID WHERE p.AD_Client_ID = 12 ORDER BY pp.PriceStd DESC'); },
+        'JOIN M_Product p ON p.M_Product_ID = pp.M_Product_ID WHERE p.AD_Client_ID = ' + (cid | 0) + ' ORDER BY pp.PriceStd DESC'); },
       badge: function (k, n, T) { return '⚖ PREMIUM: ' + k + ' of ' + n + '   (T = ' + T + ')'; }
     },
     maycomplete: {
       id: 'maycomplete', layer: 'L1', title: 'L1 · May Complete (orders)', gate: 'Complete(CO)', cmp: 'lte',
       T0: 1500, T1: 3000, attr: 'GrandTotal',
       desc: 'an order (DR/IP) may Complete (CO) without approval iff GrandTotal ≤ T  — a LIFECYCLE guard on the wfmc transition',
-      load: function (adDb) { return rows(adDb,
+      load: function (adDb, cid) { return rows(adDb,
         "SELECT C_Order_ID id, DocumentNo name, GrandTotal v FROM C_Order " +
-        "WHERE AD_Client_ID = 12 AND DocStatus IN ('DR','IP') ORDER BY GrandTotal DESC"); },
+        "WHERE AD_Client_ID = " + (cid | 0) + " AND DocStatus IN ('DR','IP') ORDER BY GrandTotal DESC"); },
       badge: function (k, n, T) { return '⚖ MAY COMPLETE: ' + k + ' of ' + n + '   (approval limit T = ' + T + ')'; }
     }
   };
@@ -114,8 +123,10 @@
     opts = opts || {};
     var R = RULES[opts.rule || 'premium'];
     var adDb = opts.db || global.__idmpDb, SQL = opts.SQL || global.SQL;
-    var pop = R.load(adDb), N = pop.length;
-    if (N === 0) { console.log('§RULE-GESTURE layer=' + R.layer + ' rule=' + R.id + ' FAIL no-population'); return { pass: false, reason: 'no-population' }; }
+    var client = curClient(opts);                       // the live tenant — never hardcoded
+    if (!client) { console.log('§RULE-GESTURE layer=' + R.layer + ' rule=' + R.id + ' FAIL no-client'); return { pass: false, reason: 'no-client' }; }
+    var pop = R.load(adDb, client.id), N = pop.length;
+    if (N === 0) { console.log('§RULE-GESTURE layer=' + R.layer + ' rule=' + R.id + ' FAIL no-population client=' + clientLabel(client)); return { pass: false, reason: 'no-population' }; }
 
     var opDb = await ensureOpLog(SQL);
     await commitEdit(opDb, R, null, R.T0, []);          // seed the rule as DATA at the default threshold
@@ -144,7 +155,7 @@
     if (opts.render) opts.render(pop, set2, R.T0); if (opts.animate) await _sleep(400);
 
     // ── emit the witness contract (reversibility PROVEN by step 4 before these lines print) ──
-    var tag = 'layer=' + R.layer + ' rule=' + R.id + ' tenant=Odoo(12) gate=' + R.gate;
+    var tag = 'layer=' + R.layer + ' rule=' + R.id + ' tenant=' + clientLabel(client) + ' gate=' + R.gate;
     console.log('§RULE-EDIT ' + tag + ' edit=T:' + R.T0 + '→' + R.T1 + ' population=' + N + ' affected=' + crossFwd.length +
       ' refold=ok signedOp=' + fwd.uuid.slice(0, 8) + ' chainOk=' + (fwd.chainOk ? 'Y' : 'N') + ' reversible=' + (reversible ? 'Y' : 'N'));
     console.log('§RULE-EDIT-ORACLE layer=' + R.layer + ' rule=' + R.id + ' rebuilt==' + (oracleOk ? 'live' : 'DIFF') + ' K=' + rebuilt1.length + ' chainOk=' + (ov.ok ? 'Y' : 'N'));
@@ -165,6 +176,7 @@
     opts = opts || {};
     var adDb = opts.db || global.__idmpDb, SQL = opts.SQL || global.SQL, status = opts.status || function () {};
     if (!global.BigDecimal || !global.KernelOps || !global.ErpSigner) { status('Rule gesture: engine/signer/bigdecimal not loaded'); return; }
+    var client = curClient(opts);             // the honest tenant for this overlay — scopes every load
 
     var cur = 'premium';
     var wrap = _el('div', 'font-family:system-ui,sans-serif');
@@ -197,8 +209,15 @@
           (on ? 'background:#b8860b;color:#fff;border-color:#b8860b' : 'background:#fff;color:#475467');
       });
       sub.textContent = R.desc + '  ·  Editing T is one signed op; the K reflow is a re-fold of the rule.';
-      var pop = R.load(adDb);
-      if (!pop.length) { badge.textContent = '(no ' + R.id + ' population — need the Odoo tenant)'; list.innerHTML = ''; return; }
+      var pop = R.load(adDb, client && client.id);
+      console.log('§RULE-SCOPE rule=' + R.id + ' client=' + clientLabel(client) + ' population=' + pop.length);
+      if (!pop.length) {                       // honest-disable: this client has no population for this rule
+        badge.textContent = '(no ' + R.id + ' population in ' + clientLabel(client) + ')';
+        list.innerHTML = ''; run.disabled = true;
+        console.log('§RULE-DISABLE rule=' + R.id + ' client=' + clientLabel(client) + ' reason=no-population');
+        return;
+      }
+      run.disabled = false;
       render(pop, fold(pop, R.T0, R.cmp), R.T0);
     }
     ['premium', 'maycomplete'].forEach(function (id) {
@@ -208,7 +227,7 @@
 
     run.addEventListener('click', function () {
       run.disabled = true; status('Running signed rule-edit gesture (' + RULES[cur].layer + ')…');
-      runGesture({ rule: cur, db: adDb, SQL: SQL, render: render, animate: true }).then(function (res) {
+      runGesture({ rule: cur, db: adDb, SQL: SQL, client: client, render: render, animate: true }).then(function (res) {
         run.disabled = false;
         status(res.pass ? ('§RULE-GESTURE ' + res.layer + ' PASS — ' + res.affected + ' of ' + res.N + ' reflowed, signed + reversible') : 'Rule gesture: see console §-log');
       });
@@ -217,8 +236,8 @@
     wrap.appendChild(tabs); wrap.appendChild(badge); wrap.appendChild(sub); wrap.appendChild(list);
     bar.appendChild(run); wrap.appendChild(bar);
     select('premium');
-    if (opts.mount) opts.mount('Rule edit — Odoo (signed, reversible re-fold)', wrap);
-    console.log('§RULE-OPEN rules=[premium(L2),maycomplete(L1)] tenant=Odoo(12)');
+    if (opts.mount) opts.mount('Rule edit — ' + clientLabel(client) + ' (signed, reversible re-fold)', wrap);
+    console.log('§RULE-OPEN rules=[premium(L2),maycomplete(L1)] tenant=' + clientLabel(client));
   }
 
   global.RuleFold = { open: open, runGesture: runGesture, setT: setT, fold: fold, _RULES: RULES };

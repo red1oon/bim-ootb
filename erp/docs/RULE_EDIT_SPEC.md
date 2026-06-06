@@ -109,3 +109,37 @@ a document's lifecycle transition**, the most valuable rule a user edits.
 
 Both rules share ONE generalized engine (`RULES` registry in `rule_fold.js`) and ONE signed op-log
 (rule-tagged `SET_RULE` ops); the ⚖ Rule overlay switches between them.
+
+## 11. Client-scoping (the honest tenant) — bug fix 2026-06-06
+**Issue it proves/disproves:** "the Rule pill is hard-bound to Odoo." `rule_fold.js` hardcoded
+`AD_Client_ID = 12` in BOTH rule populations and stamped `tenant=Odoo(12)` on every §RULE-EDIT line.
+On any non-Odoo login (e.g. GardenWorld, Client 11) the pill therefore queried Odoo's rows — returning
+**0** under a GardenWorld-only seed — and lied `tenant=Odoo(12) FAIL no-population`, even though
+GardenWorld has 114 priced products that the rule *should* fold. The engine is supposed to be
+client-agnostic (the AD is the model; the tenant is data), so the rule must fold over the **logged-in
+client**.
+
+- **Source of the client (NON-INVENT):** the live login session. `idempiere.html` `applySession()`
+  exposes `window.__idmpClient = _session.client` (`{id, name}`); `rule_fold.js` reads it (with an
+  `opts.client` override for tests). No client ⇒ honest no-client, never a hardcoded default.
+- **Scope:** each rule's `load(adDb, clientId)` substitutes the live `clientId` (coerced to a number)
+  for the literal `12`. Odoo logins still resolve `clientId=12` → identical results (regression below).
+- **Honest-disable:** when the logged-in client has **no population** for a rule (e.g. GardenWorld has
+  0 DR/IP orders → `maycomplete`), the overlay disables ▶ Run for that rule and states the real client;
+  it never pretends Odoo. Emits `§RULE-DISABLE rule=<id> client=<Name>(<id>) reason=no-population`.
+
+Witness contract (`tests/poc_rule_client_scope.js` — whitebox §-log first):
+```
+# (A) regression — login Odoo(12) with the 12-odoo shard: UNCHANGED
+§RULE-EDIT layer=L2 rule=premium tenant=Odoo(12) … edit=T:100→500 population=35 …   (still 12 of 35)
+§RULE-GESTURE layer=L2 rule=premium PASS N=35 …
+
+# (B) the fix — login GardenWorld(11), no Odoo shard: scoped to the real client
+§RULE-OPEN  rules=[premium(L2),maycomplete(L1)] tenant=GardenWorld(11)        (the honest tenant, NOT Odoo(12))
+§RULE-SCOPE rule=premium client=GardenWorld(11) population=114                (client 11's 114, NOT 0, NOT 35)
+§RULE-SCOPE rule=maycomplete client=GardenWorld(11) population=0
+§RULE-DISABLE rule=maycomplete client=GardenWorld(11) reason=no-population    (0 DR/IP orders → honest-disable ▶ Run)
+§RULE-CLIENT-SCOPE PASS premium.tenant=GardenWorld(11) premium.pop=114 maycomplete=disabled odooRegress=PASS
+```
+- Pass = (A) Odoo gesture still PASS (no regression) AND (B) `population` & `tenant` reflect the live
+  client (114 / GardenWorld(11), not 0 / Odoo(12)) AND `maycomplete` honest-disabled AND 0 pageerrors.
