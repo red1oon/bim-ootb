@@ -859,10 +859,10 @@
       mg.setAttribute('color', new THREE.BufferAttribute(outC, 3));
       mg.setIndex(new THREE.BufferAttribute(outI, 1));
       // §GHOST-MAXBLEND: MAX blend so overlapping envelope layers DON'T accumulate — looking through N
-      // walls reads the same as 1 (no "drown" in the building interior). result = max(color×0.2, behind).
+      // walls reads the same as 1 (no "drown" in the building interior). result = max(color×0.12, behind).
       // Bold over the dark scene; fades only against a bright lit-sky (rare). depthWrite stays false so all
       // faces reach the blend. Thin/outside view is unchanged (one layer either way).
-      var mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.2,
+      var mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.12,
         depthWrite: false, side: THREE.DoubleSide,
         blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation,
         blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor });
