@@ -325,6 +325,9 @@
 <script src="icons.js?v=1"></script>
 <script src="pill_builder.js?v=1"></script>
 <script src="idmp_pills.js?v=1"></script>
+<!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
+     across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
+<script src="idmp_history.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -590,6 +593,7 @@
     }
     _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {};
     renderWinTabs(); renderToolbar(); renderTabStrip(); renderActiveTab();
+    _histPush('window');   // §B — window opened / window-tab switched (this is the single activation choke point)
   }
   function closeWindow(windowId) {
     delete _openWins[windowId];
@@ -650,7 +654,7 @@
       var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), (lvl ? '└ ' : '') + tab.name);
       if (lvl) t.style.paddingLeft = (14 + lvl * 12) + 'px';
       t.title = 'TabLevel ' + lvl + (tab.tableName ? ' · ' + tab.tableName : '');
-      t.addEventListener('click', function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); });
+      t.addEventListener('click', function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); });
       strip.appendChild(t);
     });
   }
@@ -780,7 +784,7 @@
       var tr = el('tr'); tr.dataset.i = i;
       tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
       cols.forEach(function (f) { tr.appendChild(el('td', null, fmt(f, recVal(rec, f.columnName)))); });
-      tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); });
+      tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       tb.appendChild(tr);
     });
     table.appendChild(tb);
@@ -824,7 +828,7 @@
       acc.appendChild(bd);
       // chevron / label-region tap = expand body (peek); "Open ›" or the rest of the header = open form view.
       lbl.addEventListener('click', function (e) { e.stopPropagation(); hd.classList.toggle('open'); bd.classList.toggle('open'); });
-      hd.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); });
+      hd.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       cards.appendChild(acc);
     });
     return cards;
@@ -1141,6 +1145,50 @@
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
   }
   function _syncPillStage() { if (window.IdmpPills && window.IdmpPills.setStage) window.IdmpPills.setStage(); }
+
+  // ── §B cross-tab history scrubber (ERP_BOTTOM_BAR_AND_LIFECYCLE §B) — record SEMANTIC nav moments
+  // {window opened, AD-tab switched, record selected} across #idmp-wintabs; a dot click restores READ-ONLY
+  // (re-open window/tab + re-select record; never mutate the kernel op-log). Labels come from REAL fields. ──
+  var _histRestoring = false;
+  function _histLabel(kind) {
+    var o = _openWins[_activeWin], wname = o ? o.name : ('Window ' + _activeWin);
+    if (kind === 'window') return wname;
+    var tab = _curTab(), tname = tab ? tab.name : '';
+    if (kind === 'tab' || !tab) return wname + ' › ' + tname;
+    var rec = _records[_recIdx]; if (!rec) return wname + ' › ' + tname;
+    // NON-INVENT: the human label is a REAL record field (DocumentNo/Value/Name/…), else the key #id.
+    var human = recVal(rec, 'DocumentNo') || recVal(rec, 'Value') || recVal(rec, 'Name') || recVal(rec, 'Description');
+    var rid = recVal(rec, _keyCol(tab));
+    return tname + ' ' + (human != null && human !== '' ? human : ('#' + rid));
+  }
+  function _histPush(kind) {
+    if (_histRestoring || !window.IdmpHistory || !_session) return;
+    var tab = _curTab(), rec = (kind === 'record' && tab) ? _records[_recIdx] : null;
+    window.IdmpHistory.push({
+      kind: kind, windowId: _activeWin, tabIdx: _activeTabIdx,
+      table: tab ? tab.tableName : null,
+      recordId: rec ? recVal(rec, _keyCol(tab)) : null,
+      label: _histLabel(kind)
+    });
+  }
+  function _histRestore(e) {
+    _histRestoring = true;
+    try {
+      if (e.windowId != null) openWindow(e.windowId);                          // re-open / re-activate the window
+      if (typeof e.tabIdx === 'number' && e.tabIdx !== _activeTabIdx && _curWin() && _curWin().tabs[e.tabIdx]) {
+        _activeTabIdx = e.tabIdx; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar();
+      }
+      if (e.kind === 'record' && e.recordId != null) {
+        var tab = _curTab();
+        for (var i = 0; i < _records.length; i++) {
+          if (String(recVal(_records[i], _keyCol(tab))) === String(e.recordId)) {
+            _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); break;
+          }
+        }
+      }
+      console.log('§IDMP-HIST restore=' + e.label + ' kind=' + e.kind + ' readOnly=Y');
+    } finally { _histRestoring = false; }
+  }
   // _injectPillCSS now carries ONLY the overlay (chart/kanban/heat-map) styles used by openGraphFor/openKanbanFor —
   // the rail CSS moved into idmp_pills.js (#idmp-pillbar, responsive bottom dock). Same call sites (_overlay).
   function _injectPillCSS() {
@@ -1161,6 +1209,7 @@
     $('idmp-menu-backdrop').addEventListener('click', function () { document.body.classList.remove('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
     mountPillRegistry();
+    if (window.IdmpHistory) window.IdmpHistory.registerRestore(_histRestore);   // §B — read-only nav restore
     $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
@@ -1191,7 +1240,7 @@ window.__helpIdmpKeymap = {
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=589')
+  navigator.serviceWorker.register('sw.js?v=590')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }

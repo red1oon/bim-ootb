@@ -7,7 +7,8 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v589';   // v589: §C ERP_BOTTOM_BAR lifecycle — Install/Migrate show only pre-client (login/tenant picker), hidden once a client is committed (GATE-2);
+const CACHE_VERSION = 'v590';   // v590: §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub): records window/tab/record nav moments, double-tap blooms chips, dot click = read-only restore;
+                                // v589: §C ERP_BOTTOM_BAR lifecycle — Install/Migrate show only pre-client (login/tenant picker), hidden once a client is committed (GATE-2);
                                 // v588: §A ERP_BOTTOM_BAR — iDempiere bottom/side bar rendered by the SHARED registry (idmp_pills.js + pills_idmp.json + PillBuilder, ⋯ collapse); retired the hand-rolled #idmp-pillrail;
                                 // v587: §MOBILE-LANDING — phone post-login lands on the menu drawer (was empty canvas) + tap-to-close backdrop;
                                 // v586: §MOBILE-VIEW — record LIST renders as .acc cards @≤760px (table = desktop only) + bottom pill rail;
@@ -77,6 +78,7 @@ const PRECACHE_ASSETS = [
   'pills.json',
   'idmp_pills.js',     // §A — iDempiere bar registration layer (binds pills_idmp.json fn BY ID to IdmpPillActions)
   'pills_idmp.json',   // §A — sibling manifest for the iDempiere renderer surface (GATE-1: separate from pills.json)
+  'idmp_history.js',   // §B — cross-tab history scrubber (Glassbowl #scrub pattern, read-only restore)
   'initbubble.json',
   'redpill.png',
   'aplus.png',
