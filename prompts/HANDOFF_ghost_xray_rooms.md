@@ -43,6 +43,26 @@ Rooms render but the flood-fill mis-classifies some volumes. **NEW symptom (user
 - ⚠ The room formula STICKS unless the user gives explicit go (user: "DO NOT DISTURB THE FORMULA" until
   agreed). This section is the spec for that next task.
 
+### More from the audit (verified data + extra defects — saves the next session the dig)
+- **No IfcRelSpaceBoundary / adjacency / space-boundary table in ANY `*_meta.db`** (checked all 4) — room
+  boundaries MUST be derived from wall geometry; there is nothing to just read. Don't waste time looking.
+- **Real per-element mesh polygons DO exist**: `*_geo.db → component_geometries(vertices,faces,normals)`,
+  linked by `element_instances.geometry_hash`. Available if face-accurate boundaries are ever needed
+  (heavy — only reach for it if the wall-AABB snap below isn't enough).
+- **Element→room mis-attribution**: containment is a rectangular bbox test that **breaks on first match**
+  (compile_rooms.py:181-183) → an element inside an overlapping/oversized room bbox is wired to the WRONG
+  room. Fix alongside the bbox-snap.
+- **Duplicate storey labels split the walls** (recount finding): LTU has BOTH `VÅN 1-4` and `VÅNING 1-4`;
+  the walls for one physical floor divide across the two strings → the `VÅN*` variants enclose nothing →
+  0 rooms there. Normalize/merge storey names before flood-fill. (Same shape: Terminal `GROUND FLOOR LEVEL`
+  59 walls→0 vs `Aras Tanah` 316→15.)
+- **Area thresholds clip the tails**: `MIN_AREA 4 m²` drops toilets/closets; `MAX_AREA_ABS 150 m²` drops
+  halls/lobbies (LTU VÅNING-4 rooms already brush 145-149 m²). Tune if recall matters.
+- **3rd fix option — store the true cell outline (most accurate, biggest change)**: the flood component
+  already knows its exact occupied cells (compile_rooms.py:94); emit the cell-boundary polygon instead of
+  collapsing to a bbox. Needs a geometry column on `spatial_structure` + a polygon-extrude render path
+  (today `_drawRoomShell` is hardwired to `BoxGeometry`).
+
 ## Probes (leak-safe; ≤1 browser, serviceWorkers:'block')
 - `tests/probe_live_ghost.js` — health-probe the LIVE GH url (OCI _prodBase form); checks
   `§NAV_FIND_VERSION`, `§SHELL_GHOST_BUILT`, page errors. `BLD=Terminal|Clinic|Hospital|LTU_AHouse`.
