@@ -469,6 +469,7 @@
   function showLogin(step) {
     $('idmp-login').style.display = 'flex';
     if (step === 'role' && _loginUser) loginStep2(_loginUser); else loginStep1();
+    _syncPillStage();   // §C — picker open = back at the front door → Install/Migrate visible again
   }
   function loginStep1() {
     $('idmp-login-step2').style.display = 'none';
@@ -521,6 +522,7 @@
       ' org=' + (_session.org ? _session.org.name.replace(/\s.*/, '') : '-') +
       ' menu-visible=' + _lastMenu.visible + '/' + _lastMenu.total +
       ' source=ad_user/ad_role/ad_window_access handAuthored=0');
+    _syncPillStage();   // §C — a client context is now committed → hide Install/Migrate from the primary rail
     var _wOpened = false;
     if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) { openWindow(w); _wOpened = true; } }
     _mobileSurfaceMenu(_wOpened);   // §MOBILE-LANDING: phone lands on an empty canvas → surface the menu drawer
@@ -1128,9 +1130,17 @@
       posted: openPostedFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor
     };
+    // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
+    // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
+    window.IdmpPillStage = function () {
+      var lg = $('idmp-login');
+      var pickerOpen = lg && lg.style.display !== 'none';
+      return (pickerOpen || !_session) ? 'pre-client' : 'in-client';
+    };
     if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
   }
+  function _syncPillStage() { if (window.IdmpPills && window.IdmpPills.setStage) window.IdmpPills.setStage(); }
   // _injectPillCSS now carries ONLY the overlay (chart/kanban/heat-map) styles used by openGraphFor/openKanbanFor —
   // the rail CSS moved into idmp_pills.js (#idmp-pillbar, responsive bottom dock). Same call sites (_overlay).
   function _injectPillCSS() {
@@ -1181,7 +1191,7 @@ window.__helpIdmpKeymap = {
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=588')
+  navigator.serviceWorker.register('sw.js?v=589')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }

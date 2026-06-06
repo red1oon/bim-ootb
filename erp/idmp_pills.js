@@ -43,6 +43,28 @@
     return ic.svg;
   }
 
+  // §C lifecycle gate — pills tagged stage:"pre-client" (Install/Migrate) are SHOWN only before a client is
+  // entered (login/tenant-picker), HIDDEN once a client is committed (GATE-2). PillBuilder._build skips
+  // act.pill===false, so we toggle that flag + rebuild — no second rail, no DOM teardown.
+  var _PB = null, _actions = null, _curStage = null;
+  function _applyStage(stage) {
+    if (!_PB || !_actions) return;
+    _actions.forEach(function (a) {
+      if (a._stage === 'pre-client') a.pill = (stage === 'pre-client') ? undefined : false;
+    });
+    _PB.build();
+    var lc = (stage === 'pre-client') ? 'Y' : 'context';     // 'context' = hidden from the primary rail (GATE-2)
+    var shown = _actions.filter(function (a) { return a.pill !== false; }).map(function (a) { return a.id; });
+    console.log('§IDMP-LIFECYCLE stage=' + stage + ' install=' + lc + ' migrate=' + lc + ' shown=[' + shown.join(',') + ']');
+  }
+  // setStage(s) — host calls on login (in-client) / tenant-picker open (pre-client). No arg → re-read IdmpPillStage().
+  function setStage(stage) {
+    if (!stage) stage = (typeof window.IdmpPillStage === 'function') ? window.IdmpPillStage() : 'pre-client';
+    if (stage === _curStage) return;
+    _curStage = stage;
+    _applyStage(stage);
+  }
+
   function mount() {
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
@@ -54,10 +76,12 @@
       var actions = pills.map(function (p) {
         var act = { id: p.id, name: p.name, key: p.key || '' };
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
+        if (p.stage) act._stage = p.stage;                   // §C lifecycle tag (carried from the manifest)
         // fn binds BY ID to the host's real handler; honest toast if a handler is missing (NON-INVENT).
         act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
         return act;
       });
+      _actions = actions;
 
       _injectStyle();
       var wrap = document.createElement('div');
@@ -80,14 +104,18 @@
         storageKey: 'idmp_pill_config'
       });
       trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
+      _PB = PB;
       window.IdmpPills.builder = PB;
       PB.toggle();                                            // open + sync internal state (persistent bar, no off-by-one tap)
+
+      // §C — apply the initial session stage (pre-client at boot: Install/Migrate visible at the front door).
+      _curStage = null; setStage();
 
       var mounted = pill.querySelectorAll('button[id^="pill-"]').length;
       var hidden = (PB.getConfig().hidden || []).length;
       console.log('§IDMP-PILLS source=registry pills=' + pills.length + ' handAuthored=0' +
         ' mountedButtons=' + mounted + ' overflow=⋯ hidden=' + hidden +
-        ' ids=[' + pills.map(function (p) { return p.id; }).join(',') + ']');
+        ' stage=' + _curStage + ' ids=[' + pills.map(function (p) { return p.id; }).join(',') + ']');
     }).catch(function (e) {
       console.warn('§IDMP-PILLS fetch/mount failed: ' + e.message);
     });
@@ -128,5 +156,5 @@
     document.head.appendChild(s);
   }
 
-  window.IdmpPills = { mount: mount, builder: null };
+  window.IdmpPills = { mount: mount, setStage: setStage, builder: null };
 })();

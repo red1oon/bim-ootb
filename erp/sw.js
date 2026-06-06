@@ -7,7 +7,8 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v588';   // v588: §A ERP_BOTTOM_BAR — iDempiere bottom/side bar rendered by the SHARED registry (idmp_pills.js + pills_idmp.json + PillBuilder, ⋯ collapse); retired the hand-rolled #idmp-pillrail;
+const CACHE_VERSION = 'v589';   // v589: §C ERP_BOTTOM_BAR lifecycle — Install/Migrate show only pre-client (login/tenant picker), hidden once a client is committed (GATE-2);
+                                // v588: §A ERP_BOTTOM_BAR — iDempiere bottom/side bar rendered by the SHARED registry (idmp_pills.js + pills_idmp.json + PillBuilder, ⋯ collapse); retired the hand-rolled #idmp-pillrail;
                                 // v587: §MOBILE-LANDING — phone post-login lands on the menu drawer (was empty canvas) + tap-to-close backdrop;
                                 // v586: §MOBILE-VIEW — record LIST renders as .acc cards @≤760px (table = desktop only) + bottom pill rail;
                                 // v585: Migrate INSTALL persists the merged tenant (shard-in → idbPut) so a
