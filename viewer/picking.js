@@ -244,6 +244,7 @@ function setupPicking(A) {
       if (A.setOutline) A.setOutline([], 0xff8c00);
       // §S277d: Restore isolation
       _restoreIsolation(A);
+      if (A.clearFocusElement) A.clearFocusElement(); // §FOCUS-ELEM: drop shape-mesh focus
       return;
     }
 
@@ -268,6 +269,7 @@ function setupPicking(A) {
       }
       if (A.setOutline) A.setOutline([], 0xff8c00);
       _restoreIsolation(A);
+      if (A.clearFocusElement) A.clearFocusElement(); // §FOCUS-ELEM: drop shape-mesh focus
       return;
     }
 
@@ -415,6 +417,7 @@ function setupPicking(A) {
       if (A.setOutline) A.setOutline([], 0xff8c00);
       // §S277d: Restore isolation
       _restoreIsolation(A);
+      if (A.clearFocusElement) A.clearFocusElement(); // §FOCUS-ELEM: drop shape-mesh focus
       A._lastPickGuid = null; A._lastPickCenter = null;
       console.log('§PICK_DESELECT guid=' + guid.substring(0, 12));
       return;
@@ -536,32 +539,45 @@ function setupPicking(A) {
     hlMesh.position.copy(hlPos);
     hlMesh.quaternion.copy(hlQuat);
     A.scene.add(hlMesh);
-    // §S277d: Isolation pick — dim everything, picked element semi-transparent (see internals)
-    _restoreIsolation(A);  // restore previous isolation first
-    var _pickMat = hit.object.material;
-    var _isolated = [];
-    A.scene.traverse(function(obj) {
-      if (!obj.isMesh && !obj.isInstancedMesh && !obj.isBatchedMesh) return;
-      if (!obj.material || obj === A.ground) return;
-      if (obj.material === _pickMat || obj === hit.object) return;  // skip picked element's material
-      if (obj.material.userData._pickDimmed) return;  // already dimmed
-      _isolated.push({ mat: obj.material, origOp: obj.material.opacity, origTr: obj.material.transparent });
-      obj.material.transparent = true;
-      obj.material.opacity = 0.15;
-      obj.material.userData._pickDimmed = true;
-      obj.material.needsUpdate = true;
-    });
-    A._pickIsolated = _isolated;
-    // Picked element: semi-transparent to show internals + outline
-    if (_pickMat && !_pickMat.userData._pickTarget) {
-      _pickMat.userData._pickTarget = true;
-      _pickMat.userData._pickOrigOp = _pickMat.opacity;
-      _pickMat.userData._pickOrigTr = _pickMat.transparent;
-      _pickMat.transparent = true;
-      _pickMat.opacity = 0.7;  // slightly see-through — reveals internal structure
-      _pickMat.needsUpdate = true;
+    // §FOCUS-ELEM (HISTORY_SCRUB_FIX §1, step 3): a LIVE tap lights the element's real SHAPE MESH
+    // (cyan shine-through, rest ghosted) via the NEUTRAL shared primitive — the SAME renderer the
+    // Find drill + history-restore use. frame:false → don't hijack the camera on a tap. Replaces
+    // the old isolation-dim + invisible-bbox visual. §PICK/info-panel/commitOp below are untouched.
+    // The primitive lives in the lazily-loaded navigate module, so the FIRST tap (before Find is
+    // ever opened) loads it once, then focuses; every later tap is instant. (NOT "opening Find" —
+    // just ensuring the file that HOSTS the shared renderer is present; the call stays neutral.)
+    if (guid && (A.focusElement || A.loadNavigate)) {
+      _restoreIsolation(A);                 // drop any prior isolation first (no double-dim)
+      if (A.focusElement) A.focusElement(guid, { item: true, frame: false });
+      else A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(guid, { item: true, frame: false }); });
+    } else {
+      // Legacy fallback (primitive unavailable): isolation dim + picked-element see-through + outline.
+      _restoreIsolation(A);  // restore previous isolation first
+      var _pickMat = hit.object.material;
+      var _isolated = [];
+      A.scene.traverse(function(obj) {
+        if (!obj.isMesh && !obj.isInstancedMesh && !obj.isBatchedMesh) return;
+        if (!obj.material || obj === A.ground) return;
+        if (obj.material === _pickMat || obj === hit.object) return;  // skip picked element's material
+        if (obj.material.userData._pickDimmed) return;  // already dimmed
+        _isolated.push({ mat: obj.material, origOp: obj.material.opacity, origTr: obj.material.transparent });
+        obj.material.transparent = true;
+        obj.material.opacity = 0.15;
+        obj.material.userData._pickDimmed = true;
+        obj.material.needsUpdate = true;
+      });
+      A._pickIsolated = _isolated;
+      // Picked element: semi-transparent to show internals + outline
+      if (_pickMat && !_pickMat.userData._pickTarget) {
+        _pickMat.userData._pickTarget = true;
+        _pickMat.userData._pickOrigOp = _pickMat.opacity;
+        _pickMat.userData._pickOrigTr = _pickMat.transparent;
+        _pickMat.transparent = true;
+        _pickMat.opacity = 0.7;  // slightly see-through — reveals internal structure
+        _pickMat.needsUpdate = true;
+      }
+      if (A.setOutline && hit.object) A.setOutline([hit.object], 0xff8c00);
     }
-    if (A.setOutline && hit.object) A.setOutline([hit.object], 0xff8c00);
     hlMesh.visible = false;
     window._pickHighlight = hlMesh;
     if (A.markDirty) A.markDirty();
