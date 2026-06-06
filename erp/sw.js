@@ -7,7 +7,7 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v593';   // v593: ⚖ Rule pill client-scoping (RULE_EDIT_SPEC §11, PR #171) merged with chrome §A–§D — fold over the LOGGED-IN client (window.__idmpClient), honest tenant label + honest-disable on no-population (was hardcoded Odoo Client-12);
+const CACHE_VERSION = 'v595';   // v595: PILL_REOPEN_FIX — ⋯-collapsed mobile pill re-opens on re-tap; outside-tap close used `e.target!==trigger`, mis-read the trigger's inner <svg> tap as outside → folded-then-reopened in one tap so it never stayed collapsed; now `!trigger.contains(e.target)` (PR fix/pill-reopen). v593: ⚖ Rule pill client-scoping (RULE_EDIT_SPEC §11, PR #171) merged with chrome §A–§D — fold over the LOGGED-IN client (window.__idmpClient), honest tenant label + honest-disable on no-population (was hardcoded Odoo Client-12);
                                 // v592: §D RED PILL — "just the pill" (our clean design, default) ⟷ classic iDempiere L&F toggle (key ','); scrubber dots-only (dropped ↶/↷ for pill-icon consistency); arrow-key record nav;
                                 // v591: §A/§B fix — iDempiere pill dock is PERSISTENT (PillBuilder opts.persistent: outside-tap no longer auto-collapses the primary nav; ⋯ still toggles); mobile stack order pills-flush/scrubber-above;
                                 // v590: §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub): records window/tab/record nav moments, double-tap blooms chips, dot click = read-only restore;
