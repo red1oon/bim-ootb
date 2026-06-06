@@ -36,7 +36,7 @@ async function openWindowKanban(browser, port, win) {
   await page.waitForSelector('#idmp-login-ok'); await page.click('#idmp-login-ok');
   await page.waitForSelector('[data-ad-table]', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1500);
-  const k = await page.$('.idmp-pill[title="Kanban"]');
+  const k = await page.$('#pill-kanban');
   if (k) { await k.click(); await page.waitForTimeout(1800); }
   const cells = await page.$$eval('.hm-cell', els => els.length).catch(() => 0);
   await page.screenshot({ path: path.join(__dirname, 'heatmap_w' + win + '.png') });

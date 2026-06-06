@@ -29,17 +29,17 @@ const shot = (page, name) => page.screenshot({ path: path.join(__dirname, name) 
   await page.waitForTimeout(1200);
   await shot(page, 'see_2_after_login_window.png');   // landing: open window + pill rail (Graph/Kanban icons)
 
-  // the pill rail — what icons are present?
-  const pills = await page.$$eval('.idmp-pill', bs => bs.map(b => b.title));
+  // §A: the bar is now the registry-driven #idmp-pillbar (was the hand-rolled .idmp-pill rail).
+  const pills = await page.$$eval('#idmp-pill button[id^="pill-"]', bs => bs.map(b => b.id.replace('pill-', '')));
   console.log('§PILL-RAIL after login: [' + pills.join(', ') + ']');
 
   // Graph icon
-  const g = await page.$('.idmp-pill[title="Graph"]');
+  const g = await page.$('#pill-graph');
   if (g) { await g.click(); await page.waitForTimeout(700); await shot(page, 'see_3_graph.png'); console.log('Graph: clicked'); }
   else console.log('Graph: pill NOT FOUND');
   // close overlay then Kanban
   var x = await page.$('#posted-overlay .posted-ov-x'); if (x) { await x.click(); await page.waitForTimeout(300); }
-  const k = await page.$('.idmp-pill[title="Kanban"]');
+  const k = await page.$('#pill-kanban');
   if (k) { await k.click(); await page.waitForTimeout(900); await shot(page, 'see_4_kanban.png'); console.log('Kanban: clicked'); }
 
   await browser.close(); server.close();

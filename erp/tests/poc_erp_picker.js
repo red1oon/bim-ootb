@@ -40,8 +40,9 @@ const server = http.createServer((req, res) => {
   await page.goto(`http://localhost:${port}/idempiere.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500);                              // let boot + sql.js + pills settle
 
-  // 1) open Migrate → picker
-  await page.click('button[title="Migrate"]');
+  // 1) open Migrate → picker (§A: registry pill #pill-migrate, was the hand-rolled button[title="Migrate"];
+  //    pre-client here — no login — so §C keeps Migrate visible)
+  await page.click('#pill-migrate');
   await page.waitForTimeout(2200);                              // let the no-cors Odoo probe resolve/timeout
 
   const cards = await page.$$eval('.ep-cardlet .ep-nm', ns => ns.map(n => n.textContent));

@@ -27,13 +27,20 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// open the ⚖ Rule pill after a login auto-completes (fallback: confirm the role step if it stalls there)
+// open the ⚖ Rule pill after a login auto-completes (fallback: confirm the role step if it stalls there).
+// Registry chrome (PR #170 §A/§D): pills render as #pill-<id>, fire on a `pointerup` PointerEvent, and live
+// in the #idmp-pill dock which may be collapsed — open it via #idmp-pill-trigger first.
 async function openRulePill(page) {
-  await page.waitForSelector('.idmp-pill[title="Rule"]', { timeout: 20000 }).catch(async () => {
+  await page.waitForSelector('#pill-rule', { timeout: 20000 }).catch(async () => {
     const ok = await page.$('#idmp-login-ok'); if (ok) await ok.click();
-    await page.waitForSelector('.idmp-pill[title="Rule"]', { timeout: 15000 });
+    await page.waitForSelector('#pill-rule', { timeout: 15000 });
   });
-  await page.click('.idmp-pill[title="Rule"]');
+  await page.evaluate(() => {                          // open the dock if collapsed (§D clean mode)
+    var dock = document.getElementById('idmp-pill'), trig = document.getElementById('idmp-pill-trigger');
+    if (dock && trig && getComputedStyle(dock).display === 'none') trig.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => document.getElementById('pill-rule').dispatchEvent(new PointerEvent('pointerup', { bubbles: true })));
   await page.waitForSelector('#rule-run', { timeout: 8000 });
 }
 

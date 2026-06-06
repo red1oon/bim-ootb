@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "spec": "docs/PILL_MANIFEST_SPEC.md (idempiereUI I1) · ERP_BOTTOM_BAR_AND_LIFECYCLE.md §A",
+  "registry": "pill_builder.js (used as-is — same renderer as erp.html, NO second framework)",
+  "note": "SIBLING manifest for the iDempiere renderer surface (idempiere.html) — DECIDED separate from erp.html's pills.json (GATE-1, ERP_BOTTOM_BAR_AND_LIFECYCLE.md §RESUME): the action sets differ. fn bound BY ID in idmp_pills.js to the REAL existing idempiere.html handlers (window.IdmpPillActions — functions are not JSON). icon = a glyph in icons.js (verbatim from viewer/panels.js); nothing inlined, nothing hand-drawn. Retires the hand-rolled #idmp-pillrail (§PILL-REGISTRY principle: no controls outside the pill).",
+  "pills": [
+    { "id": "redpill", "name": "Just the pill / classic L&F", "key": ",", "img": "redpill.png", "order": 0, "note": "§D ERP_BOTTOM_BAR_AND_LIFECYCLE — master toggle. OUR design (default) = just the pill: classic iDempiere chrome (toolbar icons) hidden, the pill IS the UI. Press red pill (or ',' — same shortcut as BIM Doc Mode) → reveal the familiar iDempiere L&F; in classic mode our lens pills step aside (only the red pill remains). Persisted in localStorage. NEVER stage-gated." },
+    { "id": "posted",  "name": "Accts Posted", "key": "", "icon": "clipboard", "order": 1, "note": "per-record accounting fold (openPostedFor) — journal-lines clipboard glyph." },
+    { "id": "graph",   "name": "Graph",        "key": "", "icon": "barChart",  "order": 2, "note": "by-status bar chart of the open window (openGraphFor) — barChart glyph." },
+    { "id": "kanban",  "name": "Kanban",       "key": "", "icon": "layout",    "order": 3, "note": "draggable wfmc board / heat-map fallback (openKanbanFor) — board-columns layout glyph." },
+    { "id": "rule",    "name": "Rule",         "key": "", "icon": "checkList", "order": 4, "note": "lifecycle-as-data governance gate (openRuleFor) — compliance checkList glyph." },
+    { "id": "install", "name": "Install",      "key": "", "icon": "save",     "order": 5, "stage": "pre-client", "note": "§C: bring a tenant ONTO this device (openInstallFor / ErpPicker install). save-to-disk glyph. stage=pre-client — hidden once a client is entered (GATE-2)." },
+    { "id": "migrate", "name": "Migrate",      "key": "", "icon": "pipe",     "order": 6, "stage": "pre-client", "note": "§C: pipe data IN from another ERP (openMigrateFor / ErpPicker migrate). conduit pipe glyph. stage=pre-client — hidden once a client is entered (GATE-2)." }
+  ]
+}

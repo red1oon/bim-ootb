@@ -95,6 +95,10 @@
     flex:0 0 auto; display:flex; align-items:center; gap:3px; padding:5px 8px; background:var(--idmp-panel);
     border-bottom:1px solid var(--idmp-border); overflow-x:auto;
   }
+  /* §D RED PILL — "just the pill" (default, body.idmp-clean): classic chrome hidden, the pill is the UI.
+     Classic L&F (body without idmp-clean): our lens pills step aside — only the red pill stays to toggle back. */
+  body.idmp-clean #idmp-toolbar { display:none !important; }
+  body:not(.idmp-clean) #idmp-pill button:not(#pill-redpill) { display:none !important; }
   #idmp-toolbar button {
     height:30px; min-width:30px; border:1px solid transparent; border-radius:4px; background:transparent;
     color:var(--idmp-text); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;
@@ -319,6 +323,15 @@
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
 <script src="rule_fold.js?v=2"></script>
+<!-- §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar from the SAME registry as erp.html/BIM (retire the
+     hand-rolled #idmp-pillrail). icons.js (verbatim glyph DATA) + pill_builder.js (the renderer) + idmp_pills.js
+     (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
+<script src="icons.js?v=1"></script>
+<script src="pill_builder.js?v=2"></script>
+<script src="idmp_pills.js?v=3"></script>
+<!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
+     across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
+<script src="idmp_history.js?v=2"></script>
 <script>
 (function () {
   'use strict';
@@ -463,6 +476,7 @@
   function showLogin(step) {
     $('idmp-login').style.display = 'flex';
     if (step === 'role' && _loginUser) loginStep2(_loginUser); else loginStep1();
+    _syncPillStage();   // §C — picker open = back at the front door → Install/Migrate visible again
   }
   function loginStep1() {
     $('idmp-login-step2').style.display = 'none';
@@ -517,6 +531,7 @@
       ' org=' + (_session.org ? _session.org.name.replace(/\s.*/, '') : '-') +
       ' menu-visible=' + _lastMenu.visible + '/' + _lastMenu.total +
       ' source=ad_user/ad_role/ad_window_access handAuthored=0');
+    _syncPillStage();   // §C — a client context is now committed → hide Install/Migrate from the primary rail
     var _wOpened = false;
     if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) { openWindow(w); _wOpened = true; } }
     _mobileSurfaceMenu(_wOpened);   // §MOBILE-LANDING: phone lands on an empty canvas → surface the menu drawer
@@ -584,6 +599,7 @@
     }
     _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {};
     renderWinTabs(); renderToolbar(); renderTabStrip(); renderActiveTab();
+    _histPush('window');   // §B — window opened / window-tab switched (this is the single activation choke point)
   }
   function closeWindow(windowId) {
     delete _openWins[windowId];
@@ -644,7 +660,7 @@
       var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), (lvl ? '└ ' : '') + tab.name);
       if (lvl) t.style.paddingLeft = (14 + lvl * 12) + 'px';
       t.title = 'TabLevel ' + lvl + (tab.tableName ? ' · ' + tab.tableName : '');
-      t.addEventListener('click', function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); });
+      t.addEventListener('click', function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); });
       strip.appendChild(t);
     });
   }
@@ -774,7 +790,7 @@
       var tr = el('tr'); tr.dataset.i = i;
       tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
       cols.forEach(function (f) { tr.appendChild(el('td', null, fmt(f, recVal(rec, f.columnName)))); });
-      tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); });
+      tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       tb.appendChild(tr);
     });
     table.appendChild(tb);
@@ -818,7 +834,7 @@
       acc.appendChild(bd);
       // chevron / label-region tap = expand body (peek); "Open ›" or the rest of the header = open form view.
       lbl.addEventListener('click', function (e) { e.stopPropagation(); hd.classList.toggle('open'); bd.classList.toggle('open'); });
-      hd.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); });
+      hd.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       cards.appendChild(acc);
     });
     return cards;
@@ -1116,27 +1132,98 @@
   }
   function openInstallFor() { console.log('§INSTALL-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'install', status: status }); else status('ERP picker not loaded.'); }
   function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
-  function buildPillRail() {
-    _injectPillCSS();
-    var rail = el('div'); rail.id = 'idmp-pillrail';
-    [['📒', 'Posted', openPostedFor], ['📊', 'Graph', openGraphFor], ['🗂', 'Kanban', openKanbanFor],
-     ['⚖', 'Rule', openRuleFor], ['⬇', 'Install', openInstallFor], ['🔌', 'Migrate', openMigrateFor]].forEach(function (p) {
-      var b = el('button', 'idmp-pill'); b.title = p[1];
-      b.appendChild(el('span', 'idmp-pill-ic', p[0])); b.appendChild(el('span', 'idmp-pill-lb', p[1]));
-      b.addEventListener('click', p[2]); rail.appendChild(b);
-    });
-    document.body.appendChild(rail); console.log('§PILL-RAIL pills=6 [Posted,Graph,Kanban,Rule,Install,Migrate]');
+  // §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar is now rendered by the SHARED registry (idmp_pills.js +
+  // pills_idmp.json + PillBuilder), NOT hand-rolled. Publish the REAL handlers BY ID; idmp_pills.js binds them.
+  // (The hand-rolled #idmp-pillrail builder + its CSS were deleted — §PILL-REGISTRY: no controls outside the pill.)
+  // ── §D RED PILL — "just the pill" (our design) ⟷ classic iDempiere L&F. Default = just the pill: the classic
+  // chrome (toolbar icons) is hidden and the pill IS the UI. Red pill (or ',' — same shortcut as BIM Doc Mode)
+  // reveals the familiar iDempiere L&F; in classic mode our lens pills step aside (only the red pill remains).
+  // Persisted in localStorage. Common-HMI: one master toggle, no new icons (redpill.png is the shared control).
+  var _pillMode = true;   // true = "just the pill" (clean, our design); false = classic iDempiere L&F
+  try { _pillMode = (localStorage.getItem('idmp_pillmode') || 'clean') !== 'classic'; } catch (e) {}
+  function _applyPillMode() {
+    document.body.classList.toggle('idmp-clean', _pillMode);
+    if (window.IdmpPills && window.IdmpPills.builder) window.IdmpPills.builder.sync();
   }
+  function toggleCleanMode() {
+    _pillMode = !_pillMode;
+    try { localStorage.setItem('idmp_pillmode', _pillMode ? 'clean' : 'classic'); } catch (e) {}
+    _applyPillMode();
+    status(_pillMode ? 'Just the pill — classic toolbar hidden (red pill / , to restore)' : 'Classic iDempiere look — our pills stepped aside');
+    console.log('§REDPILL mode=' + (_pillMode ? 'just-the-pill' : 'classic') + ' source=user');
+  }
+
+  function mountPillRegistry() {
+    window.IdmpPillActions = {
+      redpill: toggleCleanMode,
+      posted: openPostedFor, graph: openGraphFor, kanban: openKanbanFor,
+      rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor
+    };
+    window.IdmpPillActive = { redpill: function () { return _pillMode; } };   // §D — red pill lit in "just the pill" mode
+    // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
+    // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
+    window.IdmpPillStage = function () {
+      var lg = $('idmp-login');
+      var pickerOpen = lg && lg.style.display !== 'none';
+      return (pickerOpen || !_session) ? 'pre-client' : 'in-client';
+    };
+    if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
+    else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
+  }
+  function _syncPillStage() { if (window.IdmpPills && window.IdmpPills.setStage) window.IdmpPills.setStage(); }
+
+  // ── §B cross-tab history scrubber (ERP_BOTTOM_BAR_AND_LIFECYCLE §B) — record SEMANTIC nav moments
+  // {window opened, AD-tab switched, record selected} across #idmp-wintabs; a dot click restores READ-ONLY
+  // (re-open window/tab + re-select record; never mutate the kernel op-log). Labels come from REAL fields. ──
+  var _histRestoring = false;
+  function _histLabel(kind) {
+    var o = _openWins[_activeWin], wname = o ? o.name : ('Window ' + _activeWin);
+    if (kind === 'window') return wname;
+    var tab = _curTab(), tname = tab ? tab.name : '';
+    if (kind === 'tab' || !tab) return wname + ' › ' + tname;
+    var rec = _records[_recIdx]; if (!rec) return wname + ' › ' + tname;
+    // NON-INVENT: the human label is a REAL record field (DocumentNo/Value/Name/…), else the key #id.
+    var human = recVal(rec, 'DocumentNo') || recVal(rec, 'Value') || recVal(rec, 'Name') || recVal(rec, 'Description');
+    var rid = recVal(rec, _keyCol(tab));
+    return tname + ' ' + (human != null && human !== '' ? human : ('#' + rid));
+  }
+  function _histPush(kind) {
+    if (_histRestoring || !window.IdmpHistory || !_session) return;
+    var tab = _curTab(), rec = (kind === 'record' && tab) ? _records[_recIdx] : null;
+    window.IdmpHistory.push({
+      kind: kind, windowId: _activeWin, tabIdx: _activeTabIdx,
+      table: tab ? tab.tableName : null,
+      recordId: rec ? recVal(rec, _keyCol(tab)) : null,
+      label: _histLabel(kind)
+    });
+  }
+  function _histRestore(e) {
+    _histRestoring = true;
+    try {
+      if (e.windowId != null) openWindow(e.windowId);                          // re-open / re-activate the window
+      if (typeof e.tabIdx === 'number' && e.tabIdx !== _activeTabIdx && _curWin() && _curWin().tabs[e.tabIdx]) {
+        _activeTabIdx = e.tabIdx; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar();
+      }
+      if (e.kind === 'record' && e.recordId != null) {
+        var tab = _curTab();
+        for (var i = 0; i < _records.length; i++) {
+          if (String(recVal(_records[i], _keyCol(tab))) === String(e.recordId)) {
+            _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); break;
+          }
+        }
+      }
+      console.log('§IDMP-HIST restore=' + e.label + ' kind=' + e.kind + ' readOnly=Y');
+    } finally { _histRestoring = false; }
+  }
+  // _injectPillCSS now carries ONLY the overlay (chart/kanban/heat-map) styles used by openGraphFor/openKanbanFor —
+  // the rail CSS moved into idmp_pills.js (#idmp-pillbar, responsive bottom dock). Same call sites (_overlay).
   function _injectPillCSS() {
     if (window._pillCSSDone) return; window._pillCSSDone = true;
     var s = document.createElement('style');
-    s.textContent = '#idmp-pillrail{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;display:flex;flex-direction:column;gap:8px;max-height:82vh;overflow:auto;padding:8px;border-radius:18px;background:rgba(20,22,32,.82);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px)}' +
-      '.idmp-pill{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;min-height:48px;border:none;border-radius:14px;background:rgba(255,255,255,.06);color:#dfe6f2;cursor:pointer;padding:6px 2px}.idmp-pill:hover{background:rgba(108,159,255,.25)}.idmp-pill-ic{font-size:18px;line-height:1}.idmp-pill-lb{font-size:9px;opacity:.85}' +
+    s.textContent =
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
       '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}' +
-      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}' +
-      // MOBILE_CARDS.md §4 — dock the vertical right rail as a BOTTOM bar on phone so it stops covering records.
-      '@media (max-width:760px){#idmp-pillrail{right:0;left:0;bottom:0;top:auto;transform:none;flex-direction:row;justify-content:space-around;max-height:none;border-radius:0;padding:6px 4px;gap:4px}.idmp-pill{width:auto;flex:1;max-width:64px}}';
+      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
     document.head.appendChild(s);
   }
 
@@ -1147,7 +1234,25 @@
     $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
     $('idmp-menu-backdrop').addEventListener('click', function () { document.body.classList.remove('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
-    buildPillRail();
+    mountPillRegistry();
+    _applyPillMode();   // §D — apply persisted "just the pill" / classic state at boot
+    if (window.IdmpHistory) window.IdmpHistory.registerRestore(_histRestore);   // §B — read-only nav restore
+    // §D + common-HMI keyboard: ',' toggles the red pill (same as BIM Doc Mode); arrow keys navigate records
+    // (essential in "just the pill" mode where the toolbar arrows are hidden). Ignored while typing in a field.
+    document.addEventListener('keydown', function (e) {
+      var t = e.target, tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      if ($('idmp-login') && $('idmp-login').style.display !== 'none') return;   // not while the login overlay is up
+      if (e.key === ',') { toggleCleanMode(); return; }
+      if (!_session || !_records.length) return;
+      var n = _records.length, moved = true;
+      if (e.key === 'ArrowRight') { if (_recIdx < n - 1) _recIdx++; }
+      else if (e.key === 'ArrowLeft') { if (_recIdx > 0) _recIdx--; }
+      else if (e.key === 'Home') { _recIdx = 0; }
+      else if (e.key === 'End') { _recIdx = n - 1; }
+      else moved = false;
+      if (moved) { e.preventDefault(); refreshForm(); _histPush('record'); }
+    });
     $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
@@ -1178,7 +1283,7 @@ window.__helpIdmpKeymap = {
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=564')
+  navigator.serviceWorker.register('sw.js?v=592')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
