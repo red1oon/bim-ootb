@@ -318,7 +318,7 @@
 <script src="erp_signer.js?v=1"></script>
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
-<script src="kanban_lens.js?v=2"></script>
+<script src="kanban_lens.js?v=3"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
@@ -327,7 +327,7 @@
      hand-rolled #idmp-pillrail). icons.js (verbatim glyph DATA) + pill_builder.js (the renderer) + idmp_pills.js
      (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
 <script src="icons.js?v=1"></script>
-<script src="pill_builder.js?v=2"></script>
+<script src="pill_builder.js?v=3"></script>
 <script src="idmp_pills.js?v=3"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
@@ -1051,10 +1051,18 @@
     var wrap = el('div', 'chart-wrap');
     wrap.appendChild(_viewSwitch('🗂 View as Kanban', openKanbanFor));   // 🗂 launch the board from the graph
     wrap.appendChild(el('div', 'chart-title', 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)'));
-    keys.forEach(function (k) { var n = gr.groups[k].length, row = el('div', 'chart-row');
+    // colourful, status-at-a-glance bars (consistent L&F with the Kanban) — KANBAN_MARVEL_SPEC. When the
+    // pivot IS the lifecycle status, colour each bar by the SHARED semantic status palette (green=done etc.,
+    // keyed by the RAW code via recVal); otherwise a deterministic per-key hue. NON-INVENT, no Math.random.
+    var KL = window.KanbanLens, _colored = 0;
+    keys.forEach(function (k) { var rows = gr.groups[k], n = rows.length, row = el('div', 'chart-row');
       row.appendChild(el('span', 'chart-lbl', k)); var bw = el('div', 'chart-barw'), b = el('div', 'chart-bar', String(n));
+      if (KL) { var c = gr.hasStatus ? KL.statusColor(String(recVal(rows[0], gr.col.columnName))) : KL.tableColor(k);
+        b.style.background = c; _colored++; }
       b.style.width = Math.round(n / max * 100) + '%'; bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row); });
-    _overlay('Graph', wrap); console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + keys.length + ' table=' + gr.tab.tableName);
+    _overlay('Graph', wrap);
+    console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + keys.length + ' colored=' + _colored +
+      ' scheme=' + (gr.hasStatus ? 'status-semantic' : 'per-key-hue') + ' table=' + gr.tab.tableName);
   }
   // Kanban write-path host state (gap c) — lazy: publish window.ERP once, then mount the REAL draggable board.
   var _kanbanWfmc = null, _kanbanProj = null, _KPROJ = 'idmp_kanban_proj';
@@ -1101,12 +1109,39 @@
     });
     var folds = Object.keys(byS).map(function (s) { return { table: T, doc_status: s, count: byS[s].length, ids: byS[s].slice(0, 30) }; });
     var board = window.KanbanLens.buildBoard(folds, _kanbanWfmc, { showEmptyStates: true });
+    // ── "Odoo-marvel" card meta — DICTIONARY-DRIVEN, NON-INVENT, ZERO per-model code (KANBAN_MARVEL_SPEC).
+    //    Detect identifier/amount/date by AD naming convention so ANY absorbed model renders rich cards. ──
+    var _cols = _records.length ? Object.keys(_records[0]) : [];
+    function _hasCol(c) { return _cols.some(function (k) { return k.toLowerCase() === String(c).toLowerCase(); }); }
+    function _pickCol(cands, re) {
+      for (var i = 0; i < cands.length; i++) { if (cands[i] && _hasCol(cands[i])) return cands[i]; }
+      if (re) { for (var j = 0; j < _cols.length; j++) { if (re.test(_cols[j])) return _cols[j]; } }
+      return null;
+    }
+    var titleCol = _pickCol(['DocumentNo', 'Name', 'Value', kc], null) || kc;
+    var amountCol = _pickCol(['GrandTotal'], /(Amt|Amount|Total)$/i);
+    var dateCol = _pickCol([], /^Date/i);
+    var kmeta = {};
+    _records.forEach(function (r) {
+      var key = T + '#' + recVal(r, kc);
+      kmeta[key] = { title: titleCol ? recVal(r, titleCol) : null,
+                     amount: amountCol ? recVal(r, amountCol) : null,
+                     date: dateCol ? recVal(r, dateCol) : null };
+    });
+    var _enr = board.cards.filter(function (c) { return !!kmeta[c.key]; }).length;
+    console.log('§KANBAN-MARVEL table=' + T + ' cards=' + board.cards.length + ' enriched=' + _enr +
+      ' titleCol=' + (titleCol || 'none') + ' amountCol=' + (amountCol || 'none') + ' dateCol=' + (dateCol || 'none') + ' handAuthored=0');
+    var _sc = board.cards.filter(function (c) { return !!kmeta[c.key]; })[0];
+    if (_sc) { var _m = kmeta[_sc.key];
+      console.log("§KANBAN-CARD key=" + _sc.key + " avatar=" + window.KanbanLens.monogram(T) +
+        " title='" + _m.title + "' amount='" + (_m.amount == null ? '' : _m.amount) + "' date='" + (_m.date == null ? '' : _m.date) +
+        "' color=" + window.KanbanLens.statusColor(_sc.status)); }
     var container = el('div');
     container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));   // switch back to the chart lens
     var root = el('div'); root.style.cssText = 'overflow:auto;max-height:72vh';
     container.appendChild(root);
     _overlay('Kanban — ' + tab.name, container);
-    window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc,
+    window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc, meta: kmeta,
       dispatch: window.ERP.dispatch, ctx: window.ERP.ctx,
       onResult: function (res, dr) {
         if (dr && dr.ok) {
