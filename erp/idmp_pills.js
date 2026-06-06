@@ -101,7 +101,8 @@
       var PB = window.PillBuilder({
         pill: pill, trigger: trigger, APP: {}, actions: actions,
         order: actions.map(function (a) { return a.id; }),
-        storageKey: 'idmp_pill_config'
+        storageKey: 'idmp_pill_config',
+        persistent: true   // primary nav dock — stays visible like the old rail; ⋯ still collapses on demand
       });
       trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
       _PB = PB;

@@ -31,7 +31,7 @@ const odooProductSeen=/Large Desk|Storage Box|Corner Desk|Customizable Desk|Cabi
 const tabLog=logs.find(l=>/§IDEMPIERE tab=Product/.test(l))||'(no product tab)';
 await pg.screenshot({path:path.join(__dirname,'renderer2_products.png')});
 // Graph → heat map by category
-await pg.click('.idmp-pill[title="Kanban"]');await pg.waitForTimeout(1500);
+await pg.click('#pill-kanban');await pg.waitForTimeout(1500);
 const heatLog=logs.find(l=>l.startsWith('§HEATMAP'))||'(no heatmap)';
 const cells=await pg.$$eval('.hm-cell',e=>e.length).catch(()=>0);
 await pg.screenshot({path:path.join(__dirname,'renderer2_graph.png')});

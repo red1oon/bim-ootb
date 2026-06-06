@@ -40,13 +40,13 @@ const server = http.createServer((req, res) => {
   // open the Sales Order window (143) so the Kanban host publishes window.ERP (seam + signer)
   const url = `http://localhost:${port}/idempiere.html?seed=ad_seed.db&shard=12-odoo.db&login=Odoo&window=143`;
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.waitForSelector('.idmp-pill[title="Kanban"]', { timeout: 20000 }).catch(async () => {
+  await page.waitForSelector('#pill-kanban', { timeout: 20000 }).catch(async () => {
     const u = await page.$('#idmp-login-users .idmp-login-user:not(.disabled)');
     if (u) { await u.click(); const ok = await page.$('#idmp-login-ok'); if (ok) await ok.click(); }
-    await page.waitForSelector('.idmp-pill[title="Kanban"]', { timeout: 15000 });
+    await page.waitForSelector('#pill-kanban', { timeout: 15000 });
   });
   await page.waitForSelector('[data-ad-table]', { timeout: 15000 }).catch(() => {});
-  await page.click('.idmp-pill[title="Kanban"]');
+  await page.click('#pill-kanban');
   // wait for window.ERP to be published (the seam went live)
   for (let i = 0; i < 40 && !logs.find(l => l.startsWith('§SEAM-LIVE')); i++) await page.waitForTimeout(250);
 
