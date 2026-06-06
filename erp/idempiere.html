@@ -319,6 +319,12 @@
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
 <script src="rule_fold.js?v=1"></script>
+<!-- §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar from the SAME registry as erp.html/BIM (retire the
+     hand-rolled #idmp-pillrail). icons.js (verbatim glyph DATA) + pill_builder.js (the renderer) + idmp_pills.js
+     (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
+<script src="icons.js?v=1"></script>
+<script src="pill_builder.js?v=1"></script>
+<script src="idmp_pills.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -1114,27 +1120,26 @@
   }
   function openInstallFor() { console.log('§INSTALL-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'install', status: status }); else status('ERP picker not loaded.'); }
   function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
-  function buildPillRail() {
-    _injectPillCSS();
-    var rail = el('div'); rail.id = 'idmp-pillrail';
-    [['📒', 'Posted', openPostedFor], ['📊', 'Graph', openGraphFor], ['🗂', 'Kanban', openKanbanFor],
-     ['⚖', 'Rule', openRuleFor], ['⬇', 'Install', openInstallFor], ['🔌', 'Migrate', openMigrateFor]].forEach(function (p) {
-      var b = el('button', 'idmp-pill'); b.title = p[1];
-      b.appendChild(el('span', 'idmp-pill-ic', p[0])); b.appendChild(el('span', 'idmp-pill-lb', p[1]));
-      b.addEventListener('click', p[2]); rail.appendChild(b);
-    });
-    document.body.appendChild(rail); console.log('§PILL-RAIL pills=6 [Posted,Graph,Kanban,Rule,Install,Migrate]');
+  // §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar is now rendered by the SHARED registry (idmp_pills.js +
+  // pills_idmp.json + PillBuilder), NOT hand-rolled. Publish the REAL handlers BY ID; idmp_pills.js binds them.
+  // (The hand-rolled #idmp-pillrail builder + its CSS were deleted — §PILL-REGISTRY: no controls outside the pill.)
+  function mountPillRegistry() {
+    window.IdmpPillActions = {
+      posted: openPostedFor, graph: openGraphFor, kanban: openKanbanFor,
+      rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor
+    };
+    if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
+    else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
   }
+  // _injectPillCSS now carries ONLY the overlay (chart/kanban/heat-map) styles used by openGraphFor/openKanbanFor —
+  // the rail CSS moved into idmp_pills.js (#idmp-pillbar, responsive bottom dock). Same call sites (_overlay).
   function _injectPillCSS() {
     if (window._pillCSSDone) return; window._pillCSSDone = true;
     var s = document.createElement('style');
-    s.textContent = '#idmp-pillrail{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;display:flex;flex-direction:column;gap:8px;max-height:82vh;overflow:auto;padding:8px;border-radius:18px;background:rgba(20,22,32,.82);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px)}' +
-      '.idmp-pill{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;min-height:48px;border:none;border-radius:14px;background:rgba(255,255,255,.06);color:#dfe6f2;cursor:pointer;padding:6px 2px}.idmp-pill:hover{background:rgba(108,159,255,.25)}.idmp-pill-ic{font-size:18px;line-height:1}.idmp-pill-lb{font-size:9px;opacity:.85}' +
+    s.textContent =
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
       '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}' +
-      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}' +
-      // MOBILE_CARDS.md §4 — dock the vertical right rail as a BOTTOM bar on phone so it stops covering records.
-      '@media (max-width:760px){#idmp-pillrail{right:0;left:0;bottom:0;top:auto;transform:none;flex-direction:row;justify-content:space-around;max-height:none;border-radius:0;padding:6px 4px;gap:4px}.idmp-pill{width:auto;flex:1;max-width:64px}}';
+      '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
     document.head.appendChild(s);
   }
 
@@ -1145,7 +1150,7 @@
     $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
     $('idmp-menu-backdrop').addEventListener('click', function () { document.body.classList.remove('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
-    buildPillRail();
+    mountPillRegistry();
     $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
@@ -1176,7 +1181,7 @@ window.__helpIdmpKeymap = {
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=564')
+  navigator.serviceWorker.register('sw.js?v=588')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }

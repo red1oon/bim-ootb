@@ -7,7 +7,8 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v587';   // v587: §MOBILE-LANDING — phone post-login lands on the menu drawer (was empty canvas) + tap-to-close backdrop;
+const CACHE_VERSION = 'v588';   // v588: §A ERP_BOTTOM_BAR — iDempiere bottom/side bar rendered by the SHARED registry (idmp_pills.js + pills_idmp.json + PillBuilder, ⋯ collapse); retired the hand-rolled #idmp-pillrail;
+                                // v587: §MOBILE-LANDING — phone post-login lands on the menu drawer (was empty canvas) + tap-to-close backdrop;
                                 // v586: §MOBILE-VIEW — record LIST renders as .acc cards @≤760px (table = desktop only) + bottom pill rail;
                                 // v585: Migrate INSTALL persists the merged tenant (shard-in → idbPut) so a
                                 //       migrated client (e.g. Odoo 12) survives a plain reload — actual, not transient;
@@ -73,6 +74,8 @@ const PRECACHE_ASSETS = [
   'qrcode.min.js',
   'manifest.json',
   'pills.json',
+  'idmp_pills.js',     // §A — iDempiere bar registration layer (binds pills_idmp.json fn BY ID to IdmpPillActions)
+  'pills_idmp.json',   // §A — sibling manifest for the iDempiere renderer surface (GATE-1: separate from pills.json)
   'initbubble.json',
   'redpill.png',
   'aplus.png',
