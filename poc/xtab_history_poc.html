@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<!-- POC: app-wide cross-tab history over a signed kernel log. Serverless, no deps.
+     RUN:  cd /home/red1/bim-ootb/poc && python3 -m http.server 8137
+     OPEN: http://localhost:8137/xtab_history_poc.html  in TWO tabs side by side.
+     Act in one tab → the history line updates in BOTH instantly (BroadcastChannel),
+     and survives reload (localStorage). Demonstrates: (1) cross-tab app-wide history,
+     (2) depth toggle All/Doc/Off, (3) clear-history vs the kernel log (source of truth),
+     (4) cache-size readout + clear button. -->
+<html lang="en"><head><meta charset="utf-8"><title>Cross-tab History POC</title>
+<style>
+  body{font-family:Segoe UI,system-ui,sans-serif;background:#0e141b;color:#cdd9e5;margin:0;padding:18px 22px}
+  h1{font-size:17px;color:#4fc3f7;margin:0 0 2px} .sub{color:#7a8a99;font-size:12px;margin-bottom:16px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  button{background:rgba(30,50,80,.7);color:#9ad;border:1px solid rgba(255,255,255,.15);border-radius:7px;
+    padding:8px 12px;font-size:13px;cursor:pointer} button:hover{border-color:#4fc3f7;color:#cfe8ff}
+  .card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px 16px;margin:12px 0}
+  .card h2{font-size:13px;color:#4fc3f7;margin:0 0 8px} code{color:#ffd479}
+  table{width:100%;border-collapse:collapse;font-size:13px} td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
+  td.r{text-align:right;color:#fff} .danger{color:#ff8a65;border-color:#ff8a6555}
+  /* the history scrub line (mirrors the viewer dot-line) */
+  #scrub{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px;align-items:center;
+    background:rgba(16,22,30,.94);border:1px solid #2b3744;border-radius:20px;padding:6px 12px;max-width:80vw;z-index:9}
+  #scrub.bloom{border-radius:11px}
+  .dot{width:10px;height:10px;min-width:10px;border-radius:50%;background:#3a4a5a;cursor:pointer}
+  .dot.op{border-radius:2px} .dot.on{background:#ffd479;box-shadow:0 0 8px #ffd479}
+  #scrub.bloom .dot{width:auto;height:auto;border-radius:7px;padding:3px 9px;font-size:11px;color:#9ab;
+    background:#19222c;border:1px solid #2b3744;white-space:nowrap} #scrub.bloom .dot.on{color:#ffd479;border-color:#ffd479}
+  .depth{font-weight:700;letter-spacing:.5px} .b-all{color:#4fc3f7} .b-doc{color:#5fd38a} .b-off{color:#888}
+  .line{font-size:12px;color:#7a8a99;margin-top:6px}
+</style></head>
+<body>
+<h1>App-wide cross-tab history — POC</h1>
+<div class="sub">Open this page in TWO tabs. Act in one → both update live. Reload → it persists.
+  This is the lighter tech tier (BroadcastChannel + localStorage) that runs anywhere incl. GitHub Pages.</div>
+
+<div class="card"><h2>Do something (each = a kernel op or a view moment)</h2>
+  <div class="row">
+    <button onclick="openBuilding()">🏠 Open Building</button>
+    <button onclick="pickElement()">🔹 Pick Element (kernel op)</button>
+    <button onclick="lensNav()">🔍 Lens nav (view-only)</button>
+    <button onclick="menuTouch()">• Menu touch (trivial)</button>
+  </div>
+  <div class="line">Recording depth:
+    <button id="depthBtn" class="depth" onclick="cycleDepth()">●</button>
+    <span id="depthLbl"></span> — cycles ALL → DOC-only → OFF. (Green = doc events only.)</div>
+</div>
+
+<div class="card"><h2>Settings ▸ Cache Info</h2>
+  <table>
+    <tr><td>Kernel log (signed, source of truth)</td><td class="r" id="szKernel">–</td><td class="r" id="cntKernel">–</td></tr>
+    <tr><td>History view cache (derived, what the line shows)</td><td class="r" id="szView">–</td><td class="r" id="cntView">–</td></tr>
+  </table>
+  <div class="row" style="margin-top:12px">
+    <button onclick="clearHistory()">🧹 Clear History view</button>
+    <button onclick="rebuildFromKernel()">↺ Rebuild history from kernel</button>
+    <button class="danger" onclick="clearKernel()">⚠ Clear kernel (destructive)</button>
+  </div>
+  <div class="line" id="note"></div>
+</div>
+
+<div id="scrub"></div>
+
+<script>
+// ── Two stores, deliberately separate ───────────────────────────────────────
+//   K_KEY  = the SIGNED kernel log. Source of truth. Cleared ONLY by the destructive button.
+//   V_KEY  = the history VIEW cache. Derived/ephemeral. What the scrub line renders. Safe to clear.
+var K_KEY='poc.kernel', V_KEY='poc.histview', D_KEY='poc.depth';
+var ch = ('BroadcastChannel' in window) ? new BroadcastChannel('poc_hist') : null;
+var depth = localStorage.getItem(D_KEY) || 'all';      // all | doc | off
+var cursor = -1;                                        // scrub position
+var bloom = false;
+
+// Significance profiles — the ONE gate (mirrors universal_history.js SIGNIFICANCE).
+var DOC = {BUILDING_OPEN:1, GRID_MOVE:1, ELEMENT_PLACE:1};            // "real items"
+var ALL = {BUILDING_OPEN:1, ELEMENT_PICK:1, VIEW_NAV:1, GRID_MOVE:1, ELEMENT_PLACE:1}; // + picks + nav
+function significant(type){ if(depth==='off') return false; return !!((depth==='doc'?DOC:ALL)[type]); }
+
+function load(k){ try{return JSON.parse(localStorage.getItem(k)||'[]')}catch(e){return[]} }
+function save(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+function ping(){ if(ch) ch.postMessage('sync'); }     // tell other tabs to re-read + re-render
+
+// tiny fake hash chain, just to echo the "signed kernel" idea (NOT real crypto)
+function h(s){ var x=2166136261; for(var i=0;i<s.length;i++){x^=s.charCodeAt(i);x=Math.imul(x,16777619)} return (x>>>0).toString(16); }
+
+// ── Commit an event ─────────────────────────────────────────────────────────
+// Kernel ops ALWAYS go to the kernel log (the audit truth). The history VIEW only
+// gets the event if the current depth says it's significant. View-only moments
+// (VIEW_NAV) never touch the kernel log — they live only in the view cache.
+function commit(type, label, isView){
+  if(!isView){
+    var kl=load(K_KEY); var prev=kl.length?kl[kl.length-1].hash:'0';
+    var op={id:kl.length+1, type:type, label:label, prev:prev};
+    op.hash=h(op.id+type+label+prev); kl.push(op); save(K_KEY, kl);
+  }
+  if(significant(type)){
+    var v=load(V_KEY); v.push({type:type, label:label, op:!isView}); save(V_KEY, v);
+  } else {
+    note('dropped "'+label+'" — not significant at depth='+depth.toUpperCase());
+  }
+  cursor = load(V_KEY).length-1;
+  render(); ping();
+}
+function openBuilding(){ commit('BUILDING_OPEN','Opened Tower-A', false); }
+function pickElement(){  commit('ELEMENT_PICK','merk H · door', false); }
+function lensNav(){      commit('VIEW_NAV','Storey 2', true); }
+function menuTouch(){    commit('MENU_TOUCH','tapped a menu', false); } // never significant → shows the gate
+
+// ── Clearing — the crux of the user's question ──────────────────────────────
+function clearHistory(){ save(V_KEY, []); cursor=-1; render(); ping();
+  note('History VIEW cleared. Kernel log UNTOUCHED ('+load(K_KEY).length+' ops still signed). Try Rebuild.'); }
+function rebuildFromKernel(){
+  // Regenerate the timeline FROM the kernel log → proves the kernel is the source of truth.
+  // NOTE the honest limit: VIEW_NAV (lens-only) moments were never in the kernel, so they
+  // cannot be recovered — they are ephemeral by design. Picks/opens come back fully.
+  var kl=load(K_KEY), v=[];
+  kl.forEach(function(op){ if(significant(op.type)) v.push({type:op.type,label:op.label,op:true}); });
+  save(V_KEY, v); cursor=v.length-1; render(); ping();
+  note('Rebuilt '+v.length+' steps from the kernel log. (Lens-only nav not recoverable — ephemeral.)'); }
+function clearKernel(){ if(!confirm('Destroy the signed kernel log? (POC only)')) return;
+  save(K_KEY,[]); save(V_KEY,[]); cursor=-1; render(); ping(); note('Kernel + view both wiped.'); }
+
+// ── Depth toggle ────────────────────────────────────────────────────────────
+function cycleDepth(){ depth = depth==='all'?'doc':depth==='doc'?'off':'all';
+  localStorage.setItem(D_KEY, depth); render(); ping(); }
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function bytes(k){ var s=localStorage.getItem(k)||''; return (new Blob([s]).size); }
+function fmt(n){ return n<1024?n+' B':(n/1024).toFixed(1)+' KB'; }
+function note(t){ document.getElementById('note').textContent=t; }
+function render(){
+  var v=load(V_KEY), kl=load(K_KEY);
+  // scrub line
+  var sc=document.getElementById('scrub'); sc.className=bloom?'bloom':''; sc.innerHTML='';
+  v.forEach(function(e,i){ var d=document.createElement('div');
+    d.className='dot '+(e.op?'op':'')+(i===cursor?' on':''); d.title=e.label;
+    if(bloom) d.textContent=e.label;
+    d.onclick=function(ev){ ev.stopPropagation(); cursor=i; render(); ping(); };
+    sc.appendChild(d); });
+  sc.onclick=function(){ bloom=!bloom; render(); };               // tap bar = bloom
+  if(!v.length) sc.innerHTML='<span style="color:#566;font-size:11px">no history — do something</span>';
+  // depth pill
+  var db=document.getElementById('depthBtn'), dl=document.getElementById('depthLbl');
+  db.className='depth '+(depth==='all'?'b-all':depth==='doc'?'b-doc':'b-off');
+  db.textContent = depth==='all'?'●':depth==='doc'?'◉':'○';
+  dl.textContent = depth==='all'?'ALL (every action)':depth==='doc'?'DOC events only':'OFF';
+  // cache info
+  document.getElementById('szKernel').textContent=fmt(bytes(K_KEY));
+  document.getElementById('szView').textContent=fmt(bytes(V_KEY));
+  document.getElementById('cntKernel').textContent=kl.length+' ops';
+  document.getElementById('cntView').textContent=v.length+' steps';
+}
+
+// ── Cross-tab wiring ─────────────────────────────────────────────────────────
+if(ch) ch.onmessage=function(){ depth=localStorage.getItem(D_KEY)||depth; render(); };  // live, same-origin
+window.addEventListener('storage', function(){ depth=localStorage.getItem(D_KEY)||depth; render(); }); // backup + cross-tab
+render();
+</script>
+</body></html>
