@@ -23,7 +23,9 @@ function probe(pg) {
     var host = document.getElementById('idmp-content');
     var tbl = host ? host.querySelector('.idmp-grid') : null;
     var cds = host ? host.querySelector('.idmp-cards') : null;
-    var rail = document.getElementById('idmp-pillrail');
+    // §A retired the hand-rolled #idmp-pillrail → the bar is now the registry-driven #idmp-pillbar
+    // (ERP_BOTTOM_BAR_AND_LIFECYCLE §A); the mobile BOTTOM dock behaviour is preserved, only the id changed.
+    var rail = document.getElementById('idmp-pillbar') || document.getElementById('idmp-pillrail');
     var vh = document.documentElement.clientHeight;
     var railBottomDocked = false;
     if (rail) { var rb = rail.getBoundingClientRect(); railBottomDocked = (rb.bottom >= vh - 2 && rb.left <= 2); }

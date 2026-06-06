@@ -78,6 +78,7 @@
     var _defaultOrder = opts.order || _actions.map(function(a) { return a.id; });
     var _CFG_KEY = opts.storageKey || 'bim_pill_config';
     var _pillOpen = false;
+    var _persistent = !!opts.persistent;   // persistent dock: ⋯ still toggles, but an outside tap does NOT auto-close
     var HOLD_MS = 450;
 
     // ── Config persistence: { order: [], hidden: [] } ──
@@ -256,10 +257,13 @@
       console.log('§PILL open=' + _pillOpen);
     }
 
-    // Close on outside tap
-    document.addEventListener('pointerdown', function(e) {
-      if (_pillOpen && !pill.contains(e.target) && e.target !== trigger) _close();
-    });
+    // Close on outside tap — skipped for a persistent dock (the iDempiere bottom/side bar stays open;
+    // only the ⋯ trigger collapses it). erp.html/BIM keep the default (no opts.persistent) — behaviour unchanged.
+    if (!_persistent) {
+      document.addEventListener('pointerdown', function(e) {
+        if (_pillOpen && !pill.contains(e.target) && e.target !== trigger) _close();
+      });
+    }
 
     // ── Init ──
     _initPanels();

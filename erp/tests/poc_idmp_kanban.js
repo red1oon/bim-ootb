@@ -45,8 +45,8 @@ const server = http.createServer((req, res) => {
   await page.waitForTimeout(1200);
 
   // ── click the Kanban pill ──
-  await page.waitForSelector('.idmp-pill[title="Kanban"]', { timeout: 8000 });
-  await page.click('.idmp-pill[title="Kanban"]');
+  await page.waitForSelector('#pill-kanban', { timeout: 8000 });
+  await page.click('#pill-kanban');
   await page.waitForFunction(() => window.__idmpKanban && window.ERP && window.ERP.dispatch, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(600);
 
