@@ -318,7 +318,7 @@
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
-<script src="rule_fold.js?v=1"></script>
+<script src="rule_fold.js?v=2"></script>
 <script>
 (function () {
   'use strict';
@@ -502,6 +502,8 @@
     applySession();
   }
   function applySession() {
+    // expose the live login client (the honest tenant) for client-scoped lenses (RuleFold §11) — NON-INVENT
+    window.__idmpClient = _session.client;   // { id, name }
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
     $('idmp-ctx').textContent = _session.client.name + ' · ' + _session.role.name + ' · ' + orgLabel;
