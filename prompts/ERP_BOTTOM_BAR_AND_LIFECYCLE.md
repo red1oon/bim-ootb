@@ -108,19 +108,21 @@ GATE before coding §A: confirm with the user — reuse `pills.json` or a siblin
   sw v586) · `§MOBILE-LANDING` post-login auto-opens the menu drawer + backdrop (PR #159, sw v587).
 
 ## ▶ RESUME — NEXT SESSION STARTS HERE (carry-on prompt)
-This spec is TRIAGE-COMPLETE; nothing is implemented yet. A fresh session should:
-1. **Resolve the TWO open gate decisions with the user FIRST** (they own these — do not invent a default and run):
-   - **GATE-1 (§A manifest):** reuse the existing `erp/pills.json`, OR author a sibling `erp/pills_idmp.json` for the
-     iDempiere surface? The action sets differ — iDempiere needs Posted/Graph/Kanban/Rule + the AD-window actions,
-     whereas `pills.json` is erp.html's 16-pill set. RECOMMENDATION to put to the user: a sibling `pills_idmp.json`
-     (same `PillBuilder` renderer, surface-specific manifest) — keeps each surface honest, no shared-manifest drift.
-   - **GATE-2 (§C in-client behaviour):** once a client is entered, should Install/Migrate be (a) HIDDEN from the
-     primary rail, (b) TRANSFORMED into client-scoped actions ("migrate more into THIS tenant"), or (c) MOVED into
-     the ⋯ overflow? RECOMMENDATION: (a) hidden from the primary rail + available pre-client / in the P3 switcher,
-     with (b) as a later enhancement.
-2. **Then implement in order §A → §C → §B** (sequencing rationale above). Each: spec the section's witness line
-   first, whitebox `§`-log on localhost (NOT a forced-viewport Playwright pass — [[feedback_whitebox_not_playwright]]),
-   isolated worktree off `origin/main` → PR → CI → squash-merge → bump `erp/sw.js` CACHE_VERSION.
+This spec is TRIAGE-COMPLETE and the two gates are now DECIDED by the user (2026-06-06). Just EXECUTE — do NOT
+re-ask these; the user explicitly delegated the technicals ("I am weak in such technicals, what do you propose").
+- **✅ GATE-1 (§A manifest) — DECIDED: a SIBLING `erp/pills_idmp.json`** (NOT shared with erp.html's `pills.json`).
+  Same `PillBuilder` renderer, surface-specific manifest. Rationale: the two surfaces show different action sets;
+  a shared manifest forces compromises and cross-surface breakage. Separate data, one engine, zero code dup.
+- **✅ GATE-2 (§C in-client behaviour) — DECIDED: HIDE Install/Migrate from the in-client primary rail.** They
+  appear ONLY pre-client (login card + the P3 client-switcher) — "set up / bring in a company" lives at the front
+  door, not inside the house. The context-aware "import more into THIS client" (option b) is a LATER enhancement,
+  explicitly deferred — do not build it now.
+- **THEN implement in order §A → §C → §B** (sequencing rationale above). Each: spec the section's witness line
+  first, whitebox `§`-log on localhost (NOT a forced-viewport Playwright pass — [[feedback_whitebox_not_playwright]]),
+  isolated worktree off `origin/main` → PR → CI → squash-merge → bump `erp/sw.js` CACHE_VERSION.
+- **START with §A**: add `erp_pills.js`+`pill_builder.js`+`pills_idmp.json` to `idempiere.html`, render the bar via
+  `PillBuilder` (incl. ⋯ collapse), prove `§IDMP-PILLS source=registry pills=N handAuthored=0 overflow=⋯`, then
+  DELETE the inline `#idmp-pillrail` builder.
 3. Start with **§A** (foundational): add `erp_pills.js`+`pill_builder.js`+manifest to `idempiere.html`, render the
    bar via `PillBuilder`, prove `§IDMP-PILLS source=registry pills=N handAuthored=0 overflow=⋯`, then DELETE the
    inline `#idmp-pillrail` builder.
