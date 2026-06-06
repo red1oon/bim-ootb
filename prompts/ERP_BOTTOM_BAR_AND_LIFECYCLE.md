@@ -106,3 +106,32 @@ GATE before coding §A: confirm with the user — reuse `pills.json` or a siblin
 - Lifecycle: [[prompts/MIGRATE_INSTALL_TENANT.md]] (P1 emitter · P2 persist ✅ · P3 switcher) · [[project_migrate_erp_picker]].
 - Mobile chrome already shipped (build on, don't redo): `§MOBILE-VIEW` record-list cards + bottom pill dock (PR #157,
   sw v586) · `§MOBILE-LANDING` post-login auto-opens the menu drawer + backdrop (PR #159, sw v587).
+
+## ▶ RESUME — NEXT SESSION STARTS HERE (carry-on prompt)
+This spec is TRIAGE-COMPLETE; nothing is implemented yet. A fresh session should:
+1. **Resolve the TWO open gate decisions with the user FIRST** (they own these — do not invent a default and run):
+   - **GATE-1 (§A manifest):** reuse the existing `erp/pills.json`, OR author a sibling `erp/pills_idmp.json` for the
+     iDempiere surface? The action sets differ — iDempiere needs Posted/Graph/Kanban/Rule + the AD-window actions,
+     whereas `pills.json` is erp.html's 16-pill set. RECOMMENDATION to put to the user: a sibling `pills_idmp.json`
+     (same `PillBuilder` renderer, surface-specific manifest) — keeps each surface honest, no shared-manifest drift.
+   - **GATE-2 (§C in-client behaviour):** once a client is entered, should Install/Migrate be (a) HIDDEN from the
+     primary rail, (b) TRANSFORMED into client-scoped actions ("migrate more into THIS tenant"), or (c) MOVED into
+     the ⋯ overflow? RECOMMENDATION: (a) hidden from the primary rail + available pre-client / in the P3 switcher,
+     with (b) as a later enhancement.
+2. **Then implement in order §A → §C → §B** (sequencing rationale above). Each: spec the section's witness line
+   first, whitebox `§`-log on localhost (NOT a forced-viewport Playwright pass — [[feedback_whitebox_not_playwright]]),
+   isolated worktree off `origin/main` → PR → CI → squash-merge → bump `erp/sw.js` CACHE_VERSION.
+3. Start with **§A** (foundational): add `erp_pills.js`+`pill_builder.js`+manifest to `idempiere.html`, render the
+   bar via `PillBuilder`, prove `§IDMP-PILLS source=registry pills=N handAuthored=0 overflow=⋯`, then DELETE the
+   inline `#idmp-pillrail` builder.
+
+## ▶ APPENDIX — measured "bloat reduction" (2026-06-06, from ~/idempiere-dev-setup + seed dump; NON-INVENT)
+Why this chrome work matters — the project's headline thesis, with real numbers (delivery/definition, NOT feature parity):
+- **DB seed:** iDempiere `Adempiere_pg.dmp` = **45.2 MB** → this project `ad_seed.db` = **12.7 MB** (≈3.5× smaller),
+  and the 12.7 MB IS the full self-describing Application Dictionary: **378 tables · 1,003 AD_Table · 26,144 AD_Column · 370 windows.**
+- **Runtime surface:** iDempiere **1,427,147 Java LOC** / 4,465 files / 294 `.zul` / 60 plugins / JVM+Postgres+3.7 GB build
+  → this project **16,068 JS LOC** / 39 files / 884 KB + a 1,079-line HTML, static + SQLite-WASM, offline (≈89× fewer LOC, zero server).
+- **Honest caveat:** that 16K LOC RENDERS the dictionary + FOLDS the paths built so far (O2C, journal, signed rule-edit) —
+  it is NOT a re-implementation of the full transactional server. Removable bloat = the generic AD-interpretation engine
+  (re-expressible leanly because the AD is self-describing) + the entire server/JVM/DB/build stack. Irreducible = each
+  transactional verb/process, which must be FOLDED deterministically (the migration-solvent thesis). See [[feedback_erp_perf_claims]].
