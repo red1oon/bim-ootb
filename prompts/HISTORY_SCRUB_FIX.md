@@ -20,6 +20,13 @@
 - Cut ceremony; decide and let the user judge by what appears. STOP yourself only when about to INVENT
   (no source) OR when a genuine architecture fork needs a user decision you cannot extract.
 
+## ☠ LINE-REF FRESHNESS (navigate_find.js was rewritten by the v41 depth-model PRs #163/165/166)
+Line numbers for `navigate_find.js` below are PRE-v41 and HAVE DRIFTED. **Anchor by FUNCTION NAME, not line.**
+Current origin/main (2026-06-06, post-merge): `_replayViewObj` ~313 · axis `_pushView` ~546 ·
+`_buildShapeMeshes(set,color,solidOpacity,colorOpacity,clipPlanes)` ~940 · `_drillSelect` ~1684 ·
+item/group `_pushView` ~1696. `picking.js` (~458 `§BBOX_DEBUG`) + `universal_history.js` (~42 `SIGNIFICANCE`,
+~54 drop-log) are UNCHANGED. Always `git grep -n 'function _name' origin/main -- <file>` to re-find before editing.
+
 ## ▶ THE BUG (witnessed in user's log this session)
 User tapped a door in 3D. The log:
 ```
@@ -35,7 +42,7 @@ the user did. Root cause: the significance gate (`universal_history.js:42-45`, `
 The timeline's whole purpose (UNIVERSAL_HISTORY.md / FIND_LENS_DEPTH_MODEL.md): *"no way to see what was
 chosen some steps before"* → retrace the **selection/viewing** path.
 - A direct 3D pick **IS a selection moment** — semantically identical to a Find-lens *item-select*
-  (`navigate_find.js:1375`, `kind:'item'`), which IS recorded. So selecting a door via the Find tree gets
+  (`navigate_find.js` item `_pushView`, `kind:'item'`, ~L1696), which IS recorded. So selecting a door via the Find tree gets
   a step, but selecting the SAME door by tapping it in 3D gets dropped. That asymmetry is the defect.
 - A pick **mutates nothing** → it is VIEW-class, not a model op. It must NOT go through `undoOp`/`redoOp`
   flag-flipping (`_applyOp`, `:195`); restore = re-select/re-highlight + frame, read-only.
@@ -81,9 +88,12 @@ chosen some steps before"* → retrace the **selection/viewing** path.
   pretend to be Find.
 - Bonus this earns: the LIVE tap highlight also upgrades from the bbox box to the shape mesh (same source) —
   not just on restore. (Keep `§PICK`/info-panel behaviour; replace only the visual highlight.)
-- **Do NOT destroy the good uncommitted §PERF work** in navigate_find (FIND_LENS_DEPTH_MODEL.md §UNCOMMITTED:
-  deferred-rAF `_drillSelect` build, `_getInstanceRows` cache `§INSTROWS_CACHED`,
-  `_buildShapeMeshes(set,color,solidOpacity)`). Reuse it inside the shared primitive; keep it; re-witness.
+- **The §PERF work in navigate_find is now COMMITTED + LIVE** (origin/main, `navigate_find ?v=28`, v41 —
+  PR#165/166, 2026-06-06): deferred-rAF `_drillSelect` build, `_getInstanceRows` cache `§INSTROWS_CACHED`,
+  `_buildShapeMeshes(set,color,solidOpacity)`. ALSO live now: ghost MAX-blend shell @0.12, whole-row focus
+  band (`.row-focus`), Find drag fix (`measure.js`), x-ray-restore-on-room-lens-exit. So start this work
+  from FRESH `origin/main` (it carries all of the above) — reuse `_buildShapeMeshes` inside the shared
+  primitive; keep it; re-witness. (No longer "uncommitted/at-risk" — it's shipped.)
 - On the TIMELINE, a tapped element and a Find-drilled element are the SAME step kind ("selected element X")
   — distinguish steps by WHAT was selected (single element vs group/scope), never by HOW (tap vs Find).
 
