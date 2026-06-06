@@ -53,6 +53,7 @@
       if (a._stage === 'pre-client') a.pill = (stage === 'pre-client') ? undefined : false;
     });
     _PB.build();
+    _PB.sync();   // §D — re-apply lit states (red pill) after the rebuild
     var lc = (stage === 'pre-client') ? 'Y' : 'context';     // 'context' = hidden from the primary rail (GATE-2)
     var shown = _actions.filter(function (a) { return a.pill !== false; }).map(function (a) { return a.id; });
     console.log('§IDMP-LIFECYCLE stage=' + stage + ' install=' + lc + ' migrate=' + lc + ' shown=[' + shown.join(',') + ']');
@@ -69,7 +70,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=24').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=25').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -79,6 +80,8 @@
         if (p.stage) act._stage = p.stage;                   // §C lifecycle tag (carried from the manifest)
         // fn binds BY ID to the host's real handler; honest toast if a handler is missing (NON-INVENT).
         act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
+        var ACTIVE = window.IdmpPillActive || {};            // §D — lit-state binding by id (e.g. redpill = clean mode on)
+        if (ACTIVE[p.id]) act.isActive = ACTIVE[p.id];
         return act;
       });
       _actions = actions;
@@ -111,6 +114,7 @@
 
       // §C — apply the initial session stage (pre-client at boot: Install/Migrate visible at the front door).
       _curStage = null; setStage();
+      PB.sync();   // §D — restore lit states (e.g. red pill) after setStage's rebuild (build() doesn't sync)
 
       var mounted = pill.querySelectorAll('button[id^="pill-"]').length;
       var hidden = (PB.getConfig().hidden || []).length;

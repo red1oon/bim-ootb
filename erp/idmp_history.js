@@ -86,16 +86,15 @@
     if (!has) { _bar.classList.remove('show'); return; }
     _bar.classList.add('show');
     _bar.classList.toggle('bloom', _bloom);
-    var h = '<span class="scrubbtn" id="idmp-scrub-undo" title="back">↶</span><div class="scrubline" id="idmp-scrubline">';
+    // Dots-only timeline — consistent with the clean pill idiom (no ↶/↷ unicode arrows). Click any dot to
+    // jump (subsumes step undo/redo); gold = current; double-tap blooms labelled chips. [[feedback_pill_icon_consistency]]
+    var h = '<div class="scrubline" id="idmp-scrubline">';
     _hist.forEach(function (e, i) {
       h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + '" data-i="' + i + '" data-kind="' + e.kind +
         '" title="' + (i + 1) + '. ' + _esc(e.label) + '">' + (_bloom ? _esc(e.label) : '') + '</div>';
     });
-    h += '</div><span class="scrubbtn" id="idmp-scrub-redo" title="forward">↷</span>';
+    h += '</div>';
     _bar.innerHTML = h;
-    var u = document.getElementById('idmp-scrub-undo'), r = document.getElementById('idmp-scrub-redo');
-    if (u) u.addEventListener('click', function (e) { e.stopPropagation(); undo(); });
-    if (r) r.addEventListener('click', function (e) { e.stopPropagation(); redo(); });
     Array.prototype.forEach.call(_bar.querySelectorAll('.scrubdot'), function (d) {
       d.addEventListener('click', function (ev) { ev.stopPropagation(); _go(+d.getAttribute('data-i')); });
     });
@@ -114,8 +113,6 @@
       '#idmp-scrub{display:none;flex:0 0 auto;align-items:center;gap:8px;height:28px;padding:0 10px;' +
         'background:#0f1420;border-top:1px solid rgba(255,255,255,0.08);overflow:hidden;}' +
       '#idmp-scrub.show{display:flex;}' +
-      '#idmp-scrub .scrubbtn{color:#9aa4b8;cursor:pointer;font-size:14px;line-height:1;user-select:none;padding:0 2px;}' +
-      '#idmp-scrub .scrubbtn:hover{color:#6c9fff;}' +
       '#idmp-scrub .scrubline{display:flex;align-items:center;gap:8px;flex:1;overflow-x:auto;overflow-y:hidden;height:100%;}' +
       '#idmp-scrub .scrubline::-webkit-scrollbar{height:0;}' +
       '#idmp-scrub .scrubdot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:rgba(154,164,184,0.5);' +

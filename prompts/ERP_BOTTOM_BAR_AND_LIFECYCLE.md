@@ -88,6 +88,28 @@ TARGET lifecycle:
 - Witness: `§IDMP-LIFECYCLE stage=pre-client install=Y migrate=Y` vs `stage=in-client install=context migrate=context`
   (the generic always-on pills are gone once a client is entered).
 
+## ▶ §D — RED PILL: "just the pill" (our design) ⟷ classic iDempiere L&F  (added 2026-06-06, user-directed; BUILT)
+GOAL (user, verbatim intent): "have all icons in iDempiere to be gone and appear, at the main pill, when pressing
+the red pill … keeps the UI clean under user control. Three dots pill collapse. Red pill shortcut same as in BIM."
+Clarified: "iDempiere users are familiar with their L&F so they can have it, but in our own design we offer them to
+use just the pill." / "If they refuse, just ignore our pill." / "Follow common HMI practice … no need to overthink."
+- **Model:** ONE master toggle (`redpill` pill, `redpill.png`, key `,` = same as BIM Doc Mode `panels.js`).
+  - **OUR design = DEFAULT = "just the pill":** classic chrome (the `#idmp-toolbar` action icons) is HIDDEN; the
+    pill IS the UI; record nav moves to the keyboard (arrow keys — see below). `body.idmp-clean`.
+  - **Red pill / `,` → classic iDempiere L&F:** reveal the familiar `#idmp-toolbar`; OUR lens pills STEP ASIDE
+    (only `#pill-redpill` stays to toggle back) — "if they refuse, just ignore our pill." Persisted (localStorage
+    `idmp_pillmode`). The red pill is LIT (`.active`) in just-the-pill mode.
+  - **⋯ collapse** (PillBuilder) is unchanged and orthogonal: it tidies the pill list; the red pill swaps paradigms.
+- **Common-HMI keyboard (no overthink):** `,` toggles the red pill; ←/→ = prev/next record, Home/End = first/last
+  (essential once the toolbar arrows are hidden in pill mode). Ignored while typing in a field or at the login overlay.
+- **ICON CONSISTENCY (user, [[feedback_pill_icon_consistency]]):** OUR surface uses ONLY the clean Lucide line-icon
+  idiom (`icons.js`, verbatim from `panels.js`); NO differing/unicode glyphs. Applied here: the §B scrubber dropped
+  its `↶`/`↷` arrows → **dots-only** (click a dot = jump, which subsumes step undo/redo). `redpill.png` is the one
+  allowed raster (the shared brand control). Classic iDempiere chrome may keep its own emoji L&F — it's THEIRS.
+- Witness `tests/poc_idmp_redpill.js`: default clean (toolbar hidden, red pill lit, 4 lens pills) → red pill →
+  classic (toolbar visible, lens pills 0) → `,` → clean; arrow keys move the record; scrubber arrowButtons=0; 0 errs.
+- Reuses what we already built (pill registry + settings editor per-user order/hidden) — no new framework.
+
 ## ▶ SEQUENCING (each shippable alone; whitebox witness + PR each)
 1. **§A pill registry unification** FIRST (foundational — everything else hangs off the registry + its ⋯/lifecycle
    hooks). Proves parity, deletes the hand-roll.
