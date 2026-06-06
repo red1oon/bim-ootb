@@ -33,11 +33,13 @@
   }
   .bld-card:hover { background: rgba(79,195,247,0.15); color: #4fc3f7; }
   .bld-card .cnt { color: #888; font-size: 10px; }
-  /* §S280: Status bar with undo/redo arrows */
+  /* §S280: Status bar with undo/redo arrows. §HSF-3: column stack — status row on top, the
+     universal history scrub row docks directly beneath it (one unit, bottom-center). */
   #status-bar-wrap {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
-    display: flex; align-items: center; gap: 4px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
   }
+  #status-row { display: flex; align-items: center; gap: 4px; }
   #status {
     background: rgba(10,10,30,0.50); border-radius: 6px; padding: 8px 16px;
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
@@ -520,13 +522,16 @@
 </div>
 <!-- §S280: Undo/Redo arrows flanking status bar -->
 <div id="status-bar-wrap">
-  <button id="undo-btn" class="ur-btn" onclick="if(window._doSceneUndo)window._doSceneUndo()" title="Undo (Backspace)">
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-  </button>
-  <div id="status">v3 — <span data-trl="ui_initializing">Initializing...</span></div>
-  <button id="redo-btn" class="ur-btn" onclick="if(window._doSceneRedo)window._doSceneRedo()" title="Redo (\)">
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19 7-7-7-7"/><path d="M5 12h14"/></svg>
-  </button>
+  <div id="status-row">
+    <button id="undo-btn" class="ur-btn" onclick="if(window._doSceneUndo)window._doSceneUndo()" title="Undo (Backspace)">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+    </button>
+    <div id="status">v3 — <span data-trl="ui_initializing">Initializing...</span></div>
+    <button id="redo-btn" class="ur-btn" onclick="if(window._doSceneRedo)window._doSceneRedo()" title="Redo (\)">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19 7-7-7-7"/><path d="M5 12h14"/></svg>
+    </button>
+  </div>
+  <!-- §HSF-3: universal-hist-btns (scrub row) is appended here at runtime by universal_history.js -->
 </div>
 <pre id="walk-log" style="display:none;position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow:auto;background:#111;color:#0f0;font-size:10px;z-index:99;padding:4px;margin:0"></pre>
 <div id="section-slider-panel">
@@ -771,7 +776,7 @@
 <script src="scene.js?v=50" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
-<script src="streaming.js?v=52" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="streaming.js?v=53" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=7" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
 <script src="panels.js?v=35" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=29" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
@@ -808,7 +813,7 @@
 <script src="grid_contours.js?v=5" onerror="console.warn('[GridContours] grid_contours.js skipped')"></script>
 <script src="grid_dim_chains.js?v=4" onerror="console.warn('[DimChains] grid_dim_chains.js skipped')"></script>
 <script src="kernel_ops.js?v=3" onerror="console.warn('[KernelOps] kernel_ops.js skipped')"></script>
-<script src="universal_history.js?v=3" onerror="console.warn('[UniversalHistory] universal_history.js skipped')"></script>
+<script src="universal_history.js?v=4" onerror="console.warn('[UniversalHistory] universal_history.js skipped')"></script>
 <script src="bom_extract.js?v=1" onerror="console.warn('[BOMExtract] bom_extract.js skipped')"></script>
 <script src="verb_expand.js?v=1" onerror="console.warn('[VerbExpand] verb_expand.js skipped')"></script>
 <script src="bom_walker.js?v=1" onerror="console.warn('[BOMWalker] bom_walker.js skipped')"></script>
@@ -826,7 +831,7 @@
 <script src="cost_panel.js?v=4" onerror="console.warn('[CostPanel] cost_panel.js skipped')"></script>
 <script src="grid_drag.js?v=6" onerror="console.warn('[GridDrag] grid_drag.js skipped')"></script>
 <script src="grid_scissors.js?v=2" onerror="console.warn('[GridScissors] grid_scissors.js skipped')"></script>
-<script src="grid_overlay.js?v=34" onerror="console.warn('[GridOverlay] grid_overlay.js skipped — file not found or error')"></script>
+<script src="grid_overlay.js?v=35" onerror="console.warn('[GridOverlay] grid_overlay.js skipped — file not found or error')"></script>
 <script src="grid_assembler.js?v=2" onerror="console.warn('[GridAssembler] grid_assembler.js skipped')"></script>
 <script src="print_sheet.js?v=3" onerror="console.warn('[PrintSheet] print_sheet.js skipped')"></script>
 <script src="ghostglass.js?v=2" onerror="console.warn('§LOAD_FAIL ghostglass.js')"></script>

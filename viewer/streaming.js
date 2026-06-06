@@ -485,6 +485,16 @@ function setupStreaming(A) {
         A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_done||'DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.').replace('{name}',A.activeBuilding).replace('{n}',A.streamedCount.toLocaleString()).replace('{g}',iCount).replace('{b}',A.buildingsRendered.size);
         // §S276: Pre-compile WebGPU pipelines after all materials in scene
         if (A._onStreamDone) A._onStreamDone();
+        // §HSF-7: record "building opened" ONCE per building (the first time its geometry finishes)
+        // so a fresh session's timeline is non-empty even before any tap. Read-only milestone.
+        if (window.KernelOps && A.db && A.activeBuilding) {
+          A._historyOpened = A._historyOpened || {};
+          if (!A._historyOpened[A.activeBuilding]) {
+            A._historyOpened[A.activeBuilding] = true;
+            try { KernelOps.commitOp(A.db, 'BUILDING_OPEN', { name: A.activeBuilding, count: A.streamedCount }, []); }
+            catch (e) { console.log('§BUILDING_OPEN_ERR ' + e.message); }
+          }
+        }
         // §S265: Force render after stream-complete — DLOD/consolidation/bbox-clear happen after streaming=false
         if (A.markDirty) A.markDirty();
       }
