@@ -71,6 +71,7 @@
       '}',
       '.find-result-item:hover { background: rgba(79,195,247,0.1); }',
       '.find-result-item.active { background: rgba(79,195,247,0.18); }',
+      '.find-tree-row.row-focus { box-shadow: inset 3px 0 0 #ffd400 !important; }',
       '.find-result-item .ri-icon { font-size: 12px; opacity: 0.4; flex-shrink: 0; }',
       '.find-result-item .ri-body { flex: 1; min-width: 0; }',
       '.find-result-item .ri-name { color: #e0e0e0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }',
@@ -115,7 +116,7 @@
       '@media (max-width: 600px) {',
       '  #find-panel { right: 8px; left: 8px; max-width: none; width: auto; top: 60px; bottom: auto; transform: none; max-height: 50vh; }',
       '  #find-panel.results-expanded #find-results { max-height: 140px; }',
-      '  #find-tree { max-height: 120px !important; }',
+      '  #find-tree { height: 150px; }',
       '}',
     ].join('\n');
     document.head.appendChild(style);
@@ -145,7 +146,8 @@
       // §RevitParity Task 3 (W-AXIS): the toggle IS the lens — one data-gated axis row.
       // Storey/Discipline always; Room/Material/Phase pills appear only when their data is present.
       '<div id="find-outliner-bar" style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.06)"></div>',
-      '<div id="find-tree" style="max-height:200px;overflow-y:auto;scrollbar-width:thin;display:none"></div>',
+      '<div id="find-tree" style="height:180px;min-height:90px;overflow-y:auto;scrollbar-width:thin;display:none"></div>',
+      '<div id="find-tree-grip" style="display:none;height:18px;cursor:ns-resize;touch-action:none;align-items:center;justify-content:center;background:rgba(255,255,255,0.05);border-top:1px solid rgba(255,255,255,0.10)"><span style="width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,0.40);pointer-events:none"></span></div>',
       // Legacy accordion rows — hidden, kept for backward compat
       '<div class="find-acc-row" id="find-storey-row" style="display:none">',
       '  <div class="find-acc-header" id="find-storey-hdr"><span class="fa-label">All Storeys</span><span class="fa-chevron">\u25BC</span></div>',
@@ -212,6 +214,42 @@
 
     // §S280: Outliner tree — Storey/Disc toggle
     var elTree = document.getElementById('find-tree');
+    // §FIND-GRIP: explicit drag-to-resize (pointer events → mouse + touch). setProperty important so it
+    // beats the mobile media-query; persisted across sessions.
+    var elTreeGrip = document.getElementById('find-tree-grip');
+    if (elTree && elTreeGrip) {
+      var _gY = 0, _gH = 0, _gripping = false;
+      elTreeGrip.addEventListener('pointerdown', function(e) {
+        _gripping = true; _gY = e.clientY; _gH = elTree.getBoundingClientRect().height;
+        try { elTreeGrip.setPointerCapture(e.pointerId); } catch (x) {}
+        e.preventDefault();
+      });
+      elTreeGrip.addEventListener('pointermove', function(e) {
+        if (!_gripping) return;
+        var h = Math.max(90, Math.min(window.innerHeight * 0.85, _gH + (e.clientY - _gY)));
+        elTree.style.setProperty('height', h + 'px', 'important');
+        e.preventDefault();
+      });
+      var _gripEnd = function(e) {
+        if (!_gripping) return; _gripping = false;
+        try { elTreeGrip.releasePointerCapture(e.pointerId); } catch (x) {}
+        try { localStorage.setItem('findTreeH', elTree.style.height); } catch (x) {}
+        console.log('§FIND_GRIP resized h=' + elTree.style.height);
+      };
+      elTreeGrip.addEventListener('pointerup', _gripEnd);
+      elTreeGrip.addEventListener('pointercancel', _gripEnd);
+      try { var _sh = localStorage.getItem('findTreeH'); if (_sh) elTree.style.setProperty('height', _sh, 'important'); } catch (x) {}
+    }
+    // §FOCUS-ALL-DEPTHS: mark the last-clicked row at ANY level (storey/type/item) with the yellow band.
+    // Capture phase so it fires even when inner row handlers stopPropagation. Single-focus (clear others).
+    if (elTree) {
+      elTree.addEventListener('pointerup', function(e) {
+        var t = e.target, row = t && t.closest ? t.closest('.find-tree-row') : null;
+        if (!row || !elTree.contains(row)) return;
+        elTree.querySelectorAll('.find-tree-row.row-focus').forEach(function(r) { r.classList.remove('row-focus'); });
+        row.classList.add('row-focus');
+      }, true);
+    }
     var elAxisBar = document.getElementById('find-outliner-bar');
     var _treeMode = 'storey'; // 'storey' | 'disc' | 'room' | 'material' | 'phase'
     var _treeRevealed = false; // §S280d: tree hidden until mode toggle pressed
@@ -440,9 +478,9 @@
       var text = row.querySelector('span:nth-child(2)');
       if (active) {
         row.setAttribute('data-active', '1');
-        row.style.background = 'linear-gradient(180deg,rgba(79,195,247,0.2) 0%,rgba(79,195,247,0.08) 100%)';
-        row.style.borderLeftColor = '#4fc3f7';
-        if (text) text.style.color = '#4fc3f7';
+        row.style.background = 'linear-gradient(180deg,rgba(255,212,0,0.22) 0%,rgba(255,212,0,0.07) 100%)'; // §FOCUS yellow
+        row.style.borderLeftColor = '#ffd400';
+        if (text) text.style.color = '#ffd400';
       } else {
         row.removeAttribute('data-active');
         row.style.background = 'linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)';
@@ -499,7 +537,7 @@
       if (elIsoBar) elIsoBar.style.display = 'none';
       _thump();
       _renderAxes(); // re-highlight the active pill
-      if (elTree) { elTree.style.display = ''; _treeRevealed = true; }
+      if (elTree) { elTree.style.display = ''; _treeRevealed = true; var _g=document.getElementById('find-tree-grip'); if(_g) _g.style.display='flex'; }
       buildTree();
       console.log('§FIND_MODE_TOGGLE mode=' + mode);
       // §VIEWLOG: an axis change is a semantic view moment. Record it (skipped on replay/off).
@@ -759,6 +797,98 @@
     // each tap → the "panel responds late / unresponsive to touch". Cache it per activeBuilding;
     // the first drill pays the query, every subsequent tap reuses the rows.
     var _instRows = null, _instRowsBld = null;
+    // §SHELL-GHOST (user): the building's OUTER SHELL — only envelope classes (walls/slabs/roof/curtain/
+    // covering/plate, ~7% of elements) baked into ONE merged mesh, real LOD shapes, see-through 0.3,
+    // colored by real material. ONE draw. NOT the whole building (full merge = 2.3GB; envelope ≈ ~150MB).
+    // A persistent overlay (NOT in _shapeOverlays → never cleared on tap). Built deferred, after open.
+    var _mergedGhost = null, _mergedGhostBld = null, _MG_VCAP = 60000000; // vert cap, bail above
+    // Envelope = the outward-facing skin classes. Interior MEP/furniture/fittings excluded.
+    function _isEnvelope(ifc) {
+      if (!ifc) return false;
+      return /^Ifc(Wall|Slab|Roof|CurtainWall|Covering|Plate)/.test(ifc);
+    }
+    function _buildMergedGhost() {
+      if (!A.scene || typeof THREE === 'undefined' || !A.meshCache || !A.ifc2three) { console.log('[MG] §SHELL_GHOST_SKIP deps'); return null; }
+      if (_mergedGhost && _mergedGhostBld === A.activeBuilding) return _mergedGhost; // cached
+      var t0 = (performance && performance.now) ? performance.now() : 0;
+      var rows = _getInstanceRows();
+      // pass 1 — total vert/index counts over ENVELOPE rows whose geometry is streamed
+      var totV = 0, totI = 0, used = 0, miss = 0, r, geo, pa;
+      for (var i = 0; i < rows.length; i++) {
+        r = rows[i]; if (r[2] == null || !_isEnvelope(r[9])) continue;
+        geo = A.meshCache[r[1]]; if (!geo || !geo.attributes || !geo.attributes.position) { miss++; continue; }
+        pa = geo.attributes.position;
+        totV += pa.count; totI += geo.index ? geo.index.count : pa.count; used++;
+        if (totV > _MG_VCAP) { console.log('[MG] §MERGE_GHOST_CAP verts>' + _MG_VCAP + ' at el=' + used); return null; }
+      }
+      if (!used) { console.log('[MG] §MERGE_GHOST_EMPTY rows=' + rows.length + ' miss=' + miss); return null; }
+      var outP = new Float32Array(totV * 3), outC = new Float32Array(totV * 3), outI = new Uint32Array(totI);
+      // §MERGE-GHOST COLOR (user: "Bonsai x-ray is bland"): bake each element's REAL colour as a vertex
+      // attribute → a COLORED glass building, not a flat wash. Pulled from the SAME A._getMaterial the
+      // solid view uses (exact parity), cached per rgba|ifc so we build each unique material once.
+      var _colCache = {};
+      function _colFor(rgba, ifc) {
+        var key = (rgba || '_') + '|' + (ifc || '_'), c = _colCache[key];
+        if (c) return c;
+        var col = null;
+        try { var m = A._getMaterial ? A._getMaterial(rgba, ifc) : null; if (m && m.color) col = [m.color.r, m.color.g, m.color.b]; } catch (e) {}
+        if (!col) col = [0.62, 0.78, 0.91];   // neutral glass-blue fallback when no material
+        _colCache[key] = col; return col;
+      }
+      var m4 = new THREE.Matrix4(), eu = new THREE.Euler(), q = new THREE.Quaternion(),
+          pos = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1), vbase = 0, ip = 0, pp = 0, cp = 0;
+      for (var k = 0; k < rows.length; k++) {
+        r = rows[k]; if (r[2] == null || !_isEnvelope(r[9])) continue;
+        geo = A.meshCache[r[1]]; if (!geo || !geo.attributes || !geo.attributes.position) continue;
+        pa = geo.attributes.position;
+        var p = A.ifc2three(r[2], r[3], r[4]); pos.set(p.x, p.y, p.z);
+        eu.set(r[5] || 0, r[7] || 0, -(r[6] || 0)); q.setFromEuler(eu); m4.compose(pos, q, sc);
+        var e = m4.elements, e0 = e[0], e1 = e[1], e2 = e[2], e4 = e[4], e5 = e[5], e6 = e[6],
+            e8 = e[8], e9 = e[9], e10 = e[10], e12 = e[12], e13 = e[13], e14 = e[14];
+        var arr = pa.array, vc = pa.count, col = _colFor(r[8], r[9]), cr = col[0], cg = col[1], cb = col[2];
+        for (var v = 0; v < vc; v++) {
+          var x = arr[v * 3], y = arr[v * 3 + 1], z = arr[v * 3 + 2];
+          outP[pp++] = e0 * x + e4 * y + e8 * z + e12;
+          outP[pp++] = e1 * x + e5 * y + e9 * z + e13;
+          outP[pp++] = e2 * x + e6 * y + e10 * z + e14;
+          outC[cp++] = cr; outC[cp++] = cg; outC[cp++] = cb;
+        }
+        if (geo.index) { var gi = geo.index.array, ic = geo.index.count; for (var j = 0; j < ic; j++) outI[ip++] = gi[j] + vbase; }
+        else { for (var j2 = 0; j2 < vc; j2++) outI[ip++] = j2 + vbase; }
+        vbase += vc;
+      }
+      var mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.BufferAttribute(outP, 3));
+      mg.setAttribute('color', new THREE.BufferAttribute(outC, 3));
+      mg.setIndex(new THREE.BufferAttribute(outI, 1));
+      var mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.2,
+        depthWrite: false, side: THREE.DoubleSide });
+      var mesh = new THREE.Mesh(mg, mat);
+      mesh.frustumCulled = false; mesh.renderOrder = -1; // draw before overlays
+      mesh.userData._mergedGhost = true;
+      A.scene.add(mesh);
+      _mergedGhost = mesh; _mergedGhostBld = A.activeBuilding;
+      var ms = ((performance && performance.now) ? performance.now() : 0) - t0;
+      var heap = (performance && performance.memory) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) : '?';
+      console.log('[MG] §SHELL_GHOST_BUILT bld=' + A.activeBuilding + ' envelope_elements=' + used + ' miss=' + miss +
+        ' verts=' + totV + ' tris=' + (totI / 3) + ' build_ms=' + ms.toFixed(0) + ' heapMB=' + heap);
+      if (A.markDirty) A.markDirty();
+      return mesh;
+    }
+    function toggleMergedGhost() {
+      // Alt+X ghost x-ray: build once, then KEEP it cached (envelope shell ≈ ~3MB — not costly RAM) and
+      // just flip visibility. Shell-mode drills key off (_mergedGhost && .visible).
+      if (_mergedGhost && _mergedGhostBld === A.activeBuilding) {
+        _mergedGhost.visible = !_mergedGhost.visible;
+        if (!_mergedGhost.visible && A.filterByGuids) A.filterByGuids(null); // ghost off → restore base
+        console.log('[MG] §GHOST_XRAY visible=' + _mergedGhost.visible);
+        if (A.markDirty) A.markDirty();
+        return _mergedGhost.visible;
+      }
+      return !!_buildMergedGhost();
+    }
+    window._mergeGhost = toggleMergedGhost;
+    window.toggleGhostXray = toggleMergedGhost; // Alt+X — ghost x-ray (cached, cheap)
     function _getInstanceRows() {
       if (_instRows && _instRowsBld === A.activeBuilding) return _instRows;
       try {
@@ -1620,6 +1750,7 @@
       opts = opts || {};
       var row = document.createElement('div');
       var isParent = level === 0;
+      row.className = 'find-tree-row';
       row.style.cssText = 'padding:' + (isParent ? '7px 10px' : '4px 10px 4px ' + (22 + level * 12) + 'px') +
         ';cursor:pointer;font-size:' + (isParent ? '12px' : '11px') +
         ';color:' + (isParent ? '#ddd' : '#aaa') +
@@ -1971,7 +2102,7 @@
       // §S281: Defer item queries — only build tree (fast GROUP BY) on open.
       _renderAxes(); // §RULE1: single axis toggle (cycles storey→disc→room→material→phase)
       // §RULE1: with one toggle, the CURRENT axis tree is shown immediately (no hide-until-tap).
-      if (elTree) { elTree.style.display = ''; _treeRevealed = true; }
+      if (elTree) { elTree.style.display = ''; _treeRevealed = true; var _g=document.getElementById('find-tree-grip'); if(_g) _g.style.display='flex'; }
       buildTree();
       buildChips();
       if (searchTerm) { _handleInput(searchTerm, true); }
@@ -2009,20 +2140,8 @@
     }
     A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
     elClose.onclick = closeFindPanel;
-    // §S275: Tap (not drag) outside find panel to close
-    var _findPointerDown = { x: 0, y: 0 };
-    document.addEventListener('pointerdown', function(e) {
-      _findPointerDown.x = e.clientX; _findPointerDown.y = e.clientY;
-    });
-    document.addEventListener('pointerup', function(e) {
-      if (panel.style.display === 'none') return;
-      if (panel.contains(e.target)) return;
-      if (e.target.closest && e.target.closest('[title="Find"]')) return;
-      // Only close on tap — ignore drags (orbit/pan)
-      var dx = e.clientX - _findPointerDown.x, dy = e.clientY - _findPointerDown.y;
-      if (Math.sqrt(dx * dx + dy * dy) > 10) return;
-      closeFindPanel();
-    });
+    // §S275 (user): tap OUTSIDE the Find panel must NOT close it — only Esc or the × button do.
+    // The outside-tap-to-close handler was removed; the panel stays put while you click the model.
 
     // ── Populate dropdowns — show all types/storeys, with match counts when searching ──
     // §S280: Two-phase dropdowns — storeys appear instantly, types load in background
@@ -2722,5 +2841,25 @@
     console.log('[S233] §NAV_FIND_MODULE_LOADED panel=' + !!document.getElementById('find-panel'));
   }
 
+  console.log('§NAV_FIND_VERSION vDEPLOY1 — ghost-xray + yellow-band + grip + no-outside-close');
   window.NavigateFind = { init: init };
+  // §MERGE-GHOST auto-trigger: open viewer with #...ghost → build the merged glass shell with no taps.
+  // Loads the lens module (so _mergeGhost exists) once geometry is streamed, then builds once.
+  // NOTE: read location.SEARCH (query) — the viewer rewrites location.hash with live camera coords,
+  // which wipes a #ghost flag before geometry streams. The query string survives. (hash kept as fallback.)
+  if (typeof window !== 'undefined' && location && /ghost/.test(location.search + location.hash)) {
+    var _mgTries = 0, _mgPoll = setInterval(function () {
+      _mgTries++;
+      var A = window.APP || window.A;
+      if (!A) { if (_mgTries > 200) clearInterval(_mgPoll); return; }
+      var ready = A.meshCache && Object.keys(A.meshCache).length > 20;
+      if (!ready) { if (_mgTries > 200) clearInterval(_mgPoll); return; }
+      if (typeof window._mergeGhost !== 'function') { if (A.loadNavigate) A.loadNavigate(); return; }
+      clearInterval(_mgPoll);
+      console.log('[MG] §SHELL_GHOST_AUTO meshCacheKeys=' + Object.keys(A.meshCache).length + ' (deferred build)');
+      // build AFTER the panel is interactive — never block open
+      var _go = function () { window._mergeGhost(); };
+      if (window.requestIdleCallback) requestIdleCallback(_go, { timeout: 2000 }); else setTimeout(_go, 600);
+    }, 400);
+  }
 })();
