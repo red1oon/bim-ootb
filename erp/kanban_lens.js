@@ -37,6 +37,24 @@
 (function () {
   'use strict';
 
+  // ── "Odoo-marvel" card optics (KANBAN_MARVEL_SPEC) — ALL deterministic, NON-INVENT ──────────────
+  // Colour scheme = lifecycle status. The card's left rail + status chip read at a glance; a legal
+  // drag re-colours the card to its destination state. Unknown status → neutral (never faked).
+  var STATUS_COLORS = { DR: '#f5a623', IP: '#4a90e2', IN: '#4a90e2', CO: '#27c08a',
+                        CL: '#8a94a6', VO: '#aab2bd', RE: '#e5604d' };
+  function statusColor(s) { return STATUS_COLORS[s] || '#6c7a89'; }
+  // deterministic colour from a table name (each absorbed model gets its own stable brand chip) — no Math.random
+  function tableColor(t) {
+    var h = 0, i; for (i = 0; i < (t || '').length; i++) { h = (h * 31 + t.charCodeAt(i)) >>> 0; }
+    return 'hsl(' + (h % 360) + ',42%,46%)';
+  }
+  // 2-char monogram from a doc table: drop the AD prefix (C_Order→Order→OR), else first 2 alnum.
+  function monogram(t) {
+    var base = String(t || '').replace(/^[A-Za-z]+_/, '') || String(t || '');
+    var alnum = base.replace(/[^A-Za-z0-9]/g, '');
+    return (alnum.slice(0, 2) || '··').toUpperCase();
+  }
+
   // ── (a) PURE view-model builder ──────────────────────────────────────────────
   // folds: [{ table, doc_status, count, ids? }]  — the status-grouped fold of REAL docs.
   //        (a row per (table,doc_status); `ids` optional = the actual record keys for that cell.)
@@ -179,6 +197,7 @@
     }
 
     var colEls = {};   // status -> { body, cardEls:{key:el} }
+    var _recolorOnMove = null;   // set by the card loop → _moveCardDom recolours a card to its new status
     board.columns.forEach(function (col) {
       var colEl = document.createElement('div');
       colEl.className = 'kanban-col';
@@ -206,14 +225,50 @@
       wrap.appendChild(colEl);
     });
 
+    // marvel optics: per-card meta {title,amount,date} (real values, host-supplied via opts.meta) drives
+    // the avatar+title+meta layout; status drives the colour. Absent meta → the plain id chip (fallback).
+    var meta = opts.meta || {};
+    var _avatars = 0, _statusColors = 0, _enriched = 0;
+    function _applyStatusColor(cardEl, status) {              // left rail + chip recolour (also on drag-move)
+      var c = statusColor(status);
+      cardEl.style.borderLeft = '3px solid ' + c;
+      var chip = cardEl.querySelector('.kanban-chip'); if (chip) { chip.style.background = c; chip.textContent = status; }
+    }
     board.cards.forEach(function (card) {
+      var m = meta[card.key];
       var cardEl = document.createElement('div');
       cardEl.className = 'kanban-card';
       cardEl.draggable = true;
       cardEl.dataset.key = card.key;
-      cardEl.style.cssText = 'background:rgba(108,159,255,0.14);border:1px solid rgba(108,159,255,0.3);' +
-        'border-radius:6px;padding:6px 8px;font-size:12px;color:#e8e8ed;cursor:grab;';
-      cardEl.textContent = card.table + (card.id != null ? ' #' + card.id : ' (id absent)');
+      cardEl.style.cssText = 'background:rgba(108,159,255,0.10);border:1px solid rgba(108,159,255,0.22);' +
+        'border-radius:7px;padding:7px 9px;font-size:12px;color:#e8e8ed;cursor:grab;display:flex;gap:8px;align-items:flex-start;';
+      if (m) {
+        _enriched++;
+        // avatar — doctype monogram, deterministic table colour (each absorbed model = its own brand chip)
+        var av = document.createElement('div'); av.className = 'kanban-avatar';
+        av.style.cssText = 'flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;' +
+          'justify-content:center;font-size:10px;font-weight:700;color:#fff;background:' + tableColor(card.table) + ';';
+        av.textContent = monogram(card.table); cardEl.appendChild(av); _avatars++;
+        var col = document.createElement('div'); col.style.cssText = 'flex:1 1 auto;min-width:0;';
+        // title (real DocumentNo/Name/key) + status chip
+        var top = document.createElement('div'); top.style.cssText = 'display:flex;justify-content:space-between;gap:6px;align-items:center;';
+        var ttl = document.createElement('span'); ttl.style.cssText = 'font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        ttl.textContent = (m.title != null && m.title !== '') ? String(m.title) : (card.table + ' #' + card.id);
+        var chip = document.createElement('span'); chip.className = 'kanban-chip';
+        chip.style.cssText = 'flex:0 0 auto;font-size:9px;font-weight:700;padding:1px 6px;border-radius:9px;color:#0e141f;';
+        top.appendChild(ttl); top.appendChild(chip); col.appendChild(top);
+        // meta line — amount + date, ONLY when the real column existed (NON-INVENT)
+        var bits = [];
+        if (m.amount != null && m.amount !== '') bits.push(String(m.amount));
+        if (m.date != null && m.date !== '') bits.push(String(m.date));
+        if (bits.length) { var sub = document.createElement('div');
+          sub.style.cssText = 'font-size:11px;color:#9aa6b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+          sub.textContent = bits.join('  ·  '); col.appendChild(sub); }
+        cardEl.appendChild(col);
+        _applyStatusColor(cardEl, card.status); _statusColors++;
+      } else {
+        cardEl.textContent = card.table + (card.id != null ? ' #' + card.id : ' (id absent)');
+      }
       cardEl.addEventListener('dragstart', function (e) {
         e.dataTransfer.setData('text/plain', card.key);
         e.dataTransfer.effectAllowed = 'move';
@@ -221,6 +276,8 @@
       var dst = colEls[card.status];
       if (dst) { dst.body.appendChild(cardEl); dst.cardEls[card.key] = cardEl; }
     });
+    if (_enriched) console.log('§KANBAN-CARD-RENDER enriched=' + _enriched + ' avatars=' + _avatars + ' statusColors=' + _statusColors + ' handAuthored=0');
+    _recolorOnMove = _applyStatusColor;   // let _moveCardDom recolour the card to its new lifecycle state
 
     root.appendChild(wrap);
 
@@ -260,6 +317,7 @@
       toCol.body.appendChild(el);
       toCol.cardEls[cardKey] = el;
       if (card) card.status = toStatus;   // keep the model in step with the confirmed engine write
+      if (_recolorOnMove) _recolorOnMove(el, toStatus);   // marvel: card re-colours to its new lifecycle state
     }
 
     console.log('§KANBAN-CHROME mounted columns=' + board.columns.length + ' cards=' + board.cards.length);
@@ -271,7 +329,9 @@
     buildBoard: buildBoard,
     resolveDrag: resolveDrag,
     dragIntent: dragIntent,
-    mount: mount
+    mount: mount,
+    // shared status colour language — Graph + Kanban use ONE palette for consistent L&F (KANBAN_MARVEL_SPEC)
+    statusColor: statusColor, statusColors: STATUS_COLORS, tableColor: tableColor, monogram: monogram
   };
   if (typeof window !== 'undefined') window.KanbanLens = KanbanLens;
   if (typeof module !== 'undefined' && module.exports) module.exports = KanbanLens;
