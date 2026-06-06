@@ -152,6 +152,21 @@
       undoable: true, label: label,
       replay: params || {}
     });
+    // §HSF-8: mirror DOC-class milestones to the app-wide shared log so the LANDING's history line
+    // (a different tab) shows viewer-opened buildings too. Cross-tab via localStorage + broadcast.
+    if (opType === 'BUILDING_OPEN') _mirrorDocHistory(opType, (params && params.name) || 'building');
+  }
+
+  // Append one doc-event to the shared bim.docHistory log (read by the landing's history line).
+  function _mirrorDocHistory(type, label) {
+    try {
+      var KEY = 'bim.docHistory';
+      var arr = JSON.parse(localStorage.getItem(KEY) || '[]');
+      arr.push({ ts: _now(), source: 'viewer', type: type, label: label });
+      if (arr.length > 50) arr = arr.slice(-50);
+      localStorage.setItem(KEY, JSON.stringify(arr));
+      try { new BroadcastChannel('bim_history').postMessage('sync'); } catch (e) {}
+    } catch (e) {}
   }
 
   // Humanise an IFC class for a label: "IfcDoor" → "door", "IfcFlowTerminal" → "flow terminal".
