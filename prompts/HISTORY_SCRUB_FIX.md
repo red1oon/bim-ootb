@@ -147,6 +147,43 @@ icon switches; `significant()` reads the active one. Persist the choice (localSt
   moved) · `ELEMENT_PLACE` · design SAVE/OPEN · 4D capture · clash-snag created. DROP: ELEMENT_PICK, axis/
   group/item, menu touches. (Tune the table by feel — that's the whole point of the centralised gate.)
 
+### 6b. EVENT CLASSIFICATION — the CANONICAL list (BOTH sessions classify HERE — do not invent your own)
+☠ READ THIS BEFORE adding any `History.push`. There are exactly TWO buckets. Do NOT add a third, do NOT
+re-decide per feature, do NOT push anything not on these lists without adding it here first. This is the
+single source of truth the depth toggle (§6) and the cross-tab bridge (§CONTRACT) both read.
+
+**THE ONE DECISION RULE (use this for anything not explicitly listed):**
+> Does it change the CONTEXT (what you're looking at / which page) OR change DATA? → **MAIN.**
+> Is it navigation WITHIN the current context that changes nothing? → **ALL.**
+> Is it a hover / scroll / expand / camera nudge / idle redraw? → **IGNORE (record nothing).**
+
+**MAIN / DOC events (coarse; GREEN mode; these CROSS TABS):** context switches + data mutations + milestones.
+- ANY app: **tab / page / mode change** (switching tab, panel takeover, 2D↔3D, opening another app/page). ← user: a tab change IS a main event.
+- VIEWER: `BUILDING_OPEN`, IFC import, **axis / lens / view-mode switch** (the viewer's "tab change" analog),
+  `GRID_MOVE` (grid line moved), `ELEMENT_PLACE`, design SAVE/OPEN, 4D capture, clash-snag created.
+- ERP: tab/window change, doc/line moved, order/SO/PO completed, **signed rule edit**, posting committed,
+  document status change, payment/allocation. (The user's "only happens in Red Pill/ERP" events.)
+
+**ALL events (fine-grained; BLUE mode only; STAY LOCAL to the tab — never cross tabs):** breadcrumbs of what
+you did *inside* one context, for replay.
+- VIEWER: `ELEMENT_PICK` (tap an element), group select (a specific storey/disc/room/material), item drill,
+  Find search/filter applied.
+- ERP: a specific record opened, list row navigation, search/filter applied within a tab.
+
+**IGNORE (record NOTHING — neither bucket):** hover, scroll, row expand/collapse, camera micro-nudges,
+idle/awake re-renders, focus changes, transient toasts.
+
+**☠ CROSS-TAB RULE (this is the "how does it manage across tabs" answer):**
+- **MAIN events** → written to the SHARED log `bim.history.v1` + a `BroadcastChannel('bim_history')` ping →
+  appear on EVERY tab's line (the app-wide trail). MAIN is the ONLY thing that crosses tabs.
+- **ALL events** → stay in the tab's OWN local history; NOT broadcast (else tab B re-renders on tab A's every
+  tap = flood). So the depth toggle doubles as the cross-tab filter: GREEN = the shared MAIN trail (identical
+  on every tab); BLUE = this tab's local ALL detail merged with the shared MAIN trail.
+- Net per tab = [this tab's fine detail] + [the app-wide MAIN trail from all tabs]. Restore stays owner-local
+  (§CONTRACT §3): clicking a MAIN step from another app deep-links to that app's tab, never restores in place.
+- **If unsure where something goes: apply THE ONE DECISION RULE above. Do NOT guess, do NOT add a new bucket,
+  do NOT silently push un-listed events — add the event to this section first, then push it.**
+
 ### 7. Record "building opened" (the one NEW event to add now)
 Building launch today = `A.streamBuilding(name)` (`city.js:622`); SESSION_START exists but no open event.
 Add a `BUILDING_OPEN` significant event (commit a kernel op OR push a view-style entry) when a building
