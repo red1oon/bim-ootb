@@ -139,6 +139,12 @@ window.addEventListener('error', function(e){
     white-space: nowrap; flex-shrink: 0;
   }
   .tabs-panel .tab-item:hover { background: rgba(79,195,247,0.3); }
+  /* §HSF-8: landing doc-history line — app-wide opens (landing + viewer) via shared localStorage */
+  .tabs-panel .doc-hist-chip {
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+    background: rgba(255,212,121,0.12); border: 1px solid rgba(255,212,121,0.3);
+    border-radius: 14px; color: #ffd479; font-size: 11px; white-space: nowrap; flex-shrink: 0;
+  }
 
   /* Section headers */
   .section-header {
@@ -312,8 +318,15 @@ window.addEventListener('error', function(e){
 </div>
 
 <div class="tabs-panel" id="tabs-panel">
-  <div class="tab-label" data-trl="landing_open_tabs">Open Tabs</div>
-  <div class="tab-list" id="tab-list"></div>
+  <!-- §HSF-8: app-wide history line (landing opens + viewer building-opens, shared via localStorage) -->
+  <div id="doc-history-row" style="display:none; margin-bottom:8px;">
+    <div class="tab-label" data-trl="landing_history">History</div>
+    <div class="tab-list" id="doc-history-line"></div>
+  </div>
+  <div id="open-tabs-row" style="display:none;">
+    <div class="tab-label" data-trl="landing_open_tabs">Open Tabs</div>
+    <div class="tab-list" id="tab-list"></div>
+  </div>
 </div>
 
 <script src="viewer/import_db_builder.js?v=4"></script>
@@ -350,23 +363,76 @@ function trackTab(name, type, win) {
 }
 
 function renderTabs() {
-  const panel = document.getElementById('tabs-panel');
   const list = document.getElementById('tab-list');
+  const row = document.getElementById('open-tabs-row');
   // Clean closed tabs
   for (const [key, tab] of Object.entries(openTabs)) {
     if (tab.win && tab.win.closed) delete openTabs[key];
   }
   const entries = Object.values(openTabs);
-  if (entries.length === 0) { panel.style.display = 'none'; return; }
-  panel.style.display = 'block';
-  list.innerHTML = entries.map(tab => {
+  if (row) row.style.display = entries.length ? '' : 'none';
+  if (list) list.innerHTML = entries.map(tab => {
     const label = tab.type === '3D' ? tab.name : `${tab.name} ${tab.type}`;
     const focusCall = tab.win ? `openTabs['${tab.name}_${tab.type}'].win.focus()` : '';
     return `<div class="tab-item" onclick="${focusCall}">${label}</div>`;
   }).join('');
+  _syncTabsPanel();
 }
 // Poll for closed tabs
 setInterval(renderTabs, 3000);
+
+// ── §HSF-8: app-wide doc-history line ─────────────────────────────────────
+// ONE shared append-only localStorage log (bim.docHistory) that BOTH the landing AND the viewer
+// write doc-events to; the landing renders the UNION. Cross-tab live-sync via BroadcastChannel
+// ('bim_history') + the storage event — zero server, works on GitHub Pages. (The richer shared
+// bar / bim.history.v1 cross-app contract is a separate, later piece — this is the §8 bridge.)
+const DOC_HIST_KEY = 'bim.docHistory';
+function _docHist() { try { return JSON.parse(localStorage.getItem(DOC_HIST_KEY) || '[]'); } catch (e) { return []; } }
+function docHistAppend(type, label) {
+  try {
+    var arr = _docHist();
+    arr.push({ ts: Date.now(), source: 'landing', type: type, label: label });
+    if (arr.length > 50) arr = arr.slice(-50);
+    localStorage.setItem(DOC_HIST_KEY, JSON.stringify(arr));
+    try { new BroadcastChannel('bim_history').postMessage('sync'); } catch (e) {}
+    renderDocHistory();
+  } catch (e) {}
+}
+function _docEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+function _docIconSvg(type) {
+  var p = {
+    BUILDING_OPEN: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    CITY_LAUNCH:   '<path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/>',
+    IFC_IMPORT:    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>'
+  }[type] || '<rect x="4" y="4" width="16" height="16" rx="2"/>';
+  return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto">' + p + '</svg>';
+}
+function renderDocHistory() {
+  var row = document.getElementById('doc-history-row');
+  var line = document.getElementById('doc-history-line');
+  if (!row || !line) return;
+  var arr = _docHist();
+  if (!arr.length) { row.style.display = 'none'; _syncTabsPanel(); return; }
+  row.style.display = '';
+  line.innerHTML = arr.slice(-20).map(function (e) {
+    var label = e.label || e.type;
+    var short = label.length > 20 ? label.slice(0, 18) + '…' : label;
+    return '<span class="doc-hist-chip" title="' + _docEsc((e.source || '') + ' · ' + label) + '">' +
+      _docIconSvg(e.type) + '<span>' + _docEsc(short) + '</span></span>';
+  }).join('');
+  _syncTabsPanel();
+}
+function _syncTabsPanel() {
+  var panel = document.getElementById('tabs-panel');
+  if (!panel) return;
+  var hasTabs = Object.keys(openTabs).length > 0;
+  var hasHist = _docHist().length > 0;
+  panel.style.display = (hasTabs || hasHist) ? 'block' : 'none';
+}
+// Cross-tab live sync: a viewer tab writing BUILDING_OPEN pings here; re-render the union.
+try { var _docBC = new BroadcastChannel('bim_history'); _docBC.onmessage = function () { renderDocHistory(); }; } catch (e) {}
+window.addEventListener('storage', function (e) { if (e.key === DOC_HIST_KEY) renderDocHistory(); });
+renderDocHistory();
 
 // All per-building DBs — single DB per building (S242), no separate library
 const BUILDINGS = {
@@ -425,6 +491,7 @@ function openViewer(archName, repBuilding) {
   // window.open returns null if popup is blocked (some mobile browsers)
   if (!win) { location.href = url; return; }
   trackTab(archName, '3D', win);
+  docHistAppend('BUILDING_OPEN', archName); // §HSF-8: landing records the open
   const isNew = !viewedBuildings.has(archName);
   viewedBuildings.add(archName);
   saveViewed();
@@ -501,6 +568,7 @@ function launchCity() {
   const url = viewerUrl + `?city=${bldBase}city_index_v2.db&bldbase=${bldBase}`;
   const win = window.open(url, 'bim_city_1M');
   trackTab('City 1M', '3D', win);
+  docHistAppend('CITY_LAUNCH', 'City 1M'); // §HSF-8
 }
 
 // ── Ensure _TRL is always defined (locale_loader.js may not have run yet) ──

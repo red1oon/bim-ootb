@@ -1124,6 +1124,9 @@ function setupPanels(A) {
       // ── JSON registry hub: open ANY registered project JSON in the same editor ──
       _buildJsonHub(content);
 
+      // ── §9 Cache Info: per-store size + clear (history-clear keeps the signed kernel) ──
+      content.appendChild(_buildSection('Cache Info', false, _cacheInfoBody));
+
       // ── Reset button (Pill Icons defaults) ──
       var resetBtn = document.createElement('button');
       resetBtn.textContent = 'Reset Pill Icons';
@@ -1166,6 +1169,94 @@ function setupPanels(A) {
     // wire pointerup, not click — a synthetic btn.click() never fired this). Idiomatic
     // window export like _revealChip / toggleDocPill.
     window._openSettingsPanel = _openSettingsPanel;
+
+    // §9 Cache Info — three deliberately-separate storage tiers (HISTORY_SCRUB_FIX §9):
+    //   kernel log (signed, tiny, KEPT) · history view cache (derived, safe to clear, rebuildable)
+    //   · imported building DBs (IndexedDB) · offline app cache (SW). Each row shows a size + Clear.
+    //   ☠ Clearing the history view cache MUST NOT touch kernel_ops — we verifyChain after to prove it.
+    function _fmtBytes(b) {
+      if (b == null || isNaN(b)) return '—';
+      if (b < 1024) return b + ' B';
+      if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+      return (b / 1048576).toFixed(1) + ' MB';
+    }
+    function _lsBytes() {
+      var n = 0, b = 0;
+      try { for (var k in localStorage) { if (!Object.prototype.hasOwnProperty.call(localStorage, k)) continue; n++; b += k.length + (localStorage.getItem(k) || '').length; } } catch (e) {}
+      return { n: n, b: b };
+    }
+    function _idbInfo() {
+      if (!window.indexedDB || !indexedDB.databases) return Promise.resolve('n/a');
+      return indexedDB.databases().then(function (dbs) { return (dbs ? dbs.length : 0) + ' DB(s)'; }).catch(function () { return '—'; });
+    }
+    function _estimate() {
+      if (!navigator.storage || !navigator.storage.estimate) return Promise.resolve(null);
+      return navigator.storage.estimate().then(function (e) { return e.usage || 0; }).catch(function () { return null; });
+    }
+    function _swCacheInfo() {
+      if (!window.caches) return Promise.resolve('n/a');
+      return caches.keys().then(function (keys) { return keys.length + ' cache(s)'; }).catch(function () { return '—'; });
+    }
+    function _clearSwCaches() {
+      if (!window.caches) return Promise.resolve();
+      return caches.keys().then(function (keys) { return Promise.all(keys.map(function (k) { return caches.delete(k); })); })
+        .then(function () { console.log('§CACHE_CLEAR sw caches purged'); });
+    }
+    function _clearImportedDbs() {
+      if (!window.indexedDB || !indexedDB.databases) return Promise.resolve();
+      return indexedDB.databases().then(function (dbs) {
+        return Promise.all((dbs || []).map(function (d) { return new Promise(function (res) { try { var r = indexedDB.deleteDatabase(d.name); r.onsuccess = r.onerror = r.onblocked = function () { res(); }; } catch (e) { res(); } }); }));
+      }).then(function () { console.log('§CACHE_CLEAR imported IndexedDB purged'); });
+    }
+    // Proof: clearing the history view cache leaves the signed kernel chain intact.
+    function _verifyKernelAfterHistClear() {
+      if (!A.db || !window.KernelOps || !KernelOps.verifyChain) return;
+      KernelOps.verifyChain(A.db).then(function (res) {
+        console.log('§CACHE_CLEAR_CHAIN_OK history-cleared kernel ok=' + (res && res.ok) + ' len=' + (res ? res.len : '?'));
+      }).catch(function (e) { console.warn('§CACHE_CLEAR_CHAIN_ERR ' + (e && e.message)); });
+    }
+    function _cacheInfoBody() {
+      var box = document.createElement('div');
+      box.style.cssText = 'padding:6px 14px 14px;font-size:12px;color:#bbb;';
+      var note = document.createElement('div');
+      note.style.cssText = 'color:#888;font-size:11px;margin-bottom:8px;line-height:1.4;';
+      note.textContent = 'Browser storage used by BIM OOTB. Clearing the history view cache or SW/imported caches is safe — the signed kernel log is kept.';
+      box.appendChild(note);
+      var rows = [];
+      function addRow(label, sizeFn, clearFn, danger) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);';
+        var l = document.createElement('span'); l.textContent = label; l.style.cssText = 'flex:1;color:#cfe;';
+        var sz = document.createElement('span'); sz.textContent = '…'; sz.style.cssText = 'color:#8ab4ff;min-width:64px;text-align:right;';
+        row.appendChild(l); row.appendChild(sz);
+        if (clearFn) {
+          var btn = document.createElement('button');
+          btn.textContent = 'Clear';
+          btn.style.cssText = 'padding:3px 10px;border:1px solid rgba(255,138,101,' + (danger ? '0.5' : '0.25') + ');border-radius:6px;background:transparent;color:' + (danger ? '#ff8a65' : '#6c9fff') + ';font-size:11px;cursor:pointer;';
+          btn.addEventListener('pointerup', function (e) { e.stopPropagation(); Promise.resolve(clearFn()).then(refresh); });
+          row.appendChild(btn);
+        }
+        box.appendChild(row);
+        rows.push({ set: function (v) { sz.textContent = v; }, fn: sizeFn });
+        return row;
+      }
+      addRow('Kernel log (signed)', function () { try { var r = A.db && A.db.exec('SELECT COUNT(*) FROM kernel_ops'); return (r && r.length ? r[0].values[0][0] : 0) + ' ops'; } catch (e) { return '—'; } }, null);
+      addRow('History view cache', function () { return (window.UniversalHistory ? UniversalHistory.list().length : 0) + ' steps'; },
+        function () { if (window.UniversalHistory) UniversalHistory.clear(); _verifyKernelAfterHistClear(); });
+      addRow('Settings (localStorage)', function () { var x = _lsBytes(); return x.n + ' keys · ' + _fmtBytes(x.b); }, null);
+      addRow('Imported buildings (IndexedDB)', _idbInfo, _clearImportedDbs, true);
+      addRow('Offline app cache (SW)', _swCacheInfo, _clearSwCaches, true);
+      var foot = document.createElement('div');
+      foot.style.cssText = 'color:#777;font-size:11px;margin-top:8px;';
+      box.appendChild(foot);
+      function refresh() {
+        rows.forEach(function (r) { try { Promise.resolve(r.fn()).then(function (v) { r.set(v); }); } catch (e) { r.set('—'); } });
+        _estimate().then(function (u) { foot.textContent = u != null ? ('Total origin storage ≈ ' + _fmtBytes(u)) : ''; });
+      }
+      refresh();
+      console.log('§CACHE_INFO panel built rows=' + rows.length);
+      return box;
+    }
 
     // §S282: Accordion section — ERP .acc pattern (chevron, expand/collapse)
     function _buildSection(title, startOpen, buildContent) {
