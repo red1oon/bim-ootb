@@ -261,7 +261,10 @@
     // only the ⋯ trigger collapses it). erp.html/BIM keep the default (no opts.persistent) — behaviour unchanged.
     if (!_persistent) {
       document.addEventListener('pointerdown', function(e) {
-        if (_pillOpen && !pill.contains(e.target) && e.target !== trigger) _close();
+        // PILL_REOPEN_FIX: use trigger.contains() — a tap on the ⋯ trigger lands on its inner <svg>/<circle>,
+        // so `e.target !== trigger` mis-classified the trigger's own tap as "outside" and _close()d the pill
+        // on pointerdown; _toggle() (pointerup) then re-opened it, so it never stayed collapsed (never re-folded).
+        if (_pillOpen && !pill.contains(e.target) && !trigger.contains(e.target)) _close();
       });
     }
 

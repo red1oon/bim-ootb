@@ -159,3 +159,20 @@ Why this chrome work matters — the project's headline thesis, with real number
   it is NOT a re-implementation of the full transactional server. Removable bloat = the generic AD-interpretation engine
   (re-expressible leanly because the AD is self-describing) + the entire server/JVM/DB/build stack. Irreducible = each
   transactional verb/process, which must be FOLDED deterministically (the migration-solvent thesis). See [[feedback_erp_perf_claims]].
+
+## ▶ BUGFIX — PILL_REOPEN_FIX (2026-06-07, branch fix/pill-reopen)
+**Issue (user, verbatim):** "the mobile version ... that pill when folded after clicking the three dots, failed to
+open back on reclicking." The ⋯-collapsed pill never stayed folded / never re-opened on a re-tap.
+**Root cause (whitebox-proven):** `pill_builder.js` outside-tap close guard used `e.target !== trigger`. A real tap
+on the ⋯ trigger lands on its inner `<svg>`/`<circle>`, so the trigger's OWN tap was mis-classified as an
+"outside" tap → `_close()` fired on `pointerdown`, then `_toggle()` re-opened it on `pointerup`. Net: the pill
+flickered shut-then-open within ONE tap and never folded. (Instrument probe: `svgEqTrigger=false`;
+`after pd2 disp=none` → `after pu2 disp=block`.) The persistent iDempiere dock dodged it only because the
+non-persistent close handler is skipped (`opts.persistent`) — the defect lives in the SHARED close guard, so
+erp.html's right-edge bar was the broken surface.
+**Fix (1 line):** `e.target !== trigger` → `!trigger.contains(e.target)` (treat taps on the trigger's descendants
+as trigger taps). Surgical; no behaviour change for legitimate outside taps.
+**Witness (`erp/tests/poc_pill_reopen.js`, mobile 390×844 + touch, both PillBuilder surfaces):**
+- BUGGY: `§PILL-REOPEN surface=erp.html collapse=N reopen=Y (... collapsedDisplay=block ...) trail=open=true->true->true->true` → `§PILL-REOPEN-RESULT FAIL`
+- FIXED: `§PILL-REOPEN surface=erp.html collapse=Y reopen=Y (... trail=open=true->false->true)` and `surface=idempiere.html collapse=Y reopen=Y` → `§PILL-REOPEN-RESULT PASS erp.html=Y idempiere.html=Y pageErrors=0`
+- Regression: existing `erp/tests/poc_idmp_pills.js` still `§A-RESULT PASS` (`§A-WITNESS-4 afterToggle1=none afterToggle2=block`).
