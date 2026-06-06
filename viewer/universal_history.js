@@ -39,32 +39,52 @@
   //   camera micro-nudges never reach us (navigate_find only calls pushView for these three),
   //   but the gate still names them so curation lives in one place.
   var UNDOABLE_OPS = { 'GRID_MOVE': true, 'ELEMENT_PLACE': true }; // back-compat export
-  var SIGNIFICANCE = {
-    // ELEMENT_PICK QUALIFIES (HISTORY_SCRUB_FIX §1): a direct 3D tap is a SELECTION moment —
-    // semantically identical to a Find-lens item-select, which is already recorded. It is read-
-    // only (mutates nothing) → recorded as a 'pick' entry that restores via A.focusElement, NOT
-    // via undo/redo flag-flip (it is NOT in UNDOABLE_OPS). Audit ops stay dropped (below).
-    // BUILDING_OPEN (§7): a read-only milestone so a fresh session's timeline is non-empty.
-    op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'ELEMENT_PICK': true, 'BUILDING_OPEN': true }, // qualifying model ops
-    view: { 'axis': true, 'group': true, 'item': true }           // qualifying view moments
+
+  // §6 RECORDING-DEPTH PROFILES — the gate consults ONE active profile (tune by feel HERE; a depth
+  // toggle just SWAPS which profile, not a refactor). The history icon cycles the depth:
+  //   BLUE 'all' — record EVERYTHING (ELEMENT_PICK + axis/group/item + milestones): replay exactly.
+  //   GREEN 'doc' — record DOC-level events only (the clean trail); DROP taps + Find-nav.
+  //   GREY 'off'  — record nothing.
+  // §6b canonical buckets: ALL = picks + Find-nav + milestones; DOC = the "real items" only.
+  var PROFILES = {
+    all: {
+      // ELEMENT_PICK (§1) + BUILDING_OPEN (§7) + Find-nav (axis/group/item) all qualify.
+      op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'ELEMENT_PICK': true, 'BUILDING_OPEN': true },
+      view: { 'axis': true, 'group': true, 'item': true }
+    },
+    doc: {
+      // DOC whitelist (the viewer's "real items"): milestones + data mutations + design lifecycle.
+      // DROP ELEMENT_PICK + axis/group/item (Find-nav) — the advanced "clean trail".
+      op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'BUILDING_OPEN': true,
+              'DESIGN_SAVE': true, 'DESIGN_OPEN': true, 'CAPTURE_4D': true, 'CLASH_SNAG': true },
+      view: {} // Find-nav dropped in DOC mode
+    }
   };
+  var SIGNIFICANCE = PROFILES.all; // back-compat export — re-pointed at the active profile by setDepth
   var COALESCE_MS = 700; // rapid same-signature repeats inside this window fold into one entry
 
-  // significant(event) → true if this event belongs on the timeline. The ONE decision point.
-  // event = { source:'op'|'view', type:<opType|viewKind>, label } . Logs every DROP.
+  var DEPTH_KEY = 'bim.universalHist.depth';
+  var _depth = (function () {
+    try { var d = localStorage.getItem(DEPTH_KEY); return (d === 'all' || d === 'doc' || d === 'off') ? d : 'all'; }
+    catch (e) { return 'all'; } // default BLUE/all
+  })();
+  function _on() { return _depth !== 'off'; } // recording is on unless OFF
+
+  // significant(event) → true if this event belongs on the timeline, per the ACTIVE depth profile.
+  // event = { source:'op'|'view', type:<opType|viewKind>, label } . Logs every DROP (with profile).
   function significant(ev) {
-    var ok = !!(SIGNIFICANCE[ev.source] && SIGNIFICANCE[ev.source][ev.type]);
+    if (_depth === 'off') {
+      console.log('§HIST_DROP source=' + ev.source + ' type=' + ev.type + ' reason=off profile=off label="' + (ev.label || '') + '"');
+      return false;
+    }
+    var prof = PROFILES[_depth] || PROFILES.all;
+    var ok = !!(prof[ev.source] && prof[ev.source][ev.type]);
     if (!ok) {
       console.log('§HIST_DROP source=' + ev.source + ' type=' + ev.type +
-        ' reason=not-significant label="' + (ev.label || '') + '"');
+        ' reason=not-significant profile=' + _depth + ' label="' + (ev.label || '') + '"');
     }
     return ok;
   }
-
-  var ENABLED_KEY = 'bim.universalHist.on';
-  var _enabled = (function () {
-    try { return localStorage.getItem(ENABLED_KEY) !== 'off'; } catch (e) { return true; } // default ON
-  })();
 
   function _now() { return (typeof Date !== 'undefined') ? Date.now() : 0; }
 
@@ -82,7 +102,7 @@
   // COALESCE: if the entry repeats the tip's signature within COALESCE_MS, fold into it
   // (update payload, keep one step) — §-logged, so the curation is never silent.
   function _push(entry) {
-    if (!_enabled || _suppress) return;
+    if (!_on() || _suppress) return;
     if (entry.ts == null) entry.ts = _now();
     // Coalesce rapid same-signature repeats only when we're at the tip (no redo tail to break).
     if (_cursor >= 0 && _cursor === _stream.length - 1) {
@@ -152,7 +172,7 @@
   // VIEW-nav push — navigate_find calls this with its semantic view entry. We tag it kind:'view'
   // and remember the entry verbatim so restore can replay it through the registered callback.
   function pushView(v) {
-    if (!_enabled) return;
+    if (!_on()) return;
     var label = v.label || v.axis || 'view';
     // Same ONE gate as the model side — axis/group/item qualify; anything else is dropped (§-logged).
     if (!significant({ source: 'view', type: v.kind, label: label })) return;
@@ -283,14 +303,19 @@
     });
   }
 
-  // ── Off-toggle ────────────────────────────────────────────────────────
-  function setEnabled(on) {
-    _enabled = !!on;
-    try { localStorage.setItem(ENABLED_KEY, on ? 'on' : 'off'); } catch (e) {}
+  // ── Recording-depth (§6): all → doc → off, cycled on the history icon ──────────────────
+  function setDepth(d) {
+    if (d !== 'all' && d !== 'doc' && d !== 'off') return;
+    _depth = d;
+    SIGNIFICANCE = PROFILES[d] || PROFILES.all; // keep the back-compat export on the active profile
+    try { localStorage.setItem(DEPTH_KEY, d); } catch (e) {}
     _render();
-    console.log('§HIST_TOGGLE enabled=' + _enabled);
+    console.log('§HIST_DEPTH depth=' + _depth);
   }
-  function isEnabled() { return _enabled; }
+  function cycleDepth() { setDepth(_depth === 'all' ? 'doc' : (_depth === 'doc' ? 'off' : 'all')); }
+  // Back-compat: the old on/off API maps onto the depth model (on = all, off = off).
+  function setEnabled(on) { setDepth(on ? 'all' : 'off'); }
+  function isEnabled() { return _on(); }
 
   // Clear the whole timeline (e.g. on building switch). Kernel_ops itself is untouched.
   function clear() { _stream = []; _cursor = -1; _render(); }
@@ -359,7 +384,7 @@
     _marks.style.cssText = 'display:flex;gap:3px;align-items:center;padding:0 4px;overflow-x:auto;max-width:60vw';
     _off = document.createElement('button');
     _off.id = 'hist-off'; _off.style.cssText = BTN + ';font-size:13px';
-    _off.addEventListener('pointerup', function (e) { e.stopPropagation(); setEnabled(!_enabled); });
+    _off.addEventListener('pointerup', function (e) { e.stopPropagation(); cycleDepth(); }); // §6: all→doc→off
     _bar.appendChild(_back); _bar.appendChild(_fwd);
     _bar.appendChild(_marks); _bar.appendChild(_off);
     // §2 BLOOM: double-tap the BAR itself (empty area — dots/buttons stopPropagation) toggles chips.
@@ -405,22 +430,29 @@
     return chip;
   }
 
+  // §6 depth glyph/colour on the history icon: BLUE all · GREEN doc · GREY off.
+  var _DEPTH_UI = {
+    all: { g: '◉', c: '#4fc3f7', t: 'Recording: ALL — taps + nav + milestones (tap → DOC only)' },
+    doc: { g: '◑', c: '#66bb6a', t: 'Recording: DOC only — the clean trail (tap → OFF)' },
+    off: { g: '◯', c: '#888',    t: 'Recording: OFF (tap → ALL)' }
+  };
   function _render() {
     if (!_bar) return;
-    _off.textContent = _enabled ? '◉' : '◯';   // ◉ on / ◯ off
-    _off.title = _enabled ? 'History ON — tap to turn off' : 'History OFF — tap to turn on';
-    _off.style.color = _enabled ? '#4fc3f7' : '#888';
-    // Visible when the user opened it AND recording is on. Off → hidden + not recording.
-    var show = _opened && _enabled;
+    var du = _DEPTH_UI[_depth] || _DEPTH_UI.all;
+    _off.textContent = du.g; _off.style.color = du.c; _off.title = du.t;
+    // Bar visible whenever opened (so the depth toggle stays reachable even when OFF).
+    var show = _opened;
     _bar.style.display = show ? 'flex' : 'none';
     if (!show) return;
-    var hasSteps = _stream.length > 0;
+    var recording = _on();
+    var hasSteps = recording && _stream.length > 0; // OFF → just the depth toggle, no arrows/dots
     _back.style.display = hasSteps ? '' : 'none';
     _fwd.style.display = hasSteps ? '' : 'none';
     _marks.style.display = hasSteps ? 'flex' : 'none';
+    _marks.innerHTML = '';
+    if (!hasSteps) return; // OFF or empty → bar shows only the depth toggle
     _back.style.opacity = (_cursor >= 0) ? '1' : '0.35';
     _fwd.style.opacity = (_cursor < _stream.length - 1) ? '1' : '0.35';
-    _marks.innerHTML = '';
     var current = null;
     for (var i = 0; i < _stream.length; i++) {
       var e = _stream[i], applied = (i <= _cursor), isCurrent = (i === _cursor);
@@ -457,7 +489,7 @@
 
   // ── Keyboard: Ctrl+Z / Ctrl+Shift+Z route here universally ───────────────
   document.addEventListener('keydown', function (e) {
-    if (!_enabled) return;
+    if (!_on()) return;
     var key = (e.key || '').toLowerCase();
     if (e.ctrlKey && key === 'z' && !e.shiftKey) { e.preventDefault(); open(); undo(); }
     else if ((e.ctrlKey && key === 'z' && e.shiftKey) || (e.ctrlKey && key === 'y')) { e.preventDefault(); open(); redo(); }
@@ -471,6 +503,10 @@
     jumpTo:              jumpTo,
     setEnabled:          setEnabled,
     isEnabled:           isEnabled,
+    setDepth:            setDepth,    // §6: 'all' | 'doc' | 'off'
+    cycleDepth:          cycleDepth,
+    getDepth:            function () { return _depth; },
+    PROFILES:            PROFILES,    // data-driven depth profiles — edit to tune "what matters"
     clear:               clear,
     open:                open,
     toggleOpen:          toggleOpen,
