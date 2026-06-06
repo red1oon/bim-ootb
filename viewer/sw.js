@@ -71,6 +71,7 @@ const PRECACHE_ASSETS = [
   'rates.js',
   'analysis_sidecar.js',
   'locale_loader.js',
+  'decoder.js',
   'nlp.js',
   'semantic_enrichment.js',
   'scene_to_db.js',
