@@ -132,6 +132,9 @@
   VOICES.downlift = function (f, s, pan) { var c = audio(); if (!c) return; var b = cinBus(), at = c.currentTime + 0.01, dur = 1.5; var ns = _nz(c, dur), ff = c.createBiquadFilter(); ff.type = 'bandpass'; ff.Q.value = 1.0; ff.frequency.setValueAtTime(5000, at); ff.frequency.exponentialRampToValueAtTime(260, at + dur); var g = c.createGain(); g.gain.setValueAtTime(0.3, at); g.gain.exponentialRampToValueAtTime(0.001, at + dur); ns.connect(ff); ff.connect(g); g.connect(b); ns.start(at); ns.stop(at + dur + 0.1); };
   VOICES.subdrop = function (f, s, pan) { var c = audio(); if (!c) return; var b = cinBus(), at = c.currentTime + 0.01; var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f || 90, at); o.frequency.exponentialRampToValueAtTime(24, at + 1.2); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.9, at + 0.05); g.gain.exponentialRampToValueAtTime(0.001, at + 1.4); o.connect(g); g.connect(b); o.start(at); o.stop(at + 1.5); };
   VOICES.boom = function (f, s, pan) { var c = audio(); if (!c) return; var b = cinBus(), at = c.currentTime + 0.01; var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f || 60, at); o.frequency.exponentialRampToValueAtTime((f || 60) * 0.7, at + 1.0); var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.8, at + 0.02); g.gain.exponentialRampToValueAtTime(0.001, at + 1.7); o.connect(g); g.connect(b); o.start(at); o.stop(at + 1.8); };
+  // clank — short inharmonic metallic hit (3 bell partials + a bandpass tick), panned, through
+  // the hall. Zero asset; the "metal-on-metal" you pass when the ray-blast hits a vertical surface.
+  VOICES.clank = function (f, s, pan) { var c = audio(); if (!c) return; var b = cinBus(), at = c.currentTime + 0.005, dur = (s && s > 0.05) ? s : 0.2, pn = c.createStereoPanner ? c.createStereoPanner() : null; if (pn) { pn.pan.value = pan || 0; pn.connect(b); } [1, 2.76, 5.4].forEach(function (r, i) { var o = c.createOscillator(); o.type = 'square'; o.frequency.value = (f || 240) * r; var g = c.createGain(); var pk = 0.42 / (i + 1); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(pk, at + 0.004); g.gain.exponentialRampToValueAtTime(0.001, at + dur); o.connect(g); g.connect(pn || b); o.start(at); o.stop(at + dur + 0.05); }); var ns = _nz(c, 0.03), ff = c.createBiquadFilter(); ff.type = 'bandpass'; ff.frequency.value = 3200; ff.Q.value = 0.9; var ng = c.createGain(); ng.gain.setValueAtTime(0.4, at); ng.gain.exponentialRampToValueAtTime(0.001, at + 0.04); ns.connect(ff); ff.connect(ng); ng.connect(pn || b); ns.start(at); ns.stop(at + 0.06); };
   VOICES.stinger = function (f, s, pan) { var c = audio(); if (!c) return; var b = cinBus(), at = c.currentTime + 0.01, base = f || 110; [1, 1.19, 1.5].forEach(function (r) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = base * r; var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.18, at + 0.02); g.gain.exponentialRampToValueAtTime(0.001, at + 0.8); o.connect(lp); lp.connect(g); g.connect(b); o.start(at); o.stop(at + 0.85); }); };
   VOICES.tension = function (f, s, pan) { var c = audio(); if (!c) return; var b = cinBus(), at = c.currentTime + 0.01, base = f || 110; [1, 1.06].forEach(function (r) { var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = base * r; var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; var g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(0.14, at + 0.4); g.gain.setValueAtTime(0.14, at + 1.2); g.gain.exponentialRampToValueAtTime(0.001, at + 2.0); var trem = c.createOscillator(); trem.frequency.value = 6; var tg = c.createGain(); tg.gain.value = 0.05; trem.connect(tg); tg.connect(g.gain); o.connect(lp); lp.connect(g); g.connect(b); trem.start(at); o.start(at); trem.stop(at + 2.0); o.stop(at + 2.05); }); };
   // Cinematic whoosh (reverbed, pans with motion) — overrides the dry one for this style.
@@ -407,14 +410,63 @@
   }
   function _flyTick() {
     var A = (window.APP || window.A);
-    if (!A || !A.flyActive || !_on) { _flyRaf = 0; _flyIdx = -1; _flyPtIdx = -1; return; }
+    if (!A || !A.flyActive || !_on) { _flyRaf = 0; _flyIdx = -1; _flyPtIdx = -1; _rayLastObj = -1; return; }
     var act = (A.walkActions && A.walkActions[A.walkActionIdx | 0]) || {};
     if (act.type === 'flyPath' && act.points && act.points.length && A.camera && A.camera.position) {
       var cp = A.camera.position, best = -1, bd = 1e12;
       for (var i = 0; i < act.points.length; i++) { var p = act.points[i], dx = p.x - cp.x, dy = p.y - cp.y, dz = p.z - cp.z, d = dx * dx + dy * dy + dz * dz; if (d < bd) { bd = d; best = i; } }
       if (best >= 0 && best !== _flyPtIdx) { _flyPtIdx = best; _flySpot((act.names && act.names[best]) || '', act.points[best]); }
     } else { _flyPtIdx = -1; }
+    _rayBlast(A);   // §SFX-RAYBLAST: geometry-anticipating cues between the sparse named waypoints
     _flyRaf = requestAnimationFrame(_flyTick);
+  }
+
+  // ── FLY RAY-BLAST (§SFX-RAYBLAST) ─────────────────────────────────────────────────
+  // Sparse named waypoints leave most of a fly silent (room centres match no cue). Instead,
+  // cast a forward BVH ray from the flying camera to ANTICIPATE the nearest surface ahead, and
+  // sound it the moment we're about to pass. The hit NORMAL classifies the voice with NO DB /
+  // no IFC lookup: horizontal (|n.y|→1) = slab/stair underfoot → thud (impact/boom); vertical
+  // (|n.y|→0) = wall/glass ahead → clank or whoosh. Distance→level, screen-side→pan. Dedup by
+  // hit object id (one sound per surface) + the rAF gate keeps it pulsing, not machine-gunning.
+  // "Repeat reverb clips" = each cue retriggers 2–3× through the shared reverb hall.
+  var _rayRC = null, _rayDir = null, _rayRight = null, _rayRel = null, _rayN = null;
+  var _rayLastT = 0, _rayLastObj = -1, _rayAlt = 0, _rayMeshes = null, _rayMeshT = 0;
+  function _rayBlast(A) {
+    if (!_on || !(_cfg && _cfg.master && _cfg.master.fly_rayblast !== false)) return;
+    var THREE = window.THREE;
+    if (!THREE || !A.camera || typeof A.collectMeshes !== 'function') return;
+    var now = Date.now();
+    if (now - _rayLastT < 90) return;                 // ~11Hz — BVH-cheap, well under audio budget
+    _rayLastT = now;
+    if (!_rayRC) { _rayRC = new THREE.Raycaster(); _rayRC.firstHitOnly = true; _rayDir = new THREE.Vector3(); _rayRight = new THREE.Vector3(); _rayRel = new THREE.Vector3(); _rayN = new THREE.Vector3(); }
+    // Mesh list is static during a fly — cache it, refresh ~1s in case streaming added geometry.
+    if (!_rayMeshes || now - _rayMeshT > 1000) {
+      _rayMeshes = A.collectMeshes(function (o) { return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible; });
+      _rayMeshT = now;
+    }
+    if (!_rayMeshes.length) return;
+    var LOOKAHEAD = 8, TRIGGER = 6;
+    A.camera.getWorldDirection(_rayDir);
+    _rayRC.set(A.camera.position, _rayDir);
+    _rayRC.far = LOOKAHEAD;
+    var hits = _rayRC.intersectObjects(_rayMeshes, false);
+    if (!hits.length) { _rayLastObj = -1; return; }
+    var h = hits[0], d = h.distance;
+    if (d > TRIGGER) return;                           // only when we're about to pass it
+    var oid = (h.object && h.object.id) || -1;
+    if (oid === _rayLastObj) return;                  // already sounded this surface
+    _rayLastObj = oid;
+    var ny = 1;
+    if (h.face && h.face.normal && h.object) { _rayN.copy(h.face.normal).transformDirection(h.object.matrixWorld); ny = Math.abs(_rayN.y); }
+    var pan = 0;
+    if (h.point) { _rayRight.copy(_rayDir).cross(A.camera.up); if (_rayRight.lengthSq() > 1e-6) { _rayRight.normalize(); _rayRel.copy(h.point).sub(A.camera.position); var rl = _rayRel.length() || 1; pan = Math.max(-1, Math.min(1, _rayRel.dot(_rayRight) / rl)); } }
+    var lvl = Math.max(0.25, 1 - d / LOOKAHEAD);      // closer = stronger
+    var voice, freq, ms, rep;
+    if (ny > 0.7) { voice = 'impact'; freq = 70 + 50 * lvl; ms = 600; rep = 2; }              // slab/stair → thud/bang
+    else if (ny < 0.4) { _rayAlt ^= 1; if (_rayAlt) { voice = 'clank'; freq = 220 + 80 * lvl; ms = 200; } else { voice = 'whoosh'; freq = 720; ms = 420; } rep = 3; } // wall/glass → clank/whoosh
+    else { voice = 'clank'; freq = 300; ms = 180; rep = 3; }                                  // angled surface
+    _playRow({ voice: voice, freq: freq, ms: ms, repeat: rep, gap_ms: 120 }, pan);
+    console.log('§SFX_RAYBLAST voice=' + voice + ' d=' + d.toFixed(1) + ' ny=' + ny.toFixed(2) + ' pan=' + pan.toFixed(2) + ' lvl=' + lvl.toFixed(2));
   }
   function _watchFly() {
     setInterval(function () {
