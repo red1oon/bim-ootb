@@ -62,6 +62,7 @@
     width:100%; height:30px; border:1px solid var(--idmp-border); border-radius:4px; padding:0 8px; font-size:13px;
   }
   #idmp-tree { flex:1; overflow-y:auto; padding:4px 0; }
+  #idmp-menu-backdrop { display:none; }   /* mobile-only dim behind the open menu drawer (see @media) */
   .idmp-node { user-select:none; }
   .idmp-row {
     display:flex; align-items:center; gap:6px; padding:4px 8px; cursor:pointer; white-space:nowrap;
@@ -216,6 +217,8 @@
       transform:translateX(-105%); transition:transform .22s ease; box-shadow:2px 0 12px rgba(0,0,0,0.2);
     }
     body.menu-open #idmp-menu { transform:translateX(0); }
+    /* tap-to-close dim behind the drawer; sits below the menu (z25) over the content. */
+    body.menu-open #idmp-menu-backdrop { display:block; position:fixed; inset:46px 0 0 0; background:rgba(0,0,0,0.38); z-index:24; }
     .idmp-form { grid-template-columns:1fr; }
     .idmp-fld label { flex-basis:110px; }
     /* the header breadcrumb (#idmp-ctx) is nowrap and shoved the role/home/help buttons off the right edge at
@@ -284,6 +287,7 @@
     <div id="idmp-menu-head"><input id="idmp-menu-filter" type="search" placeholder="Filter menu&hellip;" autocomplete="off"></div>
     <div id="idmp-tree"></div>
   </aside>
+  <div id="idmp-menu-backdrop"></div>
   <main id="idmp-main">
     <div id="idmp-wintabs"></div>
     <div id="idmp-toolbar" style="display:none"></div>
@@ -511,7 +515,17 @@
       ' org=' + (_session.org ? _session.org.name.replace(/\s.*/, '') : '-') +
       ' menu-visible=' + _lastMenu.visible + '/' + _lastMenu.total +
       ' source=ad_user/ad_role/ad_window_access handAuthored=0');
-    if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) openWindow(w); }
+    var _wOpened = false;
+    if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) { openWindow(w); _wOpened = true; } }
+    _mobileSurfaceMenu(_wOpened);   // §MOBILE-LANDING: phone lands on an empty canvas → surface the menu drawer
+  }
+  // §MOBILE-LANDING — on a phone the post-login landing is an empty "select a menu item" canvas with the menu
+  // hidden behind the ☰ burger (a desktop pattern). Auto-open the drawer so the first thing seen IS the tappable
+  // menu, not a blank page. No-op on desktop (>760) and when a window is already opening.
+  function _mobileSurfaceMenu(windowOpening) {
+    if (windowOpening || window.innerWidth > 760) return;
+    document.body.classList.add('menu-open');
+    console.log('§MOBILE-LANDING drawer=open reason=empty-landing innerW=' + window.innerWidth);
   }
 
   // ── Left menu tree (folded from AD_Menu) ──
@@ -575,7 +589,7 @@
     if (windowId === _activeWin) {
       if (ids.length) openWindow(Number(ids[ids.length - 1]));
       else { _activeWin = null; renderWinTabs(); $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready'); }
+        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready'); _mobileSurfaceMenu(false); }
     } else renderWinTabs();
   }
   function renderWinTabs() {
@@ -1129,6 +1143,7 @@
     $('idmp-menu-filter').addEventListener('input', function (e) { applyFilter(e.target.value); });
     $('idmp-search').addEventListener('input', function (e) { $('idmp-menu-filter').value = e.target.value; applyFilter(e.target.value); });
     $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
+    $('idmp-menu-backdrop').addEventListener('click', function () { document.body.classList.remove('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
     buildPillRail();
     $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
