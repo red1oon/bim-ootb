@@ -1551,94 +1551,15 @@ function setupGridOverlay(APP) {
     zoomAnim = requestAnimationFrame(step);
   }
 
-  // ── Undo/Redo Buttons (bottom-right) ───────────────────────────────
-  var undoRedoDiv = null;
-
-  function showUndoRedo() {
-    // §UHIST: the grid-only undo/redo bar (#undo-redo-btns) is RETIRED — replaced by the
-    // ONE universal timeline (universal_history.js, #universal-hist-btns) that spans the
-    // whole kernel_ops log AND all panels. Open it via the pill or Ctrl+Z. No-op here.
-    if (window.UniversalHistory) return;
-    if (undoRedoDiv) { undoRedoDiv.style.display = 'flex'; return; }
-    undoRedoDiv = document.createElement('div');
-    undoRedoDiv.id = 'undo-redo-btns';
-    undoRedoDiv.style.cssText = 'position:fixed;bottom:32px;right:16px;z-index:25;display:flex;gap:4px';
-
-    var btnStyle = 'background:rgba(30,50,80,0.7);color:#4fc3f7;border:1px solid rgba(255,255,255,0.15);' +
-      'border-radius:6px;padding:6px 10px;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);' +
-      'min-width:36px;text-align:center';
-
-    var undoBtn = document.createElement('button');
-    undoBtn.id = 'kernel-undo-btn';
-    undoBtn.title = 'Undo (Ctrl+Z)';
-    undoBtn.style.cssText = btnStyle;
-    undoBtn.textContent = '\u21A9';
-    undoBtn.addEventListener('pointerup', function(e) {
-      e.stopPropagation();
-      doUndo();
-    });
-
-    var redoBtn = document.createElement('button');
-    redoBtn.id = 'kernel-redo-btn';
-    redoBtn.title = 'Redo (Ctrl+Shift+Z)';
-    redoBtn.style.cssText = btnStyle;
-    redoBtn.textContent = '\u21AA';
-    redoBtn.addEventListener('pointerup', function(e) {
-      e.stopPropagation();
-      doRedo();
-    });
-
-    undoRedoDiv.appendChild(undoBtn);
-    undoRedoDiv.appendChild(redoBtn);
-    document.body.appendChild(undoRedoDiv);
-    log('§UNDO_REDO buttons added');
-  }
-
-  function hideUndoRedo() {
-    if (undoRedoDiv) undoRedoDiv.style.display = 'none';
-  }
-
-  // Op types that are undoable (user actions). Others are audit-only.
-  var UNDOABLE_OPS = { 'GRID_MOVE': true };
-
-  /** Dispatch undo — skip audit-only ops (GRID_DETECT, SESSION_START, etc.) */
-  function doUndo() {
-    if (!A.db || !window.KernelOps) return;
-    // Keep undoing until we find an undoable op or run out
-    var op = null;
-    for (var attempt = 0; attempt < 10; attempt++) {
-      op = KernelOps.undoOp(A.db);
-      if (!op) { log('§UNDO nothing to undo'); return; }
-      if (UNDOABLE_OPS[op.op_type]) break;
-      log('§UNDO skip audit op=' + op.op_type + ' id=' + op.id);
-      op = null;
-    }
-    if (!op) { log('§UNDO no undoable ops found'); return; }
-    log('§UNDO op=' + op.op_type + ' id=' + op.id);
-    if (op.op_type === 'GRID_MOVE' && typeof GridDrag !== 'undefined' && GridDrag.applyReplayedMove) {
-      GridDrag.applyReplayedMove(op.parameters.axis, op.parameters.label, op.parameters.from);
-    }
-    A.markDirty();
-  }
-
-  /** Dispatch redo — skip audit-only ops */
-  function doRedo() {
-    if (!A.db || !window.KernelOps) return;
-    var op = null;
-    for (var attempt = 0; attempt < 10; attempt++) {
-      op = KernelOps.redoOp(A.db);
-      if (!op) { log('§REDO nothing to redo'); return; }
-      if (UNDOABLE_OPS[op.op_type]) break;
-      log('§REDO skip audit op=' + op.op_type + ' id=' + op.id);
-      op = null;
-    }
-    if (!op) { log('§REDO no undoable ops found'); return; }
-    log('§REDO op=' + op.op_type + ' id=' + op.id);
-    if (op.op_type === 'GRID_MOVE' && typeof GridDrag !== 'undefined' && GridDrag.applyReplayedMove) {
-      GridDrag.applyReplayedMove(op.parameters.axis, op.parameters.label, op.parameters.to);
-    }
-    A.markDirty();
-  }
+  // ── Undo/Redo — RETIRED (HISTORY_SCRUB_FIX §5) ─────────────────────────
+  // The grid-only #undo-redo-btns bar (and its doUndo/doRedo/UNDOABLE_OPS skip-audit walk) is
+  // GONE. There is now ONE undo path: the universal timeline (universal_history.js,
+  // #universal-hist-btns) which spans the whole signed kernel_ops log AND all panels, opened via
+  // the pill or Ctrl+Z. GRID_MOVE replay flows through it (KernelOps.undoOp/redoOp +
+  // GridDrag.applyReplayedMove). Hard no-ops kept so existing call sites stay valid
+  // (showUndoRedo() at grid-activate, hideUndoRedo() at grid-exit).
+  function showUndoRedo() { /* retired — the universal timeline owns undo/redo */ }
+  function hideUndoRedo() { var d = document.getElementById('undo-redo-btns'); if (d) d.remove(); }
 
   // ── Toggle ────────────────────────────────────────────────────────
 

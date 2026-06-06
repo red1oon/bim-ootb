@@ -44,7 +44,8 @@
     // semantically identical to a Find-lens item-select, which is already recorded. It is read-
     // only (mutates nothing) → recorded as a 'pick' entry that restores via A.focusElement, NOT
     // via undo/redo flag-flip (it is NOT in UNDOABLE_OPS). Audit ops stay dropped (below).
-    op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'ELEMENT_PICK': true }, // qualifying model ops
+    // BUILDING_OPEN (§7): a read-only milestone so a fresh session's timeline is non-empty.
+    op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'ELEMENT_PICK': true, 'BUILDING_OPEN': true }, // qualifying model ops
     view: { 'axis': true, 'group': true, 'item': true }           // qualifying view moments
   };
   var COALESCE_MS = 700; // rapid same-signature repeats inside this window fold into one entry
@@ -142,6 +143,7 @@
   function _opLabel(opType, p) {
     if (opType === 'GRID_MOVE') return 'Grid ' + (p && p.label ? p.label : '') + ' move';
     if (opType === 'ELEMENT_PLACE') return 'Place ' + ((p && (p.cls || p.name)) || 'element');
+    if (opType === 'BUILDING_OPEN') return 'Opened ' + ((p && p.name) || 'building');
     // §1: label a pick by the ELEMENT, not the op — "merk H · door" (name + humanised class).
     if (opType === 'ELEMENT_PICK') return ((p && p.name) || 'element') + ' · ' + _humanClass(p && p.cls);
     return opType;
@@ -303,18 +305,46 @@
     return out;
   }
 
-  // ── The ONE universal bar ─────────────────────────────────────────────
+  // ── The ONE universal bar — bottom-center, docked UNDER the status bar (§3) ────────────
   var _bar = null, _back = null, _fwd = null, _marks = null, _off = null;
+  var _bloom = false;        // §2: double-tap the BAR → dots bloom into labelled chips
+  var GOLD = '#ffd479';      // current step (glassbowl #scrub palette)
   var BTN = 'background:rgba(30,50,80,0.7);color:#4fc3f7;border:1px solid rgba(255,255,255,0.15);' +
     'border-radius:6px;padding:6px 10px;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);' +
     'min-width:36px;text-align:center';
+
+  // §2 chip icon by WHAT (not how): SINGLE element step → its discipline icon; GROUP/scope step
+  // → the search magnifier (Find narrows scope). Reuses panels.js' global ICONS registry.
+  var _DISC_ICON = { STR: 'discSTR', ARC: 'discARC', MEP: 'discMEP', FP: 'discFP', ELEC: 'discELEC', ACMV: 'discACMV', PLMB: 'discPLMB' };
+  function _stepIcon(e) {
+    if (e.kind === 'pick') return _DISC_ICON[String((e.params && e.params.disc) || '').toUpperCase()] || null; // null → generic box
+    if (e.opType === 'BUILDING_OPEN') return 'home'; // milestone
+    return 'search'; // group/scope (view) → magnifier; NEVER on a single-element chip
+  }
+  function _iconSvg(name, px) {
+    var ic = name && window.ICONS && window.ICONS[name];
+    var inner = ic ? ic.svg : '<rect x="4" y="4" width="16" height="16" rx="2"/>'; // generic box fallback
+    return '<svg width="' + px + '" height="' + px + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto">' + inner + '</svg>';
+  }
+  function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+  function _shortLabel(s) { s = String(s || ''); return s.length > 26 ? s.slice(0, 24) + '…' : s; }
 
   function _build() {
     if (_bar) return;
     _bar = document.createElement('div');
     _bar.id = 'universal-hist-btns';
-    _bar.style.cssText = 'position:fixed;bottom:32px;left:16px;z-index:25;display:none;' +
-      'gap:4px;align-items:center';
+    var host = document.getElementById('status-bar-wrap');
+    // §3 PLACEMENT: dock as ONE row directly under the status bar (status + scrub = one unit).
+    // In-flow inside #status-bar-wrap (now a flex column); fall back to fixed bottom-center if absent.
+    if (host) {
+      _bar.style.cssText = 'display:none;gap:4px;align-items:center;max-width:74vw;z-index:25';
+      host.appendChild(_bar);
+    } else {
+      _bar.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);' +
+        'z-index:25;display:none;gap:4px;align-items:center;max-width:74vw';
+      document.body.appendChild(_bar);
+    }
     _back = document.createElement('button');
     _back.id = 'hist-back'; _back.title = 'Undo (Ctrl+Z)'; _back.textContent = '↶';
     _back.style.cssText = BTN;
@@ -325,20 +355,55 @@
     _fwd.addEventListener('pointerup', function (e) { e.stopPropagation(); redo(); });
     _marks = document.createElement('div');
     _marks.id = 'hist-marks';
-    _marks.style.cssText = 'display:flex;gap:3px;align-items:center;padding:0 4px';
+    // §2: horizontal scroll so the dot-line / chips never overflow; gold current auto-scrolls in.
+    _marks.style.cssText = 'display:flex;gap:3px;align-items:center;padding:0 4px;overflow-x:auto;max-width:60vw';
     _off = document.createElement('button');
     _off.id = 'hist-off'; _off.style.cssText = BTN + ';font-size:13px';
     _off.addEventListener('pointerup', function (e) { e.stopPropagation(); setEnabled(!_enabled); });
     _bar.appendChild(_back); _bar.appendChild(_fwd);
     _bar.appendChild(_marks); _bar.appendChild(_off);
-    document.body.appendChild(_bar);
-    console.log('§HIST_BAR added');
+    // §2 BLOOM: double-tap the BAR itself (empty area — dots/buttons stopPropagation) toggles chips.
+    // Pointer-based double-tap works on touch AND mouse (dblclick doesn't fire on touch).
+    var _lastTap = 0;
+    _bar.addEventListener('pointerup', function () {
+      var t = _now();
+      if (t - _lastTap < 350) { _bloom = !_bloom; _lastTap = 0; _render(); console.log('§HIST_BLOOM ' + (_bloom ? 'on' : 'off')); }
+      else _lastTap = t;
+    });
+    console.log('§HIST_BAR added host=' + (host ? 'status-bar-wrap' : 'body'));
   }
 
   // _open: explicit user request to SHOW the bar (the pill icon). Off-toggle still wins.
   var _opened = false;
   function open() { _opened = true; _build(); _render(); console.log('§HIST_OPEN'); }
   function toggleOpen() { if (_opened && _bar && _bar.style.display !== 'none') { _opened = false; _render(); } else open(); }
+
+  // One timeline step → a dot (collapsed) or a labelled chip (bloomed). Gold = current.
+  function _dot(e, idx, applied, isCurrent) {
+    var dot = document.createElement('button');
+    var isRound = e.kind === 'view' || e.kind === 'pick'; // view/pick = round, model-op = square
+    dot.title = e.label || ('step ' + (idx + 1));
+    dot.style.cssText = 'width:9px;height:9px;padding:0;cursor:pointer;flex:0 0 auto;' +
+      'border:1px solid ' + (isCurrent ? GOLD : 'rgba(79,195,247,0.6)') + ';' +
+      'border-radius:' + (isRound ? '50%' : '2px') + ';' +
+      'background:' + (isCurrent ? GOLD : (applied ? '#4fc3f7' : 'rgba(79,195,247,0.18)')) + ';' +
+      (isCurrent ? 'box-shadow:0 0 6px ' + GOLD : '');
+    dot.addEventListener('pointerup', function (ev) { ev.stopPropagation(); jumpTo(idx); });
+    return dot;
+  }
+  function _chip(e, idx, applied, isCurrent) {
+    var chip = document.createElement('button');
+    chip.title = e.label || ('step ' + (idx + 1));
+    var col = isCurrent ? GOLD : (applied ? '#4fc3f7' : 'rgba(79,195,247,0.7)');
+    chip.style.cssText = 'display:flex;align-items:center;gap:4px;flex:0 0 auto;cursor:pointer;' +
+      'padding:3px 7px;border-radius:11px;font-size:11px;white-space:nowrap;' +
+      'border:1px solid ' + (isCurrent ? GOLD : 'rgba(79,195,247,0.4)') + ';color:' + col + ';' +
+      'background:rgba(20,35,60,' + (applied ? '0.85' : '0.5') + ');' +
+      (isCurrent ? 'box-shadow:0 0 8px ' + GOLD : '');
+    chip.innerHTML = _iconSvg(_stepIcon(e), 13) + '<span>' + _esc(_shortLabel(e.label)) + '</span>';
+    chip.addEventListener('pointerup', function (ev) { ev.stopPropagation(); jumpTo(idx); });
+    return chip;
+  }
 
   function _render() {
     if (!_bar) return;
@@ -356,20 +421,15 @@
     _back.style.opacity = (_cursor >= 0) ? '1' : '0.35';
     _fwd.style.opacity = (_cursor < _stream.length - 1) ? '1' : '0.35';
     _marks.innerHTML = '';
+    var current = null;
     for (var i = 0; i < _stream.length; i++) {
-      var dot = document.createElement('button');
-      var applied = (i <= _cursor);
-      var isView = _stream[i].kind === 'view' || _stream[i].kind === 'pick';
-      dot.title = _stream[i].label || ('step ' + (i + 1));
-      // view/pick = round dot, model-op = square dot — the two streams stay visually distinct.
-      dot.style.cssText = 'width:9px;height:9px;padding:0;cursor:pointer;' +
-        'border:1px solid rgba(79,195,247,0.6);border-radius:' + (isView ? '50%' : '2px') + ';' +
-        'background:' + (applied ? '#4fc3f7' : 'rgba(79,195,247,0.18)');
-      (function (idx) {
-        dot.addEventListener('pointerup', function (e) { e.stopPropagation(); jumpTo(idx); });
-      })(i);
-      _marks.appendChild(dot);
+      var e = _stream[i], applied = (i <= _cursor), isCurrent = (i === _cursor);
+      var node = _bloom ? _chip(e, i, applied, isCurrent) : _dot(e, i, applied, isCurrent);
+      if (isCurrent) current = node;
+      _marks.appendChild(node);
     }
+    // §2: keep the gold current step in view (scroll the strip, not the page).
+    if (current) { try { _marks.scrollLeft = current.offsetLeft - _marks.clientWidth / 2 + current.offsetWidth / 2; } catch (e3) {} }
   }
 
   // ── commitOp wrapper — record EVERY model op as it lands (mirror scene.js's wrap) ──────
