@@ -6,8 +6,12 @@
 // erp/sw.js — Service Worker for the ERP app's own folder home (docs/ERP_FOLDER_HOME.md).
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
-// Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v597';   // v597: pill ⋯ trigger UX — (a) FLAT horizontal kebab (icons.js moreHoriz) on ALL pill surfaces (erp.html + idempiere, desktop+mobile) so OUR ⋯ differs from Android's own vertical ⋮; (b) mobile dock anchors the ⋯ to a CONSTANT right-edge position (order:-1 + justify-content:flex-start) so it no longer re-centres out from under the finger on collapse;
+// Navigation (.html) = STALE-WHILE-REVALIDATE (instant cached first paint + background refresh — the
+// init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
+// deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
+// bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
+const CACHE_VERSION = 'v598';   // v598: INIT-BUBBLE INSTANT — navigation served stale-while-revalidate (was network-first), so a warm load paints the init-bubble shell from cache with ZERO network round-trip instead of awaiting the HTML document over the wire (witness erp/tests/poc_init_instant.js: warm bubblePaint 883ms→<300ms under 800ms nav latency); db already deferred off the paint path;
+                                // v597: pill ⋯ trigger UX — (a) FLAT horizontal kebab (icons.js moreHoriz) on ALL pill surfaces (erp.html + idempiere, desktop+mobile) so OUR ⋯ differs from Android's own vertical ⋮; (b) mobile dock anchors the ⋯ to a CONSTANT right-edge position (order:-1 + justify-content:flex-start) so it no longer re-centres out from under the finger on collapse;
                                 // v596: Kanban "Odoo-marvel" cards + shared Graph/Kanban status palette (KANBAN_MARVEL_SPEC, PR #177) merged with the mobile pill-reopen fix (v595);
                                 // v595: PILL_REOPEN_FIX — ⋯-collapsed mobile pill re-opens on re-tap; outside-tap close used `e.target!==trigger`, mis-read the trigger's inner <svg> tap as outside → folded-then-reopened in one tap so it never stayed collapsed; now `!trigger.contains(e.target)` (PR fix/pill-reopen);
                                 // v594: Kanban "Odoo-marvel" cards (KANBAN_MARVEL_SPEC) — dictionary-driven avatar+title+amount+date (zero per-model code) + shared semantic status colour palette across Kanban cards AND Graph bars (consistent L&F, status-at-a-glance for the long tail);
@@ -131,7 +135,7 @@ self.addEventListener('fetch', (event) => {
   const url = event.request.url;
   if (event.request.method !== 'GET') return;
   if (url.split('?')[0].endsWith('.db')) return;   // ad_seed.db handled by the page directly
-  if (event.request.mode === 'navigate') { event.respondWith(networkFirst(event.request)); return; }
+  if (event.request.mode === 'navigate') { event.respondWith(staleWhileRevalidate(event.request)); return; }
   if (isNetworkFirst(url)) { event.respondWith(networkFirst(event.request)); return; }
   event.respondWith(cacheFirst(event.request));
 });
@@ -152,6 +156,28 @@ function networkFirst(request) {
       return new Response('<h1>Offline</h1><p>Open the ERP after a first online visit.</p>',
         { headers: { 'Content-Type': 'text/html' } });
     }));
+}
+
+// staleWhileRevalidate — serve the cached document INSTANTLY (no network wait) while refreshing the cache
+// in the background. Used for navigations so the init-bubble shell paints immediately on a warm load
+// instead of awaiting the HTML over the network (ERP_INIT_BUBBLE_INSTANT.md). First-ever visit (no cache)
+// awaits the network. Query is stripped for the cache key (the precached 'erp.html'/'idempiere.html' shell),
+// so deep-links (?window=…) still hit the cached shell and the page reads its own params at runtime.
+function staleWhileRevalidate(request) {
+  var cacheUrl = request.url.split('?')[0];
+  var revalidate = fetch(request).then(resp => {
+    if (resp && resp.status === 200) {
+      const clone = resp.clone();
+      caches.open(CACHE_NAME).then(c => c.put(cacheUrl, clone));
+    }
+    return resp;
+  }).catch(() => null);
+  return caches.match(cacheUrl).then(cached => {
+    if (cached) return cached;   // instant — background revalidate already in flight
+    return revalidate.then(r => r || caches.match(cacheUrl)).then(r => r ||
+      new Response('<h1>Offline</h1><p>Open the ERP after a first online visit.</p>',
+        { headers: { 'Content-Type': 'text/html' } }));
+  });
 }
 
 function cacheFirst(request) {
