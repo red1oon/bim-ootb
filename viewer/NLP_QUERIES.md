@@ -25,6 +25,13 @@ the answer is a set of elements.
 Phrasing is forgiving — filler words, order, case, and punctuation don't matter
 (`SHOW me ALL the doors!!!` works the same as `doors`).
 
+### Mobile-safe 3D behaviour
+- **Large result (>2000 elements)** → shows the **count only**, no 3D highlight. Lighting up
+  tens of thousands of meshes is the one heavy op; skipping it keeps cheap phones smooth.
+- **Normal result (≤2000)** → highlights the matched elements in 3D.
+- **Single element (a "leaf")** → highlights **and zooms the camera in** to frame it
+  (reuses `A.zoomToGuid`).
+
 ### Storey names work in any language
 `level 3` resolves against the building's **actual** storey labels, so it finds
 `Level 3`, Malay `Aras 03`, Swedish `VÅNING 3`, or worded `Third Floor` — automatically.
