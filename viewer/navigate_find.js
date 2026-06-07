@@ -788,6 +788,9 @@
     function _clearShapeOverlays() {
       _shapeOverlays.forEach(function(o) {
         if (o.mesh && o.mesh.parent) o.mesh.parent.remove(o.mesh);
+        // §UNIFIED-SELECT: drop the per-overlay instance→guid map registered in _buildShapeMeshes
+        // (so picking can never resolve a stale, removed overlay).
+        if (o.mesh && A._instanceMeta) delete A._instanceMeta[o.mesh.id];
         if (o.disposeMat && o.mesh && o.mesh.material) o.mesh.material.dispose();
       });
       _shapeOverlays = [];
@@ -967,8 +970,15 @@
         // ghost(0.2)=1 draws first (under), solid focus=2, cyan shine=3 on top
         inst.renderOrder = color != null ? 3 : ((solidOpacity != null && solidOpacity < 1) ? 1 : 2);
         inst.userData._shapeOverlay = true;
+        // §UNIFIED-SELECT: map each overlay instance back to its real element guid so a 3D tap on
+        // the overlay (picking.js instanced path) resolves the element — this is what lets a re-tap
+        // on a focused/selected element DESELECT it (the overlay sits over the x-ray-dimmed base, so
+        // without this the tap hits a guid-less mesh and the toggle never fires). Cleared in
+        // _clearShapeOverlays. inst.id is globally unique → never collides with real scene meshes.
+        A._instanceMeta = A._instanceMeta || {};
+        A._instanceMeta[inst.id] = g.els.map(function (e) { return { guid: e[0] }; });
         A.scene.add(inst);
-        _shapeOverlays.push({ mesh: inst, disposeMat: true }); // cyan + clones are ours to dispose
+        _shapeOverlays.push({ mesh: inst, disposeMat: true }); // clones are ours to dispose
         made += g.els.length;
       }
       if (missing) console.log('[RP-C] §SHAPE_MISS hashes_not_streamed=' + missing + ' (set=' + set.size + ')');
@@ -2358,6 +2368,18 @@
       // cruft — always tear them down on close so nothing lingers invisibly.
       _roomLensReset();
       _highlightLensReset();
+      // §PICK-BBOX-LEAK (user): the picking.js-owned bbox (window._pickHighlight, a LineSegments
+      // EdgesGeometry) is a SHARED global cleared only when a NEW pick happens — clearHighlight()
+      // above disposes it ONLY when it === the Find-local _highlight (and early-returns when that's
+      // null). So a bbox from a 3D tap / info-panel re-highlight survives Find discard (scene + GPU
+      // leak). Own it here unconditionally: remove from scene + dispose its geometry. (Material is
+      // the shared A._bboxMaterial singleton — never dispose that.)
+      if (window._pickHighlight) {
+        if (window._pickHighlight.parent) window._pickHighlight.parent.remove(window._pickHighlight);
+        if (window._pickHighlight.geometry) window._pickHighlight.geometry.dispose();
+        window._pickHighlight = null;
+        if (A.markDirty) A.markDirty();
+      }
       if (elIsoBar) elIsoBar.style.display = 'none';
       // §S280d: Reset tree visibility for next open
       _treeRevealed = false;
@@ -3050,18 +3072,36 @@
       var set = (guids instanceof Set) ? guids
               : new Set((Array.isArray(guids) ? guids : [guids]).filter(Boolean));
       if (!set.size) { console.log('[RP-TB] §FOCUS_ELEM skip=empty'); return 0; }
-      // Clear any prior lens/highlight, ghost the rest, light the focus as a cyan shine-through mesh.
+      // §UNIFIED-SELECT (user "drop cyan"): ONE select look for pick / Find zoom-to / history-restore.
+      // Ghost the rest (0.1), draw the focus in its OWN real material (SOLID), and mark it with the
+      // OutlinePass silhouette — the S277 Bonsai outline. NO cyan shine-through fill (the depth-model
+      // "bright-blue item" is retired; the outline reads the selection cleanly on its real material).
       _clearShapeOverlays();
       _clearHlOverlay();
       if (A.setOutline) A.setOutline([]);
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
       _dimXrayTo(0.1);                                                          // §DEPTH: rest = 0.1 ghost
-      // colorOpacity path → MeshBasicMaterial cyan, depthTest off → SHINES THROUGH occluders.
-      var lit = _buildShapeMeshes(set, 0x00e5ff, null, 0.9);
+      // color=null → opaque clone of each element's REAL material; solidOpacity=1 → fully solid.
+      var _ovBefore = _shapeOverlays.length;
+      var lit = _buildShapeMeshes(set, null, 1, null);
+      var _ovMeshes = [];
+      for (var _oi = _ovBefore; _oi < _shapeOverlays.length; _oi++) _ovMeshes.push(_shapeOverlays[_oi].mesh);
+      // §YELLOW-SILHOUETTE: IDENTICAL treatment to the Find drill (_drillSelect) so a 3D pick, a Find
+      // zoom-to and a history-restore all read the same — yellow silhouette that SHINES THROUGH the
+      // ghosted rest (hidden-edge same yellow). Mobile/no-OutlinePass → faint yellow fill fallback.
+      if (A._outlinePass && A.setOutline && _ovMeshes.length) {
+        A.setOutline(_ovMeshes, 0xffd400);
+        A._outlinePass.hiddenEdgeColor.set(0xffd400);
+        A._outlinePass.edgeThickness = 3;
+        A._outlinePass.edgeStrength = 6;
+        A._outlinePass.edgeGlow = 0.3;
+      } else if (!_ovMeshes.length || !A._outlinePass) {
+        _buildShapeMeshes(set, 0xffd400, null, 0.35); // fallback: faint yellow fill (no silhouette pass)
+      }
       var zoomed = false;
       if (opts.frame !== false) zoomed = (opts.item === false) ? _zoomToGroup(set) : _zoomToGuids(set, 1.1);
       if (A.markDirty) A.markDirty();
-      console.log('[RP-TB] §FOCUS_ELEM guids=' + set.size + ' lit=' + lit +
+      console.log('[RP-TB] §FOCUS_ELEM guids=' + set.size + ' lit=' + lit + ' outline=' + _ovMeshes.length +
         ' frame=' + (opts.frame !== false) + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
       return lit;
     };
