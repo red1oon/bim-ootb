@@ -293,9 +293,17 @@ function setupNlp(A) {
                 cur2 = typeof _TRL!=='undefined'&&_TRL.cur2||'USD',
                 rate = typeof _TRL!=='undefined'&&_TRL.cur_rate||3.91;
           const f = BimDecoder.formatResult(d, (s, p) => A.db.exec(s, p || []), { cur, cur2, rate });
-          showToast(f.summary, { cols: f.table.cols, vals: f.table.vals, parsed: { desc: d.desc } }, 'ok');
-          if (f.guids && f.guids.length) highlightGuids(f.guids); else clearHighlights();
-          console.log('[NLP2026] §NLP_DEC kind=' + d.kind + ' guids=' + (f.guids ? f.guids.length : 0) + ' "' + f.summary.substring(0, 80) + '"');
+          // Mobile guard: huge result sets show the COUNT only — lighting up tens of
+          // thousands of meshes is the one heavy op. Leaf (single element) zooms in.
+          const n = f.guids ? f.guids.length : 0, HL_CAP = 2000;
+          const note = n > HL_CAP ? '  (too many to show in 3D — count only)' : '';
+          showToast(f.summary + note, { cols: f.table.cols, vals: f.table.vals, parsed: { desc: d.desc } }, 'ok');
+          if (!n || n > HL_CAP) { clearHighlights(); }
+          else {
+            highlightGuids(f.guids);
+            if (n === 1 && typeof A.zoomToGuid === 'function') A.zoomToGuid(f.guids[0]); // final leaf → frame it
+          }
+          console.log('[NLP2026] §NLP_DEC kind=' + d.kind + ' n=' + n + (n > HL_CAP ? ' COUNT_ONLY' : '') + (n === 1 ? ' LEAFZOOM' : '') + ' "' + f.summary.substring(0, 60) + '"');
           return;
         }
       } catch (e) { console.log('[NLP2026] §NLP_DEC_ERR ' + e.message + ' — legacy fallback'); }
