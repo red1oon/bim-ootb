@@ -718,7 +718,6 @@
       _clearHlOverlay();
       _clearShapeOverlays();
       if (A.setOutline) A.setOutline([]);
-      _hideVeil();   // §VEIL: drop the dim quad (no-op if x-ray path was used)
       if (A.filterByGuids) A.filterByGuids(null);  // §SHELL: un-hide the base (shell-mode or old _USE_SHELL)
       if (A.xrayOn && _hlXrayWasOff && A.toggleXray) {
         A.toggleXray(); // WE turned x-ray on for the lens → turn it off (restores _origOpacity = 1)
@@ -857,38 +856,37 @@
       var mg = new THREE.BufferGeometry();
       mg.setAttribute('position', new THREE.BufferAttribute(outP, 3));
       mg.setAttribute('color', new THREE.BufferAttribute(outC, 3));
-      mg.setIndex(new THREE.BufferAttribute(outI, 1));
-      // §GHOST-MAXBLEND: MAX blend so overlapping envelope layers DON'T accumulate — looking through N
-      // walls reads the same as 1 (no "drown" in the building interior). result = max(color×0.12, behind).
-      // Bold over the dark scene; fades only against a bright lit-sky (rare). depthWrite stays false so all
-      // faces reach the blend. Thin/outside view is unchanged (one layer either way).
-      var mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.12,
-        depthWrite: false, side: THREE.DoubleSide,
-        blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation,
-        blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor });
-      var mesh = new THREE.Mesh(mg, mat);
+      mg.setIndex(new THREE.BufferAttribute(outI, 1));   // FULL faces (no shed) — EdgesGeometry needs the whole surface
+      // §GHOST-EDGES: draw FEATURE-EDGE OUTLINES, not filled faces. A filled translucent shell fills the
+      // silhouette → whitewash at any opacity; edges have no fill area → clean see-through outline, no wash.
+      // Threshold 30° = real corners/outlines only (not every triangle). SAME complete shell — nothing dropped.
+      var edges = new THREE.EdgesGeometry(mg, 30);
+      var mat = new THREE.LineBasicMaterial({ color: 0x9fc9e8, transparent: true, opacity: 0.5, depthWrite: false });
+      var mesh = new THREE.LineSegments(edges, mat);
       mesh.frustumCulled = false; mesh.renderOrder = -1; // draw before overlays
       mesh.userData._mergedGhost = true;
       A.scene.add(mesh);
       _mergedGhost = mesh; _mergedGhostBld = A.activeBuilding;
       var ms = ((performance && performance.now) ? performance.now() : 0) - t0;
       var heap = (performance && performance.memory) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) : '?';
-      console.log('[MG] §SHELL_GHOST_BUILT bld=' + A.activeBuilding + ' envelope_elements=' + used + ' miss=' + miss +
-        ' verts=' + totV + ' tris=' + (totI / 3) + ' build_ms=' + ms.toFixed(0) + ' heapMB=' + heap);
+      console.log('[MG] §SHELL_GHOST_EDGES bld=' + A.activeBuilding + ' envelope_elements=' + used + ' miss=' + miss +
+        ' edges=' + (edges.attributes.position.count / 2) + ' from_tris=' + (totI / 3) + ' build_ms=' + ms.toFixed(0) + ' heapMB=' + heap);
       if (A.markDirty) A.markDirty();
       return mesh;
     }
     function toggleMergedGhost() {
-      // Alt+X ghost x-ray: build once, then KEEP it cached (envelope shell ≈ ~3MB — not costly RAM) and
-      // just flip visibility. Shell-mode drills key off (_mergedGhost && .visible).
+      // Alt+X: show the envelope ghost ALONE — hide every solid mesh via filterByGuids (VISIBILITY ONLY,
+      // no material.opacity/color mutated → clean toggle, no residue). Off → everything restored.
       if (_mergedGhost && _mergedGhostBld === A.activeBuilding) {
         _mergedGhost.visible = !_mergedGhost.visible;
-        if (!_mergedGhost.visible && A.filterByGuids) A.filterByGuids(null); // ghost off → restore base
-        console.log('[MG] §GHOST_XRAY visible=' + _mergedGhost.visible);
+        if (A.filterByGuids) A.filterByGuids(_mergedGhost.visible ? new Set() : null); // on → hide solids; off → restore
+        console.log('[MG] §GHOST_XRAY visible=' + _mergedGhost.visible + ' solids=' + (_mergedGhost.visible ? 'hidden' : 'shown'));
         if (A.markDirty) A.markDirty();
         return _mergedGhost.visible;
       }
-      return !!_buildMergedGhost();
+      var _mg = _buildMergedGhost();
+      if (_mg && A.filterByGuids) A.filterByGuids(new Set()); // first build → hide solids so the ghost stands alone
+      return !!_mg;
     }
     window._mergeGhost = toggleMergedGhost;
     window.toggleGhostXray = toggleMergedGhost; // Alt+X — ghost x-ray (cached, cheap)
@@ -975,11 +973,6 @@
             // no 0.2"). depthTest off + low renderOrder draws it under the solid focus, through the
             // invisible base. (Witnessed: ghost 0.20 dT0 dW0 ro1; Hospital intermediate anc=[0.2×N].)
             mat.transparent = true; mat.opacity = solidOpacity; mat.depthWrite = false; mat.depthTest = false;
-          } else if (_veilActive) {
-            // §VEIL-SORT: full-opacity but transparent:true so it renders in the transparent pass
-            // AFTER the veil (renderOrder 2 > 0.5) → bright solid OVER the dimmed base. depthWrite on
-            // → still self-occludes correctly.
-            mat.transparent = true; mat.opacity = 1; mat.depthWrite = true;
           } else {
             mat.transparent = false; mat.opacity = 1; mat.depthWrite = true;
           }
@@ -1040,12 +1033,6 @@
       _roomBoxes = [];
     }
 
-    // §VEIL: the cheap replacement for x-raying the whole building. A camera-facing translucent dark
-    // quad renders BETWEEN the opaque base (renderOrder 0) and the bright overlays (≥1) — so it dims
-    // ONLY the background, at a cost independent of element count (the 122k stay opaque = fast). The
-    // solid/focus overlays redraw OVER it (see _buildShapeMeshes veil-sort) → layers intact:
-    // Dim = opaque base + veil · Solid = storey overlay · Thru = room shell (depthTest off).
-    var _veil = null, _veilActive = false, _USE_VEIL = false; // §VEIL: parked (didn't move the geometry cost)
     var _USE_SHELL = false;                                   // §SHELL: parked — bbox-boundary too sparse (28 elems); needs class/PVS
     // §SHELL: the building's OUTFACING shell — elements whose bbox touches the outer building bbox (within
     // MARGIN of any of the 6 faces): exterior walls, floor + roof slabs. The deep interior (MEP, furniture
@@ -1074,29 +1061,6 @@
       _extCache = set; _extBld = A.activeBuilding;
       console.log('[RP-TB] §SHELL exterior=' + set.size + ' (outfacing-shell dim context)');
       return set;
-    }
-    function _showVeil(keep) {
-      if (!A.scene || !A.camera || typeof THREE === 'undefined') return;
-      if (!_veil) {
-        _veil = new THREE.Mesh(new THREE.PlaneGeometry(2, 2),
-          new THREE.MeshBasicMaterial({ color: 0x070b12, transparent: true, opacity: 0.8,
-            depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
-        _veil.frustumCulled = false; _veil.renderOrder = 0.5; _veil.userData._veil = true;
-        A.camera.add(_veil);
-        if (!A.camera.parent && A.scene) A.scene.add(A.camera);  // children of camera render only if it's in the graph
-      }
-      _veil.material.opacity = 1 - (keep != null ? keep : 0.2);  // keep=0.2 → veil 0.8 (building shows 20%)
-      var d = 2.0, fov = (A.camera.fov || 50) * Math.PI / 180;    // 2 units out — clear of any near plane
-      _veil.position.set(0, 0, -d);
-      var h = 2 * d * Math.tan(fov / 2), w = h * (A.camera.aspect || 1);
-      _veil.scale.set(w / 2 * 1.15, h / 2 * 1.15, 1);          // cover the frustum (+breathing)
-      _veil.visible = true; _veilActive = true;
-      console.log('[RP-TB] §VEIL on keep=' + (keep != null ? keep : 0.2) + ' opacity=' + _veil.material.opacity.toFixed(2));
-      if (A.markDirty) A.markDirty();
-    }
-    function _hideVeil() {
-      _veilActive = false;
-      if (_veil) { _veil.visible = false; if (A.markDirty) A.markDirty(); }
     }
 
     // §RP-SHELL (option 3): a room's drawable OUTLINE is its IfcSpace volume (center+size), not a
@@ -1215,7 +1179,6 @@
     function _roomLensReset() {
       _clearRoomBoxes();
       if (A.setOutline) A.setOutline([]);
-      _hideVeil();   // §VEIL: drop the dim quad
       if (A.filterByGuids) A.filterByGuids(null);  // §SHELL: un-hide the base (shell-mode or old _USE_SHELL)
       if (A.xrayOn && _roomXrayWasOff && A.toggleXray) A.toggleXray(); // WE turned x-ray on → turn it off (restores _origOpacity=1)
       else if (A.xrayOn) _dimXrayTo(0.3); // §XRAY_UNDISTURB: user had Alt+Z on before Find → our _dimXrayTo(0.12) lingers; put the normal 0.3 back
@@ -1706,7 +1669,7 @@
       // §SHELL-MODE: when the merged ghost shell is built it IS the surroundings — so drop the whole
       // x-ray machinery and the ancestor context overlays. A frame becomes: selection solid + ONE shell mesh.
       var _shell = !!(_mergedGhost && _mergedGhost.visible);
-      if (!_shell && !_USE_VEIL && !A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
+      if (!_shell && !A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
 
       // Build the visible window (inner→outer) + decide the building base (0.2 if it IS the next layer, else hidden).
       var layers = [], baseOp;
@@ -1727,7 +1690,6 @@
           else baseOp = 0.2;                                             // top-level group → building IS the 0.2
         }
         if (_USE_SHELL && A.filterByGuids) { A.filterByGuids(_exteriorGuids()); _dimXrayTo(0.3); }
-        else if (_USE_VEIL) _showVeil(baseOp);
         else _dimXrayTo(baseOp);
       }
       if (elIsoBar) {
