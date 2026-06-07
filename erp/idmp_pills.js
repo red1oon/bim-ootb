@@ -94,8 +94,9 @@
       var trigger = document.createElement('button');
       trigger.id = 'idmp-pill-trigger';
       trigger.title = 'Pills';
-      var _mv = (window.ICONS && window.ICONS.moreVert) ? window.ICONS.moreVert.svg
-        : '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>';
+      // FLAT (horizontal) kebab so OUR ⋯ differs from Android's own vertical ⋮ system menu (user-requested).
+      var _mv = (window.ICONS && window.ICONS.moreHoriz) ? window.ICONS.moreHoriz.svg
+        : '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>';
       trigger.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _mv + '</svg>';
       wrap.appendChild(pill);
       wrap.appendChild(trigger);
@@ -151,9 +152,14 @@
       // NOTE: PillBuilder toggles the pill via inline display:block, which defeats flex-direction:row — so the
       // row is laid out with inline-flex buttons + nowrap (horizontal, scrollable) instead of a flex row.
       '@media (max-width:760px){' +
+        // Pin the dock content to the RIGHT edge (row-reverse main-start) and force the ⋯ trigger to be the
+        // right-most item (order:-1) so it holds ONE constant position whether the pills row is shown or
+        // collapsed — a tapped control must never jump out from under the finger. Was justify-content:center,
+        // which re-centred the lone trigger on collapse (x≈15→179). Mobile-scoped; desktop column dock untouched.
         '#idmp-pillbar{right:0;left:0;bottom:0;top:auto;transform:none;flex-direction:row-reverse;' +
-          'align-items:center;justify-content:center;gap:6px;padding:6px 8px;background:rgba(20,22,32,0.92);' +
+          'align-items:center;justify-content:flex-start;gap:6px;padding:6px 8px;background:rgba(20,22,32,0.92);' +
           'border-top:1px solid rgba(255,255,255,0.08);}' +
+        '#idmp-pill-trigger{order:-1;}' +
         '#idmp-pill{max-height:none;background:transparent;border:none;backdrop-filter:none;' +
           '-webkit-backdrop-filter:none;padding:0;white-space:nowrap;overflow-x:auto;overflow-y:hidden;}' +
         '#idmp-pill button{display:inline-flex;margin:0 3px;}' +
