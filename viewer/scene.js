@@ -605,6 +605,11 @@ async function setupScene(A) {
     // §S277c: Resize EffectComposer
     if (A._composer) A._composer.setSize(window.innerWidth, window.innerHeight);
     if (A._ssaoPass) { A._ssaoPass.width = window.innerWidth; A._ssaoPass.height = window.innerHeight; }
+    // §BLANK_IDLE: setSize() reallocates+CLEARS the WebGL drawing buffer. With the §IDLE-PARK
+    // self-parking loop, a resize while parked leaves a cleared (blank) buffer until the next
+    // pointer/wheel/key. markDirty() draws ONE frame at the new size; the gate re-parks at 0
+    // GPU frames immediately after — idle-CPU savings untouched. (cf. webglcontextrestored:352)
+    if (A.markDirty) A.markDirty();
   };
   window.addEventListener('resize', A._onResize);
 
