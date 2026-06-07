@@ -85,8 +85,26 @@ function discFromFilename(fname) {
   return null;
 }
 
-function classifyDisc(ifcClass, filenameDisc) {
+// §FLOWTERM-REFINE: IfcFlowTerminal is the abstract supertype generic/IFC2x3 exporters emit for
+// sprinklers, lights, diffusers AND sanitary fixtures — the flat "IfcFlowTerminal → MEP" rule buries
+// them all in MEP (sprinklers never show under FP in Find). Disambiguate the catch-all by element-name
+// keyword. Filename discipline (e.g. LTU_AHouse_FP.ifc) still wins; deterministic; unmatched → MEP.
+var FLOWTERM_NAME_DISC = [
+  [['sprinkler','fire suppression','fire protection','firefight'], 'FP'],
+  [['light','luminaire','lamp','downlight','spotlight'], 'ELEC'],
+  [['receptacle','socket','outlet','switch','panelboard','panel board'], 'ELEC'],
+  [['diffuser','grille','register','air terminal','supply air','return air','exhaust'], 'ACMV'],
+  [['lavatory','water closet','urinal','sink','basin','shower','toilet','wc','sanitary','bidet','faucet','tap'], 'PLB'],
+];
+function classifyDisc(ifcClass, filenameDisc, name) {
   if (filenameDisc) return filenameDisc;
+  if (ifcClass === 'IfcFlowTerminal' && name) {
+    var low = String(name).toLowerCase();
+    for (var fi = 0; fi < FLOWTERM_NAME_DISC.length; fi++) {
+      var keys = FLOWTERM_NAME_DISC[fi][0];
+      for (var ki = 0; ki < keys.length; ki++) if (low.indexOf(keys[ki]) >= 0) return FLOWTERM_NAME_DISC[fi][1];
+    }
+  }
   return DISC_MAP[ifcClass] || 'ARC';
 }
 
@@ -404,7 +422,7 @@ self.onmessage = async function(e) {
             ifcClass: ifcClass,
             name: el.Name ? el.Name.value : ifcClass + '_' + id,
             storey: elementToStorey[id] || 'Unknown',
-            discipline: classifyDisc(ifcClass, discFromFilename(filename)),
+            discipline: classifyDisc(ifcClass, discFromFilename(filename), el.Name ? el.Name.value : ''),  // §FLOWTERM-REFINE
             material: '',
           });
         } catch(e) { /* skip unreadable */ }
