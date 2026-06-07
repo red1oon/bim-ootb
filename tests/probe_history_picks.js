@@ -138,13 +138,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     console.log('STREAM kinds: ' + JSON.stringify(listSnap.map(e => e.kind)) +
       ' labels: ' + JSON.stringify(listSnap.map(e => e.label)));
 
-    // ── 4. jumpTo step 0 → shape-mesh restore + chain ok ─────────────────
+    // ── 4. jumpTo a PICK step → shape-mesh restore + chain ok ────────────
+    // (The stream starts with a BUILDING_OPEN milestone (§7); jump to the first 'pick' step so the
+    // restore is a real element focus, not the milestone which correctly clears focus.)
+    const pickIdx = await page.evaluate(() => { var l = UniversalHistory.list(); for (var i = 0; i < l.length; i++) if (l[i].kind === 'pick') return i; return 0; });
     const focusBefore = logs.filter(l => l.includes('§FOCUS_ELEM ')).length;
-    await page.evaluate(() => UniversalHistory.jumpTo(0));
+    await page.evaluate((i) => UniversalHistory.jumpTo(i), pickIdx);
     await sleep(1200);
     const ovR = await shapeOverlayCount();
     const focusAfter = logs.filter(l => l.includes('§FOCUS_ELEM ')).length;
-    console.log('after jumpTo(0) shapeOverlays: ' + JSON.stringify(ovR) +
+    console.log('after jumpTo(pick idx=' + pickIdx + ') shapeOverlays: ' + JSON.stringify(ovR) +
       ' §FOCUS_ELEM restore-fired: ' + (focusAfter > focusBefore) + ' (want overlays>0 AND restore-fired)');
     await sleep(1400); // let async chainCheck resolve
     console.log('--- §HIST_CHAIN_OK (after jumpTo) ---');

@@ -522,14 +522,11 @@
 </div>
 <!-- §S280: Undo/Redo arrows flanking status bar -->
 <div id="status-bar-wrap">
+  <!-- §HSF-5b: the status row is now JUST the status text. The old undo/redo arrows (a separate
+       raw KernelOps.undoOp path) are RETIRED — undo/redo lives in the universal timeline scrub row
+       below (↶ ↷ + dot-line) / Ctrl+Z / Backspace, which routes through it. ONE undo path. -->
   <div id="status-row">
-    <button id="undo-btn" class="ur-btn" onclick="if(window._doSceneUndo)window._doSceneUndo()" title="Undo (Backspace)">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-    </button>
     <div id="status">v3 — <span data-trl="ui_initializing">Initializing...</span></div>
-    <button id="redo-btn" class="ur-btn" onclick="if(window._doSceneRedo)window._doSceneRedo()" title="Redo (\)">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19 7-7-7-7"/><path d="M5 12h14"/></svg>
-    </button>
   </div>
   <!-- §HSF-3: universal-hist-btns (scrub row) is appended here at runtime by universal_history.js -->
 </div>
@@ -773,7 +770,7 @@
 <script src="pill_builder.js?v=1" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=1" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
 <script src="settings_editor.js?v=1" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
-<script src="scene.js?v=50" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=51" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="streaming.js?v=53" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
@@ -813,7 +810,8 @@
 <script src="grid_contours.js?v=5" onerror="console.warn('[GridContours] grid_contours.js skipped')"></script>
 <script src="grid_dim_chains.js?v=4" onerror="console.warn('[DimChains] grid_dim_chains.js skipped')"></script>
 <script src="kernel_ops.js?v=3" onerror="console.warn('[KernelOps] kernel_ops.js skipped')"></script>
-<script src="universal_history.js?v=6" onerror="console.warn('[UniversalHistory] universal_history.js skipped')"></script>
+<script src="../common/history_bar.js?v=1" onerror="console.warn('[HistoryBar] common/history_bar.js skipped')"></script>
+<script src="universal_history.js?v=7" onerror="console.warn('[UniversalHistory] universal_history.js skipped')"></script>
 <script src="bom_extract.js?v=1" onerror="console.warn('[BOMExtract] bom_extract.js skipped')"></script>
 <script src="verb_expand.js?v=1" onerror="console.warn('[VerbExpand] verb_expand.js skipped')"></script>
 <script src="bom_walker.js?v=1" onerror="console.warn('[BOMWalker] bom_walker.js skipped')"></script>

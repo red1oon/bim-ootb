@@ -1647,15 +1647,18 @@ async function setupScene(A) {
     var noMod = !e.ctrlKey && !e.altKey && !e.metaKey;
     var notInput = e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA';
 
-    // §S280: Backspace = undo, \ = redo (kernel_ops)
+    // §S280 / §HSF-5b: Backspace = undo, \ = redo — now route through the ONE universal timeline
+    // (skip-audit + replay + read-only picks), not the retired raw scene-undo.
     if (noMod && notInput && e.key === 'Backspace') {
       e.preventDefault();
-      if (window._doSceneUndo) window._doSceneUndo();
+      if (window.UniversalHistory) { UniversalHistory.open(); UniversalHistory.undo(); }
+      else if (window._doSceneUndo) window._doSceneUndo();
       return;
     }
     if (noMod && notInput && e.key === '\\') {
       e.preventDefault();
-      if (window._doSceneRedo) window._doSceneRedo();
+      if (window.UniversalHistory) { UniversalHistory.open(); UniversalHistory.redo(); }
+      else if (window._doSceneRedo) window._doSceneRedo();
       return;
     }
 
@@ -1804,7 +1807,9 @@ async function setupScene(A) {
     if (_redoBtn) { _redoBtn.classList.toggle('active-redo', hasRedo); }
   }
 
+  // §HSF-5b: delegate to the universal timeline (ONE undo path). Back-compat shim for any caller.
   window._doSceneUndo = function() {
+    if (window.UniversalHistory) { UniversalHistory.open(); UniversalHistory.undo(); return; }
     if (!window.KernelOps || !A.db) { A.status.textContent = 'No ops to undo'; return; }
     var op = KernelOps.undoOp(A.db);
     if (op) {
@@ -1816,6 +1821,7 @@ async function setupScene(A) {
     _updateUrButtons();
   };
   window._doSceneRedo = function() {
+    if (window.UniversalHistory) { UniversalHistory.open(); UniversalHistory.redo(); return; }
     if (!window.KernelOps || !A.db) { A.status.textContent = 'No ops to redo'; return; }
     var op = KernelOps.redoOp(A.db);
     if (op) {
