@@ -73,6 +73,11 @@
       '.find-result-item.active { background: rgba(255,212,0,0.14); box-shadow: inset 2px 0 0 #ffd400; }',
       // §FOCUS: the last-clicked tree row at ANY depth — box-shadow survives the inline hover styles.
       '.find-tree-row.row-focus { background: rgba(255,212,0,0.14) !important; box-shadow: inset 3px 0 0 #ffd400 !important; }',
+      // §TAP-RESPONSE: the tree/results are scroll lists; with default touch-action mobile waits ~300ms for a
+      // possible double-tap-zoom, which eats the FIRST tap and makes the panel feel heavy. `manipulation` keeps
+      // vertical pan (scroll) but drops the double-tap delay → single tap fires immediately, first time.
+      '.find-tree-row, .find-acc-header, .find-acc-item, .find-result-item, #find-selected-text { touch-action: manipulation; }',
+      '#find-tree, .find-acc-body, #find-results { touch-action: pan-y; }',
       '.find-result-item .ri-icon { font-size: 12px; opacity: 0.4; flex-shrink: 0; }',
       '.find-result-item .ri-body { flex: 1; min-width: 0; }',
       '.find-result-item .ri-name { color: #e0e0e0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }',
@@ -2086,6 +2091,7 @@
       // Plain=replace, Ctrl/Cmd=toggle, Shift=range. Children → opts.onTap.
       function _doTap(e) {
         e.stopPropagation();
+        console.log('[RP-TA] §TAP_FIRE "' + label + '" pType=' + (e.pointerType || '?')); // §TAP-RESPONSE witness: 1 log per genuine tap
         if (isParent && opts.multiSelect) {
           var sel = (_treeMode === 'storey') ? _selStoreys : _selDiscs;
           var ctrl = e.ctrlKey || e.metaKey;
