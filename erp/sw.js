@@ -7,7 +7,8 @@
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the
 // BIM viewer SW so the two coexist on one origin — each purges ONLY its own prefix.
 // Network-first for .html/.js (fresh on deploy); cache-first for .wasm/images.
-const CACHE_VERSION = 'v596';   // v596: Kanban "Odoo-marvel" cards + shared Graph/Kanban status palette (KANBAN_MARVEL_SPEC, PR #177) merged with the mobile pill-reopen fix (v595);
+const CACHE_VERSION = 'v597';   // v597: pill ⋯ trigger UX — (a) FLAT horizontal kebab (icons.js moreHoriz) on ALL pill surfaces (erp.html + idempiere, desktop+mobile) so OUR ⋯ differs from Android's own vertical ⋮; (b) mobile dock anchors the ⋯ to a CONSTANT right-edge position (order:-1 + justify-content:flex-start) so it no longer re-centres out from under the finger on collapse;
+                                // v596: Kanban "Odoo-marvel" cards + shared Graph/Kanban status palette (KANBAN_MARVEL_SPEC, PR #177) merged with the mobile pill-reopen fix (v595);
                                 // v595: PILL_REOPEN_FIX — ⋯-collapsed mobile pill re-opens on re-tap; outside-tap close used `e.target!==trigger`, mis-read the trigger's inner <svg> tap as outside → folded-then-reopened in one tap so it never stayed collapsed; now `!trigger.contains(e.target)` (PR fix/pill-reopen);
                                 // v594: Kanban "Odoo-marvel" cards (KANBAN_MARVEL_SPEC) — dictionary-driven avatar+title+amount+date (zero per-model code) + shared semantic status colour palette across Kanban cards AND Graph bars (consistent L&F, status-at-a-glance for the long tail);
                                 // v593: ⚖ Rule pill client-scoping (RULE_EDIT_SPEC §11, PR #171) merged with chrome §A–§D — fold over the LOGGED-IN client (window.__idmpClient), honest tenant label + honest-disable on no-population (was hardcoded Odoo Client-12);

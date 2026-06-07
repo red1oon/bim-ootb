@@ -130,9 +130,9 @@
       var trigger = document.createElement('button');
       trigger.id = 'erp-pill-trigger';
       trigger.title = 'Pills';
-      // canonical vertical kebab (moreVert) from the verbatim icon set — same glyph as the BIM viewer trigger
-      var _mv = (window.ICONS && window.ICONS.moreVert) ? window.ICONS.moreVert.svg
-        : '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>';
+      // FLAT (horizontal) kebab from the verbatim icon set — differs from Android's own vertical ⋮ menu (user-requested, all surfaces).
+      var _mv = (window.ICONS && window.ICONS.moreHoriz) ? window.ICONS.moreHoriz.svg
+        : '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>';
       trigger.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _mv + '</svg>';
       wrap.appendChild(pill);
       wrap.appendChild(trigger);
