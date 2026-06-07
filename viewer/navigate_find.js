@@ -695,6 +695,7 @@
     var _roomBoxes = [];      // { guid, name, mesh, center:{x,y,z} }
     var _roomXrayWasOff = false;
     var _hlXrayWasOff = false; // true → the Phase/Material highlight lens turned X-Ray on
+    var _mgLensOwned = false;  // §MOBILE-BBOX: true → the lens auto-enabled the bbox shell on mobile (hide it on reset; user Alt+X is NOT lens-owned)
 
     // §C ELEMENT-PRECISE: the Phase/Material highlight overlay. ONE InstancedMesh of unit
     // boxes — one box per matched element, positioned+scaled from element_transforms (same
@@ -719,6 +720,10 @@
       _clearShapeOverlays();
       if (A.setOutline) A.setOutline([]);
       if (A.filterByGuids) A.filterByGuids(null);  // §SHELL: un-hide the base (shell-mode or old _USE_SHELL)
+      if (_mgLensOwned && _mergedGhost) {           // §MOBILE-BBOX: lens-owned bbox shell → hide on reset (user Alt+X stays put)
+        _mergedGhost.visible = false; _mgLensOwned = false;
+        console.log('[MG] §MOBILE_BBOX_RESET hidden (lens-owned)');
+      }
       if (A.xrayOn && _hlXrayWasOff && A.toggleXray) {
         A.toggleXray(); // WE turned x-ray on for the lens → turn it off (restores _origOpacity = 1)
         console.log('[RP-TB] §XRAY_RESTORE mode=off (lens-owned) xrayOn=' + A.xrayOn);
@@ -869,6 +874,7 @@
     }
     window._mergeGhost = toggleMergedGhost;
     window.toggleGhostXray = toggleMergedGhost; // Alt+X — ghost x-ray (cached, cheap)
+    window.ghostXrayOn = function() { return !!(_mergedGhost && _mergedGhost.visible && _mergedGhostBld === A.activeBuilding); }; // §GHOST_STATE — for pill/Help isActive
 
     // Build InstancedMeshes of the real geometry for `set`. color!=null → one cyan opaque
     // material (the highlighted item); color==null → opaque CLONE of each element's real
@@ -1655,6 +1661,13 @@
       // §SHELL-MODE: when the merged ghost shell is built it IS the surroundings — so drop the whole
       // x-ray machinery and the ancestor context overlays. A frame becomes: selection solid + ONE shell mesh.
       var _shell = !!(_mergedGhost && _mergedGhost.visible);
+      // §MOBILE-BBOX-DEFAULT: the translucent ghost shell (_dimXrayTo whole model) is too heavy on mobile.
+      // Default mobile Find/drill to the cheap bbox-wireframe shell (Alt+X envelope) — i.e. bboxes during layering.
+      // Desktop keeps the rich x-ray path. Cached build → only the first drill pays for it.
+      if (!_shell && window._isMobile) {
+        var _mg = (_mergedGhost && _mergedGhostBld === A.activeBuilding) ? _mergedGhost : _buildMergedGhost();
+        if (_mg) { _mg.visible = true; _shell = true; _mgLensOwned = true; console.log('[MG] §MOBILE_BBOX_SHELL Find→bbox (no heavy x-ray) lensOwned=1'); }
+      }
       if (!_shell && !A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
 
       // Build the visible window (inner→outer) + decide the building base (0.2 if it IS the next layer, else hidden).
