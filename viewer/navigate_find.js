@@ -804,73 +804,40 @@
       return /^Ifc(Wall|Slab|Roof|CurtainWall|Covering|Plate)/.test(ifc);
     }
     function _buildMergedGhost() {
-      if (!A.scene || typeof THREE === 'undefined' || !A.meshCache || !A.ifc2three) { console.log('[MG] §SHELL_GHOST_SKIP deps'); return null; }
+      if (!A.scene || typeof THREE === 'undefined' || !A.dbQuery || !A.ifc2three) { console.log('[MG] §SHELL_GHOST_SKIP deps'); return null; }
       if (_mergedGhost && _mergedGhostBld === A.activeBuilding) return _mergedGhost; // cached
       var t0 = (performance && performance.now) ? performance.now() : 0;
-      var rows = _getInstanceRows();
-      // pass 1 — total vert/index counts over ENVELOPE rows whose geometry is streamed
-      var totV = 0, totI = 0, used = 0, miss = 0, r, geo, pa;
-      for (var i = 0; i < rows.length; i++) {
-        r = rows[i]; if (r[2] == null || !_isEnvelope(r[9])) continue;
-        geo = A.meshCache[r[1]]; if (!geo || !geo.attributes || !geo.attributes.position) { miss++; continue; }
-        pa = geo.attributes.position;
-        totV += pa.count; totI += geo.index ? geo.index.count : pa.count; used++;
-        if (totV > _MG_VCAP) { console.log('[MG] §MERGE_GHOST_CAP verts>' + _MG_VCAP + ' at el=' + used); return null; }
+      // §BBOX-GHOST: draw the envelope as instanced WIREFRAME BOUNDING BOXES. The per-element bbox is already
+      // in the DB (same data the load placeholders use), so this is INSTANT — no real-mesh merge, no
+      // EdgesGeometry over millions of triangles (that was the Alt+X hang). One BoxGeometry, N instances.
+      var rows;
+      try {
+        rows = A.dbQuery("SELECT t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y,t.bbox_z, m.ifc_class" +
+          " FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE t.center_x IS NOT NULL") || [];
+      } catch (e) { console.log('[MG] §SHELL_GHOST_SKIP query ' + e.message); return null; }
+      var env = [];
+      for (var i = 0; i < rows.length; i++) { if (_isEnvelope(rows[i][6])) env.push(rows[i]); }
+      if (!env.length) { console.log('[MG] §BBOX_GHOST_EMPTY rows=' + rows.length); return null; }
+      var geo = new THREE.BoxGeometry(1, 1, 1);
+      var mat = new THREE.MeshBasicMaterial({ color: 0x9fc9e8, wireframe: true, transparent: true, opacity: 0.4, depthWrite: false });
+      var mesh = new THREE.InstancedMesh(geo, mat, env.length);
+      mesh.frustumCulled = false;
+      var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();
+      for (var j = 0; j < env.length; j++) {
+        var r = env[j], p = A.ifc2three(r[0], r[1], r[2]);
+        _pos.set(p.x, p.y, p.z);
+        _scl.set(r[3] || 0.3, r[5] || 0.3, r[4] || 0.3);   // bbox (x, z, y) — axis swap matches ifc2three
+        m4.compose(_pos, _q, _scl);
+        mesh.setMatrixAt(j, m4);
       }
-      if (!used) { console.log('[MG] §MERGE_GHOST_EMPTY rows=' + rows.length + ' miss=' + miss); return null; }
-      var outP = new Float32Array(totV * 3), outC = new Float32Array(totV * 3), outI = new Uint32Array(totI);
-      // §MERGE-GHOST COLOR (user: "Bonsai x-ray is bland"): bake each element's REAL colour as a vertex
-      // attribute → a COLORED glass building, not a flat wash. Pulled from the SAME A._getMaterial the
-      // solid view uses (exact parity), cached per rgba|ifc so we build each unique material once.
-      var _colCache = {};
-      function _colFor(rgba, ifc) {
-        var key = (rgba || '_') + '|' + (ifc || '_'), c = _colCache[key];
-        if (c) return c;
-        var col = null;
-        try { var m = A._getMaterial ? A._getMaterial(rgba, ifc) : null; if (m && m.color) col = [m.color.r, m.color.g, m.color.b]; } catch (e) {}
-        if (!col) col = [0.62, 0.78, 0.91];   // neutral glass-blue fallback when no material
-        _colCache[key] = col; return col;
-      }
-      var m4 = new THREE.Matrix4(), eu = new THREE.Euler(), q = new THREE.Quaternion(),
-          pos = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1), vbase = 0, ip = 0, pp = 0, cp = 0;
-      for (var k = 0; k < rows.length; k++) {
-        r = rows[k]; if (r[2] == null || !_isEnvelope(r[9])) continue;
-        geo = A.meshCache[r[1]]; if (!geo || !geo.attributes || !geo.attributes.position) continue;
-        pa = geo.attributes.position;
-        var p = A.ifc2three(r[2], r[3], r[4]); pos.set(p.x, p.y, p.z);
-        eu.set(r[5] || 0, r[7] || 0, -(r[6] || 0)); q.setFromEuler(eu); m4.compose(pos, q, sc);
-        var e = m4.elements, e0 = e[0], e1 = e[1], e2 = e[2], e4 = e[4], e5 = e[5], e6 = e[6],
-            e8 = e[8], e9 = e[9], e10 = e[10], e12 = e[12], e13 = e[13], e14 = e[14];
-        var arr = pa.array, vc = pa.count, col = _colFor(r[8], r[9]), cr = col[0], cg = col[1], cb = col[2];
-        for (var v = 0; v < vc; v++) {
-          var x = arr[v * 3], y = arr[v * 3 + 1], z = arr[v * 3 + 2];
-          outP[pp++] = e0 * x + e4 * y + e8 * z + e12;
-          outP[pp++] = e1 * x + e5 * y + e9 * z + e13;
-          outP[pp++] = e2 * x + e6 * y + e10 * z + e14;
-          outC[cp++] = cr; outC[cp++] = cg; outC[cp++] = cb;
-        }
-        if (geo.index) { var gi = geo.index.array, ic = geo.index.count; for (var j = 0; j < ic; j++) outI[ip++] = gi[j] + vbase; }
-        else { for (var j2 = 0; j2 < vc; j2++) outI[ip++] = j2 + vbase; }
-        vbase += vc;
-      }
-      var mg = new THREE.BufferGeometry();
-      mg.setAttribute('position', new THREE.BufferAttribute(outP, 3));
-      mg.setAttribute('color', new THREE.BufferAttribute(outC, 3));
-      mg.setIndex(new THREE.BufferAttribute(outI, 1));   // FULL faces (no shed) — EdgesGeometry needs the whole surface
-      // §GHOST-EDGES: draw FEATURE-EDGE OUTLINES, not filled faces. A filled translucent shell fills the
-      // silhouette → whitewash at any opacity; edges have no fill area → clean see-through outline, no wash.
-      // Threshold 30° = real corners/outlines only (not every triangle). SAME complete shell — nothing dropped.
-      var edges = new THREE.EdgesGeometry(mg, 30);
-      var mat = new THREE.LineBasicMaterial({ color: 0x9fc9e8, transparent: true, opacity: 0.5, depthWrite: false });
-      var mesh = new THREE.LineSegments(edges, mat);
-      mesh.frustumCulled = false; mesh.renderOrder = -1; // draw before overlays
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.renderOrder = -1;
       mesh.userData._mergedGhost = true;
       A.scene.add(mesh);
       _mergedGhost = mesh; _mergedGhostBld = A.activeBuilding;
       var ms = ((performance && performance.now) ? performance.now() : 0) - t0;
-      var heap = (performance && performance.memory) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) : '?';
-      console.log('[MG] §SHELL_GHOST_EDGES bld=' + A.activeBuilding + ' envelope_elements=' + used + ' miss=' + miss +
-        ' edges=' + (edges.attributes.position.count / 2) + ' from_tris=' + (totI / 3) + ' build_ms=' + ms.toFixed(0) + ' heapMB=' + heap);
+      console.log('[MG] §SHELL_GHOST_BBOX bld=' + A.activeBuilding + ' boxes=' + env.length + ' of=' + rows.length +
+        ' build_ms=' + ms.toFixed(0));
       if (A.markDirty) A.markDirty();
       return mesh;
     }
