@@ -88,6 +88,8 @@ const PRECACHE_ASSETS = [
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_period_close.js', // §INTEG-WIRE — period-close fold = signed checkpoint = balance b/f (window.ErpPeriodClose)
   'period_close_ui.js',  // §INTEG-WIRE — in-app close/bootstrap on the live sidecar op-log (window.PeriodClose)
+  'migrate_compare.html', // evaluator-facing comparison paper (docs/MigrateComparisonPaper.md) — linked from erp.html+idempiere.html
+  'migrate_compare.md',   // its single source; deep papers (ERP/HolyGrail/OpLog/Distributed/BIMERP .md) fetch on-demand, not precached
   'qrcode.min.js',
   'manifest.json',
   'pills.json',
