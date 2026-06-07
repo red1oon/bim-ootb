@@ -645,7 +645,7 @@
   }
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
-                    kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
+                    kernelDb: function () { return SIDE; }, withSidecar: withSidecar, persist: _sidePersist,
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history };
   console.log('§CRUD layer mounted (Edit-mode ready)');
 })(typeof window !== 'undefined' ? window : this);

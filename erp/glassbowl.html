@@ -854,8 +854,15 @@ if(!window.__restored&&isMobile())setPanelCollapsed(true);else syncPanelUI(docum
 <script src="bigdecimal.js"></script>
 <!-- production signed kernel (W-CHAIN/W-SIGN) — one source, copied from bim-ootb/viewer/kernel_ops.js. GP3: Process ▶ commits real signed SET_STATUS ops to a sidecar log. -->
 <script src="kernel_ops.js"></script>
+<!-- edge signer (W-SIGN) — turns the signed checkpoint un-FORGEABLE; loadOrMint custody, reused by period-close. -->
+<script src="erp_signer.js"></script>
 <!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). -->
 <script src="crud_overlay.js"></script>
+<!-- Period-close in-app (§INTEG-WIRE) — fold the live sidecar op-log → ONE signed checkpoint = balance b/f; bootstrap from it on load. -->
+<script src="erp_period_close.js"></script>
+<script src="period_close_ui.js"></script>
 <!-- Report (read face of the op-log) — peer overlay; the ring's ▤ verb folds a Receipt from the bundle. PURE READ. (CRUD_P_R_REPORT.md R1) -->
 <script src="report_overlay.js"></script>
+<!-- §INTEG-WIRE — mount the period-close control into the info panel (the op-log's natural home: compact → checkpoint). -->
+<script>(function(){function m(){if(!(window.PeriodClose&&window.__crud&&window.ErpPeriodClose)){return setTimeout(m,300);}var p=document.getElementById('panel');if(p&&!p.querySelector('.pclose-ctl')){try{window.PeriodClose.renderInto(p,{});console.log('§INTEG-WIRE control mounted in #panel');}catch(e){console.warn('§INTEG-WIRE mount',e&&e.message);}}}if(document.readyState!=='loading')m();else document.addEventListener('DOMContentLoaded',m);})();</script>
 </body></html>
