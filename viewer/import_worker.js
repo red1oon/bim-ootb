@@ -623,8 +623,25 @@ self.onmessage = async function(e) {
     // We send raw data back to main thread — it builds sql.js DBs there
     // (sql.js WASM can't run in all workers easily)
     const discCounts = {};
+    const flowTermSplit = {}; // §FLOWTERM-NOTE: how the abstract IfcFlowTerminal catch-all was split
     for (const el of renderableElements) {
       discCounts[el.discipline] = (discCounts[el.discipline] || 0) + 1;
+      if (el.ifcClass === 'IfcFlowTerminal') flowTermSplit[el.discipline] = (flowTermSplit[el.discipline] || 0) + 1;
+    }
+    // §IMPORT_DISC (user "harden Drop-IFC to note on discipline"): discipline is NOT carried in the
+    // IFC — we INFER it from the IFC class (+ element name for the abstract IfcFlowTerminal). Note the
+    // full tally so a dropped model's discipline split is auditable from the log.
+    var _discStr = Object.keys(discCounts).sort(function (a, b) { return discCounts[b] - discCounts[a]; })
+      .map(function (d) { return d + '=' + discCounts[d]; }).join(' ');
+    console.log('[FLOWTERM] §IMPORT_DISC ' + _discStr);
+    // §IMPORT_FLOWTERM_SPLIT: show how the ambiguous IfcFlowTerminal supertype was disambiguated by
+    // name. MEP-kept = the name had no FP/ELEC/ACMV/PLB keyword → the residual catch-all to review (this
+    // is the leak the refine narrows: sprinkler→FP, light→ELEC, diffuser→ACMV, sanitary→PLB).
+    var _ftKeys = Object.keys(flowTermSplit);
+    if (_ftKeys.length) {
+      console.log('[FLOWTERM] §IMPORT_FLOWTERM_SPLIT IfcFlowTerminal→ ' +
+        _ftKeys.sort().map(function (d) { return d + '=' + flowTermSplit[d]; }).join(' ') +
+        (flowTermSplit.MEP ? '  (MEP=' + flowTermSplit.MEP + ' kept — name had no discipline keyword, review)' : ' (all name-resolved)'));
     }
 
     const storeys = [...new Set(renderableElements.map(e => e.storey))].sort();
@@ -848,6 +865,7 @@ self.onmessage = async function(e) {
         elementCount: elements.length,
         geomCount: geometries.length,
         disciplines: discCounts,
+        flowTermSplit: flowTermSplit, // §FLOWTERM-NOTE: how the abstract IfcFlowTerminal was split by name
         storeys: storeys,
       },
       elements: renderableElements,

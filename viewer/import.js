@@ -218,6 +218,17 @@ function setupImport(A) {
             }
 
             if (status) status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_imported||'Imported {n} elements').replace('{n}', msg.meta.elementCount);
+            // §FLOWTERM-NOTE (user "note on discipline"): discipline is INFERRED, not in the IFC. If the
+            // import had to disambiguate the abstract IfcFlowTerminal supertype by name, note how it split
+            // (and how many stayed MEP = no discipline keyword → review). Surfaced + §-logged.
+            try {
+              var _fts = msg.meta && msg.meta.flowTermSplit;
+              if (_fts && Object.keys(_fts).length) {
+                var _note = 'IfcFlowTerminal→ ' + Object.keys(_fts).sort().map(function(d){return d+'='+_fts[d];}).join(' ');
+                console.log('[FLOWTERM] §IMPORT_FLOWTERM_NOTE ' + _note + (_fts.MEP ? ' (MEP kept — no discipline keyword, review)' : ''));
+                if (status) status.textContent += '  ·  ' + _note;
+              }
+            } catch (e) { /* note only — never block import */ }
             if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#44cc44'; }
 
             // Refresh card list
