@@ -1318,7 +1318,16 @@ window.__helpIdmpKeymap = {
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=592')
+  // §INIT-INSTANT freshness backstop — navigation is stale-while-revalidate (sw.js v598): instant cached
+  // first paint, and on a DEPLOY the new SW claims the page → controllerchange → ONE reload onto the fresh
+  // shell (so a deploy reaches a returning user in a single reload). Loop-guarded; skips the first install-claim.
+  var _swHadCtrl = !!navigator.serviceWorker.controller, _swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (_swRefreshing) return;
+    if (!_swHadCtrl) { _swHadCtrl = true; return; }   // initial install claim — adopt silently
+    _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
+  });
+  navigator.serviceWorker.register('sw.js?v=599')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
