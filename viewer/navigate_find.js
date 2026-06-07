@@ -807,39 +807,48 @@
       if (!A.scene || typeof THREE === 'undefined' || !A.dbQuery || !A.ifc2three) { console.log('[MG] §SHELL_GHOST_SKIP deps'); return null; }
       if (_mergedGhost && _mergedGhostBld === A.activeBuilding) return _mergedGhost; // cached
       var t0 = (performance && performance.now) ? performance.now() : 0;
-      // §BBOX-GHOST: draw the envelope as instanced WIREFRAME BOUNDING BOXES. The per-element bbox is already
-      // in the DB (same data the load placeholders use), so this is INSTANT — no real-mesh merge, no
-      // EdgesGeometry over millions of triangles (that was the Alt+X hang). One BoxGeometry, N instances.
+      // §BBOX-GHOST: draw the envelope as instanced WIREFRAME BOUNDING BOXES, grouped by discipline and
+      // coloured with the SAME A.DISC_COLORS the load placeholders use (no new palette). Per-element bbox is
+      // already in the DB, so this is INSTANT — no real-mesh merge, no EdgesGeometry (that was the Alt+X hang).
       var rows;
       try {
-        rows = A.dbQuery("SELECT t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y,t.bbox_z, m.ifc_class" +
+        rows = A.dbQuery("SELECT t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y,t.bbox_z, m.ifc_class, m.discipline" +
           " FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE t.center_x IS NOT NULL") || [];
       } catch (e) { console.log('[MG] §SHELL_GHOST_SKIP query ' + e.message); return null; }
-      var env = [];
-      for (var i = 0; i < rows.length; i++) { if (_isEnvelope(rows[i][6])) env.push(rows[i]); }
-      if (!env.length) { console.log('[MG] §BBOX_GHOST_EMPTY rows=' + rows.length); return null; }
-      var geo = new THREE.BoxGeometry(1, 1, 1);
-      var mat = new THREE.MeshBasicMaterial({ color: 0x9fc9e8, wireframe: true, transparent: true, opacity: 0.4, depthWrite: false });
-      var mesh = new THREE.InstancedMesh(geo, mat, env.length);
-      mesh.frustumCulled = false;
-      var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();
-      for (var j = 0; j < env.length; j++) {
-        var r = env[j], p = A.ifc2three(r[0], r[1], r[2]);
-        _pos.set(p.x, p.y, p.z);
-        _scl.set(r[3] || 0.3, r[5] || 0.3, r[4] || 0.3);   // bbox (x, z, y) — axis swap matches ifc2three
-        m4.compose(_pos, _q, _scl);
-        mesh.setMatrixAt(j, m4);
+      var byDisc = {};
+      for (var i = 0; i < rows.length; i++) {
+        var rr = rows[i]; if (!_isEnvelope(rr[6])) continue;
+        var d = rr[7] || '_'; (byDisc[d] = byDisc[d] || []).push(rr);
       }
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.renderOrder = -1;
-      mesh.userData._mergedGhost = true;
-      A.scene.add(mesh);
-      _mergedGhost = mesh; _mergedGhostBld = A.activeBuilding;
+      var discs = Object.keys(byDisc);
+      if (!discs.length) { console.log('[MG] §BBOX_GHOST_EMPTY rows=' + rows.length); return null; }
+      var group = new THREE.Group(), geo = new THREE.BoxGeometry(1, 1, 1), total = 0;
+      var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();
+      for (var di = 0; di < discs.length; di++) {
+        var disc = discs[di], drows = byDisc[disc];
+        var color = A.DISC_COLORS[disc] || A.DEFAULT_COLOR;   // EXACT same line as the load placeholders (streaming.js:215)
+        var mat = new THREE.MeshBasicMaterial({ color: color, wireframe: true, transparent: true, opacity: 0.4, depthWrite: false });
+        var im = new THREE.InstancedMesh(geo, mat, drows.length);
+        im.frustumCulled = false; im.renderOrder = -1;   // per-child (matches #184's single-mesh renderOrder)
+        for (var j = 0; j < drows.length; j++) {
+          var r = drows[j], p = A.ifc2three(r[0], r[1], r[2]);
+          _pos.set(p.x, p.y, p.z);
+          _scl.set(r[3] || 0.3, r[5] || 0.3, r[4] || 0.3);   // bbox (x, z, y) — axis swap matches ifc2three
+          m4.compose(_pos, _q, _scl);
+          im.setMatrixAt(j, m4);
+        }
+        im.instanceMatrix.needsUpdate = true;
+        group.add(im); total += drows.length;
+      }
+      group.renderOrder = -1;
+      group.userData._mergedGhost = true;
+      A.scene.add(group);
+      _mergedGhost = group; _mergedGhostBld = A.activeBuilding;
       var ms = ((performance && performance.now) ? performance.now() : 0) - t0;
-      console.log('[MG] §SHELL_GHOST_BBOX bld=' + A.activeBuilding + ' boxes=' + env.length + ' of=' + rows.length +
+      console.log('[MG] §SHELL_GHOST_BBOX bld=' + A.activeBuilding + ' boxes=' + total + ' discs=' + discs.length +
         ' build_ms=' + ms.toFixed(0));
       if (A.markDirty) A.markDirty();
-      return mesh;
+      return group;
     }
     function toggleMergedGhost() {
       // Alt+X: show the envelope ghost ALONE — hide every solid mesh via filterByGuids (VISIBILITY ONLY,
