@@ -10,7 +10,8 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v599';   // v599: INIT-BUBBLE freshness backstop — SWR navigation (v598) reaches a returning user fresh only on the SECOND post-deploy reload (old SW serves the nav before the new one activates); erp.html+idempiere.html now do a one-shot controllerchange→reload so a deploy converges in ONE reload (witness erp/tests/poc_init_deploy_fresh.js: reload1Settled=B, oneReloadConverges=Y);
+const CACHE_VERSION = 'v600';   // v600: §INTEG-WIRE — period-close in-app (erp_period_close.js + period_close_ui.js): an accountant closes a period → signed checkpoint = balance b/f on the live sidecar op-log; next load bootstraps from the checkpoint. Substrate (prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2 slice A) on the collapsed canonical kernel (commitGroup). Witness erp/tests/poc_period_close_wire.js (§INTEG-WIRE).
+// v599: INIT-BUBBLE freshness backstop — SWR navigation (v598) reaches a returning user fresh only on the SECOND post-deploy reload (old SW serves the nav before the new one activates); erp.html+idempiere.html now do a one-shot controllerchange→reload so a deploy converges in ONE reload (witness erp/tests/poc_init_deploy_fresh.js: reload1Settled=B, oneReloadConverges=Y);
                                 // v598: INIT-BUBBLE INSTANT — navigation served stale-while-revalidate (was network-first), so a warm load paints the init-bubble shell from cache with ZERO network round-trip instead of awaiting the HTML document over the wire (witness erp/tests/poc_init_instant.js: warm bubblePaint 883ms→<300ms under 800ms nav latency); db already deferred off the paint path;
                                 // v597: pill ⋯ trigger UX — (a) FLAT horizontal kebab (icons.js moreHoriz) on ALL pill surfaces (erp.html + idempiere, desktop+mobile) so OUR ⋯ differs from Android's own vertical ⋮; (b) mobile dock anchors the ⋯ to a CONSTANT right-edge position (order:-1 + justify-content:flex-start) so it no longer re-centres out from under the finger on collapse;
                                 // v596: Kanban "Odoo-marvel" cards + shared Graph/Kanban status palette (KANBAN_MARVEL_SPEC, PR #177) merged with the mobile pill-reopen fix (v595);
@@ -85,6 +86,10 @@ const PRECACHE_ASSETS = [
   'kanban_host.js',    // reusable Kanban host: publish window.ERP + persist/restore the op-log
   'bigdecimal.js',     // exact decimal compare for the rule fold (never raw JS Number) — window.BigDecimal
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
+  'erp_period_close.js', // §INTEG-WIRE — period-close fold = signed checkpoint = balance b/f (window.ErpPeriodClose)
+  'period_close_ui.js',  // §INTEG-WIRE — in-app close/bootstrap on the live sidecar op-log (window.PeriodClose)
+  'migrate_compare.html', // evaluator-facing comparison paper (docs/MigrateComparisonPaper.md) — linked from erp.html+idempiere.html
+  'migrate_compare.md',   // its single source; deep papers (ERP/HolyGrail/OpLog/Distributed/BIMERP .md) fetch on-demand, not precached
   'qrcode.min.js',
   'manifest.json',
   'pills.json',

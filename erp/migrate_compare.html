@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Migrate &amp; Compare — Legacy ERP vs the WASM Event-Sourced Browser</title>
+<!--
+  migrate_compare.html — the basic, evaluator-facing comparison page (prompts/ERP_SUBSTRATE_INTEGRATION /
+  docs/MigrateComparisonPaper.md). Renders the SINGLE source migrate_compare.md (no duplication, no drift):
+  a thesis, a round-trip-vs-local diagram, and a source-cited vitals table comparing iDempiere/Odoo/SAP
+  with our WASM event-source concept. Self-contained — a tiny markdown renderer, no external library.
+  Linked from erp.html + idempiere.html. NON-INVENT: every number lives in the .md, each cell footnoted.
+-->
+<style>
+  :root{--bg:#0c0f14;--card:#141a22;--ink:#e7edf3;--dim:#9fb0c8;--line:#222c38;--accent:#6c9fff;--good:#5fd08a}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-text-size-adjust:100%}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 18px 80px}
+  .top{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .back{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 14px;border-radius:20px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--accent);text-decoration:none;font-size:13px}
+  #doc h1{font-size:24px;line-height:1.25;margin:18px 0 6px}
+  #doc h2{font-size:19px;margin:28px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  #doc h3{font-size:16px;margin:20px 0 6px;color:var(--accent)}
+  #doc p{margin:10px 0}
+  #doc a{color:var(--accent)}
+  #doc hr{border:none;border-top:1px solid var(--line);margin:22px 0}
+  #doc blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:rgba(108,159,255,.07);border-radius:0 8px 8px 0;color:var(--dim);font-size:14px}
+  #doc pre{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cfe0f5}
+  #doc code{background:rgba(255,255,255,.07);border-radius:5px;padding:1px 5px;font:12.5px ui-monospace,Menlo,monospace}
+  #doc pre code{background:none;padding:0}
+  #doc ul,#doc ol{margin:10px 0;padding-left:22px}#doc li{margin:5px 0}
+  .tablewrap{overflow-x:auto;margin:14px 0;-webkit-overflow-scrolling:touch}
+  #doc table{border-collapse:collapse;width:100%;min-width:680px;font-size:13px}
+  #doc th,#doc td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  #doc th{background:#1a2230;color:#fff;position:sticky;top:0}
+  #doc tbody tr:nth-child(even){background:rgba(255,255,255,.02)}
+  #doc td:last-child{background:rgba(95,208,138,.06)}
+  .err{color:#e88;padding:20px}
+  sup{color:var(--accent);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a class="back" id="back" href="erp.html">‹ Back</a></div>
+  <div id="doc"><p class="err" style="display:none" id="err"></p></div>
+</div>
+<script>
+// minimal, scoped markdown renderer — handles exactly the constructs in migrate_compare.md:
+// fenced code, h1-h3, hr, blockquote, GFM pipe tables, ordered/unordered lists, paragraphs;
+// inline: **bold**, `code`, [text](url), [^ref] footnote markers. No external dependency.
+(function () {
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function inline(s) {
+    s = esc(s);
+    s = s.replace(/`([^`]+)`/g, function (_, c) { return '<code>' + c + '</code>'; });
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\[\^([^\]]+)\]/g, '<sup>[$1]</sup>');                          // footnote ref
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, t, u) {                // links: local .md → this viewer ?f=
+      var m = u.match(/^([A-Za-z0-9_]+\.md)(#.*)?$/);
+      var href = m ? ('migrate_compare.html?f=' + m[1] + (m[2] || '')) : u; return '<a href="' + href + '">' + t + '</a>'; });
+    return s;
+  }
+  function table(rows) {
+    var head = rows[0].slice(1, -1).split('|').map(function (c) { return c.trim(); });
+    var body = rows.slice(2).map(function (r) { return r.slice(1, -1).split('|').map(function (c) { return c.trim(); }); });
+    var h = '<div class="tablewrap"><table><thead><tr>' + head.map(function (c) { return '<th>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    h += body.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + inline(c) + '</td>'; }).join('') + '</tr>'; }).join('');
+    return h + '</tbody></table></div>';
+  }
+  function render(md) {
+    var lines = md.replace(/\r/g, '').split('\n'), out = [], i = 0;
+    while (i < lines.length) {
+      var ln = lines[i];
+      if (/^```/.test(ln)) { var buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]); i++; out.push('<pre><code>' + esc(buf.join('\n')) + '</code></pre>'); continue; }
+      if (/^#{1,6}\s/.test(ln)) { var lvl = ln.match(/^#+/)[0].length, txt = ln.replace(/^#+\s/, '');
+        var id = txt.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '');
+        out.push('<h' + lvl + ' id="' + id + '">' + inline(txt) + '</h' + lvl + '>'); i++; continue; }
+      if (/^---+\s*$/.test(ln)) { out.push('<hr>'); i++; continue; }
+      if (/^\s*\|.*\|\s*$/.test(ln) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+        var tb = []; while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) tb.push(lines[i++].trim()); out.push(table(tb)); continue; }
+      if (/^>\s?/.test(ln)) { var q = []; while (i < lines.length && /^>\s?/.test(lines[i])) q.push(lines[i++].replace(/^>\s?/, '')); out.push('<blockquote>' + inline(q.join(' ')) + '</blockquote>'); continue; }
+      if (/^\s*[-*]\s+/.test(ln)) { var ul = []; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) ul.push('<li>' + inline(lines[i++].replace(/^\s*[-*]\s+/, '')) + '</li>'); out.push('<ul>' + ul.join('') + '</ul>'); continue; }
+      if (/^\s*\d+\.\s+/.test(ln)) { var ol = []; while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) ol.push('<li>' + inline(lines[i++].replace(/^\s*\d+\.\s+/, '')) + '</li>'); out.push('<ol>' + ol.join('') + '</ol>'); continue; }
+      if (/^\s*$/.test(ln)) { i++; continue; }
+      var p = []; while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^(#{1,6}\s|```|>|\s*[-*]\s|\s*\d+\.\s|---+\s*$)/.test(lines[i]) && !/^\s*\|.*\|\s*$/.test(lines[i])) p.push(lines[i++]);
+      out.push('<p>' + inline(p.join(' ')) + '</p>');
+    }
+    return out.join('\n');
+  }
+  // whitelist of renderable docs (no arbitrary fetch). Default = the comparison paper.
+  var DOCS = { 'migrate_compare.md': 'Migrate & Compare', 'ERP.md': 'ERP — AD-in-a-browser blueprint',
+    'HolyGrail.md': 'Holy Grail — end-state & hard parts', 'OpLogERP.md': 'OpLog ERP — the log is the truth',
+    'DistributedERP.md': 'Distributed ERP — serverless doctrine', 'BIMERPPaper.md': 'BIM·ERP — why & provenance' };
+  function param(n) { try { return new URLSearchParams(location.search).get(n); } catch (e) { return null; } }
+  var hash = (location.search.match(/#.*$/) || [''])[0];
+  var f = param('f'); if (!f || !DOCS.hasOwnProperty(f)) f = 'migrate_compare.md';
+  if (f !== 'migrate_compare.md') document.title = DOCS[f] + ' — ERP OOTB';
+  fetch(f, { cache: 'no-cache' })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function (md) {
+      document.getElementById('doc').innerHTML = render(md);
+      console.log('§MIGRATE-COMPARE rendered f=' + f + ' chars=' + md.length);
+      if (location.hash) { var t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }
+    })
+    .catch(function (e) { var el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Could not load ' + f + ' — ' + e.message; });
+  // back: a deep paper returns to the comparison page; the comparison page returns to its referrer surface.
+  var back = document.getElementById('back');
+  if (f !== 'migrate_compare.md') { back.href = 'migrate_compare.html'; back.textContent = '‹ Back to comparison'; }
+  else { try { if (/idempiere\.html/.test(document.referrer || '')) back.href = 'idempiere.html'; } catch (e) {} }
+})();
+</script>
+</body>
+</html>
