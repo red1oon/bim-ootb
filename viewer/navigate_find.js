@@ -2002,7 +2002,13 @@
           ';background:linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)' +
           ';border-left:3px solid rgba(79,195,247,0.3)' : '');
       var arrow = document.createElement('span');
-      arrow.style.cssText = 'font-size:' + (isParent ? '10px' : '8px') + ';opacity:0.5;width:12px;text-align:center;flex-shrink:0';
+      // §EXPAND-HITZONE (user): the expand "+" was a 12px glyph — the only expand affordance on
+      // storey/disc parent rows (label-tap there = select). Make the arrow a BIG tap target: a wider
+      // column + full row height (align-self:stretch + flex-center keeps the glyph put). Rows WITH
+      // children additionally reclaim the left gutter into the tap zone (below) so it extends to the
+      // LEFT of the "+". flex-center keeps the glyph visually where it was.
+      arrow.style.cssText = 'font-size:' + (isParent ? '10px' : '8px') + ';opacity:0.5;width:16px;' +
+        'text-align:center;flex-shrink:0;align-self:stretch;display:flex;align-items:center;justify-content:center';
       arrow.textContent = opts.children ? '\u25B8' : '';
       var text = document.createElement('span');
       text.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis';
@@ -2047,6 +2053,13 @@
       // Close panel = restore full scene.
       if (childContainer) {
         arrow.style.cursor = 'pointer';
+        // §EXPAND-HITZONE: extend the tap area to the LEFT of the "+" by eating the row's left gutter
+        // (negative margin pulls the box left to the row edge; equal padding pushes the glyph back so
+        // it stays put visually). Now the whole left strip + the wider taller arrow toggles expand.
+        var _leftPad = isParent ? 10 : (22 + level * 12);
+        arrow.style.marginLeft = '-' + _leftPad + 'px';
+        arrow.style.paddingLeft = _leftPad + 'px';
+        arrow.title = 'Expand';
         arrow.addEventListener('pointerup', function(e) {
           e.stopPropagation();
           expanded = !expanded;
