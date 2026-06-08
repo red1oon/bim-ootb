@@ -212,6 +212,11 @@
   #idmp-login-migrate-btn { width:100%; height:34px; border:1px solid var(--idmp-blue); border-radius:6px;
     background:var(--idmp-hover); color:var(--idmp-blue); font-size:12.5px; font-weight:600; cursor:pointer; }
   #idmp-login-migrate-btn:hover { background:var(--idmp-sel); }
+  /* §0.10a front-door onboarding — Install (fresh tenant) + Migrate (from another ERP), both via ErpPicker. */
+  .idmp-onboard-row { display:flex; gap:8px; }
+  .idmp-onboard-btn { flex:1; height:34px; border:1px solid var(--idmp-blue); border-radius:6px;
+    background:var(--idmp-hover); color:var(--idmp-blue); font-size:12.5px; font-weight:600; cursor:pointer; }
+  .idmp-onboard-btn:hover { background:var(--idmp-sel); }
   /* ── Mobile adaptation (desktop is exact; mobile may adapt) ── */
   @media (max-width:760px) {
     #idmp-burger { display:flex; }
@@ -264,11 +269,16 @@
       </div>
       <div id="idmp-login-note" class="idmp-login-note"></div>
     </div>
-    <!-- §0.10a first-mile: before you have data, the first task is bringing it IN. -->
+    <!-- §0.10a first-mile: before you have data, the first task is bringing it IN. Install a fresh tenant or
+         Migrate from another ERP — both routed through the one ErpPicker (which delegates to ShowMe/Odoo). -->
     <div class="idmp-login-migrate">
-      <span>New here — your data still in a Docker Postgres?</span>
-      <button id="idmp-login-migrate-btn" type="button"
-        onclick="window.MigrateShowMe &amp;&amp; MigrateShowMe.open()">↓ Migrate your iDempiere data (ShowMe)</button>
+      <span>New here? Set up a fresh ERP, or bring your data in from another one.</span>
+      <div class="idmp-onboard-row">
+        <button type="button" class="idmp-onboard-btn"
+          onclick="window.openInstallFor ? openInstallFor() : (window.ErpPicker &amp;&amp; ErpPicker.open({mode:'install'}))">⤓ Install</button>
+        <button type="button" class="idmp-onboard-btn"
+          onclick="window.openMigrateFor ? openMigrateFor() : (window.ErpPicker &amp;&amp; ErpPicker.open({mode:'migrate'}))">⇄ Migrate</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1168,6 +1178,8 @@
   }
   function openInstallFor() { console.log('§INSTALL-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'install', status: status }); else status('ERP picker not loaded.'); }
   function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
+  // §0.10a — expose to the login-card onboarding buttons (same handlers as the rail pills; one ErpPicker path).
+  window.openInstallFor = openInstallFor; window.openMigrateFor = openMigrateFor;
   // §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar is now rendered by the SHARED registry (idmp_pills.js +
   // pills_idmp.json + PillBuilder), NOT hand-rolled. Publish the REAL handlers BY ID; idmp_pills.js binds them.
   // (The hand-rolled #idmp-pillrail builder + its CSS were deleted — §PILL-REGISTRY: no controls outside the pill.)

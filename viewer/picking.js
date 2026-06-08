@@ -389,6 +389,7 @@ function setupPicking(A) {
         return;
       }
       console.log(`§PICK merged→resolved guid=${guid}`);
+      if (window.S) window.S('PICK', `${(ud && ud.elementName) || ud && ud.ifcClass || 'element'} ${guid.slice(0,8)}`, { guid: guid });
     }
     if (!guid) guid = A.guidMap[hit.object.id];
     // 2D contour/arc/label/furniture meshes carry guid directly in userData (not in guidMap)
@@ -547,6 +548,7 @@ function setupPicking(A) {
     // ever opened) loads it once, then focuses; every later tap is instant. (NOT "opening Find" —
     // just ensuring the file that HOSTS the shared renderer is present; the call stays neutral.)
     if (guid && (A.focusElement || A.loadNavigate)) {
+      if (window.S) window.S('FOCUS', `element ${guid.slice(0,8)}`, { guid: guid });
       _restoreIsolation(A);                 // drop any prior isolation first (no double-dim)
       if (A.focusElement) A.focusElement(guid, { item: true, frame: false });
       else A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(guid, { item: true, frame: false }); });
