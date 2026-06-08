@@ -10,6 +10,7 @@
     { "id": "kanban",  "name": "Kanban",       "key": "", "icon": "layout",    "order": 3, "note": "draggable wfmc board / heat-map fallback (openKanbanFor) — board-columns layout glyph." },
     { "id": "rule",    "name": "Rule",         "key": "", "icon": "checkList", "order": 4, "note": "lifecycle-as-data governance gate (openRuleFor) — compliance checkList glyph." },
     { "id": "install", "name": "Install",      "key": "", "icon": "save",     "order": 5, "stage": "pre-client", "note": "§C: bring a tenant ONTO this device (openInstallFor / ErpPicker install). save-to-disk glyph. stage=pre-client — hidden once a client is entered (GATE-2)." },
-    { "id": "migrate", "name": "Migrate",      "key": "", "icon": "pipe",     "order": 6, "stage": "pre-client", "note": "§C: pipe data IN from another ERP (openMigrateFor / ErpPicker migrate). conduit pipe glyph. stage=pre-client — hidden once a client is entered (GATE-2)." }
+    { "id": "migrate", "name": "Migrate",      "key": "", "icon": "pipe",     "order": 6, "stage": "pre-client", "note": "§C: pipe data IN from another ERP (openMigrateFor / ErpPicker migrate). conduit pipe glyph. stage=pre-client — hidden once a client is entered (GATE-2)." },
+    { "id": "compare", "name": "Migrate & Compare", "key": "", "icon": "doc", "order": 7, "nav": "https://red1oon.github.io/BIMCompiler/MigrateComparisonPaper/", "note": "evaluator companion paper (legacy ERP vs the WASM event-sourced browser) — opens the BIMCompiler docs site in a NEW TAB. nav handled by idmp_pills.js (external https → window.open _blank). 'doc' glyph (barChart is taken by graph on this surface)." }
   ]
 }
