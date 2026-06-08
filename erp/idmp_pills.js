@@ -49,13 +49,18 @@
   var _PB = null, _actions = null, _curStage = null;
   function _applyStage(stage) {
     if (!_PB || !_actions) return;
-    _actions.forEach(function (a) {
-      if (a._stage === 'pre-client') a.pill = (stage === 'pre-client') ? undefined : false;
-    });
-    _PB.build();
-    _PB.sync();   // §D — re-apply lit states (red pill) after the rebuild
-    var lc = (stage === 'pre-client') ? 'Y' : 'context';     // 'context' = hidden from the primary rail (GATE-2)
-    var shown = _actions.filter(function (a) { return a.pill !== false; }).map(function (a) { return a.id; });
+    // §C lifecycle (agreed onboarding UX): pre-client = lifecycle pills on the primary rail (the login card
+    // also carries Install/Migrate); in-client = DEMOTE to the ⋯ overflow — still reachable/restorable, NOT
+    // gone (so a 2nd tenant can be onboarded without a foot-gun on the live rail). We toggle the builder's
+    // `hidden` set (off-rail-but-in-overflow) rather than pill=false (gone), preserving the user's own choices.
+    var lifecycleIds = _actions.filter(function (a) { return a._stage === 'pre-client'; }).map(function (a) { return a.id; });
+    _actions.forEach(function (a) { if (a._stage === 'pre-client') a.pill = undefined; });  // always a real pill
+    var cfg = _PB.getConfig();
+    var hidden = (cfg.hidden || []).filter(function (id) { return lifecycleIds.indexOf(id) < 0; }); // drop managed ids
+    if (stage !== 'pre-client') hidden = hidden.concat(lifecycleIds);                                // in-client → overflow
+    _PB.setConfig({ order: cfg.order, hidden: hidden });   // setConfig rebuilds + re-syncs lit states (§D)
+    var lc = (stage === 'pre-client') ? 'rail' : 'overflow';
+    var shown = _actions.filter(function (a) { return a.pill !== false && hidden.indexOf(a.id) < 0; }).map(function (a) { return a.id; });
     console.log('§IDMP-LIFECYCLE stage=' + stage + ' install=' + lc + ' migrate=' + lc + ' shown=[' + shown.join(',') + ']');
   }
   // setStage(s) — host calls on login (in-client) / tenant-picker open (pre-client). No arg → re-read IdmpPillStage().
