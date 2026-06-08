@@ -861,8 +861,13 @@ if(!window.__restored&&isMobile())setPanelCollapsed(true);else syncPanelUI(docum
 <!-- Period-close in-app (§INTEG-WIRE) — fold the live sidecar op-log → ONE signed checkpoint = balance b/f; bootstrap from it on load. -->
 <script src="erp_period_close.js"></script>
 <script src="period_close_ui.js"></script>
+<!-- Disposable-host persistence (§INTEG-WIRE-B) — back the books up to a SIGNED snapshot the user owns; restore on a fresh device (replay → recompute tip == signed tip). -->
+<script src="erp_replica_client.js"></script>
+<script src="erp_persist_ui.js"></script>
 <!-- Report (read face of the op-log) — peer overlay; the ring's ▤ verb folds a Receipt from the bundle. PURE READ. (CRUD_P_R_REPORT.md R1) -->
 <script src="report_overlay.js"></script>
 <!-- §INTEG-WIRE — mount the period-close control into the info panel (the op-log's natural home: compact → checkpoint). -->
 <script>(function(){function m(){if(!(window.PeriodClose&&window.__crud&&window.ErpPeriodClose)){return setTimeout(m,300);}var p=document.getElementById('panel');if(p&&!p.querySelector('.pclose-ctl')){try{window.PeriodClose.renderInto(p,{});console.log('§INTEG-WIRE control mounted in #panel');}catch(e){console.warn('§INTEG-WIRE mount',e&&e.message);}}}if(document.readyState!=='loading')m();else document.addEventListener('DOMContentLoaded',m);})();</script>
+<!-- §INTEG-WIRE-B — mount the backup/restore control into the info panel (beside period-close; both act on the op-log). -->
+<script>(function(){function m(){if(!(window.ErpPersist&&window.__crud&&window.ErpReplicaClient&&window.KernelOps)){return setTimeout(m,300);}var p=document.getElementById('panel');if(p&&!p.querySelector('.persist-ctl')){try{window.ErpPersist.renderInto(p,{});console.log('§INTEG-WIRE-B control mounted in #panel');}catch(e){console.warn('§INTEG-WIRE-B mount',e&&e.message);}}}if(document.readyState!=='loading')m();else document.addEventListener('DOMContentLoaded',m);})();</script>
 </body></html>
