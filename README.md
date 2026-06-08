@@ -32,7 +32,7 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **Typed natural-language query** — type a question in the viewer bar → SQL → answer + 3D highlight; 92/92 across 7 buildings (EN/Malay/Swedish), zero drift
 - **Find / Revit+ Lens** — uniform depth model (ghost / group-solid / shine-through item), room·material·phase·storey lenses, x-ray (Alt+X), tight-FOV group-zoom drill
 - **Alt+X envelope ghost** — disc-coloured instanced bbox wireframes (free, no hang) — see the model's skeleton through its skin
-- **City Mode (S285)** — camera ray-blast streaming with ARC-first gate and wave eviction; whole-city facade resident, 786 buildings
+- **City Mode (S285)** — camera ray-blast streaming with ARC-first gate and wave eviction; whole-city facade kept resident as you fly
 - **Precision camera** — Auto-Pivot live re-centre orbit (room-centroid / selected element), keyboard cluster
 - **Synthesized SFX** — zero-asset cinematic audio overlay (Time-Machine score, nav cues, surface-aware ray-blast)
 
@@ -65,16 +65,19 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 1. **uniCenta POS** — a new browser version, driven by **replenishment** (the POS lifecycle as folds over the same ledger).
 2. **Warehouse mobile walk** — a phone-first pick/put-away "walk the aisles" app over the same tenant.
 
-**BIM — two big objectives.**
+**BIM — one big objective.**
 
 1. **2D Grid Editor modelling** — author and edit the model from the 2D grid, not just view it.
-2. **Parallel history timeline** — the universal op|view timeline running side-by-side across building and ERP context.
+
+**Common — across both engines.**
+
+1. **Parallel history timeline** — the one universal op|view timeline running side-by-side across the BIM building *and* the ERP context: a single scrubbable history over the shared op-log.
 
 ---
 
 ## Architecture
 
-80+ vanilla JS modules. No framework, no build step, no server dependency.
+140+ vanilla JS modules (≈100 BIM + 40 ERP). No framework, no build step, no server dependency.
 
 Application state lives in **two SQLite databases** queried via sql-wasm — one for the BIM model, one for the ERP Application Dictionary. Three.js r160 ESM handles rendering with BatchedMesh and distance-based LOD; IFC files are parsed client-side by web-ifc and stored in IndexedDB. Both engines share one signed operation log.
 
@@ -86,7 +89,7 @@ viewer/               — BIM engine
   streaming.js        — DB streaming + mesh construction
   measure.js          — Clash detection engine
   import.js           — IFC/mesh import pipeline
-  ...80+ modules
+  ...100+ modules
   lib/                — Three.js, sql-wasm, web-ifc
   locales/            — 18 language packs
   rates/              — 17 country rate templates
@@ -147,9 +150,11 @@ cd tests && npm install && npx playwright test
 
 ## History
 
-This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) — a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend. The ERP engine grew alongside it — the iDempiere Application Dictionary folded into the same browser, fully in JavaScript rather than the original Java.
+This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) — a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend. That parent browser sprint (S200–S271, April 20 — May 23) produced 552 commits and 92 JS modules in 33 days.
 
-The browser sprint (S200–S271, April 20 — May 23) produced 552 commits and 92 JS modules in 33 days, but the BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power it were built over the preceding 6 months in the parent project.
+Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **491 commits across 210 PRs through S288 (June 2026)**, now **140+ vanilla JS modules** (≈100 BIM + 40 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) while the **ERP engine emerged beside it** — the iDempiere Application Dictionary folded into the same browser, fully in JavaScript rather than the original Java, then extended to fold a live Odoo tenant through the same signed op-log.
+
+The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power the viewer were built over the preceding 6 months in the parent project.
 
 ## Links
 
