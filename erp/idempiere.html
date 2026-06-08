@@ -251,7 +251,7 @@
     <div class="idmp-login-mark">A+</div>
     <div class="idmp-login-title">iDempiere&#8209;like — Sign In</div>
     <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
-    <div class="idmp-login-sub" style="margin-top:6px"><a href="migrate_compare.html" style="color:#6c9fff;text-decoration:none">▤ How this compares to iDempiere / Odoo / SAP&nbsp;›</a></div>
+    <div class="idmp-login-sub" style="margin-top:6px"><a href="migrate_compare.html" style="color:#6c9fff;text-decoration:none;display:inline-flex;align-items:center;gap:6px"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>How this compares to iDempiere / Odoo / SAP&nbsp;›</a></div>
     <div id="idmp-login-step1">
       <div class="idmp-login-label">Select a user</div>
       <div id="idmp-login-users" class="idmp-login-list"></div>
@@ -1180,6 +1180,8 @@
   function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
   // §0.10a — expose to the login-card onboarding buttons (same handlers as the rail pills; one ErpPicker path).
   window.openInstallFor = openInstallFor; window.openMigrateFor = openMigrateFor;
+  // Read / Compare pill — houses the 'How this compares' paper in a pill (was a free-floating login-card link).
+  function openReadCompare() { console.log('§ERPDOC-PILL action=open'); window.location.href = 'migrate_compare.html'; }
   // §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar is now rendered by the SHARED registry (idmp_pills.js +
   // pills_idmp.json + PillBuilder), NOT hand-rolled. Publish the REAL handlers BY ID; idmp_pills.js binds them.
   // (The hand-rolled #idmp-pillrail builder + its CSS were deleted — §PILL-REGISTRY: no controls outside the pill.)
@@ -1205,7 +1207,8 @@
     window.IdmpPillActions = {
       redpill: toggleCleanMode,
       posted: openPostedFor, graph: openGraphFor, kanban: openKanbanFor,
-      rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor
+      rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor,
+      erpdoc: openReadCompare
     };
     window.IdmpPillActive = { redpill: function () { return _pillMode; } };   // §D — red pill lit in "just the pill" mode
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker

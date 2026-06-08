@@ -84,7 +84,23 @@ const server = http.createServer((req, res) => {
   console.log('   ' + (preRail ? '🟢' : '🔴') + ' W5 pre-client: Install/Migrate on the primary rail (front door)');
   console.log('   ' + (incOverflw ? '🟢' : '🔴') + ' W6 in-client: Install/Migrate DEMOTED to ⋯ overflow (hidden-set, restorable — not gone)');
 
-  const pass = railUp && hasInstall && hasMigrate && !card.oldShowMe && pickOk && preRail && incOverflw && errs.length === 0;
+  // ── W7 — the 'Read / Compare' paper is now a (lightbulb) PILL on iDempiere, wired to openReadCompare ──
+  const erpdoc = await page.evaluate(() => {
+    var cfg = window.IdmpPills.builder.getConfig();
+    return { inOrder: (cfg.order || []).indexOf('erpdoc') >= 0,
+             handler: !!(window.IdmpPillActions && typeof window.IdmpPillActions.erpdoc === 'function') };
+  });
+  // pre-client rail should include erpdoc (never stage-gated)
+  await page.evaluate(() => window.IdmpPills.setStage('pre-client'));
+  const erpdocShown = await page.evaluate(() => {
+    var b = window.IdmpPills.builder, cfg = b.getConfig();
+    return (cfg.hidden || []).indexOf('erpdoc') < 0 && (cfg.order || []).indexOf('erpdoc') >= 0;
+  });
+  console.log('§ONBOARD-READPILL inOrder=' + erpdoc.inOrder + ' handler=' + erpdoc.handler + ' shownPreClient=' + erpdocShown);
+  const readPillOk = erpdoc.inOrder && erpdoc.handler && erpdocShown;
+  console.log('   ' + (readPillOk ? '🟢' : '🔴') + ' W7 Read/Compare lives in a pill (id=erpdoc) wired to openReadCompare — not a stray link');
+
+  const pass = railUp && hasInstall && hasMigrate && !card.oldShowMe && pickOk && preRail && incOverflw && readPillOk && errs.length === 0;
   console.log('§ONBOARD-RESULT ' + (pass ? 'PASS' : 'FAIL') + ' pageErrors=' + (errs.length ? errs.join('|') : 0));
   await browser.close(); server.close(); process.exit(pass ? 0 : 1);
 })().catch(e => { console.error('PROBE-ERR', e); server.close(); process.exit(2); });
