@@ -15,7 +15,15 @@
     max:  null,                                                              // nearly all (deny still applies)
   };
   // Noise floor: even 'max' never records these tags (render churn / not user intent).
-  var DENY_TAG = { RENDER_TICK: 1, IDLE_GATE: 1, HOVER: 1, PANEL_BLUR: 1, LOAD_FAIL: 1 };
+  // Tuned against the live Hospital firehose (§RENDER_LOOP/§IDLE_GATE/§SFX_* dominated the stream).
+  // NB: KBD_ROUTE is NOT denied — that's how Alt+X/Z ghost-xray is captured; its noise ("drop key") is
+  // dropped by NOISE_LABEL instead. EVT/RESTORE = the tap's OWN output (anti-recursion for the sniffer).
+  var DENY_TAG = {
+    RENDER_TICK: 1, RENDER_LOOP: 1, IDLE_GATE: 1, HOVER: 1, PANEL_BLUR: 1, PANEL_FOCUS: 1, LOAD_FAIL: 1,
+    SFX_NAV: 1, SFX_SUSPEND: 1, SFX_RESUME: 1, SFX_INIT: 1, SFX_CONFIG: 1, FILTER_GUIDS: 1, GRID_SCISSORS: 1,
+    KBD_SEQ_ENGINE: 1, KBD_SEQ_FIRE: 1, KBD_SEQ: 1, BBOX: 1, BBOX_PLACEHOLDERS: 1, BBOX_CLEARED: 1,
+    EVT: 1, RESTORE: 1, HIST_PUSH: 1, HIST_UNDO: 1, HIST_REDO: 1, KRN_CHAIN: 1, KRN_PERSIST: 1,
+  };
   // Intra-tag noise: same tag, but the line is internal routing/error, not a user action.
   var NOISE_LABEL = /pass-through|no-op|error|blocked|unregistered|drop key|guard/i;
 
@@ -38,15 +46,24 @@
   }
   function snapView() { var c = {}; for (var k in ambient) c[k] = ambient[k]; return c; }
 
-  // (1) Camera & other NON-stream state come from one optional pull-hook — loose-coupled, host opt-in.
-  var viewProvider = null;                              // () => ({ cam:{p,t}, … })  registered by host
+  // ── THE PRIMITIVE: field(name, read, write) ────────────────────────────────────────
+  // ONE symmetric line makes any view-act restorable: capture = read(), restore = write(value).
+  // Lives in the feature's OWN module → history couples to nothing. Adding section/palette/clash =
+  // one field() line. Two branches are two field-maps; orthogonal fields (color vs section) UNION
+  // with no collision — which is exactly what makes "combine A's color + B's section" effortless.
+  var fields = {};                                     // name -> { read, write }
+  function field(name, read, write) { fields[name] = { read: read, write: write }; }
+
+  // (compat) the old asymmetric pair, now expressed AS fields — kept so existing hosts don't break.
+  var viewProvider = null;
   function setViewProvider(fn) { viewProvider = fn; }
-  // (2) Seed ambient once from current state (so a toggle ON before the tap woke up isn't missed).
+  function registerApplier(key, fn) { field(key, null, fn); }
   function seed(state) { if (state) for (var k in state) ambient[k] = state[k]; }
 
-  // Build the current view vector: ambient mirror (from stream) + provider pulls (camera etc, authoritative).
+  // Build the current view vector: stream-ambient toggles + every field's read() (authoritative).
   function buildView() {
     var v = snapView();
+    for (var name in fields) { if (fields[name].read) { try { v[name] = fields[name].read(); } catch (e) {} } }
     if (viewProvider) { try { var ext = viewProvider(); for (var k in ext) v[k] = ext[k]; } catch (e) {} }
     return v;
   }
@@ -57,18 +74,54 @@
     all.push({ tag: tag, label: label, payload: payload || null, view: buildView(), t: all.length });     // … then stamp.
   }
 
-  // (3) RESTORE — re-apply a recorded entry's view vector to the live scene.
-  // Appliers are registered by the host (one per state key) — the tap stays scene-agnostic.
-  var appliers = {};                                   // key -> fn(value)
-  function registerApplier(key, fn) { appliers[key] = fn; }
+  // ── THE LOG-SNIFFER: recording goes TOTAL with ZERO per-feature wiring ──────────────
+  // Every act already prints a §line (Log Mandate). We read that stream instead of instrumenting each
+  // feature. A crumb is LIGHTWEIGHT (no view-stamp) — the read-only "what I did" net the knob filters.
+  // Boot/load/render LIFECYCLE — logged, but not "what the USER did". Excluded from the sniffer net so
+  // "total recording" means total ACTIONS, not total console output. (Explicit S() acts bypass this.)
+  var LIFECYCLE = /_(LOADED|READY|INIT|DONE|WIRED?|MODULE|VERSION|REGISTER|CHECK|AUDIT|PROBE|FETCHED|FLUSH|STREAM|DETAIL|MISS_READ|WRITE_OK|QUERY|RESULT|DETECT|RECOLOR|EARLY|FROM_POSITIONS)$|^(UPGRADE|CACHE|BVH|BOOTSTRAP|SPLIT|GEO|DB|DS|SW|PWA|FOG|ENV|SKY|TONE|GROUND|BATCHED|BLOB|INSTANCED|PROGRESSIVE|NORMALS|CENTRES|HASH|DIFF|HELPERS|PANELS|LISTNAV|QUOTA|OFFSET|MAIN|COLOR_MGMT|LENSFLARE|EFFECTS|SITECAM|NLP|MEASURE|SHARE|RECORD|ERROR_REPORTER|GHOSTGLASS|UI_PILL|PILL|MOBILE)/;
+  function feedCrumb(tag, label) {
+    if (DENY_TAG[tag] || LIFECYCLE.test(tag) || NOISE_LABEL.test(label)) return;  // firehose + lifecycle + intra-tag noise
+    var n = all.length;                                             // dedupe vs the last few (explicit S() + its console.log overlap)
+    for (var i = n - 1; i >= 0 && i >= n - 3; i--) if (all[i].tag === tag && all[i].label === label) return;
+    reduceAmbient(tag, label);
+    all.push({ tag: tag, label: label, payload: null, crumb: true, t: all.length });
+  }
+  var _origLog = null, _sniffing = false;
+  var TAGRE = /§([A-Z][A-Z0-9_]*)\s*([^\n]*)/;                      // find §TAG anywhere ("[S205] §SECTION …")
+  function sniff(enable) {
+    if (enable && !_origLog && typeof console !== 'undefined') {
+      _origLog = console.log;
+      console.log = function () {
+        _origLog.apply(console, arguments);                        // never swallow the real log
+        if (_sniffing) return;                                     // anti-recursion
+        try {
+          _sniffing = true;
+          var s = ''; for (var i = 0; i < arguments.length; i++) s += (typeof arguments[i] === 'string' ? arguments[i] : '') + ' ';
+          var m = TAGRE.exec(s);
+          if (m) feedCrumb(m[1], (m[2] || '').trim().slice(0, 80));
+        } catch (e) {} finally { _sniffing = false; }
+      };
+      try { console.log('§EVT SNIFF|on — recording every §act, deny-filtered'); } catch (e) {}
+    } else if (!enable && _origLog) { console.log = _origLog; _origLog = null; }
+  }
+
+  // RESTORE — re-apply a recorded view vector: each field's write() reproduces its slice of the look.
   function applyView(view, label) {
     if (!view) return false;
     var applied = [];
     for (var k in view) {
-      if (appliers[k]) { try { appliers[k](view[k]); applied.push(k); } catch (e) {} }
+      if (fields[k] && fields[k].write) { try { fields[k].write(view[k]); applied.push(k); } catch (e) {} }
     }
     try { console.log('§EVT RESTORE|' + (label || '?') + ' keys=' + applied.join(',')); } catch (e) {}
     return applied.length > 0;
+  }
+  // COMBINE — union two recorded looks into one. Orthogonal fields (color vs section) never collide;
+  // a shared field → second wins (last-writer). This is "merge" reduced to a vector union (no 3-way).
+  function combineViews() {
+    var out = {};
+    for (var i = 0; i < arguments.length; i++) { var v = arguments[i] || {}; for (var k in v) out[k] = v[k]; }
+    return out;
   }
   function restore(entry) { return entry ? applyView(entry.view, entry.label) : false; }
   function setKnob(l) { if (STOPS.hasOwnProperty(l) || l === 'max') level = l; }
@@ -83,10 +136,10 @@
   }
   function clear() { all.length = 0; }
 
-  var Tap = { feed: feed, setKnob: setKnob, getKnob: getKnob, history: history, clear: clear,
-              seed: seed, setViewProvider: setViewProvider, registerApplier: registerApplier,
-              restore: restore, currentView: currentView, applyView: applyView,
-              _all: all, STOPS: STOPS };
+  var Tap = { feed: feed, feedCrumb: feedCrumb, sniff: sniff, setKnob: setKnob, getKnob: getKnob, history: history, clear: clear,
+              field: field, seed: seed, setViewProvider: setViewProvider, registerApplier: registerApplier,
+              restore: restore, currentView: currentView, applyView: applyView, combineViews: combineViews,
+              _all: all, _fields: fields, STOPS: STOPS };
 
   // S() — the sink. Keeps the §-debug line you have today AND feeds the tap. No event bus.
   function S(tag, label, payload) {
