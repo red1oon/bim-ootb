@@ -78,17 +78,8 @@
         var act = { id: p.id, name: p.name, key: p.key || '' };
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
         if (p.stage) act._stage = p.stage;                   // §C lifecycle tag (carried from the manifest)
-        // nav pills navigate (external https → new tab, like erp_pills.js); else fn binds BY ID to the host's
-        // real handler; honest toast if a handler is missing (NON-INVENT).
-        if (p.nav) {
-          act.fn = (function (url, id) { return function () {
-            var external = /^https?:\/\//i.test(url);
-            console.log('§IDMP-PILL-NAV ' + id + '->' + url + (external ? ' (new tab)' : ''));
-            if (external) window.open(url, '_blank', 'noopener'); else location.href = url;
-          }; })(p.nav, p.id);
-        } else {
-          act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
-        }
+        // fn binds BY ID to the host's real handler; honest toast if a handler is missing (NON-INVENT).
+        act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
         var ACTIVE = window.IdmpPillActive || {};            // §D — lit-state binding by id (e.g. redpill = clean mode on)
         if (ACTIVE[p.id]) act.isActive = ACTIVE[p.id];
         return act;
