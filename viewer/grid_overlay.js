@@ -771,11 +771,45 @@ function setupGridOverlay(APP) {
     return state;
   }
 
-  /** Load saved sections from DB into savedSections[]. Falls back to localStorage. */
+  /** Load saved sections. localStorage (per-building) is AUTHORITATIVE; the DB is a cache. */
   function loadSavedSections() {
     savedSections = [];
     if (!A.db) return;
     ensureSavedSectionsTable(A.db);
+
+    // §BLANK_IDLE-sibling fix (CARD-DELETE-DURABLE): localStorage is written synchronously on
+    // every save/delete, so it is the authoritative card set. The building DB is only a cache —
+    // and with kernel-op IDB persistence (now working, see kernel_ops §KRN_PERSIST_FIX), a card
+    // DELETED but not followed by a kernel-op flush still LINGERS in the persisted DB and would
+    // resurrect on reload if we trusted the DB first. So: prefer localStorage when present and
+    // reconcile the in-memory DB to it (a later kernel flush then persists the correct set).
+    // Fall back to the DB only when no localStorage record exists yet (legacy / first run).
+    var lsRows = null;
+    try {
+      var lsData = localStorage.getItem(lsKey());
+      if (lsData != null) lsRows = JSON.parse(lsData);   // NOTE: "[]" is a valid AUTHORITATIVE empty
+    } catch (e) { log('§SAVE_SECTION ls parse error: ' + e.message); lsRows = null; }
+
+    if (lsRows) {
+      savedSections = lsRows;
+      try {
+        A.db.run('DELETE FROM saved_sections');
+        for (var k = 0; k < lsRows.length; k++) {
+          var s = lsRows[k];
+          A.db.run(
+            'INSERT OR REPLACE INTO saved_sections (id,name,cut_value,plane_normal,detected_grids,timestamp,view_state) VALUES(?,?,?,?,?,?,?)',
+            [s.id, s.name, s.cut_value, s.plane_normal,
+             (s.dwells && s.dwells.length) ? JSON.stringify(s.dwells) : null,
+             s.timestamp || '',
+             s.view_state ? JSON.stringify(s.view_state) : null]
+          );
+        }
+      } catch (e) { log('§SAVE_SECTION reconcile error: ' + e.message); }
+      log('§SAVE_SECTION loaded=' + savedSections.length + ' src=localStorage');
+      return;
+    }
+
+    // No localStorage record yet → read from the DB (legacy DBs / first entry before any save)
     try {
       var r = A.db.exec('SELECT id, name, cut_value, plane_normal, detected_grids, view_state FROM saved_sections ORDER BY id');
       if (r.length && r[0].values.length) {
@@ -789,28 +823,7 @@ function setupGridOverlay(APP) {
         }
       }
     } catch (e) { log('§SAVE_SECTION load db error: ' + e.message); }
-
-    // Fall back to localStorage if DB has no rows (persists across reloads)
-    if (!savedSections.length) {
-      try {
-        var lsData = localStorage.getItem(lsKey());
-        if (lsData) {
-          var lsRows = JSON.parse(lsData);
-          for (var j = 0; j < lsRows.length; j++) {
-            var ss = lsRows[j];
-            try {
-              A.db.run(
-                'INSERT OR IGNORE INTO saved_sections (id,name,cut_value,plane_normal,detected_grids,timestamp,view_state) VALUES(?,?,?,?,?,?,?)',
-                [ss.id, ss.name, ss.cut_value, ss.plane_normal, null, ss.timestamp || '', ss.view_state ? JSON.stringify(ss.view_state) : null]
-              );
-            } catch (e2) { /* skip duplicate */ }
-          }
-          savedSections = lsRows;
-          log('§SAVE_SECTION restored ' + lsRows.length + ' from localStorage');
-        }
-      } catch (e) { log('§SAVE_SECTION localStorage read error: ' + e.message); }
-    }
-    log('§SAVE_SECTION loaded=' + savedSections.length);
+    log('§SAVE_SECTION loaded=' + savedSections.length + ' src=db');
   }
 
   /** Save current scissors cut to DB and localStorage.
@@ -839,6 +852,10 @@ function setupGridOverlay(APP) {
         var lastId = A.db.exec('SELECT last_insert_rowid()');
         if (lastId.length && lastId[0].values.length) latestSavedId = lastId[0].values[0][0];
       } catch (e2) { /* ignore */ }
+      // CARD-DELETE-DURABLE: clear localStorage BEFORE the (now ls-authoritative) reload so
+      // loadSavedSections reads the fresh DB (incl. this new row) rather than the stale ls set;
+      // we re-write ls from the fresh savedSections immediately after.
+      try { localStorage.removeItem(lsKey()); } catch (e) { /* no-op */ }
       loadSavedSections();
       try { localStorage.setItem(lsKey(), JSON.stringify(savedSections)); } catch (e) { /* no-op */ }
       // User saved a card manually — re-enable auto-create for future

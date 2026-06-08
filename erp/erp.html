@@ -61,6 +61,9 @@
 </head>
 <body>
 
+<!-- Evaluator on-ramp → the basic comparison paper (docs/MigrateComparisonPaper.md). -->
+<a href="migrate_compare.html" id="cmp-link" style="position:fixed;top:10px;left:12px;z-index:9500;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:18px;border:1px solid rgba(108,159,255,.4);background:rgba(12,15,20,.82);color:#6c9fff;text-decoration:none;font:13px -apple-system,system-ui,sans-serif">▤ How this compares</a>
+
 <div id="loading">
   <div class="spinner"></div>
   <div>Loading ERP OOTB&hellip;</div>
@@ -359,7 +362,18 @@ var _shellReady = false;
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=564')
+  // §INIT-INSTANT freshness backstop — navigation is now stale-while-revalidate (sw.js v598), so a returning
+  // user paints the cached shell instantly. When a DEPLOY lands, the new SW installs (skipWaiting) + claims
+  // the page → `controllerchange` fires → reload ONCE onto the fresh shell, so a fresh deploy reaches the
+  // user in a single reload (witness erp/tests/poc_init_deploy_fresh.js). Guarded against reload loops, and
+  // it skips the FIRST install-claim (no controller at load = first-ever visit, nothing stale to refresh).
+  var _swHadCtrl = !!navigator.serviceWorker.controller, _swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if (_swRefreshing) return;
+    if (!_swHadCtrl) { _swHadCtrl = true; return; }   // initial install claim — adopt silently
+    _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
+  });
+  navigator.serviceWorker.register('sw.js?v=599')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

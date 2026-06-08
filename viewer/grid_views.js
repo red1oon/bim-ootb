@@ -98,6 +98,9 @@ var GridViews = (function() {
         cam.left = -curHalfW;
         cam.right = curHalfW;
         cam.updateProjectionMatrix();
+        // §BLANK_IDLE: setSize() clears the buffer — re-render once or the parked loop
+        // leaves a blank 2D view until interaction (same defect as scene.js _onResize).
+        if (A.markDirty) A.markDirty();
       };
       window.addEventListener('resize', _resizeHandler);
     }

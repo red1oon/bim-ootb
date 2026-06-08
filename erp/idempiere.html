@@ -212,6 +212,11 @@
   #idmp-login-migrate-btn { width:100%; height:34px; border:1px solid var(--idmp-blue); border-radius:6px;
     background:var(--idmp-hover); color:var(--idmp-blue); font-size:12.5px; font-weight:600; cursor:pointer; }
   #idmp-login-migrate-btn:hover { background:var(--idmp-sel); }
+  /* §0.10a front-door onboarding — Install (fresh tenant) + Migrate (from another ERP), both via ErpPicker. */
+  .idmp-onboard-row { display:flex; gap:8px; }
+  .idmp-onboard-btn { flex:1; height:34px; border:1px solid var(--idmp-blue); border-radius:6px;
+    background:var(--idmp-hover); color:var(--idmp-blue); font-size:12.5px; font-weight:600; cursor:pointer; }
+  .idmp-onboard-btn:hover { background:var(--idmp-sel); }
   /* ── Mobile adaptation (desktop is exact; mobile may adapt) ── */
   @media (max-width:760px) {
     #idmp-burger { display:flex; }
@@ -246,6 +251,7 @@
     <div class="idmp-login-mark">A+</div>
     <div class="idmp-login-title">iDempiere&#8209;like — Sign In</div>
     <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
+    <div class="idmp-login-sub" style="margin-top:6px"><a href="migrate_compare.html" style="color:#6c9fff;text-decoration:none">▤ How this compares to iDempiere / Odoo / SAP&nbsp;›</a></div>
     <div id="idmp-login-step1">
       <div class="idmp-login-label">Select a user</div>
       <div id="idmp-login-users" class="idmp-login-list"></div>
@@ -263,11 +269,16 @@
       </div>
       <div id="idmp-login-note" class="idmp-login-note"></div>
     </div>
-    <!-- §0.10a first-mile: before you have data, the first task is bringing it IN. -->
+    <!-- §0.10a first-mile: before you have data, the first task is bringing it IN. Install a fresh tenant or
+         Migrate from another ERP — both routed through the one ErpPicker (which delegates to ShowMe/Odoo). -->
     <div class="idmp-login-migrate">
-      <span>New here — your data still in a Docker Postgres?</span>
-      <button id="idmp-login-migrate-btn" type="button"
-        onclick="window.MigrateShowMe &amp;&amp; MigrateShowMe.open()">↓ Migrate your iDempiere data (ShowMe)</button>
+      <span>New here? Set up a fresh ERP, or bring your data in from another one.</span>
+      <div class="idmp-onboard-row">
+        <button type="button" class="idmp-onboard-btn"
+          onclick="window.openInstallFor ? openInstallFor() : (window.ErpPicker &amp;&amp; ErpPicker.open({mode:'install'}))">⤓ Install</button>
+        <button type="button" class="idmp-onboard-btn"
+          onclick="window.openMigrateFor ? openMigrateFor() : (window.ErpPicker &amp;&amp; ErpPicker.open({mode:'migrate'}))">⇄ Migrate</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1167,6 +1178,8 @@
   }
   function openInstallFor() { console.log('§INSTALL-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'install', status: status }); else status('ERP picker not loaded.'); }
   function openMigrateFor() { console.log('§MIGRATE-PILL action=picker'); if (window.ErpPicker) ErpPicker.open({ mode: 'migrate', status: status }); else status('ERP picker not loaded.'); }
+  // §0.10a — expose to the login-card onboarding buttons (same handlers as the rail pills; one ErpPicker path).
+  window.openInstallFor = openInstallFor; window.openMigrateFor = openMigrateFor;
   // §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar is now rendered by the SHARED registry (idmp_pills.js +
   // pills_idmp.json + PillBuilder), NOT hand-rolled. Publish the REAL handlers BY ID; idmp_pills.js binds them.
   // (The hand-rolled #idmp-pillrail builder + its CSS were deleted — §PILL-REGISTRY: no controls outside the pill.)
@@ -1318,7 +1331,16 @@ window.__helpIdmpKeymap = {
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=592')
+  // §INIT-INSTANT freshness backstop — navigation is stale-while-revalidate (sw.js v598): instant cached
+  // first paint, and on a DEPLOY the new SW claims the page → controllerchange → ONE reload onto the fresh
+  // shell (so a deploy reaches a returning user in a single reload). Loop-guarded; skips the first install-claim.
+  var _swHadCtrl = !!navigator.serviceWorker.controller, _swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (_swRefreshing) return;
+    if (!_swHadCtrl) { _swHadCtrl = true; return; }   // initial install claim — adopt silently
+    _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
+  });
+  navigator.serviceWorker.register('sw.js?v=599')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
