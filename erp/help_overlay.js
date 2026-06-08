@@ -366,6 +366,17 @@
   function disable() { on = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } clearBadges(); close(); console.log('§HELP mode=off'); }
   ck.addEventListener('change', function () { if (ck.checked) enable(); else disable(); });
 
+  // setOps(store) — ADDITIVE host extension (NO FORK; same spirit as init()). A host (idempiere) context-gates
+  // the ShowMe content by handing the overlay a different ops store per stage: pre-client = an onboarding store,
+  // in-client = the AD tour. store=null/undefined RESTORES the default (fetch help_ops.json). Callers that never
+  // invoke it (glassbowl, erp.html) are behaviorally diff=0. If ShowMe is currently on, rebuild from the new store.
+  function setOps(store) {
+    HELP = store || null;
+    cur = -1;
+    console.log('§HELP setOps store=' + (store ? ('custom/' + Object.keys(store).filter(function (k) { return k !== '__meta'; }).length) : 'default'));
+    if (on) { disable(); enable(); }
+  }
+
   // ── veer (§veer): an off-path action on the shared bus SUSPENDS the guide — it does NOT kill Help.
   // NeedHelp? stays ON (badges live); no §VIEWLOG / timeline tag (a veer is not a Next); the step number
   // is preserved for Resume. If the veered-to element has its own ReadMe step, meet them where they landed.
@@ -391,7 +402,7 @@
 
   setupDrag();
   window.__help = { init: init, enable: enable, disable: disable, goTo: goTo, suspend: suspend, resume: resume,
-                    showMe: showMe, suspended: function () { return suspended; }, steps: function () { return STEPS; },
+                    showMe: showMe, setOps: setOps, suspended: function () { return suspended; }, steps: function () { return STEPS; },
                     adapter: function () { return { host: HOST, nav: NAV }; } };
   console.log('§HELP layer mounted (NeedHelp? ready)');
 })();

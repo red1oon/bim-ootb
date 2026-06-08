@@ -54,6 +54,12 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
     var lg = document.getElementById('idmp-login'); if (lg) lg.style.display = 'flex';
     window.IdmpPills.setStage('pre-client');
   });
+  // §P4-3 — the boot PEEK (strip slides out then re-collapses) fires on mount. Let it SETTLE before asserting
+  // the clean resting state, else §P3-A would catch the strip mid-peek. Wait for the peek class to clear.
+  await page.waitForFunction(() => {
+    var p = document.getElementById('idmp-pill');
+    return p && !p.classList.contains('idmp-pill-peeking');
+  }, { timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(120);
 
   // Per-pill on-screen probe: rendered (exists) + visible (offsetParent) + rect intersects 390×844.
@@ -98,6 +104,29 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
               ' cueArmed=' + dflt.cueArmed + ' anyPillVisible=' + dflt.anyPillVisible);
   const collapsedDefaultOk = !dflt.open && dflt.trigOnScreen && !dflt.anyPillVisible;
 
+  // ── §P4-3 — TRUE PEEK: fire the cue from the collapsed resting state and prove the actual PILLS become
+  //    momentarily VISIBLE (the strip slides out, a real pill button is on-screen) then RE-COLLAPSE (the strip
+  //    returns to display:none, no pill visible) — not just a ⋯ bob. Names the bug "jump-reveal never happens". ──
+  const peekProbe = () => page.evaluate(() => {
+    var p = document.getElementById('idmp-pill');
+    var anyPill = ['install','migrate','erpdoc','posted','graph','kanban','rule']
+      .some(function (id) { var b = document.getElementById('pill-' + id); return b && b.offsetParent !== null; });
+    return { peeking: !!(p && p.classList.contains('idmp-pill-peeking')),
+             display: p ? getComputedStyle(p).display : 'none', anyPillVisible: anyPill };
+  });
+  await page.evaluate(() => { window.IdmpPills._evalReveal(); });   // fire from collapsed → strip slides out
+  await page.waitForTimeout(60);                                    // mid-peek
+  const peekOpen = await peekProbe();
+  await page.waitForFunction(() => {                                // wait for the slide-back + re-collapse
+    var p = document.getElementById('idmp-pill');
+    return p && !p.classList.contains('idmp-pill-peeking');
+  }, { timeout: 6000 }).catch(() => {});
+  await page.waitForTimeout(80);
+  const peekDone = await peekProbe();
+  console.log('§P4-3-PEEK openPhase=' + JSON.stringify(peekOpen) + ' collapsePhase=' + JSON.stringify(peekDone));
+  const peekOk = peekOpen.peeking && peekOpen.display !== 'none' && peekOpen.anyPillVisible &&
+                 !peekDone.peeking && peekDone.display === 'none' && !peekDone.anyPillVisible;
+
   // ── REVEAL: simulate the user's ⋯ tap (PB.toggle) — now the pills must render + be visible + on-screen. ──
   await page.evaluate(() => { window.IdmpPills.builder.toggle(); });
   await page.waitForTimeout(120);
@@ -113,6 +142,50 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   const barOk = bar.exists && bar.onScreen;
   const preOk = allVisible(pre);
   const lensOk = allVisible(lens);
+
+  // ── §P4-1 — at the FRONT DOOR (pre-client, login overlay up) the ShowMe pill must produce a MEANINGFUL,
+  //    VISIBLE card — NOT the in-client AD tour whose steps target nonexistent keys → 0 badges behind the z-120
+  //    login ("ShowMe gives nothing"). Tap showme → assert the help card is OPEN, on-screen, ON TOP (elementFromPoint
+  //    hits it, above the login), and shows the onboarding store (a real title + steps). This is the test that
+  //    PASSES ONLY IF the feature is actually visible (the §P3-B gap §P4-1 called out). Restores ShowMe off. ──
+  const onboard = await page.evaluate(() => {
+    var stage = (typeof window.IdmpPillStage === 'function') ? window.IdmpPillStage() : '?';
+    var btn = document.getElementById('pill-showme');
+    if (btn) btn.dispatchEvent(new Event('pointerup', { bubbles: true }));     // ShowMe on
+    var card = document.getElementById('helpCard');
+    var out = { stage: stage, open: false, onScreen: false, onTop: false, title: '', steps: 0 };
+    if (card) {
+      out.open = card.classList.contains('open');
+      var r = card.getBoundingClientRect();
+      out.onScreen = r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 &&
+                     r.right <= window.innerWidth && r.bottom <= window.innerHeight;
+      var hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+      out.onTop = !!(hit && (hit === card || card.contains(hit)));
+      var t = card.querySelector('.hctitle'); out.title = t ? t.textContent.trim() : '';
+    }
+    out.steps = (window.__help && window.__help.steps) ? window.__help.steps().length : 0;
+    var ck = document.getElementById('needHelpCk'); if (ck && ck.checked) { ck.checked = false; ck.dispatchEvent(new Event('change')); }  // restore
+    return out;
+  });
+  console.log('§P4-1-ONBOARD ' + JSON.stringify(onboard));
+  const onboardOk = onboard.stage === 'pre-client' && onboard.open && onboard.onScreen && onboard.onTop &&
+                    onboard.title.length > 0 && onboard.steps >= 1;
+
+  // ── §P4-2 — the gate switches BOTH ways: in-client restores the default AD tour (setOps(null) → help_ops.json,
+  //    the o2c store), NOT the onboarding store. Drive the default directly + enable; assert the o2c keys load. ──
+  const inClient = await page.evaluate(() => new Promise((resolve) => {
+    window.__help.setOps(null);                                  // what _driveShowMeOps() does in-client
+    var ck = document.getElementById('needHelpCk');
+    ck.checked = true; ck.dispatchEvent(new Event('change'));    // enable → fetch help_ops.json → buildSteps
+    setTimeout(function () {
+      var steps = (window.__help.steps && window.__help.steps()) || [];
+      var keys = steps.map(function (s) { return s.key; });
+      if (ck.checked) { ck.checked = false; ck.dispatchEvent(new Event('change')); }   // restore off
+      resolve({ n: steps.length, hasO2c: keys.indexOf('o2c') >= 0, hasOrder: keys.indexOf('c_order') >= 0 });
+    }, 500);
+  }));
+  console.log('§P4-2-INCLIENT ' + JSON.stringify(inClient));
+  const inClientOk = inClient.hasO2c && inClient.n >= 4;
 
   // ── §P3-B — Help/ShowMe is now a CLEAN pill, not header chrome. Assert: (1) the 'showme' pill renders
   //    visible+on-screen (reveal state); (2) its handler is wired; (3) the header '?' (#idmp-help-btn) is GONE;
@@ -169,14 +242,17 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   const cueOk = (cue.collapsedCue || cue.hiddenSetCue);
 
   console.log('   ' + (collapsedDefaultOk ? '🟢' : '🔴') + ' §P3-A COLLAPSED BY DEFAULT — at boot only the ⋯ shows (no pills visible), clean resting state');
+  console.log('   ' + (peekOk ? '🟢' : '🔴') + ' §P4-3 TRUE PEEK — the hidden pills slide OUT (visible) then RE-COLLAPSE (display:none), not just a ⋯ bob');
   console.log('   ' + (barOk ? '🟢' : '🔴') + ' §P0-A after ⋯ tap: #idmp-pillbar exists + on-screen (390×844)');
   console.log('   ' + (preOk ? '🟢' : '🔴') + ' §P0-B after ⋯ tap: pre-client pills [install,migrate,erpdoc] rendered+visible+on-screen');
   console.log('   ' + (lensOk ? '🟢' : '🔴') + ' §P0-C after ⋯ tap: lens pills [posted,graph,kanban,rule] rendered+visible+on-screen');
   console.log('   ' + (showmeOk ? '🟢' : '🔴') + ' §P3-B Help/ShowMe is a CLEAN pill (circleHelp, lit-on-toggle); header ? gone + floating NeedHelp suppressed');
+  console.log('   ' + (onboardOk ? '🟢' : '🔴') + ' §P4-1 ShowMe at the front door shows a VISIBLE onboarding card on top of the login (not 0-badges-nothing)');
+  console.log('   ' + (inClientOk ? '🟢' : '🔴') + ' §P4-2 in-client restores the default AD tour (o2c store) — the gate switches both ways');
   console.log('   ' + (rightVertical ? '🟢' : '🔴') + ' §P2-A mobile strip is RIGHT-anchored vertical (not bottom dock)');
   console.log('   ' + (cueOk ? '🟢' : '🔴') + ' §P2-B self-reveal cue fires when pills hidden (collapsed OR hidden-set>0)');
 
-  const pass = collapsedDefaultOk && barOk && preOk && lensOk && showmeOk && rightVertical && cueOk && errs.length === 0;
+  const pass = collapsedDefaultOk && peekOk && barOk && preOk && lensOk && showmeOk && onboardOk && inClientOk && rightVertical && cueOk && errs.length === 0;
   console.log('§P0-RESULT ' + (pass ? 'PASS' : 'FAIL') + ' pageErrors=' + (errs.length ? errs.join('|') : 0));
   // Always capture the 390px screenshot (log≠visual proof) — attach to §P2.
   try { await page.screenshot({ path: __dirname + '/poc_pill_mobile.png' }); console.log('§P0-SHOT tests/poc_pill_mobile.png'); } catch (e) {}

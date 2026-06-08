@@ -1,11 +1,13 @@
 // ⚠ DO NOT REMOVE — Scope guard
-// Scope: real-browser §-witness for the agreed front-door onboarding UX (idempiere.html). THE CLAIM:
-//   1. The LOGIN CARD carries Install + Migrate as first-class buttons, BOTH routed through the one
-//      ErpPicker (mode:install / mode:migrate) — the lone direct-ShowMe card button is gone.
+// Scope: real-browser §-witness for the agreed front-door onboarding UX (idempiere.html). THE CLAIM
+//   (UPDATED §P4-4, user wrap 2026-06-09 — "stick to the pill"):
+//   1. The LOGIN CARD has NO onboarding row — Install/Migrate are pill-ONLY now (this REVERSES #204's card
+//      buttons). The kept window.openInstallFor/openMigrateFor still route through the ONE ErpPicker, and the
+//      pill bar binds install/migrate to them.
 //   2. Stage gate: pre-client → Install/Migrate on the primary rail; in-client → DEMOTED to the ⋯
 //      overflow (in the builder `hidden` set — reachable/restorable), NOT pill=false (gone).
-//   NON-INVENT: the card buttons reuse the SAME handlers as the rail pills (openInstallFor/openMigrateFor
-//   → ErpPicker), so the proven ShowMe/Odoo path underneath is untouched.
+//   NON-INVENT: the pills reuse the SAME handlers (openInstallFor/openMigrateFor → ErpPicker), so the proven
+//   ShowMe/Odoo path underneath is untouched.
 //   §-log first — READ poc_onboard_front_door.log before any conclusion.
 // Run:  node tests/poc_onboard_front_door.js 2>&1 | tee tests/poc_onboard_front_door.log   (cwd = bim-ootb/erp)
 'use strict';
@@ -35,27 +37,32 @@ const server = http.createServer((req, res) => {
     () => window.IdmpPills && window.IdmpPills.builder && window.ErpPicker && window.openInstallFor && window.openMigrateFor,
     { timeout: 20000 }).then(() => true).catch(() => false);
 
-  // ── W1/W2 — the login card onboarding buttons (and the old direct-ShowMe button is gone) ──
+  // ── W2 (§P4-4) — the login card now has NO onboarding row: Install/Migrate are pill-ONLY (behind the ⋯).
+  //    "Stick to the pill" (user wrap 2026-06-09) REVERSES #204's card buttons. Assert the card is clean. ──
   const card = await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll('.idmp-onboard-btn')).map(b => b.textContent.trim());
-    return { btns, oldShowMe: !!document.getElementById('idmp-login-migrate-btn') };
+    return { onboardBtns: document.querySelectorAll('.idmp-onboard-btn').length,
+             migrateBlock: !!document.querySelector('.idmp-login-migrate'),
+             oldMigrateBtn: !!document.getElementById('idmp-login-migrate-btn') };
   });
-  const hasInstall = card.btns.some(t => /Install/i.test(t));
-  const hasMigrate = card.btns.some(t => /Migrate/i.test(t));
-  console.log('§ONBOARD-CARD buttons=' + JSON.stringify(card.btns) + ' oldShowMeButton=' + card.oldShowMe);
+  console.log('§ONBOARD-CARD onboardBtns=' + card.onboardBtns + ' migrateBlock=' + card.migrateBlock + ' oldMigrateBtn=' + card.oldMigrateBtn);
+  const cardClean = card.onboardBtns === 0 && !card.migrateBlock && !card.oldMigrateBtn;
 
-  // ── W3 — clicking the card buttons opens ErpPicker with the right mode (stub to capture) ──
+  // ── W3 (§P4-4) — Install/Migrate still reach the ONE ErpPicker through the KEPT handlers the pills use
+  //    (window.openInstallFor/openMigrateFor → ErpPicker.open({mode})). The proven ShowMe/Odoo path is untouched. ──
   const picked = await page.evaluate(() => new Promise((res) => {
     const seen = [];
     window.ErpPicker.open = function (opts) { seen.push(opts && opts.mode); };  // stub-capture
-    document.getElementById('idmp-login').style.display = 'flex';                // ensure card visible
-    const btns = Array.from(document.querySelectorAll('.idmp-onboard-btn'));
-    const inB = btns.find(b => /Install/i.test(b.textContent)), miB = btns.find(b => /Migrate/i.test(b.textContent));
-    if (inB) inB.click(); if (miB) miB.click();
+    if (window.openInstallFor) window.openInstallFor();
+    if (window.openMigrateFor) window.openMigrateFor();
     setTimeout(() => res(seen), 100);
   }));
   console.log('§ONBOARD-PICK modesInvoked=' + JSON.stringify(picked));
   const pickOk = picked.indexOf('install') >= 0 && picked.indexOf('migrate') >= 0;
+
+  // ── W4 (§P4-4) — the pill bar BINDS install + migrate to those handlers (IdmpPillActions). ──
+  const pillBound = await page.evaluate(() => !!(window.IdmpPillActions &&
+    typeof window.IdmpPillActions.install === 'function' && typeof window.IdmpPillActions.migrate === 'function'));
+  console.log('§ONBOARD-PILLBIND install+migrate bound=' + pillBound);
 
   // ── W4/W5 — stage gate: pre-client = rail, in-client = ⋯ overflow (hidden, not gone) ──
   async function stageProbe(stage) {
@@ -78,9 +85,9 @@ const server = http.createServer((req, res) => {
 
   // ── verdict ──
   console.log('   ' + (railUp ? '🟢' : '🔴') + ' W1 idempiere onboarding wired (IdmpPills/ErpPicker/openInstallFor/openMigrateFor present)');
-  console.log('   ' + (hasInstall && hasMigrate ? '🟢' : '🔴') + ' W2 login card has Install + Migrate first-class buttons');
-  console.log('   ' + (!card.oldShowMe ? '🟢' : '🔴') + ' W3 the lone direct-ShowMe card button is removed (single ErpPicker path)');
-  console.log('   ' + (pickOk ? '🟢' : '🔴') + ' W4 card buttons open ErpPicker with mode install + migrate (proven path reused)');
+  console.log('   ' + (cardClean ? '🟢' : '🔴') + ' W2 (§P4-4) login card has NO onboarding row — Install/Migrate are pill-only');
+  console.log('   ' + (pickOk ? '🟢' : '🔴') + ' W3 (§P4-4) kept handlers still open ErpPicker mode install + migrate (proven path reused)');
+  console.log('   ' + (pillBound ? '🟢' : '🔴') + ' W4 (§P4-4) the pill bar binds install + migrate to those handlers (IdmpPillActions)');
   console.log('   ' + (preRail ? '🟢' : '🔴') + ' W5 pre-client: Install/Migrate on the primary rail (front door)');
   console.log('   ' + (incOverflw ? '🟢' : '🔴') + ' W6 in-client: Install/Migrate DEMOTED to ⋯ overflow (hidden-set, restorable — not gone)');
 
@@ -100,7 +107,7 @@ const server = http.createServer((req, res) => {
   const readPillOk = erpdoc.inOrder && erpdoc.handler && erpdocShown;
   console.log('   ' + (readPillOk ? '🟢' : '🔴') + ' W7 Read/Compare lives in a pill (id=erpdoc) wired to openReadCompare — not a stray link');
 
-  const pass = railUp && hasInstall && hasMigrate && !card.oldShowMe && pickOk && preRail && incOverflw && readPillOk && errs.length === 0;
+  const pass = railUp && cardClean && pickOk && pillBound && preRail && incOverflw && readPillOk && errs.length === 0;
   console.log('§ONBOARD-RESULT ' + (pass ? 'PASS' : 'FAIL') + ' pageErrors=' + (errs.length ? errs.join('|') : 0));
   await browser.close(); server.close(); process.exit(pass ? 0 : 1);
 })().catch(e => { console.error('PROBE-ERR', e); server.close(); process.exit(2); });
