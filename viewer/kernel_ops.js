@@ -104,14 +104,28 @@
         try {
           var dbUrl = window.APP && APP.DB_URL;
           if (!dbUrl) return;
+          if (window.APP && APP._cacheDisabled) return;   // incognito / low quota → no IDB
           var buf = db.export().buffer;
-          var req = indexedDB.open('bim_ootb_cache', 1);
-          req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
-          req.onsuccess = function() {
-            var tx = req.result.transaction('dbs', 'readwrite');
+          // §KRN_PERSIST_FIX: open the cache DB through the app's SINGLE opener (scene.js
+          // openCacheDB → version 2, ensures the 'dbs' store). The old hardcoded
+          // indexedDB.open('bim_ootb_cache', 1) drifted BELOW scene.js's v2 → the open fired
+          // onerror (VersionError), onsuccess never ran, and the edit was silently never
+          // persisted (kernel "survive refresh" was dead). Witness: probe_krn_persist.js.
+          var openP = (window.APP && APP.openCacheDB)
+            ? APP.openCacheDB()
+            : new Promise(function(res, rej) {
+                var rq = indexedDB.open('bim_ootb_cache');  // no version → current
+                rq.onsuccess = function() { res(rq.result); };
+                rq.onerror = function() { rej(rq.error); };
+              });
+          openP.then(function(idb) {
+            if (!idb) { console.warn('§KRN_PERSIST_ERR no cacheDB'); return; }
+            if (!idb.objectStoreNames.contains('dbs')) { console.warn('§KRN_PERSIST_ERR no dbs store'); return; }
+            var tx = idb.transaction('dbs', 'readwrite');
             tx.objectStore('dbs').put(buf, dbUrl);
-            console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB');
-          };
+            tx.oncomplete = function() { console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB'); };
+            tx.onerror = function() { console.warn('§KRN_PERSIST_ERR tx ' + (tx.error && tx.error.message)); };
+          }).catch(function(e) { console.warn('§KRN_PERSIST_ERR open ' + (e && e.message)); });
         } catch(e) { console.warn('§KRN_PERSIST_ERR', e); }
       }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
     }, 2000);
