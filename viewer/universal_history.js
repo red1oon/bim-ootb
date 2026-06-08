@@ -171,8 +171,15 @@
     return 'search';
   }
 
+  // Per-building persisted-tree key (item 4): universes survive reload, scoped to THIS building's db.
+  function _treeKey() {
+    try { var db = new URLSearchParams(location.search).get('db') || 'default';
+      return 'bim.hist.tree.' + db.replace(/[^A-Za-z0-9_.-]/g, '_'); } catch (e) { return 'bim.hist.tree.default'; }
+  }
+
   // ── Wire the viewer onto the shared bar ───────────────────────────────
   HB.configure({
+    treeKey: _treeKey(),                    // §4 persist the branch tree per building
     source: 'viewer',
     mountHostId: 'status-bar-wrap',         // §3: dock under the status row
     profiles: PROFILES,
@@ -211,6 +218,8 @@
     setDepth: HB.setDepth, cycleDepth: HB.cycleDepth, getDepth: HB.getDepth,
     clear: HB.clear, open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list,
     significant: function (ev) { return HB.significant(ev.source, ev.type, ev.label); },
+    // branch TREE (PR #5) — fork-don't-wipe universes + switch=restore.
+    switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey,
     PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS
   };
   _wireTap();   // §-tap depth axis: provider + appliers + seed (no-op if history_tap.js absent)
