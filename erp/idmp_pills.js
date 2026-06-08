@@ -94,7 +94,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=25').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=26').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -130,19 +130,25 @@
         pill: pill, trigger: trigger, APP: {}, actions: actions,
         order: actions.map(function (a) { return a.id; }),
         storageKey: 'idmp_pill_config',
-        persistent: true   // primary nav dock — stays visible like the old rail; ⋯ still collapses on demand
+        persistent: true   // ⋯ toggles the rail; an outside tap does NOT auto-close (user drives reveal/collapse)
       });
       trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); _evalReveal(); });
       // §P2 — re-arm the cue: drop the attract class when the bob ends so it can REPLAY on the next eval.
       trigger.addEventListener('animationend', function () { trigger.classList.remove('idmp-pill-attract'); });
       _PB = PB;
       window.IdmpPills.builder = PB;
-      PB.toggle();                                            // open + sync internal state (persistent bar, no off-by-one tap)
 
-      // §C — apply the initial session stage (pre-client at boot: Install/Migrate visible at the front door).
+      // §P3 (FRONT_DOOR_PILL_FINISH, user decision 2026-06-09): COLLAPSED BY DEFAULT on BOTH desktop and mobile —
+      // the clean resting state is just the ⋯; pills reveal ONLY when the user taps it. Keep the UI clean, leave
+      // the reveal to user intuition (the peek cue invites the tap). PB.close() (not toggle) sets display:none AND
+      // _pillOpen=false together, so the FIRST ⋯ tap opens cleanly (no off-by-one). Also kills the mobile
+      // expanded-strip-over-content overlap: the strip only appears on demand.
+      PB.close();
+
+      // §C — apply the initial session stage (pre-client at boot: Install/Migrate belong on the rail behind the ⋯).
       _curStage = null; setStage();
-      PB.sync();   // §D — restore lit states (e.g. red pill) after setStage's rebuild (build() doesn't sync)
-      _evalReveal();   // §P2 — initial cue (no-op at the front door where nothing is hidden yet)
+      PB.sync();   // §D — restore lit states (e.g. red pill) so they're correct the moment the user opens the rail
+      _evalReveal();   // §P2 — collapsed at boot ⇒ the cue peeks the ⋯ once, inviting the first tap (both platforms)
 
       var mounted = pill.querySelectorAll('button[id^="pill-"]').length;
       var hidden = (PB.getConfig().hidden || []).length;

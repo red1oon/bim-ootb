@@ -49,6 +49,10 @@
     border-radius:4px; display:flex; align-items:center; justify-content:center;
   }
   #idmp-header .hbtns button:hover { background:rgba(255,255,255,0.18); }
+  /* §P3-REOPENED: ShowMe/Help is the clean 'showme' side-strip pill on THIS surface, so suppress the shared
+     help_overlay.js floating 'NeedHelp?' checkbox here (the pill drives #needHelpCk; the checkbox still exists in
+     the DOM, just hidden — toggling it programmatically keeps working). Scoped to idempiere.html; erp.html keeps it. */
+  #needHelpWrap { display:none !important; }
   #idmp-burger { display:none; }
   /* ── Body split ── */
   #idmp-body { flex:1; display:flex; min-height:0; }
@@ -295,7 +299,8 @@
   <span class="hbtns">
     <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
     <button id="idmp-home-btn" title="Home / Engine view (erp.html)">&#8962;</button>
-    <button title="Help" id="idmp-help-btn">?</button>
+    <!-- §P3-REOPENED: the header '?' help glyph is RETIRED — ShowMe/Help is now the clean circleHelp 'showme' pill
+         on the side strip (IdmpPillActions.showme → toggleShowMe), honouring clean-Lucide-only + no-controls-outside-the-pill. -->
   </span>
 </div>
 
@@ -1184,6 +1189,18 @@
   window.openInstallFor = openInstallFor; window.openMigrateFor = openMigrateFor;
   // Read / Compare pill — houses the 'How this compares' paper in a pill (was a free-floating login-card link).
   function openReadCompare() { console.log('§ERPDOC-PILL action=open'); window.location.href = 'migrate_compare.html'; }
+  // ShowMe Help pill (§P3-REOPENED) — the guided ShowMe/NeedHelp tour, now a clean Lucide circleHelp PILL instead
+  // of a header '?' text glyph + a floating 'NeedHelp?' checkbox. TOGGLE by flipping the SHARED help_overlay.js
+  // checkbox (#needHelpCk) — its own change handler runs enable()/disable(), so we reuse the proven wiring and do
+  // NOT fork the shared module. If the overlay hasn't mounted yet, fall back to __help.enable(). lit via toggleShowMe.
+  function toggleShowMe() {
+    var ck = document.getElementById('needHelpCk');
+    if (ck) { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); status(ck.checked ? 'ShowMe on — tap a numbered badge' : 'ShowMe off'); }
+    else if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); }
+    else status('Help / ShowMe overlay loading…');
+    console.log('§SHOWME-PILL action=toggle on=' + (ck ? ck.checked : 'n/a'));
+  }
+  function _showMeOn() { var ck = document.getElementById('needHelpCk'); return !!(ck && ck.checked); }
   // §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar is now rendered by the SHARED registry (idmp_pills.js +
   // pills_idmp.json + PillBuilder), NOT hand-rolled. Publish the REAL handlers BY ID; idmp_pills.js binds them.
   // (The hand-rolled #idmp-pillrail builder + its CSS were deleted — §PILL-REGISTRY: no controls outside the pill.)
@@ -1210,9 +1227,10 @@
       redpill: toggleCleanMode,
       posted: openPostedFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor,
-      erpdoc: openReadCompare
+      erpdoc: openReadCompare, showme: toggleShowMe
     };
-    window.IdmpPillActive = { redpill: function () { return _pillMode; } };   // §D — red pill lit in "just the pill" mode
+    // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
+    window.IdmpPillActive = { redpill: function () { return _pillMode; }, showme: _showMeOn };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
     window.IdmpPillStage = function () {
@@ -1306,7 +1324,7 @@
       else moved = false;
       if (moved) { e.preventDefault(); refreshForm(); _histPush('record'); }
     });
-    $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
+    // §P3-REOPENED — the header '?' help button is gone; ShowMe is driven by the 'showme' pill (toggleShowMe). No listener here.
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
     $('idmp-login-back').addEventListener('click', loginStep1);
