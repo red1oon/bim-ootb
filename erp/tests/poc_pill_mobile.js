@@ -47,11 +47,12 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.waitForFunction(
     () => window.IdmpPills && window.IdmpPills.builder, { timeout: 20000 }).catch(() => {});
-  // Front door: ensure the login card is up so stage = pre-client (Install/Migrate on the rail).
+  // Front door: ensure the login card is up so stage = pre-client (Install/Migrate belong on the rail).
+  // NOTE (user decision 2026-06-09): the rail is now COLLAPSED BY DEFAULT on both form factors — do NOT open it
+  // here; the first thing this witness proves is the clean collapsed resting state.
   await page.evaluate(() => {
     var lg = document.getElementById('idmp-login'); if (lg) lg.style.display = 'flex';
     window.IdmpPills.setStage('pre-client');
-    if (window.IdmpPills.builder && !window.IdmpPills.builder.isOpen()) window.IdmpPills.builder.toggle();
   });
   await page.waitForTimeout(120);
 
@@ -70,17 +71,38 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
       });
     }, { ids, VW, VH });
   }
+  function barRect() {
+    return page.evaluate((arg) => {
+      var VW = arg.VW, VH = arg.VH;
+      var el = document.getElementById('idmp-pillbar');
+      if (!el) return { exists: false };
+      var r = el.getBoundingClientRect();
+      return { exists: true, onScreen: r.right > 0 && r.bottom > 0 && r.left < VW && r.top < VH,
+               rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height),
+                       right: Math.round(r.right), bottom: Math.round(r.bottom) } };
+    }, { VW, VH });
+  }
 
-  const bar = await page.evaluate((arg) => {
-    var VW = arg.VW, VH = arg.VH;
-    var el = document.getElementById('idmp-pillbar');
-    if (!el) return { exists: false };
-    var r = el.getBoundingClientRect();
-    return { exists: true, onScreen: r.right > 0 && r.bottom > 0 && r.left < VW && r.top < VH,
-             rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height),
-                     right: Math.round(r.right), bottom: Math.round(r.bottom) } };
-  }, { VW, VH });
+  // ── §P3-A — COLLAPSED BY DEFAULT: at boot the ⋯ is present + on-screen, the pills are NOT visible yet, and the
+  //    ⋯ carries the attract cue inviting the tap. This is the clean resting state (both desktop + mobile). ──
+  const dflt = await page.evaluate(() => {
+    var trig = document.getElementById('idmp-pill-trigger');
+    var open = window.IdmpPills.builder.isOpen();
+    var anyPillVisible = ['install','migrate','erpdoc','posted','graph','kanban','rule']
+      .some(function (id) { var b = document.getElementById('pill-' + id); return b && b.offsetParent !== null; });
+    return { open: open, trigOnScreen: !!(trig && trig.offsetParent !== null),
+             cueArmed: !!(trig && /idmp-pill-attract/.test(trig.className)), anyPillVisible: anyPillVisible };
+  });
+  await page.screenshot({ path: __dirname + '/poc_pill_mobile_collapsed.png' });
+  console.log('§P3-DEFAULT open=' + dflt.open + ' trigOnScreen=' + dflt.trigOnScreen +
+              ' cueArmed=' + dflt.cueArmed + ' anyPillVisible=' + dflt.anyPillVisible);
+  const collapsedDefaultOk = !dflt.open && dflt.trigOnScreen && !dflt.anyPillVisible;
 
+  // ── REVEAL: simulate the user's ⋯ tap (PB.toggle) — now the pills must render + be visible + on-screen. ──
+  await page.evaluate(() => { window.IdmpPills.builder.toggle(); });
+  await page.waitForTimeout(120);
+
+  const bar = await barRect();
   const pre = await probe(PRE_CLIENT);
   const lens = await probe(LENS);
   console.log('§P0-BAR exists=' + bar.exists + ' onScreen=' + (bar.onScreen||false) + ' rect=' + JSON.stringify(bar.rect||null));
@@ -91,6 +113,30 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   const barOk = bar.exists && bar.onScreen;
   const preOk = allVisible(pre);
   const lensOk = allVisible(lens);
+
+  // ── §P3-B — Help/ShowMe is now a CLEAN pill, not header chrome. Assert: (1) the 'showme' pill renders
+  //    visible+on-screen (reveal state); (2) its handler is wired; (3) the header '?' (#idmp-help-btn) is GONE;
+  //    (4) the shared floating '#needHelpWrap' (NeedHelp? checkbox) is suppressed on this surface; (5) tapping the
+  //    showme pill TOGGLES the shared #needHelpCk on (and the pill goes lit). Drives the real wiring, no fork. ──
+  const showme = (await probe(['showme']))[0];
+  const help = await page.evaluate(() => {
+    var out = { handler: !!(window.IdmpPillActions && typeof window.IdmpPillActions.showme === 'function'),
+                headerQ: !!document.getElementById('idmp-help-btn'),
+                floatingShown: false, toggledOn: false, pillLit: false };
+    var wrap = document.getElementById('needHelpWrap');
+    out.floatingShown = !!(wrap && wrap.offsetParent !== null);     // suppressed ⇒ offsetParent null
+    // tap the showme pill → should flip #needHelpCk on
+    var btn = document.getElementById('pill-showme'); if (btn) btn.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    var ck = document.getElementById('needHelpCk');
+    out.toggledOn = !!(ck && ck.checked);
+    window.IdmpPills.builder.sync();                                // re-evaluate lit states
+    out.pillLit = !!(btn && /active/.test(btn.className));
+    if (ck && ck.checked) { ck.checked = false; ck.dispatchEvent(new Event('change')); }   // restore
+    return out;
+  });
+  console.log('§P3-SHOWME pill=' + JSON.stringify(showme) + ' ' + JSON.stringify(help));
+  const showmeOk = showme.rendered && showme.visible && showme.onScreen && help.handler &&
+                   !help.headerQ && !help.floatingShown && help.toggledOn && help.pillLit;
 
   // §P2-A — mobile strip is RIGHT-anchored vertical (right edge hugged, taller than wide).
   const rightVertical = bar.exists && bar.rect.right >= (VW - 24) && bar.rect.h > bar.rect.w;
@@ -122,13 +168,15 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   console.log('§P2-CUE ' + JSON.stringify(cue));
   const cueOk = (cue.collapsedCue || cue.hiddenSetCue);
 
-  console.log('   ' + (barOk ? '🟢' : '🔴') + ' §P0-A #idmp-pillbar exists + on-screen (390×844)');
-  console.log('   ' + (preOk ? '🟢' : '🔴') + ' §P0-B pre-client pills [install,migrate,erpdoc] rendered+visible+on-screen');
-  console.log('   ' + (lensOk ? '🟢' : '🔴') + ' §P0-C lens pills [posted,graph,kanban,rule] rendered+visible+on-screen');
+  console.log('   ' + (collapsedDefaultOk ? '🟢' : '🔴') + ' §P3-A COLLAPSED BY DEFAULT — at boot only the ⋯ shows (no pills visible), clean resting state');
+  console.log('   ' + (barOk ? '🟢' : '🔴') + ' §P0-A after ⋯ tap: #idmp-pillbar exists + on-screen (390×844)');
+  console.log('   ' + (preOk ? '🟢' : '🔴') + ' §P0-B after ⋯ tap: pre-client pills [install,migrate,erpdoc] rendered+visible+on-screen');
+  console.log('   ' + (lensOk ? '🟢' : '🔴') + ' §P0-C after ⋯ tap: lens pills [posted,graph,kanban,rule] rendered+visible+on-screen');
+  console.log('   ' + (showmeOk ? '🟢' : '🔴') + ' §P3-B Help/ShowMe is a CLEAN pill (circleHelp, lit-on-toggle); header ? gone + floating NeedHelp suppressed');
   console.log('   ' + (rightVertical ? '🟢' : '🔴') + ' §P2-A mobile strip is RIGHT-anchored vertical (not bottom dock)');
   console.log('   ' + (cueOk ? '🟢' : '🔴') + ' §P2-B self-reveal cue fires when pills hidden (collapsed OR hidden-set>0)');
 
-  const pass = barOk && preOk && lensOk && rightVertical && cueOk && errs.length === 0;
+  const pass = collapsedDefaultOk && barOk && preOk && lensOk && showmeOk && rightVertical && cueOk && errs.length === 0;
   console.log('§P0-RESULT ' + (pass ? 'PASS' : 'FAIL') + ' pageErrors=' + (errs.length ? errs.join('|') : 0));
   // Always capture the 390px screenshot (log≠visual proof) — attach to §P2.
   try { await page.screenshot({ path: __dirname + '/poc_pill_mobile.png' }); console.log('§P0-SHOT tests/poc_pill_mobile.png'); } catch (e) {}
