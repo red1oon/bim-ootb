@@ -54,13 +54,8 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
     var lg = document.getElementById('idmp-login'); if (lg) lg.style.display = 'flex';
     window.IdmpPills.setStage('pre-client');
   });
-  // §P4-3 — the boot PEEK (strip slides out then re-collapses) fires on mount. Let it SETTLE before asserting
-  // the clean resting state, else §P3-A would catch the strip mid-peek. Wait for the peek class to clear.
-  await page.waitForFunction(() => {
-    var p = document.getElementById('idmp-pill');
-    return p && !p.classList.contains('idmp-pill-peeking');
-  }, { timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(120);
+  // Boot cue is now just a ⋯ bob (no strip movement). Let it settle before asserting the clean resting state.
+  await page.waitForTimeout(300);
 
   // Per-pill on-screen probe: rendered (exists) + visible (offsetParent) + rect intersects 390×844.
   function probe(ids) {
@@ -104,31 +99,29 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
               ' cueArmed=' + dflt.cueArmed + ' anyPillVisible=' + dflt.anyPillVisible);
   const collapsedDefaultOk = !dflt.open && dflt.trigOnScreen && !dflt.anyPillVisible;
 
-  // ── §P4-3 — TRUE PEEK: fire the cue from the collapsed resting state and prove the actual PILLS become
-  //    momentarily VISIBLE (the strip slides out, a real pill button is on-screen) then RE-COLLAPSE (the strip
-  //    returns to display:none, no pill visible) — not just a ⋯ bob. Names the bug "jump-reveal never happens". ──
-  const peekProbe = () => page.evaluate(() => {
+  // ── §P4-3 (user wrap 2026-06-09 — REVISED): the reveal is CLICK-DRIVEN and STAYS open. From the collapsed
+  //    resting state, a ⋯ tap RISES the strip UP (it gets `.pill-revealing`) + real pills become visible, and it
+  //    STAYS open after the animation finishes (does NOT auto-recollapse). The old auto strip-peek that slid the
+  //    pills out and re-collapsed is GONE ("and not collapse"). Names the bug "the reveal recollapses". ──
+  const revealProbe = () => page.evaluate(() => {
     var p = document.getElementById('idmp-pill');
     var anyPill = ['install','migrate','erpdoc','posted','graph','kanban','rule']
       .some(function (id) { var b = document.getElementById('pill-' + id); return b && b.offsetParent !== null; });
-    return { peeking: !!(p && p.classList.contains('idmp-pill-peeking')),
-             display: p ? getComputedStyle(p).display : 'none', anyPillVisible: anyPill };
+    return { rising: !!(p && p.classList.contains('pill-revealing')),
+             display: p ? getComputedStyle(p).display : 'none', anyPillVisible: anyPill,
+             open: window.IdmpPills.builder.isOpen() };
   });
-  await page.evaluate(() => { window.IdmpPills._evalReveal(); });   // fire from collapsed → strip slides out
-  await page.waitForTimeout(60);                                    // mid-peek
-  const peekOpen = await peekProbe();
-  await page.waitForFunction(() => {                                // wait for the slide-back + re-collapse
-    var p = document.getElementById('idmp-pill');
-    return p && !p.classList.contains('idmp-pill-peeking');
-  }, { timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(80);
-  const peekDone = await peekProbe();
-  console.log('§P4-3-PEEK openPhase=' + JSON.stringify(peekOpen) + ' collapsePhase=' + JSON.stringify(peekDone));
-  const peekOk = peekOpen.peeking && peekOpen.display !== 'none' && peekOpen.anyPillVisible &&
-                 !peekDone.peeking && peekDone.display === 'none' && !peekDone.anyPillVisible;
+  await page.click('#idmp-pill-trigger');     // the user's ⋯ tap
+  await page.waitForTimeout(90);              // mid-rise — the strip is animating up
+  const revealMid = await revealProbe();
+  await page.waitForTimeout(650);             // let the rise finish + dwell — it must STAY open
+  const revealAfter = await revealProbe();
+  console.log('§P4-3-REVEAL mid=' + JSON.stringify(revealMid) + ' after=' + JSON.stringify(revealAfter));
+  const peekOk = revealMid.rising && revealMid.display !== 'none' && revealMid.anyPillVisible &&
+                 revealAfter.open && revealAfter.display !== 'none' && revealAfter.anyPillVisible;
 
-  // ── REVEAL: simulate the user's ⋯ tap (PB.toggle) — now the pills must render + be visible + on-screen. ──
-  await page.evaluate(() => { window.IdmpPills.builder.toggle(); });
+  // ── REVEAL: the strip is already open from the ⋯ tap above — ensure open for the §P0 on-screen checks. ──
+  await page.evaluate(() => { if (!window.IdmpPills.builder.isOpen()) window.IdmpPills.builder.toggle(); });
   await page.waitForTimeout(120);
 
   const bar = await barRect();
@@ -242,7 +235,7 @@ const LENS = ['posted', 'graph', 'kanban', 'rule'];     // always present
   const cueOk = (cue.collapsedCue || cue.hiddenSetCue);
 
   console.log('   ' + (collapsedDefaultOk ? '🟢' : '🔴') + ' §P3-A COLLAPSED BY DEFAULT — at boot only the ⋯ shows (no pills visible), clean resting state');
-  console.log('   ' + (peekOk ? '🟢' : '🔴') + ' §P4-3 TRUE PEEK — the hidden pills slide OUT (visible) then RE-COLLAPSE (display:none), not just a ⋯ bob');
+  console.log('   ' + (peekOk ? '🟢' : '🔴') + ' §P4-3 CLICK-REVEAL-UP — a ⋯ tap rises the strip up (.pill-revealing) + pills visible, and it STAYS open (no auto-recollapse)');
   console.log('   ' + (barOk ? '🟢' : '🔴') + ' §P0-A after ⋯ tap: #idmp-pillbar exists + on-screen (390×844)');
   console.log('   ' + (preOk ? '🟢' : '🔴') + ' §P0-B after ⋯ tap: pre-client pills [install,migrate,erpdoc] rendered+visible+on-screen');
   console.log('   ' + (lensOk ? '🟢' : '🔴') + ' §P0-C after ⋯ tap: lens pills [posted,graph,kanban,rule] rendered+visible+on-screen');

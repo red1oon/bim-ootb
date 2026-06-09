@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v629';
+const CACHE_VERSION = 'v630';   // v630: pill reveal-UP cue — viewer #mobile-pill rises on open (PillBuilder _toggle `.pill-revealing` + @keyframes pill-rise in viewer.html); part of the cross-surface pill consistency pass (erp/sw.js v611). pill_builder.js?v=2. (supersedes v629 history-bar merge.)
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

@@ -35,16 +35,54 @@
     home: 'home', settings: 'settings', find: 'search', share: 'share', help: 'lifeBuoy'
   };
 
-  // ── id → real handler (no behaviour change) OR honest "arrives in Ix" toast ──
+  // ── ErpPicker bridge (Install/Migrate) — user wrap 2026-06-09: Install/Migrate now appear on erp.html too,
+  // reusing the SAME window.ErpPicker module idempiere.html uses (erp_picker.js, loaded by erp.html). No fork.
+  function _picker(mode) {
+    return function () {
+      console.log('§ERP-PICKER mode=' + mode);
+      if (window.ErpPicker && ErpPicker.open) ErpPicker.open({ mode: mode, status: _toast });
+      else _toast('ERP picker not loaded');
+    };
+  }
+
+  // ── HelpGuide (user wrap 2026-06-09: "give a note to click a bubble / go deeper via Glassbowl/Gravity/iDempiere").
+  // erp.html does NOT load the shared help_overlay.js — this is a NEW, self-contained, dismissible card (KISS,
+  // clean Lucide-only chrome). It tells the user how to navigate the bubble constellation + the deeper surfaces.
+  function _helpGuide() {
+    var existing = document.getElementById('erp-help-guide');
+    if (existing) { existing.remove(); console.log('§ERP-HELP action=close'); return; }   // toggle
+    var card = document.createElement('div');
+    card.id = 'erp-help-guide';
+    card.setAttribute('role', 'dialog');
+    card.innerHTML =
+      '<button id="erp-help-x" title="Close" aria-label="Close">&times;</button>' +
+      '<h3>Getting around</h3>' +
+      '<ul>' +
+        '<li><b>Tap a bubble</b> to open its records — each bubble is an ERP window (Orders, Products, Partners&hellip;).</li>' +
+        '<li>Tap <b>Home</b> any time to return to the bubble constellation.</li>' +
+        '<li>Go <b>deeper</b> with the pills:' +
+          '<ul>' +
+            '<li><b>iDempiere</b> — the full classic ERP UI (records, posting, kanban).</li>' +
+            '<li><b>Glassbowl</b> — the engine-as-data lens (see the kernel fold live).</li>' +
+            '<li><b>Gravity</b> — the orbit view of the whole system.</li>' +
+          '</ul>' +
+        '</li>' +
+        '<li>New here? <b>Install</b> sets up a fresh ERP on this device; <b>Migrate</b> brings data in from another one.</li>' +
+      '</ul>';
+    document.body.appendChild(card);
+    var close = function () { if (card.parentNode) card.remove(); console.log('§ERP-HELP action=close'); };
+    document.getElementById('erp-help-x').addEventListener('pointerup', function (e) { e.stopPropagation(); close(); });
+    console.log('§ERP-HELP action=open items=5');
+  }
+
+  // ── id → real handler. Stubs that only toasted "arrives in a later task" (find/read/ledger/graphs/edit/
+  // process/settings) are REMOVED from the manifest (user wrap 2026-06-09) — that depth lives on idempiere.html;
+  // erp.html is the lean globe that funnels there. What remains is operative. ──
   var BINDINGS = {
     home:      function () { if (window.ADUI && ADUI.showMenu) ADUI.showMenu(); else _toast('Home'); },
-    find:      function () { _toast('Search — record/account search wires in a later task'); },
-    read:      function () { _toast('Read — record view wires in a later task'); },
-    ledger:    function () { _toast('Report — Receipt · Trial Balance · P&L arrive in I2'); },
-    graphs:    function () { _toast('Graphs — chart overlay arrives in I4'); },
-    edit:      function () { _toast('Editable — CRUD ring arrives with CRUD-P'); },
-    process:   function () { _toast('Process — DocAction arrives with CRUD-P'); },
-    maximize:  function () {                                  // real now — fullscreen the ERP surface
+    install:   _picker('install'),
+    migrate:   _picker('migrate'),
+    maximize:  function () {                                  // real — fullscreen the ERP surface
       try {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
         else document.exitFullscreen();
@@ -63,12 +101,11 @@
         } else { _toast(url); }
       } catch (e) { _toast(url); }
     },
-    settings:  function () { _toast('Settings — JSON editor wires in a later task'); },
     verify:    function () {                                  // chain-integrity check — was a floating button, now a pill
       if (window.ErpVerifyLedger) window.ErpVerifyLedger();
       else _toast('Verify ledger — not ready');
     },
-    help:      function () { _toast('Need Help? — guided ShowMe tours arrive per task'); }
+    help:      _helpGuide                                     // real HelpGuide card (was a "tours arrive" toast)
   };
 
   // ── hold (long-press) drawers land in I3 — honest stub now ──
@@ -89,7 +126,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=24').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=25').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];
@@ -126,7 +163,6 @@
       wrap.id = 'erp-pillbar';
       var pill = document.createElement('div');
       pill.id = 'erp-pill';
-      pill.style.display = 'block';                          // persistent bar (spec: always visible)
       var trigger = document.createElement('button');
       trigger.id = 'erp-pill-trigger';
       trigger.title = 'Pills';
@@ -141,10 +177,22 @@
       var PB = window.PillBuilder({
         pill: pill, trigger: trigger, APP: {}, actions: actions,
         order: actions.map(function (a) { return a.id; }),
-        storageKey: 'erp_pill_config'
+        storageKey: 'erp_pill_config',
+        persistent: true   // ⋯ toggles; an outside tap does NOT auto-close — stays open until the user re-taps ⋯
       });
+      // ⋯ tap → toggle. Opening RISES the strip up from the bottom-right ⋯ + STAYS open (PillBuilder _toggle
+      // `.pill-revealing`); re-tapping collapses it back down to the ⋯ (which never leaves the bottom-right).
       trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
+      // Re-arm the boot cue: drop the attract class when the bob ends so it can replay.
+      trigger.addEventListener('animationend', function () { trigger.classList.remove('erp-pill-attract'); });
       window.ErpPills = PB;
+
+      // Collapsed by DEFAULT (consistent with idempiere.html + the BIM viewer): the clean resting state is just
+      // the bottom-right ⋯; the strip reveals only on the user's tap. A one-time ⋯ bob cues "there's more here".
+      PB.close();
+      void trigger.offsetWidth;
+      trigger.classList.add('erp-pill-attract');
+      console.log('§PILL-CUE page=erp attract=⋯ collapsed=true');
 
       var mounted = pill.querySelectorAll('button[id^="pill-"]').length;
       console.log('§PILL-MANIFEST page=erp pills=' + pills.length + ' source=pills.json handAuthoredButtons=0' +
@@ -161,9 +209,12 @@
     var s = document.createElement('style');
     s.id = 'erp-pill-style';
     s.textContent =
-      '#erp-pillbar{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;' +
+      // BOTTOM-RIGHT dock (consistent with idempiere.html + the BIM viewer): the ⋯ rests at the bottom-right and
+      // STAYS there; the strip (DOM-ordered above the trigger in a bottom-anchored column) RISES UP on tap. Was
+      // right-edge vertically-CENTRED — collapsing used to drift the ⋯ to mid-screen; now `bottom` is pinned.
+      '#erp-pillbar{position:fixed;right:10px;bottom:16px;top:auto;transform:none;z-index:1200;' +
         'display:flex;flex-direction:column;align-items:center;gap:8px;}' +
-      '#erp-pill{display:flex;flex-direction:column;gap:6px;max-height:62vh;overflow-y:auto;' +
+      '#erp-pill{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 120px);overflow-y:auto;' +
         'padding:6px;border-radius:16px;background:rgba(20,22,32,0.78);' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
       '#erp-pill::-webkit-scrollbar{width:0;}' +
@@ -173,8 +224,31 @@
       '#erp-pill button.active{background:rgba(108,159,255,0.24);color:#6c9fff;}' +
       '#erp-pill button img{border-radius:4px;}' +
       '#erp-pill-trigger{width:32px;height:32px;min-height:32px;border:none;border-radius:50%;cursor:pointer;' +
-        'background:rgba(20,22,32,0.78);color:#9aa4b8;font-size:18px;line-height:1;' +
-        'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}';
+        'background:rgba(20,22,32,0.78);color:#9aa4b8;font-size:18px;line-height:1;display:flex;' +
+        'align-items:center;justify-content:center;' +
+        'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
+      // Reveal-UP on open + a gentle ⋯ bob while collapsed (same idiom as idmp_pills.js — consistent everywhere).
+      '@keyframes pill-rise{from{transform:translateY(18px);opacity:0;}to{transform:translateY(0);opacity:1;}}' +
+      '#erp-pill.pill-revealing{animation:pill-rise 0.42s cubic-bezier(.2,.85,.25,1);}' +
+      '@keyframes erp-pill-peek{0%,100%{transform:translateY(0);box-shadow:none;}' +
+        '25%{transform:translateY(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
+        '55%{transform:translateY(0);}78%{transform:translateY(-4px);}}' +
+      '#erp-pill-trigger.erp-pill-attract{animation:erp-pill-peek 0.85s ease-in-out 2;color:#6c9fff;}' +
+      '@media (max-width:760px){#erp-pillbar{right:calc(10px + env(safe-area-inset-right,0px));' +
+        'bottom:calc(12px + env(safe-area-inset-bottom,0px));}#erp-pill{max-height:calc(100vh - 110px);}}' +
+      // HelpGuide card (the `help` pill) — centred, dismissible, clean glass. Self-contained (erp.html has no
+      // shared help_overlay.js). z above the globe + pill bar; scrolls on a short screen.
+      '#erp-help-guide{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;' +
+        'width:min(420px,90vw);max-height:80vh;overflow-y:auto;padding:22px 24px 24px;border-radius:16px;' +
+        'background:rgba(20,22,32,0.96);color:#cdd6e4;border:1px solid rgba(255,255,255,0.12);' +
+        'box-shadow:0 12px 48px rgba(0,0,0,0.5);font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;}' +
+      '#erp-help-guide h3{margin:0 0 12px;color:#6c9fff;font-size:16px;}' +
+      '#erp-help-guide ul{margin:0;padding-left:20px;}' +
+      '#erp-help-guide li{margin:7px 0;}' +
+      '#erp-help-guide b{color:#e6ebf5;font-weight:600;}' +
+      '#erp-help-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;' +
+        'background:transparent;color:#9aa4b8;font-size:22px;line-height:1;cursor:pointer;}' +
+      '#erp-help-x:hover{background:rgba(255,255,255,0.08);color:#fff;}';
     document.head.appendChild(s);
   }
 
