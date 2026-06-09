@@ -71,7 +71,9 @@ window.HistoryBar = (function () {
     sharedKey: 'bim.docHistory',             // app-wide cross-tab log
     channel: 'bim_history',
     docTypes: null,                           // {type:true} whitelist that mirrors to the shared log
-    treeKey: null                             // per-building localStorage key for the persisted TREE (opt-in)
+    treeKey: null,                            // per-building localStorage key for the persisted TREE (opt-in)
+    combine: null,                            // combine(current,donor,ancestor)→{viewState,label} (cross-branch VIEW union)
+    cherryPick: null                          // cherryPick(donorOp,ancestor)→bool (replay a signed op onto current)
   };
   // ── The KNOB (HISTORY_KNOB_SIGNAL_TAP §LOCKED-KNOB) ──────────────────────
   // The old 3-state cycle (all/doc/off) is a 5-stop magnitude DIAL: Off·Low·Mid·High·Max, default
@@ -243,6 +245,50 @@ window.HistoryBar = (function () {
     if (hit) _switchToNode(hit); else console.log('§HIST_SWITCH miss id=' + id);
     return !!hit;
   }
+  // ── Cross-branch COMBINE / cherry-pick (PR #6, §LOCKED-BRANCH) ────────────
+  // "Bring into current ⤵": standing on one universe, graft a SIBLING universe's contribution onto it
+  // WITHOUT merge. Two flavours, both keep A and B intact as visible universes:
+  //   • VIEW combine — union the donor's distinctive view-fields into the current look (color⊕section,
+  //     the proven combineViews). The bar delegates to _cfg.combine (only the app knows its fields).
+  //   • MODEL cherry-pick — replay the donor's signed op onto the current tip (delegated to _cfg.cherryPick;
+  //     disjoint = clean, NO 3-way merge — conflict UI is out of scope by design).
+  function _forceAppend(entry) {     // append a node on the current branch, BYPASSING the significance gate
+    entry.ts = _now(); entry.seq = ++_seq; entry.kids = []; entry.active = 0; entry.parent = _cursorNode;
+    var kids = _kidsOf(_cursorNode); kids.push(entry); _setActive(_cursorNode, kids.length - 1); _cursorNode = entry;
+    if (_isDoc(entry)) _mirror(entry);
+    _rebuild(); _persistSave(); _render();
+    console.log('§HIST_PUSH n=' + _stream.length + ' idx=' + _cursor + ' kind=' + entry.kind + ' label="' + (entry.label || '') + '" forced=1');
+  }
+  function _commonAncestor(a, b) {
+    var anc = []; for (var n = a; n; n = n.parent) anc.push(n);
+    for (var m = b; m; m = m.parent) if (anc.indexOf(m) >= 0) return m;
+    return null;   // disjoint roots → virtual root (delta vs {})
+  }
+  function _combineFrom(donor) {
+    if (!donor) return;
+    var cur = _cursorNode;
+    if (!cur) { console.log('§HIST_COMBINE skip reason=no-current'); return; }
+    if (donor === cur || _isAncestorOrSelf(donor, cur)) { console.log('§HIST_COMBINE skip reason=on-current-line'); return; }
+    var anc = _commonAncestor(cur, donor);
+    if (donor.kind === 'op') {
+      var ok = false; try { ok = _cfg.cherryPick ? _cfg.cherryPick(donor, anc) : false; } catch (e) { console.warn('§HIST_CHERRY_ERR', e); }
+      console.log('§HIST_COMBINE mode=cherry-pick donor="' + (donor.label || '') + '" ok=' + ok);
+      return;   // the app's own commit path records the replayed op onto the current branch
+    }
+    var res = null;
+    try { res = _cfg.combine ? _cfg.combine(cur, donor, anc) : null; } catch (e) { console.warn('§HIST_COMBINE_ERR', e); }
+    if (!res || !res.viewState) { console.log('§HIST_COMBINE skip reason=no-result donor="' + (donor.label || '') + '"'); return; }
+    _forceAppend({ bucket: 'view', kind: 'view', type: 'combine', readonly: true,
+      label: res.label || ('⊕ ' + (donor.label || 'universe')), viewState: res.viewState, sigKey: 'combine:' + (_seq + 1) });
+    console.log('§HIST_COMBINE mode=view donor="' + (donor.label || '') + '" into="' + (cur.label || '') + '" keys=' + Object.keys(res.viewState).join(','));
+  }
+  function combineFromId(id) {
+    var hit = null;
+    (function dfs(node) { var k = _kidsOf(node); for (var i = 0; i < k.length; i++) { if (k[i].seq === id) hit = k[i]; if (!hit) dfs(k[i]); } })(null);
+    if (hit) _combineFrom(hit); else console.log('§HIST_COMBINE miss id=' + id);
+    return !!hit;
+  }
+
   // Every leaf in the tree = one universe tip. onMain = it lies on the current active line.
   function tips() {
     var out = [];
@@ -435,26 +481,37 @@ window.HistoryBar = (function () {
     dot.addEventListener('pointerup', function (ev) { ev.stopPropagation(); jumpTo(idx); });
     return dot;
   }
-  // A sibling universe (a fork-child NOT on the active line) → a small accent tick / chip whose click
-  // SWITCHES to that universe's tip (walks the tree + restores its look — switch == restore down a path).
+  // A sibling universe (a fork-child NOT on the active line) → a small accent tick / chip.
+  //   TAP        = SWITCH to that universe's tip (walk the tree + restore its look).
+  //   LONG-PRESS / RIGHT-CLICK = BRING INTO CURRENT ⤵ (cross-branch combine/cherry-pick, PR #6).
+  function _wireSibling(el, tip) {
+    var t0 = 0, pid = null, done = false;
+    el.addEventListener('pointerdown', function (e) { e.stopPropagation(); t0 = _now(); pid = e.pointerId; done = false; try { el.setPointerCapture(pid); } catch (x) {} });
+    el.addEventListener('pointerup', function (e) {
+      e.stopPropagation(); try { el.releasePointerCapture(pid); } catch (x) {} pid = null;
+      if (done) return;
+      if (_now() - t0 >= 500) { done = true; _combineFrom(tip); } else _switchToNode(tip);
+    });
+    el.addEventListener('contextmenu', function (e) { e.preventDefault(); e.stopPropagation(); _combineFrom(tip); });
+  }
   function _siblingTick(child) {
     var tip = _tipOf(child);
     var t = document.createElement('button');
-    t.title = 'Universe ⑂ ' + (tip.label || ('#' + tip.seq)) + ' — click to switch';
-    t.style.cssText = 'width:7px;height:7px;padding:0;cursor:pointer;flex:0 0 auto;align-self:flex-start;' +
+    t.title = 'Universe ⑂ ' + (tip.label || ('#' + tip.seq)) + ' — tap = switch · long-press/right-click = bring into current ⤵';
+    t.style.cssText = 'width:7px;height:7px;padding:0;cursor:pointer;flex:0 0 auto;align-self:flex-start;touch-action:none;' +
       'border:1px solid ' + SIB + ';border-radius:50%;background:rgba(179,136,255,0.45);box-shadow:0 0 4px rgba(179,136,255,0.5)';
-    t.addEventListener('pointerup', function (ev) { ev.stopPropagation(); _switchToNode(tip); });
+    _wireSibling(t, tip);
     return t;
   }
   function _siblingChip(child) {
     var tip = _tipOf(child);
     var chip = document.createElement('button');
-    chip.title = 'Switch to universe ⑂ ' + (tip.label || '');
-    chip.style.cssText = 'display:flex;align-items:center;gap:3px;flex:0 0 auto;cursor:pointer;' +
+    chip.title = 'Universe ⑂ ' + (tip.label || '') + ' — tap = switch · long-press/right-click = bring into current ⤵';
+    chip.style.cssText = 'display:flex;align-items:center;gap:3px;flex:0 0 auto;cursor:pointer;touch-action:none;' +
       'padding:2px 6px;border-radius:11px;font-size:10px;white-space:nowrap;' +
       'border:1px dashed ' + SIB + ';color:' + SIB + ';background:rgba(40,25,70,0.6)';
     chip.innerHTML = '<span>⑂ ' + _esc(_shortLabel(tip.label)) + '</span>';
-    chip.addEventListener('pointerup', function (ev) { ev.stopPropagation(); _switchToNode(tip); });
+    _wireSibling(chip, tip);
     return chip;
   }
   function _chip(e, idx, applied, isCurrent) {
@@ -593,8 +650,9 @@ window.HistoryBar = (function () {
     undo: undo, redo: redo, jumpTo: jumpTo,
     setDepth: setDepth, cycleDepth: cycleDepth, getDepth: getDepth, setEnabled: setEnabled, isEnabled: isEnabled,
     clear: clear, open: open, toggleOpen: toggleOpen, list: list, significant: significant,
-    // ── branch TREE (PR #5) ──
+    // ── branch TREE (PR #5) + combine (PR #6) ──
     switchToId: switchToId, tips: tips, dumpTree: dumpTree, treeShape: treeShape,
-    serialize: serialize, hydrate: hydrate, setTreeKey: setTreeKey
+    serialize: serialize, hydrate: hydrate, setTreeKey: setTreeKey,
+    combineFromId: combineFromId
   };
 })();

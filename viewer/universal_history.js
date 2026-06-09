@@ -88,9 +88,33 @@
       _tapApply(entry.viewState, entry.label);   // re-apply the x-ray/bbox/camera this pick was taken under
       return;
     }
-    // view
-    if (_viewRestore) _viewRestore(entry.view);
-    _tapApply(entry.viewState, entry.label);     // …same for a Find/nav view entry
+    // view (Find/nav) OR combine (no Find view, just a stamped look) — only replay a Find view if present.
+    if (_viewRestore && entry.view) _viewRestore(entry.view);
+    _tapApply(entry.viewState, entry.label);
+  }
+
+  // (PR #6) Cross-branch COMBINE — bring a sibling universe's DISTINCTIVE view-fields into the current
+  // look. Delta = the fields the donor branch changed vs the fork point (so the current branch's own
+  // fields are kept); union via the proven combineViews, then apply. Result is a new tip on the current
+  // branch — A and B stay intact as universes. (color⊕section, the user's exact demo.)
+  function _combine(current, donor, ancestor) {
+    if (!window.HistoryTap) return null;
+    var Dv = donor && donor.viewState; if (!Dv) return null;
+    var Fv = (ancestor && ancestor.viewState) || {};
+    var delta = {};
+    for (var k in Dv) { if (JSON.stringify(Dv[k]) !== JSON.stringify(Fv[k])) delta[k] = Dv[k]; }   // donor's contribution only
+    var base = (current && current.viewState) || HistoryTap.currentView();
+    var combined = HistoryTap.combineViews(base, delta);
+    HistoryTap.applyView(combined, '⊕ ' + (donor.label || 'universe'));
+    console.log('§HIST_COMBINE_DELTA donor="' + (donor.label || '') + '" delta=' + Object.keys(delta).join(',') + ' → combined=' + Object.keys(combined).join(','));
+    return { viewState: combined, label: '⊕ ' + (donor.label || 'universe') };
+  }
+  // MODEL cherry-pick — replay the donor's signed op onto the current state (disjoint = clean; no 3-way).
+  function _cherryPick(donor) {
+    var A = _A();
+    if (!A || !A.db || !window.KernelOps || !donor || !UNDOABLE_OPS[donor.type]) return false;
+    try { KernelOps.commitOp(A.db, donor.type, donor.replay || donor.params || {}, (donor.params && donor.params.guids) || []); return true; }
+    catch (e) { console.warn('§HIST_CHERRY_ERR', e); return false; }
   }
 
   // ── §-tap bridge: stamp each entry with the ambient look, re-apply it on restore ──────
@@ -192,7 +216,9 @@
     iconFn: _stepIcon,
     sharedKey: 'bim.docHistory',            // §8 app-wide log (landing reads it)
     channel: 'bim_history',
-    docTypes: { 'BUILDING_OPEN': true }     // mirror only milestones to the shared log
+    docTypes: { 'BUILDING_OPEN': true },    // mirror only milestones to the shared log
+    combine: _combine,                      // §6 cross-branch VIEW combine (color⊕section)
+    cherryPick: _cherryPick                 // §6 model op replay (disjoint graft)
   });
 
   // commitOp wrapper — record EVERY model op as it lands.
@@ -220,8 +246,8 @@
     setDepth: HB.setDepth, cycleDepth: HB.cycleDepth, getDepth: HB.getDepth,
     clear: HB.clear, open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list,
     significant: function (ev) { return HB.significant(ev.source, ev.type, ev.label); },
-    // branch TREE (PR #5) — fork-don't-wipe universes + switch=restore.
-    switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey,
+    // branch TREE (PR #5) + combine (PR #6) — fork-don't-wipe universes, switch=restore, bring-into-current.
+    switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey, combineFromId: HB.combineFromId,
     PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS
   };
   _wireTap();   // §-tap depth axis: provider + appliers + seed (no-op if history_tap.js absent)
