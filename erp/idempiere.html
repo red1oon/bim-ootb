@@ -340,7 +340,8 @@
 <script src="idmp_pills.js?v=5"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
-<script src="idmp_history.js?v=2"></script>
+<script src="../common/history_tap.js?v=1" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
+<script src="idmp_history.js?v=3"></script>
 <script>
 (function () {
   'use strict';
@@ -1287,6 +1288,25 @@
     var rid = recVal(rec, _keyCol(tab));
     return tname + ' ' + (human != null && human !== '' ? human : ('#' + rid));
   }
+  // §HISTORY_TAP (HISTORY_TAP_TO_IDEMPIERE.md §3) — mirror the viewer's universal_history.js _wireTap():
+  // ONE symmetric field(name, read, write) per restorable LOOK + the sniffer for free total recording.
+  // Only look-DEFINING ERP state that has a clean get AND set gets a field (kanban/graph are mount-based
+  // overlays with no gettable lens — left to the sniffer's read-only crumb trail, not restored).
+  function _wireErpTap() {
+    if (!window.HistoryTap || !window.HistoryTap.field) return;
+    var T = window.HistoryTap;
+    // search/menu-filter term — the slice the user narrowed the menu down to.
+    T.field('search',
+      function () { var el = $('idmp-menu-filter'); return el ? el.value : ''; },
+      function (q) { var el = $('idmp-menu-filter'); if (el && el.value !== (q || '')) { el.value = q || ''; applyFilter(q || ''); } });
+    // red-pill chrome mode — "just the pill" (idmp-clean) vs classic iDempiere L&F.
+    T.field('clean',
+      function () { return document.body.classList.contains('idmp-clean'); },
+      function (want) { if (document.body.classList.contains('idmp-clean') !== !!want) toggleCleanMode(); });
+    if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every ERP §act from the stream, deny-filtered
+    console.log('§IDMP-HIST-TAP wired fields(search,clean) + sniffer ON — one symmetric line each');
+  }
+
   function _histPush(kind) {
     if (_histRestoring || !window.IdmpHistory || !_session) return;
     var tab = _curTab(), rec = (kind === 'record' && tab) ? _records[_recIdx] : null;
@@ -1294,7 +1314,8 @@
       kind: kind, windowId: _activeWin, tabIdx: _activeTabIdx,
       table: tab ? tab.tableName : null,
       recordId: rec ? recVal(rec, _keyCol(tab)) : null,
-      label: _histLabel(kind)
+      label: _histLabel(kind),
+      view: (window.HistoryTap ? HistoryTap.currentView() : null)   // §HISTORY_TAP: stamp the LOOK (search term, chrome mode) at this moment
     });
   }
   function _histRestore(e) {
@@ -1312,6 +1333,7 @@
           }
         }
       }
+      if (e.view && window.HistoryTap) HistoryTap.applyView(e.view, e.label);   // §HISTORY_TAP: reproduce the LOOK (search/clean), view-only — never touches the op-log
       console.log('§IDMP-HIST restore=' + e.label + ' kind=' + e.kind + ' readOnly=Y');
     } finally { _histRestoring = false; }
   }
@@ -1337,6 +1359,7 @@
     mountPillRegistry();
     _applyPillMode();   // §D — apply persisted "just the pill" / classic state at boot
     if (window.IdmpHistory) window.IdmpHistory.registerRestore(_histRestore);   // §B — read-only nav restore
+    _wireErpTap();   // §HISTORY_TAP — depth axis: field()s make a moment restore the LOOK + sniffer = free total recording
     // §D + common-HMI keyboard: ',' toggles the red pill (same as BIM Doc Mode); arrow keys navigate records
     // (essential in "just the pill" mode where the toolbar arrows are hidden). Ignored while typing in a field.
     document.addEventListener('keydown', function (e) {
