@@ -142,5 +142,6 @@
   "WizardOrientation": "readonly",
   "WizardStoreys": "readonly",
   "WORK_PACKAGES": "readonly",
-  "XLSX": "readonly"
+  "XLSX": "readonly",
+  "HistoryTap": "readonly"
 }
