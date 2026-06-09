@@ -38,7 +38,8 @@
     if (_idx >= 0 && _hist[_idx] && _hist[_idx].sig === sig) return;     // §curation: coalesce the no-op repeat
     if (_idx < _hist.length - 1) _hist.length = _idx + 1;                // truncate forward branch
     var e = { seq: _seq++, sig: sig, kind: m.kind, label: m.label || m.kind,
-              windowId: m.windowId, tabIdx: m.tabIdx, table: m.table || null, recordId: (m.recordId == null ? null : m.recordId) };
+              windowId: m.windowId, tabIdx: m.tabIdx, table: m.table || null, recordId: (m.recordId == null ? null : m.recordId),
+              view: (m.view == null ? null : m.view) };   // §HISTORY_TAP: carry the stamped LOOK (search/clean) so restore re-applies it
     _hist.push(e); _idx = _hist.length - 1;
     console.log('§IDMP-HIST push=' + e.kind + ':' + e.label + ' depth=' + _hist.length + ' idx=' + _idx);
     render();
