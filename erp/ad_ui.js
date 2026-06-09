@@ -267,13 +267,15 @@
     // not hand-coded): @Col@ refs resolve against the record via window.AdEvaluator. Parse error/uncertain → SHOW.
     var _AdEv = (typeof window !== 'undefined' && window.AdEvaluator) ? window.AdEvaluator : null;
     if (_AdEv) {
-      var _before = displayFields.length;
+      var _before = displayFields.length, _hidden = [];
       displayFields = displayFields.filter(function (f) {
         if (!f.displaylogic || String(f.displaylogic).trim() === '') return true;
-        try { return _AdEv.evaluate(f.displaylogic, record || {}, record || {}) !== false; } catch (e) { return true; }
+        var keep; try { keep = _AdEv.evaluate(f.displaylogic, record || {}, record || {}) !== false; } catch (e) { keep = true; }
+        if (!keep) _hidden.push(f.columnName + '[' + f.displaylogic + ']');
+        return keep;
       });
-      if (_before !== displayFields.length)
-        console.log('§AD-DISPLAYLOGIC-LIVE table=' + tableName + ' shown=' + displayFields.length + ' hidden=' + (_before - displayFields.length) + ' (AD DisplayLogic false for this record)');
+      if (_hidden.length)
+        console.log('§AD-DISPLAYLOGIC-LIVE table=' + tableName + ' shown=' + displayFields.length + ' hidden=' + _hidden.length + ' hiddenCols=' + _hidden.join(',') + ' (AD DisplayLogic false for this record)');
     }
     if (filterMode && filterMode !== 'data') {
       displayFields = fields.filter(function(f) {
@@ -3418,7 +3420,8 @@
     _test: {
       drillCallback: _graphDrillCallback,
       closeTableOverlay: _closeTableOverlay,
-      getTableOverlay: function () { return _tableOverlay; }
+      getTableOverlay: function () { return _tableOverlay; },
+      openAccordion: _openAccordionPanel   // §AD-DISPLAYLOGIC-LIVE test seam: build a record's accordion directly
     }
   };
 
