@@ -40,6 +40,13 @@
   var _lastEntityTable = null; // remember which TABLE we dived into (for back animation)
   var _onLongPressEmpty = null; // callback for long-press on empty space (mobile search)
 
+  // §IDLE-GATE — CPU/battery: redraw at 60fps only while there is real motion;
+  // throttle to ~18fps when idle (keeps the node pulse "alive" but sheds ~70% of
+  // idle redraws), and skip work entirely when the tab is hidden. No loop-stop = no freeze.
+  var _lastActivity = 0;   // performance.now() of last user interaction
+  var _lastDrawAt = 0;     // performance.now() of last actual canvas draw
+  var _drawCount = 0;      // §IDLE-GATE witness — # of actual canvas draws
+
   // Fly-to-front animation
   var _flyTarget = null;   // node being pulled to front
   var _flyRotYStart = 0, _flyRotXStart = 0;
@@ -1100,7 +1107,20 @@
   // ── Animation loop ─────────────────────────────────────────────────
 
   function _animate() {
-    if (!_ctx) return;
+    if (!_ctx) return;   // teardown: stop the loop (no reschedule)
+    _animId = requestAnimationFrame(_animate);
+
+    // §IDLE-GATE — tab hidden: keep the loop alive but do zero canvas work.
+    if (typeof document !== 'undefined' && document.hidden) return;
+    var _now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var _active = _flyTarget || _dragging
+      || Math.abs(_momentumY) > 1e-4 || Math.abs(_momentumX) > 1e-4
+      || _focusPulseT > 0
+      || (_now - _lastActivity) < 1200;
+    // Idle → throttle to ~18fps (55ms). Active → full 60fps.
+    if (!_active && (_now - _lastDrawAt) < 55) return;
+    _lastDrawAt = _now;
+    _drawCount++;   // §IDLE-GATE witness
 
     // Fly-to-front animation (overrides all other motion)
     if (_flyTarget) {
@@ -1219,9 +1239,6 @@
     for (var ni = 0; ni < sortedIdx.length; ni++) {
       _drawNode(_nodes[sortedIdx[ni]]);
     }
-
-
-    _animId = requestAnimationFrame(_animate);
   }
 
   // §2b — Track which node is actively expanded (for dimming siblings)
@@ -1389,6 +1406,7 @@
 
   function _onPointerDown(e) {
     e.preventDefault();
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     var rect = _canvas.getBoundingClientRect();
     _dragStartX = e.clientX;
     _dragStartY = e.clientY;
@@ -1600,6 +1618,7 @@
 
   function _onWheel(e) {
     e.preventDefault();
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     var delta = e.deltaY > 0 ? -8 : 8;
     _radius = Math.max(40, Math.min(Math.max(_W, _H) * 1.2, _radius + delta));
     _rebuildSpherePositions();
@@ -1611,6 +1630,7 @@
   var _pinchStartRadius = 0;
 
   function _onTouchStart(e) {
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     if (e.touches.length === 2) {
       e.preventDefault();
       var dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1621,6 +1641,7 @@
   }
 
   function _onTouchMove(e) {
+    _lastActivity = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // §IDLE-GATE
     if (e.touches.length === 2 && _pinchStartDist > 0) {
       e.preventDefault();
       var dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1846,6 +1867,7 @@
     getFlyDelta: function () { return Math.abs(_flyRotYEnd - _flyRotYStart); },
     getScreenScale: function (idx) { return _nodes[idx] ? _nodes[idx].screenScale : 0; },
     getNodeCount: function () { return _nodes.length; },
+    getDrawCount: function () { return _drawCount; },   // §IDLE-GATE witness
     getCurrentView: function () { return _currentView; },
     getBubbleWeight: _getBubbleWeight,
     // §DEBUG — whitebox accessors for testing collapse/dim/gateway state
