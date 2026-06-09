@@ -213,20 +213,20 @@
   var _graphCanvas = null;
   var _graphContainer = null;  // the div that goes fullscreen
 
-  function _graphDrillCallback(tableName, windowId, record, filterMode) {
-    console.log('§AD_UI drill table=' + tableName + ' windowId=' + windowId +
-                ' filterMode=' + (filterMode || 'none') + ' hasRecord=' + !!record);
+  // §IDEMPIERE-ROUTE — resolve a table's PK value from a raw record row (case-insensitive col match).
+  function _recPk(record, tableName) {
+    if (!record) return null;
+    var want = (tableName + '_ID').toLowerCase();
+    for (var k in record) { if (k.toLowerCase() === want) return record[k]; }
+    return null;
+  }
 
-    // §S259b — Open accordion panel instead of full window navigation
-    // Long-press / double-tap sends record=null + filterMode='table' → route to _openTableView
-    if (record || filterMode === 'table') {
-      _openAccordionPanel(tableName, windowId, record, filterMode);
-      return;
-    }
-
-    // Fallback: no record → open window listing
+  // §IDEMPIERE-ROUTE — the in-app accordion/grid record view is RETIRED. Drilling a record or
+  // requesting the table view now opens the REAL iDempiere (idempiere.html) → login → client/role-scoped
+  // records (wrong client → blank, the familiar iDempiere behavior). Deep-links ?window=&record= survive login.
+  function _openInIdempiere(windowId, tableName, recordId) {
     var wid = windowId;
-    if (!wid) {
+    if (!wid && tableName) {
       try {
         var wr = _db.exec(
           'SELECT w.AD_Window_ID FROM AD_Window w ' +
@@ -236,9 +236,17 @@
         if (wr.length && wr[0].values.length) wid = Number(wr[0].values[0][0]);
       } catch (e) { /* no window */ }
     }
-    if (wid) {
-      openWindow(wid);
-    }
+    if (!wid) { _showToast('No iDempiere window for ' + (tableName || '?')); return; }
+    var url = 'idempiere.html?window=' + wid + (recordId != null && recordId !== '' ? '&record=' + encodeURIComponent(recordId) : '');
+    console.log('§AD_UI open-in-idempiere table=' + tableName + ' url=' + url);
+    window.location.href = url;
+  }
+
+  function _graphDrillCallback(tableName, windowId, record, filterMode) {
+    console.log('§AD_UI drill table=' + tableName + ' windowId=' + windowId +
+                ' filterMode=' + (filterMode || 'none') + ' hasRecord=' + !!record);
+    // Open the record (or the window's table view) in the real iDempiere — see §IDEMPIERE-ROUTE.
+    _openInIdempiere(windowId, tableName, record ? _recPk(record, tableName) : null);
   }
 
   // ── §S259b Accordion Grid Record Panel ────────────────────────────────
@@ -1508,11 +1516,9 @@
   }
 
   function _graphLongPressCallback(node) {
-    if (node.windowId) {
-      openWindow(node.windowId);
-    } else if (node.record) {
-      _showToast(node.label);
-    }
+    // §IDEMPIERE-ROUTE — long-press a bubble → open it in the real iDempiere (login → records).
+    // Table bubble → window only; record bubble → that record (node.recordId).
+    _openInIdempiere(node.windowId, node.tableName, (node.recordId != null ? node.recordId : null));
   }
 
   function _renderHomeGraph() {
