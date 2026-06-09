@@ -177,11 +177,13 @@
       var PB = window.PillBuilder({
         pill: pill, trigger: trigger, APP: {}, actions: actions,
         order: actions.map(function (a) { return a.id; }),
-        storageKey: 'erp_pill_config',
-        persistent: true   // ⋯ toggles; an outside tap does NOT auto-close — stays open until the user re-taps ⋯
+        storageKey: 'erp_pill_config'
+        // NON-persistent (user wrap 2026-06-09: "click outside closes — intuitive + standard"): a ⋯ tap toggles;
+        // tapping a pill INSIDE keeps it open; tapping OUTSIDE (the globe) collapses it — consistent with the BIM
+        // viewer. Still stays open until you act away from it (no auto-recollapse after the reveal).
       });
-      // ⋯ tap → toggle. Opening RISES the strip up from the bottom-right ⋯ + STAYS open (PillBuilder _toggle
-      // `.pill-revealing`); re-tapping collapses it back down to the ⋯ (which never leaves the bottom-right).
+      // ⋯ tap → toggle. Opening RISES the strip up from the bottom-right ⋯ (PillBuilder _toggle `.pill-revealing`);
+      // re-tapping (or a tap outside the strip) collapses it back down to the ⋯ (which never leaves bottom-right).
       trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
       // Re-arm the boot cue: drop the attract class when the bob ends so it can replay.
       trigger.addEventListener('animationend', function () { trigger.classList.remove('erp-pill-attract'); });

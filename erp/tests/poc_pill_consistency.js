@@ -12,9 +12,10 @@
 //     §C-B  COLLAPSED-DEFAULT — at boot the strip is not visible (display:none / offsetParent null).
 //     §C-C  REVEAL-UP — tapping ⋯ makes the strip visible, it carries `.pill-revealing` (the rise animation),
 //           and its top is ABOVE the trigger (rises UP, not down).
-//     §C-D  STAYS-OPEN — after the reveal, a tap on empty page area leaves the strip STILL open (persistent).
-//           Disproves the old auto-recollapse.
-//     §C-E  RE-TAP-COLLAPSES — a second ⋯ tap hides the strip again (back to the clean ⋯).
+//     §C-D  OUTSIDE-CLOSES — after the reveal, a tap on empty page area COLLAPSES the strip (intuitive +
+//           standard, consistent with the BIM viewer; user wrap 2026-06-09). It still stays open while you tap
+//           pills INSIDE / until you act away — no auto-recollapse after the reveal.
+//     §C-E  RE-TAP-TOGGLE — the ⋯ still drives open/close: a tap opens, a second tap collapses.
 //   ERP.HTML SURGERY:
 //     §C-F  CURATED — pills == [home,install,migrate,verify,maximize,share,erpdoc,help,idempiere,glassbowl,
 //           gravity] (11); the 7 dead stubs [find,read,ledger,graphs,edit,process,settings] are ABSENT.
@@ -70,22 +71,20 @@ async function probeErpBar(page, ids, label) {
   }, ids);
   ok(`§C-C-${label}`, revealed.vis && revealed.rising && revealed.above,
      `visible=${revealed.vis} pill-revealing=${revealed.rising} risesAbove=${revealed.above}`);
-  // §C-D stays open after an outside tap
+  // §C-D OUTSIDE-CLOSES (intuitive + standard, consistent with the viewer): a tap away from the bar collapses it.
   await page.mouse.click(20, Math.floor(VH / 2));   // empty area, away from the bottom-right bar
-  await page.waitForTimeout(120);
-  const stays = await page.evaluate((strip) => {
-    const s = document.querySelector(strip);
-    return s.offsetParent !== null && getComputedStyle(s).display !== 'none';
-  }, strip);
-  ok(`§C-D-${label}`, stays === true, `stillOpen=${stays}`);
-  // §C-E re-tap collapses
-  await page.click(trig);
-  await page.waitForTimeout(120);
-  const recollapsed = await page.evaluate((strip) => {
+  await page.waitForTimeout(150);
+  const closedOnOutside = await page.evaluate((strip) => {
     const s = document.querySelector(strip);
     return s.offsetParent === null || getComputedStyle(s).display === 'none';
   }, strip);
-  ok(`§C-E-${label}`, recollapsed === true, `collapsedAgain=${recollapsed}`);
+  ok(`§C-D-${label}`, closedOnOutside === true, `closedOnOutsideTap=${closedOnOutside}`);
+  // §C-E RE-TAP TOGGLE: ⋯ opens again, ⋯ again collapses — the trigger still drives open/close.
+  await page.click(trig); await page.waitForTimeout(120);
+  const reopened = await page.evaluate((strip) => { const s = document.querySelector(strip); return s.offsetParent !== null && getComputedStyle(s).display !== 'none'; }, strip);
+  await page.click(trig); await page.waitForTimeout(120);
+  const recollapsed = await page.evaluate((strip) => { const s = document.querySelector(strip); return s.offsetParent === null || getComputedStyle(s).display === 'none'; }, strip);
+  ok(`§C-E-${label}`, reopened && recollapsed, `reopenedOnTap=${reopened} collapsedOnRetap=${recollapsed}`);
 }
 
 (async () => {
