@@ -856,6 +856,8 @@ if(!window.__restored&&isMobile())setPanelCollapsed(true);else syncPanelUI(docum
 <script src="kernel_ops.js"></script>
 <!-- edge signer (W-SIGN) — turns the signed checkpoint un-FORGEABLE; loadOrMint custody, reused by period-close. -->
 <script src="erp_signer.js"></script>
+<!-- AD logic-expression evaluator (W-LOGIC-EVAL / W-AD-LOGIC-LIVE) — window.AdEvaluator; crud_overlay.applyAdLogic reads it so form fields show/hide/enable/require off the AD's Display/ReadOnly/Mandatory logic. MUST load before crud_overlay. -->
+<script src="ad_evaluator.js"></script>
 <!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). -->
 <script src="crud_overlay.js"></script>
 <!-- Period-close in-app (§INTEG-WIRE) — fold the live sidecar op-log → ONE signed checkpoint = balance b/f; bootstrap from it on load. -->

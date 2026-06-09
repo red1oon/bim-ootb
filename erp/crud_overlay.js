@@ -37,15 +37,46 @@
     return v;
   }
 
+  // ── W-LOGIC-EVAL wiring (Implementing ERP_COVERAGE_MATRIX.md §DisplayLogic/§ReadOnlyLogic/§MandatoryLogic).
+  // effectiveFlags — a field's LIVE {visible,readonly,required} from its AD logic strings, evaluated against
+  // (record, context) by ad_evaluator.js (window.AdEvaluator / node global). When a field carries no logic
+  // string for a given attr, fall back EXACTLY to the flat boolean (f.readonly / f.required; visible=true).
+  // AD logic keys (lowercase, as in ad_full.db): displaylogic / readonlylogic / mandatorylogic.
+  function adEval() { return (typeof window !== 'undefined' && window.AdEvaluator) ? window.AdEvaluator
+                           : (typeof AdEvaluator !== 'undefined' ? AdEvaluator : null); }
+  function effectiveFlags(f, record, context) {
+    var E = adEval();
+    var dl = f.displaylogic, rl = f.readonlylogic, ml = f.mandatorylogic;
+    var visible = true, readonly = !!f.readonly, required = !!f.required, logicHit = [];
+    if (E) {
+      try {
+        if (dl != null && String(dl).trim() !== '') { visible  = E.evaluate(dl, record || {}, context || {}); logicHit.push('display'); }
+        if (rl != null && String(rl).trim() !== '') { readonly = E.evaluate(rl, record || {}, context || {}); logicHit.push('readonly'); }
+        if (ml != null && String(ml).trim() !== '') { required = E.evaluate(ml, record || {}, context || {}); logicHit.push('mandatory'); }
+      } catch (e) { /* parse error → keep flat fallback for that attr (non-invent: never guess a verdict) */ }
+    }
+    if (logicHit.length && typeof console !== 'undefined') {
+      logicHit.forEach(function (a) {
+        var expr = a === 'display' ? dl : a === 'readonly' ? rl : ml;
+        var res = a === 'display' ? visible : a === 'readonly' ? readonly : required;
+        console.log('§LOGIC_EVAL attr=' + a + ' col=' + (f.col || '?') + ' expr="' + expr + '" ctx=' + JSON.stringify(context || {}) + ' result=' + res);
+      });
+    }
+    return { visible: visible, readonly: readonly, required: required };
+  }
+
   // validateField — the per-field check (AD: IsUpdateable, IsMandatory, AD_Reference, AD_Val_Rule).
   // Returns a reason string on FAIL, else null. `orig` (current value) lets readonly detect a change.
-  function validateField(store, f, val, orig) {
-    if (f.readonly) {
+  // record/context (optional, last) drive the AD logic-expression evaluator; absent → flat-bool behaviour (back-compat).
+  function validateField(store, f, val, orig, record, context) {
+    var eff = effectiveFlags(f, record, context);
+    if (!eff.visible) return null;                        // hidden by DisplayLogic → not validated (GridField parity)
+    if (eff.readonly) {
       if (orig !== undefined && orig !== null && String(val) !== String(orig)) return 'readonly';
       return null;
     }
     var empty = (val == null || String(val).trim() === '');
-    if (f.required && empty) return 'required';
+    if (eff.required && empty) return 'required';
     if (empty) return null;                              // optional + empty = fine
     var V = f.validation || {};
     switch (f.type) {
@@ -72,10 +103,12 @@
   }
 
   // validate — run every field; collect {col, why}. The "checks before saving" layer, BEFORE apply().
-  function validate(store, entry, values, originals) {
+  function validate(store, entry, values, originals, context) {
     var errors = [];
+    // record = the row under edit (values merged over originals) — what the AD logic evaluates against.
+    var record = {}; var k; if (originals) for (k in originals) record[k] = originals[k]; if (values) for (k in values) record[k] = values[k];
     (entry.fields || []).forEach(function (f) {
-      var why = validateField(store, f, values[f.col], originals ? originals[f.col] : undefined);
+      var why = validateField(store, f, values[f.col], originals ? originals[f.col] : undefined, record, context || {});
       if (why) errors.push({ col: f.col, why: why });
     });
     return { ok: errors.length === 0, errors: errors };
@@ -180,7 +213,7 @@
 
   var CORE = {
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
-    validateField: validateField, validate: validate, cleanVals: cleanVals, buildOp: buildOp,
+    validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, kernelParamsFor: kernelParamsFor, readTip: readTip,
     buildDocActionGroup: buildDocActionGroup
   };
@@ -366,15 +399,36 @@
     var title = (verb === 'create' ? '＋ New ' : '✎ Edit ') + fname(e.key);
     var h = '<span class=cfx title=close>✕</span><div class=cfh>' + title + '</div><div class=cfbody>';
     (e.fields || []).forEach(function (f) {
-      h += '<label class=cfrow><span class=cfl>' + esc(f.label || f.col) + (f.required ? ' <i class=req>*</i>' : '') + '</span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
+      h += '<label class=cfrow data-row="' + f.col + '"><span class=cfl>' + esc(f.label || f.col) + ' <i class=req data-req="' + f.col + '" style="display:none">*</i></span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
     });
     h += '</div><div class=cfnav><span class=cfnote>dry-run — logs the op it would apply (E3 wires the signed kernel)</span><span class=cfgrow></span>' +
          '<button class=cfb id=cfCancel>Cancel</button><button class="cfb cfsave" id=cfSave>' + (verb === 'create' ? 'Create' : 'Save') + '</button></div>';
     form.innerHTML = h; form.className = 'open';
     populateRefs(e);
+    applyAdLogic(e);                                            // §AD-LOGIC-LIVE — initial show/hide/enable/require off the AD
+    var body = form.querySelector('.cfbody');                   // …and re-apply on every edit so the form REACTS like iDempiere
+    if (body) { body.addEventListener('input', function () { applyAdLogic(e); }); body.addEventListener('change', function () { applyAdLogic(e); }); }
     form.querySelector('.cfx').addEventListener('click', closeForm);
     form.querySelector('#cfCancel').addEventListener('click', closeForm);
     form.querySelector('#cfSave').addEventListener('click', function () { saveForm(verb, e, orig, id); });
+  }
+  // applyAdLogic — drive the live DOM from each field's AD logic (DisplayLogic/ReadOnlyLogic/MandatoryLogic) via
+  // CORE.effectiveFlags (→ window.AdEvaluator). The record AND context = the form's own current field values, so
+  // same-record @Col@ references resolve. visible=false→hide the row · readonly=true→disable · required=true→mark.
+  function applyAdLogic(e) {
+    var rec = gatherVals(e), ctx = rec, flips = 0, withLogic = 0;
+    (e.fields || []).forEach(function (f) {
+      var hasLogic = [f.displaylogic, f.readonlylogic, f.mandatorylogic].some(function (s) { return s != null && String(s).trim() !== ''; });
+      if (hasLogic) withLogic++;
+      var eff = CORE.effectiveFlags(f, rec, ctx);
+      var row = form.querySelector('.cfrow[data-row="' + f.col + '"]'); if (!row) return;
+      var wasHidden = row.style.display === 'none';
+      row.style.display = eff.visible ? '' : 'none';
+      if (hasLogic && wasHidden !== !eff.visible) flips++;
+      var input = row.querySelector('[data-col="' + f.col + '"]'); if (input) input.disabled = !!eff.readonly;
+      var mark = row.querySelector('[data-req="' + f.col + '"]'); if (mark) mark.style.display = eff.required ? '' : 'none';
+    });
+    console.log('§AD-LOGIC-LIVE key=' + e.key + ' fields=' + (e.fields || []).length + ' withLogic=' + withLogic + ' visibilityFlips=' + flips + ' applied=DOM');
   }
   function fieldInput(f, val) {
     var v = (val == null ? '' : val), ro = f.readonly ? ' disabled' : '';
@@ -645,7 +699,7 @@
   }
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
-                    kernelDb: function () { return SIDE; }, withSidecar: withSidecar, persist: _sidePersist,
+                    kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history };
   console.log('§CRUD layer mounted (Edit-mode ready)');
 })(typeof window !== 'undefined' ? window : this);
