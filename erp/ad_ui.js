@@ -263,6 +263,18 @@
 
     // Apply filter: Properties → only non-null columns, sorted by picked column
     var displayFields = fields;
+    // §AD-DISPLAYLOGIC-LIVE — hide fields whose AD DisplayLogic is FALSE for THIS record (real iDempiere show/hide,
+    // not hand-coded): @Col@ refs resolve against the record via window.AdEvaluator. Parse error/uncertain → SHOW.
+    var _AdEv = (typeof window !== 'undefined' && window.AdEvaluator) ? window.AdEvaluator : null;
+    if (_AdEv) {
+      var _before = displayFields.length;
+      displayFields = displayFields.filter(function (f) {
+        if (!f.displaylogic || String(f.displaylogic).trim() === '') return true;
+        try { return _AdEv.evaluate(f.displaylogic, record || {}, record || {}) !== false; } catch (e) { return true; }
+      });
+      if (_before !== displayFields.length)
+        console.log('§AD-DISPLAYLOGIC-LIVE table=' + tableName + ' shown=' + displayFields.length + ' hidden=' + (_before - displayFields.length) + ' (AD DisplayLogic false for this record)');
+    }
     if (filterMode && filterMode !== 'data') {
       displayFields = fields.filter(function(f) {
         var val = _caseGet(record, f.columnName);
@@ -1358,7 +1370,7 @@
       var r = _db.exec(
         "SELECT DISTINCT f.Name, c.ColumnName, f.SeqNo, " +
         "c.AD_Reference_ID, c.IsKey, c.IsMandatory AS ColMandatory, " +
-        "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault " +
+        "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault, f.DisplayLogic " +
         "FROM AD_Field f " +
         "JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID " +
         "JOIN AD_Tab t ON f.AD_Tab_ID = t.AD_Tab_ID " +
@@ -1369,7 +1381,7 @@
         r = _db.exec(
           "SELECT DISTINCT f.Name, c.ColumnName, f.SeqNo, " +
           "c.AD_Reference_ID, c.IsKey, c.IsMandatory AS ColMandatory, " +
-          "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault " +
+          "f.IsMandatory, f.IsReadOnly, f.DefaultValue, c.DefaultValue AS ColDefault, f.DisplayLogic " +
           "FROM AD_Field f " +
           "JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID " +
           "JOIN AD_Tab t ON f.AD_Tab_ID = t.AD_Tab_ID " +
@@ -1398,7 +1410,8 @@
             isKey: row[4] === 'Y',
             isMandatory: (row[5] === 'Y' || row[6] === 'Y'),
             isReadOnly: row[7] === 'Y',
-            defaultValue: row[8] || row[9] || null
+            defaultValue: row[8] || row[9] || null,
+            displaylogic: row[10] || null            // §AD-DISPLAYLOGIC-LIVE — DisplayLogic for AdEvaluator (show/hide)
           });
         }
       }
