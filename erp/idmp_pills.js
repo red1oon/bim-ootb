@@ -62,6 +62,34 @@
     var lc = (stage === 'pre-client') ? 'rail' : 'overflow';
     var shown = _actions.filter(function (a) { return a.pill !== false && hidden.indexOf(a.id) < 0; }).map(function (a) { return a.id; });
     console.log('§IDMP-LIFECYCLE stage=' + stage + ' install=' + lc + ' migrate=' + lc + ' shown=[' + shown.join(',') + ']');
+    _evalReveal();   // §P2 — a stage change can tuck pills into the ⋯ (in-client demotes Install/Migrate); re-cue.
+  }
+
+  // §P2/§P4-3 self-reveal cue (FRONT_DOOR_PILL_FINISH). WHENEVER pills are tucked behind the ⋯ (the bar is
+  // collapsed OR the hidden-set is non-empty), cue the user that "there's more here". §P4-3 (user wrap
+  // 2026-06-09): the cue is now a TRUE PEEK — the actual hidden PILLS briefly SLIDE OUT and back, not just a
+  // ⋯ bob (with collapse-by-default ALL pills sit behind the ⋯, so a bob alone never showed the icons). We
+  // momentarily show the real strip (#idmp-pill display:block + a slide keyframe) WITHOUT flipping PillBuilder's
+  // open state (_pillOpen stays false), then restore display:none on animationend — so it re-collapses cleanly
+  // and the user's own ⋯ tap still opens from the closed state. The ⋯ keeps a companion glow. No second
+  // animation system: a CSS keyframe class added/removed around the condition.
+  function _evalReveal() {
+    if (!_PB) return;
+    var trigger = document.getElementById('idmp-pill-trigger');
+    var pill = document.getElementById('idmp-pill');
+    if (!trigger || !pill) return;
+    var hiddenN = (_PB.getConfig().hidden || []).length;
+    var collapsed = !_PB.isOpen();
+    trigger.classList.remove('idmp-pill-attract');
+    pill.classList.remove('idmp-pill-peeking');
+    if (hiddenN <= 0 && !collapsed) return;                 // nothing tucked → no cue (don't nag)
+    if (_PB.isOpen()) return;                               // rail already revealed → don't peek over it
+    // §P4-3 TRUE PEEK — slide the real pills out then re-collapse (the strip itself, not the ⋯).
+    pill.style.display = 'block';                           // lay out the strip so it can animate (PB stays closed)
+    void pill.offsetWidth;                                  // reflow so the slide REPLAYS on each eval
+    pill.classList.add('idmp-pill-peeking');
+    trigger.classList.add('idmp-pill-attract');             // companion glow on the ⋯
+    console.log('§P4-3-PEEK phase=open hidden=' + hiddenN + ' collapsed=' + collapsed);
   }
   // setStage(s) — host calls on login (in-client) / tenant-picker open (pre-client). No arg → re-read IdmpPillStage().
   function setStage(stage) {
@@ -75,7 +103,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=25').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=26').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -111,16 +139,33 @@
         pill: pill, trigger: trigger, APP: {}, actions: actions,
         order: actions.map(function (a) { return a.id; }),
         storageKey: 'idmp_pill_config',
-        persistent: true   // primary nav dock — stays visible like the old rail; ⋯ still collapses on demand
+        persistent: true   // ⋯ toggles the rail; an outside tap does NOT auto-close (user drives reveal/collapse)
       });
-      trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
+      trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); _evalReveal(); });
+      // §P2 — re-arm the cue: drop the attract class when the bob ends so it can REPLAY on the next eval.
+      trigger.addEventListener('animationend', function () { trigger.classList.remove('idmp-pill-attract'); });
+      // §P4-3 — the strip peek finished: drop the class and RE-COLLAPSE the strip (PB is still logically closed,
+      // so display:none restores the clean resting state). If the user opened the rail mid-peek, leave it open.
+      pill.addEventListener('animationend', function () {
+        if (!pill.classList.contains('idmp-pill-peeking')) return;
+        pill.classList.remove('idmp-pill-peeking');
+        if (!PB.isOpen()) pill.style.display = 'none';
+        console.log('§P4-3-PEEK phase=collapse');
+      });
       _PB = PB;
       window.IdmpPills.builder = PB;
-      PB.toggle();                                            // open + sync internal state (persistent bar, no off-by-one tap)
 
-      // §C — apply the initial session stage (pre-client at boot: Install/Migrate visible at the front door).
+      // §P3 (FRONT_DOOR_PILL_FINISH, user decision 2026-06-09): COLLAPSED BY DEFAULT on BOTH desktop and mobile —
+      // the clean resting state is just the ⋯; pills reveal ONLY when the user taps it. Keep the UI clean, leave
+      // the reveal to user intuition (the peek cue invites the tap). PB.close() (not toggle) sets display:none AND
+      // _pillOpen=false together, so the FIRST ⋯ tap opens cleanly (no off-by-one). Also kills the mobile
+      // expanded-strip-over-content overlap: the strip only appears on demand.
+      PB.close();
+
+      // §C — apply the initial session stage (pre-client at boot: Install/Migrate belong on the rail behind the ⋯).
       _curStage = null; setStage();
-      PB.sync();   // §D — restore lit states (e.g. red pill) after setStage's rebuild (build() doesn't sync)
+      PB.sync();   // §D — restore lit states (e.g. red pill) so they're correct the moment the user opens the rail
+      _evalReveal();   // §P2 — collapsed at boot ⇒ the cue peeks the ⋯ once, inviting the first tap (both platforms)
 
       var mounted = pill.querySelectorAll('button[id^="pill-"]').length;
       var hidden = (PB.getConfig().hidden || []).length;
@@ -153,24 +198,43 @@
         'background:rgba(20,22,32,0.82);color:#9aa4b8;font-size:18px;line-height:1;display:flex;' +
         'align-items:center;justify-content:center;' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
-      // Mobile (≤760px): dock as a BOTTOM row (the dock the user liked — kept, sourced from the registry now).
-      // NOTE: PillBuilder toggles the pill via inline display:block, which defeats flex-direction:row — so the
-      // row is laid out with inline-flex buttons + nowrap (horizontal, scrollable) instead of a flex row.
+      // §P2 self-reveal cue (FRONT_DOOR_PILL_FINISH): a brief upward peek that fires WHENEVER pills are tucked
+      // behind the ⋯ (collapsed bar OR a non-empty hidden-set). Two bobs then SETTLE — an attract, not a loop
+      // ([[feedback_pill_icon_consistency]]: subtle, common HMI). Applied to the TRIGGER (the bar itself carries
+      // translateY(-50%) for centring, so animating the bar's transform would fight it; the trigger is clean).
+      '@keyframes idmp-pill-peek{' +
+        '0%,100%{transform:translateY(0);box-shadow:none;}' +
+        '25%{transform:translateY(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
+        '55%{transform:translateY(0);}' +
+        '78%{transform:translateY(-4px);}' +
+      '}' +
+      '#idmp-pill-trigger.idmp-pill-attract{animation:idmp-pill-peek 0.85s ease-in-out 2;color:#6c9fff;}' +
+      // §P4-3 TRUE PEEK — the hidden PILLS themselves slide out from the right edge into view, hold so the
+      // user registers the icons, then slide back out (re-collapse on animationend). pointer-events:none — it
+      // is an attract cue, not an interaction; the user's own ⋯ tap is what truly opens the rail. Applied to
+      // the inner #idmp-pill strip (a clean transform target — the bar carries translateY(-50%) for centring).
+      '@keyframes idmp-strip-peek{' +
+        '0%{transform:translateX(48px);opacity:0;}' +
+        '22%{transform:translateX(0);opacity:1;}' +
+        '70%{transform:translateX(0);opacity:1;}' +
+        '100%{transform:translateX(48px);opacity:0;}' +
+      '}' +
+      '#idmp-pill.idmp-pill-peeking{display:block !important;pointer-events:none;animation:idmp-strip-peek 1.8s ease-in-out 1;}' +
+      // §P2 (FRONT_DOOR_PILL_FINISH): mobile MIRRORS desktop — a RIGHT-edge VERTICAL strip, NOT the old bottom
+      // row dock (user-requested consistency). Same form factor everywhere; the ⋯ keeps one constant right-side
+      // spot. Respect the safe-area inset (home indicator / rounded corners) and cap the height so a short phone
+      // scrolls instead of overflowing. PillBuilder toggles the pill via inline display:block — a block container
+      // with display:flex buttons stacks them vertically (same as desktop), so no inline-flex/nowrap needed.
       '@media (max-width:760px){' +
-        // Pin the dock content to the RIGHT edge (row-reverse main-start) and force the ⋯ trigger to be the
-        // right-most item (order:-1) so it holds ONE constant position whether the pills row is shown or
-        // collapsed — a tapped control must never jump out from under the finger. Was justify-content:center,
-        // which re-centred the lone trigger on collapse (x≈15→179). Mobile-scoped; desktop column dock untouched.
-        '#idmp-pillbar{right:0;left:0;bottom:0;top:auto;transform:none;flex-direction:row-reverse;' +
-          'align-items:center;justify-content:flex-start;gap:6px;padding:6px 8px;background:rgba(20,22,32,0.92);' +
-          'border-top:1px solid rgba(255,255,255,0.08);}' +
-        '#idmp-pill-trigger{order:-1;}' +
-        '#idmp-pill{max-height:none;background:transparent;border:none;backdrop-filter:none;' +
-          '-webkit-backdrop-filter:none;padding:0;white-space:nowrap;overflow-x:auto;overflow-y:hidden;}' +
-        '#idmp-pill button{display:inline-flex;margin:0 3px;}' +
+        '#idmp-pillbar{right:calc(8px + env(safe-area-inset-right,0px));left:auto;bottom:auto;top:50%;' +
+          'transform:translateY(-50%);flex-direction:column;align-items:center;justify-content:center;' +
+          'gap:8px;padding:0;background:none;border-top:none;}' +
+        '#idmp-pill{flex-direction:column;max-height:68vh;overflow-y:auto;overflow-x:hidden;white-space:normal;}' +
+        '#idmp-pill button{display:flex;margin:0;}' +
+        '#idmp-pill-trigger{order:0;margin-top:2px;}' +
       '}';
     document.head.appendChild(s);
   }
 
-  window.IdmpPills = { mount: mount, setStage: setStage, builder: null };
+  window.IdmpPills = { mount: mount, setStage: setStage, _evalReveal: _evalReveal, builder: null };
 })();

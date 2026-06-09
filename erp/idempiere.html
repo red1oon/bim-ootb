@@ -49,6 +49,16 @@
     border-radius:4px; display:flex; align-items:center; justify-content:center;
   }
   #idmp-header .hbtns button:hover { background:rgba(255,255,255,0.18); }
+  /* §P3-REOPENED: ShowMe/Help is the clean 'showme' side-strip pill on THIS surface, so suppress the shared
+     help_overlay.js floating 'NeedHelp?' checkbox here (the pill drives #needHelpCk; the checkbox still exists in
+     the DOM, just hidden — toggling it programmatically keeps working). Scoped to idempiere.html; erp.html keeps it. */
+  #needHelpWrap { display:none !important; }
+  /* §P4-1 (FRONT_DOOR_PILL_FINISH): the front-door ShowMe runs at LOGIN, where #idmp-login is a z-120 full-screen
+     overlay. The shared help_overlay.js card/badges default to z-71/69 — BEHIND the login → "ShowMe gives nothing".
+     Raise them above the login overlay on THIS surface so the onboarding guide is actually seen. (erp.html/glassbowl
+     have no such overlay and never load this CSS — unaffected.) */
+  #helpCard { z-index:130 !important; }
+  .help-q   { z-index:129 !important; }
   #idmp-burger { display:none; }
   /* ── Body split ── */
   #idmp-body { flex:1; display:flex; min-height:0; }
@@ -206,17 +216,8 @@
     cursor:pointer; font-size:13px; font-weight:600; }
   .idmp-login-actions .primary { background:var(--idmp-blue); color:#fff; border-color:var(--idmp-blue); }
   .idmp-login-note { font-size:11px; color:var(--idmp-muted); margin-top:12px; text-align:center; }
-  /* §0.10a — first-mile Migrate ShowMe CTA on the login card */
-  .idmp-login-migrate { margin-top:18px; padding-top:14px; border-top:1px dashed var(--idmp-border); text-align:center; }
-  .idmp-login-migrate span { display:block; font-size:11.5px; color:var(--idmp-muted); margin-bottom:7px; }
-  #idmp-login-migrate-btn { width:100%; height:34px; border:1px solid var(--idmp-blue); border-radius:6px;
-    background:var(--idmp-hover); color:var(--idmp-blue); font-size:12.5px; font-weight:600; cursor:pointer; }
-  #idmp-login-migrate-btn:hover { background:var(--idmp-sel); }
-  /* §0.10a front-door onboarding — Install (fresh tenant) + Migrate (from another ERP), both via ErpPicker. */
-  .idmp-onboard-row { display:flex; gap:8px; }
-  .idmp-onboard-btn { flex:1; height:34px; border:1px solid var(--idmp-blue); border-radius:6px;
-    background:var(--idmp-hover); color:var(--idmp-blue); font-size:12.5px; font-weight:600; cursor:pointer; }
-  .idmp-onboard-btn:hover { background:var(--idmp-sel); }
+  /* §P4-4 (FRONT_DOOR_PILL_FINISH): the login-card onboarding row CSS (.idmp-login-migrate / .idmp-onboard-row /
+     .idmp-onboard-btn / #idmp-login-migrate-btn) is RETIRED — Install/Migrate are pill-only now (behind the ⋯). */
   /* ── Mobile adaptation (desktop is exact; mobile may adapt) ── */
   @media (max-width:760px) {
     #idmp-burger { display:flex; }
@@ -251,7 +252,9 @@
     <div class="idmp-login-mark">A+</div>
     <div class="idmp-login-title">iDempiere&#8209;like — Sign In</div>
     <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
-    <div class="idmp-login-sub" style="margin-top:6px"><a href="migrate_compare.html" style="color:#6c9fff;text-decoration:none;display:inline-flex;align-items:center;gap:6px"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>How this compares to iDempiere / Odoo / SAP&nbsp;›</a></div>
+    <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
+         pill-housed (the lightbulb 'Read / Compare' erpdoc pill on the side strip, wired to openReadCompare).
+         A duplicate card link was redundant once the pill existed (#206). -->
     <div id="idmp-login-step1">
       <div class="idmp-login-label">Select a user</div>
       <div id="idmp-login-users" class="idmp-login-list"></div>
@@ -269,17 +272,11 @@
       </div>
       <div id="idmp-login-note" class="idmp-login-note"></div>
     </div>
-    <!-- §0.10a first-mile: before you have data, the first task is bringing it IN. Install a fresh tenant or
-         Migrate from another ERP — both routed through the one ErpPicker (which delegates to ShowMe/Odoo). -->
-    <div class="idmp-login-migrate">
-      <span>New here? Set up a fresh ERP, or bring your data in from another one.</span>
-      <div class="idmp-onboard-row">
-        <button type="button" class="idmp-onboard-btn"
-          onclick="window.openInstallFor ? openInstallFor() : (window.ErpPicker &amp;&amp; ErpPicker.open({mode:'install'}))">⤓ Install</button>
-        <button type="button" class="idmp-onboard-btn"
-          onclick="window.openMigrateFor ? openMigrateFor() : (window.ErpPicker &amp;&amp; ErpPicker.open({mode:'migrate'}))">⇄ Migrate</button>
-      </div>
-    </div>
+    <!-- §P4-4 (FRONT_DOOR_PILL_FINISH, user wrap 2026-06-09): the onboarding row (Install/Migrate buttons + the
+         'New here?' sub) is RETIRED from the login card — "stick to the pill". Install/Migrate are pill-ONLY now
+         (login/pre-client-gated, behind the ⋯), reached via the SAME window.openInstallFor/openMigrateFor the card
+         buttons used (kept). This reverses #204's card-buttons decision (now superseded). The ShowMe pill
+         (§P4-1/§P4-2) is the front-door guide here. -->
   </div>
 </div>
 
@@ -293,7 +290,8 @@
   <span class="hbtns">
     <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
     <button id="idmp-home-btn" title="Home / Engine view (erp.html)">&#8962;</button>
-    <button title="Help" id="idmp-help-btn">?</button>
+    <!-- §P3-REOPENED: the header '?' help glyph is RETIRED — ShowMe/Help is now the clean circleHelp 'showme' pill
+         on the side strip (IdmpPillActions.showme → toggleShowMe), honouring clean-Lucide-only + no-controls-outside-the-pill. -->
   </span>
 </div>
 
@@ -339,7 +337,7 @@
      (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
 <script src="icons.js?v=2"></script>
 <script src="pill_builder.js?v=3"></script>
-<script src="idmp_pills.js?v=4"></script>
+<script src="idmp_pills.js?v=5"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="idmp_history.js?v=2"></script>
@@ -1182,6 +1180,51 @@
   window.openInstallFor = openInstallFor; window.openMigrateFor = openMigrateFor;
   // Read / Compare pill — houses the 'How this compares' paper in a pill (was a free-floating login-card link).
   function openReadCompare() { console.log('§ERPDOC-PILL action=open'); window.location.href = 'migrate_compare.html'; }
+  // ── §P4-1/§P4-2 (FRONT_DOOR_PILL_FINISH) — CONTEXT-GATED ShowMe content ──────────────────────────────────
+  // THE BUG: at login the ShowMe pill "gave nothing" — the 6 AD-tour steps (o2c, c_order, …) target IN-CLIENT
+  // window keys that DON'T EXIST at the front door, so buildBadges() made 0 badges and the overview card opened
+  // BEHIND the z-120 login overlay. FIX: gate the store by stage (DECIDED — ShowMe is the LOGIN GUIDE here, it
+  // does NOT auto-fire): pre-client drives an ONBOARDING store (overview steps → a visible centred card that
+  // orients the front door, raised above the login overlay by the #helpCard z-index bump in <style>); in-client
+  // restores the default AD tour (help_ops.json). Driven through the SHARED overlay's additive setOps() — NO fork.
+  // NON-INVENT: pure narration of the real front door (sign in · the ⋯ Install/Migrate pills · the Read/Compare
+  // paper) — no fabricated data, target=null so no AD nav is attempted pre-client.
+  var ONBOARD_HELP_OPS = {
+    __meta: { version: 1, spec: 'prompts/FRONT_DOOR_PILL_FINISH.md §P4-2', note: 'pre-client onboarding ShowMe (login guide)' },
+    welcome:  { op: 'onboard', ordinal: 0, target: null, kind: 'overview', title: 'Welcome — your ERP, offline',
+      tip: 'This is an iDempiere-like ERP folded from SQLite, running entirely in your browser — no server. The demo data is local.',
+      readmeAnchor: 'MigrateComparisonPaper.md' },
+    signin:   { op: 'onboard', ordinal: 1, target: null, kind: 'overview', title: 'Sign in',
+      tip: 'Pick a user, then a role and organisation. It is a context selection, not a password — the data is already on your device.',
+      readmeAnchor: 'MigrateComparisonPaper.md' },
+    bringdata:{ op: 'onboard', ordinal: 2, target: null, kind: 'overview', title: 'Bring your data in',
+      tip: 'New here? Open the ⋯ pills on the right: Install a fresh ERP onto this device, or Migrate data in from another ERP (Postgres / Odoo).',
+      readmeAnchor: 'MigrateComparisonPaper.md' },
+    compare:  { op: 'onboard', ordinal: 3, target: null, kind: 'overview', title: 'Read / Compare',
+      tip: 'The lightbulb pill opens the Migrate & Compare paper — how this browser-native, serverless approach compares to a classic install.',
+      readmeAnchor: 'MigrateComparisonPaper.md' }
+  };
+  // _driveShowMeOps — set the ShowMe store for the CURRENT stage (called before enabling, and on every stage sync).
+  function _driveShowMeOps() {
+    if (!window.__help || !window.__help.setOps) return;
+    var pre = (typeof window.IdmpPillStage === 'function') ? (window.IdmpPillStage() === 'pre-client') : true;
+    window.__help.setOps(pre ? ONBOARD_HELP_OPS : null);   // null → default AD tour (help_ops.json) in-client
+  }
+
+  // ShowMe Help pill (§P3-REOPENED) — the guided ShowMe/NeedHelp tour, now a clean Lucide circleHelp PILL instead
+  // of a header '?' text glyph + a floating 'NeedHelp?' checkbox. TOGGLE by flipping the SHARED help_overlay.js
+  // checkbox (#needHelpCk) — its own change handler runs enable()/disable(), so we reuse the proven wiring and do
+  // NOT fork the shared module. If the overlay hasn't mounted yet, fall back to __help.enable(). lit via toggleShowMe.
+  function toggleShowMe() {
+    var ck = document.getElementById('needHelpCk');
+    var turningOn = ck ? !ck.checked : true;
+    if (turningOn) _driveShowMeOps();   // §P4-1 — pick the store for the current stage BEFORE enable() reads HELP
+    if (ck) { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); status(ck.checked ? 'ShowMe on' : 'ShowMe off'); }
+    else if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready'); }
+    else status('Help / ShowMe overlay loading…');
+    console.log('§SHOWME-PILL action=toggle on=' + (ck ? ck.checked : 'n/a') + ' stage=' + ((typeof window.IdmpPillStage === 'function') ? window.IdmpPillStage() : '?'));
+  }
+  function _showMeOn() { var ck = document.getElementById('needHelpCk'); return !!(ck && ck.checked); }
   // §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar is now rendered by the SHARED registry (idmp_pills.js +
   // pills_idmp.json + PillBuilder), NOT hand-rolled. Publish the REAL handlers BY ID; idmp_pills.js binds them.
   // (The hand-rolled #idmp-pillrail builder + its CSS were deleted — §PILL-REGISTRY: no controls outside the pill.)
@@ -1208,9 +1251,10 @@
       redpill: toggleCleanMode,
       posted: openPostedFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor,
-      erpdoc: openReadCompare
+      erpdoc: openReadCompare, showme: toggleShowMe
     };
-    window.IdmpPillActive = { redpill: function () { return _pillMode; } };   // §D — red pill lit in "just the pill" mode
+    // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
+    window.IdmpPillActive = { redpill: function () { return _pillMode; }, showme: _showMeOn };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
     window.IdmpPillStage = function () {
@@ -1221,7 +1265,12 @@
     if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
   }
-  function _syncPillStage() { if (window.IdmpPills && window.IdmpPills.setStage) window.IdmpPills.setStage(); }
+  function _syncPillStage() {
+    if (window.IdmpPills && window.IdmpPills.setStage) window.IdmpPills.setStage();
+    // §P4-1 — if ShowMe is open while the stage flips (login/logout), re-point it at the right store (setOps
+    // rebuilds when on). When off this just pre-primes HELP for the next enable. No-op until __help loads.
+    _driveShowMeOps();
+  }
 
   // ── §B cross-tab history scrubber (ERP_BOTTOM_BAR_AND_LIFECYCLE §B) — record SEMANTIC nav moments
   // {window opened, AD-tab switched, record selected} across #idmp-wintabs; a dot click restores READ-ONLY
@@ -1304,7 +1353,7 @@
       else moved = false;
       if (moved) { e.preventDefault(); refreshForm(); _histPush('record'); }
     });
-    $('idmp-help-btn').addEventListener('click', function () { if (window.__help && window.__help.enable) { window.__help.enable(); status('ShowMe ready — tap a numbered badge'); } else status('Help / ShowMe overlay loading…'); });
+    // §P3-REOPENED — the header '?' help button is gone; ShowMe is driven by the 'showme' pill (toggleShowMe). No listener here.
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
     $('idmp-login-back').addEventListener('click', loginStep1);
@@ -1329,7 +1378,7 @@ window.__helpIdmpKeymap = {
   "c_allocationline":{ "window": "Allocation",          "table": "c_allocationline", "coverage": "partial" }
 };
 </script>
-<script src="help_overlay.js?v=22"></script>
+<script src="help_overlay.js?v=23"></script>
 <script src="help_idmp.js?v=22"></script>
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
