@@ -27,51 +27,10 @@
   var _currentClient = 'gardenworld';  // 'system' | 'gardenworld'
   var GW_WINDOW_SET = null; // built on init from tables that actually have rows
 
-  // ── §2. Bottom navigation bar ──────────────────────────────────────
-
-  function _renderBottomNav() {
-    if (!_navEl) return;
-    var items = [
-      { icon: '\uD83C\uDFE0', label: 'Home',   action: 'home' },
-      { icon: '\uD83D\uDCCB', label: 'List',   action: 'list' },
-      { icon: '\u2795',       label: 'New',    action: 'new' },
-      { icon: '\uD83D\uDCCA', label: 'Charts', action: 'charts' },
-      { icon: '\u2699\uFE0F', label: 'More',   action: 'more' }
-    ];
-    _navEl.innerHTML = '';
-    _navEl.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:10;' +
-      'background:rgba(18,18,24,0.92);backdrop-filter:blur(12px);' +
-      '-webkit-backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,0.06);' +
-      'display:flex;min-height:52px;';
-
-    for (var i = 0; i < items.length; i++) {
-      var btn = document.createElement('button');
-      btn.dataset.nav = items[i].action;
-      btn.innerHTML = '<div style="font-size:18px">' + items[i].icon + '</div>' +
-        '<div style="font-size:10px;margin-top:2px">' + items[i].label + '</div>';
-      var navActive = items[i].action === _currentScreen;
-      var navColour = navActive ? '#6c9fff' : '#555';
-      btn.style.cssText = 'flex:1;background:none;border:none;color:' + navColour +
-        ';padding:6px 0;cursor:pointer;min-height:52px;display:flex;' +
-        'flex-direction:column;align-items:center;justify-content:center;' +
-        'transition:color 0.15s;font-weight:' + (navActive ? '600' : '400') + ';';
-      btn.addEventListener('pointerup', _navHandler(items[i].action));
-      _navEl.appendChild(btn);
-    }
-    console.log('§AD_UI bottomNav rendered');
-  }
-
-  function _navHandler(action) {
-    return function (e) {
-      e.preventDefault();
-      console.log('§AD_UI nav action=' + action);
-      if (action === 'home') showMenu();
-      else if (action === 'list') _showRecordList();
-      else if (action === 'new') _createNewRecord();
-      else if (action === 'charts') _showCharts();
-      else if (action === 'more') _showMore();
-    };
-  }
+  // ── §2. Bottom navigation bar — RETIRED (user wrap 2026-06-10) ──────
+  // The emoji bottom-button bar (Home/List/New/Charts/More) belonged to the in-app record UI that the
+  // §IDEMPIERE-ROUTE launcher model replaced. It was the "old deprecated format" that reappeared on some
+  // back-from-idempiere paths. _renderBottomNav + _navHandler are DELETED; erp.html is bubbles + pill ONLY.
 
   // ── §3. Menu screen (Home) ─────────────────────────────────────────
 
@@ -87,68 +46,18 @@
     _breadcrumbEl.innerHTML = '<span style="font-size:16px;font-weight:bold;color:#eee">' +
       '\u2630 ERP OOTB</span>';
 
-    // §INSTANT — if DB not ready, render globe only (no switcher, no nav)
-    if (!_dbReady) {
-      if (typeof ADGraph !== 'undefined' && typeof INIT_BUBBLES !== 'undefined') {
-        _renderHomeGraph();  // will use initFromBubbles path
-        console.log('§AD_UI showMenu INSTANT bubbles');
-      } else {
-        _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
-          'Loading ERP\u2026</div>';
-        console.log('§AD_UI showMenu INSTANT waiting');
-      }
-      return;
+    // §IDEMPIERE-ROUTE (user wrap 2026-06-10) — erp.html is the bubble LAUNCHER, ALWAYS. Render only the
+    // curated globe skeleton; the old DB-ready home chrome (bottom-button nav + recent list + menu tree)
+    // is RETIRED — drilling now launches idempiere.html. Guarantees "clean bubbles only, no bottom buttons"
+    // on every entry (incl. back-from-idempiere), regardless of _dbReady.
+    if (typeof ADGraph !== 'undefined' && typeof INIT_BUBBLES !== 'undefined') {
+      _renderHomeGraph();  // initFromBubbles path; graphHydrate already enabled drill once DB ready
+      console.log('§AD_UI showMenu bubbles dbReady=' + _dbReady);
+    } else {
+      _contentEl.innerHTML = '<div style="text-align:center;color:#666;padding:40px">' +
+        'Loading ERP\u2026</div>';
+      console.log('§AD_UI showMenu waiting');
     }
-
-    // ── Full mode below (DB ready) ────────────────────────────────────
-    _renderBottomNav();
-
-    // Client switcher REMOVED (§OUTSTANDING two-top-buttons) — the System/GardenWorld
-    // toggle was redundant: client still switches via swipe (_switchClient, line ~2443)
-    // + _showClientToast, and deep-links via _setClient. _currentClient defaults to 'gardenworld'.
-    console.log('§AD_UI switcher-removed redundant=System/GardenWorld client=' + _currentClient);
-
-    // ── Full mode (DB ready) ──────────────────────────────────────────
-
-    // Data constellation — interactive graph replaces KPI cards
-    _renderHomeGraph();
-
-    // Recent windows
-    _loadRecent();
-    if (_recentWindows.length) {
-      var recentEl2 = document.createElement('div');
-      recentEl2.style.cssText = 'margin-bottom:12px;font-size:13px;color:#888;';
-      recentEl2.textContent = 'Recent: ';
-      for (var r2 = 0; r2 < _recentWindows.length && r2 < 5; r2++) {
-        var rw2 = _recentWindows[r2];
-        var rLink2 = document.createElement('a');
-        rLink2.href = '#';
-        rLink2.textContent = rw2.name;
-        rLink2.style.cssText = 'color:#4fc3f7;text-decoration:none;margin-right:8px;';
-        rLink2.dataset.windowId = rw2.id;
-        rLink2.addEventListener('pointerup', function (ev) {
-          ev.preventDefault();
-          openWindow(Number(this.dataset.windowId));
-        });
-        recentEl2.appendChild(rLink2);
-      }
-      _contentEl.appendChild(recentEl2);
-    }
-
-    // Build set of windows that have browsable data
-    if (!GW_WINDOW_SET) _buildWindowSets();
-
-    // Menu tree — filtered by client
-    var tree = ADParser.getMenuTree(_db);
-    var treeEl2 = document.createElement('div');
-    var windowSet = (_currentClient === 'system') ? _systemWindowSet : GW_WINDOW_SET;
-    _renderMenuNodes(treeEl2, tree, windowSet);
-    _contentEl.appendChild(treeEl2);
-
-    // (Search is now a floating overlay — see _toggleSearchOverlay / Alt+S)
-
-    console.log('§AD_UI showMenu roots=' + tree.length + ' client=' + _currentClient +
-                ' recent=' + _recentWindows.length);
   }
 
   // ── KPI cards ──────────────────────────────────────────────────────
@@ -1938,38 +1847,14 @@
     setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 1500);
   }
 
+  // §IDEMPIERE-ROUTE (user wrap 2026-06-10) — the in-app window/grid view + its bottom-button bar are
+  // RETIRED. erp.html is the bubble LAUNCHER; opening a window now launches the REAL iDempiere renderer
+  // (idempiere.html → login → client/role-scoped records). Every caller (FTS hit, recent, deep-link)
+  // funnels through here so the deprecated grid/_renderBottomNav can never repaint.
   function openWindow(windowId) {
     if (!_dbReady) { _showHydrating(); return; }
-    // Destroy graph animation when leaving home
-    if (typeof ADGraph !== 'undefined' && _currentScreen === 'home') {
-      ADGraph.destroy();
-    }
-    console.log('§AD_UI openWindow id=' + windowId);
-    var win = ADParser.getWindow(_db, windowId);
-    if (!win) {
-      console.log('§AD_UI openWindow NOT FOUND id=' + windowId);
-      return;
-    }
-
-    _currentWindow = win;
-    _currentTabIdx = 0;
-    _currentScreen = 'window';
-    _parentRecord = null;
-
-    // Save to recent
-    _addRecent(win.id, win.name);
-    _renderBottomNav();
-
-    // Load records for header tab
-    _loadTabRecords();
-    _renderWindow();
-
-    // §HELP auto-show on window open (desktop only, >768px)
-    if (typeof window !== 'undefined' && window.innerWidth > 768 && !_helpVisible) {
-      _toggleHelp();
-    }
-
-    console.log('§AD_UI openWindow name=' + win.name + ' tabs=' + win.tabs.length);
+    console.log('§AD_UI openWindow id=' + windowId + ' → idempiere');
+    _openInIdempiere(Number(windowId), null, null);
   }
 
   function _loadTabRecords() {
