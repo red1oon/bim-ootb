@@ -76,6 +76,35 @@
     console.log('§ERP-HELP action=open items=6');
   }
 
+  // ── Shortcuts panel (the LIFEBELT's original role — mirrors the BIM viewer's command palette /
+  // showCommandPalette). Keyboard + gesture legend for the globe. The bubble-navigation HelpGuide lives
+  // on the separate (?) 'guide' pill now. Same dismissible card chrome as _helpGuide (shared CSS).
+  function _shortcutsPanel() {
+    var existing = document.getElementById('erp-shortcuts');
+    if (existing) { existing.remove(); console.log('§ERP-SHORTCUTS action=close'); return; }   // toggle
+    var card = document.createElement('div');
+    card.id = 'erp-shortcuts';
+    card.setAttribute('role', 'dialog');
+    card.innerHTML =
+      '<button id="erp-shortcuts-x" title="Close" aria-label="Close">&times;</button>' +
+      '<h3>Shortcuts</h3>' +
+      '<ul>' +
+        '<li><b>?</b> &mdash; Help: how to use the bubbles</li>' +
+        '<li><b>F11</b> &mdash; Maximize the globe</li>' +
+        '<li><b>/</b> &mdash; Share this view</li>' +
+        '<li><b>+ / &minus;</b> or scroll &mdash; Zoom the globe</li>' +
+        '<li><b>drag</b> &mdash; Orbit &middot; <b>pinch</b> &mdash; Zoom</li>' +
+        '<li><b>tap</b> &mdash; open records &middot; <b>long-press</b> &mdash; open in iDempiere</li>' +
+        '<li><b>Esc</b> &mdash; Close this panel</li>' +
+      '</ul>';
+    document.body.appendChild(card);
+    var close = function () { if (card.parentNode) card.remove(); document.removeEventListener('keydown', escH); console.log('§ERP-SHORTCUTS action=close'); };
+    var escH = function (ev) { if (ev.key === 'Escape') { ev.preventDefault(); close(); } };
+    document.getElementById('erp-shortcuts-x').addEventListener('pointerup', function (e) { e.stopPropagation(); close(); });
+    document.addEventListener('keydown', escH);
+    console.log('§ERP-SHORTCUTS action=open items=7');
+  }
+
   // ── id → real handler. Stubs that only toasted "arrives in a later task" (find/read/ledger/graphs/edit/
   // process/settings) are REMOVED from the manifest (user wrap 2026-06-09) — that depth lives on idempiere.html;
   // erp.html is the lean globe that funnels there. What remains is operative. ──
@@ -106,7 +135,8 @@
       if (window.ErpVerifyLedger) window.ErpVerifyLedger();
       else _toast('Verify ledger — not ready');
     },
-    help:      _helpGuide                                     // real HelpGuide card (was a "tours arrive" toast)
+    guide:     _helpGuide,                                    // (?) bubble-navigation HelpGuide card
+    help:      _shortcutsPanel                                // lifebelt → keyboard/gesture shortcuts (its original role)
   };
 
   // ── hold (long-press) drawers land in I3 — honest stub now ──
@@ -127,7 +157,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=25').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=26').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];
@@ -241,17 +271,17 @@
         'bottom:calc(12px + env(safe-area-inset-bottom,0px));}#erp-pill{max-height:calc(100vh - 110px);}}' +
       // HelpGuide card (the `help` pill) — centred, dismissible, clean glass. Self-contained (erp.html has no
       // shared help_overlay.js). z above the globe + pill bar; scrolls on a short screen.
-      '#erp-help-guide{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;' +
+      '#erp-help-guide,#erp-shortcuts{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;' +
         'width:min(420px,90vw);max-height:80vh;overflow-y:auto;padding:22px 24px 24px;border-radius:16px;' +
         'background:rgba(20,22,32,0.96);color:#cdd6e4;border:1px solid rgba(255,255,255,0.12);' +
         'box-shadow:0 12px 48px rgba(0,0,0,0.5);font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;}' +
-      '#erp-help-guide h3{margin:0 0 12px;color:#6c9fff;font-size:16px;}' +
-      '#erp-help-guide ul{margin:0;padding-left:20px;}' +
-      '#erp-help-guide li{margin:7px 0;}' +
-      '#erp-help-guide b{color:#e6ebf5;font-weight:600;}' +
-      '#erp-help-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;' +
+      '#erp-help-guide h3,#erp-shortcuts h3{margin:0 0 12px;color:#6c9fff;font-size:16px;}' +
+      '#erp-help-guide ul,#erp-shortcuts ul{margin:0;padding-left:20px;}' +
+      '#erp-help-guide li,#erp-shortcuts li{margin:7px 0;}' +
+      '#erp-help-guide b,#erp-shortcuts b{color:#e6ebf5;font-weight:600;}' +
+      '#erp-help-x,#erp-shortcuts-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;' +
         'background:transparent;color:#9aa4b8;font-size:22px;line-height:1;cursor:pointer;}' +
-      '#erp-help-x:hover{background:rgba(255,255,255,0.08);color:#fff;}';
+      '#erp-help-x:hover,#erp-shortcuts-x:hover{background:rgba(255,255,255,0.08);color:#fff;}';
     document.head.appendChild(s);
   }
 
