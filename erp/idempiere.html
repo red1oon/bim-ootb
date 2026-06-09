@@ -341,7 +341,8 @@
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
-<script src="idmp_history.js?v=4"></script>
+<script src="../common/whole_history.js?v=1" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local bar only')"></script>
+<script src="idmp_history.js?v=5"></script>
 <script>
 (function () {
   'use strict';
@@ -1359,6 +1360,12 @@
     mountPillRegistry();
     _applyPillMode();   // §D — apply persisted "just the pill" / classic state at boot
     if (window.IdmpHistory) window.IdmpHistory.registerRestore(_histRestore);   // §B — read-only nav restore
+    // W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + consume a pending cross-page restore (read-only).
+    if (window.WholeHistory) {
+      window.WholeHistory.mount({ page: 'idempiere', rootPrefix: '../' });
+      window.WholeHistory.registerLocalRestore(function (ref) { if (ref) _histRestore({ kind: ref.recordId != null ? 'record' : 'window', windowId: ref.window, tabIdx: ref.tab, table: ref.table, recordId: ref.recordId, view: ref.view, label: '' }); });
+      window.WholeHistory.consumeRestore('idempiere', function (ref) { if (ref) _histRestore({ kind: ref.recordId != null ? 'record' : 'window', windowId: ref.window, tabIdx: ref.tab, table: ref.table, recordId: ref.recordId, view: ref.view, label: '' }); });
+    }
     _wireErpTap();   // §HISTORY_TAP — depth axis: field()s make a moment restore the LOOK + sniffer = free total recording
     // §D + common-HMI keyboard: ',' toggles the red pill (same as BIM Doc Mode); arrow keys navigate records
     // (essential in "just the pill" mode where the toolbar arrows are hidden). Ignored while typing in a field.

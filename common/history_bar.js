@@ -182,8 +182,16 @@ window.HistoryBar = (function () {
   }
 
   // Mirror a DOC-class event to the app-wide shared log (cross-tab) — the landing/other apps read it.
+  // HISTORY_WHOLE_TIMELINE.md W1: route through the ONE shared writer (WholeHistory.record) so every
+  // surface uses the unified shape {page,ts,label,kind,ref}; fall back to the inline write if the
+  // whole-history substrate isn't loaded (keeps the viewer-only mirror working standalone).
   function _mirror(entry) {
     try {
+      if (typeof WholeHistory !== 'undefined' && WholeHistory.record) {
+        WholeHistory.record({ page: _cfg.source, kind: entry.kind, type: entry.type,
+          label: entry.label, ref: (entry.ref != null ? entry.ref : null) });
+        return;
+      }
       var arr = JSON.parse(localStorage.getItem(_cfg.sharedKey) || '[]');
       arr.push({ ts: _now(), source: _cfg.source, type: entry.type, label: entry.label });
       if (arr.length > 50) arr = arr.slice(-50);

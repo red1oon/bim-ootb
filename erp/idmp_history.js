@@ -68,6 +68,14 @@
               windowId: m.windowId, tabIdx: m.tabIdx, table: m.table || null, recordId: (m.recordId == null ? null : m.recordId),
               view: (m.view == null ? null : m.view) };   // §HISTORY_TAP: carry the stamped LOOK (search/clean) so restore re-applies it
     _hist.push(e); _idx = _hist.length - 1;
+    // W1 (HISTORY_WHOLE_TIMELINE.md): ALSO mirror this moment into the ONE cross-page log — ADDITIVE,
+    // best-effort, never replaces this local bar. ref = the page's own re-open key (read-only restore).
+    try {
+      if (typeof WholeHistory !== 'undefined' && WholeHistory.record) {
+        WholeHistory.record({ page: 'idempiere', label: e.label, kind: 'nav', type: e.kind,
+          ref: { window: e.windowId, tab: e.tabIdx, table: e.table, recordId: e.recordId, view: e.view } });
+      }
+    } catch (err) {}
     console.log('§IDMP-HIST push=' + e.kind + ':' + e.label + ' depth=' + _hist.length + ' idx=' + _idx);
     render();
   }
