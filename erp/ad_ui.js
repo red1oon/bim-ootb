@@ -1595,6 +1595,8 @@
       if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
         ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
           _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+        // initFromBubbles resets the graph's _db to null; re-attach so tap-drill still queries records.
+        if (_dbReady && _db && ADGraph.graphHydrate) ADGraph.graphHydrate(_db);
       } else {
         ADGraph.init(canvas, _db, _currentClient,
           _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
@@ -1645,6 +1647,8 @@
     if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
       ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
         _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+      // initFromBubbles resets the graph's _db to null; re-attach so tap-drill still queries records.
+      if (_dbReady && _db && ADGraph.graphHydrate) ADGraph.graphHydrate(_db);
     } else {
       ADGraph.init(canvas, _db, _currentClient,
         _graphDrillCallback, _graphLongPressCallback);
