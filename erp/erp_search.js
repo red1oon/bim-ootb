@@ -86,6 +86,42 @@
     return { tables: SEARCHABLE.length, rows: totalRows, ms: elapsed };
   }
 
+  // Non-blocking build: one table per macrotask so the globe never freezes.
+  // §INSTANT — search isn't needed for the opening burst; index hydrates behind it.
+  // Each table's inserts are transaction-wrapped (_indexTable) so per-tick cost stays small.
+  function buildIndexChunked(db, done) {
+    _db = db;
+    var t0 = performance.now();
+    try { db.run('DROP TABLE IF EXISTS erp_search'); } catch (e) { /* ok */ }
+    db.run(
+      'CREATE VIRTUAL TABLE erp_search USING fts5(' +
+      '  search_text,' +
+      '  table_name UNINDEXED,' +
+      '  record_id UNINDEXED,' +
+      '  display_text UNINDEXED,' +
+      '  window_id UNINDEXED,' +
+      '  doc_status UNINDEXED,' +
+      '  client UNINDEXED,' +
+      '  tokenize = "porter unicode61"' +
+      ')'
+    );
+    var i = 0, totalRows = 0;
+    function step() {
+      if (i >= SEARCHABLE.length) {
+        _indexed = true;
+        var elapsed = Math.round(performance.now() - t0);
+        console.log('§ERP_SEARCH buildIndexChunked tables=' + SEARCHABLE.length +
+                    ' rows=' + totalRows + ' ms=' + elapsed + ' (non-blocking)');
+        if (done) done({ tables: SEARCHABLE.length, rows: totalRows, ms: elapsed });
+        return;
+      }
+      totalRows += _indexTable(db, SEARCHABLE[i]);
+      i++;
+      setTimeout(step, 0); // yield to the event loop → input + rAF stay live
+    }
+    setTimeout(step, 0);
+  }
+
   function _indexTable(db, spec) {
     var keyCol = spec.table + '_ID';
     // Composite key tables
@@ -112,6 +148,7 @@
     try {
       var r = db.exec(sql);
       if (r.length) {
+        try { db.run('BEGIN'); } catch (e) { /* nested ok */ }
         for (var j = 0; j < r[0].values.length; j++) {
           var row = r[0].values[j];
           var rid = row[0];
@@ -125,8 +162,10 @@
           );
           count++;
         }
+        try { db.run('COMMIT'); } catch (e) { /* ok */ }
       }
     } catch (e) {
+      try { db.run('COMMIT'); } catch (e2) { /* ok */ }
       // Table might not exist in this DB
       console.log('§ERP_SEARCH skip table=' + spec.table + ' err=' + e.message);
     }
@@ -456,6 +495,7 @@
 
   var ERPSearch = {
     buildIndex:    buildIndex,
+    buildIndexChunked: buildIndexChunked,
     search:        search,
     recentChanges: recentChanges,
     tableLabel:    tableLabel,

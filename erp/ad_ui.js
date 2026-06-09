@@ -1590,7 +1590,9 @@
         fsBtn.style.fontSize = '16px';
       }
       ADGraph.destroy();
-      if (!_dbReady && typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
+      // §INSTANT — keep the curated skeleton authoritative even after _dbReady;
+      // graphHydrate(db) already enabled drill, so DON'T rebuild from _buildHomeNodes (no flash/reset).
+      if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
         ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
           _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
       } else {
@@ -1638,8 +1640,9 @@
 
     _contentEl.appendChild(container);
 
-    // Init graph — use initFromBubbles if DB not ready
-    if (!_dbReady && typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
+    // §INSTANT — always render the curated skeleton (initFromBubbles); graphHydrate(db)
+    // enables drill on it, so we never rebuild from _buildHomeNodes (no destroy/reset flash).
+    if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
       ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
         _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
     } else {
@@ -3324,10 +3327,17 @@
       ADGraph.graphHydrate(db);
     }
 
-    // Build FTS5 search index
-    if (typeof ERPSearch !== 'undefined') {
-      var idx = ERPSearch.buildIndex(db);
-      console.log('§AD_UI fts5 indexed rows=' + idx.rows + ' ms=' + idx.ms);
+    // Build FTS5 search index — DEFERRED + chunked so it never freezes the globe.
+    // §INSTANT — search isn't needed for the opening burst; index hydrates behind it,
+    // one table per macrotask. (Was a single ~1s synchronous block; see W-INSTANT-FTS.)
+    if (typeof ERPSearch !== 'undefined' && ERPSearch.buildIndexChunked) {
+      var _kick = function () {
+        ERPSearch.buildIndexChunked(db, function (idx) {
+          console.log('§AD_UI fts5 indexed rows=' + idx.rows + ' ms=' + idx.ms + ' (deferred)');
+        });
+      };
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(_kick, { timeout: 1500 });
+      else setTimeout(_kick, 0);
     }
 
     // Build window sets silently — don't rebuild the globe (no flash)
