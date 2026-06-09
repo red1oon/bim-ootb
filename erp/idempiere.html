@@ -355,6 +355,7 @@
   var _loginUser = null;     // the user picked at login step 1 (drives step 2)
   var _lastMenu = { visible: 0, total: 0 };  // last scopeMenu counts (for the §witness)
   var _pendingWid = null;    // ?window=<id> deep link, opened AFTER login
+  var _pendingRid = null;    // ?record=<pk> deep link — land on this record post-login (blank if wrong client/role)
 
   // open-window state (a faithful single-window desktop; MDI tabs track opened windows)
   var _openWins = {};        // windowId -> { win, name }
@@ -459,6 +460,7 @@
 
     // Menu builds only AFTER login — it is role-scoped (docs §3b). Defer the deep link too.
     _pendingWid = new URLSearchParams(location.search).get('window');
+    _pendingRid = new URLSearchParams(location.search).get('record');  // §DEEPLINK — set by erp.html globe long-press
     $('idmp-loading').style.display = 'none';
     // ?login=<AD_User_ID | name-substring> auto-logs-in (demo/kiosk wow — zero clicks to the opening screen).
     // Proper practice: tenant SETUP/migration is a SystemAdmin act (System, client 0 — ?login=SuperUser); a
@@ -544,7 +546,7 @@
       ' source=ad_user/ad_role/ad_window_access handAuthored=0');
     _syncPillStage();   // §C — a client context is now committed → hide Install/Migrate from the primary rail
     var _wOpened = false;
-    if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) { openWindow(w); _wOpened = true; } }
+    if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) { openWindow(w); _wOpened = true; if (_pendingRid) { _landOnRecord(_pendingRid); _pendingRid = null; } } }
     _mobileSurfaceMenu(_wOpened);   // §MOBILE-LANDING: phone lands on an empty canvas → surface the menu drawer
   }
   // §MOBILE-LANDING — on a phone the post-login landing is an empty "select a menu item" canvas with the menu
@@ -636,6 +638,24 @@
   }
   function _curWin() { return _activeWin != null ? _openWins[_activeWin].win : null; }
   function _curTab() { var w = _curWin(); return w && w.tabs ? w.tabs[_activeTabIdx] : null; }
+
+  // §DEEPLINK — after openWindow() loads _records, jump to the record whose PK matches ?record=<pk>
+  // and switch to form view. If it isn't in the role/client-scoped set, log + stay on the grid (honest blank).
+  function _landOnRecord(rid) {
+    var tab = _curTab(); if (!tab) return false;
+    var kc = _keyCol(tab);
+    for (var i = 0; i < _records.length; i++) {
+      if (String(recVal(_records[i], kc)) === String(rid)) {
+        _recIdx = i; _viewMode = 'form';
+        if (typeof renderBody === 'function') renderBody();
+        if (typeof renderToolbar === 'function') renderToolbar();
+        console.log('§IDEMPIERE-DEEPLINK record=' + rid + ' landed idx=' + i + ' of ' + _records.length);
+        return true;
+      }
+    }
+    console.log('§IDEMPIERE-DEEPLINK record=' + rid + ' NOT in scoped set (' + _records.length + ' rows) — wrong client/role or filtered');
+    return false;
+  }
 
   function renderToolbar() {
     var tb = $('idmp-toolbar'); tb.style.display = 'flex'; tb.innerHTML = '';

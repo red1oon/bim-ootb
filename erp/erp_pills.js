@@ -58,7 +58,8 @@
       '<button id="erp-help-x" title="Close" aria-label="Close">&times;</button>' +
       '<h3>Getting around</h3>' +
       '<ul>' +
-        '<li><b>Tap a bubble</b> to open its records — each bubble is an ERP window (Orders, Products, Partners&hellip;).</li>' +
+        '<li><b>Tap a bubble</b> to open its records as bubbles — each bubble is an ERP window (Orders, Products, Partners&hellip;).</li>' +
+        '<li><b>Long-press a bubble</b> to open it in <b>iDempiere</b>. You sign in first (pick your client &amp; role), <i>then</i> the window/record opens &mdash; pick the wrong client and it shows nothing, just like the real system.</li>' +
         '<li>Tap <b>Home</b> any time to return to the bubble constellation.</li>' +
         '<li>Go <b>deeper</b> with the pills:' +
           '<ul>' +
@@ -72,7 +73,7 @@
     document.body.appendChild(card);
     var close = function () { if (card.parentNode) card.remove(); console.log('§ERP-HELP action=close'); };
     document.getElementById('erp-help-x').addEventListener('pointerup', function (e) { e.stopPropagation(); close(); });
-    console.log('§ERP-HELP action=open items=5');
+    console.log('§ERP-HELP action=open items=6');
   }
 
   // ── id → real handler. Stubs that only toasted "arrives in a later task" (find/read/ledger/graphs/edit/

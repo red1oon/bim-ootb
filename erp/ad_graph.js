@@ -321,10 +321,23 @@
     _activeExpandedNode = null;  // §1 — clear dim on view rebuild
     var cfg = ENTITY_CFG[tableName] || SYS_CFG[tableName] || { icon: 'table', colour: '#888', label: tableName };
 
+    // §PRICE-LABEL — composite-key tables with no Name read as "Record N". Join to humanise the bubble.
+    // M_ProductPrice → "Product · <PriceList Year>" (M_PriceList_Version.Name already encodes list+year).
+    var ENTITY_QUERY = {
+      'M_ProductPrice':
+        "SELECT pp.M_Product_ID, pp.M_PriceList_Version_ID, pp.PriceStd, pp.IsActive, " +
+        "(p.Name || ' · ' || plv.Name) AS Name " +
+        "FROM M_ProductPrice pp " +
+        "LEFT JOIN M_Product p ON pp.M_Product_ID = p.M_Product_ID " +
+        "LEFT JOIN M_PriceList_Version plv ON pp.M_PriceList_Version_ID = plv.M_PriceList_Version_ID"
+    };
     var records;
     try {
       // §BUG2 — no arbitrary LIMIT; cap at _maxBubbles for memory safety
-      var r = _db.exec('SELECT * FROM [' + tableName + '] LIMIT ' + _maxBubbles);
+      var _entitySql = ENTITY_QUERY[tableName]
+        ? (ENTITY_QUERY[tableName] + ' LIMIT ' + _maxBubbles)
+        : ('SELECT * FROM [' + tableName + '] LIMIT ' + _maxBubbles);
+      var r = _db.exec(_entitySql);
       if (!r.length) return;
       var cols = r[0].columns;
       records = r[0].values.map(function (row) {
@@ -369,7 +382,7 @@
       var eSz = _radius * rFactor * Math.sin(phi) * Math.sin(theta);
       _nodes.push({
         id: keyCol + ':' + rec[keyCol],
-        label: String(name).substring(0, 16),
+        label: String(name).substring(0, 24),  // §PRICE-LABEL — was 16; fit composite labels (e.g. "Rose Bush · Export 2003")
         count: null,
         icon: cfg.icon,
         colour: cls.colour,
@@ -410,8 +423,10 @@
     }
 
     console.log('§BUILD_ENTITY table=' + tableName + ' records=' + _nodes.length +
+                ' nameCol=' + nameCol +
                 ' ids=[' + _nodes.slice(0,5).map(function(n){return n.recordId;}).join(',') +
                 (_nodes.length > 5 ? '...' : '') + ']' +
+                ' labels=[' + _nodes.slice(0,5).map(function(n){return n.label;}).join(' | ') + ']' +
                 ' types=' + _nodes.map(function(n){return n.type;}).filter(function(v,i,a){return a.indexOf(v)===i;}).join('/'));
   }
 
@@ -1827,6 +1842,7 @@
     collapseAll: _collapseAll,
     zoom: function (delta) { _radius = Math.max(40, _radius + delta); _rebuildSpherePositions(); },
     getRadius: function () { return _radius; },
+    _debugNodes: function () { return _nodes.map(function (n) { return { id: n.id, label: n.label, x: n.screenX, y: n.screenY, z: n.screenZ, recordId: n.recordId, tableName: n.tableName }; }); },
     getFlyDelta: function () { return Math.abs(_flyRotYEnd - _flyRotYStart); },
     getScreenScale: function (idx) { return _nodes[idx] ? _nodes[idx].screenScale : 0; },
     getNodeCount: function () { return _nodes.length; },
