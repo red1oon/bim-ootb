@@ -52,7 +52,7 @@
       if (!Array.isArray(g)) g = [g];
       g = g.filter(Boolean);
       HB.push({ bucket: 'op', kind: 'pick', type: opType, label: label, readonly: true,
-        opId: opId, guids: g, params: params || {}, sigKey: 'pick:' + (g.join(',') || label) });
+        opId: opId, guids: g, params: params || {}, viewState: _tapView(), sigKey: 'pick:' + (g.join(',') || label) });
       return;
     }
     HB.push({ bucket: 'op', kind: 'op', type: opType, label: label, readonly: false,
@@ -65,7 +65,7 @@
     if (!HB.isEnabled()) return;
     var label = v.label || v.axis || 'view';
     HB.push({ bucket: 'view', kind: 'view', type: v.kind, label: label, readonly: true,
-      view: v, sigKey: 'view:' + (v.kind + ':' + (v.label || v.axis)) });
+      view: v, viewState: _tapView(), sigKey: 'view:' + (v.kind + ':' + (v.label || v.axis)) });
   }
   function registerViewRestore(fn) { _viewRestore = fn; }
 
@@ -83,10 +83,54 @@
       if (A && A.focusElement) A.focusElement(entry.guids, { item: true });
       else if (A && A.loadNavigate) A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(entry.guids, { item: true }); });
       else console.warn('§HIST_RESTORE_NOFN A.focusElement missing');
+      _tapApply(entry.viewState, entry.label);   // re-apply the x-ray/bbox/camera this pick was taken under
       return;
     }
     // view
     if (_viewRestore) _viewRestore(entry.view);
+    _tapApply(entry.viewState, entry.label);     // …same for a Find/nav view entry
+  }
+
+  // ── §-tap bridge: stamp each entry with the ambient look, re-apply it on restore ──────
+  // The depth axis (HISTORY_KNOB_SIGNAL_TAP §LOCKED #3). Loose-coupled: the tap module owns the
+  // vector; the viewer only registers HOW to read/apply its own toggles + camera.
+  function _tapView() { try { return window.HistoryTap ? HistoryTap.currentView() : null; } catch (e) { return null; } }
+  function _tapApply(v, label) { try { if (v && window.HistoryTap) HistoryTap.applyView(v, label); } catch (e) {} }
+  function _wireTap() {
+    if (!window.HistoryTap) return;
+    var T = window.HistoryTap;
+    // Camera + live toggle state are pulled at capture (authoritative — no stream desync).
+    T.setViewProvider(function () {
+      var A = _A(), v = {};
+      try { if (typeof window.ghostXrayOn === 'function') v.ghost = window.ghostXrayOn(); } catch (e) {}
+      try { if (A) v.xray = !!A.xrayOn; } catch (e) {}
+      try {
+        if (A && A.camera && A.controls) {
+          var p = A.camera.position, t = A.controls.target;
+          v.cam = { p: [p.x, p.y, p.z], t: [t.x, t.y, t.z] };
+        }
+      } catch (e) {}
+      return v;
+    });
+    // Appliers set the scene back to a recorded state (toggles are flip-to-target; camera is set+update).
+    T.registerApplier('ghost', function (want) {
+      try { if (typeof window.ghostXrayOn === 'function' && typeof window.toggleGhostXray === 'function' && window.ghostXrayOn() !== !!want) window.toggleGhostXray(); } catch (e) {}
+    });
+    T.registerApplier('xray', function (want) {
+      var A = _A(); try { if (A && !!A.xrayOn !== !!want && A.toggleXray) A.toggleXray(); } catch (e) {}
+    });
+    T.registerApplier('cam', function (c) {
+      var A = _A();
+      try {
+        if (A && A.camera && A.controls && c && c.p) {
+          A.camera.position.set(c.p[0], c.p[1], c.p[2]);
+          if (c.t) A.controls.target.set(c.t[0], c.t[1], c.t[2]);
+          A.controls.update(); if (A.markDirty) A.markDirty();
+        }
+      } catch (e) {}
+    });
+    try { T.seed({ ghost: (typeof window.ghostXrayOn === 'function') ? window.ghostXrayOn() : false, xray: !!(_A() && _A().xrayOn) }); } catch (e) {}
+    console.log('§HIST_TAP_WIRED provider+appliers(ghost,xray,cam)+seed');
   }
 
   // MODEL op apply: flips the signed kernel_ops `undone` flag (never deletion) + dispatches replay.
@@ -168,5 +212,6 @@
     significant: function (ev) { return HB.significant(ev.source, ev.type, ev.label); },
     PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS
   };
+  _wireTap();   // §-tap depth axis: provider + appliers + seed (no-op if history_tap.js absent)
   console.log('§UNIVERSAL_HISTORY_LOADED v3 (viewer adapter on shared HistoryBar)');
 })();

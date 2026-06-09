@@ -44,26 +44,33 @@
   // (2) Seed ambient once from current state (so a toggle ON before the tap woke up isn't missed).
   function seed(state) { if (state) for (var k in state) ambient[k] = state[k]; }
 
+  // Build the current view vector: ambient mirror (from stream) + provider pulls (camera etc, authoritative).
+  function buildView() {
+    var v = snapView();
+    if (viewProvider) { try { var ext = viewProvider(); for (var k in ext) v[k] = ext[k]; } catch (e) {} }
+    return v;
+  }
+  function currentView() { return buildView(); }       // host stamps its OWN bar entries with this.
+
   function feed(tag, label, payload) {
     reduceAmbient(tag, label);                          // update the mirror FROM the stream …
-    var v = snapView();
-    if (viewProvider) { try { var ext = viewProvider(); for (var k in ext) v[k] = ext[k]; } catch (e) {} } // … + pull camera …
-    all.push({ tag: tag, label: label, payload: payload || null, view: v, t: all.length });               // … then stamp.
+    all.push({ tag: tag, label: label, payload: payload || null, view: buildView(), t: all.length });     // … then stamp.
   }
 
   // (3) RESTORE — re-apply a recorded entry's view vector to the live scene.
   // Appliers are registered by the host (one per state key) — the tap stays scene-agnostic.
   var appliers = {};                                   // key -> fn(value)
   function registerApplier(key, fn) { appliers[key] = fn; }
-  function restore(entry) {
-    if (!entry || !entry.view) return false;
+  function applyView(view, label) {
+    if (!view) return false;
     var applied = [];
-    for (var k in entry.view) {
-      if (appliers[k]) { try { appliers[k](entry.view[k]); applied.push(k); } catch (e) {} }
+    for (var k in view) {
+      if (appliers[k]) { try { appliers[k](view[k]); applied.push(k); } catch (e) {} }
     }
-    try { console.log('§EVT RESTORE|' + (entry.label || '?') + ' keys=' + applied.join(',')); } catch (e) {}
-    return true;
+    try { console.log('§EVT RESTORE|' + (label || '?') + ' keys=' + applied.join(',')); } catch (e) {}
+    return applied.length > 0;
   }
+  function restore(entry) { return entry ? applyView(entry.view, entry.label) : false; }
   function setKnob(l) { if (STOPS.hasOwnProperty(l) || l === 'max') level = l; }
   function getKnob() { return level; }
   function history() {
@@ -77,7 +84,8 @@
   function clear() { all.length = 0; }
 
   var Tap = { feed: feed, setKnob: setKnob, getKnob: getKnob, history: history, clear: clear,
-              seed: seed, setViewProvider: setViewProvider, registerApplier: registerApplier, restore: restore,
+              seed: seed, setViewProvider: setViewProvider, registerApplier: registerApplier,
+              restore: restore, currentView: currentView, applyView: applyView,
               _all: all, STOPS: STOPS };
 
   // S() — the sink. Keeps the §-debug line you have today AND feeds the tap. No event bus.
