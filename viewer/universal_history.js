@@ -258,8 +258,8 @@
   // restore. ADDITIVE — this never touches the viewer's own bottom bar. Building reopen is best-effort
   // (uses the existing A.cityLoadBuilding; if absent, the deep-link still re-opens the viewer).
   if (window.WholeHistory) {
-    WholeHistory.mount({ page: 'viewer', rootPrefix: '../' });
-    WholeHistory.consumeRestore('viewer', function (ref) {
+    window.WholeHistory.mount({ page: 'viewer', rootPrefix: '../' });
+    window.WholeHistory.consumeRestore('viewer', function (ref) {
       try { var A = _A(); if (ref && ref.building && A && A.cityLoadBuilding) A.cityLoadBuilding(ref.building); } catch (e) {}
     });
   }
