@@ -97,40 +97,41 @@
   function _tapView() { try { return window.HistoryTap ? HistoryTap.currentView() : null; } catch (e) { return null; } }
   function _tapApply(v, label) { try { if (v && window.HistoryTap) HistoryTap.applyView(v, label); } catch (e) {} }
   function _wireTap() {
-    if (!window.HistoryTap) return;
+    if (!window.HistoryTap || !window.HistoryTap.field) return;
     var T = window.HistoryTap;
-    // Camera + live toggle state are pulled at capture (authoritative — no stream desync).
-    T.setViewProvider(function () {
-      var A = _A(), v = {};
-      try { if (typeof window.ghostXrayOn === 'function') v.ghost = window.ghostXrayOn(); } catch (e) {}
-      try { if (A) v.xray = !!A.xrayOn; } catch (e) {}
-      try {
-        if (A && A.camera && A.controls) {
-          var p = A.camera.position, t = A.controls.target;
-          v.cam = { p: [p.x, p.y, p.z], t: [t.x, t.y, t.z] };
+    // ── ONE symmetric line per restorable act: field(name, read, write). ───────────────
+    // read() = capture the slice · write(v) = reproduce it. Adding a new act = add a line.
+    T.field('ghost',
+      function () { return (typeof window.ghostXrayOn === 'function') ? window.ghostXrayOn() : false; },
+      function (want) { if (typeof window.ghostXrayOn === 'function' && typeof window.toggleGhostXray === 'function' && window.ghostXrayOn() !== !!want) window.toggleGhostXray(); });
+    T.field('xray',
+      function () { return !!(_A() && _A().xrayOn); },
+      function (want) { var A = _A(); if (A && !!A.xrayOn !== !!want && A.toggleXray) A.toggleXray(); });
+    T.field('cam',
+      function () { var A = _A(); if (!(A && A.camera && A.controls)) return null; var p = A.camera.position, t = A.controls.target; return { p: [p.x, p.y, p.z], t: [t.x, t.y, t.z] }; },
+      function (c) { var A = _A(); if (A && A.camera && A.controls && c && c.p) { A.camera.position.set(c.p[0], c.p[1], c.p[2]); if (c.t) A.controls.target.set(c.t[0], c.t[1], c.t[2]); A.controls.update(); if (A.markDirty) A.markDirty(); } });
+    // §SECTION — full cut state is {on, axis, cut} where cut = sectionPlane.constant (the slider position).
+    // write() drives the REAL setters: toggle on/off, set axis, then land the exact cut.  (demo's branch B)
+    T.field('section',
+      function () { var A = _A(); if (!A) return null; return { on: !!A.sectionOn, axis: A.sectionAxis, cut: (A.sectionPlane ? A.sectionPlane.constant : 0) }; },
+      function (s) {
+        var A = _A(); if (!(A && s)) return;
+        if (!s.on) { if (A.sectionOn && A.toggleSection) A.toggleSection(); return; }   // target = off → clear
+        if (!A.sectionOn && A.toggleSection) A.toggleSection();                          // target = on → enable
+        if (A.sectionAxis !== s.axis && A.setSectionAxis) A.setSectionAxis(s.axis);      // axis (re-applies range)
+        else if (A.applySectionAxis) A.applySectionAxis();
+        if (typeof s.cut === 'number' && A.updateSectionPlane) {
+          A.updateSectionPlane(s.cut);                                                   // the EXACT cut position
+          var sl = document.getElementById('section-slider'); if (sl) sl.value = s.cut;  // sync the slider thumb
         }
-      } catch (e) {}
-      return v;
-    });
-    // Appliers set the scene back to a recorded state (toggles are flip-to-target; camera is set+update).
-    T.registerApplier('ghost', function (want) {
-      try { if (typeof window.ghostXrayOn === 'function' && typeof window.toggleGhostXray === 'function' && window.ghostXrayOn() !== !!want) window.toggleGhostXray(); } catch (e) {}
-    });
-    T.registerApplier('xray', function (want) {
-      var A = _A(); try { if (A && !!A.xrayOn !== !!want && A.toggleXray) A.toggleXray(); } catch (e) {}
-    });
-    T.registerApplier('cam', function (c) {
-      var A = _A();
-      try {
-        if (A && A.camera && A.controls && c && c.p) {
-          A.camera.position.set(c.p[0], c.p[1], c.p[2]);
-          if (c.t) A.controls.target.set(c.t[0], c.t[1], c.t[2]);
-          A.controls.update(); if (A.markDirty) A.markDirty();
-        }
-      } catch (e) {}
-    });
-    try { T.seed({ ghost: (typeof window.ghostXrayOn === 'function') ? window.ghostXrayOn() : false, xray: !!(_A() && _A().xrayOn) }); } catch (e) {}
-    console.log('§HIST_TAP_WIRED provider+appliers(ghost,xray,cam)+seed');
+        if (A.markDirty) A.markDirty();
+      });
+    // §PALETTE — the whole palette/ambience is one scalar tick.  (the demo's branch A)
+    T.field('palette',
+      function () { var A = _A(); return A ? (A._ambienceTick || 0) : 0; },
+      function (tick) { var A = _A(); if (A && A.updateAmbience) A.updateAmbience(tick); });
+    if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every §act from the stream, deny-filtered
+    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette) + sniffer ON — one symmetric line each');
   }
 
   // MODEL op apply: flips the signed kernel_ops `undone` flag (never deletion) + dispatches replay.

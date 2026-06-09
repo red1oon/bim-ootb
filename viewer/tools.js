@@ -463,6 +463,7 @@ function setupTools(A) {
 
   A.updateAmbience = function(val) {
     var tick = Math.round(Number(val));
+    A._ambienceTick = tick;   // §-tap palette field reads this (one scalar = the whole palette state)
     A._restoreSunglass();
     if (tick === 0) {
       document.getElementById('sunglass-val').textContent = 'Off';
