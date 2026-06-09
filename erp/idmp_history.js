@@ -27,6 +27,33 @@
   var _restoreFn = null;
   var _bar = null, _line = null;
 
+  // ── §HISTORY_KNOB (HISTORY_TAP_TO_IDEMPIERE.md §KNOB) — the breadth dial on the ERP bar ───────────
+  // The nav dots (window/tab/record) are the restorable backbone. The KNOB surfaces the sniffer's
+  // §-stream DOC EVENTS at a dial-able breadth (off → low milestones → mid +doc-changes/nav → high
+  // +lenses → max), filtered by the SHARED HistoryTap STOPS. PRESS=richness reuses the existing bloom
+  // (dot→chip); thumbnail (3rd level) stays deferred per HISTORY_PERSIST_RECALL §LOCKED-5.
+  var KNOB_STOPS = ['off', 'low', 'mid', 'high', 'max'];
+  var _knob = 'mid';
+  try { var k = localStorage.getItem('idmp.hist.knob'); if (k && KNOB_STOPS.indexOf(k) >= 0) _knob = k; } catch (e) {}
+  // Category of a doc-event §-tag → tick colour (milestone=gold · change=blue · nav/aid=grey).
+  var _EVT_MILESTONE = { KERNEL_OP: 1, POSTED: 1, PCLOSE: 1, SIGN: 1 };
+  var _EVT_CHANGE = { CRUD: 1, RULE: 1, AD_DATA: 1 };
+  function _evtClass(tag) { return _EVT_MILESTONE[tag] ? 'ev-milestone' : (_EVT_CHANGE[tag] ? 'ev-change' : 'ev-nav'); }
+  function _setKnob(level) {
+    if (KNOB_STOPS.indexOf(level) < 0) return;
+    _knob = level;
+    try { localStorage.setItem('idmp.hist.knob', level); } catch (e) {}
+    if (window.HistoryTap && HistoryTap.setKnob && level !== 'off') HistoryTap.setKnob(level);  // off = display-gate only
+    console.log('§IDMP-HIST knob=' + level + ' (doc-events ' + (level === 'off' ? 'hidden' : 'breadth=' + level) + ')');
+    render();
+  }
+  function _stepKnob() { _setKnob(KNOB_STOPS[(KNOB_STOPS.indexOf(_knob) + 1) % KNOB_STOPS.length]); }   // tap = widen (wraps)
+  // The knob-filtered doc-event crumbs to show (last N; HistoryTap already breadth-filters at the set level).
+  function _docEvents() {
+    if (_knob === 'off' || !window.HistoryTap || !HistoryTap.history) return [];
+    return HistoryTap.history().slice(-30);
+  }
+
   function _sig(m) { return m.kind + '|' + m.windowId + '|' + m.tabIdx + '|' + (m.recordId == null ? '' : m.recordId); }
 
   // push(moment) — the host calls this at a semantic moment. Curation: drop a repeat of the current entry
@@ -87,15 +114,38 @@
     if (!has) { _bar.classList.remove('show'); return; }
     _bar.classList.add('show');
     _bar.classList.toggle('bloom', _bloom);
-    // Dots-only timeline — consistent with the clean pill idiom (no ↶/↷ unicode arrows). Click any dot to
-    // jump (subsumes step undo/redo); gold = current; double-tap blooms labelled chips. [[feedback_pill_icon_consistency]]
-    var h = '<div class="scrubline" id="idmp-scrubline">';
+
+    // KNOB — 4-segment breadth dial (glyph-free; tap = widen off→low→mid→high→max). Filled bars = level.
+    var ki = KNOB_STOPS.indexOf(_knob), kn = '<div class="scrubknob" title="History depth: ' + _knob +
+      ' — tap to widen (off→low→mid→high→max)">';
+    for (var s = 1; s <= 4; s++) kn += '<i class="kbar' + (s <= ki ? ' on' : '') + '"></i>';
+    kn += '</div>';
+
+    // NAV dots — the restorable backbone. Click any dot to jump (gold = current); double-tap blooms chips.
+    // [[feedback_pill_icon_consistency]]
+    var h = kn + '<div class="scrubline" id="idmp-scrubline">';
     _hist.forEach(function (e, i) {
       h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + '" data-i="' + i + '" data-kind="' + e.kind +
         '" title="' + (i + 1) + '. ' + _esc(e.label) + '">' + (_bloom ? _esc(e.label) : '') + '</div>';
     });
     h += '</div>';
+
+    // DOC-EVENT strip — the sniffer's §-stream at the dialled breadth (display-only context, not restore
+    // moments): milestone=gold (POSTED/PCLOSE/KERNEL_OP) · change=blue (CRUD/RULE) · nav/aid=grey.
+    var evs = _docEvents();
+    if (_knob !== 'off') {
+      h += '<div class="scrubsep"></div><div class="scrubevents" title="doc events @ ' + _knob + '">';
+      evs.forEach(function (e) {
+        h += '<div class="scrubev ' + _evtClass(e.tag) + '" title="' + _esc(e.tag + (e.label ? ' ' + e.label : '')) +
+          '">' + (_bloom ? _esc(e.tag) : '') + '</div>';
+      });
+      h += '</div>';
+    }
     _bar.innerHTML = h;
+    console.log('§IDMP-HIST render dots=' + _hist.length + ' knob=' + _knob + ' docEvents=' + evs.length);
+
+    var knob = _bar.querySelector('.scrubknob');
+    if (knob) knob.addEventListener('click', function (ev) { ev.stopPropagation(); _stepKnob(); });
     Array.prototype.forEach.call(_bar.querySelectorAll('.scrubdot'), function (d) {
       d.addEventListener('click', function (ev) { ev.stopPropagation(); _go(+d.getAttribute('data-i')); });
     });
@@ -124,6 +174,23 @@
       '#idmp-scrub.bloom .scrubdot{width:auto;height:auto;border-radius:10px;padding:3px 9px;font-size:11px;' +
         'color:#cdd6e4;white-space:nowrap;line-height:1.2;}' +
       '#idmp-scrub.bloom .scrubdot.on{color:#1a1205;font-weight:600;}' +
+      // §HISTORY_KNOB — 4-segment breadth dial (no glyphs; fan of rising bars, filled = current level).
+      '#idmp-scrub .scrubknob{flex:0 0 auto;display:flex;align-items:flex-end;gap:2px;height:16px;cursor:pointer;padding:0 2px;}' +
+      '#idmp-scrub .scrubknob .kbar{width:3px;border-radius:1px;background:rgba(154,164,184,0.30);}' +
+      '#idmp-scrub .scrubknob .kbar:nth-child(1){height:5px;}#idmp-scrub .scrubknob .kbar:nth-child(2){height:8px;}' +
+      '#idmp-scrub .scrubknob .kbar:nth-child(3){height:11px;}#idmp-scrub .scrubknob .kbar:nth-child(4){height:14px;}' +
+      '#idmp-scrub .scrubknob .kbar.on{background:#6c9fff;}' +
+      '#idmp-scrub .scrubknob:hover .kbar{background:rgba(108,159,255,0.65);}' +
+      // divider between the restorable nav backbone and the doc-event context strip.
+      '#idmp-scrub .scrubsep{flex:0 0 auto;width:1px;height:16px;background:rgba(255,255,255,0.12);margin:0 2px;}' +
+      // doc-event ticks — squares (distinct from the round nav dots); colour by category; bloom shows the §tag.
+      '#idmp-scrub .scrubevents{display:flex;align-items:center;gap:6px;flex:0 1 auto;overflow-x:auto;overflow-y:hidden;height:100%;}' +
+      '#idmp-scrub .scrubevents::-webkit-scrollbar{height:0;}' +
+      '#idmp-scrub .scrubev{flex:0 0 auto;width:7px;height:7px;border-radius:2px;background:rgba(154,164,184,0.45);}' +
+      '#idmp-scrub .scrubev.ev-milestone{background:#ffd479;}' +
+      '#idmp-scrub .scrubev.ev-change{background:#6c9fff;}' +
+      '#idmp-scrub.bloom .scrubev{width:auto;height:auto;border-radius:8px;padding:2px 7px;font-size:10px;' +
+        'color:#cdd6e4;white-space:nowrap;}' +
       // Mobile coexistence (§A bottom pill dock + §B scrubber). Spec §B stack order: content / status / scrubber /
       // pills(very bottom). So the §A pill dock stays FLUSH at bottom:0 and the scrubber becomes a fixed strip
       // sitting directly ABOVE it (~52px pill-dock height). Desktop keeps the scrubber in-flow under #idmp-status.
@@ -135,5 +202,6 @@
   }
 
   window.IdmpHistory = { push: push, registerRestore: registerRestore, undo: undo, redo: redo,
-    render: render, clear: clear, list: list };
+    render: render, clear: clear, list: list, setKnob: _setKnob, getKnob: function () { return _knob; } };
+  if (window.HistoryTap && HistoryTap.setKnob && _knob !== 'off') HistoryTap.setKnob(_knob);   // sync shared breadth at load
 })();

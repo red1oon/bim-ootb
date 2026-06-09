@@ -7,11 +7,19 @@
   'use strict';
 
   // Named knob stops → which §-tags enter history (pattern SETS, not a brittle per-label whitelist).
+  // Shared vocabulary: VIEWER tags + ERP DOC-EVENT tags coexist (a stream only emits its own app's tags,
+  // so the union is safe). ERP doc events from the erp/*.js §-census, mapped onto the same breadth ladder:
+  //   low  = signed/posted MILESTONES — POSTED (posting), PCLOSE (period close); KERNEL_OP already here.
+  //   mid  = + document CHANGES + navigation — CRUD (record edit), RULE (rule edit), SIGN, NAVIGATE, FOCUS_NODE.
+  //   high = + lenses/aids — KANBAN, ERP_SEARCH, AD_GRAPH, AD_DATA, ERP_PANEL, TAP.
   var STOPS = {
-    low:  ['KERNEL_OP', 'BUILDING_OPEN'],                                    // milestones
-    mid:  ['KERNEL_OP', 'BUILDING_OPEN', 'FOCUS', 'PICK', 'PHASE_LENS', 'FILTER', 'ROOM'], // + navigation
-    high: ['KERNEL_OP', 'BUILDING_OPEN', 'FOCUS', 'PICK', 'PHASE_LENS', 'FILTER', 'ROOM',
-           'KBD_ROUTE', 'XRAY', 'MAT_SELECT', 'DEPTH'],                      // + toggles/aids
+    low:  ['KERNEL_OP', 'BUILDING_OPEN', 'POSTED', 'PCLOSE'],                                    // milestones
+    mid:  ['KERNEL_OP', 'BUILDING_OPEN', 'POSTED', 'PCLOSE', 'FOCUS', 'PICK', 'PHASE_LENS', 'FILTER', 'ROOM',
+           'CRUD', 'RULE', 'SIGN', 'NAVIGATE', 'FOCUS_NODE'],                                    // + doc changes + navigation
+    high: ['KERNEL_OP', 'BUILDING_OPEN', 'POSTED', 'PCLOSE', 'FOCUS', 'PICK', 'PHASE_LENS', 'FILTER', 'ROOM',
+           'CRUD', 'RULE', 'SIGN', 'NAVIGATE', 'FOCUS_NODE',
+           'KBD_ROUTE', 'XRAY', 'MAT_SELECT', 'DEPTH',
+           'KANBAN', 'ERP_SEARCH', 'AD_GRAPH', 'AD_DATA', 'ERP_PANEL', 'TAP'],                   // + toggles/lenses/aids
     max:  null,                                                              // nearly all (deny still applies)
   };
   // Noise floor: even 'max' never records these tags (render churn / not user intent).
