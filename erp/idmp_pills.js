@@ -73,23 +73,19 @@
   // open state (_pillOpen stays false), then restore display:none on animationend — so it re-collapses cleanly
   // and the user's own ⋯ tap still opens from the closed state. The ⋯ keeps a companion glow. No second
   // animation system: a CSS keyframe class added/removed around the condition.
+  // Boot/stage CUE (user wrap 2026-06-09): the reveal itself is now CLICK-DRIVEN and STAYS open (PillBuilder
+  // _toggle rises the strip up on every ⋯ tap — see `.pill-revealing`). The old auto STRIP-PEEK that slid the
+  // pills out and RE-COLLAPSED is REMOVED (user: "and not collapse"). All this does now is a gentle ⋯ bob while
+  // the bar is collapsed, so the user notices there's more behind the ⋯ — it never moves/recollapses the strip.
   function _evalReveal() {
     if (!_PB) return;
     var trigger = document.getElementById('idmp-pill-trigger');
-    var pill = document.getElementById('idmp-pill');
-    if (!trigger || !pill) return;
-    var hiddenN = (_PB.getConfig().hidden || []).length;
-    var collapsed = !_PB.isOpen();
+    if (!trigger) return;
     trigger.classList.remove('idmp-pill-attract');
-    pill.classList.remove('idmp-pill-peeking');
-    if (hiddenN <= 0 && !collapsed) return;                 // nothing tucked → no cue (don't nag)
-    if (_PB.isOpen()) return;                               // rail already revealed → don't peek over it
-    // §P4-3 TRUE PEEK — slide the real pills out then re-collapse (the strip itself, not the ⋯).
-    pill.style.display = 'block';                           // lay out the strip so it can animate (PB stays closed)
-    void pill.offsetWidth;                                  // reflow so the slide REPLAYS on each eval
-    pill.classList.add('idmp-pill-peeking');
-    trigger.classList.add('idmp-pill-attract');             // companion glow on the ⋯
-    console.log('§P4-3-PEEK phase=open hidden=' + hiddenN + ' collapsed=' + collapsed);
+    if (_PB.isOpen()) return;                               // rail already revealed → no need to cue
+    void trigger.offsetWidth;                               // reflow so the bob REPLAYS on each eval
+    trigger.classList.add('idmp-pill-attract');             // a brief glow/bob on the ⋯ — "tap to reveal"
+    console.log('§PILL-CUE attract=⋯ collapsed=true hidden=' + (_PB.getConfig().hidden || []).length);
   }
   // setStage(s) — host calls on login (in-client) / tenant-picker open (pre-client). No arg → re-read IdmpPillStage().
   function setStage(stage) {
@@ -141,17 +137,11 @@
         storageKey: 'idmp_pill_config',
         persistent: true   // ⋯ toggles the rail; an outside tap does NOT auto-close (user drives reveal/collapse)
       });
-      trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); _evalReveal(); });
-      // §P2 — re-arm the cue: drop the attract class when the bob ends so it can REPLAY on the next eval.
+      // ⋯ tap → toggle. Opening RISES the strip up + STAYS open (PillBuilder _toggle `.pill-revealing`);
+      // re-tapping collapses it back down to the bottom-right ⋯. No bob after a deliberate tap.
+      trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
+      // Re-arm the ⋯ bob: drop the attract class when it ends so it can REPLAY on the next eval.
       trigger.addEventListener('animationend', function () { trigger.classList.remove('idmp-pill-attract'); });
-      // §P4-3 — the strip peek finished: drop the class and RE-COLLAPSE the strip (PB is still logically closed,
-      // so display:none restores the clean resting state). If the user opened the rail mid-peek, leave it open.
-      pill.addEventListener('animationend', function () {
-        if (!pill.classList.contains('idmp-pill-peeking')) return;
-        pill.classList.remove('idmp-pill-peeking');
-        if (!PB.isOpen()) pill.style.display = 'none';
-        console.log('§P4-3-PEEK phase=collapse');
-      });
       _PB = PB;
       window.IdmpPills.builder = PB;
 
@@ -182,10 +172,13 @@
     var s = document.createElement('style');
     s.id = 'idmp-pill-style';
     s.textContent =
-      // Desktop: right-edge vertical strip (matches erp.html's #erp-pillbar idiom).
-      '#idmp-pillbar{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;' +
+      // BOTTOM-RIGHT dock (user wrap 2026-06-09 — consistent with the BIM viewer's #mobile-bar/#mobile-pill):
+      // the ⋯ rests at the bottom-right corner and STAYS there; the strip (DOM-ordered ABOVE the trigger in a
+      // bottom-anchored column) RISES UP from behind it on tap. `bottom` is pinned so collapsing never moves the
+      // ⋯ to mid-screen — it remains where it is. Was right-edge VERTICALLY-CENTRED (top:50%/translateY(-50%)).
+      '#idmp-pillbar{position:fixed;right:10px;bottom:16px;top:auto;transform:none;z-index:1200;' +
         'display:flex;flex-direction:column;align-items:center;gap:8px;}' +
-      '#idmp-pill{display:flex;flex-direction:column;gap:6px;max-height:62vh;overflow-y:auto;' +
+      '#idmp-pill{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 120px);overflow-y:auto;' +
         'padding:6px;border-radius:16px;background:rgba(20,22,32,0.82);' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
       '#idmp-pill::-webkit-scrollbar{width:0;}' +
@@ -198,10 +191,12 @@
         'background:rgba(20,22,32,0.82);color:#9aa4b8;font-size:18px;line-height:1;display:flex;' +
         'align-items:center;justify-content:center;' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
-      // §P2 self-reveal cue (FRONT_DOOR_PILL_FINISH): a brief upward peek that fires WHENEVER pills are tucked
-      // behind the ⋯ (collapsed bar OR a non-empty hidden-set). Two bobs then SETTLE — an attract, not a loop
-      // ([[feedback_pill_icon_consistency]]: subtle, common HMI). Applied to the TRIGGER (the bar itself carries
-      // translateY(-50%) for centring, so animating the bar's transform would fight it; the trigger is clean).
+      // Reveal-UP: on each open the strip rises into view from behind the bottom ⋯ (translateY 18px → 0) then
+      // STAYS open (PillBuilder _toggle adds `.pill-revealing`; persistent dock — only a ⋯ re-tap collapses it).
+      '@keyframes pill-rise{from{transform:translateY(18px);opacity:0;}to{transform:translateY(0);opacity:1;}}' +
+      '#idmp-pill.pill-revealing{animation:pill-rise 0.42s cubic-bezier(.2,.85,.25,1);}' +
+      // Boot/stage CUE: a gentle upward bob on the ⋯ while collapsed — "there's more here, tap me". Two bobs
+      // then settle (subtle, common HMI — [[feedback_pill_icon_consistency]]); never recollapses the strip.
       '@keyframes idmp-pill-peek{' +
         '0%,100%{transform:translateY(0);box-shadow:none;}' +
         '25%{transform:translateY(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
@@ -209,29 +204,12 @@
         '78%{transform:translateY(-4px);}' +
       '}' +
       '#idmp-pill-trigger.idmp-pill-attract{animation:idmp-pill-peek 0.85s ease-in-out 2;color:#6c9fff;}' +
-      // §P4-3 TRUE PEEK — the hidden PILLS themselves slide out from the right edge into view, hold so the
-      // user registers the icons, then slide back out (re-collapse on animationend). pointer-events:none — it
-      // is an attract cue, not an interaction; the user's own ⋯ tap is what truly opens the rail. Applied to
-      // the inner #idmp-pill strip (a clean transform target — the bar carries translateY(-50%) for centring).
-      '@keyframes idmp-strip-peek{' +
-        '0%{transform:translateX(48px);opacity:0;}' +
-        '22%{transform:translateX(0);opacity:1;}' +
-        '70%{transform:translateX(0);opacity:1;}' +
-        '100%{transform:translateX(48px);opacity:0;}' +
-      '}' +
-      '#idmp-pill.idmp-pill-peeking{display:block !important;pointer-events:none;animation:idmp-strip-peek 1.8s ease-in-out 1;}' +
-      // §P2 (FRONT_DOOR_PILL_FINISH): mobile MIRRORS desktop — a RIGHT-edge VERTICAL strip, NOT the old bottom
-      // row dock (user-requested consistency). Same form factor everywhere; the ⋯ keeps one constant right-side
-      // spot. Respect the safe-area inset (home indicator / rounded corners) and cap the height so a short phone
-      // scrolls instead of overflowing. PillBuilder toggles the pill via inline display:block — a block container
-      // with display:flex buttons stacks them vertically (same as desktop), so no inline-flex/nowrap needed.
+      // Mobile mirrors desktop — same BOTTOM-RIGHT dock, just a touch tighter + safe-area inset (home indicator).
       '@media (max-width:760px){' +
-        '#idmp-pillbar{right:calc(8px + env(safe-area-inset-right,0px));left:auto;bottom:auto;top:50%;' +
-          'transform:translateY(-50%);flex-direction:column;align-items:center;justify-content:center;' +
-          'gap:8px;padding:0;background:none;border-top:none;}' +
-        '#idmp-pill{flex-direction:column;max-height:68vh;overflow-y:auto;overflow-x:hidden;white-space:normal;}' +
-        '#idmp-pill button{display:flex;margin:0;}' +
-        '#idmp-pill-trigger{order:0;margin-top:2px;}' +
+        '#idmp-pillbar{right:calc(10px + env(safe-area-inset-right,0px));' +
+          'bottom:calc(12px + env(safe-area-inset-bottom,0px));top:auto;transform:none;' +
+          'flex-direction:column;align-items:center;gap:8px;}' +
+        '#idmp-pill{max-height:calc(100vh - 110px);overflow-y:auto;overflow-x:hidden;}' +
       '}';
     document.head.appendChild(s);
   }

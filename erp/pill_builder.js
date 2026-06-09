@@ -249,11 +249,20 @@
     }
 
     // ── Open/close ──
-    function _close() { pill.style.display = 'none'; _pillOpen = false; }
+    function _close() { pill.style.display = 'none'; pill.classList.remove('pill-revealing'); _pillOpen = false; }
     function _toggle() {
       _pillOpen = !_pillOpen;
       pill.style.display = _pillOpen ? 'block' : 'none';
-      if (_pillOpen) _sync();
+      if (_pillOpen) {
+        _sync();
+        // Reveal-UP cue (user wrap 2026-06-09 — consistent across ALL pill surfaces): on every open the strip
+        // RISES into view from behind the bottom-anchored ⋯, so the user sees what was hidden. It STAYS open
+        // (persistent dock — only a ⋯ re-tap collapses it). Re-trigger by reflow so the animation replays each
+        // open. The surface CSS defines `.pill-revealing` + its @keyframes (no second animation system).
+        pill.classList.remove('pill-revealing'); void pill.offsetWidth; pill.classList.add('pill-revealing');
+      } else {
+        pill.classList.remove('pill-revealing');
+      }
       console.log('§PILL open=' + _pillOpen);
     }
 

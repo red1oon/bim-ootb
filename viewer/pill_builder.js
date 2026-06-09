@@ -248,11 +248,19 @@
     }
 
     // ── Open/close ──
-    function _close() { pill.style.display = 'none'; _pillOpen = false; }
+    function _close() { pill.style.display = 'none'; pill.classList.remove('pill-revealing'); _pillOpen = false; }
     function _toggle() {
       _pillOpen = !_pillOpen;
       pill.style.display = _pillOpen ? 'block' : 'none';
-      if (_pillOpen) _sync();
+      if (_pillOpen) {
+        _sync();
+        // Reveal-UP cue (consistent across ALL pill surfaces): the strip RISES into view on open so the user
+        // sees what was hidden. Re-trigger by reflow so it replays each open. viewer.html #mobile-pill defines
+        // `.pill-revealing` + its @keyframes (no second animation system). The viewer keeps tap-outside-to-close.
+        pill.classList.remove('pill-revealing'); void pill.offsetWidth; pill.classList.add('pill-revealing');
+      } else {
+        pill.classList.remove('pill-revealing');
+      }
       console.log('§PILL open=' + _pillOpen);
     }
 
