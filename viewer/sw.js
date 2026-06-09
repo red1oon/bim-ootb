@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v630';   // v630: pill reveal-UP cue — viewer #mobile-pill rises on open (PillBuilder _toggle `.pill-revealing` + @keyframes pill-rise in viewer.html); part of the cross-surface pill consistency pass (erp/sw.js v611). pill_builder.js?v=2. (supersedes v629 history-bar merge.)
+const CACHE_VERSION = 'v631';   // v631: WHOLE-HISTORY cross-page TIME-scroller (HISTORY_WHOLE_TIMELINE.md W1–W3) — new common/whole_history.js?v=1 is the ONE cross-page log every surface mirrors into ({page,ts,label,kind,ref}); history_bar.js?v=2 `_mirror` now routes through it; universal_history.js?v=11 mounts the cross-page launcher (clock pill bottom-left → overlay: WHOLE|THIS toggle + day-axis time scroller, long-press-back steps DAY→DAY into a horizontally-scrollable STRETCH) + best-effort read-only restore. ADDITIVE — the viewer's own bottom bar is untouched. Witnesses tests/poc_whole_{log,bar,time}.js + *_dom.js all PASS. PRIOR — v630: pill reveal-UP cue — viewer #mobile-pill rises on open (PillBuilder _toggle `.pill-revealing` + @keyframes pill-rise in viewer.html); part of the cross-surface pill consistency pass (erp/sw.js v611). pill_builder.js?v=2. (supersedes v629 history-bar merge.)
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

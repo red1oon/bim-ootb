@@ -59,6 +59,8 @@
     }
     HB.push({ bucket: 'op', kind: 'op', type: opType, label: label, readonly: false,
       opId: opId, replay: params || {}, params: params || {},
+      // W1: a re-open key for the cross-page log (only BUILDING_OPEN is mirrored; reopen = the building).
+      ref: (opType === 'BUILDING_OPEN' && params && params.name) ? { building: params.name } : null,
       sigKey: 'op:' + opType + ':' + ((params && (params.axis + '/' + params.label)) || '') });
   }
 
@@ -251,5 +253,15 @@
     PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS
   };
   _wireTap();   // §-tap depth axis: provider + appliers + seed (no-op if history_tap.js absent)
+
+  // W2 (HISTORY_WHOLE_TIMELINE.md): mount the cross-page launcher + consume any pending cross-page
+  // restore. ADDITIVE — this never touches the viewer's own bottom bar. Building reopen is best-effort
+  // (uses the existing A.cityLoadBuilding; if absent, the deep-link still re-opens the viewer).
+  if (window.WholeHistory) {
+    WholeHistory.mount({ page: 'viewer', rootPrefix: '../' });
+    WholeHistory.consumeRestore('viewer', function (ref) {
+      try { var A = _A(); if (ref && ref.building && A && A.cityLoadBuilding) A.cityLoadBuilding(ref.building); } catch (e) {}
+    });
+  }
   console.log('§UNIVERSAL_HISTORY_LOADED v3 (viewer adapter on shared HistoryBar)');
 })();

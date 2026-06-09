@@ -152,6 +152,7 @@ if('serviceWorker' in navigator){addEventListener('load',function(){navigator.se
   <span id="prov">extracted from glassbowl_data.db · 0 invented</span></div>
 <div id="hint">drag the <b>gravity ball</b> ↑ down to the AD dictionary · up into a record's lines &nbsp;·&nbsp; tap a bubble</div>
 
+<script src="../common/whole_history.js?v=1" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local scrub only')"></script>
 <script>
 "use strict";
 
@@ -734,6 +735,8 @@ function captureView(){ return {lens:state.lens, measure:state.measure, depth:Ma
 function recordView(){ if(restoring) return; const v=captureView();
   if(viewIdx>=0 && JSON.stringify(viewHist[viewIdx])===JSON.stringify(v)) return;
   viewHist=viewHist.slice(0,viewIdx+1); viewHist.push(v); viewIdx=viewHist.length-1; syncUndo();
+  /* W1 (HISTORY_WHOLE_TIMELINE.md): ALSO mirror into the ONE cross-page log — additive, best-effort. */
+  try{ if(typeof WholeHistory!=='undefined'&&WholeHistory.record) WholeHistory.record({page:'gravity',label:viewLabel(v),kind:'view',ref:v}); }catch(e){}
   console.log('§VIEWLOG idx=%d depth=%d total=%d', viewIdx, viewHist.length-1, viewHist.length); }
 function applyView(v){ restoring=true;
   state.lens=v.lens; state.measure=v.measure; state.depth=v.depth; state.focusGroup=v.focusGroup;
@@ -783,6 +786,8 @@ bowl.addEventListener('pointercancel',()=>{ lensCursor=null; window.__lensCursor
 positionBall(); relayout(); tick();
 recordView();  // log the opening view as the first entry
 setTimeout(()=>hint.style.opacity=0,5000);
+/* W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + read-only restore via the existing applyView. */
+try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../'});WholeHistory.registerLocalRestore(function(v){applyView(v);});WholeHistory.consumeRestore('gravity',function(v){applyView(v);});}}catch(e){}
 </script>
 </body>
 </html>
