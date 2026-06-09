@@ -73,29 +73,52 @@ window.HistoryBar = (function () {
     docTypes: null,                           // {type:true} whitelist that mirrors to the shared log
     treeKey: null                             // per-building localStorage key for the persisted TREE (opt-in)
   };
-  var _depth = 'all';
+  // ── The KNOB (HISTORY_KNOB_SIGNAL_TAP §LOCKED-KNOB) ──────────────────────
+  // The old 3-state cycle (all/doc/off) is a 5-stop magnitude DIAL: Off·Low·Mid·High·Max, default
+  // High. TURN (drag/tap) = BREADTH (how wide the §-net). PRESS (long-press) = RICHNESS (dot→chip,
+  // unified with the double-tap bloom). SOUND = a pitched detent tick per stop (∝ breadth, mute-aware).
+  // Persisted legacy values migrate: off→Off · doc→Mid · all→High (keeps any prior/ERP value working).
+  var _STOPS = ['off', 'low', 'mid', 'high', 'max'];
+  var _depth = 'high';
   var _configured = false;
+  function _stopIdx(d) { var i = _STOPS.indexOf(d); return i < 0 ? 3 : i; }
+  function _migrateDepth(d) {
+    if (d === 'all') return 'high';
+    if (d === 'doc') return 'mid';
+    if (d === 'off') return 'off';
+    return (_STOPS.indexOf(d) >= 0) ? d : null;
+  }
 
   function _now() { return (typeof Date !== 'undefined') ? Date.now() : 0; }
   function _on() { return _depth !== 'off'; }
 
   function configure(opts) {
     for (var k in opts) { if (Object.prototype.hasOwnProperty.call(opts, k)) _cfg[k] = opts[k]; }
-    // depth: persisted choice wins; else the app's (device-aware) default.
-    try { var d = localStorage.getItem(_cfg.depthKey); _depth = (d === 'all' || d === 'doc' || d === 'off') ? d : _cfg.defaultDepth(); }
-    catch (e) { _depth = _cfg.defaultDepth(); }
+    // depth: persisted choice wins (legacy all/doc/off migrate to stops); else the app's default.
+    try { _depth = _migrateDepth(localStorage.getItem(_cfg.depthKey)) || _migrateDepth(_cfg.defaultDepth()) || 'high'; }
+    catch (e) { _depth = _migrateDepth(_cfg.defaultDepth()) || 'high'; }
     if (!_configured) { _wireKeyboard(); _wireCrossTab(); _configured = true; }
     if (_cfg.treeKey) _persistLoad();   // restore persisted universes for this building (item 4)
     console.log('§HIST_CONFIGURE source=' + _cfg.source + ' depth=' + _depth + ' host=' + (_cfg.mountHostId || 'body') + ' treeKey=' + (_cfg.treeKey || '-'));
   }
 
-  // ── Significance gate (per active depth profile) ──────────────────────
+  // ── Significance gate (per active KNOB stop) ──────────────────────────
+  // BREADTH ladder: the stop selects how wide the §-net is. An app may supply a per-stop profile
+  // (the viewer does: low⊂mid⊂high⊂max); otherwise we fall back to its legacy all/doc sets so apps
+  // with only two profiles (e.g. ERP, if it adopts this bar) keep working — low/mid→doc, high/max→all.
+  function _profileForStop(stop) {
+    if (stop === 'off') return null;
+    var p = _cfg.profiles || {};
+    if (p[stop]) return p[stop];
+    if (stop === 'high' || stop === 'max') return p.all || p.doc || {};
+    return p.doc || p.all || {};   // low / mid
+  }
   function significant(bucket, type, label) {
     if (_depth === 'off') {
       console.log('§HIST_DROP source=' + bucket + ' type=' + type + ' reason=off profile=off label="' + (label || '') + '"');
       return false;
     }
-    var prof = _cfg.profiles[_depth] || _cfg.profiles.all || {};
+    var prof = _profileForStop(_depth) || {};
     var ok = !!(prof[bucket] && prof[bucket][type]);
     if (!ok) {
       console.log('§HIST_DROP source=' + bucket + ' type=' + type +
@@ -257,18 +280,35 @@ window.HistoryBar = (function () {
   }
   function _afterApply(when) { try { _cfg.afterApply(when); } catch (e) { console.warn('§HIST_AFTER_ERR', e); } }
 
-  // ── Depth (§6) ────────────────────────────────────────────────────────
+  // ── The KNOB: breadth (turn) + sound (detent) ─────────────────────────
   function setDepth(d) {
-    if (d !== 'all' && d !== 'doc' && d !== 'off') return;
+    d = _migrateDepth(d); if (!d) return;
+    var changed = d !== _depth;
     _depth = d;
     try { localStorage.setItem(_cfg.depthKey, d); } catch (e) {}
     _render();
-    console.log('§HIST_DEPTH depth=' + _depth);
+    console.log('§HIST_DEPTH depth=' + _depth + ' stop=' + _stopIdx(_depth) + '/4');
+    if (changed) _detentTick();
   }
-  function cycleDepth() { setDepth(_depth === 'all' ? 'doc' : (_depth === 'doc' ? 'off' : 'all')); }
-  function setEnabled(on) { setDepth(on ? 'all' : 'off'); }
+  function cycleDepth() { setDepth(_STOPS[(_stopIdx(_depth) + 1) % _STOPS.length]); }  // tap = one step (wraps)
+  function setEnabled(on) { setDepth(on ? 'high' : 'off'); }
   function isEnabled() { return _on(); }
   function getDepth() { return _depth; }
+
+  // SOUND axis: a crisp pitched detent tick per stop (pitch ∝ breadth), eyes-free confirmation.
+  // FREE — reuses the SFX synth; MUST stay silent under the global mute (`v` / §SFX_TOGGLE).
+  var _DETENT_HZ = { off: 150, low: 300, mid: 392, high: 494, max: 622 };
+  function _detentTick() {
+    try {
+      if (!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn())) { console.log('§HIST_DETENT muted stop=' + _depth); return; }
+      var hz = _DETENT_HZ[_depth] || 440;
+      console.log('§HIST_DETENT stop=' + _depth + ' hz=' + hz);
+      window.__sfx.voice(_depth === 'off' ? 'knock' : 'pluck', hz, 55, 0);
+    } catch (e) {}
+  }
+  // RICHNESS axis (press): dot → chip (unified with the double-tap bloom). The 3rd level (thumbnail)
+  // is desktop-only + ephemeral (HISTORY_PERSIST_RECALL §LOCKED-5) — deferred, not faked here.
+  function _cycleRichness() { _bloom = !_bloom; _render(); console.log('§HIST_BLOOM ' + (_bloom ? 'on' : 'off') + ' via=press'); }
 
   function clear() { _rootKids = []; _rootActive = 0; _cursorNode = null; _rebuild(); _persistSave(); _render(); }
 
@@ -335,6 +375,7 @@ window.HistoryBar = (function () {
 
   // ── The bar UI ────────────────────────────────────────────────────────
   var _bar = null, _back = null, _fwd = null, _marks = null, _off = null;
+  var _knobTrack = null, _knobThumb = null, _knobLbl = null;
   var BTN = 'background:rgba(30,50,80,0.7);color:#4fc3f7;border:1px solid rgba(255,255,255,0.15);' +
     'border-radius:6px;padding:6px 10px;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);min-width:36px;text-align:center';
 
@@ -368,9 +409,7 @@ window.HistoryBar = (function () {
     _marks = document.createElement('div');
     _marks.id = 'hist-marks';
     _marks.style.cssText = 'display:flex;gap:3px;align-items:center;padding:0 4px;overflow-x:auto;max-width:60vw';
-    _off = document.createElement('button');
-    _off.id = 'hist-off'; _off.style.cssText = BTN + ';font-size:13px';
-    _off.addEventListener('pointerup', function (e) { e.stopPropagation(); cycleDepth(); });
+    _off = _buildKnob();
     _bar.appendChild(_back); _bar.appendChild(_fwd); _bar.appendChild(_marks); _bar.appendChild(_off);
     var _lastTap = 0; // §2 bloom: pointer double-tap (touch + mouse)
     _bar.addEventListener('pointerup', function () {
@@ -431,15 +470,75 @@ window.HistoryBar = (function () {
     return chip;
   }
 
-  var _DEPTH_UI = {
-    all: { g: '◉', c: '#4fc3f7', t: 'Recording: ALL — taps + nav + milestones (tap → DOC only)' },
-    doc: { g: '◑', c: '#66bb6a', t: 'Recording: DOC only — the clean trail (tap → OFF)' },
-    off: { g: '◯', c: '#888',    t: 'Recording: OFF (tap → ALL)' }
+  // ── The KNOB control (§LOCKED-KNOB): a 5-stop dial replacing the 3-state glyph button ──
+  // TURN = breadth (drag the dot, or tap to step) · PRESS = richness (long-press → bloom) ·
+  // SOUND = detent tick (in setDepth). Reuses the pill (BTN) look + a mini slider — no new widget.
+  var _STOP_UI = {
+    off:  { g: '○', c: '#777',    t: 'History OFF — drag/tap to dial up · long-press = detail' },
+    low:  { g: '◔', c: '#8a9bbf', t: 'Low — milestones only (tap → Mid)' },
+    mid:  { g: '◑', c: '#66bb6a', t: 'Mid — the clean trail: edits + saves (tap → High)' },
+    high: { g: '◕', c: '#4fc3f7', t: 'High — + navigation & selections · default (tap → Max)' },
+    max:  { g: '●', c: '#ffd479', t: 'Max — everything significant (tap → Off)' }
   };
+  function _buildKnob() {
+    var wrap = document.createElement('div');
+    wrap.id = 'hist-knob';
+    wrap.style.cssText = BTN + ';font-size:13px;display:flex;align-items:center;gap:6px;padding:6px 9px;touch-action:none;user-select:none';
+    _knobLbl = document.createElement('span');
+    _knobLbl.style.cssText = 'font-size:13px;line-height:1;flex:0 0 auto';
+    var track = document.createElement('div'); _knobTrack = track;
+    track.style.cssText = 'position:relative;width:48px;height:12px;flex:0 0 auto';
+    var line = document.createElement('div');
+    line.style.cssText = 'position:absolute;left:0;right:0;top:5px;height:2px;border-radius:1px;background:rgba(255,255,255,0.25)';
+    track.appendChild(line);
+    for (var s = 0; s < 5; s++) {
+      var pip = document.createElement('div');
+      pip.style.cssText = 'position:absolute;top:4px;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,0.35);left:' + (s / 4 * 100) + '%;transform:translateX(-50%)';
+      track.appendChild(pip);
+    }
+    _knobThumb = document.createElement('div');
+    _knobThumb.style.cssText = 'position:absolute;top:1px;width:10px;height:10px;border-radius:50%;transform:translateX(-50%);box-shadow:0 0 4px rgba(0,0,0,0.5);transition:left .08s';
+    track.appendChild(_knobThumb);
+    wrap.appendChild(_knobLbl); wrap.appendChild(track);
+    _wireKnobGestures(wrap, track);
+    return wrap;
+  }
+  function _wireKnobGestures(wrap, track) {
+    var startX = 0, startT = 0, dragging = false, pid = null;
+    var DRAG_PX = 4, PRESS_MS = 420;
+    function stopFromX(clientX) {
+      var r = track.getBoundingClientRect(); if (r.width <= 0) return _stopIdx(_depth);
+      return Math.max(0, Math.min(4, Math.round((clientX - r.left) / r.width * 4)));
+    }
+    wrap.addEventListener('pointerdown', function (e) {
+      e.stopPropagation(); startX = e.clientX; startT = _now(); dragging = false; pid = e.pointerId;
+      try { wrap.setPointerCapture(pid); } catch (x) {}
+    });
+    wrap.addEventListener('pointermove', function (e) {
+      if (pid == null) return;
+      if (Math.abs(e.clientX - startX) > DRAG_PX) dragging = true;
+      if (dragging) { var st = _STOPS[stopFromX(e.clientX)]; if (st !== _depth) setDepth(st); }   // live = TURN
+    });
+    wrap.addEventListener('pointerup', function (e) {
+      e.stopPropagation();
+      try { wrap.releasePointerCapture(pid); } catch (x) {} pid = null;
+      if (dragging) { dragging = false; return; }              // drag already committed live
+      if (_now() - startT >= PRESS_MS) { _cycleRichness(); return; }  // PRESS = richness
+      cycleDepth();                                            // TAP = one breadth step
+    });
+    wrap.addEventListener('pointercancel', function () { pid = null; dragging = false; });
+  }
+  function _renderKnob() {
+    if (!_off) return;
+    var su = _STOP_UI[_depth] || _STOP_UI.high;
+    if (_knobLbl) { _knobLbl.textContent = su.g; _knobLbl.style.color = su.c; }
+    _off.title = su.t;
+    if (_knobThumb) { _knobThumb.style.left = (_stopIdx(_depth) / 4 * 100) + '%'; _knobThumb.style.background = su.c; _knobThumb.style.border = '1px solid ' + su.c; }
+  }
+
   function _render() {
     if (!_bar) return;
-    var du = _DEPTH_UI[_depth] || _DEPTH_UI.all;
-    _off.textContent = du.g; _off.style.color = du.c; _off.title = du.t;
+    _renderKnob();
     var show = _opened;
     _bar.style.display = show ? 'flex' : 'none';
     if (!show) return;

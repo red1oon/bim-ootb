@@ -14,19 +14,21 @@
 
   function _A() { return window.A || window.APP; }
 
-  // (c) Viewer significance profiles (§6 depth) — BLUE all / GREEN doc.
+  // (c) Viewer significance profiles — now the KNOB's 5-stop BREADTH ladder (§LOCKED-KNOB).
+  // Monotone low ⊂ mid ⊂ high ⊂ max, each stop adding ONE category:
+  //   low  = milestones only · mid = + reversible edits & saves (the clean trail) ·
+  //   high = + navigation views (DEFAULT) · max = + every selection/pick.
   var UNDOABLE_OPS = { 'GRID_MOVE': true, 'ELEMENT_PLACE': true };
+  var _EDITS = { 'BUILDING_OPEN': true, 'GRID_MOVE': true, 'ELEMENT_PLACE': true,
+                 'DESIGN_SAVE': true, 'DESIGN_OPEN': true, 'CAPTURE_4D': true, 'CLASH_SNAG': true };
+  var _NAV = { 'axis': true, 'group': true, 'item': true };
   var PROFILES = {
-    all: {
-      op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'ELEMENT_PICK': true, 'BUILDING_OPEN': true },
-      view: { 'axis': true, 'group': true, 'item': true }
-    },
-    doc: {
-      op:   { 'GRID_MOVE': true, 'ELEMENT_PLACE': true, 'BUILDING_OPEN': true,
-              'DESIGN_SAVE': true, 'DESIGN_OPEN': true, 'CAPTURE_4D': true, 'CLASH_SNAG': true },
-      view: {}
-    }
+    low:  { op: { 'BUILDING_OPEN': true }, view: {} },
+    mid:  { op: _EDITS, view: {} },
+    high: { op: _EDITS, view: _NAV },
+    max:  { op: Object.assign({ 'ELEMENT_PICK': true }, _EDITS), view: _NAV }
   };
+  PROFILES.all = PROFILES.high; PROFILES.doc = PROFILES.mid;   // legacy aliases (exported SIGNIFICANCE + _isDoc fallback)
 
   var _viewRestore = null; // navigate_find's view-restore callback
 
