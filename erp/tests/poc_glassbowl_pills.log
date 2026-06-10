@@ -1,13 +1,15 @@
-§GB-WITNESS-1 §GB-PILLS source=registry built=10 handAuthored=0 pills=10 overflow=⋯ hidden=0 ids=[home,trace,untangle,reset,mute,panel,edit,qr,showme,about]
-§GB-WITNESS-2 bar=present ids=[home,trace,untangle,reset,mute,panel,edit,qr,showme,about]
+§GB-WITNESS-1 §GB-PILLS source=registry built=11 handAuthored=0 pills=11 overflow=⋯ hidden=0 ids=[home,trace,untangle,reset,mute,panel,worldhist,edit,qr,showme,about]
+§GB-WITNESS-2 bar=present ids=[home,trace,untangle,reset,mute,panel,worldhist,edit,qr,showme,about]
 §GB-WITNESS-3 looseGone={"ctl":true,"traceBtn":true,"untangleBtn":true,"muteBtn":true,"resetBtn":true,"panelToggle":true,"aboutBtn":true,"qrbtn":true} allGone=true
 §GB-WITNESS-4 iconMiss=none pageErrors=0
-§GB-WITNESS-5 conceptWM={"op":0.045,"pe":"none","txt":"Concept UI"}
-§GB-WITNESS-6 collapse afterToggle1=none afterToggle2=block
-§GB-WITNESS-7 home logged=true url=http://localhost:44843/erp.html
+§GB-WITNESS-5 conceptWM={"op":1,"pe":"none","txt":""}
+§GB-WITNESS-6 collapse afterToggle1=block afterToggle2=none
+§GB-WITNESS-8 worldDrawer chips=2
+§GB-WITNESS-7 home logged=true url=http://localhost:44781/erp.html
 §GB-RESULT PASS idsOk=true bar=true looseGone=true iconClean=true noErr=true wmOk=true home=true
-§GRV-WITNESS-1 §GRV-PILLS source=registry built=5 handAuthored=0 pills=5 overflow=⋯ hidden=0 ids=[home,undo,redo,edit,showme]
-§GRV-WITNESS-2 bar=present ids=[home,undo,redo,edit,showme]
+§GRV-WITNESS-1 §GRV-PILLS source=registry built=4 handAuthored=0 pills=4 overflow=⋯ hidden=0 ids=[home,worldhist,edit,showme]
+§GRV-WITNESS-2 bar=present ids=[home,worldhist,edit,showme]
 §GRV-WITNESS-3 undoGone=true redoGone=true scrubKept=true conceptWM=present
 §GRV-WITNESS-4 iconMiss=none pageErrors=0
-§GRV-RESULT PASS idsOk=true bar=true undoRedoGone=true scrub=true noErr=true
+§GRV-WITNESS-5 worldDrawer chips=2 undoRedoPillsGone=true
+§GRV-RESULT PASS idsOk=true bar=true undoRedoGone=true scrub=true drawer=true noErr=true

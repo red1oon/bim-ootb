@@ -158,7 +158,7 @@ if("serviceWorker" in navigator){addEventListener("load",function(){navigator.se
   console.log("\u00a7SWUPDATE wired=Y toast=1 reload-guard=tap");
 }).catch(function(){});});}</script>
 <!-- CONCEPT-UI watermark: very weak, non-interactive, behind the chrome — honest "this is a concept surface" stamp (PILLS_TO_GLASSBOWL_CONSOLIDATE.md, user 2026-06-10). -->
-<div id="conceptWM" aria-hidden="true" style="position:fixed;inset:0;pointer-events:none;z-index:6;background-image:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22300%22%20height%3D%22160%22%3E%3Ctext%20x%3D%226%22%20y%3D%22100%22%20transform%3D%22rotate(-28%20150%2080)%22%20font-family%3D%22system-ui%2C-apple-system%2Csans-serif%22%20font-size%3D%2230%22%20font-weight%3D%22800%22%20letter-spacing%3D%222%22%20fill%3D%22%23cfe8ee%22%20fill-opacity%3D%220.03%22%3ECONCEPT%20UI%3C%2Ftext%3E%3C%2Fsvg%3E');background-repeat:repeat;"></div>
+<div id="conceptWM" aria-hidden="true" style="position:fixed;inset:0;pointer-events:none;z-index:6;background-image:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22300%22%20height%3D%22160%22%3E%3Ctext%20x%3D%226%22%20y%3D%22100%22%20transform%3D%22rotate(-28%20150%2080)%22%20font-family%3D%22system-ui%2C-apple-system%2Csans-serif%22%20font-size%3D%2230%22%20font-weight%3D%22800%22%20letter-spacing%3D%222%22%20fill%3D%22%23cfe8ee%22%20fill-opacity%3D%220.07%22%3ECONCEPT%20UI%3C%2Ftext%3E%3C%2Fsvg%3E');background-repeat:repeat;"></div>
 <div id="wrap">
 <div id="stage"><svg id="svg" width="100%" height="100%"></svg>
   <div class="legend" id="legend"></div>
@@ -395,7 +395,7 @@ var LABEL={containment:"document & its line items",derivation:"sales flow (order
 var FRIENDLY={c_order:"Order",c_orderline:"Order line",m_inout:"Shipment / Receipt",m_inoutline:"Shipment line",c_invoice:"Invoice",c_invoiceline:"Invoice line",c_payment:"Payment",c_allocationhdr:"Payment applied",c_allocationline:"Payment applied",m_matchpo:"Order\u2194Receipt match",m_matchinv:"Receipt\u2194Invoice match",gl_journal:"Accounting journal",gl_journalline:"Journal line",c_bpartner:"Customer / Supplier",m_product:"Product"};
 function fname(id){return FRIENDLY[id]||id;}
 var VERB={createShipment:"creates a shipment/receipt",createInvoice:"creates an invoice",completeOrder:"completes the order",setStatus:"completes the document",allocate:"applies a payment to an invoice"};
-var svg=document.getElementById("svg"),W=svg.clientWidth||window.innerWidth-340,H=svg.clientHeight||window.innerHeight;
+var svg=document.getElementById("svg"),W=svg.clientWidth||window.innerWidth-340,H=(svg.clientHeight||window.innerHeight)-64;  /* -64 bottom gutter: lift the map up so the World overlay / #scrub don't obscure the lowest bubbles */
 var show={containment:1,derivation:1,settlement:1,reference:1};
 var SVGNS="http://www.w3.org/2000/svg";
 function el(tag,a){var e=document.createElementNS(SVGNS,tag);for(var key in a)e.setAttribute(key,a[key]);return e;}
@@ -821,7 +821,7 @@ if(typeof recordView==="function")recordView();   // log the opening view as the
 //   screen and the yellow #phandle invites a tap to slide it open. A restored scene keeps the user\u2019s last state.
 if(!window.__restored&&isMobile())setPanelCollapsed(true);else syncPanelUI(document.getElementById("wrap").classList.contains("collapsed"));
 /* W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + read-only restore via the existing applyView. */
-try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../"});WholeHistory.registerLocalRestore(function(v){if(typeof applyView==="function")applyView(v);});WholeHistory.consumeRestore("glassbowl",function(v){if(typeof applyView==="function")applyView(v);});}}catch(e){}
+try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../",launcher:false});WholeHistory.registerLocalRestore(function(v){if(typeof applyView==="function")applyView(v);});WholeHistory.consumeRestore("glassbowl",function(v){if(typeof applyView==="function")applyView(v);});}}catch(e){}  /* launcher:false — World History launched from the W pill, not the bottom-left clock */
 </script>
 <!-- ReadMe/ShowMe HELP overlay — separated behavior layer, keyed to bubbles (READSHOWME_DYNAMIC_SPEC.md D3) -->
 <script src="help_overlay.js"></script>
@@ -845,7 +845,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <!-- §GB-PILLS — shared ⋯ pill registry (PILLS_TO_GLASSBOWL_CONSOLIDATE.md): icons.js (glyph DATA) + pill_builder.js (renderer, used as-is) + glassbowl_pills.js (binds fn BY ID) + pills_glassbowl.json (manifest). Replaces the hand-rolled .ctl bar + loose about/qr/needHelp/crud-mode controls. -->
 <script src="icons.js?v=3"></script>
 <script src="pill_builder.js?v=4"></script>
-<script src="glassbowl_pills.js?v=1"></script>
+<script src="glassbowl_pills.js?v=2"></script>
 <script>(function(){
   // Bind the registry fn BY ID to the REAL existing host handlers (published as window.* by the inline scripts above).
   // showme → the shared help_overlay NeedHelp guide; edit → the crud_overlay Edit-mode (both checkboxes, now pill-driven;
@@ -861,6 +861,10 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
       reset:   function(){if(window.gbReset)window.gbReset();},
       mute:    function(){if(window.toggleMute)window.toggleMute();},
       panel:   function(){if(window.togglePanel)window.togglePanel();},
+      // HISTORY_KNOB_DIAL.md §FOLLOWUP — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) wired in
+      // glassbowl_pills.js. pagehistory (Z chip) toggles THIS page's #scrub view-log timeline.
+      worldhist:  function(){ if(window.WholeHistory&&WholeHistory.toggleOpen) WholeHistory.toggleOpen(); else console.log('§GB-WHIST WholeHistory absent'); },
+      pagehistory:function(){ var s=document.getElementById('scrub'); if(s){ var hidden=getComputedStyle(s).display==='none'; s.style.display=hidden?'':'none'; console.log('§GB-PAGEHIST scrub='+(hidden?'shown':'hidden')); } },
       edit:    function(){_ck('crudModeCk');},
       qr:      function(){if(window.gbQR)window.gbQR();else if(window.qrOpen)window.qrOpen();},
       showme:  function(){_ck('needHelpCk');},
@@ -874,7 +878,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
       showme:function(){return _ckOn('needHelpCk');},
       about: function(){var a=document.getElementById('about');return !!(a&&a.classList.contains('open'));}
     };
-    window.GlassbowlPills.mount({manifest:'pills_glassbowl.json?v=1',storageKey:'glassbowl_pill_config',tag:'§GB-PILLS'});
+    window.GlassbowlPills.mount({manifest:'pills_glassbowl.json?v=2',storageKey:'glassbowl_pill_config',tag:'§GB-PILLS'});
   }
   if(document.readyState!=='loading')mount();else window.addEventListener('load',mount);
 })();</script>

@@ -76,9 +76,20 @@ const gone = (page, sel) => page.$(sel).then(el => !el);
               await trig.click(); await page.waitForTimeout(200); c2 = await page.$eval('#gb-pill', e => getComputedStyle(e).display); }
   console.log('§GB-WITNESS-6 collapse afterToggle1=' + c1 + ' afterToggle2=' + c2);
 
+  // Collapsed-default dock now — OPEN it so the pills are interactable/visible for the checks + screenshot.
+  if (trig) { await trig.click(); await page.waitForTimeout(250); }
   await page.screenshot({ path: path.join(__dirname, 'glassbowl_pills_1280.png') });
 
-  // W-HOME — click the home pill, expect §GB-HOME log + nav to erp.html
+  // W-pill long-press → #gb-whist-drawer with 2 chips (Z + bomb). HISTORY_KNOB_DIAL §FOLLOWUP.
+  const gbDrawer = await (async () => {
+    const w = await page.$('#pill-worldhist'); if (!w) return { ok:false, n:0 };
+    await w.dispatchEvent('pointerdown'); await page.waitForTimeout(600);
+    const n = await page.$$eval('#gb-whist-drawer button', bs => bs.length).catch(() => 0);
+    await w.dispatchEvent('pointerup'); return { ok: n === 2, n };
+  })();
+  console.log('§GB-WITNESS-8 worldDrawer chips=' + gbDrawer.n);
+
+  // W-HOME — click the home pill LAST (it navigates away). Closes the drawer + fires §GB-HOME.
   const homeBtn = await page.$('#pill-home');
   let homeLogged = false, urlAfter = '(no-home-pill)';
   if (homeBtn) {
@@ -89,11 +100,11 @@ const gone = (page, sel) => page.$(sel).then(el => !el);
   }
   console.log('§GB-WITNESS-7 home logged=' + homeLogged + ' url=' + urlAfter);
 
-  const GB_EXPECT = ['home','trace','untangle','reset','mute','panel','edit','qr','showme','about'];
+  const GB_EXPECT = ['home','trace','untangle','reset','mute','panel','worldhist','edit','qr','showme','about'];
   const gbIdsOk = GB_EXPECT.every(id => gbIds.includes(id)) && gbIds.length === GB_EXPECT.length;
   const gbPass = gbIdsOk && gbBar && allLooseGone && iconMiss === 'none' && errs.length === 0 &&
-    /source=registry/.test(gbLog) && /handAuthored=0/.test(gbLog) && wm && wm.pe === 'none' && wm.op <= 0.15 &&
-    homeLogged && /erp\.html/.test(urlAfter);
+    /source=registry/.test(gbLog) && /handAuthored=0/.test(gbLog) && wm && wm.pe === 'none' &&
+    homeLogged && /erp\.html/.test(urlAfter) && gbDrawer.ok;   // weakness now lives in the SVG tile fill-opacity (see poc_concept_suffix.js), not element opacity
   console.log('§GB-RESULT ' + (gbPass ? 'PASS' : 'FAIL') + ' idsOk=' + gbIdsOk + ' bar=' + !!gbBar +
     ' looseGone=' + allLooseGone + ' iconClean=' + (iconMiss === 'none') + ' noErr=' + (errs.length === 0) +
     ' wmOk=' + !!(wm && wm.pe === 'none') + ' home=' + (homeLogged && /erp\.html/.test(urlAfter)));
@@ -121,12 +132,24 @@ const gone = (page, sel) => page.$(sel).then(el => !el);
     ' conceptWM=' + (grvWm ? 'present' : 'MISSING'));
   console.log('§GRV-WITNESS-4 iconMiss=' + grvIcon + ' pageErrors=' + (errs.length ? errs.join('|') : 0));
 
-  const GRV_EXPECT = ['home','undo','redo','edit','showme'];
+  // open the collapsed dock, then long-press worldhist → drawer with 2 chips
+  const gtrig = await page.$('#gb-pill-trigger');
+  if (gtrig) { await gtrig.click(); await page.waitForTimeout(250); }
+  const grvDrawer = await (async () => {
+    const w = await page.$('#pill-worldhist'); if (!w) return { ok:false, n:0 };
+    await w.dispatchEvent('pointerdown'); await page.waitForTimeout(600);
+    const n = await page.$$eval('#gb-whist-drawer button', bs => bs.length).catch(() => 0);
+    await w.dispatchEvent('pointerup'); return { ok: n === 2, n };
+  })();
+  console.log('§GRV-WITNESS-5 worldDrawer chips=' + grvDrawer.n + ' undoRedoPillsGone=' +
+    (!grvIds.includes('undo') && !grvIds.includes('redo')));
+
+  const GRV_EXPECT = ['home','worldhist','edit','showme'];   // undo/redo pills REMOVED (W pill owns time nav now)
   const grvIdsOk = GRV_EXPECT.every(id => grvIds.includes(id)) && grvIds.length === GRV_EXPECT.length;
   const grvPass = grvIdsOk && grvBar && undoGone && redoGone && scrubKept && grvIcon === 'none' &&
-    errs.length === 0 && grvWm && /source=registry/.test(grvLog) && /handAuthored=0/.test(grvLog);
+    errs.length === 0 && grvWm && /source=registry/.test(grvLog) && /handAuthored=0/.test(grvLog) && grvDrawer.ok;
   console.log('§GRV-RESULT ' + (grvPass ? 'PASS' : 'FAIL') + ' idsOk=' + grvIdsOk + ' bar=' + !!grvBar +
-    ' undoRedoGone=' + (undoGone && redoGone) + ' scrub=' + scrubKept + ' noErr=' + (errs.length === 0));
+    ' undoRedoGone=' + (undoGone && redoGone) + ' scrub=' + scrubKept + ' drawer=' + grvDrawer.ok + ' noErr=' + (errs.length === 0));
   await page.screenshot({ path: path.join(__dirname, 'gravity_pills_1280.png') });
 
   await browser.close();
