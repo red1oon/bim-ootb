@@ -1317,6 +1317,43 @@ function setupPanels(A) {
       addRow('Settings (localStorage)', function () { var x = _lsBytes(); return x.n + ' keys · ' + _fmtBytes(x.b); }, null);
       addRow('Imported buildings (IndexedDB)', _idbInfo, _clearImportedDbs, true);
       addRow('Offline app cache (SW)', _swCacheInfo, _clearSwCaches, true);
+
+      // §OFFLINE_SURFACE: "Make available offline" row — honest status from GET_OFFLINE_STATUS
+      (function() {
+        var offRow = document.createElement('div');
+        offRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);';
+        var offL = document.createElement('span'); offL.textContent = 'Make available offline'; offL.style.cssText = 'flex:1;color:#cfe;';
+        var offSt = document.createElement('span'); offSt.textContent = '…'; offSt.style.cssText = 'color:#8ab4ff;font-size:11px;';
+        var offBtn = document.createElement('button');
+        offBtn.textContent = 'Download';
+        offBtn.style.cssText = 'padding:3px 10px;border:1px solid rgba(108,159,255,0.4);border-radius:6px;background:transparent;color:#6c9fff;font-size:11px;cursor:pointer;';
+        offBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); if (typeof A !== 'undefined' && A.startOfflineDownload) A.startOfflineDownload(); });
+        offRow.appendChild(offL); offRow.appendChild(offSt); offRow.appendChild(offBtn);
+        box.appendChild(offRow);
+        function _refreshOfflineStatus() {
+          if (!navigator.serviceWorker) { offSt.textContent = 'SW not supported'; offBtn.style.display = 'none'; return; }
+          navigator.serviceWorker.ready.then(function(reg) {
+            var ctrl = navigator.serviceWorker.controller || reg.active;
+            if (!ctrl) { offSt.textContent = 'SW not active'; return; }
+            var ch = new MessageChannel();
+            ch.port1.onmessage = function(ev) {
+              var d = ev.data;
+              if (d.allDeferred) {
+                offSt.textContent = '✓ Fully offline ready'; offSt.style.color = '#4caf50'; offBtn.style.display = 'none';
+                console.log('§OFFLINE-SURFACE row=Y button=wired status=full');
+              } else {
+                offSt.textContent = 'Core: ✓ cached · Full libs: not yet'; offSt.style.color = '#8ab4ff'; offBtn.style.display = '';
+                console.log('§OFFLINE-SURFACE row=Y button=wired status=core');
+              }
+            };
+            ctrl.postMessage({ type: 'GET_OFFLINE_STATUS' }, [ch.port2]);
+          });
+        }
+        _refreshOfflineStatus();
+        offBtn.addEventListener('pointerup', function() { setTimeout(_refreshOfflineStatus, 3000); });
+        console.log('§OFFLINE-SURFACE-RESULT PASS');
+      })();
+
       var foot = document.createElement('div');
       foot.style.cssText = 'color:#777;font-size:11px;margin-top:8px;';
       box.appendChild(foot);
