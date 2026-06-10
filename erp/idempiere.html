@@ -262,9 +262,18 @@
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
          pill-housed (the lightbulb 'Read / Compare' erpdoc pill on the side strip, wired to openReadCompare).
          A duplicate card link was redundant once the pill existed (#206). -->
-    <div id="idmp-login-step1">
-      <div class="idmp-login-label">Select a user</div>
+    <!-- Step 0 — TENANT SWITCHER (NEW_CLIENT_MGMT.md P3): only rendered when ≥2 installed tenants exist; a
+         single-tenant seed skips straight to the user list (zero behaviour change). -->
+    <div id="idmp-login-step0" style="display:none">
+      <div class="idmp-login-label">Select a tenant</div>
+      <div id="idmp-login-clients" class="idmp-login-list"></div>
+    </div>
+    <div id="idmp-login-step1" style="display:none">
+      <div class="idmp-login-label" id="idmp-login-step1-label">Select a user</div>
       <div id="idmp-login-users" class="idmp-login-list"></div>
+      <div class="idmp-login-actions" id="idmp-login-step1-actions" style="display:none">
+        <button id="idmp-login-tenants-back" class="ghost">&lsaquo; Tenants</button>
+      </div>
     </div>
     <div id="idmp-login-step2" style="display:none">
       <div class="idmp-login-label">Role</div>
@@ -321,7 +330,7 @@
 
 <script src="ad_parser.js?v=22"></script>
 <script src="ad_data.js?v=22"></script>
-<script src="idmp_session.js?v=22"></script>
+<script src="idmp_session.js?v=23"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
 <script src="erp_postings.js?v=23"></script>
 <script src="accts_posted.js?v=23"></script>
@@ -365,6 +374,7 @@
   // ── Session (docs §3b): identity + Role·Client·Org context SELECTION (no server, no auth) ──
   var _session = null;       // { user, role, client, org, roles, orgs, winSet } — null until login
   var _loginUser = null;     // the user picked at login step 1 (drives step 2)
+  var _loginClient = null;   // the tenant picked at login step 0 (filters steps 1/2; null = no/single tenant)
   var _lastMenu = { visible: 0, total: 0 };  // last scopeMenu counts (for the §witness)
   var _pendingWid = null;    // ?window=<id> deep link, opened AFTER login
   var _pendingRid = null;    // ?record=<pk> deep link — land on this record post-login (blank if wrong client/role)
@@ -489,7 +499,15 @@
     // Proper practice: tenant SETUP/migration is a SystemAdmin act (System, client 0 — ?login=SuperUser); a
     // migrated tenant is then entered directly (?login=Odoo). Config-in-pill (iDempiere-style) comes later.
     var loginParam = new URLSearchParams(location.search).get('login');
-    if (!(loginParam && _tryAutoLogin(loginParam))) showLogin('user');
+    // ?client=<id|name> pre-selects a tenant (skips step 0 → filtered user list); ?login= still bypasses the picker.
+    var clientParam = new URLSearchParams(location.search).get('client');
+    if (clientParam) {
+      var cl = SES.listClients(db).filter(function (c) { return String(c.id) === clientParam || (c.name || '').toLowerCase().indexOf(String(clientParam).toLowerCase()) >= 0; })[0];
+      if (cl) { _loginClient = cl; console.log('§IDEMPIERE login-client-preselect ' + cl.name + '(' + cl.id + ')'); }
+    }
+    if (loginParam && _tryAutoLogin(loginParam)) { /* auto-login bypasses the picker */ }
+    else if (_loginClient) { $('idmp-login').style.display = 'flex'; loginStep1(); _syncPillStage(); }
+    else showLogin('user');
   }
   function _tryAutoLogin(q) {
     var ql = String(q).toLowerCase();
@@ -508,17 +526,44 @@
     return true;
   }
 
-  // ── Login flow (docs §3b/§3b.1): pick user → Role/Client/Org → role-scoped session ──
+  // ── Login flow (docs §3b/§3b.1): [pick tenant →] pick user → Role/Client/Org → role-scoped session ──
+  // Step 0 (tenant switcher, NEW_CLIENT_MGMT.md P3) surfaces ONLY when ≥2 installed tenants exist; otherwise the
+  // single tenant is auto-selected and we land straight on the user list — zero change for a single-tenant seed.
   function showLogin(step) {
     $('idmp-login').style.display = 'flex';
-    if (step === 'role' && _loginUser) loginStep2(_loginUser); else loginStep1();
+    if (step === 'role' && _loginUser) { loginStep2(_loginUser); }
+    else {
+      var tenants = SES.listClients(db);
+      if (tenants.length >= 2) { _loginClient = null; loginStep0(tenants); }
+      else { _loginClient = tenants[0] || null; loginStep1(); }   // auto-skip: 0/1 tenant → user list (as before)
+    }
     _syncPillStage();   // §C — picker open = back at the front door → Install/Migrate visible again
   }
+  function loginStep0(tenants) {
+    $('idmp-login-step1').style.display = 'none';
+    $('idmp-login-step2').style.display = 'none';
+    $('idmp-login-step0').style.display = '';
+    var host = $('idmp-login-clients'); host.innerHTML = '';
+    (tenants || SES.listClients(db)).forEach(function (c) {
+      var row = el('div', 'idmp-login-user');
+      row.appendChild(el('span', 'av', (c.name || '?').charAt(0).toUpperCase()));
+      row.appendChild(el('span', 'nm', c.name));
+      row.appendChild(el('span', 'tag', c.users + (c.users === 1 ? ' user' : ' users') + ' · ' + c.id));
+      row.addEventListener('click', function () { _loginClient = c; loginStep1(); });
+      host.appendChild(row);
+    });
+    console.log('§IDEMPIERE login-step0 tenants=' + (tenants ? tenants.length : 0));
+  }
   function loginStep1() {
+    $('idmp-login-step0').style.display = 'none';
     $('idmp-login-step2').style.display = 'none';
     $('idmp-login-step1').style.display = '';
+    // when a tenant was picked, scope the user list to it + offer a "‹ Tenants" back; else the full list (as before)
+    var users = _loginClient ? SES.usersForClient(db, _loginClient.id) : SES.listUsers(db);
+    $('idmp-login-step1-label').textContent = _loginClient ? ('Select a user · ' + _loginClient.name) : 'Select a user';
+    $('idmp-login-step1-actions').style.display = (_loginClient && SES.listClients(db).length >= 2) ? '' : 'none';
     var host = $('idmp-login-users'); host.innerHTML = '';
-    SES.listUsers(db).forEach(function (u) {
+    users.forEach(function (u) {
       var row = el('div', 'idmp-login-user' + (u.hasRoles ? '' : ' disabled'));
       row.appendChild(el('span', 'av', (u.name || '?').charAt(0).toUpperCase()));
       row.appendChild(el('span', 'nm', u.name));
@@ -528,10 +573,13 @@
     });
   }
   function loginStep2(u) {
+    $('idmp-login-step0').style.display = 'none';
     $('idmp-login-step1').style.display = 'none';
     $('idmp-login-step2').style.display = '';
     var roleSel = $('idmp-login-role'); roleSel.innerHTML = '';
     var roles = SES.rolesForUser(db, u.id);
+    // tenant chosen → show only that client's roles (so the readonly Client field matches the picked tenant)
+    if (_loginClient) { var f = roles.filter(function (r) { return r.clientId === _loginClient.id; }); if (f.length) roles = f; }
     roles.forEach(function (r) { var o = el('option', null, r.name); o.value = r.id; roleSel.appendChild(o); });
     function syncRole() {
       var rid = Number(roleSel.value);
@@ -1473,6 +1521,7 @@
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
     $('idmp-login-back').addEventListener('click', loginStep1);
+    $('idmp-login-tenants-back').addEventListener('click', function () { _loginClient = null; _loginUser = null; loginStep0(SES.listClients(db)); });
     $('idmp-login-ok').addEventListener('click', doLogin);
     $('idmp-switch-btn').addEventListener('click', function () { showLogin('role'); });
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
