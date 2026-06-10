@@ -450,8 +450,19 @@
         var mTbl = 0, mRow = 0;
         if (stbls.length) stbls[0].values.forEach(function (tv) {
           var t = tv[0], r = sdb.exec('SELECT * FROM "' + t + '"'); if (!r.length) return;
-          var cs = r[0].columns, ins = 'INSERT OR IGNORE INTO "' + t + '" (' + cs.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + cs.map(function () { return '?'; }).join(',') + ')';
-          r[0].values.forEach(function (vals) { try { db.run(ins, vals); mRow++; } catch (e) {} });
+          // INTERSECT shard columns with the base table's columns. A real tenant shard is a SCHEMA SUPERSET of the
+          // curated base (a full PG/Odoo export carries dozens more columns than this AD subset); inserting a
+          // shard-only column throws → the whole row (the tenant's order/invoice) silently fails to land → the
+          // migrated client never appears. Keep only the columns the base table has, matched case-insensitively
+          // (base = canonical CamelCase, shards may be lowercase). Skip a table the base doesn't carry. NON-INVENT:
+          // we only ever DROP unknown columns, never synthesize one. (NEW_CLIENT_MGMT.md install fix, 2026-06-11.)
+          var bi = db.exec('PRAGMA table_info("' + t + '")'); if (!bi.length) return;
+          var baseCols = {}; bi[0].values.forEach(function (cr) { baseCols[String(cr[1]).toLowerCase()] = true; });
+          var idx = [], cols = [];
+          r[0].columns.forEach(function (c, i) { if (baseCols[String(c).toLowerCase()]) { idx.push(i); cols.push(c); } });
+          if (!cols.length) return;
+          var ins = 'INSERT OR IGNORE INTO "' + t + '" (' + cols.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + cols.map(function () { return '?'; }).join(',') + ')';
+          r[0].values.forEach(function (vals) { try { db.run(ins, idx.map(function (i) { return vals[i]; })); mRow++; } catch (e) {} });
           mTbl++;
         });
         sdb.close();
