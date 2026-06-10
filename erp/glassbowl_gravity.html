@@ -92,6 +92,8 @@
 </style>
 </head>
 <body>
+<!-- CONCEPT-UI watermark: very weak, non-interactive, behind the chrome — honest "concept surface" stamp (PILLS_TO_GLASSBOWL_CONSOLIDATE.md, user 2026-06-10). -->
+<div id="conceptWM" aria-hidden="true" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:6;font:800 13vw/1 system-ui,-apple-system,sans-serif;letter-spacing:.06em;color:#cfe8ee;opacity:.045;text-transform:uppercase;user-select:none;transform:rotate(-18deg);white-space:nowrap;">Concept UI</div>
 <script>/* offline SW — register on load, but warm the cache LATER (on idle) so there's no load lag */
 /* SYNC-POINT: keep SW-update toast identical to glassbowl.html (generator VIEWER_JS, line ~520).
    Same behaviour: updatefound -> installed+controller -> #swToast (hidden at rest) -> tap posts
@@ -143,10 +145,9 @@ if('serviceWorker' in navigator){addEventListener('load',function(){navigator.se
 <div id="card"></div>
 
 <!-- view-log scrubber (Red Pill TM pattern): ↶ · timeline of views · ↷ -->
+<!-- §GRV-PILLS: the ↶/↷ buttons moved into the shared ⋯ pill registry (undo/redo); the #scrub view-log timeline stays as the in-canvas scrubber. -->
 <div id="vbar">
-  <button id="undoBtn" title="back to the last view — Ctrl+Z">↶</button>
   <div id="scrub" title="scrub the view-log — the kernel-log magic, on views"><div id="scrubline"></div><div id="scrubticks"></div></div>
-  <button id="redoBtn" title="forward — Ctrl+Shift+Z">↷</button>
 </div>
 
 <div id="foot">Every number is a live <b>GROUP BY</b> over 8 real GardenWorld orders ·
@@ -764,6 +765,7 @@ function renderScrub(){ const t=document.getElementById('scrubticks'); if(!t) re
 function undoView(){ if(viewIdx>0){ viewIdx--; applyView(viewHist[viewIdx]); flashHint('↶ stepped back through the view-log (the kernel-log magic, read-only)'); } }
 function redoView(){ if(viewIdx<viewHist.length-1){ viewIdx++; applyView(viewHist[viewIdx]); } }
 if(undoBtn) undoBtn.onclick=undoView; if(redoBtn) redoBtn.onclick=redoView;
+window.undoView=undoView; window.redoView=redoView;  /* §GRV-PILLS — expose for the ⋯ undo/redo pills (loose ↶/↷ retired) */
 addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){ e.preventDefault(); e.shiftKey?redoView():undoView(); } });
 
 /* W-DOCKLENS: track the pointer over the bowl (desktop hover AND mobile touch-drag) so tick()'s
@@ -790,5 +792,26 @@ setTimeout(()=>hint.style.opacity=0,5000);
 /* W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + read-only restore via the existing applyView. */
 try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../'});WholeHistory.registerLocalRestore(function(v){applyView(v);});WholeHistory.consumeRestore('gravity',function(v){applyView(v);});}}catch(e){}
 </script>
+<!-- §GRV-PILLS — shared ⋯ pill registry (same renderer as glassbowl/idempiere): home · undo · redo · edit · showme. -->
+<script src="icons.js?v=3"></script>
+<script src="pill_builder.js?v=3"></script>
+<script src="glassbowl_pills.js?v=1"></script>
+<script>(function(){
+  function _hintOn(){var h=document.getElementById('hint');return !!(h&&getComputedStyle(h).display!=='none'&&parseFloat(getComputedStyle(h).opacity)>0.05);}
+  function _toggleHint(){var h=document.getElementById('hint');if(!h)return;var on=_hintOn();h.style.display='';h.style.opacity=on?'0':'1';}
+  function mount(){
+    if(!window.GlassbowlPills){return;}
+    window.GlassbowlPillActions={
+      home:  function(){console.log('§GRV-HOME → erp.html');location.href='erp.html';},
+      undo:  function(){if(window.undoView)window.undoView();},
+      redo:  function(){if(window.redoView)window.redoView();},
+      edit:  function(){ /* honest disabled stub — gravity editing is T3 */ console.log('§GRV-EDIT stub T3'); var t=document.createElement('div');t.textContent='Editing — coming later (T3)';t.style.cssText='position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999;padding:10px 22px;border-radius:8px;font:13px system-ui;background:rgba(16,22,30,.95);color:#cfe8ee;border:1px solid rgba(86,214,224,.3);pointer-events:none;transition:opacity .5s';document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';},2200);setTimeout(function(){if(t.parentNode)t.remove();},2700); },
+      showme:function(){_toggleHint();}
+    };
+    window.GlassbowlPillActive={ showme:function(){return _hintOn();} };
+    window.GlassbowlPills.mount({manifest:'pills_gravity.json?v=1',storageKey:'gravity_pill_config',tag:'§GRV-PILLS'});
+  }
+  if(document.readyState!=='loading')mount();else window.addEventListener('load',mount);
+})();</script>
 </body>
 </html>
