@@ -88,12 +88,17 @@
   }
   function _clearHistory() {
     // The page timeline + cross-page log live in localStorage, NOT the SW cache — "clear cache" never wipes them.
-    if (window.confirm('Clear history for this page?\nThis wipes the session timeline and cannot be undone.')) {
+    if (window.confirm('Clear history for this page AND the world timeline?\nThis wipes the session timeline and cannot be undone.')) {
       try { Object.keys(localStorage).filter(function (k) { return k.indexOf('bim.hist') === 0 || k.indexOf('gb.viewlog') === 0 || k.indexOf('glassbowl') === 0 || k.indexOf('gravity') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+      // The page keeps an IN-MEMORY view-log (viewHist) — clearing only localStorage left the page Z
+      // bar still showing old views and recordView() re-mirrored the current view back into the world
+      // log, so the bomb looked like it "did nothing". The host resets its in-memory log + re-renders.
+      var reset = (typeof window.GlassbowlHistoryReset === 'function') ? 'hook' : 'none';
+      try { if (window.GlassbowlHistoryReset) window.GlassbowlHistoryReset(); } catch (e) { reset = 'err'; }
       if (window.WholeHistory && WholeHistory.clear) try { WholeHistory.clear(); } catch (e) {}
       // refresh the World overlay in place (if open) so it shows empty straight away, not stale entries.
       try { var p = document.getElementById('whole-hist-panel'); if (p && p.classList.contains('show') && window.WholeHistory && WholeHistory.open) WholeHistory.open(); } catch (e) {}
-      console.log('§GB-HIST clear via=bomb confirmed');
+      console.log('§GB-HIST clear via=bomb confirmed world=cleared inmem=' + reset);
     } else { console.log('§GB-HIST clear via=bomb cancelled'); }
   }
   function _worldDrawer(srcBtn) {

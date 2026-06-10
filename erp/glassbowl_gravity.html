@@ -788,6 +788,10 @@ bowl.addEventListener('pointercancel',()=>{ lensCursor=null; window.__lensCursor
 
 positionBall(); relayout(); tick();
 recordView();  // log the opening view as the first entry
+/* Bomb (W long-press → clear) must reset the IN-MEMORY view-log too, not just localStorage — else the
+   page Z (#vbar) keeps showing old views and recordView() re-mirrors the current view to the world log
+   (the "bomb did nothing" report). glassbowl_pills.js calls this before WholeHistory.clear(). */
+window.GlassbowlHistoryReset=function(){ viewHist=[]; viewIdx=-1; if(typeof syncUndo==='function')syncUndo(); else if(typeof renderScrub==='function')renderScrub(); console.log('§GRV-HIST-RESET viewHist=0'); };
 setTimeout(()=>hint.style.opacity=0,5000);
 /* W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + read-only restore via the existing applyView. */
 try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../',launcher:false});WholeHistory.registerLocalRestore(function(v){applyView(v);});WholeHistory.consumeRestore('gravity',function(v){applyView(v);});}}catch(e){}  /* launcher:false — World History is launched from the W pill now, not the bottom-left clock */
@@ -795,7 +799,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../',
 <!-- §GRV-PILLS — shared ⋯ pill registry (same renderer as glassbowl/idempiere): home · undo · redo · edit · showme. -->
 <script src="icons.js?v=3"></script>
 <script src="pill_builder.js?v=4"></script>
-<script src="glassbowl_pills.js?v=4"></script>
+<script src="glassbowl_pills.js?v=5"></script>
 <script>(function(){
   function _hintOn(){var h=document.getElementById('hint');return !!(h&&getComputedStyle(h).display!=='none'&&parseFloat(getComputedStyle(h).opacity)>0.05);}
   function _toggleHint(){var h=document.getElementById('hint');if(!h)return;var on=_hintOn();h.style.display='';h.style.opacity=on?'0':'1';}
