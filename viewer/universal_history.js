@@ -103,6 +103,9 @@
   // the look only — it NEVER calls KernelOps.undo/redo (not a model op). Gated by the `event` profile bucket.
   function recordEvent(type, label, ref) {
     if (!HB.isEnabled() || _isReHome()) return;   // A2: read-only re-home never records
+    // A scrub-restore drives the REAL setters (HistoryTap.applyView → section.write → A.toggleSection):
+    // recording there would mint fake dots while merely browsing the past. isApplying() gates it.
+    if (window.HistoryTap && HistoryTap.isApplying && HistoryTap.isApplying()) return;
     HB.push({ bucket: 'event', kind: 'event', type: type, label: label || type, readonly: true,
       viewState: _tapView(), ref: (ref != null ? ref : null), sigKey: 'event:' + type + ':' + (label || '') });
   }
@@ -301,6 +304,12 @@
     combine: _combine,                      // §6 cross-branch VIEW combine (color⊕section)
     cherryPick: _cherryPick                 // §6 model op replay (disjoint graft)
   });
+  // Implementing HISTORY_SESSION_EVENTS.md §RESUME — load diagnostic: which session Z loaded, read-only or
+  // live, under which tree key, with how many dots. One line pinpoints "new session shows no dots" reports.
+  try {
+    console.log('§HIST_SESSION id=' + _sessionId() + ' reHome=' + _isReHome() +
+      ' treeKey=' + _treeKey() + ' dots=' + HB.list().length);
+  } catch (e) {}
 
   // commitOp wrapper — record EVERY model op as it lands.
   (function wrapCommit() {
