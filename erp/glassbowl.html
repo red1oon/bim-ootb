@@ -765,6 +765,10 @@ function captureView(){return {focus:focusId,trace:traceMode,seed:(traceMode&&cu
 function viewLabel(v){if(v.hint)return v.hint;if(v.trace)return "trace"+(v.seed!=null?" #"+v.seed:"");if(v.dossier)return "dossier "+fname(v.dossier);if(v.focus)return "focus "+fname(v.focus);var off=["containment","derivation","settlement","reference"].filter(function(kk){return !v.show[kk];});if(off.length)return "filter \u2212"+off.length;if(Math.abs(v.yaw)>0.05||Math.abs(v.pitch)>0.05)return "orbit";return "overview";}
 function recordView(){if(vlRestoring)return;var v=captureView();v.hint=vlHint;vlHint=null;if(viewIdx>=0&&JSON.stringify(viewHist[viewIdx])===JSON.stringify(v))return;viewHist=viewHist.slice(0,viewIdx+1);viewHist.push(v);viewIdx=viewHist.length-1;renderScrub();try{if(typeof WholeHistory!=="undefined"&&WholeHistory.record)WholeHistory.record({page:"glassbowl",label:viewLabel(v),kind:"view",ref:v});}catch(e){}console.log("\u00a7VIEWLOG idx="+viewIdx+" total="+viewHist.length+" label="+viewLabel(v));}
 window.recordView=recordView;window.__viewHist=viewHist;
+// Bomb (W long-press → clear) must reset the IN-MEMORY view-log too, not just localStorage — else the
+// page Z (#scrub) keeps showing old views and recordView() re-mirrors the current view to the world log.
+// glassbowl_pills.js calls this before WholeHistory.clear().
+window.GlassbowlHistoryReset=function(){viewHist=[];viewIdx=-1;window.__viewHist=viewHist;if(typeof renderScrub==="function")renderScrub();console.log("§GB-HIST-RESET viewHist=0");};
 // restore a captured view (PURE-READ): re-apply focus/trace/spine-toggles/orbit. No persistence writes.
 function applyView(v){vlRestoring=true;try{
  ["containment","derivation","settlement","reference"].forEach(function(kk,i){show[kk]=v.show[kk];var cb=document.querySelectorAll("#legend input[type=checkbox]")[i];if(cb)cb.checked=v.show[kk];});
