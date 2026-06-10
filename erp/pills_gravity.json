@@ -2,12 +2,11 @@
   "version": 1,
   "spec": "PILLS_TO_GLASSBOWL_CONSOLIDATE.md — fold every loose Gravity control into the shared ⋯ pill registry.",
   "registry": "pill_builder.js (used as-is — same renderer as glassbowl/erp/idempiere)",
-  "note": "SIBLING manifest for the Gravity surface (glassbowl_gravity.html, hand-authored). The in-canvas lens chips (Partner/Month/Status/Type) + measure chips stay as the PRIMARY lens control (NOT pills). The #scrub view-log timeline stays in #vbar; only its flanking ↶/↷ buttons fold into the undo/redo pills. fn bound BY ID in glassbowl_pills.js to window.GlassbowlPillActions.",
+  "note": "SIBLING manifest for the Gravity surface (glassbowl_gravity.html, hand-authored). The in-canvas lens chips (Partner/Month/Status/Type) + measure chips stay as the PRIMARY lens control (NOT pills). The #scrub view-log timeline stays in #vbar. HISTORY_KNOB_DIAL.md §FOLLOWUP: the custom undo/redo pills are REMOVED — time is navigated via the W (World History) pill (tap=cross-page overlay; long-press=drawer with Z page-timeline + bomb clear), mirroring viewer + idempiere. fn bound BY ID in glassbowl_pills.js to window.GlassbowlPillActions.",
   "pills": [
-    { "id": "home",   "name": "Home — back to ERP", "key": "", "icon": "home",       "order": 0, "note": "navigate to erp.html." },
-    { "id": "undo",   "name": "Undo view",          "key": "", "icon": "undo2",      "order": 1, "note": "back to the last view — Ctrl+Z (view-log step, never a kernel undo)." },
-    { "id": "redo",   "name": "Redo view",          "key": "", "icon": "redo2",      "order": 2, "note": "forward — Ctrl+Shift+Z." },
-    { "id": "edit",   "name": "Edit",               "key": "", "icon": "edit",       "order": 3, "note": "editing — coming later (T3); honest disabled-stub toast for now." },
-    { "id": "showme", "name": "ShowMe / Need Help", "key": "", "icon": "circleHelp", "order": 4, "note": "toggle the shared help_overlay NeedHelp guide (lit = on)." }
+    { "id": "home",      "name": "Home — back to ERP", "key": "", "icon": "home",      "order": 0, "note": "navigate to erp.html." },
+    { "id": "worldhist", "name": "World History",      "key": "w","icon": "worldHist", "order": 1, "note": "HISTORY_KNOB_DIAL.md — TAP = the cross-page History overlay (which building/doc/page); LONG-PRESS = drawer with Z (this page's view-log timeline) + bomb (clear history, warns first). Replaces the bottom-left clock launcher (WholeHistory mounts {launcher:false}) + the old undo/redo pills." },
+    { "id": "edit",      "name": "Edit",               "key": "", "icon": "edit",      "order": 2, "note": "editing — coming later (T3); honest disabled-stub toast for now." },
+    { "id": "showme",    "name": "ShowMe / Need Help", "key": "", "icon": "circleHelp","order": 3, "note": "toggle the shared help guide (lit = on) — same Help affordance as the other pages." }
   ]
 }

@@ -46,9 +46,10 @@
     var s = document.createElement('style');
     s.id = 'gb-pill-style';
     s.textContent =
-      // Desktop: right-edge vertical strip (matches idempiere.html's #idmp-pillbar idiom).
-      '#gb-pillbar{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:1200;' +
-        'display:flex;flex-direction:column;align-items:center;gap:8px;}' +
+      // Desktop: BOTTOM-RIGHT corner (consistent with erp.html/idempiere.html/viewer, v611) — the ⋯ rests in
+      // the corner and the strip rises UP above it, so it never covers mid-screen content (was right-centred).
+      '#gb-pillbar{position:fixed;right:12px;bottom:12px;z-index:1200;' +
+        'display:flex;flex-direction:column;align-items:flex-end;gap:8px;}' +
       '#gb-pill{display:flex;flex-direction:column;gap:6px;max-height:62vh;overflow-y:auto;' +
         'padding:6px;border-radius:16px;background:rgba(16,22,30,0.86);' +
         'border:1px solid rgba(86,214,224,0.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
@@ -77,6 +78,49 @@
     document.head.appendChild(s);
   }
 
+  // HISTORY_KNOB_DIAL.md §FOLLOWUP — the W (worldhist) pill's long-press drawer: two stacked chips above it.
+  //   Z (docHist) = toggle THIS page's view-log timeline (#scrub/#vbar) · bomb = clear history (warns first).
+  //   Mirrors erp/idmp_pills.js _worldDrawer (the proven 2-chip drawer). Reuses worldHist/docHist/bomb icons.
+  function _histIconSvg(name, color) {
+    var ic = (window.ICONS || {})[name];
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (ic ? ic.svg : '') + '</svg>';
+  }
+  function _clearHistory() {
+    // The page timeline + cross-page log live in localStorage, NOT the SW cache — "clear cache" never wipes them.
+    if (window.confirm('Clear history for this page?\nThis wipes the session timeline and cannot be undone.')) {
+      try { Object.keys(localStorage).filter(function (k) { return k.indexOf('bim.hist') === 0 || k.indexOf('gb.viewlog') === 0 || k.indexOf('glassbowl') === 0 || k.indexOf('gravity') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+      if (window.WholeHistory && WholeHistory.clear) try { WholeHistory.clear(); } catch (e) {}
+      console.log('§GB-HIST clear via=bomb confirmed');
+    } else { console.log('§GB-HIST clear via=bomb cancelled'); }
+  }
+  function _worldDrawer(srcBtn) {
+    var open = document.getElementById('gb-whist-drawer');
+    if (open) { open.remove(); return; }
+    if (!srcBtn) return;
+    var r = srcBtn.getBoundingClientRect();
+    var d = document.createElement('div'); d.id = 'gb-whist-drawer';
+    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;gap:6px;' +
+      'top:' + (r.top - 102) + 'px;left:' + r.left + 'px;';
+    function chip(name, title, color, onTap) {
+      var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
+      b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
+        'border-radius:8px;background:rgba(16,22,30,0.9);color:' + color + ';cursor:pointer;' +
+        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);';
+      b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('gb-whist-drawer'); if (dd) dd.remove(); });
+      return b;
+    }
+    d.appendChild(chip('docHist', 'Page history (Z) — this page\'s view-log timeline', '#6c9fff',
+      function () { var A = window.GlassbowlPillActions || {}; if (A.pagehistory) A.pagehistory(); }));
+    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearHistory));
+    document.body.appendChild(d);
+    setTimeout(function () {
+      var off = function (ev) { var dd = document.getElementById('gb-whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
+      document.addEventListener('pointerdown', off, true);
+    }, 0);
+    console.log('§GB-PILL drawer=worldhist items=Z,bomb');
+  }
+
   function mount(opts) {
     opts = opts || {};
     var manifestUrl = opts.manifest || 'pills_glassbowl.json';
@@ -95,6 +139,8 @@
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
         act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
         if (ACTIVE[p.id]) act.isActive = ACTIVE[p.id];
+        // HISTORY_KNOB_DIAL.md — the W pill long-presses into a drawer (Z page-timeline + bomb clear).
+        if (p.id === 'worldhist') act.hold = function (btn) { _worldDrawer(btn); };
         return act;
       });
 
@@ -116,12 +162,12 @@
       var PB = window.PillBuilder({
         pill: pill, trigger: trigger, APP: {}, actions: actions,
         order: actions.map(function (a) { return a.id; }),
-        storageKey: storageKey,
-        persistent: true
+        storageKey: storageKey
+        // NOT persistent — outside-click collapses the strip, consistent with erp.html/idempiere.html/viewer (v612).
       });
       trigger.addEventListener('pointerup', function (e) { e.stopPropagation(); PB.toggle(); });
       window.GlassbowlPills.builder = PB;
-      PB.toggle();   // open + sync (persistent bar)
+      PB.close();   // collapsed-default: the clean resting state is just the ⋯ (consistent with the other surfaces)
 
       var mounted = pill.querySelectorAll('button[id^="pill-"]').length;
       var hidden = (PB.getConfig().hidden || []).length;

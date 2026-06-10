@@ -10,9 +10,10 @@
     { "id": "reset",    "name": "Reset view",         "key": "", "icon": "maximize",   "order": 3, "note": "re-home the bubbles + camera to the at-rest layout." },
     { "id": "mute",     "name": "Mute / unmute",      "key": "", "icon": "volume2",    "order": 4, "note": "toggle the interface sounds (lit = muted)." },
     { "id": "panel",    "name": "Info panel",         "key": "", "icon": "panelRight", "order": 5, "note": "hide / show the side info panel (lit = open)." },
-    { "id": "edit",     "name": "Edit (CRUD ring)",   "key": "", "icon": "edit",       "order": 6, "note": "open the CRUD ring-of-fire on the focused record (crud_overlay)." },
-    { "id": "qr",       "name": "Scan QR",            "key": "", "icon": "scan",       "order": 7, "note": "scan a record's QR — no typing (opens the camera)." },
-    { "id": "showme",   "name": "ShowMe / Need Help", "key": "", "icon": "circleHelp", "order": 8, "note": "toggle the shared help_overlay NeedHelp guide (lit = on)." },
-    { "id": "about",    "name": "How to read this",   "key": "", "icon": "lifeBuoy",   "order": 9, "note": "toggle the How-to-read-Glassbowl card." }
+    { "id": "worldhist","name": "World History",      "key": "w","icon": "worldHist",  "order": 6, "note": "HISTORY_KNOB_DIAL.md — TAP = the cross-page History overlay; LONG-PRESS = drawer with Z (this page's view-log timeline) + bomb (clear history, warns first). Replaces the bottom-left clock launcher (WholeHistory mounts {launcher:false})." },
+    { "id": "edit",     "name": "Edit (CRUD ring)",   "key": "", "icon": "edit",       "order": 7, "note": "open the CRUD ring-of-fire on the focused record (crud_overlay)." },
+    { "id": "qr",       "name": "Scan QR",            "key": "", "icon": "scan",       "order": 8, "note": "scan a record's QR — no typing (opens the camera)." },
+    { "id": "showme",   "name": "ShowMe / Need Help", "key": "", "icon": "circleHelp", "order": 9, "note": "toggle the shared help_overlay NeedHelp guide (lit = on) — same Help affordance as the other pages." },
+    { "id": "about",    "name": "How to read this",   "key": "", "icon": "lifeBuoy",   "order": 10,"note": "toggle the How-to-read-Glassbowl card." }
   ]
 }

@@ -93,7 +93,7 @@
 </head>
 <body>
 <!-- CONCEPT-UI watermark: very weak, non-interactive, behind the chrome — honest "concept surface" stamp (PILLS_TO_GLASSBOWL_CONSOLIDATE.md, user 2026-06-10). -->
-<div id="conceptWM" aria-hidden="true" style="position:fixed;inset:0;pointer-events:none;z-index:6;background-image:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22300%22%20height%3D%22160%22%3E%3Ctext%20x%3D%226%22%20y%3D%22100%22%20transform%3D%22rotate(-28%20150%2080)%22%20font-family%3D%22system-ui%2C-apple-system%2Csans-serif%22%20font-size%3D%2230%22%20font-weight%3D%22800%22%20letter-spacing%3D%222%22%20fill%3D%22%23cfe8ee%22%20fill-opacity%3D%220.03%22%3ECONCEPT%20UI%3C%2Ftext%3E%3C%2Fsvg%3E');background-repeat:repeat;"></div>
+<div id="conceptWM" aria-hidden="true" style="position:fixed;inset:0;pointer-events:none;z-index:6;background-image:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22300%22%20height%3D%22160%22%3E%3Ctext%20x%3D%226%22%20y%3D%22100%22%20transform%3D%22rotate(-28%20150%2080)%22%20font-family%3D%22system-ui%2C-apple-system%2Csans-serif%22%20font-size%3D%2230%22%20font-weight%3D%22800%22%20letter-spacing%3D%222%22%20fill%3D%22%23cfe8ee%22%20fill-opacity%3D%220.07%22%3ECONCEPT%20UI%3C%2Ftext%3E%3C%2Fsvg%3E');background-repeat:repeat;"></div>
 <script>/* offline SW — register on load, but warm the cache LATER (on idle) so there's no load lag */
 /* SYNC-POINT: keep SW-update toast identical to glassbowl.html (generator VIEWER_JS, line ~520).
    Same behaviour: updatefound -> installed+controller -> #swToast (hidden at rest) -> tap posts
@@ -437,7 +437,7 @@ let W=0,H=0,cx=0,cy=0,Rmax=0,frameHX=0,frameHY=0;
 function resize(){
   W=innerWidth; H=innerHeight;
   const mobile=W<600;
-  const padL=14, padR=92 /* reserve the depth-dial column */, padT=mobile?104:64, padB=30;
+  const padL=14, padR=92 /* reserve the right drop-zone labels */, padT=mobile?104:64, padB=mobile?96:84;  /* padB lifted (was 30): clear the bottom so the World overlay / #scrub timeline don't obscure the lowest bubbles */
   const uW=Math.max(140,W-padL-padR), uH=Math.max(180,H-padT-padB);
   cx=padL+uW/2; cy=padT+uH/2; frameHX=uW/2; frameHY=uH/2;
   Rmax=Math.min(uW,uH)/2;
@@ -790,12 +790,12 @@ positionBall(); relayout(); tick();
 recordView();  // log the opening view as the first entry
 setTimeout(()=>hint.style.opacity=0,5000);
 /* W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + read-only restore via the existing applyView. */
-try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../'});WholeHistory.registerLocalRestore(function(v){applyView(v);});WholeHistory.consumeRestore('gravity',function(v){applyView(v);});}}catch(e){}
+try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../',launcher:false});WholeHistory.registerLocalRestore(function(v){applyView(v);});WholeHistory.consumeRestore('gravity',function(v){applyView(v);});}}catch(e){}  /* launcher:false — World History is launched from the W pill now, not the bottom-left clock */
 </script>
 <!-- §GRV-PILLS — shared ⋯ pill registry (same renderer as glassbowl/idempiere): home · undo · redo · edit · showme. -->
 <script src="icons.js?v=3"></script>
 <script src="pill_builder.js?v=4"></script>
-<script src="glassbowl_pills.js?v=1"></script>
+<script src="glassbowl_pills.js?v=2"></script>
 <script>(function(){
   function _hintOn(){var h=document.getElementById('hint');return !!(h&&getComputedStyle(h).display!=='none'&&parseFloat(getComputedStyle(h).opacity)>0.05);}
   function _toggleHint(){var h=document.getElementById('hint');if(!h)return;var on=_hintOn();h.style.display='';h.style.opacity=on?'0':'1';}
@@ -803,13 +803,15 @@ try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../'}
     if(!window.GlassbowlPills){return;}
     window.GlassbowlPillActions={
       home:  function(){console.log('§GRV-HOME → erp.html');location.href='erp.html';},
-      undo:  function(){if(window.undoView)window.undoView();},
-      redo:  function(){if(window.redoView)window.redoView();},
+      // HISTORY_KNOB_DIAL.md §FOLLOWUP — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) is wired
+      // in glassbowl_pills.js. pagehistory (Z chip) toggles THIS page's #vbar view-log timeline.
+      worldhist: function(){ if(window.WholeHistory&&WholeHistory.toggleOpen) WholeHistory.toggleOpen(); else console.log('§GRV-WHIST WholeHistory absent'); },
+      pagehistory: function(){ var v=document.getElementById('vbar'); if(v){ var hidden=getComputedStyle(v).display==='none'; v.style.display=hidden?'':'none'; console.log('§GRV-PAGEHIST vbar='+(hidden?'shown':'hidden')); } },
       edit:  function(){ /* honest disabled stub — gravity editing is T3 */ console.log('§GRV-EDIT stub T3'); var t=document.createElement('div');t.textContent='Editing — coming later (T3)';t.style.cssText='position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999;padding:10px 22px;border-radius:8px;font:13px system-ui;background:rgba(16,22,30,.95);color:#cfe8ee;border:1px solid rgba(86,214,224,.3);pointer-events:none;transition:opacity .5s';document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';},2200);setTimeout(function(){if(t.parentNode)t.remove();},2700); },
       showme:function(){_toggleHint();}
     };
     window.GlassbowlPillActive={ showme:function(){return _hintOn();} };
-    window.GlassbowlPills.mount({manifest:'pills_gravity.json?v=1',storageKey:'gravity_pill_config',tag:'§GRV-PILLS'});
+    window.GlassbowlPills.mount({manifest:'pills_gravity.json?v=2',storageKey:'gravity_pill_config',tag:'§GRV-PILLS'});
   }
   if(document.readyState!=='loading')mount();else window.addEventListener('load',mount);
 })();</script>
