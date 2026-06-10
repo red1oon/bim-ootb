@@ -35,6 +35,36 @@
     return out;
   }
 
+  // ── Step 0: installed TENANTS (the client switcher, NEW_CLIENT_MGMT.md P3) ──
+  // A login-able tenant = an AD_Client that has ≥1 active AD_Role granted (AD_User_Roles) to ≥1 active AD_User.
+  // This is exactly "which clients can someone enter" — the set a multi-tenant picker chooses among. NON-INVENT:
+  // folded from the same AD tables the user/role steps use; a client with no role+user grant never appears.
+  function listClients(db) {
+    var cs = rows(db,
+      'SELECT cl.AD_Client_ID AS id, cl.Name AS name, COUNT(DISTINCT ur.AD_User_ID) AS users ' +
+      'FROM AD_Client cl ' +
+      'JOIN AD_Role r ON r.AD_Client_ID = cl.AD_Client_ID AND r.IsActive = \'Y\' ' +
+      'JOIN AD_User_Roles ur ON ur.AD_Role_ID = r.AD_Role_ID ' +
+      'JOIN AD_User u ON u.AD_User_ID = ur.AD_User_ID AND u.IsActive = \'Y\' ' +
+      'WHERE cl.IsActive = \'Y\' ' +
+      'GROUP BY cl.AD_Client_ID, cl.Name ORDER BY cl.AD_Client_ID');
+    var out = cs.map(function (c) { return { id: num(c.id), name: (c.name || '').trim(), users: num(c.users) }; });
+    console.log('§IDMP-SESSION listClients tenants=' + out.length + ' [' + out.map(function (c) { return c.name + '(' + c.id + '):' + c.users; }).join(',') + '] source=ad_client/ad_role/ad_user_roles');
+    return out;
+  }
+
+  // ── users who can log into a given tenant (have an active role IN that client). Filters Step 1. ──
+  function usersForClient(db, clientId) {
+    var us = rows(db,
+      'SELECT DISTINCT u.AD_User_ID AS id, u.Name AS name FROM AD_User u ' +
+      'JOIN AD_User_Roles ur ON ur.AD_User_ID = u.AD_User_ID ' +
+      'JOIN AD_Role r ON r.AD_Role_ID = ur.AD_Role_ID AND r.IsActive = \'Y\' ' +
+      'WHERE u.IsActive = \'Y\' AND r.AD_Client_ID = ? ORDER BY u.AD_User_ID', [clientId]);
+    var out = us.map(function (u) { return { id: num(u.id), name: (u.name || '').trim(), clientId: num(clientId), hasRoles: true }; });
+    console.log('§IDMP-SESSION usersForClient client=' + clientId + ' users=' + out.length + ' source=ad_user_roles/ad_role');
+    return out;
+  }
+
   // ── Step 2: roles for a user (the Role dropdown) ──
   function rolesForUser(db, userId) {
     var rs = rows(db,
@@ -133,6 +163,8 @@
 
   var IdmpSession = {
     listUsers: listUsers,
+    listClients: listClients,
+    usersForClient: usersForClient,
     rolesForUser: rolesForUser,
     clientFor: clientFor,
     orgsForRole: orgsForRole,
