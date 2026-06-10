@@ -94,12 +94,33 @@
   function urlFor(page) { return _rootPrefix + (PATHS[page] || PATHS.landing); }
 
   // buildItems(mode, page) — the rows the bar renders, time-ordered. mode 'this' filters to `page`.
+  // Bake the entry's ref INTO the target URL as a deep-link, so navigation uses each page's PROVEN,
+  // deferred deep-link restore (post-login / post-load) instead of a fragile load-timing consumeRestore
+  // on a bare URL — which is why a foreign card "sometimes" reached the doc/building and sometimes didn't.
+  //   idempiere: ?window=W[&record=R] (the _pendingWid/_pendingRid path, fires after login).
+  //   viewer:    ?db=<dbUrl>&ghost=1 (the EXACT format the landing's openViewer uses; raw, unencoded —
+  //              the viewer reads it the same way; the db url has no '&' so it parses cleanly).
+  // No ref / no deep-linkable field → the bare page URL (+ the RESTORE_KEY handoff stays as a fallback).
+  function _deepUrl(page, ref) {
+    var base = urlFor(page);
+    try {
+      if (page === 'idempiere' && ref && ref.window != null) {
+        var u = base + '?window=' + ref.window;
+        if (ref.recordId != null) u += '&record=' + ref.recordId;
+        return u;
+      }
+      if (page === 'viewer' && ref && ref.db) {
+        return base + '?db=' + ref.db + '&ghost=1';
+      }
+    } catch (e) {}
+    return base;
+  }
   function buildItems(mode, page) {
     var es = entries();
     if (mode === 'this' && page) es = es.filter(function (e) { return e.page === page; });
     return es.map(function (e) {
       return { page: e.page, label: e.label, kind: e.kind, ts: e.ts, ref: e.ref,
-        pageLabel: PAGE_LABEL[e.page] || e.page, foreign: (e.page !== page), url: urlFor(e.page) };
+        pageLabel: PAGE_LABEL[e.page] || e.page, foreign: (e.page !== page), url: _deepUrl(e.page, e.ref) };
     });
   }
 
