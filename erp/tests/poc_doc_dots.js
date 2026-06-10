@@ -50,9 +50,9 @@ ok(Object.keys(one.changes).length === 1 && CORE.docLabel(one) === 'Save c_order
 var src = fs.readFileSync(path.join(__dirname, '../crud_overlay.js'), 'utf8');
 var calls = (src.match(/docDot\(CORE\.docLabel\(/g) || []).length;
 ok(calls === 5, 'docDot(CORE.docLabel(…)) wired at exactly the 5 funnel sites (3 CRUD + committed + dry): ' + calls);
-ok(/docDot\(CORE\.docLabel\(op, fname\(op\.key\)\) \+ ' \(dry\)'\)/.test(src), 'dry fallback marks the dot " (dry)"');
+ok(/docDot\(CORE\.docLabel\(op, fname\(op\.key\)\) \+ ' \(dry\)', op\)/.test(src), 'dry fallback marks the dot " (dry)" and passes op (§A-GRAIL)');
 ok(!/addEventListener\(['"](input|keydown|keyup)['"][\s\S]{0,200}docDot/.test(src), 'no input/key handler reaches docDot (commit boundary only)');
-ok(/function docDot\(label\) \{ try \{ if \(typeof global\.recordDocMoment === 'function'\)/.test(src), 'docDot delegates to the page recordDocMoment (typeof-guarded)');
+ok(/function docDot\(label, op\) \{ try \{ if \(typeof global\.recordDocMoment === 'function'\)/.test(src), 'docDot(label,op) delegates to the page recordDocMoment (typeof-guarded)');
 
 // 4. glassbowl.html recordDocMoment: page-local §DOC-DOT, no W mirror, docSeq distinctness, scrub-gated
 var gb = fs.readFileSync(path.join(__dirname, '../glassbowl.html'), 'utf8');
