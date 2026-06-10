@@ -72,8 +72,9 @@
     if (!srcBtn) return;
     var r = srcBtn.getBoundingClientRect();
     var d = document.createElement('div'); d.id = 'idmp-whist-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
-      'top:' + (r.top - 2) + 'px;left:' + Math.max(8, r.left - 104) + 'px;';   // SIDEWAYS: chips to the LEFT of the W pill (matches the _revealChip convention), not stacked above
+    // UPWARD column — bomb at top (outside/far = safety), Z at bottom (near pill = first reach)
+    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;align-items:center;gap:6px;' +
+      'bottom:' + (window.innerHeight - r.top + 6) + 'px;left:' + Math.max(8, r.left) + 'px;';
     function chip(name, title, color, onTap) {
       var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
       b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
@@ -82,9 +83,9 @@
       b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('idmp-whist-drawer'); if (dd) dd.remove(); });
       return b;
     }
+    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearIdmpHistory));
     d.appendChild(chip('docHist', 'Page history (Z) — this page\'s dot timeline', '#6c9fff',
       function () { if (window.IdmpHistory && window.IdmpHistory.toggleBar) window.IdmpHistory.toggleBar(); else if (window.IdmpHistory) window.IdmpHistory.render(); }));
-    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearIdmpHistory));
     document.body.appendChild(d);
     setTimeout(function () {
       var off = function (ev) { var dd = document.getElementById('idmp-whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
