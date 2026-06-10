@@ -275,13 +275,26 @@
   })();
 
   // Public API — UNCHANGED surface (navigate_find.js + scene.js + panels.js depend on it).
+  // The bomb (W long-press) clears the timeline; without a re-seed, open()/Z then shows an EMPTY bar with
+  // no "current" moment → "Z doesn't work after bomb". Re-seed ONE BUILDING_OPEN of the active building so
+  // the bar has a live starting point (push() already handles the empty tree; subsequent acts append).
+  function clearAndReseed() {
+    HB.clear();
+    try {
+      var A = _A();
+      var name = (A && A.activeBuilding) || '';
+      if (name) _recordOp('reseed', 'BUILDING_OPEN', { name: name }, []);
+    } catch (e) {}
+    console.log('§HIST_RESEED after=clear');
+  }
+
   window.UniversalHistory = {
     pushView: pushView,
     registerViewRestore: registerViewRestore,
     undo: HB.undo, redo: HB.redo, jumpTo: HB.jumpTo,
     setEnabled: HB.setEnabled, isEnabled: HB.isEnabled,
     setDepth: HB.setDepth, cycleDepth: HB.cycleDepth, getDepth: HB.getDepth,
-    clear: HB.clear, open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list,
+    clear: clearAndReseed, open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list,
     significant: function (ev) { return HB.significant(ev.source, ev.type, ev.label); },
     // branch TREE (PR #5) + combine (PR #6) — fork-don't-wipe universes, switch=restore, bring-into-current.
     switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey, combineFromId: HB.combineFromId,

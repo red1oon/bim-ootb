@@ -72,10 +72,22 @@ function _histIconSvg(name, color) {
 function _clearHistoryWithWarning() {
   // The timeline persists in localStorage (bim.hist.tree.<db>), NOT the SW cache — "clear cache" never
   // wiped it (this confused the user). The bomb is the one switch that does.
-  if (window.confirm('Clear history for this page?\nThis wipes the saved timeline (it lives in local storage, not the cache) and cannot be undone.')) {
+  // It must wipe BOTH stores: the per-page TIMELINE (bim.hist.tree.*) AND the cross-page WORLD log
+  // (WholeHistory's bim.docHistory) — bug: the bomb only touched the timeline, so World History survived.
+  if (window.confirm('Clear history for this page AND the world timeline?\nThis wipes the saved history (it lives in local storage, not the cache) and cannot be undone.')) {
     try { Object.keys(localStorage).filter(function (k) { return k.indexOf('bim.hist.tree') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
     if (window.UniversalHistory && UniversalHistory.clear) UniversalHistory.clear();
-    console.log('§HIST_CLEAR via=bomb confirmed');
+    // §HIST_CLEAR world: WholeHistory keeps its own bim.docHistory log — clear it too, then refresh the
+    // overlay in place (if open) so it shows empty straight away rather than stale entries.
+    var world = 'n/a';
+    if (window.WholeHistory && WholeHistory.clear) {
+      try { WholeHistory.clear(); world = 'cleared'; } catch (e) { world = 'err'; }
+      try {
+        var p = document.getElementById('whole-hist-panel');
+        if (p && p.classList.contains('show') && WholeHistory.open) WholeHistory.open();  // re-render to empty
+      } catch (e) {}
+    }
+    console.log('§HIST_CLEAR via=bomb confirmed world=' + world);
   } else { console.log('§HIST_CLEAR via=bomb cancelled'); }
 }
 function _worldHistDrawer(srcBtn) {
