@@ -89,7 +89,7 @@ function pillIds(page) {
   const gateWorks = !ids.includes('preview') && idsDoc.includes('preview');
   console.log('§A-WITNESS-6 §AD-GATE noDoc-preview=' + ids.includes('preview') + ' postingDoc-preview=' + idsDoc.includes('preview') + ' gateWorks=' + gateWorks);
 
-  const EXPECT = ['redpill','posted','graph','kanban','rule','install','migrate','erpdoc','showme'];   // §D red pill (order 0) + erpdoc (v606) + showme (v609). NOTE: 'preview' is §AD-GATED (showWhen:posting-doc) → OFF the bar at the login/no-doc state this test runs in (it surfaces only when a posting document is open); excluded here by design.
+  const EXPECT = ['redpill','posted','graph','kanban','rule','install','migrate','erpdoc','showme','worldhist'];   // §D red pill (order 0) + erpdoc (v606) + showme (v609) + worldhist (v627 W pill — World-history overlay, HISTORY_KNOB_DIAL.md). NOTE: 'preview' is §AD-GATED (showWhen:posting-doc) → OFF the bar at the login/no-doc state this test runs in (it surfaces only when a posting document is open); excluded here by design.
   const idsOk = EXPECT.every(id => ids.includes(id)) && ids.length === EXPECT.length;
   const pass = idsOk && gateWorks && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
     /source=registry/.test(idmpPillsLog) && /handAuthored=0/.test(idmpPillsLog);

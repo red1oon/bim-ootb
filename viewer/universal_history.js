@@ -57,11 +57,26 @@
         opId: opId, guids: g, params: params || {}, viewState: _tapView(), sigKey: 'pick:' + (g.join(',') || label) });
       return;
     }
+    // De-dup pile-up (HISTORY_KNOB_DIAL.md): the tree persists per building and a fresh BUILDING_OPEN is
+    // appended every reload. Skip recording one when the current tip is ALREADY a BUILDING_OPEN of the
+    // same building (sigKey carries the name) — kills the "Opened…Opened…Opened" stack.
+    var bname = (opType === 'BUILDING_OPEN' && params && params.name) ? params.name : '';
+    var sigKey = 'op:' + opType + ':' + (opType === 'BUILDING_OPEN' ? bname : ((params && (params.axis + '/' + params.label)) || ''));
+    if (opType === 'BUILDING_OPEN' && HB.tipInfo) {
+      var tip = HB.tipInfo();
+      if (tip && tip.type === 'BUILDING_OPEN' && tip.sigKey === sigKey) {
+        console.log('§HIST_DEDUP BUILDING_OPEN "' + bname + '" already at tip — skipped');
+        return;
+      }
+    }
     HB.push({ bucket: 'op', kind: 'op', type: opType, label: label, readonly: false,
       opId: opId, replay: params || {}, params: params || {},
+      // HISTORY_KNOB_DIAL.md fix: stamp EVERY moment (incl. ops) with the ambient view so the READ-ONLY
+      // scrubber restores the scene when you step ONTO an op moment (was only on pick/view → ops did nothing).
+      viewState: _tapView(),
       // W1: a re-open key for the cross-page log (only BUILDING_OPEN is mirrored; reopen = the building).
       ref: (opType === 'BUILDING_OPEN' && params && params.name) ? { building: params.name } : null,
-      sigKey: 'op:' + opType + ':' + ((params && (params.axis + '/' + params.label)) || '') });
+      sigKey: sigKey });
   }
 
   // VIEW-nav push — navigate_find calls this with its semantic view entry.
@@ -228,7 +243,10 @@
     mountHostId: 'status-bar-wrap',         // §3: dock under the status row
     profiles: PROFILES,
     depthKey: 'bim.universalHist.depth',
-    defaultDepth: function () { return window._isMobile ? 'off' : 'all'; }, // mobile opt-in, desktop on
+    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile, which
+    // used to default 'off' → no dots collected). 'max' = every meaningful act becomes one dot (scene
+    // change / pick / section / grid), matching "every change is a dot".
+    defaultDepth: function () { return 'max'; },
     restore: _restore,
     restoreView: _restoreView,              // READ-ONLY scrubber path (knob nav + dot clicks)
     afterApply: _chainCheck,
@@ -275,7 +293,7 @@
   // restore. ADDITIVE — this never touches the viewer's own bottom bar. Building reopen is best-effort
   // (uses the existing A.cityLoadBuilding; if absent, the deep-link still re-opens the viewer).
   if (window.WholeHistory) {
-    window.WholeHistory.mount({ page: 'viewer', rootPrefix: '../' });
+    window.WholeHistory.mount({ page: 'viewer', rootPrefix: '../', launcher: false });   // launched from the W pill
     window.WholeHistory.consumeRestore('viewer', function (ref) {
       try { var A = _A(); if (ref && ref.building && A && A.cityLoadBuilding) A.cityLoadBuilding(ref.building); } catch (e) {}
     });

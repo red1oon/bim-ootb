@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!-- ⚠ DO NOT REMOVE — headless harness for the VIEWER history-bar REWORK witness (poc_histbar_viewer.js).
+     Loads the REAL stack (kernel_ops · history_bar · universal_history) — NO history_knob (scrapped,
+     HISTORY_KNOB_DIAL.md) — with a minimal window.A holding a real sql.js db + GridDrag stub. Proves the
+     reworked `‹ dots ›` bar: arrows + dots are READ-ONLY (op-log rows/undone unchanged), the bar is
+     focusable (←/→ only while focused), and model undo() still flips a signed op.
+     Spec: prompts/HISTORY_KNOB_DIAL.md. Witness: W-HISTBAR-VIEWER. -->
+<html><head><meta charset="utf-8"><title>history-bar viewer harness</title></head>
+<body>
+<div id="status-bar-wrap"></div>
+<script src="../lib/sql-wasm.js"></script>
+<script src="../kernel_ops.js"></script>
+<script src="../../common/history_bar.js"></script>
+<script>
+  window.GridDrag = { applyReplayedMove: function () {} };
+  window.__restoredViews = [];
+  window.A = { db: null, markDirty: function () {}, focusElement: function (g) { window.__restoredViews.push('pick:' + g); },
+    clearFocusElement: function () { window.__restoredViews.push('clear'); } };
+  window._isMobile = false;
+  window.__ready = (async function () {
+    var SQL = await initSqlJs({ locateFile: function (f) { return '../lib/' + f; } });
+    window.A.db = new SQL.Database();
+    console.log('§HARNESS db-created');
+    return true;
+  })();
+</script>
+<script src="../universal_history.js"></script>
+</body></html>
