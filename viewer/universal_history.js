@@ -22,11 +22,17 @@
   var _EDITS = { 'BUILDING_OPEN': true, 'GRID_MOVE': true, 'ELEMENT_PLACE': true,
                  'DESIGN_SAVE': true, 'DESIGN_OPEN': true, 'CAPTURE_4D': true, 'CLASH_SNAG': true };
   var _NAV = { 'axis': true, 'group': true, 'item': true };
+  // HISTORY_SESSION_EVENTS.md A1 — read-only DETAIL EVENTS in Z: the detail actions a user does inside a
+  // building (inspect a clash, cut a section, take a measurement) that were invisible to history — clash/
+  // measure never called the recorder, SECTION_CUT committed but was in no profile. They record as read-only
+  // 'event' moments (look-restore on scrub, NEVER a kernel mutation), gated by a new `event` bucket that is
+  // ON from `mid` up (so the default `max` shows them; `low`/`off` keep them out).
+  var _EVENTS = { 'CLASH_INSPECT': true, 'SECTION_CUT': true, 'MEASURE': true };
   var PROFILES = {
-    low:  { op: { 'BUILDING_OPEN': true }, view: {} },
-    mid:  { op: _EDITS, view: {} },
-    high: { op: _EDITS, view: _NAV },
-    max:  { op: Object.assign({ 'ELEMENT_PICK': true }, _EDITS), view: _NAV }
+    low:  { op: { 'BUILDING_OPEN': true }, view: {}, event: {} },
+    mid:  { op: _EDITS, view: {}, event: _EVENTS },
+    high: { op: _EDITS, view: _NAV, event: _EVENTS },
+    max:  { op: Object.assign({ 'ELEMENT_PICK': true }, _EDITS), view: _NAV, event: _EVENTS }
   };
   PROFILES.all = PROFILES.high; PROFILES.doc = PROFILES.mid;   // legacy aliases (exported SIGNIFICANCE + _isDoc fallback)
 
@@ -90,6 +96,15 @@
       view: v, viewState: _tapView(), sigKey: 'view:' + (v.kind + ':' + (v.label || v.axis)) });
   }
   function registerViewRestore(fn) { _viewRestore = fn; }
+
+  // HISTORY_SESSION_EVENTS.md A1 — record a read-only DETAIL EVENT into Z (clash-inspect / section / measure).
+  // It is a 'event'-bucket moment: stamped with the ambient look (_tapView) so scrubbing onto it RE-APPLIES
+  // the look only — it NEVER calls KernelOps.undo/redo (not a model op). Gated by the `event` profile bucket.
+  function recordEvent(type, label, ref) {
+    if (!HB.isEnabled()) return;
+    HB.push({ bucket: 'event', kind: 'event', type: type, label: label || type, readonly: true,
+      viewState: _tapView(), ref: (ref != null ? ref : null), sigKey: 'event:' + type + ':' + (label || '') });
+  }
 
   // (b) Restore one entry's state — the ONLY thing only the viewer can do.
   //   null → clear focus · op → kernel flag-flip + replay · pick → shape-mesh focus · view → Find replay.
@@ -229,8 +244,11 @@
 
   // §2 chip icon by WHAT: single element → discipline icon · building-open → home · group/scope → magnifier.
   var _DISC_ICON = { STR: 'discSTR', ARC: 'discARC', MEP: 'discMEP', FP: 'discFP', ELEC: 'discELEC', ACMV: 'discACMV', PLMB: 'discPLMB' };
+  // A1 detail events get their action's own icon so the dot reads at a glance.
+  var _EVENT_ICON = { 'CLASH_INSPECT': 'triangle', 'SECTION_CUT': 'scissors', 'MEASURE': 'ruler' };
   function _stepIcon(e) {
     if (e.kind === 'pick') return _DISC_ICON[String((e.params && e.params.disc) || '').toUpperCase()] || null;
+    if (e.kind === 'event') return _EVENT_ICON[e.type] || 'search';
     if (e.type === 'BUILDING_OPEN') return 'home';
     return 'search';
   }
@@ -295,6 +313,7 @@
 
   window.UniversalHistory = {
     pushView: pushView,
+    recordEvent: recordEvent,   // A1: read-only DETAIL EVENTS (clash-inspect / section / measure) → Z
     registerViewRestore: registerViewRestore,
     undo: HB.undo, redo: HB.redo, jumpTo: HB.jumpTo,
     setEnabled: HB.setEnabled, isEnabled: HB.isEnabled,

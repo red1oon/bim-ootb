@@ -774,6 +774,14 @@ function setupMeasure(A) {
       A.setOutline(A._clashHighlights.filter(function(m) { return m.isMesh; }), 0xffffff);
     }
     console.log('§CLASH_DETAIL guidA=' + c[0] + ' guidB=' + c[1] + ' overlap=' + ((typeof c[8] === 'number') ? c[8].toFixed(3) : '?') + 'm');
+    // HISTORY_SESSION_EVENTS.md A1 — inspecting a clash is a real detail action → one read-only Z dot
+    // (look-restore on scrub; never a kernel mutation). Stays page-local (Z), never crowds W.
+    try {
+      if (window.UniversalHistory && UniversalHistory.recordEvent) {
+        var _ov = (typeof c[8] === 'number') ? c[8].toFixed(3) + 'm' : '';
+        UniversalHistory.recordEvent('CLASH_INSPECT', 'Clash ' + _ov, { guidA: c[0], guidB: c[1], overlap: c[8] });
+      }
+    } catch (e) {}
   };
 
   // S246: Build deep-link URL for a clash pair
@@ -1271,6 +1279,13 @@ function setupMeasure(A) {
       A.measureLabels.push({ div: labelDiv, p1: p1.clone(), p2: p2.clone(), mid: mid });
 
       console.log(`§MEASURE ${dist} from (${p1.x.toFixed(1)},${p1.y.toFixed(1)},${p1.z.toFixed(1)}) to (${p2.x.toFixed(1)},${p2.y.toFixed(1)},${p2.z.toFixed(1)})`);
+      // HISTORY_SESSION_EVENTS.md A1 — a completed measurement is a detail action → one read-only Z dot.
+      try {
+        if (window.UniversalHistory && UniversalHistory.recordEvent) {
+          UniversalHistory.recordEvent('MEASURE', 'Measure ' + dist,
+            { a: [p1.x, p1.y, p1.z], b: [p2.x, p2.y, p2.z], dist: dist });
+        }
+      } catch (e) {}
 
       A.measureFirstPoint = null;
       A.measureFirstMarker = null;
