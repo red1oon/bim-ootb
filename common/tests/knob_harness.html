@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!-- ⚠ DO NOT REMOVE — headless harness for the history KNOB DIAL witness (poc_knob.js).
+     Loads the REAL common/history_knob.js with a MINIMAL host adapter (in-memory moment list + a
+     read-only applyView + a stub __sfx). The host NEVER mutates an op-log — so a passing run proves the
+     dial's nav path is read-only by construction. Spec: prompts/HISTORY_KNOB_DIAL.md. Witness: W-KNOB-DIAL. -->
+<html><head><meta charset="utf-8"><title>knob dial harness</title></head>
+<body>
+<div id="bar"></div>
+<script src="../history_knob.js"></script>
+<script>
+  'use strict';
+  // ── Stub SFX: mute-aware, like window.__sfx in the real pages. Toggle via window.__setMuted(). ──
+  var _muted = false;
+  window.__sfx = { isOn: function () { return !_muted; }, voice: function (v, hz) { console.log('§HARNESS sfx voice=' + v + ' hz=' + hz); } };
+  window.__setMuted = function (m) { _muted = !!m; };
+
+  // ── Host adapter: an in-memory history of 3 moments + a depth value. ──
+  // CRITICAL: stepBack/stepFront ONLY re-apply a view (read-only). If anything ever mutated a model,
+  // it would call __mutate() and the witness would catch it. There is no such path here — by design.
+  var moments = [{ label: 'Open Building' }, { label: 'Pick Door' }, { label: 'Section X' }];
+  var cursor = moments.length - 1;
+  var depth = 'high';
+  window.__opLogMutations = 0;
+  window.__applyViews = [];
+  function applyView(idx, label) { window.__applyViews.push(idx); console.log('§HARNESS applyView idx=' + idx + ' label="' + label + '" opLogMutated=NO'); }
+
+  window.__knob = HistoryKnob.mount({
+    host: 'bar',
+    source: 'harness',
+    getDepth: function () { return depth; },
+    setDepth: function (d) { depth = d; console.log('§HARNESS setDepth=' + d); },
+    canStep: function () { return { back: cursor > 0, front: cursor < moments.length - 1 }; },
+    stepBack: function () { if (cursor <= 0) return null; cursor--; applyView(cursor, moments[cursor].label); return { idx: cursor, label: moments[cursor].label }; },
+    stepFront: function () { if (cursor >= moments.length - 1) return null; cursor++; applyView(cursor, moments[cursor].label); return { idx: cursor, label: moments[cursor].label }; }
+  });
+  window.__getState = function () { return { cursor: cursor, depth: depth, mutations: window.__opLogMutations, applied: window.__applyViews.slice() }; };
+  console.log('§HARNESS ready cursor=' + cursor + ' depth=' + depth);
+</script>
+</body></html>

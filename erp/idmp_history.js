@@ -90,17 +90,40 @@
     if (_restoreFn) { try { _restoreFn(e); } catch (err) { console.warn('§IDMP-HIST restore-fail ' + err.message); } }
     render();
   }
-  function undo() { if (_idx > 0) _go(_idx - 1); }
-  function redo() { if (_idx < _hist.length - 1) _go(_idx + 1); }
+  // READ-ONLY steps (re-open window/tab/record via _restoreFn) — return the landed moment so the KNOB-DIAL
+  // can §-log it; null at the ends. NEVER mutates the kernel op-log (ERP scrubber was read-only by contract).
+  function undo() { if (_idx > 0) { _go(_idx - 1); var e = _hist[_idx]; return { idx: _idx, label: e ? e.label : '' }; } return null; }
+  function redo() { if (_idx < _hist.length - 1) { _go(_idx + 1); var e = _hist[_idx]; return { idx: _idx, label: e ? e.label : '' }; } return null; }
+  function canStep() { return { back: _idx > 0, front: _idx < _hist.length - 1 }; }
 
+  var _content = null, _knobHost = null, _knobCtl = null;
+  // Map the ERP 5-stop ladder (off/low/mid/high/max) onto the dial's 4 depth ticks (off/low/high/max).
+  function _dialDepth() { return (_knob === 'off' || _knob === 'low' || _knob === 'high' || _knob === 'max') ? _knob : 'high'; }
+  function _mountKnob() {
+    if (_knobCtl || !window.HistoryKnob || !window.HistoryKnob.mount) return;
+    // HISTORY_KNOB_DIAL.md: the SAME line-art amp-knob as the viewer, drop-in on the ERP bar. Depth ticks
+    // set the doc-event breadth (_setKnob); the 2 nav ticks do the existing READ-ONLY window/tab/record step.
+    _knobCtl = window.HistoryKnob.mount({
+      host: _knobHost, source: 'idempiere',
+      getDepth: _dialDepth, setDepth: function (d) { _setKnob(d); },
+      stepBack: undo, stepFront: redo, canStep: canStep
+    });
+  }
   function _ensureBar() {
     if (_bar) return _bar;
     _injectStyle();
     _bar = document.createElement('div');
     _bar.id = 'idmp-scrub';
+    _knobHost = document.createElement('div'); _knobHost.id = 'idmp-knob-host';
+    _knobHost.style.cssText = 'flex:0 0 auto;display:flex;align-items:center';
+    _content = document.createElement('div'); _content.id = 'idmp-scrub-content';
+    _content.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden';
+    _bar.appendChild(_knobHost); _bar.appendChild(_content);   // dial survives render()'s innerHTML rewrite of _content
     var main = document.getElementById('idmp-main') || document.body;
     main.appendChild(_bar);                                   // in-flow, after #idmp-status (under it)
+    _mountKnob();
     // double-tap anywhere on the bar (except a dot) blooms the dots into labelled chips (performance.now meter).
+    // The dial stopPropagation()s its own clicks, so tapping the knob never blooms the dots.
     var _last = 0;
     _bar.addEventListener('click', function (ev) {
       if (ev.target.classList && ev.target.classList.contains('scrubdot')) return;
@@ -122,16 +145,12 @@
     if (!has) { _bar.classList.remove('show'); return; }
     _bar.classList.add('show');
     _bar.classList.toggle('bloom', _bloom);
+    _mountKnob();                                             // ensure the dial is present (idempotent)
 
-    // KNOB — 4-segment breadth dial (glyph-free; tap = widen off→low→mid→high→max). Filled bars = level.
-    var ki = KNOB_STOPS.indexOf(_knob), kn = '<div class="scrubknob" title="History depth: ' + _knob +
-      ' — tap to widen (off→low→mid→high→max)">';
-    for (var s = 1; s <= 4; s++) kn += '<i class="kbar' + (s <= ki ? ' on' : '') + '"></i>';
-    kn += '</div>';
-
+    // The breadth control is now the radial KNOB-DIAL (mounted in #idmp-knob-host, outside this innerHTML).
     // NAV dots — the restorable backbone. Click any dot to jump (gold = current); double-tap blooms chips.
     // [[feedback_pill_icon_consistency]]
-    var h = kn + '<div class="scrubline" id="idmp-scrubline">';
+    var h = '<div class="scrubline" id="idmp-scrubline">';
     _hist.forEach(function (e, i) {
       h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + '" data-i="' + i + '" data-kind="' + e.kind +
         '" title="' + (i + 1) + '. ' + _esc(e.label) + '">' + (_bloom ? _esc(e.label) : '') + '</div>';
@@ -149,12 +168,11 @@
       });
       h += '</div>';
     }
-    _bar.innerHTML = h;
+    _content.innerHTML = h;
+    if (_knobCtl) _knobCtl.refresh();                         // dial re-reads depth + canStep
     console.log('§IDMP-HIST render dots=' + _hist.length + ' knob=' + _knob + ' docEvents=' + evs.length);
 
-    var knob = _bar.querySelector('.scrubknob');
-    if (knob) knob.addEventListener('click', function (ev) { ev.stopPropagation(); _stepKnob(); });
-    Array.prototype.forEach.call(_bar.querySelectorAll('.scrubdot'), function (d) {
+    Array.prototype.forEach.call(_content.querySelectorAll('.scrubdot'), function (d) {
       d.addEventListener('click', function (ev) { ev.stopPropagation(); _go(+d.getAttribute('data-i')); });
     });
   }
