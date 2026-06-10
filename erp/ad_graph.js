@@ -1742,6 +1742,34 @@
     }
   }
 
+  /**
+   * §INSTANT — in-place canvas resize. Rescales the existing globe to the new
+   * canvas size WITHOUT destroy()+re-init, so the entry animation (or current
+   * drill view) continues uninterrupted instead of bursting a second time.
+   * The canvas element is reused by the caller (only width/height change), so
+   * _ctx, listeners and the _animate loop stay valid — we only update geometry.
+   */
+  function resize(w, h) {
+    if (!_canvas) return;
+    var oldRadius = _radius || 1;
+    _W = w; _H = h;
+    _cx = _W / 2;
+    _cy = _H / 2;
+    _radius = Math.min(_W, _H) * 0.38;
+    var ratio = _radius / oldRadius;
+    // Rescale home/target/start/current positions by the radius ratio — keeps any
+    // in-flight animation proportional (nodes animating out from origin keep going).
+    for (var i = 0; i < _nodes.length; i++) {
+      var n = _nodes[i];
+      if (n.sx !== undefined) { n.sx *= ratio; n.sy *= ratio; n.sz *= ratio; }
+      if (n.homeSx !== undefined) { n.homeSx *= ratio; n.homeSy *= ratio; n.homeSz *= ratio; }
+      if (n._targetSx !== undefined) { n._targetSx *= ratio; n._targetSy *= ratio; n._targetSz *= ratio; }
+      if (n._startSx !== undefined) { n._startSx *= ratio; n._startSy *= ratio; n._startSz *= ratio; }
+    }
+    console.log('§AD_GRAPH resize w=' + _W + ' h=' + _H + ' radius=' + Math.round(_radius) +
+                ' nodes=' + _nodes.length + ' (in-place, no re-init)');
+  }
+
   function destroy() {
     if (_animId) { cancelAnimationFrame(_animId); _animId = null; }
     if (_canvas) {
@@ -1855,6 +1883,7 @@
     init: init,
     initFromBubbles: initFromBubbles,
     graphHydrate: graphHydrate,
+    resize: resize,
     destroy: destroy,
     showEntity: showEntity,
     focusNode: focusNode,

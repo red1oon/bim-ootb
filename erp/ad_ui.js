@@ -1504,17 +1504,23 @@
         fsBtn.style.height = '28px';
         fsBtn.style.fontSize = '16px';
       }
-      ADGraph.destroy();
-      // §INSTANT — keep the curated skeleton authoritative even after _dbReady;
-      // graphHydrate(db) already enabled drill, so DON'T rebuild from _buildHomeNodes (no flash/reset).
-      if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
-        ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
-          _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
-        // initFromBubbles resets the graph's _db to null; re-attach so tap-drill still queries records.
-        if (_dbReady && _db && ADGraph.graphHydrate) ADGraph.graphHydrate(_db);
+      // §INSTANT — resize the EXISTING globe in place (no destroy()+re-init). The
+      // canvas element is reused (only width/height changed above), so the animation
+      // loop, listeners and drill state survive — this kills the second "bubble burst"
+      // the 100ms auto-maximize used to cause by tearing the graph down and rebuilding.
+      if (ADGraph.resize) {
+        ADGraph.resize(canvas.width, canvas.height);
       } else {
-        ADGraph.init(canvas, _db, _currentClient,
-          _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+        // Legacy fallback: full rebuild (keeps the curated skeleton authoritative).
+        ADGraph.destroy();
+        if (typeof INIT_BUBBLES !== 'undefined' && ADGraph.initFromBubbles) {
+          ADGraph.initFromBubbles(canvas, INIT_BUBBLES, _currentClient,
+            _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+          if (_dbReady && _db && ADGraph.graphHydrate) ADGraph.graphHydrate(_db);
+        } else {
+          ADGraph.init(canvas, _db, _currentClient,
+            _graphDrillCallback, _graphLongPressCallback, _toggleSearchOverlay);
+        }
       }
       console.log('§AD_UI graphFullscreen=' + fullscreen +
         ' w=' + canvas.width + ' h=' + canvas.height);
