@@ -318,6 +318,11 @@
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
 <script src="erp_postings.js?v=23"></script>
 <script src="accts_posted.js?v=23"></script>
+<!-- POSTING_PREVIEW_PANEL.md — the Posting-Preview lens: what a DocAction (Complete) WOULD post, pure/no-write.
+     FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
+<script src="post_resolver.js?v=1"></script>
+<script src="doc_poster.js?v=1"></script>
+<script src="erp_preview.js?v=1"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=22"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
@@ -985,6 +990,26 @@
     _showPosted(ui);
     console.log('§POSTED-LIVE table=' + ref.table + ' rec=' + ref.record_id + ' visible=' + result.visible + ' source=' + result.source + ' coverage=' + result.coverage);
   }
+
+  // ── Posting Preview (POSTING_PREVIEW_PANEL.md) — SIBLING lens to Accts-Posted, per-record, PURE (no write).
+  // Shows the to-the-cent journal a DocAction (Complete) WOULD post, derived by the FOLD-frozen window.DocPoster
+  // (== fact_acct(318)) and rendered by the SAME window.AcctsPosted renderer via window.ERPPreview. Lights up on a
+  // db carrying posting config (preview_demo.db / migrated tenant); honest coverage:absent otherwise. NO new verb.
+  function openPreviewFor() {
+    if (!_session) { status('Log in first to preview postings'); return; }
+    if (!window.ERPPreview || !window.DocPoster || !window.PostResolver) { status('Posting-Preview engine not loaded'); return; }
+    var tab = _curTab(), rec = _records[_recIdx];
+    if (!tab || !rec) { status('Open a record first — Posting Preview is per record'); return; }
+    var ref = { table: tab.tableName, id: recVal(rec, _keyCol(tab)),
+                ad_org_id: recVal(rec, 'AD_Org_ID') || recVal(rec, 'ad_org_id') };
+    var dbs = { adQ: _adQ, docDb: window.ERPPreview.facade(db) };   // gate + derive both off the loaded db
+    var out = window.ERPPreview.openPreview(ref, _session, dbs, { doc: document, open: true, accordion: true,
+      onInstall: function () { status('Bring your own data via Migrate to preview real postings (POC)'); },
+      onShare: function () { if (navigator.share) navigator.share({ title: 'Posting Preview', text: 'Preview ' + ref.table + ' #' + ref.id }); else status('Share not supported on this device'); },
+      onVerify: function () { status('Verify arrives with the write path (window.ERP.verify)'); } });
+    _overlay('Posting Preview — what Complete would post', out.node);
+    console.log('§PREVIEW-LIVE table=' + ref.table + ' rec=' + ref.id + ' visible=' + out.result.visible + ' source=' + out.result.source + ' coverage=' + out.result.coverage + ' balanced=' + out.result.balanced);
+  }
   function _showPosted(ui) {
     _injectPostedCSS();
     var prev = $('posted-overlay'); if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
@@ -1272,7 +1297,7 @@
   function mountPillRegistry() {
     window.IdmpPillActions = {
       redpill: toggleCleanMode,
-      posted: openPostedFor, graph: openGraphFor, kanban: openKanbanFor,
+      posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe
     };
