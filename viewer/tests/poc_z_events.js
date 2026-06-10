@@ -69,5 +69,30 @@ ok(/recordEvent\('MEASURE'/.test(mz), 'measure.js emits MEASURE');
 var sc = fs.readFileSync(path.join(__dirname, '../section_cut.js'), 'utf8');
 ok(/recordEvent\('SECTION_CUT'/.test(sc), 'section_cut.js emits SECTION_CUT');
 
+// ── HISTORY_SESSION_EVENTS.md §RESUME (user 2026-06-11 "new session — Z shows no dots") ──
+// Issue PROVED/DISPROVED: (5) the COMMON section path (key 'x' → toggleSection → applySectionAxis
+//   §SECTION ON) had NO recordEvent — toggling a section made no dot. Fix = emitter in tools.js.
+var tz = fs.readFileSync(path.join(__dirname, '../tools.js'), 'utf8');
+ok(/§SECTION ON[\s\S]{0,500}recordEvent\('SECTION_CUT'/.test(tz), 'tools.js emits SECTION_CUT at the §SECTION ON site (toggle path records)');
+
+// (6) scrub-restore drives the SAME setters (applyView → section.write → toggleSection) — without a
+//   latch, browsing the past would MINT fake dots. Prove HistoryTap.isApplying() is true exactly
+//   during applyView's field writes and false after (behavioral, real history_tap.js).
+var tapSrc = fs.readFileSync(path.join(__dirname, '../../common/history_tap.js'), 'utf8');
+(0, eval)(tapSrc);   // IIFE attaches to the shimmed window (typeof window !== 'undefined' here)
+var Tap = global.window.HistoryTap || globalThis.HistoryTap;
+ok(!!Tap && typeof Tap.isApplying === 'function', 'history_tap exports isApplying()');
+var duringWrite = null;
+Tap.field('probe', function(){ return 1; }, function(){ duringWrite = Tap.isApplying(); });
+Tap.applyView({ probe: 1 }, 'witness');
+ok(duringWrite === true, 'isApplying()=true DURING a restore write (emitter sees the latch)');
+ok(Tap.isApplying() === false, 'isApplying()=false after applyView returns (live actions still record)');
+ok(/HistoryTap\.isApplying\(\)\)\s*return/.test(uh), 'universal_history recordEvent gates on isApplying (scrub never records)');
+
+// (7) load diagnostic — §HIST_SESSION id/reHome/treeKey/dots logged at HB.configure so the next
+//   empty-Z report pinpoints fresh-session vs re-home vs non-recording action.
+ok(/§HIST_SESSION id=/.test(uh) && /reHome=/.test(uh) && /treeKey=/.test(uh) && /dots=/.test(uh),
+  'universal_history logs §HIST_SESSION id/reHome/treeKey/dots after configure');
+
 console.log(fail === 0 ? '§W-Z-EVENTS ALL PASS' : ('§W-Z-EVENTS ' + fail + ' FAILED'));
 process.exit(fail === 0 ? 0 : 1);

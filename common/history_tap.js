@@ -115,15 +115,22 @@
   }
 
   // RESTORE — re-apply a recorded view vector: each field's write() reproduces its slice of the look.
+  // _applyingView: write() drives the REAL setters (e.g. A.toggleSection) — emitters that record history
+  // at those setters must NOT mint a new dot during a restore. They gate on isApplying().
+  var _applyingView = false;
   function applyView(view, label) {
     if (!view) return false;
     var applied = [];
-    for (var k in view) {
-      if (fields[k] && fields[k].write) { try { fields[k].write(view[k]); applied.push(k); } catch (e) {} }
-    }
+    _applyingView = true;
+    try {
+      for (var k in view) {
+        if (fields[k] && fields[k].write) { try { fields[k].write(view[k]); applied.push(k); } catch (e) {} }
+      }
+    } finally { _applyingView = false; }
     try { console.log('§EVT RESTORE|' + (label || '?') + ' keys=' + applied.join(',')); } catch (e) {}
     return applied.length > 0;
   }
+  function isApplying() { return _applyingView; }
   // COMBINE — union two recorded looks into one. Orthogonal fields (color vs section) never collide;
   // a shared field → second wins (last-writer). This is "merge" reduced to a vector union (no 3-way).
   function combineViews() {
@@ -147,6 +154,7 @@
   var Tap = { feed: feed, feedCrumb: feedCrumb, sniff: sniff, setKnob: setKnob, getKnob: getKnob, history: history, clear: clear,
               field: field, seed: seed, setViewProvider: setViewProvider, registerApplier: registerApplier,
               restore: restore, currentView: currentView, applyView: applyView, combineViews: combineViews,
+              isApplying: isApplying,
               _all: all, _fields: fields, STOPS: STOPS };
 
   // S() — the sink. Keeps the §-debug line you have today AND feeds the tap. No event bus.

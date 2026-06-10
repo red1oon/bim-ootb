@@ -309,6 +309,12 @@ function setupTools(A) {
     });
     document.getElementById('section-val').textContent = axMax.toFixed(1) + ' m';
     console.log(`[S205] §SECTION ON axis=${A.sectionAxis} range=[${axMin.toFixed(1)}, ${axMax.toFixed(1)}]`);
+    // Implementing HISTORY_SESSION_EVENTS.md §RESUME — Witness: W-Z-EVENTS. The COMMON section path
+    // (key 'x' / section-btn → toggleSection → here) never recorded; only saveCut did. One dot per real
+    // toggle/axis apply; scrub-restores reach here too but are gated inside recordEvent (isApplying).
+    if (window.UniversalHistory && UniversalHistory.recordEvent) {
+      UniversalHistory.recordEvent('SECTION_CUT', 'Section ' + A.sectionAxis, { axis: A.sectionAxis });
+    }
   };
 
   A.updateSectionPlane = function(val) {
