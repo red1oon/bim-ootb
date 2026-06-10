@@ -96,8 +96,8 @@ function _worldHistDrawer(srcBtn) {
   if (!srcBtn) return;
   var r = srcBtn.getBoundingClientRect();
   var d = document.createElement('div'); d.id = 'whist-drawer';
-  d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;gap:6px;' +
-    'top:' + (r.top - 102) + 'px;left:' + r.left + 'px;';
+  d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
+    'top:' + (r.top - 2) + 'px;left:' + Math.max(8, r.left - 104) + 'px;';   // SIDEWAYS: chips to the LEFT of the W pill (matches the _revealChip convention), not stacked above
   function chip(name, title, color, onTap) {
     var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
     b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +

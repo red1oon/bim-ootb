@@ -72,8 +72,8 @@
     if (!srcBtn) return;
     var r = srcBtn.getBoundingClientRect();
     var d = document.createElement('div'); d.id = 'idmp-whist-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;gap:6px;' +
-      'top:' + (r.top - 102) + 'px;left:' + r.left + 'px;';
+    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
+      'top:' + (r.top - 2) + 'px;left:' + Math.max(8, r.left - 104) + 'px;';   // SIDEWAYS: chips to the LEFT of the W pill (matches the _revealChip convention), not stacked above
     function chip(name, title, color, onTap) {
       var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
       b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
@@ -244,16 +244,14 @@
       // the ⋯ rests at the bottom-right corner and STAYS there; the strip (DOM-ordered ABOVE the trigger in a
       // bottom-anchored column) RISES UP from behind it on tap. `bottom` is pinned so collapsing never moves the
       // ⋯ to mid-screen — it remains where it is. Was right-edge VERTICALLY-CENTRED (top:50%/translateY(-50%)).
-      // BOTTOM-RIGHT, expands SIDEWAYS (horizontal): the ⋯ stays in the corner and the icons reveal to its LEFT
-      // along the bottom edge (user 2026-06-10: "expand sideways not upwards") — was a vertical column rising up.
       '#idmp-pillbar{position:fixed;right:10px;bottom:16px;top:auto;transform:none;z-index:1200;' +
-        'display:flex;flex-direction:row;align-items:center;gap:8px;}' +
-      '#idmp-pill{display:flex;align-items:center;gap:6px;max-width:calc(100vw - 90px);overflow-x:auto;overflow-y:hidden;white-space:nowrap;' +
+        'display:flex;flex-direction:column;align-items:center;gap:8px;}' +
+      '#idmp-pill{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 120px);overflow-y:auto;' +
         'padding:6px;border-radius:16px;background:rgba(20,22,32,0.82);' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
-      '#idmp-pill::-webkit-scrollbar{height:0;}' +
-      '#idmp-pill button{width:40px;height:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;' +
-        'border:none;border-radius:10px;background:transparent;color:#cdd6e4;cursor:pointer;padding:0;margin:0 2px;vertical-align:middle;}' +
+      '#idmp-pill::-webkit-scrollbar{width:0;}' +
+      '#idmp-pill button{width:40px;height:40px;min-height:40px;display:flex;align-items:center;justify-content:center;' +
+        'border:none;border-radius:10px;background:transparent;color:#cdd6e4;cursor:pointer;padding:0;}' +
       '#idmp-pill button:hover{background:rgba(108,159,255,0.16);color:#6c9fff;}' +
       '#idmp-pill button.active{background:rgba(108,159,255,0.24);color:#6c9fff;}' +
       '#idmp-pill button img{border-radius:4px;}' +
@@ -263,23 +261,23 @@
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
       // Reveal-UP: on each open the strip rises into view from behind the bottom ⋯ (translateY 18px → 0) then
       // STAYS open (PillBuilder _toggle adds `.pill-revealing`; persistent dock — only a ⋯ re-tap collapses it).
-      '@keyframes pill-rise{from{transform:translateX(18px);opacity:0;}to{transform:translateX(0);opacity:1;}}' +
+      '@keyframes pill-rise{from{transform:translateY(18px);opacity:0;}to{transform:translateY(0);opacity:1;}}' +
       '#idmp-pill.pill-revealing{animation:pill-rise 0.42s cubic-bezier(.2,.85,.25,1);}' +
       // Boot/stage CUE: a gentle upward bob on the ⋯ while collapsed — "there's more here, tap me". Two bobs
       // then settle (subtle, common HMI — [[feedback_pill_icon_consistency]]); never recollapses the strip.
       '@keyframes idmp-pill-peek{' +
-        '0%,100%{transform:translateX(0);box-shadow:none;}' +
-        '25%{transform:translateX(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
-        '55%{transform:translateX(0);}' +
-        '78%{transform:translateX(-4px);}' +
+        '0%,100%{transform:translateY(0);box-shadow:none;}' +
+        '25%{transform:translateY(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
+        '55%{transform:translateY(0);}' +
+        '78%{transform:translateY(-4px);}' +
       '}' +
       '#idmp-pill-trigger.idmp-pill-attract{animation:idmp-pill-peek 0.85s ease-in-out 2;color:#6c9fff;}' +
       // Mobile mirrors desktop — same BOTTOM-RIGHT dock, just a touch tighter + safe-area inset (home indicator).
       '@media (max-width:760px){' +
         '#idmp-pillbar{right:calc(10px + env(safe-area-inset-right,0px));' +
           'bottom:calc(12px + env(safe-area-inset-bottom,0px));top:auto;transform:none;' +
-          'flex-direction:row;align-items:center;gap:8px;}' +
-        '#idmp-pill{max-width:calc(100vw - 80px);overflow-x:auto;overflow-y:hidden;}' +
+          'flex-direction:column;align-items:center;gap:8px;}' +
+        '#idmp-pill{max-height:calc(100vh - 110px);overflow-y:auto;overflow-x:hidden;}' +
       '}';
     document.head.appendChild(s);
   }

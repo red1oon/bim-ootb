@@ -46,17 +46,16 @@
     var s = document.createElement('style');
     s.id = 'gb-pill-style';
     s.textContent =
-      // BOTTOM-RIGHT, expands SIDEWAYS (horizontal strip): the ⋯ rests in the corner and the icons reveal to its
-      // LEFT along the bottom edge — so the open dock is a short bar, NOT a tall column over the right-side panel /
-      // dial / ball (user 2026-06-10: "expand sideways not upwards" + "move items away from the pill").
+      // Desktop: BOTTOM-RIGHT corner (consistent with erp.html/idempiere.html/viewer, v611) — the ⋯ rests in
+      // the corner and the strip rises UP above it, so it never covers mid-screen content (was right-centred).
       '#gb-pillbar{position:fixed;right:12px;bottom:12px;z-index:1200;' +
-        'display:flex;flex-direction:row;align-items:center;gap:8px;}' +
-      '#gb-pill{display:flex;align-items:center;gap:6px;max-width:calc(100vw - 96px);overflow-x:auto;overflow-y:hidden;white-space:nowrap;' +
+        'display:flex;flex-direction:column;align-items:flex-end;gap:8px;}' +
+      '#gb-pill{display:flex;flex-direction:column;gap:6px;max-height:62vh;overflow-y:auto;' +
         'padding:6px;border-radius:16px;background:rgba(16,22,30,0.86);' +
         'border:1px solid rgba(86,214,224,0.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
-      '#gb-pill::-webkit-scrollbar{height:0;}' +
-      '#gb-pill button{width:40px;height:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;' +
-        'border:none;border-radius:10px;background:transparent;color:#cfe8ee;cursor:pointer;padding:0;margin:0 2px;vertical-align:middle;}' +
+      '#gb-pill::-webkit-scrollbar{width:0;}' +
+      '#gb-pill button{width:40px;height:40px;min-height:40px;display:flex;align-items:center;justify-content:center;' +
+        'border:none;border-radius:10px;background:transparent;color:#cfe8ee;cursor:pointer;padding:0;}' +
       '#gb-pill button:hover{background:rgba(86,214,224,0.16);color:#56d6e0;}' +
       '#gb-pill button.active{background:rgba(86,214,224,0.26);color:#56d6e0;}' +
       '#gb-pill-trigger{width:32px;height:32px;min-height:32px;border-radius:50%;cursor:pointer;' +
@@ -103,8 +102,8 @@
     if (!srcBtn) return;
     var r = srcBtn.getBoundingClientRect();
     var d = document.createElement('div'); d.id = 'gb-whist-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;gap:6px;' +
-      'top:' + (r.top - 102) + 'px;left:' + r.left + 'px;';
+    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
+      'top:' + (r.top - 2) + 'px;left:' + Math.max(8, r.left - 104) + 'px;';   // SIDEWAYS: chips to the LEFT of the W pill (matches the _revealChip convention), not stacked above
     function chip(name, title, color, onTap) {
       var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
       b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
