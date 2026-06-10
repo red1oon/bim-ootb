@@ -136,9 +136,6 @@
   #scrub.bloom .scrubline{border-radius:11px;gap:6px;flex-wrap:nowrap;overflow-x:auto;max-width:74vw}
   #scrub.bloom .scrubdot{width:auto;height:auto;min-width:0;border-radius:7px;padding:3px 9px;font-size:11px;color:#8aa;background:#19222c;border:1px solid #2b3744;white-space:nowrap}
   #scrub.bloom .scrubdot.on{color:#ffd479;background:#1d2937;border-color:#ffd479;box-shadow:none}
-  /* Feature 3 W-DIAG: the mobile-only diagonal-arrange button \u2014 sibling to Untangle, hidden on desktop. */
-  #diagBtn{display:none;position:absolute;bottom:64px;left:20px;background:rgba(16,22,30,.95);border:1px solid #3a5a7a;color:#ffd479;border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;z-index:15;touch-action:manipulation} #diagBtn:hover{border-color:#ffd479}
-  @media (max-width:760px){ #diagBtn{display:block} }
 </style></head><body>
 <script>/* offline SW + W-SWUPDATE tap-to-refresh toast (driven by the SW updatefound signal; never auto-reload) */
 if("serviceWorker" in navigator){addEventListener("load",function(){navigator.serviceWorker.register("sw.js").then(function(reg){
@@ -150,13 +147,15 @@ if("serviceWorker" in navigator){addEventListener("load",function(){navigator.se
   var msg=document.createElement("span");msg.id="swToastMsg";msg.textContent="Glassbowl updated \u2014 tap to refresh";
   var x=document.createElement("span");x.id="swToastX";x.textContent="\u2715";x.title="dismiss";x.style.cssText="color:#8aa;cursor:pointer;padding:0 2px;font-size:14px";
   toast.appendChild(msg);toast.appendChild(x);(document.body||document.documentElement).appendChild(toast);
-  window.__swApply=function(){if(reg.waiting)reg.waiting.postMessage({type:"skipWaiting"});window.__swPostCount=(window.__swPostCount||0)+1;};
+  window.__swApplied=false;
+  window.__swApply=function(){window.__swApplied=true;if(reg.waiting)reg.waiting.postMessage({type:"skipWaiting"});window.__swPostCount=(window.__swPostCount||0)+1;};
   window.__swShowToast=function(){toast.style.display="flex";if(typeof beep==="function"){try{beep();}catch(e){}}};
   toast.addEventListener("click",function(ev){if(ev.target===x)return;window.__swApply();});
   x.addEventListener("click",function(ev){ev.stopPropagation();toast.style.display="none";});
   reg.addEventListener("updatefound",function(){var nw=reg.installing;if(!nw)return;nw.addEventListener("statechange",function(){if(nw.state==="installed"&&navigator.serviceWorker.controller){window.__swShowToast();}});});
-  navigator.serviceWorker.addEventListener("controllerchange",function(){if(sessionStorage.getItem("__swReloaded"))return;sessionStorage.setItem("__swReloaded","1");location.reload();});
-  console.log("\u00a7SWUPDATE wired=Y toast=1 reload-guard=session");
+  /* reload ONLY after the user taps the toast (__swApplied) \u2014 NEVER on the first-install clients.claim() controllerchange (that auto-reload was the mobile double-load); sessionStorage one-shot prevents any loop */
+  navigator.serviceWorker.addEventListener("controllerchange",function(){if(!window.__swApplied)return;if(sessionStorage.getItem("__swReloaded"))return;sessionStorage.setItem("__swReloaded","1");location.reload();});
+  console.log("\u00a7SWUPDATE wired=Y toast=1 reload-guard=tap");
 }).catch(function(){});});}</script>
 <div id="wrap">
 <div id="stage"><svg id="svg" width="100%" height="100%"></svg>
@@ -174,7 +173,6 @@ if("serviceWorker" in navigator){addEventListener("load",function(){navigator.se
   <div id="blurb"></div>
   <div id="comet"></div>
   <div id="scrub"></div>
-  <button id="diagBtn" title="arrange the bubbles along the screen diagonal \u2014 cuts overlap on a narrow phone screen">&#10696; Diagonal</button>
   <div id="phandle" title="show / hide the info panel">&#10217;</div>
 </div>
 <div id="pgrip" title="drag to resize the panel"></div>
@@ -796,32 +794,6 @@ function renderScrub(){if(!SCRUB)return;if(viewHist.length<1){SCRUB.classList.re
 window.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&(e.key==="z"||e.key==="Z")){e.preventDefault();if(e.shiftKey)redoView();else undoView();}});
 // soft audio tick on scrub (honours mute).
 function scrubJive(){beep(415,0.05,"sine",0.03);}
-// ════════════════════════════════════════════════════════════════════════════════
-//  Feature 3 \u2014 W-DIAG: MOBILE-ONLY diagonal arrange (sibling to Untangle). Eases the bubbles
-//   onto the screen DIAGONAL (corner\u2192corner, the longest span) to cut overlap on a narrow phone.
-//   Positions are DETERMINISTIC from each bubble\u2019s index along the diagonal (no Math.random). It is
-//   an EXPLICIT, reversible action \u2014 never the default layout; hx,hy (the home) are LEFT UNTOUCHED so
-//   Reset reverts to the original home. Desktop at-rest stays pixel-identical (W-ORBIT). Swoosh
-//   via the existing audio (sweep). ──
-function diagonalArrange(){var n=N.length;if(!n)return;sweep(180,640,0.4,0.035);   // the swoosh
- // the diagonal axis = unit vector (1,1)/\u221a2 (corner\u2192corner, the longest screen span). Target span is
- // the LARGER of the screen diagonal and 1.5\u00d7 the current cloud spread, so the result ALWAYS spreads
- // bubbles further along the diagonal than the flat layout (the whole point). Centred on the centroid.
- var ux=1/Math.SQRT2,uy=1/Math.SQRT2,perpx=-uy,perpy=ux;
- var xs0=N.map(function(node){return node.x;}),ys0=N.map(function(node){return node.y;});
- var cxC=xs0.reduce(function(a,b){return a+b;},0)/n,cyC=ys0.reduce(function(a,b){return a+b;},0)/n;
- var curSpan=Math.hypot(Math.max.apply(null,xs0)-Math.min.apply(null,xs0),Math.max.apply(null,ys0)-Math.min.apply(null,ys0));
- var L=Math.max(Math.hypot(W,H)*0.85,curSpan*1.5);   // guarantee a wider diagonal than the flat cloud
- // deterministic target per bubble: spread evenly by index along the diagonal axis, tiny perpendicular
- // zig (index parity) so coincident-index bubbles do not perfectly overlap. Pure index math (no random).
- N.forEach(function(node,i){var f=(n===1)?0:(i/(n-1)-0.5);var along=f*L;var zig=((i%2)?1:-1)*Math.min(W,H)*0.05*(i%3);node.dgx=cxC+ux*along+perpx*zig;node.dgy=cyC+uy*along+perpy*zig;});
- var fr=0,STEPS=26;(function pass(){fr++;var e=fr/STEPS,ease=e<0.5?2*e*e:1-Math.pow(-2*e+2,2)/2;
-  N.forEach(function(node){if(node.dsx==null){node.dsx=node.x;node.dsy=node.y;}node.x=node.dsx+(node.dgx-node.dsx)*ease;node.y=node.dsy+(node.dgy-node.dsy)*ease;});draw();
-  if(fr<STEPS)requestAnimationFrame(pass);else{N.forEach(function(node){node.dsx=null;});   // do NOT touch hx,hy \u2014 Reset reverts to the original home (reversible)
-   var xs=N.map(function(node){return node.x;}),ys=N.map(function(node){return node.y;});var span=Math.hypot(Math.max.apply(null,xs)-Math.min.apply(null,xs),Math.max.apply(null,ys)-Math.min.apply(null,ys));
-   window.__diagDone=true;console.log("\u00a7DIAG bubbles="+N.length+" axis=diagonal span="+span.toFixed(0));recordView();}})();}
-window.diagonalArrange=diagonalArrange;
-(function(){var db=document.getElementById("diagBtn");if(db)db.addEventListener("click",function(ev){ev.stopPropagation();audioUnlock();diagonalArrange();});})();
 // ── SCENE PERSISTENCE: the screen survives a hard refresh, so you continue exactly where you left
 //    off \u2014 no re-login, no hunting \u201crecent changes\u201d. Saved on unload, restored on load (localStorage). ──
 var pendingSeed=null,SKEY="glassbowl.scene";

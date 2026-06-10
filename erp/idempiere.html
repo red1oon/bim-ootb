@@ -59,7 +59,7 @@
      have no such overlay and never load this CSS — unaffected.) */
   #helpCard { z-index:130 !important; }
   .help-q   { z-index:129 !important; }
-  #idmp-burger { display:none; }
+  #idmp-burger { display:flex; }   /* shown on desktop too: lets the permanent left menu be collapsed so it never blocks the bottom history scrubber */
   /* ── Body split ── */
   #idmp-body { flex:1; display:flex; min-height:0; }
   /* ── Left menu panel ── */
@@ -73,6 +73,13 @@
   }
   #idmp-tree { flex:1; overflow-y:auto; padding:4px 0; }
   #idmp-menu-backdrop { display:none; }   /* mobile-only dim behind the open menu drawer (see @media) */
+  /* Desktop collapse: the burger (☰, always visible) slides the permanent 262px left column off to the LEFT so it
+     never blocks the bottom history scrubber; tap the burger again to bring it back. Scoped >760 so it never fights
+     the mobile drawer (which uses menu-open). flex-basis→0 lets #idmp-main reclaim the width as the menu slides out. */
+  #idmp-menu { transition:flex-basis .2s ease, transform .2s ease; }
+  @media (min-width:761px){
+    body.idmp-menu-collapsed #idmp-menu { flex-basis:0; transform:translateX(-100%); overflow:hidden; border-right:none; }
+  }
   .idmp-node { user-select:none; }
   .idmp-row {
     display:flex; align-items:center; gap:6px; padding:4px 8px; cursor:pointer; white-space:nowrap;
@@ -1375,7 +1382,11 @@
   document.addEventListener('DOMContentLoaded', function () {
     $('idmp-menu-filter').addEventListener('input', function (e) { applyFilter(e.target.value); });
     $('idmp-search').addEventListener('input', function (e) { $('idmp-menu-filter').value = e.target.value; applyFilter(e.target.value); });
-    $('idmp-burger').addEventListener('click', function () { document.body.classList.toggle('menu-open'); });
+    $('idmp-burger').addEventListener('click', function () {
+      if (window.innerWidth <= 760) { document.body.classList.toggle('menu-open'); }   // mobile: slide the drawer
+      else { var c = document.body.classList.toggle('idmp-menu-collapsed');             // desktop: collapse the permanent menu
+        console.log('§IDMP-MENU collapsed=' + c + ' innerW=' + window.innerWidth); }
+    });
     $('idmp-menu-backdrop').addEventListener('click', function () { document.body.classList.remove('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
     mountPillRegistry();

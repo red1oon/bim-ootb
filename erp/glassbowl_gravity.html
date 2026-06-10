@@ -105,13 +105,15 @@ if('serviceWorker' in navigator){addEventListener('load',function(){navigator.se
   var msg=document.createElement('span');msg.id='swToastMsg';msg.textContent='Glassbowl updated — tap to refresh';
   var x=document.createElement('span');x.id='swToastX';x.textContent='✕';x.title='dismiss';x.style.cssText='color:#8aa;cursor:pointer;padding:0 2px;font-size:14px';
   toast.appendChild(msg);toast.appendChild(x);(document.body||document.documentElement).appendChild(toast);
-  window.__swApply=function(){if(reg.waiting)reg.waiting.postMessage({type:'skipWaiting'});window.__swPostCount=(window.__swPostCount||0)+1;};
+  window.__swApplied=false;
+  window.__swApply=function(){window.__swApplied=true;if(reg.waiting)reg.waiting.postMessage({type:'skipWaiting'});window.__swPostCount=(window.__swPostCount||0)+1;};
   window.__swShowToast=function(){toast.style.display='flex';if(typeof beep==='function'){try{beep();}catch(e){}}};
   toast.addEventListener('click',function(ev){if(ev.target===x)return;window.__swApply();});
   x.addEventListener('click',function(ev){ev.stopPropagation();toast.style.display='none';});
   reg.addEventListener('updatefound',function(){var nw=reg.installing;if(!nw)return;nw.addEventListener('statechange',function(){if(nw.state==='installed'&&navigator.serviceWorker.controller){window.__swShowToast();}});});
-  navigator.serviceWorker.addEventListener('controllerchange',function(){if(sessionStorage.getItem('__swReloaded'))return;sessionStorage.setItem('__swReloaded','1');location.reload();});
-  console.log('§SWUPDATE wired=Y toast=1 reload-guard=session');
+  /* reload ONLY after the user taps the toast (__swApplied) — NEVER on the first-install clients.claim() controllerchange (that auto-reload was the mobile double-load); sessionStorage one-shot prevents any loop */
+  navigator.serviceWorker.addEventListener('controllerchange',function(){if(!window.__swApplied)return;if(sessionStorage.getItem('__swReloaded'))return;sessionStorage.setItem('__swReloaded','1');location.reload();});
+  console.log('§SWUPDATE wired=Y toast=1 reload-guard=tap');
 }).catch(function(){});});}</script>
 <svg id="bowl"></svg>
 
