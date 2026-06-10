@@ -21,6 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Minify OUR OWN JS in the ephemeral checkout only (prompts/UI_PAYLOAD_PERF.md Win #1).
+      # The repo source in git is NEVER changed — readable-source ethos preserved; only the
+      # uploaded Pages artifact is minified. Whitespace+syntax only (no identifier mangling),
+      # so cross-file window.* globals stay intact. Measured: gz ~1167KB → ~737KB (−36.9%).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Minify own JS into the Pages artifact
+        run: |
+          npm i --no-save esbuild@0.23.0
+          node scripts/minify_pages.js .
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
