@@ -52,9 +52,9 @@ function ok(c, m) { console.log((c ? '§W-HIST-SESSION PASS ' : '§W-HIST-SESSIO
 
     // ── 3. scrub over the dot: look re-applies, NO new dot ─────────────
     const nBeforeScrub = logs.filter(l => l.includes('§HIST_PUSH')).length;
-    await page.evaluate(() => { HistoryBar.viewStepBack(); });
+    await page.evaluate(() => { window.HistoryBar.viewStepBack(); });
     await sleep(600);
-    await page.evaluate(() => { HistoryBar.viewStepFront(); });
+    await page.evaluate(() => { window.HistoryBar.viewStepFront(); });
     await sleep(600);
     const nAfterScrub = logs.filter(l => l.includes('§HIST_PUSH')).length;
     const restored = logs.some(l => l.includes('§EVT RESTORE'));
