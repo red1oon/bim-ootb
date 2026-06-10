@@ -349,7 +349,7 @@
      (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
 <script src="icons.js?v=2"></script>
 <script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=7"></script>
+<script src="idmp_pills.js?v=8"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -778,7 +778,10 @@
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
     _recIdx = 0; _setSel(tab);
-    console.log('§IDEMPIERE tab=' + tab.name + ' table=' + tab.tableName + ' rows=' + _records.length + ' fields=' + (tab.fields ? tab.fields.length : 0) + (mdNote ? ' parentFilter=' + mdNote : ''));
+    // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
+    _curPostingDoc = _isPostingDoc(tab.tableName);
+    if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
+    console.log('§IDEMPIERE tab=' + tab.name + ' table=' + tab.tableName + ' rows=' + _records.length + ' fields=' + (tab.fields ? tab.fields.length : 0) + (mdNote ? ' parentFilter=' + mdNote : '') + ' postingDoc=' + _curPostingDoc);
     renderBody();
   }
   function _displayFields(tab) {
@@ -980,6 +983,18 @@
   function _adQ(sql, p) {
     var r = db.exec(sql, p || []); if (!r.length) return [];
     return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; });
+  }
+  // §AD-GATE — is the OPEN table a POSTING document? i.e. does it carry the AD `Posted` Button field
+  // (AD_Column.ColumnName='Posted', AD_Reference=28) — the same rule iDempiere uses to show the Posted button.
+  // The accounting pills (Accts-Posted / Posting-Preview) surface ONLY where this is true. Cached per table.
+  var _curPostingDoc = false, _postingDocCache = {};
+  function _isPostingDoc(tn) {
+    if (!tn || !db) return false;
+    if (_postingDocCache[tn] !== undefined) return _postingDocCache[tn];
+    var ok = false;
+    try { ok = _adQ("SELECT 1 AS x FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE UPPER(t.tablename)=UPPER(?) AND c.columnname='Posted' LIMIT 1", [tn]).length > 0; }
+    catch (e) { ok = false; }
+    _postingDocCache[tn] = ok; return ok;
   }
   function openPostedFor() {
     if (!_session) { status('Log in first to see Accts Posted'); return; }
@@ -1317,6 +1332,8 @@
       var pickerOpen = lg && lg.style.display !== 'none';
       return (pickerOpen || !_session) ? 'pre-client' : 'in-client';
     };
+    // §AD-GATE — the host answer for showWhen:"posting-doc" pills: true only when a posting document is open.
+    window.IdmpPillDocGate = function () { return _curPostingDoc; };
     if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
   }
