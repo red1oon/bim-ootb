@@ -211,11 +211,22 @@
     } catch (e) { return null; }
   }
 
+  // §A1-DOC (HISTORY_SESSION_EVENTS.md) — Witness: W-DOC-DOTS. The Z-dot label for a COMMITTED op.
+  // PURE: op in, label out — one label per commit gesture (Save/New/Delete/DocAction), never a keystroke.
+  function docLabel(op, name) {
+    var n = name || op.key;
+    if (op.op_type === 'CRUD_CREATE') return 'New ' + n;
+    if (op.op_type === 'CRUD_UPDATE') return 'Save ' + n;
+    if (op.op_type === 'CRUD_DELETE') return 'Delete ' + n;
+    if (op.op_type === 'DOC_ACTION') return op.action + ' ' + n + ' → ' + op.to;
+    return null;
+  }
+
   var CORE = {
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, kernelParamsFor: kernelParamsFor, readTip: readTip,
-    buildDocActionGroup: buildDocActionGroup
+    buildDocActionGroup: buildDocActionGroup, docLabel: docLabel
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -558,6 +569,7 @@
   function dryProcess(op) {
     console.log('§CRUD process key=' + op.key + ' action=' + op.action + ' from=' + op.from + ' to=' + op.to + ' (dry) op=DOC_ACTION outcome=' + op.outcome + (op.unmet && op.unmet.length ? ' unmet=' + op.unmet.join(',') : ''));
     setDocStatus(op.key, op.to, op.outcome, op.unmet);
+    docDot(CORE.docLabel(op, fname(op.key)) + ' (dry)');
     toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress — unmet condition)' : ' (Completed)') + ' — dry-run');
   }
   // commitProcess — the REAL signed write loop (W-CHAIN), now via §I-K commitGroup (Phase 3, UI tier):
@@ -580,6 +592,7 @@
             var uuid = (row.length && row[0].values.length) ? row[0].values[0][0] : null;
             console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
             setDocStatus(op.key, op.to, op.outcome, op.unmet);
+            docDot(CORE.docLabel(op, fname(op.key)));
             toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
           });
         }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); dryProcess(op); });
@@ -587,15 +600,23 @@
     });
   }
 
+  // Implementing HISTORY_SESSION_EVENTS.md §A1-DOC — Witness: W-DOC-DOTS. One Z dot per COMMITTED doc
+  // change; called ONLY from the commit funnel (applyOp / commitProcess / dryProcess), never from a
+  // field/keystroke path — typing between commits stays in the input's native undo.
+  function docDot(label) { try { if (typeof global.recordDocMoment === 'function') global.recordDocMoment(label); } catch (e) {} }
+
   // ── applyOp — E2 dry path for CRUD verbs; DOC_ACTION now takes the GP3 signed-write seam. ──
   function applyOp(op, e) {
-    if (op.op_type === 'CRUD_CREATE')
+    if (op.op_type === 'CRUD_CREATE') {
       console.log('§CRUD create key=' + op.key + ' (dry) op=CRUD_CREATE fields=' + JSON.stringify(op.fields) + ' ownerGated=' + (op.ownerGated ? 'Y' : 'N') + ' cas=' + (op.cas || '-'));
-    else if (op.op_type === 'CRUD_UPDATE')
+      docDot(CORE.docLabel(op, fname(op.key)));
+    } else if (op.op_type === 'CRUD_UPDATE') {
       console.log('§CRUD update key=' + op.key + ' field=' + Object.keys(op.changes).join(',') + ' (dry) op=CRUD_UPDATE changes=' + JSON.stringify(op.changes));
-    else if (op.op_type === 'CRUD_DELETE')
+      docDot(CORE.docLabel(op, fname(op.key)));
+    } else if (op.op_type === 'CRUD_DELETE') {
       console.log('§CRUD delete key=' + op.key + ' tombstone=Y reversible=Y (dry) op=CRUD_DELETE id=' + op.id);
-    else if (op.op_type === 'DOC_ACTION') { commitProcess(op); return; }   // GP3: real signed write (sidecar)
+      docDot(CORE.docLabel(op, fname(op.key)));
+    } else if (op.op_type === 'DOC_ACTION') { commitProcess(op); return; }   // GP3: real signed write (sidecar)
     toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — dry-run logged (E3 will sign + apply)');
   }
 
@@ -698,6 +719,8 @@
     } catch (e) { return []; }
   }
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
+                    applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
+
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history };
