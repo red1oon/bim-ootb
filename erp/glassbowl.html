@@ -769,6 +769,13 @@ window.recordView=recordView;window.__viewHist=viewHist;
 // page Z (#scrub) keeps showing old views and recordView() re-mirrors the current view to the world log.
 // glassbowl_pills.js calls this before WholeHistory.clear().
 window.GlassbowlHistoryReset=function(){viewHist=[];viewIdx=-1;window.__viewHist=viewHist;if(typeof renderScrub==="function")renderScrub();console.log("§GB-HIST-RESET viewHist=0");};
+// HISTORY_SESSION_EVENTS.md §A1-DOC — a dot = a COMMITTED doc change (Save/New/Delete/DocAction), never a
+// keystroke (typing stays in the field's native undo). PAGE-LOCAL by design: no WholeHistory mirror — CRUD
+// detail never crowds W. docSeq keeps consecutive same-label commits distinct (two saves = two dots).
+var docSeq=0;
+// §A-GRAIL: op (from crud_overlay docDot) carries {op_type,key,from,to} — stored on the dot so
+// foldDocOps can call crudFoldBack/crudFoldForward when scrubbing past it.
+window.recordDocMoment=function(label,op){if(vlRestoring)return;var v=captureView();v.hint=label;v.docSeq=++docSeq;v.docOp=op||null;viewHist=viewHist.slice(0,viewIdx+1);viewHist.push(v);viewIdx=viewHist.length-1;window.__viewHist=viewHist;renderScrub();console.log("§DOC-DOT idx="+viewIdx+" total="+viewHist.length+" label="+label+(op?" op="+op.op_type:""));};
 // restore a captured view (PURE-READ): re-apply focus/trace/spine-toggles/orbit. No persistence writes.
 function applyView(v){vlRestoring=true;try{
  ["containment","derivation","settlement","reference"].forEach(function(kk,i){show[kk]=v.show[kk];var cb=document.querySelectorAll("#legend input[type=checkbox]")[i];if(cb)cb.checked=v.show[kk];});
@@ -778,7 +785,11 @@ function applyView(v){vlRestoring=true;try{
  if(v.pos&&v.pos.length===N.length)N.forEach(function(nn,i){nn.x=v.pos[i][0];nn.y=v.pos[i][1];});yaw=v.yaw||0;pitch=v.pitch||0;window.__yaw=yaw;window.__pitch=pitch;updateBall();draw();
 }catch(e){}vlRestoring=false;scrubJive();renderScrub();}
 window.applyView=applyView;
-function scrubTo(i){if(i<0||i>=viewHist.length||i===viewIdx)return;viewIdx=i;applyView(viewHist[i]);}
+// §A-GRAIL (HISTORY_SESSION_EVENTS.md): when scrubbing past a DOC_ACTION dot, fold the doc
+// back (backward) or re-apply (forward) via crudFoldBack / crudFoldForward (crud_overlay.js).
+// READ-ONLY events (CRUD_UPDATE etc.) restore the LOOK only — applyView handles that.
+function foldDocOps(from,to){if(from===to)return;var j,v;if(from>to){for(j=from;j>to;j--){v=viewHist[j];if(v&&v.docOp&&v.docOp.op_type==='DOC_ACTION'&&typeof window.crudFoldBack==='function')window.crudFoldBack(v.docOp.key,v.docOp.from,v.docOp.to);}}else{for(j=from+1;j<=to;j++){v=viewHist[j];if(v&&v.docOp&&v.docOp.op_type==='DOC_ACTION'&&typeof window.crudFoldForward==='function')window.crudFoldForward(v.docOp.key,v.docOp.to);}}}
+function scrubTo(i){if(i<0||i>=viewHist.length||i===viewIdx)return;foldDocOps(viewIdx,i);viewIdx=i;applyView(viewHist[i]);}
 function undoView(){if(viewIdx>0){viewIdx--;applyView(viewHist[viewIdx]);}}
 function redoView(){if(viewIdx<viewHist.length-1){viewIdx++;applyView(viewHist[viewIdx]);}}
 window.undoView=undoView;window.redoView=redoView;
