@@ -81,9 +81,17 @@ function pillIds(page) {
   console.log('§A-WITNESS-5 mobileBottomDock=' + dock.docked + ' bottom=' + dock.bottom + ' vh=' + dock.vh);
   await page.screenshot({ path: path.join(__dirname, 'idmp_pills_mobile_390.png') });
 
-  const EXPECT = ['redpill','posted','preview','graph','kanban','rule','install','migrate','erpdoc','showme','worldhist'];   // §D red pill (order 0) + erpdoc (v606) + showme (v609) + preview (v625 Posting-Preview lens) + worldhist (v627 W pill — World-history overlay, HISTORY_KNOB_DIAL.md)
+  // §AD-GATE show-direction: with NO posting doc, 'preview' is off the bar (above). Simulate a posting
+  // document open (the host predicate returns true) + resync → the preview pill must now SURFACE.
+  await page.evaluate(() => { window.IdmpPillDocGate = () => true; if (window.IdmpPills.setDocContext) window.IdmpPills.setDocContext(); });
+  await page.waitForTimeout(300);
+  const idsDoc = await pillIds(page);
+  const gateWorks = !ids.includes('preview') && idsDoc.includes('preview');
+  console.log('§A-WITNESS-6 §AD-GATE noDoc-preview=' + ids.includes('preview') + ' postingDoc-preview=' + idsDoc.includes('preview') + ' gateWorks=' + gateWorks);
+
+  const EXPECT = ['redpill','posted','graph','kanban','rule','install','migrate','erpdoc','showme','worldhist'];   // §D red pill (order 0) + erpdoc (v606) + showme (v609) + worldhist (v627 W pill — World-history overlay, HISTORY_KNOB_DIAL.md). NOTE: 'preview' is §AD-GATED (showWhen:posting-doc) → OFF the bar at the login/no-doc state this test runs in (it surfaces only when a posting document is open); excluded here by design.
   const idsOk = EXPECT.every(id => ids.includes(id)) && ids.length === EXPECT.length;
-  const pass = idsOk && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
+  const pass = idsOk && gateWorks && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
     /source=registry/.test(idmpPillsLog) && /handAuthored=0/.test(idmpPillsLog);
   console.log('§A-RESULT ' + (pass ? 'PASS' : 'FAIL') +
     ' idsOk=' + idsOk + ' barPresent=' + !!bar + ' handRollGone=' + !handRoll +
