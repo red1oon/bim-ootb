@@ -53,10 +53,17 @@
   function _clearIdmpHistory() {
     // The page timeline lives in localStorage / the in-memory bar, NOT the SW cache — "clear cache" never
     // wiped it. The bomb is the one switch that does.
-    if (window.confirm('Clear history for this page?\nThis wipes the session timeline and cannot be undone.')) {
+    if (window.confirm('Clear history for this page AND the world timeline?\nThis wipes the session timeline and cannot be undone.')) {
       try { Object.keys(localStorage).filter(function (k) { return k.indexOf('idmp.hist') === 0 || k.indexOf('bim.hist') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
       if (window.IdmpHistory && window.IdmpHistory.clear) window.IdmpHistory.clear();
-      console.log('§IDMP-HIST clear via=bomb confirmed');
+      // §IDMP-HIST world: the cross-page WorldHistory log is its OWN store (bim.docHistory) — the bim.hist
+      // prefix above does NOT match it. Clear it explicitly + refresh the open overlay so it shows empty.
+      var world = 'n/a';
+      if (window.WholeHistory && WholeHistory.clear) {
+        try { WholeHistory.clear(); world = 'cleared'; } catch (e) { world = 'err'; }
+        try { var p = document.getElementById('whole-hist-panel'); if (p && p.classList.contains('show') && WholeHistory.open) WholeHistory.open(); } catch (e) {}
+      }
+      console.log('§IDMP-HIST clear via=bomb confirmed world=' + world);
     } else { console.log('§IDMP-HIST clear via=bomb cancelled'); }
   }
   function _worldDrawer(srcBtn) {

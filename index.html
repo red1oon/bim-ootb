@@ -318,11 +318,10 @@ window.addEventListener('error', function(e){
 </div>
 
 <div class="tabs-panel" id="tabs-panel">
-  <!-- §HSF-8: app-wide history line (landing opens + viewer building-opens, shared via localStorage) -->
-  <div id="doc-history-row" style="display:none; margin-bottom:8px;">
-    <div class="tab-label" data-trl="landing_history">History</div>
-    <div class="tab-list" id="doc-history-line"></div>
-  </div>
+  <!-- HISTORY_KNOB_DIAL.md: the read-only §HSF-8 history strip is replaced by the interactive "W"
+       World-history feature (clock launcher bottom-left → cross-page WHOLE|This overlay), same as
+       viewer/iDempiere/Glassbowl. The landing still RECORDS opens into bim.docHistory (docHistAppend),
+       which WholeHistory reads. -->
   <div id="open-tabs-row" style="display:none;">
     <div class="tab-label" data-trl="landing_open_tabs">Open Tabs</div>
     <div class="tab-list" id="tab-list"></div>
@@ -330,6 +329,8 @@ window.addEventListener('error', function(e){
 </div>
 
 <script src="viewer/import_db_builder.js?v=4"></script>
+<!-- HISTORY_KNOB_DIAL.md: shared World-history module — landing's "W" feature (packager inlines this). -->
+<script src="common/whole_history.js?v=1"></script>
 <!-- wizard.js now loads in viewer via ?wizard=1 param (S230) -->
 <script>
 // ── Config ──
@@ -425,14 +426,18 @@ function renderDocHistory() {
 function _syncTabsPanel() {
   var panel = document.getElementById('tabs-panel');
   if (!panel) return;
-  var hasTabs = Object.keys(openTabs).length > 0;
-  var hasHist = _docHist().length > 0;
-  panel.style.display = (hasTabs || hasHist) ? 'block' : 'none';
+  // History moved to the "W" overlay; the panel now only frames Open Tabs.
+  panel.style.display = Object.keys(openTabs).length > 0 ? 'block' : 'none';
 }
 // Cross-tab live sync: a viewer tab writing BUILDING_OPEN pings here; re-render the union.
 try { var _docBC = new BroadcastChannel('bim_history'); _docBC.onmessage = function () { renderDocHistory(); }; } catch (e) {}
 window.addEventListener('storage', function (e) { if (e.key === DOC_HIST_KEY) renderDocHistory(); });
 renderDocHistory();
+
+// HISTORY_KNOB_DIAL.md — the landing gets the SAME "W" World-history feature as viewer/erp, replacing
+// the old read-only strip: a self-contained clock launcher (bottom-left) → cross-page WHOLE|This overlay.
+// rootPrefix defaults to '' (landing is at the site root), so deep-links resolve to viewer/erp correctly.
+try { if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'landing', launcher: true }); } catch (e) {}
 
 // All per-building DBs — single DB per building (S242), no separate library
 const BUILDINGS = {
@@ -1935,6 +1940,9 @@ async function packageLandingPage() {
     setStatus('Inlining scripts…');
     var dbBuilderSrc = await fetch('viewer/import_db_builder.js?v=4').then(function(r) { return r.text(); });
     var localeSrc = await fetch('viewer/locale_loader.js?v=7').then(function(r) { return r.text(); });
+    // HISTORY_KNOB_DIAL.md: the W feature's module lives in common/ — inline it so the offline package is
+    // self-contained (a bare common/ ref would 404 from a saved single file).
+    var wholeHistSrc = await fetch('common/whole_history.js?v=1').then(function(r) { return r.text(); }).catch(function() { return ''; });
 
     // 1b. Fetch Worker scripts for Blob URL in standalone mode
     setStatus('Fetching worker scripts…');
@@ -2017,6 +2025,7 @@ async function packageLandingPage() {
     // 5. Inline external scripts (function replacement avoids $' $& corruption in sources)
     html = html.replace(/<script src="viewer\/import_db_builder\.js[^"]*"><\/script>/, function() { return '<script>\n' + dbBuilderSrc + '\n<\/script>'; });
     html = html.replace(/<script src="viewer\/locale_loader\.js[^"]*"><\/script>/, function() { return '<script>\n' + localeSrc + '\n<\/script>'; });
+    if (wholeHistSrc) html = html.replace(/<script src="common\/whole_history\.js[^"]*"><\/script>/, function() { return '<script>\n' + wholeHistSrc + '\n<\/script>'; });
 
     // 6. Inline images → base64
     html = html.replace(/src="viewer\/icons\/icon-192\.png"/g, 'src="' + iconB64 + '"');

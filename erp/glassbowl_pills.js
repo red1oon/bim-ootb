@@ -92,6 +92,8 @@
     if (window.confirm('Clear history for this page?\nThis wipes the session timeline and cannot be undone.')) {
       try { Object.keys(localStorage).filter(function (k) { return k.indexOf('bim.hist') === 0 || k.indexOf('gb.viewlog') === 0 || k.indexOf('glassbowl') === 0 || k.indexOf('gravity') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
       if (window.WholeHistory && WholeHistory.clear) try { WholeHistory.clear(); } catch (e) {}
+      // refresh the World overlay in place (if open) so it shows empty straight away, not stale entries.
+      try { var p = document.getElementById('whole-hist-panel'); if (p && p.classList.contains('show') && window.WholeHistory && WholeHistory.open) WholeHistory.open(); } catch (e) {}
       console.log('§GB-HIST clear via=bomb confirmed');
     } else { console.log('§GB-HIST clear via=bomb cancelled'); }
   }
