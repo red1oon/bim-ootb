@@ -55,6 +55,11 @@
     // `hidden` set (off-rail-but-in-overflow) rather than pill=false (gone), preserving the user's own choices.
     var lifecycleIds = _actions.filter(function (a) { return a._stage === 'pre-client'; }).map(function (a) { return a.id; });
     _actions.forEach(function (a) { if (a._stage === 'pre-client') a.pill = undefined; });  // always a real pill
+    // §AD-GATE — pills tagged showWhen:"posting-doc" mirror iDempiere's AD `Posted` Button field: they may
+    // surface ONLY when a posting document (a table carrying that field) is open. The host answers via
+    // window.IdmpPillDocGate(); absent/false → the pill is fully off the bar (pill=false), not just overflow.
+    var _docOk = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk ? undefined : false; });
     var cfg = _PB.getConfig();
     var hidden = (cfg.hidden || []).filter(function (id) { return lifecycleIds.indexOf(id) < 0; }); // drop managed ids
     if (stage !== 'pre-client') hidden = hidden.concat(lifecycleIds);                                // in-client → overflow
@@ -95,11 +100,15 @@
     _applyStage(stage);
   }
 
+  // setDocContext() — host calls on every tab/record open so showWhen:"posting-doc" pills re-evaluate against
+  // window.IdmpPillDocGate() (AD: is a posting document open?). Recomputes the bar at the current stage.
+  function setDocContext() { if (_PB && _actions) _applyStage(_curStage || 'pre-client'); }
+
   function mount() {
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=26').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=27').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -107,6 +116,7 @@
         var act = { id: p.id, name: p.name, key: p.key || '' };
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
         if (p.stage) act._stage = p.stage;                   // §C lifecycle tag (carried from the manifest)
+        if (p.showWhen) act._showWhen = p.showWhen;           // §AD-GATE condition (e.g. "posting-doc") carried from the manifest
         // fn binds BY ID to the host's real handler; honest toast if a handler is missing (NON-INVENT).
         act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
         var ACTIVE = window.IdmpPillActive || {};            // §D — lit-state binding by id (e.g. redpill = clean mode on)
@@ -114,6 +124,10 @@
         return act;
       });
       _actions = actions;
+      // §AD-GATE — apply the posting-doc condition at BUILD (not just on later sync): with no document open
+      // the host's IdmpPillDocGate() is false → showWhen:"posting-doc" pills (Posting-Preview) start OFF the bar.
+      var _docOk0 = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk0 ? undefined : false; });
 
       _injectStyle();
       var wrap = document.createElement('div');
@@ -216,5 +230,5 @@
     document.head.appendChild(s);
   }
 
-  window.IdmpPills = { mount: mount, setStage: setStage, _evalReveal: _evalReveal, builder: null };
+  window.IdmpPills = { mount: mount, setStage: setStage, setDocContext: setDocContext, _evalReveal: _evalReveal, builder: null };
 })();
