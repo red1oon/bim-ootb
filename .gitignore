@@ -16,3 +16,4 @@ quick-push.sh
 
 # Reference context from HP machine (not source) — §S281
 BIM_CONTEXT/
+!erp/preview_demo.db

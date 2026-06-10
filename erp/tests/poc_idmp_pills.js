@@ -81,7 +81,7 @@ function pillIds(page) {
   console.log('§A-WITNESS-5 mobileBottomDock=' + dock.docked + ' bottom=' + dock.bottom + ' vh=' + dock.vh);
   await page.screenshot({ path: path.join(__dirname, 'idmp_pills_mobile_390.png') });
 
-  const EXPECT = ['redpill','posted','graph','kanban','rule','install','migrate','erpdoc','showme'];   // §D red pill (order 0) + erpdoc (v606) + showme (v609)
+  const EXPECT = ['redpill','posted','preview','graph','kanban','rule','install','migrate','erpdoc','showme'];   // §D red pill (order 0) + erpdoc (v606) + showme (v609) + preview (v625 Posting-Preview lens)
   const idsOk = EXPECT.every(id => ids.includes(id)) && ids.length === EXPECT.length;
   const pass = idsOk && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
     /source=registry/.test(idmpPillsLog) && /handAuthored=0/.test(idmpPillsLog);
