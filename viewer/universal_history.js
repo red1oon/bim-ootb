@@ -75,7 +75,10 @@
       // scrubber restores the scene when you step ONTO an op moment (was only on pick/view → ops did nothing).
       viewState: _tapView(),
       // W1: a re-open key for the cross-page log (only BUILDING_OPEN is mirrored; reopen = the building).
-      ref: (opType === 'BUILDING_OPEN' && params && params.name) ? { building: params.name } : null,
+      // Carry the ?db= URL this viewer was opened with so a foreign World card can DETERMINISTICALLY reopen
+      // the building (viewer/viewer.html?db=<url>&ghost=1, the landing's openViewer format) — not just the
+      // best-effort city-only A.cityLoadBuilding(name).
+      ref: (opType === 'BUILDING_OPEN' && params && params.name) ? { building: params.name, db: _openDbUrl() } : null,
       sigKey: sigKey });
   }
 
@@ -154,6 +157,8 @@
   // The depth axis (HISTORY_KNOB_SIGNAL_TAP §LOCKED #3). Loose-coupled: the tap module owns the
   // vector; the viewer only registers HOW to read/apply its own toggles + camera.
   function _tapView() { try { return window.HistoryTap ? HistoryTap.currentView() : null; } catch (e) { return null; } }
+  // The ?db= URL this viewer was opened with — the deterministic re-open key for a cross-page World card.
+  function _openDbUrl() { try { return new URLSearchParams(location.search).get('db') || null; } catch (e) { return null; } }
   function _tapApply(v, label) { try { if (v && window.HistoryTap) HistoryTap.applyView(v, label); } catch (e) {} }
   function _wireTap() {
     if (!window.HistoryTap || !window.HistoryTap.field) return;
