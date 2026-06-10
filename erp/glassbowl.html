@@ -769,6 +769,11 @@ window.recordView=recordView;window.__viewHist=viewHist;
 // page Z (#scrub) keeps showing old views and recordView() re-mirrors the current view to the world log.
 // glassbowl_pills.js calls this before WholeHistory.clear().
 window.GlassbowlHistoryReset=function(){viewHist=[];viewIdx=-1;window.__viewHist=viewHist;if(typeof renderScrub==="function")renderScrub();console.log("§GB-HIST-RESET viewHist=0");};
+// HISTORY_SESSION_EVENTS.md §A1-DOC — a dot = a COMMITTED doc change (Save/New/Delete/DocAction), never a
+// keystroke (typing stays in the field's native undo). PAGE-LOCAL by design: no WholeHistory mirror — CRUD
+// detail never crowds W. docSeq keeps consecutive same-label commits distinct (two saves = two dots).
+var docSeq=0;
+window.recordDocMoment=function(label){if(vlRestoring)return;var v=captureView();v.hint=label;v.docSeq=++docSeq;viewHist=viewHist.slice(0,viewIdx+1);viewHist.push(v);viewIdx=viewHist.length-1;renderScrub();console.log("§DOC-DOT idx="+viewIdx+" total="+viewHist.length+" label="+label);};
 // restore a captured view (PURE-READ): re-apply focus/trace/spine-toggles/orbit. No persistence writes.
 function applyView(v){vlRestoring=true;try{
  ["containment","derivation","settlement","reference"].forEach(function(kk,i){show[kk]=v.show[kk];var cb=document.querySelectorAll("#legend input[type=checkbox]")[i];if(cb)cb.checked=v.show[kk];});
