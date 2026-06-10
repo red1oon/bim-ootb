@@ -53,6 +53,7 @@
 
   // (a) Record a kernel op as it commits → build an entry and push it through the shared gate.
   function _recordOp(opId, opType, params, guids) {
+    if (_isReHome()) return;   // A2: re-homed past session is READ-ONLY — never append to it
     var label = _opLabel(opType, params);
     if (opType === 'ELEMENT_PICK') {
       // Read-only SELECTION moment: a 'pick' entry that restores via A.focusElement (no flag-flip).
@@ -84,13 +85,13 @@
       // Carry the ?db= URL this viewer was opened with so a foreign World card can DETERMINISTICALLY reopen
       // the building (viewer/viewer.html?db=<url>&ghost=1, the landing's openViewer format) — not just the
       // best-effort city-only A.cityLoadBuilding(name).
-      ref: (opType === 'BUILDING_OPEN' && params && params.name) ? { building: params.name, db: _openDbUrl() } : null,
+      ref: (opType === 'BUILDING_OPEN' && params && params.name) ? { building: params.name, db: _openDbUrl(), session: _sessionId() } : null,
       sigKey: sigKey });
   }
 
   // VIEW-nav push — navigate_find calls this with its semantic view entry.
   function pushView(v) {
-    if (!HB.isEnabled()) return;
+    if (!HB.isEnabled() || _isReHome()) return;   // A2: read-only re-home never records
     var label = v.label || v.axis || 'view';
     HB.push({ bucket: 'view', kind: 'view', type: v.kind, label: label, readonly: true,
       view: v, viewState: _tapView(), sigKey: 'view:' + (v.kind + ':' + (v.label || v.axis)) });
@@ -101,7 +102,7 @@
   // It is a 'event'-bucket moment: stamped with the ambient look (_tapView) so scrubbing onto it RE-APPLIES
   // the look only — it NEVER calls KernelOps.undo/redo (not a model op). Gated by the `event` profile bucket.
   function recordEvent(type, label, ref) {
-    if (!HB.isEnabled()) return;
+    if (!HB.isEnabled() || _isReHome()) return;   // A2: read-only re-home never records
     HB.push({ bucket: 'event', kind: 'event', type: type, label: label || type, readonly: true,
       viewState: _tapView(), ref: (ref != null ? ref : null), sigKey: 'event:' + type + ':' + (label || '') });
   }
@@ -174,6 +175,25 @@
   function _tapView() { try { return window.HistoryTap ? HistoryTap.currentView() : null; } catch (e) { return null; } }
   // The ?db= URL this viewer was opened with — the deterministic re-open key for a cross-page World card.
   function _openDbUrl() { try { return new URLSearchParams(location.search).get('db') || null; } catch (e) { return null; } }
+  // HISTORY_SESSION_EVENTS.md A2 [VIEWER] — the SESSION boundary. A session = one open, tied to the browser
+  // TAB via sessionStorage: a reload CONTINUES it (same id → same Z tree, no loss); a new tab / new visit =
+  // a NEW session (fresh Z, new W card). `?sess=<id>` = a read-only RE-HOME of a past session picked from W
+  // (loads that session's persisted Z tree from localStorage to scrub; recording is gated off so browsing the
+  // past never mutates it — viewer is the LIGHT lane, no forking, per the partition).
+  var _SESSION = null, _REHOME = false;
+  function _sessionId() {
+    if (_SESSION) return _SESSION;
+    try {
+      var sp = new URLSearchParams(location.search), db = sp.get('db') || 'default';
+      var forced = sp.get('sess');
+      if (forced) { _REHOME = true; _SESSION = forced; return _SESSION; }
+      var key = 'bim.sess.' + db.replace(/[^A-Za-z0-9_.-]/g, '_');
+      var sid = null; try { sid = sessionStorage.getItem(key); } catch (e) {}
+      if (!sid) { sid = 's' + Date.now(); try { sessionStorage.setItem(key, sid); } catch (e) {} }
+      _SESSION = sid; return _SESSION;
+    } catch (e) { _SESSION = 'live'; return _SESSION; }
+  }
+  function _isReHome() { _sessionId(); return _REHOME; }   // resolve _REHOME via the cached compute
   function _tapApply(v, label) { try { if (v && window.HistoryTap) HistoryTap.applyView(v, label); } catch (e) {} }
   function _wireTap() {
     if (!window.HistoryTap || !window.HistoryTap.field) return;
@@ -256,7 +276,8 @@
   // Per-building persisted-tree key (item 4): universes survive reload, scoped to THIS building's db.
   function _treeKey() {
     try { var db = new URLSearchParams(location.search).get('db') || 'default';
-      return 'bim.hist.tree.' + db.replace(/[^A-Za-z0-9_.-]/g, '_'); } catch (e) { return 'bim.hist.tree.default'; }
+      // A2: scope the tree to (building, SESSION) so each session has its OWN Z; `?sess=` loads a past one.
+      return 'bim.hist.tree.' + db.replace(/[^A-Za-z0-9_.-]/g, '_') + '.' + _sessionId(); } catch (e) { return 'bim.hist.tree.default'; }
   }
 
   // ── Wire the viewer onto the shared bar ───────────────────────────────

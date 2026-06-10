@@ -330,7 +330,7 @@ window.addEventListener('error', function(e){
 
 <script src="viewer/import_db_builder.js?v=4"></script>
 <!-- HISTORY_KNOB_DIAL.md: shared World-history module — landing's "W" feature (packager inlines this). -->
-<script src="common/whole_history.js?v=3"></script>
+<script src="common/whole_history.js?v=4"></script>
 <!-- wizard.js now loads in viewer via ?wizard=1 param (S230) -->
 <script>
 // ── Config ──
@@ -1942,7 +1942,7 @@ async function packageLandingPage() {
     var localeSrc = await fetch('viewer/locale_loader.js?v=7').then(function(r) { return r.text(); });
     // HISTORY_KNOB_DIAL.md: the W feature's module lives in common/ — inline it so the offline package is
     // self-contained (a bare common/ ref would 404 from a saved single file).
-    var wholeHistSrc = await fetch('common/whole_history.js?v=3').then(function(r) { return r.text(); }).catch(function() { return ''; });
+    var wholeHistSrc = await fetch('common/whole_history.js?v=4').then(function(r) { return r.text(); }).catch(function() { return ''; });
 
     // 1b. Fetch Worker scripts for Blob URL in standalone mode
     setStatus('Fetching worker scripts…');
