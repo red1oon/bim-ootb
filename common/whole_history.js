@@ -182,7 +182,7 @@
   function getMode() { return _mode; }
 
   // ── DOM (browser only) — a clean, self-contained launcher + overlay panel ──
-  var _panel = null, _strip = null, _launch = null, _opened = false;
+  var _panel = null, _strip = null, _launch = null, _opened = false, _launcher = true;
   var GOLD = '#ffd479';
   var _PAGE_COLOR = { viewer: '#4fc3f7', idempiere: '#66bb6a', glassbowl: '#b388ff', gravity: '#ff8a65', landing: '#9aa4b8' };
   function _clockSvg(px) {
@@ -234,10 +234,14 @@
       '.whole-chip .whole-lbl{white-space:normal}';
     document.head.appendChild(st);
 
-    _launch = document.createElement('button');
-    _launch.id = 'whole-hist-launch'; _launch.title = 'Whole history — across pages'; _launch.innerHTML = _clockSvg(19);
-    _launch.addEventListener('click', function () { toggleOpen(); });
-    document.body.appendChild(_launch);
+    // HISTORY_KNOB_DIAL.md rework: the World history is launched from the "W" PILL now (clean, in the
+    // pill registry). Hosts pass {launcher:false} to suppress the standalone bottom-left clock button.
+    if (_launcher !== false) {
+      _launch = document.createElement('button');
+      _launch.id = 'whole-hist-launch'; _launch.title = 'Whole history — across pages'; _launch.innerHTML = _clockSvg(19);
+      _launch.addEventListener('click', function () { toggleOpen(); });
+      document.body.appendChild(_launch);
+    }
 
     _panel = document.createElement('div'); _panel.id = 'whole-hist-panel';
     _panel.innerHTML =
@@ -340,6 +344,7 @@
     opts = opts || {};
     _page = opts.page || _page || 'landing';
     _rootPrefix = (opts.rootPrefix != null) ? opts.rootPrefix : _rootPrefix;
+    if (opts.launcher === false) _launcher = false;
     _readMode();
     if (typeof document !== 'undefined') {
       if (document.body) { _ensureDom(); }

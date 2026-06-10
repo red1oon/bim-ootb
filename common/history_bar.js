@@ -34,7 +34,6 @@ window.HistoryBar = (function () {
   // The MODEL cursor (_cursor) only moves on real undo/redo (Ctrl+Z/Backspace/toolbar); we keep them in
   // sync when the model moves, so the highlighted dot never diverges confusingly.
   var _viewCursor = -1;
-  var _haloIdx = -1;       // dot index that just received the amber view-nav halo (double-feedback)
   var _seq = 0;            // monotonic id + tiebreak for same-ms timestamps (also the node id)
   var _suppress = false;   // true while WE drive a restore — stops re-recording
   var _bloom = false;      // double-tap the BAR → dots bloom into labelled chips
@@ -254,10 +253,9 @@ window.HistoryBar = (function () {
     _viewCursor = idx;
     var entry = idx >= 0 ? _stream[idx] : null;
     try { if (_cfg.restoreView) _cfg.restoreView(entry); } catch (e) { console.warn('§HIST_VIEWNAV_ERR', e); }
-    _haloIdx = idx;                                  // amber double-feedback halo lands here
     _render();
     var lbl = entry ? (entry.label || '') : '';
-    console.log('§HIST_VIEWNAV idx=' + _viewCursor + ' label="' + lbl + '" opLogMutated=NO dotJump=ok halo=amber');
+    console.log('§HIST_VIEWNAV idx=' + _viewCursor + ' label="' + lbl + '" opLogMutated=NO dotJump=ok');
     return { idx: _viewCursor, label: lbl };
   }
   function viewStepBack() { return (_viewCursor > 0) ? _viewApply(_viewCursor - 1) : (_viewCursor === 0 ? _viewApply(-1) : null); }
@@ -453,6 +451,9 @@ window.HistoryBar = (function () {
     if (!_persistLoad()) { _rebuild(); _render(); }
     console.log('§HIST_TREEKEY key=' + (key || '-') + ' nodes=' + _nodeCount());
   }
+  // Current tip (most-recently-applied node) — small shape for de-dup checks (e.g. skip a repeat
+  // BUILDING_OPEN on reload). null at the virtual root.
+  function tipInfo() { return _cursorNode ? { type: _cursorNode.type, label: _cursorNode.label, sigKey: _sig(_cursorNode) } : null; }
   function list() {
     var out = _stream.map(function (e, i) { return { i: i, kind: e.kind, label: e.label, applied: i <= _cursor }; });
     console.log('§HIST_LIST n=' + _stream.length + ' cursor=' + _cursor + ' ' +
@@ -461,14 +462,15 @@ window.HistoryBar = (function () {
   }
 
   // ── The bar UI ────────────────────────────────────────────────────────
-  var _bar = null, _back = null, _fwd = null, _marks = null, _off = null;
-  var _knobTrack = null, _knobThumb = null, _knobLbl = null;
-  var _knobCtl = null;                                  // the HistoryKnob dial controller (when loaded)
-  // The dial exposes 4 depth ticks (off/low/high/max); HB's ladder has 5 (legacy/keyboard can land on
-  // 'mid'). Map the off-dial 'mid' onto the nearest dial tick for display.
-  function _knobDepth() { return (_depth === 'off' || _depth === 'low' || _depth === 'high' || _depth === 'max') ? _depth : 'high'; }
-  var BTN = 'background:rgba(30,50,80,0.7);color:#4fc3f7;border:1px solid rgba(255,255,255,0.15);' +
-    'border-radius:6px;padding:6px 10px;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);min-width:36px;text-align:center';
+  // HISTORY_KNOB_DIAL.md rework: the amp-knob is SCRAPPED. The bar is now just `‹ dots ›` — the two
+  // arrows step the READ-ONLY view cursor older/newer, the dots are clickable jumps, hover = the action
+  // name. No knob, no depth slider, no halo orange. The bar is FOCUSABLE (tabindex) → ←/→ step ONLY
+  // while it holds focus (a blue left-edge highlight shows focus); Tab reaches it; otherwise the arrows
+  // belong to whatever panel is focused.
+  var _bar = null, _back = null, _fwd = null, _marks = null;
+  var ARROW = 'background:rgba(30,50,80,0.7);color:#4fc3f7;border:1px solid rgba(255,255,255,0.15);' +
+    'border-radius:6px;padding:4px 8px;font-size:17px;line-height:1;cursor:pointer;backdrop-filter:blur(6px);' +
+    'min-width:28px;text-align:center;outline:none';
 
   function _iconSvg(name, px) {
     var ic = name && window.ICONS && window.ICONS[name];
@@ -482,10 +484,11 @@ window.HistoryBar = (function () {
   function _injectHaloStyle() {
     if (document.getElementById('hist-halo-style')) return;
     var st = document.createElement('style'); st.id = 'hist-halo-style';
-    // Amber double-feedback halo (HISTORY_KNOB_DIAL.md): the dot the scrubber landed on pulses, so even
-    // two identical-looking moments give a visible "it moved" signal. Reduced-motion users skip it.
-    st.textContent = '@keyframes hkHalo{0%{box-shadow:0 0 0 0 rgba(255,183,77,0.9)}100%{box-shadow:0 0 0 7px rgba(255,183,77,0)}}' +
-      '@media (prefers-reduced-motion: reduce){#universal-hist-btns *{animation:none !important}}';
+    // FOCUS highlight (HISTORY_KNOB_DIAL.md §3.4): a blue left edge means the bar holds focus → ←/→
+    // step its dots. No focus = the arrows belong to whatever panel does. The amber knob halo is gone.
+    st.textContent = '#universal-hist-btns{border-left:3px solid transparent;transition:border-color .12s,box-shadow .12s}' +
+      '#universal-hist-btns.hist-focused{border-left-color:#4fc3f7;box-shadow:-3px 0 10px rgba(79,195,247,0.45)}' +
+      '@media (prefers-reduced-motion: reduce){#universal-hist-btns,#universal-hist-btns *{transition:none !important;animation:none !important}}';
     document.head.appendChild(st);
   }
   function _build() {
@@ -493,6 +496,8 @@ window.HistoryBar = (function () {
     _injectHaloStyle();
     _bar = document.createElement('div');
     _bar.id = 'universal-hist-btns';
+    _bar.tabIndex = 0;                          // focusable → Tab reaches it, ←/→ step only while focused
+    _bar.title = 'History — ‹ older · newer › (click a dot to jump · ←/→ when focused)';
     var host = _cfg.mountHostId ? document.getElementById(_cfg.mountHostId) : null;
     if (host) {
       _bar.style.cssText = 'display:none;gap:4px;align-items:center;max-width:74vw;z-index:25';
@@ -501,32 +506,29 @@ window.HistoryBar = (function () {
       _bar.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:25;display:none;gap:4px;align-items:center;max-width:74vw';
       document.body.appendChild(_bar);
     }
+    // ‹ (older) · dots · › (newer) — the arrows walk the READ-ONLY view cursor, never the op-log.
+    _back = document.createElement('button');
+    _back.id = 'hist-back'; _back.title = 'Older (←)'; _back.innerHTML = '‹'; _back.style.cssText = ARROW;
+    _back.addEventListener('pointerup', function (e) { e.stopPropagation(); viewStepBack(); });
     _marks = document.createElement('div');
     _marks.id = 'hist-marks';
     _marks.style.cssText = 'display:flex;gap:3px;align-items:center;padding:0 4px;overflow-x:auto;max-width:60vw';
-    // HISTORY_KNOB_DIAL.md: the line-art amp-knob dial REPLACES the ↶/↷ model-undo buttons + the slider.
-    // Its 2 nav ticks do READ-ONLY view stepping (viewStepBack/Front); its 4 depth ticks set breadth
-    // (setDepth, silent — the dial owns its own detent). Fallback to the legacy slider + buttons when the
-    // dial module isn't loaded (keeps the standalone test harness + any non-bundling page working).
-    if (window.HistoryKnob && window.HistoryKnob.mount) {
-      _bar.appendChild(_marks);
-      _knobCtl = window.HistoryKnob.mount({
-        host: _bar, source: _cfg.source,
-        getDepth: _knobDepth,
-        setDepth: function (d) { setDepth(d, true); },
-        stepBack: viewStepBack, stepFront: viewStepFront, canStep: viewCanStep
-      });
-    } else {
-      _back = document.createElement('button');
-      _back.id = 'hist-back'; _back.title = 'Undo (Ctrl+Z)'; _back.textContent = '↶'; _back.style.cssText = BTN;
-      _back.addEventListener('pointerup', function (e) { e.stopPropagation(); undo(); });
-      _fwd = document.createElement('button');
-      _fwd.id = 'hist-fwd'; _fwd.title = 'Redo (Ctrl+Shift+Z)'; _fwd.textContent = '↷'; _fwd.style.cssText = BTN;
-      _fwd.addEventListener('pointerup', function (e) { e.stopPropagation(); redo(); });
-      _off = _buildKnob();
-      _bar.appendChild(_back); _bar.appendChild(_fwd); _bar.appendChild(_marks); _bar.appendChild(_off);
-    }
-    var _lastTap = 0; // §2 bloom: pointer double-tap (touch + mouse)
+    _fwd = document.createElement('button');
+    _fwd.id = 'hist-fwd'; _fwd.title = 'Newer (→)'; _fwd.innerHTML = '›'; _fwd.style.cssText = ARROW;
+    _fwd.addEventListener('pointerup', function (e) { e.stopPropagation(); viewStepFront(); });
+    _bar.appendChild(_back); _bar.appendChild(_marks); _bar.appendChild(_fwd);
+
+    // FOCUS model (§3.4): blue left edge while focused; arrow keys handled HERE so they only fire when
+    // the bar (or a dot inside it) holds focus — otherwise they go to whatever panel is focused.
+    _bar.addEventListener('focusin', function () { _bar.classList.add('hist-focused'); });
+    _bar.addEventListener('focusout', function () { _bar.classList.remove('hist-focused'); });
+    _bar.addEventListener('keydown', function (e) {
+      var k = e.key;
+      if (k === 'ArrowLeft') { e.preventDefault(); viewStepBack(); }
+      else if (k === 'ArrowRight') { e.preventDefault(); viewStepFront(); }
+    });
+
+    var _lastTap = 0; // §2 bloom: pointer double-tap reveals the dots as labelled chips (browse aid)
     _bar.addEventListener('pointerup', function () {
       var t = _now();
       if (t - _lastTap < 350) { _bloom = !_bloom; _lastTap = 0; _render(); console.log('§HIST_BLOOM ' + (_bloom ? 'on' : 'off')); }
@@ -547,7 +549,6 @@ window.HistoryBar = (function () {
       'border-radius:' + (isRound ? '50%' : '2px') + ';' +
       'background:' + (isCurrent ? GOLD : (applied ? '#4fc3f7' : 'rgba(79,195,247,0.18)')) + ';' +
       (isCurrent ? 'box-shadow:0 0 6px ' + GOLD : '');
-    if (idx === _haloIdx) dot.style.animation = 'hkHalo .6s ease-out';   // amber double-feedback pulse
     dot.addEventListener('pointerup', function (ev) { ev.stopPropagation(); viewJumpTo(idx); });   // READ-ONLY jump
     return dot;
   }
@@ -593,81 +594,12 @@ window.HistoryBar = (function () {
       'border:1px solid ' + (isCurrent ? GOLD : 'rgba(79,195,247,0.4)') + ';color:' + col + ';' +
       'background:rgba(20,35,60,' + (applied ? '0.85' : '0.5') + ');' + (isCurrent ? 'box-shadow:0 0 8px ' + GOLD : '');
     chip.innerHTML = _iconSvg(_cfg.iconFn(e), 13) + '<span>' + _esc(_shortLabel(e.label)) + '</span>';
-    if (idx === _haloIdx) chip.style.animation = 'hkHalo .6s ease-out';   // amber double-feedback pulse
     chip.addEventListener('pointerup', function (ev) { ev.stopPropagation(); viewJumpTo(idx); });   // READ-ONLY jump
     return chip;
   }
 
-  // ── The KNOB control (§LOCKED-KNOB): a 5-stop dial replacing the 3-state glyph button ──
-  // TURN = breadth (drag the dot, or tap to step) · PRESS = richness (long-press → bloom) ·
-  // SOUND = detent tick (in setDepth). Reuses the pill (BTN) look + a mini slider — no new widget.
-  var _STOP_UI = {
-    off:  { g: '○', c: '#777',    t: 'History OFF — drag/tap to dial up · long-press = detail' },
-    low:  { g: '◔', c: '#8a9bbf', t: 'Low — milestones only (tap → Mid)' },
-    mid:  { g: '◑', c: '#66bb6a', t: 'Mid — the clean trail: edits + saves (tap → High)' },
-    high: { g: '◕', c: '#4fc3f7', t: 'High — + navigation & selections · default (tap → Max)' },
-    max:  { g: '●', c: '#ffd479', t: 'Max — everything significant (tap → Off)' }
-  };
-  function _buildKnob() {
-    var wrap = document.createElement('div');
-    wrap.id = 'hist-knob';
-    wrap.style.cssText = BTN + ';font-size:13px;display:flex;align-items:center;gap:6px;padding:6px 9px;touch-action:none;user-select:none';
-    _knobLbl = document.createElement('span');
-    _knobLbl.style.cssText = 'font-size:13px;line-height:1;flex:0 0 auto';
-    var track = document.createElement('div'); _knobTrack = track;
-    track.style.cssText = 'position:relative;width:48px;height:12px;flex:0 0 auto';
-    var line = document.createElement('div');
-    line.style.cssText = 'position:absolute;left:0;right:0;top:5px;height:2px;border-radius:1px;background:rgba(255,255,255,0.25)';
-    track.appendChild(line);
-    for (var s = 0; s < 5; s++) {
-      var pip = document.createElement('div');
-      pip.style.cssText = 'position:absolute;top:4px;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,0.35);left:' + (s / 4 * 100) + '%;transform:translateX(-50%)';
-      track.appendChild(pip);
-    }
-    _knobThumb = document.createElement('div');
-    _knobThumb.style.cssText = 'position:absolute;top:1px;width:10px;height:10px;border-radius:50%;transform:translateX(-50%);box-shadow:0 0 4px rgba(0,0,0,0.5);transition:left .08s';
-    track.appendChild(_knobThumb);
-    wrap.appendChild(_knobLbl); wrap.appendChild(track);
-    _wireKnobGestures(wrap, track);
-    return wrap;
-  }
-  function _wireKnobGestures(wrap, track) {
-    var startX = 0, startT = 0, dragging = false, pid = null;
-    var DRAG_PX = 4, PRESS_MS = 420;
-    function stopFromX(clientX) {
-      var r = track.getBoundingClientRect(); if (r.width <= 0) return _stopIdx(_depth);
-      return Math.max(0, Math.min(4, Math.round((clientX - r.left) / r.width * 4)));
-    }
-    wrap.addEventListener('pointerdown', function (e) {
-      e.stopPropagation(); startX = e.clientX; startT = _now(); dragging = false; pid = e.pointerId;
-      try { wrap.setPointerCapture(pid); } catch (x) {}
-    });
-    wrap.addEventListener('pointermove', function (e) {
-      if (pid == null) return;
-      if (Math.abs(e.clientX - startX) > DRAG_PX) dragging = true;
-      if (dragging) { var st = _STOPS[stopFromX(e.clientX)]; if (st !== _depth) setDepth(st); }   // live = TURN
-    });
-    wrap.addEventListener('pointerup', function (e) {
-      e.stopPropagation();
-      try { wrap.releasePointerCapture(pid); } catch (x) {} pid = null;
-      if (dragging) { dragging = false; return; }              // drag already committed live
-      if (_now() - startT >= PRESS_MS) { _cycleRichness(); return; }  // PRESS = richness
-      cycleDepth();                                            // TAP = one breadth step
-    });
-    wrap.addEventListener('pointercancel', function () { pid = null; dragging = false; });
-  }
-  function _renderKnob() {
-    if (!_off) return;
-    var su = _STOP_UI[_depth] || _STOP_UI.high;
-    if (_knobLbl) { _knobLbl.textContent = su.g; _knobLbl.style.color = su.c; }
-    _off.title = su.t;
-    if (_knobThumb) { _knobThumb.style.left = (_stopIdx(_depth) / 4 * 100) + '%'; _knobThumb.style.background = su.c; _knobThumb.style.border = '1px solid ' + su.c; }
-  }
-
   function _render() {
     if (!_bar) return;
-    if (_off) _renderKnob();                 // legacy slider (fallback path only)
-    if (_knobCtl) _knobCtl.refresh();        // the dial re-reads depth + canStep
     var show = _opened;
     _bar.style.display = show ? 'flex' : 'none';
     if (!show) return;
@@ -677,8 +609,10 @@ window.HistoryBar = (function () {
     _marks.style.display = hasSteps ? 'flex' : 'none';
     _marks.innerHTML = '';
     if (!hasSteps) return;
-    if (_back) _back.style.opacity = (_cursor >= 0) ? '1' : '0.35';
-    if (_fwd) _fwd.style.opacity = (_cursor < _stream.length - 1) ? '1' : '0.35';
+    // the arrows walk the READ-ONLY view cursor → light them by what the scrubber can still step.
+    var cs = viewCanStep();
+    if (_back) _back.style.opacity = cs.back ? '1' : '0.35';
+    if (_fwd) _fwd.style.opacity = cs.front ? '1' : '0.35';
     var current = null;
     // A fork at the very START (virtual root has >1 child) → show the off-line root universes first.
     if (_rootKids.length > 1) {
@@ -703,7 +637,6 @@ window.HistoryBar = (function () {
       }
     }
     if (current) { try { _marks.scrollLeft = current.offsetLeft - _marks.clientWidth / 2 + current.offsetWidth / 2; } catch (e3) {} }
-    _haloIdx = -1;                            // the amber pulse is a one-shot (inline animation already attached)
   }
 
   // ── Keyboard + cross-tab ──────────────────────────────────────────────
@@ -726,7 +659,7 @@ window.HistoryBar = (function () {
     // READ-ONLY view scrubber (the KNOB-DIAL + dot clicks) — never touches the op-log.
     viewStepBack: viewStepBack, viewStepFront: viewStepFront, viewJumpTo: viewJumpTo, viewCanStep: viewCanStep,
     setDepth: setDepth, cycleDepth: cycleDepth, getDepth: getDepth, setEnabled: setEnabled, isEnabled: isEnabled,
-    clear: clear, open: open, toggleOpen: toggleOpen, list: list, significant: significant,
+    clear: clear, open: open, toggleOpen: toggleOpen, list: list, significant: significant, tipInfo: tipInfo,
     // ── branch TREE (PR #5) + combine (PR #6) ──
     switchToId: switchToId, tips: tips, dumpTree: dumpTree, treeShape: treeShape,
     serialize: serialize, hydrate: hydrate, setTreeKey: setTreeKey,

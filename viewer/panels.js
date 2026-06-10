@@ -53,8 +53,57 @@ var ICONS = {
   sun:       { svg: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>', trl: 'ui_sun', key: null, desc: 'Sun intensity' },
   sunDim:    { svg: '<circle cx="12" cy="12" r="4"/><path d="M12 4h.01"/><path d="M20 12h.01"/><path d="M12 20h.01"/><path d="M4 12h.01"/><path d="M17.66 6.34h.01"/><path d="M17.66 17.66h.01"/><path d="M6.34 17.66h.01"/><path d="M6.34 6.34h.01"/>', trl: 'ui_exposure', key: null, desc: 'Exposure' },
   lightbulb: { svg: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>', trl: 'ui_ambient', key: null, desc: 'Ambient' },
-  sunrise:   { svg: '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="M16 18a4 4 0 0 0-8 0"/>', trl: 'ui_hemisphere', key: null, desc: 'Hemisphere' }
+  sunrise:   { svg: '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="M16 18a4 4 0 0 0-8 0"/>', trl: 'ui_hemisphere', key: null, desc: 'Hemisphere' },
+  // HISTORY_KNOB_DIAL.md rework: "W" = World history (cross-page) — two overlapping outline circles.
+  worldHist: { svg: '<circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/>', trl: null, key: 'w', desc: 'World History' },
+  // "Z" per-page timeline — three small overlapping dots, the MIDDLE one filled.
+  docHist:   { svg: '<circle cx="8" cy="12" r="3"/><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="16" cy="12" r="3"/>', trl: null, key: 'z', desc: 'Page history' },
+  // Clear history (bomb) — Lucide bomb (lives in the W long-press drawer, NO keyboard shortcut).
+  bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' }
 };
+
+// HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
+//   Z (docHist) = open THIS page's dot-timeline bar · bomb = clear history (warns first, no shortcut).
+function _histIconSvg(name, color) {
+  var ic = ICONS[name];
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (ic ? ic.svg : '') + '</svg>';
+}
+function _clearHistoryWithWarning() {
+  // The timeline persists in localStorage (bim.hist.tree.<db>), NOT the SW cache — "clear cache" never
+  // wiped it (this confused the user). The bomb is the one switch that does.
+  if (window.confirm('Clear history for this page?\nThis wipes the saved timeline (it lives in local storage, not the cache) and cannot be undone.')) {
+    try { Object.keys(localStorage).filter(function (k) { return k.indexOf('bim.hist.tree') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+    if (window.UniversalHistory && UniversalHistory.clear) UniversalHistory.clear();
+    console.log('§HIST_CLEAR via=bomb confirmed');
+  } else { console.log('§HIST_CLEAR via=bomb cancelled'); }
+}
+function _worldHistDrawer(srcBtn) {
+  var open = document.getElementById('whist-drawer');
+  if (open) { open.remove(); return; }                 // long-press again toggles it shut
+  if (!srcBtn) return;
+  var r = srcBtn.getBoundingClientRect();
+  var d = document.createElement('div'); d.id = 'whist-drawer';
+  d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;gap:6px;' +
+    'top:' + (r.top - 102) + 'px;left:' + r.left + 'px;';
+  function chip(name, title, color, onTap) {
+    var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
+    b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
+      'border-radius:8px;background:rgba(20,20,40,0.85);color:' + color + ';cursor:pointer;' +
+      'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);';
+    b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('whist-drawer'); if (dd) dd.remove(); });
+    return b;
+  }
+  d.appendChild(chip('docHist', 'Page history (Z) — this page\'s dot timeline', '#4fc3f7',
+    function () { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }));
+  d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearHistoryWithWarning));
+  document.body.appendChild(d);
+  setTimeout(function () {
+    var off = function (ev) { var dd = document.getElementById('whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
+    document.addEventListener('pointerdown', off, true);
+  }, 0);
+  console.log('§PILL_DRAWER worldhist items=Z,bomb');
+}
 
 function setupPanels(A) {
   // ── S265 Phase 5: A.icon() — standard icon button factory ──
@@ -1043,10 +1092,14 @@ function setupPanels(A) {
       { id: 'find',       name: 'Find / Navigate', key: 'f', icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
       { id: 'help',       name: 'Help',            key: 'F1', icon: I.lifeBuoy.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
-      { id: 'history',    name: 'History',         key: 'z', icon: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
-        fn: function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); },
-        isActive: function() { var b = document.getElementById('universal-hist-btns'); return !!(b && b.style.display !== 'none'); },
-        children: [ { name: 'Universal undo/redo (Ctrl+Z / Ctrl+Shift+Z)' }, { name: 'Merges model ops (grid moves, places) + view navigation' }, { name: 'Dots: round = view, square = model op' }, { name: 'Tap a dot to jump to that step' }, { name: '◉ / ◯ toggle: recording ON/OFF (persisted)' } ] },
+      // HISTORY_KNOB_DIAL.md rework: ONE "W" World-history pill replaces the old History pill.
+      //   TAP        = open the cross-page overlay (which building/doc/page).
+      //   LONG-PRESS = a small drawer: Z (this page's dot-timeline bar) + bomb (clear history, warns first).
+      { id: 'worldhist',  name: 'World History',   key: 'w', icon: I.worldHist.svg,
+        fn: function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); },
+        hold: function(btn) { _worldHistDrawer(btn); },
+        isActive: function() { var p = document.getElementById('whole-hist-panel'); return !!(p && p.classList.contains('show')); },
+        children: [ { name: 'History across ALL pages — viewer, iDempiere, Gravity' }, { name: 'Whole | This page toggle' }, { name: 'Day strip — step back/forward by day' }, { name: 'Tap a card to jump to that building/doc' }, { name: 'Long-press → Z page-timeline + clear (bomb)' } ] },
       { id: 'walk',       name: 'Walk',            platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
       { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,

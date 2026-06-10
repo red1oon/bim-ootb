@@ -133,6 +133,7 @@
   "updateAmbience": "readonly",
   "updateLighting": "readonly",
   "UniversalHistory": "readonly",
+  "WholeHistory": "readonly",
   "USD_RATE": "readonly",
   "_verifyMaths": "readonly",
   "_verifyTRL": "readonly",

@@ -43,6 +43,49 @@
     return ic.svg;
   }
 
+  // HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
+  //   Z (docHist) = open THIS page's dot-timeline bar (IdmpHistory) · bomb = clear history (warns first).
+  function _histIconSvg(name, color) {
+    var ic = (window.ICONS || {})[name];
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (ic ? ic.svg : '') + '</svg>';
+  }
+  function _clearIdmpHistory() {
+    // The page timeline lives in localStorage / the in-memory bar, NOT the SW cache — "clear cache" never
+    // wiped it. The bomb is the one switch that does.
+    if (window.confirm('Clear history for this page?\nThis wipes the session timeline and cannot be undone.')) {
+      try { Object.keys(localStorage).filter(function (k) { return k.indexOf('idmp.hist') === 0 || k.indexOf('bim.hist') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+      if (window.IdmpHistory && window.IdmpHistory.clear) window.IdmpHistory.clear();
+      console.log('§IDMP-HIST clear via=bomb confirmed');
+    } else { console.log('§IDMP-HIST clear via=bomb cancelled'); }
+  }
+  function _worldDrawer(srcBtn) {
+    var open = document.getElementById('idmp-whist-drawer');
+    if (open) { open.remove(); return; }
+    if (!srcBtn) return;
+    var r = srcBtn.getBoundingClientRect();
+    var d = document.createElement('div'); d.id = 'idmp-whist-drawer';
+    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;gap:6px;' +
+      'top:' + (r.top - 102) + 'px;left:' + r.left + 'px;';
+    function chip(name, title, color, onTap) {
+      var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
+      b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
+        'border-radius:8px;background:rgba(20,20,40,0.85);color:' + color + ';cursor:pointer;' +
+        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.4);';
+      b.addEventListener('pointerup', function (e) { e.stopPropagation(); onTap(); var dd = document.getElementById('idmp-whist-drawer'); if (dd) dd.remove(); });
+      return b;
+    }
+    d.appendChild(chip('docHist', 'Page history (Z) — this page\'s dot timeline', '#6c9fff',
+      function () { if (window.IdmpHistory && window.IdmpHistory.toggleBar) window.IdmpHistory.toggleBar(); else if (window.IdmpHistory) window.IdmpHistory.render(); }));
+    d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearIdmpHistory));
+    document.body.appendChild(d);
+    setTimeout(function () {
+      var off = function (ev) { var dd = document.getElementById('idmp-whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
+      document.addEventListener('pointerdown', off, true);
+    }, 0);
+    console.log('§IDMP-PILL drawer=worldhist items=Z,bomb');
+  }
+
   // §C lifecycle gate — pills tagged stage:"pre-client" (Install/Migrate) are SHOWN only before a client is
   // entered (login/tenant-picker), HIDDEN once a client is committed (GATE-2). PillBuilder._build skips
   // act.pill===false, so we toggle that flag + rebuild — no second rail, no DOM teardown.
@@ -99,7 +142,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=26').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=27').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -111,6 +154,8 @@
         act.fn = ACT[p.id] || (function (name) { return function () { _toast(name + ' — handler not wired'); }; })(p.name);
         var ACTIVE = window.IdmpPillActive || {};            // §D — lit-state binding by id (e.g. redpill = clean mode on)
         if (ACTIVE[p.id]) act.isActive = ACTIVE[p.id];
+        // HISTORY_KNOB_DIAL.md — the W pill long-presses into a drawer (Z page-timeline + bomb clear).
+        if (p.id === 'worldhist') act.hold = function (btn) { _worldDrawer(btn); };
         return act;
       });
       _actions = actions;

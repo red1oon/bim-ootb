@@ -711,7 +711,8 @@ async function setupScene(A) {
     'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
     't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
-    'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the universal timeline (Ctrl+Z = undo, bound in universal_history.js)
+    'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the per-page timeline bar (Ctrl+Z = undo, bound in universal_history.js)
+    'w':  function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }, // §WHIST: open/close the cross-page World-history overlay (HISTORY_KNOB_DIAL.md)
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },
     'v':  function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
     's':  function() { if (typeof A.screenshot === 'function') A.screenshot(); },
