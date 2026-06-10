@@ -110,7 +110,8 @@
         return u;
       }
       if (page === 'viewer' && ref && ref.db) {
-        return base + '?db=' + ref.db + '&ghost=1';
+        // A2: carry the SESSION so the card RE-HOMES to that session's Z (read-only), not just reopens the bldg.
+        return base + '?db=' + ref.db + (ref.session ? '&sess=' + ref.session : '') + '&ghost=1';
       }
     } catch (e) {}
     return base;
