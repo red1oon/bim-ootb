@@ -246,14 +246,16 @@
       // BOTTOM-RIGHT dock (consistent with idempiere.html + the BIM viewer): the ⋯ rests at the bottom-right and
       // STAYS there; the strip (DOM-ordered above the trigger in a bottom-anchored column) RISES UP on tap. Was
       // right-edge vertically-CENTRED — collapsing used to drift the ⋯ to mid-screen; now `bottom` is pinned.
+      // BOTTOM-RIGHT, expands SIDEWAYS (horizontal): icons reveal to the LEFT of the ⋯ along the bottom edge
+      // (user 2026-06-10: "expand sideways not upwards") — was a vertical column rising up.
       '#erp-pillbar{position:fixed;right:10px;bottom:16px;top:auto;transform:none;z-index:1200;' +
-        'display:flex;flex-direction:column;align-items:center;gap:8px;}' +
-      '#erp-pill{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 120px);overflow-y:auto;' +
+        'display:flex;flex-direction:row;align-items:center;gap:8px;}' +
+      '#erp-pill{display:flex;align-items:center;gap:6px;max-width:calc(100vw - 90px);overflow-x:auto;overflow-y:hidden;white-space:nowrap;' +
         'padding:6px;border-radius:16px;background:rgba(20,22,32,0.78);' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
-      '#erp-pill::-webkit-scrollbar{width:0;}' +
-      '#erp-pill button{width:40px;height:40px;min-height:40px;display:flex;align-items:center;justify-content:center;' +
-        'border:none;border-radius:10px;background:transparent;color:#cdd6e4;cursor:pointer;padding:0;}' +
+      '#erp-pill::-webkit-scrollbar{height:0;}' +
+      '#erp-pill button{width:40px;height:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;' +
+        'border:none;border-radius:10px;background:transparent;color:#cdd6e4;cursor:pointer;padding:0;margin:0 2px;vertical-align:middle;}' +
       '#erp-pill button:hover{background:rgba(108,159,255,0.16);color:#6c9fff;}' +
       '#erp-pill button.active{background:rgba(108,159,255,0.24);color:#6c9fff;}' +
       '#erp-pill button img{border-radius:4px;}' +
@@ -262,11 +264,11 @@
         'align-items:center;justify-content:center;' +
         'border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
       // Reveal-UP on open + a gentle ⋯ bob while collapsed (same idiom as idmp_pills.js — consistent everywhere).
-      '@keyframes pill-rise{from{transform:translateY(18px);opacity:0;}to{transform:translateY(0);opacity:1;}}' +
+      '@keyframes pill-rise{from{transform:translateX(18px);opacity:0;}to{transform:translateX(0);opacity:1;}}' +
       '#erp-pill.pill-revealing{animation:pill-rise 0.42s cubic-bezier(.2,.85,.25,1);}' +
-      '@keyframes erp-pill-peek{0%,100%{transform:translateY(0);box-shadow:none;}' +
-        '25%{transform:translateY(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
-        '55%{transform:translateY(0);}78%{transform:translateY(-4px);}}' +
+      '@keyframes erp-pill-peek{0%,100%{transform:translateX(0);box-shadow:none;}' +
+        '25%{transform:translateX(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}' +
+        '55%{transform:translateX(0);}78%{transform:translateX(-4px);}}' +
       '#erp-pill-trigger.erp-pill-attract{animation:erp-pill-peek 0.85s ease-in-out 2;color:#6c9fff;}' +
       '@media (max-width:760px){#erp-pillbar{right:calc(10px + env(safe-area-inset-right,0px));' +
         'bottom:calc(12px + env(safe-area-inset-bottom,0px));}#erp-pill{max-height:calc(100vh - 110px);}}' +
