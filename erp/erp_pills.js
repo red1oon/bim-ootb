@@ -157,7 +157,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=26').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=27').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];
@@ -165,6 +165,7 @@
         if (p.reuse === 'bim') reusedBim.push(p.id); else newErp.push(p.id);
 
         var act = { id: p.id, name: p.name, key: p.key || '' };
+        if (p.title) act.title = p.title;   // hover tooltip override (e.g. "Glassbowl — CONCEPT")
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
 
         // fn: nav pills navigate; the rest bind by id (handler or honest toast).
