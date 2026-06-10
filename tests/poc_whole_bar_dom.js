@@ -30,9 +30,9 @@ const { spawn } = require('child_process');
       const launch = !!document.getElementById('whole-hist-launch');
       WH.setMode('whole'); WH.open();
       const panelShown = document.getElementById('whole-hist-panel').classList.contains('show');
-      const rowsWhole = document.querySelectorAll('#whole-hist-body .whole-row').length;
+      const rowsWhole = document.querySelectorAll('#whole-hist-body .whole-chip').length;
       // a foreign row (glassbowl) — find it by its badge text
-      const rows = Array.prototype.slice.call(document.querySelectorAll('#whole-hist-body .whole-row'));
+      const rows = Array.prototype.slice.call(document.querySelectorAll('#whole-hist-body .whole-chip'));
       const gRow = rows.find(r => /Glassbowl/.test(r.textContent));
       // stub navigation so the click doesn't actually leave the page
       try { Object.defineProperty(window, 'location', { value: { href: '' }, writable: true }); } catch (e) {}
@@ -40,7 +40,7 @@ const { spawn } = require('child_process');
       const handoff = JSON.parse(localStorage.getItem('bim.wholeRestore') || 'null');
       // THIS-page filter
       WH.setMode('this');
-      const rowsThis = document.querySelectorAll('#whole-hist-body .whole-row').length;
+      const rowsThis = document.querySelectorAll('#whole-hist-body .whole-chip').length;
       return { launch, panelShown, rowsWhole, rowsThis, handoff };
     });
     console.log('DOM result: ' + JSON.stringify(r));
