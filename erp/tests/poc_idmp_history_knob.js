@@ -71,7 +71,10 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  const knobExists = await page.$('#idmp-scrub .scrubknob') != null;
+  // The breadth control is now the shared radial KNOB-DIAL (HISTORY_KNOB_DIAL.md), replacing the old
+  // 4-bar .scrubknob — the same widget the viewer uses. The breadth proof below is unchanged (driven via
+  // IdmpHistory.setKnob, which the dial's depth ticks call).
+  const knobExists = await page.$('#idmp-scrub #hist-knob-idempiere') != null;
 
   // Feed REAL-FORMAT ERP doc-event §-lines through the LIVE sniffer (same path the ERP's own lines take).
   await page.evaluate(() => {

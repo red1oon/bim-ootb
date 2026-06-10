@@ -95,6 +95,22 @@
     _tapApply(entry.viewState, entry.label);
   }
 
+  // READ-ONLY restore for the KNOB-DIAL scrubber (HISTORY_KNOB_DIAL.md): re-apply the moment's stamped
+  // LOOK ONLY — camera/lens/section via the §-tap, pick focus for selections, Find replay for nav views.
+  // Crucially it NEVER calls _applyOp (no KernelOps.undo/redo) — so stepping a GRID_MOVE moment restores
+  // the view it was taken under without flipping the signed op. This is the fix for "scrubber looks corrupted".
+  function _restoreView(entry) {
+    var A = _A();
+    if (!entry) { if (A && A.clearFocusElement) A.clearFocusElement(); else if (_viewRestore) _viewRestore(null); return; }
+    if (entry.kind === 'pick' && entry.guids) {
+      if (A && A.focusElement) A.focusElement(entry.guids, { item: true });
+      else if (A && A.loadNavigate) A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(entry.guids, { item: true }); });
+    } else if (_viewRestore && entry.view) {
+      _viewRestore(entry.view);
+    }
+    _tapApply(entry.viewState, entry.label);   // the x-ray/section/camera/palette this moment lived under
+  }
+
   // (PR #6) Cross-branch COMBINE — bring a sibling universe's DISTINCTIVE view-fields into the current
   // look. Delta = the fields the donor branch changed vs the fork point (so the current branch's own
   // fields are kept); union via the proven combineViews, then apply. Result is a new tip on the current
@@ -214,6 +230,7 @@
     depthKey: 'bim.universalHist.depth',
     defaultDepth: function () { return window._isMobile ? 'off' : 'all'; }, // mobile opt-in, desktop on
     restore: _restore,
+    restoreView: _restoreView,              // READ-ONLY scrubber path (knob nav + dot clicks)
     afterApply: _chainCheck,
     iconFn: _stepIcon,
     sharedKey: 'bim.docHistory',            // §8 app-wide log (landing reads it)

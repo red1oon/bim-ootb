@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!-- ⚠ DO NOT REMOVE — headless harness for the VIEWER KNOB-DIAL integration witness (poc_knob_viewer.js).
+     Loads the REAL stack (kernel_ops · history_knob · history_bar · universal_history) with a minimal
+     window.A holding a real sql.js db + GridDrag stub — so the dial mounts on the live bar and its nav/dot
+     clicks drive the REAL read-only restore path against a REAL kernel op-log. Proves the scrubber moves a
+     VIEW cursor only (op-log rows/undone unchanged), while model undo() still flips a signed op.
+     Spec: prompts/HISTORY_KNOB_DIAL.md. Witness: W-KNOB-DIAL-VIEWER. -->
+<html><head><meta charset="utf-8"><title>knob viewer harness</title></head>
+<body>
+<div id="status-bar-wrap"></div>
+<script src="../lib/sql-wasm.js"></script>
+<script src="../kernel_ops.js"></script>
+<script src="../../common/history_knob.js"></script>
+<script src="../../common/history_bar.js"></script>
+<script>
+  window.GridDrag = { applyReplayedMove: function () {} };
+  // §-tap fields read these; the read-only restore re-applies the camera/lens stamp. Stub the look-applier
+  // so a restore is observable without a 3D scene.
+  window.__restoredViews = [];
+  window.A = { db: null, markDirty: function () {}, focusElement: function (g) { window.__restoredViews.push('pick:' + g); },
+    clearFocusElement: function () { window.__restoredViews.push('clear'); } };
+  window._isMobile = false;
+  window.__ready = (async function () {
+    var SQL = await initSqlJs({ locateFile: function (f) { return '../lib/' + f; } });
+    window.A.db = new SQL.Database();
+    console.log('§HARNESS db-created');
+    return true;
+  })();
+</script>
+<script src="../universal_history.js"></script>
+</body></html>

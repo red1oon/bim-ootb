@@ -29,6 +29,12 @@ window.HistoryBar = (function () {
   var _cursorNode = null;  // most-recently-APPLIED node; null = at the virtual root (nothing applied)
   var _stream = [];        // DERIVED: the active line, root→tip (kept current by _rebuild)
   var _cursor = -1;        // DERIVED: index of _cursorNode within _stream (-1 = virtual root)
+  // READ-ONLY view cursor (HISTORY_KNOB_DIAL.md): the SCRUBBER (knob nav + dot clicks) walks THIS,
+  // re-applying each moment's stamped VIEW — it never moves _cursor, so the signed op-log is untouched.
+  // The MODEL cursor (_cursor) only moves on real undo/redo (Ctrl+Z/Backspace/toolbar); we keep them in
+  // sync when the model moves, so the highlighted dot never diverges confusingly.
+  var _viewCursor = -1;
+  var _haloIdx = -1;       // dot index that just received the amber view-nav halo (double-feedback)
   var _seq = 0;            // monotonic id + tiebreak for same-ms timestamps (also the node id)
   var _suppress = false;   // true while WE drive a restore — stops re-recording
   var _bloom = false;      // double-tap the BAR → dots bloom into labelled chips
@@ -73,7 +79,10 @@ window.HistoryBar = (function () {
     docTypes: null,                           // {type:true} whitelist that mirrors to the shared log
     treeKey: null,                            // per-building localStorage key for the persisted TREE (opt-in)
     combine: null,                            // combine(current,donor,ancestor)→{viewState,label} (cross-branch VIEW union)
-    cherryPick: null                          // cherryPick(donorOp,ancestor)→bool (replay a signed op onto current)
+    cherryPick: null,                         // cherryPick(donorOp,ancestor)→bool (replay a signed op onto current)
+    restoreView: null                         // restoreView(entry|null) — READ-ONLY: re-apply the moment's stamped
+                                              // VIEW (camera/lens/section) ONLY, never flip the kernel op-log.
+                                              // The KNOB-DIAL scrubber + dot clicks route here (HISTORY_KNOB_DIAL.md).
   };
   // ── The KNOB (HISTORY_KNOB_SIGNAL_TAP §LOCKED-KNOB) ──────────────────────
   // The old 3-state cycle (all/doc/off) is a 5-stop magnitude DIAL: Off·Low·Mid·High·Max, default
@@ -170,6 +179,7 @@ window.HistoryBar = (function () {
     _cursorNode = entry;
     if (_isDoc(entry)) _mirror(entry);
     _rebuild();
+    _viewCursor = _cursor;                  // a new act lands at the tip → the scrubber follows
     _persistSave();
     _render();
     console.log('§HIST_PUSH n=' + _stream.length + ' idx=' + _cursor + ' kind=' + entry.kind +
@@ -208,6 +218,7 @@ window.HistoryBar = (function () {
     _applyEntry(e, false);
     _cursorNode = e.parent;
     _rebuild();
+    _viewCursor = _cursor;                  // model moved → keep the scrubber highlight in sync
     _render();
     console.log('§HIST_UNDO idx=' + was + '→' + _cursor + ' kind=' + e.kind + ' label="' + (e.label || '') + '"');
     _afterApply('undo');
@@ -220,6 +231,7 @@ window.HistoryBar = (function () {
     _applyEntry(next, true);
     _cursorNode = next;
     _rebuild();
+    _viewCursor = _cursor;                  // model moved → keep the scrubber highlight in sync
     _render();
     console.log('§HIST_REDO idx=' + was + '→' + _cursor + ' kind=' + next.kind + ' label="' + (next.label || '') + '"');
     _afterApply('redo');
@@ -231,6 +243,27 @@ window.HistoryBar = (function () {
     while (_cursor > idx && guard++ < 999) undo();
     while (_cursor < idx && guard++ < 999) redo();
   }
+
+  // ── READ-ONLY view scrubber (HISTORY_KNOB_DIAL.md) ─────────────────────
+  // The KNOB's back/front ticks and the dot clicks call THESE — they re-apply a moment's stamped VIEW
+  // via _cfg.restoreView and move ONLY _viewCursor. The op-log is NEVER flipped (that's undo()/redo(),
+  // reserved for Ctrl+Z/Backspace/toolbar). DOUBLE-FEEDBACK: the active dot jumps + gets an amber halo
+  // AND the scene changes — two independent signals it moved, even if two moments look identical.
+  function _viewApply(idx) {
+    if (idx < -1 || idx >= _stream.length) return null;
+    _viewCursor = idx;
+    var entry = idx >= 0 ? _stream[idx] : null;
+    try { if (_cfg.restoreView) _cfg.restoreView(entry); } catch (e) { console.warn('§HIST_VIEWNAV_ERR', e); }
+    _haloIdx = idx;                                  // amber double-feedback halo lands here
+    _render();
+    var lbl = entry ? (entry.label || '') : '';
+    console.log('§HIST_VIEWNAV idx=' + _viewCursor + ' label="' + lbl + '" opLogMutated=NO dotJump=ok halo=amber');
+    return { idx: _viewCursor, label: lbl };
+  }
+  function viewStepBack() { return (_viewCursor > 0) ? _viewApply(_viewCursor - 1) : (_viewCursor === 0 ? _viewApply(-1) : null); }
+  function viewStepFront() { return (_viewCursor < _stream.length - 1) ? _viewApply(_viewCursor + 1) : null; }
+  function viewJumpTo(idx) { return _viewApply(idx); }
+  function viewCanStep() { return { back: _viewCursor > -1, front: _viewCursor < _stream.length - 1 }; }
 
   // SWITCH UNIVERSE = restore down a different path. Walk the cursor from where it is up to the common
   // ancestor of `target`, point the active-child chain at `target`, then redo down to it — every step
@@ -335,14 +368,14 @@ window.HistoryBar = (function () {
   function _afterApply(when) { try { _cfg.afterApply(when); } catch (e) { console.warn('§HIST_AFTER_ERR', e); } }
 
   // ── The KNOB: breadth (turn) + sound (detent) ─────────────────────────
-  function setDepth(d) {
+  function setDepth(d, silent) {
     d = _migrateDepth(d); if (!d) return;
     var changed = d !== _depth;
     _depth = d;
     try { localStorage.setItem(_cfg.depthKey, d); } catch (e) {}
     _render();
     console.log('§HIST_DEPTH depth=' + _depth + ' stop=' + _stopIdx(_depth) + '/4');
-    if (changed) _detentTick();
+    if (changed && !silent) _detentTick();   // the KNOB-DIAL owns its own detent → passes silent=true
   }
   function cycleDepth() { setDepth(_STOPS[(_stopIdx(_depth) + 1) % _STOPS.length]); }  // tap = one step (wraps)
   function setEnabled(on) { setDepth(on ? 'high' : 'off'); }
@@ -430,6 +463,10 @@ window.HistoryBar = (function () {
   // ── The bar UI ────────────────────────────────────────────────────────
   var _bar = null, _back = null, _fwd = null, _marks = null, _off = null;
   var _knobTrack = null, _knobThumb = null, _knobLbl = null;
+  var _knobCtl = null;                                  // the HistoryKnob dial controller (when loaded)
+  // The dial exposes 4 depth ticks (off/low/high/max); HB's ladder has 5 (legacy/keyboard can land on
+  // 'mid'). Map the off-dial 'mid' onto the nearest dial tick for display.
+  function _knobDepth() { return (_depth === 'off' || _depth === 'low' || _depth === 'high' || _depth === 'max') ? _depth : 'high'; }
   var BTN = 'background:rgba(30,50,80,0.7);color:#4fc3f7;border:1px solid rgba(255,255,255,0.15);' +
     'border-radius:6px;padding:6px 10px;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);min-width:36px;text-align:center';
 
@@ -442,8 +479,18 @@ window.HistoryBar = (function () {
   function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
   function _shortLabel(s) { s = String(s || ''); return s.length > 26 ? s.slice(0, 24) + '…' : s; }
 
+  function _injectHaloStyle() {
+    if (document.getElementById('hist-halo-style')) return;
+    var st = document.createElement('style'); st.id = 'hist-halo-style';
+    // Amber double-feedback halo (HISTORY_KNOB_DIAL.md): the dot the scrubber landed on pulses, so even
+    // two identical-looking moments give a visible "it moved" signal. Reduced-motion users skip it.
+    st.textContent = '@keyframes hkHalo{0%{box-shadow:0 0 0 0 rgba(255,183,77,0.9)}100%{box-shadow:0 0 0 7px rgba(255,183,77,0)}}' +
+      '@media (prefers-reduced-motion: reduce){#universal-hist-btns *{animation:none !important}}';
+    document.head.appendChild(st);
+  }
   function _build() {
     if (_bar) return;
+    _injectHaloStyle();
     _bar = document.createElement('div');
     _bar.id = 'universal-hist-btns';
     var host = _cfg.mountHostId ? document.getElementById(_cfg.mountHostId) : null;
@@ -454,17 +501,31 @@ window.HistoryBar = (function () {
       _bar.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:25;display:none;gap:4px;align-items:center;max-width:74vw';
       document.body.appendChild(_bar);
     }
-    _back = document.createElement('button');
-    _back.id = 'hist-back'; _back.title = 'Undo (Ctrl+Z)'; _back.textContent = '↶'; _back.style.cssText = BTN;
-    _back.addEventListener('pointerup', function (e) { e.stopPropagation(); undo(); });
-    _fwd = document.createElement('button');
-    _fwd.id = 'hist-fwd'; _fwd.title = 'Redo (Ctrl+Shift+Z)'; _fwd.textContent = '↷'; _fwd.style.cssText = BTN;
-    _fwd.addEventListener('pointerup', function (e) { e.stopPropagation(); redo(); });
     _marks = document.createElement('div');
     _marks.id = 'hist-marks';
     _marks.style.cssText = 'display:flex;gap:3px;align-items:center;padding:0 4px;overflow-x:auto;max-width:60vw';
-    _off = _buildKnob();
-    _bar.appendChild(_back); _bar.appendChild(_fwd); _bar.appendChild(_marks); _bar.appendChild(_off);
+    // HISTORY_KNOB_DIAL.md: the line-art amp-knob dial REPLACES the ↶/↷ model-undo buttons + the slider.
+    // Its 2 nav ticks do READ-ONLY view stepping (viewStepBack/Front); its 4 depth ticks set breadth
+    // (setDepth, silent — the dial owns its own detent). Fallback to the legacy slider + buttons when the
+    // dial module isn't loaded (keeps the standalone test harness + any non-bundling page working).
+    if (window.HistoryKnob && window.HistoryKnob.mount) {
+      _bar.appendChild(_marks);
+      _knobCtl = window.HistoryKnob.mount({
+        host: _bar, source: _cfg.source,
+        getDepth: _knobDepth,
+        setDepth: function (d) { setDepth(d, true); },
+        stepBack: viewStepBack, stepFront: viewStepFront, canStep: viewCanStep
+      });
+    } else {
+      _back = document.createElement('button');
+      _back.id = 'hist-back'; _back.title = 'Undo (Ctrl+Z)'; _back.textContent = '↶'; _back.style.cssText = BTN;
+      _back.addEventListener('pointerup', function (e) { e.stopPropagation(); undo(); });
+      _fwd = document.createElement('button');
+      _fwd.id = 'hist-fwd'; _fwd.title = 'Redo (Ctrl+Shift+Z)'; _fwd.textContent = '↷'; _fwd.style.cssText = BTN;
+      _fwd.addEventListener('pointerup', function (e) { e.stopPropagation(); redo(); });
+      _off = _buildKnob();
+      _bar.appendChild(_back); _bar.appendChild(_fwd); _bar.appendChild(_marks); _bar.appendChild(_off);
+    }
     var _lastTap = 0; // §2 bloom: pointer double-tap (touch + mouse)
     _bar.addEventListener('pointerup', function () {
       var t = _now();
@@ -486,7 +547,8 @@ window.HistoryBar = (function () {
       'border-radius:' + (isRound ? '50%' : '2px') + ';' +
       'background:' + (isCurrent ? GOLD : (applied ? '#4fc3f7' : 'rgba(79,195,247,0.18)')) + ';' +
       (isCurrent ? 'box-shadow:0 0 6px ' + GOLD : '');
-    dot.addEventListener('pointerup', function (ev) { ev.stopPropagation(); jumpTo(idx); });
+    if (idx === _haloIdx) dot.style.animation = 'hkHalo .6s ease-out';   // amber double-feedback pulse
+    dot.addEventListener('pointerup', function (ev) { ev.stopPropagation(); viewJumpTo(idx); });   // READ-ONLY jump
     return dot;
   }
   // A sibling universe (a fork-child NOT on the active line) → a small accent tick / chip.
@@ -531,7 +593,8 @@ window.HistoryBar = (function () {
       'border:1px solid ' + (isCurrent ? GOLD : 'rgba(79,195,247,0.4)') + ';color:' + col + ';' +
       'background:rgba(20,35,60,' + (applied ? '0.85' : '0.5') + ');' + (isCurrent ? 'box-shadow:0 0 8px ' + GOLD : '');
     chip.innerHTML = _iconSvg(_cfg.iconFn(e), 13) + '<span>' + _esc(_shortLabel(e.label)) + '</span>';
-    chip.addEventListener('pointerup', function (ev) { ev.stopPropagation(); jumpTo(idx); });
+    if (idx === _haloIdx) chip.style.animation = 'hkHalo .6s ease-out';   // amber double-feedback pulse
+    chip.addEventListener('pointerup', function (ev) { ev.stopPropagation(); viewJumpTo(idx); });   // READ-ONLY jump
     return chip;
   }
 
@@ -603,18 +666,19 @@ window.HistoryBar = (function () {
 
   function _render() {
     if (!_bar) return;
-    _renderKnob();
+    if (_off) _renderKnob();                 // legacy slider (fallback path only)
+    if (_knobCtl) _knobCtl.refresh();        // the dial re-reads depth + canStep
     var show = _opened;
     _bar.style.display = show ? 'flex' : 'none';
     if (!show) return;
     var hasSteps = _on() && _stream.length > 0;
-    _back.style.display = hasSteps ? '' : 'none';
-    _fwd.style.display = hasSteps ? '' : 'none';
+    if (_back) _back.style.display = hasSteps ? '' : 'none';
+    if (_fwd) _fwd.style.display = hasSteps ? '' : 'none';
     _marks.style.display = hasSteps ? 'flex' : 'none';
     _marks.innerHTML = '';
     if (!hasSteps) return;
-    _back.style.opacity = (_cursor >= 0) ? '1' : '0.35';
-    _fwd.style.opacity = (_cursor < _stream.length - 1) ? '1' : '0.35';
+    if (_back) _back.style.opacity = (_cursor >= 0) ? '1' : '0.35';
+    if (_fwd) _fwd.style.opacity = (_cursor < _stream.length - 1) ? '1' : '0.35';
     var current = null;
     // A fork at the very START (virtual root has >1 child) → show the off-line root universes first.
     if (_rootKids.length > 1) {
@@ -624,7 +688,9 @@ window.HistoryBar = (function () {
       }
     }
     for (var i = 0; i < _stream.length; i++) {
-      var e = _stream[i], applied = (i <= _cursor), isCurrent = (i === _cursor);
+      // gold "current" follows the READ-ONLY view cursor (the scrubber), not the model cursor;
+      // "applied" fill still reflects the model line so undone ops read as hollow.
+      var e = _stream[i], applied = (i <= _cursor), isCurrent = (i === _viewCursor);
       var node = _bloom ? _chip(e, i, applied, isCurrent) : _dot(e, i, applied, isCurrent);
       if (isCurrent) current = node;
       _marks.appendChild(node);
@@ -637,6 +703,7 @@ window.HistoryBar = (function () {
       }
     }
     if (current) { try { _marks.scrollLeft = current.offsetLeft - _marks.clientWidth / 2 + current.offsetWidth / 2; } catch (e3) {} }
+    _haloIdx = -1;                            // the amber pulse is a one-shot (inline animation already attached)
   }
 
   // ── Keyboard + cross-tab ──────────────────────────────────────────────
@@ -656,6 +723,8 @@ window.HistoryBar = (function () {
   return {
     configure: configure, push: push,
     undo: undo, redo: redo, jumpTo: jumpTo,
+    // READ-ONLY view scrubber (the KNOB-DIAL + dot clicks) — never touches the op-log.
+    viewStepBack: viewStepBack, viewStepFront: viewStepFront, viewJumpTo: viewJumpTo, viewCanStep: viewCanStep,
     setDepth: setDepth, cycleDepth: cycleDepth, getDepth: getDepth, setEnabled: setEnabled, isEnabled: isEnabled,
     clear: clear, open: open, toggleOpen: toggleOpen, list: list, significant: significant,
     // ── branch TREE (PR #5) + combine (PR #6) ──
