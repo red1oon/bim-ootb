@@ -176,8 +176,22 @@
   // The depth axis (HISTORY_KNOB_SIGNAL_TAP §LOCKED #3). Loose-coupled: the tap module owns the
   // vector; the viewer only registers HOW to read/apply its own toggles + camera.
   function _tapView() { try { return window.HistoryTap ? HistoryTap.currentView() : null; } catch (e) { return null; } }
-  // The ?db= URL this viewer was opened with — the deterministic re-open key for a cross-page World card.
-  function _openDbUrl() { try { return new URLSearchParams(location.search).get('db') || null; } catch (e) { return null; } }
+  // _openDbUrl — the building's cross-page re-open key baked into a World card's deep-link.
+  // FIX (CRUD_EDIT_PERSIST.md Item 3, cause (a)): prefer the AUTHORITATIVE db the viewer actually loaded
+  // (A.DB_URL), not just the ?db= query param. A building reached by ANY path without ?db= in the URL
+  // (default open / in-app pick) left this null → ref.db null → _deepUrl fell back to a BARE url → the
+  // World card "sometimes" failed to transport. A.DB_URL is set whenever a building loads (streaming.js).
+  // import:// dbs live in THIS tab's IndexedDB and are NOT re-openable via ?db= on a fresh page → keep them
+  // null so the card falls back to the bare-url + RESTORE_KEY handoff (same-session only), never a dead link.
+  function _openDbUrl() {
+    try {
+      var q = null; try { q = new URLSearchParams(location.search).get('db') || null; } catch (e0) {}
+      var A = _A();
+      var u = (A && A.DB_URL) ? A.DB_URL : q;
+      if (u && /^import:\/\//.test(String(u))) return (q && !/^import:\/\//.test(String(q))) ? q : null;
+      return u || null;
+    } catch (e) { return null; }
+  }
   // HISTORY_SESSION_EVENTS.md A2 [VIEWER] — the SESSION boundary. A session = one open, tied to the browser
   // TAB via sessionStorage: a reload CONTINUES it (same id → same Z tree, no loss); a new tab / new visit =
   // a NEW session (fresh Z, new W card). `?sess=<id>` = a read-only RE-HOME of a past session picked from W
@@ -352,7 +366,8 @@
     significant: function (ev) { return HB.significant(ev.source, ev.type, ev.label); },
     // branch TREE (PR #5) + combine (PR #6) — fork-don't-wipe universes, switch=restore, bring-into-current.
     switchToId: HB.switchToId, tips: HB.tips, dumpTree: HB.dumpTree, setTreeKey: HB.setTreeKey, combineFromId: HB.combineFromId,
-    PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS
+    PROFILES: PROFILES, SIGNIFICANCE: PROFILES.all, UNDOABLE_OPS: UNDOABLE_OPS,
+    openDbUrl: _openDbUrl   // Item 3: the World-card re-open key (A.DB_URL-authoritative) — exposed for the witness/debug
   };
   _wireTap();   // §-tap depth axis: provider + appliers + seed (no-op if history_tap.js absent)
 
@@ -361,6 +376,15 @@
   // (uses the existing A.cityLoadBuilding; if absent, the deep-link still re-opens the viewer).
   if (window.WholeHistory) {
     window.WholeHistory.mount({ page: 'viewer', rootPrefix: '../', launcher: false });   // launched from the W pill
+    // §WHOLE-LANDED (CRUD_EDIT_PERSIST.md Item 3) — the TARGET end of the transport trace: pairs with
+    // §WHOLE-NAV (whole_history.js, the click). A World building-card deep-link lands the viewer with
+    // ?db=<url>&ghost=1[&sess=]; this one line shows the db we landed on, so a card click is traceable
+    // end-to-end (was the missing half — restore was untraceable). db=null here ⇒ a bare-url landing.
+    try {
+      var _sp = new URLSearchParams(location.search);
+      console.log('§WHOLE-LANDED page=viewer db=' + (_openDbUrl() || 'null') + ' ghost=' + (_sp.get('ghost') || '0') +
+        ' sess=' + (_sp.get('sess') || 'none') + ' reHome=' + _isReHome());
+    } catch (e) {}
     window.WholeHistory.consumeRestore('viewer', function (ref) {
       try { var A = _A(); if (ref && ref.building && A && A.cityLoadBuilding) A.cityLoadBuilding(ref.building); } catch (e) {}
     });
