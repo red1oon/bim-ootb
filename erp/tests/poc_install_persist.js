@@ -14,7 +14,9 @@
 //   §-log first — READ tests/poc_install_persist.log before any conclusion.
 // Run:  node tests/poc_install_persist.js 2>&1 | tee tests/poc_install_persist.log   (cwd = bim-ootb/erp)
 'use strict';
-const { chromium } = require(__dirname + '/../../tests/node_modules/playwright');
+let chromium;   // repo-relative first; worktrees have no node_modules → the shared ~/bim-ootb checkout's
+try { ({ chromium } = require(__dirname + '/../../tests/node_modules/playwright')); }
+catch (e) { ({ chromium } = require(process.env.HOME + '/bim-ootb/tests/node_modules/playwright')); }
 const http = require('http'), fs = require('fs'), path = require('path');
 
 const ROOT = path.join(__dirname, '..');

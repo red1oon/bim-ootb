@@ -34,10 +34,15 @@
     { key: 'dynamics',  name: 'MS Dynamics', icon: '🟦', real: false }
   ];
 
-  // Each real source's installable tenant shard (the delegate-install artifact gen_ad_odoo.js emits). The dialog
-  // success-path INSTALLS this (merge + persist) so going through Install actually leaves a resident tenant —
-  // not just a verified fold. iDempiere installs via its own MigrateShowMe/agent flow (NEW_CLIENT_MGMT.md #5).
-  var TENANT_SHARD = { odoo: { file: '12-odoo.db', name: 'Odoo', client: 12 } };
+  // Each real source's installable tenant shard (the delegate-install artifact gen_ad_odoo.js /
+  // gen_ad_idmp.sh emits). The dialog success-path INSTALLS this (merge + persist) so going through
+  // Install actually leaves a resident tenant — not just a verified fold. Migrate mode for iDempiere
+  // still routes to its MigrateShowMe/agent flow (NEW_CLIENT_MGMT.md #5).
+  // 13-idempiere.db = the migrated GardenWorld tenant off the real PG agent, PK RE-BANDED into the
+  // CL*100000 client band (IDMP_FULLWIDTH_SEED §4 / #5-install: un-banded ids collided with the seed's
+  // own GardenWorld PKs → INSERT OR IGNORE silently dropped every tenant row; W-IDMP-REBAND green).
+  var TENANT_SHARD = { odoo: { file: '12-odoo.db', name: 'Odoo', client: 12 },
+                       idempiere: { file: '13-idempiere.db', name: 'iDempiere', client: 13 } };
 
   var _overlay = null, _mode = 'migrate', _status = null;
   var _detected = {};   // key → true (port reachable). idempiere is 'agent' (real, not auto-probeable).
@@ -162,12 +167,31 @@
     if (!e.real) { console.log('§ERP-PICKER coming erp=' + key); _say(e.name + ' migration is coming.'); return; }
     console.log('§ERP-PICKER confirm erp=' + key + ' route=' + e.route);
     if (e.route === 'showme') {
+      // INSTALL mode + a pre-verified shard → install-tenant panel (the #5-install route). MIGRATE
+      // mode keeps the MigrateShowMe/agent flow (extract YOUR iDempiere) untouched.
+      if (_mode === 'install' && TENANT_SHARD[key]) { _renderInstallTenant(TENANT_SHARD[key]); return; }
       close();
       if (global.MigrateShowMe && global.MigrateShowMe.open) global.MigrateShowMe.open();
       else _say('Migrate ShowMe overlay not loaded.');
       return;
     }
     if (e.route === 'odoo') { _renderOdoo(); return; }
+  }
+
+  // ── iDempiere install-tenant panel (#5-install) — the shard is already verified (its books diffed
+  //    against its OWN fact_acct, W-IDMP-REBAND/frame-fit), so install mode goes straight to the CTA.
+  function _renderInstallTenant(tenant) {
+    var body = _$('ep-body'); if (!body) return;
+    body.innerHTML =
+      '<div class="ep-lock">🔒 <b>' + tenant.name + ' tenant shard, pre-verified.</b> '
+      + 'A migrated ' + tenant.name + ' client extracted by the real PG agent — every row a recorded '
+      + tenant.name + ' row, its ids banded into the Client-' + tenant.client + ' slot, and its books '
+      + 'already diffed to the cent against its own GL (nothing is invented).</div>'
+      + '<div id="ep-result" class="ep-result"></div>'
+      + '<div class="ep-foot"><button id="ep-back" class="ep-btn">&larr; Back</button></div>';
+    console.log('§ERP-PICKER install-tenant erp=' + _sel + ' shard=' + tenant.file + ' client=' + tenant.client);
+    _$('ep-back').onclick = function () { _renderPicker(); _select(_sel); };
+    _renderInstallCta(_$('ep-result'), tenant);
   }
 
   // ── Odoo sub-flow (delegate-to-install): a STAGED panel — download bundle → run natively → load chain ──
