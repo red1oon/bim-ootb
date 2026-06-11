@@ -409,7 +409,7 @@
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function status(main) { if (main != null) $('idmp-status-main').textContent = main; }
 
-  // ── IndexedDB cache (shares 'ad_seed_v13' with erp.html) ──
+  // ── IndexedDB cache (shares 'ad_seed_v14' with erp.html) ──
   function idbGet(key) {
     return new Promise(function (resolve) {
       try {
@@ -497,8 +497,8 @@
       // clobber a ?seed= gen db), and only when rows actually merged. INSERT OR IGNORE upstream keeps it idempotent.
       var persisted = false;
       if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
-        try { idbPut('ad_seed_v13', db.export().buffer); persisted = true;
-          console.log('§IDEMPIERE shard-persist key=ad_seed_v13 rows=' + mRow + ' resident=Y'); }
+        try { idbPut('ad_seed_v14', db.export().buffer); persisted = true;
+          console.log('§IDEMPIERE shard-persist key=ad_seed_v14 rows=' + mRow + ' resident=Y'); }
         catch (e) { console.warn('§IDEMPIERE shard-persist failed ' + e.message); }
       }
       return { ok: true, mTbl: mTbl, mRow: mRow, clients: clAfter, persisted: persisted };
@@ -519,7 +519,7 @@
     var seedFile = (seedParam && /^[\w.-]+\.db$/.test(seedParam)) ? seedParam : 'ad_seed.db';
     var src = seedParam ? 'gen:' + seedFile : 'network';
     if (!seedParam) {
-      var cached = await idbGet('ad_seed_v13');
+      var cached = await idbGet('ad_seed_v14');
       if (cached && cached.byteLength > 1000) {
         var sig = String.fromCharCode.apply(null, new Uint8Array(cached, 0, 6));
         if (sig === 'SQLite') { db = new SQL.Database(new Uint8Array(cached)); src = 'idb_cache'; }
@@ -528,7 +528,7 @@
     if (!db) {
       var resp = await fetch(seedFile); var buf = await resp.arrayBuffer();
       db = new SQL.Database(new Uint8Array(buf));
-      if (!seedParam) idbPut('ad_seed_v13', buf);   // cache only the real seed, never a ?seed= override
+      if (!seedParam) idbPut('ad_seed_v14', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.
