@@ -245,6 +245,49 @@
     return out;
   }
 
+  // listOptions — PURE. Implementing CRUD_EDIT_PERSIST.md residual (docstatus-select) — Witness: W-CRUD-DOCSTATUS.
+  // Build the <option> list for a `list` field so the record's CURRENT value renders SELECTED. Pre-fix,
+  // populateRefs read `data-cur` (which fieldInput never set) and never marked any option selected → the
+  // select always landed on the FIRST __meta key (DR); gatherVals then read DR off a CO order and the save
+  // diff emitted a docstatus flip the user never touched (the silent-corruption bug, UI_UNPARK_RESUME B-3).
+  // A current value missing from the ref map is PREPENDED (kept), never silently swapped for the first option.
+  function listOptions(optsMap, cur) {
+    var keys = Object.keys(optsMap || {}), c = cur == null ? '' : String(cur);
+    if (c !== '' && keys.indexOf(c) < 0) keys.unshift(c);
+    return keys.map(function (k) {
+      return { value: k, label: k + (optsMap && optsMap[k] ? ' · ' + optsMap[k] : ''), selected: c !== '' && k === c };
+    });
+  }
+
+  // splitStatusChange — PURE. Implementing CRUD_EDIT_PERSIST.md residual (docstatus-select) — Witness: W-CRUD-DOCSTATUS.
+  // docstatus is FSM state, not a field: an EXPLICIT status edit in the form must take the DOC_ACTION lane
+  // (→ SET_STATUS, the op readTip folds), NEVER ride a CRUD_UPDATE column write — otherwise readTip (the
+  // status truth doProcess derives `from` off) and tipValues (field truth) SPLIT-BRAIN on the same row:
+  // the live-data corruption class. When the explicit target equals the descriptor's docAction.to, the
+  // SAME requires-gating as the Process ▶ applies (docActionOutcome may demote to IP) — no bypass lane.
+  // Returns {fieldOp, statusOp}: fieldOp = the CRUD_UPDATE minus docstatus (null if nothing else changed);
+  // statusOp = a DOC_ACTION op for the explicit transition (null if docstatus untouched).
+  function splitStatusChange(entry, op, values) {
+    if (!op || op.op_type !== 'CRUD_UPDATE' || !op.changes || !Object.prototype.hasOwnProperty.call(op.changes, 'docstatus'))
+      return { fieldOp: op, statusOp: null };
+    var ch = op.changes.docstatus, rest = {}, n = 0, c;
+    for (c in op.changes) if (c !== 'docstatus') { rest[c] = op.changes[c]; n++; }
+    var fieldOp = null;
+    if (n) { fieldOp = {}; for (c in op) fieldOp[c] = op[c]; fieldOp.changes = rest; }
+    var to = ch['new'] == null ? null : String(ch['new']);
+    var statusOp = { key: op.key, table: op.table, verb: 'process', op_type: 'DOC_ACTION', id: op.id,
+      action: to,                                          // iDempiere DocAction codes mirror the target status (CO/CL/VO/RE)
+      from: ch.old == null ? null : String(ch.old), to: to, outcome: 'success', unmet: [],
+      ownerGated: !!op.ownerGated, op_uuid: op.op_uuid || null,
+      oracle: (entry && entry.docAction && entry.docAction.oracle) || null };
+    var da = entry && entry.docAction;
+    if (da && to === String(da.to || 'CO')) {              // completing via the form → the SAME gate as Process ▶
+      var r = docActionOutcome(entry, values || {});
+      statusOp.action = r.action; statusOp.to = r.to; statusOp.outcome = r.outcome; statusOp.unmet = r.unmet;
+    }
+    return { fieldOp: fieldOp, statusOp: statusOp };
+  }
+
   // §A1-DOC (HISTORY_SESSION_EVENTS.md) — Witness: W-DOC-DOTS. The Z-dot label for a COMMITTED op.
   // PURE: op in, label out — one label per commit gesture (Save/New/Delete/DocAction), never a keystroke.
   function docLabel(op, name) {
@@ -260,7 +303,8 @@
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
-    normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel
+    normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,
+    listOptions: listOptions, splitStatusChange: splitStatusChange
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -477,7 +521,7 @@
   }
   function fieldInput(f, val) {
     var v = (val == null ? '' : val), ro = f.readonly ? ' disabled' : '';
-    if (f.type === 'list') return '<select class=cfi data-col="' + f.col + '"' + ro + '></select>';
+    if (f.type === 'list') return '<select class=cfi data-col="' + f.col + '" data-cur="' + esc(v) + '"' + ro + '></select>';   // W-CRUD-DOCSTATUS: carry the CURRENT value to populateRefs
     if (f.type === 'fk')   return '<select class=cfi data-col="' + f.col + '" data-fk="' + esc(f.ref || '') + '"' + ro + '><option value="' + esc(v) + '">' + esc(v) + '</option></select>';
     var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : 'text');
     if (f.type === 'date') {                                  // §CRUD-DATE: strip any time component → strict yyyy-MM-dd, else type=date renders blank
@@ -491,8 +535,13 @@
     (e.fields || []).forEach(function (f) {
       var el = form.querySelector('[data-col="' + f.col + '"]'); if (!el || el.tagName !== 'SELECT') return;
       if (f.type === 'list') {
+        // W-CRUD-DOCSTATUS render arm: the record's CURRENT value must render SELECTED (pre-fix the select
+        // landed on the first __meta key → a CO order silently read back as DR).
         var opts = (STORE.__meta && STORE.__meta[f.ref]) || {}; var cur = el.getAttribute('data-cur') || '';
-        el.innerHTML = Object.keys(opts).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k + ' · ' + opts[k]) + '</option>'; }).join('');
+        var lo = CORE.listOptions(opts, cur);
+        el.innerHTML = lo.map(function (o) { return '<option value="' + esc(o.value) + '"' + (o.selected ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('');
+        var sel = lo.filter(function (o) { return o.selected; }).map(function (o) { return o.value; })[0];
+        console.log('§CRUD-LIST col=' + f.col + ' cur="' + cur + '" options=' + lo.length + ' selected="' + (sel || '(first)') + '"');
       } else if (f.type === 'fk' && typeof withBundle === 'function') {
         var keep = el.value;
         withBundle(function (db) {
@@ -544,6 +593,21 @@
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' verdict=OK fired=' + mv.fired);
       }
       var op = CORE.buildOp(verb, e, vals, orig, { id: id });
+      if (op.op_type === 'CRUD_UPDATE') {
+        // W-CRUD-DOCSTATUS diff arm: docstatus rides the DOC_ACTION lane (SET_STATUS) — never a silent
+        // column write; and a save with ZERO changed columns commits NOTHING (no-op suppression).
+        var sp = CORE.splitStatusChange(e, op, vals);
+        if (!sp.statusOp && (!sp.fieldOp || !Object.keys(sp.fieldOp.changes).length)) {
+          console.log('§CRUD update key=' + e.key + ' no-op (0 changed columns) — nothing committed');
+          toast('No changes — nothing to save'); closeForm(); return;
+        }
+        if (sp.statusOp) {
+          console.log('§CRUD-STATUS-SPLIT key=' + e.key + ' docstatus ' + (sp.statusOp.from || '?') + '→' + (sp.statusOp.to || '?') + ' lane=DOC_ACTION fieldCols=' + (sp.fieldOp ? Object.keys(sp.fieldOp.changes).join(',') : '(none)'));
+          applyOp(sp.statusOp, e);
+        }
+        if (sp.fieldOp) applyOp(sp.fieldOp, e);
+        closeForm(); return;
+      }
       applyOp(op, e);
       closeForm();
     });
@@ -824,6 +888,13 @@
           var tip = CORE.tipValues(db, key, id), cols = Object.keys(tip);
           if (cols.length) { cols.forEach(function (c) { o[c] = tip[c]; });
             console.log('§CRUD-TIP key=' + key + ' id=' + id + ' overlaid=' + cols.join(',') + ' source=sidecar'); }
+          // W-CRUD-DOCSTATUS: docstatus truth = the SET_STATUS tip (the FSM lane), not a column write —
+          // the edit form must render the CURRENT status selected, same source doProcess derives `from` off.
+          var st = CORE.readTip(db, key, id);
+          if (st != null && Object.prototype.hasOwnProperty.call(o, 'docstatus') && o.docstatus !== st) {
+            o.docstatus = st;
+            console.log('§CRUD-TIP key=' + key + ' id=' + id + ' docstatus=' + st + ' source=readTip(SET_STATUS)');
+          }
         } catch (e) {}
       }
       cb(o);
