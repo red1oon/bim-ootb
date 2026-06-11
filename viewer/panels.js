@@ -54,6 +54,8 @@ var ICONS = {
   sunDim:    { svg: '<circle cx="12" cy="12" r="4"/><path d="M12 4h.01"/><path d="M20 12h.01"/><path d="M12 20h.01"/><path d="M4 12h.01"/><path d="M17.66 6.34h.01"/><path d="M17.66 17.66h.01"/><path d="M6.34 17.66h.01"/><path d="M6.34 6.34h.01"/>', trl: 'ui_exposure', key: null, desc: 'Exposure' },
   lightbulb: { svg: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>', trl: 'ui_ambient', key: null, desc: 'Ambient' },
   sunrise:   { svg: '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="M16 18a4 4 0 0 0-8 0"/>', trl: 'ui_hemisphere', key: null, desc: 'Hemisphere' },
+  // SPATIAL_PICKING_SPEC §S-3 — Lucide "route" verbatim (the warehouse pick-walk lens pill).
+  route:     { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>', trl: null, key: null, desc: 'Pick Walk' },
   // HISTORY_KNOB_DIAL.md rework: "W" = World history (cross-page) — two overlapping outline circles.
   worldHist: { svg: '<circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/>', trl: null, key: 'w', desc: 'World History' },
   // "Z" per-page timeline — three small overlapping dots, the MIDDLE one filled.
@@ -1114,6 +1116,12 @@ function setupPanels(A) {
         isActive: function() { var p = document.getElementById('whole-hist-panel'); return !!(p && p.classList.contains('show')); },
         children: [ { name: 'History across ALL pages — viewer, iDempiere, Gravity' }, { name: 'Whole | This page toggle' }, { name: 'Day strip — step back/forward by day' }, { name: 'Tap a card to jump to that building/doc' }, { name: 'Long-press → Z page-timeline + clear (bomb)' } ] },
       { id: 'walk',       name: 'Walk',            platform: 'mobile', icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
+      // SPATIAL_PICKING_SPEC §S-3 — DATA-GATED (the pos-pill showWhen precedent): starts pill:false;
+      // wh_walk.js flips it on + rebuilds ONLY when the loaded model carries locator-GUID bins (§S-1).
+      { id: 'whwalk',     name: 'Pick Walk',       pill: false, icon: I.route.svg,
+        fn: function() { if (window.WHWalk) WHWalk.toggle(); },
+        isActive: function() { return !!(window.WHWalk && WHWalk.isOpen && WHWalk.isOpen()); },
+        children: [ { name: 'Route over locators (walk order)' }, { name: 'Fly-to next bin, FIND-lens depth' }, { name: 'Scan bin QR / type code' }, { name: 'Signed pick group per bin' } ] },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
       { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },

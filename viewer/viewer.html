@@ -780,9 +780,9 @@
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="streaming.js?v=53" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=7" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
-<script src="panels.js?v=38" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=39" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=30" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
-<script src="picking.js?v=26" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
+<script src="picking.js?v=27" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="tour.js?v=4" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
 <script src="clash_report.js?v=1" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=1" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
@@ -793,6 +793,11 @@
 <script src="issues.js?v=5" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
 <script src="excel.js?v=4" onerror="console.warn('§LOAD_FAIL excel.js')"></script>
 <script src="walk.js?v=7" onerror="console.warn('§LOAD_FAIL walk.js')"></script>
+<!-- SPATIAL_PICKING_SPEC §S-2..§S-5 — the warehouse pick-walk addon: wh_route.js (UMD of bim-compiler
+     build/erp/wh_route.js, the pure §S-2 route verb) + wh_walk.js (the data-gated lens; lazy-loads
+     ../erp/erp_engine.js + ../erp/ad_docfsm.js + ../erp/ad_seed.db only when opened). -->
+<script src="wh_route.js?v=1" onerror="console.warn('§LOAD_FAIL wh_route.js — pick walk disabled')"></script>
+<script src="wh_walk.js?v=1" onerror="console.warn('§LOAD_FAIL wh_walk.js — pick walk disabled')"></script>
 <!-- navigate.js lazy-loaded on demand by main.js A.loadNavigate() -->
 <script src="city.js?v=7"></script>
 <script src="rates.js?v=7"></script>
