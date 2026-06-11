@@ -425,6 +425,10 @@ function setupPicking(A) {
     }
     A._lastPickGuid = guid;
 
+    // SPATIAL_PICKING_SPEC §S-3 tap-gate (additive): the pick-walk lens hears every resolved tap —
+    // target bin → scan screen; NON-target bin must NOT advance the step (W-WH-WALK falsifier).
+    if (window.WHWalk && WHWalk.onPick) { try { WHWalk.onPick(guid); } catch (e) {} }
+
     // Wall X-Ray in Walk Mode
     if (A.walkModeActive) {
       const faceNormal = hit.face ? _pickV3.copy(hit.face.normal) : _pickV3.set(1, 0, 0);
