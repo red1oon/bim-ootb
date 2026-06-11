@@ -34,6 +34,11 @@
     { key: 'dynamics',  name: 'MS Dynamics', icon: '🟦', real: false }
   ];
 
+  // Each real source's installable tenant shard (the delegate-install artifact gen_ad_odoo.js emits). The dialog
+  // success-path INSTALLS this (merge + persist) so going through Install actually leaves a resident tenant —
+  // not just a verified fold. iDempiere installs via its own MigrateShowMe/agent flow (NEW_CLIENT_MGMT.md #5).
+  var TENANT_SHARD = { odoo: { file: '12-odoo.db', name: 'Odoo', client: 12 } };
+
   var _overlay = null, _mode = 'migrate', _status = null;
   var _detected = {};   // key → true (port reachable). idempiere is 'agent' (real, not auto-probeable).
   var _sel = null, _SQL = null;
@@ -292,7 +297,51 @@
       console.log('§ODOO-MIGRATE-BROWSER loaded events=' + chain.events.length + ' mapped=' + mapped + '/' + chain.events.length
         + ' verbs=[' + usedVerbs.join(',') + '] newVerbs=[' + newVerbs.join(',') + '] glDr' + (balanced ? '==' : '!=') + 'glCr verify chainOk=' + (chainOk ? 'Y' : 'N') + ' tip=' + tip);
       if (db.close) db.close();
+      // INSTALL success-path: the fold is verified → offer to make the tenant RESIDENT (merge its shard + persist).
+      // Only in install mode; migrate mode stops at "verified fold" (no install). _sel is the chosen source key.
+      if (_mode === 'install' && TENANT_SHARD[_sel]) _renderInstallCta(_$('ep-result'), TENANT_SHARD[_sel]);
     }).catch(function (e) { out.innerHTML = '<div class="ep-err">Fold failed: ' + e.message + '</div>'; });
+  }
+
+  // ── INSTALL CTA — turn a verified fold into a resident tenant (drives persist from the dialog, not the URL) ──
+  function _renderInstallCta(out, tenant) {
+    if (!out) return;
+    var box = _el('div', { class: 'ep-install' });
+    box.innerHTML =
+      '<div class="ep-idim">The fold is verified. Install <b>' + tenant.name + '</b> as a resident tenant '
+      + '(Client ' + tenant.client + ') — it survives a plain reload and appears in the login tenant switcher.</div>'
+      + '<button id="ep-install-go" class="ep-btn ep-primary">⬇ Install ' + tenant.name + ' (Client ' + tenant.client + ')</button>'
+      + '<div id="ep-install-msg" class="ep-idim"></div>';
+    out.appendChild(box);
+    _$('ep-install-go').onclick = function () { _doInstall(tenant); };
+  }
+
+  function _doInstall(tenant) {
+    var btn = _$('ep-install-go'), msg = _$('ep-install-msg');
+    if (btn) { btn.disabled = true; btn.textContent = 'Installing…'; }
+    var fn = global.idmpInstallShard;   // present on idempiere.html (where Install is reached); installs in-page
+    if (typeof fn !== 'function') {
+      // not on idempiere.html (e.g. opened from erp.html) — hand off to the proven ?shard= URL install path.
+      console.log('§ERP-INSTALL erp=' + _sel + ' via=shard-url shard=' + tenant.file + ' client=' + tenant.client);
+      if (msg) msg.textContent = 'Opening the iDempiere app to finish install…';
+      location.href = 'idempiere.html?shard=' + encodeURIComponent(tenant.file) + '&client=' + tenant.client;
+      return;
+    }
+    Promise.resolve(fn(tenant.file)).then(function (res) {
+      res = res || {};
+      console.log('§ERP-INSTALL erp=' + _sel + ' shard=' + tenant.file + ' client=' + tenant.client
+        + ' rows=' + (res.mRow || 0) + ' clients=' + (res.clients != null ? res.clients : '?') + ' persisted=' + (res.persisted ? 'Y' : 'N'));
+      if (res.ok && res.persisted) {
+        if (btn) btn.textContent = '✓ Installed';
+        if (msg) msg.innerHTML = '✓ <b>' + tenant.name + '</b> installed (Client ' + tenant.client + ', '
+          + (res.mRow || 0) + ' rows merged) and persisted — it now survives reload. '
+          + '<button id="ep-reload" class="ep-btn ep-primary">Reload &amp; switch tenant</button>';
+        var rl = _$('ep-reload'); if (rl) rl.onclick = function () { location.href = location.pathname; };
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = '⬇ Install ' + tenant.name; }
+        if (msg) msg.textContent = '✗ Install failed: ' + (res.error || 'no rows merged');
+      }
+    });
   }
 
   function _injectStyle() {
@@ -314,6 +363,8 @@
       + '.ep-primary{background:#0b6;color:#fff;border-color:#0b6}.ep-comingnote{margin-top:4px;flex-basis:100%}'
       + '.ep-cmd{background:#0d1117;color:#9be29b;padding:10px;border-radius:8px;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0;flex:1}'
       + '.ep-file{margin:8px 0}.ep-result{margin-top:12px}'
+      + '.ep-install{margin-top:14px;padding:12px 14px;border:1px solid #cfe9d8;background:#f6faf7;border-radius:10px}'
+      + '.ep-idim{color:#567;font-size:12px;margin:6px 0;line-height:1.5}'
       // staged Odoo panel
       + '.ep-lock{background:#fff8e6;border:1px solid #f0e0a8;border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.5;color:#5a4a16;margin:0 0 14px}.ep-lock code{background:#fdeec2;padding:1px 4px;border-radius:4px}'
       + '.ep-steps{display:flex;flex-direction:column;gap:10px}'
