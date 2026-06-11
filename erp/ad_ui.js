@@ -2122,8 +2122,20 @@
       // Hidden fields: isKey, not displayed
       if (f.isKey || !f.isDisplayed) continue;
 
-      // DisplayLogic evaluation
-      if (f.displayLogic && !ADParser.evaluateDisplayLogic(f.displayLogic, rec)) continue;
+      // DisplayLogic evaluation — proven engine first (ad_evaluator.js, W-LOGIC-EVAL 3044/3044;
+      // ERP_COVERAGE_MATRIX.md §AD_Field·DisplayLogic), legacy ADParser only if AdEvaluator absent
+      if (f.displayLogic) {
+        var _show;
+        if (typeof window !== 'undefined' && window.AdEvaluator) {
+          try { _show = window.AdEvaluator.evaluate(f.displayLogic, rec || {}, rec || {}) !== false; }
+          catch (e) { _show = true; }
+          if (!_show) console.log('§AD-DISPLAYLOGIC-LIVE card table=' + (tab.tableName || tab.name) +
+            ' hiddenCol=' + f.columnName + ' logic=' + f.displayLogic);
+        } else {
+          _show = ADParser.evaluateDisplayLogic(f.displayLogic, rec);
+        }
+        if (!_show) continue;
+      }
 
       var val = rec[f.columnName];
       var isEmpty = (val === null || val === undefined || val === '');

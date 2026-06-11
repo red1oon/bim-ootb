@@ -114,12 +114,35 @@
     return set;
   }
 
-  // ── prune the AD_Menu tree to the role's accessible windows ──
-  // Hide action='W' leaves whose windowId ∉ winSet; then drop summary folders left empty.
-  // Non-W leaves (P/R/F/X/I/T) are NOT access-scoped here (§3b.1 bounded scope). Returns a
-  // new pruned tree (input is not mutated) plus visible/total W-window counts.
-  function scopeMenu(roots, winSet) {
+  // ── role-scope: the AD_Process_IDs / AD_Form_IDs the role may run (§3b.1 P/R/F residual) ──
+  function accessibleProcesses(db, roleId) {
+    var ps = rows(db,
+      'SELECT DISTINCT AD_Process_ID AS id FROM AD_Process_Access ' +
+      'WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
+    var set = {};
+    ps.forEach(function (p) { if (p.id != null) set[Number(p.id)] = 1; });
+    console.log('§IDMP-SESSION accessibleProcesses role=' + roleId + ' processes=' + Object.keys(set).length + ' source=ad_process_access');
+    return set;
+  }
+  function accessibleForms(db, roleId) {
+    var fs = rows(db,
+      'SELECT DISTINCT AD_Form_ID AS id FROM AD_Form_Access ' +
+      'WHERE AD_Role_ID = ? AND IsActive = \'Y\'', [roleId]);
+    var set = {};
+    fs.forEach(function (f) { if (f.id != null) set[Number(f.id)] = 1; });
+    console.log('§IDMP-SESSION accessibleForms role=' + roleId + ' forms=' + Object.keys(set).length + ' source=ad_form_access');
+    return set;
+  }
+
+  // ── prune the AD_Menu tree to the role's accessible windows/processes/forms ──
+  // Hide action='W' leaves whose windowId ∉ winSet; with procSet/formSet given (§AD-MENU-PRF-LIVE),
+  // also hide 'P'/'R' leaves whose processId ∉ procSet and 'X' leaves whose formId ∉ formSet;
+  // then drop summary folders left empty. 'F' (workflow) / 'I' / 'T' leaves stay unscoped — this
+  // seed's ad_menu carries no workflow/task/info id column to gate on (named residual). Returns a
+  // new pruned tree (input is not mutated) plus visible/total counts per gated kind.
+  function scopeMenu(roots, winSet, procSet, formSet) {
     var total = {}, visible = {};
+    var totalP = {}, visibleP = {}, totalF = {}, visibleF = {};
     function prune(node) {
       var isFolder = node.isSummary || (node.children && node.children.length);
       if (isFolder) {
@@ -133,11 +156,26 @@
         if (!winSet[wid]) return null;                       // window the role can't open → drop
         visible[wid] = 1;
       }
+      if (procSet && (node.action === 'P' || node.action === 'R') && node.processId != null) {
+        var pid = Number(node.processId); totalP[pid] = 1;
+        if (!procSet[pid]) return null;                      // process/report the role can't run → drop
+        visibleP[pid] = 1;
+      }
+      if (formSet && node.action === 'X' && node.formId != null) {
+        var fid = Number(node.formId); totalF[fid] = 1;
+        if (!formSet[fid]) return null;                      // form the role can't open → drop
+        visibleF[fid] = 1;
+      }
       return node;
     }
     var tree = (roots || []).map(prune).filter(Boolean);
-    var out = { tree: tree, visible: Object.keys(visible).length, total: Object.keys(total).length };
-    console.log('§IDMP-SESSION scopeMenu visibleWindows=' + out.visible + '/' + out.total + ' roots=' + tree.length);
+    var out = { tree: tree, visible: Object.keys(visible).length, total: Object.keys(total).length,
+                visibleProcs: Object.keys(visibleP).length, totalProcs: Object.keys(totalP).length,
+                visibleForms: Object.keys(visibleF).length, totalForms: Object.keys(totalF).length };
+    console.log('§IDMP-SESSION scopeMenu visibleWindows=' + out.visible + '/' + out.total +
+      (procSet ? ' visibleProcs=' + out.visibleProcs + '/' + out.totalProcs : '') +
+      (formSet ? ' visibleForms=' + out.visibleForms + '/' + out.totalForms : '') +
+      ' roots=' + tree.length);
     return out;
   }
 
@@ -155,9 +193,11 @@
     var users = listUsers(db);
     var user = users.filter(function (u) { return u.id === Number(userId); })[0] || { id: Number(userId), name: '#' + userId };
     var winSet = accessibleWindows(db, role.id);
+    var procSet = accessibleProcesses(db, role.id);            // §AD-MENU-PRF-LIVE
+    var formSet = accessibleForms(db, role.id);
     return {
       user: user, role: role, client: client, org: org,
-      roles: roles, orgs: orgs, winSet: winSet
+      roles: roles, orgs: orgs, winSet: winSet, procSet: procSet, formSet: formSet
     };
   }
 
@@ -169,6 +209,8 @@
     clientFor: clientFor,
     orgsForRole: orgsForRole,
     accessibleWindows: accessibleWindows,
+    accessibleProcesses: accessibleProcesses,
+    accessibleForms: accessibleForms,
     scopeMenu: scopeMenu,
     buildContext: buildContext
   };

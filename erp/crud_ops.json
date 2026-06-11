@@ -24,6 +24,8 @@
       { "col": "grandtotal", "label": "Grand Total", "type": "number", "required": true, "default": 0,
         "validation": { "min": 0, "valRule": "non_negative_amt" } },
       { "col": "description", "label": "Description", "type": "string", "required": false, "default": "" },
+      { "col": "m_pricelist_id", "label": "Price List (ID)", "type": "number", "required": false },
+      { "col": "bill_bpartner_id", "label": "Bill-To Partner (ID)", "type": "number", "required": false },
       { "col": "docstatus", "label": "Status", "type": "list", "ref": "docStatus", "required": true, "default": "DR" }
     ]
   },
