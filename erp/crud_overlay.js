@@ -211,6 +211,40 @@
     } catch (e) { return null; }
   }
 
+  // normDateValue — seed an <input type=date>. HTML5 type=date accepts ONLY a strict yyyy-MM-dd value;
+  // a stored TIMESTAMP ("2002-02-22 00:00:00" / "...21:09:00") is REJECTED → the widget renders BLANK →
+  // the required check then sees an empty field and REJECTs (the user-reported bug). Slice the date
+  // prefix so the widget seeds correctly. The AD model types every doc date column as `date` (date-only —
+  // verified against crud_ops.json: c_order/m_inout/c_invoice/c_payment/c_allocationline all type=date),
+  // so date-only is correct; the time component in the bundle is an incidental SQLite-TIMESTAMP artifact,
+  // not a modeled time-of-day. PURE (no Date.now) — replay-safe. Non-date types pass through unchanged.
+  function normDateValue(type, val) {
+    if (type !== 'date') return val == null ? '' : val;
+    var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(val == null ? '' : val));
+    return m ? m[1] : '';
+  }
+
+  // tipValues — read-the-tip FIELD VALUES for (table,id) from the signed op-log: replay every non-undone
+  // CRUD_UPDATE op for that row in commit (id) order and return the merged {col: latest .new} overlay.
+  // The DOC_ACTION peer is readTip (docstatus); this is its field-value sibling. glassbowl_data.db stays
+  // the IMMUTABLE baseline — getRecord layers this overlay on the bundle row so the reopened form, the Z
+  // fold-back, and every reader agree on the tip value. JS-side filter (no json_extract dependency).
+  function tipValues(db, table, id) {
+    var out = {};
+    try {
+      var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='CRUD_UPDATE' AND undone=0 ORDER BY id ASC");
+      if (!r.length || !r[0].values.length) return out;
+      var rows = r[0].values;
+      for (var i = 0; i < rows.length; i++) {
+        var p = JSON.parse(rows[i][0]);
+        if (!p || p.table !== table || String(p.id) !== String(id)) continue;
+        var ch = p.changes || {};
+        for (var c in ch) { if (ch.hasOwnProperty(c)) out[c] = (ch[c] && ch[c].hasOwnProperty('new')) ? ch[c].new : ch[c]; }
+      }
+    } catch (e) {}
+    return out;
+  }
+
   // §A1-DOC (HISTORY_SESSION_EVENTS.md) — Witness: W-DOC-DOTS. The Z-dot label for a COMMITTED op.
   // PURE: op in, label out — one label per commit gesture (Save/New/Delete/DocAction), never a keystroke.
   function docLabel(op, name) {
@@ -225,8 +259,8 @@
   var CORE = {
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
-    docActionOutcome: docActionOutcome, kernelParamsFor: kernelParamsFor, readTip: readTip,
-    buildDocActionGroup: buildDocActionGroup, docLabel: docLabel
+    docActionOutcome: docActionOutcome, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
+    normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -446,6 +480,10 @@
     if (f.type === 'list') return '<select class=cfi data-col="' + f.col + '"' + ro + '></select>';
     if (f.type === 'fk')   return '<select class=cfi data-col="' + f.col + '" data-fk="' + esc(f.ref || '') + '"' + ro + '><option value="' + esc(v) + '">' + esc(v) + '</option></select>';
     var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : 'text');
+    if (f.type === 'date') {                                  // §CRUD-DATE: strip any time component → strict yyyy-MM-dd, else type=date renders blank
+      var raw = v; v = normDateValue('date', v);
+      console.log('§CRUD-DATE col=' + f.col + ' raw="' + raw + '" normalized="' + v + '" widget=date');
+    }
     return '<input class=cfi type="' + t + '" data-col="' + f.col + '" value="' + esc(v) + '"' + ro + (f.readonly ? ' title="derived — read-only"' : '') + '>';
   }
   // list options from __meta; fk options from the ref table via the page bundle (truth-bound).
@@ -639,25 +677,60 @@
   global.crudFoldBack = foldBackDocOp;
   global.crudFoldForward = foldForwardDocOp;
 
-  // ── applyOp — E2 dry path for CRUD verbs; DOC_ACTION now takes the GP3 signed-write seam. ──
+  // dryCrud — the E2 fallback for a CRUD verb (kernel/sql.js absent): log the op, drop a Z dot. The
+  // change is NOT persisted (honest dry-run) — getRecord then shows the stale bundle row.
+  function dryCrud(op) {
+    if (op.op_type === 'CRUD_CREATE')      console.log('§CRUD create key=' + op.key + ' (dry) op=CRUD_CREATE fields=' + JSON.stringify(op.fields) + ' ownerGated=' + (op.ownerGated ? 'Y' : 'N') + ' cas=' + (op.cas || '-'));
+    else if (op.op_type === 'CRUD_UPDATE') console.log('§CRUD update key=' + op.key + ' field=' + Object.keys(op.changes).join(',') + ' (dry) op=CRUD_UPDATE changes=' + JSON.stringify(op.changes));
+    else if (op.op_type === 'CRUD_DELETE') console.log('§CRUD delete key=' + op.key + ' tombstone=Y reversible=Y (dry) op=CRUD_DELETE id=' + op.id);
+    docDot(CORE.docLabel(op, fname(op.key)), op);
+    toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — dry-run (kernel absent)');
+  }
+
+  // commitCrud — the REAL signed write for a CRUD field verb (CREATE/UPDATE/DELETE), the field-value peer
+  // of commitProcess. SAME sidecar path: build a kernel op carrying {table,id,changes|fields} →
+  // commitGroup (all-or-none, sealed once from the tip) → verifyChain → persist. read-the-tip (tipValues)
+  // later overlays these on the IMMUTABLE bundle row in getRecord — so a reopened form, the Z fold-back,
+  // and a page reload (sidecar rehydrated from IndexedDB) all show the tip value. glassbowl_data.db is
+  // NEVER mutated — the signed op-log is the only mutable truth (GP3 DECIDED). Kernel/sql.js absent →
+  // dryCrud fallback (never a silent failure).
+  function commitCrud(op) {
+    var K = kernel();
+    withSidecar(function (db) {
+      if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD ' + op.op_type + ' key=' + op.key + ' kernel/sql.js absent → DRY fallback'); dryCrud(op); return; }
+      try {
+        var params = { table: op.table, id: op.id == null ? null : op.id };
+        if (op.op_type === 'CRUD_UPDATE')      params.changes = op.changes;
+        else if (op.op_type === 'CRUD_CREATE') { params.fields = op.fields; params.cas = op.cas || null; }
+        else if (op.op_type === 'CRUD_DELETE') { params.tombstone = true; params.reversible = true; }
+        var groupOps = [{ op_type: op.op_type, op_uuid: op.op_uuid || null, params: params }];
+        Promise.resolve(K.commitGroup(db, groupOps, {})).then(function (res) {
+          if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); return; }
+          return Promise.resolve(K.verifyChain(db)).then(function (v) {
+            _sidePersist();
+            var cols = op.changes ? Object.keys(op.changes).join(',') : (op.fields ? Object.keys(op.fields).join(',') : '-');
+            console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+            docDot(CORE.docLabel(op, fname(op.key)), op);
+            toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
+          });
+        }).catch(function (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); });
+      } catch (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); }
+    });
+  }
+
+  // ── applyOp — the commit funnel. DOC_ACTION + CRUD verbs all take the GP3 signed-write seam (sidecar). ──
   function applyOp(op, e) {
-    if (op.op_type === 'CRUD_CREATE') {
-      console.log('§CRUD create key=' + op.key + ' (dry) op=CRUD_CREATE fields=' + JSON.stringify(op.fields) + ' ownerGated=' + (op.ownerGated ? 'Y' : 'N') + ' cas=' + (op.cas || '-'));
-      docDot(CORE.docLabel(op, fname(op.key)), op);
-    } else if (op.op_type === 'CRUD_UPDATE') {
-      console.log('§CRUD update key=' + op.key + ' field=' + Object.keys(op.changes).join(',') + ' (dry) op=CRUD_UPDATE changes=' + JSON.stringify(op.changes));
-      docDot(CORE.docLabel(op, fname(op.key)), op);
-    } else if (op.op_type === 'CRUD_DELETE') {
-      console.log('§CRUD delete key=' + op.key + ' tombstone=Y reversible=Y (dry) op=CRUD_DELETE id=' + op.id);
-      docDot(CORE.docLabel(op, fname(op.key)), op);
-    } else if (op.op_type === 'DOC_ACTION') { commitProcess(op); return; }   // GP3: real signed write (sidecar)
-    toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — dry-run logged (E3 will sign + apply)');
+    if (op.op_type === 'DOC_ACTION') { commitProcess(op); return; }                                    // GP3: signed status write
+    if (op.op_type === 'CRUD_CREATE' || op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE') { commitCrud(op); return; }  // GP3: signed field write
+    toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — unknown op');
   }
 
   // ── page-data helpers (truth-bound Edit pre-fill from the real bundle row) ──
   function recId(key, rec) { var pk = key + '_id'; return rec && rec[pk] != null ? rec[pk] : null; }
   function assignVals(e, rec) { var v = {}; (e.fields || []).forEach(function (f) { v[f.col] = rec && rec[f.col] != null ? rec[f.col] : ''; }); return v; }
   // getRecord — prefer the row in the currently-traced O2C chain (the lit instance), else the first row.
+  // The immutable bundle row is the BASELINE; _overlayTip then layers the signed sidecar's read-the-tip
+  // field values on top, so the form (re)opens on the tip value, not the stale original.
   function getRecord(key, cb) {
     if (typeof withBundle !== 'function') { cb({}); return; }
     var wantId = null;
@@ -666,8 +739,25 @@
       try {
         var pk = key + '_id', sql = wantId != null ? 'SELECT * FROM ' + key + ' WHERE ' + pk + '=' + wantId + ' LIMIT 1' : 'SELECT * FROM ' + key + ' ORDER BY ' + pk + ' LIMIT 1';
         var res = db.exec(sql); if (!res.length || !res[0].values.length) { cb({}); return; }
-        var o = {}; res[0].columns.forEach(function (c, i) { o[c] = res[0].values[0][i]; }); cb(o);
+        var o = {}; res[0].columns.forEach(function (c, i) { o[c] = res[0].values[0][i]; }); _overlayTip(key, o, cb);
       } catch (er) { cb({}); }
+    });
+  }
+  // _overlayTip — layer the signed sidecar's read-the-tip field values over the immutable bundle row.
+  // Sidecar absent (kernel/sql.js not loaded) → pass the baseline row through unchanged. NON-MUTATING of
+  // the bundle DB: the overlay lives only on the returned JS object.
+  function _overlayTip(key, o, cb) {
+    var id = recId(key, o);
+    if (id == null || typeof withSidecar !== 'function') { cb(o); return; }
+    withSidecar(function (db) {
+      if (db) {
+        try {
+          var tip = CORE.tipValues(db, key, id), cols = Object.keys(tip);
+          if (cols.length) { cols.forEach(function (c) { o[c] = tip[c]; });
+            console.log('§CRUD-TIP key=' + key + ' id=' + id + ' overlaid=' + cols.join(',') + ' source=sidecar'); }
+        } catch (e) {}
+      }
+      cb(o);
     });
   }
 
