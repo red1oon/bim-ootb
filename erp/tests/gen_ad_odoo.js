@@ -161,85 +161,88 @@ function nextFreeClient(db) { var r = exec(db, 'SELECT COALESCE(MAX(AD_Client_ID
     ins('M_ProductPrice', stamp7({ M_Product_ID: pid, M_PriceList_Version_ID: PLV, PriceList: lp, PriceStd: lp, PriceLimit: lp }, CL, ORG));
     priced++; if (pmin === null || lp < pmin) pmin = lp; if (pmax === null || lp > pmax) pmax = lp; });
   L('§RULE-DATA products=' + prods.length + ' priced=' + priced + ' min=' + pmin + ' max=' + pmax + ' (all real Odoo list_price, 0 invented)');
-  var BP = DOC + 1, INV = DOC + 1;
-  ins('C_BPartner', stamp7({ C_BPartner_ID: BP, Value: 'ODOO-BP-' + so.partner_id[0], Name: so.partner_id[1], IsCustomer: 'Y', IsVendor: 'N', IsEmployee: 'N' }, CL, ORG));
-  var ORD = DOC + 1;
-  ins('C_Order', stamp7({ C_Order_ID: ORD, DocumentNo: so.name, DocStatus: 'CO', IsSOTrx: 'Y', DateOrdered: String(so.date_order).slice(0, 10), C_BPartner_ID: BP, C_Currency_ID: 100, GrandTotal: so.amount_total, TotalLines: so.amount_untaxed, Description: 'Migrated from odoodemo' }, CL, ORG));
-  sol.forEach(function (l, i) { ins('C_OrderLine', stamp7({ C_OrderLine_ID: ORD * 100 + i + 1, C_Order_ID: ORD, Line: (i + 1) * 10, M_Product_ID: pidMap[l.product_id[0]] || null, QtyOrdered: l.product_uom_qty, QtyDelivered: l.qty_delivered, QtyInvoiced: l.qty_invoiced, PriceActual: l.price_unit, LineNetAmt: l.price_subtotal, C_UOM_ID: 100 }, CL, ORG)); });
-  if (inv) ins('C_Invoice', stamp7({ C_Invoice_ID: INV, DocumentNo: inv.name, DocStatus: 'CO', IsSOTrx: 'Y', DateInvoiced: String(inv.invoice_date).slice(0, 10), C_BPartner_ID: BP, C_Currency_ID: 100, GrandTotal: inv.amount_total, TotalLines: inv.amount_untaxed, Description: 'Migrated from odoodemo · ' + inv.payment_state, C_Order_ID: ORD }, CL, ORG));
-  L('   data: products=' + prods.length + ' categories=' + Object.keys(catId).length + ' SO=' + so.name + ' customer="' + so.partner_id[1] + '"');
+  // ── 5c. FULL DOCUMENT PULL (NEW_CLIENT_MGMT.md #3) — pull EVERY sale order's OWN lines + invoice (+ invoice
+  //        lines + tax), not just the S00023 showcase, so each migrated order folds through its own invoice
+  //        (oracle path) or projects from its own lines (no oracle) → coverage:complete, not header-only partial.
+  //        Batched: one RPC per relation across all 27 orders. NON-INVENT: every row is a recorded Odoo record. ──
+  var orderIds = orders.map(function (o) { return o.id; });
+  var orderNames = orders.map(function (o) { return o.name; });
+  var allSol = await ex('sale.order.line', 'search_read', [[['order_id', 'in', orderIds], ['display_type', '=', false]]],
+    { fields: ['order_id', 'product_id', 'product_uom_qty', 'qty_delivered', 'qty_invoiced', 'price_unit', 'price_subtotal'] });
+  var allInv = await ex('account.move', 'search_read', [[['invoice_origin', 'in', orderNames], ['move_type', '=', 'out_invoice']]],
+    { fields: ['id', 'name', 'invoice_origin', 'invoice_date', 'amount_untaxed', 'amount_total', 'amount_tax', 'payment_state'] });
+  var invMoveIds = allInv.map(function (m) { return m.id; });
+  var allInvL = invMoveIds.length ? await ex('account.move.line', 'search_read', [[['move_id', 'in', invMoveIds], ['display_type', '=', 'product']]],
+    { fields: ['move_id', 'product_id', 'price_subtotal'] }) : [];
+  var partnerIds = []; orders.forEach(function (o) { var pid = o.partner_id && o.partner_id[0]; if (pid && partnerIds.indexOf(pid) < 0) partnerIds.push(pid); });
+  var allPartners = partnerIds.length ? await ex('res.partner', 'read', [partnerIds], { fields: ['id', 'property_account_receivable_id'] }) : [];
+  function grp(a, f) { var m = {}; a.forEach(function (x) { var k = f(x); (m[k] = m[k] || []).push(x); }); return m; }
+  var solBy = grp(allSol, function (l) { return l.order_id[0]; });
+  var invByOrigin = {}; allInv.forEach(function (m) { if (!invByOrigin[m.invoice_origin]) invByOrigin[m.invoice_origin] = m; });  // 1st invoice per SO (demo is 1:1)
+  var invlBy = grp(allInvL, function (l) { return l.move_id[0]; });
+  var rcvBy = {}; allPartners.forEach(function (p) { rcvBy[p.id] = p.property_account_receivable_id; });
+  L('§FULL-PULL-LIVE orderlines=' + allSol.length + ' invoices=' + allInv.length + ' invoicelines=' + allInvL.length + ' partners=' + allPartners.length);
 
-  // ── 5c. real Odoo ORDER population for the L1 lifecycle rule ("when may this Order complete"). Insert every
-  //        sale order as C_Order (Client 12) with its real GrandTotal + DocStatus mapped from the Odoo state
-  //        (draft/sent→DR, sale→IP — both completable to CO; done→CO; cancel→VO). S00023 stays the detailed CO
-  //        showcase above (skipped here, not duplicated). Distinct partners → C_BPartner rows. NON-INVENT.
-  var ST = { draft: 'DR', sent: 'DR', sale: 'IP', done: 'CO', cancel: 'VO' };
-  var bpMap = {}; bpMap[so.partner_id[0]] = BP;                       // S00023's partner already inserted as BP
-  var nextBP = DOC + 2, nextOrd = DOC + 2, omin = null, omax = null, ocount = 0;
-  orders.forEach(function (o) {
-    if (o.name === so.name) return;                                  // the detailed showcase order — keep it CO above
-    var ppid = o.partner_id && o.partner_id[0];
-    if (ppid && !bpMap[ppid]) { bpMap[ppid] = nextBP++; ins('C_BPartner', stamp7({ C_BPartner_ID: bpMap[ppid], Value: 'ODOO-BP-' + ppid, Name: o.partner_id[1], IsCustomer: 'Y', IsVendor: 'N', IsEmployee: 'N' }, CL, ORG)); }
-    var ds = ST[o.state] || 'DR';
-    ins('C_Order', stamp7({ C_Order_ID: nextOrd++, DocumentNo: o.name, DocStatus: ds, IsSOTrx: 'Y', DateOrdered: String(o.date_order).slice(0, 10), C_BPartner_ID: bpMap[ppid] || BP, C_Currency_ID: 100, GrandTotal: o.amount_total, TotalLines: o.amount_untaxed, Description: 'Migrated from odoodemo · state=' + o.state }, CL, ORG));
-    if (ds === 'DR' || ds === 'IP') { ocount++; var t = o.amount_total; if (omin === null || t < omin) omin = t; if (omax === null || t > omax) omax = t; }
-  });
-  L('§RULE-DATA-L1 orders=' + ocount + ' DR+IP=' + ocount + ' min=' + omin + ' max=' + omax + ' (real Odoo order totals, 0 invented)');
-
-  // ── 5d. POSTING CONFIG + richer documents (MIGRATE_FULL_MODEL_FRAME §3-4) — so the FROZEN engine
-  //        (doc_poster→post_resolver) resolves the tenant's accounts to the cent and the AD-gated accounting
-  //        view renders coverage:complete + balanced. Keyed on c_acctschema_id=101 (the frozen consumer's
-  //        default schema) — every ACCOUNT VALUE is a real Odoo column; the schema surrogate is shared engine
-  //        infra (exactly as the AD dictionary is shared across clients). NON-INVENT. ──
-  var SCHEMA = 101;
-  // ensure a C_ElementValue (natural account) + a C_ValidCombination for an Odoo account pair [id,"code name"].
-  // returns the C_ValidCombination id (what the master *_acct columns store, mirroring gl_journalline).
-  var evSeen = {}, vcSeen = {};
+  // ── 5d. POSTING CONFIG (MIGRATE_FULL_MODEL_FRAME §3-4) — so the FROZEN engine (doc_poster→post_resolver)
+  //        resolves the tenant's accounts to the cent. Keyed on c_acctschema_id=101 (the frozen consumer's
+  //        default schema); every ACCOUNT VALUE is a real Odoo column. acctVC ensures C_ElementValue (natural
+  //        account) + C_ValidCombination for an Odoo [id,"code name"] pair, client-scoped in the ACCT band. ──
+  var SCHEMA = 101, evSeen = {}, vcSeen = {};
   function acctVC(odooAcct) {
     if (!odooAcct) return null;
     var aid = odooAcct[0], label = String(odooAcct[1] || '');
     var sp = label.indexOf(' '), code = sp < 0 ? label : label.slice(0, sp), nm = sp < 0 ? label : label.slice(sp + 1);
-    // client-scope the natural account id: raw Odoo aid (6,19,…) would collide between two Odoo tenants. ev lives
-    // in the client's ACCT band (DOC+50000+aid); vc is offset +25000 above ev within the same band. aid is small
-    // (Odoo account.account record id), so both stay inside [ACCT, DOC+100000). vc.account_id points to the ev id.
     var evId = ACCT + aid, vc = ACCT + 25000 + aid;
     if (!evSeen[evId]) { ins('c_elementvalue', stamp7({ c_elementvalue_id: evId, value: code, name: nm, accounttype: '', issummary: 'N' }, CL, 0)); evSeen[evId] = 1; }
     if (!vcSeen[vc]) { ins('c_validcombination', stamp7({ c_validcombination_id: vc, account_id: evId }, CL, 0)); vcSeen[vc] = 1; }
     return vc;
   }
   ins('c_acctschema_default', stamp7({ c_acctschema_id: SCHEMA }, CL, 0));
-  // BPartner receivable — partner.property_account_receivable_id (one row per migrated customer, here the SO partner).
-  var rcvVC = acctVC(partner.property_account_receivable_id);
-  if (rcvVC) ins('c_bp_customer_acct', stamp7({ c_bpartner_id: BP, c_acctschema_id: SCHEMA, c_receivable_acct: rcvVC }, CL, 0));
-  // Product-category revenue/cogs — category income/expense properties (one row per migrated category).
+  // product-category revenue/cogs — category income/expense properties (one row per migrated category).
   var ncfg = 0;
   ocats.forEach(function (oc) {
-    var leaf = String(oc.name || 'Odoo').split('/').pop().trim();
-    var cid = catId[leaf]; if (cid == null) return;                                   // only categories we emitted
-    var revVC = acctVC(oc.property_account_income_categ_id);
-    var cogsVC = acctVC(oc.property_account_expense_categ_id);
+    var leaf = String(oc.name || 'Odoo').split('/').pop().trim(); var cid = catId[leaf]; if (cid == null) return;
+    var revVC = acctVC(oc.property_account_income_categ_id), cogsVC = acctVC(oc.property_account_expense_categ_id);
     ins('m_product_category_acct', stamp7({ m_product_category_id: cid, c_acctschema_id: SCHEMA, p_revenue_acct: revVC, p_cogs_acct: cogsVC, p_asset_acct: cogsVC }, CL, 0));
     ncfg++;
   });
-  // Tax — the sale tax + its GL account (read off the posted invoice's tax AML line: 251000 Tax Received).
+  // sale tax + its GL account (read off the posted invoice's tax AML line: 251000 Tax Received).
   var TAXID = DOC + 1, dueVC = taxAcct ? acctVC(taxAcct.account_id) : null;
   ins('c_tax', stamp7({ c_tax_id: TAXID, name: (saleTax && saleTax.name) || 'Tax', rate: (saleTax && saleTax.amount) || 0, issummary: 'N' }, CL, 0));
   if (dueVC) ins('c_tax_acct', stamp7({ c_tax_id: TAXID, c_acctschema_id: SCHEMA, t_due_acct: dueVC, t_credit_acct: dueVC }, CL, 0));
-  // ── richer documents: invoice lines (link to the order lines) + invoice tax + order tax, so the C_Order
-  //    resolves through its generated INVOICE (the oracle path, == Odoo account.move.line to the cent). ──
-  var ninvl = 0;
-  if (inv) {
-    invLines.forEach(function (l, i) {
-      ins('c_invoiceline', stamp7({ c_invoiceline_id: INV * 10 + i + 1, c_invoice_id: INV, c_orderline_id: ORD * 100 + i + 1,
-        m_product_id: pidMap[l.product_id && l.product_id[0]] || null, line: (i + 1) * 10, linenetamt: l.price_subtotal }, CL, ORG));
-      ninvl++;
-    });
-    ins('c_invoicetax', stamp7({ c_invoice_id: INV, c_tax_id: TAXID, taxamt: inv.amount_tax }, CL, ORG));
-  }
-  // order tax (drives the DRAFT-projection path too, when no invoice exists)
-  ins('c_ordertax', stamp7({ c_order_id: ORD, c_tax_id: TAXID, taxamt: (inv && inv.amount_tax) || (so.amount_total - so.amount_untaxed) }, CL, ORG));
+
+  // ── 5e. the unified per-order emit (S00023 first → keeps C_Order_ID DOC+1). Each order = BP (+receivable
+  //        acct, deduped per partner) · C_Order · its C_OrderLines · (its C_Invoice + C_InvoiceLines +
+  //        C_InvoiceTax, when invoiced) · C_OrderTax. invoice id = order id (distinct tables, no collision). ──
+  var ST = { draft: 'DR', sent: 'DR', sale: 'IP', done: 'CO', cancel: 'VO' };
+  var ordered = orders.slice().sort(function (a, b) { return a.name === so.name ? -1 : b.name === so.name ? 1 : 0; });
+  var bpMap = {}, bpAcctDone = {}, nextBP = DOC + 1, nextOrd = DOC + 1;     // S00023 sorts first → keeps BP+order id DOC+1 (1200001)
+  var nOrd = 0, nOL = 0, nInv = 0, nIL = 0, withLines = 0, withInv = 0, omin = null, omax = null, ocount = 0;
+  ordered.forEach(function (o) {
+    var ppid = o.partner_id && o.partner_id[0], bp;
+    if (ppid) { if (bpMap[ppid] == null) { bp = bpMap[ppid] = nextBP++; ins('C_BPartner', stamp7({ C_BPartner_ID: bp, Value: 'ODOO-BP-' + ppid, Name: o.partner_id[1], IsCustomer: 'Y', IsVendor: 'N', IsEmployee: 'N' }, CL, ORG)); } else bp = bpMap[ppid]; }
+    else { bp = nextBP++; }
+    if (ppid && !bpAcctDone[ppid]) { var rvc = acctVC(rcvBy[ppid]); if (rvc) ins('c_bp_customer_acct', stamp7({ c_bpartner_id: bp, c_acctschema_id: SCHEMA, c_receivable_acct: rvc }, CL, 0)); bpAcctDone[ppid] = 1; }
+    var ordId = nextOrd++, ds = ST[o.state] || 'DR';
+    ins('C_Order', stamp7({ C_Order_ID: ordId, DocumentNo: o.name, DocStatus: ds, IsSOTrx: 'Y', DateOrdered: String(o.date_order).slice(0, 10), C_BPartner_ID: bp, C_Currency_ID: 100, GrandTotal: o.amount_total, TotalLines: o.amount_untaxed, Description: 'Migrated from odoodemo · state=' + o.state }, CL, ORG)); nOrd++;
+    if (ds === 'DR' || ds === 'IP') { ocount++; var t = o.amount_total; if (omin === null || t < omin) omin = t; if (omax === null || t > omax) omax = t; }
+    var lines = solBy[o.id] || [];
+    lines.forEach(function (l, i) { ins('C_OrderLine', stamp7({ C_OrderLine_ID: ordId * 100 + i + 1, C_Order_ID: ordId, Line: (i + 1) * 10, M_Product_ID: pidMap[l.product_id && l.product_id[0]] || null, QtyOrdered: l.product_uom_qty, QtyDelivered: l.qty_delivered, QtyInvoiced: l.qty_invoiced, PriceActual: l.price_unit, LineNetAmt: l.price_subtotal, C_UOM_ID: 100 }, CL, ORG)); nOL++; });
+    if (lines.length) withLines++;
+    var m = invByOrigin[o.name];
+    if (m) {
+      withInv++;
+      ins('C_Invoice', stamp7({ C_Invoice_ID: ordId, DocumentNo: m.name, DocStatus: 'CO', IsSOTrx: 'Y', DateInvoiced: String(m.invoice_date).slice(0, 10), C_BPartner_ID: bp, C_Currency_ID: 100, GrandTotal: m.amount_total, TotalLines: m.amount_untaxed, Description: 'Migrated from odoodemo · ' + m.payment_state, C_Order_ID: ordId }, CL, ORG)); nInv++;
+      (invlBy[m.id] || []).forEach(function (l, i) { ins('c_invoiceline', stamp7({ c_invoiceline_id: ordId * 10 + i + 1, c_invoice_id: ordId, c_orderline_id: ordId * 100 + i + 1, m_product_id: pidMap[l.product_id && l.product_id[0]] || null, line: (i + 1) * 10, linenetamt: l.price_subtotal }, CL, ORG)); nIL++; });
+      ins('c_invoicetax', stamp7({ c_invoice_id: ordId, c_tax_id: TAXID, taxamt: m.amount_tax }, CL, ORG));
+    }
+    // order tax (drives the draft-projection path when no invoice exists): the invoice tax, else the header delta.
+    ins('c_ordertax', stamp7({ c_order_id: ordId, c_tax_id: TAXID, taxamt: m ? m.amount_tax : (o.amount_total - o.amount_untaxed) }, CL, ORG));
+  });
+  L('§FULL-PULL orders=' + nOrd + ' withLines=' + withLines + ' withInvoice=' + withInv + ' orderlines=' + nOL + ' invoices=' + nInv + ' invoicelines=' + nIL + ' bpartners=' + Object.keys(bpMap).length + ' (every row a recorded Odoo record, 0 invented)');
+  L('§RULE-DATA-L1 orders=' + ocount + ' DR+IP=' + ocount + ' min=' + omin + ' max=' + omax + ' (real Odoo order totals, 0 invented)');
   L('§MIGRATE-POSTCFG-EMIT schema=' + SCHEMA + ' elementvalues=' + Object.keys(evSeen).length + ' validcombinations=' + Object.keys(vcSeen).length +
-    ' bp_cust_acct=' + (rcvVC ? 1 : 0) + ' prodcat_acct=' + ncfg + ' tax_acct=' + (dueVC ? 1 : 0) + ' invoicelines=' + ninvl + ' (0 invented)');
+    ' bp_cust_acct=' + Object.keys(bpAcctDone).length + ' prodcat_acct=' + ncfg + ' tax_acct=' + (dueVC ? 1 : 0) + ' invoicelines=' + nIL + ' (0 invented)');
 
   // ── 6. 7-field audit + write the SHARD ──
   var has7 = ['AD_Client_ID', 'AD_Org_ID', 'IsActive', 'Created', 'CreatedBy', 'Updated', 'UpdatedBy'];
