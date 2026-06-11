@@ -22,6 +22,7 @@ function setupConfig(A) {
   // iDempiere BIM Tab: embedded mode + project record ID
   A.EMBEDDED = _params.get('embedded') === 'true';
   A.RECORD_ID = _params.get('record') || null;
+  A.HOME_URL = _params.get('home') || null;
 
   // Discipline colours (same as Blender addon)
   A.DISC_COLORS = {

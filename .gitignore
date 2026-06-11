@@ -4,7 +4,6 @@
 *.bin
 node_modules/
 test-results/
-buildings/
 *.log
 
 # OCI deploy staging (artifacts, not source) — §S281
@@ -17,3 +16,4 @@ quick-push.sh
 # Reference context from HP machine (not source) — §S281
 BIM_CONTEXT/
 !erp/preview_demo.db
+!buildings/warehouse_gardenworld.db

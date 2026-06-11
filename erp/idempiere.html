@@ -342,6 +342,7 @@
   <span class="ctx" id="idmp-ctx">&mdash;</span>
   <span class="hbtns">
     <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
+    <button id="idmp-share-btn" title="Share this page"></button>
     <button id="idmp-home-btn" title="Home / Engine view (erp.html)">&#8962;</button>
     <!-- §P3-REOPENED: the header '?' help glyph is RETIRED — ShowMe/Help is now the clean circleHelp 'showme' pill
          on the side strip (IdmpPillActions.showme → toggleShowMe), honouring clean-Lucide-only + no-controls-outside-the-pill. -->
@@ -433,6 +434,7 @@
   var _pendingWid = null;    // ?window=<id> deep link, opened AFTER login
   var _pendingRid = null;    // ?record=<pk> deep link — land on this record post-login (blank if wrong client/role)
   var _pendingPid = null;    // ?process=<id> deep link — launch this process post-login (§AD-PROC-LIVE, procSet-gated)
+  var _pendingLens = null;   // ?lens=<name> deep link — open a lens post-login (e.g. ?lens=pos)
 
   // open-window state (a faithful single-window desktop; MDI tabs track opened windows)
   var _openWins = {};        // windowId -> { win, name }
@@ -580,6 +582,7 @@
     _pendingWid = new URLSearchParams(location.search).get('window');
     _pendingRid = new URLSearchParams(location.search).get('record');  // §DEEPLINK — set by erp.html globe long-press
     _pendingPid = new URLSearchParams(location.search).get('process'); // §AD-PROC-LIVE — process deep link (mirrors ?window=)
+    _pendingLens = new URLSearchParams(location.search).get('lens');   // §DEEPLINK — lens=pos opens POS surface post-login
     $('idmp-loading').style.display = 'none';
     // ?login=<AD_User_ID | name-substring> auto-logs-in (demo/kiosk wow — zero clicks to the opening screen).
     // Proper practice: tenant SETUP/migration is a SystemAdmin act (System, client 0 — ?login=SuperUser); a
@@ -708,6 +711,7 @@
     if (_pendingPid) { var pp = Number(_pendingPid); _pendingPid = null;
       if (_session.procSet && _session.procSet[pp]) { openProcess(pp); _wOpened = true; }
       else console.log('§AD-PROC-LIVE deeplink proc=' + pp + ' DENIED — not in role procSet (ad_process_access)'); }
+    if (_pendingLens) { var ln = _pendingLens; _pendingLens = null; if (ln === 'pos') { openPosFor(); console.log('§DEEPLINK lens=pos opened post-login'); } }
     _mobileSurfaceMenu(_wOpened);   // §MOBILE-LANDING: phone lands on an empty canvas → surface the menu drawer
   }
   // §MOBILE-LANDING — on a phone the post-login landing is an empty "select a menu item" canvas with the menu
@@ -1807,6 +1811,20 @@
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
+      warehouse: function () {
+        var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
+        var url = '../viewer/viewer.html?db=../buildings/warehouse_gardenworld.db&home=' + homeUrl;
+        window.open(url, '_blank'); console.log('§WH-PILL opened url=' + url); },
+      warehouseShare: function () {
+        var url = location.origin + location.pathname.replace(/[^/]*$/, '') + '../viewer/viewer.html?db=../buildings/warehouse_gardenworld.db';
+        if (navigator.share) navigator.share({ title: 'Warehouse Walk', url: url });
+        else { try { navigator.clipboard.writeText(url); } catch(e){} }
+        console.log('§WH-SHARE url=' + url); },
+      posShare: function () {
+        var url = location.href.split('?')[0] + '?lens=pos';
+        if (navigator.share) navigator.share({ title: 'POS — Garden User · Store', url: url });
+        else { try { navigator.clipboard.writeText(url); } catch(e){} }
+        console.log('§POS-SHARE url=' + url); },
       // HISTORY_KNOB_DIAL.md — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) is in idmp_pills.js.
       worldhist: function () { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }
     };
@@ -1923,6 +1941,24 @@
     });
     $('idmp-menu-backdrop').addEventListener('click', function () { document.body.classList.remove('menu-open'); });
     $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
+    (function () {
+      var ic = window.ICONS && window.ICONS.share;
+      var btn = $('idmp-share-btn');
+      btn.innerHTML = ic ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ic.svg + '</svg>' : '&#8679;';
+      btn.addEventListener('pointerup', function () {
+        var url = location.href.split('?')[0];
+        var q = [];
+        if (_activeWin != null) q.push('window=' + _activeWin);
+        var tab = _curTab(), rec = _records[_recIdx];
+        if (tab && rec) { var rid = recVal(rec, _keyCol(tab)); if (rid != null) q.push('record=' + rid); }
+        if (q.length) url += '?' + q.join('&');
+        var w = _curWin();
+        var title = (w ? w.name + ' — ' : '') + 'iDempiere-like';
+        if (navigator.share) navigator.share({ title: title, url: url });
+        else { try { navigator.clipboard.writeText(url); } catch(e){} }
+        console.log('§IDMP-SHARE url=' + url);
+      });
+    })();
     mountPillRegistry();
     _applyPillMode();   // §D — apply persisted "just the pill" / classic state at boot
     if (window.IdmpHistory) window.IdmpHistory.registerRestore(_histRestore);   // §B — read-only nav restore

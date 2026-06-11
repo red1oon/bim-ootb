@@ -89,7 +89,16 @@
     };
 
     var cart = [];
-    var wrap = el('div'); wrap.style.cssText = 'display:flex;gap:10px;max-height:74vh;overflow:auto;padding:8px';
+    var wrap = el('div'); wrap.style.cssText = 'position:relative;display:flex;gap:10px;max-height:74vh;overflow:auto;padding:8px';
+    var homeBtn = el('button'); homeBtn.title = 'Back to iDempiere';
+    var homeIc = window.ICONS && window.ICONS.home;
+    homeBtn.innerHTML = homeIc ? '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + homeIc.svg + '</svg>' : '⌂';
+    homeBtn.style.cssText = 'position:absolute;top:4px;right:4px;background:none;border:none;color:#7fd6e0;cursor:pointer;padding:4px;opacity:.7;z-index:10';
+    homeBtn.addEventListener('pointerup', function () {
+      var ov = document.getElementById('posted-overlay'); if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+      console.log('§POS-HOME closed');
+    });
+    wrap.appendChild(homeBtn);
     var grid = el('div'); grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:6px;flex:2;align-content:start';
     var side = el('div'); side.style.cssText = 'flex:1;min-width:230px';
     wrap.appendChild(grid); wrap.appendChild(side);
