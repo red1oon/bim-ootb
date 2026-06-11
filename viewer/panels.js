@@ -1842,6 +1842,17 @@ function setupPanels(A) {
     } catch(e) { /* ignore */ }
   }
 
+  // §WH-HOME — if the viewer was opened with ?home=<url>, render a back button in the top-left HUD.
+  if (A.HOME_URL) {
+    var whHomeBtn = A.icon('home', { size: 22, title: 'Back to iDempiere',
+      onClick: function () { location.href = A.HOME_URL; }
+    });
+    whHomeBtn.style.cssText = 'position:fixed;top:10px;left:10px;z-index:900;' +
+      'background:rgba(0,0,0,0.45);border-radius:8px;padding:5px;cursor:pointer';
+    document.body.appendChild(whHomeBtn);
+    console.log('§WH-HOME rendered href=' + A.HOME_URL);
+  }
+
   // These exist in HTML from page load — section, sunglasses, toolbar
   setTimeout(function() {
     if (A._wireListKeyNav) A._wireListKeyNav();
