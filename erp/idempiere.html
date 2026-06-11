@@ -401,12 +401,18 @@
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
 <script src="report_overlay.js?v=1"></script>
 <script src="rule_fold.js?v=2"></script>
+<!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
+     the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
+     Order matters: pos_core needs ERPEngine + BigDecimal (above). Witnesses W-POS-* headless + poc_pos_live. -->
+<script src="erp_engine.js?v=1"></script>
+<script src="pos_core.js?v=1"></script>
+<script src="pos_lens.js?v=1"></script>
 <!-- §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar from the SAME registry as erp.html/BIM (retire the
      hand-rolled #idmp-pillrail). icons.js (verbatim glyph DATA) + pill_builder.js (the renderer) + idmp_pills.js
      (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
-<script src="icons.js?v=2"></script>
+<script src="icons.js?v=3"></script>
 <script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=10"></script>
+<script src="idmp_pills.js?v=11"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -1706,6 +1712,17 @@
       } });
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
   }
+  // 🛒 POS — the point-of-sale lens (POS_ADDON_SPEC §P-1): tiles from c_poskey, sealed master prices,
+  // Complete = ONE signed group through the SAME published op log the Kanban write path rides.
+  async function openPosFor() {
+    console.log('§POS-PILL action=open');
+    if (!_session) { status('Log in first'); return; }
+    if (!window.PosLens || !window.POSCore || !window.ERPEngine) { status('POS lens not loaded.'); return; }
+    var ok = await _ensureKanbanERP();                    // publishes window.ERP (kernel + signer + seam) once
+    if (!ok || !window.ERP) { status('POS: write path unavailable (window.ERP not published)'); console.log('§POS-PILL write-path=absent'); return; }
+    PosLens.open({ b3: _b3(window.__idmpDb), opDb: window.ERP.opDb, KO: window.KernelOps,
+      seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status });
+  }
   // ⚖ Rule — THE ONE GESTURE: edit one rule → K records re-fold live, signed + reversible (RuleFold).
   function openRuleFor() {
     console.log('§RULE-PILL action=open');
@@ -1788,7 +1805,7 @@
     window.IdmpPillActions = {
       redpill: toggleCleanMode,
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
-      rule: openRuleFor, install: openInstallFor, migrate: openMigrateFor,
+      rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
       // HISTORY_KNOB_DIAL.md — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) is in idmp_pills.js.
       worldhist: function () { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }
@@ -1804,6 +1821,11 @@
     };
     // §AD-GATE — the host answer for showWhen:"posting-doc" pills: true only when a posting document is open.
     window.IdmpPillDocGate = function () { return _curPostingDoc; };
+    // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
+    window.IdmpPillPosGate = function () {
+      try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }
+      catch (e) { return false; }   // table absent in a slim tenant → pill honestly off the bar
+    };
     if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
   }

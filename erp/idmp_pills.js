@@ -111,6 +111,10 @@
     // window.IdmpPillDocGate(); absent/false → the pill is fully off the bar (pill=false), not just overflow.
     var _docOk = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
     _actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk ? undefined : false; });
+    // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): the POS pill surfaces only when the tenant
+    // carries a c_pos row (data-gated like Posting-Preview). Host answers via window.IdmpPillPosGate().
+    var _posOk = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk ? undefined : false; });
     var cfg = _PB.getConfig();
     var hidden = (cfg.hidden || []).filter(function (id) { return lifecycleIds.indexOf(id) < 0; }); // drop managed ids
     if (stage !== 'pre-client') hidden = hidden.concat(lifecycleIds);                                // in-client → overflow
@@ -159,7 +163,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=27').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=28').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -181,6 +185,9 @@
       // the host's IdmpPillDocGate() is false → showWhen:"posting-doc" pills (Posting-Preview) start OFF the bar.
       var _docOk0 = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
       actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk0 ? undefined : false; });
+      // §AD-GATE — pos-station at BUILD too (POS pill off the bar until a c_pos tenant is open)
+      var _posOk0 = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk0 ? undefined : false; });
 
       _injectStyle();
       var wrap = document.createElement('div');
