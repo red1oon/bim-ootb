@@ -149,6 +149,17 @@
   }
   .idmp-fld .val.bool { border:none; background:transparent; }
   .idmp-fld.mand .val { border-left:3px solid #e0a800; }
+  /* §AD-DOCFSM-LIVE — doc-action bar (B-2): status chip + ONLY-legal action buttons */
+  .idmp-docfsm { grid-column:1 / -1; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:8px 0 10px; border-bottom:1px solid var(--idmp-border); margin-bottom:4px; }
+  .idmp-docfsm .chip { font-size:12px; font-weight:600; padding:3px 10px; border-radius:10px;
+    background:var(--idmp-sel); color:var(--idmp-text); border:1px solid var(--idmp-border); }
+  .idmp-docfsm .chip.st-CO { background:#d8efd8; border-color:#9cc79c; }
+  .idmp-docfsm .chip.st-DR, .idmp-docfsm .chip.st-IP { background:#fdf3d7; border-color:#e0c878; }
+  .idmp-docfsm .chip.st-VO, .idmp-docfsm .chip.st-RE { background:#f5dada; border-color:#d09c9c; }
+  .idmp-docfsm button { font-size:12px; padding:4px 10px; border:1px solid var(--idmp-border);
+    border-radius:6px; background:var(--idmp-panel); color:var(--idmp-text); cursor:pointer; }
+  .idmp-docfsm button:hover { background:var(--idmp-hover); border-color:var(--idmp-blue); }
   /* grid */
   .idmp-grid { width:100%; border-collapse:collapse; background:var(--idmp-panel); font-size:12.5px; }
   .idmp-grid th, .idmp-grid td {
@@ -329,6 +340,11 @@
 </div>
 
 <script src="ad_parser.js?v=22"></script>
+<!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
+     (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
+<script src="ad_evaluator.js?v=24"></script>
+<script src="ad_docfsm.js?v=1"></script>
+<script src="ad_modelval.js?v=1"></script>
 <script src="ad_data.js?v=22"></script>
 <script src="idmp_session.js?v=23"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
@@ -662,8 +678,9 @@
   // ── Left menu tree (folded from AD_Menu) ──
   function buildMenu() {
     var roots = (ADP && ADP.getMenuTree) ? ADP.getMenuTree(db) : [];
-    // Role-scope: prune W leaves the role can't open + empty folders (docs §3b.1). winSet from AD_Window_Access.
-    var scoped = (_session && SES && SES.scopeMenu) ? SES.scopeMenu(roots, _session.winSet) : { tree: roots, visible: 0, total: 0 };
+    // Role-scope: prune W leaves the role can't open + P/R ∉ ad_process_access + X ∉ ad_form_access
+    // + empty folders (docs §3b.1 + §AD-MENU-PRF-LIVE). Sets from buildContext (real grant rows).
+    var scoped = (_session && SES && SES.scopeMenu) ? SES.scopeMenu(roots, _session.winSet, _session.procSet, _session.formSet) : { tree: roots, visible: 0, total: 0 };
     _lastMenu = scoped;
     var tree = $('idmp-tree'); tree.innerHTML = '';
     var groups = 0, leaves = 0;
@@ -974,11 +991,129 @@
     });
     return cards;
   }
+  // ── §AD-DOCFSM-LIVE (UI_UNPARK_RESUME.md B-2) — doc-action bar from the PROVEN DocAction FSM
+  //    (ad_docfsm.js, W-*-FSM: every DocAction table walked vs DocumentEngine.getValidActions).
+  //    Buttons = ONLY the legal actions for THIS record; click = dispatchFor → status chip per transitionFor.
+  //    Transition is IN-MEMORY (status chip + grid refresh) — the signed persist path is the kernel-ops lane.
+  var ACTION_LABEL = { CO: 'Complete', PR: 'Prepare', VO: 'Void', CL: 'Close', RC: 'Reverse — Correct',
+    RA: 'Reverse — Accrual', RE: 'Re-Activate', XL: 'Unlock', IN: 'Invalidate', RJ: 'Reject', AP: 'Approve', PO: 'Post' };
+  var DOCSTATUS_LABEL = { DR: 'Drafted', IP: 'In Progress', IN: 'Invalid', AP: 'Approved', NA: 'Not Approved',
+    CO: 'Completed', CL: 'Closed', RE: 'Reversed', VO: 'Voided', WP: 'Waiting Payment', WC: 'Waiting Confirmation' };
+  // better-sqlite3-shaped shim over the sql.js handle — the engines are node-witness API (prepare().get/.all).
+  // ad_seed.db is a column SLICE of ad_full.db: an engine query touching an absent column (e.g.
+  // c_doctype.iscanbereactivated) returns NO ROW instead of throwing → the engine's conservative default
+  // (canReact=false → fewer buttons, never an illegal one). §-named so the gap is visible, not silent.
+  function _b3(dbh) {
+    // sql.js getAsObject keys carry the STORED column case (CamelCase in ad_seed.db); the engines were
+    // proven against the lowercase ad_full.db oracle → normalize keys to lowercase at this one seam.
+    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
+    function run(sql, args, all) {
+      var st;
+      try { st = dbh.prepare(sql); }
+      catch (e) {
+        var es = String((e && e.message) || e);   // sql.js throws strings, not always Error
+        if (es.indexOf('no such column') >= 0) {
+          console.log('§AD-DOCFSM-LIVE seed-gap (' + es + ') → no-row conservative default');
+          return all ? [] : undefined;
+        }
+        throw e;
+      }
+      var out = all ? [] : undefined;
+      try {
+        if (args.length) st.bind(args);
+        if (all) { while (st.step()) out.push(lc(st.getAsObject())); }
+        else if (st.step()) out = lc(st.getAsObject());
+      } finally { st.free(); }
+      return out;
+    }
+    return { prepare: function (sql) { return {
+      get: function () { return run(sql, Array.prototype.slice.call(arguments), false); },
+      all: function () { return run(sql, Array.prototype.slice.call(arguments), true); }
+    }; } };
+  }
+  // MPeriod.isOpen port — the standard period containing DateAcct + its c_periodcontrol row for the doc's
+  // docbasetype must be 'O' (real c_period 360 rows + c_periodcontrol 10464 rows in ad_seed.db, verified).
+  function _periodOpen(dateacct, doctypeId) {
+    try {
+      var b = _b3(window.__idmpDb);
+      var d = String(dateacct || '').slice(0, 10);
+      if (!d) return { open: true, why: 'no-dateacct→assume-open' };
+      var p = b.prepare("SELECT c_period_id FROM c_period WHERE periodtype='S' AND date(?)>=date(startdate) AND date(?)<=date(enddate) ORDER BY c_period_id").get(d, d);
+      if (!p) return { open: false, why: 'no-period(' + d + ')' };
+      var dbt = doctypeId ? b.prepare('SELECT docbasetype FROM c_doctype WHERE c_doctype_id=?').get(Number(doctypeId)) : null;
+      if (!dbt) return { open: true, why: 'no-doctype→assume-open' };
+      var pc = b.prepare('SELECT periodstatus FROM c_periodcontrol WHERE c_period_id=? AND docbasetype=?').get(Number(p.c_period_id), dbt.docbasetype);
+      return { open: !!(pc && pc.periodstatus === 'O'), why: 'period=' + p.c_period_id + ' ' + dbt.docbasetype + '=' + (pc ? pc.periodstatus : 'absent') };
+    } catch (e) { return { open: true, why: 'probe-error(' + e.message + ')→assume-open' }; }
+  }
+  function _recKey(rec, col) {   // the record's REAL key for an AD column name (db rows are lowercase)
+    if (col in rec) return col;
+    var lc = col.toLowerCase();
+    for (var k in rec) if (k.toLowerCase() === lc) return k;
+    return col;
+  }
+  function buildDocActionBar(tab, rec) {
+    if (!window.AdDocFsm || !rec) return null;
+    var tid = Number(tab.tableId);
+    if (tid !== 259 && !window.AdDocFsm.DOC_FAMILY[tid]) return null;   // not a walked DocAction table
+    var ds = recVal(rec, 'DocStatus'); if (ds == null || ds === '') return null;
+    var b = _b3(window.__idmpDb);
+    var doctypeId = Number(recVal(rec, 'C_DocType_ID')) || Number(recVal(rec, 'C_DocTypeTarget_ID')) || null;
+    var po = _periodOpen(recVal(rec, 'DateAcct'), doctypeId);
+    var fsmRec = { docStatus: ds, doctypeId: doctypeId,
+      processing: recVal(rec, 'Processing') === 'Y' ? 'Y' : 'N',
+      periodOpen: po.open, isBackDateTrxAllowed: true,                  // backDate=true: named default (B-2 card)
+      isSOTrx: recVal(rec, 'IsSOTrx') || 'N' };
+    var legal;
+    try { legal = (tid === 259) ? window.AdDocFsm.legalActionsOrder(b, fsmRec) : window.AdDocFsm.legalActionsFor(b, tid, fsmRec); }
+    catch (e) { console.log('§AD-DOCFSM-LIVE table=' + tid + ' err=' + e.message); return null; }
+    var recId = recVal(rec, _keyCol(tab));
+    console.log('§AD-DOCFSM-LIVE table=' + tid + '(' + tab.tableName + ') record=' + recId + ' status=' + ds +
+      ' legal=[' + legal.join(',') + '] periodOpen=' + po.open + '(' + po.why + ') backDate=true(named-default)');
+    var bar = el('div', 'idmp-docfsm');
+    bar.appendChild(el('span', 'chip st-' + ds, (DOCSTATUS_LABEL[ds] || ds) + ' · ' + ds));
+    legal.forEach(function (act) {
+      var btn = el('button', null, ACTION_LABEL[act] || act);
+      btn.setAttribute('data-doc-action', act);
+      btn.addEventListener('click', function () {
+        var opts = null;
+        if (tid === 259 && doctypeId) {
+          var dt = b.prepare('SELECT docsubtypeso FROM c_doctype WHERE c_doctype_id=?').get(doctypeId);
+          opts = { docSubTypeSO: dt ? dt.docsubtypeso : null };
+        }
+        var res = (tid === 259) ? window.AdDocFsm.dispatchOrder(b, fsmRec, act, opts)
+                                : window.AdDocFsm.dispatchFor(b, tid, fsmRec, act);
+        console.log('§AD-DOCFSM-LIVE table=' + tid + '(' + tab.tableName + ') record=' + recId +
+          ' clicked=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
+        if (res.ok) { rec[_recKey(rec, 'DocStatus')] = res.to; refreshForm(); }
+        else window.alert('Action ' + (ACTION_LABEL[act] || act) + ' rejected: ' + res.reason);
+      });
+      bar.appendChild(btn);
+    });
+    return bar;
+  }
   function buildForm(tab) {
     var form = el('div', 'idmp-form'); form.id = 'idmp-form';
     var rec = _records[_recIdx];
     if (rec) { form.setAttribute('data-ad-table', tab.tableName); form.setAttribute('data-ad-record', recVal(rec, _keyCol(tab))); }  // AD-key tag (host contract)
-    _displayFields(tab).forEach(function (f) {
+    var fsmBar = buildDocActionBar(tab, rec);                            // §AD-DOCFSM-LIVE (B-2)
+    if (fsmBar) form.appendChild(fsmBar);
+    // §AD-DISPLAYLOGIC-LIVE — hide fields whose AD DisplayLogic is FALSE for THIS record, via the proven
+    // evaluator (ad_evaluator.js, W-LOGIC-EVAL; ERP_COVERAGE_MATRIX.md §AD_Field·DisplayLogic).
+    // Uncertain/parse-error → SHOW (GridField parity).
+    var flds = _displayFields(tab);
+    if (window.AdEvaluator && rec) {
+      var _hidden = [];
+      flds = flds.filter(function (f) {
+        if (!f.displayLogic || String(f.displayLogic).trim() === '') return true;
+        var show; try { show = window.AdEvaluator.evaluate(f.displayLogic, rec, rec) !== false; } catch (e) { show = true; }
+        if (!show) _hidden.push(f.columnName + '[' + f.displayLogic + ']');
+        return show;
+      });
+      if (_hidden.length)
+        console.log('§AD-DISPLAYLOGIC-LIVE table=' + tab.tableName + ' shown=' + flds.length + ' hidden=' + _hidden.length + ' cols=' + _hidden.join(','));
+    }
+    flds.forEach(function (f) {
       var fld = el('div', 'idmp-fld' + (f.isMandatory ? ' mand' : ''));
       fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', f.columnName);
       fld.appendChild(el('label', null, f.name));

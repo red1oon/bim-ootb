@@ -523,9 +523,78 @@
       return;
     }
     console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' ok');
-    var op = CORE.buildOp(verb, e, vals, orig, { id: id });
-    applyOp(op, e);
-    closeForm();
+    // §AD-MODELVAL-LIVE (UI_UNPARK_RESUME.md B-3) — fire the PROVEN beforeSave hook engine (ad_modelval.js,
+    // W-*-SAVE: faithful M*.beforeSave ports) AFTER the field-level checks: a hook REJECT blocks the save
+    // with the hook's error string; hook-DERIVED values fill the form/op (the info.derived seam).
+    fireBeforeSaveHooks(e, vals, orig, function (mv) {
+      if (mv && !mv.ok) {
+        var s0 = form.querySelector('.cfe'); if (s0) s0.textContent = mv.blocked + ': ' + mv.error;
+        toast('Save rejected — ' + mv.error);
+        console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' hook=' + mv.blocked + ' verdict=REJECT error="' + mv.error + '"');
+        return;
+      }
+      if (mv && mv.derived && Object.keys(mv.derived).length) {
+        Object.keys(mv.derived).forEach(function (c) {
+          var inEl = form.querySelector('[data-col="' + c + '"]');
+          if (inEl) inEl.value = mv.derived[c] == null ? '' : mv.derived[c];
+          if (Object.prototype.hasOwnProperty.call(vals, c) || (e.fields || []).some(function (f) { return f.col === c; })) vals[c] = mv.derived[c];
+        });
+        console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' verdict=OK derived=' + JSON.stringify(mv.derived) + ' fired=' + mv.fired);
+      } else if (mv) {
+        console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' verdict=OK fired=' + mv.fired);
+      }
+      var op = CORE.buildOp(verb, e, vals, orig, { id: id });
+      applyOp(op, e);
+      closeForm();
+    });
+  }
+  // ── §AD-MODELVAL-LIVE plumbing — lazy per-table installer over the page bundle (sql.js → b3 shim) ──
+  var MV_INSTALLER = { c_order: 'installMOrderSaveHooks', m_inout: 'installMInOutSaveHooks',
+    c_invoice: 'installMInvoiceSaveHooks', c_payment: 'installMPaymentSaveHooks' };
+  var _mvInstalled = {};
+  function _mvB3(dbh) {   // better-sqlite3-shaped shim over sql.js; lowercase keys (engines proven on ad_full.db);
+    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
+    function run(sql, args, all) {                              // absent table/column in this bundle slice → no-row
+      var st;
+      try { st = dbh.prepare(sql); }
+      catch (er) {
+        var es = String((er && er.message) || er);
+        if (es.indexOf('no such column') >= 0 || es.indexOf('no such table') >= 0) {
+          console.log('§AD-MODELVAL-LIVE bundle-gap (' + es + ') → no-row conservative default');
+          return all ? [] : undefined;
+        }
+        throw er;
+      }
+      var out = all ? [] : undefined;
+      try {
+        if (args.length) st.bind(args);
+        if (all) { while (st.step()) out.push(lc(st.getAsObject())); }
+        else if (st.step()) out = lc(st.getAsObject());
+      } finally { st.free(); }
+      return out;
+    }
+    return { prepare: function (sql) { return {
+      get: function () { return run(sql, Array.prototype.slice.call(arguments), false); },
+      all: function () { return run(sql, Array.prototype.slice.call(arguments), true); }
+    }; } };
+  }
+  function fireBeforeSaveHooks(e, vals, orig, cb) {
+    var MV = global.AdModelVal;
+    if (!MV || !MV_INSTALLER[e.key] || typeof withBundle !== 'function') { cb(null); return; }
+    withBundle(function (db) {
+      var out = null;
+      try {
+        var b = _mvB3(db);
+        if (!_mvInstalled[e.key]) { _mvInstalled[e.key] = true; var n = MV[MV_INSTALLER[e.key]](b); console.log('§AD-MODELVAL-LIVE installed ' + MV_INSTALLER[e.key] + ' hooks=' + n); }
+        var rec = {}, k;
+        if (orig) for (k in orig) rec[k.toLowerCase()] = orig[k];
+        for (k in vals) rec[k.toLowerCase()] = vals[k];
+        var info = { table: e.key, record: rec, recordOld: orig || null };
+        var v = MV.fireHooks('BEFORE_SAVE', info, {});
+        out = { ok: v.ok, fired: v.fired, blocked: v.blocked, error: v.error, derived: info.derived || null };
+      } catch (er) { console.log('§AD-MODELVAL-LIVE error ' + (er && er.message) + ' → hooks skipped'); out = null; }
+      cb(out);
+    });
   }
   function openDeleteConfirm(e) {
     getRecord(e.key, function (rec) {
