@@ -143,6 +143,8 @@
   "WHWalk": "readonly",
   "ERPEngine": "readonly",
   "AdDocFsm": "readonly",
+  "POSCore": "readonly",
+  "InOutConfirm": "readonly",
   "WizardClassify": "readonly",
   "WizardOrientation": "readonly",
   "WizardStoreys": "readonly",
