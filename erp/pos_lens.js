@@ -365,9 +365,9 @@
       // receipt-URL QR (order ref only — payable-QR ⛔ BLOCKED on user fact per POS_ADDON_SPEC §P-11)
       ov.qrEl.textContent = '';
       var rcptUrl = (window.location.href.split('?')[0]) + '?pos-receipt=' + orderId + '&ref=' + String(gid).slice(0, 8);
-      if (window.QRCode) {
+      if (window.qrcode) {
         try {
-          new window.QRCode(ov.qrEl, { text: rcptUrl, width: 140, height: 140, colorDark: '#4dcc88', colorLight: '#0d1f14' });
+          var qr = window.qrcode(10, 'M'); qr.addData(rcptUrl); qr.make(); ov.qrEl.innerHTML = qr.createSvgTag(3, 2);
         } catch (e) { ov.qrEl.textContent = rcptUrl; }
       } else {
         var a = document.createElement('a'); a.href = rcptUrl; a.style.cssText = 'color:#4dcc88;font-size:11px;word-break:break-all'; a.textContent = rcptUrl;
