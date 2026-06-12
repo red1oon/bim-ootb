@@ -28,6 +28,8 @@
     grid: { svg: '<path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/>' },
     // POS_ADDON_SPEC §P-1 — Lucide shopping-cart, verbatim (the POS lens pill).
     shoppingCart: { svg: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>' },
+    // POS_KILLER_DEMO §LAYOUT.1 — Lucide image, verbatim (album card photo-less placeholder glyph).
+    image: { svg: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>' },
     next: { svg: '<path d="m9 18 6-6-6-6"/>' },
     // HISTORY_KNOB_DIAL.md — verbatim from panels.js ICONS (the BIM registry, source of truth).
     worldHist: { svg: '<circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/>' },
