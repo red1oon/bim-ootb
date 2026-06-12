@@ -86,7 +86,7 @@ window.HistoryBar = (function () {
   // ── The KNOB (HISTORY_KNOB_SIGNAL_TAP §LOCKED-KNOB) ──────────────────────
   // The old 3-state cycle (all/doc/off) is a 5-stop magnitude DIAL: Off·Low·Mid·High·Max, default
   // High. TURN (drag/tap) = BREADTH (how wide the §-net). PRESS (long-press) = RICHNESS (dot→chip,
-  // unified with the double-tap bloom). SOUND = a pitched detent tick per stop (∝ breadth, mute-aware).
+  // unified with the double-tap bloom).
   // Persisted legacy values migrate: off→Off · doc→Mid · all→High (keeps any prior/ERP value working).
   var _STOPS = ['off', 'low', 'mid', 'high', 'max'];
   var _depth = 'high';
@@ -365,32 +365,19 @@ window.HistoryBar = (function () {
   }
   function _afterApply(when) { try { _cfg.afterApply(when); } catch (e) { console.warn('§HIST_AFTER_ERR', e); } }
 
-  // ── The KNOB: breadth (turn) + sound (detent) ─────────────────────────
-  function setDepth(d, silent) {
+  // ── Breadth (the 5-stop significance ladder) ──────────────────────────
+  function setDepth(d, silent) {   // silent kept for API compat (callers pass it)
     d = _migrateDepth(d); if (!d) return;
-    var changed = d !== _depth;
     _depth = d;
     try { localStorage.setItem(_cfg.depthKey, d); } catch (e) {}
     _render();
     console.log('§HIST_DEPTH depth=' + _depth + ' stop=' + _stopIdx(_depth) + '/4');
-    if (changed && !silent) _detentTick();   // the KNOB-DIAL owns its own detent → passes silent=true
   }
   function cycleDepth() { setDepth(_STOPS[(_stopIdx(_depth) + 1) % _STOPS.length]); }  // tap = one step (wraps)
   function setEnabled(on) { setDepth(on ? 'high' : 'off'); }
   function isEnabled() { return _on(); }
   function getDepth() { return _depth; }
 
-  // SOUND axis: a crisp pitched detent tick per stop (pitch ∝ breadth), eyes-free confirmation.
-  // FREE — reuses the SFX synth; MUST stay silent under the global mute (`v` / §SFX_TOGGLE).
-  var _DETENT_HZ = { off: 150, low: 300, mid: 392, high: 494, max: 622 };
-  function _detentTick() {
-    try {
-      if (!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn())) { console.log('§HIST_DETENT muted stop=' + _depth); return; }
-      var hz = _DETENT_HZ[_depth] || 440;
-      console.log('§HIST_DETENT stop=' + _depth + ' hz=' + hz);
-      window.__sfx.voice(_depth === 'off' ? 'knock' : 'pluck', hz, 55, 0);
-    } catch (e) {}
-  }
   // RICHNESS axis (press): dot → chip (unified with the double-tap bloom). The 3rd level (thumbnail)
   // is desktop-only + ephemeral (HISTORY_PERSIST_RECALL §LOCKED-5) — deferred, not faked here.
   function _cycleRichness() { _bloom = !_bloom; _render(); console.log('§HIST_BLOOM ' + (_bloom ? 'on' : 'off') + ' via=press'); }

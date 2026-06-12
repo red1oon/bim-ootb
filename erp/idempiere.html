@@ -386,10 +386,14 @@
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
 <script src="erp_preview.js?v=1"></script>
+<!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
+     the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
+<script src="icons.js?v=5"></script>
+<script src="overlay_kit.js?v=1"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
-<script src="migrate_showme.js?v=22"></script>
+<script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
-<script src="erp_picker.js?v=2"></script>
+<script src="erp_picker.js?v=3"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
 <script src="kernel_ops.js?v=1"></script>
 <script src="erp_signer.js?v=1"></script>
@@ -416,16 +420,15 @@
 if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 </script>
 <!-- §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar from the SAME registry as erp.html/BIM (retire the
-     hand-rolled #idmp-pillrail). icons.js (verbatim glyph DATA) + pill_builder.js (the renderer) + idmp_pills.js
-     (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
-<script src="icons.js?v=4"></script>
+     hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
+     renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
 <script src="idmp_pills.js?v=11"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
 <script src="../common/whole_history.js?v=4" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local bar only')"></script>
-<script src="idmp_history.js?v=7"></script>
+<script src="idmp_history.js?v=8"></script>
 <script>
 (function () {
   'use strict';
@@ -546,7 +549,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var persisted = false;
       if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
         try { idbPut('ad_seed_v15', db.export().buffer); persisted = true;
-          console.log('§IDEMPIERE shard-persist key=ad_seed_v15 rows=' + mRow + ' resident=Y'); }
+          console.log('§IDEMPIERE shard-persist key=ad_seed_v15 rows=' + mRow + ' resident=Y');
+          // CONSISTENCY_FINISH.md §K-3 — a tenant becoming resident is the largest state change a user
+          // can make; it earns a World-history dot like any doc moment. Guarded, best-effort, NOT a
+          // signed op (install = infrastructure, deliberately outside the Z fold lane).
+          try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
+            label: 'Installed ' + shardFile + ' (' + mRow + ' rows, clients ' + clBefore + '\u2192' + clAfter + ')' }); } catch (e2) {} }
         catch (e) { console.warn('§IDEMPIERE shard-persist failed ' + e.message); }
       }
       return { ok: true, mTbl: mTbl, mRow: mRow, clients: clAfter, persisted: persisted };

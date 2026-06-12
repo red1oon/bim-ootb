@@ -57,7 +57,14 @@
     edit:       { svg: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>' },
     panelRight: { svg: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>' },
     undo2:      { svg: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/>' },
-    redo2:      { svg: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/>' }
+    redo2:      { svg: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/>' },
+    // verbatim Lucide (lucide.dev) — overlay-kit set for the import overlays (CONSISTENCY_FINISH.md §K-2);
+    // ERP-only surface, not in panels.js — same precedent as circleHelp.
+    check:       { svg: '<path d="M20 6 9 17l-5-5"/>' },
+    xmark:       { svg: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>' },
+    lock:        { svg: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
+    plug:        { svg: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>' },
+    chevronLeft: { svg: '<path d="m15 18-6-6 6-6"/>' }
   };
   if (typeof window !== "undefined") window.ICONS = ICONS;
   if (typeof module !== "undefined" && module.exports) module.exports = ICONS;

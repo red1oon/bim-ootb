@@ -780,31 +780,44 @@
   // A-GRAIL (HISTORY_SESSION_EVENTS.md §A-GRAIL) — Witness: W-FOLD-BACK.
   // foldBackDocOp: called by glassbowl.html scrubTo when moving BACKWARD past a DOC_ACTION dot.
   // Marks the most-recent non-undone kernel op as undone + paints the status bar at fromStatus.
+  // Both fold fns RETURN Promise<boolean> (CONSISTENCY_FINISH.md §K-4b): true = the signed sidecar
+  // op-log really flipped; false = dry (sidecar/kernel absent, only the status chip moved). The sidecar
+  // opens async, so a synchronous boolean would be invented — callers that ignore it are unaffected.
   function foldBackDocOp(key, fromStatus, toStatus) {
     var K = kernel();
-    withSidecar(function (db) {
-      if (db && K && typeof K.undoOp === 'function') {
-        var undone = K.undoOp(db);
-        _sidePersist();
-        console.log('§FOLD-BACK key=' + key + ' status=' + (toStatus || '?') + '→' + fromStatus + ' undone_id=' + (undone && undone.id || 'null'));
-      } else {
-        console.log('§FOLD-BACK key=' + key + ' status=→' + fromStatus + ' (dry — sidecar absent)');
-      }
-      setDocStatus(key, fromStatus, 'completed', []);
+    return new Promise(function (resolve) {
+      withSidecar(function (db) {
+        var ok = false;
+        if (db && K && typeof K.undoOp === 'function') {
+          var undone = K.undoOp(db);
+          _sidePersist();
+          ok = !!(undone && undone.id);
+          console.log('§FOLD-BACK key=' + key + ' status=' + (toStatus || '?') + '→' + fromStatus + ' undone_id=' + (undone && undone.id || 'null') + ' ok=' + (ok ? 'Y' : 'N'));
+        } else {
+          console.log('§FOLD-BACK key=' + key + ' status=→' + fromStatus + ' (dry — sidecar absent) ok=N');
+        }
+        setDocStatus(key, fromStatus, 'completed', []);
+        resolve(ok);
+      });
     });
   }
   // foldForwardDocOp: called when moving FORWARD through a DOC_ACTION dot (re-applies the op).
   function foldForwardDocOp(key, toStatus) {
     var K = kernel();
-    withSidecar(function (db) {
-      if (db && K && typeof K.redoOp === 'function') {
-        K.redoOp(db);
-        _sidePersist();
-        console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus);
-      } else {
-        console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus + ' (dry — sidecar absent)');
-      }
-      setDocStatus(key, toStatus, 'completed', []);
+    return new Promise(function (resolve) {
+      withSidecar(function (db) {
+        var ok = false;
+        if (db && K && typeof K.redoOp === 'function') {
+          K.redoOp(db);
+          _sidePersist();
+          ok = true;
+          console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus + ' ok=Y');
+        } else {
+          console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus + ' (dry — sidecar absent) ok=N');
+        }
+        setDocStatus(key, toStatus, 'completed', []);
+        resolve(ok);
+      });
     });
   }
   global.crudFoldBack = foldBackDocOp;

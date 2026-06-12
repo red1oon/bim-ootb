@@ -25,7 +25,7 @@
   var _idx = -1;         // current (gold) index; tail beyond it is the "forward" branch (truncated on new push)
   var _seq = 0;
   var _bloom = false;
-  var _restoreFn = null;
+  var _restoreFn = null, _warnedNoRestore = false;
   var _userHidden = false;   // the Z chip toggles the bar shut/open even when there IS history
   var _bar = null, _back = null, _fwd = null, _content = null;
 
@@ -63,6 +63,8 @@
     _idx = i;
     var e = _hist[i];
     if (_restoreFn) { try { _restoreFn(e); } catch (err) { console.warn('§IDMP-HIST restore-fail ' + err.message); } }
+    else if (!_warnedNoRestore) { _warnedNoRestore = true;
+      console.warn('§IDMP-HIST no-restoreFn — host never called registerRestore(); the bar is display-only (CONSISTENCY_FINISH.md §K-4c)'); }
     render();
     console.log('§IDMP-HIST go idx=' + _idx + ' label="' + (e ? e.label : '') + '" opLogMutated=NO');
   }

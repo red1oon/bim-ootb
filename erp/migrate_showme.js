@@ -28,22 +28,11 @@
     ['c_charge', 'C_Charge'], ['c_tax', 'C_Tax'], ['c_currency', 'C_Currency']
   ];
 
-  var _SQL = null;      // sql.js module (lazy)
   var _hashes = [];     // for the §README-SHARE "identical DB" check across two loads
 
-  function _ensureSql() {
-    if (_SQL) return Promise.resolve(_SQL);
-    if (typeof initSqlJs !== 'function') return Promise.reject(new Error('sql.js not loaded'));
-    return initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } })
-      .then(function (S) { _SQL = S; return S; });
-  }
-
-  function _el(tag, attrs, html) {
-    var e = document.createElement(tag);
-    if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
-    if (html != null) e.innerHTML = html;
-    return e;
-  }
+  // Shared utilities + the ONE icon renderer live in overlay_kit.js (CONSISTENCY_FINISH.md §K-1) —
+  // loaded before this script on idempiere.html. ensureSql reuses the page's booted sql.js.
+  var _el = window.OverlayKit.el, _ico = window.OverlayKit.ico, _ensureSql = window.OverlayKit.ensureSql;
   function _$(id) { return document.getElementById(id); }
 
   // SHA-256 of bytes → hex (Web Crypto) for the "same DB" verify (replay-hash analogue).
@@ -72,7 +61,7 @@
     { key: 'run', title: '2 · Install & run (once, on a desktop)',
       body: '<p>Three steps, on the machine that has Docker (your laptop/server):</p>'
         + '<p><b>1.</b> Download the agent:</p>'
-        + '<a class="ms-btn ms-primary" href="migrate_agent.js" download="migrate_agent.js">⬇ Download migrate_agent.js</a>'
+        + '<a class="ms-btn ms-primary" href="migrate_agent.js" download="migrate_agent.js">' + _ico('download', 13) + ' Download migrate_agent.js</a>'
         + '<p><b>2.</b> Run it (needs Node + Docker) — installs one dependency, reads your Docker PG, '
         + 'writes <code>ad_masters.db</code>:</p>'
         + '<pre id="ms-cmd" class="ms-cmd"></pre><button id="ms-copy" class="ms-btn">Copy command</button>'
@@ -80,7 +69,7 @@
         + '<p class="ms-dim">Master/metadata only — documents/transactions/postings/logs excluded; plugin '
         + '<i>logic</i> is a later step. PG container not named "postgres"? prefix '
         + '<code>ERP_PG_CONTAINER=&lt;name&gt;</code>.</p>'
-        + '<p class="ms-dim">📱 <b>On a phone?</b> Migrating reads a Docker Postgres, so it runs on a '
+        + '<p class="ms-dim"><b>On a phone?</b> Migrating reads a Docker Postgres, so it runs on a '
         + 'desktop — a phone can\'t reach Postgres. On mobile you take this tour and open a DB someone '
         + 'already migrated (step 3); the file browses fine everywhere.</p>' },
     { key: 'watch', title: '3 · Watch masters stream in',
@@ -117,7 +106,7 @@
       + '<div class="ms-head"><span id="ms-title"></span>'
       + '<button id="ms-x" class="ms-x" aria-label="Close">&times;</button></div>'
       + '<div id="ms-body" class="ms-body"></div>'
-      + '<div class="ms-nav"><button id="ms-back" class="ms-btn">&larr; Back</button>'
+      + '<div class="ms-nav"><button id="ms-back" class="ms-btn">' + _ico('chevronLeft', 13) + ' Back</button>'
       + '<span id="ms-dots" class="ms-dots"></span>'
       + '<button id="ms-next" class="ms-btn ms-primary">Next &rarr;</button></div></div>';
     document.body.appendChild(_overlay);
@@ -135,7 +124,7 @@
     _$('ms-title').textContent = s.title;
     _$('ms-body').innerHTML = s.body;
     _$('ms-back').style.visibility = _i === 0 ? 'hidden' : 'visible';
-    _$('ms-next').textContent = _i >= STEPS.length - 1 ? 'Done' : 'Next →';
+    _$('ms-next').innerHTML = _i >= STEPS.length - 1 ? 'Done' : 'Next ' + _ico('next', 12);
     _$('ms-dots').innerHTML = STEPS.map(function (_, k) {
       return '<span class="ms-dot' + (k === _i ? ' on' : '') + '"></span>';
     }).join('');
@@ -167,7 +156,7 @@
         (j.clients || []).forEach(function (c) {
           var real = c.id !== 0;
           box.appendChild(_el('div', { class: 'ms-client' + (c.id === j.auto ? ' auto' : '') },
-            (c.id === j.auto ? '▶ ' : '') + c.id + ' · ' + c.name
+            (c.id === j.auto ? _ico('next', 11) + ' ' : '') + c.id + ' · ' + c.name
             + (c.hasMasters ? ' <span class="ms-dim">(' + c.bpartners + ' partners)</span>' : ' <span class="ms-dim">(no masters)</span>')
             + (c.id === j.auto ? ' <b>← auto-seek; confirm to use</b>' : '')));
         });
@@ -183,7 +172,7 @@
     _$('ms-cmd').textContent = cmd;
     _$('ms-copy').onclick = function () {
       navigator.clipboard && navigator.clipboard.writeText(cmd);
-      _$('ms-copy').textContent = 'Copied ✓';
+      _$('ms-copy').innerHTML = 'Copied ' + _ico('check', 12);
     };
   }
   function _wireWatch() {
@@ -204,7 +193,7 @@
             catch (e) { n = null; /* absent — never invented */ }
             setTimeout(function () {                       // staggered "landing" animation
               var line = _el('div', { class: 'ms-row' + (n == null ? ' absent' : '') },
-                '<span class="ms-tick">' + (n == null ? '—' : '✓') + '</span> ' + disp
+                '<span class="ms-tick">' + (n == null ? '—' : _ico('check', 12)) + '</span> ' + disp
                 + ' <b>' + (n == null ? 'absent' : n) + '</b>');
               stream.appendChild(line);
               if (n != null) { _resident += 1;
@@ -227,7 +216,7 @@
     var box = _$('ms-share-hash');
     if (_hashes.length >= 2) {
       var same = _hashes[_hashes.length - 1] === _hashes[_hashes.length - 2];
-      box.innerHTML = 'replay-hash ' + (same ? 'MATCH ✓ — identical DB' : 'DIFFER ✗')
+      box.innerHTML = 'replay-hash ' + (same ? 'MATCH ' + _ico('check', 12) + ' — identical DB' : 'DIFFER ' + _ico('xmark', 12))
         + '<br><code>' + _hashes[_hashes.length - 1].slice(0, 24) + '…</code>';
       console.log('§README-SHARE loads=' + _hashes.length + ' replay-hash-match=' + (same ? 'Y' : 'N')
         + ' hash=' + _hashes[_hashes.length - 1]);
