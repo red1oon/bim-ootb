@@ -138,13 +138,48 @@
       cart.forEach(function (c) { cartBox.appendChild(el('div', null, c.qty + ' × ' + c.name + ' @ ' + c.priceactual + ' = ' + c.linenetamt)); });
       totalEl.textContent = 'Total ' + (cart.length ? POS.cartTotal(cart) : '0.00');
     }
+    // vendorOf — real seed lookup, HONEST refusal when absent (POS_FULL_LOOP.md §L-3 "vendor/price from real seed rows")
+    function vendorOf(pid) {
+      return q1(b3, "SELECT c_bpartner_id, pricepo FROM m_product_po WHERE m_product_id=? AND iscurrentvendor='Y' ORDER BY m_product_id LIMIT 1", pid) || null;
+    }
+
     function renderReplenish() {
       replBox.textContent = '';
       var sugg = suggestAll(b3, cfg.opDb);
-      replBox.appendChild(el('div', null, '⟳ Replenishment (fold == ReplenishReport): ' + sugg.length + ' suggestion(s)'));
+      var hdr = el('div', null, '⟳ Replenishment (' + sugg.length + ' suggestion(s))');
+      hdr.style.cssText = 'font-weight:bold;color:#8fd;margin-bottom:4px';
+      replBox.appendChild(hdr);
       sugg.forEach(function (s) {
         var nm = q1(b3, 'SELECT name FROM m_product WHERE m_product_id=?', s.m_product_id);
-        replBox.appendChild(el('div', null, '· ' + (nm ? nm.name : s.m_product_id) + ' → order ' + s.qtytoorder + ' (wh ' + s.m_warehouse_id + ')'));
+        var vendor = vendorOf(s.m_product_id);
+        var row = el('button', 'pos-replenish-row',
+          '· ' + (nm ? nm.name : s.m_product_id) + ' → order ' + s.qtytoorder +
+          ' (wh ' + s.m_warehouse_id + ')' +
+          (vendor ? ' ← ' + vendor.c_bpartner_id : ' [no vendor]'));
+        row.style.cssText = 'display:block;width:100%;text-align:left;margin:2px 0;padding:4px 6px;border-radius:4px;' +
+          'border:1px solid ' + (vendor ? '#2a6' : '#553') + ';background:' + (vendor ? '#0b1f17' : '#1a1209') +
+          ';color:' + (vendor ? '#cfe' : '#987') + ';cursor:' + (vendor ? 'pointer' : 'default') + ';font-size:11px';
+        if (vendor) {
+          // §L-3: tap → buildReplenishPO (real vendor+price, newVerbs=[]) → commit as a signed group (DR state)
+          row.addEventListener('click', function () {
+            var enriched = [Object.assign({}, s, { c_bpartner_id: vendor.c_bpartner_id, pricepo: vendor.pricepo })];
+            var poOps = POS.buildReplenishPO(s.m_warehouse_id, enriched);
+            cfg.KO.commitGroup(cfg.opDb, poOps.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
+              .then(function (res) {
+                return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
+                  return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
+                }).then(function (cv) {
+                  console.log('§POS-REPLENISH-PO product=' + s.m_product_id + ' qty=' + s.qtytoorder +
+                    ' vendor=' + vendor.c_bpartner_id + ' pricepo=' + vendor.pricepo +
+                    ' newVerbs=[] gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N'));
+                  cfg.status('PO created · product ' + s.m_product_id + ' qty ' + s.qtytoorder + ' vendor ' + vendor.c_bpartner_id);
+                  renderReplenish();
+                });
+              })
+              .catch(function (e) { cfg.status('PO commit failed: ' + e); console.log('§POS-REPLENISH-PO FAIL ' + e); });
+          });
+        }
+        replBox.appendChild(row);
       });
       console.log('§POS-LIVE-REPLENISH suggestions=' + sugg.length + ' (suggest-by-default; PO via buildDoc on tap)');
       return sugg;
