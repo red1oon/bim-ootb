@@ -104,21 +104,27 @@
   // persisted op log — IDB bim_ootb_cache / store dbs / key idmp_kanban_proj (kanban_host.js
   // IDB/STORE + idempiere.html _KPROJ, EXTRACTED) — folded by the PURE WHRoute.openPosDocsFromOps.
   // A live sale exists ONLY as signed ops there; never faked into the seed. Cross-device = §P-5, out of scope.
+  // open bim_ootb_cache at the CURRENT version. scene.js owns the schema at v2; a hardcoded
+  // version 1 drifts BELOW it → VersionError → onerror → silent null (the exact bug
+  // kernel_ops.js §KRN_PERSIST_FIX fixed for the persist path). Prefer the app's single opener.
+  function _openCacheDB() {
+    if (window.APP && APP.openCacheDB) return APP.openCacheDB();
+    return new Promise(function (ok, bad) {
+      var rq = indexedDB.open('bim_ootb_cache');   // no version → current
+      rq.onsuccess = function () { ok(rq.result); };
+      rq.onerror = function () { bad(rq.error); };
+    });
+  }
+
   function readPosSidecarDocs() {
-    return new Promise(function (ok) {
-      try {
-        var rq = indexedDB.open('bim_ootb_cache', 1);
-        rq.onupgradeneeded = function () { try { rq.result.createObjectStore('dbs'); } catch (e) {} };
-        rq.onsuccess = function () {
-          var idb = rq.result;
-          if (!idb.objectStoreNames.contains('dbs')) { idb.close(); return ok(null); }
-          var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get('idmp_kanban_proj');
-          g.onsuccess = function () { idb.close(); ok(g.result || null); };
-          g.onerror = function () { idb.close(); ok(null); };
-        };
-        rq.onerror = function () { ok(null); };
-      } catch (e) { ok(null); }
-    }).then(function (buf) {
+    return _openCacheDB().then(function (idb) {
+      if (!idb || !idb.objectStoreNames.contains('dbs')) { if (idb) idb.close(); return null; }
+      return new Promise(function (ok) {
+        var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get('idmp_kanban_proj');
+        g.onsuccess = function () { idb.close(); ok(g.result || null); };
+        g.onerror = function () { idb.close(); ok(null); };
+      });
+    }).catch(function (e) { log('SIDECAR open fail: ' + (e && e.message)); return null; }).then(function (buf) {
       if (!buf || buf.byteLength < 100) return [];
       var sdb = null;
       try {
@@ -601,17 +607,14 @@
   async function writebackToSidecar(written) {
     if (W.doc.src !== 'oplog') { log('SIDECAR-WRITEBACK skip src=' + W.doc.src + ' (no live ledger blob — walk-local completion)'); return; }
     try {
-      var buf = await new Promise(function (ok) {
-        var rq = indexedDB.open('bim_ootb_cache', 1);
-        rq.onupgradeneeded = function () { try { rq.result.createObjectStore('dbs'); } catch (e) {} };
-        rq.onsuccess = function () {
-          var idb = rq.result;
+      var buf = await _openCacheDB().then(function (idb) {
+        if (!idb || !idb.objectStoreNames.contains('dbs')) { if (idb) idb.close(); return null; }
+        return new Promise(function (ok) {
           var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get('idmp_kanban_proj');
           g.onsuccess = function () { idb.close(); ok(g.result || null); };
           g.onerror = function () { idb.close(); ok(null); };
-        };
-        rq.onerror = function () { ok(null); };
-      });
+        });
+      }).catch(function () { return null; });
       if (!buf) { log('SIDECAR-WRITEBACK skip (blob gone)'); return; }
       var sdb = new A._SQL.Database(new Uint8Array(buf));
       var n = 0;
@@ -622,16 +625,13 @@
       }
       var out = sdb.export().buffer;
       sdb.close();
-      await new Promise(function (ok, bad) {
-        var rq = indexedDB.open('bim_ootb_cache', 1);
-        rq.onsuccess = function () {
-          var idb = rq.result;
+      await _openCacheDB().then(function (idb) {
+        return new Promise(function (ok, bad) {
           var tx = idb.transaction('dbs', 'readwrite');
           tx.objectStore('dbs').put(out, 'idmp_kanban_proj');
           tx.oncomplete = function () { idb.close(); ok(); };
           tx.onerror = function () { idb.close(); bad(tx.error); };
-        };
-        rq.onerror = function () { bad(rq.error); };
+        });
       });
       log('SIDECAR-WRITEBACK groups=' + n + '/' + written.length + ' key=idmp_kanban_proj bytes=' + out.byteLength + ' (selector will not re-offer ' + W.doc.id + ')');
     } catch (e) { log('SIDECAR-WRITEBACK fail: ' + e.message); }
