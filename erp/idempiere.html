@@ -388,7 +388,7 @@
 <script src="erp_preview.js?v=1"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
-<script src="icons.js?v=5"></script>
+<script src="icons.js?v=6"></script>
 <script src="overlay_kit.js?v=1"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
@@ -413,7 +413,7 @@
 <script src="pos_core.js?v=3"></script>
 <!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
 <script src="img_store.js?v=2"></script>
-<script src="pos_lens.js?v=5"></script>
+<script src="pos_lens.js?v=6"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
@@ -2051,7 +2051,7 @@ if ('serviceWorker' in navigator) {
     if (!_swHadCtrl) { _swHadCtrl = true; return; }   // initial install claim — adopt silently
     _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
   });
-  navigator.serviceWorker.register('sw.js?v=599')
+  navigator.serviceWorker.register('sw.js?v=600')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
