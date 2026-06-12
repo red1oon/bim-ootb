@@ -104,13 +104,27 @@
 
   // ── the READ PATH the lens uses: folder full-res → ledger thumb → null (placeholder) ───────────
   // imageOps = the folded AD_Image rows/ops keyed by content key (imageurl). Returns
-  // { src, tier: 'full'|'thumb'|'none' } — honest about WHICH resolution renders.
-  function resolveImage(store, key, thumbOf) {
+  // { src, tier: 'full'|'thumb'|'none', tampered? } — honest about WHICH resolution renders.
+  //
+  // CONTENT-ADDRESS INTEGRITY (W-IMG-LIVE falsifier): a 'sha256:<hex>' key NAMES its bytes. When the
+  // host supplies digestOf(blob) -> Promise<hex> (browser = SubtleCrypto over the blob bytes), the
+  // folder blob is RE-HASHED before it renders full-tier; a mismatch (tampered/corrupt folder entry)
+  // demotes to the ledger thumb and reports tampered:true — never renders bytes the key disowns,
+  // never fabricates. Keys outside the sha256: scheme (e.g. curated 'product-<id>') skip the check
+  // (they are folder conventions, not content addresses). No digestOf → prior behavior, unchanged.
+  function resolveImage(store, key, thumbOf, digestOf) {
     return store.get(key).then(function (blob) {
-      if (blob != null) return { src: blob, tier: 'full' };
-      var thumb = thumbOf ? thumbOf(key) : null;
-      if (thumb != null) return { src: thumb, tier: 'thumb' };
-      return { src: null, tier: 'none' };
+      var checkable = blob != null && digestOf && /^sha256:[0-9a-f]+$/.test(String(key));
+      return Promise.resolve(checkable ? digestOf(blob) : null).then(function (hex) {
+        if (blob != null) {
+          if (!checkable || ('sha256:' + hex) === String(key)) return { src: blob, tier: 'full' };
+          var t = thumbOf ? thumbOf(key) : null;   // key ≠ recomputed hash → demote, say so
+          return { src: t != null ? t : null, tier: t != null ? 'thumb' : 'none', tampered: true };
+        }
+        var thumb = thumbOf ? thumbOf(key) : null;
+        if (thumb != null) return { src: thumb, tier: 'thumb' };
+        return { src: null, tier: 'none' };
+      });
     });
   }
 
