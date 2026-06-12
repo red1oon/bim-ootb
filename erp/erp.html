@@ -90,7 +90,7 @@
 <script src="erp_picker.js?v=29"></script>
 <script src="pill_builder.js?v=27"></script>
 <script src="doc_cycle_validator.js?v=1"></script>
-<script src="erp_pills.js?v=33"></script>
+<script src="erp_pills.js?v=34"></script>
 <script>
 // Phase 1: Instant constellation — fetch initbubble.json, then init
 var _shellReady = false;
@@ -378,7 +378,7 @@ if('serviceWorker' in navigator){
     if (!_swHadCtrl) { _swHadCtrl = true; return; }   // initial install claim — adopt silently
     _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
   });
-  navigator.serviceWorker.register('sw.js?v=599')
+  navigator.serviceWorker.register('sw.js?v=600')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }

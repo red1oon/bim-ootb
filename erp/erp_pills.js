@@ -117,9 +117,10 @@
 
     var card = document.createElement('div');
     card.id = 'doc-cycle-card';
+    card.className = 'erp-test-card';
     card.setAttribute('role', 'dialog');
     card.innerHTML =
-      '<button id="doc-cycle-x" title="Close" aria-label="Close">&times;</button>' +
+      '<button id="doc-cycle-x" class="erp-test-card-x" title="Close" aria-label="Close">&times;</button>' +
       '<h3>Doc Cycle Validator</h3>' +
       '<div id="doc-cycle-body" class="dc-running">Running…</div>';
     document.body.appendChild(card);
@@ -207,6 +208,50 @@
       });
   }
 
+  // ── Verify Ledger card — calls KernelOps.verifyChain on live op-log, renders result card. Witness: §VERIFY-CARD
+  function _verifyLedgerCard() {
+    var existing = document.getElementById('verify-card');
+    if (existing) { existing.remove(); console.log('§VERIFY-CARD action=close'); return; }
+
+    var db = window.__erpDb;
+    if (!db || !window.KernelOps || !KernelOps.verifyChain) {
+      _toast('Verify ledger — not ready'); return;
+    }
+
+    var card = document.createElement('div');
+    card.id = 'verify-card';
+    card.className = 'erp-test-card';
+    card.setAttribute('role', 'dialog');
+    card.innerHTML =
+      '<button id="verify-x" class="erp-test-card-x" title="Close" aria-label="Close">&times;</button>' +
+      '<h3>Verify Ledger</h3>' +
+      '<div id="verify-body" class="dc-running">Checking…</div>';
+    document.body.appendChild(card);
+    document.getElementById('verify-x').addEventListener('pointerup', function (e) {
+      e.stopPropagation(); card.remove(); console.log('§VERIFY-CARD action=close');
+    });
+
+    KernelOps.verifyChain(db).then(function (r) {
+      var body = document.getElementById('verify-body');
+      if (!body) return;
+      body.className = '';
+      var ok = r.ok;
+      body.innerHTML =
+        '<div class="dc-row ' + (ok ? 'dc-pass' : 'dc-fail') + '">' +
+          '<span class="dc-icon">' + (ok ? '✓' : '✗') + '</span>' +
+          '<span>' + (ok ? r.len + ' ops — chain intact' : 'Tamper at op ' + r.brokeAt + ' — ' + r.why) + '</span>' +
+        '</div>' +
+        '<div class="dc-total ' + (ok ? 'dc-all-pass' : 'dc-has-fail') + '">' +
+          (ok ? '✓ Chain intact' : '✗ Tamper detected') +
+        '</div>';
+      console.log('§VERIFY-CARD ok=' + ok + ' len=' + (ok ? r.len : r.brokeAt));
+    }).catch(function (e) {
+      var body = document.getElementById('verify-body');
+      if (body) body.textContent = 'Error: ' + e.message;
+      console.error('§VERIFY-CARD error', e);
+    });
+  }
+
   // ── id → real handler. Stubs that only toasted "arrives in a later task" (find/read/ledger/graphs/edit/
   // process/settings) are REMOVED from the manifest (user wrap 2026-06-09) — that depth lives on idempiere.html;
   // erp.html is the lean globe that funnels there. What remains is operative. ──
@@ -233,10 +278,7 @@
         } else { _toast(url); }
       } catch (e) { _toast(url); }
     },
-    verify:    function () {                                  // chain-integrity check — was a floating button, now a pill
-      if (window.ErpVerifyLedger) window.ErpVerifyLedger();
-      else _toast('Verify ledger — not ready');
-    },
+    verify:    _verifyLedgerCard,                             // chain-integrity check — card (A-1)
     'doc-cycle': _docCycleValidator,                          // Doc Cycle Validator card (always visible POC proof)
     guide:     _helpGuide,                                    // (?) bubble-navigation HelpGuide card
     help:      _shortcutsPanel                                // lifebelt → keyboard/gesture shortcuts (its original role)
@@ -260,7 +302,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=28').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=29').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];
@@ -375,17 +417,17 @@
         'bottom:calc(12px + env(safe-area-inset-bottom,0px));}#erp-pill{max-height:calc(100vh - 110px);}}' +
       // HelpGuide card (the `help` pill) — centred, dismissible, clean glass. Self-contained (erp.html has no
       // shared help_overlay.js). z above the globe + pill bar; scrolls on a short screen.
-      '#erp-help-guide,#erp-shortcuts,#doc-cycle-card{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;' +
+      '#erp-help-guide,#erp-shortcuts,.erp-test-card{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;' +
         'width:min(420px,90vw);max-height:80vh;overflow-y:auto;padding:22px 24px 24px;border-radius:16px;' +
         'background:rgba(20,22,32,0.96);color:#cdd6e4;border:1px solid rgba(255,255,255,0.12);' +
         'box-shadow:0 12px 48px rgba(0,0,0,0.5);font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;}' +
-      '#erp-help-guide h3,#erp-shortcuts h3,#doc-cycle-card h3{margin:0 0 12px;color:#6c9fff;font-size:16px;}' +
+      '#erp-help-guide h3,#erp-shortcuts h3,.erp-test-card h3{margin:0 0 12px;color:#6c9fff;font-size:16px;}' +
       '#erp-help-guide ul,#erp-shortcuts ul{margin:0;padding-left:20px;}' +
       '#erp-help-guide li,#erp-shortcuts li{margin:7px 0;}' +
       '#erp-help-guide b,#erp-shortcuts b{color:#e6ebf5;font-weight:600;}' +
-      '#erp-help-x,#erp-shortcuts-x,#doc-cycle-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;' +
+      '#erp-help-x,#erp-shortcuts-x,.erp-test-card-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;' +
         'background:transparent;color:#9aa4b8;font-size:22px;line-height:1;cursor:pointer;}' +
-      '#erp-help-x:hover,#erp-shortcuts-x:hover,#doc-cycle-x:hover{background:rgba(255,255,255,0.08);color:#fff;}' +
+      '#erp-help-x:hover,#erp-shortcuts-x:hover,.erp-test-card-x:hover{background:rgba(255,255,255,0.08);color:#fff;}' +
       // Doc Cycle Validator card rows
       '.dc-running{color:#9aa4b8;font-style:italic;}' +
       '.dc-row{display:flex;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);}' +
