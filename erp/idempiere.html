@@ -406,8 +406,10 @@
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
      Order matters: pos_core needs ERPEngine + BigDecimal (above). Witnesses W-POS-* headless + poc_pos_live. -->
 <script src="erp_engine.js?v=1"></script>
-<script src="pos_core.js?v=1"></script>
-<script src="pos_lens.js?v=1"></script>
+<script src="pos_core.js?v=2"></script>
+<!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
+<script src="img_store.js?v=1"></script>
+<script src="pos_lens.js?v=2"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <script>/* §P-11 — expose the library var into window (UMD skips browser global) */
@@ -416,7 +418,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <!-- §A ERP_BOTTOM_BAR_AND_LIFECYCLE — the bottom/side bar from the SAME registry as erp.html/BIM (retire the
      hand-rolled #idmp-pillrail). icons.js (verbatim glyph DATA) + pill_builder.js (the renderer) + idmp_pills.js
      (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json (the manifest). §PILL-REGISTRY. -->
-<script src="icons.js?v=3"></script>
+<script src="icons.js?v=4"></script>
 <script src="pill_builder.js?v=4"></script>
 <script src="idmp_pills.js?v=11"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
