@@ -26,12 +26,14 @@
   'use strict';
 
   // S1 — the full list, always rendered. real:true ⇒ a working route; real:false ⇒ honest "coming".
+  // dot = brand hue rendered as a clean CSS circle (CONSISTENCY_FINISH.md §K-2 — same hues the old
+  // emoji marks carried, minus the cross-platform emoji rendering variance).
   var ERPS = [
-    { key: 'idempiere', name: 'iDempiere',   icon: '🟧', real: true,  route: 'showme' },
-    { key: 'odoo',      name: 'Odoo',        icon: '🟣', real: true,  route: 'odoo', probe: probeOdoo },
-    { key: 'sap',       name: 'SAP',         icon: '🔵', real: false },
-    { key: 'oracle',    name: 'Oracle',      icon: '🔴', real: false },
-    { key: 'dynamics',  name: 'MS Dynamics', icon: '🟦', real: false }
+    { key: 'idempiere', name: 'iDempiere',   dot: '#e8590c', real: true,  route: 'showme' },
+    { key: 'odoo',      name: 'Odoo',        dot: '#9c36b5', real: true,  route: 'odoo', probe: probeOdoo },
+    { key: 'sap',       name: 'SAP',         dot: '#1971c2', real: false },
+    { key: 'oracle',    name: 'Oracle',      dot: '#e03131', real: false },
+    { key: 'dynamics',  name: 'MS Dynamics', dot: '#1864ab', real: false }
   ];
 
   // Each real source's installable tenant shard (the delegate-install artifact gen_ad_odoo.js /
@@ -46,14 +48,11 @@
 
   var _overlay = null, _mode = 'migrate', _status = null;
   var _detected = {};   // key → true (port reachable). idempiere is 'agent' (real, not auto-probeable).
-  var _sel = null, _SQL = null;
+  var _sel = null;
 
-  function _el(tag, attrs, html) {
-    var e = document.createElement(tag);
-    if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
-    if (html != null) e.innerHTML = html;
-    return e;
-  }
+  // Shared utilities + the ONE icon renderer live in overlay_kit.js (CONSISTENCY_FINISH.md §K-1) —
+  // loaded before this script on every host page (erp.html, idempiere.html).
+  var _el = global.OverlayKit.el, _ico = global.OverlayKit.ico;
   function _$(id) { return document.getElementById(id); }
   function _erp(k) { return ERPS.filter(function (e) { return e.key === k; })[0]; }
   function _say(m) { if (typeof _status === 'function') _status(m); }
@@ -82,7 +81,7 @@
     _overlay = _el('div', { id: 'ep-overlay', class: 'ep-overlay' });
     _overlay.innerHTML =
       '<div class="ep-card" role="dialog" aria-label="Pick your ERP">'
-      + '<div class="ep-head"><span>' + (_mode === 'install' ? '⬇ Install onto this device' : '🔌 Migrate from your ERP')
+      + '<div class="ep-head"><span>' + (_mode === 'install' ? _ico('download', 16) + ' Install onto this device' : _ico('plug', 16) + ' Migrate from your ERP')
       + '</span><button id="ep-x" class="ep-x" aria-label="Close">&times;</button></div>'
       + '<div id="ep-body" class="ep-body"></div></div>';
     document.body.appendChild(_overlay);
@@ -105,7 +104,7 @@
     var grid = _$('ep-grid');
     ERPS.forEach(function (e) {
       var card = _el('div', { id: 'ep-c-' + e.key, class: 'ep-cardlet' });
-      card.innerHTML = '<div class="ep-ic">' + e.icon + '</div><div class="ep-nm">' + e.name + '</div>'
+      card.innerHTML = '<div class="ep-ic"><span class="ep-dot" style="background:' + e.dot + '"></span></div><div class="ep-nm">' + e.name + '</div>'
         + '<div id="ep-b-' + e.key + '" class="ep-badge">' + _badge(e) + '</div>';
       card.onclick = function () { _select(e.key); };
       grid.appendChild(card);
@@ -136,7 +135,7 @@
 
   function _paintCard(key) {
     var e = _erp(key), b = _$('ep-b-' + key), c = _$('ep-c-' + key);
-    if (b) b.innerHTML = _detected[key] ? '<span class="ep-detect">● detected</span>' : (e.real ? '<span class="ep-agent">via agent</span>' : '<span class="ep-coming">coming soon</span>');
+    if (b) b.innerHTML = _detected[key] ? '<span class="ep-detect"><span class="ep-livedot"></span> detected</span>' : (e.real ? '<span class="ep-agent">via agent</span>' : '<span class="ep-coming">coming soon</span>');
     if (c) c.classList.toggle('ep-live', !!_detected[key]);
   }
 
@@ -183,12 +182,12 @@
   function _renderInstallTenant(tenant) {
     var body = _$('ep-body'); if (!body) return;
     body.innerHTML =
-      '<div class="ep-lock">🔒 <b>' + tenant.name + ' tenant shard, pre-verified.</b> '
+      '<div class="ep-lock">' + _ico('lock', 14) + ' <b>' + tenant.name + ' tenant shard, pre-verified.</b> '
       + 'A migrated ' + tenant.name + ' client extracted by the real PG agent — every row a recorded '
       + tenant.name + ' row, its ids banded into the Client-' + tenant.client + ' slot, and its books '
       + 'already diffed to the cent against its own GL (nothing is invented).</div>'
       + '<div id="ep-result" class="ep-result"></div>'
-      + '<div class="ep-foot"><button id="ep-back" class="ep-btn">&larr; Back</button></div>';
+      + '<div class="ep-foot"><button id="ep-back" class="ep-btn">' + _ico('chevronLeft', 13) + ' Back</button></div>';
     console.log('§ERP-PICKER install-tenant erp=' + _sel + ' shard=' + tenant.file + ' client=' + tenant.client);
     _$('ep-back').onclick = function () { _renderPicker(); _select(_sel); };
     _renderInstallCta(_$('ep-result'), tenant);
@@ -201,7 +200,7 @@
   function _renderOdoo() {
     var body = _$('ep-body'); if (!body) return;
     body.innerHTML =
-      '<div class="ep-lock">🔒 <b>The browser cannot reach your Odoo / Postgres / Docker.</b> '
+      '<div class="ep-lock">' + _ico('lock', 14) + ' <b>The browser cannot reach your Odoo / Postgres / Docker.</b> '
       + 'YOU run the agent <b>natively</b> on the machine that has Odoo — it writes one file '
       + '(<code>odoo_chain.json</code>) that you then load back here. Your credentials never leave that machine; '
       + 'every value is a recorded Odoo row (nothing is invented).</div>'
@@ -211,7 +210,7 @@
       + '<div class="ep-st">Download the agent bundle</div>'
       + '<div class="ep-sd">A self-contained zip — agent + engine + adapter + <code>package.json</code>. '
       + 'No repo needed.</div>'
-      + '<a id="ep-dl" class="ep-btn ep-primary" href="odoo_agent.zip" download="odoo_agent.zip">⬇ odoo_agent.zip</a>'
+      + '<a id="ep-dl" class="ep-btn ep-primary" href="odoo_agent.zip" download="odoo_agent.zip">' + _ico('download', 13) + ' odoo_agent.zip</a>'
       + '</div></div>'
       // ② run it natively
       + '<div class="ep-step" id="ep-s2"><div class="ep-sn">2</div><div class="ep-sc">'
@@ -219,18 +218,18 @@
       + '<div class="ep-sd">Unzip, then — on the machine that has Odoo — install the one dependency and run. '
       + 'Defaults to <code>odoodemo</code> @ <code>localhost:8069</code>; override creds via env (see the bundle README).</div>'
       + '<div class="ep-cmdrow"><pre class="ep-cmd" id="ep-cmd">' + ODOO_CMD + '</pre>'
-      + '<button id="ep-copy" class="ep-btn ep-copy" title="Copy command">⧉ Copy</button></div>'
+      + '<button id="ep-copy" class="ep-btn ep-copy" title="Copy command">' + _ico('clipboard', 13) + ' Copy</button></div>'
       + '</div></div>'
       // ③ load the produced file
       + '<div class="ep-step" id="ep-s3"><div class="ep-sn">3</div><div class="ep-sc">'
       + '<div class="ep-st">Load the file it produced</div>'
       + '<div class="ep-sd">Drop or pick the <code>odoo_chain.json</code> the agent wrote.</div>'
       + '<label id="ep-drop" class="ep-drop"><input type="file" id="ep-chain" accept=".json,application/json" hidden>'
-      + '<span id="ep-droptxt">⬑ Drop <code>odoo_chain.json</code> here, or click to choose</span></label>'
+      + '<span id="ep-droptxt">Drop <code>odoo_chain.json</code> here, or click to choose</span></label>'
       + '</div></div>'
       + '</div>'
       + '<div id="ep-result" class="ep-result"></div>'
-      + '<div class="ep-foot"><button id="ep-back" class="ep-btn">&larr; Back</button></div>';
+      + '<div class="ep-foot"><button id="ep-back" class="ep-btn">' + _ico('chevronLeft', 13) + ' Back</button></div>';
 
     console.log('§MIGRATE-INSTR clear=Y selfsufficient=Y design=staged erp=odoo artifact=odoo_agent.zip');
 
@@ -238,7 +237,7 @@
     _$('ep-dl').onclick = function () { _stepDone('ep-s1'); };
     _$('ep-copy').onclick = function () {
       if (navigator.clipboard) navigator.clipboard.writeText(ODOO_CMD);
-      _$('ep-copy').textContent = 'Copied ✓'; _stepDone('ep-s2');
+      _$('ep-copy').innerHTML = 'Copied ' + _ico('check', 12); _stepDone('ep-s2');
     };
     var drop = _$('ep-drop'), inp = _$('ep-chain');
     function _take(f) {
@@ -260,7 +259,7 @@
 
   function _stepDone(id) { var s = _$(id); if (s) s.classList.add('ep-done'); }
   function _dropBad(msg) {
-    var t = _$('ep-droptxt'); if (t) t.innerHTML = '✗ Not a valid chain file — ' + msg + '. Re-run step 2.';
+    var t = _$('ep-droptxt'); if (t) t.innerHTML = _ico('xmark', 12) + ' Not a valid chain file — ' + msg + '. Re-run step 2.';
     var d = _$('ep-drop'); if (d) { d.classList.add('ep-drop-bad'); d.classList.remove('ep-drop-ok'); }
     var s = _$('ep-s3'); if (s) s.classList.remove('ep-done');
   }
@@ -271,17 +270,11 @@
     if (!chain || !Array.isArray(chain.events) || !chain.events.length) {
       return _dropBad('no events[] — is this the agent output?');
     }
-    var t = _$('ep-droptxt'); if (t) t.innerHTML = '✓ <b>' + (name || 'odoo_chain.json') + '</b> — parsed '
+    var t = _$('ep-droptxt'); if (t) t.innerHTML = _ico('check', 12) + ' <b>' + (name || 'odoo_chain.json') + '</b> — parsed '
       + chain.events.length + ' events';
     var d = _$('ep-drop'); if (d) { d.classList.add('ep-drop-ok'); d.classList.remove('ep-drop-bad'); }
     _stepDone('ep-s3');
     _foldChain(chain);
-  }
-
-  function _ensureSql() {
-    if (_SQL) return Promise.resolve(_SQL);
-    if (typeof initSqlJs !== 'function') return Promise.reject(new Error('sql.js not loaded'));
-    return initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }).then(function (S) { _SQL = S; return S; });
   }
 
   // RE-FOLD the loaded chain through window.ERPKernel + the carried wfmc (the Odoo dictionary). The engine
@@ -290,7 +283,7 @@
     var out = _$('ep-result'); out.innerHTML = '<div class="ep-dim">Folding ' + (chain.events || []).length + ' hops through the engine…</div>';
     var K = global.ERPKernel;
     if (!K) { out.innerHTML = '<div class="ep-err">Engine (window.ERPKernel) not loaded — open the Kanban pill once to boot it, then retry.</div>'; return; }
-    _ensureSql().then(function (S) {
+    global.OverlayKit.ensureSql().then(function (S) {
       var db = new S.Database(); K.initProjection(db);
       var qfn = function (s, p) { return K.query(db, s, p); };
       var known = chain.KNOWN_VERBS || ['CREATE_DOCUMENT', 'CREATE_LINE', 'SET_STATUS', 'ALLOCATE', 'MATCH', 'POST'];
@@ -310,13 +303,13 @@
       try { var a = K.replay(db, new S.Database()), b = K.replay(db, new S.Database()); chainOk = a.hash === b.hash; tip = a.hash; len = a.ops; } catch (e) {}
       out.innerHTML =
         '<table class="ep-tbl"><thead><tr><th>hop</th><th>doc</th><th>ops</th><th>→</th></tr></thead><tbody>'
-        + rows.map(function (r) { return '<tr class="' + (r.ok ? '' : 'ep-bad') + '"><td>' + r.name + '</td><td>' + r.doc + '</td><td>' + r.ops + '</td><td>' + (r.ok ? '✓ ' + r.to : '✗ ' + r.to) + '</td></tr>'; }).join('')
+        + rows.map(function (r) { return '<tr class="' + (r.ok ? '' : 'ep-bad') + '"><td>' + r.name + '</td><td>' + r.doc + '</td><td>' + r.ops + '</td><td>' + (r.ok ? _ico('check', 12) + ' ' + r.to : _ico('xmark', 12) + ' ' + r.to) + '</td></tr>'; }).join('')
         + '</tbody></table>'
         + '<div class="ep-sum">'
         + '<div>SO <b>' + (chain.meta && chain.meta.so) + '</b> → invoice <b>' + (chain.meta && chain.meta.invoice) + '</b>, total <b>' + Number((chain.totals && chain.totals.total) || 0).toFixed(2) + '</b></div>'
         + '<div>mapped <b>' + mapped + '/' + chain.events.length + '</b> · verbs [' + usedVerbs.join(', ') + '] · newVerbs [<b>' + newVerbs.join(',') + '</b>]</div>'
-        + '<div>invoice GL ΣDr ' + Number(dr).toFixed(2) + ' ' + (balanced ? '== ' : '≠ ') + 'ΣCr ' + Number(cr).toFixed(2) + ' ' + (balanced ? '✓' : '✗') + '</div>'
-        + '<div>verify chain ' + (chainOk ? '✓ trusted' : '✗') + ' · ops ' + len + ' · tip <code>' + String(tip).slice(0, 16) + '…</code></div>'
+        + '<div>invoice GL ΣDr ' + Number(dr).toFixed(2) + ' ' + (balanced ? '== ' : '≠ ') + 'ΣCr ' + Number(cr).toFixed(2) + ' ' + _ico(balanced ? 'check' : 'xmark', 12) + '</div>'
+        + '<div>verify chain ' + (chainOk ? _ico('check', 12) + ' trusted' : _ico('xmark', 12)) + ' · ops ' + len + ' · tip <code>' + String(tip).slice(0, 16) + '…</code></div>'
         + '</div>';
       console.log('§ODOO-MIGRATE-BROWSER loaded events=' + chain.events.length + ' mapped=' + mapped + '/' + chain.events.length
         + ' verbs=[' + usedVerbs.join(',') + '] newVerbs=[' + newVerbs.join(',') + '] glDr' + (balanced ? '==' : '!=') + 'glCr verify chainOk=' + (chainOk ? 'Y' : 'N') + ' tip=' + tip);
@@ -334,7 +327,7 @@
     box.innerHTML =
       '<div class="ep-idim">The fold is verified. Install <b>' + tenant.name + '</b> as a resident tenant '
       + '(Client ' + tenant.client + ') — it survives a plain reload and appears in the login tenant switcher.</div>'
-      + '<button id="ep-install-go" class="ep-btn ep-primary">⬇ Install ' + tenant.name + ' (Client ' + tenant.client + ')</button>'
+      + '<button id="ep-install-go" class="ep-btn ep-primary">' + _ico('download', 13) + ' Install ' + tenant.name + ' (Client ' + tenant.client + ')</button>'
       + '<div id="ep-install-msg" class="ep-idim"></div>';
     out.appendChild(box);
     _$('ep-install-go').onclick = function () { _doInstall(tenant); };
@@ -356,14 +349,14 @@
       console.log('§ERP-INSTALL erp=' + _sel + ' shard=' + tenant.file + ' client=' + tenant.client
         + ' rows=' + (res.mRow || 0) + ' clients=' + (res.clients != null ? res.clients : '?') + ' persisted=' + (res.persisted ? 'Y' : 'N'));
       if (res.ok && res.persisted) {
-        if (btn) btn.textContent = '✓ Installed';
-        if (msg) msg.innerHTML = '✓ <b>' + tenant.name + '</b> installed (Client ' + tenant.client + ', '
+        if (btn) btn.innerHTML = _ico('check', 12) + ' Installed';
+        if (msg) msg.innerHTML = _ico('check', 12) + ' <b>' + tenant.name + '</b> installed (Client ' + tenant.client + ', '
           + (res.mRow || 0) + ' rows merged) and persisted — it now survives reload. '
           + '<button id="ep-reload" class="ep-btn ep-primary">Reload &amp; switch tenant</button>';
         var rl = _$('ep-reload'); if (rl) rl.onclick = function () { location.href = location.pathname; };
       } else {
-        if (btn) { btn.disabled = false; btn.textContent = '⬇ Install ' + tenant.name; }
-        if (msg) msg.textContent = '✗ Install failed: ' + (res.error || 'no rows merged');
+        if (btn) { btn.disabled = false; btn.innerHTML = _ico('download', 13) + ' Install ' + tenant.name; }
+        if (msg) msg.innerHTML = _ico('xmark', 12) + ' Install failed: ' + (res.error || 'no rows merged');
       }
     });
   }
@@ -380,7 +373,9 @@
       + '.ep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;margin:6px 0 16px}'
       + '.ep-cardlet{border:2px solid #e6e6ea;border-radius:12px;padding:12px 6px;text-align:center;cursor:pointer;opacity:.55;transition:.12s}'
       + '.ep-cardlet:hover{border-color:#bcd}.ep-cardlet.ep-live{opacity:1}.ep-cardlet.ep-sel{border-color:#0b6;box-shadow:0 0 0 3px rgba(11,170,102,.18)}'
-      + '.ep-ic{font-size:24px}.ep-nm{font-size:12px;font-weight:600;margin:4px 0 6px}'
+      + '.ep-ic{height:24px;display:flex;align-items:center;justify-content:center}.ep-nm{font-size:12px;font-weight:600;margin:4px 0 6px}'
+      + '.ep-dot{width:18px;height:18px;border-radius:50%;display:inline-block}'
+      + '.ep-livedot{width:7px;height:7px;border-radius:50%;background:#0b6;display:inline-block;vertical-align:1px}'
       + '.ep-badge{font-size:10px;min-height:14px}.ep-detect{color:#0b6;font-weight:700}.ep-agent{color:#36c}.ep-coming{color:#a98}.ep-probing{color:#aaa}'
       + '.ep-q{font-size:15px;margin:6px 0 12px}.ep-foot{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}'
       + '.ep-btn{padding:9px 16px;border:1px solid #ccc;background:#f5f5f5;border-radius:8px;cursor:pointer;font-size:13px}.ep-btn[disabled]{opacity:.5;cursor:not-allowed}'
@@ -395,7 +390,8 @@
       + '.ep-step{display:flex;gap:12px;border:1px solid #e6e6ea;border-radius:12px;padding:12px 14px;transition:.15s}'
       + '.ep-step.ep-done{border-color:#0b6;background:#f6faf7}'
       + '.ep-sn{flex:none;width:26px;height:26px;border-radius:50%;background:#e6e6ea;color:#555;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}'
-      + '.ep-step.ep-done .ep-sn{background:#0b6;color:#fff}.ep-step.ep-done .ep-sn::after{content:"✓"}.ep-step.ep-done .ep-sn{font-size:0}.ep-step.ep-done .ep-sn::after{font-size:14px}'
+      // done-state step number → Lucide check (inline data-URI of the same icons.js `check` path)
+      + '.ep-step.ep-done .ep-sn{font-size:0;background:#0b6 url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>\') center/13px 13px no-repeat}'
       + '.ep-sc{flex:1;min-width:0}.ep-st{font-weight:600;font-size:13.5px;margin-bottom:3px}.ep-sd{color:#777;font-size:12px;line-height:1.45;margin-bottom:9px}.ep-sd code{background:#f0f0f3;padding:1px 4px;border-radius:4px}'
       + '.ep-cmdrow{display:flex;gap:8px;align-items:stretch}.ep-copy{flex:none;font-size:12px;white-space:nowrap}'
       + '.ep-drop{display:block;border:2px dashed #ccd;border-radius:10px;padding:16px;text-align:center;color:#789;font-size:12.5px;cursor:pointer;transition:.12s}'
