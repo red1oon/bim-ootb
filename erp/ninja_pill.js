@@ -23,6 +23,10 @@
   'use strict';
 
   var _db = null, _xlsxReady = null;
+  // RULE-tier phrase box state (NinjaExcelAdaptation.md §7 UI contract, W-NINJA-RULE-UI):
+  // the last RUN workbook + manifest the box authors into, the lazy-loaded AD dictionary,
+  // and the last compile's candidates (the radio list the human picks from).
+  var _wb = null, _wbName = '', _man = null, _dict = null, _cands = null;
 
   function ico(n, s) { return (global.OverlayKit && OverlayKit.ico) ? OverlayKit.ico(n, s || 14) : ''; }
   function el(tag, attrs, html) {
@@ -51,6 +55,16 @@
   function exec(sql, params) {
     var r = _db.exec(sql, params);
     return (r.length && r[0].values.length) ? r[0].values[0][0] : null;
+  }
+  // row-object adapter for NinjaRule.loadDict (sql.js columns/values → {col: v} rows; SQLite reports
+  // result column names as written in the query, so the lowercase dict queries get lowercase keys).
+  function queryRows(sql, params) {
+    var r = _db.exec(sql, params);
+    if (!r.length) return [];
+    var cols = r[0].columns;
+    return r[0].values.map(function (v) {
+      var o = {}; cols.forEach(function (c, i) { o[c] = v[i]; }); return o;
+    });
   }
 
   // ── panel ───────────────────────────────────────────────────────────────────────────────────────
@@ -147,11 +161,13 @@
   // RUN — gate → fold over the page db → write back → verify-by-example if the sample travels along
   function runFlow(N, wb, name, out, hasBackup) {
     var man = N.readManifest(wb), g = N.gate(man);
+    _wb = wb; _wbName = name; _man = man;                        // the phrase box authors into THIS workbook
     if (!g.ok) {
       console.log('§NINJA-PILL gate=REFUSED errors=' + g.errors.length);
       out.innerHTML = '<div style="border-left:3px solid #ff9b9b;padding-left:10px;"><b>Gate refused</b> (fix and re-drop):' +
         '<ul style="margin:6px 0 0 14px;padding:0;">' + g.errors.slice(0, 12).map(function (e) { return '<li>' + e + '</li>'; }).join('') +
         (g.errors.length > 12 ? '<li>… ' + (g.errors.length - 12) + ' more</li>' : '') + '</ul></div>';
+      renderRuleBox();                                           // a refused row is exactly what a phrase can fill
       return { mode: 'run', gate: g };
     }
     var results = N.run(man, exec);
@@ -173,7 +189,89 @@
         '<table style="margin-top:6px;border-collapse:collapse;font-size:12px;">' + rows + '</table>' +
       '</div>';
     download(wb, name.replace(/(_scaffold)?\.xlsx$/i, '') + '_filled.xlsx', out);
+    renderRuleBox();
     return { mode: 'run', results: results, verify: v };
+  }
+
+  // ════ RULE-tier phrase box (§7 UI contract — the steering wheel over ninja_rule.js) ═════════════════
+  // Implementing internal/NinjaExcelAdaptation.md §7 phrase-box contract — Witness: W-NINJA-RULE-UI.
+  // ZERO compile logic here: compile/falsify/tie all happen in NinjaRule; the box only collects the
+  // phrase + target row, shows the candidates with their folded values, and lets the HUMAN pick.
+
+  function renderRuleBox() {
+    var R = global.NinjaRule, box = document.getElementById('np-rule');
+    if (box) box.remove();
+    if (!R || !_man || !_man.rows.length) { if (!R) console.log('§NINJA-PILL rule=unavailable (ninja_rule.js not loaded)'); return; }
+    var panel = document.getElementById('np-out');
+    box = el('div', { id: 'np-rule' });
+    box.style.cssText = 'margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.12);font-size:12px;';
+    var addrOpts = _man.rows.map(function (r) { return '<option value="' + r.address + '">' + r.address + '</option>'; }).join('');
+    box.innerHTML =
+      '<div style="margin-bottom:6px;">' + ico('lightbulb', 13) + ' <b>Or describe a data point</b> ' +
+      '<span style="opacity:0.6;">(no SQL — compiled from this tenant’s own dictionary; the sample has the last word)</span></div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+        '<input id="np-phrase" placeholder="SUM GrandTotal of Invoices, completed, from 2002-01-01 to 2003-12-31" ' +
+          'style="flex:1;min-width:240px;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.25);color:#cdd6e4;font-size:12px;">' +
+        '<label style="opacity:0.8;">into row <select id="np-rule-addr" style="padding:5px;border-radius:6px;background:rgba(0,0,0,0.25);color:#cdd6e4;border:1px solid rgba(255,255,255,0.2);">' + addrOpts + '</select></label>' +
+        '<button id="np-rule-compile" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:#2d3550;color:#cdd6e4;cursor:pointer;font-size:12px;">Compile</button>' +
+      '</div>' +
+      '<div id="np-rule-out" style="margin-top:8px;"></div>';
+    panel.parentNode.insertBefore(box, panel.nextSibling);
+    box.querySelector('#np-rule-compile').addEventListener('click', function () {
+      ruleCompile(box.querySelector('#np-phrase').value, box.querySelector('#np-rule-addr').value);
+    });
+  }
+
+  // ruleCompile(phrase, address) → {ok, errors | candidates, accepted, tie} — also the witness seam.
+  function ruleCompile(phrase, address) {
+    var R = global.NinjaRule, out = document.getElementById('np-rule-out');
+    _dict = _dict || R.loadDict(queryRows);
+    var c = R.compile(_dict, phrase);
+    if (!c.ok) {
+      console.log('§NINJA-PILL rule compile=REFUSED errors=' + c.errors.length);
+      if (out) out.innerHTML = '<div style="color:#ff9b9b;">' + c.errors.join('<br>') + '</div>';
+      return { ok: false, errors: c.errors };
+    }
+    var sample = _wb.Sheets.BACKUP ? (_wb.Sheets.BACKUP[address] || {}).v : undefined;
+    var pick = (sample !== undefined) ? R.pickByExample(c.candidates, exec, sample) : null;
+    var listed = pick ? pick.accepted.concat(pick.rejected) : c.candidates.map(function (cd) { return { candidate: cd, got: exec(R.toSql(cd), []) }; });
+    var nAcc = pick ? pick.accepted.length : listed.length;
+    _cands = { address: address, entries: listed, accepted: nAcc, pick: pick };
+    console.log('§NINJA-PILL rule compile entity=' + c.entity + ' candidates=' + c.candidates.length +
+      ' sample=' + (sample === undefined ? 'n/a' : sample) + ' accepted=' + (pick ? pick.accepted.length : 'n/a') +
+      ' tie=' + (pick ? (pick.tie ? 'Y' : 'N') : 'n/a'));
+    if (out) {
+      var radios = listed.map(function (en, i) {
+        var acc = pick ? i < pick.accepted.length : true;
+        var tag = en.candidate.dateColumn ? en.candidate.dateColumn + ' → ' + en.got : String(en.got);
+        return '<label style="display:block;margin:2px 0;color:' + (acc ? '#9be29b' : '#9aa3b5') + ';">' +
+          '<input type="radio" name="np-cand" value="' + i + '" ' + (acc && (pick ? pick.accepted.length === 1 : listed.length === 1) ? 'checked' : '') +
+          (acc ? '' : ' disabled') + '> ' + tag + (acc ? '' : ' (falsified by sample)') + '</label>';
+      }).join('');
+      out.innerHTML =
+        '<div style="opacity:0.85;"><code>' + R.toSql(c.candidates[0]).replace(c.candidates[0].where, '…') + '</code></div>' +
+        (pick && !pick.accepted.length ? '<div style="color:#ff9b9b;margin-top:4px;">Sample ' + sample + ' falsifies every candidate — the phrase is wrong, not the data.</div>' : radios) +
+        (nAcc ? '<button id="np-rule-apply" style="margin-top:6px;padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:#2d5040;color:#cdd6e4;cursor:pointer;font-size:12px;">Apply & run → ' + address + '</button>' : '');
+      var ap = out.querySelector('#np-rule-apply');
+      if (ap) ap.addEventListener('click', function () {
+        var sel = out.querySelector('input[name="np-cand"]:checked');
+        if (sel) ruleApply(address, parseInt(sel.value, 10));
+      });
+    }
+    return { ok: true, entity: c.entity, candidates: listed.length, accepted: nAcc, tie: !!(pick && pick.tie) };
+  }
+
+  // ruleApply(address, index) — write the picked candidate into the target Process row, re-run ALL.
+  function ruleApply(address, index) {
+    var cand = _cands.entries[index].candidate, proc = _wb.Sheets.Process, N = global.NinjaExcel;
+    var hit = null;
+    for (var r = 2; r <= _man.rows.length + 1; r++) if (proc['G' + r] && String(proc['G' + r].v).toUpperCase() === address) { hit = r; break; }
+    if (!hit) { console.log('§NINJA-PILL rule apply=MISS addr=' + address); return null; }
+    proc['C' + hit] = { t: 's', v: cand.select };
+    proc['D' + hit] = { t: 's', v: cand.table };
+    proc['F' + hit] = { t: 's', v: cand.where };
+    console.log('§NINJA-PILL rule apply addr=' + address + ' row=' + hit + ' dateColumn=' + (cand.dateColumn || 'n/a') + ' (human-picked)');
+    return runFlow(N, _wb, _wbName, document.getElementById('np-out'), !!_wb.Sheets.BACKUP);
   }
 
   function download(wb, fname, out) {
@@ -187,6 +285,7 @@
     console.log('§NINJA-PILL download=' + fname);
   }
 
-  global.NinjaPill = { open: open, close: close, handleBuffer: handleBuffer };
+  global.NinjaPill = { open: open, close: close, handleBuffer: handleBuffer,
+                       ruleCompile: ruleCompile, ruleApply: ruleApply };
   console.log('§NINJA-PILL loaded');
 })(typeof self !== 'undefined' ? self : this);
