@@ -68,6 +68,10 @@
   async function ensureDeps() {
     if (!window.ERPEngine) await loadScript('../erp/erp_engine.js?v=1');
     if (!window.AdDocFsm) await loadScript('../erp/ad_docfsm.js?v=1');
+    // §S-2b POS-shipment route deps: BigDecimal BEFORE pos_core (its UMD factory reads root.BigDecimal)
+    if (!window.BigDecimal) await loadScript('../erp/bigdecimal.js?v=1');
+    if (!window.POSCore) await loadScript('../erp/pos_core.js?v=3');
+    if (!window.InOutConfirm) await loadScript('../erp/inout_confirm.js?v=1');
     if (!W.erpDb) {
       var r = await fetch('../erp/ad_seed.db');
       if (!r.ok) throw new Error('ad_seed.db fetch ' + r.status);
@@ -94,8 +98,104 @@
     return { prepare: function (sql) { return { get: function () { return row(sql, [].slice.call(arguments)); }, all: function () { return all(sql, [].slice.call(arguments)); } }; } };
   }
 
+  // ── §S-2b: the POS-shipment route source (WH_POS_PICK_LANE W-2) ──
+  // Implementing docs/SPATIAL_PICKING_SPEC.md §S-2b — Witness: W-WH-POS-PICK (headless) + live §-logs.
+  // TWO honest sources, merged: (a) the static seed via the witnessed SQL; (b) the ERP page's
+  // persisted op log — IDB bim_ootb_cache / store dbs / key idmp_kanban_proj (kanban_host.js
+  // IDB/STORE + idempiere.html _KPROJ, EXTRACTED) — folded by the PURE WHRoute.openPosDocsFromOps.
+  // A live sale exists ONLY as signed ops there; never faked into the seed. Cross-device = §P-5, out of scope.
+  // open bim_ootb_cache at the CURRENT version. scene.js owns the schema at v2; a hardcoded
+  // version 1 drifts BELOW it → VersionError → onerror → silent null (the exact bug
+  // kernel_ops.js §KRN_PERSIST_FIX fixed for the persist path). Prefer the app's single opener.
+  function _openCacheDB() {
+    if (window.APP && APP.openCacheDB) return APP.openCacheDB();
+    return new Promise(function (ok, bad) {
+      var rq = indexedDB.open('bim_ootb_cache');   // no version → current
+      rq.onsuccess = function () { ok(rq.result); };
+      rq.onerror = function () { bad(rq.error); };
+    });
+  }
+
+  function readPosSidecarDocs() {
+    return _openCacheDB().then(function (idb) {
+      if (!idb || !idb.objectStoreNames.contains('dbs')) { if (idb) idb.close(); return null; }
+      return new Promise(function (ok) {
+        var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get('idmp_kanban_proj');
+        g.onsuccess = function () { idb.close(); ok(g.result || null); };
+        g.onerror = function () { idb.close(); ok(null); };
+      });
+    }).catch(function (e) { log('SIDECAR open fail: ' + (e && e.message)); return null; }).then(function (buf) {
+      if (!buf || buf.byteLength < 100) return [];
+      var sdb = null;
+      try {
+        sdb = new A._SQL.Database(new Uint8Array(buf));
+        var r = sdb.exec('SELECT gid, parameters FROM kernel_ops ORDER BY id');
+        var rows = (r[0] ? r[0].values : []).map(function (v) { return { gid: v[0], parameters: v[1] }; });
+        return WHRoute.openPosDocsFromOps(rows);
+      } catch (e) { log('SIDECAR read fail: ' + e.message); return []; }
+      finally { try { if (sdb) sdb.close(); } catch (e) {} }
+    });
+  }
+  function seedPosDocs() {   // the witnessed §S-2 selector SQL (poc_pos_deliverlater), static-seed source
+    var q = b3(W.erpDb);
+    return q.prepare("SELECT io.m_inout_id, io.docstatus, io.c_doctype_id, io.m_warehouse_id, io.ad_client_id, io.ad_org_id FROM m_inout io JOIN c_order o ON o.c_order_id=io.c_order_id WHERE io.docstatus IN ('DR','IP') AND o.c_pos_id IS NOT NULL").all()
+      .map(function (d) {
+        d.src = 'seed';
+        d.lines = q.prepare('SELECT m_inoutline_id, m_product_id, movementqty FROM m_inoutline WHERE m_inout_id=' + Number(d.m_inout_id) + ' ORDER BY m_inoutline_id').all();
+        return d;
+      });
+  }
+  // minimal route-source chooser — shown ONLY when both sources are non-empty (the replenish draft
+  // is always draftable + open POS docs exist); one source → walked directly, no decision trees.
+  function chooseSource(posDocs) {
+    return new Promise(function (resolve) {
+      var ov = document.createElement('div');
+      ov.id = 'wh-src';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:1400;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,10,20,.93);color:#e3f2fd;font:14px system-ui;padding:16px;gap:10px';
+      var title = document.createElement('div'); title.style.cssText = 'font-weight:600;margin-bottom:6px';
+      title.textContent = 'Pick route source';
+      ov.appendChild(title);
+      function btn(label, val) {
+        var b = document.createElement('button');
+        b.style.cssText = 'background:#0b1c2c;color:#e3f2fd;border:1px solid #4fc3f7;border-radius:10px;padding:12px 16px;width:min(86vw,420px);font-size:14px;cursor:pointer';
+        b.textContent = label;
+        b.addEventListener('click', function () { document.body.removeChild(ov); resolve(val); });
+        ov.appendChild(b);
+      }
+      posDocs.forEach(function (d) {
+        btn('POS shipment ' + d.m_inout_id + ' — ' + d.lines.length + ' line(s) · ' +
+            (d.src === 'oplog' ? 'live sale (op log)' : 'tenant seed') + ' · ' + d.docstatus, d);
+      });
+      btn('Replenish pick — draft from stock', null);
+      document.body.appendChild(ov);
+    });
+  }
+  // §S-2b bin resolution (EXTRACT rule): a shipment line carries NO locator — the pick bin is the
+  // m_storageonhand row HOLDING the product (ORDER BY qtyonhand DESC, m_locator_id, deterministic).
+  // No storage row → m_locator_id null → the route's explicit unroutable step (never invented).
+  function draftFromPosDoc(d) {
+    var q = b3(W.erpDb);
+    W.lines = d.lines.map(function (l, i) {
+      var s = q.prepare('SELECT m_locator_id AS loc FROM m_storageonhand WHERE m_product_id=? ORDER BY qtyonhand DESC, m_locator_id LIMIT 1').get(Number(l.m_product_id));
+      return { line: (i + 1) * 10, m_inoutline_id: l.m_inoutline_id, m_product_id: l.m_product_id,
+               qty: Number(l.movementqty), m_locator_id: s ? s.loc : null, m_locatorto_id: null };
+    });
+    W.doc = { kind: 'pos-inout', id: d.m_inout_id, docStatus: d.docstatus, doctypeId: d.c_doctype_id, src: d.src,
+              adClientId: d.ad_client_id != null ? d.ad_client_id : null, adOrgId: d.ad_org_id != null ? d.ad_org_id : null };
+    log('DRAFT pos-shipment m_inout=' + d.m_inout_id + ' (' + d.src + ') lines=' + W.lines.length +
+      ' qty=[' + W.lines.map(function (l) { return l.qty; }).join(',') + '] bins=[' + W.lines.map(function (l) { return l.m_locator_id; }).join(',') + ']');
+  }
+
   // ── §S-2 in the lens: drafted movement (seed first; else buildDoc from REAL rows) + route ──
-  function draftPick() {
+  async function draftPick() {
+    // §S-2b source merge first: open POS-generated shipments (seed SQL + sidecar op-log fold)
+    var posDocs = seedPosDocs().concat(await readPosSidecarDocs());
+    log('SRC pos-docs=' + posDocs.length +
+      (posDocs.length ? ' [' + posDocs.map(function (d) { return d.m_inout_id + '(' + d.src + ')'; }).join(',') + ']' : ''));
+    if (posDocs.length) {
+      var pick = await chooseSource(posDocs);
+      if (pick) { draftFromPosDoc(pick); return; }
+    }
     var q = b3(W.erpDb);
     var dr = q.prepare("SELECT m_movement_id AS id FROM m_movement WHERE docstatus='DR' LIMIT 1").get();
     var seedLine = q.prepare('SELECT movementqty AS q FROM m_movementline WHERE m_movementline_id=100').get();
@@ -387,8 +487,14 @@
   window.WHWalk.confirmQty = async function () {
     var s = currentStep();
     var qty = _pendingQty;
-    var ops = WHRoute.enactOps(s, qty).map(function (o) { return { op_type: o.op_type, params: o }; });
-    var gid = 'wh-pick-1-step' + s.step + '-loc' + s.m_locator_id;               // deterministic, idempotent
+    // §S-2b: on a POS-shipment route the per-step act is an ANNOTATE trail only — the oracle puts
+    // the storage update AT completion (MInOut.completeIt below the gate; on-hand moves at the
+    // pick-COMPLETE, W-POS-DELIVERLATER). M± per-step enact stays the M_Movement route's shape.
+    var ops = (W.doc.kind === 'pos-inout')
+      ? [{ op_type: 'ANNOTATE', params: { op_type: 'ANNOTATE', table: 'M_InOutLine', note: 'PICK_CONFIRM', m_inoutline_id: s.line.m_inoutline_id, m_product_id: s.line.m_product_id, m_locator_id: s.m_locator_id, qty: qty } }]
+      : WHRoute.enactOps(s, qty).map(function (o) { return { op_type: o.op_type, params: o }; });
+    var gidBase = (W.doc.kind === 'pos-inout') ? 'wh-pos-' + W.doc.id : 'wh-pick-1';
+    var gid = gidBase + '-step' + s.step + '-loc' + s.m_locator_id;              // deterministic, idempotent
     var g = await KernelOps.commitGroup(W.opDb, ops, { gid: gid });
     var chain = await KernelOps.verifyChain(W.opDb);
     var short = qty < Number(s.line.qty);
@@ -413,8 +519,127 @@
     advance();
   };
 
+  // ── §S-2b W-3: POS-shipment completion — the ENGINE's act, not M_Movement-style CO ──
+  // Implementing docs/SPATIAL_PICKING_SPEC.md §S-2b — proven headless in W-WH-POS-PICK.
+  // Plain doctype (seed 120) → POSCore.completeShipmentOps (UPDATE_LINE short-picks + SET_STATUS CO,
+  // ONE group). Confirm-demanding doctype (148/147) → the W-WH-CONFIRM sequence: spawn → confirm
+  // (confirmedqty = the walked PICKED qty) → gate re-check → the bare SET_STATUS CO.
+  async function completePos() {
+    renderStrip();
+    var q = b3(W.erpDb);
+    var dt = q.prepare('SELECT * FROM c_doctype WHERE c_doctype_id=?').get(Number(W.doc.doctypeId)) || {};
+    var pickedByLine = {};
+    W.steps.forEach(function (s, i) {
+      var d = W.done[i];
+      pickedByLine[s.line.line] = (d && !d.skipped && d.qty) ? d.qty : 0;
+    });
+    var ioLines = W.lines.map(function (l) { return { m_inoutline_id: l.m_inoutline_id, m_product_id: l.m_product_id, movementqty: l.qty }; });
+    function pickedQtyOf(i) { return pickedByLine[W.lines[i].line]; }
+    var inout = { m_inout_id: W.doc.id, docstatus: W.doc.docStatus };
+    var gidBase = 'wh-pos-' + W.doc.id;
+    var written = [];   // [{gid, ops}] — every group also WRITES BACK to the shared ledger blob (§S-2b)
+    var r = POSCore.completeShipmentOps(inout, ioLines, dt, { pickedQtyOf: pickedQtyOf });
+    var movements, via;
+    if (r.ok) {
+      via = 'completeShipmentOps(' + W.doc.doctypeId + ')';
+      movements = r.movements;
+      var g1 = await KernelOps.commitGroup(W.opDb, r.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), { gid: gidBase + '-complete' });
+      written.push({ gid: gidBase + '-complete', ops: r.ops });
+      log('PICK-COMPLETE group gid=' + g1.gid + ' ops=' + (g1.ids ? g1.ids.length : 0) + ' committed=' + g1.committed);
+    } else if (r.reason === 'confirm-gated') {
+      // the W-WH-CONFIRM fold, live: deterministic ids off the walk's own op log (nextIds discipline)
+      via = 'confirm-gate(' + W.doc.doctypeId + ')';
+      var nR = W.opDb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type='CREATE_DOCUMENT'");
+      var cid = 970000 + (((nR[0] && Number(nR[0].values[0][0])) || 0) * 10) + 1;
+      // client/org from the shipment row when the source carries it (seed); op-log docs inherit the
+      // tenant context from the doctype row (same tenant — the ops themselves carry no client/org)
+      var inoutFull = { m_inout_id: W.doc.id, c_doctype_id: W.doc.doctypeId, issotrx: 'Y', docstatus: W.doc.docStatus,
+                        ref_inout_id: null,
+                        ad_client_id: W.doc.adClientId != null ? W.doc.adClientId : dt.ad_client_id,
+                        ad_org_id: W.doc.adOrgId != null ? W.doc.adOrgId : dt.ad_org_id };
+      var spawn = InOutConfirm.createConfirmationOps(inoutFull, ioLines, dt, [], { confirmId: cid, lineIdOf: function (i) { return cid + 10 + i; } });
+      await KernelOps.commitGroup(W.opDb, spawn.map(function (o) { return { op_type: o.op_type, params: o }; }), { gid: gidBase + '-confirm-spawn' });
+      written.push({ gid: gidBase + '-confirm-spawn', ops: spawn });
+      var clines = ioLines.map(function (l, i) {
+        return { m_inoutlineconfirm_id: cid + 10 + i, m_inoutline_id: l.m_inoutline_id, m_product_id: l.m_product_id,
+                 targetqty: l.movementqty, confirmedqty: pickedQtyOf(i), scrappedqty: 0 };
+      });
+      var doneOps = InOutConfirm.completeConfirmOps({ m_inoutconfirm_id: cid, confirmtype: spawn[0].confirmtype, processed: 'N' }, clines, inoutFull, dt, {});
+      if (!doneOps.ok) { log('PICK-COMPLETE REFUSED confirm reason=' + doneOps.reason); return; }
+      await KernelOps.commitGroup(W.opDb, doneOps.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), { gid: gidBase + '-confirm-done' });
+      written.push({ gid: gidBase + '-confirm-done', ops: doneOps.ops });
+      var gate = InOutConfirm.completeInOutGate([{ m_inoutconfirm_id: cid, confirmtype: spawn[0].confirmtype, processed: 'Y' }]);
+      if (!gate.ok) { log('PICK-COMPLETE GATE still open: ' + JSON.stringify(gate.open)); return; }
+      var coOp = { op_type: 'SET_STATUS', table: 'M_InOut', id: W.doc.id, doc_status: 'CO', via: 'completeInOutGate→CO' };
+      await KernelOps.commitGroup(W.opDb, [{ op_type: 'SET_STATUS', params: coOp }], { gid: gidBase + '-complete' });
+      written.push({ gid: gidBase + '-complete', ops: [coOp] });
+      movements = ioLines.map(function (l, i) { return { m_product_id: l.m_product_id, movementtype: 'C-', movementqty: pickedQtyOf(i) }; });
+      log('PICK-COMPLETE confirm-fold cid=' + cid + ' type=' + spawn[0].confirmtype + ' confirmed=picked');
+    } else {
+      log('PICK-COMPLETE REFUSED reason=' + r.reason);
+      ui.step.innerHTML = '<b>Cannot complete</b> — ' + r.reason;
+      return;
+    }
+    W.doc.docStatus = 'CO';
+    // the fold: on-hand moves by the PICKED qty (C- per product) — diff vs the walked confirmations
+    var fold = ERPEngine.qtyOnHand(movements, {
+      keyOf: function (e) { return e.m_product_id; },
+      typeOf: function (e) { return e.movementtype; },
+      absQtyOf: function (e) { return Math.abs(Number(e.movementqty)); }
+    });
+    var exp = {}, asked = 0, picked = 0;
+    W.lines.forEach(function (l, i) { exp[l.m_product_id] = (exp[l.m_product_id] || 0) - pickedQtyOf(i); asked += l.qty; picked += pickedQtyOf(i); });
+    var keys = Object.keys(exp).sort(), diffs = 0;
+    keys.forEach(function (k) { if ((fold[k] || 0) !== exp[k]) { diffs++; log('FOLD MISMATCH ' + k + ' fold=' + fold[k] + ' expected=' + exp[k]); } });
+    var chain = await KernelOps.verifyChain(W.opDb);
+    log('PICK-COMPLETE inout=' + W.doc.id + ' CO via=' + via + ' picked=' + picked + '/' + asked +
+      ' foldKeys=' + keys.length + ' diffs=' + diffs + ' chainOk=' + (chain.ok ? 'Y' : 'N'));
+    await writebackToSidecar(written);
+    ui.step.innerHTML = '<b>Walk complete ✓</b> — Shipment ' + W.doc.id + ' CO, on-hand moved by picked qty (' +
+      keys.length + ' product(s), ' + (diffs === 0 ? 'all match' : diffs + ' MISMATCH') + ')';
+  }
+
+  // §S-2b completion WRITE-BACK — one ledger, not a private log: the completion (and confirm) groups
+  // are RE-COMMITTED into the ERP page's persisted op-log blob under the SAME deterministic gids
+  // (commitGroup gid-idempotency = replay-safe) and the blob is persisted back. Without this the
+  // shipment stays DR in the shared ledger and the selector would re-offer a picked doc (double-pick
+  // door). Seed-source docs carry no live blob → named skip. Races vs the ERP page = §P-5, out of scope.
+  async function writebackToSidecar(written) {
+    if (W.doc.src !== 'oplog') { log('SIDECAR-WRITEBACK skip src=' + W.doc.src + ' (no live ledger blob — walk-local completion)'); return; }
+    try {
+      var buf = await _openCacheDB().then(function (idb) {
+        if (!idb || !idb.objectStoreNames.contains('dbs')) { if (idb) idb.close(); return null; }
+        return new Promise(function (ok) {
+          var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get('idmp_kanban_proj');
+          g.onsuccess = function () { idb.close(); ok(g.result || null); };
+          g.onerror = function () { idb.close(); ok(null); };
+        });
+      }).catch(function () { return null; });
+      if (!buf) { log('SIDECAR-WRITEBACK skip (blob gone)'); return; }
+      var sdb = new A._SQL.Database(new Uint8Array(buf));
+      var n = 0;
+      for (var i = 0; i < written.length; i++) {
+        var w = written[i];
+        var res = await KernelOps.commitGroup(sdb, w.ops.map(function (o) { return { op_type: o.op_type, params: o.params || o }; }), { gid: w.gid });
+        if (res.committed) n++;
+      }
+      var out = sdb.export().buffer;
+      sdb.close();
+      await _openCacheDB().then(function (idb) {
+        return new Promise(function (ok, bad) {
+          var tx = idb.transaction('dbs', 'readwrite');
+          tx.objectStore('dbs').put(out, 'idmp_kanban_proj');
+          tx.oncomplete = function () { idb.close(); ok(); };
+          tx.onerror = function () { idb.close(); bad(tx.error); };
+        });
+      });
+      log('SIDECAR-WRITEBACK groups=' + n + '/' + written.length + ' key=idmp_kanban_proj bytes=' + out.byteLength + ' (selector will not re-offer ' + W.doc.id + ')');
+    } catch (e) { log('SIDECAR-WRITEBACK fail: ' + e.message); }
+  }
+
   // ── §S-5 completion: ad_docfsm.dispatchFor CO + the qtyOnHand fold of the op log ──
   async function complete() {
+    if (W.doc && W.doc.kind === 'pos-inout') return completePos();
     renderStrip();
     var fsm = AdDocFsm.dispatchFor(b3(W.erpDb), 323, { docStatus: W.doc.docStatus, processing: 'N', doctypeId: W.doc.doctypeId }, 'CO');
     if (!fsm.ok) { log('COMPLETE REFUSED reason=' + fsm.reason); return; }

@@ -410,10 +410,10 @@
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
      Order matters: pos_core needs ERPEngine + BigDecimal (above). Witnesses W-POS-* headless + poc_pos_live. -->
 <script src="erp_engine.js?v=1"></script>
-<script src="pos_core.js?v=2"></script>
+<script src="pos_core.js?v=3"></script>
 <!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
 <script src="img_store.js?v=2"></script>
-<script src="pos_lens.js?v=4"></script>
+<script src="pos_lens.js?v=5"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
@@ -1746,7 +1746,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var ok = await _ensureKanbanERP();                    // publishes window.ERP (kernel + signer + seam) once
     if (!ok || !window.ERP) { status('POS: write path unavailable (window.ERP not published)'); console.log('§POS-PILL write-path=absent'); return; }
     PosLens.open({ b3: _b3(window.__idmpDb), opDb: window.ERP.opDb, KO: window.KernelOps,
-      seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status });
+      seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status,
+      // §S-2b seam (WH_POS_PICK_LANE W-1): persist the op log to IDB (bim_ootb_cache/dbs/idmp_kanban_proj)
+      // so the warehouse-walk page can fold a deliver-later sale; same store the Kanban write path persists.
+      persist: function () { return window.KanbanHost.persist(window.ERP.opDb, _KPROJ); } });
   }
   // ⚖ Rule — THE ONE GESTURE: edit one rule → K records re-fold live, signed + reversible (RuleFold).
   function openRuleFor() {

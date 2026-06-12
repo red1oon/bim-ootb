@@ -82,8 +82,10 @@
     var bp = opts.c_bpartner_id != null ? opts.c_bpartner_id : ctx.pos.c_bpartnercashtrx_id;
     if (bp == null) return { ok: false, reason: 'no-bpartner' };   // seed c_pos.c_bpartnercashtrx_id is NULL — never invent a counterparty
     var wh = opts.warehouseId != null ? opts.warehouseId : ctx.pos.m_warehouse_id;
+    // §P-12 deliver-later rides a DIFFERENT sale doctype (seed 132 'SO'); absent = the station's (WR path byte-unchanged)
+    var dtId = opts.doctypeId != null ? opts.doctypeId : ctx.pos.c_doctype_id;
 
-    var order = { c_order_id: opts.orderId, issotrx: 'Y', c_doctype_id: ctx.pos.c_doctype_id, m_warehouse_id: wh, c_bpartner_id: bp };
+    var order = { c_order_id: opts.orderId, issotrx: 'Y', c_doctype_id: dtId, m_warehouse_id: wh, c_bpartner_id: bp };
     // order lines in the shape EVERY downstream verb consumes (c_orderline_id deterministic per slot)
     var soLines = cart.map(function (l, i) {
       return { c_orderline_id: opts.orderId * 100 + (i + 1) * 10, m_product_id: l.m_product_id, qtyordered: l.qty, priceactual: l.priceactual, linenetamt: l.linenetamt };
@@ -93,7 +95,7 @@
     var POS_ORDER_SPEC = {
       docTable: 'C_Order', lineTable: 'C_OrderLine', parentId: 'c_pos_id', lineParentId: 'c_orderline_id',
       qtyTo: 'qtyordered', qtyFrom: 'qtyordered',
-      header: function () { return { c_order_id: opts.orderId, issotrx: 'Y', c_doctype_id: ctx.pos.c_doctype_id, m_warehouse_id: wh, c_bpartner_id: bp, c_pos_id: ctx.pos.c_pos_id }; }
+      header: function () { return { c_order_id: opts.orderId, issotrx: 'Y', c_doctype_id: dtId, m_warehouse_id: wh, c_bpartner_id: bp, c_pos_id: ctx.pos.c_pos_id }; }
     };
     var ops = E.buildDoc(POS_ORDER_SPEC, { c_pos_id: ctx.pos.c_pos_id }, soLines);
     // annotate each CREATE_LINE with the sealed master price (annotation of the verb's output, not a verb)
@@ -159,6 +161,80 @@
     if (!heldLines || !heldLines.length) return { ok: false, reason: 'no-held-lines' };
     var tail = completionOps(ctx, heldOrder, heldLines, opts);
     return { ok: true, ops: tail.ops, order: heldOrder, soLines: heldLines, consumed: tail.consumed, newVerbs: [], verbsUsed: ['completeOrder', 'completeInvoice'] };
+  }
+
+  // ── §P-12 deliver-later sale — the PICKABLE variant (engine note banked TWICE 2026-06-12:
+  // POS_ADDON_SPEC §P-12 + SPATIAL_PICKING_SPEC §S-2 "ENGINE builds it"). Witness W-POS-DELIVERLATER.
+  // Implementing docs/POS_ADDON_SPEC.md §P-12 — Witness: W-POS-DELIVERLATER.
+  //
+  // The policy is DERIVED from the sale doctype's dictionary row (the wrPolicy discipline — flags
+  // from docsubtypeso, never POS code): 'WR' = cash-and-carry (buildSaleGroup: ship+invoice complete
+  // IN-group, nothing left to pick) · 'SO' (seed 132 Standard Order, IsAutoGenerateInout='N',
+  // IsAutoGenerateInvoice='N') = deliver-later: C_Order → CO, the shipment BORN DR (same buildDoc
+  // spec, NO SET_STATUS M_InOut) — the walk's §S-4 scan-commit (or the §P-12 confirm path when the
+  // shipment doctype demands it, e.g. 148 IsPickQAConfirm) is what completes it and moves on-hand.
+  function deliverLaterPolicy(dt) {
+    if (!dt) return { ok: false, reason: 'no-doctype' };
+    if (dt.docsubtypeso === 'WR') return { ok: false, reason: 'cash-and-carry', hint: 'buildSaleGroup' };
+    if (dt.docsubtypeso !== 'SO') return { ok: false, reason: 'unsupported-docsubtypeso', docsubtypeso: dt.docsubtypeso };
+    return {
+      ok: true,
+      isautogenerateinout: dt.isautogenerateinout,       // 'N' on seed 132 — completeOrder fans out NOTHING;
+      isautogenerateinvoice: dt.isautogenerateinvoice,   // the DR shipment below is the §P-12 spec choice
+      shipDoctypeId: dt.c_doctypeshipment_id != null ? dt.c_doctypeshipment_id : null   // dictionary link (132→120)
+    };
+  }
+
+  // opts = { orderId, inoutId, c_bpartner_id, doctype: <the SALE doctype's c_doctype row, host-read>,
+  //          invoiceRule: <C_Order.InvoiceRule AD_Column defaultvalue, host-EXTRACTED ('I' in seed)> }
+  // NO backflush and NO invoice here: §P-3 CONSUME and the C- movement belong to the act that moves
+  // goods (the pick); invoice timing is NAMED from the dictionary (InvoiceRule), not hardcoded —
+  // IsAutoGenerateInvoice='N' means the invoice is a LATER Generate-Invoices fold per that rule.
+  function buildDeliverLaterGroup(ctx, cart, opts) {
+    var pol = deliverLaterPolicy(opts.doctype);
+    if (!pol.ok) return pol;
+    var built = buildOrderOps(ctx, cart, Object.assign({}, opts, { doctypeId: opts.doctype.c_doctype_id }));
+    if (!built.ok) return built;
+    // complete the ORDER with the dictionary flags VERBATIM (N/N ⇒ the bare SET_STATUS C_Order CO)
+    var ops = built.ops.concat(E.completeOrder(built.order, built.soLines, pol));
+    // the pickable shipment: the SAME buildDoc spec the WR path rides (replay-equal), born DR by
+    // absence of SET_STATUS — the engine's own convention (buildDoc creates, SET_STATUS transitions)
+    var ship = E.VERBS.createShipment(built.order, built.soLines);
+    ship[0].m_inout_id = opts.inoutId; ship[0].m_warehouse_id = built.order.m_warehouse_id;
+    if (pol.shipDoctypeId != null) ship[0].c_doctype_id = pol.shipDoctypeId;
+    ops = ops.concat(ship);
+    return {
+      ok: true, ops: ops, order: built.order, soLines: built.soLines,
+      shipment: { m_inout_id: opts.inoutId, docstatus: 'DR' },
+      invoiceTiming: { inGroup: false, rule: opts.invoiceRule != null ? opts.invoiceRule : null, source: 'C_Order.InvoiceRule dictionary default' },
+      newVerbs: [], verbsUsed: ['buildDoc', 'completeOrder']
+    };
+  }
+
+  // ── §S-4 completion-by-pick: scan-commit completes the DR shipment — THE act that moves on-hand.
+  // dt = the SHIPMENT's c_doctype row. A doctype that demands confirmation (148 IsPickQAConfirm /
+  // 147 IsShipConfirm) REFUSES here and routes to inout_confirm.js (the W-WH-CONFIRM gate: confirm
+  // first, on-hand at confirm-complete). opts.pickedQtyOf(i) = operator-confirmed qty (§S-4 stepper;
+  // default = line qty). SO-side short-pick REDUCES MovementQty, no difference doc — the same
+  // extracted rule inout_confirm.js carries (MInOutConfirm.createDifferenceDoc SO branch).
+  function completeShipmentOps(inout, inoutLines, dt, opts) {
+    if (inout.docstatus !== 'DR' && inout.docstatus !== 'IP') {
+      return { ok: false, reason: 'not-open', docstatus: inout.docstatus };   // §FALSIFIER: double-complete refused (FSM)
+    }
+    if (dt && (dt.ispickqaconfirm === 'Y' || dt.isshipconfirm === 'Y')) {
+      return { ok: false, reason: 'confirm-gated', hint: 'inout_confirm.createConfirmationOps/completeConfirmOps (W-WH-CONFIRM)' };
+    }
+    if (!inoutLines || !inoutLines.length) return { ok: false, reason: 'no-lines' };
+    var ops = [], movements = [];
+    inoutLines.forEach(function (l, i) {
+      var picked = (opts && opts.pickedQtyOf) ? opts.pickedQtyOf(i) : l.movementqty;
+      if (Number(picked) !== Number(l.movementqty)) {
+        ops.push({ op_type: 'UPDATE_LINE', table: 'M_InOutLine', id: l.m_inoutline_id, movementqty: picked });
+      }
+      movements.push({ m_product_id: l.m_product_id, movementtype: 'C-', movementqty: picked });
+    });
+    ops.push({ op_type: 'SET_STATUS', table: 'M_InOut', id: inout.m_inout_id, doc_status: 'CO' });
+    return { ok: true, ops: ops, movements: movements, newVerbs: [] };
   }
 
   // The group's movement events, as qtyOnHand-foldable rows — "the fold over the NEW ledger state"
@@ -391,6 +467,8 @@
     buildReplenishPO: buildReplenishPO, REPLENISH_PO_SPEC: REPLENISH_PO_SPEC,
     buildRegisterGroup: buildRegisterGroup, buildEditGroup: buildEditGroup,
     buildHoldGroup: buildHoldGroup, buildRecallCompleteGroup: buildRecallCompleteGroup,
+    deliverLaterPolicy: deliverLaterPolicy, buildDeliverLaterGroup: buildDeliverLaterGroup,
+    completeShipmentOps: completeShipmentOps,
     registerNextIds: registerNextIds, dataUrlBytes: dataUrlBytes, IMAGE_CAP_BYTES: IMAGE_CAP_BYTES,
     ALLOWED_VERBS: ALLOWED_VERBS
   };

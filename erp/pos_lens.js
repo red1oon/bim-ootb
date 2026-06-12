@@ -459,8 +459,24 @@
     btn.innerHTML = _svgIcon('shoppingCart', 14) + ' Tender cash · Complete';
     var receipt  = document.createElement('div'); receipt.id = 'pos-float-receipt';
     var replBox  = document.createElement('div'); replBox.id = 'pos-float-replenish';
+    // §P-12 deliver-later door (WH_POS_PICK_LANE W-1) — DICTIONARY-GATED: shown only when a
+    // docsubtypeso='SO' sale doctype exists in the loaded db (seed 132 Standard Order). The sale
+    // rides POSCore.buildDeliverLaterGroup VERBATIM (W-POS-DELIVERLATER engine, newVerbs=[]);
+    // the Tender path above stays byte-identical (W-POS-LIVE falsifier).
+    var dtSO = q1(b3, "SELECT * FROM c_doctype WHERE docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id LIMIT 1");
+    var dlBtn = null;
+    if (dtSO) {
+      dlBtn = document.createElement('button'); dlBtn.id = 'pos-float-deliverlater';
+      dlBtn.style.cssText = 'width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #2a6;' +
+        'background:#0b1f17;color:#8fd;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px';
+      dlBtn.innerHTML = _svgIcon('clock', 14) + ' Deliver later · pick at warehouse';
+    }
+    console.log('§POS-DELIVERLATER door=' + (dtSO ? 'on' : 'off') +
+      (dtSO ? ' doctype=' + dtSO.c_doctype_id + ' ship=' + dtSO.c_doctypeshipment_id : '') +
+      ' (dictionary-gated docsubtypeso=SO)');
     floatBody.appendChild(cartBox); floatBody.appendChild(totalEl); floatBody.appendChild(bpSel);
-    floatBody.appendChild(btn); floatBody.appendChild(receipt); floatBody.appendChild(replBox);
+    floatBody.appendChild(btn); if (dlBtn) floatBody.appendChild(dlBtn);
+    floatBody.appendChild(receipt); floatBody.appendChild(replBox);
     floatPanel.appendChild(floatHdr); floatPanel.appendChild(floatBody);
     document.body.appendChild(floatPanel);
 
@@ -1139,6 +1155,44 @@
           });
         })
         .catch(function (e) { cfg.status('commit failed: ' + e); console.log('§POS-LIVE commit FAIL ' + e); });
+    });
+
+    // ── §P-12 deliver-later handler (W-1) — order CO + shipment born DR, then PERSIST the op log ──
+    // Implementing docs/SPATIAL_PICKING_SPEC.md §S-2b — Witness: W-POS-DELIVERLATER (engine) + live §-logs.
+    // The persist is THE seam: the walk page reads the SAME IDB the host persists to
+    // (bim_ootb_cache/dbs/idmp_kanban_proj) — without it the sale exists only in page memory.
+    if (dlBtn) dlBtn.addEventListener('click', function () {
+      if (!cart.length) { cfg.status('Cart is empty'); return; }
+      if (!bpSel.value) { cfg.status('Pick the walk-in partner first (seed has no BPartnerCashTrx on c_pos)'); return; }
+      var saleCart = cart.map(function (c) { return Object.assign({}, c); });
+      var ids = nextIds(cfg.opDb);
+      // invoice timing NAMED from the dictionary (the witness's extraction query, verbatim)
+      var invR = q1(b3, "SELECT c.defaultvalue AS v FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='InvoiceRule'");
+      var g = POS.buildDeliverLaterGroup(ctx, cart, {
+        orderId: ids.orderId, inoutId: ids.inoutId, c_bpartner_id: Number(bpSel.value),
+        doctype: dtSO, invoiceRule: invR ? invR.v : null
+      });
+      if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-DELIVERLATER REFUSED reason=' + g.reason); return; }
+      cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
+        .then(function (res) {
+          return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
+            return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
+          }).then(function (cv) {
+            // persist the op log so the WALK page can fold this sale (the §S-2b seam)
+            return Promise.resolve(cfg.persist ? cfg.persist() : false).then(function (saved) {
+              var statuses = g.ops.filter(function (o) { return o.op_type === 'SET_STATUS'; })
+                .map(function (o) { return o.table + '→' + o.doc_status; });
+              console.log('§POS-DELIVERLATER sale order=' + ids.orderId + ' doctype=' + dtSO.c_doctype_id +
+                '(SO) ops=' + g.ops.length + ' statuses=[' + statuses.join(',') + '] inout=' + ids.inoutId +
+                ' born=DR invoice=none(InvoiceRule=' + (g.invoiceTiming && g.invoiceTiming.rule) + ' named)' +
+                ' gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N') + ' persisted=' + (saved ? 'Y' : 'N'));
+              receipt.textContent = '✓ ' + POS.cartTotal(saleCart) + ' · deliver later — order ' + ids.orderId +
+                ' CO, shipment ' + ids.inoutId + ' DR · pick it in the warehouse walk';
+              cart = []; renderCart();
+            });
+          });
+        })
+        .catch(function (e) { cfg.status('commit failed: ' + e); console.log('§POS-DELIVERLATER commit FAIL ' + e); });
     });
 
     // station info at top of float panel body (above cart lines)
