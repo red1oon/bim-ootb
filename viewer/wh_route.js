@@ -138,6 +138,46 @@
     ];
   }
 
+  // ── openPosDocsFromOps(rows) — §S-2b: the SIDECAR fold of the selector ──
+  // Implementing docs/SPATIAL_PICKING_SPEC.md §S-2b — Witness: W-WH-POS-PICK.
+  // rows = kernel_ops rows [{gid, parameters}] (parameters = the committed op, JSON string or object —
+  // commitGroup stores the caller's {op_type, params:o} param object verbatim). PURE fold, op shapes
+  // EXTRACTED from pos_core/erp_engine verbatim:
+  //   CREATE_DOCUMENT C_Order with c_pos_id        ⇒ a POS order (POS_ORDER_SPEC header carries c_pos_id)
+  //   CREATE_DOCUMENT M_InOut, source_id ∈ orders  ⇒ its shipment (createShipment: source_id = c_order_id)
+  //   CREATE_LINE M_InOutLine in the SAME gid      ⇒ its lines — buildDoc emits NO line→doc id; gid
+  //                                                  adjacency IS the link. The line's ledger identity
+  //                                                  is its source_line_id (the deterministic
+  //                                                  c_orderline_id) — the only key the log carries.
+  //   SET_STATUS M_InOut (latest per id)           ⇒ folded status; open = born-DR with no CO/RE.
+  // The WR cash-and-carry sale self-filters: its SET_STATUS M_InOut CO is IN-GROUP (W-POS-WR).
+  function openPosDocsFromOps(rows) {
+    var posOrders = {}, ships = [], status = {}, lastShipByGid = {};
+    (rows || []).forEach(function (r) {
+      var p = r.parameters;
+      if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) { return; } }
+      p = p && p.params ? p.params : p;               // unwrap the legacy nested shape (logMovements idiom)
+      if (!p || !p.op_type) return;
+      if (p.op_type === 'CREATE_DOCUMENT' && p.table === 'C_Order' && p.c_pos_id != null) {
+        posOrders[p.c_order_id] = true;
+      } else if (p.op_type === 'CREATE_DOCUMENT' && p.table === 'M_InOut' && posOrders[p.source_id]) {
+        var ship = { m_inout_id: p.m_inout_id, c_order_id: p.source_id, c_doctype_id: p.c_doctype_id,
+                     m_warehouse_id: p.m_warehouse_id, movementtype: p.movementtype, lines: [], src: 'oplog' };
+        ships.push(ship); lastShipByGid[r.gid] = ship;
+      } else if (p.op_type === 'CREATE_LINE' && p.table === 'M_InOutLine' && lastShipByGid[r.gid]) {
+        lastShipByGid[r.gid].lines.push({ m_inoutline_id: p.source_line_id, m_product_id: p.m_product_id,
+                                          movementqty: p.movementqty });
+      } else if (p.op_type === 'SET_STATUS' && p.table === 'M_InOut' && p.id != null) {
+        status[p.id] = p.doc_status;
+      }
+    });
+    return ships.filter(function (s) {
+      var st = status[s.m_inout_id];
+      return st !== 'CO' && st !== 'RE' && st !== 'VO';   // open only — a completed/reversed doc never routes
+    }).map(function (s) { s.docstatus = status[s.m_inout_id] || 'DR'; return s; });
+  }
+
   return { treeFromBom: treeFromBom, route: route,
-           PICK_DOC_SPEC: PICK_DOC_SPEC, decoratePickOps: decoratePickOps, enactOps: enactOps };
+           PICK_DOC_SPEC: PICK_DOC_SPEC, decoratePickOps: decoratePickOps, enactOps: enactOps,
+           openPosDocsFromOps: openPosDocsFromOps };
 });
