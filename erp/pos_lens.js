@@ -517,6 +517,13 @@
     floatCloseBtn.addEventListener('click', function () { floatPanel.classList.remove('open'); });
 
     function renderCart() {
+      // dispose-with-cart (user live-test 2026-06-12): the panel follows the cart's lifecycle —
+      // sale completed or last line removed → cart empties → the panel dismisses itself (the
+      // receipt lives in its own overlay + the receipt pill; the cart pill re-summons anytime).
+      if (!cart.length && floatPanel.classList.contains('open')) {
+        floatPanel.classList.remove('open');
+        console.log('§POS-FLOAT dispose=cart-empty');
+      }
       cartBox.textContent = '';
       cart.forEach(function (c) {
         var row = document.createElement('div'); row.className = 'pos-float-cart-line';

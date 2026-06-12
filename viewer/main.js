@@ -845,6 +845,20 @@ async function initViewer() {
   }).catch(e => {
     APP.status.textContent = `Error: ${e.message}`;
     console.error(`[S192] §INIT_ERROR`, e);
+    // §PWA_RESUME recovery (2026-06-12): a RESUMED db (no explicit ?db=) that no longer fetches —
+    // e.g. an OCI-era pwa_last_db after the building dbs moved into the repo (GH Pages) — must not
+    // brick the viewer. Clear the stale resume key and reload ONCE onto the default db.
+    try {
+      var _qs = new URLSearchParams(location.search);
+      if (!_qs.get('db') && localStorage.getItem('pwa_last_db') && !sessionStorage.getItem('pwa_resume_retry')) {
+        console.log('§PWA_RESUME_CLEAR stale db=' + localStorage.getItem('pwa_last_db') + ' — back to the landing');
+        localStorage.removeItem('pwa_last_db');
+        sessionStorage.setItem('pwa_resume_retry', '1');
+        // the landing (bubbles) is the only door that knows where every building db lives —
+        // the viewer's bare default is not guaranteed on GH Pages (buildings ride OCI/_prodBase)
+        location.replace('../index.html');
+      }
+    } catch (e2) {}
   });
 
   // S243: Offline/online status notification
