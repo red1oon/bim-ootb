@@ -56,6 +56,8 @@ var ICONS = {
   sunrise:   { svg: '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="M16 18a4 4 0 0 0-8 0"/>', trl: 'ui_hemisphere', key: null, desc: 'Hemisphere' },
   // SPATIAL_PICKING_SPEC §S-3 — Lucide "route" verbatim (the warehouse pick-walk lens pill).
   route:     { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>', trl: null, key: null, desc: 'Pick Walk' },
+  // WH Walk UX §C-5 — switch-source mid-walk (Lucide rotateCcw, verbatim).
+  rotateCcw: { svg: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>', trl: null, key: null, desc: 'Switch source' },
   // HISTORY_KNOB_DIAL.md rework: "W" = World history (cross-page) — two overlapping outline circles.
   worldHist: { svg: '<circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/>', trl: null, key: 'w', desc: 'World History' },
   // "Z" per-page timeline — three small overlapping dots, the MIDDLE one filled.
