@@ -98,6 +98,15 @@
   // so the 0ms UI is untouched. See docs/DistributedERP.md §0 (the two-domain split).
   var _persistTimer = null;
   function _persistToIdb(db) {
+    // §KRN_PERSIST_GUARD: the IDB write is keyed by APP.DB_URL, so ONLY the building db
+    // (APP.db) may be persisted under it. A lens committing on its own in-memory op db
+    // (wh_walk W.opDb) used to clobber the cached building with a 16KB op-only db →
+    // refresh served it → building never loaded (P0 2026-06-12). Guard BEFORE the timer
+    // so a foreign-db commit can't cancel a pending legit persist either.
+    if (window.APP && APP.db && db !== APP.db) {
+      console.log('§KRN_PERSIST_SKIP foreign db (not APP.db) — building cache preserved');
+      return;
+    }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
       sealChain(db).then(function() {
