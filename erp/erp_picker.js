@@ -36,15 +36,36 @@
     { key: 'dynamics',  name: 'MS Dynamics', dot: '#1864ab', real: false }
   ];
 
-  // Each real source's installable tenant shard (the delegate-install artifact gen_ad_odoo.js /
-  // gen_ad_idmp.sh emits). The dialog success-path INSTALLS this (merge + persist) so going through
-  // Install actually leaves a resident tenant — not just a verified fold. Migrate mode for iDempiere
-  // still routes to its MigrateShowMe/agent flow (NEW_CLIENT_MGMT.md #5).
-  // 13-idempiere.db = the migrated GardenWorld tenant off the real PG agent, PK RE-BANDED into the
-  // CL*100000 client band (IDMP_FULLWIDTH_SEED §4 / #5-install: un-banded ids collided with the seed's
-  // own GardenWorld PKs → INSERT OR IGNORE silently dropped every tenant row; W-IDMP-REBAND green).
-  var TENANT_SHARD = { odoo: { file: '12-odoo.db', name: 'Odoo', client: 12 },
-                       idempiere: { file: '13-idempiere.db', name: 'iDempiere', client: 13 } };
+  // Each source's installable tenant shard. The dialog success-path INSTALLS this (merge + persist) so
+  // going through Install actually leaves a resident tenant — not just a verified fold. Migrate mode for
+  // iDempiere still routes to its MigrateShowMe/agent flow (NEW_CLIENT_MGMT.md #5).
+  // 12/13 = LIVE-EXTRACTED tenants (gen_ad_odoo.js off odoodemo; migrate agent off real PG, PK re-banded —
+  // IDMP_FULLWIDTH_SEED §4, W-IDMP-REBAND). 14/15/16 = master-matching PoC tenants (IMPORT_EXPAND_POC.md §P-1,
+  // gen_poc_shards.js): each carries that vendor's DOCUMENTED PUBLIC DEMO MODEL (SFLIGHT / SCOTT EMP-DEPT /
+  // CRONUS) — reference data, NOT a live extraction; the claim text says so. Delegate agents = the production
+  // path; these prove the master-table mapping + login-able frame.
+  // claim = the honest per-tenant lock-banner HTML shown by _renderInstallTenant.
+  var TENANT_SHARD = {
+    odoo: { file: '12-odoo.db', name: 'Odoo', client: 12,
+      claim: 'A migrated Odoo client extracted LIVE from odoodemo — every row a recorded Odoo row, its books '
+        + 'already diffed to the cent against its own GL (nothing is invented).' },
+    idempiere: { file: '13-idempiere.db', name: 'iDempiere', client: 13,
+      claim: 'A migrated iDempiere client extracted by the real PG agent — every row a recorded iDempiere row, '
+        + 'its ids banded into the Client-13 slot, and its books already diffed to the cent against its own GL '
+        + '(nothing is invented).' },
+    sap: { file: '14-sap.db', name: 'SAP Flights', client: 14, poc: true,
+      claim: '<b>PoC tenant</b> — the documented SAP <b>SFLIGHT</b> reference model (the flight-booking demo): '
+        + 'SCARR carriers land as Business Partners, SPFLI connections as Products. Master-table mapping only — '
+        + 'reference data, not a live extraction; the SAP delegate agent is the production path.' },
+    oracle: { file: '15-oracle.db', name: 'Oracle Scott', client: 15, poc: true,
+      claim: '<b>PoC tenant</b> — Oracle\'s canonical <b>EMP/DEPT (SCOTT)</b> reference schema: departments land '
+        + 'as BP Groups, employees as Business Partners. Master-table mapping only — reference data, not a live '
+        + 'extraction; the Oracle delegate agent is the production path.' },
+    dynamics: { file: '16-dynamics.db', name: 'Dynamics Cronus', client: 16, poc: true,
+      claim: '<b>PoC tenant</b> — the Dynamics 365 Business Central <b>CRONUS</b> demo company: furniture items '
+        + 'land as Products, customers as Business Partners. Master-table mapping only — reference data, not a '
+        + 'live extraction; the Dynamics delegate agent is the production path.' }
+  };
 
   var _overlay = null, _mode = 'migrate', _status = null;
   var _detected = {};   // key → true (port reachable). idempiere is 'agent' (real, not auto-probeable).
@@ -112,7 +133,8 @@
     _renderFoot();
   }
   function _badge(e) {
-    if (!e.real) return '<span class="ep-coming">coming soon</span>';
+    if (!e.real) return (_mode === 'install' && TENANT_SHARD[e.key])
+      ? '<span class="ep-poc">PoC tenant</span>' : '<span class="ep-coming">coming soon</span>';
     if (e.probe) return '<span class="ep-probing">detecting…</span>';
     return '<span class="ep-agent">via agent</span>';
   }
@@ -135,7 +157,7 @@
 
   function _paintCard(key) {
     var e = _erp(key), b = _$('ep-b-' + key), c = _$('ep-c-' + key);
-    if (b) b.innerHTML = _detected[key] ? '<span class="ep-detect"><span class="ep-livedot"></span> detected</span>' : (e.real ? '<span class="ep-agent">via agent</span>' : '<span class="ep-coming">coming soon</span>');
+    if (b) b.innerHTML = _detected[key] ? '<span class="ep-detect"><span class="ep-livedot"></span> detected</span>' : (e.real ? '<span class="ep-agent">via agent</span>' : _badge(e));
     if (c) c.classList.toggle('ep-live', !!_detected[key]);
   }
 
@@ -149,26 +171,29 @@
     var foot = _$('ep-foot'); if (!foot || !_sel) return;
     var e = _erp(_sel);
     var verb = _mode === 'install' ? 'install' : 'migrate';
+    var shard = TENANT_SHARD[e.key];
+    var installable = e.real || (_mode === 'install' && shard);     // PoC tenants install; only agents migrate
     var q = _mode === 'install' ? ('Install <b>' + e.name + '</b> data onto this device?')
                                 : ('Do you want to ' + verb + ' your <b>' + e.name + '</b> data?');
-    var btn = e.real
-      ? '<button id="ep-go" class="ep-btn ep-primary">' + (_mode === 'install' ? 'Install ' : 'Migrate ') + e.name + '</button>'
+    var btn = installable
+      ? '<button id="ep-go" class="ep-btn ep-primary">' + (_mode === 'install' ? 'Install ' : 'Migrate ') + e.name
+        + (!e.real && shard && shard.poc ? ' (PoC)' : '') + '</button>'
       : '<button id="ep-go" class="ep-btn" disabled>' + e.name + ' — coming</button>';
     foot.innerHTML = '<div class="ep-q">' + q + '</div>' + btn
-      + (e.real ? '' : '<div class="ep-dim ep-comingnote">No adapter yet — ' + e.name + ' migration is on the way. '
-         + 'Nothing is faked; pick iDempiere or Odoo for a real fold.</div>');
-    var go = _$('ep-go'); if (go && e.real) go.onclick = function () { _confirm(_sel); };
+      + (installable ? '' : '<div class="ep-dim ep-comingnote">No adapter yet — ' + e.name + ' migration is on the way. '
+         + 'Nothing is faked; pick iDempiere or Odoo for a real fold, or Install its PoC tenant (documented demo model).</div>');
+    var go = _$('ep-go'); if (go && installable) go.onclick = function () { _confirm(_sel); };
   }
 
   // ── S4 — route on confirm ──
   function _confirm(key) {
     var e = _erp(key);
+    // INSTALL mode + a shard → install-tenant panel for EVERY non-Odoo source (iDempiere #5-install route;
+    // SAP/Oracle/Dynamics PoC tenants — IMPORT_EXPAND_POC.md §P-2). Odoo keeps its fold-then-install staged flow.
+    if (_mode === 'install' && TENANT_SHARD[key] && e.route !== 'odoo') { console.log('§ERP-PICKER confirm erp=' + key + ' route=install-tenant' + (e.real ? '' : ' poc=Y')); _renderInstallTenant(TENANT_SHARD[key]); return; }
     if (!e.real) { console.log('§ERP-PICKER coming erp=' + key); _say(e.name + ' migration is coming.'); return; }
     console.log('§ERP-PICKER confirm erp=' + key + ' route=' + e.route);
     if (e.route === 'showme') {
-      // INSTALL mode + a pre-verified shard → install-tenant panel (the #5-install route). MIGRATE
-      // mode keeps the MigrateShowMe/agent flow (extract YOUR iDempiere) untouched.
-      if (_mode === 'install' && TENANT_SHARD[key]) { _renderInstallTenant(TENANT_SHARD[key]); return; }
       close();
       if (global.MigrateShowMe && global.MigrateShowMe.open) global.MigrateShowMe.open();
       else _say('Migrate ShowMe overlay not loaded.');
@@ -182,10 +207,8 @@
   function _renderInstallTenant(tenant) {
     var body = _$('ep-body'); if (!body) return;
     body.innerHTML =
-      '<div class="ep-lock">' + _ico('lock', 14) + ' <b>' + tenant.name + ' tenant shard, pre-verified.</b> '
-      + 'A migrated ' + tenant.name + ' client extracted by the real PG agent — every row a recorded '
-      + tenant.name + ' row, its ids banded into the Client-' + tenant.client + ' slot, and its books '
-      + 'already diffed to the cent against its own GL (nothing is invented).</div>'
+      '<div class="ep-lock">' + _ico('lock', 14) + ' <b>' + tenant.name + ' tenant shard'
+      + (tenant.poc ? '' : ', pre-verified') + '.</b> ' + tenant.claim + '</div>'
       + '<div id="ep-result" class="ep-result"></div>'
       + '<div class="ep-foot"><button id="ep-back" class="ep-btn">' + _ico('chevronLeft', 13) + ' Back</button></div>';
     console.log('§ERP-PICKER install-tenant erp=' + _sel + ' shard=' + tenant.file + ' client=' + tenant.client);
@@ -376,7 +399,7 @@
       + '.ep-ic{height:24px;display:flex;align-items:center;justify-content:center}.ep-nm{font-size:12px;font-weight:600;margin:4px 0 6px}'
       + '.ep-dot{width:18px;height:18px;border-radius:50%;display:inline-block}'
       + '.ep-livedot{width:7px;height:7px;border-radius:50%;background:#0b6;display:inline-block;vertical-align:1px}'
-      + '.ep-badge{font-size:10px;min-height:14px}.ep-detect{color:#0b6;font-weight:700}.ep-agent{color:#36c}.ep-coming{color:#a98}.ep-probing{color:#aaa}'
+      + '.ep-badge{font-size:10px;min-height:14px}.ep-detect{color:#0b6;font-weight:700}.ep-agent{color:#36c}.ep-coming{color:#a98}.ep-probing{color:#aaa}.ep-poc{color:#b07d10;font-weight:600}'
       + '.ep-q{font-size:15px;margin:6px 0 12px}.ep-foot{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}'
       + '.ep-btn{padding:9px 16px;border:1px solid #ccc;background:#f5f5f5;border-radius:8px;cursor:pointer;font-size:13px}.ep-btn[disabled]{opacity:.5;cursor:not-allowed}'
       + '.ep-primary{background:#0b6;color:#fff;border-color:#0b6}.ep-comingnote{margin-top:4px;flex-basis:100%}'
