@@ -416,6 +416,11 @@
 <script src="pos_lens.js?v=4"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
+<!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
+     lens: engine ninja_excel.js (== bim-compiler build/erp source of truth, headless-proven W-NINJA/MAKE/RULE)
+     + pill UI. SheetJS (xlsx.mini.min.js) LAZY-loads on first open — not on the page hot path. -->
+<script src="ninja_excel.js?v=1"></script>
+<script src="ninja_pill.js?v=1"></script>
 <script>/* §P-11 — expose the library var into window (UMD skips browser global) */
 if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 </script>
@@ -1826,6 +1831,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
+      // NINJA EXCEL — the lens needs only the loaded tenant db; engine + UI are self-contained.
+      ninja: function () { window.NinjaPill.open({ db: window.__idmpDb }); },
       warehouse: function () {
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
         var url = '../viewer/viewer.html?db=../buildings/warehouse_gardenworld.db&home=' + homeUrl;
