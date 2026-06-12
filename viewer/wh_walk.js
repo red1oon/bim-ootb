@@ -34,6 +34,18 @@
 
   function log(s) { console.log('§WH ' + s); }
 
+  // §C-6 audio feedback — affirmative warehouse actions only (bin confirm / qty confirm / skip). The ids
+  // resolve from sfx.json ui_sounds (PRE-PINNED FACT 2: rows added there, NOT hardcoded synth here); an
+  // absent id plays nothing (sfx.js _playRow guards !row). Real global is window.__sfx (sfx.js public API).
+  var _SFX_ID = { confirm: 'wh_confirm', qty: 'wh_qty', skip: 'wh_skip' };
+  function _sfx(event) {
+    var id = _SFX_ID[event];
+    var sfx = window.__sfx;
+    var ok = !!(sfx && typeof sfx.play === 'function' && id);
+    if (ok) { try { sfx.play(id); } catch (e) { ok = false; } }
+    console.log('§WH_AUDIO event=' + event + ' sfx=' + (ok ? 'played' : 'absent'));
+  }
+
   // ── data gate: locator-GUID bins present in the LOADED db (poll, the ghost-auto-trigger idiom) ──
   function gateNow() {
     if (!A || !A.db) return false;
@@ -55,7 +67,27 @@
     }
     if (W.gate && A._buildPill) A._buildPill();
     log('PILL gate=' + (W.gate ? 'on' : 'off') + ' (locator-GUID bins ' + (W.gate ? 'present' : 'absent') + ')');
+    if (W.gate) _autoEngage();
   }, 500);
+
+  // §C-1 auto-engage: on a WH building load, start the walk without hunting for the pill. The pill stays
+  // for manual close/reopen. Timing trap (PRE-PINNED FACT C-1): A.db exists before geometry streams, so the
+  // first fly-to would be into an empty scene — DEFER until the bbox placeholders are cleared (A._bboxCleared,
+  // the same render-gate signal poc_wh_walk_live waits on as §BBOX_CLEARED). When POS docs exist the auto-open
+  // pops the source chooser — intended.
+  function _autoEngage() {
+    if (W._autoEngaged) return;
+    var t = 0, p = setInterval(function () {
+      t++;
+      var ready = !!(A && (A._bboxCleared || (A.scene && A.scene.children && A.scene.children.length > 2)));
+      if (!ready) { if (t > 120) { clearInterval(p); console.log('§WH_AUTOSTART gate=true open=skip (scene never readied in 60s)'); } return; }
+      clearInterval(p);
+      if (W.open || W._autoEngaged) return;
+      W._autoEngaged = true;
+      console.log('§WH_AUTOSTART gate=true open=auto');
+      open();
+    }, 500);
+  }
 
   // ── lazy deps: engine UMDs + the ERP seed (never on the viewer's critical path) ──
   function loadScript(src) {
@@ -190,6 +222,8 @@
   async function draftPick() {
     // §S-2b source merge first: open POS-generated shipments (seed SQL + sidecar op-log fold)
     var posDocs = seedPosDocs().concat(await readPosSidecarDocs());
+    W._posDocs = posDocs;                                     // §C-5 remembered for the switch-source button data-gate
+    if (ui.switchBtn) ui.switchBtn.style.display = posDocs.length ? '' : 'none';
     log('SRC pos-docs=' + posDocs.length +
       (posDocs.length ? ' [' + posDocs.map(function (d) { return d.m_inout_id + '(' + d.src + ')'; }).join(',') + ']' : ''));
     if (posDocs.length) {
@@ -290,9 +324,10 @@
     var b = _aabb(s.m_locator_id);
     if (!b) { log('step=' + s.step + '/' + s.of + ' locator=' + s.m_locator_id + ' fly=skip lit=0 (no transform)'); if (onDone) onDone(); return; }
     var center = new THREE.Vector3(b.c.x, b.c.y, b.c.z);
-    var dist = Math.max(b.sx, b.sy, b.sz) * 1.5 + 0.5;       // §S277d tight-zoom rule, verbatim
+    var dist = Math.max(b.sx, b.sy, b.sz) * 4 + 0.5;         // §C-2 pull-back (was *1.5+0.5): see the rack, not the bin face
     var camDir = A.camera.position.clone().sub(A.controls.target).normalize();
-    var end = center.clone().add(camDir.multiplyScalar(Math.max(dist, 2.5)));
+    var end = center.clone().add(camDir.multiplyScalar(Math.max(dist, 6)));
+    console.log('§WH_ZOOM dist=' + Math.max(dist, 6).toFixed(1) + ' min=6');
     var sp = A.camera.position.clone(), st = A.controls.target.clone(), t = 0;
     if (W.flyAnim) cancelAnimationFrame(W.flyAnim);
     (function fly() {
@@ -319,12 +354,33 @@
     st.style.cssText = 'position:fixed;left:8px;right:8px;bottom:64px;z-index:1200;display:flex;gap:8px;align-items:center;' +
       'background:rgba(16,24,40,.92);color:#e3f2fd;border:1px solid #4fc3f7;border-radius:12px;padding:10px 12px;' +
       'font:13px system-ui;backdrop-filter:blur(6px)';
+    // §C-5 ↺ switch-source — Lucide rotateCcw from the panels.js ICONS map (verbatim), beside ⌂. Data-gated:
+    // hidden until draftPick learns posDocs>0 (absent, not greyed). Tap re-chooses the POS source mid-walk.
+    var rotIc = (window.ICONS && window.ICONS.rotateCcw) ? window.ICONS.rotateCcw.svg : '';
     st.innerHTML = '<button id="wh-home" title="Home" style="background:none;color:#90caf9;border:0;font-size:18px;line-height:1;cursor:pointer">⌂</button>' +
+      '<button id="wh-switch" title="Switch source" style="display:none;background:none;color:#90caf9;border:0;cursor:pointer;padding:0;line-height:0">' +
+        '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + rotIc + '</svg></button>' +
       '<div id="wh-step" style="flex:1;min-width:0"></div>' +
       '<button id="wh-scan-btn" style="background:#4fc3f7;color:#06263a;border:0;border-radius:8px;padding:8px 12px;font-weight:600">Confirm bin</button>' +
       '<button id="wh-close" title="Exit walk (back to view)" style="background:none;color:#90a4ae;border:0;font-size:16px;cursor:pointer">✕</button>';
     document.body.appendChild(st);
     ui.strip = st; ui.step = st.querySelector('#wh-step');
+
+    // §C-4 route-list drawer — sits ABOVE the strip; collapsed by default, auto-expands once at walk start.
+    var rd = document.createElement('div');
+    rd.id = 'wh-route-drawer';
+    rd.style.cssText = 'position:fixed;left:8px;right:8px;bottom:120px;z-index:1200;display:none;flex-direction:column;' +
+      'background:rgba(16,24,40,.92);color:#e3f2fd;border:1px solid #4fc3f7;border-radius:12px;padding:8px 10px;' +
+      'font:13px system-ui;backdrop-filter:blur(6px);max-height:38vh;overflow:hidden';
+    rd.innerHTML = '<div id="wh-route-hdr" style="cursor:pointer;font-weight:600;color:#90caf9;padding:2px 0;user-select:none"></div>' +
+      '<div id="wh-route-list" style="display:none;overflow-y:auto;margin-top:6px"></div>';
+    document.body.appendChild(rd);
+    ui.routeDrawer = rd; ui.routeHdr = rd.querySelector('#wh-route-hdr'); ui.routeList = rd.querySelector('#wh-route-list');
+    ui.routeOpen = false;
+    ui.routeHdr.addEventListener('click', function () { toggleRouteDrawer(); });
+
+    ui.switchBtn = st.querySelector('#wh-switch');
+    ui.switchBtn.addEventListener('click', function () { window.WHWalk.switchSource(); });
     st.querySelector('#wh-close').addEventListener('click', close);
     st.querySelector('#wh-scan-btn').addEventListener('click', function () { openScan(false); });
     // ⌂ home — one tap back to the opener (?home=, e.g. iDempiere) or the bubbles landing.
@@ -374,21 +430,57 @@
   }
   function renderStrip() {
     var open = W.steps.filter(function (s, i) { return !W.done[i]; });
-    if (!open.length) { ui.step.innerHTML = '<b>Walk complete</b> — completing document…'; return; }
+    if (!open.length) { ui.step.innerHTML = '<b>Walk complete</b> — completing document…'; renderRouteDrawer(); return; }
     var s = currentStep();
     ui.step.innerHTML = '<b>step ' + s.step + '/' + s.of + '</b> · ' + (W.names[s.line.m_product_id] || s.line.m_product_id) +
       ' · qty ' + s.line.qty + '<br><span style="color:#90caf9">' + (W.locVal[s.m_locator_id] || '') + ' (bin ' + s.m_locator_id + ')' +
       (s.unroutable ? ' · <span style="color:#ffb74d">UNROUTABLE — off-model bin</span>' : '') + '</span>' +
       '<span style="color:#607d8b"> · long-press = skip</span>';
+    renderRouteDrawer();
   }
   function currentStep() { return W.steps[W.idx]; }
 
+  // §C-4 route-list drawer — header (always) + rows (only when expanded). Current step '→' + green bg, done ✓ dimmed.
+  function doneCount() { var n = 0; for (var i = 0; i < W.steps.length; i++) if (W.done[i]) n++; return n; }
+  function renderRouteDrawer() {
+    if (!ui.routeDrawer) return;
+    if (!W.steps.length) { ui.routeDrawer.style.display = 'none'; return; }
+    ui.routeDrawer.style.display = 'flex';
+    var done = doneCount(), remaining = W.steps.length - done;
+    ui.routeHdr.textContent = (ui.routeOpen ? '▾' : '▸') + ' Movement (' + W.steps.length + ' steps, ' + remaining + ' remaining)';
+    if (!ui.routeOpen) { ui.routeList.style.display = 'none'; return; }
+    ui.routeList.style.display = '';
+    ui.routeList.innerHTML = W.steps.map(function (s, i) {
+      var d = W.done[i];
+      var isCur = (i === W.idx) && !d;
+      var mark = d ? (d.skipped ? '⊘' : '✓') : (isCur ? '→' : '[ ]');
+      var prod = W.names[s.line.m_product_id] || s.line.m_product_id;
+      var binVal = W.locVal[s.m_locator_id] || ('bin ' + s.m_locator_id);
+      var bg = isCur ? 'background:#1d4a2e;' : '';
+      var col = d ? 'color:#607d8b;' : 'color:#e3f2fd;';
+      return '<div style="display:flex;gap:8px;padding:4px 6px;border-radius:6px;' + bg + col + '">' +
+        '<span style="width:16px;flex-shrink:0;color:' + (isCur ? '#4fc3f7' : 'inherit') + '">' + mark + '</span>' +
+        '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+          binVal + ' – ' + s.line.qty + '× ' + prod + '</span></div>';
+    }).join('');
+  }
+  function toggleRouteDrawer() {
+    ui.routeOpen = !ui.routeOpen;
+    renderRouteDrawer();
+    console.log('§WH_ROUTE_DRAWER open=' + ui.routeOpen + ' steps=' + W.steps.length + ' done=' + doneCount());
+  }
+
   // ── walk advance / skip ──
-  function advance() {
+  // §C-3 fast-confirm: autoScan re-opens the scan screen for the NEXT step once the fly settles,
+  // so the picker doesn't re-tap "Confirm bin" every step. The per-bin refuse gate is untouched —
+  // the scan screen still demands the EXPECTED locator (scanInput), the act-at-the-bin discipline holds.
+  function advance(autoScan) {
     while (W.idx < W.steps.length && W.done[W.idx]) W.idx++;
     if (W.idx >= W.steps.length) { complete(); return; }
     renderStrip();
-    focusStep(currentStep());
+    focusStep(currentStep(), autoScan ? function () {
+      if (W.open && W.idx < W.steps.length) { openScan(false); console.log('§WH_AUTOADVANCE step=' + currentStep().step + '/' + currentStep().of + ' scan=auto-open'); }
+    } : null);
   }
   function skipPrompt() {
     var reason = window.prompt('Skip step ' + currentStep().step + ' — reason?', '');
@@ -475,6 +567,7 @@
     ui.qtyRow.style.display = 'flex';
     ui.scanStatus.innerHTML = '<span style="color:#a5d6a7">✓ bin ' + code + ' confirmed (' + via + ') — confirm qty</span>';
     log('scan=' + code + ' expected=' + s.m_locator_id + ' via=' + via + ' MATCH qtyDefault=' + _pendingQty);
+    _sfx('confirm');                                          // §C-6 bin-confirm earcon (MATCH path only)
     return true;
   };
   function stepQty(d) {
@@ -502,9 +595,10 @@
     log('PICK step=' + s.step + '/' + s.of + ' locator=' + s.m_locator_id + ' qty=' + qty +
       (short ? ' SHORT (remainder ' + (Number(s.line.qty) - qty) + ' stays open on the doc)' : '') +
       ' gid=' + g.gid + ' ops=' + g.ids.length + ' committed=' + g.committed + ' chainOk=' + (chain.ok ? 'Y' : 'N'));
+    _sfx('qty');                                              // §C-6 qty confirm earcon (affirmative action)
     closeScan();
     W.idx++;
-    advance();
+    advance(true);                                            // §C-3 fast-confirm: auto-open scan for the next step
   };
 
   // skip-with-reason = op ANNOTATION on the log (the exception trail), step closed as skipped
@@ -515,7 +609,28 @@
       { gid: 'wh-pick-1-skip' + s.step });
     W.done[W.idx] = { qty: 0, gid: g.gid, skipped: true, reason: reason };
     log('SKIP step=' + s.step + '/' + s.of + ' locator=' + s.m_locator_id + ' reason="' + reason + '" gid=' + g.gid + ' (annotation op)');
+    _sfx('skip');                                             // §C-6 skip earcon
     W.idx++;
+    advance();
+  };
+
+  // §C-5 switch source mid-walk — re-choose the POS shipment to pick, rebuilding the route from step 0.
+  // An in-progress walk's confirmed steps are SIGNED in the op log (never unwound by switching); the
+  // REMAINDER of the current route is abandoned — logged honestly, never silently dropped.
+  window.WHWalk.switchSource = async function () {
+    if (!W.open) return;
+    var posDocs = seedPosDocs().concat(await readPosSidecarDocs());
+    if (!posDocs.length) { log('SOURCE_SWITCH posDocs=0 (none to switch to)'); return; }
+    var abandoned = 0;
+    for (var i = W.idx; i < W.steps.length; i++) if (!W.done[i]) abandoned++;
+    var pick = await chooseSource(posDocs);
+    if (!pick) { log('SOURCE_SWITCH cancelled (chooser dismissed)'); return; }
+    log('SOURCE_SWITCH abandoned=' + abandoned + ' steps (signed picks stay on the log)');
+    draftFromPosDoc(pick);
+    buildRoute();
+    W.idx = 0;
+    if (ui.switchBtn) ui.switchBtn.style.display = posDocs.length ? '' : 'none';
+    console.log('§WH_SOURCE_SWITCH posDocs=' + posDocs.length + ' selected=' + W.doc.id);
     advance();
   };
 
@@ -693,6 +808,7 @@
     if (bar) { W._barDisplay = bar.style.display; bar.style.display = 'none'; }
     log('MODE walk-on (BIM pill bar hidden)');
     if (!W.steps.length) { await draftPick(); buildRoute(); W.idx = 0; }
+    if (ui.routeDrawer) { ui.routeDrawer.style.display = 'flex'; ui.routeOpen = true; }  // §C-4 auto-expand once at walk start
     log('OPEN steps=' + W.steps.length + ' doc=' + W.doc.id + ' status=' + W.doc.docStatus);
     advance();
   }
@@ -700,6 +816,7 @@
     W.open = false;
     closeScan();
     if (ui.strip) ui.strip.style.display = 'none';
+    if (ui.routeDrawer) ui.routeDrawer.style.display = 'none';
     // restore the BIM chrome exactly as it was (walk mode OFF → back to BIM view)
     var bar = document.getElementById('mobile-pill');
     if (bar) bar.style.display = (W._barDisplay != null ? W._barDisplay : '');
