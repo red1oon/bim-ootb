@@ -719,15 +719,20 @@
       card.setAttribute('data-pid', productId);
       var imgArea = document.createElement('div'); imgArea.className = 'pos-card-img';
 
-      // priority 1: full-res ImgStore (async, may arrive after card renders)
-      if (imageKey && window.ImgStore && typeof window.ImgStore.get === 'function') {
-        window.ImgStore.get(imageKey).then(function (blob) {
-          if (blob) {
-            var url = URL.createObjectURL(blob);
-            var im = document.createElement('img'); im.src = url; im.alt = name;
-            imgArea.innerHTML = ''; imgArea.appendChild(im);
-          }
-        }).catch(function () {});
+      // priority 1: full-res ImgStore (async, may arrive after card renders) — sha256 keys are
+      // RE-HASHED before full-tier renders (img_store.resolveImage; tampered folder blob → §IMG-TAMPER,
+      // the ledger thumb keeps rendering — never bytes the key disowns)
+      if (imageKey && window.ImgStore && typeof window.ImgStore.resolveImage === 'function') {
+        var digestOf = (window.crypto && window.crypto.subtle) ? _blobSha256 : undefined;
+        window.ImgStore.resolveImage({ get: window.ImgStore.get }, imageKey, function () { return null; }, digestOf)
+          .then(function (r) {
+            if (r.tampered) { console.log('§IMG-TAMPER key=' + String(imageKey).slice(0, 23) + '… folder blob ≠ its content address — thumb keeps rendering'); return; }
+            if (r.tier === 'full' && r.src) {
+              var url = URL.createObjectURL(r.src);
+              var im = document.createElement('img'); im.src = url; im.alt = name;
+              imgArea.innerHTML = ''; imgArea.appendChild(im);
+            }
+          }).catch(function () {});
       }
 
       // priority 2: thumbnail dataURL captured this session
@@ -839,6 +844,27 @@
         quality -= 0.12;
       } while (quality > 0.1);
       return dataUrl;
+    }
+
+    // ── G-2 (POS_GAP_CLOSE): content-address helpers — imageKey = sha256 of the DECODED image
+    // bytes (the W-IMG-SYNC copy-job premise; the former content-length stub diverged from the
+    // engine proof). Pages is HTTPS so SubtleCrypto is present; absent → keys stay HONESTLY null.
+    function _hexOf(buf) {
+      var v = new Uint8Array(buf), s = '';
+      for (var i = 0; i < v.length; i++) s += (v[i] < 16 ? '0' : '') + v[i].toString(16);
+      return s;
+    }
+    function _dataUrlBytes(dataUrl) {   // decoded base64 payload → Uint8Array (the bytes the key names)
+      var s = String(dataUrl), i = s.indexOf('base64,');
+      if (i < 0) return null;
+      var bin = atob(s.slice(i + 7)), out = new Uint8Array(bin.length);
+      for (var j = 0; j < bin.length; j++) out[j] = bin.charCodeAt(j);
+      return out;
+    }
+    function _blobSha256(blob) {        // digestOf for ImgStore.resolveImage (sha256-key verification)
+      return blob.arrayBuffer()
+        .then(function (buf) { return window.crypto.subtle.digest('SHA-256', buf); })
+        .then(_hexOf);
     }
 
     importBtn.addEventListener('click', function () {
@@ -1039,9 +1065,18 @@
         var cx = ie.canvas.getContext('2d'); cx.drawImage(vid, 0, 0);
         var dataUrl = _downscaleCapture(ie.canvas);
         _state.imageThumb = dataUrl;
-        // imageKey = content-hash stub; a real SHA-256 needs SubtleCrypto (async) or a JS sha256.
-        // Use a deterministic key from the b64 payload length + a timestamp-free counter.
-        _state.imageKey = 'thumb:' + (dataUrl.length).toString(16) + ':' + _state.barcode;
+        // imageKey = CONTENT ADDRESS: sha256 of the decoded bytes (W-IMG-SYNC premise — G-2 fix of
+        // the content-length stub). No SubtleCrypto → key stays null (honest: thumb-only, no fake key).
+        _state.imageKey = null;
+        var keyBytes = _dataUrlBytes(dataUrl);
+        if (keyBytes && window.crypto && window.crypto.subtle) {
+          window.crypto.subtle.digest('SHA-256', keyBytes).then(function (buf) {
+            _state.imageKey = 'sha256:' + _hexOf(buf);
+            console.log('§POS-IMGKEY sha256 key=' + _state.imageKey.slice(0, 23) + '… bytes=' + keyBytes.length);
+          }).catch(function () { console.log('§POS-IMGKEY digest failed — key stays null (honest)'); });
+        } else {
+          console.log('§POS-IMGKEY no SubtleCrypto/bytes — key stays null (honest refusal, thumb-only)');
+        }
         ie.thumb.src = dataUrl; ie.thumb.style.display = 'block';
         _stopSnapStream();
         // remove snap buttons
