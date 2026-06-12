@@ -105,6 +105,108 @@
     console.log('§ERP-SHORTCUTS action=open items=7');
   }
 
+  // ── Doc Cycle Validator — runs DocCycleValidator in-memory, renders tick/cross result card.
+  // Always visible (POC demo: proof-of-seriousness for newbies). Uses sql.js WASM already on the page.
+  // Implementing doc_cycle_validator.js W-DOC-CYCLE-VALIDATOR — Witness: §DOC-CYCLE
+  function _docCycleValidator() {
+    var existing = document.getElementById('doc-cycle-card');
+    if (existing) { existing.remove(); console.log('§DOC-CYCLE action=close'); return; }
+
+    var V = window.DocCycleValidator;
+    if (!V || !window.initSqlJs) { _toast('DocCycleValidator not loaded — check erp.html scripts'); return; }
+
+    var card = document.createElement('div');
+    card.id = 'doc-cycle-card';
+    card.setAttribute('role', 'dialog');
+    card.innerHTML =
+      '<button id="doc-cycle-x" title="Close" aria-label="Close">&times;</button>' +
+      '<h3>Doc Cycle Validator</h3>' +
+      '<div id="doc-cycle-body" class="dc-running">Running…</div>';
+    document.body.appendChild(card);
+    document.getElementById('doc-cycle-x').addEventListener('pointerup', function (e) {
+      e.stopPropagation(); card.remove(); console.log('§DOC-CYCLE action=close');
+    });
+
+    var TS = '2026-06-13T00:00:00Z';   // deterministic — no Date.now() in engine
+    initSqlJs({ locateFile: function (f) { return 'lib/sql-wasm-fts5.wasm'; } })
+      .catch(function () {
+        return initSqlJs({ locateFile: function () {
+          return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm';
+        }});
+      })
+      .then(function (SQL) {
+        var raw = new SQL.Database();
+        var db  = V.mkAdapter(raw);
+        V.bootstrapSchema(db);
+
+        // seed: valid receipt (1001 + 1 line), no-lines doc (1002), already-CO doc (1003), progression test (1004)
+        db.run('INSERT INTO m_inout VALUES (?,?,?,?,?,?)', [1001,'DR','V+',null,'Valid receipt',TS]);
+        db.run('INSERT INTO m_inoutline VALUES (?,?,?,?,?)', [1,1001,100,10,10]);
+        db.run('INSERT INTO m_inout VALUES (?,?,?,?,?,?)', [1002,'DR','V+',null,'No-lines doc',TS]);
+        db.run('INSERT INTO m_inout VALUES (?,?,?,?,?,?)', [1003,'CO','V+',null,'Already CO',TS]);
+        db.run('INSERT INTO m_inout VALUES (?,?,?,?,?,?)', [1004,'DR','V+',null,'Progression',TS]);
+        db.run('INSERT INTO m_inoutline VALUES (?,?,?,?,?)', [10,1004,200,5,null]);
+
+        var fails = 0, rows = [];
+        function chk(ok, label) { if (!ok) fails++; rows.push({ ok: ok, label: label }); }
+        function throws(action, from) {
+          try { V.resolveTransition(action, from); return false; }
+          catch (e) { return e.name === 'DocStateError'; }
+        }
+
+        // §FSM_LEGAL
+        chk(V.getValidActions('DR').join(',') === 'CO,PR,VO', 'DR legal actions [CO,PR,VO]');
+        chk(V.getValidActions('CO').join(',') === 'CL,RC,RA,VO', 'CO legal actions [CL,RC,RA,VO]');
+        chk(V.getValidActions('VO').length === 0, 'VO is terminal — no actions');
+        // §FSM_STRICT
+        chk(throws('CO','CL'), 'CO from Closed → DocStateError');
+        chk(throws('PR','CO'), 'PR from Completed → DocStateError');
+        chk(throws('CO','VO'), 'CO from Voided → DocStateError');
+        // §FSM_FORWARD
+        var t1 = V.advanceState(db, 1004, 'PR', { ts: TS });
+        chk(t1.from === 'DR' && t1.to === 'IP', 'PR advances DR → IP');
+        // §ATOMIC_SYNC
+        var r2 = V.completeReceipt(db, 1001,
+          [{ elementGuid: 'GUID-WALL-001', qty: 3 }, { elementGuid: 'GUID-BEAM-002', qty: 7 }],
+          { ts: TS });
+        var factRows = db.get('SELECT COUNT(*) AS n FROM fact_acct WHERE record_id=1001').n;
+        var bimRows  = db.get('SELECT COUNT(*) AS n FROM bim_element_status WHERE erp_doc_id=1001').n;
+        chk(r2.ok && r2.from === 'DR' && r2.to === 'CO', 'DR → CO complete');
+        chk(factRows === 2, 'ERP: DR Inventory + CR AP (2 fact_acct rows)');
+        chk(bimRows === 2, 'BIM: 2 element status rows committed');
+        // §ROLLBACK
+        var r3 = V.completeReceipt(db, 1002, [{ elementGuid: 'X', qty: 1 }], { ts: TS });
+        var factAfter = db.get('SELECT COUNT(*) AS n FROM fact_acct WHERE record_id=1002').n;
+        var docSt = db.get('SELECT docstatus FROM m_inout WHERE m_inout_id=1002').docstatus;
+        chk(!r3.ok && r3.rolledBack, 'No-lines doc → rollback reported');
+        chk(factAfter === 0, 'SAVEPOINT rollback: 0 fact_acct rows committed');
+        chk(docSt === 'DR', 'docstatus reverted to DR after rollback');
+        // §FALSIFIER
+        var r4 = V.completeReceipt(db, 1003, [], { ts: TS });
+        chk(!r4.ok && r4.isStateError, 'CO→CO rejected as DocStateError');
+        raw.close();
+
+        var pass = rows.filter(function (r) { return r.ok; }).length;
+        var allPass = fails === 0;
+        var body = document.getElementById('doc-cycle-body');
+        if (!body) return;
+        body.className = '';
+        body.innerHTML = rows.map(function (r) {
+          return '<div class="dc-row ' + (r.ok ? 'dc-pass' : 'dc-fail') + '">' +
+            '<span class="dc-icon">' + (r.ok ? '✓' : '✗') + '</span><span>' + r.label + '</span></div>';
+        }).join('') +
+        '<div class="dc-total ' + (allPass ? 'dc-all-pass' : 'dc-has-fail') + '">' +
+          (allPass ? '✓ ' : '✗ ') + pass + ' / ' + rows.length + ' PASS — doc cycle proven in-browser' +
+        '</div>';
+        console.log('§DOC-CYCLE total=' + rows.length + ' pass=' + pass + ' fail=' + fails);
+      })
+      .catch(function (e) {
+        var body = document.getElementById('doc-cycle-body');
+        if (body) body.textContent = 'Error: ' + e.message;
+        console.error('§DOC-CYCLE error', e);
+      });
+  }
+
   // ── id → real handler. Stubs that only toasted "arrives in a later task" (find/read/ledger/graphs/edit/
   // process/settings) are REMOVED from the manifest (user wrap 2026-06-09) — that depth lives on idempiere.html;
   // erp.html is the lean globe that funnels there. What remains is operative. ──
@@ -135,6 +237,7 @@
       if (window.ErpVerifyLedger) window.ErpVerifyLedger();
       else _toast('Verify ledger — not ready');
     },
+    'doc-cycle': _docCycleValidator,                          // Doc Cycle Validator card (always visible POC proof)
     guide:     _helpGuide,                                    // (?) bubble-navigation HelpGuide card
     help:      _shortcutsPanel                                // lifebelt → keyboard/gesture shortcuts (its original role)
   };
@@ -157,7 +260,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=27').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=28').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];
@@ -272,17 +375,26 @@
         'bottom:calc(12px + env(safe-area-inset-bottom,0px));}#erp-pill{max-height:calc(100vh - 110px);}}' +
       // HelpGuide card (the `help` pill) — centred, dismissible, clean glass. Self-contained (erp.html has no
       // shared help_overlay.js). z above the globe + pill bar; scrolls on a short screen.
-      '#erp-help-guide,#erp-shortcuts{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;' +
+      '#erp-help-guide,#erp-shortcuts,#doc-cycle-card{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;' +
         'width:min(420px,90vw);max-height:80vh;overflow-y:auto;padding:22px 24px 24px;border-radius:16px;' +
         'background:rgba(20,22,32,0.96);color:#cdd6e4;border:1px solid rgba(255,255,255,0.12);' +
         'box-shadow:0 12px 48px rgba(0,0,0,0.5);font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;}' +
-      '#erp-help-guide h3,#erp-shortcuts h3{margin:0 0 12px;color:#6c9fff;font-size:16px;}' +
+      '#erp-help-guide h3,#erp-shortcuts h3,#doc-cycle-card h3{margin:0 0 12px;color:#6c9fff;font-size:16px;}' +
       '#erp-help-guide ul,#erp-shortcuts ul{margin:0;padding-left:20px;}' +
       '#erp-help-guide li,#erp-shortcuts li{margin:7px 0;}' +
       '#erp-help-guide b,#erp-shortcuts b{color:#e6ebf5;font-weight:600;}' +
-      '#erp-help-x,#erp-shortcuts-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;' +
+      '#erp-help-x,#erp-shortcuts-x,#doc-cycle-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;' +
         'background:transparent;color:#9aa4b8;font-size:22px;line-height:1;cursor:pointer;}' +
-      '#erp-help-x:hover,#erp-shortcuts-x:hover{background:rgba(255,255,255,0.08);color:#fff;}';
+      '#erp-help-x:hover,#erp-shortcuts-x:hover,#doc-cycle-x:hover{background:rgba(255,255,255,0.08);color:#fff;}' +
+      // Doc Cycle Validator card rows
+      '.dc-running{color:#9aa4b8;font-style:italic;}' +
+      '.dc-row{display:flex;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);}' +
+      '.dc-icon{flex-shrink:0;font-weight:700;width:14px;}' +
+      '.dc-pass .dc-icon{color:#4dcc88;}' +
+      '.dc-fail .dc-icon{color:#e05c5c;}' +
+      '.dc-total{margin-top:12px;padding:8px 12px;border-radius:8px;font-weight:600;font-size:13px;}' +
+      '.dc-all-pass{background:rgba(77,204,136,0.12);color:#4dcc88;border:1px solid rgba(77,204,136,0.3);}' +
+      '.dc-has-fail{background:rgba(224,92,92,0.12);color:#e05c5c;border:1px solid rgba(224,92,92,0.3);}';
     document.head.appendChild(s);
   }
 
