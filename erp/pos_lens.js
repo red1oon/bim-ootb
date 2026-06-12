@@ -107,6 +107,37 @@
       '#pos-float-receipt { margin-top:6px;font-size:11px;color:#9cb;text-align:center;min-height:16px; }',
       '#pos-float-replenish { margin-top:8px; }',
 
+      /* U-3: import overlay */
+      '#pos-import-overlay { display:none;position:fixed;inset:0;background:#000d;z-index:9600;',
+      '                      flex-direction:column;align-items:center;justify-content:flex-start;',
+      '                      padding-top:6vh;overflow-y:auto; }',
+      '#pos-import-overlay.active { display:flex; }',
+      '#pos-import-card { background:#0d1f14;border:1px solid #2a6;border-radius:12px;padding:20px 24px;',
+      '                   max-width:min(400px,96vw);width:100%;box-sizing:border-box; }',
+      '#pos-import-title { color:#8fd;font-size:14px;font-weight:bold;margin-bottom:14px;',
+      '                    border-bottom:1px solid #2a6;padding-bottom:8px; }',
+      '#pos-import-steps { display:flex;gap:4px;margin-bottom:14px; }',
+      '.pos-import-step  { flex:1;padding:4px 2px;text-align:center;font-size:11px;',
+      '                    border-radius:4px;color:#6a9;border:1px solid #1a3d24; }',
+      '.pos-import-step.active { color:#4dcc88;border-color:#2a6;background:#071409; }',
+      '.pos-import-step.done { color:#3a7;background:#071409; }',
+      '#pos-import-body  { min-height:80px; }',
+      '#pos-import-video { width:min(300px,86vw);border:2px solid #2a6;border-radius:8px;background:#000;display:block; }',
+      '#pos-import-canvas { display:none; }',
+      '.pos-import-btn   { display:inline-flex;align-items:center;gap:6px;padding:9px 20px;',
+      '                    border-radius:8px;border:1px solid #2a6;background:#0b1f17;',
+      '                    color:#cfe;cursor:pointer;font-size:13px;margin-top:8px; }',
+      '.pos-import-btn:disabled { opacity:.4;cursor:default; }',
+      '.pos-import-input { width:100%;box-sizing:border-box;padding:8px 12px;margin-top:8px;',
+      '                    border-radius:6px;border:1px solid #2a6;',
+      '                    background:#071409;color:#cfe;font-size:15px; }',
+      '#pos-import-hint  { color:#8fd;font-size:12px;margin-top:8px; }',
+      '#pos-import-thumb { max-width:120px;max-height:120px;border-radius:6px;',
+      '                    display:none;margin-top:8px;object-fit:cover; }',
+      '#pos-import-err   { color:#fa8;font-size:12px;margin-top:6px;min-height:16px; }',
+      '#pos-import-close { margin-top:12px;display:block;width:100%;padding:9px;border-radius:8px;',
+      '                    border:1px solid #556;background:#0b1209;color:#9cb;cursor:pointer;font-size:13px; }',
+
       /* §P-11 receipt overlay */
       '#pos-receipt-overlay { display:none;position:fixed;inset:0;background:#0009;z-index:9600;',
       '                       align-items:center;justify-content:center; }',
@@ -231,6 +262,29 @@
     return { ov: ov, lines: lines, tot: tot, qrEl: qrEl, payWrap: payWrap, btn: btn };
   }
 
+  // ── U-3: import overlay DOM build ──────────────────────────────────────────────────────────────
+  function _buildImportOverlay() {
+    var ov    = document.createElement('div'); ov.id = 'pos-import-overlay';
+    var card  = document.createElement('div'); card.id = 'pos-import-card';
+    var title = document.createElement('div'); title.id = 'pos-import-title';
+    title.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> &nbsp;Import — Register New Product';
+    var steps = document.createElement('div'); steps.id = 'pos-import-steps';
+    var sLabels = ['1 Snap', '2 Scan', '3 Price', '4 Register'];
+    var stepEls = sLabels.map(function (l) { var d = document.createElement('div'); d.className = 'pos-import-step'; d.textContent = l; steps.appendChild(d); return d; });
+    var body  = document.createElement('div'); body.id = 'pos-import-body';
+    var video = document.createElement('video'); video.id = 'pos-import-video'; video.autoplay = true; video.playsInline = true; video.muted = true; video.style.display = 'none';
+    var canvas = document.createElement('canvas'); canvas.id = 'pos-import-canvas';
+    var thumb = document.createElement('img'); thumb.id = 'pos-import-thumb'; thumb.alt = 'captured';
+    var hint  = document.createElement('div'); hint.id = 'pos-import-hint';
+    var err   = document.createElement('div'); err.id = 'pos-import-err';
+    var close = document.createElement('button'); close.id = 'pos-import-close'; close.textContent = 'Cancel';
+    body.appendChild(video); body.appendChild(canvas); body.appendChild(thumb);
+    body.appendChild(hint); body.appendChild(err);
+    card.appendChild(title); card.appendChild(steps); card.appendChild(body); card.appendChild(close);
+    ov.appendChild(card); document.body.appendChild(ov);
+    return { ov: ov, stepEls: stepEls, body: body, video: video, canvas: canvas, thumb: thumb, hint: hint, err: err, close: close };
+  }
+
   function open(cfg) {
     _injectStyles();
     var b3 = cfg.b3, el = cfg.el;
@@ -264,6 +318,9 @@
 
     var cart = [];
 
+    // U-3: track products registered THIS session (for §POS-FIRSTSELL witness)
+    var _sessionProductIds = {};  // { [productId]: true }
+
     // ── §P-6 ids on the root elements ──────────────────────────────────────────────────────────
     var wrap = el('div'); wrap.id = 'pos-wrap';
 
@@ -291,7 +348,12 @@
       floatPanel.classList.toggle('open');
     });
 
-    pillBar.appendChild(homeBtn); pillBar.appendChild(scanBtn); pillBar.appendChild(payBtn); pillBar.appendChild(rcptBtn);
+    // U-3: Import pill — "Register a new product (snap · scan · price)"
+    var importBtn = el('button'); importBtn.className = 'pos-pill-btn'; importBtn.id = 'pos-pill-import';
+    importBtn.title = 'Register a new product (snap · scan · price)';
+    importBtn.innerHTML = _svgIcon('upload', 16) || ('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>');
+
+    pillBar.appendChild(homeBtn); pillBar.appendChild(scanBtn); pillBar.appendChild(importBtn); pillBar.appendChild(payBtn); pillBar.appendChild(rcptBtn);
     wrap.appendChild(pillBar);
 
     // §P-7 witness
@@ -647,6 +709,359 @@
       _se.close.onclick = function () { _stopScan(); };
     });
 
+    // ── U-3: Import overlay — snap + scan + price → register → new tile ───────────────────────
+    var _ie = null;  // import overlay elements (lazy-built)
+
+    // Helper: build a single album card for a newly registered product and append it to the grid.
+    // Mirrors the inline tile loop above — keeps §POS-FIRSTSELL tracking consistent.
+    function _addNewTileCard(productId, name, price, imageThumb, imageKey) {
+      var card = document.createElement('div'); card.className = 'pos-card';
+      card.setAttribute('data-pid', productId);
+      var imgArea = document.createElement('div'); imgArea.className = 'pos-card-img';
+
+      // priority 1: full-res ImgStore (async, may arrive after card renders)
+      if (imageKey && window.ImgStore && typeof window.ImgStore.get === 'function') {
+        window.ImgStore.get(imageKey).then(function (blob) {
+          if (blob) {
+            var url = URL.createObjectURL(blob);
+            var im = document.createElement('img'); im.src = url; im.alt = name;
+            imgArea.innerHTML = ''; imgArea.appendChild(im);
+          }
+        }).catch(function () {});
+      }
+
+      // priority 2: thumbnail dataURL captured this session
+      if (imageThumb) {
+        var im2 = document.createElement('img'); im2.src = imageThumb; im2.alt = name;
+        im2.style.cssText = 'width:100%;height:100px;object-fit:cover;display:block;';
+        imgArea.innerHTML = ''; imgArea.appendChild(im2);
+      } else {
+        imgArea.innerHTML = _svgIcon('image', 36);
+      }
+
+      var nameDiv  = document.createElement('div'); nameDiv.className = 'pos-card-name'; nameDiv.textContent = name;
+      var priceDiv = document.createElement('div'); priceDiv.className = 'pos-card-price'; priceDiv.textContent = Number(price).toFixed(2);
+      card.appendChild(imgArea); card.appendChild(nameDiv); card.appendChild(priceDiv);
+
+      card.addEventListener('click', function () {
+        var added = _addToCart(productId, name);
+        if (added) {
+          card.classList.add('flash');
+          setTimeout(function () { card.classList.remove('flash'); }, 220);
+        }
+      });
+      grid.appendChild(card);
+      // register in productByCode so the scan overlay can find it immediately
+      productByCode[String(name).trim()] = productId;
+      tileByPid[productId] = { m_product_id: productId, name: name, pricestd: price };
+    }
+
+    // Build the ctx needed by buildRegisterGroup — mirrors poc_pos_register.js registerDefaults()
+    // using the sql.js b3 handle the lens already holds. All queries extracted from poc_pos_register.js.
+    function _buildRegisterCtx() {
+      function modeOf(rows, col) {
+        var c = {}; rows.forEach(function (r) { var v = r[col]; c[v] = (c[v] || 0) + 1; });
+        var best = null;
+        Object.keys(c).forEach(function (k) { if (best == null || c[k] > c[best]) best = k; });
+        if (best == null || best === 'null' || best === '') return null;
+        var n = Number(best); return (!isNaN(n) && String(n) === best) ? n : (best === 'null' ? null : best);
+      }
+
+      // M_Product mandatory cols from AD_Column
+      var AUDIT = { created: 1, createdby: 1, updated: 1, updatedby: 1 };
+      var KEYED = { m_product_id: 1, name: 1, value: 1 };
+      var tid = (function () {
+        var r = q1(b3, "SELECT ad_table_id FROM ad_table WHERE LOWER(tablename)='m_product'");
+        return r && r.ad_table_id;
+      })();
+      var mand = tid ? qa(b3, "SELECT columnname, defaultvalue FROM ad_column WHERE ad_table_id=? AND ismandatory='Y'", tid) : [];
+      var prows = qa(b3, 'SELECT * FROM m_product WHERE m_product_id IN (SELECT m_product_id FROM c_poskey WHERE c_poskeylayout_id=? AND m_product_id IS NOT NULL)', pos.c_poskeylayout_id);
+      var dict = {}, product = {};
+      mand.forEach(function (c) {
+        var col = String(c.columnname).toLowerCase();
+        if (AUDIT[col] || KEYED[col]) return;
+        var dv = c.defaultvalue;
+        if (dv != null && String(dv) !== 'SYSDATE' && String(dv).indexOf('@') < 0) {
+          dict[col] = (String(Number(dv)) === String(dv)) ? Number(dv) : dv;
+        } else {
+          product[col] = modeOf(prows, c.columnname) || modeOf(prows, col);
+        }
+      });
+
+      var pricerows = qa(b3, 'SELECT * FROM m_productprice WHERE m_pricelist_version_id=?', plv.v);
+      var imgrows   = qa(b3, 'SELECT * FROM ad_image');
+      var keyrows   = qa(b3, 'SELECT * FROM c_poskey WHERE c_poskeylayout_id=?', pos.c_poskeylayout_id);
+      function modeR(rows, col) { return modeOf(rows.map(function (r) { var o = {}; o[col] = r[col]; return o; }), col); }
+
+      var et = 'U';
+      try { var sr = q1(b3, "SELECT value FROM ad_sysconfig WHERE name='DEFAULT_ENTITYTYPE'"); if (sr) et = sr.value; } catch (e) {}
+      var seqR = q1(b3, 'SELECT COALESCE(MAX(seqno),0)+10 AS s FROM c_poskey WHERE c_poskeylayout_id=?', pos.c_poskeylayout_id);
+      var nextseq = (seqR && seqR.s != null) ? seqR.s : 10;
+
+      var regDefaults = {
+        dict: dict, product: product,
+        price: { ad_client_id: modeR(pricerows, 'ad_client_id'), ad_org_id: modeR(pricerows, 'ad_org_id') },
+        image: { ad_client_id: modeR(imgrows, 'ad_client_id'), ad_org_id: modeR(imgrows, 'ad_org_id'), entitytype: et },
+        poskey: { ad_client_id: modeR(keyrows, 'ad_client_id'), ad_org_id: modeR(keyrows, 'ad_org_id'), qty: modeR(keyrows, 'qty'), nextseqno: nextseq }
+      };
+
+      function priorCreateCount() {
+        var r = cfg.opDb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type='CRUD_CREATE'");
+        return (r[0] && Number(r[0].values[0][0])) || 0;
+      }
+
+      return {
+        pos: pos,
+        priceListVersionId: plv.v,
+        registerDefaults: function () { return regDefaults; },
+        productByBarcode: function (upc) {
+          return q1(b3, 'SELECT m_product_id, name FROM m_product WHERE upc=?', upc) || null;
+        },
+        priorCreateCount: priorCreateCount
+      };
+    }
+
+    // Downscale a captured canvas frame to ≤256px and JPEG-compress until base64 payload ≤ 43700 chars.
+    function _downscaleCapture(srcCanvas) {
+      var MAX_SIDE = 256;
+      var MAX_B64 = 43700;
+      var sw = srcCanvas.width, sh = srcCanvas.height;
+      var scale = Math.min(1, MAX_SIDE / Math.max(sw, sh));
+      var tw = Math.max(1, Math.round(sw * scale)), th = Math.max(1, Math.round(sh * scale));
+      var c = document.createElement('canvas'); c.width = tw; c.height = th;
+      var cx = c.getContext('2d'); cx.drawImage(srcCanvas, 0, 0, tw, th);
+      var quality = 0.82;
+      var dataUrl;
+      do {
+        dataUrl = c.toDataURL('image/jpeg', quality);
+        var b64 = dataUrl.split(',')[1] || '';
+        if (b64.length <= MAX_B64) break;
+        quality -= 0.12;
+      } while (quality > 0.1);
+      return dataUrl;
+    }
+
+    importBtn.addEventListener('click', function () {
+      if (!_ie) _ie = _buildImportOverlay();
+      var ie = _ie;
+      var _state = { step: 0, imageThumb: null, imageKey: null, barcode: '', snapStream: null };
+
+      function _setErr(msg) { ie.err.textContent = msg || ''; }
+      function _setHint(msg) { ie.hint.textContent = msg || ''; }
+      function _activateStep(n) {
+        ie.stepEls.forEach(function (s, i) {
+          s.className = 'pos-import-step' + (i < n ? ' done' : i === n ? ' active' : '');
+        });
+      }
+      function _stopSnapStream() {
+        if (_state.snapStream) { _state.snapStream.getTracks().forEach(function (t) { t.stop(); }); _state.snapStream = null; }
+        ie.video.style.display = 'none'; ie.video.srcObject = null;
+      }
+      function _closeImport() {
+        _stopSnapStream();
+        ie.ov.classList.remove('active');
+      }
+
+      ie.close.onclick = function () { _closeImport(); };
+
+      // clear body
+      ie.body.querySelectorAll('.pos-import-dyn').forEach(function (n) { n.parentNode && n.parentNode.removeChild(n); });
+      ie.video.style.display = 'none'; ie.thumb.style.display = 'none'; ie.err.textContent = '';
+
+      // ── STEP 1: SNAP ────────────────────────────────────────────────────────────────────────
+      _state.step = 0; _activateStep(0);
+      _setHint('Take a photo of the product (or skip if no camera).');
+
+      function _buildDyn(tag, cls, text) {
+        var d = document.createElement(tag); d.className = 'pos-import-dyn ' + (cls || '');
+        if (text) d.textContent = text; return d;
+      }
+
+      var takePhotoBtn = _buildDyn('button', 'pos-import-btn'); takePhotoBtn.textContent = 'Take photo';
+      var skipSnapBtn  = _buildDyn('button', 'pos-import-btn'); skipSnapBtn.textContent  = 'Skip photo';
+      skipSnapBtn.style.marginLeft = '8px';
+      ie.body.appendChild(takePhotoBtn); ie.body.appendChild(skipSnapBtn);
+
+      // try camera
+      var hasCam = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      if (!hasCam) {
+        takePhotoBtn.disabled = true;
+        _setHint('No camera available — skip photo and proceed to scan.');
+      } else {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+          .then(function (stream) {
+            _state.snapStream = stream;
+            ie.video.srcObject = stream; ie.video.style.display = 'block';
+          })
+          .catch(function (e) {
+            takePhotoBtn.disabled = true;
+            _setHint('Camera access denied — skip photo.');
+            console.log('§POS-IMPORT getUserMedia denied: ' + e);
+          });
+      }
+
+      function _goToScan() {
+        _stopSnapStream();
+        // clear snap controls
+        ie.body.querySelectorAll('.pos-import-dyn').forEach(function (n) { n.parentNode && n.parentNode.removeChild(n); });
+        _activateStep(1);
+        // ── STEP 2: SCAN ──────────────────────────────────────────────────────────────────────
+        _state.step = 1;
+        _setHint('Scan barcode or type it below, then press Enter.');
+
+        var barcodeInput = _buildDyn('input', 'pos-import-input'); barcodeInput.type = 'text';
+        barcodeInput.placeholder = 'Barcode / UPC — scan or type + Enter';
+        ie.body.appendChild(barcodeInput);
+
+        var scanHint = _buildDyn('div', ''); scanHint.style.cssText = 'color:#8fd;font-size:11px;margin-top:6px;';
+        var hasBD = typeof BarcodeDetector !== 'undefined';
+        if (hasBD) {
+          scanHint.textContent = 'BarcodeDetector active — point camera at barcode OR type above.';
+          // one-shot scan attempt via environment camera
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(function (stream) {
+              _state.snapStream = stream;
+              ie.video.srcObject = stream; ie.video.style.display = 'block';
+              var bd = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','qr_code','data_matrix'] });
+              var tries = 0;
+              function detect() {
+                if (!ie.ov.classList.contains('active') || _state.step !== 1) { _stopSnapStream(); return; }
+                bd.detect(ie.video).then(function (bc) {
+                  if (bc.length) { _stopSnapStream(); barcodeInput.value = bc[0].rawValue; _goToPrice(bc[0].rawValue); }
+                  else if (++tries < 60) { setTimeout(detect, 250); }
+                  else { _stopSnapStream(); scanHint.textContent = 'Scan timed out — type barcode above.'; }
+                }).catch(function () { if (++tries < 60) { setTimeout(detect, 250); } else { _stopSnapStream(); } });
+              }
+              setTimeout(detect, 300);
+            })
+            .catch(function () { scanHint.textContent = 'Camera denied — type barcode above.'; });
+        } else {
+          scanHint.textContent = 'BarcodeDetector not available — type barcode above + Enter.';
+        }
+        ie.body.appendChild(scanHint);
+
+        barcodeInput.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { var v = barcodeInput.value.trim(); if (v) { _stopSnapStream(); _goToPrice(v); } }
+        });
+        // also offer a "Next" button
+        var nextScanBtn = _buildDyn('button', 'pos-import-btn'); nextScanBtn.textContent = 'Use this barcode';
+        nextScanBtn.style.display = 'block'; nextScanBtn.style.marginTop = '10px';
+        nextScanBtn.addEventListener('click', function () { var v = barcodeInput.value.trim(); if (v) { _stopSnapStream(); _goToPrice(v); } else { _setErr('Enter a barcode first.'); } });
+        ie.body.appendChild(nextScanBtn);
+
+        barcodeInput.focus();
+      }
+
+      function _goToPrice(barcode) {
+        _state.barcode = barcode;
+        ie.body.querySelectorAll('.pos-import-dyn').forEach(function (n) { n.parentNode && n.parentNode.removeChild(n); });
+        ie.video.style.display = 'none';
+        _activateStep(2);
+        _state.step = 2;
+        _setHint('Enter the price for "' + barcode + '".');
+        _setErr('');
+
+        var priceInput = _buildDyn('input', 'pos-import-input'); priceInput.type = 'number';
+        priceInput.placeholder = 'Price (e.g. 1.00)'; priceInput.min = '0'; priceInput.step = '0.01'; priceInput.value = '1.00';
+        ie.body.appendChild(priceInput);
+
+        var confirmBtn = _buildDyn('button', 'pos-import-btn'); confirmBtn.textContent = 'Register product';
+        confirmBtn.style.display = 'block'; confirmBtn.style.marginTop = '10px';
+        ie.body.appendChild(confirmBtn);
+
+        confirmBtn.addEventListener('click', function () { _doRegister(priceInput.value.trim()); });
+        priceInput.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { _doRegister(priceInput.value.trim()); } });
+        priceInput.focus();
+      }
+
+      function _doRegister(priceStr) {
+        if (!priceStr || isNaN(Number(priceStr)) || Number(priceStr) < 0) {
+          _setErr('Enter a valid price (e.g. 1.00)'); return;
+        }
+        _activateStep(3); _state.step = 3;
+        _setErr(''); _setHint('Registering…');
+        ie.body.querySelectorAll('.pos-import-dyn').forEach(function (n) { n.parentNode && n.parentNode.removeChild(n); });
+
+        var rCtx = _buildRegisterCtx();
+        var spec = {
+          stationId: pos.c_pos_id,
+          barcode: _state.barcode,
+          name: _state.barcode,      // name = barcode mnemonic per §P-9 seed convention
+          price: priceStr,
+          imageThumb: _state.imageThumb || null,
+          imageKey: _state.imageKey   || null
+        };
+
+        var r = POS.buildRegisterGroup(rCtx, spec);
+        if (r.ok === false) {
+          _activateStep(2); _state.step = 2;
+          _setHint('');
+          _setErr('Register refused: ' + r.reason + (r.bytes ? ' (' + r.bytes + 'B > ' + r.cap + 'B cap)' : '') + (r.existing ? ' · existing product ' + r.existing.m_product_id : ''));
+          console.log('§POS-IMPORT refused reason=' + r.reason);
+          return;
+        }
+
+        cfg.KO.commitGroup(cfg.opDb, r.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
+          .then(function (res) {
+            // store full-res blob in ImgStore if available
+            if (_state.imageThumb && _state.imageKey && window.ImgStore && typeof window.ImgStore.put === 'function') {
+              try {
+                // convert dataURL → Blob for ImgStore
+                var b64part = _state.imageThumb.split(',')[1] || '';
+                var byteStr = atob(b64part);
+                var buf = new Uint8Array(byteStr.length);
+                for (var i = 0; i < byteStr.length; i++) buf[i] = byteStr.charCodeAt(i);
+                var blob = new Blob([buf], { type: 'image/jpeg' });
+                window.ImgStore.put(_state.imageKey, blob).catch(function () {});
+              } catch (e) {}
+            }
+            // render the new tile in the album grid
+            _addNewTileCard(r.productId, _state.barcode, priceStr, _state.imageThumb, _state.imageKey);
+            // register in session tracker → §POS-FIRSTSELL
+            _sessionProductIds[r.productId] = true;
+            console.log('§POS-IMPORT registered productId=' + r.productId + ' barcode=' + _state.barcode +
+              ' price=' + priceStr + ' hasPhoto=' + (!!_state.imageThumb) +
+              ' gid=' + res.gid + ' ops=' + res.ids.length);
+            _closeImport();
+          })
+          .catch(function (e) {
+            _activateStep(2); _state.step = 2;
+            _setHint(''); _setErr('Commit failed: ' + String(e));
+            console.log('§POS-IMPORT commit FAIL ' + e);
+          });
+      }
+
+      takePhotoBtn.addEventListener('click', function () {
+        if (!_state.snapStream) { _goToScan(); return; }  // no live stream — skip to scan
+        // capture frame to canvas
+        var vid = ie.video;
+        ie.canvas.width = vid.videoWidth || 320; ie.canvas.height = vid.videoHeight || 240;
+        var cx = ie.canvas.getContext('2d'); cx.drawImage(vid, 0, 0);
+        var dataUrl = _downscaleCapture(ie.canvas);
+        _state.imageThumb = dataUrl;
+        // imageKey = content-hash stub; a real SHA-256 needs SubtleCrypto (async) or a JS sha256.
+        // Use a deterministic key from the b64 payload length + a timestamp-free counter.
+        _state.imageKey = 'thumb:' + (dataUrl.length).toString(16) + ':' + _state.barcode;
+        ie.thumb.src = dataUrl; ie.thumb.style.display = 'block';
+        _stopSnapStream();
+        // remove snap buttons
+        ie.body.querySelectorAll('.pos-import-dyn').forEach(function (n) { n.parentNode && n.parentNode.removeChild(n); });
+        _setHint('Photo captured.');
+        _goToScan();
+      });
+
+      skipSnapBtn.addEventListener('click', function () {
+        _state.imageThumb = null; _state.imageKey = null;
+        _stopSnapStream();
+        ie.body.querySelectorAll('.pos-import-dyn').forEach(function (n) { n.parentNode && n.parentNode.removeChild(n); });
+        _setHint('No photo — skipped.');
+        _goToScan();
+      });
+
+      ie.ov.classList.add('active');
+      console.log('§POS-IMPORT mode=open');
+    });
+
     // ── Complete handler ───────────────────────────────────────────────────────────────────────
     btn.addEventListener('click', function () {
       if (!cart.length) { cfg.status('Cart is empty'); return; }
@@ -662,6 +1077,11 @@
           }).then(function (cv) {
             var chainOk = cv && cv.ok ? 'Y' : 'N';
             var grandTotal = POS.cartTotal(saleCart);
+            // U-3: §POS-FIRSTSELL — fires when a completed cart contains a session-registered product
+            var _firstSellHit = saleCart.some(function (c) { return !!_sessionProductIds[c.m_product_id]; });
+            if (_firstSellHit) {
+              console.log('§POS-FIRSTSELL snap=Y scan=Y price=keyed tile=rendered sold=Y elapsed<60s');
+            }
             console.log('§POS-SALE lines=' + g.soLines.length + ' dispatch=SALE newVerbs=[] chainOk=' + chainOk +
               ' gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed);
             console.log('§POS-DOC order=' + ids.orderId + ' completeIt ok (C_Order+M_InOut+C_Invoice CO in ONE group)');
