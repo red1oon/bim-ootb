@@ -219,13 +219,21 @@
     st.style.cssText = 'position:fixed;left:8px;right:8px;bottom:64px;z-index:1200;display:flex;gap:8px;align-items:center;' +
       'background:rgba(16,24,40,.92);color:#e3f2fd;border:1px solid #4fc3f7;border-radius:12px;padding:10px 12px;' +
       'font:13px system-ui;backdrop-filter:blur(6px)';
-    st.innerHTML = '<div id="wh-step" style="flex:1;min-width:0"></div>' +
-      '<button id="wh-scan-btn" style="background:#4fc3f7;color:#06263a;border:0;border-radius:8px;padding:8px 12px;font-weight:600">Scan bin</button>' +
-      '<button id="wh-close" style="background:none;color:#90a4ae;border:0;font-size:16px">✕</button>';
+    st.innerHTML = '<button id="wh-home" title="Home" style="background:none;color:#90caf9;border:0;font-size:18px;line-height:1;cursor:pointer">⌂</button>' +
+      '<div id="wh-step" style="flex:1;min-width:0"></div>' +
+      '<button id="wh-scan-btn" style="background:#4fc3f7;color:#06263a;border:0;border-radius:8px;padding:8px 12px;font-weight:600">Confirm bin</button>' +
+      '<button id="wh-close" title="Exit walk (back to view)" style="background:none;color:#90a4ae;border:0;font-size:16px;cursor:pointer">✕</button>';
     document.body.appendChild(st);
     ui.strip = st; ui.step = st.querySelector('#wh-step');
     st.querySelector('#wh-close').addEventListener('click', close);
     st.querySelector('#wh-scan-btn').addEventListener('click', function () { openScan(false); });
+    // ⌂ home — one tap back to the opener (?home=, e.g. iDempiere) or the bubbles landing.
+    // Browser-back walks the whole nav stack down to the landing; this is the single-hop escape.
+    st.querySelector('#wh-home').addEventListener('click', function () {
+      var dest = (A && A.HOME_URL) || '../index.html';
+      log('HOME nav=' + dest);
+      location.href = dest;
+    });
     // long-press on the strip = skip-with-reason (§S-3 exception trail)
     var hold = null;
     ui.step.addEventListener('pointerdown', function () { hold = setTimeout(function () { hold = null; skipPrompt(); }, 550); });
@@ -234,7 +242,12 @@
     var sc = document.createElement('div');
     sc.id = 'wh-scan';
     sc.style.cssText = 'position:fixed;inset:0;z-index:1300;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,10,20,.93);color:#e3f2fd;font:14px system-ui;padding:16px';
-    sc.innerHTML = '<div id="wh-scan-title" style="margin-bottom:10px;font-weight:600"></div>' +
+    sc.innerHTML = '<div id="wh-scan-title" style="margin-bottom:10px;font-weight:600;text-align:center"></div>' +
+      // §S-4b manual confirm — the obvious DIY / desktop / no-camera act: you are standing at the
+      // LIT target bin, so vouch for it. Feeds the EXPECTED locator through the SAME gate (via=manual);
+      // wrong-bin protection still lives in the 3D tap path (onPick refuses a non-target bin).
+      '<button id="wh-manual" style="background:#66bb6a;color:#06263a;border:0;border-radius:10px;padding:14px 18px;font-weight:700;font-size:15px;width:min(86vw,420px)">✓ I\'m at this bin — confirm</button>' +
+      '<div style="margin:12px 0;color:#607d8b;font-size:12px">— or scan its QR / type the code —</div>' +
       '<video id="wh-vid" playsinline style="width:min(86vw,420px);border-radius:12px;background:#000"></video>' +
       '<div id="wh-scan-status" style="margin:10px 0;min-height:20px;text-align:center"></div>' +
       '<div style="display:flex;gap:8px;align-items:center"><input id="wh-typed" inputmode="numeric" placeholder="type locator code" ' +
@@ -250,6 +263,7 @@
     ui.scan = sc; ui.vid = sc.querySelector('#wh-vid'); ui.scanStatus = sc.querySelector('#wh-scan-status');
     ui.qtyRow = sc.querySelector('#wh-qty'); ui.qtyVal = sc.querySelector('#wh-qty-val');
     sc.querySelector('#wh-scan-close').addEventListener('click', closeScan);
+    sc.querySelector('#wh-manual').addEventListener('click', function () { window.WHWalk.confirmHere(); });
     sc.querySelector('#wh-typed-go').addEventListener('click', function () {
       var v = sc.querySelector('#wh-typed').value;
       window.WHWalk.scanInput(v, 'typed');
@@ -289,6 +303,15 @@
     var s = currentStep();
     if (String(guid) === String(s.m_locator_id)) { log('TAP bin=' + guid + ' target=Y → scan'); openScan(true); }
     else log('TAP bin=' + guid + ' target=N step-held=' + s.step + '/' + s.of + ' (no advance)');
+  };
+
+  // §S-4b manual confirm — vouch you are at the LIT target bin (no camera/code needed). Routes the
+  // EXPECTED locator through the SAME scanInput gate (always MATCH here by construction), logged
+  // via=manual so the trail shows it was operator-vouched, not scanned. The signed op group, the
+  // qty confirm, and the fold are byte-identical to the QR path — nothing about the engine changes.
+  window.WHWalk.confirmHere = function () {
+    if (!W.open || !W.steps.length || W.idx >= W.steps.length) return false;
+    return window.WHWalk.scanInput(String(currentStep().m_locator_id), 'manual');
   };
 
   // ── §S-4 scan: ONE gate for camera QR and typed code ──
@@ -439,6 +462,11 @@
     if (!window.WHRoute) { log('OPEN fail wh_route.js not loaded'); return; }
     W.open = true;
     ui.strip.style.display = 'flex';
+    // §S-3 walk mode ENGAGES — clear the BIM construction chrome so the picker is in the WALK,
+    // not BIM-with-a-strip. The pill bar is hidden (not destroyed) and restored verbatim on close.
+    var bar = document.getElementById('mobile-pill');
+    if (bar) { W._barDisplay = bar.style.display; bar.style.display = 'none'; }
+    log('MODE walk-on (BIM pill bar hidden)');
     if (!W.steps.length) { await draftPick(); buildRoute(); W.idx = 0; }
     log('OPEN steps=' + W.steps.length + ' doc=' + W.doc.id + ' status=' + W.doc.docStatus);
     advance();
@@ -447,6 +475,10 @@
     W.open = false;
     closeScan();
     if (ui.strip) ui.strip.style.display = 'none';
+    // restore the BIM chrome exactly as it was (walk mode OFF → back to BIM view)
+    var bar = document.getElementById('mobile-pill');
+    if (bar) bar.style.display = (W._barDisplay != null ? W._barDisplay : '');
+    log('MODE walk-off (BIM pill bar restored)');
     _clearDepth();
     if (W.xrayWasOff && A.xrayOn && A.toggleXray) { A.toggleXray(); W.xrayWasOff = false; }
     if (A.markDirty) A.markDirty();
