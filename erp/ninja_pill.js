@@ -96,7 +96,7 @@
       '<div id="np-drop" style="border:2px dashed rgba(255,255,255,0.25);border-radius:10px;padding:26px 12px;text-align:center;' +
         'cursor:pointer;font-size:13px;">' + ico('download', 16) + ' drop .xlsx here / tap to choose</div>' +
       '<input id="np-file" type="file" accept=".xlsx" style="display:none;">' +
-      '<div style="margin-top:8px;font-size:12px;"><a id="np-sample" href="ninja_sample.xlsx" download ' +
+      '<div style="margin-top:8px;font-size:12px;"><a id="np-sample" ' +
         'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample workbook (GardenWorld invoice summary — runnable as-is)</a></div>' +
       '<div id="np-out" style="margin-top:12px;font-size:12px;"></div>';
     p.appendChild(box);
@@ -113,7 +113,45 @@
       if (ev.dataTransfer.files.length) _onFile(ev.dataTransfer.files[0]);
     });
     file.addEventListener('change', function () { if (file.files.length) _onFile(file.files[0]); });
+    box.querySelector('#np-sample').addEventListener('click', fetchSample);
     console.log('§NINJA-PILL open db=Y engine=' + (global.NinjaExcel ? 'Y' : 'MISSING'));
+  }
+
+  // sample workbook fetch: LOCAL copy first (same-origin asset, SW-precached for offline) — if that
+  // is unreachable (page hosted without the asset, stale cache), fall back to the canonical GH Pages
+  // copy; either way the user is TOLD where it came from and what to do next (toast + §-log).
+  var SAMPLE_GH = 'https://red1oon.github.io/bim-ootb/erp/ninja_sample.xlsx';
+  function fetchSample() {
+    function grab(url) {
+      return fetch(url).then(function (r) { if (!r.ok) throw new Error(url + ' → HTTP ' + r.status); return r.blob(); });
+    }
+    return grab('ninja_sample.xlsx').then(function (b) { return { blob: b, source: 'local' }; })
+      .catch(function () { return grab(SAMPLE_GH).then(function (b) { return { blob: b, source: 'gh-pages' }; }); })
+      .then(function (got) {
+        var url = URL.createObjectURL(got.blob);
+        var a = el('a', { href: url, download: 'ninja_sample.xlsx' });
+        document.body.appendChild(a); a.click(); a.remove();
+        console.log('§NINJA-PILL sample source=' + got.source + ' bytes=' + got.blob.size);
+        toast('Sample saved to your downloads' + (got.source === 'gh-pages' ? ' (fetched from GH Pages — no local copy)' : '') +
+              ' — open it in Excel, or drop it straight back here to run it.');
+        return got.source;
+      })
+      .catch(function (e) {
+        console.log('§NINJA-PILL sample=UNREACHABLE ' + String(e.message || e));
+        toast('Could not fetch the sample (offline and not cached). Connect once and retry.');
+        return null;
+      });
+  }
+
+  function toast(msg) {
+    var t = el('div', { id: 'np-toast' }, msg);
+    t.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);z-index:9600;max-width:80vw;' +
+      'padding:10px 18px;border-radius:8px;font-size:12.5px;font-family:system-ui,sans-serif;transition:opacity .5s;' +
+      'background:rgba(40,44,58,0.97);color:#cdd6e4;border:1px solid rgba(255,255,255,0.15);pointer-events:none;';
+    var old = document.getElementById('np-toast'); if (old) old.remove();
+    document.body.appendChild(t);
+    setTimeout(function () { t.style.opacity = '0'; }, 3600);
+    setTimeout(function () { if (t.parentNode) t.remove(); }, 4200);
   }
 
   function _onFile(f) {
@@ -286,6 +324,6 @@
   }
 
   global.NinjaPill = { open: open, close: close, handleBuffer: handleBuffer,
-                       ruleCompile: ruleCompile, ruleApply: ruleApply };
+                       ruleCompile: ruleCompile, ruleApply: ruleApply, fetchSample: fetchSample };
   console.log('§NINJA-PILL loaded');
 })(typeof self !== 'undefined' ? self : this);
