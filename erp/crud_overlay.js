@@ -182,16 +182,179 @@
   // buildDocActionGroup — PURE (no DOM): turn ONE overlay DOC_ACTION op into the group of kernel ops the
   // live write path commits ATOMICALLY via KernelOps.commitGroup. Returns the commitGroup op-shape array
   // ({op_type, op_uuid, params}) so commitGroup folds them all-or-none, sealed ONCE from the tip (I-D win).
-  // Today the honest set is exactly ONE op: the SET_STATUS status transition we actually have extracted.
-  function buildDocActionGroup(op) {
+  //
+  // Implementing SO_FULL_CRUD_GAP.md T1 (GAP 1) — Witness: W-SO-COMPLETE-UI.
+  // `fanout` (optional) = { ops: <ENGINE consequence ops>, glGate?: <reason> } — the completeIt fan-out the
+  // PROVEN engine extracts (ERPEngine.completeOrder, W-FOLD-COMPLETE oracle-equivalent: CREATE_DOCUMENT
+  // M_InOut + CREATE_LINE per order line + CREATE_DOCUMENT C_Invoice + CREATE_LINE per line). NON-INVENT:
+  // each engine op rides as the kernel op's params VERBATIM (the pos_lens.js group pattern) — this function
+  // only ASSEMBLES; it never re-derives quantities/amounts/accounts. The engine's own SET_STATUS is dropped
+  // (the FSM transition rides OUR statusOp exactly once); SET_STATUS goes LAST — consequences first, the
+  // status seals the gesture. No fanout (absent engine / non-CO action / gated) → the honest [SET_STATUS].
+  function buildDocActionGroup(op, fanout) {
     if (!op || op.op_type !== 'DOC_ACTION') return null;
     var statusOp = { op_type: 'SET_STATUS', op_uuid: op.op_uuid || null, params: kernelParamsFor(op) };
-
-    // §I-K consequence set — DELEGATED (install-side: I-C procedural callouts + I-G §13.6 postings).
-    // NON-INVENT: do not synthesize SHIP/INVOICE/Dr-AR/Cr-Rev here. When the install/re-extract provides
-    // the extracted ops for this docAction, push them into `groupOps` below; commitGroup already folds them all-or-none.
-    var groupOps = [ statusOp ];   // today: the status transition only (honest); extensible to N.
+    var groupOps = [];
+    if (fanout && fanout.ops && fanout.ops.length) {
+      fanout.ops.forEach(function (eo) {
+        if (!eo || eo.op_type === 'SET_STATUS') return;            // status rides OUR statusOp, exactly once
+        groupOps.push({ op_type: eo.op_type, op_uuid: null, params: eo });   // engine op VERBATIM (non-invent)
+      });
+    }
+    groupOps.push(statusOp);
     return groupOps;
+  }
+
+  // docPolicyFor — PURE. Implementing SO_FULL_CRUD_GAP.md T1 — Witness: W-SO-COMPLETE-UI.
+  // The completeIt fan-out flags are DATA (iDempiere C_DocType decision table), EXTRACTED into
+  // crud_ops.json __meta.docPolicy (← erp_rules.db DOCPOLICY:<id> ← the real c_doctype capture).
+  // Unknown doctype → null (the caller GATES the fan-out — never a defaulted 'Y', non-invent).
+  function docPolicyFor(store, doctypeId) {
+    var m = store && store.__meta && store.__meta.docPolicy;
+    return (m && doctypeId != null && m[String(doctypeId)]) || null;
+  }
+
+  // tipDocs — read-the-tip CREATED documents for a table from the signed op-log: every non-undone
+  // CREATE_DOCUMENT op whose params.table matches (case-insensitive — the engine emits 'M_InOut',
+  // overlay keys are 'm_inout'). The CREATE-side sibling of readTip (docstatus) / tipValues (fields).
+  function tipDocs(db, table) {
+    var out = [], want = String(table || '').toLowerCase();
+    try {
+      var r = db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='CREATE_DOCUMENT' AND undone=0 ORDER BY id ASC");
+      if (!r.length) return out;
+      r[0].values.forEach(function (row) {
+        try {
+          var p = JSON.parse(row[1]);
+          if (p && String(p.table || '').toLowerCase() === want) out.push({ opId: row[0], doc: p });
+        } catch (e) {}
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  // listTip — read-the-tip at the LIST level (SO_FULL_CRUD_GAP.md T2 / GAP 2 — Witness: W-CRUD-LIST).
+  // PURE: the IMMUTABLE bundle rows for a table come in (baseRows, already read from glassbowl_data.db);
+  // replay the signed op-log filtered to that table — CRUD_CREATE rows are UNIONed (surfacing newly raised
+  // documents), CRUD_DELETE tombstones HIDE matching ids — latest-wins, in commit (id) order. The
+  // CREATE/UPDATE/DELETE sibling of tipValues (field-level) lifted to the row set. glassbowl_data.db stays
+  // the IMMUTABLE baseline — baseRows is NEVER mutated; created/hidden live only in the returned overlay.
+  // Created rows get a SYNTHETIC negative pk (kernel op id, negated) so they are stable + collision-free
+  // against real pks and survive a sidecar rehydrate (the op id is durable). A later CRUD_UPDATE/CRUD_DELETE
+  // on a created row (keyed by that synthetic pk) folds latest-wins like any other. JS-side filter (no
+  // json_extract dependency). Returns { rows, created:[pk…], hidden:[pk…] }.
+  function listTip(db, table, pkCol, baseRows) {
+    var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
+    var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
+    var created = [], hidden = [], want = String(table || '').toLowerCase();
+    if (!db) return { rows: rows, created: created, hidden: hidden };
+    try {
+      var r = db.exec("SELECT id, op_type, parameters FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0 ORDER BY id ASC");
+      if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden };
+      r[0].values.forEach(function (row) {
+        var opId = row[0], type = row[1], p;
+        try { p = JSON.parse(row[2]); } catch (e) { return; }
+        if (!p || String(p.table || '').toLowerCase() !== want) return;
+        if (type === 'CRUD_CREATE') {
+          var synth = -opId;                                  // synthetic, collision-free, durable pk for the new row
+          var nr = {}; var f = p.fields || {}; for (var c in f) if (f.hasOwnProperty(c)) nr[c] = f[c];
+          nr[pkCol] = synth; byId[String(synth)] = nr; rows.push(nr);
+          if (created.indexOf(synth) < 0) created.push(synth);
+        } else if (type === 'CRUD_UPDATE') {
+          var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
+          if (ex) { var ch = p.changes || {}; for (var cc in ch) if (ch.hasOwnProperty(cc)) ex[cc] = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc]; }
+        } else if (type === 'CRUD_DELETE') {
+          if (p.id != null && hidden.indexOf(p.id) < 0) hidden.push(p.id);
+        }
+      });
+    } catch (e) {}
+    // apply tombstones last (a delete after a create on the same id still hides it).
+    var hideSet = {}; hidden.forEach(function (h) { hideSet[String(h)] = 1; });
+    rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])]; });
+    created = created.filter(function (c) { return !hideSet[String(c)]; });
+    return { rows: rows, created: created, hidden: hidden };
+  }
+
+  // gateOp — the owner-gate + CAS pre-seal check (SO_FULL_CRUD_GAP.md T4 / GAP 4 — Witness: W-CRUD-GATE).
+  // INVESTIGATED: kernel_ops.js commitGroup does NOT enforce owner/CAS (it gates only empty-group /
+  // rate-as-input / expectedHash torn-group / tx-integrity), so an unauthorized edit would commit silently.
+  // This lifts the EXISTING owner-gate / CAS policy from erp_replay.js (G-SINGLE-WRITER owner-gate +
+  // set-if-unset CAS — W-OWNER, ERP.md §9-C/D/E) into a PURE pre-check the live commit funnel runs BEFORE
+  // sealing. NON-INVENT: SAME rule, not a new policy — owner-gate = the editing actor MUST equal the
+  // recorded owner; CAS = the op's expected baseline MUST match the record's current value. Identity is a
+  // recorded INPUT (§0.21) — the gate READS owner/actor/cas, never recomputes them.
+  //   ctx = { actor, owner, casCol?, casExpected?, casCurrent? }.
+  // Only applies to an ownerGated op (op.ownerGated truthy); a non-gated op always passes (back-compat).
+  // Missing actor/owner inputs → cannot prove ownership → REJECT reason=owner (fail-closed, never default-allow).
+  // Returns { ok, reason? } where reason ∈ {owner, cas}.
+  function gateOp(op, ctx) {
+    if (!op || !op.ownerGated) return { ok: true };
+    ctx = ctx || {};
+    if (ctx.owner == null || ctx.actor == null || String(ctx.actor) !== String(ctx.owner))
+      return { ok: false, reason: 'owner' };
+    // CAS set-if-unset / set-if-match: when a cas column is declared and an expected baseline is supplied,
+    // it must equal the record's current value (a stale read loses) — the erp_replay CLAIM CAS, generalized.
+    if (op.cas != null || ctx.casCol != null) {
+      if (ctx.casExpected !== undefined && ctx.casCurrent !== undefined && String(ctx.casExpected) !== String(ctx.casCurrent))
+        return { ok: false, reason: 'cas' };
+    }
+    return { ok: true };
+  }
+
+  // ── group-aware Z fold (SO_FULL_CRUD_GAP.md T1 Part B) — Witness: W-SO-COMPLETE-UI ──────────────
+  // A Complete now commits a GROUP (ship + invoice + status sharing one gid), so the history fold must
+  // reverse/replay the WHOLE gesture — not one op. These are the REAL fold verbs (db + kernel in, no DOM);
+  // the DOM foldBackDocOp/foldForwardDocOp delegate here, so deployed glassbowl.html's foldDocOps →
+  // crudFoldBack(key,from,to) plumbing is REUSED UNCHANGED (no second history lane).
+  function _foldLabel(opType, params) {
+    if (opType === 'SET_STATUS') return 'status';
+    if (opType === 'POST') return 'gl';
+    var t = String((params && params.table) || '').toLowerCase();
+    if (t.indexOf('m_inout') === 0) return 'ship';
+    if (t.indexOf('c_invoice') === 0) return 'invoice';
+    return t || String(opType || '').toLowerCase();
+  }
+  function _foldLabels(ops) {
+    var seen = {}; ops.forEach(function (o) { seen[_foldLabel(o.op_type, o.parameters)] = 1; });
+    var canon = ['ship', 'invoice', 'gl', 'status'];
+    return canon.filter(function (l) { return seen[l]; })
+      .concat(Object.keys(seen).filter(function (l) { return canon.indexOf(l) < 0; }));
+  }
+  // foldBackGroup — undo the TIP gesture WHOLE: if the most-recent non-undone op carries a gid, undo
+  // EVERY non-undone op of that gid via the kernel verb (undoOp takes newest-first → REVERSE commit
+  // order: status, then invoice, then ship); a gid-less op folds alone (back-compat). Group ops are
+  // contiguous at the tip (one transaction), so the kernel verb never strays outside the gid — asserted.
+  function foldBackGroup(db, K) {
+    var out = { gid: null, undone: [], labels: [] };
+    try {
+      var r = db.exec('SELECT id, gid FROM kernel_ops WHERE undone=0 ORDER BY id DESC LIMIT 1');
+      if (!r.length || !r[0].values.length) return out;
+      out.gid = r[0].values[0][1] || null;
+      var n = 1;
+      if (out.gid) {
+        var c = db.exec('SELECT COUNT(*) FROM kernel_ops WHERE undone=0 AND gid=' + JSON.stringify(out.gid));
+        n = (c.length && c[0].values.length) ? Number(c[0].values[0][0]) : 1;
+      }
+      for (var i = 0; i < n; i++) { var u = K.undoOp(db); if (!u) break; out.undone.push(u); }
+    } catch (e) {}
+    out.labels = _foldLabels(out.undone);
+    return out;
+  }
+  // foldForwardGroup — redo the EARLIEST undone gesture WHOLE (redoOp takes oldest-first → commit order).
+  function foldForwardGroup(db, K) {
+    var out = { gid: null, redone: [], labels: [] };
+    try {
+      var r = db.exec('SELECT id, gid FROM kernel_ops WHERE undone=1 ORDER BY id ASC LIMIT 1');
+      if (!r.length || !r[0].values.length) return out;
+      out.gid = r[0].values[0][1] || null;
+      var n = 1;
+      if (out.gid) {
+        var c = db.exec('SELECT COUNT(*) FROM kernel_ops WHERE undone=1 AND gid=' + JSON.stringify(out.gid));
+        n = (c.length && c[0].values.length) ? Number(c[0].values[0][0]) : 1;
+      }
+      for (var i = 0; i < n; i++) { var u = K.redoOp(db); if (!u) break; out.redone.push(u); }
+    } catch (e) {}
+    out.labels = _foldLabels(out.redone);
+    return out;
   }
 
   // readTip — read-the-tip docstatus for (table,id) from the signed op-log: the latest NON-undone
@@ -304,7 +467,10 @@
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
     normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,
-    listOptions: listOptions, splitStatusChange: splitStatusChange
+    listOptions: listOptions, splitStatusChange: splitStatusChange,
+    docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
+    foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
+    listTip: listTip, gateOp: gateOp                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -387,11 +553,21 @@
   }
   function clearHots() { hots.forEach(function (h) { if (h.el.parentNode) h.el.parentNode.removeChild(h.el); }); hots = []; }
 
+  // bubbleXY — where the ring/hotzone anchors for `key`. Glassbowl: the projected bubble center.
+  // HOST-ANCHORED (SO_FULL_CRUD_GAP.md T3 / GAP 3): on a surface with no bubble model (e.g. the iDempiere
+  // renderer — no N/idx/project), the host supplies the anchor via global.__crudHostAnchor(key) → {x,y,r}
+  // (e.g. the focused record's row/edit-button rect). ONE overlay, two anchors — no fork. Returns null when
+  // neither is available (ring/hot self-hides).
   function bubbleXY(key) {
-    if (typeof idx === 'undefined' || idx[key] == null || typeof N === 'undefined') return null;
-    var n = N[idx[key]]; if (!n) return null; project(n);
-    var r = (typeof radius === 'function' ? radius(n) : 14);
-    return { x: px + n.sx * k, y: py + n.sy * k, r: Math.max(13, r * k) };
+    if (typeof idx !== 'undefined' && idx[key] != null && typeof N !== 'undefined') {
+      var n = N[idx[key]]; if (n) { project(n);
+        var r = (typeof radius === 'function' ? radius(n) : 14);
+        return { x: px + n.sx * k, y: py + n.sy * k, r: Math.max(13, r * k) }; }
+    }
+    if (typeof global.__crudHostAnchor === 'function') {
+      try { var a = global.__crudHostAnchor(key); if (a && a.x != null && a.y != null) return { x: a.x, y: a.y, r: a.r || 16 }; } catch (e) {}
+    }
+    return null;
   }
   function positionHots() {
     hots.forEach(function (h) {
@@ -743,17 +919,61 @@
     docDot(CORE.docLabel(op, fname(op.key)) + ' (dry)', op);
     toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress — unmet condition)' : ' (Completed)') + ' — dry-run');
   }
+  // Implementing SO_FULL_CRUD_GAP.md T1 (GAP 1) — Witness: W-SO-COMPLETE-UI.
+  // completeFanout — EXTRACT the completeIt consequence set for a c_order Complete from the PROVEN engine
+  // (window.ERPEngine.completeOrder — W-FOLD-COMPLETE, oracle-equivalent to the cent headless): order
+  // header + lines read from the IMMUTABLE bundle, fan-out flags from the EXTRACTED DOCPOLICY decision
+  // table (crud_ops.json __meta.docPolicy ← erp_rules.db ← real c_doctype). The overlay only ASSEMBLES —
+  // the engine supplies every quantity; nothing is re-derived here (non-invent).
+  // GL postings (fact_acct) are COVERAGE-GATED on this surface, honestly (the posting-preview data-gate
+  // pattern): the bundle carries no c_ordertax (a fresh order's invoice tax legs are non-derivable) and
+  // post_resolver is not mounted — the omission is LOGGED, never faked. Ship/Invoice creation still works.
+  // cb(fanout|null): null → the honest status-only group (engine absent / non-CO / no policy / re-complete).
+  function completeFanout(op, cb) {
+    if (!(op.key === 'c_order' && op.action === 'CO' && op.to === 'CO' && op.outcome === 'success')) { cb(null); return; }
+    if (op.from === 'CO') { console.log('§SO-COMPLETE fan-out skipped: already CO (no duplicate consequence docs)'); cb(null); return; }
+    var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
+    if (!E || typeof E.completeOrder !== 'function' || typeof withBundle !== 'function' || op.id == null) {
+      console.log('§SO-COMPLETE fan-out gated: ' + (E ? 'bundle/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
+      cb(null); return;
+    }
+    withBundle(function (db) {
+      var fanout = null;
+      try {
+        var or = db.exec('SELECT * FROM c_order WHERE c_order_id=' + Number(op.id) + ' LIMIT 1');
+        if (!or.length || !or[0].values.length) { console.log('§SO-COMPLETE fan-out gated: order ' + op.id + ' not in bundle → status-only'); cb(null); return; }
+        var order = {}; or[0].columns.forEach(function (c, i) { order[c] = or[0].values[0][i]; });
+        var lr = db.exec('SELECT c_orderline_id, m_product_id, qtyordered FROM c_orderline WHERE c_order_id=' + Number(op.id));
+        var lines = (lr.length ? lr[0].values : []).map(function (v) { return { c_orderline_id: v[0], m_product_id: v[1], qtyordered: v[2] }; });
+        var policy = CORE.docPolicyFor(STORE, order.c_doctype_id);
+        if (!policy) { console.log('§SO-COMPLETE fan-out gated: no DOCPOLICY for c_doctype_id=' + order.c_doctype_id + ' (extract gap — never defaulted to Y)'); cb(null); return; }
+        var ops = E.completeOrder(order, lines, policy).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+        console.log('§SO-FANOUT order=' + op.id + ' doctype=' + order.c_doctype_id + ' policy(io,inv)=' + policy.isautogenerateinout + ',' + policy.isautogenerateinvoice +
+                    ' lines=' + lines.length + ' engineOps=' + ops.length + ' gl=gated(no c_ordertax in bundle + post_resolver not mounted — postings stay the proven headless lane, never faked)');
+        fanout = ops.length ? { ops: ops, glGate: 'no-order-side-acct/tax-linkage' } : null;
+      } catch (er) { console.log('§SO-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
+      cb(fanout);
+    });
+  }
+
   // commitProcess — the REAL signed write loop (W-CHAIN), now via §I-K commitGroup (Phase 3, UI tier):
-  // buildDocActionGroup → commitGroup(db, groupOps, {gid}) → verifyChain → persist sidecar → paint
-  // #docStatusBar from the COMMITTED `to`. commitGroup folds the ops all-or-none and SEALS ONCE from the
-  // tip (the I-D win — not a whole-log reseal). Today the group is just [statusOp]; it is atomic-READY for
-  // the future consequence ops (delegated — see buildDocActionGroup). The op-log is the truth; reversible.
+  // completeFanout → buildDocActionGroup → commitGroup(db, groupOps, {gid}) → verifyChain → persist
+  // sidecar → paint #docStatusBar from the COMMITTED `to`. commitGroup folds the ops all-or-none and
+  // SEALS ONCE from the tip (the I-D win — not a whole-log reseal). T1 (W-SO-COMPLETE-UI): a c_order
+  // Complete now carries the engine's consequence ops (ship + invoice creates) ahead of SET_STATUS; the
+  // committed op is stamped with the gid so the history MOMENT carries the WHOLE group (Part B).
   function commitProcess(op) {
     var K = kernel();
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD process key=' + op.key + ' kernel/sql.js/commitGroup absent → DRY fallback'); dryProcess(op); return; }
+      // T4 (GAP 4): a DocAction (Complete/Close/Void) is an ownerGated mutation of an owned document —
+      // gate owner+CAS BEFORE the seal; a non-owner / stale-CAS process is REJECTED (toast, no dot, no
+      // fan-out), never silently sealed. Non-gated doctypes pass through unchanged.
+      _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, db, function (gate) {
+        if (!gate.ok) { _gateReject(op, gate); return; }
+      completeFanout(op, function (fanout) {
       try {
-        var groupOps = CORE.buildDocActionGroup(op);   // PURE: today [statusOp]; extensible to N (all-or-none)
+        var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
         Promise.resolve(K.commitGroup(db, groupOps, {})).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
           return Promise.resolve(K.verifyChain(db)).then(function (v) {
@@ -761,6 +981,14 @@
             var lastId = res.ids[res.ids.length - 1];
             var row = db.exec('SELECT op_uuid FROM kernel_ops WHERE id=' + lastId);
             var uuid = (row.length && row[0].values.length) ? row[0].values[0][0] : null;
+            // T1 Part B: stamp the group onto the op BEFORE docDot — recordDocMoment stores the op
+            // verbatim (v.docOp), so the ONE history dot carries the whole consequence group.
+            op.gid = res.gid; op.groupN = res.ids.length;
+            if (fanout && fanout.ops) {
+              var nShip = 0, nInv = 0;
+              fanout.ops.forEach(function (o) { if (o.op_type === 'CREATE_DOCUMENT') { if (o.table === 'M_InOut') nShip++; else if (o.table === 'C_Invoice') nInv++; } });
+              console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=gated sealed=Y gid=' + res.gid);
+            }
             console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
             setDocStatus(op.key, op.to, op.outcome, op.unmet);
             docDot(CORE.docLabel(op, fname(op.key)), op);
@@ -768,6 +996,8 @@
           });
         }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); dryProcess(op); });
       } catch (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); }
+      });
+      });
     });
   }
 
@@ -779,45 +1009,42 @@
 
   // A-GRAIL (HISTORY_SESSION_EVENTS.md §A-GRAIL) — Witness: W-FOLD-BACK.
   // foldBackDocOp: called by glassbowl.html scrubTo when moving BACKWARD past a DOC_ACTION dot.
-  // Marks the most-recent non-undone kernel op as undone + paints the status bar at fromStatus.
-  // Both fold fns RETURN Promise<boolean> (CONSISTENCY_FINISH.md §K-4b): true = the signed sidecar
-  // op-log really flipped; false = dry (sidecar/kernel absent, only the status chip moved). The sidecar
-  // opens async, so a synchronous boolean would be invented — callers that ignore it are unaffected.
+  // T1 Part B (SO_FULL_CRUD_GAP.md, W-SO-COMPLETE-UI): the dot's gesture may be a GROUP (Complete =
+  // ship + invoice + status sharing one gid) — CORE.foldBackGroup undoes the WHOLE gid in REVERSE
+  // commit order (un-status, un-invoice, un-ship); a gid-less single op folds exactly as before.
+  // glassbowl.html's foldDocOps → crudFoldBack(key,from,to) plumbing is REUSED UNCHANGED.
   function foldBackDocOp(key, fromStatus, toStatus) {
     var K = kernel();
-    return new Promise(function (resolve) {
-      withSidecar(function (db) {
-        var ok = false;
-        if (db && K && typeof K.undoOp === 'function') {
-          var undone = K.undoOp(db);
-          _sidePersist();
-          ok = !!(undone && undone.id);
-          console.log('§FOLD-BACK key=' + key + ' status=' + (toStatus || '?') + '→' + fromStatus + ' undone_id=' + (undone && undone.id || 'null') + ' ok=' + (ok ? 'Y' : 'N'));
-        } else {
-          console.log('§FOLD-BACK key=' + key + ' status=→' + fromStatus + ' (dry — sidecar absent) ok=N');
-        }
-        setDocStatus(key, fromStatus, 'completed', []);
-        resolve(ok);
-      });
+    withSidecar(function (db) {
+      if (db && K && typeof K.undoOp === 'function') {
+        var g = CORE.foldBackGroup(db, K);
+        _sidePersist();
+        if (g.gid && g.undone.length > 1)
+          console.log('§FOLD-BACK key=' + key + ' group=' + g.gid + ' reversed=' + g.labels.join(',') + ' ops=' + g.undone.length + ' status=' + (toStatus || '?') + '→' + fromStatus);
+        else
+          console.log('§FOLD-BACK key=' + key + ' status=' + (toStatus || '?') + '→' + fromStatus + ' undone_id=' + ((g.undone[0] && g.undone[0].id) || 'null'));
+      } else {
+        console.log('§FOLD-BACK key=' + key + ' status=→' + fromStatus + ' (dry — sidecar absent)');
+      }
+      setDocStatus(key, fromStatus, 'completed', []);
     });
   }
-  // foldForwardDocOp: called when moving FORWARD through a DOC_ACTION dot (re-applies the op).
+  // foldForwardDocOp: called when moving FORWARD through a DOC_ACTION dot (re-applies the gesture —
+  // the WHOLE gid in commit order when it is a group; the single op otherwise).
   function foldForwardDocOp(key, toStatus) {
     var K = kernel();
-    return new Promise(function (resolve) {
-      withSidecar(function (db) {
-        var ok = false;
-        if (db && K && typeof K.redoOp === 'function') {
-          K.redoOp(db);
-          _sidePersist();
-          ok = true;
-          console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus + ' ok=Y');
-        } else {
-          console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus + ' (dry — sidecar absent) ok=N');
-        }
-        setDocStatus(key, toStatus, 'completed', []);
-        resolve(ok);
-      });
+    withSidecar(function (db) {
+      if (db && K && typeof K.redoOp === 'function') {
+        var g = CORE.foldForwardGroup(db, K);
+        _sidePersist();
+        if (g.gid && g.redone.length > 1)
+          console.log('§FOLD-FORWARD key=' + key + ' group=' + g.gid + ' reapplied=' + g.labels.join(',') + ' ops=' + g.redone.length + ' status=→' + toStatus);
+        else
+          console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus);
+      } else {
+        console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus + ' (dry — sidecar absent)');
+      }
+      setDocStatus(key, toStatus, 'completed', []);
     });
   }
   global.crudFoldBack = foldBackDocOp;
@@ -833,6 +1060,54 @@
     toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — dry-run (kernel absent)');
   }
 
+  // ── T4 (GAP 4) owner-gate / CAS enforcement on the LIVE write — Witness: W-CRUD-GATE ─────────────
+  // sessionActor — the current writer's identity (a recorded INPUT, §0.21). The page may set it
+  // (window.APP.actor / window.__actor); absent → null, and the gate falls back to allow-self (the
+  // single-session demo: you own what you created). NEVER invented — only read.
+  function sessionActor() {
+    try { if (global.APP && global.APP.actor != null) return global.APP.actor; } catch (e) {}
+    try { if (global.__actor != null) return global.__actor; } catch (e2) {}
+    return null;
+  }
+  // _gateCtxFor — resolve {actor, owner, casCol, casExpected, casCurrent} for an ownerGated op from the
+  // REAL record (NON-INVENT): owner = the record's recorded owner column (createdby / owner / claimed_by);
+  // casCurrent = the record's current cas-column value (read-the-tip first, else the bundle row); casExpected
+  // = the op's read-time baseline (op.casExpected, stamped when the form opened) if the caller carries one.
+  // In the single-session demo with no login, actor defaults to owner (self) → PASS; an explicit op.actor or
+  // a stale op.casExpected exercises the REJECT path the witness proves headless.
+  function _gateCtxFor(op, rec, db) {
+    var entry = entryFor(op.key) || {};
+    var casCol = entry.cas || (op.cas) || null;
+    var ownerCol = entry.ownerCol || 'createdby';
+    var owner = rec && (rec[ownerCol] != null ? rec[ownerCol] : (rec.owner != null ? rec.owner : (rec.claimed_by != null ? rec.claimed_by : null)));
+    var actor = (op.actor != null) ? op.actor : (sessionActor() != null ? sessionActor() : owner);   // allow-self when no session actor
+    var casCurrent;
+    if (casCol) {
+      casCurrent = rec && rec[casCol] != null ? rec[casCol] : null;
+      try { var tv = db ? CORE.tipValues(db, op.table, op.id) : null; if (tv && Object.prototype.hasOwnProperty.call(tv, casCol)) casCurrent = tv[casCol]; } catch (e) {}
+    }
+    return { actor: actor, owner: owner, casCol: casCol,
+             casExpected: (op.casExpected !== undefined ? op.casExpected : casCurrent), casCurrent: casCurrent };
+  }
+  // _gateReject — surface a REJECT in the UI: a toast + NO history dot (the write never happened), and the
+  // §-log line the witness asserts. Replaces the old silent dry fallback for an ownerGated denial.
+  function _gateReject(op, gate) {
+    console.log('§CRUD-GATE key=' + op.key + ' ownerGated=Y verdict=REJECT reason=' + gate.reason);
+    toast((op.verb ? op.verb.toUpperCase() + ' ' : '') + fname(op.key) + ' — REJECTED (' +
+          (gate.reason === 'owner' ? 'not the owner' : 'stale write — record changed') + ')');
+  }
+  // _gateForOwnedWrite — run the pre-seal owner/CAS check for an ownerGated mutating op; resolves the ctx
+  // from the record (getRecord layers read-the-tip), then cb(gate). Non-gated ops short-circuit to PASS.
+  function _gateForOwnedWrite(op, db, cb) {
+    if (!op.ownerGated) { cb({ ok: true }); return; }
+    getRecord(op.key, function (rec) {
+      var ctx = _gateCtxFor(op, rec, db);
+      var gate = CORE.gateOp(op, ctx);
+      if (gate.ok) console.log('§CRUD-GATE key=' + op.key + ' ownerGated=Y verdict=PASS actor=' + ctx.actor + ' owner=' + ctx.owner + (ctx.casCol ? ' cas=' + ctx.casCol : ''));
+      cb(gate);
+    });
+  }
+
   // commitCrud — the REAL signed write for a CRUD field verb (CREATE/UPDATE/DELETE), the field-value peer
   // of commitProcess. SAME sidecar path: build a kernel op carrying {table,id,changes|fields} →
   // commitGroup (all-or-none, sealed once from the tip) → verifyChain → persist. read-the-tip (tipValues)
@@ -844,6 +1119,18 @@
     var K = kernel();
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD ' + op.op_type + ' key=' + op.key + ' kernel/sql.js absent → DRY fallback'); dryCrud(op); return; }
+      // T4 (GAP 4): an ownerGated mutation of an EXISTING owned row (UPDATE/DELETE) is gated owner+CAS
+      // BEFORE the seal — a non-owner / stale-CAS write is REJECTED (toast, NO dot), never silently sealed.
+      // CREATE has no prior owner to gate (the creator becomes the owner) → passes through.
+      var gatedVerb = op.ownerGated && (op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE');
+      _gateForOwnedWrite(gatedVerb ? op : { ownerGated: false }, db, function (gate) {
+        if (!gate.ok) { _gateReject(op, gate); return; }   // REJECT — no dry fallback, no dot
+        _commitCrudSealed(op, K, db);
+      });
+    });
+  }
+  function _commitCrudSealed(op, K, db) {
+    {
       try {
         var params = { table: op.table, id: op.id == null ? null : op.id };
         if (op.op_type === 'CRUD_UPDATE')      params.changes = op.changes;
@@ -861,7 +1148,7 @@
           });
         }).catch(function (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); });
       } catch (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); }
-    });
+    }
   }
 
   // ── applyOp — the commit funnel. DOC_ACTION + CRUD verbs all take the GP3 signed-write seam (sidecar). ──
@@ -872,7 +1159,16 @@
   }
 
   // ── page-data helpers (truth-bound Edit pre-fill from the real bundle row) ──
-  function recId(key, rec) { var pk = key + '_id'; return rec && rec[pk] != null ? rec[pk] : null; }
+  // recId — the record's pk value. key+'_id' is the convention; lookup is CASE-INSENSITIVE so it works on
+  // glassbowl rows (lower-case cols) AND the iDempiere renderer's SELECT * rows (original-case cols, e.g.
+  // C_Order_ID) — T3 host-mount (SO_FULL_CRUD_GAP.md GAP 3).
+  function recId(key, rec) {
+    if (!rec) return null;
+    var pk = (key + '_id').toLowerCase();
+    if (rec[pk] != null) return rec[pk];
+    for (var c in rec) if (rec.hasOwnProperty(c) && String(c).toLowerCase() === pk && rec[c] != null) return rec[c];
+    return null;
+  }
   function assignVals(e, rec) { var v = {}; (e.fields || []).forEach(function (f) { v[f.col] = rec && rec[f.col] != null ? rec[f.col] : ''; }); return v; }
   // getRecord — prefer the row in the currently-traced O2C chain (the lit instance), else the first row.
   // The immutable bundle row is the BASELINE; _overlayTip then layers the signed sidecar's read-the-tip
@@ -880,12 +1176,15 @@
   function getRecord(key, cb) {
     if (typeof withBundle !== 'function') { cb({}); return; }
     var wantId = null;
-    try { if (typeof curChain !== 'undefined' && curChain) { for (var i = 0; i < curChain.length; i++) if (curChain[i].table === key && curChain[i].id != null) wantId = curChain[i].id; } } catch (er) {}
+    try { if (typeof curChain !== 'undefined' && curChain) { for (var i = 0; i < curChain.length; i++) if (String(curChain[i].table).toLowerCase() === String(key).toLowerCase() && curChain[i].id != null) wantId = curChain[i].id; } } catch (er) {}
     withBundle(function (db) {
       try {
         var pk = key + '_id', sql = wantId != null ? 'SELECT * FROM ' + key + ' WHERE ' + pk + '=' + wantId + ' LIMIT 1' : 'SELECT * FROM ' + key + ' ORDER BY ' + pk + ' LIMIT 1';
         var res = db.exec(sql); if (!res.length || !res[0].values.length) { cb({}); return; }
-        var o = {}; res[0].columns.forEach(function (c, i) { o[c] = res[0].values[0][i]; }); _overlayTip(key, o, cb);
+        // expose each column under BOTH its original name and its lower-cased alias — the form (f.col is
+        // lower-case) + recId resolve regardless of the surface's column casing (glassbowl lower vs iDempiere
+        // SELECT * original-case). T3 host-mount (SO_FULL_CRUD_GAP.md GAP 3).
+        var o = {}; res[0].columns.forEach(function (c, i) { var val = res[0].values[0][i]; o[c] = val; var lc = String(c).toLowerCase(); if (lc !== c && o[lc] === undefined) o[lc] = val; }); _overlayTip(key, o, cb);
       } catch (er) { cb({}); }
     });
   }
