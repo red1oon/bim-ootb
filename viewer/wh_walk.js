@@ -374,7 +374,13 @@
     // §C-5 ↺ switch-source — Lucide rotateCcw from the panels.js ICONS map (verbatim), beside ⌂. Data-gated:
     // hidden until draftPick learns posDocs>0 (absent, not greyed). Tap re-chooses the POS source mid-walk.
     var rotIc = (window.ICONS && window.ICONS.rotateCcw) ? window.ICONS.rotateCcw.svg : '';
+    // §WH-MODE-ICON — Lucide route icon: WH-mode indicator in the strip (confirms "you are in walk mode, not BIM view").
+    // Tap = toggle the route-list drawer (merged: the route icon IS the drawer toggle, no separate drawer header click).
+    var routeIc = (window.ICONS && window.ICONS.route) ? window.ICONS.route.svg
+      : '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>';
     st.innerHTML = '<button id="wh-home" title="Home" style="background:none;color:#90caf9;border:0;font-size:18px;line-height:1;cursor:pointer">⌂</button>' +
+      '<button id="wh-route-toggle" title="WH walk mode — tap to show/hide route list" style="background:none;color:#4fc3f7;border:0;cursor:pointer;padding:0 4px;line-height:0;flex-shrink:0">' +
+        '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + routeIc + '</svg></button>' +
       '<button id="wh-switch" title="Switch source" style="display:none;background:none;color:#90caf9;border:0;cursor:pointer;padding:0;line-height:0">' +
         '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + rotIc + '</svg></button>' +
       '<div id="wh-step" style="flex:1;min-width:0"></div>' +
@@ -384,20 +390,20 @@
     ui.strip = st; ui.step = st.querySelector('#wh-step');
 
     // §C-4 route-list drawer — sits ABOVE the strip; collapsed by default, auto-expands once at walk start.
+    // Header removed — the route icon in the strip (#wh-route-toggle) is now the sole toggle.
     var rd = document.createElement('div');
     rd.id = 'wh-route-drawer';
     rd.style.cssText = 'position:fixed;left:8px;right:8px;bottom:120px;z-index:1200;display:none;flex-direction:column;' +
       'background:rgba(16,24,40,.92);color:#e3f2fd;border:1px solid #4fc3f7;border-radius:12px;padding:8px 10px;' +
       'font:13px system-ui;backdrop-filter:blur(6px);max-height:38vh;overflow:hidden';
-    rd.innerHTML = '<div id="wh-route-hdr" style="cursor:pointer;font-weight:600;color:#90caf9;padding:2px 0;user-select:none"></div>' +
-      '<div id="wh-route-list" style="display:none;overflow-y:auto;margin-top:6px"></div>';
+    rd.innerHTML = '<div id="wh-route-list" style="overflow-y:auto"></div>';
     document.body.appendChild(rd);
-    ui.routeDrawer = rd; ui.routeHdr = rd.querySelector('#wh-route-hdr'); ui.routeList = rd.querySelector('#wh-route-list');
+    ui.routeDrawer = rd; ui.routeHdr = null; ui.routeList = rd.querySelector('#wh-route-list');
     ui.routeOpen = false;
-    ui.routeHdr.addEventListener('click', function () { toggleRouteDrawer(); });
 
     ui.switchBtn = st.querySelector('#wh-switch');
     ui.switchBtn.addEventListener('click', function () { window.WHWalk.switchSource(); });
+    st.querySelector('#wh-route-toggle').addEventListener('click', function () { toggleRouteDrawer(); });
     st.querySelector('#wh-close').addEventListener('click', close);
     st.querySelector('#wh-scan-btn').addEventListener('click', function () { openScan(false); });
     // ⌂ home — one tap back to the opener (?home=, e.g. iDempiere) or the bubbles landing.
@@ -457,16 +463,17 @@
   }
   function currentStep() { return W.steps[W.idx]; }
 
-  // §C-4 route-list drawer — header (always) + rows (only when expanded). Current step '→' + green bg, done ✓ dimmed.
+  // §C-4 route-list drawer — rows only; toggle is the route icon in the strip (#wh-route-toggle).
   function doneCount() { var n = 0; for (var i = 0; i < W.steps.length; i++) if (W.done[i]) n++; return n; }
   function renderRouteDrawer() {
     if (!ui.routeDrawer) return;
-    if (!W.steps.length) { ui.routeDrawer.style.display = 'none'; return; }
-    ui.routeDrawer.style.display = 'flex';
     var done = doneCount(), remaining = W.steps.length - done;
-    ui.routeHdr.textContent = (ui.routeOpen ? '▾' : '▸') + ' Movement (' + W.steps.length + ' steps, ' + remaining + ' remaining)';
-    if (!ui.routeOpen) { ui.routeList.style.display = 'none'; return; }
-    ui.routeList.style.display = '';
+    // Update strip route-toggle title with current step counts
+    var tog = document.getElementById('wh-route-toggle');
+    if (tog) tog.title = 'WH walk — ' + W.steps.length + ' steps, ' + remaining + ' remaining (tap to ' + (ui.routeOpen ? 'hide' : 'show') + ')';
+    if (!W.steps.length) { ui.routeDrawer.style.display = 'none'; return; }
+    if (!ui.routeOpen) { ui.routeDrawer.style.display = 'none'; return; }
+    ui.routeDrawer.style.display = 'flex';
     ui.routeList.innerHTML = W.steps.map(function (s, i) {
       var d = W.done[i];
       var isCur = (i === W.idx) && !d;
@@ -820,7 +827,7 @@
     if (bar) { W._barDisplay = bar.style.display; bar.style.display = 'none'; }
     log('MODE walk-on (BIM pill bar hidden)');
     if (!W.steps.length) { await draftPick(); buildRoute(); W.idx = 0; }
-    if (ui.routeDrawer) { ui.routeDrawer.style.display = 'flex'; ui.routeOpen = true; }  // §C-4 auto-expand once at walk start
+    if (ui.routeDrawer) { ui.routeOpen = true; renderRouteDrawer(); }  // §C-4 auto-expand once at walk start
     log('OPEN steps=' + W.steps.length + ' doc=' + W.doc.id + ' status=' + W.doc.docStatus);
     advance();
   }
