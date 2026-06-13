@@ -54,6 +54,7 @@
   // (a) Record a kernel op as it commits → build an entry and push it through the shared gate.
   function _recordOp(opId, opType, params, guids) {
     if (_isReHome()) return;   // A2: re-homed past session is READ-ONLY — never append to it
+    _ensureAuthoritativeTreeKey();   // W-SESSION-RECALL: key the tree by A.DB_URL before the first record
     var label = _opLabel(opType, params);
     if (opType === 'ELEMENT_PICK') {
       // Read-only SELECTION moment: a 'pick' entry that restores via A.focusElement (no flag-flip).
@@ -92,6 +93,7 @@
   // VIEW-nav push — navigate_find calls this with its semantic view entry.
   function pushView(v) {
     if (!HB.isEnabled() || _isReHome()) return;   // A2: read-only re-home never records
+    _ensureAuthoritativeTreeKey();
     var label = v.label || v.axis || 'view';
     HB.push({ bucket: 'view', kind: 'view', type: v.kind, label: label, readonly: true,
       view: v, viewState: _tapView(), sigKey: 'view:' + (v.kind + ':' + (v.label || v.axis)) });
@@ -106,8 +108,23 @@
     // A scrub-restore drives the REAL setters (HistoryTap.applyView → section.write → A.toggleSection):
     // recording there would mint fake dots while merely browsing the past. isApplying() gates it.
     if (window.HistoryTap && HistoryTap.isApplying && HistoryTap.isApplying()) return;
+    _ensureAuthoritativeTreeKey();
     HB.push({ bucket: 'event', kind: 'event', type: type, label: label || type, readonly: true,
       viewState: _tapView(), ref: (ref != null ? ref : null), sigKey: 'event:' + type + ':' + (label || '') });
+  }
+
+  // W-SESSION-RECALL (user 2026-06-13 "recall all the dots that were in that session … fresh back zero").
+  // Re-key the live tree to the AUTHORITATIVE db (A.DB_URL via _openDbUrl) right before the FIRST recorded
+  // moment, so the record-time key == the W card's ref.db (= _openDbUrl) → re-home RECALLS the session's
+  // dots. Was: _treeKey keyed off the raw ?db= PARAM, so a bare/PWA open (no ?db=) saved under 'default'
+  // while the card re-homed under the real url → empty Z. At HB.configure A.DB_URL is not set yet, so the
+  // configure-time key falls back to ?db= (unchanged for ?db= opens); this re-key fires once the building
+  // is loaded (A.DB_URL live) and is a NO-OP when the key is unchanged (setTreeKey early-returns). Never
+  // runs on re-home (every caller gates on _isReHome first), so the read-only "no new dot" rule is intact.
+  var _rekeyed = false;
+  function _ensureAuthoritativeTreeKey() {
+    if (_rekeyed) return; _rekeyed = true;
+    try { if (HB.setTreeKey) HB.setTreeKey(_treeKey()); } catch (e) {}
   }
 
   // (b) Restore one entry's state — the ONLY thing only the viewer can do.
@@ -292,7 +309,11 @@
 
   // Per-building persisted-tree key (item 4): universes survive reload, scoped to THIS building's db.
   function _treeKey() {
-    try { var db = new URLSearchParams(location.search).get('db') || 'default';
+    // Key by the AUTHORITATIVE db the viewer loaded (A.DB_URL via _openDbUrl) — the SAME value the W card's
+    // ref.db carries — NOT the raw ?db= param (which is 'default' on a bare/PWA open → empty recall). At
+    // configure time A.DB_URL isn't set yet so _openDbUrl falls back to ?db= (key unchanged for ?db= opens);
+    // _ensureAuthoritativeTreeKey re-keys once A.DB_URL is live, before the first recorded moment.
+    try { var db = _openDbUrl() || 'default';
       // A2: scope the tree to (building, SESSION) so each session has its OWN Z; `?sess=` loads a past one.
       return 'bim.hist.tree.' + db.replace(/[^A-Za-z0-9_.-]/g, '_') + '.' + _sessionId(); } catch (e) { return 'bim.hist.tree.default'; }
   }
