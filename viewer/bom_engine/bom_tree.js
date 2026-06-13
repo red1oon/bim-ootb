@@ -38,6 +38,22 @@
     return rows;
   }
 
+  /**
+   * Set of column names present on a table (schema-tolerance for older/subset DBs
+   * — e.g. the SampleCastle W022 export lacks the grid_* / count columns).
+   * @param {object} db
+   * @param {string} table
+   * @returns {Object} colName → true
+   */
+  function _tableCols(db, table) {
+    var set = {};
+    try {
+      var rows = _queryRows(db, "PRAGMA table_info(" + table + ")");
+      for (var i = 0; i < rows.length; i++) set[rows[i].name] = true;
+    } catch (e) { /* table may not exist */ }
+    return set;
+  }
+
   // ── BOM loader ───────────────────────────────────────────────────────────
 
   /**
@@ -98,20 +114,26 @@
       h: parentBom.aabbH
     };
 
-    // Query children — the §8.3 one-level query
+    // Query children — the §8.3 one-level query.
+    // Schema-tolerant: a subset export (e.g. SampleCastle W022) may lack the grid_* / count
+    // columns. Select only columns that EXIST; absent ones read as undefined → defaults below.
+    var have = _tableCols(db, 'm_bom_line');
+    var wanted = [
+      'M_BOM_Line_ID', 'bom_id', 'child_product_id', 'qty', 'qty_type', 'sequence',
+      'layout_strategy', 'min_space_mm', 'anchor_face', 'fit_priority',
+      'rotation_rule', 'component_type',
+      'allocated_width_mm', 'allocated_depth_mm', 'allocated_height_mm',
+      'dx', 'dy', 'dz', 'mandatory', 'edge_offset_mm', 'buffer_mm',
+      'min_count', 'max_count', 'fill_axis',
+      'creates_grid', 'drag_axis', 'grid_shared_key', 'grid_editable',
+      'element_ref', 'storey', 'entity_type'
+    ];
+    var selCols = [];
+    for (var wi = 0; wi < wanted.length; wi++) {
+      if (have[wanted[wi]]) selCols.push('bl.' + wanted[wi]);
+    }
     var rows = _queryRows(db,
-      "SELECT " +
-      "  bl.M_BOM_Line_ID, bl.bom_id, " +
-      "  bl.child_product_id, bl.qty, bl.qty_type, bl.sequence, " +
-      "  bl.layout_strategy, bl.min_space_mm, " +
-      "  bl.anchor_face, bl.fit_priority, " +
-      "  bl.rotation_rule, bl.component_type, " +
-      "  bl.allocated_width_mm, bl.allocated_depth_mm, bl.allocated_height_mm, " +
-      "  bl.dx, bl.dy, bl.dz, " +
-      "  bl.mandatory, bl.edge_offset_mm, bl.buffer_mm, " +
-      "  bl.min_count, bl.max_count, bl.fill_axis, " +
-      "  bl.creates_grid, bl.drag_axis, bl.grid_shared_key, bl.grid_editable, " +
-      "  bl.element_ref, bl.storey, bl.entity_type " +
+      "SELECT " + selCols.join(', ') + " " +
       "FROM m_bom_line bl " +
       "WHERE bl.is_active = 1 AND bl.bom_id = ?1 " +
       "ORDER BY bl.sequence",
@@ -235,6 +257,127 @@
     return result;
   }
 
+  // ── buildBomAttachMap (Red Pill B1, RedPillRosetta.md §7b.1) ──────────────
+
+  /**
+   * Build a grid→element attach map FROM THE BOM TREE (kills F1–F4 / F6: BOM data BUILDS
+   * the map, proximity never enters). Each materialized child carrying an `_elementRef`
+   * (bom_tree.js child._elementRef) is bound to the grid line(s) its PARENT BOM created
+   * (a bomGridMgr GridLine whose `bomNodeId` == the parent's id, or — via grid_shared_key —
+   * the parent's shared group). When no bomGridMgr grid maps to a parent (subset DB with no
+   * grid_* columns, e.g. SampleCastle W022), the parent BOM id itself is the grid key, so the
+   * whole floor's children are still BOM-governed under one synthetic line.
+   *
+   * @param {BOMNode[]} bomNodes - flat list of materialized BOMNodes (parents + children)
+   * @param {Object} [bomGridMgr] - BomGrid.GridLineManager (optional; subset DBs have none)
+   * @returns {{
+   *   map: Object,        // gridId → [{guid,bomNodeId,parentId,anchorFace,strategy,axis,storey}]
+   *   governed: Object,   // guid → true (every guid the BOM map governs)
+   *   byGuid: Object,     // guid → host entry (the binding above)
+   *   gridCount: number,
+   *   bomCount: number    // count of governed (BOM-sourced) guids
+   * }}
+   */
+  function buildBomAttachMap(bomNodes, bomGridMgr) {
+    var map = {};        // gridId → entries[]
+    var governed = {};   // guid → true
+    var byGuid = {};     // guid → entry
+    var bomCount = 0;
+
+    // Index grid lines by the BOMNode id they belong to (and shared-group membership).
+    // A child binds to grid(s) created by its PARENT BOM.
+    var gridsByBomNode = {};   // bomNodeId → [gridId]
+    if (bomGridMgr) {
+      var levels = bomGridMgr.getLevels ? bomGridMgr.getLevels() : [];
+      for (var li = 0; li < levels.length; li++) {
+        var grids = bomGridMgr.getDisplayGrids(levels[li]) || [];
+        for (var gi = 0; gi < grids.length; gi++) {
+          var gl = grids[gi];
+          if (!gridsByBomNode[gl.bomNodeId]) gridsByBomNode[gl.bomNodeId] = [];
+          gridsByBomNode[gl.bomNodeId].push(gl);
+        }
+      }
+    }
+
+    for (var i = 0; i < bomNodes.length; i++) {
+      var node = bomNodes[i];
+      if (!node._elementRef) continue;          // no element binding → not BOM-governed (fallback)
+      var parent = node.getParentBOM ? node.getParentBOM() : node.parentBOM;
+      var parentId = parent ? parent.id : (node.id || '_root');
+
+      // Which grid(s) govern this child? The grids the PARENT created (or shared-group),
+      // else fall back to the parent BOM id as the grid key (subset-DB no-grid case).
+      var parentGrids = (parent && gridsByBomNode[parent.id]) || [];
+      var gridIds = [];
+      if (parentGrids.length) {
+        for (var pg = 0; pg < parentGrids.length; pg++) gridIds.push(parentGrids[pg]);
+      } else {
+        gridIds.push({ id: parentId, axis: node.fillAxis || 'x' });   // synthetic floor-grid
+      }
+
+      var guid = node._elementRef;
+      for (var k = 0; k < gridIds.length; k++) {
+        var g = gridIds[k];
+        var entry = {
+          guid:       guid,
+          bomNodeId:  node.id,
+          parentId:   parentId,
+          anchorFace: node._anchorFace || 'BACK',
+          strategy:   node.strategy || 'LINEAR',
+          axis:       g.axis || node.fillAxis || 'x',
+          storey:     node._storey || null
+        };
+        if (!map[g.id]) map[g.id] = [];
+        map[g.id].push(entry);
+      }
+      if (!governed[guid]) { governed[guid] = true; bomCount++; }
+      byGuid[guid] = byGuid[guid] || { bomNodeId: node.id, parentId: parentId,
+        anchorFace: node._anchorFace || 'BACK', strategy: node.strategy || 'LINEAR',
+        storey: node._storey || null };
+    }
+
+    var gridCount = 0;
+    for (var gk in map) gridCount++;
+
+    return { map: map, governed: governed, byGuid: byGuid, gridCount: gridCount, bomCount: bomCount };
+  }
+
+  /**
+   * BOM-sourced peer of getAffectedBranch (the F4 fix): select affected parent BOMNodes
+   * for a dragged grid FROM the BOM attach map — it does NOT read the heuristic proximity
+   * attach map. Returns the parent BOMNodes whose children are bound to `gridId`.
+   *
+   * @param {{map:Object}} bomAttach - result of buildBomAttachMap
+   * @param {BOMNode[]} bomNodes - flat node list (to resolve parentId → node)
+   * @param {string} gridId
+   * @returns {BOMNode[]}
+   */
+  function getAffectedBranchFromBom(bomAttach, bomNodes, gridId) {
+    if (!bomAttach || !bomAttach.map) return [];
+    var entries = bomAttach.map[gridId];
+    if (!entries || !entries.length) return [];
+
+    var wantParents = {};
+    for (var i = 0; i < entries.length; i++) wantParents[entries[i].parentId] = true;
+
+    var result = [];
+    var seen = {};
+    for (var j = 0; j < bomNodes.length; j++) {
+      var n = bomNodes[j];
+      if (wantParents[n.id] && !seen[n.id]) { seen[n.id] = true; result.push(n); }
+    }
+    // A child may carry the parentId without the parent node being in the flat list — fall back
+    // to each governed child's own parent ref so the branch is never silently empty.
+    if (!result.length) {
+      for (var k = 0; k < bomNodes.length; k++) {
+        var c = bomNodes[k];
+        var par = c.getParentBOM ? c.getParentBOM() : c.parentBOM;
+        if (par && wantParents[par.id] && !seen[par.id]) { seen[par.id] = true; result.push(par); }
+      }
+    }
+    return result;
+  }
+
   // ── listRoots ────────────────────────────────────────────────────────────
 
   /**
@@ -252,10 +395,13 @@
 
   // ── Exports ──────────────────────────────────────────────────────────────
 
-  exports.materializeLevel  = materializeLevel;
-  exports.getAffectedBranch = getAffectedBranch;
-  exports.loadBom           = loadBom;
-  exports.listRoots         = listRoots;
-  exports._queryRows        = _queryRows;
+  exports.materializeLevel        = materializeLevel;
+  exports.getAffectedBranch       = getAffectedBranch;
+  exports.buildBomAttachMap       = buildBomAttachMap;       // Red Pill B1 §7b.1
+  exports.getAffectedBranchFromBom = getAffectedBranchFromBom; // Red Pill B1 (F4 fix)
+  exports.loadBom                 = loadBom;
+  exports.listRoots               = listRoots;
+  exports._queryRows              = _queryRows;
+  exports._tableCols              = _tableCols;
 
 })(typeof module !== 'undefined' ? module.exports : (window.BomTree = {}));

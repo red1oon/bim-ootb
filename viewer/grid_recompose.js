@@ -356,10 +356,15 @@
     console.log('§RECOMPOSE_DONE translated=' + translated + ' scaled=' + scaled +
       ' roofOps=' + roofOps);
 
-    // §S272 Phase 3a: After L0 kinematics, fire L1 BOM recompose (debounced 16ms)
+    // §S272 Phase 3a / Red Pill B1 (RedPillRosetta.md §7b.2): After L0 kinematics, fire the
+    // BOM-GOVERNED recompose. If _bomNodes is empty the session is UNCALIBRATED (user dragged
+    // before Next) — degrade VISIBLY (the heuristic §RECOMPOSE_ENGINE above already ran) and
+    // make NO governance claim.
     if (_bomNodes.length && _kinEngine && typeof BomTree !== 'undefined' && typeof BomDiff !== 'undefined') {
       clearTimeout(_bomDebounceTimer);
       _bomDebounceTimer = setTimeout(function() { _fireBomRecompose(A); }, 16);
+    } else if (!_bomNodes.length) {
+      console.log('§BOM_RECOMPOSE skipped reason=uncalibrated (bomNodes=0)');
     }
   }
 
@@ -391,12 +396,32 @@
     if (!_kinEngine || !_bomNodes.length) return;
     if (typeof BomTree === 'undefined' || typeof BomDiff === 'undefined') return;
 
-    var attachMap = _kinEngine.getAttachMap();
+    // Red Pill B1 (RedPillRosetta.md §7b.1): build the attach map FROM THE BOM TREE (proximity
+    // never enters). Parent selection routes through getAffectedBranchFromBom — the F4 fix — so
+    // the heuristic §RECOMPOSE_ENGINE map is NOT consulted for governed branches. A `fallback`
+    // guid (no _elementRef) is handled by the heuristic path only; per Q4 it must stay STATIC.
+    var bomAttach = BomTree.buildBomAttachMap ? BomTree.buildBomAttachMap(_bomNodes, _bomGridMgr) : null;
+    var heurMap = _kinEngine.getAttachMap();
+    var attachMap = (bomAttach && bomAttach.gridCount) ? bomAttach.map : heurMap;
     var totalMoves = 0, totalAdds = 0, totalRemoves = 0, totalScales = 0;
     var allCommands = [];
+    var governedN = 0, ungovernedN = 0;
+    var cascade = [];   // {guid,oldX,oldY,newX,newY} — the GRID_MOVE group fold payload (§7b.3)
+
+    if (bomAttach) {
+      var heurGuids = 0; for (var hk in heurMap) heurGuids += heurMap[hk].length;
+      var fallbackN = 0;
+      // fallback = shown guids with no BOM _elementRef (genuinely absent BOM data)
+      var shown = (_ctx && _ctx.getShownGuids) ? _ctx.getShownGuids() : [];
+      for (var sg = 0; sg < shown.length; sg++) { if (!bomAttach.governed[shown[sg]]) fallbackN++; }
+      console.log('§BOM_ATTACH map built: bom=' + bomAttach.bomCount +
+        ' fallback=' + fallbackN + ' grids=' + bomAttach.gridCount);
+    }
 
     for (var gridId in attachMap) {
-      var affectedParents = BomTree.getAffectedBranch(_bomNodes, attachMap, gridId);
+      var affectedParents = (bomAttach && bomAttach.gridCount)
+        ? BomTree.getAffectedBranchFromBom(bomAttach, _bomNodes, gridId)
+        : BomTree.getAffectedBranch(_bomNodes, attachMap, gridId);
       if (!affectedParents.length) continue;
 
       for (var pi = 0; pi < affectedParents.length; pi++) {
@@ -441,6 +466,20 @@
           else if (cmds[di].type === 'REMOVE') totalRemoves++;
           else if (cmds[di].type === 'SCALE') totalScales++;
           allCommands.push(cmds[di]);
+          // Red Pill B1 §7b.3 — PERSIST-FIRST: every governed MOVE/SCALE writes its new center to
+          // element_transforms (Q5: "actual = the persisted DB row"), and contributes to the
+          // GRID_MOVE cascade so the timeline reverses the WHOLE governed set on a step-back.
+          if ((cmds[di].type === 'MOVE' || cmds[di].type === 'SCALE') && cmds[di].to) {
+            var govGuid = cmds[di].id;
+            var isGov = !bomAttach || bomAttach.governed[govGuid];
+            if (isGov) governedN++; else ungovernedN++;
+            var old = cmds[di].from || {};
+            var nw  = cmds[di].to;
+            cascade.push({ guid: govGuid,
+              oldX: (old.x != null ? old.x / 1000 : null), oldY: (old.y != null ? old.y / 1000 : null),
+              newX: nw.x / 1000, newY: nw.y / 1000 });
+            _persistCenter(govGuid, nw.x / 1000, nw.y / 1000);
+          }
         }
 
         if (result.conflicts && result.conflicts.length) {
@@ -461,40 +500,47 @@
           }
         }
 
+        // Red Pill B1 verdict (RedPillRosetta.md §6): governed=N/N ungoverned=0 is the
+        // G8-GOVERNANCE claim — every moved child moved because the BOM said so.
         console.log('§BOM_RECOMPOSE parent=' + parent.id +
           ' reserved=' + (result.commands ? result.commands.length : 0) +
           ' filled=' + targetState.length +
+          ' governed=' + governedN + '/' + (governedN + ungovernedN) +
+          ' ungoverned=' + ungovernedN +
           ' phantom.w=' + (result.phantom ? result.phantom.w : 0));
       }
     }
 
     if (allCommands.length) {
       console.log('§BOM_L1_DONE moves=' + totalMoves + ' adds=' + totalAdds +
-        ' removes=' + totalRemoves + ' scales=' + totalScales);
-      _logBomRecomposeOp(A, allCommands);
+        ' removes=' + totalRemoves + ' scales=' + totalScales +
+        ' governed=' + governedN + ' ungoverned=' + ungovernedN);
+      _logBomRecomposeOp(A, cascade);
     }
   }
 
-  function _logBomRecomposeOp(A, commands) {
-    if (typeof KernelOps === 'undefined' || !A || !A.db) return;
-    if (!commands || !commands.length) return;
-
-    var payload = [];
-    var inputGuids = [];
-    for (var i = 0; i < commands.length; i++) {
-      var c = commands[i];
-      if (c.type === 'KEEP') continue;
-      payload.push({ type: c.type, id: c.id, from: c.from || null, to: c.to || null });
-      inputGuids.push(c.id);
-    }
-    if (!payload.length) return;
-
+  // §7b.3 persist-first — write a governed element's new center to element_transforms.
+  // Metres in/out (element_transforms.center_* is in metres, as grid_drag.js uses it).
+  function _persistCenter(guid, centerXm, centerYm) {
+    if (!_ctx || !_ctx.db) return;
     try {
-      KernelOps.commitOp(A.db, 'BOM_RECOMPOSE', {
-        bomLevel: _bomLevel,
-        commandCount: payload.length,
-        commands: payload
-      }, inputGuids, null);
+      _ctx.db.run('UPDATE element_transforms SET center_x = ?, center_y = ? WHERE guid = ?',
+        [centerXm, centerYm, guid]);
+    } catch (e) { console.log('§BOM_PERSIST_ERR guid=' + guid + ' ' + e.message); }
+  }
+
+  // Red Pill B1 §7b.3 — commit the WHOLE governed set as ONE GRID_MOVE op (one gid) carrying
+  // params.cascade, so it folds via the EXISTING universal_history GRID_MOVE path
+  // (KernelOps.undoOp + GridDrag.applyReplayedMove) — the proven group fold, the same tree #291 fixed.
+  // (Was a single non-foldable BOM_RECOMPOSE op — replaced so the timeline reverses the set.)
+  function _logBomRecomposeOp(A, cascade) {
+    if (typeof KernelOps === 'undefined' || !A || !A.db) return;
+    if (!cascade || !cascade.length) return;
+    try {
+      KernelOps.commitOp(A.db, 'GRID_MOVE', {
+        axis: 'BOM', label: 'L' + _bomLevel, from: null, to: null,
+        bomLevel: _bomLevel, cascade: cascade
+      });
     } catch(e) {
       console.log('§BOM_RECOMPOSE_LOG_ERR ' + e.message);
     }
