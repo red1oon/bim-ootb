@@ -98,9 +98,12 @@ function _worldHistDrawer(srcBtn) {
   if (!srcBtn) return;
   var r = srcBtn.getBoundingClientRect();
   var d = document.createElement('div'); d.id = 'whist-drawer';
-  // UPWARD column — bomb at top (outside/far = safety), Z at bottom (near pill = first reach)
-  d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;align-items:center;gap:6px;' +
-    'bottom:' + (window.innerHeight - r.top + 6) + 'px;left:' + Math.max(8, r.left) + 'px;';
+  // PERPENDICULAR to the viewer's VERTICAL right-edge pill strip → the drawer extends SIDEWAYS (a row to
+  // the LEFT of the W pill), not a column above it (that ran PARALLEL to the strip — #257's upward layout
+  // fits the ERP horizontal bottom bar, but regressed the viewer's vertical pill). Row order: bomb first
+  // (leftmost = outside/far, safety), Z last (rightmost = adjacent to the pill, first reach).
+  d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
+    'top:' + r.top + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
   function chip(name, title, color, onTap) {
     var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
     b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
