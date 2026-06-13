@@ -334,7 +334,7 @@
 </div>
 
 <div id="idmp-header">
-  <button id="idmp-burger" class="hbtns"><button title="Menu">&#9776;</button></button>
+  <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
   <span id="idmp-logo">A+</span>
   <span id="idmp-title">iDempiere&#8209;like</span>
   <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
@@ -1910,6 +1910,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
+      reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
+      editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
       // PLUGIN_* kernel_ops + a bundle's read-only setup query) + the live engine registries a bundle contributes
       // into. db may be null pre-login — engine plugins still install/activate (their ops just aren't logged).
@@ -1941,7 +1943,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       worldhist: function () { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }
     };
     // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
-    window.IdmpPillActive = { redpill: function () { return _pillMode; }, showme: _showMeOn };
+    window.IdmpPillActive = { redpill: function () { return _pillMode; }, showme: _showMeOn,
+                              editmode: function () { return !!(window.__crud && window.__crud.editModeOn && window.__crud.editModeOn()); } };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
     window.IdmpPillStage = function () {
