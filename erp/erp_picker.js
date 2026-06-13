@@ -125,7 +125,8 @@
       + '<div id="ep-foot" class="ep-foot"></div>';
     var grid = _$('ep-grid');
     ERPS.forEach(function (e) {
-      var card = _el('div', { id: 'ep-c-' + e.key, class: 'ep-cardlet' });
+      var avail = (e.real || TENANT_SHARD[e.key]) ? ' ep-avail' : '';
+      var card = _el('div', { id: 'ep-c-' + e.key, class: 'ep-cardlet' + avail });
       card.innerHTML = '<div class="ep-ic"><span class="ep-dot" style="background:' + e.dot + '"></span></div><div class="ep-nm">' + e.name + '</div>'
         + '<div id="ep-b-' + e.key + '" class="ep-badge">' + _badge(e) + '</div>';
       card.onclick = function () { _select(e.key); };
@@ -134,7 +135,7 @@
     _renderFoot();
   }
   function _badge(e) {
-    if (!e.real) return (_mode === 'install' && TENANT_SHARD[e.key])
+    if (!e.real) return TENANT_SHARD[e.key]
       ? '<span class="ep-poc">PoC tenant</span>' : '<span class="ep-coming">coming soon</span>';
     if (e.probe) return '<span class="ep-probing">detecting…</span>';
     return '<span class="ep-agent">via agent</span>';
@@ -173,7 +174,7 @@
     var e = _erp(_sel);
     var verb = _mode === 'install' ? 'install' : 'migrate';
     var shard = TENANT_SHARD[e.key];
-    var installable = e.real || (_mode === 'install' && shard);     // PoC tenants install; only agents migrate
+    var installable = e.real || shard;     // PoC tenants are pickable in BOTH modes (the demo fold IS the deliverable)
     var q = _mode === 'install' ? ('Install <b>' + e.name + '</b> data onto this device?')
                                 : ('Do you want to ' + verb + ' your <b>' + e.name + '</b> data?');
     var btn = installable
@@ -188,18 +189,18 @@
 
   // ── S4 — route on confirm ──
   function _confirm(key) {
-    var e = _erp(key);
-    // INSTALL mode + a shard → install-tenant panel for EVERY non-Odoo source (iDempiere #5-install route;
-    // SAP/Oracle/Dynamics PoC tenants — IMPORT_EXPAND_POC.md §P-2). Odoo keeps its fold-then-install staged flow.
-    // PoC tenants with a chainUrl use the fetch-fold-install flow (auto-fetch from GH, localStorage cache,
-    // file-drop to replace with real data) instead of the static .db approach.
-    if (_mode === 'install' && TENANT_SHARD[key] && e.route !== 'odoo') {
-      var shard = TENANT_SHARD[key];
+    var e = _erp(key), shard = TENANT_SHARD[key];
+    // PoC tenants (real:false) reach the install/fetch-fold flow in EITHER mode — the demo fold IS what we
+    // ship for SAP/Oracle/Dynamics (ALPHA, not production). Real non-Odoo only routes here in INSTALL mode
+    // (iDempiere #5-install). Odoo always keeps its own staged delegate-to-install flow.
+    // chainUrl → fetch-fold-install (auto-fetch from GH, localStorage cache, file-drop to replace with real
+    // data); no chainUrl → the static-shard install-tenant panel (Oracle/Dynamics until their chains land).
+    if (shard && e.route !== 'odoo' && (!e.real || _mode === 'install')) {
       if (shard.chainUrl) {
-        console.log('§ERP-PICKER confirm erp=' + key + ' route=fetch-fold-install poc=Y chainUrl=' + shard.chainUrl);
+        console.log('§ERP-PICKER confirm erp=' + key + ' mode=' + _mode + ' route=fetch-fold-install poc=Y chainUrl=' + shard.chainUrl);
         _renderFetchFold(shard); return;
       }
-      console.log('§ERP-PICKER confirm erp=' + key + ' route=install-tenant' + (e.real ? '' : ' poc=Y'));
+      console.log('§ERP-PICKER confirm erp=' + key + ' mode=' + _mode + ' route=install-tenant' + (e.real ? '' : ' poc=Y'));
       _renderInstallTenant(shard); return;
     }
     if (!e.real) { console.log('§ERP-PICKER coming erp=' + key); _say(e.name + ' migration is coming.'); return; }
@@ -223,7 +224,7 @@
     var cacheKey = 'erp_chain_' + _sel;
     var hasCached = !!localStorage.getItem(cacheKey);
     body.innerHTML =
-      '<div class="ep-lock">' + _ico('lock', 14) + ' ' + tenant.claim + '</div>'
+      '<div class="ep-lock">' + _ico('lock', 14) + ' <span class="ep-alpha">ALPHA · not for production</span> ' + tenant.claim + '</div>'
       + '<div id="ep-ff-st" class="ep-dim">Loading…</div>'
       + '<div id="ep-result" class="ep-result"></div>'
       + '<div class="ep-step" style="margin-top:12px"><div class="ep-sc">'
@@ -285,8 +286,8 @@
   function _renderInstallTenant(tenant) {
     var body = _$('ep-body'); if (!body) return;
     body.innerHTML =
-      '<div class="ep-lock">' + _ico('lock', 14) + ' <b>' + tenant.name + ' tenant shard'
-      + (tenant.poc ? '' : ', pre-verified') + '.</b> ' + tenant.claim + '</div>'
+      '<div class="ep-lock">' + _ico('lock', 14) + ' ' + (tenant.poc ? '<span class="ep-alpha">ALPHA · not for production</span> ' : '')
+      + '<b>' + tenant.name + ' tenant shard' + (tenant.poc ? '' : ', pre-verified') + '.</b> ' + tenant.claim + '</div>'
       + '<div id="ep-result" class="ep-result"></div>'
       + '<div class="ep-foot"><button id="ep-back" class="ep-btn">' + _ico('chevronLeft', 13) + ' Back</button></div>';
     console.log('§ERP-PICKER install-tenant erp=' + _sel + ' shard=' + tenant.file + ' client=' + tenant.client);
@@ -407,7 +408,9 @@
         + rows.map(function (r) { return '<tr class="' + (r.ok ? '' : 'ep-bad') + '"><td>' + r.name + '</td><td>' + r.doc + '</td><td>' + r.ops + '</td><td>' + (r.ok ? _ico('check', 12) + ' ' + r.to : _ico('xmark', 12) + ' ' + r.to) + '</td></tr>'; }).join('')
         + '</tbody></table>'
         + '<div class="ep-sum">'
-        + '<div>SO <b>' + (chain.meta && chain.meta.so) + '</b> → invoice <b>' + (chain.meta && chain.meta.invoice) + '</b>, total <b>' + Number((chain.totals && chain.totals.total) || 0).toFixed(2) + '</b></div>'
+        + '<div>' + (function () { var m = chain.meta || {}, tot = Number((chain.totals && chain.totals.total) || 0).toFixed(2);
+            return m.so ? ('SO <b>' + m.so + '</b> → invoice <b>' + (m.invoice || '?') + '</b>, total <b>' + tot + '</b>')
+                        : ((m.description ? m.description + ' · ' : '') + 'total <b>' + tot + '</b>'); }()) + '</div>'
         + '<div>mapped <b>' + mapped + '/' + chain.events.length + '</b> · verbs [' + usedVerbs.join(', ') + '] · newVerbs [<b>' + newVerbs.join(',') + '</b>]</div>'
         + '<div>invoice GL ΣDr ' + Number(dr).toFixed(2) + ' ' + (balanced ? '== ' : '≠ ') + 'ΣCr ' + Number(cr).toFixed(2) + ' ' + _ico(balanced ? 'check' : 'xmark', 12) + '</div>'
         + '<div>verify chain ' + (chainOk ? _ico('check', 12) + ' trusted' : _ico('xmark', 12)) + ' · ops ' + len + ' · tip <code>' + String(tip).slice(0, 16) + '…</code></div>'
@@ -417,7 +420,7 @@
       if (db.close) db.close();
       // INSTALL success-path: the fold is verified → offer to make the tenant RESIDENT (merge its shard + persist).
       // Only in install mode; migrate mode stops at "verified fold" (no install). _sel is the chosen source key.
-      if (_mode === 'install' && TENANT_SHARD[_sel]) _renderInstallCta(_$('ep-result'), TENANT_SHARD[_sel]);
+      if (TENANT_SHARD[_sel] && (_mode === 'install' || !_erp(_sel).real)) _renderInstallCta(_$('ep-result'), TENANT_SHARD[_sel]);
     }).catch(function (e) { out.innerHTML = '<div class="ep-err">Fold failed: ' + e.message + '</div>'; });
   }
 
@@ -473,11 +476,12 @@
       + '.ep-body{padding:18px 20px;font-size:14px;line-height:1.5}.ep-dim{color:#777;font-size:12px;margin:0 0 14px}'
       + '.ep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;margin:6px 0 16px}'
       + '.ep-cardlet{border:2px solid #e6e6ea;border-radius:12px;padding:12px 6px;text-align:center;cursor:pointer;opacity:.55;transition:.12s}'
-      + '.ep-cardlet:hover{border-color:#bcd}.ep-cardlet.ep-live{opacity:1}.ep-cardlet.ep-sel{border-color:#0b6;box-shadow:0 0 0 3px rgba(11,170,102,.18)}'
+      + '.ep-cardlet:hover{border-color:#bcd}.ep-cardlet.ep-avail{opacity:.85}.ep-cardlet.ep-live{opacity:1}.ep-cardlet.ep-sel{border-color:#0b6;box-shadow:0 0 0 3px rgba(11,170,102,.18)}'
       + '.ep-ic{height:24px;display:flex;align-items:center;justify-content:center}.ep-nm{font-size:12px;font-weight:600;margin:4px 0 6px}'
       + '.ep-dot{width:18px;height:18px;border-radius:50%;display:inline-block}'
       + '.ep-livedot{width:7px;height:7px;border-radius:50%;background:#0b6;display:inline-block;vertical-align:1px}'
       + '.ep-badge{font-size:10px;min-height:14px}.ep-detect{color:#0b6;font-weight:700}.ep-agent{color:#36c}.ep-coming{color:#a98}.ep-probing{color:#aaa}.ep-poc{color:#b07d10;font-weight:600}'
+      + '.ep-alpha{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#b07d10;background:#fdeec2;border:1px solid #f0e0a8;border-radius:5px;padding:1px 6px;vertical-align:1px}'
       + '.ep-q{font-size:15px;margin:6px 0 12px}.ep-foot{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}'
       + '.ep-btn{padding:9px 16px;border:1px solid #ccc;background:#f5f5f5;border-radius:8px;cursor:pointer;font-size:13px}.ep-btn[disabled]{opacity:.5;cursor:not-allowed}'
       + '.ep-primary{background:#0b6;color:#fff;border-color:#0b6}.ep-comingnote{margin-top:4px;flex-basis:100%}'
