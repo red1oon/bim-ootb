@@ -366,6 +366,7 @@
   </main>
 </div>
 
+<script src="vfs_detect.js?v=1"></script>
 <script src="ad_parser.js?v=22"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
@@ -585,6 +586,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }); }
     catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
     window.SQL = SQL;   // exposed for the Kanban host (KanbanHost.publish needs a SQL.Database factory)
+
+    // §VFS — CONSTRAINT_MITIGATION item 3 wired live: detect OPFS-vs-IndexedDB at boot (FoldEngineConstraints
+    // §6 vfs_backend monitor). On GH Pages this is IDB (no COOP/COEP) — NAMED, not a silent downgrade.
+    // Result stashed for future consumers; sql.js here is in-memory, so this is the monitor + no-silent-downgrade
+    // guarantee, not yet a persistence-VFS switch (that needs an OPFS sql.js build, blocked on GH-Pages anyway).
+    try { window.__VFS = (window.ERP && ERP.VFS) ? ERP.VFS.detect() : null; } catch (e) { console.log('§VFS detect error ' + e.message); }
 
     // ?seed=<file>.db loads a generated AD-gen seed (scripts/gen_ad.js) — bypasses the idb cache so it
     // never clobbers the real ad_seed.db cache and always loads fresh (§AD-RENDER). Default = ad_seed.db.
