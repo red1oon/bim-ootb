@@ -435,6 +435,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
 <script src="../common/whole_history.js?v=4" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local bar only')"></script>
 <script src="idmp_history.js?v=8"></script>
+<!-- SO_FULL_CRUD_GAP.md T3 / GAP 3 — the SAME CRUD ring-of-fire overlay glassbowl mounts, host-anchored to the
+     iDempiere renderer (no fork). Needs kernel_ops.js + erp_engine.js + bigdecimal.js (all loaded above). The
+     overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
+     withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
+     T4 owner-gate ride along unchanged. -->
+<script src="crud_overlay.js?v=4"></script>
 <script>
 (function () {
   'use strict';
@@ -855,9 +861,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function sep() { tb.appendChild(el('span', 'sep')); }
     btn('⟲', 'Refresh', true, function () { renderActiveTab(); });
     sep();
-    btn('＋', 'New (arrives with CRUD-P)', false);
-    btn('💾', 'Save (arrives with CRUD-P)', false);
-    btn('🗑', 'Delete (arrives with CRUD-P)', false);
+    (function () {
+      var tab = _curTab();
+      var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+      var canCrud = !!(window.__crud && tn && _crudHas(tn));
+      btn('✎ CRUD', canCrud ? 'Edit / New / Delete / Complete this record (CRUD ring)' : 'CRUD ring — this table is not in crud_ops (read-only)', canCrud, function () {
+        if (!window.__crud || !tn) return;
+        // ensure Edit-mode is on (the overlay gates writes behind it), then open the ring on the focused table.
+        try { var ck = document.getElementById('crudModeCk'); if (ck && !ck.checked) { ck.checked = true; ck.dispatchEvent(new Event('change')); } } catch (e) {}
+        window.__crud.enable();
+        // openRing reads crud_ops.json (fetched on enable); defer one frame so the store is present.
+        var tries = 0; (function tryOpen() { if (window.__crud.openRing && window.__crud.store && window.__crud.store()) { window.__crud.openRing(tn); console.log('§CRUD-IDMP-OPEN table=' + tn + ' record=' + _curRecPk()); } else if (tries++ < 30) { setTimeout(tryOpen, 60); } })();
+      });
+    })();
     sep();
     btn('◀◀', 'First record', true, function () { _recIdx = 0; refreshForm(); });
     btn('◀', 'Previous record', true, function () { if (_recIdx > 0) _recIdx--; refreshForm(); });
@@ -1473,6 +1489,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   write path is PROVEN (W-CRUD-WRITELOOP 11/11); only the C0 wrapper + ctx wiring remain (ENGINE_CONTRACT §6).
   };
   console.log('§SEAM-FROZEN seam=host-contract globals=IdmpHost methods=trace,focus,openTab,has,locate mount=#idmp-content');
+
+  // ── SO_FULL_CRUD_GAP.md T3 / GAP 3 — host adapter for the SHARED crud_overlay.js (no fork) ───────────
+  // The overlay reads page globals (typeof-guarded): withBundle/curChain/fname + __crudHostAnchor. Glassbowl
+  // supplies a bubble model; the iDempiere renderer has none, so we adapt: withBundle hands the overlay THIS
+  // window's seed db; curChain points it at the FOCUSED record (so getRecord/recId resolve the right row,
+  // case-insensitive); __crudHostAnchor anchors the ring on the focused table's on-screen rect (IdmpHost.locate),
+  // falling back to the ✎ CRUD toolbar button. The sidecar (signed op-log) is the overlay's OWN (IndexedDB) —
+  // shared with glassbowl. T1 fan-out + T2 list-tip + T4 owner-gate ride along unchanged.
+  function _curRecPk() {
+    try { var tab = _curTab(); if (!tab) return null; var rec = _records[_recIdx]; if (!rec) return null;
+      var v = recVal(rec, _keyCol(tab)); return (v === '' || v == null) ? null : v; } catch (e) { return null; }
+  }
+  // _crudHas — does the overlay's crud_ops store carry an entry for this (lower-cased) table? Drives the
+  // ✎ CRUD button's enabled state. Tolerant: store may not be fetched yet → treat as "maybe" (let the ring decide).
+  function _crudHas(tn) {
+    try { var st = window.__crud && window.__crud.store && window.__crud.store();
+      if (!st) return true;                 // store not fetched yet — don't pre-disable; openRing re-checks
+      return Object.prototype.hasOwnProperty.call(st, tn); } catch (e) { return true; }
+  }
+  // withBundle — the overlay's read source on iDempiere = THIS window's seed db (immutable baseline).
+  window.withBundle = function (cb) { try { if (db) cb(db); else cb(null); } catch (e) { try { cb(null); } catch (e2) {} } };
+  // curChain — a one-hop chain at the FOCUSED record so getRecord targets the right row (table lower-cased to
+  // match crud_ops keys; getRecord matches case-insensitively regardless). Rebuilt as a getter each read.
+  Object.defineProperty(window, 'curChain', { configurable: true, get: function () {
+    try { var tab = _curTab(); if (!tab || !tab.tableName) return null; var id = _curRecPk();
+      return [{ table: String(tab.tableName).toLowerCase(), id: id }]; } catch (e) { return null; }
+  } });
+  // fname — friendly label for a table key (the overlay titles the ring with it). iDempiere has the AD window
+  // name on the focused tab; fall back to the key.
+  window.fname = function (k) { try { var tab = _curTab(); if (tab && tab.tableName && String(tab.tableName).toLowerCase() === String(k).toLowerCase()) return tab.name || tab.tableName; } catch (e) {} return k; };
+  // __crudHostAnchor — where the ring/hot anchors. Prefer the focused table's on-screen rect (IdmpHost.locate),
+  // else the ✎ CRUD toolbar button, else null (ring self-hides). Returns {x,y,r} in viewport px.
+  window.__crudHostAnchor = function (key) {
+    try { if (window.IdmpHost && typeof IdmpHost.locate === 'function') { var L = IdmpHost.locate(key); if (L && L.x != null) return { x: L.x, y: L.y, r: L.r || 16 }; } } catch (e) {}
+    try { var tb = document.getElementById('idmp-toolbar'); if (tb) { var bs = tb.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) { if (/CRUD/.test(bs[i].textContent)) { var r = bs[i].getBoundingClientRect(); if (r.width) return { x: r.left + r.width / 2, y: r.bottom + 8, r: 16 }; } } } } catch (e2) {}
+    return null;
+  };
+  console.log('§CRUD-IDMP-ADAPTER mounted globals=withBundle,curChain,fname,__crudHostAnchor overlay=' + (window.__crud ? 'present' : 'absent'));
 
   // ── Accts Posted (FRONTEND_LANE_MASTER §2 Item C) — pill-alongside, read-only, consumes the seam. ──
   // window.ERPPostings (frozen read-fold) + window.AcctsPosted (the lens). The browser has no posted

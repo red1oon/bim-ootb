@@ -599,11 +599,33 @@ function renderTab(name){var id=dossierId,n=N[idx[id]],doss=(n&&n.dossier)||{col
  if(name==="Rules")return renderRulesTab(doss);
  if(name==="Columns")return renderColumnsTab(doss);
  if(name==="History")return renderHistoryTab(id);}
+function crudListOverlay(table,cs,valueRows,cb){
+ try{var CR=window.__crud;var CORE=CR&&CR.core;
+  if(!CR||!CORE||typeof CORE.listTip!=='function'||typeof CR.withSidecar!=='function'){cb(valueRows,null);return;}
+  CR.withSidecar(function(db){
+   try{if(!db){cb(valueRows,null);return;}
+    var pk=table+'_id';var lc=cs.map(function(c){return String(c).toLowerCase();});
+    // build object rows keyed by the lower-cased column names listTip reads.
+    var objRows=valueRows.map(function(v){var o={};lc.forEach(function(c,i){o[c]=v[i];});return o;});
+    var t=CORE.listTip(db,table,pk,objRows);
+    // flatten back to value-arrays in the SAME column order; new rows fill columns they carry.
+    var out=t.rows.map(function(o){return lc.map(function(c){return o.hasOwnProperty(c)?o[c]:null;});});
+    console.log('\u00a7CRUD-LIST key='+table+' created='+t.created.length+' hidden='+t.hidden.length+' rows='+out.length+' source=sidecar');
+    cb(out,t);
+   }catch(e){cb(valueRows,null);}
+  });
+ }catch(e){cb(valueRows,null);}
+}
 function renderDataTab(id){DBODY.innerHTML='<div class=dlead>the actual records for this document \u2014 the GardenWorld instance layer.</div>';
  if(BUNDLE_T.indexOf(id)<0){DBODY.innerHTML+='<div class=none>records not carried in this dataset</div>';return;}
  var load=document.createElement("div");load.className="none";load.textContent="loading\u2026";DBODY.appendChild(load);
  withBundle(function(db){if(dossierId!==id)return;var cols=recCols(db,id);if(!cols){DBODY.innerHTML='<div class=none>records not carried in this dataset</div>';return;}var sel=cols.map(function(o){return o.c;}).join(", "),res;try{res=db.exec("SELECT "+sel+" FROM "+id+" LIMIT 20");}catch(e){DBODY.innerHTML='<div class=none>records not carried in this dataset</div>';return;}
-  if(!res.length||!res[0].values.length){DBODY.innerHTML='<div class=none>no rows</div>';return;}var cs=res[0].columns,h='<table class=dt data-rows="'+res[0].values.length+'"><tr>';cs.forEach(function(c){h+="<th>"+esc(c)+"</th>";});h+="</tr>";res[0].values.forEach(function(v){h+="<tr>";cols.forEach(function(o,i){var raw=v[i],val=raw==null?"\u2014":(o.cls==="amt"&&!isNaN(Number(raw))?Number(raw).toFixed(2):String(raw));h+='<td title="'+esc(val)+'">'+esc(val)+"</td>";});h+="</tr>";});h+="</table>";DBODY.innerHTML='<div class=dlead>the actual records for this document.</div>'+h;});}
+  if(!res.length||!res[0].values.length){DBODY.innerHTML='<div class=none>no rows</div>';return;}var cs=res[0].columns;
+  // T2: surface CRUD_CREATE rows + hide CRUD_DELETE tombstones from the signed sidecar (falls back to baseline if overlay absent).
+  crudListOverlay(id,cs,res[0].values,function(rows,tip){if(dossierId!==id)return;
+   var h='<table class=dt data-rows="'+rows.length+'"><tr>';cs.forEach(function(c){h+="<th>"+esc(c)+"</th>";});h+="</tr>";rows.forEach(function(v){h+="<tr>";cols.forEach(function(o,i){var raw=v[i],val=raw==null?"\u2014":(o.cls==="amt"&&!isNaN(Number(raw))?Number(raw).toFixed(2):String(raw));h+='<td title="'+esc(val)+'">'+esc(val)+"</td>";});h+="</tr>";});h+="</table>";
+   var lead=tip&&(tip.created.length||tip.hidden.length)?'the actual records for this document \u2014 incl. '+tip.created.length+' you created'+(tip.hidden.length?', '+tip.hidden.length+' hidden':'')+' (from the signed sidecar).':'the actual records for this document.';
+   DBODY.innerHTML='<div class=dlead>'+lead+'</div>'+h;});});}
 function renderRulesTab(doss){if(!doss.ruleCount){DBODY.innerHTML='<div class=none>no validation rules recorded for this table</div>';return;}
  var h='<div class=dlead>the checks the system runs before saving ('+doss.ruleCount+' validation rule'+(doss.ruleCount==1?"":"s")+') \u2014 read-only.</div>';
  (doss.rules||[]).forEach(function(rr){h+='<div class=rule><div class=rb>'+esc(rr.binding)+'</div><code>'+esc(rr.body)+'</code></div>';});DBODY.innerHTML=h;}
@@ -850,8 +872,10 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <script src="ad_evaluator.js"></script>
 <!-- model-validator beforeSave hooks (W-*-SAVE, faithful M*.beforeSave ports) — window.AdModelVal; crud_overlay.saveForm fires BEFORE_SAVE: reject blocks, derived fills (§AD-MODELVAL-LIVE, UI_UNPARK B-3). MUST load before crud_overlay. -->
 <script src="ad_modelval.js"></script>
-<!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). -->
-<script src="crud_overlay.js?v=3"></script>
+<!-- T1 (SO_FULL_CRUD_GAP.md, W-SO-COMPLETE-UI): the PROVEN engine (UMD of bim-compiler scripts/erp_engine.js — window.ERPEngine, same file idempiere.html loads). crud_overlay.completeFanout extracts the completeIt consequence set (ship+invoice creates) from it. MUST load before crud_overlay. -->
+<script src="erp_engine.js?v=1"></script>
+<!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). T1: Complete a c_order = the WHOLE document process committed as ONE group. T2: renderDataTab unions CRUD_CREATE rows + hides DELETE tombstones (CORE.listTip). -->
+<script src="crud_overlay.js?v=4"></script>
 <!-- Period-close in-app (§INTEG-WIRE) — fold the live sidecar op-log → ONE signed checkpoint = balance b/f; bootstrap from it on load. -->
 <script src="erp_period_close.js"></script>
 <script src="period_close_ui.js"></script>
