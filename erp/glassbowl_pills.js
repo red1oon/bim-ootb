@@ -108,9 +108,21 @@
     if (!srcBtn) return;
     var r = srcBtn.getBoundingClientRect();
     var d = document.createElement('div'); d.id = 'gb-whist-drawer';
-    // UPWARD column — bomb at top (outside/far = safety), Z at bottom (near pill = first reach)
-    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;align-items:center;gap:6px;' +
-      'bottom:' + (window.innerHeight - r.top + 6) + 'px;left:' + Math.max(8, r.left) + 'px;';
+    // PERPENDICULAR auto-layout — draw ACROSS the strip, never along it (parallel covers neighbour pills).
+    // Glassbowl/Gravity strip is HORIZONTAL (bottom bar) → a COLUMN ABOVE; a VERTICAL strip → a ROW to the
+    // LEFT. Same dynamic rule as idmp_pills/panels — self-correcting if orientation flips. Chip order
+    // (bomb, then Z): column → bomb top/far, Z bottom/adjacent · row → bomb left/far, Z right/adjacent.
+    var _host = srcBtn.parentElement, _hr = _host ? _host.getBoundingClientRect() : r;
+    var _vertical = _hr.height >= _hr.width;
+    var _base = 'position:fixed;z-index:10000;display:flex;align-items:center;gap:6px;';
+    if (_vertical) {
+      d.style.cssText = _base + 'flex-direction:row;top:' + r.top + 'px;right:' +
+        Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+    } else {
+      d.style.cssText = _base + 'flex-direction:column;bottom:' + (window.innerHeight - r.top + 6) +
+        'px;left:' + Math.max(8, r.left) + 'px;';
+    }
+    console.log('§GB-PILL drawer-orient=' + (_vertical ? 'row(vertical-strip)' : 'col(horizontal-strip)'));
     function chip(name, title, color, onTap) {
       var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
       b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
