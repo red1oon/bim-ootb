@@ -323,11 +323,28 @@
     W.binOverlay = _box(s.m_locator_id, 0x4fc3f7, 0.55);        // target bin = bright (the _highlightGuids material)
     var b = _aabb(s.m_locator_id);
     if (!b) { log('step=' + s.step + '/' + s.of + ' locator=' + s.m_locator_id + ' fly=skip lit=0 (no transform)'); if (onDone) onDone(); return; }
-    var center = new THREE.Vector3(b.c.x, b.c.y, b.c.z);
-    var dist = Math.max(b.sx, b.sy, b.sz) * 4 + 0.5;         // §C-2 pull-back (was *1.5+0.5): see the rack, not the bin face
+    // §C-fix-2: frame the UNION AABB of all route bins so the picker sees the whole layout
+    var allBins = W.steps.map(function (st) { return _aabb(st.m_locator_id); }).filter(Boolean);
+    var center, dist;
+    if (allBins.length <= 1) {
+      center = new THREE.Vector3(b.c.x, b.c.y, b.c.z);
+      dist = Math.max(b.sx, b.sy, b.sz) * 4 + 0.5;
+    } else {
+      var minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      allBins.forEach(function (bb) {
+        minX = Math.min(minX, bb.c.x - bb.sx / 2); maxX = Math.max(maxX, bb.c.x + bb.sx / 2);
+        minY = Math.min(minY, bb.c.y - bb.sy / 2); maxY = Math.max(maxY, bb.c.y + bb.sy / 2);
+        minZ = Math.min(minZ, bb.c.z - bb.sz / 2); maxZ = Math.max(maxZ, bb.c.z + bb.sz / 2);
+      });
+      var ux = maxX - minX, uy = maxY - minY, uz = maxZ - minZ;
+      center = new THREE.Vector3((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+      var fovRad = ((A.camera && A.camera.fov) || 75) * Math.PI / 180;
+      var halfDiag = Math.sqrt(ux * ux + uy * uy + uz * uz) / 2;
+      dist = halfDiag / Math.tan(fovRad / 2) * 1.3;          // FOV-based fit, 1.3× margin
+    }
     var camDir = A.camera.position.clone().sub(A.controls.target).normalize();
     var end = center.clone().add(camDir.multiplyScalar(Math.max(dist, 6)));
-    console.log('§WH_ZOOM dist=' + Math.max(dist, 6).toFixed(1) + ' min=6');
+    console.log('§WH_ZOOM fit=whole bins=' + allBins.length + ' dist=' + Math.max(dist, 6).toFixed(1));
     var sp = A.camera.position.clone(), st = A.controls.target.clone(), t = 0;
     if (W.flyAnim) cancelAnimationFrame(W.flyAnim);
     (function fly() {
@@ -471,16 +488,11 @@
   }
 
   // ── walk advance / skip ──
-  // §C-3 fast-confirm: autoScan re-opens the scan screen for the NEXT step once the fly settles,
-  // so the picker doesn't re-tap "Confirm bin" every step. The per-bin refuse gate is untouched —
-  // the scan screen still demands the EXPECTED locator (scanInput), the act-at-the-bin discipline holds.
-  function advance(autoScan) {
+  function advance() {
     while (W.idx < W.steps.length && W.done[W.idx]) W.idx++;
     if (W.idx >= W.steps.length) { complete(); return; }
     renderStrip();
-    focusStep(currentStep(), autoScan ? function () {
-      if (W.open && W.idx < W.steps.length) { openScan(false); console.log('§WH_AUTOADVANCE step=' + currentStep().step + '/' + currentStep().of + ' scan=auto-open'); }
-    } : null);
+    focusStep(currentStep());
   }
   function skipPrompt() {
     var reason = window.prompt('Skip step ' + currentStep().step + ' — reason?', '');
@@ -598,7 +610,7 @@
     _sfx('qty');                                              // §C-6 qty confirm earcon (affirmative action)
     closeScan();
     W.idx++;
-    advance(true);                                            // §C-3 fast-confirm: auto-open scan for the next step
+    advance();
   };
 
   // skip-with-reason = op ANNOTATION on the log (the exception trail), step closed as skipped
