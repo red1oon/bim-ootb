@@ -555,7 +555,9 @@
     homeBtn.innerHTML = _svgIcon('home', 18);
     homeBtn.addEventListener('pointerup', function () {
       var ov = document.getElementById('posted-overlay'); if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
-      console.log('§POS-HOME closed');
+      // dispose POS-owned body floats (not inside the overlay — must be removed explicitly)
+      [floatPanel, payModal, dock].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+      console.log('§POS-HOME closed dispose=float+modal+dock');
     });
     var importBtn = document.createElement('button'); importBtn.className = 'pos-dock-item'; importBtn.id = 'pos-pill-import';
     importBtn.title = 'Register a new product (snap · scan · price)';

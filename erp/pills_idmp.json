@@ -82,7 +82,7 @@
       "id": "warehouse",
       "name": "Warehouse Walk",
       "key": "",
-      "icon": "box",
+      "icon": "route",
       "order": 4.7,
       "note": "Opens the warehouse walk viewer (\u00a7S-1 compiled GardenWorld db, short GH Pages URL). Static demo door \u2014 no data gate (the walk pill inside the viewer already gates on locator bins). share = navigator.share the viewer URL."
     },
