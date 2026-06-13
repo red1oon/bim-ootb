@@ -252,6 +252,25 @@
   .idmp-login-user.disabled { opacity:.5; cursor:not-allowed; }
   .idmp-login-user.disabled:hover { background:#fbfcfe; border-color:var(--idmp-border); }
   .idmp-login-user .tag { margin-left:auto; font-size:11px; color:var(--idmp-muted); }
+  /* tenant delete affordance (NEW_CLIENT_MGMT — reverse of install) + its red-rim warning */
+  .idmp-tenant-del { margin-left:8px; flex:0 0 auto; width:28px; height:28px; padding:0; border:1px solid transparent;
+    background:none; border-radius:6px; color:var(--idmp-muted); cursor:pointer; opacity:0; transition:.12s;
+    display:flex; align-items:center; justify-content:center; }
+  .idmp-login-user:hover .idmp-tenant-del { opacity:.65; }
+  .idmp-tenant-del:hover { opacity:1; color:#e5484d; background:#fdeced; border-color:#f3c0c2; }
+  .idmp-del-overlay { position:fixed; inset:0; background:rgba(8,10,16,.55); z-index:100000;
+    display:flex; align-items:center; justify-content:center; }
+  .idmp-del-card { background:#fff; width:min(420px,92vw); border:2px solid #e5484d; border-radius:14px;
+    box-shadow:0 0 0 5px rgba(229,72,77,.13), 0 22px 60px rgba(0,0,0,.4); overflow:hidden; }
+  .idmp-del-h { display:flex; align-items:center; gap:9px; padding:15px 18px 10px; font-size:17px; font-weight:800; color:#c4282d; }
+  .idmp-del-b { padding:2px 18px 14px; font-size:13.5px; line-height:1.55; color:#2a2d33; }
+  .idmp-del-b a { color:var(--idmp-blue); font-weight:600; }
+  .idmp-del-warn { margin-top:9px; font-size:12px; color:#c4282d; background:#fdeced; border:1px solid #f3c0c2;
+    border-radius:8px; padding:8px 11px; }
+  .idmp-del-f { display:flex; justify-content:flex-end; gap:10px; padding:0 18px 16px; }
+  .idmp-del-danger { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border:0; border-radius:8px;
+    background:#e5484d; color:#fff; font-size:13px; font-weight:700; cursor:pointer; }
+  .idmp-del-danger:hover { background:#c4282d; }
   #idmp-login select, #idmp-login input { width:100%; height:34px; border:1px solid var(--idmp-border);
     border-radius:5px; padding:0 9px; font-size:13px; background:#fff; color:var(--idmp-text); }
   #idmp-login input[readonly] { background:#eef1f5; color:var(--idmp-muted); }
@@ -377,7 +396,7 @@
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=1"></script>
 <script src="ad_data.js?v=22"></script>
-<script src="idmp_session.js?v=23"></script>
+<script src="idmp_session.js?v=24"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
 <script src="erp_postings.js?v=23"></script>
 <script src="accts_posted.js?v=23"></script>
@@ -388,7 +407,7 @@
 <script src="erp_preview.js?v=1"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
-<script src="icons.js?v=7"></script>
+<script src="icons.js?v=8"></script>
 <script src="overlay_kit.js?v=1"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
@@ -666,9 +685,59 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       row.appendChild(el('span', 'nm', c.name));
       row.appendChild(el('span', 'tag', c.users + (c.users === 1 ? ' user' : ' users') + ' · ' + c.id));
       row.addEventListener('click', function () { _loginClient = c; loginStep1(); });
+      // delete affordance — every resident tenant EXCEPT System(0)/GardenWorld(11), which are framework/seed.
+      if (c.id !== 0 && c.id !== 11) {
+        var del = el('button', 'idmp-tenant-del'); del.title = 'Delete tenant ' + c.name;
+        del.innerHTML = (window.OverlayKit ? OverlayKit.ico('trash', 15) : '✕');
+        del.addEventListener('click', function (ev) { ev.stopPropagation(); _confirmDeleteTenant(c); });
+        row.appendChild(del);
+      }
       host.appendChild(row);
     });
     console.log('§IDEMPIERE login-step0 tenants=' + (tenants ? tenants.length : 0));
+  }
+
+  // Red-rim warning before tearing a tenant down (feedback_destructive_ops). Shows the business-record count
+  // with an "Open to see?" escape — that logs into the tenant FIRST (like World-history select from BIM), so
+  // its records + history timeline become browsable (jump to first, scrub back through all). Delete persists.
+  function _confirmDeleteTenant(c) {
+    var rec = SES.countClientRecords(db, c.id);
+    var ov = el('div', 'idmp-del-overlay');
+    var warnIco = window.OverlayKit ? OverlayKit.ico('alertTriangle', 20) : '⚠';
+    var trashIco = window.OverlayKit ? OverlayKit.ico('trash', 13) : '';
+    var detail = rec.total > 0
+      ? ('There are <b>' + rec.total + '</b> record' + (rec.total === 1 ? '' : 's') + ' in this tenant. '
+         + '<a href="#" id="idmp-del-see">Open to see?</a>')
+      : 'This tenant has no business records yet.';
+    ov.innerHTML =
+      '<div class="idmp-del-card" role="alertdialog" aria-label="Delete tenant">'
+      + '<div class="idmp-del-h">' + warnIco + ' Delete tenant?</div>'
+      + '<div class="idmp-del-b"><b>' + c.name + '</b> (Client ' + c.id + ')<br>' + detail
+      + '<div class="idmp-del-warn">Removes all rows of this tenant. This cannot be undone.</div></div>'
+      + '<div class="idmp-del-f"><button id="idmp-del-cancel" class="ghost">Cancel</button>'
+      + '<button id="idmp-del-go" class="idmp-del-danger">' + trashIco + ' Delete</button></div>'
+      + '</div>';
+    document.body.appendChild(ov);
+    function closeOv() { ov.remove(); }
+    ov.addEventListener('click', function (e) { if (e.target === ov) closeOv(); });
+    $('idmp-del-cancel').onclick = closeOv;
+    var see = document.getElementById('idmp-del-see');
+    if (see) see.onclick = function (e) {
+      e.preventDefault();
+      console.log('§IDEMPIERE tenant-del-see client=' + c.id + ' records=' + rec.total + ' → login then timeline');
+      closeOv(); _loginClient = c; loginStep1();   // login FIRST; the World-history timeline scrubs from there
+    };
+    $('idmp-del-go').onclick = function () {
+      var res = SES.deleteClient(db, c.id);
+      if (!res.ok) { closeOv(); return; }
+      try { idbPut('ad_seed_v15', db.export().buffer); } catch (e) {}
+      console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=Y');
+      try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
+        label: 'Deleted tenant ' + c.name + ' (Client ' + c.id + ', ' + res.deleted + ' rows)' }); } catch (e) {}
+      closeOv();
+      var rest = SES.listClients(db);                 // re-render; one tenant left → auto-skip to its user list
+      if (rest.length >= 2) loginStep0(rest); else { _loginClient = rest[0] || null; loginStep1(); }
+    };
   }
   function loginStep1() {
     $('idmp-login-step0').style.display = 'none';
