@@ -1281,6 +1281,31 @@
                 ' gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N') + ' persisted=' + (saved ? 'Y' : 'N'));
               receipt.textContent = '✓ ' + POS.cartTotal(saleCart) + ' · deliver later — order ' + ids.orderId +
                 ' CO, shipment ' + ids.inoutId + ' DR · pick it in the warehouse walk';
+              // §CL-1: serialize op group → clipboard blob for cross-device relay
+              (function () {
+                var sentRows = cfg.opDb.exec('SELECT op_uuid, op_type, parameters FROM kernel_ops WHERE gid = ?', [res.gid]);
+                if (!sentRows[0]) return;
+                var sentOps = sentRows[0].values.map(function (v) {
+                  return { op_uuid: v[0], op_type: v[1], params: JSON.parse(v[2]) };
+                });
+                var blob = btoa(JSON.stringify({ v: 1, ops: sentOps }));
+                console.log('§POS-OPLOG-COPY gid=' + res.gid + ' ops=' + sentOps.length + ' bytes=' + blob.length);
+                var copyBtn = document.createElement('button');
+                copyBtn.id = 'pos-copy-oplog';
+                copyBtn.style.cssText = 'margin-top:8px;padding:7px 14px;border:1px solid #2a6a3a;border-radius:6px;' +
+                  'background:rgba(40,100,60,0.3);color:#6fb;font-size:12px;cursor:pointer;width:100%;display:flex;align-items:center;gap:6px;justify-content:center';
+                var iconSvg = (window.ICONS && window.ICONS.clipboard) ? window.ICONS.clipboard : '';
+                copyBtn.innerHTML = (iconSvg ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + iconSvg + '</svg>' : '') + ' Copy op log';
+                copyBtn.onclick = function () {
+                  navigator.clipboard.writeText(blob).then(function () {
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(function () {
+                      copyBtn.innerHTML = (iconSvg ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + iconSvg + '</svg>' : '') + ' Copy op log';
+                    }, 2000);
+                  });
+                };
+                receipt.parentNode && receipt.parentNode.insertBefore(copyBtn, receipt.nextSibling);
+              })();
               cart = []; renderCart();
               // §D-5 POC: open WH walk in new tab so user can immediately pick (user gesture → no popup block)
               var whUrl = (window.location.href.split('/erp/')[0] || '..') + '/viewer/viewer.html?db=../buildings/warehouse_gardenworld.db';

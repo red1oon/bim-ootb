@@ -396,6 +396,88 @@
     ui.routeOpen = false;
     ui.routeHdr.addEventListener('click', function () { toggleRouteDrawer(); });
 
+    // §CL-2: paste-receive box — collapsed <details>, sits above route drawer
+    var pd = document.createElement('div');
+    pd.id = 'wh-paste-drawer';
+    pd.style.cssText = 'position:fixed;left:8px;right:8px;bottom:168px;z-index:1199;' +
+      'background:rgba(16,24,40,.92);color:#e3f2fd;border:1px solid #37474f;border-radius:12px;' +
+      'padding:0;font:13px system-ui;backdrop-filter:blur(6px)';
+    pd.innerHTML =
+      '<details style="padding:8px 10px">' +
+        '<summary style="cursor:pointer;color:#90a4ae;user-select:none;font-size:12px">Paste incoming op log</summary>' +
+        '<textarea id="wh-oplog-paste" rows="3" placeholder="Paste op log here…" ' +
+          'style="width:100%;box-sizing:border-box;margin-top:6px;background:#0d1b2a;color:#b0bec5;' +
+          'border:1px solid #37474f;border-radius:6px;padding:6px;font-size:11px;font-family:monospace;resize:vertical"></textarea>' +
+        '<button id="wh-oplog-apply" style="margin-top:6px;padding:6px 14px;border:1px solid #37474f;' +
+          'border-radius:6px;background:rgba(79,195,247,0.15);color:#4fc3f7;font-size:12px;cursor:pointer">Apply</button>' +
+        '<span id="wh-oplog-status" style="margin-left:8px;font-size:11px;color:#90a4ae"></span>' +
+      '</details>';
+    document.body.appendChild(pd);
+    ui.pasteDrawer = pd;
+
+    pd.querySelector('#wh-oplog-apply').addEventListener('click', function () {
+      var statusEl = pd.querySelector('#wh-oplog-status');
+      var raw = (pd.querySelector('#wh-oplog-paste').value || '').trim();
+      if (!raw) { statusEl.textContent = 'Nothing to apply'; return; }
+      var payload;
+      try { payload = JSON.parse(atob(raw)); } catch (e) { statusEl.textContent = 'Invalid blob'; return; }
+      if (!payload || payload.v !== 1 || !Array.isArray(payload.ops) || !payload.ops.length) {
+        statusEl.textContent = 'Invalid payload'; return;
+      }
+      statusEl.textContent = 'Applying…';
+      (async function () {
+        try {
+          var SQL = A._SQL || window._SQL_CACHED;
+          if (!SQL) { statusEl.textContent = 'SQL not ready'; return; }
+          var idb = await _openCacheDB();
+          if (!idb || !idb.objectStoreNames.contains('dbs')) {
+            if (idb) idb.close();
+            statusEl.textContent = 'IDB unavailable'; return;
+          }
+          // read existing sidecar (may be absent on a fresh device)
+          var buf = await new Promise(function (ok) {
+            var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get('idmp_kanban_proj');
+            g.onsuccess = function () { ok(g.result || null); };
+            g.onerror = function () { ok(null); };
+          });
+          var sdb = buf ? new SQL.Database(new Uint8Array(buf)) : new SQL.Database();
+          KernelOps.ensureTable(sdb);
+          // pre-gate: skip if any op_uuid already present (paste-twice safety)
+          var incomingUuids = payload.ops.map(function (o) { return o.op_uuid; }).filter(Boolean);
+          var alreadyIn = false;
+          if (incomingUuids.length) {
+            var ph = incomingUuids.map(function () { return '?'; }).join(',');
+            var chk = sdb.exec('SELECT COUNT(*) FROM kernel_ops WHERE op_uuid IN (' + ph + ')', incomingUuids);
+            alreadyIn = chk[0] && Number(chk[0].values[0][0]) > 0;
+          }
+          if (alreadyIn) {
+            sdb.close(); idb.close();
+            statusEl.textContent = 'Already applied';
+            console.log('§WH-OPLOG-APPLY ops=' + payload.ops.length + ' ok=false reason=already-applied');
+            return;
+          }
+          var rxOps = payload.ops.map(function (o) { return { op_type: o.op_type, op_uuid: o.op_uuid, params: o.params }; });
+          var rxRes = await KernelOps.commitGroup(sdb, rxOps, {});
+          var out = sdb.export().buffer;
+          sdb.close();
+          await new Promise(function (ok, bad) {
+            var tx = idb.transaction('dbs', 'readwrite');
+            tx.objectStore('dbs').put(out, 'idmp_kanban_proj');
+            tx.oncomplete = function () { idb.close(); ok(); };
+            tx.onerror = function () { idb.close(); bad(tx.error); };
+          });
+          console.log('§WH-OPLOG-APPLY ops=' + payload.ops.length + ' ok=' + rxRes.committed);
+          pd.querySelector('#wh-oplog-paste').value = '';
+          statusEl.textContent = 'Applied — check the selector';
+          // refresh: re-run draftPick to surface the new pending shipment
+          await draftPick();
+        } catch (e) {
+          console.log('§WH-OPLOG-APPLY ops=' + (payload.ops ? payload.ops.length : '?') + ' ok=false reason=' + e.message);
+          statusEl.textContent = 'Error: ' + e.message;
+        }
+      })();
+    });
+
     ui.switchBtn = st.querySelector('#wh-switch');
     ui.switchBtn.addEventListener('click', function () { window.WHWalk.switchSource(); });
     st.querySelector('#wh-close').addEventListener('click', close);
