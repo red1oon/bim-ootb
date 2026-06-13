@@ -389,13 +389,21 @@
 <script src="erp_preview.js?v=1"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
-<script src="icons.js?v=7"></script>
+<script src="icons.js?v=8"></script>
 <script src="overlay_kit.js?v=1"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
      gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
 <script src="ad_callout.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
-<script src="plugin_overlay.js?v=1"></script>
+<!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
+     Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
+     (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
+<script src="ninja_model.js?v=1"></script>
+<script src="ninja_stage.js?v=1"></script>
+<script src="ninja_bundle.js?v=1"></script>
+<script src="ninja_create.js?v=1"></script>
+<script src="ninja_starter.js?v=1"></script>
+<script src="plugin_overlay.js?v=2"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
