@@ -97,15 +97,24 @@
       '#pos-float-cart { margin-bottom:8px; }',
       '.pos-float-cart-line { display:flex;justify-content:space-between;',
       '                       color:#cfe;font-size:12px;padding:3px 0;border-bottom:1px solid #112; }',
-      '#pos-float-total { font-size:32px;font-weight:bold;color:#4dcc88;',
-      '                   text-align:center;margin:10px 0 8px;letter-spacing:1px; }',
       '#pos-float-bp { width:100%;margin:4px 0 8px;padding:5px;background:#071409;',
       '                border:1px solid #2a6;border-radius:6px;color:#cfe;font-size:12px; }',
-      '#pos-float-tender { width:100%;padding:12px;border-radius:8px;border:1px solid #2a6;',
-      '                    background:#134;color:#cfe;cursor:pointer;font-weight:bold;',
-      '                    display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px; }',
-      '#pos-float-receipt { margin-top:6px;font-size:11px;color:#9cb;text-align:center;min-height:16px; }',
-      '#pos-float-replenish { margin-top:8px; }',
+      /* §B-1/B-2 collapsible drawers */
+      '.pos-drawer     { border-bottom:1px solid #1a3d24;margin-bottom:2px; }',
+      '.pos-drawer-hdr { display:flex;align-items:center;justify-content:space-between;',
+      '                  padding:7px 4px;font-size:12px;color:#8fd;cursor:pointer;user-select:none; }',
+      '.pos-drawer-hdr:hover { color:#cfe; }',
+      '.pos-drawer-body { padding:4px 0 8px; }',
+      /* §B-3 sticky total + icon action buttons */
+      '.pos-sticky-total { padding:8px 4px 6px;border-bottom:1px solid #1a3d24; }',
+      '#pos-float-total { font-size:32px;font-weight:bold;color:#4dcc88;',
+      '                   text-align:center;margin:0 0 8px;letter-spacing:1px; }',
+      '.pos-action-row  { display:flex;align-items:center;justify-content:center;gap:12px; }',
+      '#pos-float-tender { width:48px;height:48px;border-radius:12px;border:1px solid #2a6;',
+      '                    background:#134;color:#cfe;cursor:pointer;',
+      '                    display:flex;align-items:center;justify-content:center;padding:0; }',
+      '#pos-float-tender:hover { background:#1a5040; }',
+      '#pos-float-receipt { margin-top:4px;font-size:11px;color:#9cb;text-align:center;min-height:16px; }',
 
       /* U-3: import overlay */
       '#pos-import-overlay { display:none;position:fixed;inset:0;background:#000d;z-index:9600;',
@@ -455,8 +464,9 @@
       var o = document.createElement('option'); o.value = b.c_bpartner_id; o.textContent = b.name; bpSel.appendChild(o);
     });
     if (pos.c_bpartnercashtrx_id) bpSel.value = String(pos.c_bpartnercashtrx_id);
+    // §B-3 icon-only action buttons (banknote + package from icons.js) — KEEP ids + handlers VERBATIM
     var btn = document.createElement('button'); btn.id = 'pos-float-tender'; btn.className = 'pos-complete';
-    btn.innerHTML = _svgIcon('shoppingCart', 14) + ' Tender cash · Complete';
+    btn.innerHTML = _svgIcon('banknote', 24); btn.title = 'Tender cash · Complete';
     var receipt  = document.createElement('div'); receipt.id = 'pos-float-receipt';
     var replBox  = document.createElement('div'); replBox.id = 'pos-float-replenish';
     // §P-12 deliver-later door (WH_POS_PICK_LANE W-1) — DICTIONARY-GATED: shown only when a
@@ -467,16 +477,53 @@
     var dlBtn = null;
     if (dtSO) {
       dlBtn = document.createElement('button'); dlBtn.id = 'pos-float-deliverlater';
-      dlBtn.style.cssText = 'width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #2a6;' +
-        'background:#0b1f17;color:#8fd;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px';
-      dlBtn.innerHTML = _svgIcon('clock', 14) + ' Deliver later · pick at warehouse';
+      dlBtn.style.cssText = 'width:48px;height:48px;border-radius:12px;border:1px solid #2a6;' +
+        'background:#0b1f17;color:#8fd;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0';
+      dlBtn.innerHTML = _svgIcon('package', 24); dlBtn.title = 'Deliver later · pick at warehouse';
     }
     console.log('§POS-DELIVERLATER door=' + (dtSO ? 'on' : 'off') +
       (dtSO ? ' doctype=' + dtSO.c_doctype_id + ' ship=' + dtSO.c_doctypeshipment_id : '') +
       ' (dictionary-gated docsubtypeso=SO)');
-    floatBody.appendChild(cartBox); floatBody.appendChild(totalEl); floatBody.appendChild(bpSel);
-    floatBody.appendChild(btn); if (dlBtn) floatBody.appendChild(dlBtn);
-    floatBody.appendChild(receipt); floatBody.appendChild(replBox);
+
+    // §B-1 items drawer (collapsed per new sale, data-gate: count updates via renderCart)
+    var itemsDrawer = document.createElement('div'); itemsDrawer.className = 'pos-drawer';
+    var itemsHdr = document.createElement('div'); itemsHdr.id = 'pos-drawer-items-hdr'; itemsHdr.className = 'pos-drawer-hdr';
+    itemsHdr.textContent = '▸ Ordered items (0)';
+    var itemsBody = document.createElement('div'); itemsBody.className = 'pos-drawer-body'; itemsBody.style.display = 'none';
+    itemsBody.appendChild(cartBox);
+    itemsDrawer.appendChild(itemsHdr); itemsDrawer.appendChild(itemsBody);
+    var _itemsOpen = false;
+    itemsHdr.addEventListener('pointerup', function () {
+      _itemsOpen = !_itemsOpen;
+      itemsBody.style.display = _itemsOpen ? '' : 'none';
+      itemsHdr.textContent = (_itemsOpen ? '▾ ' : '▸ ') + 'Ordered items (' + cart.length + ')';
+      console.log('§POS-DRAWER-ITEMS open=' + _itemsOpen + ' count=' + cart.length);
+    });
+
+    // §B-3 sticky total + action row (always visible)
+    var stickyZone = document.createElement('div'); stickyZone.className = 'pos-sticky-total';
+    var actionRow = document.createElement('div'); actionRow.className = 'pos-action-row';
+    actionRow.appendChild(btn); if (dlBtn) actionRow.appendChild(dlBtn);
+    stickyZone.appendChild(totalEl); stickyZone.appendChild(actionRow);
+
+    // §B-2 replenishment drawer (collapsed by default, count updates via renderReplenish)
+    var replDrawer = document.createElement('div'); replDrawer.className = 'pos-drawer';
+    var replHdr = document.createElement('div'); replHdr.id = 'pos-drawer-repl-hdr'; replHdr.className = 'pos-drawer-hdr';
+    replHdr.textContent = '▸ Replenishment (0)';
+    var replBody = document.createElement('div'); replBody.className = 'pos-drawer-body'; replBody.style.display = 'none';
+    replBody.appendChild(replBox);
+    replDrawer.appendChild(replHdr); replDrawer.appendChild(replBody);
+    var _replOpen = false;
+    replHdr.addEventListener('pointerup', function () {
+      _replOpen = !_replOpen;
+      replBody.style.display = _replOpen ? '' : 'none';
+      var replCount = replBox.querySelectorAll('.pos-replenish-row').length;
+      replHdr.textContent = (_replOpen ? '▾ ' : '▸ ') + 'Replenishment (' + replCount + ')';
+      console.log('§POS-DRAWER-REPL open=' + _replOpen + ' count=' + replCount);
+    });
+
+    floatBody.appendChild(itemsDrawer); floatBody.appendChild(stickyZone);
+    floatBody.appendChild(bpSel); floatBody.appendChild(receipt); floatBody.appendChild(replDrawer);
     floatPanel.appendChild(floatHdr); floatPanel.appendChild(floatBody);
     document.body.appendChild(floatPanel);
 
@@ -551,6 +598,8 @@
       totalEl.textContent = tot;
       // keep scan overlay total live
       var st = document.getElementById('pos-scan-total'); if (st) st.textContent = tot;
+      // §B-1 update items drawer header count (drawer state preserved)
+      itemsHdr.textContent = (_itemsOpen ? '▾ ' : '▸ ') + 'Ordered items (' + cart.length + ')';
     }
 
     function vendorOf(pid) {
@@ -593,6 +642,8 @@
         }
         replBox.appendChild(row);
       });
+      // §B-2 update replenishment drawer header count (drawer state preserved)
+      replHdr.textContent = (_replOpen ? '▾ ' : '▸ ') + 'Replenishment (' + sugg.length + ')';
       console.log('§POS-LIVE-REPLENISH suggestions=' + sugg.length + ' (suggest-by-default; PO via buildDoc on tap)');
       return sugg;
     }
@@ -702,12 +753,27 @@
         _se.video.style.display = 'none';
         console.log('§POS-SCAN BarcodeDetector=absent → typed fallback active (W-QR-INPUT honest)');
       } else {
-        _se.hint.textContent = 'Camera live — scan items one by one';
+        _se.hint.textContent = 'Hold steady · 10–15 cm from barcode';
+        console.log('§POS-SCAN-HINT shown=true');
         _se.video.style.display = '';
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
           .then(function (stream) {
             _scanStream = stream;
             _se.video.srcObject = stream;
+            // §B-4 capability-guarded macro focus (Chrome-only; Safari degrades silently)
+            var tracks = stream.getVideoTracks();
+            if (tracks.length) {
+              var track = tracks[0];
+              var caps = track.getCapabilities ? track.getCapabilities() : {};
+              var hasMacro = caps.focusMode && caps.focusMode.indexOf('macro') >= 0;
+              if (hasMacro) {
+                track.applyConstraints({ advanced: [{ focusMode: 'macro' }] })
+                  .then(function () { console.log('§POS-FOCUS-MACRO applied=true'); })
+                  .catch(function () { console.log('§POS-FOCUS-MACRO applied=false'); });
+              } else {
+                console.log('§POS-FOCUS-MACRO applied=false');
+              }
+            }
             var bd = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','qr_code','data_matrix'] });
             var lastCode = '', lastTs = 0;
             function detect() {
@@ -1199,7 +1265,7 @@
     var stationInfo = document.createElement('div');
     stationInfo.style.cssText = 'color:#6a9;font-size:11px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #1a3d24';
     stationInfo.textContent = pos.name + ' · wh ' + pos.m_warehouse_id + ' · pricelist v' + plv.v;
-    floatBody.insertBefore(stationInfo, cartBox);
+    floatBody.insertBefore(stationInfo, itemsDrawer);
 
     renderCart();
     cfg.overlay('POS — ' + pos.name, wrap);
