@@ -483,10 +483,6 @@
   // ════════════════════════════════════════════════════════════════════════
   injectCss();
   var panel = document.createElement('div'); panel.id = 'reportPanel'; document.body.appendChild(panel);
-  // iDempiere-style MENU launcher pill (mirrors help_overlay's own-pill precedent) — reach reports the AD_Menu way.
-  var menuPill = document.createElement('div'); menuPill.id = 'reportMenuPill'; menuPill.innerHTML = '<span class=rpglyph>▤</span> Reports';
-  document.body.appendChild(menuPill);
-  menuPill.addEventListener('click', function () { openMenu(); });
 
   // ── bundle helpers (truth-bound: read real rows, never invent) ──────────────
   function hasCol(db, t, c) {
@@ -944,11 +940,8 @@
       '#reportPanel .rptab:hover{border-color:#6a4a62;color:#fbeaf7}' +
       '#reportPanel .rptab.on{background:#3a2440;border-color:#9fdfe8;color:#bff0dd}' +
       '#reportPanel .rpcalc td{font-weight:600;color:#fbeaf7;border-top:1px solid #2a1f29}' +
-      '#reportMenuPill{position:fixed;z-index:70;left:14px;top:10px;display:flex;align-items:center;gap:6px;' +
-        'background:#120d16;border:1px solid #4a2f44;border-radius:16px;padding:5px 12px;font:13px system-ui;' +
-        'color:#ecdcea;cursor:pointer;user-select:none;box-shadow:0 2px 10px rgba(0,0,0,.4)}' +
-      '#reportMenuPill:hover{border-color:#9fdfe8;color:#fbeaf7}' +
-      '#reportMenuPill .rpglyph{color:#9fdfe8}' +
+      // #reportMenuPill removed — Reports now surfaces as a registry pill (pills_idmp.json + IdmpPillActions.reports → window.__report.menu)
+
       '#reportPanel .rpcrumb{font-size:11px;color:#8a6f86;margin:0 0 9px;padding-bottom:8px;border-bottom:1px solid #2a1f29}' +
       '#reportPanel .rpmenu{display:flex;flex-direction:column;gap:2px}' +
       '#reportPanel .rpmi{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12.5px}' +

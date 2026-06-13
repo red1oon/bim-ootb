@@ -1227,8 +1227,8 @@
   function injectCss() {
     var css = document.createElement('style');
     css.textContent =
-      '#crudModeWrap{position:fixed;top:10px;right:150px;z-index:70;display:flex;align-items:center;gap:6px;background:#221826;border:1px solid #4a2f44;border-radius:16px;padding:5px 11px;font:13px system-ui;color:#eecfe8;cursor:pointer;user-select:none}' +
-      '#crudModeWrap:hover{border-color:#e066c0}#crudModeWrap input{accent-color:#e066c0;cursor:pointer}' +
+      '#crudModeWrap{display:none}' +   // hidden — Edit-mode now surfaces as a registry pill (pills_idmp.json)
+
       '#crudRing{position:fixed;z-index:72;width:0;height:0;pointer-events:none;display:none}#crudRing.open{display:block}' +
       '#crudRing .crud-fab{position:absolute;left:0;top:0;width:' + FAB + 'px;height:' + FAB + 'px;margin:0;border-radius:50%;border:1px solid #2f4654;' +
         'font:600 15px system-ui;display:flex;align-items:center;justify-content:center;cursor:pointer;pointer-events:auto;' +
@@ -1299,6 +1299,8 @@
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
-                    readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history };
+                    readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history,
+                    editModeOn: function () { return on; },
+                    toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
   console.log('§CRUD layer mounted (Edit-mode ready)');
 })(typeof window !== 'undefined' ? window : this);
