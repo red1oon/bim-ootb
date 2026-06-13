@@ -78,6 +78,7 @@
 <div id="bottom-nav"></div>
 
 <!-- §INSTANT Phase 1: globe renders from initbubble.json in <300ms -->
+<script src="vfs_detect.js?v=1"></script>
 <script src="ad_graph.js?v=26"></script>
 <!-- AD logic-expression evaluator (window.AdEvaluator) — ad_ui.js reads it to hide fields whose AD DisplayLogic is false for a record (§AD-DISPLAYLOGIC-LIVE). MUST precede ad_ui.js. -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -237,6 +238,10 @@ var _shellReady = false;
     }
     _bench.sql_init = Math.round(performance.now() - _t0);
     console.log('§BENCH sql_init=' + _bench.sql_init + 'ms');
+
+    // §VFS — CONSTRAINT_MITIGATION item 3 wired live: OPFS-vs-IDB detection at boot (monitor + no silent
+    // downgrade). GH Pages → IDB (no COOP/COEP), named not a regression. Result on window.__VFS.
+    try { window.__VFS = (window.ERP && ERP.VFS) ? ERP.VFS.detect() : null; } catch (e) { console.log('§VFS detect error ' + e.message); }
 
     // ── Load database ───────────────────────────────────────────────
     var params = new URLSearchParams(window.location.search);
