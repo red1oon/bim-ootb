@@ -390,6 +390,11 @@
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
 <script src="icons.js?v=7"></script>
 <script src="overlay_kit.js?v=1"></script>
+<!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
+     gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
+<script src="ad_callout.js?v=1"></script>
+<script src="plugin_registry.js?v=1"></script>
+<script src="plugin_overlay.js?v=1"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
@@ -1890,6 +1895,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
+      // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
+      // PLUGIN_* kernel_ops + a bundle's read-only setup query) + the live engine registries a bundle contributes
+      // into. db may be null pre-login — engine plugins still install/activate (their ops just aren't logged).
+      plugin: function () {
+        if (!window.PluginEngine) { status('Plugin engine not loaded'); return; }
+        window.PluginEngine.open({
+          doc: document, db: window.__idmpDb || db, adQ: _adQ, KO: window.KernelOps,
+          engines: { modelval: window.AdModelVal, callout: window.AdCallout, process: window.AdProcess,
+                     postTokens: (window.PostResolver && window.PostResolver.TOKENS) || null }
+        });
+      },
       // NINJA EXCEL — the lens needs only the loaded tenant db; engine + UI are self-contained.
       ninja: function () { window.NinjaPill.open({ db: window.__idmpDb }); },
       warehouse: function () {
