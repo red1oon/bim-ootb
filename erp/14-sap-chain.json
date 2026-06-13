@@ -1,0 +1,100 @@
+{
+  "meta": {
+    "source": "derived-from-abap-literals 2026-06-14; carrier/connection/supplement hardcoded in /DMO/CL_FLIGHT_DATA_GENERATOR; flight_price=placeholder; IDs=placeholder; refresh from real export when available",
+    "description": "SAP /DMO/ Flight Reference Scenario — lifecycle fold: Travel T00001 · LH FRA→JFK · Hot Chocolate supplement",
+    "erp": "sap",
+    "client": 14,
+    "total_price": 527.3,
+    "currency": "EUR"
+  },
+  "wfmc": {
+    "transitions": [
+      [
+        "DR",
+        "CO",
+        "CO"
+      ]
+    ]
+  },
+  "KNOWN_VERBS": [
+    "CREATE_DOCUMENT",
+    "CREATE_LINE",
+    "SET_STATUS",
+    "ALLOCATE",
+    "MATCH",
+    "POST"
+  ],
+  "fold_scope": "document-lifecycle ONLY (CREATE_DOCUMENT/CREATE_LINE/SET_STATUS) — NO POST/ALLOCATE/MATCH (flight model has no FI)",
+  "events": [
+    {
+      "name": "SAP flight data install",
+      "d": {
+        "docType": "C_SAP_Travel",
+        "action": "CO",
+        "status": "DR"
+      },
+      "ops": [
+        {
+          "op_type": "CREATE_DOCUMENT",
+          "table": "C_Order",
+          "source_id": "T00001",
+          "doc_status": "CO"
+        },
+        {
+          "op_type": "CREATE_LINE",
+          "table": "C_OrderLine",
+          "source_line_id": "1",
+          "line_no": 1,
+          "m_product_id": "0400",
+          "amount": 500,
+          "currency": "EUR"
+        },
+        {
+          "op_type": "CREATE_LINE",
+          "table": "C_OrderLine",
+          "source_line_id": "1-1",
+          "line_no": 1000,
+          "m_product_id": "SUPP-0001",
+          "amount": 2.3,
+          "currency": "EUR"
+        },
+        {
+          "op_type": "SET_STATUS",
+          "table": "C_Order",
+          "id": "T00001",
+          "doc_status": "CO"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "total": 527.3,
+    "currency": "EUR"
+  },
+  "reference": {
+    "carrier": {
+      "carrier_id": "LH",
+      "name": "Deutsche Lufthansa AG",
+      "currency_code": "EUR",
+      "hardcoded": true
+    },
+    "connection": {
+      "carrier_id": "LH",
+      "connection_id": "0400",
+      "airport_from_id": "FRA",
+      "airport_to_id": "JFK",
+      "departure_time": "101000",
+      "arrival_time": "113400",
+      "distance": 6162,
+      "distance_unit": "KM",
+      "hardcoded": true
+    },
+    "supplement_product": {
+      "description": "Hot Chocolate",
+      "supplement_category": "beverage",
+      "price_hardcoded": 2.3,
+      "currency_code": "EUR",
+      "hardcoded": true
+    }
+  }
+}
