@@ -1575,11 +1575,16 @@
         _graphDrillCallback, _graphLongPressCallback);
     }
 
-    // Auto-maximize globe — first load or if was maximized before client switch
+    // Auto-maximize globe — first load or if was maximized before client switch.
+    // §INIT-REBURST fix: maximize SYNCHRONOUSLY (same tick as initFromBubbles, before the first rAF paint)
+    // so the globe's first visible frame is already at final size. The old setTimeout(…,100) painted the
+    // canvas at its small height (360) then grew it to viewport (600) ~100ms later — a visible size/position
+    // JUMP on every load + refresh (witness tests/poc_init_reburst.js: resizedAfterPaint Y→N). resize-in-place
+    // (ADGraph.resize) means no destroy/reinit, so this does NOT reintroduce the old bubble-burst.
     if (!_graphAutoMaxed || _graphIsMaxed) {
       _graphAutoMaxed = true;
       _graphIsMaxed = true;
-      setTimeout(function () { _resizeGraph(true); }, 100);
+      _resizeGraph(true);
     }
 
     console.log('§AD_UI graphView rendered client=' + _currentClient);
