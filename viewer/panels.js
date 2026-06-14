@@ -1219,6 +1219,9 @@ function setupPanels(A) {
       // ── JSON registry hub: open ANY registered project JSON in the same editor ──
       _buildJsonHub(content);
 
+      // ── §5D Rate Pack (BIM→Project TASK A, docs/BIMtoProject.md §A): pick the active cost pack ──
+      content.appendChild(_buildSection('5D Rate Pack', false, _rate5dBody));
+
       // ── §9 Cache Info: per-store size + clear (history-clear keeps the signed kernel) ──
       content.appendChild(_buildSection('Cache Info', false, _cacheInfoBody));
 
@@ -1350,6 +1353,49 @@ function setupPanels(A) {
       }
       refresh();
       console.log('§CACHE_INFO panel built rows=' + rows.length);
+      return box;
+    }
+
+    // §5D Rate Pack body (BIM→Project TASK A) — picks the active cost pack, persisted to
+    // localStorage[bim_5d_pack] (read with priority by rates.js initRateTemplate). On change it
+    // loads the pack LIVE (loadRateTemplate → RATES + _TRL.cur), so the Find-panel cost + future
+    // BIM→ERP export bill from the chosen pack. The 4D sequence is edited via the JSON registry hub.
+    function _rate5dBody() {
+      var box = document.createElement('div');
+      box.style.cssText = 'padding:8px 14px 14px;font-size:12px;color:#bbb;';
+      var note = document.createElement('div');
+      note.style.cssText = 'color:#888;font-size:11px;margin-bottom:8px;line-height:1.4;';
+      note.textContent = 'Currency + unit rates for the Find-panel cost and BIM→ERP export. Editing the 4D sequence: use the JSON registry above (sequence_rules).';
+      box.appendChild(note);
+      // The shipped locale packs (rates/<id>.json). Value = file id; the pack carries its own currency.
+      var PACKS = ['cidb2024_my', 'bcis2024_uk', 'rsmeans2024_us', 'rawlinsons2024_au', 'bki2024_de',
+        'untec2024_fr', 'cype2024_es', 'gb50500_cn', 'dpt2024_th', 'jbci2024_jp', 'kict2024_kr',
+        'aramco2024_sa', 'sinapi2024_br', 'sni2024_id', 'asaqs2024_za', 'pwd2024_bd'];
+      var active = (function () { try { return localStorage.getItem('bim_5d_pack'); } catch (e) { return null; } })()
+        || (window.RATE_TEMPLATE_NAME) || 'cidb2024_my';
+      var sel = document.createElement('select');
+      sel.style.cssText = 'width:100%;padding:6px 8px;border:1px solid rgba(108,159,255,0.3);border-radius:6px;background:#1a1a1a;color:#cfe;font-size:12px;';
+      PACKS.forEach(function (id) {
+        var o = document.createElement('option'); o.value = id; o.textContent = id;
+        if (id === active) o.selected = true; sel.appendChild(o);
+      });
+      var status = document.createElement('div');
+      status.style.cssText = 'color:#8ab4ff;font-size:11px;margin-top:8px;min-height:14px;';
+      var curNow = (window._TRL && window._TRL.cur) || '';
+      status.textContent = 'Active: ' + active + (curNow ? (' (' + curNow + ')') : '');
+      sel.addEventListener('change', function () {
+        var name = sel.value;
+        try { localStorage.setItem('bim_5d_pack', name); } catch (e) {}
+        if (typeof window.loadRateTemplate === 'function') {
+          window.loadRateTemplate(name).then(function () {
+            var cur = (window._TRL && window._TRL.cur) || '';
+            status.textContent = 'Active: ' + (window.RATE_TEMPLATE_NAME || name) + (cur ? (' (' + cur + ')') : '');
+            console.log('§FIND_COST_PACK set=' + name + ' active=' + (window.RATE_TEMPLATE_NAME || name) + ' cur=' + cur);
+            if (A.status) A.status.textContent = '5D pack: ' + name;
+          });
+        }
+      });
+      box.appendChild(sel); box.appendChild(status);
       return box;
     }
 
