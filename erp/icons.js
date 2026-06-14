@@ -72,7 +72,9 @@
     // POS_MINIMAL §D-2 — receipt-preview pay modal QR action (verbatim Lucide qr-code).
     qrCode:   { svg: '<rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/>' },
     // SPATIAL_PICKING_SPEC §S-3 — Lucide route (warehouse pill idempiere.html + WH walk strip mode indicator).
-    route:    { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>' }
+    route:    { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>' },
+    // POS FOLLOW-UP ROUND 2 §R2-6 — Lucide plus (the "register NEW product" import dock glyph).
+    plus:     { svg: '<path d="M5 12h14"/><path d="M12 5v14"/>' }
   };
   if (typeof window !== "undefined") window.ICONS = ICONS;
   if (typeof module !== "undefined" && module.exports) module.exports = ICONS;
