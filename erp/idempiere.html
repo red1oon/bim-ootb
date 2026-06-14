@@ -488,7 +488,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=8"></script>
+<script src="crud_overlay.js?v=9"></script>
+<!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
+     over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
+     seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
+     is safe). W-BLUE-FUTURE-LIVE. -->
+<script src="blue_future.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -1759,7 +1764,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var c = window.__crud;
       if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return rows;
       var sdb = c.kernelDb(); if (!sdb) return rows;
-      var res = c.core.listTip(sdb, table, pkCol, rows);
+      var br = (window.BlueFuture && typeof window.BlueFuture.readBranch === 'function') ? window.BlueFuture.readBranch() : null;
+      var res = c.core.listTip(sdb, table, pkCol, rows, br);   // BLUE FUTURE: blue VIEW includes the active branch
       return (res && res.rows) ? res.rows : rows;
     });
     console.log('§AD-SELFEDIT-LIVE tip-source wired (ad_parser ← crud sidecar)');
@@ -1773,6 +1779,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-SELFEDIT-LIVE refold table=' + t + ' win=' + wid);
     if (wid != null && _openWins[wid]) { delete _openWins[wid]; openWindow(Number(wid)); }
     if (/^AD_(Window|Menu)$/i.test(t)) { try { buildMenu(); } catch (er) {} }   // name/menu edits relabel the tree
+  });
+
+  // BLUE FUTURE (item 0) — enter/accept/discard changed the branch view: re-open the active window so the
+  // grid/form re-read through the now-branch-aware read-sites (blue rows appear in blue, vanish on discard).
+  window.addEventListener('bluefuture:changed', function () {
+    var wid = _activeWin;
+    console.log('§BLUE-LIVE chrome-refold win=' + wid + ' blue=' + (window.BlueFuture && window.BlueFuture.isBlue()));
+    if (wid != null && _openWins[wid]) { delete _openWins[wid]; openWindow(Number(wid)); }
+    try { if (window.BlueFuture) window.BlueFuture.refresh(); } catch (er) {}
+  });
+  // leg 3 — Zoom: a tapped blue dot asks the chrome to open its speculative child (M_InOut/C_Invoice).
+  window.addEventListener('bluefuture:zoom', function (e) {
+    var kids = (e.detail && e.detail.children) || [];
+    console.log('§BLUE-LIVE zoom-open children=' + kids.map(function (k) { return k.table; }).join(',') + ' (host opens the child window)');
   });
 
   // ── Accts Posted (FRONTEND_LANE_MASTER §2 Item C) — pill-alongside, read-only, consumes the seam. ──
