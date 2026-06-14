@@ -72,9 +72,22 @@
     if (!srcBtn) return;
     var r = srcBtn.getBoundingClientRect();
     var d = document.createElement('div'); d.id = 'idmp-whist-drawer';
-    // UPWARD column — bomb at top (outside/far = safety), Z at bottom (near pill = first reach)
-    d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:column;align-items:center;gap:6px;' +
-      'bottom:' + (window.innerHeight - r.top + 6) + 'px;left:' + Math.max(8, r.left) + 'px;';
+    // PERPENDICULAR auto-layout — draw the drawer ACROSS the pill strip, never ALONG it (a parallel drawer
+    // covers the neighbouring pills; that was the regression). Measure the strip container: a VERTICAL strip
+    // (viewer/idmp right edge) → a ROW to the LEFT of W; a HORIZONTAL strip (glassbowl/gravity bottom bar) →
+    // a COLUMN ABOVE W. Self-correcting if a bar's orientation ever flips again — no per-surface hardcoding.
+    // Chip append order (bomb, then Z): row → bomb left/far, Z right/adjacent · column → bomb top/far, Z bottom/adjacent.
+    var _host = srcBtn.parentElement, _hr = _host ? _host.getBoundingClientRect() : r;
+    var _vertical = _hr.height >= _hr.width;
+    var _base = 'position:fixed;z-index:10000;display:flex;align-items:center;gap:6px;';
+    if (_vertical) {
+      d.style.cssText = _base + 'flex-direction:row;top:' + r.top + 'px;right:' +
+        Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+    } else {
+      d.style.cssText = _base + 'flex-direction:column;bottom:' + (window.innerHeight - r.top + 6) +
+        'px;left:' + Math.max(8, r.left) + 'px;';
+    }
+    console.log('§IDMP-PILL drawer-orient=' + (_vertical ? 'row(vertical-strip)' : 'col(horizontal-strip)'));
     function chip(name, title, color, onTap) {
       var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
       b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
@@ -163,7 +176,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=29').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=30').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 

@@ -353,7 +353,7 @@
 </div>
 
 <div id="idmp-header">
-  <button id="idmp-burger" class="hbtns"><button title="Menu">&#9776;</button></button>
+  <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
   <span id="idmp-logo">A+</span>
   <span id="idmp-title">iDempiere&#8209;like</span>
   <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
@@ -385,6 +385,7 @@
   </main>
 </div>
 
+<script src="vfs_detect.js?v=1"></script>
 <script src="ad_parser.js?v=22"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
@@ -409,8 +410,21 @@
 <script src="erp_preview.js?v=1"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
-<script src="icons.js?v=8"></script>
+<script src="icons.js?v=9"></script>
 <script src="overlay_kit.js?v=1"></script>
+<!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
+     gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
+<script src="ad_callout.js?v=1"></script>
+<script src="plugin_registry.js?v=1"></script>
+<!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
+     Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
+     (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
+<script src="ninja_model.js?v=1"></script>
+<script src="ninja_stage.js?v=1"></script>
+<script src="ninja_bundle.js?v=1"></script>
+<script src="ninja_create.js?v=1"></script>
+<script src="ninja_starter.js?v=1"></script>
+<script src="plugin_overlay.js?v=3"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
@@ -434,7 +448,7 @@
 <script src="pos_core.js?v=3"></script>
 <!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
 <script src="img_store.js?v=2"></script>
-<script src="pos_lens.js?v=7"></script>
+<script src="pos_lens.js?v=8"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
@@ -601,6 +615,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }); }
     catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
     window.SQL = SQL;   // exposed for the Kanban host (KanbanHost.publish needs a SQL.Database factory)
+
+    // §VFS — CONSTRAINT_MITIGATION item 3 wired live: detect OPFS-vs-IndexedDB at boot (FoldEngineConstraints
+    // §6 vfs_backend monitor). On GH Pages this is IDB (no COOP/COEP) — NAMED, not a silent downgrade.
+    // Result stashed for future consumers; sql.js here is in-memory, so this is the monitor + no-silent-downgrade
+    // guarantee, not yet a persistence-VFS switch (that needs an OPFS sql.js build, blocked on GH-Pages anyway).
+    try { window.__VFS = (window.ERP && ERP.VFS) ? ERP.VFS.detect() : null; } catch (e) { console.log('§VFS detect error ' + e.message); }
 
     // ?seed=<file>.db loads a generated AD-gen seed (scripts/gen_ad.js) — bypasses the idb cache so it
     // never clobbers the real ad_seed.db cache and always loads fresh (§AD-RENDER). Default = ad_seed.db.
@@ -2069,6 +2089,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
+      reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
+      editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
+      // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
+      // PLUGIN_* kernel_ops + a bundle's read-only setup query) + the live engine registries a bundle contributes
+      // into. db may be null pre-login — engine plugins still install/activate (their ops just aren't logged).
+      plugin: function () {
+        if (!window.PluginEngine) { status('Plugin engine not loaded'); return; }
+        window.PluginEngine.open({
+          doc: document, db: window.__idmpDb || db, adQ: _adQ, KO: window.KernelOps,
+          engines: { modelval: window.AdModelVal, callout: window.AdCallout, process: window.AdProcess,
+                     postTokens: (window.PostResolver && window.PostResolver.TOKENS) || null }
+        });
+      },
       // NINJA EXCEL — the lens needs only the loaded tenant db; engine + UI are self-contained.
       ninja: function () { window.NinjaPill.open({ db: window.__idmpDb }); },
       warehouse: function () {
@@ -2089,7 +2122,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       worldhist: function () { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }
     };
     // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
-    window.IdmpPillActive = { redpill: function () { return _pillMode; }, showme: _showMeOn };
+    window.IdmpPillActive = { redpill: function () { return _pillMode; }, showme: _showMeOn,
+                              editmode: function () { return !!(window.__crud && window.__crud.editModeOn && window.__crud.editModeOn()); } };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
     window.IdmpPillStage = function () {

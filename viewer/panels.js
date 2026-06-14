@@ -100,12 +100,22 @@ function _worldHistDrawer(srcBtn) {
   if (!srcBtn) return;
   var r = srcBtn.getBoundingClientRect();
   var d = document.createElement('div'); d.id = 'whist-drawer';
-  // PERPENDICULAR to the viewer's VERTICAL right-edge pill strip → the drawer extends SIDEWAYS (a row to
-  // the LEFT of the W pill), not a column above it (that ran PARALLEL to the strip — #257's upward layout
-  // fits the ERP horizontal bottom bar, but regressed the viewer's vertical pill). Row order: bomb first
-  // (leftmost = outside/far, safety), Z last (rightmost = adjacent to the pill, first reach).
-  d.style.cssText = 'position:fixed;z-index:10000;display:flex;flex-direction:row;align-items:center;gap:6px;' +
-    'top:' + r.top + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+  // PERPENDICULAR auto-layout — draw the drawer ACROSS the pill strip, never ALONG it (a parallel drawer
+  // covers the neighbouring pills). Measure the strip container: a VERTICAL strip (viewer right-edge
+  // #mobile-pill) → a ROW to the LEFT of W; a HORIZONTAL strip → a COLUMN ABOVE. Same dynamic rule as
+  // erp idmp_pills/glassbowl_pills — self-correcting if a bar's orientation flips (the regression that bit
+  // the ERP bar when it went vertical). Chip order (bomb, then Z): row → bomb left/far, Z right/adjacent.
+  var _host = srcBtn.parentElement, _hr = _host ? _host.getBoundingClientRect() : r;
+  var _vertical = _hr.height >= _hr.width;
+  var _base = 'position:fixed;z-index:10000;display:flex;align-items:center;gap:6px;';
+  if (_vertical) {
+    d.style.cssText = _base + 'flex-direction:row;top:' + r.top + 'px;right:' +
+      Math.max(8, Math.round(window.innerWidth - r.left + 6)) + 'px;';
+  } else {
+    d.style.cssText = _base + 'flex-direction:column;bottom:' + (window.innerHeight - r.top + 6) +
+      'px;left:' + Math.max(8, r.left) + 'px;';
+  }
+  console.log('§PILL_DRAWER orient=' + (_vertical ? 'row(vertical-strip)' : 'col(horizontal-strip)'));
   function chip(name, title, color, onTap) {
     var b = document.createElement('button'); b.title = title; b.innerHTML = _histIconSvg(name, color);
     b.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:none;' +
