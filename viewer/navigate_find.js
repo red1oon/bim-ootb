@@ -88,6 +88,7 @@
       '#find-selected-text { flex: 1; font-size: 11px; color: #4fc3f7; cursor: pointer;',
       '  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
       '#find-selected-text:hover { color: #fff; }',
+      '#find-selected-cost { font-size: 11px; color: #ffc107; font-weight: 600; white-space: nowrap; margin: 0 8px; }',
       '.find-nav-inline { background: rgba(79,195,247,0.25); color: #4fc3f7; border: none;',
       '  border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;',
       '  flex-shrink: 0; min-width: 32px; min-height: 32px; transition: background 0.15s; }',
@@ -171,7 +172,8 @@
       '  <button id="find-showall-btn" style="display:none;flex:1;padding:5px 8px;font-size:11px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;background:rgba(255,255,255,0.08);color:#ccc;cursor:pointer">' + _t('ui_find_showall', 'Show all') + '</button>',
       '</div>',
       // S275: Selected item summary + inline navigate button
-      '<div id="find-selected"><span id="find-selected-text"></span><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      // BIM\u2192Project TASK A: indicative 5D cost of the selection (docs/BIMtoProject.md \u00A7A)
+      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
@@ -196,6 +198,8 @@
     var elResults = document.getElementById('find-results');
     var elCount = document.getElementById('find-count');
     var elNavBtn = document.getElementById('find-navigate-btn');
+    var elErpBtn = document.getElementById('find-erp-btn');   // BIM→Project TASK C: > to ERP push
+    var _lastSelSet = null, _lastSelLabel = '';               // current selection, for the ERP push
     var elClose = document.getElementById('find-close');
     var elChips = document.getElementById('find-chips');
     var elMicBtn = document.getElementById('find-mic-btn');
@@ -917,6 +921,130 @@
         console.log('[RP-C] §INSTROWS_SET rows=' + r.length + ' of set=' + guids.length + ' (direct, no full join)');
         return r;
       } catch (e) { console.log('[RP-C] §SHAPE_ERR_SET ' + e.message); return _getInstanceRows(); }
+    }
+
+    // ── §FIND_COST (BIM→Project TASK A, docs/BIMtoProject.md §A): indicative 5D cost of a selection ──
+    // Same currency-free quantity basis as analysis_sidecar.js compute5D/apply5DRates (the consistency
+    // invariant: round(rate×qty) in JS Number — BigDecimal is reserved for the ERP push, Task C).
+    // Cost folds over the focusSet GUIDs, so EVERY selection kind (storey/disc/type/room/item/phase)
+    // is handled uniformly. Bound params cap at 999 → chunk by 900. Non-invent: a class with no pack
+    // rate contributes 0 (never a guessed price). Witness W-FIND-COST (tests/poc_find_cost.js).
+    var _SELCOST_CAP = 30000;       // beyond this, the per-guid fold is too heavy for an indicative readout
+    var _AREA_EXPR_SC =
+      "MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE " +
+      "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
+      "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
+      "ELSE MAX(t.bbox_x,t.bbox_y) END";
+    function _rates() { return (typeof window !== 'undefined' && window.RATES) || (typeof RATES !== 'undefined' ? RATES : {}); }
+    function _cur() { return (typeof window !== 'undefined' && window._TRL && window._TRL.cur) || 'RM'; }
+    function _pack() { return (typeof window !== 'undefined' && window.RATE_TEMPLATE_NAME) || 'hardcoded'; }
+    // Priced rows for a selection at (disc,cls,storey) granularity — the apply5DRates shape the fold
+    // engine (proj_fold.js) consumes. ONE source for both the bar cost (Task A) and the > to ERP push (Task C).
+    function _selectionPriced(set) {
+      var R = _rates();
+      if (!set || !set.size || !A.dbQuery) return null;
+      var guids = []; set.forEach(function (g) { guids.push(g); });
+      if (guids.length > _SELCOST_CAP) return { capped: true, elements: guids.length, rows: [] };
+      var agg = {}; // disc|cls|storey → {disc,cls,storey,cnt,len,area,vol}
+      for (var i = 0; i < guids.length; i += 900) {
+        var chunk = guids.slice(i, i + 900);
+        var ph = chunk.map(function () { return '?'; }).join(',');
+        var rows = A.dbQuery(
+          "SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) cnt, " +
+          "SUM(MAX(t.bbox_x,t.bbox_y,t.bbox_z)) len, SUM(" + _AREA_EXPR_SC + ") area, " +
+          "SUM(t.bbox_x*t.bbox_y*t.bbox_z) vol " +
+          "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+          "WHERE m.guid IN (" + ph + ") AND t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+          "GROUP BY m.discipline, m.ifc_class, m.storey", chunk) || [];
+        rows.forEach(function (r) {
+          var k = (r[0] || '_') + '|' + (r[1] || '_') + '|' + (r[2] || '_');
+          var a = agg[k] || (agg[k] = { disc: r[0] || '_', cls: r[1] || '_', storey: r[2] || '_', cnt: 0, len: 0, area: 0, vol: 0 });
+          a.cnt += r[3] || 0; a.len += r[4] || 0; a.area += r[5] || 0; a.vol += r[6] || 0;
+        });
+      }
+      var priced = [], elements = 0;
+      Object.keys(agg).forEach(function (k) {
+        var a = agg[k], rt = R[a.cls], unit = rt ? rt.unit : 'EA', rate = rt ? rt.rate : 0, qty;
+        if (unit === 'M') qty = a.len; else if (unit === 'M2') qty = a.area; else if (unit === 'M3') qty = a.vol; else { unit = rt ? unit : 'EA'; qty = a.cnt; }
+        elements += a.cnt;
+        priced.push({ disc: a.disc, cls: a.cls, storey: a.storey, count: a.cnt, unit: unit, qty: qty, rate: rate, cost: Math.round(rate * qty) });
+      });
+      return { capped: false, elements: elements, rows: priced };
+    }
+    function _selectionCost(set) {
+      var p = _selectionPriced(set);
+      if (!p) return null;
+      if (p.capped) { console.log('[RP-C] §FIND_COST_SKIP elems=' + p.elements + ' > cap=' + _SELCOST_CAP); return { capped: true, elements: p.elements, cost: 0, cur: _cur(), pack: _pack() }; }
+      var cost = p.rows.reduce(function (s, r) { return s + r.cost; }, 0);
+      return { capped: false, elements: p.elements, cost: cost, cur: _cur(), pack: _pack() };
+    }
+    function _updateSelCost(set, scopeLabel) {
+      _lastSelSet = (set && set.size) ? set : null;            // remember selection for the > to ERP push
+      _lastSelLabel = scopeLabel || '';
+      var el = document.getElementById('find-selected-cost');
+      if (!el) return;
+      try {
+        var res = _selectionCost(set);
+        if (!res) { el.textContent = ''; return; }
+        if (res.capped) { el.textContent = '~ ' + res.cur; el.title = 'Selection too large for indicative cost (' + res.elements + ' elements)'; return; }
+        el.textContent = res.cur + ' ' + res.cost.toLocaleString(undefined, { maximumFractionDigits: 0 });
+        el.title = 'Indicative 5D cost · ' + res.elements + ' elements · pack ' + res.pack;
+        console.log('[RP-C] §FIND_COST scope="' + (scopeLabel || '') + '" elements=' + res.elements +
+          ' cost=' + res.cost + ' cur=' + res.cur + ' pack=' + res.pack);
+      } catch (e) { el.textContent = ''; console.log('[RP-C] §FIND_COST_ERR ' + e.message); }
+    }
+
+    // ── §PROJ_PUSH (BIM→Project TASK C, docs/BIMtoProject.md §C): > to ERP — fold the selection into
+    // an iDempiere C_Project via the proven engine proj_fold.js (window.ProjFold). The fold is the
+    // witnessed part (W-PROJ-PUSH/FOLD/SEQ, tests/poc_proj_push.js); here we wire the UI call path.
+    // The writable ERP db is loaded lazily (fetch erp/ad_seed.db → sql.js) and the folded result is
+    // persisted to OPFS (bim_project_orders.db) — a viewer-owned project-orders store. NOTE: the
+    // cross-page hand-off so the ERP app reads it is the BIMtoERP §B write-path (follow-on).
+    var _bimErpDb = null;
+    function _ensureErpDb() {
+      if (_bimErpDb) return Promise.resolve(_bimErpDb);
+      var SQL = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
+      if (!SQL || !window.ProjFold) return Promise.resolve(null);
+      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+        .then(function (buf) { _bimErpDb = new SQL.Database(new Uint8Array(buf)); return _bimErpDb; })
+        .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
+    }
+    function _persistErpDb(db) {
+      try {
+        if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+        var bytes = db.export();
+        return navigator.storage.getDirectory()
+          .then(function (root) { return root.getDirectoryHandle('bim_analysis', { create: true }); })
+          .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
+          .then(function (fh) { return fh.createWritable(); })
+          .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
+          .then(function () { return true; }).catch(function () { return false; });
+      } catch (e) { return Promise.resolve(false); }
+    }
+    function _pushToErp() {
+      var set = _lastSelSet;
+      if (!set || !set.size) { if (A.status) A.status.textContent = 'Select something to push to ERP'; return; }
+      if (!window.ProjFold) { if (A.status) A.status.textContent = 'ERP push engine not loaded'; console.log('[RP-C] §PROJ_PUSH_DEFER ProjFold absent'); return; }
+      var building = A.activeBuilding;
+      var priced = _selectionPriced(set);
+      if (!priced || !priced.rows.length) { if (A.status) A.status.textContent = 'No priced elements in selection'; return; }
+      if (A.status) A.status.textContent = 'Folding Project Order…';
+      _ensureErpDb().then(function (db) {
+        if (!db) { if (A.status) A.status.textContent = 'ERP db unavailable for push'; console.log('[RP-C] §PROJ_PUSH_DEFER no ERP db'); return; }
+        var opts = {
+          seqRules: window.SEQUENCE_RULES || {}, laborRates: window.LABOR_RATES || {},
+          packCurrencyISO: _cur(), now: (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })()
+        };
+        var r = window.ProjFold.foldProjectOrder(db, building, priced.rows, opts);
+        console.log('[RP-C] §PROJ_PUSH project="' + building + '" scope="' + _lastSelLabel + '" phases=+' + r.created.phases +
+          ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
+          ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt);
+        _persistErpDb(db).then(function (ok) {
+          console.log('[RP-C] §PROJ_PUSH_PERSIST opfs=' + ok + ' store=bim_project_orders.db');
+          if (A.status) A.status.textContent = 'Project Order: ' + r.created.lines + ' lines · ' + _cur() + ' ' +
+            Number(r.plannedAmt).toLocaleString(undefined, { maximumFractionDigits: 0 }) + (ok ? ' (saved)' : '');
+        });
+      });
     }
 
     // solidOpacity (optional): for the kept-solid CONTEXT build (color==null), render it at this
@@ -1755,6 +1883,7 @@
         console.log('[RP-TB] §' + tag + ' "' + label + '" ' + (isItem ? 'ITEM' : 'GROUP') + ' focus=' + focusN +
           ' solid=' + solid + ' hl=' + hl + ' anc=[' + ancLog.join(',') + '] base=' + baseOp +
           ' overlays=' + _shapeOverlays.length + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+        _updateSelCost(focusSet, tag + ':' + label);   // BIM→Project TASK A: indicative 5D cost on the bar
       });
     }
     // Build the (focusSet, opts) pair for _drillSelect from a recorded view object (timeline replay).
@@ -2114,6 +2243,16 @@
           var arr = Array.from(sel);
           _axisGroupSelect(_treeMode, arr); // §DEPTH: ghost rest 0.1 + selected solid (was filterStorey hide)
           console.log('§FIND_MULTISEL mode=' + _treeMode + ' sel=[' + arr.join(',') + '] n=' + arr.length + ' mod=' + mod);
+          // BIM→Project TASK A/C: a storey/disc selection IS a WBS level to price & push, so reveal the
+          // #find-selected bar (cost span + > ERP) for GROUP scopes too — previously it only showed on a
+          // single result-item click (line ~3027), so a group's cost + push button were never visible.
+          var _elSelText = document.getElementById('find-selected-text');
+          if (arr.length) {
+            if (_elSelText) _elSelText.textContent = arr.join(', ') + ' · ' + arr.length + ' ' + _treeMode + (arr.length > 1 ? 's' : '');
+            elSelected.style.display = 'flex';
+          } else {
+            elSelected.style.display = 'none';
+          }
           return;
         }
         if (opts.onTap) { opts.onTap(); return; }
@@ -2894,6 +3033,7 @@
       var dispClass = friendlyClass(r.ifc_class);
       var elSelText = document.getElementById('find-selected-text');
       if (elSelText) elSelText.textContent = classIcon(r.ifc_class) + ' ' + dispName + ' · ' + dispClass;
+      if (r.guid) _updateSelCost(new Set([r.guid]), 'ITEM:' + dispName);   // BIM→Project TASK A: cost on the bar
       elSelected.style.display = 'flex';
       panel.classList.remove('results-expanded');
       [elStoreyRow, elTypeRow].forEach(function(row) { row.classList.remove('expanded'); });
@@ -3082,6 +3222,9 @@
     elNavBtn.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeFindPanel();
     });
+
+    // ── BIM→Project TASK C: wire the > to ERP button (folds the selection via window.ProjFold) ──
+    if (elErpBtn) { elErpBtn.tabIndex = 0; elErpBtn.onclick = function () { _pushToErp(); }; }
 
     // ── Expose for navigate.js Section D and external callers ──
     A.clearHighlight = clearHighlight;
