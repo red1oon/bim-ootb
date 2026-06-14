@@ -473,7 +473,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=11"></script>
+<script src="idmp_pills.js?v=12"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -2162,10 +2162,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         else { try { navigator.clipboard.writeText(url); } catch(e){} }
         console.log('§POS-SHARE url=' + url); },
       // HISTORY_KNOB_DIAL.md — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) is in idmp_pills.js.
-      worldhist: function () { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }
+      worldhist: function () { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); },
+      // Sound FX — the SAME speaker pill as the BIM viewer (sfx.js loaded above publishes window.toggleSfx /
+      // window.__sfx). Tap toggles the ERP/POS earcons; the choice PERSISTS (localStorage sfx_on). builder.sync()
+      // re-lights the pill on the spot (isActive → __sfx.isOn()), like redpill/showme.
+      audio: function () {
+        if (window.toggleSfx) window.toggleSfx();
+        try { if (window.IdmpPills && IdmpPills.builder) IdmpPills.builder.sync(); } catch (e) {}
+      }
     };
     // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
     window.IdmpPillActive = { redpill: function () { return _pillMode; }, showme: _showMeOn,
+                              audio: function () { return !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()); },
                               editmode: function () { return !!(window.__crud && window.__crud.editModeOn && window.__crud.editModeOn()); } };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
