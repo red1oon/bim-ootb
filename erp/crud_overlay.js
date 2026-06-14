@@ -541,7 +541,8 @@
     docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
     foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
     listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
-    changeLog: changeLog, fmtKernelTs: _fmtKernelTs                              // Task 2: per-record AD-filtered change trail + iDempiere ts format
+    changeLog: changeLog, fmtKernelTs: _fmtKernelTs,                             // Task 2: per-record AD-filtered change trail + iDempiere ts format
+    fieldLineage: fieldLineage                                                   // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -1190,6 +1191,58 @@
     } catch (e) { return null; }
   }
 
+  // ── Item 3b (FRONTEND_LANE_MASTER §OUTSTANDING) — fieldLineage: the FULL value history of ONE column,
+  // reconstructed as a filtered fold of the op-log. Witness: W-FIELD-LINEAGE. This is the always-on,
+  // zero-setup replacement for iDempiere's AD_ChangeLog: NOT gated by IsAllowLogging/IsChangeLog (the log IS
+  // the history, so every field is traceable for free). Returns newest-first [{opId,ts,actor,value,prev,action}]
+  // for (table, recordId, column) — value = the value SET by that op; prev = the value before it. action ∈
+  // {'CREATE','UPDATE'}. NON-INVENT: every entry is a real op row; column match is case-insensitive (AD cols
+  // vary in case across CREATE.fields vs UPDATE.changes). Read-only; callers cap to last N for hot fields.
+  function fieldLineage(sideDb, table, recordId, column) {
+    if (!sideDb || !table || !column) return [];
+    try {
+      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0 ORDER BY id ASC");
+      if (!r.length) return [];
+      var want = String(table).toLowerCase(), rid = recordId != null ? String(recordId) : null;
+      var wantCol = String(column).toLowerCase(), out = [];
+      r[0].values.forEach(function (row) {
+        var opId = row[0], opType = row[1], ts = row[3], p;
+        try { p = JSON.parse(row[2]); } catch (e) { return; }
+        if (!p || String(p.table || '').toLowerCase() !== want) return;
+        if (opType === 'CRUD_CREATE') {
+          var f = p.fields || {};
+          if (rid !== null) {
+            // a created row is keyed by EITHER its real embedded pk (<table>_id in fields) OR, for an
+            // overlay row with no real pk yet, the synthetic -opId. Match on either so CREATE joins its UPDATEs.
+            var pkCol = _ciKey(f, want + '_id');
+            var pkMatch = String(-opId) === rid || (pkCol != null && String(f[pkCol]) === rid);
+            if (!pkMatch) return;
+          }
+          var ck = _ciKey(f, wantCol); if (ck == null) return;
+          out.push({ opId: opId, ts: ts, actor: (p.stdDefaults && p.stdDefaults.actor) || null,
+                     value: f[ck], prev: null, action: 'CREATE' });
+        } else if (opType === 'CRUD_UPDATE') {
+          if (rid !== null && String(p.id) !== rid) return;
+          var ch = p.changes || {};
+          var uk = _ciKey(ch, wantCol); if (uk == null) return;
+          var pair = ch[uk];
+          out.push({ opId: opId, ts: ts, actor: p.actor || null,
+                     value: pair && pair['new'], prev: pair && pair.old, action: 'UPDATE' });
+        }
+      });
+      out.reverse();   // newest-first for the hover blurb
+      console.log('§FIELD-LINEAGE table=' + want + ' rec=' + rid + ' col=' + wantCol + ' entries=' + out.length + ' (always-on, no AD_ChangeLog)');
+      return out;
+    } catch (e) { return []; }
+  }
+  // case-insensitive key lookup in an object (CREATE.fields / UPDATE.changes use varied AD column casing).
+  function _ciKey(obj, lowerCol) {
+    if (!obj) return null;
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) { if (keys[i].toLowerCase() === lowerCol) return keys[i]; }
+    return null;
+  }
+
   // ── Task 4 — allocDocNo: assign DocumentNo from AD_Sequence on CRUD_CREATE for document tables.
   // Approach (a-simplified): number embedded in the op fields (replay-stable); sequence CurrentNext
   // bumped directly in the main db (state not in op-log — acceptable for demo; name the trade-off).
@@ -1445,6 +1498,74 @@
       return r[0].values.map(function (v) { return { id: v[0], op_uuid: v[1], ts: v[2], op_type: v[3], params: JSON.parse(v[4]), undone: !!v[5] }; });
     } catch (e) { return []; }
   }
+  // ── Item 3b (FRONTEND_LANE_MASTER §OUTSTANDING) — PER-FIELD LINEAGE hover-pause blurb ──────────────
+  // Witness: W-FIELD-LINEAGE (engine) + §LINEAGE-HOVER (live DOM). Dwell ~900ms on any field carrying a
+  // column id → reveal that column's full value history folded from the op-log (value · who · when), newest
+  // -first. Always-on, read-only, zero setup — the inline replacement for iDempiere's AD_ChangeLog window.
+  // Delegated ONE document listener (no per-field wiring): resolves (table,id,column) from the hovered
+  // element's attributes + nearest data-ad-table/record ancestor. Empty history → no popup (only fields with
+  // real logged edits reveal a blurb, so it's never noise). NON-INVENT: every line is a real op row.
+  (function lineageHover() {
+    if (typeof document === 'undefined') return;
+    var DWELL = 900, MAX = 8, tip = null, timer = null, curEl = null;
+    function ensureTip() {
+      if (tip) return tip;
+      var st = document.createElement('style');
+      st.textContent =
+        '.idmp-lineage{position:fixed;z-index:100000;max-width:320px;background:#1c2230;color:#e8edf6;' +
+        'border:1px solid #3a455c;border-radius:8px;padding:8px 10px;font:12px/1.45 system-ui,sans-serif;' +
+        'box-shadow:0 6px 22px rgba(0,0,0,.45);pointer-events:none;display:none}' +
+        '.idmp-lineage b{color:#8fc8ff;font-weight:600}.idmp-lineage .ll-row{white-space:nowrap;overflow:hidden;' +
+        'text-overflow:ellipsis}.idmp-lineage .ll-who{color:#9fb0c8}.idmp-lineage .ll-when{color:#6f7e96}' +
+        '.idmp-lineage .ll-more{color:#6f7e96;margin-top:4px}';
+      document.head.appendChild(st);
+      tip = document.createElement('div'); tip.className = 'idmp-lineage'; document.body.appendChild(tip);
+      return tip;
+    }
+    function resolve(target) {
+      var el = target && target.closest && target.closest('[data-col],[data-ad-column],[data-ad-col]');
+      if (!el) return null;
+      var column = el.getAttribute('data-col') || el.getAttribute('data-ad-column') || el.getAttribute('data-ad-col');
+      if (!column) return null;
+      var tEl = el.closest('[data-ad-table]'), rEl = el.closest('[data-ad-record]');
+      var table = tEl && tEl.getAttribute('data-ad-table');
+      var id = rEl && rEl.getAttribute('data-ad-record');
+      if (!table || id == null || id === '') return null;
+      return { el: el, table: table, id: id, column: column };
+    }
+    function fmtVal(v) { return v == null || v === '' ? '∅' : esc(String(v)); }
+    function show(ctx, x, y) {
+      if (!SIDE) return;
+      var lin = CORE.fieldLineage(SIDE, ctx.table, ctx.id, ctx.column);
+      if (!lin || !lin.length) return;                 // nothing logged → no popup (never noise)
+      var t = ensureTip(), rows = lin.slice(0, MAX).map(function (e) {
+        var val = e.action === 'CREATE' ? ('set ' + fmtVal(e.value)) : (fmtVal(e.prev) + ' → ' + fmtVal(e.value));
+        var who = e.actor ? ' <span class=ll-who>' + esc(e.actor) + '</span>' : '';
+        var when = e.ts ? ' <span class=ll-when>' + esc(CORE.fmtKernelTs(e.ts)) + '</span>' : '';
+        return '<div class=ll-row>' + val + who + when + '</div>';
+      }).join('');
+      var more = lin.length > MAX ? '<div class=ll-more>+' + (lin.length - MAX) + ' older…</div>' : '';
+      t.innerHTML = '<b>' + esc(ctx.column) + '</b> · ' + lin.length + ' change' + (lin.length === 1 ? '' : 's') + rows + more;
+      t.style.display = 'block';
+      var w = t.offsetWidth, h = t.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+      t.style.left = Math.min(x + 14, vw - w - 8) + 'px';
+      t.style.top = (y + 18 + h > vh ? y - h - 10 : y + 18) + 'px';
+      console.log('§LINEAGE-HOVER ' + ctx.table + '#' + ctx.id + '.' + ctx.column + ' entries=' + lin.length);
+    }
+    function hide() { if (timer) { clearTimeout(timer); timer = null; } if (tip) tip.style.display = 'none'; curEl = null; }
+    document.addEventListener('pointermove', function (ev) {
+      var ctx = resolve(ev.target);
+      if (!ctx) { if (curEl) hide(); return; }
+      if (ctx.el === curEl) return;                    // same field — keep pending/shown
+      hide(); curEl = ctx.el;
+      var x = ev.clientX, y = ev.clientY;
+      timer = setTimeout(function () { timer = null; show(ctx, x, y); }, DWELL);
+    }, true);
+    document.addEventListener('pointerdown', hide, true);
+    document.addEventListener('scroll', hide, true);
+    global.__lineageHover = { show: show, hide: hide, resolve: resolve };  // exposed for the live §-log probe
+  })();
+
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
@@ -1452,6 +1573,7 @@
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history,
                     changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
+                    fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col) : []; },  // Item 3b (W-FIELD-LINEAGE)
                     fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
                     toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
