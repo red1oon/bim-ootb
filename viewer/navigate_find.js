@@ -1003,7 +1003,7 @@
     var _bimErpDb = null;
     function _ensureErpDb() {
       if (_bimErpDb) return Promise.resolve(_bimErpDb);
-      var SQL = window.SQL || window._SQL_CACHED;
+      var SQL = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
       if (!SQL || !window.ProjFold) return Promise.resolve(null);
       return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
         .then(function (buf) { _bimErpDb = new SQL.Database(new Uint8Array(buf)); return _bimErpDb; })
@@ -2243,6 +2243,16 @@
           var arr = Array.from(sel);
           _axisGroupSelect(_treeMode, arr); // §DEPTH: ghost rest 0.1 + selected solid (was filterStorey hide)
           console.log('§FIND_MULTISEL mode=' + _treeMode + ' sel=[' + arr.join(',') + '] n=' + arr.length + ' mod=' + mod);
+          // BIM→Project TASK A/C: a storey/disc selection IS a WBS level to price & push, so reveal the
+          // #find-selected bar (cost span + > ERP) for GROUP scopes too — previously it only showed on a
+          // single result-item click (line ~3027), so a group's cost + push button were never visible.
+          var _elSelText = document.getElementById('find-selected-text');
+          if (arr.length) {
+            if (_elSelText) _elSelText.textContent = arr.join(', ') + ' · ' + arr.length + ' ' + _treeMode + (arr.length > 1 ? 's' : '');
+            elSelected.style.display = 'flex';
+          } else {
+            elSelected.style.display = 'none';
+          }
           return;
         }
         if (opts.onTap) { opts.onTap(); return; }
