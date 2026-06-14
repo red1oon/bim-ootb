@@ -397,6 +397,8 @@
 <script src="ad_process.js?v=1"></script>
 <script src="ad_data.js?v=22"></script>
 <script src="idmp_session.js?v=24"></script>
+<!-- ERP_AUDIT_CHANGELOG Task 2 — resolve audit actor AD_User_ID → real AD_User.Name (NON-INVENT, honest fallback). -->
+<script src="user_names.js?v=1"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
 <script src="erp_postings.js?v=23"></script>
 <script src="accts_posted.js?v=23"></script>
@@ -459,7 +461,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=5"></script>
+<script src="crud_overlay.js?v=6"></script>
 <script>
 (function () {
   'use strict';
@@ -818,6 +820,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.APP.clientId = _session.client.id;
     window.APP.orgId   = _session.org ? _session.org.id : 0;
     console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId);
+    _buildUserNameMap();   // Task 2 — AD_User_ID → Name for the change-log (iDempiere shows names, not ids)
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
     $('idmp-ctx').textContent = _session.client.name + ' · ' + _session.role.name + ' · ' + orgLabel;
@@ -999,6 +1002,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     })();
   }
 
+  // Task 2 — AD_User name map (iDempiere change-log shows the user NAME, never the raw AD_User_ID).
+  // Built once at login from the real AD_User rows; UserNames.resolveSender keeps it NON-INVENT (a name
+  // only when a real row supplies it; honest "System (AD_User#0)" / "AD_User#<id>" fallback otherwise).
+  var _userRows = null;
+  function _buildUserNameMap() {
+    try {
+      var r = db.exec('SELECT AD_User_ID, Name FROM AD_User');
+      _userRows = (r.length && r[0].values.length)
+        ? r[0].values.map(function (v) { return { AD_User_ID: v[0], Name: v[1] }; }) : [];
+    } catch (e) { _userRows = []; }
+  }
+  function _userName(id) {
+    if (id == null) return '—';
+    try {
+      if (window.UserNames && typeof window.UserNames.resolveSender === 'function') {
+        var r = window.UserNames.resolveSender(id, _userRows || []);
+        return r && r.name ? r.name : ('AD_User#' + id);
+      }
+    } catch (e) {}
+    return 'AD_User#' + id;
+  }
+
   // Task 2 — showChangelog: open a small overlay showing the per-record AD-filtered change trail.
   function _showChangelog(tableName) {
     var rec = _records[_recIdx], tab = _curTab();
@@ -1025,9 +1050,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       ['When', 'By', 'Column', 'Old', 'New'].forEach(function (h) {
         var th = document.createElement('th'); th.textContent = h; th.style.cssText = 'text-align:left;padding:3px 6px;border-bottom:1px solid #4a2f44;color:#c4a8c0'; hr.appendChild(th);
       });
+      var fmtTs = (window.__crud && window.__crud.fmtTs) ? window.__crud.fmtTs : function (t) { return t; };
       entries.forEach(function (e) {
         var tr = tbl.insertRow();
-        [e.ts, e.actor, e.column, e.old == null ? '—' : e.old, e['new'] == null ? '—' : e['new']].forEach(function (v) {
+        // iDempiere convention: readable date + resolved user NAME (not raw ts/id)
+        [fmtTs(e.ts), _userName(e.actor), e.column, e.old == null ? '—' : e.old, e['new'] == null ? '—' : e['new']].forEach(function (v) {
           var td = tr.insertCell(); td.textContent = String(v == null ? '' : v); td.style.padding = '3px 6px'; td.style.borderBottom = '1px solid #2a1a2f';
         });
       });

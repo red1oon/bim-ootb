@@ -28,6 +28,22 @@
     } catch (e) { return {}; }
   }
 
+  // _fmtKernelTs — render the kernel's epoch timestamp (a recorded input, Date.now() at commit) into
+  // iDempiere's audit-column convention `yyyy-MM-dd HH:mm:ss` (UTC, locale-independent → deterministic).
+  // The seed's migrated rows store Created/Updated in exactly this shape (e.g. "2003-01-22 17:55:36"), so a
+  // user-created row must match it — not show a raw integer. PURE: derived from the stored input, replay-stable;
+  // NOT part of any op hash (this is a display projection at materialise time). Tolerant of ms (13-digit, the
+  // kernel default) and accidental seconds (10-digit) inputs. Non-numeric/absent → passed through unchanged.
+  function _fmtKernelTs(ts) {
+    if (ts == null) return ts;
+    var n = Number(ts); if (!isFinite(n)) return ts;
+    if (n > 0 && n < 1e12) n = n * 1000;                 // looks like epoch-seconds → ms
+    var d = new Date(n); if (isNaN(d.getTime())) return ts;
+    function p(x) { return (x < 10 ? '0' : '') + x; }
+    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +
+           ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds());
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // PURE CORE — no DOM. Exported for the headless §-witness harness (node).
   // ════════════════════════════════════════════════════════════════════════
@@ -293,8 +309,9 @@
               if (tcols['updatedby']  && !fkeys['updatedby'])  nr['UpdatedBy']  = sd.actor;
             }
             if (opTs != null) {
-              if (tcols['created'] && !fkeys['created']) nr['Created'] = opTs;
-              if (tcols['updated'] && !fkeys['updated']) nr['Updated'] = opTs;
+              // iDempiere convention: Created/Updated are `yyyy-MM-dd HH:mm:ss` strings (match the seed rows)
+              if (tcols['created'] && !fkeys['created']) nr['Created'] = _fmtKernelTs(opTs);
+              if (tcols['updated'] && !fkeys['updated']) nr['Updated'] = _fmtKernelTs(opTs);
             }
             if (sd.clientId != null && tcols['ad_client_id'] && !fkeys['ad_client_id']) nr['AD_Client_ID'] = sd.clientId;
             if (sd.orgId    != null && tcols['ad_org_id']    && !fkeys['ad_org_id'])    nr['AD_Org_ID']    = sd.orgId;
@@ -312,7 +329,7 @@
             var ch = p.changes || {}; for (var cc in ch) if (ch.hasOwnProperty(cc)) ex[cc] = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc];
             // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
             var ucols = _getTableCols(want);
-            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['Updated'] = opTs;
+            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['Updated'] = _fmtKernelTs(opTs);
             if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['UpdatedBy'] = p.actor;
           }
         } else if (type === 'CRUD_DELETE') {
@@ -524,7 +541,7 @@
     docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
     foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
     listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
-    changeLog: changeLog                                                         // Task 2: per-record AD-filtered change trail
+    changeLog: changeLog, fmtKernelTs: _fmtKernelTs                              // Task 2: per-record AD-filtered change trail + iDempiere ts format
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -1431,6 +1448,7 @@
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history,
                     changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
+                    fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
                     toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
   console.log('§CRUD layer mounted (Edit-mode ready)');
