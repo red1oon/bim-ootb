@@ -398,6 +398,9 @@
 <script src="ad_process.js?v=1"></script>
 <script src="ad_data.js?v=22"></script>
 <script src="idmp_session.js?v=24"></script>
+<!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
+     (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
+<script src="erp_descriptor.js?v=1"></script>
 <!-- ERP_AUDIT_CHANGELOG Task 2 — resolve audit actor AD_User_ID → real AD_User.Name (NON-INVENT, honest fallback). -->
 <script src="user_names.js?v=1"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
@@ -486,7 +489,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   'use strict';
   var _t0 = performance.now();
   var db = null;
-  var ADP = window.ADParser, ADD = window.ADData, SES = window.IdmpSession;
+  // DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot) — the chrome reads its dictionary/data/session from the ACTIVE
+  // descriptor, not from AD directly. AD is the first descriptor (facets === ADParser/ADData/IdmpSession),
+  // so this is behavior-identical today; ErpDescriptor.use('odoo') repoints the whole chrome at renderer #2.
+  // ?erp=<name> selects a descriptor before the aliases are cached (renderer #2 entry point). Fallback to the
+  // raw AD globals if the seam module failed to load (never a blank chrome).
+  (function () { try { var w = new URLSearchParams(location.search).get('erp'); if (w && window.ErpDescriptor) window.ErpDescriptor.use(w); } catch (e) {} })();
+  var _D = (window.ErpDescriptor && window.ErpDescriptor.active) || null;
+  var ADP = _D ? _D.structure : window.ADParser,
+      ADD = _D ? _D.data      : window.ADData,
+      SES = _D ? _D.session   : window.IdmpSession;
 
   // ── Session (docs §3b): identity + Role·Client·Org context SELECTION (no server, no auth) ──
   var _session = null;       // { user, role, client, org, roles, orgs, winSet } — null until login
