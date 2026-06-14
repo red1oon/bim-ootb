@@ -257,13 +257,46 @@
     return (m && doctypeId != null && m[String(doctypeId)]) || null;
   }
 
+  // _branchClause — BLUE FUTURE (W-BLUE-FUTURE-LIVE / FRONTEND_LANE_MASTER §OUTSTANDING item 0 leg 4):
+  // the read-the-tip sites below (tipDocs/listTip/readTip/tipValues) run their OWN raw SELECT against
+  // kernel_ops rather than going through KernelOps.replayOps, so they do NOT inherit replayOps' official
+  // default (branch_id IS NULL). Without this clause a speculative blue op would LEAK into the official
+  // chrome (list rows, docstatus, field tip) — the safety bug leg 4 closes. Semantics mirror replayOps:
+  //   branch == null/undefined → OFFICIAL only (branch_id IS NULL). Every pre-blue op has branch_id NULL,
+  //                              so this is byte-identical to the prior behaviour — no existing caller moves.
+  //   branch == '<id>'         → OFFICIAL + that branch (the blue VIEW sees official rows + its own blue).
+  // Inline (these are db.exec string queries, no bound params); branch ids are controlled ('blue-…') but
+  // we single-quote-escape anyway. NON-INVENT: the tag is the same branch_id the engine commits/folds.
+  function _sqlStr(s) { return "'" + String(s).replace(/'/g, "''") + "'"; }
+  function _branchClause(branch) {
+    return (branch == null) ? ' AND branch_id IS NULL'
+                            : ' AND (branch_id IS NULL OR branch_id = ' + _sqlStr(branch) + ')';
+  }
+  // _readBranch — the live seam: when the Blue Future controller has entered blue mode it returns the active
+  // branch id, so the chrome's INTERNAL read-the-tip callers (docstatus/CAS/getRecord overlay) automatically
+  // fold the blue VIEW without every idempiere.html call site threading a branch. OFFICIAL chrome (no blue
+  // mode) → null → official-only. Best-effort: the controller may not be loaded (older bundle / witness).
+  function _readBranch() {
+    try { return (typeof window !== 'undefined' && window.BlueFuture && typeof window.BlueFuture.readBranch === 'function')
+      ? window.BlueFuture.readBranch() : null; } catch (e) { return null; }
+  }
+  // _commitMeta — the WRITE seam (leg 1 tail + leg 5): every signed commit (ordinary CRUD edit AND the full
+  // CompleteIt DocAction fan-out) routes its groupMeta through here, so in blue mode it carries {branch_id}
+  // and lands SPECULATIVE (invisible to official reads above). Official mode → {} → unchanged. The tag is
+  // ∉ _canonical (kernel_ops.js), so ACCEPT later clears it without rehashing — the chain stays valid.
+  function _commitMeta() {
+    try { return (typeof window !== 'undefined' && window.BlueFuture && typeof window.BlueFuture.groupMeta === 'function')
+      ? (window.BlueFuture.groupMeta() || {}) : {}; } catch (e) { return {}; }
+  }
+
   // tipDocs — read-the-tip CREATED documents for a table from the signed op-log: every non-undone
   // CREATE_DOCUMENT op whose params.table matches (case-insensitive — the engine emits 'M_InOut',
   // overlay keys are 'm_inout'). The CREATE-side sibling of readTip (docstatus) / tipValues (fields).
-  function tipDocs(db, table) {
+  // BLUE FUTURE: `branch` (optional) opens the blue VIEW — leg 3 Zoom drills into blue children with it.
+  function tipDocs(db, table, branch) {
     var out = [], want = String(table || '').toLowerCase();
     try {
-      var r = db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='CREATE_DOCUMENT' AND undone=0 ORDER BY id ASC");
+      var r = db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='CREATE_DOCUMENT' AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
       if (!r.length) return out;
       r[0].values.forEach(function (row) {
         try {
@@ -285,13 +318,14 @@
   // against real pks and survive a sidecar rehydrate (the op id is durable). A later CRUD_UPDATE/CRUD_DELETE
   // on a created row (keyed by that synthetic pk) folds latest-wins like any other. JS-side filter (no
   // json_extract dependency). Returns { rows, created:[pk…], hidden:[pk…] }.
-  function listTip(db, table, pkCol, baseRows) {
+  // BLUE FUTURE: `branch` (optional) — official-only by default; pass the active branch for the blue VIEW.
+  function listTip(db, table, pkCol, baseRows, branch) {
     var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
     var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
     var created = [], hidden = [], want = String(table || '').toLowerCase();
     if (!db) return { rows: rows, created: created, hidden: hidden };
     try {
-      var r = db.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0 ORDER BY id ASC");
+      var r = db.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
       if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden };
       r[0].values.forEach(function (row) {
         var opId = row[0], type = row[1], opTs = row[3], p;
@@ -431,9 +465,10 @@
   // SET_STATUS op's `to`, or null if none (caller treats null as the descriptor default, e.g. DR).
   // glassbowl_data.db stays the IMMUTABLE baseline; this sidecar log is the only mutable truth. Filters
   // in JS (no json_extract dependency) so it runs on any sql.js build.
-  function readTip(db, table, id) {
+  // BLUE FUTURE: `branch` (optional) — official docstatus by default; the blue VIEW folds blue SET_STATUS too.
+  function readTip(db, table, id, branch) {
     try {
-      var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='SET_STATUS' AND undone=0 ORDER BY id DESC");
+      var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='SET_STATUS' AND undone=0" + _branchClause(branch) + " ORDER BY id DESC");
       if (!r.length || !r[0].values.length) return null;
       var rows = r[0].values;
       for (var i = 0; i < rows.length; i++) {
@@ -462,10 +497,11 @@
   // The DOC_ACTION peer is readTip (docstatus); this is its field-value sibling. glassbowl_data.db stays
   // the IMMUTABLE baseline — getRecord layers this overlay on the bundle row so the reopened form, the Z
   // fold-back, and every reader agree on the tip value. JS-side filter (no json_extract dependency).
-  function tipValues(db, table, id) {
+  // BLUE FUTURE: `branch` (optional) — official field tip by default; the blue VIEW folds blue CRUD_UPDATE too.
+  function tipValues(db, table, id, branch) {
     var out = {};
     try {
-      var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='CRUD_UPDATE' AND undone=0 ORDER BY id ASC");
+      var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='CRUD_UPDATE' AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
       if (!r.length || !r[0].values.length) return out;
       var rows = r[0].values;
       for (var i = 0; i < rows.length; i++) {
@@ -542,7 +578,9 @@
     foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
     listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
     changeLog: changeLog, fmtKernelTs: _fmtKernelTs,                             // Task 2: per-record AD-filtered change trail + iDempiere ts format
-    fieldLineage: fieldLineage                                                   // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
+    fieldLineage: fieldLineage,                                                  // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
+    draftPut: draftPut, draftGet: draftGet, draftClear: draftClear, draftList: draftList,
+    draftDirty: draftDirty, draftChangedCols: draftChangedCols, draftDrift: draftDrift   // Item 1 (W-DRAFT-RESTORE): private draft buffer — unsaved typing, never an official dot
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -717,7 +755,7 @@
     getRecord(e.key, function (rec) {
       var vals = assignVals(e, rec), id = recId(e.key, rec);
       withSidecar(function (db) {
-        var from = (db ? CORE.readTip(db, e.key, id) : null) || (e.docAction && e.docAction.from) || 'DR';
+        var from = (db ? CORE.readTip(db, e.key, id, _readBranch()) : null) || (e.docAction && e.docAction.from) || 'DR';
         applyOp(CORE.buildOp('process', e, vals, rec, { id: id, from: from }), e);
       });
     });
@@ -1046,7 +1084,7 @@
       completeFanout(op, function (fanout) {
       try {
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
-        Promise.resolve(K.commitGroup(db, groupOps, {})).then(function (res) {
+        Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
           return Promise.resolve(K.verifyChain(db)).then(function (v) {
             _sidePersist();
@@ -1198,10 +1236,11 @@
   // for (table, recordId, column) — value = the value SET by that op; prev = the value before it. action ∈
   // {'CREATE','UPDATE'}. NON-INVENT: every entry is a real op row; column match is case-insensitive (AD cols
   // vary in case across CREATE.fields vs UPDATE.changes). Read-only; callers cap to last N for hot fields.
-  function fieldLineage(sideDb, table, recordId, column) {
+  // BLUE FUTURE: `branch` (optional) — official lineage by default; the blue VIEW shows blue edits too.
+  function fieldLineage(sideDb, table, recordId, column, branch) {
     if (!sideDb || !table || !column) return [];
     try {
-      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0 ORDER BY id ASC");
+      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
       if (!r.length) return [];
       var want = String(table).toLowerCase(), rid = recordId != null ? String(recordId) : null;
       var wantCol = String(column).toLowerCase(), out = [];
@@ -1235,6 +1274,91 @@
       return out;
     } catch (e) { return []; }
   }
+  // ── Item 1 (FRONTEND_LANE_MASTER §OUTSTANDING) — PRIVATE DRAFT RESTORE-POINT. The engine half of the
+  // "no official dot while typing" model. An unsaved edit is PRIVATE + local: it MUST NOT be committed to the
+  // op-log (other docs read the committed tip via readTip/tipValues — never a half-typed buffer), so leaving
+  // the form NEVER seals an official dot. Instead the typed values are refreshed into a per-(table,id) buffer
+  // (in storage: localStorage in-browser, a Map-mock headless) carrying a dirty-pip. On RETURN the default is
+  // the saved official tip; the buffer is an OPT-IN restore only. A validated Save folds draft→official dot and
+  // clears the buffer; discard drops it. Two distinct marks: official committed dots vs the private "you-were-
+  // here, unsaved" pip — never merged. Storage is injected so the whole contract is witnessable headless.
+  // Witness: W-DRAFT-RESTORE.
+  // NB: a hoisted function (not a `var`) so the prefix survives the headless early-return at the CORE export —
+  // a `var DRAFT_PREFIX = …` would assign AFTER that return and read back `undefined` in node.
+  function _draftPrefix() { return 'erpdraft:'; }
+  function _draftKey(table, id) { return _draftPrefix() + String(table || '').toLowerCase() + ':' + (id == null ? 'new' : id); }
+
+  // draftChangedCols — the unsaved-edit delta: typed cols whose value differs from the baseline (the official
+  // tip for an edit, the create-defaults for a new row). String-compared (the form yields strings), case-
+  // insensitive on the col name. PURE; the basis of both "is it dirty" and the pip's changed-col list.
+  function draftChangedCols(vals, baseline) {
+    var b = baseline || {}, out = [];
+    Object.keys(vals || {}).forEach(function (c) {
+      var nv = vals[c] == null ? '' : String(vals[c]);
+      var bk = _ciKey(b, c.toLowerCase());
+      var ov = bk == null ? '' : (b[bk] == null ? '' : String(b[bk]));
+      if (nv !== ov) out.push(c);
+    });
+    return out;
+  }
+  function draftDirty(vals, baseline) { return draftChangedCols(vals, baseline).length > 0; }
+
+  // draftPut — refresh the private buffer for (table,id) IFF the form is dirty; if it is CLEAN, clear any stale
+  // buffer (leaving a clean form must not strand an old pip). Stores the typed vals + the tipSnapshot the draft
+  // was edited over (→ drift detection) + ts/actor. Returns the stored record, or null when nothing was buffered.
+  // NON-INVENT: writes ONLY to the injected storage — never to the op-log (no official dot). ts is caller-supplied
+  // (no Date.now in the op path).
+  function draftPut(storage, table, id, vals, opts) {
+    if (!storage) return null;
+    opts = opts || {};
+    var cols = draftChangedCols(vals, opts.baseline);
+    var key = _draftKey(table, id);
+    if (!cols.length) { try { storage.removeItem(key); } catch (e) {} return null; }
+    var rec = { table: String(table || '').toLowerCase(), id: id == null ? null : id, vals: vals, cols: cols,
+                tipSnapshot: opts.tipSnapshot || opts.baseline || null, ts: opts.ts || 0, actor: opts.actor || null };
+    try { storage.setItem(key, JSON.stringify(rec)); } catch (e) { return null; }
+    console.log('§DRAFT-PUT key=' + key + ' cols=' + cols.join(',') + ' (private buffer, NO official dot)');
+    return rec;
+  }
+  function draftGet(storage, table, id) {
+    if (!storage) return null;
+    try { var s = storage.getItem(_draftKey(table, id)); return s ? JSON.parse(s) : null; } catch (e) { return null; }
+  }
+  function draftClear(storage, table, id) {
+    if (!storage) return false;
+    var key = _draftKey(table, id);
+    try { storage.removeItem(key); console.log('§DRAFT-CLEAR key=' + key); return true; } catch (e) { return false; }
+  }
+  // draftList — every buffered draft (for the dirty-pip rail). PURE scan of the storage keys under our prefix.
+  function draftList(storage) {
+    if (!storage) return [];
+    var out = [];
+    try {
+      var n = storage.length || 0;
+      for (var i = 0; i < n; i++) {
+        var k = storage.key(i);
+        if (k && k.indexOf(_draftPrefix()) === 0) {
+          try { var r = JSON.parse(storage.getItem(k)); out.push({ table: r.table, id: r.id, ts: r.ts, cols: r.cols || [] }); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    return out;
+  }
+  // draftDrift — "record changed underneath": did the official tip move since the draft snapshot was taken?
+  // Compares the stored tipSnapshot against the CURRENT tip on the cols the draft touched. Returns
+  // {drifted, cols} so the restore UI can WARN (the item-1 DECISION OWED) instead of silently clobbering.
+  function draftDrift(draft, currentTip) {
+    if (!draft || !draft.tipSnapshot || !currentTip) return { drifted: false, cols: [] };
+    var snap = draft.tipSnapshot, cols = [];
+    (draft.cols || []).forEach(function (c) {
+      var sk = _ciKey(snap, c.toLowerCase()), tk = _ciKey(currentTip, c.toLowerCase());
+      var sv = sk == null ? '' : String(snap[sk] == null ? '' : snap[sk]);
+      var tv = tk == null ? '' : String(currentTip[tk] == null ? '' : currentTip[tk]);
+      if (sv !== tv) cols.push(c);
+    });
+    return { drifted: cols.length > 0, cols: cols };
+  }
+
   // case-insensitive key lookup in an object (CREATE.fields / UPDATE.changes use varied AD column casing).
   function _ciKey(obj, lowerCol) {
     if (!obj) return null;
@@ -1279,7 +1403,7 @@
     var casCurrent;
     if (casCol) {
       casCurrent = rec && rec[casCol] != null ? rec[casCol] : null;
-      try { var tv = db ? CORE.tipValues(db, op.table, op.id) : null; if (tv && Object.prototype.hasOwnProperty.call(tv, casCol)) casCurrent = tv[casCol]; } catch (e) {}
+      try { var tv = db ? CORE.tipValues(db, op.table, op.id, _readBranch()) : null; if (tv && Object.prototype.hasOwnProperty.call(tv, casCol)) casCurrent = tv[casCol]; } catch (e) {}
     }
     return { actor: actor, owner: owner, casCol: casCol,
              casExpected: (op.casExpected !== undefined ? op.casExpected : casCurrent), casCurrent: casCurrent };
@@ -1337,7 +1461,7 @@
         else if (op.op_type === 'CRUD_CREATE') { params.fields = op.fields; params.cas = op.cas || null; if (op.stdDefaults) params.stdDefaults = op.stdDefaults; }
         else if (op.op_type === 'CRUD_DELETE') { params.tombstone = true; params.reversible = true; }
         var groupOps = [{ op_type: op.op_type, op_uuid: op.op_uuid || null, params: params }];
-        Promise.resolve(K.commitGroup(db, groupOps, {})).then(function (res) {
+        Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); return; }
           return Promise.resolve(K.verifyChain(db)).then(function (v) {
             _sidePersist();
@@ -1401,12 +1525,12 @@
     withSidecar(function (db) {
       if (db) {
         try {
-          var tip = CORE.tipValues(db, key, id), cols = Object.keys(tip);
+          var tip = CORE.tipValues(db, key, id, _readBranch()), cols = Object.keys(tip);
           if (cols.length) { cols.forEach(function (c) { o[c] = tip[c]; });
             console.log('§CRUD-TIP key=' + key + ' id=' + id + ' overlaid=' + cols.join(',') + ' source=sidecar'); }
           // W-CRUD-DOCSTATUS: docstatus truth = the SET_STATUS tip (the FSM lane), not a column write —
           // the edit form must render the CURRENT status selected, same source doProcess derives `from` off.
-          var st = CORE.readTip(db, key, id);
+          var st = CORE.readTip(db, key, id, _readBranch());
           if (st != null && Object.prototype.hasOwnProperty.call(o, 'docstatus') && o.docstatus !== st) {
             o.docstatus = st;
             console.log('§CRUD-TIP key=' + key + ' id=' + id + ' docstatus=' + st + ' source=readTip(SET_STATUS)');
@@ -1571,9 +1695,9 @@
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
-                    readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history,
+                    readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id, _readBranch()) : null; }, history: history,
                     changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
-                    fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col) : []; },  // Item 3b (W-FIELD-LINEAGE)
+                    fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col, _readBranch()) : []; },  // Item 3b (W-FIELD-LINEAGE) + BLUE FUTURE view
                     fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
                     toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
