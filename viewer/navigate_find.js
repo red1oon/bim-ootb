@@ -173,7 +173,7 @@
       '</div>',
       // S275: Selected item summary + inline navigate button
       // BIM\u2192Project TASK A: indicative 5D cost of the selection (docs/BIMtoProject.md \u00A7A)
-      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
@@ -198,6 +198,8 @@
     var elResults = document.getElementById('find-results');
     var elCount = document.getElementById('find-count');
     var elNavBtn = document.getElementById('find-navigate-btn');
+    var elErpBtn = document.getElementById('find-erp-btn');   // BIM→Project TASK C: > to ERP push
+    var _lastSelSet = null, _lastSelLabel = '';               // current selection, for the ERP push
     var elClose = document.getElementById('find-close');
     var elChips = document.getElementById('find-chips');
     var elMicBtn = document.getElementById('find-mic-btn');
@@ -933,46 +935,52 @@
       "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
       "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
       "ELSE MAX(t.bbox_x,t.bbox_y) END";
-    function _selectionCost(set) {
-      var R = (typeof window !== 'undefined' && window.RATES) || (typeof RATES !== 'undefined' ? RATES : {});
-      var cur = (typeof window !== 'undefined' && window._TRL && window._TRL.cur) || 'RM';
-      var pack = (typeof window !== 'undefined' && window.RATE_TEMPLATE_NAME) || 'hardcoded';
+    function _rates() { return (typeof window !== 'undefined' && window.RATES) || (typeof RATES !== 'undefined' ? RATES : {}); }
+    function _cur() { return (typeof window !== 'undefined' && window._TRL && window._TRL.cur) || 'RM'; }
+    function _pack() { return (typeof window !== 'undefined' && window.RATE_TEMPLATE_NAME) || 'hardcoded'; }
+    // Priced rows for a selection at (disc,cls,storey) granularity — the apply5DRates shape the fold
+    // engine (proj_fold.js) consumes. ONE source for both the bar cost (Task A) and the > to ERP push (Task C).
+    function _selectionPriced(set) {
+      var R = _rates();
       if (!set || !set.size || !A.dbQuery) return null;
       var guids = []; set.forEach(function (g) { guids.push(g); });
-      if (guids.length > _SELCOST_CAP) {
-        console.log('[RP-C] §FIND_COST_SKIP elems=' + guids.length + ' > cap=' + _SELCOST_CAP);
-        return { capped: true, elements: guids.length, cost: 0, cur: cur, pack: pack };
-      }
-      var agg = {}; // ifc_class → {cnt,len,area,vol}
+      if (guids.length > _SELCOST_CAP) return { capped: true, elements: guids.length, rows: [] };
+      var agg = {}; // disc|cls|storey → {disc,cls,storey,cnt,len,area,vol}
       for (var i = 0; i < guids.length; i += 900) {
         var chunk = guids.slice(i, i + 900);
         var ph = chunk.map(function () { return '?'; }).join(',');
         var rows = A.dbQuery(
-          "SELECT m.ifc_class, COUNT(*) cnt, " +
+          "SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) cnt, " +
           "SUM(MAX(t.bbox_x,t.bbox_y,t.bbox_z)) len, SUM(" + _AREA_EXPR_SC + ") area, " +
           "SUM(t.bbox_x*t.bbox_y*t.bbox_z) vol " +
           "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
           "WHERE m.guid IN (" + ph + ") AND t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
-          "GROUP BY m.ifc_class", chunk) || [];
+          "GROUP BY m.discipline, m.ifc_class, m.storey", chunk) || [];
         rows.forEach(function (r) {
-          var k = r[0] || '_';
-          var a = agg[k] || (agg[k] = { cnt: 0, len: 0, area: 0, vol: 0 });
-          a.cnt += r[1] || 0; a.len += r[2] || 0; a.area += r[3] || 0; a.vol += r[4] || 0;
+          var k = (r[0] || '_') + '|' + (r[1] || '_') + '|' + (r[2] || '_');
+          var a = agg[k] || (agg[k] = { disc: r[0] || '_', cls: r[1] || '_', storey: r[2] || '_', cnt: 0, len: 0, area: 0, vol: 0 });
+          a.cnt += r[3] || 0; a.len += r[4] || 0; a.area += r[5] || 0; a.vol += r[6] || 0;
         });
       }
-      var cost = 0, elements = 0;
-      for (var cls in agg) {
-        var a2 = agg[cls], rt = R[cls];
-        elements += a2.cnt;
-        if (!rt || !rt.rate) continue;                       // non-invent: no rate → no money
-        var unit = rt.unit, qty;
-        if (unit === 'M') qty = a2.len; else if (unit === 'M2') qty = a2.area;
-        else if (unit === 'M3') qty = a2.vol; else qty = a2.cnt; // EA/KG/unmapped → count
-        cost += Math.round(rt.rate * qty);
-      }
-      return { capped: false, elements: elements, cost: cost, cur: cur, pack: pack };
+      var priced = [], elements = 0;
+      Object.keys(agg).forEach(function (k) {
+        var a = agg[k], rt = R[a.cls], unit = rt ? rt.unit : 'EA', rate = rt ? rt.rate : 0, qty;
+        if (unit === 'M') qty = a.len; else if (unit === 'M2') qty = a.area; else if (unit === 'M3') qty = a.vol; else { unit = rt ? unit : 'EA'; qty = a.cnt; }
+        elements += a.cnt;
+        priced.push({ disc: a.disc, cls: a.cls, storey: a.storey, count: a.cnt, unit: unit, qty: qty, rate: rate, cost: Math.round(rate * qty) });
+      });
+      return { capped: false, elements: elements, rows: priced };
+    }
+    function _selectionCost(set) {
+      var p = _selectionPriced(set);
+      if (!p) return null;
+      if (p.capped) { console.log('[RP-C] §FIND_COST_SKIP elems=' + p.elements + ' > cap=' + _SELCOST_CAP); return { capped: true, elements: p.elements, cost: 0, cur: _cur(), pack: _pack() }; }
+      var cost = p.rows.reduce(function (s, r) { return s + r.cost; }, 0);
+      return { capped: false, elements: p.elements, cost: cost, cur: _cur(), pack: _pack() };
     }
     function _updateSelCost(set, scopeLabel) {
+      _lastSelSet = (set && set.size) ? set : null;            // remember selection for the > to ERP push
+      _lastSelLabel = scopeLabel || '';
       var el = document.getElementById('find-selected-cost');
       if (!el) return;
       try {
@@ -984,6 +992,59 @@
         console.log('[RP-C] §FIND_COST scope="' + (scopeLabel || '') + '" elements=' + res.elements +
           ' cost=' + res.cost + ' cur=' + res.cur + ' pack=' + res.pack);
       } catch (e) { el.textContent = ''; console.log('[RP-C] §FIND_COST_ERR ' + e.message); }
+    }
+
+    // ── §PROJ_PUSH (BIM→Project TASK C, docs/BIMtoProject.md §C): > to ERP — fold the selection into
+    // an iDempiere C_Project via the proven engine proj_fold.js (window.ProjFold). The fold is the
+    // witnessed part (W-PROJ-PUSH/FOLD/SEQ, tests/poc_proj_push.js); here we wire the UI call path.
+    // The writable ERP db is loaded lazily (fetch erp/ad_seed.db → sql.js) and the folded result is
+    // persisted to OPFS (bim_project_orders.db) — a viewer-owned project-orders store. NOTE: the
+    // cross-page hand-off so the ERP app reads it is the BIMtoERP §B write-path (follow-on).
+    var _bimErpDb = null;
+    function _ensureErpDb() {
+      if (_bimErpDb) return Promise.resolve(_bimErpDb);
+      var SQL = window.SQL || window._SQL_CACHED;
+      if (!SQL || !window.ProjFold) return Promise.resolve(null);
+      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+        .then(function (buf) { _bimErpDb = new SQL.Database(new Uint8Array(buf)); return _bimErpDb; })
+        .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
+    }
+    function _persistErpDb(db) {
+      try {
+        if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+        var bytes = db.export();
+        return navigator.storage.getDirectory()
+          .then(function (root) { return root.getDirectoryHandle('bim_analysis', { create: true }); })
+          .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
+          .then(function (fh) { return fh.createWritable(); })
+          .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
+          .then(function () { return true; }).catch(function () { return false; });
+      } catch (e) { return Promise.resolve(false); }
+    }
+    function _pushToErp() {
+      var set = _lastSelSet;
+      if (!set || !set.size) { if (A.status) A.status.textContent = 'Select something to push to ERP'; return; }
+      if (!window.ProjFold) { if (A.status) A.status.textContent = 'ERP push engine not loaded'; console.log('[RP-C] §PROJ_PUSH_DEFER ProjFold absent'); return; }
+      var building = A.activeBuilding;
+      var priced = _selectionPriced(set);
+      if (!priced || !priced.rows.length) { if (A.status) A.status.textContent = 'No priced elements in selection'; return; }
+      if (A.status) A.status.textContent = 'Folding Project Order…';
+      _ensureErpDb().then(function (db) {
+        if (!db) { if (A.status) A.status.textContent = 'ERP db unavailable for push'; console.log('[RP-C] §PROJ_PUSH_DEFER no ERP db'); return; }
+        var opts = {
+          seqRules: window.SEQUENCE_RULES || {}, laborRates: window.LABOR_RATES || {},
+          packCurrencyISO: _cur(), now: (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })()
+        };
+        var r = window.ProjFold.foldProjectOrder(db, building, priced.rows, opts);
+        console.log('[RP-C] §PROJ_PUSH project="' + building + '" scope="' + _lastSelLabel + '" phases=+' + r.created.phases +
+          ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
+          ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt);
+        _persistErpDb(db).then(function (ok) {
+          console.log('[RP-C] §PROJ_PUSH_PERSIST opfs=' + ok + ' store=bim_project_orders.db');
+          if (A.status) A.status.textContent = 'Project Order: ' + r.created.lines + ' lines · ' + _cur() + ' ' +
+            Number(r.plannedAmt).toLocaleString(undefined, { maximumFractionDigits: 0 }) + (ok ? ' (saved)' : '');
+        });
+      });
     }
 
     // solidOpacity (optional): for the kept-solid CONTEXT build (color==null), render it at this
@@ -3151,6 +3212,9 @@
     elNavBtn.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeFindPanel();
     });
+
+    // ── BIM→Project TASK C: wire the > to ERP button (folds the selection via window.ProjFold) ──
+    if (elErpBtn) { elErpBtn.tabIndex = 0; elErpBtn.onclick = function () { _pushToErp(); }; }
 
     // ── Expose for navigate.js Section D and external callers ──
     A.clearHighlight = clearHighlight;
