@@ -386,7 +386,7 @@
 </div>
 
 <script src="vfs_detect.js?v=1"></script>
-<script src="ad_parser.js?v=22"></script>
+<script src="ad_parser.js?v=23"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -484,7 +484,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=6"></script>
+<script src="crud_overlay.js?v=7"></script>
 <script>
 (function () {
   'use strict';
@@ -1746,6 +1746,31 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   };
   console.log('§CRUD-IDMP-ADAPTER mounted globals=withBundle,curChain,fname,__crudHostAnchor overlay=' + (window.__crud ? 'present' : 'absent'));
 
+  // ── W-AD-SELFEDIT-LIVE — reflexive AD self-edit: a signed dictionary edit repaints the form on the spot. ──
+  // Leg 1: feed ad_parser a tip-source so its AD_Field/AD_Window reads OVERLAY the signed sidecar edit (the SAME
+  // CrudOverlay.listTip verb the engine witness W-AD-SELFEDIT used). Read window.__crud lazily so script load
+  // order is irrelevant; absent overlay → rows pass through pure.
+  if (ADP && typeof ADP.setTipSource === 'function') {
+    ADP.setTipSource(function (table, pkCol, rows) {
+      var c = window.__crud;
+      if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return rows;
+      var sdb = c.kernelDb(); if (!sdb) return rows;
+      var res = c.core.listTip(sdb, table, pkCol, rows);
+      return (res && res.rows) ? res.rows : rows;
+    });
+    console.log('§AD-SELFEDIT-LIVE tip-source wired (ad_parser ← crud sidecar)');
+  }
+  // Leg 2: on a committed dictionary edit, invalidate the cached window model + re-fold (re-read AD → repaint).
+  // openWindow caches _openWins[winId]; deleting it forces a fresh AD read that now sees the overlaid edit.
+  window.addEventListener('overlay:committed', function (e) {
+    var t = (e.detail && e.detail.table) ? String(e.detail.table) : '';
+    if (!/^AD_/i.test(t)) return;                              // only DICTIONARY edits refold the model
+    var wid = _activeWin;
+    console.log('§AD-SELFEDIT-LIVE refold table=' + t + ' win=' + wid);
+    if (wid != null && _openWins[wid]) { delete _openWins[wid]; openWindow(Number(wid)); }
+    if (/^AD_(Window|Menu)$/i.test(t)) { try { buildMenu(); } catch (er) {} }   // name/menu edits relabel the tree
+  });
+
   // ── Accts Posted (FRONTEND_LANE_MASTER §2 Item C) — pill-alongside, read-only, consumes the seam. ──
   // window.ERPPostings (frozen read-fold) + window.AcctsPosted (the lens). The browser has no posted
   // op-log yet (read-only until install) → projQ is empty → honest "install local data first" card;
@@ -2337,7 +2362,7 @@ if ('serviceWorker' in navigator) {
     if (!_swHadCtrl) { _swHadCtrl = true; return; }   // initial install claim — adopt silently
     _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
   });
-  navigator.serviceWorker.register('sw.js?v=681')
+  navigator.serviceWorker.register('sw.js?v=683')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
