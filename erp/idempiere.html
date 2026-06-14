@@ -459,7 +459,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=4"></script>
+<script src="crud_overlay.js?v=5"></script>
 <script>
 (function () {
   'use strict';
@@ -697,18 +697,43 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§IDEMPIERE login-step0 tenants=' + (tenants ? tenants.length : 0));
   }
 
-  // Red-rim warning before tearing a tenant down (feedback_destructive_ops). Shows the business-record count
-  // with an "Open to see?" escape — that logs into the tenant FIRST (like World-history select from BIM), so
-  // its records + history timeline become browsable (jump to first, scrub back through all). Delete persists.
+  // Task 3 — count user-created/edited records in the op-log for this tenant (ERP_AUDIT_CHANGELOG.md §TASK3).
+  // Replaces the static AD-table row count (which counted ALL seed rows, not what THIS user did). Honest:
+  // fresh install + no writes → 0. Counts CRUD_CREATE where stdDefaults.clientId=c.id + CRUD_UPDATE where
+  // actor matches. Only counts if an actor is known (user is logged in). JS-parses kernel_ops parameters.
+  function _countUserOpsForClient(clientId) {
+    try {
+      var sideDb = window.__crud && typeof window.__crud.kernelDb === 'function' ? window.__crud.kernelDb() : null;
+      if (!sideDb) return 0;
+      var actor = window.APP && window.APP.actor != null ? window.APP.actor : null;
+      if (actor == null) return 0;
+      var r = sideDb.exec("SELECT op_type, parameters FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0");
+      if (!r.length) return 0;
+      var n = 0;
+      r[0].values.forEach(function (row) {
+        try {
+          var p = JSON.parse(row[1]);
+          if (!p) return;
+          if (row[0] === 'CRUD_CREATE' && p.stdDefaults && String(p.stdDefaults.clientId) === String(clientId) && String(p.stdDefaults.actor) === String(actor)) n++;
+          else if (row[0] === 'CRUD_UPDATE' && p.actor != null && String(p.actor) === String(actor)) n++;  // tenant inferred from actor scope
+        } catch (e) {}
+      });
+      console.log('§DELETE-TRAIL client=' + clientId + ' actor=' + actor + ' opCount=' + n);
+      return n;
+    } catch (e) { return 0; }
+  }
+
+  // Red-rim warning before tearing a tenant down (feedback_destructive_ops). Shows the user's op-log count
+  // (records they created/edited, from the kernel op-log, not static seed rows) + an "Open to see?" escape.
   function _confirmDeleteTenant(c) {
-    var rec = SES.countClientRecords(db, c.id);
+    var opCount = _countUserOpsForClient(c.id);   // Task 3: honest op-log count, not static seed rows
     var ov = el('div', 'idmp-del-overlay');
     var warnIco = window.OverlayKit ? OverlayKit.ico('alertTriangle', 20) : '⚠';
     var trashIco = window.OverlayKit ? OverlayKit.ico('trash', 13) : '';
-    var detail = rec.total > 0
-      ? ('There are <b>' + rec.total + '</b> record' + (rec.total === 1 ? '' : 's') + ' in this tenant. '
+    var detail = opCount > 0
+      ? ('You created/edited <b>' + opCount + '</b> record' + (opCount === 1 ? '' : 's') + ' here. '
          + '<a href="#" id="idmp-del-see">Open to see?</a>')
-      : 'This tenant has no business records yet.';
+      : 'You have not created or edited any records in this tenant.';
     ov.innerHTML =
       '<div class="idmp-del-card" role="alertdialog" aria-label="Delete tenant">'
       + '<div class="idmp-del-h">' + warnIco + ' Delete tenant?</div>'
@@ -724,8 +749,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var see = document.getElementById('idmp-del-see');
     if (see) see.onclick = function (e) {
       e.preventDefault();
-      console.log('§IDEMPIERE tenant-del-see client=' + c.id + ' records=' + rec.total + ' → login then timeline');
-      closeOv(); _loginClient = c; loginStep1();   // login FIRST; the World-history timeline scrubs from there
+      console.log('§DELETE-TRAIL client=' + c.id + ' actor=' + (window.APP && window.APP.actor) + ' count=' + opCount + ' → login then timeline');
+      closeOv(); _loginClient = c; loginStep1();   // login FIRST; the op-log timeline is then browsable
     };
     $('idmp-del-go').onclick = function () {
       var res = SES.deleteClient(db, c.id);
@@ -787,6 +812,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function applySession() {
     // expose the live login client (the honest tenant) for client-scoped lenses (RuleFold §11) — NON-INVENT
     window.__idmpClient = _session.client;   // { id, name }
+    // Task 0 — wire the session actor so every CRUD op is stamped with who/which-tenant (ERP_AUDIT_CHANGELOG.md)
+    window.APP = window.APP || {};
+    window.APP.actor   = _session.user.id;
+    window.APP.clientId = _session.client.id;
+    window.APP.orgId   = _session.org ? _session.org.id : 0;
+    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId);
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
     $('idmp-ctx').textContent = _session.client.name + ' · ' + _session.role.name + ' · ' + orgLabel;
@@ -956,6 +987,58 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       renderBody();
     });
     tgl.innerHTML = _viewMode === 'grid' ? '▦ Grid' : '▤ Form';
+    // Task 2 — changelog affordance (iDempiere record-history icon): only for tables with AD_Table.IsChangeLog='Y'
+    (function () {
+      var tab = _curTab(); if (!tab || !tab.tableName) return;
+      var tn = tab.tableName;
+      var isLoggable = false;
+      try { var r = db.exec("SELECT IsChangeLog FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [tn]); isLoggable = r.length && r[0].values.length && String(r[0].values[0][0]).toUpperCase() === 'Y'; } catch (e) {}
+      if (!isLoggable) return;
+      sep();
+      btn('🕒 Log', 'Change log for this record (AD-filtered)', true, function () { _showChangelog(tn); });
+    })();
+  }
+
+  // Task 2 — showChangelog: open a small overlay showing the per-record AD-filtered change trail.
+  function _showChangelog(tableName) {
+    var rec = _records[_recIdx], tab = _curTab();
+    if (!rec || !tab) { return; }
+    var pk = recVal(rec, _keyCol(tab));
+    if (!window.__crud || typeof window.__crud.changeLog !== 'function') { return; }
+    var entries = window.__crud.changeLog(tableName, pk);
+    if (entries === null) { alert('IsChangeLog=N for ' + tableName + ' — no trail.'); return; }
+    var old = document.getElementById('idmp-changelog-ov');
+    if (old) old.remove();
+    var ov = el('div', null);
+    ov.id = 'idmp-changelog-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    var box = el('div', null);
+    box.style.cssText = 'background:#15101a;border:1px solid #4a2f44;border-radius:12px;padding:16px 18px;width:min(560px,94vw);max-height:70vh;overflow:auto;color:#ecdcea;font:13px system-ui';
+    var hdr = el('div', null, '🕒 Change Log — ' + tableName + ' #' + pk);
+    hdr.style.cssText = 'font-weight:700;font-size:15px;margin:0 0 10px;color:#fbeaf7';
+    box.appendChild(hdr);
+    if (!entries.length) {
+      var em = el('div', null, 'No logged changes for this record yet.'); em.style.color = '#8a6f86'; box.appendChild(em);
+    } else {
+      var tbl = document.createElement('table'); tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px';
+      var thead = tbl.createTHead(); var hr = thead.insertRow();
+      ['When', 'By', 'Column', 'Old', 'New'].forEach(function (h) {
+        var th = document.createElement('th'); th.textContent = h; th.style.cssText = 'text-align:left;padding:3px 6px;border-bottom:1px solid #4a2f44;color:#c4a8c0'; hr.appendChild(th);
+      });
+      entries.forEach(function (e) {
+        var tr = tbl.insertRow();
+        [e.ts, e.actor, e.column, e.old == null ? '—' : e.old, e['new'] == null ? '—' : e['new']].forEach(function (v) {
+          var td = tr.insertCell(); td.textContent = String(v == null ? '' : v); td.style.padding = '3px 6px'; td.style.borderBottom = '1px solid #2a1a2f';
+        });
+      });
+      box.appendChild(tbl);
+    }
+    var closeBtn = el('button', null, 'Close'); closeBtn.style.cssText = 'margin-top:12px;background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:5px 14px;cursor:pointer';
+    closeBtn.onclick = function () { ov.remove(); };
+    box.appendChild(closeBtn);
+    ov.appendChild(box);
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
   }
   function renderTabStrip() {
     var w = _curWin(); var strip = $('idmp-tabstrip'); strip.style.display = 'flex'; strip.innerHTML = '';
