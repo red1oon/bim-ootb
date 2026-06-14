@@ -154,6 +154,11 @@
       '.pe-warn{margin-top:10px;font-size:11.5px;color:#fbbf24}' +
       '.pe-emit{margin-top:14px;display:flex;justify-content:flex-end}' +
       '.pe-ninja{font-size:12.5px;color:#cdd6e4;margin-bottom:11px}' +
+      // ── export (PackOut existing window) sub-section ──
+      '.pe-export{margin-top:16px;padding-top:13px;border-top:1px solid rgba(255,255,255,.07)}' +
+      '.pe-export .pe-ninja2{font-size:11.5px;color:#8b93a7;margin-bottom:8px}' +
+      '.pe-export .pe-exrow{display:flex;gap:7px}' +
+      '.pe-win{flex:1;background:#11131a;border:1px solid rgba(255,255,255,.14);color:#cdd6e4;border-radius:8px;padding:7px 9px;font-size:12px}' +
       '.pe-byline{margin-top:14px;padding-top:11px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#8b93a7;text-align:center}' +
       '.pe-byline b{color:#aab3c5;font-weight:600}';
     doc.head.appendChild(s);
@@ -222,6 +227,7 @@
     var ti = doc.getElementById('pe-tab-install'), tc = doc.getElementById('pe-tab-create');
     if (ti) ti.className = 'pe-tab' + (tab === 'install' ? ' on' : '');
     if (tc) tc.className = 'pe-tab' + (tab === 'create' ? ' on' : '');
+    if (tab === 'create') _populateWindows(doc);   // refresh picker (tenant may have loaded since open)
     console.log('§NINJA-PILL-DOM tab=' + (tab === 'create' ? 'Create' : 'Install'));
   }
 
@@ -279,6 +285,54 @@
     } catch (e) { _toast(doc, 'Starter download failed: ' + e.message); }
   }
 
+  // Lazy-load SheetJS (xlsx.mini.min.js) the same way ninja_pill does — Export may run on a fresh open
+  // where the report pill hasn't pulled XLSX yet. Resolves to global.XLSX.
+  function _ensureXLSX(doc) {
+    if (global.XLSX) return Promise.resolve(global.XLSX);
+    return new Promise(function (res, rej) {
+      var s = doc.createElement('script'); s.src = 'xlsx.mini.min.js?v=1';
+      s.onload = function () { console.log('§NINJA-PILL-DOM xlsx=loaded'); res(global.XLSX); };
+      s.onerror = function () { rej(new Error('xlsx.mini.min.js failed to load')); };
+      doc.head.appendChild(s);
+    });
+  }
+
+  // Populate the window picker from the live writable AD db (read-only query). Active windows only.
+  function _populateWindows(doc) {
+    var sel = doc.getElementById('pe-win'); if (!sel) return;
+    var db = _glue && _glue.db;
+    if (!db || typeof db.exec !== 'function') { return; }   // no tenant loaded → leave placeholder
+    var rows;
+    try { rows = db.exec("SELECT AD_Window_ID, Name FROM AD_Window WHERE IsActive='Y' ORDER BY Name"); }
+    catch (e) { console.warn('§NINJA-PILL-DOM win-list FAILED: ' + e.message); return; }
+    var vals = (rows && rows[0] && rows[0].values) || [];
+    var html = '<option value="">&mdash; pick a window &mdash;</option>';
+    vals.forEach(function (r) {
+      html += '<option value="' + r[0] + '">' + String(r[1] || ('Window ' + r[0])).replace(/</g, '&lt;') + '</option>';
+    });
+    sel.innerHTML = html;
+    console.log('§NINJA-PILL-DOM win-list count=' + vals.length);
+  }
+
+  function _doExport(doc) {
+    if (!global.NinjaExport) { _toast(doc, 'Ninja engine not loaded'); return; }
+    var sel = doc.getElementById('pe-win');
+    var winId = sel && sel.value ? Number(sel.value) : 0;
+    if (!winId) { _toast(doc, 'Pick a window first'); return; }
+    if (!_glue || !_glue.db || typeof _glue.db.exec !== 'function') { _toast(doc, 'Load a tenant first (no AD db)'); return; }
+    var label = (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].text) || ('window ' + winId);
+    _ensureXLSX(doc).then(function (XLSX) {
+      var blob = global.NinjaExport.exportBlob(_glue.db, winId, XLSX);
+      if (!blob) { _toast(doc, 'Window not found / nothing to export'); console.warn('§NINJA-PILL-DOM export winId=' + winId + ' → null'); return; }
+      var fname = label.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || ('window_' + winId);
+      var a = doc.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname + '.xlsx';
+      doc.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      console.log('§NINJA-PILL-DOM export winId=' + winId + ' file=' + fname + '.xlsx');
+      _toast(doc, 'Exported ' + fname + '.xlsx');
+    }).catch(function (e) { console.warn('§NINJA-PILL-DOM export FAILED: ' + e.message); _toast(doc, 'Export failed: ' + e.message); });
+  }
+
   function _doEmit(doc) {
     if (!_createModel) { _toast(doc, 'Drop a model sheet first'); return; }
     if (!global.NinjaCreate) { _toast(doc, 'Ninja engine not loaded'); return; }
@@ -311,6 +365,8 @@
     });
     var st = doc.getElementById('pe-starter'); if (st) st.onclick = function () { _downloadStarter(doc); };
     var eb = doc.getElementById('pe-emit-btn'); if (eb) eb.onclick = function () { _doEmit(doc); };
+    var xb = doc.getElementById('pe-export-btn'); if (xb) xb.onclick = function () { _doExport(doc); };
+    _populateWindows(doc);
   }
 
   // open({ doc, db, adQ, KO, engines }) — host injects the page glue; build/hydrate the registry once.
@@ -356,6 +412,14 @@
           '<button class="pe-starter" id="pe-starter">' + ICO('download') + ' Download starter template</button>' +
           '<div class="pe-prev" id="pe-prev"></div>' +
           '<div class="pe-emit"><button class="pe-btn pe-go" id="pe-emit-btn" disabled>' + ICO('plug') + ' Emit &amp; Install</button></div>' +
+          // Export (the literal PackOut) — round-trip a live window back to a re-droppable sheet. NINJA_MODE_LANE §1.
+          '<div class="pe-export">' +
+            '<div class="pe-ninja2">Export an existing window &mdash; round-trip a live module back to a sheet</div>' +
+            '<div class="pe-exrow">' +
+              '<select class="pe-win" id="pe-win"><option value="">&mdash; pick a window &mdash;</option></select>' +
+              '<button class="pe-btn" id="pe-export-btn">' + ICO('download') + ' Export</button>' +
+            '</div>' +
+          '</div>' +
           '<div class="pe-byline">A friendlier <b>Red1 Ninja</b>, in the browser — Excel defines the model; no JVM, no 2Pack.</div>' +
         '</div>' +
       '</div>';
