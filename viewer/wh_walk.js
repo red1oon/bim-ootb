@@ -202,6 +202,69 @@
       document.body.appendChild(ov);
     });
   }
+  // ── §C-R2-8 cross-reload resume: a lightweight UI-state cache, NOT the signed kanban blob ──
+  // Mid-walk picks live ONLY in the in-memory W.opDb + W.done; a PAGE RELOAD drops them (W.opDb is a
+  // fresh db each load, and draftFromPosDoc resets W.done). The signed ledger writeback still happens
+  // ONLY at completion (writebackToSidecar) — this cache never touches it. Scope = pos-inout SALE walks
+  // (C-R2-8 "same sale"); completePos folds pickedByLine from W.done (NOT the op-log), so restoring
+  // W.done seals an identical completion — no signed-op replay needed. Own IDB key in the `dbs` store
+  // (a structured-clone JS object; no SQL). Keyed by m_inout_id; per-step by line@locator (route-order
+  // independent). Movement-route resume (its complete() folds the op-log) stays out of scope.
+  var WALK_PROGRESS_KEY = 'idmp_whwalk_progress';
+  function _lineKey(s) { return String(s.line.line) + '@' + String(s.m_locator_id); }
+  function _loadWalkProgressAll() {
+    return _openCacheDB().then(function (idb) {
+      if (!idb || !idb.objectStoreNames.contains('dbs')) { if (idb) idb.close(); return {}; }
+      return new Promise(function (ok) {
+        var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(WALK_PROGRESS_KEY);
+        g.onsuccess = function () { idb.close(); ok(g.result || {}); };
+        g.onerror = function () { idb.close(); ok({}); };
+      });
+    }).catch(function () { return {}; });
+  }
+  function _saveWalkProgressAll(all) {
+    return _openCacheDB().then(function (idb) {
+      if (!idb || !idb.objectStoreNames.contains('dbs')) { if (idb) idb.close(); return; }
+      return new Promise(function (ok) {
+        var tx = idb.transaction('dbs', 'readwrite');
+        tx.objectStore('dbs').put(all, WALK_PROGRESS_KEY);
+        tx.oncomplete = function () { idb.close(); ok(); };
+        tx.onerror = function () { idb.close(); ok(); };
+      });
+    }).catch(function () {});
+  }
+  async function _persistWalkProgress() {
+    if (!W.doc || W.doc.kind !== 'pos-inout' || !W.steps.length) return;
+    var picks = {}, n = 0;
+    W.steps.forEach(function (s, i) {
+      var d = W.done[i];
+      if (d) { picks[_lineKey(s)] = { qty: d.qty, short: !!d.short, skipped: !!d.skipped, reason: d.reason || null }; n++; }
+    });
+    var all = await _loadWalkProgressAll();
+    all[String(W.doc.id)] = { picks: picks, idx: W.idx, ts: Date.now() };
+    await _saveWalkProgressAll(all);
+    log('PROGRESS-SAVE inout=' + W.doc.id + ' picked=' + n + '/' + W.steps.length);
+  }
+  async function restoreWalkProgress() {
+    if (!W.doc || W.doc.kind !== 'pos-inout' || !W.steps.length) return;
+    var all = await _loadWalkProgressAll();
+    var entry = all[String(W.doc.id)];
+    if (!entry || !entry.picks) { log('RESUME-RELOAD inout=' + W.doc.id + ' restored=0/' + W.steps.length + ' (no saved state)'); return; }
+    var n = 0;
+    W.steps.forEach(function (s, i) {
+      var p = entry.picks[_lineKey(s)];
+      if (p) { W.done[i] = { qty: p.qty, short: !!p.short, skipped: !!p.skipped, reason: p.reason || undefined, restored: true }; n++; }
+    });
+    W.idx = 0;
+    while (W.idx < W.steps.length && W.done[W.idx]) W.idx++;
+    log('RESUME-RELOAD inout=' + W.doc.id + ' restored=' + n + '/' + W.steps.length + ' idx=' + W.idx);
+  }
+  function _clearWalkProgress(id) {
+    return _loadWalkProgressAll().then(function (all) {
+      if (all && all[String(id)] != null) { delete all[String(id)]; return _saveWalkProgressAll(all).then(function () { log('PROGRESS-CLEAR inout=' + id); }); }
+    });
+  }
+
   // §S-2b bin resolution (EXTRACT rule): a shipment line carries NO locator — the pick bin is the
   // m_storageonhand row HOLDING the product (ORDER BY qtyonhand DESC, m_locator_id, deterministic).
   // No storage row → m_locator_id null → the route's explicit unroutable step (never invented).
@@ -667,6 +730,7 @@
     _sfx('qty');                                              // §C-6 qty confirm earcon (affirmative action)
     closeScan();
     W.idx++;
+    await _persistWalkProgress();                             // §C-R2-8 persist pick state for cross-reload resume
     advance();
   };
 
@@ -680,6 +744,7 @@
     log('SKIP step=' + s.step + '/' + s.of + ' locator=' + s.m_locator_id + ' reason="' + reason + '" gid=' + g.gid + ' (annotation op)');
     _sfx('skip');                                             // §C-6 skip earcon
     W.idx++;
+    await _persistWalkProgress();                             // §C-R2-8 persist skip state for cross-reload resume
     advance();
   };
 
@@ -779,6 +844,7 @@
     log('PICK-COMPLETE inout=' + W.doc.id + ' CO via=' + via + ' picked=' + picked + '/' + asked +
       ' foldKeys=' + keys.length + ' diffs=' + diffs + ' chainOk=' + (chain.ok ? 'Y' : 'N'));
     await writebackToSidecar(written);
+    await _clearWalkProgress(W.doc.id);   // §C-R2-8 sale sealed → drop the resume cache (hygiene)
     ui.step.innerHTML = '<b>Walk complete ✓</b> — Shipment ' + W.doc.id + ' CO, on-hand moved by picked qty (' +
       keys.length + ' product(s), ' + (diffs === 0 ? 'all match' : diffs + ' MISMATCH') + ')';
   }
@@ -882,6 +948,7 @@
     log('MODE walk-on (BIM pill+trigger hidden §C-R2-5 nopill)');
     if (!W.steps.length) {
       await draftPick(); buildRoute(); W.idx = 0;
+      await restoreWalkProgress();   // §C-R2-8 cross-reload: re-pick the same sale → restore W.done from IDB
     } else {
       // §C-R2-8 resume same walk state within the same session (W.steps + W.done preserved across close/open)
       log('RESUME steps=' + W.steps.length + ' idx=' + W.idx + ' done=' + doneCount() + ' (state preserved)');
