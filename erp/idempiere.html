@@ -438,7 +438,7 @@
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
 <script src="erp_picker.js?v=5"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
-<script src="kernel_ops.js?v=1"></script>
+<script src="kernel_ops.js?v=2"></script>
 <script src="erp_signer.js?v=1"></script>
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
@@ -488,7 +488,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=7"></script>
+<script src="crud_overlay.js?v=8"></script>
 <script>
 (function () {
   'use strict';
@@ -1248,7 +1248,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _records.forEach(function (rec, i) {
       var tr = el('tr'); tr.dataset.i = i;
       tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
-      cols.forEach(function (f) { tr.appendChild(el('td', null, fmt(f, recVal(rec, f.columnName)))); });
+      cols.forEach(function (f) { var td = el('td', null, fmt(f, recVal(rec, f.columnName))); td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td); });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
       tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       tb.appendChild(tr);
     });
