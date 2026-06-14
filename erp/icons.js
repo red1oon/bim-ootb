@@ -75,7 +75,9 @@
     trash:    { svg: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>' },
     alertTriangle: { svg: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>' },
     // SPATIAL_PICKING_SPEC §S-3 — Lucide route (warehouse pill idempiere.html + WH walk strip mode indicator).
-    route:    { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>' }
+    route:    { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>' },
+    // POS FOLLOW-UP ROUND 2 §R2-6 — Lucide plus (the "register NEW product" import dock glyph).
+    plus:     { svg: '<path d="M5 12h14"/><path d="M12 5v14"/>' }
   };
   if (typeof window !== "undefined") window.ICONS = ICONS;
   if (typeof module !== "undefined" && module.exports) module.exports = ICONS;

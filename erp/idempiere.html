@@ -410,7 +410,7 @@
 <script src="erp_preview.js?v=1"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
-<script src="icons.js?v=9"></script>
+<script src="icons.js?v=10"></script>
 <script src="overlay_kit.js?v=1"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
      gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
@@ -448,7 +448,12 @@
 <script src="pos_core.js?v=3"></script>
 <!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
 <script src="img_store.js?v=2"></script>
-<script src="pos_lens.js?v=8"></script>
+<!-- FOLLOW-UP ROUND 2 §R2-AUDIO — subtle POS earcons. The SAME synth engine the viewer uses (no audio
+     files, no DB); it reads erp/sfx.json (POS-surface config: enabled, ui_clicks:false → only the explicit
+     ring/pay/complete earcons pos_lens.js fires via window.__sfx.play, no per-button tick spam). Guarded:
+     pos_lens._sfx no-ops if absent. -->
+<script src="../viewer/sfx.js?v=1" onerror="console.warn('§POS-AUDIO sfx.js absent — POS earcons silent (guarded)')"></script>
+<script src="pos_lens.js?v=9"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
