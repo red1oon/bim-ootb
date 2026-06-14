@@ -88,6 +88,7 @@
       '#find-selected-text { flex: 1; font-size: 11px; color: #4fc3f7; cursor: pointer;',
       '  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
       '#find-selected-text:hover { color: #fff; }',
+      '#find-selected-cost { font-size: 11px; color: #ffc107; font-weight: 600; white-space: nowrap; margin: 0 8px; }',
       '.find-nav-inline { background: rgba(79,195,247,0.25); color: #4fc3f7; border: none;',
       '  border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;',
       '  flex-shrink: 0; min-width: 32px; min-height: 32px; transition: background 0.15s; }',
@@ -171,7 +172,8 @@
       '  <button id="find-showall-btn" style="display:none;flex:1;padding:5px 8px;font-size:11px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;background:rgba(255,255,255,0.08);color:#ccc;cursor:pointer">' + _t('ui_find_showall', 'Show all') + '</button>',
       '</div>',
       // S275: Selected item summary + inline navigate button
-      '<div id="find-selected"><span id="find-selected-text"></span><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      // BIM\u2192Project TASK A: indicative 5D cost of the selection (docs/BIMtoProject.md \u00A7A)
+      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
@@ -917,6 +919,71 @@
         console.log('[RP-C] §INSTROWS_SET rows=' + r.length + ' of set=' + guids.length + ' (direct, no full join)');
         return r;
       } catch (e) { console.log('[RP-C] §SHAPE_ERR_SET ' + e.message); return _getInstanceRows(); }
+    }
+
+    // ── §FIND_COST (BIM→Project TASK A, docs/BIMtoProject.md §A): indicative 5D cost of a selection ──
+    // Same currency-free quantity basis as analysis_sidecar.js compute5D/apply5DRates (the consistency
+    // invariant: round(rate×qty) in JS Number — BigDecimal is reserved for the ERP push, Task C).
+    // Cost folds over the focusSet GUIDs, so EVERY selection kind (storey/disc/type/room/item/phase)
+    // is handled uniformly. Bound params cap at 999 → chunk by 900. Non-invent: a class with no pack
+    // rate contributes 0 (never a guessed price). Witness W-FIND-COST (tests/poc_find_cost.js).
+    var _SELCOST_CAP = 30000;       // beyond this, the per-guid fold is too heavy for an indicative readout
+    var _AREA_EXPR_SC =
+      "MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE " +
+      "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
+      "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
+      "ELSE MAX(t.bbox_x,t.bbox_y) END";
+    function _selectionCost(set) {
+      var R = (typeof window !== 'undefined' && window.RATES) || (typeof RATES !== 'undefined' ? RATES : {});
+      var cur = (typeof window !== 'undefined' && window._TRL && window._TRL.cur) || 'RM';
+      var pack = (typeof window !== 'undefined' && window.RATE_TEMPLATE_NAME) || 'hardcoded';
+      if (!set || !set.size || !A.dbQuery) return null;
+      var guids = []; set.forEach(function (g) { guids.push(g); });
+      if (guids.length > _SELCOST_CAP) {
+        console.log('[RP-C] §FIND_COST_SKIP elems=' + guids.length + ' > cap=' + _SELCOST_CAP);
+        return { capped: true, elements: guids.length, cost: 0, cur: cur, pack: pack };
+      }
+      var agg = {}; // ifc_class → {cnt,len,area,vol}
+      for (var i = 0; i < guids.length; i += 900) {
+        var chunk = guids.slice(i, i + 900);
+        var ph = chunk.map(function () { return '?'; }).join(',');
+        var rows = A.dbQuery(
+          "SELECT m.ifc_class, COUNT(*) cnt, " +
+          "SUM(MAX(t.bbox_x,t.bbox_y,t.bbox_z)) len, SUM(" + _AREA_EXPR_SC + ") area, " +
+          "SUM(t.bbox_x*t.bbox_y*t.bbox_z) vol " +
+          "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+          "WHERE m.guid IN (" + ph + ") AND t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+          "GROUP BY m.ifc_class", chunk) || [];
+        rows.forEach(function (r) {
+          var k = r[0] || '_';
+          var a = agg[k] || (agg[k] = { cnt: 0, len: 0, area: 0, vol: 0 });
+          a.cnt += r[1] || 0; a.len += r[2] || 0; a.area += r[3] || 0; a.vol += r[4] || 0;
+        });
+      }
+      var cost = 0, elements = 0;
+      for (var cls in agg) {
+        var a2 = agg[cls], rt = R[cls];
+        elements += a2.cnt;
+        if (!rt || !rt.rate) continue;                       // non-invent: no rate → no money
+        var unit = rt.unit, qty;
+        if (unit === 'M') qty = a2.len; else if (unit === 'M2') qty = a2.area;
+        else if (unit === 'M3') qty = a2.vol; else qty = a2.cnt; // EA/KG/unmapped → count
+        cost += Math.round(rt.rate * qty);
+      }
+      return { capped: false, elements: elements, cost: cost, cur: cur, pack: pack };
+    }
+    function _updateSelCost(set, scopeLabel) {
+      var el = document.getElementById('find-selected-cost');
+      if (!el) return;
+      try {
+        var res = _selectionCost(set);
+        if (!res) { el.textContent = ''; return; }
+        if (res.capped) { el.textContent = '~ ' + res.cur; el.title = 'Selection too large for indicative cost (' + res.elements + ' elements)'; return; }
+        el.textContent = res.cur + ' ' + res.cost.toLocaleString(undefined, { maximumFractionDigits: 0 });
+        el.title = 'Indicative 5D cost · ' + res.elements + ' elements · pack ' + res.pack;
+        console.log('[RP-C] §FIND_COST scope="' + (scopeLabel || '') + '" elements=' + res.elements +
+          ' cost=' + res.cost + ' cur=' + res.cur + ' pack=' + res.pack);
+      } catch (e) { el.textContent = ''; console.log('[RP-C] §FIND_COST_ERR ' + e.message); }
     }
 
     // solidOpacity (optional): for the kept-solid CONTEXT build (color==null), render it at this
@@ -1755,6 +1822,7 @@
         console.log('[RP-TB] §' + tag + ' "' + label + '" ' + (isItem ? 'ITEM' : 'GROUP') + ' focus=' + focusN +
           ' solid=' + solid + ' hl=' + hl + ' anc=[' + ancLog.join(',') + '] base=' + baseOp +
           ' overlays=' + _shapeOverlays.length + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+        _updateSelCost(focusSet, tag + ':' + label);   // BIM→Project TASK A: indicative 5D cost on the bar
       });
     }
     // Build the (focusSet, opts) pair for _drillSelect from a recorded view object (timeline replay).
@@ -2894,6 +2962,7 @@
       var dispClass = friendlyClass(r.ifc_class);
       var elSelText = document.getElementById('find-selected-text');
       if (elSelText) elSelText.textContent = classIcon(r.ifc_class) + ' ' + dispName + ' · ' + dispClass;
+      if (r.guid) _updateSelCost(new Set([r.guid]), 'ITEM:' + dispName);   // BIM→Project TASK A: cost on the bar
       elSelected.style.display = 'flex';
       panel.classList.remove('results-expanded');
       [elStoreyRow, elTypeRow].forEach(function(row) { row.classList.remove('expanded'); });

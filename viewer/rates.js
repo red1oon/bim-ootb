@@ -448,6 +448,8 @@ function loadSequenceRules() {
 function initRateTemplate() {
   var p = new URLSearchParams(window.location.search);
   var name = p.get('rates');
+  // BIM→Project TASK A: the Settings "5D Rate Pack" picker overrides locale (but not an explicit ?rates=).
+  if (!name) { try { name = localStorage.getItem('bim_5d_pack') || null; } catch (e) {} }
   if (!name) {
     // Derive from active locale (same detection as locale_loader)
     var locale = p.get('lang');
