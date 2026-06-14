@@ -137,6 +137,14 @@
       "note": "PLUGIN_SYSTEM_LANE.md \u00a7Phase D \u2014 the Fold-Engine plugin host (W-PLUGIN). TAP opens PluginEngine.open: paste a raw ES-module bundle URL \u2192 one click \u2192 ACTIVE (collapses iDempiere's drop-JAR-restart + 2Pack-import into one in-surface action). A bundle contributes into the live engine registries (AdModelVal/AdCallout/AdProcess/PostResolver) via plugin_registry.js; state persists in IndexedDB. plug glyph (Lucide verbatim). NEVER stage-gated (engine plugins are a global concern). \u00a7-witness \u00a7PLUGIN-PILL."
     },
     {
+      "id": "audio",
+      "name": "Sound FX",
+      "key": "v",
+      "icon": "volume2",
+      "order": 8.7,
+      "note": "The SAME Sound-FX speaker pill as the BIM viewer (panels.js id=audio, key v) \u2014 idempiere.html loads ../viewer/sfx.js so window.toggleSfx + window.__sfx are present. TAP toggles the ERP/POS earcons (POS ring/pay/complete, \u00a7R2-AUDIO); lit when on (IdmpPillActive.audio \u2192 __sfx.isOn()), live-synced via builder.sync(). The choice PERSISTS (localStorage sfx_on overrides erp/sfx.json master.enabled), so a mute sticks across reloads \u2014 surfaces the control instead of an invisible default. volume2 glyph (Lucide verbatim, already in icons.js). [[feedback_pill_icon_consistency]]."
+    },
+    {
       "id": "worldhist",
       "name": "World History",
       "key": "w",
