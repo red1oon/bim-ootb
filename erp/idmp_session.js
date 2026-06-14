@@ -53,6 +53,58 @@
     return out;
   }
 
+  // ── tenant teardown (NEW_CLIENT_MGMT.md — the reverse of installShard) ──────────────────────────
+  // A tenant's rows are tagged AD_Client_ID across every table that carries that column (exactly the
+  // surface installShard merges INTO). These three introspect that surface so count + delete stay
+  // symmetric to install and need no hardcoded table list. NON-INVENT: we read what's there, delete by id.
+  var FRAME_TABLES = { ad_client: 1, ad_org: 1, ad_role: 1, ad_user: 1, ad_user_roles: 1,
+    ad_role_orgaccess: 1, ad_window_access: 1, ad_process_access: 1, ad_form_access: 1 };
+  function clientTables(db) {
+    var ts = rows(db, "SELECT name FROM sqlite_master WHERE type='table'");
+    var out = [];
+    ts.forEach(function (t) {
+      var n = t.name; if (!n) return;
+      try {
+        var pi = db.exec('PRAGMA table_info("' + n + '")'); if (!pi.length) return;
+        if (pi[0].values.some(function (c) { return String(c[1]).toLowerCase() === 'ad_client_id'; })) out.push(n);
+      } catch (e) {}
+    });
+    return out;
+  }
+  // business-record count for a tenant (excludes the login FRAME — what the user thinks of as "their data").
+  // Returns { total, byTable:[{table,n}] } so the delete-warning can say "N records · Open to see".
+  function countClientRecords(db, clientId) {
+    var id = Number(clientId), total = 0, byTable = [];
+    clientTables(db).forEach(function (t) {
+      if (FRAME_TABLES[t.toLowerCase()]) return;
+      try {
+        var r = db.exec('SELECT COUNT(*) FROM "' + t + '" WHERE AD_Client_ID=' + id);
+        var n = r.length ? Number(r[0].values[0][0]) : 0;
+        if (n > 0) { total += n; byTable.push({ table: t, n: n }); }
+      } catch (e) {}
+    });
+    byTable.sort(function (a, b) { return b.n - a.n; });
+    console.log('§IDMP-SESSION countClientRecords client=' + id + ' records=' + total + ' tables=' + byTable.length
+      + ' top=[' + byTable.slice(0, 4).map(function (x) { return x.table + ':' + x.n; }).join(',') + ']');
+    return { total: total, byTable: byTable };
+  }
+  // remove a tenant entirely: DELETE its rows from EVERY AD_Client_ID-bearing table (frame included, so it
+  // leaves the switcher). System(0) + GardenWorld(11) are PROTECTED — framework/seed, never deletable.
+  function deleteClient(db, clientId) {
+    var id = Number(clientId);
+    if (id === 0 || id === 11) { console.log('§IDMP-SESSION deleteClient REFUSED client=' + id + ' (protected framework/seed)'); return { ok: false, protected: true, deleted: 0, tables: 0 }; }
+    var deleted = 0, tCount = 0;
+    clientTables(db).forEach(function (t) {
+      try {
+        var b = db.exec('SELECT COUNT(*) FROM "' + t + '" WHERE AD_Client_ID=' + id);
+        var n = b.length ? Number(b[0].values[0][0]) : 0;
+        if (n > 0) { db.run('DELETE FROM "' + t + '" WHERE AD_Client_ID=' + id); deleted += n; tCount++; }
+      } catch (e) {}
+    });
+    console.log('§IDMP-SESSION deleteClient client=' + id + ' deleted=' + deleted + ' tables=' + tCount);
+    return { ok: true, deleted: deleted, tables: tCount };
+  }
+
   // ── users who can log into a given tenant (have an active role IN that client). Filters Step 1. ──
   function usersForClient(db, clientId) {
     var us = rows(db,
@@ -204,6 +256,8 @@
   var IdmpSession = {
     listUsers: listUsers,
     listClients: listClients,
+    countClientRecords: countClientRecords,
+    deleteClient: deleteClient,
     usersForClient: usersForClient,
     rolesForUser: rolesForUser,
     clientFor: clientFor,
@@ -218,5 +272,5 @@
   if (typeof window !== 'undefined') window.IdmpSession = IdmpSession;
   if (typeof module !== 'undefined' && module.exports) module.exports = IdmpSession;
 
-  console.log('§IDMP-SESSION_LOADED v1');
+  console.log('§IDMP-SESSION_LOADED v2');
 })();

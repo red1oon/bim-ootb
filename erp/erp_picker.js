@@ -54,9 +54,10 @@
         + 'its ids banded into the Client-13 slot, and its books already diffed to the cent against its own GL '
         + '(nothing is invented).' },
     sap: { file: '14-sap.db', name: 'SAP Flights', client: 14, poc: true,
-      claim: '<b>PoC tenant</b> — the documented SAP <b>SFLIGHT</b> reference model (the flight-booking demo): '
-        + 'SCARR carriers land as Business Partners, SPFLI connections as Products. Master-table mapping only — '
-        + 'reference data, not a live extraction; the SAP delegate agent is the production path.' },
+      chainUrl: '14-sap-chain.json',
+      claim: '<b>PoC tenant</b> — the documented SAP <b>/DMO/ Flight</b> reference model (Apache-2.0): '
+        + '1 travel booking (LH FRA→JFK, EUR 527.30) folded through the kernel. '
+        + 'Demo data fetched from GH; replace with your own <code>sap-chain.json</code> to fold real SAP rows.' },
     oracle: { file: '15-oracle.db', name: 'Oracle Scott', client: 15, poc: true,
       claim: '<b>PoC tenant</b> — Oracle\'s canonical <b>EMP/DEPT (SCOTT)</b> reference schema: departments land '
         + 'as BP Groups, employees as Business Partners. Master-table mapping only — reference data, not a live '
@@ -124,7 +125,8 @@
       + '<div id="ep-foot" class="ep-foot"></div>';
     var grid = _$('ep-grid');
     ERPS.forEach(function (e) {
-      var card = _el('div', { id: 'ep-c-' + e.key, class: 'ep-cardlet' });
+      var avail = (e.real || TENANT_SHARD[e.key]) ? ' ep-avail' : '';
+      var card = _el('div', { id: 'ep-c-' + e.key, class: 'ep-cardlet' + avail });
       card.innerHTML = '<div class="ep-ic"><span class="ep-dot" style="background:' + e.dot + '"></span></div><div class="ep-nm">' + e.name + '</div>'
         + '<div id="ep-b-' + e.key + '" class="ep-badge">' + _badge(e) + '</div>';
       card.onclick = function () { _select(e.key); };
@@ -133,7 +135,7 @@
     _renderFoot();
   }
   function _badge(e) {
-    if (!e.real) return (_mode === 'install' && TENANT_SHARD[e.key])
+    if (!e.real) return TENANT_SHARD[e.key]
       ? '<span class="ep-poc">PoC tenant</span>' : '<span class="ep-coming">coming soon</span>';
     if (e.probe) return '<span class="ep-probing">detecting…</span>';
     return '<span class="ep-agent">via agent</span>';
@@ -172,7 +174,7 @@
     var e = _erp(_sel);
     var verb = _mode === 'install' ? 'install' : 'migrate';
     var shard = TENANT_SHARD[e.key];
-    var installable = e.real || (_mode === 'install' && shard);     // PoC tenants install; only agents migrate
+    var installable = e.real || shard;     // PoC tenants are pickable in BOTH modes (the demo fold IS the deliverable)
     var q = _mode === 'install' ? ('Install <b>' + e.name + '</b> data onto this device?')
                                 : ('Do you want to ' + verb + ' your <b>' + e.name + '</b> data?');
     var btn = installable
@@ -187,10 +189,20 @@
 
   // ── S4 — route on confirm ──
   function _confirm(key) {
-    var e = _erp(key);
-    // INSTALL mode + a shard → install-tenant panel for EVERY non-Odoo source (iDempiere #5-install route;
-    // SAP/Oracle/Dynamics PoC tenants — IMPORT_EXPAND_POC.md §P-2). Odoo keeps its fold-then-install staged flow.
-    if (_mode === 'install' && TENANT_SHARD[key] && e.route !== 'odoo') { console.log('§ERP-PICKER confirm erp=' + key + ' route=install-tenant' + (e.real ? '' : ' poc=Y')); _renderInstallTenant(TENANT_SHARD[key]); return; }
+    var e = _erp(key), shard = TENANT_SHARD[key];
+    // PoC tenants (real:false) reach the install/fetch-fold flow in EITHER mode — the demo fold IS what we
+    // ship for SAP/Oracle/Dynamics (ALPHA, not production). Real non-Odoo only routes here in INSTALL mode
+    // (iDempiere #5-install). Odoo always keeps its own staged delegate-to-install flow.
+    // chainUrl → fetch-fold-install (auto-fetch from GH, localStorage cache, file-drop to replace with real
+    // data); no chainUrl → the static-shard install-tenant panel (Oracle/Dynamics until their chains land).
+    if (shard && e.route !== 'odoo' && (!e.real || _mode === 'install')) {
+      if (shard.chainUrl) {
+        console.log('§ERP-PICKER confirm erp=' + key + ' mode=' + _mode + ' route=fetch-fold-install poc=Y chainUrl=' + shard.chainUrl);
+        _renderFetchFold(shard); return;
+      }
+      console.log('§ERP-PICKER confirm erp=' + key + ' mode=' + _mode + ' route=install-tenant' + (e.real ? '' : ' poc=Y'));
+      _renderInstallTenant(shard); return;
+    }
     if (!e.real) { console.log('§ERP-PICKER coming erp=' + key); _say(e.name + ' migration is coming.'); return; }
     console.log('§ERP-PICKER confirm erp=' + key + ' route=' + e.route);
     if (e.route === 'showme') {
@@ -202,13 +214,80 @@
     if (e.route === 'odoo') { _renderOdoo(); return; }
   }
 
+  // ── fetch-fold-install flow for PoC tenants with a chainUrl ──────────────────────────────────────
+  // Flow: check localStorage → fetch from GH if absent → fold via _foldChain() → install CTA.
+  // "Replace with your data": drop a real {erp}-chain.json → stored in localStorage → re-fold on next open.
+  // §-witnesses: §ERP-PICKER confirm erp=sap route=fetch-fold-install
+  //              §ERP-FF fetch erp=<key> source=<gh|cache|own>
+  function _renderFetchFold(tenant) {
+    var body = _$('ep-body'); if (!body) return;
+    var cacheKey = 'erp_chain_' + _sel;
+    var hasCached = !!localStorage.getItem(cacheKey);
+    body.innerHTML =
+      '<div class="ep-lock">' + _ico('lock', 14) + ' <span class="ep-alpha">ALPHA · not for production</span> ' + tenant.claim + '</div>'
+      + '<div id="ep-ff-st" class="ep-dim">Loading…</div>'
+      + '<div id="ep-result" class="ep-result"></div>'
+      + '<div class="ep-step" style="margin-top:12px"><div class="ep-sc">'
+      + '<div class="ep-st">Use your own ' + tenant.name + ' data</div>'
+      + '<div class="ep-sd">Drop a <code>' + _sel + '-chain.json</code> from the adapter — replaces demo data and re-folds immediately.</div>'
+      + '<label class="ep-drop" id="ep-ff-drop"><input type="file" id="ep-chain-own" accept=".json,application/json" hidden>'
+      + '<span id="ep-own-txt">Drop <code>' + _sel + '-chain.json</code> here, or click to choose</span></label>'
+      + (hasCached ? '<button id="ep-ff-clear" class="ep-btn" style="margin-top:6px;font-size:12px">' + _ico('trash', 11) + ' Clear cached data</button>' : '')
+      + '</div></div>'
+      + '<div class="ep-foot"><button id="ep-back" class="ep-btn">' + _ico('chevronLeft', 13) + ' Back</button></div>';
+    _$('ep-back').onclick = function () { _renderPicker(); _select(_sel); };
+    // file-drop: user supplies their own chain JSON → cache + re-fold
+    var inp = _$('ep-chain-own');
+    if (inp) inp.onchange = function () {
+      var f = this.files && this.files[0]; if (!f) return;
+      f.text().then(function (txt) {
+        var ch; try { ch = JSON.parse(txt); } catch (e) { var t = _$('ep-own-txt'); if (t) t.innerHTML = _ico('xmark', 12) + ' Not valid JSON — ' + e.message; return; }
+        localStorage.setItem(cacheKey, txt);
+        console.log('§ERP-FF fetch erp=' + _sel + ' source=own');
+        _ffFold(ch, 'own');
+      });
+    };
+    var clr = _$('ep-ff-clear');
+    if (clr) clr.onclick = function () { localStorage.removeItem(cacheKey); _renderFetchFold(tenant); };
+    // auto-load: cached first, else fetch from GH
+    var cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try { console.log('§ERP-FF fetch erp=' + _sel + ' source=cache'); _ffFold(JSON.parse(cached), 'cache'); }
+      catch (e) { localStorage.removeItem(cacheKey); _ffFetch(tenant); }
+    } else { _ffFetch(tenant); }
+  }
+
+  function _ffFetch(tenant) {
+    var st = _$('ep-ff-st');
+    if (st) st.innerHTML = 'Fetching demo data from GH (<code>' + tenant.chainUrl + '</code>)…';
+    fetch(tenant.chainUrl, { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (chain) {
+        localStorage.setItem('erp_chain_' + _sel, JSON.stringify(chain));
+        console.log('§ERP-FF fetch erp=' + _sel + ' source=gh events=' + (chain.events || []).length);
+        _ffFold(chain, 'gh');
+      })
+      .catch(function (e) {
+        var st = _$('ep-ff-st');
+        if (st) st.innerHTML = _ico('xmark', 12) + ' Could not fetch demo data: ' + e.message
+          + '. Drop your own <code>' + _sel + '-chain.json</code> below to proceed.';
+      });
+  }
+
+  function _ffFold(chain, source) {
+    var st = _$('ep-ff-st');
+    var src = source === 'own' ? 'your data' : source === 'cache' ? 'cached data' : 'demo data';
+    if (st) st.innerHTML = 'Folding ' + (chain.events || []).length + ' events (' + src + ')…';
+    _foldChain(chain);   // populates #ep-result + appends install CTA automatically (install mode)
+  }
+
   // ── iDempiere install-tenant panel (#5-install) — the shard is already verified (its books diffed
   //    against its OWN fact_acct, W-IDMP-REBAND/frame-fit), so install mode goes straight to the CTA.
   function _renderInstallTenant(tenant) {
     var body = _$('ep-body'); if (!body) return;
     body.innerHTML =
-      '<div class="ep-lock">' + _ico('lock', 14) + ' <b>' + tenant.name + ' tenant shard'
-      + (tenant.poc ? '' : ', pre-verified') + '.</b> ' + tenant.claim + '</div>'
+      '<div class="ep-lock">' + _ico('lock', 14) + ' ' + (tenant.poc ? '<span class="ep-alpha">ALPHA · not for production</span> ' : '')
+      + '<b>' + tenant.name + ' tenant shard' + (tenant.poc ? '' : ', pre-verified') + '.</b> ' + tenant.claim + '</div>'
       + '<div id="ep-result" class="ep-result"></div>'
       + '<div class="ep-foot"><button id="ep-back" class="ep-btn">' + _ico('chevronLeft', 13) + ' Back</button></div>';
     console.log('§ERP-PICKER install-tenant erp=' + _sel + ' shard=' + tenant.file + ' client=' + tenant.client);
@@ -329,7 +408,9 @@
         + rows.map(function (r) { return '<tr class="' + (r.ok ? '' : 'ep-bad') + '"><td>' + r.name + '</td><td>' + r.doc + '</td><td>' + r.ops + '</td><td>' + (r.ok ? _ico('check', 12) + ' ' + r.to : _ico('xmark', 12) + ' ' + r.to) + '</td></tr>'; }).join('')
         + '</tbody></table>'
         + '<div class="ep-sum">'
-        + '<div>SO <b>' + (chain.meta && chain.meta.so) + '</b> → invoice <b>' + (chain.meta && chain.meta.invoice) + '</b>, total <b>' + Number((chain.totals && chain.totals.total) || 0).toFixed(2) + '</b></div>'
+        + '<div>' + (function () { var m = chain.meta || {}, tot = Number((chain.totals && chain.totals.total) || 0).toFixed(2);
+            return m.so ? ('SO <b>' + m.so + '</b> → invoice <b>' + (m.invoice || '?') + '</b>, total <b>' + tot + '</b>')
+                        : ((m.description ? m.description + ' · ' : '') + 'total <b>' + tot + '</b>'); }()) + '</div>'
         + '<div>mapped <b>' + mapped + '/' + chain.events.length + '</b> · verbs [' + usedVerbs.join(', ') + '] · newVerbs [<b>' + newVerbs.join(',') + '</b>]</div>'
         + '<div>invoice GL ΣDr ' + Number(dr).toFixed(2) + ' ' + (balanced ? '== ' : '≠ ') + 'ΣCr ' + Number(cr).toFixed(2) + ' ' + _ico(balanced ? 'check' : 'xmark', 12) + '</div>'
         + '<div>verify chain ' + (chainOk ? _ico('check', 12) + ' trusted' : _ico('xmark', 12)) + ' · ops ' + len + ' · tip <code>' + String(tip).slice(0, 16) + '…</code></div>'
@@ -339,7 +420,7 @@
       if (db.close) db.close();
       // INSTALL success-path: the fold is verified → offer to make the tenant RESIDENT (merge its shard + persist).
       // Only in install mode; migrate mode stops at "verified fold" (no install). _sel is the chosen source key.
-      if (_mode === 'install' && TENANT_SHARD[_sel]) _renderInstallCta(_$('ep-result'), TENANT_SHARD[_sel]);
+      if (TENANT_SHARD[_sel] && (_mode === 'install' || !_erp(_sel).real)) _renderInstallCta(_$('ep-result'), TENANT_SHARD[_sel]);
     }).catch(function (e) { out.innerHTML = '<div class="ep-err">Fold failed: ' + e.message + '</div>'; });
   }
 
@@ -395,11 +476,12 @@
       + '.ep-body{padding:18px 20px;font-size:14px;line-height:1.5}.ep-dim{color:#777;font-size:12px;margin:0 0 14px}'
       + '.ep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;margin:6px 0 16px}'
       + '.ep-cardlet{border:2px solid #e6e6ea;border-radius:12px;padding:12px 6px;text-align:center;cursor:pointer;opacity:.55;transition:.12s}'
-      + '.ep-cardlet:hover{border-color:#bcd}.ep-cardlet.ep-live{opacity:1}.ep-cardlet.ep-sel{border-color:#0b6;box-shadow:0 0 0 3px rgba(11,170,102,.18)}'
+      + '.ep-cardlet:hover{border-color:#bcd}.ep-cardlet.ep-avail{opacity:.85}.ep-cardlet.ep-live{opacity:1}.ep-cardlet.ep-sel{border-color:#0b6;box-shadow:0 0 0 3px rgba(11,170,102,.18)}'
       + '.ep-ic{height:24px;display:flex;align-items:center;justify-content:center}.ep-nm{font-size:12px;font-weight:600;margin:4px 0 6px}'
       + '.ep-dot{width:18px;height:18px;border-radius:50%;display:inline-block}'
       + '.ep-livedot{width:7px;height:7px;border-radius:50%;background:#0b6;display:inline-block;vertical-align:1px}'
       + '.ep-badge{font-size:10px;min-height:14px}.ep-detect{color:#0b6;font-weight:700}.ep-agent{color:#36c}.ep-coming{color:#a98}.ep-probing{color:#aaa}.ep-poc{color:#b07d10;font-weight:600}'
+      + '.ep-alpha{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#b07d10;background:#fdeec2;border:1px solid #f0e0a8;border-radius:5px;padding:1px 6px;vertical-align:1px}'
       + '.ep-q{font-size:15px;margin:6px 0 12px}.ep-foot{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}'
       + '.ep-btn{padding:9px 16px;border:1px solid #ccc;background:#f5f5f5;border-radius:8px;cursor:pointer;font-size:13px}.ep-btn[disabled]{opacity:.5;cursor:not-allowed}'
       + '.ep-primary{background:#0b6;color:#fff;border-color:#0b6}.ep-comingnote{margin-top:4px;flex-basis:100%}'

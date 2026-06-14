@@ -61,6 +61,7 @@
   "LABOR_RATES": "readonly",
   "ListBuilder": "readonly",
   "loadJsonWithOverrides": "readonly",
+  "Materialize": "readonly",
   "_log": "readonly",
   "module": "readonly",
   "NavigateControls": "readonly",

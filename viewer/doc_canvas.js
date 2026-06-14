@@ -1942,6 +1942,32 @@ function saveDesign(A, designKey) {
 }
 
 /**
+ * materializeDesign(A, designKey, openAfter) — Red Pill P5 (RED_PILL.md §11.5 P5 / §9 MATERIALIZE).
+ * Export the EDITED in-memory db as NewIFC.db into CACHE_STORE under the import:// scheme the
+ * viewer already resolves, so the design round-trips. NON-INVENT: db.export() of what the editor
+ * holds (B1-persisted element_transforms + replayed kernel_ops). Reference is never written back.
+ * §-log: §MATERIALIZE url=<import://…> size=<MB>  — verified by W-REDPILL-MATERIALIZE.
+ */
+function materializeDesign(A, designKey, openAfter) {
+  if (!window.Materialize) { console.log('§MATERIALIZE skipped reason=module-absent'); return; }
+  if (!designKey) designKey = 'NewIFC_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  Materialize.materialize(A, designKey, function (err, res) {
+    if (err) {
+      console.log('§MATERIALIZE ERROR: ' + err);
+      if (window.APP && APP.status) APP.status.textContent = 'Materialize failed: ' + err;
+      return;
+    }
+    if (window.APP && APP.status) {
+      APP.status.textContent = 'Materialized NewIFC.db: ' + designKey + ' (' + (res.size / 1024 / 1024).toFixed(1) + ' MB)';
+    }
+    if (openAfter && typeof window.open === 'function') {
+      var base = location.href.replace(/[^/]*$/, '');
+      window.open(base + res.viewerUrl, '_blank');
+    }
+  });
+}
+
+/**
  * listDesigns(callback) — list saved designs from IndexedDB.
  * callback(err, [{key, savedAt, ops, grids}])
  */
@@ -2055,6 +2081,7 @@ window.DocCanvas = {
   saveDesign: saveDesign,
   openDesign: openDesign,
   listDesigns: listDesigns,
+  materialize: materializeDesign,
   getGridState: function() {
     var p = _GS.getPositions(), l = _GS.getLabels();
     return { xPositions: p.x, zPositions: p.z, xLabels: l.x, zLabels: l.z };

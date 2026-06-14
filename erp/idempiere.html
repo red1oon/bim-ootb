@@ -252,6 +252,25 @@
   .idmp-login-user.disabled { opacity:.5; cursor:not-allowed; }
   .idmp-login-user.disabled:hover { background:#fbfcfe; border-color:var(--idmp-border); }
   .idmp-login-user .tag { margin-left:auto; font-size:11px; color:var(--idmp-muted); }
+  /* tenant delete affordance (NEW_CLIENT_MGMT — reverse of install) + its red-rim warning */
+  .idmp-tenant-del { margin-left:8px; flex:0 0 auto; width:28px; height:28px; padding:0; border:1px solid transparent;
+    background:none; border-radius:6px; color:var(--idmp-muted); cursor:pointer; opacity:0; transition:.12s;
+    display:flex; align-items:center; justify-content:center; }
+  .idmp-login-user:hover .idmp-tenant-del { opacity:.65; }
+  .idmp-tenant-del:hover { opacity:1; color:#e5484d; background:#fdeced; border-color:#f3c0c2; }
+  .idmp-del-overlay { position:fixed; inset:0; background:rgba(8,10,16,.55); z-index:100000;
+    display:flex; align-items:center; justify-content:center; }
+  .idmp-del-card { background:#fff; width:min(420px,92vw); border:2px solid #e5484d; border-radius:14px;
+    box-shadow:0 0 0 5px rgba(229,72,77,.13), 0 22px 60px rgba(0,0,0,.4); overflow:hidden; }
+  .idmp-del-h { display:flex; align-items:center; gap:9px; padding:15px 18px 10px; font-size:17px; font-weight:800; color:#c4282d; }
+  .idmp-del-b { padding:2px 18px 14px; font-size:13.5px; line-height:1.55; color:#2a2d33; }
+  .idmp-del-b a { color:var(--idmp-blue); font-weight:600; }
+  .idmp-del-warn { margin-top:9px; font-size:12px; color:#c4282d; background:#fdeced; border:1px solid #f3c0c2;
+    border-radius:8px; padding:8px 11px; }
+  .idmp-del-f { display:flex; justify-content:flex-end; gap:10px; padding:0 18px 16px; }
+  .idmp-del-danger { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border:0; border-radius:8px;
+    background:#e5484d; color:#fff; font-size:13px; font-weight:700; cursor:pointer; }
+  .idmp-del-danger:hover { background:#c4282d; }
   #idmp-login select, #idmp-login input { width:100%; height:34px; border:1px solid var(--idmp-border);
     border-radius:5px; padding:0 9px; font-size:13px; background:#fff; color:var(--idmp-text); }
   #idmp-login input[readonly] { background:#eef1f5; color:var(--idmp-muted); }
@@ -378,7 +397,9 @@
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=1"></script>
 <script src="ad_data.js?v=22"></script>
-<script src="idmp_session.js?v=23"></script>
+<script src="idmp_session.js?v=24"></script>
+<!-- ERP_AUDIT_CHANGELOG Task 2 — resolve audit actor AD_User_ID → real AD_User.Name (NON-INVENT, honest fallback). -->
+<script src="user_names.js?v=1"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
 <script src="erp_postings.js?v=23"></script>
 <script src="accts_posted.js?v=23"></script>
@@ -407,7 +428,7 @@
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
-<script src="erp_picker.js?v=4"></script>
+<script src="erp_picker.js?v=5"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
 <script src="kernel_ops.js?v=1"></script>
 <script src="erp_signer.js?v=1"></script>
@@ -459,7 +480,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=4"></script>
+<script src="crud_overlay.js?v=6"></script>
 <script>
 (function () {
   'use strict';
@@ -691,9 +712,84 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       row.appendChild(el('span', 'nm', c.name));
       row.appendChild(el('span', 'tag', c.users + (c.users === 1 ? ' user' : ' users') + ' · ' + c.id));
       row.addEventListener('click', function () { _loginClient = c; loginStep1(); });
+      // delete affordance — every resident tenant EXCEPT System(0)/GardenWorld(11), which are framework/seed.
+      if (c.id !== 0 && c.id !== 11) {
+        var del = el('button', 'idmp-tenant-del'); del.title = 'Delete tenant ' + c.name;
+        del.innerHTML = (window.OverlayKit ? OverlayKit.ico('trash', 15) : '✕');
+        del.addEventListener('click', function (ev) { ev.stopPropagation(); _confirmDeleteTenant(c); });
+        row.appendChild(del);
+      }
       host.appendChild(row);
     });
     console.log('§IDEMPIERE login-step0 tenants=' + (tenants ? tenants.length : 0));
+  }
+
+  // Task 3 — count user-created/edited records in the op-log for this tenant (ERP_AUDIT_CHANGELOG.md §TASK3).
+  // Replaces the static AD-table row count (which counted ALL seed rows, not what THIS user did). Honest:
+  // fresh install + no writes → 0. Counts CRUD_CREATE where stdDefaults.clientId=c.id + CRUD_UPDATE where
+  // actor matches. Only counts if an actor is known (user is logged in). JS-parses kernel_ops parameters.
+  function _countUserOpsForClient(clientId) {
+    try {
+      var sideDb = window.__crud && typeof window.__crud.kernelDb === 'function' ? window.__crud.kernelDb() : null;
+      if (!sideDb) return 0;
+      var actor = window.APP && window.APP.actor != null ? window.APP.actor : null;
+      if (actor == null) return 0;
+      var r = sideDb.exec("SELECT op_type, parameters FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0");
+      if (!r.length) return 0;
+      var n = 0;
+      r[0].values.forEach(function (row) {
+        try {
+          var p = JSON.parse(row[1]);
+          if (!p) return;
+          if (row[0] === 'CRUD_CREATE' && p.stdDefaults && String(p.stdDefaults.clientId) === String(clientId) && String(p.stdDefaults.actor) === String(actor)) n++;
+          else if (row[0] === 'CRUD_UPDATE' && p.actor != null && String(p.actor) === String(actor)) n++;  // tenant inferred from actor scope
+        } catch (e) {}
+      });
+      console.log('§DELETE-TRAIL client=' + clientId + ' actor=' + actor + ' opCount=' + n);
+      return n;
+    } catch (e) { return 0; }
+  }
+
+  // Red-rim warning before tearing a tenant down (feedback_destructive_ops). Shows the user's op-log count
+  // (records they created/edited, from the kernel op-log, not static seed rows) + an "Open to see?" escape.
+  function _confirmDeleteTenant(c) {
+    var opCount = _countUserOpsForClient(c.id);   // Task 3: honest op-log count, not static seed rows
+    var ov = el('div', 'idmp-del-overlay');
+    var warnIco = window.OverlayKit ? OverlayKit.ico('alertTriangle', 20) : '⚠';
+    var trashIco = window.OverlayKit ? OverlayKit.ico('trash', 13) : '';
+    var detail = opCount > 0
+      ? ('You created/edited <b>' + opCount + '</b> record' + (opCount === 1 ? '' : 's') + ' here. '
+         + '<a href="#" id="idmp-del-see">Open to see?</a>')
+      : 'You have not created or edited any records in this tenant.';
+    ov.innerHTML =
+      '<div class="idmp-del-card" role="alertdialog" aria-label="Delete tenant">'
+      + '<div class="idmp-del-h">' + warnIco + ' Delete tenant?</div>'
+      + '<div class="idmp-del-b"><b>' + c.name + '</b> (Client ' + c.id + ')<br>' + detail
+      + '<div class="idmp-del-warn">Removes all rows of this tenant. This cannot be undone.</div></div>'
+      + '<div class="idmp-del-f"><button id="idmp-del-cancel" class="ghost">Cancel</button>'
+      + '<button id="idmp-del-go" class="idmp-del-danger">' + trashIco + ' Delete</button></div>'
+      + '</div>';
+    document.body.appendChild(ov);
+    function closeOv() { ov.remove(); }
+    ov.addEventListener('click', function (e) { if (e.target === ov) closeOv(); });
+    $('idmp-del-cancel').onclick = closeOv;
+    var see = document.getElementById('idmp-del-see');
+    if (see) see.onclick = function (e) {
+      e.preventDefault();
+      console.log('§DELETE-TRAIL client=' + c.id + ' actor=' + (window.APP && window.APP.actor) + ' count=' + opCount + ' → login then timeline');
+      closeOv(); _loginClient = c; loginStep1();   // login FIRST; the op-log timeline is then browsable
+    };
+    $('idmp-del-go').onclick = function () {
+      var res = SES.deleteClient(db, c.id);
+      if (!res.ok) { closeOv(); return; }
+      try { idbPut('ad_seed_v15', db.export().buffer); } catch (e) {}
+      console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=Y');
+      try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
+        label: 'Deleted tenant ' + c.name + ' (Client ' + c.id + ', ' + res.deleted + ' rows)' }); } catch (e) {}
+      closeOv();
+      var rest = SES.listClients(db);                 // re-render; one tenant left → auto-skip to its user list
+      if (rest.length >= 2) loginStep0(rest); else { _loginClient = rest[0] || null; loginStep1(); }
+    };
   }
   function loginStep1() {
     $('idmp-login-step0').style.display = 'none';
@@ -743,6 +839,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function applySession() {
     // expose the live login client (the honest tenant) for client-scoped lenses (RuleFold §11) — NON-INVENT
     window.__idmpClient = _session.client;   // { id, name }
+    // Task 0 — wire the session actor so every CRUD op is stamped with who/which-tenant (ERP_AUDIT_CHANGELOG.md)
+    window.APP = window.APP || {};
+    window.APP.actor   = _session.user.id;
+    window.APP.clientId = _session.client.id;
+    window.APP.orgId   = _session.org ? _session.org.id : 0;
+    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId);
+    _buildUserNameMap();   // Task 2 — AD_User_ID → Name for the change-log (iDempiere shows names, not ids)
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
     $('idmp-ctx').textContent = _session.client.name + ' · ' + _session.role.name + ' · ' + orgLabel;
@@ -912,6 +1015,82 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       renderBody();
     });
     tgl.innerHTML = _viewMode === 'grid' ? '▦ Grid' : '▤ Form';
+    // Task 2 — changelog affordance (iDempiere record-history icon): only for tables with AD_Table.IsChangeLog='Y'
+    (function () {
+      var tab = _curTab(); if (!tab || !tab.tableName) return;
+      var tn = tab.tableName;
+      var isLoggable = false;
+      try { var r = db.exec("SELECT IsChangeLog FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [tn]); isLoggable = r.length && r[0].values.length && String(r[0].values[0][0]).toUpperCase() === 'Y'; } catch (e) {}
+      if (!isLoggable) return;
+      sep();
+      btn('🕒 Log', 'Change log for this record (AD-filtered)', true, function () { _showChangelog(tn); });
+    })();
+  }
+
+  // Task 2 — AD_User name map (iDempiere change-log shows the user NAME, never the raw AD_User_ID).
+  // Built once at login from the real AD_User rows; UserNames.resolveSender keeps it NON-INVENT (a name
+  // only when a real row supplies it; honest "System (AD_User#0)" / "AD_User#<id>" fallback otherwise).
+  var _userRows = null;
+  function _buildUserNameMap() {
+    try {
+      var r = db.exec('SELECT AD_User_ID, Name FROM AD_User');
+      _userRows = (r.length && r[0].values.length)
+        ? r[0].values.map(function (v) { return { AD_User_ID: v[0], Name: v[1] }; }) : [];
+    } catch (e) { _userRows = []; }
+  }
+  function _userName(id) {
+    if (id == null) return '—';
+    try {
+      if (window.UserNames && typeof window.UserNames.resolveSender === 'function') {
+        var r = window.UserNames.resolveSender(id, _userRows || []);
+        return r && r.name ? r.name : ('AD_User#' + id);
+      }
+    } catch (e) {}
+    return 'AD_User#' + id;
+  }
+
+  // Task 2 — showChangelog: open a small overlay showing the per-record AD-filtered change trail.
+  function _showChangelog(tableName) {
+    var rec = _records[_recIdx], tab = _curTab();
+    if (!rec || !tab) { return; }
+    var pk = recVal(rec, _keyCol(tab));
+    if (!window.__crud || typeof window.__crud.changeLog !== 'function') { return; }
+    var entries = window.__crud.changeLog(tableName, pk);
+    if (entries === null) { alert('IsChangeLog=N for ' + tableName + ' — no trail.'); return; }
+    var old = document.getElementById('idmp-changelog-ov');
+    if (old) old.remove();
+    var ov = el('div', null);
+    ov.id = 'idmp-changelog-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    var box = el('div', null);
+    box.style.cssText = 'background:#15101a;border:1px solid #4a2f44;border-radius:12px;padding:16px 18px;width:min(560px,94vw);max-height:70vh;overflow:auto;color:#ecdcea;font:13px system-ui';
+    var hdr = el('div', null, '🕒 Change Log — ' + tableName + ' #' + pk);
+    hdr.style.cssText = 'font-weight:700;font-size:15px;margin:0 0 10px;color:#fbeaf7';
+    box.appendChild(hdr);
+    if (!entries.length) {
+      var em = el('div', null, 'No logged changes for this record yet.'); em.style.color = '#8a6f86'; box.appendChild(em);
+    } else {
+      var tbl = document.createElement('table'); tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px';
+      var thead = tbl.createTHead(); var hr = thead.insertRow();
+      ['When', 'By', 'Column', 'Old', 'New'].forEach(function (h) {
+        var th = document.createElement('th'); th.textContent = h; th.style.cssText = 'text-align:left;padding:3px 6px;border-bottom:1px solid #4a2f44;color:#c4a8c0'; hr.appendChild(th);
+      });
+      var fmtTs = (window.__crud && window.__crud.fmtTs) ? window.__crud.fmtTs : function (t) { return t; };
+      entries.forEach(function (e) {
+        var tr = tbl.insertRow();
+        // iDempiere convention: readable date + resolved user NAME (not raw ts/id)
+        [fmtTs(e.ts), _userName(e.actor), e.column, e.old == null ? '—' : e.old, e['new'] == null ? '—' : e['new']].forEach(function (v) {
+          var td = tr.insertCell(); td.textContent = String(v == null ? '' : v); td.style.padding = '3px 6px'; td.style.borderBottom = '1px solid #2a1a2f';
+        });
+      });
+      box.appendChild(tbl);
+    }
+    var closeBtn = el('button', null, 'Close'); closeBtn.style.cssText = 'margin-top:12px;background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:5px 14px;cursor:pointer';
+    closeBtn.onclick = function () { ov.remove(); };
+    box.appendChild(closeBtn);
+    ov.appendChild(box);
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
   }
   function renderTabStrip() {
     var w = _curWin(); var strip = $('idmp-tabstrip'); strip.style.display = 'flex'; strip.innerHTML = '';
