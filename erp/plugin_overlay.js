@@ -152,7 +152,10 @@
       '.pe-col{font-size:10.5px;background:#11131a;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:2px 7px;color:#aab3c5}' +
       '.pe-col b{color:#cdd6e4;font-weight:600}' +
       '.pe-warn{margin-top:10px;font-size:11.5px;color:#fbbf24}' +
-      '.pe-emit{margin-top:14px;display:flex;justify-content:flex-end}';
+      '.pe-emit{margin-top:14px;display:flex;justify-content:flex-end}' +
+      '.pe-ninja{font-size:12.5px;color:#cdd6e4;margin-bottom:11px}' +
+      '.pe-byline{margin-top:14px;padding-top:11px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#8b93a7;text-align:center}' +
+      '.pe-byline b{color:#aab3c5;font-weight:600}';
     doc.head.appendChild(s);
   }
 
@@ -345,13 +348,15 @@
           '</div>' +
           '<div id="pe-list"></div>' +
         '</div>' +
-        // Create (PackOut) face — drop a model sheet, preview, Emit & Install.
+        // Create (PackOut) face — drop a model sheet, preview, Emit & Install. Ninja mode (tribute to Red1 Ninja).
         '<div class="pe-body" id="pe-create-body" style="display:none">' +
+          '<div class="pe-ninja">Ninja mode — your spreadsheet becomes a running module</div>' +
           '<div class="pe-drop" id="pe-drop"><div class="pe-di">' + ICO('upload') + ' drop a .xlsx model sheet here</div></div>' +
           '<input type="file" id="pe-file" accept=".xlsx,.xls" style="display:none" />' +
           '<button class="pe-starter" id="pe-starter">' + ICO('download') + ' Download starter template</button>' +
           '<div class="pe-prev" id="pe-prev"></div>' +
           '<div class="pe-emit"><button class="pe-btn pe-go" id="pe-emit-btn" disabled>' + ICO('plug') + ' Emit &amp; Install</button></div>' +
+          '<div class="pe-byline">A friendlier <b>Red1 Ninja</b>, in the browser — Excel defines the model; no JVM, no 2Pack.</div>' +
         '</div>' +
       '</div>';
     doc.body.appendChild(ov);
