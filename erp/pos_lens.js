@@ -475,9 +475,16 @@
     // §R2-5 default the partner: the POS cash partner if the station names one, else the FIRST active
     // partner (deterministic, name-ordered — extracted, not invented) so the single Pay icon completes
     // out of the box. The empty-partner gate silently blocked the old banknote → "Pay stopped working".
-    if (pos.c_bpartnercashtrx_id) bpSel.value = String(pos.c_bpartnercashtrx_id);
-    if (!bpSel.value && bpSel.options.length > 1) bpSel.selectedIndex = 1;
-    console.log('§POS-PARTNER-DEFAULT bp=' + (bpSel.value || 'none') + ' src=' + (pos.c_bpartnercashtrx_id ? 'cashtrx' : 'first-active'));
+    var _bpSrc = 'none';
+    if (pos.c_bpartnercashtrx_id) { bpSel.value = String(pos.c_bpartnercashtrx_id); if (bpSel.value) _bpSrc = 'cashtrx'; }
+    // §R2-5 default the walk-in partner = 'Standard' (user 2026-06-14); fall back to first active.
+    if (!bpSel.value) {
+      for (var _bi = 0; _bi < bpSel.options.length; _bi++) {
+        if (bpSel.options[_bi].textContent === 'Standard') { bpSel.selectedIndex = _bi; _bpSrc = 'standard'; break; }
+      }
+      if (!bpSel.value && bpSel.options.length > 1) { bpSel.selectedIndex = 1; _bpSrc = 'first-active'; }
+    }
+    console.log('§POS-PARTNER-DEFAULT bp=' + (bpSel.value || 'none') + ' name=' + (bpSel.options[bpSel.selectedIndex] ? bpSel.options[bpSel.selectedIndex].textContent : '?') + ' src=' + _bpSrc);
 
     // §R2-3 single Pay icon on the right (the ONLY pay control) — fires Complete directly (§R2-5).
     var payRow = document.createElement('div'); payRow.className = 'pos-pay-row';
