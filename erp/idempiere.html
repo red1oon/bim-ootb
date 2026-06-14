@@ -401,6 +401,10 @@
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
 <script src="erp_descriptor.js?v=1"></script>
+<!-- RENDERER #2 (IDEMPIERE_2.md §pivot) — the Odoo descriptor: registers a 2nd dictionary so ?erp=odoo drives
+     this UNCHANGED chrome over an Odoo model. Reads odoo_model.json + odoo_chain.json (pulled live by
+     odoo_agent/extract_model.js). Inactive unless ?erp=odoo — the AD path is untouched. -->
+<script src="odoo_descriptor.js?v=1"></script>
 <!-- ERP_AUDIT_CHANGELOG Task 2 — resolve audit actor AD_User_ID → real AD_User.Name (NON-INVENT, honest fallback). -->
 <script src="user_names.js?v=1"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
