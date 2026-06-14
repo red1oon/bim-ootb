@@ -11,6 +11,39 @@
 (function (global) {
   'use strict';
 
+  // ── Task 1 / Task 4 helpers — table column cache (uses global.__idmpDb, the main app db) ──
+  var _tableColsCache = {};
+  function _getTableCols(table) {
+    var k = String(table || '').toLowerCase();
+    if (_tableColsCache[k]) return _tableColsCache[k];
+    try {
+      // `global` is the IIFE parameter (= window in browser, module.exports in node); use globalThis
+      // to reach the actual global object in both environments without being shadowed.
+      var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+      if (!mdb) return {};
+      var r = mdb.exec('PRAGMA table_info("' + k + '")'); if (!r.length) { _tableColsCache[k] = {}; return {}; }
+      var ni = r[0].columns.indexOf('name'), cols = {};
+      r[0].values.forEach(function (v) { cols[String(v[ni]).toLowerCase()] = 1; });
+      _tableColsCache[k] = cols; return cols;
+    } catch (e) { return {}; }
+  }
+
+  // _fmtKernelTs — render the kernel's epoch timestamp (a recorded input, Date.now() at commit) into
+  // iDempiere's audit-column convention `yyyy-MM-dd HH:mm:ss` (UTC, locale-independent → deterministic).
+  // The seed's migrated rows store Created/Updated in exactly this shape (e.g. "2003-01-22 17:55:36"), so a
+  // user-created row must match it — not show a raw integer. PURE: derived from the stored input, replay-stable;
+  // NOT part of any op hash (this is a display projection at materialise time). Tolerant of ms (13-digit, the
+  // kernel default) and accidental seconds (10-digit) inputs. Non-numeric/absent → passed through unchanged.
+  function _fmtKernelTs(ts) {
+    if (ts == null) return ts;
+    var n = Number(ts); if (!isFinite(n)) return ts;
+    if (n > 0 && n < 1e12) n = n * 1000;                 // looks like epoch-seconds → ms
+    var d = new Date(n); if (isNaN(d.getTime())) return ts;
+    function p(x) { return (x < 10 ? '0' : '') + x; }
+    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +
+           ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds());
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // PURE CORE — no DOM. Exported for the headless §-witness harness (node).
   // ════════════════════════════════════════════════════════════════════════
@@ -144,6 +177,13 @@
     var base = { key: entry.key, table: entry.key, verb: verb, ownerGated: !!entry.ownerGated, op_uuid: ctx.opUuid || null };
     if (verb === 'create') {
       base.op_type = 'CRUD_CREATE'; base.fields = cleanVals(entry, values); base.cas = entry.cas || null;
+      // Task 1 — iDempiere setStandardDefaults parity: carry actor+tenant onto the op; listTip materialises them
+      var _cActor = ctx.actor != null ? ctx.actor : sessionActor();
+      var _cCid   = ctx.clientId != null ? ctx.clientId : sessionClientId();
+      var _cOid   = ctx.orgId != null ? ctx.orgId : sessionOrgId();
+      if (_cActor != null || _cCid != null) {
+        base.stdDefaults = { actor: _cActor, clientId: _cCid, orgId: _cOid != null ? _cOid : 0 };
+      }
       return base;
     }
     if (verb === 'update') {
@@ -154,6 +194,9 @@
         if (String(nv == null ? '' : nv) !== String(ov == null ? '' : ov)) changes[f.col] = { old: ov == null ? null : ov, new: coerce(f.type, nv) };
       });
       base.op_type = 'CRUD_UPDATE'; base.id = ctx.id == null ? null : ctx.id; base.changes = changes;
+      // Task 1 — carry actor for UpdatedBy materialise in listTip
+      var _uActor = ctx.actor != null ? ctx.actor : sessionActor();
+      if (_uActor != null) { base.actor = _uActor; }
       return base;
     }
     if (verb === 'delete') {
@@ -248,20 +291,47 @@
     var created = [], hidden = [], want = String(table || '').toLowerCase();
     if (!db) return { rows: rows, created: created, hidden: hidden };
     try {
-      var r = db.exec("SELECT id, op_type, parameters FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0 ORDER BY id ASC");
+      var r = db.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0 ORDER BY id ASC");
       if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden };
       r[0].values.forEach(function (row) {
-        var opId = row[0], type = row[1], p;
+        var opId = row[0], type = row[1], opTs = row[3], p;
         try { p = JSON.parse(row[2]); } catch (e) { return; }
         if (!p || String(p.table || '').toLowerCase() !== want) return;
         if (type === 'CRUD_CREATE') {
           var synth = -opId;                                  // synthetic, collision-free, durable pk for the new row
           var nr = {}; var f = p.fields || {}; for (var c in f) if (f.hasOwnProperty(c)) nr[c] = f[c];
+          // Task 1 — iDempiere setStandardDefaults parity: fill audit+tenant cols from the recorded stdDefaults
+          if (p.stdDefaults) {
+            var sd = p.stdDefaults, tcols = _getTableCols(want), fkeys = {};
+            for (var _fk in f) if (Object.prototype.hasOwnProperty.call(f, _fk)) fkeys[String(_fk).toLowerCase()] = 1;
+            if (sd.actor != null) {
+              if (tcols['createdby']  && !fkeys['createdby'])  nr['CreatedBy']  = sd.actor;
+              if (tcols['updatedby']  && !fkeys['updatedby'])  nr['UpdatedBy']  = sd.actor;
+            }
+            if (opTs != null) {
+              // iDempiere convention: Created/Updated are `yyyy-MM-dd HH:mm:ss` strings (match the seed rows)
+              if (tcols['created'] && !fkeys['created']) nr['Created'] = _fmtKernelTs(opTs);
+              if (tcols['updated'] && !fkeys['updated']) nr['Updated'] = _fmtKernelTs(opTs);
+            }
+            if (sd.clientId != null && tcols['ad_client_id'] && !fkeys['ad_client_id']) nr['AD_Client_ID'] = sd.clientId;
+            if (sd.orgId    != null && tcols['ad_org_id']    && !fkeys['ad_org_id'])    nr['AD_Org_ID']    = sd.orgId;
+            if (tcols['isactive']   && !fkeys['isactive'])   nr['IsActive']   = 'Y';
+            if (tcols['processed']  && !fkeys['processed'])  nr['Processed']  = 'N';
+            if (tcols['processing'] && !fkeys['processing']) nr['Processing'] = 'N';
+            if (tcols['posted']     && !fkeys['posted'])     nr['Posted']     = 'N';
+            console.log('§STD-DEFAULTS create table=' + want + ' client=' + sd.clientId + ' org=' + sd.orgId + ' by=' + sd.actor + ' active=Y');
+          }
           nr[pkCol] = synth; byId[String(synth)] = nr; rows.push(nr);
           if (created.indexOf(synth) < 0) created.push(synth);
         } else if (type === 'CRUD_UPDATE') {
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
-          if (ex) { var ch = p.changes || {}; for (var cc in ch) if (ch.hasOwnProperty(cc)) ex[cc] = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc]; }
+          if (ex) {
+            var ch = p.changes || {}; for (var cc in ch) if (ch.hasOwnProperty(cc)) ex[cc] = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc];
+            // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
+            var ucols = _getTableCols(want);
+            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['Updated'] = _fmtKernelTs(opTs);
+            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['UpdatedBy'] = p.actor;
+          }
         } else if (type === 'CRUD_DELETE') {
           if (p.id != null && hidden.indexOf(p.id) < 0) hidden.push(p.id);
         }
@@ -470,7 +540,9 @@
     listOptions: listOptions, splitStatusChange: splitStatusChange,
     docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
     foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
-    listTip: listTip, gateOp: gateOp                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
+    listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
+    changeLog: changeLog, fmtKernelTs: _fmtKernelTs,                             // Task 2: per-record AD-filtered change trail + iDempiere ts format
+    fieldLineage: fieldLineage                                                   // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
   };
 
   // node (headless witness): export the core and stop — no DOM to attach.
@@ -1067,7 +1139,130 @@
   function sessionActor() {
     try { if (global.APP && global.APP.actor != null) return global.APP.actor; } catch (e) {}
     try { if (global.__actor != null) return global.__actor; } catch (e2) {}
+    try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.actor != null) return globalThis.APP.actor; } catch (e3) {}
+    try { if (typeof globalThis !== 'undefined' && globalThis.__actor != null) return globalThis.__actor; } catch (e4) {}
     return null;
+  }
+  // Task 0 companions — read the logged-in tenant and org from window.APP (set by applySession in idempiere.html).
+  function sessionClientId() { try { if (global.APP && global.APP.clientId != null) return global.APP.clientId; } catch (e) {} try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.clientId != null) return globalThis.APP.clientId; } catch (e2) {} return null; }
+  function sessionOrgId()    { try { if (global.APP && global.APP.orgId    != null) return global.APP.orgId;    } catch (e) {} try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.orgId    != null) return globalThis.APP.orgId;    } catch (e2) {} return 0; }
+
+  // ── Task 2 — changeLog: op-log CRUD trail for one record, AD-config-filtered (iDempiere AD_ChangeLog parity)
+  // Returns [{opId,ts,actor,column,old,new}] for logged columns only; null if table not in IsChangeLog=Y.
+  // NON-INVENT: the IsAllowLogging/IsChangeLog filter is READ from the main db (global.__idmpDb); we follow AD.
+  function changeLog(sideDb, table, recordId) {
+    var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+    if (!mdb || !sideDb) return null;
+    try {
+      var tbl = String(table || '');
+      // IsChangeLog check
+      var tc = mdb.exec("SELECT IsChangeLog FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [tbl]);
+      if (!tc.length || !tc[0].values.length || String(tc[0].values[0][0]).toUpperCase() !== 'Y') return null;
+      // loggable columns (IsAllowLogging=Y) for this table
+      var lc = mdb.exec("SELECT c.ColumnName FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE UPPER(t.TableName)=UPPER(?) AND c.IsAllowLogging='Y'", [tbl]);
+      var loggable = {};
+      if (lc.length && lc[0].values.length) lc[0].values.forEach(function (v) { loggable[String(v[0]).toLowerCase()] = 1; });
+      // walk op-log
+      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0 ORDER BY id ASC");
+      if (!r.length) return [];
+      var want = tbl.toLowerCase(), rid = recordId != null ? String(recordId) : null, entries = [];
+      r[0].values.forEach(function (row) {
+        var opId = row[0], opType = row[1], ts = row[3], p;
+        try { p = JSON.parse(row[2]); } catch (e) { return; }
+        if (!p || String(p.table || '').toLowerCase() !== want) return;
+        if (opType === 'CRUD_CREATE') {
+          if (rid !== null && String(-opId) !== rid) return;
+          var f = p.fields || {};
+          Object.keys(f).forEach(function (col) {
+            if (!loggable[col.toLowerCase()]) return;
+            entries.push({ opId: opId, ts: ts, actor: p.stdDefaults && p.stdDefaults.actor, column: col, old: null, 'new': f[col] });
+          });
+        } else if (opType === 'CRUD_UPDATE') {
+          if (rid !== null && String(p.id) !== rid) return;
+          var ch = p.changes || {};
+          Object.keys(ch).forEach(function (col) {
+            if (!loggable[col.toLowerCase()]) return;
+            var pair = ch[col]; entries.push({ opId: opId, ts: ts, actor: p.actor, column: col, old: pair && pair.old, 'new': pair && pair['new'] });
+          });
+        }
+      });
+      console.log('§CHANGELOG table=' + tbl + ' rec=' + rid + ' entries=' + entries.length + ' filtered(IsAllowLogging)=Y');
+      return entries;
+    } catch (e) { return null; }
+  }
+
+  // ── Item 3b (FRONTEND_LANE_MASTER §OUTSTANDING) — fieldLineage: the FULL value history of ONE column,
+  // reconstructed as a filtered fold of the op-log. Witness: W-FIELD-LINEAGE. This is the always-on,
+  // zero-setup replacement for iDempiere's AD_ChangeLog: NOT gated by IsAllowLogging/IsChangeLog (the log IS
+  // the history, so every field is traceable for free). Returns newest-first [{opId,ts,actor,value,prev,action}]
+  // for (table, recordId, column) — value = the value SET by that op; prev = the value before it. action ∈
+  // {'CREATE','UPDATE'}. NON-INVENT: every entry is a real op row; column match is case-insensitive (AD cols
+  // vary in case across CREATE.fields vs UPDATE.changes). Read-only; callers cap to last N for hot fields.
+  function fieldLineage(sideDb, table, recordId, column) {
+    if (!sideDb || !table || !column) return [];
+    try {
+      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0 ORDER BY id ASC");
+      if (!r.length) return [];
+      var want = String(table).toLowerCase(), rid = recordId != null ? String(recordId) : null;
+      var wantCol = String(column).toLowerCase(), out = [];
+      r[0].values.forEach(function (row) {
+        var opId = row[0], opType = row[1], ts = row[3], p;
+        try { p = JSON.parse(row[2]); } catch (e) { return; }
+        if (!p || String(p.table || '').toLowerCase() !== want) return;
+        if (opType === 'CRUD_CREATE') {
+          var f = p.fields || {};
+          if (rid !== null) {
+            // a created row is keyed by EITHER its real embedded pk (<table>_id in fields) OR, for an
+            // overlay row with no real pk yet, the synthetic -opId. Match on either so CREATE joins its UPDATEs.
+            var pkCol = _ciKey(f, want + '_id');
+            var pkMatch = String(-opId) === rid || (pkCol != null && String(f[pkCol]) === rid);
+            if (!pkMatch) return;
+          }
+          var ck = _ciKey(f, wantCol); if (ck == null) return;
+          out.push({ opId: opId, ts: ts, actor: (p.stdDefaults && p.stdDefaults.actor) || null,
+                     value: f[ck], prev: null, action: 'CREATE' });
+        } else if (opType === 'CRUD_UPDATE') {
+          if (rid !== null && String(p.id) !== rid) return;
+          var ch = p.changes || {};
+          var uk = _ciKey(ch, wantCol); if (uk == null) return;
+          var pair = ch[uk];
+          out.push({ opId: opId, ts: ts, actor: p.actor || null,
+                     value: pair && pair['new'], prev: pair && pair.old, action: 'UPDATE' });
+        }
+      });
+      out.reverse();   // newest-first for the hover blurb
+      console.log('§FIELD-LINEAGE table=' + want + ' rec=' + rid + ' col=' + wantCol + ' entries=' + out.length + ' (always-on, no AD_ChangeLog)');
+      return out;
+    } catch (e) { return []; }
+  }
+  // case-insensitive key lookup in an object (CREATE.fields / UPDATE.changes use varied AD column casing).
+  function _ciKey(obj, lowerCol) {
+    if (!obj) return null;
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) { if (keys[i].toLowerCase() === lowerCol) return keys[i]; }
+    return null;
+  }
+
+  // ── Task 4 — allocDocNo: assign DocumentNo from AD_Sequence on CRUD_CREATE for document tables.
+  // Approach (a-simplified): number embedded in the op fields (replay-stable); sequence CurrentNext
+  // bumped directly in the main db (state not in op-log — acceptable for demo; name the trade-off).
+  // Returns the formatted DocumentNo, or null when no matching active sequence (named, not faked).
+  function _allocDocNo(table, fields) {
+    var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+    if (!mdb) return null;
+    var cols = _getTableCols(table);
+    if (!cols['documentno']) return null;
+    if (fields && (fields['DocumentNo'] != null || fields['documentno'] != null)) return null; // user provided
+    try {
+      var seqName = 'DocumentNo_' + table;
+      var r = mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", [seqName]);
+      if (!r.length || !r[0].values.length) { console.log('§DOCNO no-sequence table=' + table + ' (named, not faked)'); return null; }
+      var v = r[0].values[0], seqId = v[0], next = v[1], incr = v[2] || 1, prefix = v[3] || '', suffix = v[4] || '';
+      var docNo = (prefix || '') + next + (suffix || '');
+      mdb.run('UPDATE AD_Sequence SET CurrentNext=' + (next + incr) + ' WHERE AD_Sequence_ID=' + seqId);
+      console.log('§DOCNO table=' + table + ' seq=' + seqName + ' next=' + next + ' docno=' + docNo + ' replay-stable=Y');
+      return docNo;
+    } catch (e) { return null; }
   }
   // _gateCtxFor — resolve {actor, owner, casCol, casExpected, casCurrent} for an ownerGated op from the
   // REAL record (NON-INVENT): owner = the record's recorded owner column (createdby / owner / claimed_by);
@@ -1119,6 +1314,11 @@
     var K = kernel();
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD ' + op.op_type + ' key=' + op.key + ' kernel/sql.js absent → DRY fallback'); dryCrud(op); return; }
+      // Task 4 — DocumentNo: allocate from AD_Sequence for CRUD_CREATE on document tables (approach a-simplified)
+      if (op.op_type === 'CRUD_CREATE') {
+        var dn = _allocDocNo(op.table, op.fields);
+        if (dn != null) { op.fields = op.fields || {}; op.fields.DocumentNo = dn; }
+      }
       // T4 (GAP 4): an ownerGated mutation of an EXISTING owned row (UPDATE/DELETE) is gated owner+CAS
       // BEFORE the seal — a non-owner / stale-CAS write is REJECTED (toast, NO dot), never silently sealed.
       // CREATE has no prior owner to gate (the creator becomes the owner) → passes through.
@@ -1133,8 +1333,8 @@
     {
       try {
         var params = { table: op.table, id: op.id == null ? null : op.id };
-        if (op.op_type === 'CRUD_UPDATE')      params.changes = op.changes;
-        else if (op.op_type === 'CRUD_CREATE') { params.fields = op.fields; params.cas = op.cas || null; }
+        if (op.op_type === 'CRUD_UPDATE')      { params.changes = op.changes; if (op.actor != null) params.actor = op.actor; }
+        else if (op.op_type === 'CRUD_CREATE') { params.fields = op.fields; params.cas = op.cas || null; if (op.stdDefaults) params.stdDefaults = op.stdDefaults; }
         else if (op.op_type === 'CRUD_DELETE') { params.tombstone = true; params.reversible = true; }
         var groupOps = [{ op_type: op.op_type, op_uuid: op.op_uuid || null, params: params }];
         Promise.resolve(K.commitGroup(db, groupOps, {})).then(function (res) {
@@ -1145,6 +1345,10 @@
             console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
             docDot(CORE.docLabel(op, fname(op.key)), op);
             toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
+            // W-AD-SELFEDIT-LIVE — announce the committed write so a host can refold on a dictionary edit
+            // (AD_Field/AD_Window/AD_Tab → form/menu rebuilds = re-read the dictionary, not recompile).
+            try { global.dispatchEvent(new CustomEvent('overlay:committed',
+              { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id } })); } catch (ev) {}
           });
         }).catch(function (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); });
       } catch (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); }
@@ -1294,12 +1498,83 @@
       return r[0].values.map(function (v) { return { id: v[0], op_uuid: v[1], ts: v[2], op_type: v[3], params: JSON.parse(v[4]), undone: !!v[5] }; });
     } catch (e) { return []; }
   }
+  // ── Item 3b (FRONTEND_LANE_MASTER §OUTSTANDING) — PER-FIELD LINEAGE hover-pause blurb ──────────────
+  // Witness: W-FIELD-LINEAGE (engine) + §LINEAGE-HOVER (live DOM). Dwell ~900ms on any field carrying a
+  // column id → reveal that column's full value history folded from the op-log (value · who · when), newest
+  // -first. Always-on, read-only, zero setup — the inline replacement for iDempiere's AD_ChangeLog window.
+  // Delegated ONE document listener (no per-field wiring): resolves (table,id,column) from the hovered
+  // element's attributes + nearest data-ad-table/record ancestor. Empty history → no popup (only fields with
+  // real logged edits reveal a blurb, so it's never noise). NON-INVENT: every line is a real op row.
+  (function lineageHover() {
+    if (typeof document === 'undefined') return;
+    var DWELL = 900, MAX = 8, tip = null, timer = null, curEl = null;
+    function ensureTip() {
+      if (tip) return tip;
+      var st = document.createElement('style');
+      st.textContent =
+        '.idmp-lineage{position:fixed;z-index:100000;max-width:320px;background:#1c2230;color:#e8edf6;' +
+        'border:1px solid #3a455c;border-radius:8px;padding:8px 10px;font:12px/1.45 system-ui,sans-serif;' +
+        'box-shadow:0 6px 22px rgba(0,0,0,.45);pointer-events:none;display:none}' +
+        '.idmp-lineage b{color:#8fc8ff;font-weight:600}.idmp-lineage .ll-row{white-space:nowrap;overflow:hidden;' +
+        'text-overflow:ellipsis}.idmp-lineage .ll-who{color:#9fb0c8}.idmp-lineage .ll-when{color:#6f7e96}' +
+        '.idmp-lineage .ll-more{color:#6f7e96;margin-top:4px}';
+      document.head.appendChild(st);
+      tip = document.createElement('div'); tip.className = 'idmp-lineage'; document.body.appendChild(tip);
+      return tip;
+    }
+    function resolve(target) {
+      var el = target && target.closest && target.closest('[data-col],[data-ad-column],[data-ad-col]');
+      if (!el) return null;
+      var column = el.getAttribute('data-col') || el.getAttribute('data-ad-column') || el.getAttribute('data-ad-col');
+      if (!column) return null;
+      var tEl = el.closest('[data-ad-table]'), rEl = el.closest('[data-ad-record]');
+      var table = tEl && tEl.getAttribute('data-ad-table');
+      var id = rEl && rEl.getAttribute('data-ad-record');
+      if (!table || id == null || id === '') return null;
+      return { el: el, table: table, id: id, column: column };
+    }
+    function fmtVal(v) { return v == null || v === '' ? '∅' : esc(String(v)); }
+    function show(ctx, x, y) {
+      if (!SIDE) return;
+      var lin = CORE.fieldLineage(SIDE, ctx.table, ctx.id, ctx.column);
+      if (!lin || !lin.length) return;                 // nothing logged → no popup (never noise)
+      var t = ensureTip(), rows = lin.slice(0, MAX).map(function (e) {
+        var val = e.action === 'CREATE' ? ('set ' + fmtVal(e.value)) : (fmtVal(e.prev) + ' → ' + fmtVal(e.value));
+        var who = e.actor ? ' <span class=ll-who>' + esc(e.actor) + '</span>' : '';
+        var when = e.ts ? ' <span class=ll-when>' + esc(CORE.fmtKernelTs(e.ts)) + '</span>' : '';
+        return '<div class=ll-row>' + val + who + when + '</div>';
+      }).join('');
+      var more = lin.length > MAX ? '<div class=ll-more>+' + (lin.length - MAX) + ' older…</div>' : '';
+      t.innerHTML = '<b>' + esc(ctx.column) + '</b> · ' + lin.length + ' change' + (lin.length === 1 ? '' : 's') + rows + more;
+      t.style.display = 'block';
+      var w = t.offsetWidth, h = t.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+      t.style.left = Math.min(x + 14, vw - w - 8) + 'px';
+      t.style.top = (y + 18 + h > vh ? y - h - 10 : y + 18) + 'px';
+      console.log('§LINEAGE-HOVER ' + ctx.table + '#' + ctx.id + '.' + ctx.column + ' entries=' + lin.length);
+    }
+    function hide() { if (timer) { clearTimeout(timer); timer = null; } if (tip) tip.style.display = 'none'; curEl = null; }
+    document.addEventListener('pointermove', function (ev) {
+      var ctx = resolve(ev.target);
+      if (!ctx) { if (curEl) hide(); return; }
+      if (ctx.el === curEl) return;                    // same field — keep pending/shown
+      hide(); curEl = ctx.el;
+      var x = ev.clientX, y = ev.clientY;
+      timer = setTimeout(function () { timer = null; show(ctx, x, y); }, DWELL);
+    }, true);
+    document.addEventListener('pointerdown', hide, true);
+    document.addEventListener('scroll', hide, true);
+    global.__lineageHover = { show: show, hide: hide, resolve: resolve };  // exposed for the live §-log probe
+  })();
+
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id) : null; }, history: history,
+                    changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
+                    fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col) : []; },  // Item 3b (W-FIELD-LINEAGE)
+                    fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
                     toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
   console.log('§CRUD layer mounted (Edit-mode ready)');
