@@ -423,11 +423,12 @@
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
      (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
 <script src="ninja_model.js?v=1"></script>
-<script src="ninja_stage.js?v=1"></script>
+<script src="ninja_stage.js?v=2"></script>
 <script src="ninja_bundle.js?v=1"></script>
 <script src="ninja_create.js?v=1"></script>
 <script src="ninja_starter.js?v=1"></script>
-<script src="plugin_overlay.js?v=3"></script>
+<script src="ninja_export.js?v=1"></script>
+<script src="plugin_overlay.js?v=4"></script>
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
@@ -2336,7 +2337,7 @@ if ('serviceWorker' in navigator) {
     if (!_swHadCtrl) { _swHadCtrl = true; return; }   // initial install claim — adopt silently
     _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
   });
-  navigator.serviceWorker.register('sw.js?v=600')
+  navigator.serviceWorker.register('sw.js?v=681')
     .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
