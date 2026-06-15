@@ -281,11 +281,105 @@ function setupDiff(A) {
 
     // Footer
     html += '<div style="margin-top:8px;font-size:10px;color:#666">📊 4D/5D for costed Excel &middot; <a href="https://red1oon.github.io/BIMCompiler/BIM_Designer_Browser/#phase-2b-ifc-import-variation-order-s220s222-done" target="_blank" style="color:#4fc3f7;text-decoration:none">See rates &amp; templates</a></div>';
+    // BIM→Project §H1 / TASK F: fold this model-delta into a signed Variation Order (C_Order amendment).
+    html += '<button id="diff-vo-btn" onclick="APP._voToErp()" title="Fold this model-delta into a signed Variation Order — a C_Order amendment against the building\'s Project (FIDIC/AACE 5D)" style="margin-top:6px;padding:6px 12px;background:#1565c0;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;width:100%;font-weight:600">› VO — fold to ERP amendment</button>';
     html += '<button onclick="this.parentElement.style.display=\'none\'" style="margin-top:6px;padding:5px 12px;background:#444;color:#ccc;border:none;border-radius:4px;cursor:pointer;font-size:11px;width:100%">Close</button>';
 
     panel.innerHTML = html;
     panel.style.display = 'flex';
     console.log('[S225] §DIFF_SUMMARY added=' + d.added.length + ' removed=' + d.removed.length + ' changed=' + d.changed.length);
+  };
+
+  // ── BIM→Project §H1 / TASK F: fold the model-delta into a signed C_Order amendment (window.VoFold) ──
+  // Prices A.diffResult per status×IFC-class (count + rate=getRate; the FIDIC/AACE factors live in vo_fold),
+  // loads the project-orders store the > ERP push wrote (OPFS bim_project_orders.db, falling back to the
+  // seed), folds, persists. The fold is the witnessed part (W-VO-FOLD, tests/poc_vo_fold.js); here we wire
+  // the UI call-path (mirrors navigate_find.js _pushToErp).
+  function _voCur() { try { return (window._TRL && window._TRL.cur) || 'RM'; } catch (e) { return 'RM'; } }
+  function _voCurISO() { try { return (window._TRL && window._TRL.cur) || 'USD'; } catch (e) { return 'USD'; } }
+  function _voNow() { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } }
+
+  // price the diff into vo_fold rows: one per (status × IFC class), count + rate (per element).
+  A._diffToVoRows = function () {
+    var d = A.diffResult;
+    if (!d) return [];
+    function agg(db, guids, status, out) {
+      if (!db || !guids || !guids.length) return;
+      for (var i = 0; i < guids.length; i += 900) {
+        var chunk = guids.slice(i, i + 900);
+        var ph = chunk.map(function () { return '?'; }).join(',');
+        var rows;
+        try { rows = db.exec("SELECT ifc_class, discipline, COUNT(*) FROM elements_meta WHERE guid IN (" + ph + ") GROUP BY ifc_class, discipline", chunk); }
+        catch (e) { console.log('[RP-F] §VO_PRICE_ERR ' + e.message); rows = []; }
+        (rows.length ? rows[0].values : []).forEach(function (r) {
+          var cls = r[0] || 'Unknown', disc = r[1] || '_', k = status + '|' + cls;
+          var a = out[k] || (out[k] = { status: status, cls: cls, disc: disc, count: 0, rate: (typeof getRate === 'function' ? getRate(cls) : 0), unit: 'EA' });
+          a.count += r[2] || 0;
+        });
+      }
+    }
+    var out = {};
+    agg(A.diffDb || A.db, d.added, 'ADDED', out);
+    agg(A.db, d.removed, 'REMOVED', out);
+    agg(A.diffDb || A.db, d.changed, 'CHANGED', out);
+    return Object.keys(out).map(function (k) { return out[k]; });
+  };
+
+  var _voErpDb = null;
+  function _loadVoErpDb() {
+    if (_voErpDb) return Promise.resolve(_voErpDb);
+    var SQL = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL
+    if (!SQL || !window.VoFold) return Promise.resolve(null);
+    // OPFS-first: amend the project the > ERP push already wrote; fall back to the seed (plan-only).
+    function fromOpfs() {
+      if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(null);
+      return navigator.storage.getDirectory()
+        .then(function (root) { return root.getDirectoryHandle('bim_analysis'); })
+        .then(function (dir) { return dir.getFileHandle('bim_project_orders.db'); })
+        .then(function (fh) { return fh.getFile(); })
+        .then(function (f) { return f.arrayBuffer(); })
+        .then(function (buf) { return new SQL.Database(new Uint8Array(buf)); })
+        .catch(function () { return null; });
+    }
+    return fromOpfs().then(function (db) {
+      if (db) { _voErpDb = db; console.log('[RP-F] §VO_DB src=opfs'); return db; }
+      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+        .then(function (buf) { _voErpDb = new SQL.Database(new Uint8Array(buf)); console.log('[RP-F] §VO_DB src=seed'); return _voErpDb; })
+        .catch(function (e) { console.log('[RP-F] §VO_DB_ERR ' + e.message); return null; });
+    });
+  }
+  function _persistVoDb(db) {
+    try {
+      if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+      var bytes = db.export();
+      return navigator.storage.getDirectory()
+        .then(function (root) { return root.getDirectoryHandle('bim_analysis', { create: true }); })
+        .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
+        .then(function (fh) { return fh.createWritable(); })
+        .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
+        .then(function () { return true; }).catch(function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+
+  A._voToErp = function () {
+    if (!A.diffResult) { if (A.status) A.status.textContent = 'No diff to fold'; return; }
+    if (!window.VoFold) { if (A.status) A.status.textContent = 'VO engine not loaded'; console.log('[RP-F] §VO_PUSH_DEFER VoFold absent'); return; }
+    var rows = A._diffToVoRows();
+    if (!rows.length) { if (A.status) A.status.textContent = 'No priced elements in the delta'; console.log('[RP-F] §VO_PUSH_DEFER empty rows'); return; }
+    var building = A.activeBuilding;
+    if (A.status) A.status.textContent = 'Folding Variation Order…';
+    _loadVoErpDb().then(function (db) {
+      if (!db) { if (A.status) A.status.textContent = 'ERP db unavailable for VO'; console.log('[RP-F] §VO_PUSH_DEFER no ERP db'); return; }
+      var r = window.VoFold.foldVariationOrder(db, building, rows, { packCurrencyISO: _voCurISO(), now: _voNow() });
+      console.log('[RP-F] §VO_PUSH building="' + building + '" doc=' + r.docNo + ' order=' + r.orderId +
+        ' lines=+' + r.created.lines + ' grandTotal=' + r.grandTotal + ' project=' + (r.projectId || '-') + ' refPO=' + (r.refOrderId || '-'));
+      (r.notes || []).forEach(function (n) { console.log('[RP-F] §VO_PUSH_NOTE ' + n); });
+      _persistVoDb(db).then(function (ok) {
+        console.log('[RP-F] §VO_PUSH_PERSIST opfs=' + ok + ' store=bim_project_orders.db');
+        if (A.status) A.status.textContent = 'Variation Order ' + (r.docNo || '') + ': ' + r.created.lines + ' lines · ' + _voCur() + ' ' +
+          Number(r.grandTotal).toLocaleString(undefined, { maximumFractionDigits: 0 }) + (ok ? ' (saved)' : '');
+      });
+    });
   };
 
   // Toggle variance panel visibility (called from HUD button)
