@@ -84,10 +84,17 @@ project's revised contract sum + `IsCommitment`.
 > original+VO. W-FIN-VO-APPROVE 6/6: DR→CO, commitment 1312.5→revised 1056790.5, 2nd approve idempotent (no
 > double-commit), FSM rejects CO→CO (falsifier = gated). viewer.html ships ad_docfsm.js + vo_approve.js?v=1. 5 reg re-pass. LOCALHOST.
 
-**F6 — §H2 Progress Claim → C_Invoice + posting preview** · `W-FIN-CLAIM` (+ `W-FIN-CLAIM-POST`)
+**F6 — §H2 Progress Claim → C_Invoice + posting preview** · `W-FIN-CLAIM` (+ `W-FIN-CLAIM-POST`) · ✅ DONE (`tests/poc_fin_claim.js` 7/7 + 5/5 reg)
 Complete a phase (% / `IsComplete`) → raise a **progress C_Invoice** (`ProjInvoiceRule`) for the earned portion → show
 the **GL posting preview** (Dr Cost, Cr AP). Honest where `fact_acct` is absent (preview only + note).
 *Witness:* claim N% → invoice amount == earned value (BigDecimal); posting preview **balances Σ Dr = Σ Cr**.
+> **Done 2026-06-15:** new `viewer/proj_claim.js` — `progressClaim` raises an AP C_Invoice (DocBaseType API, one line per
+> newly-complete phase, sets ProjInvoiceRule, idempotent at phase granularity) for the earned EV delta and moves
+> C_Project.InvoicedAmt (so EVM AC stops being 0 → CPI computable, closing F4's honesty gap). `postingPreview` derives the
+> GL manifest Dr WIP `14130` / Cr AP `21100` (F3 accounts) and balances ΣDr=ΣCr; it does NOT write Fact_Acct (posted=false +
+> honest note — a folded claim is previewed, posting is an explicit ERP-app DocAction). W-FIN-CLAIM 7/7 (claim==EV 2240,
+> AC→CPI 1.0000, preview balances, idempotent re-claim=0, unbalanced-manifest falsifier caught). viewer.html ships
+> proj_claim.js?v=1. 5 regression re-pass. LOCALHOST.
 
 **F7 — Tax (SST/GST) on the document lines** · `W-FIN-TAX`
 EXTRACT a `C_Tax` rate from the seed (or seed a Malaysian SST row, reproducibly) and apply it to order/invoice lines.
@@ -129,6 +136,8 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
   regression. `viewer/proj_control.js` (contractSum/evm/evmMetrics, BigDecimal); `navigate_find` logs §PROJ_CONTROL + status bar. LOCALHOST (2026-06-15).
 - ✅ **F5 — VO approval (DR→CO)** — `W-FIN-VO-APPROVE` (`tests/poc_fin_vo_approve.js`) 6/6 + 5/5 regression. `viewer/vo_approve.js`
   reuses `erp/ad_docfsm.js` dispatchOrder (gated DR→CO), moves C_Project.CommittedAmt + IsCommitment, idempotent, signed. LOCALHOST (2026-06-15).
+- ✅ **F6 — Progress claim → C_Invoice + posting preview** — `W-FIN-CLAIM` (`tests/poc_fin_claim.js`) 7/7 + 5/5 regression.
+  `viewer/proj_claim.js` progressClaim (AP invoice == EV, moves InvoicedAmt→AC) + postingPreview (Dr WIP/Cr AP balances, no fact_acct write). LOCALHOST (2026-06-15).
 
 ---
 
