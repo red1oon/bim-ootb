@@ -48,6 +48,49 @@
     return _scalar(db, "SELECT C_Currency_ID FROM C_Currency WHERE ISO_Code=? OR CurSymbol=? " +
       "ORDER BY (ISO_Code=?) DESC, C_Currency_ID LIMIT 1", [code, code, code]);
   }
+  // §F3 W-FIN-GLMAP — the p_*_acct columns a product category carries; both M_Product_Category_Acct and
+  // C_AcctSchema_Default expose this set, so a new BIM category copies the schema defaults verbatim (exactly
+  // as iDempiere's MProductCategory.insertAccounting does). EXTRACT-only: every value is a real
+  // C_ValidCombination from the seed's chart of accounts — never a fabricated account number.
+  var _CAT_ACCT_COLS = ['p_revenue_acct', 'p_expense_acct', 'p_asset_acct', 'p_cogs_acct',
+    'p_purchasepricevariance_acct', 'p_invoicepricevariance_acct', 'p_tradediscountrec_acct',
+    'p_tradediscountgrant_acct', 'p_inventoryclearing_acct', 'p_costadjustment_acct', 'p_floorstock_acct',
+    'p_wip_acct', 'p_methodchangevariance_acct', 'p_usagevariance_acct', 'p_ratevariance_acct',
+    'p_mixvariance_acct', 'p_costofproduction_acct', 'p_labor_acct', 'p_burden_acct',
+    'p_outsideprocessing_acct', 'p_overhead_acct', 'p_scrap_acct', 'p_averagecostvariance_acct',
+    'p_landedcostclearing_acct'];
+  // create M_Product_Category_Acct (per acct schema) for a BIM category, copying C_AcctSchema_Default.
+  function _seedCategoryAcct(db, catId, CL, OG, U, now) {
+    var schemas = db.exec("SELECT C_AcctSchema_ID FROM C_AcctSchema");
+    if (!schemas.length) return 0;
+    var n = 0, cols = _CAT_ACCT_COLS, qs = cols.map(function () { return '?'; }).join(',');
+    schemas[0].values.forEach(function (row) {
+      var asId = row[0];
+      if (_scalar(db, "SELECT 1 FROM M_Product_Category_Acct WHERE M_Product_Category_ID=? AND C_AcctSchema_ID=?", [catId, asId]) != null) return;
+      var def = db.exec("SELECT " + cols.join(',') + " FROM C_AcctSchema_Default WHERE C_AcctSchema_ID=?", [asId]);
+      if (!def.length) return;
+      db.run("INSERT INTO M_Product_Category_Acct (m_product_category_id,c_acctschema_id,ad_client_id,ad_org_id," +
+        "isactive,created,createdby,updated,updatedby," + cols.join(',') + ",m_product_category_acct_uu) " +
+        "VALUES (?,?,?,?,'Y',?,?,?,?," + qs + ",?)",
+        [catId, asId, CL, OG, now, U, now, U].concat(def[0].values[0]).concat([_uu()]));
+      n++;
+    });
+    return n;
+  }
+  // §F3 — the postable account pair for this fold against the primary schema: Dr = WIP/Expense (the cost
+  // side, from the schema defaults), Cr = AP (the supplier's BP-group liability, else the schema default).
+  function _glMap(db, bpartnerId) {
+    var as = Number(_scalar(db, "SELECT C_AcctSchema_ID FROM C_AcctSchema ORDER BY C_AcctSchema_ID LIMIT 1") || 101);
+    var wip = _scalar(db, "SELECT p_wip_acct FROM C_AcctSchema_Default WHERE C_AcctSchema_ID=?", [as]);
+    var exp = _scalar(db, "SELECT p_expense_acct FROM C_AcctSchema_Default WHERE C_AcctSchema_ID=?", [as]);
+    var ap = null;
+    if (bpartnerId != null) {
+      var grp = _scalar(db, "SELECT C_BP_Group_ID FROM C_BPartner WHERE C_BPartner_ID=?", [bpartnerId]);
+      if (grp != null) ap = _scalar(db, "SELECT v_liability_acct FROM C_BP_Group_Acct WHERE C_BP_Group_ID=? AND C_AcctSchema_ID=?", [grp, as]);
+    }
+    if (ap == null) ap = _scalar(db, "SELECT v_liability_acct FROM C_AcctSchema_Default WHERE C_AcctSchema_ID=?", [as]);
+    return { acctSchemaId: as, drWip: wip, drExpense: exp, ap: ap };
+  }
   // the primary accounting-schema currency + the conversion (multiply) rate from curId to it.
   // rate '1' when already the acct currency; null when a rate is genuinely absent (→ honest gap note).
   function _convRateToAcct(db, curId) {
@@ -186,6 +229,7 @@
             "Value,Name,IsDefault,M_Product_Category_UU) VALUES (?,?,?,'Y',?,?,?,?,?,?,'N',?)",
             [catId, CL, OG, now, U, now, U, 'BIM-' + disc, 'BIM ' + disc, _uu()]);
           created.categories++;
+          _seedCategoryAcct(db, catId, CL, OG, U, now); // §F3 — GL accounts from schema defaults
         }
         var uomId = _scalar(db, "SELECT C_UOM_ID FROM C_UOM WHERE X12DE355=?", [unit]) || 100; // seed lacks M/M2/M3 → EA
         if (uomId === 100 && unit !== 'EA') notes.push('UOM_FALLBACK ' + cls + ' ' + unit + '→EA (seed lacks ' + unit + ')');
@@ -243,7 +287,7 @@
     return {
       projectId: projId, created: created, plannedAmt: projAmt.toString(), plannedQty: projQty,
       orderId: orderId, seqLog: seqLog, notes: notes, currencyId: curId,
-      acctCurrencyId: conv.acctCurId, convRateToAcct: conv.rate
+      acctCurrencyId: conv.acctCurId, convRateToAcct: conv.rate, glMap: _glMap(db, opts.bpartnerId)
     };
   }
 

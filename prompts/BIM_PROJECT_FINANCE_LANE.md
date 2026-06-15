@@ -51,10 +51,15 @@ EXTRACT the standard `C_UOM` rows (M, M2, M3 — X12DE355) into the seed. The fo
 > StdPrecision 3 = QTO precision). Idempotent. W-FIN-UOM 6/6 (16 metre lines resolve; 8 EA classes stay EA = falsifier holds;
 > qty==5D golden 3dp). 5 regression re-pass. LOCALHOST — not deployed.
 
-**F3 — GL account mapping** · `W-FIN-GLMAP`
+**F3 — GL account mapping** · `W-FIN-GLMAP` · ✅ DONE (`tests/poc_fin_glmap.js` 6/6 + 5/5 regression)
 Map BIM `M_Product_Category` → real GL accounts (`M_Product_Category_Acct`, Dr WIP/Expense) and the order → AP, from
 the seed's existing chart of accounts (EXTRACT, never invent an account number).
 *Witness:* every BIM product/category resolves a Dr account; an order/invoice line has a postable account pair.
+> **Done 2026-06-15:** the categories are folded at runtime, so the mapping lives in the fold (as iDempiere's
+> MProductCategory does): `proj_fold._seedCategoryAcct` creates `M_Product_Category_Acct` per acct schema, copying the
+> full p_*_acct set from `C_AcctSchema_Default` verbatim; `proj_fold._glMap` surfaces the postable pair (Dr WIP `14130` /
+> Expense `51200`, Cr AP `21100` from the BP-group / schema default). W-FIN-GLMAP 6/6: primary-schema Dr resolves to a real
+> C_ValidCombination→C_ElementValue, every non-null acct traces to the chart, Dr≠Cr. 5 regression re-pass. LOCALHOST.
 
 **F4 — PM control view: contract sum + EVM (live)** · `W-FIN-EVM` (+ `W-FIN-EVM-LIVE` browser)
 Surface, on the C_Project (ERP window + a viewer readout): *Original Contract + Approved VOs = Revised Contract Sum*,
@@ -105,6 +110,8 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
   seeds C_Conversion_Rate MYR↔USD from the CIDB pack (3.91). Amounts unchanged. LOCALHOST (2026-06-15).
 - ✅ **F2 — UOM fidelity** — `W-FIN-UOM` (`tests/poc_fin_uom.js`) 6/6 + 5/5 regression. `scripts/seed_fin_uom.js` adds
   M/M2/M3 (UNCEFACT MTR/MTK/MTQ, UOMType LE/AR/VD); BoQ reads m/m²/m³, no UOM_FALLBACK, qty==5D golden. LOCALHOST (2026-06-15).
+- ✅ **F3 — GL account mapping** — `W-FIN-GLMAP` (`tests/poc_fin_glmap.js`) 6/6 + 5/5 regression. `proj_fold._seedCategoryAcct`
+  copies C_AcctSchema_Default → M_Product_Category_Acct per BIM category; `_glMap` exposes Dr WIP 14130/Cr AP 21100. LOCALHOST (2026-06-15).
 
 ---
 
