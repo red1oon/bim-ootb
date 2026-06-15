@@ -46,7 +46,7 @@ async function clickPill(page, id) {
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html?window=167`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden&window=167`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#idmp-login-users .idmp-login-user:not(.disabled)', { timeout: 15000 });
   await page.click('#idmp-login-users .idmp-login-user:not(.disabled)');
   await page.waitForSelector('#idmp-login-ok', { timeout: 5000 });

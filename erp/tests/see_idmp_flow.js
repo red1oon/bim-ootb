@@ -18,7 +18,7 @@ const shot = (page, name) => page.screenshot({ path: path.join(__dirname, name) 
   const browser = await chromium.launch();
   const page = await browser.newPage();
   page.on('console', m => logs.push(m.text()));
-  await page.goto(`http://localhost:${port}/idempiere.html?window=167`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden&window=167`, { waitUntil: 'networkidle' });
 
   // login
   await page.waitForSelector('#idmp-login-users .idmp-login-user:not(.disabled)', { timeout: 15000 });

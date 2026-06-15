@@ -39,7 +39,7 @@ async function login(page) {
 (async () => {
   await new Promise(r => server.listen(0, r));
   const port = server.address().port;
-  const base = `http://localhost:${port}/idempiere.html`;
+  const base = `http://localhost:${port}/idempiere.html?client=garden`;
   let logs = [], errs = [];
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
