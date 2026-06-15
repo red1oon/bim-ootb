@@ -157,6 +157,10 @@
   .idmp-docfsm .chip.st-CO { background:#d8efd8; border-color:#9cc79c; }
   .idmp-docfsm .chip.st-DR, .idmp-docfsm .chip.st-IP { background:#fdf3d7; border-color:#e0c878; }
   .idmp-docfsm .chip.st-VO, .idmp-docfsm .chip.st-RE { background:#f5dada; border-color:#d09c9c; }
+  /* USER_JOURNEY_LANE punch-list #2 — DocStatus status-at-a-glance chip in grid + cards. Dot colour =
+     KanbanLens.statusColor (same source kanban uses); label = DOCSTATUS_LABEL. Consistent look-and-feel. */
+  .idmp-stchip { display:inline-flex; align-items:center; gap:6px; font-size:12px; white-space:nowrap; }
+  .idmp-stchip .dot { width:8px; height:8px; border-radius:50%; flex:0 0 8px; }
   .idmp-docfsm button { font-size:12px; padding:4px 10px; border:1px solid var(--idmp-border);
     border-radius:6px; background:var(--idmp-panel); color:var(--idmp-text); cursor:pointer; }
   .idmp-docfsm button:hover { background:var(--idmp-hover); border-color:var(--idmp-blue); }
@@ -1470,6 +1474,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _renderBatchBar(tab);
     });
     thSel.appendChild(allCk); htr.appendChild(thSel);
+    // punch-list #2 — status-at-a-glance: a LEADING Status column for document windows when DocStatus isn't
+    // already one of the displayed columns (when it IS, that cell renders the chip in place — see row loop).
+    // Leading (not trailing) so the chip is always on-screen without horizontal scroll — the whole point.
+    var hasStatus = _tabHasStatus(tab);
+    var statusInCols = cols.some(function (f) { return /^docstatus$/i.test(f.columnName); });
+    var leadStatus = hasStatus && !statusInCols;
+    if (leadStatus) htr.appendChild(el('th', null, 'Status'));
     cols.forEach(function (f) { htr.appendChild(el('th', null, f.name)); });
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
@@ -1483,7 +1494,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       ck.addEventListener('click', function (e) { e.stopPropagation(); });   // checkbox ≠ open-form
       ck.addEventListener('change', function () { if (ck.checked) _gridSel[pk] = 1; else delete _gridSel[pk]; _renderBatchBar(tab); var sa = document.getElementById('idmp-grid-selall'); if (sa) sa.checked = _selectedRecs(tab).length === _records.length; });
       tdCk.appendChild(ck); tr.appendChild(tdCk);
-      cols.forEach(function (f) { var td = el('td', null, fmt(f, recVal(rec, f.columnName))); td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td); });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
+      if (leadStatus) { var tdS = el('td'); var ds = _recStatus(rec); tdS.appendChild(ds ? _statusChip(ds) : document.createTextNode('')); tdS.setAttribute('data-ad-col', 'DocStatus'); tr.appendChild(tdS); }
+      cols.forEach(function (f) {
+        var td;
+        if (/^docstatus$/i.test(f.columnName)) { td = el('td'); var ds0 = _recStatus(rec); td.appendChild(ds0 ? _statusChip(ds0) : document.createTextNode('')); }
+        else { td = el('td', null, fmt(f, recVal(rec, f.columnName))); }
+        td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
+      });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
       tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       tb.appendChild(tr);
     });
@@ -1523,6 +1540,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var chv = el('span', 'chv', '▶'); lbl.appendChild(chv);
       lbl.appendChild(el('span', 'idmp-card-title', title));
       hd.appendChild(lbl);
+      var _cds = _recStatus(rec); if (_cds) hd.appendChild(_statusChip(_cds));   // punch-list #2 — status-at-a-glance on mobile cards
       hd.appendChild(el('span', 'idmp-card-open', 'Open ›'));
       acc.appendChild(hd);
       var bd = el('div', 'bd');
@@ -1548,6 +1566,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     RA: 'Reverse — Accrual', RE: 'Re-Activate', XL: 'Unlock', IN: 'Invalidate', RJ: 'Reject', AP: 'Approve', PO: 'Post' };
   var DOCSTATUS_LABEL = { DR: 'Drafted', IP: 'In Progress', IN: 'Invalid', AP: 'Approved', NA: 'Not Approved',
     CO: 'Completed', CL: 'Closed', RE: 'Reversed', VO: 'Voided', WP: 'Waiting Payment', WC: 'Waiting Confirmation' };
+  // USER_JOURNEY_LANE punch-list #2 — status-at-a-glance. A record HAS a status iff it carries a DocStatus
+  // value (model-agnostic — any absorbed model with a DocStatus column lights up; no per-model hardcode).
+  function _recStatus(rec) { var ds = recVal(rec, 'DocStatus'); return (ds == null || ds === '') ? null : String(ds); }
+  function _tabHasStatus(tab) { return !!(_records.length && _records.some(function (r) { return _recStatus(r) != null; })); }
+  // _statusChip(ds) — coloured dot (KanbanLens.statusColor) + human label (DOCSTATUS_LABEL). EXTRACT: every
+  // colour + label traces to the kanban colour map / the label map; the raw code stays as a title for traceability.
+  function _statusChip(ds) {
+    var color = (window.KanbanLens && window.KanbanLens.statusColor) ? window.KanbanLens.statusColor(ds) : '#6c7a89';
+    var chip = el('span', 'idmp-stchip'); chip.title = 'DocStatus · ' + ds;
+    var dot = el('span', 'dot'); dot.style.background = color; chip.appendChild(dot);
+    chip.appendChild(el('span', null, DOCSTATUS_LABEL[ds] || ds));
+    return chip;
+  }
   // better-sqlite3-shaped shim over the sql.js handle — the engines are node-witness API (prepare().get/.all).
   // ad_seed.db is a column SLICE of ad_full.db: an engine query touching an absent column (e.g.
   // c_doctype.iscanbereactivated) returns NO ROW instead of throwing → the engine's conservative default
