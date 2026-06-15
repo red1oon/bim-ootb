@@ -197,6 +197,17 @@
   .idmp-grid tr:nth-child(even) td { background:#f6f8fb; }
   .idmp-grid tr:hover td { background:var(--idmp-hover); }
   .idmp-grid tr.sel td { background:var(--idmp-sel); }
+  /* GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select checkbox column + the gear/batch toolbar. */
+  .idmp-grid th.idmp-cbcol, .idmp-grid td.idmp-cbcol { width:30px; text-align:center; padding:4px 6px; cursor:default; }
+  .idmp-grid td.idmp-cbcol input, .idmp-card-cb { width:15px; height:15px; cursor:pointer; }
+  .idmp-card-cb { margin-right:8px; flex:0 0 auto; }
+  #idmp-batchbar { display:none; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 10px; margin-bottom:6px;
+    background:#eef4ff; border:1px solid var(--idmp-border); border-radius:7px; font-size:12.5px; position:sticky; top:0; z-index:3; }
+  #idmp-batchbar .idmp-batch-lead { display:inline-flex; align-items:center; gap:5px; font-weight:600; color:#23477a; }
+  #idmp-batchbar .idmp-batch-act { padding:4px 11px; border:1px solid #2c6; border-radius:5px; background:#e9fbef; color:#176b33; cursor:pointer; font-size:12px; }
+  #idmp-batchbar .idmp-batch-act:hover { background:#d6f5e1; }
+  #idmp-batchbar .idmp-batch-none { color:var(--idmp-muted); font-style:italic; }
+  #idmp-batchbar .idmp-batch-clear { margin-left:auto; border:none; background:none; cursor:pointer; color:var(--idmp-muted); font-size:14px; }
   /* MOBILE_CARDS.md §2/§3 — mobile .acc card list (HIDDEN on desktop; the grid is canonical >760px). */
   .idmp-cards { display:none; }
   .idmp-cards-empty { color:#888; padding:18px; text-align:center; }
@@ -478,7 +489,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=12"></script>
+<script src="idmp_pills.js?v=13"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -528,6 +539,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _records = [];
   var _recIdx = 0;
   var _viewMode = 'grid';    // 'grid' | 'form'
+  var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
@@ -1178,6 +1190,49 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
     document.body.appendChild(ov);
   }
+  // ── GRID_BATCH_FORM_PILL_SPEC item 5 — the form-view action toolbar relocated INTO the pill rail (red-pill
+  //    "just the pill" hides #idmp-toolbar, so New/Save/Process must live on the pill). Each binds BY ID to a
+  //    REAL existing handler — never forks a verb: New/Save = the CRUD ring + its #cfSave; Process = the FSM seam.
+  function _openCrudRing() {   // = the ✎ CRUD toolbar button (New/Save/Delete bundled in the ring), reused
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn || !_crudHas(tn)) { status('CRUD ring — this table is not editable (not in crud_ops)'); return; }
+    try { var ck = document.getElementById('crudModeCk'); if (ck && !ck.checked) { ck.checked = true; ck.dispatchEvent(new Event('change')); } } catch (e) {}
+    window.__crud.enable();
+    var tries = 0; (function tryOpen() { if (window.__crud.openRing && window.__crud.store && window.__crud.store()) { window.__crud.openRing(tn); console.log('§FORM-PILL crud-ring table=' + tn + ' record=' + _curRecPk()); } else if (tries++ < 30) { setTimeout(tryOpen, 60); } })();
+  }
+  function _formSave() {        // = iDempiere Save: persist the edits in the open CRUD overlay form (its #cfSave)
+    var sv = document.getElementById('cfSave');
+    if (sv) { sv.click(); console.log('§FORM-PILL save=clicked'); }
+    else { status('Save — open New or Edit a record first (nothing being edited)'); console.log('§FORM-PILL save=no-open-form'); }
+  }
+  function _showProcessChooser() {   // = iDempiere Process ▶: the record's legal DocAction set (the _fsmCtx seam)
+    var tab = _curTab(), rec = _records[_recIdx];
+    var ctx = (tab && rec) ? _fsmCtx(tab, rec) : null;
+    console.log('§FORM-PILL process-chooser record=' + (ctx ? ctx.recId : 'none') + ' legal=[' + (ctx ? ctx.legal.join(',') : '') + ']');
+    var old = document.getElementById('idmp-proc-ov'); if (old) old.remove();
+    var ov = el('div', null); ov.id = 'idmp-proc-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    var box = el('div', null);
+    box.style.cssText = 'background:#15101a;border:1px solid #4a2f44;border-radius:12px;padding:16px 18px;width:min(360px,94vw);color:#ecdcea;font:13px system-ui';
+    var hdr = el('div', null, 'Process ▶' + (ctx ? ('  ·  ' + (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds) : ''));
+    hdr.style.cssText = 'font-weight:700;font-size:15px;margin:0 0 12px;color:#fbeaf7'; box.appendChild(hdr);
+    if (!ctx) { var n0 = el('div', null, 'This record is not a document (no DocStatus to process).'); n0.style.color = '#c4a8c0'; box.appendChild(n0); }
+    else if (!ctx.legal.length) { var n1 = el('div', null, 'No legal actions from ' + ctx.ds + '.'); n1.style.color = '#c4a8c0'; box.appendChild(n1); }
+    else ctx.legal.forEach(function (act) {
+      var b = el('button', null, ACTION_LABEL[act] || act);
+      b.style.cssText = 'display:block;width:100%;text-align:left;margin:5px 0;background:#1e1622;color:#bff0dd;border:1px solid #2c6;border-radius:7px;padding:8px 12px;cursor:pointer;font-size:13px';
+      b.addEventListener('click', function () {
+        var res = ctx.dispatch(act);
+        console.log('§FORM-PILL process record=' + ctx.recId + ' act=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
+        ov.remove(); if (res.ok) refreshForm(); else window.alert('Action ' + (ACTION_LABEL[act] || act) + ' rejected: ' + res.reason);
+      });
+      box.appendChild(b);
+    });
+    var close = el('button', null, 'Close'); close.style.cssText = 'margin-top:12px;background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:5px 14px;cursor:pointer';
+    close.onclick = function () { ov.remove(); }; box.appendChild(close);
+    ov.appendChild(box); ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
   function renderTabStrip() {
     var w = _curWin(); var strip = $('idmp-tabstrip'); strip.style.display = 'flex'; strip.innerHTML = '';
     (w.tabs || []).forEach(function (tab, i) {
@@ -1258,7 +1313,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var orderBy = tab.orderByClause && tab.orderByClause.indexOf('@') < 0 ? tab.orderByClause : null;
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
-    _recIdx = 0; _setSel(tab);
+    _recIdx = 0; _gridSel = Object.create(null); _setSel(tab);   // fresh record set → clear any grid multi-select (item 4)
     // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
     _curPostingDoc = _isPostingDoc(tab.tableName);
     if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
@@ -1305,18 +1360,83 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     else host.appendChild(buildForm(tab));
     updateStatus(tab);
     refreshForm();
+    // item 5 — re-evaluate showWhen:"form-view" pills now the view (grid/form) is settled.
+    if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
+  }
+  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select keyed by record PK (survives a grid re-render) + a batch
+  //   "gear" toolbar that fans _fsmCtx(tab,rec).dispatch over the LEGAL-ACTION INTERSECTION of the selection.
+  function _pkOf(tab, rec) { return String(recVal(rec, _keyCol(tab))); }
+  function _selectedRecs(tab) { return _records.filter(function (r) { return _gridSel[_pkOf(tab, r)]; }); }
+  function _renderBatchBar(tab) {
+    var bar = document.getElementById('idmp-batchbar'); if (!bar) return;
+    bar.innerHTML = '';
+    var sel = _selectedRecs(tab);
+    if (!sel.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    var gear = (window.ICONS && window.ICONS.settings) ? window.ICONS.settings.svg : '<circle cx="12" cy="12" r="3"/>';
+    var lead = el('span', 'idmp-batch-lead');
+    lead.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + gear + '</svg> ' + sel.length + ' selected';
+    bar.appendChild(lead);
+    // legal-action INTERSECTION across the selected DOC records (only tid 259 / DOC_FAMILY records contribute)
+    var ctxs = sel.map(function (r) { return _fsmCtx(tab, r); }).filter(Boolean);
+    var inter = null;
+    ctxs.forEach(function (c) { inter = (inter === null) ? c.legal.slice() : inter.filter(function (a) { return c.legal.indexOf(a) >= 0; }); });
+    inter = inter || [];
+    if (ctxs.length && inter.length) {
+      inter.forEach(function (act) {
+        var btn = el('button', 'idmp-batch-act', ACTION_LABEL[act] || act);
+        btn.setAttribute('data-batch-action', act);
+        btn.addEventListener('click', function () { _runBatch(tab, act); });
+        bar.appendChild(btn);
+      });
+    } else {
+      bar.appendChild(el('span', 'idmp-batch-none', ctxs.length ? 'no action legal for all selected' : 'not a document table'));
+    }
+    var clr = el('button', 'idmp-batch-clear', '✕'); clr.title = 'Clear selection';
+    clr.addEventListener('click', function () { _gridSel = Object.create(null); renderBody(); });
+    bar.appendChild(clr);
+  }
+  function _runBatch(tab, act) {
+    var sel = _selectedRecs(tab), ok = 0, rejected = [];
+    sel.forEach(function (r) {
+      var c = _fsmCtx(tab, r);
+      if (!c || c.legal.indexOf(act) < 0) { rejected.push((c ? c.recId : _pkOf(tab, r)) + ':illegal'); return; }
+      var res = c.dispatch(act);
+      if (res.ok) ok++; else rejected.push(c.recId + ':' + res.reason);
+    });
+    console.log('§GRID-BATCH table=' + tab.tableName + ' action=' + act + ' selected=' + sel.length +
+      ' ok=' + ok + ' rejected=[' + rejected.join(',') + ']');
+    renderBody();   // re-render grid: DocStatus chips advance, still-selected rows persist by PK, batch bar re-folds
   }
   function buildGrid(tab) {
     var cols = _displayFields(tab).slice(0, 7);
+    var batchbar = el('div'); batchbar.id = 'idmp-batchbar'; batchbar.style.display = 'none';   // item 4 — the gear/batch toolbar
     var table = el('table', 'idmp-grid');
     var thead = el('thead'); var htr = el('tr');
+    var thSel = el('th', 'idmp-cbcol');   // select-all
+    var allCk = el('input'); allCk.type = 'checkbox'; allCk.title = 'Select all'; allCk.id = 'idmp-grid-selall';
+    allCk.checked = _records.length > 0 && _selectedRecs(tab).length === _records.length;
+    allCk.addEventListener('click', function (e) { e.stopPropagation(); });
+    allCk.addEventListener('change', function () {
+      _records.forEach(function (r) { if (allCk.checked) _gridSel[_pkOf(tab, r)] = 1; else delete _gridSel[_pkOf(tab, r)]; });
+      table.querySelectorAll('tbody input[data-batch-cb]').forEach(function (cb) { cb.checked = allCk.checked; });
+      var cards = document.querySelector('.idmp-cards'); if (cards) cards.querySelectorAll('input[data-batch-cb]').forEach(function (cb) { cb.checked = allCk.checked; });
+      _renderBatchBar(tab);
+    });
+    thSel.appendChild(allCk); htr.appendChild(thSel);
     cols.forEach(function (f) { htr.appendChild(el('th', null, f.name)); });
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
-    if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = cols.length || 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
+    if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
     _records.forEach(function (rec, i) {
       var tr = el('tr'); tr.dataset.i = i;
+      var pk = _pkOf(tab, rec);
       tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
+      var tdCk = el('td', 'idmp-cbcol');
+      var ck = el('input'); ck.type = 'checkbox'; ck.setAttribute('data-batch-cb', '1'); ck.setAttribute('data-pk', pk); ck.checked = !!_gridSel[pk];
+      ck.addEventListener('click', function (e) { e.stopPropagation(); });   // checkbox ≠ open-form
+      ck.addEventListener('change', function () { if (ck.checked) _gridSel[pk] = 1; else delete _gridSel[pk]; _renderBatchBar(tab); var sa = document.getElementById('idmp-grid-selall'); if (sa) sa.checked = _selectedRecs(tab).length === _records.length; });
+      tdCk.appendChild(ck); tr.appendChild(tdCk);
       cols.forEach(function (f) { var td = el('td', null, fmt(f, recVal(rec, f.columnName))); td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td); });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
       tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       tb.appendChild(tr);
@@ -1326,8 +1446,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // MOBILE_CARDS.md §2/§3 — ONE DOM, two skins: the desktop table (UNCHANGED above) + a mobile .acc card
     // list. CSS toggles which shows (.idmp-cards{display:none} desktop; @≤760 .idmp-grid hidden, cards shown).
     var wrap = el('div', 'idmp-listwrap');
+    wrap.appendChild(batchbar);
     wrap.appendChild(table);
     wrap.appendChild(_buildCards(tab));
+    setTimeout(function () { _renderBatchBar(tab); }, 0);   // fold the batch bar once the wrap is in the DOM
     return wrap;
   }
   // MOBILE_CARDS.md §3 — one .acc card per record (reuses the ad_ui.js/accts_posted .acc/.hd/.bd/.lbl/.chv idiom):
@@ -1346,6 +1468,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var title = identFields.map(function (f) { return fmt(f, recVal(rec, f.columnName)); })
         .filter(function (v) { return v != null && v !== ''; }).join(' · ') || ('Record ' + (i + 1));
       var hd = el('div', 'hd');
+      var pk = _pkOf(tab, rec);
+      var ck = el('input'); ck.type = 'checkbox'; ck.className = 'idmp-card-cb'; ck.setAttribute('data-batch-cb', '1'); ck.setAttribute('data-pk', pk); ck.checked = !!_gridSel[pk];   // item 4 — multi-select on mobile
+      ck.addEventListener('click', function (e) { e.stopPropagation(); });
+      ck.addEventListener('change', function () { if (ck.checked) _gridSel[pk] = 1; else delete _gridSel[pk]; _renderBatchBar(tab); });
+      hd.appendChild(ck);
       var lbl = el('span', 'lbl');
       var chv = el('span', 'chv', '▶'); lbl.appendChild(chv);
       lbl.appendChild(el('span', 'idmp-card-title', title));
@@ -1428,7 +1555,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     for (var k in rec) if (k.toLowerCase() === lc) return k;
     return col;
   }
-  function buildDocActionBar(tab, rec) {
+  // §FSM-CTX (GRID_BATCH_FORM_PILL_SPEC item 4) — ONE doc-action resolution seam shared by the FORM bar
+  //   (buildDocActionBar) AND the GRID batch bar (W-GRID-BATCH) AND the form Process ▶ pill (item 5). Returns the
+  //   record's legal FSM action set + an in-memory dispatch(act) — the SAME AdDocFsm path the form bar always used,
+  //   factored so the batch fan-out is "AdDocFsm.dispatch over N rows", NOT a forked verb. null when the table is
+  //   not a walked DocAction table (tid 259 / DOC_FAMILY) or the record carries no DocStatus.
+  function _fsmCtx(tab, rec) {
     if (!window.AdDocFsm || !rec) return null;
     var tid = Number(tab.tableId);
     if (tid !== 259 && !window.AdDocFsm.DOC_FAMILY[tid]) return null;   // not a walked DocAction table
@@ -1443,15 +1575,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var legal;
     try { legal = (tid === 259) ? window.AdDocFsm.legalActionsOrder(b, fsmRec) : window.AdDocFsm.legalActionsFor(b, tid, fsmRec); }
     catch (e) { console.log('§AD-DOCFSM-LIVE table=' + tid + ' err=' + e.message); return null; }
-    var recId = recVal(rec, _keyCol(tab));
-    console.log('§AD-DOCFSM-LIVE table=' + tid + '(' + tab.tableName + ') record=' + recId + ' status=' + ds +
-      ' legal=[' + legal.join(',') + '] periodOpen=' + po.open + '(' + po.why + ') backDate=true(named-default)');
-    var bar = el('div', 'idmp-docfsm');
-    bar.appendChild(el('span', 'chip st-' + ds, (DOCSTATUS_LABEL[ds] || ds) + ' · ' + ds));
-    legal.forEach(function (act) {
-      var btn = el('button', null, ACTION_LABEL[act] || act);
-      btn.setAttribute('data-doc-action', act);
-      btn.addEventListener('click', function () {
+    return {
+      tid: tid, doctypeId: doctypeId, ds: ds, po: po, legal: legal, recId: recVal(rec, _keyCol(tab)),
+      // dispatch(act) — in-memory transition (same grain as the form bar); on ok mutates rec.DocStatus. The signed
+      //   persist path stays the kernel-ops/CRUD lane (NOT invented here). Returns the FSM result {ok,from,to,reason}.
+      dispatch: function (act) {
         var opts = null;
         if (tid === 259 && doctypeId) {
           var dt = b.prepare('SELECT docsubtypeso FROM c_doctype WHERE c_doctype_id=?').get(doctypeId);
@@ -1459,9 +1587,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         var res = (tid === 259) ? window.AdDocFsm.dispatchOrder(b, fsmRec, act, opts)
                                 : window.AdDocFsm.dispatchFor(b, tid, fsmRec, act);
-        console.log('§AD-DOCFSM-LIVE table=' + tid + '(' + tab.tableName + ') record=' + recId +
+        if (res.ok) rec[_recKey(rec, 'DocStatus')] = res.to;
+        return res;
+      }
+    };
+  }
+  function buildDocActionBar(tab, rec) {
+    var ctx = _fsmCtx(tab, rec); if (!ctx) return null;
+    console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId + ' status=' + ctx.ds +
+      ' legal=[' + ctx.legal.join(',') + '] periodOpen=' + ctx.po.open + '(' + ctx.po.why + ') backDate=true(named-default)');
+    var bar = el('div', 'idmp-docfsm');
+    bar.appendChild(el('span', 'chip st-' + ctx.ds, (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds));
+    ctx.legal.forEach(function (act) {
+      var btn = el('button', null, ACTION_LABEL[act] || act);
+      btn.setAttribute('data-doc-action', act);
+      btn.addEventListener('click', function () {
+        var res = ctx.dispatch(act);
+        console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId +
           ' clicked=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
-        if (res.ok) { rec[_recKey(rec, 'DocStatus')] = res.to; refreshForm(); }
+        if (res.ok) refreshForm();
         else window.alert('Action ' + (ACTION_LABEL[act] || act) + ' rejected: ' + res.reason);
       });
       bar.appendChild(btn);
@@ -2220,6 +2364,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
+      // GRID_BATCH_FORM_PILL_SPEC item 5 — form-view action toolbar relocated into the pill (red-pill hides
+      //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
+      formproc: function () { _showProcessChooser(); },
+      formnew: function () { _openCrudRing(); },
+      formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
       editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
@@ -2272,6 +2421,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     // §AD-GATE — the host answer for showWhen:"posting-doc" pills: true only when a posting document is open.
     window.IdmpPillDocGate = function () { return _curPostingDoc; };
+    // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills surface ONLY
+    //   with a record open in FORM view (so they don't clutter the grid / front door). renderBody re-evaluates.
+    window.IdmpPillFormGate = function () { return !!(_session && _curTab() && _viewMode === 'form'); };
     // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
     window.IdmpPillPosGate = function () {
       try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }

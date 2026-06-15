@@ -13,6 +13,33 @@
       "note": "\u00a7D ERP_BOTTOM_BAR_AND_LIFECYCLE \u2014 master toggle. OUR design (default) = just the pill: classic iDempiere chrome (toolbar icons) hidden, the pill IS the UI. Press red pill (or ',' \u2014 same shortcut as BIM Doc Mode) \u2192 reveal the familiar iDempiere L&F; in classic mode our lens pills step aside (only the red pill remains). Persisted in localStorage. NEVER stage-gated."
     },
     {
+      "id": "formnew",
+      "name": "New record",
+      "key": "",
+      "icon": "plus",
+      "showWhen": "form-view",
+      "order": 0.3,
+      "note": "GRID_BATCH_FORM_PILL_SPEC item 5 — the iDempiere New toolbar action relocated into the pill (red-pill 'just the pill' hides #idmp-toolbar). Opens the CRUD ring on the current table (New/Save/Delete bundled — reuses _openCrudRing, the SAME logic as the ✎ CRUD toolbar button; never forks the verb). §AD-GATE showWhen:form-view — surfaces only with a record open in FORM view (IdmpPillFormGate); off the bar in grid / at the front door. plus glyph (Lucide verbatim)."
+    },
+    {
+      "id": "formsave",
+      "name": "Save",
+      "key": "",
+      "icon": "save",
+      "showWhen": "form-view",
+      "order": 0.4,
+      "note": "GRID_BATCH_FORM_PILL_SPEC item 5 — the iDempiere Save toolbar action: commits the edits in the open CRUD overlay form (clicks its #cfSave). Honest toast when nothing is being edited. §AD-GATE showWhen:form-view. save glyph (Lucide verbatim, already in icons.js)."
+    },
+    {
+      "id": "formproc",
+      "name": "Process",
+      "key": "",
+      "icon": "next",
+      "showWhen": "form-view",
+      "order": 0.5,
+      "note": "GRID_BATCH_FORM_PILL_SPEC item 5 — the iDempiere Process ▶ (DocAction) toolbar action: opens a chooser of the current record's LEGAL FSM action set (the _fsmCtx seam, same AdDocFsm path as the form DocAction bar and the grid batch bar). Click dispatches in-memory + repaints. §AD-GATE showWhen:form-view. next glyph (forward arrow, Lucide verbatim). Print maps to the existing `reports` pill (NON-INVENT, no duplicate)."
+    },
+    {
       "id": "posted",
       "name": "Accts Posted",
       "key": "",
