@@ -276,10 +276,13 @@
   .idmp-login-demo.installing { opacity:.6; cursor:progress; }
   @keyframes idmp-demo-pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
   /* tenant delete affordance (NEW_CLIENT_MGMT — reverse of install) + its red-rim warning */
+  /* Delete affordance is ALWAYS faintly visible on every deletable tenant (was opacity:0 = hover-only,
+     so on a glance only the hovered row showed it, and on touch — no hover — it was unreachable). Faint
+     by default → brightens on row hover → red on button hover. Consistent across all resident tenants. */
   .idmp-tenant-del { margin-left:8px; flex:0 0 auto; width:28px; height:28px; padding:0; border:1px solid transparent;
-    background:none; border-radius:6px; color:var(--idmp-muted); cursor:pointer; opacity:0; transition:.12s;
+    background:none; border-radius:6px; color:var(--idmp-muted); cursor:pointer; opacity:.4; transition:.12s;
     display:flex; align-items:center; justify-content:center; }
-  .idmp-login-user:hover .idmp-tenant-del { opacity:.65; }
+  .idmp-login-user:hover .idmp-tenant-del { opacity:.7; }
   .idmp-tenant-del:hover { opacity:1; color:#e5484d; background:#fdeced; border-color:#f3c0c2; }
   .idmp-del-overlay { position:fixed; inset:0; background:rgba(8,10,16,.55); z-index:100000;
     display:flex; align-items:center; justify-content:center; }
