@@ -1261,8 +1261,9 @@
   function _resolveDisplay(rec, colName) {
     var val = _caseGet(rec, colName);
     if (val === null || val === undefined || val === '') return null;
-    // If column ends with _ID, try FK resolution
-    if (colName.indexOf('_ID') >= 0 && typeof ADData !== 'undefined' && ADData.resolveFK) {
+    // REFRESOLVE_SPEC.md W-REFRESOLVE: attempt reference resolution for EVERY column (not just _ID) —
+    // List refs (PaymentRule/DeliveryVia) carry no _ID; resolveFK returns null when nothing resolves.
+    if (typeof ADData !== 'undefined' && ADData.resolveFK) {
       var resolved = ADData.resolveFK(_db, colName, val);
       if (resolved) return resolved;
     }
