@@ -489,7 +489,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=9"></script>
+<script src="crud_overlay.js?v=10"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1034,6 +1034,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     btn('◀◀', 'First record', true, function () { _recIdx = 0; refreshForm(); });
     btn('◀', 'Previous record', true, function () { if (_recIdx > 0) _recIdx--; refreshForm(); });
     var navSpan = el('span', 'nav'); navSpan.id = 'idmp-recnav'; tb.appendChild(navSpan);
+    // Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING — RECORD-INFO POPUP, W-RECINFO). The iDempiere "(i)" record-info
+    // affordance at the rec/total indicator: who/when last touched this record, read from the immutable op-log
+    // (CORE.recordInfo) + the row's own audit columns. Always-on (no AD_ChangeLog gate, unlike 🕒 Log).
+    btn('ⓘ', 'Record info — who created / last updated this record', true, function () { _showRecordInfo(); });
     btn('▶', 'Next record', true, function () { if (_recIdx < _records.length - 1) _recIdx++; refreshForm(); });
     btn('▶▶', 'Last record', true, function () { _recIdx = Math.max(0, _records.length - 1); refreshForm(); });
     sep();
@@ -1114,6 +1118,60 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       box.appendChild(tbl);
     }
     var closeBtn = el('button', null, 'Close'); closeBtn.style.cssText = 'margin-top:12px;background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:5px 14px;cursor:pointer';
+    closeBtn.onclick = function () { ov.remove(); };
+    box.appendChild(closeBtn);
+    ov.appendChild(box);
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
+
+  // Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING — RECORD-INFO POPUP, W-RECINFO). The iDempiere "(i)" popup:
+  // record-level who/when. CORE.recordInfo folds the immutable op-log to {created,updated,count} (always-on,
+  // record-grain — distinct from the AD-gated per-column 🕒 Log). We also show the row's own audit columns
+  // (Created/CreatedBy/Updated/UpdatedBy) for seed records the op-log never touched. NON-INVENT: every value
+  // is a real op row or a materialized audit col; user ids resolve through _userName, ts through fmtTs.
+  function _showRecordInfo() {
+    var rec = _records[_recIdx], tab = _curTab();
+    if (!rec || !tab) { return; }
+    var tn = tab.tableName, pk = recVal(rec, _keyCol(tab));
+    var info = (window.__crud && typeof window.__crud.recordInfo === 'function') ? window.__crud.recordInfo(tn, pk) : null;
+    var fmtTs = (window.__crud && window.__crud.fmtTs) ? window.__crud.fmtTs : function (t) { return t; };
+    // op-log actor ids are session actors (may be names or AD_User ids); _userName resolves ids, passes names.
+    function who(a) { return a == null ? '—' : (/^\d+$/.test(String(a)) ? _userName(Number(a)) : String(a)); }
+    console.log('§RECINFO-LIVE table=' + tn + ' record=' + pk + ' opLog=' + (info ? ('created=' + (info.created && who(info.created.actor)) + ' updated=' + (info.updated && who(info.updated.actor)) + ' ops=' + info.count) : 'none(baseline)'));
+    var old = document.getElementById('idmp-recinfo-ov'); if (old) old.remove();
+    var ov = el('div', null); ov.id = 'idmp-recinfo-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    var box = el('div', null);
+    box.style.cssText = 'background:#15101a;border:1px solid #4a2f44;border-radius:12px;padding:16px 18px;width:min(440px,94vw);max-height:70vh;overflow:auto;color:#ecdcea;font:13px system-ui';
+    var hdr = el('div', null, 'ⓘ Record Info — ' + tn + ' #' + (pk == null ? '(new)' : pk));
+    hdr.style.cssText = 'font-weight:700;font-size:15px;margin:0 0 12px;color:#fbeaf7';
+    box.appendChild(hdr);
+    function rowLine(label, value) {
+      var r = el('div', null); r.style.cssText = 'display:flex;justify-content:space-between;gap:14px;padding:5px 0;border-bottom:1px solid #2a1a2f';
+      var l = el('span', null, label); l.style.cssText = 'color:#c4a8c0;font-weight:600';
+      var v = el('span', null, value == null || value === '' ? '—' : String(value)); v.style.cssText = 'color:#bff0dd;text-align:right';
+      r.appendChild(l); r.appendChild(v); box.appendChild(r);
+    }
+    // op-log activity (this session's signed edits) — the W-RECINFO fold.
+    if (info) {
+      var sub1 = el('div', null, 'Activity (signed op-log)'); sub1.style.cssText = 'margin:4px 0 2px;color:#9a7f96;font-size:11px;text-transform:uppercase;letter-spacing:.04em'; box.appendChild(sub1);
+      if (info.created) rowLine('Created', who(info.created.actor) + ' · ' + fmtTs(info.created.ts));
+      if (info.updated) rowLine('Last updated', who(info.updated.actor) + ' · ' + fmtTs(info.updated.ts));
+      rowLine('Changes (ops)', info.count);
+    }
+    // the record's own audit columns (seed / materialized) — present even when the op-log never touched it.
+    var aCreatedBy = recVal(rec, 'CreatedBy'), aCreated = recVal(rec, 'Created'),
+        aUpdatedBy = recVal(rec, 'UpdatedBy'), aUpdated = recVal(rec, 'Updated');
+    if (aCreatedBy != null || aCreated != null || aUpdatedBy != null || aUpdated != null) {
+      var sub2 = el('div', null, 'Audit columns'); sub2.style.cssText = 'margin:12px 0 2px;color:#9a7f96;font-size:11px;text-transform:uppercase;letter-spacing:.04em'; box.appendChild(sub2);
+      if (aCreatedBy != null || aCreated != null) rowLine('Created', who(aCreatedBy) + (aCreated != null ? ' · ' + aCreated : ''));
+      if (aUpdatedBy != null || aUpdated != null) rowLine('Updated', who(aUpdatedBy) + (aUpdated != null ? ' · ' + aUpdated : ''));
+    }
+    if (!info && aCreatedBy == null && aCreated == null && aUpdatedBy == null && aUpdated == null) {
+      var em = el('div', null, 'No audit info for this record.'); em.style.color = '#8a6f86'; box.appendChild(em);
+    }
+    var closeBtn = el('button', null, 'Close'); closeBtn.style.cssText = 'margin-top:14px;background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:5px 14px;cursor:pointer';
     closeBtn.onclick = function () { ov.remove(); };
     box.appendChild(closeBtn);
     ov.appendChild(box);

@@ -159,15 +159,44 @@
     return out;
   }
 
+  // ── Item 2 (FRONTEND_LANE_MASTER §OUTSTANDING) — WIRE FULL DOCACTION SET PER AD. legalDocActions: the
+  // CORE↔FSM seam the Process ▶ ring consults so it surfaces the legal action set for the record's CURRENT
+  // status (from AD/FSM, `AdDocFsm.legalActions`), NOT the hardcoded `{action:"CO"}` in crud_ops.json. The FSM
+  // is injected (window.AdDocFsm in-browser, required headless) so CORE stays decoupled + witnessable.
+  // Returns {doctype, docBaseType, actions:[…]} or null when the FSM/db is absent. Witness: W-DOCACTION-FULL.
+  function legalDocActions(fsm, fsmDb, doctypeId, fromStatus) {
+    if (!fsm || !fsmDb || typeof fsm.legalActions !== 'function') return null;
+    try { var la = fsm.legalActions(fsmDb, doctypeId, fromStatus); return (la && la.actions && la.actions.length) ? la : null; }
+    catch (e) { return null; }
+  }
+
   // docActionOutcome — derive the DocAction result DETERMINISTICALLY (E2 dry-run; E3 = real completeIt()).
-  // CO iff every docAction.requires col is non-empty in `values`; else IP (unsatisfied condition — a
-  // legitimate business non-completion, NOT an error). No Date.now/Math.random — replay-safe, non-invent.
-  function docActionOutcome(entry, values) {
+  // No Date.now/Math.random — replay-safe, non-invent.
+  // Item 2: when a CHOSEN action + the FSM are supplied (opts.{chosen,fsm,fsmDb,doctypeId}), the outcome is
+  // routed through `AdDocFsm.dispatch` so the FULL set works — VO/CL/RC/RA/RE/PO, not just CO. The completeIt
+  // (CO) precondition still gates on docAction.requires (an incomplete doc → IP, never a fake CO). RC/RA route
+  // to a REVERSAL (status → RE: a reversing document, never a silent un-complete back to DR/IP on a posted doc).
+  // An action illegal from the current status is reported (outcome 'illegal') with the legal set, never applied.
+  // DEFAULT (no FSM/chosen) = the legacy hardcoded-CO requires-gate, UNCHANGED — the bridge is opt-in.
+  function docActionOutcome(entry, values, opts) {
     var da = entry.docAction; if (!da) return null;
+    opts = opts || {};
+    var fromStatus = opts.from || da.from || 'DR';
+    if (opts.chosen && opts.fsm && opts.fsmDb && opts.doctypeId != null && typeof opts.fsm.dispatch === 'function') {
+      var disp;
+      try { disp = opts.fsm.dispatch(opts.fsmDb, opts.doctypeId, fromStatus, opts.chosen); } catch (e) { disp = { ok: false, reason: 'fsm-error' }; }
+      if (!disp.ok) return { action: opts.chosen, from: fromStatus, to: fromStatus, outcome: 'illegal', unmet: [], legalActions: disp.legalActions || [], reason: disp.reason };
+      if (opts.chosen === 'CO') {                              // completeIt still honours the field preconditions
+        var unmetC = (da.requires || []).filter(function (c) { var v = values ? values[c] : undefined; return v == null || String(v).trim() === ''; });
+        if (unmetC.length) return { action: 'CO', from: fromStatus, to: 'IP', outcome: 'in-progress', unmet: unmetC, legalActions: disp.legalActions };
+      }
+      var isReversal = opts.chosen === 'RC' || opts.chosen === 'RA';   // reverse-correct / reverse-accrual → posts a reversal
+      return { action: opts.chosen, from: fromStatus, to: disp.to, outcome: isReversal ? 'reversal' : 'success', unmet: [], reversal: isReversal, legalActions: disp.legalActions };
+    }
     var reqs = da.requires || [];
     var unmet = reqs.filter(function (c) { var v = values ? values[c] : undefined; return v == null || String(v).trim() === ''; });
     var ok = unmet.length === 0;
-    return { action: da.action || 'CO', from: da.from || 'DR', to: ok ? (da.to || 'CO') : 'IP', outcome: ok ? 'success' : 'in-progress', unmet: unmet };
+    return { action: da.action || 'CO', from: fromStatus, to: ok ? (da.to || 'CO') : 'IP', outcome: ok ? 'success' : 'in-progress', unmet: unmet };
   }
 
   // buildOp — the op the kernel WOULD apply (E2 dry / E3 live). One op per CRUD action.
@@ -204,9 +233,12 @@
       return base;
     }
     if (verb === 'process') {                              // DocAction — runs the doc state machine, not a row write
-      var r = docActionOutcome(entry, values) || { action: 'CO', from: 'DR', to: 'IP', outcome: 'in-progress', unmet: [] };
+      // Item 2: pass a chosen action + FSM (ctx.{chosen,fsm,fsmDb,doctypeId}) → the full set; default = CO.
+      var r = docActionOutcome(entry, values, { chosen: ctx.chosen, fsm: ctx.fsm, fsmDb: ctx.fsmDb, doctypeId: ctx.doctypeId, from: ctx.from })
+              || { action: 'CO', from: 'DR', to: 'IP', outcome: 'in-progress', unmet: [] };
       base.op_type = 'DOC_ACTION'; base.id = ctx.id == null ? null : ctx.id;
       base.action = r.action; base.from = ctx.from || r.from; base.to = r.to; base.outcome = r.outcome; base.unmet = r.unmet;
+      if (r.reversal) base.reversal = true;                 // RC/RA — post a reversal, never a silent un-complete
       base.oracle = (entry.docAction && entry.docAction.oracle) || null;
       return base;
     }
@@ -571,13 +603,13 @@
   var CORE = {
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
-    docActionOutcome: docActionOutcome, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
+    docActionOutcome: docActionOutcome, legalDocActions: legalDocActions, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
     normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,
     listOptions: listOptions, splitStatusChange: splitStatusChange,
     docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
     foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
     listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
-    changeLog: changeLog, fmtKernelTs: _fmtKernelTs,                             // Task 2: per-record AD-filtered change trail + iDempiere ts format
+    changeLog: changeLog, recordInfo: recordInfo, fmtKernelTs: _fmtKernelTs,     // Task 2: per-record AD-filtered change trail + iDempiere ts format · Item 3a (W-RECINFO): always-on record-level last-touch
     fieldLineage: fieldLineage,                                                  // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
     draftPut: draftPut, draftGet: draftGet, draftClear: draftClear, draftList: draftList,
     draftDirty: draftDirty, draftChangedCols: draftChangedCols, draftDrift: draftDrift   // Item 1 (W-DRAFT-RESTORE): private draft buffer — unsaved typing, never an official dot
@@ -1229,6 +1261,44 @@
     } catch (e) { return null; }
   }
 
+  // ── Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING) — recordInfo: record-level last-touch (the iDempiere "(i)"
+  // popup), reconstructed from the immutable op-log. UNLIKE changeLog this is ALWAYS-ON (no AD IsChangeLog gate)
+  // and UNLIKE fieldLineage it is record-grain: {created:{actor,ts,opId}, updated:{actor,ts,opId}, count}. The
+  // log already carries actor+ts+sig per op, so Created/CreatedBy/Updated/UpdatedBy (materialized into the tip
+  // via listTip) are READ here straight from the source rather than re-derived — they MATCH by construction.
+  // NON-INVENT: every value is a real op row; ts from the op-log (no Date.now). Read-only. Witness: W-RECINFO.
+  function recordInfo(sideDb, table, recordId, branch) {
+    if (!sideDb || !table) return null;
+    try {
+      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
+      if (!r.length) return null;
+      var want = String(table).toLowerCase(), rid = recordId != null ? String(recordId) : null;
+      var created = null, updated = null, count = 0;
+      r[0].values.forEach(function (row) {
+        var opId = row[0], opType = row[1], ts = row[3], p;
+        try { p = JSON.parse(row[2]); } catch (e) { return; }
+        if (!p || String(p.table || '').toLowerCase() !== want) return;
+        if (opType === 'CRUD_CREATE') {
+          if (rid !== null) {
+            var f = p.fields || {}, pkCol = _ciKey(f, want + '_id');
+            if (!(String(-opId) === rid || (pkCol != null && String(f[pkCol]) === rid))) return;
+          }
+          var cActor = (p.stdDefaults && p.stdDefaults.actor) || null;
+          created = { actor: cActor, ts: ts, opId: opId };
+          updated = updated || { actor: cActor, ts: ts, opId: opId };
+          count++;
+        } else if (opType === 'CRUD_UPDATE') {
+          if (rid !== null && String(p.id) !== rid) return;
+          updated = { actor: p.actor || null, ts: ts, opId: opId };   // last writer wins (ASC order → final = latest)
+          count++;
+        }
+      });
+      if (!count) return null;
+      console.log('§RECINFO table=' + want + ' rec=' + rid + ' createdBy=' + (created && created.actor) + ' updatedBy=' + (updated && updated.actor) + ' ops=' + count + ' (always-on, from op-log)');
+      return { created: created, updated: updated, count: count };
+    } catch (e) { return null; }
+  }
+
   // ── Item 3b (FRONTEND_LANE_MASTER §OUTSTANDING) — fieldLineage: the FULL value history of ONE column,
   // reconstructed as a filtered fold of the op-log. Witness: W-FIELD-LINEAGE. This is the always-on,
   // zero-setup replacement for iDempiere's AD_ChangeLog: NOT gated by IsAllowLogging/IsChangeLog (the log IS
@@ -1698,6 +1768,7 @@
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id, _readBranch()) : null; }, history: history,
                     changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
                     fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col, _readBranch()) : []; },  // Item 3b (W-FIELD-LINEAGE) + BLUE FUTURE view
+                    recordInfo: function (table, id) { return SIDE ? CORE.recordInfo(SIDE, table, id, _readBranch()) : null; },  // Item 3a (W-RECINFO): record-level who/when from the op-log
                     fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
                     toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
