@@ -675,17 +675,23 @@
   function today() { try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; } }
   function entryFor(key) { return STORE && !isMeta(key) && STORE[key] ? (function () { var e = STORE[key]; e.key = key; return e; })() : null; }
 
+  // _ensureStore — load the keyed crud_ops.json store once (idempotent). Shared by Edit-mode enable AND the
+  // host DocAction lane (hostProcess), which fires WITHOUT enabling Edit mode and still needs the store's
+  // entry config + __meta.docPolicy. cb runs once STORE is available (or on load-error, with STORE still null).
+  function _ensureStore(cb) {
+    if (STORE) { cb(); return; }
+    fetch('crud_ops.json').then(function (r) { return r.json(); }).then(function (j) { STORE = j; cb(); })
+      .catch(function (e) { console.warn('§CRUD store load-error', e && e.message); cb(); });
+  }
+
   // ── enable/disable ────────────────────────────────────────────────────────
   function enable() {
     on = true;
-    function go() {
+    _ensureStore(function () {
       buildHots();
       if (!raf) raf = requestAnimationFrame(loop);
       console.log('§CRUD mode=on rings=' + hots.length);
-    }
-    if (STORE) { go(); return; }
-    fetch('crud_ops.json').then(function (r) { return r.json(); }).then(function (j) { STORE = j; go(); })
-      .catch(function (e) { console.warn('§CRUD load-error', e && e.message); });
+    });
   }
   function disable() { on = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } clearHots(); closeRing(); closeForm(); statusBar.className = ''; console.log('§CRUD mode=off'); }
 
@@ -797,6 +803,41 @@
         var from = (db ? CORE.readTip(db, e.key, id, _readBranch()) : null) || (e.docAction && e.docAction.from) || 'DR';
         applyOp(CORE.buildOp('process', e, vals, rec, { id: id, from: from }), e);
       });
+    });
+  }
+
+  // ── hostProcess (S1/J5 — ERP_CRITIC_UX_LANE) — the host-callable parameterized doProcess. iDempiere's OWN
+  // DocAction surfaces (form Process ▶ pill, DocAction bar, grid gear-batch) call this to EXECUTE + SIGN a
+  // chosen action on the SHARED signed lane: applyOp → commitProcess → completeFanout → signed commitGroup →
+  // persist. NO ring STORE entry is required and the ring NEVER opens — the op is built from explicit params.
+  // The host FSM (AdDocFsm via _fsmCtx) decides WHICH action is legal + its transition; this lane signs EXACTLY
+  // that one (no split-brain — `to`/`outcome` come from the caller). ownerGated/oracle reuse the SAME crud_ops
+  // entry the ring path uses (entryFor), so behaviour is identical to the proven W-SO-COMPLETE-UI ring path.
+  // opts = { from, to, outcome, doctypeId, ownerGated, oracle }. Returns the DOC_ACTION op (already fired).
+  function hostProcess(table, id, action, opts) {
+    opts = opts || {};
+    // ensure the crud_ops store is loaded BEFORE building/committing: it carries the entry (ownerGated/oracle)
+    // AND __meta.docPolicy (the fan-out decision table). It is otherwise loaded lazily only on Edit-mode enable —
+    // the ring path toggled ✎ first; iDempiere's pill/bar/batch do NOT, so without this the fan-out would always
+    // gate "no DOCPOLICY" and the owner-gate would be skipped. Idempotent; cached after the first call.
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase();
+      var e = entryFor(key);
+      var from = opts.from || 'DR';
+      var to = opts.to != null ? opts.to : from;
+      var outcome = opts.outcome || 'success';
+      // ownerGated defaults FALSE for a host DocAction: iDempiere governs Complete/Void/Close by ROLE access +
+      // FSM legality + period — NOT by "only the document's creator" (the createdby owner-gate is the glassbowl
+      // field-edit lane's single-writer rule, and it would here read the lit/first row, not op.id). The signed
+      // commit + chain verification still apply (integrity intact). A caller may opt INTO owner-gating via opts.
+      var op = { key: key, table: key, verb: 'process', op_type: 'DOC_ACTION',
+                 ownerGated: !!opts.ownerGated,
+                 op_uuid: null, id: id == null ? null : id,
+                 action: action, from: from, to: to, outcome: outcome, unmet: [],
+                 oracle: opts.oracle || (e && e.docAction && e.docAction.oracle) || null };
+      if (action === 'RC' || action === 'RA') op.reversal = true;
+      console.log('§CRUD-HOSTPROCESS table=' + key + ' id=' + op.id + ' action=' + action + ' from=' + from + ' to=' + to + ' outcome=' + outcome + ' ownerGated=' + op.ownerGated);
+      applyOp(op);
     });
   }
 
@@ -1148,7 +1189,10 @@
       try {
         var or = db.exec('SELECT * FROM c_order WHERE c_order_id=' + Number(op.id) + ' LIMIT 1');
         if (!or.length || !or[0].values.length) { console.log('§SO-COMPLETE fan-out gated: order ' + op.id + ' not in bundle → status-only'); cb(null); return; }
-        var order = {}; or[0].columns.forEach(function (c, i) { order[c] = or[0].values[0][i]; });
+        // lower-case every column key: the engine (completeOrder/buildDoc) reads lower-case fields, and the host
+        // bundle's SELECT * returns ORIGINAL-case columns (C_DocType_ID, IsSOTrx) — without this the doctype reads
+        // undefined → the fan-out wrongly gates as "no DOCPOLICY". glassbowl_data.db was lower-case so it hid this.
+        var order = {}; or[0].columns.forEach(function (c, i) { order[String(c).toLowerCase()] = or[0].values[0][i]; });
         var lr = db.exec('SELECT c_orderline_id, m_product_id, qtyordered FROM c_orderline WHERE c_order_id=' + Number(op.id));
         var lines = (lr.length ? lr[0].values : []).map(function (v) { return { c_orderline_id: v[0], m_product_id: v[1], qtyordered: v[2] }; });
         var policy = CORE.docPolicyFor(STORE, order.c_doctype_id);
@@ -1160,6 +1204,18 @@
       } catch (er) { console.log('§SO-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
       cb(fanout);
     });
+  }
+
+  // _serializeCommit — run a signed commit EXCLUSIVELY. commitGroup is async (it awaits crypto.subtle.digest to
+  // seal the hash chain), so two commits launched on the same sidecar db interleave at the await points and TEAR
+  // the chain — the grid gear-batch fans N completes synchronously, the exact trigger (a later row's write was
+  // silently lost). Chain every signed commit through ONE queue: each reads a stable tip, seals + persists, then
+  // the next begins. task() must return a Promise; a rejected task must not wedge the queue. (S1/J5 hardening.)
+  var _commitChain = Promise.resolve();
+  function _serializeCommit(task) {
+    var run = _commitChain.then(task, task);
+    _commitChain = run.catch(function () {});
+    return run;
   }
 
   // commitProcess — the REAL signed write loop (W-CHAIN), now via §I-K commitGroup (Phase 3, UI tier):
@@ -1178,9 +1234,9 @@
       _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, db, function (gate) {
         if (!gate.ok) { _gateReject(op, gate); return; }
       completeFanout(op, function (fanout) {
-      try {
+      _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe)
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
-        Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
+        return Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
           return Promise.resolve(K.verifyChain(db)).then(function (v) {
             _sidePersist();
@@ -1199,9 +1255,13 @@
             setDocStatus(op.key, op.to, op.outcome, op.unmet);
             docDot(CORE.docLabel(op, fname(op.key)), op);
             toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
+            // S1/J5 — announce the committed DOCUMENT action so a host (iDempiere chrome) re-reads the now-signed
+            // DocStatus through its readTip overlay: the persisted CO shows + survives reload (op-log is the truth).
+            try { global.dispatchEvent(new CustomEvent('overlay:committed',
+              { detail: { table: op.table, op_type: 'DOC_ACTION', id: op.id == null ? null : op.id, to: op.to, action: op.action } })); } catch (ev) {}
           });
         }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); dryProcess(op); });
-      } catch (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); }
+      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); });
       });
       });
     });
@@ -1826,6 +1886,7 @@
 
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
+                    process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,

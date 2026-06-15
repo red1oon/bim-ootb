@@ -512,7 +512,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=11"></script>
+<script src="crud_overlay.js?v=12"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1362,6 +1362,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var orderBy = tab.orderByClause && tab.orderByClause.indexOf('@') < 0 ? tab.orderByClause : null;
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
+    _overlayDocTip(tab, _records);   // S1/J5 — signed DocStatus reads-the-tip (the bundle is immutable; op-log is truth)
     _recIdx = 0; _gridSel = Object.create(null); _setSel(tab);   // fresh record set → clear any grid multi-select (item 4)
     // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
     _curPostingDoc = _isPostingDoc(tab.tableName);
@@ -1570,6 +1571,35 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // value (model-agnostic — any absorbed model with a DocStatus column lights up; no per-model hardcode).
   function _recStatus(rec) { var ds = recVal(rec, 'DocStatus'); return (ds == null || ds === '') ? null : String(ds); }
   function _tabHasStatus(tab) { return !!(_records.length && _records.some(function (r) { return _recStatus(r) != null; })); }
+  // S1/J5 (ERP_CRITIC_UX_LANE) — read-the-tip overlay for DOCUMENT status. A signed DocAction (commitProcess)
+  //   writes the new DocStatus to the kernel op-log (SET_STATUS), NOT the immutable bundle — so the rendered
+  //   status, and its SURVIVAL across reload, must READ THE TIP, the SAME verb the CRUD form (_overlayTip) and
+  //   ad_parser (setTipSource) use. For each loaded record carrying a DocStatus, overlay the latest signed
+  //   SET_STATUS `to`. Branch-aware (Blue Future). No tip / no overlay mounted → rows pass through unchanged.
+  function _overlayDocTip(tab, recs) {
+    if (!recs || !recs.length || !tab || !window.__crud) return;
+    var c = window.__crud;
+    if (typeof c.withSidecar !== 'function' || !c.core || typeof c.core.readTip !== 'function') return;
+    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null; if (!tn) return;
+    // HYDRATE the kernel sidecar from IndexedDB before reading — it is LAZY (null on a fresh page load), so a
+    // synchronous kernelDb() would miss a persisted status and the signed CO would "vanish" on reload. withSidecar
+    // loads it once; we then overlay + repaint the CURRENT view (async), guarding against a navigation meanwhile.
+    c.withSidecar(function (sdb) {
+      if (!sdb || recs !== _records) return;
+      var br = (window.BlueFuture && typeof window.BlueFuture.readBranch === 'function') ? window.BlueFuture.readBranch() : null;
+      var n = 0;
+      recs.forEach(function (r) {
+        var dsKey = _recKey(r, 'DocStatus'); if (!(dsKey in r)) return;
+        var id = recVal(r, _keyCol(tab)); if (id == null) return;
+        var tip = c.core.readTip(sdb, tn, id, br);
+        if (tip != null && String(tip) !== String(r[dsKey])) { r[dsKey] = tip; n++; }
+      });
+      if (n) {
+        console.log('§DOC-TIP overlay table=' + tn + ' rows=' + recs.length + ' advanced=' + n + ' source=readTip(SET_STATUS)' + (br ? ' branch=' + br : ''));
+        if (_viewMode === 'form') refreshForm(); else renderBody();
+      }
+    });
+  }
   // _statusChip(ds) — coloured dot (KanbanLens.statusColor) + human label (DOCSTATUS_LABEL). EXTRACT: every
   // colour + label traces to the kanban colour map / the label map; the raw code stays as a title for traceability.
   function _statusChip(ds) {
@@ -1652,10 +1682,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var legal;
     try { legal = (tid === 259) ? window.AdDocFsm.legalActionsOrder(b, fsmRec) : window.AdDocFsm.legalActionsFor(b, tid, fsmRec); }
     catch (e) { console.log('§AD-DOCFSM-LIVE table=' + tid + ' err=' + e.message); return null; }
+    var theRecId = recVal(rec, _keyCol(tab));
     return {
-      tid: tid, doctypeId: doctypeId, ds: ds, po: po, legal: legal, recId: recVal(rec, _keyCol(tab)),
-      // dispatch(act) — in-memory transition (same grain as the form bar); on ok mutates rec.DocStatus. The signed
-      //   persist path stays the kernel-ops/CRUD lane (NOT invented here). Returns the FSM result {ok,from,to,reason}.
+      tid: tid, doctypeId: doctypeId, ds: ds, po: po, legal: legal, recId: theRecId,
+      // dispatch(act) — S1/J5: the FSM decides legality + the transition (synchronous, the same grain the form bar,
+      //   process chooser + grid batch always shared); on ok it advances rec.DocStatus OPTIMISTICALLY (immediate
+      //   chip/refresh) AND fires __crud.process to EXECUTE + SIGN that exact action on the SHARED signed lane
+      //   (commitProcess → completeFanout → signed commitGroup → persist). The ring NEVER opens. The persisted
+      //   status survives reload via the readTip overlay (_overlayDocTip); a DOC_ACTION commit refolds the view.
+      //   Returns the FSM result {ok,from,to,reason}.
       dispatch: function (act) {
         var opts = null;
         if (tid === 259 && doctypeId) {
@@ -1664,7 +1699,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         var res = (tid === 259) ? window.AdDocFsm.dispatchOrder(b, fsmRec, act, opts)
                                 : window.AdDocFsm.dispatchFor(b, tid, fsmRec, act);
-        if (res.ok) rec[_recKey(rec, 'DocStatus')] = res.to;
+        if (res.ok) {
+          rec[_recKey(rec, 'DocStatus')] = res.to;          // optimistic in-memory advance (immediate UI feedback)
+          if (window.__crud && typeof window.__crud.process === 'function') {
+            try {
+              window.__crud.process(tab.tableName, theRecId, act,
+                { from: res.from, to: res.to, doctypeId: doctypeId,
+                  outcome: (act === 'RC' || act === 'RA') ? 'reversal' : 'success' });
+            } catch (e) { console.log('§FSM-CTX signed-process error table=' + tab.tableName + ' rec=' + theRecId + ' ' + (e && e.message)); }
+          } else {
+            console.log('§FSM-CTX signed-process SKIPPED (__crud.process absent) — in-memory preview only rec=' + theRecId);
+          }
+        }
         return res;
       }
     };
@@ -2058,7 +2104,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // Leg 2: on a committed dictionary edit, invalidate the cached window model + re-fold (re-read AD → repaint).
   // openWindow caches _openWins[winId]; deleting it forces a fresh AD read that now sees the overlaid edit.
   window.addEventListener('overlay:committed', function (e) {
-    var t = (e.detail && e.detail.table) ? String(e.detail.table) : '';
+    var d = e.detail || {};
+    var t = d.table ? String(d.table) : '';
+    // S1/J5 — a signed DOCUMENT action (Complete/Void/Close/ReActivate/…) committed. Re-read the now-signed
+    //   DocStatus onto the loaded records via the readTip overlay + repaint the CURRENT view (no view reset):
+    //   the persisted status shows immediately and survives reload (the bundle is immutable; the op-log is truth).
+    if (d.op_type === 'DOC_ACTION') {
+      try { _overlayDocTip(_curTab(), _records); } catch (er) {}
+      console.log('§DOC-COMMIT-LIVE refold table=' + t + ' id=' + (d.id == null ? '?' : d.id) + ' to=' + (d.to || '?') + ' view=' + _viewMode);
+      if (_viewMode === 'form') refreshForm(); else renderBody();
+      return;
+    }
     if (!/^AD_/i.test(t)) return;                              // only DICTIONARY edits refold the model
     var wid = _activeWin;
     console.log('§AD-SELFEDIT-LIVE refold table=' + t + ' win=' + wid);
