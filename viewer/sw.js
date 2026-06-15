@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v660';   // bump to ship MEP+4D/5D offline DB-load fix. SW changelog dropped 2026-06-16 — git history is the record.
+const CACHE_VERSION = 'v661';   // measure-dot idle-render wake fix (measure.js?v=50). git history is the record.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

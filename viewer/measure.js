@@ -1291,6 +1291,9 @@ function setupMeasure(A) {
       A.measureFirstMarker = null;
       A._measureFirstMesh = null;
     }
+    // S286 idle-render gate: the dot/line/highlight just mutated the scene — wake the
+    // render loop or the blue dot won't paint until the NEXT click happens to wake it.
+    if (A.markDirty) A.markDirty();
     return true;
   };
 
