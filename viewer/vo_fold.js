@@ -62,6 +62,13 @@
     try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
     return 'bim-' + Math.abs((Date.now ? Date.now() : 0) ^ (Math.random() * 1e9 | 0)).toString(16);
   }
+  // §F1 W-FIN-CURRENCY — resolve a currency by ISO_Code first, then CurSymbol (packs carry 'RM', not 'MYR';
+  // MYR.CurSymbol='RM' bridges them). ISO-exact wins. EXTRACT-only — never invent a currency.
+  function _resolveCurrency(db, code) {
+    if (code == null) return null;
+    return _scalar(db, "SELECT C_Currency_ID FROM C_Currency WHERE ISO_Code=? OR CurSymbol=? " +
+      "ORDER BY (ISO_Code=?) DESC, C_Currency_ID LIMIT 1", [code, code, code]);
+  }
   // a deterministic, order-independent digest of the delta → the VO's natural key (idempotency).
   function _digest(voRows) {
     var keys = voRows.map(function (r) {
@@ -87,10 +94,10 @@
     var notes = [];
     if (!voRows || !voRows.length) { notes.push('EMPTY_DELTA no rows to fold'); return { orderId: null, created: created, grandTotal: '0', notes: notes }; }
 
-    // currency: match the pack; fall back to seed default with a logged gap (== proj_fold §F).
-    var curISO = opts.packCurrencyISO || 'USD';
-    var curId = _scalar(db, "SELECT C_Currency_ID FROM C_Currency WHERE ISO_Code=?", [curISO]);
-    if (curId == null) { curId = 100; notes.push('CUR_FALLBACK pack=' + curISO + '→USD(100) (seed lacks ' + curISO + ')'); }
+    // currency (§F1): resolve the pack currency by ISO_Code OR CurSymbol (== proj_fold §F1).
+    var curCode = opts.packCurrencyISO || 'USD';
+    var curId = _resolveCurrency(db, curCode);
+    if (curId == null) { curId = 100; notes.push('CUR_FALLBACK pack=' + curCode + '→USD(100) (seed lacks ' + curCode + ')'); }
 
     // the project this VO amends (find-only — a VO presupposes an existing project; never invent one).
     var projId = _scalar(db, "SELECT C_Project_ID FROM C_Project WHERE Value=?", [building]);
