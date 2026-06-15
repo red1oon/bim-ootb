@@ -446,6 +446,7 @@
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
+<script src="bim_orders_overlay.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
 <script src="report_overlay.js?v=2"></script>
 <script src="rule_fold.js?v=2"></script>
@@ -667,6 +668,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (!seedParam) idbPut('ad_seed_v15', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
+    // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
+    // (OPFS bim_project_orders.db, the same-origin store the viewer's > ERP / > VO pushes wrote) onto the live
+    // ad_seed.db, so they appear in the STANDARD C_Project / C_Order windows. Additive delta (PK >= BIM_BASE),
+    // idempotent; the idb seed cache was written from raw bytes above so it stays unpolluted. Witness W-BIM-OVERLAY.
+    if (window.BimOrdersOverlay) { try { await window.BimOrdersOverlay.apply(SQL, db); } catch (e) { console.log('§BIM_OVERLAY_ERR ' + e.message); } }
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.
     var shardParam = new URLSearchParams(location.search).get('shard');
     if (shardParam) await installShard(shardParam);
