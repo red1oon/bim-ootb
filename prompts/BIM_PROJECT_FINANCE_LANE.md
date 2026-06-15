@@ -73,10 +73,16 @@ and **PV / EV / AC, CV / SV, CPI / SPI** — reusing `viewer/variation_order.js`
 > buckets = F5 hook, project EVM extraction, AC honesty). W-FIN-EVM-LIVE 8/8 (`tests/probe_fin_evm.js`, Hospital): live push →
 > §PROJ_CONTROL revised=4,359,746 / BAC / PV / AC=0 + honest note; status bar shows the contract sum. 5 regression re-pass. LOCALHOST.
 
-**F5 — VO approval moves the contract (DR→CO)** · `W-FIN-VO-APPROVE`
+**F5 — VO approval moves the contract (DR→CO)** · `W-FIN-VO-APPROVE` · ✅ DONE (`tests/poc_fin_vo_approve.js` 6/6 + 5/5 reg)
 Approve a Variation Order through the DocAction FSM (DR→CO, who/when governance) so it **commits** and updates the
 project's revised contract sum + `IsCommitment`.
 *Witness:* approve VO → C_Project revised-contract-sum / commitment update; a 2nd approve is idempotent; CO is signed.
+> **Done 2026-06-15:** new `viewer/vo_approve.js` `approveVariationOrder` REUSES the real DocAction FSM
+> (`erp/ad_docfsm.js` `dispatchOrder`, DR→CO gated — not a blind UPDATE) → DocStatus CO, signed (IsApproved=Y + who
+> UpdatedBy / when Updated + the POReference delta-digest content signature), then MOVES the commitment
+> (C_Project.CommittedAmt += GrandTotal, IsCommitment='Y'); revised contract sum (proj_control.contractSum) =
+> original+VO. W-FIN-VO-APPROVE 6/6: DR→CO, commitment 1312.5→revised 1056790.5, 2nd approve idempotent (no
+> double-commit), FSM rejects CO→CO (falsifier = gated). viewer.html ships ad_docfsm.js + vo_approve.js?v=1. 5 reg re-pass. LOCALHOST.
 
 **F6 — §H2 Progress Claim → C_Invoice + posting preview** · `W-FIN-CLAIM` (+ `W-FIN-CLAIM-POST`)
 Complete a phase (% / `IsComplete`) → raise a **progress C_Invoice** (`ProjInvoiceRule`) for the earned portion → show
@@ -121,6 +127,8 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
   copies C_AcctSchema_Default → M_Product_Category_Acct per BIM category; `_glMap` exposes Dr WIP 14130/Cr AP 21100. LOCALHOST (2026-06-15).
 - ✅ **F4 — Contract sum + EVM** — `W-FIN-EVM` (`tests/poc_fin_evm.js`) 6/6 + `W-FIN-EVM-LIVE` (`tests/probe_fin_evm.js`) 8/8 + 5/5
   regression. `viewer/proj_control.js` (contractSum/evm/evmMetrics, BigDecimal); `navigate_find` logs §PROJ_CONTROL + status bar. LOCALHOST (2026-06-15).
+- ✅ **F5 — VO approval (DR→CO)** — `W-FIN-VO-APPROVE` (`tests/poc_fin_vo_approve.js`) 6/6 + 5/5 regression. `viewer/vo_approve.js`
+  reuses `erp/ad_docfsm.js` dispatchOrder (gated DR→CO), moves C_Project.CommittedAmt + IsCommitment, idempotent, signed. LOCALHOST (2026-06-15).
 
 ---
 
