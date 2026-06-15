@@ -61,10 +61,17 @@ the seed's existing chart of accounts (EXTRACT, never invent an account number).
 > Expense `51200`, Cr AP `21100` from the BP-group / schema default). W-FIN-GLMAP 6/6: primary-schema Dr resolves to a real
 > C_ValidCombination→C_ElementValue, every non-null acct traces to the chart, Dr≠Cr. 5 regression re-pass. LOCALHOST.
 
-**F4 — PM control view: contract sum + EVM (live)** · `W-FIN-EVM` (+ `W-FIN-EVM-LIVE` browser)
+**F4 — PM control view: contract sum + EVM (live)** · `W-FIN-EVM` (+ `W-FIN-EVM-LIVE` browser) · ✅ DONE (6/6 + 8/8 + 5/5 reg)
 Surface, on the C_Project (ERP window + a viewer readout): *Original Contract + Approved VOs = Revised Contract Sum*,
 and **PV / EV / AC, CV / SV, CPI / SPI** — reusing `viewer/variation_order.js` math (lift it out of the Excel-only path).
 *Witness:* headless math == hand-computed BigDecimal golden; browser-drive renders the control numbers on the project.
+> **Done 2026-06-15:** new `viewer/proj_control.js` (BigDecimal) — `evmMetrics` (the variance/index formulas documented in
+> variation_order.js, now real), `contractSum` (original + Σ CO-VO GrandTotal = revised; DR VOs are pending), `evm`
+> (BAC=Σ phase PlannedAmt, PV=schedule-fraction, EV=Σ IsComplete phases, AC=C_Project.InvoicedAmt — all EXTRACTED;
+> CPI/SPI null on zero divisor, never faked). `navigate_find._pushToErp` logs `§PROJ_CONTROL` + shows the contract sum in
+> the status bar (viewer.html loads proj_control.js?v=1; proj_fold/vo_fold?v=2). W-FIN-EVM 6/6 (math golden, DR→CO contract
+> buckets = F5 hook, project EVM extraction, AC honesty). W-FIN-EVM-LIVE 8/8 (`tests/probe_fin_evm.js`, Hospital): live push →
+> §PROJ_CONTROL revised=4,359,746 / BAC / PV / AC=0 + honest note; status bar shows the contract sum. 5 regression re-pass. LOCALHOST.
 
 **F5 — VO approval moves the contract (DR→CO)** · `W-FIN-VO-APPROVE`
 Approve a Variation Order through the DocAction FSM (DR→CO, who/when governance) so it **commits** and updates the
@@ -112,6 +119,8 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
   M/M2/M3 (UNCEFACT MTR/MTK/MTQ, UOMType LE/AR/VD); BoQ reads m/m²/m³, no UOM_FALLBACK, qty==5D golden. LOCALHOST (2026-06-15).
 - ✅ **F3 — GL account mapping** — `W-FIN-GLMAP` (`tests/poc_fin_glmap.js`) 6/6 + 5/5 regression. `proj_fold._seedCategoryAcct`
   copies C_AcctSchema_Default → M_Product_Category_Acct per BIM category; `_glMap` exposes Dr WIP 14130/Cr AP 21100. LOCALHOST (2026-06-15).
+- ✅ **F4 — Contract sum + EVM** — `W-FIN-EVM` (`tests/poc_fin_evm.js`) 6/6 + `W-FIN-EVM-LIVE` (`tests/probe_fin_evm.js`) 8/8 + 5/5
+  regression. `viewer/proj_control.js` (contractSum/evm/evmMetrics, BigDecimal); `navigate_find` logs §PROJ_CONTROL + status bar. LOCALHOST (2026-06-15).
 
 ---
 

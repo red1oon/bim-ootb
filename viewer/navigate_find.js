@@ -1039,10 +1039,23 @@
         console.log('[RP-C] §PROJ_PUSH project="' + building + '" scope="' + _lastSelLabel + '" phases=+' + r.created.phases +
           ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
           ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt);
+        // §F4 — the PM control readout (contract sum + EVM) on the freshly folded project.
+        var ctrl = null;
+        if (window.ProjControl && r.projectId) {
+          try {
+            ctrl = window.ProjControl.projectControl(db, r.projectId);
+            console.log('[RP-C] §PROJ_CONTROL project="' + building + '" original=' + ctrl.contract.original +
+              ' approvedVOs=' + ctrl.contract.approvedVOs + ' revised=' + ctrl.contract.revised +
+              ' bac=' + ctrl.evm.bac + ' pv=' + ctrl.evm.pv + ' ev=' + ctrl.evm.ev + ' ac=' + ctrl.evm.ac +
+              ' cv=' + ctrl.evm.cv + ' sv=' + ctrl.evm.sv + ' cpi=' + ctrl.evm.cpi + ' spi=' + ctrl.evm.spi +
+              ' %complete=' + ctrl.evm.percentComplete + (ctrl.note ? ' note="' + ctrl.note + '"' : ''));
+          } catch (e) { console.log('[RP-C] §PROJ_CONTROL_ERR ' + e.message); }
+        }
         _persistErpDb(db).then(function (ok) {
           console.log('[RP-C] §PROJ_PUSH_PERSIST opfs=' + ok + ' store=bim_project_orders.db');
-          if (A.status) A.status.textContent = 'Project Order: ' + r.created.lines + ' lines · ' + _cur() + ' ' +
-            Number(r.plannedAmt).toLocaleString(undefined, { maximumFractionDigits: 0 }) + (ok ? ' (saved)' : '');
+          var revised = ctrl ? Number(ctrl.contract.revised) : Number(r.plannedAmt);
+          if (A.status) A.status.textContent = 'Project Order: ' + r.created.lines + ' lines · contract ' + _cur() + ' ' +
+            revised.toLocaleString(undefined, { maximumFractionDigits: 0 }) + (ok ? ' (saved)' : '');
         });
       });
     }
