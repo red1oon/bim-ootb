@@ -96,9 +96,15 @@ the **GL posting preview** (Dr Cost, Cr AP). Honest where `fact_acct` is absent 
 > AC→CPI 1.0000, preview balances, idempotent re-claim=0, unbalanced-manifest falsifier caught). viewer.html ships
 > proj_claim.js?v=1. 5 regression re-pass. LOCALHOST.
 
-**F7 — Tax (SST/GST) on the document lines** · `W-FIN-TAX`
+**F7 — Tax (SST/GST) on the document lines** · `W-FIN-TAX` · ✅ DONE (`tests/poc_fin_tax.js` 6/6 + F6 + 5/5 reg)
 EXTRACT a `C_Tax` rate from the seed (or seed a Malaysian SST row, reproducibly) and apply it to order/invoice lines.
 *Witness:* invoice carries a tax line; net + tax == gross; totals balance to the cent.
+> **Done 2026-06-15:** `scripts/seed_fin_tax.js` seeds Malaysia SST (the statutory 6% Service Tax, country MY 238, Standard
+> category) + C_Tax_Acct rows copied from the seed's existing 6% tax (idempotent). `proj_claim.progressClaim` gained an
+> optional `taxId`: each line carries C_Tax_ID + TaxAmt=round(net×6%), GrandTotal=net+tax (tax-off path preserves F6).
+> `postingPreview` adds the recoverable INPUT tax to the tax's T_Credit account. W-FIN-TAX 6/6: net 2240 + tax 134.40 =
+> gross 2374.40; preview balances Dr WIP `14130` + Dr InputTax `12610` = Cr AP `21100`; AC moves by NET only (tax recoverable).
+> 5 regression + F6 re-pass. LOCALHOST.
 
 **F8 — Period control** · `W-FIN-PERIOD`
 `DateAcct` lands in an **open `C_Period`** (the seed carries `c_period`/`c_periodcontrol`); conversion rate honored.
@@ -138,6 +144,8 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
   reuses `erp/ad_docfsm.js` dispatchOrder (gated DR→CO), moves C_Project.CommittedAmt + IsCommitment, idempotent, signed. LOCALHOST (2026-06-15).
 - ✅ **F6 — Progress claim → C_Invoice + posting preview** — `W-FIN-CLAIM` (`tests/poc_fin_claim.js`) 7/7 + 5/5 regression.
   `viewer/proj_claim.js` progressClaim (AP invoice == EV, moves InvoicedAmt→AC) + postingPreview (Dr WIP/Cr AP balances, no fact_acct write). LOCALHOST (2026-06-15).
+- ✅ **F7 — Tax (SST) on lines** — `W-FIN-TAX` (`tests/poc_fin_tax.js`) 6/6 + F6 + 5/5 regression. `scripts/seed_fin_tax.js`
+  (MY SST 6% + C_Tax_Acct); proj_claim optional taxId → line TaxAmt, net+tax==gross, preview adds Dr input-tax (12610), balances. LOCALHOST (2026-06-15).
 
 ---
 

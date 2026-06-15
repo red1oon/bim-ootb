@@ -57,35 +57,51 @@
     var claim = BD.ZERO;
     newPhases.forEach(function (p) { claim = claim.add(BD.of(String(p[2] || 0))); });
 
+    // §F7 — optional tax (SST/GST). When opts.taxId is given, each line carries TaxAmt = round(net×rate);
+    // GrandTotal = net + tax. EXTRACT the rate from C_Tax (never invent). No taxId → net == gross (F6).
+    var taxId = opts.taxId != null ? opts.taxId : null;
+    var taxRate = taxId != null ? BD.of(String(_scalar(db, "SELECT Rate FROM C_Tax WHERE C_Tax_ID=?", [taxId]) || 0)) : null;
+
     // the progress-claim invoice (AP Invoice doctype, DR draft — awaiting the accountant's post).
     var docType = _scalar(db, "SELECT C_DocType_ID FROM C_DocType WHERE DocBaseType='API' LIMIT 1") || 123;
     var invId = id('C_Invoice', 'C_Invoice_ID');
     var claimNo = Number(_scalar(db, "SELECT COUNT(*) FROM C_Invoice WHERE Description LIKE ?", ['BIM Progress Claim: ' + building + '%']) || 0) + 1;
     var docNo = 'CLAIM-' + building + '-' + ('00' + claimNo).slice(-3);
+    // per-phase tax + the rolled gross (BigDecimal).
+    var totalTax = BD.ZERO;
+    var perPhase = newPhases.map(function (p) {
+      var net = BD.of(String(p[2] || 0));
+      var tax = taxRate ? net.multiply(taxRate).divide(BD.of('100'), 2, HALF_UP) : BD.ZERO;
+      totalTax = totalTax.add(tax);
+      return { phase: p, net: net, tax: tax, total: net.add(tax) };
+    });
+    var grand = claim.add(totalTax);
+
     db.run("INSERT INTO C_Invoice (C_Invoice_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
       "IsSOTrx,DocumentNo,DocStatus,DocAction,Processed,Posted,C_DocType_ID,C_DocTypeTarget_ID,Description,IsApproved," +
       "DateInvoiced,DateAcct,C_BPartner_ID,C_Currency_ID,C_Project_ID,C_Order_ID,GrandTotal,TotalLines,PaymentRule,IsPaid,C_Invoice_UU) " +
       "VALUES (?,?,?,'Y',?,?,?,?,'N',?,'DR','CO','N','N',?,?,?,'N',?,?,?,?,?,?,?,?,'P','N',?)",
-      [invId, CL, OG, now, U, now, U, docNo, docType, docType, 'BIM Progress Claim: ' + building + ' #' + claimNo, now, now, bpId, curId, projectId, poOrderId, claim.toString(), claim.toString(), _uu()]);
+      [invId, CL, OG, now, U, now, U, docNo, docType, docType, 'BIM Progress Claim: ' + building + ' #' + claimNo, now, now, bpId, curId, projectId, poOrderId, grand.toString(), claim.toString(), _uu()]);
 
     var lineNo = 10;
-    newPhases.forEach(function (p) {
+    perPhase.forEach(function (pp) {
+      var p = pp.phase;
       var lnId = id('C_InvoiceLine', 'C_InvoiceLine_ID');
       // a representative product for the phase (the first project line's product) — for the Dr account map.
       var prodId = _scalar(db, "SELECT m_product_id FROM C_ProjectLine WHERE c_project_id=? AND c_projectphase_id=? LIMIT 1", [projectId, p[0]]);
       db.run("INSERT INTO C_InvoiceLine (C_InvoiceLine_ID,C_Invoice_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
-        "Line,Description,M_Product_ID,QtyInvoiced,QtyEntered,PriceActual,PriceEntered,LineNetAmt,LineTotalAmt,C_Project_ID,C_ProjectPhase_ID,Processed,C_InvoiceLine_UU) " +
-        "VALUES (?,?,?,?,'Y',?,?,?,?,?,?,?,1,1,?,?,?,?,?,?,'N',?)",
-        [lnId, invId, CL, OG, now, U, now, U, lineNo, 'Progress: ' + p[1], prodId, p[2], p[2], p[2], p[2], projectId, p[0], _uu()]);
+        "Line,Description,M_Product_ID,QtyInvoiced,QtyEntered,PriceActual,PriceEntered,LineNetAmt,C_Tax_ID,TaxAmt,LineTotalAmt,C_Project_ID,C_ProjectPhase_ID,Processed,C_InvoiceLine_UU) " +
+        "VALUES (?,?,?,?,'Y',?,?,?,?,?,?,?,1,1,?,?,?,?,?,?,?,?,'N',?)",
+        [lnId, invId, CL, OG, now, U, now, U, lineNo, 'Progress: ' + p[1], prodId, pp.net.toString(), pp.net.toString(), pp.net.toString(), taxId, pp.tax.toString(), pp.total.toString(), projectId, p[0], _uu()]);
       lineNo += 10;
     });
 
-    // move the actual cost onto the project (EVM AC) — BigDecimal.
+    // move the actual cost onto the project (EVM AC) = the NET earned (tax is not project cost) — BigDecimal.
     var prevInv = BD.of(String(_scalar(db, "SELECT COALESCE(InvoicedAmt,0) FROM C_Project WHERE C_Project_ID=?", [projectId]) || 0));
     db.run("UPDATE C_Project SET InvoicedAmt=?,ProjInvoiceRule='C',Updated=?,UpdatedBy=? WHERE C_Project_ID=?",
       [prevInv.add(claim).toString(), now, U, projectId]);
 
-    return { ok: true, idempotent: false, invoiceId: invId, documentNo: docNo, claimAmt: claim.toString(), phasesClaimed: newPhases.length, projectId: projectId, bpartnerId: bpId, notes: notes };
+    return { ok: true, idempotent: false, invoiceId: invId, documentNo: docNo, claimAmt: claim.toString(), taxAmt: totalTax.toString(), grandTotal: grand.toString(), taxId: taxId, phasesClaimed: newPhases.length, projectId: projectId, bpartnerId: bpId, notes: notes };
   }
 
   // the primary accounting schema + its default WIP / AP combinations.
@@ -106,7 +122,7 @@
     var grand = inv[0].values[0][0], bpId = inv[0].values[0][1];
     var ctx = _acctCtx(db, bpId);
 
-    var lnRes = db.exec("SELECT il.LineNetAmt, p.M_Product_Category_ID FROM C_InvoiceLine il LEFT JOIN M_Product p ON il.M_Product_ID=p.M_Product_ID WHERE il.C_Invoice_ID=" + Number(invoiceId));
+    var lnRes = db.exec("SELECT il.LineNetAmt, p.M_Product_Category_ID, il.C_Tax_ID, il.TaxAmt FROM C_InvoiceLine il LEFT JOIN M_Product p ON il.M_Product_ID=p.M_Product_ID WHERE il.C_Invoice_ID=" + Number(invoiceId));
     var lns = lnRes.length ? lnRes[0].values : [];
     var by = {}; // account_id → {dr,cr}
     function add(side, acctId, amt) {
@@ -115,13 +131,18 @@
       if (!by[k]) by[k] = { account: acctId, dr: BD.ZERO, cr: BD.ZERO };
       by[k][side] = by[k][side].add(BD.of(String(amt)));
     }
-    // Dr — each line's cost to the product-category WIP account (else the schema default WIP).
+    // Dr — each line's cost to the product-category WIP account (else the schema default WIP), plus the
+    // recoverable INPUT tax (§F7) to the tax's T_Credit account (a purchase tax is reclaimable, not a cost).
     lns.forEach(function (l) {
-      var net = l[0], catId = l[1];
+      var net = l[0], catId = l[1], taxId = l[2], taxAmt = l[3];
       var wip = (catId != null ? _scalar(db, "SELECT p_wip_acct FROM M_Product_Category_Acct WHERE M_Product_Category_ID=? AND C_AcctSchema_ID=?", [catId, ctx.acctSchemaId]) : null) || ctx.wipDef;
       add('dr', wip, net);
+      if (taxId != null && taxAmt != null && BD.of(String(taxAmt)).compareTo(BD.ZERO) !== 0) {
+        var tCredit = _scalar(db, "SELECT t_credit_acct FROM C_Tax_Acct WHERE C_Tax_ID=? AND C_AcctSchema_ID=?", [taxId, ctx.acctSchemaId]);
+        add('dr', tCredit, taxAmt);
+      }
     });
-    // Cr — accounts payable for the whole claim.
+    // Cr — accounts payable for the whole claim (gross = net + tax = the invoice GrandTotal).
     add('cr', ctx.ap, grand);
 
     var lines = Object.keys(by).map(function (k) {
