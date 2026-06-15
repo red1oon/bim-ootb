@@ -43,9 +43,13 @@ EXTRACT real `C_Currency` MYR (ISO 4217 = 458) + a `C_Conversion_Rate` (MYR→ac
 > `cidb2024_my.json`; reuses seed org/client/conversiontype 114; idempotent). Fold surfaces `convRateToAcct`. W-FIN-CURRENCY
 > 6/6 (incl. ZZZ falsifier + amounts-unchanged 1055478==golden); 5 regression witnesses re-pass. LOCALHOST — not deployed.
 
-**F2 — UOM fidelity (BoQ speaks m³/m²/m)** · `W-FIN-UOM`
+**F2 — UOM fidelity (BoQ speaks m³/m²/m)** · `W-FIN-UOM` · ✅ DONE (`tests/poc_fin_uom.js` 6/6 + 5/5 regression)
 EXTRACT the standard `C_UOM` rows (M, M2, M3 — X12DE355) into the seed. The fold already knows the pack unit.
 *Witness:* BoQ lines read m³/m²/m (not `EA`), **no `UOM_FALLBACK`**; line qty == the 5D golden to the unit.
+> **Done 2026-06-15:** `scripts/seed_fin_uom.js` adds M/M2/M3 (X12DE355 short code = pack/fold convention, same as the
+> seed's pre-existing 'CM' row; UNCEFACT = real UN/CEFACT Rec-20 MTR/MTK/MTQ; UOMType LE/AR/VD extracted from AD_Ref_List;
+> StdPrecision 3 = QTO precision). Idempotent. W-FIN-UOM 6/6 (16 metre lines resolve; 8 EA classes stay EA = falsifier holds;
+> qty==5D golden 3dp). 5 regression re-pass. LOCALHOST — not deployed.
 
 **F3 — GL account mapping** · `W-FIN-GLMAP`
 Map BIM `M_Product_Category` → real GL accounts (`M_Product_Category_Acct`, Dr WIP/Expense) and the order → AP, from
@@ -99,6 +103,8 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
 - ✅ **F1 — Currency + conversion-rate fidelity** — `W-FIN-CURRENCY` (`tests/poc_fin_currency.js`) 6/6 + 5/5 regression.
   `_resolveCurrency` (ISO|CurSymbol) in proj_fold/vo_fold kills CUR_FALLBACK ('RM'→MYR 301); `scripts/seed_fin_currency.js`
   seeds C_Conversion_Rate MYR↔USD from the CIDB pack (3.91). Amounts unchanged. LOCALHOST (2026-06-15).
+- ✅ **F2 — UOM fidelity** — `W-FIN-UOM` (`tests/poc_fin_uom.js`) 6/6 + 5/5 regression. `scripts/seed_fin_uom.js` adds
+  M/M2/M3 (UNCEFACT MTR/MTK/MTQ, UOMType LE/AR/VD); BoQ reads m/m²/m³, no UOM_FALLBACK, qty==5D golden. LOCALHOST (2026-06-15).
 
 ---
 
