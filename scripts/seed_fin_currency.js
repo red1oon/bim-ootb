@@ -47,8 +47,9 @@ function scalar(db, sql, p) { var r = db.exec(sql, p || []); return (r.length &&
   const proto = db.exec("SELECT ad_client_id,ad_org_id,c_conversiontype_id FROM C_Conversion_Rate LIMIT 1");
   if (!proto.length) { console.log('§SEED_CUR FAIL — no existing C_Conversion_Rate to mirror org/type'); process.exit(1); }
   const [cl, og, ctype] = proto[0].values[0];
-  // validity window: extracted from the seed's own far-future bound style (matches existing rows).
-  const validFrom = '2024-01-01 00:00:00';                 // CIDB 2024 pack year
+  // validity window: match the seed's own base-rate convention (USD↔EUR validfrom 2000-01-01) so the rate
+  // covers every C_Period in the seed (incl. the open GardenWorld-era periods used by §F8 period control).
+  const validFrom = '2000-01-01 00:00:00';
   const validTo = scalar(db, "SELECT MAX(validto) FROM C_Conversion_Rate") || '2056-01-29 00:00:00';
   const now = '2026-06-15 00:00:00';
 
@@ -59,7 +60,16 @@ function scalar(db, sql, p) { var r = db.exec(sql, p || []); return (r.length &&
   //    iDempiere semantics: to convert FROM cur TO cur_to, multiply by multiplyrate.
   function upsert(from, to, mult) {
     const existing = scalar(db, "SELECT c_conversion_rate_id FROM C_Conversion_Rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND isactive='Y'", [from, to, ctype]);
-    if (existing != null) { console.log('§SEED_CUR_SKIP exists ' + from + '→' + to + ' id=' + existing); return 0; }
+    if (existing != null) {
+      // correct an earlier row's validity window if it doesn't match the convention (keeps reproducible).
+      const vf = scalar(db, "SELECT validfrom FROM C_Conversion_Rate WHERE c_conversion_rate_id=?", [existing]);
+      if (String(vf).slice(0, 10) !== validFrom.slice(0, 10)) {
+        db.run("UPDATE C_Conversion_Rate SET validfrom=? WHERE c_conversion_rate_id=?", [validFrom, existing]);
+        console.log('§SEED_CUR_FIX ' + from + '→' + to + ' id=' + existing + ' validfrom→' + validFrom.slice(0, 10));
+        return 1;
+      }
+      console.log('§SEED_CUR_SKIP exists ' + from + '→' + to + ' id=' + existing); return 0;
+    }
     const id = nextId++;
     const div = 1 / mult;
     db.run("INSERT INTO C_Conversion_Rate (c_conversion_rate_id,ad_client_id,ad_org_id,isactive,created,createdby,updated,updatedby," +

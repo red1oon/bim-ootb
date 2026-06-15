@@ -19,6 +19,7 @@
 (function (global) {
   'use strict';
   var BD = (typeof module !== 'undefined' && module.exports) ? require('../erp/bigdecimal.js') : (global.BigDecimal);
+  var PERIOD = (typeof module !== 'undefined' && module.exports) ? require('./proj_period.js') : (global.ProjPeriod);
   var HALF_UP = BD.RoundingMode.HALF_UP;
   var BIM_BASE = 990000;
 
@@ -53,6 +54,15 @@
       return _scalar(db, "SELECT 1 FROM C_InvoiceLine il JOIN C_Invoice i ON il.C_Invoice_ID=i.C_Invoice_ID WHERE il.C_ProjectPhase_ID=? AND i.Description LIKE 'BIM Progress Claim:%' LIMIT 1", [p[0]]) == null;
     });
     if (!newPhases.length) return { ok: true, idempotent: true, invoiceId: null, claimAmt: '0', projectId: projectId, notes: ['nothing newly earned (all complete phases already claimed)'] };
+
+    // §F8 — period control: the AP-invoice DateAcct (=now) must land in an OPEN C_Period for DocBaseType
+    // 'API'. Resolution is always reported; enforcement is opt-in (opts.requireOpenPeriod) so a demo push
+    // into a not-yet-opened future period still previews. A closed/never-opened period REFUSES the claim.
+    var period = PERIOD ? PERIOD.resolvePeriod(db, now, 'API', CL) : null;
+    if (opts.requireOpenPeriod && period && !period.open) {
+      return { ok: false, reason: 'period-not-open', period: period, projectId: projectId, invoiceId: null,
+        notes: ['DateAcct ' + (period.dateAcct) + ' is in period "' + period.name + '" status=' + period.status + ' (not Open) — claim refused'] };
+    }
 
     var claim = BD.ZERO;
     newPhases.forEach(function (p) { claim = claim.add(BD.of(String(p[2] || 0))); });
@@ -101,7 +111,7 @@
     db.run("UPDATE C_Project SET InvoicedAmt=?,ProjInvoiceRule='C',Updated=?,UpdatedBy=? WHERE C_Project_ID=?",
       [prevInv.add(claim).toString(), now, U, projectId]);
 
-    return { ok: true, idempotent: false, invoiceId: invId, documentNo: docNo, claimAmt: claim.toString(), taxAmt: totalTax.toString(), grandTotal: grand.toString(), taxId: taxId, phasesClaimed: newPhases.length, projectId: projectId, bpartnerId: bpId, notes: notes };
+    return { ok: true, idempotent: false, invoiceId: invId, documentNo: docNo, claimAmt: claim.toString(), taxAmt: totalTax.toString(), grandTotal: grand.toString(), taxId: taxId, phasesClaimed: newPhases.length, projectId: projectId, bpartnerId: bpId, period: period, dateAcct: now.slice(0, 10), notes: notes };
   }
 
   // the primary accounting schema + its default WIP / AP combinations.

@@ -106,9 +106,16 @@ EXTRACT a `C_Tax` rate from the seed (or seed a Malaysian SST row, reproducibly)
 > gross 2374.40; preview balances Dr WIP `14130` + Dr InputTax `12610` = Cr AP `21100`; AC moves by NET only (tax recoverable).
 > 5 regression + F6 re-pass. LOCALHOST.
 
-**F8 — Period control** · `W-FIN-PERIOD`
+**F8 — Period control** · `W-FIN-PERIOD` · ✅ DONE (`tests/poc_fin_period.js` 6/6 + 8 fin + 5/5 reg)
 `DateAcct` lands in an **open `C_Period`** (the seed carries `c_period`/`c_periodcontrol`); conversion rate honored.
 *Witness:* the invoice/preview's period is open and resolved; a closed-period date is refused (falsifier).
+> **Done 2026-06-15:** new `viewer/proj_period.js` — `resolvePeriod(db,dateAcct,docBaseType,client)` returns the covering
+> C_Period + its C_PeriodControl status (open === 'O'; C/N/P refuse — real iDempiere gate); `conversionRateAsOf` honours the
+> rate's validity window. `proj_claim` resolves the period for DateAcct+'API' (always reported; enforcement opt-in via
+> `requireOpenPeriod` so a future-period demo still previews). Aligned the F1 MYR conversion rate validfrom→2000-01-01 (seed
+> base-rate convention) so it covers the open GardenWorld-era periods. W-FIN-PERIOD 6/6: open Dec-06 'O' → claim posts in
+> window; closed Jun-26 'N' + enforce → refused, no invoice (falsifier); MYR rate resolvable as-of the open date.
+> viewer.html ships proj_period.js?v=1. All 8 finance + 5 regression re-pass. LOCALHOST.
 
 ### §BLUE — speculate the Project Order on the timeline, then roll it back (capstone; reuses F4/F5)
 
@@ -146,6 +153,10 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
   `viewer/proj_claim.js` progressClaim (AP invoice == EV, moves InvoicedAmt→AC) + postingPreview (Dr WIP/Cr AP balances, no fact_acct write). LOCALHOST (2026-06-15).
 - ✅ **F7 — Tax (SST) on lines** — `W-FIN-TAX` (`tests/poc_fin_tax.js`) 6/6 + F6 + 5/5 regression. `scripts/seed_fin_tax.js`
   (MY SST 6% + C_Tax_Acct); proj_claim optional taxId → line TaxAmt, net+tax==gross, preview adds Dr input-tax (12610), balances. LOCALHOST (2026-06-15).
+- ✅ **F8 — Period control** — `W-FIN-PERIOD` (`tests/poc_fin_period.js`) 6/6 + 8 finance + 5/5 regression. `viewer/proj_period.js`
+  resolvePeriod/conversionRateAsOf; proj_claim opt-in requireOpenPeriod gate (open posts, closed refused). MYR rate validfrom→2000. LOCALHOST (2026-06-15).
+
+**🎯 Foundations + control + accounting (F1–F8) DRAINED 2026-06-15** — all LOCALHOST, witnessed. §BLUE capstone (F9/F10) next.
 
 ---
 
