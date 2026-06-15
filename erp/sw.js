@@ -115,6 +115,7 @@ const PRECACHE_ASSETS = [
   'kanban_lens.js',    // Kanban board chrome (buildBoard/resolveDrag/mount) — lens + idempiere
   'kanban_host.js',    // reusable Kanban host: publish window.ERP + persist/restore the op-log
   'bigdecimal.js',     // exact decimal compare for the rule fold (never raw JS Number) — window.BigDecimal
+  'bim_orders_overlay.js', // BIM→Project §B round-trip: overlay viewer-folded Project Orders + VO amendments from OPFS at boot
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_engine.js',     // POS_ADDON_SPEC — engine verbs (UMD of bim-compiler scripts/erp_engine.js, window.ERPEngine)
   'crud_overlay.js',   // SO_FULL_CRUD_GAP.md T1-T4 — CRUD ring-of-fire + DocAction overlay (window.__crud); glassbowl + idempiere both mount it
