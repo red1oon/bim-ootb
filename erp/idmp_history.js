@@ -28,6 +28,10 @@
   var _restoreFn = null, _warnedNoRestore = false;
   var _userHidden = false;   // the Z chip toggles the bar shut/open even when there IS history
   var _bar = null, _back = null, _fwd = null, _content = null;
+  // Item 1 (PRIVATE DRAFT RESTORE, W-DRAFT-RESTORE-LIVE) — the unsaved-edit marker: an AMBER pip distinct from the
+  // committed nav dots (white/gold). It is NOT a committed dot (no op-log moment) — purely "you-were-here, unsaved".
+  // Tapping it = opt-in restore (the host's onRestore fills the open form). Set by crud_overlay on a dirty leave.
+  var _draftPip = null;      // { table, id, cols, onRestore } | null
 
   function _sig(m) { return m.kind + '|' + m.windowId + '|' + m.tabIdx + '|' + (m.recordId == null ? '' : m.recordId); }
 
@@ -119,9 +123,10 @@
 
   function render() {
     _ensureBar();
-    var has = _hist.length > 0 && !_userHidden;
+    // Item 1 — a buffered draft forces the bar visible even with no nav history, so the unsaved-edit pip is reachable.
+    var has = (_hist.length > 0 || _draftPip) && !_userHidden;
     document.body.classList.toggle('idmp-has-scrub', has);    // mobile: lifts the bottom pill dock above the strip
-    if (!has) { _bar.classList.remove('show'); return; }
+    if (!has) { _bar.classList.remove('show'); if (_content) _content.innerHTML = ''; return; }   // clear stale dots/pip when hidden
     _bar.classList.add('show');
     _bar.classList.toggle('bloom', _bloom);
 
@@ -132,17 +137,42 @@
       h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + '" data-i="' + i + '" data-kind="' + e.kind +
         '" title="' + (i + 1) + '. ' + _esc(e.label) + '">' + (_bloom ? _esc(e.label) : '') + '</div>';
     });
+    // Item 1 — the AMBER unsaved-edit pip (rightmost, after the committed dots). Tap = opt-in restore.
+    if (_draftPip) {
+      var tip = 'Unsaved edit · ' + _esc((_draftPip.cols || []).join(', ')) + ' — tap to restore your draft';
+      h += '<div class="scrubdraft" title="' + tip + '">' + (_bloom ? 'unsaved draft' : '') + '</div>';
+    }
     h += '</div>';
     _content.innerHTML = h;
 
     var cs = canStep();
     if (_back) _back.style.opacity = cs.back ? '1' : '0.3';
     if (_fwd) _fwd.style.opacity = cs.front ? '1' : '0.3';
-    console.log('§IDMP-HIST render dots=' + _hist.length + ' idx=' + _idx);
+    console.log('§IDMP-HIST render dots=' + _hist.length + ' idx=' + _idx + ' draftPip=' + (_draftPip ? 'Y' : 'N'));
 
     Array.prototype.forEach.call(_content.querySelectorAll('.scrubdot'), function (d) {
       d.addEventListener('click', function (ev) { ev.stopPropagation(); _go(+d.getAttribute('data-i')); });
     });
+    var dp = _content.querySelector('.scrubdraft');
+    if (dp) dp.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      console.log('§IDMP-HIST draft-pip tap → restore (opt-in)');
+      if (_draftPip && typeof _draftPip.onRestore === 'function') { try { _draftPip.onRestore(); } catch (er) { console.warn('§IDMP-HIST draft restore-fail ' + er.message); } }
+    });
+  }
+
+  // Item 1 API (W-DRAFT-RESTORE-LIVE) — crud_overlay sets/clears the amber unsaved-edit pip on a dirty leave / save.
+  function setDraftPip(info, onRestore) {
+    _draftPip = { table: (info && info.table) || null, id: (info && info.id != null) ? info.id : null,
+                  cols: (info && info.cols) || [], onRestore: onRestore || null };
+    console.log('§IDMP-HIST setDraftPip key=' + _draftPip.table + ':' + _draftPip.id + ' cols=' + _draftPip.cols.join(','));
+    render();
+  }
+  function clearDraftPip(table, id) {
+    if (!_draftPip) return;     // only one pip is tracked at a time; clearing the shown unsaved-edit marker.
+    _draftPip = null;
+    console.log('§IDMP-HIST clearDraftPip key=' + table + ':' + id);
+    render();
   }
 
   function _esc(s) { return String(s == null ? '' : s).replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; }); }
@@ -172,6 +202,15 @@
         'cursor:pointer;transition:background .15s,transform .15s;}' +
       '#idmp-scrub .scrubdot:hover{background:#6c9fff;transform:scale(1.25);}' +
       '#idmp-scrub .scrubdot.on{background:#ffd479;box-shadow:0 0 6px rgba(255,212,121,0.7);}' +
+      // Item 1 — AMBER unsaved-edit pip: a hollow amber ring (NOT a filled committed dot) + a soft pulse, so the
+      // "you-were-here, unsaved" mark reads as distinct from the white/gold committed dots. Tappable = opt-in restore.
+      '#idmp-scrub .scrubdraft{flex:0 0 auto;width:10px;height:10px;border-radius:50%;background:transparent;' +
+        'border:2px solid #f5a623;box-shadow:0 0 6px rgba(245,166,35,0.6);cursor:pointer;margin-left:6px;' +
+        'animation:idmp-draftpulse 1.6s ease-in-out infinite;transition:transform .15s;}' +
+      '#idmp-scrub .scrubdraft:hover{transform:scale(1.3);background:rgba(245,166,35,0.25);}' +
+      '@keyframes idmp-draftpulse{0%,100%{opacity:.5;}50%{opacity:1;}}' +
+      '#idmp-scrub.bloom .scrubdraft{width:auto;height:auto;border-radius:10px;padding:3px 9px;font-size:11px;' +
+        'color:#f5a623;border-color:#f5a623;white-space:nowrap;line-height:1.2;}' +
       // bloom: dots become labelled chips (the real record field — NON-INVENT).
       '#idmp-scrub.bloom .scrubdot{width:auto;height:auto;border-radius:10px;padding:3px 9px;font-size:11px;' +
         'color:#cdd6e4;white-space:nowrap;line-height:1.2;}' +
@@ -186,5 +225,6 @@
   }
 
   window.IdmpHistory = { push: push, registerRestore: registerRestore, undo: undo, redo: redo,
-    render: render, clear: clear, list: list, toggleBar: toggleBar, canStep: canStep };
+    render: render, clear: clear, list: list, toggleBar: toggleBar, canStep: canStep,
+    setDraftPip: setDraftPip, clearDraftPip: clearDraftPip };   // Item 1 (W-DRAFT-RESTORE-LIVE): amber unsaved-edit pip
 })();
