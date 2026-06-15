@@ -40,7 +40,7 @@ const state = (pg) => pg.evaluate(() => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.on('console', m => logs.push(m.text())); page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
   // login + open a window so the toolbar + records exist
   await page.evaluate(() => { var r = [...document.querySelectorAll('#idmp-login-users .idmp-login-user')].find(x => !x.classList.contains('disabled')); if (r) r.click(); });

@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => { let p = decodeURIComponent(req.
   const page = await browser.newPage({ viewport: { width: 1280, height: 850 } });
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(3500);
 
   let pass = 0, fail = 0;

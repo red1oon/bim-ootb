@@ -262,7 +262,15 @@
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex:0 0 auto; }
   .idmp-login-user.disabled { opacity:.5; cursor:not-allowed; }
   .idmp-login-user.disabled:hover { background:#fbfcfe; border-color:var(--idmp-border); }
-  .idmp-login-user .tag { margin-left:auto; font-size:11px; color:var(--idmp-muted); }
+  .idmp-login-user .tag { margin-left:auto; font-size:11px; color:var(--idmp-muted); display:flex; align-items:center; gap:5px; }
+  /* DEMO tenants at the front door (ERP_CRITIC_UX_LANE P0) — present + lazy-install on pick. Subtle blue accent
+     so they read as "ready to enter", distinct from a resident tenant; the pip is a small filled dot. */
+  .idmp-login-demo { border-style:dashed; }
+  .idmp-login-demo .av { background:#e7f0fb; color:var(--idmp-blue); }
+  .idmp-demo-pip { width:6px; height:6px; border-radius:50%; background:var(--idmp-blue); flex:0 0 auto; }
+  .idmp-demo-pip.busy { animation:idmp-demo-pulse .8s ease-in-out infinite; }
+  .idmp-login-demo.installing { opacity:.6; cursor:progress; }
+  @keyframes idmp-demo-pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
   /* tenant delete affordance (NEW_CLIENT_MGMT — reverse of install) + its red-rim warning */
   .idmp-tenant-del { margin-left:8px; flex:0 0 auto; width:28px; height:28px; padding:0; border:1px solid transparent;
     background:none; border-radius:6px; color:var(--idmp-muted); cursor:pointer; opacity:0; transition:.12s;
@@ -447,7 +455,7 @@
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
-<script src="erp_picker.js?v=5"></script>
+<script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
 <script src="kernel_ops.js?v=2"></script>
 <script src="erp_signer.js?v=1"></script>
@@ -736,12 +744,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (step === 'role' && _loginUser) { loginStep2(_loginUser); }
     else {
       var tenants = SES.listClients(db);
-      if (tenants.length >= 2) { _loginClient = null; loginStep0(tenants); }
-      else { _loginClient = tenants[0] || null; loginStep1(); }   // auto-skip: 0/1 tenant → user list (as before)
+      var demos = _demoTenants();   // ERP_CRITIC_UX_LANE.md P0/J1 — the 5 demo tenants, present at the front door
+      // FRONT DOOR: surface step 0 whenever ≥2 tenants are reachable (resident OR demo-ready). A bare seed used to
+      // auto-skip (1 resident) — now the 5 demo tenants make the "a demo all ready" first impression, no install step.
+      if (tenants.length + demos.length >= 2) { _loginClient = null; loginStep0(tenants, demos); }
+      else { _loginClient = tenants[0] || null; loginStep1(); }   // auto-skip only if truly <2 tenants total
     }
     _syncPillStage();   // §C — picker open = back at the front door → Install/Migrate visible again
   }
-  function loginStep0(tenants) {
+  // The demo tenants from ErpPicker.manifest (single source of truth) that are NOT yet resident — these are
+  // PRESENT at the front door and lazy-install on first pick (the same installShard the dialog drives). NON-INVENT:
+  // every demo maps to a real shard file that ships in the bundle; a tenant already merged drops out of this list.
+  function _demoTenants() {
+    var man = (window.ErpPicker && ErpPicker.manifest) || {};
+    var resident = {}; try { SES.listClients(db).forEach(function (c) { resident[c.id] = true; }); } catch (e) {}
+    return Object.keys(man).map(function (k) { var s = man[k];
+      return { key: k, id: s.client, name: s.name, file: s.file, poc: !!s.poc, demo: true }; })
+      .filter(function (t) { return t.id != null && !resident[t.id]; });
+  }
+  function loginStep0(tenants, demos) {
     $('idmp-login-step1').style.display = 'none';
     $('idmp-login-step2').style.display = 'none';
     $('idmp-login-step0').style.display = '';
@@ -761,7 +782,31 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }
       host.appendChild(row);
     });
-    console.log('§IDEMPIERE login-step0 tenants=' + (tenants ? tenants.length : 0));
+    // DEMO TENANTS — present + enterable with NO install dialog (lazy installShard on pick). Honest tag: ready vs PoC.
+    (demos || []).forEach(function (t) {
+      var row = el('div', 'idmp-login-user idmp-login-demo');
+      row.appendChild(el('span', 'av', (t.name || '?').charAt(0).toUpperCase()));
+      row.appendChild(el('span', 'nm', t.name));
+      var tag = el('span', 'tag'); tag.innerHTML = '<span class="idmp-demo-pip"></span>demo · ' + (t.poc ? 'PoC' : 'ready');
+      row.appendChild(tag);
+      row.addEventListener('click', function () { _enterDemoTenant(t, row, tag); });
+      host.appendChild(row);
+    });
+    console.log('§IDEMPIERE login-step0 tenants=' + ((tenants || []).length) + ' demos=' + ((demos || []).length));
+    console.log('§CRITIC-FRONTDOOR step0 resident=[' + (tenants || []).map(function (c) { return c.name; }).join(',')
+      + '] demo=[' + (demos || []).map(function (t) { return t.name + (t.poc ? '(PoC)' : ''); }).join(',') + '] install-dialog=N');
+  }
+  // Lazy-install a demo tenant on first pick, then land on its user list — NO Install dialog, NO ?shard= URL.
+  async function _enterDemoTenant(t, row, tag) {
+    if (row && row.classList.contains('installing')) return;   // guard double-tap
+    if (row) row.classList.add('installing'); if (tag) tag.innerHTML = '<span class="idmp-demo-pip busy"></span>installing…';
+    console.log('§CRITIC-FRONTDOOR pick demo=' + t.key + ' client=' + t.id + ' file=' + t.file);
+    var res = { ok: false };
+    try { res = await installShard(t.file); } catch (e) { console.warn('§CRITIC-FRONTDOOR install-err ' + e.message); }
+    console.log('§CRITIC-FRONTDOOR installed ' + t.file + ' ok=' + res.ok + ' rows=' + (res.mRow || 0) + ' clients=' + (res.clients != null ? res.clients : '?'));
+    var c = SES.listClients(db).filter(function (x) { return x.id === t.id; })[0];
+    if (c) { _loginClient = c; loginStep1(); }
+    else { if (row) row.classList.remove('installing'); if (tag) tag.innerHTML = '<span class="idmp-demo-pip"></span>unavailable'; showLogin('user'); }
   }
 
   // Task 3 — count user-created/edited records in the op-log for this tenant (ERP_AUDIT_CHANGELOG.md §TASK3).

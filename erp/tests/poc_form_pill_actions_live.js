@@ -44,7 +44,7 @@ const tapPill = (page, id) => page.evaluate((pid) => {
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html?window=167`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden&window=167`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
   await page.click('#idmp-login-users .idmp-login-user:not(.disabled)');
   await page.waitForTimeout(400);
