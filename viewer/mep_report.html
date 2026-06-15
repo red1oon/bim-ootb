@@ -117,6 +117,26 @@ function _fmt(n) { return n.toLocaleString(undefined, { minimumFractionDigits: 2
 // _TRL-safe helper: returns translated string or English fallback
 function _t(key, fallback) { return (typeof _TRL !== 'undefined' && _TRL[key]) ? _TRL[key] : fallback; }
 
+// Peek the IDB cache without ever hitting the network — returns cached buf or null.
+// Lets MEP run fully offline once a building's DB is in cache (meta OR full).
+async function peekDbCache(url) {
+  try {
+    var cacheDb = await new Promise(function(resolve) {
+      var req = indexedDB.open('bim_ootb_cache', 1);
+      req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { resolve(null); };
+    });
+    if (!cacheDb) return null;
+    return await new Promise(function(ok) {
+      var tx = cacheDb.transaction('dbs', 'readonly');
+      var req = tx.objectStore('dbs').get(url);
+      req.onsuccess = function() { ok(req.result || null); };
+      req.onerror = function() { ok(null); };
+    });
+  } catch(e) { return null; }
+}
+
 // DB loader with IDB cache
 async function fetchDbBuffer(url) {
   var cacheDb = await new Promise(function(resolve) {
@@ -163,17 +183,30 @@ async function init() {
 
   document.getElementById('report-content').innerHTML = _t('ui_loading','Loading') + ' ' + DB_URL.split('/').pop() + '...';
 
-  // §S260b+S274: Try _meta.db first (sufficient for MEP — no geometry needed)
+  // §S260b+S274: Try _meta.db first (sufficient for MEP — no geometry needed).
+  // OFFLINE-FIRST: peek the IDB cache before any network probe. Whatever the viewer
+  // already cached (meta OR full _extracted.db) is served with zero network — so MEP
+  // works offline for EVERY building once its DB is in, meta-split or not. The HEAD
+  // probe (online-only bandwidth optimization) ran unconditionally before and threw
+  // offline, then fell through to an _extracted.db key the viewer never cached.
   var _actualUrl = DB_URL;
   if (DB_URL.indexOf('_extracted.db') > -1) {
     var _metaUrl = DB_URL.replace('_extracted.db', '_meta.db');
-    if (DB_URL.startsWith('import://')) {
+    if (await peekDbCache(_metaUrl)) {
+      _actualUrl = _metaUrl;
+      console.log('§MEP_SPLIT_HIT_CACHE using cached ' + _metaUrl.split('/').pop());
+    } else if (await peekDbCache(DB_URL)) {
+      // full DB already cached (non-meta building, or viewer cached the full) — use it, no network
+      _actualUrl = DB_URL;
+      console.log('§MEP_FULL_HIT_CACHE using cached ' + DB_URL.split('/').pop());
+    } else if (DB_URL.startsWith('import://')) {
       // §S274: import:// URLs live in IDB — check cache via fetchDbBuffer
       try {
         var _metaBuf = await fetchDbBuffer(_metaUrl);
         if (_metaBuf) { _actualUrl = _metaUrl; console.log('§MEP_SPLIT_HIT_IDB using ' + _metaUrl + ' (' + Math.round(_metaBuf.byteLength/1024/1024) + 'MB)'); }
       } catch(e) {}
     } else {
+      // online: probe for a _meta.db to save bandwidth
       try {
         var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
         if (_headResp.ok) {
@@ -187,7 +220,25 @@ async function init() {
   var SQL = await initSqlJs({
     locateFile: function(f) { return 'lib/' + f; }
   });
-  var buf = await fetchDbBuffer(_actualUrl);
+  // The _meta.db split is an OPTIMIZATION, never a hard dependency. If the chosen URL
+  // fails (offline + only the sibling is cached), fall back to the other one — the full
+  // _extracted.db carries elements_meta, so MEP output is identical.
+  var buf = null;
+  try {
+    buf = await fetchDbBuffer(_actualUrl);
+  } catch(e) {
+    var _fallback = (_actualUrl === DB_URL) ? DB_URL.replace('_extracted.db', '_meta.db') : DB_URL;
+    console.log('§MEP_DB_FALLBACK ' + _actualUrl.split('/').pop() + ' failed (' + e.message + ') — trying ' + _fallback.split('/').pop());
+    try { _actualUrl = _fallback; buf = await fetchDbBuffer(_actualUrl); }
+    catch(e2) { console.log('§MEP_DB_UNAVAILABLE offline + not cached — prompting to load building first'); }
+  }
+  // No DB anywhere (offline and this building was never opened in the viewer) — don't crash;
+  // tell the user to load it first, the way they asked: open it in the viewer while online.
+  if (!buf) {
+    document.getElementById('report-content').innerHTML =
+      '<div class="empty-msg">⏳ ' + _t('ui_load_db_first','Load the building first — open it in the 3D viewer while online to cache its data, then reopen this report.') + '</div>';
+    return;
+  }
   console.log('§MEP_DB_LOADED url=' + _actualUrl.split('/').pop() + ' size=' + Math.round(buf.byteLength/1024/1024) + 'MB');
   var db = new SQL.Database(new Uint8Array(buf));
 
