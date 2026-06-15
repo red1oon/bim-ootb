@@ -841,14 +841,96 @@
     });
   }
 
+  // ── hostCreate (S2/J4 — ERP_CRITIC_UX_LANE) — the host-callable New. iDempiere's OWN New pill calls this to
+  // open the SAME create form the ring's ＋ verb opens (openForm('create', …)) WITHOUT fanning the visual ring
+  // (doctrine §0: the ring is Glass/Gravity-only; iDempiere keeps its own surface). _ensureStore first so the
+  // crud_ops entry (fields + validation) is present even though Edit-mode was never toggled — same reason
+  // hostProcess pre-loads it. Save = the form's #cfSave → saveForm → ONE signed CRUD_CREATE (commitCrud), the
+  // proven write lane. Returns nothing; the form drives the rest.
+  function hostCreate(table) {
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase();
+      var e = entryFor(key);
+      if (!e) { console.log('§CRUD-HOSTCREATE table=' + key + ' skipped (not in crud_ops)'); return; }
+      if (!CORE.verbEnabled(e, 'create')) { console.log('§CRUD-HOSTCREATE table=' + key + ' skipped (create not permitted)'); return; }
+      console.log('§CRUD-HOSTCREATE table=' + key + ' open=create-form (ring not fanned)');
+      openForm('create', e);
+    });
+  }
+
+  // ── §CRUD-CALLOUT (S2/J4) — fire the PROVEN AD callout engine (ad_callout.js, W-CALLOUT) on a create-form
+  // field change so price/defaults FILL like iDempiere, instead of being hand-typed. The dispatch + the line
+  // handlers (amt/qty/product) are the ENGINE's; the W-CALLOUT witness PINS installDefaultHandlers at 6, so the
+  // header bPartner default is registered HERE as HOST GLUE (not in the engine) — a faithful CalloutOrder.bPartner
+  // slice: bill-to defaults to the order BP, the price list from that BP. The accessors (bpDefaults/productPrice)
+  // read the immutable bundle (the real join), never invent. NON-INVENT: the callout NAME + the field it fires on
+  // are AD data (ad_column.callout); every derived value traces to a bundle row.
+  var _calloutHostReady = false;
+  function _ensureHostCallouts() {
+    if (_calloutHostReady || !global.AdCallout) return;
+    _calloutHostReady = true;
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutOrder.bPartner')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutOrder.bPartner', function (ctx, info) {
+        var r = info.record || {};
+        var bp = Number(r.C_BPartner_ID || r.c_bpartner_id || 0); if (!bp) return { derived: {} };
+        var d = {};
+        var billNow = Number(r.Bill_BPartner_ID || r.bill_bpartner_id || 0);
+        if (!billNow) d.Bill_BPartner_ID = bp;                              // bill-to defaults to the order BP
+        var pl = ctx.bpDefaults ? ctx.bpDefaults(bp) : null;               // price list from the BP (SO)
+        if (pl && pl.priceListId != null && pl.priceListId !== '') d.M_PriceList_ID = pl.priceListId;
+        return { derived: d, note: 'bill+pricelist defaulted from BP ' + bp };
+      });
+      console.log('§CRUD-CALLOUT host bPartner handler registered (CalloutOrder.bPartner — bill+pricelist default; engine handlers untouched)');
+    }
+  }
+  function fireCreateCallout(e, changedCol) {
+    if (!global.AdCallout || typeof withBundle !== 'function' || !e || !changedCol) return;
+    _ensureHostCallouts();
+    withBundle(function (bdb) {
+      if (!bdb) return;
+      var b3 = _mvB3(bdb), vals = gatherVals(e);
+      var ctx = {
+        bpDefaults: function (bpId) {
+          try { var row = b3.prepare('SELECT m_pricelist_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(bpId));
+            return row ? { priceListId: row.m_pricelist_id } : null; } catch (er) { return null; }
+        },
+        productPrice: function (pid) {   // forward-compat for a c_orderline create (next leg) — the real price-list join
+          try { var row = b3.prepare('SELECT pp.pricestd, pp.pricelist FROM m_productprice pp JOIN m_pricelist_version v ON v.m_pricelist_version_id=pp.m_pricelist_version_id WHERE pp.m_product_id=? LIMIT 1').get(Number(pid));
+            return row ? { priceStd: row.pricestd, priceList: row.pricelist } : null; } catch (er) { return null; }
+        }
+      };
+      var res = global.AdCallout.dispatch(b3, { table: e.key, column: changedCol, record: vals }, ctx) || {};
+      var derived = res.derived || {}, applied = [];
+      Object.keys(derived).forEach(function (c) {
+        var inEl = form.querySelector('[data-col="' + c + '"]') || form.querySelector('[data-col="' + String(c).toLowerCase() + '"]');
+        if (inEl && !inEl.disabled) { inEl.value = derived[c] == null ? '' : derived[c]; applied.push(c); }
+      });
+      var short = function (n) { return String(n).split('.').slice(-2).join('.'); };
+      console.log('§CRUD-CALLOUT table=' + e.key + ' col=' + changedCol + ' callouts=[' + (res.callouts || []).map(short).join(',') + '] fired=[' + (res.fired || []).map(short).join(',') + '] absent=[' + (res.absent || []).map(short).join(',') + '] derived=' + JSON.stringify(derived) + ' applied=[' + applied.join(',') + ']');
+      if (applied.length && typeof applyAdLogic === 'function') try { applyAdLogic(e); } catch (er) {}
+    });
+  }
+
   // ── the form (bubble kind -> document form of its fields[]) ─────────────────
   function openForm(verb, e) {
     var isEdit = verb === 'update';
     getRecord(e.key, function (rec) {
       var orig = isEdit ? (rec || {}) : null;
       var vals = isEdit ? assignVals(e, rec) : CORE.defaultsFor(e, today());
+      if (!isEdit) _seedDocNoPreview(e, vals);                 // pre-fill DocumentNo with the sequence preview (iDempiere New convention)
       renderForm(verb, e, vals, orig, isEdit ? recId(e.key, rec) : null);
     });
+  }
+  // _seedDocNoPreview — fill an empty DocumentNo on a New form with the sequence preview (the real next number,
+  //   so the numeric val rule passes); _allocDocNo finalises (consumes the sequence) on Save. NON-INVENT: the
+  //   number comes from AD_Sequence, never fabricated; if the table has no documentno field or no sequence, no-op.
+  function _seedDocNoPreview(e, vals) {
+    if (!e || !(e.fields || []).some(function (f) { return String(f.col).toLowerCase() === 'documentno'; })) return;
+    var cur = vals.documentno;
+    if (cur != null && String(cur) !== '' && String(cur) !== 'auto') return;   // a real default already present → keep
+    var pv = _previewDocNo(e.key);
+    vals.documentno = pv != null ? pv : '';
+    if (pv != null) console.log('§DOCNO-PREVIEW table=' + e.key + ' documentno=' + pv + ' (sequence preview, finalised on Save)');
   }
   function renderForm(verb, e, vals, orig, id) {
     var title = (verb === 'create' ? '＋ New ' : '✎ Edit ') + fname(e.key);
@@ -863,6 +945,13 @@
     applyAdLogic(e);                                            // §AD-LOGIC-LIVE — initial show/hide/enable/require off the AD
     var body = form.querySelector('.cfbody');                   // …and re-apply on every edit so the form REACTS like iDempiere
     if (body) { body.addEventListener('input', function () { applyAdLogic(e); }); body.addEventListener('change', function () { applyAdLogic(e); }); }
+    // §CRUD-CALLOUT (S2/J4) — on a create form, a field change fires the AD callout (price/defaults FILL like
+    //   iDempiere: e.g. C_BPartner_ID → bill-to + price list). Fires AFTER applyAdLogic; derived siblings filled.
+    if (verb === 'create' && body) body.addEventListener('change', function (ev) {
+      var el = ev.target && ev.target.closest ? ev.target.closest('[data-col]') : null;
+      var col = el ? el.getAttribute('data-col') : null;
+      if (col) fireCreateCallout(e, col);
+    });
     form.querySelector('.cfx').addEventListener('click', closeForm);
     form.querySelector('#cfCancel').addEventListener('click', closeForm);
     form.querySelector('#cfSave').addEventListener('click', function () { saveForm(verb, e, orig, id); });
@@ -999,7 +1088,10 @@
         Object.keys(mv.derived).forEach(function (c) {
           var inEl = form.querySelector('[data-col="' + c + '"]');
           if (inEl) inEl.value = mv.derived[c] == null ? '' : mv.derived[c];
-          if (Object.prototype.hasOwnProperty.call(vals, c) || (e.fields || []).some(function (f) { return f.col === c; })) vals[c] = mv.derived[c];
+          // a hook-derived value rides the op when it maps to a form field/val; on CREATE, a beforeSave-filled
+          // MANDATORY default that has NO visible field (e.g. M_Warehouse_ID defaulted from session context) must
+          // STILL persist on the new row — iDempiere saves what beforeSave derived. (UPDATE keeps the tight guard.)
+          if (Object.prototype.hasOwnProperty.call(vals, c) || (e.fields || []).some(function (f) { return f.col === c; }) || verb === 'create') vals[c] = mv.derived[c];
         });
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' verdict=OK derived=' + JSON.stringify(mv.derived) + ' fired=' + mv.fired);
       } else if (mv) {
@@ -1055,6 +1147,18 @@
       all: function () { return run(sql, Array.prototype.slice.call(arguments), true); }
     }; } };
   }
+  // _docCtx — the session document context the beforeSave hooks consult (iDempiere Env). The default Warehouse
+  //   for the session org (else the client's first active warehouse) — read from m_warehouse, never invented.
+  function _docCtx(b) {
+    var ctx = {};
+    try {
+      var app = global.APP || {}, org = Number(app.orgId) || 0, cli = Number(app.clientId) || 0, wh = null;
+      if (org) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(org);
+      if ((!wh || wh.m_warehouse_id == null) && cli) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_client_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(cli);
+      if (wh && wh.m_warehouse_id != null) ctx.m_warehouse_id = Number(wh.m_warehouse_id);
+    } catch (e) {}
+    return ctx;
+  }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;
     if (!MV || !MV_INSTALLER[e.key] || typeof withBundle !== 'function') { cb(null); return; }
@@ -1067,7 +1171,10 @@
         if (orig) for (k in orig) rec[k.toLowerCase()] = orig[k];
         for (k in vals) rec[k.toLowerCase()] = vals[k];
         var info = { table: e.key, record: rec, recordOld: orig || null };
-        var v = MV.fireHooks('BEFORE_SAVE', info, {});
+        // ctx = the session document defaults the beforeSave hooks read (iDempiere's Env #context): chiefly the
+        //   default Warehouse, which MOrder.warehouseMandatory fills from ctx when the order carries none. NON-INVENT:
+        //   the warehouse is the session org's own active warehouse (else the client's first), read from m_warehouse.
+        var v = MV.fireHooks('BEFORE_SAVE', info, _docCtx(b));
         out = { ok: v.ok, fired: v.fired, blocked: v.blocked, error: v.error, derived: info.derived || null };
       } catch (er) { console.log('§AD-MODELVAL-LIVE error ' + (er && er.message) + ' → hooks skipped'); out = null; }
       cb(out);
@@ -1565,18 +1672,33 @@
   // Approach (a-simplified): number embedded in the op fields (replay-stable); sequence CurrentNext
   // bumped directly in the main db (state not in op-log — acceptable for demo; name the trade-off).
   // Returns the formatted DocumentNo, or null when no matching active sequence (named, not faked).
+  // _previewDocNo — the sequence's NEXT DocumentNo WITHOUT consuming it (iDempiere shows this preview on a New
+  //   form; the field is filled so the numeric val rule passes + the user isn't asked to type a doc number).
+  //   The real number is allocated (and the sequence consumed) at commit by _allocDocNo. Returns null if no seq.
+  function _previewDocNo(table) {
+    var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null; if (!mdb) return null;
+    var cols = _getTableCols(table); if (!cols['documentno']) return null;
+    try {
+      var r = mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", ['DocumentNo_' + table]);
+      if (!r.length || !r[0].values.length) return null;
+      var v = r[0].values[0]; return (v[1] || '') + v[0] + (v[2] || '');
+    } catch (e) { return null; }
+  }
   function _allocDocNo(table, fields) {
     var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
     if (!mdb) return null;
     var cols = _getTableCols(table);
     if (!cols['documentno']) return null;
-    if (fields && (fields['DocumentNo'] != null || fields['documentno'] != null)) return null; // user provided
     try {
       var seqName = 'DocumentNo_' + table;
       var r = mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", [seqName]);
       if (!r.length || !r[0].values.length) { console.log('§DOCNO no-sequence table=' + table + ' (named, not faked)'); return null; }
       var v = r[0].values[0], seqId = v[0], next = v[1], incr = v[2] || 1, prefix = v[3] || '', suffix = v[4] || '';
       var docNo = (prefix || '') + next + (suffix || '');
+      // honor a MANUAL override (a value the user changed AWAY from the preview); otherwise allocate (consume)
+      //   the sequence. The New form pre-fills the preview (= docNo), so an untouched field allocates this number.
+      var provided = fields ? (fields['DocumentNo'] != null ? fields['DocumentNo'] : fields['documentno']) : null;
+      if (provided != null && String(provided) !== '' && String(provided) !== String(docNo)) return null;
       mdb.run('UPDATE AD_Sequence SET CurrentNext=' + (next + incr) + ' WHERE AD_Sequence_ID=' + seqId);
       console.log('§DOCNO table=' + table + ' seq=' + seqName + ' next=' + next + ' docno=' + docNo + ' replay-stable=Y');
       return docNo;
@@ -1887,6 +2009,8 @@
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
+                    create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
+                    fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,

@@ -512,7 +512,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=12"></script>
+<script src="crud_overlay.js?v=13"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1249,6 +1249,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.__crud.enable();
     var tries = 0; (function tryOpen() { if (window.__crud.openRing && window.__crud.store && window.__crud.store()) { window.__crud.openRing(tn); console.log('§FORM-PILL crud-ring table=' + tn + ' record=' + _curRecPk()); } else if (tries++ < 30) { setTimeout(tryOpen, 60); } })();
   }
+  // _openCreate (S2/J4) — iDempiere's OWN New: open the create FORM directly via the host seam (__crud.create),
+  //   NOT the visual ring fan (doctrine §0: the ring is Glass/Gravity-only). The create-twin of J5's Process seam:
+  //   same proven write lane (saveForm → signed CRUD_CREATE), iDempiere's own surface. Save = #cfSave (_formSave).
+  function _openCreate() {
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn) { status('New — open a window first'); console.log('§FORM-PILL new=skip(no-table)'); return; }
+    if (typeof window.__crud.create !== 'function') { _openCrudRing(); return; }   // pre-J4 fallback (older overlay)
+    // hostCreate runs _ensureStore (the crud_ops fetch is lazy) then checks entryFor/verbEnabled — so a New on the
+    //   very first click (before the store loads) resolves correctly; a non-creatable table logs §CRUD-HOSTCREATE skip.
+    window.__crud.create(tn);                                  // the form + CSS are mounted at overlay init — no enable()/ring needed (mirrors hostProcess)
+    console.log('§FORM-PILL new=create-form table=' + tn + ' (ring not fanned)');
+  }
   function _formSave() {        // = iDempiere Save: persist the edits in the open CRUD overlay form (its #cfSave)
     var sv = document.getElementById('cfSave');
     if (sv) { sv.click(); console.log('§FORM-PILL save=clicked'); }
@@ -1362,7 +1374,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var orderBy = tab.orderByClause && tab.orderByClause.indexOf('@') < 0 ? tab.orderByClause : null;
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
-    _overlayDocTip(tab, _records);   // S1/J5 — signed DocStatus reads-the-tip (the bundle is immutable; op-log is truth)
+    _overlayListTip(tab, _records);  // S2/J4 — fold the op-log over the bundle: signed CRUD_CREATE rows APPEAR, edits overlay, deletes hide, then DocStatus reads-the-tip (S1/J5). Bundle immutable; op-log is truth.
     _recIdx = 0; _gridSel = Object.create(null); _setSel(tab);   // fresh record set → clear any grid multi-select (item 4)
     // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
     _curPostingDoc = _isPostingDoc(tab.tableName);
@@ -1576,6 +1588,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   status, and its SURVIVAL across reload, must READ THE TIP, the SAME verb the CRUD form (_overlayTip) and
   //   ad_parser (setTipSource) use. For each loaded record carrying a DocStatus, overlay the latest signed
   //   SET_STATUS `to`. Branch-aware (Blue Future). No tip / no overlay mounted → rows pass through unchanged.
+  function _readBr() { return (window.BlueFuture && typeof window.BlueFuture.readBranch === 'function') ? window.BlueFuture.readBranch() : null; }
+  // _applyDocTip — the SYNC core of the read-the-tip status overlay (given an OPEN sidecar): for each loaded
+  //   record carrying a DocStatus, overlay the latest signed SET_STATUS `to`. Returns the # of rows advanced.
+  //   Shared by _overlayDocTip (the J5 DOC_ACTION path) and _overlayListTip (the J4 full-row-set path) so the
+  //   status overlay is identical on a freshly-created row and a bundle row — ONE verb, no fork.
+  function _applyDocTip(tab, recs, sdb, br) {
+    var c = window.__crud, tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!sdb || !tn || !recs || !c || !c.core || typeof c.core.readTip !== 'function') return 0;
+    var n = 0;
+    recs.forEach(function (r) {
+      var dsKey = _recKey(r, 'DocStatus'); if (!(dsKey in r)) return;
+      var id = recVal(r, _keyCol(tab)); if (id == null) return;
+      var tip = c.core.readTip(sdb, tn, id, br);
+      if (tip != null && String(tip) !== String(r[dsKey])) { r[dsKey] = tip; n++; }
+    });
+    return n;
+  }
   function _overlayDocTip(tab, recs) {
     if (!recs || !recs.length || !tab || !window.__crud) return;
     var c = window.__crud;
@@ -1586,16 +1615,54 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // loads it once; we then overlay + repaint the CURRENT view (async), guarding against a navigation meanwhile.
     c.withSidecar(function (sdb) {
       if (!sdb || recs !== _records) return;
-      var br = (window.BlueFuture && typeof window.BlueFuture.readBranch === 'function') ? window.BlueFuture.readBranch() : null;
-      var n = 0;
-      recs.forEach(function (r) {
-        var dsKey = _recKey(r, 'DocStatus'); if (!(dsKey in r)) return;
-        var id = recVal(r, _keyCol(tab)); if (id == null) return;
-        var tip = c.core.readTip(sdb, tn, id, br);
-        if (tip != null && String(tip) !== String(r[dsKey])) { r[dsKey] = tip; n++; }
-      });
+      var br = _readBr();
+      var n = _applyDocTip(tab, recs, sdb, br);
       if (n) {
         console.log('§DOC-TIP overlay table=' + tn + ' rows=' + recs.length + ' advanced=' + n + ' source=readTip(SET_STATUS)' + (br ? ' branch=' + br : ''));
+        if (_viewMode === 'form') refreshForm(); else renderBody();
+      }
+    });
+  }
+  // _overlayListTip (S2/J4 — ERP_CRITIC_UX_LANE) — generalizes _overlayDocTip to the FULL row set: fold
+  //   CORE.listTip over the loaded _records so a signed CRUD_CREATE row APPEARS (synthetic negative pk),
+  //   CRUD_UPDATE edits overlay, CRUD_DELETE tombstones HIDE — then overlay the SET_STATUS docstatus (the J5
+  //   verb) on the folded set so a freshly-created-then-Completed row reads its signed status too. The immutable
+  //   bundle (ad_seed/glassbowl_data) stays the BASELINE; created/edited/hidden live only in _records. Hydrates
+  //   the lazy sidecar so the new row SURVIVES RELOAD (the op id is durable). One repaint.
+  //   GATING (W-CRITIC-GATING, load-bearing): the SQL read already scoped the bundle rows to the session
+  //   client/org; listTip's created rows bypass that SQL, so re-apply the SAME client/org scope to created rows
+  //   (their stdDefaults carry AD_Client_ID/AD_Org_ID) — a created order shows ONLY in its own tenant.
+  //   crud_ops creatable tables are header-level (tabLevel 0) this leg; a created CHILD row's parent-FK scope is
+  //   the next generalization (§-noted), not silently dropped.
+  function _overlayListTip(tab, recs) {
+    if (!recs || !tab || !window.__crud) { return; }
+    var c = window.__crud;
+    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null; if (!tn) return;
+    if (typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { _overlayDocTip(tab, recs); return; }
+    c.withSidecar(function (sdb) {
+      if (!sdb || recs !== _records) return;                  // a navigation happened meanwhile → drop this stale pass
+      var br = _readBr(), pkCol = _keyCol(tab), folded = null;
+      try { folded = c.core.listTip(sdb, tn, pkCol, recs, br); } catch (e) { folded = null; }
+      var rows = (folded && folded.rows) || recs;
+      var created = (folded && folded.created) || [], hidden = (folded && folded.hidden) || [];
+      // gate created rows to the session client/org (the SAME scope the bundle SELECT applied to base rows).
+      if (created.length && _session) {
+        var createdSet = {}; created.forEach(function (p) { createdSet[String(p)] = 1; });
+        var cid = _session.client ? _session.client.id : null;
+        var oid = (_session.org && _session.org.id !== 0) ? _session.org.id : null;
+        rows = rows.filter(function (r) {
+          if (!createdSet[String(recVal(r, pkCol))]) return true;           // base row — already SQL-scoped
+          if (cid != null) { var rc = recVal(r, 'AD_Client_ID'); if (rc !== '' && rc != null && Number(rc) !== 0 && Number(rc) !== Number(cid)) return false; }
+          if (oid != null) { var ro = recVal(r, 'AD_Org_ID');    if (ro !== '' && ro != null && Number(ro) !== 0 && Number(ro) !== Number(oid)) return false; }
+          return true;
+        });
+        var kept = {}; rows.forEach(function (r) { kept[String(recVal(r, pkCol))] = 1; });
+        created = created.filter(function (p) { return kept[String(p)]; });
+      }
+      var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
+      if (created.length || hidden.length || nStatus || rows.length !== recs.length) {
+        _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
+        console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
         if (_viewMode === 'form') refreshForm(); else renderBody();
       }
     });
@@ -2115,6 +2182,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (_viewMode === 'form') refreshForm(); else renderBody();
       return;
     }
+    // S2/J4 — a signed CRUD write (New/edit/delete) committed on a DATA table. Re-fold listTip over the loaded
+    //   records so the created row APPEARS (or an edit/delete reflects) on the CURRENT view, without a window
+    //   reset — then it persists + survives reload (handled by renderActiveTab's _overlayListTip on next load).
+    if (d.op_type === 'CRUD_CREATE' || d.op_type === 'CRUD_UPDATE' || d.op_type === 'CRUD_DELETE') {
+      var ct = _curTab();
+      if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
+        console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
+        try { _overlayListTip(ct, _records); } catch (er) {}
+      }
+      return;
+    }
     if (!/^AD_/i.test(t)) return;                              // only DICTIONARY edits refold the model
     var wid = _activeWin;
     console.log('§AD-SELFEDIT-LIVE refold table=' + t + ' win=' + wid);
@@ -2500,7 +2578,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // GRID_BATCH_FORM_PILL_SPEC item 5 — form-view action toolbar relocated into the pill (red-pill hides
       //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
       formproc: function () { _showProcessChooser(); },
-      formnew: function () { _openCrudRing(); },
+      formnew: function () { _openCreate(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
       editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
