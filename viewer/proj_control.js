@@ -46,15 +46,35 @@
     };
   }
 
+  // does C_Order carry the BLUE-FUTURE branch_id column? (only after a blue push has ALTERed it in)
+  function _hasBranchCol(db) {
+    var r = db.exec("PRAGMA table_info(C_Order)");
+    return r.length && r[0].values.some(function (v) { return String(v[1]).toLowerCase() === 'branch_id'; });
+  }
   // Original Contract + Approved VOs = Revised Contract Sum (commercial picture).
-  function contractSum(db, projectId) {
+  // §F9 — opts.branch: undefined/null = OFFICIAL view (excludes blue rows, branch_id IS NULL); a branch
+  // string = that blue view (official rows + the branch's speculative rows). Column-safe: with no branch_id
+  // column (the F1–F8 path) the filter is a no-op, so official == every row, unchanged.
+  function contractSum(db, projectId, opts) {
+    opts = opts || {};
     var original = _bd(_scalar(db, "SELECT PlannedAmt FROM C_Project WHERE C_Project_ID=?", [projectId]));
-    // linked VO amendments (vo_fold writes Description 'BIM VO: …', C_Project_ID set).
-    var approved = _bd(_scalar(db, "SELECT COALESCE(SUM(GrandTotal),0) FROM C_Order WHERE C_Project_ID=? AND Description LIKE 'BIM VO:%' AND DocStatus='CO'", [projectId]));
-    var pending = _bd(_scalar(db, "SELECT COALESCE(SUM(GrandTotal),0) FROM C_Order WHERE C_Project_ID=? AND Description LIKE 'BIM VO:%' AND DocStatus<>'CO'", [projectId]));
+    var filt = '', args2 = null;
+    if (_hasBranchCol(db)) {
+      if (opts.branch == null) filt = " AND branch_id IS NULL";
+      else { filt = " AND (branch_id IS NULL OR branch_id=?)"; args2 = opts.branch; }
+    }
+    function vo(statusClause) {
+      var sql = "SELECT COALESCE(SUM(GrandTotal),0) FROM C_Order WHERE C_Project_ID=? AND Description LIKE 'BIM VO:%' AND " + statusClause + filt;
+      var params = args2 != null ? [projectId, args2] : [projectId];
+      return _bd(_scalar(db, sql, params));
+    }
+    var approved = vo("DocStatus='CO'");
+    var pending = vo("DocStatus<>'CO'");
     return {
       original: original.toString(), approvedVOs: approved.toString(), pendingVOs: pending.toString(),
-      revised: original.add(approved).toString()
+      revised: original.add(approved).toString(),            // committed contract (approved VOs only)
+      whatIfRevised: original.add(approved).add(pending).toString(), // + pending/speculative VOs (the what-if)
+      view: (opts.branch == null ? 'official' : 'blue:' + opts.branch)
     };
   }
 

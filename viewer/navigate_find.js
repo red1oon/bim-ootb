@@ -1039,6 +1039,19 @@
         console.log('[RP-C] §PROJ_PUSH project="' + building + '" scope="' + _lastSelLabel + '" phases=+' + r.created.phases +
           ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
           ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt);
+        // §F9 — when BlueFuture is engaged, route the pushed Project Order onto the active blue branch
+        // (op-log + projection tag) so it's a speculative UNOFFICIAL draft, invisible to official chrome
+        // until accepted on the timeline. No-op in the plain viewer (BlueFuture/BlueFold absent → white push).
+        try {
+          var _bf = window.BlueFuture, _bfold = window.BlueFold;
+          if (_bf && _bfold && _bf.isBlue && _bf.isBlue() && r.created.projects) {
+            var _br = _bf.branchId ? _bf.branchId() : (_bf.readBranch && _bf.readBranch());
+            var _tags = [{ table: 'C_Project', idCol: 'C_Project_ID', id: r.projectId }];
+            if (r.orderId) _tags.push({ table: 'C_Order', idCol: 'C_Order_ID', id: r.orderId });
+            _bfold.commitBlue(db, _br, [{ op_type: 'PROJECT_FOLD', output_guid: String(r.projectId), params: { building: building, plannedAmt: String(r.plannedAmt) } }], _tags)
+              .then(function (b) { console.log('[RP-C] §PROJ_PUSH_BLUE branch=' + _br + ' ok=' + (b && b.ok) + ' ops=' + JSON.stringify(b && b.opIds) + ' (speculative — invisible to official chrome)'); });
+          }
+        } catch (e) { console.log('[RP-C] §PROJ_PUSH_BLUE_ERR ' + e.message); }
         // §F4 — the PM control readout (contract sum + EVM) on the freshly folded project.
         var ctrl = null;
         if (window.ProjControl && r.projectId) {

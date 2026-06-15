@@ -119,7 +119,7 @@ EXTRACT a `C_Tax` rate from the seed (or seed a Malaysian SST row, reproducibly)
 
 ### §BLUE — speculate the Project Order on the timeline, then roll it back (capstone; reuses F4/F5)
 
-**F9 — Speculative ("blue") Project Order / VO** · `W-FIN-BLUE-SPEC`
+**F9 — Speculative ("blue") Project Order / VO** · `W-FIN-BLUE-SPEC` · ✅ DONE (`tests/poc_fin_blue_spec.js` 5/5)
 Route the BIM push through the ERP **kernel op-log on the active blue branch** instead of raw INSERTs: when
 `window.BlueFuture` is engaged, `proj_fold`/`vo_fold` commit via `KernelOps.commitGroup(db, ops, BlueFuture.groupMeta())`
 so every row carries a `branch_id` (or, lighter: tag the §B-overlaid rows with the active branch). The speculative
@@ -127,8 +127,14 @@ C_Project/VO render with the **UNOFFICIAL blue treatment** and feed a *what-if* 
 invisible to official chrome (`branch_id IS NULL`).
 *Witness:* blue push → `KO.branchOps(db, branch)` carries the project/VO ops; an official query (`branch_id IS NULL`)
 does **not** see them; the contract-sum control shows the speculative delta only in blue view.
+> **Done 2026-06-15:** new `viewer/blue_fold.js` `commitBlue` REUSES `KernelOps.commitGroup(db, ops, {branch_id})` (exactly
+> what `BlueFuture.groupMeta()` hands signed commits) + tags the projection rows (C_Project/C_Order, branch_id column
+> ALTERed in idempotently). `proj_control.contractSum` gained a column-safe `branch` arg (official = branch_id IS NULL;
+> blue view = + the branch) and a `whatIfRevised` (original + approved + pending). `navigate_find._pushToErp` routes through
+> BlueFold when `window.BlueFuture.isBlue()` (no-op in the plain viewer → white push, EVM-LIVE 8/8 unchanged). W-FIN-BLUE-SPEC
+> 5/5: blue VO op carried by branchOps, official op-projection + official query both empty, what-if delta only in blue view.
 
-**F10 — Roll back / accept the speculation on the timeline** · `W-FIN-BLUE-ROLLBACK`
+**F10 — Roll back / accept the speculation on the timeline** · `W-FIN-BLUE-ROLLBACK` · ✅ DONE (engine, `tests/poc_fin_blue_rollback.js` 5/5)
 Reuse the `‹ dots ›` history rail + `BlueFuture`: step-back / discard (`KO.discardBranch(db, branch)`) folds the
 speculative Project Order away **atomically** (official state unchanged = the rollback the user asked for); a long-press
 accept (`KO.acceptBranchUpTo(db, branch, uptoId)`) turns the blue ops **white** → it becomes the real, official
@@ -136,6 +142,12 @@ Project Order.
 *Witness:* headless — `discardBranch` → `branchOps` empty + official contract sum reverts; `acceptBranchUpTo` → ops
 go white + appear in official chrome. Browser — the blue Project Order **rolls back via the timeline gesture** and the
 revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` kernel + `project_history_branch_tree`.)
+> **Done 2026-06-15 (engine):** `blue_fold.discardBlue` wraps `KernelOps.discardBranch` + drops the blue projection rows;
+> `blue_fold.acceptBlue` wraps `KernelOps.acceptBranchUpTo` + clears branch_id on the rows. W-FIN-BLUE-ROLLBACK 5/5:
+> discard → branchOps empty + blue VO row gone + blue what-if reverts to original while official is untouched the whole
+> cycle; accept → blue ops turn white (branch_id IS NULL), row becomes official, official contract sum picks up the VO.
+> ⏳ **Remaining (browser):** drive the live ERP `‹ dots ›` rail gesture on a BIM-pushed blue Project Order — reuses the
+> already-shipped `BlueFuture` discardAll/acceptUpTo (which call exactly these kernel seams); blue_fold is wired for it.
 
 ## §DONE
 - ✅ **F1 — Currency + conversion-rate fidelity** — `W-FIN-CURRENCY` (`tests/poc_fin_currency.js`) 6/6 + 5/5 regression.
@@ -156,7 +168,13 @@ revised contract sum reverts; accept lands it official. (Reuses `W-BLUE-FUTURE` 
 - ✅ **F8 — Period control** — `W-FIN-PERIOD` (`tests/poc_fin_period.js`) 6/6 + 8 finance + 5/5 regression. `viewer/proj_period.js`
   resolvePeriod/conversionRateAsOf; proj_claim opt-in requireOpenPeriod gate (open posts, closed refused). MYR rate validfrom→2000. LOCALHOST (2026-06-15).
 
-**🎯 Foundations + control + accounting (F1–F8) DRAINED 2026-06-15** — all LOCALHOST, witnessed. §BLUE capstone (F9/F10) next.
+- ✅ **F9 — Speculative blue Project Order/VO** — `W-FIN-BLUE-SPEC` (`tests/poc_fin_blue_spec.js`) 5/5. `viewer/blue_fold.js`
+  reuses KernelOps.commitGroup({branch_id}); contractSum branch arg + whatIfRevised; navigate_find routes blue when engaged. LOCALHOST (2026-06-15).
+- ✅ **F10 — Roll back / accept on the timeline** — `W-FIN-BLUE-ROLLBACK` (`tests/poc_fin_blue_rollback.js`) 5/5 (engine).
+  blue_fold discardBlue (KO.discardBranch + drop rows) / acceptBlue (KO.acceptBranchUpTo + white rows). Browser ‹dots›-gesture drive remaining. LOCALHOST (2026-06-15).
+
+**🎯 Lane F1–F10 engine-complete 2026-06-15** — 12 finance witnesses (F1–F8 + F9/F10) + EVM-LIVE browser + 5 regression, all green,
+all LOCALHOST. ONE remaining sub-item: F10 live ERP ‹dots›-timeline gesture drive (engine + wiring done, reuses shipped BlueFuture).
 
 ---
 
