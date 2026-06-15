@@ -624,6 +624,11 @@
   // ════════════════════════════════════════════════════════════════════════
   injectCss();
   var STORE = null, on = false, raf = 0, hots = [], ring = null, ringKey = null, form = null;
+  // Item 1 (PRIVATE DRAFT RESTORE, W-DRAFT-RESTORE-LIVE) — the OPEN form's context, so closeForm/beforeunload can
+  // buffer the unsaved typing for (table,id) WITHOUT committing an official op. Cleared by closeForm. _draftSeq is
+  // a monotonic ts (no Date.now — the draft buffer is not the op-log but we keep determinism anyway).
+  var _formCtx = null, _draftSeq = 0;
+  function _draftStore() { try { return (typeof localStorage !== 'undefined') ? localStorage : null; } catch (e) { return null; } }
   var ICONS = [
     { verb: 'create', glyph: '＋', cls: 'new',  title: 'New' },
     { verb: 'view',   glyph: '👁', cls: 'view', title: 'View data' },
@@ -664,6 +669,8 @@
     statusBar.innerHTML = '<span class=dsbk>' + esc(fname(key)) + '</span><span class=dsbv>' + esc(status + ' · ' + label + note) + '</span>';
   }
   ck.addEventListener('change', function () { if (ck.checked) enable(); else disable(); });
+  // Item 1 — leaving the page with a dirty edit buffers the typing (private, no official dot). beforeunload only.
+  if (typeof window !== 'undefined') window.addEventListener('beforeunload', function () { try { _bufferDraft(); } catch (e) {} });
 
   function today() { try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; } }
   function entryFor(key) { return STORE && !isMeta(key) && STORE[key] ? (function () { var e = STORE[key]; e.key = key; return e; })() : null; }
@@ -818,6 +825,53 @@
     form.querySelector('.cfx').addEventListener('click', closeForm);
     form.querySelector('#cfCancel').addEventListener('click', closeForm);
     form.querySelector('#cfSave').addEventListener('click', function () { saveForm(verb, e, orig, id); });
+    // Item 1 — track the open form so a leave (close/nav) buffers the unsaved typing; offer restore on reopen.
+    _formCtx = { verb: verb, e: e, id: id, baseline: orig || {} };
+    if (verb === 'update') _offerDraftRestore(e, id);
+  }
+  // ── Item 1 (PRIVATE DRAFT RESTORE) — Save is the publish boundary: an unsaved edit is PRIVATE/local and must
+  // NEVER become an official dot or leak to other docs (they read the committed tip). On leave we refresh a private
+  // buffer + an amber dirty-pip (distinct from committed dots); on return the form DEFAULTS to the saved tip and the
+  // pip lets the user OPT IN to restore their typing. Witness: W-DRAFT-RESTORE-LIVE. Engine: W-DRAFT-RESTORE 14/14.
+  function _bufferDraft() {
+    if (!_formCtx || _formCtx.verb !== 'update') return null;
+    var st = _draftStore(); if (!st) return null;
+    var vals = gatherVals(_formCtx.e);
+    var rec = draftPut(st, _formCtx.e.key, _formCtx.id, vals,
+      { baseline: _formCtx.baseline, tipSnapshot: _formCtx.baseline, ts: ++_draftSeq });
+    if (rec) _setDraftPip(_formCtx.e.key, _formCtx.id, rec.cols);
+    else _clearDraftPip(_formCtx.e.key, _formCtx.id);   // clean leave → strand no stale pip
+    return rec;
+  }
+  // offer the restore pip when reopening a form that has a buffered draft (default view stays the saved tip).
+  function _offerDraftRestore(e, id) {
+    var st = _draftStore(); if (!st) return;
+    var d = draftGet(st, e.key, id);
+    if (d && d.cols && d.cols.length) { _setDraftPip(e.key, id, d.cols); console.log('§DRAFT-OFFER key=' + e.key + ':' + id + ' cols=' + d.cols.join(',') + ' (default=saved tip; pip=opt-in restore)'); }
+  }
+  // restoreDraft — the opt-in: fill the OPEN form with the buffered typing, and WARN if the tip moved underneath
+  // (draftDrift — the item-1 decision: single-user default keeps the draft, never silently clobbers; we flag it).
+  function restoreDraft() {
+    if (!_formCtx) return false;
+    var st = _draftStore(); if (!st) return false;
+    var d = draftGet(st, _formCtx.e.key, _formCtx.id); if (!d) return false;
+    var drift = draftDrift(d, _formCtx.baseline);
+    (_formCtx.e.fields || []).forEach(function (f) {
+      if (!Object.prototype.hasOwnProperty.call(d.vals || {}, f.col)) return;
+      var el = form.querySelector('[data-col="' + f.col + '"]'); if (el) el.value = d.vals[f.col] == null ? '' : d.vals[f.col];
+    });
+    try { applyAdLogic(_formCtx.e); } catch (er) {}
+    if (drift.drifted) { toast('Restored your draft — note: ' + drift.cols.join(', ') + ' changed underneath since'); }
+    console.log('§DRAFT-RESTORE key=' + _formCtx.e.key + ':' + _formCtx.id + ' cols=' + (d.cols || []).join(',') + ' drift=' + drift.drifted + (drift.drifted ? '(' + drift.cols.join(',') + ')' : ''));
+    return true;
+  }
+  // pip plumbing — render on the shared history bar (idmp_history) when present; guarded for glassbowl (no bar).
+  function _setDraftPip(table, id, cols) {
+    try { if (window.IdmpHistory && typeof window.IdmpHistory.setDraftPip === 'function')
+      window.IdmpHistory.setDraftPip({ table: table, id: id, cols: cols || [] }, function () { restoreDraft(); }); } catch (e) {}
+  }
+  function _clearDraftPip(table, id) {
+    try { if (window.IdmpHistory && typeof window.IdmpHistory.clearDraftPip === 'function') window.IdmpHistory.clearDraftPip(table, id); } catch (e) {}
   }
   // applyAdLogic — drive the live DOM from each field's AD logic (DisplayLogic/ReadOnlyLogic/MandatoryLogic) via
   // CORE.effectiveFlags (→ window.AdEvaluator). The record AND context = the form's own current field values, so
@@ -924,10 +978,10 @@
           applyOp(sp.statusOp, e);
         }
         if (sp.fieldOp) applyOp(sp.fieldOp, e);
-        closeForm(); return;
+        closeForm({ saved: true }); return;        // Item 1: committed → draft cleared, no buffering
       }
       applyOp(op, e);
-      closeForm();
+      closeForm({ saved: true });                  // Item 1: committed → draft cleared, no buffering
     });
   }
   // ── §AD-MODELVAL-LIVE plumbing — lazy per-table installer over the page bundle (sql.js → b3 shim) ──
@@ -991,7 +1045,17 @@
       form.querySelector('#cfDel').addEventListener('click', function () { applyOp(CORE.buildOp('delete', e, {}, rec, { id: id }), e); closeForm(); });
     });
   }
-  function closeForm() { form.className = ''; form.innerHTML = ''; }
+  // closeForm(opts) — opts.saved===true after a committed Save: clear the draft (it's now official), no buffering.
+  // A plain close/cancel/nav (or an Event from an onclick listener — no .saved) BUFFERS the dirty typing first.
+  function closeForm(opts) {
+    var saved = opts && opts.saved === true;
+    if (_formCtx && _formCtx.verb === 'update') {
+      if (saved) { var st = _draftStore(); if (st) draftClear(st, _formCtx.e.key, _formCtx.id); _clearDraftPip(_formCtx.e.key, _formCtx.id); }
+      else _bufferDraft();
+    }
+    _formCtx = null;
+    form.className = ''; form.innerHTML = '';
+  }
 
   // ════════════════════════════════════════════════════════════════════════
   // GP3 SIGNED-WRITE SEAM — the deployed Process ▶ becomes a REAL signed write (W-CRUD-WRITELOOP-OVERLAY).
@@ -1768,6 +1832,7 @@
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id, _readBranch()) : null; }, history: history,
                     changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
                     fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col, _readBranch()) : []; },  // Item 3b (W-FIELD-LINEAGE) + BLUE FUTURE view
+                    restoreDraft: restoreDraft, bufferDraft: _bufferDraft,   // Item 1 (W-DRAFT-RESTORE-LIVE): opt-in restore + leave-buffer (host/witness seam)
                     recordInfo: function (table, id) { return SIDE ? CORE.recordInfo(SIDE, table, id, _readBranch()) : null; },  // Item 3a (W-RECINFO): record-level who/when from the op-log
                     fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
