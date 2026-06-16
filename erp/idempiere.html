@@ -2729,7 +2729,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _erpTapHW = -1, _erpDraining = false, _erpArmed = false;
   // Tags the ERP page ALREADY records as nav moments (window/tab/record) or that are the bar's own chrome — skip
   // so the crumb drain never doubles a nav dot. (IDMP* chrome isn't in any STOP set, so this is belt-and-braces.)
-  var _ERP_EXPLICIT_TAGS = { IDMP: 1, IDMP_HIST: 1, NAVIGATE: 1, FOCUS_NODE: 1 };
+  // §AD_DATA = navigation's DATA-READ ECHO (fires on every tab/record open AND on a restore's re-read) — NOT an
+  // independent act. Draining it (a) doubled every nav dot with a "readRecords" crumb and (b) the deferred re-read
+  // during a RESTORE minted a crumb that truncated the forward branch + bumped idx → the back-arrow couldn't go
+  // back (observed live). Skip it: the real nav is already the window/tab/record dot. Genuinely independent acts
+  // (KANBAN/ERP_SEARCH/AD_GRAPH/RULE) still dot. (Belt: the drain is also isApplying/_histRestoring gated, but
+  // those are synchronous-only and the AD_DATA re-read is deferred, so the skip is the real fix.)
+  var _ERP_EXPLICIT_TAGS = { IDMP: 1, IDMP_HIST: 1, NAVIGATE: 1, FOCUS_NODE: 1, AD_DATA: 1 };
   function _drainErpTap() {
     if (_erpDraining || !window.HistoryTap || !HistoryTap.historySince || !window.IdmpHistory || !IdmpHistory.pushCrumb) return;
     if (HistoryTap.isApplying && HistoryTap.isApplying()) return;   // scrubbing the past ≠ a new act
