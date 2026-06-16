@@ -104,6 +104,10 @@
   function validateField(store, f, val, orig, record, context) {
     var eff = effectiveFlags(f, record, context);
     if (!eff.visible) return null;                        // hidden by DisplayLogic → not validated (GridField parity)
+    // iDempiere validates only what the SAVE changes — an UNCHANGED field's value is already persisted (valid by
+    //   definition) and won't be written, so it is not re-checked (this also spares an untouched fk/code field that
+    //   the spec types imperfectly, e.g. AD_Language='en_US'). orig===undefined (create) → every field is checked.
+    if (orig !== undefined && String(val == null ? '' : val) === String(orig == null ? '' : orig)) return null;
     if (eff.readonly) {
       if (orig !== undefined && orig !== null && String(val) !== String(orig)) return 'readonly';
       return null;
@@ -700,6 +704,11 @@
   // ════════════════════════════════════════════════════════════════════════
   injectCss();
   var STORE = null, on = false, raf = 0, hots = [], ring = null, ringKey = null, form = null;
+  // INLINE CRUD (P2 — prompts/CRUD_INPLACE_EDIT_SESSION.md). fhost = the element that currently HOLDS the open
+  // form's field rows. The shared helpers (fieldInput/populateRefs/applyAdLogic/gatherVals/saveForm/restoreDraft)
+  // all query fhost, so the SAME engine serves two mounts: the modal #crudForm (Glass/Gravity ring) and the
+  // iDempiere form view rendered INLINE (no modal, no ✎ Edit). _inlineHost!=null ⇒ the open form is the inline one.
+  var fhost = null, _inlineHost = null, _inlineBaseline = null, _onInlineDirty = null;
   // Item 1 (PRIVATE DRAFT RESTORE, W-DRAFT-RESTORE-LIVE) — the OPEN form's context, so closeForm/beforeunload can
   // buffer the unsaved typing for (table,id) WITHOUT committing an official op. Cleared by closeForm. _draftSeq is
   // a monotonic ts (no Date.now — the draft buffer is not the op-log but we keep determinism anyway).
@@ -729,7 +738,7 @@
     if (ev.target && ev.target.closest && (ev.target.closest('#crudRing') || ev.target.closest('.crud-hot'))) return;
     closeRing();
   });
-  form = document.createElement('div'); form.id = 'crudForm'; document.body.appendChild(form);
+  form = document.createElement('div'); form.id = 'crudForm'; document.body.appendChild(form); fhost = form;
   // #docStatusBar — the statusbar element-kind TARGET the Help guide highlights ("note the status").
   // Reflects the lit / last-processed document's docstatus; hidden until a Process runs (CRUD_OVERLAY.md §Process).
   var statusBar = document.createElement('div'); statusBar.id = 'docStatusBar';
@@ -1013,7 +1022,7 @@
       var res = global.AdCallout.dispatch(b3, { table: e.key, column: changedCol, record: vals }, ctx) || {};
       var derived = res.derived || {}, applied = [];
       Object.keys(derived).forEach(function (c) {
-        var inEl = form.querySelector('[data-col="' + c + '"]') || form.querySelector('[data-col="' + String(c).toLowerCase() + '"]');
+        var inEl = fhost.querySelector('[data-col="' + c + '"]') || fhost.querySelector('[data-col="' + String(c).toLowerCase() + '"]');
         if (inEl && !inEl.disabled) { inEl.value = derived[c] == null ? '' : derived[c]; applied.push(c); }
       });
       var short = function (n) { return String(n).split('.').slice(-2).join('.'); };
@@ -1051,6 +1060,7 @@
     });
     h += '</div><div class=cfnav><span class=cfnote>dry-run — logs the op it would apply (E3 wires the signed kernel)</span><span class=cfgrow></span>' +
          '<button class=cfb id=cfCancel>Cancel</button><button class="cfb cfsave" id=cfSave>' + (verb === 'create' ? 'Create' : 'Save') + '</button></div>';
+    fhost = form; _inlineHost = null;                           // modal mount (Glass/Gravity ring path)
     form.innerHTML = h; form.className = 'open';
     populateRefs(e);
     applyAdLogic(e);                                            // §AD-LOGIC-LIVE — initial show/hide/enable/require off the AD
@@ -1099,7 +1109,7 @@
     var drift = draftDrift(d, _formCtx.baseline);
     (_formCtx.e.fields || []).forEach(function (f) {
       if (!Object.prototype.hasOwnProperty.call(d.vals || {}, f.col)) return;
-      var el = form.querySelector('[data-col="' + f.col + '"]'); if (el) el.value = d.vals[f.col] == null ? '' : d.vals[f.col];
+      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) el.value = d.vals[f.col] == null ? '' : d.vals[f.col];
     });
     try { applyAdLogic(_formCtx.e); } catch (er) {}
     if (drift.drifted) { toast('Restored your draft — note: ' + drift.cols.join(', ') + ' changed underneath since'); }
@@ -1123,7 +1133,7 @@
       var hasLogic = [f.displaylogic, f.readonlylogic, f.mandatorylogic].some(function (s) { return s != null && String(s).trim() !== ''; });
       if (hasLogic) withLogic++;
       var eff = CORE.effectiveFlags(f, rec, ctx);
-      var row = form.querySelector('.cfrow[data-row="' + f.col + '"]'); if (!row) return;
+      var row = fhost.querySelector('.cfrow[data-row="' + f.col + '"]'); if (!row) return;
       var wasHidden = row.style.display === 'none';
       row.style.display = eff.visible ? '' : 'none';
       if (hasLogic && wasHidden !== !eff.visible) flips++;
@@ -1146,7 +1156,7 @@
   // list options from __meta; fk options from the ref table via the page bundle (truth-bound).
   function populateRefs(e) {
     (e.fields || []).forEach(function (f) {
-      var el = form.querySelector('[data-col="' + f.col + '"]'); if (!el || el.tagName !== 'SELECT') return;
+      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (!el || el.tagName !== 'SELECT') return;
       if (f.type === 'list') {
         // W-CRUD-DOCSTATUS render arm: the record's CURRENT value must render SELECTED (pre-fix the select
         // landed on the first __meta key → a CO order silently read back as DR).
@@ -1172,15 +1182,15 @@
 
   function gatherVals(e) {
     var vals = {};
-    (e.fields || []).forEach(function (f) { var el = form.querySelector('[data-col="' + f.col + '"]'); vals[f.col] = el ? el.value : ''; });
+    (e.fields || []).forEach(function (f) { var el = fhost.querySelector('[data-col="' + f.col + '"]'); vals[f.col] = el ? el.value : ''; });
     return vals;
   }
   function saveForm(verb, e, orig, id) {
     var vals = gatherVals(e);
-    Array.prototype.forEach.call(form.querySelectorAll('.cfe'), function (s) { s.textContent = ''; });
+    Array.prototype.forEach.call(fhost.querySelectorAll('.cfe'), function (s) { s.textContent = ''; });
     var res = CORE.validate(STORE, e, vals, orig);
     if (!res.ok) {
-      res.errors.forEach(function (er) { var s = form.querySelector('.cfe[data-col="' + er.col + '"]'); if (s) s.textContent = er.why; });
+      res.errors.forEach(function (er) { var s = fhost.querySelector('.cfe[data-col="' + er.col + '"]'); if (s) s.textContent = er.why; });
       console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' REJECT errors=' + JSON.stringify(res.errors));
       return;
     }
@@ -1190,14 +1200,14 @@
     // with the hook's error string; hook-DERIVED values fill the form/op (the info.derived seam).
     fireBeforeSaveHooks(e, vals, orig, function (mv) {
       if (mv && !mv.ok) {
-        var s0 = form.querySelector('.cfe'); if (s0) s0.textContent = mv.blocked + ': ' + mv.error;
+        var s0 = fhost.querySelector('.cfe'); if (s0) s0.textContent = mv.blocked + ': ' + mv.error;
         toast('Save rejected — ' + mv.error);
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' hook=' + mv.blocked + ' verdict=REJECT error="' + mv.error + '"');
         return;
       }
       if (mv && mv.derived && Object.keys(mv.derived).length) {
         Object.keys(mv.derived).forEach(function (c) {
-          var inEl = form.querySelector('[data-col="' + c + '"]');
+          var inEl = fhost.querySelector('[data-col="' + c + '"]');
           if (inEl) inEl.value = mv.derived[c] == null ? '' : mv.derived[c];
           // a hook-derived value rides the op when it maps to a form field/val; on CREATE, a beforeSave-filled
           // MANDATORY default that has NO visible field (e.g. M_Warehouse_ID defaulted from session context) must
@@ -1215,7 +1225,9 @@
         var sp = CORE.splitStatusChange(e, op, vals);
         if (!sp.statusOp && (!sp.fieldOp || !Object.keys(sp.fieldOp.changes).length)) {
           console.log('§CRUD update key=' + e.key + ' no-op (0 changed columns) — nothing committed');
-          toast('No changes — nothing to save'); closeForm(); return;
+          toast('No changes — nothing to save');
+          if (_inlineHost) { _refreshInlineDirty(); return; }   // inline: keep the editor alive, just reset dirty
+          closeForm(); return;
         }
         if (sp.statusOp) {
           console.log('§CRUD-STATUS-SPLIT key=' + e.key + ' docstatus ' + (sp.statusOp.from || '?') + '→' + (sp.statusOp.to || '?') + ' lane=DOC_ACTION fieldCols=' + (sp.fieldOp ? Object.keys(sp.fieldOp.changes).join(',') : '(none)'));
@@ -1226,6 +1238,97 @@
       }
       applyOp(op, e);
       closeForm({ saved: true });                  // Item 1: committed → draft cleared, no buffering
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // INLINE CRUD (P2 — prompts/CRUD_INPLACE_EDIT_SESSION.md §P2; ZK ADWindowToolbar/AbstractADWindowContent).
+  // The iDempiere form view IS the editable surface (no #crudForm modal, no ✎ Edit button). renderInline mounts the
+  // SAME field rows + engine (fieldInput/populateRefs/applyAdLogic/validate/buildOp/applyOp/commitCrud) into a host
+  // element; the verb bar carries iDempiere's real set (Save/Ignore/Refresh in P2; New/Copy/Save&New/Delete in P3),
+  // Save+Ignore DIRTY-GATED (dataStatusChanged parity), Ignore = dataIgnore() reverting the unsaved delta to the
+  // saved tip. Save is the hard boundary before Process (T3 — dirty blocks DocAction). Witness W-INPLACE-EDIT-LIVE.
+  function _inlineDirty() {
+    if (!_inlineBaseline || !_formCtx) return false;
+    var vals = gatherVals(_formCtx.e);
+    return (_formCtx.e.fields || []).some(function (f) {
+      return String(vals[f.col] == null ? '' : vals[f.col]) !== String(_inlineBaseline[f.col] == null ? '' : _inlineBaseline[f.col]);
+    });
+  }
+  function _refreshInlineDirty() {
+    if (!_inlineHost) return;
+    var dirty = _inlineDirty();
+    var sv = _inlineHost.querySelector('.ic-vb[data-v="save"]'), ig = _inlineHost.querySelector('.ic-vb[data-v="ignore"]');
+    if (sv) sv.disabled = !dirty;
+    if (ig) ig.disabled = !dirty;
+    var pip = _inlineHost.querySelector('.ic-dirty'); if (pip) pip.style.display = dirty ? '' : 'none';
+    if (typeof _onInlineDirty === 'function') { try { _onInlineDirty(dirty); } catch (e) {} }   // T3 — host disables Process while dirty
+  }
+  function _inlineVerbBar(verb, e) {
+    var canU = CORE.verbEnabled(e, 'update');
+    return '<div class="ic-bar" role=toolbar>' +
+      '<button class="ic-vb ic-save" data-v="save" disabled title="Save (Alt+S)">Save</button>' +
+      '<button class="ic-vb" data-v="ignore" disabled title="Ignore — discard unsaved edits (Alt+Z)">Ignore</button>' +
+      '<button class="ic-vb" data-v="refresh" title="Refresh (Alt+E)">Refresh</button>' +
+      '<span class=ic-grow></span><span class=ic-dirty style="display:none">● unsaved</span></div>' +
+      (canU ? '' : '<div class=ic-ro>This record is read-only per its dictionary.</div>');
+  }
+  function renderInline(verb, e, vals, orig, id, host, onDirty) {
+    fhost = host; _inlineHost = host; _onInlineDirty = onDirty || null;
+    var h = _inlineVerbBar(verb, e);
+    (e.fields || []).forEach(function (f) {
+      // data-ad-table/data-ad-column keep the host contract (IdmpHost.locate / ShowMe / lens field-targeting,
+      //   _adMatch is case-insensitive); data-col is the engine's own field handle.
+      h += '<label class=cfrow data-row="' + f.col + '" data-ad-table="' + esc(e.key) + '" data-ad-column="' + esc(f.col) + '"><span class=cfl>' + esc(f.label || f.col) + ' <i class=req data-req="' + f.col + '" style="display:none">*</i></span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
+    });
+    host.innerHTML = h; host.classList.add('idmp-inline-crud');
+    populateRefs(e);
+    applyAdLogic(e);
+    // baseline = the values AS RENDERED (populateRefs picks the selected option, fieldInput normalizes dates/numbers),
+    //   so a freshly-mounted form reads CLEAN — dirty is a true user delta, not a render-normalization artifact.
+    _inlineBaseline = gatherVals(e);
+    host.addEventListener('input', function () { applyAdLogic(e); _refreshInlineDirty(); });
+    host.addEventListener('change', function (ev) {
+      applyAdLogic(e);
+      if (verb === 'create') { var el = ev.target && ev.target.closest ? ev.target.closest('[data-col]') : null; var col = el ? el.getAttribute('data-col') : null; if (col) fireCreateCallout(e, col); }
+      _refreshInlineDirty();
+    });
+    // Save validates + diffs against the POST-RENDER baseline (the true user delta) — so untouched fields that the
+    //   spec/render handles imperfectly (a readonly fk select that fell to another option, a string-coded fk) never
+    //   trip validation and are never written; only what the user actually changed is checked + committed.
+    var sv = host.querySelector('.ic-vb[data-v="save"]'); if (sv) sv.addEventListener('click', function () { if (!_inlineDirty()) return; saveForm(verb, e, _inlineBaseline || orig, id); });
+    var ig = host.querySelector('.ic-vb[data-v="ignore"]'); if (ig) ig.addEventListener('click', function () { ignoreInline(); });
+    var rf = host.querySelector('.ic-vb[data-v="refresh"]'); if (rf) rf.addEventListener('click', function () { if (typeof _inlineRefresh === 'function') _inlineRefresh(); });
+    _formCtx = { verb: verb, e: e, id: id, baseline: orig || {}, inline: true };
+    if (verb === 'update') _offerDraftRestore(e, id);
+    _refreshInlineDirty();
+    console.log('§INPLACE-EDIT table=' + e.key + ' id=' + (id == null ? 'new' : id) + ' verb=' + verb + ' fields=' + (e.fields || []).length + ' mount=inline (no modal, no ✎ Edit)');
+  }
+  // ignoreInline — iDempiere dataIgnore(): discard the unsaved delta, revert inputs to the saved tip, clear dirty.
+  function ignoreInline() {
+    if (!_inlineHost || !_formCtx) return;
+    (_formCtx.e.fields || []).forEach(function (f) {
+      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) el.value = _inlineBaseline[f.col] == null ? '' : _inlineBaseline[f.col];
+    });
+    try { applyAdLogic(_formCtx.e); } catch (e) {}
+    var st = _draftStore(); if (st) draftClear(st, _formCtx.e.key, _formCtx.id); _clearDraftPip(_formCtx.e.key, _formCtx.id);   // unsaved → strand no private draft
+    _refreshInlineDirty();
+    console.log('§INPLACE-IGNORE table=' + _formCtx.e.key + ' id=' + (_formCtx.id == null ? 'new' : _formCtx.id) + ' reverted=tip (unsaved delta discarded)');
+  }
+  var _inlineRefresh = null;   // host sets this each mount → re-read the record (re-mount the inline form from the tip)
+  // editInline — host-callable inline EDIT mount (the form view calls this instead of opening the modal via update).
+  //   opts.onDirty(dirty) → host blocks Process while dirty (T3); opts.refresh → re-mount from tip; opts.onUnsupported
+  //   → table has no crud spec (host falls back to its read-only render).
+  function editInline(table, id, host, opts) {
+    opts = opts || {};
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e) { console.log('§INPLACE-EDIT table=' + key + ' skipped (no crud spec)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
+      _inlineRefresh = typeof opts.refresh === 'function' ? opts.refresh : null;
+      getRecord(key, function (rec) {
+        var vals = assignVals(e, rec || {});
+        renderInline('update', e, vals, rec || {}, id == null ? null : id, host, opts.onDirty);
+      }, id == null ? null : id);
     });
   }
   // ── §AD-MODELVAL-LIVE plumbing — lazy per-table installer over the page bundle (sql.js → b3 shim) ──
@@ -1327,11 +1430,23 @@
   // A plain close/cancel/nav (or an Event from an onclick listener — no .saved) BUFFERS the dirty typing first.
   function closeForm(opts) {
     var saved = opts && opts.saved === true;
+    var inline = !!_inlineHost;
     if (_formCtx && _formCtx.verb === 'update') {
       if (saved) { var st = _draftStore(); if (st) draftClear(st, _formCtx.e.key, _formCtx.id); _clearDraftPip(_formCtx.e.key, _formCtx.id); }
-      else _bufferDraft();
+      else if (!inline) _bufferDraft();   // inline nav-buffer = beforeunload (P5 wires the explicit needSave flush)
     }
     _formCtx = null;
+    if (inline) {
+      // inline saved → clear dirty in place; the host's overlay:committed refold re-mounts the editor from the new tip.
+      if (saved && _inlineHost) {
+        var s2 = _inlineHost.querySelector('.ic-vb[data-v="save"]'); if (s2) s2.disabled = true;
+        var i2 = _inlineHost.querySelector('.ic-vb[data-v="ignore"]'); if (i2) i2.disabled = true;
+        var p2 = _inlineHost.querySelector('.ic-dirty'); if (p2) p2.style.display = 'none';
+        if (typeof _onInlineDirty === 'function') { try { _onInlineDirty(false); } catch (e) {} }
+      }
+      _inlineHost = null; _inlineBaseline = null; _onInlineDirty = null; fhost = form;
+      return;
+    }
     form.className = ''; form.innerHTML = '';
   }
 
@@ -2068,6 +2183,19 @@
       '#crudForm .cfb{background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:6px 13px;font:13px system-ui;cursor:pointer}#crudForm .cfb:hover{border-color:#e066c0}' +
       '#crudForm .cfsave{background:#16493a;border-color:#2f6d5a;color:#bff0dd}#crudForm .cfdel{background:#4a1d1a;border-color:#7a2f2a;color:#f0c3bf}' +
       '#crudForm .cfwarn{margin:0 0 7px}#crudForm .cfdim{color:#8a6f86;font-size:12px}' +
+      // INLINE CRUD (P2) — the iDempiere form view editable in place. Rows reuse .cfrow; verb bar = .ic-bar.
+      '.idmp-inline-crud .cfrow{display:grid;grid-template-columns:170px 1fr;align-items:center;gap:10px;margin:0 0 8px}' +
+      '.idmp-inline-crud .cfl{font-size:12.5px;color:#5a6270}.idmp-inline-crud .cfl .req{color:#c0392b;font-style:normal}' +
+      '.idmp-inline-crud .cfi{width:100%;background:#fff;border:1px solid #c8cdd6;border-radius:6px;padding:6px 8px;color:#1a1f28;font:13px system-ui}' +
+      '.idmp-inline-crud .cfi:disabled{background:#f1f2f5;color:#7a808c;cursor:not-allowed}.idmp-inline-crud .cfi:focus{border-color:#2f6fd6;outline:none}' +
+      '.idmp-inline-crud .cfe{grid-column:2;font-size:11px;color:#c0392b;min-height:0}' +
+      '.idmp-inline-crud .ic-bar{display:flex;align-items:center;gap:7px;margin:0 0 12px;padding:0 0 9px;border-bottom:1px solid #e2e5ea}' +
+      '.idmp-inline-crud .ic-vb{background:#f5f6f8;color:#2a3140;border:1px solid #c8cdd6;border-radius:7px;padding:5px 13px;font:13px system-ui;cursor:pointer}' +
+      '.idmp-inline-crud .ic-vb:hover:not(:disabled){border-color:#2f6fd6;color:#1f4fa6}.idmp-inline-crud .ic-vb:disabled{opacity:.45;cursor:default}' +
+      '.idmp-inline-crud .ic-save:not(:disabled){background:#1f7a4d;border-color:#1f7a4d;color:#fff}.idmp-inline-crud .ic-grow{flex:1}' +
+      '.idmp-inline-crud .ic-dirty{font-size:12px;color:#c77d12;font-weight:600}.idmp-inline-crud .ic-ro{font-size:12px;color:#7a808c;font-style:italic;margin:0 0 10px}' +
+      // T3 — a dirty inline form blocks Process (Save is the boundary before ProcessIt): dim+disable the DocAction bar.
+      '.idmp-form-dirty .idmp-docfsm button{opacity:.4;pointer-events:none}.idmp-form-dirty .idmp-docfsm::after{content:"— Save first";font-size:11px;color:#c77d12;margin-left:8px}' +
       '.crud-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);z-index:80;background:#221826;border:1px solid #4a2f44;border-radius:10px;padding:9px 15px;color:#eecfe8;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.6);opacity:0;transition:opacity .3s,transform .3s}' +
       '.crud-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}' +
       '#docStatusBar{position:fixed;left:14px;bottom:14px;z-index:73;display:none;align-items:center;gap:9px;background:#15101a;border:1px solid #4a2f44;border-radius:10px;padding:7px 13px;font:12.5px system-ui;color:#ecdcea;box-shadow:0 4px 18px rgba(0,0,0,.55)}' +
@@ -2182,6 +2310,7 @@
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
+                    editInline: editInline, ignoreInline: ignoreInline, inlineDirty: _inlineDirty,   // P2 (W-INPLACE-EDIT-LIVE): in-place editable form view (no modal, no ✎ Edit)
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub

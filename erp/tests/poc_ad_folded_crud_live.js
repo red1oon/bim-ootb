@@ -137,23 +137,23 @@ async function fillBpForm(page, marker) {
   const draftPk = createdPk;
 
   // ════════════ ACT 2 — EDIT (IsUpdateable=N display-only) ════════════
+  // P2 (CRUD_INPLACE_EDIT_SESSION.md): Edit is IN PLACE — open the created BP into form view → the inline editor
+  //   mounts (no modal). The same AD logic disables IsUpdateable=N fields; change Name + click the inline Save.
   await openRow(page, draftPk);
-  await tapPill(page, 'formedit');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('#idmp-inline-mount [data-col="name"]', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(600);
   const editState = await page.evaluate(() => {
-    const f = document.getElementById('crudForm'), r = document.getElementById('crudRing');
-    const org = f && f.querySelector('[data-col="ad_org_id"]'), nm = f && f.querySelector('[data-col="name"]');
-    return { open: !!(f && f.classList.contains('open')), ring: !!(r && r.classList.contains('open')),
-             title: f ? (f.querySelector('.cfh') || {}).textContent : null,
+    const m = document.getElementById('idmp-inline-mount'), f = document.getElementById('crudForm'), r = document.getElementById('crudRing');
+    const org = m && m.querySelector('[data-col="ad_org_id"]'), nm = m && m.querySelector('[data-col="name"]');
+    return { open: !!m, modal: !!(f && f.classList.contains('open')), ring: !!(r && r.classList.contains('open')),
              orgDisabled: !!(org && org.disabled), nameDisabled: !!(nm && nm.disabled) };
   });
   console.log('§FOLD-CRUD ACT2 editState=' + JSON.stringify(editState));
-  ok('Edit opens the edit form DIRECTLY (ring not fanned)', editState.open && !editState.ring && /Edit/.test(String(editState.title || '')), JSON.stringify(editState));
+  ok('Edit opens the edit form IN PLACE (no modal, ring not fanned)', editState.open && !editState.modal && !editState.ring, JSON.stringify(editState));
   ok('IsUpdateable=N field (AD_Org_ID) is DISPLAY-ONLY on edit; an updateable field (Name) is editable', editState.orgDisabled === true && editState.nameDisabled === false, 'orgDisabled=' + editState.orgDisabled + ' nameDisabled=' + editState.nameDisabled);
   const marker2 = marker + '-EDIT';
-  await page.evaluate((m) => { const d = document.querySelector('#crudForm [data-col="name"]'); if (d) { d.value = m; d.dispatchEvent(new Event('input', { bubbles: true })); d.dispatchEvent(new Event('change', { bubbles: true })); } }, marker2);
-  await page.evaluate(() => { const s = document.getElementById('cfSave'); if (s) s.click(); });
+  await page.evaluate((m) => { const d = document.querySelector('#idmp-inline-mount [data-col="name"]'); if (d) { d.value = m; d.dispatchEvent(new Event('input', { bubbles: true })); d.dispatchEvent(new Event('change', { bubbles: true })); } }, marker2);
+  await page.evaluate(() => { const s = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]'); if (s && !s.disabled) s.click(); });
   await page.waitForTimeout(1500);
   await backToGrid(page);
   const persistU = lastLog(/§CRUD-PERSIST .*op=CRUD_UPDATE/);
@@ -164,13 +164,12 @@ async function fillBpForm(page, marker) {
   await page.waitForSelector('.idmp-grid tbody tr[data-ad-record]', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await openRow(page, draftPk);
-  await tapPill(page, 'formedit');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('#idmp-inline-mount [data-col="name"]', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(600);
-  const reloadName = await page.evaluate(() => { const d = document.querySelector('#crudForm [data-col="name"]'); return d ? d.value : null; });
+  const reloadName = await page.evaluate(() => { const d = document.querySelector('#idmp-inline-mount [data-col="name"]'); return d ? d.value : null; });
   console.log('§FOLD-CRUD ACT2 RELOAD name="' + reloadName + '" (want "' + marker2 + '")');
   ok('UPDATE SURVIVES reload (the edited Name re-folds)', String(reloadName) === marker2, 'got="' + reloadName + '"');
-  await page.evaluate(() => { const c = document.getElementById('cfCancel'); if (c) c.click(); });
+  await backToGrid(page);
   await page.waitForTimeout(300); await backToGrid(page);
 
   // ════════════ ACT 3 — DELETE ════════════
