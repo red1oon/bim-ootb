@@ -493,6 +493,15 @@
     if (!res || !res.length) return [];
     return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; });
   }
+  // lowercase-alias every column key (NON-INVENT, ADDITIVE) — the browser bundle stores DOCUMENT tables in
+  // canonical CamelCase (DocumentNo/GrandTotal/LineNetAmt), but REPORT_MAP keys + foldReceipt read lowercase
+  // (the verb is proven headless on all-lowercase ad_full.db). Without this the in-browser receipt read 0.00 /
+  // docno=undefined. Mirrors doc_poster.lc — all-lowercase rows alias to themselves → the headless verb unchanged.
+  function lc(row) {
+    if (!row || typeof row !== 'object') return row;
+    Object.keys(row).forEach(function (k) { var lk = k.toLowerCase(); if (lk !== k && !(lk in row)) row[lk] = row[k]; });
+    return row;
+  }
   // litId — prefer the row in the currently-traced O2C chain (the lit instance), else the first row
   // (mirrors crud_overlay.getRecord so Report and the ring agree on which document is focused).
   function litId(db, map) {
@@ -514,10 +523,10 @@
       try {
         var id = litId(db, map);
         if (id == null) { renderUnsupported(db, key); return; }
-        var header = rowsOf(db.exec('SELECT * FROM ' + map.key + ' WHERE ' + map.pk + '=' + id + ' LIMIT 1'))[0] || null;
+        var header = lc(rowsOf(db.exec('SELECT * FROM ' + map.key + ' WHERE ' + map.pk + '=' + id + ' LIMIT 1'))[0]) || null;
         if (!header) { renderUnsupported(db, key); return; }
         var lines = [];
-        try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY line')); } catch (e) {}
+        try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY line')).map(lc); } catch (e) {}
         var names = { partner: nameOf(db, 'c_bpartner', 'c_bpartner_id', header.c_bpartner_id, 'name'), products: {} };
         lines.forEach(function (r) { var pid = r[map.fkProduct]; if (pid != null && names.products[pid] === undefined) names.products[pid] = nameOf(db, 'm_product', 'm_product_id', pid, 'name'); });
         var rec = CORE.foldReceipt(map, header, lines, names);

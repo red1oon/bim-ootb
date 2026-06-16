@@ -440,7 +440,7 @@
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
-<script src="erp_preview.js?v=1"></script>
+<script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
 <script src="icons.js?v=10"></script>
@@ -475,7 +475,7 @@
 <script src="bigdecimal.js?v=1"></script>
 <script src="bim_orders_overlay.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
-<script src="report_overlay.js?v=2"></script>
+<script src="report_overlay.js?v=3"></script>
 <script src="rule_fold.js?v=2"></script>
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
@@ -505,18 +505,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=13"></script>
+<script src="idmp_pills.js?v=14"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
-<script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
+<script src="../common/history_tap.js?v=6" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
 <script src="../common/whole_history.js?v=4" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local bar only')"></script>
-<script src="idmp_history.js?v=9"></script>
+<script src="idmp_history.js?v=10"></script>
 <!-- SO_FULL_CRUD_GAP.md T3 / GAP 3 — the SAME CRUD ring-of-fire overlay glassbowl mounts, host-anchored to the
      iDempiere renderer (no fork). Needs kernel_ops.js + erp_engine.js + bigdecimal.js (all loaded above). The
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=13"></script>
+<script src="crud_overlay.js?v=14"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1265,6 +1265,31 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.__crud.create(tn);                                  // the form + CSS are mounted at overlay init — no enable()/ring needed (mirrors hostProcess)
     console.log('§FORM-PILL new=create-form table=' + tn + ' (ring not fanned)');
   }
+  // _openEdit / _openDelete (S2/J4 full-CRUD) — iDempiere's OWN Edit/Delete: open the edit form / delete-confirm
+  //   DIRECTLY on the SELECTED record via the host seam (__crud.update/remove), NOT the ring fan (doctrine §0).
+  //   The change-twin of _openCreate. Targets the open record's real pk (_records[_recIdx]); a synthetic-pk
+  //   (just-created, not yet in the bundle) row is skipped honestly — it has no bundle baseline to edit/delete yet.
+  function _selectedPkFor(verb) {
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn) { status(verb + ' — open a window first'); console.log('§FORM-PILL ' + verb + '=skip(no-table)'); return null; }
+    var rec = _records[_recIdx]; var id = rec ? recVal(rec, _keyCol(tab)) : null;
+    if (id == null || id === '') { status(verb + ' — open a record first'); console.log('§FORM-PILL ' + verb + '=skip(no-record)'); return null; }
+    // A synthetic (negative) pk is a SAVED draft that lives in the op-log (created via New); it IS editable —
+    //   the host seam loads it from the op-log (_recordFromOplog). Change the moment you save is the basic flow.
+    return { tn: tn, id: id };
+  }
+  function _openEdit() {
+    var t = _selectedPkFor('edit'); if (!t) return;
+    if (typeof window.__crud.update !== 'function') { _openCrudRing(); return; }   // pre-full-CRUD fallback (older overlay)
+    window.__crud.update(t.tn, t.id);
+    console.log('§FORM-PILL edit=edit-form table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+  }
+  function _openDelete() {
+    var t = _selectedPkFor('delete'); if (!t) return;
+    if (typeof window.__crud.remove !== 'function') { _openCrudRing(); return; }
+    window.__crud.remove(t.tn, t.id);
+    console.log('§FORM-PILL delete=delete-confirm table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+  }
   function _formSave() {        // = iDempiere Save: persist the edits in the open CRUD overlay form (its #cfSave)
     var sv = document.getElementById('cfSave');
     if (sv) { sv.click(); console.log('§FORM-PILL save=clicked'); }
@@ -1648,7 +1673,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var br = _readBr(), pkCol = _keyCol(tab), folded = null;
       try { folded = c.core.listTip(sdb, tn, pkCol, recs, br); } catch (e) { folded = null; }
       var rows = (folded && folded.rows) || recs;
-      var created = (folded && folded.created) || [], hidden = (folded && folded.hidden) || [];
+      var created = (folded && folded.created) || [], hidden = (folded && folded.hidden) || [], updated = (folded && folded.updated) || [];
       // gate created rows to the session client/org (the SAME scope the bundle SELECT applied to base rows).
       if (created.length && _session) {
         var createdSet = {}; created.forEach(function (p) { createdSet[String(p)] = 1; });
@@ -1664,9 +1689,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         created = created.filter(function (p) { return kept[String(p)]; });
       }
       var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
-      if (created.length || hidden.length || nStatus || rows.length !== recs.length) {
+      if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
         _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
-        console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
+        console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
         if (_viewMode === 'form') refreshForm(); else renderBody();
       }
     });
@@ -2586,6 +2611,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
       formproc: function () { _showProcessChooser(); },
       formnew: function () { _openCreate(); },
+      formedit: function () { _openEdit(); },
+      formdel: function () { _openDelete(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
       editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
@@ -2688,7 +2715,37 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       function () { return document.body.classList.contains('idmp-clean'); },
       function (want) { if (document.body.classList.contains('idmp-clean') !== !!want) toggleCleanMode(); });
     if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every ERP §act from the stream, deny-filtered
-    console.log('§IDMP-HIST-TAP wired fields(search,clean) + sniffer ON — one symmetric line each');
+    if (T.setKnob) T.setKnob('high');                 // ONE KNOB: ERP breadth = high (spec default; KANBAN/SEARCH/GRAPH/CRUD/RULE in-net)
+    if (T.onFeed) T.onFeed(_drainErpTap);             // ── THE SUBSCRIPTION: the ERP bar LISTENS to the §-stream ──
+    console.log('§IDMP-HIST-TAP wired fields(search,clean) + sniffer ON + bar SUBSCRIBES tap (knob=high) — one symmetric line each');
+  }
+
+  // ── ERP bar SUBSCRIBES the §-tap (HISTORY_TAP_TO_IDEMPIERE §SESSION — the twin of the viewer #340 drain) ──
+  // The sniffer records every ERP § act into HistoryTap.all, but only window/tab/record _histPush moments dotted.
+  // Now each § act drains into a read-only CRUMB dot — for tags NOT already minted by an explicit nav push (the
+  // skip set) — so KANBAN/ERP_SEARCH/AD_GRAPH/AD_DATA/CRUD/RULE dot for free, zero per-feature wiring. The bar's
+  // own §IDMP-HIST and denied infra never enter (DENY + STOP-set filtering in historySince). isApplying-gated so
+  // a restore-scrub never mints a dot.
+  var _erpTapHW = -1, _erpDraining = false, _erpArmed = false;
+  // Tags the ERP page ALREADY records as nav moments (window/tab/record) or that are the bar's own chrome — skip
+  // so the crumb drain never doubles a nav dot. (IDMP* chrome isn't in any STOP set, so this is belt-and-braces.)
+  var _ERP_EXPLICIT_TAGS = { IDMP: 1, IDMP_HIST: 1, NAVIGATE: 1, FOCUS_NODE: 1 };
+  function _drainErpTap() {
+    if (_erpDraining || !window.HistoryTap || !HistoryTap.historySince || !window.IdmpHistory || !IdmpHistory.pushCrumb) return;
+    if (HistoryTap.isApplying && HistoryTap.isApplying()) return;   // scrubbing the past ≠ a new act
+    if (_histRestoring || !_session) return;                       // not during a restore / before login
+    // ARM on the first post-login § act: skip the whole boot + pre-login backlog (set HW to the stream tip),
+    // so the ERP timeline shows only what the user did AFTER they were in — not infra accrued during boot.
+    if (!_erpArmed) { _erpArmed = true; var a = HistoryTap._all; _erpTapHW = (a && a.length) ? a[a.length - 1].t : -1; return; }
+    _erpDraining = true;
+    try {
+      var fresh = HistoryTap.historySince(_erpTapHW, _ERP_EXPLICIT_TAGS);
+      for (var i = 0; i < fresh.length; i++) {
+        var e = fresh[i];
+        if (e.t > _erpTapHW) _erpTapHW = e.t;
+        IdmpHistory.pushCrumb(e.tag, e.label || e.tag, e.view || null);
+      }
+    } finally { _erpDraining = false; }
   }
 
   function _histPush(kind) {
@@ -2792,7 +2849,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
     $('idmp-login-back').addEventListener('click', loginStep1);
-    $('idmp-login-tenants-back').addEventListener('click', function () { _loginClient = null; _loginUser = null; loginStep0(SES.listClients(db)); });
+    // ERP_CRITIC_UX_LANE.md P2/J8 — the in-session "‹ Tenants" rail surfaces the SAME front-door set: resident
+    // tenants AND the demo manifest (lazy-install on pick via _enterDemoTenant). Without the demos here, a
+    // logged-in user could only switch BETWEEN already-installed tenants — never reach a not-yet-installed demo
+    // tenant from the rail, which is exactly the "change tenant from the rail" journey J8 asks for.
+    $('idmp-login-tenants-back').addEventListener('click', function () { _loginClient = null; _loginUser = null; loginStep0(SES.listClients(db), _demoTenants()); });
     $('idmp-login-ok').addEventListener('click', doLogin);
     $('idmp-switch-btn').addEventListener('click', function () { showLogin('role'); });
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });

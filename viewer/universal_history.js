@@ -264,7 +264,36 @@
       function () { var A = _A(); return A ? (A._ambienceTick || 0) : 0; },
       function (tick) { var A = _A(); if (A && A.updateAmbience) A.updateAmbience(tick); });
     if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every §act from the stream, deny-filtered
-    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette) + sniffer ON — one symmetric line each');
+    if (T.onFeed) T.onFeed(_drainTap);   // ── THE SUBSCRIPTION: the bar now LISTENS to the §-stream ──
+    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette) + sniffer ON + bar SUBSCRIBES tap — one symmetric line each');
+  }
+
+  // ── BAR SUBSCRIBES TO THE TAP (HISTORY_KNOB_SIGNAL_TAP §GAP-BAR-NEVER-CONSUMED-THE-TAP, §THE WORK 1&5) ──
+  // The §-stream already carries every act (the S() sink + the sniffer). The bar used to draw dots ONLY from
+  // explicit pushes → X/C (§KBD_ROUTE), clash, and every FUTURE feature silently never dotted. Now the bar
+  // SUBSCRIBES: each § act drains the knob-filtered crumbs into read-only dots — for tags NOT already minted
+  // by an explicit push (the skip set). Zero per-feature wiring; coverage falls out the moment a feature logs §.
+  // Tags the adapter ALREADY pushes explicitly (op / pick / nav / detail) — skip so the drain never doubles them.
+  var _EXPLICIT_TAGS = { KERNEL_OP: 1, BUILDING_OPEN: 1, GRID_MOVE: 1, ELEMENT_PLACE: 1, ELEMENT_PICK: 1,
+                         PICK: 1, FOCUS: 1, PHASE_LENS: 1, FILTER: 1, ROOM: 1,
+                         CLASH_INSPECT: 1, SECTION_CUT: 1, MEASURE: 1 };
+  var _tapHW = -1;        // high-water: the last consumed crumb index (e.t), so we never re-mint
+  var _draining = false;  // re-entry guard (the drain's own §HIST_TAP_DOT/§HIST_PUSH are DENYed in the tap too)
+  function _drainTap() {
+    if (_draining || !window.HistoryTap || !HistoryTap.historySince) return;
+    if (HistoryTap.isApplying && HistoryTap.isApplying()) return;   // scrubbing the past ≠ a new act
+    if (_isReHome() || !HB.isEnabled()) return;                     // read-only re-home / knob Off → no dots
+    _draining = true;
+    try {
+      var fresh = HistoryTap.historySince(_tapHW, _EXPLICIT_TAGS);
+      for (var i = 0; i < fresh.length; i++) {
+        var e = fresh[i];
+        if (e.t > _tapHW) _tapHW = e.t;
+        HB.push({ bucket: 'event', kind: 'event', type: e.tag, label: e.label || e.tag, readonly: true,
+                  fromTap: true, viewState: e.view || _tapView(), sigKey: 'tap:' + e.tag + ':' + e.t });
+        console.log('§HIST_TAP_DOT tag=' + e.tag + ' label="' + (e.label || '') + '" t=' + e.t + ' (from §-stream, no per-feature wiring)');
+      }
+    } finally { _draining = false; }
   }
 
   // MODEL op apply: flips the signed kernel_ops `undone` flag (never deletion) + dispatches replay.
@@ -327,11 +356,12 @@
     depthKey: 'bim.universalHist.depth',
     ignorePersistedDepth: true,             // knob scrapped → a stale 'low' from the knob era must not
                                             // pin the bar (no UI to raise it). Always boot at defaultDepth.
-    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile). 'mid'
-    // is the CLEAN TRAIL: edits/saves + detail events (measure / clash-inspect / section-cut), WITHOUT
-    // the element-pick + nav-view spam that 'max' adds (user direction 2026-06-16: keep the trail readable,
-    // don't clutter it with a dot for every selection). Measure/clash/section all leave a Z dot at mid.
-    defaultDepth: function () { return 'mid'; },
+    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile). 'high'
+    // records what the user actually DOES: navigation views (axis/group/item — Find storey/floor selects)
+    // + edits/saves + detail events (measure / clash-inspect / section-cut). It deliberately stops short of
+    // 'max', which adds a dot for EVERY raw element-pick (that's the spam). User direction 2026-06-16: a
+    // mid-only trail dropped Find/storey navigation (profile=mid type=group HIST_DROP) → looked unchanged.
+    defaultDepth: function () { return 'high'; },
     restore: _restore,
     restoreView: _restoreView,              // READ-ONLY scrubber path (knob nav + dot clicks)
     afterApply: _chainCheck,
