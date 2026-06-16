@@ -263,9 +263,42 @@
     T.field('palette',
       function () { var A = _A(); return A ? (A._ambienceTick || 0) : 0; },
       function (tick) { var A = _A(); if (A && A.updateAmbience) A.updateAmbience(tick); });
+    // §CLASH — the inspected clash PAIR (which two elements + the panel). The clash dot used to restore only
+    // camera+ambient (zoom-to) — NOT the highlighted pair or the Clash list panel (user: "Clash shows the zoom
+    // to but without the clash pair and Clash panel"). read() = the pair currently inspected (by GUID, gated on
+    // the panel being active so a stale idx never re-fires); write(pair) re-inspects it: re-open the list panel
+    // from the PERSISTED _currentClashes (read-only re-render, NO re-detection) if it was dismissed, then
+    // _flyToClash → red/blue overlap meshes + outline + fly. _flyToClash's own recordEvent self-suppresses here
+    // because applyView holds isApplying()=true. write(null) = a non-clash moment → clear the viz (keep matrix).
+    T.field('clash',
+      function () {
+        var A = _A();
+        if (!A || !A._clashRevealActive || A._currentClashViewIdx == null || !A._currentClashes) return null;
+        var c = A._currentClashes[A._currentClashViewIdx];
+        return (c && c[0] && c[1]) ? { a: c[0], b: c[1] } : null;
+      },
+      function (pair) {
+        var A = _A();
+        if (!A) return;
+        if (!pair || !pair.a) {                                   // moment had no clash → clear any current viz
+          if (A._clashRevealActive && A._dismissClashes) A._dismissClashes(true);   // keepMatrix
+          return;
+        }
+        if (!A._currentClashes || !A._flyToClash) return;         // no clash list this session → can't reconstruct (cold)
+        var idx = -1, cc = A._currentClashes;
+        for (var i = 0; i < cc.length; i++) {
+          var c = cc[i];
+          if (c && ((c[0] === pair.a && c[1] === pair.b) || (c[0] === pair.b && c[1] === pair.a))) { idx = i; break; }
+        }
+        if (idx < 0) return;                                      // pair not in the current list (rules changed) → skip
+        if (!A._clashRevealActive && A._revealClashes && A._currentClashRules) {
+          A._revealClashes(A._currentClashes, A._currentClashRules);   // re-show the panel (no re-detection)
+        }
+        A._flyToClash(idx);                                       // pair highlight + fly + row (recordEvent suppressed)
+      });
     if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every §act from the stream, deny-filtered
     if (T.onFeed) T.onFeed(_drainTap);   // ── THE SUBSCRIPTION: the bar now LISTENS to the §-stream ──
-    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette) + sniffer ON + bar SUBSCRIBES tap — one symmetric line each');
+    console.log('§HIST_TAP_WIRED fields(ghost,xray,cam,section,palette,clash) + sniffer ON + bar SUBSCRIBES tap — one symmetric line each');
   }
 
   // ── BAR SUBSCRIBES TO THE TAP (HISTORY_KNOB_SIGNAL_TAP §GAP-BAR-NEVER-CONSUMED-THE-TAP, §THE WORK 1&5) ──
