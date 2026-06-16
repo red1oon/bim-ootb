@@ -105,9 +105,16 @@ window.HistoryBar = (function () {
   function configure(opts) {
     for (var k in opts) { if (Object.prototype.hasOwnProperty.call(opts, k)) _cfg[k] = opts[k]; }
     // depth: persisted choice wins (legacy all/doc/off migrate to stops); else the app's default.
-    try { _depth = _migrateDepth(localStorage.getItem(_cfg.depthKey)) || _migrateDepth(_cfg.defaultDepth()) || 'high'; }
+    // ignorePersistedDepth: an app with NO depth knob (the viewer — knob scrapped per
+    // HISTORY_KNOB_DIAL) passes this so a STALE persisted stop from the knob era can't pin it
+    // forever with no UI to change it. Such apps always boot at their defaultDepth().
+    try {
+      var _storedDepth = _cfg.ignorePersistedDepth ? null : localStorage.getItem(_cfg.depthKey);
+      _depth = _migrateDepth(_storedDepth) || _migrateDepth(_cfg.defaultDepth()) || 'high';
+    }
     catch (e) { _depth = _migrateDepth(_cfg.defaultDepth()) || 'high'; }
     if (!_configured) { _wireKeyboard(); _wireCrossTab(); _configured = true; }
+    _syncTapKnob();                     // ONE KNOB: push the loaded depth onto the §-tap at startup
     if (_cfg.treeKey) _persistLoad();   // restore persisted universes for this building (item 4)
     console.log('§HIST_CONFIGURE source=' + _cfg.source + ' depth=' + _depth + ' host=' + (_cfg.mountHostId || 'body') + ' treeKey=' + (_cfg.treeKey || '-'));
   }
@@ -152,7 +159,10 @@ window.HistoryBar = (function () {
   // snapshotted into a node.
   function push(entry) {
     if (!_on() || _suppress) return;
-    if (!entry || !significant(entry.bucket, entry.type, entry.label)) return;
+    // fromTap entries arrive PRE-FILTERED by the §-tap's knob (the single breadth dial) → they bypass the
+    // bar's per-stop significant() gate, which is the DUPLICATE breadth logic this unification retires for
+    // the read-only tier (HISTORY_KNOB_SIGNAL_TAP §THE WORK step 1/2). _on() (off) still suppresses all.
+    if (!entry || (!entry.fromTap && !significant(entry.bucket, entry.type, entry.label))) return;
     if (entry.ts == null) entry.ts = _now();
     // Coalesce rapid same-signature repeats — only at a TRUE tip (cursor node has no children, so
     // there is no sibling/redo subtree we'd quietly mutate).
@@ -366,12 +376,20 @@ window.HistoryBar = (function () {
   function _afterApply(when) { try { _cfg.afterApply(when); } catch (e) { console.warn('§HIST_AFTER_ERR', e); } }
 
   // ── Breadth (the 5-stop significance ladder) ──────────────────────────
+  // ONE KNOB (HISTORY_KNOB_SIGNAL_TAP §THE WORK step 2): the bar's depth IS the §-tap's knob. Off keeps
+  // the tap level (the bar suppresses via _on()); low/mid/high/max map 1:1 onto the tap's STOP sets. The
+  // bar's depthKey is the SINGLE persisted source of truth — the tap level is DERIVED, never separately
+  // persisted. This collapses the two knobs that used to disagree (tap level='mid' vs bar _depth='high').
+  function _syncTapKnob() {
+    try { if (typeof window !== 'undefined' && window.HistoryTap && window.HistoryTap.setKnob && _depth !== 'off') window.HistoryTap.setKnob(_depth); } catch (e) {}
+  }
   function setDepth(d, silent) {   // silent kept for API compat (callers pass it)
     d = _migrateDepth(d); if (!d) return;
     _depth = d;
     try { localStorage.setItem(_cfg.depthKey, d); } catch (e) {}
+    _syncTapKnob();
     _render();
-    console.log('§HIST_DEPTH depth=' + _depth + ' stop=' + _stopIdx(_depth) + '/4');
+    console.log('§HIST_DEPTH depth=' + _depth + ' stop=' + _stopIdx(_depth) + '/4 tapKnob=' + ((typeof window !== 'undefined' && window.HistoryTap && window.HistoryTap.getKnob) ? window.HistoryTap.getKnob() : '-'));
   }
   function cycleDepth() { setDepth(_STOPS[(_stopIdx(_depth) + 1) % _STOPS.length]); }  // tap = one step (wraps)
   function setEnabled(on) { setDepth(on ? 'high' : 'off'); }

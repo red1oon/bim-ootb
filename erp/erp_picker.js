@@ -509,5 +509,8 @@
     document.head.appendChild(s);
   }
 
-  global.ErpPicker = { open: open, close: close, _erps: ERPS };
+  // manifest = the 5 demo tenants, surfaced at the LOGIN FRONT DOOR (ERP_CRITIC_UX_LANE.md P0/J1) so they are
+  // PRESENT + enterable with NO install step. idempiere.html's loginStep0 reads this and lazy-installs the shard
+  // on first pick (the same installShard the dialog success-path drives). Single source of truth — never duplicated.
+  global.ErpPicker = { open: open, close: close, _erps: ERPS, manifest: TENANT_SHARD };
 })(typeof window !== 'undefined' ? window : this);

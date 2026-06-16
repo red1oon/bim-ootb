@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
   page.on('pageerror', e => errs.push(e.message));
 
   // Invoice window (8 CO docs in ad_seed.db); ?window opens AFTER login.
-  await page.goto(`http://localhost:${port}/idempiere.html?window=167`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden&window=167`, { waitUntil: 'networkidle' });
 
   // ── login: pick the first enabled user → submit (defaults) ──
   await page.waitForSelector('#idmp-login-users .idmp-login-user:not(.disabled)', { timeout: 15000 });

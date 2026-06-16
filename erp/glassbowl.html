@@ -875,7 +875,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <!-- T1 (SO_FULL_CRUD_GAP.md, W-SO-COMPLETE-UI): the PROVEN engine (UMD of bim-compiler scripts/erp_engine.js — window.ERPEngine, same file idempiere.html loads). crud_overlay.completeFanout extracts the completeIt consequence set (ship+invoice creates) from it. MUST load before crud_overlay. -->
 <script src="erp_engine.js?v=1"></script>
 <!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). T1: Complete a c_order = the WHOLE document process committed as ONE group. T2: renderDataTab unions CRUD_CREATE rows + hides DELETE tombstones (CORE.listTip). -->
-<script src="crud_overlay.js?v=4"></script>
+<script src="crud_overlay.js?v=5"></script>
 <!-- Period-close in-app (§INTEG-WIRE) — fold the live sidecar op-log → ONE signed checkpoint = balance b/f; bootstrap from it on load. -->
 <script src="erp_period_close.js"></script>
 <script src="period_close_ui.js"></script>

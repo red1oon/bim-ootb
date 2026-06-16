@@ -36,7 +36,7 @@ const server = http.createServer((req, res) => {
   page.on('pageerror', e => errs.push(e.message));
 
   // window=167 = the Invoice window (8 CO docs in ad_seed.db — a walked DocAction table), opens AFTER login in GRID view.
-  await page.goto(`http://localhost:${port}/idempiere.html?window=167`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden&window=167`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
   await page.click('#idmp-login-users .idmp-login-user:not(.disabled)');
   await page.waitForTimeout(400);

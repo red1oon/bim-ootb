@@ -17,7 +17,7 @@ const server=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')
 (async()=>{await new Promise(r=>server.listen(0,r));const port=server.address().port;
 const br=await chromium.launch();const pg=await br.newPage();await pg.setViewportSize({width:390,height:844});
 const errs=[];pg.on('pageerror',e=>errs.push(e.message));
-await pg.goto(`http://localhost:${port}/idempiere.html?window=140`,{waitUntil:'networkidle'});
+await pg.goto(`http://localhost:${port}/idempiere.html?client=garden&window=140`,{waitUntil:'networkidle'});
 await pg.waitForSelector('#idmp-login-users .idmp-login-user:not(.disabled)',{timeout:15000});
 await pg.click('#idmp-login-users .idmp-login-user:not(.disabled)');
 await pg.waitForSelector('#idmp-login-ok');await pg.click('#idmp-login-ok');await pg.waitForTimeout(1500);

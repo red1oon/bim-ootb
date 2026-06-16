@@ -280,7 +280,7 @@
       'SELECT f.AD_Field_ID, f.Name, f.Description, f.SeqNo, ' +
       '       f.IsDisplayed, f.DisplayLogic, f.IsMandatory, f.IsReadOnly, f.DefaultValue, ' +
       '       c.AD_Column_ID, c.ColumnName, c.AD_Reference_ID, c.FieldLength, ' +
-      '       c.IsMandatory as ColMandatory, c.IsKey, c.IsIdentifier, ' +
+      '       c.IsMandatory as ColMandatory, c.IsKey, c.IsIdentifier, c.IsUpdateable, ' +
       '       c.DefaultValue as ColDefault ' +
       'FROM AD_Field f ' +
       'JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID ' +
@@ -314,7 +314,8 @@
         referenceType: REF_TYPES[refId] || 'string',
         fieldLength: o.FieldLength,
         isKey: o.IsKey === 'Y',
-        isIdentifier: o.IsIdentifier === 'Y'
+        isIdentifier: o.IsIdentifier === 'Y',
+        isUpdateable: o.IsUpdateable !== 'N'                 // S2B: AD_Column.IsUpdateable (null/Y → updateable; 'N' → display-only on Edit)
       };
     }).filter(Boolean);
 
