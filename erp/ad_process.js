@@ -122,6 +122,102 @@
     }, { kind: 'docaction', action: 'Verify' });
   }
 
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // KIND-2 process handler — ProjectGenOrder (AD_Process 164 "Generate Order", classname
+  //   org.compiere.process.ProjectGenOrder, isReport=N, 0 params). The effect IS an engine verb: ASSEMBLE a
+  //   C_Order op-group via the EXISTING erp_engine.buildDoc archetype — newVerbs=0, NOT a Java port.
+  // Java home (EXTRACT, do NOT invent):
+  //   org.compiere.process.ProjectGenOrder.doIt (ProjectGenOrder.java:62-111) — generates a SALES order
+  //     (Env.setSOTrx(ctx,true); class doc "Generate Sales Order from Project"), ONE C_OrderLine per
+  //     C_ProjectLine: Qty = PlannedQty − InvoicedQty (line 96); Price = PlannedPrice when non-zero, else the
+  //     price-list price (ol.setPrice() = MProductPricing — NAMED-DEFERRED, like crud_overlay's FK membership).
+  //   org.compiere.model.MOrder(MProject,IsSOTrx,DocSubTypeSO) (MOrder.java:487-522) — the header: SO on the
+  //     On-Credit doctype (DocSubTypeSO_OnCredit="WI", MOrder.java:654); BP/BP-Loc/User/SalesRep/Campaign/
+  //     Warehouse/PriceList/PaymentTerm copied from the project; description=project name; dateordered=
+  //     datecontract, datepromised=datefinish.
+  //   ProjectGenOrder.getProject (line 120-132) — GATES on M_PriceList_Version + M_Warehouse + C_BPartner +
+  //     C_BPartner_Location, throwing IllegalArgumentException otherwise. We mirror that as an HONEST
+  //     'project-not-ready' rejection (NOT a fabricated order) — the HONESTY INVARIANT for thin/PoC seeds.
+  //   MProject.getM_PriceList_ID (MProject.java:168-178) — pricelist = the version's M_PriceList_ID (resolved
+  //     by the host fetcher, keeping this module DB-agnostic).
+  // Implementing AD_PROCESS_FOLD_LANE.md §P1 — Witness: W-PROC-GENPO
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+  // projectGenGate — ProjectGenOrder.getProject's four IllegalArgumentException checks, as a returnable verdict.
+  function projectGenGate(p) {
+    if (!p || !p.c_project_id)                       return { ok: false, missing: 'C_Project_ID',          message: 'Project not found' };
+    if (!p.m_pricelist_version_id)                   return { ok: false, missing: 'M_PriceList_Version_ID', message: 'Project has no Price List' };
+    if (!p.m_warehouse_id)                           return { ok: false, missing: 'M_Warehouse_ID',         message: 'Project has no Warehouse' };
+    if (!p.c_bpartner_id || !p.c_bpartner_location_id) return { ok: false, missing: 'C_BPartner(_Location)_ID', message: 'Project has no Business Partner/Location' };
+    return { ok: true };
+  }
+
+  // genOrderLines — per C_ProjectLine → the order-line shape: Qty = PlannedQty − InvoicedQty; PriceActual =
+  // PlannedPrice when non-zero (the price-list branch is named-deferred → priceactual:null = "from price list").
+  // No money arithmetic here (qty/price are carried verbatim from the source row; the kernel does the cent math
+  // via bigdecimal.js downstream) — staging only, EXTRACT-not-invent.
+  function genOrderLines(lines) {
+    return (lines || []).map(function (l) {
+      var qty = Number(l.plannedqty || 0) - Number(l.invoicedqty || 0);
+      var fromPlanned = Number(l.plannedprice || 0) !== 0;
+      return {
+        c_projectline_id: l.c_projectline_id, m_product_id: l.m_product_id,
+        qtyordered: qty, line: l.line, description: l.description,
+        priceactual: fromPlanned ? l.plannedprice : null, _priceFromPlanned: fromPlanned
+      };
+    });
+  }
+
+  // GENORDER_SPEC — the buildDoc archetype spec for a project→SalesOrder fold (table-parameterised, no new verb).
+  var GENORDER_SPEC = {
+    docTable: 'C_Order', lineTable: 'C_OrderLine',
+    parentId: 'c_project_id', lineParentId: 'c_projectline_id',
+    qtyTo: 'qtyordered', qtyFrom: 'qtyordered',
+    header: function (p) {
+      return {
+        issotrx: 'Y', docsubtypeso: 'WI',                 // SO, On-Credit (MOrder.DocSubTypeSO_OnCredit)
+        c_doctypetarget_id: p._c_doctypetarget_id || null, // resolved on-credit SO doctype (host-supplied)
+        ad_client_id: p.ad_client_id, ad_org_id: p.ad_org_id,
+        c_bpartner_id: p.c_bpartner_id, c_bpartner_location_id: p.c_bpartner_location_id,
+        ad_user_id: p.ad_user_id, salesrep_id: p.salesrep_id, c_campaign_id: p.c_campaign_id,
+        m_warehouse_id: p.m_warehouse_id, m_pricelist_id: p.m_pricelist_id,
+        c_paymentterm_id: p.c_paymentterm_id,
+        description: p.name, dateordered: p.datecontract, datepromised: p.datefinish,
+        c_project_id: p.c_project_id
+      };
+    }
+  };
+
+  // registerProjectGenOrder(engine) — wire the KIND-2 handler; engine = erp_engine API (its buildDoc archetype).
+  // ctx the handler consumes: fetchProject(info)->project row (with m_pricelist_id + _c_doctypetarget_id
+  //   resolved), fetchProjectLines(info)->C_ProjectLine rows. info.Record_ID = the C_Project_ID (prepare()).
+  function registerProjectGenOrder(engine) {
+    registerHandler('org.compiere.process.ProjectGenOrder', function (ctx, info) {
+      var project = ctx.fetchProject ? ctx.fetchProject(info) : null;
+      var gate = projectGenGate(project);
+      if (!gate.ok) {
+        // getProject's IllegalArgumentException — honest rejection, NEVER a fabricated order.
+        return { ok: false, reason: 'project-not-ready', message: gate.message, rows: 0, result: { gate: gate } };
+      }
+      var norm = genOrderLines(ctx.fetchProjectLines ? ctx.fetchProjectLines(info) : []);
+      // KIND-2: the op-group rides the buildDoc archetype (CREATE_DOCUMENT + N CREATE_LINE), newVerbs=0.
+      var ops = engine.buildDoc(GENORDER_SPEC, project, norm);
+      // Decorate each CREATE_LINE with the source line's Line/Description/PriceActual (buildDoc carries only
+      // m_product_id + qtyordered). All EXTRACTED from the C_ProjectLine row — nothing invented.
+      var li = 0;
+      ops.forEach(function (op) {
+        if (op.op_type !== 'CREATE_LINE') return;
+        var n = norm[li++];
+        op.line = n.line; op.description = n.description; op.priceactual = n.priceactual;
+      });
+      return {
+        ok: true, rows: norm.length,
+        message: '@C_Order_ID@ generated from project (' + norm.length + ' line' + (norm.length === 1 ? '' : 's') + ')',
+        result: { ops: ops, lineCount: norm.length, header: ops[0], issotrx: 'Y', docsubtypeso: 'WI' }
+      };
+    }, { kind: 'process', action: 'GenerateOrder' });
+  }
+
   // ── Read the AD rows for a process: header + ordered params (the ProcessInfo source). ─────────────────
   function readProcess(db, ad_process_id) {
     var p = db.prepare('SELECT ad_process_id,value,name,classname,isreport,procedurename,jasperreport,ad_reportview_id FROM ad_process WHERE ad_process_id=?').get(ad_process_id);
@@ -213,16 +309,64 @@
     return {
       ad_process_id: proc.AD_Process_ID, name: proc.name, classname: classname,
       kind: entry.meta.kind || 'process', dispatched: true,
-      ok: out.ok !== false, reason: out.ok === false ? 'handler-failed' : 'ok',
+      ok: out.ok !== false, reason: out.ok === false ? (out.reason || 'handler-failed') : 'ok',
       validate: validate, rows: out.rows || 0, message: out.message, result: out.result
     };
+  }
+
+  // ── pickUsedProcesses — the P3 ON-DEMAND PICKER (GAP_CLOSURE_LANE §P3.5) ─────────────────────────────
+  // Returns the ACTUALLY-USED subset of AD_Process via TWO lenses, unioned:
+  //   byAccess  — AD_Process ⋈ AD_Process_Access (processes granted to at least one active role)
+  //   byWorkflow— AD_Process ⋈ AD_WF_Node        (processes that appear in a workflow node)
+  // This IS the mechanism; the 337-classname corpus is NOT pre-ported.
+  // opts.roles  — array of ad_role_id to narrow the access lens (default: all active roles)
+  // opts.includeWfNodes — false to skip the workflow lens (default: true)
+  // Implements GAP_CLOSURE_LANE.md §P3.5 — Witness: W-PROC-PICKER
+  function pickUsedProcesses(db, opts) {
+    opts = opts || {};
+    var roleClause = '';
+    if (opts.roles && opts.roles.length > 0) {
+      roleClause = ' AND pa.ad_role_id IN (' + opts.roles.map(Number).join(',') + ')';
+    }
+
+    // lens 1: access grants — AD_Process ⋈ AD_Process_Access
+    var byAccess = db.prepare(
+      "SELECT DISTINCT p.ad_process_id, p.value, p.classname, p.isreport " +
+      "FROM ad_process p " +
+      "JOIN ad_process_access pa ON pa.ad_process_id=p.ad_process_id AND pa.isactive='Y' " +
+      "WHERE p.isactive='Y'" + roleClause +
+      " ORDER BY p.ad_process_id"
+    ).all();
+
+    // lens 2: workflow nodes — AD_WF_Node ⋈ AD_Process (processes referenced as node actions)
+    var byWorkflow = [];
+    if (opts.includeWfNodes !== false) {
+      byWorkflow = db.prepare(
+        "SELECT DISTINCT p.ad_process_id, p.value, p.classname, p.isreport " +
+        "FROM ad_process p " +
+        "JOIN ad_wf_node n ON n.ad_process_id=p.ad_process_id AND n.isactive='Y' " +
+        "WHERE p.isactive='Y' ORDER BY p.ad_process_id"
+      ).all();
+    }
+
+    // union by ad_process_id (deterministic sort for oracle diff)
+    var seen = Object.create(null), union = [];
+    byAccess.concat(byWorkflow).forEach(function (r) {
+      if (!seen[r.ad_process_id]) { seen[r.ad_process_id] = true; union.push(r); }
+    });
+    union.sort(function (a, b) { return a.ad_process_id - b.ad_process_id; });
+
+    return { byAccess: byAccess, byWorkflow: byWorkflow, union: union };
   }
 
   var API = {
     REGISTRY: REGISTRY, registerHandler: registerHandler, hasHandler: hasHandler,
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
+    registerProjectGenOrder: registerProjectGenOrder, projectGenGate: projectGenGate,
+    genOrderLines: genOrderLines, GENORDER_SPEC: GENORDER_SPEC,
     readProcess: readProcess, resolveClassname: resolveClassname,
     validateParams: validateParams, dispatch: dispatch,
+    pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE
   };
 
