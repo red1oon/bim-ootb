@@ -31,6 +31,7 @@
     SFX_NAV: 1, SFX_SUSPEND: 1, SFX_RESUME: 1, SFX_INIT: 1, SFX_CONFIG: 1, FILTER_GUIDS: 1, GRID_SCISSORS: 1,
     KBD_SEQ_ENGINE: 1, KBD_SEQ_FIRE: 1, KBD_SEQ: 1, BBOX: 1, BBOX_PLACEHOLDERS: 1, BBOX_CLEARED: 1,
     EVT: 1, RESTORE: 1, HIST_PUSH: 1, HIST_UNDO: 1, HIST_REDO: 1, KRN_CHAIN: 1, KRN_PERSIST: 1,
+    HIST_TAP_DOT: 1, HIST_DEPTH: 1,                                 // the bar's tap-drain echo (anti-recursion)
   };
   // Intra-tag noise: same tag, but the line is internal routing/error, not a user action.
   var NOISE_LABEL = /pass-through|no-op|error|blocked|unregistered|drop key|guard/i;
@@ -77,9 +78,18 @@
   }
   function currentView() { return buildView(); }       // host stamps its OWN bar entries with this.
 
+  // ── SUBSCRIBERS (HISTORY_KNOB_SIGNAL_TAP §THE WORK step 1) ─────────────────────────
+  // The bar subscribes HERE instead of being wired into every feature. _notify() fires after each act
+  // enters the stream → the bar drains fresh crumbs into read-only dots. Loose-coupled: the tap knows
+  // nothing about the bar. (Anti-recursion: the bar's drain echoes HIST_TAP_DOT/HIST_PUSH, both DENYed.)
+  var _observers = [];
+  function onFeed(fn) { if (typeof fn === 'function') _observers.push(fn); }
+  function _notify() { for (var i = 0; i < _observers.length; i++) { try { _observers[i](); } catch (e) {} } }
+
   function feed(tag, label, payload) {
     reduceAmbient(tag, label);                          // update the mirror FROM the stream …
     all.push({ tag: tag, label: label, payload: payload || null, view: buildView(), t: all.length });     // … then stamp.
+    _notify();
   }
 
   // ── THE LOG-SNIFFER: recording goes TOTAL with ZERO per-feature wiring ──────────────
@@ -94,6 +104,7 @@
     for (var i = n - 1; i >= 0 && i >= n - 3; i--) if (all[i].tag === tag && all[i].label === label) return;
     reduceAmbient(tag, label);
     all.push({ tag: tag, label: label, payload: null, crumb: true, t: all.length });
+    _notify();
   }
   var _origLog = null, _sniffing = false;
   var TAGRE = /§([A-Z][A-Z0-9_]*)\s*([^\n]*)/;                      // find §TAG anywhere ("[S205] §SECTION …")
@@ -149,9 +160,22 @@
       return pass === null || pass.indexOf(e.tag) !== -1;
     });
   }
+  // historySince(t, extraDeny) — the SUBSCRIBER pull: knob-filtered crumbs newer than high-water `t`,
+  // minus any tag the host already records explicitly (extraDeny). Pure → the bar drains this into dots.
+  function historySince(t, extraDeny) {
+    var pass = level === 'max' ? null : STOPS[level];
+    return all.filter(function (e) {
+      if (e.t <= t) return false;
+      if (DENY_TAG[e.tag]) return false;
+      if (extraDeny && extraDeny[e.tag]) return false;
+      if (NOISE_LABEL.test(e.label)) return false;
+      return pass === null || pass.indexOf(e.tag) !== -1;
+    });
+  }
   function clear() { all.length = 0; }
 
-  var Tap = { feed: feed, feedCrumb: feedCrumb, sniff: sniff, setKnob: setKnob, getKnob: getKnob, history: history, clear: clear,
+  var Tap = { feed: feed, feedCrumb: feedCrumb, sniff: sniff, setKnob: setKnob, getKnob: getKnob, history: history,
+              historySince: historySince, onFeed: onFeed, clear: clear,
               field: field, seed: seed, setViewProvider: setViewProvider, registerApplier: registerApplier,
               restore: restore, currentView: currentView, applyView: applyView, combineViews: combineViews,
               isApplying: isApplying,
