@@ -32,6 +32,10 @@
     KBD_SEQ_ENGINE: 1, KBD_SEQ_FIRE: 1, KBD_SEQ: 1, BBOX: 1, BBOX_PLACEHOLDERS: 1, BBOX_CLEARED: 1,
     EVT: 1, RESTORE: 1, HIST_PUSH: 1, HIST_UNDO: 1, HIST_REDO: 1, KRN_CHAIN: 1, KRN_PERSIST: 1,
     HIST_TAP_DOT: 1, HIST_DEPTH: 1,                                 // the bar's tap-drain echo (anti-recursion)
+    // ERP boot/infra + cross-page-log echo (HISTORY_TAP_TO_IDEMPIERE §SESSION — from the REAL idempiere
+    // firehose; all infra on the viewer too): VFS=storage-backend probe · AD_PARSER=tip-miss parse churn ·
+    // IDEMPIERE=shard load · WHOLE=whole_history's own §WHOLE-REC/NAV/LANDED echo (also recursion-guard).
+    VFS: 1, AD_PARSER: 1, IDEMPIERE: 1, WHOLE: 1,
   };
   // Intra-tag noise: same tag, but the line is internal routing/error, not a user action.
   var NOISE_LABEL = /pass-through|no-op|error|blocked|unregistered|drop key|guard/i;
