@@ -325,10 +325,13 @@
     mountHostId: 'status-bar-wrap',         // §3: dock under the status row
     profiles: PROFILES,
     depthKey: 'bim.universalHist.depth',
-    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile, which
-    // used to default 'off' → no dots collected). 'max' = every meaningful act becomes one dot (scene
-    // change / pick / section / grid), matching "every change is a dot".
-    defaultDepth: function () { return 'max'; },
+    ignorePersistedDepth: true,             // knob scrapped → a stale 'low' from the knob era must not
+                                            // pin the bar (no UI to raise it). Always boot at defaultDepth.
+    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile). 'mid'
+    // is the CLEAN TRAIL: edits/saves + detail events (measure / clash-inspect / section-cut), WITHOUT
+    // the element-pick + nav-view spam that 'max' adds (user direction 2026-06-16: keep the trail readable,
+    // don't clutter it with a dot for every selection). Measure/clash/section all leave a Z dot at mid.
+    defaultDepth: function () { return 'mid'; },
     restore: _restore,
     restoreView: _restoreView,              // READ-ONLY scrubber path (knob nav + dot clicks)
     afterApply: _chainCheck,
