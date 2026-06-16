@@ -1086,13 +1086,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var tab = _curTab();
       var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
       var canCrud = !!(window.__crud && tn && _crudHas(tn));
-      btn('✎ CRUD', canCrud ? 'Edit / New / Delete / Complete this record (CRUD ring)' : 'CRUD ring — this table is not in crud_ops (read-only)', canCrud, function () {
+      // RING LEAK FIX (GRAND_LANE §0: iDempiere NEVER opens the Glass/Gravity ring — Execute is iDempiere's own UI
+      //   surface). The ✎ button re-points to the SAME form host-seam the form pills use (_openEdit → __crud.update
+      //   → edit form, ring NOT fanned); New/Delete/Complete stay on the form pills + DocAction bar. enable()/
+      //   openRing()/the Edit-mode toggle are never called from this surface, so §CRUD ring … view=on and
+      //   §CRUD-IDMP-OPEN can no longer fire on iDempiere. The ring remains Glass/Gravity-only.
+      btn('✎ Edit', canCrud ? 'Edit this record (opens the form — ring not fanned)' : 'Edit — this table is read-only per its dictionary', canCrud, function () {
         if (!window.__crud || !tn) return;
-        // ensure Edit-mode is on (the overlay gates writes behind it), then open the ring on the focused table.
-        try { var ck = document.getElementById('crudModeCk'); if (ck && !ck.checked) { ck.checked = true; ck.dispatchEvent(new Event('change')); } } catch (e) {}
-        window.__crud.enable();
-        // openRing reads crud_ops.json (fetched on enable); defer one frame so the store is present.
-        var tries = 0; (function tryOpen() { if (window.__crud.openRing && window.__crud.store && window.__crud.store()) { window.__crud.openRing(tn); console.log('§CRUD-IDMP-OPEN table=' + tn + ' record=' + _curRecPk()); } else if (tries++ < 30) { setTimeout(tryOpen, 60); } })();
+        _openEdit();
       });
     })();
     sep();
