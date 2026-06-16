@@ -602,8 +602,82 @@
     return null;
   }
 
+  // ── S2B (AD-FOLDED CRUD GENERALITY) — derive a crud_ops-shaped entry FROM THE DICTIONARY so EVERY window is
+  // editable per its OWN AD, not a curated 5-table allow-list (Janke/Compiere vision). PURE + headless-testable.
+  // Input `adFields` = the renderer's already-folded field shape (ADParser.getFields): {columnName, name,
+  // isMandatory, isReadOnly, isUpdateable, isKey, isDisplayed, referenceType, defaultValue, displayLogic}. We do
+  // NOT re-derive types/refs — we MAP what the renderer already folded. opts: {key, title, isView, isReadOnly,
+  // forVerb}. The signed write path (commitCrud→listTip overlay→reload-survival) is UNCHANGED; only the SPEC
+  // SOURCE moves from the hand-list to the AD.
+  // mapRefDisplayType — the AUTHORITATIVE map: iDempiere DisplayType id → the overlay form type vocab. Folded from
+  //   the raw AD_Reference_ID (ADParser exposes `referenceId`) so it is correct even where the renderer's coarse
+  //   REF_TYPES string is imperfect (e.g. 20=Yes-No, 18=Table). Returns null for an unknown id (→ string fallback).
+  //   number: 11 Integer · 12 Amount · 22 Number · 29 Quantity. date: 15 Date · 16 DateTime · 24 Time. fk: 18 Table ·
+  //   19 TableDir · 30 Search. id: 13 ID (hidden PK) · 28 Button (dropped by the caller). else (10 String · 14 Text ·
+  //   17 List · 20 Yes-No · …) → string (LEG-1: list/yesno render as an editable text of the raw value; AD_Ref_List
+  //   option-fold is a named follow-on).
+  function mapRefDisplayType(rid) {
+    switch (Number(rid)) {
+      case 11: case 12: case 22: case 29: return 'number';
+      case 15: case 16: case 24: return 'date';
+      case 18: case 19: case 30: return 'fk';
+      case 13: return 'id'; case 28: return 'button';
+      // string-rendered ids — MUST be enumerated so a known id never falls through to the coarse referenceType
+      // fallback (where 20=Yes-No is mislabelled 'table'→fk): 10 String · 14 Text · 17 List · 20 Yes-No · 21 Location
+      // · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment · 34 Memo · 35 PAttribute · 38 PrinterName.
+      case 10: case 14: case 17: case 20: case 21: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
+      default: return null;   // truly unknown id → caller falls back to the referenceType string
+    }
+  }
+  // mapRefType — fallback by the renderer's coarse referenceType STRING (older callers / when no referenceId).
+  function mapRefType(rt) {
+    switch (rt) {
+      case 'integer': case 'amount': case 'number': case 'quantity': return 'number';
+      case 'date': case 'datetime': return 'date';
+      case 'tableDirect': case 'table': case 'search': return 'fk';
+      case 'id': return 'id'; case 'button': return 'button';
+      default: return 'string';   // string · text · char · list · yesno · unknown
+    }
+  }
+  function foldCrudSpec(adFields, opts) {
+    opts = opts || {};
+    var roTable = !!opts.isView || !!opts.isReadOnly;     // AD_Table.IsView or AD_Tab.IsReadOnly → the whole row is read-only
+    var forVerb = opts.forVerb || 'update';
+    var fields = (adFields || []).map(function (f) {
+      // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
+      var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
+      return f && f.isDisplayed && !f.isKey && type !== 'button' && type !== 'id' ? { f: f, type: type } : null;
+    }).filter(Boolean).map(function (ft) {
+      var f = ft.f, type = ft.type;
+      // IsUpdateable='N' is SETTABLE on New (iDempiere fills it once) but display-only on Edit; isReadOnly + a
+      // read-only table/tab are always read-only.
+      var readonly = !!f.isReadOnly || roTable || (forVerb === 'update' && f.isUpdateable === false);
+      var spec = { col: String(f.columnName).toLowerCase(), label: f.name || f.columnName, type: type,
+                   required: !!f.isMandatory, readonly: readonly };
+      // DEFAULTS: resolve the well-known AD context variables iDempiere's Env fills on New (@#AD_Client_ID@,
+      // @#AD_Org_ID@, @#Date@) from opts.ctx — so a mandatory system column (AD_Client_ID/AD_Org_ID) doesn't block a
+      // folded create; keep PLAIN literals (0/N/Y/DR…); drop any OTHER unevaluated expression (@SQL=…, functions) —
+      // we don't run the full AD default-expression language here (named follow-on), and never seed an un-evaluated
+      // token (it would fail the field validator). Edit pre-fills the real row regardless.
+      var d = f.defaultValue, ctx = opts.ctx || {};
+      if (d != null && String(d) !== '') {
+        var ds = String(d);
+        if (ds === '@#AD_Client_ID@' && ctx.clientId != null) spec.default = ctx.clientId;
+        else if (ds === '@#AD_Org_ID@' && ctx.orgId != null) spec.default = ctx.orgId;
+        else if (ds === '@#Date@' && ctx.today) spec.default = ctx.today;
+        else if (!/[@()]/.test(ds)) spec.default = d;
+      }
+      if (type === 'fk') spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+      if (f.displayLogic != null && String(f.displayLogic).trim() !== '') spec.displaylogic = f.displayLogic;
+      return spec;
+    });
+    return { key: opts.key, title: opts.title || opts.key, folded: true, isView: !!opts.isView,
+             verbs: roTable ? [] : ['create', 'update', 'delete'], fields: fields };
+  }
+
   var CORE = {
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
+    foldCrudSpec: foldCrudSpec, mapRefType: mapRefType,                          // S2B: AD-folded CRUD spec (general, not curated)
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, legalDocActions: legalDocActions, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
     normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,
@@ -675,7 +749,18 @@
   if (typeof window !== 'undefined') window.addEventListener('beforeunload', function () { try { _bufferDraft(); } catch (e) {} });
 
   function today() { try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; } }
-  function entryFor(key) { return STORE && !isMeta(key) && STORE[key] ? (function () { var e = STORE[key]; e.key = key; return e; })() : null; }
+  // S2B — FOLDED holds host-registered AD-folded specs (one per non-curated table). entryFor prefers the CURATED
+  //   crud_ops entry (it carries docPolicy fan-out / ownerGate / docAction); else falls back to the folded spec so
+  //   ANY window is editable per its own dictionary. Lower-cased key, mirrors crud_ops keys.
+  var FOLDED = {};
+  function registerFolded(key, entry) { if (key && entry) FOLDED[String(key).toLowerCase()] = entry; }
+  function entryFor(key) {
+    if (STORE && !isMeta(key) && STORE[key]) { var e = STORE[key]; e.key = key; return e; }
+    var f = FOLDED[String(key).toLowerCase()];
+    if (f) { f.key = String(key).toLowerCase(); return f; }
+    return null;
+  }
+  function hasEntry(key) { return !!(STORE && !isMeta(key) && STORE[key]) || !!FOLDED[String(key).toLowerCase()]; }
 
   // _ensureStore — load the keyed crud_ops.json store once (idempotent). Shared by Edit-mode enable AND the
   // host DocAction lane (hostProcess), which fires WITHOUT enabling Edit mode and still needs the store's
@@ -954,7 +1039,7 @@
     if (!e || !(e.fields || []).some(function (f) { return String(f.col).toLowerCase() === 'documentno'; })) return;
     var cur = vals.documentno;
     if (cur != null && String(cur) !== '' && String(cur) !== 'auto') return;   // a real default already present → keep
-    var pv = _previewDocNo(e.key);
+    var pv = _previewDocNo(e.key, vals);                       // GAP (c): honour the doctype's controlled sequence when vals carry a C_DocType
     vals.documentno = pv != null ? pv : '';
     if (pv != null) console.log('§DOCNO-PREVIEW table=' + e.key + ' documentno=' + pv + ' (sequence preview, finalised on Save)');
   }
@@ -1144,9 +1229,23 @@
     });
   }
   // ── §AD-MODELVAL-LIVE plumbing — lazy per-table installer over the page bundle (sql.js → b3 shim) ──
-  var MV_INSTALLER = { c_order: 'installMOrderSaveHooks', m_inout: 'installMInOutSaveHooks',
-    c_invoice: 'installMInvoiceSaveHooks', c_payment: 'installMPaymentSaveHooks' };
-  var _mvInstalled = {};
+  // AUDIT GAP (d) — general not custom: DISCOVER the model-validator installers from the AdModelVal registry instead
+  //   of a hardcoded 4-table map. Every `install<Model>SaveHooks` export is invoked once (idempotent); each registers
+  //   its own BEFORE_SAVE hooks under its table (registerValidator). fireHooks then resolves coverage from REGISTRY —
+  //   so ALL ~13 ported model validators apply (the old map wired only 4), and a table with no ported hook is a clean
+  //   no-op. Install is pure registration (db is captured in hook closures, touched only when a hook fires) → safe.
+  var _mvAllInstalled = false;
+  function _installAllModelVal(b) {
+    var MV = global.AdModelVal; if (!MV) return [];
+    var installed = [];
+    Object.keys(MV).forEach(function (m) {
+      if (/^install[A-Z].*SaveHooks$/.test(m) && typeof MV[m] === 'function') {
+        try { MV[m](b); installed.push(m); } catch (e) { console.log('§AD-MODELVAL-LIVE installer ' + m + ' skipped (' + (e && e.message) + ')'); }
+      }
+    });
+    if (typeof MV.installDefaultHooks === 'function') { try { MV.installDefaultHooks(); installed.push('installDefaultHooks'); } catch (e) {} }
+    return installed;
+  }
   function _mvB3(dbh) {   // better-sqlite3-shaped shim over sql.js; lowercase keys (engines proven on ad_full.db);
     function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
     function run(sql, args, all) {                              // absent table/column in this bundle slice → no-row
@@ -1173,13 +1272,17 @@
       all: function () { return run(sql, Array.prototype.slice.call(arguments), true); }
     }; } };
   }
-  // _docCtx — the session document context the beforeSave hooks consult (iDempiere Env). The default Warehouse
-  //   for the session org (else the client's first active warehouse) — read from m_warehouse, never invented.
+  // _docCtx — the session document context the beforeSave hooks consult (iDempiere Env). The default Warehouse.
+  //   AUDIT GAP (b) — general not custom: iDempiere reads the org's DEFAULT warehouse from AD_OrgInfo.M_Warehouse_ID
+  //   (MOrgInfo.getM_Warehouse_ID), NOT "the lowest active warehouse id". Read that FIRST; only if AD_OrgInfo carries
+  //   none fall back to the org's first active warehouse, then the client's. Always a real m_warehouse, never invented.
   function _docCtx(b) {
     var ctx = {};
     try {
       var app = global.APP || {}, org = Number(app.orgId) || 0, cli = Number(app.clientId) || 0, wh = null;
-      if (org) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(org);
+      if (org) { try { var oi = b.prepare("SELECT m_warehouse_id FROM ad_orginfo WHERE ad_org_id=? LIMIT 1").get(org);
+        if (oi && oi.m_warehouse_id != null) wh = { m_warehouse_id: oi.m_warehouse_id }; } catch (e0) {} }
+      if ((!wh || wh.m_warehouse_id == null) && org) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(org);
       if ((!wh || wh.m_warehouse_id == null) && cli) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_client_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(cli);
       if (wh && wh.m_warehouse_id != null) ctx.m_warehouse_id = Number(wh.m_warehouse_id);
     } catch (e) {}
@@ -1187,12 +1290,13 @@
   }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;
-    if (!MV || !MV_INSTALLER[e.key] || typeof withBundle !== 'function') { cb(null); return; }
+    if (!MV || typeof withBundle !== 'function') { cb(null); return; }
     withBundle(function (db) {
       var out = null;
       try {
         var b = _mvB3(db);
-        if (!_mvInstalled[e.key]) { _mvInstalled[e.key] = true; var n = MV[MV_INSTALLER[e.key]](b); console.log('§AD-MODELVAL-LIVE installed ' + MV_INSTALLER[e.key] + ' hooks=' + n); }
+        if (!_mvAllInstalled) { _mvAllInstalled = true; var ins = _installAllModelVal(b); console.log('§AD-MODELVAL-LIVE installed-all registry=' + ins.length + ' [' + ins.join(',') + ']'); }
+        // GAP (d): no ported hook for this table → fireHooks returns fired=0, ok=true (a clean no-op, not a gate).
         var rec = {}, k;
         if (orig) for (k in orig) rec[k.toLowerCase()] = orig[k];
         for (k in vals) rec[k.toLowerCase()] = vals[k];
@@ -1701,11 +1805,30 @@
   // _previewDocNo — the sequence's NEXT DocumentNo WITHOUT consuming it (iDempiere shows this preview on a New
   //   form; the field is filled so the numeric val rule passes + the user isn't asked to type a doc number).
   //   The real number is allocated (and the sequence consumed) at commit by _allocDocNo. Returns null if no seq.
-  function _previewDocNo(table) {
+  // AUDIT GAP (c) — honour the doctype's controlled sequence (general not custom): when the record carries a
+  //   C_DocType(/Target) whose C_DocType.IsDocNoControlled='Y', iDempiere allocates DocumentNo from that doctype's
+  //   DocNoSequence_ID, NOT the table-level DocumentNo_<table> sequence. Returns the AD_Sequence_ID to use, else
+  //   null (→ fall back to the named table sequence). c_doctype is lower-cased in the bundle (data table).
+  function _docTypeSeqId(mdb, fields) {
+    try {
+      if (!fields) return null;
+      var dt = fields.c_doctype_id != null ? fields.c_doctype_id : (fields.C_DocType_ID != null ? fields.C_DocType_ID
+             : (fields.c_doctypetarget_id != null ? fields.c_doctypetarget_id : fields.C_DocTypeTarget_ID));
+      if (dt == null || String(dt) === '' || !isFinite(Number(dt))) return null;
+      var r = mdb.exec("SELECT isdocnocontrolled, docnosequence_id FROM c_doctype WHERE c_doctype_id=" + Number(dt) + " LIMIT 1");
+      if (!r.length || !r[0].values.length) return null;
+      var controlled = String(r[0].values[0][0]).toUpperCase() === 'Y', seqId = r[0].values[0][1];
+      return (controlled && seqId != null) ? Number(seqId) : null;
+    } catch (e) { return null; }
+  }
+  function _previewDocNo(table, fields) {
     var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null; if (!mdb) return null;
     var cols = _getTableCols(table); if (!cols['documentno']) return null;
     try {
-      var r = mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", ['DocumentNo_' + table]);
+      var dtSeq = _docTypeSeqId(mdb, fields);
+      var r = dtSeq != null
+        ? mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE AD_Sequence_ID=" + dtSeq + " AND IsActive='Y' LIMIT 1")
+        : mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", ['DocumentNo_' + table]);
       if (!r.length || !r[0].values.length) return null;
       var v = r[0].values[0]; return (v[1] || '') + v[0] + (v[2] || '');
     } catch (e) { return null; }
@@ -1716,9 +1839,11 @@
     var cols = _getTableCols(table);
     if (!cols['documentno']) return null;
     try {
-      var seqName = 'DocumentNo_' + table;
-      var r = mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", [seqName]);
-      if (!r.length || !r[0].values.length) { console.log('§DOCNO no-sequence table=' + table + ' (named, not faked)'); return null; }
+      var dtSeq = _docTypeSeqId(mdb, fields), seqName = 'DocumentNo_' + table;
+      var r = dtSeq != null
+        ? mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE AD_Sequence_ID=" + dtSeq + " AND IsActive='Y' LIMIT 1")
+        : mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", [seqName]);
+      if (!r.length || !r[0].values.length) { console.log('§DOCNO no-sequence table=' + table + (dtSeq != null ? ' doctypeSeq=' + dtSeq : ' seq=' + seqName) + ' (named, not faked)'); return null; }
       var v = r[0].values[0], seqId = v[0], next = v[1], incr = v[2] || 1, prefix = v[3] || '', suffix = v[4] || '';
       var docNo = (prefix || '') + next + (suffix || '');
       // honor a MANUAL override (a value the user changed AWAY from the preview); otherwise allocate (consume)
@@ -1726,7 +1851,7 @@
       var provided = fields ? (fields['DocumentNo'] != null ? fields['DocumentNo'] : fields['documentno']) : null;
       if (provided != null && String(provided) !== '' && String(provided) !== String(docNo)) return null;
       mdb.run('UPDATE AD_Sequence SET CurrentNext=' + (next + incr) + ' WHERE AD_Sequence_ID=' + seqId);
-      console.log('§DOCNO table=' + table + ' seq=' + seqName + ' next=' + next + ' docno=' + docNo + ' replay-stable=Y');
+      console.log('§DOCNO table=' + table + ' seq=' + (dtSeq != null ? ('doctype#' + dtSeq) : seqName) + ' next=' + next + ' docno=' + docNo + ' docNoControlled=' + (dtSeq != null) + ' replay-stable=Y');
       return docNo;
     } catch (e) { return null; }
   }
@@ -2057,6 +2182,7 @@
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
+                    registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,

@@ -412,7 +412,7 @@
 </div>
 
 <script src="vfs_detect.js?v=1"></script>
-<script src="ad_parser.js?v=23"></script>
+<script src="ad_parser.js?v=24"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -516,7 +516,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=14"></script>
+<script src="crud_overlay.js?v=15"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1248,10 +1248,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //    REAL existing handler — never forks a verb: New/Save = the CRUD ring + its #cfSave; Process = the FSM seam.
   function _openCrudRing() {   // = the ✎ CRUD toolbar button (New/Save/Delete bundled in the ring), reused
     var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
-    if (!window.__crud || !tn || !_crudHas(tn)) { status('CRUD ring — this table is not editable (not in crud_ops)'); return; }
+    if (!window.__crud || !tn || !_crudHas(tn)) { status('CRUD ring — this table is not editable (read-only)'); return; }
     try { var ck = document.getElementById('crudModeCk'); if (ck && !ck.checked) { ck.checked = true; ck.dispatchEvent(new Event('change')); } } catch (e) {}
     window.__crud.enable();
-    var tries = 0; (function tryOpen() { if (window.__crud.openRing && window.__crud.store && window.__crud.store()) { window.__crud.openRing(tn); console.log('§FORM-PILL crud-ring table=' + tn + ' record=' + _curRecPk()); } else if (tries++ < 30) { setTimeout(tryOpen, 60); } })();
+    _withFoldedEntry(tn, 'update', function () {     // S2B — fold a non-curated table so the ring's verbs resolve (entryFor fallback); ensureStore ran first
+      if (window.__crud.openRing) { window.__crud.openRing(tn); console.log('§FORM-PILL crud-ring table=' + tn + ' record=' + _curRecPk()); }
+    });
   }
   // _openCreate (S2/J4) — iDempiere's OWN New: open the create FORM directly via the host seam (__crud.create),
   //   NOT the visual ring fan (doctrine §0: the ring is Glass/Gravity-only). The create-twin of J5's Process seam:
@@ -1262,8 +1264,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (typeof window.__crud.create !== 'function') { _openCrudRing(); return; }   // pre-J4 fallback (older overlay)
     // hostCreate runs _ensureStore (the crud_ops fetch is lazy) then checks entryFor/verbEnabled — so a New on the
     //   very first click (before the store loads) resolves correctly; a non-creatable table logs §CRUD-HOSTCREATE skip.
-    window.__crud.create(tn);                                  // the form + CSS are mounted at overlay init — no enable()/ring needed (mirrors hostProcess)
-    console.log('§FORM-PILL new=create-form table=' + tn + ' (ring not fanned)');
+    // S2B — register the AD-folded create-spec for a non-curated table FIRST so entryFor resolves (general, not curated).
+    _withFoldedEntry(tn, 'create', function () {
+      window.__crud.create(tn);                                // the form + CSS are mounted at overlay init — no enable()/ring needed (mirrors hostProcess)
+      console.log('§FORM-PILL new=create-form table=' + tn + ' (ring not fanned)');
+    });
   }
   // _openEdit / _openDelete (S2/J4 full-CRUD) — iDempiere's OWN Edit/Delete: open the edit form / delete-confirm
   //   DIRECTLY on the SELECTED record via the host seam (__crud.update/remove), NOT the ring fan (doctrine §0).
@@ -1281,14 +1286,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _openEdit() {
     var t = _selectedPkFor('edit'); if (!t) return;
     if (typeof window.__crud.update !== 'function') { _openCrudRing(); return; }   // pre-full-CRUD fallback (older overlay)
-    window.__crud.update(t.tn, t.id);
-    console.log('§FORM-PILL edit=edit-form table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+    _withFoldedEntry(t.tn, 'update', function () {                                 // S2B — fold a non-curated table (IsUpdateable=N → display-only on edit)
+      window.__crud.update(t.tn, t.id);
+      console.log('§FORM-PILL edit=edit-form table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+    });
   }
   function _openDelete() {
     var t = _selectedPkFor('delete'); if (!t) return;
     if (typeof window.__crud.remove !== 'function') { _openCrudRing(); return; }
-    window.__crud.remove(t.tn, t.id);
-    console.log('§FORM-PILL delete=delete-confirm table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+    _withFoldedEntry(t.tn, 'update', function () {                                 // S2B — fold a non-curated table so entryFor resolves
+      window.__crud.remove(t.tn, t.id);
+      console.log('§FORM-PILL delete=delete-confirm table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+    });
   }
   function _formSave() {        // = iDempiere Save: persist the edits in the open CRUD overlay form (its #cfSave)
     var sv = document.getElementById('cfSave');
@@ -2154,12 +2163,66 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { var tab = _curTab(); if (!tab) return null; var rec = _records[_recIdx]; if (!rec) return null;
       var v = recVal(rec, _keyCol(tab)); return (v === '' || v == null) ? null : v; } catch (e) { return null; }
   }
-  // _crudHas — does the overlay's crud_ops store carry an entry for this (lower-cased) table? Drives the
-  // ✎ CRUD button's enabled state. Tolerant: store may not be fetched yet → treat as "maybe" (let the ring decide).
-  function _crudHas(tn) {
+  // _curatedHas — does the CURATED crud_ops store carry an entry for this (lower-cased) table? (The 5 document
+  //   tables: docPolicy fan-out + ownerGate.) Tolerant: store may not be fetched yet → "maybe".
+  function _curatedHas(tn) {
     try { var st = window.__crud && window.__crud.store && window.__crud.store();
       if (!st) return true;                 // store not fetched yet — don't pre-disable; openRing re-checks
       return Object.prototype.hasOwnProperty.call(st, tn); } catch (e) { return true; }
+  }
+  // S2B — _tableIsView: AD_Table.IsView='Y' → the table is a database VIEW = read-only (no New/Edit/Delete).
+  //   Cached per table; reads the seed AD_Table like the IsChangeLog probe.
+  var _isViewCache = {};
+  function _tableIsView(tn) {
+    if (tn == null) return false; var key = String(tn).toLowerCase();
+    if (key in _isViewCache) return _isViewCache[key];
+    var v = false;
+    try { var r = db.exec("SELECT IsView FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [tn]);
+      v = r.length && r[0].values.length && String(r[0].values[0][0]).toUpperCase() === 'Y'; } catch (e) {}
+    _isViewCache[key] = v; return v;
+  }
+  // S2B — _foldableTab: a NON-curated table the AD says is editable (not a view, not a read-only tab, has fields).
+  //   The general path: every window editable per its OWN dictionary, retiring the curated allow-list as the GATE.
+  function _foldableTab(tab) {
+    if (!tab || !tab.tableName) return false;
+    var tn = String(tab.tableName).toLowerCase();
+    if (_curatedHas(tn)) return false;                       // curated wins (its docPolicy fan-out)
+    if (_tableIsView(tn) || tab.isReadOnly) return false;    // AD_Table.IsView / AD_Tab.IsReadOnly → read-only
+    return (tab.fields || []).some(function (f) { return f.isDisplayed && !f.isKey; });
+  }
+  // S2B — _foldCrudSpecForTab: derive + register the crud_ops-shaped entry FROM the current tab's AD-folded
+  //   fields (the renderer's getFields shape — reused, not re-derived) so hostCreate/Update/Delete's entryFor
+  //   resolves for a non-curated table. forVerb shapes the readonly set (IsUpdateable='N' settable on New,
+  //   display-only on Edit). Returns the registered spec (or null when the engine seam is absent).
+  function _foldCrudSpecForTab(tab, forVerb) {
+    if (!tab || !tab.tableName || !window.__crud || !window.__crud.core ||
+        typeof window.__crud.core.foldCrudSpec !== 'function' || typeof window.__crud.registerFolded !== 'function') return null;
+    var tn = String(tab.tableName).toLowerCase();
+    // ctx = the session Env defaults the AD context-variable defaults resolve from (@#AD_Client_ID@/@#AD_Org_ID@/
+    //   @#Date@) — so a mandatory system column doesn't block a folded New. iDempiere fills these from Env, never asks.
+    var ctx = { clientId: (_session && _session.client) ? _session.client.id : null,
+                orgId: (_session && _session.org) ? _session.org.id : null,
+                today: (new Date()).toISOString().slice(0, 10) };
+    var spec = window.__crud.core.foldCrudSpec(tab.fields, {
+      key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx });
+    window.__crud.registerFolded(tn, spec);
+    console.log('§S2B-FOLD table=' + tn + ' verb=' + (forVerb || 'update') + ' verbs=[' + (spec.verbs || []).join(',') + '] fields=' + (spec.fields || []).length + ' isView=' + spec.isView + ' tabRO=' + !!tab.isReadOnly);
+    return spec;
+  }
+  // _crudHas — is this table editable AT ALL? curated crud_ops OR AD-foldable (S2B general). Drives the ✎ CRUD
+  //   button's enabled state. Tolerant: store may not be fetched yet → "maybe".
+  function _crudHas(tn) {
+    if (_curatedHas(tn)) return true;
+    return _foldableTab(_curTab());
+  }
+  // S2B — _withFoldedEntry: register a dictionary-folded spec for a NON-curated table BEFORE invoking a host CRUD
+  //   seam, so entryFor resolves. ensureStore first (so _curatedHas sees the loaded crud_ops; a curated doc table
+  //   is NEVER folded — its docPolicy entry wins). forVerb shapes the readonly set. Degrades to a bare run() if the
+  //   overlay predates the seam (older cache) — the host seam then logs its own honest skip.
+  function _withFoldedEntry(tn, forVerb, run) {
+    var es = window.__crud && window.__crud.ensureStore;
+    var go = function () { if (!_curatedHas(tn)) _foldCrudSpecForTab(_curTab(), forVerb); run(); };
+    if (typeof es === 'function') es(go); else go();
   }
   // withBundle — the overlay's read source on iDempiere = THIS window's seed db (immutable baseline).
   window.withBundle = function (cb) { try { if (db) cb(db); else cb(null); } catch (e) { try { cb(null); } catch (e2) {} } };
