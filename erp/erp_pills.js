@@ -257,8 +257,8 @@
   // erp.html is the lean globe that funnels there. What remains is operative. ──
   var BINDINGS = {
     home:      function () { if (window.ADUI && ADUI.showMenu) ADUI.showMenu(); else _toast('Home'); },
-    install:   _picker('install'),
-    migrate:   _picker('migrate'),
+    // ABOUT_BOX_CONSOLIDATE.md — install/migrate retired; the (?) Help pill opens the ONE shared About/DIY modal
+    // (About = the project; DIY = self-host + bring-your-data-in agents). Falls back to the bubble guide card.
     maximize:  function () {                                  // real — fullscreen the ERP surface
       try {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
@@ -280,7 +280,7 @@
     },
     verify:    _verifyLedgerCard,                             // chain-integrity check — card (A-1)
     'doc-cycle': _docCycleValidator,                          // Doc Cycle Validator card (always visible POC proof)
-    guide:     _helpGuide,                                    // (?) bubble-navigation HelpGuide card
+    guide:     function () { if (window.AboutDIY) AboutDIY.open(); else _helpGuide(); },  // (?) → shared About/DIY modal
     help:      _shortcutsPanel                                // lifebelt → keyboard/gesture shortcuts (its original role)
   };
 

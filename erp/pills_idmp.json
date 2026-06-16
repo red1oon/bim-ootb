@@ -122,24 +122,6 @@
       "note": "NinjaExcelAdaptation.md \u00a76.2 \u2014 Excel-as-report-binder lens (window.NinjaPill): drop a filled sample (BACKUP) \u2192 MAKE scaffolds Input+Process; drop the authored workbook \u2192 RUN folds each Process row over the loaded tenant db (sql.js), writes values to the addressed cells, verify-by-example vs the sample (integer cents), download filled. The browser never renders the report \u2014 formatting/subtotals/charts stay the user's own Excel. grid glyph (spreadsheet). Engine == bim-compiler build/erp (W-NINJA/MAKE/RULE headless + W-NINJA-PILL live)."
     },
     {
-      "id": "install",
-      "name": "Install",
-      "key": "",
-      "icon": "download",
-      "order": 5,
-      "stage": "pre-client",
-      "note": "\u00a7C: bring a tenant ONTO this device (openInstallFor / ErpPicker install). download glyph (onto this device) \u2014 clearer than the old save-to-disk. stage=pre-client on the rail (also a login-card button); in-client \u2192 \u22ef overflow."
-    },
-    {
-      "id": "migrate",
-      "name": "Migrate",
-      "key": "",
-      "icon": "arrowRightLeft",
-      "order": 6,
-      "stage": "pre-client",
-      "note": "\u00a7C: bring data IN from another ERP (openMigrateFor / ErpPicker migrate). arrowRightLeft glyph (transfer across) \u2014 clearer than the old conduit pipe. stage=pre-client on the rail (also a login-card button); in-client \u2192 \u22ef overflow."
-    },
-    {
       "id": "erpdoc",
       "name": "Read / Compare",
       "key": "",

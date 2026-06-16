@@ -180,7 +180,7 @@ window.addEventListener('error', function(e){
   </div>
   <div style="display:flex;justify-content:center;align-items:center;gap:14px;margin-top:10px">
     <a href="https://youtu.be/hnLYNcRihzs" target="_blank" style="display:inline-flex;align-items:center;gap:6px;color:#0277bd;font-size:13px;text-decoration:none;padding:4px 8px"><img src="viewer/YT.png" alt="YouTube" style="height:20px;vertical-align:middle"> <span data-trl="landing_watch_demo">Watch Demo</span></a>
-    <a href="javascript:void(0)" onclick="document.getElementById('about-dialog').classList.toggle('active')" style="display:inline-flex;align-items:center;gap:5px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px">&#10067; <span data-trl="landing_about">About</span></a>
+    <a href="javascript:void(0)" onclick="if(window.AboutDIY){AboutDIY.openAbout();}else{document.getElementById('about-dialog').classList.toggle('active');}" style="display:inline-flex;align-items:center;gap:5px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px">&#10067; <span data-trl="landing_about">About</span></a>
     <a href="javascript:void(0)" id="header-flag-btn" onclick="if(window._TRL_LOADER)_TRL_LOADER.openFlagPicker()" style="display:inline-flex;align-items:center;gap:4px;color:#444;font-size:16px;text-decoration:none;padding:4px 8px;cursor:pointer" title="Language">&#127760;</a>
     <a href="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml" target="_blank" style="display:inline-flex;align-items:center;padding:4px 8px" title="CI status"><img src="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg" alt="CI" style="height:18px"></a>
   </div>
@@ -331,6 +331,9 @@ window.addEventListener('error', function(e){
 <script src="viewer/import_db_builder.js?v=4"></script>
 <!-- HISTORY_KNOB_DIAL.md: shared World-history module — landing's "W" feature (packager inlines this). -->
 <script src="common/whole_history.js?v=4"></script>
+<!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (About link → AboutDIY.openAbout; DIY is a tab).
+     Self-contained (embeds its own Lucide glyphs); packageLandingPage inlines it for the offline copy. -->
+<script src="common/about_diy.js?v=1"></script>
 <!-- wizard.js now loads in viewer via ?wizard=1 param (S230) -->
 <script>
 // ── Config ──

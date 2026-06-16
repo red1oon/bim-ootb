@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v662';   // history default mid + ignore stale-low (history_bar?v=6, universal_history?v=21). git history is the record.
+const CACHE_VERSION = 'v663';   // shared About/DIY modal wired to the viewer Help pill (common/about_diy.js). git history is the record.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
