@@ -37,6 +37,13 @@ window.addEventListener('error', function(e){
   .header .tagline {
     font-size: 14px; color: #888; font-style: italic;
   }
+  /* ABOUT_BOX_CONSOLIDATE.md — unify the header action links into clean, consistent pill-chips (pro polish). */
+  .hlink {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #37474f;
+    text-decoration: none; padding: 6px 14px; border: 1px solid #d8cfc0; border-radius: 999px;
+    background: #fffdf8; transition: border-color .13s, color .13s, box-shadow .13s;
+  }
+  .hlink:hover { border-color: #0277bd; color: #0277bd; box-shadow: 0 1px 5px rgba(2,119,189,.14); }
   /* Loading overlay */
   .loading {
     text-align: center; padding: 60px 20px;
@@ -178,11 +185,11 @@ window.addEventListener('error', function(e){
     <img src="viewer/icons/icon-192.png" alt="Out of the Box" style="height:100px;width:100px;align-self:center">
     <a href="erp/erp.html" target="_blank" style="text-decoration:none"><h1 style="color:#e8a735;margin-bottom:0"><span style="font-size:64px;display:block;margin-bottom:-8px;line-height:0.8;font-family:'Arial Black',Impact,sans-serif;letter-spacing:16px;margin-left:16px">ERP</span><span style="font-size:16px;font-weight:400;font-family:'Arial Black',Impact,sans-serif;letter-spacing:6px;margin-left:6px;color:#e8a735aa;text-transform:lowercase">outofthebox</span></h1></a>
   </div>
-  <div style="display:flex;justify-content:center;align-items:center;gap:14px;margin-top:10px">
-    <a href="https://youtu.be/hnLYNcRihzs" target="_blank" style="display:inline-flex;align-items:center;gap:6px;color:#0277bd;font-size:13px;text-decoration:none;padding:4px 8px"><img src="viewer/YT.png" alt="YouTube" style="height:20px;vertical-align:middle"> <span data-trl="landing_watch_demo">Watch Demo</span></a>
-    <a href="javascript:void(0)" onclick="if(window.AboutDIY){AboutDIY.openAbout();}else{document.getElementById('about-dialog').classList.toggle('active');}" style="display:inline-flex;align-items:center;gap:5px;color:#444;font-size:13px;text-decoration:none;padding:4px 8px">&#10067; <span data-trl="landing_about">About</span></a>
-    <a href="javascript:void(0)" id="header-flag-btn" onclick="if(window._TRL_LOADER)_TRL_LOADER.openFlagPicker()" style="display:inline-flex;align-items:center;gap:4px;color:#444;font-size:16px;text-decoration:none;padding:4px 8px;cursor:pointer" title="Language">&#127760;</a>
-    <a href="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml" target="_blank" style="display:inline-flex;align-items:center;padding:4px 8px" title="CI status"><img src="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg" alt="CI" style="height:18px"></a>
+  <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
+    <a class="hlink" href="https://youtu.be/hnLYNcRihzs" target="_blank"><img src="viewer/YT.png" alt="YouTube" style="height:18px;vertical-align:middle"> <span data-trl="landing_watch_demo">Watch Demo</span></a>
+    <a class="hlink" href="javascript:void(0)" onclick="if(window.AboutDIY){AboutDIY.openAbout();}else{document.getElementById('about-dialog').classList.toggle('active');}">&#10067; <span data-trl="landing_about">About</span></a>
+    <a class="hlink" href="javascript:void(0)" id="header-flag-btn" onclick="if(window._TRL_LOADER)_TRL_LOADER.openFlagPicker()" style="cursor:pointer" title="Language">&#127760;</a>
+    <a class="hlink" href="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml" target="_blank" style="padding:5px 10px" title="CI status"><img src="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg" alt="CI" style="height:16px"></a>
   </div>
 </div>
 
