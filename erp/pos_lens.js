@@ -90,7 +90,8 @@
       '.pos-top-btn:hover { background:#1a5040; }',
       '#pos-top-total   { flex:1;text-align:center;font-size:24px;font-weight:bold;color:#4dcc88;letter-spacing:.5px; }',
 
-      /* §R2-3/§R2-4 the pay panel — RIMS RETIRED, draggable via the grab header */
+      /* §R3-A the pay panel — slim rim-drawer RESTORED (v667): drag header · orange items-rim ·
+         [BIG total · Pay] one-bar · partner · receipt · green replenish-rim. Draggable via the header. */
       '#pos-float-panel { position:fixed;bottom:70px;right:20px;z-index:9500;',
       '                   width:min(340px,calc(100vw - 20px));',
       '                   background:#0d1f14;border:1px solid #2a6;border-radius:12px;',
@@ -100,6 +101,29 @@
       '                   color:#8fd;font-size:13px;font-weight:bold;user-select:none;touch-action:none;',
       '                   border-bottom:1px solid #1a3d24;border-radius:12px 12px 0 0;background:#0b1c14; }',
       '.pos-drag-grip   { color:#456;font-size:14px;letter-spacing:-2px; }',
+      /* §R3-A edge-rim drawers (collapsed by default) — orange=items above the total, green=replenish below */
+      '.pos-rim         { height:9px;cursor:pointer;width:100%;flex-shrink:0;transition:opacity .15s; }',
+      '.pos-rim:hover   { opacity:.8; }',
+      '.pos-rim-top     { background:#e65c00; }',
+      '.pos-rim-bottom  { background:#2e7d32;border-radius:0 0 12px 12px; }',
+      /* §R3-A the slim ONE-BAR line: big total flanked by the single Pay icon */
+      '.pos-main-row    { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 14px; }',
+      '#pos-float-total { flex:1;font-size:30px;font-weight:bold;color:#4dcc88;text-align:center;letter-spacing:1px; }',
+      /* §R3-A2 OK-confirm bar — armed by Pay, commits only on OK */
+      '#pos-confirm-bar { display:flex;gap:8px;align-items:center;padding:4px 12px 8px; }',
+      '.pos-pay-ok      { flex:1;padding:13px;border-radius:10px;border:1px solid #4dcc88;background:#11331f;',
+      '                   color:#4dcc88;font-size:18px;font-weight:bold;cursor:pointer; }',
+      '.pos-pay-ok:hover { background:#1a5040; }',
+      '.pos-pay-cancel  { width:46px;height:46px;border-radius:10px;border:1px solid #634;background:#1a0e12;',
+      '                   color:#d99;font-size:16px;cursor:pointer;flex-shrink:0; }',
+      /* §R3-B previous-sales rows + Revert */
+      '.pos-prevsale-row { display:flex;align-items:center;justify-content:space-between;gap:8px;',
+      '                    padding:5px 6px;margin:2px 0;border-radius:5px;border:1px solid #1a3d24;',
+      '                    background:#0b1f17;color:#cfe;font-size:12px; }',
+      '.pos-prevsale-row.voided { opacity:.55;border-color:#533;background:#160f12;color:#b99;text-decoration:line-through; }',
+      '.pos-revert-btn  { padding:3px 10px;border-radius:5px;border:1px solid #a65;background:#2a1410;',
+      '                   color:#f9a;font-size:11px;cursor:pointer;flex-shrink:0; }',
+      '.pos-revert-btn:hover { background:#3a1c14; }',
       '.pos-section-hdr { padding:6px 12px 2px;color:#6a9;font-size:11px;font-weight:bold; }',
       '.pos-items-body  { padding:0 12px 4px;overflow-y:auto;max-height:24vh; }',
       '#pos-float-cart  { margin-bottom:2px; }',
@@ -451,20 +475,33 @@
     });
     console.log('§POS-ALBUM cards=' + tiles.length + ' imgs=' + _nImgs + ' thumbs=' + _nThumbs + ' placeholders=' + _nPH);
 
-    // ── §R2-3: the pay panel — RIMS RETIRED. A draggable (§R2-4) panel: grab-header · ordered items ·
-    //   partner · ONE single Pay icon on the right (§R2-3) · receipt · replenishment. No orange/green
-    //   rim-edges; the running total + scan live on the top bar now (§R2-1/§R2-2).
+    // ── §R3-A: the pay panel — slim rim-drawer RESTORED (UI_UX_LANE §ROUND 3 item A, from v667
+    //   e820d2d, user 2026-06-15 "keep the panel one bar line slim thus the rims are needed").
+    //   Layout: drag/title · orange items-rim (collapsed) · [BIG total · Pay] one-bar · partner ·
+    //   receipt · green replenish-rim (collapsed). Total back INSIDE the slim center bar; the two rims
+    //   flank it (items above, replenish below). R2 good bits KEPT: single Pay completes directly
+    //   (§R2-3), draggable header (§R2-4), partner default = Standard (§R2-5), earcons (§R2-AUDIO).
     var floatPanel = document.createElement('div'); floatPanel.id = 'pos-float-panel';
 
     // §R2-4 grab header — the drag handle (drag idiom ported below); also carries the panel title.
     var dragHdr = document.createElement('div'); dragHdr.className = 'pos-drag-hdr'; dragHdr.id = 'pos-drag-hdr';
     dragHdr.innerHTML = '<span class="pos-drag-grip">⠿</span><span>Pay</span>';
 
-    // ordered items list (always visible — no rim toggle)
-    var itemsHdr = document.createElement('div'); itemsHdr.className = 'pos-section-hdr'; itemsHdr.id = 'pos-items-hdr';
+    // §R3-A orange TOP rim = ordered-items drawer (collapsed by default; tap to expand the list ABOVE the total)
+    var rimTop = document.createElement('div'); rimTop.className = 'pos-rim pos-rim-top'; rimTop.id = 'pos-rim-top';
+    rimTop.title = 'Ordered items (0)';
     var cartBox  = document.createElement('div'); cartBox.id = 'pos-float-cart';
-    var itemsBody = document.createElement('div'); itemsBody.className = 'pos-items-body';
+    var itemsBody = document.createElement('div'); itemsBody.className = 'pos-items-body'; itemsBody.style.display = 'none';
     itemsBody.appendChild(cartBox);
+    var _itemsOpen = false;
+    rimTop.addEventListener('pointerup', function () {
+      _itemsOpen = !_itemsOpen; itemsBody.style.display = _itemsOpen ? '' : 'none';
+      console.log('§POS-DRAWER-ITEMS open=' + _itemsOpen + ' count=' + cart.length);
+    });
+
+    // §R3-A the slim ONE-BAR line: [BIG running total] [single Pay icon] — the "total amount panel".
+    var mainRow = document.createElement('div'); mainRow.className = 'pos-main-row'; mainRow.id = 'pos-main-row';
+    var totalEl = document.createElement('div'); totalEl.id = 'pos-float-total'; totalEl.textContent = '0.00';
 
     // §D-2 partner selector (witness selectOption('#pos-float-bp')); §R2-5: default a walk-in so Pay works
     var bpSel  = document.createElement('select'); bpSel.id = 'pos-float-bp';
@@ -486,25 +523,44 @@
     }
     console.log('§POS-PARTNER-DEFAULT bp=' + (bpSel.value || 'none') + ' name=' + (bpSel.options[bpSel.selectedIndex] ? bpSel.options[bpSel.selectedIndex].textContent : '?') + ' src=' + _bpSrc);
 
-    // §R2-3 single Pay icon on the right (the ONLY pay control) — fires Complete directly (§R2-5).
-    var payRow = document.createElement('div'); payRow.className = 'pos-pay-row';
-    var btn     = document.createElement('button'); btn.id = 'pos-float-tender'; btn.className = 'pos-pay-icon';
+    // §R2-3 single Pay icon (the ONLY pay control) — fires Complete directly (§R2-5); lives IN the slim bar.
+    var btn = document.createElement('button'); btn.id = 'pos-float-tender'; btn.className = 'pos-pay-icon';
     btn.innerHTML = _svgIcon('banknote', 22); btn.title = 'Pay — complete the sale';
-    payRow.appendChild(btn);
+    mainRow.appendChild(totalEl); mainRow.appendChild(btn);
+
+    // §R3-A2 OK-confirm bar (hidden until Pay arms it) — big OK to commit, ✕ to back out.
+    var confirmBar = document.createElement('div'); confirmBar.id = 'pos-confirm-bar'; confirmBar.style.display = 'none';
+    var confirmOk = document.createElement('button'); confirmOk.id = 'pos-pay-ok'; confirmOk.className = 'pos-pay-ok';
+    var confirmCancel = document.createElement('button'); confirmCancel.id = 'pos-pay-cancel'; confirmCancel.className = 'pos-pay-cancel'; confirmCancel.textContent = '✕';
+    confirmBar.appendChild(confirmOk); confirmBar.appendChild(confirmCancel);
 
     var receipt  = document.createElement('div'); receipt.id = 'pos-float-receipt';
 
-    // replenishment list (below, no rim)
-    var replHdr  = document.createElement('div'); replHdr.className = 'pos-section-hdr'; replHdr.id = 'pos-repl-hdr';
+    // §R3 replenishment elements KEPT but DETACHED — renderReplenish feeds the EODA report (P1.C), not
+    //   the live panel anymore (user 2026-06-15: "Replenishment should not be here, just an EODA op").
     var replBox  = document.createElement('div'); replBox.id = 'pos-float-replenish';
-    var replBody = document.createElement('div'); replBody.className = 'pos-repl-body';
+    var replBody = document.createElement('div'); replBody.className = 'pos-repl-body'; replBody.style.display = 'none';
     replBody.appendChild(replBox);
+    // §R3-B (POS_SHOWCASE_LANE §P1.B) green BOTTOM rim = PREVIOUS SALES drawer (collapsed by default;
+    //   tap to recall the day's completed sales BELOW the total; each row carries a Revert(Void)).
+    var salesBox  = document.createElement('div'); salesBox.id = 'pos-float-prevsales';
+    var salesBody = document.createElement('div'); salesBody.className = 'pos-repl-body'; salesBody.style.display = 'none';
+    salesBody.appendChild(salesBox);
+    var rimBottom = document.createElement('div'); rimBottom.className = 'pos-rim pos-rim-bottom'; rimBottom.id = 'pos-rim-bottom';
+    rimBottom.title = 'Previous sales (0)';
+    var _salesOpen = false;
+    rimBottom.addEventListener('pointerup', function () {
+      _salesOpen = !_salesOpen; salesBody.style.display = _salesOpen ? '' : 'none';
+      if (_salesOpen) renderPrevSales();
+      console.log('§POS-DRAWER-SALES open=' + _salesOpen);
+    });
 
+    // assembly: drag header · [items-rim · items] · slim total+Pay bar · partner · receipt · [replenish · replenish-rim]
     floatPanel.appendChild(dragHdr);
-    floatPanel.appendChild(itemsHdr); floatPanel.appendChild(itemsBody);
-    floatPanel.appendChild(bpSel); floatPanel.appendChild(payRow);
+    floatPanel.appendChild(rimTop); floatPanel.appendChild(itemsBody);
+    floatPanel.appendChild(mainRow); floatPanel.appendChild(confirmBar); floatPanel.appendChild(bpSel);
     floatPanel.appendChild(receipt);
-    floatPanel.appendChild(replHdr); floatPanel.appendChild(replBody);
+    floatPanel.appendChild(salesBody); floatPanel.appendChild(rimBottom);
     document.body.appendChild(floatPanel);
 
     // §R2-4 draggable — ported from the established viewer _makeDraggable idiom (measure.js): grab the
@@ -566,8 +622,16 @@
     rcptBtn.innerHTML = _svgIcon('doc', 18); rcptBtn.style.display = 'none';
     rcptBtn.addEventListener('click', function () { if (_lastRcptArgs) _showReceipt.apply(null, _lastRcptArgs); });
 
+    // §P1.C EODA "Close Cash" — the cashier's end-of-day op (Unicenta close-till): one press folds the
+    //   day → BOM backflush + Generate Replenishment Report. The signed records land on the op-log/timeline.
+    var closeCashBtn = document.createElement('button'); closeCashBtn.className = 'pos-dock-item'; closeCashBtn.id = 'pos-pill-closecash';
+    closeCashBtn.title = 'Close cash (end of day) — backflush + replenishment report';
+    closeCashBtn.innerHTML = _svgIcon('lock', 18);
+    closeCashBtn.addEventListener('click', function () { _eodaCloseDay(); });
+
     var dockItems   = document.createElement('div'); dockItems.id = 'pos-dock-items';
     dockItems.appendChild(homeBtn); dockItems.appendChild(importBtn); dockItems.appendChild(rcptBtn);
+    dockItems.appendChild(closeCashBtn);
     if (dlBtn) dockItems.appendChild(dlBtn);
     var dockTrigger = document.createElement('button'); dockTrigger.id = 'pos-dock-trigger'; dockTrigger.title = 'More actions'; dockTrigger.textContent = '⋯';
     var dock        = document.createElement('div'); dock.id = 'pos-dock';
@@ -608,12 +672,14 @@
         row.appendChild(lbl); row.appendChild(amt); cartBox.appendChild(row);
       });
       var tot = cart.length ? POS.cartTotal(cart) : '0.00';
-      // §R2-1 the running total lives on the TOP BAR now (live as items ring)
+      // §R2-1 the running total lives on the top bar (glance when panel closed)
       topTotal.textContent = tot;
+      // §R3-A the BIG total is back INSIDE the slim panel bar
+      totalEl.textContent = tot;
       // keep scan overlay total live
       var st = document.getElementById('pos-scan-total'); if (st) st.textContent = tot;
-      // §R2-3 ordered-items section header carries the live count (no rim)
-      itemsHdr.textContent = 'Ordered items (' + cart.length + ')';
+      // §R3-A the orange items-rim carries the live count (collapsed drawer)
+      rimTop.title = 'Ordered items (' + cart.length + ')';
     }
 
     function vendorOf(pid) {
@@ -623,7 +689,7 @@
     function renderReplenish() {
       replBox.textContent = '';
       var sugg = suggestAll(b3, cfg.opDb);
-      // §R2-3 the section header (replHdr) carries the count now — no duplicate inner header.
+      // §R3-A the green replenish-rim title carries the count now — no inner header.
       sugg.forEach(function (s) {
         var nm = q1(b3, 'SELECT name FROM m_product WHERE m_product_id=?', s.m_product_id);
         var vendor = vendorOf(s.m_product_id);
@@ -654,10 +720,154 @@
         }
         replBox.appendChild(row);
       });
-      // §R2-3 replenishment section header carries the live count (no rim)
-      replHdr.textContent = 'Replenishment (' + sugg.length + ')';
+      // §R3-A the green replenish-rim carries the live count (collapsed drawer)
+      // §R3-B rimBottom is Previous Sales now; replenishment count no longer rides the rim (→ EODA report, P1.C).
       console.log('§POS-LIVE-REPLENISH suggestions=' + sugg.length + ' (suggest-by-default; PO via buildDoc on tap)');
       return sugg;
+    }
+
+    // ── §R3-B (POS_SHOWCASE_LANE §P1.B) PREVIOUS SALES — recall the day's CO/VO C_Orders straight from the
+    //   signed op-log (kernel_ops), no new store; total = Σ C_OrderLine.linenetamt; status = latest SET_STATUS.
+    //   Each CO row carries a Revert → DocFSM Void (CO→VO); the postings-net-0c + qty-restore are the
+    //   W-POS-VOID engine guarantee (cited, not re-derived here); the EODA backflush (P1.C) skips VO sales.
+    function renderPrevSales() {
+      salesBox.textContent = '';
+      var orders = {};
+      try {
+        var r = cfg.opDb.exec('SELECT op_type, parameters FROM kernel_ops ORDER BY id');
+        (r[0] ? r[0].values : []).forEach(function (row) {
+          var p; try { p = JSON.parse(row[1]); } catch (e) { return; }
+          p = (p && p.params) ? p.params : p; if (!p) return;
+          var ot = p.op_type || row[0];
+          if (ot === 'CREATE_DOCUMENT' && p.table === 'C_Order') {
+            orders[p.c_order_id] = orders[p.c_order_id] || { orderId: p.c_order_id, bp: p.c_bpartner_id, doctypeId: p.c_doctype_id, total: 0, status: 'DR' };
+          } else if (ot === 'CREATE_LINE' && p.table === 'C_OrderLine' && p.source_line_id != null) {
+            var oid = Math.floor(p.source_line_id / 100);
+            if (orders[oid]) orders[oid].total += Number(p.linenetamt) || 0;
+          } else if (ot === 'SET_STATUS' && p.table === 'C_Order' && orders[p.id]) {
+            orders[p.id].status = p.doc_status;
+          }
+        });
+      } catch (e) {}
+      var list = Object.keys(orders).map(function (k) { return orders[k]; })
+        .filter(function (o) { return o.status === 'CO' || o.status === 'VO'; })
+        .sort(function (a, b) { return b.orderId - a.orderId; });
+      list.forEach(function (o) {
+        var bpRow = q1(b3, 'SELECT name FROM c_bpartner WHERE c_bpartner_id=?', o.bp);
+        var bpName = (bpRow && bpRow.name) || ('BP ' + o.bp);
+        var voided = o.status === 'VO';
+        var row = el('div', 'pos-prevsale-row' + (voided ? ' voided' : ''));
+        var info = el('span'); info.textContent = '#' + o.orderId + ' · ' + Number(o.total).toFixed(2) + ' · ' + bpName + (voided ? ' · VOID' : '');
+        row.appendChild(info);
+        if (!voided) {
+          var rev = el('button', 'pos-revert-btn'); rev.textContent = 'Revert';
+          rev.addEventListener('click', function () { _revertSale(o.orderId, o.doctypeId); });
+          row.appendChild(rev);
+        }
+        salesBox.appendChild(row);
+      });
+      rimBottom.title = 'Previous sales (' + list.length + ')';
+      console.log('§POS-PREVSALE count=' + list.length +
+        ' co=' + list.filter(function (o) { return o.status === 'CO'; }).length +
+        ' vo=' + list.filter(function (o) { return o.status === 'VO'; }).length);
+      return list;
+    }
+
+    // §R3-B Revert = the DocFSM Void (W-POS-VOID): validate CO→VO is legal, then commit a SIGNED status group.
+    function _revertSale(orderId, doctypeId) {
+      var dt = doctypeId ? q1(b3, 'SELECT docsubtypeso FROM c_doctype WHERE c_doctype_id=?', doctypeId) : null;
+      var rec = { docStatus: 'CO', doctypeId: doctypeId, isSOTrx: 'Y' };
+      var disp = window.AdDocFsm ? window.AdDocFsm.dispatchOrder(b3, rec, 'VO', { docSubTypeSO: dt ? dt.docsubtypeso : null }) : { ok: false, reason: 'no-AdDocFsm' };
+      if (!disp.ok) { cfg.status('Revert refused: ' + disp.reason); console.log('§POS-REVERT order=' + orderId + ' REFUSED reason=' + disp.reason + ' legal=' + JSON.stringify(disp.legalActions || [])); return; }
+      // shipment id is deterministic (nextIds: inout = order + 1) — void both the order and its receipt.
+      var ops = [
+        { op_type: 'SET_STATUS', table: 'C_Order', id: orderId, doc_status: 'VO' },
+        { op_type: 'SET_STATUS', table: 'M_InOut', id: orderId + 1, doc_status: 'VO' }
+      ];
+      cfg.KO.commitGroup(cfg.opDb, ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
+        .then(function (res) {
+          return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
+            return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
+          }).then(function (cv) {
+            console.log('§POS-REVERT order=' + orderId + ' CO→VO newVerbs=[] gid=' + res.gid +
+              ' chainOk=' + (cv && cv.ok ? 'Y' : 'N') +
+              ' (postings net 0c + qty restored = W-POS-VOID engine guarantee; EODA skips VO)');
+            cfg.status('Sale #' + orderId + ' reverted (voided)');
+            _sfx('pos_pay');
+            renderPrevSales();
+          });
+        })
+        .catch(function (e) { cfg.status('revert failed: ' + e); console.log('§POS-REVERT order=' + orderId + ' FAIL ' + e); });
+    }
+
+    // ── §P1.C EODA "Close Cash" — the LATE end-of-day fold (POSLens.md §195; POS_SHOWCASE_LANE §P1.C):
+    //   BOM backflush of the day's CO sales (the SHARED POS.backflushOps == Σ per-sale explode) + Generate
+    //   Replenishment Report (the M_Replenish fold via suggestAll). VO (reverted) sales are skipped. The
+    //   CONSUME group is signed onto the op-log; the report is summarised here and issued from the menu.
+    function _eodaCloseDay() {
+      var orders = {}, lineRows = [];
+      try {
+        var r = cfg.opDb.exec('SELECT op_type, parameters FROM kernel_ops ORDER BY id');
+        (r[0] ? r[0].values : []).forEach(function (row) {
+          var p; try { p = JSON.parse(row[1]); } catch (e) { return; }
+          p = (p && p.params) ? p.params : p; if (!p) return;
+          var ot = p.op_type || row[0];
+          if (ot === 'CREATE_DOCUMENT' && p.table === 'C_Order') {
+            orders[p.c_order_id] = orders[p.c_order_id] || { status: 'DR', wh: p.m_warehouse_id, total: 0 };
+          } else if (ot === 'CREATE_LINE' && p.table === 'C_OrderLine' && p.source_line_id != null) {
+            var oid = Math.floor(p.source_line_id / 100);
+            lineRows.push({ orderId: oid, m_product_id: p.m_product_id, qty: p.qtyordered });
+            if (orders[oid]) orders[oid].total += Number(p.linenetamt) || 0;
+          } else if (ot === 'SET_STATUS' && p.table === 'C_Order' && orders[p.id]) {
+            orders[p.id].status = p.doc_status;
+          }
+        });
+      } catch (e) {}
+      var coIds = Object.keys(orders).filter(function (k) { return orders[k].status === 'CO'; });
+      if (!coIds.length) { cfg.status('Close Cash: no completed sales to fold'); console.log('§POS-EODA sales=0 backflush=0 replenish=skipped (no CO sales)'); _showEodaSummary({ sales: 0 }); return; }
+      var coSet = {}; coIds.forEach(function (k) { coSet[k] = true; });
+      var soLines = lineRows.filter(function (l) { return coSet[l.orderId]; }).map(function (l) { return { m_product_id: l.m_product_id, qtyordered: l.qty }; });
+      var dayTotal = coIds.reduce(function (s, k) { return s + orders[k].total; }, 0);
+      var wh = pos.m_warehouse_id || orders[coIds[0]].wh;
+      var bf = POS.backflushOps(ctx, soLines, wh);              // §P1.C the SHARED explode (== Σ per-sale)
+      var sugg = suggestAll(b3, cfg.opDb);                      // §P1.C Generate Replenishment Report (M_Replenish)
+      function done(chainOk) {
+        console.log('§POS-EODA sales=' + coIds.length + ' dayTotal=' + dayTotal.toFixed(2) +
+          ' backflushComponents=' + bf.ops.length + ' replenishItems=' + sugg.length +
+          ' newVerbs=[] chainOk=' + chainOk + ' (backflush == Σ per-sale explode; report from menu)');
+        cfg.status('Cash closed · ' + coIds.length + ' sales · backflush ' + bf.ops.length + ' · replenish ' + sugg.length);
+        _showEodaSummary({ sales: coIds.length, total: dayTotal, backflush: bf, replenish: sugg, chainOk: chainOk });
+      }
+      if (!bf.ops.length) { done('Y(no-consume)'); return; }   // leaf-only day → nothing to consume (honest)
+      cfg.KO.commitGroup(cfg.opDb, bf.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
+        .then(function (res) {
+          return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
+            return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
+          }).then(function (cv) { done(cv && cv.ok ? 'Y' : 'N'); });
+        })
+        .catch(function (e) { cfg.status('Close Cash failed: ' + e); console.log('§POS-EODA FAIL ' + e); });
+    }
+
+    function _showEodaSummary(s) {
+      var ov = document.getElementById('pos-eoda-overlay');
+      if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+      ov = document.createElement('div'); ov.id = 'pos-eoda-overlay';
+      ov.style.cssText = 'position:fixed;inset:0;background:#0009;z-index:9700;display:flex;align-items:center;justify-content:center';
+      var nameOf = function (id) { var n = q1(b3, 'SELECT name FROM m_product WHERE m_product_id=?', Number(id)); return n ? n.name : ('product ' + id); };
+      var compLines = (s.backflush ? Object.keys(s.backflush.consumed) : []).map(function (c) { return '· ' + nameOf(c) + ' −' + s.backflush.consumed[c]; });
+      var replLines = (s.replenish || []).map(function (x) { return '· ' + nameOf(x.m_product_id) + ' → order ' + x.qtytoorder; });
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#0d1f14;border:1px solid #2a6;border-radius:12px;padding:20px 24px;max-width:min(420px,94vw);width:100%;max-height:88vh;overflow-y:auto;color:#cfe;font-size:13px';
+      card.innerHTML = '<div style="color:#8fd;font-size:15px;font-weight:bold;border-bottom:1px solid #2a6;padding-bottom:8px;margin-bottom:10px">' +
+        _svgIcon('lock', 16) + ' Close Cash — End of Day</div>' +
+        (s.sales ? ('<div style="margin-bottom:8px">Sales: <b>' + s.sales + '</b> · Total: <b>' + (s.total || 0).toFixed(2) + '</b> · chain ' + (s.chainOk || '-') + '</div>' +
+          '<div style="color:#6a9;font-size:12px;margin-top:8px">BOM backflush (' + compLines.length + ' components)</div>' + (compLines.join('<br>') || '<span style="color:#789">— no BOM components (leaf products)</span>') +
+          '<div style="color:#6a9;font-size:12px;margin-top:10px">Replenishment report (' + replLines.length + ' items) — issue from the menu</div>' + (replLines.join('<br>') || '<span style="color:#789">— none below min</span>'))
+          : '<div style="color:#c98">No completed sales to fold.</div>');
+      var close = document.createElement('button'); close.id = 'pos-eoda-close'; close.textContent = 'Close';
+      close.style.cssText = 'display:block;width:100%;margin-top:14px;padding:10px;border-radius:8px;border:1px solid #2a6;background:#134;color:#cfe;cursor:pointer';
+      close.addEventListener('click', function () { ov.parentNode && ov.parentNode.removeChild(ov); });
+      card.appendChild(close); ov.appendChild(card); document.body.appendChild(ov);
     }
 
     // ── §P-11 receipt overlay ──────────────────────────────────────────────────────────────────
@@ -1200,13 +1410,32 @@
     // ── §R2-3/§R2-5 single Pay icon = Complete the sale DIRECTLY (buildSaleGroup → commitGroup →
     //   receipt). No preview modal. The partner is defaulted (§R2-5) so it works out of the box; the
     //   empty-partner gate that silently blocked the old banknote ("Pay stopped working") is fixed. ──
+    // §R3-A2 (POS_SHOWCASE_LANE §P1.A2): Pay no longer completes on a single tap — it ARMS an OK-confirm.
+    //   The sale commits only when the big OK is pressed (✕ backs out). On the blue timeline this is the
+    //   accept-up-to gesture: the in-progress sale is speculative until the cashier confirms.
+    var _payArmed = false;
+    function _disarmPay() { _payArmed = false; confirmBar.style.display = 'none'; }
     btn.addEventListener('click', function () {
       _sfx('pos_pay');                                           // §R2-AUDIO pay earcon (guarded, no-op if SFX off/absent)
       if (!cart.length) { cfg.status('Cart is empty'); console.log('§POS-PAY refused reason=empty-cart'); return; }
       if (!bpSel.value) { cfg.status('Pick the walk-in partner first (seed has no BPartnerCashTrx on c_pos)'); console.log('§POS-PAY refused reason=no-partner'); return; }
+      _payArmed = true;
+      confirmOk.textContent = '✓ OK · Pay ' + POS.cartTotal(cart);
+      confirmBar.style.display = '';
+      cfg.status('Confirm to pay ' + POS.cartTotal(cart));
+      console.log('§POS-PAY-CONFIRM armed=Y total=' + POS.cartTotal(cart));
+    });
+    confirmCancel.addEventListener('click', function () { _disarmPay(); console.log('§POS-PAY-CONFIRM cancelled'); });
+    confirmOk.addEventListener('click', function () {
+      if (!_payArmed) return;                                    // ignore stray OK taps when not armed
+      _disarmPay();
+      console.log('§POS-PAY-CONFIRM ok=Y');
+      _completeSale();
+    });
+    function _completeSale() {
       var saleCart = cart.map(function (c) { return Object.assign({}, c); }); // snapshot for receipt
       var ids = nextIds(cfg.opDb);
-      var g = POS.buildSaleGroup(ctx, cart, { orderId: ids.orderId, inoutId: ids.inoutId, invoiceId: ids.invoiceId, c_bpartner_id: Number(bpSel.value) });
+      var g = POS.buildSaleGroup(ctx, cart, { orderId: ids.orderId, inoutId: ids.inoutId, invoiceId: ids.invoiceId, c_bpartner_id: Number(bpSel.value), backflush: false }); // §P1.C backflush is the EODA Close-Cash op, not per-sale
       if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-LIVE complete REFUSED reason=' + g.reason); return; }
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
         .then(function (res) {
@@ -1232,11 +1461,11 @@
             _showReceipt(saleCart, ids.orderId, grandTotal, res.gid, chainOk);
             rcptBtn.style.display = '';
             receipt.textContent = '✓ ' + grandTotal + ' tendered · order ' + ids.orderId + ' · group ' + String(res.gid).slice(0, 8) + '… · signed=' + chainOk;
-            cart = []; renderCart(); renderReplenish();
+            cart = []; renderCart(); renderPrevSales();
           });
         })
         .catch(function (e) { cfg.status('commit failed: ' + e); console.log('§POS-LIVE commit FAIL ' + e); });
-    });
+    }
 
     // ── §P-12 deliver-later handler (W-1) — order CO + shipment born DR, then PERSIST the op log ──
     // Implementing docs/SPATIAL_PICKING_SPEC.md §S-2b — Witness: W-POS-DELIVERLATER (engine) + live §-logs.
@@ -1289,7 +1518,7 @@
     renderCart();
     cfg.overlay('POS — ' + pos.name, wrap);
     console.log('§POS-LIVE open station=' + pos.c_pos_id + ' tiles=' + tiles.length + ' priced=' + tiles.length + ' handAuthored=0');
-    renderReplenish();
+    renderPrevSales();   // §R3-B bottom rim = Previous Sales; replenishment now runs only at EODA Close Cash (P1.C)
   }
 
   root.PosLens = { open: open };

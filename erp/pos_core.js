@@ -103,6 +103,23 @@
     return { ok: true, ops: ops, order: order, soLines: soLines };
   }
 
+  // ── §P1.C backflush fold (EXTRACTED) — recursive recipe explosion → CONSUME 'P-' leaves. SHARED by the
+  //   (opt-in) per-sale path AND the EODA Close Cash fold, so "EOD CONSUME == Σ per-sale explode" is exact
+  //   (same function, same recipe). POS_SHOWCASE_LANE §P1.C. soLines: [{m_product_id, qtyordered|qty}].
+  function backflushOps(ctx, soLines, wh) {
+    var consumed = {};
+    (soLines || []).forEach(function (l) {
+      var qty = (l.qtyordered != null) ? l.qtyordered : (l.qty != null ? l.qty : 0);
+      var leaves = E.explodeBOM(ctx.bomOf, l.m_product_id, qty);
+      if (leaves) Object.keys(leaves).forEach(function (c) { consumed[c] = (consumed[c] || 0) + leaves[c]; });
+    });
+    var ops = [];
+    Object.keys(consumed).sort(function (a, b) { return a - b; }).forEach(function (c) {
+      ops.push({ op_type: 'CONSUME', table: 'M_Transaction', m_product_id: Number(c), movementtype: 'P-', movementqty: consumed[c], m_warehouse_id: wh });
+    });
+    return { ops: ops, consumed: consumed };
+  }
+
   // ── the completion half: CO + WR fan-out + backflush, on an EXISTING order (created OR held) ──
   function completionOps(ctx, order, soLines, opts) {
     var wh = order.m_warehouse_id;
@@ -115,16 +132,15 @@
       if (op.op_type === 'CREATE_DOCUMENT' && op.table === 'C_Invoice') { op.c_invoice_id = opts.invoiceId; }
     });
 
-    // §P-3 backflush (AutoBOMOrder reborn): recursive recipe explosion → CONSUME leaves, SAME group.
-    // movementtype 'P-' = production issue (the qty-spine polarity the fold lane proved on P±/I±).
+    // §P-3/§P1.C backflush is the LATE EODA op now (POS_SHOWCASE_LANE §P1.C, user 2026-06-15): the POS
+    // lens passes opts.backflush===false so the per-sale group does NOT consume — Close Cash folds the
+    // day's sales instead. Default stays ON (OPT-OUT) so non-EODA configs + the engine unit witnesses are
+    // unchanged; the explode is the SHARED backflushOps() the EODA fold calls → EOD == Σ per-sale is exact.
     var consumed = {};
-    soLines.forEach(function (l) {
-      var leaves = E.explodeBOM(ctx.bomOf, l.m_product_id, l.qtyordered);
-      if (leaves) Object.keys(leaves).forEach(function (c) { consumed[c] = (consumed[c] || 0) + leaves[c]; });
-    });
-    Object.keys(consumed).sort(function (a, b) { return a - b; }).forEach(function (c) {
-      ops.push({ op_type: 'CONSUME', table: 'M_Transaction', m_product_id: Number(c), movementtype: 'P-', movementqty: consumed[c], m_warehouse_id: wh });
-    });
+    if (!opts || opts.backflush !== false) {
+      var bf = backflushOps(ctx, soLines, wh);
+      ops = ops.concat(bf.ops); consumed = bf.consumed;
+    }
 
     // the WR on-the-fly children complete in the same group (completeInvoice = the engine's own verb;
     // sales path emits the bare SET_STATUS — M_InOut mirrors it with the same kernel op shape)
@@ -463,6 +479,7 @@
 
   return {
     ringLine: ringLine, cartTotal: cartTotal, buildSaleGroup: buildSaleGroup,
+    backflushOps: backflushOps,
     saleMovements: saleMovements, replenishSuggest: replenishSuggest,
     buildReplenishPO: buildReplenishPO, REPLENISH_PO_SPEC: REPLENISH_PO_SPEC,
     buildRegisterGroup: buildRegisterGroup, buildEditGroup: buildEditGroup,
