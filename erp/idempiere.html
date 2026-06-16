@@ -2606,7 +2606,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       erpdoc: openReadCompare,
       // ABOUT_BOX_CONSOLIDATE.md — ShowMe/Help now opens the ONE shared About/DIY modal (was toggleShowMe).
       // Install/Migrate pills retired: the DIY tab carries "bring your data in" (download agent → run → load).
-      showme: function () { if (window.AboutDIY) AboutDIY.open(); else toggleShowMe(); },
+      showme: function () { if (window.AboutDIY) window.AboutDIY.open(); else toggleShowMe(); },
       // GRID_BATCH_FORM_PILL_SPEC item 5 — form-view action toolbar relocated into the pill (red-pill hides
       //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
       formproc: function () { _showProcessChooser(); },

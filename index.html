@@ -187,7 +187,7 @@ window.addEventListener('error', function(e){
   </div>
   <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
     <a class="hlink" href="https://youtu.be/hnLYNcRihzs" target="_blank"><img src="viewer/YT.png" alt="YouTube" style="height:18px;vertical-align:middle"> <span data-trl="landing_watch_demo">Watch Demo</span></a>
-    <a class="hlink" href="javascript:void(0)" onclick="if(window.AboutDIY){AboutDIY.openAbout();}else{document.getElementById('about-dialog').classList.toggle('active');}">&#10067; <span data-trl="landing_about">About</span></a>
+    <a class="hlink" href="javascript:void(0)" onclick="if(window.AboutDIY){window.AboutDIY.openAbout();}else{document.getElementById('about-dialog').classList.toggle('active');}">&#10067; <span data-trl="landing_about">About</span></a>
     <a class="hlink" href="javascript:void(0)" id="header-flag-btn" onclick="if(window._TRL_LOADER)_TRL_LOADER.openFlagPicker()" style="cursor:pointer" title="Language">&#127760;</a>
     <a class="hlink" href="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml" target="_blank" style="padding:5px 10px" title="CI status"><img src="https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg" alt="CI" style="height:16px"></a>
   </div>

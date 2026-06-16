@@ -280,7 +280,7 @@
     },
     verify:    _verifyLedgerCard,                             // chain-integrity check — card (A-1)
     'doc-cycle': _docCycleValidator,                          // Doc Cycle Validator card (always visible POC proof)
-    guide:     function () { if (window.AboutDIY) AboutDIY.open(); else _helpGuide(); },  // (?) → shared About/DIY modal
+    guide:     function () { if (window.AboutDIY) window.AboutDIY.open(); else _helpGuide(); },  // (?) → shared About/DIY modal
     help:      _shortcutsPanel                                // lifebelt → keyboard/gesture shortcuts (its original role)
   };
 
