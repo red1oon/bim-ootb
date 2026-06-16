@@ -2282,8 +2282,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
         console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
         try { _overlayListTip(ct, _records); } catch (er) {}
+        return;                                                // a DATA edit on the OPEN tab — overlaid in place, done
       }
-      return;
+      // S4 LIVE MODEL SELF-EDIT — a CRUD write on an AD_* DICTIONARY table (e.g. AD_Field.IsDisplayed) is NOT a
+      //   data edit of the open tab; it must fall THROUGH to the model refold below so the form/grid re-reads AD
+      //   and repaints. (Before: this branch returned for every CRUD op, silently shadowing the dictionary refold
+      //   added in W-AD-SELFEDIT-LIVE once J4 CREATE landed its data-refold here.) Non-AD CRUD on a non-open tab
+      //   is a no-op and the AD_ guard below returns it harmlessly.
+      if (!/^AD_/i.test(t)) return;
     }
     if (!/^AD_/i.test(t)) return;                              // only DICTIONARY edits refold the model
     var wid = _activeWin;
