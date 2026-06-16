@@ -59,6 +59,23 @@
     render();
   }
 
+  // pushCrumb(tag,label,view) — the §-STREAM SUBSCRIBER (HISTORY_TAP_TO_IDEMPIERE §SESSION; the ERP twin of the
+  // viewer's #340 drain). A read-only CRUMB: a §-act the user did (kanban/search/graph/rule) that is NOT a
+  // window/tab/record nav — it has no re-open key, so it ANNOTATES the timeline and (if a look was stamped)
+  // re-applies it on click. windowId stays null → _histRestore skips re-open and applies `view` only. Distinct
+  // from the gold nav dots (kind='crumb', dimmer). Coalesce a repeat of the same tag at the tip.
+  function pushCrumb(tag, label, view) {
+    if (!tag) return;
+    var sig = 'crumb|' + tag;
+    if (_idx >= 0 && _hist[_idx] && _hist[_idx].sig === sig) return;     // §curation: same act repeated = no new dot
+    if (_idx < _hist.length - 1) _hist.length = _idx + 1;                // truncate forward branch
+    var e = { seq: _seq++, sig: sig, kind: 'crumb', tag: tag, label: label || tag,
+              windowId: null, tabIdx: null, table: null, recordId: null, view: (view == null ? null : view) };
+    _hist.push(e); _idx = _hist.length - 1;
+    console.log('§IDMP-HIST crumb tag=' + tag + ' label="' + e.label + '" depth=' + _hist.length + ' (from §-stream, no per-feature wiring)');
+    render();
+  }
+
   function registerRestore(fn) { _restoreFn = fn; }
 
   // _go(i) — click a dot / undo / redo. Restore is READ-ONLY: the host re-selects via openWindow/tab/record.
@@ -134,7 +151,8 @@
     // step older/newer; double-tap blooms chips. [[feedback_pill_icon_consistency]]
     var h = '<div class="scrubline" id="idmp-scrubline">';
     _hist.forEach(function (e, i) {
-      h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + '" data-i="' + i + '" data-kind="' + e.kind +
+      h += '<div class="scrubdot' + (i === _idx ? ' on' : '') + (e.kind === 'crumb' ? ' crumb' : '') +
+        '" data-i="' + i + '" data-kind="' + e.kind +
         '" title="' + (i + 1) + '. ' + _esc(e.label) + '">' + (_bloom ? _esc(e.label) : '') + '</div>';
     });
     // Item 1 — the AMBER unsaved-edit pip (rightmost, after the committed dots). Tap = opt-in restore.
@@ -202,6 +220,10 @@
         'cursor:pointer;transition:background .15s,transform .15s;}' +
       '#idmp-scrub .scrubdot:hover{background:#6c9fff;transform:scale(1.25);}' +
       '#idmp-scrub .scrubdot.on{background:#ffd479;box-shadow:0 0 6px rgba(255,212,121,0.7);}' +
+      // crumb = a §-stream breadcrumb (what you did), dimmer + hollow vs the solid gold/white nav dots.
+      '#idmp-scrub .scrubdot.crumb{background:transparent;border:1.5px solid rgba(154,164,184,0.55);width:7px;height:7px;}' +
+      '#idmp-scrub .scrubdot.crumb:hover{border-color:#6c9fff;background:rgba(108,159,255,0.15);}' +
+      '#idmp-scrub .scrubdot.crumb.on{background:#ffd479;border-color:#ffd479;}' +
       // Item 1 — AMBER unsaved-edit pip: a hollow amber ring (NOT a filled committed dot) + a soft pulse, so the
       // "you-were-here, unsaved" mark reads as distinct from the white/gold committed dots. Tappable = opt-in restore.
       '#idmp-scrub .scrubdraft{flex:0 0 auto;width:10px;height:10px;border-radius:50%;background:transparent;' +
@@ -224,7 +246,7 @@
     document.head.appendChild(s);
   }
 
-  window.IdmpHistory = { push: push, registerRestore: registerRestore, undo: undo, redo: redo,
+  window.IdmpHistory = { push: push, pushCrumb: pushCrumb, registerRestore: registerRestore, undo: undo, redo: redo,
     render: render, clear: clear, list: list, toggleBar: toggleBar, canStep: canStep,
     setDraftPip: setDraftPip, clearDraftPip: clearDraftPip };   // Item 1 (W-DRAFT-RESTORE-LIVE): amber unsaved-edit pip
 })();
