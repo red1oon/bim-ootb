@@ -507,9 +507,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="idmp_pills.js?v=14"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
-<script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
+<script src="../common/history_tap.js?v=6" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
 <script src="../common/whole_history.js?v=4" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local bar only')"></script>
-<script src="idmp_history.js?v=9"></script>
+<script src="idmp_history.js?v=10"></script>
 <!-- SO_FULL_CRUD_GAP.md T3 / GAP 3 — the SAME CRUD ring-of-fire overlay glassbowl mounts, host-anchored to the
      iDempiere renderer (no fork). Needs kernel_ops.js + erp_engine.js + bigdecimal.js (all loaded above). The
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
@@ -2711,7 +2711,37 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       function () { return document.body.classList.contains('idmp-clean'); },
       function (want) { if (document.body.classList.contains('idmp-clean') !== !!want) toggleCleanMode(); });
     if (T.sniff) T.sniff(true);   // recording goes TOTAL: read every ERP §act from the stream, deny-filtered
-    console.log('§IDMP-HIST-TAP wired fields(search,clean) + sniffer ON — one symmetric line each');
+    if (T.setKnob) T.setKnob('high');                 // ONE KNOB: ERP breadth = high (spec default; KANBAN/SEARCH/GRAPH/CRUD/RULE in-net)
+    if (T.onFeed) T.onFeed(_drainErpTap);             // ── THE SUBSCRIPTION: the ERP bar LISTENS to the §-stream ──
+    console.log('§IDMP-HIST-TAP wired fields(search,clean) + sniffer ON + bar SUBSCRIBES tap (knob=high) — one symmetric line each');
+  }
+
+  // ── ERP bar SUBSCRIBES the §-tap (HISTORY_TAP_TO_IDEMPIERE §SESSION — the twin of the viewer #340 drain) ──
+  // The sniffer records every ERP § act into HistoryTap.all, but only window/tab/record _histPush moments dotted.
+  // Now each § act drains into a read-only CRUMB dot — for tags NOT already minted by an explicit nav push (the
+  // skip set) — so KANBAN/ERP_SEARCH/AD_GRAPH/AD_DATA/CRUD/RULE dot for free, zero per-feature wiring. The bar's
+  // own §IDMP-HIST and denied infra never enter (DENY + STOP-set filtering in historySince). isApplying-gated so
+  // a restore-scrub never mints a dot.
+  var _erpTapHW = -1, _erpDraining = false, _erpArmed = false;
+  // Tags the ERP page ALREADY records as nav moments (window/tab/record) or that are the bar's own chrome — skip
+  // so the crumb drain never doubles a nav dot. (IDMP* chrome isn't in any STOP set, so this is belt-and-braces.)
+  var _ERP_EXPLICIT_TAGS = { IDMP: 1, IDMP_HIST: 1, NAVIGATE: 1, FOCUS_NODE: 1 };
+  function _drainErpTap() {
+    if (_erpDraining || !window.HistoryTap || !HistoryTap.historySince || !window.IdmpHistory || !IdmpHistory.pushCrumb) return;
+    if (HistoryTap.isApplying && HistoryTap.isApplying()) return;   // scrubbing the past ≠ a new act
+    if (_histRestoring || !_session) return;                       // not during a restore / before login
+    // ARM on the first post-login § act: skip the whole boot + pre-login backlog (set HW to the stream tip),
+    // so the ERP timeline shows only what the user did AFTER they were in — not infra accrued during boot.
+    if (!_erpArmed) { _erpArmed = true; var a = HistoryTap._all; _erpTapHW = (a && a.length) ? a[a.length - 1].t : -1; return; }
+    _erpDraining = true;
+    try {
+      var fresh = HistoryTap.historySince(_erpTapHW, _ERP_EXPLICIT_TAGS);
+      for (var i = 0; i < fresh.length; i++) {
+        var e = fresh[i];
+        if (e.t > _erpTapHW) _erpTapHW = e.t;
+        IdmpHistory.pushCrumb(e.tag, e.label || e.tag, e.view || null);
+      }
+    } finally { _erpDraining = false; }
   }
 
   function _histPush(kind) {
