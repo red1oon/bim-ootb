@@ -459,9 +459,10 @@
 <script src="ninja_starter.js?v=1"></script>
 <script src="ninja_export.js?v=1"></script>
 <script src="plugin_overlay.js?v=4"></script>
-<!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
-<script src="migrate_showme.js?v=23"></script>
-<!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
+<!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (supersedes migrate_showme + the Install/Migrate
+     pills). Mounted from the `showme` pill → AboutDIY.open(). icons.js + overlay_kit loaded above. -->
+<script src="../common/about_diy.js?v=1"></script>
+<!-- MIGRATE_ERP_PICKER.md §SPEC — still loaded: the login front-door tenant picker (ErpPicker.manifest). -->
 <script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
 <script src="kernel_ops.js?v=2"></script>
@@ -2601,8 +2602,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.IdmpPillActions = {
       redpill: toggleCleanMode,
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
-      rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
-      erpdoc: openReadCompare, showme: toggleShowMe,
+      rule: openRuleFor, pos: openPosFor,
+      erpdoc: openReadCompare,
+      // ABOUT_BOX_CONSOLIDATE.md — ShowMe/Help now opens the ONE shared About/DIY modal (was toggleShowMe).
+      // Install/Migrate pills retired: the DIY tab carries "bring your data in" (download agent → run → load).
+      showme: function () { if (window.AboutDIY) window.AboutDIY.open(); else toggleShowMe(); },
       // GRID_BATCH_FORM_PILL_SPEC item 5 — form-view action toolbar relocated into the pill (red-pill hides
       //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
       formproc: function () { _showProcessChooser(); },
