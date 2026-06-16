@@ -327,11 +327,12 @@
     depthKey: 'bim.universalHist.depth',
     ignorePersistedDepth: true,             // knob scrapped → a stale 'low' from the knob era must not
                                             // pin the bar (no UI to raise it). Always boot at defaultDepth.
-    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile). 'mid'
-    // is the CLEAN TRAIL: edits/saves + detail events (measure / clash-inspect / section-cut), WITHOUT
-    // the element-pick + nav-view spam that 'max' adds (user direction 2026-06-16: keep the trail readable,
-    // don't clutter it with a dot for every selection). Measure/clash/section all leave a Z dot at mid.
-    defaultDepth: function () { return 'mid'; },
+    // HISTORY_KNOB_DIAL.md: depth/knob is gone — recording is ALWAYS ON everywhere (incl. mobile). 'high'
+    // records what the user actually DOES: navigation views (axis/group/item — Find storey/floor selects)
+    // + edits/saves + detail events (measure / clash-inspect / section-cut). It deliberately stops short of
+    // 'max', which adds a dot for EVERY raw element-pick (that's the spam). User direction 2026-06-16: a
+    // mid-only trail dropped Find/storey navigation (profile=mid type=group HIST_DROP) → looked unchanged.
+    defaultDepth: function () { return 'high'; },
     restore: _restore,
     restoreView: _restoreView,              // READ-ONLY scrubber path (knob nav + dot clicks)
     afterApply: _chainCheck,
