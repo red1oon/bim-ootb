@@ -62,18 +62,21 @@ async function driveTenant(browser, port, cfg) {
   await page.evaluate(() => { const tr = document.querySelector('.idmp-grid tbody tr[data-ad-record]'); if (tr) tr.click(); });
   await page.waitForTimeout(700);
 
-  const clk = await clickEditBtn(page);
-  await page.waitForSelector('#crudForm.open', { timeout: 6000 }).catch(() => {});
+  // P2 (CRUD_INPLACE_EDIT_SESSION.md) — the ✎ Edit button is RETIRED: the form view is editable IN PLACE. Opening a
+  //   record into form view mounts the inline editor; the leak guard now proves that doing so NEVER fans the ring.
+  await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(600);
-  const formOpen = await page.evaluate(() => !!document.querySelector('#crudForm.open'));
+  const inlineMounted = await page.evaluate(() => !!document.getElementById('idmp-inline-mount'));
+  const modalOpen = await page.evaluate(() => !!document.querySelector('#crudForm.open'));
+  const noEditBtn = await page.evaluate(() => !Array.from(document.querySelectorAll('#idmp-toolbar button')).some(b => /✎\s*Edit/.test(b.textContent || '')));
   const ringFan = anyLog(/§CRUD ring .*view=on/);
   const idmpOpen = anyLog(/§CRUD-IDMP-OPEN/);
-  const editForm = anyLog(/§FORM-PILL edit=edit-form/);
+  const inplace = anyLog(/§INPLACE-EDIT table=/);
 
-  console.log('§RING-LEAK[' + cfg.key + '] btn="' + clk.label + '" clicked=' + clk.clicked + ' formOpen=' + formOpen
-    + ' editFormLog=' + editForm + ' ringFan=' + ringFan + ' idmpOpen=' + idmpOpen);
-  ok('[' + cfg.key + '] the ✎ Edit toolbar button is present + enabled on ' + cfg.table + ' (re-pointed off the ring)', clk.clicked, 'label="' + clk.label + '"');
-  ok('[' + cfg.key + '] it opens iDempiere\'s OWN edit FORM (host seam, ring not fanned)', formOpen && editForm, 'formOpen=' + formOpen + ' §FORM-PILL=' + editForm);
+  console.log('§RING-LEAK[' + cfg.key + '] inlineMounted=' + inlineMounted + ' modalOpen=' + modalOpen
+    + ' noEditBtn=' + noEditBtn + ' inplaceLog=' + inplace + ' ringFan=' + ringFan + ' idmpOpen=' + idmpOpen);
+  ok('[' + cfg.key + '] the form view is editable IN PLACE on ' + cfg.table + ' (inline editor mounted, no modal)', inlineMounted && inplace && !modalOpen, 'mounted=' + inlineMounted + ' modal=' + modalOpen);
+  ok('[' + cfg.key + '] the ✎ Edit toolbar button is RETIRED (no read→Edit→modal hop)', noEditBtn);
   ok('[' + cfg.key + '] the Glass/Gravity ring NEVER fans on iDempiere (no §CRUD ring … view=on)', !ringFan);
   ok('[' + cfg.key + '] no §CRUD-IDMP-OPEN — the leak is closed', !idmpOpen);
   ok('[' + cfg.key + '] 0 pageerrors', errs.length === 0, errs.slice(0, 2).join(' | '));

@@ -104,17 +104,18 @@ async function backToGrid(page) {
   const marker = 'EDIT-W-CRUD-' + Math.abs(draftPk);
 
   // ════════════ ACT 2 — UPDATE the draft (the change) ════════════
+  // P2 (CRUD_INPLACE_EDIT_SESSION.md): Edit is IN PLACE — opening the draft into form view mounts the editable
+  //   inline editor (no modal, no ✎ Edit). Change the field directly + click the inline Save (dirty-gated).
   await openRow(page, draftPk);
-  await tapPill(page, 'formedit');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('#idmp-inline-mount [data-col="description"]', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(500);
   const editFormState = await page.evaluate(() => {
-    const f = document.getElementById('crudForm'), r = document.getElementById('crudRing');
-    return { open: !!(f && f.classList.contains('open')), ring: !!(r && r.classList.contains('open')),
-             title: f ? (f.querySelector('.cfh') || {}).textContent : null, hasDesc: !!(f && f.querySelector('[data-col="description"]')) };
+    const m = document.getElementById('idmp-inline-mount'), f = document.getElementById('crudForm'), r = document.getElementById('crudRing');
+    return { open: !!m, modal: !!(f && f.classList.contains('open')), ring: !!(r && r.classList.contains('open')),
+             hasDesc: !!(m && m.querySelector('[data-col="description"]')) };
   });
-  await page.evaluate((m) => { const d = document.querySelector('#crudForm [data-col="description"]'); if (d) { d.value = m; d.dispatchEvent(new Event('input', { bubbles: true })); d.dispatchEvent(new Event('change', { bubbles: true })); } }, marker);
-  await page.evaluate(() => { const s = document.getElementById('cfSave'); if (s) s.click(); });
+  await page.evaluate((m) => { const d = document.querySelector('#idmp-inline-mount [data-col="description"]'); if (d) { d.value = m; d.dispatchEvent(new Event('input', { bubbles: true })); d.dispatchEvent(new Event('change', { bubbles: true })); } }, marker);
+  await page.evaluate(() => { const s = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]'); if (s && !s.disabled) s.click(); });
   await page.waitForTimeout(1500);
   await backToGrid(page);
   const oplogRow = lastLog(/§CRUD-OPLOG-ROW .*loaded=/);
@@ -122,7 +123,7 @@ async function backToGrid(page) {
   const listU = lastLog(/§LIST-TIP overlay .*table=c_order/);
   console.log('§CRUD-FULL ACT2 editForm=' + JSON.stringify(editFormState) + ' oplogRow="' + oplogRow + '"');
   console.log('§CRUD-FULL ACT2 persist="' + persistU + '" listTip="' + listU + '"');
-  ok('Edit opens the draft\'s edit form DIRECTLY, loaded from the op-log (ring not fanned)', editFormState.open && !editFormState.ring && /Edit/.test(String(editFormState.title || '')) && /loaded=/.test(oplogRow), JSON.stringify(editFormState));
+  ok('Edit opens the draft\'s edit form IN PLACE (no modal, ring not fanned), loaded from the op-log', editFormState.open && !editFormState.modal && !editFormState.ring && editFormState.hasDesc && /loaded=/.test(oplogRow), JSON.stringify(editFormState));
   ok('UPDATE: ONE signed CRUD_UPDATE (verifyChain=ok)', /op=CRUD_UPDATE.*verifyChain=ok/.test(persistU), persistU);
   ok('the grid re-folds the edit (§LIST-TIP updated>=1)', /updated=[1-9]/.test(listU), listU);
 
@@ -131,14 +132,12 @@ async function backToGrid(page) {
   await page.waitForSelector('.idmp-grid tbody tr[data-ad-record]', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await openRow(page, draftPk);
-  await tapPill(page, 'formedit');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('#idmp-inline-mount [data-col="description"]', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(600);
-  const reloadVal = await page.evaluate(() => { const d = document.querySelector('#crudForm [data-col="description"]'); return d ? d.value : null; });
+  const reloadVal = await page.evaluate(() => { const d = document.querySelector('#idmp-inline-mount [data-col="description"]'); return d ? d.value : null; });
   console.log('§CRUD-FULL ACT2 RELOAD description="' + reloadVal + '" (want "' + marker + '")');
   ok('UPDATE SURVIVES reload (the edited value re-folds after a fresh load)', String(reloadVal) === marker, 'got="' + reloadVal + '"');
-  await page.evaluate(() => { const c = document.getElementById('cfCancel'); if (c) c.click(); });
-  await page.waitForTimeout(300); await backToGrid(page);
+  await backToGrid(page);
 
   // ════════════ ACT 3 — DELETE the draft ════════════
   await openRow(page, draftPk);

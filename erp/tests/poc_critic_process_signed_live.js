@@ -113,7 +113,11 @@ async function processVia(page, id, actionRe) {
   const did1 = target ? await processVia(page, target.id, /complete/i) : { present: false };
   const tipAfter = target ? await tipOf(page, target.id) : null;
   const shown = await page.evaluate(() => {
-    const f = document.querySelector('[data-ad-column="DocStatus"]');
+    // P2 in-place form: the canonical rendered DocStatus is the DocAction-bar chip (e.g. "Completed · CO"); fall
+    //   back to a docstatus field (inline data-col / read-only data-ad-column) for the read-only fallback render.
+    const chip = document.querySelector('.idmp-docfsm .chip');
+    if (chip && chip.textContent) return chip.textContent.trim();
+    const f = document.querySelector('[data-ad-column="DocStatus" i], [data-col="docstatus"]');
     return f ? (f.querySelector('input,select') ? f.querySelector('input,select').value : f.textContent).trim() : null;
   });
   const hostLog = lastLog(/§CRUD-HOSTPROCESS .*action=CO/);

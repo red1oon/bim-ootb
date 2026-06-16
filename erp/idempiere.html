@@ -141,6 +141,9 @@
   #idmp-placeholder .big { font-size:34px; margin-bottom:10px; opacity:.5; }
   /* form */
   .idmp-form { display:grid; grid-template-columns:repeat(2, minmax(280px, 1fr)); gap:8px 28px; max-width:980px; }
+  /* P2 in-place edit: the editable form is a single-column block (the inline editor owns its row grid), not the 2-col read grid. */
+  .idmp-form-inline { display:block; max-width:760px; }
+  #idmp-inline-mount { display:block; }
   .idmp-fld { display:flex; align-items:center; gap:10px; }
   .idmp-fld label { flex:0 0 150px; text-align:right; color:var(--idmp-muted); font-size:12px; }
   .idmp-fld .val {
@@ -516,7 +519,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=15"></script>
+<script src="crud_overlay.js?v=16"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1082,21 +1085,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function sep() { tb.appendChild(el('span', 'sep')); }
     btn('⟲', 'Refresh', true, function () { renderActiveTab(); });
     sep();
-    (function () {
-      var tab = _curTab();
-      var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
-      var canCrud = !!(window.__crud && tn && _crudHas(tn));
-      // RING LEAK FIX (GRAND_LANE §0: iDempiere NEVER opens the Glass/Gravity ring — Execute is iDempiere's own UI
-      //   surface). The ✎ button re-points to the SAME form host-seam the form pills use (_openEdit → __crud.update
-      //   → edit form, ring NOT fanned); New/Delete/Complete stay on the form pills + DocAction bar. enable()/
-      //   openRing()/the Edit-mode toggle are never called from this surface, so §CRUD ring … view=on and
-      //   §CRUD-IDMP-OPEN can no longer fire on iDempiere. The ring remains Glass/Gravity-only.
-      btn('✎ Edit', canCrud ? 'Edit this record (opens the form — ring not fanned)' : 'Edit — this table is read-only per its dictionary', canCrud, function () {
-        if (!window.__crud || !tn) return;
-        _openEdit();
-      });
-    })();
-    sep();
+    // P2 (prompts/CRUD_INPLACE_EDIT_SESSION.md) — NO ✎ Edit button. The form view is DIRECTLY editable in place
+    //   (iDempiere-faithful: the form/grid IS the editable surface, never a read→Edit→modal). Save/Ignore live in the
+    //   inline verb bar (dirty-gated), New/Delete on the form pills. The Glass/Gravity ring stays Glass-only (the
+    //   old ✎ re-point that W-RING-LEAK guarded is now removed entirely — there is no ring affordance on this surface).
     btn('◀◀', 'First record', true, function () { _recIdx = 0; refreshForm(); });
     btn('◀', 'Previous record', true, function () { if (_recIdx > 0) _recIdx--; refreshForm(); });
     var navSpan = el('span', 'nav'); navSpan.id = 'idmp-recnav'; tb.appendChild(navSpan);
@@ -1300,9 +1292,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       console.log('§FORM-PILL delete=delete-confirm table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
     });
   }
-  function _formSave() {        // = iDempiere Save: persist the edits in the open CRUD overlay form (its #cfSave)
+  function _formSave() {        // = iDempiere Save: persist the open form. P2 — prefer the inline editor's Save; the
+    var inlineSave = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]');   // modal #cfSave only for the ring.
+    if (inlineSave && !inlineSave.disabled) { inlineSave.click(); console.log('§FORM-PILL save=clicked(inline)'); return; }
     var sv = document.getElementById('cfSave');
     if (sv) { sv.click(); console.log('§FORM-PILL save=clicked'); }
+    else if (inlineSave) { status('No changes — nothing to save'); console.log('§FORM-PILL save=inline-clean'); }
     else { status('Save — open New or Edit a record first (nothing being edited)'); console.log('§FORM-PILL save=no-open-form'); }
   }
   function _showProcessChooser() {   // = iDempiere Process ▶: the record's legal DocAction set (the _fsmCtx seam)
@@ -2122,14 +2117,38 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
 
   function buildForm(tab) {
-    var form = el('div', 'idmp-form'); form.id = 'idmp-form';
     var rec = _records[_recIdx];
-    if (rec) { form.setAttribute('data-ad-table', tab.tableName); form.setAttribute('data-ad-record', recVal(rec, _keyCol(tab))); }  // AD-key tag (host contract)
-    var fsmBar = buildDocActionBar(tab, rec);                            // §AD-DOCFSM-LIVE (B-2)
-    if (fsmBar) form.appendChild(fsmBar);
-    // §AD-DISPLAYLOGIC-LIVE — hide fields whose AD DisplayLogic is FALSE for THIS record, via the proven
-    // evaluator (ad_evaluator.js, W-LOGIC-EVAL; ERP_COVERAGE_MATRIX.md §AD_Field·DisplayLogic).
-    // Uncertain/parse-error → SHOW (GridField parity).
+    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    var pk = rec ? recVal(rec, _keyCol(tab)) : null;
+    // P2 — IN-PLACE EDIT (prompts/CRUD_INPLACE_EDIT_SESSION.md): the iDempiere form view IS the editable surface
+    //   (no read→✎ Edit→modal). Mount the crud_overlay inline editor for a real record on a CRUD-capable table;
+    //   fall back to the read-only render when there's no record / no crud spec (engine reports onUnsupported).
+    var canInline = !!(rec && tn && window.__crud && typeof window.__crud.editInline === 'function' && _crudHas(tn) && pk != null && String(pk) !== '');
+    if (canInline) {
+      var ef = el('div', 'idmp-form idmp-form-inline'); ef.id = 'idmp-form';
+      ef.setAttribute('data-ad-table', tab.tableName); ef.setAttribute('data-ad-record', pk);
+      var fsmBar = buildDocActionBar(tab, rec); if (fsmBar) ef.appendChild(fsmBar);   // Process bar stays SEPARATE (T2)
+      var mountEl = el('div', null); mountEl.id = 'idmp-inline-mount'; ef.appendChild(mountEl);
+      _withFoldedEntry(tn, 'update', function () {
+        window.__crud.editInline(tn, pk, mountEl, {
+          onDirty: function (dirty) { ef.classList.toggle('idmp-form-dirty', !!dirty); },   // T3 — dirty blocks Process
+          refresh: function () { renderActiveTab(); _viewMode = 'form'; refreshForm(); },
+          onUnsupported: function () { ef.className = 'idmp-form'; mountEl.remove(); _appendReadonlyFields(ef, tab, rec); }
+        });
+      });
+      return ef;
+    }
+    var form = el('div', 'idmp-form'); form.id = 'idmp-form';
+    if (rec) { form.setAttribute('data-ad-table', tab.tableName); form.setAttribute('data-ad-record', pk); }  // AD-key tag (host contract)
+    var fsmBar2 = buildDocActionBar(tab, rec);                            // §AD-DOCFSM-LIVE (B-2)
+    if (fsmBar2) form.appendChild(fsmBar2);
+    _appendReadonlyFields(form, tab, rec);
+    return form;
+  }
+  // _appendReadonlyFields — the classic read-only field render (the fallback when a table has no crud spec).
+  // §AD-DISPLAYLOGIC-LIVE — hide fields whose AD DisplayLogic is FALSE for THIS record (ad_evaluator.js, W-LOGIC-EVAL;
+  //   uncertain/parse-error → SHOW, GridField parity). The inline editor applies its own AD logic via applyAdLogic.
+  function _appendReadonlyFields(form, tab, rec) {
     var flds = _displayFields(tab);
     if (window.AdEvaluator && rec) {
       var _hidden = [];
@@ -2151,7 +2170,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       fld.appendChild(v);
       form.appendChild(fld);
     });
-    return form;
   }
   function refreshForm() {
     var nav = $('idmp-recnav');
@@ -2357,6 +2375,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
         console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
         try { _overlayListTip(ct, _records); } catch (er) {}
+        // P2 — in form view re-mount the inline editor from the now-committed tip (baseline resets, dirty clears).
+        if (_viewMode === 'form') { try { refreshForm(); } catch (er2) {} }
         return;                                                // a DATA edit on the OPEN tab — overlaid in place, done
       }
       // S4 LIVE MODEL SELF-EDIT — a CRUD write on an AD_* DICTIONARY table (e.g. AD_Field.IsDisplayed) is NOT a
@@ -2755,7 +2775,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
       formproc: function () { _showProcessChooser(); },
       formnew: function () { _openCreate(); },
-      formedit: function () { _openEdit(); },
+      // P2 — Edit is retired: the form view is editable in place (no modal). If invoked, guide the user (and fall
+      //   back to the modal edit only when the inline editor isn't mounted, e.g. a read-only/spec-less table).
+      formedit: function () {
+        if (document.getElementById('idmp-inline-mount')) { status('This form is editable in place — edit a field, then Save'); console.log('§FORM-PILL edit=inline-already-editable'); return; }
+        _openEdit();
+      },
       formdel: function () { _openDelete(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
