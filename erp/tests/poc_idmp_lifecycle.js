@@ -37,7 +37,7 @@ const pillIds = (page) => page.$$eval('#idmp-pill button[id^="pill-"]', bs => bs
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
 
-  await page.goto(`http://localhost:${port}/idempiere.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/idempiere.html?client=garden`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500);
 
   // ── Stage 1: pre-client (login overlay open) ──

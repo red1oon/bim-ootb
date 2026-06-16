@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v660';   // v660: history bar SUBSCRIBES to the §-tap + ONE knob (HISTORY_KNOB_SIGNAL_TAP §SESSION — bar consumes HistoryTap.historySince; X/C + future § dot for free; W-KNOB-ONE/W-DRAIN-XC/W-DRAIN-SKIP 9/9). history_tap.js?v=6 + history_bar.js?v=6 + universal_history.js?v=21
+const CACHE_VERSION = 'v664';   // v664: history bar SUBSCRIBES to the §-tap + ONE knob (HISTORY_KNOB_SIGNAL_TAP §SESSION — bar consumes HistoryTap.historySince; X/C + future § dot for free; W-KNOB-ONE/W-DRAIN-XC/W-DRAIN-SKIP 9/9 + W-LIVE 6/6) atop v663 default-high. history_tap.js?v=6 + history_bar.js?v=6 + universal_history.js?v=23
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

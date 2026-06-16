@@ -105,7 +105,13 @@ window.HistoryBar = (function () {
   function configure(opts) {
     for (var k in opts) { if (Object.prototype.hasOwnProperty.call(opts, k)) _cfg[k] = opts[k]; }
     // depth: persisted choice wins (legacy all/doc/off migrate to stops); else the app's default.
-    try { _depth = _migrateDepth(localStorage.getItem(_cfg.depthKey)) || _migrateDepth(_cfg.defaultDepth()) || 'high'; }
+    // ignorePersistedDepth: an app with NO depth knob (the viewer — knob scrapped per
+    // HISTORY_KNOB_DIAL) passes this so a STALE persisted stop from the knob era can't pin it
+    // forever with no UI to change it. Such apps always boot at their defaultDepth().
+    try {
+      var _storedDepth = _cfg.ignorePersistedDepth ? null : localStorage.getItem(_cfg.depthKey);
+      _depth = _migrateDepth(_storedDepth) || _migrateDepth(_cfg.defaultDepth()) || 'high';
+    }
     catch (e) { _depth = _migrateDepth(_cfg.defaultDepth()) || 'high'; }
     if (!_configured) { _wireKeyboard(); _wireCrossTab(); _configured = true; }
     _syncTapKnob();                     // ONE KNOB: push the loaded depth onto the §-tap at startup

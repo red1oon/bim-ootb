@@ -157,6 +157,10 @@
   .idmp-docfsm .chip.st-CO { background:#d8efd8; border-color:#9cc79c; }
   .idmp-docfsm .chip.st-DR, .idmp-docfsm .chip.st-IP { background:#fdf3d7; border-color:#e0c878; }
   .idmp-docfsm .chip.st-VO, .idmp-docfsm .chip.st-RE { background:#f5dada; border-color:#d09c9c; }
+  /* USER_JOURNEY_LANE punch-list #2 — DocStatus status-at-a-glance chip in grid + cards. Dot colour =
+     KanbanLens.statusColor (same source kanban uses); label = DOCSTATUS_LABEL. Consistent look-and-feel. */
+  .idmp-stchip { display:inline-flex; align-items:center; gap:6px; font-size:12px; white-space:nowrap; }
+  .idmp-stchip .dot { width:8px; height:8px; border-radius:50%; flex:0 0 8px; }
   .idmp-docfsm button { font-size:12px; padding:4px 10px; border:1px solid var(--idmp-border);
     border-radius:6px; background:var(--idmp-panel); color:var(--idmp-text); cursor:pointer; }
   .idmp-docfsm button:hover { background:var(--idmp-hover); border-color:var(--idmp-blue); }
@@ -197,6 +201,17 @@
   .idmp-grid tr:nth-child(even) td { background:#f6f8fb; }
   .idmp-grid tr:hover td { background:var(--idmp-hover); }
   .idmp-grid tr.sel td { background:var(--idmp-sel); }
+  /* GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select checkbox column + the gear/batch toolbar. */
+  .idmp-grid th.idmp-cbcol, .idmp-grid td.idmp-cbcol { width:30px; text-align:center; padding:4px 6px; cursor:default; }
+  .idmp-grid td.idmp-cbcol input, .idmp-card-cb { width:15px; height:15px; cursor:pointer; }
+  .idmp-card-cb { margin-right:8px; flex:0 0 auto; }
+  #idmp-batchbar { display:none; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 10px; margin-bottom:6px;
+    background:#eef4ff; border:1px solid var(--idmp-border); border-radius:7px; font-size:12.5px; position:sticky; top:0; z-index:3; }
+  #idmp-batchbar .idmp-batch-lead { display:inline-flex; align-items:center; gap:5px; font-weight:600; color:#23477a; }
+  #idmp-batchbar .idmp-batch-act { padding:4px 11px; border:1px solid #2c6; border-radius:5px; background:#e9fbef; color:#176b33; cursor:pointer; font-size:12px; }
+  #idmp-batchbar .idmp-batch-act:hover { background:#d6f5e1; }
+  #idmp-batchbar .idmp-batch-none { color:var(--idmp-muted); font-style:italic; }
+  #idmp-batchbar .idmp-batch-clear { margin-left:auto; border:none; background:none; cursor:pointer; color:var(--idmp-muted); font-size:14px; }
   /* MOBILE_CARDS.md §2/§3 — mobile .acc card list (HIDDEN on desktop; the grid is canonical >760px). */
   .idmp-cards { display:none; }
   .idmp-cards-empty { color:#888; padding:18px; text-align:center; }
@@ -251,12 +266,23 @@
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex:0 0 auto; }
   .idmp-login-user.disabled { opacity:.5; cursor:not-allowed; }
   .idmp-login-user.disabled:hover { background:#fbfcfe; border-color:var(--idmp-border); }
-  .idmp-login-user .tag { margin-left:auto; font-size:11px; color:var(--idmp-muted); }
+  .idmp-login-user .tag { margin-left:auto; font-size:11px; color:var(--idmp-muted); display:flex; align-items:center; gap:5px; }
+  /* DEMO tenants at the front door (ERP_CRITIC_UX_LANE P0) — present + lazy-install on pick. Subtle blue accent
+     so they read as "ready to enter", distinct from a resident tenant; the pip is a small filled dot. */
+  .idmp-login-demo { border-style:dashed; }
+  .idmp-login-demo .av { background:#e7f0fb; color:var(--idmp-blue); }
+  .idmp-demo-pip { width:6px; height:6px; border-radius:50%; background:var(--idmp-blue); flex:0 0 auto; }
+  .idmp-demo-pip.busy { animation:idmp-demo-pulse .8s ease-in-out infinite; }
+  .idmp-login-demo.installing { opacity:.6; cursor:progress; }
+  @keyframes idmp-demo-pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
   /* tenant delete affordance (NEW_CLIENT_MGMT — reverse of install) + its red-rim warning */
+  /* Delete affordance is ALWAYS faintly visible on every deletable tenant (was opacity:0 = hover-only,
+     so on a glance only the hovered row showed it, and on touch — no hover — it was unreachable). Faint
+     by default → brightens on row hover → red on button hover. Consistent across all resident tenants. */
   .idmp-tenant-del { margin-left:8px; flex:0 0 auto; width:28px; height:28px; padding:0; border:1px solid transparent;
-    background:none; border-radius:6px; color:var(--idmp-muted); cursor:pointer; opacity:0; transition:.12s;
+    background:none; border-radius:6px; color:var(--idmp-muted); cursor:pointer; opacity:.4; transition:.12s;
     display:flex; align-items:center; justify-content:center; }
-  .idmp-login-user:hover .idmp-tenant-del { opacity:.65; }
+  .idmp-login-user:hover .idmp-tenant-del { opacity:.7; }
   .idmp-tenant-del:hover { opacity:1; color:#e5484d; background:#fdeced; border-color:#f3c0c2; }
   .idmp-del-overlay { position:fixed; inset:0; background:rgba(8,10,16,.55); z-index:100000;
     display:flex; align-items:center; justify-content:center; }
@@ -396,7 +422,7 @@
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=1"></script>
-<script src="ad_data.js?v=22"></script>
+<script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
@@ -414,7 +440,7 @@
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
-<script src="erp_preview.js?v=1"></script>
+<script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
 <script src="icons.js?v=10"></script>
@@ -436,7 +462,7 @@
 <!-- §0.10a — first-mile Migrate ShowMe (launched from the login card). -->
 <script src="migrate_showme.js?v=23"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (detect→highlight→default→route). -->
-<script src="erp_picker.js?v=5"></script>
+<script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
 <script src="kernel_ops.js?v=2"></script>
 <script src="erp_signer.js?v=1"></script>
@@ -448,7 +474,7 @@
 <script src="bigdecimal.js?v=1"></script>
 <script src="bim_orders_overlay.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
-<script src="report_overlay.js?v=2"></script>
+<script src="report_overlay.js?v=3"></script>
 <script src="rule_fold.js?v=2"></script>
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
@@ -478,7 +504,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=12"></script>
+<script src="idmp_pills.js?v=14"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -489,7 +515,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=11"></script>
+<script src="crud_overlay.js?v=14"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -528,6 +554,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _records = [];
   var _recIdx = 0;
   var _viewMode = 'grid';    // 'grid' | 'form'
+  var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
@@ -535,7 +562,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function status(main) { if (main != null) $('idmp-status-main').textContent = main; }
 
-  // ── IndexedDB cache (shares 'ad_seed_v15' with erp.html) ──
+  // ── IndexedDB cache (shares 'ad_seed_v16' with erp.html) ──
   function idbGet(key) {
     return new Promise(function (resolve) {
       try {
@@ -623,8 +650,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // clobber a ?seed= gen db), and only when rows actually merged. INSERT OR IGNORE upstream keeps it idempotent.
       var persisted = false;
       if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
-        try { idbPut('ad_seed_v15', db.export().buffer); persisted = true;
-          console.log('§IDEMPIERE shard-persist key=ad_seed_v15 rows=' + mRow + ' resident=Y');
+        try { idbPut('ad_seed_v16', db.export().buffer); persisted = true;
+          console.log('§IDEMPIERE shard-persist key=ad_seed_v16 rows=' + mRow + ' resident=Y');
           // CONSISTENCY_FINISH.md §K-3 — a tenant becoming resident is the largest state change a user
           // can make; it earns a World-history dot like any doc moment. Guarded, best-effort, NOT a
           // signed op (install = infrastructure, deliberately outside the Z fold lane).
@@ -656,7 +683,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var seedFile = (seedParam && /^[\w.-]+\.db$/.test(seedParam)) ? seedParam : 'ad_seed.db';
     var src = seedParam ? 'gen:' + seedFile : 'network';
     if (!seedParam) {
-      var cached = await idbGet('ad_seed_v15');
+      var cached = await idbGet('ad_seed_v16');
       if (cached && cached.byteLength > 1000) {
         var sig = String.fromCharCode.apply(null, new Uint8Array(cached, 0, 6));
         if (sig === 'SQLite') { db = new SQL.Database(new Uint8Array(cached)); src = 'idb_cache'; }
@@ -665,7 +692,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!db) {
       var resp = await fetch(seedFile); var buf = await resp.arrayBuffer();
       db = new SQL.Database(new Uint8Array(buf));
-      if (!seedParam) idbPut('ad_seed_v15', buf);   // cache only the real seed, never a ?seed= override
+      if (!seedParam) idbPut('ad_seed_v16', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
@@ -724,12 +751,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (step === 'role' && _loginUser) { loginStep2(_loginUser); }
     else {
       var tenants = SES.listClients(db);
-      if (tenants.length >= 2) { _loginClient = null; loginStep0(tenants); }
-      else { _loginClient = tenants[0] || null; loginStep1(); }   // auto-skip: 0/1 tenant → user list (as before)
+      var demos = _demoTenants();   // ERP_CRITIC_UX_LANE.md P0/J1 — the 5 demo tenants, present at the front door
+      // FRONT DOOR: surface step 0 whenever ≥2 tenants are reachable (resident OR demo-ready). A bare seed used to
+      // auto-skip (1 resident) — now the 5 demo tenants make the "a demo all ready" first impression, no install step.
+      if (tenants.length + demos.length >= 2) { _loginClient = null; loginStep0(tenants, demos); }
+      else { _loginClient = tenants[0] || null; loginStep1(); }   // auto-skip only if truly <2 tenants total
     }
     _syncPillStage();   // §C — picker open = back at the front door → Install/Migrate visible again
   }
-  function loginStep0(tenants) {
+  // The demo tenants from ErpPicker.manifest (single source of truth) that are NOT yet resident — these are
+  // PRESENT at the front door and lazy-install on first pick (the same installShard the dialog drives). NON-INVENT:
+  // every demo maps to a real shard file that ships in the bundle; a tenant already merged drops out of this list.
+  function _demoTenants() {
+    var man = (window.ErpPicker && ErpPicker.manifest) || {};
+    var resident = {}; try { SES.listClients(db).forEach(function (c) { resident[c.id] = true; }); } catch (e) {}
+    return Object.keys(man).map(function (k) { var s = man[k];
+      return { key: k, id: s.client, name: s.name, file: s.file, poc: !!s.poc, demo: true }; })
+      .filter(function (t) { return t.id != null && !resident[t.id]; });
+  }
+  function loginStep0(tenants, demos) {
     $('idmp-login-step1').style.display = 'none';
     $('idmp-login-step2').style.display = 'none';
     $('idmp-login-step0').style.display = '';
@@ -749,7 +789,31 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }
       host.appendChild(row);
     });
-    console.log('§IDEMPIERE login-step0 tenants=' + (tenants ? tenants.length : 0));
+    // DEMO TENANTS — present + enterable with NO install dialog (lazy installShard on pick). Honest tag: ready vs PoC.
+    (demos || []).forEach(function (t) {
+      var row = el('div', 'idmp-login-user idmp-login-demo');
+      row.appendChild(el('span', 'av', (t.name || '?').charAt(0).toUpperCase()));
+      row.appendChild(el('span', 'nm', t.name));
+      var tag = el('span', 'tag'); tag.innerHTML = '<span class="idmp-demo-pip"></span>demo · ' + (t.poc ? 'PoC' : 'ready');
+      row.appendChild(tag);
+      row.addEventListener('click', function () { _enterDemoTenant(t, row, tag); });
+      host.appendChild(row);
+    });
+    console.log('§IDEMPIERE login-step0 tenants=' + ((tenants || []).length) + ' demos=' + ((demos || []).length));
+    console.log('§CRITIC-FRONTDOOR step0 resident=[' + (tenants || []).map(function (c) { return c.name; }).join(',')
+      + '] demo=[' + (demos || []).map(function (t) { return t.name + (t.poc ? '(PoC)' : ''); }).join(',') + '] install-dialog=N');
+  }
+  // Lazy-install a demo tenant on first pick, then land on its user list — NO Install dialog, NO ?shard= URL.
+  async function _enterDemoTenant(t, row, tag) {
+    if (row && row.classList.contains('installing')) return;   // guard double-tap
+    if (row) row.classList.add('installing'); if (tag) tag.innerHTML = '<span class="idmp-demo-pip busy"></span>installing…';
+    console.log('§CRITIC-FRONTDOOR pick demo=' + t.key + ' client=' + t.id + ' file=' + t.file);
+    var res = { ok: false };
+    try { res = await installShard(t.file); } catch (e) { console.warn('§CRITIC-FRONTDOOR install-err ' + e.message); }
+    console.log('§CRITIC-FRONTDOOR installed ' + t.file + ' ok=' + res.ok + ' rows=' + (res.mRow || 0) + ' clients=' + (res.clients != null ? res.clients : '?'));
+    var c = SES.listClients(db).filter(function (x) { return x.id === t.id; })[0];
+    if (c) { _loginClient = c; loginStep1(); }
+    else { if (row) row.classList.remove('installing'); if (tag) tag.innerHTML = '<span class="idmp-demo-pip"></span>unavailable'; showLogin('user'); }
   }
 
   // Task 3 — count user-created/edited records in the op-log for this tenant (ERP_AUDIT_CHANGELOG.md §TASK3).
@@ -810,7 +874,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-del-go').onclick = function () {
       var res = SES.deleteClient(db, c.id);
       if (!res.ok) { closeOv(); return; }
-      try { idbPut('ad_seed_v15', db.export().buffer); } catch (e) {}
+      try { idbPut('ad_seed_v16', db.export().buffer); } catch (e) {}
       console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=Y');
       try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
         label: 'Deleted tenant ' + c.name + ' (Client ' + c.id + ', ' + res.deleted + ' rows)' }); } catch (e) {}
@@ -1178,6 +1242,86 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
     document.body.appendChild(ov);
   }
+  // ── GRID_BATCH_FORM_PILL_SPEC item 5 — the form-view action toolbar relocated INTO the pill rail (red-pill
+  //    "just the pill" hides #idmp-toolbar, so New/Save/Process must live on the pill). Each binds BY ID to a
+  //    REAL existing handler — never forks a verb: New/Save = the CRUD ring + its #cfSave; Process = the FSM seam.
+  function _openCrudRing() {   // = the ✎ CRUD toolbar button (New/Save/Delete bundled in the ring), reused
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn || !_crudHas(tn)) { status('CRUD ring — this table is not editable (not in crud_ops)'); return; }
+    try { var ck = document.getElementById('crudModeCk'); if (ck && !ck.checked) { ck.checked = true; ck.dispatchEvent(new Event('change')); } } catch (e) {}
+    window.__crud.enable();
+    var tries = 0; (function tryOpen() { if (window.__crud.openRing && window.__crud.store && window.__crud.store()) { window.__crud.openRing(tn); console.log('§FORM-PILL crud-ring table=' + tn + ' record=' + _curRecPk()); } else if (tries++ < 30) { setTimeout(tryOpen, 60); } })();
+  }
+  // _openCreate (S2/J4) — iDempiere's OWN New: open the create FORM directly via the host seam (__crud.create),
+  //   NOT the visual ring fan (doctrine §0: the ring is Glass/Gravity-only). The create-twin of J5's Process seam:
+  //   same proven write lane (saveForm → signed CRUD_CREATE), iDempiere's own surface. Save = #cfSave (_formSave).
+  function _openCreate() {
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn) { status('New — open a window first'); console.log('§FORM-PILL new=skip(no-table)'); return; }
+    if (typeof window.__crud.create !== 'function') { _openCrudRing(); return; }   // pre-J4 fallback (older overlay)
+    // hostCreate runs _ensureStore (the crud_ops fetch is lazy) then checks entryFor/verbEnabled — so a New on the
+    //   very first click (before the store loads) resolves correctly; a non-creatable table logs §CRUD-HOSTCREATE skip.
+    window.__crud.create(tn);                                  // the form + CSS are mounted at overlay init — no enable()/ring needed (mirrors hostProcess)
+    console.log('§FORM-PILL new=create-form table=' + tn + ' (ring not fanned)');
+  }
+  // _openEdit / _openDelete (S2/J4 full-CRUD) — iDempiere's OWN Edit/Delete: open the edit form / delete-confirm
+  //   DIRECTLY on the SELECTED record via the host seam (__crud.update/remove), NOT the ring fan (doctrine §0).
+  //   The change-twin of _openCreate. Targets the open record's real pk (_records[_recIdx]); a synthetic-pk
+  //   (just-created, not yet in the bundle) row is skipped honestly — it has no bundle baseline to edit/delete yet.
+  function _selectedPkFor(verb) {
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn) { status(verb + ' — open a window first'); console.log('§FORM-PILL ' + verb + '=skip(no-table)'); return null; }
+    var rec = _records[_recIdx]; var id = rec ? recVal(rec, _keyCol(tab)) : null;
+    if (id == null || id === '') { status(verb + ' — open a record first'); console.log('§FORM-PILL ' + verb + '=skip(no-record)'); return null; }
+    // A synthetic (negative) pk is a SAVED draft that lives in the op-log (created via New); it IS editable —
+    //   the host seam loads it from the op-log (_recordFromOplog). Change the moment you save is the basic flow.
+    return { tn: tn, id: id };
+  }
+  function _openEdit() {
+    var t = _selectedPkFor('edit'); if (!t) return;
+    if (typeof window.__crud.update !== 'function') { _openCrudRing(); return; }   // pre-full-CRUD fallback (older overlay)
+    window.__crud.update(t.tn, t.id);
+    console.log('§FORM-PILL edit=edit-form table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+  }
+  function _openDelete() {
+    var t = _selectedPkFor('delete'); if (!t) return;
+    if (typeof window.__crud.remove !== 'function') { _openCrudRing(); return; }
+    window.__crud.remove(t.tn, t.id);
+    console.log('§FORM-PILL delete=delete-confirm table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+  }
+  function _formSave() {        // = iDempiere Save: persist the edits in the open CRUD overlay form (its #cfSave)
+    var sv = document.getElementById('cfSave');
+    if (sv) { sv.click(); console.log('§FORM-PILL save=clicked'); }
+    else { status('Save — open New or Edit a record first (nothing being edited)'); console.log('§FORM-PILL save=no-open-form'); }
+  }
+  function _showProcessChooser() {   // = iDempiere Process ▶: the record's legal DocAction set (the _fsmCtx seam)
+    var tab = _curTab(), rec = _records[_recIdx];
+    var ctx = (tab && rec) ? _fsmCtx(tab, rec) : null;
+    console.log('§FORM-PILL process-chooser record=' + (ctx ? ctx.recId : 'none') + ' legal=[' + (ctx ? ctx.legal.join(',') : '') + ']');
+    var old = document.getElementById('idmp-proc-ov'); if (old) old.remove();
+    var ov = el('div', null); ov.id = 'idmp-proc-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    var box = el('div', null);
+    box.style.cssText = 'background:#15101a;border:1px solid #4a2f44;border-radius:12px;padding:16px 18px;width:min(360px,94vw);color:#ecdcea;font:13px system-ui';
+    var hdr = el('div', null, 'Process ▶' + (ctx ? ('  ·  ' + (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds) : ''));
+    hdr.style.cssText = 'font-weight:700;font-size:15px;margin:0 0 12px;color:#fbeaf7'; box.appendChild(hdr);
+    if (!ctx) { var n0 = el('div', null, 'This record is not a document (no DocStatus to process).'); n0.style.color = '#c4a8c0'; box.appendChild(n0); }
+    else if (!ctx.legal.length) { var n1 = el('div', null, 'No legal actions from ' + ctx.ds + '.'); n1.style.color = '#c4a8c0'; box.appendChild(n1); }
+    else ctx.legal.forEach(function (act) {
+      var b = el('button', null, ACTION_LABEL[act] || act);
+      b.style.cssText = 'display:block;width:100%;text-align:left;margin:5px 0;background:#1e1622;color:#bff0dd;border:1px solid #2c6;border-radius:7px;padding:8px 12px;cursor:pointer;font-size:13px';
+      b.addEventListener('click', function () {
+        var res = ctx.dispatch(act);
+        console.log('§FORM-PILL process record=' + ctx.recId + ' act=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
+        ov.remove(); if (res.ok) refreshForm(); else window.alert('Action ' + (ACTION_LABEL[act] || act) + ' rejected: ' + res.reason);
+      });
+      box.appendChild(b);
+    });
+    var close = el('button', null, 'Close'); close.style.cssText = 'margin-top:12px;background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:5px 14px;cursor:pointer';
+    close.onclick = function () { ov.remove(); }; box.appendChild(close);
+    ov.appendChild(box); ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
   function renderTabStrip() {
     var w = _curWin(); var strip = $('idmp-tabstrip'); strip.style.display = 'flex'; strip.innerHTML = '';
     (w.tabs || []).forEach(function (tab, i) {
@@ -1258,7 +1402,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var orderBy = tab.orderByClause && tab.orderByClause.indexOf('@') < 0 ? tab.orderByClause : null;
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
-    _recIdx = 0; _setSel(tab);
+    _overlayListTip(tab, _records);  // S2/J4 — fold the op-log over the bundle: signed CRUD_CREATE rows APPEAR, edits overlay, deletes hide, then DocStatus reads-the-tip (S1/J5). Bundle immutable; op-log is truth.
+    _recIdx = 0; _gridSel = Object.create(null); _setSel(tab);   // fresh record set → clear any grid multi-select (item 4)
     // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
     _curPostingDoc = _isPostingDoc(tab.tableName);
     if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
@@ -1279,10 +1424,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (raw == null || raw === '') return '';
     var rt = f.referenceType;
     if (rt === 'yesno') return (raw === 'Y' || raw === true || raw === 1) ? '☑' : '☐';
-    if (rt === 'tableDirect' || rt === 'table' || rt === 'search') {
-      try { var n = ADD.resolveFK(db, f.columnName, raw); if (n) return n; } catch (e) {}
-      return String(raw);
-    }
+    // REFRESOLVE_SPEC.md W-REFRESOLVE: attempt reference resolution for EVERY column. resolveFK reads AD
+    // metadata itself (List / Table / Search / TableDir) and returns null when nothing resolves — so this is
+    // robust to fields whose referenceType is mislabeled (e.g. SalesRep_ID arrives as 'string') and to List
+    // refs (PaymentRule/DeliveryViaRule) the old tableDirect-only gate skipped entirely.
+    try { var n = ADD.resolveFK(db, f.columnName, raw); if (n) return n; } catch (e) {}
     return String(raw);
   }
   function renderBody() {
@@ -1305,19 +1451,97 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     else host.appendChild(buildForm(tab));
     updateStatus(tab);
     refreshForm();
+    // item 5 — re-evaluate showWhen:"form-view" pills now the view (grid/form) is settled.
+    if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
+  }
+  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select keyed by record PK (survives a grid re-render) + a batch
+  //   "gear" toolbar that fans _fsmCtx(tab,rec).dispatch over the LEGAL-ACTION INTERSECTION of the selection.
+  function _pkOf(tab, rec) { return String(recVal(rec, _keyCol(tab))); }
+  function _selectedRecs(tab) { return _records.filter(function (r) { return _gridSel[_pkOf(tab, r)]; }); }
+  function _renderBatchBar(tab) {
+    var bar = document.getElementById('idmp-batchbar'); if (!bar) return;
+    bar.innerHTML = '';
+    var sel = _selectedRecs(tab);
+    if (!sel.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    var gear = (window.ICONS && window.ICONS.settings) ? window.ICONS.settings.svg : '<circle cx="12" cy="12" r="3"/>';
+    var lead = el('span', 'idmp-batch-lead');
+    lead.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + gear + '</svg> ' + sel.length + ' selected';
+    bar.appendChild(lead);
+    // legal-action INTERSECTION across the selected DOC records (only tid 259 / DOC_FAMILY records contribute)
+    var ctxs = sel.map(function (r) { return _fsmCtx(tab, r); }).filter(Boolean);
+    var inter = null;
+    ctxs.forEach(function (c) { inter = (inter === null) ? c.legal.slice() : inter.filter(function (a) { return c.legal.indexOf(a) >= 0; }); });
+    inter = inter || [];
+    if (ctxs.length && inter.length) {
+      inter.forEach(function (act) {
+        var btn = el('button', 'idmp-batch-act', ACTION_LABEL[act] || act);
+        btn.setAttribute('data-batch-action', act);
+        btn.addEventListener('click', function () { _runBatch(tab, act); });
+        bar.appendChild(btn);
+      });
+    } else {
+      bar.appendChild(el('span', 'idmp-batch-none', ctxs.length ? 'no action legal for all selected' : 'not a document table'));
+    }
+    var clr = el('button', 'idmp-batch-clear', '✕'); clr.title = 'Clear selection';
+    clr.addEventListener('click', function () { _gridSel = Object.create(null); renderBody(); });
+    bar.appendChild(clr);
+  }
+  function _runBatch(tab, act) {
+    var sel = _selectedRecs(tab), ok = 0, rejected = [];
+    sel.forEach(function (r) {
+      var c = _fsmCtx(tab, r);
+      if (!c || c.legal.indexOf(act) < 0) { rejected.push((c ? c.recId : _pkOf(tab, r)) + ':illegal'); return; }
+      var res = c.dispatch(act);
+      if (res.ok) ok++; else rejected.push(c.recId + ':' + res.reason);
+    });
+    console.log('§GRID-BATCH table=' + tab.tableName + ' action=' + act + ' selected=' + sel.length +
+      ' ok=' + ok + ' rejected=[' + rejected.join(',') + ']');
+    renderBody();   // re-render grid: DocStatus chips advance, still-selected rows persist by PK, batch bar re-folds
   }
   function buildGrid(tab) {
     var cols = _displayFields(tab).slice(0, 7);
+    var batchbar = el('div'); batchbar.id = 'idmp-batchbar'; batchbar.style.display = 'none';   // item 4 — the gear/batch toolbar
     var table = el('table', 'idmp-grid');
     var thead = el('thead'); var htr = el('tr');
+    var thSel = el('th', 'idmp-cbcol');   // select-all
+    var allCk = el('input'); allCk.type = 'checkbox'; allCk.title = 'Select all'; allCk.id = 'idmp-grid-selall';
+    allCk.checked = _records.length > 0 && _selectedRecs(tab).length === _records.length;
+    allCk.addEventListener('click', function (e) { e.stopPropagation(); });
+    allCk.addEventListener('change', function () {
+      _records.forEach(function (r) { if (allCk.checked) _gridSel[_pkOf(tab, r)] = 1; else delete _gridSel[_pkOf(tab, r)]; });
+      table.querySelectorAll('tbody input[data-batch-cb]').forEach(function (cb) { cb.checked = allCk.checked; });
+      var cards = document.querySelector('.idmp-cards'); if (cards) cards.querySelectorAll('input[data-batch-cb]').forEach(function (cb) { cb.checked = allCk.checked; });
+      _renderBatchBar(tab);
+    });
+    thSel.appendChild(allCk); htr.appendChild(thSel);
+    // punch-list #2 — status-at-a-glance: a LEADING Status column for document windows when DocStatus isn't
+    // already one of the displayed columns (when it IS, that cell renders the chip in place — see row loop).
+    // Leading (not trailing) so the chip is always on-screen without horizontal scroll — the whole point.
+    var hasStatus = _tabHasStatus(tab);
+    var statusInCols = cols.some(function (f) { return /^docstatus$/i.test(f.columnName); });
+    var leadStatus = hasStatus && !statusInCols;
+    if (leadStatus) htr.appendChild(el('th', null, 'Status'));
     cols.forEach(function (f) { htr.appendChild(el('th', null, f.name)); });
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
-    if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = cols.length || 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
+    if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
     _records.forEach(function (rec, i) {
       var tr = el('tr'); tr.dataset.i = i;
+      var pk = _pkOf(tab, rec);
       tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
-      cols.forEach(function (f) { var td = el('td', null, fmt(f, recVal(rec, f.columnName))); td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td); });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
+      var tdCk = el('td', 'idmp-cbcol');
+      var ck = el('input'); ck.type = 'checkbox'; ck.setAttribute('data-batch-cb', '1'); ck.setAttribute('data-pk', pk); ck.checked = !!_gridSel[pk];
+      ck.addEventListener('click', function (e) { e.stopPropagation(); });   // checkbox ≠ open-form
+      ck.addEventListener('change', function () { if (ck.checked) _gridSel[pk] = 1; else delete _gridSel[pk]; _renderBatchBar(tab); var sa = document.getElementById('idmp-grid-selall'); if (sa) sa.checked = _selectedRecs(tab).length === _records.length; });
+      tdCk.appendChild(ck); tr.appendChild(tdCk);
+      if (leadStatus) { var tdS = el('td'); var ds = _recStatus(rec); tdS.appendChild(ds ? _statusChip(ds) : document.createTextNode('')); tdS.setAttribute('data-ad-col', 'DocStatus'); tr.appendChild(tdS); }
+      cols.forEach(function (f) {
+        var td;
+        if (/^docstatus$/i.test(f.columnName)) { td = el('td'); var ds0 = _recStatus(rec); td.appendChild(ds0 ? _statusChip(ds0) : document.createTextNode('')); }
+        else { td = el('td', null, fmt(f, recVal(rec, f.columnName))); }
+        td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
+      });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
       tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       tb.appendChild(tr);
     });
@@ -1326,8 +1550,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // MOBILE_CARDS.md §2/§3 — ONE DOM, two skins: the desktop table (UNCHANGED above) + a mobile .acc card
     // list. CSS toggles which shows (.idmp-cards{display:none} desktop; @≤760 .idmp-grid hidden, cards shown).
     var wrap = el('div', 'idmp-listwrap');
+    wrap.appendChild(batchbar);
     wrap.appendChild(table);
     wrap.appendChild(_buildCards(tab));
+    setTimeout(function () { _renderBatchBar(tab); }, 0);   // fold the batch bar once the wrap is in the DOM
     return wrap;
   }
   // MOBILE_CARDS.md §3 — one .acc card per record (reuses the ad_ui.js/accts_posted .acc/.hd/.bd/.lbl/.chv idiom):
@@ -1346,10 +1572,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var title = identFields.map(function (f) { return fmt(f, recVal(rec, f.columnName)); })
         .filter(function (v) { return v != null && v !== ''; }).join(' · ') || ('Record ' + (i + 1));
       var hd = el('div', 'hd');
+      var pk = _pkOf(tab, rec);
+      var ck = el('input'); ck.type = 'checkbox'; ck.className = 'idmp-card-cb'; ck.setAttribute('data-batch-cb', '1'); ck.setAttribute('data-pk', pk); ck.checked = !!_gridSel[pk];   // item 4 — multi-select on mobile
+      ck.addEventListener('click', function (e) { e.stopPropagation(); });
+      ck.addEventListener('change', function () { if (ck.checked) _gridSel[pk] = 1; else delete _gridSel[pk]; _renderBatchBar(tab); });
+      hd.appendChild(ck);
       var lbl = el('span', 'lbl');
       var chv = el('span', 'chv', '▶'); lbl.appendChild(chv);
       lbl.appendChild(el('span', 'idmp-card-title', title));
       hd.appendChild(lbl);
+      var _cds = _recStatus(rec); if (_cds) hd.appendChild(_statusChip(_cds));   // punch-list #2 — status-at-a-glance on mobile cards
       hd.appendChild(el('span', 'idmp-card-open', 'Open ›'));
       acc.appendChild(hd);
       var bd = el('div', 'bd');
@@ -1375,6 +1607,103 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     RA: 'Reverse — Accrual', RE: 'Re-Activate', XL: 'Unlock', IN: 'Invalidate', RJ: 'Reject', AP: 'Approve', PO: 'Post' };
   var DOCSTATUS_LABEL = { DR: 'Drafted', IP: 'In Progress', IN: 'Invalid', AP: 'Approved', NA: 'Not Approved',
     CO: 'Completed', CL: 'Closed', RE: 'Reversed', VO: 'Voided', WP: 'Waiting Payment', WC: 'Waiting Confirmation' };
+  // USER_JOURNEY_LANE punch-list #2 — status-at-a-glance. A record HAS a status iff it carries a DocStatus
+  // value (model-agnostic — any absorbed model with a DocStatus column lights up; no per-model hardcode).
+  function _recStatus(rec) { var ds = recVal(rec, 'DocStatus'); return (ds == null || ds === '') ? null : String(ds); }
+  function _tabHasStatus(tab) { return !!(_records.length && _records.some(function (r) { return _recStatus(r) != null; })); }
+  // S1/J5 (ERP_CRITIC_UX_LANE) — read-the-tip overlay for DOCUMENT status. A signed DocAction (commitProcess)
+  //   writes the new DocStatus to the kernel op-log (SET_STATUS), NOT the immutable bundle — so the rendered
+  //   status, and its SURVIVAL across reload, must READ THE TIP, the SAME verb the CRUD form (_overlayTip) and
+  //   ad_parser (setTipSource) use. For each loaded record carrying a DocStatus, overlay the latest signed
+  //   SET_STATUS `to`. Branch-aware (Blue Future). No tip / no overlay mounted → rows pass through unchanged.
+  function _readBr() { return (window.BlueFuture && typeof window.BlueFuture.readBranch === 'function') ? window.BlueFuture.readBranch() : null; }
+  // _applyDocTip — the SYNC core of the read-the-tip status overlay (given an OPEN sidecar): for each loaded
+  //   record carrying a DocStatus, overlay the latest signed SET_STATUS `to`. Returns the # of rows advanced.
+  //   Shared by _overlayDocTip (the J5 DOC_ACTION path) and _overlayListTip (the J4 full-row-set path) so the
+  //   status overlay is identical on a freshly-created row and a bundle row — ONE verb, no fork.
+  function _applyDocTip(tab, recs, sdb, br) {
+    var c = window.__crud, tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!sdb || !tn || !recs || !c || !c.core || typeof c.core.readTip !== 'function') return 0;
+    var n = 0;
+    recs.forEach(function (r) {
+      var dsKey = _recKey(r, 'DocStatus'); if (!(dsKey in r)) return;
+      var id = recVal(r, _keyCol(tab)); if (id == null) return;
+      var tip = c.core.readTip(sdb, tn, id, br);
+      if (tip != null && String(tip) !== String(r[dsKey])) { r[dsKey] = tip; n++; }
+    });
+    return n;
+  }
+  function _overlayDocTip(tab, recs) {
+    if (!recs || !recs.length || !tab || !window.__crud) return;
+    var c = window.__crud;
+    if (typeof c.withSidecar !== 'function' || !c.core || typeof c.core.readTip !== 'function') return;
+    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null; if (!tn) return;
+    // HYDRATE the kernel sidecar from IndexedDB before reading — it is LAZY (null on a fresh page load), so a
+    // synchronous kernelDb() would miss a persisted status and the signed CO would "vanish" on reload. withSidecar
+    // loads it once; we then overlay + repaint the CURRENT view (async), guarding against a navigation meanwhile.
+    c.withSidecar(function (sdb) {
+      if (!sdb || recs !== _records) return;
+      var br = _readBr();
+      var n = _applyDocTip(tab, recs, sdb, br);
+      if (n) {
+        console.log('§DOC-TIP overlay table=' + tn + ' rows=' + recs.length + ' advanced=' + n + ' source=readTip(SET_STATUS)' + (br ? ' branch=' + br : ''));
+        if (_viewMode === 'form') refreshForm(); else renderBody();
+      }
+    });
+  }
+  // _overlayListTip (S2/J4 — ERP_CRITIC_UX_LANE) — generalizes _overlayDocTip to the FULL row set: fold
+  //   CORE.listTip over the loaded _records so a signed CRUD_CREATE row APPEARS (synthetic negative pk),
+  //   CRUD_UPDATE edits overlay, CRUD_DELETE tombstones HIDE — then overlay the SET_STATUS docstatus (the J5
+  //   verb) on the folded set so a freshly-created-then-Completed row reads its signed status too. The immutable
+  //   bundle (ad_seed/glassbowl_data) stays the BASELINE; created/edited/hidden live only in _records. Hydrates
+  //   the lazy sidecar so the new row SURVIVES RELOAD (the op id is durable). One repaint.
+  //   GATING (W-CRITIC-GATING, load-bearing): the SQL read already scoped the bundle rows to the session
+  //   client/org; listTip's created rows bypass that SQL, so re-apply the SAME client/org scope to created rows
+  //   (their stdDefaults carry AD_Client_ID/AD_Org_ID) — a created order shows ONLY in its own tenant.
+  //   crud_ops creatable tables are header-level (tabLevel 0) this leg; a created CHILD row's parent-FK scope is
+  //   the next generalization (§-noted), not silently dropped.
+  function _overlayListTip(tab, recs) {
+    if (!recs || !tab || !window.__crud) { return; }
+    var c = window.__crud;
+    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null; if (!tn) return;
+    if (typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { _overlayDocTip(tab, recs); return; }
+    c.withSidecar(function (sdb) {
+      if (!sdb || recs !== _records) return;                  // a navigation happened meanwhile → drop this stale pass
+      var br = _readBr(), pkCol = _keyCol(tab), folded = null;
+      try { folded = c.core.listTip(sdb, tn, pkCol, recs, br); } catch (e) { folded = null; }
+      var rows = (folded && folded.rows) || recs;
+      var created = (folded && folded.created) || [], hidden = (folded && folded.hidden) || [], updated = (folded && folded.updated) || [];
+      // gate created rows to the session client/org (the SAME scope the bundle SELECT applied to base rows).
+      if (created.length && _session) {
+        var createdSet = {}; created.forEach(function (p) { createdSet[String(p)] = 1; });
+        var cid = _session.client ? _session.client.id : null;
+        var oid = (_session.org && _session.org.id !== 0) ? _session.org.id : null;
+        rows = rows.filter(function (r) {
+          if (!createdSet[String(recVal(r, pkCol))]) return true;           // base row — already SQL-scoped
+          if (cid != null) { var rc = recVal(r, 'AD_Client_ID'); if (rc !== '' && rc != null && Number(rc) !== 0 && Number(rc) !== Number(cid)) return false; }
+          if (oid != null) { var ro = recVal(r, 'AD_Org_ID');    if (ro !== '' && ro != null && Number(ro) !== 0 && Number(ro) !== Number(oid)) return false; }
+          return true;
+        });
+        var kept = {}; rows.forEach(function (r) { kept[String(recVal(r, pkCol))] = 1; });
+        created = created.filter(function (p) { return kept[String(p)]; });
+      }
+      var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
+      if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
+        _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
+        console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
+        if (_viewMode === 'form') refreshForm(); else renderBody();
+      }
+    });
+  }
+  // _statusChip(ds) — coloured dot (KanbanLens.statusColor) + human label (DOCSTATUS_LABEL). EXTRACT: every
+  // colour + label traces to the kanban colour map / the label map; the raw code stays as a title for traceability.
+  function _statusChip(ds) {
+    var color = (window.KanbanLens && window.KanbanLens.statusColor) ? window.KanbanLens.statusColor(ds) : '#6c7a89';
+    var chip = el('span', 'idmp-stchip'); chip.title = 'DocStatus · ' + ds;
+    var dot = el('span', 'dot'); dot.style.background = color; chip.appendChild(dot);
+    chip.appendChild(el('span', null, DOCSTATUS_LABEL[ds] || ds));
+    return chip;
+  }
   // better-sqlite3-shaped shim over the sql.js handle — the engines are node-witness API (prepare().get/.all).
   // ad_seed.db is a column SLICE of ad_full.db: an engine query touching an absent column (e.g.
   // c_doctype.iscanbereactivated) returns NO ROW instead of throwing → the engine's conservative default
@@ -1428,7 +1757,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     for (var k in rec) if (k.toLowerCase() === lc) return k;
     return col;
   }
-  function buildDocActionBar(tab, rec) {
+  // §FSM-CTX (GRID_BATCH_FORM_PILL_SPEC item 4) — ONE doc-action resolution seam shared by the FORM bar
+  //   (buildDocActionBar) AND the GRID batch bar (W-GRID-BATCH) AND the form Process ▶ pill (item 5). Returns the
+  //   record's legal FSM action set + an in-memory dispatch(act) — the SAME AdDocFsm path the form bar always used,
+  //   factored so the batch fan-out is "AdDocFsm.dispatch over N rows", NOT a forked verb. null when the table is
+  //   not a walked DocAction table (tid 259 / DOC_FAMILY) or the record carries no DocStatus.
+  function _fsmCtx(tab, rec) {
     if (!window.AdDocFsm || !rec) return null;
     var tid = Number(tab.tableId);
     if (tid !== 259 && !window.AdDocFsm.DOC_FAMILY[tid]) return null;   // not a walked DocAction table
@@ -1443,15 +1777,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var legal;
     try { legal = (tid === 259) ? window.AdDocFsm.legalActionsOrder(b, fsmRec) : window.AdDocFsm.legalActionsFor(b, tid, fsmRec); }
     catch (e) { console.log('§AD-DOCFSM-LIVE table=' + tid + ' err=' + e.message); return null; }
-    var recId = recVal(rec, _keyCol(tab));
-    console.log('§AD-DOCFSM-LIVE table=' + tid + '(' + tab.tableName + ') record=' + recId + ' status=' + ds +
-      ' legal=[' + legal.join(',') + '] periodOpen=' + po.open + '(' + po.why + ') backDate=true(named-default)');
-    var bar = el('div', 'idmp-docfsm');
-    bar.appendChild(el('span', 'chip st-' + ds, (DOCSTATUS_LABEL[ds] || ds) + ' · ' + ds));
-    legal.forEach(function (act) {
-      var btn = el('button', null, ACTION_LABEL[act] || act);
-      btn.setAttribute('data-doc-action', act);
-      btn.addEventListener('click', function () {
+    var theRecId = recVal(rec, _keyCol(tab));
+    return {
+      tid: tid, doctypeId: doctypeId, ds: ds, po: po, legal: legal, recId: theRecId,
+      // dispatch(act) — S1/J5: the FSM decides legality + the transition (synchronous, the same grain the form bar,
+      //   process chooser + grid batch always shared); on ok it advances rec.DocStatus OPTIMISTICALLY (immediate
+      //   chip/refresh) AND fires __crud.process to EXECUTE + SIGN that exact action on the SHARED signed lane
+      //   (commitProcess → completeFanout → signed commitGroup → persist). The ring NEVER opens. The persisted
+      //   status survives reload via the readTip overlay (_overlayDocTip); a DOC_ACTION commit refolds the view.
+      //   Returns the FSM result {ok,from,to,reason}.
+      dispatch: function (act) {
         var opts = null;
         if (tid === 259 && doctypeId) {
           var dt = b.prepare('SELECT docsubtypeso FROM c_doctype WHERE c_doctype_id=?').get(doctypeId);
@@ -1459,9 +1794,36 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         var res = (tid === 259) ? window.AdDocFsm.dispatchOrder(b, fsmRec, act, opts)
                                 : window.AdDocFsm.dispatchFor(b, tid, fsmRec, act);
-        console.log('§AD-DOCFSM-LIVE table=' + tid + '(' + tab.tableName + ') record=' + recId +
+        if (res.ok) {
+          rec[_recKey(rec, 'DocStatus')] = res.to;          // optimistic in-memory advance (immediate UI feedback)
+          if (window.__crud && typeof window.__crud.process === 'function') {
+            try {
+              window.__crud.process(tab.tableName, theRecId, act,
+                { from: res.from, to: res.to, doctypeId: doctypeId,
+                  outcome: (act === 'RC' || act === 'RA') ? 'reversal' : 'success' });
+            } catch (e) { console.log('§FSM-CTX signed-process error table=' + tab.tableName + ' rec=' + theRecId + ' ' + (e && e.message)); }
+          } else {
+            console.log('§FSM-CTX signed-process SKIPPED (__crud.process absent) — in-memory preview only rec=' + theRecId);
+          }
+        }
+        return res;
+      }
+    };
+  }
+  function buildDocActionBar(tab, rec) {
+    var ctx = _fsmCtx(tab, rec); if (!ctx) return null;
+    console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId + ' status=' + ctx.ds +
+      ' legal=[' + ctx.legal.join(',') + '] periodOpen=' + ctx.po.open + '(' + ctx.po.why + ') backDate=true(named-default)');
+    var bar = el('div', 'idmp-docfsm');
+    bar.appendChild(el('span', 'chip st-' + ctx.ds, (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds));
+    ctx.legal.forEach(function (act) {
+      var btn = el('button', null, ACTION_LABEL[act] || act);
+      btn.setAttribute('data-doc-action', act);
+      btn.addEventListener('click', function () {
+        var res = ctx.dispatch(act);
+        console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId +
           ' clicked=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
-        if (res.ok) { rec[_recKey(rec, 'DocStatus')] = res.to; refreshForm(); }
+        if (res.ok) refreshForm();
         else window.alert('Action ' + (ACTION_LABEL[act] || act) + ' rejected: ' + res.reason);
       });
       bar.appendChild(btn);
@@ -1837,7 +2199,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // Leg 2: on a committed dictionary edit, invalidate the cached window model + re-fold (re-read AD → repaint).
   // openWindow caches _openWins[winId]; deleting it forces a fresh AD read that now sees the overlaid edit.
   window.addEventListener('overlay:committed', function (e) {
-    var t = (e.detail && e.detail.table) ? String(e.detail.table) : '';
+    var d = e.detail || {};
+    var t = d.table ? String(d.table) : '';
+    // S1/J5 — a signed DOCUMENT action (Complete/Void/Close/ReActivate/…) committed. Re-read the now-signed
+    //   DocStatus onto the loaded records via the readTip overlay + repaint the CURRENT view (no view reset):
+    //   the persisted status shows immediately and survives reload (the bundle is immutable; the op-log is truth).
+    if (d.op_type === 'DOC_ACTION') {
+      try { _overlayDocTip(_curTab(), _records); } catch (er) {}
+      console.log('§DOC-COMMIT-LIVE refold table=' + t + ' id=' + (d.id == null ? '?' : d.id) + ' to=' + (d.to || '?') + ' view=' + _viewMode);
+      if (_viewMode === 'form') refreshForm(); else renderBody();
+      return;
+    }
+    // S2/J4 — a signed CRUD write (New/edit/delete) committed on a DATA table. Re-fold listTip over the loaded
+    //   records so the created row APPEARS (or an edit/delete reflects) on the CURRENT view, without a window
+    //   reset — then it persists + survives reload (handled by renderActiveTab's _overlayListTip on next load).
+    if (d.op_type === 'CRUD_CREATE' || d.op_type === 'CRUD_UPDATE' || d.op_type === 'CRUD_DELETE') {
+      var ct = _curTab();
+      if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
+        console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
+        try { _overlayListTip(ct, _records); } catch (er) {}
+      }
+      return;
+    }
     if (!/^AD_/i.test(t)) return;                              // only DICTIONARY edits refold the model
     var wid = _activeWin;
     console.log('§AD-SELFEDIT-LIVE refold table=' + t + ' win=' + wid);
@@ -2220,6 +2603,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor, install: openInstallFor, migrate: openMigrateFor,
       erpdoc: openReadCompare, showme: toggleShowMe,
+      // GRID_BATCH_FORM_PILL_SPEC item 5 — form-view action toolbar relocated into the pill (red-pill hides
+      //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
+      formproc: function () { _showProcessChooser(); },
+      formnew: function () { _openCreate(); },
+      formedit: function () { _openEdit(); },
+      formdel: function () { _openDelete(); },
+      formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
       editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
@@ -2272,6 +2662,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     // §AD-GATE — the host answer for showWhen:"posting-doc" pills: true only when a posting document is open.
     window.IdmpPillDocGate = function () { return _curPostingDoc; };
+    // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills surface ONLY
+    //   with a record open in FORM view (so they don't clutter the grid / front door). renderBody re-evaluates.
+    window.IdmpPillFormGate = function () { return !!(_session && _curTab() && _viewMode === 'form'); };
     // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
     window.IdmpPillPosGate = function () {
       try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }

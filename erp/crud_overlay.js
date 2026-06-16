@@ -354,11 +354,11 @@
   function listTip(db, table, pkCol, baseRows, branch) {
     var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
     var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
-    var created = [], hidden = [], want = String(table || '').toLowerCase();
-    if (!db) return { rows: rows, created: created, hidden: hidden };
+    var created = [], hidden = [], updated = [], want = String(table || '').toLowerCase();
+    if (!db) return { rows: rows, created: created, hidden: hidden, updated: updated };
     try {
       var r = db.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
-      if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden };
+      if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden, updated: updated };
       r[0].values.forEach(function (row) {
         var opId = row[0], type = row[1], opTs = row[3], p;
         try { p = JSON.parse(row[2]); } catch (e) { return; }
@@ -392,6 +392,7 @@
         } else if (type === 'CRUD_UPDATE') {
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
           if (ex) {
+            if (updated.indexOf(p.id) < 0) updated.push(p.id);   // S2/J4 — report the touched row so the host overlay repaints on a pure edit
             var ch = p.changes || {}; for (var cc in ch) if (ch.hasOwnProperty(cc)) ex[cc] = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc];
             // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
             var ucols = _getTableCols(want);
@@ -407,7 +408,8 @@
     var hideSet = {}; hidden.forEach(function (h) { hideSet[String(h)] = 1; });
     rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])]; });
     created = created.filter(function (c) { return !hideSet[String(c)]; });
-    return { rows: rows, created: created, hidden: hidden };
+    updated = updated.filter(function (u) { return !hideSet[String(u)]; });
+    return { rows: rows, created: created, hidden: hidden, updated: updated };
   }
 
   // gateOp — the owner-gate + CAS pre-seal check (SO_FULL_CRUD_GAP.md T4 / GAP 4 — Witness: W-CRUD-GATE).
@@ -675,17 +677,23 @@
   function today() { try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; } }
   function entryFor(key) { return STORE && !isMeta(key) && STORE[key] ? (function () { var e = STORE[key]; e.key = key; return e; })() : null; }
 
+  // _ensureStore — load the keyed crud_ops.json store once (idempotent). Shared by Edit-mode enable AND the
+  // host DocAction lane (hostProcess), which fires WITHOUT enabling Edit mode and still needs the store's
+  // entry config + __meta.docPolicy. cb runs once STORE is available (or on load-error, with STORE still null).
+  function _ensureStore(cb) {
+    if (STORE) { cb(); return; }
+    fetch('crud_ops.json').then(function (r) { return r.json(); }).then(function (j) { STORE = j; cb(); })
+      .catch(function (e) { console.warn('§CRUD store load-error', e && e.message); cb(); });
+  }
+
   // ── enable/disable ────────────────────────────────────────────────────────
   function enable() {
     on = true;
-    function go() {
+    _ensureStore(function () {
       buildHots();
       if (!raf) raf = requestAnimationFrame(loop);
       console.log('§CRUD mode=on rings=' + hots.length);
-    }
-    if (STORE) { go(); return; }
-    fetch('crud_ops.json').then(function (r) { return r.json(); }).then(function (j) { STORE = j; go(); })
-      .catch(function (e) { console.warn('§CRUD load-error', e && e.message); });
+    });
   }
   function disable() { on = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } clearHots(); closeRing(); closeForm(); statusBar.className = ''; console.log('§CRUD mode=off'); }
 
@@ -800,14 +808,155 @@
     });
   }
 
+  // ── hostProcess (S1/J5 — ERP_CRITIC_UX_LANE) — the host-callable parameterized doProcess. iDempiere's OWN
+  // DocAction surfaces (form Process ▶ pill, DocAction bar, grid gear-batch) call this to EXECUTE + SIGN a
+  // chosen action on the SHARED signed lane: applyOp → commitProcess → completeFanout → signed commitGroup →
+  // persist. NO ring STORE entry is required and the ring NEVER opens — the op is built from explicit params.
+  // The host FSM (AdDocFsm via _fsmCtx) decides WHICH action is legal + its transition; this lane signs EXACTLY
+  // that one (no split-brain — `to`/`outcome` come from the caller). ownerGated/oracle reuse the SAME crud_ops
+  // entry the ring path uses (entryFor), so behaviour is identical to the proven W-SO-COMPLETE-UI ring path.
+  // opts = { from, to, outcome, doctypeId, ownerGated, oracle }. Returns the DOC_ACTION op (already fired).
+  function hostProcess(table, id, action, opts) {
+    opts = opts || {};
+    // ensure the crud_ops store is loaded BEFORE building/committing: it carries the entry (ownerGated/oracle)
+    // AND __meta.docPolicy (the fan-out decision table). It is otherwise loaded lazily only on Edit-mode enable —
+    // the ring path toggled ✎ first; iDempiere's pill/bar/batch do NOT, so without this the fan-out would always
+    // gate "no DOCPOLICY" and the owner-gate would be skipped. Idempotent; cached after the first call.
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase();
+      var e = entryFor(key);
+      var from = opts.from || 'DR';
+      var to = opts.to != null ? opts.to : from;
+      var outcome = opts.outcome || 'success';
+      // ownerGated defaults FALSE for a host DocAction: iDempiere governs Complete/Void/Close by ROLE access +
+      // FSM legality + period — NOT by "only the document's creator" (the createdby owner-gate is the glassbowl
+      // field-edit lane's single-writer rule, and it would here read the lit/first row, not op.id). The signed
+      // commit + chain verification still apply (integrity intact). A caller may opt INTO owner-gating via opts.
+      var op = { key: key, table: key, verb: 'process', op_type: 'DOC_ACTION',
+                 ownerGated: !!opts.ownerGated,
+                 op_uuid: null, id: id == null ? null : id,
+                 action: action, from: from, to: to, outcome: outcome, unmet: [],
+                 oracle: opts.oracle || (e && e.docAction && e.docAction.oracle) || null };
+      if (action === 'RC' || action === 'RA') op.reversal = true;
+      console.log('§CRUD-HOSTPROCESS table=' + key + ' id=' + op.id + ' action=' + action + ' from=' + from + ' to=' + to + ' outcome=' + outcome + ' ownerGated=' + op.ownerGated);
+      applyOp(op);
+    });
+  }
+
+  // ── hostCreate (S2/J4 — ERP_CRITIC_UX_LANE) — the host-callable New. iDempiere's OWN New pill calls this to
+  // open the SAME create form the ring's ＋ verb opens (openForm('create', …)) WITHOUT fanning the visual ring
+  // (doctrine §0: the ring is Glass/Gravity-only; iDempiere keeps its own surface). _ensureStore first so the
+  // crud_ops entry (fields + validation) is present even though Edit-mode was never toggled — same reason
+  // hostProcess pre-loads it. Save = the form's #cfSave → saveForm → ONE signed CRUD_CREATE (commitCrud), the
+  // proven write lane. Returns nothing; the form drives the rest.
+  function hostCreate(table) {
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase();
+      var e = entryFor(key);
+      if (!e) { console.log('§CRUD-HOSTCREATE table=' + key + ' skipped (not in crud_ops)'); return; }
+      if (!CORE.verbEnabled(e, 'create')) { console.log('§CRUD-HOSTCREATE table=' + key + ' skipped (create not permitted)'); return; }
+      console.log('§CRUD-HOSTCREATE table=' + key + ' open=create-form (ring not fanned)');
+      openForm('create', e);
+    });
+  }
+  // ── hostUpdate / hostDelete (S2/J4 full-CRUD) — the host-callable Edit + Delete, the change-twin of hostCreate.
+  // iDempiere's OWN Edit/Delete pills call these to open the edit form / delete-confirm DIRECTLY on a SPECIFIC
+  // record id (the open record), WITHOUT fanning the visual ring (doctrine §0). Same proven write lane:
+  // openForm('update') → #cfSave → saveForm → signed CRUD_UPDATE; openDeleteConfirm → signed CRUD_DELETE. The
+  // _overlayListTip fold then overlays the edit / tombstones the row in the grid (survives reload). Change is the
+  // most basic AD usage — re-pointed off the ring so it works on iDempiere's surface, not just the Glass ring.
+  function hostUpdate(table, id) {
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e) { console.log('§CRUD-HOSTUPDATE table=' + key + ' skipped (not in crud_ops)'); return; }
+      if (!CORE.verbEnabled(e, 'update')) { console.log('§CRUD-HOSTUPDATE table=' + key + ' skipped (update not permitted)'); return; }
+      console.log('§CRUD-HOSTUPDATE table=' + key + ' id=' + (id == null ? 'null' : id) + ' open=edit-form (ring not fanned)');
+      openForm('update', e, id == null ? null : id);
+    });
+  }
+  function hostDelete(table, id) {
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e) { console.log('§CRUD-HOSTDELETE table=' + key + ' skipped (not in crud_ops)'); return; }
+      if (!CORE.verbEnabled(e, 'delete')) { console.log('§CRUD-HOSTDELETE table=' + key + ' skipped (delete not permitted)'); return; }
+      console.log('§CRUD-HOSTDELETE table=' + key + ' id=' + (id == null ? 'null' : id) + ' open=delete-confirm (ring not fanned)');
+      openDeleteConfirm(e, id == null ? null : id);
+    });
+  }
+
+  // ── §CRUD-CALLOUT (S2/J4) — fire the PROVEN AD callout engine (ad_callout.js, W-CALLOUT) on a create-form
+  // field change so price/defaults FILL like iDempiere, instead of being hand-typed. The dispatch + the line
+  // handlers (amt/qty/product) are the ENGINE's; the W-CALLOUT witness PINS installDefaultHandlers at 6, so the
+  // header bPartner default is registered HERE as HOST GLUE (not in the engine) — a faithful CalloutOrder.bPartner
+  // slice: bill-to defaults to the order BP, the price list from that BP. The accessors (bpDefaults/productPrice)
+  // read the immutable bundle (the real join), never invent. NON-INVENT: the callout NAME + the field it fires on
+  // are AD data (ad_column.callout); every derived value traces to a bundle row.
+  var _calloutHostReady = false;
+  function _ensureHostCallouts() {
+    if (_calloutHostReady || !global.AdCallout) return;
+    _calloutHostReady = true;
+    if (!global.AdCallout.hasHandler('org.compiere.model.CalloutOrder.bPartner')) {
+      global.AdCallout.registerHandler('org.compiere.model.CalloutOrder.bPartner', function (ctx, info) {
+        var r = info.record || {};
+        var bp = Number(r.C_BPartner_ID || r.c_bpartner_id || 0); if (!bp) return { derived: {} };
+        var d = {};
+        var billNow = Number(r.Bill_BPartner_ID || r.bill_bpartner_id || 0);
+        if (!billNow) d.Bill_BPartner_ID = bp;                              // bill-to defaults to the order BP
+        var pl = ctx.bpDefaults ? ctx.bpDefaults(bp) : null;               // price list from the BP (SO)
+        if (pl && pl.priceListId != null && pl.priceListId !== '') d.M_PriceList_ID = pl.priceListId;
+        return { derived: d, note: 'bill+pricelist defaulted from BP ' + bp };
+      });
+      console.log('§CRUD-CALLOUT host bPartner handler registered (CalloutOrder.bPartner — bill+pricelist default; engine handlers untouched)');
+    }
+  }
+  function fireCreateCallout(e, changedCol) {
+    if (!global.AdCallout || typeof withBundle !== 'function' || !e || !changedCol) return;
+    _ensureHostCallouts();
+    withBundle(function (bdb) {
+      if (!bdb) return;
+      var b3 = _mvB3(bdb), vals = gatherVals(e);
+      var ctx = {
+        bpDefaults: function (bpId) {
+          try { var row = b3.prepare('SELECT m_pricelist_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(bpId));
+            return row ? { priceListId: row.m_pricelist_id } : null; } catch (er) { return null; }
+        },
+        productPrice: function (pid) {   // forward-compat for a c_orderline create (next leg) — the real price-list join
+          try { var row = b3.prepare('SELECT pp.pricestd, pp.pricelist FROM m_productprice pp JOIN m_pricelist_version v ON v.m_pricelist_version_id=pp.m_pricelist_version_id WHERE pp.m_product_id=? LIMIT 1').get(Number(pid));
+            return row ? { priceStd: row.pricestd, priceList: row.pricelist } : null; } catch (er) { return null; }
+        }
+      };
+      var res = global.AdCallout.dispatch(b3, { table: e.key, column: changedCol, record: vals }, ctx) || {};
+      var derived = res.derived || {}, applied = [];
+      Object.keys(derived).forEach(function (c) {
+        var inEl = form.querySelector('[data-col="' + c + '"]') || form.querySelector('[data-col="' + String(c).toLowerCase() + '"]');
+        if (inEl && !inEl.disabled) { inEl.value = derived[c] == null ? '' : derived[c]; applied.push(c); }
+      });
+      var short = function (n) { return String(n).split('.').slice(-2).join('.'); };
+      console.log('§CRUD-CALLOUT table=' + e.key + ' col=' + changedCol + ' callouts=[' + (res.callouts || []).map(short).join(',') + '] fired=[' + (res.fired || []).map(short).join(',') + '] absent=[' + (res.absent || []).map(short).join(',') + '] derived=' + JSON.stringify(derived) + ' applied=[' + applied.join(',') + ']');
+      if (applied.length && typeof applyAdLogic === 'function') try { applyAdLogic(e); } catch (er) {}
+    });
+  }
+
   // ── the form (bubble kind -> document form of its fields[]) ─────────────────
-  function openForm(verb, e) {
+  function openForm(verb, e, wantId) {
     var isEdit = verb === 'update';
     getRecord(e.key, function (rec) {
       var orig = isEdit ? (rec || {}) : null;
       var vals = isEdit ? assignVals(e, rec) : CORE.defaultsFor(e, today());
+      if (!isEdit) _seedDocNoPreview(e, vals);                 // pre-fill DocumentNo with the sequence preview (iDempiere New convention)
       renderForm(verb, e, vals, orig, isEdit ? recId(e.key, rec) : null);
-    });
+    }, wantId);
+  }
+  // _seedDocNoPreview — fill an empty DocumentNo on a New form with the sequence preview (the real next number,
+  //   so the numeric val rule passes); _allocDocNo finalises (consumes the sequence) on Save. NON-INVENT: the
+  //   number comes from AD_Sequence, never fabricated; if the table has no documentno field or no sequence, no-op.
+  function _seedDocNoPreview(e, vals) {
+    if (!e || !(e.fields || []).some(function (f) { return String(f.col).toLowerCase() === 'documentno'; })) return;
+    var cur = vals.documentno;
+    if (cur != null && String(cur) !== '' && String(cur) !== 'auto') return;   // a real default already present → keep
+    var pv = _previewDocNo(e.key);
+    vals.documentno = pv != null ? pv : '';
+    if (pv != null) console.log('§DOCNO-PREVIEW table=' + e.key + ' documentno=' + pv + ' (sequence preview, finalised on Save)');
   }
   function renderForm(verb, e, vals, orig, id) {
     var title = (verb === 'create' ? '＋ New ' : '✎ Edit ') + fname(e.key);
@@ -822,6 +971,13 @@
     applyAdLogic(e);                                            // §AD-LOGIC-LIVE — initial show/hide/enable/require off the AD
     var body = form.querySelector('.cfbody');                   // …and re-apply on every edit so the form REACTS like iDempiere
     if (body) { body.addEventListener('input', function () { applyAdLogic(e); }); body.addEventListener('change', function () { applyAdLogic(e); }); }
+    // §CRUD-CALLOUT (S2/J4) — on a create form, a field change fires the AD callout (price/defaults FILL like
+    //   iDempiere: e.g. C_BPartner_ID → bill-to + price list). Fires AFTER applyAdLogic; derived siblings filled.
+    if (verb === 'create' && body) body.addEventListener('change', function (ev) {
+      var el = ev.target && ev.target.closest ? ev.target.closest('[data-col]') : null;
+      var col = el ? el.getAttribute('data-col') : null;
+      if (col) fireCreateCallout(e, col);
+    });
     form.querySelector('.cfx').addEventListener('click', closeForm);
     form.querySelector('#cfCancel').addEventListener('click', closeForm);
     form.querySelector('#cfSave').addEventListener('click', function () { saveForm(verb, e, orig, id); });
@@ -958,7 +1114,10 @@
         Object.keys(mv.derived).forEach(function (c) {
           var inEl = form.querySelector('[data-col="' + c + '"]');
           if (inEl) inEl.value = mv.derived[c] == null ? '' : mv.derived[c];
-          if (Object.prototype.hasOwnProperty.call(vals, c) || (e.fields || []).some(function (f) { return f.col === c; })) vals[c] = mv.derived[c];
+          // a hook-derived value rides the op when it maps to a form field/val; on CREATE, a beforeSave-filled
+          // MANDATORY default that has NO visible field (e.g. M_Warehouse_ID defaulted from session context) must
+          // STILL persist on the new row — iDempiere saves what beforeSave derived. (UPDATE keeps the tight guard.)
+          if (Object.prototype.hasOwnProperty.call(vals, c) || (e.fields || []).some(function (f) { return f.col === c; }) || verb === 'create') vals[c] = mv.derived[c];
         });
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' verdict=OK derived=' + JSON.stringify(mv.derived) + ' fired=' + mv.fired);
       } else if (mv) {
@@ -1014,6 +1173,18 @@
       all: function () { return run(sql, Array.prototype.slice.call(arguments), true); }
     }; } };
   }
+  // _docCtx — the session document context the beforeSave hooks consult (iDempiere Env). The default Warehouse
+  //   for the session org (else the client's first active warehouse) — read from m_warehouse, never invented.
+  function _docCtx(b) {
+    var ctx = {};
+    try {
+      var app = global.APP || {}, org = Number(app.orgId) || 0, cli = Number(app.clientId) || 0, wh = null;
+      if (org) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(org);
+      if ((!wh || wh.m_warehouse_id == null) && cli) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_client_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(cli);
+      if (wh && wh.m_warehouse_id != null) ctx.m_warehouse_id = Number(wh.m_warehouse_id);
+    } catch (e) {}
+    return ctx;
+  }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;
     if (!MV || !MV_INSTALLER[e.key] || typeof withBundle !== 'function') { cb(null); return; }
@@ -1026,13 +1197,16 @@
         if (orig) for (k in orig) rec[k.toLowerCase()] = orig[k];
         for (k in vals) rec[k.toLowerCase()] = vals[k];
         var info = { table: e.key, record: rec, recordOld: orig || null };
-        var v = MV.fireHooks('BEFORE_SAVE', info, {});
+        // ctx = the session document defaults the beforeSave hooks read (iDempiere's Env #context): chiefly the
+        //   default Warehouse, which MOrder.warehouseMandatory fills from ctx when the order carries none. NON-INVENT:
+        //   the warehouse is the session org's own active warehouse (else the client's first), read from m_warehouse.
+        var v = MV.fireHooks('BEFORE_SAVE', info, _docCtx(b));
         out = { ok: v.ok, fired: v.fired, blocked: v.blocked, error: v.error, derived: info.derived || null };
       } catch (er) { console.log('§AD-MODELVAL-LIVE error ' + (er && er.message) + ' → hooks skipped'); out = null; }
       cb(out);
     });
   }
-  function openDeleteConfirm(e) {
+  function openDeleteConfirm(e, wantId) {
     getRecord(e.key, function (rec) {
       var id = recId(e.key, rec);
       form.innerHTML = '<span class=cfx title=close>✕</span><div class=cfh>🗑 Delete ' + esc(fname(e.key)) + '</div>' +
@@ -1043,7 +1217,7 @@
       form.querySelector('.cfx').addEventListener('click', closeForm);
       form.querySelector('#cfCancel').addEventListener('click', closeForm);
       form.querySelector('#cfDel').addEventListener('click', function () { applyOp(CORE.buildOp('delete', e, {}, rec, { id: id }), e); closeForm(); });
-    });
+    }, wantId);
   }
   // closeForm(opts) — opts.saved===true after a committed Save: clear the draft (it's now official), no buffering.
   // A plain close/cancel/nav (or an Event from an onclick listener — no .saved) BUFFERS the dirty typing first.
@@ -1148,7 +1322,10 @@
       try {
         var or = db.exec('SELECT * FROM c_order WHERE c_order_id=' + Number(op.id) + ' LIMIT 1');
         if (!or.length || !or[0].values.length) { console.log('§SO-COMPLETE fan-out gated: order ' + op.id + ' not in bundle → status-only'); cb(null); return; }
-        var order = {}; or[0].columns.forEach(function (c, i) { order[c] = or[0].values[0][i]; });
+        // lower-case every column key: the engine (completeOrder/buildDoc) reads lower-case fields, and the host
+        // bundle's SELECT * returns ORIGINAL-case columns (C_DocType_ID, IsSOTrx) — without this the doctype reads
+        // undefined → the fan-out wrongly gates as "no DOCPOLICY". glassbowl_data.db was lower-case so it hid this.
+        var order = {}; or[0].columns.forEach(function (c, i) { order[String(c).toLowerCase()] = or[0].values[0][i]; });
         var lr = db.exec('SELECT c_orderline_id, m_product_id, qtyordered FROM c_orderline WHERE c_order_id=' + Number(op.id));
         var lines = (lr.length ? lr[0].values : []).map(function (v) { return { c_orderline_id: v[0], m_product_id: v[1], qtyordered: v[2] }; });
         var policy = CORE.docPolicyFor(STORE, order.c_doctype_id);
@@ -1160,6 +1337,18 @@
       } catch (er) { console.log('§SO-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
       cb(fanout);
     });
+  }
+
+  // _serializeCommit — run a signed commit EXCLUSIVELY. commitGroup is async (it awaits crypto.subtle.digest to
+  // seal the hash chain), so two commits launched on the same sidecar db interleave at the await points and TEAR
+  // the chain — the grid gear-batch fans N completes synchronously, the exact trigger (a later row's write was
+  // silently lost). Chain every signed commit through ONE queue: each reads a stable tip, seals + persists, then
+  // the next begins. task() must return a Promise; a rejected task must not wedge the queue. (S1/J5 hardening.)
+  var _commitChain = Promise.resolve();
+  function _serializeCommit(task) {
+    var run = _commitChain.then(task, task);
+    _commitChain = run.catch(function () {});
+    return run;
   }
 
   // commitProcess — the REAL signed write loop (W-CHAIN), now via §I-K commitGroup (Phase 3, UI tier):
@@ -1178,9 +1367,9 @@
       _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, db, function (gate) {
         if (!gate.ok) { _gateReject(op, gate); return; }
       completeFanout(op, function (fanout) {
-      try {
+      _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe)
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
-        Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
+        return Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
           return Promise.resolve(K.verifyChain(db)).then(function (v) {
             _sidePersist();
@@ -1199,9 +1388,13 @@
             setDocStatus(op.key, op.to, op.outcome, op.unmet);
             docDot(CORE.docLabel(op, fname(op.key)), op);
             toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
+            // S1/J5 — announce the committed DOCUMENT action so a host (iDempiere chrome) re-reads the now-signed
+            // DocStatus through its readTip overlay: the persisted CO shows + survives reload (op-log is the truth).
+            try { global.dispatchEvent(new CustomEvent('overlay:committed',
+              { detail: { table: op.table, op_type: 'DOC_ACTION', id: op.id == null ? null : op.id, to: op.to, action: op.action } })); } catch (ev) {}
           });
         }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); dryProcess(op); });
-      } catch (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); }
+      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); });
       });
       });
     });
@@ -1505,18 +1698,33 @@
   // Approach (a-simplified): number embedded in the op fields (replay-stable); sequence CurrentNext
   // bumped directly in the main db (state not in op-log — acceptable for demo; name the trade-off).
   // Returns the formatted DocumentNo, or null when no matching active sequence (named, not faked).
+  // _previewDocNo — the sequence's NEXT DocumentNo WITHOUT consuming it (iDempiere shows this preview on a New
+  //   form; the field is filled so the numeric val rule passes + the user isn't asked to type a doc number).
+  //   The real number is allocated (and the sequence consumed) at commit by _allocDocNo. Returns null if no seq.
+  function _previewDocNo(table) {
+    var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null; if (!mdb) return null;
+    var cols = _getTableCols(table); if (!cols['documentno']) return null;
+    try {
+      var r = mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", ['DocumentNo_' + table]);
+      if (!r.length || !r[0].values.length) return null;
+      var v = r[0].values[0]; return (v[1] || '') + v[0] + (v[2] || '');
+    } catch (e) { return null; }
+  }
   function _allocDocNo(table, fields) {
     var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
     if (!mdb) return null;
     var cols = _getTableCols(table);
     if (!cols['documentno']) return null;
-    if (fields && (fields['DocumentNo'] != null || fields['documentno'] != null)) return null; // user provided
     try {
       var seqName = 'DocumentNo_' + table;
       var r = mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", [seqName]);
       if (!r.length || !r[0].values.length) { console.log('§DOCNO no-sequence table=' + table + ' (named, not faked)'); return null; }
       var v = r[0].values[0], seqId = v[0], next = v[1], incr = v[2] || 1, prefix = v[3] || '', suffix = v[4] || '';
       var docNo = (prefix || '') + next + (suffix || '');
+      // honor a MANUAL override (a value the user changed AWAY from the preview); otherwise allocate (consume)
+      //   the sequence. The New form pre-fills the preview (= docNo), so an untouched field allocates this number.
+      var provided = fields ? (fields['DocumentNo'] != null ? fields['DocumentNo'] : fields['documentno']) : null;
+      if (provided != null && String(provided) !== '' && String(provided) !== String(docNo)) return null;
       mdb.run('UPDATE AD_Sequence SET CurrentNext=' + (next + incr) + ' WHERE AD_Sequence_ID=' + seqId);
       console.log('§DOCNO table=' + table + ' seq=' + seqName + ' next=' + next + ' docno=' + docNo + ' replay-stable=Y');
       return docNo;
@@ -1635,19 +1843,39 @@
   // getRecord — prefer the row in the currently-traced O2C chain (the lit instance), else the first row.
   // The immutable bundle row is the BASELINE; _overlayTip then layers the signed sidecar's read-the-tip
   // field values on top, so the form (re)opens on the tip value, not the stale original.
-  function getRecord(key, cb) {
+  function getRecord(key, cb, explicitId) {
     if (typeof withBundle !== 'function') { cb({}); return; }
-    var wantId = null;
-    try { if (typeof curChain !== 'undefined' && curChain) { for (var i = 0; i < curChain.length; i++) if (String(curChain[i].table).toLowerCase() === String(key).toLowerCase() && curChain[i].id != null) wantId = curChain[i].id; } } catch (er) {}
+    var wantId = (explicitId != null) ? explicitId : null;   // S2/J4 host Edit/Delete target a SPECIFIC record id
+    try { if (wantId == null && typeof curChain !== 'undefined' && curChain) { for (var i = 0; i < curChain.length; i++) if (String(curChain[i].table).toLowerCase() === String(key).toLowerCase() && curChain[i].id != null) wantId = curChain[i].id; } } catch (er) {}
     withBundle(function (db) {
       try {
         var pk = key + '_id', sql = wantId != null ? 'SELECT * FROM ' + key + ' WHERE ' + pk + '=' + wantId + ' LIMIT 1' : 'SELECT * FROM ' + key + ' ORDER BY ' + pk + ' LIMIT 1';
-        var res = db.exec(sql); if (!res.length || !res[0].values.length) { cb({}); return; }
+        var res = db.exec(sql);
+        if (!res.length || !res[0].values.length) { _recordFromOplog(key, wantId, cb); return; }   // S2/J4: a created (synthetic-pk) row lives ONLY in the op-log, not the bundle — fold it from there
         // expose each column under BOTH its original name and its lower-cased alias — the form (f.col is
         // lower-case) + recId resolve regardless of the surface's column casing (glassbowl lower vs iDempiere
         // SELECT * original-case). T3 host-mount (SO_FULL_CRUD_GAP.md GAP 3).
         var o = {}; res[0].columns.forEach(function (c, i) { var val = res[0].values[0][i]; o[c] = val; var lc = String(c).toLowerCase(); if (lc !== c && o[lc] === undefined) o[lc] = val; }); _overlayTip(key, o, cb);
       } catch (er) { cb({}); }
+    });
+  }
+  // _recordFromOplog — load a row that exists ONLY in the signed op-log (a created/synthetic-pk row), so the Edit
+  //   form can pre-fill it and a CHANGE is possible the moment a draft is saved — the most basic AD flow. Folds
+  //   listTip (CREATE + later UPDATE ops, latest-wins) and returns the matching row, lower-cased aliases exposed.
+  //   No id / no sidecar / not found → empty object (the caller renders a blank form, never crashes).
+  function _recordFromOplog(key, wantId, cb) {
+    if (wantId == null || typeof withSidecar !== 'function') { cb({}); return; }
+    withSidecar(function (sdb) {
+      if (!sdb) { cb({}); return; }
+      try {
+        var pkc = key + '_id';
+        var lt = CORE.listTip(sdb, key, pkc, [], _readBranch());
+        var hit = (lt && lt.rows || []).filter(function (r) { return String(r[pkc]) === String(wantId); })[0];
+        if (!hit) { console.log('§CRUD-OPLOG-ROW key=' + key + ' id=' + wantId + ' not-found (no create op)'); cb({}); return; }
+        var o = {}; for (var c in hit) if (hit.hasOwnProperty(c)) { o[c] = hit[c]; var lc = String(c).toLowerCase(); if (lc !== c && o[lc] === undefined) o[lc] = hit[c]; }
+        console.log('§CRUD-OPLOG-ROW key=' + key + ' id=' + wantId + ' loaded=' + Object.keys(hit).length + ' source=listTip');
+        cb(o);
+      } catch (e) { cb({}); }
     });
   }
   // _overlayTip — layer the signed sidecar's read-the-tip field values over the immutable bundle row.
@@ -1826,6 +2054,10 @@
 
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
+                    process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
+                    create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
+                    update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
+                    fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,

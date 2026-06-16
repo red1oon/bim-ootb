@@ -717,6 +717,26 @@ function audit4DSchedule(scheduleData, db, qtoData) {
 // ============================================================================
 // INIT — load DB, compute everything
 // ============================================================================
+// Peek the IDB cache without ever hitting the network — returns cached buf or null.
+// Lets 4D/5D run fully offline once a building's DB is in cache (meta OR full).
+async function peekDbCache(url) {
+  try {
+    const cacheDb = await new Promise(resolve => {
+      const req = indexedDB.open('bim_ootb_cache', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('dbs');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+    if (!cacheDb) return null;
+    return await new Promise(resolve => {
+      const tx = cacheDb.transaction('dbs', 'readonly');
+      const req = tx.objectStore('dbs').get(url);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch(e) { return null; }
+}
+
 // S238: Fetch DB buffer — checks bim_ootb_cache IDB first (same cache as scene.js), falls back to fetch
 // import:// URLs: IDB only (no network). OCI URLs: IDB first (scene.js wrote it), then network.
 async function fetchDbBuffer(url) {
@@ -958,17 +978,28 @@ async function init() {
     // Fallback — load DB the slow way (viewer not open or no response)
     console.log('§QTO_RELAY_MISS reason=' + (relay ? relay.error || 'empty' : 'timeout') +
       ' — loading DB from ' + (DB_URL.startsWith('import://') ? 'IndexedDB' : 'OCI'));
-    // §S260b+S274: Try _meta.db first (4D5D only needs metadata, not geometry)
+    // §S260b+S274: Try _meta.db first (4D5D only needs metadata, not geometry).
+    // OFFLINE-FIRST: peek the IDB cache before any network probe — serve whatever the
+    // viewer already cached (meta OR full _extracted.db) with zero network, so 4D/5D
+    // works offline for EVERY building once its DB is in. The HEAD probe (online-only)
+    // ran unconditionally before and threw offline, pointing at an uncached key.
     var _actualUrl = DB_URL;
     if (DB_URL.indexOf('_extracted.db') > -1) {
       var _metaUrl = DB_URL.replace('_extracted.db', '_meta.db');
-      if (DB_URL.startsWith('import://')) {
+      if (await peekDbCache(_metaUrl)) {
+        _actualUrl = _metaUrl;
+        console.log('§QTO_SPLIT_HIT_CACHE using cached ' + _metaUrl.split('/').pop());
+      } else if (await peekDbCache(DB_URL)) {
+        _actualUrl = DB_URL;
+        console.log('§QTO_FULL_HIT_CACHE using cached ' + DB_URL.split('/').pop());
+      } else if (DB_URL.startsWith('import://')) {
         // §S274: import:// URLs live in IDB — check cache via fetchDbBuffer
         try {
           var _metaBuf = await fetchDbBuffer(_metaUrl);
           if (_metaBuf) { _actualUrl = _metaUrl; console.log('§QTO_SPLIT_HIT_IDB using ' + _metaUrl + ' (' + Math.round(_metaBuf.byteLength/1024/1024) + 'MB)'); }
         } catch(e) {}
       } else {
+        // online: probe for a _meta.db to save bandwidth
         try {
           var _headResp = await fetch(_metaUrl, { method: 'HEAD' });
           if (_headResp.ok) {
@@ -982,7 +1013,23 @@ async function init() {
       locateFile: f => 'lib/' + f
     });
     document.getElementById('info').textContent = 'Loading ' + _actualUrl + '...';
-    const buf = await fetchDbBuffer(_actualUrl);
+    // _meta.db split is an OPTIMIZATION, never a hard dependency — fall back to the sibling.
+    var buf = null;
+    try {
+      buf = await fetchDbBuffer(_actualUrl);
+    } catch(e) {
+      var _fallback = (_actualUrl === DB_URL) ? DB_URL.replace('_extracted.db', '_meta.db') : DB_URL;
+      console.log('§QTO_DB_FALLBACK ' + _actualUrl.split('/').pop() + ' failed (' + e.message + ') — trying ' + _fallback.split('/').pop());
+      try { _actualUrl = _fallback; buf = await fetchDbBuffer(_actualUrl); }
+      catch(e2) { console.log('§QTO_DB_UNAVAILABLE offline + not cached — prompting to load building first'); }
+    }
+    // No DB anywhere (offline and this building was never opened in the viewer) — don't crash;
+    // tell the user to load it first: open it in the viewer while online.
+    if (!buf) {
+      document.getElementById('info').innerHTML =
+        '⏳ ' + (typeof _t === 'function' ? _t('ui_load_db_first','Load the building first — open it in the 3D viewer while online to cache its data, then reopen this report.') : 'Load the building first — open it in the 3D viewer while online to cache its data, then reopen this report.');
+      return;
+    }
     db = new SQL.Database(new Uint8Array(buf));
     console.log('§DB_INIT loadMs=' + Math.round(performance.now() - _t0) + ' size=' + Math.round(buf.byteLength / 1024 / 1024) + 'MB');
 
