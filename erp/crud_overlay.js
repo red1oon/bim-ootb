@@ -354,11 +354,11 @@
   function listTip(db, table, pkCol, baseRows, branch) {
     var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
     var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
-    var created = [], hidden = [], want = String(table || '').toLowerCase();
-    if (!db) return { rows: rows, created: created, hidden: hidden };
+    var created = [], hidden = [], updated = [], want = String(table || '').toLowerCase();
+    if (!db) return { rows: rows, created: created, hidden: hidden, updated: updated };
     try {
       var r = db.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
-      if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden };
+      if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden, updated: updated };
       r[0].values.forEach(function (row) {
         var opId = row[0], type = row[1], opTs = row[3], p;
         try { p = JSON.parse(row[2]); } catch (e) { return; }
@@ -392,6 +392,7 @@
         } else if (type === 'CRUD_UPDATE') {
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
           if (ex) {
+            if (updated.indexOf(p.id) < 0) updated.push(p.id);   // S2/J4 — report the touched row so the host overlay repaints on a pure edit
             var ch = p.changes || {}; for (var cc in ch) if (ch.hasOwnProperty(cc)) ex[cc] = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc];
             // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
             var ucols = _getTableCols(want);
@@ -407,7 +408,8 @@
     var hideSet = {}; hidden.forEach(function (h) { hideSet[String(h)] = 1; });
     rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])]; });
     created = created.filter(function (c) { return !hideSet[String(c)]; });
-    return { rows: rows, created: created, hidden: hidden };
+    updated = updated.filter(function (u) { return !hideSet[String(u)]; });
+    return { rows: rows, created: created, hidden: hidden, updated: updated };
   }
 
   // gateOp — the owner-gate + CAS pre-seal check (SO_FULL_CRUD_GAP.md T4 / GAP 4 — Witness: W-CRUD-GATE).
@@ -857,6 +859,30 @@
       openForm('create', e);
     });
   }
+  // ── hostUpdate / hostDelete (S2/J4 full-CRUD) — the host-callable Edit + Delete, the change-twin of hostCreate.
+  // iDempiere's OWN Edit/Delete pills call these to open the edit form / delete-confirm DIRECTLY on a SPECIFIC
+  // record id (the open record), WITHOUT fanning the visual ring (doctrine §0). Same proven write lane:
+  // openForm('update') → #cfSave → saveForm → signed CRUD_UPDATE; openDeleteConfirm → signed CRUD_DELETE. The
+  // _overlayListTip fold then overlays the edit / tombstones the row in the grid (survives reload). Change is the
+  // most basic AD usage — re-pointed off the ring so it works on iDempiere's surface, not just the Glass ring.
+  function hostUpdate(table, id) {
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e) { console.log('§CRUD-HOSTUPDATE table=' + key + ' skipped (not in crud_ops)'); return; }
+      if (!CORE.verbEnabled(e, 'update')) { console.log('§CRUD-HOSTUPDATE table=' + key + ' skipped (update not permitted)'); return; }
+      console.log('§CRUD-HOSTUPDATE table=' + key + ' id=' + (id == null ? 'null' : id) + ' open=edit-form (ring not fanned)');
+      openForm('update', e, id == null ? null : id);
+    });
+  }
+  function hostDelete(table, id) {
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e) { console.log('§CRUD-HOSTDELETE table=' + key + ' skipped (not in crud_ops)'); return; }
+      if (!CORE.verbEnabled(e, 'delete')) { console.log('§CRUD-HOSTDELETE table=' + key + ' skipped (delete not permitted)'); return; }
+      console.log('§CRUD-HOSTDELETE table=' + key + ' id=' + (id == null ? 'null' : id) + ' open=delete-confirm (ring not fanned)');
+      openDeleteConfirm(e, id == null ? null : id);
+    });
+  }
 
   // ── §CRUD-CALLOUT (S2/J4) — fire the PROVEN AD callout engine (ad_callout.js, W-CALLOUT) on a create-form
   // field change so price/defaults FILL like iDempiere, instead of being hand-typed. The dispatch + the line
@@ -912,14 +938,14 @@
   }
 
   // ── the form (bubble kind -> document form of its fields[]) ─────────────────
-  function openForm(verb, e) {
+  function openForm(verb, e, wantId) {
     var isEdit = verb === 'update';
     getRecord(e.key, function (rec) {
       var orig = isEdit ? (rec || {}) : null;
       var vals = isEdit ? assignVals(e, rec) : CORE.defaultsFor(e, today());
       if (!isEdit) _seedDocNoPreview(e, vals);                 // pre-fill DocumentNo with the sequence preview (iDempiere New convention)
       renderForm(verb, e, vals, orig, isEdit ? recId(e.key, rec) : null);
-    });
+    }, wantId);
   }
   // _seedDocNoPreview — fill an empty DocumentNo on a New form with the sequence preview (the real next number,
   //   so the numeric val rule passes); _allocDocNo finalises (consumes the sequence) on Save. NON-INVENT: the
@@ -1180,7 +1206,7 @@
       cb(out);
     });
   }
-  function openDeleteConfirm(e) {
+  function openDeleteConfirm(e, wantId) {
     getRecord(e.key, function (rec) {
       var id = recId(e.key, rec);
       form.innerHTML = '<span class=cfx title=close>✕</span><div class=cfh>🗑 Delete ' + esc(fname(e.key)) + '</div>' +
@@ -1191,7 +1217,7 @@
       form.querySelector('.cfx').addEventListener('click', closeForm);
       form.querySelector('#cfCancel').addEventListener('click', closeForm);
       form.querySelector('#cfDel').addEventListener('click', function () { applyOp(CORE.buildOp('delete', e, {}, rec, { id: id }), e); closeForm(); });
-    });
+    }, wantId);
   }
   // closeForm(opts) — opts.saved===true after a committed Save: clear the draft (it's now official), no buffering.
   // A plain close/cancel/nav (or an Event from an onclick listener — no .saved) BUFFERS the dirty typing first.
@@ -1817,19 +1843,39 @@
   // getRecord — prefer the row in the currently-traced O2C chain (the lit instance), else the first row.
   // The immutable bundle row is the BASELINE; _overlayTip then layers the signed sidecar's read-the-tip
   // field values on top, so the form (re)opens on the tip value, not the stale original.
-  function getRecord(key, cb) {
+  function getRecord(key, cb, explicitId) {
     if (typeof withBundle !== 'function') { cb({}); return; }
-    var wantId = null;
-    try { if (typeof curChain !== 'undefined' && curChain) { for (var i = 0; i < curChain.length; i++) if (String(curChain[i].table).toLowerCase() === String(key).toLowerCase() && curChain[i].id != null) wantId = curChain[i].id; } } catch (er) {}
+    var wantId = (explicitId != null) ? explicitId : null;   // S2/J4 host Edit/Delete target a SPECIFIC record id
+    try { if (wantId == null && typeof curChain !== 'undefined' && curChain) { for (var i = 0; i < curChain.length; i++) if (String(curChain[i].table).toLowerCase() === String(key).toLowerCase() && curChain[i].id != null) wantId = curChain[i].id; } } catch (er) {}
     withBundle(function (db) {
       try {
         var pk = key + '_id', sql = wantId != null ? 'SELECT * FROM ' + key + ' WHERE ' + pk + '=' + wantId + ' LIMIT 1' : 'SELECT * FROM ' + key + ' ORDER BY ' + pk + ' LIMIT 1';
-        var res = db.exec(sql); if (!res.length || !res[0].values.length) { cb({}); return; }
+        var res = db.exec(sql);
+        if (!res.length || !res[0].values.length) { _recordFromOplog(key, wantId, cb); return; }   // S2/J4: a created (synthetic-pk) row lives ONLY in the op-log, not the bundle — fold it from there
         // expose each column under BOTH its original name and its lower-cased alias — the form (f.col is
         // lower-case) + recId resolve regardless of the surface's column casing (glassbowl lower vs iDempiere
         // SELECT * original-case). T3 host-mount (SO_FULL_CRUD_GAP.md GAP 3).
         var o = {}; res[0].columns.forEach(function (c, i) { var val = res[0].values[0][i]; o[c] = val; var lc = String(c).toLowerCase(); if (lc !== c && o[lc] === undefined) o[lc] = val; }); _overlayTip(key, o, cb);
       } catch (er) { cb({}); }
+    });
+  }
+  // _recordFromOplog — load a row that exists ONLY in the signed op-log (a created/synthetic-pk row), so the Edit
+  //   form can pre-fill it and a CHANGE is possible the moment a draft is saved — the most basic AD flow. Folds
+  //   listTip (CREATE + later UPDATE ops, latest-wins) and returns the matching row, lower-cased aliases exposed.
+  //   No id / no sidecar / not found → empty object (the caller renders a blank form, never crashes).
+  function _recordFromOplog(key, wantId, cb) {
+    if (wantId == null || typeof withSidecar !== 'function') { cb({}); return; }
+    withSidecar(function (sdb) {
+      if (!sdb) { cb({}); return; }
+      try {
+        var pkc = key + '_id';
+        var lt = CORE.listTip(sdb, key, pkc, [], _readBranch());
+        var hit = (lt && lt.rows || []).filter(function (r) { return String(r[pkc]) === String(wantId); })[0];
+        if (!hit) { console.log('§CRUD-OPLOG-ROW key=' + key + ' id=' + wantId + ' not-found (no create op)'); cb({}); return; }
+        var o = {}; for (var c in hit) if (hit.hasOwnProperty(c)) { o[c] = hit[c]; var lc = String(c).toLowerCase(); if (lc !== c && o[lc] === undefined) o[lc] = hit[c]; }
+        console.log('§CRUD-OPLOG-ROW key=' + key + ' id=' + wantId + ' loaded=' + Object.keys(hit).length + ' source=listTip');
+        cb(o);
+      } catch (e) { cb({}); }
     });
   }
   // _overlayTip — layer the signed sidecar's read-the-tip field values over the immutable bundle row.
@@ -2010,6 +2056,7 @@
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
+                    update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
