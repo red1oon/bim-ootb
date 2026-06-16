@@ -504,7 +504,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
-<script src="idmp_pills.js?v=13"></script>
+<script src="idmp_pills.js?v=14"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=2" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -515,7 +515,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=13"></script>
+<script src="crud_overlay.js?v=14"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1264,6 +1264,31 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.__crud.create(tn);                                  // the form + CSS are mounted at overlay init — no enable()/ring needed (mirrors hostProcess)
     console.log('§FORM-PILL new=create-form table=' + tn + ' (ring not fanned)');
   }
+  // _openEdit / _openDelete (S2/J4 full-CRUD) — iDempiere's OWN Edit/Delete: open the edit form / delete-confirm
+  //   DIRECTLY on the SELECTED record via the host seam (__crud.update/remove), NOT the ring fan (doctrine §0).
+  //   The change-twin of _openCreate. Targets the open record's real pk (_records[_recIdx]); a synthetic-pk
+  //   (just-created, not yet in the bundle) row is skipped honestly — it has no bundle baseline to edit/delete yet.
+  function _selectedPkFor(verb) {
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn) { status(verb + ' — open a window first'); console.log('§FORM-PILL ' + verb + '=skip(no-table)'); return null; }
+    var rec = _records[_recIdx]; var id = rec ? recVal(rec, _keyCol(tab)) : null;
+    if (id == null || id === '') { status(verb + ' — open a record first'); console.log('§FORM-PILL ' + verb + '=skip(no-record)'); return null; }
+    // A synthetic (negative) pk is a SAVED draft that lives in the op-log (created via New); it IS editable —
+    //   the host seam loads it from the op-log (_recordFromOplog). Change the moment you save is the basic flow.
+    return { tn: tn, id: id };
+  }
+  function _openEdit() {
+    var t = _selectedPkFor('edit'); if (!t) return;
+    if (typeof window.__crud.update !== 'function') { _openCrudRing(); return; }   // pre-full-CRUD fallback (older overlay)
+    window.__crud.update(t.tn, t.id);
+    console.log('§FORM-PILL edit=edit-form table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+  }
+  function _openDelete() {
+    var t = _selectedPkFor('delete'); if (!t) return;
+    if (typeof window.__crud.remove !== 'function') { _openCrudRing(); return; }
+    window.__crud.remove(t.tn, t.id);
+    console.log('§FORM-PILL delete=delete-confirm table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
+  }
   function _formSave() {        // = iDempiere Save: persist the edits in the open CRUD overlay form (its #cfSave)
     var sv = document.getElementById('cfSave');
     if (sv) { sv.click(); console.log('§FORM-PILL save=clicked'); }
@@ -1647,7 +1672,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var br = _readBr(), pkCol = _keyCol(tab), folded = null;
       try { folded = c.core.listTip(sdb, tn, pkCol, recs, br); } catch (e) { folded = null; }
       var rows = (folded && folded.rows) || recs;
-      var created = (folded && folded.created) || [], hidden = (folded && folded.hidden) || [];
+      var created = (folded && folded.created) || [], hidden = (folded && folded.hidden) || [], updated = (folded && folded.updated) || [];
       // gate created rows to the session client/org (the SAME scope the bundle SELECT applied to base rows).
       if (created.length && _session) {
         var createdSet = {}; created.forEach(function (p) { createdSet[String(p)] = 1; });
@@ -1663,9 +1688,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         created = created.filter(function (p) { return kept[String(p)]; });
       }
       var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
-      if (created.length || hidden.length || nStatus || rows.length !== recs.length) {
+      if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
         _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
-        console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
+        console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
         if (_viewMode === 'form') refreshForm(); else renderBody();
       }
     });
@@ -2582,6 +2607,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
       formproc: function () { _showProcessChooser(); },
       formnew: function () { _openCreate(); },
+      formedit: function () { _openEdit(); },
+      formdel: function () { _openDelete(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
       editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },

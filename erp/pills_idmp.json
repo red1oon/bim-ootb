@@ -40,6 +40,24 @@
       "note": "GRID_BATCH_FORM_PILL_SPEC item 5 — the iDempiere Process ▶ (DocAction) toolbar action: opens a chooser of the current record's LEGAL FSM action set (the _fsmCtx seam, same AdDocFsm path as the form DocAction bar and the grid batch bar). Click dispatches in-memory + repaints. §AD-GATE showWhen:form-view. next glyph (forward arrow, Lucide verbatim). Print maps to the existing `reports` pill (NON-INVENT, no duplicate)."
     },
     {
+      "id": "formedit",
+      "name": "Edit record",
+      "key": "",
+      "icon": "edit",
+      "showWhen": "form-view",
+      "order": 0.35,
+      "note": "S2/J4 full-CRUD — the iDempiere Edit toolbar action relocated into the pill. Opens the create/edit form DIRECTLY on the OPEN record via the host seam __crud.update(table,id) (NO ring fanned, doctrine §0; the create twin is formnew→__crud.create). Save = #cfSave → signed CRUD_UPDATE; _overlayListTip overlays the changed value in the grid + survives reload. §AD-GATE showWhen:form-view. edit glyph (Lucide verbatim)."
+    },
+    {
+      "id": "formdel",
+      "name": "Delete record",
+      "key": "",
+      "icon": "trash",
+      "showWhen": "form-view",
+      "order": 0.55,
+      "note": "S2/J4 full-CRUD — the iDempiere Delete toolbar action relocated into the pill. Opens the delete confirm DIRECTLY on the OPEN record via the host seam __crud.remove(table,id) (NO ring fanned). Confirm = signed CRUD_DELETE; _overlayListTip tombstones the row (it disappears) + the hide survives reload. §AD-GATE showWhen:form-view. trash glyph (Lucide verbatim)."
+    },
+    {
       "id": "posted",
       "name": "Accts Posted",
       "key": "",
