@@ -424,7 +424,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=1"></script>
+<script src="ad_process.js?v=2"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -1849,8 +1849,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (_procHandlersInstalled || !window.AdProcess) return;
     var core = (window.__report && window.__report.core) ? window.__report.core : null;
     window.AdProcess.installDefaultHandlers(core);
+    // §GENPO-LIVE — the KIND-2 ProjectGenOrder handler (AD_Process 164) rides the EXISTING erp_engine.buildDoc
+    // archetype (newVerbs=0). Implementing AD_PROCESS_FOLD_LANE.md §P1 — Witness: W-PROC-GENPO-LIVE.
+    if (window.ERPEngine && typeof window.AdProcess.registerProjectGenOrder === 'function')
+      window.AdProcess.registerProjectGenOrder(window.ERPEngine);
     _procHandlersInstalled = true;
-    console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N'));
+    console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }
   // raw sql.js exec → array of lowercase-keyed row objects; an ABSENT table (seed slice) → [] + §-named, never a throw.
   function _sqlRows(sql) {
@@ -1902,7 +1906,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return m;
       },
       countFacts: function () { var r = _sqlRows('SELECT count(*) n FROM fact_acct'); return r.length ? Number(r[0].n) : 0; },
-      countDocTypes: function () { var r = _sqlRows('SELECT count(*) n FROM c_doctype'); return r.length ? Number(r[0].n) : 0; }
+      countDocTypes: function () { var r = _sqlRows('SELECT count(*) n FROM c_doctype'); return r.length ? Number(r[0].n) : 0; },
+      // §GENPO-LIVE — ProjectGenOrder accessors. fetchProject resolves the version→pricelist (getM_PriceList_ID)
+      // + the On-Credit SO doctype (DocSubTypeSO_OnCredit='WI'), every value a REAL seed row. info.Record_ID =
+      // the chosen C_Project_ID (prepare()/getRecord_ID). A thin project (no warehouse/pricelist) → the handler's
+      // getProject gate honestly REJECTS — the seed's truth, never a fabricated order.
+      fetchProject: function (info) {
+        var id = info && info.Record_ID; if (id == null) return null;
+        var p = _sqlRows('SELECT * FROM c_project WHERE c_project_id=' + Number(id))[0]; if (!p) return null;
+        if (p.m_pricelist_version_id != null) {
+          var plv = _sqlRows('SELECT m_pricelist_id FROM m_pricelist_version WHERE m_pricelist_version_id=' + Number(p.m_pricelist_version_id))[0];
+          if (plv) p.m_pricelist_id = plv.m_pricelist_id;
+        }
+        var cl = (_session && _session.client) ? Number(_session.client.id) : null;
+        var dt = _sqlRows("SELECT c_doctype_id FROM c_doctype WHERE docsubtypeso='WI' AND docbasetype='SOO'" +
+          (cl != null ? ' AND ad_client_id=' + cl : '') + ' ORDER BY c_doctype_id LIMIT 1')[0];
+        p._c_doctypetarget_id = dt ? dt.c_doctype_id : null;
+        return p;
+      },
+      fetchProjectLines: function (info) {
+        var id = info && info.Record_ID; if (id == null) return [];
+        return _sqlRows('SELECT * FROM c_projectline WHERE c_project_id=' + Number(id) + ' ORDER BY line, c_projectline_id');
+      }
     };
   }
   // default resolution — ONLY the session-backed context vars resolve (real values, never invented);
@@ -1928,8 +1953,37 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     catch (e) { status('Process ' + processId + ' not found'); console.log('§AD-PROC-LIVE proc=' + processId + ' read-failed: ' + e.message); return; }
     console.log('§AD-PROC-LIVE open proc=' + proc.AD_Process_ID + ' name="' + proc.name + '" report=' + (proc.isReport ? 'Y' : 'N') + ' paras=' + proc.paras.length);
     status((name || proc.name) + ' — ' + (proc.isReport ? 'report' : 'process') + ' (AD_Process ' + proc.AD_Process_ID + ')');
+    // §GENPO-LIVE — ProjectGenOrder is RECORD-scoped (getRecord_ID = the C_Project). Its AD trigger button
+    // (C_Project.GenerateTo, ref 28) is dropped by the S2B foldCrudSpec, so the menu/process path supplies the
+    // project via a picker (decoupled path (a), AD_PROCESS_FOLD_LANE §CONFLICT). Every project row is real seed.
+    if (proc.classname === 'org.compiere.process.ProjectGenOrder') { renderProjectPicker(proc); return; }
     if (proc.paras.length) renderProcParamForm(proc);
     else runProcess(proc, {});
+  }
+  function renderProjectPicker(proc) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, proc.name));
+    pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · pick the project to generate a Sales Order from'));
+    var rows = _sqlRows('SELECT c_project_id, value, name FROM c_project ORDER BY c_project_id');
+    var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Project'));
+    var sel = document.createElement('select'); sel.setAttribute('data-genpo-project', '1');
+    if (!rows.length) { var o0 = el('option', null, '— no projects in this tenant —'); o0.value = ''; sel.appendChild(o0); }
+    rows.forEach(function (r) { var o = el('option', null, (r.value ? r.value + ' — ' : '') + (r.name || ('Project ' + r.c_project_id))); o.value = String(r.c_project_id); sel.appendChild(o); });
+    fld.appendChild(sel); pane.appendChild(fld);
+    var actions = el('div', 'actions');
+    var run = el('button', 'run', 'Generate Order'); run.setAttribute('data-proc-run', '1');
+    var cancel = el('button', null, 'Cancel');
+    run.addEventListener('click', function () {
+      var id = sel.value ? Number(sel.value) : null;
+      if (id == null) { status('Pick a project first'); return; }
+      console.log('§GENPO-LIVE run proc=' + proc.AD_Process_ID + ' Record_ID(C_Project_ID)=' + id);
+      runProcess(proc, {}, id);
+    });
+    cancel.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
+    _showProcPane(pane);
   }
   function renderProcParamForm(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
@@ -1997,12 +2051,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     pane.appendChild(actions); pane.appendChild(err);
     _showProcPane(pane);
   }
-  function runProcess(proc, params) {
+  function runProcess(proc, params, recordId) {
     var b = _b3(window.__idmpDb);
-    var res = window.AdProcess.dispatch(b, { AD_Process_ID: proc.AD_Process_ID, params: params }, _procCtx());
+    var info = { AD_Process_ID: proc.AD_Process_ID, params: params };
+    if (recordId != null) info.Record_ID = recordId;          // §GENPO-LIVE — record-scoped processes (getRecord_ID)
+    var res = window.AdProcess.dispatch(b, info, _procCtx());
     console.log('§AD-PROC-LIVE proc=' + res.ad_process_id + ' name="' + res.name + '" classname=' + (res.classname || '(blank)') +
       ' dispatched=' + (res.dispatched ? 'Y' : 'N') +
-      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows : ' reason=' + res.reason));
+      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason) : ' reason=' + res.reason));
     renderProcResult(proc, res);
   }
   function renderProcResult(proc, res) {
@@ -2031,6 +2087,24 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       else if (r.total != null) pane.appendChild(el('div', 'msg', 'Subtotal ' + r.subtotal + ' · Tax ' + r.tax + ' · Total ' + r.total));
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
+    }
+    // §GENPO-LIVE — a KIND-2 op-group result (ProjectGenOrder): render the would-be C_Order header + lines folded
+    // from the project (CREATE_DOCUMENT + N CREATE_LINE). EXTRACT: every value comes from the project / its lines.
+    if (!absent && r && r.ops && r.header) {
+      var h = r.header;
+      pane.appendChild(el('div', 'msg', 'C_Order (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ', On-Credit) from project ' +
+        h.c_project_id + ' · BPartner ' + h.c_bpartner_id + ' · Warehouse ' + h.m_warehouse_id + ' · PriceList ' + h.m_pricelist_id));
+      var lns = r.ops.filter(function (o) { return o.op_type === 'CREATE_LINE'; });
+      var t = document.createElement('table'), tr = el('tr');
+      ['#', 'Product', 'Qty', 'Price'].forEach(function (hd, i) { tr.appendChild(el('th', i >= 2 ? 'r' : null, hd)); }); t.appendChild(tr);
+      lns.forEach(function (op) {
+        tr = el('tr');
+        [op.line, op.m_product_id, op.qtyordered, op.priceactual == null ? '(price list)' : op.priceactual]
+          .forEach(function (cv, i) { tr.appendChild(el('td', i >= 2 ? 'r' : null, cv == null ? '' : String(cv))); });
+        t.appendChild(tr);
+      });
+      pane.appendChild(t);
+      pane.appendChild(el('div', 'msg', r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
