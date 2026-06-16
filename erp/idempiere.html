@@ -2845,7 +2845,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // Login overlay wiring (docs §3b): Back→pick another user (logout), Log In→commit session,
     // switch-role→reopen at the Role step, backdrop click→dismiss only if already logged in.
     $('idmp-login-back').addEventListener('click', loginStep1);
-    $('idmp-login-tenants-back').addEventListener('click', function () { _loginClient = null; _loginUser = null; loginStep0(SES.listClients(db)); });
+    // ERP_CRITIC_UX_LANE.md P2/J8 — the in-session "‹ Tenants" rail surfaces the SAME front-door set: resident
+    // tenants AND the demo manifest (lazy-install on pick via _enterDemoTenant). Without the demos here, a
+    // logged-in user could only switch BETWEEN already-installed tenants — never reach a not-yet-installed demo
+    // tenant from the rail, which is exactly the "change tenant from the rail" journey J8 asks for.
+    $('idmp-login-tenants-back').addEventListener('click', function () { _loginClient = null; _loginUser = null; loginStep0(SES.listClients(db), _demoTenants()); });
     $('idmp-login-ok').addEventListener('click', doLogin);
     $('idmp-switch-btn').addEventListener('click', function () { showLogin('role'); });
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
