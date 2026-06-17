@@ -43,6 +43,49 @@
       });
     },
 
+    // Fold a whole op-log CHAIN -> array of mesh payloads (the feature tree, evaluated in one pass).
+    _foldChain(ops) {
+      const w = this.init();
+      if (!w) return Promise.reject(new Error('bonsai unsupported'));
+      const id = ++this._seq;
+      return new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        w.postMessage({ id, ops });
+      });
+    },
+
+    _buildMesh(d, opts) {
+      opts = opts || {};
+      const THREE = window.THREE;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(d.positions, 3));
+      if (d.normals) geo.setAttribute('normal', new THREE.BufferAttribute(d.normals, 3));
+      if (d.indices) geo.setIndex(new THREE.BufferAttribute(d.indices, 1));
+      if (!d.normals) geo.computeVertexNormals();
+      geo.computeBoundingBox();
+      const mat = new THREE.MeshStandardMaterial({ color: opts.color != null ? opts.color : 0x9fb4c8, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = opts.name || ('bonsai:' + d.featureId);
+      mesh.userData.featureId = d.featureId;
+      return mesh;
+    },
+
+    // Rebuild A.scene's authored group from a CHAIN of op-rows (history replay = fold ops[0..k]).
+    async foldChainToScene(ops, opts) {
+      opts = opts || {};
+      const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+      const g = this.group();
+      const d = await this._foldChain(ops);
+      const meshes = d.meshes || [];
+      if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
+      let totalTris = 0;
+      meshes.forEach(md => { const m = this._buildMesh(md, { color: opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
+      const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
+      console.log(TAG + ' chain ops=' + ops.length + ' solids=' + meshes.length + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g);
+      if (window.A && typeof A.requestRender === 'function') A.requestRender();
+      return { solids: meshes.length, triangleCount: totalTris, meshes };
+    },
+
     group() {
       if (!this._group && window.A && A.scene && window.THREE) {
         this._group = new THREE.Group(); this._group.name = 'BonsaiAuthored'; A.scene.add(this._group);

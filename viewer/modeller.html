@@ -30,7 +30,13 @@
   <button id="b-open" disabled>+ Opening</button>
   <button id="b-sketch" disabled>✎ Sketch</button>
   <button id="b-extrude" disabled style="display:none">⬆ Extrude</button>
+  <button id="b-cut" disabled>✂ Cut</button>
   <button id="b-clear" disabled>Clear</button>
+</div>
+<div id="hist" style="position:fixed;bottom:36px;left:10px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
+  <span>history</span>
+  <input id="hist-slider" type="range" min="0" max="0" value="0" step="1" style="flex:1;accent-color:#4fc3f7" disabled>
+  <span id="hist-label">0/0</span>
 </div>
 <div id="title">BONSAI · MODELLER</div>
 <div id="stat">booting…</div>
@@ -39,6 +45,8 @@
 <script src="bonsai_kernel.js?v=1" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
+<!-- Bonsai feature tree: the op-log; geometry is a fold over it; history scrubber replays the recipe. -->
+<script src="bonsai_oplog.js?v=1" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -109,7 +117,7 @@ async function author(op, color) {
 }
 bWall.onclick = () => author(WALL, 0x9fb4c8);
 bOpen.onclick = () => author(OPENING, 0xc8a99f);
-bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } setStat('cleared'); };
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); setStat('cleared'); };
 
 // ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
 // Click on the XY ground plane to drop profile points; the planegcs solver cleans up the polygon
@@ -161,11 +169,70 @@ bExtrude.onclick = async () => {
   if (window.Bonsai.sketch.points.length < 3) { setStat('need ≥3 points'); return; }
   setStat('solving…');
   try {
-    const res = await window.Bonsai.sketch.solveAndExtrude(3, { color: 0x9fd6b4 });
-    setStat('extruded  tris=' + res.triangleCount + '  axisEdges=' + res.axisClean + '/' + res.edges + '  bbox=[' + res.bbox + ']');
-    exitSketch();
+    // leg 3: a sketched wall is committed as a FEATURE in the op-log (not a one-shot author).
+    const res = await window.Bonsai.sketch.commitExtrude(3, { color: 0x9fd6b4 });
+    setStat('committed wall #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
+    exitSketch(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
 };
+
+// ── PICK-SELECT + HIGHLIGHT ─────────────────────────────────────────────────────────────────────
+// Click an authored solid to select it (emissive highlight); the selected feature is the cut target.
+const bCut = document.getElementById('b-cut');
+let selectedId = null, selectedMesh = null;
+function highlight(mesh) {
+  if (selectedMesh && selectedMesh.material) selectedMesh.material.emissive && selectedMesh.material.emissive.setHex(0x000000);
+  selectedMesh = mesh; selectedId = mesh ? mesh.userData.featureId : null;
+  if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
+  bCut.disabled = selectedId == null;
+  console.log('§MODELLER select featureId=' + selectedId);
+}
+window.Bonsai.select = (fid) => {                 // witness/programmatic hook
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  highlight(m || null); return selectedId;
+};
+canvas.addEventListener('pointerdown', (e) => {
+  if (sketching || e.button !== 0 || e.shiftKey) return;
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(g.children.filter(o => o.isMesh), false)[0];
+  if (hit) { highlight(hit.object); setStat('selected feature #' + selectedId); }
+});
+
+// Cut an opening into the SELECTED wall: derive a window void from the wall bbox (full through the
+// thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
+bCut.onclick = async () => {
+  if (selectedId == null || !selectedMesh) { setStat('select a wall first'); return; }
+  selectedMesh.geometry.computeBoundingBox();
+  const bb = selectedMesh.geometry.boundingBox, mn = bb.min, mx = bb.max;
+  const ext = [mx.x - mn.x, mx.y - mn.y, mx.z - mn.z];
+  const thin = ext.indexOf(Math.min(...ext));     // thickness axis -> cut all the way through
+  const c1 = [mn.x, mn.y, mn.z].slice(), c2 = [mx.x, mx.y, mx.z].slice();
+  [0, 1, 2].forEach(a => {
+    if (a === thin) { c1[a] = mn.getComponent(a) - 0.5; c2[a] = mx.getComponent(a) + 0.5; }
+    else { const lo = [mn.x, mn.y, mn.z][a], hi = [mx.x, mx.y, mx.z][a], mid = (lo + hi) / 2, half = (hi - lo) * 0.2; c1[a] = mid - half; c2[a] = mid + half; }
+  });
+  setStat('cutting…');
+  try {
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_CUT', parent: selectedId, parameters: { void: { c1, c2 } } }, { color: 0x9fd6b4 });
+    setStat('cut opening in #' + selectedId + '  tris=' + res.triangleCount); highlight(null); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER cut fail ' + err); }
+};
+
+// ── HISTORY SCRUBBER ────────────────────────────────────────────────────────────────────────────
+const slider = document.getElementById('hist-slider'), histLabel = document.getElementById('hist-label');
+function syncHistory() {
+  const n = window.Bonsai.oplog.length;
+  slider.max = n; slider.value = window.Bonsai.oplog.cursor; slider.disabled = n === 0;
+  histLabel.textContent = slider.value + '/' + n;
+}
+slider.addEventListener('input', async () => {
+  histLabel.textContent = slider.value + '/' + window.Bonsai.oplog.length;
+  await window.Bonsai.oplog.scrubTo(+slider.value);
+});
 
 bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = false;
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -181,6 +248,30 @@ if (q) {
     if (q === 'opening' || q === 'both') await author(OPENING, 0xc8a99f);
     window.__authorDone = true;
     console.log('§MODELLER author-done q=' + q);
+  })();
+}
+// ?recipe=demo drives the feature-tree + history replay (W-BONSAI-RECIPE): commit a wall, pick it,
+// cut an opening (child of the wall), then scrub history back (hole gone) and forward (hole back).
+if (qs.get('recipe') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      // 1. commit a thin wall (4 x 0.2 x 3) as feature #1.
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.wallId = wall.id; out.afterWall = wall.triangleCount;     // expect 12
+      // 2. pick it (programmatic), then cut a window through the thickness (child of #1).
+      out.picked = window.Bonsai.select(wall.id);
+      const cut = await O.commit({ op_type: 'GEOM_CUT', parent: wall.id, parameters: { void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      out.afterCut = cut.triangleCount;                              // expect > 12 (hole)
+      // 3. history replay: scrub back to before the cut, then forward again — deterministic.
+      out.scrubBack = (await O.scrubTo(1)).triangleCount;            // expect == afterWall (hole gone)
+      out.scrubFwd = (await O.scrubTo(2)).triangleCount;             // expect == afterCut (hole back)
+      out.rows = O.length;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OPLOG recipe fail ' + e); }
+    window.__recipeResult = out;
+    window.__recipeDone = true;
+    console.log('§MODELLER recipe-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).

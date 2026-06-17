@@ -71,6 +71,17 @@
       console.log(TAG + ' solveAndExtrude status=' + r.status + ' depth=' + depth + ' tris=' + res.triangleCount +
         ' bbox=[' + res.bbox + '] axisCleanEdges=' + axisClean + '/' + pts.length);
       return { solveStatus: r.status, axisClean, edges: pts.length, solved: r.points, ...res };
+    },
+
+    // Leg 3: commit the solved profile as a FEATURE in the op-log (vs solveAndExtrude's one-shot author).
+    async commitExtrude(depth, opts) {
+      depth = depth || 3;
+      const r = await this.solve();
+      const pts = r.points.map(p => [p.x, p.y]);
+      const res = await window.Bonsai.oplog.commit(
+        { op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: pts }, depth } },
+        opts || { color: 0x9fd6b4 });
+      return { solveStatus: r.status, solved: r.points, ...res };
     }
   };
 
