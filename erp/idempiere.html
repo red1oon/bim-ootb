@@ -208,6 +208,12 @@
   .idmp-grid th.idmp-cbcol, .idmp-grid td.idmp-cbcol { width:30px; text-align:center; padding:4px 6px; cursor:default; }
   .idmp-grid td.idmp-cbcol input, .idmp-card-cb { width:15px; height:15px; cursor:pointer; }
   .idmp-card-cb { margin-right:8px; flex:0 0 auto; }
+  /* P4 (W-INPLACE-GRID-LIVE) — a clicked data cell becomes an inline WEditor (GridView per-cell editor parity). */
+  .idmp-grid td.idmp-gcell { cursor:text; }
+  .idmp-grid td.idmp-cell-edit { padding:2px 4px; background:#fffbe6; overflow:visible; white-space:normal; }
+  .idmp-grid td.idmp-cell-edit .ic-cell { display:flex; flex-direction:column; gap:1px; }
+  .idmp-grid td.idmp-cell-edit .cfi { width:100%; box-sizing:border-box; font:inherit; padding:2px 5px; border:1px solid var(--idmp-accent,#2f6db0); border-radius:3px; background:#fff; }
+  .idmp-grid td.idmp-cell-edit .cfe { color:#c0392b; font-size:11px; line-height:1.2; }
   #idmp-batchbar { display:none; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 10px; margin-bottom:6px;
     background:#eef4ff; border:1px solid var(--idmp-border); border-radius:7px; font-size:12.5px; position:sticky; top:0; z-index:3; }
   #idmp-batchbar .idmp-batch-lead { display:inline-flex; align-items:center; gap:5px; font-weight:600; color:#23477a; }
@@ -520,7 +526,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=17"></script>
+<script src="crud_overlay.js?v=18"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1627,7 +1633,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       cols.forEach(function (f) {
         var td;
         if (/^docstatus$/i.test(f.columnName)) { td = el('td'); var ds0 = _recStatus(rec); td.appendChild(ds0 ? _statusChip(ds0) : document.createTextNode('')); }
-        else { td = el('td', null, fmt(f, recVal(rec, f.columnName))); }
+        else {
+          td = el('td', null, fmt(f, recVal(rec, f.columnName)));
+          // P4 (W-INPLACE-GRID-LIVE) — click a data cell → inline WEditor → signed CRUD_UPDATE row-wise (GridView
+          //   parity). stopPropagation so a click EDITS the cell, not opens the form; a read-only cell falls through
+          //   editCell's onUnsupported and opens the record form (the classic row-click — not a dead click).
+          td.classList.add('idmp-gcell');
+          (function (fc, tdc, ri) { tdc.addEventListener('click', function (ev) { ev.stopPropagation(); _editGridCell(tab, rec, fc, tdc, ri); }); })(f.columnName, td, i);
+        }
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
       tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
@@ -2299,6 +2312,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (typeof window.__crud.createInline !== 'function') { _openCreate0(); return; }   // pre-P3 fallback (older overlay)
     _newMode = { copyFrom: copyFromId == null ? null : copyFromId };
     _viewMode = 'form'; renderBody(); renderToolbar();
+  }
+  // _editGridCell — P4 (W-INPLACE-GRID-LIVE) host glue: a clicked grid data cell becomes an inline WEditor via the
+  //   crud seam editCell (ONE signed CRUD_UPDATE row-wise, GridView parity). Fold the entry first (S2B — a non-curated
+  //   table resolves). onUnsupported (read-only per AD / older overlay / no pk) → open the record FORM (the classic
+  //   row-click, so a read-only cell is never a dead click); onCancel (Escape/unchanged) → repaint the cell from the
+  //   pre-edit HTML; onCommit → overlay:committed already refolds the grid (renderBody), nothing more to do here.
+  function _editGridCell(tab, rec, col, td, recIdx) {
+    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    var pk = rec ? recVal(rec, _keyCol(tab)) : null;
+    var openForm = function () { _recIdx = recIdx; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); };
+    if (!tn || pk == null || String(pk) === '' || !window.__crud || typeof window.__crud.editCell !== 'function' || !_crudHas(tn)) { openForm(); return; }
+    if (td.classList.contains('idmp-cell-edit')) return;   // already editing this cell
+    var prevHtml = td.innerHTML;
+    _withFoldedEntry(tn, 'update', function () {
+      window.__crud.editCell(tn, pk, col, td, {
+        onUnsupported: function () { td.classList.remove('idmp-cell-edit'); td.innerHTML = prevHtml; openForm(); },
+        onCancel: function () { td.classList.remove('idmp-cell-edit'); td.innerHTML = prevHtml; },
+        onCommit: function () { /* overlay:committed → renderBody repaints the grid with the new value */ }
+      });
+    });
   }
   function buildForm(tab) {
     var rec = _records[_recIdx];

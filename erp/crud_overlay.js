@@ -397,7 +397,16 @@
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
           if (ex) {
             if (updated.indexOf(p.id) < 0) updated.push(p.id);   // S2/J4 — report the touched row so the host overlay repaints on a pure edit
-            var ch = p.changes || {}; for (var cc in ch) if (ch.hasOwnProperty(cc)) ex[cc] = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc];
+            // apply each change onto the EXISTING key case (the op keys lowercase via f.col, but a SELECT* bundle row
+            //   carries original-case cols e.g. "Value"/"Name"; recVal returns the exact-case match first, so a
+            //   lowercase parallel key would be invisible on the grid — P4 row-wise edit reflect). Match c-i, else add.
+            var ch = p.changes || {};
+            for (var cc in ch) if (ch.hasOwnProperty(cc)) {
+              var nv = (ch[cc] && ch[cc].hasOwnProperty('new')) ? ch[cc].new : ch[cc];
+              var tgt = Object.prototype.hasOwnProperty.call(ex, cc) ? cc : null;
+              if (tgt == null) { for (var ek in ex) if (ex.hasOwnProperty(ek) && String(ek).toLowerCase() === String(cc).toLowerCase()) { tgt = ek; break; } }
+              ex[tgt == null ? cc : tgt] = nv;
+            }
             // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
             var ucols = _getTableCols(want);
             if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['Updated'] = _fmtKernelTs(opTs);
@@ -1384,6 +1393,65 @@
         renderInline('create', e, vals, null, null, host, opts);
         console.log('§INPLACE-COPY table=' + key + ' from=' + (fromId == null ? 'null' : fromId) + ' (cloned into a new inline record)');
       }, fromId == null ? null : fromId);
+    });
+  }
+  // editCell — P4 (T5) GRID INLINE EDIT, the SINGLE-COLUMN peer of editInline. iDempiere GridView/GridTabRowRenderer
+  //   parity: a grid cell is a per-cell WEditor — click → an inline input → commit ONE signed CRUD_UPDATE for {that
+  //   col} on that row's pk, the SAME signed write the form uses (buildOp('update')→applyOp→commitCrud→overlay:
+  //   committed → host repaints). NO modal, ring NOT fanned, NO new verb. Read-only per AD (IsUpdateable=N / view
+  //   table / not a field) → onUnsupported (host opens the form — a read-only cell is not a dead click). A docstatus
+  //   cell rides the DOC_ACTION lane via splitStatusChange, never a column write. opts:{onCommit,onCancel,onUnsupported}.
+  function editCell(table, id, col, hostTd, opts) {
+    opts = opts || {};
+    var unsup = function () { if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); };
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e || !CORE.verbEnabled(e, 'update')) { console.log('§INPLACE-CELL table=' + key + ' col=' + col + ' skipped (update not permitted)'); unsup(); return; }
+      var lc = String(col).toLowerCase();
+      var f = (e.fields || []).filter(function (ff) { return String(ff.col).toLowerCase() === lc; })[0];
+      if (!f || f.readonly || f.type === 'id' || f.type === 'button') { console.log('§INPLACE-CELL table=' + key + ' col=' + col + ' skipped (read-only / not a field)'); unsup(); return; }
+      getRecord(key, function (rec) {
+        var orig = assignVals(e, rec || {});                 // full-row baseline → buildOp diffs to exactly {col}
+        // render ONE inline editor into the cell, reusing the form's fieldInput + populateRefs (borrow fhost, restore)
+        var prevFhost = fhost; fhost = hostTd;
+        hostTd.innerHTML = '<div class="ic-cell">' + fieldInput(f, orig[f.col]) + '<span class="cfe" data-col="' + esc(f.col) + '"></span></div>';
+        hostTd.classList.add('idmp-cell-edit');
+        populateRefs(e);                                     // list/fk options (every col but ours → el null → skipped)
+        var input = hostTd.querySelector('[data-col="' + f.col + '"]');
+        var baseline = input ? input.value : (orig[f.col] == null ? '' : orig[f.col]);   // AS-RENDERED (selected option / normalized date)
+        fhost = prevFhost;                                   // references captured — restore the module host immediately
+        if (!input) { hostTd.classList.remove('idmp-cell-edit'); if (typeof opts.onCancel === 'function') opts.onCancel(); return; }
+        try { input.focus(); if (input.select) input.select(); } catch (e0) {}
+        var done = false;
+        var cancel = function () { if (done) return; done = true; if (typeof opts.onCancel === 'function') opts.onCancel(); };
+        var commit = function (viaBlur) {
+          if (done) return;
+          var nv = input.value;
+          if (String(nv == null ? '' : nv) === String(baseline == null ? '' : baseline)) { cancel(); return; }   // unchanged → revert, commit nothing
+          var why = CORE.validateField(STORE, f, nv, orig[f.col], rec || {}, {});
+          if (why) {                                         // AD reject: Enter keeps the editor + shows it; blur reverts (focus is gone)
+            if (viaBlur) { cancel(); return; }
+            var errEl = hostTd.querySelector('.cfe'); if (errEl) errEl.textContent = why;
+            console.log('§INPLACE-CELL table=' + key + ' col=' + f.col + ' REJECT why="' + why + '"');
+            return;
+          }
+          done = true;
+          var vals = {}; for (var c in orig) vals[c] = orig[c]; vals[f.col] = nv;   // full row, one col overridden
+          var op = CORE.buildOp('update', e, vals, orig, { id: id });
+          var sp = CORE.splitStatusChange(e, op, vals);      // docstatus cell → DOC_ACTION lane, never a column write
+          if (!sp.statusOp && (!sp.fieldOp || !Object.keys(sp.fieldOp.changes).length)) { console.log('§INPLACE-CELL table=' + key + ' col=' + f.col + ' no-op'); done = false; cancel(); return; }
+          console.log('§INPLACE-CELL table=' + key + ' id=' + (id == null ? 'null' : id) + ' col=' + f.col + ' "' + baseline + '"→"' + nv + '" commit=signed-CRUD_UPDATE (row-wise, no modal)');
+          if (sp.statusOp) applyOp(sp.statusOp, e);
+          if (sp.fieldOp) applyOp(sp.fieldOp, e);
+          if (typeof opts.onCommit === 'function') opts.onCommit();   // overlay:committed already refolds the grid; this is a host hook
+        };
+        input.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); commit(false); }
+          else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+        });
+        input.addEventListener('blur', function () { setTimeout(function () { commit(true); }, 0); });   // focus-out = commit-or-revert (GridView leaves the editor)
+        console.log('§INPLACE-CELL-OPEN table=' + key + ' id=' + (id == null ? 'null' : id) + ' col=' + f.col + ' type=' + f.type + ' editor=inline');
+      }, id == null ? null : id);
     });
   }
   // ── §AD-MODELVAL-LIVE plumbing — lazy per-table installer over the page bundle (sql.js → b3 shim) ──
@@ -2375,6 +2443,7 @@
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
                     editInline: editInline, createInline: createInline, copyInline: copyInline,   // P2/P3 (W-INPLACE-*): in-place editable form view (no modal, no ✎ Edit) — edit/new/copy
+                    editCell: editCell,   // P4 (W-INPLACE-GRID-LIVE): row-wise grid cell edit → ONE signed CRUD_UPDATE (GridView parity)
                     ignoreInline: ignoreInline, inlineDirty: _inlineDirty,
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
