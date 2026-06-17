@@ -1018,8 +1018,11 @@ async function setupScene(A) {
           console.log('§PWA_BADGE click=update (green)');
           _checkUpdate();
         } else {
-          console.log('§PWA_BADGE click=download (blue)');
-          _startOfflineDownload();
+          // ABOUT_BOX_CONSOLIDATE.md — the corner download triangle opens the shared
+          // About/DIY modal (its DIY tab is the self-host installer). Help pill keeps the
+          // shortcuts palette. Fallback to the raw offline download if AboutDIY is absent.
+          console.log('§PWA_BADGE click=about-diy (blue)');
+          if (window.AboutDIY) window.AboutDIY.open(); else _startOfflineDownload();
         }
       });
       console.log('§PWA_BADGE rendered color=' + _badgeColor);
