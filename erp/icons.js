@@ -78,6 +78,9 @@
     route:    { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>' },
     // POS FOLLOW-UP ROUND 2 §R2-6 — Lucide plus (the "register NEW product" import dock glyph).
     plus:     { svg: '<path d="M5 12h14"/><path d="M12 5v14"/>' },
+    // BONSAI_MORPHEUS_WIRING §4 — verbatim Lucide tree-deciduous (lucide.dev). The ⋯-rail launcher
+    // for the Bonsai BIM modeller (canopy + trunk reads as a bonsai). ERP/landing surface, not in panels.js.
+    bonsaiTree: { svg: '<path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 0 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 0 1 3.24 5.65A4 4 0 0 1 16 19Z"/><path d="M12 19v3"/>' },
     // BIM_EMBED_WINDOW_SESSION §B2 — verbatim Lucide line glyphs for the BIM-in-window embed panel +
     // status/Time-Machine/PO-drawer controls. ERP-only surface, not in panels.js (precedent: overlay-kit set).
     pictureInPicture2: { svg: '<path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/>' },

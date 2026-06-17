@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BIM/ERP OOTB — front door (index2 TEST)</title>
+<!--
+  LANDING_APP_SHELL_SPEC.md — index2.html TEST harness (does NOT touch index.html).
+  REUSES real components: erp/icons.js (ICONS), erp/pill_builder.js (PillBuilder ⋯ rail),
+  common/whole_history.js (.whole-chip cards + CSS). Nothing about the rail/cards is invented.
+  Whitebox proof = §-tagged console.log.
+-->
+<style>
+  :root { --gold:#e8a735; --blue:#0277bd; --red:#e23b4e; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#000; color:#e0e0e0;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; overflow:hidden; }
+  .screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    flex-direction:column; text-align:center; }
+  .screen.active { display:flex; }
+
+  /* ---- Morpheus — the jpg IS the interface; hover = message, halves = choice (APPROVED, unchanged) ---- */
+  #morpheus { background:#000; }
+  .morph-wrap { position:relative; display:inline-block; line-height:0; }
+  #morph-img { width:min(68vw,680px); max-height:64vh; object-fit:contain;
+    filter:brightness(0.92) drop-shadow(0 0 0 transparent); transition:filter .9s ease; user-select:none; }
+  #morph-img.loading { animation:glow 1.2s ease-in-out infinite; }
+  @keyframes glow {
+    0%,100% { filter:brightness(0.7) drop-shadow(0 0 6px rgba(232,167,53,.25)); }
+    50%     { filter:brightness(1.15) drop-shadow(0 0 26px rgba(232,167,53,.7)); } }
+  @media (prefers-reduced-motion: reduce) { #morph-img.loading { animation:none; filter:brightness(1.1); } }
+  .hot { position:absolute; top:0; bottom:0; width:50%; cursor:pointer; }
+  .hot.red  { left:0; }
+  .hot.blue { right:0; }
+  .hot:hover { background:radial-gradient(circle at center,rgba(255,255,255,.06),transparent 70%); }
+  .hot[data-tip]:hover::after { content:attr(data-tip); position:absolute; left:50%; bottom:14%;
+    transform:translateX(-50%); white-space:nowrap; background:rgba(0,0,0,.85); color:#e6e6ea;
+    border:1px solid rgba(255,255,255,.18); padding:8px 14px; border-radius:8px; font-size:13px;
+    line-height:1; pointer-events:none; }
+
+  /* ---- graceful blue end (APPROVED, unchanged) ---- */
+  #ended { background:#000; }
+  #ended .quote { font-size:20px; font-style:italic; color:#aaa; max-width:560px; line-height:1.6; padding:0 24px; }
+  #ended .back { margin-top:34px; color:#0277bd; cursor:pointer; font-size:14px; text-decoration:underline; }
+
+  /* ---- desktop = blank dark background AFTER Morpheus; the REAL whole_history.js panel opens over it ---- */
+  #desktop { background:#07090f; }
+
+  /* ---- About box ---- */
+  #about { position:fixed; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center; z-index:3000; }
+  #about.active { display:flex; }
+  #about .card { background:#14141c; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:28px; max-width:440px; width:90%; }
+  #about h3 { margin:0 0 4px; color:var(--gold); letter-spacing:4px; }
+  #about .sla { font-size:13px; color:#bdbdbd; line-height:1.6; background:#0c0c12; border-radius:10px; padding:14px; margin:14px 0; }
+  #about a.lnk { display:block; color:var(--blue); text-decoration:none; padding:7px 0; font-size:14px; }
+  #about .install { width:100%; margin-top:8px; padding:14px; border:none; border-radius:10px;
+    background:linear-gradient(135deg,#3aa0e0,#015a8f); color:#fff; font-weight:700; cursor:pointer; font-size:15px; }
+  #about .flash { font-size:12px; color:#4fc3f7; min-height:16px; margin-top:8px; text-align:center; }
+  #about .close { float:right; cursor:pointer; color:#888; font-size:20px; line-height:1; }
+
+  /* ---- red-pill preload status shower (loader.js-style named progress, hidden behind the pulse) ---- */
+  #preload-shower { position:fixed; left:50%; bottom:8%; transform:translateX(-50%); z-index:2500;
+    width:min(84vw,420px); background:rgba(6,10,16,.82); border:1px solid rgba(79,195,247,.22);
+    border-radius:12px; padding:14px 16px; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; transition:opacity .5s ease; }
+  #preload-shower.psh-hide { opacity:0; pointer-events:none; }
+  .psh-head { color:#4fc3f7; font-size:11px; letter-spacing:2px; text-transform:uppercase; margin-bottom:10px; opacity:.85; }
+  .psh-row { display:grid; grid-template-columns:1fr 64px 26px; align-items:center; gap:10px; margin:7px 0; }
+  .psh-name { color:#cdd6e4; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .psh-track { height:5px; background:rgba(255,255,255,.08); border-radius:3px; overflow:hidden; }
+  .psh-bar { height:100%; width:0%; background:#4fc3f7; border-radius:3px; transition:width .15s ease; }
+  .psh-bar.psh-indet { animation:psh-pulse 1s ease-in-out infinite; }
+  @keyframes psh-pulse { 0%,100%{opacity:.45;} 50%{opacity:1;} }
+  .psh-pct { color:#7fd6f7; font-size:11px; text-align:right; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+
+<!-- §3 MORPHEUS (cold only) -->
+<div class="screen" id="morpheus">
+  <div class="morph-wrap">
+    <img id="morph-img" src="assets/2hands.jpg" alt="" onerror="this.style.outline='1px dashed #555';this.alt='2hands.jpg (drop into assets/)'">
+    <div class="hot red"  data-tip="Red — you go in (sound on, then we load)" onclick="takeRed()"></div>
+    <div class="hot blue" data-tip="Blue — nothing happens, nothing loads"     onclick="takeBlue()"></div>
+  </div>
+</div>
+
+<!-- graceful blue end -->
+<div class="screen" id="ended">
+  <div class="quote">"You take the blue pill — the story ends, you wake up in your bed and believe whatever you want to believe."</div>
+  <div class="back" onclick="location.reload()">&larr; back</div>
+</div>
+
+<!-- desktop background (real WholeHistory panel opens over this) -->
+<div class="screen" id="desktop"></div>
+
+<!-- About box -->
+<div id="about">
+  <div class="card">
+    <span class="close" onclick="closeAbout()">&times;</span>
+    <h3>BIM/ERP OOTB</h3>
+    <div style="font-size:12px;color:#888">FOSS · No account · No vendor lock-in</div>
+    <div class="sla">
+      <b>Your model never leaves your device.</b> Open the Network tab and watch — zero upload.
+      The code is open source: inspect any line in the console.
+    </div>
+    <a class="lnk" href="https://red1oon.github.io/BIMCompiler/" target="_blank">📖 Documentation &amp; theory</a>
+    <button class="install" id="install-btn" onclick="doInstall()">Install — take it with you (offline)</button>
+    <div class="flash" id="install-flash"></div>
+  </div>
+</div>
+
+<!-- REAL components, loaded verbatim from the repo -->
+<script src="erp/icons.js"></script>
+<script src="erp/pill_builder.js"></script>
+<script src="common/whole_history.js"></script>
+<!-- Bonsai BIM modeller host: window.Bonsai (preload streams occt-wasm + warms the worker on red-pill). -->
+<script src="viewer/bonsai_kernel.js"></script>
+
+<script>
+'use strict';
+function L(){ console.log.apply(console,['[index2]'].concat([].slice.call(arguments))); }
+
+// ============ screen switch (rail hidden on the Morpheus gate + blue end) ============
+function show(id){
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+  if(window._railWrap) _railWrap.style.display = (id==='morpheus'||id==='ended') ? 'none' : 'flex';
+}
+
+// ============ cold/warm probe ============
+async function probeColdWarm(){
+  let buildings=0, erpdb=0;
+  try { buildings = await idbCount('bim_ootb_imports','buildings'); } catch(e){}
+  try { const keys = await caches.keys(); erpdb = keys.some(function(k){return /erp|idmp/i.test(k);}) ? 1 : 0; } catch(e){}
+  const state = (buildings>0) ? 'warm' : 'cold';
+  L('§COLDWARM state='+state+' buildings='+buildings+' erpdb='+erpdb);
+  return state;
+}
+function idbCount(dbName,store){ return new Promise(function(res){
+  const rq = indexedDB.open(dbName);
+  rq.onerror = function(){ res(0); };
+  rq.onsuccess = function(){ const db=rq.result;
+    if(!db.objectStoreNames.contains(store)){ db.close(); return res(0); }
+    const tx=db.transaction(store,'readonly').objectStore(store).count();
+    tx.onsuccess=function(){ res(tx.result); db.close(); };
+    tx.onerror=function(){ res(0); db.close(); }; };
+  rq.onupgradeneeded=function(){ try{ rq.transaction.abort(); }catch(e){} };
+}); }
+
+// ============ AUDIO (APPROVED, unchanged) ============
+let _audioCtx=null, _muted=false;
+function playOrchestralSwell(){
+  if(_muted){ L('§AUDIO muted, skip pad'); return 0; }
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const ac=_audioCtx, t=ac.currentTime, ATTACK=2.6, DUR=5.2;
+    const master=ac.createGain();
+    master.gain.setValueAtTime(0.0001,t);
+    master.gain.exponentialRampToValueAtTime(0.42,t+ATTACK);
+    master.gain.setTargetAtTime(0.0001,t+ATTACK,1.2);
+    const lp=ac.createBiquadFilter(); lp.type='lowpass';
+    lp.frequency.setValueAtTime(110,t);
+    lp.frequency.exponentialRampToValueAtTime(900,t+ATTACK);
+    lp.Q.value=0.4; lp.connect(master); master.connect(ac.destination);
+    const fStart=43.65, fEnd=55.0;
+    [[0.5,'sine',1.0],[1,'sawtooth',0.8],[1.003,'sawtooth',0.7],[1.5,'triangle',0.4],[2,'triangle',0.3]]
+    .forEach(function(s){ const o=ac.createOscillator(); o.type=s[1];
+      o.frequency.setValueAtTime(fStart*s[0],t); o.frequency.linearRampToValueAtTime(fEnd*s[0],t+ATTACK);
+      const g=ac.createGain(); g.gain.value=s[2]*0.5; o.connect(g).connect(lp); o.start(t); o.stop(t+DUR+0.1); });
+    L('§AUDIO orchestral_pad attack='+ATTACK+' dur='+DUR);
+    return ATTACK*1000;
+  } catch(e){ L('§AUDIO pad_failed '+e.message); return 0; }
+}
+function sfxWhoosh(){ const ac=_audioCtx; if(_muted||!ac||ac.state!=='running'){ return; }
+  try { const t=ac.currentTime;
+    const buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.32),ac.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,1.6);
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=0.8;
+    bp.frequency.setValueAtTime(420,t); bp.frequency.exponentialRampToValueAtTime(2600,t+0.28);
+    const g=ac.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.10,t+0.04); g.gain.exponentialRampToValueAtTime(0.0001,t+0.3);
+    src.connect(bp).connect(g).connect(ac.destination); src.start(t); src.stop(t+0.33);
+    L('§AUDIO sfx=whoosh(rail)');
+  } catch(e){} }
+function sfxChime(){ const ac=_audioCtx; if(_muted||!ac||ac.state!=='running'){ return; }
+  try { const t=ac.currentTime;
+    [659.25,987.77].forEach(function(f,i){ const o=ac.createOscillator(),g=ac.createGain(),ts=t+i*0.09;
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,ts); g.gain.exponentialRampToValueAtTime(0.12,ts+0.02); g.gain.exponentialRampToValueAtTime(0.0001,ts+0.9);
+      o.connect(g).connect(ac.destination); o.start(ts); o.stop(ts+0.95); });
+    L('§AUDIO sfx=chime(world)');
+  } catch(e){} }
+function sfxPress(){ const ac=_audioCtx; if(_muted||!ac||ac.state!=='running'){ return; }
+  try { const t=ac.currentTime, o=ac.createOscillator(), g=ac.createGain();
+    o.type='square'; o.frequency.setValueAtTime(440,t); o.frequency.exponentialRampToValueAtTime(170,t+0.08);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.16,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.13);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t+0.15);
+    L('§AUDIO sfx=press(worldHist)');
+  } catch(e){} }
+function playConfirm(by){ if(_muted){ return; }
+  try { _audioCtx = _audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const t=_audioCtx.currentTime, o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(330,t); o.frequency.exponentialRampToValueAtTime(660,t+.18);
+    g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.2,t+.03); g.gain.exponentialRampToValueAtTime(.0001,t+.4);
+    o.connect(g).connect(_audioCtx.destination); o.start(t); o.stop(t+.42); L('§AUDIO confirm_by='+by);
+  } catch(e){} }
+
+// ============ BLUE / RED (APPROVED, unchanged) ============
+function takeBlue(){ L('§MORPHEUS_BLUE shown=1 closed=0 (graceful-end) loaded=0'); show('ended'); }
+async function takeRed(){
+  const dur=playOrchestralSwell();
+  const img=document.getElementById('morph-img'); img.classList.add('loading');
+  L('§MORPHEUS_RED audio_unlocked=1 load_started=1');
+  preloadFaces();   // BACKGROUND — heavy face assets stream behind the pulse (NOT awaited: never block entry)
+  await Promise.all([ warmColdFetch(), new Promise(function(r){ setTimeout(r, Math.max(0, dur-400)); }) ]);
+  img.classList.remove('loading');
+  revealWorld();
+}
+
+// ============ RED-PILL PRELOAD SHOWER (W-BONSAI-PRELOAD) ============
+// Whichever face the user then picks (Bonsai tree → modeller / ERP → iDempiere), its heavy asset is
+// already streaming behind the pulse: occt-wasm warms the BIM worker; ad_seed.db cache-warms the ERP
+// face. The shower = loader.js-style named progress rows fed by Bonsai.preload's onProgress callback.
+var PRELOAD_ASSETS=[
+  { key:'occt-wasm',      label:'BIM kernel · occt-wasm',  url:'viewer/lib/kernel/occt-wasm.wasm', warm:true },
+  { key:'idempiere-seed', label:'ERP seed · iDempiere',    url:'erp/ad_seed.db' }
+];
+function buildShower(){
+  if(document.getElementById('preload-shower')) return document.getElementById('preload-shower');
+  var box=document.createElement('div'); box.id='preload-shower';
+  var rows=PRELOAD_ASSETS.map(function(a){
+    return '<div class="psh-row" id="psh-'+a.key+'">'+
+      '<div class="psh-name">'+a.label+'</div>'+
+      '<div class="psh-track"><div class="psh-bar" id="psh-bar-'+a.key+'"></div></div>'+
+      '<div class="psh-pct" id="psh-pct-'+a.key+'">·</div></div>';
+  }).join('');
+  box.innerHTML='<div class="psh-head">warming your workspace…</div>'+rows;
+  document.body.appendChild(box);
+  return box;
+}
+function showerProgress(p){
+  var bar=document.getElementById('psh-bar-'+p.asset), pct=document.getElementById('psh-pct-'+p.asset);
+  if(!bar) return;
+  if(p.done){ bar.classList.remove('psh-indet'); bar.style.width='100%'; bar.style.background='#44cc44'; if(pct){ pct.textContent='✓'; } return; }
+  if(p.total>0){ var v=Math.round(p.pct*100); bar.classList.remove('psh-indet'); bar.style.width=v+'%'; if(pct){ pct.textContent=v+'%'; } }
+  else { bar.classList.add('psh-indet'); bar.style.width='50%'; if(pct){ pct.textContent='···'; } } // no Content-Length (local server)
+}
+async function preloadFaces(){
+  if(!window.Bonsai || !Bonsai.preload){ L('§PRELOAD Bonsai missing — shower skipped'); return; }
+  var box=buildShower(); var t0=performance.now();
+  try {
+    await Bonsai.preload({ assets:PRELOAD_ASSETS.map(function(a){ return { key:a.key, url:a.url, warm:!!a.warm }; }) }, showerProgress);
+    L('§PRELOAD done assets='+PRELOAD_ASSETS.length+' ms='+Math.round(performance.now()-t0));
+  } catch(e){ L('§PRELOAD fail '+(e&&e.message||e)); }
+  setTimeout(function(){ if(box) box.classList.add('psh-hide'); }, 1200);   // fade after a beat once warm
+}
+async function warmColdFetch(){
+  const SHARED=[ 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+    'https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js',
+    'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js' ];
+  const t0=performance.now();
+  await Promise.all(SHARED.map(function(u){ return fetch(u,{mode:'no-cors'})
+    .then(function(){ L('§MORPHEUS_LOAD ok asset='+u); })
+    .catch(function(e){ L('§MORPHEUS_LOAD fail asset='+u+' '+e.message); }); }));
+  L('§MORPHEUS_LOAD done ms='+Math.round(performance.now()-t0));
+}
+
+// ============ REAL ⋯ PILL RAIL — mounted via window.PillBuilder (extracted from erp_pills.js) ============
+function _ic(k){ return (window.ICONS && window.ICONS[k]) ? window.ICONS[k].svg : ''; }
+function _injectRailStyle(){
+  if(document.getElementById('erp-pill-style')) return;
+  var s=document.createElement('style'); s.id='erp-pill-style';
+  // VERBATIM from erp_pills.js _injectStyle (the rail part): bottom-right dock, strip RISES UP on open.
+  s.textContent =
+    '#erp-pillbar{position:fixed;right:10px;bottom:16px;top:auto;transform:none;z-index:1200;display:flex;flex-direction:column;align-items:center;gap:8px;}' +
+    '#erp-pill{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 120px);overflow-y:auto;padding:6px;border-radius:16px;background:rgba(20,22,32,0.78);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
+    '#erp-pill::-webkit-scrollbar{width:0;}' +
+    '#erp-pill button{width:40px;height:40px;min-height:40px;display:flex;align-items:center;justify-content:center;border:none;border-radius:10px;background:transparent;color:#cdd6e4;cursor:pointer;padding:0;}' +
+    '#erp-pill button:hover{background:rgba(108,159,255,0.16);color:#6c9fff;}' +
+    '#erp-pill button.active{background:rgba(108,159,255,0.24);color:#6c9fff;}' +
+    '#erp-pill-trigger{width:32px;height:32px;min-height:32px;border:none;border-radius:50%;cursor:pointer;background:rgba(20,22,32,0.78);color:#9aa4b8;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}' +
+    '@keyframes pill-rise{from{transform:translateY(18px);opacity:0;}to{transform:translateY(0);opacity:1;}}' +
+    '#erp-pill.pill-revealing{animation:pill-rise 0.42s cubic-bezier(.2,.85,.25,1);}' +
+    '@keyframes erp-pill-peek{0%,100%{transform:translateY(0);box-shadow:none;}25%{transform:translateY(-9px);box-shadow:0 0 0 3px rgba(108,159,255,0.35);}55%{transform:translateY(0);}78%{transform:translateY(-4px);}}' +
+    '#erp-pill-trigger.erp-pill-attract{animation:erp-pill-peek 0.85s ease-in-out 2;color:#6c9fff;}';
+  document.head.appendChild(s);
+}
+var _rail=null;
+function buildRail(){
+  if(_rail) return _rail;
+  if(!window.PillBuilder){ L('§RAIL PillBuilder missing'); return null; }
+  _injectRailStyle();
+  var wrap=document.createElement('div'); wrap.id='erp-pillbar';
+  var pill=document.createElement('div'); pill.id='erp-pill';
+  var trigger=document.createElement('button'); trigger.id='erp-pill-trigger'; trigger.title='More';
+  var mv=_ic('moreHoriz')||'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>';
+  trigger.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+mv+'</svg>';
+  wrap.appendChild(pill); wrap.appendChild(trigger); document.body.appendChild(wrap);
+  var actions=[
+    // BIM face = the Bonsai modeller. Doctrine entry path: red pill → ⋯ rail → Bonsai tree → modeller.html
+    // (mirrors the ERP face's route to iDempiere). Bonsai-tree icon = verbatim Lucide tree-deciduous.
+    { id:'bonsai',    name:'BIM Modeller',  icon:_ic('bonsaiTree'),  fn:function(){ launchModeller(); } },
+    { id:'worldhist', name:'World History', icon:_ic('worldHist'), fn:function(){ openWorld(); } },
+    { id:'about',     name:'About',         icon:_ic('circleHelp'), fn:function(){ openAbout(); } }
+  ];
+  var PB=window.PillBuilder({ pill:pill, trigger:trigger, APP:{}, actions:actions,
+    order:actions.map(function(a){return a.id;}), storageKey:'index2_pill_config' });
+  trigger.addEventListener('pointerup', function(e){ e.stopPropagation(); PB.toggle(); });
+  trigger.addEventListener('animationend', function(){ trigger.classList.remove('erp-pill-attract'); });
+  PB.close();
+  _rail=PB; window._railWrap=wrap; window._railTrigger=trigger;
+  L('§RAIL mounted (real PillBuilder) pills=bonsai,worldHist,about');
+  return PB;
+}
+
+// BIM face launcher — the ⋯-rail Bonsai-tree pill opens the modeller (already-warm via red-pill preload).
+function launchModeller(){
+  try { if(window.WholeHistory && WholeHistory.record){ WholeHistory.record({ page:'viewer', label:'BIM', kind:'nav' }); } } catch(e){}
+  sfxPress();
+  L('§BONSAI-LAUNCH → viewer/modeller.html (warm='+(window.Bonsai && Bonsai._preload ? 'preloaded' : 'cold')+')');
+  location.href='viewer/modeller.html';
+}
+
+// ============ Reveal: ⋯ appears → rail rises → worldHist pill self-presses → World History ============
+function revealWorld(){
+  show('desktop');
+  buildRail();
+  if(window._railWrap) _railWrap.style.display='flex';
+  if(window._railTrigger){ _railTrigger.classList.remove('erp-pill-attract'); void _railTrigger.offsetWidth; _railTrigger.classList.add('erp-pill-attract'); }
+  L('§REVEAL three dots (⋯) shown bottom-right + attract');
+  setTimeout(function(){ if(_rail){ _rail.toggle(); sfxWhoosh(); L('§REVEAL rail rose up (pill-revealing) +sfx'); } }, 950);
+  setTimeout(function(){ pressWorldPill(); }, 1750);
+}
+function pressWorldPill(){
+  var btn=document.getElementById('pill-worldhist');
+  if(btn){ btn.classList.add('active'); sfxPress(); L('§REVEAL worldHist pill self-pressed +sfx');
+    setTimeout(function(){ btn.classList.remove('active'); }, 260); }
+  setTimeout(function(){ openWorld(); }, 280);
+}
+// World History = the REAL whole_history.js panel. BIM|ERP are seeded as the permanent entries (never deleted).
+function seedPermanent(){
+  if(!window.WholeHistory || !WholeHistory.record) return;
+  try {
+    var ex = WholeHistory.all ? WholeHistory.all() : [];
+    var have = {}; ex.forEach(function(e){ if(e && e.label==='BIM') have.bim=1; if(e && e.label==='ERP') have.erp=1; });
+    if(!have.bim) WholeHistory.record({ page:'viewer',     label:'BIM', kind:'nav' });   // → BIM canvas (viewer)
+    if(!have.erp) WholeHistory.record({ page:'idempiere',  label:'ERP', kind:'nav' });   // → erp
+    L('§WH_SEED bim='+(have.bim?'kept':'added')+' erp='+(have.erp?'kept':'added'));
+  } catch(e){ L('§WH_SEED fail '+e.message); }
+}
+function openWorld(){
+  seedPermanent();
+  if(window.WholeHistory && WholeHistory.open){ WholeHistory.open(); sfxChime(); L('§WORLDHISTORY opened (real whole_history panel)'); }
+  else L('§WORLDHISTORY WholeHistory missing');
+}
+
+// ============ About + install ============
+function openAbout(){ document.getElementById('about').classList.add('active'); L('§ABOUT opened'); }
+function closeAbout(){ document.getElementById('about').classList.remove('active'); }
+var _bip=null;
+window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); _bip=e; L('§INSTALL prompt_available=1'); });
+async function doInstall(){
+  var f=document.getElementById('install-flash');
+  if(_bip){ f.textContent='fetching — online for a sec…'; _bip.prompt();
+    var c=await _bip.userChoice; L('§INSTALL fired=1 outcome='+c.outcome); f.textContent='installed: '+c.outcome; _bip=null; }
+  else { L('§INSTALL no_prompt (iOS/unsupported) → hint'); f.textContent='On iPhone: Share → Add to Home Screen'; }
+}
+
+// ============ BOOT ============
+(async function boot(){
+  var qs=new URLSearchParams(location.search);
+  if(qs.has('building')||qs.has('client')||qs.has('skip')){ L('§BOOT deeplink bypass'); revealWorld(); return; }
+  var state=await probeColdWarm();
+  if(state==='warm'){ L('§BOOT warm → World History (no Morpheus)'); revealWorld(); }
+  else { L('§BOOT cold → Morpheus (ZERO load until red)'); show('morpheus'); }
+})();
+</script>
+</body>
+</html>
