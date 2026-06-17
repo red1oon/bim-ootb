@@ -430,7 +430,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=3"></script>
+<script src="ad_process.js?v=4"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -1878,6 +1878,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // (shipment) via the createShipment archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2 — W-PROC-SHIP-LIVE.
     if (window.ERPEngine && typeof window.AdProcess.registerInOutGenerate === 'function')
       window.AdProcess.registerInOutGenerate(window.ERPEngine);
+    // §GENINV-LIVE — the KIND-2 InvoiceGenerate handler (AD_Process 119): a CO Sales Order → C_Invoice via the
+    // createInvoice archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2-leg2 — Witness: W-PROC-INV-LIVE.
+    if (window.ERPEngine && typeof window.AdProcess.registerInvoiceGenerate === 'function')
+      window.AdProcess.registerInvoiceGenerate(window.ERPEngine);
     _procHandlersInstalled = true;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }
@@ -2000,29 +2004,41 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §GENSHIP-LIVE — InOutGenerate is record-scoped here (ship ONE order). The menu form is a warehouse-batch
     // selector; we offer the journey-coherent "ship this order" picker (CO Sales Orders), warehouse from the order.
     if (proc.classname === 'org.compiere.process.InOutGenerate') { renderOrderPicker(proc); return; }
+    // §GENINV-LIVE — InvoiceGenerate is record-scoped here (invoice ONE order). Same CO Sales Order picker as
+    // Generate Shipments; the order supplies the mandatory AD_Org_ID para (DocAction defaults to Complete).
+    if (proc.classname === 'org.compiere.process.InvoiceGenerate') { renderOrderPicker(proc); return; }
     if (proc.paras.length) renderProcParamForm(proc);
     else runProcess(proc, {});
   }
   function renderOrderPicker(proc) {
+    // Shared CO Sales Order picker for the two KIND-2 order-to-cash generators: Generate Shipments
+    // (InOutGenerate, M_Warehouse_ID para from the order) + Generate Invoices (InvoiceGenerate, AD_Org_ID para
+    // from the order; InvoiceGenerate also takes CL orders). The order supplies the mandatory para in both cases.
+    var isInv = proc.classname === 'org.compiere.process.InvoiceGenerate';
+    var verb = isInv ? 'Generate Invoice' : 'Generate Shipment';
+    var tag = isInv ? '§GENINV-LIVE' : '§GENSHIP-LIVE';
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, proc.name));
-    pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · pick a completed Sales Order to generate a shipment from'));
-    var rows = _sqlRows("SELECT c_order_id, documentno, deliveryrule, m_warehouse_id FROM c_order WHERE docstatus='CO' AND issotrx='Y' ORDER BY c_order_id");
+    pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · pick a completed Sales Order to ' + (isInv ? 'generate an invoice from' : 'generate a shipment from')));
+    var statusClause = isInv ? "docstatus IN ('CO','CL')" : "docstatus='CO'";
+    var rows = _sqlRows("SELECT c_order_id, documentno, deliveryrule, invoicerule, m_warehouse_id, ad_org_id FROM c_order WHERE " + statusClause + " AND issotrx='Y' ORDER BY c_order_id");
     var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Sales Order'));
-    var sel = document.createElement('select'); sel.setAttribute('data-genship-order', '1');
+    var sel = document.createElement('select'); sel.setAttribute(isInv ? 'data-geninv-order' : 'data-genship-order', '1');
     if (!rows.length) { var o0 = el('option', null, '— no completed Sales Orders in this tenant —'); o0.value = ''; sel.appendChild(o0); }
-    rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + r.deliveryrule + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); sel.appendChild(o); });
+    rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + (isInv ? r.invoicerule : r.deliveryrule) + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); o.setAttribute('data-org', String(r.ad_org_id)); sel.appendChild(o); });
     fld.appendChild(sel); pane.appendChild(fld);
     var actions = el('div', 'actions');
-    var run = el('button', 'run', 'Generate Shipment'); run.setAttribute('data-proc-run', '1');
+    var run = el('button', 'run', verb); run.setAttribute('data-proc-run', '1');
     var cancel = el('button', null, 'Cancel');
     run.addEventListener('click', function () {
       var opt = sel.options[sel.selectedIndex];
       var id = sel.value ? Number(sel.value) : null;
       if (id == null) { status('Pick a Sales Order first'); return; }
-      var wh = opt ? Number(opt.getAttribute('data-wh')) : null;   // M_Warehouse_ID is a mandatory para — from the order
-      console.log('§GENSHIP-LIVE run proc=' + proc.AD_Process_ID + ' Record_ID(C_Order_ID)=' + id + ' M_Warehouse_ID=' + wh);
-      runProcess(proc, wh != null ? { M_Warehouse_ID: wh } : {}, id);
+      var params, wh = opt ? Number(opt.getAttribute('data-wh')) : null, org = opt ? Number(opt.getAttribute('data-org')) : null;
+      if (isInv) params = { AD_Org_ID: org, DocAction: 'CO' };     // AD_Org_ID is the mandatory para — from the order; DocAction = Complete
+      else params = wh != null ? { M_Warehouse_ID: wh } : {};       // M_Warehouse_ID is the mandatory para — from the order
+      console.log(tag + ' run proc=' + proc.AD_Process_ID + ' Record_ID(C_Order_ID)=' + id + (isInv ? ' AD_Org_ID=' + org : ' M_Warehouse_ID=' + wh));
+      runProcess(proc, params, id);
     });
     cancel.addEventListener('click', function () {
       $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
@@ -2161,19 +2177,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §GENPO-LIVE / §GENSHIP-LIVE — a KIND-2 op-group result (CREATE_DOCUMENT + N CREATE_LINE), rendered
     // doc-aware off the folded header table. EXTRACT: every value comes from the source record / its lines.
     if (!absent && r && r.ops && r.header) {
-      var h = r.header, isShip = h.table === 'M_InOut';
+      var h = r.header, isShip = h.table === 'M_InOut', isInv = h.table === 'C_Invoice';
       if (isShip)
         pane.appendChild(el('div', 'msg', 'M_InOut (' + (h.movementtype === 'C-' ? 'Customer Shipment' : 'Vendor Receipt') +
           ') from order ' + h.c_order_id + ' · Warehouse ' + h.m_warehouse_id + ' · BPartner ' + h.c_bpartner_id));
+      else if (isInv)
+        pane.appendChild(el('div', 'msg', 'C_Invoice (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ') from order ' +
+          h.c_order_id + ' · BPartner ' + h.c_bpartner_id + ' · Bill-Location ' + h.c_bpartner_location_id + ' · PaymentTerm ' + h.c_paymentterm_id));
       else
         pane.appendChild(el('div', 'msg', 'C_Order (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ', On-Credit) from project ' +
           h.c_project_id + ' · BPartner ' + h.c_bpartner_id + ' · Warehouse ' + h.m_warehouse_id + ' · PriceList ' + h.m_pricelist_id));
       var lns = r.ops.filter(function (o) { return o.op_type === 'CREATE_LINE'; });
       var t = document.createElement('table'), tr = el('tr');
-      (isShip ? ['#', 'Product', 'Ship Qty'] : ['#', 'Product', 'Qty', 'Price']).forEach(function (hd, i) { tr.appendChild(el('th', i >= 2 ? 'r' : null, hd)); }); t.appendChild(tr);
+      (isShip ? ['#', 'Product', 'Ship Qty'] : isInv ? ['#', 'Product', 'Invoice Qty'] : ['#', 'Product', 'Qty', 'Price']).forEach(function (hd, i) { tr.appendChild(el('th', i >= 2 ? 'r' : null, hd)); }); t.appendChild(tr);
       lns.forEach(function (op) {
         tr = el('tr');
         (isShip ? [op.line, op.m_product_id, op.movementqty]
+                : isInv ? [op.line, op.m_product_id, op.qtyinvoiced]
                 : [op.line, op.m_product_id, op.qtyordered, op.priceactual == null ? '(price list)' : op.priceactual])
           .forEach(function (cv, i) { tr.appendChild(el('td', i >= 2 ? 'r' : null, cv == null ? '' : String(cv))); });
         t.appendChild(tr);
@@ -2181,6 +2201,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       pane.appendChild(t);
       pane.appendChild(el('div', 'msg', isShip
         ? r.lineCount + ' shipment line' + (r.lineCount === 1 ? '' : 's') + ' folded (MovementQty = min(QtyOrdered − QtyDelivered, OnHand))'
+        : isInv
+        ? r.lineCount + ' invoice line' + (r.lineCount === 1 ? '' : 's') + ' folded (QtyInvoiced = QtyOrdered − QtyInvoiced)'
         : r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
