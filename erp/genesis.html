@@ -56,13 +56,42 @@
 <script src="overlay_kit.js"></script>
 <script src="erp_snapshot_sign.js"></script>
 <script src="genesis_seed.js?v=1"></script>
-<script src="genesis.js?v=1"></script>
+<script src="genesis.js?v=2"></script>
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
 <script>
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
+  var _installBundle = null;   // the last birth's install bundle (G1..G7), set on a successful birth
+
+  // ── idb handoff (shares 'erp_cache'/'blobs' with idempiere.html) — write the install bundle, then redirect ──
+  function idbPut(key, val) {
+    return new Promise(function (resolve) {
+      try {
+        var req = indexedDB.open('erp_cache', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
+        req.onsuccess = function () {
+          var tx = req.result.transaction('blobs', 'readwrite');
+          tx.objectStore('blobs').put(val, key);
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = function () { resolve(false); };
+        };
+        req.onerror = function () { resolve(false); };
+      } catch (e) { resolve(false); }
+    });
+  }
+  // B3 — hand the born tenant to idempiere.html as a RESIDENT install: stash the bundle, redirect; the host's boot
+  // allocates the free client band, re-bands + merges it into the live ad_seed, then the login switcher lists it.
+  function installResident(btn) {
+    if (!_installBundle) return;
+    btn.disabled = true; btn.textContent = 'Installing…';
+    console.log('§W-GENESIS-RESIDENT-LIVE handoff client=' + _installBundle.input.clientName + ' groups=' + _installBundle.groups.length);
+    idbPut('genesis_pending', _installBundle).then(function () {
+      location.href = 'idempiere.html?installGenesis=1';
+    });
+  }
+  window._genesisInstallResident = installResident;   // the render() button calls this
 
   // ── better-sqlite3-shaped shim over a sql.js handle: get/all/run, named (@key) + positional (?). ──
   // (idempiere.html's _b3 is read-only; foldGenesis needs run() for INSERTs, so this is the full shim.)
@@ -122,6 +151,16 @@
       db.prepare('INSERT INTO c_invoiceline VALUES (@a,@b,@c)').run({ a: invId, b: born.refs.productId, c: 100.00 });
       db.prepare('INSERT INTO c_invoicetax VALUES (@a,@b,@c)').run({ a: invId, b: born.refs.taxId, c: 9.00 });
 
+      // INSTALL BUNDLE — G1..G6 + a G7 carrying THIS sample invoice (named columns so mergeGenesisInto can
+      // column-intersect into the resident schema). The same op-log, just one group longer; reband bands its
+      // *_id (invId > base) automatically. Stashed for the "Install as resident tenant" button (B3 handoff).
+      _installBundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups.concat([{
+        seq: born.groups.length + 1, label: 'G7 sample invoice', ops: [
+          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: '2024-01-15', docstatus: 'CO' } },
+          { op: 'CREATE', table: 'c_invoiceline', row: { c_invoice_id: invId, m_product_id: born.refs.productId, ad_client_id: born.refs.clientId, linenetamt: 100.00 } },
+          { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
+        ] }]) };
+
       // POST via the shipped doc_poster + post_resolver (same verbs the live Posting-Preview uses)
       var gl = window.DocPoster.derivePostings(db, { table: 'C_Invoice', id: invId }, born.refs.acctSchemaId, window.PostResolver);
       var byVal = {}; gl.lines.forEach(function (l) { byVal[l.value] = l; });
@@ -162,7 +201,12 @@
         + ' · ΣDr ' + money(gl.sumDr / 100) + ' / ΣCr ' + money(gl.sumCr / 100) + '</div></div>'
       + '<div class="card dim">Signed genesis bundle: head <span class="mono">' + s.sig.tip.slice(0, 16) + '…</span> · ECDSA P-256 '
         + (s.verified ? '<span class="ok">✓ verified</span>' : '<span class="bad">✗ unverified</span>')
-        + '<br>This birth is replayable, branchable and reversible — the tenant\'s entire genesis is an auditable op-log.</div>';
+        + '<br>This birth is replayable, branchable and reversible — the tenant\'s entire genesis is an auditable op-log.</div>'
+      // B3 — make the born tenant REAL: install it as a resident client you can log in to and work.
+      + (ok ? '<div class="card"><div style="margin-bottom:6px"><b>Make it real</b> — install <b>' + born.input.clientName
+          + '</b> as a resident tenant: re-banded into a free client slot, merged into the live dictionary, then you '
+          + 'log in to it and work (its windows, its data, sharing the System AD).</div>'
+          + '<button id="install-resident" onclick="_genesisInstallResident(this)">⬇ Install as resident tenant</button></div>' : '');
   }
 })();
 </script>

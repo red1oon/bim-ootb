@@ -424,7 +424,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=2"></script>
+<script src="ad_process.js?v=4"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -443,6 +443,7 @@
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
+<script src="genesis.js?v=2"></script>
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
@@ -592,6 +593,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       req.onsuccess = function () { req.result.transaction('blobs', 'readwrite').objectStore('blobs').put(val, key); };
     } catch (e) {}
   }
+  function idbDel(key) {
+    try {
+      var req = indexedDB.open('erp_cache', 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
+      req.onsuccess = function () { req.result.transaction('blobs', 'readwrite').objectStore('blobs').delete(key); };
+    } catch (e) {}
+  }
   function loadScript(url, cdn) {
     return new Promise(function (resolve) {
       var s = document.createElement('script'); s.src = url; s.onload = resolve;
@@ -671,6 +679,65 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   window.idmpInstallShard = installShard;   // the Install dialog success-path calls this in-page (erp_picker.js)
 
+  // ── installGenesis(bundle) — make a BORN tenant (genesis.html, an op-log of rows, not a .db file) RESIDENT ─────
+  // The sibling of installShard for the genesis path (GENESIS_RESIDENT_TENANT_SESSION §SPEC). genesis.html hands
+  // off the bundle via idb; here we allocate a free client band, RE-BAND every minted id into it (no collision),
+  // MERGE its rows into the live ad_seed sharing the System dictionary, and PERSIST — reusing the SAME persist seam
+  // installShard uses, so the born tenant survives a reload and the login switcher lists it. NON-INVENT: the engine
+  // (Genesis.rebandGenesis/mergeGenesisInto/nextClientId) is the headless-witnessed verb (W-GENESIS-RESIDENT); this
+  // is only the host glue (allocate + persist + idempotent guard). Returns {ok,clientId,rows,persisted}.
+  async function installGenesis(bundle) {
+    if (!bundle || !bundle.groups || !window.Genesis) return { ok: false };
+    // IDEMPOTENT GUARD — the born client carries no fixed id (it is allocated here), so guard on a same-name
+    // resident tenant: if one already exists, this is a re-entry (e.g. reload with a stale pending) → no-op.
+    var name = (bundle.input && bundle.input.clientName) || 'NewCo';
+    try { var exist = db.exec("SELECT AD_Client_ID FROM AD_Client WHERE Name=" + "'" + String(name).replace(/'/g, "''") + "'");
+      if (exist.length && exist[0].values.length) {
+        console.log('§GENESIS-RESIDENT-LIVE install-skip name=' + name + ' already-resident client=' + exist[0].values[0][0]);
+        return { ok: true, already: true, clientId: Number(exist[0].values[0][0]) }; } } catch (e) {}
+    var dbw = _b3w(db);                                        // full (writeable) better-sqlite3 shim over the live db
+    var newId = window.Genesis.nextClientId(dbw);
+    var rb = window.Genesis.rebandGenesis(bundle, { clientId: newId });
+    var rows = window.Genesis.mergeGenesisInto(rb.groups, dbw);
+    // GRANT the born admin role access to the shared System dictionary — else it logs in to an EMPTY menu. Same
+    // setup-default the headless witness proves (W-GENESIS-RESIDENT): read the System windows, grant them.
+    var grants = window.Genesis.grantFullAccess(dbw, rb.refs.roleAdminId, newId, rb.refs.orgId);
+    var clAfter = (SES && db) ? SES.listClients(db).length : -1;
+    console.log('§GENESIS-RESIDENT-LIVE install name=' + name + ' client=' + newId + ' rows=' + rows + ' grants=' + grants + ' clients→' + clAfter);
+    var persisted = false;
+    if (rows > 0) {
+      try { idbPut('ad_seed_v16', db.export().buffer); persisted = true;
+        console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v16 client=' + newId + ' resident=Y');
+        try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
+          label: 'Installed tenant ' + name + ' (' + rows + ' rows, client ' + newId + ')' }); } catch (e2) {} }
+      catch (e) { console.warn('§GENESIS-RESIDENT-LIVE persist failed ' + e.message); }
+    }
+    return { ok: rows > 0, clientId: newId, rows: rows, persisted: persisted };
+  }
+  window.idmpInstallGenesis = installGenesis;
+
+  // full (writeable) better-sqlite3-shaped shim over the live sql.js db — _b3 is read-only; mergeGenesisInto needs
+  // prepare().run() (INSERT) + prepare().all() (PRAGMA). Same shape genesis.html uses; named (@key) + positional.
+  function _b3w(dbh) {
+    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
+    function bindp(st, sql, args) {
+      if (!args.length) return; var p = args[0];
+      if (p != null && typeof p === 'object' && !Array.isArray(p)) {
+        var b = {}; Object.keys(p).forEach(function (k) { var m = sql.match(new RegExp('[@:$]' + k + '\\b')); b[(m ? m[0][0] : '@') + k] = p[k]; }); st.bind(b);
+      } else { st.bind(args.slice()); }
+    }
+    function exec(sql, args, all) {
+      var st = dbh.prepare(sql), out = all ? [] : undefined;
+      try { bindp(st, sql, args); if (all) { while (st.step()) out.push(lc(st.getAsObject())); } else if (st.step()) out = lc(st.getAsObject()); }
+      finally { st.free(); } return out;
+    }
+    return { prepare: function (sql) { return {
+      get: function () { return exec(sql, [].slice.call(arguments), false); },
+      all: function () { return exec(sql, [].slice.call(arguments), true); },
+      run: function () { var st = dbh.prepare(sql); try { bindp(st, sql, [].slice.call(arguments)); st.step(); } finally { st.free(); } return {}; }
+    }; } };
+  }
+
   async function boot() {
     await loadScript('lib/sql-wasm-fts5.js', 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js');
     var SQL;
@@ -713,6 +780,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.
     var shardParam = new URLSearchParams(location.search).get('shard');
     if (shardParam) await installShard(shardParam);
+    // GENESIS HANDOFF — genesis.html stashes a born tenant's bundle in idb then redirects here. Install it as a
+    // resident client (allocate band + re-band + merge + persist), clear the pending key so a later reload is a
+    // no-op, then fall through to login — the switcher now lists the new tenant. (GENESIS_RESIDENT_TENANT_SESSION B3.)
+    if (new URLSearchParams(location.search).get('installGenesis')) {
+      try { var pending = await idbGet('genesis_pending');
+        if (pending && pending.groups) { await installGenesis(pending); idbDel('genesis_pending'); }
+      } catch (e) { console.warn('§GENESIS-RESIDENT-LIVE handoff failed ' + e.message); } }
     if (ADP && ADP.init) ADP.init(db);
     console.log('§IDEMPIERE boot db=' + src + ' ms=' + Math.round(performance.now() - _t0));
 
@@ -1896,6 +1970,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // archetype (newVerbs=0). Implementing AD_PROCESS_FOLD_LANE.md §P1 — Witness: W-PROC-GENPO-LIVE.
     if (window.ERPEngine && typeof window.AdProcess.registerProjectGenOrder === 'function')
       window.AdProcess.registerProjectGenOrder(window.ERPEngine);
+    // §GENSHIP-LIVE — the KIND-2 InOutGenerate handler (AD_Process 118/199): a CO Sales Order → M_InOut
+    // (shipment) via the createShipment archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2 — W-PROC-SHIP-LIVE.
+    if (window.ERPEngine && typeof window.AdProcess.registerInOutGenerate === 'function')
+      window.AdProcess.registerInOutGenerate(window.ERPEngine);
+    // §GENINV-LIVE — the KIND-2 InvoiceGenerate handler (AD_Process 119): a CO Sales Order → C_Invoice via the
+    // createInvoice archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2-leg2 — Witness: W-PROC-INV-LIVE.
+    if (window.ERPEngine && typeof window.AdProcess.registerInvoiceGenerate === 'function')
+      window.AdProcess.registerInvoiceGenerate(window.ERPEngine);
     _procHandlersInstalled = true;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }
@@ -1970,6 +2052,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       fetchProjectLines: function (info) {
         var id = info && info.Record_ID; if (id == null) return [];
         return _sqlRows('SELECT * FROM c_projectline WHERE c_project_id=' + Number(id) + ' ORDER BY line, c_projectline_id');
+      },
+      // §GENSHIP-LIVE — InOutGenerate accessors. info.Record_ID = the chosen C_Order. onHandOf sums the REAL
+      // m_storageonhand for the product across the warehouse's locators (the Availability cap). A fully-delivered
+      // order (the seed's state) → the handler honestly yields 0 lines, never a fabricated shipment.
+      fetchOrder: function (info) {
+        var id = info && info.Record_ID; if (id == null) return null;
+        return _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+      },
+      fetchOrderLines: function (info) {
+        var id = info && info.Record_ID; if (id == null) return [];
+        return _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+      },
+      onHandOf: function (pid, wh) {
+        var r = _sqlRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
+        return r.length ? Number(r[0].oh) : 0;
       }
     };
   }
@@ -2000,8 +2097,50 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // (C_Project.GenerateTo, ref 28) is dropped by the S2B foldCrudSpec, so the menu/process path supplies the
     // project via a picker (decoupled path (a), AD_PROCESS_FOLD_LANE §CONFLICT). Every project row is real seed.
     if (proc.classname === 'org.compiere.process.ProjectGenOrder') { renderProjectPicker(proc); return; }
+    // §GENSHIP-LIVE — InOutGenerate is record-scoped here (ship ONE order). The menu form is a warehouse-batch
+    // selector; we offer the journey-coherent "ship this order" picker (CO Sales Orders), warehouse from the order.
+    if (proc.classname === 'org.compiere.process.InOutGenerate') { renderOrderPicker(proc); return; }
+    // §GENINV-LIVE — InvoiceGenerate is record-scoped here (invoice ONE order). Same CO Sales Order picker as
+    // Generate Shipments; the order supplies the mandatory AD_Org_ID para (DocAction defaults to Complete).
+    if (proc.classname === 'org.compiere.process.InvoiceGenerate') { renderOrderPicker(proc); return; }
     if (proc.paras.length) renderProcParamForm(proc);
     else runProcess(proc, {});
+  }
+  function renderOrderPicker(proc) {
+    // Shared CO Sales Order picker for the two KIND-2 order-to-cash generators: Generate Shipments
+    // (InOutGenerate, M_Warehouse_ID para from the order) + Generate Invoices (InvoiceGenerate, AD_Org_ID para
+    // from the order; InvoiceGenerate also takes CL orders). The order supplies the mandatory para in both cases.
+    var isInv = proc.classname === 'org.compiere.process.InvoiceGenerate';
+    var verb = isInv ? 'Generate Invoice' : 'Generate Shipment';
+    var tag = isInv ? '§GENINV-LIVE' : '§GENSHIP-LIVE';
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, proc.name));
+    pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · pick a completed Sales Order to ' + (isInv ? 'generate an invoice from' : 'generate a shipment from')));
+    var statusClause = isInv ? "docstatus IN ('CO','CL')" : "docstatus='CO'";
+    var rows = _sqlRows("SELECT c_order_id, documentno, deliveryrule, invoicerule, m_warehouse_id, ad_org_id FROM c_order WHERE " + statusClause + " AND issotrx='Y' ORDER BY c_order_id");
+    var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Sales Order'));
+    var sel = document.createElement('select'); sel.setAttribute(isInv ? 'data-geninv-order' : 'data-genship-order', '1');
+    if (!rows.length) { var o0 = el('option', null, '— no completed Sales Orders in this tenant —'); o0.value = ''; sel.appendChild(o0); }
+    rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + (isInv ? r.invoicerule : r.deliveryrule) + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); o.setAttribute('data-org', String(r.ad_org_id)); sel.appendChild(o); });
+    fld.appendChild(sel); pane.appendChild(fld);
+    var actions = el('div', 'actions');
+    var run = el('button', 'run', verb); run.setAttribute('data-proc-run', '1');
+    var cancel = el('button', null, 'Cancel');
+    run.addEventListener('click', function () {
+      var opt = sel.options[sel.selectedIndex];
+      var id = sel.value ? Number(sel.value) : null;
+      if (id == null) { status('Pick a Sales Order first'); return; }
+      var params, wh = opt ? Number(opt.getAttribute('data-wh')) : null, org = opt ? Number(opt.getAttribute('data-org')) : null;
+      if (isInv) params = { AD_Org_ID: org, DocAction: 'CO' };     // AD_Org_ID is the mandatory para — from the order; DocAction = Complete
+      else params = wh != null ? { M_Warehouse_ID: wh } : {};       // M_Warehouse_ID is the mandatory para — from the order
+      console.log(tag + ' run proc=' + proc.AD_Process_ID + ' Record_ID(C_Order_ID)=' + id + (isInv ? ' AD_Org_ID=' + org : ' M_Warehouse_ID=' + wh));
+      runProcess(proc, params, id);
+    });
+    cancel.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
+    _showProcPane(pane);
   }
   function renderProjectPicker(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
@@ -2131,23 +2270,36 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
     }
-    // §GENPO-LIVE — a KIND-2 op-group result (ProjectGenOrder): render the would-be C_Order header + lines folded
-    // from the project (CREATE_DOCUMENT + N CREATE_LINE). EXTRACT: every value comes from the project / its lines.
+    // §GENPO-LIVE / §GENSHIP-LIVE — a KIND-2 op-group result (CREATE_DOCUMENT + N CREATE_LINE), rendered
+    // doc-aware off the folded header table. EXTRACT: every value comes from the source record / its lines.
     if (!absent && r && r.ops && r.header) {
-      var h = r.header;
-      pane.appendChild(el('div', 'msg', 'C_Order (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ', On-Credit) from project ' +
-        h.c_project_id + ' · BPartner ' + h.c_bpartner_id + ' · Warehouse ' + h.m_warehouse_id + ' · PriceList ' + h.m_pricelist_id));
+      var h = r.header, isShip = h.table === 'M_InOut', isInv = h.table === 'C_Invoice';
+      if (isShip)
+        pane.appendChild(el('div', 'msg', 'M_InOut (' + (h.movementtype === 'C-' ? 'Customer Shipment' : 'Vendor Receipt') +
+          ') from order ' + h.c_order_id + ' · Warehouse ' + h.m_warehouse_id + ' · BPartner ' + h.c_bpartner_id));
+      else if (isInv)
+        pane.appendChild(el('div', 'msg', 'C_Invoice (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ') from order ' +
+          h.c_order_id + ' · BPartner ' + h.c_bpartner_id + ' · Bill-Location ' + h.c_bpartner_location_id + ' · PaymentTerm ' + h.c_paymentterm_id));
+      else
+        pane.appendChild(el('div', 'msg', 'C_Order (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ', On-Credit) from project ' +
+          h.c_project_id + ' · BPartner ' + h.c_bpartner_id + ' · Warehouse ' + h.m_warehouse_id + ' · PriceList ' + h.m_pricelist_id));
       var lns = r.ops.filter(function (o) { return o.op_type === 'CREATE_LINE'; });
       var t = document.createElement('table'), tr = el('tr');
-      ['#', 'Product', 'Qty', 'Price'].forEach(function (hd, i) { tr.appendChild(el('th', i >= 2 ? 'r' : null, hd)); }); t.appendChild(tr);
+      (isShip ? ['#', 'Product', 'Ship Qty'] : isInv ? ['#', 'Product', 'Invoice Qty'] : ['#', 'Product', 'Qty', 'Price']).forEach(function (hd, i) { tr.appendChild(el('th', i >= 2 ? 'r' : null, hd)); }); t.appendChild(tr);
       lns.forEach(function (op) {
         tr = el('tr');
-        [op.line, op.m_product_id, op.qtyordered, op.priceactual == null ? '(price list)' : op.priceactual]
+        (isShip ? [op.line, op.m_product_id, op.movementqty]
+                : isInv ? [op.line, op.m_product_id, op.qtyinvoiced]
+                : [op.line, op.m_product_id, op.qtyordered, op.priceactual == null ? '(price list)' : op.priceactual])
           .forEach(function (cv, i) { tr.appendChild(el('td', i >= 2 ? 'r' : null, cv == null ? '' : String(cv))); });
         t.appendChild(tr);
       });
       pane.appendChild(t);
-      pane.appendChild(el('div', 'msg', r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
+      pane.appendChild(el('div', 'msg', isShip
+        ? r.lineCount + ' shipment line' + (r.lineCount === 1 ? '' : 's') + ' folded (MovementQty = min(QtyOrdered − QtyDelivered, OnHand))'
+        : isInv
+        ? r.lineCount + ' invoice line' + (r.lineCount === 1 ? '' : 's') + ' folded (QtyInvoiced = QtyOrdered − QtyInvoiced)'
+        : r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
