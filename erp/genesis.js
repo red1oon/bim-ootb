@@ -176,7 +176,8 @@
     return {
       input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, adminUser: adminUser, dateAcct: dateAcct },
       groups: groups, tip: parent,
-      refs: { clientId: clientId, orgId: orgId, acctSchemaId: asId, bpartnerId: bpId, productId: prodId,
+      refs: { clientId: clientId, orgId: orgId, roleAdminId: roleAdminId, userId: userId,
+              acctSchemaId: asId, bpartnerId: bpId, productId: prodId,
               taxId: taxId, doctypeAriId: dtAriId, warehouseId: whId, periodId: periodId,
               ev: evByValue, vc: vcByColumn }
     };
@@ -204,6 +205,147 @@
     return n;
   }
 
+  // ── rebandGenesis — make a born tenant RESIDENT-safe (GENESIS_RESIDENT_TENANT_SESSION §SPEC). W-GENESIS-RESIDENT ─
+  //
+  //   A born tenant mints every id from a fixed base (1_000_000) — so two tenants, or a tenant + the resident
+  //   ad_seed, collide on PK/id values. Re-band offsets every genesis-minted *_id into a free per-client numeric
+  //   band, exactly the convention the demo shards use (clientNum*100000; Odoo[12] → 12_50001, 12_00001, …).
+  //
+  //   NON-INVENT rule (deterministic, no Date/random):
+  //     · idMap is built ONLY from the minted set — every distinct *_id value > genesisBase across all ops. Shared
+  //       System references (currencyId=100, etc.) are < genesisBase, so they are never in the map → never remapped.
+  //     · clientId          → newClientId (the small free AD_Client_ID; what listClients/scoping key on).
+  //     · every other minted → newClientId*stride + (id - genesisBase)   (the high data band).
+  //     · isactive:'Y' is injected into any row lacking it — SES.listClients (and most read-site queries) filter
+  //       IsActive='Y'; a born row carries none, so without this the resident tenant is invisible. 'Y' is the
+  //       canonical active flag every real iDempiere row carries (extract-the-default, not invent).
+  //     · the hash chain is recomputed over the re-banded ops so the op-log still verifies (git-for-a-tenant).
+  //   bundle = { groups, refs? } (born, optionally with an appended G7 sample-invoice group). Returns the same
+  //   shape re-banded, plus { clientId, idMap }.
+  function rebandGenesis(bundle, opts) {
+    opts = opts || {};
+    var newClientId = opts.clientId;
+    if (newClientId == null) throw new Error('rebandGenesis: opts.clientId required');
+    var base = opts.genesisBase != null ? opts.genesisBase : 1000000;
+    var stride = opts.stride != null ? opts.stride : 100000;
+    var bandBase = newClientId * stride;
+    var groups = bundle.groups || [];
+    var clientId = bundle.refs ? bundle.refs.clientId : null;
+
+    // collect the minted set, then build the value→value map
+    var minted = {};
+    groups.forEach(function (g) { (g.ops || []).forEach(function (o) {
+      Object.keys(o.row || {}).forEach(function (k) {
+        if (/_id$/i.test(k)) { var v = o.row[k]; if (typeof v === 'number' && v > base) minted[v] = true; }
+      });
+    }); });
+    var map = {};
+    Object.keys(minted).forEach(function (s) {
+      var v = Number(s);
+      map[v] = (v === clientId) ? newClientId : bandBase + (v - base);
+    });
+
+    // re-band the ops + inject isactive, rebuild the hash chain
+    var parent = '0'.repeat(64), out = [];
+    groups.forEach(function (g) {
+      var ops = (g.ops || []).map(function (o) {
+        var row = {};
+        Object.keys(o.row || {}).forEach(function (k) {
+          var v = o.row[k];
+          // apply by VALUE-membership, not column name: account columns are *_acct (c_receivable_acct,
+          // p_revenue_acct, t_due_acct) yet hold minted C_ValidCombination ids. The map holds ONLY genesis-minted
+          // ids (all > base), and no genesis amount/rate is > base, so value-membership has no false positive.
+          if (typeof v === 'number' && map[v] != null) v = map[v];
+          row[k] = v;
+        });
+        if (row.isactive == null) row.isactive = 'Y';
+        return { op: o.op, table: o.table, row: row };
+      });
+      var tip = sha256(parent + JSON.stringify(ops));
+      out.push({ seq: g.seq, label: g.label, ops: ops, parent: parent, tip: tip });
+      parent = tip;
+    });
+
+    // re-band refs (so callers — the invoice post, the deep link — address the new ids)
+    function rm(v) { return (typeof v === 'number' && map[v] != null) ? map[v] : v; }
+    var refs = null;
+    if (bundle.refs) {
+      refs = { clientId: newClientId };
+      Object.keys(bundle.refs).forEach(function (k) {
+        var v = bundle.refs[k];
+        if (k === 'clientId') return;
+        if (v && typeof v === 'object') { var m = {}; Object.keys(v).forEach(function (kk) { m[kk] = rm(v[kk]); }); refs[k] = m; }
+        else refs[k] = rm(v);
+      });
+    }
+    return { input: bundle.input, groups: out, tip: parent, refs: refs, clientId: newClientId, idMap: map };
+  }
+
+  // ── mergeGenesisInto — merge re-banded CREATE ops into an EXISTING (resident) DB, never CREATE a table ────────
+  //   The resident ad_seed already holds the System dictionary + other tenants; a born tenant SHARES it (client 0
+  //   AD, client N data). So we INTERSECT each row with the resident table's real columns (case-insensitive — born
+  //   rows are lowercase, resident tables CamelCase) and INSERT OR IGNORE (idempotent re-install). A table or column
+  //   the resident schema does not carry is skipped, never synthesized (NON-INVENT). Mirrors installShard's merge.
+  function mergeGenesisInto(groups, db) {
+    var schema = {}, n = 0;
+    function cols(t) {
+      if (schema[t] !== undefined) return schema[t];
+      var info; try { info = db.prepare('PRAGMA table_info("' + t + '")').all(); } catch (e) { info = []; }
+      var m = null;
+      if (info && info.length) { m = {}; info.forEach(function (c) { m[String(c.name).toLowerCase()] = c.name; }); }
+      schema[t] = m; return m;
+    }
+    groups.forEach(function (g) { (g.ops || []).forEach(function (o) {
+      if (o.op !== 'CREATE') return;
+      var c = cols(o.table); if (!c) return;                                  // resident has no such table → skip
+      var keys = Object.keys(o.row).filter(function (k) { return c[k.toLowerCase()]; });
+      if (!keys.length) return;
+      var canon = keys.map(function (k) { return '"' + c[k.toLowerCase()] + '"'; });
+      var sql = 'INSERT OR IGNORE INTO "' + o.table + '" (' + canon.join(',') + ') VALUES (' +
+        keys.map(function (k) { return '@' + k; }).join(',') + ')';
+      try { db.prepare(sql).run(o.row); n++; } catch (e) { /* honest skip; caller logs the count */ }
+    }); });
+    return n;
+  }
+
+  // ── nextClientId — first free AD_Client_ID for a born tenant, floored at 17 so the 5 demo tenants (12-16, each
+  //   data-banded to ≤1.6e6) never collide on either the client number OR the high data band (17→1_700_000). ──────
+  function nextClientId(db) {
+    var floor = 17, taken = {};
+    try {
+      var rows = db.prepare('SELECT AD_Client_ID AS id FROM AD_Client').all();
+      rows.forEach(function (r) { taken[Number(r.id)] = true; });
+    } catch (e) {}
+    var n = floor; while (taken[n]) n++;
+    return n;
+  }
+
+  // ── grantFullAccess — grant the born admin role access to the SHARED (System/client-0) dictionary ────────────
+  //   A born tenant SHARES client-0's AD_Window/Process/Form, but the menu is role-scoped via AD_*_Access — with
+  //   none, the tenant logs in to an EMPTY menu (can't work). iDempiere's InitialClientSetup grants the new client
+  //   admin role access to the dictionary; this replicates that at INSTALL time (where the resident db with the
+  //   System dictionary is available — genesis has no db at birth). NON-INVENT: we read the EXISTING System rows
+  //   and grant them (IsActive='Y'), exactly the setup default; INSERT OR IGNORE on the composite PK = idempotent.
+  function grantFullAccess(db, roleId, clientId, orgId) {
+    var n = 0;
+    function grant(srcTbl, accTbl, idCol, extra) {
+      var src; try { src = db.prepare('SELECT ' + idCol + ' AS id FROM ' + srcTbl + " WHERE IsActive='Y'").all(); } catch (e) { src = []; }
+      src.forEach(function (r) {
+        if (r.id == null) return;
+        var cols = ['AD_Client_ID', 'AD_Org_ID', 'AD_Role_ID', idCol, 'IsActive'].concat(Object.keys(extra || {}));
+        var vals = { c: clientId, o: orgId || 0, r: roleId, k: r.id };
+        var ph = ['@c', '@o', '@r', '@k', "'Y'"]; Object.keys(extra || {}).forEach(function (e) { ph.push("'" + extra[e] + "'"); });
+        try { db.prepare('INSERT OR IGNORE INTO ' + accTbl + ' (' + cols.join(',') + ') VALUES (' + ph.join(',') + ')').run(vals); n++; } catch (e) {}
+      });
+    }
+    grant('AD_Window', 'AD_Window_Access', 'AD_Window_ID', { IsReadWrite: 'Y' });
+    grant('AD_Process', 'AD_Process_Access', 'AD_Process_ID', {});
+    grant('AD_Form', 'AD_Form_Access', 'AD_Form_ID', {});
+    try { db.prepare("INSERT OR IGNORE INTO AD_Role_OrgAccess (AD_Client_ID,AD_Org_ID,AD_Role_ID,IsActive) VALUES (@c,@o,@r,'Y')")
+      .run({ c: clientId, o: orgId || 0, r: roleId }); } catch (e) {}
+    return n;
+  }
+
   // ── signHead — sign the genesis head tip (the signed bundle); isomorphic webcrypto (node + browser) ─────────
   async function signHead(groups) {
     if (typeof global.crypto === 'undefined' || !global.crypto.subtle) {
@@ -218,7 +360,9 @@
     return { tip: head, sig: await S.signTip(priv, head), pub: pub, verify: function (t, s) { return S.verifyTip(t, s, pub); } };
   }
 
-  var _api = { birthTenant: birthTenant, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256 };
+  var _api = { birthTenant: birthTenant, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
+    rebandGenesis: rebandGenesis, mergeGenesisInto: mergeGenesisInto, nextClientId: nextClientId,
+    grantFullAccess: grantFullAccess };
   if (typeof module !== 'undefined' && module.exports) module.exports = _api;
   else global.Genesis = _api;
 
