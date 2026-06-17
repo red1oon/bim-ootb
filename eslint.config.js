@@ -47,4 +47,13 @@ module.exports = [
       'no-undef': 'error',
     },
   },
+  {
+    // bonsai_kernel_worker.js is a MODULE Web Worker (ESM `import` of the occt kernel),
+    // unlike the rest of viewer/ which are global-scope <script> files. Parse it as a module
+    // so its import statements aren't a syntax error under the no-undef gate.
+    files: ['viewer/bonsai_kernel_worker.js'],
+    languageOptions: {
+      sourceType: 'module',
+    },
+  },
 ];
