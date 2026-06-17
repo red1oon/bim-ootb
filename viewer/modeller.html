@@ -45,8 +45,11 @@
 <script src="bonsai_kernel.js?v=1" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
-<!-- Bonsai feature tree: the op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=1" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
+<script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
+<script src="kernel_ops.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
+<!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
+<script src="bonsai_oplog.js?v=2" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -217,7 +220,7 @@ bCut.onclick = async () => {
   });
   setStat('cutting…');
   try {
-    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_CUT', parent: selectedId, parameters: { void: { c1, c2 } } }, { color: 0x9fd6b4 });
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_CUT', parameters: { parent: selectedId, void: { c1, c2 } } }, { color: 0x9fd6b4 });
     setStat('cut opening in #' + selectedId + '  tris=' + res.triangleCount); highlight(null); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER cut fail ' + err); }
 };
@@ -262,7 +265,7 @@ if (qs.get('recipe') === 'demo') {
       out.wallId = wall.id; out.afterWall = wall.triangleCount;     // expect 12
       // 2. pick it (programmatic), then cut a window through the thickness (child of #1).
       out.picked = window.Bonsai.select(wall.id);
-      const cut = await O.commit({ op_type: 'GEOM_CUT', parent: wall.id, parameters: { void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      const cut = await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
       out.afterCut = cut.triangleCount;                              // expect > 12 (hole)
       // 3. history replay: scrub back to before the cut, then forward again — deterministic.
       out.scrubBack = (await O.scrubTo(1)).triangleCount;            // expect == afterWall (hole gone)
@@ -272,6 +275,28 @@ if (qs.get('recipe') === 'demo') {
     window.__recipeResult = out;
     window.__recipeDone = true;
     console.log('§MODELLER recipe-done');
+  })();
+}
+// ?signed=demo proves geometry rides the SIGNED kernel_ops chain in-viewer (W-BONSAI-SIGNED): commit
+// wall+cut as signed op-groups, verify the chain, replay deterministically, then tamper a param → verify fails.
+if (qs.get('signed') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.wallId = wall.id; out.afterWall = wall.triangleCount; out.verifyWall = wall.verify; out.signedWall = wall.signed;
+      window.Bonsai.select(wall.id);
+      const cut = await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      out.afterCut = cut.triangleCount; out.verifyCut = cut.verify; out.signed = cut.signed; out.tip = cut.tip;
+      out.scrubBack = (await O.scrubTo(1)).triangleCount;
+      out.scrubFwd = (await O.scrubTo(2)).triangleCount;
+      const tv = await O.tamperFirstGeom();
+      out.tamperOk = tv.ok; out.tamperWhy = tv.why; out.brokeAt = tv.brokeAt;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OPLOG signed fail ' + e); }
+    window.__signedResult = out;
+    window.__signedDone = true;
+    console.log('§MODELLER signed-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
