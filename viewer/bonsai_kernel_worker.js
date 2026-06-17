@@ -6,9 +6,10 @@
 import { OcctKernel } from './lib/kernel/index.js';
 
 let kernelPromise = null;
+let _wasmBytes = null;   // pre-fetched bytes handed in by the host (preload) → single download, no re-fetch
 function getKernel() {
-  // OcctKernel.init() with no args auto-locates the co-located lib/kernel/occt-wasm.wasm.
-  if (!kernelPromise) kernelPromise = OcctKernel.init();
+  // With host-supplied bytes, init from them; else OcctKernel.init() auto-locates the co-located wasm.
+  if (!kernelPromise) kernelPromise = OcctKernel.init(_wasmBytes ? { wasm: _wasmBytes } : undefined);
   return kernelPromise;
 }
 
@@ -80,8 +81,14 @@ function foldChain(kernel, ops) {
 }
 
 self.onmessage = async (e) => {
-  const { id, op, ops } = e.data || {};
+  const { id, op, ops, warm, wasm } = e.data || {};
   try {
+    if (warm) {                                    // preload: warm the kernel (optionally from host bytes)
+      if (wasm) _wasmBytes = wasm;
+      await getKernel();
+      self.postMessage({ id, ok: true, warmed: true });
+      return;
+    }
     const kernel = await getKernel();
     if (ops) {                                       // CHAIN fold (feature tree) -> array of meshes
       const meshes = foldChain(kernel, ops);

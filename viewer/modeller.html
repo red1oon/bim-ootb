@@ -311,6 +311,29 @@ if (qs.get('recipe') === 'demo') {
     console.log('§MODELLER recipe-done');
   })();
 }
+// ?preload=demo proves the red-pill background preload: stream heavy assets with per-asset progress
+// (the status shower) + warm the kernel worker so authoring is instant on entry (W-BONSAI-PRELOAD).
+if (qs.get('preload') === 'demo') {
+  (async () => {
+    const ev = []; const out = {};
+    try {
+      const occt = new URL('lib/kernel/occt-wasm.wasm', location.href).href;
+      const planegcs = new URL('lib/planegcs/planegcs_dist/planegcs.wasm', location.href).href;
+      // occt = warm (bytes drive the worker); planegcs stands in for a 2nd asset (e.g. the iDempiere seed.db).
+      await window.Bonsai.preload({ assets: [{ key: 'occt-wasm', url: occt, warm: true }, { key: 'idmp-seed-stub', url: planegcs }] },
+        p => ev.push({ asset: p.asset, pct: +(p.pct || 0).toFixed(2), done: !!p.done }));
+      const r = await window.Bonsai.author(WALL, { color: 0x9fb4c8 });   // worker already warm → authors at once
+      out.events = ev.length;
+      out.occtStreamed = ev.filter(e => e.asset === 'occt-wasm').length;
+      out.occtDone = ev.some(e => e.asset === 'occt-wasm' && e.done);
+      out.seedDone = ev.some(e => e.asset === 'idmp-seed-stub' && e.done);
+      out.tris = r.triangleCount; out.bbox = r.bbox;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§BONSAI preload demo fail ' + e); }
+    window.__preloadResult = out;
+    window.__preloadDone = true;
+    console.log('§MODELLER preload-done');
+  })();
+}
 // ?outliner=demo proves the Bonsai Outliner reflects the signed op-log feature tree + Find (W-BONSAI-OUTLINER).
 if (qs.get('outliner') === 'demo') {
   (async () => {

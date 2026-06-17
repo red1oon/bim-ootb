@@ -43,6 +43,55 @@
       });
     },
 
+    // PRELOAD — background-fetch the heavy assets (occt wasm + any others, e.g. the iDempiere seed.db)
+    // with per-asset streamed progress, and WARM the kernel worker from the fetched bytes (single download,
+    // no re-fetch). Built to be called on the Morpheus red-pill pulse so the surface is hot on entry, with a
+    // status shower driven by onProgress({asset, loaded, total, pct, done}). The occt asset is warm:true (the
+    // bytes drive OcctKernel.init in the worker); others (the seed.db) are cache-warm fetches.
+    async _fetchProgress(url, key, onProgress) {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(url + ' ' + resp.status);
+      const total = +resp.headers.get('Content-Length') || 0;
+      const reader = resp.body.getReader();
+      const chunks = []; let loaded = 0, mark = 0;
+      for (; ;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); loaded += value.length;
+        if (onProgress) onProgress({ asset: key, loaded, total, pct: total ? loaded / total : 0 });
+        if (loaded - mark >= 4e6) { mark = loaded; console.log(TAG + ' load ' + key + ' ' + (loaded / 1e6).toFixed(1) + '/' + (total / 1e6).toFixed(1) + 'MB'); }
+      }
+      const buf = new Uint8Array(loaded); let off = 0;
+      for (const c of chunks) { buf.set(c, off); off += c.length; }
+      if (onProgress) onProgress({ asset: key, loaded, total: total || loaded, pct: 1, done: true });
+      console.log(TAG + ' load ' + key + ' DONE ' + (loaded / 1e6).toFixed(1) + 'MB');
+      return buf.buffer;
+    },
+
+    preload(opts, onProgress) {
+      if (typeof opts === 'function') { onProgress = opts; opts = null; }
+      if (this._preload) return this._preload;
+      const occt = new URL('lib/kernel/occt-wasm.wasm', _self).href;
+      const assets = (opts && opts.assets) || [{ key: 'occt-wasm', url: occt, warm: true }];
+      this._preload = (async () => {
+        for (const a of assets) {
+          let bytes = null;
+          try { bytes = await this._fetchProgress(a.url, a.key, onProgress); }
+          catch (e) { console.warn(TAG + ' preload ' + a.key + ' failed ' + e); continue; }
+          if (a.warm && bytes && this.isSupported()) {
+            const w = this.init();
+            const id = ++this._seq;
+            const warmed = new Promise((res, rej) => this._pending.set(id, { resolve: res, reject: rej }));
+            w.postMessage({ id, warm: true, wasm: bytes }, [bytes]);   // transfer bytes → worker inits from them
+            await warmed;
+            console.log(TAG + ' preload warmed worker from ' + a.key);
+          }
+        }
+        return true;
+      })();
+      return this._preload;
+    },
+
     // Fold a whole op-log CHAIN -> array of mesh payloads (the feature tree, evaluated in one pass).
     _foldChain(ops) {
       const w = this.init();
