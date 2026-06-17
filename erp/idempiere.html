@@ -115,6 +115,14 @@
   /* iDempiere L&F is ALWAYS ON (red pill / "just the pill" mode retired 2026-06-18): the classic ADWindow
      toolbar is the CRUD surface; the pill rail carries ONLY truly-OOTB extras (graph/kanban/history/POS/
      Ninja/…), alongside the classic chrome — never the navigation/CRUD/posting verbs iDempiere owns. */
+  /* The classic top toolbar is the SINGLE ADWindow toolbar — the inline edit-form's own verb bar is hidden
+     (its buttons stay in the DOM so the top Save/Ignore delegate to them; no second bar = true iDempiere L&F). */
+  #idmp-inline-mount .ic-bar { display:none !important; }
+  /* FUNDAMENTAL LAW — the bottom history scrubber + the Blue-Future band are NOT iDempiere; HIDDEN by default
+     (clean iDempiere surface), revealed only when the History pill is pressed (body.idmp-history-open). */
+  #idmp-scrub, #blue-rail { display:none !important; }
+  body.idmp-history-open #idmp-scrub { display:flex !important; }
+  body.idmp-history-open #blue-rail { display:flex !important; }
   #idmp-toolbar button {
     height:30px; min-width:30px; border:1px solid transparent; border-radius:4px; background:transparent;
     color:var(--idmp-text); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;
@@ -125,15 +133,18 @@
   #idmp-toolbar .sep { width:1px; height:20px; background:var(--idmp-border); margin:0 4px; }
   #idmp-toolbar .nav { font-size:12px; color:var(--idmp-muted); padding:0 6px; white-space:nowrap; }
   /* AD tab-strip */
+  /* iDempiere AD Window tab strip — classic folder/box tabs (the active tab connects to the content area). */
   #idmp-tabstrip {
-    flex:0 0 auto; display:flex; gap:2px; padding:6px 8px 0; background:var(--idmp-panel);
+    flex:0 0 auto; display:flex; gap:2px; padding:7px 8px 0; background:var(--idmp-panel);
     border-bottom:1px solid var(--idmp-border); overflow-x:auto;
   }
   .idmp-adtab {
-    padding:6px 14px; cursor:pointer; font-size:13px; color:var(--idmp-muted);
-    border-bottom:2px solid transparent; white-space:nowrap;
+    padding:6px 16px; cursor:pointer; font-size:13px; color:#5a6677; white-space:nowrap;
+    background:#e9edf3; border:1px solid var(--idmp-border); border-bottom:none;
+    border-radius:5px 5px 0 0; margin-bottom:-1px;
   }
-  .idmp-adtab.active { color:var(--idmp-blue); border-bottom-color:var(--idmp-blue); font-weight:600; }
+  .idmp-adtab:hover:not(.active) { background:#f0f3f8; }
+  .idmp-adtab.active { background:#fff; color:var(--idmp-blue); font-weight:600; border-bottom:1px solid #fff; }
   /* body */
   #idmp-content { flex:1; overflow:auto; padding:14px; min-height:0; }
   #idmp-placeholder { color:var(--idmp-muted); text-align:center; margin-top:14vh; font-size:14px; }
@@ -394,11 +405,10 @@
   <span class="spacer"></span>
   <span class="ctx" id="idmp-ctx">&mdash;</span>
   <span class="hbtns">
+    <!-- FUNDAMENTAL LAW (2026-06-18): the iDempiere surface is indistinguishable from real iDempiere — zero
+         learning curve. The header keeps ONLY iDempiere-native bits (menu · logo · search · role/client ctx ·
+         role-switch/logout). Non-iDempiere controls (Share, Home/engine-view, etc.) live in the pill rail. -->
     <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
-    <button id="idmp-share-btn" title="Share this page"></button>
-    <button id="idmp-home-btn" title="Home / Engine view (erp.html)">&#8962;</button>
-    <!-- §P3-REOPENED: the header '?' help glyph is RETIRED — ShowMe/Help is now the clean circleHelp 'showme' pill
-         on the side strip (IdmpPillActions.showme → toggleShowMe), honouring clean-Lucide-only + no-controls-outside-the-pill. -->
   </span>
 </div>
 
@@ -1451,8 +1461,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var w = _curWin(); var strip = $('idmp-tabstrip'); strip.style.display = 'flex'; strip.innerHTML = '';
     (w.tabs || []).forEach(function (tab, i) {
       var lvl = tab.tabLevel || 0;
-      var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), (lvl ? '└ ' : '') + tab.name);
-      if (lvl) t.style.paddingLeft = (14 + lvl * 12) + 'px';
+      var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), tab.name);   // no tree glyph — iDempiere shows plain tab names
+      if (lvl) t.style.paddingLeft = (16 + lvl * 10) + 'px';   // child tabs subtly indented (iDempiere parent→child)
       t.title = 'TabLevel ' + lvl + (tab.tableName ? ' · ' + tab.tableName : '');
       t.addEventListener('click', function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); });
       strip.appendChild(t);
@@ -3061,10 +3071,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // mode that HID iDempiere's classic chrome is gone; the classic ADWindow toolbar is now ALWAYS the CRUD
   // surface, and the pill rail carries ONLY truly-OOTB extras alongside it (never CRUD/navigation/posting).
 
+  // share — relocated off the header (FUNDAMENTAL LAW): a deep-link to the open window/record (native share or clipboard).
+  function _shareCurrent() {
+    var url = location.href.split('?')[0], q = [];
+    if (_activeWin != null) q.push('window=' + _activeWin);
+    var tab = _curTab(), rec = _records[_recIdx];
+    if (tab && rec) { var rid = recVal(rec, _keyCol(tab)); if (rid != null) q.push('record=' + rid); }
+    if (q.length) url += '?' + q.join('&');
+    var w = _curWin(); var title = (w ? w.name + ' — ' : '') + 'iDempiere-like';
+    if (navigator.share) navigator.share({ title: title, url: url });
+    else { try { navigator.clipboard.writeText(url); status('Link copied'); } catch (e) {} }
+    console.log('§IDMP-SHARE url=' + url);
+  }
   function mountPillRegistry() {
     window.IdmpPillActions = {
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor,
+      share: _shareCurrent, home: function () { location.href = 'erp.html'; },
       erpdoc: openReadCompare,
       // ABOUT_BOX_CONSOLIDATE.md — ShowMe/Help now opens the ONE shared About/DIY modal (was toggleShowMe).
       // Install/Migrate pills retired: the DIY tab carries "bring your data in" (download agent → run → load).
@@ -3111,7 +3134,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         else { try { navigator.clipboard.writeText(url); } catch(e){} }
         console.log('§POS-SHARE url=' + url); },
       // HISTORY_KNOB_DIAL.md — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) is in idmp_pills.js.
-      worldhist: function () { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); },
+      worldhist: function () {
+        // FUNDAMENTAL LAW — History is opt-in: pressing it REVEALS the bottom scrubber + the Blue-Future band
+        //   (otherwise hidden for a clean iDempiere surface), and opens the cross-page timeline.
+        var on = document.body.classList.toggle('idmp-history-open');
+        console.log('§IDMP-HISTORY-TOGGLE open=' + on);
+        if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen();
+      },
       // Sound FX — the SAME speaker pill as the BIM viewer (sfx.js loaded above publishes window.toggleSfx /
       // window.__sfx). Tap toggles the ERP/POS earcons; the choice PERSISTS (localStorage sfx_on). builder.sync()
       // re-lights the pill on the spot (isActive → __sfx.isOn()), like redpill/showme.
@@ -3269,25 +3298,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§IDMP-MENU collapsed=' + c + ' innerW=' + window.innerWidth); }
     });
     $('idmp-menu-backdrop').addEventListener('click', function () { document.body.classList.remove('menu-open'); });
-    $('idmp-home-btn').addEventListener('click', function () { location.href = 'erp.html'; });
-    (function () {
-      var ic = window.ICONS && window.ICONS.share;
-      var btn = $('idmp-share-btn');
-      btn.innerHTML = ic ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ic.svg + '</svg>' : '&#8679;';
-      btn.addEventListener('pointerup', function () {
-        var url = location.href.split('?')[0];
-        var q = [];
-        if (_activeWin != null) q.push('window=' + _activeWin);
-        var tab = _curTab(), rec = _records[_recIdx];
-        if (tab && rec) { var rid = recVal(rec, _keyCol(tab)); if (rid != null) q.push('record=' + rid); }
-        if (q.length) url += '?' + q.join('&');
-        var w = _curWin();
-        var title = (w ? w.name + ' — ' : '') + 'iDempiere-like';
-        if (navigator.share) navigator.share({ title: title, url: url });
-        else { try { navigator.clipboard.writeText(url); } catch(e){} }
-        console.log('§IDMP-SHARE url=' + url);
-      });
-    })();
+    // FUNDAMENTAL LAW — Share + Home/engine-view are NOT iDempiere chrome → relocated to the pill rail
+    //   (IdmpPillActions.share / .home, registered in mountPillRegistry). The header carries no such buttons.
     mountPillRegistry();
     if (window.IdmpHistory) window.IdmpHistory.registerRestore(_histRestore);   // §B — read-only nav restore
     // W2 (HISTORY_WHOLE_TIMELINE.md): cross-page launcher + consume a pending cross-page restore (read-only).

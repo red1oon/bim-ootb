@@ -73,8 +73,18 @@ const server = http.createServer((req, res) => {
 
   await page.screenshot({ path: path.join(__dirname, 'classic_chrome.png'), fullPage: false });
 
-  const pass = actA && actB && actC && errs.length === 0;
-  console.log('§W-CLASSIC-CHROME ACT_A=' + actA + ' ACT_B=' + actB + ' ACT_C=' + actC + ' pageErrors=' + (errs.length ? errs.slice(0,2).join('|') : 0));
+  // ACT D — the bottom history scrubber + Blue-Future band are HIDDEN by default (clean iDempiere surface),
+  //   and pressing the History pill REVEALS them (body.idmp-history-open). FUNDAMENTAL LAW.
+  const vis = (sel) => page.evaluate((s) => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== 'none' && e.offsetParent !== null); }, sel);
+  const scrubDefault = await vis('#idmp-scrub'), blueDefault = await vis('#blue-rail');
+  await page.evaluate(() => { const b = document.getElementById('pill-worldhist'); if (b) { b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); } });
+  await page.waitForTimeout(400);
+  const openClass = await page.evaluate(() => document.body.classList.contains('idmp-history-open'));
+  console.log('§CLASSIC-CHROME-D scrubDefault=' + scrubDefault + ' blueDefault=' + blueDefault + ' historyPill→open=' + openClass);
+  const actD = !scrubDefault && !blueDefault && openClass === true;
+
+  const pass = actA && actB && actC && actD && errs.length === 0;
+  console.log('§W-CLASSIC-CHROME ACT_A=' + actA + ' ACT_B=' + actB + ' ACT_C=' + actC + ' ACT_D=' + actD + ' pageErrors=' + (errs.length ? errs.slice(0,2).join('|') : 0));
   console.log('§W-CLASSIC-CHROME-RESULT ' + (pass ? 'PASS' : 'FAIL'));
   await browser.close(); server.close(); process.exit(pass ? 0 : 1);
 })().catch(e => { console.error('§W-CLASSIC-CHROME-RESULT FAIL ' + e.message); process.exit(1); });

@@ -125,6 +125,22 @@
       "icon": "worldHist",
       "order": 9,
       "note": "HISTORY_KNOB_DIAL.md — the cross-page History overlay (which building/doc/page). TAP = open the across-pages overlay (WholeHistory.toggleOpen); LONG-PRESS = a drawer with Z (this page's dot-timeline bar = IdmpHistory) + bomb (clear history, warns first; no shortcut). Replaces the standalone bottom-left clock launcher (WholeHistory mounts {launcher:false}). Two-overlapping-circles glyph. NEVER stage-gated (history is useful anywhere)."
+    },
+    {
+      "id": "share",
+      "name": "Share this page",
+      "key": "",
+      "icon": "share",
+      "order": 8.7,
+      "note": "Deep-link to the open window/record (native share / clipboard). FUNDAMENTAL LAW — relocated off the iDempiere header to the pill rail (not iDempiere chrome)."
+    },
+    {
+      "id": "home",
+      "name": "Engine view",
+      "key": "",
+      "icon": "home",
+      "order": 8.8,
+      "note": "Jump to the engine view (erp.html). FUNDAMENTAL LAW — relocated off the iDempiere header to the pill rail."
     }
   ]
 }
