@@ -31,6 +31,7 @@
   <button id="b-sketch" disabled>✎ Sketch</button>
   <button id="b-extrude" disabled style="display:none">⬆ Extrude</button>
   <button id="b-cut" disabled>✂ Cut</button>
+  <button id="b-ifc" disabled>⤓ IFC</button>
   <button id="b-clear" disabled>Clear</button>
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:10px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
@@ -50,6 +51,9 @@
 <script src="kernel_ops.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
 <script src="bonsai_oplog.js?v=2" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
+<script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
+<script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -237,7 +241,18 @@ slider.addEventListener('input', async () => {
   await window.Bonsai.oplog.scrubTo(+slider.value);
 });
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = false;
+// ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
+const bIfc = document.getElementById('b-ifc');
+bIfc.onclick = async () => {
+  if (window.Bonsai.oplog.length === 0) { setStat('author something first'); return; }
+  setStat('exporting IFC…');
+  try {
+    const r = await window.Bonsai.ifc.exportModel({ name: 'bonsai_model.ifc' });
+    setStat('IFC exported  walls=' + r.walls + '  openings=' + r.openings + '  ' + r.bytes.length + ' bytes (downloaded)');
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
+};
+
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = false;
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -275,6 +290,25 @@ if (qs.get('recipe') === 'demo') {
     window.__recipeResult = out;
     window.__recipeDone = true;
     console.log('§MODELLER recipe-done');
+  })();
+}
+// ?ifc=demo authors a wall+opening, EXPORTS the op-log to IFC4, then re-imports to prove the round-trip (W-BONSAI-IFC).
+if (qs.get('ifc') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      window.Bonsai.select(wall.id);
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      const built = await window.Bonsai.ifc.exportModel({ download: false });   // build bytes, skip the browser download in headless
+      out.bytes = built.bytes.length; out.builtWalls = built.walls; out.builtOpenings = built.openings; out.builtRels = built.rels;
+      out.src = built.firstWall;
+      out.re = await window.Bonsai.ifc.reimport(built.bytes);                    // re-import the exported bytes
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§IFC demo fail ' + e); }
+    window.__ifcResult = out;
+    window.__ifcDone = true;
+    console.log('§MODELLER ifc-done');
   })();
 }
 // ?signed=demo proves geometry rides the SIGNED kernel_ops chain in-viewer (W-BONSAI-SIGNED): commit
