@@ -98,6 +98,9 @@
     }
     registerHandler('report:c_order',   receiptHandler('c_order'),   { kind: 'report', reportKey: 'c_order' });
     registerHandler('report:c_invoice', receiptHandler('c_invoice'), { kind: 'report', reportKey: 'c_invoice' });
+    // report:c_project — "Rpt C_Project" (AD_Process 217, Project Print). KIND-1, folds via the SAME foldReceipt
+    // (REPORT_MAP.c_project), no new fold code. AD_PROCESS_FOLD_LANE §P2-leg3 — Witness: W-PROC-PROJPRINT.
+    registerHandler('report:c_project', receiptHandler('c_project'), { kind: 'report', reportKey: 'c_project' });
 
     // org.compiere.report.TrialBalance -> report_overlay.foldTrialBalance over the posted journal.
     registerHandler('org.compiere.report.TrialBalance', function (ctx, info) {
@@ -435,6 +438,10 @@
       // map known report procs to the report_overlay header tables (extracted, not invented)
       if (/c_order\b|order print|rpt c_order/.test(hay) && !/invoice/.test(hay)) return 'report:c_order';
       if (/c_invoice|invoice print|rpt c_invoice/.test(hay)) return 'report:c_invoice';
+      // "Rpt C_Project" (217) — SPECIFIC match (c_project / project print), NOT the broad "project" so the other
+      // RV_Project* report-VIEW procs (218 RV_ProjectCycle, 226/228/229/234) stay absent-handler (no foldReceipt
+      // for a report view — those are a later report-view fold, not this leg).
+      if (/c_project|project print|rpt c_project/.test(hay)) return 'report:c_project';
     }
     return proc.classname || '';     // blank -> no handler -> absent-handler result downstream
   }
