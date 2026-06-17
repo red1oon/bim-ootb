@@ -28,6 +28,7 @@
 <div id="bar">
   <button id="b-wall" disabled>+ Wall</button>
   <button id="b-open" disabled>+ Opening</button>
+  <button id="b-grid" disabled>▦ Grid</button>
   <button id="b-sketch" disabled>✎ Sketch</button>
   <button id="b-extrude" disabled style="display:none">⬆ Extrude</button>
   <button id="b-cut" disabled>✂ Cut</button>
@@ -54,6 +55,8 @@
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
+<!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
+<script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -168,8 +171,10 @@ canvas.addEventListener('pointerdown', (e) => {
   raycaster.setFromCamera(ndc, camera);
   const hit = new THREE.Vector3();
   if (raycaster.ray.intersectPlane(GROUND, hit)) {
-    window.Bonsai.sketch.addPoint(hit.x, hit.y); sketchMarkers();
-    setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points');
+    // 2D correlation: if the grid is active, snap the click to the nearest gridlines (A-1, B-2…).
+    const s = window.Bonsai.grid.snap(hit.x, hit.y);
+    window.Bonsai.sketch.addPoint(s.x, s.y); sketchMarkers();
+    setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points' + (s.ref && (s.snappedX || s.snappedY) ? '  @' + s.ref : ''));
   }
 });
 bExtrude.onclick = async () => {
@@ -241,6 +246,15 @@ slider.addEventListener('input', async () => {
   await window.Bonsai.oplog.scrubTo(+slider.value);
 });
 
+// ── ARCHITECTURAL GRID (2D correlation) ─────────────────────────────────────────────────────────
+const bGrid = document.getElementById('b-grid');
+window.Bonsai.grid.define();   // default column grid A–D × 1–3
+bGrid.onclick = () => {
+  const on = window.Bonsai.grid.show(!window.Bonsai.grid.active);
+  bGrid.textContent = on ? '▦ Grid ✓' : '▦ Grid';
+  setStat(on ? 'grid ON — sketch clicks snap to gridlines (A-1, B-2…)' : 'grid off');
+};
+
 // ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
 const bIfc = document.getElementById('b-ifc');
 bIfc.onclick = async () => {
@@ -252,7 +266,7 @@ bIfc.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = false;
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = false;
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -290,6 +304,31 @@ if (qs.get('recipe') === 'demo') {
     window.__recipeResult = out;
     window.__recipeDone = true;
     console.log('§MODELLER recipe-done');
+  })();
+}
+// ?grid=demo proves 2D correlation (W-BONSAI-GRID): define a column grid, snap NOISY clicks to it,
+// solve+commit a wall, and confirm every wall corner lands EXACTLY on a gridline with a grid reference.
+if (qs.get('grid') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.grid.show(true);
+      window.Bonsai.oplog.clear(); window.Bonsai.sketch.reset();
+      // clicks NEAR grid nodes A1,B1,B2,A2 (off by up to 0.2) — snap must pull them onto the grid.
+      const clicks = [[0.18, 0.05], [3.88, 0.12], [4.1, 2.9], [0.05, 3.07]];
+      out.snapped = clicks.map(c => { const s = window.Bonsai.grid.snap(c[0], c[1]); window.Bonsai.sketch.addPoint(s.x, s.y); return { x: s.x, y: s.y, ref: s.ref }; });
+      const wall = await window.Bonsai.oplog.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: window.Bonsai.sketch.points.map(p => [p.x, p.y]) }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.tris = wall.triangleCount;
+      // every committed corner must sit on a gridline (exact) and yield an architectural ref.
+      const ops = window.Bonsai.oplog._geomOps();
+      const pts = ops[0].parameters.profile.points;
+      out.corners = pts.map(p => { const r = window.Bonsai.grid.refAt(p[0], p[1]); return { p, ref: (r.x || '·') + '-' + (r.y || '·'), onGrid: !!(r.x && r.y) }; });
+      out.allOnGrid = out.corners.every(c => c.onGrid);
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§GRID demo fail ' + e); }
+    window.__gridResult = out;
+    window.__gridDone = true;
+    console.log('§MODELLER grid-done');
   })();
 }
 // ?ifc=demo authors a wall+opening, EXPORTS the op-log to IFC4, then re-imports to prove the round-trip (W-BONSAI-IFC).
