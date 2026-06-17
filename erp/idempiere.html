@@ -2872,12 +2872,24 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _overlay('Kanban — ' + tab.name + ' (read-only)', rbc); console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T); return;
     }
     // fold the OPEN window's records PER-ROW by RAW docstatus (codes, not labels), overlaying the op-log tip.
-    var tip = window.KanbanHost.tip(_kanbanProj), byS = {};
+    // S6 LENS-SWAP (GRAND_LANE): read the tip from the SHARED kernel sidecar (__crud) — the SAME store the
+    //   grid/form DocAction path writes (J5) — so a status set on the grid SHOWS on the board, and (with the
+    //   re-pointed drag below) a board drag SHOWS on the grid. ONE owned model, visible across skins. Hydrate
+    //   the lazy sidecar first (null on a fresh load) so the board reflects persisted DocActions, and write the
+    //   tip back onto the rec so the board's `from` matches what _fsmCtx reads when the drag fires.
+    await new Promise(function (resolve) {
+      if (window.__crud && typeof window.__crud.withSidecar === 'function') window.__crud.withSidecar(function () { resolve(); });
+      else resolve();
+    });
+    var _cr = window.__crud, _readTip = (_cr && typeof _cr.readTip === 'function') ? _cr.readTip : null;
+    var _Tlc = String(T).toLowerCase(), _tipN = 0, byS = {};
     _records.forEach(function (r) {
       var id = recVal(r, kc), s = String(recVal(r, statusCol) || '');
-      var t = tip['DOC:' + T + '#' + id]; if (t) s = t;
+      var t = _readTip ? _readTip(_Tlc, id) : null;
+      if (t != null && t !== '' && String(t) !== s) { s = String(t); r[_recKey(r, 'DocStatus')] = s; _tipN++; }   // SHARED sidecar tip
       (byS[s] = byS[s] || []).push(id);
     });
+    if (_tipN) console.log('§KANBAN-TIP source=__crud.readTip(shared) table=' + _Tlc + ' advanced=' + _tipN + ' (grid⇆kanban one store)');
     var folds = Object.keys(byS).map(function (s) { return { table: T, doc_status: s, count: byS[s].length, ids: byS[s].slice(0, 30) }; });
     var board = window.KanbanLens.buildBoard(folds, _kanbanWfmc, { showEmptyStates: true });
     // ── "Odoo-marvel" card meta — DICTIONARY-DRIVEN, NON-INVENT, ZERO per-model code (KANBAN_MARVEL_SPEC).
@@ -2913,20 +2925,35 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     container.appendChild(root);
     _overlay('Kanban — ' + tab.name, container);
     window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc, meta: kmeta,
-      dispatch: window.ERP.dispatch, ctx: window.ERP.ctx,
+      // S6 LENS-SWAP — a kanban drag is the SAME signed verb as the grid/form DocAction: reuse the SHARED
+      //   _fsmCtx(tab,rec).dispatch(action) seam (AdDocFsm decides legality + transition → __crud.process →
+      //   commitProcess → completeFanout → signed commitGroup → persist to the SHARED kernel sidecar). The
+      //   ring NEVER opens; the kanban no longer forks its own op-log (_kanbanProj) — Kanban-drag ⇆ grid-bar ⇆
+      //   gear-batch are now ONE owned model, one store, one write path (doctrine §0: never fork a verb).
+      //   The lens's wfmc drop-zones stay the fast visual mirror; AdDocFsm is the WRITE authority (it may
+      //   reject a wfmc-legal drag for period/processing — then the card honestly snaps back).
+      dispatch: function (intent) {
+        var rec = _records.filter(function (r) { return String(recVal(r, kc)) === String(intent.id); })[0];
+        if (!rec) { console.log('§KANBAN-WRITE no-rec id=' + intent.id); return { ok: false, reason: 'no-rec' }; }
+        var fc = _fsmCtx(tab, rec);
+        if (!fc) { console.log('§KANBAN-WRITE no-fsm table=' + T + ' id=' + intent.id); return { ok: false, reason: 'no-fsm' }; }
+        var res = fc.dispatch(intent.action);   // AdDocFsm legality + __crud.process on the SHARED signed lane
+        if (res && res.ok) console.log('§KANBAN-WRITE ok ' + T + '#' + intent.id + ' action=' + intent.action +
+          ' from=' + res.from + ' to=' + res.to + ' via=__crud.process store=shared(__crud)');
+        else console.log('§KANBAN-WRITE rejected ' + T + '#' + intent.id + ' action=' + intent.action + ' why=' + (res && res.reason));
+        return { ok: !!(res && res.ok), to: res && res.to, reason: res && res.reason };
+      }, ctx: {},
       onResult: function (res, dr) {
-        if (dr && dr.ok) {
-          var v = window.ERP.verify();                          // A: effects determinism (replay×2 equal)
-          // I-4: SEAL the op so the live SET_STATUS write is genuinely SIGNED (W-CHAIN+W-SIGN), then verify
-          // the chain (incl. ECDSA signature). This is the same signed log the ⚖ rule edit rides.
-          Promise.resolve(window.ERP.seal ? window.ERP.seal() : null).then(function () {
-            return window.ERP.chainVerify ? window.ERP.chainVerify() : { ok: v.chainOk, len: v.len };
-          }).then(function (cv) {
-            console.log('§KANBAN-WRITE ok ' + res.table + '#' + res.id + ' to=' + dr.to +
-              ' effects=' + v.chainOk + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N') + ' signed=' + (window.ERP.ctx && window.ERP.ctx.pubKey ? 'Y' : 'N') + ' len=' + (cv && cv.len));
-            window.KanbanHost.persist(_kanbanProj, _KPROJ);
-          });
-        } else if (dr && dr.rejected) { console.log('§KANBAN-WRITE rejected why=' + dr.why); }
+        // the signed write + chain verify + persist all happen INSIDE __crud.process (commitProcess →
+        //   commitGroup → verifyChain → _sidePersist → IDB) and the engine logs the authoritative
+        //   "§CRUD process committed … verifyChain=ok". Here we only confirm the SHARED sidecar tip settled
+        //   to the new status once the async commit lands (the kernel sidecar — not _kanbanProj — is the truth).
+        if (dr && dr.ok && window.__crud && typeof window.__crud.withSidecar === 'function') {
+          setTimeout(function () { window.__crud.withSidecar(function () {
+            try { console.log('§KANBAN-WRITE settled ' + res.table + '#' + res.id +
+              ' shared-tip=' + (window.__crud.readTip(String(res.table).toLowerCase(), res.id) || '?') + ' (kernel sidecar = the one store)'); } catch (e) {}
+          }); }, 350);
+        }
       } });
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
   }
