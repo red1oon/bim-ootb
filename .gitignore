@@ -17,3 +17,6 @@ quick-push.sh
 BIM_CONTEXT/
 !erp/preview_demo.db
 !buildings/warehouse_gardenworld.db
+
+# Bonsai kernel: 22MB occt wasm is a vendored deploy asset, not git-tracked (slim build pending)
+viewer/lib/kernel/occt-wasm.wasm

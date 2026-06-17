@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bonsai Modeller — alternative authoring viewer</title>
+<!-- ALTERNATIVE viewer surface for the Bonsai authoring kernel. Does NOT load viewer.html /
+     does NOT touch the production viewer. prompts/BONSAI_KERNEL_RESEARCH.md Item 2 leg 1:
+     occt-wasm kernel in a Web Worker -> kernel_ops op-row folds into a mesh in this scene. -->
+<style>
+  html, body { margin: 0; height: 100%; background: #14161c; overflow: hidden; font-family: -apple-system, system-ui, sans-serif; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #bar { position: fixed; top: 10px; left: 10px; display: flex; gap: 8px; z-index: 10; }
+  #bar button { background: #232733; color: #cdd6e4; border: 1px solid #39404f; border-radius: 7px;
+    padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  #bar button:hover { background: #2c3140; }
+  #bar button:disabled { opacity: .5; cursor: default; }
+  #stat { position: fixed; bottom: 10px; left: 10px; color: #6b7488; font-size: 11px; z-index: 10;
+    font-family: ui-monospace, monospace; white-space: pre; }
+  #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./lib/three.webgpu.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="bar">
+  <button id="b-wall" disabled>+ Wall</button>
+  <button id="b-open" disabled>+ Opening</button>
+  <button id="b-clear" disabled>Clear</button>
+</div>
+<div id="title">BONSAI · MODELLER</div>
+<div id="stat">booting…</div>
+
+<!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
+<script src="bonsai_kernel.js?v=1" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+
+<!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
+<script type="module">
+import { OrbitControls } from './lib/OrbitControls.module.js';
+// ESM namespaces are frozen — copy into a plain mutable object (same shim as loader.js §S276).
+// scene.js overlays the STANDARD WebGL build for a real WebGLRenderer (the webgpu bundle ships
+// only WebGPURenderer); mirror that so the modeller uses the production rendering stack.
+const _std = await import('./lib/three.module.min.js');
+const THREE = {}; for (const k of Object.keys(_std)) THREE[k] = _std[k];
+window.THREE = THREE;
+THREE.OrbitControls = OrbitControls;
+THREE.ColorManagement.enabled = false;
+
+const stat = document.getElementById('stat');
+const setStat = (m) => { stat.textContent = m; };
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161c);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 5000);
+camera.position.set(6, 5, 8);
+
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.target.set(2, 1, 1.5);
+
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202028, 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(5, 10, 7); scene.add(key);
+const grid = new THREE.GridHelper(40, 40, 0x2a3040, 0x21262f); scene.add(grid);
+scene.add(new THREE.AxesHelper(1.5));
+
+// window.A — the alternative viewer's app object, matching the viewer's A.scene convention so
+// bonsai_kernel.js drops the authored mesh into A.scene exactly as it would in the main viewer.
+window.A = { scene, camera, renderer, controls };
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// ── Sample op-rows (kernel_ops-shaped) — same params proven by W-KERNEL-FOLD / W-KERNEL-SIGNED.
+const WALL = { id: 1, op_type: 'GEOM_EXTRUDE', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3] } };
+const OPENING = { id: 2, op_type: 'GEOM_OPENING', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3], void: { c1: [1, -1, 1], c2: [2, 1, 2] } } };
+
+const bWall = document.getElementById('b-wall');
+const bOpen = document.getElementById('b-open');
+const bClear = document.getElementById('b-clear');
+
+async function author(op, color) {
+  setStat('folding ' + op.op_type + '…');
+  try {
+    const r = await window.Bonsai.author(op, { color });
+    setStat(op.op_type + '  tris=' + r.triangleCount + '  bbox=[' + r.bbox + ']');
+  } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
+}
+bWall.onclick = () => author(WALL, 0x9fb4c8);
+bOpen.onclick = () => author(OPENING, 0xc8a99f);
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } setStat('cleared'); };
+
+bWall.disabled = bOpen.disabled = bClear.disabled = false;
+setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
+window.__sceneReady = true;
+console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
+
+// Headless witness hook: ?author=wall|opening|both auto-authors after boot.
+const q = new URLSearchParams(location.search).get('author');
+if (q) {
+  (async () => {
+    if (q === 'wall' || q === 'both') await author(WALL, 0x9fb4c8);
+    if (q === 'opening' || q === 'both') await author(OPENING, 0xc8a99f);
+    window.__authorDone = true;
+    console.log('§MODELLER author-done q=' + q);
+  })();
+}
+</script>
+</body>
+</html>
