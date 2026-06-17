@@ -59,7 +59,7 @@ async function backToGrid(page) {
 // fill every mandatory editable field on the open folded create form (iDempiere asks for these on a New BP)
 async function fillBpForm(page, marker) {
   await page.evaluate((m) => {
-    const form = document.getElementById('crudForm'); if (!form) return;
+    const form = document.getElementById('idmp-inline-mount') || document.getElementById('crudForm'); if (!form) return;   // P3: inline create form
     const set = (col, val) => { const el = form.querySelector('[data-col="' + col + '"]'); if (!el || el.disabled) return;
       if (el.tagName === 'SELECT' && !Array.from(el.options).some(o => String(o.value) === String(val))) { const o = document.createElement('option'); o.value = val; o.textContent = val; el.appendChild(o); }
       el.value = val; el.dispatchEvent(new Event('change', { bubbles: true })); el.dispatchEvent(new Event('input', { bubbles: true })); };
@@ -105,19 +105,19 @@ async function fillBpForm(page, marker) {
   const curated = await page.evaluate(() => { try { const st = window.__crud.store && window.__crud.store(); return !!(st && Object.prototype.hasOwnProperty.call(st, 'c_bpartner')); } catch (e) { return null; } });
   ok('c_bpartner is NOT in the curated crud_ops allow-list (proves generality, not a hand-list)', curated === false, 'curatedHas=' + curated);
 
-  // ════════════ ACT 1 — FOLD + CREATE ════════════
+  // ════════════ ACT 1 — FOLD + CREATE (P3: New is IN PLACE — inline create form, no modal) ════════════
   await openRow(page, basePks[0]);
   await tapPill(page, 'formnew');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('.idmp-form-new #idmp-inline-mount .cfrow', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(700);
   const foldLog = lastLog(/§S2B-FOLD table=c_bpartner/);
   console.log('§FOLD-CRUD ACT1 fold="' + foldLog + '"');
   ok('§S2B-FOLD derived create/update/delete verbs for c_bpartner FROM the AD', /verbs=\[create,update,delete\]/.test(foldLog) && /isView=false/.test(foldLog), foldLog);
-  ok('New opened a create form (NOT the "not in crud_ops" skip)', anyLog(/§CRUD-HOSTCREATE table=c_bpartner open=create-form/) && !anyLog(/§CRUD-HOSTCREATE table=c_bpartner skipped/), '');
+  ok('New opened the inline create form (NOT the "not in crud_ops" skip)', anyLog(/§INPLACE-NEW table=c_bpartner/) && !anyLog(/§INPLACE-NEW table=c_bpartner skipped/), '');
   const marker = 'S2B-BP-' + Math.floor(port);
   await fillBpForm(page, marker);
   const newRingFanned = await ringOpen(page);
-  await page.evaluate(() => { const s = document.getElementById('cfSave'); if (s) s.click(); });
+  await page.evaluate(() => { const s = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]'); if (s && !s.disabled) s.click(); });
   await page.waitForTimeout(1500);
   const rejected = lastLog(/§CRUD validate key=c_bpartner verb=create REJECT/);
   await backToGrid(page);
@@ -172,13 +172,13 @@ async function fillBpForm(page, marker) {
   await backToGrid(page);
   await page.waitForTimeout(300); await backToGrid(page);
 
-  // ════════════ ACT 3 — DELETE ════════════
+  // ════════════ ACT 3 — DELETE (P3: inline confirm strip, no modal) ════════════
   await openRow(page, draftPk);
   await tapPill(page, 'formdel');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('#idmp-inline-mount .ic-confirm', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(400);
   const delRing = await ringOpen(page);
-  await page.evaluate(() => { const d = document.getElementById('cfDel'); if (d) d.click(); });
+  await page.evaluate(() => { const d = document.querySelector('#idmp-inline-mount [data-c="del"]'); if (d) d.click(); });
   await page.waitForTimeout(1400);
   await backToGrid(page);
   const afterDel = await gridPks(page);

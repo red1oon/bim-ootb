@@ -519,7 +519,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=16"></script>
+<script src="crud_overlay.js?v=17"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -1251,15 +1251,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // _openCreate (S2/J4) — iDempiere's OWN New: open the create FORM directly via the host seam (__crud.create),
   //   NOT the visual ring fan (doctrine §0: the ring is Glass/Gravity-only). The create-twin of J5's Process seam:
   //   same proven write lane (saveForm → signed CRUD_CREATE), iDempiere's own surface. Save = #cfSave (_formSave).
+  // P3 (CRUD_INPLACE_EDIT_SESSION.md) — New is IN PLACE: enter new-mode → a blank inline create form (no modal).
   function _openCreate() {
     var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
     if (!window.__crud || !tn) { status('New — open a window first'); console.log('§FORM-PILL new=skip(no-table)'); return; }
+    if (typeof window.__crud.createInline === 'function') { _startInlineNew(null); console.log('§FORM-PILL new=inline-create table=' + tn + ' (no modal, ring not fanned)'); return; }
+    _openCreate0();   // pre-P3 fallback (older overlay) — modal create
+  }
+  function _openCreate0() {
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn) { status('New — open a window first'); return; }
     if (typeof window.__crud.create !== 'function') { _openCrudRing(); return; }   // pre-J4 fallback (older overlay)
-    // hostCreate runs _ensureStore (the crud_ops fetch is lazy) then checks entryFor/verbEnabled — so a New on the
-    //   very first click (before the store loads) resolves correctly; a non-creatable table logs §CRUD-HOSTCREATE skip.
-    // S2B — register the AD-folded create-spec for a non-curated table FIRST so entryFor resolves (general, not curated).
     _withFoldedEntry(tn, 'create', function () {
-      window.__crud.create(tn);                                // the form + CSS are mounted at overlay init — no enable()/ring needed (mirrors hostProcess)
+      window.__crud.create(tn);
       console.log('§FORM-PILL new=create-form table=' + tn + ' (ring not fanned)');
     });
   }
@@ -1285,9 +1289,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
   }
   function _openDelete() {
+    // P3 — Delete is IN PLACE: if the inline editor is mounted, trigger its inline confirm strip (no modal).
+    var inlineDel = document.querySelector('#idmp-inline-mount .ic-vb[data-v="delete"]');
+    if (inlineDel) { inlineDel.click(); console.log('§FORM-PILL delete=inline-confirm (no modal, ring not fanned)'); return; }
     var t = _selectedPkFor('delete'); if (!t) return;
     if (typeof window.__crud.remove !== 'function') { _openCrudRing(); return; }
-    _withFoldedEntry(t.tn, 'update', function () {                                 // S2B — fold a non-curated table so entryFor resolves
+    _withFoldedEntry(t.tn, 'update', function () {                                 // pre-P3 fallback — modal delete-confirm
       window.__crud.remove(t.tn, t.id);
       console.log('§FORM-PILL delete=delete-confirm table=' + t.tn + ' id=' + t.id + ' (ring not fanned)');
     });
@@ -1367,6 +1374,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     Object.keys(_selByLevel).forEach(function (L) { if (Number(L) > lvl) delete _selByLevel[L]; });
   }
   function renderActiveTab() {
+    _newMode = null;   // P3 — any tab switch / grid reload exits new-record mode (untouched New auto-discards, nothing committed)
     var tab = _curTab(); if (!tab) return;
     if (!tab.tableName) { _records = []; _recIdx = 0; $('idmp-content').innerHTML = '<div id="idmp-placeholder">Tab has no table.</div>'; return; }
     // Honest: ad_seed.db carries AD metadata for ALL windows but DATA for a curated subset only.
@@ -2116,26 +2124,57 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
   }
 
+  // P3 (CRUD_INPLACE_EDIT_SESSION.md) — new-record mode: when New/Copy is invoked, the form view mounts a blank
+  //   (or cloned) inline CREATE form instead of an existing record. _newMode = null | {copyFrom: pk|null}.
+  var _newMode = null;
+  // _inlineOptsFor — the shared opts the inline editor calls back through (edit + create both use this contract).
+  function _inlineOptsFor(tn, formEl) {
+    return {
+      onDirty: function (dirty) { formEl.classList.toggle('idmp-form-dirty', !!dirty); },   // T3 — dirty blocks Process
+      refresh: function () { _newMode = null; renderActiveTab(); _viewMode = 'form'; refreshForm(); },
+      onNew: function () { _startInlineNew(null); },
+      onCopy: function () { _startInlineNew(_curRecPk()); },
+      afterSaveCreate: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // saved New → show the new row in the grid
+      afterDiscardNew: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // Ignore on a New → back to grid
+      afterDelete: function () { _newMode = null; _viewMode = 'grid'; renderToolbar(); },                          // tombstone → grid (overlay:committed refolds)
+      onUnsupported: function () { formEl.className = 'idmp-form'; var m = formEl.querySelector('#idmp-inline-mount'); if (m) m.remove(); _appendReadonlyFields(formEl, _curTab(), _records[_recIdx]); }
+    };
+  }
+  // _startInlineNew — enter new-record mode (blank or cloned-from copyFromId) and render the inline create form.
+  function _startInlineNew(copyFromId) {
+    var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (!window.__crud || !tn) { status('New — open a window first'); console.log('§FORM-PILL new=skip(no-table)'); return; }
+    if (typeof window.__crud.createInline !== 'function') { _openCreate0(); return; }   // pre-P3 fallback (older overlay)
+    _newMode = { copyFrom: copyFromId == null ? null : copyFromId };
+    _viewMode = 'form'; renderBody(); renderToolbar();
+  }
   function buildForm(tab) {
     var rec = _records[_recIdx];
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    // P3 — NEW / COPY: mount a blank (or cloned) inline create form (no modal, no record loaded).
+    if (_newMode && tn && window.__crud && typeof window.__crud.createInline === 'function') {
+      var nf = el('div', 'idmp-form idmp-form-inline idmp-form-new'); nf.id = 'idmp-form';
+      nf.setAttribute('data-ad-table', tab.tableName);
+      var nmount = el('div', null); nmount.id = 'idmp-inline-mount'; nf.appendChild(nmount);
+      var copyFrom = _newMode.copyFrom;
+      _withFoldedEntry(tn, 'create', function () {
+        var opts = _inlineOptsFor(tn, nf);
+        if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
+        else window.__crud.createInline(tn, nmount, opts);
+      });
+      return nf;
+    }
     var pk = rec ? recVal(rec, _keyCol(tab)) : null;
-    // P2 — IN-PLACE EDIT (prompts/CRUD_INPLACE_EDIT_SESSION.md): the iDempiere form view IS the editable surface
-    //   (no read→✎ Edit→modal). Mount the crud_overlay inline editor for a real record on a CRUD-capable table;
-    //   fall back to the read-only render when there's no record / no crud spec (engine reports onUnsupported).
+    // P2 — IN-PLACE EDIT: the iDempiere form view IS the editable surface (no read→✎ Edit→modal). Mount the inline
+    //   editor for a real record on a CRUD-capable table; fall back to the read-only render when there's no record /
+    //   no crud spec (engine reports onUnsupported).
     var canInline = !!(rec && tn && window.__crud && typeof window.__crud.editInline === 'function' && _crudHas(tn) && pk != null && String(pk) !== '');
     if (canInline) {
       var ef = el('div', 'idmp-form idmp-form-inline'); ef.id = 'idmp-form';
       ef.setAttribute('data-ad-table', tab.tableName); ef.setAttribute('data-ad-record', pk);
       var fsmBar = buildDocActionBar(tab, rec); if (fsmBar) ef.appendChild(fsmBar);   // Process bar stays SEPARATE (T2)
       var mountEl = el('div', null); mountEl.id = 'idmp-inline-mount'; ef.appendChild(mountEl);
-      _withFoldedEntry(tn, 'update', function () {
-        window.__crud.editInline(tn, pk, mountEl, {
-          onDirty: function (dirty) { ef.classList.toggle('idmp-form-dirty', !!dirty); },   // T3 — dirty blocks Process
-          refresh: function () { renderActiveTab(); _viewMode = 'form'; refreshForm(); },
-          onUnsupported: function () { ef.className = 'idmp-form'; mountEl.remove(); _appendReadonlyFields(ef, tab, rec); }
-        });
-      });
+      _withFoldedEntry(tn, 'update', function () { window.__crud.editInline(tn, pk, mountEl, _inlineOptsFor(tn, ef)); });
       return ef;
     }
     var form = el('div', 'idmp-form'); form.id = 'idmp-form';
@@ -2375,8 +2414,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
         console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
         try { _overlayListTip(ct, _records); } catch (er) {}
-        // P2 — in form view re-mount the inline editor from the now-committed tip (baseline resets, dirty clears).
-        if (_viewMode === 'form') { try { refreshForm(); } catch (er2) {} }
+        // P2/P3 — repaint the CURRENT view post-commit: form view re-mounts the inline editor from the now-committed
+        //   tip (baseline resets, dirty clears); grid view repaints so a created row APPEARS / a deleted row vanishes.
+        if (_viewMode === 'form') { try { refreshForm(); } catch (er2) {} } else { try { renderBody(); } catch (er3) {} }
         return;                                                // a DATA edit on the OPEN tab — overlaid in place, done
       }
       // S4 LIVE MODEL SELF-EDIT — a CRUD write on an AD_* DICTIONARY table (e.g. AD_Field.IsDisplayed) is NOT a

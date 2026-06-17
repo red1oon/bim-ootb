@@ -80,15 +80,15 @@ async function backToGrid(page) {
   console.log('§CRUD-FULL setup client=11 baseRealPks=' + JSON.stringify(basePks));
   ok('GardenWorld Sales-Order grid has existing rows to change', basePks.length >= 2, 'pks=' + JSON.stringify(basePks));
 
-  // ════════════ ACT 1 — CREATE ════════════
+  // ════════════ ACT 1 — CREATE (P3: New is IN PLACE — inline create form, no modal) ════════════
   await openRow(page, basePks[0]);
   await tapPill(page, 'formnew');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
-  await page.waitForTimeout(700);
-  await page.evaluate(() => { const bp = document.querySelector('#crudForm [data-col="c_bpartner_id"]'); if (bp) { if (!Array.from(bp.options).some(o => String(o.value) === '120')) { const o = document.createElement('option'); o.value = '120'; o.textContent = 'Seed Farm Inc. (120)'; bp.appendChild(o); } bp.value = '120'; bp.dispatchEvent(new Event('change', { bubbles: true })); } });
+  await page.waitForSelector('.idmp-form-new #idmp-inline-mount .cfrow', { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  await page.evaluate(() => { const bp = document.querySelector('#idmp-inline-mount [data-col="c_bpartner_id"]'); if (bp) { if (!Array.from(bp.options).some(o => String(o.value) === '120')) { const o = document.createElement('option'); o.value = '120'; o.textContent = 'Seed Farm Inc. (120)'; bp.appendChild(o); } bp.value = '120'; bp.dispatchEvent(new Event('change', { bubbles: true })); } });
   await page.waitForTimeout(500);
   const newRingFanned = await ringOpen(page);
-  await page.evaluate(() => { const s = document.getElementById('cfSave'); if (s) s.click(); });
+  await page.evaluate(() => { const s = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]'); if (s && !s.disabled) s.click(); });
   await page.waitForTimeout(1500);
   await backToGrid(page);
   const afterCreate = await gridPks(page);
@@ -139,13 +139,13 @@ async function backToGrid(page) {
   ok('UPDATE SURVIVES reload (the edited value re-folds after a fresh load)', String(reloadVal) === marker, 'got="' + reloadVal + '"');
   await backToGrid(page);
 
-  // ════════════ ACT 3 — DELETE the draft ════════════
+  // ════════════ ACT 3 — DELETE the draft (P3: inline confirm strip, no modal) ════════════
   await openRow(page, draftPk);
   await tapPill(page, 'formdel');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('#idmp-inline-mount .ic-confirm', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(400);
   const delRing = await ringOpen(page);
-  await page.evaluate(() => { const d = document.getElementById('cfDel'); if (d) d.click(); });
+  await page.evaluate(() => { const d = document.querySelector('#idmp-inline-mount [data-c="del"]'); if (d) d.click(); });
   await page.waitForTimeout(1400);
   await backToGrid(page);
   const afterDel = await gridPks(page);

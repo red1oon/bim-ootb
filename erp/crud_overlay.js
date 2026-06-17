@@ -708,7 +708,7 @@
   // form's field rows. The shared helpers (fieldInput/populateRefs/applyAdLogic/gatherVals/saveForm/restoreDraft)
   // all query fhost, so the SAME engine serves two mounts: the modal #crudForm (Glass/Gravity ring) and the
   // iDempiere form view rendered INLINE (no modal, no ✎ Edit). _inlineHost!=null ⇒ the open form is the inline one.
-  var fhost = null, _inlineHost = null, _inlineBaseline = null, _onInlineDirty = null;
+  var fhost = null, _inlineHost = null, _inlineBaseline = null, _inlineOpts = null, _inlinePendingNew = false;
   // Item 1 (PRIVATE DRAFT RESTORE, W-DRAFT-RESTORE-LIVE) — the OPEN form's context, so closeForm/beforeunload can
   // buffer the unsaved typing for (table,id) WITHOUT committing an official op. Cleared by closeForm. _draftSeq is
   // a monotonic ts (no Date.now — the draft buffer is not the op-log but we keep determinism anyway).
@@ -1250,6 +1250,7 @@
   // saved tip. Save is the hard boundary before Process (T3 — dirty blocks DocAction). Witness W-INPLACE-EDIT-LIVE.
   function _inlineDirty() {
     if (!_inlineBaseline || !_formCtx) return false;
+    if (_formCtx.verb === 'create') return true;   // a new record (New/Copy) is a pending insert — Save/Save&New/Ignore live from the start (iDempiere parity); validate gates mandatory on Save, nav auto-discards an untouched New
     var vals = gatherVals(_formCtx.e);
     return (_formCtx.e.fields || []).some(function (f) {
       return String(vals[f.col] == null ? '' : vals[f.col]) !== String(_inlineBaseline[f.col] == null ? '' : _inlineBaseline[f.col]);
@@ -1258,23 +1259,28 @@
   function _refreshInlineDirty() {
     if (!_inlineHost) return;
     var dirty = _inlineDirty();
-    var sv = _inlineHost.querySelector('.ic-vb[data-v="save"]'), ig = _inlineHost.querySelector('.ic-vb[data-v="ignore"]');
-    if (sv) sv.disabled = !dirty;
-    if (ig) ig.disabled = !dirty;
+    ['save', 'savenew', 'ignore'].forEach(function (v) { var b = _inlineHost.querySelector('.ic-vb[data-v="' + v + '"]'); if (b) b.disabled = !dirty; });
     var pip = _inlineHost.querySelector('.ic-dirty'); if (pip) pip.style.display = dirty ? '' : 'none';
-    if (typeof _onInlineDirty === 'function') { try { _onInlineDirty(dirty); } catch (e) {} }   // T3 — host disables Process while dirty
+    if (_inlineOpts && typeof _inlineOpts.onDirty === 'function') { try { _inlineOpts.onDirty(dirty); } catch (e) {} }   // T3 — host disables Process while dirty
   }
+  // _inlineVerbBar — iDempiere's real toolbar set (ADWindowToolbar), folded per AD verbEnabled, verb-aware:
+  //   New · Copy · Save · Save&New · Delete · Ignore · Refresh. NO Edit button (the form IS editable). On a
+  //   create form Copy/Delete are absent (nothing saved yet to copy/delete); Save/Save&New/Ignore are dirty-gated.
   function _inlineVerbBar(verb, e) {
-    var canU = CORE.verbEnabled(e, 'update');
-    return '<div class="ic-bar" role=toolbar>' +
-      '<button class="ic-vb ic-save" data-v="save" disabled title="Save (Alt+S)">Save</button>' +
-      '<button class="ic-vb" data-v="ignore" disabled title="Ignore — discard unsaved edits (Alt+Z)">Ignore</button>' +
-      '<button class="ic-vb" data-v="refresh" title="Refresh (Alt+E)">Refresh</button>' +
-      '<span class=ic-grow></span><span class=ic-dirty style="display:none">● unsaved</span></div>' +
-      (canU ? '' : '<div class=ic-ro>This record is read-only per its dictionary.</div>');
+    var canU = CORE.verbEnabled(e, 'update'), canC = CORE.verbEnabled(e, 'create'), canD = CORE.verbEnabled(e, 'delete');
+    var isCreate = verb === 'create', b = [];
+    if (canC)               b.push('<button class="ic-vb" data-v="new" title="New (Alt+N)">New</button>');
+    if (canC && !isCreate)  b.push('<button class="ic-vb" data-v="copy" title="Copy (Alt+C)">Copy</button>');
+    b.push('<button class="ic-vb ic-save" data-v="save" disabled title="Save (Alt+S)">Save</button>');
+    if (canC)               b.push('<button class="ic-vb" data-v="savenew" disabled title="Save &amp; New (Alt+A)">Save&amp;New</button>');
+    if (canD && !isCreate)  b.push('<button class="ic-vb ic-del" data-v="delete" title="Delete (Alt+D)">Delete</button>');
+    b.push('<button class="ic-vb" data-v="ignore" disabled title="Ignore — discard unsaved edits (Alt+Z)">Ignore</button>');
+    b.push('<button class="ic-vb" data-v="refresh" title="Refresh (Alt+E)">Refresh</button>');
+    return '<div class="ic-bar" role=toolbar>' + b.join('') + '<span class=ic-grow></span><span class=ic-dirty style="display:none">● unsaved</span></div>' +
+      (canU || isCreate ? '' : '<div class=ic-ro>This record is read-only per its dictionary.</div>');
   }
-  function renderInline(verb, e, vals, orig, id, host, onDirty) {
-    fhost = host; _inlineHost = host; _onInlineDirty = onDirty || null;
+  function renderInline(verb, e, vals, orig, id, host, opts) {
+    fhost = host; _inlineHost = host; _inlineOpts = opts || {}; _inlinePendingNew = false;
     var h = _inlineVerbBar(verb, e);
     (e.fields || []).forEach(function (f) {
       // data-ad-table/data-ad-column keep the host contract (IdmpHost.locate / ShowMe / lens field-targeting,
@@ -1296,17 +1302,30 @@
     // Save validates + diffs against the POST-RENDER baseline (the true user delta) — so untouched fields that the
     //   spec/render handles imperfectly (a readonly fk select that fell to another option, a string-coded fk) never
     //   trip validation and are never written; only what the user actually changed is checked + committed.
-    var sv = host.querySelector('.ic-vb[data-v="save"]'); if (sv) sv.addEventListener('click', function () { if (!_inlineDirty()) return; saveForm(verb, e, _inlineBaseline || orig, id); });
-    var ig = host.querySelector('.ic-vb[data-v="ignore"]'); if (ig) ig.addEventListener('click', function () { ignoreInline(); });
-    var rf = host.querySelector('.ic-vb[data-v="refresh"]'); if (rf) rf.addEventListener('click', function () { if (typeof _inlineRefresh === 'function') _inlineRefresh(); });
+    var save = function () { if (!_inlineDirty()) return; saveForm(verb, e, _inlineBaseline || orig, id); };
+    var wire = function (v, fn) { var b = host.querySelector('.ic-vb[data-v="' + v + '"]'); if (b) b.addEventListener('click', fn); };
+    wire('save', save);
+    wire('savenew', function () { if (!_inlineDirty()) return; _inlinePendingNew = true; saveForm(verb, e, _inlineBaseline || orig, id); });
+    wire('ignore', function () { ignoreInline(verb); });
+    wire('refresh', function () { if (_inlineOpts && typeof _inlineOpts.refresh === 'function') _inlineOpts.refresh(); });
+    wire('new', function () { if (_inlineOpts && typeof _inlineOpts.onNew === 'function') _inlineOpts.onNew(); });
+    wire('copy', function () { if (_inlineOpts && typeof _inlineOpts.onCopy === 'function') _inlineOpts.onCopy(); });
+    wire('delete', function () { _inlineConfirmDelete(e, id); });
     _formCtx = { verb: verb, e: e, id: id, baseline: orig || {}, inline: true };
     if (verb === 'update') _offerDraftRestore(e, id);
     _refreshInlineDirty();
-    console.log('§INPLACE-EDIT table=' + e.key + ' id=' + (id == null ? 'new' : id) + ' verb=' + verb + ' fields=' + (e.fields || []).length + ' mount=inline (no modal, no ✎ Edit)');
+    console.log('§INPLACE-' + (verb === 'create' ? 'NEW' : 'EDIT') + ' table=' + e.key + ' id=' + (id == null ? 'new' : id) + ' verb=' + verb + ' fields=' + (e.fields || []).length + ' mount=inline (no modal, no ✎ Edit)');
   }
-  // ignoreInline — iDempiere dataIgnore(): discard the unsaved delta, revert inputs to the saved tip, clear dirty.
-  function ignoreInline() {
+  // ignoreInline — iDempiere dataIgnore(): discard the unsaved delta. On UPDATE revert inputs to the saved tip; on
+  //   a CREATE (a not-yet-saved new record) the whole record is thrown away (auto-discard of an untouched/abandoned New).
+  function ignoreInline(verb) {
     if (!_inlineHost || !_formCtx) return;
+    var v = verb || _formCtx.verb;
+    if (v === 'create') {
+      console.log('§INPLACE-IGNORE table=' + _formCtx.e.key + ' verb=create discarded=new-record (nothing committed)');
+      if (_inlineOpts && typeof _inlineOpts.afterDiscardNew === 'function') _inlineOpts.afterDiscardNew();
+      return;
+    }
     (_formCtx.e.fields || []).forEach(function (f) {
       var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) el.value = _inlineBaseline[f.col] == null ? '' : _inlineBaseline[f.col];
     });
@@ -1315,20 +1334,56 @@
     _refreshInlineDirty();
     console.log('§INPLACE-IGNORE table=' + _formCtx.e.key + ' id=' + (_formCtx.id == null ? 'new' : _formCtx.id) + ' reverted=tip (unsaved delta discarded)');
   }
-  var _inlineRefresh = null;   // host sets this each mount → re-read the record (re-mount the inline form from the tip)
-  // editInline — host-callable inline EDIT mount (the form view calls this instead of opening the modal via update).
-  //   opts.onDirty(dirty) → host blocks Process while dirty (T3); opts.refresh → re-mount from tip; opts.onUnsupported
-  //   → table has no crud spec (host falls back to its read-only render).
+  // _inlineConfirmDelete — iDempiere Delete with an INLINE confirm (no modal): the verb bar becomes a confirm strip.
+  //   Delete commits the SAME signed reversible-tombstone op (CRUD_DELETE); Cancel restores the editor.
+  function _inlineConfirmDelete(e, id) {
+    if (!_inlineHost) return;
+    var bar = _inlineHost.querySelector('.ic-bar'); if (!bar) return;
+    bar.innerHTML = '<span class=ic-confirm>Delete this ' + esc(fname(e.key)) + '? <em>(a reversible tombstone — the History ↶ can reverse it)</em></span>' +
+      '<span class=ic-grow></span><button class="ic-vb ic-del" data-c="del">Delete</button><button class="ic-vb" data-c="cancel">Cancel</button>';
+    bar.querySelector('[data-c="del"]').addEventListener('click', function () {
+      console.log('§INPLACE-DELETE table=' + e.key + ' id=' + (id == null ? 'new' : id) + ' tombstone (inline confirm, ring not fanned)');
+      applyOp(CORE.buildOp('delete', e, {}, _inlineBaseline || {}, { id: id }), e);
+      if (_inlineOpts && typeof _inlineOpts.afterDelete === 'function') _inlineOpts.afterDelete();
+    });
+    bar.querySelector('[data-c="cancel"]').addEventListener('click', function () { if (_inlineOpts && typeof _inlineOpts.refresh === 'function') _inlineOpts.refresh(); });
+  }
+  // editInline / createInline / copyInline — host-callable inline mounts (the form view calls these instead of the
+  //   modal). opts: {onDirty(d) [T3 host blocks Process], refresh() [re-mount from tip], onNew()/onCopy() [host swaps
+  //   to a fresh/cloned create], afterSaveCreate()/afterDelete()/afterDiscardNew() [host leaves new-mode], onUnsupported()}.
   function editInline(table, id, host, opts) {
     opts = opts || {};
     _ensureStore(function () {
       var key = String(table || '').toLowerCase(), e = entryFor(key);
       if (!e) { console.log('§INPLACE-EDIT table=' + key + ' skipped (no crud spec)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
-      _inlineRefresh = typeof opts.refresh === 'function' ? opts.refresh : null;
       getRecord(key, function (rec) {
         var vals = assignVals(e, rec || {});
-        renderInline('update', e, vals, rec || {}, id == null ? null : id, host, opts.onDirty);
+        renderInline('update', e, vals, rec || {}, id == null ? null : id, host, opts);
       }, id == null ? null : id);
+    });
+  }
+  function createInline(table, host, opts) {
+    opts = opts || {};
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e || !CORE.verbEnabled(e, 'create')) { console.log('§INPLACE-NEW table=' + key + ' skipped (create not permitted)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
+      var vals = CORE.defaultsFor(e, today());
+      _seedDocNoPreview(e, vals);
+      renderInline('create', e, vals, null, null, host, opts);
+    });
+  }
+  function copyInline(table, fromId, host, opts) {
+    opts = opts || {};
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e || !CORE.verbEnabled(e, 'create')) { console.log('§INPLACE-COPY table=' + key + ' skipped (create not permitted)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
+      getRecord(key, function (rec) {
+        var vals = assignVals(e, rec || {});                                   // clone the source values as a starting point
+        (e.fields || []).forEach(function (f) { if (String(f.col).toLowerCase() === 'documentno') vals[f.col] = ''; });   // iDempiere Copy clears DocumentNo (new sequence)
+        _seedDocNoPreview(e, vals);
+        renderInline('create', e, vals, null, null, host, opts);
+        console.log('§INPLACE-COPY table=' + key + ' from=' + (fromId == null ? 'null' : fromId) + ' (cloned into a new inline record)');
+      }, fromId == null ? null : fromId);
     });
   }
   // ── §AD-MODELVAL-LIVE plumbing — lazy per-table installer over the page bundle (sql.js → b3 shim) ──
@@ -1431,20 +1486,26 @@
   function closeForm(opts) {
     var saved = opts && opts.saved === true;
     var inline = !!_inlineHost;
+    var fverb = _formCtx ? _formCtx.verb : null;
     if (_formCtx && _formCtx.verb === 'update') {
       if (saved) { var st = _draftStore(); if (st) draftClear(st, _formCtx.e.key, _formCtx.id); _clearDraftPip(_formCtx.e.key, _formCtx.id); }
       else if (!inline) _bufferDraft();   // inline nav-buffer = beforeunload (P5 wires the explicit needSave flush)
     }
     _formCtx = null;
     if (inline) {
+      var io = _inlineOpts, pend = _inlinePendingNew; _inlinePendingNew = false;
       // inline saved → clear dirty in place; the host's overlay:committed refold re-mounts the editor from the new tip.
       if (saved && _inlineHost) {
-        var s2 = _inlineHost.querySelector('.ic-vb[data-v="save"]'); if (s2) s2.disabled = true;
-        var i2 = _inlineHost.querySelector('.ic-vb[data-v="ignore"]'); if (i2) i2.disabled = true;
+        ['save', 'savenew', 'ignore'].forEach(function (v) { var b = _inlineHost.querySelector('.ic-vb[data-v="' + v + '"]'); if (b) b.disabled = true; });
         var p2 = _inlineHost.querySelector('.ic-dirty'); if (p2) p2.style.display = 'none';
-        if (typeof _onInlineDirty === 'function') { try { _onInlineDirty(false); } catch (e) {} }
+        if (io && typeof io.onDirty === 'function') { try { io.onDirty(false); } catch (e) {} }
       }
-      _inlineHost = null; _inlineBaseline = null; _onInlineDirty = null; fhost = form;
+      _inlineHost = null; _inlineBaseline = null; _inlineOpts = null; fhost = form;
+      // a saved CREATE leaves new-mode: Save&New → a fresh blank record (pend); plain Save → host shows the new row.
+      if (saved && fverb === 'create' && io) {
+        if (pend && typeof io.onNew === 'function') io.onNew();
+        else if (typeof io.afterSaveCreate === 'function') io.afterSaveCreate();
+      }
       return;
     }
     form.className = ''; form.innerHTML = '';
@@ -2194,6 +2255,9 @@
       '.idmp-inline-crud .ic-vb:hover:not(:disabled){border-color:#2f6fd6;color:#1f4fa6}.idmp-inline-crud .ic-vb:disabled{opacity:.45;cursor:default}' +
       '.idmp-inline-crud .ic-save:not(:disabled){background:#1f7a4d;border-color:#1f7a4d;color:#fff}.idmp-inline-crud .ic-grow{flex:1}' +
       '.idmp-inline-crud .ic-dirty{font-size:12px;color:#c77d12;font-weight:600}.idmp-inline-crud .ic-ro{font-size:12px;color:#7a808c;font-style:italic;margin:0 0 10px}' +
+      // P3 — Delete verb + inline delete-confirm strip.
+      '.idmp-inline-crud .ic-del{color:#b3261e}.idmp-inline-crud .ic-del:hover:not(:disabled){border-color:#b3261e;color:#911c16}' +
+      '.idmp-inline-crud .ic-confirm{font-size:12.5px;color:#b3261e;font-weight:600}.idmp-inline-crud .ic-confirm em{color:#7a808c;font-weight:400;font-style:normal}' +
       // T3 — a dirty inline form blocks Process (Save is the boundary before ProcessIt): dim+disable the DocAction bar.
       '.idmp-form-dirty .idmp-docfsm button{opacity:.4;pointer-events:none}.idmp-form-dirty .idmp-docfsm::after{content:"— Save first";font-size:11px;color:#c77d12;margin-left:8px}' +
       '.crud-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);z-index:80;background:#221826;border:1px solid #4a2f44;border-radius:10px;padding:9px 15px;color:#eecfe8;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.6);opacity:0;transition:opacity .3s,transform .3s}' +
@@ -2310,7 +2374,8 @@
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
-                    editInline: editInline, ignoreInline: ignoreInline, inlineDirty: _inlineDirty,   // P2 (W-INPLACE-EDIT-LIVE): in-place editable form view (no modal, no ✎ Edit)
+                    editInline: editInline, createInline: createInline, copyInline: copyInline,   // P2/P3 (W-INPLACE-*): in-place editable form view (no modal, no ✎ Edit) — edit/new/copy
+                    ignoreInline: ignoreInline, inlineDirty: _inlineDirty,
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
