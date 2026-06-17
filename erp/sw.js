@@ -28,6 +28,8 @@ const CDN_ASSETS = [
 const PRECACHE_ASSETS = [
   'erp.html',
   'idempiere.html',
+  'bim_embed.js',     // BIM_EMBED §B2 — BIM-set DETECT (bimSetForTable), W-BIM-EMBED
+  'bim_panel.js',     // BIM_EMBED §B2 — dock/float/max embed panel
   'ad_charts.js',
   'ad_data.js',
   'ad_docfsm.js',

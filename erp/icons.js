@@ -77,7 +77,18 @@
     // SPATIAL_PICKING_SPEC §S-3 — Lucide route (warehouse pill idempiere.html + WH walk strip mode indicator).
     route:    { svg: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>' },
     // POS FOLLOW-UP ROUND 2 §R2-6 — Lucide plus (the "register NEW product" import dock glyph).
-    plus:     { svg: '<path d="M5 12h14"/><path d="M12 5v14"/>' }
+    plus:     { svg: '<path d="M5 12h14"/><path d="M12 5v14"/>' },
+    // BIM_EMBED_WINDOW_SESSION §B2 — verbatim Lucide line glyphs for the BIM-in-window embed panel +
+    // status/Time-Machine/PO-drawer controls. ERP-only surface, not in panels.js (precedent: overlay-kit set).
+    pictureInPicture2: { svg: '<path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/>' },
+    externalLink:      { svg: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' },
+    paperclip:         { svg: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>' },
+    filter:            { svg: '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>' },
+    play:              { svg: '<polygon points="6 3 20 12 6 21 6 3"/>' },
+    pause:             { svg: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>' },
+    radio:             { svg: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>' },
+    truck:             { svg: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>' },
+    calendar:          { svg: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>' }
   };
   if (typeof window !== "undefined") window.ICONS = ICONS;
   if (typeof module !== "undefined" && module.exports) module.exports = ICONS;

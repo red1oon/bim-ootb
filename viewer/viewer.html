@@ -419,6 +419,17 @@
     .swipe-hidden, #hud.swipe-hidden, #search-box.swipe-hidden, #info-panel.swipe-hidden { display: none !important; }
   }
 </style>
+<style>
+/* BIM_EMBED_WINDOW_SESSION §B2 — chromeless when docked inside the iDempiere window (html.bim-embedded,
+   set by main.js when ?embedded=true). Hides the viewer's own app chrome so it reads as a native sub-panel;
+   the 3D canvas + model stay. Additive/guarded — ids that aren't present are simply no-ops. */
+html.bim-embedded #hud, html.bim-embedded #icon-pill, html.bim-embedded #overflow-scrim,
+html.bim-embedded #search-box, html.bim-embedded #info-panel, html.bim-embedded #site-cam-btn,
+html.bim-embedded #walk-mode-btn, html.bim-embedded #nlp-btn, html.bim-embedded #panel-toggle-btn,
+html.bim-embedded #minmax-btn, html.bim-embedded #mobile-bar, html.bim-embedded #mobile-pill,
+html.bim-embedded #status-bar-wrap, html.bim-embedded #doc-timeline { display: none !important; }
+html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
+</style>
 </head>
 <body>
 <div id="hud" style="display:none!important">
