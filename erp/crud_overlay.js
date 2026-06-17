@@ -1097,8 +1097,14 @@
     if (!_formCtx || _formCtx.verb !== 'update') return null;
     var st = _draftStore(); if (!st) return null;
     var vals = gatherVals(_formCtx.e);
+    // P5 (phantom-draft-pip fix): diff against the POST-RENDER baseline on an inline form — `_formCtx.baseline` is the
+    //   RAW record, but populateRefs/fieldInput normalize on render (date→yyyy-MM-dd, an fk select landing on another
+    //   option, number coercion), so an UNTOUCHED open would read those as "changed" → a spurious AMBER pip + a
+    //   §DRAFT-PUT the user never typed. `_inlineBaseline` is the same as-rendered baseline _inlineDirty/validate use,
+    //   so an untouched inline open now buffers NOTHING. The modal path keeps the raw baseline (unchanged).
+    var baseDraft = (_formCtx.inline && _inlineBaseline) ? _inlineBaseline : _formCtx.baseline;
     var rec = draftPut(st, _formCtx.e.key, _formCtx.id, vals,
-      { baseline: _formCtx.baseline, tipSnapshot: _formCtx.baseline, ts: ++_draftSeq });
+      { baseline: baseDraft, tipSnapshot: baseDraft, ts: ++_draftSeq });
     if (rec) _setDraftPip(_formCtx.e.key, _formCtx.id, rec.cols);
     else _clearDraftPip(_formCtx.e.key, _formCtx.id);   // clean leave → strand no stale pip
     return rec;
