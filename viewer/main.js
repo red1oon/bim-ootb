@@ -25,6 +25,51 @@ async function initViewer() {
     } catch (e) {}
     console.log('§BIM-EMBEDDED chromeless mode on; ready posted to host');
   }
+  // BIM_EMBED_WINDOW_SESSION §B3 — bidirectional cross-highlight contract (host-agnostic postMessage).
+  //   ERP(parent) → viewer(iframe): {type:'bim:highlight', ifcClass|guid} | {type:'bim:clearHighlight'}.
+  //   viewer → ERP: {type:'bim:highlighted', ifcClass, guid, count} (ACK) and {type:'bim:focusRecord', guid,
+  //   ifcClass} on a pick (emitted from picking.js in A.EMBEDDED). NON-INVENT: every class/guid is read from
+  //   elements_meta — no fabricated line↔element map. Render reuses A.focusElement (the SAME yellow-silhouette
+  //   renderer the Find drill / pick / history-restore use); match-count is the GPU-independent witness assertion.
+  function _bimPostParent(msg) {
+    try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
+  }
+  APP._bimPostFocus = function (guid, ifcClass) {
+    if (!guid) return;
+    _bimPostParent({ type: 'bim:focusRecord', guid: guid, ifcClass: ifcClass || null });
+    console.log('§BIM-FOCUSREC guid=' + String(guid).slice(0, 12) + ' class=' + (ifcClass || '?'));
+  };
+  APP._bimGuidsForClass = function (ifcClass) {
+    if (!APP.db || !ifcClass) return [];
+    try {
+      var rows = APP.dbQuery('SELECT guid FROM elements_meta WHERE ifc_class = ?', [ifcClass]) || [];
+      return rows.map(function (r) { return r[0]; }).filter(Boolean);
+    } catch (e) { console.log('§BIM-HL-ERR ' + e.message); return []; }
+  };
+  APP._bimHighlight = function (o) {
+    o = o || {};
+    var guids = [], cls = o.ifcClass || null;
+    if (o.guid) {
+      guids = [o.guid];
+      if (!cls && APP.db) { try { var r = APP.dbQuery('SELECT ifc_class FROM elements_meta WHERE guid = ?', [o.guid]); if (r && r.length) cls = r[0][0]; } catch (e) {} }
+    } else if (cls) {
+      guids = APP._bimGuidsForClass(cls);
+    }
+    var n = guids.length;
+    console.log('§BIM-HL ' + (o.guid ? ('guid=' + String(o.guid).slice(0, 12)) : ('class=' + cls)) + ' match=' + n);
+    if (n) {
+      var apply = function () { if (APP.focusElement) APP.focusElement(guids, { item: !!o.guid, frame: o.frame !== false }); };
+      if (APP.focusElement) apply();
+      else if (APP.loadNavigate) APP.loadNavigate().then(apply).catch(function () {});
+    }
+    _bimPostParent({ type: 'bim:highlighted', ifcClass: cls, guid: o.guid || null, count: n });
+    return n;
+  };
+  window.addEventListener('message', function (e) {
+    var d = e.data; if (!d || typeof d !== 'object') return;
+    if (d.type === 'bim:highlight') APP._bimHighlight(d);
+    else if (d.type === 'bim:clearHighlight') { if (APP.clearFocusElement) APP.clearFocusElement(); console.log('§BIM-HL clear'); }
+  });
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);

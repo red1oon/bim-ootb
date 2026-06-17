@@ -618,6 +618,9 @@ function setupPicking(A) {
       A.populateStoreys(bld);
       A.populateDiscs(bld);
       console.log(`§PICK ${cls} "${name}" ${disc} ${storey}`);
+      // BIM_EMBED_WINDOW_SESSION §B3 — when docked inside an ERP window (A.EMBEDDED), a pick broadcasts
+      // {bim:focusRecord} to the host so it focuses the owning project line (product Value == ifc_class).
+      if (A.EMBEDDED && A._bimPostFocus) A._bimPostFocus(g || guid, cls);
       if (window.KernelOps && A.db) KernelOps.commitOp(A.db, 'ELEMENT_PICK', {cls:cls,name:name,disc:disc,storey:storey}, [g]);
     } catch (err) {
       console.log(`§PICK_ERR ${err.message}`);
