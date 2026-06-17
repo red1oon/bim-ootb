@@ -424,7 +424,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=2"></script>
+<script src="ad_process.js?v=3"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -1861,6 +1861,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // archetype (newVerbs=0). Implementing AD_PROCESS_FOLD_LANE.md §P1 — Witness: W-PROC-GENPO-LIVE.
     if (window.ERPEngine && typeof window.AdProcess.registerProjectGenOrder === 'function')
       window.AdProcess.registerProjectGenOrder(window.ERPEngine);
+    // §GENSHIP-LIVE — the KIND-2 InOutGenerate handler (AD_Process 118/199): a CO Sales Order → M_InOut
+    // (shipment) via the createShipment archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2 — W-PROC-SHIP-LIVE.
+    if (window.ERPEngine && typeof window.AdProcess.registerInOutGenerate === 'function')
+      window.AdProcess.registerInOutGenerate(window.ERPEngine);
     _procHandlersInstalled = true;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }
@@ -1935,6 +1939,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       fetchProjectLines: function (info) {
         var id = info && info.Record_ID; if (id == null) return [];
         return _sqlRows('SELECT * FROM c_projectline WHERE c_project_id=' + Number(id) + ' ORDER BY line, c_projectline_id');
+      },
+      // §GENSHIP-LIVE — InOutGenerate accessors. info.Record_ID = the chosen C_Order. onHandOf sums the REAL
+      // m_storageonhand for the product across the warehouse's locators (the Availability cap). A fully-delivered
+      // order (the seed's state) → the handler honestly yields 0 lines, never a fabricated shipment.
+      fetchOrder: function (info) {
+        var id = info && info.Record_ID; if (id == null) return null;
+        return _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+      },
+      fetchOrderLines: function (info) {
+        var id = info && info.Record_ID; if (id == null) return [];
+        return _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+      },
+      onHandOf: function (pid, wh) {
+        var r = _sqlRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
+        return r.length ? Number(r[0].oh) : 0;
       }
     };
   }
@@ -1965,8 +1984,38 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // (C_Project.GenerateTo, ref 28) is dropped by the S2B foldCrudSpec, so the menu/process path supplies the
     // project via a picker (decoupled path (a), AD_PROCESS_FOLD_LANE §CONFLICT). Every project row is real seed.
     if (proc.classname === 'org.compiere.process.ProjectGenOrder') { renderProjectPicker(proc); return; }
+    // §GENSHIP-LIVE — InOutGenerate is record-scoped here (ship ONE order). The menu form is a warehouse-batch
+    // selector; we offer the journey-coherent "ship this order" picker (CO Sales Orders), warehouse from the order.
+    if (proc.classname === 'org.compiere.process.InOutGenerate') { renderOrderPicker(proc); return; }
     if (proc.paras.length) renderProcParamForm(proc);
     else runProcess(proc, {});
+  }
+  function renderOrderPicker(proc) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, proc.name));
+    pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · pick a completed Sales Order to generate a shipment from'));
+    var rows = _sqlRows("SELECT c_order_id, documentno, deliveryrule, m_warehouse_id FROM c_order WHERE docstatus='CO' AND issotrx='Y' ORDER BY c_order_id");
+    var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Sales Order'));
+    var sel = document.createElement('select'); sel.setAttribute('data-genship-order', '1');
+    if (!rows.length) { var o0 = el('option', null, '— no completed Sales Orders in this tenant —'); o0.value = ''; sel.appendChild(o0); }
+    rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + r.deliveryrule + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); sel.appendChild(o); });
+    fld.appendChild(sel); pane.appendChild(fld);
+    var actions = el('div', 'actions');
+    var run = el('button', 'run', 'Generate Shipment'); run.setAttribute('data-proc-run', '1');
+    var cancel = el('button', null, 'Cancel');
+    run.addEventListener('click', function () {
+      var opt = sel.options[sel.selectedIndex];
+      var id = sel.value ? Number(sel.value) : null;
+      if (id == null) { status('Pick a Sales Order first'); return; }
+      var wh = opt ? Number(opt.getAttribute('data-wh')) : null;   // M_Warehouse_ID is a mandatory para — from the order
+      console.log('§GENSHIP-LIVE run proc=' + proc.AD_Process_ID + ' Record_ID(C_Order_ID)=' + id + ' M_Warehouse_ID=' + wh);
+      runProcess(proc, wh != null ? { M_Warehouse_ID: wh } : {}, id);
+    });
+    cancel.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
+    _showProcPane(pane);
   }
   function renderProjectPicker(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
@@ -2096,23 +2145,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
     }
-    // §GENPO-LIVE — a KIND-2 op-group result (ProjectGenOrder): render the would-be C_Order header + lines folded
-    // from the project (CREATE_DOCUMENT + N CREATE_LINE). EXTRACT: every value comes from the project / its lines.
+    // §GENPO-LIVE / §GENSHIP-LIVE — a KIND-2 op-group result (CREATE_DOCUMENT + N CREATE_LINE), rendered
+    // doc-aware off the folded header table. EXTRACT: every value comes from the source record / its lines.
     if (!absent && r && r.ops && r.header) {
-      var h = r.header;
-      pane.appendChild(el('div', 'msg', 'C_Order (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ', On-Credit) from project ' +
-        h.c_project_id + ' · BPartner ' + h.c_bpartner_id + ' · Warehouse ' + h.m_warehouse_id + ' · PriceList ' + h.m_pricelist_id));
+      var h = r.header, isShip = h.table === 'M_InOut';
+      if (isShip)
+        pane.appendChild(el('div', 'msg', 'M_InOut (' + (h.movementtype === 'C-' ? 'Customer Shipment' : 'Vendor Receipt') +
+          ') from order ' + h.c_order_id + ' · Warehouse ' + h.m_warehouse_id + ' · BPartner ' + h.c_bpartner_id));
+      else
+        pane.appendChild(el('div', 'msg', 'C_Order (' + (h.issotrx === 'Y' ? 'Sales' : 'Purchase') + ', On-Credit) from project ' +
+          h.c_project_id + ' · BPartner ' + h.c_bpartner_id + ' · Warehouse ' + h.m_warehouse_id + ' · PriceList ' + h.m_pricelist_id));
       var lns = r.ops.filter(function (o) { return o.op_type === 'CREATE_LINE'; });
       var t = document.createElement('table'), tr = el('tr');
-      ['#', 'Product', 'Qty', 'Price'].forEach(function (hd, i) { tr.appendChild(el('th', i >= 2 ? 'r' : null, hd)); }); t.appendChild(tr);
+      (isShip ? ['#', 'Product', 'Ship Qty'] : ['#', 'Product', 'Qty', 'Price']).forEach(function (hd, i) { tr.appendChild(el('th', i >= 2 ? 'r' : null, hd)); }); t.appendChild(tr);
       lns.forEach(function (op) {
         tr = el('tr');
-        [op.line, op.m_product_id, op.qtyordered, op.priceactual == null ? '(price list)' : op.priceactual]
+        (isShip ? [op.line, op.m_product_id, op.movementqty]
+                : [op.line, op.m_product_id, op.qtyordered, op.priceactual == null ? '(price list)' : op.priceactual])
           .forEach(function (cv, i) { tr.appendChild(el('td', i >= 2 ? 'r' : null, cv == null ? '' : String(cv))); });
         t.appendChild(tr);
       });
       pane.appendChild(t);
-      pane.appendChild(el('div', 'msg', r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
+      pane.appendChild(el('div', 'msg', isShip
+        ? r.lineCount + ' shipment line' + (r.lineCount === 1 ? '' : 's') + ' folded (MovementQty = min(QtyOrdered − QtyDelivered, OnHand))'
+        : r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';

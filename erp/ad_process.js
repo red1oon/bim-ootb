@@ -188,6 +188,99 @@
     }
   };
 
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // KIND-2 process handler — InOutGenerate (AD_Process 118/199 "Generate Shipments", classname
+  //   org.compiere.process.InOutGenerate, isReport=N). The order-to-cash sibling of ProjectGenOrder: a
+  //   Completed Sales Order → an M_InOut (shipment) op-group via the EXISTING erp_engine.buildDoc archetype.
+  // Java home (EXTRACT, do NOT invent) — org.compiere.process.InOutGenerate:
+  //   doIt/generate — selects DocStatus='CO' AND IsSOTrx='Y' orders (line 158); per order line:
+  //     toDeliver = QtyOrdered − QtyDelivered (line 278-279); SKIP if toDeliver.signum()==0 ("Nothing to
+  //     Deliver", line 281-283) or over-delivered with QtyOrdered>0. The DeliveryRule then caps the qty:
+  //       'F' Force        → deliver = toDeliver               (createLine force=true, line 408-416)
+  //       'A' Availability → deliver = min(toDeliver, onHand)  (line 397-405: if deliver>onHand → deliver=onHand)
+  //       'O' CompleteOrder / 'L' CompleteLine / 'M' Manual / '5' AfterPayment → NAMED-DEFERRED (not in this
+  //         seed's data; honest deferral, NOT a silent skip — flagged in the result).
+  //   createLine (line ~470-520) — the M_InOut header is new MInOut(order,...): warehouse/BPartner/BP-Location
+  //     from the order, MovementType 'C-' (customer shipment, SO) / 'V+' (vendor receipt); MInOutLine.setOrderLine
+  //     + setQty(deliver). EXACTLY the existing DOC_SPECS.createShipment shape (W-FOLD-BUILDDOC) — newVerbs=0.
+  // Implementing AD_PROCESS_FOLD_LANE.md §P2 — Witness: W-PROC-SHIP
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+  // inoutGenGate — InOutGenerate's selection predicate as a per-order verdict (DocStatus='CO' AND IsSOTrx='Y').
+  function inoutGenGate(o) {
+    if (!o || !o.c_order_id)  return { ok: false, missing: 'C_Order_ID', message: 'Order not found' };
+    if (o.docstatus !== 'CO') return { ok: false, missing: 'DocStatus', message: 'Order is not Completed (Generate Shipments ships CO orders only)' };
+    if (o.issotrx !== 'Y')    return { ok: false, missing: 'IsSOTrx',   message: 'Order is not a Sales Order (Generate Shipments is the SO path)' };
+    return { ok: true };
+  }
+
+  // genShipmentLines — per C_OrderLine → the shipment-line shape: MovementQty = the DeliveryRule-capped toDeliver.
+  // toDeliver = QtyOrdered − QtyDelivered (signum-0 → nothing to deliver → skip). onHandOf(productId)->qty is
+  // host-injected (keeps this module DB-agnostic). Non-F/A rules are NAMED-DEFERRED (deferredRule carries the code).
+  function genShipmentLines(orderLines, deliveryRule, onHandOf) {
+    var out = [], deferredRule = null;
+    (orderLines || []).forEach(function (l) {
+      var toDeliver = Number(l.qtyordered || 0) - Number(l.qtydelivered || 0);
+      if (toDeliver === 0) return;                                            // "Nothing to Deliver"
+      if (toDeliver < 0 && Number(l.qtyordered || 0) > 0) return;             // over-delivered, ordered>0 → skip
+      var deliver;
+      if (deliveryRule === 'F') deliver = toDeliver;                          // Force
+      else if (deliveryRule === 'A') {                                        // Availability — cap at on-hand
+        var onHand = onHandOf ? Number(onHandOf(l.m_product_id) || 0) : 0;
+        deliver = Math.min(toDeliver, onHand);
+      } else { deferredRule = deliveryRule; return; }                         // O/L/M/5 — named-deferred (honest)
+      if (deliver <= 0) return;
+      out.push({ c_orderline_id: l.c_orderline_id, m_product_id: l.m_product_id, movementqty: deliver, line: l.line, toDeliver: toDeliver });
+    });
+    return { lines: out, deferredRule: deferredRule };
+  }
+
+  // SHIPMENT_SPEC — the buildDoc archetype spec for an order→shipment fold (the createShipment shape).
+  var SHIPMENT_SPEC = {
+    docTable: 'M_InOut', lineTable: 'M_InOutLine',
+    parentId: 'c_order_id', lineParentId: 'c_orderline_id',
+    qtyTo: 'movementqty', qtyFrom: 'movementqty',
+    header: function (o) {
+      return {
+        issotrx: o.issotrx, movementtype: o.issotrx === 'Y' ? 'C-' : 'V+',
+        ad_client_id: o.ad_client_id, ad_org_id: o.ad_org_id,
+        c_bpartner_id: o.c_bpartner_id, c_bpartner_location_id: o.c_bpartner_location_id,
+        m_warehouse_id: o.m_warehouse_id, c_order_id: o.c_order_id
+      };
+    }
+  };
+
+  // registerInOutGenerate(engine) — wire the KIND-2 handler. ctx: fetchOrder(info)->C_Order row,
+  //   fetchOrderLines(info)->C_OrderLine rows, onHandOf(productId)->on-hand qty in the order's warehouse.
+  function registerInOutGenerate(engine) {
+    registerHandler('org.compiere.process.InOutGenerate', function (ctx, info) {
+      var order = ctx.fetchOrder ? ctx.fetchOrder(info) : null;
+      var gate = inoutGenGate(order);
+      if (!gate.ok) return { ok: false, reason: 'order-not-shippable', message: gate.message, rows: 0, result: { gate: gate } };
+      var built = genShipmentLines(
+        ctx.fetchOrderLines ? ctx.fetchOrderLines(info) : [],
+        order.deliveryrule,
+        function (pid) { return ctx.onHandOf ? ctx.onHandOf(pid, order.m_warehouse_id) : 0; }
+      );
+      if (!built.lines.length) {
+        // Honest empty — every ordered qty already delivered (or the rule is named-deferred). NOT a fake shipment.
+        return {
+          ok: true, rows: 0,
+          message: '@Created@ = 0' + (built.deferredRule ? ' (DeliveryRule ' + built.deferredRule + ' is named-deferred)' : ' (nothing to deliver — ordered qty already delivered)'),
+          result: { ops: [], lineCount: 0, deferredRule: built.deferredRule }
+        };
+      }
+      var ops = engine.buildDoc(SHIPMENT_SPEC, order, built.lines);
+      var li = 0;
+      ops.forEach(function (op) { if (op.op_type === 'CREATE_LINE') { op.line = built.lines[li++].line; } });
+      return {
+        ok: true, rows: built.lines.length,
+        message: '@Created@ = 1 (' + built.lines.length + ' shipment line' + (built.lines.length === 1 ? '' : 's') + ')',
+        result: { ops: ops, lineCount: built.lines.length, header: ops[0], movementtype: ops[0].movementtype, deferredRule: built.deferredRule }
+      };
+    }, { kind: 'process', action: 'GenerateShipment' });
+  }
+
   // registerProjectGenOrder(engine) — wire the KIND-2 handler; engine = erp_engine API (its buildDoc archetype).
   // ctx the handler consumes: fetchProject(info)->project row (with m_pricelist_id + _c_doctypetarget_id
   //   resolved), fetchProjectLines(info)->C_ProjectLine rows. info.Record_ID = the C_Project_ID (prepare()).
@@ -364,6 +457,8 @@
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
     registerProjectGenOrder: registerProjectGenOrder, projectGenGate: projectGenGate,
     genOrderLines: genOrderLines, GENORDER_SPEC: GENORDER_SPEC,
+    registerInOutGenerate: registerInOutGenerate, inoutGenGate: inoutGenGate,
+    genShipmentLines: genShipmentLines, SHIPMENT_SPEC: SHIPMENT_SPEC,
     readProcess: readProcess, resolveClassname: resolveClassname,
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
