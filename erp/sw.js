@@ -49,6 +49,10 @@ const PRECACHE_ASSETS = [
   'migrate_agent.js',
   'overlay_kit.js',    // CONSISTENCY_FINISH.md §K-1 — shared import-overlay toolbox (window.OverlayKit)
   'erp_picker.js',     // MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (window.ErpPicker)
+  'genesis.html',      // SYSTEM_ADMIN_LANE §5 L1 — Initial Tenant Setup wizard (W-GENESIS-WIZARD-LIVE)
+  'genesis.js',        // genesis engine (UMD, window.Genesis) — births a tenant as a signed op-log
+  'genesis_seed.js',   // NON-INVENT default-genesis data (311 iDempiere default accounts + 73 default-acct maps)
+  'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
   'idmp_session.js',
   'erp_descriptor.js',  // DESCRIPTOR SEAM (IDEMPIERE_2.md pivot, renderer #2) — one chrome, N dictionaries; AD = first descriptor

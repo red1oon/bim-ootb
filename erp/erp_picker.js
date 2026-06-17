@@ -122,7 +122,10 @@
       '<p class="ep-dim">Pick the system to ' + _mode + ' from. We detect what is running on this machine and '
       + 'pre-select it — the others are listed for when their adapter lands.</p>'
       + '<div id="ep-grid" class="ep-grid"></div>'
-      + '<div id="ep-foot" class="ep-foot"></div>';
+      + '<div id="ep-foot" class="ep-foot"></div>'
+      // SYSTEM_ADMIN_LANE §5 L1 — start a fresh tenant via the Initial Setup wizard (no source to migrate from).
+      + '<div class="ep-newt">No ERP to migrate? <a href="genesis.html">' + _ico('plus', 12)
+      + ' Start a new tenant — Initial Setup</a> (default chart of accounts, ~3 fields).</div>';
     var grid = _$('ep-grid');
     ERPS.forEach(function (e) {
       var avail = (e.real || TENANT_SHARD[e.key]) ? ' ep-avail' : '';
@@ -505,7 +508,8 @@
       + '.ep-drop.ep-drop-bad{border-style:solid;border-color:#d66;background:#fdf3f3;color:#c33}.ep-drop code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}'
       + '.ep-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}.ep-tbl th,.ep-tbl td{text-align:left;padding:5px 8px;border-bottom:1px solid #f0f0f0}.ep-tbl th{color:#888;font-weight:600}.ep-bad{color:#c33}'
       + '.ep-sum{font-size:13px;line-height:1.7;background:#f6faf7;border:1px solid #d8efe2;border-radius:8px;padding:10px 12px}'
-      + '.ep-err{color:#c33;font-size:13px}';
+      + '.ep-err{color:#c33;font-size:13px}'
+      + '.ep-newt{margin-top:14px;padding-top:12px;border-top:1px solid #eee;font-size:12px;color:#789}.ep-newt a{color:#0b6;font-weight:600;text-decoration:none}.ep-newt a:hover{text-decoration:underline}';
     document.head.appendChild(s);
   }
 
