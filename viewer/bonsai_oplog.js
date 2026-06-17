@@ -34,7 +34,8 @@
       return this.db;
     },
 
-    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; },
+    _emit() { try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } },
+    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; this._emit(); },
 
     // Read the live GEOM ops out of the signed log, mapped to fold-op shape (parent rides in parameters).
     _geomOps() {
@@ -62,7 +63,9 @@
       const rowId = res.ids[res.ids.length - 1];
       const v = await window.KernelOps.verifyChain(db);
       const signed = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      this._lastTip = v.tip;
       const r = await this._foldUpto();
+      this._emit();
       console.log(TAG + ' commit rowId=' + rowId + ' op=' + op.op_type +
         (op.parameters && op.parameters.parent != null ? ' parent=' + op.parameters.parent : '') +
         ' verify=' + v.ok + ' tip=' + (v.tip || '').slice(0, 12) + ' signed=' + signed + ' tris=' + r.triangleCount);

@@ -10,12 +10,12 @@
 <style>
   html, body { margin: 0; height: 100%; background: #14161c; overflow: hidden; font-family: -apple-system, system-ui, sans-serif; }
   #c { display: block; width: 100vw; height: 100vh; }
-  #bar { position: fixed; top: 10px; left: 10px; display: flex; gap: 8px; z-index: 10; }
+  #bar { position: fixed; top: 10px; left: 252px; display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; max-width: calc(100vw - 270px); }
   #bar button { background: #232733; color: #cdd6e4; border: 1px solid #39404f; border-radius: 7px;
     padding: 8px 12px; font-size: 13px; cursor: pointer; }
   #bar button:hover { background: #2c3140; }
   #bar button:disabled { opacity: .5; cursor: default; }
-  #stat { position: fixed; bottom: 10px; left: 10px; color: #6b7488; font-size: 11px; z-index: 10;
+  #stat { position: fixed; bottom: 10px; left: 252px; color: #6b7488; font-size: 11px; z-index: 10;
     font-family: ui-monospace, monospace; white-space: pre; }
   #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
 </style>
@@ -35,7 +35,7 @@
   <button id="b-ifc" disabled>⤓ IFC</button>
   <button id="b-clear" disabled>Clear</button>
 </div>
-<div id="hist" style="position:fixed;bottom:36px;left:10px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
+<div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
   <span>history</span>
   <input id="hist-slider" type="range" min="0" max="0" value="0" step="1" style="flex:1;accent-color:#4fc3f7" disabled>
   <span id="hist-label">0/0</span>
@@ -57,6 +57,8 @@
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
+<!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
+<script src="bonsai_outliner.js?v=1" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -197,6 +199,8 @@ function highlight(mesh) {
   selectedMesh = mesh; selectedId = mesh ? mesh.userData.featureId : null;
   if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
   bCut.disabled = selectedId == null;
+  window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   console.log('§MODELLER select featureId=' + selectedId);
 }
 window.Bonsai.select = (fid) => {                 // witness/programmatic hook
@@ -267,6 +271,7 @@ bIfc.onclick = async () => {
 };
 
 bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = false;
+window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -304,6 +309,37 @@ if (qs.get('recipe') === 'demo') {
     window.__recipeResult = out;
     window.__recipeDone = true;
     console.log('§MODELLER recipe-done');
+  })();
+}
+// ?outliner=demo proves the Bonsai Outliner reflects the signed op-log feature tree + Find (W-BONSAI-OUTLINER).
+if (qs.get('outliner') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      const O = window.Bonsai.oplog; O.clear();
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      window.Bonsai.select(wall.id);
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      const tree = () => document.querySelector('#bonsai-outliner #bo-tree');
+      const rowsAll = () => Array.from(tree().querySelectorAll('[data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.rows = rowsAll();
+      out.wallRow = out.rows.find(r => /Wall/.test(r)) || null;
+      out.openingRow = out.rows.find(r => /Opening/.test(r)) || null;
+      out.hasGridRef = /A-1/.test(out.wallRow || '');
+      // Find filter: typing "opening" must hide the wall row.
+      const find = document.querySelector('#bonsai-outliner #bo-find');
+      find.value = 'opening'; find.dispatchEvent(new Event('input'));
+      out.afterFind = rowsAll();
+      out.findFiltered = out.afterFind.length === 1 && /Opening/.test(out.afterFind[0]);
+      find.value = ''; find.dispatchEvent(new Event('input'));
+      // click the wall row -> selection mirrors to 3D (Bonsai._selId) and the row goes active.
+      tree().querySelector('[data-fid]').click();
+      out.selId = window.Bonsai._selId;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OUTLINER demo fail ' + e); }
+    window.__outlinerResult = out;
+    window.__outlinerDone = true;
+    console.log('§MODELLER outliner-done');
   })();
 }
 // ?grid=demo proves 2D correlation (W-BONSAI-GRID): define a column grid, snap NOISY clicks to it,
