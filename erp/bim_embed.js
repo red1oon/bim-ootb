@@ -89,8 +89,13 @@
   // NO 26MB binary churn and it auto-survives a seed re-export (no re-apply needed). Each entry is a
   // standard AD_Attachment row. NON-INVENT: the URL points at a REAL served viewer building.
   var SEED_BIM_SETS = [
+    // Project Order (C_Project 203) — the driving case.
     { adTableId: 203, recordId: 101, name: 'Landscape Complex (Hospital model)',
-      url: '../viewer/viewer.html?db=buildings/Hospital_extracted.db&bld=Hospital', clientId: 11, orgId: 11 }
+      url: '../viewer/viewer.html?db=buildings/Hospital_extracted.db&bld=Hospital', clientId: 11, orgId: 11 },
+    // GENERALITY (§B4): a SECOND, non-Project table — M_Warehouse (190) record 103 "HQ Warehouse" — lights the
+    // SAME "Open Model" affordance with ZERO new render code, purely from this AD flag. This is the framework proof.
+    { adTableId: 190, recordId: 103, name: 'HQ Warehouse (Terminal model)',
+      url: '../viewer/viewer.html?db=buildings/Terminal_extracted.db&bld=Terminal', clientId: 11, orgId: 11 }
   ];
 
   // ensureSeedBimSets — idempotently declare the SEED_BIM_SETS onto the loaded db (boot hook). Only inserts

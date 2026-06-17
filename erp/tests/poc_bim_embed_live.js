@@ -34,10 +34,11 @@ function S(m) { log.push(m); console.log(m); }
 function verdict(ok, label, detail) { if (!ok) fails++; S('   ' + (ok ? '🟢' : '🔴') + ' ' + label + (detail ? ' — ' + detail : '')); }
 function soft(ok, label, detail) { S('   ' + (ok ? '🟢' : '🟡') + ' ' + label + (detail ? ' — ' + detail : '')); }
 
-async function openAt(page, port, pk) {
-  await page.goto('http://127.0.0.1:' + port + '/erp/idempiere.html?login=GardenAdmin&window=130&record=' + pk,
+async function openAt(page, port, pk, win) {
+  win = win || 130;
+  await page.goto('http://127.0.0.1:' + port + '/erp/idempiere.html?login=GardenAdmin&window=' + win + '&record=' + pk,
     { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2500);   // let auto-login → openWindow(130) → land-on-record → renderBody settle
+  await page.waitForTimeout(2500);   // let auto-login → openWindow(win) → land-on-record → renderBody settle
 }
 
 (async () => {
@@ -87,6 +88,14 @@ async function openAt(page, port, pk) {
   const btn100 = await page.evaluate(() => !!document.querySelector('.idmp-bim-open'));
   verdict(!aff100present && !btn100, 'project 100 (Standard) → NO affordance (honest absent)',
     aff100absent ? 'logged bimSet=absent' : 'no affordance log');
+
+  // ── (B4) GENERALITY: a SECOND, non-Project table lights up from an AD flag alone (ZERO new render code) ──
+  await openAt(page, port, 103, 139);   // M_Warehouse "HQ Warehouse", window 139 (Warehouse and Locators)
+  const affWh = log.some(l => /§BIM-EMBED affordance .*record=103 .*bimSet=present/.test(l));
+  const btnWh = await page.evaluate(() => !!document.querySelector('.idmp-bim-open'));
+  const whUrl = await page.evaluate(() => { var b = document.querySelector('.idmp-bim-open'); return b ? b.title : ''; });
+  verdict(affWh && btnWh, 'M_Warehouse 103 (window 139) → "Open Model" lights from the AD flag alone (B4 generality)',
+    whUrl || '');
 
   // ── pageerrors ────────────────────────────────────────────────────────────
   verdict(errs.length === 0, '0 pageerrors', errs.length ? errs.slice(0, 3).join(' | ') : 'clean');
