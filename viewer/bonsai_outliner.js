@@ -10,6 +10,14 @@
   'use strict';
   const TAG = '§OUTLINER';
 
+  // Lucide line disclosure glyphs (verbatim chevron-down / chevron-right) — no unicode triangles.
+  const CHEV = (open) => '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px">' +
+    (open ? '<path d="m6 9 6 6 6-6"/>' : '<path d="m9 18 6-6-6-6"/>') + '</svg>';
+  // Leaf marker — a small dot (a leaf row is not expandable, so a chevron would mislead).
+  const LEAF = '<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="none" ' +
+    'style="vertical-align:-1px;margin-right:5px;opacity:.55"><circle cx="12" cy="12" r="3"/></svg>';
+
   function gridRef(pt) {
     if (!pt || !window.Bonsai.grid || !window.Bonsai.grid.xs.length) return null;
     const r = window.Bonsai.grid.refAt(pt[0], pt[1]);
@@ -65,13 +73,13 @@
       const f = this._find;
       const match = n => !f || (n.label + ' ' + n.sub).toLowerCase().includes(f);
       let total = 0, shown = 0;
-      let html = '<div style="padding:2px 6px;color:#8b94a3">▼ Bonsai Model</div>';
+      let html = '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'Bonsai Model</div>';
       groups.forEach(g => {
         const vis = g.nodes.filter(match); total += g.nodes.length; shown += vis.length;
         if (f && !vis.length) return;
         const col = this._collapsed[g.cat.key];
         html += '<div data-grp="' + g.cat.key + '" style="padding:2px 6px 2px 16px;color:#6f7a8b;cursor:pointer">' +
-          (col ? '▸ ' : '▼ ') + g.cat.label + ' <span style="color:#454e5d">(' + g.nodes.length + ')</span></div>';
+          CHEV(!col) + g.cat.label + ' <span style="color:#454e5d">(' + g.nodes.length + ')</span></div>';
         if (col) return;
         vis.forEach(n => {
           const active = window.Bonsai._selId === n.id;
@@ -79,7 +87,7 @@
             (active ? 'background:#26456b;color:#dce6f4' : 'color:#c7cdd8') + '" ' +
             'onmouseover="this.style.background=\'' + (active ? '#26456b' : '#23262e') + '\'" ' +
             'onmouseout="this.style.background=\'' + (active ? '#26456b' : 'transparent') + '\'">' +
-            '▸ ' + n.label + '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span></div>';
+            LEAF + n.label + '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span></div>';
         });
       });
       tree.innerHTML = html;
