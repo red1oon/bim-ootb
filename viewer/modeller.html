@@ -12,9 +12,11 @@
   #c { display: block; width: 100vw; height: 100vh; }
   #bar { position: fixed; top: 10px; left: 252px; display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; max-width: calc(100vw - 270px); }
   #bar button { background: #232733; color: #cdd6e4; border: 1px solid #39404f; border-radius: 7px;
-    padding: 8px 12px; font-size: 13px; cursor: pointer; }
+    padding: 8px 12px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
   #bar button:hover { background: #2c3140; }
   #bar button:disabled { opacity: .5; cursor: default; }
+  #bar button.on { background: #1f3147; border-color: #4fc3f7; color: #9fd4f7; }
+  #bar button .ic { width: 15px; height: 15px; flex: 0 0 auto; }
   #stat { position: fixed; bottom: 10px; left: 252px; color: #6b7488; font-size: 11px; z-index: 10;
     font-family: ui-monospace, monospace; white-space: pre; }
   #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
@@ -26,14 +28,15 @@
 <body>
 <canvas id="c"></canvas>
 <div id="bar">
-  <button id="b-wall" disabled>+ Wall</button>
-  <button id="b-open" disabled>+ Opening</button>
-  <button id="b-grid" disabled>▦ Grid</button>
-  <button id="b-sketch" disabled>✎ Sketch</button>
-  <button id="b-extrude" disabled style="display:none">⬆ Extrude</button>
-  <button id="b-cut" disabled>✂ Cut</button>
-  <button id="b-ifc" disabled>⤓ IFC</button>
-  <button id="b-clear" disabled>Clear</button>
+  <button id="b-wall" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Wall</span></button>
+  <button id="b-open" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Opening</span></button>
+  <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
+  <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
+  <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
+  <button id="b-cut" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg><span>Cut</span></button>
+  <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
+  <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
+  <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
   <span>history</span>
@@ -125,6 +128,7 @@ async function author(op, color) {
   try {
     const r = await window.Bonsai.author(op, { color });
     setStat(op.op_type + '  tris=' + r.triangleCount + '  bbox=[' + r.bbox + ']');
+    audioCue('author');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
 }
 bWall.onclick = () => author(WALL, 0x9fb4c8);
@@ -136,6 +140,39 @@ bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group();
 // (auto H/V), then Extrude folds the solved profile into a solid via GEOM_EXTRUDE_POLY.
 const bSketch = document.getElementById('b-sketch');
 const bExtrude = document.getElementById('b-extrude');
+// Lucide line icons (verbatim) for the Sketch button's two states — no unicode glyphs on the surface.
+const _ico = (p) => '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>';
+const SK_SKETCH = _ico('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>') + '<span>Sketch</span>';
+const SK_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+
+// ── AUTHORING AUDIO FEEDBACK ──────────────────────────────────────────────────────────────────
+// Carries the Morpheus red-pill audio into the modeller: a short Web Audio cue on each authoring
+// action. Sound toggle (default ON, persisted) lives on the toolbar; moves into the shared pill
+// rail when that lands. Verbatim Lucide volume-2 / volume-x icons (no unicode).
+let _soundOn = (localStorage.getItem('bonsai_sound') !== 'off');
+let _ac = null;
+function _actx() { try { _ac = _ac || new (window.AudioContext || window.webkitAudioContext)(); if (_ac.state === 'suspended' && _ac.resume) _ac.resume(); return _ac; } catch (e) { return null; } }
+function audioCue(kind) {
+  if (!_soundOn) return;
+  console.log('§AUDIO cue=' + kind + ' on=' + _soundOn);
+  const ac = _actx(); if (!ac) return;
+  try {
+    const t = ac.currentTime;
+    const TONES = { author: [330, 523], commit: [392, 587], cut: [294, 220], tick: [660], export: [523, 784], clear: [220, 165] };
+    (TONES[kind] || [440]).forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain(), ts = t + i * 0.06;
+      o.type = 'sine'; o.frequency.setValueAtTime(f, ts);
+      g.gain.setValueAtTime(0.0001, ts); g.gain.exponentialRampToValueAtTime(0.13, ts + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, ts + 0.18);
+      o.connect(g).connect(ac.destination); o.start(ts); o.stop(ts + 0.2);
+    });
+  } catch (e) {}
+}
+const bSound = document.getElementById('b-sound');
+const VOL_ON = _ico('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>') + '<span>Sound</span>';
+const VOL_OFF = _ico('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>') + '<span>Muted</span>';
+function paintSound() { bSound.innerHTML = _soundOn ? VOL_ON : VOL_OFF; bSound.classList.toggle('on', _soundOn); }
+bSound.onclick = () => { _soundOn = !_soundOn; localStorage.setItem('bonsai_sound', _soundOn ? 'on' : 'off'); paintSound(); if (_soundOn) audioCue('tick'); };
+paintSound();
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // z=0 sketch plane
 const raycaster = new THREE.Raycaster();
 let sketching = false, sketchGroup = null, savedCam = null;
@@ -157,11 +194,11 @@ function enterSketch() {
   sketching = true; window.Bonsai.sketch.reset();
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
-  bExtrude.style.display = ''; bExtrude.disabled = false; bSketch.textContent = '✕ Cancel';
+  bExtrude.style.display = ''; bExtrude.disabled = false; bSketch.innerHTML = SK_CANCEL;
   sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
 }
 function exitSketch() {
-  sketching = false; bExtrude.style.display = 'none'; bSketch.textContent = '✎ Sketch';
+  sketching = false; bExtrude.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
 }
@@ -186,7 +223,7 @@ bExtrude.onclick = async () => {
     // leg 3: a sketched wall is committed as a FEATURE in the op-log (not a one-shot author).
     const res = await window.Bonsai.sketch.commitExtrude(3, { color: 0x9fd6b4 });
     setStat('committed wall #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
-    exitSketch(); syncHistory();
+    audioCue('commit'); exitSketch(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
 };
 
@@ -234,7 +271,7 @@ bCut.onclick = async () => {
   setStat('cutting…');
   try {
     const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_CUT', parameters: { parent: selectedId, void: { c1, c2 } } }, { color: 0x9fd6b4 });
-    setStat('cut opening in #' + selectedId + '  tris=' + res.triangleCount); highlight(null); syncHistory();
+    setStat('cut opening in #' + selectedId + '  tris=' + res.triangleCount); audioCue('cut'); highlight(null); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER cut fail ' + err); }
 };
 
@@ -255,7 +292,8 @@ const bGrid = document.getElementById('b-grid');
 window.Bonsai.grid.define();   // default column grid A–D × 1–3
 bGrid.onclick = () => {
   const on = window.Bonsai.grid.show(!window.Bonsai.grid.active);
-  bGrid.textContent = on ? '▦ Grid ✓' : '▦ Grid';
+  bGrid.classList.toggle('on', on);
+  audioCue('tick');
   setStat(on ? 'grid ON — sketch clicks snap to gridlines (A-1, B-2…)' : 'grid off');
 };
 
@@ -266,7 +304,7 @@ bIfc.onclick = async () => {
   setStat('exporting IFC…');
   try {
     const r = await window.Bonsai.ifc.exportModel({ name: 'bonsai_model.ifc' });
-    setStat('IFC exported  walls=' + r.walls + '  openings=' + r.openings + '  ' + r.bytes.length + ' bytes (downloaded)');
+    setStat('IFC exported  walls=' + r.walls + '  openings=' + r.openings + '  ' + r.bytes.length + ' bytes (downloaded)'); audioCue('export');
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
 
