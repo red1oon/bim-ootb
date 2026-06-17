@@ -98,6 +98,12 @@
     }
     registerHandler('report:c_order',   receiptHandler('c_order'),   { kind: 'report', reportKey: 'c_order' });
     registerHandler('report:c_invoice', receiptHandler('c_invoice'), { kind: 'report', reportKey: 'c_invoice' });
+    // report:m_inout — "Rpt M_InOut" (AD_Process 117, "Delivery Note / Shipment Print"). KIND-1, the print
+    // sibling of InOutGenerate (§P2-leg1 makes the M_InOut; this prints it). Folds via the SAME foldReceipt over
+    // the ALREADY-PRESENT REPORT_MAP.m_inout — ZERO new fold code. A shipment is a NON-FINANCIAL document
+    // (amount:null → subtotal/tax/total stay null, qty=MovementQty carried) — honest, never a fabricated total.
+    // AD_PROCESS_FOLD_LANE §P2-tail-leg1 — Witness: W-PROC-MINOUT.
+    registerHandler('report:m_inout',   receiptHandler('m_inout'),   { kind: 'report', reportKey: 'm_inout' });
     // report:c_project — "Rpt C_Project" (AD_Process 217, Project Print). KIND-1, folds via the SAME foldReceipt
     // (REPORT_MAP.c_project), no new fold code. AD_PROCESS_FOLD_LANE §P2-leg3 — Witness: W-PROC-PROJPRINT.
     registerHandler('report:c_project', receiptHandler('c_project'), { kind: 'report', reportKey: 'c_project' });
@@ -438,6 +444,10 @@
       // map known report procs to the report_overlay header tables (extracted, not invented)
       if (/c_order\b|order print|rpt c_order/.test(hay) && !/invoice/.test(hay)) return 'report:c_order';
       if (/c_invoice|invoice print|rpt c_invoice/.test(hay)) return 'report:c_invoice';
+      // "Rpt M_InOut" (117) — M_InOut-SPECIFIC: m_inout\b (word-boundary) so "Rpt M_InOutConfirm" (292,
+      // "m_inoutconfirm" — no boundary) and the RV_InOutDetails report-VIEWs (293/294) stay absent-handler.
+      // "delivery note"/"shipment print" are the print-format name; "shipment confirmation"/"...details" do NOT match.
+      if (/m_inout\b|delivery note|shipment print/.test(hay)) return 'report:m_inout';
       // "Rpt C_Project" (217) — SPECIFIC match (c_project / project print), NOT the broad "project" so the other
       // RV_Project* report-VIEW procs (218 RV_ProjectCycle, 226/228/229/234) stay absent-handler (no foldReceipt
       // for a report view — those are a later report-view fold, not this leg).

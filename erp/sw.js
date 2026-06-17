@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v712';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v714';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -118,7 +118,6 @@ const PRECACHE_ASSETS = [
   'pills_glassbowl.json', // §GB-PILLS — Glassbowl manifest (home/trace/untangle/reset/mute/panel/edit/qr/showme/about)
   'pills_gravity.json',   // §GRV-PILLS — Gravity manifest (home/undo/redo/edit/showme)
   'initbubble.json',
-  'redpill.png',
   'aplus.png',
 ];
 

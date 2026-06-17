@@ -1,69 +1,16 @@
 {
   "version": 1,
-  "spec": "docs/PILL_MANIFEST_SPEC.md (idempiereUI I1) \u00b7 ERP_BOTTOM_BAR_AND_LIFECYCLE.md \u00a7A",
-  "registry": "pill_builder.js (used as-is \u2014 same renderer as erp.html, NO second framework)",
-  "note": "SIBLING manifest for the iDempiere renderer surface (idempiere.html) \u2014 DECIDED separate from erp.html's pills.json (GATE-1, ERP_BOTTOM_BAR_AND_LIFECYCLE.md \u00a7RESUME): the action sets differ. fn bound BY ID in idmp_pills.js to the REAL existing idempiere.html handlers (window.IdmpPillActions \u2014 functions are not JSON). icon = a glyph in icons.js (verbatim from viewer/panels.js); nothing inlined, nothing hand-drawn. Retires the hand-rolled #idmp-pillrail (\u00a7PILL-REGISTRY principle: no controls outside the pill).",
+  "spec": "docs/PILL_MANIFEST_SPEC.md (idempiereUI I1) · ERP_BOTTOM_BAR_AND_LIFECYCLE.md §A",
+  "registry": "pill_builder.js (used as-is — same renderer as erp.html, NO second framework)",
+  "note": "SIBLING manifest for the iDempiere renderer surface (idempiere.html) — DECIDED separate from erp.html's pills.json (GATE-1, ERP_BOTTOM_BAR_AND_LIFECYCLE.md §RESUME): the action sets differ. fn bound BY ID in idmp_pills.js to the REAL existing idempiere.html handlers (window.IdmpPillActions — functions are not JSON). icon = a glyph in icons.js (verbatim from viewer/panels.js); nothing inlined, nothing hand-drawn. Retires the hand-rolled #idmp-pillrail (§PILL-REGISTRY principle: no controls outside the pill).",
   "pills": [
-    {
-      "id": "redpill",
-      "name": "Just the pill / classic L&F",
-      "key": ",",
-      "img": "redpill.png",
-      "order": 0,
-      "note": "\u00a7D ERP_BOTTOM_BAR_AND_LIFECYCLE \u2014 master toggle. OUR design (default) = just the pill: classic iDempiere chrome (toolbar icons) hidden, the pill IS the UI. Press red pill (or ',' \u2014 same shortcut as BIM Doc Mode) \u2192 reveal the familiar iDempiere L&F; in classic mode our lens pills step aside (only the red pill remains). Persisted in localStorage. NEVER stage-gated."
-    },
-    {
-      "id": "formnew",
-      "name": "New record",
-      "key": "",
-      "icon": "plus",
-      "showWhen": "form-view",
-      "order": 0.3,
-      "note": "GRID_BATCH_FORM_PILL_SPEC item 5 — the iDempiere New toolbar action relocated into the pill (red-pill 'just the pill' hides #idmp-toolbar). Opens the CRUD ring on the current table (New/Save/Delete bundled — reuses _openCrudRing, the SAME logic as the ✎ CRUD toolbar button; never forks the verb). §AD-GATE showWhen:form-view — surfaces only with a record open in FORM view (IdmpPillFormGate); off the bar in grid / at the front door. plus glyph (Lucide verbatim)."
-    },
-    {
-      "id": "formsave",
-      "name": "Save",
-      "key": "",
-      "icon": "save",
-      "showWhen": "form-view",
-      "order": 0.4,
-      "note": "GRID_BATCH_FORM_PILL_SPEC item 5 — the iDempiere Save toolbar action: commits the edits in the open CRUD overlay form (clicks its #cfSave). Honest toast when nothing is being edited. §AD-GATE showWhen:form-view. save glyph (Lucide verbatim, already in icons.js)."
-    },
-    {
-      "id": "formproc",
-      "name": "Process",
-      "key": "",
-      "icon": "next",
-      "showWhen": "form-view",
-      "order": 0.5,
-      "note": "GRID_BATCH_FORM_PILL_SPEC item 5 — the iDempiere Process ▶ (DocAction) toolbar action: opens a chooser of the current record's LEGAL FSM action set (the _fsmCtx seam, same AdDocFsm path as the form DocAction bar and the grid batch bar). Click dispatches in-memory + repaints. §AD-GATE showWhen:form-view. next glyph (forward arrow, Lucide verbatim). Print maps to the existing `reports` pill (NON-INVENT, no duplicate)."
-    },
-    {
-      "id": "formedit",
-      "name": "Edit record",
-      "key": "",
-      "icon": "edit",
-      "showWhen": "form-view",
-      "order": 0.35,
-      "note": "S2/J4 full-CRUD — the iDempiere Edit toolbar action relocated into the pill. Opens the create/edit form DIRECTLY on the OPEN record via the host seam __crud.update(table,id) (NO ring fanned, doctrine §0; the create twin is formnew→__crud.create). Save = #cfSave → signed CRUD_UPDATE; _overlayListTip overlays the changed value in the grid + survives reload. §AD-GATE showWhen:form-view. edit glyph (Lucide verbatim)."
-    },
-    {
-      "id": "formdel",
-      "name": "Delete record",
-      "key": "",
-      "icon": "trash",
-      "showWhen": "form-view",
-      "order": 0.55,
-      "note": "S2/J4 full-CRUD — the iDempiere Delete toolbar action relocated into the pill. Opens the delete confirm DIRECTLY on the OPEN record via the host seam __crud.remove(table,id) (NO ring fanned). Confirm = signed CRUD_DELETE; _overlayListTip tombstones the row (it disappears) + the hide survives reload. §AD-GATE showWhen:form-view. trash glyph (Lucide verbatim)."
-    },
     {
       "id": "posted",
       "name": "Accts Posted",
       "key": "",
       "icon": "clipboard",
       "order": 1,
-      "note": "per-record accounting fold (openPostedFor) \u2014 journal-lines clipboard glyph."
+      "note": "per-record accounting fold (openPostedFor) — journal-lines clipboard glyph."
     },
     {
       "id": "reports",
@@ -71,7 +18,7 @@
       "key": "",
       "icon": "doc",
       "order": 1.2,
-      "note": "Financial statements + receipt report menu (window.__report.menu \u2192 report_overlay.js openMenu). Replaces the former #reportMenuPill fixed float (PR #295 legacy) \u2014 reports are now a registry pill, no controls outside the pill bar."
+      "note": "Financial statements + receipt report menu (window.__report.menu → report_overlay.js openMenu). Replaces the former #reportMenuPill fixed float (PR #295 legacy) — reports are now a registry pill, no controls outside the pill bar."
     },
     {
       "id": "preview",
@@ -80,7 +27,7 @@
       "icon": "doc",
       "showWhen": "posting-doc",
       "order": 1.5,
-      "note": "per-record DocAction preview (openPreviewFor) \u2014 the journal Complete WOULD post, PURE (no write); reuses AcctsPosted renderer via window.ERPPreview. doc glyph (report/document). \u00a7AD-GATE showWhen:posting-doc \u2014 mirrors iDempiere's AD `Posted` Button field: the pill surfaces ONLY when a posting document (table carrying the `Posted` column, AD_Reference=28) is open; off the bar otherwise. Lights to-the-cent on a tenant db carrying posting config."
+      "note": "per-record DocAction preview (openPreviewFor) — the journal Complete WOULD post, PURE (no write); reuses AcctsPosted renderer via window.ERPPreview. doc glyph (report/document). §AD-GATE showWhen:posting-doc — mirrors iDempiere's AD `Posted` Button field: the pill surfaces ONLY when a posting document (table carrying the `Posted` column, AD_Reference=28) is open; off the bar otherwise. Lights to-the-cent on a tenant db carrying posting config."
     },
     {
       "id": "editmode",
@@ -88,7 +35,7 @@
       "key": "",
       "icon": "edit",
       "order": 1.7,
-      "note": "Toggle CRUD Edit-mode ring on/off (window.__crud.toggleEditMode). Lit when edit mode is active (IdmpPillActive.editmode). Replaces the former #crudModeWrap fixed float \u2014 edit mode is now a registry pill, consistent with the pill-only surface convention."
+      "note": "Toggle CRUD Edit-mode ring on/off (window.__crud.toggleEditMode). Lit when edit mode is active (IdmpPillActive.editmode). Replaces the former #crudModeWrap fixed float — edit mode is now a registry pill, consistent with the pill-only surface convention."
     },
     {
       "id": "graph",
@@ -96,7 +43,7 @@
       "key": "",
       "icon": "barChart",
       "order": 2,
-      "note": "by-status bar chart of the open window (openGraphFor) \u2014 barChart glyph."
+      "note": "by-status bar chart of the open window (openGraphFor) — barChart glyph."
     },
     {
       "id": "kanban",
@@ -104,7 +51,7 @@
       "key": "",
       "icon": "layout",
       "order": 3,
-      "note": "draggable wfmc board / heat-map fallback (openKanbanFor) \u2014 board-columns layout glyph."
+      "note": "draggable wfmc board / heat-map fallback (openKanbanFor) — board-columns layout glyph."
     },
     {
       "id": "rule",
@@ -112,7 +59,7 @@
       "key": "",
       "icon": "checkList",
       "order": 4,
-      "note": "lifecycle-as-data governance gate (openRuleFor) \u2014 compliance checkList glyph."
+      "note": "lifecycle-as-data governance gate (openRuleFor) — compliance checkList glyph."
     },
     {
       "id": "pos",
@@ -121,7 +68,7 @@
       "icon": "shoppingCart",
       "showWhen": "pos-station",
       "order": 4.5,
-      "note": "POS_ADDON_SPEC \u00a7P-1 \u2014 the point-of-sale lens (openPosFor \u2192 PosLens.open): c_poskey tile grid, sealed master prices, Complete = ONE signed group (order+ship+invoice+backflush, WR from the dictionary), replenishment fold after. shopping-cart glyph (Lucide verbatim). \u00a7AD-GATE showWhen:pos-station \u2014 surfaces only when the tenant carries a c_pos row (window.IdmpPillPosGate, mirrors the Posting-Preview data-gate)."
+      "note": "POS_ADDON_SPEC §P-1 — the point-of-sale lens (openPosFor → PosLens.open): c_poskey tile grid, sealed master prices, Complete = ONE signed group (order+ship+invoice+backflush, WR from the dictionary), replenishment fold after. shopping-cart glyph (Lucide verbatim). §AD-GATE showWhen:pos-station — surfaces only when the tenant carries a c_pos row (window.IdmpPillPosGate, mirrors the Posting-Preview data-gate)."
     },
     {
       "id": "warehouse",
@@ -129,7 +76,7 @@
       "key": "",
       "icon": "route",
       "order": 4.7,
-      "note": "Opens the warehouse walk viewer (\u00a7S-1 compiled GardenWorld db, short GH Pages URL). Static demo door \u2014 no data gate (the walk pill inside the viewer already gates on locator bins). share = navigator.share the viewer URL."
+      "note": "Opens the warehouse walk viewer (§S-1 compiled GardenWorld db, short GH Pages URL). Static demo door — no data gate (the walk pill inside the viewer already gates on locator bins). share = navigator.share the viewer URL."
     },
     {
       "id": "ninja",
@@ -137,7 +84,7 @@
       "key": "",
       "icon": "grid",
       "order": 4.8,
-      "note": "NinjaExcelAdaptation.md \u00a76.2 \u2014 Excel-as-report-binder lens (window.NinjaPill): drop a filled sample (BACKUP) \u2192 MAKE scaffolds Input+Process; drop the authored workbook \u2192 RUN folds each Process row over the loaded tenant db (sql.js), writes values to the addressed cells, verify-by-example vs the sample (integer cents), download filled. The browser never renders the report \u2014 formatting/subtotals/charts stay the user's own Excel. grid glyph (spreadsheet). Engine == bim-compiler build/erp (W-NINJA/MAKE/RULE headless + W-NINJA-PILL live)."
+      "note": "NinjaExcelAdaptation.md §6.2 — Excel-as-report-binder lens (window.NinjaPill): drop a filled sample (BACKUP) → MAKE scaffolds Input+Process; drop the authored workbook → RUN folds each Process row over the loaded tenant db (sql.js), writes values to the addressed cells, verify-by-example vs the sample (integer cents), download filled. The browser never renders the report — formatting/subtotals/charts stay the user's own Excel. grid glyph (spreadsheet). Engine == bim-compiler build/erp (W-NINJA/MAKE/RULE headless + W-NINJA-PILL live)."
     },
     {
       "id": "erpdoc",
@@ -145,7 +92,7 @@
       "key": "",
       "icon": "lightbulb",
       "order": 7,
-      "note": "Migrate & Compare evaluator paper (migrate_compare.html) \u2014 same lightbulb pill as erp.html's erpdoc. Houses the 'How this compares' experience in a pill (was a free-floating login-card link). Bound to openReadCompare in idmp_pills.js \u2192 window.IdmpPillActions. NEVER stage-gated (always reachable)."
+      "note": "Migrate & Compare evaluator paper (migrate_compare.html) — same lightbulb pill as erp.html's erpdoc. Houses the 'How this compares' experience in a pill (was a free-floating login-card link). Bound to openReadCompare in idmp_pills.js → window.IdmpPillActions. NEVER stage-gated (always reachable)."
     },
     {
       "id": "showme",
@@ -153,7 +100,7 @@
       "key": "",
       "icon": "circleHelp",
       "order": 8,
-      "note": "\u00a7P3-REOPENED (FRONT_DOOR_PILL_FINISH): guided ShowMe/NeedHelp tour, now a CLEAN Lucide circleHelp PILL (was a header '?' text glyph + a floating 'NeedHelp?' checkbox outside the pill). TOGGLE \u2014 IdmpPillActions.showme flips the shared help_overlay.js #needHelpCk (no fork), lit via IdmpPillActive.showme = ck.checked. NOT stage-gated (help is always useful). The floating #needHelpWrap is CSS-hidden on this surface; the pill is the sole control."
+      "note": "§P3-REOPENED (FRONT_DOOR_PILL_FINISH): guided ShowMe/NeedHelp tour, now a CLEAN Lucide circleHelp PILL (was a header '?' text glyph + a floating 'NeedHelp?' checkbox outside the pill). TOGGLE — IdmpPillActions.showme flips the shared help_overlay.js #needHelpCk (no fork), lit via IdmpPillActive.showme = ck.checked. NOT stage-gated (help is always useful). The floating #needHelpWrap is CSS-hidden on this surface; the pill is the sole control."
     },
     {
       "id": "plugin",
@@ -161,7 +108,7 @@
       "key": "",
       "icon": "plug",
       "order": 8.5,
-      "note": "PLUGIN_SYSTEM_LANE.md \u00a7Phase D \u2014 the Fold-Engine plugin host (W-PLUGIN). TAP opens PluginEngine.open: paste a raw ES-module bundle URL \u2192 one click \u2192 ACTIVE (collapses iDempiere's drop-JAR-restart + 2Pack-import into one in-surface action). A bundle contributes into the live engine registries (AdModelVal/AdCallout/AdProcess/PostResolver) via plugin_registry.js; state persists in IndexedDB. plug glyph (Lucide verbatim). NEVER stage-gated (engine plugins are a global concern). \u00a7-witness \u00a7PLUGIN-PILL."
+      "note": "PLUGIN_SYSTEM_LANE.md §Phase D — the Fold-Engine plugin host (W-PLUGIN). TAP opens PluginEngine.open: paste a raw ES-module bundle URL → one click → ACTIVE (collapses iDempiere's drop-JAR-restart + 2Pack-import into one in-surface action). A bundle contributes into the live engine registries (AdModelVal/AdCallout/AdProcess/PostResolver) via plugin_registry.js; state persists in IndexedDB. plug glyph (Lucide verbatim). NEVER stage-gated (engine plugins are a global concern). §-witness §PLUGIN-PILL."
     },
     {
       "id": "audio",
@@ -169,7 +116,7 @@
       "key": "v",
       "icon": "volume2",
       "order": 8.7,
-      "note": "The SAME Sound-FX speaker pill as the BIM viewer (panels.js id=audio, key v) \u2014 idempiere.html loads ../viewer/sfx.js so window.toggleSfx + window.__sfx are present. TAP toggles the ERP/POS earcons (POS ring/pay/complete, \u00a7R2-AUDIO); lit when on (IdmpPillActive.audio \u2192 __sfx.isOn()), live-synced via builder.sync(). The choice PERSISTS (localStorage sfx_on overrides erp/sfx.json master.enabled), so a mute sticks across reloads \u2014 surfaces the control instead of an invisible default. volume2 glyph (Lucide verbatim, already in icons.js). [[feedback_pill_icon_consistency]]."
+      "note": "The SAME Sound-FX speaker pill as the BIM viewer (panels.js id=audio, key v) — idempiere.html loads ../viewer/sfx.js so window.toggleSfx + window.__sfx are present. TAP toggles the ERP/POS earcons (POS ring/pay/complete, §R2-AUDIO); lit when on (IdmpPillActive.audio → __sfx.isOn()), live-synced via builder.sync(). The choice PERSISTS (localStorage sfx_on overrides erp/sfx.json master.enabled), so a mute sticks across reloads — surfaces the control instead of an invisible default. volume2 glyph (Lucide verbatim, already in icons.js). [[feedback_pill_icon_consistency]]."
     },
     {
       "id": "worldhist",
@@ -177,7 +124,23 @@
       "key": "w",
       "icon": "worldHist",
       "order": 9,
-      "note": "HISTORY_KNOB_DIAL.md \u2014 the cross-page History overlay (which building/doc/page). TAP = open the across-pages overlay (WholeHistory.toggleOpen); LONG-PRESS = a drawer with Z (this page's dot-timeline bar = IdmpHistory) + bomb (clear history, warns first; no shortcut). Replaces the standalone bottom-left clock launcher (WholeHistory mounts {launcher:false}). Two-overlapping-circles glyph. NEVER stage-gated (history is useful anywhere)."
+      "note": "HISTORY_KNOB_DIAL.md — the cross-page History overlay (which building/doc/page). TAP = open the across-pages overlay (WholeHistory.toggleOpen); LONG-PRESS = a drawer with Z (this page's dot-timeline bar = IdmpHistory) + bomb (clear history, warns first; no shortcut). Replaces the standalone bottom-left clock launcher (WholeHistory mounts {launcher:false}). Two-overlapping-circles glyph. NEVER stage-gated (history is useful anywhere)."
+    },
+    {
+      "id": "share",
+      "name": "Share this page",
+      "key": "",
+      "icon": "share",
+      "order": 8.7,
+      "note": "Deep-link to the open window/record (native share / clipboard). FUNDAMENTAL LAW — relocated off the iDempiere header to the pill rail (not iDempiere chrome)."
+    },
+    {
+      "id": "home",
+      "name": "Engine view",
+      "key": "",
+      "icon": "home",
+      "order": 8.8,
+      "note": "Jump to the engine view (erp.html). FUNDAMENTAL LAW — relocated off the iDempiere header to the pill rail."
     }
   ]
 }
