@@ -15,6 +15,16 @@ async function initViewer() {
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
     setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
+  // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
+  // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
+  if (APP.EMBEDDED) {
+    try { document.documentElement.classList.add('bim-embedded'); } catch (e) {}
+    try {
+      if (window.parent && window.parent !== window)
+        window.parent.postMessage({ type: 'bim:ready', bld: (new URLSearchParams(location.search)).get('bld') || null }, '*');
+    } catch (e) {}
+    console.log('§BIM-EMBEDDED chromeless mode on; ready posted to host');
+  }
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
