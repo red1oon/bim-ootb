@@ -486,7 +486,7 @@
 <script src="bim_orders_overlay.js?v=1"></script>
 <!-- BIM_EMBED_WINDOW_SESSION §B2 — DETECT a BIM-set attachment (bim_embed.js) + the dock/float/max embed panel (bim_panel.js). -->
 <script src="bim_embed.js?v=1"></script>
-<script src="bim_panel.js?v=1"></script>
+<script src="bim_panel.js?v=2"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
 <script src="report_overlay.js?v=4"></script>
 <script src="rule_fold.js?v=2"></script>
@@ -783,6 +783,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // BIM_EMBED_WINDOW_SESSION §B2 — declare the BIM-set attachment(s) onto the loaded db (boot overlay, no
     // ad_seed.db binary churn, idempotent). Lights the "Open Model" affordance on a BIM-bearing record. W-BIM-EMBED.
     if (window.BimEmbed && window.BimEmbed.ensureSeedBimSets) { try { var _bn = window.BimEmbed.ensureSeedBimSets(db); console.log('§BIM-EMBED seed-bimsets applied=' + _bn); } catch (e) { console.log('§BIM-EMBED-SEED-ERR ' + e.message); } }
+    // §B3 — wire the viewer→host pick callback at boot (not only on affordance mount) so a 3D pick always
+    // reaches _bimOnFocusRecord, whichever way the panel was opened.
+    if (window.BimPanel) window.BimPanel.onFocusRecord = _bimOnFocusRecord;
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.
     var shardParam = new URLSearchParams(location.search).get('shard');
     if (shardParam) await installShard(shardParam);
@@ -1581,8 +1584,68 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var lbl = el('span', null, bs.title || 'BIM model'); lbl.style.cssText = 'color:#9bd; font:13px system-ui,sans-serif;';
     bar.appendChild(btn); bar.appendChild(lbl);
     formEl.insertBefore(bar, formEl.firstChild);
+    // BIM_EMBED §B3 — wire the viewer→host pick callback once (focus the owning line on a 3D pick).
+    if (window.BimPanel && !window.BimPanel.onFocusRecord) window.BimPanel.onFocusRecord = _bimOnFocusRecord;
     console.log('§BIM-EMBED affordance table=' + tab.tableName + ' record=' + pk + ' bimSet=present url=' + bs.url);
   }
+  // BIM_EMBED §B3 — the line↔IFC-class bridge (NON-INVENT: proj_fold writes M_Product.Value = the IFC class,
+  // so a line's class is the Value of its product, only when that Value is actually an Ifc* type). No window id.
+  function _bimClassForRow(tab, rec) {
+    if (!db || !tab || !rec) return null;
+    var pid = recVal(rec, 'M_Product_ID');
+    if (pid != null && String(pid) !== '') {
+      try {
+        // alias the column (sql.js getAsObject keys by the schema's actual case — `Value`, not `value`).
+        var st = db.prepare('SELECT value AS v FROM m_product WHERE m_product_id=? LIMIT 1'); st.bind([pid]);
+        var v = st.step() ? st.getAsObject().v : null; st.free();
+        if (v && /^Ifc/i.test(v)) return v;
+      } catch (e) {}
+    }
+    var direct = recVal(rec, 'ifc_class') || recVal(rec, 'IfcClass');   // a future declared class column
+    if (direct && /^Ifc/i.test(direct)) return direct;
+    return null;
+  }
+  // ERP→viewer: click a (line/phase/task) row while the model panel is open → highlight that IFC class in 3D.
+  function _bimMaybeHighlight(tab, rec) {
+    if (!window.BimPanel || !window.BimPanel.isOpen || !window.BimPanel.isOpen()) return;
+    var cls = _bimClassForRow(tab, rec);
+    if (!cls) return;
+    window.BimPanel.post({ type: 'bim:highlight', ifcClass: cls });
+    console.log('§BIM-EMBED-ROWHL table=' + tab.tableName + ' class=' + cls);
+  }
+  // viewer→ERP: a 3D pick reports {guid,ifcClass} → focus the matching line (product Value == ifcClass).
+  function _bimOnFocusRecord(d) {
+    if (!d || !d.ifcClass) return;
+    var tab = _curTab(); if (!tab) { console.log('§BIM-EMBED-FOCUSLINE class=' + d.ifcClass + ' row=none(no-tab)'); return; }
+    for (var i = 0; i < _records.length; i++) {
+      if (_bimClassForRow(tab, _records[i]) === d.ifcClass) {
+        _bimFlashRow(i);
+        console.log('§BIM-EMBED-FOCUSLINE class=' + d.ifcClass + ' row=' + i);
+        return;
+      }
+    }
+    console.log('§BIM-EMBED-FOCUSLINE class=' + d.ifcClass + ' row=none');
+  }
+  function _bimFlashRow(i) {
+    var rows = document.querySelectorAll('.idmp-grid tbody tr');
+    var tr = rows && rows[i];
+    var card = document.querySelector('.acc[data-i="' + i + '"]');
+    [tr, card].forEach(function (elm) {
+      if (!elm) return;
+      try { elm.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+      var prev = elm.style.background; elm.style.transition = 'background .3s'; elm.style.background = 'rgba(255,212,0,.35)';
+      setTimeout(function () { elm.style.background = prev || ''; }, 1100);
+    });
+  }
+  // BIM_EMBED §B3 — witness seam (W-BIM-HIGHLIGHT 2c): insert a product whose Value IS an IFC class (exactly
+  // what proj_fold writes) into the live AD store, then resolve it through the SHIPPED _bimClassForRow rule —
+  // so the line↔class derivation is proven against the real function + real db handle, not a copy. Read-only
+  // probe; harmless in prod (only writes a synthetic 990001 product on demand from a test).
+  window.__bimClassProbe = function (cls) {
+    try { if (!db) return '__no_db'; db.run("INSERT OR REPLACE INTO m_product (m_product_id,value,name,ad_client_id,ad_org_id,isactive) VALUES (990001,?,?,11,11,'Y')", [cls, cls + ' (BIM)']); }
+    catch (e) { return '__insert_err:' + e.message; }
+    return _bimClassForRow({ tableName: 'C_ProjectLine' }, { M_Product_ID: 990001 });
+  };
   // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select keyed by record PK (survives a grid re-render) + a batch
   //   "gear" toolbar that fans _fsmCtx(tab,rec).dispatch over the LEGAL-ACTION INTERSECTION of the selection.
   function _pkOf(tab, rec) { return String(recVal(rec, _keyCol(tab))); }
@@ -1678,7 +1741,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
-      tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
+      tr.addEventListener('click', function () { _bimMaybeHighlight(tab, rec); _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       tb.appendChild(tr);
     });
     table.appendChild(tb);
@@ -1730,7 +1793,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       acc.appendChild(bd);
       // chevron / label-region tap = expand body (peek); "Open ›" or the rest of the header = open form view.
       lbl.addEventListener('click', function (e) { e.stopPropagation(); hd.classList.toggle('open'); bd.classList.toggle('open'); });
-      hd.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
+      hd.addEventListener('click', function () { _bimMaybeHighlight(tab, rec); _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
       cards.appendChild(acc);
     });
     return cards;

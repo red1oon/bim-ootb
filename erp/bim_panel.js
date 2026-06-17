@@ -110,12 +110,30 @@
     return panel;
   }
 
-  // viewer → host: the embedded viewer posts {type:'bim:ready'} once chromeless mode is up.
+  function isOpen() { return !!document.getElementById(PANEL_ID); }
+
+  // host → viewer: post a message into the embedded iframe (BIM_EMBED §B3 highlight contract).
+  function post(msg) {
+    var f = document.getElementById('bim-panel-frame');
+    if (f && f.contentWindow) { try { f.contentWindow.postMessage(msg, '*'); return true; } catch (e) {} }
+    return false;
+  }
+
+  // viewer → host: the embedded viewer posts {bim:ready} once chromeless mode is up; {bim:highlighted}
+  // ACKs a class/guid highlight (count of matched elements); {bim:focusRecord} fires when the user PICKS an
+  // element in the viewer → the host focuses the owning record/line (BimPanel.onFocusRecord). §B3.
   window.addEventListener('message', function (e) {
     var d = e.data;
-    if (d && typeof d === 'object' && d.type === 'bim:ready')
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'bim:ready')
       console.log('§BIM-EMBED-READY viewer ready bld=' + (d.bld || '?'));
+    else if (d.type === 'bim:highlighted')
+      console.log('§BIM-EMBED-HIGHLIGHTED class=' + (d.ifcClass || '?') + ' guid=' + (d.guid ? String(d.guid).slice(0, 12) : '-') + ' count=' + d.count);
+    else if (d.type === 'bim:focusRecord') {
+      console.log('§BIM-EMBED-FOCUSREC guid=' + String(d.guid || '').slice(0, 12) + ' class=' + (d.ifcClass || '?'));
+      if (typeof window.BimPanel.onFocusRecord === 'function') { try { window.BimPanel.onFocusRecord(d); } catch (er) { console.warn('§BIM-EMBED-FOCUSREC-ERR ' + er.message); } }
+    }
   });
 
-  window.BimPanel = { open: open, close: close };
+  window.BimPanel = { open: open, close: close, post: post, isOpen: isOpen, onFocusRecord: null };
 })();
