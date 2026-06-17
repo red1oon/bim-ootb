@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v705';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v706';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -49,6 +49,10 @@ const PRECACHE_ASSETS = [
   'migrate_agent.js',
   'overlay_kit.js',    // CONSISTENCY_FINISH.md §K-1 — shared import-overlay toolbox (window.OverlayKit)
   'erp_picker.js',     // MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (window.ErpPicker)
+  'genesis.html',      // SYSTEM_ADMIN_LANE §5 L1 — Initial Tenant Setup wizard (W-GENESIS-WIZARD-LIVE)
+  'genesis.js',        // genesis engine (UMD, window.Genesis) — births a tenant as a signed op-log
+  'genesis_seed.js',   // NON-INVENT default-genesis data (311 iDempiere default accounts + 73 default-acct maps)
+  'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
   'idmp_session.js',
   'erp_descriptor.js',  // DESCRIPTOR SEAM (IDEMPIERE_2.md pivot, renderer #2) — one chrome, N dictionaries; AD = first descriptor
