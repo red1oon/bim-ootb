@@ -21,6 +21,20 @@ function applyFeature(kernel, op) {
     kernel.release(rect);
     return solid;
   }
+  if (op.op_type === 'GEOM_EXTRUDE_POLY') {       // sketch profile (planegcs-solved polygon) swept by depth
+    const pts = P.profile.points;                 // [[x,y],...] ring (auto-closed); same path as W-SKETCH-SOLVE
+    const v = (x, y) => ({ x, y, z: 0 });
+    const edges = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      edges.push(kernel.makeLineEdge(v(a[0], a[1]), v(b[0], b[1])));
+    }
+    const wire = kernel.makeWire(edges);
+    const face = kernel.makeFace(wire);
+    const solid = kernel.extrude(face, 0, 0, P.depth);
+    edges.forEach(e => kernel.release(e)); kernel.release(wire); kernel.release(face);
+    return solid;
+  }
   if (op.op_type === 'GEOM_OPENING') {            // IfcRelVoidsElement: base solid CUT by a void box
     const baseRect = kernel.makeRectangle(P.profile.w, P.profile.h);
     const wall = kernel.extrude(baseRect, P.dir[0], P.dir[1], P.dir[2]); kernel.release(baseRect);

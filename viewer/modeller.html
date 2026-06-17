@@ -28,6 +28,8 @@
 <div id="bar">
   <button id="b-wall" disabled>+ Wall</button>
   <button id="b-open" disabled>+ Opening</button>
+  <button id="b-sketch" disabled>✎ Sketch</button>
+  <button id="b-extrude" disabled style="display:none">⬆ Extrude</button>
   <button id="b-clear" disabled>Clear</button>
 </div>
 <div id="title">BONSAI · MODELLER</div>
@@ -35,6 +37,8 @@
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
 <script src="bonsai_kernel.js?v=1" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
+<script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -107,19 +111,91 @@ bWall.onclick = () => author(WALL, 0x9fb4c8);
 bOpen.onclick = () => author(OPENING, 0xc8a99f);
 bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } setStat('cleared'); };
 
-bWall.disabled = bOpen.disabled = bClear.disabled = false;
+// ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
+// Click on the XY ground plane to drop profile points; the planegcs solver cleans up the polygon
+// (auto H/V), then Extrude folds the solved profile into a solid via GEOM_EXTRUDE_POLY.
+const bSketch = document.getElementById('b-sketch');
+const bExtrude = document.getElementById('b-extrude');
+const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // z=0 sketch plane
+const raycaster = new THREE.Raycaster();
+let sketching = false, sketchGroup = null, savedCam = null;
+
+function sketchMarkers() {
+  if (!sketchGroup) { sketchGroup = new THREE.Group(); sketchGroup.name = 'SketchPreview'; scene.add(sketchGroup); }
+  while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]);
+  const pts = window.Bonsai.sketch.points;
+  pts.forEach(p => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshBasicMaterial({ color: 0x4fc3f7 }));
+    m.position.set(p.x, p.y, 0.01); sketchGroup.add(m);
+  });
+  if (pts.length >= 2) {
+    const ring = pts.map(p => new THREE.Vector3(p.x, p.y, 0.01)); if (pts.length >= 3) ring.push(ring[0]);
+    sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
+  }
+}
+function enterSketch() {
+  sketching = true; window.Bonsai.sketch.reset();
+  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
+  camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
+  bExtrude.style.display = ''; bExtrude.disabled = false; bSketch.textContent = '✕ Cancel';
+  sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
+}
+function exitSketch() {
+  sketching = false; bExtrude.style.display = 'none'; bSketch.textContent = '✎ Sketch';
+  if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
+  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
+}
+bSketch.onclick = () => sketching ? exitSketch() : enterSketch();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!sketching || e.button !== 0 || e.shiftKey) return;   // shift-drag still orbits
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(GROUND, hit)) {
+    window.Bonsai.sketch.addPoint(hit.x, hit.y); sketchMarkers();
+    setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points');
+  }
+});
+bExtrude.onclick = async () => {
+  if (window.Bonsai.sketch.points.length < 3) { setStat('need ≥3 points'); return; }
+  setStat('solving…');
+  try {
+    const res = await window.Bonsai.sketch.solveAndExtrude(3, { color: 0x9fd6b4 });
+    setStat('extruded  tris=' + res.triangleCount + '  axisEdges=' + res.axisClean + '/' + res.edges + '  bbox=[' + res.bbox + ']');
+    exitSketch();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
+};
+
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = false;
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 
-// Headless witness hook: ?author=wall|opening|both auto-authors after boot.
-const q = new URLSearchParams(location.search).get('author');
+// Headless witness hooks. ?author=wall|opening|both auto-authors the sample ops.
+const qs = new URLSearchParams(location.search);
+const q = qs.get('author');
 if (q) {
   (async () => {
     if (q === 'wall' || q === 'both') await author(WALL, 0x9fb4c8);
     if (q === 'opening' || q === 'both') await author(OPENING, 0xc8a99f);
     window.__authorDone = true;
     console.log('§MODELLER author-done q=' + q);
+  })();
+}
+// ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
+if (qs.get('sketch') === 'demo') {
+  (async () => {
+    const S = window.Bonsai.sketch;
+    S.reset();
+    // a roughly-drawn rectangle: corners are off-axis on purpose so the solver has real work to do.
+    S.addPoint(0, 0); S.addPoint(4.0, 0.15); S.addPoint(3.9, 3.0); S.addPoint(0.1, 2.9);
+    try {
+      const res = await S.solveAndExtrude(3, { color: 0x9fd6b4 });
+      window.__sketchResult = { status: res.solveStatus, tris: res.triangleCount, bbox: res.bbox, axisClean: res.axisClean, edges: res.edges, solved: res.solved };
+    } catch (e) { window.__sketchResult = { error: String(e && e.message || e) }; console.warn('§SKETCH demo fail ' + e); }
+    window.__sketchDone = true;
+    console.log('§MODELLER sketch-done');
   })();
 }
 </script>
