@@ -98,23 +98,22 @@ const createdRows = (page) => page.evaluate(() =>
   // FORM opens directly, the ring is NOT fanned.
   await enterFormView(page);
   await tapPill(page, 'formnew');
-  await page.waitForSelector('#crudForm.open', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('.idmp-form-new #idmp-inline-mount .cfrow', { timeout: 8000 }).catch(() => {});   // P3: New is IN PLACE (inline create form, no modal)
   await page.waitForTimeout(700);   // let populateRefs fill the BP <select> options (async withBundle)
   const formState = await page.evaluate(() => {
-    const f = document.getElementById('crudForm');
-    const ring = document.getElementById('crudRing');
-    const bp = f && f.querySelector('[data-col="c_bpartner_id"]');
-    return { formOpen: !!(f && f.classList.contains('open')),
-             ringOpen: !!(ring && ring.classList.contains('open')),
-             bpOptions: bp ? bp.options.length : 0,
-             title: f ? (f.querySelector('.cfh') || {}).textContent : null };
+    const m = document.getElementById('idmp-inline-mount');
+    const ring = document.getElementById('crudRing'), modal = document.querySelector('#crudForm.open');
+    const bp = m && m.querySelector('[data-col="c_bpartner_id"]');
+    return { formOpen: !!(m && document.querySelector('.idmp-form-new')),
+             ringOpen: !!(ring && ring.classList.contains('open')), modalOpen: !!modal,
+             bpOptions: bp ? bp.options.length : 0 };
   });
   console.log('§CRITIC-CREATE ACT1 form=' + JSON.stringify(formState));
-  ok('New opens iDempiere\'s create FORM directly (the ring visual is NOT fanned)', formState.formOpen && !formState.ringOpen, 'form=' + formState.formOpen + ' ring=' + formState.ringOpen);
+  ok('New opens iDempiere\'s create FORM IN PLACE (no modal, the ring visual is NOT fanned)', formState.formOpen && !formState.ringOpen && !formState.modalOpen, 'form=' + formState.formOpen + ' ring=' + formState.ringOpen + ' modal=' + formState.modalOpen);
 
   // pick the tenant's own BPartner (120 Seed Farm Inc., client 11, pricelist 101) → fire the callout on change
   const picked = await page.evaluate(() => {
-    const bp = document.querySelector('#crudForm [data-col="c_bpartner_id"]');
+    const bp = document.querySelector('#idmp-inline-mount [data-col="c_bpartner_id"]');
     if (!bp) return { set: false };
     // ensure 120 is an option (populateRefs loaded all c_bpartner); else add it so the change is real
     if (!Array.from(bp.options).some(o => String(o.value) === '120')) { const o = document.createElement('option'); o.value = '120'; o.textContent = 'Seed Farm Inc. (120)'; bp.appendChild(o); }
@@ -124,7 +123,7 @@ const createdRows = (page) => page.evaluate(() =>
   });
   await page.waitForTimeout(500);   // let fireCreateCallout (async withBundle) fill the derived siblings
   const afterCallout = await page.evaluate(() => {
-    const g = (c) => { const el = document.querySelector('#crudForm [data-col="' + c + '"]'); return el ? el.value : null; };
+    const g = (c) => { const el = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]'); return el ? el.value : null; };
     return { bill: g('bill_bpartner_id'), pricelist: g('m_pricelist_id') };
   });
   const calloutLog = lastLog(/§CRUD-CALLOUT .*col=c_bpartner_id/);
@@ -134,8 +133,8 @@ const createdRows = (page) => page.evaluate(() =>
   ok('Bill_BPartner_ID DEFAULTS from the callout (= the picked BP, not hand-typed)', String(afterCallout.bill) === '120', 'bill=' + afterCallout.bill);
   ok('M_PriceList_ID DEFAULTS from the BP via the callout (not hand-typed)', String(afterCallout.pricelist) === '101', 'pricelist=' + afterCallout.pricelist);
 
-  // Save = ONE signed CRUD_CREATE
-  await page.evaluate(() => { const s = document.getElementById('cfSave'); if (s) s.click(); });
+  // Save = ONE signed CRUD_CREATE (inline verb-bar Save)
+  await page.evaluate(() => { const s = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]'); if (s && !s.disabled) s.click(); });
   await page.waitForTimeout(1600);   // async commitGroup + verifyChain + _sidePersist + the committed refold
   const persist = lastLog(/§CRUD-PERSIST .*op=CRUD_CREATE/);
   await backToGrid(page);            // return to the grid so the created row (synthetic pk) shows via the listTip fold
