@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bonsai Modeller — alternative authoring viewer</title>
+<!-- ALTERNATIVE viewer surface for the Bonsai authoring kernel. Does NOT load viewer.html /
+     does NOT touch the production viewer. prompts/BONSAI_KERNEL_RESEARCH.md Item 2 leg 1:
+     occt-wasm kernel in a Web Worker -> kernel_ops op-row folds into a mesh in this scene. -->
+<style>
+  html, body { margin: 0; height: 100%; background: #14161c; overflow: hidden; font-family: -apple-system, system-ui, sans-serif; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #bar { position: fixed; top: 10px; left: 252px; display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; max-width: calc(100vw - 270px); }
+  #bar button { background: #232733; color: #cdd6e4; border: 1px solid #39404f; border-radius: 7px;
+    padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  #bar button:hover { background: #2c3140; }
+  #bar button:disabled { opacity: .5; cursor: default; }
+  #stat { position: fixed; bottom: 10px; left: 252px; color: #6b7488; font-size: 11px; z-index: 10;
+    font-family: ui-monospace, monospace; white-space: pre; }
+  #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./lib/three.webgpu.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="bar">
+  <button id="b-wall" disabled>+ Wall</button>
+  <button id="b-open" disabled>+ Opening</button>
+  <button id="b-grid" disabled>▦ Grid</button>
+  <button id="b-sketch" disabled>✎ Sketch</button>
+  <button id="b-extrude" disabled style="display:none">⬆ Extrude</button>
+  <button id="b-cut" disabled>✂ Cut</button>
+  <button id="b-ifc" disabled>⤓ IFC</button>
+  <button id="b-clear" disabled>Clear</button>
+</div>
+<div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
+  <span>history</span>
+  <input id="hist-slider" type="range" min="0" max="0" value="0" step="1" style="flex:1;accent-color:#4fc3f7" disabled>
+  <span id="hist-label">0/0</span>
+</div>
+<div id="title">BONSAI · MODELLER</div>
+<div id="stat">booting…</div>
+
+<!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
+<script src="bonsai_kernel.js?v=1" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
+<script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
+<!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
+<script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
+<script src="kernel_ops.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
+<!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
+<script src="bonsai_oplog.js?v=2" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
+<script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
+<script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
+<!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
+<script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
+<!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
+<script src="bonsai_outliner.js?v=1" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+
+<!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
+<script type="module">
+import { OrbitControls } from './lib/OrbitControls.module.js';
+// ESM namespaces are frozen — copy into a plain mutable object (same shim as loader.js §S276).
+// scene.js overlays the STANDARD WebGL build for a real WebGLRenderer (the webgpu bundle ships
+// only WebGPURenderer); mirror that so the modeller uses the production rendering stack.
+const _std = await import('./lib/three.module.min.js');
+const THREE = {}; for (const k of Object.keys(_std)) THREE[k] = _std[k];
+window.THREE = THREE;
+THREE.OrbitControls = OrbitControls;
+THREE.ColorManagement.enabled = false;
+
+const stat = document.getElementById('stat');
+const setStat = (m) => { stat.textContent = m; };
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161c);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 5000);
+camera.position.set(6, 5, 8);
+
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.target.set(2, 1, 1.5);
+
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202028, 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(5, 10, 7); scene.add(key);
+const grid = new THREE.GridHelper(40, 40, 0x2a3040, 0x21262f); scene.add(grid);
+scene.add(new THREE.AxesHelper(1.5));
+
+// window.A — the alternative viewer's app object, matching the viewer's A.scene convention so
+// bonsai_kernel.js drops the authored mesh into A.scene exactly as it would in the main viewer.
+window.A = { scene, camera, renderer, controls };
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// ── Sample op-rows (kernel_ops-shaped) — same params proven by W-KERNEL-FOLD / W-KERNEL-SIGNED.
+const WALL = { id: 1, op_type: 'GEOM_EXTRUDE', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3] } };
+const OPENING = { id: 2, op_type: 'GEOM_OPENING', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3], void: { c1: [1, -1, 1], c2: [2, 1, 2] } } };
+
+const bWall = document.getElementById('b-wall');
+const bOpen = document.getElementById('b-open');
+const bClear = document.getElementById('b-clear');
+
+async function author(op, color) {
+  setStat('folding ' + op.op_type + '…');
+  try {
+    const r = await window.Bonsai.author(op, { color });
+    setStat(op.op_type + '  tris=' + r.triangleCount + '  bbox=[' + r.bbox + ']');
+  } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
+}
+bWall.onclick = () => author(WALL, 0x9fb4c8);
+bOpen.onclick = () => author(OPENING, 0xc8a99f);
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); setStat('cleared'); };
+
+// ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
+// Click on the XY ground plane to drop profile points; the planegcs solver cleans up the polygon
+// (auto H/V), then Extrude folds the solved profile into a solid via GEOM_EXTRUDE_POLY.
+const bSketch = document.getElementById('b-sketch');
+const bExtrude = document.getElementById('b-extrude');
+const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // z=0 sketch plane
+const raycaster = new THREE.Raycaster();
+let sketching = false, sketchGroup = null, savedCam = null;
+
+function sketchMarkers() {
+  if (!sketchGroup) { sketchGroup = new THREE.Group(); sketchGroup.name = 'SketchPreview'; scene.add(sketchGroup); }
+  while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]);
+  const pts = window.Bonsai.sketch.points;
+  pts.forEach(p => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshBasicMaterial({ color: 0x4fc3f7 }));
+    m.position.set(p.x, p.y, 0.01); sketchGroup.add(m);
+  });
+  if (pts.length >= 2) {
+    const ring = pts.map(p => new THREE.Vector3(p.x, p.y, 0.01)); if (pts.length >= 3) ring.push(ring[0]);
+    sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
+  }
+}
+function enterSketch() {
+  sketching = true; window.Bonsai.sketch.reset();
+  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
+  camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
+  bExtrude.style.display = ''; bExtrude.disabled = false; bSketch.textContent = '✕ Cancel';
+  sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
+}
+function exitSketch() {
+  sketching = false; bExtrude.style.display = 'none'; bSketch.textContent = '✎ Sketch';
+  if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
+  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
+}
+bSketch.onclick = () => sketching ? exitSketch() : enterSketch();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!sketching || e.button !== 0 || e.shiftKey) return;   // shift-drag still orbits
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(GROUND, hit)) {
+    // 2D correlation: if the grid is active, snap the click to the nearest gridlines (A-1, B-2…).
+    const s = window.Bonsai.grid.snap(hit.x, hit.y);
+    window.Bonsai.sketch.addPoint(s.x, s.y); sketchMarkers();
+    setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points' + (s.ref && (s.snappedX || s.snappedY) ? '  @' + s.ref : ''));
+  }
+});
+bExtrude.onclick = async () => {
+  if (window.Bonsai.sketch.points.length < 3) { setStat('need ≥3 points'); return; }
+  setStat('solving…');
+  try {
+    // leg 3: a sketched wall is committed as a FEATURE in the op-log (not a one-shot author).
+    const res = await window.Bonsai.sketch.commitExtrude(3, { color: 0x9fd6b4 });
+    setStat('committed wall #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
+    exitSketch(); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
+};
+
+// ── PICK-SELECT + HIGHLIGHT ─────────────────────────────────────────────────────────────────────
+// Click an authored solid to select it (emissive highlight); the selected feature is the cut target.
+const bCut = document.getElementById('b-cut');
+let selectedId = null, selectedMesh = null;
+function highlight(mesh) {
+  if (selectedMesh && selectedMesh.material) selectedMesh.material.emissive && selectedMesh.material.emissive.setHex(0x000000);
+  selectedMesh = mesh; selectedId = mesh ? mesh.userData.featureId : null;
+  if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
+  bCut.disabled = selectedId == null;
+  window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  console.log('§MODELLER select featureId=' + selectedId);
+}
+window.Bonsai.select = (fid) => {                 // witness/programmatic hook
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  highlight(m || null); return selectedId;
+};
+canvas.addEventListener('pointerdown', (e) => {
+  if (sketching || e.button !== 0 || e.shiftKey) return;
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(g.children.filter(o => o.isMesh), false)[0];
+  if (hit) { highlight(hit.object); setStat('selected feature #' + selectedId); }
+});
+
+// Cut an opening into the SELECTED wall: derive a window void from the wall bbox (full through the
+// thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
+bCut.onclick = async () => {
+  if (selectedId == null || !selectedMesh) { setStat('select a wall first'); return; }
+  selectedMesh.geometry.computeBoundingBox();
+  const bb = selectedMesh.geometry.boundingBox, mn = bb.min, mx = bb.max;
+  const ext = [mx.x - mn.x, mx.y - mn.y, mx.z - mn.z];
+  const thin = ext.indexOf(Math.min(...ext));     // thickness axis -> cut all the way through
+  const c1 = [mn.x, mn.y, mn.z].slice(), c2 = [mx.x, mx.y, mx.z].slice();
+  [0, 1, 2].forEach(a => {
+    if (a === thin) { c1[a] = mn.getComponent(a) - 0.5; c2[a] = mx.getComponent(a) + 0.5; }
+    else { const lo = [mn.x, mn.y, mn.z][a], hi = [mx.x, mx.y, mx.z][a], mid = (lo + hi) / 2, half = (hi - lo) * 0.2; c1[a] = mid - half; c2[a] = mid + half; }
+  });
+  setStat('cutting…');
+  try {
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_CUT', parameters: { parent: selectedId, void: { c1, c2 } } }, { color: 0x9fd6b4 });
+    setStat('cut opening in #' + selectedId + '  tris=' + res.triangleCount); highlight(null); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER cut fail ' + err); }
+};
+
+// ── HISTORY SCRUBBER ────────────────────────────────────────────────────────────────────────────
+const slider = document.getElementById('hist-slider'), histLabel = document.getElementById('hist-label');
+function syncHistory() {
+  const n = window.Bonsai.oplog.length;
+  slider.max = n; slider.value = window.Bonsai.oplog.cursor; slider.disabled = n === 0;
+  histLabel.textContent = slider.value + '/' + n;
+}
+slider.addEventListener('input', async () => {
+  histLabel.textContent = slider.value + '/' + window.Bonsai.oplog.length;
+  await window.Bonsai.oplog.scrubTo(+slider.value);
+});
+
+// ── ARCHITECTURAL GRID (2D correlation) ─────────────────────────────────────────────────────────
+const bGrid = document.getElementById('b-grid');
+window.Bonsai.grid.define();   // default column grid A–D × 1–3
+bGrid.onclick = () => {
+  const on = window.Bonsai.grid.show(!window.Bonsai.grid.active);
+  bGrid.textContent = on ? '▦ Grid ✓' : '▦ Grid';
+  setStat(on ? 'grid ON — sketch clicks snap to gridlines (A-1, B-2…)' : 'grid off');
+};
+
+// ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
+const bIfc = document.getElementById('b-ifc');
+bIfc.onclick = async () => {
+  if (window.Bonsai.oplog.length === 0) { setStat('author something first'); return; }
+  setStat('exporting IFC…');
+  try {
+    const r = await window.Bonsai.ifc.exportModel({ name: 'bonsai_model.ifc' });
+    setStat('IFC exported  walls=' + r.walls + '  openings=' + r.openings + '  ' + r.bytes.length + ' bytes (downloaded)');
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
+};
+
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = false;
+window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log
+setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
+window.__sceneReady = true;
+console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
+
+// Headless witness hooks. ?author=wall|opening|both auto-authors the sample ops.
+const qs = new URLSearchParams(location.search);
+const q = qs.get('author');
+if (q) {
+  (async () => {
+    if (q === 'wall' || q === 'both') await author(WALL, 0x9fb4c8);
+    if (q === 'opening' || q === 'both') await author(OPENING, 0xc8a99f);
+    window.__authorDone = true;
+    console.log('§MODELLER author-done q=' + q);
+  })();
+}
+// ?recipe=demo drives the feature-tree + history replay (W-BONSAI-RECIPE): commit a wall, pick it,
+// cut an opening (child of the wall), then scrub history back (hole gone) and forward (hole back).
+if (qs.get('recipe') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      // 1. commit a thin wall (4 x 0.2 x 3) as feature #1.
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.wallId = wall.id; out.afterWall = wall.triangleCount;     // expect 12
+      // 2. pick it (programmatic), then cut a window through the thickness (child of #1).
+      out.picked = window.Bonsai.select(wall.id);
+      const cut = await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      out.afterCut = cut.triangleCount;                              // expect > 12 (hole)
+      // 3. history replay: scrub back to before the cut, then forward again — deterministic.
+      out.scrubBack = (await O.scrubTo(1)).triangleCount;            // expect == afterWall (hole gone)
+      out.scrubFwd = (await O.scrubTo(2)).triangleCount;             // expect == afterCut (hole back)
+      out.rows = O.length;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OPLOG recipe fail ' + e); }
+    window.__recipeResult = out;
+    window.__recipeDone = true;
+    console.log('§MODELLER recipe-done');
+  })();
+}
+// ?preload=demo proves the red-pill background preload: stream heavy assets with per-asset progress
+// (the status shower) + warm the kernel worker so authoring is instant on entry (W-BONSAI-PRELOAD).
+if (qs.get('preload') === 'demo') {
+  (async () => {
+    const ev = []; const out = {};
+    try {
+      const occt = new URL('lib/kernel/occt-wasm.wasm', location.href).href;
+      const planegcs = new URL('lib/planegcs/planegcs_dist/planegcs.wasm', location.href).href;
+      // occt = warm (bytes drive the worker); planegcs stands in for a 2nd asset (e.g. the iDempiere seed.db).
+      await window.Bonsai.preload({ assets: [{ key: 'occt-wasm', url: occt, warm: true }, { key: 'idmp-seed-stub', url: planegcs }] },
+        p => ev.push({ asset: p.asset, pct: +(p.pct || 0).toFixed(2), done: !!p.done }));
+      const r = await window.Bonsai.author(WALL, { color: 0x9fb4c8 });   // worker already warm → authors at once
+      out.events = ev.length;
+      out.occtStreamed = ev.filter(e => e.asset === 'occt-wasm').length;
+      out.occtDone = ev.some(e => e.asset === 'occt-wasm' && e.done);
+      out.seedDone = ev.some(e => e.asset === 'idmp-seed-stub' && e.done);
+      out.tris = r.triangleCount; out.bbox = r.bbox;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§BONSAI preload demo fail ' + e); }
+    window.__preloadResult = out;
+    window.__preloadDone = true;
+    console.log('§MODELLER preload-done');
+  })();
+}
+// ?outliner=demo proves the Bonsai Outliner reflects the signed op-log feature tree + Find (W-BONSAI-OUTLINER).
+if (qs.get('outliner') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      const O = window.Bonsai.oplog; O.clear();
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      window.Bonsai.select(wall.id);
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      const tree = () => document.querySelector('#bonsai-outliner #bo-tree');
+      const rowsAll = () => Array.from(tree().querySelectorAll('[data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.rows = rowsAll();
+      out.wallRow = out.rows.find(r => /Wall/.test(r)) || null;
+      out.openingRow = out.rows.find(r => /Opening/.test(r)) || null;
+      out.hasGridRef = /A-1/.test(out.wallRow || '');
+      // Find filter: typing "opening" must hide the wall row.
+      const find = document.querySelector('#bonsai-outliner #bo-find');
+      find.value = 'opening'; find.dispatchEvent(new Event('input'));
+      out.afterFind = rowsAll();
+      out.findFiltered = out.afterFind.length === 1 && /Opening/.test(out.afterFind[0]);
+      find.value = ''; find.dispatchEvent(new Event('input'));
+      // click the wall row -> selection mirrors to 3D (Bonsai._selId) and the row goes active.
+      tree().querySelector('[data-fid]').click();
+      out.selId = window.Bonsai._selId;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OUTLINER demo fail ' + e); }
+    window.__outlinerResult = out;
+    window.__outlinerDone = true;
+    console.log('§MODELLER outliner-done');
+  })();
+}
+// ?grid=demo proves 2D correlation (W-BONSAI-GRID): define a column grid, snap NOISY clicks to it,
+// solve+commit a wall, and confirm every wall corner lands EXACTLY on a gridline with a grid reference.
+if (qs.get('grid') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.grid.show(true);
+      window.Bonsai.oplog.clear(); window.Bonsai.sketch.reset();
+      // clicks NEAR grid nodes A1,B1,B2,A2 (off by up to 0.2) — snap must pull them onto the grid.
+      const clicks = [[0.18, 0.05], [3.88, 0.12], [4.1, 2.9], [0.05, 3.07]];
+      out.snapped = clicks.map(c => { const s = window.Bonsai.grid.snap(c[0], c[1]); window.Bonsai.sketch.addPoint(s.x, s.y); return { x: s.x, y: s.y, ref: s.ref }; });
+      const wall = await window.Bonsai.oplog.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: window.Bonsai.sketch.points.map(p => [p.x, p.y]) }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.tris = wall.triangleCount;
+      // every committed corner must sit on a gridline (exact) and yield an architectural ref.
+      const ops = window.Bonsai.oplog._geomOps();
+      const pts = ops[0].parameters.profile.points;
+      out.corners = pts.map(p => { const r = window.Bonsai.grid.refAt(p[0], p[1]); return { p, ref: (r.x || '·') + '-' + (r.y || '·'), onGrid: !!(r.x && r.y) }; });
+      out.allOnGrid = out.corners.every(c => c.onGrid);
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§GRID demo fail ' + e); }
+    window.__gridResult = out;
+    window.__gridDone = true;
+    console.log('§MODELLER grid-done');
+  })();
+}
+// ?ifc=demo authors a wall+opening, EXPORTS the op-log to IFC4, then re-imports to prove the round-trip (W-BONSAI-IFC).
+if (qs.get('ifc') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      window.Bonsai.select(wall.id);
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      const built = await window.Bonsai.ifc.exportModel({ download: false });   // build bytes, skip the browser download in headless
+      out.bytes = built.bytes.length; out.builtWalls = built.walls; out.builtOpenings = built.openings; out.builtRels = built.rels;
+      out.src = built.firstWall;
+      out.re = await window.Bonsai.ifc.reimport(built.bytes);                    // re-import the exported bytes
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§IFC demo fail ' + e); }
+    window.__ifcResult = out;
+    window.__ifcDone = true;
+    console.log('§MODELLER ifc-done');
+  })();
+}
+// ?signed=demo proves geometry rides the SIGNED kernel_ops chain in-viewer (W-BONSAI-SIGNED): commit
+// wall+cut as signed op-groups, verify the chain, replay deterministically, then tamper a param → verify fails.
+if (qs.get('signed') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.wallId = wall.id; out.afterWall = wall.triangleCount; out.verifyWall = wall.verify; out.signedWall = wall.signed;
+      window.Bonsai.select(wall.id);
+      const cut = await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      out.afterCut = cut.triangleCount; out.verifyCut = cut.verify; out.signed = cut.signed; out.tip = cut.tip;
+      out.scrubBack = (await O.scrubTo(1)).triangleCount;
+      out.scrubFwd = (await O.scrubTo(2)).triangleCount;
+      const tv = await O.tamperFirstGeom();
+      out.tamperOk = tv.ok; out.tamperWhy = tv.why; out.brokeAt = tv.brokeAt;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OPLOG signed fail ' + e); }
+    window.__signedResult = out;
+    window.__signedDone = true;
+    console.log('§MODELLER signed-done');
+  })();
+}
+// ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
+if (qs.get('sketch') === 'demo') {
+  (async () => {
+    const S = window.Bonsai.sketch;
+    S.reset();
+    // a roughly-drawn rectangle: corners are off-axis on purpose so the solver has real work to do.
+    S.addPoint(0, 0); S.addPoint(4.0, 0.15); S.addPoint(3.9, 3.0); S.addPoint(0.1, 2.9);
+    try {
+      const res = await S.solveAndExtrude(3, { color: 0x9fd6b4 });
+      window.__sketchResult = { status: res.solveStatus, tris: res.triangleCount, bbox: res.bbox, axisClean: res.axisClean, edges: res.edges, solved: res.solved };
+    } catch (e) { window.__sketchResult = { error: String(e && e.message || e) }; console.warn('§SKETCH demo fail ' + e); }
+    window.__sketchDone = true;
+    console.log('§MODELLER sketch-done');
+  })();
+}
+</script>
+</body>
+</html>

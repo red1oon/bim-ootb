@@ -57,6 +57,7 @@
   "GridViews": "readonly",
   "initViewer": "readonly",
   "InputReg": "readonly",
+  "Bonsai": "readonly",
   "KernelOps": "readonly",
   "LABOR_RATES": "readonly",
   "ListBuilder": "readonly",
