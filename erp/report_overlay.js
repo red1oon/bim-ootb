@@ -27,7 +27,15 @@
                  date: 'dateinvoiced', total: 'grandtotal' },
     m_inout:   { key: 'm_inout',   pk: 'm_inout_id',   lineTable: 'm_inoutline',   fk: 'm_inout_id',
                  fkProduct: 'm_product_id', amount: null,        qty: 'movementqty', price: null,
-                 date: 'movementdate', total: null }
+                 date: 'movementdate', total: null },
+    // Rpt C_Project (AD_Process 217, "Project Print") — a KIND-1 report folded by the SAME foldReceipt as the
+    // order/invoice prints (no new fold code, AD_PROCESS_FOLD_LANE §P2-leg3). A project IS a document: header
+    // C_Project + lines C_ProjectLine; the planned amounts are its money (subtotal = Σ PlannedAmt, total = the
+    // header PlannedAmt). C_Project has no DocumentNo → docnoCol names its identifier column (Value). The browser
+    // lc() helper aliases the bundle's CamelCase (PlannedAmt/Value) to these lowercase keys.
+    c_project: { key: 'c_project', pk: 'c_project_id', lineTable: 'c_projectline', fk: 'c_project_id',
+                 fkProduct: 'm_product_id', amount: 'plannedamt', qty: 'plannedqty', price: 'plannedprice',
+                 date: 'datecontract', total: 'plannedamt', docnoCol: 'value' }
   };
 
   function num(v) { return (v == null || v === '') ? null : Number(v); }
@@ -73,7 +81,7 @@
     var taxB = (subtotalB != null && totalB != null) ? totalB.subtract(subtotalB) : null;
     var subtotal = money2(subtotalB), total = (totalB != null ? money2(totalB) : null), tax = money2(taxB);
     return {
-      key: map.key, id: header[map.pk], docno: header.documentno,
+      key: map.key, id: header[map.pk], docno: header[map.docnoCol || 'documentno'],
       date: (map.date && header[map.date] != null) ? String(header[map.date]).slice(0, 10) : null,
       partner: (names.partner != null ? names.partner
                  : (header.c_bpartner_id != null ? '#' + header.c_bpartner_id : null)),

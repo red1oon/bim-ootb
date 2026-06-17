@@ -430,7 +430,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=4"></script>
+<script src="ad_process.js?v=5"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -488,7 +488,7 @@
 <script src="bim_embed.js?v=1"></script>
 <script src="bim_panel.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
-<script src="report_overlay.js?v=3"></script>
+<script src="report_overlay.js?v=4"></script>
 <script src="rule_fold.js?v=2"></script>
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
@@ -529,7 +529,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=18"></script>
+<script src="crud_overlay.js?v=19"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
