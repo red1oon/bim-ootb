@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v666';   // v666: clash dot restores the pair + Clash panel (field('clash'), universal_history.js?v=24)
+const CACHE_VERSION = 'v667';   // v667: Help pill restored to the shortcuts palette; the corner download triangle opens About/DIY (was wrongly on Help). git history is the record.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
