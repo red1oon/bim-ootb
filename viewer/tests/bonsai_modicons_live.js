@@ -21,8 +21,10 @@ const UNICODE_GLYPH = /[←-⯿\u{1F000}-\u{1FAFF}]/u;
   const br = await puppeteer.launch({ headless: 'new',
     args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--window-size=1200,760'] });
   const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 760 });
-  const errs = []; const logs = [];
-  pg.on('console', m => { const t = m.text(); if (/§BONSAI author/.test(t)) { logs.push(t); console.log('  ' + t); } });
+  const errs = []; const logs = []; const audio = [];
+  pg.on('console', m => { const t = m.text();
+    if (/§BONSAI author/.test(t)) { logs.push(t); console.log('  ' + t); }
+    if (/§AUDIO/.test(t)) { audio.push(t); console.log('  ' + t); } });
   pg.on('pageerror', e => { errs.push(String(e)); console.log('  ERR ' + String(e).slice(0, 200)); });
 
   await pg.goto(`http://localhost:${port}/modeller.html?author=both`, { waitUntil: 'load', timeout: 60000 });
@@ -55,6 +57,19 @@ const UNICODE_GLYPH = /[←-⯿\u{1F000}-\u{1FAFF}]/u;
     return { found: !!(el || tree), svgCount: svgN, hasTriangle: /[▼▸]/.test(txt) };
   });
 
+  // sound toggle: default ON (.on + Sound label), click → Muted; authoring fired a §AUDIO cue
+  const sound = await pg.evaluate(() => {
+    const b = document.getElementById('b-sound');
+    if (!b) return { exists: false };
+    const onAtStart = b.classList.contains('on');
+    const labelOn = (b.textContent || '').trim();
+    b.click();
+    const mutedAfter = !b.classList.contains('on') && /Muted/.test(b.textContent || '');
+    b.click(); // back on
+    return { exists: true, hasSvg: !!b.querySelector('svg.ic'), onAtStart, labelOn, mutedAfter };
+  });
+  const audioFired = audio.some(t => /§AUDIO cue=author/.test(t));
+
   const shot = path.join(VIEWER, 'modeller_icons_shot.png');
   await pg.screenshot({ path: shot }).catch(() => {});
   await br.close(); server.close();
@@ -63,10 +78,11 @@ const UNICODE_GLYPH = /[←-⯿\u{1F000}-\u{1FAFF}]/u;
   const open = logs.find(t => /op=GEOM_OPENING/.test(t));
   const authored = wall && /inScene=true/.test(wall) && open && /inScene=true/.test(open);
   const sketchOK = sketchToggle.inSketch.hasSvg && /Cancel/.test(sketchToggle.inSketch.label) && /Sketch/.test(sketchToggle.back);
-  const pass = errs.length === 0 && authored && allHaveIcons && noGlyph && gridOn && sketchOK && !outliner.hasTriangle && outliner.svgCount >= 1;
+  const soundOK = sound.exists && sound.hasSvg && sound.onAtStart && sound.mutedAfter;
+  const pass = errs.length === 0 && authored && allHaveIcons && noGlyph && gridOn && sketchOK && !outliner.hasTriangle && outliner.svgCount >= 1 && soundOK && audioFired;
   console.log('  §BONSAI-MODICONS buttons=' + bar.length + ' allIcons=' + allHaveIcons + ' noGlyph=' + noGlyph +
     ' gridOn=' + gridOn + ' sketchToggle=' + sketchOK + ' outlinerChevrons=' + outliner.svgCount + ' outlinerTriangleText=' + outliner.hasTriangle +
-    ' authored=' + authored + ' pageerrors=' + errs.length);
+    ' sound=' + soundOK + ' audioCue=' + audioFired + ' authored=' + authored + ' pageerrors=' + errs.length);
   console.log('  shot: ' + shot);
   console.log('── W-BONSAI-MODICONS ' + (pass ? 'PASS' : 'FAIL') + ' ──');
   process.exit(pass ? 0 : 1);
