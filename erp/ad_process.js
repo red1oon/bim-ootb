@@ -250,6 +250,101 @@
     }
   };
 
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // KIND-2 process handler — InvoiceGenerate (AD_Process 119 "Generate Invoices", classname
+  //   org.compiere.process.InvoiceGenerate, isReport=N). The order-to-cash CLOSER + sibling of InOutGenerate: a
+  //   Completed Sales Order → a C_Invoice (invoice) op-group via the EXISTING erp_engine.buildDoc archetype
+  //   (KIND 2, newVerbs=0 — the DOC_SPECS.createInvoice shape). InvoiceRule is the sibling of DeliveryRule.
+  // Java home (EXTRACT, do NOT invent) — org.compiere.process.InvoiceGenerate:
+  //   doIt/generate — selects DocStatus IN('CO','CL') AND IsSOTrx='Y' orders that have a line with
+  //     QtyOrdered<>QtyInvoiced (line 159/167/176). Then branches on the order's InvoiceRule (X_C_Order:1546-1552:
+  //       'I' Immediate, 'D' AfterDelivery, 'O' AfterOrderDelivered, 'S' CustomerScheduleAfterDelivery):
+  //       'I' Immediate → the DIRECT order-line fold (the "After Order Delivered, Immediate" else-branch,
+  //          line 293-337): per order line toInvoice = QtyOrdered − QtyInvoiced (line 299); SKIP if
+  //          toInvoice.signum()==0 AND M_Product_ID != 0 ("nothing to invoice", line 300-301); createLine
+  //          (order,oLine,toInvoice,...) (line 325). EXACTLY the DOC_SPECS.createInvoice shape — newVerbs=0.
+  //       'D'/'O'/'S' → invoice from SHIPMENT lines (order.getShipments(), line 271-291 / 340-360) or an
+  //          MInvoiceSchedule (line 248-268). Those ride the SHIPMENT/SCHEDULE corpus (itself the InOutGenerate
+  //          output) — NAMED-DEFERRED here (honest, flagged in the result), the same law as InOutGenerate's
+  //          O/L/M/5 DeliveryRules. NOT a silent skip, NEVER a fabricated invoice.
+  //   createLine (line 388-413) — m_invoice = new MInvoice(order,...): Bill BPartner/Location, PriceList,
+  //     PaymentTerm, Currency, the SOO target doctype copied from the order; MInvoiceLine.setOrderLine +
+  //     setQtyInvoiced(toInvoice). Header copied from the order EXACTLY like createShipment's M_InOut header.
+  // Implementing AD_PROCESS_FOLD_LANE.md §P2-leg2 — Witness: W-PROC-INV
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+  // invoiceGenGate — InvoiceGenerate's selection predicate as a per-order verdict (DocStatus IN('CO','CL') AND
+  // IsSOTrx='Y'). The "has an un-invoiced line" requirement is enforced by the empty-result branch downstream.
+  function invoiceGenGate(o) {
+    if (!o || !o.c_order_id)                       return { ok: false, missing: 'C_Order_ID', message: 'Order not found' };
+    if (o.docstatus !== 'CO' && o.docstatus !== 'CL') return { ok: false, missing: 'DocStatus', message: 'Order is not Completed/Closed (Generate Invoices invoices CO/CL orders only)' };
+    if (o.issotrx !== 'Y')                         return { ok: false, missing: 'IsSOTrx',   message: 'Order is not a Sales Order (Generate Invoices is the SO path)' };
+    return { ok: true };
+  }
+
+  // genInvoiceLines — per C_OrderLine → the invoice-line shape: QtyInvoiced = toInvoice (Immediate rule only).
+  // toInvoice = QtyOrdered − QtyInvoiced (signum-0 with a product → "nothing to invoice" → skip, source line 300).
+  // Non-Immediate rules ('D'/'O'/'S') invoice from the shipment/schedule corpus → NAMED-DEFERRED (deferredRule
+  // carries the code), exactly InOutGenerate's non-F/A deferral. EXTRACT-not-invent (qty carried verbatim).
+  function genInvoiceLines(orderLines, invoiceRule) {
+    var out = [], deferredRule = null;
+    if (invoiceRule !== 'I') {                                                 // D/O/S — shipment/schedule corpus
+      return { lines: out, deferredRule: invoiceRule || null };               //   named-deferred (honest)
+    }
+    (orderLines || []).forEach(function (l) {
+      var toInvoice = Number(l.qtyordered || 0) - Number(l.qtyinvoiced || 0);
+      if (toInvoice === 0 && Number(l.m_product_id || 0) !== 0) return;        // "nothing to invoice" (source 300)
+      if (toInvoice <= 0) return;                                              // over-invoiced / zero charge → skip
+      out.push({ c_orderline_id: l.c_orderline_id, m_product_id: l.m_product_id, qtyinvoiced: toInvoice, line: l.line, toInvoice: toInvoice });
+    });
+    return { lines: out, deferredRule: deferredRule };
+  }
+
+  // INVOICE_SPEC — the buildDoc archetype spec for an order→invoice fold (the createInvoice shape). The header
+  // is copied from the order EXACTLY like SHIPMENT_SPEC (Bill_Location is the invoice's C_BPartner_Location).
+  var INVOICE_SPEC = {
+    docTable: 'C_Invoice', lineTable: 'C_InvoiceLine',
+    parentId: 'c_order_id', lineParentId: 'c_orderline_id',
+    qtyTo: 'qtyinvoiced', qtyFrom: 'qtyinvoiced',
+    header: function (o) {
+      return {
+        issotrx: o.issotrx,
+        ad_client_id: o.ad_client_id, ad_org_id: o.ad_org_id,
+        c_bpartner_id: o.c_bpartner_id,
+        c_bpartner_location_id: o.bill_location_id || o.c_bpartner_location_id,  // MInvoice uses Bill_Location
+        c_currency_id: o.c_currency_id, c_paymentterm_id: o.c_paymentterm_id,
+        m_pricelist_id: o.m_pricelist_id, c_order_id: o.c_order_id
+      };
+    }
+  };
+
+  // registerInvoiceGenerate(engine) — wire the KIND-2 handler. ctx: fetchOrder(info)->C_Order row,
+  //   fetchOrderLines(info)->C_OrderLine rows. info.Record_ID = the C_Order_ID.
+  function registerInvoiceGenerate(engine) {
+    registerHandler('org.compiere.process.InvoiceGenerate', function (ctx, info) {
+      var order = ctx.fetchOrder ? ctx.fetchOrder(info) : null;
+      var gate = invoiceGenGate(order);
+      if (!gate.ok) return { ok: false, reason: 'order-not-invoiceable', message: gate.message, rows: 0, result: { gate: gate } };
+      var built = genInvoiceLines(ctx.fetchOrderLines ? ctx.fetchOrderLines(info) : [], order.invoicerule);
+      if (!built.lines.length) {
+        // Honest empty — every ordered qty already invoiced (or the rule is named-deferred). NOT a fake invoice.
+        return {
+          ok: true, rows: 0,
+          message: '@Created@ = 0' + (built.deferredRule ? ' (InvoiceRule ' + built.deferredRule + ' invoices from shipments/schedule — named-deferred)' : ' (nothing to invoice — ordered qty already invoiced)'),
+          result: { ops: [], lineCount: 0, deferredRule: built.deferredRule }
+        };
+      }
+      var ops = engine.buildDoc(INVOICE_SPEC, order, built.lines);
+      var li = 0;
+      ops.forEach(function (op) { if (op.op_type === 'CREATE_LINE') { op.line = built.lines[li++].line; } });
+      return {
+        ok: true, rows: built.lines.length,
+        message: '@Created@ = 1 (' + built.lines.length + ' invoice line' + (built.lines.length === 1 ? '' : 's') + ')',
+        result: { ops: ops, lineCount: built.lines.length, header: ops[0], issotrx: ops[0].issotrx, deferredRule: built.deferredRule }
+      };
+    }, { kind: 'process', action: 'GenerateInvoice' });
+  }
+
   // registerInOutGenerate(engine) — wire the KIND-2 handler. ctx: fetchOrder(info)->C_Order row,
   //   fetchOrderLines(info)->C_OrderLine rows, onHandOf(productId)->on-hand qty in the order's warehouse.
   function registerInOutGenerate(engine) {
@@ -459,6 +554,8 @@
     genOrderLines: genOrderLines, GENORDER_SPEC: GENORDER_SPEC,
     registerInOutGenerate: registerInOutGenerate, inoutGenGate: inoutGenGate,
     genShipmentLines: genShipmentLines, SHIPMENT_SPEC: SHIPMENT_SPEC,
+    registerInvoiceGenerate: registerInvoiceGenerate, invoiceGenGate: invoiceGenGate,
+    genInvoiceLines: genInvoiceLines, INVOICE_SPEC: INVOICE_SPEC,
     readProcess: readProcess, resolveClassname: resolveClassname,
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
