@@ -85,7 +85,7 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=4" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=5" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -738,7 +738,11 @@ function paintLod() {
 function clearGhost() { if (ghostMesh) { scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh.material.dispose(); ghostMesh = null; } ghostXY = null; }
 function showGhost(x, y) {                                        // translucent preview of where/how the insert lands
   if (!insertHash) return;
-  const pa = window.Bonsai.library.previewArrays(insertHash, { x, y, z: insElev, rot: insRot }); if (!pa) return;
+  const L = window.Bonsai.library, asm = L.isAssembly(insertHash) ? L.assembly(insertHash) : null;
+  const pa = asm                                                 // assembly ghost = its aabb footprint box
+    ? L.previewBox([-(asm.w || 0.2) / 2, (asm.w || 0.2) / 2, -(asm.d || 0.2) / 2, (asm.d || 0.2) / 2, 0, asm.h || 0.1], { x, y, z: insElev, rot: insRot })
+    : L.previewArrays(insertHash, { x, y, z: insElev, rot: insRot });
+  if (!pa) return;
   if (!ghostMesh) {
     ghostMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.32, depthWrite: false }));
     ghostMesh.name = 'InsertGhost'; ghostMesh.renderOrder = 999; scene.add(ghostMesh);
@@ -752,8 +756,31 @@ function rotateInsert() {                                          // R key / Ro
   const rl = insertPanel && insertPanel.querySelector('#ins-rot'); if (rl) rl.textContent = insRot + '°';
   if (ghostXY) showGhost(ghostXY.x, ghostXY.y); setStat('insert rotation ' + insRot + '°');
 }
+// Drop a whole BOM assembly: expand its subtree to N leaf placements and commit one signed GEOM_INSERT per
+// leaf (the recursion + parent-relative transforms live in bonsai_library.expandAssembly). W-BOM-ASSEMBLY.
+async function placeAssembly(x, y) {
+  const L = window.Bonsai.library, asm = L.assembly(insertHash);
+  const leaves = L.expandAssembly(insertHash, { x, y, z: insElev, rot: insRot });
+  if (!leaves.length) { setStat('assembly ' + insertHash + ' has no placeable leaves'); return null; }
+  const placed = [];
+  for (const lf of leaves) {                                     // each leaf = one signed op-row (the chain)
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_INSERT', parameters: { hash: lf.hash, placement: { x: lf.x, y: lf.y, z: lf.z, rot: lf.rot }, lod: '200' } });
+    placed.push({ id: res.id, hash: lf.hash });
+  }
+  lastInsertId = placed[placed.length - 1].id; bLod.style.display = ''; bLod.disabled = false; paintLod();
+  setStat('assembled ' + (asm ? asm.name : insertHash) + ' → ' + placed.length + ' parts placed (signed)'); audioCue('commit'); syncHistory();
+  console.log('§MODELLER assembly-drop ' + insertHash + ' parts=' + placed.length);
+  // refine ALL leaves to real meshes in ONE pass: load the geom store once, set LOD-300 per leaf, single re-fold.
+  const needs = placed.filter(p => { const c = L.get(p.hash); return c && c.gh; });
+  if (needs.length) L.ensureMesh(needs[0].hash).then(() => {
+    needs.forEach(p => { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
+    return window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
+  }).then(() => { if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); paintLod(); }).catch(() => {});
+  return { id: lastInsertId, count: placed.length };
+}
 async function placeComponent(x, y) {
   if (!insertHash) { setStat('pick a component first'); return null; }
+  if (window.Bonsai.library.isAssembly(insertHash)) return placeAssembly(x, y);
   const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_INSERT', parameters: { hash: insertHash, placement: { x, y, z: insElev, rot: insRot }, lod: '200' } });
   lastInsertId = res.id; bLod.style.display = ''; bLod.disabled = false; paintLod();
   setStat('inserted ' + window.Bonsai.library.get(insertHash).ifc_class + ' #' + res.id + ' @' + insRot + '°' + (insElev ? ' elev ' + insElev : '') + '  tris=' + res.triangleCount); audioCue('commit'); syncHistory();
@@ -806,6 +833,9 @@ function renderCatalog() {
       if (open) h += '<div style="margin:0 0 4px 8px">' + L.productsIn(cat.cat).map(_prodBtn).join('') + '</div>';
     });
   });
+  // ASSEMBLIES (recursive BOM sets) — drop a whole BUILDING/FLOOR/ROOM/SET and it folds into N placed parts.
+  // Shown when the Sets chip is active, and appended under "All".
+  if (_insFilter === 'asm' || _insFilter === 'all') h += _renderAssemblies();
   // Legacy mesh-bearing parts (the 3 real extracted components, hex hashes) — kept until component_library
   // range-load lands real meshes for the whole catalog. Shown under "All" so LOD-300 demos keep a real mesh.
   if (_insFilter === 'all') {
@@ -814,11 +844,30 @@ function renderCatalog() {
   }
   body.innerHTML = h;
 }
+// Assembly button (a whole BOM set) + the Level-grouped collapsible list (Buildings/Floors/Rooms/Sets).
+function _asmBtn(a) {
+  const dim = (a.w || 0).toFixed(1) + '×' + (a.d || 0).toFixed(1) + '×' + (a.h || 0).toFixed(1) + 'm';
+  return '<button data-asm="' + _ESC(a.id) + '" class="ins-a" title="' + _ESC(a.name) + ' — ' + a.children.length + ' parts" style="display:block;width:100%;box-sizing:border-box;text-align:left;margin:2px 0;background:#171a21;border:1px solid #34506b;border-radius:5px;color:#cdd6e3;padding:5px 8px;cursor:pointer;font-size:11px">' +
+    _ESC(a.name) + ' <span style="color:#5b6473;font-size:9px">' + a.children.length + ' parts · ' + dim + '</span></button>';
+}
+function _renderAssemblies() {
+  const asm = window.Bonsai.library.assemblies(); if (!asm.length) return '';
+  const LEVELS = [['BUILDING', 'Buildings'], ['FLOOR', 'Floors'], ['ROOM', 'Rooms'], ['SET', 'Sets'], ['ITEM', 'Items']];
+  let h = '<div style="font-size:9px;letter-spacing:.08em;color:#7f8aa0;margin:6px 0 2px">ASSEMBLIES · drop a whole set</div>';
+  LEVELS.forEach(([lv, label]) => {
+    const items = asm.filter(a => a.level === lv); if (!items.length) return;
+    const key = 'ASM_' + lv, open = !!_insExpanded[key];
+    h += '<div class="ins-cat" data-cat="' + key + '" style="cursor:pointer;padding:4px 6px;font-size:11px;color:#cdd6e3;border-radius:4px">' +
+      (open ? '▾ ' : '▸ ') + label + ' <span style="color:#5b6473;font-size:9px">(' + items.length + ')</span></div>';
+    if (open) h += '<div style="margin:0 0 4px 8px">' + items.map(_asmBtn).join('') + '</div>';
+  });
+  return h;
+}
 function buildInsertPanel() {
   if (insertPanel) return insertPanel;
   const p = document.createElement('div'); p.id = 'ins-panel';
   p.style.cssText = 'position:fixed;left:252px;top:60px;width:228px;background:#1b1d23;border:1px solid #2c303a;border-radius:7px;padding:8px;z-index:30;font:12px system-ui,sans-serif;color:#c7cdd8;display:none';
-  const chips = [['all', 'All'], ['structure', 'Struct'], ['openings', 'Open'], ['furniture', 'Furn']]
+  const chips = [['all', 'All'], ['structure', 'Struct'], ['openings', 'Open'], ['furniture', 'Furn'], ['asm', 'Sets']]
     .map(c => '<button class="ins-chip" data-g="' + c[0] + '" style="background:' + (c[0] === 'all' ? '#23364a' : '#13151a') + ';border:1px solid #2c303a;border-radius:4px;color:#c7cdd8;padding:3px 8px;cursor:pointer;font-size:10px">' + c[1] + '</button>').join('');
   p.innerHTML =
     '<div style="font-size:10px;letter-spacing:.1em;color:#5b6473;margin-bottom:6px">INSERT · BOM CATALOG</div>' +
@@ -835,9 +884,16 @@ function buildInsertPanel() {
   p.addEventListener('click', e => {
     const leaf = e.target.closest('.ins-c');
     if (leaf) { insertHash = leaf.getAttribute('data-hash');
-      p.querySelectorAll('.ins-c').forEach(x => x.style.borderColor = '#2c303a'); leaf.style.borderColor = '#4fc3f7';
+      p.querySelectorAll('.ins-c,.ins-a').forEach(x => x.style.borderColor = ''); leaf.style.borderColor = '#4fc3f7';
+      clearGhost();
       const c = window.Bonsai.library.get(insertHash);
       setStat('aim on the grid, R to rotate, click to place ' + (c ? c.name : insertHash)); return; }
+    const asmBtn = e.target.closest('.ins-a');           // pick a whole assembly (BOM set) to drop
+    if (asmBtn) { insertHash = asmBtn.getAttribute('data-asm');
+      p.querySelectorAll('.ins-c,.ins-a').forEach(x => x.style.borderColor = ''); asmBtn.style.borderColor = '#4fc3f7';
+      clearGhost();
+      const a = window.Bonsai.library.assembly(insertHash);
+      setStat('aim on the grid, R to rotate, click to drop assembly ' + (a ? a.name : insertHash) + ' (' + (a ? a.children.length : 0) + ' parts)'); return; }
     const cat = e.target.closest('.ins-cat');
     if (cat) { const k = cat.getAttribute('data-cat'); _insExpanded[k] = !_insExpanded[k]; renderCatalog(); return; }
     const chip = e.target.closest('.ins-chip');

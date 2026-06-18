@@ -31,7 +31,7 @@ const server = http.createServer((q, r) => {
   // every curated product carries a matched geometry_hash
   const ghCoverage = await pg.evaluate(() => {
     const all = window.Bonsai.library.catalog();
-    const db = all.filter(c => !/^[0-9a-f]{16}$/.test(c.hash));    // the 80 BOM products (not the 3 legacy)
+    const db = all.filter(c => !/^[0-9a-f]{16}$/.test(c.hash) && c.group !== 'asm');   // curated BOM browse products (not 3 legacy, not assembly-only leaves)
     return { total: db.length, withGh: db.filter(c => window.Bonsai.library.get(c.hash).gh).length };
   });
 
@@ -61,7 +61,7 @@ const server = http.createServer((q, r) => {
   // matches (the Bed_King-matched-a-box regression). Geometries are loaded by now (the insert fetched them).
   const quality = await pg.evaluate(() => {
     const L = window.Bonsai.library;
-    const db = L.catalog().filter(c => !/^[0-9a-f]{16}$/.test(c.hash));
+    const db = L.catalog().filter(c => !/^[0-9a-f]{16}$/.test(c.hash) && c.group !== 'asm');   // curated browse products only
     let boxy = [], min = 1e9;
     db.forEach(c => { const t = L.meshArrays(c.hash).indices.length / 3; if (t <= 12) boxy.push(c.hash); if (t < min) min = t; });
     const bed = L.catalog().find(c => /bed king/i.test(c.name));
