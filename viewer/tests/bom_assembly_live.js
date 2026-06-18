@@ -42,6 +42,17 @@ const server = http.createServer((q, r) => {
     const N = expLen(pick);
     const recursionExpanded = N > directLeafLines;
 
+    // ── PURE LINEAR-LAYOUT math (ported PhantomLayout walk): a zero-offset set is SPREAD, not stacked. Every
+    // leaf of an autoLayout=LINEAR set lands at a distinct X spanning a real run (DUPLEX_BATHROOM_SET etc.).
+    const lin = all.find(a => a.autoLayout === 'LINEAR' && a.children.filter(c => !c.isBom).length >= 3);
+    let layoutSpread = true, linId = null;
+    if (lin) {
+      linId = lin.id;
+      const lv = L.expandAssembly(lin.id, { x: 0, y: 0, z: 0, rot: 0 });
+      const xs = lv.map(l => +l.x.toFixed(3));
+      layoutSpread = new Set(xs).size >= Math.min(lv.length, 3) && (Math.max(...xs) - Math.min(...xs)) > 0.3;
+    }
+
     // ── PURE relative-placement: a direct leaf child lands at root + (dx,dy,dz) at rot=0
     const dl = pick.children.find(c => !c.isBom && (Math.abs(c.dx) > 0.001 || Math.abs(c.dy) > 0.001));
     const leavesAt = L.expandAssembly(pick.id, { x: 10, y: 7, z: 0, rot: 0 });
@@ -83,9 +94,11 @@ const server = http.createServer((q, r) => {
     const distinctPts = new Set(pts).size;
     // rendered meshes in the authored group
     const g = window.Bonsai.group(); const meshCount = g ? g.children.filter(o => o.isMesh).length : 0;
+    // picker DETACHES after the drop (no ghost stuck to the pointer) — user-reported fix
+    const ghostDetached = !window.A.scene.children.find(o => o.name === 'InsertGhost');
 
     return { pickId: pick.id, level: pick.level, parts: pick.children.length, directLeafLines, N,
-      recursionExpanded, relativeOk, rotationOk, det,
+      recursionExpanded, relativeOk, rotationOk, det, layoutSpread, linId, ghostDetached,
       committed, verify: !!(ver && ver.ok), signedCount, allInsert, distinctPts, meshCount };
   });
 
@@ -94,6 +107,8 @@ const server = http.createServer((q, r) => {
   const checks = {
     nestedPicked:    r.level && r.parts > 0,
     recursionExpand: r.recursionExpanded === true,           // expansion > direct leaf-lines = a nested BOM unfolded
+    linearSpread:    r.layoutSpread === true,                // zero-offset set SPREAD (PhantomLayout walk), not stacked
+    ghostDetaches:   r.ghostDetached === true,               // picker shakes off the pointer after a drop
     relativePlace:   r.relativeOk === true,                  // leaf seats at root+(dx,dy,dz)
     rotationCompose: r.rotationOk === true,                  // yaw rotates child (dx,dy) about the drop point
     deterministic:   r.det === true,                         // identical expansion twice
