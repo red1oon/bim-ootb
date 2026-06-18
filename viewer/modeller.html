@@ -44,6 +44,9 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
+  <button id="b-undo" disabled title="Undo last (Ctrl+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg><span>Undo</span></button>
+  <button id="b-redo" disabled title="Redo (Ctrl+Shift+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg><span>Redo</span></button>
+  <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
 </div>
@@ -256,6 +259,7 @@ function highlight(mesh) {
   selectedMesh = mesh; selectedId = mesh ? mesh.userData.featureId : null;
   if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
   bCut.disabled = selectedId == null;
+  const bd = document.getElementById('b-del'); if (bd) bd.disabled = selectedId == null;   // Delete acts on the selection
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
   console.log('§MODELLER select featureId=' + selectedId);
@@ -519,6 +523,7 @@ bIfc.onclick = async () => {
 const bInsert = document.getElementById('b-insert');
 const bLod = document.getElementById('b-lod');
 let inserting = false, insertHash = null, lastInsertId = null, insertPanel = null;
+let insRot = 0, insElev = 0, ghostMesh = null, ghostXY = null;   // pending placement: yaw(deg) + elevation(z), live ghost
 function isInsert(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && o.op_type === 'GEOM_INSERT'; }
 function lodTargetId() { return (selectedId != null && isInsert(selectedId)) ? selectedId : lastInsertId; }
 function paintLod() {
@@ -526,11 +531,28 @@ function paintLod() {
   const lod = id != null ? window.Bonsai.library.lodFor(id, '200') : '200';
   bLod.querySelector('span').textContent = 'LOD ' + lod; bLod.classList.toggle('on', lod === '300');
 }
+function clearGhost() { if (ghostMesh) { scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh.material.dispose(); ghostMesh = null; } ghostXY = null; }
+function showGhost(x, y) {                                        // translucent preview of where/how the insert lands
+  if (!insertHash) return;
+  const pa = window.Bonsai.library.previewArrays(insertHash, { x, y, z: insElev, rot: insRot }); if (!pa) return;
+  if (!ghostMesh) {
+    ghostMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.32, depthWrite: false }));
+    ghostMesh.name = 'InsertGhost'; ghostMesh.renderOrder = 999; scene.add(ghostMesh);
+  }
+  const g = ghostMesh.geometry;
+  g.setAttribute('position', new THREE.BufferAttribute(pa.positions, 3)); g.setIndex(new THREE.BufferAttribute(pa.indices, 1)); g.computeBoundingSphere();
+  ghostXY = { x, y }; if (window.A && A.requestRender) A.requestRender();
+}
+function rotateInsert() {                                          // R key / Rotate button — yaw the pending insert 90°
+  insRot = (insRot + 90) % 360;
+  const rl = insertPanel && insertPanel.querySelector('#ins-rot'); if (rl) rl.textContent = insRot + '°';
+  if (ghostXY) showGhost(ghostXY.x, ghostXY.y); setStat('insert rotation ' + insRot + '°');
+}
 async function placeComponent(x, y) {
   if (!insertHash) { setStat('pick a component first'); return null; }
-  const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_INSERT', parameters: { hash: insertHash, placement: { x, y, z: 0, rot: 0 }, lod: '200' } });
+  const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_INSERT', parameters: { hash: insertHash, placement: { x, y, z: insElev, rot: insRot }, lod: '200' } });
   lastInsertId = res.id; bLod.style.display = ''; bLod.disabled = false; paintLod();
-  setStat('inserted ' + window.Bonsai.library.get(insertHash).ifc_class + ' #' + res.id + '  tris=' + res.triangleCount); audioCue('commit'); syncHistory();
+  setStat('inserted ' + window.Bonsai.library.get(insertHash).ifc_class + ' #' + res.id + ' @' + insRot + '°' + (insElev ? ' elev ' + insElev : '') + '  tris=' + res.triangleCount); audioCue('commit'); syncHistory();
   return res;
 }
 function buildInsertPanel() {
@@ -539,18 +561,27 @@ function buildInsertPanel() {
   p.style.cssText = 'position:fixed;left:252px;top:60px;width:212px;background:#1b1d23;border:1px solid #2c303a;border-radius:7px;padding:8px;z-index:30;font:12px system-ui,sans-serif;color:#c7cdd8;display:none';
   let h = '<div style="font-size:10px;letter-spacing:.1em;color:#5b6473;margin-bottom:6px">COMPONENT LIBRARY</div>';
   window.Bonsai.library.catalog().forEach(c => {
-    h += '<button data-hash="' + c.hash + '" class="ins-c" style="display:block;width:100%;box-sizing:border-box;text-align:left;margin:3px 0;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:6px 8px;cursor:pointer">' + c.ifc_class.replace('Ifc', '') + ' <span style="color:#7f8aa0;font-size:10px">' + c.fc + ' tris</span></button>';
+    const d = c.bbox, dim = (d[1] - d[0]).toFixed(1) + '×' + (d[5] - d[4]).toFixed(1) + 'm';   // W×H from bbox so users can tell parts apart
+    h += '<button data-hash="' + c.hash + '" class="ins-c" style="display:block;width:100%;box-sizing:border-box;text-align:left;margin:3px 0;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:6px 8px;cursor:pointer">' + c.ifc_class.replace('Ifc', '') + ' <span style="color:#7f8aa0;font-size:10px">' + dim + '</span></button>';
   });
+  // pending-placement controls: Rotate (yaw 90°) + Elevation. Lucide rotate-cw line icon (no unicode glyph).
+  h += '<div style="display:flex;align-items:center;gap:7px;margin-top:9px;border-top:1px solid #2c303a;padding-top:9px">' +
+    '<button id="ins-rotbtn" style="display:flex;align-items:center;gap:5px;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 9px;cursor:pointer">' +
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Rotate <span id="ins-rot" style="color:#4fc3f7">0°</span></button>' +
+    '<span style="font-size:10px;color:#5b6473">(R)</span></div>';
+  h += '<div style="display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11px;color:#7f8aa0">Elevation <input id="ins-elev" type="number" step="0.1" value="0" style="width:62px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:4px;color:#c7cdd8;padding:3px 6px;outline:none"> m</div>';
   p.innerHTML = h; document.body.appendChild(p); insertPanel = p;
   p.querySelectorAll('.ins-c').forEach(b => b.onclick = () => {
     insertHash = b.getAttribute('data-hash');
     p.querySelectorAll('.ins-c').forEach(x => x.style.borderColor = '#2c303a'); b.style.borderColor = '#4fc3f7';
-    setStat('click the grid to place ' + window.Bonsai.library.get(insertHash).ifc_class);
+    setStat('move over the grid to aim, R to rotate, click to place ' + window.Bonsai.library.get(insertHash).ifc_class);
   });
+  p.querySelector('#ins-rotbtn').onclick = () => rotateInsert();
+  p.querySelector('#ins-elev').oninput = (e) => { insElev = parseFloat(e.target.value) || 0; if (ghostXY) showGhost(ghostXY.x, ghostXY.y); setStat('insert elevation ' + insElev + 'm'); };
   return p;
 }
-function enterInsert() { inserting = true; buildInsertPanel().style.display = ''; bInsert.classList.add('on'); bLod.style.display = ''; bLod.disabled = (lastInsertId == null); paintLod(); setStat('insert: pick a component, then click the grid'); }
-function exitInsert() { inserting = false; if (insertPanel) insertPanel.style.display = 'none'; bInsert.classList.remove('on'); setStat('ready'); }
+function enterInsert() { inserting = true; buildInsertPanel().style.display = ''; bInsert.classList.add('on'); bLod.style.display = ''; bLod.disabled = (lastInsertId == null); paintLod(); setStat('insert: pick a component, aim on the grid (R rotates), click to place'); }
+function exitInsert() { inserting = false; clearGhost(); if (insertPanel) insertPanel.style.display = 'none'; bInsert.classList.remove('on'); setStat('ready'); }
 bInsert.onclick = () => inserting ? exitInsert() : enterInsert();
 bLod.onclick = async () => {
   const id = lodTargetId(); if (id == null) return;
@@ -565,6 +596,41 @@ canvas.addEventListener('pointerdown', async (e) => {
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera); const hit = new THREE.Vector3();
   if (raycaster.ray.intersectPlane(GROUND, hit)) { const s = window.Bonsai.grid.snap(hit.x, hit.y); await placeComponent(s.x, s.y); }
+});
+canvas.addEventListener('pointermove', (e) => {                  // live ghost follows the cursor while inserting
+  if (!inserting || !insertHash) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera); const hit = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(GROUND, hit)) { const s = window.Bonsai.grid.snap(hit.x, hit.y); showGhost(s.x, s.y); }
+});
+window.addEventListener('keydown', (e) => {                       // R rotates the pending insert (skip when typing in a field)
+  if (inserting && (e.key === 'r' || e.key === 'R') && !/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) { e.preventDefault(); rotateInsert(); }
+});
+
+// ── EDIT: Delete (selected) / Undo / Redo (operability leg 2) — soft-delete via the signed op-log ──────
+const bUndo = document.getElementById('b-undo'), bRedo = document.getElementById('b-redo'), bDel = document.getElementById('b-del');
+function refreshEditButtons() {                                   // enable Undo/Redo by what's available
+  const O = window.Bonsai.oplog; if (!O || !O.db) { bUndo.disabled = bRedo.disabled = true; return; }
+  const all = O._allGeom();
+  bUndo.disabled = !all.some(o => !o.undone);
+  bRedo.disabled = !all.some(o => o.undone);
+}
+window.addEventListener('bonsai:oplog', refreshEditButtons);
+async function deleteSelected() {
+  if (selectedId == null) return;
+  const id = selectedId; await window.Bonsai.oplog.deleteFeature(id); highlight(null); audioCue('cut');
+  setStat('deleted feature #' + id); syncHistory();
+}
+bDel.onclick = () => deleteSelected();
+bUndo.onclick = async () => { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } };
+bRedo.onclick = async () => { const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); } };
+window.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
+  if (typing) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? bRedo : bUndo).onclick(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); bRedo.onclick(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
 bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
@@ -881,6 +947,72 @@ if (qs.get('insert') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER insert demo fail ' + e); }
     window.__insertResult = out; window.__insertDone = true;
     console.log('§MODELLER insert-done');
+  })();
+}
+// ?place=demo proves PLACEMENT CORRECTNESS (W-BONSAI-PLACE): a component lands SEATED on the ground (not
+// half-buried — the door bug), can be ROTATED before placing (R / Rotate button), and ELEVATED — each a signed
+// GEOM_INSERT; a live ghost previews the landing. Drives the REAL UI handlers.
+if (qs.get('place') === 'demo') {
+  (async () => {
+    const out = {};
+    const meshOf = (fid) => { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { zmin: +b.min.z.toFixed(2), zmax: +b.max.z.toFixed(2), xext: +(b.max.x - b.min.x).toFixed(2), yext: +(b.max.y - b.min.y).toFixed(2) }; };
+    const rect = canvas.getBoundingClientRect();
+    const toClient = (gx, gy) => { const v = new THREE.Vector3(gx, gy, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+    const clickGround = async (gx, gy) => { const c = toClient(gx, gy); const before = window.Bonsai.oplog.length; canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...c, bubbles: true })); for (let i = 0; i < 40 && window.Bonsai.oplog.length === before; i++) await new Promise(r => setTimeout(r, 50)); };
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.oplog.clear();
+      const door = window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor');
+      bInsert.onclick();
+      document.querySelector('#ins-panel .ins-c[data-hash="' + door.hash + '"]').onclick();
+      canvas.dispatchEvent(new PointerEvent('pointermove', { ...toClient(4, 3), bubbles: true }));   // ghost appears on aim
+      out.ghost = !!scene.getObjectByName('InsertGhost');
+      await clickGround(4, 3); out.seated = meshOf(lastInsertId);                                    // 1) ground: zmin≈0 zmax≈2.1, wide in X
+      insertPanel.querySelector('#ins-rotbtn').onclick(); out.rotDeg = insRot;                       // 2) rotate 90° (button)
+      await clickGround(0, 0); out.rotated = meshOf(lastInsertId);                                   //    footprint swaps to wide in Y
+      const elev = insertPanel.querySelector('#ins-elev'); elev.value = '3'; elev.oninput({ target: elev });  // 3) elevate 3m
+      await clickGround(8, 3); out.elevated = meshOf(lastInsertId);                                  //    zmin≈3 zmax≈5.1
+      out.inserts = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length;
+      out.signed = window.Bonsai.oplog.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await window.Bonsai.oplog.verify()).ok;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER place demo fail ' + e); }
+    window.__placeResult = out; window.__placeDone = true;
+    console.log('§MODELLER place-done');
+  })();
+}
+// ?edit=demo proves EDITABILITY (W-BONSAI-EDIT): delete a single feature, cascade-delete a parent (its cut child
+// goes too — no fold break), and undo/redo (LIFO) — all via soft-delete over the SIGNED op-log (chain stays valid).
+if (qs.get('edit') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      const lib = window.Bonsai.library.catalog();
+      // DELETE: wall + cut(child of wall) + door insert → 3 active
+      O.clear();
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } });
+      const ins = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: lib.find(c => c.ifc_class === 'IfcDoor').hash, placement: { x: 6, y: 1, z: 0, rot: 0 }, lod: '200' } });
+      out.start = O.length;                              // 3
+      window.Bonsai.select(ins.id); await deleteSelected();
+      out.afterDeleteDoor = O.length;                    // 2
+      out.verifyA = (await O.verify()).ok;
+      await O.deleteFeature(wall.id);                    // delete wall → cascades the cut child
+      out.afterDeleteWall = O.length;                    // 0 (no "GEOM_CUT parent not found" fold error)
+      out.verifyB = (await O.verify()).ok;
+      // UNDO/REDO (LIFO): wall + column
+      O.clear();
+      await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });
+      await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: lib.find(c => c.ifc_class === 'IfcColumn').hash, placement: { x: 6, y: 1, z: 0, rot: 0 }, lod: '200' } });
+      out.u0 = O.length;                                 // 2
+      await O.undo(); out.u1 = O.length;                 // 1
+      await O.undo(); out.u2 = O.length;                 // 0
+      await O.redo(); out.r1 = O.length;                 // 1
+      await O.redo(); out.r2 = O.length;                 // 2
+      out.verifyC = (await O.verify()).ok;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER edit demo fail ' + e); }
+    window.__editResult = out; window.__editDone = true;
+    console.log('§MODELLER edit-done');
   })();
 }
 // ?fillet=demo proves the occt fillet/chamfer shoulders + EDGE-PICK UI (W-BONSAI-FILLET): commit a wall, select
