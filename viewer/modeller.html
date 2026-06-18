@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Bonsai Modeller — alternative authoring viewer</title>
-<!-- ALTERNATIVE viewer surface for the Bonsai authoring kernel. Does NOT load viewer.html /
+<title>DAGeVu Modeller — alternative authoring viewer</title>
+<!-- DAGeVu — the alternative authoring viewer surface (renamed from "Bonsai" to avoid brand clash; the
+     internal window.Bonsai API + bonsai_*.js filenames are unchanged for now). Does NOT load viewer.html /
      does NOT touch the production viewer. prompts/BONSAI_KERNEL_RESEARCH.md Item 2 leg 1:
      occt-wasm kernel in a Web Worker -> kernel_ops op-row folds into a mesh in this scene. -->
 <style>
@@ -54,13 +55,14 @@
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
+  <button id="b-connect" title="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span>Connect</span></button>
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
   <span>history</span>
   <input id="hist-slider" type="range" min="0" max="0" value="0" step="1" style="flex:1;accent-color:#4fc3f7" disabled>
   <span id="hist-label">0/0</span>
 </div>
-<div id="title">BONSAI · MODELLER</div>
+<div id="title">DAGeVu · MODELLER</div>
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
@@ -84,6 +86,9 @@
 <script src="bonsai_outliner.js?v=1" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=1" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
+     identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
+<script src="connect_scene.js?v=1" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -231,6 +236,42 @@ const VOL_OFF = _ico('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line
 function paintSound() { bSound.innerHTML = _soundOn ? VOL_ON : VOL_OFF; bSound.classList.toggle('on', _soundOn); }
 bSound.onclick = () => { _soundOn = !_soundOn; localStorage.setItem('bonsai_sound', _soundOn ? 'on' : 'off'); paintSound(); if (_soundOn) audioCue('tick'); };
 paintSound();
+// Connect Scene toggle (CONNECT_SCENE_SPEC.md P0): register this surface as 'modeller' on the broker, then
+// the button gates the opt-in shared-context mode. On = a lit "connected surfaces" chip; off = independent.
+const bConnect = document.getElementById('b-connect');
+let _applyingRemoteSel = false;   // echo guard: a selection applied FROM the scene must not re-broadcast.
+// Derive the signed-identity selection payload for a feature: op_hash (anchor) + the component's ifc_class
+// (the cross-surface bridge). FOLDS from the signed op-log + library — never hand-coded (NON-INVENT boundary).
+function _connectSelPayload(id) {
+  if (id == null || !window.Bonsai.oplog) return null;
+  const op = window.Bonsai.oplog._geomOps().find(o => o.id === id);
+  if (!op) return null;
+  let ifcClass = null;
+  if (op.op_type === 'GEOM_INSERT') { const c = window.Bonsai.library && window.Bonsai.library.get(op.parameters.hash); ifcClass = c ? c.ifc_class : null; }
+  return { op_hash: op.op_hash, featureId: id, ifcClass: ifcClass, surface: 'modeller' };
+}
+if (window.Connect && bConnect) {
+  window.Connect.register('modeller');
+  window.Connect.onState((on) => { bConnect.classList.toggle('on', on); bConnect.querySelector('span').textContent = on ? 'Connected' : 'Connect'; });
+  bConnect.onclick = () => {
+    const on = window.Connect.toggle();
+    setStat(on ? 'Connect Scene ON — selection/timeline now shared with Viewer & ERP' : 'Connect Scene off — surfaces independent');
+    if (_soundOn) audioCue('tick');
+    console.log('§CONNECT-MODELLER toggle on=' + on);
+  };
+  // Inbound selection from another surface → select the feature whose component ifc_class matches (same signed
+  // class). Echo-guarded so applying it doesn't re-publish. The match folds from the op-log, not a hand map.
+  window.Connect.subscribe('selection', (sel) => {
+    if (!sel || !sel.ifcClass || !window.Bonsai.oplog) return;
+    let match = null;
+    for (const o of window.Bonsai.oplog._geomOps()) {
+      if (o.op_type === 'GEOM_INSERT') { const c = window.Bonsai.library && window.Bonsai.library.get(o.parameters.hash); if (c && c.ifc_class === sel.ifcClass) { match = o.id; break; } }
+    }
+    console.log('§CONNECT-SEL-IN modeller class=' + sel.ifcClass + ' from=' + (sel.surface || '?') + ' match=' + (match == null ? 'none' : match));
+    if (match != null) { _applyingRemoteSel = true; try { window.Bonsai.select(match); } finally { _applyingRemoteSel = false; } }
+  });
+  try { if ((new URLSearchParams(location.search)).get('connect') === '1') window.Connect.enable(); } catch (e) {}
+} else if (bConnect) { bConnect.disabled = true; }
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // z=0 sketch plane
 const raycaster = new THREE.Raycaster();
 let sketching = false, sketchGroup = null, savedCam = null;
@@ -304,6 +345,13 @@ function highlight(mesh) {
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
   console.log('§MODELLER select featureId=' + selectedId);
+  // CONNECT_SCENE_SPEC.md P1 — broadcast the pick over the shared 'selection' channel so the Viewer/ERP land
+  // on the SAME signed entity. Payload is anchored on signed identity (op_hash) + the component's ifc_class
+  // (the only cross-surface bridge: viewer elements_meta + ERP product Value). Echo-guarded by _applyingRemoteSel.
+  if (window.Connect && window.Connect.on && !_applyingRemoteSel && selectedId != null) {
+    const p = _connectSelPayload(selectedId);
+    if (p && p.ifcClass) window.Connect.publish('selection', p);
+  }
 }
 window.Bonsai.select = (fid) => {                 // witness/programmatic hook
   const g = window.Bonsai.group && window.Bonsai.group();
@@ -1043,6 +1091,33 @@ if (qs.get('insert') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER insert demo fail ' + e); }
     window.__insertResult = out; window.__insertDone = true;
     console.log('§MODELLER insert-done');
+  })();
+}
+// ?connectsel=demo sets up the Connect Scene P1 selection witness (W-CONNECT-SELECT): insert a REAL Door
+// component (ifc_class IfcDoor) as a signed GEOM_INSERT, enable the Connect broker, and expose the feature id.
+// The witness then drives select (forward: Modeller→Viewer highlight) and an inbound selection (reverse).
+if (qs.get('connectsel') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.oplog.clear();
+      const cat = window.Bonsai.library.catalog();
+      const door = cat.find(c => c.ifc_class === 'IfcDoor') || cat[0];
+      out.ifcClass = door.ifc_class;
+      bInsert.onclick();
+      const pBtn = document.querySelector('#ins-panel .ins-c[data-hash="' + door.hash + '"]'); if (pBtn) pBtn.onclick();
+      const rect = canvas.getBoundingClientRect();
+      const v = new THREE.Vector3(4, 3, 0).project(camera);
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height, bubbles: true }));
+      for (let i = 0; i < 60 && window.Bonsai.oplog.length === 0; i++) await new Promise(r => setTimeout(r, 50));
+      const ins = window.Bonsai.oplog._geomOps().find(o => o.op_type === 'GEOM_INSERT');
+      out.insertedId = ins ? ins.id : null;
+      window.Connect.enable();                                    // join the scene (witness drives the surfaces)
+      window.__connectSelInsertedId = out.insertedId;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER connectsel fail ' + e); }
+    window.__connectSelResult = out; window.__connectSelReady = true;
+    console.log('§MODELLER connectsel-ready id=' + out.insertedId + ' class=' + out.ifcClass);
   })();
 }
 // ?place=demo proves PLACEMENT CORRECTNESS (W-BONSAI-PLACE): a component lands SEATED on the ground (not

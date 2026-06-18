@@ -37,6 +37,12 @@ async function initViewer() {
   APP._bimPostFocus = function (guid, ifcClass) {
     if (!guid) return;
     _bimPostParent({ type: 'bim:focusRecord', guid: guid, ifcClass: ifcClass || null });
+    // CONNECT_SCENE_SPEC.md P1 — generalise the bim:* pick-emit onto the shared 'selection' channel so the
+    // Modeller (and any connected surface) lands on the SAME signed entity, not just the ERP host. Anchored on
+    // signed identity: guid + ifcClass (ERP product Value == ifc_class; component ifc_class). NON-INVENT: both
+    // read from elements_meta — no fabricated map. _connectApplying guards the remote→local→remote echo loop.
+    if (window.Connect && window.Connect.on && !APP._connectApplying)
+      window.Connect.publish('selection', { guid: guid, ifcClass: ifcClass || null, surface: 'viewer' });
     console.log('§BIM-FOCUSREC guid=' + String(guid).slice(0, 12) + ' class=' + (ifcClass || '?'));
   };
   APP._bimGuidsForClass = function (ifcClass) {
@@ -70,6 +76,20 @@ async function initViewer() {
     if (d.type === 'bim:highlight') APP._bimHighlight(d);
     else if (d.type === 'bim:clearHighlight') { if (APP.clearFocusElement) APP.clearFocusElement(); console.log('§BIM-HL clear'); }
   });
+  // CONNECT_SCENE_SPEC.md P1 — the viewer joins the shared scene as surface 'viewer'. An incoming 'selection'
+  // (from the Modeller or ERP) highlights the SAME signed entity here via the existing focusElement path; the
+  // _connectApplying flag stops that highlight from re-publishing (echo guard). Opt-in: auto-enable on ?connect=1.
+  if (window.Connect) {
+    window.Connect.register('viewer');
+    window.Connect.subscribe('selection', function (sel) {
+      if (!sel) return;
+      console.log('§CONNECT-SEL-IN viewer guid=' + String(sel.guid || '').slice(0, 12) + ' class=' + (sel.ifcClass || '?') + ' from=' + (sel.surface || '?'));
+      APP._connectApplying = true;
+      try { APP._bimHighlight({ guid: sel.guid || null, ifcClass: sel.ifcClass || null }); }
+      finally { APP._connectApplying = false; }
+    });
+    try { if ((new URLSearchParams(location.search)).get('connect') === '1') window.Connect.enable(); } catch (e) {}
+  }
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
