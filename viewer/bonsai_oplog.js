@@ -22,7 +22,10 @@
     async _ensureDb() {
       if (this.db) return this.db;
       const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, _base).href });
-      this.db = new SQL.Database();
+      // PERSISTENCE: restore the saved signed op-log from localStorage so work survives a reload.
+      const saved = this._loadBytes();
+      if (saved) { try { this.db = new SQL.Database(saved); console.log(TAG + ' restored saved model bytes=' + saved.length); } catch (e) { console.warn(TAG + ' restore failed ' + e); this.db = new SQL.Database(); } }
+      else this.db = new SQL.Database();
       window.KernelOps.ensureTable(this.db);
       // W-SIGN: install an edge signer so every committed op carries a verifiable signature over its op_hash.
       window.KernelOps.setSigner({
@@ -30,12 +33,30 @@
         verify: async (h, s) => s === await sha256hex(SECRET + '|' + h)
       });
       this._signed = true;
-      console.log(TAG + ' signed DB ready (kernel_ops chain + edge signer)');
+      // restore the group counter so new commits mint fresh gids (max existing group ordinal).
+      try { const r = this.db.exec("SELECT gid FROM kernel_ops WHERE gid LIKE 'geom-grp-%'"); if (r.length) this._n = r[0].values.reduce((m, v) => Math.max(m, parseInt(String(v[0]).replace('geom-grp-', '')) || 0), 0); } catch (e) { }
+      console.log(TAG + ' signed DB ready (kernel_ops chain + edge signer) groups=' + this._n);
       return this.db;
     },
 
-    _emit() { try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } },
-    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; this._emit(); },
+    // ---- PERSISTENCE: autosave the whole signed op-log to localStorage on every change; restore on boot.
+    // A modelling session's kernel_ops db is small (KB–tens of KB) → well within the localStorage budget.
+    _KEY: 'bonsai_model_v1',
+    _b64(u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); },
+    _unb64(b64) { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; },
+    _loadBytes() { try { const s = localStorage.getItem(this._KEY); return s ? this._unb64(s) : null; } catch (e) { return null; } },
+    _save() { try { if (this.db) localStorage.setItem(this._KEY, this._b64(this.db.export())); } catch (e) { console.warn(TAG + ' save failed ' + e); } },
+
+    // Boot-time restore: ensure the db (loads saved bytes), then fold it to the scene if non-empty.
+    async restore() {
+      await this._ensureDb();
+      if (this.length) { await this._foldUpto(); this._emit(); }
+      console.log(TAG + ' restore active=' + this.length);
+      return this.length;
+    },
+
+    _emit() { try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
+    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } this._emit(); },
 
     // Read the live GEOM ops out of the signed log, mapped to fold-op shape (parent rides in parameters).
     _geomOps() {

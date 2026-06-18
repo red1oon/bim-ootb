@@ -421,13 +421,30 @@ bApplyFillet.onclick = async () => {
 
 // ── HISTORY SCRUBBER ────────────────────────────────────────────────────────────────────────────
 const slider = document.getElementById('hist-slider'), histLabel = document.getElementById('hist-label');
+// Human label for a feature op so the timeline reads "3/5 · Door" instead of a bare number (operability).
+function featLabel(op) {
+  if (!op) return ''; const P = op.parameters || {};
+  switch (op.op_type) {
+    case 'GEOM_EXTRUDE_POLY': return 'Wall'; case 'GEOM_EXTRUDE': return 'Wall';
+    case 'GEOM_CUT': return 'Opening'; case 'GEOM_SWEEP': return 'Route';
+    case 'GEOM_FILLET': return P.kind === 'chamfer' ? 'Chamfer' : 'Round'; case 'GEOM_GRID_MOVE': return 'Grid move';
+    case 'GEOM_INSERT': { const c = window.Bonsai.library && window.Bonsai.library.get(P.hash); return c ? c.ifc_class.replace('Ifc', '') : 'Component'; }
+    default: return op.op_type.replace('GEOM_', '');
+  }
+}
+function histStamp(val) {
+  const O = window.Bonsai.oplog; const n = O.length; const ops = O.db ? O._geomOps() : [];
+  const at = val > 0 ? ops[val - 1] : null;
+  histLabel.textContent = val + '/' + n + (at ? ' · ' + featLabel(at) : '');
+  slider.title = ops.length ? ops.map((o, i) => (i + 1) + '. ' + featLabel(o)).join('\n') : '';   // hover = full step list
+}
 function syncHistory() {
   const n = window.Bonsai.oplog.length;
   slider.max = n; slider.value = window.Bonsai.oplog.cursor; slider.disabled = n === 0;
-  histLabel.textContent = slider.value + '/' + n;
+  histStamp(+slider.value);
 }
 slider.addEventListener('input', async () => {
-  histLabel.textContent = slider.value + '/' + window.Bonsai.oplog.length;
+  histStamp(+slider.value);
   await window.Bonsai.oplog.scrubTo(+slider.value);
 });
 
@@ -628,8 +645,15 @@ bRedo.onclick = async () => { const r = await window.Bonsai.oplog.redo(); if (r.
 window.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
   if (typing) return;
+  if (e.key === 'Escape') {                                       // cancel whatever mode is active
+    if (sketching) exitSketch(); else if (routing) exitRoute(); else if (edgePicking) exitFillet();
+    else if (gridMoving) exitGridMove(); else if (inserting) exitInsert(); else { highlight(null); }
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? bRedo : bUndo).onclick(); }
   else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); bRedo.onclick(); }
+  else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.points.length) { e.preventDefault(); window.Bonsai.sketch.points.pop(); sketchMarkers(); setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points'); }
+  else if (e.key === 'Backspace' && routing && routePts.length) { e.preventDefault(); routePts.pop(); routeMarkers(); bRun.disabled = routePts.length < 2; setStat('route: ' + routePts.length + ' points'); }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
@@ -660,6 +684,11 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
 
 // Headless witness hooks. ?author=wall|opening|both auto-authors the sample ops.
 const qs = new URLSearchParams(location.search);
+// PERSISTENCE: restore the saved signed model on boot so work survives a reload — unless a demo hook runs
+// (demos clear() and drive their own state). Folds the restored op-log to the scene + refreshes panels.
+if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|fillet|constrain|gridmove|sketch|insert|place|edit|ux)$/.test(k))) {
+  (async () => { try { const n = await window.Bonsai.oplog.restore(); if (n) { syncHistory(); setStat('restored ' + n + ' feature' + (n === 1 ? '' : 's') + ' from your last session'); } } catch (e) { console.warn('§MODELLER restore fail ' + e); } window.__restoreDone = true; })();
+}
 const q = qs.get('author');
 if (q) {
   (async () => {
@@ -1013,6 +1042,31 @@ if (qs.get('edit') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER edit demo fail ' + e); }
     window.__editResult = out; window.__editDone = true;
     console.log('§MODELLER edit-done');
+  })();
+}
+// ?ux=demo proves feedback wins (W-BONSAI-UX): Backspace undoes the last sketch point, Escape cancels a mode,
+// and the history timeline now LABELS each step (e.g. "2/2 · Door") instead of a bare number.
+if (qs.get('ux') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.oplog.clear();
+      bSketch.onclick(); out.enteredSketch = sketching;                                  // enter sketch mode
+      window.Bonsai.sketch.addPoint(0, 0); window.Bonsai.sketch.addPoint(4, 0); window.Bonsai.sketch.addPoint(4, 3); sketchMarkers();
+      out.ptsBefore = window.Bonsai.sketch.points.length;                                 // 3
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));           // point-undo
+      out.ptsAfter = window.Bonsai.sketch.points.length;                                  // 2
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));              // cancel sketch mode
+      out.escExited = !sketching;
+      const O = window.Bonsai.oplog;
+      await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });
+      await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor').hash, placement: { x: 6, y: 1, z: 0, rot: 0 }, lod: '200' } });
+      syncHistory();
+      out.histLabel = document.getElementById('hist-label').textContent;                  // "2/2 · Door"
+      out.sliderTitle = document.getElementById('hist-slider').title;                     // "1. Wall\n2. Door"
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER ux demo fail ' + e); }
+    window.__uxResult = out; window.__uxDone = true;
+    console.log('§MODELLER ux-done');
   })();
 }
 // ?fillet=demo proves the occt fillet/chamfer shoulders + EDGE-PICK UI (W-BONSAI-FILLET): commit a wall, select
