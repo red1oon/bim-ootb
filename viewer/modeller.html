@@ -41,6 +41,8 @@
   <button id="b-run" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Sweep Run</span></button>
   <button id="b-fillet" disabled title="Round a selected solid's picked edges"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H7a4 4 0 0 1-4-4V3"/><path d="M21 3a14 14 0 0 0-14 14"/></svg><span>Fillet</span></button>
   <button id="b-applyfillet" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Apply</span></button>
+  <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
+  <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
@@ -72,6 +74,8 @@
 <script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=1" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
+<script src="bonsai_library.js?v=1" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -262,7 +266,7 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook
   highlight(m || null); return selectedId;
 };
 canvas.addEventListener('pointerdown', (e) => {
-  if (sketching || routing || edgePicking || gridMoving || e.button !== 0 || e.shiftKey) return;
+  if (sketching || routing || edgePicking || gridMoving || inserting || e.button !== 0 || e.shiftKey) return;
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -508,7 +512,62 @@ bIfc.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = false;
+// ── INSERT LIBRARY COMPONENT (§OOTB Item 2: assemble, don't draw) ───────────────────────────────
+// A picked catalog component is placed on the grid as ONE signed GEOM_INSERT op-row; geometry folds
+// HOST-side (a baked mesh, not a B-rep). LOD is a render override over the immutable signed row:
+// LOD-200 = bbox box proxy, LOD-300 = the real extracted mesh — "same signed row, refined".
+const bInsert = document.getElementById('b-insert');
+const bLod = document.getElementById('b-lod');
+let inserting = false, insertHash = null, lastInsertId = null, insertPanel = null;
+function isInsert(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && o.op_type === 'GEOM_INSERT'; }
+function lodTargetId() { return (selectedId != null && isInsert(selectedId)) ? selectedId : lastInsertId; }
+function paintLod() {
+  const id = lodTargetId();
+  const lod = id != null ? window.Bonsai.library.lodFor(id, '200') : '200';
+  bLod.querySelector('span').textContent = 'LOD ' + lod; bLod.classList.toggle('on', lod === '300');
+}
+async function placeComponent(x, y) {
+  if (!insertHash) { setStat('pick a component first'); return null; }
+  const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_INSERT', parameters: { hash: insertHash, placement: { x, y, z: 0, rot: 0 }, lod: '200' } });
+  lastInsertId = res.id; bLod.style.display = ''; bLod.disabled = false; paintLod();
+  setStat('inserted ' + window.Bonsai.library.get(insertHash).ifc_class + ' #' + res.id + '  tris=' + res.triangleCount); audioCue('commit'); syncHistory();
+  return res;
+}
+function buildInsertPanel() {
+  if (insertPanel) return insertPanel;
+  const p = document.createElement('div'); p.id = 'ins-panel';
+  p.style.cssText = 'position:fixed;left:252px;top:60px;width:212px;background:#1b1d23;border:1px solid #2c303a;border-radius:7px;padding:8px;z-index:30;font:12px system-ui,sans-serif;color:#c7cdd8;display:none';
+  let h = '<div style="font-size:10px;letter-spacing:.1em;color:#5b6473;margin-bottom:6px">COMPONENT LIBRARY</div>';
+  window.Bonsai.library.catalog().forEach(c => {
+    h += '<button data-hash="' + c.hash + '" class="ins-c" style="display:block;width:100%;box-sizing:border-box;text-align:left;margin:3px 0;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:6px 8px;cursor:pointer">' + c.ifc_class.replace('Ifc', '') + ' <span style="color:#7f8aa0;font-size:10px">' + c.fc + ' tris</span></button>';
+  });
+  p.innerHTML = h; document.body.appendChild(p); insertPanel = p;
+  p.querySelectorAll('.ins-c').forEach(b => b.onclick = () => {
+    insertHash = b.getAttribute('data-hash');
+    p.querySelectorAll('.ins-c').forEach(x => x.style.borderColor = '#2c303a'); b.style.borderColor = '#4fc3f7';
+    setStat('click the grid to place ' + window.Bonsai.library.get(insertHash).ifc_class);
+  });
+  return p;
+}
+function enterInsert() { inserting = true; buildInsertPanel().style.display = ''; bInsert.classList.add('on'); bLod.style.display = ''; bLod.disabled = (lastInsertId == null); paintLod(); setStat('insert: pick a component, then click the grid'); }
+function exitInsert() { inserting = false; if (insertPanel) insertPanel.style.display = 'none'; bInsert.classList.remove('on'); setStat('ready'); }
+bInsert.onclick = () => inserting ? exitInsert() : enterInsert();
+bLod.onclick = async () => {
+  const id = lodTargetId(); if (id == null) return;
+  const next = window.Bonsai.library.lodFor(id, '200') === '300' ? '200' : '300';
+  window.Bonsai.library.setLod(id, next);
+  await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);   // re-fold full chain at the new LOD — signed row untouched
+  paintLod(); window.Bonsai.outliner.refresh(); audioCue('tick'); setStat('component #' + id + ' refined to LOD ' + next);
+};
+canvas.addEventListener('pointerdown', async (e) => {
+  if (!inserting || e.button !== 0 || e.shiftKey) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera); const hit = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(GROUND, hit)) { const s = window.Bonsai.grid.snap(hit.x, hit.y); await placeComponent(s.x, s.y); }
+});
+
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -522,6 +581,13 @@ window.Bonsai.outliner.addCategory({ key: 'fillets', label: 'Fillets', match: op
 window.Bonsai.outliner.addCategory({ key: 'gridmoves', label: 'Grid Moves', match: op => op.op_type === 'GEOM_GRID_MOVE',
   node: op => ({ id: op.id, label: 'Move ' + op.parameters.gridId,
     sub: (op.parameters.delta > 0 ? '+' : '') + (+op.parameters.delta).toFixed(2) + ' ·' + (op.parameters.commands ? op.parameters.commands.length : 0) + ' recomp' }) });
+// Components category: inserted library components (§OOTB Item 2 = assemble, don't draw). Registered via the seam.
+window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', match: op => op.op_type === 'GEOM_INSERT',
+  node: op => { const p = op.parameters.placement, c = window.Bonsai.library && window.Bonsai.library.get(op.parameters.hash);
+    const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt(p.x, p.y) : null;
+    const lod = window.Bonsai.library ? window.Bonsai.library.lodFor(op.id, op.parameters.lod) : op.parameters.lod;
+    return { id: op.id, label: (c ? c.ifc_class.replace('Ifc', '') : 'Component'),
+      sub: ((a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) : '#' + op.id) + ' ·LOD' + lod }; } });
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -774,6 +840,47 @@ if (qs.get('route') === 'demo') {
     window.__routeResult = out;
     window.__routeDone = true;
     console.log('§MODELLER route-done');
+  })();
+}
+// ?insert=demo proves library-component insert @ LOD (W-BONSAI-INSERT): enter Insert mode via the button, pick a
+// REAL catalog component (Door), click the grid to PLACE it as a signed GEOM_INSERT (LOD-200 box proxy), then the
+// LOD button refines the SAME signed row to LOD-300 (the real extracted mesh) — chain tip + row count unchanged.
+// Outliner shows a Components category. Drives the REAL UI handlers — not the engine API directly.
+if (qs.get('insert') === 'demo') {
+  (async () => {
+    const out = {};
+    const g_tris = () => { const g = window.Bonsai.group(); return g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0); };
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.oplog.clear();
+      const cat = window.Bonsai.library.catalog(); out.catalog = cat.length;
+      const door = cat.find(c => c.ifc_class === 'IfcDoor') || cat[0];
+      out.componentFc = door.fc;                                  // real mesh tri count (52 for the Door)
+      bInsert.onclick();                                          // enter insert mode (button)
+      out.inserting = inserting;
+      const pBtn = document.querySelector('#ins-panel .ins-c[data-hash="' + door.hash + '"]'); if (pBtn) pBtn.onclick();
+      out.pickedComponent = insertHash === door.hash;
+      // place by SIMULATING a ground click at grid B-2 (4,3) so the REAL pointerdown handler runs.
+      const rect = canvas.getBoundingClientRect();
+      const v = new THREE.Vector3(4, 3, 0).project(camera);
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height, bubbles: true }));
+      for (let i = 0; i < 40 && window.Bonsai.oplog.length === 0; i++) await new Promise(r => setTimeout(r, 50));   // await async commit + first sql.js init
+      out.insertOps = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length;
+      out.lod200Tris = g_tris();                                  // box proxy = 12
+      out.signed = window.Bonsai.oplog.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      const v1 = await window.Bonsai.oplog.verify(); out.verify = v1.ok; out.tipBefore = (v1.tip || '').slice(0, 12); out.lenBefore = window.Bonsai.oplog.length;
+      out.componentsCategory = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'components');
+      out.componentRow = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim()).find(r => /Door/.test(r)) || null;
+      await bLod.onclick();                                       // REFINE LOD 200 -> 300 on the SAME row (LOD button)
+      out.lod300Tris = g_tris();                                  // real mesh = componentFc (52)
+      out.lenAfter = window.Bonsai.oplog.length;                  // unchanged = same row refined
+      const v2 = await window.Bonsai.oplog.verify(); out.tipAfter = (v2.tip || '').slice(0, 12); out.tipUnchanged = out.tipBefore === out.tipAfter;
+      out.scrub0 = (await window.Bonsai.oplog.scrubTo(0)).triangleCount;   // 0 features
+      out.scrub1 = (await window.Bonsai.oplog.scrubTo(1)).triangleCount;   // back to LOD-300 mesh (override persists) = 52
+      out.tamperOk = (await window.Bonsai.oplog.tamperFirstGeom()).ok;     // mutating committed param breaks the chain
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER insert demo fail ' + e); }
+    window.__insertResult = out; window.__insertDone = true;
+    console.log('§MODELLER insert-done');
   })();
 }
 // ?fillet=demo proves the occt fillet/chamfer shoulders + EDGE-PICK UI (W-BONSAI-FILLET): commit a wall, select
