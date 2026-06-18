@@ -133,12 +133,20 @@
     },
 
     // Rebuild A.scene's authored group from a CHAIN of op-rows (history replay = fold ops[0..k]).
+    // GEOM_INSERT (a library component = a BAKED mesh, not a B-rep) folds HOST-side via Bonsai.library —
+    // it is filtered OUT of the occt worker batch (the worker has no THREE / no component db) and rebuilt
+    // here. Order among independent solids doesn't affect geometry, so determinism holds.
     async foldChainToScene(ops, opts) {
       opts = opts || {};
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
       const g = this.group();
-      const d = await this._foldChain(ops);
-      const meshes = d.meshes || [];
+      const insertOps = ops.filter(o => o.op_type === 'GEOM_INSERT');
+      const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');
+      const d = kernelOps.length ? await this._foldChain(kernelOps) : { meshes: [] };
+      const meshes = (d.meshes || []).slice();
+      if (window.Bonsai.library) {
+        for (const op of insertOps) { try { meshes.push(window.Bonsai.library.foldInsert(op)); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
+      }
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
       let totalTris = 0;
       meshes.forEach(md => { const m = this._buildMesh(md, { color: opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
