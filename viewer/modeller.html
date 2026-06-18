@@ -85,7 +85,7 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=5" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=6" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -736,6 +736,9 @@ function paintLod() {
   bLod.querySelector('span').textContent = 'LOD ' + lod; bLod.classList.toggle('on', lod === '300');
 }
 function clearGhost() { if (ghostMesh) { scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh.material.dispose(); ghostMesh = null; } ghostXY = null; }
+// After a drop, DISARM the pending pick so the ghost stops sticking to the pointer (user: "shake off once Insert
+// done"). Panel stays open; re-click a part/set to arm the next placement.
+function disarmPick() { insertHash = null; clearGhost(); if (insertPanel) insertPanel.querySelectorAll('.ins-c,.ins-a').forEach(x => x.style.borderColor = ''); }
 function showGhost(x, y) {                                        // translucent preview of where/how the insert lands
   if (!insertHash) return;
   const L = window.Bonsai.library, asm = L.isAssembly(insertHash) ? L.assembly(insertHash) : null;
@@ -776,6 +779,7 @@ async function placeAssembly(x, y) {
     needs.forEach(p => { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
     return window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
   }).then(() => { if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); paintLod(); }).catch(() => {});
+  disarmPick();                                                  // detach the ghost from the pointer after the drop
   return { id: lastInsertId, count: placed.length };
 }
 async function placeComponent(x, y) {
@@ -786,18 +790,19 @@ async function placeComponent(x, y) {
   setStat('inserted ' + window.Bonsai.library.get(insertHash).ifc_class + ' #' + res.id + ' @' + insRot + '°' + (insElev ? ' elev ' + insElev : '') + '  tris=' + res.triangleCount); audioCue('commit'); syncHistory();
   // LAST MILE: the box proxy lands instantly (LOD-200); LAZILY fetch the real library mesh (LOD-300/400) and
   // refine THIS signed row in place — op_hash/chain unchanged, just a richer render override (W-BOM-MESH).
-  const _c = window.Bonsai.library.get(insertHash), _id = res.id;
+  const _hash = insertHash, _c = window.Bonsai.library.get(_hash), _id = res.id;   // capture hash (disarmPick nulls insertHash)
   if (_c && _c.gh) {
-    window.Bonsai.library.ensureMesh(insertHash).then(ok => {
+    window.Bonsai.library.ensureMesh(_hash).then(ok => {
       if (!ok) return;
       window.Bonsai.library.setLod(_id, '300');
       window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);   // re-fold the chain → real mesh swaps in
       if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();   // badge reflects the real mesh (LOD 300)
       if (_id === lastInsertId) paintLod();
-      const t = (window.Bonsai.library.meshArrays(insertHash).indices.length / 3) | 0;
+      const t = (window.Bonsai.library.meshArrays(_hash).indices.length / 3) | 0;
       setStat('refined #' + _id + ' to real library mesh  tris=' + t); console.log('§MODELLER mesh-upgrade #' + _id + ' tris=' + t);
     }).catch(() => {});
   }
+  disarmPick();                                                  // detach the ghost from the pointer after the drop
   return res;
 }
 // ── BOM-hierarchy INSERT catalog panel (MODELLER_BOM_CATALOG_SPEC.md): search + ⭐cheat-sheet quick-pick rail
