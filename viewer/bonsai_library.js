@@ -26,18 +26,21 @@
   // scripts/extract_dagevu_catalog.py): 80 products in groups Structure/Openings/Furniture + an 18-pick cheat
   // sheet. LOD-200 box proxies come from w/d/h dims (no 220MB/httpvfs to browse or insert); real meshes via
   // component_library.db range-load are a later enhancement. Loaded async on module init (14KB, fast).
-  let DB_PRODUCTS = [], GROUPS = [], CHEAT = [];
+  let DB_PRODUCTS = [], GROUPS = [], CHEAT = [], ASSEMBLIES = [], ASM_BY_ID = {};
   function bboxFromDims(w, d, h) { return [-w / 2, w / 2, -d / 2, d / 2, 0, h]; }   // centred in x/y, base on ground
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src
     : (typeof location !== 'undefined' ? location.href : '');
   const ready = (typeof fetch === 'function')
-    ? fetch(new URL('dagevu_catalog.json?v=2', _base).href).then(function (r) { return r.json(); }).then(function (j) {
+    ? fetch(new URL('dagevu_catalog.json?v=3', _base).href).then(function (r) { return r.json(); }).then(function (j) {
         GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
         DB_PRODUCTS = (j.products || []).map(function (p) {
           return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
-                   cat: p.cat, group: p.group, gh: p.gh, bbox: bboxFromDims(p.w, p.d, p.h), w: p.w, d: p.d, h: p.h, fc: 12 };
+                   cat: p.cat, group: p.group, gh: p.gh, bbox: bboxFromDims(p.w, p.d, p.h), w: p.w, d: p.d, h: p.h, fc: 12, asmOnly: !!p.asmOnly };
         });
-        console.log(TAG + ' catalog loaded products=' + DB_PRODUCTS.length + ' groups=' + GROUPS.length + ' cheat=' + CHEAT.length);
+        ASSEMBLIES = j.assemblies || []; ASM_BY_ID = {};
+        ASSEMBLIES.forEach(function (a) { ASM_BY_ID[a.id] = a; });
+        console.log(TAG + ' catalog loaded products=' + DB_PRODUCTS.length + ' groups=' + GROUPS.length +
+          ' cheat=' + CHEAT.length + ' assemblies=' + ASSEMBLIES.length);
         return true;
       }).catch(function (e) { console.warn(TAG + ' catalog load failed ' + e); return false; })
     : Promise.resolve(false);
@@ -95,6 +98,31 @@
       q = String(q || '').trim().toLowerCase(); if (!q) return [];
       return ALL().filter(c => (c.name + ' ' + c.ifc_class + ' ' + (c.category || '')).toLowerCase().indexOf(q) !== -1).slice(0, 40);
     },
+    // ── RECURSIVE BOM ASSEMBLIES (W-BOM-ASSEMBLY). An assembly is a non-leaf BOM (BUILDING/FLOOR/ROOM/SET);
+    // dropping it folds its m_bom_line subtree into N LEAF placements — each child seated at its parent-relative
+    // (dx,dy,dz)+rotation, recursing through nested BOMs. The host commits one signed GEOM_INSERT per leaf.
+    assemblies() { return ASSEMBLIES; },                                  // [{id,name,level,category,w,d,h,children:[…]}]
+    assembly(id) { return ASM_BY_ID[id] || null; },
+    isAssembly(id) { return !!ASM_BY_ID[id]; },
+    // expand to a flat list of leaf placements [{hash,x,y,z,rot,role}] in WORLD space. Yaw is about +Z so a
+    // child's local (dx,dy) rotates by the parent yaw; dz is unaffected. depth-cap + cycle-guard (visited set).
+    expandAssembly(id, placement, _depth, _seen) {
+      const a = ASM_BY_ID[id]; if (!a) return [];
+      _depth = _depth || 0; _seen = _seen || {};
+      if (_depth > 12 || _seen[id]) { console.warn(TAG + ' assembly recursion stop at ' + id + ' depth=' + _depth); return []; }
+      _seen = Object.assign({}, _seen); _seen[id] = true;
+      placement = placement || {};
+      const px = placement.x || 0, py = placement.y || 0, pz = placement.z || 0, pr = placement.rot || 0;
+      const rad = pr * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
+      const out = [];
+      (a.children || []).forEach(ch => {
+        const wx = px + (cs * ch.dx - sn * ch.dy), wy = py + (sn * ch.dx + cs * ch.dy), wz = pz + (ch.dz || 0);
+        const wrot = ((pr + (ch.rotDeg || 0)) % 360 + 360) % 360;
+        if (ch.isBom) { const sub = this.expandAssembly(ch.ref, { x: wx, y: wy, z: wz, rot: wrot }, _depth + 1, _seen); for (let i = 0; i < sub.length; i++) out.push(sub[i]); }
+        else if (this.get(ch.ref)) out.push({ hash: ch.ref, x: +wx.toFixed(4), y: +wy.toFixed(4), z: +wz.toFixed(4), rot: wrot, role: ch.role });
+      });
+      return out;
+    },
     setLod(featureId, lod) { this._lod[featureId] = String(lod); return this; },
     lodFor(featureId, fallback) { return this._lod[featureId] || fallback || '200'; },
 
@@ -108,7 +136,7 @@
       if (!c || !c.gh || (this._geom && this._geom[c.gh])) return Promise.resolve(this.hasMesh(hash));
       if (!this._geomP) {
         this._geomP = (typeof fetch === 'function')
-          ? fetch(new URL('dagevu_geometries.json?v=2', _base).href).then(r => r.json())
+          ? fetch(new URL('dagevu_geometries.json?v=3', _base).href).then(r => r.json())
               .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
               .catch(e => { console.warn(TAG + ' geometries load failed ' + e); this._geom = {}; return {}; })
           : Promise.resolve(this._geom = {});
@@ -140,6 +168,11 @@
       const c = this.get(hash); if (!c) return null;
       const base = boxArrays(c.bbox);
       return { positions: place(base.positions, placement, c.bbox), indices: base.indices, bbox: c.bbox };
+    },
+    // GHOST for an ASSEMBLY: its aabb box (the whole set's footprint) at the candidate placement.
+    previewBox(bbox, placement) {
+      const base = boxArrays(bbox);
+      return { positions: place(base.positions, placement, bbox), indices: base.indices, bbox };
     }
   };
 

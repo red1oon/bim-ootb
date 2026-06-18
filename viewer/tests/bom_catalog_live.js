@@ -79,7 +79,7 @@ const server = http.createServer((q, r) => {
   const checks = {
     catalogLoaded: cat.products >= 80 && cat.groups === 3 && cat.cheat >= 12,
     searchEngine:  cat.searchBed >= 1,
-    panelBuilt:    ui.panel && ui.search && ui.chips === 4 && ui.catRows >= 8,
+    panelBuilt:    ui.panel && ui.search && ui.chips === 5 && ui.catRows >= 8,   // chips: All/Struct/Open/Furn/Sets
     cheatRail:     ui.cheatBtns >= 12,
     expandWorks:   ui.afterExpand > ui.cheatBtns,
     searchNarrows: ui.searchResults >= 1 && ui.searchAllBed,
