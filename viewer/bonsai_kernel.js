@@ -150,10 +150,19 @@
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
       let totalTris = 0;
       meshes.forEach(md => { const m = this._buildMesh(md, { color: opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
+      this._lastRegenStats = d.stats || null;   // {rebuilt, hits, tess, tessHits} — incremental-regen cache witness hook
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
-      console.log(TAG + ' chain ops=' + ops.length + ' solids=' + meshes.length + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g);
+      const st = d.stats ? ' regen[rebuilt=' + d.stats.rebuilt + ' hits=' + d.stats.hits + ' tess=' + d.stats.tess + ' tessHits=' + d.stats.tessHits + ']' : '';
+      console.log(TAG + ' chain ops=' + ops.length + ' solids=' + meshes.length + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g + st);
       if (window.A && typeof A.requestRender === 'function') A.requestRender();
       return { solids: meshes.length, triangleCount: totalTris, meshes };
+    },
+
+    // INCREMENTAL REGEN CACHE control: drop the worker's op_hash-keyed shape/mesh cache (a new/cleared model).
+    clearKernelCache() {
+      if (!this._worker) return Promise.resolve();   // no worker yet → nothing cached
+      const id = ++this._seq;
+      return new Promise((resolve) => { this._pending.set(id, { resolve, reject: resolve }); this._worker.postMessage({ id, clearCache: true }); });
     },
 
     group() {

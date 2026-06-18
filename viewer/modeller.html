@@ -753,7 +753,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
 const qs = new URLSearchParams(location.search);
 // PERSISTENCE: restore the saved signed model on boot so work survives a reload — unless a demo hook runs
 // (demos clear() and drive their own state). Folds the restored op-log to the scene + refreshes panels.
-if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera)$/.test(k))) {
+if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera|regen)$/.test(k))) {
   (async () => { try { const n = await window.Bonsai.oplog.restore(); if (n) { syncHistory(); setStat('restored ' + n + ' feature' + (n === 1 ? '' : 's') + ' from your last session'); } } catch (e) { console.warn('§MODELLER restore fail ' + e); } window.__restoreDone = true; })();
 }
 const q = qs.get('author');
@@ -1356,6 +1356,28 @@ if (qs.get('camera') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER camera demo fail ' + e); }
     window.__cameraResult = out; window.__cameraDone = true;
     console.log('§MODELLER camera-done');
+  })();
+}
+// ?regen=demo proves the INCREMENTAL REGEN CACHE (W-BONSAI-REGEN, card §4#1): a re-fold of an unchanged chain
+// rebuilds ZERO occt shapes (all op_hash cache hits); adding one feature rebuilds exactly ONE; geometry is
+// byte-identical (deterministic); clearing the model drops the cache.
+if (qs.get('regen') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog; const S = () => window.Bonsai._lastRegenStats;
+    try {
+      O.clear();
+      for (const y of [0, 1, 2]) await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, y], [4, y], [4, y + 0.2], [0, y + 0.2]] }, depth: 3 } });
+      const cold = await O.scrubTo(3); out.cold = S(); out.coldTris = cold.triangleCount;     // COLD: 3 rebuilds
+      const warm = await O.scrubTo(3); out.warm = S(); out.warmTris = warm.triangleCount;      // WARM: 0 rebuilds, 3 hits
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: 1, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } });
+      out.afterCut = S();                                                                       // INCREMENTAL: 1 rebuild (the cut), 3 hits
+      out.deterministic = out.coldTris === out.warmTris;
+      O.clear(); await new Promise(r => setTimeout(r, 60));                                      // clear → drop cache
+      await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });
+      await O.scrubTo(1); out.afterClear = S();                                                  // COLD again: 1 rebuild
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER regen demo fail ' + e); }
+    window.__regenResult = out; window.__regenDone = true;
+    console.log('§MODELLER regen-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).

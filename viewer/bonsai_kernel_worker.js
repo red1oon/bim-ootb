@@ -7,6 +7,17 @@ import { OcctKernel } from './lib/kernel/index.js';
 
 let kernelPromise = null;
 let _wasmBytes = null;   // pre-fetched bytes handed in by the host (preload) → single download, no re-fetch
+
+// INCREMENTAL REGEN CACHE (prompts/BONSAI_KERNEL_RESEARCH.md §4#1 "the real core"). The signed op_hash is the
+// perfect, free invalidation key: in an append-only hash chain op_hash = SHA(prev_hash | op), so it encodes the
+// ENTIRE prefix → a committed row's folded geometry is IMMUTABLE once computed. So we cache the resulting occt
+// shape (and its tessellated mesh) per op_hash across folds; a re-fold rebuilds ONLY genuinely-new ops (the
+// dirty feature + nothing else). Single-lineage, content-addressed — decades-old dependency-graph regen prior
+// art (Pro/E, SolidWorks); the patent-sensitive surface is cloud branch&merge, NOT this (card §6 — build freely).
+const shapeCache = new Map();   // op_hash -> occt shape (persists across folds; cache owns it → never released mid-fold)
+const meshCache = new Map();    // op_hash -> tessellated mesh payload (skip re-tessellation of unchanged features)
+let _stats = { rebuilt: 0, hits: 0, tess: 0, tessHits: 0 };
+function clearCache(kernel) { for (const s of shapeCache.values()) { try { kernel.release(s); } catch (e) { } } shapeCache.clear(); meshCache.clear(); }
 function getKernel() {
   // With host-supplied bytes, init from them; else OcctKernel.init() auto-locates the co-located wasm.
   if (!kernelPromise) kernelPromise = OcctKernel.init(_wasmBytes ? { wasm: _wasmBytes } : undefined);
@@ -108,50 +119,61 @@ function edgeMidpoints(kernel, solid) {
 // THE FEATURE-TREE FOLD (solids map): an ordered op-log -> a set of live solids. GEOM_CUT and GEOM_FILLET
 // modify their referenced parent solid IN PLACE (the child references a prior feature by id), so the op-log
 // IS the feature tree and the rendered geometry is a pure fold of the chain — replaying ops[0..k] = history.
+// Fold the chain into live solids, REUSING cached shapes by op_hash. solids: featureId -> {shape, hash}; the
+// `hash` (op_hash that produced the current shape) keys the mesh cache. Cached shapes/inputs are NEVER released
+// here — the cache owns them (released only by clearCache). Only LOCAL intermediates (void box, edge subshapes)
+// are released. A cache MISS rebuilds via occt (and counts); a HIT skips occt entirely.
 function buildSolids(kernel, ops) {
-  const solids = new Map();   // featureId -> shape
+  const solids = new Map();
   for (const op of ops) {
     const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
-    if (op.op_type === 'GEOM_CUT') {                 // IfcRelVoidsElement: cut the referenced parent
-      const parent = solids.get(op.parent);
-      if (!parent) throw new Error('GEOM_CUT parent ' + op.parent + ' not found');
+    const key = op.op_hash || ('nohash:' + op.id);    // op_hash = unique per immutable prefix → the cache key
+    if (op.op_type === 'GEOM_CUT') {
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_CUT parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
       const v = (a) => ({ x: a[0], y: a[1], z: a[2] });
       const void_ = kernel.makeBoxFromCorners(v(P.void.c1), v(P.void.c2));
-      const cut = kernel.cut(parent, void_);
-      kernel.release(void_); kernel.release(parent);
-      solids.set(op.parent, cut);                    // parent geometry replaced by the cut result
-    } else if (op.op_type === 'GEOM_FILLET') {        // BRepFilletAPI: round (or chamfer) the referenced parent's picked edges
-      const parent = solids.get(op.parent);
-      if (!parent) throw new Error('GEOM_FILLET parent ' + op.parent + ' not found');
-      const all = kernel.getSubShapes(parent, 'edge');           // canonical order — must match edgeMidpoints()
+      const cut = kernel.cut(pe.shape, void_);
+      kernel.release(void_);                          // local intermediate (parent is cached → NOT released)
+      shapeCache.set(key, cut); solids.set(op.parent, { shape: cut, hash: key });
+    } else if (op.op_type === 'GEOM_FILLET') {
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_FILLET parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const all = kernel.getSubShapes(pe.shape, 'edge');           // canonical order — must match edgeMidpoints()
       const sel = (P.edges || []).map(i => all[i]).filter(s => s != null);
       const r = P.radius != null ? P.radius : 0.1;
-      const result = (P.kind === 'chamfer') ? kernel.chamfer(parent, sel, r) : kernel.fillet(parent, sel, r);
-      all.forEach(e => kernel.release(e)); kernel.release(parent);
-      solids.set(op.parent, result);                 // parent geometry replaced by the filleted/chamfered result
-    } else if (op.op_type === 'GEOM_GRID_MOVE') {     // §S270 grid kinematics: recompose attached solids per the engine's commands
+      const result = (P.kind === 'chamfer') ? kernel.chamfer(pe.shape, sel, r) : kernel.fillet(pe.shape, sel, r);
+      all.forEach(e => kernel.release(e));            // local edge subshapes (parent cached → NOT released)
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_GRID_MOVE') {     // one op recomposes N features → cache per (op_hash, featureId)
       for (const c of (P.commands || [])) {
-        const s = solids.get(c.featureId); if (!s) continue;
+        const pe = solids.get(c.featureId); if (!pe) continue;
+        const ckey = key + ':' + c.featureId;
+        if (shapeCache.has(ckey)) { _stats.hits++; solids.set(c.featureId, { shape: shapeCache.get(ckey), hash: ckey }); continue; }
+        _stats.rebuilt++;
+        let out;
         if (c.action === 'TRANSLATE') {
           const d = c.delta || 0;
-          const out = kernel.translate(s, c.axis === 'x' ? d : 0, c.axis === 'y' ? d : 0, c.axis === 'z' ? d : 0);
-          kernel.release(s); solids.set(c.featureId, out);
-        } else if (c.action === 'SCALE') {             // axis-stretch about the element's stationary (min) edge: new = a + f·(old−a)
+          out = kernel.translate(pe.shape, c.axis === 'x' ? d : 0, c.axis === 'y' ? d : 0, c.axis === 'z' ? d : 0);
+        } else {                                       // SCALE: non-uniform axis-stretch about the stationary (min) edge
           const f = c.newScale != null ? c.newScale : 1;
-          const b = kernel.getBoundingBox(s, false);
+          const b = kernel.getBoundingBox(pe.shape, false);
           const a = c.axis === 'x' ? b.xmin : c.axis === 'y' ? b.ymin : b.zmin;
           const tx = a * (1 - f) + (c.translateDelta || 0);
           const M = c.axis === 'x' ? [f, 0, 0, tx, 0, 1, 0, 0, 0, 0, 1, 0]
                   : c.axis === 'y' ? [1, 0, 0, 0, 0, f, 0, tx, 0, 0, 1, 0]
                   :                  [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, f, tx];
-          // generalTransform = gp_GTrsf (supports NON-UNIFORM scale); plain transform = gp_Trsf which would
-          // collapse an axis stretch to a uniform det^(1/3) scale. A grid stretch is non-uniform by definition.
-          const out = kernel.generalTransform(s, M);
-          kernel.release(s); solids.set(c.featureId, out);
+          out = kernel.generalTransform(pe.shape, M);  // gp_GTrsf supports non-uniform scale (input cached → NOT released)
         }
+        shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
       }
-    } else {
-      solids.set(op.id, applyFeature(kernel, op));
+    } else {                                           // LEAF feature (extrude/poly/sweep/opening)
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.id, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const shape = applyFeature(kernel, op);
+      shapeCache.set(key, shape); solids.set(op.id, { shape, hash: key });
     }
   }
   return solids;
@@ -159,7 +181,13 @@ function buildSolids(kernel, ops) {
 function foldChain(kernel, ops) {
   const solids = buildSolids(kernel, ops);
   const meshes = [];
-  for (const [fid, shape] of solids) { meshes.push(meshOf(kernel, shape, fid)); kernel.release(shape); }
+  for (const [fid, ent] of solids) {
+    let m = meshCache.get(ent.hash);
+    if (!m) { m = meshOf(kernel, ent.shape, fid); meshCache.set(ent.hash, m); _stats.tess++; } else { _stats.tessHits++; }
+    // Return CLONES — the host transfers (detaches) buffers; the cached copy must stay intact for the next fold.
+    meshes.push({ featureId: fid, triangleCount: m.triangleCount,
+      positions: m.positions.slice(), normals: m.normals ? m.normals.slice() : null, indices: m.indices ? m.indices.slice() : null });
+  }
   return meshes;
 }
 
@@ -172,21 +200,26 @@ self.onmessage = async (e) => {
       self.postMessage({ id, ok: true, warmed: true });
       return;
     }
+    if (e.data.clearCache) {                          // host signalled a new/cleared model → drop the regen cache
+      if (kernelPromise) { const k = await getKernel(); clearCache(k); } else { shapeCache.clear(); meshCache.clear(); }
+      self.postMessage({ id, ok: true, cleared: true });
+      return;
+    }
     const kernel = await getKernel();
     if (e.data.listEdges) {                          // EDGE-PICK: fold to the parent solid, report its edge midpoints
       const { ops: cops, parentId } = e.data.listEdges;
       const solids = buildSolids(kernel, cops);
-      const parent = solids.get(parentId);
-      const edges = parent ? edgeMidpoints(kernel, parent) : [];
-      for (const [, s] of solids) kernel.release(s);
+      const pe = solids.get(parentId);
+      const edges = pe ? edgeMidpoints(kernel, pe.shape) : [];   // solids are cached shapes — do NOT release
       self.postMessage({ id, ok: true, edges });
       return;
     }
     if (ops) {                                       // CHAIN fold (feature tree) -> array of meshes
+      _stats = { rebuilt: 0, hits: 0, tess: 0, tessHits: 0 };
       const meshes = foldChain(kernel, ops);
       const transfer = [];
       meshes.forEach(m => { transfer.push(m.positions.buffer); if (m.normals) transfer.push(m.normals.buffer); if (m.indices) transfer.push(m.indices.buffer); });
-      self.postMessage({ id, ok: true, meshes }, transfer);
+      self.postMessage({ id, ok: true, meshes, stats: _stats }, transfer);
       return;
     }
     if (op == null) return;
