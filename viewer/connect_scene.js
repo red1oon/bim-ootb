@@ -33,6 +33,8 @@
     _acks: Object.create(null),                  // ping mid -> collector(from)
     _wired: false,
     _onState: null,                              // optional indicator hook: fn(true|false)
+    _bc: null,                                   // BroadcastChannel — same-origin N-surface fan-out
+    _seen: [],                                   // recent envelope keys (dedup across dual transports)
 
     // Register this surface and wire the inbound listener. Idempotent.
     register(surface) {
@@ -92,14 +94,26 @@
       return ws;
     },
     _fanout(env) {
-      const ws = this._peerWindows();
-      ws.forEach((w) => { try { w.postMessage(env, '*'); } catch (e) {} });
-      // same-document peers (other surfaces sharing this window) hear it via a local event too.
+      // (a) same-origin N-surface fan-out (independent tabs/iframes) — the primary cross-surface transport.
+      if (this._bc) { try { this._bc.postMessage(env); } catch (e) {} }
+      // (b) window-tree peers (host parent + embedded child frames) — covers the ERP↔embedded-viewer case
+      //     and any cross-origin embed BroadcastChannel can't reach. Dedup by mid stops double-delivery.
+      this._peerWindows().forEach((w) => { try { w.postMessage(env, '*'); } catch (e) {} });
+      // (c) same-document peers (other modules sharing this window) hear it via a local event too.
       try { window.dispatchEvent(new CustomEvent('connect:local', { detail: env })); } catch (e) {}
+    },
+
+    // True the FIRST time an envelope is seen (per transport-independent key) — drops dual-transport echoes.
+    _dupe(env) {
+      const k = env.from + '|' + env.channel + '|' + env.mid;
+      if (this._seen.indexOf(k) !== -1) return true;
+      this._seen.push(k); if (this._seen.length > 256) this._seen.shift();
+      return false;
     },
 
     _deliver(env) {
       if (env.from === this._surface) return;    // never deliver our own message back to ourselves
+      if (this._dupe(env)) return;               // already handled via the other transport
       if (env.channel === '__ping') {            // auto-ACK a ping back to the sender
         const ack = { __connect: ENVELOPE, channel: '__ack', payload: null, from: this._surface, mid: env.mid };
         this._peerWindows().forEach((w) => { try { w.postMessage(ack, '*'); } catch (e) {} });
@@ -125,6 +139,7 @@
       };
       window.addEventListener('message', (e) => inbound(e.data));
       window.addEventListener('connect:local', (e) => inbound(e.detail));
+      try { if (typeof BroadcastChannel !== 'undefined') { this._bc = new BroadcastChannel('connect:v1'); this._bc.onmessage = (e) => inbound(e.data); } } catch (e) {}
     }
   };
 
