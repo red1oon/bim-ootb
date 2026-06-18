@@ -57,11 +57,25 @@ const server = http.createServer((q, r) => {
              realMeshTris: (window.Bonsai.library.meshArrays(picked).indices.length / 3) | 0 };
   });
 
+  // QUALITY GUARD: every curated product must resolve to a DETAILED mesh (>12 tris) — no degenerate box
+  // matches (the Bed_King-matched-a-box regression). Geometries are loaded by now (the insert fetched them).
+  const quality = await pg.evaluate(() => {
+    const L = window.Bonsai.library;
+    const db = L.catalog().filter(c => !/^[0-9a-f]{16}$/.test(c.hash));
+    let boxy = [], min = 1e9;
+    db.forEach(c => { const t = L.meshArrays(c.hash).indices.length / 3; if (t <= 12) boxy.push(c.hash); if (t < min) min = t; });
+    const bed = L.catalog().find(c => /bed king/i.test(c.name));
+    return { total: db.length, boxy: boxy.length, boxyIds: boxy.slice(0, 8), minTris: min,
+             bedKingTris: bed ? L.meshArrays(bed.hash).indices.length / 3 : -1 };
+  });
+
   await br.close(); server.close();
   console.log('  §LIBRARY lazyBefore=' + lazyBefore + ' ghCoverage=' + JSON.stringify(ghCoverage) + ' insert=' + JSON.stringify(tris));
+  console.log('  §LIBRARY quality=' + JSON.stringify(quality));
   const checks = {
     lazyAtBoot:   lazyBefore === true,                       // store not fetched until needed
     fullGhMatch:  ghCoverage.withGh === ghCoverage.total && ghCoverage.total >= 80,
+    allDetailed:  quality.boxy === 0 && quality.minTris > 12 && quality.bedKingTris > 12,  // no degenerate box matches
     boxFirst:     tris.boxTris === 12,                       // box proxy lands instantly
     lazyLoaded:   tris.geomLoaded === true,                  // fetched on the insert
     realUpgrade:  tris.realTris > 12 && tris.realTris === tris.realMeshTris   // refined to the real detailed mesh
