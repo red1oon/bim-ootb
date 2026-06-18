@@ -129,6 +129,27 @@ function buildSolids(kernel, ops) {
       const result = (P.kind === 'chamfer') ? kernel.chamfer(parent, sel, r) : kernel.fillet(parent, sel, r);
       all.forEach(e => kernel.release(e)); kernel.release(parent);
       solids.set(op.parent, result);                 // parent geometry replaced by the filleted/chamfered result
+    } else if (op.op_type === 'GEOM_GRID_MOVE') {     // §S270 grid kinematics: recompose attached solids per the engine's commands
+      for (const c of (P.commands || [])) {
+        const s = solids.get(c.featureId); if (!s) continue;
+        if (c.action === 'TRANSLATE') {
+          const d = c.delta || 0;
+          const out = kernel.translate(s, c.axis === 'x' ? d : 0, c.axis === 'y' ? d : 0, c.axis === 'z' ? d : 0);
+          kernel.release(s); solids.set(c.featureId, out);
+        } else if (c.action === 'SCALE') {             // axis-stretch about the element's stationary (min) edge: new = a + f·(old−a)
+          const f = c.newScale != null ? c.newScale : 1;
+          const b = kernel.getBoundingBox(s, false);
+          const a = c.axis === 'x' ? b.xmin : c.axis === 'y' ? b.ymin : b.zmin;
+          const tx = a * (1 - f) + (c.translateDelta || 0);
+          const M = c.axis === 'x' ? [f, 0, 0, tx, 0, 1, 0, 0, 0, 0, 1, 0]
+                  : c.axis === 'y' ? [1, 0, 0, 0, 0, f, 0, tx, 0, 0, 1, 0]
+                  :                  [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, f, tx];
+          // generalTransform = gp_GTrsf (supports NON-UNIFORM scale); plain transform = gp_Trsf which would
+          // collapse an axis stretch to a uniform det^(1/3) scale. A grid stretch is non-uniform by definition.
+          const out = kernel.generalTransform(s, M);
+          kernel.release(s); solids.set(c.featureId, out);
+        }
+      }
     } else {
       solids.set(op.id, applyFeature(kernel, op));
     }

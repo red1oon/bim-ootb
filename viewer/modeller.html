@@ -32,6 +32,7 @@
   <button id="b-wall" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Wall</span></button>
   <button id="b-open" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Opening</span></button>
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
+  <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
   <button id="b-constrain" disabled style="display:none" title="Constraint intent the solver enforces on the sketch"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span>Axis</span></button>
@@ -66,6 +67,9 @@
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
+<!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
+<script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
+<script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=1" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 
@@ -258,7 +262,7 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook
   highlight(m || null); return selectedId;
 };
 canvas.addEventListener('pointerdown', (e) => {
-  if (sketching || routing || edgePicking || e.button !== 0 || e.shiftKey) return;
+  if (sketching || routing || edgePicking || gridMoving || e.button !== 0 || e.shiftKey) return;
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -429,6 +433,70 @@ bGrid.onclick = () => {
   setStat(on ? 'grid ON — sketch clicks snap to gridlines (A-1, B-2…)' : 'grid off');
 };
 
+// ── GRID MOVE (gridline-drag recompose) ───────────────────────────────────────────────────────────
+// The §S270 parametric-grid payoff: drag a gridline and the attached walls RECOMPOSE (ATTACH→translate,
+// SPAN/EDGE→stretch) via the pure GridKinematicEngine, committed as ONE signed GEOM_GRID_MOVE op.
+const bGridMove = document.getElementById('b-gridmove');
+const GM_MOVE = _ico('<path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/>') + '<span>Move Grid</span>';
+const GM_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let gridMoving = false, _dragGrid = null, gmPreview = null;
+function nearestGridline(x, y) {
+  const G = window.Bonsai.grid; let best = null, bd = 0.6;
+  G.xs.forEach((gx, i) => { const d = Math.abs(x - gx); if (d < bd) { bd = d; best = { id: 'gx' + i, axis: 'x', coord: gx }; } });
+  G.ys.forEach((gy, j) => { const d = Math.abs(y - gy); if (d < bd) { bd = d; best = { id: 'gy' + j, axis: 'y', coord: gy }; } });
+  return best;
+}
+function gmPreviewLine(axis, coord) {
+  if (gmPreview) { scene.remove(gmPreview); gmPreview = null; }
+  const G = window.Bonsai.grid;
+  const a = axis === 'x' ? [new THREE.Vector3(coord, G.ys[0], 0.03), new THREE.Vector3(coord, G.ys[G.ys.length - 1], 0.03)]
+                         : [new THREE.Vector3(G.xs[0], coord, 0.03), new THREE.Vector3(G.xs[G.xs.length - 1], coord, 0.03)];
+  gmPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: 0xffd24f }));
+  scene.add(gmPreview);
+}
+function enterGridMove() {
+  if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
+  gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false;   // grab gridlines, not the camera
+  setStat('move grid: drag a gridline — attached walls recompose');
+}
+function exitGridMove() {
+  gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true;
+  if (gmPreview) { scene.remove(gmPreview); gmPreview = null; }
+}
+bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!gridMoving || e.button !== 0 || e.shiftKey) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
+  const gl = nearestGridline(hit.x, hit.y);
+  if (gl) { _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')'); }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!gridMoving || !_dragGrid) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
+  const cur = _dragGrid.axis === 'x' ? hit.x : hit.y;
+  _dragGrid.delta = cur - _dragGrid.downAt;
+  gmPreviewLine(_dragGrid.axis, _dragGrid.coord + _dragGrid.delta);
+});
+async function commitGridMove() {
+  if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }
+  const { id, delta } = _dragGrid;
+  setStat('recomposing…');
+  try {
+    const res = await window.Bonsai.gridmove.commit(id, delta);
+    setStat('grid ' + id + ' moved ' + delta.toFixed(2) + '  recomposed=' + res.commands.length + '  verify=' + res.verify);
+    audioCue('commit'); exitGridMove(); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
+}
+canvas.addEventListener('pointerup', () => { if (gridMoving && _dragGrid) commitGridMove(); });
+
 // ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
 const bIfc = document.getElementById('b-ifc');
 bIfc.onclick = async () => {
@@ -440,7 +508,7 @@ bIfc.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = false;
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -451,6 +519,9 @@ window.Bonsai.outliner.addCategory({ key: 'routes', label: 'Routes', match: op =
 window.Bonsai.outliner.addCategory({ key: 'fillets', label: 'Fillets', match: op => op.op_type === 'GEOM_FILLET',
   node: op => ({ id: op.parameters.parent, label: (op.parameters.kind === 'chamfer' ? 'Chamfer' : 'Round'),
     sub: '⮡ Wall ' + op.parameters.parent + ' ·' + (op.parameters.edges ? op.parameters.edges.length : 0) + 'e' }) });
+window.Bonsai.outliner.addCategory({ key: 'gridmoves', label: 'Grid Moves', match: op => op.op_type === 'GEOM_GRID_MOVE',
+  node: op => ({ id: op.id, label: 'Move ' + op.parameters.gridId,
+    sub: (op.parameters.delta > 0 ? '+' : '') + (+op.parameters.delta).toFixed(2) + ' ·' + (op.parameters.commands ? op.parameters.commands.length : 0) + ' recomp' }) });
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -792,6 +863,57 @@ if (qs.get('constrain') === 'demo') {
     window.__constrainResult = out;
     window.__constrainDone = true;
     console.log('§MODELLER constrain-done');
+  })();
+}
+// ?gridmove=demo proves the §S270 grid-kinematics shoulder (W-BONSAI-GRIDMOVE): a thin wall ATTACHED to grid B
+// and a wide wall whose right EDGE sits on grid B. Entering Move-Grid mode and DRAGGING grid B (real pointer
+// down→move→up) commits ONE signed GEOM_GRID_MOVE: the attached wall TRANSLATES and the edge wall STRETCHES via
+// the pure GridKinematicEngine — the scene's max-x grows, the chain verifies+signs, the Outliner shows a Grid
+// Moves row, and scrubbing back undoes the recompose deterministically. Drives the real drag handlers.
+if (qs.get('gridmove') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4], ys: [0, 3], xlabels: ['A', 'B'], ylabels: ['1', '2'] });
+      window.Bonsai.grid.show(true);
+      const O = window.Bonsai.oplog; O.clear();
+      // Wall1: centred ON grid B (x=4), half-extent 0.3 (between EDGE_TOL 0.1 and ATTACH_TOL 0.5) → ATTACH → translate.
+      // Wall2: wide x[0,4], right edge on grid B → EDGE_RIGHT → stretch.
+      const w1 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[3.7, 0], [4.3, 0], [4.3, 3], [3.7, 3]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      const w2 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.w1 = w1.id; out.w2 = w2.id;
+      const featBox = () => { const o = {}; window.Bonsai.group().children.filter(m => m.isMesh).forEach(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; o[m.userData.featureId] = { x: [+b.min.x.toFixed(2), +b.max.x.toFixed(2)], z: [+b.min.z.toFixed(2), +b.max.z.toFixed(2)] }; }); return o; };
+      out.before = featBox();
+      const box0 = new THREE.Box3().setFromObject(window.Bonsai.group()); out.maxXBefore = +box0.max.x.toFixed(2);
+      // peek the engine's commands for the drag (TRANSLATE for the attached wall, SCALE for the edge wall).
+      out.commands = window.Bonsai.gridmove.computeCommands('gx1', 1.5).map(c => c.action);
+      // DRIVE THE REAL DRAG: enter mode, pointer down on grid B, move +1.5 in x, release.
+      bGridMove.onclick();                                       // enter Move-Grid mode
+      out.entered = gridMoving;
+      const rect = canvas.getBoundingClientRect();
+      const toClient = (x, y) => { const v = new THREE.Vector3(x, y, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+      const down = toClient(4, 1.5), move = toClient(5.5, 1.5);
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: down.clientX, clientY: down.clientY, bubbles: true }));
+      out.grabbed = _dragGrid && _dragGrid.id;
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: move.clientX, clientY: move.clientY, bubbles: true }));
+      out.dragDelta = _dragGrid ? +(_dragGrid.delta || 0).toFixed(2) : null;
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: move.clientX, clientY: move.clientY, bubbles: true }));
+      await new Promise(r => setTimeout(r, 400));                // let the async commitGridMove + fold settle
+      out.exited = !gridMoving;
+      out.after = featBox();   // per-feature x/z bbox after the recompose (verify Wall1 translated, Wall2 x-stretched, z intact)
+      const box1 = new THREE.Box3().setFromObject(window.Bonsai.group()); out.maxXAfter = +box1.max.x.toFixed(2);
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await O.verify()).ok;
+      out.gridOps = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;
+      const rows = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.moveRow = rows.find(r => /Move gx1/.test(r)) || null;
+      out.gridMovesCategory = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'gridmoves');
+      await O.scrubTo(2); out.scrubBack = +(new THREE.Box3().setFromObject(window.Bonsai.group()).max.x).toFixed(2);   // before the move
+      await O.scrubTo(3); out.scrubFwd = +(new THREE.Box3().setFromObject(window.Bonsai.group()).max.x).toFixed(2);    // after the move
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER gridmove demo fail ' + e); }
+    window.__gridmoveResult = out;
+    window.__gridmoveDone = true;
+    console.log('§MODELLER gridmove-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
