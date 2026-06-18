@@ -128,7 +128,9 @@ controls.target.set(4, 2, 0.4);
 
 scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202028, 1.1));
 const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(5, 10, 7); scene.add(key);
-const grid = new THREE.GridHelper(40, 40, 0x2a3040, 0x21262f); scene.add(grid);
+const grid = new THREE.GridHelper(40, 40, 0x2a3040, 0x21262f);
+grid.rotation.x = Math.PI / 2;   // GridHelper defaults to the XZ plane (Y-up); rotate onto XY so it lies FLAT in our Z-up world (was standing up as a wall)
+scene.add(grid);
 scene.add(new THREE.AxesHelper(1.5));
 
 // window.A — the alternative viewer's app object, matching the viewer's A.scene convention so
@@ -922,7 +924,7 @@ window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', mat
   node: op => { const p = op.parameters.placement, c = window.Bonsai.library && window.Bonsai.library.get(op.parameters.hash);
     const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt(p.x, p.y) : null;
     const lod = window.Bonsai.library ? window.Bonsai.library.lodFor(op.id, op.parameters.lod) : op.parameters.lod;
-    return { id: op.id, label: (c ? c.ifc_class.replace('Ifc', '') : 'Component'),
+    return { id: op.id, label: (c ? (c.name || c.ifc_class.replace('Ifc', '')) : 'Component'),
       sub: ((a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) : '#' + op.id) + ' ·LOD' + lod }; } });
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
