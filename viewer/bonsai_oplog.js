@@ -96,6 +96,52 @@
 
     async verify() { return window.KernelOps.verifyChain(this.db); },
 
+    // ---- EDIT (operability): soft-delete / undo / redo by toggling the kernel_ops `undone` flag. `undone`
+    // is NOT part of the signed payload (verifyChain never reads it), so the append-only chain stays valid and
+    // every "edit" is reversible — features are hidden/shown, never rewritten. Invariant kept: never leave an
+    // ACTIVE child (GEOM_CUT/FILLET/…) whose referenced parent is undone (that would break the fold).
+    _allGeom() {
+      const r = this.db.exec("SELECT id, op_type, parameters, undone FROM kernel_ops WHERE " + GEOM + " ORDER BY id");
+      if (!r.length) return [];
+      return r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parent: p.parent, undone: v[3] }; });
+    },
+    _setUndone(ids, val) { if (ids.length) this.db.run("UPDATE kernel_ops SET undone=" + (val ? 1 : 0) + " WHERE id IN (" + ids.join(',') + ")"); },
+
+    // Delete ONE feature (+ its children that reference it as parent) — soft, reversible via redo.
+    async deleteFeature(featureId) {
+      if (!this.db) return { deleted: [] };
+      const kids = this._allGeom().filter(o => o.parent === featureId && !o.undone).map(o => o.id);
+      const ids = [featureId, ...kids];
+      this._setUndone(ids, 1);
+      await this._foldUpto(); this._emit();
+      console.log(TAG + ' delete feature=' + featureId + (kids.length ? ' +kids[' + kids + ']' : '') + ' active=' + this.length);
+      return { deleted: ids };
+    },
+    // Undo = soft-delete the most-recent ACTIVE feature (LIFO; newest has no active dependents).
+    async undo() {
+      if (!this.db) return { undone: null };
+      const active = this._allGeom().filter(o => !o.undone);
+      if (!active.length) return { undone: null };
+      const top = active[active.length - 1].id;
+      this._setUndone([top], 1);
+      await this._foldUpto(); this._emit();
+      console.log(TAG + ' undo id=' + top + ' active=' + this.length);
+      return { undone: top };
+    },
+    // Redo = reactivate the most-recent undone feature, walking UP any undone ancestor chain (keep the invariant).
+    async redo() {
+      if (!this.db) return { redone: null };
+      const all = this._allGeom(); const undoneRows = all.filter(o => o.undone);
+      if (!undoneRows.length) return { redone: null };
+      const byId = new Map(all.map(o => [o.id, o]));
+      const on = []; let cur = undoneRows[undoneRows.length - 1]; const top = cur.id;
+      while (cur && cur.undone) { on.push(cur.id); cur = cur.parent != null ? byId.get(cur.parent) : null; }
+      this._setUndone(on, 0);
+      await this._foldUpto(); this._emit();
+      console.log(TAG + ' redo id=' + top + (on.length > 1 ? ' +ancestors' : '') + ' active=' + this.length);
+      return { redone: top };
+    },
+
     // Tamper test (W-SIGN in-viewer): mutate a committed parameter behind the chain's back → verify must fail.
     async tamperFirstGeom() {
       const r = this.db.exec("SELECT id FROM kernel_ops WHERE " + GEOM + " ORDER BY id LIMIT 1");

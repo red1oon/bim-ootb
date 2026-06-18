@@ -44,6 +44,9 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
+  <button id="b-undo" disabled title="Undo last (Ctrl+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg><span>Undo</span></button>
+  <button id="b-redo" disabled title="Redo (Ctrl+Shift+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg><span>Redo</span></button>
+  <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
 </div>
@@ -256,6 +259,7 @@ function highlight(mesh) {
   selectedMesh = mesh; selectedId = mesh ? mesh.userData.featureId : null;
   if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
   bCut.disabled = selectedId == null;
+  const bd = document.getElementById('b-del'); if (bd) bd.disabled = selectedId == null;   // Delete acts on the selection
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
   console.log('§MODELLER select featureId=' + selectedId);
@@ -604,6 +608,31 @@ window.addEventListener('keydown', (e) => {                       // R rotates t
   if (inserting && (e.key === 'r' || e.key === 'R') && !/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) { e.preventDefault(); rotateInsert(); }
 });
 
+// ── EDIT: Delete (selected) / Undo / Redo (operability leg 2) — soft-delete via the signed op-log ──────
+const bUndo = document.getElementById('b-undo'), bRedo = document.getElementById('b-redo'), bDel = document.getElementById('b-del');
+function refreshEditButtons() {                                   // enable Undo/Redo by what's available
+  const O = window.Bonsai.oplog; if (!O || !O.db) { bUndo.disabled = bRedo.disabled = true; return; }
+  const all = O._allGeom();
+  bUndo.disabled = !all.some(o => !o.undone);
+  bRedo.disabled = !all.some(o => o.undone);
+}
+window.addEventListener('bonsai:oplog', refreshEditButtons);
+async function deleteSelected() {
+  if (selectedId == null) return;
+  const id = selectedId; await window.Bonsai.oplog.deleteFeature(id); highlight(null); audioCue('cut');
+  setStat('deleted feature #' + id); syncHistory();
+}
+bDel.onclick = () => deleteSelected();
+bUndo.onclick = async () => { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } };
+bRedo.onclick = async () => { const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); } };
+window.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
+  if (typing) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? bRedo : bUndo).onclick(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); bRedo.onclick(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
+});
+
 bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
@@ -949,6 +978,41 @@ if (qs.get('place') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER place demo fail ' + e); }
     window.__placeResult = out; window.__placeDone = true;
     console.log('§MODELLER place-done');
+  })();
+}
+// ?edit=demo proves EDITABILITY (W-BONSAI-EDIT): delete a single feature, cascade-delete a parent (its cut child
+// goes too — no fold break), and undo/redo (LIFO) — all via soft-delete over the SIGNED op-log (chain stays valid).
+if (qs.get('edit') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      const lib = window.Bonsai.library.catalog();
+      // DELETE: wall + cut(child of wall) + door insert → 3 active
+      O.clear();
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } });
+      const ins = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: lib.find(c => c.ifc_class === 'IfcDoor').hash, placement: { x: 6, y: 1, z: 0, rot: 0 }, lod: '200' } });
+      out.start = O.length;                              // 3
+      window.Bonsai.select(ins.id); await deleteSelected();
+      out.afterDeleteDoor = O.length;                    // 2
+      out.verifyA = (await O.verify()).ok;
+      await O.deleteFeature(wall.id);                    // delete wall → cascades the cut child
+      out.afterDeleteWall = O.length;                    // 0 (no "GEOM_CUT parent not found" fold error)
+      out.verifyB = (await O.verify()).ok;
+      // UNDO/REDO (LIFO): wall + column
+      O.clear();
+      await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });
+      await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: lib.find(c => c.ifc_class === 'IfcColumn').hash, placement: { x: 6, y: 1, z: 0, rot: 0 }, lod: '200' } });
+      out.u0 = O.length;                                 // 2
+      await O.undo(); out.u1 = O.length;                 // 1
+      await O.undo(); out.u2 = O.length;                 // 0
+      await O.redo(); out.r1 = O.length;                 // 1
+      await O.redo(); out.r2 = O.length;                 // 2
+      out.verifyC = (await O.verify()).ok;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER edit demo fail ' + e); }
+    window.__editResult = out; window.__editDone = true;
+    console.log('§MODELLER edit-done');
   })();
 }
 // ?fillet=demo proves the occt fillet/chamfer shoulders + EDGE-PICK UI (W-BONSAI-FILLET): commit a wall, select
