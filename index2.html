@@ -424,7 +424,7 @@ function openTab(url){ sfxPress(); L('§OPEN tab '+url); window.open(url,'_blank
 window.addEventListener('keydown', function(e){ if(e.key==='Escape'){ closeHub(); } });
 function launchModeller(){
   // Bonsai authoring is desktop-only (heavy occt-wasm kernel). On mobile → polite note, no launch.
-  if(isMobile()){ sfxPress(); L('§BONSAI-LAUNCH blocked mobile → desktop-only note'); toast('BIM authoring (Bonsai) is a desktop experience &mdash; open it on a larger screen.'); return; }
+  if(isMobile()){ sfxPress(); L('§BONSAI-LAUNCH blocked mobile → desktop-only note'); toast('BIM authoring (DAGeVu) is a desktop experience &mdash; open it on a larger screen.'); return; }
   // lazy-mount: occt bytes are warm; the worker spins inside modeller.html on demand.
   sfxPress(); L('§BONSAI-LAUNCH → viewer/modeller.html (occt bytes warm, worker spins there)');
   location.href='viewer/modeller.html';

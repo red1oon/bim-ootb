@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Bonsai Modeller — alternative authoring viewer</title>
-<!-- ALTERNATIVE viewer surface for the Bonsai authoring kernel. Does NOT load viewer.html /
+<title>DAGeVu Modeller — alternative authoring viewer</title>
+<!-- DAGeVu — the alternative authoring viewer surface (renamed from "Bonsai" to avoid brand clash; the
+     internal window.Bonsai API + bonsai_*.js filenames are unchanged for now). Does NOT load viewer.html /
      does NOT touch the production viewer. prompts/BONSAI_KERNEL_RESEARCH.md Item 2 leg 1:
      occt-wasm kernel in a Web Worker -> kernel_ops op-row folds into a mesh in this scene. -->
 <style>
@@ -61,7 +62,7 @@
   <input id="hist-slider" type="range" min="0" max="0" value="0" step="1" style="flex:1;accent-color:#4fc3f7" disabled>
   <span id="hist-label">0/0</span>
 </div>
-<div id="title">BONSAI · MODELLER</div>
+<div id="title">DAGeVu · MODELLER</div>
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
