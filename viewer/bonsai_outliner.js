@@ -66,6 +66,21 @@
 
     refresh() { if (this._el) this._paint(); },
 
+    // Pick-select is FREQUENT (every click) and changes ONLY which row is active — so restyle the existing
+    // rows in place instead of re-querying the DB + rebuilding the whole tree (the old refresh() on each pick
+    // was the select-side jank). Full _paint() still runs on actual op-log changes (commit/clear/find).
+    setActive(id) {
+      window.Bonsai._selId = id;
+      if (!this._el) return;
+      this._el.querySelectorAll('[data-fid]').forEach(d => {
+        const on = (+d.getAttribute('data-fid')) === id;
+        d.style.background = on ? '#26456b' : 'transparent';
+        d.style.color = on ? '#dce6f4' : '#c7cdd8';
+        d.onmouseover = () => { d.style.background = on ? '#26456b' : '#23262e'; };
+        d.onmouseout = () => { d.style.background = on ? '#26456b' : 'transparent'; };
+      });
+    },
+
     _paint() {
       const tree = this._el.querySelector('#bo-tree'); if (!tree) return;
       const ops = (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps() : [];
@@ -94,8 +109,8 @@
       tree.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._paint(); });
       tree.querySelectorAll('[data-fid]').forEach(d => d.onclick = () => {
         const fid = +d.getAttribute('data-fid');
-        if (window.Bonsai.select) window.Bonsai.select(fid);
-        window.Bonsai._selId = fid; this._paint();
+        if (window.Bonsai.select) window.Bonsai.select(fid);   // → highlight() → setActive(): restyle only, no rebuild
+        else this.setActive(fid);
       });
       const foot = this._el.querySelector('#bo-foot');
       const tip = (window.Bonsai.oplog && window.Bonsai.oplog._lastTip) || '';

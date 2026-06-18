@@ -36,6 +36,28 @@ function applyFeature(kernel, op) {
     edges.forEach(e => kernel.release(e)); kernel.release(wire); kernel.release(face);
     return solid;
   }
+  if (op.op_type === 'GEOM_SWEEP') {              // BRepOffsetAPI_MakePipe: rectangle profile swept along a polyline spine (MEP run / route)
+    const w = P.profile.w, h = P.profile.h;       // profile centred on the spine start, in the XY plane (normal +Z = spine's initial direction)
+    const v = (x, y, z) => ({ x, y, z });
+    const pc = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+    const pedges = [];
+    for (let i = 0; i < pc.length; i++) {
+      const a = pc[i], b = pc[(i + 1) % pc.length];
+      pedges.push(kernel.makeLineEdge(v(a[0], a[1], 0), v(b[0], b[1], 0)));
+    }
+    const pwire = kernel.makeWire(pedges);
+    const face = kernel.makeFace(pwire);
+    const path = P.path;                          // [[x,y,z],...] ≥2 points; starts at the profile (origin) so the sweep is well-conditioned
+    const sedges = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      sedges.push(kernel.makeLineEdge(v(path[i][0], path[i][1], path[i][2]), v(path[i + 1][0], path[i + 1][1], path[i + 1][2])));
+    }
+    const spine = kernel.makeWire(sedges);
+    const solid = kernel.pipe(face, spine);
+    pedges.forEach(e => kernel.release(e)); kernel.release(pwire); kernel.release(face);
+    sedges.forEach(e => kernel.release(e)); kernel.release(spine);
+    return solid;
+  }
   if (op.op_type === 'GEOM_OPENING') {            // IfcRelVoidsElement: base solid CUT by a void box
     const baseRect = kernel.makeRectangle(P.profile.w, P.profile.h);
     const wall = kernel.extrude(baseRect, P.dir[0], P.dir[1], P.dir[2]); kernel.release(baseRect);

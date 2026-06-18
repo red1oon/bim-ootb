@@ -64,7 +64,20 @@
       const v = await window.KernelOps.verifyChain(db);
       const signed = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
       this._lastTip = v.tip;
-      const r = await this._foldUpto();
+      // OPTIMISTIC APPEND (responsiveness): a LEAF feature (extrude/sweep/poly — not a GEOM_CUT, which mutates
+      // a parent in place) renders by authoring ONLY the new op and appending its mesh — O(1) — instead of
+      // clearing the group and re-folding EVERY feature through occt (O(N), the felt lag). The fold is
+      // deterministic so the optimistic mesh == the eventual chain-fold mesh (no flicker); any later scrub/cut
+      // reconciles to the authoritative foldChainToScene. Full incremental regen = the op_hash-cache card.
+      let r;
+      const isCut = op.op_type === 'GEOM_CUT' || (op.parameters && op.parameters.parent != null);
+      if (isCut) {
+        r = await this._foldUpto();                              // cut modifies a referenced parent → authoritative re-fold
+      } else {
+        const ad = await window.Bonsai.author({ id: rowId, op_type: op.op_type, parameters: op.parameters }, { color: opts && opts.color, featureId: rowId });
+        this._cursor = this.length;                              // history cursor advances to the new tip
+        r = { solids: this._cursor, triangleCount: ad.triangleCount, appended: true };
+      }
       this._emit();
       console.log(TAG + ' commit rowId=' + rowId + ' op=' + op.op_type +
         (op.parameters && op.parameters.parent != null ? ' parent=' + op.parameters.parent : '') +
