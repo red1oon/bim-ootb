@@ -117,6 +117,7 @@ scene.background = new THREE.Color(0x14161c);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 5000);
 camera.position.set(6, 5, 8);
+camera.up.set(0, 0, 1);   // world is Z-up → screen-up = Z so placed components STAND (top-down sketch view flips to Y-up)
 
 const controls = new THREE.OrbitControls(camera, canvas);
 controls.enableDamping = true;
@@ -145,7 +146,9 @@ window.addEventListener('resize', () => {
 // ── CAMERA: zoom-to-fit + view presets (operability v4) — geometry is Z-up but camera.up stays Y so the
 // sketch plan view (looking straight down −Z) isn't degenerate; presets are limited to Iso/Top accordingly.
 const bFit = document.getElementById('b-fit'), bView = document.getElementById('b-view');
-const VIEWS = [{ name: 'Iso', dir: new THREE.Vector3(1, 0.85, 1) }, { name: 'Top', dir: new THREE.Vector3(0, 0.001, 1) }];
+// up per view: Iso/3D = Z-up (objects stand); Top = Y-up (plan of the XY ground, non-degenerate looking down −Z).
+const VIEWS = [{ name: 'Iso', dir: new THREE.Vector3(1, 0.85, 1), up: new THREE.Vector3(0, 0, 1) },
+               { name: 'Top', dir: new THREE.Vector3(0, 0.001, 1), up: new THREE.Vector3(0, 1, 0) }];
 let _viewIdx = 0;
 function _authoredBox() {
   const g = window.Bonsai.group && window.Bonsai.group();
@@ -159,6 +162,7 @@ function frameBox(box, dir) {
   const radius = Math.max(s.x, s.y, s.z, 0.5) * 0.5;
   const dist = radius / Math.sin((camera.fov * Math.PI / 180) / 2) * 1.3 + radius;   // fit the bounding sphere + margin
   const d = (dir || VIEWS[_viewIdx].dir).clone().normalize();
+  if (VIEWS[_viewIdx].up) camera.up.copy(VIEWS[_viewIdx].up);   // Z-up for iso, Y-up for the top/plan view
   controls.target.copy(c); camera.position.copy(c).addScaledVector(d, dist); controls.update();
   if (window.A && A.requestRender) A.requestRender();
   return true;
@@ -326,7 +330,8 @@ function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.quer
 bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); };
 function enterSketch() {
   sketching = true; window.Bonsai.sketch.reset();
-  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
+  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone(), up: camera.up.clone() };
+  camera.up.set(0, 1, 0);   // top-down plan needs Y-up (looking down −Z with Z-up is degenerate)
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
   bExtrude.style.display = ''; bExtrude.disabled = false; dimDepth.style.display = ''; bSketch.innerHTML = SK_CANCEL;
   bConstrain.style.display = ''; bConstrain.disabled = false; paintConstrain();
@@ -335,7 +340,7 @@ function enterSketch() {
 function exitSketch() {
   sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
-  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
+  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
 bSketch.onclick = () => sketching ? exitSketch() : enterSketch();
 canvas.addEventListener('pointerdown', (e) => {
@@ -442,7 +447,8 @@ function routeMarkers() {
 }
 function enterRoute() {
   routing = true; routePts = [];
-  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
+  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone(), up: camera.up.clone() };
+  camera.up.set(0, 1, 0);   // top-down route plan: Y-up (Z-up degenerate looking down −Z)
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
   bRun.style.display = ''; bRun.disabled = true; dimProf.style.display = ''; bRoute.innerHTML = RT_CANCEL;
   routeMarkers(); setStat('route: click ≥2 points on the grid to lay a run, then Sweep Run');
@@ -450,7 +456,7 @@ function enterRoute() {
 function exitRoute() {
   routing = false; bRun.style.display = 'none'; dimProf.style.display = 'none'; bRoute.innerHTML = RT_ROUTE;
   if (routeGroup) { while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]); }
-  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
+  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
 bRoute.onclick = () => routing ? exitRoute() : enterRoute();
 canvas.addEventListener('pointerdown', (e) => {
