@@ -88,7 +88,7 @@
       const f = this._find;
       const match = n => !f || (n.label + ' ' + n.sub).toLowerCase().includes(f);
       let total = 0, shown = 0;
-      let html = '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'Bonsai Model</div>';
+      let html = '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'DAGeVu Model</div>';
       groups.forEach(g => {
         const vis = g.nodes.filter(match); total += g.nodes.length; shown += vis.length;
         if (f && !vis.length) return;

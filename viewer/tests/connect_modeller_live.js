@@ -3,7 +3,7 @@
 // button toggles the broker on/off (indicator + §-log) — proving the toggle lives on the actual surface,
 // not just the harness. (occt/WASM may not finish on Node18 V8; the broker + button wiring do not need it.)
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-connect', 'viewer');
+const VIEWER = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };

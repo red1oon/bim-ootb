@@ -55,6 +55,25 @@
       return this.length;
     },
 
+    // Re-read the signed op-log from the SHARED store (localStorage) WITHOUT clearing it, then re-fold to scene.
+    // The Connect Scene identity channel (CONNECT_SCENE_SPEC.md P3) calls this: a commit in another surface grew
+    // the shared signed chain → this surface reloads it and re-folds. verifyChain still holds (same signed log).
+    async reload() {
+      // Preserve the user's scrub position: if they are LIVE at the tip, follow to the new tip; if they are
+      // scrubbed BACK reviewing history, a peer's commit must NOT yank them forward (it appends beyond cursor).
+      const wasAtTip = this.db ? (this._cursor >= this.length) : true;
+      const prevCursor = this._cursor;
+      if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache();
+      if (this.db) { try { this.db.close(); } catch (e) { } }
+      this.db = null;                      // force _ensureDb to re-load the saved bytes from the shared store
+      await this._ensureDb();
+      this._cursor = wasAtTip ? this.length : Math.min(prevCursor, this.length);
+      await this._foldUpto(this._cursor);
+      this._emit();
+      console.log(TAG + ' reload active=' + this.length + ' cursor=' + this._cursor);
+      return this.length;
+    },
+
     _emit() { try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
     clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
 

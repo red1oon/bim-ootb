@@ -6,7 +6,7 @@
 // geometry AND its record BOTH vanish, and forward restores both: one log, two folds, co-vanishing, in lockstep
 // across surfaces. (3D draw GPU-gated; the MESH COUNT + RECORD COUNT + cross-surface §-log are the assertions.)
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-connect', 'viewer');
+const VIEWER = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm',
   '.json': 'application/json', '.css': 'text/css', '.map': 'application/json', '.db': 'application/octet-stream', '.png': 'image/png' };
@@ -24,17 +24,22 @@ const state = "(" + (function () { const g = window.Bonsai.group && window.Bonsa
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
   const br = await puppeteer.launch({ headless: 'new',
     args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const open = async (tag) => {
-    const pg = await br.newPage();
+  const mk = (tag) => br.newPage().then(pg => {
     pg.on('console', m => { const t = m.text(); if (/^§(CONNECT-TL|MODELLER connecttl)/.test(t)) console.log('  [' + tag + '] ' + t); });
     pg.on('pageerror', e => console.log('  [' + tag + '] ERR ' + String(e).slice(0, 160)));
-    await pg.goto(`http://localhost:${port}/modeller.html?connecttl=demo&connect=1`, { waitUntil: 'load', timeout: 90000 });
-    await pg.waitForFunction('window.__connectTlReady === true && window.__connectTlResult.length === 2', { timeout: 120000 })
-      .catch(() => console.log('  ✗ [' + tag + '] connecttl not ready'));
     return pg;
-  };
-  const A = await open('A');                     // open A first so it is listening
-  const B = await open('B');
+  });
+  // A AUTHORS the 2-feature recipe into the shared store (the only author → no competing identity traffic).
+  const A = await mk('A');
+  await A.goto(`http://localhost:${port}/modeller.html?connecttl=demo&connect=1`, { waitUntil: 'load', timeout: 90000 });
+  await A.waitForFunction('window.__connectTlReady === true && window.__connectTlResult.length === 2', { timeout: 120000 })
+    .catch(() => console.log('  ✗ [A] connecttl not ready'));
+  // B is a PASSIVE connected surface — restores A's shared store (length 2), then follows A's scrub over 'timeline'.
+  const B = await mk('B');
+  await B.goto(`http://localhost:${port}/modeller.html?connect=1`, { waitUntil: 'load', timeout: 90000 });
+  await B.waitForFunction('window.Bonsai && window.Bonsai.oplog && window.Bonsai.oplog.length === 2 && window.Connect && window.Connect.on', { timeout: 120000 })
+    .catch(() => console.log('  ✗ [B] did not restore shared store to length 2'));
+  await new Promise(r => setTimeout(r, 400));
 
   // Scrub A to cursor 1 → B should fold to 1 (geometry 1 mesh, records 1). Drive A's shared-scrub seam and await it.
   await A.evaluate(() => window.__scrubShared(1, true));
