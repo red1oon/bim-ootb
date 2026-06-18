@@ -32,7 +32,7 @@ function ck(name, ok) { console.log((ok ? '  PASS ' : '  FAIL ') + name); ok ? p
   ck('cold boot → Morpheus gate', await pg.$('#morpheus.active') != null);
 
   // red pill
-  await pg.evaluate(() => takeRed());
+  await pg.evaluate(() => window.takeRed());
   await pg.waitForSelector('#portal.active', { timeout: 8000 }).catch(() => {});
   ck('red → portal vortex shown', await pg.$('#portal.active') != null);
   ck('vortex element uses round01.jpg', await pg.evaluate(() => /round01/.test(getComputedStyle(document.getElementById('portal-vortex')).backgroundImage)));
@@ -69,7 +69,7 @@ function ck(name, ok) { console.log((ok ? '  PASS ' : '  FAIL ') + name); ok ? p
 
   // watch-demo opens the youtu.be link in a plain new tab (like index.html's <a target="_blank">),
   // NOT window.open with a 'noopener' features string (that yields a blank popup window).
-  await pg.evaluate(() => { window.__opened = []; openTab('https://youtu.be/hnLYNcRihzs'); });
+  await pg.evaluate(() => { window.__opened = []; window.openTab('https://youtu.be/hnLYNcRihzs'); });
   ck('watch-demo → plain new tab youtu.be/hnLYNcRihzs',
      await pg.evaluate(() => window.__opened.length === 1 && window.__opened[0] === 'https://youtu.be/hnLYNcRihzs'));
 
