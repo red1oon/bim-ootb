@@ -36,11 +36,13 @@
     _bc: null,                                   // BroadcastChannel — same-origin N-surface fan-out
     _seen: [],                                   // recent envelope keys (dedup across dual transports)
 
+    _token: null,                                // unique per-INSTANCE id (two tabs of the same surface differ)
     // Register this surface and wire the inbound listener. Idempotent.
     register(surface) {
       this._surface = surface || _uid('surface');
+      if (!this._token) this._token = _uid('inst');   // self-guard keys on the instance, NOT the surface type
       this._wire();
-      console.log(TAG + ' register surface=' + this._surface);
+      console.log(TAG + ' register surface=' + this._surface + ' inst=' + this._token);
       return this;
     },
 
@@ -62,7 +64,7 @@
     // Publish to all OTHER surfaces over `channel`. No-op (logged) when the broker is off.
     publish(channel, payload) {
       if (!this._on) { console.log(TAG + ' publish DROP (off) ch=' + channel); return false; }
-      const env = { __connect: ENVELOPE, channel: channel, payload: payload, from: this._surface, mid: _uid('m') };
+      const env = { __connect: ENVELOPE, channel: channel, payload: payload, from: this._surface, inst: this._token, mid: _uid('m') };
       this._fanout(env);
       console.log(TAG + ' publish ch=' + channel + ' from=' + this._surface + ' mid=' + env.mid);
       return true;
@@ -74,7 +76,7 @@
         if (!this._on) { console.log(TAG + ' ping DROP (off)'); resolve([]); return; }
         const mid = _uid('p'); const acks = [];
         this._acks[mid] = (from) => { acks.push(from); };
-        this._fanout({ __connect: ENVELOPE, channel: '__ping', payload: null, from: this._surface, mid: mid });
+        this._fanout({ __connect: ENVELOPE, channel: '__ping', payload: null, from: this._surface, inst: this._token, mid: mid });
         console.log(TAG + ' ping mid=' + mid + ' from=' + this._surface);
         setTimeout(() => {
           delete this._acks[mid];
@@ -112,10 +114,10 @@
     },
 
     _deliver(env) {
-      if (env.from === this._surface) return;    // never deliver our own message back to ourselves
+      if (env.inst && env.inst === this._token) return;  // never deliver our own message back to ourselves (by INSTANCE)
       if (this._dupe(env)) return;               // already handled via the other transport
       if (env.channel === '__ping') {            // auto-ACK a ping back to the sender
-        const ack = { __connect: ENVELOPE, channel: '__ack', payload: null, from: this._surface, mid: env.mid };
+        const ack = { __connect: ENVELOPE, channel: '__ack', payload: null, from: this._surface, inst: this._token, mid: env.mid };
         this._peerWindows().forEach((w) => { try { w.postMessage(ack, '*'); } catch (e) {} });
         try { window.dispatchEvent(new CustomEvent('connect:local', { detail: ack })); } catch (e) {}
         console.log(TAG + ' ping<- from=' + env.from + ' ACK mid=' + env.mid);
