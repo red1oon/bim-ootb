@@ -34,6 +34,7 @@
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
+  <button id="b-constrain" disabled style="display:none" title="Constraint intent the solver enforces on the sketch"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span>Axis</span></button>
   <button id="b-cut" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg><span>Cut</span></button>
   <button id="b-route" disabled title="Sweep a profile along a route (MEP run)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Route</span></button>
   <button id="b-run" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Sweep Run</span></button>
@@ -195,15 +196,21 @@ function sketchMarkers() {
     sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
   }
 }
+// Constraint-intent cycle (the planegcs shoulders): Axis (per-edge H/V) → Rect (∥+⊥) → Square (+ equal sides).
+const bConstrain = document.getElementById('b-constrain');
+const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square' };
+function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.querySelector('span').textContent = CON_LABEL[m] || m; bConstrain.classList.toggle('on', m !== 'axis'); }
+bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); };
 function enterSketch() {
   sketching = true; window.Bonsai.sketch.reset();
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
   bExtrude.style.display = ''; bExtrude.disabled = false; bSketch.innerHTML = SK_CANCEL;
+  bConstrain.style.display = ''; bConstrain.disabled = false; paintConstrain();
   sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
 }
 function exitSketch() {
-  sketching = false; bExtrude.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
+  sketching = false; bExtrude.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
 }
@@ -743,6 +750,48 @@ if (qs.get('fillet') === 'demo') {
     window.__filletResult = out;
     window.__filletDone = true;
     console.log('§MODELLER fillet-done');
+  })();
+}
+// ?constrain=demo proves the richer planegcs shoulders (W-BONSAI-CONSTRAIN): a deliberately non-rectangular quad
+// is cleaned to a true rectangle by parallel+perpendicular_ll (mode 'rect'), to a square by + equal_length (mode
+// 'square'), two points are made mirror-symmetric by p2p_symmetric_ppp, and the Constrain toolbar button cycles
+// the intent. We previously wired only 2 of ~60 constraints (horizontal_pp/vertical_pp); these add 4 more.
+if (qs.get('constrain') === 'demo') {
+  (async () => {
+    const out = {}; const S = window.Bonsai.sketch;
+    const NOISY = [[0, 0], [4, 0.6], [3.0, 3.0], [0.4, 2.5]];   // opposite sides NOT parallel, corners NOT 90°
+    const quadMetrics = (pts) => {
+      const v = (a, b) => [b[0] - a[0], b[1] - a[1]];
+      const ang = (u, w) => { const d = u[0] * w[0] + u[1] * w[1]; const m = Math.hypot(u[0], u[1]) * Math.hypot(w[0], w[1]); return Math.acos(Math.max(-1, Math.min(1, d / (m || 1)))) * 180 / Math.PI; };
+      const e = [v(pts[0], pts[1]), v(pts[1], pts[2]), v(pts[2], pts[3]), v(pts[3], pts[0])];
+      let maxCorner = 0; for (let i = 0; i < 4; i++) maxCorner = Math.max(maxCorner, Math.abs(90 - ang(e[i], e[(i + 1) % 4])));
+      const len = e.map(x => Math.hypot(x[0], x[1]));
+      return { maxCorner: +maxCorner.toFixed(2), par: +Math.abs(180 - ang(e[0], e[2])).toFixed(2), sideRatio: +(Math.max(len[0], len[1]) / Math.min(len[0], len[1])).toFixed(3) };
+    };
+    const solveMode = async (m) => { S.reset(); S.setMode(m); NOISY.forEach(p => S.addPoint(p[0], p[1])); const r = await S.solve(); return { status: r.status, cons: r.constraints, m: quadMetrics(r.points.map(p => [p.x, p.y])) }; };
+    try {
+      out.input = quadMetrics(NOISY);
+      out.axis = await solveMode('axis');
+      out.rect = await solveMode('rect');
+      out.square = await solveMode('square');
+      // SYMMETRY shoulder (p2p_symmetric_ppp): a,b made mirror-symmetric about a fixed centre c ⇒ c = midpoint(a,b).
+      const g = await S._ensure(); g.clear_data();
+      g.push_primitive({ id: 'c', type: 'point', x: 1, y: 1, fixed: true });
+      g.push_primitive({ id: 'a', type: 'point', x: 0.1, y: 0.2, fixed: false });
+      g.push_primitive({ id: 'b', type: 'point', x: 2.3, y: 1.6, fixed: false });
+      g.push_primitive({ id: 'sym', type: 'p2p_symmetric_ppp', p1_id: 'a', p2_id: 'b', p_id: 'c' });
+      const st = g.solve(); g.apply_solution();
+      const A = g.sketch_index.get_sketch_point('a'), B = g.sketch_index.get_sketch_point('b'), C = g.sketch_index.get_sketch_point('c');
+      out.sym = { status: st, midErr: +Math.hypot((A.x + B.x) / 2 - C.x, (A.y + B.y) / 2 - C.y).toFixed(4) };
+      // UI cycle: the Constrain button cycles axis→rect→square→axis (label tracks the mode).
+      out.btnExists = !!document.getElementById('b-constrain');
+      S.setMode('axis'); const labels = [];
+      for (let k = 0; k < 3; k++) { bConstrain.onclick(); labels.push(bConstrain.querySelector('span').textContent); }
+      out.cycleLabels = labels;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER constrain demo fail ' + e); }
+    window.__constrainResult = out;
+    window.__constrainDone = true;
+    console.log('§MODELLER constrain-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
