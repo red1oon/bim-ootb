@@ -35,7 +35,7 @@
         GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
         DB_PRODUCTS = (j.products || []).map(function (p) {
           return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
-                   cat: p.cat, group: p.group, bbox: bboxFromDims(p.w, p.d, p.h), w: p.w, d: p.d, h: p.h, fc: 12 };
+                   cat: p.cat, group: p.group, gh: p.gh, bbox: bboxFromDims(p.w, p.d, p.h), w: p.w, d: p.d, h: p.h, fc: 12 };
         });
         console.log(TAG + ' catalog loaded products=' + DB_PRODUCTS.length + ' groups=' + GROUPS.length + ' cheat=' + CHEAT.length);
         return true;
@@ -43,6 +43,15 @@
     : Promise.resolve(false);
   function ALL() { return CATALOG.concat(DB_PRODUCTS); }   // 3 legacy mesh-bearing + the DB box-proxy catalog
 
+  // actual extent of a position buffer (Float32 x,y,z) → [minx,maxx,miny,maxy,minz,maxz] for correct seating.
+  function bboxOf(p) {
+    let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity, e = Infinity, f = -Infinity;
+    for (let i = 0; i < p.length; i += 3) {
+      const x = p[i], y = p[i + 1], z = p[i + 2];
+      if (x < a) a = x; if (x > b) b = x; if (y < c) c = y; if (y > d) d = y; if (z < e) e = z; if (z > f) f = z;
+    }
+    return [a, b, c, d, e, f];
+  }
   function b64ToBuf(b64) {
     const bin = atob(b64); const u8 = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
@@ -89,10 +98,30 @@
     setLod(featureId, lod) { this._lod[featureId] = String(lod); return this; },
     lodFor(featureId, fallback) { return this._lod[featureId] || fallback || '200'; },
 
-    meshArrays(hash) {                          // LOD-300: real extracted mesh if present, else the box proxy (dims-only)
+    // ── LAZY real-mesh store (component_library.db geometry, extracted per curated product as `gh`). The
+    // geometries JSON is fetched ON DEMAND — only when a real mesh is first needed (an insert), never at boot
+    // (the box-proxy catalog already loaded). The SAME wiring scales to the full 220MB db via httpvfs later.
+    _geom: null, _geomP: null,
+    hasMesh(hash) { const c = this.get(hash); return !!(c && ((c.gh && this._geom && this._geom[c.gh]) || (c.v && c.f))); },
+    ensureMesh(hash) {                          // resolves once the real mesh for `hash` is available (or null)
+      const c = this.get(hash);
+      if (!c || !c.gh || (this._geom && this._geom[c.gh])) return Promise.resolve(this.hasMesh(hash));
+      if (!this._geomP) {
+        this._geomP = (typeof fetch === 'function')
+          ? fetch(new URL('dagevu_geometries.json', _base).href).then(r => r.json())
+              .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
+              .catch(e => { console.warn(TAG + ' geometries load failed ' + e); this._geom = {}; return {}; })
+          : Promise.resolve(this._geom = {});
+      }
+      return this._geomP.then(() => this.hasMesh(hash));
+    },
+
+    meshArrays(hash) {                          // LOD-300: real extracted mesh if loaded, else box proxy (dims-only)
       const c = this.get(hash); if (!c) throw new Error('no component ' + hash);
-      if (!c.v || !c.f) return boxArrays(c.bbox);
-      return { positions: new Float32Array(b64ToBuf(c.v)), indices: new Uint32Array(b64ToBuf(c.f)) };
+      const g = (c.gh && this._geom && this._geom[c.gh]) ? this._geom[c.gh] : (c.v && c.f ? c : null);
+      if (!g) return boxArrays(c.bbox);
+      const positions = new Float32Array(b64ToBuf(g.v)), indices = new Uint32Array(b64ToBuf(g.f));
+      return { positions, indices, bbox: bboxOf(positions) };   // real mesh carries its OWN bbox for correct seating
     },
 
     // THE FOLD for a GEOM_INSERT op-row -> a transferable mesh payload (same shape the worker returns).
@@ -101,7 +130,7 @@
       const c = this.get(P.hash); if (!c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
       const lod = this.lodFor(op.id, P.lod);
       const base = (lod === '300') ? this.meshArrays(P.hash) : boxArrays(c.bbox);
-      const positions = place(base.positions, P.placement, c.bbox);
+      const positions = place(base.positions, P.placement, base.bbox || c.bbox);   // real mesh seats on its own bbox
       return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices };
     },
 
