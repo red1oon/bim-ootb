@@ -35,12 +35,15 @@
   <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
+  <input id="dim-depth" type="number" step="0.1" min="0.1" value="3" title="Wall height / extrude depth (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-constrain" disabled style="display:none" title="Constraint intent the solver enforces on the sketch"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span>Axis</span></button>
   <button id="b-cut" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg><span>Cut</span></button>
   <button id="b-route" disabled title="Sweep a profile along a route (MEP run)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Route</span></button>
   <button id="b-run" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Sweep Run</span></button>
+  <input id="dim-prof" type="number" step="0.05" min="0.05" value="0.3" title="Sweep profile size w×h (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-fillet" disabled title="Round a selected solid's picked edges"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H7a4 4 0 0 1-4-4V3"/><path d="M21 3a14 14 0 0 0-14 14"/></svg><span>Fillet</span></button>
   <button id="b-applyfillet" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Apply</span></button>
+  <input id="dim-rad" type="number" step="0.05" min="0.01" value="0.1" title="Fillet / chamfer radius (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
@@ -157,6 +160,8 @@ bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group();
 // (auto H/V), then Extrude folds the solved profile into a solid via GEOM_EXTRUDE_POLY.
 const bSketch = document.getElementById('b-sketch');
 const bExtrude = document.getElementById('b-extrude');
+// Numeric dimension inputs (operability v3): typed wall height / sweep profile / fillet radius instead of hardcoded.
+const dimDepth = document.getElementById('dim-depth'), dimProf = document.getElementById('dim-prof'), dimRad = document.getElementById('dim-rad');
 // Lucide line icons (verbatim) for the Sketch button's two states — no unicode glyphs on the surface.
 const _ico = (p) => '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>';
 const SK_SKETCH = _ico('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>') + '<span>Sketch</span>';
@@ -216,12 +221,12 @@ function enterSketch() {
   sketching = true; window.Bonsai.sketch.reset();
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
-  bExtrude.style.display = ''; bExtrude.disabled = false; bSketch.innerHTML = SK_CANCEL;
+  bExtrude.style.display = ''; bExtrude.disabled = false; dimDepth.style.display = ''; bSketch.innerHTML = SK_CANCEL;
   bConstrain.style.display = ''; bConstrain.disabled = false; paintConstrain();
   sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
 }
 function exitSketch() {
-  sketching = false; bExtrude.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
+  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
 }
@@ -244,7 +249,7 @@ bExtrude.onclick = async () => {
   setStat('solving…');
   try {
     // leg 3: a sketched wall is committed as a FEATURE in the op-log (not a one-shot author).
-    const res = await window.Bonsai.sketch.commitExtrude(3, { color: 0x9fd6b4 });
+    const res = await window.Bonsai.sketch.commitExtrude(parseFloat(dimDepth.value) || 3, { color: 0x9fd6b4 });
     setStat('committed wall #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
     audioCue('commit'); exitSketch(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
@@ -325,11 +330,11 @@ function enterRoute() {
   routing = true; routePts = [];
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
-  bRun.style.display = ''; bRun.disabled = true; bRoute.innerHTML = RT_CANCEL;
+  bRun.style.display = ''; bRun.disabled = true; dimProf.style.display = ''; bRoute.innerHTML = RT_CANCEL;
   routeMarkers(); setStat('route: click ≥2 points on the grid to lay a run, then Sweep Run');
 }
 function exitRoute() {
-  routing = false; bRun.style.display = 'none'; bRoute.innerHTML = RT_ROUTE;
+  routing = false; bRun.style.display = 'none'; dimProf.style.display = 'none'; bRoute.innerHTML = RT_ROUTE;
   if (routeGroup) { while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
 }
@@ -351,7 +356,8 @@ bRun.onclick = async () => {
   if (routePts.length < 2) { setStat('need ≥2 route points'); return; }
   setStat('sweeping…');
   try {
-    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_SWEEP', parameters: { profile: { w: 0.3, h: 0.3 }, path: routePts.slice() } }, { color: 0xffb74f });
+    const pw = parseFloat(dimProf.value) || 0.3;
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_SWEEP', parameters: { profile: { w: pw, h: pw }, path: routePts.slice() } }, { color: 0xffb74f });
     setStat('swept run #' + res.id + '  verify=' + res.verify + '  tris=' + res.triangleCount); audioCue('commit'); exitRoute(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER route fail ' + err); }
 };
@@ -384,13 +390,13 @@ async function enterFillet() {
     const r = await window.Bonsai.queryEdges(selectedId);
     window._edgeList = r.edges || [];
     edgePicking = true; pickedEdges = new Set();
-    bApplyFillet.style.display = ''; bApplyFillet.disabled = true; bFillet.innerHTML = FIL_CANCEL;
+    bApplyFillet.style.display = ''; bApplyFillet.disabled = true; dimRad.style.display = ''; bFillet.innerHTML = FIL_CANCEL;
     edgeMarkers(window._edgeList);
     setStat('fillet: click edges (' + window._edgeList.length + ' available), then Apply');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§MODELLER fillet edges fail ' + e); }
 }
 function exitFillet() {
-  edgePicking = false; bApplyFillet.style.display = 'none'; bFillet.innerHTML = FIL_FILLET;
+  edgePicking = false; bApplyFillet.style.display = 'none'; dimRad.style.display = 'none'; bFillet.innerHTML = FIL_FILLET;
   if (edgeGroup) { while (edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]); }
 }
 bFillet.onclick = () => edgePicking ? exitFillet() : enterFillet();
@@ -413,7 +419,7 @@ bApplyFillet.onclick = async () => {
   setStat('filleting…');
   try {
     const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_FILLET',
-      parameters: { parent: selectedId, edges: Array.from(pickedEdges), radius: 0.1, kind: 'fillet' } }, { color: 0x9fd6b4 });
+      parameters: { parent: selectedId, edges: Array.from(pickedEdges), radius: parseFloat(dimRad.value) || 0.1, kind: 'fillet' } }, { color: 0x9fd6b4 });
     setStat('filleted #' + selectedId + '  verify=' + res.verify + '  tris=' + res.triangleCount);
     audioCue('commit'); exitFillet(); highlight(null); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER fillet fail ' + err); }
@@ -479,14 +485,32 @@ function gmPreviewLine(axis, coord) {
   gmPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: 0xffd24f }));
   scene.add(gmPreview);
 }
+// Live preview of the recompose: tint the walls a drag WOULD affect — blue = translate (moves rigidly),
+// orange = stretch (non-uniform scale) — so you SEE what'll happen before releasing. Pure (no commit).
+function gmClearTints() {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
+  g.children.forEach(m => { if (m.isMesh && m.material && m.material.emissive) m.material.emissive.setHex(0x000000); });
+}
+function gmTint(commands) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { t: 0, s: 0 };
+  gmClearTints(); let t = 0, s = 0;
+  commands.forEach(c => {
+    const m = g.children.find(o => o.isMesh && o.userData.featureId === c.featureId);
+    if (!m || !m.material || !m.material.emissive) return;
+    if (c.action === 'TRANSLATE') { m.material.emissive.setHex(0x1e66c8); t++; }   // blue = moves rigidly
+    else if (c.action === 'SCALE') { m.material.emissive.setHex(0xc8731e); s++; }   // orange = stretches
+  });
+  if (window.A && A.requestRender) A.requestRender();
+  return { t, s };
+}
 function enterGridMove() {
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
   gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false;   // grab gridlines, not the camera
-  setStat('move grid: drag a gridline — attached walls recompose');
+  setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch)');
 }
 function exitGridMove() {
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true;
-  if (gmPreview) { scene.remove(gmPreview); gmPreview = null; }
+  if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
 canvas.addEventListener('pointerdown', (e) => {
@@ -500,15 +524,22 @@ canvas.addEventListener('pointerdown', (e) => {
   if (gl) { _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')'); }
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (!gridMoving || !_dragGrid) return;
+  if (!gridMoving) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const hit = new THREE.Vector3();
   if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
+  if (!_dragGrid) {                                            // HOVER: highlight the grabbable gridline so it's discoverable
+    const gl = nearestGridline(hit.x, hit.y);
+    if (gl) gmPreviewLine(gl.axis, gl.coord); else if (gmPreview) { scene.remove(gmPreview); gmPreview = null; if (window.A && A.requestRender) A.requestRender(); }
+    return;
+  }
   const cur = _dragGrid.axis === 'x' ? hit.x : hit.y;
   _dragGrid.delta = cur - _dragGrid.downAt;
   gmPreviewLine(_dragGrid.axis, _dragGrid.coord + _dragGrid.delta);
+  try { const r2 = gmTint(window.Bonsai.gridmove.computeCommands(_dragGrid.id, _dragGrid.delta));   // PREVIEW which walls move/stretch
+    setStat('grid ' + _dragGrid.id + ' Δ' + _dragGrid.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch'); } catch (err) { }
 });
 async function commitGridMove() {
   if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }
@@ -686,7 +717,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
 const qs = new URLSearchParams(location.search);
 // PERSISTENCE: restore the saved signed model on boot so work survives a reload — unless a demo hook runs
 // (demos clear() and drive their own state). Folds the restored op-log to the scene + refreshes panels.
-if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|fillet|constrain|gridmove|sketch|insert|place|edit|ux)$/.test(k))) {
+if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim)$/.test(k))) {
   (async () => { try { const n = await window.Bonsai.oplog.restore(); if (n) { syncHistory(); setStat('restored ' + n + ' feature' + (n === 1 ? '' : 's') + ' from your last session'); } } catch (e) { console.warn('§MODELLER restore fail ' + e); } window.__restoreDone = true; })();
 }
 const q = qs.get('author');
@@ -1207,6 +1238,65 @@ if (qs.get('gridmove') === 'demo') {
     window.__gridmoveResult = out;
     window.__gridmoveDone = true;
     console.log('§MODELLER gridmove-done');
+  })();
+}
+// ?gmpreview=demo proves the Move-Grid PREVIEW (W-BONSAI-GMPREVIEW, the user's "move grid" feedback gap): while
+// DRAGGING (before release) the affected walls are TINTED — blue = translate, orange = stretch — so you see what
+// will happen; the grabbable line hover-highlights; nothing commits until release, then tints clear.
+if (qs.get('gmpreview') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4], ys: [0, 3], xlabels: ['A', 'B'], ylabels: ['1', '2'] }); window.Bonsai.grid.show(true);
+      O.clear();
+      const w1 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[3.7, 0], [4.3, 0], [4.3, 3], [3.7, 3]] }, depth: 3 } });   // ATTACH→translate
+      const w2 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } });          // EDGE→stretch
+      bGridMove.onclick(); out.entered = gridMoving;
+      const rect = canvas.getBoundingClientRect();
+      const toClient = (x, y) => { const v = new THREE.Vector3(x, y, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+      canvas.dispatchEvent(new PointerEvent('pointermove', { ...toClient(4, 1.5), bubbles: true }));   // hover → grabbable line highlights
+      out.hoverPreview = !!gmPreview;
+      const d = toClient(4, 1.5), m = toClient(5.5, 1.5);
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...d, bubbles: true })); out.grabbed = _dragGrid && _dragGrid.id;
+      canvas.dispatchEvent(new PointerEvent('pointermove', { ...m, bubbles: true })); out.dragDelta = _dragGrid ? +(_dragGrid.delta || 0).toFixed(2) : null;
+      const emis = id => { const o = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === id); return o ? '#' + o.material.emissive.getHexString() : null; };
+      out.tintW1 = emis(w1.id);                          // mid-drag PREVIEW (before release): blue 1e66c8 = translate
+      out.tintW2 = emis(w2.id);                          // orange c8731e = stretch
+      out.opsBeforeRelease = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;   // 0 — preview only, not committed
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, ...m, bubbles: true }));
+      await new Promise(r => setTimeout(r, 400));
+      out.opsAfterRelease = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;     // 1 — committed on release
+      out.tintsClearedW1 = emis(w1.id);                  // 000000 after commit
+      out.verify = (await O.verify()).ok;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER gmpreview demo fail ' + e); }
+    window.__gmpreviewResult = out; window.__gmpreviewDone = true;
+    console.log('§MODELLER gmpreview-done');
+  })();
+}
+// ?numdim=demo proves NUMERIC dimension input (W-BONSAI-NUMDIM): a typed wall height + sweep profile size drive
+// the geometry instead of the old hardcoded 3m / 0.3m. Inputs appear contextually with their mode.
+if (qs.get('numdim') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const size = () => { const g = window.Bonsai.group(); g.children.forEach(m => m.isMesh && m.geometry.computeBoundingBox()); const s = new THREE.Vector3(); new THREE.Box3().setFromObject(g).getSize(s); return { x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2) }; };
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4], ys: [0, 3], xlabels: ['A', 'B'], ylabels: ['1', '2'] });
+      O.clear();
+      bSketch.onclick(); out.depthShown = dimDepth.style.display !== 'none';                 // EXTRUDE: typed height
+      window.Bonsai.sketch.addPoint(0, 0); window.Bonsai.sketch.addPoint(4, 0); window.Bonsai.sketch.addPoint(4, 3); window.Bonsai.sketch.addPoint(0, 3);
+      dimDepth.value = '5'; await bExtrude.onclick();
+      out.wallZ = size().z;                                                                   // ≈ 5 (typed), not 3
+      O.clear(); { const g = window.Bonsai.group(); while (g.children.length) g.remove(g.children[0]); }   // fresh scene for phase 2
+      bRoute.onclick(); out.profShown = dimProf.style.display !== 'none';                     // SWEEP: typed profile
+      const rect = canvas.getBoundingClientRect();
+      const toClient = (x, y) => { const v = new THREE.Vector3(x, y, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+      [[0, 0], [3, 0]].forEach(([x, y]) => canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...toClient(x, y), bubbles: true })));
+      dimProf.value = '0.6'; await bRun.onclick();
+      out.sweepZ = size().z;                                                                  // ≈ 0.6 (typed), not 0.3
+      out.verify = (await O.verify()).ok;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER numdim demo fail ' + e); }
+    window.__numdimResult = out; window.__numdimDone = true;
+    console.log('§MODELLER numdim-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
