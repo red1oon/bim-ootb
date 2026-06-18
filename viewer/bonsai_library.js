@@ -22,6 +22,27 @@
       f:"AQAAAAAAAAADAAAAAgAAAAEAAAADAAAAAgAAAAMAAAAFAAAABAAAAAIAAAAFAAAABAAAAAUAAAAHAAAABgAAAAQAAAAHAAAABgAAAAcAAAAJAAAACAAAAAYAAAAJAAAACAAAAAkAAAALAAAACgAAAAgAAAALAAAACgAAAAsAAAANAAAADAAAAAoAAAANAAAADAAAAA0AAAAPAAAADgAAAAwAAAAPAAAADgAAAA8AAAAAAAAAAQAAAA4AAAAAAAAACwAAAAkAAAADAAAAAAAAAAsAAAADAAAACwAAAAAAAAAPAAAACwAAAA8AAAANAAAACQAAAAcAAAAFAAAAAwAAAAkAAAAFAAAAAgAAAAgAAAAKAAAAAgAAAAoAAAABAAAADgAAAAEAAAAKAAAADAAAAA4AAAAKAAAABAAAAAYAAAAIAAAABAAAAAgAAAACAAAAEQAAABAAAAATAAAAEgAAABEAAAATAAAAEgAAABMAAAAVAAAAFAAAABIAAAAVAAAAFAAAABUAAAAXAAAAFgAAABQAAAAXAAAAFgAAABcAAAAQAAAAEQAAABYAAAAQAAAAEwAAABAAAAAVAAAAEAAAABcAAAAVAAAAFAAAABEAAAASAAAAFAAAABYAAAARAAAAGQAAABgAAAAbAAAAGgAAABkAAAAbAAAAGgAAABsAAAAdAAAAHAAAABoAAAAdAAAAHAAAAB0AAAAfAAAAHgAAABwAAAAfAAAAHgAAAB8AAAAYAAAAGQAAAB4AAAAYAAAAGwAAABgAAAAdAAAAGAAAAB8AAAAdAAAAHAAAABkAAAAaAAAAHAAAAB4AAAAZAAAA" }
   ];
 
+  // ── Practical BOM-hierarchy catalog (EXTRACTED NON-INVENT from library/archive/BOM.db via
+  // scripts/extract_dagevu_catalog.py): 80 products in groups Structure/Openings/Furniture + an 18-pick cheat
+  // sheet. LOD-200 box proxies come from w/d/h dims (no 220MB/httpvfs to browse or insert); real meshes via
+  // component_library.db range-load are a later enhancement. Loaded async on module init (14KB, fast).
+  let DB_PRODUCTS = [], GROUPS = [], CHEAT = [];
+  function bboxFromDims(w, d, h) { return [-w / 2, w / 2, -d / 2, d / 2, 0, h]; }   // centred in x/y, base on ground
+  const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src
+    : (typeof location !== 'undefined' ? location.href : '');
+  const ready = (typeof fetch === 'function')
+    ? fetch(new URL('dagevu_catalog.json', _base).href).then(function (r) { return r.json(); }).then(function (j) {
+        GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
+        DB_PRODUCTS = (j.products || []).map(function (p) {
+          return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
+                   cat: p.cat, group: p.group, bbox: bboxFromDims(p.w, p.d, p.h), w: p.w, d: p.d, h: p.h, fc: 12 };
+        });
+        console.log(TAG + ' catalog loaded products=' + DB_PRODUCTS.length + ' groups=' + GROUPS.length + ' cheat=' + CHEAT.length);
+        return true;
+      }).catch(function (e) { console.warn(TAG + ' catalog load failed ' + e); return false; })
+    : Promise.resolve(false);
+  function ALL() { return CATALOG.concat(DB_PRODUCTS); }   // 3 legacy mesh-bearing + the DB box-proxy catalog
+
   function b64ToBuf(b64) {
     const bin = atob(b64); const u8 = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
@@ -54,13 +75,23 @@
 
   const Library = {
     _lod: {},                                   // featureId -> render-LOD override ('200'|'300')
-    catalog() { return CATALOG.map(c => ({ hash: c.hash, name: c.name, ifc_class: c.ifc_class, category: c.category, bbox: c.bbox, fc: c.fc })); },
-    get(hash) { return CATALOG.find(c => c.hash === hash) || null; },
+    ready() { return ready; },                  // resolves when the BOM catalog JSON has loaded
+    catalog() { return ALL().map(c => ({ hash: c.hash, name: c.name, ifc_class: c.ifc_class, category: c.category, group: c.group, bbox: c.bbox, fc: c.fc })); },
+    get(hash) { return ALL().find(c => c.hash === hash) || null; },
+    // BOM-catalog browse helpers (the filterable tree + the cheat sheet) — the panel renders over these.
+    groups() { return GROUPS; },                                          // [{key,label,categories:[{cat,label,ifc_class,count}]}]
+    productsIn(cat) { return DB_PRODUCTS.filter(p => p.cat === cat); },    // leaf products of a category
+    cheatsheet() { return CHEAT.map(id => this.get(id)).filter(Boolean); },// the popular quick-picks (resolved)
+    search(q) {                                                           // live filter over name + ifc_class + category
+      q = String(q || '').trim().toLowerCase(); if (!q) return [];
+      return ALL().filter(c => (c.name + ' ' + c.ifc_class + ' ' + (c.category || '')).toLowerCase().indexOf(q) !== -1).slice(0, 40);
+    },
     setLod(featureId, lod) { this._lod[featureId] = String(lod); return this; },
     lodFor(featureId, fallback) { return this._lod[featureId] || fallback || '200'; },
 
-    meshArrays(hash) {                          // LOD-300: decode the real extracted mesh
+    meshArrays(hash) {                          // LOD-300: real extracted mesh if present, else the box proxy (dims-only)
       const c = this.get(hash); if (!c) throw new Error('no component ' + hash);
+      if (!c.v || !c.f) return boxArrays(c.bbox);
       return { positions: new Float32Array(b64ToBuf(c.v)), indices: new Uint32Array(b64ToBuf(c.f)) };
     },
 
@@ -85,5 +116,5 @@
 
   window.Bonsai = window.Bonsai || {};
   window.Bonsai.library = Library;
-  console.log(TAG + ' module loaded components=' + CATALOG.length);
+  console.log(TAG + ' module loaded legacy=' + CATALOG.length + ' (BOM catalog loads async)');
 })();
