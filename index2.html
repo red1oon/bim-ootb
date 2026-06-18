@@ -120,7 +120,9 @@
   #hub .hub-card .db i { display:block; height:100%; border-radius:2px; }
   #hub .hub-import { max-width:920px; margin:0 auto 22px; }
   #hub .hub-drop { display:block; text-align:center; text-decoration:none; border:2px dashed rgba(79,195,247,.4);
-    border-radius:12px; padding:20px; color:#4fc3f7; font-weight:600; font-size:14px; }
+    border-radius:12px; padding:20px; color:#4fc3f7; font-weight:600; font-size:14px; cursor:pointer; transition:border-color .15s,background .15s; }
+  #hub .hub-drop:hover { border-color:rgba(79,195,247,.7); }
+  #hub .hub-drop.drag { border-color:#0277bd; background:rgba(2,119,189,.12); }
   @media (max-width:560px){ #hub .hub-grid { grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; } }
 </style>
 </head>
@@ -167,6 +169,9 @@
 <script src="viewer/locale_loader.js"></script>
 <!-- Bonsai BIM modeller host: window.Bonsai (preload streams occt-wasm bytes — does NOT spin the worker). -->
 <script src="viewer/bonsai_kernel.js"></script>
+<!-- Drop-own-IFC: real landing import pipeline (buildImportDBs) + the verbatim-extracted handler/helpers. -->
+<script src="viewer/import_db_builder.js?v=4"></script>
+<script src="import_own.js?v=1"></script>
 
 <script>
 'use strict';
@@ -480,8 +485,15 @@ var _hubBuilt=false;
 async function buildHubBody(){
   if(_hubBuilt) return; _hubBuilt=true;
   var b=document.getElementById('hub-body');
-  b.innerHTML='<div class="hub-import"><a class="hub-drop" href="viewer/viewer.html?import=1">&#8595; Drop / open your own IFC in the viewer</a></div>'+
+  b.innerHTML='<div class="hub-import">'+
+      '<div id="m-import-zone" class="hub-drop">&#8595; Drop an IFC / 3D file here &mdash; or tap to browse</div>'+
+      '<input type="file" id="m-import-file" accept=".ifc,.dae,.obj,.glb,.gltf,.3ds,.fbx,.stl" style="display:none">'+
+      '<div id="import-status" style="text-align:center;color:#cfe3ef;font-size:12px;margin-top:8px;min-height:16px"></div>'+
+      '<div style="display:none;margin:8px auto 0;max-width:400px;height:4px;background:#222;border-radius:2px;overflow:hidden">'+
+        '<div id="import-progress-bar" style="height:100%;width:0%;background:#0277bd;border-radius:2px;transition:width .3s"></div></div>'+
+    '</div>'+
     '<div id="hub-status" style="text-align:center;color:#667;font-size:12px;padding:20px">loading building manifest&hellip;</div>';
+  if(typeof wireImportZone==='function') wireImportZone(); else L('§HUB import_own.js not loaded');
   try {
     var data=await fetch('manifest.json').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
     if(!data||!Array.isArray(data.archetypes)) throw new Error('manifest missing archetypes');
