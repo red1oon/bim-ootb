@@ -54,6 +54,7 @@
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
+  <button id="b-connect" title="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span>Connect</span></button>
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
   <span>history</span>
@@ -84,6 +85,9 @@
 <script src="bonsai_outliner.js?v=1" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=1" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
+     identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
+<script src="connect_scene.js?v=1" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -231,6 +235,19 @@ const VOL_OFF = _ico('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line
 function paintSound() { bSound.innerHTML = _soundOn ? VOL_ON : VOL_OFF; bSound.classList.toggle('on', _soundOn); }
 bSound.onclick = () => { _soundOn = !_soundOn; localStorage.setItem('bonsai_sound', _soundOn ? 'on' : 'off'); paintSound(); if (_soundOn) audioCue('tick'); };
 paintSound();
+// Connect Scene toggle (CONNECT_SCENE_SPEC.md P0): register this surface as 'modeller' on the broker, then
+// the button gates the opt-in shared-context mode. On = a lit "connected surfaces" chip; off = independent.
+const bConnect = document.getElementById('b-connect');
+if (window.Connect && bConnect) {
+  window.Connect.register('modeller');
+  window.Connect.onState((on) => { bConnect.classList.toggle('on', on); bConnect.querySelector('span').textContent = on ? 'Connected' : 'Connect'; });
+  bConnect.onclick = () => {
+    const on = window.Connect.toggle();
+    setStat(on ? 'Connect Scene ON — selection/timeline now shared with Viewer & ERP' : 'Connect Scene off — surfaces independent');
+    if (_soundOn) audioCue('tick');
+    console.log('§CONNECT-MODELLER toggle on=' + on);
+  };
+} else if (bConnect) { bConnect.disabled = true; }
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // z=0 sketch plane
 const raycaster = new THREE.Raycaster();
 let sketching = false, sketchGroup = null, savedCam = null;

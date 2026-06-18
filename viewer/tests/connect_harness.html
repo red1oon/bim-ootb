@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>connect harness (modeller)</title>
+<script src="../connect_scene.js"></script></head>
+<body>
+<!-- W-CONNECT-BUS host: surface 'modeller' hosting an embedded 'viewer' peer (iframe). The witness drives
+     register/enable/ping/disable on window.Connect here and asserts the round-trip + ACK + toggle gating. -->
+<iframe id="peer" src="connect_peer.html" style="width:160px;height:90px;border:0"></iframe>
+<script>
+  window.Connect.register('modeller');
+  window.__connectReady = false;
+  // wait for the peer iframe to load + register before the witness runs.
+  document.getElementById('peer').addEventListener('load', function () {
+    setTimeout(function () { window.__connectReady = true; console.log('§CONNECT-HOST modeller ready peerLoaded=1'); }, 50);
+  });
+</script>
+</body></html>
