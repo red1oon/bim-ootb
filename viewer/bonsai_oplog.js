@@ -70,9 +70,11 @@
       // deterministic so the optimistic mesh == the eventual chain-fold mesh (no flicker); any later scrub/cut
       // reconciles to the authoritative foldChainToScene. Full incremental regen = the op_hash-cache card.
       let r;
-      const isCut = op.op_type === 'GEOM_CUT' || (op.parameters && op.parameters.parent != null);
-      if (isCut) {
-        r = await this._foldUpto();                              // cut modifies a referenced parent → authoritative re-fold
+      // LEAF ops (extrude/sweep) build a fresh solid → O(1) optimistic append. Everything else (GEOM_CUT,
+      // GEOM_FILLET, GEOM_GRID_MOVE) MUTATES prior solids in the fold → must take the authoritative re-fold.
+      const LEAF = op.op_type === 'GEOM_EXTRUDE' || op.op_type === 'GEOM_EXTRUDE_POLY' || op.op_type === 'GEOM_SWEEP';
+      if (!LEAF) {
+        r = await this._foldUpto();                              // mutates a referenced solid → authoritative re-fold
       } else {
         const ad = await window.Bonsai.author({ id: rowId, op_type: op.op_type, parameters: op.parameters }, { color: opts && opts.color, featureId: rowId });
         this._cursor = this.length;                              // history cursor advances to the new tip

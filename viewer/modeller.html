@@ -32,9 +32,15 @@
   <button id="b-wall" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Wall</span></button>
   <button id="b-open" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Opening</span></button>
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
+  <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
+  <button id="b-constrain" disabled style="display:none" title="Constraint intent the solver enforces on the sketch"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span>Axis</span></button>
   <button id="b-cut" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg><span>Cut</span></button>
+  <button id="b-route" disabled title="Sweep a profile along a route (MEP run)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Route</span></button>
+  <button id="b-run" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Sweep Run</span></button>
+  <button id="b-fillet" disabled title="Round a selected solid's picked edges"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H7a4 4 0 0 1-4-4V3"/><path d="M21 3a14 14 0 0 0-14 14"/></svg><span>Fillet</span></button>
+  <button id="b-applyfillet" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Apply</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
@@ -61,6 +67,9 @@
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
+<!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
+<script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
+<script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=1" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 
@@ -191,15 +200,21 @@ function sketchMarkers() {
     sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
   }
 }
+// Constraint-intent cycle (the planegcs shoulders): Axis (per-edge H/V) → Rect (∥+⊥) → Square (+ equal sides).
+const bConstrain = document.getElementById('b-constrain');
+const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square' };
+function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.querySelector('span').textContent = CON_LABEL[m] || m; bConstrain.classList.toggle('on', m !== 'axis'); }
+bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); };
 function enterSketch() {
   sketching = true; window.Bonsai.sketch.reset();
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
   bExtrude.style.display = ''; bExtrude.disabled = false; bSketch.innerHTML = SK_CANCEL;
+  bConstrain.style.display = ''; bConstrain.disabled = false; paintConstrain();
   sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
 }
 function exitSketch() {
-  sketching = false; bExtrude.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
+  sketching = false; bExtrude.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
 }
@@ -247,7 +262,7 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook
   highlight(m || null); return selectedId;
 };
 canvas.addEventListener('pointerdown', (e) => {
-  if (sketching || e.button !== 0 || e.shiftKey) return;
+  if (sketching || routing || edgePicking || gridMoving || e.button !== 0 || e.shiftKey) return;
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -276,6 +291,126 @@ bCut.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER cut fail ' + err); }
 };
 
+// ── ROUTE MODE (sweep a profile along a path = MEP run) ──────────────────────────────────────────
+// §OOTB authoring mode 3 (RouteWalker → MEP sweep). Click points on the ground plane to lay a route;
+// Sweep Run folds the SIGNED op-log GEOM_SWEEP (occt kernel.pipe) into a duct/pipe solid along the path.
+// The worker orients the rectangle profile perpendicular to the route's start tangent (so a horizontal
+// ground route sweeps correctly), centred on the first point. One route = one signed op-row.
+const bRoute = document.getElementById('b-route');
+const bRun = document.getElementById('b-run');
+const RT_ROUTE = _ico('<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>') + '<span>Route</span>';
+const RT_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let routing = false, routePts = [], routeGroup = null;
+function routeMarkers() {
+  if (!routeGroup) { routeGroup = new THREE.Group(); routeGroup.name = 'RoutePreview'; scene.add(routeGroup); }
+  while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]);
+  routePts.forEach(p => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffb74f }));
+    m.position.set(p[0], p[1], 0.01); routeGroup.add(m);
+  });
+  if (routePts.length >= 2) {
+    const line = routePts.map(p => new THREE.Vector3(p[0], p[1], 0.01));   // open polyline (a route, not a loop)
+    routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(line), new THREE.LineBasicMaterial({ color: 0xffb74f })));
+  }
+}
+function enterRoute() {
+  routing = true; routePts = [];
+  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
+  camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
+  bRun.style.display = ''; bRun.disabled = true; bRoute.innerHTML = RT_CANCEL;
+  routeMarkers(); setStat('route: click ≥2 points on the grid to lay a run, then Sweep Run');
+}
+function exitRoute() {
+  routing = false; bRun.style.display = 'none'; bRoute.innerHTML = RT_ROUTE;
+  if (routeGroup) { while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]); }
+  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
+}
+bRoute.onclick = () => routing ? exitRoute() : enterRoute();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!routing || e.button !== 0 || e.shiftKey) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(GROUND, hit)) {
+    const s = window.Bonsai.grid.snap(hit.x, hit.y);   // same 2D correlation as sketch — snap to gridlines
+    routePts.push([s.x, s.y, 0]); routeMarkers();
+    bRun.disabled = routePts.length < 2;
+    setStat('route: ' + routePts.length + ' points' + (s.ref && (s.snappedX || s.snappedY) ? '  @' + s.ref : ''));
+  }
+});
+bRun.onclick = async () => {
+  if (routePts.length < 2) { setStat('need ≥2 route points'); return; }
+  setStat('sweeping…');
+  try {
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_SWEEP', parameters: { profile: { w: 0.3, h: 0.3 }, path: routePts.slice() } }, { color: 0xffb74f });
+    setStat('swept run #' + res.id + '  verify=' + res.verify + '  tris=' + res.triangleCount); audioCue('commit'); exitRoute(); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER route fail ' + err); }
+};
+
+// ── FILLET / CHAMFER (edge-pick) ─────────────────────────────────────────────────────────────────
+// occt fillet/chamfer shoulders. The NEW input device = picking an EDGE of a solid in 3D: the worker
+// reports the selected feature's edge midpoints (canonical getSubShapes order); we render pickable markers,
+// the user clicks edges, and Apply commits a signed GEOM_FILLET (parent + edge indices + radius). Edge
+// indices are stable across the deterministic re-fold, so the rounded result replays + verifies like any op.
+const bFillet = document.getElementById('b-fillet');
+const bApplyFillet = document.getElementById('b-applyfillet');
+const FIL_FILLET = _ico('<path d="M21 21H7a4 4 0 0 1-4-4V3"/><path d="M21 3a14 14 0 0 0-14 14"/>') + '<span>Fillet</span>';
+const FIL_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let edgePicking = false, edgeGroup = null, pickedEdges = new Set();
+function edgeMarkers(edges) {
+  if (!edgeGroup) { edgeGroup = new THREE.Group(); edgeGroup.name = 'EdgePick'; scene.add(edgeGroup); }
+  while (edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]);
+  edges.forEach(ed => {
+    const on = pickedEdges.has(ed.i);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12),
+      new THREE.MeshBasicMaterial({ color: on ? 0xffd24f : 0x6fd6ff }));
+    m.position.set(ed.mid[0], ed.mid[1], ed.mid[2]); m.userData.edgeIndex = ed.i; edgeGroup.add(m);
+  });
+  edgeGroup.updateMatrixWorld(true);   // markers must have a fresh world matrix for raycast hit-testing on the same tick
+}
+async function enterFillet() {
+  if (selectedId == null) { setStat('select a solid first, then Fillet'); return; }
+  setStat('reading edges…');
+  try {
+    const r = await window.Bonsai.queryEdges(selectedId);
+    window._edgeList = r.edges || [];
+    edgePicking = true; pickedEdges = new Set();
+    bApplyFillet.style.display = ''; bApplyFillet.disabled = true; bFillet.innerHTML = FIL_CANCEL;
+    edgeMarkers(window._edgeList);
+    setStat('fillet: click edges (' + window._edgeList.length + ' available), then Apply');
+  } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§MODELLER fillet edges fail ' + e); }
+}
+function exitFillet() {
+  edgePicking = false; bApplyFillet.style.display = 'none'; bFillet.innerHTML = FIL_FILLET;
+  if (edgeGroup) { while (edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]); }
+}
+bFillet.onclick = () => edgePicking ? exitFillet() : enterFillet();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!edgePicking || e.button !== 0 || e.shiftKey || !edgeGroup) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(edgeGroup.children, false)[0];
+  if (hit) {
+    const i = hit.object.userData.edgeIndex;
+    if (pickedEdges.has(i)) pickedEdges.delete(i); else pickedEdges.add(i);
+    edgeMarkers(window._edgeList);
+    bApplyFillet.disabled = pickedEdges.size === 0;
+    setStat('fillet: ' + pickedEdges.size + ' edge(s) selected');
+  }
+});
+bApplyFillet.onclick = async () => {
+  if (pickedEdges.size === 0) { setStat('pick at least one edge'); return; }
+  setStat('filleting…');
+  try {
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_FILLET',
+      parameters: { parent: selectedId, edges: Array.from(pickedEdges), radius: 0.1, kind: 'fillet' } }, { color: 0x9fd6b4 });
+    setStat('filleted #' + selectedId + '  verify=' + res.verify + '  tris=' + res.triangleCount);
+    audioCue('commit'); exitFillet(); highlight(null); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER fillet fail ' + err); }
+};
+
 // ── HISTORY SCRUBBER ────────────────────────────────────────────────────────────────────────────
 const slider = document.getElementById('hist-slider'), histLabel = document.getElementById('hist-label');
 function syncHistory() {
@@ -298,6 +433,70 @@ bGrid.onclick = () => {
   setStat(on ? 'grid ON — sketch clicks snap to gridlines (A-1, B-2…)' : 'grid off');
 };
 
+// ── GRID MOVE (gridline-drag recompose) ───────────────────────────────────────────────────────────
+// The §S270 parametric-grid payoff: drag a gridline and the attached walls RECOMPOSE (ATTACH→translate,
+// SPAN/EDGE→stretch) via the pure GridKinematicEngine, committed as ONE signed GEOM_GRID_MOVE op.
+const bGridMove = document.getElementById('b-gridmove');
+const GM_MOVE = _ico('<path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/>') + '<span>Move Grid</span>';
+const GM_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let gridMoving = false, _dragGrid = null, gmPreview = null;
+function nearestGridline(x, y) {
+  const G = window.Bonsai.grid; let best = null, bd = 0.6;
+  G.xs.forEach((gx, i) => { const d = Math.abs(x - gx); if (d < bd) { bd = d; best = { id: 'gx' + i, axis: 'x', coord: gx }; } });
+  G.ys.forEach((gy, j) => { const d = Math.abs(y - gy); if (d < bd) { bd = d; best = { id: 'gy' + j, axis: 'y', coord: gy }; } });
+  return best;
+}
+function gmPreviewLine(axis, coord) {
+  if (gmPreview) { scene.remove(gmPreview); gmPreview = null; }
+  const G = window.Bonsai.grid;
+  const a = axis === 'x' ? [new THREE.Vector3(coord, G.ys[0], 0.03), new THREE.Vector3(coord, G.ys[G.ys.length - 1], 0.03)]
+                         : [new THREE.Vector3(G.xs[0], coord, 0.03), new THREE.Vector3(G.xs[G.xs.length - 1], coord, 0.03)];
+  gmPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: 0xffd24f }));
+  scene.add(gmPreview);
+}
+function enterGridMove() {
+  if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
+  gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false;   // grab gridlines, not the camera
+  setStat('move grid: drag a gridline — attached walls recompose');
+}
+function exitGridMove() {
+  gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true;
+  if (gmPreview) { scene.remove(gmPreview); gmPreview = null; }
+}
+bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!gridMoving || e.button !== 0 || e.shiftKey) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
+  const gl = nearestGridline(hit.x, hit.y);
+  if (gl) { _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')'); }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!gridMoving || !_dragGrid) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
+  const cur = _dragGrid.axis === 'x' ? hit.x : hit.y;
+  _dragGrid.delta = cur - _dragGrid.downAt;
+  gmPreviewLine(_dragGrid.axis, _dragGrid.coord + _dragGrid.delta);
+});
+async function commitGridMove() {
+  if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }
+  const { id, delta } = _dragGrid;
+  setStat('recomposing…');
+  try {
+    const res = await window.Bonsai.gridmove.commit(id, delta);
+    setStat('grid ' + id + ' moved ' + delta.toFixed(2) + '  recomposed=' + res.commands.length + '  verify=' + res.verify);
+    audioCue('commit'); exitGridMove(); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
+}
+canvas.addEventListener('pointerup', () => { if (gridMoving && _dragGrid) commitGridMove(); });
+
 // ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
 const bIfc = document.getElementById('b-ifc');
 bIfc.onclick = async () => {
@@ -309,8 +508,20 @@ bIfc.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = false;
-window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = false;
+window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
+// Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
+// NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
+// Viewer's job after handoff (modeller stays permanently separate from the Viewer — separation of concern).
+window.Bonsai.outliner.addCategory({ key: 'routes', label: 'Routes', match: op => op.op_type === 'GEOM_SWEEP',
+  node: op => { const p = op.parameters.path; const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt(p[0][0], p[0][1]) : null;
+    return { id: op.id, label: 'Run', sub: (a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) + ' ·' + p.length + 'pt' : '#' + op.id + ' ·' + (p ? p.length : 0) + 'pt' }; } });
+window.Bonsai.outliner.addCategory({ key: 'fillets', label: 'Fillets', match: op => op.op_type === 'GEOM_FILLET',
+  node: op => ({ id: op.parameters.parent, label: (op.parameters.kind === 'chamfer' ? 'Chamfer' : 'Round'),
+    sub: '⮡ Wall ' + op.parameters.parent + ' ·' + (op.parameters.edges ? op.parameters.edges.length : 0) + 'e' }) });
+window.Bonsai.outliner.addCategory({ key: 'gridmoves', label: 'Grid Moves', match: op => op.op_type === 'GEOM_GRID_MOVE',
+  node: op => ({ id: op.id, label: 'Move ' + op.parameters.gridId,
+    sub: (op.parameters.delta > 0 ? '+' : '') + (+op.parameters.delta).toFixed(2) + ' ·' + (op.parameters.commands ? op.parameters.commands.length : 0) + ' recomp' }) });
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -516,6 +727,193 @@ if (qs.get('sweep') === 'demo') {
     window.__sweepResult = out;
     window.__sweepDone = true;
     console.log('§MODELLER sweep-done');
+  })();
+}
+// ?route=demo proves the SWEEP toolbar wiring + interactive path-pick (W-BONSAI-ROUTE): enter route mode via the
+// Route button, lay an L-shaped run by SIMULATING ground clicks (the same pointerdown handler the user hits), Sweep
+// Run commits a signed GEOM_SWEEP, the solid spans both runs of the path, the Outliner shows it under Routes, and
+// scrubbing replays it deterministically. Drives the REAL UI handlers — not the engine API directly.
+if (qs.get('route') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 3, 6], ys: [0, 2], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.oplog.clear();
+      bRoute.onclick();                                         // enter route mode (button)
+      out.routing = routing; out.runDisabledAtEntry = bRun.disabled;
+      const rect = canvas.getBoundingClientRect();
+      // ground-plane points for an L route A-1 → B-1 → B-2; project to screen so the REAL pointerdown handler runs.
+      const groundToClient = (x, y) => {
+        const v = new THREE.Vector3(x, y, 0).project(camera);
+        return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height };
+      };
+      for (const [gx, gy] of [[0.1, 0.05], [2.95, 0.08], [3.05, 1.95]]) {
+        const c = groundToClient(gx, gy);
+        canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: c.clientX, clientY: c.clientY, bubbles: true }));
+      }
+      out.points = routePts.length; out.runEnabled = !bRun.disabled;
+      await bRun.onclick();                                     // Sweep Run (button) → signed GEOM_SWEEP
+      out.exitedRoute = !routing;
+      const ops = window.Bonsai.oplog._geomOps();
+      out.sweepOps = ops.filter(o => o.op_type === 'GEOM_SWEEP').length;
+      out.signed = window.Bonsai.oplog.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await window.Bonsai.oplog.verify()).ok;
+      // bounding box of the authored run must span both legs of the L (x≈0→3, y≈0→2).
+      const g = window.Bonsai.group();
+      const box = new THREE.Box3().setFromObject(g); const s = new THREE.Vector3(); box.getSize(s);
+      out.size = { x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2) };
+      out.tris = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      // Outliner reflects the run under a Routes category.
+      const rows = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.routeRow = rows.find(r => /Run/.test(r)) || null;
+      const hasRoutesGrp = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'routes');
+      out.routesCategory = hasRoutesGrp;
+      out.scrub0 = (await window.Bonsai.oplog.scrubTo(0)).triangleCount;
+      out.scrub1 = (await window.Bonsai.oplog.scrubTo(1)).triangleCount;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER route demo fail ' + e); }
+    window.__routeResult = out;
+    window.__routeDone = true;
+    console.log('§MODELLER route-done');
+  })();
+}
+// ?fillet=demo proves the occt fillet/chamfer shoulders + EDGE-PICK UI (W-BONSAI-FILLET): commit a wall, select
+// it, enter Fillet mode (worker reports the solid's edges), SIMULATE a click on the longest (vertical) edge's
+// marker via the real pointerdown handler, Apply → signed GEOM_FILLET rounds that edge (tris grow), the Outliner
+// shows a Fillets category, scrub replays deterministically; then a kind:'chamfer' op proves the chamfer shoulder.
+if (qs.get('fillet') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.4], [0, 0.4]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.afterWall = wall.triangleCount;
+      window.Bonsai.select(wall.id);
+      await bFillet.onclick();                                   // enter Fillet mode → worker reports edges
+      out.edgeCount = (window._edgeList || []).length;          // a box-like solid has 12 edges
+      out.edgePicking = edgePicking;
+      // pick the LONGEST edge (a vertical corner, length 3) — a safe, clearly-roundable edge.
+      const longest = (window._edgeList || []).slice().sort((a, b) => b.len - a.len)[0];
+      out.longestLen = longest ? longest.len : null;
+      const rect = canvas.getBoundingClientRect();
+      const v = new THREE.Vector3(longest.mid[0], longest.mid[1], longest.mid[2]).project(camera);
+      const cx = rect.left + (v.x + 1) / 2 * rect.width, cy = rect.top + (1 - v.y) / 2 * rect.height;
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: cx, clientY: cy, bubbles: true }));
+      out.pickedCount = pickedEdges.size; out.applyEnabled = !bApplyFillet.disabled;
+      await bApplyFillet.onclick();                              // Apply → signed GEOM_FILLET
+      out.exited = !edgePicking;
+      const g = window.Bonsai.group();
+      out.afterFillet = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await O.verify()).ok;
+      const rows = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.filletRow = rows.find(r => /Round/.test(r)) || null;
+      out.filletsCategory = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'fillets');
+      out.scrub1 = (await O.scrubTo(1)).triangleCount;          // plain wall (fillet gone)
+      out.scrub2 = (await O.scrubTo(2)).triangleCount;          // filleted (back)
+      // CHAMFER shoulder via the same op with kind:'chamfer' — on a FRESH second wall's edge (the first wall's
+      // longest edge was consumed by the fillet, so chamfering it would hit changed topology). Proves both edge-ops.
+      await O.scrubTo(O.length);                                 // restore the full fold before adding wall2
+      const wall2 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[6, 0], [10, 0], [10, 0.4], [6, 0.4]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      const e2 = (await window.Bonsai.queryEdges(wall2.id)).edges.slice().sort((a, b) => b.len - a.len)[0];
+      const cham = await O.commit({ op_type: 'GEOM_FILLET', parameters: { parent: wall2.id, edges: [e2.i], radius: 0.1, kind: 'chamfer' } }, { color: 0x9fd6b4 });
+      out.chamferTris = cham.triangleCount; out.chamferVerify = cham.verify;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER fillet demo fail ' + e); }
+    window.__filletResult = out;
+    window.__filletDone = true;
+    console.log('§MODELLER fillet-done');
+  })();
+}
+// ?constrain=demo proves the richer planegcs shoulders (W-BONSAI-CONSTRAIN): a deliberately non-rectangular quad
+// is cleaned to a true rectangle by parallel+perpendicular_ll (mode 'rect'), to a square by + equal_length (mode
+// 'square'), two points are made mirror-symmetric by p2p_symmetric_ppp, and the Constrain toolbar button cycles
+// the intent. We previously wired only 2 of ~60 constraints (horizontal_pp/vertical_pp); these add 4 more.
+if (qs.get('constrain') === 'demo') {
+  (async () => {
+    const out = {}; const S = window.Bonsai.sketch;
+    const NOISY = [[0, 0], [4, 0.6], [3.0, 3.0], [0.4, 2.5]];   // opposite sides NOT parallel, corners NOT 90°
+    const quadMetrics = (pts) => {
+      const v = (a, b) => [b[0] - a[0], b[1] - a[1]];
+      const ang = (u, w) => { const d = u[0] * w[0] + u[1] * w[1]; const m = Math.hypot(u[0], u[1]) * Math.hypot(w[0], w[1]); return Math.acos(Math.max(-1, Math.min(1, d / (m || 1)))) * 180 / Math.PI; };
+      const e = [v(pts[0], pts[1]), v(pts[1], pts[2]), v(pts[2], pts[3]), v(pts[3], pts[0])];
+      let maxCorner = 0; for (let i = 0; i < 4; i++) maxCorner = Math.max(maxCorner, Math.abs(90 - ang(e[i], e[(i + 1) % 4])));
+      const len = e.map(x => Math.hypot(x[0], x[1]));
+      return { maxCorner: +maxCorner.toFixed(2), par: +Math.abs(180 - ang(e[0], e[2])).toFixed(2), sideRatio: +(Math.max(len[0], len[1]) / Math.min(len[0], len[1])).toFixed(3) };
+    };
+    const solveMode = async (m) => { S.reset(); S.setMode(m); NOISY.forEach(p => S.addPoint(p[0], p[1])); const r = await S.solve(); return { status: r.status, cons: r.constraints, m: quadMetrics(r.points.map(p => [p.x, p.y])) }; };
+    try {
+      out.input = quadMetrics(NOISY);
+      out.axis = await solveMode('axis');
+      out.rect = await solveMode('rect');
+      out.square = await solveMode('square');
+      // SYMMETRY shoulder (p2p_symmetric_ppp): a,b made mirror-symmetric about a fixed centre c ⇒ c = midpoint(a,b).
+      const g = await S._ensure(); g.clear_data();
+      g.push_primitive({ id: 'c', type: 'point', x: 1, y: 1, fixed: true });
+      g.push_primitive({ id: 'a', type: 'point', x: 0.1, y: 0.2, fixed: false });
+      g.push_primitive({ id: 'b', type: 'point', x: 2.3, y: 1.6, fixed: false });
+      g.push_primitive({ id: 'sym', type: 'p2p_symmetric_ppp', p1_id: 'a', p2_id: 'b', p_id: 'c' });
+      const st = g.solve(); g.apply_solution();
+      const A = g.sketch_index.get_sketch_point('a'), B = g.sketch_index.get_sketch_point('b'), C = g.sketch_index.get_sketch_point('c');
+      out.sym = { status: st, midErr: +Math.hypot((A.x + B.x) / 2 - C.x, (A.y + B.y) / 2 - C.y).toFixed(4) };
+      // UI cycle: the Constrain button cycles axis→rect→square→axis (label tracks the mode).
+      out.btnExists = !!document.getElementById('b-constrain');
+      S.setMode('axis'); const labels = [];
+      for (let k = 0; k < 3; k++) { bConstrain.onclick(); labels.push(bConstrain.querySelector('span').textContent); }
+      out.cycleLabels = labels;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER constrain demo fail ' + e); }
+    window.__constrainResult = out;
+    window.__constrainDone = true;
+    console.log('§MODELLER constrain-done');
+  })();
+}
+// ?gridmove=demo proves the §S270 grid-kinematics shoulder (W-BONSAI-GRIDMOVE): a thin wall ATTACHED to grid B
+// and a wide wall whose right EDGE sits on grid B. Entering Move-Grid mode and DRAGGING grid B (real pointer
+// down→move→up) commits ONE signed GEOM_GRID_MOVE: the attached wall TRANSLATES and the edge wall STRETCHES via
+// the pure GridKinematicEngine — the scene's max-x grows, the chain verifies+signs, the Outliner shows a Grid
+// Moves row, and scrubbing back undoes the recompose deterministically. Drives the real drag handlers.
+if (qs.get('gridmove') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4], ys: [0, 3], xlabels: ['A', 'B'], ylabels: ['1', '2'] });
+      window.Bonsai.grid.show(true);
+      const O = window.Bonsai.oplog; O.clear();
+      // Wall1: centred ON grid B (x=4), half-extent 0.3 (between EDGE_TOL 0.1 and ATTACH_TOL 0.5) → ATTACH → translate.
+      // Wall2: wide x[0,4], right edge on grid B → EDGE_RIGHT → stretch.
+      const w1 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[3.7, 0], [4.3, 0], [4.3, 3], [3.7, 3]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      const w2 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.w1 = w1.id; out.w2 = w2.id;
+      const featBox = () => { const o = {}; window.Bonsai.group().children.filter(m => m.isMesh).forEach(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; o[m.userData.featureId] = { x: [+b.min.x.toFixed(2), +b.max.x.toFixed(2)], z: [+b.min.z.toFixed(2), +b.max.z.toFixed(2)] }; }); return o; };
+      out.before = featBox();
+      const box0 = new THREE.Box3().setFromObject(window.Bonsai.group()); out.maxXBefore = +box0.max.x.toFixed(2);
+      // peek the engine's commands for the drag (TRANSLATE for the attached wall, SCALE for the edge wall).
+      out.commands = window.Bonsai.gridmove.computeCommands('gx1', 1.5).map(c => c.action);
+      // DRIVE THE REAL DRAG: enter mode, pointer down on grid B, move +1.5 in x, release.
+      bGridMove.onclick();                                       // enter Move-Grid mode
+      out.entered = gridMoving;
+      const rect = canvas.getBoundingClientRect();
+      const toClient = (x, y) => { const v = new THREE.Vector3(x, y, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+      const down = toClient(4, 1.5), move = toClient(5.5, 1.5);
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: down.clientX, clientY: down.clientY, bubbles: true }));
+      out.grabbed = _dragGrid && _dragGrid.id;
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: move.clientX, clientY: move.clientY, bubbles: true }));
+      out.dragDelta = _dragGrid ? +(_dragGrid.delta || 0).toFixed(2) : null;
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: move.clientX, clientY: move.clientY, bubbles: true }));
+      await new Promise(r => setTimeout(r, 400));                // let the async commitGridMove + fold settle
+      out.exited = !gridMoving;
+      out.after = featBox();   // per-feature x/z bbox after the recompose (verify Wall1 translated, Wall2 x-stretched, z intact)
+      const box1 = new THREE.Box3().setFromObject(window.Bonsai.group()); out.maxXAfter = +box1.max.x.toFixed(2);
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await O.verify()).ok;
+      out.gridOps = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;
+      const rows = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.moveRow = rows.find(r => /Move gx1/.test(r)) || null;
+      out.gridMovesCategory = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'gridmoves');
+      await O.scrubTo(2); out.scrubBack = +(new THREE.Box3().setFromObject(window.Bonsai.group()).max.x).toFixed(2);   // before the move
+      await O.scrubTo(3); out.scrubFwd = +(new THREE.Box3().setFromObject(window.Bonsai.group()).max.x).toFixed(2);    // after the move
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER gridmove demo fail ' + e); }
+    window.__gridmoveResult = out;
+    window.__gridmoveDone = true;
+    console.log('§MODELLER gridmove-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).

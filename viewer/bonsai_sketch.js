@@ -12,6 +12,10 @@
     points: [],          // [{ id, x, y }] in sketch-plane (XY) coords, in click order
     _gcs: null,
     AXIS_TOL: 0.35,      // |dy| < AXIS_TOL*|dx| ⇒ treat edge as horizontal (and vice-versa)
+    mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides)
+    MODES: ['axis', 'rect', 'square'],
+    setMode(m) { if (this.MODES.includes(m)) this.mode = m; return this.mode; },
+    cycleMode() { this.mode = this.MODES[(this.MODES.indexOf(this.mode) + 1) % this.MODES.length]; return this.mode; },
 
     async _ensure() {
       if (!this._gcs) {
@@ -38,19 +42,40 @@
       return cons;
     },
 
+    // Richer constraints (the planegcs shoulders): treat each ring edge as a LINE primitive, then express
+    // GEOMETRIC INTENT over those lines — opposite edges PARALLEL, adjacent edges PERPENDICULAR (mode 'rect'),
+    // plus EQUAL_LENGTH of two adjacent edges (mode 'square'). Only the H/V mode used point-pair constraints;
+    // these use the line + parallel/perpendicular_ll/equal_length family (we previously wired just 2 of ~60).
+    // Returns { lines, constraints } so solve() can push both. Falls back to axis for non-quad rings.
+    _buildConstraints() {
+      const n = this.points.length;
+      if (this.mode === 'axis' || n !== 4) return { lines: [], constraints: this._autoConstraints() };
+      const lines = [];
+      for (let i = 0; i < n; i++) lines.push({ id: 'L' + i, type: 'line', p1_id: this.points[i].id, p2_id: this.points[(i + 1) % n].id });
+      const cons = [
+        { id: 'par02', type: 'parallel', l1_id: 'L0', l2_id: 'L2' },        // opposite edges parallel
+        { id: 'par13', type: 'parallel', l1_id: 'L1', l2_id: 'L3' },
+        { id: 'perp01', type: 'perpendicular_ll', l1_id: 'L0', l2_id: 'L1' } // one right angle ⇒ all four (with the ∥ pair)
+      ];
+      if (this.mode === 'square') cons.push({ id: 'eq01', type: 'equal_length', l1_id: 'L0', l2_id: 'L1' });
+      return { lines, constraints: cons };
+    },
+
     async solve() {
       if (this.points.length < 3) throw new Error('need >=3 points to solve a profile');
       const gcs = await this._ensure();
       gcs.clear_data();
       // p0 is the fixed anchor; the rest are free for the solver to clean up.
       this.points.forEach((p, i) => gcs.push_primitive({ id: p.id, type: 'point', x: p.x, y: p.y, fixed: i === 0 }));
-      const cons = this._autoConstraints();
-      cons.forEach(c => gcs.push_primitive(c));
+      const built = this._buildConstraints();
+      built.lines.forEach(l => gcs.push_primitive(l));         // line primitives must precede the constraints that reference them
+      built.constraints.forEach(c => gcs.push_primitive(c));
       const status = gcs.solve();
       gcs.apply_solution();
       const solved = this.points.map(p => { const s = gcs.sketch_index.get_sketch_point(p.id); return { x: s.x, y: s.y }; });
-      console.log(TAG + ' solve status=' + status + ' pts=' + solved.length + ' constraints=' + cons.length);
-      return { status, points: solved, constraints: cons.length };
+      console.log(TAG + ' solve mode=' + this.mode + ' status=' + status + ' pts=' + solved.length +
+        ' lines=' + built.lines.length + ' constraints=' + built.constraints.length);
+      return { status, points: solved, constraints: built.constraints.length, mode: this.mode };
     },
 
     // Solve the sketch, then author the solved profile as a real solid in A.scene via the worker kernel.
