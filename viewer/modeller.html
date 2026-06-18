@@ -200,7 +200,7 @@ function highlight(mesh) {
   if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
   bCut.disabled = selectedId == null;
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
-  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
   console.log('§MODELLER select featureId=' + selectedId);
 }
 window.Bonsai.select = (fid) => {                 // witness/programmatic hook
@@ -429,6 +429,54 @@ if (qs.get('signed') === 'demo') {
     window.__signedResult = out;
     window.__signedDone = true;
     console.log('§MODELLER signed-done');
+  })();
+}
+// ?fastauthor=demo proves the responsiveness wins (W-BONSAI-FASTAUTHOR): adding a LEAF feature renders via
+// the O(1) optimistic-append path (commit returns appended=true — NOT the O(N) clear-and-refold-all), the
+// optimistically-appended mesh is pick-selectable (featureId tagged), a GEOM_CUT still takes the authoritative
+// full fold (appended falsy), and the signed chain + scrub stay correct (no regression).
+if (qs.get('fastauthor') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const POLY = (x0) => ({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[x0, 0], [x0 + 4, 0], [x0 + 4, 0.2], [x0, 0.2]] }, depth: 3 } });
+      const w1 = await O.commit(POLY(0), { color: 0x9fb4c8 });
+      out.w1Appended = w1.appended === true; out.w1Verify = w1.verify;
+      const w2 = await O.commit(POLY(6), { color: 0x9fb4c8 });
+      out.w2Appended = w2.appended === true; out.w2Verify = w2.verify; out.signedAfterAppends = w2.signed;
+      out.picked = window.Bonsai.select(w1.id);                  // appended mesh must be selectable (Win1 featureId)
+      const cut = await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: w1.id, void: { c1: [1, -1, 1], c2: [2, 1, 2] } } }, { color: 0x9fd6b4 });
+      out.cutAppended = cut.appended === true; out.cutVerify = cut.verify; out.signed = cut.signed;
+      out.scrub1 = (await O.scrubTo(1)).solids;                  // authoritative fold: 1 solid (wall1 uncut)
+      out.scrub3 = (await O.scrubTo(3)).solids;                  // 2 solids (wall1-cut + wall2)
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OPLOG fastauthor fail ' + e); }
+    window.__fastResult = out;
+    window.__fastDone = true;
+    console.log('§MODELLER fastauthor-done');
+  })();
+}
+// ?sweep=demo proves the occt SWEEP shoulder (kernel.pipe) rides the signed op-log (W-BONSAI-SWEEP): a
+// rectangle profile swept along an L-shaped polyline spine commits as ONE signed GEOM_SWEEP op, folds to a
+// solid spanning both runs of the path, replays deterministically (scrub 0->0, 1->full), and tamper is caught.
+if (qs.get('sweep') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const run = await O.commit({ op_type: 'GEOM_SWEEP', parameters: {
+        profile: { w: 0.3, h: 0.3 },
+        path: [[0, 0, 0], [0, 0, 2], [1.5, 0, 2]]   // up Z 2m, then over X 1.5m — an L route
+      } }, { color: 0x9fd6b4 });
+      out.sweepId = run.id; out.tris = run.triangleCount; out.verify = run.verify; out.signed = run.signed; out.tip = run.tip;
+      out.scrub0 = (await O.scrubTo(0)).triangleCount;     // empty prefix
+      out.scrub1 = (await O.scrubTo(1)).triangleCount;     // full single-op fold
+      const tv = await O.tamperFirstGeom();
+      out.tamperOk = tv.ok; out.tamperWhy = tv.why;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§OPLOG sweep fail ' + e); }
+    window.__sweepResult = out;
+    window.__sweepDone = true;
+    console.log('§MODELLER sweep-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).

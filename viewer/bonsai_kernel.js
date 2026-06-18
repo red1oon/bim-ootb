@@ -157,8 +157,9 @@
       const bb = geo.boundingBox;
       const mat = new THREE.MeshStandardMaterial({ color: opts.color != null ? opts.color : 0x9fb4c8, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.name = opts.name || ('bonsai:' + op.op_type);
+      mesh.name = opts.name || ('bonsai:' + (opts.featureId != null ? opts.featureId : op.op_type));
       mesh.userData.bonsaiOp = op;
+      if (opts.featureId != null) mesh.userData.featureId = opts.featureId;   // match chain-built meshes → pick-select + cut-target work on an optimistically-appended feature
       const g = this.group();
       if (g) g.add(mesh);
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
