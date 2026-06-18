@@ -81,6 +81,11 @@
     // BONSAI_MORPHEUS_WIRING §4 — verbatim Lucide tree-deciduous (lucide.dev). The ⋯-rail launcher
     // for the Bonsai BIM modeller (canopy + trunk reads as a bonsai). ERP/landing surface, not in panels.js.
     bonsaiTree: { svg: '<path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 0 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 0 1 3.24 5.65A4 4 0 0 1 16 19Z"/><path d="M12 19v3"/>' },
+    // MORPHEUS_PLATE_REBUILD — TWO verbatim Lucide line glyphs (lucide.dev) newly extracted for the
+    // Matrix-portal launcher set: flag = language picker, video = watch-demo. The other 5 launchers
+    // reuse glyphs already in this registry (grid · bonsaiTree · barChart · lightbulb · circleHelp).
+    flag:   { svg: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
+    video:  { svg: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>' },
     // BIM_EMBED_WINDOW_SESSION §B2 — verbatim Lucide line glyphs for the BIM-in-window embed panel +
     // status/Time-Machine/PO-drawer controls. ERP-only surface, not in panels.js (precedent: overlay-kit set).
     pictureInPicture2: { svg: '<path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/>' },
