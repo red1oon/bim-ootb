@@ -31,7 +31,7 @@
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src
     : (typeof location !== 'undefined' ? location.href : '');
   const ready = (typeof fetch === 'function')
-    ? fetch(new URL('dagevu_catalog.json', _base).href).then(function (r) { return r.json(); }).then(function (j) {
+    ? fetch(new URL('dagevu_catalog.json?v=2', _base).href).then(function (r) { return r.json(); }).then(function (j) {
         GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
         DB_PRODUCTS = (j.products || []).map(function (p) {
           return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
@@ -108,7 +108,7 @@
       if (!c || !c.gh || (this._geom && this._geom[c.gh])) return Promise.resolve(this.hasMesh(hash));
       if (!this._geomP) {
         this._geomP = (typeof fetch === 'function')
-          ? fetch(new URL('dagevu_geometries.json', _base).href).then(r => r.json())
+          ? fetch(new URL('dagevu_geometries.json?v=2', _base).href).then(r => r.json())
               .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
               .catch(e => { console.warn(TAG + ' geometries load failed ' + e); this._geom = {}; return {}; })
           : Promise.resolve(this._geom = {});
