@@ -4,7 +4,7 @@
 // and the opt-in TOGGLE gates ALL cross-surface traffic — off on either end ⇒ zero ACKs. Surfaces stay
 // permanently separate (no shared DOM); only CONTEXT crosses. This is the bus P1–P3 channels ride on.
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-connect', 'viewer');
+const VIEWER = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };
