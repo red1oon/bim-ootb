@@ -259,6 +259,15 @@ if (window.Connect && bConnect) {
     if (_soundOn) audioCue('tick');
     console.log('§CONNECT-MODELLER toggle on=' + on);
   };
+  // CONNECT_SCENE_SPEC.md P2 — inbound timeline cursor: fold BOTH projections (geometry + records) to it,
+  // echo-guarded. Scrub in one surface → every connected surface folds the one signed log to the same op_hash.
+  window.Connect.subscribe('timeline', async (t) => {
+    if (!t || typeof t.cursor !== 'number' || !window.Bonsai.oplog) return;
+    const c = Math.max(0, Math.min(t.cursor, window.Bonsai.oplog.length));
+    console.log('§CONNECT-TL-IN modeller cursor=' + c + '/' + window.Bonsai.oplog.length + ' from=' + (t.surface || '?'));
+    _applyingRemoteScrub = true;
+    try { slider.value = c; await scrubToShared(c, false); } finally { _applyingRemoteScrub = false; }
+  });
   // Inbound selection from another surface → select the feature whose component ifc_class matches (same signed
   // class). Echo-guarded so applying it doesn't re-publish. The match folds from the op-log, not a hand map.
   window.Connect.subscribe('selection', (sel) => {
@@ -532,11 +541,35 @@ function syncHistory() {
   const n = window.Bonsai.oplog.length;
   slider.max = n; slider.value = window.Bonsai.oplog.cursor; slider.disabled = n === 0;
   histStamp(+slider.value);
+  if (typeof paintRecords === 'function') paintRecords(+slider.value);   // keep the record fold in step with commits
 }
-slider.addEventListener('input', async () => {
-  histStamp(+slider.value);
-  await window.Bonsai.oplog.scrubTo(+slider.value);
-});
+// CONNECT_SCENE_SPEC.md P2 — the signed op-log IS the timeline. A "records" fold projects the SAME authored
+// ops into rows (one log, two folds: geometry ⟂ records). foldRecords(cursor) reads ops up to the cursor —
+// a deterministic FOLD, never invented. The hidden #rec-count lets the witness assert the record co-vanish.
+function foldRecords(cursor) {
+  if (!window.Bonsai.oplog || !window.Bonsai.oplog.db) return [];
+  const ops = window.Bonsai.oplog._geomOps();
+  const n = cursor == null ? window.Bonsai.oplog.cursor : Math.max(0, Math.min(cursor, ops.length));
+  return ops.slice(0, n).map(o => ({ id: o.id, label: featLabel(o), op_hash: o.op_hash }));
+}
+function paintRecords(cursor) {
+  const recs = foldRecords(cursor);
+  let el = document.getElementById('rec-count');
+  if (!el) { el = document.createElement('span'); el.id = 'rec-count'; el.style.display = 'none'; document.body.appendChild(el); }
+  el.textContent = String(recs.length);
+  window.Bonsai._records = recs;   // expose the record fold (the second projection of the one signed log)
+  return recs.length;
+}
+// Apply a scrub cursor to BOTH folds (geometry + records). _applyingRemoteScrub guards the echo loop so a
+// cursor received over the timeline channel doesn't re-broadcast.
+let _applyingRemoteScrub = false;
+async function scrubToShared(cursor, publish) {
+  histStamp(cursor); paintRecords(cursor);
+  await window.Bonsai.oplog.scrubTo(cursor);
+  if (publish && window.Connect && window.Connect.on && !_applyingRemoteScrub)
+    window.Connect.publish('timeline', { cursor: cursor, length: window.Bonsai.oplog.length, surface: 'modeller' });
+}
+slider.addEventListener('input', async () => { await scrubToShared(+slider.value, true); });
 
 // ── ARCHITECTURAL GRID (2D correlation) ─────────────────────────────────────────────────────────
 const bGrid = document.getElementById('b-grid');
@@ -1118,6 +1151,37 @@ if (qs.get('connectsel') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER connectsel fail ' + e); }
     window.__connectSelResult = out; window.__connectSelReady = true;
     console.log('§MODELLER connectsel-ready id=' + out.insertedId + ' class=' + out.ifcClass);
+  })();
+}
+// ?connecttl=demo sets up the Connect Scene P2 timeline witness (W-CONNECT-TIMELINE): author a deterministic
+// recipe (two GEOM_INSERT features) into the signed op-log, enable Connect. The witness then scrubs the shared
+// cursor and asserts BOTH folds (geometry meshes + record rows) co-vanish/restore across two connected surfaces.
+if (qs.get('connecttl') === 'demo') {
+  (async () => {
+    const out = {};
+    const place = async (hash, gx, gy) => {
+      if (!inserting) bInsert.onclick();                  // enter insert mode ONCE (it persists for multi-place)
+      const pBtn = document.querySelector('#ins-panel .ins-c[data-hash="' + hash + '"]'); if (pBtn) pBtn.onclick();
+      const rect = canvas.getBoundingClientRect();
+      const v = new THREE.Vector3(gx, gy, 0).project(camera);
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height, bubbles: true }));
+    };
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4, 8], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.oplog.clear();
+      const cat = window.Bonsai.library.catalog();
+      const a = cat.find(c => c.ifc_class === 'IfcDoor') || cat[0];
+      const b = cat.find(c => c.ifc_class === 'IfcColumn') || cat[1] || cat[0];
+      await place(a.hash, 4, 3); for (let i = 0; i < 60 && window.Bonsai.oplog.length < 1; i++) await new Promise(r => setTimeout(r, 50));
+      await place(b.hash, 8, 3); for (let i = 0; i < 60 && window.Bonsai.oplog.length < 2; i++) await new Promise(r => setTimeout(r, 50));
+      syncHistory();
+      out.length = window.Bonsai.oplog.length;          // expect 2
+      out.records = paintRecords(window.Bonsai.oplog.length);
+      window.__scrubShared = scrubToShared;             // witness seam: drive a shared scrub + await the fold
+      window.Connect.enable();
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER connecttl fail ' + e); }
+    window.__connectTlResult = out; window.__connectTlReady = true;
+    console.log('§MODELLER connecttl-ready length=' + out.length + ' records=' + out.records);
   })();
 }
 // ?place=demo proves PLACEMENT CORRECTNESS (W-BONSAI-PLACE): a component lands SEATED on the ground (not
