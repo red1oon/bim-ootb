@@ -27,20 +27,25 @@
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
     return u8.buffer;
   }
-  // rotate (about +Z by rad) then translate — placement frame for an assembled component.
-  function place(positions, pl) {
+  // rotate (yaw, about +Z) about the component's local origin → translate to placement.
+  // GROUND-SEAT: the component's local bbox BOTTOM (zmin) lands at placement.z (default 0) so a
+  // component sits ON the ground, not half-buried (a door spanning local z ∈ [−1.05,+1.05] at z=0
+  // would otherwise sink 1.05 below grade). Yaw is about Z so it does not change z → seat is yaw-invariant.
+  function place(positions, pl, bbox) {
     const rad = ((pl && pl.rot) || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
-    const ox = (pl && pl.x) || 0, oy = (pl && pl.y) || 0, oz = (pl && pl.z) || 0;
+    const ox = (pl && pl.x) || 0, oy = (pl && pl.y) || 0;
+    const seatZ = ((pl && pl.z) || 0) - (bbox ? bbox[4] : 0);   // bbox[4] = local zmin → placement.z (elevation)
     const out = new Float32Array(positions.length);
     for (let i = 0; i < positions.length; i += 3) {
       const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-      out[i] = cs * x - sn * y + ox; out[i + 1] = sn * x + cs * y + oy; out[i + 2] = z + oz;
+      out[i] = cs * x - sn * y + ox; out[i + 1] = sn * x + cs * y + oy; out[i + 2] = z + seatZ;
     }
     return out;
   }
   // 12-tri box from a local bbox = the LOD-200 proxy (corner-indexed, two tris per face).
+  // bbox layout is [minx,maxx,miny,maxy,minz,maxz] (NOT [x0,y0,z0,x1,y1,z1]) — map axes explicitly.
   function boxArrays(bb) {
-    const [x0, y0, z0, x1, y1, z1] = bb;
+    const x0 = bb[0], x1 = bb[1], y0 = bb[2], y1 = bb[3], z0 = bb[4], z1 = bb[5];
     const p = [x0,y0,z0, x1,y0,z0, x1,y1,z0, x0,y1,z0, x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1];
     const positions = new Float32Array(p);
     const idx = [0,1,2, 0,2,3,  4,6,5, 4,7,6,  0,4,5, 0,5,1,  1,5,6, 1,6,2,  2,6,7, 2,7,3,  3,7,4, 3,4,0];
@@ -65,8 +70,16 @@
       const c = this.get(P.hash); if (!c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
       const lod = this.lodFor(op.id, P.lod);
       const base = (lod === '300') ? this.meshArrays(P.hash) : boxArrays(c.bbox);
-      const positions = place(base.positions, P.placement);
+      const positions = place(base.positions, P.placement, c.bbox);
       return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices };
+    },
+
+    // GHOST preview (uncommitted): a LOD-200 box of the component at a candidate placement, so the host can
+    // show where/how an insert will land (with current yaw + elevation) BEFORE the user clicks to commit.
+    previewArrays(hash, placement) {
+      const c = this.get(hash); if (!c) return null;
+      const base = boxArrays(c.bbox);
+      return { positions: place(base.positions, placement, c.bbox), indices: base.indices, bbox: c.bbox };
     }
   };
 
