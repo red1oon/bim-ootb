@@ -91,25 +91,52 @@ function meshOf(kernel, shape, featureId) {
   return { featureId, triangleCount: m.triangleCount, positions, normals, indices };
 }
 
-// THE FEATURE-TREE FOLD: an ordered op-log -> a set of live solids. GEOM_CUT modifies its parent
-// solid IN PLACE (the child references a prior feature by id), so the op-log IS the feature tree and
-// the rendered geometry is a pure fold of the chain — replaying ops[0..k] is deterministic history.
-function foldChain(kernel, ops) {
+// Edge midpoints of a solid in CANONICAL getSubShapes('edge') order — the SAME order the fold uses to
+// resolve GEOM_FILLET edge indices, so an edge picked by index is stable across deterministic re-folds.
+// Midpoint = bbox centre (exact for the straight edges of our box/extrude solids); len = bbox diagonal.
+function edgeMidpoints(kernel, solid) {
+  const edges = kernel.getSubShapes(solid, 'edge');
+  const out = edges.map((e, i) => {
+    const b = kernel.getBoundingBox(e, false);
+    return { i, mid: [(b.xmin + b.xmax) / 2, (b.ymin + b.ymax) / 2, (b.zmin + b.zmax) / 2],
+             len: +Math.hypot(b.xmax - b.xmin, b.ymax - b.ymin, b.zmax - b.zmin).toFixed(4) };
+  });
+  edges.forEach(e => kernel.release(e));
+  return out;
+}
+
+// THE FEATURE-TREE FOLD (solids map): an ordered op-log -> a set of live solids. GEOM_CUT and GEOM_FILLET
+// modify their referenced parent solid IN PLACE (the child references a prior feature by id), so the op-log
+// IS the feature tree and the rendered geometry is a pure fold of the chain — replaying ops[0..k] = history.
+function buildSolids(kernel, ops) {
   const solids = new Map();   // featureId -> shape
   for (const op of ops) {
+    const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
     if (op.op_type === 'GEOM_CUT') {                 // IfcRelVoidsElement: cut the referenced parent
       const parent = solids.get(op.parent);
       if (!parent) throw new Error('GEOM_CUT parent ' + op.parent + ' not found');
-      const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
       const v = (a) => ({ x: a[0], y: a[1], z: a[2] });
       const void_ = kernel.makeBoxFromCorners(v(P.void.c1), v(P.void.c2));
       const cut = kernel.cut(parent, void_);
       kernel.release(void_); kernel.release(parent);
       solids.set(op.parent, cut);                    // parent geometry replaced by the cut result
+    } else if (op.op_type === 'GEOM_FILLET') {        // BRepFilletAPI: round (or chamfer) the referenced parent's picked edges
+      const parent = solids.get(op.parent);
+      if (!parent) throw new Error('GEOM_FILLET parent ' + op.parent + ' not found');
+      const all = kernel.getSubShapes(parent, 'edge');           // canonical order — must match edgeMidpoints()
+      const sel = (P.edges || []).map(i => all[i]).filter(s => s != null);
+      const r = P.radius != null ? P.radius : 0.1;
+      const result = (P.kind === 'chamfer') ? kernel.chamfer(parent, sel, r) : kernel.fillet(parent, sel, r);
+      all.forEach(e => kernel.release(e)); kernel.release(parent);
+      solids.set(op.parent, result);                 // parent geometry replaced by the filleted/chamfered result
     } else {
       solids.set(op.id, applyFeature(kernel, op));
     }
   }
+  return solids;
+}
+function foldChain(kernel, ops) {
+  const solids = buildSolids(kernel, ops);
   const meshes = [];
   for (const [fid, shape] of solids) { meshes.push(meshOf(kernel, shape, fid)); kernel.release(shape); }
   return meshes;
@@ -125,6 +152,15 @@ self.onmessage = async (e) => {
       return;
     }
     const kernel = await getKernel();
+    if (e.data.listEdges) {                          // EDGE-PICK: fold to the parent solid, report its edge midpoints
+      const { ops: cops, parentId } = e.data.listEdges;
+      const solids = buildSolids(kernel, cops);
+      const parent = solids.get(parentId);
+      const edges = parent ? edgeMidpoints(kernel, parent) : [];
+      for (const [, s] of solids) kernel.release(s);
+      self.postMessage({ id, ok: true, edges });
+      return;
+    }
     if (ops) {                                       // CHAIN fold (feature tree) -> array of meshes
       const meshes = foldChain(kernel, ops);
       const transfer = [];

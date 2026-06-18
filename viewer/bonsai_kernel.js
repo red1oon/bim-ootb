@@ -92,6 +92,19 @@
       return this._preload;
     },
 
+    // EDGE-PICK support: ask the worker for the edge midpoints of a parent feature's solid (in canonical
+    // getSubShapes order). The host renders these as pickable markers; the picked indices ride a GEOM_FILLET op.
+    queryEdges(parentId) {
+      const w = this.init();
+      if (!w) return Promise.reject(new Error('bonsai unsupported'));
+      const ops = (window.Bonsai.oplog && window.Bonsai.oplog._geomOps) ? window.Bonsai.oplog._geomOps() : [];
+      const id = ++this._seq;
+      return new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        w.postMessage({ id, listEdges: { ops, parentId } });
+      });
+    },
+
     // Fold a whole op-log CHAIN -> array of mesh payloads (the feature tree, evaluated in one pass).
     _foldChain(ops) {
       const w = this.init();

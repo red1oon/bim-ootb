@@ -37,6 +37,8 @@
   <button id="b-cut" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg><span>Cut</span></button>
   <button id="b-route" disabled title="Sweep a profile along a route (MEP run)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Route</span></button>
   <button id="b-run" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Sweep Run</span></button>
+  <button id="b-fillet" disabled title="Round a selected solid's picked edges"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H7a4 4 0 0 1-4-4V3"/><path d="M21 3a14 14 0 0 0-14 14"/></svg><span>Fillet</span></button>
+  <button id="b-applyfillet" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Apply</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
@@ -249,7 +251,7 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook
   highlight(m || null); return selectedId;
 };
 canvas.addEventListener('pointerdown', (e) => {
-  if (sketching || routing || e.button !== 0 || e.shiftKey) return;
+  if (sketching || routing || edgePicking || e.button !== 0 || e.shiftKey) return;
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -335,6 +337,69 @@ bRun.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER route fail ' + err); }
 };
 
+// ── FILLET / CHAMFER (edge-pick) ─────────────────────────────────────────────────────────────────
+// occt fillet/chamfer shoulders. The NEW input device = picking an EDGE of a solid in 3D: the worker
+// reports the selected feature's edge midpoints (canonical getSubShapes order); we render pickable markers,
+// the user clicks edges, and Apply commits a signed GEOM_FILLET (parent + edge indices + radius). Edge
+// indices are stable across the deterministic re-fold, so the rounded result replays + verifies like any op.
+const bFillet = document.getElementById('b-fillet');
+const bApplyFillet = document.getElementById('b-applyfillet');
+const FIL_FILLET = _ico('<path d="M21 21H7a4 4 0 0 1-4-4V3"/><path d="M21 3a14 14 0 0 0-14 14"/>') + '<span>Fillet</span>';
+const FIL_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let edgePicking = false, edgeGroup = null, pickedEdges = new Set();
+function edgeMarkers(edges) {
+  if (!edgeGroup) { edgeGroup = new THREE.Group(); edgeGroup.name = 'EdgePick'; scene.add(edgeGroup); }
+  while (edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]);
+  edges.forEach(ed => {
+    const on = pickedEdges.has(ed.i);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12),
+      new THREE.MeshBasicMaterial({ color: on ? 0xffd24f : 0x6fd6ff }));
+    m.position.set(ed.mid[0], ed.mid[1], ed.mid[2]); m.userData.edgeIndex = ed.i; edgeGroup.add(m);
+  });
+  edgeGroup.updateMatrixWorld(true);   // markers must have a fresh world matrix for raycast hit-testing on the same tick
+}
+async function enterFillet() {
+  if (selectedId == null) { setStat('select a solid first, then Fillet'); return; }
+  setStat('reading edges…');
+  try {
+    const r = await window.Bonsai.queryEdges(selectedId);
+    window._edgeList = r.edges || [];
+    edgePicking = true; pickedEdges = new Set();
+    bApplyFillet.style.display = ''; bApplyFillet.disabled = true; bFillet.innerHTML = FIL_CANCEL;
+    edgeMarkers(window._edgeList);
+    setStat('fillet: click edges (' + window._edgeList.length + ' available), then Apply');
+  } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§MODELLER fillet edges fail ' + e); }
+}
+function exitFillet() {
+  edgePicking = false; bApplyFillet.style.display = 'none'; bFillet.innerHTML = FIL_FILLET;
+  if (edgeGroup) { while (edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]); }
+}
+bFillet.onclick = () => edgePicking ? exitFillet() : enterFillet();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!edgePicking || e.button !== 0 || e.shiftKey || !edgeGroup) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(edgeGroup.children, false)[0];
+  if (hit) {
+    const i = hit.object.userData.edgeIndex;
+    if (pickedEdges.has(i)) pickedEdges.delete(i); else pickedEdges.add(i);
+    edgeMarkers(window._edgeList);
+    bApplyFillet.disabled = pickedEdges.size === 0;
+    setStat('fillet: ' + pickedEdges.size + ' edge(s) selected');
+  }
+});
+bApplyFillet.onclick = async () => {
+  if (pickedEdges.size === 0) { setStat('pick at least one edge'); return; }
+  setStat('filleting…');
+  try {
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_FILLET',
+      parameters: { parent: selectedId, edges: Array.from(pickedEdges), radius: 0.1, kind: 'fillet' } }, { color: 0x9fd6b4 });
+    setStat('filleted #' + selectedId + '  verify=' + res.verify + '  tris=' + res.triangleCount);
+    audioCue('commit'); exitFillet(); highlight(null); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER fillet fail ' + err); }
+};
+
 // ── HISTORY SCRUBBER ────────────────────────────────────────────────────────────────────────────
 const slider = document.getElementById('hist-slider'), histLabel = document.getElementById('hist-label');
 function syncHistory() {
@@ -368,7 +433,7 @@ bIfc.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = false;
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -376,6 +441,9 @@ window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) ov
 window.Bonsai.outliner.addCategory({ key: 'routes', label: 'Routes', match: op => op.op_type === 'GEOM_SWEEP',
   node: op => { const p = op.parameters.path; const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt(p[0][0], p[0][1]) : null;
     return { id: op.id, label: 'Run', sub: (a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) + ' ·' + p.length + 'pt' : '#' + op.id + ' ·' + (p ? p.length : 0) + 'pt' }; } });
+window.Bonsai.outliner.addCategory({ key: 'fillets', label: 'Fillets', match: op => op.op_type === 'GEOM_FILLET',
+  node: op => ({ id: op.parameters.parent, label: (op.parameters.kind === 'chamfer' ? 'Chamfer' : 'Round'),
+    sub: '⮡ Wall ' + op.parameters.parent + ' ·' + (op.parameters.edges ? op.parameters.edges.length : 0) + 'e' }) });
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -628,6 +696,53 @@ if (qs.get('route') === 'demo') {
     window.__routeResult = out;
     window.__routeDone = true;
     console.log('§MODELLER route-done');
+  })();
+}
+// ?fillet=demo proves the occt fillet/chamfer shoulders + EDGE-PICK UI (W-BONSAI-FILLET): commit a wall, select
+// it, enter Fillet mode (worker reports the solid's edges), SIMULATE a click on the longest (vertical) edge's
+// marker via the real pointerdown handler, Apply → signed GEOM_FILLET rounds that edge (tris grow), the Outliner
+// shows a Fillets category, scrub replays deterministically; then a kind:'chamfer' op proves the chamfer shoulder.
+if (qs.get('fillet') === 'demo') {
+  (async () => {
+    const O = window.Bonsai.oplog; O.clear();
+    const out = {};
+    try {
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.4], [0, 0.4]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      out.afterWall = wall.triangleCount;
+      window.Bonsai.select(wall.id);
+      await bFillet.onclick();                                   // enter Fillet mode → worker reports edges
+      out.edgeCount = (window._edgeList || []).length;          // a box-like solid has 12 edges
+      out.edgePicking = edgePicking;
+      // pick the LONGEST edge (a vertical corner, length 3) — a safe, clearly-roundable edge.
+      const longest = (window._edgeList || []).slice().sort((a, b) => b.len - a.len)[0];
+      out.longestLen = longest ? longest.len : null;
+      const rect = canvas.getBoundingClientRect();
+      const v = new THREE.Vector3(longest.mid[0], longest.mid[1], longest.mid[2]).project(camera);
+      const cx = rect.left + (v.x + 1) / 2 * rect.width, cy = rect.top + (1 - v.y) / 2 * rect.height;
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: cx, clientY: cy, bubbles: true }));
+      out.pickedCount = pickedEdges.size; out.applyEnabled = !bApplyFillet.disabled;
+      await bApplyFillet.onclick();                              // Apply → signed GEOM_FILLET
+      out.exited = !edgePicking;
+      const g = window.Bonsai.group();
+      out.afterFillet = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await O.verify()).ok;
+      const rows = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.filletRow = rows.find(r => /Round/.test(r)) || null;
+      out.filletsCategory = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'fillets');
+      out.scrub1 = (await O.scrubTo(1)).triangleCount;          // plain wall (fillet gone)
+      out.scrub2 = (await O.scrubTo(2)).triangleCount;          // filleted (back)
+      // CHAMFER shoulder via the same op with kind:'chamfer' — on a FRESH second wall's edge (the first wall's
+      // longest edge was consumed by the fillet, so chamfering it would hit changed topology). Proves both edge-ops.
+      await O.scrubTo(O.length);                                 // restore the full fold before adding wall2
+      const wall2 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[6, 0], [10, 0], [10, 0.4], [6, 0.4]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      const e2 = (await window.Bonsai.queryEdges(wall2.id)).edges.slice().sort((a, b) => b.len - a.len)[0];
+      const cham = await O.commit({ op_type: 'GEOM_FILLET', parameters: { parent: wall2.id, edges: [e2.i], radius: 0.1, kind: 'chamfer' } }, { color: 0x9fd6b4 });
+      out.chamferTris = cham.triangleCount; out.chamferVerify = cham.verify;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER fillet demo fail ' + e); }
+    window.__filletResult = out;
+    window.__filletDone = true;
+    console.log('§MODELLER fillet-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
