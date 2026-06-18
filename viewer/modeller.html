@@ -116,12 +116,15 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14161c);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 5000);
-camera.position.set(6, 5, 8);
 camera.up.set(0, 0, 1);   // world is Z-up → screen-up = Z so placed components STAND (top-down sketch view flips to Y-up)
+// FRONT-elevated Z-up framing: look mostly along +Y from in front, slightly to the side. With up=Z this keeps a
+// GRID AXIS roughly horizontal (the XY grid reads as a flat FLOOR receding, not a tilted diamond) AND objects
+// stand. A 45°-azimuth iso would render the axis-aligned grid as a lopsided diamond — avoid it.
+camera.position.set(8, -7, 6);
 
 const controls = new THREE.OrbitControls(camera, canvas);
 controls.enableDamping = true;
-controls.target.set(2, 1, 1.5);
+controls.target.set(4, 2, 0.4);
 
 scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202028, 1.1));
 const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(5, 10, 7); scene.add(key);
@@ -147,7 +150,9 @@ window.addEventListener('resize', () => {
 // sketch plan view (looking straight down −Z) isn't degenerate; presets are limited to Iso/Top accordingly.
 const bFit = document.getElementById('b-fit'), bView = document.getElementById('b-view');
 // up per view: Iso/3D = Z-up (objects stand); Top = Y-up (plan of the XY ground, non-degenerate looking down −Z).
-const VIEWS = [{ name: 'Iso', dir: new THREE.Vector3(1, 0.85, 1), up: new THREE.Vector3(0, 0, 1) },
+// Iso = front-elevated (mostly +Y, slight +X), up=Z → grid reads as a flat floor (not a lopsided diamond) +
+// objects stand. Top = plan looking down −Z, up=Y (non-degenerate).
+const VIEWS = [{ name: 'Iso', dir: new THREE.Vector3(0.45, -1, 0.7), up: new THREE.Vector3(0, 0, 1) },
                { name: 'Top', dir: new THREE.Vector3(0, 0.001, 1), up: new THREE.Vector3(0, 1, 0) }];
 let _viewIdx = 0;
 function _authoredBox() {

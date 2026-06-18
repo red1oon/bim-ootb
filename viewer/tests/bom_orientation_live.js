@@ -31,6 +31,13 @@ const server = http.createServer((q, r) => {
     const up0 = cam.up.toArray().map(n => +n.toFixed(2));
     // default iso view: a higher world-Z point must project HIGHER on screen than a lower one (Z = screen-up)
     const zUpDefault = ndcY(2, 1, 3) > ndcY(2, 1, 1);
+    // GRID NOT LOPSIDED: the world +X grid axis must read ~HORIZONTAL on screen (a flat floor), not a 45° diamond.
+    // angle of world-X in screen space (account for aspect); <28° = aligned floor, ~45° = lopsided diamond.
+    const aspect = cam.aspect || (window.innerWidth / window.innerHeight);
+    const o = new THREE.Vector3(4, 2, 0).project(cam), xx = new THREE.Vector3(5, 2, 0).project(cam);
+    const sx = (xx.x - o.x) * aspect, sy = (xx.y - o.y);
+    const gridAxisDeg = +(Math.atan2(Math.abs(sy), Math.abs(sx)) * 180 / Math.PI).toFixed(1);
+    const gridFlat = gridAxisDeg < 28;
 
     // insert a real door, frame it (iso), then its TOP (max world-Z) must land above its BASE on screen
     window.Bonsai.grid.define({ xs: [0, 4], ys: [0, 3] }); window.Bonsai.oplog.clear();
@@ -55,7 +62,7 @@ const server = http.createServer((q, r) => {
     document.getElementById('b-view').click(); await new Promise(r => setTimeout(r, 100));   // back to Iso
     const upIso = cam.up.toArray().map(n => +n.toFixed(2));
 
-    return { up0, zUpDefault, topZ: +topZ.toFixed(2), botZ: +botZ.toFixed(2), doorUpright, upTop, upIso };
+    return { up0, zUpDefault, topZ: +topZ.toFixed(2), botZ: +botZ.toFixed(2), doorUpright, upTop, upIso, gridAxisDeg, gridFlat };
   });
 
   await br.close(); server.close();
@@ -65,6 +72,7 @@ const server = http.createServer((q, r) => {
     initZup:     eq(r.up0, [0, 0, 1]),                 // camera up is Z at load
     zIsScreenUp: r.zUpDefault === true,                // world +Z projects up on screen (iso)
     doorStands:  r.doorUpright === true,               // door top above base on screen (tall in Z)
+    gridFlat:    r.gridFlat === true,                  // grid axis ~horizontal (flat floor, NOT a lopsided diamond)
     topIsYup:    eq(r.upTop, [0, 1, 0]),               // Top/plan view flips to Y-up
     isoBackZup:  eq(r.upIso, [0, 0, 1])                // returning to Iso restores Z-up
   };
