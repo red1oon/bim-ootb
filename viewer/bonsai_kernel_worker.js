@@ -37,17 +37,30 @@ function applyFeature(kernel, op) {
     return solid;
   }
   if (op.op_type === 'GEOM_SWEEP') {              // BRepOffsetAPI_MakePipe: rectangle profile swept along a polyline spine (MEP run / route)
-    const w = P.profile.w, h = P.profile.h;       // profile centred on the spine start, in the XY plane (normal +Z = spine's initial direction)
+    const w = P.profile.w, h = P.profile.h;
     const v = (x, y, z) => ({ x, y, z });
-    const pc = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+    const path = P.path;                          // [[x,y,z],...] ≥2 points
+    // Place the profile PERPENDICULAR to the spine's initial tangent, CENTRED on path[0], so the sweep is
+    // well-conditioned for ANY route direction (a horizontal ground route as well as the demo's +Z riser).
+    // Frame: T = start tangent; pick up=+Y unless T is ~parallel to +Y (then +Z); U,V span the profile plane.
+    // For T=+Z this yields U=+X,V=+Y → byte-identical to the original XY profile centred at the origin.
+    const S = path[0];
+    let tx = path[1][0] - S[0], ty = path[1][1] - S[1], tz = path[1][2] - S[2];
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    const up = Math.abs(ty) < 0.9 ? [0, 1, 0] : [0, 0, 1];
+    let ux = up[1] * tz - up[2] * ty, uy = up[2] * tx - up[0] * tz, uz = up[0] * ty - up[1] * tx;   // U = up × T
+    const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    const vx = ty * uz - tz * uy, vy = tz * ux - tx * uz, vz = tx * uy - ty * ux;                   // V = T × U
+    const corner = (su, sv) => v(S[0] + su * (w / 2) * ux + sv * (h / 2) * vx,
+                                 S[1] + su * (w / 2) * uy + sv * (h / 2) * vy,
+                                 S[2] + su * (w / 2) * uz + sv * (h / 2) * vz);
+    const cpts = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
     const pedges = [];
-    for (let i = 0; i < pc.length; i++) {
-      const a = pc[i], b = pc[(i + 1) % pc.length];
-      pedges.push(kernel.makeLineEdge(v(a[0], a[1], 0), v(b[0], b[1], 0)));
+    for (let i = 0; i < cpts.length; i++) {
+      pedges.push(kernel.makeLineEdge(cpts[i], cpts[(i + 1) % cpts.length]));
     }
     const pwire = kernel.makeWire(pedges);
     const face = kernel.makeFace(pwire);
-    const path = P.path;                          // [[x,y,z],...] ≥2 points; starts at the profile (origin) so the sweep is well-conditioned
     const sedges = [];
     for (let i = 0; i < path.length - 1; i++) {
       sedges.push(kernel.makeLineEdge(v(path[i][0], path[i][1], path[i][2]), v(path[i + 1][0], path[i + 1][1], path[i + 1][2])));

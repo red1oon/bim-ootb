@@ -35,6 +35,8 @@
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
   <button id="b-cut" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg><span>Cut</span></button>
+  <button id="b-route" disabled title="Sweep a profile along a route (MEP run)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Route</span></button>
+  <button id="b-run" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Sweep Run</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
@@ -247,7 +249,7 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook
   highlight(m || null); return selectedId;
 };
 canvas.addEventListener('pointerdown', (e) => {
-  if (sketching || e.button !== 0 || e.shiftKey) return;
+  if (sketching || routing || e.button !== 0 || e.shiftKey) return;
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -274,6 +276,63 @@ bCut.onclick = async () => {
     const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_CUT', parameters: { parent: selectedId, void: { c1, c2 } } }, { color: 0x9fd6b4 });
     setStat('cut opening in #' + selectedId + '  tris=' + res.triangleCount); audioCue('cut'); highlight(null); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER cut fail ' + err); }
+};
+
+// ── ROUTE MODE (sweep a profile along a path = MEP run) ──────────────────────────────────────────
+// §OOTB authoring mode 3 (RouteWalker → MEP sweep). Click points on the ground plane to lay a route;
+// Sweep Run folds the SIGNED op-log GEOM_SWEEP (occt kernel.pipe) into a duct/pipe solid along the path.
+// The worker orients the rectangle profile perpendicular to the route's start tangent (so a horizontal
+// ground route sweeps correctly), centred on the first point. One route = one signed op-row.
+const bRoute = document.getElementById('b-route');
+const bRun = document.getElementById('b-run');
+const RT_ROUTE = _ico('<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>') + '<span>Route</span>';
+const RT_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let routing = false, routePts = [], routeGroup = null;
+function routeMarkers() {
+  if (!routeGroup) { routeGroup = new THREE.Group(); routeGroup.name = 'RoutePreview'; scene.add(routeGroup); }
+  while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]);
+  routePts.forEach(p => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffb74f }));
+    m.position.set(p[0], p[1], 0.01); routeGroup.add(m);
+  });
+  if (routePts.length >= 2) {
+    const line = routePts.map(p => new THREE.Vector3(p[0], p[1], 0.01));   // open polyline (a route, not a loop)
+    routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(line), new THREE.LineBasicMaterial({ color: 0xffb74f })));
+  }
+}
+function enterRoute() {
+  routing = true; routePts = [];
+  savedCam = { pos: camera.position.clone(), tgt: controls.target.clone() };
+  camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
+  bRun.style.display = ''; bRun.disabled = true; bRoute.innerHTML = RT_CANCEL;
+  routeMarkers(); setStat('route: click ≥2 points on the grid to lay a run, then Sweep Run');
+}
+function exitRoute() {
+  routing = false; bRun.style.display = 'none'; bRoute.innerHTML = RT_ROUTE;
+  if (routeGroup) { while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]); }
+  if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); controls.update(); }
+}
+bRoute.onclick = () => routing ? exitRoute() : enterRoute();
+canvas.addEventListener('pointerdown', (e) => {
+  if (!routing || e.button !== 0 || e.shiftKey) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(GROUND, hit)) {
+    const s = window.Bonsai.grid.snap(hit.x, hit.y);   // same 2D correlation as sketch — snap to gridlines
+    routePts.push([s.x, s.y, 0]); routeMarkers();
+    bRun.disabled = routePts.length < 2;
+    setStat('route: ' + routePts.length + ' points' + (s.ref && (s.snappedX || s.snappedY) ? '  @' + s.ref : ''));
+  }
+});
+bRun.onclick = async () => {
+  if (routePts.length < 2) { setStat('need ≥2 route points'); return; }
+  setStat('sweeping…');
+  try {
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_SWEEP', parameters: { profile: { w: 0.3, h: 0.3 }, path: routePts.slice() } }, { color: 0xffb74f });
+    setStat('swept run #' + res.id + '  verify=' + res.verify + '  tris=' + res.triangleCount); audioCue('commit'); exitRoute(); syncHistory();
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER route fail ' + err); }
 };
 
 // ── HISTORY SCRUBBER ────────────────────────────────────────────────────────────────────────────
@@ -309,8 +368,14 @@ bIfc.onclick = async () => {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = false;
-window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log
+bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = false;
+window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
+// Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
+// NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
+// Viewer's job after handoff (modeller stays permanently separate from the Viewer — separation of concern).
+window.Bonsai.outliner.addCategory({ key: 'routes', label: 'Routes', match: op => op.op_type === 'GEOM_SWEEP',
+  node: op => { const p = op.parameters.path; const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt(p[0][0], p[0][1]) : null;
+    return { id: op.id, label: 'Run', sub: (a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) + ' ·' + p.length + 'pt' : '#' + op.id + ' ·' + (p ? p.length : 0) + 'pt' }; } });
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -516,6 +581,53 @@ if (qs.get('sweep') === 'demo') {
     window.__sweepResult = out;
     window.__sweepDone = true;
     console.log('§MODELLER sweep-done');
+  })();
+}
+// ?route=demo proves the SWEEP toolbar wiring + interactive path-pick (W-BONSAI-ROUTE): enter route mode via the
+// Route button, lay an L-shaped run by SIMULATING ground clicks (the same pointerdown handler the user hits), Sweep
+// Run commits a signed GEOM_SWEEP, the solid spans both runs of the path, the Outliner shows it under Routes, and
+// scrubbing replays it deterministically. Drives the REAL UI handlers — not the engine API directly.
+if (qs.get('route') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 3, 6], ys: [0, 2], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] });
+      window.Bonsai.oplog.clear();
+      bRoute.onclick();                                         // enter route mode (button)
+      out.routing = routing; out.runDisabledAtEntry = bRun.disabled;
+      const rect = canvas.getBoundingClientRect();
+      // ground-plane points for an L route A-1 → B-1 → B-2; project to screen so the REAL pointerdown handler runs.
+      const groundToClient = (x, y) => {
+        const v = new THREE.Vector3(x, y, 0).project(camera);
+        return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height };
+      };
+      for (const [gx, gy] of [[0.1, 0.05], [2.95, 0.08], [3.05, 1.95]]) {
+        const c = groundToClient(gx, gy);
+        canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: c.clientX, clientY: c.clientY, bubbles: true }));
+      }
+      out.points = routePts.length; out.runEnabled = !bRun.disabled;
+      await bRun.onclick();                                     // Sweep Run (button) → signed GEOM_SWEEP
+      out.exitedRoute = !routing;
+      const ops = window.Bonsai.oplog._geomOps();
+      out.sweepOps = ops.filter(o => o.op_type === 'GEOM_SWEEP').length;
+      out.signed = window.Bonsai.oplog.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await window.Bonsai.oplog.verify()).ok;
+      // bounding box of the authored run must span both legs of the L (x≈0→3, y≈0→2).
+      const g = window.Bonsai.group();
+      const box = new THREE.Box3().setFromObject(g); const s = new THREE.Vector3(); box.getSize(s);
+      out.size = { x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2) };
+      out.tris = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      // Outliner reflects the run under a Routes category.
+      const rows = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim());
+      out.routeRow = rows.find(r => /Run/.test(r)) || null;
+      const hasRoutesGrp = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'routes');
+      out.routesCategory = hasRoutesGrp;
+      out.scrub0 = (await window.Bonsai.oplog.scrubTo(0)).triangleCount;
+      out.scrub1 = (await window.Bonsai.oplog.scrubTo(1)).triangleCount;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER route demo fail ' + e); }
+    window.__routeResult = out;
+    window.__routeDone = true;
+    console.log('§MODELLER route-done');
   })();
 }
 // ?sketch=demo drives a deliberately NOISY hand-drawn quad through the solver -> extrude (W-BONSAI-SKETCH).
