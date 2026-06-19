@@ -147,6 +147,23 @@ function buildSolids(kernel, ops) {
       const result = (P.kind === 'chamfer') ? kernel.chamfer(pe.shape, sel, r) : kernel.fillet(pe.shape, sel, r);
       all.forEach(e => kernel.release(e));            // local edge subshapes (parent cached → NOT released)
       shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_MOVE') {          // free translate of one referenced solid (W-BONSAI-MOVE PATH A)
+      // A signed GEOM_MOVE references a prior feature by `parent` and TRANSLATES its solid IN PLACE, so a later
+      // GEOM_CUT on the moved wall (solids.get(op.parent), above) reads the TRANSLATED shape — move-then-cut is
+      // geometrically honest. Successive moves compose (each writes solids.set(op.parent) forward; the op_hash
+      // encodes the whole prefix → distinct cache key per move). TOLERANT like GRID_MOVE (NOT CUT's throw): a move
+      // whose parent is a HOST-folded GEOM_INSERT (not in this worker's solids map) is a silent NO-OP — the host
+      // re-places inserts via library.foldInsert (PATH B), and every GEOM_MOVE rides the kernel batch regardless.
+      const pe = solids.get(op.parent);
+      if (pe) {
+        const ckey = key + ':' + op.parent;            // op_hash = immutable prefix → content-addressed per move
+        if (shapeCache.has(ckey)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(ckey), hash: ckey }); }
+        else {
+          _stats.rebuilt++;
+          const out = kernel.translate(pe.shape, P.dx || 0, P.dy || 0, P.dz || 0);   // SAME primitive as GRID_MOVE TRANSLATE
+          shapeCache.set(ckey, out); solids.set(op.parent, { shape: out, hash: ckey });   // parent cached → NOT released
+        }
+      }
     } else if (op.op_type === 'GEOM_GRID_MOVE') {     // one op recomposes N features → cache per (op_hash, featureId)
       for (const c of (P.commands || [])) {
         const pe = solids.get(c.featureId); if (!pe) continue;
