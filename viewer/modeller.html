@@ -37,15 +37,16 @@
      turn the corner and flow horizontally LEFT along the top edge. They ROLL OUT in sequence on open. The ? help
      is the FIRST button in this rail (in line with the tools), not a separate floating button. */
   #bar { position: fixed; inset: 0; z-index: 11; pointer-events: none; display: block; }
-  #bar button { position: fixed; width: 36px; height: 36px; padding: 0; justify-content: center;
-    pointer-events: auto; border-radius: 11px; color: #cdd6e4; background: rgba(22,24,32,0.34);
+  #bar button { position: fixed; width: 40px; height: 40px; padding: 0; justify-content: center;
+    pointer-events: auto; border-radius: 50%; color: #fff; background: rgba(22,24,32,0.42);
     border: 1px solid rgba(255,255,255,0.12);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 2px 10px rgba(0,0,0,0.30);
     opacity: 0; transform: scale(.35) translate(26px, 26px);
-    transition: opacity .24s ease, transform .30s cubic-bezier(.22,.9,.25,1.2); }
+    transition: opacity .24s ease, transform .30s cubic-bezier(.22,.9,.25,1.2), background .15s, border-color .15s; }
   #bar.rolled button { opacity: 1; transform: none; }                  /* rolled-out (per-index delay set in JS) */
-  #bar button:hover { background: rgba(46,52,68,0.6); }
-  #bar button.on { background: rgba(31,49,71,0.62); border-color: #4fc3f7; color: #9fd4f7; }
+  #bar button:hover { background: rgba(46,52,68,0.60); }
+  #bar button:active { background: rgba(46,52,68,0.78); }
+  #bar button.on { background: #4fc3f7; color: #000; border-color: #4fc3f7; }   /* HIGHLIGHTED when active (Viewer parity) */
   #bar button span { display: none; }                                  /* label → tooltip (title) */
   #bar button .ic { width: 20px; height: 20px; }
   #hist { right: 70px !important; }                                    /* clear the bottom-right ⋯ trigger */
