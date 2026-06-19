@@ -1642,6 +1642,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
     console.log('§IDEMPIERE tab=' + tab.name + ' table=' + tab.tableName + ' rows=' + _records.length + ' fields=' + (tab.fields ? tab.fields.length : 0) + (mdNote ? ' parentFilter=' + mdNote : '') + ' postingDoc=' + _curPostingDoc);
     renderBody();
+    // The toolbar was rendered (by openWindow) BEFORE these records loaded, so its record-dependent enable states
+    //   (Copy / Delete / Process / Zoom) were stale (computed against 0 rows). Re-render now that _records is live.
+    renderToolbar();
   }
   function _displayFields(tab) {
     return (tab.fields || []).filter(function (f) { return f.isDisplayed && !f.isKey; });
