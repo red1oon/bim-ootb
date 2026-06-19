@@ -153,12 +153,21 @@
     },
 
     // THE FOLD for a GEOM_INSERT op-row -> a transferable mesh payload (same shape the worker returns).
-    foldInsert(op) {
+    // `mv` (optional {dx,dy,dz}) = the NET translation of any GEOM_MOVE op-rows referencing this insert (W-BONSAI-MOVE
+    // PATH B). It is a pure FOLD OVERRIDE over the immutable signed GEOM_INSERT row — same doctrine as the LOD
+    // override (lodFor): the signed placement is never rewritten; the move is its own signed row, summed by the
+    // host and applied here BEFORE place() so the existing yaw + ground-seat math (place() subtracts bbox[4]) runs
+    // unchanged and the delta lands in the position BUFFER → geo.computeBoundingBox sees world coords for free
+    // (gridmove.elementData + bCut bbox stay correct with zero consumer edits).
+    foldInsert(op, mv) {
       const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
       const c = this.get(P.hash); if (!c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
       const lod = this.lodFor(op.id, P.lod);
       const base = (lod === '300') ? this.meshArrays(P.hash) : boxArrays(c.bbox);
-      const positions = place(base.positions, P.placement, base.bbox || c.bbox);   // real mesh seats on its own bbox
+      const pl = (mv && (mv.dx || mv.dy || mv.dz))
+        ? { x: (P.placement.x || 0) + mv.dx, y: (P.placement.y || 0) + mv.dy, z: (P.placement.z || 0) + mv.dz, rot: P.placement.rot }
+        : P.placement;
+      const positions = place(base.positions, pl, base.bbox || c.bbox);   // real mesh seats on its own bbox
       return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices };
     },
 

@@ -19,7 +19,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=1', _self);
+      const url = new URL('bonsai_kernel_worker.js?v=2', _self);   // v2: GEOM_MOVE branch (W-BONSAI-MOVE PATH A)
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};
@@ -140,12 +140,23 @@
       opts = opts || {};
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
       const g = this.group();
+      // W-BONSAI-MOVE 3-way split: GEOM_INSERT folds HOST-side (baked mesh); everything else (incl. GEOM_MOVE)
+      // rides the occt worker so a move can TRANSLATE a wall's B-rep in place (PATH A). GEOM_MOVE rows are ALSO
+      // summed here into a net per-parent delta — applied host-side to inserts via foldInsert (PATH B). A move
+      // whose parent is an insert harmlessly reaches the worker too: PATH A no-ops (the insert isn't a worker solid).
       const insertOps = ops.filter(o => o.op_type === 'GEOM_INSERT');
-      const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');
+      const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');   // KEEPS GEOM_MOVE → PATH A translates moved walls
+      const moveBy = new Map();                                          // targetFeatureId -> {dx,dy,dz} (net, summed)
+      for (const op of ops) {
+        if (op.op_type !== 'GEOM_MOVE') continue;
+        const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
+        const a = moveBy.get(P.parent) || { dx: 0, dy: 0, dz: 0 };
+        a.dx += P.dx || 0; a.dy += P.dy || 0; a.dz += P.dz || 0; moveBy.set(P.parent, a);
+      }
       const d = kernelOps.length ? await this._foldChain(kernelOps) : { meshes: [] };
       const meshes = (d.meshes || []).slice();
       if (window.Bonsai.library) {
-        for (const op of insertOps) { try { meshes.push(window.Bonsai.library.foldInsert(op)); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
+        for (const op of insertOps) { try { meshes.push(window.Bonsai.library.foldInsert(op, moveBy.get(op.id))); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
       }
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
       let totalTris = 0;

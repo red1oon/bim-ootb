@@ -104,6 +104,12 @@
     // (amount:null → subtotal/tax/total stay null, qty=MovementQty carried) — honest, never a fabricated total.
     // AD_PROCESS_FOLD_LANE §P2-tail-leg1 — Witness: W-PROC-MINOUT.
     registerHandler('report:m_inout',   receiptHandler('m_inout'),   { kind: 'report', reportKey: 'm_inout' });
+    // report:m_inoutconfirm — "Rpt M_InOutConfirm" (AD_Process 292, "Shipment Confirmation"). KIND-1, the LINE-SORT +
+    // PRODUCT-JOIN variant (AD_PROCESS_FOLD_LANE §P2-tail-leg6): the confirm-line m_inoutlineconfirm has no `line` col
+    // and no m_product_id → REPORT_MAP.m_inoutconfirm carries lineSort + lineProductVia, and the db-aware ctx
+    // (host _procCtx / witness) resolves the ORDER BY + the parent-line product join before folding. foldReceipt is
+    // UNCHANGED — NO new fold verb. A confirmation is NON-FINANCIAL (qty=ConfirmedQty; partner/total/amount/price null).
+    registerHandler('report:m_inoutconfirm', receiptHandler('m_inoutconfirm'), { kind: 'report', reportKey: 'm_inoutconfirm' });
     // report:m_movement — "Rpt M_Movement" (AD_Process 290, "Inventory Move Print"). KIND-1, the warehouse sibling
     // of report:m_inout (AD_PROCESS_FOLD_LANE §P2-tail-leg2): folds an M_Movement → a NON-FINANCIAL receipt via the
     // SAME report_overlay.foldReceipt over REPORT_MAP.m_movement — ZERO new fold code, zero host change.
@@ -470,9 +476,14 @@
       // map known report procs to the report_overlay header tables (extracted, not invented)
       if (/c_order\b|order print|rpt c_order/.test(hay) && !/invoice/.test(hay)) return 'report:c_order';
       if (/c_invoice|invoice print|rpt c_invoice/.test(hay)) return 'report:c_invoice';
-      // "Rpt M_InOut" (117) — M_InOut-SPECIFIC: m_inout\b (word-boundary) so "Rpt M_InOutConfirm" (292,
-      // "m_inoutconfirm" — no boundary) and the RV_InOutDetails report-VIEWs (293/294) stay absent-handler.
-      // "delivery note"/"shipment print" are the print-format name; "shipment confirmation"/"...details" do NOT match.
+      // "Rpt M_InOutConfirm" (292, "Shipment Confirmation") — CHECKED FIRST + CONFIRM-SPECIFIC: m_inoutconfirm\b |
+      // "shipment confirmation" (§P2-tail-leg6). It does NOT catch 117 "Rpt M_InOut" ("shipment print", no "confirm");
+      // the report-VIEWs 284 RV_InOutLineConfirm / 285 RV_InOutConfirm ("rv_inout*confirm", names "Open Confirmation(s)")
+      // carry no literal "m_inoutconfirm" + no "shipment confirmation" → stay absent-handler; 280 M_InOutConfirm_Process
+      // is isReport=N → never reaches here. Must precede the m_inout rule (though m_inout\b alone would not catch it).
+      if (/m_inoutconfirm\b|shipment confirmation/.test(hay)) return 'report:m_inoutconfirm';
+      // "Rpt M_InOut" (117) — M_InOut-SPECIFIC: m_inout\b (word-boundary) so the RV_InOutDetails report-VIEWs (293/294)
+      // stay absent-handler. "delivery note"/"shipment print" are the print-format name; "...details" do NOT match.
       if (/m_inout\b|delivery note|shipment print/.test(hay)) return 'report:m_inout';
       // "Rpt M_Movement" (290) — M_Movement-SPECIFIC: m_movement\b (word-boundary) so the imperative M_Movement
       // procs ("M_Movement_Process"/"M_MovementConfirm_Process", 122/286 — isReport=N, never reach here anyway) and
