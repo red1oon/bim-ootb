@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
   let pass = 0, fail = 0;
   const ok = (label, cond, extra) => { console.log('   ' + (cond ? '🟢' : '🔴') + ' ' + label + (extra ? ' — ' + extra : '')); cond ? pass++ : fail++; };
 
-  // (1)+(2) STEP 0 surfaced cold with 1 resident + 5 demo, NO install dialog
+  // (1)+(2) STEP 0 surfaced cold with 2 framework residents (System + GardenWorld) + 5 demo, NO install dialog
   const door = await page.evaluate(() => {
     const step0 = document.getElementById('idmp-login-step0');
     const visible = !!step0 && step0.style.display !== 'none';
@@ -65,7 +65,11 @@ const server = http.createServer((req, res) => {
     };
   });
   ok('STEP 0 rendered cold (not auto-skipped)', door.visible, JSON.stringify({ total: door.total }));
-  ok('1 resident tenant present (GardenWorld)', door.residentNames.length === 1 && /Garden/i.test(door.residentNames[0] || ''), JSON.stringify(door.residentNames));
+  // SYSTEM_ADMIN_LANE §SA1 — the System(0) framework tenant is now resident at the front door (so Initial Tenant
+  // Setup is reachable the canonical way: System login → menu → wizard). GardenWorld still lists; 0 demo bleed.
+  ok('framework residents present (System + GardenWorld)',
+     door.residentNames.length === 2 && door.residentNames.some(n => /Garden/i.test(n)) && door.residentNames.some(n => /^System$/i.test(n)),
+     JSON.stringify(door.residentNames));
   const want = ['Odoo', 'iDempiere', 'SAP', 'Oracle', 'Dynamics'];
   const haveAll = want.every(w => door.demoNames.some(n => n.toLowerCase().indexOf(w.toLowerCase()) >= 0));
   ok('all 5 demo tenants PRESENT by name', door.demoNames.length === 5 && haveAll, JSON.stringify(door.demoNames));
