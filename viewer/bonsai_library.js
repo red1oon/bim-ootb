@@ -31,11 +31,11 @@
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src
     : (typeof location !== 'undefined' ? location.href : '');
   const ready = (typeof fetch === 'function')
-    ? fetch(new URL('dagevu_catalog.json?v=4', _base).href).then(function (r) { return r.json(); }).then(function (j) {
+    ? fetch(new URL('dagevu_catalog.json?v=5', _base).href).then(function (r) { return r.json(); }).then(function (j) {
         GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
         DB_PRODUCTS = (j.products || []).map(function (p) {
           return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
-                   cat: p.cat, group: p.group, gh: p.gh, bbox: bboxFromDims(p.w, p.d, p.h), w: p.w, d: p.d, h: p.h, fc: 12, asmOnly: !!p.asmOnly };
+                   cat: p.cat, group: p.group, gh: p.gh, bbox: bboxFromDims(p.w, p.d, p.h), w: p.w, d: p.d, h: p.h, fc: 12, asmOnly: !!p.asmOnly, boxOnly: !!p.boxOnly };
         });
         ASSEMBLIES = j.assemblies || []; ASM_BY_ID = {};
         ASSEMBLIES.forEach(function (a) { ASM_BY_ID[a.id] = a; });
@@ -88,7 +88,7 @@
   const Library = {
     _lod: {},                                   // featureId -> render-LOD override ('200'|'300')
     ready() { return ready; },                  // resolves when the BOM catalog JSON has loaded
-    catalog() { return ALL().map(c => ({ hash: c.hash, name: c.name, ifc_class: c.ifc_class, category: c.category, group: c.group, bbox: c.bbox, fc: c.fc })); },
+    catalog() { return ALL().map(c => ({ hash: c.hash, name: c.name, ifc_class: c.ifc_class, category: c.category, group: c.group, bbox: c.bbox, fc: c.fc, boxOnly: c.boxOnly })); },
     get(hash) { return ALL().find(c => c.hash === hash) || null; },
     // BOM-catalog browse helpers (the filterable tree + the cheat sheet) — the panel renders over these.
     groups() { return GROUPS; },                                          // [{key,label,categories:[{cat,label,ifc_class,count}]}]
@@ -136,7 +136,7 @@
       if (!c || !c.gh || (this._geom && this._geom[c.gh])) return Promise.resolve(this.hasMesh(hash));
       if (!this._geomP) {
         this._geomP = (typeof fetch === 'function')
-          ? fetch(new URL('dagevu_geometries.json?v=3', _base).href).then(r => r.json())
+          ? fetch(new URL('dagevu_geometries.json?v=4', _base).href).then(r => r.json())
               .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
               .catch(e => { console.warn(TAG + ' geometries load failed ' + e); this._geom = {}; return {}; })
           : Promise.resolve(this._geom = {});
