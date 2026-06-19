@@ -122,6 +122,7 @@ const PRECACHE_ASSETS = [
   'aplus.png',
   'logo_glass.png',       // glass-bubble client logo (header + sign-in mark)
   'doublebubble.jpg',     // big/main brand mark (login card · header · System Monitor) — NEUTRAL, not iDempiere's logo
+  'favicon.png',          // tab/favicon (small bubble) — replaces the browser's default globe
 ];
 
 self.addEventListener('install', (event) => {
