@@ -10,7 +10,7 @@
 //   userlevel 'S', Y) · AD_User_Roles(10→0, 100→0, client 0, Y) · AD_Process_Access(53161 InitialClientSetup,
 //   role 0, client 0, Y, isreadwrite Y). UUIDs are the real oracle ad_*_uu values.
 //
-// This is a BOOT OVERLAY (precedent: BimOrdersOverlay / BimEmbed.ensureSeedBimSets) — it never touches the
+// This is a BOOT OVERLAY (precedent: BimOrdersOverlay.apply) — it never touches the
 //   26 MB ad_seed.db binary, runs idempotently every boot (guard on AD_Client 0 already present), and is safe
 //   across the idb-cache reload path. SECURITY: 53161 access is granted ONLY to System role 0 (never GardenWorld
 //   Admin) — the genesis wizard stays a System Administrator act. Witness: W-GENESIS-SYSADMIN-LIVE.

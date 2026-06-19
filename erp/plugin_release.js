@@ -36,7 +36,6 @@
     { id: 'kanban_lens', core: false, label: 'Kanban board' },
     { id: 'ninja_create', core: false, label: 'Ninja window builder' },
     { id: 'plugin_overlay', core: false, label: 'Plugin Engine (foreign bundles)' },
-    { id: 'bim_embed', core: false, label: 'BIM-in-window embed' },
     { id: 'blue_future', core: false, label: 'Blue Future (speculative branch)' },
     { id: 'system_monitor', core: false, label: 'System Monitor' }
   ];
