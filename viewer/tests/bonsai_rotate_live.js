@@ -5,7 +5,7 @@
 // put, the chain verifies + is signed (insert+rotate), scrub replays deterministically, and undo restores the
 // prior yaw. (Solid/group rotation = follow-ups; the worker carries a tolerant GEOM_ROTATE no-op branch.)
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-rotate', 'viewer');
+const VIEWER = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };
@@ -57,13 +57,13 @@ const server = http.createServer((q, r) => {
   const centreFixed = Math.abs((a.cx || 0) - (b.cx || 0)) < 0.03 && Math.abs((a.cy || 0) - (b.cy || 0)) < 0.03;       // spins in place
   const replayDeterministic = Math.abs(((x.replayBefore || {}).ex) - b.ex) < 0.03 && Math.abs(((x.replayAfter || {}).ex) - a.ex) < 0.03;
   const undoRestores = x.undoId != null && Math.abs((au.ex || 0) - (b.ex || 0)) < 0.03 && Math.abs((au.ey || 0) - (b.ey || 0)) < 0.03 && x.verifyAfterUndo === true;
-  const solidNoRing = x.solidRing === false;                                                // a solid gets NO yaw ring (would silently no-op)
+  const solidHasRing = x.solidRing === true;                                                 // a solid NOW carries a yaw ring (worker spins its B-rep) — W-BONSAI-ROTATE-SOLID
   const drew = probe.litPct > 0.5;
 
-  const pass = armed && dragged && oneSignedRotate && extentsSwapped && centreFixed && replayDeterministic && undoRestores && solidNoRing && drew;
+  const pass = armed && dragged && oneSignedRotate && extentsSwapped && centreFixed && replayDeterministic && undoRestores && solidHasRing && drew;
   console.log('  §ROTATE VERDICT ' + (pass ? 'PASS' : 'FAIL') +
     ' — armed=' + armed + ' dragged=' + dragged + ' oneSignedRotate=' + oneSignedRotate + ' extentsSwapped=' + extentsSwapped +
-    ' centreFixed=' + centreFixed + ' replayDeterministic=' + replayDeterministic + ' undoRestores=' + undoRestores + ' solidNoRing=' + solidNoRing + ' drew=' + drew);
+    ' centreFixed=' + centreFixed + ' replayDeterministic=' + replayDeterministic + ' undoRestores=' + undoRestores + ' solidHasRing=' + solidHasRing + ' drew=' + drew);
   console.log('── W-BONSAI-ROTATE ' + (pass ? 'PASS' : 'FAIL') + ' ──');
   process.exit(pass ? 0 : 1);
 })();
