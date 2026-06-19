@@ -311,7 +311,7 @@ async function author(op, color) {
 }
 bWall.onclick = () => author(WALL, 0x9fb4c8);
 bOpen.onclick = () => author(OPENING, 0xc8a99f);
-bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); setStat('cleared'); };
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); setStat('cleared'); };
 
 // ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
 // Click on the XY ground plane to drop profile points; the planegcs solver cleans up the polygon
@@ -483,18 +483,31 @@ bExtrude.onclick = async () => {
 // ── PICK-SELECT + HIGHLIGHT ─────────────────────────────────────────────────────────────────────
 // Click an authored solid to select it (emissive highlight); the selected feature is the cut target.
 const bCut = document.getElementById('b-cut');
+// P3 MULTI-SELECT (MODELLER_DIRECT_MANIPULATION.md L2 / W-BONSAI-MULTISELECT). selectedId/selectedMesh stay the
+// PRIMARY/anchor (last-added) so every single-target path (cut/fillet/lod/frame) is untouched; selectedIds is the
+// full membership. Every select path funnels through setSelectionIds so the scalar + the set never drift.
 let selectedId = null, selectedMesh = null;
-function highlight(mesh) {
-  if (selectedMesh && selectedMesh.material) selectedMesh.material.emissive && selectedMesh.material.emissive.setHex(0x000000);
-  selectedMesh = mesh; selectedId = mesh ? mesh.userData.featureId : null;
-  if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
+let selectedIds = new Set();
+window.Bonsai._selSet = selectedIds;
+function selMeshes() { const g = window.Bonsai.group && window.Bonsai.group(); return g ? g.children.filter(o => o.isMesh && selectedIds.has(o.userData.featureId)) : []; }
+function _emis(mesh, hex) { if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(hex); }
+function _paintSel() {                                    // emissive: primary brighter, secondaries dimmer, the rest off
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
+  g.children.forEach(o => { if (o.isMesh) _emis(o, selectedIds.has(o.userData.featureId) ? (o.userData.featureId === selectedId ? 0x2b5a8c : 0x1f3f5c) : 0x000000); });
+}
+function setSelectionIds(ids, primary) {
+  selectedIds = new Set((ids || []).filter(x => x != null)); window.Bonsai._selSet = selectedIds;
+  const g = window.Bonsai.group && window.Bonsai.group();
+  selectedId = (primary != null && selectedIds.has(primary)) ? primary : (selectedIds.size ? Array.from(selectedIds).pop() : null);
+  selectedMesh = (selectedId != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === selectedId) : null;
+  _paintSel();
   bCut.disabled = selectedId == null;
   const bd = document.getElementById('b-del'); if (bd) bd.disabled = selectedId == null;   // Delete acts on the selection
   const bmv = document.getElementById('b-move'); if (bmv) bmv.disabled = selectedId == null;   // Move acts on the selection
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
-  console.log('§MODELLER select featureId=' + selectedId);
-  // CONNECT_SCENE_SPEC.md P1 — broadcast the pick over the shared 'selection' channel so the Viewer/ERP land
+  console.log('§MODELLER select featureId=' + selectedId + (selectedIds.size > 1 ? ' set=[' + Array.from(selectedIds).join(',') + '] n=' + selectedIds.size : ''));
+  // CONNECT_SCENE_SPEC.md P1 — broadcast the PRIMARY pick over the shared 'selection' channel so the Viewer/ERP land
   // on the SAME signed entity. Payload is anchored on signed identity (op_hash) + the component's ifc_class
   // (the only cross-surface bridge: viewer elements_meta + ERP product Value). Echo-guarded by _applyingRemoteSel.
   if (window.Connect && window.Connect.on && !_applyingRemoteSel && selectedId != null) {
@@ -502,18 +515,76 @@ function highlight(mesh) {
     if (p && p.ifcClass) window.Connect.publish('selection', p);
   }
 }
-window.Bonsai.select = (fid) => {                 // witness/programmatic hook
+function highlight(mesh) { setSelectionIds(mesh ? [mesh.userData.featureId] : [], mesh ? mesh.userData.featureId : null); }   // REPLACE-select (single)
+function toggleSelect(mesh) {                             // shift-click: add/remove the hit object
+  const fid = mesh.userData.featureId; const ids = new Set(selectedIds);
+  if (ids.has(fid)) { ids.delete(fid); setSelectionIds(Array.from(ids), ids.size ? Array.from(ids).pop() : null); }
+  else { ids.add(fid); setSelectionIds(Array.from(ids), fid); }
+}
+window.Bonsai.select = (fid) => {                 // witness/programmatic hook (REPLACE-select)
   const g = window.Bonsai.group && window.Bonsai.group();
   const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
   highlight(m || null); return selectedId;
 };
-canvas.addEventListener('pointerdown', (e) => {
-  if (sketching || routing || edgePicking || gridMoving || moving || inserting || e.button !== 0 || e.shiftKey) return;
-  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
+window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids.length) ? fids[fids.length - 1] : null); return Array.from(selectedIds); };
+function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting); }
+function pickAt(clientX, clientY) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return null;
   const r = canvas.getBoundingClientRect();
-  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObjects(g.children.filter(o => o.isMesh), false)[0];
+  return raycaster.intersectObjects(g.children.filter(o => o.isMesh), false)[0] || null;
+}
+// ── MARQUEE (shift-drag box) ───────────────────────────────────────────────────────────────────
+// Bare left-drag is OrbitControls' rotate, so SHIFT is the multi gesture (no conflict). A CAPTURE-phase pointerdown
+// freezes the camera BEFORE OrbitControls consumes the drag; pointerup computes which features' projected bbox
+// CENTRE landed in the box and ADDS them. <4px of motion = a shift-CLICK → toggle the object under the cursor.
+let marquee = null;   // { x0,y0,x1,y1 (client), moved }
+function marqueeBox() { let b = document.getElementById('sel-marquee'); if (!b) { b = document.createElement('div'); b.id = 'sel-marquee'; b.style.cssText = 'position:fixed;border:1px solid #4fc3f7;background:rgba(79,195,247,0.12);pointer-events:none;z-index:50;display:none'; document.body.appendChild(b); } return b; }
+function marqueeDraw() { const b = marqueeBox(); if (!marquee) { b.style.display = 'none'; return; } const x = Math.min(marquee.x0, marquee.x1), y = Math.min(marquee.y0, marquee.y1); b.style.left = x + 'px'; b.style.top = y + 'px'; b.style.width = Math.abs(marquee.x1 - marquee.x0) + 'px'; b.style.height = Math.abs(marquee.y1 - marquee.y0) + 'px'; b.style.display = 'block'; }
+function featuresInRect(x0, y0, x1, y1) {                  // features whose projected bbox CENTRE falls in the screen rect
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
+  const r = canvas.getBoundingClientRect();
+  const lo = { x: Math.min(x0, x1), y: Math.min(y0, y1) }, hi = { x: Math.max(x0, x1), y: Math.max(y0, y1) };
+  const out = [];
+  g.children.forEach(o => {
+    if (!o.isMesh || o.userData.featureId == null) return;
+    o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox;
+    const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2).project(camera);
+    const sx = r.left + (c.x + 1) / 2 * r.width, sy = r.top + (1 - c.y) / 2 * r.height;
+    if (c.z < 1 && sx >= lo.x && sx <= hi.x && sy >= lo.y && sy <= hi.y) out.push(o.userData.featureId);
+  });
+  return out;
+}
+canvas.addEventListener('pointerdown', (e) => {           // CAPTURE — freeze controls before OrbitControls sees the shift-drag
+  if (!inSelectCtx() || e.button !== 0 || !e.shiftKey) return;
+  marquee = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, moved: false };
+  controls.enabled = false;
+}, true);
+window.addEventListener('pointermove', (e) => {           // on WINDOW so a drag that leaves the canvas still tracks
+  if (!marquee) return;
+  marquee.x1 = e.clientX; marquee.y1 = e.clientY;
+  if (Math.abs(marquee.x1 - marquee.x0) + Math.abs(marquee.y1 - marquee.y0) > 4) marquee.moved = true;
+  if (marquee.moved) marqueeDraw();
+});
+window.addEventListener('pointercancel', () => { if (marquee) { marquee = null; marqueeDraw(); controls.enabled = true; } });
+window.addEventListener('pointerup', (e) => {             // on WINDOW so an OFF-canvas release never strands controls frozen
+  if (!marquee) return;
+  const m = marquee; marquee = null; marqueeDraw(); controls.enabled = true;
+  if (!m.moved) {                                          // shift-CLICK → toggle the hit object
+    const hit = pickAt(e.clientX, e.clientY);
+    if (hit) { toggleSelect(hit.object); setStat('toggled #' + hit.object.userData.featureId + '  (' + selectedIds.size + ' selected)'); }
+    return;
+  }
+  const hits = featuresInRect(m.x0, m.y0, e.clientX, e.clientY);   // shift-DRAG box → ADD enclosed to the selection
+  const ids = new Set(selectedIds); hits.forEach(h => ids.add(h));
+  setSelectionIds(Array.from(ids), hits.length ? hits[hits.length - 1] : selectedId);
+  console.log('§MARQUEE rect-hits=[' + hits.join(',') + '] total=' + selectedIds.size);
+  setStat('marquee: +' + hits.length + ' → ' + selectedIds.size + ' selected');
+});
+canvas.addEventListener('pointerdown', (e) => {           // bare (no-shift) pick → replace-select
+  if (!inSelectCtx() || e.button !== 0 || e.shiftKey) return;
+  const hit = pickAt(e.clientX, e.clientY);
   if (hit) { highlight(hit.object); setStat('selected feature #' + selectedId); }
 });
 
@@ -828,9 +899,11 @@ function moveStep() {                                          // typed magnitud
   if (G && G.active && G.xs && G.xs.length > 1) { const g = []; for (let i = 1; i < G.xs.length; i++) g.push(Math.abs(G.xs[i] - G.xs[i - 1])); g.sort((a, b) => a - b); return g[g.length >> 1] || 0.5; }
   return 0.1;
 }
-function selCentre() {                                         // folded bbox centre of the selection (local==world: authored meshes have identity transform)
-  if (!selectedMesh) return null; selectedMesh.geometry.computeBoundingBox(); const b = selectedMesh.geometry.boundingBox;
-  return new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
+function selCentre() {                                         // folded bbox centre of the WHOLE selection (group-aware; local==world: authored meshes have identity transform)
+  const ms = selMeshes(); if (!ms.length && selectedMesh) ms.push(selectedMesh); if (!ms.length) return null;
+  const box = new THREE.Box3(); ms.forEach(m => { m.geometry.computeBoundingBox(); box.expandByObject(m); });
+  if (!isFinite(box.min.x)) return null;
+  const c = new THREE.Vector3(); box.getCenter(c); return c;
 }
 function axisHandle(axis, color, L) {                          // one pickable colored shaft + arrowhead along +axis
   const dir = axis === 'x' ? new THREE.Vector3(1, 0, 0) : axis === 'y' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
@@ -845,7 +918,9 @@ function axisHandle(axis, color, L) {                          // one pickable c
 }
 function buildMoveGizmo() {
   clearMoveGizmo(); const c = selCentre(); if (!c) return;
-  const sz = new THREE.Vector3(); selectedMesh.geometry.boundingBox.getSize(sz);
+  const gbox = new THREE.Box3(); selMeshes().forEach(m => { m.geometry.computeBoundingBox(); gbox.expandByObject(m); });
+  if (!isFinite(gbox.min.x) && selectedMesh) { selectedMesh.geometry.computeBoundingBox(); gbox.expandByObject(selectedMesh); }
+  const sz = new THREE.Vector3(); gbox.getSize(sz);
   const L = Math.min(3, Math.max(0.9, Math.max(sz.x, sz.y, sz.z) * 0.7 + 0.4));
   moveGizmo = new THREE.Group(); moveGizmo.name = 'MoveGizmo';
   moveGizmo.add(axisHandle('x', 0xe2553b, L), axisHandle('y', 0x46b955, L), axisHandle('z', 0x4f93e0, L));
@@ -856,10 +931,14 @@ function buildMoveGizmo() {
   if (window.A && A.requestRender) A.requestRender();
 }
 function clearMoveGizmo() { if (moveGizmo) { scene.remove(moveGizmo); moveGizmo.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); moveGizmo = null; } }
-function clearMoveGhost() { if (moveGhost) { scene.remove(moveGhost); moveGhost.geometry.dispose(); moveGhost.material.dispose(); moveGhost = null; } }
-function moveGhostShow(dx, dy, dz) {                           // translucent clone of the target at the running delta
-  if (!selectedMesh) return;
-  if (!moveGhost) { moveGhost = new THREE.Mesh(selectedMesh.geometry.clone(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.35, depthWrite: false })); moveGhost.renderOrder = 998; scene.add(moveGhost); }
+function clearMoveGhost() { if (moveGhost) { scene.remove(moveGhost); moveGhost.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); moveGhost = null; } }
+function moveGhostShow(dx, dy, dz) {                           // translucent clone of EVERY selected target at the running delta
+  const ms = selMeshes(); if (!ms.length && selectedMesh) ms.push(selectedMesh); if (!ms.length) return;
+  if (!moveGhost) {
+    moveGhost = new THREE.Group();
+    ms.forEach(m => { const gm = new THREE.Mesh(m.geometry.clone(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.35, depthWrite: false })); gm.renderOrder = 998; moveGhost.add(gm); });
+    scene.add(moveGhost);
+  }
   moveGhost.position.set(dx, dy, dz);
   const c = selCentre(); if (c && moveGizmo) moveGizmo.position.set(c.x + dx, c.y + dy, c.z + dz);
   if (window.A && A.requestRender) A.requestRender();
@@ -926,18 +1005,22 @@ async function commitMoveDrag() {
 }
 canvas.addEventListener('pointerup', () => { if (moving && _moveDrag) commitMoveDrag(); });
 async function commitMove(dx, dy, dz) {
-  if (selectedId == null) return;                              // guard: never move an absent/undone feature
-  const tid = selectedId;
-  setStat('moving…');
+  const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
+  if (!ids.length) return;                                     // guard: never move an absent/undone feature
+  setStat(ids.length > 1 ? ('moving ' + ids.length + ' objects…') : 'moving…');
   try {
-    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz } }, {});
-    console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
-    setStat('moved #' + tid + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')  verify=' + res.verify);
+    let lastVerify = true;
+    for (const tid of ids) {                                   // group move = N signed GEOM_MOVE by the SAME delta
+      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz } }, {});
+      lastVerify = res.verify;
+      console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
+    }
+    setStat((ids.length > 1 ? ('moved ' + ids.length + ' objects') : ('moved #' + ids[0])) + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')  verify=' + lastVerify);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
-    window.Bonsai.select(tid); clearMoveGhost();        // re-fold replaced the mesh → always re-grab the fresh selectedMesh (no stale ref)
-    if (moving) buildMoveGizmo();                        // reposition the gizmo on the moved feature (move mode only)
+    window.Bonsai.selectMany(ids); clearMoveGhost();      // re-fold replaced the meshes → always re-grab fresh refs (no stale)
+    if (moving) buildMoveGizmo();                         // reposition the gizmo on the moved selection (move mode only)
   } catch (err) {
-    clearMoveGhost(); if (moving && selectedId != null) { window.Bonsai.select(selectedId); buildMoveGizmo(); }   // don't strand the drag ghost on a failed commit
+    clearMoveGhost(); if (moving && ids.length) { window.Bonsai.selectMany(ids); buildMoveGizmo(); }   // don't strand the drag ghost on a failed commit
     setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER move fail ' + err);
   }
 }
@@ -1211,9 +1294,11 @@ function refreshEditButtons() {                                   // enable Undo
 }
 window.addEventListener('bonsai:oplog', refreshEditButtons);
 async function deleteSelected() {
-  if (selectedId == null) return;
-  const id = selectedId; await window.Bonsai.oplog.deleteFeature(id); highlight(null); audioCue('cut');
-  setStat('deleted feature #' + id); syncHistory();
+  const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
+  if (!ids.length) return;
+  for (const id of ids) await window.Bonsai.oplog.deleteFeature(id);
+  highlight(null); audioCue('cut');
+  setStat(ids.length > 1 ? ('deleted ' + ids.length + ' features') : ('deleted feature #' + ids[0])); syncHistory();
 }
 bDel.onclick = () => deleteSelected();
 bUndo.onclick = async () => { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } };
@@ -2018,6 +2103,90 @@ if (qs.get('move') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER move demo fail ' + e); }
     window.__moveResult = out; window.__moveDone = true;
     console.log('§MODELLER move-done');
+  })();
+}
+// ?multiselect=demo proves DIRECT-MANIPULATION MULTI-SELECT (W-BONSAI-MULTISELECT / P3): place 3 Doors on a grid →
+// a real shift+drag MARQUEE box over 2 of them selects EXACTLY those 2 (the 3rd untouched) → a shift-CLICK adds the
+// 3rd then removes it again (set 3→2) → a group Move drag +X commits EXACTLY 2 signed GEOM_MOVE by the SAME snapped
+// delta, both centres move by it while the 3rd door has ZERO move-ops, the chain verifies + is signed (3 inserts + 2
+// moves), and Escape clears the set to 0. Drives the REAL handlers via dispatched PointerEvents (no private pokes).
+if (qs.get('multiselect') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const centreOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
+    const rect = canvas.getBoundingClientRect();
+    const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+    const setOf = () => Array.from(window.Bonsai._selSet || []);
+    try {
+      window.Bonsai.grid.define({ xs: [0, 1, 2, 3, 4, 5], ys: [0, 3], xlabels: ['A', 'B', 'C', 'D', 'E', 'F'], ylabels: ['1', '2'] });
+      window.Bonsai.grid.show(true); O.clear(); await sleep(50);
+      const door = window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor');
+      const ids = [];
+      for (const x of [0.5, 1.5, 4.0]) {                              // 2 doors near A/B (will be boxed) + 1 far at E (control)
+        const ins = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x, y: 1.5, z: 0, rot: 0 }, lod: '200' } });
+        for (let i = 0; i < 40 && !meshOf(ins.id); i++) await sleep(50);
+        ids.push(ins.id);
+      }
+      out.doors = ids.slice();
+      window.Bonsai.select(null); highlight(null); await sleep(20); out.startSel = setOf().length;   // 0
+
+      // ── MARQUEE: shift+drag a box around doors 0 and 1 only ───────────────────────────────────
+      const c0 = centreOf(ids[0]), c1 = centreOf(ids[1]), c2 = centreOf(ids[2]);
+      out.centresBefore = { d0: c0, d1: c1, d2: c2 };
+      const p0 = toClient(c0.x, c0.y, c0.z), p1 = toClient(c1.x, c1.y, c1.z), p2 = toClient(c2.x, c2.y, c2.z);
+      const bx0 = Math.min(p0.clientX, p1.clientX) - 30, by0 = Math.min(p0.clientY, p1.clientY) - 30;
+      const bx1 = Math.max(p0.clientX, p1.clientX) + 30, by1 = Math.max(p0.clientY, p1.clientY) + 30;
+      out.d2OutsideBox = (p2.clientX < bx0 || p2.clientX > bx1 || p2.clientY < by0 || p2.clientY > by1);   // control is outside
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, shiftKey: true, clientX: bx0, clientY: by0, bubbles: true }));
+      out.controlsFrozen = (controls.enabled === false);             // capture-phase froze OrbitControls before the drag
+      canvas.dispatchEvent(new PointerEvent('pointermove', { shiftKey: true, clientX: bx1, clientY: by1, bubbles: true }));
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, shiftKey: true, clientX: bx1, clientY: by1, bubbles: true }));
+      await sleep(30);
+      out.marqueeSel = setOf().sort((a, b) => a - b);                 // EXACTLY [ids0, ids1]
+      out.controlsRestored = (controls.enabled === true);
+
+      // ── SHIFT-CLICK toggle: add door 2, then remove it ────────────────────────────────────────
+      const sc = toClient(c2.x, c2.y, c2.z);
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, shiftKey: true, clientX: sc.clientX, clientY: sc.clientY, bubbles: true }));
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, shiftKey: true, clientX: sc.clientX, clientY: sc.clientY, bubbles: true }));
+      await sleep(20); out.afterAdd = setOf().length;                 // 3
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, shiftKey: true, clientX: sc.clientX, clientY: sc.clientY, bubbles: true }));
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, shiftKey: true, clientX: sc.clientX, clientY: sc.clientY, bubbles: true }));
+      await sleep(20); out.afterRemove = setOf().sort((a, b) => a - b);   // back to [ids0, ids1]
+
+      // ── GROUP MOVE: enter Move on the 2-set, drag the X handle, release → 2 signed GEOM_MOVE same delta ──
+      if (dimMove) dimMove.value = '';                                // let grid snap drive the delta
+      bMove.onclick(); out.entered = moving; out.gizmo = !!moveGizmo;
+      const gc = selCentre();                                         // gizmo centre = group centroid
+      out.groupCentroid = { x: +gc.x.toFixed(3), y: +gc.y.toFixed(3) };
+      const down = toClient(gc.x + 0.6, gc.y, gc.z);                  // grab a point ON the X shaft
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: down.clientX, clientY: down.clientY, bubbles: true }));
+      out.grabbedAxis = _moveDrag && _moveDrag.axis;                  // 'x'
+      const mv = toClient(gc.x + 0.6 + 1.1, gc.y, gc.z);             // drag ~+1.1m along X (raw, pre-snap)
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: mv.clientX, clientY: mv.clientY, bubbles: true }));
+      const sp = window.Bonsai.grid.snap(gc.x + (_moveDrag ? _moveDrag.dx : 0), gc.y);
+      out.expectDelta = +(sp.x - gc.x).toFixed(3);                    // snapped group delta
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: mv.clientX, clientY: mv.clientY, bubbles: true }));
+      await sleep(600);                                               // let the 2 async commits + re-folds settle
+      const moves = O._geomOps().filter(o => o.op_type === 'GEOM_MOVE');
+      out.moveOps = moves.length;                                     // EXACTLY 2
+      out.moveParents = moves.map(m => m.parent).sort((a, b) => a - b);
+      out.moveDeltas = moves.map(m => ({ dx: +(+m.parameters.dx).toFixed(3), dy: +(+m.parameters.dy).toFixed(3), dz: +(+m.parameters.dz).toFixed(3) }));
+      out.d2MoveOps = moves.filter(m => m.parent === ids[2]).length;  // 0 — control never moved
+      out.centresAfter = { d0: centreOf(ids[0]), d1: centreOf(ids[1]), d2: centreOf(ids[2]) };
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];   // 5 (3 insert + 2 move)
+      out.verify = (await O.verify()).ok;
+      // Real two-press UX via the actual keydown handler (no manual exitMove): Esc #1 exits Move mode with the
+      // selection intact, Esc #2 (now mode-free) clears the set. Proves both branches, masks nothing.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(20); out.afterEsc1 = setOf().length; out.exitedMove = (moving === false);   // 2, mode exited
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(20); out.afterEsc = setOf().length;                 // 0
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER multiselect demo fail ' + e); }
+    window.__multiResult = out; window.__multiDone = true;
+    console.log('§MODELLER multiselect-done');
   })();
 }
 // ?gmpreview=demo proves the Move-Grid PREVIEW (W-BONSAI-GMPREVIEW, the user's "move grid" feedback gap): while
