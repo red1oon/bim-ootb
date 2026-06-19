@@ -248,26 +248,41 @@
     }
 
     // ── Open/close ──
-    function _close() { pill.style.display = 'none'; pill.classList.remove('pill-revealing'); _pillOpen = false; }
+    // L-PATH layout (ported from the Modeller addd8fe layoutRail): buttons are position:fixed — stack UP
+    // the right edge from the ⋯, then turn the corner and flow LEFT along the top when the column fills.
+    // Per-index transitionDelay drives the sequential roll-out (forward out, reverse in).
+    function _layoutRail() {
+      var btns = pill.querySelectorAll('button');
+      var S = 40, G = 7, M = 16, startBottom = 70;                 // clear the ⋯ trigger cluster bottom-right
+      var upRoom = window.innerHeight - M - 40 - startBottom;      // headroom before the top edge
+      var colN = Math.max(1, Math.floor(upRoom / (S + G)) + 1);    // how many fit up the right edge
+      for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        if (i < colN) { b.style.right = M + 'px'; b.style.bottom = (startBottom + i * (S + G)) + 'px'; b.style.top = 'auto'; b.style.left = 'auto'; }
+        else { var k = i - colN; b.style.top = M + 'px'; b.style.right = (M + (k + 1) * (S + G)) + 'px'; b.style.bottom = 'auto'; b.style.left = 'auto'; }
+        b.style.transitionDelay = (_pillOpen ? i * 26 : (btns.length - i) * 14) + 'ms';
+      }
+    }
+    function _close() { _layoutRail(); pill.classList.remove('pill-revealing'); _pillOpen = false; setTimeout(function(){ if (!_pillOpen) pill.style.display = 'none'; }, 360); }
     function _toggle() {
       _pillOpen = !_pillOpen;
-      pill.style.display = _pillOpen ? 'block' : 'none';
       if (_pillOpen) {
+        pill.style.display = 'block';
         _sync();
-        // Reveal-UP cue (consistent across ALL pill surfaces): the strip RISES into view on open so the user
-        // sees what was hidden. Re-trigger by reflow so it replays each open. viewer.html #mobile-pill defines
-        // `.pill-revealing` + its @keyframes (no second animation system). The viewer keeps tap-outside-to-close.
+        _layoutRail();                                              // place buttons + stage per-index delays
         pill.classList.remove('pill-revealing'); void pill.offsetWidth; pill.classList.add('pill-revealing');
       } else {
+        _layoutRail();                                              // reverse delays, then collapse
         pill.classList.remove('pill-revealing');
+        setTimeout(function(){ if (!_pillOpen) pill.style.display = 'none'; }, 360);   // let the roll-IN finish
       }
       console.log('§PILL open=' + _pillOpen);
     }
+    // Reposition on resize so the L-PATH wrap recomputes (Modeller parity).
+    window.addEventListener('resize', function() { if (_pillOpen) _layoutRail(); });
 
-    // Close on outside tap
-    document.addEventListener('pointerdown', function(e) {
-      if (_pillOpen && !pill.contains(e.target) && e.target !== trigger) _close();
-    });
+    // Once expanded, the rail stays open — ONLY a deliberate ⋯ press (_toggle) closes it.
+    // (User decree: outside-tap-to-close was too easy to trigger by accident.) No outside-close.
 
     // ── Init ──
     _initPanels();

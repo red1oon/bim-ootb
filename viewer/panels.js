@@ -12,6 +12,7 @@ var ICONS = {
   search:    { svg: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', trl: 'ui_tt_find', key: null, desc: 'Find' },
   share:     { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', trl: 'ui_tt_share', key: null, desc: 'Share' },
   lifeBuoy:  { svg: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>', trl: 'ui_tt_help', key: 'F1', desc: 'Help' },
+  circleHelp:{ svg: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>', trl: 'ui_tt_help', key: 'F1', desc: 'Help' },
   moreVert:  { svg: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>', trl: null, key: '.', desc: 'More' },
   moreHoriz: { svg: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>', trl: null, key: '.', desc: 'More' },  // FLAT kebab — mobile ⋯ trigger (differs from Android's vertical ⋮); parity with erp/icons.js
   scissors:  { svg: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', trl: 'ui_tt_section', key: null, desc: 'Section Cut' },
@@ -1118,10 +1119,16 @@ function setupPanels(A) {
     // pill:false entries appear in Help/Settings but not in the pill strip.
     var I = ICONS; // shorthand
     var _actions = [
-      { id: 'redpill',    name: 'Doc Mode',       key: ',', platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); }, isActive: function() { return !!window._docMode; } },
+      // Document verbs — Save the open building / Open a saved one. Native OS dialogs, no card.
+      { id: 'save',       name: 'Save Building',  key: 'Ctrl+S', icon: I.save.svg,
+        fn: function() { if (A.saveModelDb) A.saveModelDb(); },
+        children: [ { name: 'Save the open building to a .db file' }, { name: 'Native Save As… dialog — pick name + folder' }, { name: 'Re-openable with Open (Ctrl+O)' } ] },
+      { id: 'open',       name: 'Open Building',  key: 'Ctrl+O', icon: I.folderOpen.svg,
+        fn: function() { if (A.openModelDb) A.openModelDb(); },
+        children: [ { name: 'Open a saved .db file' }, { name: 'Native Open… dialog' }, { name: 'Replaces the current scene' } ] },
       { id: 'find',       name: 'Find / Navigate', key: 'f', icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
-      { id: 'help',       name: 'Help',            key: 'F1', icon: I.lifeBuoy.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
+      { id: 'help',       name: 'Help',            key: 'F1', icon: I.circleHelp.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
       // HISTORY_KNOB_DIAL.md rework: ONE "W" World-history pill replaces the old History pill.
       //   TAP        = open the cross-page overlay (which building/doc/page).
       //   LONG-PRESS = a small drawer: Z (this page's dot-timeline bar) + bomb (clear history, warns first).
@@ -1724,9 +1731,9 @@ function setupPanels(A) {
       });
     }
 
-    // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
+    // Default order: save/open near top, home nearest ⋯ trigger (bottom)
     // Usefulness: frequent tools near bottom (thumb reach), rare at top
-    var _defaultOrder = ['settings','audio','redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
+    var _defaultOrder = ['settings','audio','save','open','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({
