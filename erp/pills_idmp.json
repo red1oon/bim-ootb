@@ -5,29 +5,12 @@
   "note": "SIBLING manifest for the iDempiere renderer surface (idempiere.html) — DECIDED separate from erp.html's pills.json (GATE-1, ERP_BOTTOM_BAR_AND_LIFECYCLE.md §RESUME): the action sets differ. fn bound BY ID in idmp_pills.js to the REAL existing idempiere.html handlers (window.IdmpPillActions — functions are not JSON). icon = a glyph in icons.js (verbatim from viewer/panels.js); nothing inlined, nothing hand-drawn. Retires the hand-rolled #idmp-pillrail (§PILL-REGISTRY principle: no controls outside the pill).",
   "pills": [
     {
-      "id": "posted",
-      "name": "Accts Posted",
-      "key": "",
-      "icon": "clipboard",
-      "order": 1,
-      "note": "per-record accounting fold (openPostedFor) — journal-lines clipboard glyph."
-    },
-    {
       "id": "reports",
       "name": "Reports",
       "key": "",
       "icon": "doc",
       "order": 1.2,
       "note": "Financial statements + receipt report menu (window.__report.menu → report_overlay.js openMenu). Replaces the former #reportMenuPill fixed float (PR #295 legacy) — reports are now a registry pill, no controls outside the pill bar."
-    },
-    {
-      "id": "preview",
-      "name": "Posting Preview",
-      "key": "",
-      "icon": "doc",
-      "showWhen": "posting-doc",
-      "order": 1.5,
-      "note": "per-record DocAction preview (openPreviewFor) — the journal Complete WOULD post, PURE (no write); reuses AcctsPosted renderer via window.ERPPreview. doc glyph (report/document). §AD-GATE showWhen:posting-doc — mirrors iDempiere's AD `Posted` Button field: the pill surfaces ONLY when a posting document (table carrying the `Posted` column, AD_Reference=28) is open; off the bar otherwise. Lights to-the-cent on a tenant db carrying posting config."
     },
     {
       "id": "graph",

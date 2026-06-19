@@ -247,6 +247,14 @@
     var winSet = accessibleWindows(db, role.id);
     var procSet = accessibleProcesses(db, role.id);            // §AD-MENU-PRF-LIVE
     var formSet = accessibleForms(db, role.id);
+    // ROLE GATE for accounting (iDempiere MRole.isShowAcct): a role WITHOUT IsShowAcct sees NO accounting —
+    // no Posted column/button, no acct tabs. Read it onto the role so the host can gate the Posted affordance.
+    // Defensive: some col-intersect tenant shards may lack the column → default N (hide), never throw.
+    try {
+      var acctR = rows(db, 'SELECT IsShowAcct AS v FROM AD_Role WHERE AD_Role_ID = ?', [role.id]);
+      role.isShowAcct = acctR.length ? (String(acctR[0].v).toUpperCase() === 'Y') : false;
+    } catch (e) { role.isShowAcct = false; }
+    console.log('§IDMP-SESSION acctGate role=' + role.id + ' isShowAcct=' + role.isShowAcct + ' source=ad_role.isshowacct');
     return {
       user: user, role: role, client: client, org: org,
       roles: roles, orgs: orgs, winSet: winSet, procSet: procSet, formSet: formSet

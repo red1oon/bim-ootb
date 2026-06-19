@@ -228,6 +228,14 @@
   .idmp-grid td.idmp-cell-edit .ic-cell { display:flex; flex-direction:column; gap:1px; }
   .idmp-grid td.idmp-cell-edit .cfi { width:100%; box-sizing:border-box; font:inherit; padding:2px 5px; border:1px solid var(--idmp-accent,#2f6db0); border-radius:3px; background:#fff; }
   .idmp-grid td.idmp-cell-edit .cfe { color:#c0392b; font-size:11px; line-height:1.2; }
+  /* Leg 3 — Posted button (grid cell / form field / mobile card): iDempiere's AD Posted button affordance. */
+  .idmp-posted-btn { display:inline-flex; align-items:center; gap:5px; padding:2px 9px; font:inherit; font-size:11.5px;
+    line-height:1.5; border:1px solid var(--idmp-border,#c3ccd6); border-radius:11px; background:#f4f6f9; color:#5c6b7a;
+    cursor:pointer; white-space:nowrap; }
+  .idmp-posted-btn:hover { background:#e8edf3; }
+  .idmp-posted-btn.is-posted { background:#e9f7ee; border-color:#9bd6b1; color:#176b33; }
+  .idmp-grid td.idmp-posted-cell { text-align:center; cursor:default; }
+  .idmp-posted-fld .val { border:none; background:transparent; padding-left:0; }
   #idmp-batchbar { display:none; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 10px; margin-bottom:6px;
     background:#eef4ff; border:1px solid var(--idmp-border); border-radius:7px; font-size:12.5px; position:sticky; top:0; z-index:3; }
   #idmp-batchbar .idmp-batch-lead { display:inline-flex; align-items:center; gap:5px; font-weight:600; color:#23477a; }
@@ -1817,6 +1825,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var leadStatus = hasStatus && !statusInCols;
     if (leadStatus) htr.appendChild(el('th', null, 'Status'));
     cols.forEach(function (f) { htr.appendChild(el('th', null, f.name)); });
+    // Leg 3 — Posted COLUMN (accounting-role-gated, posting docs only). Trailing, mirroring iDempiere's AD
+    // Posted Button field; skipped if Posted is already one of the sampled display columns (no duplicate).
+    var postedInCols = cols.some(function (f) { return /^posted$/i.test(f.columnName); });
+    var showPosted = _showPostedAffordance() && !postedInCols;
+    if (showPosted) htr.appendChild(el('th', null, 'Posted'));
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
     if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
@@ -1843,6 +1856,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
+      if (showPosted) { var tdP = el('td', 'idmp-posted-cell'); tdP.setAttribute('data-ad-col', 'Posted'); tdP.appendChild(_postedButton(rec, i)); tr.appendChild(tdP); }
       tr.addEventListener('click', function () { _dirtyGuard(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
       tb.appendChild(tr);
     });
@@ -1883,6 +1897,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       lbl.appendChild(el('span', 'idmp-card-title', title));
       hd.appendChild(lbl);
       var _cds = _recStatus(rec); if (_cds) hd.appendChild(_statusChip(_cds));   // punch-list #2 — status-at-a-glance on mobile cards
+      if (_showPostedAffordance()) hd.appendChild(_postedButton(rec, i));        // Leg 3 — Posted affordance on mobile cards (acct role + posting doc)
       hd.appendChild(el('span', 'idmp-card-open', 'Open ›'));
       acc.appendChild(hd);
       var bd = el('div', 'bd');
@@ -2633,6 +2648,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       });
     });
   }
+  // Leg 3 — the Posted BUTTON on the form (iDempiere WButtonEditor parity): a labelled field whose button is
+  // the posting-status affordance. Gated to acct roles on posting docs, only for a real saved record.
+  function _appendPostedField(formEl, tab, rec) {
+    if (!rec || !_showPostedAffordance()) return;
+    var fld = el('div', 'idmp-fld idmp-posted-fld');
+    fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', 'Posted');
+    fld.appendChild(el('label', null, 'Posted'));
+    var wrap = el('div', 'val'); wrap.appendChild(_postedButton(rec, _recIdx)); fld.appendChild(wrap);
+    formEl.appendChild(fld);
+  }
   function buildForm(tab) {
     var rec = _records[_recIdx];
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
@@ -2660,6 +2685,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var fsmBar = buildDocActionBar(tab, rec); if (fsmBar) ef.appendChild(fsmBar);   // Process bar stays SEPARATE (T2)
       var mountEl = el('div', null); mountEl.id = 'idmp-inline-mount'; ef.appendChild(mountEl);
       _withFoldedEntry(tn, 'update', function () { window.__crud.editInline(tn, pk, mountEl, _inlineOptsFor(tn, ef)); });
+      _appendPostedField(ef, tab, rec);
       return ef;
     }
     var form = el('div', 'idmp-form'); form.id = 'idmp-form';
@@ -2667,6 +2693,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var fsmBar2 = buildDocActionBar(tab, rec);                            // §AD-DOCFSM-LIVE (B-2)
     if (fsmBar2) form.appendChild(fsmBar2);
     _appendReadonlyFields(form, tab, rec);
+    _appendPostedField(form, tab, rec);
     return form;
   }
   // _appendReadonlyFields — the classic read-only field render (the fallback when a table has no crud spec).
@@ -2954,6 +2981,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { ok = _adQ("SELECT 1 AS x FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE UPPER(t.tablename)=UPPER(?) AND c.columnname='Posted' LIMIT 1", [tn]).length > 0; }
     catch (e) { ok = false; }
     _postingDocCache[tn] = ok; return ok;
+  }
+  // ── Leg 3 (RESUME_IDMP_FIDELITY §POSTED COLUMN) — surface iDempiere's AD `Posted` Button field as the
+  //    native Posted COLUMN/button, ROLE-GATED to accounting roles. NON-INVENT: the gate reuses the existing
+  //    §AD-GATE posting-doc answer (table carries the AD Posted col) AND the role's MRole.isShowAcct; the status
+  //    label folds from the _Posted Status ref-list (AD_Reference 234); the click reuses the EXISTING accounting
+  //    seams (openPostedFor for actual GL facts when posted, openPreviewFor for the dry-run otherwise). No new verb.
+  function _acctRole() { return !!(_session && _session.role && _session.role.isShowAcct); }   // MRole.isShowAcct
+  function _showPostedAffordance() { return _curPostingDoc && _acctRole(); }
+  // The Posted status label from the AD `_Posted Status` ref-list (AD_Reference 234) for the row's Posted code.
+  // A null/empty code = the doc has never been posted → iDempiere's "Not Posted".
+  var _postedLabelCache = {};
+  function _postedLabel(code) {
+    var c = (code == null) ? '' : String(code);
+    if (c === '' || c.toUpperCase() === 'N') return 'Not Posted';
+    if (_postedLabelCache[c] !== undefined) return _postedLabelCache[c];
+    var lbl = c;
+    try { var r = _adQ("SELECT name AS n FROM ad_ref_list WHERE ad_reference_id=234 AND value=? LIMIT 1", [c]); if (r.length) lbl = r[0].n; } catch (e) {}
+    _postedLabelCache[c] = lbl; return lbl;
+  }
+  function _isPostedRec(rec) { return String(recVal(rec, 'Posted')).toUpperCase() === 'Y'; }
+  // Click the Posted affordance for the given record: posted → actual GL facts (openPostedFor), else the
+  // dry-run "what Complete would post" (openPreviewFor). Both seams already exist; this UNIFIES them behind
+  // iDempiere's single Posted affordance. Sets _recIdx so the per-record seams act on the clicked row.
+  function _openPostedAffordance(i) {
+    if (typeof i === 'number') _recIdx = i;
+    var rec = _records[_recIdx]; var posted = rec && _isPostedRec(rec);
+    console.log('§POSTED-COLUMN open rec=' + (rec ? recVal(rec, _keyCol(_curTab())) : 'none') + ' posted=' + posted + ' → ' + (posted ? 'GL-facts' : 'preview'));
+    if (posted) openPostedFor(); else openPreviewFor();
+  }
+  // The Posted button element (grid cell / form field / card) — label = status from the ref-list, glyph =
+  // bookOpen (ledger, the closest Lucide line glyph to iDempiere's InfoAccount). Reflects posted/draft state.
+  function _postedButton(rec, i) {
+    var posted = _isPostedRec(rec);
+    var b = el('button', 'idmp-posted-btn' + (posted ? ' is-posted' : ''));
+    var ic = (window.OverlayKit && OverlayKit.ico) ? OverlayKit.ico('bookOpen', 13) : '';
+    b.innerHTML = ic + '<span>' + _postedLabel(recVal(rec, 'Posted')) + '</span>';
+    b.title = posted ? 'Posted — view the accounting (GL facts)' : 'Not posted — preview what Complete would post';
+    b.addEventListener('click', function (e) { e.stopPropagation(); _openPostedAffordance(i); });
+    return b;
   }
   function openPostedFor() {
     if (!_session) { status('Log in first to see Accts Posted'); return; }
@@ -3314,9 +3380,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     else { try { navigator.clipboard.writeText(url); status('Link copied'); } catch (e) {} }
     console.log('§IDMP-SHARE url=' + url);
   }
+  // Leg 3 (RESUME_IDMP_FIDELITY) — the accounting affordance is NO LONGER a pill: openPostedFor/openPreviewFor
+  // are now carried by the native Posted COLUMN/button (_postedButton → _openPostedAffordance), role-gated to
+  // accounting roles. They are pulled from IdmpPillActions (the ⋯ rail keeps only non-iDempiere extras — LAW) and
+  // published on this small host seam so the column/button (and witnesses) can reach the two GL views directly.
+  window.IdmpPosting = { posted: openPostedFor, preview: openPreviewFor, affordance: _openPostedAffordance };
   function mountPillRegistry() {
     window.IdmpPillActions = {
-      posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
+      graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor,
       share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
       erpdoc: openReadCompare,
