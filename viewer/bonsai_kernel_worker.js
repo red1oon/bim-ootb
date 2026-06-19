@@ -186,10 +186,24 @@ function buildSolids(kernel, ops) {
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
       }
-    } else if (op.op_type === 'GEOM_ROTATE') {         // W-BONSAI-ROTATE: insert yaw folds HOST-side (PATH B via library.foldInsert).
-      // TOLERANT like GEOM_MOVE: an insert parent isn't in this worker's solids map → silent NO-OP. (Solid B-rep
-      // rotation about its centre = a follow-up leg; would generalTransform the shape here, mirroring GRID_MOVE SCALE.)
-      void solids.get(op.parent);
+    } else if (op.op_type === 'GEOM_ROTATE') {         // yaw a referenced solid about its bbox-centre Z (W-BONSAI-ROTATE-SOLID).
+      // Mirror of GEOM_MOVE: rotate the parent's B-rep IN PLACE so a later GEOM_CUT on the rotated wall reads the
+      // SPUN shape (move-then-rotate-then-cut is honest), successive rotations COMPOSE (each writes solids forward;
+      // op_hash = immutable prefix → distinct cache key), and it stays TOLERANT — an INSERT parent isn't in this
+      // worker's solids map (the host folds insert yaw via PATH B/library.foldInsert) → silent NO-OP.
+      const pe = solids.get(op.parent);
+      if (pe) {
+        const ckey = key + ':' + op.parent;
+        if (shapeCache.has(ckey)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(ckey), hash: ckey }); }
+        else {
+          _stats.rebuilt++;
+          const deg = (P.drot != null ? P.drot : (P.deg || 0));
+          const b = kernel.getBoundingBox(pe.shape, false);
+          const cx = (b.xmin + b.xmax) / 2, cy = (b.ymin + b.ymax) / 2;   // spin about the shape's centre, not the origin
+          const out = kernel.rotate(pe.shape, { point: { x: cx, y: cy, z: 0 }, direction: { x: 0, y: 0, z: 1 } }, deg * Math.PI / 180);
+          shapeCache.set(ckey, out); solids.set(op.parent, { shape: out, hash: ckey });   // parent cached → NOT released
+        }
+      }
     } else {                                           // LEAF feature (extrude/poly/sweep/opening)
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.id, { shape: shapeCache.get(key), hash: key }); continue; }
       _stats.rebuilt++;

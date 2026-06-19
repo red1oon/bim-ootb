@@ -941,7 +941,7 @@ function buildMoveGizmo() {
   moveGizmo.add(axisHandle('x', 0xe2553b, L), axisHandle('y', 0x46b955, L), axisHandle('z', 0x4f93e0, L));
   const hub = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false }));
   hub.userData.moveAxis = 'xy'; moveGizmo.add(hub);
-  if (selectedIds.size <= 1 && selectedId != null && isInsert(selectedId)) {   // H3: yaw ring — INSERTS only (PATH B host re-place); solids fold in the worker (rotation = follow-up) so no ring → no silent no-op rotate
+  if (selectedIds.size <= 1 && selectedId != null && (isInsert(selectedId) || isSolid(selectedId))) {   // H3: yaw ring on a single INSERT (host re-place, PATH B) OR a SOLID (real occt spin in the worker, W-BONSAI-ROTATE-SOLID)
     const ring = new THREE.Mesh(new THREE.TorusGeometry(Math.max(0.7, L * 0.95), 0.045, 8, 56), new THREE.MeshBasicMaterial({ color: 0xf5c542, transparent: true, opacity: 0.9, depthTest: false }));
     ring.userData.moveAxis = 'rotZ'; moveGizmo.add(ring);       // TorusGeometry lies in XY → rotates about +Z by construction
   }
@@ -1207,6 +1207,9 @@ const bLod = document.getElementById('b-lod');
 let inserting = false, insertHash = null, lastInsertId = null, insertPanel = null;
 let insRot = 0, insElev = 0, ghostMesh = null, ghostXY = null;   // pending placement: yaw(deg) + elevation(z), live ghost
 function isInsert(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && o.op_type === 'GEOM_INSERT'; }
+// standalone B-rep solids the worker can spin in place (GEOM_ROTATE): extrude/poly walls, swept runs, filleted solids.
+const SOLID_OPS = new Set(['GEOM_EXTRUDE', 'GEOM_EXTRUDE_POLY', 'GEOM_SWEEP', 'GEOM_FILLET']);
+function isSolid(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && SOLID_OPS.has(o.op_type); }
 function lodTargetId() { return (selectedId != null && isInsert(selectedId)) ? selectedId : lastInsertId; }
 function paintLod() {
   const id = lodTargetId();
@@ -2538,11 +2541,12 @@ if (qs.get('rotate') === 'demo') {
       const u = await O.undo(); out.undoId = u.undone; await sleep(60);
       out.afterUndo = dims(ins.id); out.verifyAfterUndo = (await O.verify()).ok;
       exitMove();
-      // GATE: an authored SOLID (not an insert) must NOT get a yaw ring (rotation would silently no-op for solids).
+      // GATE (flipped by W-BONSAI-ROTATE-SOLID): an authored SOLID now DOES get a yaw ring — the worker spins its
+      // B-rep via real occt rotation, so the ring is no longer a no-op. (Was INSERT-only.)
       O.clear(); { const _g = window.Bonsai.group(); while (_g.children.length) _g.remove(_g.children[0]); } await sleep(50);
       const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [2, 0], [2, 0.2], [0, 0.2]] }, depth: 3 } });
       await sleep(60); window.Bonsai.select(wall.id); bMove.onclick();
-      out.solidRing = !!(moveGizmo && moveGizmo.children.find(o => o.userData.moveAxis === 'rotZ'));   // false — no ring on a solid
+      out.solidRing = !!(moveGizmo && moveGizmo.children.find(o => o.userData.moveAxis === 'rotZ'));   // true — solids now carry the ring
       exitMove();
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER rotate demo fail ' + e); }
     window.__rotateResult = out; window.__rotateDone = true;
