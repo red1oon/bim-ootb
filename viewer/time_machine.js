@@ -36,9 +36,7 @@
   // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
   // deterministic over-run VARIANT computed live on it. No shipped schedule data — a variant ON what's there.
   var _varVisible = false;
-  var _opsPlanned = null;   // snapshot of the planned _ops (taken when variance first opens)
-  var _opsActual = null;    // the variant ops (built on demand for "Watch Actual")
-  var _watchActual = false; // when true, the SCENE animates the actual variant (the user's "animate the actual")
+  var _opsPlanned = null;   // snapshot of the planned _ops phase windows (taken when variance first opens)
   var _ganttTasks = [];  // computed task groups for click detection
   // T3 (4D_CAPTURE_AND_FALLBACK §3.1): native-4D coverage of the active schedule.
   var _capActive = false;   // true when the timeline used a captured IFC schedule
@@ -1208,6 +1206,7 @@
     applySunCycle(cursorMs);
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
+    if (_varVisible) drawVariance();   // §S1 — variance drawer tracks the scrub (hairline + phase-under-cursor)
 
     if (app.markDirty) app.markDirty();
     // Force immediate render — mobile browsers defer rAF until touch
@@ -2038,6 +2037,23 @@
       if (vbox) vbox.classList.toggle('open', _varVisible);
       if (_varVisible) drawVariance();
     });
+    // §S1 — tap a phase row in the variance drawer to jump the cursor to that phase's window (reciprocal of
+    // the hairline: the scrub moves the highlight, a tap moves the cursor). Maps click-Y → phase row.
+    document.getElementById('tm-var-canvas').addEventListener('pointerup', function (e) {
+      if (!_active || !_ops.length || !_twin) return;
+      var V = _computeVariance();
+      if (!V || !V.phases.length) return;
+      var rect = e.target.getBoundingClientRect();
+      var barH = 9, gap = 5, rowH = barH + gap;
+      var ti = Math.floor((e.clientY - rect.top - 4) / rowH);
+      if (ti < 0 || ti >= V.phases.length) return;
+      var p = V.phases[ti];
+      _cursor = p.winStart;
+      renderAtTime(_cursor);
+      anchorFromCursor();
+      configSlider();
+      console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
+    });
     document.getElementById('tm-gantt-canvas').addEventListener('pointerup', function(e) {
       if (!_active || !_ops.length) return;
       var rect = e.target.getBoundingClientRect();
@@ -2607,122 +2623,124 @@
     'Finishes': '#26a69a'
   };
 
-  // ── §TM-VARIANCE — budget-vs-actual on TM's OWN timeline (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL) ──
-  // Planned = the generated construction timeline TM already computes (_ops). Actual = a DETERMINISTIC
-  // over-run VARIANT (no random / no Date.now): per phase h=hash(name), start slips late + duration stretches
-  // + cost scales >1; Superstructure is the marquee blow-out. Same input → identical output, every run.
+  // ── §TM-VARIANCE — budget-vs-actual from the STORED twin (TM_4D5D_VARIANCE_LANE §S1) ──
+  // COST is READ, never recomputed: PlannedAmt → CommittedAmt straight off the iDempiere C_Project /
+  // C_ProjectPhase records baked into erp/ad_seed.db (erp/tests/bake_gw_hospital_variance.js). The drawer
+  // shows the SAME figure the ledger holds — §DOCTRINE 2/3 "variance = the PlannedAmt↔CommittedAmt pair,
+  // read the twin, don't recompute". Phase TIME windows come from TM's own injected gantt (_ops) so the
+  // cursor scrubs the same axis as the 3D scene. No LABOR_RATES×days, no hash variant — that only correlated.
   var _DAY_MS = 86400000;
   var _VAR_ORDER = ['Substructure', 'Superstructure', 'MEP Rough-in', 'Architecture', 'MEP Final', 'Finishes'];
-  function _strHash(s) { var h = 2166136261; s = String(s); for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
-  function _phaseVariant(name) {
-    var h = _strHash(name), marquee = /Superstructure/i.test(name);
-    return { slip: (h % 18) + (marquee ? 40 : 4),                 // start days late
-             stretch: (h % 26) + (marquee ? 130 : 10),            // extra duration days (finish even later)
-             factor: marquee ? 1.60 : (1.04 + ((h >> 8) % 36) / 100),  // cost ×; always over (1.04..1.40, marquee 1.60)
-             marquee: marquee };
-  }
-  function _opCost(op) {                                          // == drawDashboard cost basis (rate_per_day×crew×days)
-    var LR = window.LABOR_RATES || {};
-    var res = (op.parameters || {}).resource || '';
-    var lr = LR[res]; var daily = lr ? lr.rate_per_day * (lr.crew_size || 1) : 95;
-    var dur = Math.max(1, (op.end_ts || _projectEnd) - (op.start_ts || _projectStart)) / _DAY_MS;
-    return daily * dur;
+  var _twin = null;          // { building, projectId, planned, committed, phases:[{name,seqno,start,end,planned,committed}] }
+  var _twinLoading = false;
+  // Load the folded ERP twin once: fetch the seed db → sql.js → read the C_Project cost pair + its phases.
+  // Same lazy-fetch idiom as navigate_find._ensureErpDb; read-only (db.close after extracting the figures).
+  function _loadTwin() {
+    if (_twin || _twinLoading) return Promise.resolve(_twin);
+    var app = A();
+    var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
+    var building = (app && app.activeBuilding) || 'Hospital';
+    if (!SQL) { console.log('§TM_TWIN_DEFER no sql.js factory'); return Promise.resolve(null); }
+    _twinLoading = true;
+    return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      var db = new SQL.Database(new Uint8Array(buf));
+      var pr = db.exec("SELECT C_Project_ID,PlannedAmt,CommittedAmt FROM C_Project WHERE Value=?", [building]);
+      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project'); return null; }
+      var pid = pr[0].values[0][0], planned = Number(pr[0].values[0][1] || 0), committed = Number(pr[0].values[0][2] || 0);
+      var ph = db.exec("SELECT Name,SeqNo,StartDate,EndDate,PlannedAmt,CommittedAmt FROM C_ProjectPhase WHERE C_Project_ID=" + Number(pid) + " AND Name<>'Unsequenced' ORDER BY SeqNo");
+      var phases = (ph.length ? ph[0].values : []).map(function (row) {
+        return { name: row[0], seqno: Number(row[1] || 0), start: Date.parse(row[2]), end: Date.parse(row[3]),
+                 planned: Number(row[4] || 0), committed: Number(row[5] || 0) };
+      });
+      db.close();
+      _twin = { building: building, projectId: pid, planned: planned, committed: committed, phases: phases };
+      _twinLoading = false;
+      console.log('§TM_TWIN_LOADED building="' + building + '" planned=' + planned + ' committed=' + committed + ' phases=' + phases.length);
+      return _twin;
+    }).catch(function (e) { _twinLoading = false; console.log('§TM_TWIN_ERR ' + e.message); return null; });
   }
   function _money(n) { n = Math.round(n); var a = Math.abs(n), s = n < 0 ? '-' : '';
     if (a >= 1e6) return s + 'RM' + (a / 1e6).toFixed(1) + 'M'; if (a >= 1e3) return s + 'RM' + Math.round(a / 1e3) + 'K'; return s + 'RM' + a; }
-  // aggregate the planned ops into phases, then derive the actual variant per phase.
+  // Join the STORED twin cost (READ) to TM's gantt phase windows (the scrub axis). The cost numbers are the
+  // records verbatim — Σ phase PlannedAmt == C_Project.PlannedAmt and Σ CommittedAmt == C_Project.CommittedAmt
+  // (verified: 64,719,479 → 87,372,995). The _ops aggregation only supplies each phase's TIME window so the
+  // cursor + hairline land on the same axis as the 3D scene. Marquee = any phase ≥+50% over (Superstructure).
   function _computeVariance() {
-    var src = _opsPlanned || _ops, agg = {};
+    if (!_twin) return null;
+    var src = _opsPlanned || _ops, win = {};
     for (var i = 0; i < src.length; i++) {
       var op = src[i], ph = (op.parameters || {}).phase || 'Architecture';
-      if (!agg[ph]) agg[ph] = { phase: ph, pStart: op.start_ts, pEnd: op.end_ts, pCost: 0, count: 0 };
-      var a = agg[ph];
-      if (op.start_ts < a.pStart) a.pStart = op.start_ts;
-      if (op.end_ts > a.pEnd) a.pEnd = op.end_ts;
-      a.pCost += _opCost(op); a.count++;
+      if (!win[ph]) win[ph] = { start: op.start_ts, end: op.end_ts };
+      else { if (op.start_ts < win[ph].start) win[ph].start = op.start_ts; if (op.end_ts > win[ph].end) win[ph].end = op.end_ts; }
     }
-    var phases = Object.keys(agg).map(function (k) { return agg[k]; }).filter(function (p) { return p.count > 0; })
-      .sort(function (x, y) { var ix = _VAR_ORDER.indexOf(x.phase), iy = _VAR_ORDER.indexOf(y.phase); return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy); });
-    var tP = 0, tA = 0, t0 = Infinity, maxEnd = -Infinity;
-    phases.forEach(function (p) {
-      var v = _phaseVariant(p.phase);
-      p.aStart = p.pStart + v.slip * _DAY_MS;
-      p.aEnd = p.pEnd + (v.slip + v.stretch) * _DAY_MS;
-      p.aCost = Math.round(p.pCost * v.factor);
-      p.pCost = Math.round(p.pCost);
-      p.marquee = v.marquee;
-      p.dDays = Math.round((p.aEnd - p.pEnd) / _DAY_MS);
-      p.dCost = p.aCost - p.pCost;
-      tP += p.pCost; tA += p.aCost;
-      if (p.pStart < t0) t0 = p.pStart;
-      if (p.aEnd > maxEnd) maxEnd = p.aEnd;
-    });
-    return { phases: phases, tP: tP, tA: tA, dCost: tA - tP, pctOver: tP > 0 ? Math.round((tA - tP) / tP * 100) : 0,
-             t0: t0, plannedEnd: _projectEnd, actualEnd: maxEnd, lateDays: Math.round((maxEnd - _projectEnd) / _DAY_MS) };
-  }
-  // build the actual-variant ops (each planned op shifted by its phase's slip + stretch) for SCENE playback.
-  function _buildActualOps() {
-    var src = _opsPlanned || _ops;
-    return src.map(function (op) {
-      var v = _phaseVariant((op.parameters || {}).phase || 'Architecture');
-      var clone = {}; for (var k in op) clone[k] = op[k];
-      clone.start_ts = op.start_ts + v.slip * _DAY_MS;
-      clone.end_ts = op.end_ts + (v.slip + v.stretch) * _DAY_MS;
-      return clone;
-    });
+    var t0 = Infinity, t1 = -Infinity, pStart = Infinity, pEnd = -Infinity;
+    var phases = _twin.phases.map(function (tp) {
+      var w = win[tp.name], dCost = tp.committed - tp.planned;
+      var ws = w ? w.start : tp.start, we = w ? w.end : tp.end;
+      if (isFinite(ws) && ws < t0) t0 = ws;
+      if (isFinite(we) && we > t1) t1 = we;
+      if (isFinite(tp.start) && tp.start < pStart) pStart = tp.start;
+      if (isFinite(tp.end) && tp.end > pEnd) pEnd = tp.end;
+      return { phase: tp.name, pCost: tp.planned, aCost: tp.committed, dCost: dCost,
+               pct: tp.planned > 0 ? Math.round(dCost / tp.planned * 100) : 0,
+               winStart: ws, winEnd: we, startDate: tp.start, endDate: tp.end,
+               marquee: tp.planned > 0 && dCost / tp.planned >= 0.5 };
+    }).sort(function (x, y) { var ix = _VAR_ORDER.indexOf(x.phase), iy = _VAR_ORDER.indexOf(y.phase); return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy); });
+    if (!isFinite(t0)) { t0 = _projectStart; t1 = _projectEnd; }
+    return { phases: phases, tP: _twin.planned, tA: _twin.committed, dCost: _twin.committed - _twin.planned,
+             pctOver: _twin.planned > 0 ? Math.round((_twin.committed - _twin.planned) / _twin.planned * 100) : 0,
+             t0: t0, t1: t1, plannedStart: pStart, plannedEnd: pEnd };
   }
   function _recomputeBounds() {
     var s = Infinity, e = -Infinity;
     for (var i = 0; i < _ops.length; i++) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
     if (isFinite(s)) { _projectStart = s; _projectEnd = e; }
   }
-  // toggle whether the 3D SCENE animates the actual variant (the user's "scene animating only the actual").
-  function _toggleWatchActual() {
-    _watchActual = !_watchActual;
-    if (_watchActual) { if (!_opsPlanned) _opsPlanned = _ops.slice(); _opsActual = _buildActualOps(); _ops = _opsActual; }
-    else if (_opsPlanned) { _ops = _opsPlanned; }
-    _recomputeBounds();
-    _cursor = _projectStart;
-    renderAtTime(_cursor); configSlider(); updateStatus();
-    if (_ganttVisible) drawGanttMini();
-    if (_dashVisible) drawDashboard();
-    drawVariance();
-    console.log('§TM_VARIANCE_WATCH actual=' + _watchActual + ' ops=' + _ops.length + ' end=' + new Date(_projectEnd).toISOString().slice(0, 10));
+  // map the scrub cursor to the phase whose gantt window contains it (for the hairline + row highlight).
+  function _varPhaseUnderCursor(V) {
+    if (!V) return -1;
+    for (var i = 0; i < V.phases.length; i++) { var p = V.phases[i]; if (_cursor >= p.winStart && _cursor <= p.winEnd) return i; }
+    return -1;
   }
   function drawVariance() {
     if (!_ops.length) return;
-    if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline
-    var V = _computeVariance();
-    var fmtD = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
-
-    // header — the headline totals + a Watch-Actual toggle
+    if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline (phase windows)
     var head = document.getElementById('tm-var-head');
+    if (!_twin) {                                          // records not fetched yet → load, then redraw
+      if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">Reading records…</div>';
+      _loadTwin().then(function (t) { if (t && _varVisible) drawVariance(); });
+      return;
+    }
+    var V = _computeVariance();
+    if (!V) { if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">No project records for this model</div>'; return; }
+    var fmtD = function (ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '—'; };
+    var curIdx = _varPhaseUnderCursor(V);
+
+    // header — the headline COST pair (READ from the twin) + the planned schedule span. Honest labels:
+    // cost Δ is "from records"; the date span is the planned baseline (no actual-date column yet → §S3).
     if (head) {
       head.innerHTML =
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">' +
           '<b style="color:#4fc3f7">Budget vs Actual</b>' +
-          '<button id="tm-var-watch" class="' + (_watchActual ? 'tm-active' : '') + '" style="font-size:9px;padding:2px 6px">' +
-            (_watchActual ? '▶ Watching Actual' : '▶ Watch Actual') + '</button>' +
+          '<span style="font-size:9px;color:#888">from records · ' + _twin.building + '</span>' +
         '</div>' +
-        '<div style="margin-top:2px">Cost <b style="color:#9fd6ff">' + _money(V.tP) + '</b> → ' +
-          '<b style="color:#ff6b6b">' + _money(V.tA) + '</b> ' +
+        '<div style="margin-top:2px">Cost <b style="color:#9fd6ff" title="C_Project.PlannedAmt">' + _money(V.tP) + '</b> → ' +
+          '<b style="color:#ff6b6b" title="C_Project.CommittedAmt">' + _money(V.tA) + '</b> ' +
           '<span style="color:' + (V.dCost >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.dCost >= 0 ? '+' : '') + V.pctOver + '%, ' +
           (V.dCost >= 0 ? '+' : '') + _money(V.dCost) + ')</span></div>' +
-        '<div>Finish <span style="color:#9fd6ff">' + fmtD(V.plannedEnd) + '</span> → ' +
-          '<span style="color:#ff6b6b">' + fmtD(V.actualEnd) + '</span> ' +
-          '<b style="color:' + (V.lateDays >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.lateDays >= 0 ? '+' : '') + V.lateDays + 'd)</b></div>';
-      var wb = document.getElementById('tm-var-watch');
-      if (wb) wb.addEventListener('pointerup', function (e) { e.stopPropagation(); _toggleWatchActual(); });
+        '<div style="color:#9fd6ff">Schedule ' + fmtD(V.plannedStart) + ' → ' + fmtD(V.plannedEnd) +
+          ' <span style="color:#888">(planned baseline)</span></div>';
     }
 
-    // canvas — paired bars per phase on ONE timeline: planned (muted) over actual (vivid + red over-run tail)
+    // canvas — one bar per phase on the SAME axis the cursor scrubs; bar color = phase, edge cap red/green by
+    // COST over/under (from records). Phase under the cursor is outlined; a vertical hairline marks the cursor.
     var canvas = document.getElementById('tm-var-canvas');
     var box = document.getElementById('tm-var-box');
     if (canvas && box) {
       var phases = V.phases, n = phases.length;
-      var pairH = 7, gap = 2, rowH = pairH * 2 + gap + 6, marginL = 64;
-      var cW = box.clientWidth, cH = n * rowH + 6, barW = cW - marginL - 6;
-      var range = Math.max(1, V.actualEnd - V.t0);
+      var barH = 9, gap = 5, rowH = barH + gap, marginL = 64;
+      var cW = box.clientWidth, cH = n * rowH + 8, barW = cW - marginL - 6;
+      var range = Math.max(1, V.t1 - V.t0);
       canvas.width = cW * (window.devicePixelRatio || 1);
       canvas.height = cH * (window.devicePixelRatio || 1);
       canvas.style.height = cH + 'px';
@@ -2732,37 +2750,43 @@
       ctx.textBaseline = 'middle'; ctx.font = '9px sans-serif';
       for (var ti = 0; ti < n; ti++) {
         var p = phases[ti], color = PHASE_COLORS[p.phase] || '#888', y = ti * rowH + 4;
+        var over = p.dCost > 0;
         // label
-        ctx.fillStyle = p.marquee ? '#ff8c00' : '#bbb'; ctx.textAlign = 'right';
-        ctx.fillText((p.marquee ? '⚠ ' : '') + p.phase.substring(0, 11), marginL - 4, y + pairH);
-        // planned bar (muted)
-        var px = marginL + (p.pStart - V.t0) / range * barW, pw = Math.max(2, (p.pEnd - p.pStart) / range * barW);
-        ctx.globalAlpha = 0.30; ctx.fillStyle = color; ctx.fillRect(px, y, pw, pairH);
-        // actual bar (vivid) + red over-run tail beyond planned finish
-        var ax = marginL + (p.aStart - V.t0) / range * barW, aw = Math.max(2, (p.aEnd - p.aStart) / range * barW);
-        var ay = y + pairH + gap;
-        ctx.globalAlpha = 0.9; ctx.fillStyle = color; ctx.fillRect(ax, ay, aw, pairH);
-        var plannedEndX = marginL + (p.pEnd - V.t0) / range * barW;
-        if (p.aEnd > p.pEnd) { ctx.fillStyle = '#e53935'; var tx = Math.max(ax, plannedEndX); ctx.fillRect(tx, ay, (ax + aw) - tx, pairH); }
-        ctx.globalAlpha = 1;
+        ctx.fillStyle = (ti === curIdx) ? '#fff' : (p.marquee ? '#ff8c00' : '#bbb'); ctx.textAlign = 'right';
+        ctx.fillText((p.marquee ? '⚠ ' : '') + p.phase.substring(0, 11), marginL - 4, y + barH / 2);
+        // phase bar on the cursor axis
+        var px = marginL + (p.winStart - V.t0) / range * barW, pw = Math.max(3, (p.winEnd - p.winStart) / range * barW);
+        ctx.globalAlpha = (ti === curIdx) ? 1 : 0.78; ctx.fillStyle = color; ctx.fillRect(px, y, pw, barH);
+        // cost over/under cap on the trailing edge (red over, green under) — the variance signal
+        ctx.globalAlpha = 1; ctx.fillStyle = over ? '#e53935' : '#26a69a';
+        ctx.fillRect(px + pw - 3, y, 3, barH);
+        // row highlight outline for the phase under the cursor
+        if (ti === curIdx) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(px - 0.5, y - 0.5, pw + 1, barH + 1); }
+      }
+      // cursor hairline
+      var hx = marginL + (_cursor - V.t0) / range * barW;
+      if (hx >= marginL && hx <= marginL + barW) {
+        ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, cH); ctx.stroke();
       }
     }
 
-    // compact per-phase variance list
+    // compact per-phase variance list — committed vs planned, ΔCost from records.
     var list = document.getElementById('tm-var-list');
     if (list) {
       var html = '';
-      V.phases.forEach(function (p) {
-        var dc = (p.dCost >= 0 ? '+' : '') + _money(p.dCost), dd = (p.dDays >= 0 ? '+' : '') + p.dDays + 'd';
-        var col = (p.dCost > 0 || p.dDays > 0) ? '#ff6b6b' : '#26a69a';
-        html += '<div style="display:flex;justify-content:space-between;gap:6px">' +
+      V.phases.forEach(function (p, i) {
+        var dc = (p.dCost >= 0 ? '+' : '') + _money(p.dCost);
+        var col = p.dCost > 0 ? '#ff6b6b' : '#26a69a';
+        html += '<div style="display:flex;justify-content:space-between;gap:6px' + (i === curIdx ? ';color:#fff;font-weight:bold' : '') + '">' +
           '<span>' + (p.marquee ? '⚠ ' : '') + p.phase + '</span>' +
-          '<span style="color:' + col + '">' + dd + ' · ' + dc + '</span></div>';
+          '<span style="color:' + col + '">' + dc + ' (' + (p.pct >= 0 ? '+' : '') + p.pct + '%)</span></div>';
       });
       list.innerHTML = html;
     }
-    console.log('§TM_VARIANCE phases=' + V.phases.length + ' plannedCost=' + V.tP + ' actualCost=' + V.tA +
-      ' over=' + V.pctOver + '% lateDays=' + V.lateDays + ' watch=' + _watchActual);
+    console.log('§TM_VARIANCE source=twin building="' + _twin.building + '" phases=' + V.phases.length +
+      ' plannedCost=' + V.tP + ' committedCost=' + V.tA + ' over=' + V.pctOver + '% curPhase=' +
+      (curIdx >= 0 ? V.phases[curIdx].phase : '-'));
   }
 
   function drawGanttMini() {
@@ -3415,9 +3439,8 @@
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
     var ganttBox = document.getElementById('tm-gantt-box');
     if (ganttBox) ganttBox.classList.remove('open');
-    // §TM-VARIANCE: restore the planned ops (undo any "Watch Actual" swap) + reset the drawer state.
-    if (_watchActual && _opsPlanned) { _ops = _opsPlanned; _recomputeBounds(); }
-    _watchActual = false; _varVisible = false; _opsPlanned = null; _opsActual = null;
+    // §TM-VARIANCE: reset the drawer state on deactivate (the twin cache is kept — it's read-only).
+    _varVisible = false; _opsPlanned = null;
     var varBtn = document.getElementById('tm-var'); if (varBtn) varBtn.classList.remove('tm-active');
     var varBox = document.getElementById('tm-var-box'); if (varBox) varBox.classList.remove('open');
     toggleDashDOM(false);
