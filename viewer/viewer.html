@@ -295,28 +295,29 @@
   #mobile-bar button svg { width: 22px; height: 22px; pointer-events: none; }
   /* §S280: Scrollable pill — rises from bottom, 3 icons visible, drag to reveal */
   /* §S280: Full-height scrollable pill — right edge, glass, native scroll */
+  /* L-PATH rail (matches the Modeller addd8fe): a transparent full-screen layer; buttons are
+     position:fixed and JS-placed (pill_builder _layoutRail) — they stack UP the right edge from the ⋯,
+     then turn the corner and flow LEFT along the top. Roll out in sequence (per-index delay in JS). */
   #mobile-pill {
-    position: fixed; top: 16px; bottom: 72px; right: 16px; z-index: 499;
-    background: rgba(10,10,30,0.50); border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 24px; padding: 8px 6px;
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    overflow-y: auto; overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    position: fixed; inset: 0; z-index: 499; display: none; pointer-events: none;
+    background: none; border: none; padding: 0; backdrop-filter: none;
   }
   #mobile-pill::-webkit-scrollbar { display: none; }
-  /* Reveal-UP cue (consistent across all pill surfaces): the strip rises into view on open. */
   @keyframes pill-rise { from { transform: translateY(18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  #mobile-pill.pill-revealing { animation: pill-rise 0.42s cubic-bezier(.2,.85,.25,1); }
   #mobile-pill button {
-    width: 36px; height: 36px; border: none; border-radius: 50%;
-    background: transparent; color: #fff; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    padding: 0; margin: 2px 0; transition: background 0.15s;
+    position: fixed; pointer-events: auto;
+    width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.12); border-radius: 50%;
+    background: rgba(22,24,32,0.42); color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; padding: 0; margin: 0;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.30);
+    opacity: 0; transform: scale(.35) translate(26px, 26px);     /* rolled-IN; JS sets per-index delay */
+    transition: opacity .24s ease, transform .30s cubic-bezier(.22,.9,.25,1.2), background .15s, border-color .15s;
   }
-  #mobile-pill button:hover { background: rgba(255,255,255,0.1); }
-  #mobile-pill button:active { background: rgba(255,255,255,0.15); }
-  #mobile-pill button.active { background: #4fc3f7; color: #000; }
+  #mobile-pill.pill-revealing button { opacity: 1; transform: none; }   /* rolled-OUT state */
+  #mobile-pill button:hover { background: rgba(46,52,68,0.60); }
+  #mobile-pill button:active { background: rgba(46,52,68,0.78); }
+  #mobile-pill button.active { background: #4fc3f7; color: #000; border-color: #4fc3f7; }
   #mobile-pill button svg { width: 20px; height: 20px; pointer-events: none; }
   /* §S280: [] min/max button */
   #minmax-btn {
@@ -331,7 +332,7 @@
   @media (max-width: 600px) {
     /* §S280: Mobile adjustments */
     #mobile-bar { bottom: 8px; right: 8px; }
-    #mobile-pill { top: 8px; bottom: 64px; right: 8px; padding: 6px 4px; }
+    /* L-PATH layer stays inset:0; just larger touch targets on mobile (layoutRail reads the size). */
     #mobile-pill button { width: 44px; height: 44px; }
     #mobile-pill button svg { width: 24px; height: 24px; }
     /* Overflow: bottom drawer instead of dropdown */
