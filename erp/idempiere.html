@@ -461,7 +461,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=9"></script>
+<script src="ad_process.js?v=10"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -520,7 +520,7 @@
 <script src="bigdecimal.js?v=1"></script>
 <script src="bim_orders_overlay.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
-<script src="report_overlay.js?v=7"></script>
+<script src="report_overlay.js?v=8"></script>
 <script src="rule_fold.js?v=2"></script>
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
@@ -2486,6 +2486,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       else if (r.total != null) pane.appendChild(el('div', 'msg', 'Subtotal ' + r.subtotal + ' · Tax ' + r.tax + ' · Total ' + r.total));
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
+    }
+    // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
+    // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
+    // r.headerOnly is set ONLY by foldVoucher; r has no `.lines` key so the receipt branch above never fires for it.
+    if (!absent && r && r.headerOnly && r.amounts) {
+      var vt = document.createElement('table'), vtr = el('tr');
+      ['Amount', 'Value'].forEach(function (h, i) { vtr.appendChild(el('th', i >= 1 ? 'r' : null, h)); }); vt.appendChild(vtr);
+      r.amounts.forEach(function (a) { vtr = el('tr'); vtr.appendChild(el('td', null, a.label)); vtr.appendChild(el('td', 'r', a.value == null ? '' : String(a.value))); vt.appendChild(vtr); });
+      pane.appendChild(vt);
+      var flagStr = (r.flags || []).filter(function (f) { return f.value != null; }).map(function (f) { return f.label + ' ' + f.value; }).join(' · ');
+      pane.appendChild(el('div', 'msg', 'Document total ' + r.total + (r.docno ? ' · No. ' + r.docno : '') + (r.partner ? ' · ' + r.partner : '') + (flagStr ? ' · ' + flagStr : '')));
     }
     // §GENPO-LIVE / §GENSHIP-LIVE — a KIND-2 op-group result (CREATE_DOCUMENT + N CREATE_LINE), rendered
     // doc-aware off the folded header table. EXTRACT: every value comes from the source record / its lines.
