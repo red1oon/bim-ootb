@@ -96,6 +96,13 @@
     color:rgba(180,200,190,.0); transition:color 1.2s ease; pointer-events:none; letter-spacing:.5px; }
   #portal.ready .por-hint { color:rgba(150,200,180,.7); }
 
+  /* site traffic link — bottom-left corner of the Matrix portal (carried over from the old landing footer) */
+  .por-stats { position:fixed; left:14px; bottom:14px; z-index:30; font-family:'IM Fell English',Georgia,serif;
+    font-size:13px; letter-spacing:.4px; text-decoration:none; color:rgba(150,200,180,0);
+    transition:color 1.2s ease; pointer-events:none; }
+  #portal.ready .por-stats { color:rgba(150,200,180,.55); pointer-events:auto; }
+  #portal.ready .por-stats:hover { color:var(--glow); }
+
   /* ---- desktop background (rail + hub live over this) ---- */
   #desktop { background:#07090f; }
 
@@ -148,6 +155,7 @@
   <div id="portal-vortex"></div>
   <div id="portal-stage"></div>
   <div class="por-hint intertitle">choose your door</div>
+  <a class="por-stats" href="https://red1oon.goatcounter.com" target="_blank" rel="noopener" title="Site traffic stats (GoatCounter)">📊 Live Stats</a>
 </div>
 
 <!-- desktop background (rail + hub open over this) -->
