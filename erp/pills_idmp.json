@@ -38,14 +38,14 @@
       "note": "by-status bar chart of the open window (openGraphFor) — barChart glyph."
     },
     {
-      "id": "bimviewer",
-      "name": "Link to BIM Viewer",
-      "title": "Link to BIM Viewer",
-      "key": "",
+      "id": "zoomacross",
+      "name": "Zoom Across",
+      "title": "Zoom Across",
+      "key": ",",
       "img": "redpill.png",
-      "showWhen": "bim-record",
+      "showWhen": "zoom-across",
       "order": 2.6,
-      "note": "RED PILL revived (contextual, not the retired always-on clean-mode toggle) — opens the BIM Viewer at this record's building scene (cross-tab cold-launch, ../viewer/viewer.html?db=../buildings/<Value>_extracted.db&bld=<Value>, same idiom as the warehouse pill). §AD-GATE showWhen:bim-record — surfaces ONLY on a BIM-bearing record (C_Project in the BIM band PK>=990000, whose Value IS the building name). Host answers via window.IdmpPillBimGate. Replaces the retired BIM-in-window embed. img=redpill.png; hover 'Link to BIM Viewer'."
+      "note": "RED PILL — abstract cross-surface ZOOM ACROSS (record → related SURFACE; generalises iDempiere's native record→window zoom). Surfaces register destinations via window.ZoomAcross.register({id,label,available,launch}); first = BIM Viewer (C_Project BIM band PK>=990000 → open the building scene, ../viewer/viewer.html?db=../buildings/<Value>_extracted.db&bld=<Value>). §AD-GATE showWhen:zoom-across — surfaces when ANY destination is available (IdmpPillZoomGate); off otherwise so the iDempiere chrome stays pure. Keyboard ',' (revived from the retired red-pill shortcut). Modeller etc. later = one more register() call, no pill change. img=redpill.png; hover 'Zoom Across'."
     },
     {
       "id": "kanban",
