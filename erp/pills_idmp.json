@@ -30,14 +30,6 @@
       "note": "per-record DocAction preview (openPreviewFor) — the journal Complete WOULD post, PURE (no write); reuses AcctsPosted renderer via window.ERPPreview. doc glyph (report/document). §AD-GATE showWhen:posting-doc — mirrors iDempiere's AD `Posted` Button field: the pill surfaces ONLY when a posting document (table carrying the `Posted` column, AD_Reference=28) is open; off the bar otherwise. Lights to-the-cent on a tenant db carrying posting config."
     },
     {
-      "id": "editmode",
-      "name": "Edit mode",
-      "key": "",
-      "icon": "edit",
-      "order": 1.7,
-      "note": "Toggle CRUD Edit-mode ring on/off (window.__crud.toggleEditMode). Lit when edit mode is active (IdmpPillActive.editmode). Replaces the former #crudModeWrap fixed float — edit mode is now a registry pill, consistent with the pill-only surface convention."
-    },
-    {
       "id": "graph",
       "name": "Graph",
       "key": "",
