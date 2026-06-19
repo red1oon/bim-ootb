@@ -463,7 +463,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=9"></script>
+<script src="ad_process.js?v=10"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -522,7 +522,7 @@
 <script src="bigdecimal.js?v=1"></script>
 <script src="bim_orders_overlay.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
-<script src="report_overlay.js?v=7"></script>
+<script src="report_overlay.js?v=8"></script>
 <script src="rule_fold.js?v=2"></script>
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
@@ -1131,7 +1131,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       row.addEventListener('click', function () {
         document.querySelectorAll('.idmp-row.leaf.active').forEach(function (e) { e.classList.remove('active'); });
         row.classList.add('active');
-        if (node.action === 'W' && node.windowId) openWindow(Number(node.windowId), node.name);
+        if (node.action === 'W' && node.windowId) _dirtyGuard(function () { openWindow(Number(node.windowId), node.name); });
         else if ((node.action === 'P' || node.action === 'R') && node.processId) openProcess(Number(node.processId), node.name);  // §AD-PROC-LIVE (B-5/C-5)
         else status('"' + node.name + '" — action ' + node.action + ' (window opening only in I1)');
         if (window.innerWidth <= 760) document.body.classList.remove('menu-open');
@@ -1157,6 +1157,46 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     renderWinTabs(); renderToolbar(); renderTabStrip(); renderActiveTab();
     _histPush('window');   // §B — window opened / window-tab switched (this is the single activation choke point)
   }
+  // ── Leg 4 (W-DIRTY-GATE) — iDempiere's dirty-exit prompt (AbstractADWindowContent.onExit → Dialog.ask
+  //    "CloseUnSave?"). Any user navigation away from an inline New/Edit that carries REAL unsaved content is
+  //    gated: prompt [Cancel]/[Discard]. Cancel → stay on the form (still dirty); Discard → buffer the private
+  //    draft (W-DRAFT-RESTORE restore-point survives) + drop the form + proceed. An UNTOUCHED New is clean
+  //    (formNeedsSave=false) → no prompt, auto-discards (iDempiere parity). programmatic opens never call this.
+  function _formNeedsSave() {
+    if (!document.getElementById('idmp-inline-mount')) return false;
+    try { return !!(window.__crud && typeof window.__crud.formNeedsSave === 'function' && window.__crud.formNeedsSave()); }
+    catch (e) { return false; }
+  }
+  function _dirtyGuard(proceed) {
+    if (!_formNeedsSave()) { proceed(); return; }
+    var tn = (_curTab() && _curTab().tableName) || '?';
+    console.log('§DIRTY-GATE prompt table=' + tn + ' blockedNav=1');
+    _confirmDirty(function (discard) {
+      if (!discard) { console.log('§DIRTY-GATE choice=cancel table=' + tn); return; }   // stay on the dirty form
+      console.log('§DIRTY-GATE choice=discard table=' + tn);
+      try { if (window.__crud && window.__crud.bufferDraft) window.__crud.bufferDraft(); } catch (e) {}   // keep restore-point
+      _newMode = null;   // a discarded New must not re-render
+      proceed();
+    });
+  }
+  function _confirmDirty(cb) {
+    var old = document.getElementById('idmp-dirty-ov'); if (old) old.remove();
+    var ov = el('div', null); ov.id = 'idmp-dirty-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+    var box = el('div', null);
+    box.style.cssText = 'background:var(--idmp-panel,#fff);color:var(--idmp-fg,#1c1c1c);border:1px solid var(--idmp-border,#c9c9c9);border-radius:8px;padding:18px 20px;width:min(380px,92vw);box-shadow:0 10px 32px rgba(0,0,0,.4);font:13px system-ui';
+    var msg = el('div', null, 'This record has unsaved changes. Close without saving?');
+    msg.style.cssText = 'margin:0 0 16px;line-height:1.5';
+    var row = el('div', null); row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px';
+    var cancel = el('button', null, 'Cancel'); cancel.style.cssText = 'padding:6px 14px;border:1px solid var(--idmp-border,#bbb);border-radius:5px;background:#fff;cursor:pointer;font:inherit';
+    var discard = el('button', null, 'Close without saving'); discard.style.cssText = 'padding:6px 14px;border:none;border-radius:5px;background:var(--idmp-blue,#1c5fa8);color:#fff;cursor:pointer;font:inherit';
+    function done(d) { ov.remove(); cb(d); }
+    cancel.addEventListener('click', function () { done(false); });
+    discard.addEventListener('click', function () { done(true); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) done(false); });
+    row.appendChild(cancel); row.appendChild(discard); box.appendChild(msg); box.appendChild(row);
+    ov.appendChild(box); document.body.appendChild(ov); cancel.focus();
+  }
   function closeWindow(windowId) {
     if (_zoomFilter && _zoomFilter.windowId === windowId) _zoomFilter = null;   // drop a stale where-used filter
     delete _openWins[windowId];
@@ -1174,9 +1214,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var t = el('div', 'idmp-wintab' + (id === _activeWin ? ' active' : ''));
       t.appendChild(el('span', 'lbl', o.name));
       var x = el('span', 'x', '×');
-      x.addEventListener('click', function (e) { e.stopPropagation(); closeWindow(id); });
+      x.addEventListener('click', function (e) { e.stopPropagation(); _dirtyGuard(function () { closeWindow(id); }); });
       t.appendChild(x);
-      t.addEventListener('click', function () { openWindow(id); });
+      t.addEventListener('click', function () { _dirtyGuard(function () { openWindow(id); }); });
       bar.appendChild(t);
     });
   }
@@ -1253,15 +1293,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   (iDempiere-faithful: the form/grid IS the editable surface, never a read→Edit→modal). Save/Ignore live in the
     //   inline verb bar (dirty-gated), New/Delete on the form pills. The Glass/Gravity ring stays Glass-only (the
     //   old ✎ re-point that W-RING-LEAK guarded is now removed entirely — there is no ring affordance on this surface).
-    btn('◀◀', 'First record', true, function () { _recIdx = 0; refreshForm(); });
-    btn('◀', 'Previous record', true, function () { if (_recIdx > 0) _recIdx--; refreshForm(); });
+    btn('◀◀', 'First record', true, function () { _dirtyGuard(function () { _recIdx = 0; refreshForm(); }); });
+    btn('◀', 'Previous record', true, function () { _dirtyGuard(function () { if (_recIdx > 0) _recIdx--; refreshForm(); }); });
     var navSpan = el('span', 'nav'); navSpan.id = 'idmp-recnav'; tb.appendChild(navSpan);
     // Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING — RECORD-INFO POPUP, W-RECINFO). The iDempiere "(i)" record-info
     // affordance at the rec/total indicator: who/when last touched this record, read from the immutable op-log
     // (CORE.recordInfo) + the row's own audit columns. Always-on (no AD_ChangeLog gate, unlike 🕒 Log).
     btn('ⓘ', 'Record info — who created / last updated this record', true, function () { _showRecordInfo(); });
-    btn('▶', 'Next record', true, function () { if (_recIdx < _records.length - 1) _recIdx++; refreshForm(); });
-    btn('▶▶', 'Last record', true, function () { _recIdx = Math.max(0, _records.length - 1); refreshForm(); });
+    btn('▶', 'Next record', true, function () { _dirtyGuard(function () { if (_recIdx < _records.length - 1) _recIdx++; refreshForm(); }); });
+    btn('▶▶', 'Last record', true, function () { _dirtyGuard(function () { _recIdx = Math.max(0, _records.length - 1); refreshForm(); }); });
     sep();
     var tgl = btn('▦ Grid', 'Toggle Grid / Form', true, function () {
       _viewMode = _viewMode === 'grid' ? 'form' : 'grid';
@@ -1569,7 +1609,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), tab.name);   // no tree glyph — iDempiere shows plain tab names
       if (lvl) t.style.paddingLeft = (16 + lvl * 10) + 'px';   // child tabs subtly indented (iDempiere parent→child)
       t.title = 'TabLevel ' + lvl + (tab.tableName ? ' · ' + tab.tableName : '');
-      t.addEventListener('click', function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); });
+      t.addEventListener('click', function () { _dirtyGuard(function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); }); });
       strip.appendChild(t);
     });
   }
@@ -1802,7 +1842,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
-      tr.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
+      tr.addEventListener('click', function () { _dirtyGuard(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
       tb.appendChild(tr);
     });
     table.appendChild(tb);
@@ -1854,7 +1894,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       acc.appendChild(bd);
       // chevron / label-region tap = expand body (peek); "Open ›" or the rest of the header = open form view.
       lbl.addEventListener('click', function (e) { e.stopPropagation(); hd.classList.toggle('open'); bd.classList.toggle('open'); });
-      hd.addEventListener('click', function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); });
+      hd.addEventListener('click', function () { _dirtyGuard(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
       cards.appendChild(acc);
     });
     return cards;
@@ -2488,6 +2528,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       else if (r.total != null) pane.appendChild(el('div', 'msg', 'Subtotal ' + r.subtotal + ' · Tax ' + r.tax + ' · Total ' + r.total));
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
+    }
+    // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
+    // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
+    // r.headerOnly is set ONLY by foldVoucher; r has no `.lines` key so the receipt branch above never fires for it.
+    if (!absent && r && r.headerOnly && r.amounts) {
+      var vt = document.createElement('table'), vtr = el('tr');
+      ['Amount', 'Value'].forEach(function (h, i) { vtr.appendChild(el('th', i >= 1 ? 'r' : null, h)); }); vt.appendChild(vtr);
+      r.amounts.forEach(function (a) { vtr = el('tr'); vtr.appendChild(el('td', null, a.label)); vtr.appendChild(el('td', 'r', a.value == null ? '' : String(a.value))); vt.appendChild(vtr); });
+      pane.appendChild(vt);
+      var flagStr = (r.flags || []).filter(function (f) { return f.value != null; }).map(function (f) { return f.label + ' ' + f.value; }).join(' · ');
+      pane.appendChild(el('div', 'msg', 'Document total ' + r.total + (r.docno ? ' · No. ' + r.docno : '') + (r.partner ? ' · ' + r.partner : '') + (flagStr ? ' · ' + flagStr : '')));
     }
     // §GENPO-LIVE / §GENSHIP-LIVE — a KIND-2 op-group result (CREATE_DOCUMENT + N CREATE_LINE), rendered
     // doc-aware off the folded header table. EXTRACT: every value comes from the source record / its lines.

@@ -119,6 +119,20 @@
     // report:c_project — "Rpt C_Project" (AD_Process 217, Project Print). KIND-1, folds via the SAME foldReceipt
     // (REPORT_MAP.c_project), no new fold code. AD_PROCESS_FOLD_LANE §P2-leg3 — Witness: W-PROC-PROJPRINT.
     registerHandler('report:c_project', receiptHandler('c_project'), { kind: 'report', reportKey: 'c_project' });
+    // report:c_payment — "Rpt C_Payment" (AD_Process 313, "Payment Print"). KIND-1, but a HEADER-ONLY financial
+    // document (a payment has NO line table) → folded via report_overlay.foldVoucher, NOT foldReceipt (whose
+    // subtotal=Σline model would yield tax=PayAmt on an unapplied payment). AD_PROCESS_FOLD_LANE §P2-tail-leg5.
+    function voucherHandler(reportKey) {
+      return function (ctx, info) {
+        if (!RC || typeof RC.foldVoucher !== 'function') return { ok: false, message: 'report core unavailable', rows: 0 };
+        var map = RC.REPORT_MAP[reportKey];
+        var hdr = ctx.fetchHeader ? ctx.fetchHeader(reportKey, info) : null;
+        if (!hdr) return { ok: false, message: 'no header row for ' + reportKey, rows: 0 };
+        var rec = RC.foldVoucher(map, hdr, ctx.names ? ctx.names(reportKey, hdr, []) : {});
+        return { ok: true, message: 'voucher folded', rows: 0, result: rec };
+      };
+    }
+    registerHandler('report:c_payment', voucherHandler('c_payment'), { kind: 'report', reportKey: 'c_payment' });
 
     // org.compiere.report.TrialBalance -> report_overlay.foldTrialBalance over the posted journal.
     registerHandler('org.compiere.report.TrialBalance', function (ctx, info) {
@@ -477,6 +491,10 @@
       // RV_Project* report-VIEW procs (218 RV_ProjectCycle, 226/228/229/234) stay absent-handler (no foldReceipt
       // for a report view — those are a later report-view fold, not this leg).
       if (/c_project|project print|rpt c_project/.test(hay)) return 'report:c_project';
+      // "Rpt C_Payment" (313, "Payment Print") — match the SPECIFIC report value/name only (`rpt c_payment\b` |
+      // "payment print"), NOT a bare `c_payment` — else "C_Payment NotAllocated" (317, UnAllocated Payments) and
+      // the other RV_* payment report-VIEWs (146/148/318) would be wrongly caught. Those stay absent-handler.
+      if (/rpt c_payment\b|payment print/.test(hay)) return 'report:c_payment';
     }
     return proc.classname || '';     // blank -> no handler -> absent-handler result downstream
   }
