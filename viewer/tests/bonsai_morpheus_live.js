@@ -1,5 +1,5 @@
 // W-BONSAI-MORPHEUS — wiring witness (prompts/BONSAI_MORPHEUS_WIRING.md Tasks 2+3+4).
-// CLAIM: the Morpheus front door (index2.html) wires the Bonsai modeller as its BIM face:
+// CLAIM: the Morpheus front door (index.html) wires the Bonsai modeller as its BIM face:
 //   red pill → background preload SHOWER (occt-wasm + ad_seed.db stream behind the pulse) →
 //   ⋯ PillBuilder rail with a Bonsai-tree pill → click → navigates to viewer/modeller.html →
 //   the modeller boots and AUTHORS A WALL (in A.scene). Whitebox §-log + a DOM/scene probe.
@@ -10,7 +10,7 @@ const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modu
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.wasm':'application/wasm',
   '.json':'application/json', '.css':'text/css', '.db':'application/octet-stream', '.jpg':'image/jpeg', '.png':'image/png', '.map':'application/json' };
 const server = http.createServer((q, r) => {
-  let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index2.html';
+  let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index.html';
   fs.readFile(path.join(ROOT, p), (e, b) => {
     if (e) { r.writeHead(404); r.end('404 ' + p); return; }
     r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); r.end(b);
@@ -26,7 +26,7 @@ const server = http.createServer((q, r) => {
   pg.on('pageerror', e => console.log('  ERR ' + String(e).slice(0, 200)));
 
   // 1) cold boot → Morpheus gate
-  await pg.goto(`http://localhost:${port}/index2.html`, { waitUntil: 'load', timeout: 60000 });
+  await pg.goto(`http://localhost:${port}/index.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForSelector('#morpheus.active', { timeout: 15000 }).catch(() => {});
   const cold = await pg.$('#morpheus.active') ? true : false;
 

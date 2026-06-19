@@ -9,8 +9,9 @@
 //   PROVES (and HONESTLY records any gap — a dead-end is logged, never papered):
 //     ACT 1 — ODOO (client 12, the doc-complete migrated tenant) INVOICE → POST IS DERIVABLE TO THE CENT:
 //        open the Sales Invoice window (167) → invoice INV/2026/00005 ($5002.50) →
-//        (a) the Posting-Preview pill SURFACES (the AD `Posted`-column gate is true for C_Invoice);
-//        (b) tap it → the drawer lights coverage=complete, balanced, and the RENDERED journal == the Odoo
+//        (a) the native Posted button SURFACES on the form (AD `Posted`-column gate true + acct role isShowAcct);
+//        (b) click it → a draft invoice routes to the PURE preview; the drawer lights coverage=complete,
+//            balanced, and the RENDERED journal == the Odoo
 //            oracle to the cent: DR 121000 Account Receivable 5002.50 / CR 251000 Tax Received 652.50 /
 //            CR 400000 Product Sales 4350.00 (the GL the Complete WOULD post — more than iDempiere shows
 //            pre-posting). §PREVIEW-LIVE coverage=complete balanced=true;
@@ -20,7 +21,7 @@
 //        (d) a RECEIPT folds for the invoice (foldReceipt over raw header+lines): subtotal 4350.00 / tax
 //            652.50 / total 5002.50. §REPORT-RECEIPT.
 //     ACT 2 — GARDENWORLD (client 11, the full tenant) — THE REPORT HALF on a real posted journal:
-//        (a) Posting-Preview on a posted sales invoice (#200000, $50.35) lights coverage=complete balanced;
+//        (a) the Posted button on a posted sales invoice (#200000, $50.35) → preview lights coverage=complete balanced;
 //        (b) a FINANCIAL STATEMENT folds — window.__report.statement (PA_Report over the real 300-row
 //            fact_acct, W-PA-REPORT) renders cells, every one a re-sum of fact_acct, 0 invented. §STATEMENT;
 //        (c) a receipt folds for the invoice. §REPORT-RECEIPT total 50.35.
@@ -42,11 +43,17 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// PillBuilder binds on 'pointerup' — a programmatic tap dispatches the pointer sequence.
-async function tapPill(page, pid) {
-  return page.evaluate((p) => { const b = document.getElementById('pill-' + p); if (!b) return false;
-    b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-    b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); return true; }, pid);
+// Leg 3 (RESUME_IDMP_FIDELITY) — accounting is NO LONGER a pill: the Posting-Preview / Accts-Posted views are
+// carried by iDempiere's native Posted COLUMN/button (_postedButton), role-gated to acct roles (isShowAcct).
+// clickPostedButton drives the form's Posted button like a user — it routes draft→preview, posted→GL facts.
+// The two GL views are also reachable directly via the window.IdmpPosting host seam (used for the actual-GL
+// "honestly absent on a migrated tenant" check, which has no separate user affordance on a draft doc).
+async function clickPostedButton(page) {
+  return page.evaluate(() => { const b = document.querySelector('.idmp-posted-fld .idmp-posted-btn') ||
+    document.querySelector('.idmp-posted-btn'); if (!b) return false; b.click(); return true; });
+}
+async function openActualGL(page) {   // the Accts-Posted (actual fact_acct) view — IdmpPosting.posted()
+  return page.evaluate(() => { if (window.IdmpPosting && window.IdmpPosting.posted) { window.IdmpPosting.posted(); return true; } return false; });
 }
 async function gotoTenant(page, url) {
   await page.goto(url, { waitUntil: 'networkidle' });
@@ -110,14 +117,14 @@ async function closePosted(page) {
   await openRecord(page, inv ? inv.id : 0);
   await page.waitForTimeout(700);
   const tabLog = lastLog(/§IDEMPIERE .*table=C_Invoice/i);
-  const pillPresent = await page.evaluate(() => !!document.getElementById('pill-preview'));
-  console.log('§CRITIC-POST ACT1 tabLog="' + tabLog + '" previewPillInDOM=' + pillPresent);
+  const btnPresent = await page.evaluate(() => !!document.querySelector('.idmp-posted-fld .idmp-posted-btn'));
+  console.log('§CRITIC-POST ACT1 tabLog="' + tabLog + '" postedButtonInForm=' + btnPresent);
   ok('the open document is a POSTING doc (AD `Posted`-column gate true)', /postingDoc=true/.test(tabLog), tabLog);
-  ok('the Posting-Preview pill SURFACES on the invoice (the user has the control)', pillPresent);
+  ok('the native Posted button SURFACES on the invoice form (acct role + posting doc)', btnPresent);
 
-  // tap the real pill; fall back to the registered action only if the pill is somehow absent (logged).
-  const tapped = await tapPill(page, 'preview');
-  if (!tapped) await page.evaluate(() => window.IdmpPillActions && window.IdmpPillActions.preview && window.IdmpPillActions.preview());
+  // drive the native Posted button like a user; a draft invoice routes to the PURE preview (openPreviewFor).
+  const tapped = await clickPostedButton(page);
+  if (!tapped) await page.evaluate(() => window.IdmpPosting && window.IdmpPosting.preview && window.IdmpPosting.preview());
   await page.waitForTimeout(900);
   const prevLog = lastLog(/§PREVIEW-LIVE/);
   const drawer = await scrapePosted(page);
@@ -135,8 +142,8 @@ async function closePosted(page) {
   await closePosted(page);
 
   // Accts-Posted: HONEST absent on a migrated tenant (config but no captured fact_acct, no op-log POST).
-  const tappedPosted = await tapPill(page, 'posted');
-  if (!tappedPosted) await page.evaluate(() => window.IdmpPillActions && window.IdmpPillActions.posted && window.IdmpPillActions.posted());
+  // The actual-GL view (vs the dry-run preview) — reached via the IdmpPosting host seam the button folds over.
+  const tappedPosted = await openActualGL(page);
   await page.waitForTimeout(700);
   const postedLog = lastLog(/§POSTED-LIVE/);
   const postedDrawer = await scrapePosted(page);
@@ -167,8 +174,8 @@ async function closePosted(page) {
 
   await openRecord(page, gwInv ? gwInv.id : 0);
   await page.waitForTimeout(700);
-  const gwTapped = await tapPill(page, 'preview');
-  if (!gwTapped) await page.evaluate(() => window.IdmpPillActions && window.IdmpPillActions.preview && window.IdmpPillActions.preview());
+  const gwTapped = await clickPostedButton(page);
+  if (!gwTapped) await page.evaluate(() => window.IdmpPosting && window.IdmpPosting.preview && window.IdmpPosting.preview());
   await page.waitForTimeout(800);
   const gwPrevLog = lastLog(/§PREVIEW-LIVE/);
   const gwDrawer = await scrapePosted(page);

@@ -66,7 +66,7 @@ const pillIds = (page) => page.$$eval('#idmp-pill button[id^="pill-"]', bs => bs
     ' pillIds=[' + inIds.join(',') + '] install=' + inIds.includes('install') + ' migrate=' + inIds.includes('migrate'));
   console.log('§C-IN-LOG ' + inLifecycle);
 
-  const KEEP = ['posted','graph','kanban','rule'];
+  const KEEP = ['reports','graph','kanban','rule'];   // representative ungated lens pills (posted+preview retired → Posted column/button, W-POSTED-COLUMN)
   const keptBoth = KEEP.every(id => preIds.includes(id) && inIds.includes(id));
   const preOk = preIds.includes('install') && preIds.includes('migrate');
   const inOk = !inIds.includes('install') && !inIds.includes('migrate');
