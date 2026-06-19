@@ -52,7 +52,9 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
       if (typeof deleteProject === 'function') try { await deleteProject(k); } catch(e) {}
     }, KEY);
     // Intercept the auto-open BEFORE import so we capture the URL the drop opens.
-    await page.evaluate(() => { window._openedUrl = null; window.open = (u) => { window._openedUrl = u; return null; }; });
+    // Return a truthy fake window: the matrix import (import_own.js) falls back to a same-tab location.href
+    // when window.open returns null — which would navigate away and lose _openedUrl. A truthy window keeps us here.
+    await page.evaluate(() => { window._openedUrl = null; window.open = (u) => { window._openedUrl = u; return { focus() {}, closed: false }; }; });
     await page.locator('#m-import-file').setInputFiles(VOGEL);
 
     await expect.poll(() => {
