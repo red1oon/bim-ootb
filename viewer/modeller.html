@@ -587,6 +587,26 @@ canvas.addEventListener('pointerdown', (e) => {           // bare (no-shift) pic
   const hit = pickAt(e.clientX, e.clientY);
   if (hit) { highlight(hit.object); setStat('selected feature #' + selectedId); }
 });
+// ── M3 HOVER PRE-PICK (W-BONSAI-HOVER) ──────────────────────────────────────────────────────────
+// Raycast under the cursor BEFORE any click and give the feature a faint glow (dimmer than selection) + a
+// pointer cursor — the affordance every competitor has and DAGeVu's silent pick lacked. Skips selected meshes
+// (keeps their selection emissive), and is suppressed while a button is held (orbit) or any non-select mode/drag.
+let _hoverMesh = null, _hoverId = null;
+function setHover(mesh) {
+  const hid = mesh ? mesh.userData.featureId : null;
+  if (hid === _hoverId) return;
+  if (_hoverMesh && !selectedIds.has(_hoverMesh.userData.featureId)) _emis(_hoverMesh, 0x000000);   // restore prev (unless it's selected)
+  _hoverMesh = mesh; _hoverId = hid;
+  if (mesh && !selectedIds.has(hid)) _emis(mesh, 0x14324a);   // faint hover tint (< selection 0x2b5a8c)
+  canvas.style.cursor = mesh ? 'pointer' : '';
+  if (window.A && A.requestRender) A.requestRender();
+}
+canvas.addEventListener('pointermove', (e) => {
+  if (!inSelectCtx() || marquee || _moveDrag || e.buttons) { if (_hoverId != null) setHover(null); return; }   // not while orbiting/dragging/another mode
+  const hit = pickAt(e.clientX, e.clientY);
+  setHover(hit ? hit.object : null);
+});
+canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(null); });
 
 // Cut an opening into the SELECTED wall: derive a window void from the wall bbox (full through the
 // thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
@@ -2486,6 +2506,44 @@ if (qs.get('rotate') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER rotate demo fail ' + e); }
     window.__rotateResult = out; window.__rotateDone = true;
     console.log('§MODELLER rotate-done');
+  })();
+}
+// ?hover=demo proves PRE-PICK HOVER (W-BONSAI-HOVER / M3): moving the cursor over a feature (no click) gives it a
+// faint glow (dimmer than selection) + a pointer cursor; empty space clears both; a SELECTED feature keeps its
+// selection glow while a different feature is hovered; and hover is suppressed while a button is held (orbit).
+if (qs.get('hover') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const emisOf = (fid) => { const m = meshOf(fid); return m && m.material && m.material.emissive ? m.material.emissive.getHex() : null; };
+    const centreClient = (fid) => { const m = meshOf(fid); m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; const c = new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2); const r = canvas.getBoundingClientRect(); const v = c.project(camera); return { clientX: r.left + (v.x + 1) / 2 * r.width, clientY: r.top + (1 - v.y) / 2 * r.height }; };
+    const move = (pt, buttons) => canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: pt.clientX, clientY: pt.clientY, buttons: buttons || 0, bubbles: true }));
+    try {
+      window.Bonsai.grid.show(false); O.clear(); await sleep(50);
+      const door = window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor');
+      const A = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 0, y: 0, z: 0, rot: 0 }, lod: '200' } });
+      for (let i = 0; i < 40 && !meshOf(A.id); i++) await sleep(50);
+      const B = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 3, y: 0, z: 0, rot: 0 }, lod: '200' } });
+      for (let i = 0; i < 40 && !meshOf(B.id); i++) await sleep(50);
+      out.ids = [A.id, B.id]; highlight(null); await sleep(20);
+      out.HOVER_TINT = 0x14324a; out.SEL_TINT = 0x2b5a8c;
+      // 1) hover A → glow + pointer cursor
+      const pa = centreClient(A.id); move(pa); await sleep(20);
+      out.hoverAId = _hoverId; out.hoverAEmis = emisOf(A.id); out.cursorOnA = canvas.style.cursor;
+      // 2) move to empty space → cleared
+      move({ clientX: 5, clientY: 5 }); await sleep(20);
+      out.hoverEmptyId = _hoverId; out.emisAfterLeave = emisOf(A.id); out.cursorEmpty = canvas.style.cursor;
+      // 3) select A, then hover B → B glows, A keeps selection glow
+      window.Bonsai.select(A.id); await sleep(20);
+      const pb = centreClient(B.id); move(pb); await sleep(20);
+      out.hoverBId = _hoverId; out.hoverBEmis = emisOf(B.id); out.selAEmisWhileHoverB = emisOf(A.id);
+      // 4) hover B with a button held (orbit) → suppressed
+      move({ clientX: 5, clientY: 5 }); await sleep(10); move(pb, 1); await sleep(20);
+      out.hoverWhileButton = _hoverId; out.bEmisWhileButton = emisOf(B.id);
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER hover demo fail ' + e); }
+    window.__hoverResult = out; window.__hoverDone = true;
+    console.log('§MODELLER hover-done');
   })();
 }
 // ?gmpreview=demo proves the Move-Grid PREVIEW (W-BONSAI-GMPREVIEW, the user's "move grid" feedback gap): while
