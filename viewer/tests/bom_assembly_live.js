@@ -99,9 +99,23 @@ const server = http.createServer((q, r) => {
     // picker DETACHES after the drop (no ghost stuck to the pointer) — user-reported fix
     const ghostDetached = !window.A.scene.children.find(o => o.name === 'InsertGhost');
 
+    // W-BOM-DROP-CENTER: placeAssembly CENTER-anchors the corner-anchored expansion under the center-anchored
+    // ghost. The host dropped at world (4,3) with rot=0 → every committed placement must equal the RAW corner
+    // expansion at (4,3) shifted by exactly −(W/2, D/2). Equivalently the committed footprint CENTER lands on the
+    // drop point (4,3), not at (4+W/2, 3+D/2) as before the fix. Deterministic, no GPU. (BOM_DROP §RESULT fix a.)
+    const raw = L.expandAssembly(pick.id, { x: 4, y: 3, z: 0, rot: 0 });
+    const com = O._geomOps().map(o => o.parameters.placement);
+    const hw = (pick.w || 0) / 2, hd = (pick.d || 0) / 2;
+    const dropCentered = com.length === raw.length &&
+      com.every((p, i) => near(p.x, raw[i].x - hw, 0.01) && near(p.y, raw[i].y - hd, 0.01));
+    const cxs = com.map(p => p.x), cys = com.map(p => p.y);
+    const fcx = +(((Math.min(...cxs) + Math.max(...cxs)) / 2)).toFixed(2);
+    const fcy = +(((Math.min(...cys) + Math.max(...cys)) / 2)).toFixed(2);
+
     return { pickId: pick.id, level: pick.level, parts: pick.children.length, directLeafLines, N,
       recursionExpanded, relativeOk, rotationOk, det, layoutSpread, linId, ghostDetached,
-      committed, verify: !!(ver && ver.ok), signedCount, allInsert, distinctPts, meshCount };
+      committed, verify: !!(ver && ver.ok), signedCount, allInsert, distinctPts, meshCount,
+      dropCentered, footprintCenter: [fcx, fcy], asmW: +(pick.w || 0).toFixed(2), asmD: +(pick.d || 0).toFixed(2) };
   });
 
   await br.close(); server.close();
@@ -119,6 +133,7 @@ const server = http.createServer((q, r) => {
     chainVerifies:   r.verify === true,                      // signed kernel_ops chain verifies
     everyRowSigned:  r.signedCount === r.committed && r.committed > 0,
     partsSpread:     r.distinctPts > 1,                      // distinct placements (not stacked)
+    dropCentered:    r.dropCentered === true,                // W-BOM-DROP-CENTER: footprint center sits on the drop point
     renders:         r.meshCount >= r.N                      // N leaf meshes folded into the scene
   };
   const pass = Object.values(checks).every(Boolean);
