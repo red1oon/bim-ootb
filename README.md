@@ -4,9 +4,9 @@
 
 **Frictionless. Two DBs. One browser. Zero install.**
 
-Two engines in one browser tab, sharing one operation log. Drop an IFC file and get a full BIM environment in 60 seconds. Beside it, an ERP kernel forked from the iDempiere lineage runs over its own SQLite database — and the *same* signed op-log that drives the model folds a building into a procurement order. No server, no signup, no plugins.
+Two engines in one browser tab, sharing one signed operation log. Drop an IFC file and get a full BIM environment in 60 seconds — *view* it in the read-only viewer or *author* B-rep geometry in the DAGeVu modeller, where the op-log itself is the feature tree. Beside it, **Kernel-ERP** — an ERP kernel folded from the iDempiere lineage — runs over its own SQLite database, and the *same* signed op-log that drives the model folds a building into a procurement order. No server, no signup, no plugins.
 
-**Live:** [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) — **Film (both engines):** [BIM and ERP, one engine](https://youtu.be/hnLYNcRihzs)
+**Live:** [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) · **Modeller:** [DAGeVu authoring](https://red1oon.github.io/bim-ootb/viewer/modeller.html) · **Film:** [BIM and ERP, one engine](https://youtu.be/hnLYNcRihzs)
 
 Two technical papers, one per engine: **BIM →** [Feature Paper](https://red1oon.github.io/BIMCompiler/FeatureComparison/) · **ERP →** [Migrate & Compare](https://red1oon.github.io/BIMCompiler/MigrateComparisonPaper/).
 
@@ -35,14 +35,16 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **City Mode (S285)** — camera ray-blast streaming with ARC-first gate and wave eviction; whole-city facade kept resident as you fly
 - **Precision camera** — Auto-Pivot live re-centre orbit (room-centroid / selected element), keyboard cluster
 - **Synthesized SFX** — zero-asset cinematic audio overlay (Time-Machine score, nav cues, surface-aware ray-blast)
+- **DAGeVu authoring modeller** (`viewer/modeller.html`) — a browser BIM *authoring* surface beside the viewer: an occt-wasm B-rep kernel as a pure `ops → mesh` function, where the signed op-log **is** the feature tree and geometry is a deterministic fold. Insert library components at LOD from a BOM-hierarchy catalog (real meshes), drop a whole house / floor / room as a recursive BOM-assembly, sketch with a planegcs constraint solver, sweep / fillet / chamfer — all replayable and reversible. Early but spine-proven; renamed from "Bonsai" to avoid a brand clash
+- **Connect Scene** — shared cross-surface context over the one op-log: selection, timeline and identity cross between the DAGeVu modeller, the viewer and the ERP while the surfaces stay separate (one log → two folds that co-vanish on undo)
 
 → **Read the paper:** [BIM OOTB Feature Paper](https://red1oon.github.io/BIMCompiler/FeatureComparison/)
 
-## ERP side — Op-Log Engine
+## ERP side — Kernel-ERP (Op-Log Engine)
 
-**Open `erp/erp.html`.** The same browser that renders the building also runs an ERP kernel forked from the iDempiere lineage (Compiere → ADempiere → iDempiere). State is a *deterministic fold over a signed operation log* — a fact is computed by replaying the log, not stored as a guarded scalar — so it runs serverless, over SQLite WASM, and works offline. iDempiere's Application Dictionary (~925 tables) is re-expressed as five relations plus verbs, and the *same* op-log that drives the model folds a building into a procurement order.
+**Open `erp/erp.html`.** The same browser that renders the building also runs **Kernel-ERP**, an ERP kernel folded from the iDempiere lineage (Compiere → ADempiere → iDempiere). State is a *deterministic fold over a signed operation log* — a fact is computed by replaying the log, not stored as a guarded scalar — so it runs serverless, over SQLite WASM, and works offline. iDempiere's Application Dictionary (~925 tables) is re-expressed as five relations plus verbs, and the *same* op-log that drives the model folds a building into a procurement order.
 
-The ERP side has its own sprint — ~90 PRs building, in order:
+The ERP side has its own long sprint, in order:
 
 - **AD renderer** — `erp/erp.html`: every window, tab and field rendered live from the Application Dictionary in SQLite WASM; multi-tenant, `?login=` demo auto-login, shareable context (Share pill captures *and* restores), mobile cards ≤760px
 - **iDempiere client** — `erp/idempiere.html`: the same AD framework rendered as an iDempiere-flavoured client, with a real Odoo Client 12 tenant folded in as a second renderer
@@ -51,6 +53,9 @@ The ERP side has its own sprint — ~90 PRs building, in order:
 - **One signed op-log (I-4)** — the live write path is genuinely signed; gated signed **Complete** governs the CO lifecycle; GL debits == credits self-verify on every hop
 - **Glassbowl** — `erp/glassbowl.html`: the engine rendered *from its own data* — the kernel inspecting itself
 - **Migrate / Install** — pick-your-ERP dialog + the **Odoo Migrate Agent** (`erp/odoo_agent/`, self-contained `.zip`): a native *delegate-to-install* agent — the browser never touches your Odoo; you run it locally, it folds your order→delivery→invoice chain to `odoo_chain.json`, and Install persists the merged tenant so it survives reload
+- **iDempiere fidelity (the fundamental law)** — `erp/idempiere.html` is now made *indistinguishable* from real iDempiere: classic ADWindow chrome (one toolbar — New/Copy/Save/Save&New/Delete/Process; folder tabs), in-place CRUD with no modal, a Zoom-Across where-used drill, a dirty-exit gate. Anything **not** native to iDempiere lives on a `⋯` pill rail. The oracle of record is a real iDempiere (`idempiere_test`) diffed to the cent
+- **AD_Process as a fold** — iDempiere's stored processes are re-expressed as deterministic op-log derivations (no new verbs, gated to the ported document family, consequences *extracted* not invented): project → Sales Order (164), Sales Order → shipment (118) and → invoice (119), plus report folds (M_InOut, M_Movement, M_Inventory, C_Project, PP_Order, C_Payment)
+- **Genesis / System Admin** — an Initial Tenant Setup wizard *births* a tenant as a signed op-log and posts it to the cent in-browser; a born tenant becomes a login-able resident client. A System login reaches a System Monitor and a Plugins & Releases surface
 
 A proven kernel and architecture, not a finished ERP. The constituent techniques are established (event sourcing, hash-chained ledgers, single-writer-at-the-edge, local-first); the contribution is their composition under ERP semantics and the BIM↔ERP unification. Honest about gaps — SAP S/4HANA folding is not-run, B1 is a mock — see the paper.
 
@@ -65,13 +70,13 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 1. **uniCenta POS** — a new browser version, driven by **replenishment** (the POS lifecycle as folds over the same ledger).
 2. **Warehouse mobile walk** — a phone-first pick/put-away "walk the aisles" app over the same tenant.
 
-**BIM — one big objective.**
+**BIM — authoring.** The DAGeVu modeller (above) now brings B-rep authoring to the browser over the op-log; next:
 
-1. **2D Grid Editor modelling** — author and edit the model from the 2D grid, not just view it.
+1. **2D Grid Editor modelling** — author and edit the model from the 2D grid, not just the 3D kernel.
 
-**Common — across both engines.**
+**Common — across both engines.** *Connect Scene* now shares selection, timeline and identity across the modeller, the viewer and the ERP over the one op-log; next:
 
-1. **Parallel history timeline** — the one universal op|view timeline running side-by-side across the BIM building *and* the ERP context: a single scrubbable history over the shared op-log.
+1. **Parallel history timeline** — a single scrubbable op|view timeline running side-by-side across the BIM building *and* the ERP context over the shared op-log.
 
 ---
 
@@ -83,8 +88,12 @@ Application state lives in **two SQLite databases** queried via sql-wasm — one
 
 ```
 index.html            — Landing page (gallery + IFC import)
+index2.html           — Morpheus front door ("choose your door" launcher)
 viewer/               — BIM engine
-  viewer.html         — 3D viewer
+  viewer.html         — 3D viewer (read-only)
+  modeller.html       — DAGeVu B-rep authoring surface
+  bonsai_kernel.js    — occt-wasm B-rep kernel (ops → mesh)
+  connect_scene.js    — cross-surface op-log bus (selection/timeline/identity)
   scene.js            — Renderer, camera, lighting
   streaming.js        — DB streaming + mesh construction
   measure.js          — Clash detection engine
@@ -93,14 +102,17 @@ viewer/               — BIM engine
   lib/                — Three.js, sql-wasm, web-ifc
   locales/            — 18 language packs
   rates/              — 17 country rate templates
-erp/                  — ERP engine
+erp/                  — Kernel-ERP engine
   erp.html            — ERP OOTB (Application Dictionary app)
-  idempiere.html      — iDempiere client, folded from SQLite WASM
+  idempiere.html      — Kernel-ERP — iDempiere-faithful client, folded from SQLite WASM
   glassbowl.html      — the engine rendered from its own data
   erp_kernel.js       — op-log fold + verbs
   kernel_ops.js       — operation verbs
   erp_signer.js       — hash-chained signed ledger
   rule_fold.js        — client-scoped validation rules
+  ad_process.js       — stored processes re-expressed as op-log folds
+  genesis.html        — Initial Tenant Setup (births a tenant as a signed op-log)
+  system_tenant.js    — System Administrator surface (Monitor, Plugins & Releases)
   kanban_lens.js      — Kanban lens   chat_lens.js — feed-fold inbox
   ad_graph.js         — Data Globe    ad_ui.js — AD renderer
   odoo_agent/         — native delegate-to-install migration agent
@@ -139,6 +151,7 @@ cd tests && npm install && npx playwright test
 | SQLite WASM (sql.js) | 1.10.3 + FTS5 | the database for **both** engines — BIM model + ERP Application Dictionary, in-browser |
 | sql.js-httpvfs | bundled | range-read streaming of remote `.db` files (load only the pages you touch) |
 | web-ifc | 0.0.77 | IFC parsing (IFC2x3 + IFC4), client-side |
+| occt-wasm (OpenCascade) + planegcs | bundled | DAGeVu authoring — B-rep kernel (`ops → mesh`) + sketch constraint solver |
 | Canvas 2D | native | 2D plans, dimension chains, door arcs, grid overlay, clash/snag, print sheets, Time Machine |
 | SheetJS / ExcelJS + FileSaver | 0.20.3 | Excel export |
 | Chart.js | 4.x | BOQ / cost charts |
@@ -152,7 +165,7 @@ cd tests && npm install && npx playwright test
 
 This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) — a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend. That parent browser sprint (S200–S271, April 20 — May 23) produced 552 commits and 92 JS modules in 33 days.
 
-Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **491 commits across 210 PRs through S288 (June 2026)**, now **140+ vanilla JS modules** (≈100 BIM + 40 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) while the **ERP engine emerged beside it** — the iDempiere Application Dictionary folded into the same browser, fully in JavaScript rather than the original Java, then extended to fold a live Odoo tenant through the same signed op-log.
+Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **707 commits across 393 PRs through June 2026 (PR #418)**, now **140+ vanilla JS modules** (≈100 BIM + 40 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
 
 The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power the viewer were built over the preceding 6 months in the parent project.
 
@@ -161,6 +174,8 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 | | URL |
 |---|---|
 | **Live viewer** | [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) |
+| **Morpheus front door** | [red1oon.github.io/bim-ootb/index2.html](https://red1oon.github.io/bim-ootb/index2.html) |
+| **DAGeVu authoring modeller** | [red1oon.github.io/bim-ootb/viewer/modeller.html](https://red1oon.github.io/bim-ootb/viewer/modeller.html) |
 | **Film — BIM and ERP, one engine** | [youtu.be/hnLYNcRihzs](https://youtu.be/hnLYNcRihzs) |
 | **BIM feature paper** | [red1oon.github.io/BIMCompiler/FeatureComparison](https://red1oon.github.io/BIMCompiler/FeatureComparison/) |
 | **ERP migrate & compare paper** | [red1oon.github.io/BIMCompiler/MigrateComparisonPaper](https://red1oon.github.io/BIMCompiler/MigrateComparisonPaper/) |
