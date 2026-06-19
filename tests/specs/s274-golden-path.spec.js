@@ -28,7 +28,7 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
     }, KEY);
 
     // Drop the file
-    await page.locator('#import-file-input').setInputFiles(VOGEL);
+    await page.locator('#m-import-file').setInputFiles(VOGEL);
 
     // Wait for import to complete
     await expect.poll(() => {
@@ -53,7 +53,7 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
     }, KEY);
     // Intercept the auto-open BEFORE import so we capture the URL the drop opens.
     await page.evaluate(() => { window._openedUrl = null; window.open = (u) => { window._openedUrl = u; return null; }; });
-    await page.locator('#import-file-input').setInputFiles(VOGEL);
+    await page.locator('#m-import-file').setInputFiles(VOGEL);
 
     await expect.poll(() => {
       return logs.entries.some(e => e.text.includes('IMPORT_SAVED'));
@@ -124,7 +124,7 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
     await page.evaluate(async (k) => {
       if (typeof deleteProject === 'function') try { await deleteProject(k); } catch(e) {}
     }, KEY);
-    await page.locator('#import-file-input').setInputFiles(VOGEL);
+    await page.locator('#m-import-file').setInputFiles(VOGEL);
 
     await expect.poll(() => {
       return logs.entries.some(e => e.text.includes('IMPORT_SAVED'));
