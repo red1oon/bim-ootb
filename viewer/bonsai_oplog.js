@@ -182,6 +182,18 @@
       return { redone: top };
     },
 
+    // W-BONSAI-MOVE: net translation applied to a feature by its ACTIVE GEOM_MOVE rows (parent===id). Read-only,
+    // used by the Outliner so a moved insert's row shows the new grid ref (its signed GEOM_INSERT.placement is
+    // never rewritten — the move is a separate signed row, a pure fold override like LOD).
+    moveDeltaFor(id) {
+      const o = { dx: 0, dy: 0, dz: 0 };
+      if (!this.db) return o;
+      this._geomOps().forEach(op => {
+        if (op.op_type === 'GEOM_MOVE' && op.parent === id) { const p = op.parameters; o.dx += p.dx || 0; o.dy += p.dy || 0; o.dz += p.dz || 0; }
+      });
+      return o;
+    },
+
     // Tamper test (W-SIGN in-viewer): mutate a committed parameter behind the chain's back → verify must fail.
     async tamperFirstGeom() {
       const r = this.db.exec("SELECT id FROM kernel_ops WHERE " + GEOM + " ORDER BY id LIMIT 1");
