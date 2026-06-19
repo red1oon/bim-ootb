@@ -48,8 +48,8 @@
       const commands = this.computeCommands(gridId, delta);
       const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_GRID_MOVE',
         parameters: { gridId, delta, commands } }, {});
-      const m = this._map[gridId];   // advance the authoring gridline so later snaps/drags use the new position
-      if (m) { const arr = m.axis === 'x' ? window.Bonsai.grid.xs : window.Bonsai.grid.ys; arr[m.index] += delta; window.Bonsai.grid.render(); }
+      // The authoring gridline advances via Grid.foldFromOplog — a FOLD of the op-log fired on this commit's
+      // bonsai:oplog event — NOT mutated here, so undo/redo/scrub revert it deterministically (M1 fix).
       console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
         ' verify=' + res.verify + ' tris=' + res.triangleCount);
       return { ...res, commands };
