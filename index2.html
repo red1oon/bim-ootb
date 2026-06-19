@@ -486,8 +486,8 @@ async function buildHubBody(){
   if(_hubBuilt) return; _hubBuilt=true;
   var b=document.getElementById('hub-body');
   b.innerHTML='<div class="hub-import">'+
-      '<div id="m-import-zone" class="hub-drop">&#8595; Drop an IFC / 3D file here &mdash; or tap to browse</div>'+
-      '<input type="file" id="m-import-file" accept=".ifc,.dae,.obj,.glb,.gltf,.3ds,.fbx,.stl" style="display:none">'+
+      '<div id="m-import-zone" class="hub-drop">&#8595; Drop IFC / 3D files here &mdash; or tap to browse<br><span style="font-size:11px;opacity:.7">multiple discipline files merge into one building</span></div>'+
+      '<input type="file" id="m-import-file" accept=".ifc,.dae,.obj,.glb,.gltf,.3ds,.fbx,.stl" multiple style="display:none">'+
       '<div id="import-status" style="text-align:center;color:#cfe3ef;font-size:12px;margin-top:8px;min-height:16px"></div>'+
       '<div style="display:none;margin:8px auto 0;max-width:400px;height:4px;background:#222;border-radius:2px;overflow:hidden">'+
         '<div id="import-progress-bar" style="height:100%;width:0%;background:#0277bd;border-radius:2px;transition:width .3s"></div></div>'+

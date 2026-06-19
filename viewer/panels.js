@@ -1118,7 +1118,13 @@ function setupPanels(A) {
     // pill:false entries appear in Help/Settings but not in the pill strip.
     var I = ICONS; // shorthand
     var _actions = [
-      { id: 'redpill',    name: 'Doc Mode',       key: ',', platform: 'desktop', img: 'redpill.png', icon: '', fn: function() { if (typeof window.toggleDocPill === 'function') window.toggleDocPill(); }, isActive: function() { return !!window._docMode; } },
+      // Document verbs — Save the open building / Open a saved one. Native OS dialogs, no card.
+      { id: 'save',       name: 'Save Building',  key: 'Ctrl+S', icon: I.save.svg,
+        fn: function() { if (A.saveModelDb) A.saveModelDb(); },
+        children: [ { name: 'Save the open building to a .db file' }, { name: 'Native Save As… dialog — pick name + folder' }, { name: 'Re-openable with Open (Ctrl+O)' } ] },
+      { id: 'open',       name: 'Open Building',  key: 'Ctrl+O', icon: I.folderOpen.svg,
+        fn: function() { if (A.openModelDb) A.openModelDb(); },
+        children: [ { name: 'Open a saved .db file' }, { name: 'Native Open… dialog' }, { name: 'Replaces the current scene' } ] },
       { id: 'find',       name: 'Find / Navigate', key: 'f', icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
       { id: 'help',       name: 'Help',            key: 'F1', icon: I.lifeBuoy.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
@@ -1724,9 +1730,9 @@ function setupPanels(A) {
       });
     }
 
-    // Default order: redpill at top (scroll away), home nearest ⋯ trigger (bottom)
+    // Default order: save/open near top, home nearest ⋯ trigger (bottom)
     // Usefulness: frequent tools near bottom (thumb reach), rare at top
-    var _defaultOrder = ['settings','audio','redpill','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
+    var _defaultOrder = ['settings','audio','save','open','report','fly','shadow','night','background','palette','tm','section','xray','share','measure','walk','help','find','precision','home'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({
