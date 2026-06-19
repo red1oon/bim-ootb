@@ -70,7 +70,7 @@ const srv = http.createServer((q, r) => {
   await pg.evaluate(() => { try { localStorage.setItem('probe_keep', '1'); } catch (e) {} });   // a non-building key must survive
   await Promise.all([
     pg.waitForNavigation({ waitUntil: 'load' }).catch(() => {}),
-    pg.evaluate(() => clearCache()),
+    pg.evaluate(() => window.clearCache()),
   ]);
   await wait(500);
   const enteredGone = await pg.evaluate(() => { try { return localStorage.getItem('mx_entered') === null; } catch (e) { return false; } });
