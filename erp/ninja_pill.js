@@ -13,6 +13,11 @@
  * The browser never tries to BE Excel — no grid render, no chart engine; formatting/subtotals/
  * graphs stay the user's own workbook (Excel recalcs its preserved formulas on open).
  *
+ * DESIGN NOTE (FUNDAMENTAL LAW, Leg 6 2026-06-19): Ninja/Red1 stay in the `⋯` pill rail (NOT iDempiere-native
+ *   chrome — they are our own authoring face). FORWARD INTENT: tune the lens to act on the CURRENT ACTIVE WINDOW
+ *   (the open ADWindow's table/record), not a separately-chosen target — so a user reaches for Ninja and it is
+ *   already pointed at what they are looking at (zero-friction, matches the active-window mental model).
+ *
  * Implementing internal/NinjaExcelAdaptation.md §6.2 (browser pill) — Witness: W-NINJA-PILL
  * (scripts/poc_ninja_pill.js). Engine = ninja_excel.js (same module the headless W-NINJA witnesses
  * prove); SheetJS (xlsx.mini.min.js, vendored) is LAZY-loaded on first open (lazy-init pattern).

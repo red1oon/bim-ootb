@@ -102,10 +102,12 @@ function pillIds(page) {
   console.log('§A-WITNESS-6 §AD-GATE noDoc-preview=' + ids.includes('preview') + ' postingDoc-preview=' + idsDoc.includes('preview') + ' gateWorks=' + gateWorks);
 
   // The mounted set at the login / no-posting-doc / pre-client state (pillIds order = manifest `order`).
-  // §AD-GATED OFF here by design: 'pos' (showWhen:pos-station) + 'preview' (showWhen:posting-doc). Updated
-  // 2026-06-14 to the real registry (reports/editmode/warehouse/ninja/plugin added in later versions) + the
-  // new 'audio' Sound-FX pill (UI_UX_LANE §FOLLOW-UP ROUND 2 item 3).
-  const EXPECT = ['redpill','posted','reports','editmode','graph','kanban','rule','warehouse','ninja','install','migrate','erpdoc','showme','plugin','audio','worldhist'];
+  // §AD-GATED OFF here by design: 'pos' (showWhen:pos-station) + 'preview' (showWhen:posting-doc).
+  // RECONCILED 2026-06-19 (Leg 5) to the LIVE registry — the old list had drifted: 'redpill' RETIRED (PR #366
+  // classic-chrome), 'install'/'migrate' RETIRED (front-door consolidation), 'editmode' RETIRED here (ring is
+  // Glass-only on the iDempiere surface, W-RING-LEAK); 'share'/'home' are the real rail extras. This set now
+  // matches what actually mounts (the witness had been failing on the stale expectation).
+  const EXPECT = ['posted','reports','graph','kanban','rule','warehouse','ninja','erpdoc','showme','plugin','audio','share','home','worldhist'];
   const idsOk = EXPECT.every(id => ids.includes(id)) && ids.length === EXPECT.length;
   const pass = idsOk && audioOk && gateWorks && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
     /source=registry/.test(idmpPillsLog) && /handAuthored=0/.test(idmpPillsLog);
