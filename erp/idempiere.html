@@ -276,6 +276,13 @@
     font-weight:800; font-size:17px; letter-spacing:-.5px; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; }
   .idmp-login-title { text-align:center; font-size:18px; font-weight:700; }
   .idmp-login-sub { text-align:center; font-size:11.5px; color:var(--idmp-muted); margin:5px 0 16px; }
+  /* SYSTEM_ADMIN_LANE §6 — login info panel (version + credential hints + System Monitor link) */
+  .idmp-login-info { margin-top:16px; padding-top:11px; border-top:1px solid #eef1f5; text-align:center;
+    font-size:10.5px; color:var(--idmp-muted); line-height:1.7; }
+  .idmp-login-info .idmp-info-creds { color:#5a6675; }
+  .idmp-login-info b { color:#33404f; font-weight:600; }
+  .idmp-login-info .idmp-info-mon a { color:var(--idmp-blue); text-decoration:none; font-weight:600; }
+  .idmp-login-info .idmp-info-mon a:hover { text-decoration:underline; }
   .idmp-login-label { font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--idmp-muted); margin:13px 0 5px; }
   .idmp-login-list { display:flex; flex-direction:column; gap:6px; max-height:48vh; overflow:auto; }
   .idmp-login-user { display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--idmp-border);
@@ -394,6 +401,14 @@
          (login/pre-client-gated, behind the ⋯), reached via the SAME window.openInstallFor/openMigrateFor the card
          buttons used (kept). This reverses #204's card-buttons decision (now superseded). The ShowMe pill
          (§P4-1/§P4-2) is the front-door guide here. -->
+    <!-- SYSTEM_ADMIN_LANE §6 — iDempiere-style login info panel: release/dictionary version + the default
+         credential hints (the real seed users, exactly as iDempiere's demo login shows them) + the System
+         Monitor link (serverless reframe). Identity is still passwordless SELECTION; the pass is the hint. -->
+    <div id="idmp-login-info" class="idmp-login-info">
+      <div class="idmp-info-row"><span id="idmp-info-ver">Code &mdash;</span> &middot; Dictionary: iDempiere &middot; SQLite&#8209;wasm &middot; serverless</div>
+      <div class="idmp-info-creds"><b>System:</b> SuperUser / System &nbsp;&middot;&nbsp; <b>GardenWorld:</b> GardenAdmin / GardenAdmin</div>
+      <div class="idmp-info-mon"><a href="#" id="idmp-sysmon-link">System Monitor</a></div>
+    </div>
   </div>
 </div>
 
@@ -461,6 +476,7 @@
 <script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
 <script src="genesis.js?v=2"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
+<script src="system_monitor.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
@@ -3578,6 +3594,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // tenant from the rail, which is exactly the "change tenant from the rail" journey J8 asks for.
     $('idmp-login-tenants-back').addEventListener('click', function () { _loginClient = null; _loginUser = null; loginStep0(SES.listClients(db), _demoTenants()); });
     $('idmp-login-ok').addEventListener('click', doLogin);
+    // SYSTEM_ADMIN_LANE §6 — login info panel: fill the live release tag (sw CACHE_VERSION) + open System Monitor.
+    (function () {
+      var lnk = $('idmp-sysmon-link');
+      if (lnk) lnk.addEventListener('click', function (e) { e.preventDefault(); if (window.SystemMonitor) window.SystemMonitor.open(); });
+      function fillVer() {
+        try {
+          if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
+          var ch = new MessageChannel();
+          ch.port1.onmessage = function (ev) { var v = ev.data && ev.data.version; var el = $('idmp-info-ver'); if (v && el) el.innerHTML = 'Code ' + v; };
+          navigator.serviceWorker.controller.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+        } catch (e) {}
+      }
+      fillVer();   // SW may not control yet on a first cold load → retry when it takes control / is ready
+      try { if (navigator.serviceWorker) { navigator.serviceWorker.addEventListener('controllerchange', fillVer); navigator.serviceWorker.ready.then(fillVer); } } catch (e) {}
+    })();
     $('idmp-switch-btn').addEventListener('click', function () { showLogin('role'); });
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
     boot().catch(function (e) { console.error('§IDEMPIERE boot error: ' + e.message); $('idmp-load-msg').textContent = 'Boot error: ' + e.message; });
