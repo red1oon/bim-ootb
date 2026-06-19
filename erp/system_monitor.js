@@ -206,7 +206,9 @@
     //    (born-tenant DATA is preserved above; only the audit/history trail is reset — the user's call.)
     clearWorldHistory(); await delIdb(OPLOG_IDB);
     console.log('§SEED-RESET cleared world-history + op-log (' + OPLOG_IDB + ')');
-    console.log('§SEED-RESET done — reloading');
+    var kept = 0; try { var kr = db.exec('SELECT COUNT(*) FROM AD_Client WHERE AD_Client_ID >= ' + SEED_FLOOR); kept = (kr.length && kr[0].values.length) ? kr[0].values[0][0] : 0; } catch (e) {}
+    console.log('§SEED-RESET done keptTenants=' + kept + ' — reloading');
+    if (global.alert) global.alert('Reset demo / seed ERPs — done.\n\n• Shipped ERPs restored to their initial state\n• World history + kernel op-log cleared\n• Your created tenant(s) kept: ' + kept + '\n\nClick OK to reload.');
     location.reload();
   }
 
@@ -218,6 +220,7 @@
     for (var i = 0; i < FULL_WIPE_IDB.length; i++) { try { await delIdb(FULL_WIPE_IDB[i]); console.log('§SYSTEM-MONITOR wiped idb=' + FULL_WIPE_IDB[i]); } catch (e) {} }
     try { if (global.caches) { var ks = await caches.keys(); await Promise.all(ks.filter(function (k) { return /erp-ootb-/.test(k); }).map(function (k) { return caches.delete(k); })); } } catch (e) {}
     console.log('§SYSTEM-MONITOR reset-to-seed done (world-history + op-log + plugins + signer cleared) — reloading');
+    if (global.alert) global.alert('Reset to seed (full) — done.\n\nCleared everything local: all tenants you created, the kernel op-log, the World history, installed plugins and the device key.\n\nClick OK to reload fresh from the shipped seed.');
     location.reload();
   }
 
