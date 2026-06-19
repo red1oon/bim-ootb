@@ -25,6 +25,71 @@ async function initViewer() {
     } catch (e) {}
     console.log('§BIM-EMBEDDED chromeless mode on; ready posted to host');
   }
+  // BIM_EMBED_WINDOW_SESSION §B3 — bidirectional cross-highlight contract (host-agnostic postMessage).
+  //   ERP(parent) → viewer(iframe): {type:'bim:highlight', ifcClass|guid} | {type:'bim:clearHighlight'}.
+  //   viewer → ERP: {type:'bim:highlighted', ifcClass, guid, count} (ACK) and {type:'bim:focusRecord', guid,
+  //   ifcClass} on a pick (emitted from picking.js in A.EMBEDDED). NON-INVENT: every class/guid is read from
+  //   elements_meta — no fabricated line↔element map. Render reuses A.focusElement (the SAME yellow-silhouette
+  //   renderer the Find drill / pick / history-restore use); match-count is the GPU-independent witness assertion.
+  function _bimPostParent(msg) {
+    try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
+  }
+  APP._bimPostFocus = function (guid, ifcClass) {
+    if (!guid) return;
+    _bimPostParent({ type: 'bim:focusRecord', guid: guid, ifcClass: ifcClass || null });
+    // CONNECT_SCENE_SPEC.md P1 — generalise the bim:* pick-emit onto the shared 'selection' channel so the
+    // Modeller (and any connected surface) lands on the SAME signed entity, not just the ERP host. Anchored on
+    // signed identity: guid + ifcClass (ERP product Value == ifc_class; component ifc_class). NON-INVENT: both
+    // read from elements_meta — no fabricated map. _connectApplying guards the remote→local→remote echo loop.
+    if (window.Connect && window.Connect.on && !APP._connectApplying)
+      window.Connect.publish('selection', { guid: guid, ifcClass: ifcClass || null, surface: 'viewer' });
+    console.log('§BIM-FOCUSREC guid=' + String(guid).slice(0, 12) + ' class=' + (ifcClass || '?'));
+  };
+  APP._bimGuidsForClass = function (ifcClass) {
+    if (!APP.db || !ifcClass) return [];
+    try {
+      var rows = APP.dbQuery('SELECT guid FROM elements_meta WHERE ifc_class = ?', [ifcClass]) || [];
+      return rows.map(function (r) { return r[0]; }).filter(Boolean);
+    } catch (e) { console.log('§BIM-HL-ERR ' + e.message); return []; }
+  };
+  APP._bimHighlight = function (o) {
+    o = o || {};
+    var guids = [], cls = o.ifcClass || null;
+    if (o.guid) {
+      guids = [o.guid];
+      if (!cls && APP.db) { try { var r = APP.dbQuery('SELECT ifc_class FROM elements_meta WHERE guid = ?', [o.guid]); if (r && r.length) cls = r[0][0]; } catch (e) {} }
+    } else if (cls) {
+      guids = APP._bimGuidsForClass(cls);
+    }
+    var n = guids.length;
+    console.log('§BIM-HL ' + (o.guid ? ('guid=' + String(o.guid).slice(0, 12)) : ('class=' + cls)) + ' match=' + n);
+    if (n) {
+      var apply = function () { if (APP.focusElement) APP.focusElement(guids, { item: !!o.guid, frame: o.frame !== false }); };
+      if (APP.focusElement) apply();
+      else if (APP.loadNavigate) APP.loadNavigate().then(apply).catch(function () {});
+    }
+    _bimPostParent({ type: 'bim:highlighted', ifcClass: cls, guid: o.guid || null, count: n });
+    return n;
+  };
+  window.addEventListener('message', function (e) {
+    var d = e.data; if (!d || typeof d !== 'object') return;
+    if (d.type === 'bim:highlight') APP._bimHighlight(d);
+    else if (d.type === 'bim:clearHighlight') { if (APP.clearFocusElement) APP.clearFocusElement(); console.log('§BIM-HL clear'); }
+  });
+  // CONNECT_SCENE_SPEC.md P1 — the viewer joins the shared scene as surface 'viewer'. An incoming 'selection'
+  // (from the Modeller or ERP) highlights the SAME signed entity here via the existing focusElement path; the
+  // _connectApplying flag stops that highlight from re-publishing (echo guard). Opt-in: auto-enable on ?connect=1.
+  if (window.Connect) {
+    window.Connect.register('viewer');
+    window.Connect.subscribe('selection', function (sel) {
+      if (!sel) return;
+      console.log('§CONNECT-SEL-IN viewer guid=' + String(sel.guid || '').slice(0, 12) + ' class=' + (sel.ifcClass || '?') + ' from=' + (sel.surface || '?'));
+      APP._connectApplying = true;
+      try { APP._bimHighlight({ guid: sel.guid || null, ifcClass: sel.ifcClass || null }); }
+      finally { APP._connectApplying = false; }
+    });
+    try { if ((new URLSearchParams(location.search)).get('connect') === '1') window.Connect.enable(); } catch (e) {}
+  }
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
@@ -43,7 +108,7 @@ async function initViewer() {
       }
       // Load sub-modules in dependency order, then the bootstrap
       var modules = [
-        'navigate_find.js?v=38',
+        'navigate_find.js?v=39',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
