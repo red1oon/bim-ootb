@@ -12,7 +12,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>iDempiere — Application Dictionary (SQLite WASM)</title>
+<title>Kernel-ERP — Application Dictionary (SQLite WASM)</title>
+<link rel="icon" type="image/png" href="favicon.png?v=1">
+<link rel="apple-touch-icon" href="favicon.png?v=1">
 <style>
   /* ── iDempiere-classic palette (modern/ZK default theme: blue header, light body) ── */
   :root {
@@ -370,8 +372,8 @@
 <!-- Login / Role·Client·Org selection (docs §3b) — folded from AD_User/AD_Role/AD_Org; SELECTION, not auth -->
 <div id="idmp-login" style="display:none">
   <div class="idmp-login-card">
-    <div class="idmp-login-mark"><img src="doublebubble.jpg?v=1" alt="" width="52" height="52"></div>
-    <div class="idmp-login-title">iDempiere&#8209;like — Sign In</div>
+    <div class="idmp-login-mark"><img src="doublebubble.jpg?v=2" alt="" width="52" height="52"></div>
+    <div class="idmp-login-title">Kernel-ERP — Sign In</div>
     <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
          pill-housed (the lightbulb 'Read / Compare' erpdoc pill on the side strip, wired to openReadCompare).
@@ -421,8 +423,8 @@
 
 <div id="idmp-header">
   <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
-  <span id="idmp-logo"><img src="doublebubble.jpg?v=1" alt="" width="36" height="36"></span>
-  <span id="idmp-title">iDempiere&#8209;like</span>
+  <span id="idmp-logo"><img src="doublebubble.jpg?v=2" alt="" width="36" height="36"></span>
+  <span id="idmp-title">Kernel-ERP</span>
   <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
   <span class="spacer"></span>
   <span class="ctx" id="idmp-ctx">&mdash;</span>
@@ -3252,7 +3254,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var ONBOARD_HELP_OPS = {
     __meta: { version: 1, spec: 'prompts/FRONT_DOOR_PILL_FINISH.md §P4-2', note: 'pre-client onboarding ShowMe (login guide)' },
     welcome:  { op: 'onboard', ordinal: 0, target: null, kind: 'overview', title: 'Welcome — your ERP, offline',
-      tip: 'This is an iDempiere-like ERP folded from SQLite, running entirely in your browser — no server. The demo data is local.',
+      tip: 'This is Kernel-ERP — an iDempiere-faithful ERP folded from SQLite, running entirely in your browser, no server. The demo data is local.',
       readmeAnchor: 'MigrateComparisonPaper.md' },
     signin:   { op: 'onboard', ordinal: 1, target: null, kind: 'overview', title: 'Sign in',
       tip: 'Pick a user, then a role and organisation. It is a context selection, not a password — the data is already on your device.',
@@ -3299,7 +3301,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var tab = _curTab(), rec = _records[_recIdx];
     if (tab && rec) { var rid = recVal(rec, _keyCol(tab)); if (rid != null) q.push('record=' + rid); }
     if (q.length) url += '?' + q.join('&');
-    var w = _curWin(); var title = (w ? w.name + ' — ' : '') + 'iDempiere-like';
+    var w = _curWin(); var title = (w ? w.name + ' — ' : '') + 'Kernel-ERP';
     if (navigator.share) navigator.share({ title: title, url: url });
     else { try { navigator.clipboard.writeText(url); status('Link copied'); } catch (e) {} }
     console.log('§IDMP-SHARE url=' + url);

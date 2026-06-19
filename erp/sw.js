@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v728';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v729';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -122,6 +122,7 @@ const PRECACHE_ASSETS = [
   'aplus.png',
   'logo_glass.png',       // glass-bubble client logo (header + sign-in mark)
   'doublebubble.jpg',     // big/main brand mark (login card · header · System Monitor) — NEUTRAL, not iDempiere's logo
+  'favicon.png',          // tab/favicon (small bubble) — replaces the browser's default globe
 ];
 
 self.addEventListener('install', (event) => {
