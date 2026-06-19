@@ -21,6 +21,103 @@
   #stat { position: fixed; bottom: 10px; left: 252px; color: #6b7488; font-size: 11px; z-index: 10;
     font-family: ui-monospace, monospace; white-space: pre; }
   #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
+
+  /* ── Toolbar as a bottom-right WRAPPING pill rail (a new style): icon-only glass pills stack UP from the ⋯
+     trigger and WRAP to a new column LEFTWARD when they reach the top (flex column-reverse + wrap-reverse,
+     right-anchored). DEFAULT-OPEN + STICKY — only a deliberate ⋯ tap closes it (no outside-tap close),
+     persisted. The #bar buttons keep their ids/handlers/disabled-state; only chrome changes. */
+  /* ⋯ trigger + ? help — transparent glass buttons, bottom-right. */
+  #m-dots, #m-help { position: fixed; bottom: 16px; z-index: 12; width: 46px; height: 46px;
+    display: flex; align-items: center; justify-content: center; color: #cdd6e4; cursor: pointer;
+    background: rgba(22,24,32,0.34); border: 1px solid rgba(255,255,255,0.14); border-radius: 50%;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 3px 14px rgba(0,0,0,0.35); }
+  #m-dots { right: 16px; }
+  #m-help { right: 70px; }
+  #m-dots:hover, #m-help:hover { background: rgba(46,52,68,0.55); }
+  #m-dots.on, #m-help.on { color: #9fd4f7; border-color: #4fc3f7; background: rgba(31,49,71,0.5); }
+  /* L-PATH rail: buttons are absolutely positioned (set in JS) — they stack UP the right edge from the ⋯, then
+     turn the corner and flow horizontally LEFT along the top edge. They ROLL OUT in sequence on open. */
+  #bar { position: fixed; inset: 0; z-index: 11; pointer-events: none; display: block; }
+  #bar button { position: fixed; width: 36px; height: 36px; padding: 0; justify-content: center;
+    pointer-events: auto; border-radius: 11px; color: #cdd6e4; background: rgba(22,24,32,0.34);
+    border: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 2px 10px rgba(0,0,0,0.30);
+    opacity: 0; transform: scale(.35) translate(26px, 26px);
+    transition: opacity .24s ease, transform .30s cubic-bezier(.22,.9,.25,1.2); }
+  #bar.rolled button { opacity: 1; transform: none; }                  /* rolled-out state (per-index delay set in JS) */
+  #bar button:hover { background: rgba(46,52,68,0.6); }
+  #bar button.on { background: rgba(31,49,71,0.62); border-color: #4fc3f7; color: #9fd4f7; }
+  #bar button span { display: none; }                                  /* label → tooltip (title) */
+  #bar button .ic { width: 20px; height: 20px; }                        /* fill the pill like the Viewer */
+  #hist { right: 124px; }                                              /* clear the ? + ⋯ triggers */
+
+  /* ? Help — the pill registry: every tool's icon + name (built from the live toolbar). */
+  #m-help-panel { position: fixed; bottom: 74px; right: 70px; z-index: 40; width: 232px;
+    max-height: calc(100vh - 150px); overflow: auto; display: none; padding: 10px;
+    background: rgba(20,22,30,0.92); border: 1px solid #2c303a; border-radius: 12px; color: #c7cdd8;
+    font: 12px system-ui, sans-serif; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+  #m-help-panel .hp-title { font-size: 10px; letter-spacing: .14em; color: #5b6473; margin: 2px 4px 8px; }
+  #m-help-panel .hp-row { display: flex; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 7px; }
+  #m-help-panel .hp-row:hover { background: #23262e; }
+  #m-help-panel .hp-ic { width: 30px; height: 30px; flex: 0 0 auto; display: flex; align-items: center;
+    justify-content: center; background: rgba(22,24,32,0.5); border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 9px; color: #cdd6e4; }
+  #m-help-panel .hp-ic svg { width: 16px; height: 16px; }
+  #m-help-panel .hp-name { color: #c7cdd8; }
+
+  /* ── Collapsible Outliner (Bonsai-style left panel): chevron collapses it, a tab reopens. Persisted. ── */
+  #bonsai-outliner { transition: transform .18s ease; }
+  #ol-collapse { background: transparent; border: 0; color: #6b7488; cursor: pointer;
+    display: inline-flex; align-items: center; padding: 2px; border-radius: 5px; }
+  #ol-collapse:hover { color: #cdd6e4; background: #23262e; }
+  #ol-show { position: fixed; top: 10px; left: 10px; z-index: 21; width: 40px; height: 40px; display: none;
+    align-items: center; justify-content: center; background: #232733; color: #cdd6e4;
+    border: 1px solid #39404f; border-radius: 10px; cursor: pointer; }
+  #ol-show:hover { background: #2c3140; }
+  body.ol-collapsed #bonsai-outliner { transform: translateX(-100%); }
+  body.ol-collapsed #ol-show { display: flex; }
+  body.ol-collapsed #hist, body.ol-collapsed #stat, body.ol-collapsed #ins-panel { left: 12px; }
+
+  /* ── Insert panel (BOM catalog): one consistent surface — shared row component, no inline-style sprawl. ── */
+  #ins-panel { position: fixed; left: 252px; top: 60px; width: 244px; background: #1b1d23;
+    border: 1px solid #2c303a; border-radius: 10px; z-index: 30; color: #c7cdd8;
+    font: 12px system-ui, sans-serif; display: none; overflow: hidden; transition: left .18s ease; }
+  #ins-panel .ip-head { padding: 10px 10px 9px; border-bottom: 1px solid #23262e; }
+  #ins-panel .ip-title { font-size: 10px; letter-spacing: .14em; color: #5b6473; margin-bottom: 9px; }
+  #ins-search { width: 100%; box-sizing: border-box; background: #13151a; border: 1px solid #2c303a;
+    border-radius: 8px; color: #c7cdd8; padding: 7px 10px; font-size: 12px; outline: none; }
+  #ins-search:focus { border-color: #3a6ea5; }
+  #ins-panel .ip-filter { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .ins-chip { background: #13151a; border: 1px solid #2c303a; border-radius: 8px; color: #9aa3b2;
+    padding: 4px 11px; cursor: pointer; font-size: 11px; }
+  .ins-chip:hover { background: #1b1f27; color: #c7cdd8; }
+  .ins-chip.on { background: #23364a; border-color: #3a6ea5; color: #cfe3f6; }
+  #ins-body { max-height: 322px; overflow: auto; padding: 6px 8px 8px; }
+  .ins-sec { font-size: 9px; letter-spacing: .12em; color: #5b6473; text-transform: uppercase;
+    margin: 11px 4px 4px; display: flex; align-items: center; gap: 5px; }
+  .ins-sec:first-child { margin-top: 3px; }
+  .ins-cat, .ins-c, .ins-a { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+    text-align: left; border: 1px solid transparent; border-radius: 8px; color: #c7cdd8; cursor: pointer;
+    background: transparent; font-size: 12px; font-family: inherit; }
+  .ins-cat { padding: 6px 8px; }
+  .ins-c, .ins-a { padding: 6px 9px; margin: 1px 0; }
+  .ins-cat:hover, .ins-c:hover, .ins-a:hover { background: #23262e; }
+  .ins-c.sel, .ins-a.sel { border-color: #4fc3f7; background: #16242f; }
+  .ins-cat .cnt, .ins-c .dim, .ins-a .meta { margin-left: auto; color: #5b6473;
+    font-size: 9px; font-family: ui-monospace, monospace; }
+  .ins-c > span:not(.dim), .ins-a > span:not(.meta) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ins-quick-wrap { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 4px 4px; }
+  .ins-c.quick { display: inline-flex; width: auto; margin: 0; padding: 4px 10px; background: #13151a;
+    border-color: #2c303a; border-radius: 8px; font-size: 11px; }
+  .ins-ico { width: 14px; height: 14px; flex: 0 0 auto; color: #7f8aa0; }
+  #ins-panel .ip-foot { display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+    border-top: 1px solid #23262e; font-size: 11px; color: #7f8aa0; }
+  #ins-rotbtn { display: inline-flex; align-items: center; gap: 6px; background: #13151a;
+    border: 1px solid #2c303a; border-radius: 8px; color: #c7cdd8; padding: 6px 10px; cursor: pointer; }
+  #ins-rotbtn:hover { background: #1b1f27; }
+  #ins-elev { width: 56px; box-sizing: border-box; background: #13151a; border: 1px solid #2c303a;
+    border-radius: 7px; color: #c7cdd8; padding: 4px 7px; outline: none; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./lib/three.webgpu.min.js" } }
@@ -237,7 +334,7 @@ function audioCue(kind) {
   const ac = _actx(); if (!ac) return;
   try {
     const t = ac.currentTime;
-    const TONES = { author: [330, 523], commit: [392, 587], cut: [294, 220], tick: [660], export: [523, 784], clear: [220, 165] };
+    const TONES = { author: [330, 523], commit: [392, 587], cut: [294, 220], tick: [660], export: [523, 784], clear: [220, 165], rollout: [392, 494, 587, 740, 880], rollin: [740, 587, 392] };
     (TONES[kind] || [440]).forEach((f, i) => {
       const o = ac.createOscillator(), g = ac.createGain(), ts = t + i * 0.06;
       o.type = 'sine'; o.frequency.setValueAtTime(f, ts);
@@ -810,92 +907,102 @@ async function placeComponent(x, y) {
 // leaf is a .ins-c[data-hash=id] button (seam-compatible with the existing pick/place flow + witnesses).
 let _insFilter = 'all', _insExpanded = {};
 const _ESC = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-function _prodBtn(c) {                              // one leaf product button (name + W×D×H dims)
+// Lucide LINE icons (consistent with the toolbar; NO unicode glyphs per the icon-consistency rule).
+const _ICN = {
+  chev: o => '<svg class="ins-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m' + (o ? '6 9 6 6 6-6' : '9 18 6-6-6-6') + '"/></svg>',
+  star: '<svg class="ins-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.8 14 7.9l5.7.5-4.3 3.7 1.3 5.6-5.2-3-5.2 3 1.3-5.6L3.3 8.4 9 7.9z"/></svg>',
+  box: '<svg class="ins-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+  layers: '<svg class="ins-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.8 2.2 8.6 3.9a1 1 0 0 1 0 1.8l-8.6 3.9a2 2 0 0 1-1.6 0L2.6 7.9a1 1 0 0 1 0-1.8l8.6-3.9a2 2 0 0 1 1.6 0Z"/><path d="m22 12.5-9.2 4.2a2 2 0 0 1-1.6 0L2 12.5"/></svg>',
+};
+function _prodBtn(c) {                              // one leaf product row: icon · name · muted W×D×H dims
   const d = c.bbox, dim = (d[1] - d[0]).toFixed(2) + '×' + (d[3] - d[2]).toFixed(2) + '×' + (d[5] - d[4]).toFixed(2) + 'm';
-  return '<button data-hash="' + _ESC(c.hash) + '" class="ins-c" title="' + _ESC(c.name) + '" style="display:block;width:100%;box-sizing:border-box;text-align:left;margin:2px 0;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 8px;cursor:pointer;font-size:11px">' +
-    _ESC(c.name) + ' <span style="color:#5b6473;font-size:9px">' + dim + '</span></button>';
+  return '<button data-hash="' + _ESC(c.hash) + '" class="ins-c" title="' + _ESC(c.name) + '">' + _ICN.box +
+    '<span>' + _ESC(c.name) + '</span><span class="dim">' + dim + '</span></button>';
+}
+function _quickBtn(c) {                             // compact quick-pick chip (same .ins-c seam → selectable/place)
+  return '<button data-hash="' + _ESC(c.hash) + '" class="ins-c quick" title="' + _ESC(c.name) + '">' + _ESC(c.name) + '</button>';
 }
 function renderCatalog() {
   const L = window.Bonsai.library, body = document.getElementById('ins-body'); if (!body) return;
   const q = (document.getElementById('ins-search') || {}).value || '';
   if (q.trim()) {                                  // SEARCH mode — flat filtered results
     const res = L.search(q);
-    body.innerHTML = res.length ? res.map(_prodBtn).join('') : '<div style="color:#5b6473;font-size:11px;padding:6px">no matches</div>';
+    body.innerHTML = res.length ? res.map(_prodBtn).join('') : '<div style="color:#5b6473;font-size:11px;padding:8px">no matches</div>';
     return;
   }
-  let h = '';                                      // cheat sheet (popular quick-picks)
-  const cheat = L.cheatsheet();
-  if (cheat.length) h += '<div style="font-size:9px;letter-spacing:.08em;color:#5b6473;margin:2px 0 4px">⭐ CHEAT SHEET</div>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">' +
-    cheat.map(c => '<button data-hash="' + _ESC(c.hash) + '" class="ins-c" title="' + _ESC(c.name) + '" style="background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:4px 7px;cursor:pointer;font-size:10px">' + _ESC(c.name) + '</button>').join('') + '</div>';
+  let h = '';
+  if (_insFilter === 'all') {                      // Quick picks (cheat sheet) — only on the All filter
+    const cheat = L.cheatsheet();
+    if (cheat.length) h += '<div class="ins-sec">' + _ICN.star + 'Quick</div>' +
+      '<div class="ins-quick-wrap">' + cheat.map(_quickBtn).join('') + '</div>';
+  }
   L.groups().forEach(g => {                         // category tree (group → category → products), filtered by chip
     if (_insFilter !== 'all' && _insFilter !== g.key) return;
-    h += '<div style="font-size:9px;letter-spacing:.08em;color:#7f8aa0;margin:6px 0 2px">' + _ESC(g.label.toUpperCase()) + '</div>';
+    h += '<div class="ins-sec">' + _ESC(g.label) + '</div>';
     g.categories.forEach(cat => {
       const open = !!_insExpanded[cat.cat];
-      h += '<div class="ins-cat" data-cat="' + _ESC(cat.cat) + '" style="cursor:pointer;padding:4px 6px;font-size:11px;color:#c7cdd8;border-radius:4px">' +
-        (open ? '▾ ' : '▸ ') + _ESC(cat.label) + ' <span style="color:#5b6473;font-size:9px">(' + cat.count + ')</span></div>';
-      if (open) h += '<div style="margin:0 0 4px 8px">' + L.productsIn(cat.cat).map(_prodBtn).join('') + '</div>';
+      h += '<div class="ins-cat" data-cat="' + _ESC(cat.cat) + '">' + _ICN.chev(open) +
+        '<span>' + _ESC(cat.label) + '</span><span class="cnt">' + cat.count + '</span></div>';
+      if (open) h += L.productsIn(cat.cat).map(_prodBtn).join('');
     });
   });
-  // ASSEMBLIES (recursive BOM sets) — drop a whole BUILDING/FLOOR/ROOM/SET and it folds into N placed parts.
-  // Shown when the Sets chip is active, and appended under "All".
+  // ASSEMBLIES (recursive BOM sets) — drop a whole BUILDING/FLOOR/ROOM/SET; folds into N placed parts.
   if (_insFilter === 'asm' || _insFilter === 'all') h += _renderAssemblies();
   // Legacy mesh-bearing parts (the 3 real extracted components, hex hashes) — kept until component_library
   // range-load lands real meshes for the whole catalog. Shown under "All" so LOD-300 demos keep a real mesh.
   if (_insFilter === 'all') {
     const legacy = L.catalog().filter(c => /^[0-9a-f]{16}$/.test(c.hash));
-    if (legacy.length) h += '<div style="font-size:9px;letter-spacing:.08em;color:#7f8aa0;margin:6px 0 2px">DETAILED · REAL MESH</div>' + legacy.map(_prodBtn).join('');
+    if (legacy.length) h += '<div class="ins-sec">' + _ICN.box + 'Detailed · real mesh</div>' + legacy.map(_prodBtn).join('');
   }
   body.innerHTML = h;
 }
-// Assembly button (a whole BOM set) + the Level-grouped collapsible list (Buildings/Floors/Rooms/Sets).
+// Assembly row (a whole BOM set) + the Level-grouped collapsible list (Buildings/Floors/Rooms/Sets).
 function _asmBtn(a) {
-  const dim = (a.w || 0).toFixed(1) + '×' + (a.d || 0).toFixed(1) + '×' + (a.h || 0).toFixed(1) + 'm';
-  return '<button data-asm="' + _ESC(a.id) + '" class="ins-a" title="' + _ESC(a.name) + ' — ' + a.children.length + ' parts" style="display:block;width:100%;box-sizing:border-box;text-align:left;margin:2px 0;background:#171a21;border:1px solid #34506b;border-radius:5px;color:#cdd6e3;padding:5px 8px;cursor:pointer;font-size:11px">' +
-    _ESC(a.name) + ' <span style="color:#5b6473;font-size:9px">' + a.children.length + ' parts · ' + dim + '</span></button>';
+  return '<button data-asm="' + _ESC(a.id) + '" class="ins-a" title="' + _ESC(a.name) + ' — ' + a.children.length + ' parts">' + _ICN.box +
+    '<span>' + _ESC(a.name) + '</span><span class="meta">' + a.children.length + 'p</span></button>';
 }
 function _renderAssemblies() {
   const asm = window.Bonsai.library.assemblies(); if (!asm.length) return '';
   const LEVELS = [['BUILDING', 'Buildings'], ['FLOOR', 'Floors'], ['ROOM', 'Rooms'], ['SET', 'Sets'], ['ITEM', 'Items']];
-  let h = '<div style="font-size:9px;letter-spacing:.08em;color:#7f8aa0;margin:6px 0 2px">ASSEMBLIES · drop a whole set</div>';
+  let h = '<div class="ins-sec">' + _ICN.layers + 'Assemblies · drop a whole set</div>';
   LEVELS.forEach(([lv, label]) => {
     const items = asm.filter(a => a.level === lv); if (!items.length) return;
     const key = 'ASM_' + lv, open = !!_insExpanded[key];
-    h += '<div class="ins-cat" data-cat="' + key + '" style="cursor:pointer;padding:4px 6px;font-size:11px;color:#cdd6e3;border-radius:4px">' +
-      (open ? '▾ ' : '▸ ') + label + ' <span style="color:#5b6473;font-size:9px">(' + items.length + ')</span></div>';
-    if (open) h += '<div style="margin:0 0 4px 8px">' + items.map(_asmBtn).join('') + '</div>';
+    h += '<div class="ins-cat" data-cat="' + key + '">' + _ICN.chev(open) +
+      '<span>' + label + '</span><span class="cnt">' + items.length + '</span></div>';
+    if (open) h += items.map(_asmBtn).join('');
   });
   return h;
 }
 function buildInsertPanel() {
   if (insertPanel) return insertPanel;
   const p = document.createElement('div'); p.id = 'ins-panel';
-  p.style.cssText = 'position:fixed;left:252px;top:60px;width:228px;background:#1b1d23;border:1px solid #2c303a;border-radius:7px;padding:8px;z-index:30;font:12px system-ui,sans-serif;color:#c7cdd8;display:none';
-  const chips = [['all', 'All'], ['structure', 'Struct'], ['openings', 'Open'], ['furniture', 'Furn'], ['asm', 'Sets']]
-    .map(c => '<button class="ins-chip" data-g="' + c[0] + '" style="background:' + (c[0] === 'all' ? '#23364a' : '#13151a') + ';border:1px solid #2c303a;border-radius:4px;color:#c7cdd8;padding:3px 8px;cursor:pointer;font-size:10px">' + c[1] + '</button>').join('');
+  const chips = [['all', 'All'], ['structure', 'Structure'], ['openings', 'Openings'], ['furniture', 'Furniture'], ['asm', 'Sets']]
+    .map(c => '<button class="ins-chip' + (c[0] === 'all' ? ' on' : '') + '" data-g="' + c[0] + '">' + c[1] + '</button>').join('');
   p.innerHTML =
-    '<div style="font-size:10px;letter-spacing:.1em;color:#5b6473;margin-bottom:6px">INSERT · BOM CATALOG</div>' +
-    '<input id="ins-search" placeholder="search parts…" style="width:100%;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 8px;font-size:11px;outline:none;margin-bottom:7px">' +
-    '<div style="display:flex;gap:4px;margin-bottom:7px">' + chips + '</div>' +
-    '<div id="ins-body" style="max-height:300px;overflow:auto">loading…</div>' +
-    '<div style="display:flex;align-items:center;gap:7px;margin-top:9px;border-top:1px solid #2c303a;padding-top:9px">' +
-      '<button id="ins-rotbtn" style="display:flex;align-items:center;gap:5px;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 9px;cursor:pointer">' +
+    '<div class="ip-head">' +
+      '<div class="ip-title">INSERT · BOM CATALOG</div>' +
+      '<input id="ins-search" placeholder="search parts…">' +
+      '<div class="ip-filter">' + chips + '</div>' +
+    '</div>' +
+    '<div id="ins-body">loading…</div>' +
+    '<div class="ip-foot">' +
+      '<button id="ins-rotbtn" title="Rotate the insert (R)">' +
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Rotate <span id="ins-rot" style="color:#4fc3f7">0°</span></button>' +
-      '<span style="font-size:10px;color:#5b6473">(R)</span></div>' +
-    '<div style="display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11px;color:#7f8aa0">Elevation <input id="ins-elev" type="number" step="0.1" value="0" style="width:62px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:4px;color:#c7cdd8;padding:3px 6px;outline:none"> m</div>';
+      '<span style="display:flex;align-items:center;gap:6px;margin-left:auto">Elev <input id="ins-elev" type="number" step="0.1" value="0"> m</span>' +
+    '</div>';
   document.body.appendChild(p); insertPanel = p;
   // delegation: leaf pick, category expand, group chip, search, rotate/elev.
   p.addEventListener('click', e => {
     const leaf = e.target.closest('.ins-c');
     if (leaf) { insertHash = leaf.getAttribute('data-hash');
-      p.querySelectorAll('.ins-c,.ins-a').forEach(x => x.style.borderColor = ''); leaf.style.borderColor = '#4fc3f7';
+      p.querySelectorAll('.ins-c,.ins-a').forEach(x => x.classList.remove('sel')); leaf.classList.add('sel');
       clearGhost();
       const c = window.Bonsai.library.get(insertHash);
       setStat('aim on the grid, R to rotate, click to place ' + (c ? c.name : insertHash)); return; }
     const asmBtn = e.target.closest('.ins-a');           // pick a whole assembly (BOM set) to drop
     if (asmBtn) { insertHash = asmBtn.getAttribute('data-asm');
-      p.querySelectorAll('.ins-c,.ins-a').forEach(x => x.style.borderColor = ''); asmBtn.style.borderColor = '#4fc3f7';
+      p.querySelectorAll('.ins-c,.ins-a').forEach(x => x.classList.remove('sel')); asmBtn.classList.add('sel');
       clearGhost();
       const a = window.Bonsai.library.assembly(insertHash);
       setStat('aim on the grid, R to rotate, click to drop assembly ' + (a ? a.name : insertHash) + ' (' + (a ? a.children.length : 0) + ' parts)'); return; }
@@ -903,7 +1010,7 @@ function buildInsertPanel() {
     if (cat) { const k = cat.getAttribute('data-cat'); _insExpanded[k] = !_insExpanded[k]; renderCatalog(); return; }
     const chip = e.target.closest('.ins-chip');
     if (chip) { _insFilter = chip.getAttribute('data-g');
-      p.querySelectorAll('.ins-chip').forEach(x => x.style.background = '#13151a'); chip.style.background = '#23364a'; renderCatalog(); return; }
+      p.querySelectorAll('.ins-chip').forEach(x => x.classList.remove('on')); chip.classList.add('on'); renderCatalog(); return; }
     if (e.target.closest('#ins-rotbtn')) rotateInsert();
   });
   p.querySelector('#ins-search').oninput = () => renderCatalog();
@@ -911,7 +1018,7 @@ function buildInsertPanel() {
   window.Bonsai.library.ready().then(renderCatalog);   // populate once the BOM catalog JSON has loaded
   return p;
 }
-function enterInsert() { inserting = true; buildInsertPanel().style.display = ''; renderCatalog(); bInsert.classList.add('on'); bLod.style.display = ''; bLod.disabled = (lastInsertId == null); paintLod(); setStat('insert: pick from the BOM catalog, aim on the grid (R rotates), click to place'); }
+function enterInsert() { inserting = true; buildInsertPanel().style.display = 'block'; renderCatalog(); bInsert.classList.add('on'); bLod.style.display = ''; bLod.disabled = (lastInsertId == null); paintLod(); setStat('insert: pick from the BOM catalog, aim on the grid (R rotates), click to place'); }
 function exitInsert() { inserting = false; clearGhost(); if (insertPanel) insertPanel.style.display = 'none'; bInsert.classList.remove('on'); setStat('ready'); }
 bInsert.onclick = () => inserting ? exitInsert() : enterInsert();
 bLod.onclick = async () => {
@@ -995,6 +1102,83 @@ window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', mat
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
+
+// ── CHROME (MODELLER_BOM_CATALOG_SPEC §panel-reorg): the toolbar becomes a Viewer-style ⋯ pill rail and the
+// Outliner becomes a collapsible Bonsai-style left panel. PURE chrome — no engine/op-log change; the existing
+// #bar buttons keep their ids/handlers/disabled-state (just reparented visually + label→tooltip). The ⋯ rail is
+// DEFAULT-OPEN + STICKY: only a deliberate ⋯ tap closes it (no outside-tap close), persisted so it reopens open.
+(function initChrome() {
+  const bar = document.getElementById('bar');
+  if (bar && !document.getElementById('m-dots')) {
+    bar.querySelectorAll('button').forEach(b => {              // keep a tooltip once the text label is hidden
+      if (!b.title) { const s = b.querySelector('span'); if (s) b.title = s.textContent.trim(); } });
+    const dots = document.createElement('button'); dots.id = 'm-dots'; dots.title = 'Toolbar';
+    dots.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>';
+    document.body.appendChild(dots);
+    const PK = 'dagevu_modeller_pill_open';
+    let pOpen = localStorage.getItem(PK); pOpen = (pOpen === null) ? true : pOpen === '1';   // DEFAULT OPEN
+    // L-PATH layout: stack UP the right edge from the ⋯, then turn the corner and flow LEFT along the top.
+    const layoutRail = () => {
+      const btns = [...bar.querySelectorAll('button')].filter(b => b.style.display !== 'none');
+      const S = 36, G = 4, M = 16, startBottom = 112;                 // above the ? / ⋯ cluster; Viewer-tight gap
+      const upRoom = window.innerHeight - M - 40 - startBottom;       // headroom before the top edge
+      const colN = Math.max(1, Math.floor(upRoom / (S + G)) + 1);     // how many fit up the right edge
+      btns.forEach((b, i) => {
+        if (i < colN) { b.style.right = M + 'px'; b.style.bottom = (startBottom + i * (S + G)) + 'px'; b.style.top = 'auto'; b.style.left = 'auto'; }
+        else { const k = i - colN; b.style.top = M + 'px'; b.style.right = (M + (k + 1) * (S + G)) + 'px'; b.style.bottom = 'auto'; b.style.left = 'auto'; }
+        b.style.transitionDelay = (pOpen ? i * 26 : (btns.length - i) * 14) + 'ms';   // roll OUT forward, roll IN reverse
+      });
+    };
+    const applyPill = (animate) => {
+      layoutRail();
+      dots.classList.toggle('on', pOpen);
+      requestAnimationFrame(() => bar.classList.toggle('rolled', pOpen));
+      if (animate && pOpen) audioCue('rollout'); else if (animate) audioCue('rollin');
+    };
+    dots.onclick = () => { pOpen = !pOpen; try { localStorage.setItem(PK, pOpen ? '1' : '0'); } catch (e) {} applyPill(true); console.log('§MODELLER pill open=' + pOpen); };
+    window.addEventListener('resize', () => { if (pOpen) layoutRail(); });
+    applyPill(false);
+
+    // ? Help — the PILL REGISTRY: every visible tool's icon + name + keyboard shortcut, built from the live #bar.
+    const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-undo': 'Ctrl+Z', 'b-redo': 'Ctrl+⇧Z', 'b-del': 'Del' };
+    const help = document.createElement('button'); help.id = 'm-help'; help.title = 'Help — toolbar & shortcuts';
+    help.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>';
+    document.body.appendChild(help);
+    const hpanel = document.createElement('div'); hpanel.id = 'm-help-panel'; document.body.appendChild(hpanel);
+    const _kbd = k => '<span style="margin-left:auto;font:10px ui-monospace,monospace;color:#9aa3b2;background:#13151a;border:1px solid #2c303a;border-radius:5px;padding:2px 7px">' + k + '</span>';
+    function buildHelp() {
+      let h = '<div class="hp-title">TOOLBAR · PILL REGISTRY</div>';
+      bar.querySelectorAll('button').forEach(b => {
+        const ic = b.querySelector('.ic'); if (!ic || b.style.display === 'none') return;   // skip hidden tools
+        const s = b.querySelector('span'); const name = s ? s.textContent.trim() : (b.title || b.id);
+        h += '<div class="hp-row"><span class="hp-ic">' + ic.outerHTML + '</span><span class="hp-name">' + name + '</span>' +
+          (SHORTCUTS[b.id] ? _kbd(SHORTCUTS[b.id]) : '') + '</div>';
+      });
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="hp-name">Cancel current mode</span>' + _kbd('Esc') + '</div>';
+      hpanel.innerHTML = h;
+    }
+    help.onclick = e => { e.stopPropagation(); const open = hpanel.style.display !== 'block'; if (open) buildHelp();
+      hpanel.style.display = open ? 'block' : 'none'; help.classList.toggle('on', open); console.log('§MODELLER help open=' + open); };
+    document.addEventListener('pointerdown', e => { if (hpanel.style.display === 'block' && !hpanel.contains(e.target) && !help.contains(e.target)) { hpanel.style.display = 'none'; help.classList.remove('on'); } });
+  }
+  const ol = document.getElementById('bonsai-outliner');
+  if (ol && !document.getElementById('ol-collapse')) {
+    const hdr = ol.firstElementChild;                          // the "OUTLINER" label row
+    if (hdr) { hdr.style.display = 'flex'; hdr.style.alignItems = 'center'; hdr.style.justifyContent = 'space-between'; }
+    const chev = left => '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m' + (left ? '15 18-6-6 6-6' : '9 18 6-6-6-6') + '"/></svg>';
+    const tog = document.createElement('button'); tog.id = 'ol-collapse'; tog.title = 'Collapse panel'; tog.innerHTML = chev(true);
+    if (hdr) hdr.appendChild(tog);
+    const tab = document.createElement('button'); tab.id = 'ol-show'; tab.title = 'Show Outliner';
+    tab.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>';
+    document.body.appendChild(tab);
+    const OK = 'dagevu_modeller_ol_open';
+    let oOpen = localStorage.getItem(OK); oOpen = (oOpen === null) ? true : oOpen === '1';   // DEFAULT OPEN
+    const applyOl = () => document.body.classList.toggle('ol-collapsed', !oOpen);
+    tog.onclick = () => { oOpen = false; try { localStorage.setItem(OK, '0'); } catch (e) {} applyOl(); console.log('§MODELLER outliner open=false'); };
+    tab.onclick = () => { oOpen = true; try { localStorage.setItem(OK, '1'); } catch (e) {} applyOl(); console.log('§MODELLER outliner open=true'); };
+    applyOl();
+  }
+})();
 
 // Headless witness hooks. ?author=wall|opening|both auto-authors the sample ops.
 const qs = new URLSearchParams(location.search);
