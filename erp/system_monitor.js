@@ -65,7 +65,7 @@
   function panelHTML(d) {
     var t =
       '<div class="sm-modal" role="dialog" aria-label="System Monitor">' +
-      '<div class="sm-head"><img class="sm-mark" src="doublebubble.jpg?v=1" alt="" width="22" height="22"><b>System Monitor</b>' +
+      '<div class="sm-head"><img class="sm-mark" src="doublebubble.jpg?v=2" alt="" width="22" height="22"><b>System Monitor</b>' +
         '<span class="sm-sub">iDempiere-faithful · serverless kernel — this device</span>' +
         '<button class="sm-x" data-sm-close title="Close">&times;</button></div>' +
       '<div class="sm-body"><table class="sm-tbl">' +
@@ -77,8 +77,8 @@
         row('Heap usage', esc(d.heap)) +
         '<tr class="sm-grp"><td colspan="2">Cache</td></tr>' +
         row('Local storage', esc(d.storage) + (d.tenants != null ? ' &middot; ' + d.tenants + ' resident tenant(s)' + (d.tenantNames ? ' (' + esc(d.tenantNames) + ')' : '') : '')) +
-        row('Reset demo / seed ERPs', '<button class="sm-reset" data-sm-reset-seed>Reset demo / seed ERPs</button> <span class="sm-dim">restore the shipped tenants (System &middot; GardenWorld &middot; demo band) to initial &mdash; <b>keeps the tenants you created</b></span>') +
-        row('Cache reset', '<button class="sm-reset sm-nuke" data-sm-reset>Reset to seed (full)</button> <span class="sm-dim">nuclear &mdash; drops the WHOLE local cache, including tenants you created</span>') +
+        row('Reset demo / seed ERPs', '<button class="sm-reset" data-sm-reset-seed>Reset demo / seed ERPs</button> <span class="sm-dim">restore the shipped tenants (System &middot; GardenWorld &middot; demo band) to initial, clear the World history + op-log &mdash; <b>keeps the tenants you created</b></span>') +
+        row('Cache reset', '<button class="sm-reset sm-nuke" data-sm-reset>Reset to seed (full)</button> <span class="sm-dim">nuclear &mdash; drops the WHOLE local footprint: all your tenants, op-log, World history, plugins &amp; device key</span>') +
         '<tr class="sm-grp"><td colspan="2">Logs &amp; Trace</td></tr>' +
         row('Trace', 'the signed <b>op-log</b> is the trace &mdash; replayable, per-tenant (git-for-data). No server log file.') +
         '<tr class="sm-grp"><td colspan="2">Servers &amp; Cluster</td></tr>' +
@@ -113,6 +113,16 @@
     '#sm-root .sm-dim{color:#8a95a3;font-size:11px}';
 
   function ensureCss() { if (document.getElementById('sm-css')) return; var s = document.createElement('style'); s.id = 'sm-css'; s.textContent = CSS; document.head.appendChild(s); }
+
+  // delIdb — delete an IndexedDB database by name (resolves even if blocked/absent).
+  function delIdb(name) { return new Promise(function (r) { try { var q = indexedDB.deleteDatabase(name); q.onsuccess = q.onerror = q.onblocked = function () { r(); }; } catch (e) { r(); } }); }
+  // the World history (whole-history timeline scrubber) is the shared localStorage log — NOT the kernel op-log.
+  var WORLD_HISTORY_KEYS = ['bim.docHistory', 'bim.wholeRestore', 'bim.whole.mode'];
+  // the kernel op-log (signed CRUD truth = git-for-data) lives in its OWN idb, separate from the data cache.
+  var OPLOG_IDB = 'glassbowl_kernel_ops';
+  // nuclear full-wipe set: data cache · kernel op-log · installed plugins · device signing key.
+  var FULL_WIPE_IDB = ['erp_cache', 'glassbowl_kernel_ops', 'fold_plugins', 'bim_erp_signer'];
+  function clearWorldHistory() { try { var ls = global.localStorage; if (ls) WORLD_HISTORY_KEYS.forEach(function (k) { try { ls.removeItem(k); } catch (e) {} }); } catch (e) {} }
 
   // idbPutBlob — write a blob under erp_cache/blobs (the SAME store/key idempiere.html loads the live db from).
   function idbPutBlob(key, val) {
@@ -188,20 +198,26 @@
     console.log('§SEED-RESET snapshot residentTables=' + c.snapTbls + ' residentRows=' + c.snapRows);
     console.log('§SEED-RESET reinsert residentRows=' + c.reins + ' tables=' + c.reinsTbls);
 
-    // 3. persist the rebuilt base as the live cache (replaces the mutated blob), then reload.
+    // 3. persist the rebuilt base as the live cache (replaces the mutated blob).
     try { await idbPutBlob('ad_seed_v16', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v16 pristine+resident'); }
     catch (e) { console.log('§SEED-RESET persist-fail ' + (e && e.message)); }
     try { fresh.close(); } catch (e) {}
+    // 4. clear the World history (whole-history timeline) + the kernel op-log so the reset is a clean slate.
+    //    (born-tenant DATA is preserved above; only the audit/history trail is reset — the user's call.)
+    clearWorldHistory(); await delIdb(OPLOG_IDB);
+    console.log('§SEED-RESET cleared world-history + op-log (' + OPLOG_IDB + ')');
     console.log('§SEED-RESET done — reloading');
     location.reload();
   }
 
   async function resetToSeed() {
-    if (!global.confirm || !global.confirm('Reset to seed? This drops the local cache (resident tenants + edits) and re-folds from the shipped dictionary.')) return;
+    if (!global.confirm || !global.confirm('Reset to seed (full)? This drops EVERYTHING local — all tenants you created + edits, the kernel op-log, the World history timeline, installed plugins, and the device key — and re-folds from the shipped seed.')) return;
     console.log('§SYSTEM-MONITOR reset-to-seed start');
-    try { await new Promise(function (r) { var q = indexedDB.deleteDatabase('erp_cache'); q.onsuccess = q.onerror = q.onblocked = function () { r(); }; }); } catch (e) {}
+    // the WHOLE local footprint: data cache · op-log · plugins · device signer · World history · SW asset caches
+    clearWorldHistory();
+    for (var i = 0; i < FULL_WIPE_IDB.length; i++) { try { await delIdb(FULL_WIPE_IDB[i]); console.log('§SYSTEM-MONITOR wiped idb=' + FULL_WIPE_IDB[i]); } catch (e) {} }
     try { if (global.caches) { var ks = await caches.keys(); await Promise.all(ks.filter(function (k) { return /erp-ootb-/.test(k); }).map(function (k) { return caches.delete(k); })); } } catch (e) {}
-    console.log('§SYSTEM-MONITOR reset-to-seed done — reloading');
+    console.log('§SYSTEM-MONITOR reset-to-seed done (world-history + op-log + plugins + signer cleared) — reloading');
     location.reload();
   }
 
@@ -210,7 +226,7 @@
     ensureCss();
     close();
     var root = document.createElement('div'); root.id = 'sm-root';
-    root.innerHTML = '<div class="sm-modal"><div class="sm-head"><img class="sm-mark" src="doublebubble.jpg?v=1" alt="" width="22" height="22"><b>System Monitor</b><span class="sm-sub">loading…</span></div></div><div class="sm-backdrop" data-sm-close></div>';
+    root.innerHTML = '<div class="sm-modal"><div class="sm-head"><img class="sm-mark" src="doublebubble.jpg?v=2" alt="" width="22" height="22"><b>System Monitor</b><span class="sm-sub">loading…</span></div></div><div class="sm-backdrop" data-sm-close></div>';
     document.body.appendChild(root);
     console.log('§SYSTEM-MONITOR open');
     gather().then(function (d) {
