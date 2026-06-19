@@ -108,6 +108,10 @@
     // of report:m_inout (AD_PROCESS_FOLD_LANE §P2-tail-leg2): folds an M_Movement → a NON-FINANCIAL receipt via the
     // SAME report_overlay.foldReceipt over REPORT_MAP.m_movement — ZERO new fold code, zero host change.
     registerHandler('report:m_movement',receiptHandler('m_movement'),{ kind: 'report', reportKey: 'm_movement' });
+    // report:m_inventory — "Rpt M_Inventory" (AD_Process 291, "Physical Inventory Print"). KIND-1, the third
+    // inventory-document print (AD_PROCESS_FOLD_LANE §P2-tail-leg3): folds an M_Inventory → a NON-FINANCIAL receipt
+    // (qty=QtyCount) via the SAME report_overlay.foldReceipt over REPORT_MAP.m_inventory — ZERO new fold code.
+    registerHandler('report:m_inventory',receiptHandler('m_inventory'),{ kind: 'report', reportKey: 'm_inventory' });
     // report:c_project — "Rpt C_Project" (AD_Process 217, Project Print). KIND-1, folds via the SAME foldReceipt
     // (REPORT_MAP.c_project), no new fold code. AD_PROCESS_FOLD_LANE §P2-leg3 — Witness: W-PROC-PROJPRINT.
     registerHandler('report:c_project', receiptHandler('c_project'), { kind: 'report', reportKey: 'c_project' });
@@ -456,6 +460,10 @@
       // procs ("M_Movement_Process"/"M_MovementConfirm_Process", 122/286 — isReport=N, never reach here anyway) and
       // any future RV_Movement* report-VIEW stay absent-handler. "inventory move print" is the unique print name.
       if (/m_movement\b|inventory move print/.test(hay)) return 'report:m_movement';
+      // "Rpt M_Inventory" (291) — M_Inventory-SPECIFIC: m_inventory\b (word-boundary) | "physical inventory print"
+      // so the imperative M_Inventory procs (105/106 carry non-blank classnames; 107 "M_Inventory Process" is
+      // isReport=N → never reaches here) stay absent-handler. "inventory" alone is NOT matched (too broad).
+      if (/m_inventory\b|physical inventory print/.test(hay)) return 'report:m_inventory';
       // "Rpt C_Project" (217) — SPECIFIC match (c_project / project print), NOT the broad "project" so the other
       // RV_Project* report-VIEW procs (218 RV_ProjectCycle, 226/228/229/234) stay absent-handler (no foldReceipt
       // for a report view — those are a later report-view fold, not this leg).
