@@ -1247,7 +1247,16 @@ function rotateInsert() {                                          // R key / Ro
 // leaf (the recursion + parent-relative transforms live in bonsai_library.expandAssembly). W-BOM-ASSEMBLY.
 async function placeAssembly(x, y) {
   const L = window.Bonsai.library, asm = L.assembly(insertHash);
-  const leaves = L.expandAssembly(insertHash, { x, y, z: insElev, rot: insRot });
+  // CENTER-anchor the drop. expandAssembly seats children CORNER-anchored ([0..W]), but the ghost box (showGhost
+  // above) is CENTER-anchored ([-W/2..+W/2]) — so a raw expand lands the whole set in the +X/+Y quadrant, offset
+  // from the ghost by ≈(+W/2,+D/2) (BOM_DROP_SPATIAL_INVESTIGATION §RESULT: anchor mismatch, NOT bad data — the
+  // BOM cascade is proven parent-relative & untouched here). Shift the expand origin back by the ROTATED half-
+  // extent so the footprint CENTER lands on the drop point. Level-agnostic: identical for a furniture SET … a
+  // whole BUILDING (just a cascade of BOMs). W-BOM-DROP-CENTER.
+  const _r = (insRot || 0) * Math.PI / 180, _cs = Math.cos(_r), _sn = Math.sin(_r);
+  const _ox = ((asm && asm.w) || 0) / 2, _oy = ((asm && asm.d) || 0) / 2;
+  const cx = x - (_cs * _ox - _sn * _oy), cy = y - (_sn * _ox + _cs * _oy);
+  const leaves = L.expandAssembly(insertHash, { x: cx, y: cy, z: insElev, rot: insRot });
   if (!leaves.length) { setStat('assembly ' + insertHash + ' has no placeable leaves'); return null; }
   const placed = [];
   for (const lf of leaves) {                                     // each leaf = one signed op-row (the chain)
@@ -1983,6 +1992,45 @@ if (qs.get('place') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER place demo fail ' + e); }
     window.__placeResult = out; window.__placeDone = true;
     console.log('§MODELLER place-done');
+  })();
+}
+// ?dropcenter=demo proves W-BOM-DROP-CENTER: a dropped assembly's footprint CENTERS on the drop point, not the
+// +X/+Y quadrant (BOM_DROP_SPATIAL_INVESTIGATION §RESULT — anchor mismatch fix). Calls the REAL placeAssembly
+// directly (NO canvas pointer dispatch → bypasses OrbitControls.setPointerCapture, which throws on synthetic
+// pointers in headless). The proof is EXACT + deterministic: every committed leaf == the raw CORNER expansion at
+// the same drop, shifted by exactly −(W/2, D/2). Level-agnostic; uses a small curated SET so the drop is fast.
+if (qs.get('dropcenter') === 'demo') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library, O = window.Bonsai.oplog;
+    const near = (a, b, t) => Math.abs(a - b) <= (t || 1e-3);
+    try {
+      await L.ready();
+      // a coherent SET/ROOM with a real footprint (>0.5m each side) and a fast leaf count — the cluster users drop
+      const pick = L.assemblies()
+        .map(a => ({ a, n: L.expandAssembly(a.id, { x: 0, y: 0, z: 0, rot: 0 }).length }))
+        .filter(x => x.n >= 2 && x.n <= 24 && (x.a.w || 0) > 0.5 && (x.a.d || 0) > 0.5)
+        .sort((x, y) => (y.a.w * y.a.d) - (x.a.w * x.a.d)).map(x => x.a)[0];
+      if (!pick) { out.error = 'no suitable SET assembly'; }
+      else {
+        out.pick = pick.id; out.level = pick.level; out.w = +pick.w.toFixed(2); out.d = +pick.d.toFixed(2);
+        insRot = 0; insElev = 0; inserting = true; insertHash = pick.id; O.clear();
+        const raw = L.expandAssembly(pick.id, { x: 4, y: 3, z: 0, rot: 0 });   // OLD (corner-anchored) placements
+        await placeAssembly(4, 3);                                             // REAL drop through the fixed path
+        out.committed = O.length; out.N = raw.length;
+        const com = O._geomOps().map(o => o.parameters.placement);
+        // EXACT: each committed leaf is the raw corner placement shifted back by the rotated half-extent (rot=0)
+        out.shifted = com.length === raw.length &&
+          com.every((p, i) => near(p.x, raw[i].x - pick.w / 2, 0.01) && near(p.y, raw[i].y - pick.d / 2, 0.01));
+        const cxs = com.map(p => p.x), cys = com.map(p => p.y);
+        out.center = [+(((Math.min(...cxs) + Math.max(...cxs)) / 2)).toFixed(2), +(((Math.min(...cys) + Math.max(...cys)) / 2)).toFixed(2)];
+        // soft sanity: footprint center lands on the drop (4,3), no longer at (4+W/2, 3+D/2)
+        out.centeredOnDrop = near(out.center[0], 4, Math.max(0.51, pick.w * 0.15)) && near(out.center[1], 3, Math.max(0.51, pick.d * 0.15));
+        out.oldQuadrantOffset = +Math.hypot(pick.w / 2, pick.d / 2).toFixed(2);   // the scatter the fix removes
+        out.verify = (await O.verify()).ok;
+      }
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER dropcenter fail ' + e); }
+    window.__dropCenterResult = out; window.__dropCenterDone = true;
+    console.log('§MODELLER dropcenter-done ' + JSON.stringify(out));
   })();
 }
 // ?edit=demo proves EDITABILITY (W-BONSAI-EDIT): delete a single feature, cascade-delete a parent (its cut child
