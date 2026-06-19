@@ -425,7 +425,7 @@
     <div id="idmp-content">
       <div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.<br>Every window, tab and field is folded from <b>ad_seed.db</b> via SQLite WASM.</div>
     </div>
-    <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span class="seal" id="idmp-status-src">folded from SQLite WASM</span></div>
+    <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span class="seal" id="idmp-status-src"></span></div>
   </main>
 </div>
 
@@ -1211,9 +1211,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       btn(ic('x', '↺') + 'Ignore', 'Ignore — discard unsaved edits (Alt+Z)', editing, function () {
         var b = document.querySelector('#idmp-inline-mount .ic-vb[data-v="ignore"]'); if (b) b.click();
         else { status('Nothing to ignore'); } });
-      // Process ▶ — the record's legal DocAction set (same _fsmCtx seam as the form DocAction bar / grid batch).
+      // Process — iDempiere's GEAR (cog) button (verified vs iDempiere theme Process24.png). Always present,
+      //   DISABLED (grey) when the current table/record has NO runnable process (no legal DocAction) — iDempiere
+      //   greys it the same way (ADWindowToolbar.enableProcessButton). Runs the record's process set (_fsmCtx).
       var fc = (tab && rec) ? _fsmCtx(tab, rec) : null;
-      if (fc && fc.legal && fc.legal.length) btn(ic('next', '▶') + 'Process', 'DocAction ▶ (Complete / Void / …)', true, function () { _showProcessChooser(); });
+      var hasProc = !!(fc && fc.legal && fc.legal.length);
+      var gear = (window.ICONS && window.ICONS.settings)
+        ? ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.settings.svg + '</svg> ')
+        : '⚙ ';
+      btn(gear + 'Process', 'Process (Alt+P) — run the document/table process', hasProc, function () { _showProcessChooser(); });
       sep();
     })();
     // P2 (prompts/CRUD_INPLACE_EDIT_SESSION.md) — NO ✎ Edit button. The form view is DIRECTLY editable in place
@@ -2625,8 +2631,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function updateStatus(tab) {
     var w = _curWin();
-    status(w.name + ' › ' + tab.name + (_records.length ? ('  ·  Record ' + (_recIdx + 1) + ' of ' + _records.length) : '  ·  0 records') + '  ·  ' + tab.tableName);
-    $('idmp-status-src').textContent = 'folded from SQLite WASM (ad_seed.db)';
+    status(w.name + ' › ' + tab.name + (_records.length ? ('  ·  Record ' + (_recIdx + 1) + ' of ' + _records.length) : '  ·  0 records'));
+    // FUNDAMENTAL LAW — iDempiere's status bar shows record info, not the storage engine. Provenance kept in the
+    //   title (non-invent honesty) but OFF the visible bar (the "folded from SQLite WASM" tell is a dev artifact).
+    var src = $('idmp-status-src'); if (src) { src.textContent = ''; src.title = 'folded from ad_seed.db via SQLite WASM (no server)'; }
   }
 
   // ── Menu filter ──
