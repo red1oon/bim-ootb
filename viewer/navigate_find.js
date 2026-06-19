@@ -93,6 +93,12 @@
       '  border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;',
       '  flex-shrink: 0; min-width: 32px; min-height: 32px; transition: background 0.15s; }',
       '.find-nav-inline:hover { background: rgba(79,195,247,0.45); }',
+      // BIM→Project (find-erp-deeplink): after a push, the created record's deep-link surfaces here as "open ↗"
+      '#find-erp-open { display: none; background: rgba(76,175,80,0.28); color: #81c784;',
+      '  border: none; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer;',
+      '  flex-shrink: 0; min-height: 32px; line-height: 1.6; text-decoration: none; white-space: nowrap;',
+      '  transition: background 0.15s; }',
+      '#find-erp-open:hover { background: rgba(76,175,80,0.5); color: #fff; }',
       '#find-count { font-size: 9px; color: #666; padding: 2px 10px 0; }',
       // §S281: Chips visible as slim hint row
       '#find-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }',
@@ -173,7 +179,7 @@
       '</div>',
       // S275: Selected item summary + inline navigate button
       // BIM\u2192Project TASK A: indicative 5D cost of the selection (docs/BIMtoProject.md \u00A7A)
-      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><a id="find-erp-open" target="_blank" rel="noopener" title="Open the created Project Order in iDempiere (GardenWorld)">open \u2197</a><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
@@ -199,6 +205,7 @@
     var elCount = document.getElementById('find-count');
     var elNavBtn = document.getElementById('find-navigate-btn');
     var elErpBtn = document.getElementById('find-erp-btn');   // BIM→Project TASK C: > to ERP push
+    var elErpOpen = document.getElementById('find-erp-open'); // BIM→Project: deep-link to the created record
     var _lastSelSet = null, _lastSelLabel = '';               // current selection, for the ERP push
     var elClose = document.getElementById('find-close');
     var elChips = document.getElementById('find-chips');
@@ -981,6 +988,8 @@
     function _updateSelCost(set, scopeLabel) {
       _lastSelSet = (set && set.size) ? set : null;            // remember selection for the > to ERP push
       _lastSelLabel = scopeLabel || '';
+      // selection changed → any prior push's deep-link is now stale; hide it until this set is pushed
+      if (elErpOpen) { elErpOpen.style.display = 'none'; elErpOpen.removeAttribute('href'); }
       var el = document.getElementById('find-selected-cost');
       if (!el) return;
       try {
@@ -1069,6 +1078,15 @@
           var revised = ctrl ? Number(ctrl.contract.revised) : Number(r.plannedAmt);
           if (A.status) A.status.textContent = 'Project Order: ' + r.created.lines + ' lines · contract ' + _cur() + ' ' +
             revised.toLocaleString(undefined, { maximumFractionDigits: 0 }) + (ok ? ' (saved)' : '');
+          // BIM→Project (find-erp-deeplink): surface the created record's deep-link at the ERP spot. The OPFS
+          // store above is overlaid onto GardenWorld at iDempiere boot (bim_orders_overlay.js), so this URL
+          // lands on the real C_Project (window 130) AFTER the standard GW login (role/access kept by design).
+          if (elErpOpen && r && r.projectId != null) {
+            var url = '../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(r.projectId);
+            elErpOpen.setAttribute('href', url);
+            elErpOpen.style.display = 'inline-block';
+            console.log('[RP-C] §PROJ_PUSH_LINK project=' + r.projectId + ' order=' + (r.orderId || '-') + ' url=' + url);
+          }
         });
       });
     }
