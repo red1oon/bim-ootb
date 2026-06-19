@@ -164,9 +164,24 @@
       const c = this.get(P.hash); if (!c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
       const lod = this.lodFor(op.id, P.lod);
       const base = (lod === '300') ? this.meshArrays(P.hash) : boxArrays(c.bbox);
-      const pl = (mv && (mv.dx || mv.dy || mv.dz))
-        ? { x: (P.placement.x || 0) + mv.dx, y: (P.placement.y || 0) + mv.dy, z: (P.placement.z || 0) + mv.dz, rot: P.placement.rot }
-        : P.placement;
+      let pl = P.placement;
+      if (mv && (mv.dx || mv.dy || mv.dz || mv.drot)) {
+        let ox = (P.placement.x || 0) + (mv.dx || 0), oy = (P.placement.y || 0) + (mv.dy || 0);
+        const oz = (P.placement.z || 0) + (mv.dz || 0), pr = P.placement.rot || 0;
+        let rot = pr;
+        if (mv.drot) {
+          // W-BONSAI-ROTATE: yaw the insert about its bbox CENTRE (the visible centre, == the gizmo ring centre) so it
+          // SPINS in place rather than orbiting the placement origin. place() rotates local coords about (0,0) then
+          // adds (ox,oy); to keep the world centre fixed under the new yaw, solve (ox,oy) from the centre invariant.
+          const bb = base.bbox || c.bbox, lcx = (bb[0] + bb[1]) / 2, lcy = (bb[2] + bb[3]) / 2;
+          const r0 = pr * Math.PI / 180, c0 = Math.cos(r0), s0 = Math.sin(r0);
+          const wcx = c0 * lcx - s0 * lcy + ox, wcy = s0 * lcx + c0 * lcy + oy;   // current world centre
+          rot = pr + mv.drot;
+          const r1 = rot * Math.PI / 180, c1 = Math.cos(r1), s1 = Math.sin(r1);
+          ox = wcx - (c1 * lcx - s1 * lcy); oy = wcy - (s1 * lcx + c1 * lcy);     // re-anchor so the centre stays put
+        }
+        pl = { x: ox, y: oy, z: oz, rot };
+      }
       const positions = place(base.positions, pl, base.bbox || c.bbox);   // real mesh seats on its own bbox
       return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices };
     },

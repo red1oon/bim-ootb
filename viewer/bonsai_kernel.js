@@ -19,7 +19,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=2', _self);   // v2: GEOM_MOVE branch (W-BONSAI-MOVE PATH A)
+      const url = new URL('bonsai_kernel_worker.js?v=3', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch (W-BONSAI-ROTATE)
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};
@@ -146,12 +146,14 @@
       // whose parent is an insert harmlessly reaches the worker too: PATH A no-ops (the insert isn't a worker solid).
       const insertOps = ops.filter(o => o.op_type === 'GEOM_INSERT');
       const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');   // KEEPS GEOM_MOVE → PATH A translates moved walls
-      const moveBy = new Map();                                          // targetFeatureId -> {dx,dy,dz} (net, summed)
+      const moveBy = new Map();                                          // targetFeatureId -> {dx,dy,dz,drot} (net, summed)
       for (const op of ops) {
-        if (op.op_type !== 'GEOM_MOVE') continue;
+        if (op.op_type !== 'GEOM_MOVE' && op.op_type !== 'GEOM_ROTATE') continue;
         const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
-        const a = moveBy.get(P.parent) || { dx: 0, dy: 0, dz: 0 };
-        a.dx += P.dx || 0; a.dy += P.dy || 0; a.dz += P.dz || 0; moveBy.set(P.parent, a);
+        const a = moveBy.get(P.parent) || { dx: 0, dy: 0, dz: 0, drot: 0 };
+        if (op.op_type === 'GEOM_MOVE') { a.dx += P.dx || 0; a.dy += P.dy || 0; a.dz += P.dz || 0; }
+        else { a.drot += P.drot || 0; }                                  // GEOM_ROTATE: net yaw (about Z), applied host-side to inserts (W-BONSAI-ROTATE PATH B)
+        moveBy.set(P.parent, a);
       }
       const d = kernelOps.length ? await this._foldChain(kernelOps) : { meshes: [] };
       const meshes = (d.meshes || []).slice();

@@ -927,6 +927,10 @@ function buildMoveGizmo() {
   moveGizmo.add(axisHandle('x', 0xe2553b, L), axisHandle('y', 0x46b955, L), axisHandle('z', 0x4f93e0, L));
   const hub = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false }));
   hub.userData.moveAxis = 'xy'; moveGizmo.add(hub);
+  if (selectedIds.size <= 1 && selectedId != null && isInsert(selectedId)) {   // H3: yaw ring — INSERTS only (PATH B host re-place); solids fold in the worker (rotation = follow-up) so no ring → no silent no-op rotate
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(Math.max(0.7, L * 0.95), 0.045, 8, 56), new THREE.MeshBasicMaterial({ color: 0xf5c542, transparent: true, opacity: 0.9, depthTest: false }));
+    ring.userData.moveAxis = 'rotZ'; moveGizmo.add(ring);       // TorusGeometry lies in XY → rotates about +Z by construction
+  }
   moveGizmo.traverse(o => { o.renderOrder = 1000; });          // draw over the solids like the insert ghost
   moveGizmo.position.copy(c); scene.add(moveGizmo);
   if (window.A && A.requestRender) A.requestRender();
@@ -942,6 +946,19 @@ function moveGhostShow(dx, dy, dz) {                           // translucent cl
   }
   moveGhost.position.set(dx, dy, dz);
   const c = selCentre(); if (c && moveGizmo) moveGizmo.position.set(c.x + dx, c.y + dy, c.z + dz);
+  if (window.A && A.requestRender) A.requestRender();
+}
+function rotGhostShow(theta) {                                 // H3: translucent clones spun θ about the selection centre (pivot = ring centre)
+  const ms = selMeshes(); if (!ms.length && selectedMesh) ms.push(selectedMesh); if (!ms.length || !_moveDrag) return;
+  if (!moveGhost) {
+    moveGhost = new THREE.Group();
+    ms.forEach(m => { const gm = new THREE.Mesh(m.geometry.clone(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.35, depthWrite: false })); gm.renderOrder = 998; moveGhost.add(gm); });
+    scene.add(moveGhost);
+  }
+  const c = _moveDrag.c0;                                       // pivot about c: child world = c + Rz(θ)·(geomWorld − c)
+  moveGhost.children.forEach(ch => ch.position.set(-c.x, -c.y, -c.z));
+  moveGhost.position.set(c.x, c.y, c.z); moveGhost.rotation.z = theta;
+  if (moveGizmo) moveGizmo.rotation.z = theta;                  // spin the gizmo with the preview
   if (window.A && A.requestRender) A.requestRender();
 }
 // ── H2 SNAP-TO-GEOMETRY (W-BONSAI-SNAPGEOM / MODELLER_DIRECT_MANIPULATION.md L3) ─────────────────
@@ -1038,7 +1055,14 @@ canvas.addEventListener('pointerdown', (e) => {
   const hit = raycaster.intersectObjects(moveGizmo.children, true)[0];
   if (!hit) return;                                            // missed the gizmo → leave selection intact, no drag
   const axis = hit.object.userData.moveAxis || 'xy';
-  const c0 = selCentre(); const down = moveDragPoint(axis, ndc, c0); if (!c0 || !down) return;
+  const c0 = selCentre(); if (!c0) return;
+  if (axis === 'rotZ') {                                        // H3 yaw drag: track the pointer's ANGLE about the centre on the ground plane
+    const p0 = moveDragPoint('xy', ndc, c0); if (!p0) return;
+    _moveDrag = { axis, c0, a0: Math.atan2(p0.y - c0.y, p0.x - c0.x), drot: 0 };
+    setStat('rotate — drag the ring (Shift = free, else 15° snap), release to commit');
+    return;
+  }
+  const down = moveDragPoint(axis, ndc, c0); if (!down) return;
   _moveDrag = { axis, c0, down, dx: 0, dy: 0, dz: 0 };
   setStat('move ' + axis.toUpperCase() + ' — drag, release to commit');
 });
@@ -1046,6 +1070,14 @@ canvas.addEventListener('pointermove', (e) => {
   if (!moving || !_moveDrag) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  if (_moveDrag.axis === 'rotZ') {                              // H3 yaw drag: angle about the centre on the ground plane
+    const pr = moveDragPoint('xy', ndc, _moveDrag.c0); if (!pr) return;
+    let deg = (Math.atan2(pr.y - _moveDrag.c0.y, pr.x - _moveDrag.c0.x) - _moveDrag.a0) * 180 / Math.PI;
+    if (!e.shiftKey) deg = Math.round(deg / 15) * 15;          // 15° snap unless Shift = free angle
+    _moveDrag.drot = deg; rotGhostShow(deg * Math.PI / 180);
+    setStat('rotate ' + (deg >= 0 ? '+' : '') + deg.toFixed(e.shiftKey ? 1 : 0) + '°' + (e.shiftKey ? '' : '  (15° snap)'));
+    return;
+  }
   const p = moveDragPoint(_moveDrag.axis, ndc, _moveDrag.c0); if (!p) return;
   const d = p.clone().sub(_moveDrag.down); let dx = 0, dy = 0, dz = 0;
   if (_moveDrag.axis === 'x') dx = d.x; else if (_moveDrag.axis === 'y') dy = d.y; else if (_moveDrag.axis === 'z') dz = d.z; else { dx = d.x; dy = d.y; }
@@ -1060,6 +1092,11 @@ canvas.addEventListener('pointermove', (e) => {
 });
 async function commitMoveDrag() {
   const md = _moveDrag; _moveDrag = null; if (!md) return;
+  if (md.axis === 'rotZ') {                                     // H3 yaw commit
+    clearSnapMarker(); const deg = +(md.drot || 0).toFixed(2);
+    if (Math.abs(deg) < 0.5) { clearMoveGhost(); buildMoveGizmo(); setStat('rotate: no change'); return; }
+    await commitRotate(deg); return;
+  }
   const c = md.c0; const sn = snappedMoveDelta(md.axis, c, md.dx, md.dy, md.dz);   // SAME resolver as the live preview
   let dx = sn.dx, dy = sn.dy, dz = sn.dz; clearSnapMarker();
   if (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05 && Math.abs(dz) < 0.05) {   // dead-zone (mirror commitGridMove) → click, no commit
@@ -1088,6 +1125,26 @@ async function commitMove(dx, dy, dz) {
   } catch (err) {
     clearMoveGhost(); if (moving && ids.length) { window.Bonsai.selectMany(ids); buildMoveGizmo(); }   // don't strand the drag ghost on a failed commit
     setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER move fail ' + err);
+  }
+}
+// H3 yaw commit — one signed GEOM_ROTATE per selected feature (same delta about each one's own centre; ring is single-sel this leg).
+async function commitRotate(drot) {
+  const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
+  if (!ids.length) return;
+  setStat('rotating…');
+  try {
+    let v = true;
+    for (const tid of ids) {
+      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_ROTATE', parameters: { parent: tid, drot } }, {});
+      v = res.verify; console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + res.verify);
+    }
+    setStat('rotated ' + (ids.length > 1 ? ids.length + ' objects' : '#' + ids[0]) + ' ' + (drot >= 0 ? '+' : '') + drot.toFixed(1) + '°  verify=' + v);
+    audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    window.Bonsai.selectMany(ids); clearMoveGhost();
+    if (moving) buildMoveGizmo();                              // rebuild gizmo (resets the preview spin) on the rotated feature
+  } catch (err) {
+    clearMoveGhost(); if (moving && ids.length) { window.Bonsai.selectMany(ids); buildMoveGizmo(); }
+    setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER rotate fail ' + err);
   }
 }
 // Arrow-key NUDGE (deterministic, pointer-free): each press commits ONE GEOM_MOVE of moveStep() in that direction.
@@ -2375,6 +2432,60 @@ if (qs.get('snapgeom') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER snapgeom demo fail ' + e); }
     window.__snapgeomResult = out; window.__snapgeomDone = true;
     console.log('§MODELLER snapgeom-done');
+  })();
+}
+// ?rotate=demo proves FREE-ROTATE (W-BONSAI-ROTATE / H3): insert an asymmetric Door, enter Move (the gizmo now
+// carries a yaw RING), grab the ring and drag 90° (15°-snapped) → ONE signed GEOM_ROTATE {parent,drot:90}. The
+// insert SPINS about its bbox centre (PATH B host re-place): world bbox X/Y extents SWAP, the centre stays put,
+// chain verifies + is signed (insert+rotate), scrub replays deterministically, and undo restores the prior yaw.
+if (qs.get('rotate') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const dims = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
+    const rect = canvas.getBoundingClientRect();
+    const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+    try {
+      window.Bonsai.grid.show(false); O.clear(); await sleep(50);
+      const door = window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor');
+      const ins = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 2, y: 2, z: 0, rot: 0 }, lod: '200' } });
+      for (let i = 0; i < 40 && !meshOf(ins.id); i++) await sleep(50);
+      out.target = ins.id; out.before = dims(ins.id); out.asymmetric = Math.abs(out.before.ex - out.before.ey) > 0.2;
+      window.Bonsai.select(ins.id); bMove.onclick(); out.entered = moving;
+      const ring = moveGizmo && moveGizmo.children.find(o => o.userData.moveAxis === 'rotZ');
+      out.hasRing = !!ring; const R = ring ? ring.geometry.parameters.radius : 1;
+      const c = selCentre();
+      const down = toClient(c.x + R, c.y, c.z);                       // grab the ring at angle 0 (right)
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: down.clientX, clientY: down.clientY, bubbles: true }));
+      out.grabbedAxis = _moveDrag && _moveDrag.axis;                  // 'rotZ'
+      const mvp = toClient(c.x, c.y + R, c.z);                        // drag to angle 90° (top) → +90, snaps to 90
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: mvp.clientX, clientY: mvp.clientY, bubbles: true }));
+      out.dragDeg = _moveDrag ? +(_moveDrag.drot).toFixed(1) : null;  // ~90
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: mvp.clientX, clientY: mvp.clientY, bubbles: true }));
+      await sleep(400);
+      out.rotOps = O._geomOps().filter(o => o.op_type === 'GEOM_ROTATE').length;   // 1
+      const rop = O._geomOps().find(o => o.op_type === 'GEOM_ROTATE');
+      out.rotParams = rop ? { parent: rop.parent, drot: +(+rop.parameters.drot).toFixed(1) } : null;
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];   // 2
+      out.verify = (await O.verify()).ok;
+      out.after = dims(ins.id);                                       // extents swapped, centre fixed
+      const n = O.length;
+      await O.scrubTo(n - 1); out.replayBefore = dims(ins.id);
+      await O.scrubTo(n); out.replayAfter = dims(ins.id);
+      exitMove();
+      const u = await O.undo(); out.undoId = u.undone; await sleep(60);
+      out.afterUndo = dims(ins.id); out.verifyAfterUndo = (await O.verify()).ok;
+      exitMove();
+      // GATE: an authored SOLID (not an insert) must NOT get a yaw ring (rotation would silently no-op for solids).
+      O.clear(); { const _g = window.Bonsai.group(); while (_g.children.length) _g.remove(_g.children[0]); } await sleep(50);
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [2, 0], [2, 0.2], [0, 0.2]] }, depth: 3 } });
+      await sleep(60); window.Bonsai.select(wall.id); bMove.onclick();
+      out.solidRing = !!(moveGizmo && moveGizmo.children.find(o => o.userData.moveAxis === 'rotZ'));   // false — no ring on a solid
+      exitMove();
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER rotate demo fail ' + e); }
+    window.__rotateResult = out; window.__rotateDone = true;
+    console.log('§MODELLER rotate-done');
   })();
 }
 // ?gmpreview=demo proves the Move-Grid PREVIEW (W-BONSAI-GMPREVIEW, the user's "move grid" feedback gap): while

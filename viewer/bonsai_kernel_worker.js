@@ -186,6 +186,10 @@ function buildSolids(kernel, ops) {
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
       }
+    } else if (op.op_type === 'GEOM_ROTATE') {         // W-BONSAI-ROTATE: insert yaw folds HOST-side (PATH B via library.foldInsert).
+      // TOLERANT like GEOM_MOVE: an insert parent isn't in this worker's solids map → silent NO-OP. (Solid B-rep
+      // rotation about its centre = a follow-up leg; would generalTransform the shape here, mirroring GRID_MOVE SCALE.)
+      void solids.get(op.parent);
     } else {                                           // LEAF feature (extrude/poly/sweep/opening)
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.id, { shape: shapeCache.get(key), hash: key }); continue; }
       _stats.rebuilt++;
