@@ -132,10 +132,10 @@
     // Process) surface ONLY with a record open in FORM view. Host answers via window.IdmpPillFormGate().
     var _formOk = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
     _actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk ? undefined : false; });
-    // §AD-GATE — showWhen:"bim-record": the RED "Link to BIM Viewer" pill surfaces ONLY on a BIM-bearing record
-    // (C_Project in the BIM band, whose Value is the building name). Host answers via window.IdmpPillBimGate().
-    var _bimOk = (typeof window.IdmpPillBimGate === 'function') ? !!window.IdmpPillBimGate() : false;
-    _actions.forEach(function (a) { if (a._showWhen === 'bim-record') a.pill = _bimOk ? undefined : false; });
+    // §AD-GATE — showWhen:"zoom-across": the RED "Zoom Across" pill surfaces when ANY cross-surface destination
+    // is available for the focused record (window.ZoomAcross). Host answers via window.IdmpPillZoomGate().
+    var _zoomOk = (typeof window.IdmpPillZoomGate === 'function') ? !!window.IdmpPillZoomGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'zoom-across') a.pill = _zoomOk ? undefined : false; });
     var cfg = _PB.getConfig();
     var hidden = (cfg.hidden || []).filter(function (id) { return lifecycleIds.indexOf(id) < 0; }); // drop managed ids
     if (stage !== 'pre-client') hidden = hidden.concat(lifecycleIds);                                // in-client → overflow
@@ -184,7 +184,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=34').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=35').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -213,8 +213,8 @@
       // form-view at BUILD too (the New/Save/Process pills start OFF the bar until a record is open in form view)
       var _formOk0 = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
       actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk0 ? undefined : false; });
-      var _bimOk0 = (typeof window.IdmpPillBimGate === 'function') ? !!window.IdmpPillBimGate() : false;
-      actions.forEach(function (a) { if (a._showWhen === 'bim-record') a.pill = _bimOk0 ? undefined : false; });
+      var _zoomOk0 = (typeof window.IdmpPillZoomGate === 'function') ? !!window.IdmpPillZoomGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'zoom-across') a.pill = _zoomOk0 ? undefined : false; });
 
       _injectStyle();
       var wrap = document.createElement('div');

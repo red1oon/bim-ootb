@@ -552,6 +552,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
+<script src="zoom_across.js?v=1"></script>
 <script src="idmp_pills.js?v=14"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
@@ -3319,17 +3320,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       rule: openRuleFor, pos: openPosFor,
       share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
       erpdoc: openReadCompare,
-      // RED PILL (revived, contextual) — cross-tab cold-launch: open the BIM Viewer at THIS record's building
-      //   scene. Replaces the retired BIM-in-window embed. Building = the BIM-band project's Value; ../viewer
-      //   idiom mirrors the warehouse pill. Warm path (focus an open viewer tab) comes later via the message bus.
-      bimviewer: function () {
-        var tab = _curTab(); var rec = _records[_recIdx];
-        var bld = (tab && rec) ? recVal(rec, 'Value') : null;
-        if (!bld) { status('No BIM model linked to this record'); console.log('§BIMVIEWER-PILL no-building'); return; }
-        var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
-        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(bld) + '_extracted.db&bld=' + encodeURIComponent(bld) + '&home=' + homeUrl;
-        window.open(url, '_blank');
-        console.log('§BIMVIEWER-PILL opened bld=' + bld + ' url=' + url);
+      // RED PILL — abstract ZOOM ACROSS (zoom_across.js): collect the cross-surface destinations available for
+      //   the focused record; one ⇒ launch it, several ⇒ a tiny chooser (mirrors native Zoom-Across listing).
+      //   Destinations are registered at boot (the BIM Viewer below; Modeller etc. later = one register() call).
+      zoomacross: function () {
+        var ctx = _zoomCtx();
+        var ts = window.ZoomAcross ? window.ZoomAcross.targets(ctx) : [];
+        if (!ts.length) { status('Nothing to zoom across to from this record'); console.log('§ZOOM-ACROSS no-target'); return; }
+        if (ts.length === 1) { ts[0].launch(ctx); return; }
+        _zoomAcrossChooser(ts, ctx);
       },
       // ABOUT_BOX_CONSOLIDATE.md — ShowMe/Help now opens the ONE shared About/DIY modal (was toggleShowMe).
       // Install/Migrate pills retired: the DIY tab carries "bring your data in" (download agent → run → load).
@@ -3407,18 +3406,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills surface ONLY
     //   with a record open in FORM view (so they don't clutter the grid / front door). renderBody re-evaluates.
     window.IdmpPillFormGate = function () { return !!(_session && _curTab() && _viewMode === 'form'); };
-    // §AD-GATE — showWhen:"bim-record": the RED "Link to BIM Viewer" pill surfaces ONLY on a BIM-bearing record —
-    //   a C_Project in the BIM band (PK>=990000), whose Value is the building name pushed/baked from the model.
-    //   Keeps the iDempiere surface pure on every other record (the red pill is contextual, not always-on).
-    window.IdmpPillBimGate = function () {
-      try {
-        var tab = _curTab(); if (!_session || !tab) return false;
-        if (String(tab.tableName || '').toLowerCase() !== 'c_project') return false;
-        var rec = _records[_recIdx]; if (!rec) return false;
-        var pk = recVal(rec, 'C_Project_ID');
-        return pk != null && Number(pk) >= 990000;
-      } catch (e) { return false; }
+    // ZOOM ACROSS (zoom_across.js) — the focus context the destinations test/launch against, + a tiny chooser.
+    function _zoomCtx() { return { tab: _curTab(), rec: _records[_recIdx], db: window.__idmpDb }; }
+    function _zoomAcrossChooser(ts, ctx) {
+      var ov = el('div', 'idmp-zoom-chooser');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:1500;display:flex;align-items:center;justify-content:center;background:rgba(8,12,20,.45)';
+      var card = el('div'); card.style.cssText = 'background:#fff;color:#1b2430;border-radius:10px;padding:14px 16px;min-width:220px;box-shadow:0 18px 50px rgba(0,0,0,.45);font:14px system-ui,sans-serif';
+      card.appendChild(el('div', null, 'Zoom across to…')).style.cssText = 'font-weight:600;margin-bottom:8px';
+      ts.forEach(function (t) {
+        var b = el('button', null, t.label); b.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 10px;margin:3px 0;border:1px solid #c9d3df;border-radius:7px;background:#f5f8fc;cursor:pointer;font:13px system-ui';
+        b.addEventListener('click', function () { ov.remove(); t.launch(ctx); });
+        card.appendChild(b);
+      });
+      ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+      ov.appendChild(card); document.body.appendChild(ov);
+    }
+    // §AD-GATE — showWhen:"zoom-across": the RED "Zoom Across" pill surfaces when ANY cross-surface destination is
+    //   available for the focused record (window.ZoomAcross.targets). Keeps the iDempiere surface pure otherwise.
+    window.IdmpPillZoomGate = function () {
+      try { return !!(_session && window.ZoomAcross && window.ZoomAcross.targets(_zoomCtx()).length); }
+      catch (e) { return false; }
     };
+    // First destination: the BIM Viewer. available = C_Project in the BIM band (PK>=990000, Value == building
+    //   name); launch = cold-open the building scene (../viewer idiom, mirrors the warehouse pill). Idempotent.
+    if (window.ZoomAcross) window.ZoomAcross.register({
+      id: 'viewer', label: 'BIM Viewer',
+      available: function (ctx) {
+        if (!ctx.tab || String(ctx.tab.tableName || '').toLowerCase() !== 'c_project' || !ctx.rec) return false;
+        var pk = recVal(ctx.rec, 'C_Project_ID');
+        return pk != null && Number(pk) >= 990000;
+      },
+      launch: function (ctx) {
+        var bld = ctx.rec ? recVal(ctx.rec, 'Value') : null;
+        if (!bld) { status('No BIM model linked to this record'); return; }
+        var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
+        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(bld) + '_extracted.db&bld=' + encodeURIComponent(bld) + '&home=' + homeUrl;
+        window.open(url, '_blank');
+        console.log('§ZOOM-ACROSS launch id=viewer bld=' + bld + ' url=' + url);
+      }
+    });
     // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
     window.IdmpPillPosGate = function () {
       try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }
@@ -3563,13 +3589,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       window.WholeHistory.consumeRestore('idempiere', function (ref) { if (ref) _histRestore({ kind: ref.recordId != null ? 'record' : 'window', windowId: ref.window, tabIdx: ref.tab, table: ref.table, recordId: ref.recordId, view: ref.view, label: '' }); });
     }
     _wireErpTap();   // §HISTORY_TAP — depth axis: field()s make a moment restore the LOOK + sniffer = free total recording
-    // common-HMI keyboard: arrow keys navigate records. Ignored while typing in a field. (Red-pill ',' shortcut
-    //   retired with the clean mode — the classic iDempiere toolbar is always present now.)
+    // common-HMI keyboard: arrow keys navigate records. Ignored while typing in a field. The ',' shortcut is
+    //   REVIVED (was the retired red-pill key) → Zoom Across, but only when a cross-surface target is available.
     document.addEventListener('keydown', function (e) {
       var t = e.target, tag = t && t.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
       if ($('idmp-login') && $('idmp-login').style.display !== 'none') return;   // not while the login overlay is up
       if (!_session || !_records.length) return;
+      // ',' → Zoom Across (red-pill shortcut), gated to a focused record with an available destination.
+      if (e.key === ',') { if (window.IdmpPillZoomGate && window.IdmpPillZoomGate() && window.IdmpPillActions && window.IdmpPillActions.zoomacross) { e.preventDefault(); window.IdmpPillActions.zoomacross(); } return; }
       var n = _records.length, moved = true;
       if (e.key === 'ArrowRight') { if (_recIdx < n - 1) _recIdx++; }
       else if (e.key === 'ArrowLeft') { if (_recIdx > 0) _recIdx--; }
