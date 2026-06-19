@@ -39,31 +39,27 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
     expect(savedLog.text).toContain(KEY);
   });
 
-  test('GP.2 Click card opens viewer — not stuck @slow', async ({ page, context }) => {
+  test('GP.2 Drop IFC auto-opens viewer — not stuck @slow', async ({ page, context }) => {
     const logs = new ConsoleLogs(page);
 
-    // First import the file (each test gets fresh context)
+    // Drop → the import auto-opens the viewer ITSELF (the "My Buildings" card was removed 2026-06-19,
+    // so there is no card to click — the drop must open the viewer on its own).
     await page.goto('/bim-ootb/index.html', { waitUntil: 'load' });
     await page.waitForSelector('#import-zone', { timeout: 10000 });
     await page.evaluate(async (k) => {
       if (typeof deleteProject === 'function') try { await deleteProject(k); } catch(e) {}
     }, KEY);
+    // Intercept the auto-open BEFORE import so we capture the URL the drop opens.
+    await page.evaluate(() => { window._openedUrl = null; window.open = (u) => { window._openedUrl = u; return null; }; });
     await page.locator('#import-file-input').setInputFiles(VOGEL);
 
     await expect.poll(() => {
       return logs.entries.some(e => e.text.includes('IMPORT_SAVED'));
     }, { timeout: 60000, message: 'IMPORT_SAVED not found' }).toBe(true);
 
-    // Intercept window.open
-    await page.evaluate(() => { window._openedUrl = null; window.open = (u) => { window._openedUrl = u; return null; }; });
-
-    // Click the card's Open button
-    const openBtn = await page.waitForSelector('[data-open]', { timeout: 5000 });
-    await openBtn.click();
-
-    // Wait for URL
+    // Drop → viewer auto-opened (no card click)
     await expect.poll(() => page.evaluate(() => window._openedUrl), {
-      timeout: 15000, message: 'window.open not called'
+      timeout: 15000, message: 'auto-open did not fire after import'
     }).toBeTruthy();
 
     const viewerUrl = await page.evaluate(() => window._openedUrl);
