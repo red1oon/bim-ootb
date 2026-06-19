@@ -256,6 +256,7 @@
   var IdmpSession = {
     listUsers: listUsers,
     listClients: listClients,
+    clientTables: clientTables,
     countClientRecords: countClientRecords,
     deleteClient: deleteClient,
     usersForClient: usersForClient,

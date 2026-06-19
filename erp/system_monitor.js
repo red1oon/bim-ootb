@@ -65,7 +65,7 @@
   function panelHTML(d) {
     var t =
       '<div class="sm-modal" role="dialog" aria-label="System Monitor">' +
-      '<div class="sm-head"><b>System Monitor</b>' +
+      '<div class="sm-head"><img class="sm-mark" src="doublebubble.jpg?v=1" alt="" width="22" height="22"><b>System Monitor</b>' +
         '<span class="sm-sub">iDempiere-faithful · serverless kernel — this device</span>' +
         '<button class="sm-x" data-sm-close title="Close">&times;</button></div>' +
       '<div class="sm-body"><table class="sm-tbl">' +
@@ -77,7 +77,8 @@
         row('Heap usage', esc(d.heap)) +
         '<tr class="sm-grp"><td colspan="2">Cache</td></tr>' +
         row('Local storage', esc(d.storage) + (d.tenants != null ? ' &middot; ' + d.tenants + ' resident tenant(s)' + (d.tenantNames ? ' (' + esc(d.tenantNames) + ')' : '') : '')) +
-        row('Cache reset', '<button class="sm-reset" data-sm-reset>Reset to seed</button> <span class="sm-dim">drop the local cache &amp; re-fold from the shipped seed</span>') +
+        row('Reset demo / seed ERPs', '<button class="sm-reset" data-sm-reset-seed>Reset demo / seed ERPs</button> <span class="sm-dim">restore the shipped tenants (System &middot; GardenWorld &middot; demo band) to initial &mdash; <b>keeps the tenants you created</b></span>') +
+        row('Cache reset', '<button class="sm-reset sm-nuke" data-sm-reset>Reset to seed (full)</button> <span class="sm-dim">nuclear &mdash; drops the WHOLE local cache, including tenants you created</span>') +
         '<tr class="sm-grp"><td colspan="2">Logs &amp; Trace</td></tr>' +
         row('Trace', 'the signed <b>op-log</b> is the trace &mdash; replayable, per-tenant (git-for-data). No server log file.') +
         '<tr class="sm-grp"><td colspan="2">Servers &amp; Cluster</td></tr>' +
@@ -96,6 +97,7 @@
     '#sm-root .sm-modal{position:relative;z-index:1;background:#fff;color:#1b2430;width:560px;max-width:94vw;max-height:88vh;overflow:auto;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.45)}' +
     '#sm-root .sm-head{display:flex;align-items:center;gap:9px;padding:13px 16px;background:#0a4ea3;color:#fff;border-radius:10px 10px 0 0;position:sticky;top:0}' +
     '#sm-root .sm-head b{font-size:15px}' +
+    '#sm-root .sm-mark{border-radius:5px;object-fit:cover;background:#eef0f2;display:block;flex:0 0 auto}' +
     '#sm-root .sm-sub{font-size:11px;opacity:.82;flex:1}' +
     '#sm-root .sm-x{background:transparent;border:0;color:#fff;font-size:20px;line-height:1;cursor:pointer;padding:0 4px}' +
     '#sm-root .sm-body{padding:6px 16px 16px}' +
@@ -107,9 +109,92 @@
     '#sm-root .sm-rf{color:#0a4ea3;text-decoration:none;font-weight:600;white-space:nowrap}' +
     '#sm-root .sm-rf:hover{text-decoration:underline}' +
     '#sm-root .sm-reset{background:#0a4ea3;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}' +
+    '#sm-root .sm-nuke{background:#b23030}' +
     '#sm-root .sm-dim{color:#8a95a3;font-size:11px}';
 
   function ensureCss() { if (document.getElementById('sm-css')) return; var s = document.createElement('style'); s.id = 'sm-css'; s.textContent = CSS; document.head.appendChild(s); }
+
+  // idbPutBlob — write a blob under erp_cache/blobs (the SAME store/key idempiere.html loads the live db from).
+  function idbPutBlob(key, val) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var req = indexedDB.open('erp_cache', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('blobs'); };
+        req.onsuccess = function () {
+          var tx = req.result.transaction('blobs', 'readwrite');
+          tx.objectStore('blobs').put(val, key);
+          tx.oncomplete = function () { resolve(); };
+          tx.onerror = function () { reject(tx.error); };
+        };
+        req.onerror = function () { reject(req.error); };
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // resetSeedClients — SURGICAL reset (user 2026-06-19): restore the SHIPPED seed/demo ERP clients to their
+  //   initial state WITHOUT touching the tenants the user created. The mutated/dirty state lives in the
+  //   persisted ad_seed_v16 blob (whole-db cache); pristine ad_seed.db carries only System(0)+GardenWorld(11),
+  //   the demo band (12-16) re-installs from shards on demand, and born/resident tenants start at AD_Client_ID
+  //   >= 17 (genesis nextClientId floor). So: snapshot every row >= 17 → re-fetch pristine ad_seed.db → re-insert
+  //   the snapshot (col-INTERSECT, INSERT OR IGNORE, like Genesis.mergeGenesisInto) → replace ad_seed_v16.
+  //   Net: seed clients pristine · demo installs gone (re-installable) · born tenants + their data intact.
+  //   The op-log/overlay scoped to seed clients 0-16 is carried IN ad_seed_v16, so the wholesale replace drops it;
+  //   the separate glassbowl demo sidecar (its own idb) is a different surface and is left alone. W-SEED-RESET-LIVE.
+  var SEED_FLOOR = 17;
+
+  // _rebuildSeed — the PURE transform (testable headless): snapshot every resident row (AD_Client_ID >= floor)
+  //   from `live` across `tables`, then re-insert it into `fresh` (the pristine seed) column-INTERSECT +
+  //   INSERT OR IGNORE. Mutates `fresh` in place; returns the counts the witness asserts on. No globals/fetch/idb.
+  function _rebuildSeed(live, fresh, tables, floor) {
+    var snapshot = [], snapRows = 0, snapTbls = 0;
+    tables.forEach(function (t) {
+      try {
+        var r = live.exec('SELECT * FROM "' + t + '" WHERE AD_Client_ID >= ' + floor);
+        if (r.length && r[0].values.length) { snapshot.push({ table: t, cols: r[0].columns, rows: r[0].values }); snapRows += r[0].values.length; snapTbls++; }
+      } catch (e) {}
+    });
+    var reins = 0, reinsTbls = 0;
+    snapshot.forEach(function (s) {
+      var ti; try { ti = fresh.exec('PRAGMA table_info("' + s.table + '")'); } catch (e) { return; }
+      if (!ti.length) return;                          // table absent in pristine seed → could not have held resident data
+      var fcol = {}; ti[0].values.forEach(function (c) { fcol[String(c[1]).toLowerCase()] = c[1]; });
+      var keep = [], idx = [];
+      s.cols.forEach(function (c, i) { var k = fcol[String(c).toLowerCase()]; if (k) { keep.push(k); idx.push(i); } });
+      if (!keep.length) return;
+      var sql = 'INSERT OR IGNORE INTO "' + s.table + '" (' + keep.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + keep.map(function () { return '?'; }).join(',') + ')';
+      var stmt; try { stmt = fresh.prepare(sql); } catch (e) { return; }
+      s.rows.forEach(function (rw) { try { stmt.run(idx.map(function (i) { return rw[i]; })); reins++; } catch (e) {} });
+      stmt.free(); reinsTbls++;
+    });
+    return { snapTbls: snapTbls, snapRows: snapRows, reinsTbls: reinsTbls, reins: reins };
+  }
+
+  async function resetSeedClients() {
+    var db = global.__idmpDb, SQL = global.SQL, SES = global.IdmpSession;
+    if (!db || !SQL || !SES || !SES.clientTables) {
+      console.log('§SEED-RESET unavailable db=' + !!db + ' SQL=' + !!SQL + ' SES=' + !!(SES && SES.clientTables));
+      if (global.alert) global.alert('Seed reset is only available inside the iDempiere window.');
+      return;
+    }
+    if (!global.confirm || !global.confirm(
+      'Reset demo / seed ERPs?\n\nThe shipped tenants — System, GardenWorld, and any demo-band installs (Odoo · iDempiere · SAP · Oracle · Dynamics) — return to their INITIAL state. Dirty / edited / demo data is removed.\n\nThe tenants YOU created (and all their data) are KEPT untouched.')) return;
+    console.log('§SEED-RESET start floor=' + SEED_FLOOR);
+
+    // 1+2. re-fetch the PRISTINE shipped seed, then rebuild it with the resident (>= floor) snapshot.
+    var fresh;
+    try { var buf = await (await fetch('ad_seed.db', { cache: 'reload' })).arrayBuffer(); fresh = new SQL.Database(new Uint8Array(buf)); }
+    catch (e) { console.log('§SEED-RESET fetch-fail ' + (e && e.message)); if (global.alert) global.alert('Could not fetch the shipped seed — reset aborted (your data is untouched).'); return; }
+    var c = _rebuildSeed(db, fresh, SES.clientTables(db), SEED_FLOOR);
+    console.log('§SEED-RESET snapshot residentTables=' + c.snapTbls + ' residentRows=' + c.snapRows);
+    console.log('§SEED-RESET reinsert residentRows=' + c.reins + ' tables=' + c.reinsTbls);
+
+    // 3. persist the rebuilt base as the live cache (replaces the mutated blob), then reload.
+    try { await idbPutBlob('ad_seed_v16', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v16 pristine+resident'); }
+    catch (e) { console.log('§SEED-RESET persist-fail ' + (e && e.message)); }
+    try { fresh.close(); } catch (e) {}
+    console.log('§SEED-RESET done — reloading');
+    location.reload();
+  }
 
   async function resetToSeed() {
     if (!global.confirm || !global.confirm('Reset to seed? This drops the local cache (resident tenants + edits) and re-folds from the shipped dictionary.')) return;
@@ -125,15 +210,17 @@
     ensureCss();
     close();
     var root = document.createElement('div'); root.id = 'sm-root';
-    root.innerHTML = '<div class="sm-modal"><div class="sm-head"><b>System Monitor</b><span class="sm-sub">loading…</span></div></div><div class="sm-backdrop" data-sm-close></div>';
+    root.innerHTML = '<div class="sm-modal"><div class="sm-head"><img class="sm-mark" src="doublebubble.jpg?v=1" alt="" width="22" height="22"><b>System Monitor</b><span class="sm-sub">loading…</span></div></div><div class="sm-backdrop" data-sm-close></div>';
     document.body.appendChild(root);
     console.log('§SYSTEM-MONITOR open');
     gather().then(function (d) {
       root.innerHTML = panelHTML(d);
       root.querySelectorAll('[data-sm-close]').forEach(function (el) { el.addEventListener('click', close); });
       var rb = root.querySelector('[data-sm-reset]'); if (rb) rb.addEventListener('click', resetToSeed);
+      var rsb = root.querySelector('[data-sm-reset-seed]'); if (rsb) rsb.addEventListener('click', resetSeedClients);
     });
   }
 
-  global.SystemMonitor = { open: open, close: close, _gather: gather };
+  global.SystemMonitor = { open: open, close: close, _gather: gather, _resetSeedClients: resetSeedClients, _rebuildSeed: _rebuildSeed };
+  if (typeof module !== 'undefined' && module.exports) module.exports = global.SystemMonitor;
 })(typeof window !== 'undefined' ? window : this);
