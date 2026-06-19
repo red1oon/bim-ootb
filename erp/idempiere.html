@@ -372,7 +372,7 @@
 <!-- Login / Role·Client·Org selection (docs §3b) — folded from AD_User/AD_Role/AD_Org; SELECTION, not auth -->
 <div id="idmp-login" style="display:none">
   <div class="idmp-login-card">
-    <div class="idmp-login-mark"><img src="doublebubble.jpg?v=2" alt="" width="52" height="52"></div>
+    <div class="idmp-login-mark"><img src="logo_glass.png?v=2" alt="" width="52" height="52"></div>
     <div class="idmp-login-title">Kernel-ERP — Sign In</div>
     <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
@@ -423,7 +423,7 @@
 
 <div id="idmp-header">
   <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
-  <span id="idmp-logo"><img src="doublebubble.jpg?v=2" alt="" width="36" height="36"></span>
+  <span id="idmp-logo"><img src="logo_glass.png?v=2" alt="" width="36" height="36"></span>
   <span id="idmp-title">Kernel-ERP</span>
   <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
   <span class="spacer"></span>
@@ -3319,6 +3319,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       rule: openRuleFor, pos: openPosFor,
       share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },
       erpdoc: openReadCompare,
+      // RED PILL (revived, contextual) — cross-tab cold-launch: open the BIM Viewer at THIS record's building
+      //   scene. Replaces the retired BIM-in-window embed. Building = the BIM-band project's Value; ../viewer
+      //   idiom mirrors the warehouse pill. Warm path (focus an open viewer tab) comes later via the message bus.
+      bimviewer: function () {
+        var tab = _curTab(); var rec = _records[_recIdx];
+        var bld = (tab && rec) ? recVal(rec, 'Value') : null;
+        if (!bld) { status('No BIM model linked to this record'); console.log('§BIMVIEWER-PILL no-building'); return; }
+        var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
+        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(bld) + '_extracted.db&bld=' + encodeURIComponent(bld) + '&home=' + homeUrl;
+        window.open(url, '_blank');
+        console.log('§BIMVIEWER-PILL opened bld=' + bld + ' url=' + url);
+      },
       // ABOUT_BOX_CONSOLIDATE.md — ShowMe/Help now opens the ONE shared About/DIY modal (was toggleShowMe).
       // Install/Migrate pills retired: the DIY tab carries "bring your data in" (download agent → run → load).
       showme: function () { if (window.AboutDIY) window.AboutDIY.open(); else toggleShowMe(); },
@@ -3395,6 +3407,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills surface ONLY
     //   with a record open in FORM view (so they don't clutter the grid / front door). renderBody re-evaluates.
     window.IdmpPillFormGate = function () { return !!(_session && _curTab() && _viewMode === 'form'); };
+    // §AD-GATE — showWhen:"bim-record": the RED "Link to BIM Viewer" pill surfaces ONLY on a BIM-bearing record —
+    //   a C_Project in the BIM band (PK>=990000), whose Value is the building name pushed/baked from the model.
+    //   Keeps the iDempiere surface pure on every other record (the red pill is contextual, not always-on).
+    window.IdmpPillBimGate = function () {
+      try {
+        var tab = _curTab(); if (!_session || !tab) return false;
+        if (String(tab.tableName || '').toLowerCase() !== 'c_project') return false;
+        var rec = _records[_recIdx]; if (!rec) return false;
+        var pk = recVal(rec, 'C_Project_ID');
+        return pk != null && Number(pk) >= 990000;
+      } catch (e) { return false; }
+    };
     // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
     window.IdmpPillPosGate = function () {
       try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }

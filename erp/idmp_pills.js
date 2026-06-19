@@ -132,6 +132,10 @@
     // Process) surface ONLY with a record open in FORM view. Host answers via window.IdmpPillFormGate().
     var _formOk = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
     _actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk ? undefined : false; });
+    // §AD-GATE — showWhen:"bim-record": the RED "Link to BIM Viewer" pill surfaces ONLY on a BIM-bearing record
+    // (C_Project in the BIM band, whose Value is the building name). Host answers via window.IdmpPillBimGate().
+    var _bimOk = (typeof window.IdmpPillBimGate === 'function') ? !!window.IdmpPillBimGate() : false;
+    _actions.forEach(function (a) { if (a._showWhen === 'bim-record') a.pill = _bimOk ? undefined : false; });
     var cfg = _PB.getConfig();
     var hidden = (cfg.hidden || []).filter(function (id) { return lifecycleIds.indexOf(id) < 0; }); // drop managed ids
     if (stage !== 'pre-client') hidden = hidden.concat(lifecycleIds);                                // in-client → overflow
@@ -180,13 +184,14 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=33').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=34').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
       var actions = pills.map(function (p) {
         var act = { id: p.id, name: p.name, key: p.key || '' };
         if (p.img) act.img = p.img; else act.icon = _resolveIcon(p) || '';
+        if (p.title) act.title = p.title;                    // friendly hover label (e.g. "Link to BIM Viewer")
         if (p.stage) act._stage = p.stage;                   // §C lifecycle tag (carried from the manifest)
         if (p.showWhen) act._showWhen = p.showWhen;           // §AD-GATE condition (e.g. "posting-doc") carried from the manifest
         // fn binds BY ID to the host's real handler; honest toast if a handler is missing (NON-INVENT).
@@ -208,6 +213,8 @@
       // form-view at BUILD too (the New/Save/Process pills start OFF the bar until a record is open in form view)
       var _formOk0 = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
       actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk0 ? undefined : false; });
+      var _bimOk0 = (typeof window.IdmpPillBimGate === 'function') ? !!window.IdmpPillBimGate() : false;
+      actions.forEach(function (a) { if (a._showWhen === 'bim-record') a.pill = _bimOk0 ? undefined : false; });
 
       _injectStyle();
       var wrap = document.createElement('div');
