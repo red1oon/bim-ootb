@@ -941,7 +941,8 @@ function buildMoveGizmo() {
   moveGizmo.add(axisHandle('x', 0xe2553b, L), axisHandle('y', 0x46b955, L), axisHandle('z', 0x4f93e0, L));
   const hub = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false }));
   hub.userData.moveAxis = 'xy'; moveGizmo.add(hub);
-  if (selectedIds.size <= 1 && selectedId != null && (isInsert(selectedId) || isSolid(selectedId))) {   // H3: yaw ring on a single INSERT (host re-place, PATH B) OR a SOLID (real occt spin in the worker, W-BONSAI-ROTATE-SOLID)
+  const _rotIds = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
+  if (_rotIds.length >= 1 && _rotIds.every(id => isInsert(id) || isSolid(id))) {   // H3: yaw ring on a single INSERT/SOLID OR a multi-select GROUP (rotates about the set centroid, W-BONSAI-ROTATE-GROUP)
     const ring = new THREE.Mesh(new THREE.TorusGeometry(Math.max(0.7, L * 0.95), 0.045, 8, 56), new THREE.MeshBasicMaterial({ color: 0xf5c542, transparent: true, opacity: 0.9, depthTest: false }));
     ring.userData.moveAxis = 'rotZ'; moveGizmo.add(ring);       // TorusGeometry lies in XY → rotates about +Z by construction
   }
@@ -1141,21 +1142,36 @@ async function commitMove(dx, dy, dz) {
     setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER move fail ' + err);
   }
 }
-// H3 yaw commit — one signed GEOM_ROTATE per selected feature (same delta about each one's own centre; ring is single-sel this leg).
+// H3 yaw commit — rotate the selection about the SET centroid (W-BONSAI-ROTATE-GROUP). Each child gets a signed
+// GEOM_ROTATE (spins it in place about its OWN centre) plus, when it is off the centroid, a GEOM_MOVE that orbits
+// its centre about the set centroid by the same angle: Tᵢ = G + Rθ(Cᵢ−G). A single selection ⇒ Cᵢ==G ⇒ no move
+// (pure spin, identical to the single-rotate leg). Centres are snapshotted BEFORE the first commit (each commit
+// refolds the meshes). Works for inserts (host re-place) and solids (worker occt spin) alike.
 async function commitRotate(drot) {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
   if (!ids.length) return;
   setStat('rotating…');
   try {
+    const G = selCentre();                                    // set centroid = folded bbox centre of the whole selection
+    const cen = {};                                           // snapshot each child's centre up front (commits refold meshes)
+    selMeshes().forEach(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; cen[m.userData.featureId] = { x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2 }; });
+    const rad = drot * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
     let v = true;
     for (const tid of ids) {
-      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_ROTATE', parameters: { parent: tid, drot } }, {});
-      v = res.verify; console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + res.verify);
+      const r1 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_ROTATE', parameters: { parent: tid, drot } }, {});
+      v = r1.verify;
+      const C = cen[tid];
+      if (G && C) {                                           // orbit this child's centre about G by the same yaw
+        const ox = C.x - G.x, oy = C.y - G.y;
+        const dx = (G.x + (cs * ox - sn * oy)) - C.x, dy = (G.y + (sn * ox + cs * oy)) - C.y;
+        if (Math.hypot(dx, dy) > 1e-4) { const r2 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz: 0 } }, {}); v = r2.verify; }
+      }
+      console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + v);
     }
-    setStat('rotated ' + (ids.length > 1 ? ids.length + ' objects' : '#' + ids[0]) + ' ' + (drot >= 0 ? '+' : '') + drot.toFixed(1) + '°  verify=' + v);
+    setStat('rotated ' + (ids.length > 1 ? ids.length + ' objects about centroid' : '#' + ids[0]) + ' ' + (drot >= 0 ? '+' : '') + drot.toFixed(1) + '°  verify=' + v);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();
-    if (moving) buildMoveGizmo();                              // rebuild gizmo (resets the preview spin) on the rotated feature
+    if (moving) buildMoveGizmo();                              // rebuild gizmo (resets the preview spin) on the rotated selection
   } catch (err) {
     clearMoveGhost(); if (moving && ids.length) { window.Bonsai.selectMany(ids); buildMoveGizmo(); }
     setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER rotate fail ' + err);
@@ -2551,6 +2567,47 @@ if (qs.get('rotate') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER rotate demo fail ' + e); }
     window.__rotateResult = out; window.__rotateDone = true;
     console.log('§MODELLER rotate-done');
+  })();
+}
+// ?grouprot=demo proves GROUP ROTATE (W-BONSAI-ROTATE-GROUP / item 2): select TWO objects, rotate the set 90°
+// about its CENTROID — each child both spins (its own extents swap) AND orbits the centroid, via one signed
+// GEOM_ROTATE + GEOM_MOVE pair per child. Drives the REAL commitRotate (no pointer dispatch → no OrbitControls flake).
+if (qs.get('grouprot') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const meshOf = fid => { const g = window.Bonsai.group(); return g && g.children.find(o => o.isMesh && o.userData.featureId === fid); };
+    const dims = fid => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
+      return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
+    const near = (a, b, t) => Math.abs(a - b) <= (t || 0.12);
+    try {
+      window.Bonsai.grid.show(false); O.clear(); await sleep(50);
+      const door = window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor');
+      const A = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 0, y: 0, z: 0, rot: 0 }, lod: '200' } });
+      const B = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 4, y: 0, z: 0, rot: 0 }, lod: '200' } });
+      for (let i = 0; i < 80 && (!meshOf(A.id) || !meshOf(B.id)); i++) await sleep(50);
+      out.beforeA = dims(A.id); out.beforeB = dims(B.id);
+      out.asymmetric = Math.abs(out.beforeA.ex - out.beforeA.ey) > 0.2;          // door is non-square → orientation is observable
+      window.Bonsai.selectMany([A.id, B.id]); await sleep(30);
+      const base = O.length;
+      await commitRotate(90);                                                    // THE host group-rotate (about centroid (2,0))
+      await O.scrubTo(O.length);
+      for (let i = 0; i < 80; i++) { const d = dims(A.id); if (d && near(d.cy, -2)) break; await sleep(50); }
+      out.afterA = dims(A.id); out.afterB = dims(B.id);
+      // A(0,0) & B(4,0) about G(2,0), +90 CCW → A→(2,-2), B→(2,2); centroid (2,0) preserved
+      out.orbited = near(out.afterA.cx, 2) && near(out.afterA.cy, -2) && near(out.afterB.cx, 2) && near(out.afterB.cy, 2);
+      out.centroidFixed = near((out.afterA.cx + out.afterB.cx) / 2, 2) && near((out.afterA.cy + out.afterB.cy) / 2, 0);
+      out.eachSpun = near(out.afterA.ex, out.beforeA.ey) && near(out.afterA.ey, out.beforeA.ex);   // each child's own extents swapped
+      out.rotOps = O._geomOps().filter(o => o.op_type === 'GEOM_ROTATE').length;   // 2
+      out.moveOps = O._geomOps().filter(o => o.op_type === 'GEOM_MOVE').length;     // 2 (both off-centroid)
+      out.verify = (await O.verify()).ok;
+      // reversible: scrub back to before the group-rotate → originals restored
+      await O.scrubTo(base); out.replayA = dims(A.id); out.replayB = dims(B.id);
+      out.reversible = near(out.replayA.cx, 0) && near(out.replayA.cy, 0) && near(out.replayB.cx, 4) && near(out.replayB.cy, 0);
+      await O.scrubTo(O.length);
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER grouprot fail ' + e); }
+    window.__groupRotResult = out; window.__groupRotDone = true;
+    console.log('§MODELLER grouprot-done ' + JSON.stringify(out));
   })();
 }
 // ?hover=demo proves PRE-PICK HOVER (W-BONSAI-HOVER / M3): moving the cursor over a feature (no click) gives it a
