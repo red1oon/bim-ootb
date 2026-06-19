@@ -112,6 +112,10 @@
     // inventory-document print (AD_PROCESS_FOLD_LANE §P2-tail-leg3): folds an M_Inventory → a NON-FINANCIAL receipt
     // (qty=QtyCount) via the SAME report_overlay.foldReceipt over REPORT_MAP.m_inventory — ZERO new fold code.
     registerHandler('report:m_inventory',receiptHandler('m_inventory'),{ kind: 'report', reportKey: 'm_inventory' });
+    // report:pp_order — "Rpt PP_Order" (AD_Process 53028, "Manufacturing Order"). KIND-1, a 4th document family
+    // (manufacturing, AD_PROCESS_FOLD_LANE §P2-tail-leg4): folds a PP_Order → a NON-FINANCIAL receipt (qty=
+    // QtyRequiered over PP_Order_BOMLine) via the SAME report_overlay.foldReceipt — ZERO new fold code.
+    registerHandler('report:pp_order',  receiptHandler('pp_order'),  { kind: 'report', reportKey: 'pp_order' });
     // report:c_project — "Rpt C_Project" (AD_Process 217, Project Print). KIND-1, folds via the SAME foldReceipt
     // (REPORT_MAP.c_project), no new fold code. AD_PROCESS_FOLD_LANE §P2-leg3 — Witness: W-PROC-PROJPRINT.
     registerHandler('report:c_project', receiptHandler('c_project'), { kind: 'report', reportKey: 'c_project' });
@@ -464,6 +468,11 @@
       // so the imperative M_Inventory procs (105/106 carry non-blank classnames; 107 "M_Inventory Process" is
       // isReport=N → never reaches here) stay absent-handler. "inventory" alone is NOT matched (too broad).
       if (/m_inventory\b|physical inventory print/.test(hay)) return 'report:m_inventory';
+      // "Rpt PP_Order" (53028) — PP_Order-SPECIFIC with WORD-BOUNDARIES on both alternatives: `pp_order\b` does NOT
+      // match "rv_pp_order_transactions" (120 — `_` is a word char, no boundary after "pp_order"); `manufacturing
+      // order\b` does NOT match "manufacturing orders review" (53030 — the trailing "s" breaks the boundary). Both
+      // those report-view procs (+ the isReport=N "PP_Order" process 53026) thus stay the honest absent-handler.
+      if (/pp_order\b|manufacturing order\b/.test(hay)) return 'report:pp_order';
       // "Rpt C_Project" (217) — SPECIFIC match (c_project / project print), NOT the broad "project" so the other
       // RV_Project* report-VIEW procs (218 RV_ProjectCycle, 226/228/229/234) stay absent-handler (no foldReceipt
       // for a report view — those are a later report-view fold, not this leg).

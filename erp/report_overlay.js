@@ -44,6 +44,15 @@
     m_inventory:{key: 'm_inventory',pk:'m_inventory_id',lineTable:'m_inventoryline',fk:'m_inventory_id',
                  fkProduct: 'm_product_id', amount: null,        qty: 'qtycount',    price: null,
                  date: 'movementdate', total: null },
+    // Rpt PP_Order (AD_Process 53028, "Manufacturing Order") — a 4th non-sales document family (manufacturing,
+    // AD_PROCESS_FOLD_LANE §P2-tail-leg4). NON-FINANCIAL: a manufacturing order's BOM lines carry qty=QtyRequiered
+    // (the required component quantity), not money — amount/price/total null. Header PP_Order + lines
+    // PP_Order_BOMLine (line + m_product_id present → no fold-shape change). A production order is internal → no
+    // c_bpartner_id → partner null. date=DatePromised (the populated scheduling date; DateStart is null in seed).
+    // SAME foldReceipt, NO new fold code. The browser lc() helper aliases the CamelCase (DocumentNo/QtyRequiered).
+    pp_order:  { key: 'pp_order',  pk: 'pp_order_id',  lineTable: 'pp_order_bomline',fk: 'pp_order_id',
+                 fkProduct: 'm_product_id', amount: null,        qty: 'qtyrequiered',price: null,
+                 date: 'datepromised', total: null },
     // Rpt C_Project (AD_Process 217, "Project Print") — a KIND-1 report folded by the SAME foldReceipt as the
     // order/invoice prints (no new fold code, AD_PROCESS_FOLD_LANE §P2-leg3). A project IS a document: header
     // C_Project + lines C_ProjectLine; the planned amounts are its money (subtotal = Σ PlannedAmt, total = the
