@@ -33,6 +33,12 @@
   var _highlightMeshes = [];
   var _ganttVisible = false;
   var _dashVisible = false;
+  // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
+  // deterministic over-run VARIANT computed live on it. No shipped schedule data — a variant ON what's there.
+  var _varVisible = false;
+  var _opsPlanned = null;   // snapshot of the planned _ops (taken when variance first opens)
+  var _opsActual = null;    // the variant ops (built on demand for "Watch Actual")
+  var _watchActual = false; // when true, the SCENE animates the actual variant (the user's "animate the actual")
   var _ganttTasks = [];  // computed task groups for click detection
   // T3 (4D_CAPTURE_AND_FALLBACK §3.1): native-4D coverage of the active schedule.
   var _capActive = false;   // true when the timeline used a captured IFC schedule
@@ -1758,6 +1764,7 @@
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
+        '<button id="tm-var" style="font-size:13px;padding:2px 6px" title="Budget vs Actual variance">&#x2696;</button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
         '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
       '</div>' +
@@ -1791,6 +1798,11 @@
           '<div id="tm-gantt-hair" style="position:absolute;top:0;width:2px;height:100%;background:#ff8c00;pointer-events:none;z-index:1;display:none"></div>' +
           '<div id="tm-gantt-tip" style="position:absolute;top:4px;left:0;background:rgba(20,20,40,0.92);color:#ff8c00;font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid rgba(255,140,0,0.3);pointer-events:none;z-index:2;display:none;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis"></div>' +
         '</div>' +
+      '</div>' +
+      '<div id="tm-var-box" class="tm-drawer-bottom">' +
+        '<div id="tm-var-head" style="padding:4px 6px 2px;font-size:11px;color:#e0e0e0;line-height:1.5"></div>' +
+        '<canvas id="tm-var-canvas" style="width:100%;cursor:default"></canvas>' +
+        '<div id="tm-var-list" style="padding:2px 6px 4px;font-size:10px;color:#ccc"></div>' +
       '</div>' +
       '<div id="tm-dash-col" class="tm-drawer-right">' +
         '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px">' +
@@ -2010,6 +2022,21 @@
       }
       toggleDashDOM(_dashVisible);
       if (_dashVisible) drawDashboard();
+    });
+    document.getElementById('tm-var').addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      _varVisible = !_varVisible;
+      // Mobile: only one bottom drawer at a time (mirror the gantt/dash rule)
+      if (_varVisible && window.innerWidth < 600 && _ganttVisible) {
+        _ganttVisible = false;
+        var gb2 = document.getElementById('tm-gantt-box'); if (gb2) gb2.classList.remove('open');
+        var gbt2 = document.getElementById('tm-gantt'); if (gbt2) gbt2.classList.remove('tm-active');
+      }
+      var vbtn = document.getElementById('tm-var');
+      if (vbtn) vbtn.classList.toggle('tm-active', _varVisible);
+      var vbox = document.getElementById('tm-var-box');
+      if (vbox) vbox.classList.toggle('open', _varVisible);
+      if (_varVisible) drawVariance();
     });
     document.getElementById('tm-gantt-canvas').addEventListener('pointerup', function(e) {
       if (!_active || !_ops.length) return;
@@ -2579,6 +2606,164 @@
     'MEP Final': '#ab47bc',
     'Finishes': '#26a69a'
   };
+
+  // ── §TM-VARIANCE — budget-vs-actual on TM's OWN timeline (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL) ──
+  // Planned = the generated construction timeline TM already computes (_ops). Actual = a DETERMINISTIC
+  // over-run VARIANT (no random / no Date.now): per phase h=hash(name), start slips late + duration stretches
+  // + cost scales >1; Superstructure is the marquee blow-out. Same input → identical output, every run.
+  var _DAY_MS = 86400000;
+  var _VAR_ORDER = ['Substructure', 'Superstructure', 'MEP Rough-in', 'Architecture', 'MEP Final', 'Finishes'];
+  function _strHash(s) { var h = 2166136261; s = String(s); for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function _phaseVariant(name) {
+    var h = _strHash(name), marquee = /Superstructure/i.test(name);
+    return { slip: (h % 18) + (marquee ? 40 : 4),                 // start days late
+             stretch: (h % 26) + (marquee ? 130 : 10),            // extra duration days (finish even later)
+             factor: marquee ? 1.60 : (1.04 + ((h >> 8) % 36) / 100),  // cost ×; always over (1.04..1.40, marquee 1.60)
+             marquee: marquee };
+  }
+  function _opCost(op) {                                          // == drawDashboard cost basis (rate_per_day×crew×days)
+    var LR = window.LABOR_RATES || {};
+    var res = (op.parameters || {}).resource || '';
+    var lr = LR[res]; var daily = lr ? lr.rate_per_day * (lr.crew_size || 1) : 95;
+    var dur = Math.max(1, (op.end_ts || _projectEnd) - (op.start_ts || _projectStart)) / _DAY_MS;
+    return daily * dur;
+  }
+  function _money(n) { n = Math.round(n); var a = Math.abs(n), s = n < 0 ? '-' : '';
+    if (a >= 1e6) return s + 'RM' + (a / 1e6).toFixed(1) + 'M'; if (a >= 1e3) return s + 'RM' + Math.round(a / 1e3) + 'K'; return s + 'RM' + a; }
+  // aggregate the planned ops into phases, then derive the actual variant per phase.
+  function _computeVariance() {
+    var src = _opsPlanned || _ops, agg = {};
+    for (var i = 0; i < src.length; i++) {
+      var op = src[i], ph = (op.parameters || {}).phase || 'Architecture';
+      if (!agg[ph]) agg[ph] = { phase: ph, pStart: op.start_ts, pEnd: op.end_ts, pCost: 0, count: 0 };
+      var a = agg[ph];
+      if (op.start_ts < a.pStart) a.pStart = op.start_ts;
+      if (op.end_ts > a.pEnd) a.pEnd = op.end_ts;
+      a.pCost += _opCost(op); a.count++;
+    }
+    var phases = Object.keys(agg).map(function (k) { return agg[k]; }).filter(function (p) { return p.count > 0; })
+      .sort(function (x, y) { var ix = _VAR_ORDER.indexOf(x.phase), iy = _VAR_ORDER.indexOf(y.phase); return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy); });
+    var tP = 0, tA = 0, t0 = Infinity, maxEnd = -Infinity;
+    phases.forEach(function (p) {
+      var v = _phaseVariant(p.phase);
+      p.aStart = p.pStart + v.slip * _DAY_MS;
+      p.aEnd = p.pEnd + (v.slip + v.stretch) * _DAY_MS;
+      p.aCost = Math.round(p.pCost * v.factor);
+      p.pCost = Math.round(p.pCost);
+      p.marquee = v.marquee;
+      p.dDays = Math.round((p.aEnd - p.pEnd) / _DAY_MS);
+      p.dCost = p.aCost - p.pCost;
+      tP += p.pCost; tA += p.aCost;
+      if (p.pStart < t0) t0 = p.pStart;
+      if (p.aEnd > maxEnd) maxEnd = p.aEnd;
+    });
+    return { phases: phases, tP: tP, tA: tA, dCost: tA - tP, pctOver: tP > 0 ? Math.round((tA - tP) / tP * 100) : 0,
+             t0: t0, plannedEnd: _projectEnd, actualEnd: maxEnd, lateDays: Math.round((maxEnd - _projectEnd) / _DAY_MS) };
+  }
+  // build the actual-variant ops (each planned op shifted by its phase's slip + stretch) for SCENE playback.
+  function _buildActualOps() {
+    var src = _opsPlanned || _ops;
+    return src.map(function (op) {
+      var v = _phaseVariant((op.parameters || {}).phase || 'Architecture');
+      var clone = {}; for (var k in op) clone[k] = op[k];
+      clone.start_ts = op.start_ts + v.slip * _DAY_MS;
+      clone.end_ts = op.end_ts + (v.slip + v.stretch) * _DAY_MS;
+      return clone;
+    });
+  }
+  function _recomputeBounds() {
+    var s = Infinity, e = -Infinity;
+    for (var i = 0; i < _ops.length; i++) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
+    if (isFinite(s)) { _projectStart = s; _projectEnd = e; }
+  }
+  // toggle whether the 3D SCENE animates the actual variant (the user's "scene animating only the actual").
+  function _toggleWatchActual() {
+    _watchActual = !_watchActual;
+    if (_watchActual) { if (!_opsPlanned) _opsPlanned = _ops.slice(); _opsActual = _buildActualOps(); _ops = _opsActual; }
+    else if (_opsPlanned) { _ops = _opsPlanned; }
+    _recomputeBounds();
+    _cursor = _projectStart;
+    renderAtTime(_cursor); configSlider(); updateStatus();
+    if (_ganttVisible) drawGanttMini();
+    if (_dashVisible) drawDashboard();
+    drawVariance();
+    console.log('§TM_VARIANCE_WATCH actual=' + _watchActual + ' ops=' + _ops.length + ' end=' + new Date(_projectEnd).toISOString().slice(0, 10));
+  }
+  function drawVariance() {
+    if (!_ops.length) return;
+    if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline
+    var V = _computeVariance();
+    var fmtD = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+
+    // header — the headline totals + a Watch-Actual toggle
+    var head = document.getElementById('tm-var-head');
+    if (head) {
+      head.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">' +
+          '<b style="color:#4fc3f7">Budget vs Actual</b>' +
+          '<button id="tm-var-watch" class="' + (_watchActual ? 'tm-active' : '') + '" style="font-size:9px;padding:2px 6px">' +
+            (_watchActual ? '▶ Watching Actual' : '▶ Watch Actual') + '</button>' +
+        '</div>' +
+        '<div style="margin-top:2px">Cost <b style="color:#9fd6ff">' + _money(V.tP) + '</b> → ' +
+          '<b style="color:#ff6b6b">' + _money(V.tA) + '</b> ' +
+          '<span style="color:' + (V.dCost >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.dCost >= 0 ? '+' : '') + V.pctOver + '%, ' +
+          (V.dCost >= 0 ? '+' : '') + _money(V.dCost) + ')</span></div>' +
+        '<div>Finish <span style="color:#9fd6ff">' + fmtD(V.plannedEnd) + '</span> → ' +
+          '<span style="color:#ff6b6b">' + fmtD(V.actualEnd) + '</span> ' +
+          '<b style="color:' + (V.lateDays >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.lateDays >= 0 ? '+' : '') + V.lateDays + 'd)</b></div>';
+      var wb = document.getElementById('tm-var-watch');
+      if (wb) wb.addEventListener('pointerup', function (e) { e.stopPropagation(); _toggleWatchActual(); });
+    }
+
+    // canvas — paired bars per phase on ONE timeline: planned (muted) over actual (vivid + red over-run tail)
+    var canvas = document.getElementById('tm-var-canvas');
+    var box = document.getElementById('tm-var-box');
+    if (canvas && box) {
+      var phases = V.phases, n = phases.length;
+      var pairH = 7, gap = 2, rowH = pairH * 2 + gap + 6, marginL = 64;
+      var cW = box.clientWidth, cH = n * rowH + 6, barW = cW - marginL - 6;
+      var range = Math.max(1, V.actualEnd - V.t0);
+      canvas.width = cW * (window.devicePixelRatio || 1);
+      canvas.height = cH * (window.devicePixelRatio || 1);
+      canvas.style.height = cH + 'px';
+      var ctx = canvas.getContext('2d');
+      ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+      ctx.clearRect(0, 0, cW, cH);
+      ctx.textBaseline = 'middle'; ctx.font = '9px sans-serif';
+      for (var ti = 0; ti < n; ti++) {
+        var p = phases[ti], color = PHASE_COLORS[p.phase] || '#888', y = ti * rowH + 4;
+        // label
+        ctx.fillStyle = p.marquee ? '#ff8c00' : '#bbb'; ctx.textAlign = 'right';
+        ctx.fillText((p.marquee ? '⚠ ' : '') + p.phase.substring(0, 11), marginL - 4, y + pairH);
+        // planned bar (muted)
+        var px = marginL + (p.pStart - V.t0) / range * barW, pw = Math.max(2, (p.pEnd - p.pStart) / range * barW);
+        ctx.globalAlpha = 0.30; ctx.fillStyle = color; ctx.fillRect(px, y, pw, pairH);
+        // actual bar (vivid) + red over-run tail beyond planned finish
+        var ax = marginL + (p.aStart - V.t0) / range * barW, aw = Math.max(2, (p.aEnd - p.aStart) / range * barW);
+        var ay = y + pairH + gap;
+        ctx.globalAlpha = 0.9; ctx.fillStyle = color; ctx.fillRect(ax, ay, aw, pairH);
+        var plannedEndX = marginL + (p.pEnd - V.t0) / range * barW;
+        if (p.aEnd > p.pEnd) { ctx.fillStyle = '#e53935'; var tx = Math.max(ax, plannedEndX); ctx.fillRect(tx, ay, (ax + aw) - tx, pairH); }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // compact per-phase variance list
+    var list = document.getElementById('tm-var-list');
+    if (list) {
+      var html = '';
+      V.phases.forEach(function (p) {
+        var dc = (p.dCost >= 0 ? '+' : '') + _money(p.dCost), dd = (p.dDays >= 0 ? '+' : '') + p.dDays + 'd';
+        var col = (p.dCost > 0 || p.dDays > 0) ? '#ff6b6b' : '#26a69a';
+        html += '<div style="display:flex;justify-content:space-between;gap:6px">' +
+          '<span>' + (p.marquee ? '⚠ ' : '') + p.phase + '</span>' +
+          '<span style="color:' + col + '">' + dd + ' · ' + dc + '</span></div>';
+      });
+      list.innerHTML = html;
+    }
+    console.log('§TM_VARIANCE phases=' + V.phases.length + ' plannedCost=' + V.tP + ' actualCost=' + V.tA +
+      ' over=' + V.pctOver + '% lateDays=' + V.lateDays + ' watch=' + _watchActual);
+  }
 
   function drawGanttMini() {
     if (!_ops.length) return;
@@ -3230,6 +3415,11 @@
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
     var ganttBox = document.getElementById('tm-gantt-box');
     if (ganttBox) ganttBox.classList.remove('open');
+    // §TM-VARIANCE: restore the planned ops (undo any "Watch Actual" swap) + reset the drawer state.
+    if (_watchActual && _opsPlanned) { _ops = _opsPlanned; _recomputeBounds(); }
+    _watchActual = false; _varVisible = false; _opsPlanned = null; _opsActual = null;
+    var varBtn = document.getElementById('tm-var'); if (varBtn) varBtn.classList.remove('tm-active');
+    var varBox = document.getElementById('tm-var-box'); if (varBox) varBox.classList.remove('open');
     toggleDashDOM(false);
     _active = false;
     _panel.style.display = 'none';
