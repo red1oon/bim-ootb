@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v733';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v734';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -114,7 +114,8 @@ const PRECACHE_ASSETS = [
   'pills.json',
   'idmp_pills.js',     // §A — iDempiere bar registration layer (binds pills_idmp.json fn BY ID to IdmpPillActions)
   'pills_idmp.json',   // §A — sibling manifest for the iDempiere renderer surface (GATE-1: separate from pills.json)
-  'redpill.png',       // RED PILL img — the contextual "Link to BIM Viewer" pill (showWhen:bim-record)
+  'zoom_across.js',    // abstract cross-surface Zoom Across registry (record → related surface; window.ZoomAcross)
+  'redpill.png',       // RED PILL img — the contextual "Zoom Across" pill (showWhen:zoom-across)
   'idmp_history.js',   // §B — cross-tab history scrubber (Glassbowl #scrub pattern, read-only restore)
   'glassbowl_pills.js',   // §GB-PILLS — Glassbowl+Gravity ⋯ registry binding (binds pills_glassbowl/gravity.json BY ID)
   'pills_glassbowl.json', // §GB-PILLS — Glassbowl manifest (home/trace/untangle/reset/mute/panel/edit/qr/showme/about)
