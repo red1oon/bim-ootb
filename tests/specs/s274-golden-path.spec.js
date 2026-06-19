@@ -18,8 +18,9 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
 
   test('GP.1 Drop IFC on landing page @slow', async ({ page }) => {
     const logs = new ConsoleLogs(page);
-    await page.goto('/bim-ootb/index.html', { waitUntil: 'load' });
-    await page.waitForSelector('#import-zone', { timeout: 10000 });
+    await page.goto('/bim-ootb/index.html?home=1', { waitUntil: 'load' });   // matrix landing (?home = skip the red/blue gate → circle)
+    await page.evaluate(() => openHub());                                    // import lives behind the Buildings / IFC door
+    await page.waitForSelector('#m-import-zone', { timeout: 10000 });
 
     // Clean previous
     await page.evaluate(async (k) => {
@@ -44,8 +45,9 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
 
     // Drop → the import auto-opens the viewer ITSELF (the "My Buildings" card was removed 2026-06-19,
     // so there is no card to click — the drop must open the viewer on its own).
-    await page.goto('/bim-ootb/index.html', { waitUntil: 'load' });
-    await page.waitForSelector('#import-zone', { timeout: 10000 });
+    await page.goto('/bim-ootb/index.html?home=1', { waitUntil: 'load' });   // matrix landing (?home = skip the red/blue gate → circle)
+    await page.evaluate(() => openHub());                                    // import lives behind the Buildings / IFC door
+    await page.waitForSelector('#m-import-zone', { timeout: 10000 });
     await page.evaluate(async (k) => {
       if (typeof deleteProject === 'function') try { await deleteProject(k); } catch(e) {}
     }, KEY);
@@ -116,8 +118,9 @@ test.describe('S274 Golden Path — Drop → Open → Stream → Save', () => {
     const logs = new ConsoleLogs(page);
 
     // Import first
-    await page.goto('/bim-ootb/index.html', { waitUntil: 'load' });
-    await page.waitForSelector('#import-zone', { timeout: 10000 });
+    await page.goto('/bim-ootb/index.html?home=1', { waitUntil: 'load' });   // matrix landing (?home = skip the red/blue gate → circle)
+    await page.evaluate(() => openHub());                                    // import lives behind the Buildings / IFC door
+    await page.waitForSelector('#m-import-zone', { timeout: 10000 });
     await page.evaluate(async (k) => {
       if (typeof deleteProject === 'function') try { await deleteProject(k); } catch(e) {}
     }, KEY);
