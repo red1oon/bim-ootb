@@ -459,6 +459,109 @@ async function setupScene(A) {
     } catch(e) { return null; }
   };
 
+  // ── Save Building → native Save As… (FSA), fallback download. Writes one self-contained .db. ──
+  // Monolith (A.libDb === A.db): A.db already holds meta+geometry → export directly.
+  // Split (A.db=meta, A.libDb=geometry): fold the geometry tables into a meta clone so the saved
+  // single file re-opens WITH geometry (no-cubes gate — never save a geometry-less stub).
+  A._exportBuildingDb = function() {
+    if (!A.db) return null;
+    if (!A.libDb || A.libDb === A.db) {
+      console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
+      return A.db.export();
+    }
+    // Split → build a monolith: clone meta, copy every geometry table not already present.
+    var Database = A.db.constructor;
+    var mono = new Database(A.db.export());
+    var have = {};
+    var mres = mono.exec("SELECT name FROM sqlite_master WHERE type='table'");
+    if (mres[0]) mres[0].values.forEach(function(r){ have[r[0]] = 1; });
+    var copied = 0, rows = 0;
+    var gres = A.libDb.exec("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+    if (gres[0]) gres[0].values.forEach(function(r){
+      var tname = r[0], tsql = r[1];
+      if (have[tname]) return;            // meta already owns it — don't clobber
+      mono.run(tsql);
+      var data = A.libDb.exec("SELECT * FROM " + tname);
+      if (data[0] && data[0].values.length) {
+        var cols = data[0].columns, ph = cols.map(function(){ return '?'; }).join(',');
+        var stmt = mono.prepare("INSERT INTO " + tname + " VALUES (" + ph + ")");
+        data[0].values.forEach(function(v){ stmt.run(v); rows++; });
+        stmt.free();
+      }
+      copied++;
+    });
+    console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
+    var bytes = mono.export();
+    mono.close();
+    return bytes;
+  };
+
+  A.saveModelDb = async function() {
+    if (!A.db) { if (A.status) A.status.textContent = 'Open a building first'; console.log('§SAVE_SKIP no A.db'); return; }
+    var name = (A.activeBuilding || 'building').replace(/\.(ifc|db)$/i, '') + '.db';
+    var bytes;
+    try { bytes = A._exportBuildingDb(); }
+    catch (e) { if (A.status) A.status.textContent = 'Save failed: ' + e.message; console.log('§SAVE_ERR ' + e.message); return; }
+    if (!bytes) { console.log('§SAVE_SKIP export null'); return; }
+    var blob = new Blob([bytes], { type: 'application/x-sqlite3' });
+    // Native Save As… (Chromium FSA) — the traditional desktop dialog. Fallback = download.
+    if (window.showSaveFilePicker) {
+      try {
+        var handle = await window.showSaveFilePicker({ suggestedName: name,
+          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db'] } }] });
+        var w = await handle.createWritable(); await w.write(blob); await w.close();
+        if (A.status) A.status.textContent = 'Saved ' + handle.name;
+        console.log('§SAVE_DONE mode=fsa name=' + handle.name + ' bytes=' + bytes.byteLength);
+        return;
+      } catch (e) { if (e.name === 'AbortError') { console.log('§SAVE_CANCEL user'); return; } /* else fall through to download */ }
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    if (A.status) A.status.textContent = 'Saved ' + name + ' (download)';
+    console.log('§SAVE_DONE mode=download name=' + name + ' bytes=' + bytes.byteLength);
+  };
+
+  // ── Open Building → native Open… (FSA / file input). Picks a saved .db, replaces the scene. ──
+  // Mirrors the import monolith path: stash bytes in the cache store, navigate viewer with ?db=import://…
+  A._openDbBytes = async function(fileName, bytes) {
+    var key = fileName.replace(/\.(db|sqlite)$/i, '') + '.db';
+    var dbUrl = 'import://' + key + '/v0';
+    var cacheDb = await A.openCacheDB();
+    if (!cacheDb) { if (A.status) A.status.textContent = 'Cache unavailable'; return; }
+    await new Promise(function(resolve){
+      var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
+      tx.objectStore(A.CACHE_STORE).put(bytes, dbUrl);
+      tx.oncomplete = resolve; tx.onerror = resolve;
+    });
+    console.log('§OPEN_DB cached key=' + key + ' bytes=' + bytes.byteLength + ' → navigate');
+    location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
+  };
+
+  A.openModelDb = async function() {
+    // Native Open… (Chromium FSA). Fallback = hidden <input type=file>.
+    if (window.showOpenFilePicker) {
+      try {
+        var picks = await window.showOpenFilePicker({ multiple: false,
+          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db', '.sqlite'] } }] });
+        var file = await picks[0].getFile();
+        var buf = await file.arrayBuffer();
+        console.log('§OPEN_PICK mode=fsa name=' + file.name + ' bytes=' + buf.byteLength);
+        await A._openDbBytes(file.name, new Uint8Array(buf));
+        return;
+      } catch (e) { if (e.name === 'AbortError') { console.log('§OPEN_CANCEL user'); return; } /* fall through */ }
+    }
+    var input = document.createElement('input'); input.type = 'file'; input.accept = '.db,.sqlite'; input.style.display = 'none';
+    input.addEventListener('change', async function(){
+      if (!input.files.length) return;
+      var file = input.files[0]; var buf = await file.arrayBuffer();
+      console.log('§OPEN_PICK mode=input name=' + file.name + ' bytes=' + buf.byteLength);
+      await A._openDbBytes(file.name, new Uint8Array(buf));
+      document.body.removeChild(input);
+    });
+    document.body.appendChild(input); input.click();
+  };
+
   A.cachedFetch = async function(url) {
     const cacheDb = await A.openCacheDB();
     if (cacheDb) {
@@ -893,7 +996,8 @@ async function setupScene(A) {
     'r':  function() { if (typeof toggleRecord === 'function') toggleRecord(); },
     'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
     'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
-    ',':  function() { if (typeof toggleDocPill === 'function') toggleDocPill(); }, // §S281: comma = Doc mode (was 'e')
+    'Ctrl+S': function() { if (A.saveModelDb) A.saveModelDb(); },   // Save Building → native Save As…
+    'Ctrl+O': function() { if (A.openModelDb) A.openModelDb(); },   // Open Building → native Open…
     '=':  function() { // §S281: settings panel toggle — call action directly (pill wires
       // pointerup, so a synthetic btn.click() never reached it; don't depend on the DOM button).
       if (typeof window._openSettingsPanel === 'function') { window._openSettingsPanel(); console.log('§SETTINGS_TOGGLE via=keyboard'); }
@@ -1652,6 +1756,10 @@ async function setupScene(A) {
     if (e.altKey && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); console.log('§KBD_ROUTE Alt+X → ghost-xray'); if (window.S) window.S('KBD_ROUTE', 'Alt+X → ghost-xray', { ghost: true }); if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); else if (A.loadNavigate) A.loadNavigate().then(function(){ if (window.toggleGhostXray) window.toggleGhostXray(); }); return; }
     if (e.key === 'F1') { e.preventDefault(); console.log('§KBD_ROUTE F1 → help'); showCommandPalette(); return; }
     if (e.key === 'F11') { e.preventDefault(); console.log('§KBD_ROUTE F11 → fullscreen'); A.toggleFullscreen(); return; }
+    // Ctrl/Cmd+S = Save Building, Ctrl/Cmd+O = Open Building — preventDefault suppresses the browser's
+    // own Save-page / Open-file so the native app-style dialogs take over (traditional document verbs).
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); console.log('§KBD_ROUTE Ctrl+S → save'); if (A.saveModelDb) A.saveModelDb(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); console.log('§KBD_ROUTE Ctrl+O → open'); if (A.openModelDb) A.openModelDb(); return; }
 
     var noMod = !e.ctrlKey && !e.altKey && !e.metaKey;
     var notInput = e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA';
