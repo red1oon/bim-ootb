@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v721';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v723';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -28,8 +28,6 @@ const CDN_ASSETS = [
 const PRECACHE_ASSETS = [
   'erp.html',
   'idempiere.html',
-  'bim_embed.js',     // BIM_EMBED §B2 — BIM-set DETECT (bimSetForTable), W-BIM-EMBED
-  'bim_panel.js',     // BIM_EMBED §B2 — dock/float/max embed panel
   'ad_charts.js',
   'ad_data.js',
   'ad_docfsm.js',

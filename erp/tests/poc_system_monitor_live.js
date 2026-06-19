@@ -33,7 +33,9 @@ var server = http.createServer(function (req, res) {
   // ── login info panel ──────────────────────────────────────────────────────────────────────────────────────────
   var panel = await page.evaluate(function () {
     var info = document.getElementById('idmp-login-info');
-    return { present: !!info, text: info ? info.textContent.replace(/\s+/g, ' ').trim() : '', link: !!document.getElementById('idmp-sysmon-link') };
+    var em = document.getElementById('idmp-creator-email'), lic = document.getElementById('idmp-creator-license');
+    return { present: !!info, text: info ? info.textContent.replace(/\s+/g, ' ').trim() : '', link: !!document.getElementById('idmp-sysmon-link'),
+      emailHref: em ? em.getAttribute('href') : null, licHref: lic ? lic.getAttribute('href') : null };
   });
 
   // ── open the monitor + read what it rendered ──────────────────────────────────────────────────────────────────
@@ -70,6 +72,8 @@ var server = http.createServer(function (req, res) {
   ck(panel.present && panel.link, 'login info panel renders with a System Monitor link');
   ck(/SuperUser \/ System/.test(panel.text) && /GardenAdmin \/ GardenAdmin/.test(panel.text), 'panel shows the default credential hints (System: SuperUser/System · GardenWorld: GardenAdmin/GardenAdmin)');
   ck(/serverless/.test(panel.text), 'panel states the serverless / SQLite-wasm posture + version line');
+  ck(/Redhuan D\. Oon \(red1\)/.test(panel.text) && panel.emailHref === 'mailto:red1org@gmail.com', 'creator credit: Redhuan D. Oon (red1 → mailto:red1org@gmail.com)');
+  ck(/MIT License 2005\/6/.test(panel.text) && /github\.com\/red1oon/.test(panel.licHref || ''), 'MIT License 2005/6 → GitHub (' + panel.licHref + ')');
   ck(/§SYSTEM-MONITOR open/.test(L) && /§SYSTEM-MONITOR gather/.test(L), 'clicking the link opens the monitor (gather ran)');
   var want = ['System', 'Memory', 'Cache', 'Logs & Trace', 'Servers & Cluster', 'Database'];
   ck(want.every(function (g) { return mon.groups.indexOf(g) >= 0; }), 'monitor mirrors iDempiere sections: ' + want.join(', '));
