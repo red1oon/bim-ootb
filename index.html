@@ -175,7 +175,7 @@
 
 <script>
 'use strict';
-function L(){ console.log.apply(console,['[index2]'].concat([].slice.call(arguments))); }
+function L(){ console.log.apply(console,['[landing]'].concat([].slice.call(arguments))); }
 
 // ============ screen switch (rail hidden on Morpheus gate + blue end) ============
 function show(id){
@@ -325,7 +325,7 @@ var LAUNCHERS=[
   { id:'gps',   key:'grid',       name:'Buildings / IFC', center:true, fn:function(){ openHub(); } },
   { id:'bonsai',key:'bonsaiTree', name:'BIM Modeller',    fn:function(){ launchModeller(); } },
   { id:'erp',   key:'barChart',   name:'ERP',             fn:function(){ go('erp/erp.html'); } },
-  { id:'doc',   key:'lightbulb',  name:'Docs / Compare',  fn:function(){ openTab('https://red1oon.github.io/BIMCompiler/StrategicIndustryPositioning/'); } },
+  { id:'doc',   key:'lightbulb',  name:'User Guide',  fn:function(){ openTab('https://red1oon.github.io/BIMCompiler/USER_GUIDE/'); } },
   { id:'help',  key:'circleHelp', name:'About',           fn:function(){ openAbout(); } },
   { id:'flag',  key:'flag',       name:'Language',        fn:function(){ openFlags(); } },
   { id:'watch', key:'video',      name:'Watch demo',      fn:function(){ openTab('https://youtu.be/hnLYNcRihzs'); } },
