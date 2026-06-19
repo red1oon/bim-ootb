@@ -6,7 +6,7 @@ const ROOT='/tmp/wt-mplate';
 const IFC=path.join(process.env.HOME,'bim-compiler/reference/residential/Ifc4_WallElementedCase.ifc');
 const pup=require(path.join(process.env.HOME,'bim-compiler','node_modules','puppeteer'));
 const MIME={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.wasm':'application/wasm','.json':'application/json','.css':'text/css','.jpg':'image/jpeg','.png':'image/png','.db':'application/octet-stream','.ifc':'text/plain'};
-const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]);if(p==='/')p='/index2.html';fs.readFile(path.join(ROOT,p),(e,b)=>{if(e){r.writeHead(404);return r.end('404 '+p);}r.writeHead(200,{'Content-Type':MIME[path.extname(p)]||'application/octet-stream','Access-Control-Allow-Origin':'*'});r.end(b);});});
+const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]);if(p==='/')p='/index.html';fs.readFile(path.join(ROOT,p),(e,b)=>{if(e){r.writeHead(404);return r.end('404 '+p);}r.writeHead(200,{'Content-Type':MIME[path.extname(p)]||'application/octet-stream','Access-Control-Allow-Origin':'*'});r.end(b);});});
 let pass=0,fail=0; const ck=(n,o)=>{console.log((o?'  PASS ':'  FAIL ')+n);o?pass++:fail++;};
 (async()=>{
  await new Promise(r=>srv.listen(0,r));const port=srv.address().port;
@@ -15,7 +15,7 @@ let pass=0,fail=0; const ck=(n,o)=>{console.log((o?'  PASS ':'  FAIL ')+n);o?pas
  const logs=[]; pg.on('console',m=>{const t=m.text();if(/§|Failed|error/i.test(t))logs.push(t);});
  pg.on('pageerror',e=>console.log('  ERR '+String(e).slice(0,200)));
  await pg.evaluateOnNewDocument(()=>{window.__opened=[];window.open=(u)=>{window.__opened.push(u);return{focus(){}}};});
- await pg.goto(`http://localhost:${port}/index2.html?home=1`,{waitUntil:'load',timeout:60000});
+ await pg.goto(`http://localhost:${port}/index.html?home=1`,{waitUntil:'load',timeout:60000});
  await pg.waitForSelector('#portal.active',{timeout:8000}).catch(()=>{});
  // open the hub directly
  await pg.evaluate(()=>window.openHub());
