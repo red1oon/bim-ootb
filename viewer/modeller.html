@@ -131,8 +131,6 @@
   <button id="b-home" title="Back to the Matrix" onclick="location.href='../index.html?home=1'"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span>Home</span></button>
   <button id="b-fit" title="Zoom to fit (F) — frames the selection, or all"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span>Fit</span></button>
   <button id="b-view" title="Cycle view: Iso / Top"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg><span>Iso</span></button>
-  <button id="b-wall" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Wall</span></button>
-  <button id="b-open" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Opening</span></button>
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
   <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-move" disabled title="Move the selected object — drag an axis handle or nudge with arrow keys (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg><span>Move</span></button>
@@ -151,8 +149,6 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
-  <button id="b-undo" disabled title="Undo last (Ctrl+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg><span>Undo</span></button>
-  <button id="b-redo" disabled title="Redo (Ctrl+Shift+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg><span>Redo</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
@@ -297,10 +293,10 @@ window.addEventListener('keydown', (e) => {
 const WALL = { id: 1, op_type: 'GEOM_EXTRUDE', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3] } };
 const OPENING = { id: 2, op_type: 'GEOM_OPENING', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3], void: { c1: [1, -1, 1], c2: [2, 1, 2] } } };
 
-const bWall = document.getElementById('b-wall');
-const bOpen = document.getElementById('b-open');
 const bClear = document.getElementById('b-clear');
 
+// author() stays as the headless ?author=wall|opening witness seam (the Wall/Opening pill buttons were retired —
+// real authoring is Sketch + Insert; WALL/OPENING are the sample primitives the witness folds directly).
 async function author(op, color) {
   setStat('folding ' + op.op_type + '…');
   try {
@@ -309,8 +305,6 @@ async function author(op, color) {
     audioCue('author');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
 }
-bWall.onclick = () => author(WALL, 0x9fb4c8);
-bOpen.onclick = () => author(OPENING, 0xc8a99f);
 bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); setStat('cleared'); };
 
 // ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
@@ -1443,14 +1437,11 @@ window.addEventListener('keydown', (e) => {                       // R rotates t
 });
 
 // ── EDIT: Delete (selected) / Undo / Redo (operability leg 2) — soft-delete via the signed op-log ──────
-const bUndo = document.getElementById('b-undo'), bRedo = document.getElementById('b-redo'), bDel = document.getElementById('b-del');
-function refreshEditButtons() {                                   // enable Undo/Redo by what's available
-  const O = window.Bonsai.oplog; if (!O || !O.db) { bUndo.disabled = bRedo.disabled = true; return; }
-  const all = O._allGeom();
-  bUndo.disabled = !all.some(o => !o.undone);
-  bRedo.disabled = !all.some(o => o.undone);
-}
-window.addEventListener('bonsai:oplog', refreshEditButtons);
+// Undo/Redo carry NO pill button — the history scrubber is the visible retreat (a strict superset). They live on
+// as the Ctrl+Z / Ctrl+⇧Z keyboard verbs (doUndo/doRedo) and a row in the ? help panel.
+const bDel = document.getElementById('b-del');
+async function doUndo() { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } }
+async function doRedo() { const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); } }
 async function deleteSelected() {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
   if (!ids.length) return;
@@ -1459,8 +1450,6 @@ async function deleteSelected() {
   setStat(ids.length > 1 ? ('deleted ' + ids.length + ' features') : ('deleted feature #' + ids[0])); syncHistory();
 }
 bDel.onclick = () => deleteSelected();
-bUndo.onclick = async () => { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } };
-bRedo.onclick = async () => { const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); } };
 window.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
   if (typing) return;
@@ -1469,14 +1458,14 @@ window.addEventListener('keydown', (e) => {
     else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); }
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? bRedo : bUndo).onclick(); }
-  else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); bRedo.onclick(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); doRedo(); }
   else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.points.length) { e.preventDefault(); window.Bonsai.sketch.points.pop(); sketchMarkers(); setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points'); }
   else if (e.key === 'Backspace' && routing && routePts.length) { e.preventDefault(); routePts.pop(); routeMarkers(); bRun.disabled = routePts.length < 2; setStat('route: ' + routePts.length + ' points'); }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
+bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -1539,7 +1528,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     applyPill(false);
 
     // ? Help — the PILL REGISTRY: every visible tool's icon + name + keyboard shortcut, built from the live #bar.
-    const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-undo': 'Ctrl+Z', 'b-redo': 'Ctrl+⇧Z', 'b-del': 'Del' };
+    const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-del': 'Del' };   // Undo/Redo are keyboard-only rows below
     const help = document.createElement('button'); help.id = 'm-help'; help.title = 'Help — toolbar & shortcuts';
     help.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>';
     bar.insertBefore(help, bar.firstChild);   // ? is the FIRST button IN the rail (in line, nearest the ⋯), not floating outside
@@ -1554,6 +1543,10 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
         h += '<div class="hp-row"><span class="hp-ic">' + ic.outerHTML + '</span><span class="hp-name">' + name + '</span>' +
           (SHORTCUTS[b.id] ? _kbd(SHORTCUTS[b.id]) : '') + '</div>';
       });
+      // keyboard-only verbs (no pill button) — Undo/Redo retreat via the history scrubber's keys, plus Cancel.
+      h += '<div class="hp-title" style="margin-top:9px">KEYBOARD</div>';
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg></span><span class="hp-name">Undo</span>' + _kbd('Ctrl+Z') + '</div>';
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg></span><span class="hp-name">Redo</span>' + _kbd('Ctrl+⇧Z') + '</div>';
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="hp-name">Cancel current mode</span>' + _kbd('Esc') + '</div>';
       hpanel.innerHTML = h;
     }
