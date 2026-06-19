@@ -104,6 +104,10 @@
     // (amount:null → subtotal/tax/total stay null, qty=MovementQty carried) — honest, never a fabricated total.
     // AD_PROCESS_FOLD_LANE §P2-tail-leg1 — Witness: W-PROC-MINOUT.
     registerHandler('report:m_inout',   receiptHandler('m_inout'),   { kind: 'report', reportKey: 'm_inout' });
+    // report:m_movement — "Rpt M_Movement" (AD_Process 290, "Inventory Move Print"). KIND-1, the warehouse sibling
+    // of report:m_inout (AD_PROCESS_FOLD_LANE §P2-tail-leg2): folds an M_Movement → a NON-FINANCIAL receipt via the
+    // SAME report_overlay.foldReceipt over REPORT_MAP.m_movement — ZERO new fold code, zero host change.
+    registerHandler('report:m_movement',receiptHandler('m_movement'),{ kind: 'report', reportKey: 'm_movement' });
     // report:c_project — "Rpt C_Project" (AD_Process 217, Project Print). KIND-1, folds via the SAME foldReceipt
     // (REPORT_MAP.c_project), no new fold code. AD_PROCESS_FOLD_LANE §P2-leg3 — Witness: W-PROC-PROJPRINT.
     registerHandler('report:c_project', receiptHandler('c_project'), { kind: 'report', reportKey: 'c_project' });
@@ -448,6 +452,10 @@
       // "m_inoutconfirm" — no boundary) and the RV_InOutDetails report-VIEWs (293/294) stay absent-handler.
       // "delivery note"/"shipment print" are the print-format name; "shipment confirmation"/"...details" do NOT match.
       if (/m_inout\b|delivery note|shipment print/.test(hay)) return 'report:m_inout';
+      // "Rpt M_Movement" (290) — M_Movement-SPECIFIC: m_movement\b (word-boundary) so the imperative M_Movement
+      // procs ("M_Movement_Process"/"M_MovementConfirm_Process", 122/286 — isReport=N, never reach here anyway) and
+      // any future RV_Movement* report-VIEW stay absent-handler. "inventory move print" is the unique print name.
+      if (/m_movement\b|inventory move print/.test(hay)) return 'report:m_movement';
       // "Rpt C_Project" (217) — SPECIFIC match (c_project / project print), NOT the broad "project" so the other
       // RV_Project* report-VIEW procs (218 RV_ProjectCycle, 226/228/229/234) stay absent-handler (no foldReceipt
       // for a report view — those are a later report-view fold, not this leg).
