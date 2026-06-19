@@ -1125,7 +1125,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _actionGlyph(a) { return a === 'W' ? '▤' : a === 'R' ? '▦' : a === 'P' ? '▸' : a === 'F' ? '□' : '·'; }
 
   // ── Open a window (MDI tab + toolbar + AD tab-strip) ──
-  function openWindow(windowId, name) {
+  // §ZOOM-ACROSS state — set by _zoomAcross() before opening the destination window; consumed by renderActiveTab
+  //   to filter the header tab to the records that reference the origin record. Cleared on any non-zoom open.
+  var _zoomFilter = null;
+  function openWindow(windowId, name, keepZoom) {
+    if (!keepZoom) _zoomFilter = null;   // a plain menu/tab open is unfiltered; only a zoom-across keeps the filter
     if (!_openWins[windowId]) {
       var win = ADP.getWindow(db, windowId);
       if (!win) { status('Window ' + windowId + ' not found'); return; }
@@ -1137,6 +1141,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _histPush('window');   // §B — window opened / window-tab switched (this is the single activation choke point)
   }
   function closeWindow(windowId) {
+    if (_zoomFilter && _zoomFilter.windowId === windowId) _zoomFilter = null;   // drop a stale where-used filter
     delete _openWins[windowId];
     var ids = Object.keys(_openWins);
     if (windowId === _activeWin) {
@@ -1220,6 +1225,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         ? ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.settings.svg + '</svg> ')
         : '⚙ ';
       btn(gear + 'Process', 'Process (Alt+P) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      // Zoom Across — iDempiere's btnZoomAcross (magnifier, verified vs theme ZoomAcross24.png). WHERE-USED:
+      //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
+      //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
+      btn(ic('search', '🔍') + 'Zoom', 'Zoom Across — windows that reference this record',
+        hasRec, function () { _zoomAcross(tab, rec); });
       sep();
     })();
     // P2 (prompts/CRUD_INPLACE_EDIT_SESSION.md) — NO ✎ Edit button. The form view is DIRECTLY editable in place
@@ -1252,6 +1262,69 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       sep();
       btn('🕒 Log', 'Change log for this record (AD-filtered)', true, function () { _showChangelog(tn); });
     })();
+  }
+
+  // ── Zoom Across (iDempiere btnZoomAcross / WZoomAcross / ZoomInfoFactory) — WHERE-USED drill ──────────────
+  //   For the current record (table T, key col KC, pk value K), fold the AD: every table that (a) has a column
+  //   named KC, (b) is NOT T, (c) is the HEADER (TabLevel 0) tab of its default AD_Table.AD_Window_ID — then
+  //   COUNT rows in that table WHERE KC=K (skip tables absent from the seed). Keep count>0 → the windows that
+  //   reference this record. Pure fold of AD + data: no invented destinations. (matches iDempiere onZoomAcross.)
+  function _zoomDestinations(tab, rec) {
+    var T = tab.tableName, KC = _keyCol(tab); if (!T || !KC) return [];
+    var K = rec ? recVal(rec, KC) : null; if (K == null || K === '') return [];
+    var cands = [];
+    try {
+      var r = db.exec(
+        "SELECT DISTINCT t.TableName, t.AD_Window_ID, w.Name " +
+        "FROM AD_Column col " +
+        "JOIN AD_Table t ON col.AD_Table_ID=t.AD_Table_ID " +
+        "JOIN AD_Window w ON t.AD_Window_ID=w.AD_Window_ID " +
+        "JOIN AD_Tab tb ON tb.AD_Table_ID=t.AD_Table_ID AND tb.AD_Window_ID=t.AD_Window_ID " +
+        "          AND COALESCE(tb.TabLevel,0)=0 AND COALESCE(tb.IsActive,'Y')='Y' " +
+        "WHERE UPPER(col.ColumnName)=UPPER(?) AND UPPER(t.TableName)!=UPPER(?) " +
+        "  AND COALESCE(t.IsActive,'Y')='Y' AND COALESCE(w.IsActive,'Y')='Y' " +
+        "ORDER BY w.Name", [KC, T]);
+      if (r.length) r[0].values.forEach(function (v) { cands.push({ table: v[0], windowId: v[1], name: v[2] }); });
+    } catch (e) { return []; }
+    var out = [];
+    cands.forEach(function (c) {
+      if (!_tableExists(c.table) || !_colExists(c.table, KC)) return;   // honest: table absent from the seed → skip
+      var n = 0;
+      try { var cr = db.exec('SELECT COUNT(*) FROM ' + c.table + ' WHERE ' + KC + '=' + _lit(K)); n = (cr.length && cr[0].values.length) ? cr[0].values[0][0] : 0; }
+      catch (e) { return; }
+      if (n > 0) out.push({ table: c.table, windowId: c.windowId, name: c.name, col: KC, val: K, count: n });
+    });
+    return out;
+  }
+  function _zoomAcross(tab, rec) {
+    var dests = _zoomDestinations(tab, rec);
+    console.log('§ZOOM-ACROSS table=' + tab.tableName + ' key=' + _keyCol(tab) + '=' + recVal(rec, _keyCol(tab)) +
+      ' destinations=' + dests.length + ' ' + JSON.stringify(dests.map(function (d) { return d.name + '(' + d.count + ')'; })));
+    var old = document.getElementById('idmp-zoom-ov'); if (old) old.remove();
+    if (!dests.length) { status('Zoom Across — no other windows reference this record'); return; }
+    var ov = el('div', null); ov.id = 'idmp-zoom-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center';
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    var box = el('div', null);
+    box.style.cssText = 'background:var(--idmp-panel,#fff);color:var(--idmp-fg,#1c1c1c);border:1px solid var(--idmp-border,#c9c9c9);border-radius:8px;padding:10px 0;min-width:280px;max-width:92vw;max-height:72vh;overflow:auto;box-shadow:0 8px 28px rgba(0,0,0,.35);font:13px system-ui';
+    var hdr = el('div', null, 'Zoom Across'); hdr.style.cssText = 'font-weight:700;padding:2px 16px 8px;border-bottom:1px solid var(--idmp-border,#e0e0e0);margin-bottom:4px';
+    box.appendChild(hdr);
+    dests.forEach(function (d) {
+      var it = el('div', null);
+      it.style.cssText = 'padding:7px 16px;cursor:pointer;display:flex;justify-content:space-between;gap:18px;align-items:center';
+      it.onmouseover = function () { it.style.background = 'var(--idmp-hover,#eef3fb)'; };
+      it.onmouseout = function () { it.style.background = ''; };
+      var nm = el('span', null, d.name); var ct = el('span', null, '(' + d.count + ')'); ct.style.cssText = 'color:var(--idmp-muted,#888);font-variant-numeric:tabular-nums';
+      it.appendChild(nm); it.appendChild(ct);
+      it.addEventListener('click', function () {
+        ov.remove();
+        _zoomFilter = { windowId: d.windowId, table: d.table, col: d.col, val: d.val };
+        console.log('§ZOOM-ACROSS-OPEN window=' + d.name + '(' + d.windowId + ') filter=' + d.col + '=' + d.val);
+        openWindow(d.windowId, d.name, true);   // keepZoom — renderActiveTab applies the where-used filter
+      });
+      box.appendChild(it);
+    });
+    ov.appendChild(box); document.body.appendChild(ov);
   }
 
   // Task 2 — AD_User name map (iDempiere change-log shows the user NAME, never the raw AD_User_ID).
@@ -1549,6 +1622,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
       }
     }
+    // ── Zoom Across filter: while a where-used drill is active on THIS window, the header tab shows only the
+    //    records that reference the origin record (iDempiere opens the destination window filtered to the query).
+    if (_zoomFilter && _zoomFilter.windowId === _activeWin && (tab.tabLevel || 0) === 0 &&
+        _zoomFilter.table && String(_zoomFilter.table).toLowerCase() === String(tab.tableName).toLowerCase() &&
+        _colExists(tab.tableName, _zoomFilter.col)) {
+      clauses.push(_zoomFilter.col + '=' + _lit(_zoomFilter.val));
+      mdNote = (mdNote ? mdNote + ' ' : '') + 'zoomAcross=' + _zoomFilter.col + '=' + _zoomFilter.val;
+      console.log('§ZOOM-ACROSS-FILTER table=' + tab.tableName + ' ' + _zoomFilter.col + '=' + _zoomFilter.val);
+    }
     var where = clauses.length ? clauses.join(' AND ') : null;
     var orderBy = tab.orderByClause && tab.orderByClause.indexOf('@') < 0 ? tab.orderByClause : null;
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
@@ -1560,6 +1642,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
     console.log('§IDEMPIERE tab=' + tab.name + ' table=' + tab.tableName + ' rows=' + _records.length + ' fields=' + (tab.fields ? tab.fields.length : 0) + (mdNote ? ' parentFilter=' + mdNote : '') + ' postingDoc=' + _curPostingDoc);
     renderBody();
+    // The toolbar was rendered (by openWindow) BEFORE these records loaded, so its record-dependent enable states
+    //   (Copy / Delete / Process / Zoom) were stale (computed against 0 rows). Re-render now that _records is live.
+    renderToolbar();
   }
   function _displayFields(tab) {
     return (tab.fields || []).filter(function (f) { return f.isDisplayed && !f.isKey; });
