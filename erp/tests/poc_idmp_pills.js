@@ -93,23 +93,19 @@ function pillIds(page) {
   console.log('§A-WITNESS-5 mobileBottomDock=' + dock.docked + ' bottom=' + dock.bottom + ' vh=' + dock.vh);
   await page.screenshot({ path: path.join(__dirname, 'idmp_pills_mobile_390.png') });
 
-  // §AD-GATE show-direction: with NO posting doc, 'preview' is off the bar (above). Simulate a posting
-  // document open (the host predicate returns true) + resync → the preview pill must now SURFACE.
-  await page.evaluate(() => { window.IdmpPillDocGate = () => true; if (window.IdmpPills.setDocContext) window.IdmpPills.setDocContext(); });
-  await page.waitForTimeout(300);
-  const idsDoc = await pillIds(page);
-  const gateWorks = !ids.includes('preview') && idsDoc.includes('preview');
-  console.log('§A-WITNESS-6 §AD-GATE noDoc-preview=' + ids.includes('preview') + ' postingDoc-preview=' + idsDoc.includes('preview') + ' gateWorks=' + gateWorks);
+  // §AD-GATE show-direction (Leg 3, RESUME_IDMP_FIDELITY): the per-record accounting (Accts-Posted / Posting-
+  // Preview) was RETIRED from the pill rail — it now surfaces as iDempiere's NATIVE Posted COLUMN/button, role-
+  // gated to accounting roles (MRole.isShowAcct). See tests/poc_posted_column_live.js (W-POSTED-COLUMN). The
+  // remaining showWhen gates ('pos'=pos-station, 'zoomacross'=zoom-across) keep the §AD-GATE mechanism exercised.
 
-  // The mounted set at the login / no-posting-doc / pre-client state (pillIds order = manifest `order`).
-  // §AD-GATED OFF here by design: 'pos' (showWhen:pos-station) + 'preview' (showWhen:posting-doc).
-  // RECONCILED 2026-06-19 (Leg 5) to the LIVE registry — the old list had drifted: 'redpill' RETIRED (PR #366
-  // classic-chrome), 'install'/'migrate' RETIRED (front-door consolidation), 'editmode' RETIRED here (ring is
-  // Glass-only on the iDempiere surface, W-RING-LEAK); 'share'/'home' are the real rail extras. This set now
-  // matches what actually mounts (the witness had been failing on the stale expectation).
-  const EXPECT = ['posted','reports','graph','kanban','rule','warehouse','ninja','erpdoc','showme','plugin','audio','share','home','worldhist'];
+  // The mounted set at the login / pre-client state (pillIds order = manifest `order`).
+  // §AD-GATED OFF here by design: 'pos' (showWhen:pos-station) + 'zoomacross' (showWhen:zoom-across).
+  // RECONCILED 2026-06-20 (Leg 3) to the LIVE registry — 'posted'+'preview' RETIRED (accounting → native Posted
+  // column/button, W-POSTED-COLUMN). Earlier reconciliations: 'redpill' RETIRED (PR #366 classic-chrome),
+  // 'install'/'migrate' RETIRED (front-door consolidation), 'editmode' RETIRED (ring Glass-only, W-RING-LEAK).
+  const EXPECT = ['reports','graph','kanban','rule','warehouse','ninja','erpdoc','showme','plugin','audio','share','home','worldhist'];
   const idsOk = EXPECT.every(id => ids.includes(id)) && ids.length === EXPECT.length;
-  const pass = idsOk && audioOk && gateWorks && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
+  const pass = idsOk && audioOk && bar && !handRoll && iconMiss === 'none' && errs.length === 0 &&
     /source=registry/.test(idmpPillsLog) && /handAuthored=0/.test(idmpPillsLog);
   console.log('§A-RESULT ' + (pass ? 'PASS' : 'FAIL') +
     ' idsOk=' + idsOk + ' audioOk=' + audioOk + ' barPresent=' + !!bar + ' handRollGone=' + !handRoll +
