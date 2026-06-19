@@ -1030,16 +1030,27 @@
           .then(function () { return true; }).catch(function () { return false; });
       } catch (e) { return Promise.resolve(false); }
     }
+    // BIM→Project: every › ERP push outcome gets audio + a clear status (user: "good practice — a status
+    // message, with audio feedback; happy audio when it succeeds"). Reuses the SFX engine (window.__sfx,
+    // rows in sfx.json — NOT hardcoded synth, the wh_walk/PRE-PINNED-FACT idiom). Silent if audio is off.
+    function _pushSfx(id) {
+      var sfx = window.__sfx, ok = !!(sfx && typeof sfx.play === 'function' && id);
+      if (ok) { try { sfx.play(id); } catch (e) { ok = false; } }
+      console.log('[RP-C] §PROJ_PUSH_AUDIO id=' + id + ' sfx=' + (ok ? 'played' : 'absent'));
+    }
+    function _pushReject(msg) { if (A.status) A.status.textContent = msg; _pushSfx('erp_reject'); }
     function _pushToErp() {
       var set = _lastSelSet;
-      if (!set || !set.size) { if (A.status) A.status.textContent = 'Select something to push to ERP'; return; }
-      if (!window.ProjFold) { if (A.status) A.status.textContent = 'ERP push engine not loaded'; console.log('[RP-C] §PROJ_PUSH_DEFER ProjFold absent'); return; }
+      if (!set || !set.size) { _pushReject('Select something to push to ERP'); return; }
+      if (!window.ProjFold) { _pushReject('ERP push engine not loaded'); console.log('[RP-C] §PROJ_PUSH_DEFER ProjFold absent'); return; }
       var building = A.activeBuilding;
       var priced = _selectionPriced(set);
-      if (!priced || !priced.rows.length) { if (A.status) A.status.textContent = 'No priced elements in selection'; return; }
+      // no priced rows = nothing costable (e.g. a single element, or an old-schema model whose transforms
+      // carry no bbox sizes). Say so + a low cue, instead of looking like the push silently did nothing.
+      if (!priced || !priced.rows.length) { _pushReject('Nothing costable in selection — pick a type/storey group (this model may lack element sizes)'); console.log('[RP-C] §PROJ_PUSH_DEFER no priced rows (elements=' + (priced ? priced.elements : 0) + ')'); return; }
       if (A.status) A.status.textContent = 'Folding Project Order…';
       _ensureErpDb().then(function (db) {
-        if (!db) { if (A.status) A.status.textContent = 'ERP db unavailable for push'; console.log('[RP-C] §PROJ_PUSH_DEFER no ERP db'); return; }
+        if (!db) { _pushReject('ERP db unavailable for push'); console.log('[RP-C] §PROJ_PUSH_DEFER no ERP db'); return; }
         var opts = {
           seqRules: window.SEQUENCE_RULES || {}, laborRates: window.LABOR_RATES || {},
           packCurrencyISO: _cur(), now: (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })()
@@ -1085,6 +1096,7 @@
             var url = '../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(r.projectId);
             elErpOpen.setAttribute('href', url);
             elErpOpen.style.display = 'inline-block';
+            _pushSfx('erp_pushed');   // happy chime — Project Order folded + deep-link ready
             console.log('[RP-C] §PROJ_PUSH_LINK project=' + r.projectId + ' order=' + (r.orderId || '-') + ' url=' + url);
           }
         });
