@@ -36,6 +36,14 @@
     m_movement:{ key: 'm_movement',pk: 'm_movement_id',lineTable: 'm_movementline',fk: 'm_movement_id',
                  fkProduct: 'm_product_id', amount: null,        qty: 'movementqty', price: null,
                  date: 'movementdate', total: null },
+    // Rpt M_Inventory (AD_Process 291, "Physical Inventory Print") — the third inventory-document print
+    // (AD_PROCESS_FOLD_LANE §P2-tail-leg3, after m_inout + m_movement). NON-FINANCIAL: a physical count carries
+    // qty=QtyCount (the counted quantity), not money — amount/price/total null. Header M_Inventory + lines
+    // M_InventoryLine; no c_bpartner_id column → partner folds honestly null. SAME foldReceipt, NO new fold code.
+    // The browser lc() helper aliases the bundle's CamelCase (DocumentNo/QtyCount/MovementDate) to these keys.
+    m_inventory:{key: 'm_inventory',pk:'m_inventory_id',lineTable:'m_inventoryline',fk:'m_inventory_id',
+                 fkProduct: 'm_product_id', amount: null,        qty: 'qtycount',    price: null,
+                 date: 'movementdate', total: null },
     // Rpt C_Project (AD_Process 217, "Project Print") — a KIND-1 report folded by the SAME foldReceipt as the
     // order/invoice prints (no new fold code, AD_PROCESS_FOLD_LANE §P2-leg3). A project IS a document: header
     // C_Project + lines C_ProjectLine; the planned amounts are its money (subtotal = Σ PlannedAmt, total = the
