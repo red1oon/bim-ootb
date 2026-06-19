@@ -763,8 +763,15 @@
     statusBar.innerHTML = '<span class=dsbk>' + esc(fname(key)) + '</span><span class=dsbv>' + esc(status + ' · ' + label + note) + '</span>';
   }
   ck.addEventListener('change', function () { if (ck.checked) enable(); else disable(); });
-  // Item 1 — leaving the page with a dirty edit buffers the typing (private, no official dot). beforeunload only.
-  if (typeof window !== 'undefined') window.addEventListener('beforeunload', function () { try { _bufferDraft(); } catch (e) {} });
+  // Item 1 + Leg 4 (W-DIRTY-GATE) — leaving the PAGE with real unsaved content: iDempiere prompts on exit, so we
+  //   trigger the browser's native "leave site?" prompt (preventDefault + returnValue) AND still buffer the typing
+  //   as a private restore-point (the two coexist — the gate is the publish-honesty, the buffer is the safety net).
+  if (typeof window !== 'undefined') window.addEventListener('beforeunload', function (ev) {
+    try {
+      if (_inlineContentDirty()) { ev.preventDefault(); ev.returnValue = ''; }
+      _bufferDraft();
+    } catch (e) {}
+  });
 
   function today() { try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; } }
   // S2B — FOLDED holds host-registered AD-folded specs (one per non-curated table). entryFor prefers the CURATED
@@ -1266,6 +1273,17 @@
   function _inlineDirty() {
     if (!_inlineBaseline || !_formCtx) return false;
     if (_formCtx.verb === 'create') return true;   // a new record (New/Copy) is a pending insert — Save/Save&New/Ignore live from the start (iDempiere parity); validate gates mandatory on Save, nav auto-discards an untouched New
+    var vals = gatherVals(_formCtx.e);
+    return (_formCtx.e.fields || []).some(function (f) {
+      return String(vals[f.col] == null ? '' : vals[f.col]) !== String(_inlineBaseline[f.col] == null ? '' : _inlineBaseline[f.col]);
+    });
+  }
+  // Leg 4 (W-DIRTY-GATE) — CONTENT-aware dirty: unlike _inlineDirty (which reports a New dirty from the start so
+  //   Save lights up), this compares the gathered values to the POST-RENDER baseline for BOTH verbs. So an UNTOUCHED
+  //   New reads CLEAN (nav auto-discards it, iDempiere parity) while a TYPED New / changed Edit reads dirty → the
+  //   host's dirty-exit gate prompts. The host/witness seam for "does leaving here lose real work?".
+  function _inlineContentDirty() {
+    if (!_inlineBaseline || !_formCtx) return false;
     var vals = gatherVals(_formCtx.e);
     return (_formCtx.e.fields || []).some(function (f) {
       return String(vals[f.col] == null ? '' : vals[f.col]) !== String(_inlineBaseline[f.col] == null ? '' : _inlineBaseline[f.col]);
@@ -2450,7 +2468,7 @@
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
                     editInline: editInline, createInline: createInline, copyInline: copyInline,   // P2/P3 (W-INPLACE-*): in-place editable form view (no modal, no ✎ Edit) — edit/new/copy
                     editCell: editCell,   // P4 (W-INPLACE-GRID-LIVE): row-wise grid cell edit → ONE signed CRUD_UPDATE (GridView parity)
-                    ignoreInline: ignoreInline, inlineDirty: _inlineDirty,
+                    ignoreInline: ignoreInline, inlineDirty: _inlineDirty, formNeedsSave: _inlineContentDirty,   // Leg 4 (W-DIRTY-GATE): content-aware "leaving loses real work?" seam
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     fireCreateCallout: fireCreateCallout,   // S2/J4: host glue — AD callout dispatch on a create-form field change (price/defaults)
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
