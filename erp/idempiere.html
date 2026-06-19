@@ -458,7 +458,9 @@
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
+<script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
 <script src="genesis.js?v=2"></script>
+<script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
@@ -795,6 +797,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §B3 — wire the viewer→host pick callback at boot (not only on affordance mount) so a 3D pick always
     // reaches _bimOnFocusRecord, whichever way the panel was opened.
     if (window.BimPanel) window.BimPanel.onFocusRecord = _bimOnFocusRecord;
+    // SYSTEM_ADMIN_LANE §SA1 — make the iDempiere System tenant (client 0, role 0 'System Administrator') a
+    // log-in-able tenant so Initial Tenant Setup is reached the canonical way (System login → menu → wizard) and
+    // stays System-only. Idempotent boot overlay (oracle-sourced rows), never touches ad_seed.db. W-GENESIS-SYSADMIN.
+    if (window.SystemTenant) { try { SystemTenant.ensure(db); } catch (e) { console.log('§SYSTEM-TENANT-ERR ' + e.message); } }
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.
     var shardParam = new URLSearchParams(location.search).get('shard');
     if (shardParam) await installShard(shardParam);
@@ -2208,6 +2214,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §GENPO-LIVE — ProjectGenOrder is RECORD-scoped (getRecord_ID = the C_Project). Its AD trigger button
     // (C_Project.GenerateTo, ref 28) is dropped by the S2B foldCrudSpec, so the menu/process path supplies the
     // project via a picker (decoupled path (a), AD_PROCESS_FOLD_LANE §CONFLICT). Every project row is real seed.
+    // SYSTEM_ADMIN_LANE §SA1 — Initial Client Setup. iDempiere's InitialClientSetup process opens, on our engine,
+    // the genesis wizard EMBEDDED in the chrome (not a redirect to genesis.html) — the canonical System-Admin path
+    // (System login → menu → Initial Tenant Setup). Births a tenant as a signed op-log then installs it resident via
+    // the SHIPPED window.idmpInstallGenesis (#359). Process-access to 53161 is System-only, so a client admin never
+    // reaches here. W-GENESIS-SYSADMIN-LIVE.
+    if (proc.classname === 'org.adempiere.process.InitialClientSetup') { renderGenesisWizard(proc); return; }
     if (proc.classname === 'org.compiere.process.ProjectGenOrder') { renderProjectPicker(proc); return; }
     // §GENSHIP-LIVE — InOutGenerate is record-scoped here (ship ONE order). The menu form is a warehouse-batch
     // selector; we offer the journey-coherent "ship this order" picker (CO Sales Orders), warehouse from the order.
@@ -2278,6 +2290,82 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
+  }
+  // SYSTEM_ADMIN_LANE §SA1 — Initial Tenant Setup wizard, embedded in the iDempiere chrome (System-Admin only).
+  // ~3 inputs + the default CoA → Genesis.birthTenant → a G1..G7 signed op-log → window.idmpInstallGenesis installs
+  // it as a resident, login-able tenant (reband + merge + grant + persist, the SHIPPED verb #359). Same bundle
+  // shape genesis.html stashes; NO redirect (FUNDAMENTAL LAW). NON-INVENT — the engine is the witnessed verb.
+  function renderGenesisWizard(proc) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, proc.name || 'Initial Tenant Setup'));
+    pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · birth a new tenant — '
+      + 'iDempiere default chart of accounts, ~3 inputs. System Administrator only.'));
+    if (!window.Genesis || !window.Genesis.birthTenant || typeof window.idmpInstallGenesis !== 'function') {
+      pane.appendChild(el('div', 'sub', 'Genesis engine not loaded.')); _showProcPane(pane);
+      console.log('§W-GENESIS-SYSADMIN-LIVE wizard-mount FAIL engine-missing'); return;
+    }
+    var fName = el('div', 'fld'); fName.appendChild(el('label', null, 'Tenant (Client) name'));
+    var name = document.createElement('input'); name.value = 'AcmeCo'; name.setAttribute('autocomplete', 'off');
+    name.setAttribute('data-genesis-name', '1'); fName.appendChild(name); pane.appendChild(fName);
+    var fCcy = el('div', 'fld'); fCcy.appendChild(el('label', null, 'Currency'));
+    var ccy = document.createElement('select'); var oc = el('option', null, 'USD — US Dollar'); oc.value = '100'; oc.setAttribute('data-prec', '2');
+    ccy.appendChild(oc); fCcy.appendChild(ccy); pane.appendChild(fCcy);
+    var fAdmin = el('div', 'fld'); fAdmin.appendChild(el('label', null, 'Administrator user'));
+    var admin = document.createElement('input'); admin.value = 'jdoe'; admin.setAttribute('autocomplete', 'off');
+    admin.setAttribute('data-genesis-admin', '1'); fAdmin.appendChild(admin); pane.appendChild(fAdmin);
+    pane.appendChild(el('div', 'sub', 'Chart of accounts: iDempiere default (311 accounts) — folded automatically.'));
+    var actions = el('div', 'actions');
+    var run = el('button', 'run', 'Create tenant'); run.setAttribute('data-genesis-create', '1');
+    var cancel = el('button', null, 'Cancel');
+    var out = el('div', 'sub');
+    cancel.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+    });
+    run.addEventListener('click', function () {
+      var opt = ccy.options[ccy.selectedIndex];
+      var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value),
+        currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: '2024-01-15' };
+      run.disabled = true; run.textContent = 'Creating…';
+      var born;
+      try { born = window.Genesis.birthTenant(input); }
+      catch (e) { out.textContent = 'Genesis failed: ' + e.message; run.disabled = false; run.textContent = 'Create tenant';
+        console.log('§W-GENESIS-SYSADMIN-LIVE create FAIL ' + e.message); return; }
+      console.log('§W-GENESIS-SYSADMIN-LIVE born client=' + input.clientName + ' groups=' + born.groups.length + ' head=' + born.tip.slice(0, 12));
+      // Append a G7 sample invoice (named cols → mergeGenesisInto column-intersects it) — same shape genesis.html
+      // stashes, so the born tenant has a viewable, postable invoice. *_id > base so reband bands it automatically.
+      var invId = 9000001;
+      var bundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups.concat([{
+        seq: born.groups.length + 1, label: 'G7 sample invoice', ops: [
+          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: '2024-01-15', docstatus: 'CO' } },
+          { op: 'CREATE', table: 'c_invoiceline', row: { c_invoice_id: invId, m_product_id: born.refs.productId, ad_client_id: born.refs.clientId, linenetamt: 100.00 } },
+          { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
+        ] }]) };
+      Promise.resolve(window.idmpInstallGenesis(bundle)).then(function (res) {
+        if (!res || !res.ok) { out.textContent = 'Install failed.'; run.disabled = false; run.textContent = 'Create tenant';
+          console.log('§W-GENESIS-SYSADMIN-LIVE install FAIL'); return; }
+        console.log('§W-GENESIS-SYSADMIN-LIVE created client=' + res.clientId + ' rows=' + res.rows + ' persisted=' + res.persisted);
+        var c = (SES && SES.listClients) ? SES.listClients(db).filter(function (x) { return x.id === res.clientId; })[0] : null;
+        pane.innerHTML = '';
+        pane.appendChild(el('h3', null, input.clientName + ' created'));
+        pane.appendChild(el('div', 'sub', 'Tenant ' + input.clientName + ' (client ' + res.clientId + ') is now a resident, '
+          + 'login-able tenant — ' + res.rows + ' rows merged into the live dictionary, signed + persisted. '
+          + 'Log in as its administrator to start work.'));
+        var en = el('div', 'actions');
+        var enter = el('button', 'run', 'Enter ' + input.clientName); enter.setAttribute('data-genesis-enter', '1');
+        enter.addEventListener('click', function () {
+          if (c) { _loginClient = c; $('idmp-login').style.display = 'flex'; loginStep1(); _syncPillStage(); }
+          else showLogin('user');
+          console.log('§W-GENESIS-SYSADMIN-LIVE enter client=' + res.clientId);
+        });
+        en.appendChild(enter); pane.appendChild(en);
+      }).catch(function (e) {
+        out.textContent = 'Install failed: ' + e.message; run.disabled = false; run.textContent = 'Create tenant';
+        console.log('§W-GENESIS-SYSADMIN-LIVE install FAIL ' + e.message);
+      });
+    });
+    actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions); pane.appendChild(out);
+    _showProcPane(pane);
+    console.log('§W-GENESIS-SYSADMIN-LIVE wizard-mount proc=' + proc.AD_Process_ID + ' in-chrome=Y');
   }
   function renderProcParamForm(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
