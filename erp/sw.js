@@ -114,6 +114,7 @@ const PRECACHE_ASSETS = [
   'pills.json',
   'idmp_pills.js',     // §A — iDempiere bar registration layer (binds pills_idmp.json fn BY ID to IdmpPillActions)
   'pills_idmp.json',   // §A — sibling manifest for the iDempiere renderer surface (GATE-1: separate from pills.json)
+  'redpill.png',       // RED PILL img — the contextual "Link to BIM Viewer" pill (showWhen:bim-record)
   'idmp_history.js',   // §B — cross-tab history scrubber (Glassbowl #scrub pattern, read-only restore)
   'glassbowl_pills.js',   // §GB-PILLS — Glassbowl+Gravity ⋯ registry binding (binds pills_glassbowl/gravity.json BY ID)
   'pills_glassbowl.json', // §GB-PILLS — Glassbowl manifest (home/trace/untangle/reset/mute/panel/edit/qr/showme/about)
