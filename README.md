@@ -84,7 +84,7 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 
 140+ vanilla JS modules (≈100 BIM + 40 ERP). No framework, no build step, no server dependency.
 
-Application state lives in **two SQLite databases** queried via sql-wasm — one for the BIM model, one for the ERP Application Dictionary. Three.js r160 ESM handles rendering with BatchedMesh and distance-based LOD; IFC files are parsed client-side by web-ifc and stored in IndexedDB. Both engines share one signed operation log.
+Application state lives in **two SQLite databases** queried via sql-wasm — one for the BIM model, one for the ERP Application Dictionary. Three.js r184 ESM handles rendering with BatchedMesh and distance-based LOD; IFC files are parsed client-side by web-ifc and stored in IndexedDB. Both engines share one signed operation log.
 
 ```
 index.html            — Landing page (gallery + IFC import)
@@ -147,7 +147,7 @@ cd tests && npm install && npx playwright test
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| Three.js | r160 ESM | 3D rendering — BatchedMesh, DLOD, post-FX (EffectComposer/SSAO/Outline), WebGPU build |
+| Three.js | r184 ESM | 3D rendering — BatchedMesh, DLOD, post-FX (EffectComposer/SSAO/Outline), WebGPU build |
 | SQLite WASM (sql.js) | 1.10.3 + FTS5 | the database for **both** engines — BIM model + ERP Application Dictionary, in-browser |
 | sql.js-httpvfs | bundled | range-read streaming of remote `.db` files (load only the pages you touch) |
 | web-ifc | 0.0.77 | IFC parsing (IFC2x3 + IFC4), client-side |
