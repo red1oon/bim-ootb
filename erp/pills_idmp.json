@@ -138,11 +138,11 @@
     },
     {
       "id": "home",
-      "name": "Engine view",
+      "name": "Exit",
       "key": "",
       "icon": "home",
       "order": 8.8,
-      "note": "Jump to the engine view (erp.html). FUNDAMENTAL LAW — relocated off the iDempiere header to the pill rail."
+      "note": "Exit the ERP → the landing page (app-shell front door, ../index.html). 'Exit' is an app-shell action (iDempiere has no landing), so it stays in the ⋯ rail per the FUNDAMENTAL LAW — the header keeps only the iDempiere-native Logout. RESUME_IDMP_FIDELITY leg 2."
     }
   ]
 }

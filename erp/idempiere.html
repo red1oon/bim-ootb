@@ -432,7 +432,7 @@
     <!-- FUNDAMENTAL LAW (2026-06-18): the iDempiere surface is indistinguishable from real iDempiere — zero
          learning curve. The header keeps ONLY iDempiere-native bits (menu · logo · search · role/client ctx ·
          role-switch/logout). Non-iDempiere controls (Share, Home/engine-view, etc.) live in the pill rail. -->
-    <button id="idmp-switch-btn" title="Switch role / Log out">&#8644;</button>
+    <button id="idmp-switch-btn" title="Log out">&#8676;</button>
   </span>
 </div>
 
@@ -490,7 +490,7 @@
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
-<script src="icons.js?v=10"></script>
+<script src="icons.js?v=11"></script>
 <script src="overlay_kit.js?v=1"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
      gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
@@ -3317,7 +3317,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.IdmpPillActions = {
       posted: openPostedFor, preview: openPreviewFor, graph: openGraphFor, kanban: openKanbanFor,
       rule: openRuleFor, pos: openPosFor,
-      share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },
+      share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
       erpdoc: openReadCompare,
       // RED PILL (revived, contextual) — cross-tab cold-launch: open the BIM Viewer at THIS record's building
       //   scene. Replaces the retired BIM-in-window embed. Building = the BIM-band project's Value; ../viewer
@@ -3605,7 +3605,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       fillVer();   // SW may not control yet on a first cold load → retry when it takes control / is ready
       try { if (navigator.serviceWorker) { navigator.serviceWorker.addEventListener('controllerchange', fillVer); navigator.serviceWorker.ready.then(fillVer); } } catch (e) {}
     })();
-    $('idmp-switch-btn').addEventListener('click', function () { showLogin('role'); });
+    // Header LOGOUT button (RESUME_IDMP_FIDELITY leg 2): iDempiere's UserPanel exposes a single "Logout" (→ login
+    // page); ours mirrors it — the door-arrow log-out glyph (icons.js logOut) + click → showLogin('user') (back to
+    // the login overlay / pick user). Role-switch is NOT lost: it is the "Back" step inside that overlay. (Exit-to-
+    // landing is the ⋯ "Exit" pill, an app-shell action that stays off the iDempiere-native header per the LAW.)
+    (function () { var lsb = $('idmp-switch-btn'); if (!lsb) return;
+      if (window.ICONS && window.ICONS.logOut) lsb.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.logOut.svg + '</svg>';
+      lsb.title = 'Log out';
+      lsb.addEventListener('click', function () { showLogin('user'); });
+    })();
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
     boot().catch(function (e) { console.error('§IDEMPIERE boot error: ' + e.message); $('idmp-load-msg').textContent = 'Boot error: ' + e.message; });
   });
