@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v720';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v721';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -56,6 +56,7 @@ const PRECACHE_ASSETS = [
   'genesis_seed.js',   // NON-INVENT default-genesis data (311 iDempiere default accounts + 73 default-acct maps)
   'system_tenant.js',  // SYSTEM_ADMIN_LANE §SA1 — boot overlay: System(0) login surface (W-GENESIS-SYSADMIN)
   'system_monitor.js', // SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor (serverless reframe, window.SystemMonitor)
+  'plugin_release.js', // SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update (window.PluginRelease)
   'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
   'idmp_session.js',
@@ -133,7 +134,11 @@ self.addEventListener('install', (event) => {
       )
     )
   );
-  self.skipWaiting();
+  // SYSTEM_ADMIN_LANE §6 — GATED RELEASES (no auto-adopt-latest). We DON'T skipWaiting() here: a new deploy
+  // installs but STAYS in `waiting` until the System admin clicks Apply in the Release page (→ SKIP_WAITING
+  // message below). The running app therefore stays on its release until updated on purpose — a release/update
+  // surface iDempiere has no in-app equivalent of. First-ever install still activates immediately (no prior
+  // worker to supersede), so a cold visit is unaffected; only UPDATES wait. W-PLUGIN-RELEASE.
 });
 
 self.addEventListener('activate', (event) => {

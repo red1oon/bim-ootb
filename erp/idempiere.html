@@ -407,7 +407,7 @@
     <div id="idmp-login-info" class="idmp-login-info">
       <div class="idmp-info-row"><span id="idmp-info-ver">Code &mdash;</span> &middot; Dictionary: iDempiere &middot; SQLite&#8209;wasm &middot; serverless</div>
       <div class="idmp-info-creds"><b>System:</b> SuperUser / System &nbsp;&middot;&nbsp; <b>GardenWorld:</b> GardenAdmin / GardenAdmin</div>
-      <div class="idmp-info-mon"><a href="#" id="idmp-sysmon-link">System Monitor</a></div>
+      <div class="idmp-info-mon"><a href="#" id="idmp-sysmon-link">System Monitor</a> &middot; <a href="#" id="idmp-release-link">Plugins &amp; Releases</a></div>
     </div>
   </div>
 </div>
@@ -477,6 +477,7 @@
 <script src="genesis.js?v=2"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="system_monitor.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) -->
+<script src="plugin_release.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
@@ -3598,6 +3599,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     (function () {
       var lnk = $('idmp-sysmon-link');
       if (lnk) lnk.addEventListener('click', function (e) { e.preventDefault(); if (window.SystemMonitor) window.SystemMonitor.open(); });
+      var rlnk = $('idmp-release-link');
+      if (rlnk) rlnk.addEventListener('click', function (e) { e.preventDefault(); if (window.PluginRelease) window.PluginRelease.open(); });
       function fillVer() {
         try {
           if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
@@ -3634,9 +3637,10 @@ window.__helpIdmpKeymap = {
 <script>
 // Offline/PWA parity with erp.html — idempiere.html + ad_parser/ad_data/idmp_session + ad_seed.db are precached (sw v561).
 if ('serviceWorker' in navigator) {
-  // §INIT-INSTANT freshness backstop — navigation is stale-while-revalidate (sw.js v598): instant cached
-  // first paint, and on a DEPLOY the new SW claims the page → controllerchange → ONE reload onto the fresh
-  // shell (so a deploy reaches a returning user in a single reload). Loop-guarded; skips the first install-claim.
+  // §INIT-INSTANT — navigation is stale-while-revalidate: instant cached first paint. SYSTEM_ADMIN_LANE §6:
+  // releases are now GATED (sw.js no longer auto-skipWaiting), so a new deploy INSTALLS but WAITS — it does NOT
+  // auto-claim. The System admin adopts it via the Release page (SKIP_WAITING → activate → claim → the
+  // controllerchange below fires → ONE reload onto the applied release). First install-claim is still silent.
   var _swHadCtrl = !!navigator.serviceWorker.controller, _swRefreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', function () {
     if (_swRefreshing) return;
@@ -3644,7 +3648,7 @@ if ('serviceWorker' in navigator) {
     _swRefreshing = true; console.log('§SW_UPDATE controllerchange → reload onto fresh shell'); location.reload();
   });
   navigator.serviceWorker.register('sw.js?v=683')
-    .then(function (r) { console.log('§SW_REG scope=' + r.scope); })
+    .then(function (r) { window.__swReg = r; console.log('§SW_REG scope=' + r.scope); })  // §6 — Release page reads r.waiting / r.update()
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
 </script>
