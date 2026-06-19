@@ -558,5 +558,11 @@ async function clearCache(){
   else { L('§BOOT return ('+navType+') → ⋯ rail'); showMinimized(); }
 })();
 </script>
+
+<!-- GoatCounter traffic analytics — count landing visits (the ?ignore-me flag opts a device out).
+     Same counter the bottom-left Live Stats link reports from; carried over from the old gallery footer. -->
+<script>if(new URLSearchParams(location.search).has('ignore-me'))localStorage.setItem('goatcounter-ignore','t')</script>
+<script data-goatcounter="https://red1oon.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
