@@ -463,7 +463,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=10"></script>
+<script src="ad_process.js?v=11"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -522,7 +522,7 @@
 <script src="bigdecimal.js?v=1"></script>
 <script src="bim_orders_overlay.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
-<script src="report_overlay.js?v=8"></script>
+<script src="report_overlay.js?v=9"></script>
 <script src="rule_fold.js?v=2"></script>
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
@@ -2183,7 +2183,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       fetchLines: function (key, info) {
         var map = RM[key]; if (!map) return [];
         var hdr = header(key, info); if (!hdr) return [];
-        return _sqlRows('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + Number(hdr[map.pk]) + ' ORDER BY line');
+        var rows = _sqlRows('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + Number(hdr[map.pk]) + ' ORDER BY ' + (map.lineSort || 'line'));
+        // lineProductVia (§P2-tail-leg6): the product lives on a PARENT line table, not this line row — resolve it
+        // per line through the join + set it on the row, so foldReceipt + names read r[fkProduct] unchanged.
+        if (map.lineProductVia) { var via = map.lineProductVia;
+          rows.forEach(function (r) { var lid = r[via.fk];
+            if (lid != null) { var pr = _sqlRows('SELECT ' + via.product + ' AS p FROM ' + via.table + ' WHERE ' + via.pk + '=' + Number(lid))[0]; r[map.fkProduct] = pr ? pr.p : null; } });
+        }
+        return rows;
       },
       names: function (key, hdr, lines) {
         var map = RM[key], prods = {};

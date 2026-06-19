@@ -28,6 +28,16 @@
     m_inout:   { key: 'm_inout',   pk: 'm_inout_id',   lineTable: 'm_inoutline',   fk: 'm_inout_id',
                  fkProduct: 'm_product_id', amount: null,        qty: 'movementqty', price: null,
                  date: 'movementdate', total: null },
+    // Rpt M_InOutConfirm (AD_Process 292, "Shipment Confirmation") — the LINE-SORT + PRODUCT-JOIN variant
+    // (AD_PROCESS_FOLD_LANE §P2-tail-leg6). The confirm-line table m_inoutlineconfirm has (a) NO `line` column →
+    // `lineSort` names the ORDER BY column instead (m_inoutlineconfirm_id), and (b) NO m_product_id → `lineProductVia`
+    // tells the db-aware caller to resolve each line's product through the parent shipment line (m_inoutline_id →
+    // m_inoutline.m_product_id) and set it on the row before folding. foldReceipt itself is UNCHANGED. NON-FINANCIAL:
+    // qty=ConfirmedQty (amount/price/total null); no c_bpartner_id on the header → partner null; no business date → null.
+    m_inoutconfirm:{key:'m_inoutconfirm',pk:'m_inoutconfirm_id',lineTable:'m_inoutlineconfirm',fk:'m_inoutconfirm_id',
+                 fkProduct: 'm_product_id', amount: null,        qty: 'confirmedqty', price: null,
+                 date: null, total: null, lineSort: 'm_inoutlineconfirm_id',
+                 lineProductVia: { fk: 'm_inoutline_id', table: 'm_inoutline', pk: 'm_inoutline_id', product: 'm_product_id' } },
     // Rpt M_Movement (AD_Process 290, "Inventory Move Print") — the warehouse sibling of m_inout (AD_PROCESS_FOLD_LANE
     // §P2-tail-leg2). A material movement is NON-FINANCIAL (amount/price/total null) — header M_Movement + lines
     // M_MovementLine, the carried value is qty=MovementQty. SAME foldReceipt, NO new fold code. A movement has no
@@ -601,7 +611,11 @@
         var header = lc(rowsOf(db.exec('SELECT * FROM ' + map.key + ' WHERE ' + map.pk + '=' + id + ' LIMIT 1'))[0]) || null;
         if (!header) { renderUnsupported(db, key); return; }
         var lines = [];
-        try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY line')).map(lc); } catch (e) {}
+        try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY ' + (map.lineSort || 'line'))).map(lc); } catch (e) {}
+        // lineProductVia (§P2-tail-leg6): the carried product lives on a PARENT line table, not this line row —
+        // resolve it per line through the join and set it on the row, so foldReceipt reads r[fkProduct] unchanged.
+        if (map.lineProductVia) { var via = map.lineProductVia;
+          lines.forEach(function (r) { var lid = r[via.fk]; if (lid != null) r[map.fkProduct] = nameOf(db, via.table, via.pk, lid, via.product); }); }
         var names = { partner: nameOf(db, 'c_bpartner', 'c_bpartner_id', header.c_bpartner_id, 'name'), products: {} };
         lines.forEach(function (r) { var pid = r[map.fkProduct]; if (pid != null && names.products[pid] === undefined) names.products[pid] = nameOf(db, 'm_product', 'm_product_id', pid, 'name'); });
         var rec = CORE.foldReceipt(map, header, lines, names);
