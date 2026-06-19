@@ -30,9 +30,33 @@
       this.xlabels = spec.xlabels || this.xs.map((_, i) => String.fromCharCode(65 + i));   // A,B,C…
       this.ylabels = spec.ylabels || this.ys.map((_, i) => String(i + 1));                  // 1,2,3…
       if (this.snapTol == null && spec.snapTol) this.snapTol = spec.snapTol;
+      this._baseXs = this.xs.slice(); this._baseYs = this.ys.slice();   // immutable base — grid coords FOLD from this + active GEOM_GRID_MOVE deltas (M1)
       console.log(TAG + ' define xs=[' + this.xs + '] ys=[' + this.ys + '] labels=' + this.xlabels.join('') + '/' + this.ylabels.join(''));
       if (this._group) this.render();
       return this;
+    },
+
+    // M1 fix: the authoring gridline positions are a FOLD of the op-log — the defined base + the delta of every
+    // ACTIVE GEOM_GRID_MOVE (non-undone AND within the scrub cursor, the SAME set the geometry fold renders).
+    // Re-derived on every op-log change so undo/redo/scrub revert the grid deterministically. Previously
+    // bonsai_gridmove.commit mutated grid.xs imperatively and undo never reverted it → next snap used a stale line.
+    foldFromOplog() {
+      const O = window.Bonsai && window.Bonsai.oplog;
+      if (!this._baseXs || !this._baseYs || !O || !O.db) return;
+      const xs = this._baseXs.slice(), ys = this._baseYs.slice();
+      const ops = O._geomOps ? O._geomOps() : [];
+      const upto = (typeof O.cursor === 'number') ? Math.min(O.cursor, ops.length) : ops.length;
+      for (let i = 0; i < upto; i++) {
+        const op = ops[i]; if (!op || op.op_type !== 'GEOM_GRID_MOVE') continue;
+        const p = op.parameters || {}; const mm = /^g([xy])(\d+)$/.exec(p.gridId || '');
+        if (!mm || !p.delta) continue;
+        const arr = mm[1] === 'x' ? xs : ys, idx = +mm[2];
+        if (idx >= 0 && idx < arr.length) arr[idx] += p.delta;
+      }
+      const changed = xs.length !== this.xs.length || ys.length !== this.ys.length ||
+        xs.some((v, i) => v !== this.xs[i]) || ys.some((v, i) => v !== this.ys[i]);
+      this.xs = xs; this.ys = ys;
+      if (changed && this._group && this.active) this.render();   // only rebuild lines when a grid coord actually moved
     },
 
     render() {
@@ -88,5 +112,8 @@
 
   window.Bonsai = window.Bonsai || {};
   window.Bonsai.grid = Grid;
+  // Re-derive grid coords from the op-log on every change (commit/undo/redo/delete/clear/reload all _emit this).
+  // Scrub does NOT _emit → scrubToShared calls foldFromOplog directly at its call site.
+  window.addEventListener('bonsai:oplog', () => { try { Grid.foldFromOplog(); } catch (e) {} });
   console.log(TAG + ' module loaded');
 })();

@@ -778,6 +778,7 @@ let _applyingRemoteScrub = false;
 async function scrubToShared(cursor, publish) {
   histStamp(cursor); paintRecords(cursor);
   await window.Bonsai.oplog.scrubTo(cursor);
+  if (window.Bonsai.grid && window.Bonsai.grid.foldFromOplog) window.Bonsai.grid.foldFromOplog();   // grid follows the scrub (scrubTo doesn't _emit) — M1
   if (publish && window.Connect && window.Connect.on && !_applyingRemoteScrub)
     window.Connect.publish('timeline', { cursor: cursor, length: window.Bonsai.oplog.length, surface: 'modeller' });
 }
@@ -943,18 +944,81 @@ function moveGhostShow(dx, dy, dz) {                           // translucent cl
   const c = selCentre(); if (c && moveGizmo) moveGizmo.position.set(c.x + dx, c.y + dy, c.z + dz);
   if (window.A && A.requestRender) A.requestRender();
 }
+// ── H2 SNAP-TO-GEOMETRY (W-BONSAI-SNAPGEOM / MODELLER_DIRECT_MANIPULATION.md L3) ─────────────────
+// While moving, snap the dragged selection to the vertices / edge-midpoints / face-centres of OTHER (non-selected)
+// features — read from their REAL world bboxes (non-invent), a 3×3×3 lattice per feature (8 corners + 12 edge-mids
+// + 6 face-centres + centre). Takes precedence over grid snap when a candidate is within tol; a diamond marker
+// shows the live snap point. Adjusts only the drag's FREE axes so it composes with axis-constrained drags.
+const GEOM_SNAP_TOL = 0.3;                                     // metres
+let geomSnapOn = true, snapMarker = null;
+function _lattice(b, ox, oy, oz) {                             // 27 key points of an AABB, offset by (ox,oy,oz)
+  const xs = [b.min.x, (b.min.x + b.max.x) / 2, b.max.x], ys = [b.min.y, (b.min.y + b.max.y) / 2, b.max.y], zs = [b.min.z, (b.min.z + b.max.z) / 2, b.max.z];
+  const out = []; for (const x of xs) for (const y of ys) for (const z of zs) out.push(new THREE.Vector3(x + ox, y + oy, z + oz)); return out;
+}
+function geomSnapCandidates() {                                // key points of every NON-selected feature (world == local for authored meshes)
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
+  const out = [];
+  g.children.forEach(o => { if (!o.isMesh || o.userData.featureId == null || selectedIds.has(o.userData.featureId)) return;
+    o.geometry.computeBoundingBox(); out.push(..._lattice(o.geometry.boundingBox, 0, 0, 0)); });
+  return out;
+}
+function movingSnapPoints(dx, dy, dz) {                        // key points of the selection's combined bbox at the running delta
+  const box = new THREE.Box3(); selMeshes().forEach(m => { m.geometry.computeBoundingBox(); box.expandByObject(m); });
+  if (!isFinite(box.min.x)) return []; return _lattice(box, dx, dy, dz);
+}
+function solveGeomSnap(axis, dx, dy, dz) {                     // nearest (movingPt, candidate) BY THE DRAG'S FREE AXES → delta that lands it there
+  if (!geomSnapOn) return null;
+  const cands = geomSnapCandidates(); if (!cands.length) return null;
+  const mpts = movingSnapPoints(dx, dy, dz); if (!mpts.length) return null;
+  const ax = axis === 'xy' ? ['x', 'y'] : [axis];             // distance + tol gate measured on the FREE axes only, NOT 3D
+  let best = null;
+  for (const mp of mpts) for (const c of cands) {
+    let s = 0; for (const k of ax) { const e = mp[k] - c[k]; s += e * e; }
+    const d = Math.sqrt(s);
+    if (d <= GEOM_SNAP_TOL && (!best || d < best.d)) best = { d, mp, c };
+  }
+  if (!best) return null;
+  let ndx = dx, ndy = dy, ndz = dz;
+  if (axis === 'x' || axis === 'xy') ndx += best.c.x - best.mp.x;
+  if (axis === 'y' || axis === 'xy') ndy += best.c.y - best.mp.y;
+  if (axis === 'z') ndz += best.c.z - best.mp.z;
+  // marker AT the post-snap moving point: free axes → candidate coord, constrained axes → moving point's own coord
+  const marker = new THREE.Vector3(
+    (axis === 'x' || axis === 'xy') ? best.c.x : best.mp.x,
+    (axis === 'y' || axis === 'xy') ? best.c.y : best.mp.y,
+    (axis === 'z') ? best.c.z : best.mp.z);
+  return { dx: ndx, dy: ndy, dz: ndz, marker };
+}
+// ONE snap resolver used by BOTH the live drag preview and the commit, so the ghost lands exactly where it commits.
+function snappedMoveDelta(axis, c0, dx, dy, dz) {
+  const gs = solveGeomSnap(axis, dx, dy, dz);
+  if (gs) return { dx: gs.dx, dy: gs.dy, dz: gs.dz, marker: gs.marker, kind: 'geom' };
+  let ndx = dx, ndy = dy;                                       // fall back to grid snap (existing behaviour)
+  if ((axis === 'x' || axis === 'y' || axis === 'xy') && window.Bonsai.grid.active) {
+    const s = window.Bonsai.grid.snap(c0.x + dx, c0.y + dy);
+    if (axis !== 'y') ndx = s.x - c0.x;
+    if (axis !== 'x') ndy = s.y - c0.y;
+  }
+  return { dx: ndx, dy: ndy, dz: dz, marker: null, kind: 'grid' };
+}
+function showSnapMarker(p) {
+  if (!p) { clearSnapMarker(); return; }
+  if (!snapMarker) { snapMarker = new THREE.Mesh(new THREE.OctahedronGeometry(0.12), new THREE.MeshBasicMaterial({ color: 0xff3bd0, depthTest: false, transparent: true, opacity: 0.95 })); snapMarker.renderOrder = 1001; scene.add(snapMarker); }
+  snapMarker.position.copy(p); window.__snapMarkerShown = true; if (window.A && A.requestRender) A.requestRender();
+}
+function clearSnapMarker() { if (snapMarker) { scene.remove(snapMarker); snapMarker.geometry.dispose(); snapMarker.material.dispose(); snapMarker = null; } window.__snapMarkerShown = false; }
 function enterMove() {
   if (selectedId == null) { setStat('select an object first, then Move'); return; }
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
   moving = true; _moveDrag = null; bMove.innerHTML = MV_CANCEL; bMove.classList.add('on'); controls.enabled = false;
   if (dimMove) dimMove.style.display = '';
   buildMoveGizmo();
-  setStat('move: drag an axis handle (X/Y/Z) or the hub (XY plane), or arrow-keys nudge ' + moveStep().toFixed(2) + 'm (Shift ×10, Alt ÷10) — Esc to exit');
+  setStat('move: drag an axis handle (X/Y/Z) or the hub (XY plane); snaps to grid + nearby geometry (G toggles), arrow-nudge ' + moveStep().toFixed(2) + 'm — Esc to exit');
 }
 function exitMove() {
   moving = false; _moveDrag = null; bMove.innerHTML = MV_MOVE; bMove.classList.remove('on'); controls.enabled = true;
   if (dimMove) dimMove.style.display = 'none';
-  clearMoveGizmo(); clearMoveGhost();
+  clearMoveGizmo(); clearMoveGhost(); clearSnapMarker();
 }
 bMove.onclick = () => moving ? exitMove() : enterMove();
 function moveDragPlane(axis, c0) {                             // x/y/xy → horizontal plane through c0; z → vertical plane facing camera
@@ -986,21 +1050,23 @@ canvas.addEventListener('pointermove', (e) => {
   const d = p.clone().sub(_moveDrag.down); let dx = 0, dy = 0, dz = 0;
   if (_moveDrag.axis === 'x') dx = d.x; else if (_moveDrag.axis === 'y') dy = d.y; else if (_moveDrag.axis === 'z') dz = d.z; else { dx = d.x; dy = d.y; }
   _moveDrag.dx = dx; _moveDrag.dy = dy; _moveDrag.dz = dz;
-  moveGhostShow(dx, dy, dz);
-  const c = _moveDrag.c0, ref = window.Bonsai.grid.refAt ? window.Bonsai.grid.refAt(c.x + dx, c.y + dy) : null;
-  setStat('move ' + _moveDrag.axis.toUpperCase() + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')' + (ref && (ref.x || ref.y) ? ' → ' + ((ref.x || '·') + '-' + (ref.y || '·')) : ''));
+  const c = _moveDrag.c0;
+  const sn = snappedMoveDelta(_moveDrag.axis, c, dx, dy, dz);   // preview at the SNAPPED delta so the ghost lands where it commits
+  moveGhostShow(sn.dx, sn.dy, sn.dz);
+  showSnapMarker(sn.kind === 'geom' ? sn.marker : null);
+  const ref = window.Bonsai.grid.refAt ? window.Bonsai.grid.refAt(c.x + sn.dx, c.y + sn.dy) : null;
+  setStat('move ' + _moveDrag.axis.toUpperCase() + ' Δ(' + sn.dx.toFixed(2) + ',' + sn.dy.toFixed(2) + ',' + sn.dz.toFixed(2) + ')' +
+    (sn.kind === 'geom' ? '  ⬥ snap-to-geometry' : (ref && (ref.x || ref.y) ? ' → ' + ((ref.x || '·') + '-' + (ref.y || '·')) : '')));
 });
 async function commitMoveDrag() {
   const md = _moveDrag; _moveDrag = null; if (!md) return;
-  const c = md.c0; let dx = md.dx, dy = md.dy, dz = md.dz;
-  if ((md.axis === 'x' || md.axis === 'y' || md.axis === 'xy') && window.Bonsai.grid.active) {   // SNAP the candidate centre to the grid
-    const s = window.Bonsai.grid.snap(c.x + dx, c.y + dy);
-    if (md.axis !== 'y') dx = s.x - c.x;
-    if (md.axis !== 'x') dy = s.y - c.y;
-  }
+  const c = md.c0; const sn = snappedMoveDelta(md.axis, c, md.dx, md.dy, md.dz);   // SAME resolver as the live preview
+  let dx = sn.dx, dy = sn.dy, dz = sn.dz; clearSnapMarker();
   if (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05 && Math.abs(dz) < 0.05) {   // dead-zone (mirror commitGridMove) → click, no commit
     clearMoveGhost(); if (moveGizmo) moveGizmo.position.copy(c); setStat('move: no movement'); return;
   }
+  window.__lastSnap = { kind: sn.kind, marker: sn.marker ? { x: sn.marker.x, y: sn.marker.y, z: sn.marker.z } : null };
+  console.log('§SNAPGEOM commit kind=' + sn.kind + ' Δ(' + dx.toFixed(3) + ',' + dy.toFixed(3) + ',' + dz.toFixed(3) + ')' + (sn.marker ? ' marker=(' + sn.marker.x.toFixed(2) + ',' + sn.marker.y.toFixed(2) + ',' + sn.marker.z.toFixed(2) + ')' : ''));
   await commitMove(+dx.toFixed(4), +dy.toFixed(4), +dz.toFixed(4));
 }
 canvas.addEventListener('pointerup', () => { if (moving && _moveDrag) commitMoveDrag(); });
@@ -1041,6 +1107,12 @@ window.addEventListener('keydown', (e) => {
   if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;
   if ((e.key === 'm' || e.key === 'M') && !sketching && !routing && !edgePicking && !gridMoving && !inserting) {
     if (selectedId != null || moving) { e.preventDefault(); bMove.onclick(); }
+  }
+  // G toggles snap-to-geometry while moving (suppress the inference like SketchUp's Alt) — re-preview the live drag.
+  if ((e.key === 'g' || e.key === 'G') && moving) {
+    e.preventDefault(); geomSnapOn = !geomSnapOn;
+    if (_moveDrag) { const c = _moveDrag.c0, sn = snappedMoveDelta(_moveDrag.axis, c, _moveDrag.dx, _moveDrag.dy, _moveDrag.dz); moveGhostShow(sn.dx, sn.dy, sn.dz); showSnapMarker(sn.kind === 'geom' ? sn.marker : null); }
+    setStat('snap-to-geometry ' + (geomSnapOn ? 'ON' : 'OFF'));
   }
 });
 
@@ -2187,6 +2259,122 @@ if (qs.get('multiselect') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER multiselect demo fail ' + e); }
     window.__multiResult = out; window.__multiDone = true;
     console.log('§MODELLER multiselect-done');
+  })();
+}
+// ?gridundo=demo proves the GRID-UNDO CORRECTNESS FIX (W-GRIDMOVE-UNDO / M1): a committed GEOM_GRID_MOVE advances
+// the authoring gridline, but the line is now a FOLD of the op-log (base + active deltas) — so UNDO reverts it,
+// REDO re-applies it, and SCRUB to before the move shows the base line. Previously the coord was mutated
+// imperatively and never reverted → the next snap used a stale gridline. Drives the real gridmove/undo/scrub paths.
+if (qs.get('gridundo') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog; const G = window.Bonsai.grid;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const snapX = (x) => +G.snap(x, 1.5).x.toFixed(2);
+    try {
+      G.define({ xs: [0, 2, 4], ys: [0, 3], xlabels: ['A', 'B', 'C'], ylabels: ['1', '2'] }); G.show(true);
+      O.clear(); await sleep(50);
+      out.baseX1 = G.xs[1];                                          // 2 (gridline B)
+      // a thin wall straddling gridline B so the move recomposes geometry too (full GEOM_GRID_MOVE path)
+      await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[1.9, 0], [2.1, 0], [2.1, 3], [1.9, 3]] }, depth: 3 } });
+      await sleep(50);
+      const res = await window.Bonsai.gridmove.commit('gx1', 1.0);   // drag gridline B +1.0 → x=3
+      await sleep(80);
+      out.afterMoveX1 = G.xs[1];                                     // 3
+      out.gridMoveOps = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;   // 1
+      out.snapMovedAfterMove = snapX(3.05);                          // 3.00 — a point near the MOVED line snaps to it
+      out.verifyAfterMove = (await O.verify()).ok;
+
+      // SCRUB back to before the grid move (cursor=1, the wall only) → grid reverts to base, then forward again
+      await scrubToShared(1, false); await sleep(40);
+      out.scrubBackX1 = G.xs[1];                                     // 2 (base restored under scrub)
+      out.snapBaseAfterScrub = snapX(2.05);                         // 2.00 — base line snaps again
+      await scrubToShared(O.length, false); await sleep(40);
+      out.scrubFwdX1 = G.xs[1];                                      // 3 (re-applied at the tip)
+
+      // UNDO the grid move → gridline reverts to base (THE BUG: previously stayed at 3)
+      const u = await O.undo(); out.undoId = u.undone; await sleep(80);
+      out.afterUndoX1 = G.xs[1];                                     // 2
+      out.gridMoveOpsAfterUndo = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;   // 0
+      out.snapBaseAfterUndo = snapX(2.05);                          // 2.00 — base line is the snap target again
+      out.snapMovedAfterUndo = snapX(3.05);                        // 3.05 (NOT 3.0 — the moved line is gone)
+      out.verifyAfterUndo = (await O.verify()).ok;
+
+      // REDO → gridline advances again
+      const rd = await O.redo(); out.redoId = rd.redone; await sleep(80);
+      out.afterRedoX1 = G.xs[1];                                     // 3
+      out.snapMovedAfterRedo = snapX(3.05);                          // 3.00
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER gridundo demo fail ' + e); }
+    window.__gridundoResult = out; window.__gridundoDone = true;
+    console.log('§MODELLER gridundo-done');
+  })();
+}
+// ?snapgeom=demo proves SNAP-TO-GEOMETRY (W-BONSAI-SNAPGEOM / H2): two authored walls A and B; B's near corner sits
+// at (5.2,5.2) — deliberately OFF the integer grid. Enter Move on A, drag its XY hub so A's far corner lands ~0.18m
+// from B's corner: snap-to-geometry PULLS A's corner exactly onto B's vertex (read from B's real bbox, non-invent),
+// a marker shows, and it BEATS the active grid (lands on 5.2, not the 5.0 gridline). Exactly ONE signed GEOM_MOVE.
+if (qs.get('snapgeom') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const bboxOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { minx: +b.min.x.toFixed(3), miny: +b.min.y.toFixed(3), maxx: +b.max.x.toFixed(3), maxy: +b.max.y.toFixed(3) }; };
+    const rect = canvas.getBoundingClientRect();
+    const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+    try {
+      window.Bonsai.grid.define({ xs: [0, 1, 2, 3, 4, 5, 6, 7], ys: [0, 1, 2, 3, 4, 5, 6, 7], xlabels: ['A','B','C','D','E','F','G','H'], ylabels: ['1','2','3','4','5','6','7','8'] });
+      window.Bonsai.grid.show(true); O.clear(); await sleep(50);
+      // A = unit wall at origin (bbox x[0,1] y[0,1]); B = static target whose near corner is OFF-grid at (5.2,5.2)
+      const A = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [1, 0], [1, 1], [0, 1]] }, depth: 3 } });
+      for (let i = 0; i < 40 && !meshOf(A.id); i++) await sleep(50);
+      const B = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[5.2, 5.2], [6.2, 5.2], [6.2, 6.2], [5.2, 6.2]] }, depth: 3 } });
+      for (let i = 0; i < 40 && !meshOf(B.id); i++) await sleep(50);
+      out.target = A.id; out.aBefore = bboxOf(A.id); out.bBox = bboxOf(B.id);   // B corner (5.2,5.2)
+      if (dimMove) dimMove.value = '';
+      window.Bonsai.select(A.id); out.selected = selectedId === A.id;
+      bMove.onclick(); out.entered = moving; out.gizmo = !!moveGizmo;
+      const c = selCentre();                                          // A centroid (0.5,0.5,1.5)
+      const down = toClient(c.x, c.y, c.z);                           // grab the XY hub at the gizmo centre
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: down.clientX, clientY: down.clientY, bubbles: true }));
+      out.grabbedAxis = _moveDrag && _moveDrag.axis;                  // 'xy'
+      const rawDx = 4.05, rawDy = 4.08;                              // lands A's far corner at (5.05,5.08) — ~0.18m from B's (5.2,5.2)
+      const mv = toClient(c.x + rawDx, c.y + rawDy, c.z);
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: mv.clientX, clientY: mv.clientY, bubbles: true }));
+      out.markerShownDuringDrag = window.__snapMarkerShown === true;
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: mv.clientX, clientY: mv.clientY, bubbles: true }));
+      await sleep(500);
+      out.snap = window.__lastSnap || null;                           // { kind:'geom', marker:{x:5.2,y:5.2,...} }
+      out.moveOps = O._geomOps().filter(o => o.op_type === 'GEOM_MOVE').length;   // 1
+      const mop = O._geomOps().find(o => o.op_type === 'GEOM_MOVE');
+      out.delta = mop ? { dx: +(+mop.parameters.dx).toFixed(3), dy: +(+mop.parameters.dy).toFixed(3), dz: +(+mop.parameters.dz).toFixed(3) } : null;
+      out.aAfter = bboxOf(A.id);                                      // A's far corner == B's near corner (5.2,5.2)
+      out.verify = (await O.verify()).ok;
+      exitMove();
+
+      // ── LEG 2: X-AXIS-constrained snap to a candidate at a FAR Y — proves selection by the FREE axis, not 3D.
+      // The target's x=5.2 is within tol on X, but its y is 1.5m away (3D distance ≫ tol). The old 3D-nearest
+      // code would miss it (and fall to the 5.0 gridline); free-axis selection snaps X to 5.2 regardless of Y.
+      O.clear(); { const _g = window.Bonsai.group(); while (_g.children.length) _g.remove(_g.children[0]); } await sleep(50);   // LEAF commits append → drop leg-1 meshes so candidates are clean
+      const A2 = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [1, 0], [1, 1], [0, 1]] }, depth: 3 } });
+      for (let i = 0; i < 40 && !meshOf(A2.id); i++) await sleep(50);
+      await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[5.2, 2.0], [6.2, 2.0], [6.2, 3.0], [5.2, 3.0]] }, depth: 3 } });
+      await sleep(80);
+      window.Bonsai.select(A2.id); bMove.onclick();
+      const c2 = selCentre();
+      const d2 = toClient(c2.x + 0.6, c2.y, c2.z);                    // grab the X SHAFT (axis-constrained), not the hub
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: d2.clientX, clientY: d2.clientY, bubbles: true }));
+      out.x2Axis = _moveDrag && _moveDrag.axis;                       // 'x'
+      const mv2 = toClient(c2.x + 0.6 + 4.05, c2.y, c2.z);            // drag X so A2's far corner x≈5.05 (~0.15 from 5.2)
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: mv2.clientX, clientY: mv2.clientY, bubbles: true }));
+      out.x2rawDx = _moveDrag ? +_moveDrag.dx.toFixed(3) : null; out.x2cands = geomSnapCandidates().length;
+      out.x2preview = (function () { const sn = snappedMoveDelta('x', c2, _moveDrag.dx, _moveDrag.dy, _moveDrag.dz); return { kind: sn.kind, dx: +sn.dx.toFixed(3) }; })();
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: mv2.clientX, clientY: mv2.clientY, bubbles: true }));
+      await sleep(400);
+      const m2 = O._geomOps().find(o => o.op_type === 'GEOM_MOVE');
+      out.x2 = { kind: (window.__lastSnap || {}).kind, dx: m2 ? +(+m2.parameters.dx).toFixed(3) : null, dy: m2 ? +(+m2.parameters.dy).toFixed(3) : null, aAfter: bboxOf(A2.id), verify: (await O.verify()).ok };
+      exitMove();
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER snapgeom demo fail ' + e); }
+    window.__snapgeomResult = out; window.__snapgeomDone = true;
+    console.log('§MODELLER snapgeom-done');
   })();
 }
 // ?gmpreview=demo proves the Move-Grid PREVIEW (W-BONSAI-GMPREVIEW, the user's "move grid" feedback gap): while
