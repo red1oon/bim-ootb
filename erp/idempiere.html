@@ -1292,6 +1292,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         : '⚙ ';
       // Accelerator = Alt+O (oracle: ADWindowToolbar altKeyMap.put(VK_O, btnProcess); Alt+P is btnPrint's, not Process's).
       btn(gear + 'Process', 'Process (Alt+O) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      // Print — iDempiere's btnPrint (Print24.png, Alt+P): print THIS document = fold its receipt from raw
+      //   header+lines (window.__report.printRecord, PURE). Enabled only on a saved record of a PRINTABLE document
+      //   kind (a header/line table in REPORT_MAP — orders/invoices/shipments/payments/…); iDempiere greys it the
+      //   same way (enablePrint). DISTINCT from the ⋯ Reports pill (= Performance-Analysis financial statements menu).
+      var rmap = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : null;
+      var canPrint = !!(hasRec && tn && rmap && rmap[tn]);
+      btn(ic('printer', '🖨') + 'Print', 'Print this document (Alt+P)', canPrint, function () {
+        var ok = window.__report.printRecord(tn, recVal(rec, _keyCol(tab)));
+        console.log('§TOOLBAR print table=' + tn + ' rec=' + recVal(rec, _keyCol(tab)) + ' printable=' + ok);
+      });
       // Zoom Across — iDempiere's btnZoomAcross (magnifier, verified vs theme ZoomAcross24.png). WHERE-USED:
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
