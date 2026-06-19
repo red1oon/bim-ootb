@@ -200,6 +200,9 @@ async function openProject(key, btnEl, opts) {
   var viewerUrl = (_base || '') + 'viewer/viewer.html?db=' +
     encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(libUrl) + diffParam + wizardParam + '&ghost=1';
   var win = window.open(viewerUrl, '_blank');
+  // Popup blocker kills a window.open fired long after the gesture (import = ~15s of async parse).
+  // Card clicks keep their live gesture → new tab; the post-import auto-open falls back to same-tab.
+  if (!win) { console.log('§OPEN_POPUP_BLOCKED → same-tab nav key=' + key); location.href = viewerUrl; return; }
   trackTab((record && record.meta && record.meta.name) || key, '3D', win);
   if (btnEl) { btnEl.textContent = 'Open'; btnEl.disabled = false; }
 }
@@ -388,14 +391,151 @@ async function handleImportFile(file) {
   worker.postMessage(workerMsg, [arrayBuffer]);
 }
 
+// ── common prefix (building name from N IFC stems) — VERBATIM from index.html import.js ──
+function _commonPrefix(strs) {
+  if (!strs.length) return '';
+  var prefix = strs[0];
+  for (var i = 1; i < strs.length; i++) {
+    while (strs[i].indexOf(prefix) !== 0) {
+      prefix = prefix.substring(0, prefix.length - 1);
+      if (!prefix) return '';
+    }
+  }
+  return prefix;
+}
+
+// Parse ONE IFC file via worker → resolves the 'done' msg (elements/geometries/transforms/meta),
+// with discipline-from-filename override applied (mirrors handleImportFile's parse half).
+function _parseOwnIFC(file, onProgress) {
+  return new Promise(async function (resolve, reject) {
+    var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name };
+    try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
+    catch (engineErr) { reject(engineErr); return; }
+    var worker = _createWorker('viewer/import_worker.js?v=9');
+    worker.onmessage = function (e) {
+      var msg = e.data;
+      if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }
+      if (msg.type === 'error') { worker.terminate(); reject(new Error(msg.message)); return; }
+      if (msg.type === 'done') {
+        var _fnDisc = _discFromFilename(file.name);
+        if (_fnDisc && msg.elements) {
+          msg.meta.disciplines = {};
+          for (var ei = 0; ei < msg.elements.length; ei++) msg.elements[ei].discipline = _fnDisc;
+          msg.meta.disciplines[_fnDisc] = msg.elements.length;
+          console.log('§DISC_OVERRIDE file=' + file.name + ' disc=' + _fnDisc + ' elements=' + msg.elements.length);
+        }
+        worker.terminate(); resolve(msg);
+      }
+    };
+    worker.onerror = function (err) { worker.terminate(); reject(new Error(err.message)); };
+    worker.postMessage(workerMsg, [workerMsg.arrayBuffer]);
+  });
+}
+
+// ── Multi-IFC merge: N files → ONE building DB → auto-open viewer. NO merge modal, NO card. ──
+// Mirrors index.html A.importMultiIFC, self-contained on the plate's saveProject/openProject path.
+async function importMultiIFC(files) {
+  var status = document.getElementById('import-status');
+  var progressBar = document.getElementById('import-progress-bar');
+  if (progressBar) { progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; }
+
+  var stems = [];
+  for (var i = 0; i < files.length; i++) stems.push(files[i].name.replace(/\.(ifc|IFC)$/, ''));
+  var buildingName = _commonPrefix(stems).replace(/[_\-]+$/, '') || stems[0];
+
+  console.log('§MULTI_IMPORT_START files=' + files.length + ' building=' + buildingName +
+    ' names=' + Array.prototype.map.call(files, function (f) { return f.name; }).join(','));
+  if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
+
+  var allElements = [], allGeometries = [], allTransforms = [], allDiscs = {}, allStoreys = new Set(), totalElements = 0;
+
+  for (var fi = 0; fi < files.length; fi++) {
+    var file = files[fi];
+    var fileLabel = (fi + 1) + '/' + files.length + ': ' + file.name;
+    if (status) status.textContent = 'Parsing ' + fileLabel;
+    console.log('§MULTI_FILE_START ' + fileLabel);
+    try {
+      var result = await _parseOwnIFC(file, function (pct, phase) {
+        var filePct = (fi / files.length + pct / 100 / files.length) * 90;
+        if (progressBar) progressBar.style.width = filePct.toFixed(1) + '%';
+        if (status) status.textContent = fileLabel + ' — ' + phase;
+      });
+      allElements = allElements.concat(result.elements);
+      allGeometries = allGeometries.concat(result.geometries);
+      allTransforms = allTransforms.concat(result.transforms);
+      totalElements += result.meta.elementCount;
+      for (var d in result.meta.disciplines) allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d];
+      result.meta.storeys.forEach(function (s) { allStoreys.add(s); });
+      console.log('§MULTI_FILE_DONE ' + fileLabel + ' elements=' + result.meta.elementCount + ' geom=' + result.meta.geomCount);
+    } catch (err) {
+      console.log('§MULTI_FILE_ERROR ' + fileLabel + ' err=' + err.message);
+      if (status) status.textContent = 'Failed: ' + fileLabel + ' — ' + err.message;
+      if (progressBar) progressBar.style.background = '#cc4444';
+      return;
+    }
+  }
+
+  if (status) status.textContent = 'Building merged database (' + totalElements + ' elements)...';
+  if (progressBar) progressBar.style.width = '92%';
+  try {
+    var SQL = await _loadSqlJs();
+    var mergedData = {
+      meta: { name: buildingName, filename: buildingName, elementCount: totalElements, geomCount: allGeometries.length,
+              disciplines: allDiscs, storeys: Array.from(allStoreys).sort() },
+      elements: allElements, geometries: allGeometries, transforms: allTransforms,
+    };
+    var dbs = buildImportDBs(SQL, mergedData);
+    var projectKey = buildingName + '.ifc';
+    var _recSplit = dbs.metaDb && dbs.geoDb;
+    var newRecord = { meta: mergedData.meta, versions: [{ key: projectKey, importDate: new Date().toISOString(), db: _recSplit ? null : dbs.extractedDb }], latestVersion: 0 };
+    if (_recSplit) { newRecord.metaDb = dbs.metaDb; newRecord.geoDb = dbs.geoDb; }
+    await saveProject(projectKey, newRecord);
+    var _cacheDb = await openCacheDB();
+    if (_cacheDb && dbs.metaDb && dbs.geoDb) {
+      var _cDbUrl = 'import://' + projectKey + '/' + projectKey.replace(/\.ifc$/i, '_extracted.db');
+      var _cMetaUrl = 'import://' + projectKey + '/' + projectKey.replace(/\.ifc$/i, '_meta.db');
+      var _cGeoUrl = 'import://' + projectKey + '/' + projectKey.replace(/\.ifc$/i, '_geo.db');
+      await new Promise(function (resolve) {
+        var tx = _cacheDb.transaction(CACHE_STORE, 'readwrite'); var store = tx.objectStore(CACHE_STORE);
+        store.put(dbs.metaDb, _cMetaUrl); store.put(dbs.metaDb, _cDbUrl); store.put(dbs.geoDb, _cGeoUrl);
+        tx.oncomplete = resolve;
+      });
+    }
+    console.log('§MULTI_IMPORT_DONE building=' + buildingName + ' elements=' + totalElements + ' files=' + files.length +
+      ' discs=' + Object.keys(allDiscs).join(',') + ' split=' + !!_recSplit);
+    if (status) status.textContent = 'Merged ' + files.length + ' files → ' + totalElements + ' elements — opening viewer...';
+    if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#44cc44'; }
+    openProject(projectKey);
+    console.log('§MULTI_AUTO_OPEN key=' + projectKey);
+    setTimeout(function () { if (status) status.textContent = ''; if (progressBar) { progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; } }, 3000);
+  } catch (dbErr) {
+    console.log('§MULTI_DB_ERROR ' + dbErr.message);
+    if (status) status.textContent = 'DB merge failed: ' + dbErr.message;
+    if (progressBar) progressBar.style.background = '#cc4444';
+  }
+}
+
+// Route dropped/picked files: 2+ IFC → silent merge into one building; else single-file import.
+// Mirrors index.html's decision (ifcFiles.length > 1 ? merge : single). NO card, NO modal.
+function handleImportFiles(files) {
+  if (!files || !files.length) return;
+  var ifcFiles = [];
+  for (var fi = 0; fi < files.length; fi++) {
+    if (detectLandingFormat(files[fi].name).route === 'ifc') ifcFiles.push(files[fi]);
+  }
+  if (ifcFiles.length > 1) importMultiIFC(ifcFiles);
+  else handleImportFile(files[0]);
+}
+
 // wire the hub drop zone + file input (called when the hub opens)
 function wireImportZone() {
   var zone = document.getElementById('m-import-zone'); var input = document.getElementById('m-import-file');
   if (!zone || !input || zone._wired) return; zone._wired = 1;
+  input.multiple = true;   // multi-select → merge in one shot
   zone.addEventListener('dragover', function (e) { e.preventDefault(); zone.classList.add('drag'); });
   zone.addEventListener('dragleave', function () { zone.classList.remove('drag'); });
-  zone.addEventListener('drop', function (e) { e.preventDefault(); zone.classList.remove('drag'); var f = e.dataTransfer.files; if (f && f.length) handleImportFile(f[0]); });
+  zone.addEventListener('drop', function (e) { e.preventDefault(); zone.classList.remove('drag'); handleImportFiles(e.dataTransfer.files); });
   zone.addEventListener('click', function () { input.click(); });
-  input.addEventListener('change', function () { if (input.files.length) handleImportFile(input.files[0]); });
-  console.log('§IMPORT_ZONE wired (drop-own-IFC)');
+  input.addEventListener('change', function () { handleImportFiles(input.files); });
+  console.log('§IMPORT_ZONE wired (drop-own-IFC, multi-merge)');
 }

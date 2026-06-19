@@ -256,7 +256,7 @@
         _sync();
         // Reveal-UP cue (consistent across ALL pill surfaces): the strip RISES into view on open so the user
         // sees what was hidden. Re-trigger by reflow so it replays each open. viewer.html #mobile-pill defines
-        // `.pill-revealing` + its @keyframes (no second animation system). The viewer keeps tap-outside-to-close.
+        // `.pill-revealing` + its @keyframes (no second animation system). Only the ⋯ press closes the rail.
         pill.classList.remove('pill-revealing'); void pill.offsetWidth; pill.classList.add('pill-revealing');
       } else {
         pill.classList.remove('pill-revealing');
@@ -264,10 +264,8 @@
       console.log('§PILL open=' + _pillOpen);
     }
 
-    // Close on outside tap
-    document.addEventListener('pointerdown', function(e) {
-      if (_pillOpen && !pill.contains(e.target) && e.target !== trigger) _close();
-    });
+    // Once expanded, the rail stays open — ONLY a deliberate ⋯ press (_toggle) closes it.
+    // (User decree: outside-tap-to-close was too easy to trigger by accident.) No outside-close.
 
     // ── Init ──
     _initPanels();
