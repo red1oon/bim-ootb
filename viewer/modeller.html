@@ -135,6 +135,8 @@
   <button id="b-open" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Opening</span></button>
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
   <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
+  <button id="b-move" disabled title="Move the selected object — drag an axis handle or nudge with arrow keys (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg><span>Move</span></button>
+  <input id="dim-move" type="number" step="0.1" min="0.05" value="1" title="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
   <input id="dim-depth" type="number" step="0.1" min="0.1" value="3" title="Wall height / extrude depth (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
@@ -165,14 +167,14 @@
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
-<script src="bonsai_kernel.js?v=1" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=2" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
 <script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
 <script src="kernel_ops.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=3" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=4" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
@@ -184,7 +186,7 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=6" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=7" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -488,6 +490,7 @@ function highlight(mesh) {
   if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(0x2b5a8c);
   bCut.disabled = selectedId == null;
   const bd = document.getElementById('b-del'); if (bd) bd.disabled = selectedId == null;   // Delete acts on the selection
+  const bmv = document.getElementById('b-move'); if (bmv) bmv.disabled = selectedId == null;   // Move acts on the selection
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
   console.log('§MODELLER select featureId=' + selectedId);
@@ -505,7 +508,7 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook
   highlight(m || null); return selectedId;
 };
 canvas.addEventListener('pointerdown', (e) => {
-  if (sketching || routing || edgePicking || gridMoving || inserting || e.button !== 0 || e.shiftKey) return;
+  if (sketching || routing || edgePicking || gridMoving || moving || inserting || e.button !== 0 || e.shiftKey) return;
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -808,6 +811,156 @@ async function commitGridMove() {
 }
 canvas.addEventListener('pointerup', () => { if (gridMoving && _dragGrid) commitGridMove(); });
 
+// ── MOVE (direct-manipulation of a PLACED object) ─────────────────────────────────────────────────
+// W-BONSAI-MOVE / P1 (MODELLER_DIRECT_MANIPULATION.md §0-RESULTS). Select an object → a custom XYZ axis-handle
+// gizmo (NOT THREE.TransformControls, which fights OrbitControls + Z-up) lets you drag it along an axis with
+// grid snap, or nudge with arrow keys by a typed step (P2). RELEASE commits ONE signed GEOM_MOVE {parent,dx,dy,dz}
+// (a DELTA — universal across inserts AND walls; folds host-side for inserts, occt-translate for solids). Reuses
+// the proven controls-off GROUND-plane drag idiom (gridmove above) — nothing commits until release.
+const bMove = document.getElementById('b-move');
+const MV_MOVE = _ico('<path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/>') + '<span>Move</span>';
+const MV_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let moving = false, _moveDrag = null, moveGizmo = null, moveGhost = null;
+const dimMove = document.getElementById('dim-move');
+function moveStep() {                                          // typed magnitude (P2); else grid pitch; else 0.1m
+  const v = parseFloat(dimMove && dimMove.value); if (v > 0) return v;
+  const G = window.Bonsai.grid;
+  if (G && G.active && G.xs && G.xs.length > 1) { const g = []; for (let i = 1; i < G.xs.length; i++) g.push(Math.abs(G.xs[i] - G.xs[i - 1])); g.sort((a, b) => a - b); return g[g.length >> 1] || 0.5; }
+  return 0.1;
+}
+function selCentre() {                                         // folded bbox centre of the selection (local==world: authored meshes have identity transform)
+  if (!selectedMesh) return null; selectedMesh.geometry.computeBoundingBox(); const b = selectedMesh.geometry.boundingBox;
+  return new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
+}
+function axisHandle(axis, color, L) {                          // one pickable colored shaft + arrowhead along +axis
+  const dir = axis === 'x' ? new THREE.Vector3(1, 0, 0) : axis === 'y' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);   // cylinder/cone default +Y → axis
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthTest: false });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, L, 12), mat);
+  shaft.position.copy(dir.clone().multiplyScalar(L / 2)); shaft.quaternion.copy(q);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 12), mat);
+  tip.position.copy(dir.clone().multiplyScalar(L + 0.12)); tip.quaternion.copy(q);
+  const grp = new THREE.Group(); grp.userData.moveAxis = axis; shaft.userData.moveAxis = axis; tip.userData.moveAxis = axis;
+  grp.add(shaft, tip); return grp;
+}
+function buildMoveGizmo() {
+  clearMoveGizmo(); const c = selCentre(); if (!c) return;
+  const sz = new THREE.Vector3(); selectedMesh.geometry.boundingBox.getSize(sz);
+  const L = Math.min(3, Math.max(0.9, Math.max(sz.x, sz.y, sz.z) * 0.7 + 0.4));
+  moveGizmo = new THREE.Group(); moveGizmo.name = 'MoveGizmo';
+  moveGizmo.add(axisHandle('x', 0xe2553b, L), axisHandle('y', 0x46b955, L), axisHandle('z', 0x4f93e0, L));
+  const hub = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false }));
+  hub.userData.moveAxis = 'xy'; moveGizmo.add(hub);
+  moveGizmo.traverse(o => { o.renderOrder = 1000; });          // draw over the solids like the insert ghost
+  moveGizmo.position.copy(c); scene.add(moveGizmo);
+  if (window.A && A.requestRender) A.requestRender();
+}
+function clearMoveGizmo() { if (moveGizmo) { scene.remove(moveGizmo); moveGizmo.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); moveGizmo = null; } }
+function clearMoveGhost() { if (moveGhost) { scene.remove(moveGhost); moveGhost.geometry.dispose(); moveGhost.material.dispose(); moveGhost = null; } }
+function moveGhostShow(dx, dy, dz) {                           // translucent clone of the target at the running delta
+  if (!selectedMesh) return;
+  if (!moveGhost) { moveGhost = new THREE.Mesh(selectedMesh.geometry.clone(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.35, depthWrite: false })); moveGhost.renderOrder = 998; scene.add(moveGhost); }
+  moveGhost.position.set(dx, dy, dz);
+  const c = selCentre(); if (c && moveGizmo) moveGizmo.position.set(c.x + dx, c.y + dy, c.z + dz);
+  if (window.A && A.requestRender) A.requestRender();
+}
+function enterMove() {
+  if (selectedId == null) { setStat('select an object first, then Move'); return; }
+  if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
+  moving = true; _moveDrag = null; bMove.innerHTML = MV_CANCEL; bMove.classList.add('on'); controls.enabled = false;
+  if (dimMove) dimMove.style.display = '';
+  buildMoveGizmo();
+  setStat('move: drag an axis handle (X/Y/Z) or the hub (XY plane), or arrow-keys nudge ' + moveStep().toFixed(2) + 'm (Shift ×10, Alt ÷10) — Esc to exit');
+}
+function exitMove() {
+  moving = false; _moveDrag = null; bMove.innerHTML = MV_MOVE; bMove.classList.remove('on'); controls.enabled = true;
+  if (dimMove) dimMove.style.display = 'none';
+  clearMoveGizmo(); clearMoveGhost();
+}
+bMove.onclick = () => moving ? exitMove() : enterMove();
+function moveDragPlane(axis, c0) {                             // x/y/xy → horizontal plane through c0; z → vertical plane facing camera
+  if (axis === 'z') { const n = new THREE.Vector3(); camera.getWorldDirection(n); n.z = 0; if (n.lengthSq() < 1e-6) n.set(0, 1, 0); n.normalize(); return new THREE.Plane().setFromNormalAndCoplanarPoint(n, c0); }
+  return new THREE.Plane(new THREE.Vector3(0, 0, 1), -c0.z);
+}
+function moveDragPoint(axis, ndc, c0) {
+  raycaster.setFromCamera(ndc, camera); const hit = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(moveDragPlane(axis, c0), hit) ? hit.clone() : null;
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!moving || e.button !== 0 || e.shiftKey || !moveGizmo) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  moveGizmo.updateMatrixWorld(true);                           // ensure handle world-matrices are fresh before raycast (no frame may have rendered yet)
+  const hit = raycaster.intersectObjects(moveGizmo.children, true)[0];
+  if (!hit) return;                                            // missed the gizmo → leave selection intact, no drag
+  const axis = hit.object.userData.moveAxis || 'xy';
+  const c0 = selCentre(); const down = moveDragPoint(axis, ndc, c0); if (!c0 || !down) return;
+  _moveDrag = { axis, c0, down, dx: 0, dy: 0, dz: 0 };
+  setStat('move ' + axis.toUpperCase() + ' — drag, release to commit');
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!moving || !_moveDrag) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  const p = moveDragPoint(_moveDrag.axis, ndc, _moveDrag.c0); if (!p) return;
+  const d = p.clone().sub(_moveDrag.down); let dx = 0, dy = 0, dz = 0;
+  if (_moveDrag.axis === 'x') dx = d.x; else if (_moveDrag.axis === 'y') dy = d.y; else if (_moveDrag.axis === 'z') dz = d.z; else { dx = d.x; dy = d.y; }
+  _moveDrag.dx = dx; _moveDrag.dy = dy; _moveDrag.dz = dz;
+  moveGhostShow(dx, dy, dz);
+  const c = _moveDrag.c0, ref = window.Bonsai.grid.refAt ? window.Bonsai.grid.refAt(c.x + dx, c.y + dy) : null;
+  setStat('move ' + _moveDrag.axis.toUpperCase() + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')' + (ref && (ref.x || ref.y) ? ' → ' + ((ref.x || '·') + '-' + (ref.y || '·')) : ''));
+});
+async function commitMoveDrag() {
+  const md = _moveDrag; _moveDrag = null; if (!md) return;
+  const c = md.c0; let dx = md.dx, dy = md.dy, dz = md.dz;
+  if ((md.axis === 'x' || md.axis === 'y' || md.axis === 'xy') && window.Bonsai.grid.active) {   // SNAP the candidate centre to the grid
+    const s = window.Bonsai.grid.snap(c.x + dx, c.y + dy);
+    if (md.axis !== 'y') dx = s.x - c.x;
+    if (md.axis !== 'x') dy = s.y - c.y;
+  }
+  if (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05 && Math.abs(dz) < 0.05) {   // dead-zone (mirror commitGridMove) → click, no commit
+    clearMoveGhost(); if (moveGizmo) moveGizmo.position.copy(c); setStat('move: no movement'); return;
+  }
+  await commitMove(+dx.toFixed(4), +dy.toFixed(4), +dz.toFixed(4));
+}
+canvas.addEventListener('pointerup', () => { if (moving && _moveDrag) commitMoveDrag(); });
+async function commitMove(dx, dy, dz) {
+  if (selectedId == null) return;                              // guard: never move an absent/undone feature
+  const tid = selectedId;
+  setStat('moving…');
+  try {
+    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz } }, {});
+    console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
+    setStat('moved #' + tid + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')  verify=' + res.verify);
+    audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    window.Bonsai.select(tid); clearMoveGhost();        // re-fold replaced the mesh → always re-grab the fresh selectedMesh (no stale ref)
+    if (moving) buildMoveGizmo();                        // reposition the gizmo on the moved feature (move mode only)
+  } catch (err) {
+    clearMoveGhost(); if (moving && selectedId != null) { window.Bonsai.select(selectedId); buildMoveGizmo(); }   // don't strand the drag ghost on a failed commit
+    setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER move fail ' + err);
+  }
+}
+// Arrow-key NUDGE (deterministic, pointer-free): each press commits ONE GEOM_MOVE of moveStep() in that direction.
+window.addEventListener('keydown', (e) => {
+  if (!moving || selectedId == null) return;
+  if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;   // typing the step, not nudging
+  const base = moveStep(), k = e.shiftKey ? base * 10 : (e.altKey ? base / 10 : base);
+  let dx = 0, dy = 0, dz = 0;
+  if (e.key === 'ArrowLeft') dx = -k; else if (e.key === 'ArrowRight') dx = k;
+  else if (e.key === 'ArrowUp') dy = k; else if (e.key === 'ArrowDown') dy = -k;
+  else if (e.key === 'PageUp') dz = k; else if (e.key === 'PageDown') dz = -k;
+  else return;
+  e.preventDefault(); commitMove(+dx.toFixed(4), +dy.toFixed(4), +dz.toFixed(4));
+});
+// M toggles Move mode on the selection (skip when another mode is active or typing).
+window.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;
+  if ((e.key === 'm' || e.key === 'M') && !sketching && !routing && !edgePicking && !gridMoving && !inserting) {
+    if (selectedId != null || moving) { e.preventDefault(); bMove.onclick(); }
+  }
+});
+
 // ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
 const bIfc = document.getElementById('b-ifc');
 bIfc.onclick = async () => {
@@ -1070,7 +1223,7 @@ window.addEventListener('keydown', (e) => {
   if (typing) return;
   if (e.key === 'Escape') {                                       // cancel whatever mode is active
     if (sketching) exitSketch(); else if (routing) exitRoute(); else if (edgePicking) exitFillet();
-    else if (gridMoving) exitGridMove(); else if (inserting) exitInsert(); else { highlight(null); }
+    else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); }
     return;
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? bRedo : bUndo).onclick(); }
@@ -1097,10 +1250,11 @@ window.Bonsai.outliner.addCategory({ key: 'gridmoves', label: 'Grid Moves', matc
 // Components category: inserted library components (§OOTB Item 2 = assemble, don't draw). Registered via the seam.
 window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', match: op => op.op_type === 'GEOM_INSERT',
   node: op => { const p = op.parameters.placement, c = window.Bonsai.library && window.Bonsai.library.get(op.parameters.hash);
-    const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt(p.x, p.y) : null;
+    const mv = window.Bonsai.oplog.moveDeltaFor ? window.Bonsai.oplog.moveDeltaFor(op.id) : { dx: 0, dy: 0 };   // a moved insert shows its NEW grid ref
+    const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt((p.x || 0) + mv.dx, (p.y || 0) + mv.dy) : null;
     const lod = window.Bonsai.library ? window.Bonsai.library.lodFor(op.id, op.parameters.lod) : op.parameters.lod;
     return { id: op.id, label: (c ? (c.name || c.ifc_class.replace('Ifc', '')) : 'Component'),
-      sub: ((a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) : '#' + op.id) + ' ·LOD' + lod }; } });
+      sub: ((a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) : '#' + op.id) + ' ·LOD' + lod + ((mv.dx || mv.dy || mv.dz) ? ' ·moved' : '') }; } });
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -1795,6 +1949,75 @@ if (qs.get('gridmove') === 'demo') {
     window.__gridmoveResult = out;
     window.__gridmoveDone = true;
     console.log('§MODELLER gridmove-done');
+  })();
+}
+// ?move=demo proves DIRECT-MANIPULATION MOVE (W-BONSAI-MOVE / P1): select an INSERTED Door, enter Move mode, DRAG
+// its X axis-handle +1.04m (real pointer down→move→up on the gizmo) → grid SNAP lands the candidate centre on the
+// nearest gridline → exactly ONE signed GEOM_MOVE {parent,dx:1,dy:0,dz:0} → placement re-folds host-side (PATH B,
+// rebuilt=0 occt), centre updates by the snapped delta, the chain verifies+signs, the Components row reflects the
+// new ref, scrub replays deterministically, and undo restores the prior placement. Then a kernel cross-check:
+// a WALL moved +1.0 X then CUT proves PATH A translated the occt shape (the hole lands at the moved position).
+if (qs.get('move') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const centreOf = (fid) => { const m = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
+    try {
+      window.Bonsai.grid.define({ xs: [0, 1, 2, 3, 4], ys: [0, 3], xlabels: ['A', 'B', 'C', 'D', 'E'], ylabels: ['1', '2'] });
+      window.Bonsai.grid.show(true);
+      O.clear();
+      const door = window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor');
+      const ins = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 1, y: 1.5, z: 0, rot: 0 }, lod: '200' } });
+      for (let i = 0; i < 40 && O.length === 0; i++) await sleep(50);
+      out.target = ins.id; out.isInsert = isInsert(ins.id);
+      if (dimMove) dimMove.value = '1';
+      window.Bonsai.select(ins.id); out.selected = selectedId === ins.id;
+      out.before = centreOf(ins.id);                                  // before placement (the witness's 'before' half)
+      bMove.onclick(); out.entered = moving; out.gizmo = !!moveGizmo;  // enter Move mode → custom XYZ gizmo
+      const rect = canvas.getBoundingClientRect();
+      const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
+      const c = out.before;
+      const down = toClient(c.x + 0.6, c.y, c.z);                     // grab a point ON the X shaft
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: down.clientX, clientY: down.clientY, bubbles: true }));
+      out.grabbedAxis = _moveDrag && _moveDrag.axis;                  // 'x'
+      const mv = toClient(c.x + 0.6 + 1.04, c.y, c.z);                // drag +1.04m along X (raw, pre-snap)
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: mv.clientX, clientY: mv.clientY, bubbles: true }));
+      out.dragRawDx = _moveDrag ? +_moveDrag.dx.toFixed(2) : null;    // ~1.04
+      const sp = window.Bonsai.grid.snap(c.x + (_moveDrag ? _moveDrag.dx : 0), c.y);
+      out.snapX = +sp.x.toFixed(2);                                   // 2.00 (snapped to gridline C)
+      const ra = window.Bonsai.grid.refAt ? window.Bonsai.grid.refAt(sp.x, c.y) : null; out.snapRef = (ra && (ra.x || ra.y)) ? ((ra.x || '·') + '-' + (ra.y || '·')) : null;
+      canvas.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: mv.clientX, clientY: mv.clientY, bubbles: true }));
+      await sleep(500);                                               // let the async commitMove + re-fold settle
+      out.moveOps = O._geomOps().filter(o => o.op_type === 'GEOM_MOVE').length;   // EXACTLY 1
+      const mop = O._geomOps().find(o => o.op_type === 'GEOM_MOVE');
+      out.moveParams = mop ? { parent: mop.parent, dx: +(mop.parameters.dx).toFixed(3), dy: +(mop.parameters.dy).toFixed(3), dz: +(mop.parameters.dz).toFixed(3) } : null;
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];   // 2 (insert+move)
+      out.verify = (await O.verify()).ok;
+      out.after = centreOf(ins.id);                                   // after placement == before + snapped delta
+      out.regenRebuilt = (window.Bonsai._lastRegenStats || {}).rebuilt;   // 0 for a pure host re-place (PATH B)
+      out.componentRow = Array.from(document.querySelectorAll('#bonsai-outliner #bo-tree [data-fid]')).map(d => d.textContent.replace(/\s+/g, ' ').trim()).find(r => /glassdoor|Door|moved/i.test(r)) || null;
+      const n = O.length;
+      await O.scrubTo(n - 1); const rb = centreOf(ins.id); out.replayBeforeX = rb ? rb.x : null;   // prefix replay = before
+      await O.scrubTo(n); const rf = centreOf(ins.id); out.replayAfterX = rf ? rf.x : null;         // full replay = after
+      exitMove();
+      const u = await O.undo(); out.undoId = u.undone; await sleep(50);   // undo the move
+      out.afterUndo = centreOf(ins.id);                               // prior placement restored
+      out.verifyAfterUndo = (await O.verify()).ok;
+      // ── KERNEL cross-check (PATH A): move a WALL +1.0 X then CUT → the occt SHAPE moved, hole lands at the new pos.
+      O.clear(); await sleep(50);
+      const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [2, 0], [2, 0.2], [0, 0.2]] }, depth: 3 } });
+      await sleep(50);
+      out.wallBeforeX = centreOf(wall.id) ? centreOf(wall.id).x : null;   // ~1
+      selectedId = wall.id; selectedMesh = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === wall.id);
+      await commitMove(1, 0, 0); await sleep(300);
+      out.wallAfterX = centreOf(wall.id) ? centreOf(wall.id).x : null;    // ~2 (occt shape translated)
+      await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [2.6, -1, 1], c2: [2.9, 1, 2] } } });
+      await sleep(300);
+      out.wallCutVerify = (await O.verify()).ok;
+      out.wallMaxX = +(new THREE.Box3().setFromObject(window.Bonsai.group()).max.x).toFixed(2);   // ~3 (moved wall right edge)
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER move demo fail ' + e); }
+    window.__moveResult = out; window.__moveDone = true;
+    console.log('§MODELLER move-done');
   })();
 }
 // ?gmpreview=demo proves the Move-Grid PREVIEW (W-BONSAI-GMPREVIEW, the user's "move grid" feedback gap): while
