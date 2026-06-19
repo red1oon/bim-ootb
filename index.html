@@ -1085,6 +1085,14 @@ function showMergeModal(projects, filename) {
 
 // ── Render import cards (versioned) ──
 async function renderImportCards() {
+  // User decree: a dropped/imported IFC must NOT appear as a card on the landing — it just opens in the
+  // viewer (persistence is the viewer's Save/Open-to-disk pills now). Keep the section hidden so no
+  // imported DB clutters the page (covers drop, multi-merge, and page-reload). Import still saves +
+  // auto-opens via openProject; only the card render is suppressed.
+  const _section = document.getElementById('my-buildings-section');
+  if (_section) _section.style.display = 'none';
+  return;
+  // eslint-disable-next-line no-unreachable
   const container = document.getElementById('my-buildings-grid');
   const section = document.getElementById('my-buildings-section');
   if (!container || !section) return;
