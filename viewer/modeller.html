@@ -38,9 +38,11 @@
      is the FIRST button in this rail (in line with the tools), not a separate floating button. */
   #bar { position: fixed; inset: 0; z-index: 11; pointer-events: none; display: block; }
   #bar button { position: fixed; width: 40px; height: 40px; padding: 0; justify-content: center;
-    pointer-events: auto; border-radius: 50%; color: #fff; background: rgba(22,24,32,0.42);
+    pointer-events: auto; border-radius: 50%; color: #fff; background: rgba(22,24,32,0.86);
     border: 1px solid rgba(255,255,255,0.12);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 2px 10px rgba(0,0,0,0.30);
+    /* solid opaque pill — NOT per-button backdrop-filter: ~29 simultaneous blur layers saturate the compositor
+       and jank GPU-heavy actions out on icon-click (observed in viewer PR #407). Same dark look, zero blur cost. */
+    box-shadow: 0 2px 10px rgba(0,0,0,0.30);
     opacity: 0; transform: scale(.35) translate(26px, 26px);
     transition: opacity .24s ease, transform .30s cubic-bezier(.22,.9,.25,1.2), background .15s, border-color .15s; }
   #bar.rolled button { opacity: 1; transform: none; }                  /* rolled-out (per-index delay set in JS) */

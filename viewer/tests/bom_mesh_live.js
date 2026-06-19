@@ -61,12 +61,16 @@ const server = http.createServer((q, r) => {
   // matches (the Bed_King-matched-a-box regression). Geometries are loaded by now (the insert fetched them).
   const quality = await pg.evaluate(() => {
     const L = window.Bonsai.library;
-    const db = L.catalog().filter(c => !/^[0-9a-f]{16}$/.test(c.hash) && c.group !== 'asm');   // curated browse products only
+    // curated browse products that HAVE a detailed library part. boxOnly = the library's best part for it is
+    // itself a box (≤12 faces, e.g. Wardrobe — the only Wardrobe in component_library is 12 faces) → an HONEST
+    // box, not a degenerate mismatch; excluded from the detailed-mesh guard (same honesty as W-LOD300).
+    const all = L.catalog().filter(c => !/^[0-9a-f]{16}$/.test(c.hash) && c.group !== 'asm');
+    const db = all.filter(c => !c.boxOnly);
     let boxy = [], min = 1e9;
     db.forEach(c => { const t = L.meshArrays(c.hash).indices.length / 3; if (t <= 12) boxy.push(c.hash); if (t < min) min = t; });
     const bed = L.catalog().find(c => /bed king/i.test(c.name));
-    return { total: db.length, boxy: boxy.length, boxyIds: boxy.slice(0, 8), minTris: min,
-             bedKingTris: bed ? L.meshArrays(bed.hash).indices.length / 3 : -1 };
+    return { total: db.length, honestBoxes: all.length - db.length, boxy: boxy.length, boxyIds: boxy.slice(0, 8),
+             minTris: min, bedKingTris: bed ? L.meshArrays(bed.hash).indices.length / 3 : -1 };
   });
 
   await br.close(); server.close();

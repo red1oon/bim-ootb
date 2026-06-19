@@ -42,15 +42,17 @@ const server = http.createServer((q, r) => {
     const N = expLen(pick);
     const recursionExpanded = N > directLeafLines;
 
-    // ── PURE LINEAR-LAYOUT math (ported PhantomLayout walk): a zero-offset set is SPREAD, not stacked. Every
-    // leaf of an autoLayout=LINEAR set lands at a distinct X spanning a real run (DUPLEX_BATHROOM_SET etc.).
-    const lin = all.find(a => a.autoLayout === 'LINEAR' && a.children.filter(c => !c.isBom).length >= 3);
+    // ── PURE WALL-LINEAR math (ported PhantomLayout GPD walk): a zero-offset set is SPREAD along its back-wall
+    // axis, not stacked. Every leaf of an autoLayout=WALL_LINEAR set lands at a distinct position spanning a real
+    // run (DUPLEX_BATHROOM_SET / TOILET_BLOCK_FIXTURES etc.). Axis-agnostic: south wall spreads X, west wall Y.
+    const lin = all.find(a => a.autoLayout === 'WALL_LINEAR' && a.children.filter(c => !c.isBom).length >= 3);
     let layoutSpread = true, linId = null;
     if (lin) {
       linId = lin.id;
       const lv = L.expandAssembly(lin.id, { x: 0, y: 0, z: 0, rot: 0 });
-      const xs = lv.map(l => +l.x.toFixed(3));
-      layoutSpread = new Set(xs).size >= Math.min(lv.length, 3) && (Math.max(...xs) - Math.min(...xs)) > 0.3;
+      const xs = lv.map(l => +l.x.toFixed(3)), ys = lv.map(l => +l.y.toFixed(3));
+      const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+      layoutSpread = Math.max(new Set(xs).size, new Set(ys).size) >= Math.min(lv.length, 3) && span > 0.3;
     }
 
     // ── PURE relative-placement: a direct leaf child lands at root + (dx,dy,dz) at rot=0
