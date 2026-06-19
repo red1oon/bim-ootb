@@ -15,7 +15,13 @@ const fs = require('fs');
 const OBJ_FILE = path.resolve(__dirname, '..', '..', 'test', 'engel-house.obj');
 const LANDING_URL = '/landing2.html';
 
-test.describe('Drop Zone → Wizard E2E (Engel House OBJ)', () => {
+// SKIPPED 2026-06-19: the "My Buildings" card grid was removed from the landing (a dropped IFC/mesh now
+// opens straight in the viewer — no card). Every test here drives the flow by clicking the card's Open
+// button (#my-buildings-grid .card [data-open]), which no longer exists. Per user decree, CI for the drop
+// path is reduced to "drop an IFC → viewer opens" (tests/specs/s274-golden-path.spec.js GP.2). The mesh
+// wizard still runs (openProject fires it via isMesh on the drop's auto-open); re-add mesh-wizard coverage
+// through the auto-open path when needed.
+test.describe.skip('Drop Zone → Wizard E2E (Engel House OBJ)', () => {
 
   test.beforeEach(async ({ page }) => {
     // Clear IndexedDB to start fresh each test
