@@ -12,7 +12,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>iDempiere — Application Dictionary (SQLite WASM)</title>
+<title>Kernel-ERP — Application Dictionary (SQLite WASM)</title>
+<link rel="icon" type="image/png" href="favicon.png?v=1">
+<link rel="apple-touch-icon" href="favicon.png?v=1">
 <style>
   /* ── iDempiere-classic palette (modern/ZK default theme: blue header, light body) ── */
   :root {
@@ -370,8 +372,8 @@
 <!-- Login / Role·Client·Org selection (docs §3b) — folded from AD_User/AD_Role/AD_Org; SELECTION, not auth -->
 <div id="idmp-login" style="display:none">
   <div class="idmp-login-card">
-    <div class="idmp-login-mark"><img src="doublebubble.jpg?v=1" alt="" width="52" height="52"></div>
-    <div class="idmp-login-title">iDempiere&#8209;like — Sign In</div>
+    <div class="idmp-login-mark"><img src="doublebubble.jpg?v=2" alt="" width="52" height="52"></div>
+    <div class="idmp-login-title">Kernel-ERP — Sign In</div>
     <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
          pill-housed (the lightbulb 'Read / Compare' erpdoc pill on the side strip, wired to openReadCompare).
@@ -421,8 +423,8 @@
 
 <div id="idmp-header">
   <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
-  <span id="idmp-logo"><img src="doublebubble.jpg?v=1" alt="" width="36" height="36"></span>
-  <span id="idmp-title">iDempiere&#8209;like</span>
+  <span id="idmp-logo"><img src="doublebubble.jpg?v=2" alt="" width="36" height="36"></span>
+  <span id="idmp-title">Kernel-ERP</span>
   <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
   <span class="spacer"></span>
   <span class="ctx" id="idmp-ctx">&mdash;</span>
@@ -461,7 +463,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=9"></script>
+<script src="ad_process.js?v=10"></script>
 <script src="ad_data.js?v=23"></script>
 <script src="idmp_session.js?v=24"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
@@ -520,7 +522,7 @@
 <script src="bigdecimal.js?v=1"></script>
 <script src="bim_orders_overlay.js?v=1"></script>
 <!-- report folds for the AD_Process registered handlers (foldReceipt/foldTrialBalance) — needs BigDecimal above. -->
-<script src="report_overlay.js?v=7"></script>
+<script src="report_overlay.js?v=8"></script>
 <script src="rule_fold.js?v=2"></script>
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
@@ -2527,6 +2529,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
     }
+    // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
+    // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
+    // r.headerOnly is set ONLY by foldVoucher; r has no `.lines` key so the receipt branch above never fires for it.
+    if (!absent && r && r.headerOnly && r.amounts) {
+      var vt = document.createElement('table'), vtr = el('tr');
+      ['Amount', 'Value'].forEach(function (h, i) { vtr.appendChild(el('th', i >= 1 ? 'r' : null, h)); }); vt.appendChild(vtr);
+      r.amounts.forEach(function (a) { vtr = el('tr'); vtr.appendChild(el('td', null, a.label)); vtr.appendChild(el('td', 'r', a.value == null ? '' : String(a.value))); vt.appendChild(vtr); });
+      pane.appendChild(vt);
+      var flagStr = (r.flags || []).filter(function (f) { return f.value != null; }).map(function (f) { return f.label + ' ' + f.value; }).join(' · ');
+      pane.appendChild(el('div', 'msg', 'Document total ' + r.total + (r.docno ? ' · No. ' + r.docno : '') + (r.partner ? ' · ' + r.partner : '') + (flagStr ? ' · ' + flagStr : '')));
+    }
     // §GENPO-LIVE / §GENSHIP-LIVE — a KIND-2 op-group result (CREATE_DOCUMENT + N CREATE_LINE), rendered
     // doc-aware off the folded header table. EXTRACT: every value comes from the source record / its lines.
     if (!absent && r && r.ops && r.header) {
@@ -3241,7 +3254,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var ONBOARD_HELP_OPS = {
     __meta: { version: 1, spec: 'prompts/FRONT_DOOR_PILL_FINISH.md §P4-2', note: 'pre-client onboarding ShowMe (login guide)' },
     welcome:  { op: 'onboard', ordinal: 0, target: null, kind: 'overview', title: 'Welcome — your ERP, offline',
-      tip: 'This is an iDempiere-like ERP folded from SQLite, running entirely in your browser — no server. The demo data is local.',
+      tip: 'This is Kernel-ERP — an iDempiere-faithful ERP folded from SQLite, running entirely in your browser, no server. The demo data is local.',
       readmeAnchor: 'MigrateComparisonPaper.md' },
     signin:   { op: 'onboard', ordinal: 1, target: null, kind: 'overview', title: 'Sign in',
       tip: 'Pick a user, then a role and organisation. It is a context selection, not a password — the data is already on your device.',
@@ -3288,7 +3301,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var tab = _curTab(), rec = _records[_recIdx];
     if (tab && rec) { var rid = recVal(rec, _keyCol(tab)); if (rid != null) q.push('record=' + rid); }
     if (q.length) url += '?' + q.join('&');
-    var w = _curWin(); var title = (w ? w.name + ' — ' : '') + 'iDempiere-like';
+    var w = _curWin(); var title = (w ? w.name + ' — ' : '') + 'Kernel-ERP';
     if (navigator.share) navigator.share({ title: title, url: url });
     else { try { navigator.clipboard.writeText(url); status('Link copied'); } catch (e) {} }
     console.log('§IDMP-SHARE url=' + url);
@@ -3315,7 +3328,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       formdel: function () { _openDelete(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
-      editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
+      // editmode pill RETIRED (Leg 5, FUNDAMENTAL LAW): the Glass/Gravity CRUD ring is Glass-only on the iDempiere
+      //   surface (W-RING-LEAK) — a ring-toggle pill is vestigial here. The classic toolbar is the CRUD surface.
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
       // PLUGIN_* kernel_ops + a bundle's read-only setup query) + the live engine registries a bundle contributes
       // into. db may be null pre-login — engine plugins still install/activate (their ops just aren't logged).
@@ -3361,8 +3375,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
     window.IdmpPillActive = { showme: _showMeOn,
-                              audio: function () { return !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()); },
-                              editmode: function () { return !!(window.__crud && window.__crud.editModeOn && window.__crud.editModeOn()); } };
+                              audio: function () { return !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()); } };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
     window.IdmpPillStage = function () {
