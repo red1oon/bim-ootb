@@ -134,11 +134,16 @@
     ensureMesh(hash) {                          // resolves once the real mesh for `hash` is available (or null)
       const c = this.get(hash);
       if (!c || !c.gh || (this._geom && this._geom[c.gh])) return Promise.resolve(this.hasMesh(hash));
+      // RESILIENT load (W-BONSAI-LOD-RESILIENT): the geometries store is a SINGLE point of failure for every
+      // GEOM_INSERT (an assembly = many leaves all riding this one fetch). A transient hiccup must NOT poison the
+      // session into LOD-200 boxes — so on ANY failure we DROP _geomP (leave _geom null) so the NEXT ensureMesh
+      // retries cleanly, and we check r.ok (a 404/empty service-worker response must not flow into r.json()).
       if (!this._geomP) {
         this._geomP = (typeof fetch === 'function')
-          ? fetch(new URL('dagevu_geometries.json?v=4', _base).href).then(r => r.json())
+          ? fetch(new URL('dagevu_geometries.json?v=4', _base).href)
+              .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
               .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
-              .catch(e => { console.warn(TAG + ' geometries load failed ' + e); this._geom = {}; return {}; })
+              .catch(e => { console.warn(TAG + ' geometries load failed (will retry next insert) ' + e); this._geomP = null; return null; })
           : Promise.resolve(this._geom = {});
       }
       return this._geomP.then(() => this.hasMesh(hash));

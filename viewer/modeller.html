@@ -182,7 +182,7 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=7" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=8" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -1280,11 +1280,22 @@ async function placeAssembly(x, y) {
   setStat('assembled ' + (asm ? asm.name : insertHash) + ' → ' + placed.length + ' parts placed (signed)'); audioCue('commit'); syncHistory();
   console.log('§MODELLER assembly-drop ' + insertHash + ' parts=' + placed.length);
   // refine ALL leaves to real meshes in ONE pass: load the geom store once, set LOD-300 per leaf, single re-fold.
+  // SELF-HEALING (W-BONSAI-LOD-RESILIENT): if the geometries fetch hiccups, the leaves land as LOD-200 boxes; with
+  // the resilient ensureMesh, RETRY the load up to twice (300ms apart) so a transient drop doesn't leave the user
+  // staring at a field of boxes — the drop heals itself. setLod is idempotent; only un-upgraded leaves are retried.
   const needs = placed.filter(p => { const c = L.get(p.hash); return c && c.gh; });
-  if (needs.length) L.ensureMesh(needs[0].hash).then(() => {
-    needs.forEach(p => { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
-    return window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
-  }).then(() => { if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); paintLod(); }).catch(() => {});
+  if (needs.length) {
+    const upgrade = (tries) => L.ensureMesh(needs[0].hash).then(() => {
+      needs.forEach(p => { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
+      return window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
+    }).then(() => {
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); paintLod();
+      const boxed = needs.filter(p => L.lodFor(p.id, '200') !== '300').length;   // leaves still on the box proxy
+      if (boxed && tries > 0) { console.warn('§MODELLER assembly-drop ' + boxed + ' leaves still boxed — retry (' + tries + ' left)'); setTimeout(() => upgrade(tries - 1), 300); }
+      else console.log('§MODELLER assembly-drop meshes-upgraded leaves=' + (needs.length - boxed) + '/' + needs.length);
+    }).catch(() => { if (tries > 0) setTimeout(() => upgrade(tries - 1), 300); });
+    upgrade(2);
+  }
   disarmPick();                                                  // detach the ghost from the pointer after the drop
   return { id: lastInsertId, count: placed.length };
 }
