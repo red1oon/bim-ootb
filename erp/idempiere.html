@@ -3328,7 +3328,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       formdel: function () { _openDelete(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
-      editmode: function () { if (window.__crud && window.__crud.toggleEditMode) window.__crud.toggleEditMode(); },
+      // editmode pill RETIRED (Leg 5, FUNDAMENTAL LAW): the Glass/Gravity CRUD ring is Glass-only on the iDempiere
+      //   surface (W-RING-LEAK) — a ring-toggle pill is vestigial here. The classic toolbar is the CRUD surface.
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
       // PLUGIN_* kernel_ops + a bundle's read-only setup query) + the live engine registries a bundle contributes
       // into. db may be null pre-login — engine plugins still install/activate (their ops just aren't logged).
@@ -3374,8 +3375,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
     window.IdmpPillActive = { showme: _showMeOn,
-                              audio: function () { return !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()); },
-                              editmode: function () { return !!(window.__crud && window.__crud.editModeOn && window.__crud.editModeOn()); } };
+                              audio: function () { return !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()); } };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
     window.IdmpPillStage = function () {
