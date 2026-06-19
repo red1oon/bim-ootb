@@ -1290,7 +1290,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var gear = (window.ICONS && window.ICONS.settings)
         ? ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.settings.svg + '</svg> ')
         : '⚙ ';
-      btn(gear + 'Process', 'Process (Alt+P) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      // Accelerator = Alt+O (oracle: ADWindowToolbar altKeyMap.put(VK_O, btnProcess); Alt+P is btnPrint's, not Process's).
+      btn(gear + 'Process', 'Process (Alt+O) — run the document/table process', hasProc, function () { _showProcessChooser(); });
       // Zoom Across — iDempiere's btnZoomAcross (magnifier, verified vs theme ZoomAcross24.png). WHERE-USED:
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
