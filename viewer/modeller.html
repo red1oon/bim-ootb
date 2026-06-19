@@ -26,17 +26,16 @@
      trigger and WRAP to a new column LEFTWARD when they reach the top (flex column-reverse + wrap-reverse,
      right-anchored). DEFAULT-OPEN + STICKY — only a deliberate ⋯ tap closes it (no outside-tap close),
      persisted. The #bar buttons keep their ids/handlers/disabled-state; only chrome changes. */
-  /* ⋯ trigger + ? help — transparent glass buttons, bottom-right. */
-  #m-dots, #m-help { position: fixed; bottom: 16px; z-index: 12; width: 46px; height: 46px;
+  /* ⋯ trigger — transparent glass button, bottom-right (the only thing outside the rail). */
+  #m-dots { position: fixed; bottom: 16px; right: 16px; z-index: 12; width: 46px; height: 46px;
     display: flex; align-items: center; justify-content: center; color: #cdd6e4; cursor: pointer;
     background: rgba(22,24,32,0.34); border: 1px solid rgba(255,255,255,0.14); border-radius: 50%;
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 3px 14px rgba(0,0,0,0.35); }
-  #m-dots { right: 16px; }
-  #m-help { right: 70px; }
-  #m-dots:hover, #m-help:hover { background: rgba(46,52,68,0.55); }
-  #m-dots.on, #m-help.on { color: #9fd4f7; border-color: #4fc3f7; background: rgba(31,49,71,0.5); }
+  #m-dots:hover { background: rgba(46,52,68,0.55); }
+  #m-dots.on { color: #9fd4f7; border-color: #4fc3f7; background: rgba(31,49,71,0.5); }
   /* L-PATH rail: buttons are absolutely positioned (set in JS) — they stack UP the right edge from the ⋯, then
-     turn the corner and flow horizontally LEFT along the top edge. They ROLL OUT in sequence on open. */
+     turn the corner and flow horizontally LEFT along the top edge. They ROLL OUT in sequence on open. The ? help
+     is the FIRST button in this rail (in line with the tools), not a separate floating button. */
   #bar { position: fixed; inset: 0; z-index: 11; pointer-events: none; display: block; }
   #bar button { position: fixed; width: 36px; height: 36px; padding: 0; justify-content: center;
     pointer-events: auto; border-radius: 11px; color: #cdd6e4; background: rgba(22,24,32,0.34);
@@ -44,12 +43,12 @@
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 2px 10px rgba(0,0,0,0.30);
     opacity: 0; transform: scale(.35) translate(26px, 26px);
     transition: opacity .24s ease, transform .30s cubic-bezier(.22,.9,.25,1.2); }
-  #bar.rolled button { opacity: 1; transform: none; }                  /* rolled-out state (per-index delay set in JS) */
+  #bar.rolled button { opacity: 1; transform: none; }                  /* rolled-out (per-index delay set in JS) */
   #bar button:hover { background: rgba(46,52,68,0.6); }
   #bar button.on { background: rgba(31,49,71,0.62); border-color: #4fc3f7; color: #9fd4f7; }
   #bar button span { display: none; }                                  /* label → tooltip (title) */
-  #bar button .ic { width: 20px; height: 20px; }                        /* fill the pill like the Viewer */
-  #hist { right: 124px; }                                              /* clear the ? + ⋯ triggers */
+  #bar button .ic { width: 20px; height: 20px; }
+  #hist { right: 70px !important; }                                    /* clear the bottom-right ⋯ trigger */
 
   /* ? Help — the pill registry: every tool's icon + name (built from the live toolbar). */
   #m-help-panel { position: fixed; bottom: 74px; right: 70px; z-index: 40; width: 232px;
@@ -1120,8 +1119,8 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     // L-PATH layout: stack UP the right edge from the ⋯, then turn the corner and flow LEFT along the top.
     const layoutRail = () => {
       const btns = [...bar.querySelectorAll('button')].filter(b => b.style.display !== 'none');
-      const S = 36, G = 4, M = 16, startBottom = 112;                 // above the ? / ⋯ cluster; Viewer-tight gap
-      const upRoom = window.innerHeight - M - 40 - startBottom;       // headroom before the top edge
+      const S = 36, G = 4, M = 16, startBottom = 112;                 // above the ⋯ trigger
+      const upRoom = window.innerHeight - M - 40 - startBottom;
       const colN = Math.max(1, Math.floor(upRoom / (S + G)) + 1);     // how many fit up the right edge
       btns.forEach((b, i) => {
         if (i < colN) { b.style.right = M + 'px'; b.style.bottom = (startBottom + i * (S + G)) + 'px'; b.style.top = 'auto'; b.style.left = 'auto'; }
@@ -1133,7 +1132,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
       layoutRail();
       dots.classList.toggle('on', pOpen);
       requestAnimationFrame(() => bar.classList.toggle('rolled', pOpen));
-      if (animate && pOpen) audioCue('rollout'); else if (animate) audioCue('rollin');
+      if (animate) audioCue(pOpen ? 'rollout' : 'rollin');
     };
     dots.onclick = () => { pOpen = !pOpen; try { localStorage.setItem(PK, pOpen ? '1' : '0'); } catch (e) {} applyPill(true); console.log('§MODELLER pill open=' + pOpen); };
     window.addEventListener('resize', () => { if (pOpen) layoutRail(); });
@@ -1142,14 +1141,15 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     // ? Help — the PILL REGISTRY: every visible tool's icon + name + keyboard shortcut, built from the live #bar.
     const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-undo': 'Ctrl+Z', 'b-redo': 'Ctrl+⇧Z', 'b-del': 'Del' };
     const help = document.createElement('button'); help.id = 'm-help'; help.title = 'Help — toolbar & shortcuts';
-    help.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>';
-    document.body.appendChild(help);
+    help.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>';
+    bar.insertBefore(help, bar.firstChild);   // ? is the FIRST button IN the rail (in line, nearest the ⋯), not floating outside
+    layoutRail();                             // position the newly-added ? along the L-path
     const hpanel = document.createElement('div'); hpanel.id = 'm-help-panel'; document.body.appendChild(hpanel);
     const _kbd = k => '<span style="margin-left:auto;font:10px ui-monospace,monospace;color:#9aa3b2;background:#13151a;border:1px solid #2c303a;border-radius:5px;padding:2px 7px">' + k + '</span>';
     function buildHelp() {
       let h = '<div class="hp-title">TOOLBAR · PILL REGISTRY</div>';
       bar.querySelectorAll('button').forEach(b => {
-        const ic = b.querySelector('.ic'); if (!ic || b.style.display === 'none') return;   // skip hidden tools
+        const ic = b.querySelector('.ic'); if (!ic || b.style.display === 'none' || b.id === 'm-help') return;   // skip hidden tools + self
         const s = b.querySelector('span'); const name = s ? s.textContent.trim() : (b.title || b.id);
         h += '<div class="hp-row"><span class="hp-ic">' + ic.outerHTML + '</span><span class="hp-name">' + name + '</span>' +
           (SHORTCUTS[b.id] ? _kbd(SHORTCUTS[b.id]) : '') + '</div>';
