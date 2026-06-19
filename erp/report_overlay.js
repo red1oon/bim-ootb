@@ -599,32 +599,43 @@
     catch (e) { return null; }
   }
 
+  // _renderReceipt — fold + render ONE document's receipt for an explicit record id (shared by show + printRecord).
+  function _renderReceipt(db, key, map, id) {
+    if (id == null) { renderUnsupported(db, key); return; }
+    var header = lc(rowsOf(db.exec('SELECT * FROM ' + map.key + ' WHERE ' + map.pk + '=' + id + ' LIMIT 1'))[0]) || null;
+    if (!header) { renderUnsupported(db, key); return; }
+    var lines = [];
+    try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY ' + (map.lineSort || 'line'))).map(lc); } catch (e) {}
+    // lineProductVia (§P2-tail-leg6): the carried product lives on a PARENT line table, not this line row —
+    // resolve it per line through the join and set it on the row, so foldReceipt reads r[fkProduct] unchanged.
+    if (map.lineProductVia) { var via = map.lineProductVia;
+      lines.forEach(function (r) { var lid = r[via.fk]; if (lid != null) r[map.fkProduct] = nameOf(db, via.table, via.pk, lid, via.product); }); }
+    var names = { partner: nameOf(db, 'c_bpartner', 'c_bpartner_id', header.c_bpartner_id, 'name'), products: {} };
+    lines.forEach(function (r) { var pid = r[map.fkProduct]; if (pid != null && names.products[pid] === undefined) names.products[pid] = nameOf(db, 'm_product', 'm_product_id', pid, 'name'); });
+    var rec = CORE.foldReceipt(map, header, lines, names);
+    render(db, rec);
+    console.log('§REPORT-RECEIPT doc=' + fname(key) + '#' + rec.id + ' lines=' + rec.lines.length +
+      ' subtotal=' + fmtN(rec.subtotal) + ' tax=' + fmtN(rec.tax) + ' total=' + fmtN(rec.total) +
+      ' folds-from=' + rec.foldsFrom + ' handAuthored=0');
+  }
   // show — fold + render the receipt for `key` (resolving the lit document id from the bundle).
   function show(key) {
     var map = CORE.REPORT_MAP[key];
     if (!map) { renderUnsupported(key); console.log('§REPORT verb key=' + key + ' supported=N (no header/line map)'); return; }
     if (typeof withBundle !== 'function') { console.warn('§REPORT no bundle'); return; }
-    withBundle(function (db) {
-      try {
-        var id = litId(db, map);
-        if (id == null) { renderUnsupported(db, key); return; }
-        var header = lc(rowsOf(db.exec('SELECT * FROM ' + map.key + ' WHERE ' + map.pk + '=' + id + ' LIMIT 1'))[0]) || null;
-        if (!header) { renderUnsupported(db, key); return; }
-        var lines = [];
-        try { lines = rowsOf(db.exec('SELECT * FROM ' + map.lineTable + ' WHERE ' + map.fk + '=' + id + ' ORDER BY ' + (map.lineSort || 'line'))).map(lc); } catch (e) {}
-        // lineProductVia (§P2-tail-leg6): the carried product lives on a PARENT line table, not this line row —
-        // resolve it per line through the join and set it on the row, so foldReceipt reads r[fkProduct] unchanged.
-        if (map.lineProductVia) { var via = map.lineProductVia;
-          lines.forEach(function (r) { var lid = r[via.fk]; if (lid != null) r[map.fkProduct] = nameOf(db, via.table, via.pk, lid, via.product); }); }
-        var names = { partner: nameOf(db, 'c_bpartner', 'c_bpartner_id', header.c_bpartner_id, 'name'), products: {} };
-        lines.forEach(function (r) { var pid = r[map.fkProduct]; if (pid != null && names.products[pid] === undefined) names.products[pid] = nameOf(db, 'm_product', 'm_product_id', pid, 'name'); });
-        var rec = CORE.foldReceipt(map, header, lines, names);
-        render(db, rec);
-        console.log('§REPORT-RECEIPT doc=' + fname(key) + '#' + rec.id + ' lines=' + rec.lines.length +
-          ' subtotal=' + fmtN(rec.subtotal) + ' tax=' + fmtN(rec.tax) + ' total=' + fmtN(rec.total) +
-          ' folds-from=' + rec.foldsFrom + ' handAuthored=0');
-      } catch (er) { console.warn('§REPORT fold error', er && er.message); }
-    });
+    withBundle(function (db) { try { _renderReceipt(db, key, map, litId(db, map)); } catch (er) { console.warn('§REPORT fold error', er && er.message); } });
+  }
+  // printRecord — iDempiere's toolbar Print (btnPrint, Alt+P): the receipt for THIS open document (the actually-
+  // selected record), NOT the lit demo doc show() defaults to. Same PURE foldReceipt verb, just the real id.
+  // Returns true when the document kind is printable (a header/line map exists) so the caller can grey the
+  // toolbar Print otherwise (iDempiere enablePrint parity). NO new fold code.
+  function printRecord(key, recordId) {
+    var map = CORE.REPORT_MAP[key];
+    if (!map) { console.log('§REPORT-PRINT key=' + key + ' supported=N (no header/line map)'); return false; }
+    if (typeof withBundle !== 'function') { console.warn('§REPORT no bundle'); return false; }
+    withBundle(function (db) { try { _renderReceipt(db, key, map, recordId != null ? recordId : litId(db, map)); } catch (er) { console.warn('§REPORT fold error', er && er.message); } });
+    console.log('§REPORT-PRINT key=' + key + ' rec=' + recordId + ' supported=Y');
+    return true;
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -1051,7 +1062,7 @@
     document.head.appendChild(css);
   }
 
-  global.__report = { show: show, statement: statement, menu: openMenu, print: printDoc, trialBalance: trialBalance,
+  global.__report = { show: show, statement: statement, menu: openMenu, print: printDoc, printRecord: printRecord, trialBalance: trialBalance,
                       core: CORE, panel: function () { return panel; }, close: close };
   console.log('§REPORT layer mounted (read face — ▤ Report)');
 })(typeof window !== 'undefined' ? window : this);

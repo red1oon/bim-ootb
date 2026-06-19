@@ -1292,6 +1292,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         : '⚙ ';
       // Accelerator = Alt+O (oracle: ADWindowToolbar altKeyMap.put(VK_O, btnProcess); Alt+P is btnPrint's, not Process's).
       btn(gear + 'Process', 'Process (Alt+O) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      // Print — iDempiere's btnPrint (Print24.png, Alt+P): print THIS document = fold its receipt from raw
+      //   header+lines (window.__report.printRecord, PURE). Enabled only on a saved record of a PRINTABLE document
+      //   kind (a header/line table in REPORT_MAP — orders/invoices/shipments/payments/…); iDempiere greys it the
+      //   same way (enablePrint). DISTINCT from the ⋯ Reports pill (= Performance-Analysis financial statements menu).
+      var rmap = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : null;
+      var canPrint = !!(hasRec && tn && rmap && rmap[tn]);
+      btn(ic('printer', '🖨') + 'Print', 'Print this document (Alt+P)', canPrint, function () {
+        var ok = window.__report.printRecord(tn, recVal(rec, _keyCol(tab)));
+        console.log('§TOOLBAR print table=' + tn + ' rec=' + recVal(rec, _keyCol(tab)) + ' printable=' + ok);
+      });
       // Zoom Across — iDempiere's btnZoomAcross (magnifier, verified vs theme ZoomAcross24.png). WHERE-USED:
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
@@ -3501,20 +3511,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     // First destination: the BIM Viewer. available = C_Project in the BIM band (PK>=990000, Value == building
     //   name); launch = cold-open the building scene (../viewer idiom, mirrors the warehouse pill). Idempotent.
+    // v2 (ZOOM_ACROSS_SCOPE_SESSION §SPEC) — carry the in-FOCUS scope so the Viewer's Find lands on the right
+    //   items, not just the whole building. _zoomScope folds the focus ctx → {bld, find}; `find` is a REAL IFC
+    //   class (c_projectline → m_product.value, the proj_fold key), null = whole-building floor. _lastBimScope =
+    //   the nearest/latest remembered scope (the "no discerning record / blank page" fallback). NON-INVENT.
+    var _lastBimScope = null;
+    function _zoomScope(ctx) {
+      if (!ctx || !ctx.tab || !ctx.rec) return null;
+      var tn = String(ctx.tab.tableName || '').toLowerCase();
+      if (tn === 'c_project') {
+        var pk = recVal(ctx.rec, 'C_Project_ID');
+        if (pk == null || Number(pk) < 990000) return null;
+        var v = recVal(ctx.rec, 'Value');
+        return v ? { bld: String(v), find: null } : null;            // project header → whole building
+      }
+      if (tn === 'c_projectline') {                                  // a focused line → its IFC class
+        var projId = recVal(ctx.rec, 'C_Project_ID');
+        if (projId == null || Number(projId) < 990000) return null;
+        var pr = _sqlRows('SELECT value FROM c_project WHERE c_project_id=' + Number(projId))[0];
+        if (!pr || !pr.value) return null;
+        var find = null, pid = recVal(ctx.rec, 'M_Product_ID');
+        if (pid != null) { var p = _sqlRows('SELECT value FROM m_product WHERE m_product_id=' + Number(pid))[0]; find = p && p.value ? String(p.value) : null; }
+        return { bld: String(pr.value), find: find };
+      }
+      return null;
+    }
     if (window.ZoomAcross) window.ZoomAcross.register({
       id: 'viewer', label: 'BIM Viewer',
-      available: function (ctx) {
-        if (!ctx.tab || String(ctx.tab.tableName || '').toLowerCase() !== 'c_project' || !ctx.rec) return false;
-        var pk = recVal(ctx.rec, 'C_Project_ID');
-        return pk != null && Number(pk) >= 990000;
-      },
+      // available when the focus resolves a BIM scope OR one was remembered (nearest/latest); pure otherwise.
+      available: function (ctx) { return !!(_zoomScope(ctx) || _lastBimScope); },
       launch: function (ctx) {
-        var bld = ctx.rec ? recVal(ctx.rec, 'Value') : null;
-        if (!bld) { status('No BIM model linked to this record'); return; }
+        var sc = _zoomScope(ctx);
+        if (sc) _lastBimScope = sc;                                  // a real record refreshes the memory
+        else sc = _lastBimScope;                                     // blank/no-record → nearest/latest
+        if (!sc || !sc.bld) { status('No BIM model linked to this record'); console.log('§ZOOM-ACROSS no-scope'); return; }
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
-        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(bld) + '_extracted.db&bld=' + encodeURIComponent(bld) + '&home=' + homeUrl;
+        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' + encodeURIComponent(sc.bld) + '&home=' + homeUrl;
+        if (sc.find) url += '&find=' + encodeURIComponent(sc.find);  // carry the finer scope to the Find panel
         window.open(url, '_blank');
-        console.log('§ZOOM-ACROSS launch id=viewer bld=' + bld + ' url=' + url);
+        console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
       }
     });
     // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.

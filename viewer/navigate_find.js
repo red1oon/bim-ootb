@@ -3339,6 +3339,32 @@
     // Read-only teardown — drop the focus overlay + restore x-ray (same path as a lens reset).
     A.clearFocusElement = function () { _highlightLensReset(); console.log('[RP-TB] §FOCUS_ELEM_CLEAR'); };
 
+    // ── Zoom-Across SCOPE consume (ZOOM_ACROSS_SCOPE_SESSION §SPEC) ─────────────────────────────────────────
+    // The ERP "Zoom Across" pill cold-opens the viewer with ?find=<scope>; we run the INCUMBENT Find on it and
+    // light the matches with the SAME highlighter a pick/Find-zoom uses (A.focusElement). NO parallel highlighter.
+    //   scope = a comma-separated guid set  → focus those elements directly.
+    //   scope = a single IFC class (default) → drive the Find panel (elName→class) and focus the result set.
+    A.applyFindScope = function (scope) {
+      scope = String(scope || '').trim();
+      if (!scope) { console.log('§ZOOM-SCOPE skip=empty'); return 0; }
+      // guid-set: has a comma OR isn't an Ifc* class token → treat as explicit element ids.
+      if (scope.indexOf(',') >= 0 || !/^ifc[a-z]/i.test(scope)) {
+        var guids = scope.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        var lit = A.focusElement(new Set(guids), { item: guids.length === 1 });
+        console.log('§ZOOM-SCOPE kind=guids n=' + guids.length + ' lit=' + lit);
+        return guids.length;
+      }
+      // IFC class: reuse the Find panel + runSearch so the UI reflects the scope and one code path filters.
+      if (A.openFindPanel) try { A.openFindPanel(); } catch (e) {}
+      elName.value = scope;
+      try { populateDropdowns(); } catch (e) {}
+      runSearch();
+      var set = new Set((nav.results || []).map(function (r) { return r.guid; }).filter(Boolean));
+      if (set.size) A.focusElement(set, { item: false });
+      console.log('§ZOOM-SCOPE kind=class scope="' + scope + '" matches=' + set.size);
+      return set.size;
+    };
+
     // §S282b: _focusCycle removed — PanelNav handles zone cycling
     // §S282b: PanelNav replaces _findNav — universal zone-based keyboard nav
     // Fixes ArrowDown-from-input bug: input → storey header (not empty result list)
@@ -3402,4 +3428,5 @@
       if (window.requestIdleCallback) requestIdleCallback(_go, { timeout: 2000 }); else setTimeout(_go, 600);
     }, 400);
   }
+
 })();

@@ -90,6 +90,33 @@ async function initViewer() {
     });
     try { if ((new URLSearchParams(location.search)).get('connect') === '1') window.Connect.enable(); } catch (e) {}
   }
+  // §ZOOM-SCOPE auto-apply (ZOOM_ACROSS_SCOPE_SESSION §SPEC) — the ERP "Zoom Across" pill cold-opens the viewer
+  // with ?find=<scope> (a single IFC class or a comma-separated guid set). On boot we wait for the model db, then
+  // lazy-load Navigate and run the INCUMBENT Find on that scope (applyFindScope opens the Find panel + selects +
+  // highlights via focusElement — the warm correlation, reusing Find, no parallel highlighter). Query survives
+  // (the hash is rewritten with live camera coords). Best-effort: a missing scope/model just leaves a clean open.
+  (function () {
+    try {
+      var _zm = /[?&]find=([^&]+)/.exec(location.search);
+      if (!_zm) return;
+      var scope = decodeURIComponent(_zm[1].replace(/\+/g, ' '));
+      var tries = 0, poll = setInterval(function () {
+        tries++;
+        if (!APP.db) { if (tries > 300) clearInterval(poll); return; } // wait for the model db (runSearch needs it)
+        clearInterval(poll);
+        var go = function () {
+          if (typeof APP.applyFindScope === 'function') { try { APP.applyFindScope(scope); } catch (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); } }
+          else { console.log('§ZOOM-SCOPE skip=no-applyFindScope'); }
+        };
+        // give geometry a beat to stream (so focusElement can light), then load Navigate + apply.
+        setTimeout(function () {
+          if (typeof APP.applyFindScope === 'function') return go();
+          if (APP.loadNavigate) APP.loadNavigate().then(go).catch(function (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); });
+          else go();
+        }, 600);
+      }, 300);
+    } catch (e) { /* never block boot */ }
+  })();
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
@@ -108,7 +135,7 @@ async function initViewer() {
       }
       // Load sub-modules in dependency order, then the bootstrap
       var modules = [
-        'navigate_find.js?v=40',
+        'navigate_find.js?v=41',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
