@@ -4,7 +4,7 @@
 // BonsaiAuthored group carries its discipline colour (NOT the grey default) — proving the colour survives the DB
 // round-trip + history-replay fold. Reads window.__routewalkShResult (page self-test) + a GL pixel-lit sanity.
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-mep-colour', 'viewer');
+const VIEWER = path.resolve(__dirname, '..');   // this file lives in <viewer>/tests/ → serve its parent
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json',

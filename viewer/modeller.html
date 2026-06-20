@@ -153,6 +153,7 @@
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
   <button id="b-connect" title="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span>Connect</span></button>
+  <button id="b-xray" title="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg><span>X-ray</span></button>
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
   <span>history</span>
@@ -289,7 +290,9 @@ bView.onclick = () => {
   frameBox(_authoredBox() || new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(4, 3, 3)), v.dir); setStat('view: ' + v.name);
 };
 window.addEventListener('keydown', (e) => {
-  if ((e.key === 'f' || e.key === 'F') && !/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) { e.preventDefault(); fitView(); }
+  const inField = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
+  if ((e.key === 'f' || e.key === 'F') && !inField) { e.preventDefault(); fitView(); }
+  if ((e.key === 'x' || e.key === 'X') && !inField) { e.preventDefault(); const b = document.getElementById('b-xray'); if (b && b.onclick) b.onclick(); }
 });
 
 // ── Sample op-rows (kernel_ops-shaped) — same params proven by W-KERNEL-FOLD / W-KERNEL-SIGNED.
@@ -308,7 +311,62 @@ async function author(op, color) {
     audioCue('author');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
 }
-bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); setStat('cleared'); };
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); _xrayOn = false; if (typeof paintXray === 'function') paintXray(); setStat('cleared'); };
+
+// ── X-RAY REVEAL (step D) ───────────────────────────────────────────────────────────────────────
+// Mirror of the Viewer's ghostglass.js glass→glow doctrine (opacity 0.06 glass; emissive glow + depthTest off so
+// it shines through), applied to the op-log-native authored group instead of the viewer APP. Structure (any
+// authored mesh WITHOUT a persisted fixture colour) goes near-transparent glass; each MEP fixture (GEOM_INSERT
+// carrying parameters.color, from step C) glows in its discipline colour THROUGH the shell. Reversible with ZERO
+// snapshot bookkeeping: toggle OFF just re-folds the signed log (scrubTo) → true materials rebuilt deterministically.
+let _xrayOn = false;
+function _fixtureColorMap() {
+  const m = {}, O = window.Bonsai.oplog;
+  if (O) O._geomOps().forEach(o => { if (o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.color != null) m[o.id] = o.parameters.color; });
+  return m;
+}
+async function xrayReveal(on) {
+  const g = window.Bonsai.group && window.Bonsai.group();
+  if (!g) return { on: false, glass: 0, glow: 0 };
+  if (!on) {
+    _xrayOn = false;
+    await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);   // re-fold the signed log = authoritative restore
+    if (window.A && A.requestRender) A.requestRender();
+    console.log('§MODELLER xray off');
+    return { on: false, glass: 0, glow: 0 };
+  }
+  const fx = _fixtureColorMap();
+  let glass = 0, glow = 0;
+  g.children.forEach(mesh => {
+    if (!mesh.isMesh || !mesh.material) return;
+    if (!mesh._xrayOwn) { mesh.material = mesh.material.clone(); mesh._xrayOwn = true; }   // own material → no shared contamination
+    const mat = mesh.material, fid = mesh.userData && mesh.userData.featureId;
+    const col = (fid != null && fx[fid] != null) ? fx[fid] : null;
+    if (col != null) {                                    // fixture → glow through the glass shell
+      mat.transparent = true; mat.opacity = 0.97; mat.color.setHex(col);
+      if (mat.emissive) { mat.emissive.setHex(col); mat.emissiveIntensity = 0.85; }
+      mat.depthTest = false; mat.depthWrite = false; mat.needsUpdate = true; mesh.renderOrder = 999;
+      glow++;
+    } else {                                              // structure → near-transparent glass
+      mat.transparent = true; mat.opacity = 0.06; mat.color.setHex(0xaabbcc);
+      if (mat.emissive) { mat.emissive.setHex(0x000000); mat.emissiveIntensity = 0; }
+      mat.depthWrite = false; mat.depthTest = true; mat.needsUpdate = true; mesh.renderOrder = 0;
+      glass++;
+    }
+  });
+  _xrayOn = true;
+  if (window.A && A.requestRender) A.requestRender();
+  console.log('§MODELLER xray on glass=' + glass + ' glow=' + glow);
+  return { on: true, glass: glass, glow: glow };
+}
+window.__xrayReveal = xrayReveal;
+const bXray = document.getElementById('b-xray');
+function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
+if (bXray) bXray.onclick = async () => {
+  const r = await xrayReveal(!_xrayOn); paintXray();
+  setStat(r.on ? ('X-ray reveal — ' + r.glow + ' MEP glowing through ' + r.glass + ' glass') : 'X-ray off');
+  if (_soundOn) audioCue(r.on ? 'rollout' : 'rollin');
+};
 
 // ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
 // Click on the XY ground plane to drop profile points; the planegcs solver cleans up the polygon
@@ -2100,6 +2158,60 @@ if (qs.get('routewalk') === 'sh') {
     window.__routewalkShResult = out;
     window.__routewalkShDone = true;
     console.log('§MODELLER routewalk-sh-done ' + JSON.stringify(out));
+  })();
+}
+// ?routewalk=xray proves STEP D X-RAY REVEAL (W-XRAY-REVEAL): drop SH (structure + 23 coloured fixtures via the
+// step-C path), toggle X-ray ON — assert the structural shell went to GLASS (near-zero opacity, neutral colour) and
+// every MEP fixture GLOWS through it (emissive == its discipline colour, depthTest off, renderOrder on top). Toggle
+// OFF re-folds the signed log → true materials restored (structure opaque, fixtures keep their colour, no emissive).
+if (qs.get('routewalk') === 'xray') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library, O = window.Bonsai.oplog;
+    try {
+      await L.ready();
+      const B = 'BUILDING_SH_STD';
+      insRot = 0; insElev = 0; inserting = true; insertHash = B; O.clear();
+      await placeAssembly(6, 4);
+      await (window.__lastAutoRoute || Promise.resolve({}));
+      const grp = window.Bonsai.group();
+      const fxIds = {}; O._geomOps().forEach(o => { if (o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.color != null) fxIds[o.id] = o.parameters.color; });
+      out.fixtures = Object.keys(fxIds).length;
+      // ── reveal ON ──
+      const onR = await window.__xrayReveal(true);
+      out.glass = onR.glass; out.glow = onR.glow;
+      let glassOK = 0, glowOK = 0, glowColourOK = 0, shineThrough = 0;
+      grp.children.forEach(m => {
+        if (!m.isMesh || !m.material) return;
+        const fid = m.userData && m.userData.featureId, mat = m.material;
+        if (fid != null && fxIds[fid] != null) {                          // fixture → glow
+          if (mat.emissive && mat.emissiveIntensity > 0) glowOK++;
+          if (mat.emissive && mat.emissive.getHex() === fxIds[fid]) glowColourOK++;
+          if (mat.depthTest === false && m.renderOrder >= 999) shineThrough++;
+        } else {                                                          // structure → glass
+          if (mat.transparent && mat.opacity <= 0.12) glassOK++;
+        }
+      });
+      out.glassOK = glassOK; out.glowOK = glowOK; out.glowColourOK = glowColourOK; out.shineThrough = shineThrough;
+      // ── reveal OFF (re-fold restore) ──
+      await window.__xrayReveal(false);
+      let restored = 0, stillGlowing = 0, fixturesColoured = 0;
+      grp.children.forEach(m => {
+        if (!m.isMesh || !m.material) return;
+        const fid = m.userData && m.userData.featureId, mat = m.material;
+        if (fid != null && fxIds[fid] != null) {                          // fixture keeps its colour, no glow
+          if (mat.color.getHex() === fxIds[fid]) fixturesColoured++;
+          if (mat.emissive && mat.emissive.getHex() !== 0 && mat.emissiveIntensity > 0) stillGlowing++;   // black emissive (re-fold default) = no glow
+        } else if (!mat.transparent && mat.opacity >= 0.99) restored++;    // structure opaque again
+      });
+      out.structureRestored = restored; out.stillGlowing = stillGlowing; out.fixturesColouredAfter = fixturesColoured;
+      out.verify = (await O.verify()).ok;
+      out.pass = out.fixtures === 23 && out.glow === 23 && out.glass >= 50 &&
+        out.glassOK === out.glass && out.glowOK === 23 && out.glowColourOK === 23 && out.shineThrough === 23 &&
+        out.structureRestored === out.glass && out.stillGlowing === 0 && out.fixturesColouredAfter === 23 && out.verify;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk xray fail ' + e); }
+    window.__xrayResult = out;
+    window.__xrayDone = true;
+    console.log('§MODELLER routewalk-xray-done ' + JSON.stringify(out));
   })();
 }
 // ?insert=demo proves library-component insert @ LOD (W-BONSAI-INSERT): enter Insert mode via the button, pick a
