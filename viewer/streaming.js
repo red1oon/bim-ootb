@@ -1700,7 +1700,13 @@ function setupStreaming(A) {
     // Single DB — geometry is in the same DB (split mode sets libDb asynchronously)
     // §S260: Range mode uses async _rangeDb for geometry; sync A.db for metadata
     // Non-range, non-split: libDb = same sync DB
-    if (!_splitMode && !A._useRangeStream) A.libDb = A.db;
+    // §BBOX-PAINT-FIRST — yield ~2 frames so the bbox placeholders actually paint before
+    // libDb is enabled (streamTick gates on libDb), i.e. before mesh streaming grabs the thread.
+    if (!_splitMode && !A._useRangeStream) {
+      await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+      A.libDb = A.db;
+      console.log('[S241] §BBOX_PAINT_YIELD bboxes painted; enabling mesh stream');
+    }
   };
 
   // URL deep-link
