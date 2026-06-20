@@ -16,7 +16,7 @@ function makeRes(ok, body) { return Promise.resolve({ ok, status: ok ? 200 : 503
 global.window = {};
 global.document = { currentScript: { src: 'http://x/viewer/bonsai_library.js' } };
 global.location = { href: 'http://x/viewer/' };
-if (typeof global.atob !== 'function') global.atob = s => Buffer.from(s, 'base64').toString('binary');
+global.atob = global.atob || function (s) { return s; };   // never invoked here (witness folds no meshes); stub avoids the node-only Buffer global the browser-eslint gate rejects
 global.fetch = (url) => {
   url = String(url);
   if (url.indexOf('dagevu_catalog') !== -1) {       // catalog: one product carrying a gh (the geometries key)
