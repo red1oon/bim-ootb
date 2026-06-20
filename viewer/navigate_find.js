@@ -1030,6 +1030,67 @@
           .then(function () { return true; }).catch(function () { return false; });
       } catch (e) { return Promise.resolve(false); }
     }
+    // ── §S2 (TM_4D5D_VARIANCE_LANE) — Zoom-Across cost fold ─────────────────────────────────────────────────
+    // When the ERP "Zoom Across" pill lands the viewer on an IFC class, fold that class's STORED twin cost into
+    // the #info-panel: the line's PlannedAmt (line grain) + the COMMITTED from its phase (c_projectphase_id →
+    // C_ProjectPhase.CommittedAmt — line CommittedAmt is null on disk BY DESIGN, it earns at S5) + the whole
+    // project pair (header scope). READ-only off the same ../erp/ad_seed.db the push path loaded. NO recompute.
+    function _money(n) { n = Math.round(Number(n) || 0); var a = Math.abs(n), s = n < 0 ? '-' : '';
+      if (a >= 1e6) return s + 'RM' + (a / 1e6).toFixed(1) + 'M'; if (a >= 1e3) return s + 'RM' + Math.round(a / 1e3) + 'K'; return s + 'RM' + a; }
+    function _foldClassTwin(ifcClass) {
+      return _ensureErpDb().then(function (db) {
+        if (!db) return null;
+        var building = A.activeBuilding;
+        function ex(sql, p) { try { var r = db.exec(sql, p || []); return (r.length && r[0].values.length) ? r[0].values : null; } catch (e) { return null; } }
+        var pr = ex("SELECT C_Project_ID,PlannedAmt,CommittedAmt FROM C_Project WHERE Value=?", [building]);
+        if (!pr) return null;   // this building isn't a folded project → no cost fold
+        var pid = pr[0][0], proj = { planned: Number(pr[0][1] || 0), committed: Number(pr[0][2] || 0) };
+        var line = null, phase = null;
+        var ln = ex("SELECT pl.PlannedAmt, pl.c_projectphase_id FROM C_ProjectLine pl JOIN M_Product p ON pl.M_Product_ID=p.M_Product_ID WHERE pl.C_Project_ID=? AND p.Value=?", [pid, ifcClass]);
+        if (ln) {
+          line = { planned: Number(ln[0][0] || 0), phaseId: ln[0][1] };
+          var ph = ex("SELECT Name,PlannedAmt,CommittedAmt,StartDate FROM C_ProjectPhase WHERE C_ProjectPhase_ID=?", [ln[0][1]]);
+          if (ph) phase = { name: ph[0][0], planned: Number(ph[0][1] || 0), committed: Number(ph[0][2] || 0), start: ph[0][3] };
+        }
+        return { building: building, projectId: pid, ifcClass: ifcClass, project: proj, line: line, phase: phase };
+      }).catch(function (e) { console.log('§ZOOM-COST err=' + e.message); return null; });
+    }
+    function _pct(planned, committed) { return planned > 0 ? Math.round((committed - planned) * 100 / planned) : 0; }
+    function _showClassCost(ifcClass, matchCount) {
+      var box = document.getElementById('info-cost'); if (!box) return;
+      box.style.display = 'none';
+      _foldClassTwin(ifcClass).then(function (t) {
+        if (!t) { console.log('§ZOOM-COST skip — no twin for class="' + ifcClass + '"'); return; }
+        var pj = t.project, pjPct = _pct(pj.planned, pj.committed);
+        var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">Cost variance <span style="font-size:9px;color:#888;font-weight:normal">· from records</span></div>';
+        if (t.phase) {   // the committed actual lives at phase/control-account grain
+          var phPct = _pct(t.phase.planned, t.phase.committed), over = t.phase.committed >= t.phase.planned;
+          html += '<div><span class="label">' + ifcClass + '</span>: <span class="value">' + _money(t.line ? t.line.planned : 0) + ' planned</span></div>';
+          html += '<div><span class="label">Phase ' + t.phase.name + '</span>: <span class="value">' + _money(t.phase.planned) + ' → ' + _money(t.phase.committed) +
+            ' <b style="color:' + (over ? '#ff6b6b' : '#26a69a') + '">(' + (phPct >= 0 ? '+' : '') + phPct + '%)</b></span></div>';
+        }
+        html += '<div><span class="label">Project ' + t.building + '</span>: <span class="value">' + _money(pj.planned) + ' → ' + _money(pj.committed) +
+          ' <b style="color:' + (pj.committed >= pj.planned ? '#ff6b6b' : '#26a69a') + '">(' + (pjPct >= 0 ? '+' : '') + pjPct + '%)</b></span></div>';
+        // "View at this moment" — jump TM to this class's phase window (scene partially-built there).
+        if (t.phase && typeof window.tmJumpToPhase === 'function') {
+          html += '<div style="margin-top:6px"><button id="info-cost-tm" style="background:#1565c0;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">⏱ View at this moment</button></div>';
+        }
+        box.innerHTML = html;
+        box.style.display = 'block';
+        var ipnl = document.getElementById('info-panel'); if (ipnl) ipnl.style.display = 'block';
+        var jb = document.getElementById('info-cost-tm');
+        if (jb && t.phase) jb.addEventListener('click', function (e) {
+          e.stopPropagation();
+          console.log('§ZOOM-COST_JUMP class="' + ifcClass + '" phase="' + t.phase.name + '"');
+          window.tmJumpToPhase(t.phase.name);
+        });
+        console.log('§ZOOM-COST class="' + ifcClass + '" matches=' + (matchCount || 0) + ' linePlanned=' + (t.line ? t.line.planned : 'n/a') +
+          ' phase="' + (t.phase ? t.phase.name : '-') + '" phasePlanned=' + (t.phase ? t.phase.planned : '-') + ' phaseCommitted=' + (t.phase ? t.phase.committed : '-') +
+          ' projPlanned=' + pj.planned + ' projCommitted=' + pj.committed + ' projPct=' + pjPct + '%');
+      });
+    }
+    A._showClassCost = _showClassCost;   // exposed for applyFindScope + witnesses
+
     // BIM→Project: every › ERP push outcome gets audio + a clear status (user: "good practice — a status
     // message, with audio feedback; happy audio when it succeeds"). Reuses the SFX engine (window.__sfx,
     // rows in sfx.json — NOT hardcoded synth, the wh_walk/PRE-PINNED-FACT idiom). Silent if audio is off.
@@ -3362,6 +3423,8 @@
       var set = new Set((nav.results || []).map(function (r) { return r.guid; }).filter(Boolean));
       if (set.size) A.focusElement(set, { item: false });
       console.log('§ZOOM-SCOPE kind=class scope="' + scope + '" matches=' + set.size);
+      // §S2 — fold this class's twin cost into the #info-panel (Planned→Committed pair, from records).
+      try { _showClassCost(scope, set.size); } catch (e) { console.log('§ZOOM-COST wire_err=' + e.message); }
       return set.size;
     };
 

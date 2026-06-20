@@ -1763,7 +1763,7 @@
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
-        '<button id="tm-var" style="font-size:13px;padding:2px 6px" title="Budget vs Actual variance">&#x2696;</button>' +
+        '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
         '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
       '</div>' +
@@ -2636,10 +2636,11 @@
   // Load the folded ERP twin once: fetch the seed db → sql.js → read the C_Project cost pair + its phases.
   // Same lazy-fetch idiom as navigate_find._ensureErpDb; read-only (db.close after extracting the figures).
   function _loadTwin() {
-    if (_twin || _twinLoading) return Promise.resolve(_twin);
     var app = A();
-    var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     var building = (app && app.activeBuilding) || 'Hospital';
+    if (_twin && _twin.building === building) return Promise.resolve(_twin);   // cached for THIS building
+    if (_twinLoading) return Promise.resolve(null);                            // a load is in flight; caller retries
+    var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     if (!SQL) { console.log('§TM_TWIN_DEFER no sql.js factory'); return Promise.resolve(null); }
     _twinLoading = true;
     return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
@@ -3408,6 +3409,13 @@
     updateStatus();
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
+    // §S2 — the ⚖ variance drawer only offers itself when this building HAS a folded twin (a C_Project with the
+    // PlannedAmt↔CommittedAmt pair). No twin → no button, no drawer (user: "don't trigger it when no such info").
+    _loadTwin().then(function (t) {
+      var vb = document.getElementById('tm-var');
+      if (vb) vb.style.display = t ? '' : 'none';
+      console.log('§TM_VAR_GATE building="' + ((app && app.activeBuilding) || '?') + '" twin=' + (t ? 'yes' : 'no') + ' ⚖=' + (t ? 'shown' : 'hidden'));
+    });
     console.log('§TIME_MACHINE ON — ' + _ops.length + ' ops, ' + _days.length + ' days, ' +
       'project: ' + new Date(_projectStart).toLocaleDateString() + ' → ' + new Date(_projectEnd).toLocaleDateString());
   }
@@ -3505,6 +3513,42 @@
   }
 
   window.toggleTimeMachine = toggle;
+
+  // §S2 (TM_4D5D_VARIANCE_LANE) — juncture jump: land the cursor at the START of a named phase's window so the
+  // scene is rendered PARTIALLY-BUILT at that moment (the IFC cost panel's "View at this moment"). The phase
+  // window comes from TM's own _ops (same axis the cursor scrubs). Opens the ⚖ drawer so the cost story shows.
+  // Activates TM first if needed (async). Returns a Promise<bool> (true = landed in the phase window).
+  window.tmJumpToPhase = function (phaseName) {
+    phaseName = String(phaseName || '');
+    function doJump() {
+      if (!_ops.length) { console.log('§TM_JUNCTURE skip=no-ops phase="' + phaseName + '"'); return false; }
+      var s = Infinity, e = -Infinity;
+      for (var i = 0; i < _ops.length; i++) {
+        var ph = (_ops[i].parameters || {}).phase || 'Architecture';
+        if (ph === phaseName) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
+      }
+      if (!isFinite(s)) { console.log('§TM_JUNCTURE miss phase="' + phaseName + '" (no ops in that phase)'); return false; }
+      _cursor = s;
+      renderAtTime(_cursor);
+      try { anchorFromCursor(); } catch (x) {}
+      try { configSlider(); } catch (x) {}
+      // surface the cost story: open the ⚖ variance drawer (reads the twin) if it isn't already open — ONLY when
+      // this building actually has a twin (no twin → no drawer; the ⚖ button is hidden anyway).
+      if (_twin && !_varVisible) {
+        _varVisible = true;
+        var vbtn = document.getElementById('tm-var'); if (vbtn) vbtn.classList.add('tm-active');
+        var vbox = document.getElementById('tm-var-box'); if (vbox) vbox.classList.add('open');
+        drawVariance();
+      }
+      var pct = Math.round((_cursor - _projectStart) / Math.max(1, _projectEnd - _projectStart) * 100);
+      console.log('§TM_JUNCTURE phase="' + phaseName + '" cursor=' + Math.round(_cursor) +
+        ' winStart=' + new Date(s).toISOString().slice(0, 10) + ' built~' + pct + '% (partially built)');
+      return true;
+    }
+    if (_active) return Promise.resolve(doJump());
+    var p = activate();
+    return (p && p.then) ? p.then(function () { return doJump(); }) : Promise.resolve(doJump());
+  };
 
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
