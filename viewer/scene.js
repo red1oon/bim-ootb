@@ -603,9 +603,11 @@ async function setupScene(A) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value); received += value.length;
-        const pct = Math.round((received / contentLength) * 100);
+        // §S-PROGRESS-META — clamp ≤100%: gzip/transfer-encoding makes Content-Length (compressed)
+        // smaller than received (decompressed) bytes, so the raw ratio can exceed 1.0.
+        const pct = Math.min(100, Math.round((received / contentLength) * 100));
         if (A.status) A.status.textContent = `Downloading ${fileName}... ${pct}% (${(received/1024/1024).toFixed(0)}/${(contentLength/1024/1024).toFixed(0)}MB)`;
-        // §S-PROGRESS-META — drive the visible bar during cachedFetch (meta.db phase), not just the status text
+        // drive the visible bar during cachedFetch (meta.db phase), not just the status text
         var _sp = document.getElementById('s-progress');
         if (_sp) _sp.style.width = pct + '%';
       }
