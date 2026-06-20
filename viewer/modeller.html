@@ -188,7 +188,7 @@
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=3" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=4" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -1294,7 +1294,12 @@ async function autoRouteMEP(asm, leaves) {
   const name = _rwBuildingHint(asm);
   // ARC envelope auto-loaded from mep_rw.db arc_envelope table (91 Duplex boxes → clash gates ~204 runs)
   const segs = name ? rwRouteSegments(null, name) : [];
-  if (!segs.length) { console.log('§MODELLER autoroute no-MEP building="' + name + '"'); return { found: 0, routed: 0 }; }
+  // FIXTURES: lights/fans/diffusers/outlets/switches GENERATED per the building's REAL rooms (mep_rw.db
+  // building_room, baked from its OWN extracted BOM) × the real recipe. Structural-only buildings carry no MEP
+  // leaves and SH has no pipe anchors, so this is the only MEP a dropped SH gets — proven W-ROUTEWALK-FIXTURES-DB.
+  const rooms = (typeof rwLoadRooms === 'function' && name) ? rwLoadRooms(name) : [];
+  const fixtures = (rooms.length && typeof rwPlaceFixtures === 'function') ? rwPlaceFixtures(rooms) : [];
+  if (!segs.length && !fixtures.length) { console.log('§MODELLER autoroute no-MEP building="' + name + '"'); return { found: 0, routed: 0 }; }
   // World bbox min of placed structural leaves = origin of BOM coordinate frame in world space
   const bmin = [Infinity, Infinity, Infinity];
   leaves.forEach(l => { for (let i = 0; i < 3; i++) if ([l.x, l.y, l.z][i] < bmin[i]) bmin[i] = [l.x, l.y, l.z][i]; });
@@ -1317,12 +1322,38 @@ async function autoRouteMEP(asm, leaves) {
     catch (e) { console.warn('§MODELLER autoroute commit fail ' + (e && e.message || e)); }
     setStat('routing MEP… ' + routed + '/' + ops.length);
   }
+  // FIXTURES → cheap host-side box proxies (GEOM_INSERT @ LOD-200, NO occt). The fixture's real product/ifc/disc
+  // rides _rw metadata so selection + Connect use the true identity even though the box is a generic catalog proxy.
+  // Mapped product → catalog ROLE__ box (real bbox + ifc_class); fallback: a component matching the ifc_class.
+  const FIX_HASH = { LIGHT:'ROLE__LIGHT', CEILING_FAN:'ROLE__FAN', OUTLET:'ROLE__OUTLET', OUTLET_GFCI:'ROLE__OUTLET',
+    SWITCH:'ROLE__SWITCH', SUPPLY_DIFFUSER:'ROLE__DIFFUSER', EXHAUST_FAN:'ROLE__EXHAUST_FAN', SPRINKLER:'ROLE__SPRINKLER',
+    FLOOR_TRAP:'ROLE__FLOOR_TRAP', SINK:'ROLE__SINK', TOILET:'ROLE__TOILET' };
+  const L = window.Bonsai.library;
+  const hashFor = f => {
+    let h = FIX_HASH[f.product];
+    if (h && L.get(h)) return h;
+    const byClass = (L.catalog() || []).find(c => c.ifc_class === f.ifcClass);   // fallback: any box of the right ifc class
+    return byClass ? byClass.hash : 'ROLE__DIFFUSER';                            // final generic ACMV box
+  };
+  let placedFx = 0;
+  for (const f of fixtures) {
+    const hash = hashFor(f); const c = L.get(hash); const ch = c ? c.h : 0.4;
+    const w = toWorld([f.x, f.y, f.z]);
+    const op = { op_type:'GEOM_INSERT',
+      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200' },
+      _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } };
+    try { const res = await window.Bonsai.oplog.commit(op); if (res) placedFx++; }
+    catch (e) { console.warn('§MODELLER fixture commit fail ' + (e && e.message || e)); }
+    setStat('placing fixtures… ' + placedFx + '/' + fixtures.length);
+  }
   await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   syncHistory(); audioCue('commit');
-  setStat('routed ' + routed + ' MEP runs for ' + name);
-  console.log('§MODELLER autoroute-done building="' + name + '" routed=' + routed);
-  return { found: segs.length, routed: routed, emitted: ops.length, bmin: bmin.map(v => +v.toFixed(3)) };
+  const fxDisc = {}; fixtures.forEach(f => fxDisc[f.disc] = (fxDisc[f.disc]||0)+1);
+  setStat('routed ' + routed + ' runs + ' + placedFx + ' fixtures for ' + name);
+  console.log('§MODELLER autoroute-done building="' + name + '" routed=' + routed + ' fixtures=' + placedFx +
+    '/' + fixtures.length + ' disc=' + JSON.stringify(fxDisc));
+  return { found: segs.length, routed: routed, emitted: ops.length, fixtures: placedFx, fxDisc: fxDisc, bmin: bmin.map(v => +v.toFixed(3)) };
 }
 async function placeAssembly(x, y) {
   const L = window.Bonsai.library, asm = L.assembly(insertHash);
@@ -2015,6 +2046,36 @@ if (qs.get('routewalk') === 'drop') {
     window.__routewalkDropResult = out;
     window.__routewalkDropDone = true;
     console.log('§MODELLER routewalk-drop-done');
+  })();
+}
+// ?routewalk=sh proves FIXTURE AUTO-PLACE on a structural-only SampleHouse drop (W-ROUTEWALK-FIXTURES-LIVE): drop
+// BUILDING_SH_STD (real structure, MEP=0) → autoRouteMEP loads SH's REAL rooms from mep_rw.db building_room and
+// GENERATES the per-room MEP fixtures (lights/fans/diffusers/outlets/switches) as cheap signed GEOM_INSERT box
+// proxies in the placed frame. SH has no wet room → ELEC + ACMV only (no sprinkler) — faithful, proven headless by
+// W-ROUTEWALK-FIXTURES-DB. Confirms the live wiring: routewalker.js?v=4 + rwLoadRooms + building_room in the served db.
+if (qs.get('routewalk') === 'sh') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library, O = window.Bonsai.oplog;
+    try {
+      await L.ready();
+      const B = 'BUILDING_SH_STD';
+      insRot = 0; insElev = 0; inserting = true; insertHash = B; O.clear();
+      out.structuralLeaves = L.expandAssembly(B, { x: 6, y: 4, z: 0, rot: 0 }).length;
+      await placeAssembly(6, 4);                                   // REAL drop → triggers autoRouteMEP (fixtures path)
+      const ar = await (window.__lastAutoRoute || Promise.resolve({}));
+      out.building = 'SampleHouse'; out.fixtures = ar.fixtures || 0; out.fxDisc = ar.fxDisc || {};
+      const fxOps = O._geomOps().filter(o => o._rw && o._rw.fixture);
+      out.fixtureOps = fxOps.length;
+      out.products = {}; fxOps.forEach(o => { const p = o._rw.product; out.products[p] = (out.products[p]||0)+1; });
+      out.hasELEC = (out.fxDisc.ELEC || 0) > 0; out.hasACMV = (out.fxDisc.ACMV || 0) > 0;
+      out.noWetRoom = !out.fxDisc.FP && !out.fxDisc.PLB;           // SH honestly has no sprinkler/plumbing
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await O.verify()).ok;
+      out.pass = out.fixtures === 23 && out.fixtureOps === 23 && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk sh fail ' + e); }
+    window.__routewalkShResult = out;
+    window.__routewalkShDone = true;
+    console.log('§MODELLER routewalk-sh-done ' + JSON.stringify(out));
   })();
 }
 // ?insert=demo proves library-component insert @ LOD (W-BONSAI-INSERT): enter Insert mode via the button, pick a
