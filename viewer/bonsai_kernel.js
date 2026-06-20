@@ -19,7 +19,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=3', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch (W-BONSAI-ROTATE)
+      const url = new URL('bonsai_kernel_worker.js?v=4', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin (W-BONSAI-ROTATE-SOLID)
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};

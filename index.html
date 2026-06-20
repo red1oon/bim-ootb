@@ -122,6 +122,7 @@
   #hub .hub-card:hover { border-color:rgba(79,195,247,.5); transform:translateY(-1px); }
   #hub .hub-card:active { transform:scale(.98); }
   #hub .hub-card .nm { color:#e6e6ea; font-size:13px; font-weight:600; line-height:1.2; word-break:break-word; }
+  #hub .hub-card.cached .nm { color:#4fc97a; }  /* §CACHE-INDICATOR — green name = building DB already in IndexedDB cache */
   #hub .hub-card .mt { color:#7a8294; font-size:10.5px; margin-top:4px; }
   #hub .hub-card .db { display:flex; gap:2px; margin-top:8px; height:5px; }
   #hub .hub-card .db i { display:block; height:100%; border-radius:2px; }
@@ -481,7 +482,7 @@ var BUILDINGS={
   'Schependomlaan':{db:'Schependomlaan_extracted.db'},'SampleCastle':{db:'SampleCastle_extracted.db'},
   'Molio':{db:'Molio_extracted.db'},'BimWhale_Advanced':{db:'BimWhale_Advanced_extracted.db'}
 };
-function openHub(){ document.getElementById('hub').classList.add('active'); buildHubBody(); L('§HUB opened (Buildings/IFC)'); }
+function openHub(){ document.getElementById('hub').classList.add('active'); buildHubBody(); _refreshCachedIndicator(); L('§HUB opened (Buildings/IFC)'); }
 function closeHub(){ document.getElementById('hub').classList.remove('active'); }
 function openBuilding(name){
   var bld=BUILDINGS[name]; if(!bld){ toast('No DB for '+name); return; }
@@ -495,11 +496,44 @@ function _card(a){
     var pct=(a.disciplines[d]/a.count)*100;
     return '<i style="background:'+(DISC_COLORS[d]||'#888')+';width:'+Math.max(pct*1.2,4)+'px" title="'+d+'"></i>';
   }).join('');
-  return '<div class="hub-card" onclick="openBuilding(\''+a.name+'\')">'+
+  return '<div class="hub-card" data-bld="'+a.name+'" onclick="openBuilding(\''+a.name+'\')">'+
     '<div class="nm">'+a.name+'</div>'+
     '<div class="mt"><b>'+a.count.toLocaleString()+'</b> elements &middot; '+Object.keys(a.disciplines||{}).join(' ')+'</div>'+
     '<div class="db">'+bars+'</div></div>';
 }
+// §CACHE-INDICATOR — green a building's name if its DB is already in the IndexedDB building cache
+// (bim_ootb_cache/dbs, keyed by fetched URL). After Clear cache → no keys → names stay white. Best-effort.
+async function _markCachedBuildings(){
+  try{
+    var keys = await new Promise(function(res){
+      var o; try { o = indexedDB.open('bim_ootb_cache'); } catch(e){ return res([]); }
+      o.onerror = function(){ res([]); };
+      o.onsuccess = function(){
+        var db = o.result;
+        if(!db.objectStoreNames.contains('dbs')){ db.close(); return res([]); }
+        try {
+          var rq = db.transaction('dbs','readonly').objectStore('dbs').getAllKeys();
+          rq.onsuccess = function(){ db.close(); res(rq.result || []); };
+          rq.onerror = function(){ db.close(); res([]); };
+        } catch(e){ db.close(); res([]); }
+      };
+    });
+    var keyStr = '\n' + keys.join('\n') + '\n';
+    document.querySelectorAll('#hub .hub-card[data-bld]').forEach(function(card){
+      var bld = BUILDINGS[card.getAttribute('data-bld')];
+      if(!bld || !bld.db){ card.classList.remove('cached'); return; }
+      var stem = bld.db.replace(/_extracted\.db$/,'').replace(/\.db$/,'');
+      // split builds cache *_meta/_geo/_positions, single caches *_extracted.db — match on the stem boundary
+      var hit = keyStr.indexOf('/'+stem+'_') >= 0 || keyStr.indexOf('/'+bld.db) >= 0;
+      card.classList.toggle('cached', hit);  // idempotent: green if cached, white if not (handles eviction too)
+    });
+  }catch(e){ /* indicator is best-effort, never blocks the hub */ }
+}
+// §CACHE-INDICATOR live refresh — re-check when the tab regains focus/visibility (a building opened in
+// another tab may have just finished caching), so green appears WITHOUT a reload. No-op if hub not built.
+function _refreshCachedIndicator(){ if(document.querySelector('#hub .hub-card[data-bld]')) _markCachedBuildings(); }
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) _refreshCachedIndicator(); });
+window.addEventListener('focus', _refreshCachedIndicator);
 var _hubBuilt=false;
 async function buildHubBody(){
   if(_hubBuilt) return; _hubBuilt=true;
@@ -523,6 +557,7 @@ async function buildHubBody(){
     if(landmark.length) html+='<div class="hub-sect"><div class="hub-sh">Landmark buildings</div><div class="hub-grid">'+landmark.map(_card).join('')+'</div></div>';
     document.getElementById('hub-status').remove();
     b.insertAdjacentHTML('beforeend', html);
+    _markCachedBuildings();
     L('§HUB_CARDS rendered city='+city.length+' landmark='+landmark.length);
   } catch(e){
     var s=document.getElementById('hub-status'); if(s){ s.innerHTML='&#9888; '+e.message+' &mdash; <a href="javascript:location.reload()" style="color:#4fc3f7">reload</a>'; }
@@ -533,21 +568,47 @@ function openAbout(){ if(window.AboutDIY && AboutDIY.open){ AboutDIY.open(); L('
 function openFlags(){ if(window._TRL_LOADER && _TRL_LOADER.openFlagPicker){ _TRL_LOADER.openFlagPicker(); L('§FLAGS picker opened (real _TRL_LOADER)'); } else { L('§FLAGS _TRL_LOADER missing'); } }
 // 8th launcher — Clear cache: drops the entered flag + imports + caches, so the NEXT load shows the
 // red/blue gate again. (Mirrors index.html clearAllCache; this is the only thing that re-arms the gate.)
+// Reliably empty an IndexedDB even if another tab holds it open: clear every object store.
+// (deleteDatabase silently BLOCKS on open connections and the old code treated onblocked as success,
+//  so the building cache survived — the reported bug.) Then best-effort delete the now-empty DB.
+function _emptyIdb(name){
+  return new Promise(function(res){
+    var open; try { open = indexedDB.open(name); } catch(e){ return res(); }
+    open.onerror = function(){ res(); };
+    open.onsuccess = function(){
+      var db = open.result;
+      try {
+        var names = Array.prototype.slice.call(db.objectStoreNames);
+        if(!names.length){ db.close(); try{ indexedDB.deleteDatabase(name); }catch(e){} return res(); }
+        var tx = db.transaction(names, 'readwrite');
+        names.forEach(function(s){ try{ tx.objectStore(s).clear(); }catch(e){} });
+        tx.oncomplete = function(){ db.close(); try{ indexedDB.deleteDatabase(name); }catch(e){} res(); };
+        tx.onerror = function(){ db.close(); res(); };
+        tx.onabort = function(){ db.close(); res(); };
+      } catch(e){ try{ db.close(); }catch(_){} res(); }
+    };
+  });
+}
 async function clearCache(){
   sfxPress();
   // HONEST confirm — list exactly what goes. ONLY the in-browser building IndexedDB + the entered flag;
   // the installed app / offline shells stay, and any IFC saved as a .db file is the user's own copy.
   if(!confirm('Reset to the start screen?\n\nClears the in-browser building data:\n  • cached buildings\n  • any IFC scene you dropped in (not saved to a .db file)\nand returns you to the red / blue choice.\n\nKeeps: the installed app + offline data, and any .db you saved yourself.')) return;
   try { localStorage.removeItem('mx_entered'); localStorage.removeItem('bim_ootb_viewed'); } catch(e){}
-  await new Promise(function(res){ var n=0, done=function(){ if(++n>=2) res(); };
-    try { var r1=indexedDB.deleteDatabase('bim_ootb_imports'); r1.onsuccess=r1.onerror=r1.onblocked=done; } catch(e){ done(); }
-    try { var r2=indexedDB.deleteDatabase('bim_ootb_cache');   r2.onsuccess=r2.onerror=r2.onblocked=done; } catch(e){ done(); } });
-  L('§CLEAR building IndexedDB + entered wiped (app/offline caches KEPT) → reload to red/blue gate');
+  await _emptyIdb('bim_ootb_imports');
+  await _emptyIdb('bim_ootb_cache');
+  L('§CLEAR building IndexedDB stores cleared (app/offline caches KEPT) → reload to red/blue gate');
   location.href='index.html';
 }
 
 // ============ BOOT ============
 (async function boot(){
+  // Deep-link: /#buildings (or ?hub=1) opens the Buildings/IFC hub straight away — the docs "Open" link
+  // lands here. Takes precedence over the cold gate; showPortalFresh mounts the round selector BEHIND the
+  // overlay (+ marks entered), so closing the hub reveals the matrix, never a blank. (§BUILDINGS-DEEPLINK)
+  if(location.hash==='#buildings' || new URLSearchParams(location.search).has('hub')){
+    L('§BOOT deep-link → Buildings/IFC hub'); showPortalFresh(); openHub(); return;
+  }
   var navType=(performance.getEntriesByType('navigation')[0]||{}).type||'navigate';
   var entered=false; try { entered=localStorage.getItem('mx_entered')==='1'; } catch(e){}
   var state=await probeColdWarm();
@@ -558,5 +619,11 @@ async function clearCache(){
   else { L('§BOOT return ('+navType+') → ⋯ rail'); showMinimized(); }
 })();
 </script>
+
+<!-- GoatCounter traffic analytics — count landing visits (the ?ignore-me flag opts a device out).
+     Same counter the bottom-left Live Stats link reports from; carried over from the old gallery footer. -->
+<script>if(new URLSearchParams(location.search).has('ignore-me'))localStorage.setItem('goatcounter-ignore','t')</script>
+<script data-goatcounter="https://red1oon.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>

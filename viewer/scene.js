@@ -44,6 +44,15 @@ async function setupScene(A) {
     preserveDrawingBuffer: true
   });
   console.log('§S277b_RENDERER WebGLRenderer r184 (WebGPU deferred)');
+  // §S281b: report multi_draw fast-path + GPU at startup. BatchedMesh collapses a bucket to ONE draw
+  // call only when WEBGL_multi_draw is present; without it = per-draw fallback = slower final render.
+  try {
+    var _capGl = renderer.getContext();
+    var _md = !!_capGl.getExtension('WEBGL_multi_draw');
+    var _dbg = _capGl.getExtension('WEBGL_debug_renderer_info');
+    var _gpu = _dbg ? _capGl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
+    console.log('§RENDERER_CAPS multi_draw=' + (_md ? 'on (fast batched path)' : 'off (slow — per-draw fallback)') + ' gpu=' + _gpu);
+  } catch(_e) { console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message)); }
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(_isMobileRenderer ? 1 : Math.min(window.devicePixelRatio, 2));  // §S271: mobile=1x, desktop=cap 2x
@@ -603,8 +612,13 @@ async function setupScene(A) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value); received += value.length;
-        const pct = Math.round((received / contentLength) * 100);
+        // §S-PROGRESS-META — clamp ≤100%: gzip/transfer-encoding makes Content-Length (compressed)
+        // smaller than received (decompressed) bytes, so the raw ratio can exceed 1.0.
+        const pct = Math.min(100, Math.round((received / contentLength) * 100));
         if (A.status) A.status.textContent = `Downloading ${fileName}... ${pct}% (${(received/1024/1024).toFixed(0)}/${(contentLength/1024/1024).toFixed(0)}MB)`;
+        // drive the visible bar during cachedFetch (meta.db phase), not just the status text
+        var _sp = document.getElementById('s-progress');
+        if (_sp) _sp.style.width = pct + '%';
       }
       const full = new Uint8Array(received);
       let offset = 0;

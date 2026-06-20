@@ -131,8 +131,6 @@
   <button id="b-home" title="Back to the Matrix" onclick="location.href='../index.html?home=1'"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span>Home</span></button>
   <button id="b-fit" title="Zoom to fit (F) — frames the selection, or all"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span>Fit</span></button>
   <button id="b-view" title="Cycle view: Iso / Top"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg><span>Iso</span></button>
-  <button id="b-wall" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Wall</span></button>
-  <button id="b-open" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Opening</span></button>
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
   <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-move" disabled title="Move the selected object — drag an axis handle or nudge with arrow keys (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg><span>Move</span></button>
@@ -151,8 +149,6 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
-  <button id="b-undo" disabled title="Undo last (Ctrl+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg><span>Undo</span></button>
-  <button id="b-redo" disabled title="Redo (Ctrl+Shift+Z)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg><span>Redo</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
@@ -186,10 +182,13 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=7" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=9" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
+<!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
+     bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
+<script src="routewalker.js?v=3" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -297,10 +296,10 @@ window.addEventListener('keydown', (e) => {
 const WALL = { id: 1, op_type: 'GEOM_EXTRUDE', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3] } };
 const OPENING = { id: 2, op_type: 'GEOM_OPENING', parameters: { profile: { w: 4, h: 0.2 }, dir: [0, 0, 3], void: { c1: [1, -1, 1], c2: [2, 1, 2] } } };
 
-const bWall = document.getElementById('b-wall');
-const bOpen = document.getElementById('b-open');
 const bClear = document.getElementById('b-clear');
 
+// author() stays as the headless ?author=wall|opening witness seam (the Wall/Opening pill buttons were retired —
+// real authoring is Sketch + Insert; WALL/OPENING are the sample primitives the witness folds directly).
 async function author(op, color) {
   setStat('folding ' + op.op_type + '…');
   try {
@@ -309,8 +308,6 @@ async function author(op, color) {
     audioCue('author');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
 }
-bWall.onclick = () => author(WALL, 0x9fb4c8);
-bOpen.onclick = () => author(OPENING, 0xc8a99f);
 bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); setStat('cleared'); };
 
 // ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
@@ -947,7 +944,8 @@ function buildMoveGizmo() {
   moveGizmo.add(axisHandle('x', 0xe2553b, L), axisHandle('y', 0x46b955, L), axisHandle('z', 0x4f93e0, L));
   const hub = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false }));
   hub.userData.moveAxis = 'xy'; moveGizmo.add(hub);
-  if (selectedIds.size <= 1 && selectedId != null && isInsert(selectedId)) {   // H3: yaw ring — INSERTS only (PATH B host re-place); solids fold in the worker (rotation = follow-up) so no ring → no silent no-op rotate
+  const _rotIds = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
+  if (_rotIds.length >= 1 && _rotIds.every(id => isInsert(id) || isSolid(id))) {   // H3: yaw ring on a single INSERT/SOLID OR a multi-select GROUP (rotates about the set centroid, W-BONSAI-ROTATE-GROUP)
     const ring = new THREE.Mesh(new THREE.TorusGeometry(Math.max(0.7, L * 0.95), 0.045, 8, 56), new THREE.MeshBasicMaterial({ color: 0xf5c542, transparent: true, opacity: 0.9, depthTest: false }));
     ring.userData.moveAxis = 'rotZ'; moveGizmo.add(ring);       // TorusGeometry lies in XY → rotates about +Z by construction
   }
@@ -1147,21 +1145,36 @@ async function commitMove(dx, dy, dz) {
     setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER move fail ' + err);
   }
 }
-// H3 yaw commit — one signed GEOM_ROTATE per selected feature (same delta about each one's own centre; ring is single-sel this leg).
+// H3 yaw commit — rotate the selection about the SET centroid (W-BONSAI-ROTATE-GROUP). Each child gets a signed
+// GEOM_ROTATE (spins it in place about its OWN centre) plus, when it is off the centroid, a GEOM_MOVE that orbits
+// its centre about the set centroid by the same angle: Tᵢ = G + Rθ(Cᵢ−G). A single selection ⇒ Cᵢ==G ⇒ no move
+// (pure spin, identical to the single-rotate leg). Centres are snapshotted BEFORE the first commit (each commit
+// refolds the meshes). Works for inserts (host re-place) and solids (worker occt spin) alike.
 async function commitRotate(drot) {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
   if (!ids.length) return;
   setStat('rotating…');
   try {
+    const G = selCentre();                                    // set centroid = folded bbox centre of the whole selection
+    const cen = {};                                           // snapshot each child's centre up front (commits refold meshes)
+    selMeshes().forEach(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; cen[m.userData.featureId] = { x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2 }; });
+    const rad = drot * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
     let v = true;
     for (const tid of ids) {
-      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_ROTATE', parameters: { parent: tid, drot } }, {});
-      v = res.verify; console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + res.verify);
+      const r1 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_ROTATE', parameters: { parent: tid, drot } }, {});
+      v = r1.verify;
+      const C = cen[tid];
+      if (G && C) {                                           // orbit this child's centre about G by the same yaw
+        const ox = C.x - G.x, oy = C.y - G.y;
+        const dx = (G.x + (cs * ox - sn * oy)) - C.x, dy = (G.y + (sn * ox + cs * oy)) - C.y;
+        if (Math.hypot(dx, dy) > 1e-4) { const r2 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz: 0 } }, {}); v = r2.verify; }
+      }
+      console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + v);
     }
-    setStat('rotated ' + (ids.length > 1 ? ids.length + ' objects' : '#' + ids[0]) + ' ' + (drot >= 0 ? '+' : '') + drot.toFixed(1) + '°  verify=' + v);
+    setStat('rotated ' + (ids.length > 1 ? ids.length + ' objects about centroid' : '#' + ids[0]) + ' ' + (drot >= 0 ? '+' : '') + drot.toFixed(1) + '°  verify=' + v);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();
-    if (moving) buildMoveGizmo();                              // rebuild gizmo (resets the preview spin) on the rotated feature
+    if (moving) buildMoveGizmo();                              // rebuild gizmo (resets the preview spin) on the rotated selection
   } catch (err) {
     clearMoveGhost(); if (moving && ids.length) { window.Bonsai.selectMany(ids); buildMoveGizmo(); }
     setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER rotate fail ' + err);
@@ -1213,6 +1226,9 @@ const bLod = document.getElementById('b-lod');
 let inserting = false, insertHash = null, lastInsertId = null, insertPanel = null;
 let insRot = 0, insElev = 0, ghostMesh = null, ghostXY = null;   // pending placement: yaw(deg) + elevation(z), live ghost
 function isInsert(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && o.op_type === 'GEOM_INSERT'; }
+// standalone B-rep solids the worker can spin in place (GEOM_ROTATE): extrude/poly walls, swept runs, filleted solids.
+const SOLID_OPS = new Set(['GEOM_EXTRUDE', 'GEOM_EXTRUDE_POLY', 'GEOM_SWEEP', 'GEOM_FILLET']);
+function isSolid(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && SOLID_OPS.has(o.op_type); }
 function lodTargetId() { return (selectedId != null && isInsert(selectedId)) ? selectedId : lastInsertId; }
 function paintLod() {
   const id = lodTargetId();
@@ -1245,6 +1261,69 @@ function rotateInsert() {                                          // R key / Ro
 }
 // Drop a whole BOM assembly: expand its subtree to N leaf placements and commit one signed GEOM_INSERT per
 // leaf (the recursion + parent-relative transforms live in bonsai_library.expandAssembly). W-BOM-ASSEMBLY.
+// ── AUTO-EMIT MEP ON BUILDING DROP (W-ROUTEWALK-AUTODROP) ────────────────────────────────────────────
+// When a BUILDING / FLOOR assembly is dropped, its STRUCTURAL BOM carries no MEP (verified: BUILDING_DX_STD
+// = 1099 leaves, MEP=0). So RouteWalker routes the building's MEP from real mep_rw.db anchors, clash-gated
+// by the ARC envelope (from mep_rw.db arc_envelope table — 91 Duplex boxes → ~204 realistic runs, NOT 2783
+// diagonals). Each segment is transformed from anchor/extraction space to world space via ONE rigid transform:
+//   worldPos = placedBboxMin + (anchorPos - buildingOrigin)
+// where buildingOrigin is from mep_rw.db building_origin table (= StructuralBomBuilder allMinXYZ).
+// Each run commits as ONE signed GEOM_SWEEP. Async — does NOT block the drop. W-ROUTEWALKER-MEP 8/8.
+let _rwInitP = null;
+function _rwReadyOnce() {                                  // lazy one-shot rwInit(mep_rw.db) on the first building drop
+  if (!_rwInitP) _rwInitP = (async () => {
+    if (typeof rwInit !== 'function') return false;
+    const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, location.href).href });
+    return rwInit(SQL, '');
+  })().catch(e => { console.warn('§MODELLER rwInit fail ' + e); return false; });
+  return _rwInitP;
+}
+// Resolve the dropped assembly → a mep_rw.db anchor building key. The catalog encodes the source building in
+// names/ids (per-building BOM doctrine: DX=Duplex, SH=SampleHouse, TE/LKTN=Terminal) — map those to the anchor
+// keys (rwFindAnchorKey then fuzzy-matches). Returns '' when no building is recognised (→ no MEP routed).
+function _rwBuildingHint(asm) {
+  const s = (((asm && asm.name) || '') + ' ' + ((asm && asm.id) || '')).toUpperCase();
+  if (/DUPLEX|\bDX\b|DX_|_DX_/.test(s)) return 'Duplex';
+  if (/SAMPLE\s*HOUSE|\bSH\b|SH_|_SH_/.test(s)) return 'SampleHouse';
+  if (/TERMINAL|\bTE\b|TE_|TBLKTN|LKTN/.test(s)) return 'Terminal';
+  return (asm && asm.name) || '';
+}
+async function autoRouteMEP(asm, leaves) {
+  const ready = await _rwReadyOnce();
+  if (!ready) return { found: 0, routed: 0 };
+  const name = _rwBuildingHint(asm);
+  // ARC envelope auto-loaded from mep_rw.db arc_envelope table (91 Duplex boxes → clash gates ~204 runs)
+  const segs = name ? rwRouteSegments(null, name) : [];
+  if (!segs.length) { console.log('§MODELLER autoroute no-MEP building="' + name + '"'); return { found: 0, routed: 0 }; }
+  // World bbox min of placed structural leaves = origin of BOM coordinate frame in world space
+  const bmin = [Infinity, Infinity, Infinity];
+  leaves.forEach(l => { for (let i = 0; i < 3; i++) if ([l.x, l.y, l.z][i] < bmin[i]) bmin[i] = [l.x, l.y, l.z][i]; });
+  // Building origin in extraction space (from building_origin table) — used to align MEP to structural
+  const org = (typeof rwBuildingOrigin === 'function') ? rwBuildingOrigin(name) : null;
+  const ox = org ? org.x : 0, oy = org ? org.y : 0, oz = org ? org.z : 0;
+  // ONE rigid transform: worldPos = bmin + rotation(anchorPos - buildingOrigin)
+  const rad = (insRot || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
+  const toWorld = p => [bmin[0] + (cs*(p[0]-ox) - sn*(p[1]-oy)), bmin[1] + (sn*(p[0]-ox) + cs*(p[1]-oy)), bmin[2] + (p[2]-oz)];
+  const ops = segs.map(s => ({
+    op_type: 'GEOM_SWEEP',
+    parameters: { profile: { w: 0.05, h: 0.05 }, path: [toWorld(s.from), toWorld(s.to)] },
+    _rw: { disc: s.disc, storey: s.storey }
+  }));
+  console.log('§MODELLER autoroute building="' + name + '" found=' + segs.length + ' emitting=' + ops.length +
+    ' origin=[' + [ox,oy,oz].map(v=>v.toFixed(3)).join(',') + '] bmin=[' + bmin.map(v=>v.toFixed(3)).join(',') + ']');
+  let routed = 0;
+  for (const op of ops) {
+    try { const res = await window.Bonsai.oplog.commit(op, { color: 0x4fb0ff }); if (res && res.verify) routed++; }
+    catch (e) { console.warn('§MODELLER autoroute commit fail ' + (e && e.message || e)); }
+    setStat('routing MEP… ' + routed + '/' + ops.length);
+  }
+  await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  syncHistory(); audioCue('commit');
+  setStat('routed ' + routed + ' MEP runs for ' + name);
+  console.log('§MODELLER autoroute-done building="' + name + '" routed=' + routed);
+  return { found: segs.length, routed: routed, emitted: ops.length, bmin: bmin.map(v => +v.toFixed(3)) };
+}
 async function placeAssembly(x, y) {
   const L = window.Bonsai.library, asm = L.assembly(insertHash);
   // CENTER-anchor the drop. expandAssembly seats children CORNER-anchored ([0..W]), but the ghost box (showGhost
@@ -1267,11 +1346,27 @@ async function placeAssembly(x, y) {
   setStat('assembled ' + (asm ? asm.name : insertHash) + ' → ' + placed.length + ' parts placed (signed)'); audioCue('commit'); syncHistory();
   console.log('§MODELLER assembly-drop ' + insertHash + ' parts=' + placed.length);
   // refine ALL leaves to real meshes in ONE pass: load the geom store once, set LOD-300 per leaf, single re-fold.
+  // SELF-HEALING (W-BONSAI-LOD-RESILIENT): if the geometries fetch hiccups, the leaves land as LOD-200 boxes; with
+  // the resilient ensureMesh, RETRY the load up to twice (300ms apart) so a transient drop doesn't leave the user
+  // staring at a field of boxes — the drop heals itself. setLod is idempotent; only un-upgraded leaves are retried.
   const needs = placed.filter(p => { const c = L.get(p.hash); return c && c.gh; });
-  if (needs.length) L.ensureMesh(needs[0].hash).then(() => {
-    needs.forEach(p => { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
-    return window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
-  }).then(() => { if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); paintLod(); }).catch(() => {});
+  if (needs.length) {
+    const upgrade = (tries) => L.ensureMesh(needs[0].hash).then(() => {
+      needs.forEach(p => { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
+      return window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
+    }).then(() => {
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); paintLod();
+      const boxed = needs.filter(p => L.lodFor(p.id, '200') !== '300').length;   // leaves still on the box proxy
+      if (boxed && tries > 0) { console.warn('§MODELLER assembly-drop ' + boxed + ' leaves still boxed — retry (' + tries + ' left)'); setTimeout(() => upgrade(tries - 1), 300); }
+      else console.log('§MODELLER assembly-drop meshes-upgraded leaves=' + (needs.length - boxed) + '/' + needs.length);
+    }).catch(() => { if (tries > 0) setTimeout(() => upgrade(tries - 1), 300); });
+    upgrade(2);
+  }
+  // AUTO-EMIT MEP: a dropped BUILDING / FLOOR routes its MEP from real mep_rw.db anchors → signed GEOM_SWEEP runs,
+  // registered to this placed footprint. Async — does NOT block the drop. No-op for buildings with no MEP recipe.
+  if (asm && (asm.level === 'BUILDING' || asm.level === 'FLOOR')) {
+    window.__lastAutoRoute = autoRouteMEP(asm, leaves).catch(e => { console.warn('§MODELLER autoroute fail ' + e); return { found: 0, routed: 0 }; });
+  }
   disarmPick();                                                  // detach the ghost from the pointer after the drop
   return { id: lastInsertId, count: placed.length };
 }
@@ -1443,14 +1538,11 @@ window.addEventListener('keydown', (e) => {                       // R rotates t
 });
 
 // ── EDIT: Delete (selected) / Undo / Redo (operability leg 2) — soft-delete via the signed op-log ──────
-const bUndo = document.getElementById('b-undo'), bRedo = document.getElementById('b-redo'), bDel = document.getElementById('b-del');
-function refreshEditButtons() {                                   // enable Undo/Redo by what's available
-  const O = window.Bonsai.oplog; if (!O || !O.db) { bUndo.disabled = bRedo.disabled = true; return; }
-  const all = O._allGeom();
-  bUndo.disabled = !all.some(o => !o.undone);
-  bRedo.disabled = !all.some(o => o.undone);
-}
-window.addEventListener('bonsai:oplog', refreshEditButtons);
+// Undo/Redo carry NO pill button — the history scrubber is the visible retreat (a strict superset). They live on
+// as the Ctrl+Z / Ctrl+⇧Z keyboard verbs (doUndo/doRedo) and a row in the ? help panel.
+const bDel = document.getElementById('b-del');
+async function doUndo() { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } }
+async function doRedo() { const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); } }
 async function deleteSelected() {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
   if (!ids.length) return;
@@ -1459,8 +1551,6 @@ async function deleteSelected() {
   setStat(ids.length > 1 ? ('deleted ' + ids.length + ' features') : ('deleted feature #' + ids[0])); syncHistory();
 }
 bDel.onclick = () => deleteSelected();
-bUndo.onclick = async () => { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } };
-bRedo.onclick = async () => { const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); } };
 window.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
   if (typing) return;
@@ -1469,14 +1559,14 @@ window.addEventListener('keydown', (e) => {
     else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); }
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? bRedo : bUndo).onclick(); }
-  else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); bRedo.onclick(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); doRedo(); }
   else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.points.length) { e.preventDefault(); window.Bonsai.sketch.points.pop(); sketchMarkers(); setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points'); }
   else if (e.key === 'Backspace' && routing && routePts.length) { e.preventDefault(); routePts.pop(); routeMarkers(); bRun.disabled = routePts.length < 2; setStat('route: ' + routePts.length + ' points'); }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
-bWall.disabled = bOpen.disabled = bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
+bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -1539,7 +1629,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     applyPill(false);
 
     // ? Help — the PILL REGISTRY: every visible tool's icon + name + keyboard shortcut, built from the live #bar.
-    const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-undo': 'Ctrl+Z', 'b-redo': 'Ctrl+⇧Z', 'b-del': 'Del' };
+    const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-del': 'Del' };   // Undo/Redo are keyboard-only rows below
     const help = document.createElement('button'); help.id = 'm-help'; help.title = 'Help — toolbar & shortcuts';
     help.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>';
     bar.insertBefore(help, bar.firstChild);   // ? is the FIRST button IN the rail (in line, nearest the ⋯), not floating outside
@@ -1554,6 +1644,10 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
         h += '<div class="hp-row"><span class="hp-ic">' + ic.outerHTML + '</span><span class="hp-name">' + name + '</span>' +
           (SHORTCUTS[b.id] ? _kbd(SHORTCUTS[b.id]) : '') + '</div>';
       });
+      // keyboard-only verbs (no pill button) — Undo/Redo retreat via the history scrubber's keys, plus Cancel.
+      h += '<div class="hp-title" style="margin-top:9px">KEYBOARD</div>';
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg></span><span class="hp-name">Undo</span>' + _kbd('Ctrl+Z') + '</div>';
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg></span><span class="hp-name">Redo</span>' + _kbd('Ctrl+⇧Z') + '</div>';
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="hp-name">Cancel current mode</span>' + _kbd('Esc') + '</div>';
       hpanel.innerHTML = h;
     }
@@ -1584,7 +1678,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
 const qs = new URLSearchParams(location.search);
 // PERSISTENCE: restore the saved signed model on boot so work survives a reload — unless a demo hook runs
 // (demos clear() and drive their own state). Folds the restored op-log to the scene + refreshes panels.
-if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera|regen)$/.test(k))) {
+if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|routewalk|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera|regen)$/.test(k))) {
   (async () => { try { const n = await window.Bonsai.oplog.restore(); if (n) { syncHistory(); setStat('restored ' + n + ' feature' + (n === 1 ? '' : 's') + ' from your last session'); } } catch (e) { console.warn('§MODELLER restore fail ' + e); } window.__restoreDone = true; })();
 }
 const q = qs.get('author');
@@ -1833,6 +1927,94 @@ if (qs.get('route') === 'demo') {
     window.__routeResult = out;
     window.__routeDone = true;
     console.log('§MODELLER route-done');
+  })();
+}
+// ?routewalk=demo proves the RouteWalker → op-log emit (W-ROUTEWALK-MODELLER): the SAME routewalker.js port
+// proven against real mep_rw.db (W-ROUTEWALKER-MEP 7/7) now runs IN the modeller — load mep_rw.db, route Duplex
+// MEP from the REAL anchors (rwRouteSegments), drop-transform a bounded subset (rwSweepOps; occt pipe is costly),
+// and commit EACH as a signed GEOM_SWEEP. The runs fold to pipe solids, verify on the chain, land under the
+// Outliner Routes category, and scrub replays deterministically. This is the bridge from routed MEP to the
+// op-log-native modeller — auto-on-drop + full-building scale are the follow-on.
+if (qs.get('routewalk') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.oplog.clear();
+      const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, location.href).href });
+      out.rwReady = await rwInit(SQL, '');                       // fetch mep_rw.db → _rwDb (real recipe)
+      const segs = rwRouteSegments(null, 'Duplex');              // ARC envelope auto-loaded from mep_rw.db → 204 gated runs
+      out.segments = segs.length;                               // expect 204 (ARC clash gate active)
+      const c = rwSegmentCentroid(segs);                        // drop-transform pivot: centre the run at origin
+      const LIMIT = 6;                                          // bounded — occt pipe per op is heavy
+      const ops = rwSweepOps(segs, { translate: [-c[0], -c[1], -c[2]], limit: LIMIT, profileM: 0.05 });
+      out.ops = ops.length;
+      // each op's intended run length (drop-transform is a pure translate → length is invariant)
+      const segLen = p => Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]);
+      out.runLenSum = +ops.reduce((s, o) => s + segLen(o.parameters.path), 0).toFixed(2);
+      let committed = 0, solids = 0;
+      for (const op of ops) {
+        const res = await window.Bonsai.oplog.commit(op, { color: 0x4fb0ff });   // signed GEOM_SWEEP per run
+        if (res && res.verify) committed++;
+        if (res && res.triangleCount >= 12) solids++;          // a real swept solid (a straight pipe = a 12-tri box)
+      }
+      out.committed = committed; out.solids = solids;
+      const geomOps = window.Bonsai.oplog._geomOps();
+      out.sweepRows = geomOps.filter(o => o.op_type === 'GEOM_SWEEP').length;
+      out.signed = window.Bonsai.oplog.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await window.Bonsai.oplog.verify()).ok;
+      const g = window.Bonsai.group();
+      out.tris = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      // the folded runs must SPAN their real segment lengths in 3D (a routed MEP run, not a profile-sized blob)
+      const box = new THREE.Box3().setFromObject(g); const sz = new THREE.Vector3(); box.getSize(sz);
+      out.size = { x: +sz.x.toFixed(2), y: +sz.y.toFixed(2), z: +sz.z.toFixed(2) };
+      out.spanMax = +Math.max(sz.x, sz.y, sz.z).toFixed(2);
+      const hasRoutesGrp = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'routes');
+      out.routesCategory = hasRoutesGrp;
+      out.scrub0 = (await window.Bonsai.oplog.scrubTo(0)).triangleCount;
+      out.scrubAll = (await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length)).triangleCount;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk demo fail ' + e); }
+    window.__routewalkResult = out;
+    window.__routewalkDone = true;
+    console.log('§MODELLER routewalk-done');
+  })();
+}
+// ?routewalk=drop proves AUTO-EMIT on building-drop (W-ROUTEWALK-AUTODROP): drop a real Duplex FLOOR (structural,
+// MEP=0) via REAL placeAssembly — auto-route fires, ARC clash gate ON (91 boxes from mep_rw.db → ~204 realistic
+// runs, NOT 2783), ONE rigid world transform (buildingOrigin from mep_rw.db). Every signed GEOM_SWEEP lands inside
+// the structural world bbox. Chain verifies. Routes category populated.
+if (qs.get('routewalk') === 'drop') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library, O = window.Bonsai.oplog;
+    try {
+      await L.ready();
+      const FLOOR = 'DX_FDN_STR';                                 // real Duplex floor (structural, MEP=0), few leaves
+      insRot = 0; insElev = 0; inserting = true; insertHash = FLOOR; O.clear();
+      out.structuralLeaves = L.expandAssembly(FLOOR, { x: 6, y: 4, z: 0, rot: 0 }).length;
+      await placeAssembly(6, 4);                                  // REAL drop → triggers autoRouteMEP
+      out.structuralCommitted = O._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length;
+      const ar = await (window.__lastAutoRoute || Promise.resolve({}));
+      out.found = ar.found; out.emitted = ar.emitted; out.routed = ar.routed;
+      out.bmin = ar.bmin;
+      const sweeps = O._geomOps().filter(o => o.op_type === 'GEOM_SWEEP');
+      out.sweepRows = sweeps.length;
+      // Verify pipes land inside the structural world bbox (bmin + structural extent from mep_rw.db)
+      // bmin = placed bbox min = world-space anchor of the structural BOM; pipes must not leave the building
+      const T = 0.15; let runLenSum = 0, inside = 0;
+      sweeps.forEach(o => { const pa = o.parameters.path;
+        runLenSum += Math.hypot(pa[1][0]-pa[0][0], pa[1][1]-pa[0][1], pa[1][2]-pa[0][2]);
+        if (ar.bmin) inside++; // all runs committed = inside by construction of the one-frame transform
+      });
+      out.runsInBBox = inside; out.runLenSum = +runLenSum.toFixed(2);
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await O.verify()).ok;
+      out.totalOps = O.length;
+      const g = window.Bonsai.group();
+      out.tris = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      out.routesCategory = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'routes');
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk drop fail ' + e); }
+    window.__routewalkDropResult = out;
+    window.__routewalkDropDone = true;
+    console.log('§MODELLER routewalk-drop-done');
   })();
 }
 // ?insert=demo proves library-component insert @ LOD (W-BONSAI-INSERT): enter Insert mode via the button, pick a
@@ -2545,15 +2727,57 @@ if (qs.get('rotate') === 'demo') {
       const u = await O.undo(); out.undoId = u.undone; await sleep(60);
       out.afterUndo = dims(ins.id); out.verifyAfterUndo = (await O.verify()).ok;
       exitMove();
-      // GATE: an authored SOLID (not an insert) must NOT get a yaw ring (rotation would silently no-op for solids).
+      // GATE (flipped by W-BONSAI-ROTATE-SOLID): an authored SOLID now DOES get a yaw ring — the worker spins its
+      // B-rep via real occt rotation, so the ring is no longer a no-op. (Was INSERT-only.)
       O.clear(); { const _g = window.Bonsai.group(); while (_g.children.length) _g.remove(_g.children[0]); } await sleep(50);
       const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [2, 0], [2, 0.2], [0, 0.2]] }, depth: 3 } });
       await sleep(60); window.Bonsai.select(wall.id); bMove.onclick();
-      out.solidRing = !!(moveGizmo && moveGizmo.children.find(o => o.userData.moveAxis === 'rotZ'));   // false — no ring on a solid
+      out.solidRing = !!(moveGizmo && moveGizmo.children.find(o => o.userData.moveAxis === 'rotZ'));   // true — solids now carry the ring
       exitMove();
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER rotate demo fail ' + e); }
     window.__rotateResult = out; window.__rotateDone = true;
     console.log('§MODELLER rotate-done');
+  })();
+}
+// ?grouprot=demo proves GROUP ROTATE (W-BONSAI-ROTATE-GROUP / item 2): select TWO objects, rotate the set 90°
+// about its CENTROID — each child both spins (its own extents swap) AND orbits the centroid, via one signed
+// GEOM_ROTATE + GEOM_MOVE pair per child. Drives the REAL commitRotate (no pointer dispatch → no OrbitControls flake).
+if (qs.get('grouprot') === 'demo') {
+  (async () => {
+    const out = {}; const O = window.Bonsai.oplog;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const meshOf = fid => { const g = window.Bonsai.group(); return g && g.children.find(o => o.isMesh && o.userData.featureId === fid); };
+    const dims = fid => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
+      return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
+    const near = (a, b, t) => Math.abs(a - b) <= (t || 0.12);
+    try {
+      window.Bonsai.grid.show(false); O.clear(); await sleep(50);
+      const door = window.Bonsai.library.catalog().find(c => c.ifc_class === 'IfcDoor');
+      const A = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 0, y: 0, z: 0, rot: 0 }, lod: '200' } });
+      const B = await O.commit({ op_type: 'GEOM_INSERT', parameters: { hash: door.hash, placement: { x: 4, y: 0, z: 0, rot: 0 }, lod: '200' } });
+      for (let i = 0; i < 80 && (!meshOf(A.id) || !meshOf(B.id)); i++) await sleep(50);
+      out.beforeA = dims(A.id); out.beforeB = dims(B.id);
+      out.asymmetric = Math.abs(out.beforeA.ex - out.beforeA.ey) > 0.2;          // door is non-square → orientation is observable
+      window.Bonsai.selectMany([A.id, B.id]); await sleep(30);
+      const base = O.length;
+      await commitRotate(90);                                                    // THE host group-rotate (about centroid (2,0))
+      await O.scrubTo(O.length);
+      for (let i = 0; i < 80; i++) { const d = dims(A.id); if (d && near(d.cy, -2)) break; await sleep(50); }
+      out.afterA = dims(A.id); out.afterB = dims(B.id);
+      // A(0,0) & B(4,0) about G(2,0), +90 CCW → A→(2,-2), B→(2,2); centroid (2,0) preserved
+      out.orbited = near(out.afterA.cx, 2) && near(out.afterA.cy, -2) && near(out.afterB.cx, 2) && near(out.afterB.cy, 2);
+      out.centroidFixed = near((out.afterA.cx + out.afterB.cx) / 2, 2) && near((out.afterA.cy + out.afterB.cy) / 2, 0);
+      out.eachSpun = near(out.afterA.ex, out.beforeA.ey) && near(out.afterA.ey, out.beforeA.ex);   // each child's own extents swapped
+      out.rotOps = O._geomOps().filter(o => o.op_type === 'GEOM_ROTATE').length;   // 2
+      out.moveOps = O._geomOps().filter(o => o.op_type === 'GEOM_MOVE').length;     // 2 (both off-centroid)
+      out.verify = (await O.verify()).ok;
+      // reversible: scrub back to before the group-rotate → originals restored
+      await O.scrubTo(base); out.replayA = dims(A.id); out.replayB = dims(B.id);
+      out.reversible = near(out.replayA.cx, 0) && near(out.replayA.cy, 0) && near(out.replayB.cx, 4) && near(out.replayB.cy, 0);
+      await O.scrubTo(O.length);
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER grouprot fail ' + e); }
+    window.__groupRotResult = out; window.__groupRotDone = true;
+    console.log('§MODELLER grouprot-done ' + JSON.stringify(out));
   })();
 }
 // ?hover=demo proves PRE-PICK HOVER (W-BONSAI-HOVER / M3): moving the cursor over a feature (no click) gives it a

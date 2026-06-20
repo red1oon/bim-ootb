@@ -73,11 +73,12 @@ async function rwInit(SQL, baseUrl) {
       "(SELECT COUNT(*) FROM ad_mep_pattern) as pat, " +
       "(SELECT COUNT(*) FROM ad_mep_anchor) as anc, " +
       "(SELECT COUNT(*) FROM ad_placement_offset) as off, " +
-      "(SELECT COUNT(*) FROM _shim_attributes) as shim"
+      "(SELECT COUNT(*) FROM _shim_attributes) as shim, " +
+      "(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='arc_envelope') as has_arc"
     );
     var r = counts[0].values[0];
     console.log('§RW_INIT mep_rw.db loaded bom=' + r[0] + ' patterns=' + r[1] +
-                ' anchors=' + r[2] + ' offsets=' + r[3] + ' shims=' + r[4]);
+                ' anchors=' + r[2] + ' offsets=' + r[3] + ' shims=' + r[4] + ' arc_env=' + r[5]);
     return true;
   } catch (e) {
     console.warn('§RW_INIT_FAIL ' + e.message);
@@ -182,6 +183,164 @@ function _rwFindAnchorKey(buildingName, dbBldName) {
     }
   }
   return null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMIT SEAM: route SEGMENTS (endpoint polylines) for the op-log modeller
+// ═══════════════════════════════════════════════════════════════
+//
+// The modeller is op-log-native (no building DB). Instead of inserting RW2D- rows
+// it emits one signed GEOM_SWEEP per pipe run. GEOM_SWEEP needs an explicit polyline
+// path (from→to), which the proven _rwApplyPattern collapses into midpoint+bbox.
+// rwRouteSegments mirrors the SAME proven pairing (pattern topology + nearest-neighbour
+// + clash gate) but RETURNS the endpoint pairs instead of writing — the bridge between
+// the routed MEP and GEOM_SWEEP. The insert path above is left untouched (revert-safe).
+//
+// Each segment: { disc:'CW'|'SP', storey, axis, from:[x,y,z], to:[x,y,z], len }
+// Caller maps each to a GEOM_SWEEP op (2-point path, pipe profile RW_PIPE_NOMINAL_MM).
+function rwRouteSegments(buildingDb, buildingName, opts) {
+  if (!_rwReady) { console.warn('§RW_SEG_FAIL not initialised'); return []; }
+  opts = opts || {};
+  // Op-log modeller has NO building DB — pass buildingDb=null + opts.arcEnvelope (or none).
+  var dbBldName = buildingName;
+  if (buildingDb) {
+    try {
+      var bldRow = buildingDb.exec("SELECT DISTINCT building FROM elements_meta LIMIT 1");
+      if (bldRow.length && bldRow[0].values.length) dbBldName = bldRow[0].values[0][0];
+    } catch (e) { /* use passed name */ }
+  }
+
+  var anchorKey = _rwFindAnchorKey(buildingName, dbBldName);
+  if (anchorKey === null) { console.log('§RW_SEG no anchors for ' + buildingName); return []; }
+  // Load ARC envelope: explicit > from building DB > from mep_rw.db arc_envelope table (modeller path)
+  var arcEnvelope = (opts.arcEnvelope !== undefined)
+    ? opts.arcEnvelope
+    : (buildingDb ? _rwLoadArcEnvelope(buildingDb) : _rwLoadArcEnvelopeFromDb(anchorKey));
+
+  var segments = [];
+  ['CW', 'SP'].forEach(function (disc) {
+    var steps = _rwLoadPatternSteps(disc, anchorKey);
+    if (!steps.length) return;
+    _rwPairSegments(disc, steps, _rwLoadAnchors(anchorKey), arcEnvelope, segments);
+  });
+
+  console.log('§RW_SEG building=' + buildingName + ' segments=' + segments.length +
+    ' CW=' + segments.filter(function (s) { return s.disc === 'CW'; }).length +
+    ' SP=' + segments.filter(function (s) { return s.disc === 'SP'; }).length);
+  return segments;
+}
+
+// Map route segments → modeller GEOM_SWEEP commit payloads (the op-log emit).
+// Each payload: { op_type:'GEOM_SWEEP', parameters:{ profile:{w,h}, path:[from,to] }, _rw:{disc,storey} }.
+// opts: { translate:[tx,ty,tz] (drop transform applied to both endpoints, default 0),
+//         profileM (pipe cross-section in metres, default RW_PIPE_NOMINAL_MM/1000),
+//         limit (cap the number of ops emitted — occt pipe is costly; default all) }.
+// Pure: no DB, no commit — caller feeds each payload to window.Bonsai.oplog.commit().
+function rwSweepOps(segments, opts) {
+  opts = opts || {};
+  var t = opts.translate || [0, 0, 0];
+  var pw = (opts.profileM != null) ? opts.profileM : (RW_PIPE_NOMINAL_MM / 1000);
+  var segs = (opts.limit != null && opts.limit < segments.length) ? segments.slice(0, opts.limit) : segments;
+  return segs.map(function (s) {
+    return {
+      op_type: 'GEOM_SWEEP',
+      parameters: {
+        profile: { w: pw, h: pw },
+        path: [
+          [s.from[0] + t[0], s.from[1] + t[1], s.from[2] + t[2]],
+          [s.to[0] + t[0], s.to[1] + t[1], s.to[2] + t[2]]
+        ]
+      },
+      _rw: { disc: s.disc, storey: s.storey, axis: s.axis }
+    };
+  });
+}
+
+// Align anchor-space route segments to a WORLD-placed building (the auto-emit-on-drop transform).
+// The dropped building's STRUCTURAL leaves are in modeller world space; its MEP anchors are in extraction
+// space. Both are the SAME building at 1:1 metres, so map the anchor bbox-min → the placed-leaf bbox-min,
+// + an optional yaw about +Z (the drop rotation). Returns segments with world-space from/to.
+//   placedBBox: { min:[x,y,z], max:[x,y,z] } world bbox of the just-placed structural leaves.
+//   opts: { rotDeg } (the drop rotation; 0 = the common case).
+function rwAlignSegments(segments, placedBBox, opts) {
+  if (!segments.length) return [];
+  opts = opts || {};
+  var rad = (opts.rotDeg || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
+  var amin = [Infinity, Infinity, Infinity];
+  segments.forEach(function (s) {
+    [s.from, s.to].forEach(function (p) { for (var i = 0; i < 3; i++) if (p[i] < amin[i]) amin[i] = p[i]; });
+  });
+  var wmin = placedBBox.min;
+  function map(p) {
+    var lx = p[0] - amin[0], ly = p[1] - amin[1], lz = p[2] - amin[2];
+    return [wmin[0] + (cs * lx - sn * ly), wmin[1] + (sn * lx + cs * ly), wmin[2] + lz];
+  }
+  return segments.map(function (s) {
+    return { disc: s.disc, storey: s.storey, axis: s.axis, from: map(s.from), to: map(s.to), len: s.len };
+  });
+}
+
+// Centroid of all segment endpoints — the natural drop-transform pivot
+// (negate to centre a routed building at the modeller origin / drop point).
+function rwSegmentCentroid(segments) {
+  if (!segments.length) return [0, 0, 0];
+  var sx = 0, sy = 0, sz = 0, n = 0;
+  segments.forEach(function (s) {
+    sx += s.from[0] + s.to[0]; sy += s.from[1] + s.to[1]; sz += s.from[2] + s.to[2]; n += 2;
+  });
+  return [sx / n, sy / n, sz / n];
+}
+
+// Mirror of _rwApplyPattern's pairing, but collects endpoint pairs into `out`.
+function _rwPairSegments(discipline, steps, allAnchors, arcEnvelope, out) {
+  var byStorey = {};
+  allAnchors.forEach(function (a) {
+    var s = a.storey || 'Unknown';
+    if (!byStorey[s]) byStorey[s] = [];
+    byStorey[s].push(a);
+  });
+
+  Object.keys(byStorey).forEach(function (storey) {
+    var storeyAnchors = byStorey[storey];
+    var usedIds = {};
+    steps.forEach(function (step) {
+      var fromCandidates = [], toCandidates = [];
+      storeyAnchors.forEach(function (a) {
+        var nt = _rwToNodeType(a.anchorType, discipline);
+        if (nt === step.fromNodeType) fromCandidates.push(a);
+        if (nt === step.toNodeType && !usedIds[a.anchorId]) toCandidates.push(a);
+      });
+      if (!fromCandidates.length || !toCandidates.length) return;
+
+      fromCandidates.forEach(function (from) {
+        var nearest = null, minDist = Infinity;
+        toCandidates.forEach(function (to) {
+          if (usedIds[to.anchorId]) return;
+          var dx = to.x - from.x, dy = to.y - from.y;
+          var dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < minDist) { minDist = dist; nearest = to; }
+        });
+        if (!nearest) return;
+        if (minDist === 0 || minDist > RW_MAX_PAIR_DIST) return;
+
+        var dx = nearest.x - from.x, dy = nearest.y - from.y, dz = nearest.z - from.z;
+        if (step.offsetRule === 'GRADIENT' && step.gradient > 0) {
+          dz = step.gradient * Math.sqrt(dx * dx + dy * dy);
+        }
+        var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        var midX = (from.x + nearest.x) / 2, midY = (from.y + nearest.y) / 2, midZ = (from.z + nearest.z) / 2;
+        if (_rwClashesWithArc(midX, midY, midZ, RW_PIPE_CROSS / 1000, RW_PIPE_CROSS / 1000, len, arcEnvelope)) {
+          return; // clash — skip, same gate as the insert path
+        }
+        out.push({
+          disc: discipline, storey: storey, axis: step.directionAxis,
+          from: [from.x, from.y, from.z], to: [nearest.x, nearest.y, from.z + dz],
+          len: len
+        });
+        usedIds[nearest.anchorId] = true;
+      });
+    });
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -333,6 +492,50 @@ function _rwApplyPattern(buildingDb, discipline, steps, allAnchors, arcEnvelope,
   });
 
   return { emitted: emitted, clashSkipped: clashSkipped };
+}
+
+// A4a. ARC envelope loader from mep_rw.db (for the op-log modeller — no building DB)
+// Returns boxes in extraction-space metres, same coordinate frame as ad_mep_anchor.
+function _rwLoadArcEnvelopeFromDb(buildingName) {
+  if (!_rwDb) return [];
+  try {
+    var rows = _rwDb.exec(
+      "SELECT cx, cy, cz, w, d, h FROM arc_envelope WHERE source_building = '" +
+      buildingName.replace(/'/g, "''") + "'"
+    );
+    if (!rows.length || !rows[0].values.length) return [];
+    var boxes = rows[0].values.map(function(v) {
+      return { cx: v[0], cy: v[1], cz: v[2], w: v[3], d: v[4], h: v[5] };
+    });
+    console.log('§RW_ARC_FROM_DB building=' + buildingName + ' boxes=' + boxes.length);
+    return boxes;
+  } catch (e) {
+    console.warn('§RW_ARC_FROM_DB_FAIL ' + e.message);
+    return [];
+  }
+}
+
+/**
+ * Building origin in extraction space (from mep_rw.db building_origin table).
+ * This is the structural AABB min (allMinXYZ used by StructuralBomBuilder) — the
+ * reference point that maps extraction-space positions to BOM-relative positions.
+ * Use with: worldPos = placedBBoxMin + (extractionPos - buildingOrigin)
+ * @param {string} buildingName — matches source_building in mep_rw.db
+ * @returns {{ x, y, z }} or null if not found
+ */
+function rwBuildingOrigin(buildingName) {
+  if (!_rwReady || !_rwDb) return null;
+  try {
+    var rows = _rwDb.exec(
+      "SELECT min_x, min_y, min_z FROM building_origin WHERE source_building = '" +
+      buildingName.replace(/'/g, "''") + "'"
+    );
+    if (!rows.length || !rows[0].values.length) return null;
+    var v = rows[0].values[0];
+    return { x: v[0], y: v[1], z: v[2] };
+  } catch (e) {
+    return null;
+  }
 }
 
 // A4. ARC envelope loader (from building DB)
