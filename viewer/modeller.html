@@ -163,7 +163,7 @@
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
-<script src="bonsai_kernel.js?v=2" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=3" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
@@ -182,7 +182,7 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=9" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=10" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -1335,12 +1335,18 @@ async function autoRouteMEP(asm, leaves) {
     const byClass = (L.catalog() || []).find(c => c.ifc_class === f.ifcClass);   // fallback: any box of the right ifc class
     return byClass ? byClass.hash : 'ROLE__DIFFUSER';                            // final generic ACMV box
   };
+  // Discipline COLOUR (step C): f.rgba is the REAL material_rgba from RW_IFC_MAP ('r,g,b,a'). Persist it as a hex
+  // int in the signed op PARAMETERS (not the per-commit {color} opt — GEOM_INSERT is non-LEAF, so every re-fold/
+  // scrub rebuilds via foldChainToScene with one fold-level colour and would LOSE a per-commit colour). Persisted
+  // in params → survives the DB round-trip → foldInsert reads parameters.color → each fixture mesh keeps its colour
+  // through scrub/history replay (step F). Lights warm-yellow, fans cyan, sprinkler red, outlet amber, sanitary blue.
+  const rgbaHex = s => { const p = String(s || '').split(',').map(Number); const ch = i => Number.isFinite(p[i]) ? Math.max(0, Math.min(255, p[i] | 0)) : 180; return (ch(0) << 16) | (ch(1) << 8) | ch(2); };   // NOT `p[i]||180` — a legit 0 channel (amber B=0) must stay 0
   let placedFx = 0;
   for (const f of fixtures) {
     const hash = hashFor(f); const c = L.get(hash); const ch = c ? c.h : 0.4;
     const w = toWorld([f.x, f.y, f.z]);
     const op = { op_type:'GEOM_INSERT',
-      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200' },
+      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba) },
       _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } };
     try { const res = await window.Bonsai.oplog.commit(op); if (res) placedFx++; }
     catch (e) { console.warn('§MODELLER fixture commit fail ' + (e && e.message || e)); }
@@ -2064,14 +2070,32 @@ if (qs.get('routewalk') === 'sh') {
       await placeAssembly(6, 4);                                   // REAL drop → triggers autoRouteMEP (fixtures path)
       const ar = await (window.__lastAutoRoute || Promise.resolve({}));
       out.building = 'SampleHouse'; out.fixtures = ar.fixtures || 0; out.fxDisc = ar.fxDisc || {};
-      const fxOps = O._geomOps().filter(o => o._rw && o._rw.fixture);
+      // Fixtures are the only GEOM_INSERT rows carrying a persisted discipline `color` (structural leaves have none).
+      // _rw is an in-memory tag that does NOT survive _geomOps() (reads DB cols only) — parameters.color is the
+      // reload-safe signal, so identify fixtures by it.
+      const fxOps = O._geomOps().filter(o => o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.color != null);
       out.fixtureOps = fxOps.length;
-      out.products = {}; fxOps.forEach(o => { const p = o._rw.product; out.products[p] = (out.products[p]||0)+1; });
       out.hasELEC = (out.fxDisc.ELEC || 0) > 0; out.hasACMV = (out.fxDisc.ACMV || 0) > 0;
       out.noWetRoom = !out.fxDisc.FP && !out.fxDisc.PLB;           // SH honestly has no sprinkler/plumbing
       out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
       out.verify = (await O.verify()).ok;
-      out.pass = out.fixtures === 23 && out.fixtureOps === 23 && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify;
+      // STEP C: assert each fixture MESH carries its discipline colour (not the grey default) AFTER the authoritative
+      // fold — i.e. it survived the DB round-trip + scrubTo re-fold (history replay keeps colour, step F).
+      const GREY = 0x9fb4c8;
+      const grp = window.Bonsai.group();
+      const meshByFid = {};
+      if (grp) grp.children.forEach(m => { if (m.userData && m.userData.featureId != null) meshByFid[m.userData.featureId] = m; });
+      let coloured = 0, miscoloured = 0; const hexSet = {};
+      fxOps.forEach(o => {
+        const want = o.parameters.color, m = meshByFid[o.id];
+        const got = (m && m.material && m.material.color) ? m.material.color.getHex() : null;
+        if (got === want && want !== GREY) { coloured++; hexSet[want] = (hexSet[want] || 0) + 1; } else miscoloured++;
+      });
+      out.colouredFixtures = coloured; out.miscolouredFixtures = miscoloured; out.distinctColours = Object.keys(hexSet).length;
+      console.log('§MODELLER routewalk-sh-colour coloured=' + coloured + '/' + fxOps.length + ' miscoloured=' + miscoloured +
+        ' distinct=' + out.distinctColours + ' hex=' + Object.keys(hexSet).map(h => (+h).toString(16)).join(','));
+      out.pass = out.fixtures === 23 && out.fixtureOps === 23 && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify &&
+        out.colouredFixtures === 23 && out.miscolouredFixtures === 0 && out.distinctColours >= 3;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk sh fail ' + e); }
     window.__routewalkShResult = out;
     window.__routewalkShDone = true;
