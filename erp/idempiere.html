@@ -371,6 +371,9 @@
     /* MOBILE_CARDS.md §4 — leave room for the bottom-docked pill bar so the last card isn't covered. */
     #idmp-content { padding-bottom:66px; }
   }
+  /* §CONNECT-ERP — live scrub reaction: pulse the matching C_ProjectLine row when the BIM viewer broadcasts */
+  .idmp-connect-lit td { animation: idmpConnectPulse 1.8s ease-out forwards; }
+  @keyframes idmpConnectPulse { 0%{background:#b9f6ca} 100%{background:transparent} }
 </style>
 </head>
 <body>
@@ -560,6 +563,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      hand-rolled #idmp-pillrail). icons.js already loaded above (overlay-kit block) + pill_builder.js (the
      renderer) + idmp_pills.js (binds fn BY ID to window.IdmpPillActions) + sibling pills_idmp.json. §PILL-REGISTRY. -->
 <script src="pill_builder.js?v=4"></script>
+<script src="../viewer/connect_scene.js?v=1"></script><!-- §CONNECT-ERP: shared Connect bus (BroadcastChannel+postMessage); ERP registers as 'erp' on first Zoom-Across launch -->
 <script src="zoom_across.js?v=1"></script>
 <script src="idmp_pills.js?v=14"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
@@ -3541,6 +3545,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // available when the focus resolves a BIM scope OR one was remembered (nearest/latest); pure otherwise.
       available: function (ctx) { return !!(_zoomScope(ctx) || _lastBimScope); },
       launch: function (ctx) {
+        _connectEnable();                                            // OPT-IN: wire Connect on first Zoom-Across launch
         var sc = _zoomScope(ctx);
         if (sc) _lastBimScope = sc;                                  // a real record refreshes the memory
         else sc = _lastBimScope;                                     // blank/no-record → nearest/latest
@@ -3552,6 +3557,61 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
       }
     });
+    // §CONNECT-ERP-SCRUB-START — ERP-side Connect reaction: subscribe selection+timeline from the BIM viewer.
+    // Enabled OPT-IN on first Zoom-Across launch (never always-on). Echo-guarded by Connect instance token.
+    function _connectLightIfc(ifcClass) {
+      if (!ifcClass || !window.__idmpDb) return;
+      try {
+        var rows = _sqlRows(
+          'SELECT l.c_projectline_id FROM c_projectline l' +
+          ' JOIN m_product p ON l.m_product_id=p.m_product_id' +
+          ' WHERE LOWER(p.value)=\'' + ifcClass.toLowerCase().replace(/'/g, "''") + '\' LIMIT 1'
+        );
+        if (!rows.length) {
+          console.log('§CONNECT_ERP light MISS ifcClass=' + ifcClass);
+          status('↔ ' + ifcClass + ' (no project line)');
+          return;
+        }
+        var pk = Number(rows[0].c_projectline_id);
+        var trs = document.querySelectorAll('[data-ad-table="c_projectline"][data-ad-record="' + pk + '"]');
+        if (!trs.length) {
+          status('↔ ' + ifcClass + ' — open C_ProjectLine to see');
+          console.log('§CONNECT_ERP light match pk=' + pk + ' not-in-DOM');
+          return;
+        }
+        trs.forEach(function (r) {
+          r.classList.remove('idmp-connect-lit');
+          void r.offsetWidth;           // reflow to restart animation
+          r.classList.add('idmp-connect-lit');
+        });
+        status('↔ Live: ' + ifcClass);
+        console.log('§CONNECT_ERP light MATCH ifcClass=' + ifcClass + ' pk=' + pk + ' rows=' + trs.length);
+      } catch (e) { console.warn('§CONNECT_ERP light err', e); }
+    }
+    function _connectSubscribe() {
+      if (!window.Connect) return;
+      Connect.subscribe('selection', function (p) {
+        if (!p) return;
+        console.log('§CONNECT_ERP selection ifcClass=' + p.ifcClass + ' guid=' + String(p.guid || '').slice(0, 10) + ' surface=' + p.surface);
+        if (p.ifcClass) _connectLightIfc(p.ifcClass);
+      });
+      Connect.subscribe('timeline', function (p) {
+        if (!p) return;
+        console.log('§CONNECT_ERP timeline cursor=' + Math.round(p.cursor || 0) + ' phase=' + p.phase + ' frac=' + (+(p.frac || 0)).toFixed(2));
+        if (p.phase) status('⏱ TM ' + p.phase + (p.frac != null ? ' (' + Math.round(p.frac * 100) + '%)' : ''));
+      });
+      console.log('§CONNECT_ERP subscribed selection+timeline');
+    }
+    var _connectWired = false;
+    function _connectEnable() {
+      if (_connectWired || !window.Connect) return;
+      _connectWired = true;
+      Connect.register('erp').enable();
+      _connectSubscribe();
+      console.log('§CONNECT_ERP enabled inst=' + Connect._token);
+    }
+    // §CONNECT-ERP-SCRUB-END
+
     // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
     window.IdmpPillPosGate = function () {
       try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }
