@@ -44,6 +44,15 @@ async function setupScene(A) {
     preserveDrawingBuffer: true
   });
   console.log('§S277b_RENDERER WebGLRenderer r184 (WebGPU deferred)');
+  // §S281b: report multi_draw fast-path + GPU at startup. BatchedMesh collapses a bucket to ONE draw
+  // call only when WEBGL_multi_draw is present; without it = per-draw fallback = slower final render.
+  try {
+    var _capGl = renderer.getContext();
+    var _md = !!_capGl.getExtension('WEBGL_multi_draw');
+    var _dbg = _capGl.getExtension('WEBGL_debug_renderer_info');
+    var _gpu = _dbg ? _capGl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
+    console.log('§RENDERER_CAPS multi_draw=' + (_md ? 'on (fast batched path)' : 'off (slow — per-draw fallback)') + ' gpu=' + _gpu);
+  } catch(_e) { console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message)); }
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(_isMobileRenderer ? 1 : Math.min(window.devicePixelRatio, 2));  // §S271: mobile=1x, desktop=cap 2x
