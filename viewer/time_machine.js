@@ -3628,6 +3628,41 @@
     return (p && p.then) ? p.then(function () { return doJump(); }) : Promise.resolve(doJump());
   };
 
+  // §360-IDENTITY — freeze the cursor on the EXACT element the user is looking at (not just its phase).
+  // The identity thread: ERP line / Find pick → guid → the op that builds it → its end_ts = the moment it
+  // lands. renderAtTime broadcasts (line 1215) so the ERP tab reacts in lockstep. The point of 360 optics is
+  // the STOPPED frame on the right item, with 4D (scene) + 5D (⚖ drawer) coupled — not the animation.
+  window.tmJumpToElement = function (guid) {
+    guid = String(guid || '');
+    function doJump() {
+      if (!_ops.length) { console.log('§TM_PINPOINT_JUMP skip=no-ops guid="' + guid + '"'); return false; }
+      var op = null;
+      for (var i = 0; i < _ops.length; i++) {
+        var og = _ops[i].output_guid || (_ops[i].input_guids && _ops[i].input_guids.length ? _ops[i].input_guids[0] : null);
+        if (og === guid) { op = _ops[i]; break; }
+      }
+      if (!op) { console.log('§TM_PINPOINT_JUMP miss guid="' + guid + '" (no op builds it)'); return false; }
+      _cursor = op.end_ts;                       // the instant it lands → present in the scene, the lead frontier
+      renderAtTime(_cursor);
+      try { anchorFromCursor(); } catch (x) {}
+      try { configSlider(); } catch (x) {}
+      if (_twin && !_varVisible) {                // couple the 5D cost story to the frozen frame (same as phase jump)
+        _varVisible = true;
+        var vb = document.getElementById('tm-var'); if (vb) vb.classList.add('tm-active');
+        var vx = document.getElementById('tm-var-box'); if (vx) vx.classList.add('open');
+        drawVariance();
+      }
+      var ph = (op.parameters || {}).phase || '';
+      var pct = Math.round((_cursor - _projectStart) / Math.max(1, _projectEnd - _projectStart) * 100);
+      console.log('§TM_PINPOINT_JUMP guid="' + guid + '" phase="' + ph + '" cursor=' + Math.round(_cursor) +
+        ' at=' + new Date(op.end_ts).toISOString().slice(0, 10) + ' built~' + pct + '% (frozen on the item)');
+      return true;
+    }
+    if (_active) return Promise.resolve(doJump());
+    var p = activate();
+    return (p && p.then) ? p.then(function () { return doJump(); }) : Promise.resolve(doJump());
+  };
+
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
     return { active: _active, cursor: _cursor };

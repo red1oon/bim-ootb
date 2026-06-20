@@ -1056,7 +1056,7 @@
       }).catch(function (e) { console.log('§ZOOM-COST err=' + e.message); return null; });
     }
     function _pct(planned, committed) { return planned > 0 ? Math.round((committed - planned) * 100 / planned) : 0; }
-    function _showClassCost(ifcClass, matchCount) {
+    function _showClassCost(ifcClass, matchCount, guid) {
       var box = document.getElementById('info-cost'); if (!box) return;
       box.style.display = 'none';
       _foldClassTwin(ifcClass).then(function (t) {
@@ -1071,18 +1071,21 @@
         }
         html += '<div><span class="label">Project ' + t.building + '</span>: <span class="value">' + _money(pj.planned) + ' → ' + _money(pj.committed) +
           ' <b style="color:' + (pj.committed >= pj.planned ? '#ff6b6b' : '#26a69a') + '">(' + (pjPct >= 0 ? '+' : '') + pjPct + '%)</b></span></div>';
-        // "View at this moment" — jump TM to this class's phase window (scene partially-built there).
-        if (t.phase && typeof window.tmJumpToPhase === 'function') {
+        // "View at this moment" — freeze TM on the moment this thing is built. With a guid (a specific picked
+        // element) → §360-IDENTITY tmJumpToElement (the EXACT item); else fall back to the class's phase window.
+        var canElem = guid && typeof window.tmJumpToElement === 'function';
+        var canPhase = t.phase && typeof window.tmJumpToPhase === 'function';
+        if (canElem || canPhase) {
           html += '<div style="margin-top:6px"><button id="info-cost-tm" style="background:#1565c0;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">⏱ View at this moment</button></div>';
         }
         box.innerHTML = html;
         box.style.display = 'block';
         var ipnl = document.getElementById('info-panel'); if (ipnl) ipnl.style.display = 'block';
         var jb = document.getElementById('info-cost-tm');
-        if (jb && t.phase) jb.addEventListener('click', function (e) {
+        if (jb) jb.addEventListener('click', function (e) {
           e.stopPropagation();
-          console.log('§ZOOM-COST_JUMP class="' + ifcClass + '" phase="' + t.phase.name + '"');
-          window.tmJumpToPhase(t.phase.name);
+          if (canElem) { console.log('§ZOOM-COST_JUMP_ELEM class="' + ifcClass + '" guid="' + guid + '"'); window.tmJumpToElement(guid); }
+          else { console.log('§ZOOM-COST_JUMP class="' + ifcClass + '" phase="' + t.phase.name + '"'); window.tmJumpToPhase(t.phase.name); }
         });
         console.log('§ZOOM-COST class="' + ifcClass + '" matches=' + (matchCount || 0) + ' linePlanned=' + (t.line ? t.line.planned : 'n/a') +
           ' phase="' + (t.phase ? t.phase.name : '-') + '" phasePlanned=' + (t.phase ? t.phase.planned : '-') + ' phaseCommitted=' + (t.phase ? t.phase.committed : '-') +
@@ -3183,6 +3186,11 @@
         var snagRow = document.getElementById('snag-btn-row');
         if (snagRow) snagRow.style.display = A.walkModeActive ? 'block' : 'none';
         console.log('[S275] §FIND_INFO ' + rows[0][0] + ' "' + rows[0][1] + '" ' + rows[0][5] + ' ' + rows[0][4]);
+        // §FIND_INFO_COST — cost is STANDARD on the info panel for ANY selected item (360-baseline, user
+        // decree): fold the twin Planned→Committed for this element's class, same as a Zoom-Across landing.
+        // No twin (un-priced building) → _showClassCost hides the cost box gracefully. (TM_4D5D_VARIANCE_LANE)
+        // Pass the guid so "⏱ View at this moment" freezes TM on THIS element (§360-IDENTITY), not just its phase.
+        if (rows[0][0]) _showClassCost(rows[0][0], 1, guid);
       } catch(e) {
         console.log('[S275] §FIND_INFO_ERR ' + e.message);
       }
