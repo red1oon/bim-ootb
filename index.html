@@ -548,6 +548,12 @@ async function clearCache(){
 
 // ============ BOOT ============
 (async function boot(){
+  // Deep-link: /#buildings (or ?hub=1) opens the Buildings/IFC hub straight away — the docs "Open" link
+  // lands here. Takes precedence over the cold gate; showPortalFresh mounts the round selector BEHIND the
+  // overlay (+ marks entered), so closing the hub reveals the matrix, never a blank. (§BUILDINGS-DEEPLINK)
+  if(location.hash==='#buildings' || new URLSearchParams(location.search).has('hub')){
+    L('§BOOT deep-link → Buildings/IFC hub'); showPortalFresh(); openHub(); return;
+  }
   var navType=(performance.getEntriesByType('navigation')[0]||{}).type||'navigate';
   var entered=false; try { entered=localStorage.getItem('mx_entered')==='1'; } catch(e){}
   var state=await probeColdWarm();
