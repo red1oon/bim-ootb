@@ -482,7 +482,7 @@ var BUILDINGS={
   'Schependomlaan':{db:'Schependomlaan_extracted.db'},'SampleCastle':{db:'SampleCastle_extracted.db'},
   'Molio':{db:'Molio_extracted.db'},'BimWhale_Advanced':{db:'BimWhale_Advanced_extracted.db'}
 };
-function openHub(){ document.getElementById('hub').classList.add('active'); buildHubBody(); L('§HUB opened (Buildings/IFC)'); }
+function openHub(){ document.getElementById('hub').classList.add('active'); buildHubBody(); _refreshCachedIndicator(); L('§HUB opened (Buildings/IFC)'); }
 function closeHub(){ document.getElementById('hub').classList.remove('active'); }
 function openBuilding(name){
   var bld=BUILDINGS[name]; if(!bld){ toast('No DB for '+name); return; }
@@ -521,13 +521,19 @@ async function _markCachedBuildings(){
     var keyStr = '\n' + keys.join('\n') + '\n';
     document.querySelectorAll('#hub .hub-card[data-bld]').forEach(function(card){
       var bld = BUILDINGS[card.getAttribute('data-bld')];
-      if(!bld || !bld.db) return;
+      if(!bld || !bld.db){ card.classList.remove('cached'); return; }
       var stem = bld.db.replace(/_extracted\.db$/,'').replace(/\.db$/,'');
       // split builds cache *_meta/_geo/_positions, single caches *_extracted.db — match on the stem boundary
-      if(keyStr.indexOf('/'+stem+'_') >= 0 || keyStr.indexOf('/'+bld.db) >= 0) card.classList.add('cached');
+      var hit = keyStr.indexOf('/'+stem+'_') >= 0 || keyStr.indexOf('/'+bld.db) >= 0;
+      card.classList.toggle('cached', hit);  // idempotent: green if cached, white if not (handles eviction too)
     });
   }catch(e){ /* indicator is best-effort, never blocks the hub */ }
 }
+// §CACHE-INDICATOR live refresh — re-check when the tab regains focus/visibility (a building opened in
+// another tab may have just finished caching), so green appears WITHOUT a reload. No-op if hub not built.
+function _refreshCachedIndicator(){ if(document.querySelector('#hub .hub-card[data-bld]')) _markCachedBuildings(); }
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) _refreshCachedIndicator(); });
+window.addEventListener('focus', _refreshCachedIndicator);
 var _hubBuilt=false;
 async function buildHubBody(){
   if(_hubBuilt) return; _hubBuilt=true;
