@@ -73,11 +73,12 @@ async function rwInit(SQL, baseUrl) {
       "(SELECT COUNT(*) FROM ad_mep_pattern) as pat, " +
       "(SELECT COUNT(*) FROM ad_mep_anchor) as anc, " +
       "(SELECT COUNT(*) FROM ad_placement_offset) as off, " +
-      "(SELECT COUNT(*) FROM _shim_attributes) as shim"
+      "(SELECT COUNT(*) FROM _shim_attributes) as shim, " +
+      "(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='arc_envelope') as has_arc"
     );
     var r = counts[0].values[0];
     console.log('§RW_INIT mep_rw.db loaded bom=' + r[0] + ' patterns=' + r[1] +
-                ' anchors=' + r[2] + ' offsets=' + r[3] + ' shims=' + r[4]);
+                ' anchors=' + r[2] + ' offsets=' + r[3] + ' shims=' + r[4] + ' arc_env=' + r[5]);
     return true;
   } catch (e) {
     console.warn('§RW_INIT_FAIL ' + e.message);
@@ -211,7 +212,10 @@ function rwRouteSegments(buildingDb, buildingName, opts) {
 
   var anchorKey = _rwFindAnchorKey(buildingName, dbBldName);
   if (anchorKey === null) { console.log('§RW_SEG no anchors for ' + buildingName); return []; }
-  var arcEnvelope = opts.arcEnvelope || (buildingDb ? _rwLoadArcEnvelope(buildingDb) : []);
+  // Load ARC envelope: explicit > from building DB > from mep_rw.db arc_envelope table (modeller path)
+  var arcEnvelope = (opts.arcEnvelope !== undefined)
+    ? opts.arcEnvelope
+    : (buildingDb ? _rwLoadArcEnvelope(buildingDb) : _rwLoadArcEnvelopeFromDb(anchorKey));
 
   var segments = [];
   ['CW', 'SP'].forEach(function (disc) {
@@ -488,6 +492,50 @@ function _rwApplyPattern(buildingDb, discipline, steps, allAnchors, arcEnvelope,
   });
 
   return { emitted: emitted, clashSkipped: clashSkipped };
+}
+
+// A4a. ARC envelope loader from mep_rw.db (for the op-log modeller — no building DB)
+// Returns boxes in extraction-space metres, same coordinate frame as ad_mep_anchor.
+function _rwLoadArcEnvelopeFromDb(buildingName) {
+  if (!_rwDb) return [];
+  try {
+    var rows = _rwDb.exec(
+      "SELECT cx, cy, cz, w, d, h FROM arc_envelope WHERE source_building = '" +
+      buildingName.replace(/'/g, "''") + "'"
+    );
+    if (!rows.length || !rows[0].values.length) return [];
+    var boxes = rows[0].values.map(function(v) {
+      return { cx: v[0], cy: v[1], cz: v[2], w: v[3], d: v[4], h: v[5] };
+    });
+    console.log('§RW_ARC_FROM_DB building=' + buildingName + ' boxes=' + boxes.length);
+    return boxes;
+  } catch (e) {
+    console.warn('§RW_ARC_FROM_DB_FAIL ' + e.message);
+    return [];
+  }
+}
+
+/**
+ * Building origin in extraction space (from mep_rw.db building_origin table).
+ * This is the structural AABB min (allMinXYZ used by StructuralBomBuilder) — the
+ * reference point that maps extraction-space positions to BOM-relative positions.
+ * Use with: worldPos = placedBBoxMin + (extractionPos - buildingOrigin)
+ * @param {string} buildingName — matches source_building in mep_rw.db
+ * @returns {{ x, y, z }} or null if not found
+ */
+function rwBuildingOrigin(buildingName) {
+  if (!_rwReady || !_rwDb) return null;
+  try {
+    var rows = _rwDb.exec(
+      "SELECT min_x, min_y, min_z FROM building_origin WHERE source_building = '" +
+      buildingName.replace(/'/g, "''") + "'"
+    );
+    if (!rows.length || !rows[0].values.length) return null;
+    var v = rows[0].values[0];
+    return { x: v[0], y: v[1], z: v[2] };
+  } catch (e) {
+    return null;
+  }
 }
 
 // A4. ARC envelope loader (from building DB)
