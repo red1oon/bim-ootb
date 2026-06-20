@@ -43,6 +43,7 @@
   var _coveredCount = 0;    // elements driven by real captured task dates
   var _coveragePct = 0;     // covered / total * 100 (for the coverage badge)
   var _sCurveData = null;  // cached S-curve points (computed once)
+  var _shopfloor = null, _shopfloorLoading = false;  // §E2b: PP_Order cost-element stacked S-curve cache
 
   // §S278: Cached temp objects — lazy-init on first use (THREE may not be loaded yet)
   var _tmV1, _tmV2, _tmV3, _tmM4, _tmColor, _tmRay;
@@ -2735,6 +2736,46 @@
       return _twin;
     }).catch(function (e) { _twinLoading = false; console.log('§TM_TWIN_ERR ' + e.message); return null; });
   }
+  // §E2b — load PP_Order + PP_Order_Cost from the ERP DB for the active building's project.
+  // Builds _shopfloor.orders = [{start, end, elements:{Material,Labor,Burden,Overhead}}]
+  // Same fetch/cache pattern as _loadTwin; closed over _shopfloor/_shopfloorLoading.
+  function _loadShopfloor() {
+    var app = A();
+    var building = (app && app.activeBuilding) || 'Hospital';
+    if (_shopfloor && _shopfloor.building === building) return Promise.resolve(_shopfloor);
+    if (_shopfloorLoading) return Promise.resolve(null);
+    var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
+    if (!SQL) return Promise.resolve(null);
+    _shopfloorLoading = true;
+    return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      var db = new SQL.Database(new Uint8Array(buf));
+      var pr = db.exec('SELECT C_Project_ID FROM C_Project WHERE Value=?', [building]);
+      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; return null; }
+      var pid = pr[0].values[0][0];
+      var res = db.exec(
+        'SELECT o.PP_Order_ID, o.DateStartSchedule, o.DateFinishSchedule,' +
+        ' oc.M_CostElement_ID, ce.Name AS elem, oc.CumulatedAmt' +
+        ' FROM PP_Order o' +
+        ' JOIN PP_Order_Cost oc ON o.PP_Order_ID=oc.PP_Order_ID' +
+        ' JOIN M_CostElement ce ON oc.M_CostElement_ID=ce.M_CostElement_ID' +
+        ' WHERE o.C_Project_ID=' + Number(pid) + ' AND oc.CumulatedAmt>0' +
+        ' ORDER BY o.DateFinishSchedule, oc.M_CostElement_ID'
+      );
+      db.close();
+      var rows = res.length ? res[0].values : [];
+      var orderMap = {};
+      rows.forEach(function (r) {
+        var oid = r[0], s = Date.parse(r[1]), e = Date.parse(r[2]), eName = r[4], amt = Number(r[5] || 0);
+        if (!orderMap[oid]) orderMap[oid] = { start: s, end: e, elements: {} };
+        orderMap[oid].elements[eName] = (orderMap[oid].elements[eName] || 0) + amt;
+      });
+      var orders = Object.keys(orderMap).map(function (k) { return orderMap[k]; });
+      _shopfloor = { building: building, orders: orders };
+      _shopfloorLoading = false;
+      console.log('§TM_SHOPFLOOR_LOADED building=' + building + ' orders=' + orders.length + ' rows=' + rows.length);
+      return _shopfloor;
+    }).catch(function (e) { _shopfloorLoading = false; console.log('§TM_SHOPFLOOR_ERR ' + e.message); return null; });
+  }
   function _money(n) { n = Math.round(n); var a = Math.abs(n), s = n < 0 ? '-' : '';
     if (a >= 1e6) return s + 'RM' + (a / 1e6).toFixed(1) + 'M'; if (a >= 1e3) return s + 'RM' + Math.round(a / 1e3) + 'K'; return s + 'RM' + a; }
   // Join the STORED twin cost (READ) to TM's gantt phase windows (the scrub axis). The cost numbers are the
@@ -3222,6 +3263,12 @@
 
     // S-Curve sparkline
     if (!_sCurveData) computeSCurve();
+    // §E2b: trigger shopfloor load on first draw; invalidate S-curve when it arrives so stacked data renders
+    if (!_shopfloor && !_shopfloorLoading) {
+      _loadShopfloor().then(function (sf) {
+        if (sf) { _sCurveData = null; if (_dashVisible) { computeSCurve(); drawSCurve(); } }
+      });
+    }
     drawSCurve();
 
     // Day counter
@@ -3240,59 +3287,104 @@
     }
   }
 
+  // §E2b — STACKED S-curve: if shopfloor data loaded, stacks Material/Labor/Burden/Overhead cost elements;
+  // else falls back to op-count monotonic curve. "Batch lights together" = all elements of an order accrue
+  // at its finish date (not during; binary done/not-done per order, monotonic by construction). W-SHOP-SCURVE.
+  var _SF_ELEMS = ['Material', 'Labor', 'Burden', 'Overhead'];
+  var _SF_COLORS = { Material: 'rgba(136,136,136,0.65)', Labor: 'rgba(79,195,247,0.65)',
+                     Burden: 'rgba(255,213,79,0.65)', Overhead: 'rgba(255,140,0,0.65)' };
+
   function computeSCurve() {
     if (!_ops.length) { _sCurveData = []; return; }
     var totalDays = Math.max(1, Math.round((_projectEnd - _projectStart) / 86400000));
-    var points = [];
     var step = Math.max(1, Math.floor(totalDays / 50));
-    for (var d = 0; d <= totalDays; d += step) {
-      var ts = _projectStart + d * 86400000;
-      var done = 0;
-      for (var i = 0; i < _ops.length; i++) { if (_ops[i].end_ts <= ts) done++; }
-      points.push({ day: d, pct: done / _ops.length * 100 });
+    var sf = _shopfloor;
+
+    if (sf && sf.orders.length) {
+      // cost-element stacked: at each step, sum CumulatedAmt of orders whose finish has passed
+      var grandTotal = 0;
+      sf.orders.forEach(function (o) {
+        _SF_ELEMS.forEach(function (e) { grandTotal += (o.elements[e] || 0); });
+      });
+      if (!grandTotal) { _sCurveData = []; return; }
+      var points = [];
+      for (var d = 0; d <= totalDays; d += step) {
+        var ts = _projectStart + d * 86400000;
+        var pt = { day: d };
+        _SF_ELEMS.forEach(function (e) { pt[e] = 0; });
+        sf.orders.forEach(function (o) {
+          if (o.end <= ts) { _SF_ELEMS.forEach(function (e) { pt[e] += o.elements[e] || 0; }); }
+        });
+        _SF_ELEMS.forEach(function (e) { pt[e] = pt[e] / grandTotal * 100; });   // → % of grand total
+        points.push(pt);
+      }
+      _sCurveData = points;
+      console.log('§SCURVE_COMPUTE stacked=true orders=' + sf.orders.length + ' steps=' + points.length + ' grandTotal=' + Math.round(grandTotal));
+    } else {
+      // fallback count-based (until shopfloor loads)
+      var points2 = [];
+      for (var d2 = 0; d2 <= totalDays; d2 += step) {
+        var ts2 = _projectStart + d2 * 86400000;
+        var done = 0;
+        for (var i = 0; i < _ops.length; i++) { if (_ops[i].end_ts <= ts2) done++; }
+        points2.push({ day: d2, pct: done / _ops.length * 100 });
+      }
+      _sCurveData = points2;
     }
-    _sCurveData = points;
   }
 
   function drawSCurve() {
     var canvas = document.getElementById('tm-dash-scurve');
     if (!canvas || !_sCurveData || !_sCurveData.length) return;
-    var ctx = canvas.getContext('2d');
-    var w = canvas.width, h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
+    var c = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+    c.clearRect(0, 0, w, h);
+    var pts = _sCurveData;
+    var isStacked = 'Material' in (pts[0] || {});
+    var totalDays = Math.max(1, pts[pts.length - 1].day);
 
-    var totalDays = Math.max(1, _sCurveData[_sCurveData.length - 1].day);
-
-    // Draw curve
-    ctx.beginPath();
-    ctx.strokeStyle = '#4fc3f7';
-    ctx.lineWidth = 2;
-    for (var i = 0; i < _sCurveData.length; i++) {
-      var pt = _sCurveData[i];
-      var x = pt.day / totalDays * w;
-      var y = h - (pt.pct / 100 * h);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (isStacked) {
+      // stacked area per cost element (bottom to top: Material / Labor / Burden / Overhead)
+      for (var ei = 0; ei < _SF_ELEMS.length; ei++) {
+        var eName = _SF_ELEMS[ei];
+        c.beginPath();
+        for (var i = 0; i < pts.length; i++) {
+          var x = pts[i].day / totalDays * w;
+          var stackPct = 0; for (var j = 0; j <= ei; j++) stackPct += (pts[i][_SF_ELEMS[j]] || 0);
+          var y = h - (stackPct / 100 * h);
+          if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+        }
+        for (var i = pts.length - 1; i >= 0; i--) {
+          var x = pts[i].day / totalDays * w;
+          var basePct = 0; for (var j = 0; j < ei; j++) basePct += (pts[i][_SF_ELEMS[j]] || 0);
+          var y = h - (basePct / 100 * h);
+          c.lineTo(x, y);
+        }
+        c.closePath(); c.fillStyle = _SF_COLORS[eName]; c.fill();
+      }
+      // cursor dot at top of stack
+      var curDay = Math.max(0, (_cursor - _projectStart) / 86400000);
+      var ci2 = Math.min(pts.length - 1, Math.round(curDay / totalDays * (pts.length - 1)));
+      var cp = pts[ci2];
+      if (cp) {
+        var topPct = _SF_ELEMS.reduce(function (s, e) { return s + (cp[e] || 0); }, 0);
+        var dx = cp.day / totalDays * w, dy = h - (topPct / 100 * h);
+        c.beginPath(); c.arc(dx, dy, 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
+        if ((drawSCurve._tick = (drawSCurve._tick || 0) + 1) % 20 === 0)
+          console.log('§SCURVE_DRAW stacked=true cursor_day=' + Math.round(curDay) + ' accrued=' + Math.round(topPct) + '%');
+      }
+    } else {
+      // fallback single line
+      c.beginPath(); c.strokeStyle = '#4fc3f7'; c.lineWidth = 2;
+      for (var i = 0; i < pts.length; i++) {
+        var pt = pts[i], x = pt.day / totalDays * w, y = h - (pt.pct / 100 * h);
+        if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+      }
+      c.stroke(); c.lineTo(w, h); c.lineTo(0, h); c.closePath(); c.fillStyle = 'rgba(79,195,247,0.1)'; c.fill();
+      var curDay2 = Math.max(0, (_cursor - _projectStart) / 86400000);
+      var done2 = 0; for (var ci3 = 0; ci3 < _ops.length; ci3++) { if (_ops[ci3].end_ts <= _cursor) done2++; }
+      var dx2 = curDay2 / totalDays * w, dy2 = h - (done2 / Math.max(_ops.length, 1) * h);
+      c.beginPath(); c.arc(dx2, dy2, 4, 0, Math.PI * 2); c.fillStyle = '#ff8c00'; c.fill();
     }
-    ctx.stroke();
-
-    // Fill under curve
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(79,195,247,0.1)';
-    ctx.fill();
-
-    // Current position dot
-    var curDay = Math.max(0, (_cursor - _projectStart) / 86400000);
-    var curDone = 0;
-    for (var ci = 0; ci < _ops.length; ci++) { if (_ops[ci].end_ts <= _cursor) curDone++; }
-    var curPct = curDone / _ops.length * 100;
-    var dx = curDay / totalDays * w;
-    var dy = h - (curPct / 100 * h);
-    ctx.beginPath();
-    ctx.arc(dx, dy, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#ff8c00';
-    ctx.fill();
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -3516,6 +3608,7 @@
     _ganttVisible = false;
     _dashVisible = false;
     _sCurveData = null;
+    _shopfloor = null; _shopfloorLoading = false;    // §E2b: invalidate shopfloor cache on building change
     _ganttTasks = [];
     _ganttTasksComputed = false;
     var ganttBtn = document.getElementById('tm-gantt');
