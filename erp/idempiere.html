@@ -3267,43 +3267,70 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       console.log("§KANBAN-CARD key=" + _sc.key + " avatar=" + window.KanbanLens.monogram(T) +
         " title='" + _m.title + "' amount='" + (_m.amount == null ? '' : _m.amount) + "' date='" + (_m.date == null ? '' : _m.date) +
         "' color=" + window.KanbanLens.statusColor(_sc.status)); }
+    // §KANBAN-GROUPBY: extract dispatch+onResult so the group-by re-mount shares the same write path
+    var _kbDispatch = function (intent) {
+      var rec = _records.filter(function (r) { return String(recVal(r, kc)) === String(intent.id); })[0];
+      if (!rec) { console.log('§KANBAN-WRITE no-rec id=' + intent.id); return { ok: false, reason: 'no-rec' }; }
+      var fc = _fsmCtx(tab, rec);
+      if (!fc) { console.log('§KANBAN-WRITE no-fsm table=' + T + ' id=' + intent.id); return { ok: false, reason: 'no-fsm' }; }
+      var res = fc.dispatch(intent.action);   // AdDocFsm legality + __crud.process on the SHARED signed lane
+      if (res && res.ok) console.log('§KANBAN-WRITE ok ' + T + '#' + intent.id + ' action=' + intent.action +
+        ' from=' + res.from + ' to=' + res.to + ' via=__crud.process store=shared(__crud)');
+      else console.log('§KANBAN-WRITE rejected ' + T + '#' + intent.id + ' action=' + intent.action + ' why=' + (res && res.reason));
+      return { ok: !!(res && res.ok), to: res && res.to, reason: res && res.reason };
+    };
+    var _kbOnResult = function (res, dr) {
+      if (dr && dr.ok && window.__crud && typeof window.__crud.withSidecar === 'function') {
+        setTimeout(function () { window.__crud.withSidecar(function () {
+          try { console.log('§KANBAN-WRITE settled ' + res.table + '#' + res.id +
+            ' shared-tip=' + (window.__crud.readTip(String(res.table).toLowerCase(), res.id) || '?') + ' (kernel sidecar = the one store)'); } catch (e) {}
+        }); }, 350);
+      }
+    };
+    var _kbMountBoard = function (r, bd) {
+      // S6 LENS-SWAP: a kanban drag reuses the SHARED _fsmCtx dispatch (same signed lane as the grid DocAction bar)
+      window.__idmpKanban = window.KanbanLens.mount({ root: r, board: bd, wfmc: _kanbanWfmc, meta: kmeta, dispatch: _kbDispatch, ctx: {}, onResult: _kbOnResult });
+    };
     var container = el('div');
-    container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));   // switch back to the chart lens
+    container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+    // §KANBAN-GROUPBY selector — lists all AD fields with usable cardinality (≥2, < rows), driven by field
+    // metadata (no per-model code). DocStatus is first and marked ✦ (draggable); any other field → heat-map.
+    var _kbFields = (_displayFields(tab) || []).filter(function (f) {
+      var c = _distinctCount(f.columnName); return c >= 2 && c < Math.max(_records.length, 2);
+    }).sort(function (a, b) { return /docstatus/i.test(a.columnName) ? -1 : /docstatus/i.test(b.columnName) ? 1 : 0; });
     var root = el('div'); root.style.cssText = 'overflow:auto;max-height:72vh';
+    if (_kbFields.length > 1) {
+      var gbRow = el('div'); gbRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:#555;';
+      gbRow.appendChild(el('span', null, 'Group by'));
+      var gbSel = el('select'); gbSel.style.cssText = 'border:1px solid #ddd;border-radius:5px;padding:3px 8px;font-size:13px;cursor:pointer;';
+      _kbFields.forEach(function (f) {
+        var opt = el('option', null, f.name + (/docstatus/i.test(f.columnName) ? ' ✦' : ''));
+        opt.value = f.columnName; if (f.columnName === gr.col.columnName) opt.selected = true;
+        gbSel.appendChild(opt);
+      });
+      gbRow.appendChild(gbSel); container.appendChild(gbRow);
+      gbSel.addEventListener('change', function () {
+        var newF = _kbFields.filter(function (f) { return f.columnName === gbSel.value; })[0]; if (!newF) return;
+        root.innerHTML = '';
+        var isDs = /docstatus/i.test(newF.columnName), gbS = {};
+        _records.forEach(function (r) { var v = String(fmt(newF, recVal(r, newF.columnName)) || '(blank)'); (gbS[v] = gbS[v] || []).push(recVal(r, kc)); });
+        if (isDs) {
+          var gbFolds = Object.keys(gbS).map(function (s) { return { table: T, doc_status: s, count: gbS[s].length, ids: gbS[s].slice(0, 30) }; });
+          _kbMountBoard(root, window.KanbanLens.buildBoard(gbFolds, _kanbanWfmc, { showEmptyStates: true }));
+        } else {
+          var gbks = Object.keys(gbS).map(function (k) { return { k: k, n: gbS[k].length }; }).sort(function (a, b) { return b.n - a.n; });
+          var gbmax = 1; gbks.forEach(function (e) { gbmax = Math.max(gbmax, e.n); });
+          var gbgrid = el('div', 'hm-grid');
+          gbks.forEach(function (e) { var t = e.n / gbmax, cell = el('div', 'hm-cell'); cell.style.background = 'rgba(108,159,255,' + (0.14 + 0.78 * t).toFixed(3) + ')'; cell.appendChild(el('div', 'hm-k', e.k)); cell.appendChild(el('div', 'hm-n', String(e.n))); cell.title = e.k + ' · ' + e.n + ' records'; gbgrid.appendChild(cell); });
+          root.appendChild(gbgrid);
+        }
+        console.log('§KANBAN-GROUPBY field=' + newF.columnName + ' groups=' + Object.keys(gbS).length + ' draggable=' + isDs);
+      });
+    }
     container.appendChild(root);
     _overlay('Kanban — ' + tab.name, container);
-    window.__idmpKanban = window.KanbanLens.mount({ root: root, board: board, wfmc: _kanbanWfmc, meta: kmeta,
-      // S6 LENS-SWAP — a kanban drag is the SAME signed verb as the grid/form DocAction: reuse the SHARED
-      //   _fsmCtx(tab,rec).dispatch(action) seam (AdDocFsm decides legality + transition → __crud.process →
-      //   commitProcess → completeFanout → signed commitGroup → persist to the SHARED kernel sidecar). The
-      //   ring NEVER opens; the kanban no longer forks its own op-log (_kanbanProj) — Kanban-drag ⇆ grid-bar ⇆
-      //   gear-batch are now ONE owned model, one store, one write path (doctrine §0: never fork a verb).
-      //   The lens's wfmc drop-zones stay the fast visual mirror; AdDocFsm is the WRITE authority (it may
-      //   reject a wfmc-legal drag for period/processing — then the card honestly snaps back).
-      dispatch: function (intent) {
-        var rec = _records.filter(function (r) { return String(recVal(r, kc)) === String(intent.id); })[0];
-        if (!rec) { console.log('§KANBAN-WRITE no-rec id=' + intent.id); return { ok: false, reason: 'no-rec' }; }
-        var fc = _fsmCtx(tab, rec);
-        if (!fc) { console.log('§KANBAN-WRITE no-fsm table=' + T + ' id=' + intent.id); return { ok: false, reason: 'no-fsm' }; }
-        var res = fc.dispatch(intent.action);   // AdDocFsm legality + __crud.process on the SHARED signed lane
-        if (res && res.ok) console.log('§KANBAN-WRITE ok ' + T + '#' + intent.id + ' action=' + intent.action +
-          ' from=' + res.from + ' to=' + res.to + ' via=__crud.process store=shared(__crud)');
-        else console.log('§KANBAN-WRITE rejected ' + T + '#' + intent.id + ' action=' + intent.action + ' why=' + (res && res.reason));
-        return { ok: !!(res && res.ok), to: res && res.to, reason: res && res.reason };
-      }, ctx: {},
-      onResult: function (res, dr) {
-        // the signed write + chain verify + persist all happen INSIDE __crud.process (commitProcess →
-        //   commitGroup → verifyChain → _sidePersist → IDB) and the engine logs the authoritative
-        //   "§CRUD process committed … verifyChain=ok". Here we only confirm the SHARED sidecar tip settled
-        //   to the new status once the async commit lands (the kernel sidecar — not _kanbanProj — is the truth).
-        if (dr && dr.ok && window.__crud && typeof window.__crud.withSidecar === 'function') {
-          setTimeout(function () { window.__crud.withSidecar(function () {
-            try { console.log('§KANBAN-WRITE settled ' + res.table + '#' + res.id +
-              ' shared-tip=' + (window.__crud.readTip(String(res.table).toLowerCase(), res.id) || '?') + ' (kernel sidecar = the one store)'); } catch (e) {}
-          }); }, 350);
-        }
-      } });
-    console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T);
+    _kbMountBoard(root, board);
+    console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T + ' groupby=' + gr.col.columnName + ' axis-choices=' + _kbFields.length);
   }
   // 🛒 POS — the point-of-sale lens (POS_ADDON_SPEC §P-1): tiles from c_poskey, sealed master prices,
   // Complete = ONE signed group through the SAME published op log the Kanban write path rides.
