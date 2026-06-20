@@ -252,6 +252,30 @@ function rwSweepOps(segments, opts) {
   });
 }
 
+// Align anchor-space route segments to a WORLD-placed building (the auto-emit-on-drop transform).
+// The dropped building's STRUCTURAL leaves are in modeller world space; its MEP anchors are in extraction
+// space. Both are the SAME building at 1:1 metres, so map the anchor bbox-min → the placed-leaf bbox-min,
+// + an optional yaw about +Z (the drop rotation). Returns segments with world-space from/to.
+//   placedBBox: { min:[x,y,z], max:[x,y,z] } world bbox of the just-placed structural leaves.
+//   opts: { rotDeg } (the drop rotation; 0 = the common case).
+function rwAlignSegments(segments, placedBBox, opts) {
+  if (!segments.length) return [];
+  opts = opts || {};
+  var rad = (opts.rotDeg || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
+  var amin = [Infinity, Infinity, Infinity];
+  segments.forEach(function (s) {
+    [s.from, s.to].forEach(function (p) { for (var i = 0; i < 3; i++) if (p[i] < amin[i]) amin[i] = p[i]; });
+  });
+  var wmin = placedBBox.min;
+  function map(p) {
+    var lx = p[0] - amin[0], ly = p[1] - amin[1], lz = p[2] - amin[2];
+    return [wmin[0] + (cs * lx - sn * ly), wmin[1] + (sn * lx + cs * ly), wmin[2] + lz];
+  }
+  return segments.map(function (s) {
+    return { disc: s.disc, storey: s.storey, axis: s.axis, from: map(s.from), to: map(s.to), len: s.len };
+  });
+}
+
 // Centroid of all segment endpoints — the natural drop-transform pivot
 // (negate to centre a routed building at the modeller origin / drop point).
 function rwSegmentCentroid(segments) {

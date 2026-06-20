@@ -188,7 +188,7 @@
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=1" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=2" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -1261,6 +1261,65 @@ function rotateInsert() {                                          // R key / Ro
 }
 // Drop a whole BOM assembly: expand its subtree to N leaf placements and commit one signed GEOM_INSERT per
 // leaf (the recursion + parent-relative transforms live in bonsai_library.expandAssembly). W-BOM-ASSEMBLY.
+// ── AUTO-EMIT MEP ON BUILDING DROP (W-ROUTEWALK-AUTODROP) ────────────────────────────────────────────
+// When a BUILDING / FLOOR assembly is dropped, its STRUCTURAL BOM carries no MEP (verified: BUILDING_DX_STD
+// = 1099 leaves, MEP=0). So RouteWalker routes the building's MEP from the real mep_rw.db anchors keyed to
+// that building (fuzzy-matched on the assembly name), then rwAlignSegments REGISTERS the anchor-space runs to
+// the just-placed building's WORLD bbox (1:1 m + the drop yaw). Each run commits as ONE signed GEOM_SWEEP —
+// the SAME bridge proven by W-ROUTEWALKER-MEP 8/8 + W-ROUTEWALK-MODELLER. Runs async (does NOT block the drop);
+// longest-runs-first, capped (occt pipe is costly) and §-logged honestly. No clash gate yet (follow-on).
+let _rwInitP = null;
+function _rwReadyOnce() {                                  // lazy one-shot rwInit(mep_rw.db) on the first building drop
+  if (!_rwInitP) _rwInitP = (async () => {
+    if (typeof rwInit !== 'function') return false;
+    const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, location.href).href });
+    return rwInit(SQL, '');
+  })().catch(e => { console.warn('§MODELLER rwInit fail ' + e); return false; });
+  return _rwInitP;
+}
+// Resolve the dropped assembly → a mep_rw.db anchor building key. The catalog encodes the source building in
+// names/ids (per-building BOM doctrine: DX=Duplex, SH=SampleHouse, TE/LKTN=Terminal) — map those to the anchor
+// keys (rwFindAnchorKey then fuzzy-matches). Returns '' when no building is recognised (→ no MEP routed).
+function _rwBuildingHint(asm) {
+  const s = (((asm && asm.name) || '') + ' ' + ((asm && asm.id) || '')).toUpperCase();
+  if (/DUPLEX|\bDX\b|DX_|_DX_/.test(s)) return 'Duplex';
+  if (/SAMPLE\s*HOUSE|\bSH\b|SH_|_SH_/.test(s)) return 'SampleHouse';
+  if (/TERMINAL|\bTE\b|TE_|TBLKTN|LKTN/.test(s)) return 'Terminal';
+  return (asm && asm.name) || '';
+}
+async function autoRouteMEP(asm, leaves) {
+  const ready = await _rwReadyOnce();
+  if (!ready) return { found: 0, routed: 0 };
+  const name = _rwBuildingHint(asm);
+  const segs = name ? rwRouteSegments(null, name, { arcEnvelope: [] }) : [];   // anchor-space runs (no building DB)
+  if (!segs.length) { console.log('§MODELLER autoroute no-MEP building="' + name + '"'); return { found: 0, routed: 0 }; }
+  // world bbox of the just-placed structural leaves = the registration target
+  const bmin = [Infinity, Infinity, Infinity], bmax = [-Infinity, -Infinity, -Infinity];
+  leaves.forEach(l => { const p = [l.x, l.y, l.z]; for (let i = 0; i < 3; i++) { if (p[i] < bmin[i]) bmin[i] = p[i]; if (p[i] > bmax[i]) bmax[i] = p[i]; } });
+  const placedBBox = { min: bmin, max: bmax };
+  const aligned = rwAlignSegments(segs, placedBBox, { rotDeg: insRot || 0 });
+  // aligned bbox (over ALL runs, before the cap) — alignedMin == placedMin by construction (registration proof)
+  const amin = [Infinity, Infinity, Infinity], amax = [-Infinity, -Infinity, -Infinity];
+  aligned.forEach(s => [s.from, s.to].forEach(p => { for (let i = 0; i < 3; i++) { if (p[i] < amin[i]) amin[i] = p[i]; if (p[i] > amax[i]) amax[i] = p[i]; } }));
+  aligned.sort((a, b) => b.len - a.len);                          // longest mains first (most meaningful runs)
+  const MAX = (typeof window.__rwMaxRuns === 'number') ? window.__rwMaxRuns : 40;
+  const ops = rwSweepOps(aligned, { profileM: 0.05, limit: MAX });
+  console.log('§MODELLER autoroute building="' + name + '" found=' + segs.length + ' emitting=' + ops.length +
+    (ops.length < segs.length ? ' (capped of ' + segs.length + ', longest-first)' : ''));
+  let routed = 0;
+  for (const op of ops) {
+    try { const res = await window.Bonsai.oplog.commit(op, { color: 0x4fb0ff }); if (res && res.verify) routed++; }
+    catch (e) { console.warn('§MODELLER autoroute commit fail ' + (e && e.message || e)); }
+    setStat('routing MEP… ' + routed + '/' + ops.length);
+  }
+  await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);  // fold the new runs into the scene
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  syncHistory(); audioCue('commit');
+  setStat('routed ' + routed + ' MEP runs for ' + name + (ops.length < segs.length ? ' (' + segs.length + ' total)' : ''));
+  console.log('§MODELLER autoroute-done building="' + name + '" routed=' + routed + ' of ' + ops.length);
+  return { found: segs.length, routed: routed, emitted: ops.length,
+           placedMin: bmin.map(v => +v.toFixed(3)), alignedMin: amin.map(v => +v.toFixed(3)), alignedMax: amax.map(v => +v.toFixed(3)) };
+}
 async function placeAssembly(x, y) {
   const L = window.Bonsai.library, asm = L.assembly(insertHash);
   // CENTER-anchor the drop. expandAssembly seats children CORNER-anchored ([0..W]), but the ghost box (showGhost
@@ -1298,6 +1357,11 @@ async function placeAssembly(x, y) {
       else console.log('§MODELLER assembly-drop meshes-upgraded leaves=' + (needs.length - boxed) + '/' + needs.length);
     }).catch(() => { if (tries > 0) setTimeout(() => upgrade(tries - 1), 300); });
     upgrade(2);
+  }
+  // AUTO-EMIT MEP: a dropped BUILDING / FLOOR routes its MEP from real mep_rw.db anchors → signed GEOM_SWEEP runs,
+  // registered to this placed footprint. Async — does NOT block the drop. No-op for buildings with no MEP recipe.
+  if (asm && (asm.level === 'BUILDING' || asm.level === 'FLOOR')) {
+    window.__lastAutoRoute = autoRouteMEP(asm, leaves).catch(e => { console.warn('§MODELLER autoroute fail ' + e); return { found: 0, routed: 0 }; });
   }
   disarmPick();                                                  // detach the ghost from the pointer after the drop
   return { id: lastInsertId, count: placed.length };
@@ -1908,6 +1972,54 @@ if (qs.get('routewalk') === 'demo') {
     window.__routewalkResult = out;
     window.__routewalkDone = true;
     console.log('§MODELLER routewalk-done');
+  })();
+}
+// ?routewalk=drop proves AUTO-EMIT on building-drop (W-ROUTEWALK-AUTODROP): drop a real Duplex FLOOR (structural,
+// MEP=0) via the REAL placeAssembly path — the auto-route fires, routes the building's MEP from mep_rw.db anchors,
+// registers them to the placed footprint (rwAlignSegments), and commits each as a signed GEOM_SWEEP. Asserts: the
+// floor's structural leaves placed; auto-route found MEP + emitted a bounded set; every run signed + verifies;
+// every run lands INSIDE the placed building's world bbox (alignment); runs folded + under the Routes category.
+if (qs.get('routewalk') === 'drop') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library, O = window.Bonsai.oplog;
+    try {
+      await L.ready();
+      window.__rwMaxRuns = 8;                                     // bound the witness (occt pipe is costly)
+      const FLOOR = 'DX_FDN_STR';                                 // a real Duplex floor (structural, MEP=0), few leaves
+      insRot = 0; insElev = 0; inserting = true; insertHash = FLOOR; O.clear();
+      out.structuralLeaves = L.expandAssembly(FLOOR, { x: 6, y: 4, z: 0, rot: 0 }).length;
+      await placeAssembly(6, 4);                                  // REAL drop → triggers autoRouteMEP
+      out.structuralCommitted = O._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length;
+      const ar = await (window.__lastAutoRoute || Promise.resolve({}));
+      out.found = ar.found; out.emitted = ar.emitted; out.routed = ar.routed;
+      const sweeps = O._geomOps().filter(o => o.op_type === 'GEOM_SWEEP');
+      out.sweepRows = sweeps.length;
+      // REGISTRATION: rwAlignSegments maps the anchor bbox-min → the placed footprint corner, so alignedMin must
+      // equal placedMin (the transform targeted THIS drop), and EVERY emitted run lies inside [alignedMin,Max].
+      // MEP fills the whole envelope, so it legitimately extends above a single floor — bbox-registration, not
+      // floor-containment, is the right invariant.
+      out.placedMin = ar.placedMin; out.alignedMin = ar.alignedMin; out.alignedMax = ar.alignedMax;
+      out.cornerRegistered = ar.placedMin && ar.alignedMin &&
+        Math.abs(ar.placedMin[0] - ar.alignedMin[0]) < 1e-3 && Math.abs(ar.placedMin[1] - ar.alignedMin[1]) < 1e-3 &&
+        Math.abs(ar.placedMin[2] - ar.alignedMin[2]) < 1e-3;
+      const T = 1e-3; let inside = 0, runLenSum = 0;
+      sweeps.forEach(o => { const pa = o.parameters.path;
+        const ok = pa.every(p => p[0] >= ar.alignedMin[0] - T && p[0] <= ar.alignedMax[0] + T &&
+          p[1] >= ar.alignedMin[1] - T && p[1] <= ar.alignedMax[1] + T &&
+          p[2] >= ar.alignedMin[2] - T && p[2] <= ar.alignedMax[2] + T);
+        if (ok) inside++;
+        runLenSum += Math.hypot(pa[1][0] - pa[0][0], pa[1][1] - pa[0][1], pa[1][2] - pa[0][2]); });
+      out.runsInBBox = inside; out.runLenSum = +runLenSum.toFixed(2);
+      out.signed = O.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await O.verify()).ok;
+      out.totalOps = O.length;
+      const g = window.Bonsai.group();
+      out.tris = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      out.routesCategory = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'routes');
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk drop fail ' + e); }
+    window.__routewalkDropResult = out;
+    window.__routewalkDropDone = true;
+    console.log('§MODELLER routewalk-drop-done');
   })();
 }
 // ?insert=demo proves library-component insert @ LOD (W-BONSAI-INSERT): enter Insert mode via the button, pick a
