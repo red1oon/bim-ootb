@@ -1212,6 +1212,81 @@
     // Force immediate render — mobile browsers defer rAF until touch
     if (app.renderer && app.scene && app.camera) app.renderer.render(app.scene, app.camera);
     updateStatus();
+    _broadcastTimeline();   // §S3 — realtime cross-tab scrub + pinpoint the item the data is addressing
+  }
+
+  // ── §S3 (TM_4D5D_VARIANCE_LANE) — realtime cross-tab timeline broadcast + scene pinpoint ──
+  // The 4D ALREADY EXISTS (injectGantt). This stage does NOT regenerate it — it BROADCASTS the scrub over the
+  // shared Connect bus (same channel the modeller speaks) so sibling tabs/surfaces follow in lockstep, and it
+  // PINPOINTS the element(s) the cursor is addressing at this instant (the frontier) — publishing them as a
+  // selection (so an ERP tab lights the matching record) + a HUD callout that singles them out.
+  var _applyingRemoteScrub = false;   // echo guard: don't re-publish a scrub we're applying from another surface
+  var _lastTLms = 0;                   // throttle wall-clock (runtime only; never used by witnesses)
+  // PURE: the guids "addressed by the data" at cursorMs = ops whose window straddles the cursor (being built now).
+  // Falls back to the most-recently-finished op when nothing is mid-flight, so a parked cursor still pinpoints.
+  function _frontierAt(cursorMs) {
+    var live = [], lastDone = null;
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      if (op.start_ts > cursorMs) continue;
+      var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      if (!guid) continue;
+      if (op.end_ts > cursorMs) live.push({ guid: guid, phase: (op.parameters || {}).phase || 'Architecture' });
+      else if (!lastDone || op.end_ts > lastDone.end) lastDone = { guid: guid, phase: (op.parameters || {}).phase || 'Architecture', end: op.end_ts };
+    }
+    if (!live.length && lastDone) live.push({ guid: lastDone.guid, phase: lastDone.phase });
+    return live;
+  }
+  function _broadcastTimeline() {
+    var C = window.Connect;
+    if (!_ops.length) return;
+    var frontier = _frontierAt(_cursor);
+    var guids = frontier.map(function (f) { return f.guid; });
+    var lead = frontier.length ? frontier[0] : null;
+    // HUD callout — single out the item(s) the data is addressing at this moment (always, even off-bus)
+    _updatePinpoint(frontier);
+    if (!C || !C.on || _applyingRemoteScrub) return;     // off-bus or echoing a remote scrub → no publish
+    var now = (function () { try { return Date.now(); } catch (e) { return _lastTLms + 100; } })();
+    if (now - _lastTLms < 80) return;                    // throttle the fan-out during playback/drag
+    _lastTLms = now;
+    var app = A(), span = _projectEnd - _projectStart;
+    C.publish('timeline', { cursor: _cursor, frac: span > 0 ? (_cursor - _projectStart) / span : 0,
+      frontier: guids.slice(0, 40), lead: lead ? lead.guid : null, phase: lead ? lead.phase : null,
+      building: (app && app.activeBuilding) || null, surface: 'viewer' });
+    // pinpoint cross-surface: publish the lead addressed element as a selection (ERP/sibling lights its record)
+    if (lead) C.publish('selection', { guid: lead.guid, ifcClass: null, surface: 'viewer' });
+    console.log('§TM_BROADCAST cursor=' + Math.round(_cursor) + ' frontier=' + guids.length + ' lead=' + String(lead && lead.guid).slice(0, 10) + ' phase=' + (lead ? lead.phase : '-'));
+  }
+  // inbound scrub from a sibling viewer tab (same building) → move our cursor to match, echo-guarded.
+  function _applyRemoteTimeline(t) {
+    if (!t || t.surface !== 'viewer' || !_active || !_ops.length) return;
+    var app = A();
+    if (t.building && app && app.activeBuilding && t.building !== app.activeBuilding) return;  // different model
+    var span = _projectEnd - _projectStart;
+    var c = (typeof t.cursor === 'number') ? t.cursor : (typeof t.frac === 'number' ? _projectStart + t.frac * span : null);
+    if (c == null) return;
+    _applyingRemoteScrub = true;
+    try { _cursor = Math.max(_projectStart, Math.min(_projectEnd, c)); renderAtTime(_cursor); try { anchorFromCursor(); configSlider(); } catch (e) {} }
+    finally { _applyingRemoteScrub = false; }
+    console.log('§TM_TL_IN cursor=' + Math.round(_cursor) + ' from=' + (t.surface || '?'));
+  }
+  // HUD callout that names the addressed item(s) — created lazily, sits above the TM panel.
+  function _updatePinpoint(frontier) {
+    var el = document.getElementById('tm-pinpoint');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'tm-pinpoint';
+      el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:128px;z-index:16;background:rgba(8,16,40,0.78);' +
+        'border:1px solid #4fc3f7;border-radius:14px;padding:4px 12px;font-size:12px;color:#e8f4ff;pointer-events:none;' +
+        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;display:none';
+      document.body.appendChild(el);
+    }
+    if (!_active || !frontier || !frontier.length) { el.style.display = 'none'; return; }
+    var byPhase = {}; frontier.forEach(function (f) { byPhase[f.phase] = (byPhase[f.phase] || 0) + 1; });
+    var ph = Object.keys(byPhase).sort(function (a, b) { return byPhase[b] - byPhase[a]; })[0];
+    el.innerHTML = '<span style="color:#4fc3f7">⊕ Now building</span> · ' + frontier.length + ' item' +
+      (frontier.length > 1 ? 's' : '') + ' · <b>' + ph + '</b>';
+    el.style.display = 'block';
   }
 
   // ── §S260c: Outline effect — wireframe edge overlay on mesh ──
@@ -3449,6 +3524,7 @@
     if (ganttBox) ganttBox.classList.remove('open');
     // §TM-VARIANCE: reset the drawer state on deactivate (the twin cache is kept — it's read-only).
     _varVisible = false; _opsPlanned = null;
+    var pin = document.getElementById('tm-pinpoint'); if (pin) pin.style.display = 'none';   // §S3 — clear the pinpoint callout
     var varBtn = document.getElementById('tm-var'); if (varBtn) varBtn.classList.remove('tm-active');
     var varBox = document.getElementById('tm-var-box'); if (varBox) varBox.classList.remove('open');
     toggleDashDOM(false);
@@ -3480,6 +3556,8 @@
   // ── Init ──
   function init() {
     buildPanel();
+    // §S3 — listen for a sibling surface's scrub on the shared Connect bus (the modeller already speaks it).
+    try { if (window.Connect && window.Connect.subscribe) window.Connect.subscribe('timeline', _applyRemoteTimeline); } catch (e) {}
 
     // S265: TM button is now in icon pill — no longer injected into overflow
     // var toolbar = document.querySelector('#search-body > div');
