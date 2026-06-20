@@ -605,6 +605,9 @@ async function setupScene(A) {
         chunks.push(value); received += value.length;
         const pct = Math.round((received / contentLength) * 100);
         if (A.status) A.status.textContent = `Downloading ${fileName}... ${pct}% (${(received/1024/1024).toFixed(0)}/${(contentLength/1024/1024).toFixed(0)}MB)`;
+        // §S-PROGRESS-META — drive the visible bar during cachedFetch (meta.db phase), not just the status text
+        var _sp = document.getElementById('s-progress');
+        if (_sp) _sp.style.width = pct + '%';
       }
       const full = new Uint8Array(received);
       let offset = 0;
