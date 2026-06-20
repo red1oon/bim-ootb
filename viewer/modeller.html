@@ -186,6 +186,9 @@
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
+<!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
+     bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
+<script src="routewalker.js?v=1" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -1607,7 +1610,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
 const qs = new URLSearchParams(location.search);
 // PERSISTENCE: restore the saved signed model on boot so work survives a reload — unless a demo hook runs
 // (demos clear() and drive their own state). Folds the restored op-log to the scene + refreshes panels.
-if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera|regen)$/.test(k))) {
+if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|routewalk|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera|regen)$/.test(k))) {
   (async () => { try { const n = await window.Bonsai.oplog.restore(); if (n) { syncHistory(); setStat('restored ' + n + ' feature' + (n === 1 ? '' : 's') + ' from your last session'); } } catch (e) { console.warn('§MODELLER restore fail ' + e); } window.__restoreDone = true; })();
 }
 const q = qs.get('author');
@@ -1856,6 +1859,55 @@ if (qs.get('route') === 'demo') {
     window.__routeResult = out;
     window.__routeDone = true;
     console.log('§MODELLER route-done');
+  })();
+}
+// ?routewalk=demo proves the RouteWalker → op-log emit (W-ROUTEWALK-MODELLER): the SAME routewalker.js port
+// proven against real mep_rw.db (W-ROUTEWALKER-MEP 7/7) now runs IN the modeller — load mep_rw.db, route Duplex
+// MEP from the REAL anchors (rwRouteSegments), drop-transform a bounded subset (rwSweepOps; occt pipe is costly),
+// and commit EACH as a signed GEOM_SWEEP. The runs fold to pipe solids, verify on the chain, land under the
+// Outliner Routes category, and scrub replays deterministically. This is the bridge from routed MEP to the
+// op-log-native modeller — auto-on-drop + full-building scale are the follow-on.
+if (qs.get('routewalk') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.oplog.clear();
+      const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, location.href).href });
+      out.rwReady = await rwInit(SQL, '');                       // fetch mep_rw.db → _rwDb (real recipe)
+      const segs = rwRouteSegments(null, 'Duplex', { arcEnvelope: [] });   // op-log modeller: no building DB
+      out.segments = segs.length;                               // expect 204 real Duplex runs (no clash gate here)
+      const c = rwSegmentCentroid(segs);                        // drop-transform pivot: centre the run at origin
+      const LIMIT = 6;                                          // bounded — occt pipe per op is heavy
+      const ops = rwSweepOps(segs, { translate: [-c[0], -c[1], -c[2]], limit: LIMIT, profileM: 0.05 });
+      out.ops = ops.length;
+      // each op's intended run length (drop-transform is a pure translate → length is invariant)
+      const segLen = p => Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]);
+      out.runLenSum = +ops.reduce((s, o) => s + segLen(o.parameters.path), 0).toFixed(2);
+      let committed = 0, solids = 0;
+      for (const op of ops) {
+        const res = await window.Bonsai.oplog.commit(op, { color: 0x4fb0ff });   // signed GEOM_SWEEP per run
+        if (res && res.verify) committed++;
+        if (res && res.triangleCount >= 12) solids++;          // a real swept solid (a straight pipe = a 12-tri box)
+      }
+      out.committed = committed; out.solids = solids;
+      const geomOps = window.Bonsai.oplog._geomOps();
+      out.sweepRows = geomOps.filter(o => o.op_type === 'GEOM_SWEEP').length;
+      out.signed = window.Bonsai.oplog.db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
+      out.verify = (await window.Bonsai.oplog.verify()).ok;
+      const g = window.Bonsai.group();
+      out.tris = g.children.filter(o => o.isMesh).reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count / 3 : 0), 0);
+      // the folded runs must SPAN their real segment lengths in 3D (a routed MEP run, not a profile-sized blob)
+      const box = new THREE.Box3().setFromObject(g); const sz = new THREE.Vector3(); box.getSize(sz);
+      out.size = { x: +sz.x.toFixed(2), y: +sz.y.toFixed(2), z: +sz.z.toFixed(2) };
+      out.spanMax = +Math.max(sz.x, sz.y, sz.z).toFixed(2);
+      const hasRoutesGrp = Array.from(document.querySelectorAll('#bonsai-outliner [data-grp]')).some(d => d.getAttribute('data-grp') === 'routes');
+      out.routesCategory = hasRoutesGrp;
+      out.scrub0 = (await window.Bonsai.oplog.scrubTo(0)).triangleCount;
+      out.scrubAll = (await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length)).triangleCount;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk demo fail ' + e); }
+    window.__routewalkResult = out;
+    window.__routewalkDone = true;
+    console.log('§MODELLER routewalk-done');
   })();
 }
 // ?insert=demo proves library-component insert @ LOD (W-BONSAI-INSERT): enter Insert mode via the button, pick a
