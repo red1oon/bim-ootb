@@ -162,7 +162,9 @@
       }
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
       let totalTris = 0;
-      meshes.forEach(md => { const m = this._buildMesh(md, { color: opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
+      // PER-MESH colour wins over the fold-level colour: a folded insert (RouteWalker fixture) carries md.color
+      // (its discipline hex from parameters.color); B-rep solids have none → fall back to the fold-level opts.color.
+      meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
       this._lastRegenStats = d.stats || null;   // {rebuilt, hits, tess, tessHits} — incremental-regen cache witness hook
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
       const st = d.stats ? ' regen[rebuilt=' + d.stats.rebuilt + ' hits=' + d.stats.hits + ' tess=' + d.stats.tess + ' tessHits=' + d.stats.tessHits + ']' : '';

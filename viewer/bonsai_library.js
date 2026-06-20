@@ -188,7 +188,9 @@
         pl = { x: ox, y: oy, z: oz, rot };
       }
       const positions = place(base.positions, pl, base.bbox || c.bbox);   // real mesh seats on its own bbox
-      return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices };
+      // PER-MESH colour: a signed GEOM_INSERT may carry parameters.color (hex int) — RouteWalker fixtures persist
+      // their discipline colour there so each box keeps it through scrub/replay (the fold is otherwise one colour).
+      return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices, color: (P.color != null ? P.color : undefined) };
     },
 
     // GHOST preview (uncommitted): a LOD-200 box of the component at a candidate placement, so the host can
