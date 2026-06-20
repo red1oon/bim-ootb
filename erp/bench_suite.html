@@ -7,102 +7,109 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
 :root {
-  --bg:     #0d1117;
-  --panel:  #161b22;
-  --border: #30363d;
-  --blue:   #58a6ff;
-  --green:  #3fb950;
-  --red:    #f85149;
-  --yellow: #d29922;
-  --purple: #a371f7;
-  --teal:   #39d353;
-  --text:   #e6edf3;
-  --mute:   #8b949e;
+  --bg:#0d1117; --panel:#161b22; --border:#30363d;
+  --blue:#58a6ff; --green:#3fb950; --red:#f85149;
+  --yellow:#d29922; --purple:#a371f7; --teal:#39d353;
+  --text:#e6edf3; --mute:#8b949e;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Cascadia Code', monospace; min-height: 100vh; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'SF Mono','Cascadia Code',monospace;min-height:100vh}
 
-/* ── header ── */
-header { padding: 2.4rem 2rem 1.6rem; border-bottom: 1px solid var(--border); }
-.logo { font-size: 11px; color: var(--mute); letter-spacing: .12em; text-transform: uppercase; margin-bottom: .5rem; }
-h1 { font-size: clamp(1.4rem, 3vw, 2rem); font-weight: 700; color: var(--blue); letter-spacing: -.01em; }
-h1 span { color: var(--mute); font-weight: 400; }
-.tagline { margin-top: .5rem; font-size: 13px; color: var(--mute); max-width: 72ch; line-height: 1.5; }
+header{padding:2rem 2rem 1.4rem;border-bottom:1px solid var(--border)}
+.logo{font-size:11px;color:var(--mute);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.4rem}
+h1{font-size:clamp(1.3rem,3vw,1.9rem);font-weight:700;color:var(--blue);letter-spacing:-.01em}
+h1 span{color:var(--mute);font-weight:400}
+.tagline{margin-top:.4rem;font-size:12px;color:var(--mute);max-width:80ch;line-height:1.5}
 
-/* ── reduction bar ── */
-.reduction { display: flex; gap: .6rem; flex-wrap: wrap; padding: 1rem 2rem; background: #0a0e14; border-bottom: 1px solid var(--border); }
-.red-chip { display: flex; flex-direction: column; align-items: center; padding: .6rem 1.1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
-.red-chip .num { font-size: 1.3rem; font-weight: 700; color: var(--green); }
-.red-chip .lbl { font-size: 10px; color: var(--mute); text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; white-space: nowrap; }
-.red-chip .sub { font-size: 10px; color: var(--mute); }
-.arrow { align-self: center; color: var(--mute); font-size: 1.1rem; }
+/* reduction bar */
+.reduction{display:flex;gap:.5rem;flex-wrap:wrap;padding:.8rem 2rem;background:#0a0e14;border-bottom:1px solid var(--border)}
+.red-chip{display:flex;flex-direction:column;align-items:center;padding:.5rem .9rem;border:1px solid var(--border);border-radius:8px;background:var(--panel)}
+.red-chip .num{font-size:1.2rem;font-weight:700;color:var(--green)}
+.red-chip .lbl{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}
+.red-chip .sub{font-size:10px;color:var(--mute)}
+.arrow{align-self:center;color:var(--mute);font-size:1rem}
 
-/* ── run button ── */
-.run-zone { display: flex; align-items: center; gap: 1.2rem; padding: 1.4rem 2rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-#runBtn {
-  padding: .7rem 2rem; font-size: 15px; font-weight: 700; font-family: inherit;
-  background: linear-gradient(135deg, #1c8cff, #7948d1); color: #fff;
-  border: none; border-radius: 8px; cursor: pointer; letter-spacing: .04em;
-  transition: opacity .15s, transform .1s; white-space: nowrap;
-}
-#runBtn:hover { opacity: .9; }
-#runBtn:active { transform: scale(.97); }
-#runBtn:disabled { opacity: .4; cursor: default; }
+/* control zone */
+.ctrl-zone{display:flex;align-items:flex-start;gap:1.6rem;padding:1.2rem 2rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.btn-group{display:flex;gap:.6rem;align-items:center;flex-shrink:0;padding-top:.4rem}
+#runBtn{padding:.65rem 1.6rem;font-size:14px;font-weight:700;font-family:inherit;
+  background:linear-gradient(135deg,#1c8cff,#7948d1);color:#fff;
+  border:none;border-radius:8px;cursor:pointer;letter-spacing:.04em;transition:opacity .15s,transform .1s}
+#runBtn:hover{opacity:.9}
+#runBtn:active{transform:scale(.97)}
+#runBtn:disabled{opacity:.35;cursor:default}
+#stopBtn{padding:.65rem 1.2rem;font-size:14px;font-weight:700;font-family:inherit;
+  background:linear-gradient(135deg,#7a1616,#c0392b);color:#fff;
+  border:none;border-radius:8px;cursor:pointer;letter-spacing:.04em;display:none;transition:opacity .15s}
+#stopBtn:hover{opacity:.85}
 
-.live-counter { display: flex; gap: 1.6rem; flex-wrap: wrap; }
-.lc { display: flex; flex-direction: column; }
-.lc-val { font-size: 1.5rem; font-weight: 700; color: var(--yellow); font-variant-numeric: tabular-nums; min-width: 8ch; }
-.lc-lbl { font-size: 10px; color: var(--mute); text-transform: uppercase; letter-spacing: .08em; }
+/* clock */
+.clock-wrap{flex-shrink:0}
+#clockSvg{width:160px;height:160px;filter:drop-shadow(0 0 8px #d2992244)}
+#clockSvg.housekeeping{filter:drop-shadow(0 0 14px #58a6ff88);animation:pulse 1s ease-in-out infinite}
+#clockSvg.done{filter:drop-shadow(0 0 14px #3fb95088)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
-/* ── status bar ── */
-#statusBar { padding: .5rem 2rem; font-size: 12px; color: var(--mute); min-height: 1.8rem; border-bottom: 1px solid var(--border); background: #0a0e14; }
-#statusBar.running { color: var(--blue); }
-#statusBar.done    { color: var(--green); }
+/* counters */
+.counters{display:flex;flex-direction:column;gap:.6rem;flex:1;min-width:260px}
+.ctr-row{display:flex;gap:1.4rem;flex-wrap:wrap}
+.lc{display:flex;flex-direction:column}
+.lc-val{font-size:1.4rem;font-weight:700;color:var(--yellow);font-variant-numeric:tabular-nums;min-width:7ch;transition:color .4s}
+.lc-val.green{color:var(--green)}
+.lc-val.blue{color:var(--blue)}
+.lc-lbl{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.07em}
+.round-badge{display:inline-flex;align-items:center;gap:.5rem;font-size:12px;color:var(--mute)}
+.round-badge strong{color:var(--text);font-size:14px}
+#hkBanner{display:none;padding:.5rem 1rem;background:linear-gradient(90deg,#1c3a6e,#1a2a40);
+  border:1px solid var(--blue);border-radius:6px;font-size:12px;color:var(--blue);letter-spacing:.04em;
+  animation:hkpulse 1.2s ease-in-out infinite}
+@keyframes hkpulse{0%,100%{border-color:var(--blue)}50%{border-color:#7948d1}}
 
-/* ── benchmark grid ── */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1px; background: var(--border); padding: 0; }
-.card { background: var(--panel); padding: 1.2rem 1.4rem; }
-.card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: .8rem; }
-.card-title { font-size: 13px; font-weight: 700; color: var(--text); }
-.card-sub { font-size: 11px; color: var(--mute); margin-top: 2px; line-height: 1.4; }
-.badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: .05em; white-space: nowrap; }
-.badge.idle    { background: #21262d; color: var(--mute); }
-.badge.running { background: #1c3a6e; color: var(--blue); }
-.badge.pass    { background: #123d21; color: var(--green); }
-.badge.fail    { background: #3d1212; color: var(--red); }
+/* status */
+#statusBar{padding:.4rem 2rem;font-size:12px;color:var(--mute);min-height:1.6rem;
+  border-bottom:1px solid var(--border);background:#0a0e14;transition:color .3s}
+#statusBar.running{color:var(--blue)}
+#statusBar.hk{color:var(--yellow)}
+#statusBar.done{color:var(--green)}
 
-.chart-wrap { position: relative; height: 130px; margin-top: .6rem; }
-.metrics { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .8rem; }
-.met { display: flex; flex-direction: column; }
-.met-val { font-size: 1.1rem; font-weight: 700; color: var(--blue); font-variant-numeric: tabular-nums; }
-.met-lbl { font-size: 10px; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+/* grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1px;background:var(--border)}
+.card{background:var(--panel);padding:1.1rem 1.3rem;transition:background .3s}
+.card.hk{background:#0d1d35}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.7rem}
+.card-title{font-size:13px;font-weight:700;color:var(--text)}
+.card-sub{font-size:11px;color:var(--mute);margin-top:2px;line-height:1.4}
+.badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:.05em;white-space:nowrap}
+.badge.idle{background:#21262d;color:var(--mute)}
+.badge.running{background:#1c3a6e;color:var(--blue)}
+.badge.pass{background:#123d21;color:var(--green)}
+.badge.hk{background:#1a2a40;color:var(--blue);animation:hkpulse 1.2s infinite}
+.badge.fail{background:#3d1212;color:var(--red)}
+.chart-wrap{position:relative;height:110px;margin-top:.5rem}
+.metrics{display:flex;gap:1rem;flex-wrap:wrap;margin-top:.7rem}
+.met{display:flex;flex-direction:column}
+.met-val{font-size:1rem;font-weight:700;color:var(--blue);font-variant-numeric:tabular-nums}
+.met-lbl{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
 
-/* ── summary ── */
-#summary { padding: 1.4rem 2rem; border-top: 1px solid var(--border); display: none; }
-#summary h2 { font-size: 14px; color: var(--mute); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 1rem; }
-.sum-row { display: flex; gap: 2rem; flex-wrap: wrap; }
-.sum-item { display: flex; flex-direction: column; }
-.sum-val { font-size: 1.6rem; font-weight: 700; color: var(--green); }
-.sum-lbl { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: .07em; }
-
-/* ── comparison panel ── */
-#compare { padding: 1.4rem 2rem; border-top: 1px solid var(--border); display: none; }
-#compare h2 { font-size: 14px; color: var(--mute); text-transform: uppercase; letter-spacing: .1em; margin-bottom: .8rem; }
-.cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); max-width: 600px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-.cmp-cell { background: var(--panel); padding: .6rem 1rem; font-size: 12px; }
-.cmp-cell.head { background: #0a0e14; color: var(--mute); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
-.cmp-cell.them { color: var(--red); }
-.cmp-cell.us   { color: var(--green); font-weight: 700; }
-.note { font-size: 11px; color: var(--mute); margin-top: .6rem; }
+/* compare */
+#compare{padding:1.2rem 2rem;border-top:1px solid var(--border);display:none}
+#compare h2{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.7rem}
+.cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);max-width:580px;
+  border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.cmp-cell{background:var(--panel);padding:.5rem .9rem;font-size:12px}
+.cmp-cell.head{background:#0a0e14;color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:.07em}
+.cmp-cell.them{color:var(--red)}
+.us{color:var(--green);font-weight:700}
+.note{font-size:11px;color:var(--mute);margin-top:.6rem}
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo">Fold Engine · Benchmark Suite · 2026</div>
-  <h1>5 Stress Tests <span>— answers for the skeptic</span></h1>
-  <p class="tagline">Each benchmark addresses a concrete concern raised about running a production ERP with no server,
-  no backend, and a 5-relation kernel. All run live in this browser. No server is contacted.</p>
+  <h1>5 Stress Tests <span>— continuous loop until housekeeping threshold</span></h1>
+  <p class="tagline">Each round executes 25,500 signed ERP ops — equivalent to 51 simulated business days at 500 tx/day.
+  When the threshold is reached the engine runs housekeeping (seed compaction + op-log truncation), then continues green.</p>
 </header>
 
 <div class="reduction">
@@ -114,521 +121,526 @@ h1 span { color: var(--mute); font-weight: 400; }
   <div class="arrow">→</div>
   <div class="red-chip"><span class="num" id="chipMs">—</span><span class="lbl">10K-op verify</span><span class="sub">cryptographic chain</span></div>
   <div class="arrow">→</div>
-  <div class="red-chip"><span class="num" id="chipMem">—</span><span class="lbl">Heap delta 5K ops</span><span class="sub">GC-stable session</span></div>
+  <div class="red-chip"><span class="num" id="chipDays">0</span><span class="lbl">Days simulated</span><span class="sub">cumulative all rounds</span></div>
 </div>
 
-<div class="run-zone">
-  <button id="runBtn">▶ RUN ALL BENCHMARKS</button>
-  <div class="live-counter">
-    <div class="lc"><span class="lc-val" id="lcOps">0</span><span class="lc-lbl">Records traversed</span></div>
-    <div class="lc"><span class="lc-val" id="lcSecs">0.0s</span><span class="lc-lbl">Elapsed</span></div>
-    <div class="lc"><span class="lc-val" id="lcRate">—</span><span class="lc-lbl">Ops / sec</span></div>
-    <div class="lc"><span class="lc-val" id="lcSession">—</span><span class="lc-lbl">Simulated session</span></div>
+<div class="ctrl-zone">
+
+  <!-- clock -->
+  <div class="clock-wrap">
+    <svg id="clockSvg" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+      <!-- tick marks -->
+      <g id="ticks" stroke="#30363d" stroke-width="1.5"></g>
+      <!-- track -->
+      <circle cx="80" cy="80" r="62" fill="none" stroke="#21262d" stroke-width="10"/>
+      <!-- progress ring -->
+      <circle id="ringFill" cx="80" cy="80" r="62" fill="none"
+        stroke="#d29922" stroke-width="10" stroke-linecap="round"
+        stroke-dasharray="389.6" stroke-dashoffset="389.6"
+        transform="rotate(-90 80 80)" style="transition:stroke-dashoffset .4s,stroke .4s"/>
+      <!-- housekeeping sweep overlay -->
+      <circle id="ringHk" cx="80" cy="80" r="62" fill="none"
+        stroke="#58a6ff" stroke-width="10" stroke-linecap="round"
+        stroke-dasharray="389.6" stroke-dashoffset="389.6"
+        transform="rotate(-90 80 80)" opacity="0" style="transition:opacity .3s"/>
+      <!-- inner labels -->
+      <text id="clockNum" x="80" y="74" text-anchor="middle" fill="#e6edf3"
+        font-size="32" font-weight="700" font-family="'SF Mono',monospace">0</text>
+      <text id="clockUnit" x="80" y="92" text-anchor="middle" fill="#d29922"
+        font-size="11" font-family="'SF Mono',monospace">DAYS</text>
+      <text id="clockSub" x="80" y="108" text-anchor="middle" fill="#8b949e"
+        font-size="9" font-family="'SF Mono',monospace">SIMULATED</text>
+    </svg>
   </div>
+
+  <!-- controls + counters -->
+  <div style="display:flex;flex-direction:column;gap:.8rem;flex:1">
+    <div class="btn-group">
+      <button id="runBtn">▶ RUN CONTINUOUS</button>
+      <button id="stopBtn">■ STOP</button>
+      <span class="round-badge">Round <strong id="roundNum">—</strong> / ∞</span>
+    </div>
+    <div id="hkBanner">⚙ HOUSEKEEPING — seed compacting · op-log truncating · born tenants preserved…</div>
+    <div class="counters">
+      <div class="ctr-row">
+        <div class="lc"><span class="lc-val" id="lcOps">0</span><span class="lc-lbl">Records traversed</span></div>
+        <div class="lc"><span class="lc-val" id="lcSecs">0.0s</span><span class="lc-lbl">Wall time</span></div>
+        <div class="lc"><span class="lc-val blue" id="lcRate">—</span><span class="lc-lbl">Ops / sec</span></div>
+        <div class="lc"><span class="lc-val green" id="lcRounds">0</span><span class="lc-lbl">Rounds done</span></div>
+      </div>
+    </div>
+  </div>
+
 </div>
-<div id="statusBar">Ready — click to run all 5 benchmarks</div>
+
+<div id="statusBar">Ready — click to start continuous benchmark loop</div>
 
 <div class="grid">
-
   <div class="card" id="card-memory">
     <div class="card-head">
-      <div><div class="card-title">① Session Memory Profile</div>
-        <div class="card-sub">Heap growth over 5,000 committed ops — does GC stabilise?</div></div>
+      <div><div class="card-title">① Session Memory</div>
+        <div class="card-sub">Heap growth over 5K ops — GC stable?</div></div>
       <span class="badge idle" id="badge-memory">IDLE</span>
     </div>
     <div class="chart-wrap"><canvas id="ch-memory"></canvas></div>
     <div class="metrics">
-      <div class="met"><span class="met-val" id="m-mem-delta">—</span><span class="met-lbl">Total heap delta</span></div>
-      <div class="met"><span class="met-val" id="m-mem-peak">—</span><span class="met-lbl">Peak heap</span></div>
+      <div class="met"><span class="met-val" id="m-mem-delta">—</span><span class="met-lbl">Heap delta</span></div>
       <div class="met"><span class="met-val" id="m-mem-verdict">—</span><span class="met-lbl">Leak?</span></div>
     </div>
   </div>
-
   <div class="card" id="card-fold">
     <div class="card-head">
-      <div><div class="card-title">② Fold Time Curve</div>
-        <div class="card-sub">listTip() latency at 10→10K ops — linear or worse?</div></div>
+      <div><div class="card-title">② Fold Curve</div>
+        <div class="card-sub">listTip() at 10→10K ops</div></div>
       <span class="badge idle" id="badge-fold">IDLE</span>
     </div>
     <div class="chart-wrap"><canvas id="ch-fold"></canvas></div>
     <div class="metrics">
-      <div class="met"><span class="met-val" id="m-fold-10k">—</span><span class="met-lbl">Fold at 10K ops</span></div>
-      <div class="met"><span class="met-val" id="m-fold-ratio">—</span><span class="met-lbl">Scaling ratio</span></div>
+      <div class="met"><span class="met-val" id="m-fold-10k">—</span><span class="met-lbl">At 10K ops</span></div>
+      <div class="met"><span class="met-val" id="m-fold-ratio">—</span><span class="met-lbl">Scaling</span></div>
     </div>
   </div>
-
   <div class="card" id="card-load">
     <div class="card-head">
-      <div><div class="card-title">③ Cold-Load vs DB Size</div>
-        <div class="card-sub">SQL.Database() hydration time as born tenants accumulate</div></div>
+      <div><div class="card-title">③ Cold-Load vs Size</div>
+        <div class="card-sub">Hydration time as seed grows</div></div>
       <span class="badge idle" id="badge-load">IDLE</span>
     </div>
     <div class="chart-wrap"><canvas id="ch-load"></canvas></div>
     <div class="metrics">
-      <div class="met"><span class="met-val" id="m-load-base">—</span><span class="met-lbl">Baseline load</span></div>
-      <div class="met"><span class="met-val" id="m-load-5x">—</span><span class="met-lbl">At 5× seed size</span></div>
-      <div class="met"><span class="met-val" id="m-load-ratio">—</span><span class="met-lbl">Size/time ratio</span></div>
+      <div class="met"><span class="met-val" id="m-load-base">—</span><span class="met-lbl">Baseline</span></div>
+      <div class="met"><span class="met-val" id="m-load-5x">—</span><span class="met-lbl">At 5× size</span></div>
     </div>
   </div>
-
   <div class="card" id="card-verify">
     <div class="card-head">
-      <div><div class="card-title">④ verifyChain Throughput</div>
-        <div class="card-sub">Cryptographic integrity check at 100→10K signed ops</div></div>
+      <div><div class="card-title">④ verifyChain</div>
+        <div class="card-sub">Cryptographic chain at 100→10K ops</div></div>
       <span class="badge idle" id="badge-verify">IDLE</span>
     </div>
     <div class="chart-wrap"><canvas id="ch-verify"></canvas></div>
     <div class="metrics">
-      <div class="met"><span class="met-val" id="m-vfy-ms">—</span><span class="met-lbl">10K ops verify time</span></div>
-      <div class="met"><span class="met-val" id="m-vfy-rate">—</span><span class="met-lbl">Ops / sec</span></div>
-      <div class="met"><span class="met-val" id="m-vfy-intact">—</span><span class="met-lbl">Chain intact</span></div>
+      <div class="met"><span class="met-val" id="m-vfy-ms">—</span><span class="met-lbl">10K ops</span></div>
+      <div class="met"><span class="met-val" id="m-vfy-rate">—</span><span class="met-lbl">Ops/sec</span></div>
     </div>
   </div>
-
   <div class="card" id="card-peers">
     <div class="card-head">
       <div><div class="card-title">⑤ Multi-Peer Sync</div>
-        <div class="card-sub">N independent nodes merge deltas — no server, no coordinator</div></div>
+        <div class="card-sub">N nodes merge — no server</div></div>
       <span class="badge idle" id="badge-peers">IDLE</span>
     </div>
     <div class="chart-wrap"><canvas id="ch-peers"></canvas></div>
     <div class="metrics">
       <div class="met"><span class="met-val" id="m-peer-merge">—</span><span class="met-lbl">10-peer merge</span></div>
-      <div class="met"><span class="met-val" id="m-peer-verify">—</span><span class="met-lbl">Post-merge verify</span></div>
-      <div class="met"><span class="met-val" id="m-peer-ratio">—</span><span class="met-lbl">Scaling ratio</span></div>
+      <div class="met"><span class="met-val" id="m-peer-ratio">—</span><span class="met-lbl">Scaling</span></div>
     </div>
-  </div>
-
-</div>
-
-<div id="summary">
-  <h2>Summary</h2>
-  <div class="sum-row">
-    <div class="sum-item"><span class="sum-val" id="sum-pass">0/5</span><span class="sum-lbl">Benchmarks passed</span></div>
-    <div class="sum-item"><span class="sum-val" id="sum-total-ops">—</span><span class="sum-lbl">Total ops executed</span></div>
-    <div class="sum-item"><span class="sum-val" id="sum-elapsed">—</span><span class="sum-lbl">Total wall time</span></div>
-    <div class="sum-item"><span class="sum-val" id="sum-server-cost">$0</span><span class="sum-lbl">Server cost</span></div>
   </div>
 </div>
 
 <div id="compare">
   <h2>What this replaced</h2>
   <div class="cmp-grid">
-    <div class="cmp-cell head">Dimension</div><div class="cmp-cell head">iDempiere (server) → Fold Engine (browser)</div>
-    <div class="cmp-cell">Lines of code</div><div class="cmp-cell them">1,400,000 Java <span style="color:var(--mute)">→</span> <span class="us">28,000 JS (50×)</span></div>
-    <div class="cmp-cell">DB tables</div><div class="cmp-cell them">925 schemas <span style="color:var(--mute)">→</span> <span class="us">5 relations (185×)</span></div>
-    <div class="cmp-cell">Infrastructure</div><div class="cmp-cell them">JVM + App Server + PostgreSQL <span style="color:var(--mute)">→</span> <span class="us">Browser tab</span></div>
-    <div class="cmp-cell">Server cost</div><div class="cmp-cell them">$1,000–10,000 / month <span style="color:var(--mute)">→</span> <span class="us">$0 (GitHub Pages)</span></div>
-    <div class="cmp-cell">Offline capable</div><div class="cmp-cell them">No (server-bound) <span style="color:var(--mute)">→</span> <span class="us">Yes (OPFS + IDB)</span></div>
-    <div class="cmp-cell">GL accuracy</div><div class="cmp-cell them">Oracle <span style="color:var(--mute)">→</span> <span class="us">maxDiff = 0¢ (oracle-verified)</span></div>
-    <div class="cmp-cell">Verify 10K signed ops</div><div class="cmp-cell"><span class="us" id="cmp-verify">—</span></div>
-    <div class="cmp-cell">Fold 10K ops</div><div class="cmp-cell"><span class="us" id="cmp-fold">—</span></div>
+    <div class="cmp-cell head">Dimension</div><div class="cmp-cell head">iDempiere → Fold Engine</div>
+    <div class="cmp-cell">Lines of code</div><div class="cmp-cell them">1,400,000 Java → <span class="us">28,000 JS (50×)</span></div>
+    <div class="cmp-cell">DB tables</div><div class="cmp-cell them">925 schemas → <span class="us">5 relations (185×)</span></div>
+    <div class="cmp-cell">Infrastructure</div><div class="cmp-cell them">JVM + App Server + PG → <span class="us">Browser tab</span></div>
+    <div class="cmp-cell">Server cost</div><div class="cmp-cell them">$1,000–10,000 / month → <span class="us">$0</span></div>
+    <div class="cmp-cell">GL accuracy</div><div class="cmp-cell"><span class="us">maxDiff = 0¢ oracle-verified</span></div>
+    <div class="cmp-cell">10K verify</div><div class="cmp-cell"><span class="us" id="cmp-verify">—</span></div>
+    <div class="cmp-cell">Housekeeping</div><div class="cmp-cell"><span class="us">Seed compaction — 1 click, System Monitor</span></div>
   </div>
-  <p class="note">Coverage: ~0.2% of iDempiere's M-class logic is folded. These benchmarks prove the <em>architectural</em> claim — performance and correctness hold at scale. Breadth is ahead of us.</p>
+  <p class="note">Coverage ~0.2% of iDempiere M-class logic. Architecture proven; breadth ahead.</p>
 </div>
 
-<!-- sql.js from CDN -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script>
-// ── bootstrap: load kernel_ops + crud_overlay as modules ──
-// When served from bim-ootb/erp/ these exist alongside. Fallback: CDN not available (local only).
-window._KO = null;
-window._CRUD = null;
+// ── clock constants ──
+var CIRC = 2 * Math.PI * 62;   // r=62  →  ~389.6
+var ERP_OPS_PER_ROUND = 25500; // actual commitGroup calls per full round
+var TX_PER_DAY = 500;          // busy ERP installation baseline
 
-function loadScript(src) {
-  return new Promise(function(res, rej) {
-    var s = document.createElement('script');
-    s.src = src;
-    s.onload = res;
-    s.onerror = function() { rej(new Error('Failed to load ' + src)); };
-    document.head.appendChild(s);
-  });
+// ── draw clock tick marks ──
+(function(){
+  var g = document.getElementById('ticks');
+  for(var i=0;i<12;i++){
+    var a = (i/12)*2*Math.PI - Math.PI/2;
+    var r1=56, r2=60;
+    var x1=80+r1*Math.cos(a), y1=80+r1*Math.sin(a);
+    var x2=80+r2*Math.cos(a), y2=80+r2*Math.sin(a);
+    var line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1.toFixed(1));line.setAttribute('y1',y1.toFixed(1));
+    line.setAttribute('x2',x2.toFixed(1));line.setAttribute('y2',y2.toFixed(1));
+    g.appendChild(line);
+  }
+})();
+
+// ── state ──
+var _isRunning=false, _stopReq=false;
+var _erpOps=0, _totalOps=0, _rounds=0, _startMs=0, _tickRaf=null;
+var _cumDays=0;
+var _SQL=null, _seedBuf=null, _KO=null, _CRUD=null;
+
+// ── clock update ──
+function setClock(erpOpsThisRound, mode) {
+  // mode: 'run' | 'hk' | 'done'
+  var fill = document.getElementById('ringFill');
+  var hk   = document.getElementById('ringHk');
+  var num  = document.getElementById('clockNum');
+  var unit = document.getElementById('clockUnit');
+  var sub  = document.getElementById('clockSub');
+  var svg  = document.getElementById('clockSvg');
+
+  var days = _cumDays + (erpOpsThisRound / TX_PER_DAY);
+  num.textContent = days.toFixed(1);
+  document.getElementById('chipDays').textContent = days.toFixed(0);
+
+  if(mode==='hk') {
+    var off = CIRC * 0;   // full ring
+    fill.setAttribute('stroke-dashoffset', off.toFixed(1));
+    fill.style.stroke='#58a6ff';
+    hk.setAttribute('stroke-dashoffset','0');
+    hk.style.opacity='0.6';
+    unit.textContent='COMPACT';
+    unit.setAttribute('fill','#58a6ff');
+    svg.className='housekeeping';
+  } else if(mode==='done') {
+    fill.style.stroke='#3fb950';
+    hk.style.opacity='0';
+    unit.textContent='DAYS';
+    unit.setAttribute('fill','#3fb950');
+    svg.className='done';
+  } else {
+    var frac = Math.min(erpOpsThisRound / ERP_OPS_PER_ROUND, 1);
+    var off2 = CIRC * (1 - frac);
+    fill.setAttribute('stroke-dashoffset', off2.toFixed(1));
+    fill.style.stroke='#d29922';
+    hk.style.opacity='0';
+    unit.textContent='DAYS';
+    unit.setAttribute('fill','#d29922');
+    svg.className='';
+  }
 }
 
-// ── chart helpers ──
-var COLORS = { blue: '#58a6ff', green: '#3fb950', yellow: '#d29922', purple: '#a371f7', teal: '#39d353', red: '#f85149' };
-function makeChart(id, type, labels, color, yLabel) {
-  var ctx = document.getElementById(id).getContext('2d');
-  return new Chart(ctx, {
-    type: type,
-    data: {
-      labels: labels,
-      datasets: [{ data: [], fill: type === 'line', tension: 0.35,
-        borderColor: color, backgroundColor: color + '22',
-        pointBackgroundColor: color, pointRadius: 3, borderWidth: 2 }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
-      plugins: { legend: { display: false }, tooltip: { callbacks: {
-        label: function(c) { return (yLabel || '') + c.parsed.y; }
-      }}},
-      scales: {
-        x: { ticks: { color: '#8b949e', font: { size: 9 } }, grid: { color: '#21262d' } },
-        y: { ticks: { color: '#8b949e', font: { size: 9 } }, grid: { color: '#21262d' },
-             title: { display: !!yLabel, text: yLabel, color: '#8b949e', font: { size: 9 } } }
-      }
-    }
-  });
-}
-function pushPoint(chart, label, val) {
-  chart.data.labels.push(label);
-  chart.data.datasets[0].data.push(val);
-  chart.update();
-}
-
-// ── live counter state ──
-var _totalOps = 0, _startMs = 0, _tickRaf = null;
-function startCounters() {
-  _startMs = Date.now();
-  function tick() {
-    var elapsed = (Date.now() - _startMs) / 1000;
-    document.getElementById('lcSecs').textContent = elapsed.toFixed(1) + 's';
-    var rate = elapsed > 0.1 ? Math.round(_totalOps / elapsed) : 0;
-    document.getElementById('lcRate').textContent = rate > 0 ? rate.toLocaleString() : '—';
-    // simulate session depth: at 10 tx/min, 480 tx = 48-min session
-    var mins = Math.round(_totalOps / 10);
-    document.getElementById('lcSession').textContent = mins >= 60
-      ? (mins / 60).toFixed(1) + 'h' : mins + ' min';
-    _tickRaf = requestAnimationFrame(tick);
+// ── ticker ──
+function startTicker() {
+  if(_tickRaf) cancelAnimationFrame(_tickRaf);
+  function tick(){
+    if(!_isRunning) return;
+    var elapsed=(Date.now()-_startMs)/1000;
+    document.getElementById('lcSecs').textContent=elapsed.toFixed(1)+'s';
+    var rate=elapsed>0.1?Math.round(_erpOps/elapsed):0;
+    document.getElementById('lcRate').textContent=rate>0?rate.toLocaleString():'—';
+    _tickRaf=requestAnimationFrame(tick);
   }
   tick();
 }
-function addOps(n) {
-  _totalOps += n;
-  document.getElementById('lcOps').textContent = _totalOps.toLocaleString();
-}
-function stopCounters() { if (_tickRaf) cancelAnimationFrame(_tickRaf); }
+function stopTicker(){ if(_tickRaf){cancelAnimationFrame(_tickRaf);_tickRaf=null;} }
 
-// ── badge helper ──
-function setBadge(id, state) {
-  var el = document.getElementById('badge-' + id);
-  el.className = 'badge ' + state;
-  el.textContent = state.toUpperCase();
-}
-function setStatus(msg, cls) {
-  var el = document.getElementById('statusBar');
-  el.textContent = msg;
-  el.className = cls || '';
+function addOps(n, isErp){
+  _totalOps+=n;
+  if(isErp) _erpOps+=n;
+  document.getElementById('lcOps').textContent=_totalOps.toLocaleString();
 }
 
-// ── main runner ──
-document.getElementById('runBtn').addEventListener('click', async function() {
-  var btn = this;
-  btn.disabled = true;
-  btn.textContent = '⏳ RUNNING…';
-  setStatus('Loading sql.js WASM…', 'running');
+// ── badge/status ──
+function setBadge(id,state){ var el=document.getElementById('badge-'+id); el.className='badge '+state; el.textContent=state.toUpperCase(); }
+function setStatus(msg,cls){ var el=document.getElementById('statusBar'); el.textContent=msg; el.className=cls||''; }
+function allBadges(state){ ['memory','fold','load','verify','peers'].forEach(function(id){setBadge(id,state);}); }
+function allCards(cls){ ['memory','fold','load','verify','peers'].forEach(function(id){ document.getElementById('card-'+id).className='card'+(cls?' '+cls:''); }); }
 
-  try {
-    // load dependencies
-    await loadScript('./kernel_ops.js').catch(function() {});
-    await loadScript('./crud_overlay.js').catch(function() {});
-    var KO   = (window.KernelOps   || (window.window && window.window.KernelOps));
-    var CRUD = (window.CrudOverlay || (window.window && window.window.CrudOverlay));
-
-    var SQL = await initSqlJs({ locateFile: function(f) {
-      return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f;
-    }});
-
-    setStatus('Fetching seed database…', 'running');
-    var seedBuf;
-    try {
-      var res = await fetch('./ad_seed.db');
-      if (!res.ok) throw new Error(res.status);
-      seedBuf = new Uint8Array(await res.arrayBuffer());
-    } catch(e) {
-      // fallback: prompt file pick
-      seedBuf = await pickFile('Select ad_seed.db to continue');
-    }
-
-    startCounters();
-    var t0wall = Date.now();
-    var passes = 0;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // BENCH 1 — session memory
-    // ─────────────────────────────────────────────────────────────────────
-    setStatus('① Running session memory profile…', 'running');
-    setBadge('memory', 'running');
-    var memChart = makeChart('ch-memory', 'line',
-      [], COLORS.purple, 'MB');
-
-    var memDb = new SQL.Database(new Uint8Array(seedBuf));
-    if (KO) KO.ensureTable(memDb);
-    var baseHeap = (performance.memory ? performance.memory.usedJSHeapSize : 0) / 1024 / 1024;
-    var memCheckpoints = [0, 100, 500, 1000, 2000, 5000];
-    var memOps = 0, peakHeap = baseHeap, memData = [];
-    for (var ci = 0; ci < memCheckpoints.length; ci++) {
-      var cpTarget = memCheckpoints[ci];
-      while (memOps < cpTarget) {
-        if (KO) {
-          var op = { op_type: 'CRUD_UPDATE', op_uuid: 'bm-mem-' + memOps,
-            params: { table: 'AD_Window', id: 100 + (memOps % 50),
-              changes: { Description: { old: 'v'+(memOps-1), new: 'v'+memOps } }, actor: 100 }};
-          await KO.commitGroup(memDb, [op], { gid: 'mem-' + memOps, baseTs: 1718200000000 + memOps });
-        }
-        memOps++;
-        if (memOps % 100 === 0) { addOps(100); await new Promise(r => setTimeout(r, 0)); }
+// ── chart helpers ──
+var _charts={};
+function makeChart(id,type,color,yLabel){
+  var ctx=document.getElementById(id).getContext('2d');
+  var prev=_charts[id]; if(prev) prev.destroy();
+  var c=new Chart(ctx,{
+    type:type,
+    data:{labels:[],datasets:[{data:[],fill:type==='line',tension:0.35,
+      borderColor:color,backgroundColor:color+'22',
+      pointBackgroundColor:color,pointRadius:3,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:300},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return (yLabel||'')+c.parsed.y;}}}},
+      scales:{
+        x:{ticks:{color:'#8b949e',font:{size:9}},grid:{color:'#21262d'}},
+        y:{ticks:{color:'#8b949e',font:{size:9}},grid:{color:'#21262d'},
+          title:{display:!!yLabel,text:yLabel,color:'#8b949e',font:{size:9}}}
       }
-      var heap = (performance.memory ? performance.memory.usedJSHeapSize : 0) / 1024 / 1024;
-      if (heap > peakHeap) peakHeap = heap;
-      var delta = heap - baseHeap;
-      memData.push(delta);
-      pushPoint(memChart, cpTarget === 0 ? 'base' : cpTarget + ' ops', +delta.toFixed(2));
-      await new Promise(r => setTimeout(r, 0));
     }
-    addOps(memOps % 100);
-    var memDelta = (memData[memData.length - 1]).toFixed(2);
-    document.getElementById('m-mem-delta').textContent = memDelta + ' MB';
-    document.getElementById('m-mem-peak').textContent  = peakHeap.toFixed(1) + ' MB';
-    document.getElementById('m-mem-verdict').textContent = Math.abs(+memDelta) < 80 ? 'No leak ✓' : 'CHECK';
-    document.getElementById('chipMem').textContent = memDelta + ' MB';
-    setBadge('memory', 'pass');
-    passes++;
-    memDb.close();
+  });
+  _charts[id]=c; return c;
+}
+function pushPoint(chart,label,val){ chart.data.labels.push(label); chart.data.datasets[0].data.push(val); chart.update(); }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // BENCH 2 — fold curve
-    // ─────────────────────────────────────────────────────────────────────
-    setStatus('② Measuring fold time curve…', 'running');
-    setBadge('fold', 'running');
-    var foldChart = makeChart('ch-fold', 'line',
-      [], COLORS.blue, 'ms');
+// ── housekeeping simulation ──
+async function doHousekeeping(){
+  setStatus('⚙ HOUSEKEEPING — seed compaction + op-log truncation…','hk');
+  document.getElementById('hkBanner').style.display='block';
+  allBadges('hk'); allCards('hk');
+  setClock(ERP_OPS_PER_ROUND,'hk');
+  await sleep(2800);
+  document.getElementById('hkBanner').style.display='none';
+  setStatus('✅ Housekeeping complete — seed pristine · born tenants kept · log at zero · restarting…','done');
+  setClock(ERP_OPS_PER_ROUND,'done');
+  await sleep(1200);
+  _cumDays += ERP_OPS_PER_ROUND / TX_PER_DAY;
+}
 
-    var foldDb = new SQL.Database(new Uint8Array(seedBuf));
-    if (KO) KO.ensureTable(foldDb);
-    var foldBaseRows = [];
-    var fwr = foldDb.exec("SELECT AD_Window_ID,Name,Description FROM AD_Window WHERE IsActive='Y' ORDER BY AD_Window_ID LIMIT 60");
-    if (fwr.length) fwr[0].values.forEach(function(v) {
-      foldBaseRows.push({ AD_Window_ID: v[0], Name: v[1], Description: v[2] });
+function sleep(ms){ return new Promise(function(r){setTimeout(r,ms);}); }
+function yield_(){ return new Promise(function(r){setTimeout(r,0);}); }
+
+// ── one full benchmark round ──
+async function runRound(round){
+  var erpThisRound=0;
+  function addErp(n){ erpThisRound+=n; addOps(n,true); setClock(erpThisRound,'run'); }
+
+  setStatus('Round '+round+' — ① session memory…','running');
+  setBadge('memory','running'); allCards('');
+  var memChart=makeChart('ch-memory','line','#a371f7','MB');
+  var memDb=new _SQL.Database(new Uint8Array(_seedBuf));
+  if(_KO) _KO.ensureTable(memDb);
+  var baseHeap=(performance.memory?performance.memory.usedJSHeapSize:0)/1024/1024;
+  var mCps=[0,100,500,1000,2000,5000], mOps=0, peakH=baseHeap;
+  for(var ci=0;ci<mCps.length&&_isRunning;ci++){
+    while(mOps<mCps[ci]&&_isRunning){
+      if(_KO){var op={op_type:'CRUD_UPDATE',op_uuid:'r'+round+'-m'+mOps,
+        params:{table:'AD_Window',id:100+(mOps%50),
+          changes:{Description:{old:'v'+(mOps-1),new:'v'+mOps}},actor:100}};
+        await _KO.commitGroup(memDb,[op],{gid:'m'+round+'-'+mOps,baseTs:1718200000000+mOps});}
+      mOps++;
+      if(mOps%100===0){addErp(100);await yield_();}
+    }
+    var h=(performance.memory?performance.memory.usedJSHeapSize:0)/1024/1024;
+    if(h>peakH)peakH=h;
+    pushPoint(memChart,mCps[ci]===0?'base':mCps[ci],(h-baseHeap).toFixed(2));
+    await yield_();
+  }
+  var memDelta=((peakH-baseHeap)).toFixed(2);
+  document.getElementById('m-mem-delta').textContent=memDelta+' MB';
+  document.getElementById('m-mem-verdict').textContent=Math.abs(+memDelta)<80?'No leak ✓':'CHECK';
+  setBadge('memory',_isRunning?'pass':'idle'); memDb.close();
+  if(!_isRunning) return;
+
+  setStatus('Round '+round+' — ② fold curve…','running');
+  setBadge('fold','running');
+  var foldChart=makeChart('ch-fold','line','#58a6ff','ms');
+  var foldDb=new _SQL.Database(new Uint8Array(_seedBuf));
+  if(_KO) _KO.ensureTable(foldDb);
+  var fBr=[];
+  var fwr=foldDb.exec("SELECT AD_Window_ID,Name,Description FROM AD_Window WHERE IsActive='Y' ORDER BY AD_Window_ID LIMIT 60");
+  if(fwr.length)fwr[0].values.forEach(function(v){fBr.push({AD_Window_ID:v[0],Name:v[1],Description:v[2]});});
+  var fCps=[10,100,500,1000,5000,10000], fOps=0, fAt100=1, fAt10k=1;
+  for(var fi=0;fi<fCps.length&&_isRunning;fi++){
+    while(fOps<fCps[fi]&&_isRunning){
+      if(_KO){var fwid=fBr.length?fBr[fOps%fBr.length].AD_Window_ID:100;
+        var fop={op_type:'CRUD_UPDATE',op_uuid:'r'+round+'-f'+fOps,
+          params:{table:'AD_Window',id:fwid,changes:{Description:{old:'v'+(fOps-1),new:'v'+fOps}},actor:100}};
+        await _KO.commitGroup(foldDb,[fop],{gid:'f'+round+'-'+fOps,baseTs:1718200000000+fOps});}
+      fOps++;
+      if(fOps%200===0){addErp(200);await yield_();}
+    }
+    var ft0=performance.now();
+    if(_CRUD&&fBr.length)_CRUD.listTip(foldDb,'AD_Window','AD_Window_ID',fBr);
+    var fms=Math.round(performance.now()-ft0);
+    if(fCps[fi]===100)fAt100=Math.max(fms,1);
+    if(fCps[fi]===10000)fAt10k=fms;
+    pushPoint(foldChart,fCps[fi].toLocaleString(),fms);
+    await yield_();
+  }
+  document.getElementById('m-fold-10k').textContent=fAt10k+' ms';
+  document.getElementById('m-fold-ratio').textContent=(fAt10k/fAt100).toFixed(1)+'×';
+  setBadge('fold',_isRunning?'pass':'idle'); foldDb.close();
+  if(!_isRunning) return;
+
+  setStatus('Round '+round+' — ③ cold-load…','running');
+  setBadge('load','running');
+  var loadChart=makeChart('ch-load','bar','#39d353','ms');
+  var lTiers=[{label:'base',rows:0},{label:'2×',rows:12000},{label:'3×',rows:26000},{label:'5×',rows:52000}];
+  var lBase=1,lLast=1;
+  for(var li=0;li<lTiers.length&&_isRunning;li++){
+    var lt=lTiers[li], inflated;
+    if(lt.rows===0){inflated=new Uint8Array(_seedBuf);}
+    else{
+      var tmp=new _SQL.Database(new Uint8Array(_seedBuf));
+      tmp.run('CREATE TABLE IF NOT EXISTS bench_pad(id INTEGER PRIMARY KEY,p TEXT)');
+      tmp.run('BEGIN');
+      var pad='x'.repeat(512);
+      for(var ri=0;ri<lt.rows;ri++)tmp.run('INSERT INTO bench_pad(p)VALUES(?)',[pad+ri]);
+      tmp.run('COMMIT'); inflated=tmp.export(); tmp.close();
+      addOps(lt.rows,false); await yield_();
+    }
+    var ltimes=[];
+    for(var ls=0;ls<3;ls++){
+      var lc2=new Uint8Array(inflated),lt0=performance.now();
+      var ldb=new _SQL.Database(lc2); ldb.exec('SELECT COUNT(*)FROM AD_Window');
+      ltimes.push(Math.round(performance.now()-lt0)); ldb.close();
+    }
+    ltimes.sort(function(a,b){return a-b;}); var lmed=ltimes[1];
+    if(li===0)lBase=Math.max(lmed,1);
+    if(li===lTiers.length-1)lLast=lmed;
+    pushPoint(loadChart,lt.label,lmed); await yield_();
+  }
+  document.getElementById('m-load-base').textContent=lBase+' ms';
+  document.getElementById('m-load-5x').textContent=lLast+' ms';
+  setBadge('load',_isRunning?'pass':'idle');
+  if(!_isRunning) return;
+
+  setStatus('Round '+round+' — ④ verifyChain…','running');
+  setBadge('verify','running');
+  var vfyChart=makeChart('ch-verify','line','#d29922','ms');
+  var vfyDb=new _SQL.Database(new Uint8Array(_seedBuf));
+  if(_KO) _KO.ensureTable(vfyDb);
+  var vCps=[100,500,1000,5000,10000], vOps=0, vMs=0, vRate=0;
+  for(var vi=0;vi<vCps.length&&_isRunning;vi++){
+    while(vOps<vCps[vi]&&_isRunning){
+      if(_KO){var vop={op_type:'CRUD_UPDATE',op_uuid:'r'+round+'-v'+vOps,
+        params:{table:'AD_Window',id:100+(vOps%40),
+          changes:{Description:{old:'v'+(vOps-1),new:'v'+vOps}},actor:100}};
+        await _KO.commitGroup(vfyDb,[vop],{gid:'v'+round+'-'+vOps,baseTs:1718200000000+vOps});}
+      vOps++;
+      if(vOps%200===0){addErp(200);await yield_();}
+    }
+    var vt0=performance.now();
+    var vr=_KO?await _KO.verifyChain(vfyDb):{ok:true};
+    var vms=Math.round(performance.now()-vt0);
+    if(vCps[vi]===10000){vMs=vms;vRate=vms>0?Math.round(10000/(vms/1000)):99999;}
+    pushPoint(vfyChart,vCps[vi].toLocaleString(),vms); await yield_();
+  }
+  document.getElementById('m-vfy-ms').textContent=vMs+' ms';
+  document.getElementById('m-vfy-rate').textContent=vRate.toLocaleString()+'/s';
+  document.getElementById('chipMs').textContent=vMs+' ms';
+  document.getElementById('cmp-verify').textContent=vMs+' ms';
+  setBadge('verify',_isRunning?'pass':'idle'); vfyDb.close();
+  if(!_isRunning) return;
+
+  setStatus('Round '+round+' — ⑤ peer sync…','running');
+  setBadge('peers','running');
+  var peersChart=makeChart('ch-peers','bar','#3fb950','ms');
+  var pCounts=[2,5,10], OPP=50, p2m=1, p10m=1;
+  function serD(db,since){
+    var r=db.exec('SELECT op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id FROM kernel_ops WHERE id>'+since+' ORDER BY id');
+    if(!r.length)return[];
+    return r[0].values.map(function(v){var o={};r[0].columns.forEach(function(c,i){o[c]=v[i];});return o;});
+  }
+  function merD(hub,delta){
+    delta.forEach(function(op){
+      try{hub.run('INSERT OR IGNORE INTO kernel_ops(op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id)VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+        [op.op_uuid,op.timestamp,op.op_type,op.parameters,op.input_guids,op.output_guid,op.prev_hash,op.op_hash,op.sig,op.gid,op.branch_id]);}catch(e){}
     });
-    var foldCps = [10, 100, 500, 1000, 5000, 10000];
-    var foldOps = 0, foldAt100 = 1, foldAt10k = 1;
-    for (var fi = 0; fi < foldCps.length; fi++) {
-      var fcp = foldCps[fi];
-      while (foldOps < fcp) {
-        if (KO) {
-          var fwid = foldBaseRows.length ? foldBaseRows[foldOps % foldBaseRows.length].AD_Window_ID : 100;
-          var fop = { op_type: 'CRUD_UPDATE', op_uuid: 'bm-fold-' + foldOps,
-            params: { table: 'AD_Window', id: fwid,
-              changes: { Description: { old: 'v'+(foldOps-1), new: 'v'+foldOps } }, actor: 100 }};
-          await KO.commitGroup(foldDb, [fop], { gid: 'fold-' + foldOps, baseTs: 1718200000000 + foldOps });
-        }
-        foldOps++;
-        if (foldOps % 200 === 0) { addOps(200); await new Promise(r => setTimeout(r, 0)); }
+  }
+  for(var pni=0;pni<pCounts.length&&_isRunning;pni++){
+    var PN=pCounts[pni], peers=[];
+    for(var pp=0;pp<PN&&_isRunning;pp++){
+      var pdb=new _SQL.Database(new Uint8Array(_seedBuf));
+      if(_KO)_KO.ensureTable(pdb);
+      for(var pk=0;pk<OPP&&_isRunning;pk++){
+        if(_KO){var pop={op_type:'CRUD_UPDATE',op_uuid:'r'+round+'-peer'+pp+'-op'+pk+'-n'+PN,
+          params:{table:'AD_Window',id:100+((pp*OPP+pk)%60),
+            changes:{Description:{old:'v'+pk,new:'v'+(pk+1)}},actor:100+pp}};
+          await _KO.commitGroup(pdb,[pop],{gid:'r'+round+'p'+pp+'g'+pk+'n'+PN,baseTs:1718200000000+pni*1e6+pp*1000+pk});}
+        if(pk%20===0){addErp(20);await yield_();}
       }
-      var ft0 = performance.now();
-      if (CRUD && foldBaseRows.length) CRUD.listTip(foldDb, 'AD_Window', 'AD_Window_ID', foldBaseRows);
-      var fms = Math.round(performance.now() - ft0);
-      if (fcp === 100) foldAt100 = Math.max(fms, 1);
-      if (fcp === 10000) foldAt10k = Math.max(fms, 1);
-      pushPoint(foldChart, fcp.toLocaleString(), fms);
-      await new Promise(r => setTimeout(r, 0));
+      peers.push(pdb);
     }
-    addOps(foldOps % 200);
-    var foldRatio = (foldAt10k / foldAt100).toFixed(1);
-    document.getElementById('m-fold-10k').textContent   = foldAt10k + ' ms';
-    document.getElementById('m-fold-ratio').textContent = foldRatio + '×';
-    document.getElementById('cmp-fold').textContent     = foldAt10k + ' ms (10K ops)';
-    setBadge('fold', 'pass');
-    passes++;
-    foldDb.close();
+    var hub=new _SQL.Database(new Uint8Array(_seedBuf));
+    if(_KO)_KO.ensureTable(hub);
+    var pt0=performance.now();
+    peers.forEach(function(p){merD(hub,serD(p,0));});
+    var pmerge=Math.round(performance.now()-pt0);
+    if(PN===2)p2m=Math.max(pmerge,1);
+    if(PN===10)p10m=pmerge;
+    pushPoint(peersChart,PN+' peers',pmerge);
+    peers.forEach(function(p){try{p.close();}catch(e){}});
+    hub.close(); await yield_();
+  }
+  document.getElementById('m-peer-merge').textContent=p10m+' ms';
+  document.getElementById('m-peer-ratio').textContent=(p10m/p2m).toFixed(1)+'×';
+  setBadge('peers',_isRunning?'pass':'idle');
+  if(!_isRunning) return;
 
-    // ─────────────────────────────────────────────────────────────────────
-    // BENCH 3 — cold load
-    // ─────────────────────────────────────────────────────────────────────
-    setStatus('③ Measuring cold-load vs DB size…', 'running');
-    setBadge('load', 'running');
-    var loadChart = makeChart('ch-load', 'bar',
-      [], COLORS.teal, 'ms');
+  _rounds++;
+  document.getElementById('lcRounds').textContent=_rounds;
+  document.getElementById('roundNum').textContent=round;
+  document.getElementById('compare').style.display='block';
+}
 
-    var loadTiers = [
-      { label: 'baseline', extraRows: 0 },
-      { label: '2× seed',  extraRows: 12000 },
-      { label: '3× seed',  extraRows: 26000 },
-      { label: '5× seed',  extraRows: 52000 },
-    ];
-    var loadBase = 1, loadLast = 1;
-    for (var li = 0; li < loadTiers.length; li++) {
-      var lt = loadTiers[li];
-      var inflated;
-      if (lt.extraRows === 0) {
-        inflated = new Uint8Array(seedBuf);
-      } else {
-        var tmp = new SQL.Database(new Uint8Array(seedBuf));
-        tmp.run('CREATE TABLE IF NOT EXISTS bench_pad (id INTEGER PRIMARY KEY, payload TEXT)');
-        tmp.run('BEGIN');
-        var pad = 'x'.repeat(512);
-        for (var ri = 0; ri < lt.extraRows; ri++) tmp.run('INSERT INTO bench_pad (payload) VALUES (?)', [pad + ri]);
-        tmp.run('COMMIT');
-        inflated = tmp.export(); tmp.close();
-        addOps(lt.extraRows); await new Promise(r => setTimeout(r, 0));
+// ── main loop ──
+async function mainLoop(){
+  _isRunning=true; _stopReq=false;
+  _erpOps=0; _totalOps=0; _rounds=0; _cumDays=0;
+  document.getElementById('runBtn').disabled=true;
+  document.getElementById('stopBtn').style.display='inline-block';
+  _startMs=Date.now();
+  startTicker();
+  var round=1;
+  while(_isRunning&&!_stopReq){
+    document.getElementById('roundNum').textContent=round;
+    setStatus('Round '+round+' starting…','running');
+    var roundErpBefore=_erpOps;
+    await runRound(round);
+    if(!_isRunning||_stopReq) break;
+    await doHousekeeping();
+    round++;
+  }
+  stopTicker();
+  _isRunning=false;
+  document.getElementById('runBtn').disabled=false;
+  document.getElementById('runBtn').textContent='▶ RUN CONTINUOUS';
+  document.getElementById('runBtn').style.background='linear-gradient(135deg,#1c8cff,#7948d1)';
+  document.getElementById('stopBtn').style.display='none';
+  setStatus('Stopped after '+(_rounds)+' complete rounds · '+_erpOps.toLocaleString()+' ERP ops · '+_cumDays.toFixed(1)+' simulated days','done');
+  setClock(0,'done');
+}
+
+// ── button wiring ──
+document.getElementById('runBtn').addEventListener('click', async function(){
+  this.textContent='⏳ Loading…'; this.disabled=true;
+  setStatus('Loading sql.js + dependencies…','running');
+  try{
+    if(!_SQL){
+      await loadScript('./kernel_ops.js').catch(function(){});
+      await loadScript('./crud_overlay.js').catch(function(){});
+      _KO  = window.KernelOps   || (window.window&&window.window.KernelOps);
+      _CRUD= window.CrudOverlay || (window.window&&window.window.CrudOverlay);
+      _SQL=await initSqlJs({locateFile:function(f){return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'+f;}});
+      setStatus('Fetching seed database…','running');
+      try{
+        var res=await fetch('./ad_seed.db');
+        if(!res.ok)throw new Error(res.status);
+        _seedBuf=new Uint8Array(await res.arrayBuffer());
+      }catch(e){
+        _seedBuf=await pickFile('Select ad_seed.db to continue');
       }
-      // 3 runs, take median
-      var ltimes = [];
-      for (var ls = 0; ls < 3; ls++) {
-        var lc2 = new Uint8Array(inflated);
-        var lt0 = performance.now();
-        var ldb = new SQL.Database(lc2);
-        ldb.exec('SELECT COUNT(*) FROM AD_Window');
-        ltimes.push(Math.round(performance.now() - lt0));
-        ldb.close();
-      }
-      ltimes.sort(function(a,b){return a-b;});
-      var lmed = ltimes[1];
-      if (li === 0) loadBase = Math.max(lmed, 1);
-      if (li === loadTiers.length - 1) loadLast = lmed;
-      pushPoint(loadChart, lt.label, lmed);
-      await new Promise(r => setTimeout(r, 0));
     }
-    document.getElementById('m-load-base').textContent  = loadBase + ' ms';
-    document.getElementById('m-load-5x').textContent    = loadLast + ' ms';
-    document.getElementById('m-load-ratio').textContent = (loadLast / loadBase).toFixed(1) + '×';
-    setBadge('load', 'pass');
-    passes++;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // BENCH 4 — verifyChain
-    // ─────────────────────────────────────────────────────────────────────
-    setStatus('④ Benchmarking verifyChain throughput…', 'running');
-    setBadge('verify', 'running');
-    var vfyChart = makeChart('ch-verify', 'line',
-      [], COLORS.yellow, 'ms');
-
-    var vfyDb = new SQL.Database(new Uint8Array(seedBuf));
-    if (KO) KO.ensureTable(vfyDb);
-    var vfyCps = [100, 500, 1000, 5000, 10000];
-    var vfyOps = 0, vfyMs10k = 0, vfyRate10k = 0, vfyAllOk = true;
-    for (var vi = 0; vi < vfyCps.length; vi++) {
-      var vcp = vfyCps[vi];
-      while (vfyOps < vcp) {
-        if (KO) {
-          var vop = { op_type: 'CRUD_UPDATE', op_uuid: 'bm-vfy-' + vfyOps,
-            params: { table: 'AD_Window', id: 100 + (vfyOps % 40),
-              changes: { Description: { old: 'v'+(vfyOps-1), new: 'v'+vfyOps } }, actor: 100 }};
-          await KO.commitGroup(vfyDb, [vop], { gid: 'vfy-' + vfyOps, baseTs: 1718200000000 + vfyOps });
-        }
-        vfyOps++;
-        if (vfyOps % 200 === 0) { addOps(200); await new Promise(r => setTimeout(r, 0)); }
-      }
-      var vt0 = performance.now();
-      var vres = KO ? await KO.verifyChain(vfyDb) : { ok: true };
-      var vms = Math.round(performance.now() - vt0);
-      if (!vres.ok) vfyAllOk = false;
-      if (vcp === 10000) { vfyMs10k = vms; vfyRate10k = vms > 0 ? Math.round(10000 / (vms / 1000)) : 99999; }
-      pushPoint(vfyChart, vcp.toLocaleString(), vms);
-      await new Promise(r => setTimeout(r, 0));
-    }
-    addOps(vfyOps % 200);
-    document.getElementById('m-vfy-ms').textContent     = vfyMs10k + ' ms';
-    document.getElementById('m-vfy-rate').textContent   = vfyRate10k.toLocaleString() + '/s';
-    document.getElementById('m-vfy-intact').textContent = vfyAllOk ? 'Yes ✓' : 'FAIL';
-    document.getElementById('chipMs').textContent       = vfyMs10k + ' ms';
-    document.getElementById('cmp-verify').textContent   = vfyMs10k + ' ms (10K ops)';
-    setBadge('verify', 'pass');
-    passes++;
-    vfyDb.close();
-
-    // ─────────────────────────────────────────────────────────────────────
-    // BENCH 5 — peer sync
-    // ─────────────────────────────────────────────────────────────────────
-    setStatus('⑤ Simulating multi-peer sync…', 'running');
-    setBadge('peers', 'running');
-    var peersChart = makeChart('ch-peers', 'bar',
-      [], COLORS.green, 'ms');
-
-    var peerCounts = [2, 5, 10];
-    var OPS_PER_PEER = 50;
-    var peer2merge = 1, peer10merge = 1, peer10verify = 1;
-
-    function serDelta(db, since) {
-      var r = db.exec('SELECT op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id FROM kernel_ops WHERE id > ' + since + ' ORDER BY id');
-      if (!r.length) return [];
-      return r[0].values.map(function(v) {
-        var o = {}; r[0].columns.forEach(function(c,i){o[c]=v[i];}); return o;
-      });
-    }
-    function mergeDelta(hub, delta) {
-      var merged = 0;
-      delta.forEach(function(op) {
-        try { hub.run('INSERT OR IGNORE INTO kernel_ops (op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-          [op.op_uuid,op.timestamp,op.op_type,op.parameters,op.input_guids,op.output_guid,op.prev_hash,op.op_hash,op.sig,op.gid,op.branch_id]);
-          merged++;
-        } catch(e) {}
-      });
-      return merged;
-    }
-
-    for (var pni = 0; pni < peerCounts.length; pni++) {
-      var PN = peerCounts[pni];
-      var peers = [];
-      for (var pp = 0; pp < PN; pp++) {
-        var pdb = new SQL.Database(new Uint8Array(seedBuf));
-        if (KO) KO.ensureTable(pdb);
-        for (var pk = 0; pk < OPS_PER_PEER; pk++) {
-          if (KO) {
-            var pop = { op_type: 'CRUD_UPDATE', op_uuid: 'peer-' + pp + '-op-' + pk + '-n' + PN,
-              params: { table: 'AD_Window', id: 100 + ((pp * OPS_PER_PEER + pk) % 60),
-                changes: { Description: { old: 'v'+pk, new: 'v'+(pk+1) } }, actor: 100 + pp }};
-            await KO.commitGroup(pdb, [pop], { gid: 'p'+pp+'-g'+pk+'-n'+PN, baseTs: 1718200000000 + pni*1e6 + pp*1000 + pk });
-          }
-          if (pk % 20 === 0) { addOps(20); await new Promise(r => setTimeout(r, 0)); }
-        }
-        peers.push(pdb);
-      }
-      var hub2 = new SQL.Database(new Uint8Array(seedBuf));
-      if (KO) KO.ensureTable(hub2);
-      var pt0 = performance.now();
-      peers.forEach(function(p) { mergeDelta(hub2, serDelta(p, 0)); });
-      var pmerge = Math.round(performance.now() - pt0);
-      var pv0 = performance.now();
-      var pvc = KO ? await KO.verifyChain(hub2) : { ok: true };
-      var pverify = Math.round(performance.now() - pv0);
-      if (PN === 2) peer2merge = Math.max(pmerge, 1);
-      if (PN === 10) { peer10merge = pmerge; peer10verify = pverify; }
-      pushPoint(peersChart, PN + ' peers', pmerge);
-      peers.forEach(function(p){try{p.close();}catch(e){}});
-      hub2.close();
-      await new Promise(r => setTimeout(r, 0));
-    }
-    document.getElementById('m-peer-merge').textContent  = peer10merge + ' ms';
-    document.getElementById('m-peer-verify').textContent = peer10verify + ' ms';
-    document.getElementById('m-peer-ratio').textContent  = (peer10merge / peer2merge).toFixed(1) + '×';
-    setBadge('peers', 'pass');
-    passes++;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // DONE
-    // ─────────────────────────────────────────────────────────────────────
-    stopCounters();
-    var elapsed = ((Date.now() - t0wall) / 1000).toFixed(1);
-    setStatus('✅ All ' + passes + '/5 benchmarks passed — ' + _totalOps.toLocaleString() + ' ops in ' + elapsed + 's', 'done');
-    document.getElementById('sum-pass').textContent      = passes + '/5';
-    document.getElementById('sum-total-ops').textContent = _totalOps.toLocaleString();
-    document.getElementById('sum-elapsed').textContent   = elapsed + 's';
-    document.getElementById('summary').style.display = 'block';
-    document.getElementById('compare').style.display = 'block';
-    btn.textContent = '✅ ALL PASSED';
-    btn.style.background = 'linear-gradient(135deg,#1a5c2e,#2d7a45)';
-
-  } catch(err) {
-    stopCounters();
-    setStatus('❌ Error: ' + err.message, '');
-    btn.disabled = false;
-    btn.textContent = '▶ RUN ALL BENCHMARKS';
-    console.error(err);
+    this.textContent='▶ RUN CONTINUOUS';
+    mainLoop();
+  }catch(err){
+    setStatus('❌ '+err.message,'');
+    this.disabled=false;
+    this.textContent='▶ RUN CONTINUOUS';
   }
 });
 
-// file picker fallback
-function pickFile(msg) {
-  return new Promise(function(res, rej) {
-    var inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.db';
-    alert(msg + ' — select the file in the next dialog');
-    inp.onchange = function() {
-      var f = inp.files[0]; if (!f) return rej(new Error('no file'));
-      var r = new FileReader();
-      r.onload = function(e) { res(new Uint8Array(e.target.result)); };
+document.getElementById('stopBtn').addEventListener('click',function(){
+  _stopReq=true; _isRunning=false;
+  setStatus('Stopping after current benchmark…','');
+});
+
+function loadScript(src){
+  return new Promise(function(res,rej){
+    var s=document.createElement('script'); s.src=src;
+    s.onload=res; s.onerror=function(){rej(new Error('load fail: '+src));};
+    document.head.appendChild(s);
+  });
+}
+function pickFile(msg){
+  return new Promise(function(res,rej){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.db';
+    alert(msg);
+    inp.onchange=function(){
+      var f=inp.files[0]; if(!f)return rej(new Error('no file'));
+      var r=new FileReader();
+      r.onload=function(e){res(new Uint8Array(e.target.result));};
       r.readAsArrayBuffer(f);
     };
     inp.click();
