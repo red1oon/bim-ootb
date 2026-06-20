@@ -1535,6 +1535,45 @@ function setupStreaming(A) {
       } catch(e) {}
       console.log(`[S260] §DB_SIZE_CHECK size=${(_dbSize/1024/1024).toFixed(0)}MB`);
 
+      // ── §S281: Single-DB instant bboxes — try the tiny positions.bin sidecar first (the same one
+      // split builds use), so the wireframe preview paints before the full _extracted.db downloads.
+      // Additive: a missing sidecar 404s → cachedFetch throws → caught → normal full download (unchanged).
+      try {
+        var _posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
+        A.status.textContent = 'Loading positions...';
+        var _posBuf = await A.cachedFetch(_posUrl);
+        var _posView = new DataView(_posBuf);
+        var _posCount = _posView.getUint32(0, true);
+        var _posRows = [];
+        for (var _spi = 0; _spi < _posCount; _spi++) {
+          var _soff = 4 + _spi * 24;
+          _posRows.push([
+            null, null, null, null,
+            _posView.getFloat32(_soff, true), _posView.getFloat32(_soff + 4, true), _posView.getFloat32(_soff + 8, true),
+            null, null, null, null, null,
+            _posView.getFloat32(_soff + 12, true), _posView.getFloat32(_soff + 16, true), _posView.getFloat32(_soff + 20, true)
+          ]);
+        }
+        if (A._drawBboxPlaceholders && _posCount > 0) {
+          A._positionRows = _posRows;
+          var _sx = 0, _sy = 0, _sz = 0;
+          for (var _qi = 0; _qi < _posCount; _qi++) { _sx += _posRows[_qi][4]; _sy += _posRows[_qi][5]; _sz += _posRows[_qi][6]; }
+          A.modelOffset.x = _sx / _posCount; A.modelOffset.y = _sy / _posCount; A.modelOffset.z = _sz / _posCount;
+          A._drawBboxPlaceholders(_posRows);
+          A.activeBuildingTotal = _posCount;
+          var _env = Math.max(80, _posCount > 50000 ? 300 : 150);
+          A.camera.position.set(_env * 0.6, _env * 0.8, _env * 0.6);
+          A.camera.far = Math.max(10000, _env * 5);
+          A.camera.updateProjectionMatrix();
+          A.controls.target.set(0, 0, 0); A.controls.update();
+          A.markDirty();
+          console.log(`[S260b] §POSITIONS_LOADED count=${_posCount} size=${(_posBuf.byteLength/1024).toFixed(0)}KB (single-DB preview)`);
+          console.log(`[S260b] §BBOX_FROM_POSITIONS count=${_posCount} (single-DB preview)`);
+        }
+      } catch(e) {
+        console.log(`[S281] §POSITIONS_SKIP single-DB — ${(e && e.message) ? e.message : 'no sidecar'}; full download`);
+      }
+
       // ── Full download (single-DB path — use split_db.sh for large buildings) ──
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_fetching||'Fetching {url}...').replace('{url}',A.DB_URL);
       var dbBuf = await A.cachedFetch(A.DB_URL);
