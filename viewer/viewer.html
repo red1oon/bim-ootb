@@ -477,6 +477,9 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
   <div><span class="label" data-trl="h_storey">Storey</span>: <span class="value" id="info-storey">—</span></div>
   <div><span class="label" data-trl="h_discipline">Discipline</span>: <span class="value" id="info-disc">—</span></div>
   <div><span class="label" data-trl="h_material">Material</span>: <span class="value" id="info-material">—</span></div>
+  <!-- §S2 (TM_4D5D_VARIANCE_LANE) — Zoom-Across cost fold: the twin's Planned→Committed pair for this IFC class
+       (line grain) + its phase + the whole project, READ from C_Project/C_ProjectLine/C_ProjectPhase. -->
+  <div id="info-cost" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.12)"></div>
   <div id="snag-btn-row" style="margin-top:6px;display:none"><button onclick="openSiteCamera()" style="background:#f44336;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">📸 <span data-trl="ui_snag">Snag</span></button></div>
 </div>
 <!-- S265 Phase 4: storey-panel and disc-panel moved inside #hud as accordion sections -->

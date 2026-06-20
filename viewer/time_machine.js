@@ -33,12 +33,17 @@
   var _highlightMeshes = [];
   var _ganttVisible = false;
   var _dashVisible = false;
+  // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
+  // deterministic over-run VARIANT computed live on it. No shipped schedule data — a variant ON what's there.
+  var _varVisible = false;
+  var _opsPlanned = null;   // snapshot of the planned _ops phase windows (taken when variance first opens)
   var _ganttTasks = [];  // computed task groups for click detection
   // T3 (4D_CAPTURE_AND_FALLBACK §3.1): native-4D coverage of the active schedule.
   var _capActive = false;   // true when the timeline used a captured IFC schedule
   var _coveredCount = 0;    // elements driven by real captured task dates
   var _coveragePct = 0;     // covered / total * 100 (for the coverage badge)
   var _sCurveData = null;  // cached S-curve points (computed once)
+  var _shopfloor = null, _shopfloorLoading = false;  // §E2b: PP_Order cost-element stacked S-curve cache
 
   // §S278: Cached temp objects — lazy-init on first use (THREE may not be loaded yet)
   var _tmV1, _tmV2, _tmV3, _tmM4, _tmColor, _tmRay;
@@ -1202,11 +1207,87 @@
     applySunCycle(cursorMs);
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
+    if (_varVisible) drawVariance();   // §S1 — variance drawer tracks the scrub (hairline + phase-under-cursor)
 
     if (app.markDirty) app.markDirty();
     // Force immediate render — mobile browsers defer rAF until touch
     if (app.renderer && app.scene && app.camera) app.renderer.render(app.scene, app.camera);
     updateStatus();
+    _broadcastTimeline();   // §S3 — realtime cross-tab scrub + pinpoint the item the data is addressing
+  }
+
+  // ── §S3 (TM_4D5D_VARIANCE_LANE) — realtime cross-tab timeline broadcast + scene pinpoint ──
+  // The 4D ALREADY EXISTS (injectGantt). This stage does NOT regenerate it — it BROADCASTS the scrub over the
+  // shared Connect bus (same channel the modeller speaks) so sibling tabs/surfaces follow in lockstep, and it
+  // PINPOINTS the element(s) the cursor is addressing at this instant (the frontier) — publishing them as a
+  // selection (so an ERP tab lights the matching record) + a HUD callout that singles them out.
+  var _applyingRemoteScrub = false;   // echo guard: don't re-publish a scrub we're applying from another surface
+  var _lastTLms = 0;                   // throttle wall-clock (runtime only; never used by witnesses)
+  // PURE: the guids "addressed by the data" at cursorMs = ops whose window straddles the cursor (being built now).
+  // Falls back to the most-recently-finished op when nothing is mid-flight, so a parked cursor still pinpoints.
+  function _frontierAt(cursorMs) {
+    var live = [], lastDone = null;
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      if (op.start_ts > cursorMs) continue;
+      var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      if (!guid) continue;
+      if (op.end_ts > cursorMs) live.push({ guid: guid, phase: (op.parameters || {}).phase || 'Architecture' });
+      else if (!lastDone || op.end_ts > lastDone.end) lastDone = { guid: guid, phase: (op.parameters || {}).phase || 'Architecture', end: op.end_ts };
+    }
+    if (!live.length && lastDone) live.push({ guid: lastDone.guid, phase: lastDone.phase });
+    return live;
+  }
+  function _broadcastTimeline() {
+    var C = window.Connect;
+    if (!_ops.length) return;
+    var frontier = _frontierAt(_cursor);
+    var guids = frontier.map(function (f) { return f.guid; });
+    var lead = frontier.length ? frontier[0] : null;
+    // HUD callout — single out the item(s) the data is addressing at this moment (always, even off-bus)
+    _updatePinpoint(frontier);
+    if (!C || !C.on || _applyingRemoteScrub) return;     // off-bus or echoing a remote scrub → no publish
+    var now = (function () { try { return Date.now(); } catch (e) { return _lastTLms + 100; } })();
+    if (now - _lastTLms < 80) return;                    // throttle the fan-out during playback/drag
+    _lastTLms = now;
+    var app = A(), span = _projectEnd - _projectStart;
+    C.publish('timeline', { cursor: _cursor, frac: span > 0 ? (_cursor - _projectStart) / span : 0,
+      frontier: guids.slice(0, 40), lead: lead ? lead.guid : null, phase: lead ? lead.phase : null,
+      building: (app && app.activeBuilding) || null, surface: 'viewer' });
+    // pinpoint cross-surface: publish the lead addressed element as a selection (ERP/sibling lights its record)
+    if (lead) C.publish('selection', { guid: lead.guid, ifcClass: null, surface: 'viewer' });
+    console.log('§TM_BROADCAST cursor=' + Math.round(_cursor) + ' frontier=' + guids.length + ' lead=' + String(lead && lead.guid).slice(0, 10) + ' phase=' + (lead ? lead.phase : '-'));
+  }
+  // inbound scrub from a sibling viewer tab (same building) → move our cursor to match, echo-guarded.
+  function _applyRemoteTimeline(t) {
+    if (!t || t.surface !== 'viewer' || !_active || !_ops.length) return;
+    var app = A();
+    if (t.building && app && app.activeBuilding && t.building !== app.activeBuilding) return;  // different model
+    var span = _projectEnd - _projectStart;
+    var c = (typeof t.cursor === 'number') ? t.cursor : (typeof t.frac === 'number' ? _projectStart + t.frac * span : null);
+    if (c == null) return;
+    _applyingRemoteScrub = true;
+    try { _cursor = Math.max(_projectStart, Math.min(_projectEnd, c)); renderAtTime(_cursor); try { anchorFromCursor(); configSlider(); } catch (e) {} }
+    finally { _applyingRemoteScrub = false; }
+    console.log('§TM_TL_IN cursor=' + Math.round(_cursor) + ' from=' + (t.surface || '?'));
+  }
+  // HUD callout that names the addressed item(s) — created lazily, sits above the TM panel.
+  function _updatePinpoint(frontier) {
+    var el = document.getElementById('tm-pinpoint');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'tm-pinpoint';
+      el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:128px;z-index:16;background:rgba(8,16,40,0.78);' +
+        'border:1px solid #4fc3f7;border-radius:14px;padding:4px 12px;font-size:12px;color:#e8f4ff;pointer-events:none;' +
+        'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;display:none';
+      document.body.appendChild(el);
+    }
+    if (!_active || !frontier || !frontier.length) { el.style.display = 'none'; return; }
+    var byPhase = {}; frontier.forEach(function (f) { byPhase[f.phase] = (byPhase[f.phase] || 0) + 1; });
+    var ph = Object.keys(byPhase).sort(function (a, b) { return byPhase[b] - byPhase[a]; })[0];
+    el.innerHTML = '<span style="color:#4fc3f7">⊕ Now building</span> · ' + frontier.length + ' item' +
+      (frontier.length > 1 ? 's' : '') + ' · <b>' + ph + '</b>';
+    el.style.display = 'block';
   }
 
   // ── §S260c: Outline effect — wireframe edge overlay on mesh ──
@@ -1758,6 +1839,7 @@
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
+        '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
         '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
       '</div>' +
@@ -1791,6 +1873,11 @@
           '<div id="tm-gantt-hair" style="position:absolute;top:0;width:2px;height:100%;background:#ff8c00;pointer-events:none;z-index:1;display:none"></div>' +
           '<div id="tm-gantt-tip" style="position:absolute;top:4px;left:0;background:rgba(20,20,40,0.92);color:#ff8c00;font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid rgba(255,140,0,0.3);pointer-events:none;z-index:2;display:none;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis"></div>' +
         '</div>' +
+      '</div>' +
+      '<div id="tm-var-box" class="tm-drawer-bottom">' +
+        '<div id="tm-var-head" style="padding:4px 6px 2px;font-size:11px;color:#e0e0e0;line-height:1.5"></div>' +
+        '<canvas id="tm-var-canvas" style="width:100%;cursor:default"></canvas>' +
+        '<div id="tm-var-list" style="padding:2px 6px 4px;font-size:10px;color:#ccc"></div>' +
       '</div>' +
       '<div id="tm-dash-col" class="tm-drawer-right">' +
         '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px">' +
@@ -2010,6 +2097,38 @@
       }
       toggleDashDOM(_dashVisible);
       if (_dashVisible) drawDashboard();
+    });
+    document.getElementById('tm-var').addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      _varVisible = !_varVisible;
+      // Mobile: only one bottom drawer at a time (mirror the gantt/dash rule)
+      if (_varVisible && window.innerWidth < 600 && _ganttVisible) {
+        _ganttVisible = false;
+        var gb2 = document.getElementById('tm-gantt-box'); if (gb2) gb2.classList.remove('open');
+        var gbt2 = document.getElementById('tm-gantt'); if (gbt2) gbt2.classList.remove('tm-active');
+      }
+      var vbtn = document.getElementById('tm-var');
+      if (vbtn) vbtn.classList.toggle('tm-active', _varVisible);
+      var vbox = document.getElementById('tm-var-box');
+      if (vbox) vbox.classList.toggle('open', _varVisible);
+      if (_varVisible) drawVariance();
+    });
+    // §S1 — tap a phase row in the variance drawer to jump the cursor to that phase's window (reciprocal of
+    // the hairline: the scrub moves the highlight, a tap moves the cursor). Maps click-Y → phase row.
+    document.getElementById('tm-var-canvas').addEventListener('pointerup', function (e) {
+      if (!_active || !_ops.length || !_twin) return;
+      var V = _computeVariance();
+      if (!V || !V.phases.length) return;
+      var rect = e.target.getBoundingClientRect();
+      var barH = 9, gap = 5, rowH = barH + gap;
+      var ti = Math.floor((e.clientY - rect.top - 4) / rowH);
+      if (ti < 0 || ti >= V.phases.length) return;
+      var p = V.phases[ti];
+      _cursor = p.winStart;
+      renderAtTime(_cursor);
+      anchorFromCursor();
+      configSlider();
+      console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
     });
     document.getElementById('tm-gantt-canvas').addEventListener('pointerup', function(e) {
       if (!_active || !_ops.length) return;
@@ -2580,6 +2699,213 @@
     'Finishes': '#26a69a'
   };
 
+  // ── §TM-VARIANCE — budget-vs-actual from the STORED twin (TM_4D5D_VARIANCE_LANE §S1) ──
+  // COST is READ, never recomputed: PlannedAmt → CommittedAmt straight off the iDempiere C_Project /
+  // C_ProjectPhase records baked into erp/ad_seed.db (erp/tests/bake_gw_hospital_variance.js). The drawer
+  // shows the SAME figure the ledger holds — §DOCTRINE 2/3 "variance = the PlannedAmt↔CommittedAmt pair,
+  // read the twin, don't recompute". Phase TIME windows come from TM's own injected gantt (_ops) so the
+  // cursor scrubs the same axis as the 3D scene. No LABOR_RATES×days, no hash variant — that only correlated.
+  var _DAY_MS = 86400000;
+  var _VAR_ORDER = ['Substructure', 'Superstructure', 'MEP Rough-in', 'Architecture', 'MEP Final', 'Finishes'];
+  var _twin = null;          // { building, projectId, planned, committed, phases:[{name,seqno,start,end,planned,committed}] }
+  var _twinLoading = false;
+  // Load the folded ERP twin once: fetch the seed db → sql.js → read the C_Project cost pair + its phases.
+  // Same lazy-fetch idiom as navigate_find._ensureErpDb; read-only (db.close after extracting the figures).
+  function _loadTwin() {
+    var app = A();
+    var building = (app && app.activeBuilding) || 'Hospital';
+    if (_twin && _twin.building === building) return Promise.resolve(_twin);   // cached for THIS building
+    if (_twinLoading) return Promise.resolve(null);                            // a load is in flight; caller retries
+    var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
+    if (!SQL) { console.log('§TM_TWIN_DEFER no sql.js factory'); return Promise.resolve(null); }
+    _twinLoading = true;
+    return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      var db = new SQL.Database(new Uint8Array(buf));
+      var pr = db.exec("SELECT C_Project_ID,PlannedAmt,CommittedAmt FROM C_Project WHERE Value=?", [building]);
+      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project'); return null; }
+      var pid = pr[0].values[0][0], planned = Number(pr[0].values[0][1] || 0), committed = Number(pr[0].values[0][2] || 0);
+      var ph = db.exec("SELECT Name,SeqNo,StartDate,EndDate,PlannedAmt,CommittedAmt FROM C_ProjectPhase WHERE C_Project_ID=" + Number(pid) + " AND Name<>'Unsequenced' ORDER BY SeqNo");
+      var phases = (ph.length ? ph[0].values : []).map(function (row) {
+        return { name: row[0], seqno: Number(row[1] || 0), start: Date.parse(row[2]), end: Date.parse(row[3]),
+                 planned: Number(row[4] || 0), committed: Number(row[5] || 0) };
+      });
+      db.close();
+      _twin = { building: building, projectId: pid, planned: planned, committed: committed, phases: phases };
+      _twinLoading = false;
+      console.log('§TM_TWIN_LOADED building="' + building + '" planned=' + planned + ' committed=' + committed + ' phases=' + phases.length);
+      return _twin;
+    }).catch(function (e) { _twinLoading = false; console.log('§TM_TWIN_ERR ' + e.message); return null; });
+  }
+  // §E2b — load PP_Order + PP_Order_Cost from the ERP DB for the active building's project.
+  // Builds _shopfloor.orders = [{start, end, elements:{Material,Labor,Burden,Overhead}}]
+  // Same fetch/cache pattern as _loadTwin; closed over _shopfloor/_shopfloorLoading.
+  function _loadShopfloor() {
+    var app = A();
+    var building = (app && app.activeBuilding) || 'Hospital';
+    if (_shopfloor && _shopfloor.building === building) return Promise.resolve(_shopfloor);
+    if (_shopfloorLoading) return Promise.resolve(null);
+    var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
+    if (!SQL) return Promise.resolve(null);
+    _shopfloorLoading = true;
+    return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      var db = new SQL.Database(new Uint8Array(buf));
+      var pr = db.exec('SELECT C_Project_ID FROM C_Project WHERE Value=?', [building]);
+      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; return null; }
+      var pid = pr[0].values[0][0];
+      var res = db.exec(
+        'SELECT o.PP_Order_ID, o.DateStartSchedule, o.DateFinishSchedule,' +
+        ' oc.M_CostElement_ID, ce.Name AS elem, oc.CumulatedAmt' +
+        ' FROM PP_Order o' +
+        ' JOIN PP_Order_Cost oc ON o.PP_Order_ID=oc.PP_Order_ID' +
+        ' JOIN M_CostElement ce ON oc.M_CostElement_ID=ce.M_CostElement_ID' +
+        ' WHERE o.C_Project_ID=' + Number(pid) + ' AND oc.CumulatedAmt>0' +
+        ' ORDER BY o.DateFinishSchedule, oc.M_CostElement_ID'
+      );
+      db.close();
+      var rows = res.length ? res[0].values : [];
+      var orderMap = {};
+      rows.forEach(function (r) {
+        var oid = r[0], s = Date.parse(r[1]), e = Date.parse(r[2]), eName = r[4], amt = Number(r[5] || 0);
+        if (!orderMap[oid]) orderMap[oid] = { start: s, end: e, elements: {} };
+        orderMap[oid].elements[eName] = (orderMap[oid].elements[eName] || 0) + amt;
+      });
+      var orders = Object.keys(orderMap).map(function (k) { return orderMap[k]; });
+      _shopfloor = { building: building, orders: orders };
+      _shopfloorLoading = false;
+      console.log('§TM_SHOPFLOOR_LOADED building=' + building + ' orders=' + orders.length + ' rows=' + rows.length);
+      return _shopfloor;
+    }).catch(function (e) { _shopfloorLoading = false; console.log('§TM_SHOPFLOOR_ERR ' + e.message); return null; });
+  }
+  function _money(n) { n = Math.round(n); var a = Math.abs(n), s = n < 0 ? '-' : '';
+    if (a >= 1e6) return s + 'RM' + (a / 1e6).toFixed(1) + 'M'; if (a >= 1e3) return s + 'RM' + Math.round(a / 1e3) + 'K'; return s + 'RM' + a; }
+  // Join the STORED twin cost (READ) to TM's gantt phase windows (the scrub axis). The cost numbers are the
+  // records verbatim — Σ phase PlannedAmt == C_Project.PlannedAmt and Σ CommittedAmt == C_Project.CommittedAmt
+  // (verified: 64,719,479 → 87,372,995). The _ops aggregation only supplies each phase's TIME window so the
+  // cursor + hairline land on the same axis as the 3D scene. Marquee = any phase ≥+50% over (Superstructure).
+  function _computeVariance() {
+    if (!_twin) return null;
+    var src = _opsPlanned || _ops, win = {};
+    for (var i = 0; i < src.length; i++) {
+      var op = src[i], ph = (op.parameters || {}).phase || 'Architecture';
+      if (!win[ph]) win[ph] = { start: op.start_ts, end: op.end_ts };
+      else { if (op.start_ts < win[ph].start) win[ph].start = op.start_ts; if (op.end_ts > win[ph].end) win[ph].end = op.end_ts; }
+    }
+    var t0 = Infinity, t1 = -Infinity, pStart = Infinity, pEnd = -Infinity;
+    var phases = _twin.phases.map(function (tp) {
+      var w = win[tp.name], dCost = tp.committed - tp.planned;
+      var ws = w ? w.start : tp.start, we = w ? w.end : tp.end;
+      if (isFinite(ws) && ws < t0) t0 = ws;
+      if (isFinite(we) && we > t1) t1 = we;
+      if (isFinite(tp.start) && tp.start < pStart) pStart = tp.start;
+      if (isFinite(tp.end) && tp.end > pEnd) pEnd = tp.end;
+      return { phase: tp.name, pCost: tp.planned, aCost: tp.committed, dCost: dCost,
+               pct: tp.planned > 0 ? Math.round(dCost / tp.planned * 100) : 0,
+               winStart: ws, winEnd: we, startDate: tp.start, endDate: tp.end,
+               marquee: tp.planned > 0 && dCost / tp.planned >= 0.5 };
+    }).sort(function (x, y) { var ix = _VAR_ORDER.indexOf(x.phase), iy = _VAR_ORDER.indexOf(y.phase); return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy); });
+    if (!isFinite(t0)) { t0 = _projectStart; t1 = _projectEnd; }
+    return { phases: phases, tP: _twin.planned, tA: _twin.committed, dCost: _twin.committed - _twin.planned,
+             pctOver: _twin.planned > 0 ? Math.round((_twin.committed - _twin.planned) / _twin.planned * 100) : 0,
+             t0: t0, t1: t1, plannedStart: pStart, plannedEnd: pEnd };
+  }
+  function _recomputeBounds() {
+    var s = Infinity, e = -Infinity;
+    for (var i = 0; i < _ops.length; i++) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
+    if (isFinite(s)) { _projectStart = s; _projectEnd = e; }
+  }
+  // map the scrub cursor to the phase whose gantt window contains it (for the hairline + row highlight).
+  function _varPhaseUnderCursor(V) {
+    if (!V) return -1;
+    for (var i = 0; i < V.phases.length; i++) { var p = V.phases[i]; if (_cursor >= p.winStart && _cursor <= p.winEnd) return i; }
+    return -1;
+  }
+  function drawVariance() {
+    if (!_ops.length) return;
+    if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline (phase windows)
+    var head = document.getElementById('tm-var-head');
+    if (!_twin) {                                          // records not fetched yet → load, then redraw
+      if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">Reading records…</div>';
+      _loadTwin().then(function (t) { if (t && _varVisible) drawVariance(); });
+      return;
+    }
+    var V = _computeVariance();
+    if (!V) { if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">No project records for this model</div>'; return; }
+    var fmtD = function (ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '—'; };
+    var curIdx = _varPhaseUnderCursor(V);
+
+    // header — the headline COST pair (READ from the twin) + the planned schedule span. Honest labels:
+    // cost Δ is "from records"; the date span is the planned baseline (no actual-date column yet → §S3).
+    if (head) {
+      head.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">' +
+          '<b style="color:#4fc3f7">Budget vs Actual</b>' +
+          '<span style="font-size:9px;color:#888">from records · ' + _twin.building + '</span>' +
+        '</div>' +
+        '<div style="margin-top:2px">Cost <b style="color:#9fd6ff" title="C_Project.PlannedAmt">' + _money(V.tP) + '</b> → ' +
+          '<b style="color:#ff6b6b" title="C_Project.CommittedAmt">' + _money(V.tA) + '</b> ' +
+          '<span style="color:' + (V.dCost >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.dCost >= 0 ? '+' : '') + V.pctOver + '%, ' +
+          (V.dCost >= 0 ? '+' : '') + _money(V.dCost) + ')</span></div>' +
+        '<div style="color:#9fd6ff">Schedule ' + fmtD(V.plannedStart) + ' → ' + fmtD(V.plannedEnd) +
+          ' <span style="color:#888">(planned baseline)</span></div>';
+    }
+
+    // canvas — one bar per phase on the SAME axis the cursor scrubs; bar color = phase, edge cap red/green by
+    // COST over/under (from records). Phase under the cursor is outlined; a vertical hairline marks the cursor.
+    var canvas = document.getElementById('tm-var-canvas');
+    var box = document.getElementById('tm-var-box');
+    if (canvas && box) {
+      var phases = V.phases, n = phases.length;
+      var barH = 9, gap = 5, rowH = barH + gap, marginL = 64;
+      var cW = box.clientWidth, cH = n * rowH + 8, barW = cW - marginL - 6;
+      var range = Math.max(1, V.t1 - V.t0);
+      canvas.width = cW * (window.devicePixelRatio || 1);
+      canvas.height = cH * (window.devicePixelRatio || 1);
+      canvas.style.height = cH + 'px';
+      var ctx = canvas.getContext('2d');
+      ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+      ctx.clearRect(0, 0, cW, cH);
+      ctx.textBaseline = 'middle'; ctx.font = '9px sans-serif';
+      for (var ti = 0; ti < n; ti++) {
+        var p = phases[ti], color = PHASE_COLORS[p.phase] || '#888', y = ti * rowH + 4;
+        var over = p.dCost > 0;
+        // label
+        ctx.fillStyle = (ti === curIdx) ? '#fff' : (p.marquee ? '#ff8c00' : '#bbb'); ctx.textAlign = 'right';
+        ctx.fillText((p.marquee ? '⚠ ' : '') + p.phase.substring(0, 11), marginL - 4, y + barH / 2);
+        // phase bar on the cursor axis
+        var px = marginL + (p.winStart - V.t0) / range * barW, pw = Math.max(3, (p.winEnd - p.winStart) / range * barW);
+        ctx.globalAlpha = (ti === curIdx) ? 1 : 0.78; ctx.fillStyle = color; ctx.fillRect(px, y, pw, barH);
+        // cost over/under cap on the trailing edge (red over, green under) — the variance signal
+        ctx.globalAlpha = 1; ctx.fillStyle = over ? '#e53935' : '#26a69a';
+        ctx.fillRect(px + pw - 3, y, 3, barH);
+        // row highlight outline for the phase under the cursor
+        if (ti === curIdx) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(px - 0.5, y - 0.5, pw + 1, barH + 1); }
+      }
+      // cursor hairline
+      var hx = marginL + (_cursor - V.t0) / range * barW;
+      if (hx >= marginL && hx <= marginL + barW) {
+        ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, cH); ctx.stroke();
+      }
+    }
+
+    // compact per-phase variance list — committed vs planned, ΔCost from records.
+    var list = document.getElementById('tm-var-list');
+    if (list) {
+      var html = '';
+      V.phases.forEach(function (p, i) {
+        var dc = (p.dCost >= 0 ? '+' : '') + _money(p.dCost);
+        var col = p.dCost > 0 ? '#ff6b6b' : '#26a69a';
+        html += '<div style="display:flex;justify-content:space-between;gap:6px' + (i === curIdx ? ';color:#fff;font-weight:bold' : '') + '">' +
+          '<span>' + (p.marquee ? '⚠ ' : '') + p.phase + '</span>' +
+          '<span style="color:' + col + '">' + dc + ' (' + (p.pct >= 0 ? '+' : '') + p.pct + '%)</span></div>';
+      });
+      list.innerHTML = html;
+    }
+    console.log('§TM_VARIANCE source=twin building="' + _twin.building + '" phases=' + V.phases.length +
+      ' plannedCost=' + V.tP + ' committedCost=' + V.tA + ' over=' + V.pctOver + '% curPhase=' +
+      (curIdx >= 0 ? V.phases[curIdx].phase : '-'));
+  }
+
   function drawGanttMini() {
     if (!_ops.length) return;
     var canvas = document.getElementById('tm-gantt-canvas');
@@ -2937,6 +3263,12 @@
 
     // S-Curve sparkline
     if (!_sCurveData) computeSCurve();
+    // §E2b: trigger shopfloor load on first draw; invalidate S-curve when it arrives so stacked data renders
+    if (!_shopfloor && !_shopfloorLoading) {
+      _loadShopfloor().then(function (sf) {
+        if (sf) { _sCurveData = null; if (_dashVisible) { computeSCurve(); drawSCurve(); } }
+      });
+    }
     drawSCurve();
 
     // Day counter
@@ -2955,59 +3287,104 @@
     }
   }
 
+  // §E2b — STACKED S-curve: if shopfloor data loaded, stacks Material/Labor/Burden/Overhead cost elements;
+  // else falls back to op-count monotonic curve. "Batch lights together" = all elements of an order accrue
+  // at its finish date (not during; binary done/not-done per order, monotonic by construction). W-SHOP-SCURVE.
+  var _SF_ELEMS = ['Material', 'Labor', 'Burden', 'Overhead'];
+  var _SF_COLORS = { Material: 'rgba(136,136,136,0.65)', Labor: 'rgba(79,195,247,0.65)',
+                     Burden: 'rgba(255,213,79,0.65)', Overhead: 'rgba(255,140,0,0.65)' };
+
   function computeSCurve() {
     if (!_ops.length) { _sCurveData = []; return; }
     var totalDays = Math.max(1, Math.round((_projectEnd - _projectStart) / 86400000));
-    var points = [];
     var step = Math.max(1, Math.floor(totalDays / 50));
-    for (var d = 0; d <= totalDays; d += step) {
-      var ts = _projectStart + d * 86400000;
-      var done = 0;
-      for (var i = 0; i < _ops.length; i++) { if (_ops[i].end_ts <= ts) done++; }
-      points.push({ day: d, pct: done / _ops.length * 100 });
+    var sf = _shopfloor;
+
+    if (sf && sf.orders.length) {
+      // cost-element stacked: at each step, sum CumulatedAmt of orders whose finish has passed
+      var grandTotal = 0;
+      sf.orders.forEach(function (o) {
+        _SF_ELEMS.forEach(function (e) { grandTotal += (o.elements[e] || 0); });
+      });
+      if (!grandTotal) { _sCurveData = []; return; }
+      var points = [];
+      for (var d = 0; d <= totalDays; d += step) {
+        var ts = _projectStart + d * 86400000;
+        var pt = { day: d };
+        _SF_ELEMS.forEach(function (e) { pt[e] = 0; });
+        sf.orders.forEach(function (o) {
+          if (o.end <= ts) { _SF_ELEMS.forEach(function (e) { pt[e] += o.elements[e] || 0; }); }
+        });
+        _SF_ELEMS.forEach(function (e) { pt[e] = pt[e] / grandTotal * 100; });   // → % of grand total
+        points.push(pt);
+      }
+      _sCurveData = points;
+      console.log('§SCURVE_COMPUTE stacked=true orders=' + sf.orders.length + ' steps=' + points.length + ' grandTotal=' + Math.round(grandTotal));
+    } else {
+      // fallback count-based (until shopfloor loads)
+      var points2 = [];
+      for (var d2 = 0; d2 <= totalDays; d2 += step) {
+        var ts2 = _projectStart + d2 * 86400000;
+        var done = 0;
+        for (var i = 0; i < _ops.length; i++) { if (_ops[i].end_ts <= ts2) done++; }
+        points2.push({ day: d2, pct: done / _ops.length * 100 });
+      }
+      _sCurveData = points2;
     }
-    _sCurveData = points;
   }
 
   function drawSCurve() {
     var canvas = document.getElementById('tm-dash-scurve');
     if (!canvas || !_sCurveData || !_sCurveData.length) return;
-    var ctx = canvas.getContext('2d');
-    var w = canvas.width, h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
+    var c = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+    c.clearRect(0, 0, w, h);
+    var pts = _sCurveData;
+    var isStacked = 'Material' in (pts[0] || {});
+    var totalDays = Math.max(1, pts[pts.length - 1].day);
 
-    var totalDays = Math.max(1, _sCurveData[_sCurveData.length - 1].day);
-
-    // Draw curve
-    ctx.beginPath();
-    ctx.strokeStyle = '#4fc3f7';
-    ctx.lineWidth = 2;
-    for (var i = 0; i < _sCurveData.length; i++) {
-      var pt = _sCurveData[i];
-      var x = pt.day / totalDays * w;
-      var y = h - (pt.pct / 100 * h);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (isStacked) {
+      // stacked area per cost element (bottom to top: Material / Labor / Burden / Overhead)
+      for (var ei = 0; ei < _SF_ELEMS.length; ei++) {
+        var eName = _SF_ELEMS[ei];
+        c.beginPath();
+        for (var i = 0; i < pts.length; i++) {
+          var x = pts[i].day / totalDays * w;
+          var stackPct = 0; for (var j = 0; j <= ei; j++) stackPct += (pts[i][_SF_ELEMS[j]] || 0);
+          var y = h - (stackPct / 100 * h);
+          if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+        }
+        for (var i = pts.length - 1; i >= 0; i--) {
+          var x = pts[i].day / totalDays * w;
+          var basePct = 0; for (var j = 0; j < ei; j++) basePct += (pts[i][_SF_ELEMS[j]] || 0);
+          var y = h - (basePct / 100 * h);
+          c.lineTo(x, y);
+        }
+        c.closePath(); c.fillStyle = _SF_COLORS[eName]; c.fill();
+      }
+      // cursor dot at top of stack
+      var curDay = Math.max(0, (_cursor - _projectStart) / 86400000);
+      var ci2 = Math.min(pts.length - 1, Math.round(curDay / totalDays * (pts.length - 1)));
+      var cp = pts[ci2];
+      if (cp) {
+        var topPct = _SF_ELEMS.reduce(function (s, e) { return s + (cp[e] || 0); }, 0);
+        var dx = cp.day / totalDays * w, dy = h - (topPct / 100 * h);
+        c.beginPath(); c.arc(dx, dy, 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
+        if ((drawSCurve._tick = (drawSCurve._tick || 0) + 1) % 20 === 0)
+          console.log('§SCURVE_DRAW stacked=true cursor_day=' + Math.round(curDay) + ' accrued=' + Math.round(topPct) + '%');
+      }
+    } else {
+      // fallback single line
+      c.beginPath(); c.strokeStyle = '#4fc3f7'; c.lineWidth = 2;
+      for (var i = 0; i < pts.length; i++) {
+        var pt = pts[i], x = pt.day / totalDays * w, y = h - (pt.pct / 100 * h);
+        if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+      }
+      c.stroke(); c.lineTo(w, h); c.lineTo(0, h); c.closePath(); c.fillStyle = 'rgba(79,195,247,0.1)'; c.fill();
+      var curDay2 = Math.max(0, (_cursor - _projectStart) / 86400000);
+      var done2 = 0; for (var ci3 = 0; ci3 < _ops.length; ci3++) { if (_ops[ci3].end_ts <= _cursor) done2++; }
+      var dx2 = curDay2 / totalDays * w, dy2 = h - (done2 / Math.max(_ops.length, 1) * h);
+      c.beginPath(); c.arc(dx2, dy2, 4, 0, Math.PI * 2); c.fillStyle = '#ff8c00'; c.fill();
     }
-    ctx.stroke();
-
-    // Fill under curve
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(79,195,247,0.1)';
-    ctx.fill();
-
-    // Current position dot
-    var curDay = Math.max(0, (_cursor - _projectStart) / 86400000);
-    var curDone = 0;
-    for (var ci = 0; ci < _ops.length; ci++) { if (_ops[ci].end_ts <= _cursor) curDone++; }
-    var curPct = curDone / _ops.length * 100;
-    var dx = curDay / totalDays * w;
-    var dy = h - (curPct / 100 * h);
-    ctx.beginPath();
-    ctx.arc(dx, dy, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#ff8c00';
-    ctx.fill();
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -3199,6 +3576,13 @@
     updateStatus();
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
+    // §S2 — the ⚖ variance drawer only offers itself when this building HAS a folded twin (a C_Project with the
+    // PlannedAmt↔CommittedAmt pair). No twin → no button, no drawer (user: "don't trigger it when no such info").
+    _loadTwin().then(function (t) {
+      var vb = document.getElementById('tm-var');
+      if (vb) vb.style.display = t ? '' : 'none';
+      console.log('§TM_VAR_GATE building="' + ((app && app.activeBuilding) || '?') + '" twin=' + (t ? 'yes' : 'no') + ' ⚖=' + (t ? 'shown' : 'hidden'));
+    });
     console.log('§TIME_MACHINE ON — ' + _ops.length + ' ops, ' + _days.length + ' days, ' +
       'project: ' + new Date(_projectStart).toLocaleDateString() + ' → ' + new Date(_projectEnd).toLocaleDateString());
   }
@@ -3224,12 +3608,18 @@
     _ganttVisible = false;
     _dashVisible = false;
     _sCurveData = null;
+    _shopfloor = null; _shopfloorLoading = false;    // §E2b: invalidate shopfloor cache on building change
     _ganttTasks = [];
     _ganttTasksComputed = false;
     var ganttBtn = document.getElementById('tm-gantt');
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
     var ganttBox = document.getElementById('tm-gantt-box');
     if (ganttBox) ganttBox.classList.remove('open');
+    // §TM-VARIANCE: reset the drawer state on deactivate (the twin cache is kept — it's read-only).
+    _varVisible = false; _opsPlanned = null;
+    var pin = document.getElementById('tm-pinpoint'); if (pin) pin.style.display = 'none';   // §S3 — clear the pinpoint callout
+    var varBtn = document.getElementById('tm-var'); if (varBtn) varBtn.classList.remove('tm-active');
+    var varBox = document.getElementById('tm-var-box'); if (varBox) varBox.classList.remove('open');
     toggleDashDOM(false);
     _active = false;
     _panel.style.display = 'none';
@@ -3259,6 +3649,8 @@
   // ── Init ──
   function init() {
     buildPanel();
+    // §S3 — listen for a sibling surface's scrub on the shared Connect bus (the modeller already speaks it).
+    try { if (window.Connect && window.Connect.subscribe) window.Connect.subscribe('timeline', _applyRemoteTimeline); } catch (e) {}
 
     // S265: TM button is now in icon pill — no longer injected into overflow
     // var toolbar = document.querySelector('#search-body > div');
@@ -3292,6 +3684,77 @@
   }
 
   window.toggleTimeMachine = toggle;
+
+  // §S2 (TM_4D5D_VARIANCE_LANE) — juncture jump: land the cursor at the START of a named phase's window so the
+  // scene is rendered PARTIALLY-BUILT at that moment (the IFC cost panel's "View at this moment"). The phase
+  // window comes from TM's own _ops (same axis the cursor scrubs). Opens the ⚖ drawer so the cost story shows.
+  // Activates TM first if needed (async). Returns a Promise<bool> (true = landed in the phase window).
+  window.tmJumpToPhase = function (phaseName) {
+    phaseName = String(phaseName || '');
+    function doJump() {
+      if (!_ops.length) { console.log('§TM_JUNCTURE skip=no-ops phase="' + phaseName + '"'); return false; }
+      var s = Infinity, e = -Infinity;
+      for (var i = 0; i < _ops.length; i++) {
+        var ph = (_ops[i].parameters || {}).phase || 'Architecture';
+        if (ph === phaseName) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
+      }
+      if (!isFinite(s)) { console.log('§TM_JUNCTURE miss phase="' + phaseName + '" (no ops in that phase)'); return false; }
+      _cursor = s;
+      renderAtTime(_cursor);
+      try { anchorFromCursor(); } catch (x) {}
+      try { configSlider(); } catch (x) {}
+      // surface the cost story: open the ⚖ variance drawer (reads the twin) if it isn't already open — ONLY when
+      // this building actually has a twin (no twin → no drawer; the ⚖ button is hidden anyway).
+      if (_twin && !_varVisible) {
+        _varVisible = true;
+        var vbtn = document.getElementById('tm-var'); if (vbtn) vbtn.classList.add('tm-active');
+        var vbox = document.getElementById('tm-var-box'); if (vbox) vbox.classList.add('open');
+        drawVariance();
+      }
+      var pct = Math.round((_cursor - _projectStart) / Math.max(1, _projectEnd - _projectStart) * 100);
+      console.log('§TM_JUNCTURE phase="' + phaseName + '" cursor=' + Math.round(_cursor) +
+        ' winStart=' + new Date(s).toISOString().slice(0, 10) + ' built~' + pct + '% (partially built)');
+      return true;
+    }
+    if (_active) return Promise.resolve(doJump());
+    var p = activate();
+    return (p && p.then) ? p.then(function () { return doJump(); }) : Promise.resolve(doJump());
+  };
+
+  // §360-IDENTITY — freeze the cursor on the EXACT element the user is looking at (not just its phase).
+  // The identity thread: ERP line / Find pick → guid → the op that builds it → its end_ts = the moment it
+  // lands. renderAtTime broadcasts (line 1215) so the ERP tab reacts in lockstep. The point of 360 optics is
+  // the STOPPED frame on the right item, with 4D (scene) + 5D (⚖ drawer) coupled — not the animation.
+  window.tmJumpToElement = function (guid) {
+    guid = String(guid || '');
+    function doJump() {
+      if (!_ops.length) { console.log('§TM_PINPOINT_JUMP skip=no-ops guid="' + guid + '"'); return false; }
+      var op = null;
+      for (var i = 0; i < _ops.length; i++) {
+        var og = _ops[i].output_guid || (_ops[i].input_guids && _ops[i].input_guids.length ? _ops[i].input_guids[0] : null);
+        if (og === guid) { op = _ops[i]; break; }
+      }
+      if (!op) { console.log('§TM_PINPOINT_JUMP miss guid="' + guid + '" (no op builds it)'); return false; }
+      _cursor = op.end_ts;                       // the instant it lands → present in the scene, the lead frontier
+      renderAtTime(_cursor);
+      try { anchorFromCursor(); } catch (x) {}
+      try { configSlider(); } catch (x) {}
+      if (_twin && !_varVisible) {                // couple the 5D cost story to the frozen frame (same as phase jump)
+        _varVisible = true;
+        var vb = document.getElementById('tm-var'); if (vb) vb.classList.add('tm-active');
+        var vx = document.getElementById('tm-var-box'); if (vx) vx.classList.add('open');
+        drawVariance();
+      }
+      var ph = (op.parameters || {}).phase || '';
+      var pct = Math.round((_cursor - _projectStart) / Math.max(1, _projectEnd - _projectStart) * 100);
+      console.log('§TM_PINPOINT_JUMP guid="' + guid + '" phase="' + ph + '" cursor=' + Math.round(_cursor) +
+        ' at=' + new Date(op.end_ts).toISOString().slice(0, 10) + ' built~' + pct + '% (frozen on the item)');
+      return true;
+    }
+    if (_active) return Promise.resolve(doJump());
+    var p = activate();
+    return (p && p.then) ? p.then(function () { return doJump(); }) : Promise.resolve(doJump());
+  };
 
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {

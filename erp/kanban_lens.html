@@ -57,7 +57,7 @@
 
   // status-grouped fold over the resident DataSource. PER-ROW (real doc ids) so each card is a REAL
   // document a drag can SET_STATUS — not a count placeholder. Pure read; no write here. (§KANBAN-FOLD)
-  var TMAP = { c_invoice: 'C_Invoice', c_order: 'C_Order', c_payment: 'C_Payment' };
+  var TMAP = { c_invoice: 'C_Invoice', c_order: 'C_Order', c_payment: 'C_Payment', pp_order: 'PP_Order' };
   // read-the-tip: latest persisted status per doc from the projection's `documents` table (id='DOC:table#id').
   // gap #2 — a reloaded board shows the op-log result, not the stale bundle status; absent ⇒ bundle (honest).
   function tipStatus(projDb) {
@@ -215,7 +215,7 @@
       catch (e) { log('§SIGN skip ' + e.message); }
 
       // register a generic SET_STATUS handler for every (table, action) edge the board can drag.
-      var tables = ['C_Invoice', 'C_Order', 'C_Payment'];
+      var tables = ['C_Invoice', 'C_Order', 'C_Payment', 'PP_Order'];
       var actions = {}; (wfmc.transitions || []).forEach(function (t) { actions[t[1]] = 1; });
       var grants = [];
       tables.forEach(function (T) {
