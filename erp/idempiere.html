@@ -3344,14 +3344,22 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // The "Ask" panel — instant templated SUMMARY of what's shown + auto-generated "see more" question chips.
   //   Every chip is a real fold of the open window's records (NON-INVENT); tapping one regraphs above + answers
   //   in a sentence + offers the next questions. Generative-free: the prose is templated over EXTRACTED facts.
-  function _buildAskPanel(abox, gbox, tab, amtCol) {
+  function _buildAskPanel(abox, grid, tab, amtCol) {
     abox.innerHTML = '';
     var KLf = window.KanbanLens, M = function (v) { return KLf ? KLf.fmtMoney(v) : String(v); };
     var gr = _groupRecs();
-    abox.appendChild(el('div', 'ask-head', 'Want to see more? Tap a question.'));
-    var line = el('div', 'ask-summary'); abox.appendChild(line);
-    var chips = el('div', 'ask-chips'); abox.appendChild(chips);
-    var answer = el('div', 'ask-answer'); abox.appendChild(answer);
+    // collapsible header — a chevron toggles the body (default collapsed on phones to keep first sight clean)
+    var hd = el('button', 'ask-head'); var chev = el('span', 'ask-chev', '▾');
+    hd.appendChild(el('span', null, 'Explore — tap a cut')); hd.appendChild(chev);
+    var bodyA = el('div', 'ask-body');
+    abox.appendChild(hd); abox.appendChild(bodyA);
+    var line = el('div', 'ask-summary'); bodyA.appendChild(line);
+    var chips = el('div', 'ask-chips'); bodyA.appendChild(chips);
+    var answer = el('div', 'ask-answer'); bodyA.appendChild(answer);
+    var collapsed = (typeof window !== 'undefined' && window.innerWidth <= 640);
+    function applyCollapse() { abox.classList.toggle('collapsed', collapsed); chev.textContent = collapsed ? '▸' : '▾'; }
+    hd.addEventListener('click', function () { collapsed = !collapsed; applyCollapse(); console.log('§ASK-COLLAPSE ' + collapsed); });
+    applyCollapse();
     var facts = _renderBars(el('div'), { groups: gr.groups, amtCol: amtCol });   // facts only (throwaway container)
     var s = _records.length + ' ' + tab.name + ' · by ' + gr.label + ': ' +
       facts.keys.slice(0, 3).map(function (k) { return k + ' (' + gr.groups[k].length + ')'; }).join(', ');
@@ -3359,15 +3367,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     line.textContent = s;
     var cols = _records.length ? Object.keys(_records[0]) : [], titleCol = _titleColOf(cols);
     var dims = _dimFields(tab);
+    // a "By X" chip TOGGLES a donut for X into the LEFT grid (fills the empty spot); 2nd tap removes it.
     dims.forEach(function (f) {
       var chip = el('button', 'ask-chip', 'By ' + f.name);
       chip.addEventListener('click', function () {
-        answer.innerHTML = '';   // drill renders BELOW the overview (charts stay laid out)
-        var groups = _groupRecsBy(f);
-        var fc = _renderBars(answer, { title: 'By ' + f.name + ' — ' + tab.name, groups: groups, statusCol: /status/i.test(f.columnName) ? f.columnName : null, amtCol: amtCol, limit: 14 });
-        answer.appendChild(el('div', 'ask-row', f.name + ': ' + fc.keys.length + ' groups · largest ' + fc.topKey + ' (' + groups[fc.topKey].length + ')' +
-          (amtCol && fc.topAmtKey ? ' · top $ ' + fc.topAmtKey + ' ' + M(fc.topAmtVal) : '')));
-        console.log('§ASK chip=by-' + f.columnName + ' groups=' + fc.keys.length);
+        var added = _addDonutCard(grid, f.columnName, 'By ' + f.name, _groupRecsBy(f), /status/i.test(f.columnName) ? f.columnName : null, amtCol);
+        chip.classList.toggle('on', added);
+        console.log('§ASK chip=by-' + f.columnName + ' added=' + added);
       });
       chips.appendChild(chip);
     });
@@ -3381,7 +3387,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§ASK chip=top3');
       });
       chips.appendChild(topChip);
-      // concentration — the FK-ish dimension whose top group dominates by amount (real "anything unusual?")
       var fkDim = dims.filter(function (f) { return /partner|customer|salesrep|vendor/i.test(f.columnName) || /_id$/i.test(f.columnName); })[0];
       if (fkDim) {
         var cChip = el('button', 'ask-chip', 'Anything unusual?');
@@ -3389,49 +3394,69 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           var groups = _groupRecsBy(fkDim), total = 0, top = null, topV = -1;
           Object.keys(groups).forEach(function (k) { var sum = _amtSum(groups[k], amtCol); total += sum; if (sum > topV) { topV = sum; top = k; } });
           var pct = total ? Math.round(topV / total * 100) : 0;
-          answer.textContent = 'By ' + fkDim.name + ': ' + top + ' is ' + pct + '% of value (' + M(topV) + ' of ' + M(total) + ')' +
-            (pct >= 40 ? ' — high concentration.' : ' — fairly even.');
+          answer.textContent = 'By ' + fkDim.name + ': ' + top + ' is ' + pct + '% of value (' + M(topV) + ' of ' + M(total) + ')' + (pct >= 40 ? ' — high concentration.' : ' — fairly even.');
           console.log('§ASK chip=concentration dim=' + fkDim.columnName + ' top=' + pct + '%');
         });
         chips.appendChild(cChip);
       }
     }
-    console.log('§ASK-PANEL summaryLen=' + s.length + ' chips=' + chips.children.length + ' dims=' + dims.length);
+    console.log('§ASK-PANEL summaryLen=' + s.length + ' chips=' + chips.children.length + ' dims=' + dims.length + ' collapsed=' + collapsed);
   }
   // month-bucket a date column → { 'YYYY-MM': rows[] }, chronological (the trend chart).
   function _groupByMonth(field) {
     var g = {}; _records.forEach(function (r) { var d = String(recVal(r, field.columnName) || '').slice(0, 7); if (d) (g[d] = g[d] || []).push(r); }); return g;
   }
-  // DONUT (Odoo pie) — share-of-total for a low-cardinality cut; packs the grid better than full-width bars.
-  //   SVG arcs animate (sweep in), per-slice hover = value·%, centre = the total. Colours = the SHARED palette
-  //   (status semantic / per-key hue). Caps to 6 slices + an "others" arc. All real folds, NON-INVENT.
+  // DONUT (Odoo pie) — share-of-total, SELF-CONTAINED so it snuggles in a tight grid (no side legend):
+  //   the % sits ON each arc, the centre shows the total (and the hovered/touched slice's name+value),
+  //   a LONG-PRESS flips the donut to a pure-text table. SVG arcs sweep in. Caps to 6 slices + "others".
+  //   Colours = SHARED palette (status semantic / per-key hue). All real folds, NON-INVENT.
   function _renderDonut(container, opts) {
     var groups = opts.groups, KL = window.KanbanLens, amtCol = opts.amtCol, NS = 'http://www.w3.org/2000/svg';
     function val(k) { return amtCol ? _amtSum(groups[k], amtCol) : groups[k].length; }
+    function fmtV(v) { return amtCol && KL ? KL.fmtMoney(v) : String(v); }
     var keys = Object.keys(groups).sort(function (a, b) { return val(b) - val(a); });
     var CAP = 6, others = null; if (keys.length > CAP) { others = keys.slice(CAP); keys = keys.slice(0, CAP); }
     var total = 0; Object.keys(groups).forEach(function (k) { total += val(k); });
     function colorFor(k, i) { if (!KL) return 'hsl(' + (i * 53 % 360) + ',45%,52%)'; return opts.statusCol ? KL.statusColor(String(recVal(groups[k][0], opts.statusCol))) : KL.tableColor(k); }
-    var r = 52, cx = 64, cy = 64, sw = 20, circ = 2 * Math.PI * r;
+    var r = 50, cx = 64, cy = 64, sw = 22, circ = 2 * Math.PI * r;
     var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 128 128'); svg.setAttribute('class', 'donut-svg');
     var bg = document.createElementNS(NS, 'circle'); bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r); bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', 'rgba(255,255,255,.05)'); bg.setAttribute('stroke-width', sw); svg.appendChild(bg);
-    var cum = 0, slices = [], legend = el('div', 'donut-legend');
-    function arc(k, color, label, i) {
+    var ctr = document.createElementNS(NS, 'text'); ctr.setAttribute('x', cx); ctr.setAttribute('y', cy - 3); ctr.setAttribute('text-anchor', 'middle'); ctr.setAttribute('dominant-baseline', 'central'); ctr.setAttribute('class', 'donut-center'); ctr.textContent = fmtV(total);
+    var sub = document.createElementNS(NS, 'text'); sub.setAttribute('x', cx); sub.setAttribute('y', cy + 12); sub.setAttribute('text-anchor', 'middle'); sub.setAttribute('class', 'donut-sub'); sub.textContent = 'total';
+    function setCentre(big, small) { ctr.textContent = big; sub.textContent = small; }
+    var cum = 0, slices = [], rows = [];
+    function arc(k, color, label) {
       var v = val(k); var len = total ? v / total * circ : 0, pct = total ? Math.round(v / total * 100) : 0;
       var c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
-      c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', sw);
-      c.setAttribute('stroke-dasharray', '0 ' + circ);
-      c.style.transform = 'rotate(' + (cum / circ * 360 - 90) + 'deg)'; c.style.transformBox = 'fill-box'; c.style.transformOrigin = 'center'; c.style.transition = 'stroke-dasharray .6s cubic-bezier(.22,1,.36,1)';
-      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + (amtCol && KL ? KL.fmtMoney(v) : v) + ' (' + pct + '%)'; c.appendChild(ti);
-      svg.appendChild(c); slices.push({ el: c, len: len, circ: circ }); cum += len;
-      var li = el('div', 'donut-li'); var swx = el('span', 'donut-sw'); swx.style.background = color; li.appendChild(swx); li.appendChild(el('span', 'donut-k', label)); li.appendChild(el('span', 'donut-v', pct + '%')); li.title = label + ' · ' + (amtCol && KL ? KL.fmtMoney(v) : v); legend.appendChild(li);
+      c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', sw); c.setAttribute('stroke-dasharray', '0 ' + circ);
+      c.style.transform = 'rotate(' + (cum / circ * 360 - 90) + 'deg)'; c.style.transformBox = 'fill-box'; c.style.transformOrigin = 'center'; c.style.transition = 'stroke-dasharray .6s cubic-bezier(.22,1,.36,1)'; c.style.cursor = 'pointer';
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + fmtV(v) + ' (' + pct + '%)'; c.appendChild(ti);
+      c.addEventListener('mouseenter', function () { setCentre(pct + '%', label); });
+      c.addEventListener('mouseleave', function () { setCentre(fmtV(total), 'total'); });
+      c.addEventListener('touchstart', function () { setCentre(pct + '%', label); }, { passive: true });
+      svg.appendChild(c);
+      if (pct >= 8) {   // % ON the arc (mid-angle); slim slices stay clean, revealed on hover instead
+        var mid = (cum + len / 2) / circ, ang = (mid * 360 - 90) * Math.PI / 180;
+        var t = document.createElementNS(NS, 'text'); t.setAttribute('x', cx + r * Math.cos(ang)); t.setAttribute('y', cy + r * Math.sin(ang));
+        t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central'); t.setAttribute('class', 'donut-arc-l'); t.textContent = pct + '%'; svg.appendChild(t);
+      }
+      slices.push({ el: c, len: len, circ: circ }); cum += len; rows.push({ label: label, v: v, pct: pct, color: color });
     }
-    keys.forEach(function (k, i) { arc(k, colorFor(k, i), k, i); });
-    if (others) { var og = {}; var ov = 0; others.forEach(function (k) { ov += val(k); }); // synth "others" bucket
-      groups['(others)'] = []; others.forEach(function (k) { groups['(others)'] = groups['(others)'].concat(groups[k]); });
-      arc('(others)', '#5a6472', '(' + others.length + ' more)', 99); delete groups['(others)']; }
-    var ctr = document.createElementNS(NS, 'text'); ctr.setAttribute('x', cx); ctr.setAttribute('y', cy); ctr.setAttribute('text-anchor', 'middle'); ctr.setAttribute('dominant-baseline', 'central'); ctr.setAttribute('class', 'donut-center'); ctr.textContent = amtCol && KL ? KL.fmtMoney(total) : String(total); svg.appendChild(ctr);
-    var wrap = el('div', 'donut-wrap'); wrap.appendChild(svg); wrap.appendChild(legend); container.appendChild(wrap);
+    keys.forEach(function (k, i) { arc(k, colorFor(k, i), k); });
+    if (others) { groups['(others)'] = []; others.forEach(function (k) { groups['(others)'] = groups['(others)'].concat(groups[k]); });
+      arc('(others)', '#5a6472', '(+' + others.length + ')'); delete groups['(others)']; }
+    svg.appendChild(ctr); svg.appendChild(sub);
+    var wrap = el('div', 'donut-wrap'); wrap.appendChild(svg);
+    // long-press → pure-text table (hidden until flipped)
+    var textm = el('div', 'donut-text');
+    rows.forEach(function (ro) { var li = el('div', 'donut-tli'); var s = el('span', 'donut-sw'); s.style.background = ro.color; li.appendChild(s); li.appendChild(el('span', 'donut-k', ro.label)); li.appendChild(el('span', 'donut-v', ro.pct + '% · ' + fmtV(ro.v))); textm.appendChild(li); });
+    wrap.appendChild(textm);
+    var lp = null;
+    function startLP() { lp = setTimeout(function () { wrap.classList.toggle('textmode'); console.log('§DONUT-TEXTMODE on=' + wrap.classList.contains('textmode')); }, 480); }
+    function cancelLP() { if (lp) { clearTimeout(lp); lp = null; } }
+    wrap.addEventListener('mousedown', startLP); wrap.addEventListener('mouseup', cancelLP); wrap.addEventListener('mouseleave', cancelLP);
+    wrap.addEventListener('touchstart', startLP, { passive: true }); wrap.addEventListener('touchend', cancelLP);
+    container.appendChild(wrap);
     requestAnimationFrame(function () { slices.forEach(function (s) { s.el.setAttribute('stroke-dasharray', s.len + ' ' + (s.circ - s.len)); }); });
     return { total: total, slices: keys.length + (others ? 1 : 0) };
   }
@@ -3454,22 +3479,24 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var picked = [], seenFam = {};
     cat.forEach(function (f) { var fam = _family(f.columnName); if (seenFam[fam] || picked.length >= 3) return; seenFam[fam] = 1; picked.push(f); });
     var charts = [];
-    if (statusF) { charts.push({ label: statusF.name, groups: _groupRecsBy(statusF), statusCol: statusF.columnName }); }
-    picked.forEach(function (f) { charts.push({ label: f.name, groups: _groupRecsBy(f) }); });
-    if (dateF) { charts.push({ label: dateF.name + ' (over time)', groups: _groupByMonth(dateF), order: 'key', time: 1 }); }
-    // grid of cards — a cut with ≤7 distinct values reads best as a DONUT (Odoo pie, packs the grid); more
-    //   categories or the time trend stay BARS. The trend card spans the full row. Charts paint instantly.
+    if (statusF) { charts.push({ key: statusF.columnName, label: statusF.name, groups: _groupRecsBy(statusF), statusCol: statusF.columnName }); }
+    picked.forEach(function (f) { charts.push({ key: f.columnName, label: f.name, groups: _groupRecsBy(f) }); });
+    if (dateF) { charts.push({ key: dateF.columnName, label: dateF.name + ' (by month)', groups: _groupByMonth(dateF) }); }
+    // grid of DONUT cards — all donuts, consistent + snuggled. Each is a real fold; top-6 + "others".
     var grid = el('div', 'dash-grid'); gbox.appendChild(grid);
-    var _n = 0, _donuts = 0;
-    charts.forEach(function (c) {
-      var n = Object.keys(c.groups).length, useDonut = !c.time && n >= 2 && n <= 7;
-      var card = el('div', 'dash-card' + (c.time ? ' dash-card-wide' : ''));
-      card.appendChild(el('div', 'dash-chart-h', (c.time ? '' : 'By ') + c.label));
-      if (useDonut) { _renderDonut(card, { groups: c.groups, statusCol: c.statusCol || null, amtCol: amtCol }); _donuts++; }
-      else _renderBars(card, { groups: c.groups, statusCol: c.statusCol || null, amtCol: amtCol, order: c.order || 'count', limit: c.time ? 0 : 12 });
-      grid.appendChild(card); _n++;
-    });
-    console.log('§DASH-OVERVIEW charts=' + _n + ' donuts=' + _donuts + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
+    charts.forEach(function (c) { _addDonutCard(grid, c.key, (c.label.indexOf('(') < 0 ? 'By ' : '') + c.label, c.groups, c.statusCol || null, amtCol); });
+    console.log('§DASH-OVERVIEW donuts=' + charts.length + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
+    return grid;
+  }
+  // add (or toggle off) a donut card in the grid — used by the overview AND by an Ask "By X" chip (fills the
+  //   empty spot on the LEFT). Keyed by dimension so a 2nd tap removes it. Returns true if added.
+  function _addDonutCard(grid, key, title, groups, statusCol, amtCol) {
+    var existing = grid.querySelector('[data-dim="' + key + '"]');
+    if (existing) { grid.removeChild(existing); return false; }
+    var card = el('div', 'dash-card'); card.setAttribute('data-dim', key);
+    card.appendChild(el('div', 'dash-chart-h', title));
+    _renderDonut(card, { groups: groups, statusCol: statusCol, amtCol: amtCol });
+    grid.appendChild(card); return true;
   }
   // DASHBOARD — ONE surface, N lenses (Odoo multi-view). Tabs flip the SAME open-window records; the Graph tab
   //   paints instantly then streams the Ask panel in (never blocks first sight). FUNDAMENTAL LAW: a ⋯-rail lens.
@@ -3490,10 +3517,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var split = el('div', 'dash-split');
         var gbox = el('div', 'dash-gbox dash-main'), abox = el('div', 'dash-abox dash-side');
         split.appendChild(gbox); split.appendChild(abox); body.appendChild(split);
-        _buildOverview(gbox, tab, amtCol);   // several charts flowing down — the first paints instantly
-        abox.appendChild(el('div', 'ask-loading', 'Analyzing…'));   // Ask panel streamed in after the charts paint
+        var grid = _buildOverview(gbox, tab, amtCol);   // donut grid — paints instantly
+        abox.appendChild(el('div', 'ask-loading', 'Analyzing…'));   // Ask panel streamed in after the donuts paint
         var idle = window.requestIdleCallback || function (f) { return setTimeout(f, 120); };
-        idle(function () { _buildAskPanel(abox, gbox, tab, amtCol); });
+        idle(function () { _buildAskPanel(abox, grid, tab, amtCol); });
       } else if (id === 'cards') openKanbanFor(body);
       else if (id === 'pivot') openPivotFor(body);
       else if (id === 'list') openListInto(body);
@@ -4113,18 +4140,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       '.dash-split{display:flex;gap:18px;align-items:flex-start}.dash-main{flex:1 1 auto;min-width:0}.dash-side{flex:0 0 340px;max-width:340px;border-left:1px solid rgba(255,255,255,.10);padding-left:16px;animation:askfade .5s ease;position:sticky;top:0}' +
       '.dash-gbox{margin-bottom:14px}' +
       '@keyframes askfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}' +
-      '.ask-head{font-size:12px;font-weight:700;color:#6c9fff;margin-bottom:6px}.ask-summary{font-size:13px;color:#cfd6e2;line-height:1.5;margin-bottom:10px}' +
+      '.ask-head{display:flex;justify-content:space-between;align-items:center;width:100%;background:transparent;border:none;color:#6c9fff;font-size:12px;font-weight:700;cursor:pointer;padding:0 0 8px}.ask-chev{font-size:10px}' +
+      '.dash-side.collapsed .ask-body{display:none}.ask-summary{font-size:13px;color:#cfd6e2;line-height:1.5;margin-bottom:10px}' +
       '.ask-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px}.ask-chip{background:rgba(108,159,255,.12);border:1px solid rgba(108,159,255,.30);color:#cfe0ff;font-size:12px;padding:5px 11px;border-radius:14px;cursor:pointer}' +
-      '.ask-chip:hover{background:rgba(108,159,255,.24)}.ask-answer{font-size:13px;color:#cfd6e2;line-height:1.5;margin-top:4px}.ask-row{padding:1px 0}.ask-loading{font-size:12px;color:#6a7384;font-style:italic}' +
+      '.ask-chip:hover{background:rgba(108,159,255,.24)}.ask-chip.on{background:#1f6feb;border-color:#1f6feb;color:#fff}.ask-answer{font-size:13px;color:#cfd6e2;line-height:1.5;margin-top:4px}.ask-row{padding:1px 0}.ask-loading{font-size:12px;color:#6a7384;font-style:italic}' +
       '.dash-list{border-collapse:collapse;width:100%;font-size:12px}.dash-list th{text-align:left;color:#6c9fff;font-weight:700;padding:5px 9px;border-bottom:1px solid rgba(255,255,255,.10);white-space:nowrap}' +
       '.dash-list td{padding:4px 9px;border-bottom:1px solid rgba(255,255,255,.05);color:#cfd6e2;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}' +
       '.dash-timeline{padding:8px 2px}.dash-tl-h{font-size:14px;font-weight:700;color:#e8e8ed}.dash-tl-sub{font-size:12px;color:#9aa6b8;margin-top:4px}.dash-tl-note{font-size:12px;color:#6a7384;margin:12px 0;line-height:1.5}' +
       '.dash-tl-rail{position:relative;height:6px;border-radius:3px;background:rgba(255,255,255,.08);margin:14px 0 6px}.dash-tl-fill{height:100%;width:38%;background:linear-gradient(90deg,#6c9fff,#27c08a);border-radius:3px}' +
       // multi-chart overview — a responsive grid of chart cards (donut or bars); the trend card spans full width
       '.dash-chart{margin:0 0 18px}.dash-chart-h{font-size:12px;font-weight:700;color:#8aa0c0;margin-bottom:7px;text-transform:uppercase;letter-spacing:.04em}.chart-more{font-size:11px;color:#6a7384;padding:3px 0 0 6px}' +
-      '.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.dash-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 14px}.dash-card-wide{grid-column:1/-1}' +
-      '.donut-wrap{display:flex;gap:14px;align-items:center}.donut-svg{width:118px;height:118px;flex:0 0 auto}.donut-center{fill:#e8e8ed;font-size:17px;font-weight:700}' +
-      '.donut-legend{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px}.donut-li{display:flex;align-items:center;gap:7px;font-size:12px;color:#cfd6e2}.donut-sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto}.donut-k{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.donut-v{color:#9aa6b8;font-variant-numeric:tabular-nums}' +
+      '.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px}.dash-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;animation:askfade .4s ease}' +
+      '.dash-card .dash-chart-h{align-self:flex-start;margin-bottom:4px}.donut-wrap{display:flex;justify-content:center;width:100%;cursor:pointer;-webkit-user-select:none;user-select:none}.donut-svg{width:148px;height:148px}' +
+      '.donut-center{fill:#e8e8ed;font-size:16px;font-weight:700}.donut-sub{fill:#8aa0c0;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em}.donut-arc-l{fill:#fff;font-size:9px;font-weight:800;paint-order:stroke;stroke:rgba(0,0,0,.5);stroke-width:2.4px;pointer-events:none}' +
+      '.donut-text{display:none;flex-direction:column;gap:5px;width:100%;padding:4px 2px}.donut-wrap.textmode .donut-svg{display:none}.donut-wrap.textmode .donut-text{display:flex}.donut-tli{display:flex;align-items:center;gap:7px;font-size:12px;color:#cfd6e2}.donut-sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto}.donut-tli .donut-k{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.donut-tli .donut-v{color:#9aa6b8;font-variant-numeric:tabular-nums}' +
       // timeline — a sliding FILMSTRIP under a fixed centre playhead (scrub = the strip moves, day centres)
       '.tl-viewport{position:relative;overflow:hidden;height:150px;margin:10px 0 4px;border-radius:9px;background:rgba(255,255,255,.02)}' +
       '.tl-track{position:absolute;left:0;top:8px;display:flex;gap:14px;align-items:flex-end;height:134px;transition:transform .28s cubic-bezier(.22,1,.36,1);will-change:transform}' +
