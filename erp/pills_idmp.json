@@ -39,6 +39,14 @@
       "note": "draggable wfmc board / heat-map fallback (openKanbanFor) — board-columns layout glyph."
     },
     {
+      "id": "pivot",
+      "name": "Pivot",
+      "key": "",
+      "icon": "table",
+      "order": 3.5,
+      "note": "RESUME_360_KANBAN_PIVOT item 3 — the cross-tab Pivot LENS (openPivotFor → in-page overlay iframe of erp/pivot_lens.html?db=ad_seed.db). General engine: any table × row × col × measure (count|GrandTotal|Qty), read-only; cell click = §PIVOT-DRILL + Zoom-Across entry (decision #3). A LENS on the ⋯ rail (FUNDAMENTAL LAW — never native chrome), sibling to kanban/graph. Lucide table glyph (verbatim from panels.js ICONS)."
+    },
+    {
       "id": "rule",
       "name": "Rule",
       "key": "",

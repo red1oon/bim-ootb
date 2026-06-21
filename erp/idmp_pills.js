@@ -184,7 +184,7 @@
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=35').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=36').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
