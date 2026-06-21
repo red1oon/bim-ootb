@@ -3115,7 +3115,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
   }
   // distinct-value count of a column across the open window's records (heat-map cardinality scoring).
-  function _distinctCount(col) { var s = {}; _records.forEach(function (r) { s[String(recVal(r, col))] = 1; }); return Object.keys(s).length; }
+  // ── dashboard compute cache — _distinctCount/_groupRecsBy/_groupRecs are recomputed many times per open
+  //   (each a full _records scan, the folds also re-run fmt per row). Memoize per CURRENT _records array;
+  //   auto-invalidates when _records is reassigned (window/record load) or its length changes — no call-site
+  //   bookkeeping, and a stale fold can never outlive the data it folded. Pure reads, behaviour-identical. ──
+  var _dcCache = {}, _grpCache = {}, _grCache = null, _cacheArr = null, _cacheLen = -1;
+  var _dcCalls = 0, _dcComputes = 0, _grpCalls = 0, _grpComputes = 0;   // whitebox: calls ≫ computes ⇒ dedup working
+  function _dashCacheGate() { if (_cacheArr !== _records || _cacheLen !== _records.length) { _cacheArr = _records; _cacheLen = _records.length; _dcCache = {}; _grpCache = {}; _grCache = null; } }
+  function _distinctCount(col) { _dashCacheGate(); _dcCalls++; if (col in _dcCache) return _dcCache[col]; _dcComputes++; var s = {}; _records.forEach(function (r) { s[String(recVal(r, col))] = 1; }); return (_dcCache[col] = Object.keys(s).length); }
   // Pick the best CATEGORICAL/lookup column for a heat map when there is no docstatus lifecycle: prefer
   // declared FK/list references (tableDirect/table/search/list/yesno) or *_ID columns, with cardinality in a
   // useful band (≥2, < rows — never constant, never unique-per-row). Falls back to any usable column.
@@ -3133,13 +3140,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return best;
   }
   function _groupRecs() {
+    _dashCacheGate(); if (_grCache) return _grCache;
     var tab = _curTab(); if (!tab || !_records.length) return null;
     var flds = _displayFields(tab) || [], pick = null, hasStatus = false;
     for (var i = 0; i < flds.length; i++) { var cn = (flds[i].columnName || '').toLowerCase(); if (cn.indexOf('docstatus') >= 0 || cn.indexOf('status') >= 0) { pick = flds[i]; hasStatus = true; break; } }
     if (!pick) pick = _bestPivot(tab) || flds[0];   // no lifecycle → a sensible lookup, NOT a blind flds[0]
     if (!pick) return null;
     var g = {}; _records.forEach(function (r) { var v = String(fmt(pick, recVal(r, pick.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
-    return { col: pick, label: pick.name, groups: g, tab: tab, hasStatus: hasStatus };
+    return (_grCache = { col: pick, label: pick.name, groups: g, tab: tab, hasStatus: hasStatus });
   }
   // Heat map = the no-pivot fallback for the Kanban (a board with no wfmc states has no drop-zones, so an
   // empty board is useless): tiles per distinct lookup value, intensity ∝ count. Counts are REAL row folds.
@@ -3283,7 +3291,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return (_displayFields(tab) || []).filter(function (f) { var c = _distinctCount(f.columnName); return c >= 2 && c < Math.max(_records.length, 2); });
   }
   function _groupRecsBy(field) {
-    var g = {}; _records.forEach(function (r) { var v = String(fmt(field, recVal(r, field.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); }); return g;
+    _dashCacheGate(); _grpCalls++; var k = field.columnName; if (k in _grpCache) return _grpCache[k];
+    _grpComputes++; var g = {}; _records.forEach(function (r) { var v = String(fmt(field, recVal(r, field.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); });
+    return (_grpCache[k] = g);
   }
   // List lens — the records as a compact table (the iDempiere grid, distilled).
   function openListInto(mount) {
@@ -3364,7 +3374,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var gr = _groupRecs();
     // collapsible header — a chevron toggles the body (default collapsed on phones to keep first sight clean)
     var hd = el('button', 'ask-head'); var chev = el('span', 'ask-chev', '▾');
-    hd.appendChild(el('span', null, 'Explore — tap a cut')); hd.appendChild(chev);
+    hd.appendChild(el('span', null, 'Explore — tap a cut to chart it')); hd.appendChild(chev);
     var bodyA = el('div', 'ask-body');
     abox.appendChild(hd); abox.appendChild(bodyA);
     var line = el('div', 'ask-summary'); bodyA.appendChild(line);
@@ -3382,15 +3392,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var cols = _records.length ? Object.keys(_records[0]) : [], titleCol = _titleColOf(cols);
     var dims = _dimFields(tab);
     // a "By X" chip TOGGLES a donut for X into the LEFT grid (fills the empty spot); 2nd tap removes it.
+    //   Chips whose chart is ALREADY on the grid (the auto-picked overview donuts) start HIGHLIGHTED (.on) +
+    //   tooltip — so the user sees that these chips drive those donuts (tap to remove, tap any other to add).
+    var _titleOn = 'Shown on the left — tap to remove', _titleOff = 'Tap to chart this on the left';
     dims.forEach(function (f) {
-      var chip = el('button', 'ask-chip', 'By ' + f.name);
+      var shown = !!grid.querySelector('[data-dim="' + f.columnName + '"]');
+      var chip = el('button', 'ask-chip' + (shown ? ' on' : ''), 'By ' + f.name);
+      chip.title = shown ? _titleOn : _titleOff;
       chip.addEventListener('click', function () {
         var added = _addDonutCard(grid, f.columnName, 'By ' + f.name, _groupRecsBy(f), /status/i.test(f.columnName) ? f.columnName : null, amtCol);
-        chip.classList.toggle('on', added);
+        chip.classList.toggle('on', added); chip.title = added ? _titleOn : _titleOff;
         console.log('§ASK chip=by-' + f.columnName + ' added=' + added);
       });
       chips.appendChild(chip);
     });
+    console.log('§ASK-CHIPS-SYNC shownOnLoad=' + chips.querySelectorAll('.on').length + ' totalChips=' + dims.length);
     if (amtCol) {
       var topChip = el('button', 'ask-chip', 'Top 3 by ' + amtCol);
       topChip.addEventListener('click', function () {
@@ -3415,6 +3431,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }
     }
     console.log('§ASK-PANEL summaryLen=' + s.length + ' chips=' + chips.children.length + ' dims=' + dims.length + ' collapsed=' + collapsed);
+    // whitebox perf: full Graph build done — distinctCount/groupBy were called far more than computed (memoized).
+    console.log('§DASH-CACHE distinctCount calls=' + _dcCalls + ' computes=' + _dcComputes + ' · groupBy calls=' + _grpCalls + ' computes=' + _grpComputes + ' (saved ' + ((_dcCalls - _dcComputes) + (_grpCalls - _grpComputes)) + ' full scans)');
   }
   // month-bucket a date column → { 'YYYY-MM': rows[] }, chronological (the trend chart).
   function _groupByMonth(field) {
@@ -3565,6 +3583,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   paints instantly then streams the Ask panel in (never blocks first sight). FUNDAMENTAL LAW: a ⋯-rail lens.
   function openDashboard() {
     if (!_session) { status('Log in first'); return; }
+    _cacheArr = null;   // force a fresh compute-cache for this open (covers in-place record edits since last open)
+    _dcCalls = _dcComputes = _grpCalls = _grpComputes = 0;
     var tab = _curTab(); var gr = _groupRecs();
     if (!gr) { status('Open a window with records first'); return; }
     var amtCol = _amountColOf(_records.length ? Object.keys(_records[0]) : []);
