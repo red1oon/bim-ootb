@@ -13,14 +13,6 @@
       "note": "Financial statements + receipt report menu (window.__report.menu → report_overlay.js openMenu). Replaces the former #reportMenuPill fixed float (PR #295 legacy) — reports are now a registry pill, no controls outside the pill bar."
     },
     {
-      "id": "graph",
-      "name": "Graph",
-      "key": "",
-      "icon": "barChart",
-      "order": 2,
-      "note": "by-status bar chart of the open window (openGraphFor) — barChart glyph."
-    },
-    {
       "id": "zoomacross",
       "name": "Zoom Across",
       "title": "Zoom Across",
@@ -31,20 +23,12 @@
       "note": "RED PILL — abstract cross-surface ZOOM ACROSS (record → related SURFACE; generalises iDempiere's native record→window zoom). Surfaces register destinations via window.ZoomAcross.register({id,label,available,launch}); first = BIM Viewer (C_Project BIM band PK>=990000 → open the building scene, ../viewer/viewer.html?db=../buildings/<Value>_extracted.db&bld=<Value>). §AD-GATE showWhen:zoom-across — surfaces when ANY destination is available (IdmpPillZoomGate); off otherwise so the iDempiere chrome stays pure. Keyboard ',' (revived from the retired red-pill shortcut). Modeller etc. later = one more register() call, no pill change. img=redpill.png; hover 'Zoom Across'."
     },
     {
-      "id": "kanban",
-      "name": "Kanban",
+      "id": "dashboard",
+      "name": "Dashboard",
       "key": "",
-      "icon": "layout",
+      "icon": "barChart",
       "order": 3,
-      "note": "draggable wfmc board / heat-map fallback (openKanbanFor) — board-columns layout glyph."
-    },
-    {
-      "id": "pivot",
-      "name": "Pivot",
-      "key": "",
-      "icon": "table",
-      "order": 3.5,
-      "note": "RESUME_360_KANBAN_PIVOT item 3 — the cross-tab Pivot LENS (openPivotFor → in-page overlay iframe of erp/pivot_lens.html?db=ad_seed.db). General engine: any table × row × col × measure (count|GrandTotal|Qty), read-only; cell click = §PIVOT-DRILL + Zoom-Across entry (decision #3). A LENS on the ⋯ rail (FUNDAMENTAL LAW — never native chrome), sibling to kanban/graph. Lucide table glyph (verbatim from panels.js ICONS)."
+      "note": "DASHBOARD — ONE multi-view surface over the open window (Odoo multi-view pattern): tabs Graph / Cards / Pivot / List / Timeline flip the SAME records. The Graph tab paints instantly (animated fold-out bars, rich hover = count·%·Σamount) then STREAMS in the 'Ask' panel — a templated summary of what's shown + auto-generated question chips (By <dimension> / Top-N / concentration) that regraph the real data, all NON-INVENT (extracted facts, no LLM). Retires the separate graph/kanban/pivot rail pills (their handlers remain; openDashboard fans into them). barChart glyph (the familiar graph icon). FUNDAMENTAL LAW: a ⋯-rail lens, never native chrome."
     },
     {
       "id": "rule",

@@ -3163,25 +3163,70 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     b.style.cssText = 'background:#1f6feb;color:#fff;border:none;border-radius:7px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer';
     b.addEventListener('click', fn); bar.appendChild(b); return bar;
   }
-  function openGraphFor() {
+  // DASHBOARD UNIFY — the lenses (Graph/Cards/Pivot/List) are tabs of ONE surface. Each lens fn takes an
+  //   optional `mount` Element: when set it renders INTO the Dashboard tab body; when absent it opens its own
+  //   overlay (back-compat). _lensOut is the single fork. (Guarded `instanceof HTMLElement` so a click Event
+  //   passed as the handler arg is never mistaken for a mount.)
+  function _asMount(m) { return (typeof HTMLElement !== 'undefined' && m instanceof HTMLElement) ? m : null; }
+  function _lensOut(mount, title, content) {
+    if (mount) { mount.innerHTML = ''; mount.appendChild(content); }
+    else _overlay(title, content);
+  }
+  // amount column for a table's records (Σ per group on hover) — AD naming convention, NON-INVENT.
+  function _amountColOf(cols) {
+    function has(c) { return cols.some(function (k) { return k.toLowerCase() === String(c).toLowerCase(); }); }
+    if (has('GrandTotal')) return cols.filter(function (k) { return k.toLowerCase() === 'grandtotal'; })[0];
+    for (var i = 0; i < cols.length; i++) { if (/(Amt|Amount|Total)$/i.test(cols[i]) && !/line/i.test(cols[i])) return cols[i]; }
+    return null;
+  }
+  function _amtSum(rows, amtCol) { var s = 0; if (amtCol) rows.forEach(function (r) { var v = Number(recVal(r, amtCol)); if (isFinite(v)) s += v; }); return s; }
+  // ── shared bar renderer (Graph lens + Ask-panel "By X" regroups use the SAME bars) ──────────────────
+  //   groups: { key -> rows[] } (real record folds). statusCol set ⇒ semantic status palette; else per-key hue.
+  //   Bars FOLD OUT (width 0→target, staggered) after paint so first sight is instant. Rich hover = count · %
+  //   · Σamount. All NON-INVENT — folded from the real records. Returns the facts the Ask panel phrases.
+  function _renderBars(container, opts) {
+    var groups = opts.groups, KL = window.KanbanLens, amtCol = opts.amtCol;
+    var allKeys = Object.keys(groups);
+    var totalN = 0; allKeys.forEach(function (k) { totalN += groups[k].length; });   // % is over ALL groups (honest)
+    var keys = allKeys.slice();
+    if (opts.order === 'key') keys.sort(); else keys.sort(function (a, b) { return groups[b].length - groups[a].length; });
+    var hiddenN = 0;
+    if (opts.limit && keys.length > opts.limit) { hiddenN = keys.length - opts.limit; keys = keys.slice(0, opts.limit); }
+    var max = 1; keys.forEach(function (k) { max = Math.max(max, groups[k].length); });
+    var wrap = el('div', 'chart-wrap');
+    if (opts.title) wrap.appendChild(el('div', 'chart-title', opts.title));
+    var bars = [], totalAmt = 0, topAmtKey = null, topAmtVal = -1;
+    keys.forEach(function (k) {
+      var rows = groups[k], n = rows.length, row = el('div', 'chart-row');
+      row.appendChild(el('span', 'chart-lbl', k));
+      var bw = el('div', 'chart-barw'), b = el('div', 'chart-bar', String(n));
+      if (KL) { var c = opts.statusCol ? KL.statusColor(String(recVal(rows[0], opts.statusCol))) : KL.tableColor(k); b.style.background = c; }
+      var pct = totalN ? Math.round(n / totalN * 100) : 0, tip = k + ' · ' + n + ' (' + pct + '%)';
+      var sum = _amtSum(rows, amtCol);
+      if (amtCol && KL) { tip += ' · Σ ' + KL.fmtMoney(sum); totalAmt += sum; if (sum > topAmtVal) { topAmtVal = sum; topAmtKey = k; } }
+      b.title = tip;
+      b.style.width = '0%'; bars.push({ el: b, target: Math.round(n / max * 100) + '%' });
+      bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row);
+    });
+    if (hiddenN) wrap.appendChild(el('div', 'chart-more', '+ ' + hiddenN + ' more'));
+    container.appendChild(wrap);
+    requestAnimationFrame(function () { bars.forEach(function (bb, i) {
+      bb.el.style.transition = 'width .55s cubic-bezier(.22,1,.36,1)'; bb.el.style.transitionDelay = (i * 45) + 'ms'; bb.el.style.width = bb.target; }); });
+    return { keys: keys, groups: groups, totalN: totalN, topKey: keys[0], topN: keys.length ? groups[keys[0]].length : 0,
+             amtCol: amtCol, totalAmt: totalAmt, topAmtKey: topAmtKey, topAmtVal: topAmtVal };
+  }
+  function openGraphFor(mount) {
+    mount = _asMount(mount);
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
-    var keys = Object.keys(gr.groups), max = 1; keys.forEach(function (k) { max = Math.max(max, gr.groups[k].length); });
+    var amtCol = _amountColOf(_records.length ? Object.keys(_records[0]) : []);
     var wrap = el('div', 'chart-wrap');
-    wrap.appendChild(_viewSwitch('🗂 View as Kanban', openKanbanFor));   // 🗂 launch the board from the graph
-    wrap.appendChild(el('div', 'chart-title', 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)'));
-    // colourful, status-at-a-glance bars (consistent L&F with the Kanban) — KANBAN_MARVEL_SPEC. When the
-    // pivot IS the lifecycle status, colour each bar by the SHARED semantic status palette (green=done etc.,
-    // keyed by the RAW code via recVal); otherwise a deterministic per-key hue. NON-INVENT, no Math.random.
-    var KL = window.KanbanLens, _colored = 0;
-    keys.forEach(function (k) { var rows = gr.groups[k], n = rows.length, row = el('div', 'chart-row');
-      row.appendChild(el('span', 'chart-lbl', k)); var bw = el('div', 'chart-barw'), b = el('div', 'chart-bar', String(n));
-      if (KL) { var c = gr.hasStatus ? KL.statusColor(String(recVal(rows[0], gr.col.columnName))) : KL.tableColor(k);
-        b.style.background = c; _colored++; }
-      b.style.width = Math.round(n / max * 100) + '%'; bw.appendChild(b); row.appendChild(bw); wrap.appendChild(row); });
-    _overlay('Graph', wrap);
-    console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + keys.length + ' colored=' + _colored +
-      ' scheme=' + (gr.hasStatus ? 'status-semantic' : 'per-key-hue') + ' table=' + gr.tab.tableName);
+    if (!mount) wrap.appendChild(_viewSwitch('🗂 View as Kanban', openKanbanFor));   // standalone keeps the toggle
+    var facts = _renderBars(wrap, { title: 'By ' + gr.label + ' — ' + gr.tab.name + ' (' + _records.length + ' rows)',
+      groups: gr.groups, statusCol: gr.hasStatus ? gr.col.columnName : null, amtCol: amtCol });
+    _lensOut(mount, 'Graph', wrap);
+    console.log('§GRAPH-PILL by=' + gr.col.columnName + ' groups=' + facts.keys.length +
+      ' scheme=' + (gr.hasStatus ? 'status-semantic' : 'per-key-hue') + ' amountCol=' + (amtCol || 'none') + ' table=' + gr.tab.tableName);
   }
   // Kanban write-path host state (gap c) — lazy: publish window.ERP once, then mount the REAL draggable board.
   var _kanbanWfmc = null, _kanbanProj = null, _KPROJ = 'idmp_kanban_proj';
@@ -3203,30 +3248,309 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   pivot_lens.html is a self-contained lens (loads sql.js + ?db=); host it as an IN-PAGE overlay iframe so the
   //   iDempiere surface stays put (FUNDAMENTAL LAW: lenses live on the ⋯ rail, never the native chrome). Points
   //   at the live tenant seed (ad_seed.db, same dir as pivot_lens.html). General table×row×col×measure, read-only.
-  function openPivotFor() {
+  function openPivotFor(mount) {
+    mount = _asMount(mount);
     if (!_session) { status('Log in first'); return; }
     var fr = el('iframe');
     fr.src = 'pivot_lens.html?db=ad_seed.db';
-    fr.style.cssText = 'width:100%;height:82vh;border:0;border-radius:10px;background:#0f1420';
+    fr.style.cssText = 'width:100%;height:' + (mount ? '70vh' : '82vh') + ';border:0;border-radius:10px;background:#0f1420';
     fr.setAttribute('title', 'Pivot lens');
-    _overlay('Pivot — table × row × column × measure', fr);
-    console.log('§PIVOT-PILL opened src=' + fr.src);
+    _lensOut(mount, 'Pivot — table × row × column × measure', fr);
+    console.log('§PIVOT-PILL opened src=' + fr.src + ' mounted=' + (!!mount));
   }
-  async function openKanbanFor() {
+  // ── DASHBOARD support: breakdown dimensions, title/list lenses, the streamed Ask panel ──────────────
+  function _titleColOf(cols) {
+    var want = ['DocumentNo', 'Name', 'Value'];
+    for (var w = 0; w < want.length; w++) for (var i = 0; i < cols.length; i++) if (cols[i].toLowerCase() === want[w].toLowerCase()) return cols[i];
+    return null;
+  }
+  // breakdown dimensions = display fields with usable cardinality (≥2, < rows) — the auto-generated questions.
+  function _dimFields(tab) {
+    return (_displayFields(tab) || []).filter(function (f) { var c = _distinctCount(f.columnName); return c >= 2 && c < Math.max(_records.length, 2); });
+  }
+  function _groupRecsBy(field) {
+    var g = {}; _records.forEach(function (r) { var v = String(fmt(field, recVal(r, field.columnName)) || '(blank)'); (g[v] = g[v] || []).push(r); }); return g;
+  }
+  // List lens — the records as a compact table (the iDempiere grid, distilled).
+  function openListInto(mount) {
+    mount = _asMount(mount);
+    var tab = _curTab(); if (!tab) { status('Open a window first'); return; }
+    var flds = (_displayFields(tab) || []).slice(0, 7);
+    var box = el('div'); box.style.cssText = 'overflow:auto;max-height:72vh';
+    var t = el('table', 'dash-list'), hr = el('tr');
+    flds.forEach(function (f) { hr.appendChild(el('th', null, f.name)); }); t.appendChild(hr);
+    _records.slice(0, 200).forEach(function (r) { var tr = el('tr');
+      flds.forEach(function (f) { var v = fmt(f, recVal(r, f.columnName)); tr.appendChild(el('td', null, v == null ? '' : String(v))); }); t.appendChild(tr); });
+    box.appendChild(t); _lensOut(mount, 'List', box);
+    console.log('§DASH-LIST rows=' + Math.min(_records.length, 200) + ' cols=' + flds.length);
+  }
+  // Timeline lens — PREPLANNED panel for the doc-evolution scrubber (op-log journey: worldhist + per-doc dates).
+  //   First cut declares the real date span + what scrubbing will do; the scrub→graph-rewind + doc-swap wiring
+  //   lands next. Honest stub — names the data source, invents nothing.
+  function openTimelineInto(mount) {
+    mount = _asMount(mount);
+    var tab = _curTab();
+    var cols = _records.length ? Object.keys(_records[0]) : [];
+    var KL = window.KanbanLens, titleCol = _titleColOf(cols), amtCol = _amountColOf(cols), kc = _keyCol(tab);
+    var stCol = cols.filter(function (c) { return /docstatus/i.test(c); })[0] || cols.filter(function (c) { return /status/i.test(c); })[0];
+    var box = el('div', 'dash-timeline');
+    var dateF = (_displayFields(tab) || []).filter(function (f) { return /^date/i.test(f.columnName); })[0];
+    box.appendChild(el('div', 'dash-tl-h', 'Timeline — ' + (tab ? tab.name : '') + (dateF ? ' by ' + dateF.name : '')));
+    if (!dateF) { box.appendChild(el('div', 'dash-tl-sub', 'No date column on this window — nothing to scrub.')); _lensOut(mount, 'Timeline', box); console.log('§DASH-TIMELINE dateField=none'); return; }
+    // real dated docs, grouped by DAY (same-day docs stack vertically — Kanban cards, but on a time axis)
+    var items = _records.map(function (r) { var d = String(recVal(r, dateF.columnName) || '').slice(0, 10); return d ? { d: d, r: r } : null; }).filter(Boolean);
+    if (!items.length) { box.appendChild(el('div', 'dash-tl-sub', 'No dated records.')); _lensOut(mount, 'Timeline', box); console.log('§DASH-TIMELINE dated=0'); return; }
+    var byDay = {}; items.forEach(function (it) { (byDay[it.d] = byDay[it.d] || []).push(it.r); });
+    var days = Object.keys(byDay).sort();
+    box.appendChild(el('div', 'dash-tl-sub', items.length + ' ' + tab.name + ' · ' + days.length + ' days · ' + days[0] + ' (oldest, left) → ' + days[days.length - 1] + ' (newest, right)'));
+    // FILMSTRIP — a column per day (chronological L→R, oldest left), each stacking its docs as thumbnail cards.
+    //   A FIXED centre playhead; the strip SLIDES so the scrubbed day sits under it (scrub left = back in time).
+    var viewport = el('div', 'tl-viewport'), track = el('div', 'tl-track'), head = el('div', 'tl-playhead');
+    days.forEach(function (day) {
+      var colE = el('div', 'tl-col'); colE.dataset.day = day;
+      byDay[day].slice(0, 8).forEach(function (r) {
+        var card = el('div', 'tl-card');
+        var av = el('div', 'tl-av', KL ? KL.monogram(tab.tableName) : '··'); if (KL) av.style.background = KL.tableColor(tab.tableName);
+        var mid = el('div', 'tl-mid');
+        mid.appendChild(el('div', 'tl-t', titleCol ? String(recVal(r, titleCol)) : '#' + recVal(r, kc)));
+        if (amtCol) { var a = recVal(r, amtCol); if (a != null && a !== '') mid.appendChild(el('div', 'tl-a', KL ? KL.fmtMoney(a) : String(a))); }
+        card.appendChild(av); card.appendChild(mid);
+        if (KL && stCol) { var st = String(recVal(r, stCol) || ''); if (st) card.style.borderLeft = '3px solid ' + KL.statusColor(st); }
+        colE.appendChild(card);
+      });
+      if (byDay[day].length > 8) colE.appendChild(el('div', 'tl-more', '+' + (byDay[day].length - 8)));
+      colE.appendChild(el('div', 'tl-day', day));
+      track.appendChild(colE);
+    });
+    viewport.appendChild(track); viewport.appendChild(head); box.appendChild(viewport);
+    var slider = el('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(days.length - 1); slider.value = String(days.length - 1); slider.step = '1'; slider.className = 'tl-slider';
+    box.appendChild(slider);
+    var rest = el('div', 'tl-restlabel'); box.appendChild(rest);
+    var colEls = [].slice.call(track.querySelectorAll('.tl-col'));
+    function restOn(idx) {
+      idx = Math.max(0, Math.min(days.length - 1, idx)); var day = days[idx], colE = colEls[idx];
+      colEls.forEach(function (c, i) { c.classList.toggle('rest', i === idx); });
+      // slide the strip so the active column's centre sits under the fixed centre playhead
+      var vw = viewport.clientWidth || 600, cx = colE.offsetLeft + colE.offsetWidth / 2;
+      track.style.transform = 'translateX(' + (vw / 2 - cx) + 'px)';
+      var n = byDay[day].length; rest.textContent = day + ' — ' + n + ' ' + tab.name + (n > 1 ? ' (stacked)' : '');
+      console.log('§DASH-TL-SCRUB idx=' + idx + ' day=' + day + ' docs=' + n + ' shiftPx=' + Math.round(vw / 2 - cx));
+    }
+    slider.addEventListener('input', function () { restOn(parseInt(slider.value, 10)); });
+    _lensOut(mount, 'Timeline', box);
+    requestAnimationFrame(function () { restOn(days.length - 1); });   // start at newest (rightmost), centred — measure after layout
+    console.log('§DASH-TIMELINE records=' + items.length + ' days=' + days.length + ' span=' + days[0] + '..' + days[days.length - 1] + ' dateField=' + dateF.columnName + ' statusCol=' + (stCol || 'none'));
+  }
+  // The "Ask" panel — instant templated SUMMARY of what's shown + auto-generated "see more" question chips.
+  //   Every chip is a real fold of the open window's records (NON-INVENT); tapping one regraphs above + answers
+  //   in a sentence + offers the next questions. Generative-free: the prose is templated over EXTRACTED facts.
+  function _buildAskPanel(abox, grid, tab, amtCol) {
+    abox.innerHTML = '';
+    var KLf = window.KanbanLens, M = function (v) { return KLf ? KLf.fmtMoney(v) : String(v); };
+    var gr = _groupRecs();
+    // collapsible header — a chevron toggles the body (default collapsed on phones to keep first sight clean)
+    var hd = el('button', 'ask-head'); var chev = el('span', 'ask-chev', '▾');
+    hd.appendChild(el('span', null, 'Explore — tap a cut')); hd.appendChild(chev);
+    var bodyA = el('div', 'ask-body');
+    abox.appendChild(hd); abox.appendChild(bodyA);
+    var line = el('div', 'ask-summary'); bodyA.appendChild(line);
+    var chips = el('div', 'ask-chips'); bodyA.appendChild(chips);
+    var answer = el('div', 'ask-answer'); bodyA.appendChild(answer);
+    var collapsed = (typeof window !== 'undefined' && window.innerWidth <= 640);
+    function applyCollapse() { abox.classList.toggle('collapsed', collapsed); chev.textContent = collapsed ? '▸' : '▾'; }
+    hd.addEventListener('click', function () { collapsed = !collapsed; applyCollapse(); console.log('§ASK-COLLAPSE ' + collapsed); });
+    applyCollapse();
+    var facts = _renderBars(el('div'), { groups: gr.groups, amtCol: amtCol });   // facts only (throwaway container)
+    var s = _records.length + ' ' + tab.name + ' · by ' + gr.label + ': ' +
+      facts.keys.slice(0, 3).map(function (k) { return k + ' (' + gr.groups[k].length + ')'; }).join(', ');
+    if (amtCol && facts.totalAmt) s += ' · Σ ' + M(facts.totalAmt) + ' · largest ' + facts.topAmtKey + ' ' + M(facts.topAmtVal);
+    line.textContent = s;
+    var cols = _records.length ? Object.keys(_records[0]) : [], titleCol = _titleColOf(cols);
+    var dims = _dimFields(tab);
+    // a "By X" chip TOGGLES a donut for X into the LEFT grid (fills the empty spot); 2nd tap removes it.
+    dims.forEach(function (f) {
+      var chip = el('button', 'ask-chip', 'By ' + f.name);
+      chip.addEventListener('click', function () {
+        var added = _addDonutCard(grid, f.columnName, 'By ' + f.name, _groupRecsBy(f), /status/i.test(f.columnName) ? f.columnName : null, amtCol);
+        chip.classList.toggle('on', added);
+        console.log('§ASK chip=by-' + f.columnName + ' added=' + added);
+      });
+      chips.appendChild(chip);
+    });
+    if (amtCol) {
+      var topChip = el('button', 'ask-chip', 'Top 3 by ' + amtCol);
+      topChip.addEventListener('click', function () {
+        var sorted = _records.slice().sort(function (a, b) { return _amtSum([b], amtCol) - _amtSum([a], amtCol); }).slice(0, 3);
+        answer.innerHTML = '';
+        sorted.forEach(function (r) { var nm = titleCol ? String(recVal(r, titleCol)) : '#' + recVal(r, _keyCol(tab));
+          answer.appendChild(el('div', 'ask-row', '· ' + nm + ' — ' + M(_amtSum([r], amtCol)))); });
+        console.log('§ASK chip=top3');
+      });
+      chips.appendChild(topChip);
+      var fkDim = dims.filter(function (f) { return /partner|customer|salesrep|vendor/i.test(f.columnName) || /_id$/i.test(f.columnName); })[0];
+      if (fkDim) {
+        var cChip = el('button', 'ask-chip', 'Anything unusual?');
+        cChip.addEventListener('click', function () {
+          var groups = _groupRecsBy(fkDim), total = 0, top = null, topV = -1;
+          Object.keys(groups).forEach(function (k) { var sum = _amtSum(groups[k], amtCol); total += sum; if (sum > topV) { topV = sum; top = k; } });
+          var pct = total ? Math.round(topV / total * 100) : 0;
+          answer.textContent = 'By ' + fkDim.name + ': ' + top + ' is ' + pct + '% of value (' + M(topV) + ' of ' + M(total) + ')' + (pct >= 40 ? ' — high concentration.' : ' — fairly even.');
+          console.log('§ASK chip=concentration dim=' + fkDim.columnName + ' top=' + pct + '%');
+        });
+        chips.appendChild(cChip);
+      }
+    }
+    console.log('§ASK-PANEL summaryLen=' + s.length + ' chips=' + chips.children.length + ' dims=' + dims.length + ' collapsed=' + collapsed);
+  }
+  // month-bucket a date column → { 'YYYY-MM': rows[] }, chronological (the trend chart).
+  function _groupByMonth(field) {
+    var g = {}; _records.forEach(function (r) { var d = String(recVal(r, field.columnName) || '').slice(0, 7); if (d) (g[d] = g[d] || []).push(r); }); return g;
+  }
+  // DONUT (Odoo pie) — share-of-total, SELF-CONTAINED so it snuggles in a tight grid (no side legend):
+  //   the % sits ON each arc, the centre shows the total (and the hovered/touched slice's name+value),
+  //   a LONG-PRESS flips the donut to a pure-text table. SVG arcs sweep in. Caps to 6 slices + "others".
+  //   Colours = SHARED palette (status semantic / per-key hue). All real folds, NON-INVENT.
+  function _renderDonut(container, opts) {
+    var groups = opts.groups, KL = window.KanbanLens, amtCol = opts.amtCol, NS = 'http://www.w3.org/2000/svg';
+    function val(k) { return amtCol ? _amtSum(groups[k], amtCol) : groups[k].length; }
+    function fmtV(v) { return amtCol && KL ? KL.fmtMoney(v) : String(v); }
+    var keys = Object.keys(groups).sort(function (a, b) { return val(b) - val(a); });
+    var CAP = 6, others = null; if (keys.length > CAP) { others = keys.slice(CAP); keys = keys.slice(0, CAP); }
+    var total = 0; Object.keys(groups).forEach(function (k) { total += val(k); });
+    function colorFor(k, i) { if (!KL) return 'hsl(' + (i * 53 % 360) + ',45%,52%)'; return opts.statusCol ? KL.statusColor(String(recVal(groups[k][0], opts.statusCol))) : KL.tableColor(k); }
+    var r = 50, cx = 64, cy = 64, sw = 22, circ = 2 * Math.PI * r;
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 128 128'); svg.setAttribute('class', 'donut-svg');
+    var bg = document.createElementNS(NS, 'circle'); bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r); bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', 'rgba(255,255,255,.05)'); bg.setAttribute('stroke-width', sw); svg.appendChild(bg);
+    var ctr = document.createElementNS(NS, 'text'); ctr.setAttribute('x', cx); ctr.setAttribute('y', cy - 3); ctr.setAttribute('text-anchor', 'middle'); ctr.setAttribute('dominant-baseline', 'central'); ctr.setAttribute('class', 'donut-center'); ctr.textContent = fmtV(total);
+    var sub = document.createElementNS(NS, 'text'); sub.setAttribute('x', cx); sub.setAttribute('y', cy + 12); sub.setAttribute('text-anchor', 'middle'); sub.setAttribute('class', 'donut-sub'); sub.textContent = 'total';
+    function setCentre(big, small) { ctr.textContent = big; sub.textContent = small; }
+    var cum = 0, slices = [], rows = [];
+    function arc(k, color, label) {
+      var v = val(k); var len = total ? v / total * circ : 0, pct = total ? Math.round(v / total * 100) : 0;
+      var c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+      c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', sw); c.setAttribute('stroke-dasharray', '0 ' + circ);
+      c.style.transform = 'rotate(' + (cum / circ * 360 - 90) + 'deg)'; c.style.transformBox = 'fill-box'; c.style.transformOrigin = 'center'; c.style.transition = 'stroke-dasharray .6s cubic-bezier(.22,1,.36,1)'; c.style.cursor = 'pointer';
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + fmtV(v) + ' (' + pct + '%)'; c.appendChild(ti);
+      c.addEventListener('mouseenter', function () { setCentre(pct + '%', label); });
+      c.addEventListener('mouseleave', function () { setCentre(fmtV(total), 'total'); });
+      c.addEventListener('touchstart', function () { setCentre(pct + '%', label); }, { passive: true });
+      svg.appendChild(c);
+      if (pct >= 8) {   // % ON the arc (mid-angle); slim slices stay clean, revealed on hover instead
+        var mid = (cum + len / 2) / circ, ang = (mid * 360 - 90) * Math.PI / 180;
+        var t = document.createElementNS(NS, 'text'); t.setAttribute('x', cx + r * Math.cos(ang)); t.setAttribute('y', cy + r * Math.sin(ang));
+        t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central'); t.setAttribute('class', 'donut-arc-l'); t.textContent = pct + '%'; svg.appendChild(t);
+      }
+      slices.push({ el: c, len: len, circ: circ }); cum += len; rows.push({ label: label, v: v, pct: pct, color: color });
+    }
+    keys.forEach(function (k, i) { arc(k, colorFor(k, i), k); });
+    if (others) { groups['(others)'] = []; others.forEach(function (k) { groups['(others)'] = groups['(others)'].concat(groups[k]); });
+      arc('(others)', '#5a6472', '(+' + others.length + ')'); delete groups['(others)']; }
+    svg.appendChild(ctr); svg.appendChild(sub);
+    var wrap = el('div', 'donut-wrap'); wrap.appendChild(svg);
+    // long-press → pure-text table (hidden until flipped)
+    var textm = el('div', 'donut-text');
+    rows.forEach(function (ro) { var li = el('div', 'donut-tli'); var s = el('span', 'donut-sw'); s.style.background = ro.color; li.appendChild(s); li.appendChild(el('span', 'donut-k', ro.label)); li.appendChild(el('span', 'donut-v', ro.pct + '% · ' + fmtV(ro.v))); textm.appendChild(li); });
+    wrap.appendChild(textm);
+    var lp = null;
+    function startLP() { lp = setTimeout(function () { wrap.classList.toggle('textmode'); console.log('§DONUT-TEXTMODE on=' + wrap.classList.contains('textmode')); }, 480); }
+    function cancelLP() { if (lp) { clearTimeout(lp); lp = null; } }
+    wrap.addEventListener('mousedown', startLP); wrap.addEventListener('mouseup', cancelLP); wrap.addEventListener('mouseleave', cancelLP);
+    wrap.addEventListener('touchstart', startLP, { passive: true }); wrap.addEventListener('touchend', cancelLP);
+    container.appendChild(wrap);
+    requestAnimationFrame(function () { slices.forEach(function (s) { s.el.setAttribute('stroke-dasharray', s.len + ' ' + (s.circ - s.len)); }); });
+    return { total: total, slices: keys.length + (others ? 1 : 0) };
+  }
+  // OVERVIEW — lay out SEVERAL charts flowing down (a real dashboard, not one). Auto-pick from the model's own
+  //   dimensions: lifecycle status, the highest-signal categorical fields (top-N capped), and a date trend.
+  //   Every chart is a real fold of the open-window records. NON-INVENT, zero per-model code.
+  function _buildOverview(gbox, tab, amtCol) {
+    var gr = _groupRecs();
+    var dims = _dimFields(tab);
+    var statusF = dims.filter(function (f) { return /docstatus|status/i.test(f.columnName); })[0] || (gr.hasStatus ? gr.col : null);
+    var dateF = (_displayFields(tab) || []).filter(function (f) { return /^date/i.test(f.columnName); })[0];
+    // categorical = dims minus status/date, ranked by useful cardinality (sweet spot 3..12), FK/customer first
+    var cat = dims.filter(function (f) { return f !== statusF && !/^date/i.test(f.columnName); })
+      .map(function (f) { var c = _distinctCount(f.columnName); var fk = /partner|customer|salesrep|vendor|product|project|org/i.test(f.columnName) ? 0 : 1;
+        var band = (c >= 3 && c <= 12) ? 0 : 1; return { f: f, score: band * 10 + fk * 5 + Math.abs(c - 6) }; })
+      .sort(function (a, b) { return a.score - b.score; }).map(function (x) { return x.f; });
+    // diversify — collapse near-duplicate dimensions (Bill/Ship/Invoice partner all = one "partner" family) so
+    //   the charts don't repeat the same cut. family = column minus role-prefix/_ID; partner variants → 'bpartner'.
+    function _family(cn) { var s = String(cn).toLowerCase().replace(/_id$/, '').replace(/^(bill|ship|drop|pay|c|m|ad)_/, ''); return /bpartner/.test(s) && !/location/.test(s) ? 'bpartner' : s; }
+    var picked = [], seenFam = {};
+    cat.forEach(function (f) { var fam = _family(f.columnName); if (seenFam[fam] || picked.length >= 3) return; seenFam[fam] = 1; picked.push(f); });
+    var charts = [];
+    if (statusF) { charts.push({ key: statusF.columnName, label: statusF.name, groups: _groupRecsBy(statusF), statusCol: statusF.columnName }); }
+    picked.forEach(function (f) { charts.push({ key: f.columnName, label: f.name, groups: _groupRecsBy(f) }); });
+    if (dateF) { charts.push({ key: dateF.columnName, label: dateF.name + ' (by month)', groups: _groupByMonth(dateF) }); }
+    // grid of DONUT cards — all donuts, consistent + snuggled. Each is a real fold; top-6 + "others".
+    var grid = el('div', 'dash-grid'); gbox.appendChild(grid);
+    charts.forEach(function (c) { _addDonutCard(grid, c.key, (c.label.indexOf('(') < 0 ? 'By ' : '') + c.label, c.groups, c.statusCol || null, amtCol); });
+    console.log('§DASH-OVERVIEW donuts=' + charts.length + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
+    return grid;
+  }
+  // add (or toggle off) a donut card in the grid — used by the overview AND by an Ask "By X" chip (fills the
+  //   empty spot on the LEFT). Keyed by dimension so a 2nd tap removes it. Returns true if added.
+  function _addDonutCard(grid, key, title, groups, statusCol, amtCol) {
+    var existing = grid.querySelector('[data-dim="' + key + '"]');
+    if (existing) { grid.removeChild(existing); return false; }
+    var card = el('div', 'dash-card'); card.setAttribute('data-dim', key);
+    card.appendChild(el('div', 'dash-chart-h', title));
+    _renderDonut(card, { groups: groups, statusCol: statusCol, amtCol: amtCol });
+    grid.appendChild(card); return true;
+  }
+  // DASHBOARD — ONE surface, N lenses (Odoo multi-view). Tabs flip the SAME open-window records; the Graph tab
+  //   paints instantly then streams the Ask panel in (never blocks first sight). FUNDAMENTAL LAW: a ⋯-rail lens.
+  function openDashboard() {
+    if (!_session) { status('Log in first'); return; }
+    var tab = _curTab(); var gr = _groupRecs();
+    if (!gr) { status('Open a window with records first'); return; }
+    var amtCol = _amountColOf(_records.length ? Object.keys(_records[0]) : []);
+    var wrap = el('div', 'dash-wrap'), tabsEl = el('div', 'dash-tabs'), body = el('div', 'dash-body');
+    var TABS = [['graph', 'Graph'], ['cards', 'Cards'], ['pivot', 'Pivot'], ['list', 'List'], ['timeline', 'Timeline']];
+    var btns = {};
+    function setActive(id) { Object.keys(btns).forEach(function (k) { btns[k].className = 'dash-tab' + (k === id ? ' active' : ''); }); }
+    function show(id) {
+      setActive(id); body.innerHTML = '';
+      if (id === 'graph') {
+        // landscape two-column: overview charts LEFT, the Ask panel (chips + their sub-charts) RIGHT in the
+        //   empty space. On mobile (CSS) it stacks. The right column fills the desktop width that was idle.
+        var split = el('div', 'dash-split');
+        var gbox = el('div', 'dash-gbox dash-main'), abox = el('div', 'dash-abox dash-side');
+        split.appendChild(gbox); split.appendChild(abox); body.appendChild(split);
+        var grid = _buildOverview(gbox, tab, amtCol);   // donut grid — paints instantly
+        abox.appendChild(el('div', 'ask-loading', 'Analyzing…'));   // Ask panel streamed in after the donuts paint
+        var idle = window.requestIdleCallback || function (f) { return setTimeout(f, 120); };
+        idle(function () { _buildAskPanel(abox, grid, tab, amtCol); });
+      } else if (id === 'cards') openKanbanFor(body);
+      else if (id === 'pivot') openPivotFor(body);
+      else if (id === 'list') openListInto(body);
+      else if (id === 'timeline') openTimelineInto(body);
+      console.log('§DASHBOARD tab=' + id);
+    }
+    TABS.forEach(function (t2) { var b = el('button', 'dash-tab', t2[1]); b.addEventListener('click', function () { show(t2[0]); }); btns[t2[0]] = b; tabsEl.appendChild(b); });
+    var rot = el('div', 'dash-rotate');   // shown only on portrait phones (CSS) — charts/timeline read wider in landscape
+    rot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg><span>Rotate to landscape for the full view</span>';
+    wrap.appendChild(rot); wrap.appendChild(tabsEl); wrap.appendChild(body);
+    _overlay('Dashboard — ' + tab.name, wrap);
+    show('graph');
+    console.log('§DASHBOARD-OPEN table=' + tab.tableName + ' tabs=' + TABS.length + ' amountCol=' + (amtCol || 'none'));
+  }
+  async function openKanbanFor(mount) {
+    mount = _asMount(mount);
     if (!_session) { status('Log in first'); return; }
     var gr = _groupRecs(); if (!gr) { status('Open a window with records first'); return; }
     if (!gr.hasStatus) {                          // no wfmc lifecycle → heat map (a drop-zone board would be empty)
-      var hc = el('div'); hc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+      var hc = el('div'); if (!mount) hc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
       var hroot = el('div'); hroot.style.cssText = 'overflow:auto;max-height:72vh'; hc.appendChild(hroot);
       _renderHeatMap(gr, hroot);
-      _overlay('Heat map — ' + gr.tab.name, hc);
+      _lensOut(mount, 'Heat map — ' + gr.tab.name, hc);
       console.log('§KANBAN-PILL heatmap by=' + gr.col.columnName + ' table=' + gr.tab.tableName);
       return;
     }
     var ok = await _ensureKanbanERP();
     var tab = gr.tab, T = tab.tableName, kc = _keyCol(tab), statusCol = gr.col.columnName;
     if (!ok || !window.KanbanLens) {   // engine/lens absent → honest fall back to the read-only board
-      var rbc = el('div'); rbc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+      var rbc = el('div'); if (!mount) rbc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
       var rb = el('div', 'kb-board'); rbc.appendChild(rb);
       // richer card here too (no bare PK) — pick identity/amount by AD naming convention, NON-INVENT, no per-table code.
       var fcols = _records.length ? Object.keys(_records[0]) : [];
@@ -3240,7 +3564,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           cd.appendChild(el('div', 'kb-card-t', String(recVal(r, fTitle))));
           if (fAmt) { var a = recVal(r, fAmt); if (a != null && a !== '') cd.appendChild(el('div', 'kb-card-a', _KL ? _KL.fmtMoney(a) : String(a))); }
           c.appendChild(cd); }); rb.appendChild(c); });
-      _overlay('Kanban — ' + tab.name + ' (read-only)', rbc);
+      _lensOut(mount, 'Kanban — ' + tab.name + ' (read-only)', rbc);
       console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T + ' titleCol=' + fTitle + ' amountCol=' + (fAmt || 'none')); return;
     }
     // fold the OPEN window's records PER-ROW by RAW docstatus (codes, not labels), overlaying the op-log tip.
@@ -3316,7 +3640,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       window.__idmpKanban = window.KanbanLens.mount({ root: r, board: bd, wfmc: _kanbanWfmc, meta: kmeta, dispatch: _kbDispatch, ctx: {}, onResult: _kbOnResult });
     };
     var container = el('div');
-    container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
+    if (!mount) container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
     // §KANBAN-GROUPBY selector — lists all AD fields with usable cardinality (≥2, < rows), driven by field
     // metadata (no per-model code). DocStatus is first and marked ✦ (draggable); any other field → heat-map.
     var _kbFields = (_displayFields(tab) || []).filter(function (f) {
@@ -3352,7 +3676,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       });
     }
     container.appendChild(root);
-    _overlay('Kanban — ' + tab.name, container);
+    _lensOut(mount, 'Kanban — ' + tab.name, container);
     _kbMountBoard(root, board);
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T + ' groupby=' + gr.col.columnName + ' axis-choices=' + _kbFields.length);
   }
@@ -3453,7 +3777,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   window.IdmpPosting = { posted: openPostedFor, preview: openPreviewFor, affordance: _openPostedAffordance };
   function mountPillRegistry() {
     window.IdmpPillActions = {
-      graph: openGraphFor, kanban: openKanbanFor, pivot: openPivotFor,
+      dashboard: openDashboard,   // unified multi-view (Graph/Cards/Pivot/List/Timeline) — replaces the 3 separate lens pills
+      graph: openGraphFor, kanban: openKanbanFor, pivot: openPivotFor,   // kept: openDashboard fans into them
       rule: openRuleFor, pos: openPosFor,
       share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
       erpdoc: openReadCompare,
@@ -3807,6 +4132,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     s.textContent =
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
       '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}.kb-card-t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kb-card-a{font-size:11px;color:#9aa6b8;margin-top:2px}' +
+      // DASHBOARD (unified multi-view) + Ask panel + Timeline
+      '.dash-wrap{display:flex;flex-direction:column;gap:0}.dash-tabs{display:flex;gap:4px;border-bottom:1px solid rgba(255,255,255,.10);margin-bottom:12px}' +
+      '.dash-tab{background:transparent;border:none;color:#9aa6b8;font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}' +
+      '.dash-tab:hover{color:#e8e8ed}.dash-tab.active{color:#6c9fff;border-bottom-color:#6c9fff}.dash-body{min-height:40vh;max-height:74vh;overflow:auto}' +
+      // landscape two-column: charts LEFT, Ask panel (chips + sub-charts) RIGHT in the idle desktop width
+      '.dash-split{display:flex;gap:18px;align-items:flex-start}.dash-main{flex:1 1 auto;min-width:0}.dash-side{flex:0 0 340px;max-width:340px;border-left:1px solid rgba(255,255,255,.10);padding-left:16px;animation:askfade .5s ease;position:sticky;top:0}' +
+      '.dash-gbox{margin-bottom:14px}' +
+      '@keyframes askfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}' +
+      '.ask-head{display:flex;justify-content:space-between;align-items:center;width:100%;background:transparent;border:none;color:#6c9fff;font-size:12px;font-weight:700;cursor:pointer;padding:0 0 8px}.ask-chev{font-size:10px}' +
+      '.dash-side.collapsed .ask-body{display:none}.ask-summary{font-size:13px;color:#cfd6e2;line-height:1.5;margin-bottom:10px}' +
+      '.ask-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px}.ask-chip{background:rgba(108,159,255,.12);border:1px solid rgba(108,159,255,.30);color:#cfe0ff;font-size:12px;padding:5px 11px;border-radius:14px;cursor:pointer}' +
+      '.ask-chip:hover{background:rgba(108,159,255,.24)}.ask-chip.on{background:#1f6feb;border-color:#1f6feb;color:#fff}.ask-answer{font-size:13px;color:#cfd6e2;line-height:1.5;margin-top:4px}.ask-row{padding:1px 0}.ask-loading{font-size:12px;color:#6a7384;font-style:italic}' +
+      '.dash-list{border-collapse:collapse;width:100%;font-size:12px}.dash-list th{text-align:left;color:#6c9fff;font-weight:700;padding:5px 9px;border-bottom:1px solid rgba(255,255,255,.10);white-space:nowrap}' +
+      '.dash-list td{padding:4px 9px;border-bottom:1px solid rgba(255,255,255,.05);color:#cfd6e2;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}' +
+      '.dash-timeline{padding:8px 2px}.dash-tl-h{font-size:14px;font-weight:700;color:#e8e8ed}.dash-tl-sub{font-size:12px;color:#9aa6b8;margin-top:4px}.dash-tl-note{font-size:12px;color:#6a7384;margin:12px 0;line-height:1.5}' +
+      '.dash-tl-rail{position:relative;height:6px;border-radius:3px;background:rgba(255,255,255,.08);margin:14px 0 6px}.dash-tl-fill{height:100%;width:38%;background:linear-gradient(90deg,#6c9fff,#27c08a);border-radius:3px}' +
+      // multi-chart overview — a responsive grid of chart cards (donut or bars); the trend card spans full width
+      '.dash-chart{margin:0 0 18px}.dash-chart-h{font-size:12px;font-weight:700;color:#8aa0c0;margin-bottom:7px;text-transform:uppercase;letter-spacing:.04em}.chart-more{font-size:11px;color:#6a7384;padding:3px 0 0 6px}' +
+      '.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px}.dash-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;animation:askfade .4s ease}' +
+      '.dash-card .dash-chart-h{align-self:flex-start;margin-bottom:4px}.donut-wrap{display:flex;justify-content:center;width:100%;cursor:pointer;-webkit-user-select:none;user-select:none}.donut-svg{width:148px;height:148px}' +
+      '.donut-center{fill:#e8e8ed;font-size:16px;font-weight:700}.donut-sub{fill:#8aa0c0;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em}.donut-arc-l{fill:#fff;font-size:9px;font-weight:800;paint-order:stroke;stroke:rgba(0,0,0,.5);stroke-width:2.4px;pointer-events:none}' +
+      '.donut-text{display:none;flex-direction:column;gap:5px;width:100%;padding:4px 2px}.donut-wrap.textmode .donut-svg{display:none}.donut-wrap.textmode .donut-text{display:flex}.donut-tli{display:flex;align-items:center;gap:7px;font-size:12px;color:#cfd6e2}.donut-sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto}.donut-tli .donut-k{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.donut-tli .donut-v{color:#9aa6b8;font-variant-numeric:tabular-nums}' +
+      // timeline — a sliding FILMSTRIP under a fixed centre playhead (scrub = the strip moves, day centres)
+      '.tl-viewport{position:relative;overflow:hidden;height:150px;margin:10px 0 4px;border-radius:9px;background:rgba(255,255,255,.02)}' +
+      '.tl-track{position:absolute;left:0;top:8px;display:flex;gap:14px;align-items:flex-end;height:134px;transition:transform .28s cubic-bezier(.22,1,.36,1);will-change:transform}' +
+      '.tl-playhead{position:absolute;left:50%;top:0;width:2px;height:100%;background:rgba(108,159,255,.55);box-shadow:0 0 8px rgba(108,159,255,.8);pointer-events:none}' +
+      '.tl-col{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:9px;transition:background .2s,opacity .2s;opacity:.55}.tl-col.rest{background:rgba(108,159,255,.14);outline:1px solid rgba(108,159,255,.4);opacity:1}' +
+      '.tl-card{display:flex;gap:7px;align-items:center;background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:6px 8px;min-width:140px}' +
+      '.tl-av{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;background:#46506a}.tl-mid{min-width:0}.tl-t{font-size:12px;font-weight:600;color:#e8e8ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}.tl-a{font-size:11px;color:#9aa6b8}' +
+      '.tl-more{font-size:10px;color:#6a7384;text-align:center}.tl-day{font-size:10px;color:#8aa0c0;text-align:center;margin-top:2px;white-space:nowrap}' +
+      '.tl-slider{width:100%;accent-color:#6c9fff;cursor:pointer}.tl-restlabel{font-size:12px;color:#cfe0ff;font-weight:600;margin-top:6px;text-align:center}' +
+      // mobile — snug: scrollable tabs, full-width charts, tighter chips/cards
+      '@media(max-width:640px){.dash-tabs{overflow-x:auto;white-space:nowrap}.dash-tab{padding:8px 11px;font-size:12px}.dash-body{max-height:78vh}' +
+      '.dash-split{flex-direction:column;gap:0}.dash-side{flex:1 1 auto;max-width:none;border-left:none;border-top:1px dashed rgba(255,255,255,.12);padding-left:0;padding-top:12px;margin-top:12px;position:static}' +
+      '.ask-chip{font-size:11px;padding:5px 9px}.ask-summary,.ask-answer{font-size:12px}.chart-lbl{max-width:90px}.tl-card{min-width:118px}.tl-t{max-width:90px}.dash-list td,.dash-list th{padding:4px 6px}}' +
+      // rotate-to-landscape hint — only on portrait phones (charts/timeline read wider in landscape)
+      '.dash-rotate{display:none;align-items:center;gap:8px;background:rgba(108,159,255,.12);border:1px solid rgba(108,159,255,.30);color:#cfe0ff;font-size:12px;padding:7px 11px;border-radius:8px;margin-bottom:10px}' +
+      '.dash-rotate svg{width:15px;height:15px;flex:0 0 auto;animation:dashspin 2.4s linear infinite}@keyframes dashspin{to{transform:rotate(360deg)}}' +
+      '@media(max-width:640px) and (orientation:portrait){.dash-rotate{display:flex}}' +
       '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
     document.head.appendChild(s);
   }
