@@ -527,7 +527,7 @@
 <script src="erp_signer.js?v=1"></script>
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
-<script src="kanban_lens.js?v=3"></script>
+<script src="kanban_lens.js?v=4"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
@@ -3228,9 +3228,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!ok || !window.KanbanLens) {   // engine/lens absent → honest fall back to the read-only board
       var rbc = el('div'); rbc.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
       var rb = el('div', 'kb-board'); rbc.appendChild(rb);
+      // richer card here too (no bare PK) — pick identity/amount by AD naming convention, NON-INVENT, no per-table code.
+      var fcols = _records.length ? Object.keys(_records[0]) : [];
+      function _fhas(c) { return fcols.some(function (k) { return k.toLowerCase() === String(c).toLowerCase(); }); }
+      function _fpick(cands, re) { for (var i = 0; i < cands.length; i++) { if (_fhas(cands[i])) return cands[i]; }
+        if (re) { for (var j = 0; j < fcols.length; j++) { if (re.test(fcols[j])) return fcols[j]; } } return null; }
+      var fTitle = _fpick(['DocumentNo', 'Name', 'Value'], null) || kc, fAmt = _fpick(['GrandTotal'], /(Amt|Amount|Total)$/i);
+      var _KL = window.KanbanLens;
       Object.keys(gr.groups).forEach(function (k) { var c = el('div', 'kb-col'); c.appendChild(el('div', 'kb-colhd', k + ' · ' + gr.groups[k].length));
-        gr.groups[k].slice(0, 25).forEach(function (r) { c.appendChild(el('div', 'kb-card', String(recVal(r, kc)))); }); rb.appendChild(c); });
-      _overlay('Kanban — ' + tab.name + ' (read-only)', rbc); console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T); return;
+        gr.groups[k].slice(0, 25).forEach(function (r) { var cd = el('div', 'kb-card');
+          cd.appendChild(el('div', 'kb-card-t', String(recVal(r, fTitle))));
+          if (fAmt) { var a = recVal(r, fAmt); if (a != null && a !== '') cd.appendChild(el('div', 'kb-card-a', _KL ? _KL.fmtMoney(a) : String(a))); }
+          c.appendChild(cd); }); rb.appendChild(c); });
+      _overlay('Kanban — ' + tab.name + ' (read-only)', rbc);
+      console.log('§KANBAN-PILL readonly cols=' + Object.keys(gr.groups).length + ' table=' + T + ' titleCol=' + fTitle + ' amountCol=' + (fAmt || 'none')); return;
     }
     // fold the OPEN window's records PER-ROW by RAW docstatus (codes, not labels), overlaying the op-log tip.
     // S6 LENS-SWAP (GRAND_LANE): read the tip from the SHARED kernel sidecar (__crud) — the SAME store the
@@ -3795,7 +3806,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var s = document.createElement('style');
     s.textContent =
       '.chart-wrap{max-width:640px}.chart-title{font-weight:700;margin-bottom:12px}.chart-row{display:flex;align-items:center;gap:10px;margin:6px 0}.chart-lbl{width:120px;font-size:12px;color:#9fb0c8;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chart-barw{flex:1;background:rgba(255,255,255,.05);border-radius:6px}.chart-bar{background:linear-gradient(90deg,#1c5fa8,#6c9fff);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;min-width:24px;text-align:right;box-sizing:border-box}' +
-      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}' +
+      '.kb-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}.kb-col{flex:0 0 200px;background:rgba(255,255,255,.04);border-radius:12px;padding:8px}.kb-colhd{font-size:12px;font-weight:700;color:#6c9fff;padding:4px 6px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}.kb-card{background:#1a1f2e;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}.kb-card-t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kb-card-a{font-size:11px;color:#9aa6b8;margin-top:2px}' +
       '.kb-note{font-size:12px;color:#9fb0c8;margin:2px 4px 12px;line-height:1.5}.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.hm-cell{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between;color:#0a1020}.hm-k{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-n{font-size:20px;font-weight:800;align-self:flex-end}';
     document.head.appendChild(s);
   }
