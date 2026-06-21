@@ -3657,16 +3657,22 @@
 
     setTimeout(hookCommitOp, 2000);
 
-    // URL param: ?tm=1 (open time machine) or ?tm=play (open + auto-play forward)
-    var tmParam = new URLSearchParams(location.search).get('tm');
-    if (tmParam) {
+    // URL param: ?tm=1 (open time machine) · ?tm=play (open + auto-play forward) ·
+    //   ?pporder=<id> (PP_ORDER_ZOOM_TM_SPEC §B — deep-link to a manufacturing order's moment; implies tm=1).
+    var _sp = new URLSearchParams(location.search);
+    var tmParam = _sp.get('tm');
+    var ppParam = _sp.get('pporder');
+    if (tmParam || ppParam) {
       // Wait for DB to load before activating
       var _tmWait = setInterval(function() {
         var app = A();
         if (app && app.db && app.scene && app.buildingsRendered && app.buildingsRendered.size > 0 && !app.streaming) {
           clearInterval(_tmWait);
           activate();
-          if (tmParam === 'play') {
+          if (ppParam) {
+            try { window.tmJumpToOrder(ppParam); }                  // straight to the order's construction moment
+            catch (e) { console.log('§TM_ORDER_JUMP deeplink-err ' + e); }
+          } else if (tmParam === 'play') {
             // Jump to start then play forward
             _cursor = _projectStart;
             renderAtTime(_cursor);
@@ -3754,6 +3760,80 @@
     if (_active) return Promise.resolve(doJump());
     var p = activate();
     return (p && p.then) ? p.then(function () { return doJump(); }) : Promise.resolve(doJump());
+  };
+
+  // PP_ORDER_ZOOM_TM_SPEC §B — land the TM at a manufacturing/project order's construction moment. The order
+  // reaches us by IDENTITY (?pporder= / ERP Zoom-Across, never a bespoke link): PP_Order → its phase (the
+  // Description token "<Phase> — <CREW>", the shared key with the gantt phase windows) → the cursor. The shopfloor
+  // S-curve (dashboard) + the ⚖ variance drawer couple to the frozen frame. Honest mode: 'phase' when that phase
+  // has ops on the loaded scene's axis; else 'projected' — the order's finish date mapped onto
+  // [_projectStart,_projectEnd] by its position in the shopfloor span (labelled, never blurred). Returns
+  // Promise<bool>. Whitebox §-log = the proof (the Hospital scene's geom lives in OPFS → live VISUAL deferred).
+  window.tmJumpToOrder = function (ppOrderId) {
+    ppOrderId = Number(ppOrderId);
+    var app = A();
+    var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
+    function fetchOrder() {
+      if (!SQL) { console.log('§TM_ORDER_JUMP skip=no-SQL order=' + ppOrderId); return Promise.resolve(null); }
+      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+        var db = new SQL.Database(new Uint8Array(buf));
+        var r = db.exec('SELECT Description, DateStartSchedule, DateFinishSchedule, C_Project_ID FROM PP_Order WHERE PP_Order_ID=' + ppOrderId);
+        if (!r.length || !r[0].values.length) { db.close(); return null; }
+        var row = r[0].values[0], pid = row[3];
+        var c = db.exec('SELECT COALESCE(SUM(CumulatedAmt),0) FROM PP_Order_Cost WHERE PP_Order_ID=' + ppOrderId);
+        // shopfloor finish-date span (the same orders the S-curve folds) → the projected-mode axis
+        var sp = db.exec('SELECT MIN(o.DateFinishSchedule), MAX(o.DateFinishSchedule) FROM PP_Order o' +
+          ' JOIN PP_Order_Cost oc ON o.PP_Order_ID=oc.PP_Order_ID WHERE o.C_Project_ID=' + Number(pid));
+        db.close();
+        return { desc: row[0], start: Date.parse(row[1]), end: Date.parse(row[2]),
+                 cost: (c.length && c[0].values.length) ? Number(c[0].values[0][0]) : 0,
+                 spanMin: (sp.length && sp[0].values.length) ? Date.parse(sp[0].values[0][0]) : NaN,
+                 spanMax: (sp.length && sp[0].values.length) ? Date.parse(sp[0].values[0][1]) : NaN };
+      }).catch(function (e) { console.log('§TM_ORDER_JUMP fetch-err ' + e.message); return null; });
+    }
+    function doJump(info) {
+      if (!info) { console.log('§TM_ORDER_JUMP miss order=' + ppOrderId + ' (no PP_Order row)'); return false; }
+      if (!_ops.length) { console.log('§TM_ORDER_JUMP skip=no-ops order=' + ppOrderId); return false; }
+      var phase = String(info.desc || '').split(' — ')[0].trim();   // — = em-dash, the generator's token sep
+      var s = Infinity, e = -Infinity;                                    // mode=phase: this phase's window on the axis
+      for (var i = 0; i < _ops.length; i++) {
+        var ph = (_ops[i].parameters || {}).phase || 'Architecture';
+        if (ph === phase) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
+      }
+      var mode;
+      if (isFinite(s)) { _cursor = s; mode = 'phase'; }
+      else {                                                             // mode=projected: order finish → axis position
+        var frac = 0.5;
+        if (isFinite(info.spanMin) && isFinite(info.spanMax) && info.spanMax > info.spanMin && isFinite(info.end))
+          frac = Math.max(0, Math.min(1, (info.end - info.spanMin) / (info.spanMax - info.spanMin)));
+        _cursor = _projectStart + frac * (_projectEnd - _projectStart);
+        mode = 'projected';
+      }
+      renderAtTime(_cursor);
+      try { anchorFromCursor(); } catch (x) {}
+      try { configSlider(); } catch (x) {}
+      if (_twin && !_varVisible) {                                       // couple the 5D cost story (⚖ drawer)
+        _varVisible = true;
+        var vb = document.getElementById('tm-var'); if (vb) vb.classList.add('tm-active');
+        var vx = document.getElementById('tm-var-box'); if (vx) vx.classList.add('open');
+        drawVariance();
+      }
+      if (!_dashVisible) { _dashVisible = true; try { toggleDashDOM(true); } catch (x) {} }
+      try { drawDashboard(); } catch (x) {}                             // drawDashboard lazy-loads the shopfloor S-curve
+      var pct = Math.round((_cursor - _projectStart) / Math.max(1, _projectEnd - _projectStart) * 100);
+      console.log('§TM_ORDER_JUMP order=' + ppOrderId + ' phase="' + phase + '" mode=' + mode +
+        ' cursor=' + Math.round(_cursor) + ' at=' + (isFinite(_cursor) ? new Date(_cursor).toISOString().slice(0, 10) : '—') +
+        ' cost=' + Math.round(info.cost) + ' built~' + pct + '%');
+      return true;
+    }
+    function whenReady() {                                              // activate() is async → wait for the op-log
+      return new Promise(function (resolve) {
+        if (_active && _ops.length) { resolve(); return; }
+        if (!_active) activate();
+        var n = 0, iv = setInterval(function () { if (_ops.length || ++n > 60) { clearInterval(iv); resolve(); } }, 500);
+      });
+    }
+    return whenReady().then(fetchOrder).then(doJump);
   };
 
   // S265 Phase 3: Expose TM state for share URL
