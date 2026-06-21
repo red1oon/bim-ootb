@@ -37,7 +37,7 @@
 <script src="erp_signer.js?v=1"></script>
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
-<script src="kanban_lens.js?v=2"></script>
+<script src="kanban_lens.js?v=3"></script>
 <script>
 (function () {
   'use strict';
@@ -94,6 +94,35 @@
     return folds;
   }
 
+  // Rich-card meta — fold each doc's identity/amount/date from its REAL columns (DICTIONARY-DRIVEN,
+  //   NON-INVENT, zero per-table code), keyed by {table}#{id} to match buildBoard's card keys. The lens
+  //   renderer (KanbanLens.mount meta:) turns this into the avatar+title+amount+date card. (§KANBAN-LENS-META)
+  function foldMeta(db) {
+    var meta = {}, total = 0;
+    Object.keys(TMAP).forEach(function (tb) {
+      try {
+        var T = TMAP[tb], pk = tb + '_id';
+        var ti = db.exec('PRAGMA table_info(' + tb + ')'); if (!ti.length) return;
+        var names = ti[0].values.map(function (r) { return r[1]; });
+        function has(c) { return names.some(function (n) { return n.toLowerCase() === c; }); }
+        function pick(cands, re) {
+          for (var i = 0; i < cands.length; i++) { if (has(cands[i])) return cands[i]; }
+          if (re) { for (var j = 0; j < names.length; j++) { if (re.test(names[j])) return names[j]; } }
+          return null;
+        }
+        var titleCol = pick(['documentno', 'name', 'value'], null) || pk;
+        var amtCol = pick(['grandtotal', 'payamt'], /(amt|amount|total)$/i);
+        var dateCol = pick([], /^date/i);
+        var sel = [pk + ' AS id', titleCol + ' AS t', (amtCol || 'NULL') + ' AS a', (dateCol || 'NULL') + ' AS d'];
+        var r = db.exec('SELECT ' + sel.join(', ') + ' FROM ' + tb); if (!r.length) return;
+        r[0].values.forEach(function (row) { meta[T + '#' + row[0]] = { title: row[1], amount: row[2], date: row[3] }; total++; });
+        log('foldMeta ' + T + ' title=' + titleCol + ' amount=' + (amtCol || 'none') + ' date=' + (dateCol || 'none') + ' rows=' + r[0].values.length);
+      } catch (e) { log('foldMeta skip ' + tb + ': ' + e.message); }
+    });
+    console.log('§KANBAN-LENS-META tables=' + Object.keys(TMAP).length + ' cards=' + total + ' handAuthored=0');
+    return meta;
+  }
+
   async function boot() {
     await loadScript('lib/sql-wasm-fts5.js', 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.js');
     var SQL;
@@ -123,12 +152,14 @@
     // target stage has a column to land in — else _moveCardDom can't place the card (col absent).
     var board = KanbanLens.buildBoard(folds, wfmc, { showEmptyStates: true });
     log('board columns=' + board.columns.length + ' cards=' + board.totalCards + ' sparse=' + board.sparse);
+    var meta = foldMeta(db);   // rich-card meta (title/amount/date) keyed {table}#{id} — same renderer as the in-page board
 
     document.getElementById('gate').style.display = 'none';
     window.__kanban = KanbanLens.mount({
       root: document.getElementById('kanban-root'),
       board: board,
       wfmc: wfmc,
+      meta: meta,
       // STEP-0 DONE — live engine dispatch + ctx pinned by publishERP() (ENGINE_CONTRACT §1; SEND==DRAG==VERB).
       dispatch: (window.ERP && window.ERP.dispatch) ? window.ERP.dispatch : null,
       ctx: (window.ERP && window.ERP.ctx) ? window.ERP.ctx : null,
