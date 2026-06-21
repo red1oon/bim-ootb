@@ -3565,6 +3565,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (pid != null) { var p = _sqlRows('SELECT value FROM m_product WHERE m_product_id=' + Number(pid))[0]; find = p && p.value ? String(p.value) : null; }
         return { bld: String(pr.value), find: find };
       }
+      if (tn === 'pp_order') {                                       // PP_ORDER_ZOOM_TM_SPEC §A — a manufacturing
+        var ppId = recVal(ctx.rec, 'PP_Order_ID');                  //   order → its project's building, in TM mode
+        var pProj = recVal(ctx.rec, 'C_Project_ID');                //   landed at this order's construction moment
+        if (pProj == null || Number(pProj) < 990000) return null;   // only BIM-band project orders carry a scene
+        var ppr = _sqlRows('SELECT value FROM c_project WHERE c_project_id=' + Number(pProj))[0];
+        if (!ppr || !ppr.value) return null;
+        return { bld: String(ppr.value), find: null, tm: { order: Number(ppId) } };   // .tm ⇒ TimeMachine target
+      }
       return null;
     }
     if (window.ZoomAcross) window.ZoomAcross.register({
@@ -3582,6 +3590,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (sc.find) url += '&find=' + encodeURIComponent(sc.find);  // carry the finer scope to the Find panel
         window.open(url, '_blank');
         console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
+      }
+    });
+    // PP_ORDER_ZOOM_TM_SPEC §A — the manufacturing/project order destination: BIM Viewer in TimeMachine mode,
+    //   deep-linked to THIS order (?tm=1&pporder=<id>) so the 4D scrubber + shopfloor S-curve land at its moment.
+    //   available ONLY when the focus resolves a `.tm` scope (a PP_Order) — never for plain C_Project lines.
+    if (window.ZoomAcross) window.ZoomAcross.register({
+      id: 'timemachine', label: 'BIM TimeMachine',
+      available: function (ctx) { var s = _zoomScope(ctx); return !!(s && s.tm && s.bld); },
+      launch: function (ctx) {
+        _connectEnable();                                            // OPT-IN: wire Connect on first Zoom-Across launch
+        var sc = _zoomScope(ctx);
+        if (!sc || !sc.tm || !sc.bld) { status('No BIM model linked to this order'); console.log('§ZOOM-ACROSS no-scope id=timemachine'); return; }
+        var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
+        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' +
+          encodeURIComponent(sc.bld) + '&home=' + homeUrl + '&tm=1&pporder=' + encodeURIComponent(sc.tm.order);
+        window.open(url, '_blank');
+        console.log('§ZOOM-ACROSS launch id=timemachine bld=' + sc.bld + ' pporder=' + sc.tm.order + ' url=' + url);
       }
     });
     // §CONNECT-ERP-SCRUB-START — ERP-side Connect reaction: subscribe selection+timeline from the BIM viewer.
