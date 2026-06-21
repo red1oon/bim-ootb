@@ -718,16 +718,199 @@ function _rwAabbOverlap(c1, s1, c2, s2, tol) {
   return Math.abs(c1 - c2) < (s1 / 2 + s2 / 2 + tol);
 }
 
-function _rwClashesWithArc(px, py, pz, pw, pd, ph, arcs) {
+// Optional `tol` overrides RW_ARC_CLASH_TOL. Positive tol = a REQUIRED standoff (the candidate must stay
+// `tol` metres CLEAR of the box); the default -0.01 lets a pipe touch a wall but not penetrate. The
+// discipline-aware caller (_rwStructTol) passes the cited clearance for the relevant service.
+function _rwClashesWithArc(px, py, pz, pw, pd, ph, arcs, tol) {
+  if (tol === undefined) tol = RW_ARC_CLASH_TOL;
   for (var i = 0; i < arcs.length; i++) {
     var a = arcs[i];
-    if (_rwAabbOverlap(px, pw, a.cx, a.w, RW_ARC_CLASH_TOL) &&
-        _rwAabbOverlap(py, pd, a.cy, a.d, RW_ARC_CLASH_TOL) &&
-        _rwAabbOverlap(pz, ph, a.cz, a.h, RW_ARC_CLASH_TOL)) {
+    if (_rwAabbOverlap(px, pw, a.cx, a.w, tol) &&
+        _rwAabbOverlap(py, pd, a.cy, a.d, tol) &&
+        _rwAabbOverlap(pz, ph, a.cz, a.h, tol)) {
       return true;
     }
   }
   return false;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COORDINATION SEAM: discipline-vs-discipline arbitration (CoordinationHandler)
+// ═══════════════════════════════════════════════════════════════
+//
+// The clash gate above keeps services out of STRUCTURE. CoordinationHandler (mep_coordination.js,
+// docs/MEP_COORDINATION_RULESET.md) decides what happens when two MEP SERVICES of different disciplines
+// share ceiling/riser space: WHO HOLDS, WHO YIELDS, by HOW MUCH (cited min-separation), and the MOVE.
+// NON-INVENT: it acts (displaces a yielder) ONLY on VERIFIED rules; PENDING rules are logged as advisory.
+// Revert-safe: this is an OPT-IN pass (rwCoordinate); the insert/emit paths above are untouched.
+
+// our RouteWalker disc codes → CoordinationHandler disc codes.
+var RW_DISC_TO_COORD = {
+  CW: 'DWATER', SP: 'DRAIN', PLB: 'DWATER',   // CW=pressurised cold water, SP=gravity soil/waste
+  ELEC: 'ELEC', DATA: 'DATA', ACMV: 'ACMV', FP: 'FP', STRUCT: 'STRUCT', MEP: null
+};
+function _rwToCoordDisc(d) { return RW_DISC_TO_COORD[d] !== undefined ? RW_DISC_TO_COORD[d] : null; }
+
+// Discipline-aware STRUCTURE clearance (metres) for the clash gate. Only FP (sprinkler) carries a cited
+// VERIFIED standoff from non-supporting structure (NFPA 13 §18.4.9, 50mm via CoordinationHandler); every
+// other service keeps the default touch-but-don't-penetrate tol (no citation = no invented clearance).
+function _rwStructTol(disc, coord) {
+  if (coord && disc === 'FP') {
+    var s = coord.minSeparation('FP', 'STRUCT');
+    if (s && s.status === 'VERIFIED') return s.mm / 1000;  // positive = required standoff
+  }
+  return RW_ARC_CLASH_TOL;
+}
+
+// Closest distance between two 3D segments a={from,to}, b={from,to} (+ the closest points).
+function _rwSegDist(a, b) {
+  function sub(p, q) { return [p[0]-q[0], p[1]-q[1], p[2]-q[2]]; }
+  function dot(p, q) { return p[0]*q[0] + p[1]*q[1] + p[2]*q[2]; }
+  var d1 = sub(a.to, a.from), d2 = sub(b.to, b.from), r = sub(a.from, b.from);
+  var A = dot(d1, d1), E = dot(d2, d2), F = dot(d2, r);
+  var s, t, B = dot(d1, d2), C = dot(d1, r), den = A*E - B*B;
+  s = den !== 0 ? Math.min(1, Math.max(0, (B*F - C*E) / den)) : 0;
+  t = E !== 0 ? (B*s + F) / E : 0;
+  t = Math.min(1, Math.max(0, t));
+  s = A !== 0 ? Math.min(1, Math.max(0, (B*t - C) / A)) : 0;
+  var p1 = [a.from[0]+d1[0]*s, a.from[1]+d1[1]*s, a.from[2]+d1[2]*s];
+  var p2 = [b.from[0]+d2[0]*t, b.from[1]+d2[1]*t, b.from[2]+d2[2]*t];
+  var dd = sub(p1, p2);
+  return { dist: Math.sqrt(dot(dd, dd)), p1: p1, p2: p2 };
+}
+
+/**
+ * Coordinate routed MEP segments of MULTIPLE disciplines against each other (the discipline-vs-discipline
+ * gate). For every cross-discipline segment pair closer than their cited min-separation, ask
+ * CoordinationHandler.arbitrate() who holds / who yields / how far / how. ENFORCED decisions DISPLACE the
+ * yielding segment perpendicular to clear the separation; PENDING decisions are logged advisory (not moved).
+ *
+ * @param {Object} routesByDisc  { ACMV:[{from,to}], ELEC:[...], FP:[...] } RouteWalker disc codes; segments
+ *                                are mutated in place when a move is enforced.
+ * @param {Object} coord         CoordinationHandler (window.CoordinationHandler / mep_coordination.js).
+ * @returns {Object} { rawClashes, resolvedClashes, enforced, advisory, decisions:[...] }
+ */
+function rwCoordinate(routesByDisc, coord) {
+  if (!coord) { console.warn('§RW_COORD_FAIL no CoordinationHandler'); return null; }
+  var discs = Object.keys(routesByDisc).filter(function (d) { return _rwToCoordDisc(d); });
+  var decisions = [], enforced = 0, advisory = 0, raw = 0;
+
+  function clashCount() {
+    var n = 0;
+    for (var i = 0; i < discs.length; i++) for (var j = i + 1; j < discs.length; j++) {
+      var ca = _rwToCoordDisc(discs[i]), cb = _rwToCoordDisc(discs[j]);
+      var sepM = coord.minSeparation(ca, cb).mm / 1000;
+      var A = routesByDisc[discs[i]], Bs = routesByDisc[discs[j]];
+      for (var x = 0; x < A.length; x++) for (var y = 0; y < Bs.length; y++) {
+        if (_rwSegDist(A[x], Bs[y]).dist < sepM) n++;
+      }
+    }
+    return n;
+  }
+
+  raw = clashCount();
+
+  for (var i = 0; i < discs.length; i++) for (var j = i + 1; j < discs.length; j++) {
+    var da = discs[i], db = discs[j];
+    var ca = _rwToCoordDisc(da), cb = _rwToCoordDisc(db);
+    var arb = coord.arbitrate(ca, cb);
+    var sepM = arb.minSepMm / 1000;
+    var holdDisc = arb.holds === ca ? da : db;       // which routewalker bucket holds
+    var yieldDisc = arb.yields === ca ? da : db;     // which yields
+    var holders = routesByDisc[holdDisc], yielders = routesByDisc[yieldDisc];
+    var pairClashes = 0, pairMoved = 0;
+
+    for (var y = 0; y < yielders.length; y++) {
+      for (var h = 0; h < holders.length; h++) {
+        var d = _rwSegDist(yielders[y], holders[h]);
+        if (d.dist >= sepM) continue;
+        pairClashes++;
+        if (arb.enforce) {
+          // displace the yielding segment to clear the cited separation (perpendicular push)
+          var v = [d.p1[0]-d.p2[0], d.p1[1]-d.p2[1], d.p1[2]-d.p2[2]];
+          var vl = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+          if (vl < 1e-9) { v = [0, 0, 1]; vl = 1; }                 // degenerate (coincident) → push up
+          var push = (sepM - d.dist) + 1e-4;
+          var mv = [v[0]/vl*push, v[1]/vl*push, v[2]/vl*push];
+          yielders[y].from = [yielders[y].from[0]+mv[0], yielders[y].from[1]+mv[1], yielders[y].from[2]+mv[2]];
+          yielders[y].to   = [yielders[y].to[0]+mv[0],   yielders[y].to[1]+mv[1],   yielders[y].to[2]+mv[2]];
+          yielders[y].coordMoved = true;
+          pairMoved++; h = -1;   // re-test this yielder against all holders after the move
+        }
+      }
+    }
+    if (pairClashes) {
+      (arb.enforce ? (enforced += pairMoved) : (advisory += pairClashes));
+      decisions.push({ a: da, b: db, holds: holdDisc, yields: yieldDisc, minSepMm: arb.minSepMm,
+        move: arb.move, enforce: arb.enforce, clashes: pairClashes, moved: pairMoved });
+      console.log('§RW_COORD ' + da + '×' + db + ' clashes=' + pairClashes +
+        ' holds=' + holdDisc + ' yields=' + yieldDisc + ' sep=' + arb.minSepMm + 'mm' +
+        ' ' + (arb.enforce ? ('ENFORCED moved=' + pairMoved) : 'ADVISORY (rule not VERIFIED)'));
+    }
+  }
+
+  var resolved = clashCount();
+  console.log('§RW_COORD_SUMMARY raw=' + raw + ' resolved=' + resolved +
+    ' enforcedMoves=' + enforced + ' advisoryClashes=' + advisory);
+  return { rawClashes: raw, resolvedClashes: resolved, enforced: enforced, advisory: advisory, decisions: decisions };
+}
+
+/**
+ * Enforce a discipline's cited clearance from STRUCTURE (the discipline-aware extension of the structural
+ * clash gate). Only FP (sprinkler) carries a VERIFIED standoff (NFPA 13 §18.4.9 50mm via CoordinationHandler);
+ * every other service keeps the default touch-but-don't-penetrate behaviour. Segments that violate the
+ * required clearance are pushed off the offending box by the axis-of-least-penetration. Mutates `segs`.
+ *
+ * @param {Array}  segs        [{ from:[x,y,z], to:[x,y,z] }] route segments of one discipline.
+ * @param {string} disc        RouteWalker disc code (FP / ELEC / ACMV / …).
+ * @param {Array}  structBoxes [{ cx,cy,cz,w,d,h }] real ARC structural envelope boxes.
+ * @param {Object} coord       CoordinationHandler.
+ * @returns {Object} { raw, resolved, moved, tol, enforced }
+ */
+function rwClearStructure(segs, disc, structBoxes, coord) {
+  var tol = _rwStructTol(disc, coord);          // FP → +0.05 (50mm standoff); else RW_ARC_CLASH_TOL (touch)
+  var enforced = tol > 0;                        // a positive standoff is a VERIFIED, enforceable clearance
+  var cross = RW_PIPE_CROSS / 1000;
+
+  function clashesAt(seg) {                      // pipe midpoint + cross-section vs the structural boxes
+    var mx = (seg.from[0]+seg.to[0])/2, my = (seg.from[1]+seg.to[1])/2, mz = (seg.from[2]+seg.to[2])/2;
+    return _rwClashesWithArc(mx, my, mz, cross, cross, cross, structBoxes, tol);
+  }
+  function offending(seg) {                      // the box the pipe midpoint violates (for the push vector)
+    var mx = (seg.from[0]+seg.to[0])/2, my = (seg.from[1]+seg.to[1])/2, mz = (seg.from[2]+seg.to[2])/2;
+    for (var i = 0; i < structBoxes.length; i++) {
+      var a = structBoxes[i];
+      if (_rwAabbOverlap(mx, cross, a.cx, a.w, tol) && _rwAabbOverlap(my, cross, a.cy, a.d, tol) &&
+          _rwAabbOverlap(mz, cross, a.cz, a.h, tol)) return a;
+    }
+    return null;
+  }
+
+  var raw = 0; segs.forEach(function (s) { if (clashesAt(s)) raw++; });
+  var moved = 0;
+  if (enforced) {
+    segs.forEach(function (s) {
+      var guard = 0;
+      while (clashesAt(s) && guard++ < 8) {
+        var a = offending(s); if (!a) break;
+        var mx = (s.from[0]+s.to[0])/2, my = (s.from[1]+s.to[1])/2, mz = (s.from[2]+s.to[2])/2;
+        // push out along the axis of least penetration (the cheapest way to reach the required standoff)
+        var penX = (a.w/2 + cross/2 + tol) - Math.abs(mx - a.cx);
+        var penY = (a.d/2 + cross/2 + tol) - Math.abs(my - a.cy);
+        var mvx = 0, mvy = 0;
+        if (penX <= penY) mvx = (mx >= a.cx ? 1 : -1) * (penX + 1e-4);
+        else              mvy = (my >= a.cy ? 1 : -1) * (penY + 1e-4);
+        s.from = [s.from[0]+mvx, s.from[1]+mvy, s.from[2]];
+        s.to   = [s.to[0]+mvx,   s.to[1]+mvy,   s.to[2]];
+        s.coordMoved = true;
+      }
+      if (s.coordMoved) moved++;
+    });
+  }
+  var resolved = 0; segs.forEach(function (s) { if (clashesAt(s)) resolved++; });
+  console.log('§RW_CLEAR_STRUCT disc=' + disc + ' tol=' + (tol*1000).toFixed(0) + 'mm ' +
+    (enforced ? 'ENFORCED' : 'advisory(touch)') + ' raw=' + raw + ' resolved=' + resolved + ' moved=' + moved);
+  return { raw: raw, resolved: resolved, moved: moved, tol: tol, enforced: enforced };
 }
 
 
