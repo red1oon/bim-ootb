@@ -121,8 +121,41 @@
     return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; });
   }
 
+  // ── FK → display resolution (iDempiere shows the referenced record's IDENTIFIER, not the raw PK) ──────
+  //   A column ending in _ID is a foreign key; resolve the referenced table by convention (role-prefixes
+  //   folded: Bill_/Ship_ BPartner → C_BPartner, SalesRep/CreatedBy → AD_User, …) and read its identifier
+  //   column (Name/DocumentNo/Value/…). NON-INVENT: a real lookup over the loaded db; unresolved → raw id.
+  function refTableFor(col) {
+    var c = String(col).toLowerCase().replace(/_id$/, '');
+    if (/bpartner$/.test(c)) return 'c_bpartner';
+    if (c === 'salesrep' || c === 'createdby' || c === 'updatedby' || c === 'ad_user') return 'ad_user';
+    if (c === 'c_doctypetarget') return 'c_doctype';
+    return c;   // by convention the base IS the table name
+  }
+  function identifierCol(db, tb) {
+    var cols; try { var r = db.exec('SELECT * FROM ' + tb + ' LIMIT 1'); if (!r.length) return null; cols = r[0].columns.map(function (x) { return x.toLowerCase(); }); } catch (e) { return null; }
+    var pri = ['name', 'documentno', 'value', 'iso_code', 'description', 'title'];
+    for (var i = 0; i < pri.length; i++) if (cols.indexOf(pri[i]) >= 0) return pri[i];
+    return null;
+  }
+  function tableExists(db, tb) { try { return !!db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)=lower('" + tb + "') LIMIT 1").length; } catch (e) { return false; } }
+  function lookupMap(db, col) {
+    if (!/_id$/i.test(col)) return null;
+    var tb = refTableFor(col); if (!tableExists(db, tb)) return null;
+    var idc = identifierCol(db, tb); if (!idc) return null;
+    var map = {}, pkc = tb + '_id';
+    try { var r = db.exec('SELECT ' + pkc + ', ' + idc + ' FROM ' + tb); if (r.length) r[0].values.forEach(function (row) { if (row[1] != null) map[String(row[0])] = String(row[1]); }); }
+    catch (e) { return null; }
+    log('lookup ' + col + ' → ' + tb + '.' + idc + ' (' + Object.keys(map).length + ' values)');
+    return { map: map, refTable: tb, idCol: idc };
+  }
+  function display(lk, raw) { if (raw == null) return '(blank)'; var s = String(raw); return (lk && lk.map[s] != null) ? lk.map[s] : s; }
+  // friendly axis label — drop the _ID suffix so the header/selector read like iDempiere field names (best-effort).
+  function pretty(col) { return String(col).replace(/_id$/i, '').replace(/_/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); }).trim() || col; }
+
   // Build the cross-tab: rowField × colField → measure
   function buildPivot(db, tb, rowF, colF, msr) {
+    var rowLk = lookupMap(db, rowF), colLk = lookupMap(db, colF);
     var KP = pk(tb);
     // read all rows with the 3 columns we need + PK
     var cols = [KP, rowF, colF];
@@ -138,8 +171,8 @@
     var rowKeys = {}, colKeys = {};
     var cells = {};   // 'rowV|colV' → { count, sum, ids }
     rows.forEach(function (r) {
-      var rv = String(r[rowF] == null ? '(blank)' : r[rowF]);
-      var cv = String(r[colF] == null ? '(blank)' : r[colF]);
+      var rv = display(rowLk, r[rowF]);   // FK → identifier (iDempiere-style), else raw value
+      var cv = display(colLk, r[colF]);
       rowKeys[rv] = 1; colKeys[cv] = 1;
       var k = rv + '|' + cv;
       var cell = cells[k] = cells[k] || { count: 0, sum: 0, ids: [] };
@@ -160,7 +193,7 @@
     var t = document.createElement('table'); t.className = 'pv-table';
     // header row
     var htr = document.createElement('tr');
-    var th0 = document.createElement('th'); th0.textContent = pv.rowF + ' \\ ' + pv.colF; htr.appendChild(th0);
+    var th0 = document.createElement('th'); th0.textContent = pretty(pv.rowF) + ' \\ ' + pretty(pv.colF); htr.appendChild(th0);
     pv.cols.forEach(function (cv) { var th = document.createElement('th'); th.textContent = cv; htr.appendChild(th); });
     var thT = document.createElement('th'); thT.textContent = 'Total'; htr.appendChild(thT);
     t.appendChild(htr);
@@ -218,7 +251,7 @@
     ['pv-row', 'pv-col'].forEach(function (id, i) {
       var sel = document.getElementById(id); sel.innerHTML = '';
       cats.forEach(function (c, j) {
-        var opt = document.createElement('option'); opt.value = c; opt.textContent = c;
+        var opt = document.createElement('option'); opt.value = c; opt.textContent = pretty(c);
         if (j === i) opt.selected = true;   // default: row=first, col=second
         sel.appendChild(opt);
       });
