@@ -31,6 +31,20 @@ const readDl = async (dl)=>{const p=await dl.path();return fs.readFileSync(p,'ut
   await clickPill(page,'dashboard');
   await page.waitForFunction(()=>document.querySelector('.dash-card .donut-svg'),{timeout:10000});
 
+  // CHIP SYNC — Explore chips for already-shown donuts start highlighted (.on); §ASK-CHIPS-SYNC shownOnLoad>0.
+  await page.waitForFunction(()=>document.querySelector('.dash-side .ask-chip'),{timeout:5000}).catch(()=>{});
+  await page.waitForTimeout(150);
+  const onChips=await page.evaluate(()=>document.querySelectorAll('.dash-side .ask-chip.on').length);
+  const syncLog=logs.filter(l=>/§ASK-CHIPS-SYNC/.test(l)).pop()||'';
+  const syncShown=Number((syncLog.match(/shownOnLoad=(\d+)/)||[])[1]);
+  ok.chipSync = onChips>0 && syncShown>0 && onChips===syncShown;
+  console.log('§W-CHIP-SYNC domOn='+onChips+' :: '+syncLog+' :: '+(ok.chipSync?'OK':'FAIL'));
+  // PERF — distinctCount/groupBy memoized: §DASH-CACHE calls ≫ computes (saved scans>0).
+  const cacheLog=logs.filter(l=>/§DASH-CACHE/.test(l)).pop()||'';
+  const saved=Number((cacheLog.match(/saved (\d+)/)||[])[1]);
+  ok.cache = /§DASH-CACHE/.test(cacheLog) && saved>0;
+  console.log('§W-CACHE :: '+cacheLog+' :: '+(ok.cache?'OK':'FAIL'));
+
   // per-card CSV: open the export menu on the first donut card → CSV → capture the download, parse it back.
   await page.click('.dash-card .dash-export');
   await page.waitForSelector('.dash-exmenu .dash-exmi',{timeout:4000});
