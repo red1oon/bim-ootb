@@ -31,7 +31,7 @@
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src
     : (typeof location !== 'undefined' ? location.href : '');
   const ready = (typeof fetch === 'function')
-    ? fetch(new URL('dagevu_catalog.json?v=6', _base).href).then(function (r) { return r.json(); }).then(function (j) {
+    ? fetch(new URL('dagevu_catalog.json?v=7', _base).href).then(function (r) { return r.json(); }).then(function (j) {
         GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
         DB_PRODUCTS = (j.products || []).map(function (p) {
           return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
@@ -104,8 +104,17 @@
     assemblies() { return ASSEMBLIES; },                                  // [{id,name,level,category,w,d,h,children:[…]}]
     assembly(id) { return ASM_BY_ID[id] || null; },
     isAssembly(id) { return !!ASM_BY_ID[id]; },
-    // expand to a flat list of leaf placements [{hash,x,y,z,rot,role}] in WORLD space. Yaw is about +Z so a
-    // child's local (dx,dy) rotates by the parent yaw; dz is unaffected. depth-cap + cycle-guard (visited set).
+    // expand to a flat list of leaf placements [{hash,x,y,z,rot,role}] in WORLD space — a FAITHFUL port of the
+    // Java PlacementCollectorVisitor (the proven Rosetta BOM-chain). Per child:
+    //   • the parent yaw rotates the child's (dx,dy); dz is unaffected (yaw is about +Z)
+    //   • a cumulative MIRROR:X/Y reflection NEGATES the child's (dx,dy) instead of rotating it, and propagates
+    //     down the stack (PlacementCollectorVisitor.java:347-356, 391, 1144-1149)
+    //   • this BOM's OWN origin (a.ox/oy/oz, from m_bom.origin_x/y/z) is folded onto every child anchor on
+    //     descent (PlacementCollectorVisitor.java:393-399)
+    //   • a LEAF child whose offset is LBD-corner (ch.lbd, the §4 tack convention) gets its half-extent added
+    //     AXIS-ALIGNED to recover the box CENTRE (cx=anchor+offset+xySign*halfW, onLeaf:1276-1280) — exactly
+    //     what place() then seats the centred box on. WALL_LINEAR children already encode the centre → not lbd.
+    // depth-cap + cycle-guard (visited set).
     expandAssembly(id, placement, _depth, _seen) {
       const a = ASM_BY_ID[id]; if (!a) return [];
       _depth = _depth || 0; _seen = _seen || {};
@@ -113,13 +122,32 @@
       _seen = Object.assign({}, _seen); _seen[id] = true;
       placement = placement || {};
       const px = placement.x || 0, py = placement.y || 0, pz = placement.z || 0, pr = placement.rot || 0;
+      const pm = placement.mirror || '';                                   // cumulative mirror axis ('' | 'X' | 'Y')
       const rad = pr * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
+      const ox = a.ox || 0, oy = a.oy || 0, oz = a.oz || 0;                // this BOM's own origin (folded on descent)
       const out = [];
       (a.children || []).forEach(ch => {
-        const wx = px + (cs * ch.dx - sn * ch.dy), wy = py + (sn * ch.dx + cs * ch.dy), wz = pz + (ch.dz || 0);
+        let dx = ch.dx, dy = ch.dy;
+        if (pm) { dx = -dx; dy = -dy; }                                    // MIRROR:X/Y reflects X&Y (no rotation)
+        else { const x2 = cs * dx - sn * dy, y2 = sn * dx + cs * dy; dx = x2; dy = y2; }
+        const wx = px + dx + ox, wy = py + dy + oy, wz = pz + (ch.dz || 0) + oz;
+        const childMir = ch.mirror || pm;                                  // set by this line, else inherit parent's
         const wrot = ((pr + (ch.rotDeg || 0)) % 360 + 360) % 360;
-        if (ch.isBom) { const sub = this.expandAssembly(ch.ref, { x: wx, y: wy, z: wz, rot: wrot }, _depth + 1, _seen); for (let i = 0; i < sub.length; i++) out.push(sub[i]); }
-        else if (this.get(ch.ref)) out.push({ hash: ch.ref, x: +wx.toFixed(4), y: +wy.toFixed(4), z: +wz.toFixed(4), rot: wrot, role: ch.role });
+        if (ch.isBom) {
+          const sub = this.expandAssembly(ch.ref, { x: wx, y: wy, z: wz, rot: wrot, mirror: childMir }, _depth + 1, _seen);
+          for (let i = 0; i < sub.length; i++) out.push(sub[i]);
+        } else {
+          const c = this.get(ch.ref); if (!c) return;
+          let cx = wx, cy = wy, cz = wz;
+          if (ch.lbd && c.bbox) {                                          // LBD-corner offset → +half = box CENTRE
+            const sign = pm ? -1 : 1;                                      // xySign under mirror (onLeaf:1277)
+            const hw = (c.bbox[1] - c.bbox[0]) / 2, hd = (c.bbox[3] - c.bbox[2]) / 2;
+            cx = wx + sign * hw; cy = wy + sign * hd;     // x/y get +half = box CENTRE (place() centres in x/y).
+            // cz stays wz: bboxFromDims bases the proxy box at z=0, so place() seats the BASE at z = LBD bottom
+            // (= the BOM dz); the Java AABB minZ is exactly dz, so NO half is added in z (would float the box).
+          }
+          out.push({ hash: ch.ref, x: +cx.toFixed(4), y: +cy.toFixed(4), z: +cz.toFixed(4), rot: wrot, role: ch.role });
+        }
       });
       return out;
     },
@@ -140,7 +168,7 @@
       // retries cleanly, and we check r.ok (a 404/empty service-worker response must not flow into r.json()).
       if (!this._geomP) {
         this._geomP = (typeof fetch === 'function')
-          ? fetch(new URL('dagevu_geometries.json?v=5', _base).href)
+          ? fetch(new URL('dagevu_geometries.json?v=6', _base).href)
               .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
               .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
               .catch(e => { console.warn(TAG + ' geometries load failed (will retry next insert) ' + e); this._geomP = null; return null; })
