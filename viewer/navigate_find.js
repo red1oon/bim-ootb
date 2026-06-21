@@ -179,7 +179,7 @@
       '</div>',
       // S275: Selected item summary + inline navigate button
       // BIM\u2192Project TASK A: indicative 5D cost of the selection (docs/BIMtoProject.md \u00A7A)
-      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><a id="find-erp-open" target="_blank" rel="noopener" title="Open the created Project Order in iDempiere (GardenWorld)">open \u2197</a><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><a id="find-erp-open" target="_blank" rel="noopener" title="Open the created Project Order in iDempiere (GardenWorld)">open \u2197</a><button class="find-nav-inline" id="find-whatif-btn" title="What-if schedule: slip a phase, watch the finish-to-start chain re-fold in blue">What-if</button><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
@@ -3350,6 +3350,13 @@
 
     // ── BIM→Project TASK C: wire the > to ERP button (folds the selection via window.ProjFold) ──
     if (elErpBtn) { elErpBtn.tabIndex = 0; elErpBtn.onclick = function () { _pushToErp(); }; }
+
+    // ── §S6 what-if: open the schedule what-if panel on the folded project (window.WhatIfPanel) ──
+    var elWhatIf = document.getElementById('find-whatif-btn');
+    if (elWhatIf) { elWhatIf.tabIndex = 0; elWhatIf.onclick = function () {
+      if (window.WhatIfPanel) window.WhatIfPanel.open();
+      else if (A.status) A.status.textContent = 'What-if engine not loaded';
+    }; }
 
     // ── Expose for navigate.js Section D and external callers ──
     A.clearHighlight = clearHighlight;
