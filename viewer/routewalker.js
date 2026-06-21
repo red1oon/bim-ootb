@@ -23,6 +23,7 @@ var RW_PIPE_NOMINAL_MM = 50;
 var RW_PIPE_CROSS = RW_PIPE_NOMINAL_MM * 1.5;  // bbox cross-section
 var RW_MAX_PAIR_DIST = 50.0;  // metres — skip pairs > 50m apart
 var RW_ARC_CLASH_TOL = -0.01; // metres — pipes may touch walls but not penetrate
+var RW_WALL_SNAP_MAX = 1.5;   // metres — a wall-host fixture snaps onto a real wall within this; else keeps nominal
 
 // ─── MEP product → IFC class mapping ────────────────────────
 var RW_IFC_MAP = {
@@ -341,7 +342,16 @@ function rwPlaceFixtures(rooms, opts) {
     offRows[0].values.forEach(function (v) { var o = {}; cols.forEach(function (c, i) { o[c] = v[i]; }); offsets[v[0]] = o; });
   }
 
-  var out = [];
+  // WALL-MOUNT FIDELITY: a WALL-host fixture (switch/outlet/wall-aircon) nominally lands at the room SET's aabb
+  // EDGE — the furniture-extent, not a real wall. Snap it onto the nearest REAL wall solid (the building's
+  // arc_envelope thin-and-tall boxes, same source the clash gate uses) so switches/outlets actually mount on a
+  // wall surface. Honest fallback: where SH's PARTIAL wall model has no wall within RW_WALL_SNAP_MAX, the fixture
+  // keeps its nominal edge position (never teleported across the building). opts.wallBoxes injects them directly
+  // (witness); else they self-load from opts.buildingName.
+  var wallBoxes = opts.wallBoxes ||
+    (opts.buildingName ? _rwLoadArcEnvelopeFromDb(opts.buildingName).filter(function (a) { return Math.min(a.w, a.d) < 0.5 && a.h > 1.5; }) : []);
+
+  var out = [], snappedN = 0;
   rooms.forEach(function (room) {
     var spaceType = _rwRoleToSpace(room.type || room.role);
     var bomRows = _rwDb.exec(
@@ -361,9 +371,15 @@ function rwPlaceFixtures(rooms, opts) {
       var info = RW_IFC_MAP[product] || RW_IFC_MAP._DEFAULT;
       for (var q = 0; q < qty; q++) {
         var pos = _rwComputePosition(room, offset, host, q, qty);
+        var wsnap = false;
+        if (host === 'WALL' && wallBoxes.length) {
+          var sn = _rwSnapToWall(pos.x, pos.y, pos.z, wallBoxes, RW_WALL_SNAP_MAX);
+          if (sn.snapped) { pos.x = sn.x; pos.y = sn.y; wsnap = true; snappedN++; }
+        }
         out.push({
           product: product, ifcClass: info.cls, disc: info.disc, rgba: info.rgba,
-          x: pos.x, y: pos.y, z: pos.z, room: (room.name || spaceType), hostSurface: host, placementRule: rule
+          x: pos.x, y: pos.y, z: pos.z, room: (room.name || spaceType), hostSurface: host, placementRule: rule,
+          wallSnapped: wsnap
         });
       }
     });
@@ -371,9 +387,34 @@ function rwPlaceFixtures(rooms, opts) {
 
   var byDisc = {};
   out.forEach(function (f) { byDisc[f.disc] = (byDisc[f.disc] || 0) + 1; });
-  console.log('§RW_FIX rooms=' + rooms.length + ' fixtures=' + out.length +
+  console.log('§RW_FIX rooms=' + rooms.length + ' fixtures=' + out.length + ' wallSnapped=' + snappedN +
     ' disc=' + Object.keys(byDisc).map(function (k) { return k + ':' + byDisc[k]; }).join(' '));
   return out;
+}
+
+// Snap a wall-host fixture onto the nearest REAL wall solid (arc_envelope thin-and-tall box). Walls are thin in
+// ONE horizontal axis; mount the fixture on the box face nearest the point (the room-facing side) + a small
+// offset, clamped to the wall's span. Only snaps if a wall is within maxDist (else honest fallback to nominal).
+function _rwSnapToWall(x, y, z, wallBoxes, maxDist) {
+  var best = null, bestD = Infinity;
+  for (var i = 0; i < wallBoxes.length; i++) {
+    var a = wallBoxes[i];
+    if (z < a.cz - a.h / 2 - 0.10 || z > a.cz + a.h / 2 + 0.10) continue;   // fixture height must fall within the wall
+    var dx = Math.max(Math.abs(x - a.cx) - a.w / 2, 0);
+    var dy = Math.max(Math.abs(y - a.cy) - a.d / 2, 0);
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  if (!best || bestD > (maxDist || 1.5)) return { x: x, y: y, z: z, snapped: false };
+  var nx = x, ny = y;
+  if (best.w <= best.d) {                                                    // thin in X → wall runs along Y
+    nx = best.cx + (x >= best.cx ? 1 : -1) * (best.w / 2 + 0.02);
+    ny = Math.max(best.cy - best.d / 2, Math.min(best.cy + best.d / 2, y));
+  } else {                                                                   // thin in Y → wall runs along X
+    ny = best.cy + (y >= best.cy ? 1 : -1) * (best.d / 2 + 0.02);
+    nx = Math.max(best.cx - best.w / 2, Math.min(best.cx + best.w / 2, x));
+  }
+  return { x: nx, y: ny, z: z, snapped: true, dist: bestD };
 }
 
 // Mirror of _rwApplyPattern's pairing, but collects endpoint pairs into `out`.
