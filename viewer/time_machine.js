@@ -2819,6 +2819,29 @@
     for (var i = 0; i < V.phases.length; i++) { var p = V.phases[i]; if (_cursor >= p.winStart && _cursor <= p.winEnd) return i; }
     return -1;
   }
+  // E3 / W-SHOP-DATES — the 4D counterpart to the 5D cost Δ. DOCTRINE (TM_4D5D §S3/§4): there is NO actual-date
+  // column to read (PP_Order.DateStart/DateFinish are NULL by design), so the schedule slip is a PROJECTION FROM
+  // COST — never an invented actual date: slip = planned-duration × (r−1), r = CommittedAmt/PlannedAmt (the real
+  // twin). Planned durations are REAL (C_ProjectPhase.StartDate/EndDate, per-order PP_Order.DateStartSchedule/
+  // Finish). Honestly labelled "projected from cost". Ripple/dependency is S6 — phases project INDEPENDENTLY here.
+  var _DAY = 86400000;
+  function _computeScheduleProjection(V) {
+    if (!V) return null;
+    var phases = V.phases.map(function (p) {
+      var durDays = (isFinite(p.startDate) && isFinite(p.endDate) && p.endDate > p.startDate)
+        ? Math.round((p.endDate - p.startDate) / _DAY) : 0;
+      var r = p.pCost > 0 ? p.aCost / p.pCost : 1;
+      var slipDays = Math.round(durDays * (r - 1));            // +late / −early, mirrors the cost over/under sign
+      return { phase: p.phase, durDays: durDays, r: r, slipDays: slipDays,
+               projEnd: isFinite(p.endDate) ? p.endDate + slipDays * _DAY : NaN, marquee: p.marquee };
+    });
+    var projDurDays = (isFinite(V.plannedStart) && isFinite(V.plannedEnd) && V.plannedEnd > V.plannedStart)
+      ? Math.round((V.plannedEnd - V.plannedStart) / _DAY) : 0;
+    var rProj = V.tP > 0 ? V.tA / V.tP : 1;                    // project-level ratio (no phase compounding = no ripple)
+    var projSlipDays = Math.round(projDurDays * (rProj - 1));
+    return { phases: phases, projDurDays: projDurDays, rProj: rProj, projSlipDays: projSlipDays,
+             projEnd: isFinite(V.plannedEnd) ? V.plannedEnd + projSlipDays * _DAY : NaN };
+  }
   function drawVariance() {
     if (!_ops.length) return;
     if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline (phase windows)
@@ -2832,6 +2855,9 @@
     if (!V) { if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">No project records for this model</div>'; return; }
     var fmtD = function (ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '—'; };
     var curIdx = _varPhaseUnderCursor(V);
+    var SP = _computeScheduleProjection(V);                     // E3 — the projected-from-cost schedule slip (4D Δ)
+    var slipColor = function (d) { return d >= 0 ? '#ff6b6b' : '#26a69a'; };
+    var slipTxt = function (d) { return (d >= 0 ? '+' : '') + d + ' d'; };
 
     // header — the headline COST pair (READ from the twin) + the planned schedule span. Honest labels:
     // cost Δ is "from records"; the date span is the planned baseline (no actual-date column yet → §S3).
@@ -2846,7 +2872,10 @@
           '<span style="color:' + (V.dCost >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.dCost >= 0 ? '+' : '') + V.pctOver + '%, ' +
           (V.dCost >= 0 ? '+' : '') + _money(V.dCost) + ')</span></div>' +
         '<div style="color:#9fd6ff">Schedule ' + fmtD(V.plannedStart) + ' → ' + fmtD(V.plannedEnd) +
-          ' <span style="color:#888">(planned baseline)</span></div>';
+          ' <span style="color:#888">(planned baseline)</span></div>' +
+        (SP ? '<div style="color:#ffb74d">Projected finish ' + fmtD(SP.projEnd) +
+          ' <span style="color:' + slipColor(SP.projSlipDays) + '">(' + slipTxt(SP.projSlipDays) + ')</span>' +
+          ' <span style="color:#888">projected from cost</span></div>' : '');
     }
 
     // canvas — one bar per phase on the SAME axis the cursor scrubs; bar color = phase, edge cap red/green by
@@ -2895,15 +2924,20 @@
       V.phases.forEach(function (p, i) {
         var dc = (p.dCost >= 0 ? '+' : '') + _money(p.dCost);
         var col = p.dCost > 0 ? '#ff6b6b' : '#26a69a';
+        var sp = SP ? SP.phases[i] : null;                      // E3 — the per-phase projected schedule slip
+        var spTxt = sp ? ' <span style="color:' + slipColor(sp.slipDays) + '" title="projected from cost">' + slipTxt(sp.slipDays) + '</span>' : '';
         html += '<div style="display:flex;justify-content:space-between;gap:6px' + (i === curIdx ? ';color:#fff;font-weight:bold' : '') + '">' +
           '<span>' + (p.marquee ? '⚠ ' : '') + p.phase + '</span>' +
-          '<span style="color:' + col + '">' + dc + ' (' + (p.pct >= 0 ? '+' : '') + p.pct + '%)</span></div>';
+          '<span style="color:' + col + '">' + dc + ' (' + (p.pct >= 0 ? '+' : '') + p.pct + '%)' + spTxt + '</span></div>';
       });
       list.innerHTML = html;
     }
     console.log('§TM_VARIANCE source=twin building="' + _twin.building + '" phases=' + V.phases.length +
       ' plannedCost=' + V.tP + ' committedCost=' + V.tA + ' over=' + V.pctOver + '% curPhase=' +
       (curIdx >= 0 ? V.phases[curIdx].phase : '-'));
+    if (SP) console.log('§SCHED_PROJECT source=projected-from-cost building="' + _twin.building +
+      '" projEnd=' + fmtD(SP.projEnd) + ' projSlipDays=' + SP.projSlipDays + ' rProj=' + SP.rProj.toFixed(3) +
+      ' phases=' + SP.phases.map(function (x) { return x.phase + ':' + (x.slipDays >= 0 ? '+' : '') + x.slipDays + 'd'; }).join(','));
   }
 
   function drawGanttMini() {
