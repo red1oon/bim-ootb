@@ -189,7 +189,7 @@
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=4" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=5" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -1402,7 +1402,8 @@ async function autoRouteMEP(asm, leaves) {
   // building_room, baked from its OWN extracted BOM) × the real recipe. Structural-only buildings carry no MEP
   // leaves and SH has no pipe anchors, so this is the only MEP a dropped SH gets — proven W-ROUTEWALK-FIXTURES-DB.
   const rooms = (typeof rwLoadRooms === 'function' && name) ? rwLoadRooms(name) : [];
-  const fixtures = (rooms.length && typeof rwPlaceFixtures === 'function') ? rwPlaceFixtures(rooms) : [];
+  // buildingName lets rwPlaceFixtures snap WALL-host fixtures onto the building's REAL wall solids (arc_envelope).
+  const fixtures = (rooms.length && typeof rwPlaceFixtures === 'function') ? rwPlaceFixtures(rooms, { buildingName: name }) : [];
   if (!segs.length && !fixtures.length) { console.log('§MODELLER autoroute no-MEP building="' + name + '"'); return { found: 0, routed: 0 }; }
   // World bbox min of placed structural leaves = origin of BOM coordinate frame in world space
   const bmin = [Infinity, Infinity, Infinity];
