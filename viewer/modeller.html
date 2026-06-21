@@ -189,7 +189,7 @@
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=4" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=5" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -368,6 +368,52 @@ if (bXray) bXray.onclick = async () => {
   if (_soundOn) audioCue(r.on ? 'rollout' : 'rollin');
 };
 
+// ── PROGRESSIVE WALK REVEAL (step E) ────────────────────────────────────────────────────────────
+// The routed MEP fixtures don't all blink on at once — they POP into the scene one-by-one over ~1.5s, in commit
+// order (= rwPlaceFixtures' room-major order → reads room-by-room), with a whoosh swell at the start, a soft tick
+// per fixture, and a completion chord. Pure render-time animation over the ALREADY-committed signed ops — it only
+// toggles mesh.visible, never mutates geometry or the op-log, so it composes with X-ray (fixtures pop in glowing)
+// and any later scrub/re-fold simply rebuilds them visible. window.__revealWalkPlan exposes the deterministic
+// schedule for the headless witness (no racing on rAF).
+let _walkTimer = null;
+function revealWalk(opts) {
+  opts = opts || {};
+  if (_walkTimer) { clearInterval(_walkTimer); _walkTimer = null; }
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const fx = _fixtureColorMap();
+  const meshes = g ? g.children.filter(m => m.isMesh && m.userData && fx[m.userData.featureId] != null)
+                      .sort((a, b) => a.userData.featureId - b.userData.featureId) : [];
+  const n = meshes.length;
+  const DURATION = opts.durationMs || 1500;
+  window.__revealWalkPlan = meshes.map((m, i) => ({ featureId: m.userData.featureId, t: Math.round((i / Math.max(1, n - 1)) * DURATION) }));
+  if (!n) { window.__revealWalkStarted = { hiddenAtStart: 0, durationMs: DURATION }; window.__revealWalkResult = { revealed: 0, durationMs: 0 }; window.__revealWalkDone = true; return { planned: 0 }; }
+  meshes.forEach(m => { m.visible = false; });                          // hide ALL fixtures up front (the "before")
+  window.__revealWalkStarted = { hiddenAtStart: n, durationMs: DURATION };
+  window.__revealWalkDone = false;
+  if (window.A && A.requestRender) A.requestRender();
+  if (_soundOn) audioCue('whoosh');
+  const startT = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  let i = 0;
+  _walkTimer = setInterval(() => {
+    if (i >= n) {
+      clearInterval(_walkTimer); _walkTimer = null;
+      if (_soundOn) audioCue('rollout');                                // completion chord — "all systems go"
+      window.__revealWalkResult = { revealed: n, durationMs: Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - startT) };
+      window.__revealWalkDone = true;
+      setStat('all systems go — ' + n + ' fixtures online');
+      console.log('§MODELLER reveal-walk-done revealed=' + n + ' ms=' + window.__revealWalkResult.durationMs);
+      return;
+    }
+    meshes[i].visible = true;                                           // pop the next fixture in
+    if (_soundOn) audioCue('pop');
+    if (window.A && A.requestRender) A.requestRender();
+    i++;
+  }, DURATION / n);
+  console.log('§MODELLER reveal-walk-start fixtures=' + n + ' durationMs=' + DURATION);
+  return { planned: n, durationMs: DURATION };
+}
+window.__revealWalk = revealWalk;
+
 // ── 2D SKETCH MODE ────────────────────────────────────────────────────────────────────────────
 // Click on the XY ground plane to drop profile points; the planegcs solver cleans up the polygon
 // (auto H/V), then Extrude folds the solved profile into a solid via GEOM_EXTRUDE_POLY.
@@ -393,7 +439,7 @@ function audioCue(kind) {
   const ac = _actx(); if (!ac) return;
   try {
     const t = ac.currentTime;
-    const TONES = { author: [330, 523], commit: [392, 587], cut: [294, 220], tick: [660], export: [523, 784], clear: [220, 165], rollout: [392, 494, 587, 740, 880], rollin: [740, 587, 392] };
+    const TONES = { author: [330, 523], commit: [392, 587], cut: [294, 220], tick: [660], export: [523, 784], clear: [220, 165], rollout: [392, 494, 587, 740, 880], rollin: [740, 587, 392], whoosh: [165, 220, 294, 392, 523], pop: [880] };
     (TONES[kind] || [440]).forEach((f, i) => {
       const o = ac.createOscillator(), g = ac.createGain(), ts = t + i * 0.06;
       o.type = 'sine'; o.frequency.setValueAtTime(f, ts);
@@ -1356,7 +1402,8 @@ async function autoRouteMEP(asm, leaves) {
   // building_room, baked from its OWN extracted BOM) × the real recipe. Structural-only buildings carry no MEP
   // leaves and SH has no pipe anchors, so this is the only MEP a dropped SH gets — proven W-ROUTEWALK-FIXTURES-DB.
   const rooms = (typeof rwLoadRooms === 'function' && name) ? rwLoadRooms(name) : [];
-  const fixtures = (rooms.length && typeof rwPlaceFixtures === 'function') ? rwPlaceFixtures(rooms) : [];
+  // buildingName lets rwPlaceFixtures snap WALL-host fixtures onto the building's REAL wall solids (arc_envelope).
+  const fixtures = (rooms.length && typeof rwPlaceFixtures === 'function') ? rwPlaceFixtures(rooms, { buildingName: name }) : [];
   if (!segs.length && !fixtures.length) { console.log('§MODELLER autoroute no-MEP building="' + name + '"'); return { found: 0, routed: 0 }; }
   // World bbox min of placed structural leaves = origin of BOM coordinate frame in world space
   const bmin = [Infinity, Infinity, Infinity];
@@ -1417,6 +1464,9 @@ async function autoRouteMEP(asm, leaves) {
   setStat('routed ' + routed + ' runs + ' + placedFx + ' fixtures for ' + name);
   console.log('§MODELLER autoroute-done building="' + name + '" routed=' + routed + ' fixtures=' + placedFx +
     '/' + fixtures.length + ' disc=' + JSON.stringify(fxDisc));
+  // Step E: the placed fixtures POP in room-by-room over ~1.5s (whoosh → ticks → chord) — the "all systems go" reveal.
+  // (__suppressWalk lets the colour/x-ray self-tests inspect the static placed scene without the animation racing them.)
+  if (placedFx > 0 && typeof revealWalk === 'function' && !window.__suppressWalk) revealWalk();
   return { found: segs.length, routed: routed, emitted: ops.length, fixtures: placedFx, fxDisc: fxDisc, bmin: bmin.map(v => +v.toFixed(3)) };
 }
 async function placeAssembly(x, y) {
@@ -2123,6 +2173,7 @@ if (qs.get('routewalk') === 'sh') {
     try {
       await L.ready();
       const B = 'BUILDING_SH_STD';
+      window.__suppressWalk = true;                               // inspect the static placed scene (no walk animation)
       insRot = 0; insElev = 0; inserting = true; insertHash = B; O.clear();
       out.structuralLeaves = L.expandAssembly(B, { x: 6, y: 4, z: 0, rot: 0 }).length;
       await placeAssembly(6, 4);                                   // REAL drop → triggers autoRouteMEP (fixtures path)
@@ -2170,6 +2221,7 @@ if (qs.get('routewalk') === 'xray') {
     try {
       await L.ready();
       const B = 'BUILDING_SH_STD';
+      window.__suppressWalk = true;                               // x-ray inspects the static placed scene
       insRot = 0; insElev = 0; inserting = true; insertHash = B; O.clear();
       await placeAssembly(6, 4);
       await (window.__lastAutoRoute || Promise.resolve({}));
@@ -2212,6 +2264,45 @@ if (qs.get('routewalk') === 'xray') {
     window.__xrayResult = out;
     window.__xrayDone = true;
     console.log('§MODELLER routewalk-xray-done ' + JSON.stringify(out));
+  })();
+}
+// ?routewalk=walk proves STEP E PROGRESSIVE WALK REVEAL (W-WALK-REVEAL): dropping SH auto-routes 23 fixtures and the
+// reveal auto-plays — assert the deterministic schedule (23 fixtures, times monotonic, spanning ~1.5s from 0), that
+// ALL 23 were hidden at the start (the "before"), and that after the walk completes EVERY fixture mesh is visible.
+// Pure render-time animation over the committed signed ops — the hash chain is untouched (verify stays true).
+if (qs.get('routewalk') === 'walk') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library, O = window.Bonsai.oplog;
+    try {
+      await L.ready();
+      const B = 'BUILDING_SH_STD';
+      window.__suppressWalk = false;                              // ensure the auto-walk fires for this witness
+      insRot = 0; insElev = 0; inserting = true; insertHash = B; O.clear();
+      window.__revealWalkDone = false;
+      await placeAssembly(6, 4);
+      await (window.__lastAutoRoute || Promise.resolve({}));   // autoRouteMEP → places 23 fixtures → auto-plays revealWalk
+      // wait for the auto-played walk to finish (timer-driven, ~1.5s)
+      const t0 = Date.now();
+      await new Promise(res => { (function w() { if (window.__revealWalkDone === true || Date.now() - t0 > 8000) return res(); setTimeout(w, 50); })(); });
+      const plan = window.__revealWalkPlan || [], started = window.__revealWalkStarted || {}, result = window.__revealWalkResult || {};
+      out.planned = plan.length; out.hiddenAtStart = started.hiddenAtStart || 0; out.revealed = result.revealed || 0;
+      out.firstT = plan.length ? plan[0].t : -1; out.lastT = plan.length ? plan[plan.length - 1].t : -1;
+      out.monotonic = plan.every((p, i) => i === 0 || p.t >= plan[i - 1].t);
+      out.durationMs = result.durationMs || 0;
+      // final scene state: every fixture mesh visible
+      const grp = window.Bonsai.group();
+      const fxIds = {}; O._geomOps().forEach(o => { if (o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.color != null) fxIds[o.id] = true; });
+      let visible = 0, total = 0;
+      grp.children.forEach(m => { const fid = m.userData && m.userData.featureId; if (fid != null && fxIds[fid]) { total++; if (m.visible) visible++; } });
+      out.fixturesVisible = visible; out.fixturesTotal = total;
+      out.verify = (await O.verify()).ok;
+      out.pass = out.planned === 23 && out.hiddenAtStart === 23 && out.revealed === 23 &&
+        out.firstT === 0 && out.lastT === 1500 && out.monotonic === true && out.durationMs >= 800 &&
+        out.fixturesVisible === 23 && out.fixturesTotal === 23 && out.verify;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk walk fail ' + e); }
+    window.__walkResult = out;
+    window.__walkDone = true;
+    console.log('§MODELLER routewalk-walk-done ' + JSON.stringify(out));
   })();
 }
 // ?insert=demo proves library-component insert @ LOD (W-BONSAI-INSERT): enter Insert mode via the button, pick a
