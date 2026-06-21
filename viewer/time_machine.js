@@ -2842,6 +2842,27 @@
     return { phases: phases, projDurDays: projDurDays, rProj: rProj, projSlipDays: projSlipDays,
              projEnd: isFinite(V.plannedEnd) ? V.plannedEnd + projSlipDays * _DAY : NaN };
   }
+  // S5(B) / W-PC-EVM — Earned-Value Management folded from the EXISTING twin (no generated C_ProjectIssue layer;
+  // PC_EVM_SPEC). COST is real: at the cursor, each phase contributes its baseline progress fraction →
+  // EV (budgeted value of work done) + AC (committed cost of work done) → CPI = EV/AC, and the at-completion
+  // forecast EAC = BAC/CPI (at completion EV=BAC ⇒ EAC = AC = the real CommittedAmt, to the rupiah). SCHEDULE has
+  // no independent actual on this twin (see §HONESTY FINDING) so we emit NO SPI — the schedule story is the E3
+  // "projected finish". Label "cost · from records". Cursor-driven (drawVariance re-folds on scrub).
+  function _computeEVM(V, cursor) {
+    if (!V) return null;
+    var EV = 0, AC = 0;
+    V.phases.forEach(function (p) {
+      var s = p.startDate, e = p.endDate;
+      var frac = (isFinite(s) && isFinite(e) && e > s) ? Math.max(0, Math.min(1, (cursor - s) / (e - s)))
+               : (isFinite(cursor) && isFinite(e) && cursor >= e ? 1 : 0);
+      EV += p.pCost * frac;                                   // BCWP — budgeted value of completed work
+      AC += p.aCost * frac;                                   // ACWP — committed cost of completed work
+    });
+    var BAC = V.tP;                                           // budget at completion = Σ PlannedAmt
+    var CPI = AC > 0 ? EV / AC : 1;
+    var EAC = CPI > 0 ? Math.round(BAC / CPI) : V.tA;         // forecast at completion (= committed once complete)
+    return { EV: Math.round(EV), AC: Math.round(AC), CPI: CPI, CV: Math.round(EV - AC), BAC: BAC, EAC: EAC, VAC: BAC - EAC };
+  }
   function drawVariance() {
     if (!_ops.length) return;
     if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline (phase windows)
@@ -2856,6 +2877,7 @@
     var fmtD = function (ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '—'; };
     var curIdx = _varPhaseUnderCursor(V);
     var SP = _computeScheduleProjection(V);                     // E3 — the projected-from-cost schedule slip (4D Δ)
+    var EVM = _computeEVM(V, _cursor);                          // S5(B) — cursor-driven cost EVM (CPI + EAC forecast)
     var slipColor = function (d) { return d >= 0 ? '#ff6b6b' : '#26a69a'; };
     var slipTxt = function (d) { return (d >= 0 ? '+' : '') + d + ' d'; };
 
@@ -2875,7 +2897,14 @@
           ' <span style="color:#888">(planned baseline)</span></div>' +
         (SP ? '<div style="color:#ffb74d">Projected finish ' + fmtD(SP.projEnd) +
           ' <span style="color:' + slipColor(SP.projSlipDays) + '">(' + slipTxt(SP.projSlipDays) + ')</span>' +
-          ' <span style="color:#888">projected from cost</span></div>' : '');
+          ' <span style="color:#888">projected from cost</span></div>' : '') +
+        // S5(B) EVM — cursor-driven earned value: EV/AC + CPI + the at-completion forecast (EAC). Cost only,
+        // from records (no independent SPI on this twin — see §HONESTY FINDING; schedule = the line above).
+        (EVM ? '<div style="margin-top:2px;color:#cfe8ff">EV <b>' + _money(EVM.EV) + '</b> / AC <b>' + _money(EVM.AC) + '</b>' +
+          ' · CPI <b style="color:' + (EVM.CPI >= 1 ? '#26a69a' : '#ff6b6b') + '">' + EVM.CPI.toFixed(2) + '</b>' +
+          ' · forecast <b title="EAC = BAC/CPI">' + _money(EVM.EAC) + '</b>' +
+          ' <span style="color:' + (EVM.VAC >= 0 ? '#26a69a' : '#ff6b6b') + '">(' + (EVM.VAC >= 0 ? '+' : '') + _money(EVM.VAC) + ')</span>' +
+          ' <span style="font-size:9px;color:#888">cost · from records</span></div>' : '');
     }
 
     // canvas — one bar per phase on the SAME axis the cursor scrubs; bar color = phase, edge cap red/green by
@@ -2938,6 +2967,8 @@
     if (SP) console.log('§SCHED_PROJECT source=projected-from-cost building="' + _twin.building +
       '" projEnd=' + fmtD(SP.projEnd) + ' projSlipDays=' + SP.projSlipDays + ' rProj=' + SP.rProj.toFixed(3) +
       ' phases=' + SP.phases.map(function (x) { return x.phase + ':' + (x.slipDays >= 0 ? '+' : '') + x.slipDays + 'd'; }).join(','));
+    if (EVM) console.log('§EVM_FOLD source=twin(cost) cursor=' + Math.round(_cursor) + ' EV=' + EVM.EV +
+      ' AC=' + EVM.AC + ' CPI=' + EVM.CPI.toFixed(3) + ' CV=' + EVM.CV + ' BAC=' + EVM.BAC + ' EAC=' + EVM.EAC + ' VAC=' + EVM.VAC);
   }
 
   function drawGanttMini() {
