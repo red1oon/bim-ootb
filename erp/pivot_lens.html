@@ -25,6 +25,9 @@
   #ctrl-bar label { color:#999; }
   #ctrl-bar select { background:#1e1e28; color:#e8e8ed; border:1px solid rgba(255,255,255,0.12);
     border-radius:5px; padding:4px 8px; font-size:13px; cursor:pointer; }
+  #pv-export { margin-left:auto; background:#1e1e28; color:#9aa6b8; border:1px solid rgba(255,255,255,0.12);
+    border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; cursor:pointer; }
+  #pv-export:hover { color:#6c9fff; border-color:#6c9fff; }
   #pivot-root { padding:12px; overflow:auto; }
   /* pivot table */
   .pv-wrap { overflow:auto; }
@@ -61,6 +64,7 @@
     <option value="grandtotal">GrandTotal</option>
     <option value="qty">Qty</option>
   </select>
+  <button id="pv-export" title="Export cross-tab as CSV">⤓ Export</button>
 </div>
 <div id="gate">Loading pivot lens&hellip;</div>
 <div id="pivot-root"></div>
@@ -150,8 +154,21 @@
     return { map: map, refTable: tb, idCol: idc };
   }
   function display(lk, raw) { if (raw == null) return '(blank)'; var s = String(raw); return (lk && lk.map[s] != null) ? lk.map[s] : s; }
-  // friendly axis label — drop the _ID suffix so the header/selector read like iDempiere field names (best-effort).
-  function pretty(col) { return String(col).replace(/_id$/i, '').replace(/_/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); }).trim() || col; }
+  // AD dictionary names — read once from AD_Table (loads in ad_seed.db). PP_Order → "Manufacturing Order".
+  //   NON-INVENT: a real lookup over the loaded db; a data-only db without AD_Table → null → raw fallback.
+  var _DB = null, _adTbl = null;
+  function adTableName(db, tn) {
+    if (_adTbl === null) { _adTbl = {};
+      try { var r = db.exec("SELECT UPPER(TableName), Name FROM AD_Table WHERE Name IS NOT NULL");
+        if (r.length) r[0].values.forEach(function (row) { _adTbl[row[0]] = row[1]; }); } catch (e) {} }
+    return _adTbl[String(tn).toUpperCase()] || null;
+  }
+  // friendly axis label — an FK column reads as its referenced table's dictionary name (C_BPartner_ID →
+  //   "Business Partner"); otherwise drop the _ID suffix + title-case. Best-effort, NON-INVENT.
+  function pretty(col) {
+    if (_DB && /_id$/i.test(col)) { var an = adTableName(_DB, refTableFor(col)); if (an) return an; }
+    return String(col).replace(/_id$/i, '').replace(/_/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); }).trim() || col;
+  }
 
   // Build the cross-tab: rowField × colField → measure
   function buildPivot(db, tb, rowF, colF, msr) {
@@ -258,14 +275,35 @@
     });
   }
 
+  var _lastPv = null;
   function refresh(db) {
     var tb  = document.getElementById('pv-tbl').value;
     var rF  = document.getElementById('pv-row').value;
     var cF  = document.getElementById('pv-col').value;
     var msr = document.getElementById('pv-msr').value;
     if (!tb || !rF || !cF) return;
-    var pv = buildPivot(db, tb, rF, cF, msr);
+    var pv = buildPivot(db, tb, rF, cF, msr); _lastPv = pv;
     renderPivot(pv, document.getElementById('pivot-root'));
+  }
+
+  // EXPORT — the cross-tab to CSV, EXACTLY the rendered numbers (NON-INVENT). Cells = Σamount (measure) or count.
+  function _csvEsc(v) { v = (v == null ? '' : String(v)); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function exportPivotCsv(pv) {
+    if (!pv) { log('export: no pivot'); return; }
+    var cell = function (c) { return pv.amtCol ? (c && c.sum ? c.sum : 0) : (c && c.count ? c.count : 0); };
+    var lines = [], grand = 0, colT = {}; pv.cols.forEach(function (cv) { colT[cv] = 0; });
+    lines.push([pretty(pv.rowF) + ' \\ ' + pretty(pv.colF)].concat(pv.cols, ['Total']).map(_csvEsc).join(','));
+    pv.rows.forEach(function (rv) {
+      var rowT = 0, row = [rv];
+      pv.cols.forEach(function (cv) { var v = cell(pv.cells[rv + '|' + cv]); row.push(v); rowT += v; colT[cv] += v; grand += v; });
+      row.push(rowT); lines.push(row.map(_csvEsc).join(','));
+    });
+    lines.push(['Total'].concat(pv.cols.map(function (cv) { return colT[cv]; }), [grand]).map(_csvEsc).join(','));
+    var csv = lines.join('\r\n'), blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a'), u = URL.createObjectURL(blob);
+    a.href = u; a.download = 'pivot-' + pv.table + '-' + pv.rowF + '-x-' + pv.colF + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(u); }, 1000);
+    console.log('§PIVOT-EXPORT table=' + pv.table + ' rows=' + pv.rows.length + ' cols=' + pv.cols.length + ' grand=' + grand + ' bytes=' + csv.length);
   }
 
   async function boot() {
@@ -279,16 +317,17 @@
     var db;
     try {
       var buf = await (await fetch(dbUrl)).arrayBuffer();
-      db = new SQL.Database(new Uint8Array(buf));
+      db = new SQL.Database(new Uint8Array(buf)); _DB = db;
       log('db loaded ' + dbUrl + ' size=' + Math.round(buf.byteLength / 1024) + 'KB');
     } catch (e) { document.getElementById('gate').textContent = 'DB load failed: ' + e.message; return; }
 
     // populate table selector
     var tblSel = document.getElementById('pv-tbl');
     Object.entries(TMAP).forEach(function (kv) {
-      var opt = document.createElement('option'); opt.value = kv[0]; opt.textContent = kv[1];
+      var opt = document.createElement('option'); opt.value = kv[0]; opt.textContent = adTableName(db, kv[0]) || kv[1];
       tblSel.appendChild(opt);
     });
+    log('table labels: ' + Object.keys(TMAP).map(function (k) { return k + '→' + (adTableName(db, k) || TMAP[k]); }).join(', '));
 
     // populate axes for first table
     populateSelects(db, tblSel.value);
@@ -301,6 +340,7 @@
 
     document.getElementById('gate').style.display = 'none';
     document.getElementById('pv-d-x').addEventListener('click', function () { document.getElementById('pv-drill').style.display = 'none'; });
+    document.getElementById('pv-export').addEventListener('click', function () { exportPivotCsv(_lastPv); });
 
     refresh(db);
     log('boot complete tables=' + Object.keys(TMAP).length);
