@@ -17,10 +17,10 @@ await page.waitForSelector('#idmp-login-ok',{timeout:5000});await page.click('#i
 await page.waitForSelector('[data-ad-table]',{timeout:15000}).catch(()=>{});await page.waitForTimeout(1700);
 // open + time the overview build
 const t0=now();await clickPill(page,'dashboard');
-await page.waitForFunction(()=>document.querySelector('.dash-chart'),{timeout:10000});
+await page.waitForFunction(()=>document.querySelector('.dash-card'),{timeout:10000});
 const tOverview=now()-t0;
 await page.waitForFunction(()=>document.querySelector('.dash-side .ask-chip'),{timeout:5000}).catch(()=>{});
-const layout=await page.evaluate(()=>({split:!!document.querySelector('.dash-split'),mainCharts:document.querySelectorAll('.dash-main .dash-chart').length,sideChips:document.querySelectorAll('.dash-side .ask-chip').length}));
+const layout=await page.evaluate(()=>({split:!!document.querySelector('.dash-split'),mainCharts:document.querySelectorAll('.dash-main .dash-card').length,sideChips:document.querySelectorAll('.dash-side .ask-chip').length}));
 console.log('§T-LAYOUT '+JSON.stringify(layout)+' overviewMs='+tOverview);
 // CHIP CLICK EFFECT — click first "By" chip, assert §ASK fires + a sub-chart appears in the side
 const askBefore=logs.filter(l=>l.startsWith('§ASK ')).length;

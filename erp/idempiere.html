@@ -3402,6 +3402,39 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _groupByMonth(field) {
     var g = {}; _records.forEach(function (r) { var d = String(recVal(r, field.columnName) || '').slice(0, 7); if (d) (g[d] = g[d] || []).push(r); }); return g;
   }
+  // DONUT (Odoo pie) — share-of-total for a low-cardinality cut; packs the grid better than full-width bars.
+  //   SVG arcs animate (sweep in), per-slice hover = value·%, centre = the total. Colours = the SHARED palette
+  //   (status semantic / per-key hue). Caps to 6 slices + an "others" arc. All real folds, NON-INVENT.
+  function _renderDonut(container, opts) {
+    var groups = opts.groups, KL = window.KanbanLens, amtCol = opts.amtCol, NS = 'http://www.w3.org/2000/svg';
+    function val(k) { return amtCol ? _amtSum(groups[k], amtCol) : groups[k].length; }
+    var keys = Object.keys(groups).sort(function (a, b) { return val(b) - val(a); });
+    var CAP = 6, others = null; if (keys.length > CAP) { others = keys.slice(CAP); keys = keys.slice(0, CAP); }
+    var total = 0; Object.keys(groups).forEach(function (k) { total += val(k); });
+    function colorFor(k, i) { if (!KL) return 'hsl(' + (i * 53 % 360) + ',45%,52%)'; return opts.statusCol ? KL.statusColor(String(recVal(groups[k][0], opts.statusCol))) : KL.tableColor(k); }
+    var r = 52, cx = 64, cy = 64, sw = 20, circ = 2 * Math.PI * r;
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 128 128'); svg.setAttribute('class', 'donut-svg');
+    var bg = document.createElementNS(NS, 'circle'); bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r); bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', 'rgba(255,255,255,.05)'); bg.setAttribute('stroke-width', sw); svg.appendChild(bg);
+    var cum = 0, slices = [], legend = el('div', 'donut-legend');
+    function arc(k, color, label, i) {
+      var v = val(k); var len = total ? v / total * circ : 0, pct = total ? Math.round(v / total * 100) : 0;
+      var c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+      c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', sw);
+      c.setAttribute('stroke-dasharray', '0 ' + circ);
+      c.style.transform = 'rotate(' + (cum / circ * 360 - 90) + 'deg)'; c.style.transformBox = 'fill-box'; c.style.transformOrigin = 'center'; c.style.transition = 'stroke-dasharray .6s cubic-bezier(.22,1,.36,1)';
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + (amtCol && KL ? KL.fmtMoney(v) : v) + ' (' + pct + '%)'; c.appendChild(ti);
+      svg.appendChild(c); slices.push({ el: c, len: len, circ: circ }); cum += len;
+      var li = el('div', 'donut-li'); var swx = el('span', 'donut-sw'); swx.style.background = color; li.appendChild(swx); li.appendChild(el('span', 'donut-k', label)); li.appendChild(el('span', 'donut-v', pct + '%')); li.title = label + ' · ' + (amtCol && KL ? KL.fmtMoney(v) : v); legend.appendChild(li);
+    }
+    keys.forEach(function (k, i) { arc(k, colorFor(k, i), k, i); });
+    if (others) { var og = {}; var ov = 0; others.forEach(function (k) { ov += val(k); }); // synth "others" bucket
+      groups['(others)'] = []; others.forEach(function (k) { groups['(others)'] = groups['(others)'].concat(groups[k]); });
+      arc('(others)', '#5a6472', '(' + others.length + ' more)', 99); delete groups['(others)']; }
+    var ctr = document.createElementNS(NS, 'text'); ctr.setAttribute('x', cx); ctr.setAttribute('y', cy); ctr.setAttribute('text-anchor', 'middle'); ctr.setAttribute('dominant-baseline', 'central'); ctr.setAttribute('class', 'donut-center'); ctr.textContent = amtCol && KL ? KL.fmtMoney(total) : String(total); svg.appendChild(ctr);
+    var wrap = el('div', 'donut-wrap'); wrap.appendChild(svg); wrap.appendChild(legend); container.appendChild(wrap);
+    requestAnimationFrame(function () { slices.forEach(function (s) { s.el.setAttribute('stroke-dasharray', s.len + ' ' + (s.circ - s.len)); }); });
+    return { total: total, slices: keys.length + (others ? 1 : 0) };
+  }
   // OVERVIEW — lay out SEVERAL charts flowing down (a real dashboard, not one). Auto-pick from the model's own
   //   dimensions: lifecycle status, the highest-signal categorical fields (top-N capped), and a date trend.
   //   Every chart is a real fold of the open-window records. NON-INVENT, zero per-model code.
@@ -3420,17 +3453,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function _family(cn) { var s = String(cn).toLowerCase().replace(/_id$/, '').replace(/^(bill|ship|drop|pay|c|m|ad)_/, ''); return /bpartner/.test(s) && !/location/.test(s) ? 'bpartner' : s; }
     var picked = [], seenFam = {};
     cat.forEach(function (f) { var fam = _family(f.columnName); if (seenFam[fam] || picked.length >= 3) return; seenFam[fam] = 1; picked.push(f); });
-    var charts = [], _n = 0;
+    var charts = [];
     if (statusF) { charts.push({ label: statusF.name, groups: _groupRecsBy(statusF), statusCol: statusF.columnName }); }
-    picked.forEach(function (f) { charts.push({ label: f.name, groups: _groupRecsBy(f), limit: 12 }); });
+    picked.forEach(function (f) { charts.push({ label: f.name, groups: _groupRecsBy(f) }); });
     if (dateF) { charts.push({ label: dateF.name + ' (over time)', groups: _groupByMonth(dateF), order: 'key', time: 1 }); }
+    // grid of cards — a cut with ≤7 distinct values reads best as a DONUT (Odoo pie, packs the grid); more
+    //   categories or the time trend stay BARS. The trend card spans the full row. Charts paint instantly.
+    var grid = el('div', 'dash-grid'); gbox.appendChild(grid);
+    var _n = 0, _donuts = 0;
     charts.forEach(function (c) {
-      var sect = el('div', 'dash-chart');
-      sect.appendChild(el('div', 'dash-chart-h', (c.time ? '' : 'By ') + c.label));
-      _renderBars(sect, { groups: c.groups, statusCol: c.statusCol || null, amtCol: amtCol, order: c.order || 'count', limit: c.limit || 0 });
-      gbox.appendChild(sect); _n++;
+      var n = Object.keys(c.groups).length, useDonut = !c.time && n >= 2 && n <= 7;
+      var card = el('div', 'dash-card' + (c.time ? ' dash-card-wide' : ''));
+      card.appendChild(el('div', 'dash-chart-h', (c.time ? '' : 'By ') + c.label));
+      if (useDonut) { _renderDonut(card, { groups: c.groups, statusCol: c.statusCol || null, amtCol: amtCol }); _donuts++; }
+      else _renderBars(card, { groups: c.groups, statusCol: c.statusCol || null, amtCol: amtCol, order: c.order || 'count', limit: c.time ? 0 : 12 });
+      grid.appendChild(card); _n++;
     });
-    console.log('§DASH-OVERVIEW charts=' + _n + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
+    console.log('§DASH-OVERVIEW charts=' + _n + ' donuts=' + _donuts + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
   }
   // DASHBOARD — ONE surface, N lenses (Odoo multi-view). Tabs flip the SAME open-window records; the Graph tab
   //   paints instantly then streams the Ask panel in (never blocks first sight). FUNDAMENTAL LAW: a ⋯-rail lens.
@@ -4081,8 +4120,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       '.dash-list td{padding:4px 9px;border-bottom:1px solid rgba(255,255,255,.05);color:#cfd6e2;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}' +
       '.dash-timeline{padding:8px 2px}.dash-tl-h{font-size:14px;font-weight:700;color:#e8e8ed}.dash-tl-sub{font-size:12px;color:#9aa6b8;margin-top:4px}.dash-tl-note{font-size:12px;color:#6a7384;margin:12px 0;line-height:1.5}' +
       '.dash-tl-rail{position:relative;height:6px;border-radius:3px;background:rgba(255,255,255,.08);margin:14px 0 6px}.dash-tl-fill{height:100%;width:38%;background:linear-gradient(90deg,#6c9fff,#27c08a);border-radius:3px}' +
-      // multi-chart overview
+      // multi-chart overview — a responsive grid of chart cards (donut or bars); the trend card spans full width
       '.dash-chart{margin:0 0 18px}.dash-chart-h{font-size:12px;font-weight:700;color:#8aa0c0;margin-bottom:7px;text-transform:uppercase;letter-spacing:.04em}.chart-more{font-size:11px;color:#6a7384;padding:3px 0 0 6px}' +
+      '.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.dash-card{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 14px}.dash-card-wide{grid-column:1/-1}' +
+      '.donut-wrap{display:flex;gap:14px;align-items:center}.donut-svg{width:118px;height:118px;flex:0 0 auto}.donut-center{fill:#e8e8ed;font-size:17px;font-weight:700}' +
+      '.donut-legend{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px}.donut-li{display:flex;align-items:center;gap:7px;font-size:12px;color:#cfd6e2}.donut-sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto}.donut-k{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.donut-v{color:#9aa6b8;font-variant-numeric:tabular-nums}' +
       // timeline — a sliding FILMSTRIP under a fixed centre playhead (scrub = the strip moves, day centres)
       '.tl-viewport{position:relative;overflow:hidden;height:150px;margin:10px 0 4px;border-radius:9px;background:rgba(255,255,255,.02)}' +
       '.tl-track{position:absolute;left:0;top:8px;display:flex;gap:14px;align-items:flex-end;height:134px;transition:transform .28s cubic-bezier(.22,1,.36,1);will-change:transform}' +
