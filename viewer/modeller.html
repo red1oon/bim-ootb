@@ -183,7 +183,7 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=11" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=12" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -1346,9 +1346,19 @@ function disarmPick() { insertHash = null; clearGhost(); if (insertPanel) insert
 function showGhost(x, y) {                                        // translucent preview of where/how the insert lands
   if (!insertHash) return;
   const L = window.Bonsai.library, asm = L.isAssembly(insertHash) ? L.assembly(insertHash) : null;
-  const pa = asm                                                 // assembly ghost = its aabb footprint box
-    ? L.previewBox([-(asm.w || 0.2) / 2, (asm.w || 0.2) / 2, -(asm.d || 0.2) / 2, (asm.d || 0.2) / 2, 0, asm.h || 0.1], { x, y, z: insElev, rot: insRot })
-    : L.previewArrays(insertHash, { x, y, z: insElev, rot: insRot });
+  let pa;
+  if (asm) {
+    // assembly ghost = the TRUE leaf footprint placed at the SAME drop origin the commit uses (dropOrigin), so the
+    // preview box exactly encloses where the parts land. (The old ghost used the declared aabb asm.w/d = the
+    // parent-PRODUCT box, not the laid-out children → preview and landing disagreed. W-BOM-DROP-CENTER.)
+    const o = L.dropOrigin(insertHash, x, y, insRot);
+    const fp = L.footprintAABB(insertHash, { x: 0, y: 0, z: 0, rot: 0 });
+    pa = fp
+      ? L.previewBox([fp.minX, fp.maxX, fp.minY, fp.maxY, fp.minZ, fp.maxZ], { x: o.x, y: o.y, z: insElev, rot: insRot })
+      : L.previewBox([-(asm.w || 0.2) / 2, (asm.w || 0.2) / 2, -(asm.d || 0.2) / 2, (asm.d || 0.2) / 2, 0, asm.h || 0.1], { x, y, z: insElev, rot: insRot });
+  } else {
+    pa = L.previewArrays(insertHash, { x, y, z: insElev, rot: insRot });
+  }
   if (!pa) return;
   if (!ghostMesh) {
     ghostMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.32, depthWrite: false }));
@@ -1471,16 +1481,14 @@ async function autoRouteMEP(asm, leaves) {
 }
 async function placeAssembly(x, y) {
   const L = window.Bonsai.library, asm = L.assembly(insertHash);
-  // CENTER-anchor the drop. expandAssembly seats children CORNER-anchored ([0..W]), but the ghost box (showGhost
-  // above) is CENTER-anchored ([-W/2..+W/2]) — so a raw expand lands the whole set in the +X/+Y quadrant, offset
-  // from the ghost by ≈(+W/2,+D/2) (BOM_DROP_SPATIAL_INVESTIGATION §RESULT: anchor mismatch, NOT bad data — the
-  // BOM cascade is proven parent-relative & untouched here). Shift the expand origin back by the ROTATED half-
-  // extent so the footprint CENTER lands on the drop point. Level-agnostic: identical for a furniture SET … a
-  // whole BUILDING (just a cascade of BOMs). W-BOM-DROP-CENTER.
-  const _r = (insRot || 0) * Math.PI / 180, _cs = Math.cos(_r), _sn = Math.sin(_r);
-  const _ox = ((asm && asm.w) || 0) / 2, _oy = ((asm && asm.d) || 0) / 2;
-  const cx = x - (_cs * _ox - _sn * _oy), cy = y - (_sn * _ox + _cs * _oy);
-  const leaves = L.expandAssembly(insertHash, { x: cx, y: cy, z: insElev, rot: insRot });
+  // CENTER-anchor the drop on the TRUE leaf footprint. The whitebox §-log proved the cause of "the basic BOM drop
+  // lands wrong": placeAssembly used to back the expand origin off by HALF THE DECLARED aabb (asm.w/2) — but
+  // asm.w/d is the parent-PRODUCT box, NOT the laid-out children (BED_SET declares 1.2×0.6m, its leaves span
+  // 3.5×2.0m), so the cluster landed up to 22m OFF the cursor. A pure translation → the §GEO_SUMMARY / IntraBOM
+  // DRIFT check never saw it. dropOrigin backs off by the REAL footprint centre instead → cluster centre on the
+  // drop point for ANY assembly, yaw=0 exact (W-BOM-DROP-CENTER G3a, 57/57 <1mm). Rotated drops = tracked ⛔.
+  const o = L.dropOrigin(insertHash, x, y, insRot);
+  const leaves = L.expandAssembly(insertHash, { x: o.x, y: o.y, z: insElev, rot: insRot });
   if (!leaves.length) { setStat('assembly ' + insertHash + ' has no placeable leaves'); return null; }
   const placed = [];
   for (const lf of leaves) {                                     // each leaf = one signed op-row (the chain)
