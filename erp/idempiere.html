@@ -3555,7 +3555,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   is the documented NEXT step: it needs a COMMITTED baseline, which a generic window has no source for, so
   //   it is deliberately NOT faked here. One toggle (`_dashForecast`) drives the time-axis lenses; default OFF
   //   ⇒ the resting panel is byte-for-byte today's.
-  var _dashForecast = false, _curDashTab = 'graph';
+  var _dashForecast = false, _curDashTab = 'graph', _dashWeb = false;
   // run-rate forecast: project n future periods by the MEAN of the last k period-over-period deltas. Pure +
   //   unit-testable; emits §RUNRATE so the witness reads the arithmetic without a browser.
   function _runRateForecast(vals, n, k) {
@@ -3799,6 +3799,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     charts.forEach(function (c) { _addDonutCard(grid, c.key, (c.label.indexOf('(') < 0 ? 'By ' : '') + c.label, c.groups, c.statusCol || null, amtCol); });
     var hint = el('div', 'dash-hint', 'Long-press a slice to open its records'); grid.appendChild(hint);   // gesture tip in the blank grid slot
+    // WEB toggle — collapse the pies on the board into ONE spider of their concentrations (and back). Built from
+    //   the LIVE cards, so it reflects exactly the pies the user chose to show. ≥3 pies needed for a web shape.
+    var webBox = el('div', 'dash-web'); webBox.style.display = 'none'; gbox.appendChild(webBox);
+    var webBtn = el('button', 'dash-webtoggle');
+    function _setWebBtn() { webBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" style="vertical-align:-2px"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg> ' + (_dashWeb ? 'Pies' : 'Web'); }
+    function _paintWeb() {
+      webBox.innerHTML = ''; var specs = _webSpecsFromGrid(grid);
+      if (specs.length < 3) { webBox.appendChild(el('div', 'dash-hint', 'Add at least 3 pies (tap Explore chips) to see the web.')); console.log('§DASH-WEB skip spokes=' + specs.length); return; }
+      webBox.appendChild(el('div', 'dash-chart-h', 'Concentration web — ' + specs.length + ' cuts (spiky = lopsided, round = even)'));
+      _renderSpiderWeb(webBox, specs);
+    }
+    function _applyWeb() { _setWebBtn(); if (_dashWeb) { _paintWeb(); grid.style.display = 'none'; webBox.style.display = ''; } else { grid.style.display = ''; webBox.style.display = 'none'; } }
+    webBtn.addEventListener('click', function () { _dashWeb = !_dashWeb; _applyWeb(); console.log('§DASH-WEB-TOGGLE on=' + _dashWeb); });
+    gbox.insertBefore(webBtn, grid); _applyWeb();
     console.log('§DASH-OVERVIEW donuts=' + charts.length + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
     return grid;
   }
@@ -3817,8 +3831,45 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     h.appendChild(ex); card.appendChild(h);
     _renderDonut(card, { groups: groups, statusCol: statusCol, amtCol: amtCol });
+    // stamp the pie's CONCENTRATION (biggest slice's share) on the card — the spider web reads these straight off
+    //   the live cards, so the web is built from exactly the pies the user has on the board. Same fold the donut
+    //   draws (amount-share if money, else count-share). NON-INVENT.
+    var _gk = Object.keys(groups), _tot = 0, _topN = -1, _topName = '';
+    _gk.forEach(function (k) { var vv = amtCol ? _amtSum(groups[k], amtCol) : groups[k].length; _tot += vv; if (vv > _topN) { _topN = vv; _topName = k; } });
+    card.setAttribute('data-conc', _tot ? Math.round(_topN / _tot * 100) : 0);
+    card.setAttribute('data-top', _topName);
+    card.setAttribute('data-label', String(title).replace(/^By\s+/, ''));
     var hint = grid.querySelector('.dash-hint'); if (hint) grid.insertBefore(card, hint); else grid.appendChild(card);
     return true;
+  }
+  // SPIDER WEB (W-DASH-WEB) — collapse the donut grid into ONE radar. §SPEC: each pie the user has on the board
+  //   becomes a SPOKE; the spoke's reach = that pie's CONCENTRATION (its biggest slice's % — read off data-conc).
+  //   So a spiky web = a cut dominated by one value (a risk or a gap); a round web = evenly spread. It's a
+  //   SCREENING glance — "which cut deserves a look" — then tap back to the pies to drill. The totals are the
+  //   SAME on every pie (same records), so concentration — not count — is what makes the spokes differ. NON-INVENT.
+  function _renderSpiderWeb(container, specs) {
+    var NS = 'http://www.w3.org/2000/svg', n = specs.length, W = 300, H = 240, cx = W / 2, cy = H / 2 + 6, maxR = 86;
+    function pt(i, rad) { var a = (-90 + i * 360 / n) * Math.PI / 180; return [cx + rad * Math.cos(a), cy + rad * Math.sin(a)]; }
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'web-svg');
+    function poly(pts, fill, stroke, sw) { var p = document.createElementNS(NS, 'polygon'); p.setAttribute('points', pts.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ')); p.setAttribute('fill', fill); p.setAttribute('stroke', stroke); if (sw) p.setAttribute('stroke-width', sw); svg.appendChild(p); return p; }
+    [25, 50, 75, 100].forEach(function (lvl) { poly(specs.map(function (_, i) { return pt(i, maxR * lvl / 100); }), 'none', 'rgba(255,255,255,.10)', 1); });   // grid rings
+    specs.forEach(function (_, i) { var e = pt(i, maxR), l = document.createElementNS(NS, 'line'); l.setAttribute('x1', cx); l.setAttribute('y1', cy); l.setAttribute('x2', e[0]); l.setAttribute('y2', e[1]); l.setAttribute('stroke', 'rgba(255,255,255,.10)'); svg.appendChild(l); });   // spokes
+    poly(specs.map(function (s, i) { return pt(i, maxR * Math.max(0, Math.min(100, s.conc)) / 100); }), 'rgba(108,159,255,.22)', '#6c9fff', 2);   // the shape
+    specs.forEach(function (s, i) {   // vertex dots + labels
+      var v = pt(i, maxR * Math.max(0, Math.min(100, s.conc)) / 100), d = document.createElementNS(NS, 'circle'); d.setAttribute('cx', v[0]); d.setAttribute('cy', v[1]); d.setAttribute('r', 3); d.setAttribute('fill', '#6c9fff');
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = s.label + ' — biggest: ' + s.top + ' (' + s.conc + '%)'; d.appendChild(ti); svg.appendChild(d);
+      var lp = pt(i, maxR + 16), tx = document.createElementNS(NS, 'text'); tx.setAttribute('x', lp[0]); tx.setAttribute('y', lp[1]); tx.setAttribute('text-anchor', lp[0] < cx - 4 ? 'end' : lp[0] > cx + 4 ? 'start' : 'middle'); tx.setAttribute('dominant-baseline', 'middle'); tx.setAttribute('class', 'web-lbl');
+      tx.textContent = (s.label.length > 12 ? s.label.slice(0, 11) + '…' : s.label) + ' ' + s.conc + '%'; svg.appendChild(tx);
+    });
+    container.appendChild(svg);
+    console.log('§DASH-WEB spokes=' + n + ' conc=[' + specs.map(function (s) { return s.conc; }).join(',') + ']');
+    return svg;
+  }
+  // read the spider spokes off the live donut cards (excluding the S-curve/variance card) — the user's chosen pies.
+  function _webSpecsFromGrid(grid) {
+    return [].slice.call(grid.querySelectorAll('.dash-card[data-conc]')).map(function (c) {
+      return { label: c.getAttribute('data-label') || c.getAttribute('data-dim'), conc: Number(c.getAttribute('data-conc')) || 0, top: c.getAttribute('data-top') || '' };
+    });
   }
   // DASHBOARD — ONE surface, N lenses (Odoo multi-view). Tabs flip the SAME open-window records; the Graph tab
   //   paints instantly then streams the Ask panel in (never blocks first sight). FUNDAMENTAL LAW: a ⋯-rail lens.
@@ -4527,6 +4578,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       '.tl-col.future .tl-card{border:1px dashed rgba(108,159,255,.7);background:rgba(108,159,255,.07);color:#bcd2ff}.tl-col.future .tl-av{background:#3a5fa8;color:#cfe0ff}.tl-col.future .tl-t{color:#bcd2ff}.tl-col.future .tl-a{color:#9bbcff}.tl-col.future .tl-day{color:#9bbcff;font-weight:600}' +
       '.dash-scurve{grid-column:span 2}.dash-scurve .scurve-svg{width:100%;height:150px}.scurve-now{fill:#7f93b8;font-size:9px}.scurve-flab{fill:#9bbcff;font-size:9px;font-weight:600}.scurve-delta{font-size:10px;font-weight:700}' +
       '.dash-forecast.active{color:#9bbcff;border-bottom-color:#9bbcff}@media(max-width:640px){.dash-scurve{grid-column:span 1}}' +
+      // WEB — the spider toggle + one-radar view (pies collapse into spokes by concentration).
+      '.dash-webtoggle{align-self:flex-start;margin-bottom:10px;background:rgba(108,159,255,.10);border:1px solid rgba(108,159,255,.3);color:#9bbcff;font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;cursor:pointer}.dash-webtoggle:hover{background:rgba(108,159,255,.18)}' +
+      '.dash-web{display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0}.dash-web .web-svg{width:100%;max-width:460px;height:auto}.web-lbl{fill:#aeb9cc;font-size:10px;font-weight:600}' +
       // mobile — snug: scrollable tabs, full-width charts, tighter chips/cards
       '@media(max-width:640px){.dash-tabs{overflow-x:auto;white-space:nowrap}.dash-tab{padding:8px 11px;font-size:12px}.dash-body{max-height:78vh}' +
       '.dash-split{flex-direction:column;gap:0}.dash-side{flex:1 1 auto;max-width:none;border-left:none;border-top:1px dashed rgba(255,255,255,.12);padding-left:0;padding-top:12px;margin-top:12px;position:static}' +
