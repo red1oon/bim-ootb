@@ -197,6 +197,30 @@
     _render();
   }
 
+  // Reposition the whole panel by dragging its title bar (separate from the phase-track drag-to-slip).
+  function _dragByHandle(panel, handle) {
+    if (!panel || !handle) return;
+    handle.style.cursor = 'grab';
+    var ox, oy, sx, sy, dragging = false;
+    handle.addEventListener('pointerdown', function (e) {
+      if (e.target.closest && e.target.closest('button,input,select,a,.wi-track')) return;
+      var r = panel.getBoundingClientRect();
+      dragging = true; ox = e.clientX; oy = e.clientY; sx = r.left; sy = r.top;
+      handle.style.cursor = 'grabbing';
+      try { handle.setPointerCapture(e.pointerId); } catch (x) {}
+      e.preventDefault(); e.stopPropagation();
+    });
+    handle.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      panel.style.left = (sx + e.clientX - ox) + 'px';
+      panel.style.top = (sy + e.clientY - oy) + 'px';
+      panel.style.right = 'auto'; panel.style.bottom = 'auto'; panel.style.transform = 'none';
+    });
+    function end() { dragging = false; handle.style.cursor = 'grab'; }
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
   // P1.b — DIRECT-MANIPULATION drag-to-slip (front-visual dominant). Dragging a phase track maps the
   // horizontal Δpx → whole days via WhatIf.pxToDays, writing the SAME _slips[seqno].startDelta the
   // steppers use, so the blue ripple re-folds live. Listeners live on `document` so they survive the
@@ -262,6 +286,7 @@
       panel.querySelector('#wi-accept').addEventListener('click', _accept);
       panel.querySelector('#wi-discard').addEventListener('click', _discard);
       panel.addEventListener('pointerdown', _onTrackDown);   // P1.b drag-to-slip (delegated, stable)
+      _dragByHandle(panel, panel.querySelector('h3'));       // reposition the whole panel by its title bar
       console.log('§WHATIF-UI open project=' + _pid + ' "' + _name + '" phases=' + _phases.length);
       _render();
     });

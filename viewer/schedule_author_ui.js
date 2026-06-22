@@ -176,9 +176,11 @@
   function render() {
     var body = document.getElementById('sa-body'); if (!body) return;
     if (!_state || !_state.order.length) {
-      body.innerHTML = '<div style="font-size:11px;color:#9bb;line-height:1.5">No schedule yet. ' +
-        'Click <b>Generate first draft</b> to fold the model into organized phases — then rename, ' +
-        'reassign elements, and tune dates. Each edit is written to the project.</div>';
+      body.innerHTML = '<div style="font-size:11px;color:#9bb;line-height:1.5">' +
+        'No <b>editable</b> schedule here yet. The Time Machine may already play a rule-generated ' +
+        'timeline for this model, but that is computed on the fly — not an editable, authored schedule. ' +
+        'Click <b>Generate first draft</b> to fold the model into organized, editable phases — then ' +
+        'rename, reassign elements, and tune dates. Each edit is written to the project.</div>';
       return;
     }
     var d = db();
@@ -287,7 +289,7 @@
     _panel = document.createElement('div');
     _panel.id = 'schedule-author-panel';
     _panel.innerHTML =
-      '<div style="display:flex;align-items:center;gap:6px">' +
+      '<div id="sa-head" style="display:flex;align-items:center;gap:6px;cursor:grab" title="Drag to move">' +
         '<b style="flex:1;color:#4fc3f7;font-size:13px">&#9998; Author 4D Schedule</b>' +
         '<button id="sa-close" style="width:22px;height:22px;padding:0">&#x2715;</button>' +
       '</div>' +
@@ -304,8 +306,33 @@
     document.getElementById('sa-close').onclick = close;
     document.getElementById('sa-draft').onclick = generateDraft;
     document.getElementById('sa-apply').onclick = applyTo4D;
+    dragByHandle(_panel, document.getElementById('sa-head'));   // panel is repositionable (drag the header)
     _built = true;
     render();
+  }
+
+  // Reposition the whole panel by dragging its header (pointer events; ignores buttons/inputs).
+  function dragByHandle(panel, handle) {
+    if (!panel || !handle) return;
+    handle.style.cursor = 'grab';
+    var ox, oy, sx, sy, dragging = false;
+    handle.addEventListener('pointerdown', function (e) {
+      if (e.target.closest && e.target.closest('button,input,select,a')) return;
+      var r = panel.getBoundingClientRect();
+      dragging = true; ox = e.clientX; oy = e.clientY; sx = r.left; sy = r.top;
+      handle.style.cursor = 'grabbing';
+      try { handle.setPointerCapture(e.pointerId); } catch (x) {}
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      panel.style.left = (sx + e.clientX - ox) + 'px';
+      panel.style.top = (sy + e.clientY - oy) + 'px';
+      panel.style.right = 'auto'; panel.style.bottom = 'auto'; panel.style.transform = 'none';
+    });
+    function end() { dragging = false; handle.style.cursor = 'grab'; }
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
   }
 
   function open() {
@@ -327,5 +354,5 @@
   global.openScheduleAuthorWizard = open;
   global.ScheduleAuthorUI = { open: open, close: close, toggle: toggle };
 
-  console.log('§SCHEDULE_AUTHOR_UI_LOADED v2');
+  console.log('§SCHEDULE_AUTHOR_UI_LOADED v3');
 })(typeof self !== 'undefined' ? self : this);
