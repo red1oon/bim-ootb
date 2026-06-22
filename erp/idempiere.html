@@ -3525,6 +3525,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§ASK chip=top3');
       });
       chips.appendChild(topChip);
+      // TOP / BOTTOM N (W-DASH-TOPN) — drill the LIST to the 5 biggest / smallest records by amount. Same fold
+      //   the donuts use (sort _records by amtCol), then hand the PKs to the shared list drill (_drillByKeys →
+      //   _drillToRecords closes the dash + narrows the grid, with "✕ Show all" to restore). No new surface.
+      function _rankDrill(dir) {
+        var kc = _keyCol(tab), N = 5;
+        var sorted = _records.slice().sort(function (a, b) { return _amtSum([b], amtCol) - _amtSum([a], amtCol); });
+        var pick = (dir === 'bottom') ? sorted.slice(-N).reverse() : sorted.slice(0, N);
+        var ids = pick.map(function (r) { return recVal(r, kc); });
+        console.log('§DASH-TOPN dir=' + dir + ' n=' + pick.length + ' by=' + amtCol +
+          ' ids=[' + ids.join(',') + '] amts=[' + pick.map(function (r) { return Math.round(_amtSum([r], amtCol)); }).join(',') + ']');
+        _drillByKeys(ids);
+      }
+      var topN = el('button', 'ask-chip', 'Top 5 by ' + amtCol);
+      topN.title = 'Drill the list to the 5 biggest by ' + amtCol;
+      topN.addEventListener('click', function () { _rankDrill('top'); });
+      chips.appendChild(topN);
+      var botN = el('button', 'ask-chip', 'Bottom 5 by ' + amtCol);
+      botN.title = 'Drill the list to the 5 smallest by ' + amtCol;
+      botN.addEventListener('click', function () { _rankDrill('bottom'); });
+      chips.appendChild(botN);
       var fkDim = dims.filter(function (f) { return /partner|customer|salesrep|vendor/i.test(f.columnName) || /_id$/i.test(f.columnName); })[0];
       if (fkDim) {
         var cChip = el('button', 'ask-chip', 'Anything unusual?');
@@ -3763,7 +3783,102 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // OVERVIEW — lay out SEVERAL charts flowing down (a real dashboard, not one). Auto-pick from the model's own
   //   dimensions: lifecycle status, the highest-signal categorical fields (top-N capped), and a date trend.
   //   Every chart is a real fold of the open-window records. NON-INVENT, zero per-model code.
+  // STACKED BAR (W-DASH-STACK) — one cut split by another: the open window's records bucketed by MONTH, each bar
+  //   segmented by DocStatus (KanbanLens.statusColor). Reuses the _groupByMonth fold + the per-status counts; every
+  //   segment is a real record count (NON-INVENT). Drawn as an SVG so it sits beside the S-curve on the Graph tab.
+  //   Long-press a bar → that month's records (DASH_DRILL). opts:{dateF, statusF}.
+  function _renderStackedBar(container, opts) {
+    var dateF = opts.dateF, statusF = opts.statusF, KL = window.KanbanLens, NS = 'http://www.w3.org/2000/svg';
+    var byMonth = _groupByMonth(dateF), months = Object.keys(byMonth).sort();
+    if (!months.length) { console.log('§DASH-STACK skip months=0'); return null; }
+    var lab = function (r) { return String(fmt(statusF, recVal(r, statusF.columnName)) || '(blank)'); };
+    // status order = global frequency (stable legend); rawOf maps a label → a raw code for statusColor.
+    var stTot = {}, rawOf = {};
+    _records.forEach(function (r) { var l = lab(r); stTot[l] = (stTot[l] || 0) + 1; if (!(l in rawOf)) rawOf[l] = String(recVal(r, statusF.columnName)); });
+    var statuses = Object.keys(stTot).sort(function (a, b) { return stTot[b] - stTot[a]; });
+    var maxN = 1; months.forEach(function (mn) { maxN = Math.max(maxN, byMonth[mn].length); });
+    var W = 320, H = 160, padL = 6, padB = 22, padT = 10, n = months.length, slot = (W - padL) / n;
+    var bw = slot * 0.66, y0 = H - padB;
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'stack-svg');
+    var col = function (s) { return KL ? KL.statusColor(rawOf[s]) : '#6c9fff'; };
+    var segLog = [];
+    months.forEach(function (mn, i) {
+      var rows = byMonth[mn], x = padL + i * slot + (slot - bw) / 2, byS = {};
+      rows.forEach(function (r) { var l = lab(r); byS[l] = (byS[l] || 0) + 1; });
+      var stacked = 0;
+      statuses.forEach(function (s) {
+        var c = byS[s] || 0; if (!c) return;
+        var h = (H - padB - padT) * (c / maxN), yTop = y0 - stacked - h;
+        var rect = document.createElementNS(NS, 'rect');
+        rect.setAttribute('x', x.toFixed(1)); rect.setAttribute('y', yTop.toFixed(1));
+        rect.setAttribute('width', bw.toFixed(1)); rect.setAttribute('height', Math.max(0, h).toFixed(1));
+        rect.setAttribute('fill', col(s)); rect.style.cursor = 'pointer';
+        var ti = document.createElementNS(NS, 'title'); ti.textContent = mn + ' · ' + s + ': ' + c; rect.appendChild(ti);
+        if (typeof _lpDrill === 'function') (function (m) { _lpDrill(rect, function () { return byMonth[m] || []; }); })(mn);   // DASH_DRILL
+        svg.appendChild(rect); stacked += h;
+      });
+      var tx = document.createElementNS(NS, 'text'); tx.setAttribute('x', (x + bw / 2).toFixed(1)); tx.setAttribute('y', H - padB + 12);
+      tx.setAttribute('text-anchor', 'middle'); tx.setAttribute('class', 'stack-lbl'); tx.textContent = mn.slice(2); svg.appendChild(tx);   // 'YY-MM'
+      segLog.push(mn + ':' + statuses.map(function (s) { return byS[s] || 0; }).join('/'));
+    });
+    container.appendChild(svg);
+    var leg = el('div', 'stack-legend');
+    statuses.forEach(function (s) { var it = el('span', 'stack-leg'); var sw = el('span', 'stack-sw'); sw.style.background = col(s); it.appendChild(sw); it.appendChild(document.createTextNode(s)); leg.appendChild(it); });
+    container.appendChild(leg);
+    console.log('§DASH-STACK months=' + n + ' statuses=' + statuses.length + ' max=' + maxN + ' segs=[' + segLog.join(' ') + ']');
+    return svg;
+  }
+  // UP/DOWN vs last month (W-DASH-KPI) — % change of the headline measure (amount if the table has one, else
+  //   record count) from the prior FULL month to the last. Reuses _cumByMonth's per-month fold; green up / red
+  //   down (status palette). Honest null when there are <2 months of data. NON-INVENT: last full month vs the
+  //   one before, both real folds.
+  function _periodDelta(tab, amtCol) {
+    var dateF = _dateFieldOf(tab); if (!dateF) { console.log('§DASH-TREND skip no-date'); return null; }
+    var c = _cumByMonth(dateF, amtCol);   // c.per = per-month amount (amtCol) or count (no amtCol)
+    if (c.per.length < 2) { console.log('§DASH-TREND skip months=' + c.per.length); return null; }
+    var thisMo = c.per[c.per.length - 1], lastMo = c.per[c.per.length - 2];
+    var up = thisMo >= lastMo;
+    var pct = lastMo ? Math.round((thisMo - lastMo) / Math.abs(lastMo) * 100) : (thisMo ? 100 : 0);
+    var span = el('span', 'kpi-delta ' + (up ? 'up' : 'down'), (up ? '▲ ' : '▼ ') + Math.abs(pct) + '%');
+    span.title = (amtCol ? 'amount' : 'count') + ' ' + c.months[c.months.length - 2] + ' → ' + c.months[c.months.length - 1];
+    console.log('§DASH-TREND measure=' + (amtCol ? amtCol : 'count') + ' lastMo=' + Math.round(lastMo) + ' thisMo=' + Math.round(thisMo) + ' pct=' + pct);
+    return span;
+  }
+  // KPI STRIP (W-DASH-KPI) — a row of headline folds across the top of the Graph tab: count · total · average ·
+  //   biggest · smallest of the OPEN window's records, plus an up/down vs last month on the headline measure.
+  //   PURE folds (length + Σ + Math.min/max over _records; money via KanbanLens.fmtMoney). Honest "—" for the
+  //   four amount cells when the table has no amount column (count is always real, and carries the delta then).
+  //   NON-INVENT — every number traces to a real record fold.
+  function _buildKpiStrip(tab, amtCol) {
+    var KL = window.KanbanLens, M = function (v) { return KL ? KL.fmtMoney(v) : String(Math.round(v)); };
+    var n = _records.length, strip = el('div', 'dash-kpi');
+    function cell(label, value, extra) {
+      var c = el('div', 'kpi-cell'), v = el('div', 'kpi-v', value);
+      if (extra) v.appendChild(extra);
+      c.appendChild(v); c.appendChild(el('div', 'kpi-l', label)); return c;
+    }
+    if (amtCol) {
+      var amts = _records.map(function (r) { var x = Number(recVal(r, amtCol)); return isFinite(x) ? x : 0; });
+      var total = amts.reduce(function (a, b) { return a + b; }, 0), avg = n ? total / n : 0;
+      var mx = n ? Math.max.apply(null, amts) : 0, mn = n ? Math.min.apply(null, amts) : 0;
+      strip.appendChild(cell('Records', String(n), null));
+      strip.appendChild(cell('Total', M(total), _periodDelta(tab, amtCol)));
+      strip.appendChild(cell('Average', M(avg), null));
+      strip.appendChild(cell('Biggest', M(mx), null));
+      strip.appendChild(cell('Smallest', M(mn), null));
+      console.log('§DASH-KPI rows=' + n + ' total=' + Math.round(total) + ' avg=' + Math.round(avg) + ' max=' + Math.round(mx) + ' min=' + Math.round(mn) + ' amtCol=' + amtCol);
+    } else {
+      strip.appendChild(cell('Records', String(n), _periodDelta(tab, null)));
+      strip.appendChild(cell('Total', '—', null));
+      strip.appendChild(cell('Average', '—', null));
+      strip.appendChild(cell('Biggest', '—', null));
+      strip.appendChild(cell('Smallest', '—', null));
+      console.log('§DASH-KPI rows=' + n + ' amtCol=none (count-only)');
+    }
+    return strip;
+  }
   function _buildOverview(gbox, tab, amtCol) {
+    gbox.appendChild(_buildKpiStrip(tab, amtCol));   // KPI strip — headline folds across the top of the Graph tab
     var gr = _groupRecs();
     var dims = _dimFields(tab);
     var statusF = dims.filter(function (f) { return /docstatus|status/i.test(f.columnName); })[0] || (gr.hasStatus ? gr.col : null);
@@ -3796,6 +3911,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var sc = el('div', 'dash-card dash-scurve'); sc.setAttribute('data-dim', '__scurve');
       sc.appendChild(el('div', 'dash-chart-h', 'Cumulative ' + (amtCol ? amtCol : 'count') + ' — ' + dateF.name + (_dashForecast ? ' + forecast' : '')));
       if (_renderSCurve(sc, { field: dateF, amtCol: amtCol })) grid.appendChild(sc);
+    }
+    // STACKED BAR — the per-month status MIX (the S-curve shows the running total; this shows how each month split
+    //   by status). Only when the window has BOTH a date and a status axis; honest skip otherwise.
+    if (dateF && statusF) {
+      var stc = el('div', 'dash-card dash-scurve'); stc.setAttribute('data-dim', '__stack');
+      stc.appendChild(el('div', 'dash-chart-h', statusF.name + ' by month — ' + dateF.name));
+      if (_renderStackedBar(stc, { dateF: dateF, statusF: statusF })) grid.appendChild(stc);
     }
     charts.forEach(function (c) { _addDonutCard(grid, c.key, (c.label.indexOf('(') < 0 ? 'By ' : '') + c.label, c.groups, c.statusCol || null, amtCol); });
     var hint = el('div', 'dash-hint', 'Long-press a slice to open its records'); grid.appendChild(hint);   // gesture tip in the blank grid slot
@@ -4545,6 +4667,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // landscape two-column: charts LEFT, Ask panel (chips + sub-charts) RIGHT in the idle desktop width
       '.dash-split{display:flex;gap:18px;align-items:flex-start}.dash-main{flex:1 1 auto;min-width:0}.dash-side{flex:0 0 340px;max-width:340px;border-left:1px solid rgba(255,255,255,.10);padding-left:16px;animation:askfade .5s ease;position:sticky;top:0}' +
       '.dash-gbox{margin-bottom:14px}' +
+      '.dash-kpi{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}.kpi-cell{flex:1 1 0;min-width:96px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 12px}' +
+      '.kpi-v{font-size:18px;font-weight:700;color:#e6edf7;display:flex;align-items:baseline;gap:6px;line-height:1.1}.kpi-l{font-size:11px;font-weight:600;color:#8aa0c0;margin-top:4px;text-transform:uppercase;letter-spacing:.04em}' +
+      '.kpi-delta{font-size:12px;font-weight:700}.kpi-delta.up{color:#3fb950}.kpi-delta.down{color:#f85149}' +
       '@keyframes askfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}' +
       '.ask-head{display:flex;justify-content:space-between;align-items:center;width:100%;background:transparent;border:none;color:#6c9fff;font-size:12px;font-weight:700;cursor:pointer;padding:0 0 8px}.ask-chev{font-size:10px}' +
       '.dash-side.collapsed .ask-body{display:none}.ask-summary{font-size:13px;color:#cfd6e2;line-height:1.5;margin-bottom:10px}' +
@@ -4578,6 +4703,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       '.tl-col.future .tl-card{border:1px dashed rgba(108,159,255,.7);background:rgba(108,159,255,.07);color:#bcd2ff}.tl-col.future .tl-av{background:#3a5fa8;color:#cfe0ff}.tl-col.future .tl-t{color:#bcd2ff}.tl-col.future .tl-a{color:#9bbcff}.tl-col.future .tl-day{color:#9bbcff;font-weight:600}' +
       '.dash-scurve{grid-column:span 2}.dash-scurve .scurve-svg{width:100%;height:150px}.scurve-now{fill:#7f93b8;font-size:9px}.scurve-flab{fill:#9bbcff;font-size:9px;font-weight:600}.scurve-delta{font-size:10px;font-weight:700}' +
       '.dash-forecast.active{color:#9bbcff;border-bottom-color:#9bbcff}@media(max-width:640px){.dash-scurve{grid-column:span 1}}' +
+      '.stack-svg{width:100%;height:160px}.stack-lbl{fill:#7f93b8;font-size:8px}.stack-legend{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:center;margin-top:6px}.stack-leg{font-size:10px;color:#8aa0c0;display:inline-flex;align-items:center}.stack-sw{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px}' +
       // WEB — the spider toggle + one-radar view (pies collapse into spokes by concentration).
       '.dash-webtoggle{align-self:flex-start;margin-bottom:10px;background:rgba(108,159,255,.10);border:1px solid rgba(108,159,255,.3);color:#9bbcff;font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;cursor:pointer}.dash-webtoggle:hover{background:rgba(108,159,255,.18)}' +
       '.dash-web{display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0}.dash-web .web-svg{width:100%;max-width:460px;height:auto}.web-lbl{fill:#aeb9cc;font-size:10px;font-weight:600}' +
