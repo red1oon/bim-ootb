@@ -170,14 +170,72 @@
     return { ok: true, guid: guid, taskId: taskId };
   }
 
+  // foldCost(db, scheduleId, RATES, ratesDefault, currency) — §AUTHOR-1 step ④ (5D).
+  // The cost breakdown is a FOLD, not hand-entry: each leaf phase's cost = Σ of its assigned
+  // elements' 5D cost (quantity × rate). NON-INVENT — reuses the shipped 5D model verbatim
+  // (analysis_sidecar.js compute5D quantity expressions + rates.js RATES/RATES_DEFAULT). Because
+  // cost rolls up FROM task_elements, reassigning an element (assignElement) moves its cost between
+  // phases — the authored WBS organizes the cost. Returns per-phase cost + project total.
+  function foldCost(db, scheduleId, RATES, ratesDefault, currency) {
+    scheduleId = scheduleId || 'SCH_AUTHORED';
+    RATES = RATES || {};
+    ratesDefault = ratesDefault || { rate: 0, unit: 'EA', desc: 'unmapped' };
+    // dominant-face area = longest × second-longest bbox edge (same expr as compute5D).
+    var areaExpr =
+      "MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE " +
+      "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
+      "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
+      "ELSE MAX(t.bbox_x,t.bbox_y) END";
+
+    // Seed every leaf phase (so a phase whose elements lack bbox still appears, cost 0).
+    var phaseOf = {}, order = [];
+    var pr = db.exec("SELECT task_id, name FROM tasks WHERE schedule_id='" + scheduleId +
+      "' AND (is_summary IS NULL OR is_summary=0) ORDER BY schedule_start, task_id");
+    if (pr.length && pr[0].values.length) pr[0].values.forEach(function (r) {
+      phaseOf[r[0]] = { taskId: r[0], name: r[1] || r[0], cost: 0, elements: 0 };
+      order.push(r[0]);
+    });
+
+    var unmapped = {};
+    var q = "SELECT te.task_id, m.ifc_class, " +
+      "MAX(t.bbox_x,t.bbox_y,t.bbox_z) AS lng, " + areaExpr + " AS area, " +
+      "t.bbox_x*t.bbox_y*t.bbox_z AS vol " +
+      "FROM task_elements te " +
+      "JOIN tasks tk ON tk.task_id=te.task_id AND tk.schedule_id='" + scheduleId +
+      "' AND (tk.is_summary IS NULL OR tk.is_summary=0) " +
+      "JOIN elements_meta m ON m.guid=te.guid " +
+      "JOIN element_transforms t ON t.guid=te.guid " +
+      "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0";
+    var er = db.exec(q);
+    var total = 0;
+    if (er.length && er[0].values.length) {
+      er[0].values.forEach(function (row) {
+        var tid = row[0], cls = row[1], lng = row[2] || 0, area = row[3] || 0, vol = row[4] || 0;
+        var rt = RATES[cls]; if (!rt) { rt = ratesDefault; unmapped[cls] = (unmapped[cls] || 0) + 1; }
+        var unit = rt.unit || 'EA';
+        var qty = unit === 'M' ? lng : unit === 'M2' ? area : unit === 'M3' ? vol : 1;
+        var cost = Math.round((rt.rate || 0) * qty);
+        var p = phaseOf[tid]; if (!p) return;   // element on a summary/foreign task — skip
+        p.cost += cost; p.elements++; total += cost;
+      });
+    }
+    var phases = order.map(function (tid) { return phaseOf[tid]; });
+    var unmappedClasses = Object.keys(unmapped);
+    console.log('§AUTHOR_COST schedule=' + scheduleId + ' total=' + total +
+      ' phases=' + phases.length + ' unmappedClasses=' + unmappedClasses.length +
+      (unmappedClasses.length ? ' [' + unmappedClasses.join(',') + ']' : ''));
+    return { currency: currency || '', total: total, phases: phases, unmappedClasses: unmappedClasses };
+  }
+
   var API = {
     matchRule: matchRule,
     materializeDefault: materializeDefault,
-    assignElement: assignElement
+    assignElement: assignElement,
+    foldCost: foldCost
   };
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v1');
+  console.log('§SCHEDULE_AUTHOR_LOADED v2');
 })(typeof self !== 'undefined' ? self : this);
