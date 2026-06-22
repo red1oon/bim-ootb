@@ -3131,6 +3131,31 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     renderBody(); renderToolbar();
     console.log('§DASH-DRILL table=' + tab.tableName + ' recs=' + rows.length + ' mode=' + _viewMode + ' of=' + (_drillSaved ? _drillSaved.length : '?'));
   }
+  // drill by record PKs against the open window's loaded set (used by the pivot iframe's message) — same table only.
+  function _drillByKeys(ids) {
+    var tab = _curTab(); if (!tab || !ids || !ids.length) return false;
+    var kc = _keyCol(tab), set = {}; ids.forEach(function (i) { set[String(i)] = 1; });
+    var rows = (_drillSaved || _records).filter(function (r) { return set[String(recVal(r, kc))]; });
+    if (!rows.length) {   // pivot folds the whole tenant table; the window adds its own where (IsSOTrx/org) — fetch by PK
+      try { rows = ADD.readRecords(db, tab.tableName, kc + ' IN (' + ids.map(function (i) { return _lit(i); }).join(',') + ')', null) || []; } catch (e) {}
+    }
+    if (!rows.length) { console.log('§DASH-DRILL-KEYS miss ids=' + ids.length); return false; }
+    _drillToRecords(rows); return true;
+  }
+  // long-press → drill (deliberate intent; a plain tap/hover only previews). The ONE gesture shared by every
+  //   dashboard lens. Cancels on movement (so a kanban card-drag still works) or early release. ~480ms, mouse+touch.
+  function _lpDrill(el, getRows) {
+    var timer = null, sx = 0, sy = 0;
+    function clear() { if (timer) { clearTimeout(timer); timer = null; } }
+    function start(x, y) { sx = x; sy = y; clear(); timer = setTimeout(function () { timer = null; var rows = getRows(); if (rows && rows.length) _drillToRecords(rows); }, 480); }
+    function moved(x, y) { if (timer && (Math.abs(x - sx) > 8 || Math.abs(y - sy) > 8)) clear(); }
+    el.addEventListener('mousedown', function (e) { start(e.clientX, e.clientY); });
+    el.addEventListener('mousemove', function (e) { moved(e.clientX, e.clientY); });
+    el.addEventListener('mouseup', clear); el.addEventListener('mouseleave', clear); el.addEventListener('dragstart', clear);
+    el.addEventListener('touchstart', function (e) { var t = e.touches && e.touches[0]; if (t) start(t.clientX, t.clientY); }, { passive: true });
+    el.addEventListener('touchmove', function (e) { var t = e.touches && e.touches[0]; if (t) moved(t.clientX, t.clientY); }, { passive: true });
+    el.addEventListener('touchend', clear); el.addEventListener('touchcancel', clear);
+  }
   function _restoreFromDrill() {
     if (!_drillSaved) return;
     _records = _drillSaved; _drillSaved = null; _drillActive = false; _recIdx = 0; _viewMode = 'grid';
@@ -3138,10 +3163,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§DASH-DRILL-RESTORE recs=' + _records.length);
   }
   function _drillBanner() {
-    var n = _records.length, m = _drillSaved ? _drillSaved.length : n, bar = el('div');
-    bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eaf1ff;border:1px solid #c3d7ff;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:13px;color:#234';
-    bar.appendChild(el('span', null, 'Showing ' + n + ' of ' + m + ' — drilled from the dashboard'));
-    var back = el('button', null, '✕ Show all'); back.style.cssText = 'background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer';
+    // minimal restore control only — the drilled records are self-evident (no explanatory note).
+    var bar = el('div'); bar.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:8px';
+    var back = el('button', null, '✕ Show all'); back.style.cssText = 'background:transparent;color:#1f6feb;border:1px solid #c3d7ff;border-radius:6px;padding:4px 11px;font-size:12px;font-weight:600;cursor:pointer';
     back.addEventListener('click', function () { _restoreFromDrill(); });
     bar.appendChild(back); return bar;
   }
@@ -3287,11 +3311,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   pivot_lens.html is a self-contained lens (loads sql.js + ?db=); host it as an IN-PAGE overlay iframe so the
   //   iDempiere surface stays put (FUNDAMENTAL LAW: lenses live on the ⋯ rail, never the native chrome). Points
   //   at the live tenant seed (ad_seed.db, same dir as pivot_lens.html). General table×row×col×measure, read-only.
+  // DASH_DRILL (pivot) — the pivot is an iframe; a long-pressed cell posts its real PKs back, and the host drills
+  //   them in the window IF the pivot is on the same table (else honestly skips — a different table is a different
+  //   window). Wired once. NON-INVENT: the cell's own record ids.
+  var _pivotDrillWired = false;
+  function _wirePivotDrill() {
+    if (_pivotDrillWired) return; _pivotDrillWired = true;
+    window.addEventListener('message', function (e) {
+      var d = e && e.data; if (!d || !d.pivotDrill) return;
+      var tab = _curTab(); if (!tab) return;
+      if (String(d.pivotDrill.table || '').toLowerCase() !== String(tab.tableName || '').toLowerCase()) {
+        console.log('§PIVOT-DRILL-HOST skip table=' + d.pivotDrill.table + ' (window=' + tab.tableName + ')'); return;
+      }
+      var ok = _drillByKeys(d.pivotDrill.ids || []);
+      console.log('§PIVOT-DRILL-HOST table=' + d.pivotDrill.table + ' ids=' + (d.pivotDrill.ids || []).length + ' drilled=' + ok);
+    });
+  }
   function openPivotFor(mount) {
     mount = _asMount(mount);
     if (!_session) { status('Log in first'); return; }
+    _wirePivotDrill();
+    var tn = (_curTab() && _curTab().tableName) ? String(_curTab().tableName).toLowerCase() : '';   // default the pivot to THIS window's table
+    var cid = (_session && _session.client) ? _session.client.id : '';   // scope the pivot to THIS tenant (matches the window; drill PKs land)
     var fr = el('iframe');
-    fr.src = 'pivot_lens.html?db=ad_seed.db';
+    fr.src = 'pivot_lens.html?db=ad_seed.db' + (tn ? '&table=' + encodeURIComponent(tn) : '') + (cid !== '' ? '&client=' + encodeURIComponent(cid) : '');
     fr.style.cssText = 'width:100%;height:' + (mount ? '70vh' : '82vh') + ';border:0;border-radius:10px;background:#0f1420';
     fr.setAttribute('title', 'Pivot lens');
     _lensOut(mount, 'Pivot — table × row × column × measure', fr);
@@ -3334,8 +3377,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var box = el('div'); box.style.cssText = 'overflow:auto;max-height:72vh';
     var t = el('table', 'dash-list'), hr = el('tr');
     flds.forEach(function (f) { hr.appendChild(el('th', null, f.name)); }); t.appendChild(hr);
-    _records.slice(0, 200).forEach(function (r) { var tr = el('tr');
-      flds.forEach(function (f) { var v = fmt(f, recVal(r, f.columnName)); tr.appendChild(el('td', null, v == null ? '' : String(v))); }); t.appendChild(tr); });
+    _records.slice(0, 200).forEach(function (r) { var tr = el('tr'); tr.style.cursor = 'pointer';
+      flds.forEach(function (f) { var v = fmt(f, recVal(r, f.columnName)); tr.appendChild(el('td', null, v == null ? '' : String(v))); }); t.appendChild(tr);
+      _lpDrill(tr, function () { return [r]; }); });   // DASH_DRILL — long-press a row → that record
     box.appendChild(t); _lensOut(mount, 'List', box);
     console.log('§DASH-LIST rows=' + Math.min(_records.length, 200) + ' cols=' + flds.length);
   }
@@ -3371,6 +3415,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (amtCol) { var a = recVal(r, amtCol); if (a != null && a !== '') mid.appendChild(el('div', 'tl-a', KL ? KL.fmtMoney(a) : String(a))); }
         card.appendChild(av); card.appendChild(mid);
         if (KL && stCol) { var st = String(recVal(r, stCol) || ''); if (st) card.style.borderLeft = '3px solid ' + KL.statusColor(st); }
+        card.style.cursor = 'pointer';
+        (function (rec) { _lpDrill(card, function () { return [rec]; }); })(r);   // DASH_DRILL — long-press a card → that record
         colE.appendChild(card);
       });
       if (byDay[day].length > 8) colE.appendChild(el('div', 'tl-more', '+' + (byDay[day].length - 8)));
@@ -3536,12 +3582,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', sw); c.setAttribute('stroke-dasharray', '0 ' + circ);
       c.style.transform = 'rotate(' + (cum / circ * 360 - 90) + 'deg)'; c.style.transformBox = 'fill-box'; c.style.transformOrigin = 'center'; c.style.transition = 'stroke-dasharray .6s cubic-bezier(.22,1,.36,1)'; c.style.cursor = 'pointer';
       var sliceRows = groups[k];   // capture now — the '(others)' bucket is deleted right after this arc is built
-      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + fmtV(v) + ' (' + pct + '%) — tap to open these records'; c.appendChild(ti);
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + fmtV(v) + ' (' + pct + '%)'; c.appendChild(ti);
       c.addEventListener('mouseenter', function () { setCentre(pct + '%', label); });
       c.addEventListener('mouseleave', function () { setCentre(fmtV(total), 'total'); });
       c.addEventListener('touchstart', function () { setCentre(pct + '%', label); }, { passive: true });
-      // DASH_DRILL — tap the arc → those records in their window (long-press is the text-flip, so skip if it fired)
-      c.addEventListener('click', function () { if (_donutLP) { _donutLP = false; return; } if (sliceRows && sliceRows.length && typeof _drillToRecords === 'function') _drillToRecords(sliceRows); });
+      // DASH_DRILL — LONG-PRESS the slice → its records in the window (deliberate intent; plain hover only previews)
+      if (typeof _lpDrill === 'function') _lpDrill(c, function () { return sliceRows; });
       svg.appendChild(c);
       if (pct >= 8) {   // % ON the arc (mid-angle); slim slices stay clean, revealed on hover instead
         var mid = (cum + len / 2) / circ, ang = (mid * 360 - 90) * Math.PI / 180;
@@ -3559,11 +3605,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var textm = el('div', 'donut-text');
     rows.forEach(function (ro) { var li = el('div', 'donut-tli'); var s = el('span', 'donut-sw'); s.style.background = ro.color; li.appendChild(s); li.appendChild(el('span', 'donut-k', ro.label)); li.appendChild(el('span', 'donut-v', ro.pct + '% · ' + fmtV(ro.v))); textm.appendChild(li); });
     wrap.appendChild(textm);
-    var lp = null, _donutLP = false;
-    function startLP() { _donutLP = false; lp = setTimeout(function () { _donutLP = true; wrap.classList.toggle('textmode'); console.log('§DONUT-TEXTMODE on=' + wrap.classList.contains('textmode')); }, 480); }
-    function cancelLP() { if (lp) { clearTimeout(lp); lp = null; } }
-    wrap.addEventListener('mousedown', startLP); wrap.addEventListener('mouseup', cancelLP); wrap.addEventListener('mouseleave', cancelLP);
-    wrap.addEventListener('touchstart', startLP, { passive: true }); wrap.addEventListener('touchend', cancelLP);
+    // DOUBLE-TAP/double-click flips the donut to its text table (long-press is now reserved for DASH_DRILL).
+    wrap.addEventListener('dblclick', function () { wrap.classList.toggle('textmode'); console.log('§DONUT-TEXTMODE on=' + wrap.classList.contains('textmode')); });
     container.appendChild(wrap);
     requestAnimationFrame(function () { slices.forEach(function (s) { s.el.setAttribute('stroke-dasharray', s.len + ' ' + (s.circ - s.len)); }); });
     return { total: total, slices: keys.length + (others ? 1 : 0) };
@@ -3593,6 +3636,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // grid of DONUT cards — all donuts, consistent + snuggled. Each is a real fold; top-6 + "others".
     var grid = el('div', 'dash-grid'); gbox.appendChild(grid);
     charts.forEach(function (c) { _addDonutCard(grid, c.key, (c.label.indexOf('(') < 0 ? 'By ' : '') + c.label, c.groups, c.statusCol || null, amtCol); });
+    var hint = el('div', 'dash-hint', 'Long-press a slice to open its records'); grid.appendChild(hint);   // gesture tip in the blank grid slot
     console.log('§DASH-OVERVIEW donuts=' + charts.length + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
     return grid;
   }
@@ -3611,7 +3655,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     h.appendChild(ex); card.appendChild(h);
     _renderDonut(card, { groups: groups, statusCol: statusCol, amtCol: amtCol });
-    grid.appendChild(card); return true;
+    var hint = grid.querySelector('.dash-hint'); if (hint) grid.insertBefore(card, hint); else grid.appendChild(card);
+    return true;
   }
   // DASHBOARD — ONE surface, N lenses (Odoo multi-view). Tabs flip the SAME open-window records; the Graph tab
   //   paints instantly then streams the Ask panel in (never blocks first sight). FUNDAMENTAL LAW: a ⋯-rail lens.
@@ -3758,6 +3803,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var _kbMountBoard = function (r, bd) {
       // S6 LENS-SWAP: a kanban drag reuses the SHARED _fsmCtx dispatch (same signed lane as the grid DocAction bar)
       window.__idmpKanban = window.KanbanLens.mount({ root: r, board: bd, wfmc: _kanbanWfmc, meta: kmeta, dispatch: _kbDispatch, ctx: {}, onResult: _kbOnResult });
+      // DASH_DRILL — long-press a card → its record (the move-guard leaves the status-change DRAG intact)
+      [].slice.call(r.querySelectorAll('.kanban-card')).forEach(function (cardEl) {
+        var key = cardEl.dataset && cardEl.dataset.key; if (!key) return;
+        var id = key.split('#').slice(1).join('#');
+        var rec = _records.filter(function (x) { return String(recVal(x, kc)) === id; })[0];
+        if (rec) _lpDrill(cardEl, function () { return [rec]; });
+      });
     };
     var container = el('div');
     if (!mount) container.appendChild(_viewSwitch('📊 View as Graph', openGraphFor));
@@ -4281,6 +4333,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       '.dash-card .dash-chart-h{align-self:stretch;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px}.donut-wrap{display:flex;justify-content:center;width:100%;cursor:pointer;-webkit-user-select:none;user-select:none}.donut-svg{width:148px;height:148px}' +
       '.dash-export{background:transparent;border:none;color:#6a7384;cursor:pointer;padding:1px 3px;border-radius:5px;display:inline-flex;align-items:center;flex:0 0 auto}.dash-export:hover{color:#6c9fff;background:rgba(108,159,255,.12)}.dash-export svg{width:14px;height:14px}' +
       '.dash-export-all{margin-left:auto;color:#9aa6b8;display:inline-flex;align-items:center;gap:5px}.dash-export-all svg{width:14px;height:14px}.dash-export-all:hover{color:#6c9fff}' +
+      '.dash-hint{display:flex;align-items:center;justify-content:center;text-align:center;min-height:60px;padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:12px;color:#6a7384;font-size:12px;line-height:1.4}' +
       '.dash-exmenu{position:fixed;z-index:200;background:#1b2230;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:2px;box-shadow:0 8px 24px rgba(0,0,0,.5)}.dash-exmi{background:transparent;border:none;color:#e8e8ed;font-size:12px;font-weight:600;text-align:left;padding:6px 16px;border-radius:5px;cursor:pointer}.dash-exmi:hover{background:rgba(108,159,255,.18);color:#6c9fff}' +
       '.donut-center{fill:#e8e8ed;font-size:16px;font-weight:700}.donut-sub{fill:#8aa0c0;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em}.donut-arc-l{fill:#fff;font-size:9px;font-weight:800;paint-order:stroke;stroke:rgba(0,0,0,.5);stroke-width:2.4px;pointer-events:none}' +
       '.donut-text{display:none;flex-direction:column;gap:5px;width:100%;padding:4px 2px}.donut-wrap.textmode .donut-svg{display:none}.donut-wrap.textmode .donut-text{display:flex}.donut-tli{display:flex;align-items:center;gap:7px;font-size:12px;color:#cfd6e2}.donut-sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto}.donut-tli .donut-k{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.donut-tli .donut-v{color:#9aa6b8;font-variant-numeric:tabular-nums}' +

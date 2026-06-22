@@ -28,13 +28,12 @@ await page.evaluate(()=>{var c=[].slice.call(document.querySelectorAll('.dash-si
 await page.waitForTimeout(250);const tChip=now()-tc;
 const gridAfter=await page.evaluate(()=>document.querySelectorAll('.dash-main .dash-card').length);
 console.log('§T-CHIP filledLeft='+(gridAfter>gridBefore)+' gridBefore='+gridBefore+' gridAfter='+gridAfter+' clickMs='+tChip+' :: '+(logs.filter(l=>l.startsWith('§ASK ')).pop()||''));
-// LONG-PRESS → textmode
-await page.evaluate(()=>{var w=document.querySelector('.dash-main .donut-wrap');w.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}))});
-await page.waitForTimeout(560);
-await page.evaluate(()=>{var w=document.querySelector('.dash-main .donut-wrap');w.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}))});
+// DOUBLE-CLICK → textmode (long-press is now reserved for drill)
+await page.evaluate(()=>{var w=document.querySelector('.dash-main .donut-wrap');w.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))});
+await page.waitForTimeout(120);
 const textmode=await page.evaluate(()=>!!document.querySelector('.dash-main .donut-wrap.textmode'));
-console.log('§T-LONGPRESS textmode='+textmode+' :: '+(logs.filter(l=>l.startsWith('§DONUT-TEXTMODE')).pop()||'(none)'));
-await page.evaluate(()=>{var w=document.querySelector('.dash-main .donut-wrap.textmode');if(w){w.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));setTimeout(()=>w.dispatchEvent(new MouseEvent('mouseup',{bubbles:true})),520)}});await page.waitForTimeout(640);
+console.log('§T-TEXTMODE textmode='+textmode+' :: '+(logs.filter(l=>l.startsWith('§DONUT-TEXTMODE')).pop()||'(none)'));
+await page.evaluate(()=>{var w=document.querySelector('.dash-main .donut-wrap.textmode');if(w)w.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))});await page.waitForTimeout(120);
 // COLLAPSE toggle
 await page.evaluate(()=>{var h=document.querySelector('.dash-side .ask-head');h&&h.click()});
 await page.waitForTimeout(120);
