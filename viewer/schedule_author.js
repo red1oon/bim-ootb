@@ -177,6 +177,39 @@
     return { ok: true, guid: guid, taskId: taskId };
   }
 
+  // activeSchedule(db) — detect the schedule the wizard should EDIT. A model dropped from Bonsai/Revit
+  // arrives WITH a native IFC schedule (import_worker captures IfcWorkSchedule/IfcTask into these same
+  // tables, keyed by IFC GlobalId — NOT 'SCH_AUTHORED'). So the wizard must recognize an imported
+  // (captured) schedule and edit IT, never rule-generate a competing one (_cap reads ALL schedule_ids
+  // → two schedules = a doubled timeline). Priority: the user's own SCH_AUTHORED draft, else the
+  // imported schedule. Returns {id, name, taskCount, authored, captured} or null when no dated schedule.
+  function activeSchedule(db) {
+    var r;
+    try {
+      r = db.exec("SELECT schedule_id, COUNT(*) AS n FROM tasks " +
+        "WHERE schedule_start IS NOT NULL AND (is_summary IS NULL OR is_summary=0) AND schedule_id IS NOT NULL " +
+        "GROUP BY schedule_id");
+    } catch (e) { return null; }
+    if (!r.length || !r[0].values.length) return null;
+    var list = r[0].values.map(function (row) {
+      return { id: row[0], taskCount: row[1], authored: row[0] === 'SCH_AUTHORED' };
+    });
+    try {
+      var nr = db.exec("SELECT schedule_id, name FROM schedules");
+      if (nr.length && nr[0].values.length) {
+        var nm = {}; nr[0].values.forEach(function (x) { nm[x[0]] = x[1]; });
+        list.forEach(function (s) { s.name = nm[s.id] || s.id; });
+      }
+    } catch (e) {}
+    list.forEach(function (s) { if (!s.name) s.name = s.id; });
+    var authored = list.filter(function (s) { return s.authored; })[0];
+    var pick = authored || list[0];
+    pick.captured = !pick.authored;
+    console.log('§AUTHOR_DETECT schedules=' + list.length + ' active=' + pick.id +
+      ' captured=' + pick.captured + ' tasks=' + pick.taskCount);
+    return pick;
+  }
+
   // scheduleContiguous(db, scheduleId, opts) — §MI-FLOW: the user's deliberate "originate the dates"
   // act (the optional "suggest a start"). Lays the leaf phases out contiguously from opts.start so
   // a blank-materialized (undated) schedule becomes datable on demand. Orders by rowid = insert
@@ -263,6 +296,7 @@
     matchRule: matchRule,
     materializeDefault: materializeDefault,
     scheduleContiguous: scheduleContiguous,
+    activeSchedule: activeSchedule,
     assignElement: assignElement,
     foldCost: foldCost
   };
@@ -270,5 +304,5 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v3');
+  console.log('§SCHEDULE_AUTHOR_LOADED v4');
 })(typeof self !== 'undefined' ? self : this);
