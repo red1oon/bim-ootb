@@ -3607,6 +3607,63 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§DASH-SCURVE months=' + c.months.length + ' cumLast=' + Math.round(c.cum[c.cum.length - 1]) + ' forecast=' + fc.length + ' measure=' + (amtCol || 'count'));
     return svg;
   }
+  // ── EVM VARIANCE S-CURVE (W-DASH-VARIANCE) — the "future tense" with a REAL committed baseline. §SPEC: on a
+  //   Project window, a project's C_ProjectPhase rows carry a baked PlannedAmt (the contract) AND a CommittedAmt
+  //   (the projected outturn) — both REAL, extracted, never invented (e.g. BIM: Hospital 990000 = 64.7M planned →
+  //   87.4M committed, +35%). So the S-curve here is the variance cockpit: cumulative PLANNED (grey baseline,
+  //   always) vs cumulative COMMITTED/forecast outturn (blue, revealed by the Forecast toggle) + the Δ. This is
+  //   the same picture the 4D Time Machine folds (viewer/time_machine.js _computeEVM) — one truth, two surfaces.
+  //   The interactive schedule what-if (date slips on a blue branch) lives in viewer/whatif.js on the Gantt; it is
+  //   NOT folded here — a generic dashboard has no schedule-slip surface, and faking one would invent.
+  function _isProjectWindow() { var t = _curTab(); return !!t && String(t.tableName || '').toLowerCase() === 'c_project'; }
+  // pick the project in the open window that HAS phases (mirrors whatif_panel _pickProject); NON-INVENT.
+  function _pickPhasedProject() {
+    if (!db) return null;
+    // prefer a project actually in the open records, else any project with phases.
+    var ids = _records.map(function (r) { return recVal(r, 'C_Project_ID'); }).filter(function (v) { return v != null; });
+    try {
+      for (var i = 0; i < ids.length; i++) {
+        var r0 = db.exec('SELECT 1 FROM C_ProjectPhase WHERE C_Project_ID=' + Number(ids[i]) + ' LIMIT 1');
+        if (r0.length && r0[0].values.length) { var nm = db.exec('SELECT Name FROM C_Project WHERE C_Project_ID=' + Number(ids[i])); return { id: ids[i], name: nm.length && nm[0].values.length ? nm[0].values[0][0] : ('#' + ids[i]) }; }
+      }
+      var r = db.exec("SELECT p.C_Project_ID,p.Name FROM C_Project p WHERE EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID) ORDER BY p.C_Project_ID DESC LIMIT 1");
+      if (r.length && r[0].values.length) return { id: r[0].values[0][0], name: r[0].values[0][1] };
+    } catch (e) { console.log('§DASH-VARIANCE-PICK err=' + e.message); }
+    return null;
+  }
+  // fold a project's phases into cumulative planned + committed by phase EndDate. Real rows, ordered; NON-INVENT.
+  function _projectEVM(projectId) {
+    var r; try { r = db.exec("SELECT SeqNo,Name,PlannedAmt,CommittedAmt,EndDate FROM C_ProjectPhase WHERE C_Project_ID=" + Number(projectId) + " AND Name<>'Unsequenced' ORDER BY SeqNo"); }
+    catch (e) { return null; }
+    if (!r.length || !r[0].values.length) return null;
+    var rows = r[0].values, labels = [], planned = [], committed = [], cp = 0, cc = 0, phaseRows = [];
+    rows.forEach(function (v) { cp += Number(v[2] || 0); cc += Number(v[3] || 0); labels.push(String(v[4] || '').slice(0, 7)); planned.push(cp); committed.push(cc); phaseRows.push({ name: v[1], planned: Number(v[2] || 0), committed: Number(v[3] || 0) }); });
+    return { labels: labels, planned: planned, committed: committed, bac: cp, eac: cc, phases: phaseRows };
+  }
+  // draw the variance S-curve: planned baseline (grey, always) + committed outturn (blue, when _dashForecast) + Δ.
+  function _renderVarianceSCurve(container, evm) {
+    var KL = window.KanbanLens, NS = 'http://www.w3.org/2000/svg', M = function (v) { return KL ? KL.fmtMoney(v) : String(Math.round(v)); };
+    var W = 320, H = 150, pad = 24, n = evm.planned.length, maxV = Math.max(evm.bac, evm.eac) || 1;
+    function X(i) { return pad + (W - 2 * pad) * (n > 1 ? i / (n - 1) : 0); }
+    function Y(v) { return H - pad - (H - 2 * pad) * (v / maxV); }
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'scurve-svg');
+    function line(x1, y1, x2, y2, st, da) { var l = document.createElementNS(NS, 'line'); l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); l.setAttribute('stroke', st); if (da) l.setAttribute('stroke-dasharray', da); svg.appendChild(l); }
+    function poly(arr, color, da, w) { var p = document.createElementNS(NS, 'path'); p.setAttribute('d', arr.map(function (v, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1); }).join(' ')); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color); p.setAttribute('stroke-width', w || 2); if (da) p.setAttribute('stroke-dasharray', da); svg.appendChild(p); return p; }
+    line(pad, H - pad, W - pad, H - pad, 'rgba(255,255,255,.12)'); line(pad, pad, pad, H - pad, 'rgba(255,255,255,.12)');
+    poly(evm.planned, '#9aa6b8', null, 2.2);   // PLANNED baseline (the contract) — always
+    var pl = document.createElementNS(NS, 'text'); pl.setAttribute('x', X(n - 1)); pl.setAttribute('y', Y(evm.bac) + 12); pl.setAttribute('text-anchor', 'end'); pl.setAttribute('class', 'scurve-now'); pl.textContent = 'planned ' + M(evm.bac); svg.appendChild(pl);
+    var delta = evm.eac - evm.bac, pctv = evm.bac ? Math.round(delta / evm.bac * 100) : 0;
+    if (_dashForecast) {   // COMMITTED / forecast outturn — the future tense
+      poly(evm.committed, '#6c9fff', '6 4', 2.4);
+      var cl = document.createElementNS(NS, 'text'); cl.setAttribute('x', X(n - 1)); cl.setAttribute('y', Y(evm.eac) - 6); cl.setAttribute('text-anchor', 'end'); cl.setAttribute('class', 'scurve-flab'); cl.textContent = 'forecast ' + M(evm.eac); svg.appendChild(cl);
+      var dv = document.createElementNS(NS, 'text'); dv.setAttribute('x', pad + 2); dv.setAttribute('y', pad + 4); dv.setAttribute('class', 'scurve-delta'); dv.setAttribute('fill', delta > 0 ? '#e08a6a' : '#5bbf8a'); dv.textContent = 'Δ ' + (delta > 0 ? '+' : '') + M(delta) + ' (' + (pctv > 0 ? '+' : '') + pctv + '%)'; svg.appendChild(dv);
+    } else {
+      var hint = document.createElementNS(NS, 'text'); hint.setAttribute('x', X(n - 1)); hint.setAttribute('y', Y(evm.bac) - 6); hint.setAttribute('text-anchor', 'end'); hint.setAttribute('class', 'scurve-now'); hint.textContent = 'Forecast →'; svg.appendChild(hint);
+    }
+    container.appendChild(svg);
+    console.log('§DASH-VARIANCE phases=' + n + ' planned=' + Math.round(evm.bac) + ' committed=' + Math.round(evm.eac) + ' delta=' + Math.round(delta) + ' pct=' + pctv + ' forecast=' + (_dashForecast ? 1 : 0));
+    return svg;
+  }
   // ── EXPORT (DASHBOARD_EXPORT — "the killer feature we miss") — pure EXTRACT of the real folds, NON-INVENT:
   //   CSV = the fold rows (key, count/amount, %); SVG = the donut node serialized; PNG = that SVG rastered to a
   //   canvas. Per-chart affordance + a window-level "Export" (all records). Every byte traces to a real record. ──
@@ -3727,9 +3784,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (dateF) { charts.push({ key: dateF.columnName, label: dateF.name + ' (by month)', groups: _groupByMonth(dateF) }); }
     // grid of DONUT cards — all donuts, consistent + snuggled. Each is a real fold; top-6 + "others".
     var grid = el('div', 'dash-grid'); gbox.appendChild(grid);
-    // S-curve trend card FIRST (the time axis) — real cumulative; dashed forecast tail only when toggled on.
-    //   Honest skip when the window has no date dimension. Spans 2 columns so the line reads.
-    if (dateF) {
+    // S-curve trend card FIRST (the time axis). On a PROJECT window with a baked Planned/Committed baseline, this
+    //   is the EVM VARIANCE curve (planned vs committed outturn + Δ); otherwise the generic cumulative trend.
+    //   Honest skip when neither applies. Spans 2 columns so the line reads.
+    var evmProj = _isProjectWindow() ? _pickPhasedProject() : null, evm = evmProj ? _projectEVM(evmProj.id) : null;
+    if (evm) {
+      var vc = el('div', 'dash-card dash-scurve'); vc.setAttribute('data-dim', '__variance');
+      vc.appendChild(el('div', 'dash-chart-h', 'Planned vs committed — ' + evmProj.name + (_dashForecast ? ' (variance)' : '')));
+      if (_renderVarianceSCurve(vc, evm)) grid.appendChild(vc);
+    } else if (dateF) {
       var sc = el('div', 'dash-card dash-scurve'); sc.setAttribute('data-dim', '__scurve');
       sc.appendChild(el('div', 'dash-chart-h', 'Cumulative ' + (amtCol ? amtCol : 'count') + ' — ' + dateF.name + (_dashForecast ? ' + forecast' : '')));
       if (_renderSCurve(sc, { field: dateF, amtCol: amtCol })) grid.appendChild(sc);
@@ -4462,7 +4525,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // FORECAST — the future tense: a dashed 'now' divider, dashed-blue projected columns, the S-curve trend card.
       '.tl-today{flex:0 0 auto;align-self:stretch;width:0;margin:0 6px;border-left:2px dashed rgba(108,159,255,.5);position:relative}.tl-today span{position:absolute;top:2px;left:-20px;font-size:9px;letter-spacing:.5px;color:#7f93b8;background:#11151f;padding:0 4px;border-radius:3px}' +
       '.tl-col.future .tl-card{border:1px dashed rgba(108,159,255,.7);background:rgba(108,159,255,.07);color:#bcd2ff}.tl-col.future .tl-av{background:#3a5fa8;color:#cfe0ff}.tl-col.future .tl-t{color:#bcd2ff}.tl-col.future .tl-a{color:#9bbcff}.tl-col.future .tl-day{color:#9bbcff;font-weight:600}' +
-      '.dash-scurve{grid-column:span 2}.dash-scurve .scurve-svg{width:100%;height:150px}.scurve-now{fill:#7f93b8;font-size:9px}.scurve-flab{fill:#9bbcff;font-size:9px;font-weight:600}' +
+      '.dash-scurve{grid-column:span 2}.dash-scurve .scurve-svg{width:100%;height:150px}.scurve-now{fill:#7f93b8;font-size:9px}.scurve-flab{fill:#9bbcff;font-size:9px;font-weight:600}.scurve-delta{font-size:10px;font-weight:700}' +
       '.dash-forecast.active{color:#9bbcff;border-bottom-color:#9bbcff}@media(max-width:640px){.dash-scurve{grid-column:span 1}}' +
       // mobile — snug: scrollable tabs, full-width charts, tighter chips/cards
       '@media(max-width:640px){.dash-tabs{overflow-x:auto;white-space:nowrap}.dash-tab{padding:8px 11px;font-size:12px}.dash-body{max-height:78vh}' +
