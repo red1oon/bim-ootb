@@ -1159,7 +1159,7 @@ function setupPanels(A) {
       // Alt+X bounding-box envelope ghost — hold-chip off X-Ray (sibling x-ray mode); pill:false → Help/Settings only, no standalone pill.
       { id: 'bbox',       name: 'Bounding Boxes',  key: 'Alt+X', pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
       { id: 'tm',         name: 'Time Machine',    key: 't', icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
-        children: [ { name: 'Gantt timeline' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
+        children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
       { id: 'section',    name: 'Section Cut',     key: 'x', icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
         children: [ { name: 'Y axis (vertical)' }, { name: 'X axis (lateral)' }, { name: 'Z axis (depth)' }, { name: 'Slider 0\u2013100%' }, { name: 'Bookmarks' } ] },
       { id: 'background', name: 'Background',      key: 'b', keepOpen: true, icon: I.contrast.svg,

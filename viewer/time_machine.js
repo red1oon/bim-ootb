@@ -1830,7 +1830,7 @@
       'background:rgba(20,20,40,0.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);' +
       'border:1px solid rgba(79,195,247,0.3);border-radius:12px;' +
       'box-shadow:0 4px 24px rgba(0,0,0,0.5);color:#e0e0e0;font-family:sans-serif;' +
-      'width:340px;user-select:none;touch-action:none;';
+      'width:376px;user-select:none;touch-action:none;';
 
     _panel.innerHTML =
       '<div style="display:flex;align-items:center;width:100%;cursor:grab" class="tm-drag">' +
@@ -1838,6 +1838,8 @@
         '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
+        '<button id="tm-author" style="font-size:12px;padding:2px 6px" title="Author 4D schedule — build phases up, assign elements, tune dates">&#9998;</button>' +
+        '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
         '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
@@ -1926,6 +1928,21 @@
     });
 
     document.getElementById('tm-slider').addEventListener('input', onSlide);
+
+    // §AUTHOR-1: the 4D-schedule authoring wizard + what-if are TM-owned (launched from this surface).
+    var _author = document.getElementById('tm-author');
+    if (_author) _author.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
+      else if (typeof window.openScheduleAuthorWizard === 'function') window.openScheduleAuthorWizard();
+      else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'Author engine not loaded'; }
+    });
+    var _whatif = document.getElementById('tm-whatif');
+    if (_whatif) _whatif.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      if (window.WhatIfPanel) window.WhatIfPanel.open();
+      else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'What-if engine not loaded'; }
+    });
 
     // Transport buttons
     document.getElementById('tm-start-btn').addEventListener('pointerup', function(e) {
