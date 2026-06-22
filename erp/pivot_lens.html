@@ -156,7 +156,7 @@
   function display(lk, raw) { if (raw == null) return '(blank)'; var s = String(raw); return (lk && lk.map[s] != null) ? lk.map[s] : s; }
   // AD dictionary names — read once from AD_Table (loads in ad_seed.db). PP_Order → "Manufacturing Order".
   //   NON-INVENT: a real lookup over the loaded db; a data-only db without AD_Table → null → raw fallback.
-  var _DB = null, _adTbl = null;
+  var _DB = null, _adTbl = null, _CLIENT = null;
   function adTableName(db, tn) {
     if (_adTbl === null) { _adTbl = {};
       try { var r = db.exec("SELECT UPPER(TableName), Name FROM AD_Table WHERE Name IS NOT NULL");
@@ -170,6 +170,13 @@
     return String(col).replace(/_id$/i, '').replace(/_/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); }).trim() || col;
   }
 
+  // scope to the host tenant when embedded (so the cross-tab matches the window AND a drilled cell's PKs are
+  //   in the window's record set). Standalone (no client param) → whole table, unchanged.
+  function clientClause(db, tb) {
+    if (_CLIENT == null || _CLIENT === '') return '';
+    try { var r = db.exec('SELECT * FROM ' + tb + ' LIMIT 1'); if (r.length && r[0].columns.some(function (c) { return c.toLowerCase() === 'ad_client_id'; })) return ' WHERE AD_Client_ID IN (0,' + Number(_CLIENT) + ')'; } catch (e) {}
+    return '';
+  }
   // Build the cross-tab: rowField × colField → measure
   function buildPivot(db, tb, rowF, colF, msr) {
     var rowLk = lookupMap(db, rowF), colLk = lookupMap(db, colF);
@@ -181,8 +188,10 @@
     else if (msr === 'qty') { amtCol = 'qtyordered'; cols.push('qtyordered'); }
     var rows;
     try {
-      rows = _rows(db.exec('SELECT ' + cols.join(',') + ' FROM ' + tb));
+      rows = _rows(db.exec('SELECT ' + cols.join(',') + ' FROM ' + tb + clientClause(db, tb)));
     } catch (e) { log('pivot query err ' + e.message); return null; }
+    // sql.js returns columns in their DECLARED case (C_Order_ID), not the lowercase pk() — resolve so ids aren't undefined
+    if (rows.length && rows[0][KP] === undefined) { var k2 = Object.keys(rows[0]).filter(function (k) { return k.toLowerCase() === KP.toLowerCase(); })[0]; if (k2) KP = k2; }
 
     // fold into rowVal → colVal → { count, sum, ids[] }
     var rowKeys = {}, colKeys = {};
@@ -228,7 +237,8 @@
         var v = pv.amtCol ? cell.sum : cell.count;
         td.textContent = fmt(cell);
         if (!v) td.classList.add('pv-zero');
-        // cell drill — §PIVOT-DRILL
+        // cell drill — tap = §PIVOT-DRILL id panel; LONG-PRESS = ask the host to open these records in the window
+        if (cell.count) td.style.cursor = 'pointer';
         (function (cRv, cCv, cCell) {
           td.addEventListener('click', function () {
             if (!cCell.count) return;
@@ -237,6 +247,10 @@
             document.getElementById('pv-drill').style.display = 'block';
             console.log('§PIVOT-DRILL ' + msg);
           });
+          var tm = null; function clr() { if (tm) { clearTimeout(tm); tm = null; } }
+          function arm() { clr(); if (!cCell.count) return; tm = setTimeout(function () { tm = null; parent.postMessage({ pivotDrill: { table: pv.table, ids: cCell.ids } }, '*'); console.log('§PIVOT-DRILL-LP table=' + pv.table + ' ids=' + cCell.ids.length); }, 480); }
+          td.addEventListener('mousedown', arm); ['mouseup', 'mouseleave', 'dragstart'].forEach(function (ev) { td.addEventListener(ev, clr); });
+          td.addEventListener('touchstart', arm, { passive: true }); ['touchend', 'touchcancel', 'touchmove'].forEach(function (ev) { td.addEventListener(ev, clr); });
         })(rv, cv, cell);
         tr.appendChild(td);
         rowTotal.count += cell.count; rowTotal.sum += cell.sum;
@@ -329,7 +343,12 @@
     });
     log('table labels: ' + Object.keys(TMAP).map(function (k) { return k + '→' + (adTableName(db, k) || TMAP[k]); }).join(', '));
 
-    // populate axes for first table
+    // default to the host window's table when given (so the dashboard pivot reflects the open window + drill maps)
+    var want = (params.get('table') || '').toLowerCase();
+    if (want && TMAP[want]) { tblSel.value = want; log('default table from host=' + want); }
+    var cp = params.get('client'); if (cp != null && cp !== '') { _CLIENT = cp; log('tenant scope client=' + cp); }
+
+    // populate axes for the selected table
     populateSelects(db, tblSel.value);
 
     // wire controls

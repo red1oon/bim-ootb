@@ -111,32 +111,56 @@ const readDl = async (dl)=>{const p=await dl.path();return fs.readFileSync(p,'ut
   ok.bpTimeline = dateField!=='none' && /updated|created|date/i.test(dateField) && days>0 && hasSlider;
   console.log('§W-DASH-DATE :: '+tlLog+' hasSlider='+hasSlider+' :: '+(ok.bpTimeline?'OK':'FAIL'));
 
-  // ── PART 3 — DRILL: tap a donut slice → those records back in the window grid, then "Show all" restores ──
-  await login(page,port,'143');
-  await clickPill(page,'dashboard');
-  await page.waitForFunction(()=>document.querySelector('.dash-card .donut-svg'),{timeout:10000});
-  await page.waitForTimeout(300);
-  // click the FIRST value arc of the first donut (sorted desc → largest slice, most records → grid mode)
-  await page.evaluate(()=>{var arcs=document.querySelectorAll('.dash-card .donut-svg circle');if(arcs[1])arcs[1].dispatchEvent(new MouseEvent('click',{bubbles:true}))});
-  await page.waitForTimeout(500);
-  const drillLog=logs.filter(l=>/§DASH-DRILL table/.test(l)).pop()||'';
-  const drillRecs=Number((drillLog.match(/recs=(\d+)/)||[])[1])||0;
-  const dashGone=await page.evaluate(()=>!document.querySelector('.dash-wrap'));
-  const hasBanner=await page.evaluate(()=>{var b=[].slice.call(document.querySelectorAll('button')).find(x=>/Show all/.test(x.textContent));return !!b;});
-  const mode=(drillLog.match(/mode=(\w+)/)||[])[1]||'';
-  ok.drill = !!drillLog && drillRecs>0 && dashGone && (mode==='form' || hasBanner);
-  console.log('§W-DRILL :: '+drillLog+' dashClosed='+dashGone+' banner='+hasBanner+' :: '+(ok.drill?'OK':'FAIL'));
-  // restore
-  let restored=true;
-  if (mode!=='form') {
-    await page.evaluate(()=>{var b=[].slice.call(document.querySelectorAll('button')).find(x=>/Show all/.test(x.textContent));b&&b.click()});
-    await page.waitForTimeout(300);
-    const rLog=logs.filter(l=>/§DASH-DRILL-RESTORE/.test(l)).pop()||'';
-    const rRecs=Number((rLog.match(/recs=(\d+)/)||[])[1])||0;
-    restored = !!rLog && rRecs>=drillRecs;
-    console.log('§W-DRILL-RESTORE :: '+rLog+' :: '+(restored?'OK':'FAIL'));
-  }
-  ok.drillRestore = restored;
+  // ── PART 3 — DRILL on EVERY tab (Graph slice · List row · Timeline card · Cards card · Pivot cell), via
+  //    LONG-PRESS (deliberate intent). Each closes the dash and lands the record(s) in the window grid/form. ──
+  const lpDown=(sel,idx)=>page.evaluate(({s,i})=>{var els=document.querySelectorAll(s);var el=els[i==null?0:i];if(el)el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:5,clientY:5}));},{s:sel,i:idx});
+  async function reopenDash(){await clickPill(page,'dashboard');await page.waitForFunction(()=>document.querySelector('.dash-wrap'),{timeout:8000});await page.waitForTimeout(300);}
+  async function openTab(name){await page.evaluate(n=>{var b=[].slice.call(document.querySelectorAll('.dash-tab')).find(x=>x.textContent===n);b&&b.click()},name);await page.waitForTimeout(500);}
+  function drillResult(tag){const lg=logs.filter(l=>/§DASH-DRILL table/.test(l)).pop()||'';const recs=Number((lg.match(/recs=(\d+)/)||[])[1])||0;return {lg,recs};}
+  async function restore(){await page.evaluate(()=>{var b=[].slice.call(document.querySelectorAll('button')).find(x=>/Show all/.test(x.textContent));if(b)b.click();});await page.waitForTimeout(250);}
+
+  // GRAPH — long-press the largest arc
+  await login(page,port,'143'); await reopenDash();
+  await lpDown('.dash-card .donut-svg circle',1); await page.waitForTimeout(620);
+  let r=drillResult(); const dashGone=await page.evaluate(()=>!document.querySelector('.dash-wrap'));
+  ok.drillGraph = /§DASH-DRILL/.test(r.lg) && r.recs>0 && dashGone;
+  console.log('§W-DRILL-GRAPH :: '+r.lg+' dashClosed='+dashGone+' :: '+(ok.drillGraph?'OK':'FAIL'));
+  await restore(); const restLog=logs.filter(l=>/§DASH-DRILL-RESTORE/.test(l)).pop()||'';
+  ok.drillRestore = /§DASH-DRILL-RESTORE/.test(restLog); console.log('§W-DRILL-RESTORE :: '+restLog+' :: '+(ok.drillRestore?'OK':'FAIL'));
+
+  // LIST — long-press a row
+  await reopenDash(); await openTab('List');
+  const lN=logs.length; await lpDown('.dash-list tr',1); await page.waitForTimeout(620);
+  r=drillResult(); ok.drillList = logs.slice(lN).some(l=>/§DASH-DRILL table/.test(l)) && r.recs>=1;
+  console.log('§W-DRILL-LIST :: '+r.lg+' :: '+(ok.drillList?'OK':'FAIL'));
+  await restore();
+
+  // TIMELINE — long-press a day card
+  await reopenDash(); await openTab('Timeline'); await page.waitForSelector('.tl-card',{timeout:5000}).catch(()=>{});
+  const tN=logs.length; await lpDown('.tl-card',0); await page.waitForTimeout(620);
+  ok.drillTimeline = logs.slice(tN).some(l=>/§DASH-DRILL table/.test(l));
+  console.log('§W-DRILL-TIMELINE :: '+(logs.filter(l=>/§DASH-DRILL table/.test(l)).pop()||'')+' :: '+(ok.drillTimeline?'OK':'FAIL'));
+  await restore();
+
+  // CARDS (kanban) — long-press a card
+  await reopenDash(); await openTab('Cards'); await page.waitForSelector('.kanban-card',{timeout:6000}).catch(()=>{});
+  const cN=logs.length; await lpDown('.kanban-card',0); await page.waitForTimeout(620);
+  ok.drillCards = logs.slice(cN).some(l=>/§DASH-DRILL table/.test(l));
+  console.log('§W-DRILL-CARDS :: '+(logs.filter(l=>/§DASH-DRILL table/.test(l)).pop()||'')+' :: '+(ok.drillCards?'OK':'FAIL'));
+  await restore();
+
+  // PIVOT — long-press a non-zero cell → host drills (pivot defaults to the window's table c_order → match)
+  await reopenDash(); await openTab('Pivot');
+  const frEl=await page.waitForSelector('.dash-body iframe',{timeout:6000});
+  const frP=await frEl.contentFrame();
+  await frP.waitForSelector('.pv-table td:not(.pv-zero)',{timeout:8000}).catch(()=>{});
+  const pN=logs.length;
+  await frP.evaluate(()=>{var td=[].slice.call(document.querySelectorAll('.pv-table td')).find(x=>x.style.cursor==='pointer'&&!x.classList.contains('pv-zero')&&/^\d/.test(x.textContent));if(td)td.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:5,clientY:5}));});
+  await page.waitForTimeout(700);
+  const lpFired=logs.slice(pN).some(l=>/§PIVOT-DRILL-LP/.test(l));
+  const hostLog=logs.slice(pN).filter(l=>/§PIVOT-DRILL-HOST/.test(l)).pop()||'';
+  ok.drillPivot = lpFired && /drilled=true/.test(hostLog);
+  console.log('§W-DRILL-PIVOT lpFired='+lpFired+' :: '+hostLog+' :: '+(ok.drillPivot?'OK':'FAIL'));
 
   const pass = errs.length===0 && Object.values(ok).every(Boolean);
   console.log('§DASH-EXPORT-RESULT '+(pass?'PASS':'FAIL')+' checks='+JSON.stringify(ok)+' errs='+(errs.length?errs.slice(0,3).join('|'):0));
