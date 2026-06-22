@@ -146,6 +146,15 @@
       }
     };
   }
+  // P1.b drag-to-slip: convert a horizontal pointer drag (CSS px) on a phase track into a whole-day
+  // slip. spanDays = the track's full time-span; trackPx = track.clientWidth (CSS px, so dpr-safe —
+  // clientWidth is already device-independent, unlike canvas.width). Days are the schedule grain
+  // (dates are date-only), so we round. This is the SAME _slips[seqno].startDelta the steppers write,
+  // so a drag and the −/+ buttons drive one path. Witness: erp/tests/whatif_drag_witness.js.
+  function pxToDays(dpx, trackPx, spanDays) {
+    return Math.round((Number(dpx) || 0) * (Number(spanDays) || 0) / Math.max(1, Number(trackPx) || 0));
+  }
+
   function _officialFinish(phases) { return phases.length ? phases[phases.length - 1].endDays : null; }
   function _pub(p) { return { seqno: p.seqno, name: p.name, start: _date(p.startDays), end: _date(p.endDays), durDays: p.dur, plannedAmt: p.plannedAmt }; }
 
@@ -215,7 +224,7 @@
   var API = {
     readPhases: readPhases, ripple: ripple, scheduleWhatIf: scheduleWhatIf,
     commitSlip: commitSlip, discardSlip: discardSlip, acceptSlip: acceptSlip,
-    ensureBranchCol: ensureBranchCol, _days: _days, _date: _date
+    ensureBranchCol: ensureBranchCol, pxToDays: pxToDays, _days: _days, _date: _date
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.WhatIf = API;

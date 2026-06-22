@@ -18,6 +18,7 @@
   var A = function () { return global.APP || global.A || {}; };
   var DAY = 86400000;
   var _db = null, _pid = null, _name = '', _phases = [], _slips = {}, _branch = 'blue-whatif-ui', _committed = false;
+  var _geo = { p0: 0, span: 1 };   // P1.b: track time-geometry (set each _render) for drag→days mapping
 
   function _SQL() { var a = A(); return a._SQL || global.SQL || global._SQL_CACHED || null; }
   function _money(n) {
@@ -82,7 +83,8 @@
       '#whatif-panel .wi-close:hover{color:#fff}',
       '.wi-row{display:grid;grid-template-columns:120px 1fr 92px;gap:8px;align-items:center;padding:3px 0}',
       '.wi-name{font-size:12px;color:#cfd6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '.wi-track{position:relative;height:20px;background:rgba(255,255,255,0.04);border-radius:3px;overflow:hidden}',
+      '.wi-track{position:relative;height:20px;background:rgba(255,255,255,0.04);border-radius:3px;overflow:hidden;cursor:grab;touch-action:none}',
+      '.wi-track:hover{background:rgba(91,140,255,0.10)}',
       '.wi-bar{position:absolute;top:2px;height:7px;border-radius:2px}',
       '.wi-bar.off{background:#5a6478;top:2px}',
       '.wi-bar.blue{background:#5b8cff;top:11px;box-shadow:0 0 6px rgba(91,140,255,0.5)}',
@@ -115,6 +117,7 @@
     var off = wf.official.phases, blue = wf.blue.phases;
     var p0 = _days(off[0].start), pEnd = Math.max(_days(off[off.length - 1].end), _days(blue[blue.length - 1].end));
     var span = Math.max(1, pEnd - p0);
+    _geo = { p0: p0, span: span };   // P1.b: drag handler reads this to map Δpx → Δdays
     function pct(ds) { return ((_days(ds) - p0) / span * 100); }
     var rows = off.map(function (op, i) {
       var bp = blue[i], slip = _slips[op.seqno] || {}; var d = (slip.startDelta || 0);
@@ -123,7 +126,7 @@
       var moved = (bp.start !== op.start || bp.end !== op.end);
       return '<div class="wi-row">' +
         '<div class="wi-name" title="' + op.name + '">' + op.name + '</div>' +
-        '<div class="wi-track" title="official ' + _fmt(op.start) + '→' + _fmt(op.end) + (moved ? '  ·  blue ' + _fmt(bp.start) + '→' + _fmt(bp.end) : '') + '">' +
+        '<div class="wi-track" data-seq="' + op.seqno + '" title="drag to slip · official ' + _fmt(op.start) + '→' + _fmt(op.end) + (moved ? '  ·  blue ' + _fmt(bp.start) + '→' + _fmt(bp.end) : '') + '">' +
           '<div class="wi-bar off" style="left:' + offL.toFixed(1) + '%;width:' + offW.toFixed(1) + '%"></div>' +
           (moved ? '<div class="wi-bar blue" style="left:' + bL.toFixed(1) + '%;width:' + bW.toFixed(1) + '%"></div>' : '') +
         '</div>' +
@@ -194,6 +197,48 @@
     _render();
   }
 
+  // P1.b — DIRECT-MANIPULATION drag-to-slip (front-visual dominant). Dragging a phase track maps the
+  // horizontal Δpx → whole days via WhatIf.pxToDays, writing the SAME _slips[seqno].startDelta the
+  // steppers use, so the blue ripple re-folds live. Listeners live on `document` so they survive the
+  // _render() innerHTML rebuild mid-drag; trackW/span are captured at pointerdown (panel doesn't resize).
+  function _onTrackDown(e) {
+    if (e.button != null && e.button !== 0) return;
+    var track = e.target && e.target.closest && e.target.closest('.wi-track');
+    if (!track || !track.dataset.seq) return;
+    e.preventDefault();
+    var seq = Number(track.dataset.seq);
+    var trackW = track.clientWidth || 1;
+    var startX = e.clientX;
+    var base = (_slips[seq] && _slips[seq].startDelta) || 0;
+    var anchorSeq = _phases.length ? _phases[0].seqno : null;
+    var lastDays = base, raf = 0;
+    document.body.style.cursor = 'grabbing';
+
+    function apply(clientX) {
+      var dd = global.WhatIf.pxToDays(clientX - startX, trackW, _geo.span);
+      var nd = base + dd;
+      if (seq === anchorSeq && nd < 0) nd = 0;   // anchor can't start before project start (matches steppers)
+      lastDays = nd;
+      if (nd === 0) delete _slips[seq]; else _slips[seq] = { startDelta: nd };
+      _render();   // live blue ripple
+    }
+    function move(ev) {
+      if (raf) return;
+      var x = ev.clientX;
+      var sched = global.requestAnimationFrame || function (f) { return setTimeout(f, 0); };
+      raf = sched(function () { raf = 0; apply(x); });
+    }
+    function up(ev) {
+      document.removeEventListener('pointermove', move);
+      apply(ev.clientX);
+      document.body.style.cursor = '';
+      console.log('§WHATIF-UI drag-slip seq=' + seq + ' delta=' + lastDays + 'd (from ' + base +
+        'd, Δpx=' + Math.round(ev.clientX - startX) + ', trackW=' + trackW + ', span=' + _geo.span + 'd)');
+    }
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up, { once: true });
+  }
+
   function open() {
     _injectStyle();
     _loadDb().then(function (db) {
@@ -207,8 +252,8 @@
       panel.innerHTML =
         '<h3>What-if schedule <span style="font-weight:400;color:#8aa0d0;font-size:13px">' + _name + '</span>' +
           '<button class="wi-close" title="Close">×</button></h3>' +
-        '<div class="wi-sub">Slip a phase → every downstream phase re-folds in blue (finish-to-start). ' +
-          'Accept to re-baseline, Discard to drop.</div>' +
+        '<div class="wi-sub">Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase ' +
+          're-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.</div>' +
         '<div id="whatif-body"></div>' +
         '<div id="whatif-actions"><button id="wi-accept">Accept — re-baseline</button>' +
           '<button id="wi-discard">Discard</button></div>';
@@ -216,6 +261,7 @@
       panel.querySelector('.wi-close').addEventListener('click', function () { panel.remove(); });
       panel.querySelector('#wi-accept').addEventListener('click', _accept);
       panel.querySelector('#wi-discard').addEventListener('click', _discard);
+      panel.addEventListener('pointerdown', _onTrackDown);   // P1.b drag-to-slip (delegated, stable)
       console.log('§WHATIF-UI open project=' + _pid + ' "' + _name + '" phases=' + _phases.length);
       _render();
     });
