@@ -145,6 +145,10 @@
             cx = wx + sign * hw; cy = wy + sign * hd;     // x/y get +half = box CENTRE (place() centres in x/y).
             // cz stays wz: bboxFromDims bases the proxy box at z=0, so place() seats the BASE at z = LBD bottom
             // (= the BOM dz); the Java AABB minZ is exactly dz, so NO half is added in z (would float the box).
+            // NOTE: the +half is on WORLD axes, which is correct because expandAssembly is the CANONICAL placer —
+            // for a drop it is only ever called at rot=0 (faithful Java orientation); the user drop YAW is applied
+            // OUTSIDE, as a rigid rotation about the cursor, by dropLeaves (PlacementCollectorVisitor has no drop
+            // yaw — cumRot/cumMirror are the building's intrinsic transforms). So no yaw reaches this half-extent.
           }
           out.push({ hash: ch.ref, x: +cx.toFixed(4), y: +cy.toFixed(4), z: +cz.toFixed(4), rot: wrot, role: ch.role });
         }
@@ -198,6 +202,51 @@
       console.log('§GEO_SUMMARY ' + rootId + ' [' + root.level + '] ' + n + ' leaves, ' + pairs + ' pairs, worst=' + worstMm + 'mm, DRIFT=' + viol);
       if (viol) console.warn(TAG + ' §GEO_SUMMARY DRIFT ' + viol + ' — port regression (expected 0): ' + detail.slice(0, 6).join(' | '));
       return { rootId, level: root.level, leaves: n, pairs, worstMm, drift: viol, detail };
+    },
+
+    // ── TRUE leaf-footprint AABB of a dropped assembly (W-BOM-DROP-CENTER). Expand the BOM to its N leaf boxes
+    // and union their world AABBs — the ACTUAL footprint the parts occupy. This is NOT the catalog's declared
+    // aabb (asm.w/d): that is the parent-PRODUCT box, not the laid-out children (e.g. BED_SET declares 1.2×0.6m
+    // but its 5 children span 3.5×2.0m). Used to (a) centre the drop on the cursor and (b) size the ghost box so
+    // both match where the parts really land. Returns null for a leafless assembly.
+    footprintAABB(id, placement) {
+      const lv = this.expandAssembly(id, placement || { x: 0, y: 0, z: 0, rot: 0 });
+      if (!lv.length) return null;
+      let xn = Infinity, xx = -Infinity, yn = Infinity, yx = -Infinity, zn = Infinity, zx = -Infinity;
+      for (let i = 0; i < lv.length; i++) {
+        const lf = lv[i], c = this.get(lf.hash), bb = c && c.bbox;
+        const hw = bb ? (bb[1] - bb[0]) / 2 : 0, hd = bb ? (bb[3] - bb[2]) / 2 : 0, hh = bb ? (bb[5] - bb[4]) : 0;
+        if (lf.x - hw < xn) xn = lf.x - hw; if (lf.x + hw > xx) xx = lf.x + hw;
+        if (lf.y - hd < yn) yn = lf.y - hd; if (lf.y + hd > yx) yx = lf.y + hd;
+        if (lf.z < zn) zn = lf.z; if (lf.z + hh > zx) zx = lf.z + hh;   // box base = lf.z, top = base + height
+      }
+      return { minX: xn, maxX: xx, minY: yn, maxY: yx, minZ: zn, maxZ: zx,
+               cx: (xn + xx) / 2, cy: (yn + yx) / 2, cz: (zn + zx) / 2, w: xx - xn, d: yx - yn, h: zx - zn };
+    },
+
+    // ── DROP an assembly onto the canvas: the N leaf placements with the footprint CENTRE on (cursorX,cursorY) and
+    // a user DROP YAW applied (W-BOM-DROP-CENTER). KEY (from reading PlacementCollectorVisitor.java:347-374): the
+    // Java compiler has NO external drop rotation — its cumRot/cumMirror are the building's INTRINSIC transforms,
+    // and MIRROR:X is defined as rot=π (negate X&Y), so `if(mirror) else if(rot)` is correct THERE. The modeller
+    // adds a yaw the Java never had; threading it through the BOM recursion's cumRot gets it SWALLOWED under mirror
+    // (a rotated mirror-building drop scattered 45m). So expand at the CANONICAL orientation (rot=0 = the proven
+    // Java path, expandAssembly UNTOUCHED) and apply the drop yaw as a RIGID rotation about the drop point — an
+    // external rigid-body transform, where it belongs. yaw=0 reduces to "centre the true footprint on the cursor".
+    dropLeaves(id, cursorX, cursorY, yaw, z) {
+      const canonical = this.expandAssembly(id, { x: 0, y: 0, z: 0, rot: 0 });  // faithful Java building, no drop yaw
+      const fp = this.footprintAABB(id, { x: 0, y: 0, z: 0, rot: 0 });
+      if (!fp) return canonical;
+      const r = (yaw || 0) * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r), ez = z || 0;
+      const out = [];
+      for (let i = 0; i < canonical.length; i++) {
+        const lf = canonical[i], lx = lf.x - fp.cx, ly = lf.y - fp.cy;          // leaf relative to footprint centre
+        out.push({ hash: lf.hash, role: lf.role,
+          x: +(cursorX + (cs * lx - sn * ly)).toFixed(4),                       // rigid-rotate the canonical cluster
+          y: +(cursorY + (sn * lx + cs * ly)).toFixed(4),                       // about the cursor by the drop yaw
+          z: +(lf.z + ez).toFixed(4),
+          rot: (((lf.rot || 0) + (yaw || 0)) % 360 + 360) % 360 });             // mesh orientation += drop yaw
+      }
+      return out;
     },
 
     setLod(featureId, lod) { this._lod[featureId] = String(lod); return this; },
