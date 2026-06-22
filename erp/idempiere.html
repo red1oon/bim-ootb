@@ -3405,6 +3405,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // FILMSTRIP — a column per day (chronological L→R, oldest left), each stacking its docs as thumbnail cards.
     //   A FIXED centre playhead; the strip SLIDES so the scrubbed day sits under it (scrub left = back in time).
     var viewport = el('div', 'tl-viewport'), track = el('div', 'tl-track'), head = el('div', 'tl-playhead');
+    var futCols = [];   // FORECAST: projected day-columns appended past a 'now' divider when _dashForecast is on
     days.forEach(function (day) {
       var colE = el('div', 'tl-col'); colE.dataset.day = day;
       byDay[day].slice(0, 8).forEach(function (r) {
@@ -3423,24 +3424,54 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       colE.appendChild(el('div', 'tl-day', day));
       track.appendChild(colE);
     });
+    // FORECAST columns — a 'now' divider then N projected day-columns (dashed-blue), spaced by the median day-gap.
+    //   Flat run-rate: future docs/day = mean of the last K active days, future Σ = mean of their amounts. Each
+    //   card is a LABELLED projection ('~ forecast'), never a real record (NON-INVENT — extrapolated from folds).
+    if (_dashForecast && days.length >= 2) {
+      var dEpoch = days.map(function (d) { return Date.parse(d); });
+      var gaps = []; for (var gi = 1; gi < dEpoch.length; gi++) gaps.push(dEpoch[gi] - dEpoch[gi - 1]);
+      gaps.sort(function (a, b) { return a - b; }); var medGap = gaps[Math.floor(gaps.length / 2)] || 86400000;
+      var K = Math.min(3, days.length), recent = days.slice(-K);
+      var avgCnt = Math.max(1, Math.round(recent.reduce(function (a, d) { return a + byDay[d].length; }, 0) / K));
+      var avgAmt = amtCol ? Math.round(recent.reduce(function (a, d) { return a + _amtSum(byDay[d], amtCol); }, 0) / K) : 0;
+      var lastE = dEpoch[dEpoch.length - 1], NF = 3, perCard = Math.min(avgCnt, 3);
+      var nowDiv = el('div', 'tl-today'); nowDiv.appendChild(el('span', null, 'NOW')); track.appendChild(nowDiv);
+      for (var fi = 1; fi <= NF; fi++) {
+        var fd = new Date(lastE + medGap * fi).toISOString().slice(0, 10);
+        var fcol = el('div', 'tl-col future'); fcol.dataset.day = fd; fcol.dataset.future = '1';
+        for (var ci = 0; ci < perCard; ci++) {
+          var fcard = el('div', 'tl-card'); fcard.appendChild(el('div', 'tl-av', '~'));
+          var fmid = el('div', 'tl-mid'); fmid.appendChild(el('div', 'tl-t', '~ forecast'));
+          if (amtCol && KL) fmid.appendChild(el('div', 'tl-a', '≈' + KL.fmtMoney(Math.round(avgAmt / perCard))));
+          fcard.appendChild(fmid); fcol.appendChild(fcard);
+        }
+        fcol.appendChild(el('div', 'tl-day', '~ ' + fd.slice(5)));
+        track.appendChild(fcol); futCols.push({ day: fd, n: avgCnt, amt: avgAmt });
+      }
+      console.log('§DASH-TL-FORECAST cols=' + futCols.length + ' avgCnt=' + avgCnt + ' avgAmt=' + avgAmt + ' medGapDays=' + Math.round(medGap / 86400000));
+    }
+    var navDays = days.concat(futCols.map(function (f) { return f.day; }));   // real + projected, for slider/scrub
     viewport.appendChild(track); viewport.appendChild(head); box.appendChild(viewport);
-    var slider = el('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(days.length - 1); slider.value = String(days.length - 1); slider.step = '1'; slider.className = 'tl-slider';
+    var slider = el('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(navDays.length - 1); slider.value = String(days.length - 1); slider.step = '1'; slider.className = 'tl-slider';
     box.appendChild(slider);
     var rest = el('div', 'tl-restlabel'); box.appendChild(rest);
-    var colEls = [].slice.call(track.querySelectorAll('.tl-col'));
+    var colEls = [].slice.call(track.querySelectorAll('.tl-col'));   // real + future cols (the 'now' divider is .tl-today, excluded)
     function restOn(idx) {
-      idx = Math.max(0, Math.min(days.length - 1, idx)); var day = days[idx], colE = colEls[idx];
+      idx = Math.max(0, Math.min(navDays.length - 1, idx)); var day = navDays[idx], colE = colEls[idx];
       colEls.forEach(function (c, i) { c.classList.toggle('rest', i === idx); });
       // slide the strip so the active column's centre sits under the fixed centre playhead
       var vw = viewport.clientWidth || 600, cx = colE.offsetLeft + colE.offsetWidth / 2;
       track.style.transform = 'translateX(' + (vw / 2 - cx) + 'px)';
-      var n = byDay[day].length; rest.textContent = day + ' — ' + n + ' ' + tab.name + (n > 1 ? ' (stacked)' : '');
-      console.log('§DASH-TL-SCRUB idx=' + idx + ' day=' + day + ' docs=' + n + ' shiftPx=' + Math.round(vw / 2 - cx));
+      var fut = colE && colE.dataset.future === '1';
+      if (fut) { var f = futCols[idx - days.length];
+        rest.textContent = '~ ' + day + ' — forecast ≈' + f.n + ' ' + tab.name + (amtCol && KL ? ' · ≈' + KL.fmtMoney(f.amt) : '') + '  (projection)';
+      } else { var n = byDay[day].length; rest.textContent = day + ' — ' + n + ' ' + tab.name + (n > 1 ? ' (stacked)' : ''); }
+      console.log('§DASH-TL-SCRUB idx=' + idx + ' day=' + day + (fut ? ' FORECAST' : ' docs=' + byDay[day].length) + ' shiftPx=' + Math.round(vw / 2 - cx));
     }
     slider.addEventListener('input', function () { restOn(parseInt(slider.value, 10)); });
     _lensOut(mount, 'Timeline', box);
-    requestAnimationFrame(function () { restOn(days.length - 1); });   // start at newest (rightmost), centred — measure after layout
-    console.log('§DASH-TIMELINE records=' + items.length + ' days=' + days.length + ' span=' + days[0] + '..' + days[days.length - 1] + ' dateField=' + dateF.columnName + ' statusCol=' + (stCol || 'none'));
+    requestAnimationFrame(function () { restOn(days.length - 1); });   // start at the last REAL day ('now'), forecast to its right
+    console.log('§DASH-TIMELINE records=' + items.length + ' days=' + days.length + ' forecastCols=' + futCols.length + ' span=' + days[0] + '..' + days[days.length - 1] + ' dateField=' + dateF.columnName + ' statusCol=' + (stCol || 'none'));
   }
   // The "Ask" panel — instant templated SUMMARY of what's shown + auto-generated "see more" question chips.
   //   Every chip is a real fold of the open window's records (NON-INVENT); tapping one regraphs above + answers
@@ -3514,6 +3545,67 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // month-bucket a date column → { 'YYYY-MM': rows[] }, chronological (the trend chart).
   function _groupByMonth(field) {
     var g = {}; _records.forEach(function (r) { var d = String(recVal(r, field.columnName) || '').slice(0, 7); if (d) (g[d] = g[d] || []).push(r); }); return g;
+  }
+  // ── FORECAST — the Dashboard "future tense" (W-DASH-FORECAST). §SPEC: the ONLY honest projection is on a
+  //   TIME axis — a cumulative-by-month S-curve + a run-rate tail, and the Timeline filmstrip extended past a
+  //   'now' divider. PURE arithmetic on the SAME real folds the donuts use: every solid point is a record fold,
+  //   every dashed point is a labelled EXTRAPOLATION of them (NON-INVENT — no synthetic rows, no LLM). Donut/
+  //   kanban/pivot have NO time axis, so they get no forecast (that is the design, not a gap). The interactive
+  //   what-if BRANCH across all tabs (viewer/whatif.js blue engine + project-scoped EVM planned/actual/forecast)
+  //   is the documented NEXT step: it needs a COMMITTED baseline, which a generic window has no source for, so
+  //   it is deliberately NOT faked here. One toggle (`_dashForecast`) drives the time-axis lenses; default OFF
+  //   ⇒ the resting panel is byte-for-byte today's.
+  var _dashForecast = false, _curDashTab = 'graph';
+  // run-rate forecast: project n future periods by the MEAN of the last k period-over-period deltas. Pure +
+  //   unit-testable; emits §RUNRATE so the witness reads the arithmetic without a browser.
+  function _runRateForecast(vals, n, k) {
+    n = n || 3; var m = vals.length; if (m < 2) return [];
+    k = Math.min(k || 3, m - 1);
+    var d = 0; for (var i = m - k; i < m; i++) d += (vals[i] - vals[i - 1]); d = d / k;   // mean recent delta
+    var out = [], last = vals[m - 1];
+    for (var j = 0; j < n; j++) { last += d; out.push(last); }
+    console.log('§RUNRATE in=' + m + ' k=' + k + ' delta=' + Math.round(d) + ' n=' + n + ' last=' + Math.round(vals[m - 1]) + ' proj=' + out.map(function (x) { return Math.round(x); }).join(','));
+    return out;
+  }
+  // cumulative amount (or count) by month — the S-curve's solid spine. {months, cum, per, byMonth}.
+  function _cumByMonth(field, amtCol) {
+    var g = _groupByMonth(field), months = Object.keys(g).sort();
+    var per = months.map(function (mn) { return amtCol ? _amtSum(g[mn], amtCol) : g[mn].length; });
+    var cum = [], run = 0; per.forEach(function (v) { run += v; cum.push(run); });
+    return { months: months, cum: cum, per: per, byMonth: g };
+  }
+  // S-CURVE (cumulative trend) — the time-axis chart the ERP-side dashboard never had (the model side has it in
+  //   viewer/time_machine.js; this is the same SHAPE folded off the open window). Solid = cumulative actual (real
+  //   fold); a 'now' divider at the last real month; dashed-blue tail = run-rate forecast ONLY when _dashForecast.
+  //   Long-press a node → that month's records (DASH_DRILL). SVG, palette-consistent. opts:{field, amtCol}.
+  function _renderSCurve(container, opts) {
+    var field = opts.field, amtCol = opts.amtCol, KL = window.KanbanLens, NS = 'http://www.w3.org/2000/svg';
+    var c = _cumByMonth(field, amtCol); if (c.months.length < 2) { console.log('§DASH-SCURVE skip months=' + c.months.length); return null; }
+    var fc = _dashForecast ? _runRateForecast(c.cum, 3, 3).map(function (v) { return Math.max(c.cum[c.cum.length - 1], v); }) : [];
+    var allV = c.cum.concat(fc), W = 320, H = 150, pad = 24, n = allV.length, maxV = Math.max.apply(null, allV) || 1;
+    function X(i) { return pad + (W - 2 * pad) * (n > 1 ? i / (n - 1) : 0); }
+    function Y(v) { return H - pad - (H - 2 * pad) * (v / maxV); }
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'scurve-svg');
+    function line(x1, y1, x2, y2, st, da) { var l = document.createElementNS(NS, 'line'); l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); l.setAttribute('stroke', st); if (da) l.setAttribute('stroke-dasharray', da); svg.appendChild(l); }
+    function poly(pts, color, da, w) { var p = document.createElementNS(NS, 'path'); p.setAttribute('d', pts.map(function (pt, i) { return (i ? 'L' : 'M') + pt[0].toFixed(1) + ' ' + pt[1].toFixed(1); }).join(' ')); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color); p.setAttribute('stroke-width', w || 2); if (da) p.setAttribute('stroke-dasharray', da); svg.appendChild(p); return p; }
+    line(pad, H - pad, W - pad, H - pad, 'rgba(255,255,255,.12)'); line(pad, pad, pad, H - pad, 'rgba(255,255,255,.12)');
+    var col = KL ? KL.tableColor(field.columnName) : '#5b8def';
+    poly(c.cum.map(function (v, i) { return [X(i), Y(v)]; }), col, null, 2.4);   // solid actual
+    var tx = X(c.cum.length - 1); line(tx, pad, tx, H - pad, 'rgba(108,159,255,.4)', '4 4');   // 'now' divider
+    var tl = document.createElementNS(NS, 'text'); tl.setAttribute('x', tx); tl.setAttribute('y', pad - 7); tl.setAttribute('text-anchor', 'middle'); tl.setAttribute('class', 'scurve-now'); tl.textContent = 'now'; svg.appendChild(tl);
+    if (fc.length) {   // dashed-blue forecast tail, anchored at the last real point
+      poly([[tx, Y(c.cum[c.cum.length - 1])]].concat(fc.map(function (v, i) { return [X(c.cum.length + i), Y(v)]; })), '#6c9fff', '6 4', 2.4);
+      var fl = document.createElementNS(NS, 'text'); fl.setAttribute('x', W - pad); fl.setAttribute('y', Y(fc[fc.length - 1]) - 6); fl.setAttribute('text-anchor', 'end'); fl.setAttribute('class', 'scurve-flab'); fl.textContent = 'forecast'; svg.appendChild(fl);
+    }
+    c.cum.forEach(function (v, i) {   // node dots on real months → long-press drills that month
+      var dot = document.createElementNS(NS, 'circle'); dot.setAttribute('cx', X(i)); dot.setAttribute('cy', Y(v)); dot.setAttribute('r', 3.2); dot.setAttribute('fill', col); dot.style.cursor = 'pointer';
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = c.months[i] + ' · cum ' + (amtCol && KL ? KL.fmtMoney(v) : v); dot.appendChild(ti);
+      if (typeof _lpDrill === 'function') { (function (mn) { _lpDrill(dot, function () { return c.byMonth[mn] || []; }); })(c.months[i]); }
+      svg.appendChild(dot);
+    });
+    container.appendChild(svg);
+    console.log('§DASH-SCURVE months=' + c.months.length + ' cumLast=' + Math.round(c.cum[c.cum.length - 1]) + ' forecast=' + fc.length + ' measure=' + (amtCol || 'count'));
+    return svg;
   }
   // ── EXPORT (DASHBOARD_EXPORT — "the killer feature we miss") — pure EXTRACT of the real folds, NON-INVENT:
   //   CSV = the fold rows (key, count/amount, %); SVG = the donut node serialized; PNG = that SVG rastered to a
@@ -3635,6 +3727,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (dateF) { charts.push({ key: dateF.columnName, label: dateF.name + ' (by month)', groups: _groupByMonth(dateF) }); }
     // grid of DONUT cards — all donuts, consistent + snuggled. Each is a real fold; top-6 + "others".
     var grid = el('div', 'dash-grid'); gbox.appendChild(grid);
+    // S-curve trend card FIRST (the time axis) — real cumulative; dashed forecast tail only when toggled on.
+    //   Honest skip when the window has no date dimension. Spans 2 columns so the line reads.
+    if (dateF) {
+      var sc = el('div', 'dash-card dash-scurve'); sc.setAttribute('data-dim', '__scurve');
+      sc.appendChild(el('div', 'dash-chart-h', 'Cumulative ' + (amtCol ? amtCol : 'count') + ' — ' + dateF.name + (_dashForecast ? ' + forecast' : '')));
+      if (_renderSCurve(sc, { field: dateF, amtCol: amtCol })) grid.appendChild(sc);
+    }
     charts.forEach(function (c) { _addDonutCard(grid, c.key, (c.label.indexOf('(') < 0 ? 'By ' : '') + c.label, c.groups, c.statusCol || null, amtCol); });
     var hint = el('div', 'dash-hint', 'Long-press a slice to open its records'); grid.appendChild(hint);   // gesture tip in the blank grid slot
     console.log('§DASH-OVERVIEW donuts=' + charts.length + ' status=' + (statusF ? statusF.columnName : 'none') + ' cats=' + picked.map(function (f) { return f.columnName; }).join(',') + ' date=' + (dateF ? dateF.columnName : 'none'));
@@ -3672,7 +3771,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var btns = {};
     function setActive(id) { Object.keys(btns).forEach(function (k) { btns[k].className = 'dash-tab' + (k === id ? ' active' : ''); }); }
     function show(id) {
-      setActive(id); body.innerHTML = '';
+      setActive(id); _curDashTab = id; body.innerHTML = '';
       if (id === 'graph') {
         // landscape two-column: overview charts LEFT, the Ask panel (chips + their sub-charts) RIGHT in the
         //   empty space. On mobile (CSS) it stacks. The right column fills the desktop width that was idle.
@@ -3693,6 +3792,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var exAll = el('button', 'dash-tab dash-export-all'); exAll.title = 'Export this window’s records as CSV';
     exAll.innerHTML = ((window.OverlayKit && OverlayKit.ico) ? OverlayKit.ico('download', 14) : '⤓') + ' Export';
     exAll.addEventListener('click', function () { _exportRecordsCsv(tab); }); tabsEl.appendChild(exAll);
+    // FORECAST toggle — projects a run-rate future onto the TIME-axis lenses (Graph S-curve + Timeline). Default
+    //   OFF ⇒ resting view unchanged. Verbatim Lucide 'trending-up' glyph (not in icons.js registry — kept inline
+    //   like the rotate hint to avoid the panels.js parity test). Honoured only by the time-axis tabs; the donut/
+    //   kanban/pivot tabs have no time axis, so flipping it leaves them as-is (by design, not a gap).
+    var fcBtn = el('button', 'dash-tab dash-forecast' + (_dashForecast ? ' active' : ''));
+    fcBtn.title = 'Forecast — project a run-rate future onto the Timeline + S-curve (every dashed point a labelled extrapolation of the real folds)';
+    function _fcLabel() { return '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg> Forecast'; }
+    fcBtn.innerHTML = _fcLabel();
+    fcBtn.addEventListener('click', function () {
+      _dashForecast = !_dashForecast; fcBtn.className = 'dash-tab dash-forecast' + (_dashForecast ? ' active' : '');
+      _cacheArr = null; show(_curDashTab);   // re-render the active tab; time-axis tabs pick up the projection
+      console.log('§DASH-FORECAST on=' + _dashForecast + ' tab=' + _curDashTab);
+    });
+    tabsEl.appendChild(fcBtn);
     var rot = el('div', 'dash-rotate');   // shown only on portrait phones (CSS) — charts/timeline read wider in landscape
     rot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg><span>Rotate to landscape for the full view</span>';
     wrap.appendChild(rot); wrap.appendChild(tabsEl); wrap.appendChild(body);
@@ -4346,6 +4459,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       '.tl-av{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;background:#46506a}.tl-mid{min-width:0}.tl-t{font-size:12px;font-weight:600;color:#e8e8ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}.tl-a{font-size:11px;color:#9aa6b8}' +
       '.tl-more{font-size:10px;color:#6a7384;text-align:center}.tl-day{font-size:10px;color:#8aa0c0;text-align:center;margin-top:2px;white-space:nowrap}' +
       '.tl-slider{width:100%;accent-color:#6c9fff;cursor:pointer}.tl-restlabel{font-size:12px;color:#cfe0ff;font-weight:600;margin-top:6px;text-align:center}' +
+      // FORECAST — the future tense: a dashed 'now' divider, dashed-blue projected columns, the S-curve trend card.
+      '.tl-today{flex:0 0 auto;align-self:stretch;width:0;margin:0 6px;border-left:2px dashed rgba(108,159,255,.5);position:relative}.tl-today span{position:absolute;top:2px;left:-20px;font-size:9px;letter-spacing:.5px;color:#7f93b8;background:#11151f;padding:0 4px;border-radius:3px}' +
+      '.tl-col.future .tl-card{border:1px dashed rgba(108,159,255,.7);background:rgba(108,159,255,.07);color:#bcd2ff}.tl-col.future .tl-av{background:#3a5fa8;color:#cfe0ff}.tl-col.future .tl-t{color:#bcd2ff}.tl-col.future .tl-a{color:#9bbcff}.tl-col.future .tl-day{color:#9bbcff;font-weight:600}' +
+      '.dash-scurve{grid-column:span 2}.dash-scurve .scurve-svg{width:100%;height:150px}.scurve-now{fill:#7f93b8;font-size:9px}.scurve-flab{fill:#9bbcff;font-size:9px;font-weight:600}' +
+      '.dash-forecast.active{color:#9bbcff;border-bottom-color:#9bbcff}@media(max-width:640px){.dash-scurve{grid-column:span 1}}' +
       // mobile — snug: scrollable tabs, full-width charts, tighter chips/cards
       '@media(max-width:640px){.dash-tabs{overflow-x:auto;white-space:nowrap}.dash-tab{padding:8px 11px;font-size:12px}.dash-body{max-height:78vh}' +
       '.dash-split{flex-direction:column;gap:0}.dash-side{flex:1 1 auto;max-width:none;border-left:none;border-top:1px dashed rgba(255,255,255,.12);padding-left:0;padding-top:12px;margin-top:12px;position:static}' +
