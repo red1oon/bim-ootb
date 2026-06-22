@@ -23,6 +23,16 @@
     return new Date(b + n * 86400000).toISOString().slice(0, 10);
   }
 
+  function fmt(n) { return String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+  // step ④ 5D — fold the cost breakdown from the authored assignments (engine: ScheduleAuthor.foldCost).
+  function costFold() {
+    var d = db(); if (!d || !_state || !SA() || !SA().foldCost) return null;
+    try {
+      return SA().foldCost(d, _state.schedId, global.RATES || {}, global.RATES_DEFAULT, global.RATE_CURRENCY || '');
+    } catch (e) { console.log('§AUTHOR_UI_COST_ERR ' + (e && e.message)); return null; }
+  }
+
   function _injectStyle() {
     if (document.getElementById('sa-style')) return;
     var s = document.createElement('style');
@@ -47,7 +57,9 @@
       '.sa-elist{max-height:120px;overflow-y:auto;margin-top:4px}' +
       '.sa-el{display:flex;align-items:center;gap:4px;padding:2px 0;font-size:10px;border-top:1px solid rgba(255,255,255,0.05)}' +
       '.sa-el .sa-elname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:#cfe}' +
-      '.sa-el select{font-size:9px;padding:1px 2px}';
+      '.sa-el select{font-size:9px;padding:1px 2px}' +
+      '.sa-cost{font-size:10px;color:#7fdc9b;margin-left:6px}' +
+      '.sa-total{margin-top:6px;padding-top:6px;border-top:1px solid rgba(79,195,247,0.25);font-size:12px;color:#cfe;text-align:right}';
     document.head.appendChild(s);
   }
 
@@ -156,6 +168,12 @@
       return '<option value="' + tid + '">' + (_state.name[tid] || tid) + '</option>';
     }).join('');
 
+    // ── step ④ 5D: fold the cost breakdown from the assigned elements (NON-INVENT) ──
+    var cost = costFold();
+    var costByTask = {}; var total = 0; var cur = '';
+    if (cost) { cur = cost.currency || ''; total = cost.total;
+      cost.phases.forEach(function (p) { costByTask[p.taskId] = p.cost; }); }
+
     var html = '<div style="display:flex;gap:5px;align-items:center;margin-bottom:6px">' +
       '<label style="font-size:10px;color:#9bb">Start</label>' +
       '<input id="sa-start" type="date" value="' + (_state.start || '2026-01-01') + '" style="flex:1">' +
@@ -163,6 +181,7 @@
 
     _state.order.forEach(function (tid) {
       var nm = _state.name[tid] || tid, dur = _state.dur[tid] || 30, cnt = _state.count[tid] || 0;
+      var cst = costByTask[tid] || 0;
       html += '<div class="sa-phase" data-tid="' + tid + '">' +
         '<div class="sa-phase-hd">' +
           '<span class="sa-dot" style="background:' + phaseColor(nm) + '"></span>' +
@@ -173,11 +192,15 @@
           '<button class="sa-dur" data-tid="' + tid + '" data-d="-5">&#8211;5d</button> ' +
           '<b>' + dur + 'd</b> ' +
           '<button class="sa-dur" data-tid="' + tid + '" data-d="5">+5d</button> ' +
+          '<span class="sa-cost" title="5D cost folded from assigned elements">' + cur + fmt(cst) + '</span>' +
           '<button class="sa-toggle" data-tid="' + tid + '" style="float:right;font-size:9px">elements &#9662;</button>' +
         '</div>' +
         '<div class="sa-elist" data-tid="' + tid + '" style="display:none"></div>' +
       '</div>';
     });
+    html += '<div class="sa-total">5D total <b>' + cur + fmt(total) + '</b>' +
+      (cost && cost.unmappedClasses.length ? ' <span title="classes using the default rate">(' +
+        cost.unmappedClasses.length + ' unmapped)</span>' : '') + '</div>';
     body.innerHTML = html;
 
     // wire start date
