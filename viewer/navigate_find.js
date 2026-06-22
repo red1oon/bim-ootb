@@ -3419,11 +3419,22 @@
     A.applyFindScope = function (scope) {
       scope = String(scope || '').trim();
       if (!scope) { console.log('§ZOOM-SCOPE skip=empty'); return 0; }
+      // §ARCH-OWNERSHIP (FUSED_4D5D_WEDGE_LANE): if the Time Machine is OPEN it is the OWNER/consumer —
+      // it shows the pinpointed element AT ITS MOMENT (tmJumpToElement). Else Find is the default floor
+      // (cost/location users care about WHAT/WHERE, not the schedule). Mechanism = "TM-if-open, else Find".
+      var _tmSt = null; try { _tmSt = window.tmGetState && window.tmGetState(); } catch (e) {}
+      var tmOpen = !!(_tmSt && _tmSt.active && typeof window.tmJumpToElement === 'function');
+
       // guid-set: has a comma OR isn't an Ifc* class token → treat as explicit element ids.
       if (scope.indexOf(',') >= 0 || !/^ifc[a-z]/i.test(scope)) {
         var guids = scope.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
         var lit = A.focusElement(new Set(guids), { item: guids.length === 1 });
-        console.log('§ZOOM-SCOPE kind=guids n=' + guids.length + ' lit=' + lit);
+        if (tmOpen && guids.length) {
+          try { window.tmJumpToElement(guids[0]); } catch (e) {}   // TM consumes: jump to its construction moment
+          console.log('§ZOOM-SCOPE route=tm kind=guids n=' + guids.length + ' moment=' + guids[0]);
+        } else {
+          console.log('§ZOOM-SCOPE route=find kind=guids n=' + guids.length + ' lit=' + lit);
+        }
         return guids.length;
       }
       // IFC class: reuse the Find panel + runSearch so the UI reflects the scope and one code path filters.
@@ -3433,7 +3444,13 @@
       runSearch();
       var set = new Set((nav.results || []).map(function (r) { return r.guid; }).filter(Boolean));
       if (set.size) A.focusElement(set, { item: false });
-      console.log('§ZOOM-SCOPE kind=class scope="' + scope + '" matches=' + set.size);
+      if (tmOpen && set.size) {
+        var firstG = (nav.results || []).map(function (r) { return r.guid; }).filter(Boolean)[0];
+        if (firstG) { try { window.tmJumpToElement(firstG); } catch (e) {} }   // TM consumes the class's first element
+        console.log('§ZOOM-SCOPE route=tm kind=class scope="' + scope + '" matches=' + set.size + ' moment=' + (firstG || '-'));
+      } else {
+        console.log('§ZOOM-SCOPE route=find kind=class scope="' + scope + '" matches=' + set.size);
+      }
       // §S2 — fold this class's twin cost into the #info-panel (Planned→Committed pair, from records).
       try { _showClassCost(scope, set.size); } catch (e) { console.log('§ZOOM-COST wire_err=' + e.message); }
       return set.size;

@@ -90,6 +90,9 @@
     var phaseDays = opts.phaseDays || 30;
     var schedId = opts.scheduleId || 'SCH_AUTHORED';
     var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
+    var blank = !!opts.blank;   // §MI-FLOW true-blank start: organize phases+assignments but leave
+                                // them UNDATED so the user originates the schedule (nothing shows in
+                                // the TM until dated → _cap skips NULL-dated tasks).
     rules = rules || (global.SEQUENCE_RULES) || {};
 
     // Ensure the IFC-native 4D tables exist (mirror import_db_builder.js DDL exactly).
@@ -129,31 +132,35 @@
     db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule', 'PLANNED', start]);
 
     // ROOT summary task (is_summary=1 → excluded from _cap leaf window; spans the whole project).
+    // In blank mode dates are NULL (the user originates them via scheduleDefault/the wizard).
     var rootId = 'TASK_ROOT';
     var totalDays = Math.max(phaseDays, ordered.length * phaseDays);
-    var projFinish = _addDays(start, ordered.length * phaseDays);
+    var rootStart = blank ? null : start;
+    var rootFinish = blank ? null : _addDays(start, ordered.length * phaseDays);
     db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-      [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, start, projFinish, 'P' + totalDays + 'D', null, 'PLANNED']);
+      [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, rootStart, rootFinish, blank ? null : 'P' + totalDays + 'D', null, 'PLANNED']);
 
     var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
     var outPhases = [], cursor = 0, assignN = 0;
     ordered.forEach(function (p) {
       var tid = 'TASK_' + _slug(p.name);
-      var s = _addDays(start, cursor * phaseDays);
-      var f = _addDays(start, (cursor + 1) * phaseDays);
+      var s = blank ? null : _addDays(start, cursor * phaseDays);
+      var f = blank ? null : _addDays(start, (cursor + 1) * phaseDays);
       cursor++;
-      // Leaf, dated, is_summary=0 → exactly what _cap.win picks up.
-      stmtTk.run([tid, schedId, rootId, p.name, 'CONSTRUCTION', 0, s, f, 'P' + phaseDays + 'D', null, 'PLANNED']);
+      // Leaf, is_summary=0. Dated → _cap.win picks it up; blank/undated → _cap skips it (the user
+      // originates the dates, then it appears in the timeline). Assignments are made either way.
+      stmtTk.run([tid, schedId, rootId, p.name, 'CONSTRUCTION', 0, s, f, blank ? null : 'P' + phaseDays + 'D', null, 'PLANNED']);
       p.guids.forEach(function (g) { stmtTe.run([tid, g]); assignN++; });
       outPhases.push({ taskId: tid, name: p.name, sequence: p.seq, start: s, finish: f, count: p.guids.length });
     });
     stmtTk.free();
     stmtTe.free();
 
-    console.log('§AUTHOR_MATERIALIZE schedule=' + schedId + ' phases=' + outPhases.length +
-      ' leafTasks=' + outPhases.length + ' assignments=' + assignN + ' elements=' + elems.length);
-    return { scheduleId: schedId, rootId: rootId, phases: outPhases, taskCount: outPhases.length, assignmentCount: assignN };
+    console.log('§AUTHOR_MATERIALIZE schedule=' + schedId + ' mode=' + (blank ? 'blank' : 'dated') +
+      ' phases=' + outPhases.length + ' leafTasks=' + outPhases.length +
+      ' assignments=' + assignN + ' elements=' + elems.length);
+    return { scheduleId: schedId, rootId: rootId, phases: outPhases, taskCount: outPhases.length, assignmentCount: assignN, blank: blank };
   }
 
   // assignElement(db, guid, taskId) — the CRAFT verb. Re-home one element to a different phase task.
@@ -168,6 +175,31 @@
     db.run('INSERT OR IGNORE INTO task_elements VALUES (?,?)', [taskId, guid]);
     console.log('§AUTHOR_ASSIGN guid=' + guid + ' -> task=' + taskId);
     return { ok: true, guid: guid, taskId: taskId };
+  }
+
+  // scheduleContiguous(db, scheduleId, opts) — §MI-FLOW: the user's deliberate "originate the dates"
+  // act (the optional "suggest a start"). Lays the leaf phases out contiguously from opts.start so
+  // a blank-materialized (undated) schedule becomes datable on demand. Orders by rowid = insert
+  // order = the sequence order materializeDefault used (NULL dates can't be ORDER BY'd).
+  function scheduleContiguous(db, scheduleId, opts) {
+    scheduleId = scheduleId || 'SCH_AUTHORED';
+    opts = opts || {};
+    var start = opts.start || '2026-01-01';
+    var phaseDays = opts.phaseDays || 30;
+    var lr = db.exec("SELECT task_id FROM tasks WHERE schedule_id='" + scheduleId +
+      "' AND (is_summary IS NULL OR is_summary=0) ORDER BY rowid");
+    var ids = (lr.length && lr[0].values.length) ? lr[0].values.map(function (r) { return r[0]; }) : [];
+    var cursor = 0;
+    ids.forEach(function (tid) {
+      var s = _addDays(start, cursor), f = _addDays(start, cursor + phaseDays);
+      db.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
+        [s, f, 'P' + phaseDays + 'D', tid]);
+      cursor += phaseDays;
+    });
+    db.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
+      [start, _addDays(start, cursor), scheduleId]);
+    console.log('§AUTHOR_SCHEDULE schedule=' + scheduleId + ' phases=' + ids.length + ' from=' + start + ' span=' + cursor + 'd');
+    return { scheduled: ids.length, start: start, span: cursor };
   }
 
   // foldCost(db, scheduleId, RATES, ratesDefault, currency) — §AUTHOR-1 step ④ (5D).
@@ -230,6 +262,7 @@
   var API = {
     matchRule: matchRule,
     materializeDefault: materializeDefault,
+    scheduleContiguous: scheduleContiguous,
     assignElement: assignElement,
     foldCost: foldCost
   };
@@ -237,5 +270,5 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v2');
+  console.log('§SCHEDULE_AUTHOR_LOADED v3');
 })(typeof self !== 'undefined' ? self : this);

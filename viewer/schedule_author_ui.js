@@ -77,15 +77,20 @@
   // Read the authored schedule back from the DB into _state (single source of truth = the tables).
   function refreshState() {
     var d = db(); if (!d || !_state) return;
+    // Order dated phases by date, undated (blank) phases by insert order (rowid) — NULL dates can't sort.
     var r = d.exec("SELECT task_id, name, schedule_start, schedule_finish FROM tasks " +
-      "WHERE schedule_id='" + _state.schedId + "' AND is_summary=0 ORDER BY schedule_start, task_id");
-    _state.order = []; _state.name = {}; _state.start = null;
+      "WHERE schedule_id='" + _state.schedId + "' AND is_summary=0 " +
+      "ORDER BY COALESCE(schedule_start,'9999-99-99'), rowid");
+    _state.order = []; _state.name = {}; _state.start = null; _state.undated = 0; _state.dated = {};
     if (r.length && r[0].values.length) {
       r[0].values.forEach(function (row) {
         _state.order.push(row[0]); _state.name[row[0]] = row[1];
-        if (!_state.dur[row[0]]) _state.dur[row[0]] = Math.max(1,
-          Math.round((Date.parse(row[3]) - Date.parse(row[2])) / 86400000));
-        if (!_state.start) _state.start = String(row[2]).slice(0, 10);
+        if (row[2] && row[3]) {   // dated phase
+          _state.dated[row[0]] = true;
+          if (!_state.dur[row[0]]) _state.dur[row[0]] = Math.max(1,
+            Math.round((Date.parse(row[3]) - Date.parse(row[2])) / 86400000));
+          if (!_state.start) _state.start = String(row[2]).slice(0, 10);
+        } else { _state.dated[row[0]] = false; _state.undated++; }   // blank → user originates dates
       });
     }
     // element counts per task
@@ -131,15 +136,29 @@
   }
 
   // ── First draft: materialize the smart default from rules (the prebaked start) ──
+  // §MI-FLOW: a "Start blank" toggle organizes phases+assignments but leaves them UNDATED, so the
+  // user originates the schedule (the auto-dates become an optional "suggest a start" — scheduleNow).
   function generateDraft() {
     var d = db(); if (!d) { status('No model loaded'); return; }
     if (!SA()) { status('Author engine not loaded'); return; }
-    var res = SA().materializeDefault(d, rules(), { start: '2026-01-01', phaseDays: 30 });
+    var blankEl = document.getElementById('sa-blank');
+    var blank = !!(blankEl && blankEl.checked);
+    var res = SA().materializeDefault(d, rules(), { start: '2026-01-01', phaseDays: 30, blank: blank });
     _state = { schedId: res.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
     refreshState();
-    console.log('§AUTHOR_UI_DRAFT phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
-    status('Draft: ' + res.phases.length + ' phases, ' + res.assignmentCount + ' elements assigned');
+    console.log('§AUTHOR_UI_DRAFT mode=' + (blank ? 'blank' : 'dated') + ' phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
+    status(blank
+      ? 'Blank: ' + res.phases.length + ' phases organized, ' + res.assignmentCount + ' elements assigned — now set the dates'
+      : 'Draft: ' + res.phases.length + ' phases, ' + res.assignmentCount + ' elements assigned');
     render();
+  }
+
+  // The user's deliberate "originate the dates" act (blank mode) — lay phases out from the start date.
+  function scheduleNow() {
+    var d = db(); if (!d || !SA() || !_state) return;
+    SA().scheduleContiguous(d, _state.schedId, { start: _state.start || '2026-01-01', phaseDays: 30 });
+    refreshState(); render();
+    status('Scheduled — phases now carry dates and appear in the timeline.');
   }
 
   // ── Apply to 4D: re-fold the Time Machine so the gantt shows the authored schedule ──
@@ -174,14 +193,23 @@
     if (cost) { cur = cost.currency || ''; total = cost.total;
       cost.phases.forEach(function (p) { costByTask[p.taskId] = p.cost; }); }
 
+    var blankMode = _state.undated > 0;
     var html = '<div style="display:flex;gap:5px;align-items:center;margin-bottom:6px">' +
       '<label style="font-size:10px;color:#9bb">Start</label>' +
       '<input id="sa-start" type="date" value="' + (_state.start || '2026-01-01') + '" style="flex:1">' +
-      '</div>';
+      (blankMode ? '<button id="sa-schedule" class="sa-primary" title="Lay the phases out from the start date — the schedule appears in the timeline">Schedule now &#9654;</button>' : '') +
+      '</div>' +
+      (blankMode ? '<div style="font-size:10px;color:#e0b070;margin-bottom:4px">' + _state.undated +
+        ' phase(s) unscheduled — organized but undated. Set a start and press <b>Schedule now</b> to originate the dates.</div>' : '');
 
     _state.order.forEach(function (tid) {
-      var nm = _state.name[tid] || tid, dur = _state.dur[tid] || 30, cnt = _state.count[tid] || 0;
+      var nm = _state.name[tid] || tid, cnt = _state.count[tid] || 0;
       var cst = costByTask[tid] || 0;
+      var dated = _state.dated ? _state.dated[tid] !== false : true;
+      var durHtml = dated
+        ? '<button class="sa-dur" data-tid="' + tid + '" data-d="-5">&#8211;5d</button> <b>' +
+          (_state.dur[tid] || 30) + 'd</b> <button class="sa-dur" data-tid="' + tid + '" data-d="5">+5d</button> '
+        : '<span style="color:#e0b070">unscheduled</span> ';
       html += '<div class="sa-phase" data-tid="' + tid + '">' +
         '<div class="sa-phase-hd">' +
           '<span class="sa-dot" style="background:' + phaseColor(nm) + '"></span>' +
@@ -189,9 +217,7 @@
           '<span style="font-size:10px;color:#9bb">' + cnt + ' el</span>' +
         '</div>' +
         '<div class="sa-meta">' +
-          '<button class="sa-dur" data-tid="' + tid + '" data-d="-5">&#8211;5d</button> ' +
-          '<b>' + dur + 'd</b> ' +
-          '<button class="sa-dur" data-tid="' + tid + '" data-d="5">+5d</button> ' +
+          durHtml +
           '<span class="sa-cost" title="5D cost folded from assigned elements">' + cur + fmt(cst) + '</span>' +
           '<button class="sa-toggle" data-tid="' + tid + '" style="float:right;font-size:9px">elements &#9662;</button>' +
         '</div>' +
@@ -203,9 +229,13 @@
         cost.unmappedClasses.length + ' unmapped)</span>' : '') + '</div>';
     body.innerHTML = html;
 
-    // wire start date
+    // wire start date — in blank mode just remember it (the "Schedule now" button originates dates);
+    // in dated mode, changing the start re-lays the existing schedule.
     var st = document.getElementById('sa-start');
-    if (st) st.onchange = function () { _state.start = st.value; applyDates(); render(); };
+    if (st) st.onchange = function () { _state.start = st.value; if (!blankMode) { applyDates(); render(); } };
+    // wire "Schedule now" (blank mode → originate the dates)
+    var sched = document.getElementById('sa-schedule');
+    if (sched) sched.onclick = scheduleNow;
 
     // wire rename
     body.querySelectorAll('input.sa-name').forEach(function (inp) {
@@ -266,6 +296,9 @@
         '<button id="sa-draft" class="sa-primary" style="flex:1">Generate first draft</button>' +
         '<button id="sa-apply" style="flex:1">Apply to 4D &#9654;</button>' +
       '</div>' +
+      '<label style="display:flex;align-items:center;gap:5px;font-size:10px;color:#9bb;margin-top:2px" ' +
+        'title="Organize the phases + assignments but leave them UNDATED — you originate the schedule (§MI-FLOW)">' +
+        '<input type="checkbox" id="sa-blank"> Start blank (set the dates yourself)</label>' +
       '<div id="sa-body" style="margin-top:4px"></div>';
     document.body.appendChild(_panel);
     document.getElementById('sa-close').onclick = close;
@@ -294,5 +327,5 @@
   global.openScheduleAuthorWizard = open;
   global.ScheduleAuthorUI = { open: open, close: close, toggle: toggle };
 
-  console.log('§SCHEDULE_AUTHOR_UI_LOADED v1');
+  console.log('§SCHEDULE_AUTHOR_UI_LOADED v2');
 })(typeof self !== 'undefined' ? self : this);
