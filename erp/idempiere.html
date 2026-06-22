@@ -1666,6 +1666,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function renderActiveTab() {
     _newMode = null;   // P3 — any tab switch / grid reload exits new-record mode (untouched New auto-discards, nothing committed)
+    _drillSaved = null; _drillActive = false;   // a real reload supersedes any dashboard drill-narrowing
     var tab = _curTab(); if (!tab) return;
     if (!tab.tableName) { _records = []; _recIdx = 0; $('idmp-content').innerHTML = '<div id="idmp-placeholder">Tab has no table.</div>'; return; }
     // Honest: ad_seed.db carries AD metadata for ALL windows but DATA for a curated subset only.
@@ -1751,6 +1752,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function renderBody() {
     var tab = _curTab(); if (!tab) return;
     var host = $('idmp-content'); host.innerHTML = '';
+    if (_drillActive && _drillSaved) host.appendChild(_drillBanner());   // DASH_DRILL — "show all" to restore the full set
     if (_viewMode === 'grid') {
       host.appendChild(buildGrid(tab));
       // MOBILE_CARDS.md §5 — whitebox witness: cards rendered, table hidden ≤760, table shown on desktop.
@@ -3114,6 +3116,35 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     x.addEventListener('click', close); hd.appendChild(x);
     ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
   }
+  // ── DASHBOARD DRILL (DASH_DRILL) — tap a donut slice → fetch THOSE records back in their own window grid
+  //   (1 record → straight to its form; N → the grid narrowed to them, with a "show all" banner). Client-side
+  //   narrowing of the ALREADY-loaded _records (preserves op-log/OPFS overlays — never re-queries), iDempiere's
+  //   Zoom feel; any tab/window reload clears it. NON-INVENT: the slice's real record rows. ──
+  var _drillSaved = null, _drillActive = false;
+  function _closeDashOverlay() { var ov = $('posted-overlay'); if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }
+  function _drillToRecords(rows) {
+    var tab = _curTab(); if (!tab || !rows || !rows.length) return;
+    if (!_drillSaved) _drillSaved = _records;     // remember the full set (first drill only)
+    _closeDashOverlay();
+    _records = rows.slice(); _recIdx = 0; _drillActive = true;
+    _viewMode = rows.length === 1 ? 'form' : 'grid';
+    renderBody(); renderToolbar();
+    console.log('§DASH-DRILL table=' + tab.tableName + ' recs=' + rows.length + ' mode=' + _viewMode + ' of=' + (_drillSaved ? _drillSaved.length : '?'));
+  }
+  function _restoreFromDrill() {
+    if (!_drillSaved) return;
+    _records = _drillSaved; _drillSaved = null; _drillActive = false; _recIdx = 0; _viewMode = 'grid';
+    renderBody(); renderToolbar();
+    console.log('§DASH-DRILL-RESTORE recs=' + _records.length);
+  }
+  function _drillBanner() {
+    var n = _records.length, m = _drillSaved ? _drillSaved.length : n, bar = el('div');
+    bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eaf1ff;border:1px solid #c3d7ff;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:13px;color:#234';
+    bar.appendChild(el('span', null, 'Showing ' + n + ' of ' + m + ' — drilled from the dashboard'));
+    var back = el('button', null, '✕ Show all'); back.style.cssText = 'background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer';
+    back.addEventListener('click', function () { _restoreFromDrill(); });
+    bar.appendChild(back); return bar;
+  }
   // distinct-value count of a column across the open window's records (heat-map cardinality scoring).
   // ── dashboard compute cache — _distinctCount/_groupRecsBy/_groupRecs are recomputed many times per open
   //   (each a full _records scan, the folds also re-run fmt per row). Memoize per CURRENT _records array;
@@ -3504,10 +3535,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
       c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', sw); c.setAttribute('stroke-dasharray', '0 ' + circ);
       c.style.transform = 'rotate(' + (cum / circ * 360 - 90) + 'deg)'; c.style.transformBox = 'fill-box'; c.style.transformOrigin = 'center'; c.style.transition = 'stroke-dasharray .6s cubic-bezier(.22,1,.36,1)'; c.style.cursor = 'pointer';
-      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + fmtV(v) + ' (' + pct + '%)'; c.appendChild(ti);
+      var sliceRows = groups[k];   // capture now — the '(others)' bucket is deleted right after this arc is built
+      var ti = document.createElementNS(NS, 'title'); ti.textContent = label + ' · ' + fmtV(v) + ' (' + pct + '%) — tap to open these records'; c.appendChild(ti);
       c.addEventListener('mouseenter', function () { setCentre(pct + '%', label); });
       c.addEventListener('mouseleave', function () { setCentre(fmtV(total), 'total'); });
       c.addEventListener('touchstart', function () { setCentre(pct + '%', label); }, { passive: true });
+      // DASH_DRILL — tap the arc → those records in their window (long-press is the text-flip, so skip if it fired)
+      c.addEventListener('click', function () { if (_donutLP) { _donutLP = false; return; } if (sliceRows && sliceRows.length && typeof _drillToRecords === 'function') _drillToRecords(sliceRows); });
       svg.appendChild(c);
       if (pct >= 8) {   // % ON the arc (mid-angle); slim slices stay clean, revealed on hover instead
         var mid = (cum + len / 2) / circ, ang = (mid * 360 - 90) * Math.PI / 180;
@@ -3525,8 +3559,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var textm = el('div', 'donut-text');
     rows.forEach(function (ro) { var li = el('div', 'donut-tli'); var s = el('span', 'donut-sw'); s.style.background = ro.color; li.appendChild(s); li.appendChild(el('span', 'donut-k', ro.label)); li.appendChild(el('span', 'donut-v', ro.pct + '% · ' + fmtV(ro.v))); textm.appendChild(li); });
     wrap.appendChild(textm);
-    var lp = null;
-    function startLP() { lp = setTimeout(function () { wrap.classList.toggle('textmode'); console.log('§DONUT-TEXTMODE on=' + wrap.classList.contains('textmode')); }, 480); }
+    var lp = null, _donutLP = false;
+    function startLP() { _donutLP = false; lp = setTimeout(function () { _donutLP = true; wrap.classList.toggle('textmode'); console.log('§DONUT-TEXTMODE on=' + wrap.classList.contains('textmode')); }, 480); }
     function cancelLP() { if (lp) { clearTimeout(lp); lp = null; } }
     wrap.addEventListener('mousedown', startLP); wrap.addEventListener('mouseup', cancelLP); wrap.addEventListener('mouseleave', cancelLP);
     wrap.addEventListener('touchstart', startLP, { passive: true }); wrap.addEventListener('touchend', cancelLP);
