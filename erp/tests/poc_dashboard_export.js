@@ -111,6 +111,33 @@ const readDl = async (dl)=>{const p=await dl.path();return fs.readFileSync(p,'ut
   ok.bpTimeline = dateField!=='none' && /updated|created|date/i.test(dateField) && days>0 && hasSlider;
   console.log('§W-DASH-DATE :: '+tlLog+' hasSlider='+hasSlider+' :: '+(ok.bpTimeline?'OK':'FAIL'));
 
+  // ── PART 3 — DRILL: tap a donut slice → those records back in the window grid, then "Show all" restores ──
+  await login(page,port,'143');
+  await clickPill(page,'dashboard');
+  await page.waitForFunction(()=>document.querySelector('.dash-card .donut-svg'),{timeout:10000});
+  await page.waitForTimeout(300);
+  // click the FIRST value arc of the first donut (sorted desc → largest slice, most records → grid mode)
+  await page.evaluate(()=>{var arcs=document.querySelectorAll('.dash-card .donut-svg circle');if(arcs[1])arcs[1].dispatchEvent(new MouseEvent('click',{bubbles:true}))});
+  await page.waitForTimeout(500);
+  const drillLog=logs.filter(l=>/§DASH-DRILL table/.test(l)).pop()||'';
+  const drillRecs=Number((drillLog.match(/recs=(\d+)/)||[])[1])||0;
+  const dashGone=await page.evaluate(()=>!document.querySelector('.dash-wrap'));
+  const hasBanner=await page.evaluate(()=>{var b=[].slice.call(document.querySelectorAll('button')).find(x=>/Show all/.test(x.textContent));return !!b;});
+  const mode=(drillLog.match(/mode=(\w+)/)||[])[1]||'';
+  ok.drill = !!drillLog && drillRecs>0 && dashGone && (mode==='form' || hasBanner);
+  console.log('§W-DRILL :: '+drillLog+' dashClosed='+dashGone+' banner='+hasBanner+' :: '+(ok.drill?'OK':'FAIL'));
+  // restore
+  let restored=true;
+  if (mode!=='form') {
+    await page.evaluate(()=>{var b=[].slice.call(document.querySelectorAll('button')).find(x=>/Show all/.test(x.textContent));b&&b.click()});
+    await page.waitForTimeout(300);
+    const rLog=logs.filter(l=>/§DASH-DRILL-RESTORE/.test(l)).pop()||'';
+    const rRecs=Number((rLog.match(/recs=(\d+)/)||[])[1])||0;
+    restored = !!rLog && rRecs>=drillRecs;
+    console.log('§W-DRILL-RESTORE :: '+rLog+' :: '+(restored?'OK':'FAIL'));
+  }
+  ok.drillRestore = restored;
+
   const pass = errs.length===0 && Object.values(ok).every(Boolean);
   console.log('§DASH-EXPORT-RESULT '+(pass?'PASS':'FAIL')+' checks='+JSON.stringify(ok)+' errs='+(errs.length?errs.slice(0,3).join('|'):0));
   await b.close();server.close();process.exit(pass?0:1);
