@@ -151,6 +151,55 @@
       });
       return out;
     },
+
+    // ── §GEO_SUMMARY — the drop's OWN runtime drift verdict (the JS twin of the Java compiler's `[GEO] SUMMARY`,
+    // LAST_MILE_PROBLEM.md §7 "Next step for coder"). After a BOM is dropped, the modeller recomputes the proven
+    // IntraBOM invariant over the EXPANDED placement and emits ONE self-contained §-log line — so expandAssembly
+    // POLICES ITSELF at runtime, instead of correctness living only in the external witness (W-MODELLER-DROP).
+    // Faithful to IntraBOMRelativeTest (= scripts/witness_modeller_drop.js checkInvariant), scoped by bom_TYPE:
+    //   • R1 |dx|,|dy| < 10m  and  R2 |dz| < 4.5m  for every SET/ROOM bom leaf offset
+    //   • R3 absolute-leak gate: a SET/ROOM expanded at origin keeps its all-pairs leaf-CENTRE span within its own
+    //     footprint env = max(declared bbox, 10m room-scale) + 3m. A leaf flung to building-absolute coords (the
+    //     PR#478 scatter — DX ±22.8m when MIRROR was mis-handled or the sub-BOM origin / ½-extent dropped) blows
+    //     the span past env → DRIFT. FLOOR/BUILDING boms are EXEMPT from R1/R2/R3 (legit building-scale offsets
+    //     the Java resolves additively against the tack origin) — only their SET/ROOM descendants are gated.
+    // worst = the worst single excess (R1/R2 overage or R3 pair-span excess) in mm; DRIFT = total violations.
+    // LOG-ONLY: reads the catalog + expandAssembly output, never mutates geometry or the op-log → cannot regress
+    // geometry. On the proven catalog every droppable root is `worst=0mm, DRIFT=0`; DRIFT>0 = a port regression.
+    geoSummary(rootId) {
+      const root = ASM_BY_ID[rootId]; if (!root) return null;
+      const R1 = 10, R2 = 4.5, ENV_FLOOR = 10, ENV_TOL = 3;
+      let viol = 0, worst = 0; const detail = [], seen = {};
+      const span = (vals) => { let mn = Infinity, mx = -Infinity; for (let i = 0; i < vals.length; i++) { const v = vals[i]; if (v < mn) mn = v; if (v > mx) mx = v; } return mx - mn; };
+      const walk = (id) => {
+        const a = ASM_BY_ID[id]; if (!a || seen[id]) return; seen[id] = true;
+        const scoped = !(a.level === 'FLOOR' || a.level === 'BUILDING');   // IntraBOM scoping: SET/ROOM only
+        (a.children || []).forEach(ch => {
+          if (ch.isBom) { walk(ch.ref); return; }
+          if (!scoped) return;
+          const e1 = Math.max(Math.abs(ch.dx) - R1, Math.abs(ch.dy) - R1);
+          if (e1 > 0) { viol++; worst = Math.max(worst, e1); detail.push('R1 ' + id + '/' + ch.role + ' dx=' + ch.dx + ' dy=' + ch.dy); }
+          const e2 = Math.abs(ch.dz || 0) - R2;
+          if (e2 > 0) { viol++; worst = Math.max(worst, e2); detail.push('R2 ' + id + '/' + ch.role + ' dz=' + ch.dz); }
+        });
+        if (scoped) {                                                      // R3 all-pairs span vs own envelope
+          const ex = this.expandAssembly(id, { x: 0, y: 0, z: 0, rot: 0 });
+          if (ex.length > 1) {
+            const sX = span(ex.map(l => l.x)), sY = span(ex.map(l => l.y));
+            const envX = Math.max(a.w || 0, ENV_FLOOR) + ENV_TOL, envY = Math.max(a.d || 0, ENV_FLOOR) + ENV_TOL;
+            const e3 = Math.max(sX - envX, sY - envY);
+            if (e3 > 0) { viol++; worst = Math.max(worst, e3); detail.push('R3 ' + id + ' span=' + sX.toFixed(1) + 'x' + sY.toFixed(1) + ' env=' + envX.toFixed(1) + 'x' + envY.toFixed(1)); }
+          }
+        }
+      };
+      walk(rootId);
+      const all = this.expandAssembly(rootId, { x: 0, y: 0, z: 0, rot: 0 });
+      const n = all.length, pairs = n * (n - 1) / 2, worstMm = Math.round(worst * 1000);
+      console.log('§GEO_SUMMARY ' + rootId + ' [' + root.level + '] ' + n + ' leaves, ' + pairs + ' pairs, worst=' + worstMm + 'mm, DRIFT=' + viol);
+      if (viol) console.warn(TAG + ' §GEO_SUMMARY DRIFT ' + viol + ' — port regression (expected 0): ' + detail.slice(0, 6).join(' | '));
+      return { rootId, level: root.level, leaves: n, pairs, worstMm, drift: viol, detail };
+    },
+
     setLod(featureId, lod) { this._lod[featureId] = String(lod); return this; },
     lodFor(featureId, fallback) { return this._lod[featureId] || fallback || '200'; },
 

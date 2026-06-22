@@ -183,7 +183,7 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=2" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=10" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=11" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -1490,6 +1490,7 @@ async function placeAssembly(x, y) {
   lastInsertId = placed[placed.length - 1].id; bLod.style.display = ''; bLod.disabled = false; paintLod();
   setStat('assembled ' + (asm ? asm.name : insertHash) + ' → ' + placed.length + ' parts placed (signed)'); audioCue('commit'); syncHistory();
   console.log('§MODELLER assembly-drop ' + insertHash + ' parts=' + placed.length);
+  try { L.geoSummary(insertHash); } catch (e) { console.warn('§GEO_SUMMARY failed ' + e); }  // runtime self-proof (LAST_MILE §7)
   // refine ALL leaves to real meshes in ONE pass: load the geom store once, set LOD-300 per leaf, single re-fold.
   // SELF-HEALING (W-BONSAI-LOD-RESILIENT): if the geometries fetch hiccups, the leaves land as LOD-200 boxes; with
   // the resilient ensureMesh, RETRY the load up to twice (300ms apart) so a transient drop doesn't leave the user
