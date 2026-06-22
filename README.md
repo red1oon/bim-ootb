@@ -1,14 +1,34 @@
-# BIM / ERP OOTB
+# BIM OOTB
+### Two databases. One browser. Zero install. No permission required.
 
 [![CI](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg)](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Frictionless. Two DBs. One browser. Zero install.**
+A building is a manufactured product with coordinates. Drop an IFC file into a browser tab and watch it become what it always should have been — a thing you can query, cost, schedule, and *own*. No installer. No seat license. No server to rent. No salesman to call.
 
-Two engines in one browser tab, sharing one signed operation log. Drop an IFC file and get a full BIM environment in 60 seconds — *view* it in the read-only viewer or *author* B-rep geometry in the DAGeVu modeller, where the op-log itself is the feature tree. Beside it, **Kernel-ERP** — an ERP kernel folded from the iDempiere lineage — runs over its own SQLite database, and the *same* signed op-log that drives the model folds a building into a procurement order. No server, no signup, no plugins.
+Beside it runs a full ERP kernel, folded from the Compiere → ADempiere → iDempiere lineage, that reproduces a real ERP's books **to the cent** — serverless, offline, in the same tab. The building becomes a procurement order. The order becomes accounts. All of it from one signed log you can replay and verify yourself.
 
-**Live:** [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) · **Modeller:** [DAGeVu authoring](https://red1oon.github.io/bim-ootb/viewer/modeller.html) · **Film:** [BIM and ERP, one engine](https://youtu.be/hnLYNcRihzs)
+**Why this exists, plainly.** The big tools are cathedrals — and cathedrals are worth building. They house real work, they pay real engineers, they earn their keep. This is no war on any of that; making good tools and charging for them is an honest trade. I'm just building a **bazaar** — in the same city, under the same sky, open to anyone who'd rather wander in for free. Both can stand. People choose. I only insist that the free path *exists*.
 
-Two technical papers, one per engine: **BIM →** [Feature Paper](https://red1oon.github.io/BIMCompiler/FeatureComparison/) · **ERP →** [Migrate & Compare](https://red1oon.github.io/BIMCompiler/MigrateComparisonPaper/).
+**Who's doing this.** I'm Redhuan D. Oon — *red1*. Part vigilante, part kid with a magnifying glass. The vigilante doesn't fight anyone — he just builds the open path and leaves the gate unlatched, on principle, without waiting for permission. The kid wants to see how far one person and a machine can actually push this before someone insists it's impossible. Both halves are serious.
+
+**How it's built — the only three rules.**
+- **Extract or compile, never invent.** Every number traces to a real source.
+- **Talk is cheap.** Every claim here has a witness you can run; corrupt the rule and the number goes wrong. If it doesn't reproduce, it isn't true.
+- **In the open, or not at all.** MIT-licensed, because a tool you can't fork is a tool that owns you.
+
+It won't replace Autodesk or SAP this year. It already does things they were never shaped to do — and it gets closer every week, mostly because it's a genuine blast to build.
+
+**This README is the doorway, not the house.** The works — the proofs, the changes, the arguments — are in the docs and the commit log below. Scour them, break the thing, send a fix.
+
+- ▶️ [Open the live app](https://red1oon.github.io/bim-ootb/) · [Watch the film](https://youtu.be/hnLYNcRihzs)
+- 🧭 [What's landed vs the frontier](https://red1oon.github.io/BIMCompiler/StrategicIndustryPositioning/)
+- 📜 [How it got here — Federation → Compiler → Browser](https://red1oon.github.io/BIMCompiler/PROJECT_CHRONOLOGY/)
+- 🌱 [Push it further (start here)](https://red1oon.github.io/BIMCompiler/CONTRIBUTING/)
+
+*Build it like you mean it. Give it away like it's nothing.*
+
+— Redhuan D. Oon · MIT Licensed · 2025–2026
 
 ---
 
