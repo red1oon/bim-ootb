@@ -150,7 +150,9 @@
             // OUTSIDE, as a rigid rotation about the cursor, by dropLeaves (PlacementCollectorVisitor has no drop
             // yaw — cumRot/cumMirror are the building's intrinsic transforms). So no yaw reaches this half-extent.
           }
-          out.push({ hash: ch.ref, x: +cx.toFixed(4), y: +cy.toFixed(4), z: +cz.toFixed(4), rot: wrot, role: ch.role });
+          // toFixed(7) = 0.1µm quantum (trims float noise, keeps the op-log clean) — was toFixed(4) = 0.1mm, which
+          // floored the all-pairs spatial offset at 50× the Java's attested 0.002mm bar (W-DROP-VS-JAVA GAP-1).
+          out.push({ hash: ch.ref, x: +cx.toFixed(7), y: +cy.toFixed(7), z: +cz.toFixed(7), rot: wrot, role: ch.role });
         }
       });
       return out;
@@ -241,9 +243,9 @@
       for (let i = 0; i < canonical.length; i++) {
         const lf = canonical[i], lx = lf.x - fp.cx, ly = lf.y - fp.cy;          // leaf relative to footprint centre
         out.push({ hash: lf.hash, role: lf.role,
-          x: +(cursorX + (cs * lx - sn * ly)).toFixed(4),                       // rigid-rotate the canonical cluster
-          y: +(cursorY + (sn * lx + cs * ly)).toFixed(4),                       // about the cursor by the drop yaw
-          z: +(lf.z + ez).toFixed(4),
+          x: +(cursorX + (cs * lx - sn * ly)).toFixed(7),                       // rigid-rotate the canonical cluster
+          y: +(cursorY + (sn * lx + cs * ly)).toFixed(7),                       // about the cursor by the drop yaw
+          z: +(lf.z + ez).toFixed(7),                                          // toFixed(7) = 0.1µm (GAP-1 precision)
           rot: (((lf.rot || 0) + (yaw || 0)) % 360 + 360) % 360 });             // mesh orientation += drop yaw
       }
       return out;
