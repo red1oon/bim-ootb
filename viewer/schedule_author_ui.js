@@ -141,6 +141,16 @@
   function generateDraft() {
     var d = db(); if (!d) { status('No model loaded'); return; }
     if (!SA()) { status('Author engine not loaded'); return; }
+    // Never rule-generate a competing schedule when the model already carries an IMPORTED one
+    // (Bonsai/Revit). Adopt it for editing instead — _cap reads all schedule_ids, so two would double.
+    var act = SA().activeSchedule ? SA().activeSchedule(d) : null;
+    if (act && act.captured) {
+      _state = { schedId: act.id, start: '2026-01-01', order: [], name: {}, dur: {}, count: {}, captured: true };
+      refreshState(); syncControls(); render();
+      status('This model already has an imported schedule (' + act.name + ') — editing it in place, not regenerating.');
+      console.log('§AUTHOR_UI_ADOPT-CAPTURED id=' + act.id + ' tasks=' + act.taskCount);
+      return;
+    }
     var blankEl = document.getElementById('sa-blank');
     var blank = !!(blankEl && blankEl.checked);
     var res = SA().materializeDefault(d, rules(), { start: '2026-01-01', phaseDays: 30, blank: blank });
@@ -338,15 +348,33 @@
   function open() {
     if (!_built) build();
     _panel.style.display = 'flex';
-    // If a schedule was already authored this session, re-read it.
-    if (!_state && db()) {
-      var r = db().exec("SELECT schedule_id FROM schedules WHERE schedule_id='SCH_AUTHORED'");
-      if (r.length && r[0].values.length) {
-        _state = { schedId: 'SCH_AUTHORED', start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
-        refreshState(); render();
+    // Adopt whatever schedule the model already has — the user's own SCH_AUTHORED draft, OR a
+    // schedule IMPORTED with the model (Bonsai/Revit IfcWorkSchedule, captured by import_worker into
+    // the same tables). We edit it in place; we never rule-generate a competing one.
+    if (!_state && db() && SA() && SA().activeSchedule) {
+      var act = SA().activeSchedule(db());
+      if (act) {
+        _state = { schedId: act.id, start: '2026-01-01', order: [], name: {}, dur: {}, count: {}, captured: act.captured };
+        refreshState();
+        status(act.captured
+          ? 'Editing the schedule imported with this model (' + act.name + ') — ' + act.taskCount +
+            ' tasks. Rename, reassign, re-date; edits stay in this schedule.'
+          : 'Editing your authored schedule — ' + act.taskCount + ' tasks.');
+        render();
       }
     }
-    console.log('§AUTHOR_UI_OPEN built=' + _built + ' hasSchedule=' + (!!_state));
+    syncControls();
+    console.log('§AUTHOR_UI_OPEN built=' + _built + ' hasSchedule=' + (!!_state) +
+      ' captured=' + !!(_state && _state.captured));
+  }
+
+  // When editing an IMPORTED (captured) schedule, hide the rule-generate controls — you craft the
+  // real schedule in place, you do not regenerate over it (that would clobber the crafted dates/WBS).
+  function syncControls() {
+    var draft = document.getElementById('sa-draft'), blank = document.getElementById('sa-blank');
+    var cap = !!(_state && _state.captured);
+    if (draft) draft.style.display = cap ? 'none' : '';
+    if (blank && blank.parentElement) blank.parentElement.style.display = cap ? 'none' : '';
   }
   function close() { if (_panel) _panel.style.display = 'none'; console.log('§AUTHOR_UI_CLOSE'); }
   function toggle() { if (_panel && _panel.style.display === 'flex') close(); else open(); }
@@ -354,5 +382,5 @@
   global.openScheduleAuthorWizard = open;
   global.ScheduleAuthorUI = { open: open, close: close, toggle: toggle };
 
-  console.log('§SCHEDULE_AUTHOR_UI_LOADED v3');
+  console.log('§SCHEDULE_AUTHOR_UI_LOADED v4');
 })(typeof self !== 'undefined' ? self : this);
