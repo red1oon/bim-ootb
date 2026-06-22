@@ -38,6 +38,7 @@
     text-align:right; font-size:13px; color:#c8c8d8; white-space:nowrap; cursor:pointer; }
   .pv-table td:first-child { text-align:left; color:#e8e8ed; font-weight:500; }
   .pv-table td:hover { background:rgba(108,159,255,0.13); }
+  .pv-table td.pv-heat:hover { background:rgba(108,159,255,0.58) !important; }
   .pv-table tr.total-row td { border-top:2px solid rgba(255,255,255,0.14); color:#7bb3ff; font-weight:600; }
   .pv-table td.pv-zero { color:rgba(255,255,255,0.18); }
   /* drill pop */
@@ -226,6 +227,10 @@
     // data rows
     var colTotals = {}; pv.cols.forEach(function (cv) { colTotals[cv] = { count: 0, sum: 0 }; });
     var grandTotal = { count: 0, sum: 0 };
+    // HEATMAP — color each data cell by its share of the biggest cell (darker = higher). Real values only,
+    //   NON-INVENT: the same count/sum the cell already shows. Totals + labels stay plain so they don't dominate.
+    var heatMax = 0;
+    pv.rows.forEach(function (rv) { pv.cols.forEach(function (cv) { var c = pv.cells[rv + '|' + cv]; if (c) { var hv = pv.amtCol ? c.sum : c.count; if (hv > heatMax) heatMax = hv; } }); });
     pv.rows.forEach(function (rv) {
       var tr = document.createElement('tr');
       var tdR = document.createElement('td'); tdR.textContent = rv; tr.appendChild(tdR);
@@ -237,6 +242,7 @@
         var v = pv.amtCol ? cell.sum : cell.count;
         td.textContent = fmt(cell);
         if (!v) td.classList.add('pv-zero');
+        else if (heatMax > 0) { td.classList.add('pv-heat'); td.style.background = 'rgba(108,159,255,' + (0.07 + 0.45 * (v / heatMax)).toFixed(3) + ')'; }   // heat tint by share
         // cell drill — tap = §PIVOT-DRILL id panel; LONG-PRESS = ask the host to open these records in the window
         if (cell.count) td.style.cursor = 'pointer';
         (function (cRv, cCv, cCell) {
@@ -272,9 +278,9 @@
     t.appendChild(ttr);
     wrap.appendChild(t);
     var note = document.createElement('div'); note.className = 'pv-note';
-    note.textContent = pv.rows.length + ' row values · ' + pv.cols.length + ' column values · click a cell to see its record IDs';
+    note.textContent = pv.rows.length + ' row values · ' + pv.cols.length + ' column values · darker = higher · click a cell to see its record IDs';
     root.appendChild(wrap); root.appendChild(note);
-    log('renderPivot table=' + pv.table + ' rows=' + pv.rows.length + ' cols=' + pv.cols.length + ' measure=' + pv.msr + ' grandCount=' + grandTotal.count);
+    log('renderPivot table=' + pv.table + ' rows=' + pv.rows.length + ' cols=' + pv.cols.length + ' measure=' + pv.msr + ' grandCount=' + grandTotal.count + ' heatMax=' + heatMax);
   }
 
   function populateSelects(db, tb) {
