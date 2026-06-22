@@ -145,6 +145,10 @@
             cx = wx + sign * hw; cy = wy + sign * hd;     // x/y get +half = box CENTRE (place() centres in x/y).
             // cz stays wz: bboxFromDims bases the proxy box at z=0, so place() seats the BASE at z = LBD bottom
             // (= the BOM dz); the Java AABB minZ is exactly dz, so NO half is added in z (would float the box).
+            // ⚠ NOTE: the +half is added along WORLD axes, NOT rotated by the drop yaw — correct at yaw=0 (the
+            // basic drop) but one of several reasons ROTATED drops are not yet a faithful port (KNOWN ⛔; needs
+            // the Java PlacementCollectorVisitor cumulative reflect∘rotate transform ported as a unit, not
+            // piecemeal). The reported "basic BOM drop" issue was CENTRING (dropOrigin), not this.
           }
           out.push({ hash: ch.ref, x: +cx.toFixed(4), y: +cy.toFixed(4), z: +cz.toFixed(4), rot: wrot, role: ch.role });
         }
@@ -198,6 +202,37 @@
       console.log('§GEO_SUMMARY ' + rootId + ' [' + root.level + '] ' + n + ' leaves, ' + pairs + ' pairs, worst=' + worstMm + 'mm, DRIFT=' + viol);
       if (viol) console.warn(TAG + ' §GEO_SUMMARY DRIFT ' + viol + ' — port regression (expected 0): ' + detail.slice(0, 6).join(' | '));
       return { rootId, level: root.level, leaves: n, pairs, worstMm, drift: viol, detail };
+    },
+
+    // ── TRUE leaf-footprint AABB of a dropped assembly (W-BOM-DROP-CENTER). Expand the BOM to its N leaf boxes
+    // and union their world AABBs — the ACTUAL footprint the parts occupy. This is NOT the catalog's declared
+    // aabb (asm.w/d): that is the parent-PRODUCT box, not the laid-out children (e.g. BED_SET declares 1.2×0.6m
+    // but its 5 children span 3.5×2.0m). Used to (a) centre the drop on the cursor and (b) size the ghost box so
+    // both match where the parts really land. Returns null for a leafless assembly.
+    footprintAABB(id, placement) {
+      const lv = this.expandAssembly(id, placement || { x: 0, y: 0, z: 0, rot: 0 });
+      if (!lv.length) return null;
+      let xn = Infinity, xx = -Infinity, yn = Infinity, yx = -Infinity, zn = Infinity, zx = -Infinity;
+      for (let i = 0; i < lv.length; i++) {
+        const lf = lv[i], c = this.get(lf.hash), bb = c && c.bbox;
+        const hw = bb ? (bb[1] - bb[0]) / 2 : 0, hd = bb ? (bb[3] - bb[2]) / 2 : 0, hh = bb ? (bb[5] - bb[4]) : 0;
+        if (lf.x - hw < xn) xn = lf.x - hw; if (lf.x + hw > xx) xx = lf.x + hw;
+        if (lf.y - hd < yn) yn = lf.y - hd; if (lf.y + hd > yx) yx = lf.y + hd;
+        if (lf.z < zn) zn = lf.z; if (lf.z + hh > zx) zx = lf.z + hh;   // box base = lf.z, top = base + height
+      }
+      return { minX: xn, maxX: xx, minY: yn, maxY: yx, minZ: zn, maxZ: zx,
+               cx: (xn + xx) / 2, cy: (yn + yx) / 2, cz: (zn + zx) / 2, w: xx - xn, d: yx - yn, h: zx - zn };
+    },
+
+    // ── The expand ORIGIN that lands an assembly's true leaf-footprint CENTRE on a cursor point (cursorX,cursorY)
+    // at yaw `rot` (W-BOM-DROP-CENTER). Centring on the declared aabb half (asm.w/2) mis-seats the drop by up to
+    // metres because asm.w/d is the parent-product box, not the laid-out footprint (§DROP-CENTER). Back off by the
+    // REAL footprint centre, rotated by the drop yaw, so the cluster centre = the cursor for ANY assembly/rotation.
+    dropOrigin(id, cursorX, cursorY, rot) {
+      const fp = this.footprintAABB(id, { x: 0, y: 0, z: 0, rot: 0 });
+      if (!fp) return { x: cursorX, y: cursorY };
+      const r = (rot || 0) * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
+      return { x: cursorX - (cs * fp.cx - sn * fp.cy), y: cursorY - (sn * fp.cx + cs * fp.cy) };
     },
 
     setLod(featureId, lod) { this._lod[featureId] = String(lod); return this; },
