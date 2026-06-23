@@ -1840,6 +1840,7 @@
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
         '<button id="tm-author" style="font-size:12px;padding:2px 6px" title="Author 4D schedule — build phases up, assign elements, tune dates">&#9998;</button>' +
         '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
+        '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
         '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
@@ -1942,6 +1943,20 @@
       e.stopPropagation();
       if (window.WhatIfPanel) window.WhatIfPanel.open();
       else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'What-if engine not loaded'; }
+    });
+    // §SE-C: open the full Schedule Editor (WBS · dependencies · CPM · drag-Gantt) in its own tab,
+    // carrying the current building's DB so it edits the SAME model. The TM is the schedule hub; the
+    // power tool lives on a separate surface (front visual stays light).
+    var _editor = document.getElementById('tm-editor');
+    if (_editor) _editor.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      var a = A();
+      var dburl = (a && a.DB_URL) ? a.DB_URL : (new URL(location.href)).searchParams.get('db');
+      var u = new URL('schedule_editor.html', location.href);
+      if (dburl) u.searchParams.set('db', dburl);
+      window.open(u.toString(), '_blank');
+      var s = document.getElementById('tm-status'); if (s) s.textContent = 'Schedule Editor opened in a new tab';
+      console.log('§TIME_MACHINE open schedule_editor db=' + (dburl || '(default)'));
     });
 
     // Transport buttons
