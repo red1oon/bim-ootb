@@ -19,6 +19,9 @@
   function $(id) { return document.getElementById(id); }
   function status(msg) { var s = $('se-status'); if (s) s.textContent = msg; console.log('§SE_UI ' + msg); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  // UTC day arithmetic (timezone-independent, matches the engine's _addDays).
+  function addDays(base, n) { return new Date(Date.parse(base + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
+  function daysBetween(a, b) { return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
 
   // ── DB resolution (config.js parity) ─────────────────────────────────────────
   function resolveDbUrl() {
@@ -124,6 +127,105 @@
     if (ts && !ts.options.length) SA().SEQ_TYPES.forEach(function (t) { var o = el('option', null, t); o.value = t; ts.appendChild(o); });
   }
 
+  // ── STEP 5: interactive Gantt — bars on a day-axis, drag-to-reschedule + drag-to-link ────────
+  function renderGantt() {
+    var host = $('se-gantt'); if (!host) return;
+    host.innerHTML = '';
+    var leaves = taskOptions().filter(function (n) { return n.start && n.finish; });
+    if (!leaves.length) {
+      host.appendChild(el('div', 'gantt-empty', 'No dated tasks — schedule the WBS first, then drag the bars here.'));
+      return;
+    }
+    // shared day-axis over all bars
+    var min = leaves[0].start, max = leaves[0].finish;
+    leaves.forEach(function (n) { if (n.start < min) min = n.start; if (n.finish > max) max = n.finish; });
+    var totalDays = Math.max(1, daysBetween(min, max));
+    var labelW = 152;
+    var chartW = Math.max(240, (host.clientWidth || 700) - labelW - 8);
+    var pxPerDay = chartW / totalDays;
+
+    // axis: a tick roughly every ~7 days (snap to weeks), labelled with the date.
+    var axis = el('div', 'g-axis');
+    var stepDays = Math.max(7, Math.ceil(totalDays / 8 / 7) * 7);
+    for (var d = 0; d <= totalDays; d += stepDays) {
+      var tick = el('div', 'g-tick', addDays(min, d));
+      tick.style.left = (d * pxPerDay) + 'px';
+      axis.appendChild(tick);
+    }
+    host.appendChild(axis);
+
+    leaves.forEach(function (n) {
+      var dur = daysBetween(n.start, n.finish);
+      var off = daysBetween(min, n.start);
+      var row = el('div', 'g-row');
+      row.appendChild(el('div', 'g-label', n.name));
+      var track = el('div', 'g-track');
+      var bar = el('div', 'g-bar' + (n.critical ? ' crit' : ''), dur + 'd');
+      bar.style.left = (off * pxPerDay) + 'px';
+      bar.style.width = Math.max(8, dur * pxPerDay) + 'px';
+      bar.dataset.task = n.id;
+      bar.title = n.name + '  ' + n.start + ' → ' + n.finish + (n.totalFloat != null ? '  (float ' + n.totalFloat + 'd)' : '');
+      _wireBarDrag(bar, n, off, pxPerDay);
+      var handle = el('div', 'g-handle', '▸');
+      handle.title = 'drag onto another bar to link (FS)';
+      _wireLinkDrag(handle, n);
+      bar.appendChild(handle);
+      track.appendChild(bar);
+      row.appendChild(track);
+      host.appendChild(row);
+    });
+    console.log('§SE_GANTT bars=' + leaves.length + ' span=' + min + '..' + max + ' days=' + totalDays);
+  }
+
+  // drag a bar horizontally → reschedule (snap to whole days, duration locked).
+  function _wireBarDrag(bar, node, offDays, pxPerDay) {
+    bar.addEventListener('mousedown', function (e) {
+      if (e.target.className === 'g-handle') return;       // handle owns link-drag
+      e.preventDefault();
+      var startX = e.clientX, origLeft = offDays * pxPerDay;
+      bar.classList.add('dragging');
+      function mv(ev) { bar.style.left = (origLeft + (ev.clientX - startX)) + 'px'; }
+      function up(ev) {
+        document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up);
+        bar.classList.remove('dragging');
+        var deltaDays = Math.round((ev.clientX - startX) / pxPerDay);
+        if (deltaDays === 0) { bar.style.left = origLeft + 'px'; return; }
+        var newStart = addDays(node.start, deltaDays);
+        var r = SA().moveTask(db, node.id, newStart);
+        if (r.ok) {
+          broadcast({ op: 'move', taskId: node.id, start: r.start, finish: r.finish });
+          status('Moved ' + node.name + ' ' + (deltaDays > 0 ? '+' : '') + deltaDays + 'd → ' + r.start);
+          refreshFold();                                   // invalidate stale CPM + re-render all
+        }
+      }
+      document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+    });
+  }
+
+  // drag from a bar's handle onto another bar → addDependency(FS) (cycle-guarded inline).
+  function _wireLinkDrag(handle, node) {
+    handle.addEventListener('mousedown', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      var host = $('se-gantt'); if (host) host.classList.add('g-link-mode');
+      function up(ev) {
+        document.removeEventListener('mouseup', up);
+        if (host) host.classList.remove('g-link-mode');
+        var tgt = document.elementFromPoint(ev.clientX, ev.clientY);
+        while (tgt && tgt !== document.body && !(tgt.classList && tgt.classList.contains('g-bar'))) tgt = tgt.parentNode;
+        if (!tgt || !tgt.dataset || !tgt.dataset.task || tgt.dataset.task === node.id) { status('Link cancelled'); return; }
+        var r = SA().addDependency(db, node.id, tgt.dataset.task, 'FS', 0);
+        if (!r.ok) {
+          var why = { cycle: 'would create a CYCLE', duplicate: 'link already exists', self_loop: 'same task' }[r.reason] || r.reason;
+          status('⚠ Link refused — ' + why); return;
+        }
+        broadcast({ op: 'add', predId: node.id, succId: tgt.dataset.task, value: 'FS' });
+        status('Linked ' + node.id + ' → ' + tgt.dataset.task + ' (FS)');
+        refreshFold();
+      }
+      document.addEventListener('mouseup', up);
+    });
+  }
+
   function onAdd() {
     var pred = $('se-add-pred').value, succ = $('se-add-succ').value;
     var type = $('se-add-type').value, lag = $('se-add-lag').value;
@@ -152,7 +254,7 @@
       if (out) out.textContent = 'project ' + r.projectDuration + 'd · critical ' + r.criticalIds.length + '/' + r.tasks.length;
       broadcast({ op: 'cpm', projectDuration: r.projectDuration, criticalIds: r.criticalIds });
     }
-    renderWbs(); renderDeps();
+    renderWbs(); renderDeps(); renderGantt();
   }
 
   // After a graph edit the prior CPM is INVALID — null the computed columns (everywhere) until the
@@ -164,7 +266,7 @@
         'late_finish=NULL, free_float=NULL, total_float=NULL, is_critical=NULL WHERE schedule_id=?', [schedId]);
     } catch (e) {}
     var o = $('se-cpm-out'); if (o) o.textContent = '';
-    renderWbs(); renderDeps();
+    renderWbs(); renderDeps(); renderGantt();
   }
 
   // ── boot ─────────────────────────────────────────────────────────────────────
@@ -195,14 +297,15 @@
           status('Editing ' + (act.name || act.id) + ' (' + act.taskCount + ' tasks)' + (act.captured ? ' — imported' : ''));
         }
         var b = $('se-bld'); if (b) b.textContent = url.split('/').pop() + '  •  ' + (schedId);
-        renderWbs(); renderDeps();
+        renderWbs(); renderDeps(); renderGantt();
         var addBtn = $('se-add-btn'); if (addBtn) addBtn.onclick = onAdd;
         var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
+        window.addEventListener('resize', renderGantt);
       })
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
   }
 
-  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, computeCpm: onComputeCpm };
+  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(typeof window !== 'undefined' ? window : this);

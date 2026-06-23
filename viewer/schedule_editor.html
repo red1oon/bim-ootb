@@ -23,7 +23,7 @@
   #se-status { padding: 6px 16px; background: #0d1118; color: #9fb0c6; font-size: 11px;
                border-bottom: 1px solid #222b38; min-height: 26px; }
   main { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.2fr); gap: 0;
-         height: calc(100vh - 96px); }
+         height: 42vh; border-bottom: 1px solid #232c3a; }
   .pane { overflow: auto; padding: 10px 12px; }
   .pane.left { border-right: 1px solid #232c3a; }
   .pane h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6f7d93;
@@ -49,6 +49,31 @@
   #se-cpm-btn:hover { background: #2c3a50; }
   #se-cpm-out { font-size: 11px; color: #9fb0c6; }
   .se-dep-row.se-dep-crit .se-dep-pred, .se-dep-row.se-dep-crit .se-dep-succ { color: #f0a6b1; font-weight: 600; }
+  /* Gantt timeline */
+  .gantt-pane { height: calc(58vh - 96px); overflow: auto; padding: 10px 12px; }
+  .gantt-pane h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6f7d93;
+                   margin: 0 0 8px; }
+  .gantt-pane h2 .hint { text-transform: none; letter-spacing: 0; color: #566177; font-weight: 400; }
+  #se-gantt { position: relative; }
+  .g-axis { position: relative; height: 16px; margin-left: 152px; border-bottom: 1px solid #2a3342;
+            margin-bottom: 4px; }
+  .g-tick { position: absolute; top: 0; font-size: 9px; color: #56627a; border-left: 1px solid #222b38;
+            height: 16px; padding-left: 3px; }
+  .g-row { display: flex; align-items: center; height: 26px; }
+  .g-label { width: 150px; min-width: 150px; padding-right: 6px; color: #cdd7e4; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .g-track { position: relative; flex: 1; height: 26px; }
+  .g-bar { position: absolute; top: 4px; height: 18px; border-radius: 4px; background: #2f6fd1;
+           cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,.4); display: flex; align-items: center;
+           color: #eaf1fb; font-size: 10px; padding: 0 6px; white-space: nowrap; overflow: hidden;
+           user-select: none; }
+  .g-bar.crit { background: #d2475c; }
+  .g-bar.dragging { cursor: grabbing; opacity: .85; outline: 1px solid #9fb6d6; }
+  .g-handle { position: absolute; right: -5px; top: 6px; width: 12px; height: 14px; cursor: crosshair;
+              color: #9fb6d6; font-size: 11px; text-align: center; line-height: 14px; }
+  .g-handle:hover { color: #fff; }
+  .g-link-mode .g-bar { outline: 1px dashed #4a6fa5; }
+  .gantt-empty { color: #6f7d93; font-style: italic; padding: 14px 4px; }
   /* dependency rows */
   .se-dep-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
                 border-bottom: 1px solid #1c2531; }
@@ -101,9 +126,13 @@
     </div>
   </section>
 </main>
+<section class="gantt-pane">
+  <h2>Timeline (Gantt) <span class="hint">— drag a bar to reschedule · drag the ▸ handle onto another bar to link</span></h2>
+  <div id="se-gantt"></div>
+</section>
 <script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
 <script src="rates.js?v=4" onerror="console.warn('§LOAD_FAIL rates.js')"></script>
-<script src="schedule_author.js?v=6" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
-<script src="schedule_editor_ui.js?v=2" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
+<script src="schedule_author.js?v=7" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_editor_ui.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
 </body>
 </html>

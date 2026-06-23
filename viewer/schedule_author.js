@@ -464,6 +464,28 @@
     }
   }
 
+  // moveTask(db, taskId, newStart) — §SE-3 drag-to-reschedule verb. Move one LEAF task so it starts on
+  // newStart (YYYY-MM-DD), PRESERVING its duration (parsed from schedule_duration, else old finish−start,
+  // else 1). Writes schedule_start/finish only — the baseline; CPM invalidation is the caller's concern
+  // (mirrors the dependency-edit flow). Refuses unknown/summary tasks. Returns {ok, start, finish, days}.
+  function moveTask(db, taskId, newStart) {
+    var r = db.exec('SELECT is_summary, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE task_id=?', [taskId]);
+    if (!r.length || !r[0].values.length) {
+      console.log('§SE_MOVE_FAIL task=' + taskId + ' reason=no_such_task');
+      return { ok: false, reason: 'no_such_task' };
+    }
+    var row = r[0].values[0];
+    if (row[0] === 1) {
+      console.log('§SE_MOVE_FAIL task=' + taskId + ' reason=is_summary');
+      return { ok: false, reason: 'is_summary' };
+    }
+    var days = _durDays(row[3], row[1], row[2]);
+    var finish = _addDays(newStart, days);
+    db.run('UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE task_id=?', [newStart, finish, taskId]);
+    console.log('§SE_MOVE task=' + taskId + ' start=' + newStart + ' finish=' + finish + ' days=' + days);
+    return { ok: true, start: newStart, finish: finish, days: days };
+  }
+
   // computeCpm(db, scheduleId, opts) — write early/late dates, float, is_critical onto the leaf tasks.
   function computeCpm(db, scheduleId, opts) {
     opts = opts || {};
@@ -553,11 +575,12 @@
     addDependency: addDependency,
     removeDependency: removeDependency,
     updateDependency: updateDependency,
-    computeCpm: computeCpm
+    computeCpm: computeCpm,
+    moveTask: moveTask
   };
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v6');
+  console.log('§SCHEDULE_AUTHOR_LOADED v7');
 })(typeof self !== 'undefined' ? self : this);
