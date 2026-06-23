@@ -226,6 +226,47 @@
                cx: (xn + xx) / 2, cy: (yn + yx) / 2, cz: (zn + zx) / 2, w: xx - xn, d: yx - yn, h: zx - zn };
     },
 
+    // ── HOST-ROTATION INHERITANCE (W-DAGEVU-DROP openings / project_openings_inherit_host_rotation). A door, window
+    // or opening-element VOIDS INTO a wall (IfcRelVoidsElement → IfcRelFillsElement) and must rotate EN BLOC with
+    // that host wall — never sit flat at rot=0 while the wall turns. The BOM dropped the host link (host_element_ref
+    // is 100% empty in SH/DX_BOM.db) AND carries no numeric door rotation (rotation_rule=0; the FACE_* symbolic
+    // rules go unresolved with no wall context), so the opening lands at rot=0 — the "missed one-fetch save". We
+    // RECOVER the host at PLACEMENT time, over the FULLY-EXPANDED building (world space, every wall present — the
+    // sub-BOM partition that hides the host at extract time, e.g. exterior shell walls living in a different BOM
+    // than the mirror-unit's openings, is gone here). Each opening inherits the rotation of the wall it is provably
+    // EMBEDDED in: perpendicular offset < wall½thickness + tol AND within the wall's run segment. NON-INVENT: we
+    // read the host wall's OWN world rotation (itself derived from the BOM's numeric rotation_rule) and copy it —
+    // we never fabricate an angle. An opening matching NO wall keeps rot=0 (HONEST, logged) — never a guessed wall.
+    // This is the empirical fold of CONSTRUCTION_VERB_BOM_GRAMMAR.md §4.4 OPENING (host-relative placement).
+    _HOST_TOL_PERP: 0.15, _HOST_TOL_ALONG: 0.25,
+    _inheritHostRotation(leaves) {
+      const cls = (h) => { const c = this.get(h); return c ? (c.ifc_class || '') : ''; };
+      const walls = leaves.filter(l => /IfcWall/.test(cls(l.hash)));
+      const opens = leaves.filter(l => /IfcDoor|IfcWindow|IfcOpening/.test(cls(l.hash)));
+      if (!walls.length || !opens.length) return { openings: opens.length, resolved: 0, unresolved: opens.length };
+      const runAx = (rot) => { const d = Math.abs((rot || 0) % 180); return Math.abs(d - 90) < 45 ? 'NS' : 'EW'; };
+      let resolved = 0, unresolved = 0;
+      for (const op of opens) {
+        let best = null, bd = Infinity;
+        for (const w of walls) {
+          const wp = this.get(w.hash); if (!wp) continue;
+          const ax = runAx(w.rot);                                          // wall runs N-S (along Y) or E-W (along X)
+          const wlen = ax === 'NS' ? (wp.d || 0) : (wp.w || 0);             // run length along the wall axis
+          const wth  = ax === 'NS' ? (wp.w || 0) : (wp.d || 0);             // wall thickness (perpendicular)
+          const perp  = ax === 'NS' ? Math.abs(op.x - w.x) : Math.abs(op.y - w.y);
+          const along = ax === 'NS' ? Math.abs(op.y - w.y) : Math.abs(op.x - w.x);
+          if (perp < wth / 2 + this._HOST_TOL_PERP && along < wlen / 2 + this._HOST_TOL_ALONG && perp < bd) {
+            bd = perp; best = w;                                            // closest wall the opening is embedded in
+          }
+        }
+        if (best) { op.rot = best.rot; op.hostRef = best.hash; resolved++; }  // inherit host wall rotation EN BLOC
+        else { unresolved++; }                                               // no embedding wall → honest rot=0
+      }
+      console.log(TAG + ' §HOST-ROT openings=' + opens.length + ' inherited=' + resolved + ' unresolved=' +
+        unresolved + ' (each inherits its embedded host-wall rotation EN BLOC; unresolved kept honest at rot=0)');
+      return { openings: opens.length, resolved, unresolved };
+    },
+
     // ── DROP an assembly onto the canvas: the N leaf placements with the footprint CENTRE on (cursorX,cursorY) and
     // a user DROP YAW applied (W-BOM-DROP-CENTER). KEY (from reading PlacementCollectorVisitor.java:347-374): the
     // Java compiler has NO external drop rotation — its cumRot/cumMirror are the building's INTRINSIC transforms,
@@ -236,6 +277,7 @@
     // external rigid-body transform, where it belongs. yaw=0 reduces to "centre the true footprint on the cursor".
     dropLeaves(id, cursorX, cursorY, yaw, z) {
       const canonical = this.expandAssembly(id, { x: 0, y: 0, z: 0, rot: 0 });  // faithful Java building, no drop yaw
+      this._inheritHostRotation(canonical);                                     // openings rotate EN BLOC with host wall
       const fp = this.footprintAABB(id, { x: 0, y: 0, z: 0, rot: 0 });
       if (!fp) return canonical;
       const r = (yaw || 0) * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r), ez = z || 0;
