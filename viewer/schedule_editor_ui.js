@@ -12,7 +12,7 @@
   'use strict';
 
   var SA = function () { return global.ScheduleAuthor; };
-  var db = null, schedId = null, bc = null;
+  var db = null, schedId = null, sync = null;
   var collapsed = {};   // task_id -> true when its subtree is collapsed
   var critSet = {};     // task_id -> true after a CPM run (drives the red rail + bold links)
 
@@ -32,11 +32,25 @@
     return params.get('db') || last || (base ? base + 'Duplex_extracted.db' : 'buildings/Duplex_extracted.db');
   }
 
+  // §SE-4: emit each signed op on the shared bus so peer surfaces (a 2nd editor tab, the Viewer TM)
+  // replay it and re-fold live ("both are folds of one log"). Routed through ScheduleSync.
   function broadcast(detail) {
-    try {
-      if (!bc && typeof BroadcastChannel !== 'undefined') bc = new BroadcastChannel('bim_4d');
-      if (bc) { bc.postMessage(Object.assign({ type: '4D_SCHED_EDIT', from: 'schedule_editor', schedule: schedId }, detail)); }
-    } catch (e) {}
+    if (sync) sync.emit(Object.assign({ schedule: schedId }, detail));
+  }
+
+  // a peer surface broadcast an op → ScheduleSync already replayed it on our db; re-render to reflect it.
+  function onSynced(op, res) {
+    if (!res || res.ok === false) { status('↻ peer ' + op.op + ' (not applicable here)'); return; }
+    if (op.op === 'cpm') {
+      critSet = {}; (res.criticalIds || []).forEach(function (id) { critSet[id] = true; });
+      var o = $('se-cpm-out');
+      if (o && res.projectDuration != null) o.textContent = 'project ' + res.projectDuration + 'd · critical ' +
+        (res.criticalIds || []).length + '/' + (res.tasks || []).length + ' (synced)';
+      renderWbs(); renderDeps(); renderGantt();
+    } else {
+      status('↻ synced ' + op.op + ' from peer');
+      refreshFold();                                   // invalidate stale CPM + re-render all
+    }
   }
 
   // ── STEP 1: collapsible WBS outline ──────────────────────────────────────────
@@ -297,6 +311,8 @@
           status('Editing ' + (act.name || act.id) + ' (' + act.taskCount + ' tasks)' + (act.captured ? ' — imported' : ''));
         }
         var b = $('se-bld'); if (b) b.textContent = url.split('/').pop() + '  •  ' + (schedId);
+        // §SE-4: live cross-surface sync — emit our ops + replay peers' ops on our db.
+        if (global.ScheduleSync) { sync = global.ScheduleSync.create(); sync.listen(db, onSynced); }
         renderWbs(); renderDeps(); renderGantt();
         var addBtn = $('se-add-btn'); if (addBtn) addBtn.onclick = onAdd;
         var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
