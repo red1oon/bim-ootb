@@ -39,6 +39,16 @@
   .se-badge { font-size: 10px; color: #76d1a0; background: #16271f; padding: 1px 6px;
               border-radius: 8px; }
   .se-dates { font-size: 10px; color: #6f7d93; margin-left: 6px; }
+  /* CPM: critical rail + float */
+  .se-wbs-row.se-critical { box-shadow: inset 3px 0 0 #e0556b; }
+  .se-float { font-size: 10px; margin-left: 6px; }
+  .se-float.crit { color: #e0556b; }
+  .se-float.slack { color: #76d1a0; }
+  .se-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  #se-cpm-btn { background: #243042; border-color: #34465e; color: #cdd7e4; cursor: pointer; }
+  #se-cpm-btn:hover { background: #2c3a50; }
+  #se-cpm-out { font-size: 11px; color: #9fb0c6; }
+  .se-dep-row.se-dep-crit .se-dep-pred, .se-dep-row.se-dep-crit .se-dep-succ { color: #f0a6b1; font-weight: 600; }
   /* dependency rows */
   .se-dep-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
                 border-bottom: 1px solid #1c2531; }
@@ -75,6 +85,10 @@
   </section>
   <section class="pane right">
     <h2>Dependencies</h2>
+    <div class="se-toolbar">
+      <button id="se-cpm-btn" title="Critical-path forward/backward pass over the dependency graph">▶ Compute CPM</button>
+      <span id="se-cpm-out"></span>
+    </div>
     <div id="se-deps"></div>
     <div class="se-add">
       <label>Add link:</label>
@@ -89,7 +103,7 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
 <script src="rates.js?v=4" onerror="console.warn('§LOAD_FAIL rates.js')"></script>
-<script src="schedule_author.js?v=5" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
-<script src="schedule_editor_ui.js?v=1" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
+<script src="schedule_author.js?v=6" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_editor_ui.js?v=2" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@
   var SA = function () { return global.ScheduleAuthor; };
   var db = null, schedId = null, bc = null;
   var collapsed = {};   // task_id -> true when its subtree is collapsed
+  var critSet = {};     // task_id -> true after a CPM run (drives the red rail + bold links)
 
   function $(id) { return document.getElementById(id); }
   function status(msg) { var s = $('se-status'); if (s) s.textContent = msg; console.log('§SE_UI ' + msg); }
@@ -42,7 +43,7 @@
     var roots = SA().wbsTree(db, schedId);
     if (!roots.length) { host.appendChild(el('div', 'se-empty', 'No schedule tasks.')); return; }
     function walk(node, depth) {
-      var row = el('div', 'se-wbs-row');
+      var row = el('div', 'se-wbs-row' + (node.critical ? ' se-critical' : ''));
       row.style.paddingLeft = (depth * 18 + 6) + 'px';
       row.dataset.task = node.id;
       var hasKids = node.children && node.children.length;
@@ -52,6 +53,11 @@
       var nm = el('span', 'se-wbs-name' + (node.isSummary ? ' se-summary' : ''), node.name);
       row.appendChild(nm);
       if (!node.isSummary && node.guidCount) row.appendChild(el('span', 'se-badge', node.guidCount + ' el'));
+      if (!node.isSummary && node.totalFloat != null) {
+        var tf = parseFloat(node.totalFloat);
+        row.appendChild(el('span', 'se-float ' + (tf <= 0 ? 'crit' : 'slack'),
+          tf <= 0 ? 'critical' : ('float ' + tf + 'd')));
+      }
       if (node.start) row.appendChild(el('span', 'se-dates', node.start + (node.finish ? ' → ' + node.finish : '')));
       host.appendChild(row);
       if (hasKids && !collapsed[node.id]) node.children.forEach(function (c) { walk(c, depth + 1); });
@@ -73,7 +79,9 @@
     var deps = SA().listDependencies(db, schedId);
     if (!deps.length) { host.appendChild(el('div', 'se-empty', 'No dependencies yet — add one below.')); }
     deps.forEach(function (d) {
-      var row = el('div', 'se-dep-row');
+      // a "critical link" = both endpoints critical after a CPM run.
+      var crit = critSet[d.predId] && critSet[d.succId];
+      var row = el('div', 'se-dep-row' + (crit ? ' se-dep-crit' : ''));
       row.appendChild(el('span', 'se-dep-pred', d.predName));
       // type selector
       var sel = el('select', 'se-dep-type');
@@ -87,7 +95,7 @@
       var lag = el('input', 'se-dep-lag'); lag.type = 'number'; lag.value = d.lag; lag.title = 'lag (days)';
       lag.onchange = function () {
         var r = SA().updateDependency(db, d.predId, d.succId, { lag: lag.value });
-        if (r.ok) { broadcast({ op: 'lag', predId: d.predId, succId: d.succId, value: r.lag }); status('Lag ' + d.predName + ' → ' + d.succName + ' = ' + r.lag + 'd'); }
+        if (r.ok) { broadcast({ op: 'lag', predId: d.predId, succId: d.succId, value: r.lag }); status('Lag ' + d.predName + ' → ' + d.succName + ' = ' + r.lag + 'd'); refreshFold(); }
       };
       row.appendChild(lag);
       row.appendChild(el('span', 'se-dep-arrow', '→'));
@@ -96,7 +104,7 @@
       del.onclick = function () {
         SA().removeDependency(db, d.predId, d.succId);
         broadcast({ op: 'remove', predId: d.predId, succId: d.succId });
-        status('Removed ' + d.predName + ' → ' + d.succName); renderDeps(); refreshFold();
+        status('Removed ' + d.predName + ' → ' + d.succName); refreshFold();
       };
       row.appendChild(del);
       host.appendChild(row);
@@ -128,11 +136,36 @@
     }
     broadcast({ op: 'add', predId: pred, succId: succ, value: r.type });
     status('Added ' + r.predId + ' → ' + r.succId + ' (' + r.type + ')');
-    renderDeps(); refreshFold();
+    refreshFold();
   }
 
-  // Re-run cost fold if available (dependency edits don't change cost, but keep the readout live).
-  function refreshFold() { /* CPM/date ripple = §SE step 3+; this slice only edits the graph. */ }
+  // §SE step 3 — Compute CPM over the authored DAG, then re-render with critical rail + float.
+  function onComputeCpm() {
+    if (!SA().computeCpm) return;
+    var r = SA().computeCpm(db, schedId, { start: '2026-01-01' });
+    var out = $('se-cpm-out');
+    if (r.error) {
+      critSet = {};
+      if (out) out.textContent = r.error === 'cycle' ? '⚠ graph has a cycle' : '⚠ no tasks to compute';
+    } else {
+      critSet = {}; r.criticalIds.forEach(function (id) { critSet[id] = true; });
+      if (out) out.textContent = 'project ' + r.projectDuration + 'd · critical ' + r.criticalIds.length + '/' + r.tasks.length;
+      broadcast({ op: 'cpm', projectDuration: r.projectDuration, criticalIds: r.criticalIds });
+    }
+    renderWbs(); renderDeps();
+  }
+
+  // After a graph edit the prior CPM is INVALID — null the computed columns (everywhere) until the
+  // user recomputes, so a stale critical path can never linger on a changed graph.
+  function refreshFold() {
+    critSet = {};
+    try {
+      if (db && schedId) db.run('UPDATE tasks SET early_start=NULL, early_finish=NULL, late_start=NULL, ' +
+        'late_finish=NULL, free_float=NULL, total_float=NULL, is_critical=NULL WHERE schedule_id=?', [schedId]);
+    } catch (e) {}
+    var o = $('se-cpm-out'); if (o) o.textContent = '';
+    renderWbs(); renderDeps();
+  }
 
   // ── boot ─────────────────────────────────────────────────────────────────────
   function init() {
@@ -164,11 +197,12 @@
         var b = $('se-bld'); if (b) b.textContent = url.split('/').pop() + '  •  ' + (schedId);
         renderWbs(); renderDeps();
         var addBtn = $('se-add-btn'); if (addBtn) addBtn.onclick = onAdd;
+        var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
       })
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
   }
 
-  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps };
+  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, computeCpm: onComputeCpm };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(typeof window !== 'undefined' ? window : this);
