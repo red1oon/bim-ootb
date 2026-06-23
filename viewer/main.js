@@ -284,6 +284,25 @@ async function initViewer() {
         console.log('§4D_RECV type=4D_PING → sent PONG');
         return;
       }
+
+      // §SE-4 / §SE-D: a Schedule Editor tab broadcast a signed schedule op → REPLAY it on this
+      // viewer's db via the same ScheduleAuthor verb ("both are folds of one log"), then re-fold the
+      // open Time Machine via the shipped toggle (same path the authoring wizard's Apply-to-4D uses).
+      // Safe-additive: an op whose task isn't in this db is a graceful no-op, never throws.
+      if (msg.type === '4D_SCHED_EDIT') {
+        try {
+          if (window.ScheduleSync && APP.db) {
+            var _r = window.ScheduleSync.applyOp(APP.db, msg);
+            var _ok = !!(_r && _r.ok !== false);
+            console.log('§4D_RECV 4D_SCHED_EDIT op=' + msg.op + ' applied=' + _ok);
+            if (_ok && APP._tmOn && typeof window.toggleTimeMachine === 'function') {
+              window.toggleTimeMachine();
+              setTimeout(function() { window.toggleTimeMachine(); }, 60);
+            }
+          }
+        } catch (e) { console.warn('§4D_SCHED_EDIT replay', e); }
+        return;
+      }
       // Resource messages — no highlight reset needed
       if (msg.type === '4D_RESOURCES' || msg.type === '4D_RESOURCES_HIDE') {
         // handled below, skip highlight reset
