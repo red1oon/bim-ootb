@@ -306,8 +306,8 @@
   function wbsTree(db, scheduleId) {
     var r;
     try {
-      r = db.exec('SELECT task_id, wbs_parent, name, is_summary, schedule_start, schedule_finish ' +
-        'FROM tasks WHERE schedule_id=? ', [scheduleId]);
+      r = db.exec('SELECT task_id, wbs_parent, name, is_summary, schedule_start, schedule_finish, ' +
+        'is_critical, total_float FROM tasks WHERE schedule_id=? ', [scheduleId]);
     } catch (e) { return []; }
     if (!r.length || !r[0].values.length) return [];
     var nodes = {}, ids = {};
@@ -315,6 +315,7 @@
       ids[row[0]] = true;
       nodes[row[0]] = { id: row[0], parent: row[1], name: row[2] || row[0],
         isSummary: !!row[3], start: row[4] || null, finish: row[5] || null,
+        critical: row[6] === 1, totalFloat: (row[7] != null ? row[7] : null),
         guidCount: 0, children: [] };
     });
     // Element counts per task (the "N elements" badge on a leaf).
@@ -426,6 +427,118 @@
     return { ok: true, type: type, lag: lag };
   }
 
+  // ── §SE-2 — bounded CPM forward/backward pass (step 3; the deterministic compute, NOT leveling) ──
+  // Exact critical-path method over the authored task_sequences DAG, honouring FS/SS/FF/SF + lag.
+  // This is the §SE-B "DO IT" half; it STOPS before resource leveling / auto-optimisation (the refuse).
+
+  // duration in whole days: parse ISO P{n}D / P{n}W, else (finish-start), else 1.
+  function _durDays(durStr, startStr, finishStr) {
+    if (durStr) {
+      var d = /P(?:(\d+)W)?(?:(\d+)D)?/.exec(durStr);
+      if (d && (d[1] || d[2])) return (parseInt(d[1] || 0, 10) * 7) + parseInt(d[2] || 0, 10);
+    }
+    if (startStr && finishStr) {
+      var ms = Date.parse(finishStr + 'T00:00:00Z') - Date.parse(startStr + 'T00:00:00Z');
+      if (!isNaN(ms)) return Math.max(0, Math.round(ms / 86400000));
+    }
+    return 1;
+  }
+
+  // candidate EARLY START a predecessor imposes on a successor (forward pass + free-float reuse).
+  function _fwdES(pred, lag, type, succDur) {
+    switch (type) {
+      case 'SS': return pred.es + lag;
+      case 'FF': return pred.ef + lag - succDur;
+      case 'SF': return pred.es + lag - succDur;
+      default:   return pred.ef + lag;                 // FS
+    }
+  }
+  // candidate LATE FINISH a successor imposes on a predecessor (backward pass).
+  function _bwdLF(succ, lag, type, predDur) {
+    var succLS = succ.lf - succ.dur;
+    switch (type) {
+      case 'SS': return succLS - lag + predDur;
+      case 'FF': return succ.lf - lag;
+      case 'SF': return succ.lf - lag + predDur;
+      default:   return succLS - lag;                  // FS
+    }
+  }
+
+  // computeCpm(db, scheduleId, opts) — write early/late dates, float, is_critical onto the leaf tasks.
+  function computeCpm(db, scheduleId, opts) {
+    opts = opts || {};
+    var tr;
+    try {
+      tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks ' +
+        'WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [scheduleId]);
+    } catch (e) { return { error: 'no_tasks' }; }
+    if (!tr.length || !tr[0].values.length) return { error: 'no_tasks', tasks: [], projectDuration: 0, criticalIds: [] };
+    var T = {}, ids = [], minStart = null;
+    tr[0].values.forEach(function (row) {
+      var id = row[0], s = row[1], f = row[2];
+      if (s && (!minStart || s < minStart)) minStart = s;
+      T[id] = { id: id, dur: _durDays(row[3], s, f), es: 0, ef: 0, ls: 0, lf: 0, preds: [], succs: [] };
+      ids.push(id);
+    });
+    // edges among these leaf tasks only
+    var er = db.exec('SELECT predecessor_id, successor_id, sequence_type, lag_days FROM task_sequences');
+    if (er.length && er[0].values.length) er[0].values.forEach(function (row) {
+      var p = row[0], s = row[1];
+      if (!T[p] || !T[s]) return;                      // skip edges touching summary/foreign tasks
+      var edge = { pred: p, succ: s, type: (row[2] || 'FS').toUpperCase(), lag: (row[3] != null ? row[3] : 0) };
+      T[s].preds.push(edge); T[p].succs.push(edge);
+    });
+    // Kahn topo sort (DAG guaranteed by the §SE-1 cycle guard; bail defensively if not).
+    var indeg = {}, queue = [], topo = [];
+    ids.forEach(function (id) { indeg[id] = T[id].preds.length; if (indeg[id] === 0) queue.push(id); });
+    while (queue.length) {
+      var id = queue.shift(); topo.push(id);
+      T[id].succs.forEach(function (e) { if (--indeg[e.succ] === 0) queue.push(e.succ); });
+    }
+    if (topo.length !== ids.length) {
+      console.log('§SE_CPM_BAIL cycle-or-orphan topo=' + topo.length + ' tasks=' + ids.length);
+      return { error: 'cycle', tasks: [], projectDuration: 0, criticalIds: [] };
+    }
+    // FORWARD: ES/EF in topo order.
+    topo.forEach(function (id) {
+      var t = T[id], es = 0;
+      t.preds.forEach(function (e) { es = Math.max(es, _fwdES(T[e.pred], e.lag, e.type, t.dur)); });
+      t.es = Math.max(0, es); t.ef = t.es + t.dur;
+    });
+    var PF = 0; ids.forEach(function (id) { PF = Math.max(PF, T[id].ef); });
+    // BACKWARD: LF/LS in reverse topo order.
+    for (var i = topo.length - 1; i >= 0; i--) {
+      var t = T[topo[i]];
+      if (!t.succs.length) t.lf = PF;
+      else { var lf = Infinity; t.succs.forEach(function (e) { lf = Math.min(lf, _bwdLF(T[e.succ], e.lag, e.type, t.dur)); }); t.lf = lf; }
+      t.ls = t.lf - t.dur;
+    }
+    // float + critical + free float + write-back
+    var projStart = opts.start || minStart || '2026-01-01';
+    var critical = [];
+    var stmt = db.prepare('UPDATE tasks SET early_start=?, early_finish=?, late_start=?, late_finish=?, ' +
+      'free_float=?, total_float=?, is_critical=? WHERE task_id=?');
+    var out = topo.map(function (id) {
+      var t = T[id];
+      var total = t.ls - t.es;
+      var free = Infinity;
+      t.succs.forEach(function (e) { free = Math.min(free, T[e.succ].es - _fwdES(t, e.lag, e.type, T[e.succ].dur)); });
+      if (!isFinite(free)) free = total;
+      free = Math.max(0, free);
+      var isCrit = total <= 0 ? 1 : 0;
+      if (isCrit) critical.push(id);
+      stmt.run([_addDays(projStart, t.es), _addDays(projStart, t.ef),
+        _addDays(projStart, t.ls), _addDays(projStart, t.lf),
+        String(free), String(total), isCrit, id]);
+      return { id: id, es: t.es, ef: t.ef, ls: t.ls, lf: t.lf, dur: t.dur,
+        totalFloat: total, freeFloat: free, critical: !!isCrit };
+    });
+    stmt.free();
+    console.log('§SE_CPM schedule=' + scheduleId + ' tasks=' + out.length + ' projectDuration=' + PF +
+      ' critical=' + critical.length + ' [' + critical.join(',') + ']');
+    return { projectDuration: PF, projectStart: projStart, tasks: out, criticalIds: critical };
+  }
+
   var API = {
     matchRule: matchRule,
     materializeDefault: materializeDefault,
@@ -439,11 +552,12 @@
     wouldCycle: wouldCycle,
     addDependency: addDependency,
     removeDependency: removeDependency,
-    updateDependency: updateDependency
+    updateDependency: updateDependency,
+    computeCpm: computeCpm
   };
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v5');
+  console.log('§SCHEDULE_AUTHOR_LOADED v6');
 })(typeof self !== 'undefined' ? self : this);
