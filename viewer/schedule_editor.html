@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>BIM OOTB — Schedule Editor (WBS + Dependencies)</title>
+<!--
+  §SE-1 — the MSP-grade Gantt editor, NEW-TAB surface (§SE-C). Step 1+2: collapsible WBS outline +
+  dependency view/edit. Open with ?db=<building.db>&… (config.js parity: defaults to Duplex on GH
+  Pages, the OCI bucket DB when hosted there). All graph logic lives in schedule_author.js (engine,
+  node-tested W-SCHED-EDIT); this page is the surface.
+-->
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.45 -apple-system, Segoe UI, Roboto, sans-serif;
+         background: #11151c; color: #d8e0ea; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+           background: linear-gradient(180deg, #1b2230, #161b25); border-bottom: 1px solid #2a3342; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; color: #eaf1fb; }
+  header .sub { color: #7d8aa0; font-size: 11px; }
+  #se-bld { margin-left: auto; color: #4fc3f7; font-size: 11px; }
+  #se-status { padding: 6px 16px; background: #0d1118; color: #9fb0c6; font-size: 11px;
+               border-bottom: 1px solid #222b38; min-height: 26px; }
+  main { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.2fr); gap: 0;
+         height: calc(100vh - 96px); }
+  .pane { overflow: auto; padding: 10px 12px; }
+  .pane.left { border-right: 1px solid #232c3a; }
+  .pane h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6f7d93;
+             margin: 0 0 8px; }
+  /* WBS outline */
+  .se-wbs-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px;
+                white-space: nowrap; }
+  .se-wbs-row:hover { background: #1a2230; }
+  .se-twisty { width: 12px; color: #5e6b80; cursor: default; user-select: none; }
+  .se-wbs-row .se-twisty:hover { color: #9fb0c6; }
+  .se-wbs-name { color: #cdd7e4; }
+  .se-wbs-name.se-summary { font-weight: 600; color: #eaf1fb; }
+  .se-badge { font-size: 10px; color: #76d1a0; background: #16271f; padding: 1px 6px;
+              border-radius: 8px; }
+  .se-dates { font-size: 10px; color: #6f7d93; margin-left: 6px; }
+  /* dependency rows */
+  .se-dep-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
+                border-bottom: 1px solid #1c2531; }
+  .se-dep-pred { color: #eaf1fb; min-width: 90px; }
+  .se-dep-succ { color: #eaf1fb; flex: 1; }
+  .se-dep-arrow { color: #5e6b80; }
+  select, input, button { background: #1c2430; color: #d8e0ea; border: 1px solid #313c4d;
+                          border-radius: 5px; padding: 3px 6px; font: inherit; }
+  .se-dep-type { width: 56px; }
+  .se-dep-lag { width: 56px; }
+  .se-dep-del { color: #e08989; border-color: #3a2730; cursor: pointer; padding: 2px 8px; }
+  .se-dep-del:hover { background: #2a1a20; }
+  .se-empty { color: #6f7d93; font-style: italic; padding: 8px 4px; }
+  /* add-dependency form */
+  .se-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px;
+            padding: 10px; background: #141a24; border: 1px solid #232c3a; border-radius: 8px; }
+  .se-add label { font-size: 10px; color: #6f7d93; }
+  #se-add-btn { background: #1f6feb; border-color: #1f6feb; color: #fff; cursor: pointer;
+                font-weight: 600; padding: 4px 12px; }
+  #se-add-btn:hover { background: #2a7bf7; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Schedule Editor</h1>
+  <span class="sub">WBS outline + dependencies</span>
+  <span id="se-bld">—</span>
+</header>
+<div id="se-status">Initialising…</div>
+<main>
+  <section class="pane left">
+    <h2>Work Breakdown (WBS)</h2>
+    <div id="se-wbs"></div>
+  </section>
+  <section class="pane right">
+    <h2>Dependencies</h2>
+    <div id="se-deps"></div>
+    <div class="se-add">
+      <label>Add link:</label>
+      <select id="se-add-pred" title="predecessor"></select>
+      <span class="se-dep-arrow">→</span>
+      <select id="se-add-succ" title="successor"></select>
+      <label>type</label><select id="se-add-type" title="FS/SS/FF/SF"></select>
+      <label>lag</label><input id="se-add-lag" type="number" value="0" style="width:54px">
+      <button id="se-add-btn">+ Add</button>
+    </div>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
+<script src="rates.js?v=4" onerror="console.warn('§LOAD_FAIL rates.js')"></script>
+<script src="schedule_author.js?v=5" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_editor_ui.js?v=1" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
+</body>
+</html>

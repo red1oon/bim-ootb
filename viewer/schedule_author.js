@@ -292,17 +292,158 @@
     return { currency: currency || '', total: total, phases: phases, unmappedClasses: unmappedClasses };
   }
 
+  // ── §SE-1 — WBS outline + dependency CRUD (the MSP-grade Gantt arc, step 1+2) ──────────────
+  // Pure, DOM-free reads/writes over the IFC-native tables. The schedule editor's NEW-TAB surface
+  // (schedule_editor_ui.js) renders these; the engine stays node-testable (W-SCHED-EDIT). Writes go
+  // STRAIGHT to task_sequences — the IFC-native dependency truth — exactly as assignElement writes
+  // task_elements (kernel_ops signing still deferred; §SE-D signed broadcast is a later slice).
+
+  var SEQ_TYPES = ['FS', 'SS', 'FF', 'SF'];   // IfcSequenceEnum: FINISH_START/START_START/FINISH_FINISH/START_FINISH
+
+  // wbsTree(db, scheduleId) — fold tasks.wbs_parent/is_summary into a nested tree. Roots = rows whose
+  // wbs_parent is null OR points outside this schedule's id set. Returns [{id,name,isSummary,start,
+  // finish,guidCount,children[]}] depth-first. Pure read; the collapsible outline renders this.
+  function wbsTree(db, scheduleId) {
+    var r;
+    try {
+      r = db.exec('SELECT task_id, wbs_parent, name, is_summary, schedule_start, schedule_finish ' +
+        'FROM tasks WHERE schedule_id=? ', [scheduleId]);
+    } catch (e) { return []; }
+    if (!r.length || !r[0].values.length) return [];
+    var nodes = {}, ids = {};
+    r[0].values.forEach(function (row) {
+      ids[row[0]] = true;
+      nodes[row[0]] = { id: row[0], parent: row[1], name: row[2] || row[0],
+        isSummary: !!row[3], start: row[4] || null, finish: row[5] || null,
+        guidCount: 0, children: [] };
+    });
+    // Element counts per task (the "N elements" badge on a leaf).
+    try {
+      var cr = db.exec('SELECT te.task_id, COUNT(*) FROM task_elements te ' +
+        'JOIN tasks t ON t.task_id=te.task_id WHERE t.schedule_id=? GROUP BY te.task_id', [scheduleId]);
+      if (cr.length && cr[0].values.length) cr[0].values.forEach(function (row) {
+        if (nodes[row[0]]) nodes[row[0]].guidCount = row[1];
+      });
+    } catch (e) {}
+    var roots = [];
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id];
+      if (n.parent && ids[n.parent] && n.parent !== id) nodes[n.parent].children.push(n);
+      else roots.push(n);
+    });
+    console.log('§SE_WBS schedule=' + scheduleId + ' nodes=' + Object.keys(nodes).length +
+      ' roots=' + roots.length);
+    return roots;
+  }
+
+  // listDependencies(db, scheduleId) — read task_sequences (pred→succ, type, lag), joined to task
+  // names, scoped to the schedule via the predecessor's schedule_id. Returns
+  // [{predId,predName,succId,succName,type,lag}].
+  function listDependencies(db, scheduleId) {
+    var r;
+    try {
+      r = db.exec('SELECT s.predecessor_id, p.name, s.successor_id, c.name, s.sequence_type, s.lag_days ' +
+        'FROM task_sequences s ' +
+        'JOIN tasks p ON p.task_id=s.predecessor_id ' +
+        'JOIN tasks c ON c.task_id=s.successor_id ' +
+        'WHERE p.schedule_id=? ORDER BY p.name, c.name', [scheduleId]);
+    } catch (e) { return []; }
+    if (!r.length || !r[0].values.length) return [];
+    return r[0].values.map(function (row) {
+      return { predId: row[0], predName: row[1] || row[0], succId: row[2], succName: row[3] || row[2],
+        type: row[4] || 'FS', lag: (row[5] != null ? row[5] : 0) };
+    });
+  }
+
+  // wouldCycle(db, predId, succId) — would adding pred→succ create a directed cycle? DFS forward from
+  // succ over existing edges; if we reach pred, the new edge closes a loop. Deterministic graph-integrity
+  // guard (a cyclic schedule is INVALID) — NOT resource optimisation (§SE-B: forbid the cycle, DO IT).
+  function wouldCycle(db, predId, succId) {
+    if (predId === succId) return true;
+    var adj = {};
+    try {
+      var r = db.exec('SELECT predecessor_id, successor_id FROM task_sequences');
+      if (r.length && r[0].values.length) r[0].values.forEach(function (row) {
+        (adj[row[0]] = adj[row[0]] || []).push(row[1]);
+      });
+    } catch (e) {}
+    var stack = [succId], seen = {};
+    while (stack.length) {
+      var cur = stack.pop();
+      if (cur === predId) return true;
+      if (seen[cur]) continue;
+      seen[cur] = true;
+      (adj[cur] || []).forEach(function (n) { if (!seen[n]) stack.push(n); });
+    }
+    return false;
+  }
+
+  // addDependency(db, predId, succId, type, lag) — author one IfcRelSequence edge. Refuses self-loop,
+  // unknown task, duplicate, and any cycle. Returns {ok, reason}.
+  function addDependency(db, predId, succId, type, lag) {
+    type = (type || 'FS').toUpperCase();
+    if (SEQ_TYPES.indexOf(type) < 0) type = 'FS';
+    lag = (lag == null || isNaN(parseFloat(lag))) ? 0 : parseFloat(lag);
+    function fail(reason) {
+      console.log('§SE_DEP_FAIL ' + predId + '->' + succId + ' reason=' + reason);
+      return { ok: false, predId: predId, succId: succId, reason: reason };
+    }
+    if (!predId || !succId) return fail('missing_id');
+    if (predId === succId) return fail('self_loop');
+    function exists(id) { var t = db.exec('SELECT 1 FROM tasks WHERE task_id=?', [id]); return t.length && t[0].values.length; }
+    if (!exists(predId) || !exists(succId)) return fail('no_such_task');
+    var dup = db.exec('SELECT 1 FROM task_sequences WHERE predecessor_id=? AND successor_id=?', [predId, succId]);
+    if (dup.length && dup[0].values.length) return fail('duplicate');
+    if (wouldCycle(db, predId, succId)) return fail('cycle');
+    db.run('INSERT INTO task_sequences VALUES (?,?,?,?)', [predId, succId, type, lag]);
+    console.log('§SE_DEP_ADD ' + predId + '->' + succId + ' type=' + type + ' lag=' + lag);
+    return { ok: true, predId: predId, succId: succId, type: type, lag: lag };
+  }
+
+  // removeDependency(db, predId, succId) — drop one edge. Returns {ok, removed}.
+  function removeDependency(db, predId, succId) {
+    var before = db.exec('SELECT COUNT(*) FROM task_sequences')[0].values[0][0];
+    db.run('DELETE FROM task_sequences WHERE predecessor_id=? AND successor_id=?', [predId, succId]);
+    var after = db.exec('SELECT COUNT(*) FROM task_sequences')[0].values[0][0];
+    console.log('§SE_DEP_DEL ' + predId + '->' + succId + ' removed=' + (before - after));
+    return { ok: before - after > 0, removed: before - after };
+  }
+
+  // updateDependency(db, predId, succId, patch) — retype (FS/SS/FF/SF) and/or set lag on an edge.
+  function updateDependency(db, predId, succId, patch) {
+    patch = patch || {};
+    var row = db.exec('SELECT sequence_type, lag_days FROM task_sequences WHERE predecessor_id=? AND successor_id=?', [predId, succId]);
+    if (!row.length || !row[0].values.length) {
+      console.log('§SE_DEP_UPD_FAIL ' + predId + '->' + succId + ' reason=no_such_edge');
+      return { ok: false, reason: 'no_such_edge' };
+    }
+    var type = row[0].values[0][0], lag = row[0].values[0][1];
+    if (patch.type != null) { var t = String(patch.type).toUpperCase(); if (SEQ_TYPES.indexOf(t) >= 0) type = t; }
+    if (patch.lag != null && !isNaN(parseFloat(patch.lag))) lag = parseFloat(patch.lag);
+    db.run('UPDATE task_sequences SET sequence_type=?, lag_days=? WHERE predecessor_id=? AND successor_id=?',
+      [type, lag, predId, succId]);
+    console.log('§SE_DEP_UPD ' + predId + '->' + succId + ' type=' + type + ' lag=' + lag);
+    return { ok: true, type: type, lag: lag };
+  }
+
   var API = {
     matchRule: matchRule,
     materializeDefault: materializeDefault,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,
     assignElement: assignElement,
-    foldCost: foldCost
+    foldCost: foldCost,
+    SEQ_TYPES: SEQ_TYPES,
+    wbsTree: wbsTree,
+    listDependencies: listDependencies,
+    wouldCycle: wouldCycle,
+    addDependency: addDependency,
+    removeDependency: removeDependency,
+    updateDependency: updateDependency
   };
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v4');
+  console.log('§SCHEDULE_AUTHOR_LOADED v5');
 })(typeof self !== 'undefined' ? self : this);
