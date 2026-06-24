@@ -140,6 +140,14 @@ function iso(d, t) { return addDays(PROJECT.start, d) + 'T' + t; }
 
 var CP = cpm();
 
+// ── §B4 BIM-Bind token (prompts/AUTOBIND_BY_CONVENTION.md) ────────────────────────────────────────
+// When BIND_TOKENS is on, the activity NAME carries the SAME predicate the sidecar declares, folded in:
+//   "Columns" → "Columns @STR:IfcColumn"   "Structural Framing" → "Structural Framing @STR:IfcMember"
+// so the import is self-binding (no sidecar). Tokened files are written as *.bound.* so the plain files
+// stay token-free. WBS summaries are never tokened — only leaf activities bind to elements.
+var BIND_TOKENS = false;
+function actName(a) { return BIND_TOKENS ? (a.name + ' @' + a.disc + ':' + a.classes.join('|')) : a.name; }
+
 // ── XER emitter (tab-delimited %T/%F/%R) ─────────────────────────────────────────────────────────
 function emitXER() {
   var TAB = '\t', L = [];
@@ -166,7 +174,7 @@ function emitXER() {
     'total_float_hr_cnt', 'free_float_hr_cnt', 'driving_path_flag', 'status_code']);
   ACT.forEach(function (a) {
     var c = CP[a.id];
-    row('%R', [a.id, 1, a.wbs, a.id, a.name, 'TT_Task',
+    row('%R', [a.id, 1, a.wbs, a.id, actName(a), 'TT_Task',
       a.dur * HPD, startStr(c.es), finishStr(c.ef),
       c.tf * HPD, c.tf * HPD, c.critical ? 'Y' : 'N', 'TK_NotStart']);
   });
@@ -209,7 +217,7 @@ function emitPMXML() {
     var c = CP[a.id];
     x.push('    <Activity>');
     x.push('      <Id>' + esc(a.id) + '</Id>');
-    x.push('      <Name>' + esc(a.name) + '</Name>');
+    x.push('      <Name>' + esc(actName(a)) + '</Name>');
     x.push('      <WBSObjectId>' + a.wbs + '</WBSObjectId>');
     x.push('      <PlannedDuration>' + (a.dur * HPD) + '</PlannedDuration>');  // hours
     x.push('      <PlannedStartDate>' + iso(c.es, '08:00:00') + '</PlannedStartDate>');
@@ -262,7 +270,7 @@ function emitMSPDI() {
       var c = CP[a.id];
       x.push('    <Task>');
       x.push('      <UID>' + uidOf[a.id] + '</UID>');
-      x.push('      <Name>' + esc(a.name) + '</Name>');
+      x.push('      <Name>' + esc(actName(a)) + '</Name>');
       x.push('      <OutlineLevel>2</OutlineLevel>');
       x.push('      <Summary>0</Summary>');
       x.push('      <Start>' + iso(c.es, '08:00:00') + '</Start>');
@@ -303,6 +311,14 @@ fs.writeFileSync(path.join(OUT, 'Hospital_GW_Programme.xer'), emitXER());
 fs.writeFileSync(path.join(OUT, 'Hospital_GW_Programme.xml'), emitPMXML());
 fs.writeFileSync(path.join(OUT, 'Hospital_GW_MSProject.xml'), emitMSPDI());
 fs.writeFileSync(path.join(OUT, 'Hospital_GW_binding.json'), emitBinding());
+
+// §B4 — self-binding variants: activity names carry the @disc:class token (no sidecar needed).
+BIND_TOKENS = true;
+fs.writeFileSync(path.join(OUT, 'Hospital_GW_Programme.bound.xer'), emitXER());
+fs.writeFileSync(path.join(OUT, 'Hospital_GW_Programme.bound.xml'), emitPMXML());
+fs.writeFileSync(path.join(OUT, 'Hospital_GW_MSProject.bound.xml'), emitMSPDI());
+BIND_TOKENS = false;
+console.log('§GEN wrote bound (tokened @disc:class) XER+PMXML+MSPDI variants — self-binding, no sidecar');
 
 var crit = ACT.filter(function (a) { return CP[a.id].critical; }).map(function (a) { return a.id; });
 console.log('§GEN wrote XER+PMXML+binding to ' + OUT);
