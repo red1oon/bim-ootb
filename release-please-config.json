@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "changelog-sections": [
+    { "type": "feat", "section": "✨ Features" },
+    { "type": "fix", "section": "🐛 Fixes" },
+    { "type": "perf", "section": "⚡ Performance" },
+    { "type": "docs", "section": "📝 Documentation" },
+    { "type": "refactor", "section": "♻️ Refactors" },
+    { "type": "revert", "section": "⏪ Reverts" }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "bim-ootb"
+    }
+  }
+}
