@@ -11,6 +11,9 @@ function setupConfig(A) {
   // Auto-resolve: if hosted on OCI Object Storage, use same bucket base for DB URLs
   const _ociMatch = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
   const _base = _ociMatch ? _ociMatch[1] : '';
+  // OCI prod base for building DBs (matches index.html _prodBase). cachedFetch retries a failing
+  // relative buildings/<file> against this base so a stale relative db url self-heals (W-DB-404-OCI-RETRY).
+  A.PROD_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
   // §S283: If no ?db= param, try last building from localStorage (PWA resume), then default
   var _lastDb = null;
   try { _lastDb = localStorage.getItem('pwa_last_db'); } catch(e) {}
