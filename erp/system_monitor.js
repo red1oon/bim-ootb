@@ -38,9 +38,31 @@
   }
 
   // ── data gather (all real / honest) ─────────────────────────────────────────────────────────────────────────
+  // SYSTEM_MONITOR_WIDGETS §H — fold the 4 paradigm field-health widgets from REAL live signals (NON-INVENT).
+  //   field_errors ← window.__ERR_BEACON__ (error_beacon.js)  ·  durability ← offline queue (na if absent)
+  //   db_size_gauge ← window.ERP.opDb (the live signed op-log)  ·  environment ← window.ERP.VFS.detect()
+  function persistedP() {
+    try { if (navigator.storage && navigator.storage.persisted) return navigator.storage.persisted(); } catch (e) {}
+    return Promise.resolve(null);
+  }
+  function foldFieldHealth(est, persisted) {
+    var FH = global.ERP && global.ERP.FieldHealth;
+    if (!FH || typeof FH.fold !== 'function') return null;
+    var vfs = null; try { vfs = global.ERP.VFS && global.ERP.VFS.detect(); } catch (e) {}
+    var r = FH.fold({
+      beacon: global.__ERR_BEACON__,
+      queue: global.ERP && global.ERP.offlineQueue,            // present only if the app instantiated one
+      db: global.ERP && global.ERP.opDb,                       // the live signed op-log db
+      vfs: vfs,
+      storageEstimate: est ? { usage: est.usage, quota: est.quota } : null,
+      persisted: persisted
+    });
+    return r;
+  }
+
   function gather() {
-    return Promise.all([swVersion(), storageEstimate()]).then(function (r) {
-      var ver = r[0], est = r[1], h = heap(), tenants = residentTenants();
+    return Promise.all([swVersion(), storageEstimate(), persistedP()]).then(function (r) {
+      var ver = r[0], est = r[1], persisted = r[2], h = heap(), tenants = residentTenants();
       var d = {
         release: ver || '(uncontrolled)',
         os: (navigator.platform || '—') + ' · ' + (navigator.hardwareConcurrency || '?') + ' cores',
@@ -48,9 +70,10 @@
         heap: h ? (mb(h.used) + ' used / ' + mb(h.total) + ' heap · limit ' + mb(h.limit)) : 'n/a (this browser does not expose JS heap)',
         storage: est ? (mb(est.usage) + ' used of ' + mb(est.quota) + ' available') : 'n/a',
         tenants: tenants ? tenants.length : null,
-        tenantNames: tenants ? tenants.map(function (c) { return c.name; }).join(', ') : null
+        tenantNames: tenants ? tenants.map(function (c) { return c.name; }).join(', ') : null,
+        fieldHealth: foldFieldHealth(est, persisted)
       };
-      console.log('§SYSTEM-MONITOR gather release=' + d.release + ' heap=' + (h ? 'real' : 'n/a') + ' storage=' + (est ? 'real' : 'n/a') + ' tenants=' + d.tenants);
+      console.log('§SYSTEM-MONITOR gather release=' + d.release + ' heap=' + (h ? 'real' : 'n/a') + ' storage=' + (est ? 'real' : 'n/a') + ' tenants=' + d.tenants + ' fieldHealth=' + (d.fieldHealth ? d.fieldHealth.overall : 'n/a'));
       return d;
     });
   }
@@ -60,6 +83,17 @@
   function row(label, value, reframe) {
     return '<tr><th>' + esc(label) + '</th><td>' + (reframe ? '<span class="sm-badge">No longer needed</span> ' : '') + value
       + (reframe ? ' <a class="sm-rf" href="' + COMPARE + '">Read further&nbsp;&rsaquo;</a>' : '') + '</td></tr>';
+  }
+
+  // field-health rows — one per widget, with a status dot (paradigm vitals; the G2 observability remedy)
+  var FH_DOT = { ok: '#2e9e4f', warn: '#d98a00', alert: '#d23b3b', na: '#9aa4b1' };
+  function fhRows(fh) {
+    if (!fh || !fh.widgets) return '';
+    var rows = fh.widgets.map(function (w) {
+      var dot = '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + FH_DOT[w.status] + ';margin-right:7px;vertical-align:middle"></span>';
+      return '<tr><th>' + dot + esc(w.label) + '</th><td><b style="color:' + FH_DOT[w.status] + '">' + esc(String(w.value)) + '</b> <span class="sm-dim">' + esc(w.detail) + '</span></td></tr>';
+    }).join('');
+    return '<tr class="sm-grp"><td colspan="2">Field health · paradigm vitals</td></tr>' + rows;
   }
 
   function panelHTML(d) {
@@ -73,6 +107,7 @@
         row('Release', '<b>' + esc(d.release) + '</b> &middot; dictionary folded from the iDempiere oracle') +
         row('Environment', esc(d.os)) +
         row('Client', esc(d.ua)) +
+        fhRows(d.fieldHealth) +
         '<tr class="sm-grp"><td colspan="2">Memory</td></tr>' +
         row('Heap usage', esc(d.heap)) +
         '<tr class="sm-grp"><td colspan="2">Cache</td></tr>' +
