@@ -267,6 +267,61 @@
       return { openings: opens.length, resolved, unresolved };
     },
 
+    // ── FAITHFUL JAVA PORT: PlacementCollectorVisitor.facingDirection (Java lines 1019-1038, §12g GAP-4). Maps a
+    // generative device's placement_rule / anchor_face to a facing yaw. Java returns RADIANS; we return DEGREES.
+    //   WALL_BACK/WALL_COOKER/COUNTER_BACK → 0 (face −Y into room) · WALL_ENTRY → 180 (π) · other WALL_*/COUNTER_*
+    //   → 270 (−π/2, face +X) · CEILING_*/FLOOR_*/AUTO → 0. Kept verbatim for fidelity even though the post-compile
+    // drop catalog carries NO placement_rule on its leaves → this is DORMANT on today's drop (no anchor-ruled
+    // leaves to act on). Ledger: docs/JAVA_JS_PLACEMENT_PORT_LEDGER.md. NON-INVENT: a 1:1 transcription, no new angle.
+    _facingDirection(placementRule) {
+      if (!placementRule) return 0;
+      if (placementRule === 'WALL_BACK' || placementRule === 'WALL_COOKER' || placementRule === 'COUNTER_BACK') return 0;
+      if (placementRule === 'WALL_ENTRY') return 180;
+      if (placementRule.indexOf('WALL_') === 0 || placementRule.indexOf('COUNTER_') === 0) return 270;
+      return 0;
+    },
+
+    // ── RADIAL-SEATING VERB (JS-BEYOND-JAVA, declared as such in the ledger). Java has NO seat facer: it renders
+    // whatever rotation_rule the BOM carries, so a synthetic dining set with rotation_rule=0 (e.g. SH_DINING_SET,
+    // and the stale building seats) faces ONE WAY in Java too — a DATA gap, not a logic Java has and we lack. The
+    // PRIME RULE says "compute positions via verbs, never invent", so we add the missing verb: a chair seated around
+    // a table faces the table. rot = bearing(table→seat) + FRONT_OFFSET, where FRONT_OFFSET is PINNED (NON-INVENT)
+    // from the building's OWN correctly-faced dining seats — those that DO carry real extracted IFC yaw all show
+    // Δ=(rot − bearing(table→seat)) = 270° constant (see W-DAGEVU-DROP §FACE-SH). We extract that 270° and apply it
+    // radially to seats whose facing was lost/zero. Only a genuine RING (≥3 chairs grouped to one nearby table) is
+    // faced — a lone armchair keeps its own rotation. Derived from real positions + a constant taken from real
+    // correct data → never a guessed angle.
+    _RING_RADIUS_M: 2.5, _RING_MIN_CHAIRS: 3, _FRONT_OFFSET_DEG: 270,
+    _faceRingChairs(leaves) {
+      const nameOf = (l) => { const p = this.get(l.hash); return (p && p.name) || l.hash || ''; };
+      const isTable = (l) => /table/i.test(nameOf(l)) || /TABLE/i.test(l.hash || '');
+      const isChair = (l) => (/chair/i.test(nameOf(l)) || /CHAIR/i.test(l.hash || '')) && !isTable(l);
+      const tables = leaves.filter(isTable), chairs = leaves.filter(isChair);
+      if (!tables.length || !chairs.length) return { rings: 0, faced: 0 };
+      const groups = new Map();
+      for (const c of chairs) {
+        let best = null, bd = Infinity;
+        for (const t of tables) {
+          const d = Math.sqrt((c.x - t.x) * (c.x - t.x) + (c.y - t.y) * (c.y - t.y));
+          if (d < this._RING_RADIUS_M && d < bd) { bd = d; best = t; }
+        }
+        if (best) { if (!groups.has(best)) groups.set(best, []); groups.get(best).push(c); }
+      }
+      let rings = 0, faced = 0;
+      for (const [t, ring] of groups) {
+        if (ring.length < this._RING_MIN_CHAIRS) continue;        // a lone armchair is not a dining ring — leave its facing
+        rings++;
+        for (const c of ring) {
+          const bearing = Math.atan2(c.y - t.y, c.x - t.x) * 180 / Math.PI;
+          c.rot = (((bearing + this._FRONT_OFFSET_DEG) % 360) + 360) % 360;
+          faced++;
+        }
+      }
+      console.log(TAG + ' §FACE-RING tables=' + tables.length + ' chairs=' + chairs.length + ' rings=' + rings +
+        ' faced=' + faced + ' (radial verb: rot=bearing(table→seat)+' + this._FRONT_OFFSET_DEG + '°; offset pinned from real faced seats)');
+      return { rings, faced };
+    },
+
     // ── DROP an assembly onto the canvas: the N leaf placements with the footprint CENTRE on (cursorX,cursorY) and
     // a user DROP YAW applied (W-BOM-DROP-CENTER). KEY (from reading PlacementCollectorVisitor.java:347-374): the
     // Java compiler has NO external drop rotation — its cumRot/cumMirror are the building's INTRINSIC transforms,
@@ -278,6 +333,7 @@
     dropLeaves(id, cursorX, cursorY, yaw, z) {
       const canonical = this.expandAssembly(id, { x: 0, y: 0, z: 0, rot: 0 });  // faithful Java building, no drop yaw
       this._inheritHostRotation(canonical);                                     // openings rotate EN BLOC with host wall
+      this._faceRingChairs(canonical);                                          // dining seats face their table (radial verb)
       const fp = this.footprintAABB(id, { x: 0, y: 0, z: 0, rot: 0 });
       if (!fp) return canonical;
       const r = (yaw || 0) * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r), ez = z || 0;
