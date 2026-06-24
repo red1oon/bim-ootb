@@ -600,7 +600,20 @@ async function setupScene(A) {
       throw new Error('DB not found in cache: ' + url);
     }
 
-    const resp = await fetch(url);
+    let resp = await fetch(url);
+    // §DB_404_OCI_RETRY (W-DB-404-OCI-RETRY): on GH-Pages the building DBs live on OCI (A.PROD_BASE),
+    // not the relative buildings/ tree. A stale/relative db url (resumed pwa_last_db, old share link)
+    // 404s here — rewrite the failing buildings/<file> to the OCI base and retry ONCE before giving up,
+    // so a dead relative link self-heals instead of bricking the viewer boot. Pure decision in db_resolve.js.
+    if (!resp.ok && window.DbResolve) {
+      var _ociUrl = window.DbResolve.ociRetryUrl(url, A.PROD_BASE);
+      if (_ociUrl) {
+        console.warn(`[S203] §DB_404_OCI_RETRY status=${resp.status} orig=${url} → ${_ociUrl}`);
+        var _ociResp = await fetch(_ociUrl);
+        if (_ociResp.ok) { resp = _ociResp; console.log(`[S203] §DB_404_OCI_OK url=${_ociUrl.split('/').pop()}`); }
+        else console.warn(`[S203] §DB_404_OCI_FAIL url=${_ociUrl} status=${_ociResp.status}`);
+      }
+    }
     if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
     const contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
     let buf;
