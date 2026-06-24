@@ -33,6 +33,71 @@
     } catch (e) { console.log('§AUTHOR_UI_COST_ERR ' + (e && e.message)); return null; }
   }
 
+  // ── Sync the authored schedule → What-if (the ⑂ panel reads C_ProjectPhase, NOT the IFC tasks table) ──
+  // Without this, pressing Generate/Apply writes only `tasks`; What-if keeps showing a stale, thin
+  // C_ProjectPhase from a one-time `> to ERP` push (user-reported: SampleCastle What-if had one phase while
+  // the wizard showed four). We fold the authored phases 1:1 into the SAME OPFS store What-if reads, then
+  // refresh it. Open OPFS-first (else the bundled seed), exactly like whatif_panel._loadDb.
+  function _openErpDb(SQL) {
+    var fromOpfs = Promise.resolve(null);
+    try {
+      if (navigator.storage && navigator.storage.getDirectory) {
+        fromOpfs = navigator.storage.getDirectory()
+          .then(function (root) { return root.getDirectoryHandle('bim_analysis'); })
+          .then(function (dir) { return dir.getFileHandle('bim_project_orders.db'); })
+          .then(function (fh) { return fh.getFile(); })
+          .then(function (f) { return f.arrayBuffer(); })
+          .then(function (buf) { return new SQL.Database(new Uint8Array(buf)); })
+          .catch(function () { return null; });
+      }
+    } catch (e) {}
+    return fromOpfs.then(function (d) {
+      if (d) return d;
+      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+        .then(function (buf) { return new SQL.Database(new Uint8Array(buf)); })
+        .catch(function () { return null; });
+    });
+  }
+  function _persistErpDb(d) {
+    try {
+      if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+      var bytes = d.export();
+      return navigator.storage.getDirectory()
+        .then(function (root) { return root.getDirectoryHandle('bim_analysis', { create: true }); })
+        .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
+        .then(function (fh) { return fh.createWritable(); })
+        .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
+        .then(function () { return true; }).catch(function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function _syncWhatIf() {
+    var d = db(), a = A();
+    if (!d || !a || !_state) return;
+    if (!global.ProjFold || !global.ProjFold.foldAuthoredPhases) { console.log('§AUTHOR_UI_WHATIF skip=ProjFold-absent'); return; }
+    var SQL = a._SQL || global.SQL; if (!SQL) { console.log('§AUTHOR_UI_WHATIF skip=sqljs-absent'); return; }
+    var building = a.activeBuilding; if (!building) { console.log('§AUTHOR_UI_WHATIF skip=no-building'); return; }
+    var cost = costFold(), costByTask = {};
+    if (cost && cost.phases) cost.phases.forEach(function (p) { costByTask[p.taskId] = p.cost; });
+    var r = d.exec("SELECT task_id, name, schedule_start, schedule_finish FROM tasks WHERE schedule_id='" +
+      _state.schedId + "' AND is_summary=0 ORDER BY COALESCE(schedule_start,'9999-99-99'), rowid");
+    var rows = (r.length && r[0].values) ? r[0].values : [];
+    var phases = rows.map(function (row, i) {
+      return { name: row[1] || row[0], seqno: i + 1, start: row[2], end: row[3], plannedAmt: costByTask[row[0]] || 0 };
+    });
+    if (!phases.some(function (p) { return p.start && p.end; })) { console.log('§AUTHOR_UI_WHATIF skip=undated (originate dates first)'); return; }
+    _openErpDb(SQL).then(function (edb) {
+      if (!edb) { console.log('§AUTHOR_UI_WHATIF skip=erp-db-unavailable'); return; }
+      try {
+        var res = global.ProjFold.foldAuthoredPhases(edb, building, phases, {});
+        _persistErpDb(edb).then(function (saved) {
+          console.log('§AUTHOR_UI_WHATIF folded project=' + res.projectId + ' phases=' + phases.length +
+            ' (+' + res.created.phases + '/upd' + res.created.updated + ') persisted=' + saved);
+          if (global.WhatIfPanel && global.WhatIfPanel.refresh) global.WhatIfPanel.refresh();
+        });
+      } catch (e) { console.log('§AUTHOR_UI_WHATIF_ERR ' + (e && e.message)); }
+    });
+  }
+
   function _injectStyle() {
     if (document.getElementById('sa-style')) return;
     var s = document.createElement('style');
@@ -169,6 +234,7 @@
     SA().scheduleContiguous(d, _state.schedId, { start: _state.start || '2026-01-01', phaseDays: 30 });
     refreshState(); render();
     status('Scheduled — phases now carry dates and appear in the timeline.');
+    _syncWhatIf();   // dates just originated → mirror into C_ProjectPhase for the What-if panel
   }
 
   // ── Apply to 4D: re-fold the Time Machine so the gantt shows the authored schedule ──
@@ -176,15 +242,19 @@
     applyDates();
     status('Applied. ' + (A() && A()._tmOn ? 're-folding Time Machine…' : 'open Time Machine to view'));
     console.log('§AUTHOR_UI_APPLY tmOn=' + !!(A() && A()._tmOn));
-    if (A() && A()._tmOn && typeof global.toggleTimeMachine === 'function') {
-      // toggle off→on re-runs injectGantt → _cap overlays the authored windows (W-AUTHOR-4D-BLANK)
+    if (A() && A()._tmOn && typeof global.tmRefoldSchedule === 'function') {
+      // re-fold off the LIVE edited tasks (invalidates the stale gantt cache) — W-TM-REFOLD
+      global.tmRefoldSchedule();
+    } else if (A() && A()._tmOn && typeof global.toggleTimeMachine === 'function') {
       global.toggleTimeMachine();
-      setTimeout(function () { global.toggleTimeMachine(); }, 60);
+      setTimeout(function () { global.toggleTimeMachine(); }, 60);   // fallback (older viewer)
     }
+    _syncWhatIf();   // mirror the authored phases into C_ProjectPhase so the What-if (⑂) panel matches
   }
 
   function render() {
     var body = document.getElementById('sa-body'); if (!body) return;
+    syncControls();   // keep the Generate/Regenerate button label in step with the current schedule state
     if (!_state || !_state.order.length) {
       body.innerHTML = '<div style="font-size:11px;color:#9bb;line-height:1.5">' +
         'No <b>editable</b> schedule here yet. The Time Machine may already play a rule-generated ' +
@@ -373,8 +443,24 @@
   function syncControls() {
     var draft = document.getElementById('sa-draft'), blank = document.getElementById('sa-blank');
     var cap = !!(_state && _state.captured);
-    if (draft) draft.style.display = cap ? 'none' : '';
+    var hasPhases = !!(_state && _state.order && _state.order.length);
+    if (draft) {
+      draft.style.display = cap ? 'none' : '';
+      if (!cap) {
+        // Once a schedule already exists (authored / applied), pressing this REGENERATES from rules and
+        // CLOBBERS manual phase/date/assignment edits — so demote it from the primary "first draft" CTA.
+        // Otherwise the prominent "Generate first draft" button reads as "you must generate again" even
+        // right after Apply to 4D (user-reported). hasPhases → secondary "Regenerate".
+        draft.textContent = hasPhases ? 'Regenerate' : 'Generate first draft';
+        draft.classList.toggle('sa-primary', !hasPhases);
+        draft.title = hasPhases
+          ? 'Rebuild the draft from rules — discards manual phase/date/assignment edits'
+          : 'Fold the model into organized, editable phases';
+      }
+    }
     if (blank && blank.parentElement) blank.parentElement.style.display = cap ? 'none' : '';
+    console.log('§AUTHOR_UI_CONTROLS cap=' + cap + ' hasPhases=' + hasPhases +
+      ' draftLabel=' + (draft ? draft.textContent : '-') + ' primary=' + (draft ? draft.classList.contains('sa-primary') : '-'));
   }
   function close() { if (_panel) _panel.style.display = 'none'; console.log('§AUTHOR_UI_CLOSE'); }
   function toggle() { if (_panel && _panel.style.display === 'flex') close(); else open(); }

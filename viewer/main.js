@@ -135,7 +135,7 @@ async function initViewer() {
       }
       // Load sub-modules in dependency order, then the bootstrap
       var modules = [
-        'navigate_find.js?v=42',
+        'navigate_find.js?v=43',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -295,7 +295,12 @@ async function initViewer() {
             var _r = window.ScheduleSync.applyOp(APP.db, msg);
             var _ok = !!(_r && _r.ok !== false);
             console.log('§4D_RECV 4D_SCHED_EDIT op=' + msg.op + ' applied=' + _ok);
-            if (_ok && APP._tmOn && typeof window.toggleTimeMachine === 'function') {
+            // Re-fold the TM off the LIVE (now-edited) tasks. tmRefoldSchedule invalidates the stale gantt
+            // cache + kernel_ops places so activate() re-reads the edit — the old toggle-off→setTimeout(on,60)
+            // both raced the async activate AND replayed the stale cached schedule. Fallback kept for older viewers.
+            if (_ok && APP._tmOn && typeof window.tmRefoldSchedule === 'function') {
+              window.tmRefoldSchedule();
+            } else if (_ok && APP._tmOn && typeof window.toggleTimeMachine === 'function') {
               window.toggleTimeMachine();
               setTimeout(function() { window.toggleTimeMachine(); }, 60);
             }

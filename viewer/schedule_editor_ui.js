@@ -283,6 +283,28 @@
     renderWbs(); renderDeps(); renderGantt();
   }
 
+  // Reuse the viewer's IndexedDB cache (bim_ootb_cache / store 'dbs', keyed by URL — scene.js A.cachedFetch)
+  // so the Editor does NOT re-download a whole building the viewer already streamed. The ↗ Editor button
+  // passes ?db=<APP.DB_URL>, the exact key the viewer wrote, so this hits. Read-only; a miss falls through
+  // to network. Opened WITHOUT a version so we never clobber the viewer's schema. (W-SE-DB-CACHE)
+  function _idbGetDb(url) {
+    return new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('bim_ootb_cache');
+        rq.onsuccess = function () {
+          var idb = rq.result;
+          if (!idb.objectStoreNames.contains('dbs')) { resolve(null); return; }
+          try {
+            var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
+            g.onsuccess = function () { resolve(g.result || null); };
+            g.onerror = function () { resolve(null); };
+          } catch (e) { resolve(null); }
+        };
+        rq.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }
+
   // ── boot ─────────────────────────────────────────────────────────────────────
   function init() {
     if (!SA() || !SA().wbsTree) { status('engine not loaded'); return; }
@@ -291,9 +313,16 @@
     var initSqlJs = global.initSqlJs;
     initSqlJs({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/' + f; } })
       .then(function (SQL) {
-        return fetch(url).then(function (r) {
-          if (!r.ok) throw new Error('fetch ' + r.status);
-          return r.arrayBuffer();
+        return _idbGetDb(url).then(function (cached) {
+          if (cached) {
+            console.log('§SE_DB_CACHE_HIT ' + url.split('/').pop() + ' size=' + (cached.byteLength / 1024).toFixed(0) + 'KB — skipped re-download');
+            return cached;
+          }
+          console.log('§SE_DB_CACHE_MISS ' + url.split('/').pop() + ' — fetching');
+          return fetch(url).then(function (r) {
+            if (!r.ok) throw new Error('fetch ' + r.status);
+            return r.arrayBuffer();
+          });
         }).then(function (buf) {
           db = new SQL.Database(new Uint8Array(buf));
           console.log('§SE_DB_OPEN size=' + (buf.byteLength / 1024).toFixed(0) + 'KB url=' + url.split('/').pop());

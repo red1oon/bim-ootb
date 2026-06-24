@@ -989,7 +989,12 @@
       _lastSelSet = (set && set.size) ? set : null;            // remember selection for the > to ERP push
       _lastSelLabel = scopeLabel || '';
       // selection changed → any prior push's deep-link is now stale; hide it until this set is pushed
-      if (elErpOpen) { elErpOpen.style.display = 'none'; elErpOpen.removeAttribute('href'); }
+      if (elErpOpen) { elErpOpen.style.display = 'none'; elErpOpen.removeAttribute('href'); elErpOpen.title = 'Open the created Project Order in iDempiere (GardenWorld)'; }
+      var _eb0 = document.getElementById('find-erp-btn'); if (_eb0) _eb0.title = 'Push selection to ERP as a Project Order';
+      // BIM→Project (find-erp-deeplink): purely-additive — if this building is ALREADY a folded Project
+      // Order, surface the "open ↗" link to it on selection so the user opens the existing order instead
+      // of re-creating it. Guarded + async; cannot affect cost/push/navigate (user: don't impact Find).
+      try { _surfaceExistingOrder(set); } catch (e) {}
       var el = document.getElementById('find-selected-cost');
       if (!el) return;
       try {
@@ -1054,6 +1059,32 @@
         }
         return { building: building, projectId: pid, ifcClass: ifcClass, project: proj, line: line, phase: phase };
       }).catch(function (e) { console.log('§ZOOM-COST err=' + e.message); return null; });
+    }
+    // BIM→Project (find-erp-deeplink): when the active building ALREADY has a folded C_Project, surface
+    // the existing "open ↗" deep-link on selection — so the user opens that Project Order rather than
+    // re-creating it. PURELY ADDITIVE: reuses the proven _ensureErpDb + the same record URL _pushToErp
+    // builds; only sets the elErpOpen link + tooltips; wrapped so it can NEVER affect cost/push/navigate.
+    // (Slice-1 grain = project-level: the link opens the building's C_Project, window 130. Per-line/guid
+    //  precision + the OPFS cross-session store are noted follow-ups in FIND_OPENLINK_EXISTING_ORDERLINE.md.)
+    function _surfaceExistingOrder(set) {
+      if (!elErpOpen || !set || !set.size) return;
+      var mySet = set;                                   // race guard — selection may change before resolve
+      _ensureErpDb().then(function (db) {
+        if (!db || mySet !== _lastSelSet) return;        // db not available, or selection moved on
+        var pid = null;
+        try {
+          var r = db.exec("SELECT C_Project_ID FROM C_Project WHERE Value=?", [A.activeBuilding]);
+          pid = (r.length && r[0].values.length) ? r[0].values[0][0] : null;
+        } catch (e) { return; }
+        if (pid == null) return;                          // building not folded yet → keep create-push as-is
+        var url = '../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(pid);
+        elErpOpen.setAttribute('href', url);
+        elErpOpen.style.display = 'inline-block';
+        elErpOpen.title = 'Already in a Project Order — open it (no need to push again)';
+        var btn = document.getElementById('find-erp-btn');
+        if (btn) btn.title = 'Already a Project Order — use the “open ↗” link, or push to add more';
+        console.log('[RP-C] §PROJ_LINK_EXISTING building="' + A.activeBuilding + '" project=' + pid + ' url=' + url);
+      }).catch(function () { /* additive — never impact Find */ });
     }
     function _pct(planned, committed) { return planned > 0 ? Math.round((committed - planned) * 100 / planned) : 0; }
     function _showClassCost(ifcClass, matchCount, guid) {

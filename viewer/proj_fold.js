@@ -291,7 +291,57 @@
     };
   }
 
-  var API = { foldProjectOrder: foldProjectOrder, BIM_BASE: BIM_BASE };
+  // foldAuthoredPhases(db, building, phases, opts) — sync the AUTHORED 4D schedule (the wizard's phases,
+  // straight from the IFC `tasks` table) into the ERP C_ProjectPhase rows the What-if panel reads. Unlike
+  // foldProjectOrder (which RE-DERIVES phases from element IFC-class via sequence_rules + needs priced rows),
+  // this writes the user's OWN phase set 1:1 — name/seqno/dates/plannedAmt — so What-if matches the wizard.
+  // find-or-create C_Project by Value; find-or-create C_ProjectPhase by (Project, Name) → UPDATE seqno/dates/
+  // plannedAmt; INSERT if absent. IDEMPOTENT (a 2nd identical sync = +0 phases). Writes ONLY C_ProjectPhase
+  // (all What-if needs); the C_ProjectTask/Line tree is foldProjectOrder's job. Blue branch rows are untouched.
+  //   phases: [{ name, seqno, start, end, plannedAmt }]  (start/end 'YYYY-MM-DD' or full ts; plannedAmt num|str)
+  function foldAuthoredPhases(db, building, phases, opts) {
+    opts = opts || {};
+    var CL = opts.clientId != null ? opts.clientId : 11;
+    var OG = opts.orgId != null ? opts.orgId : 11;
+    var U = opts.user != null ? opts.user : 100;
+    var now = opts.now || (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })();
+    var id = _allocator(db);
+    var created = { projects: 0, phases: 0, updated: 0 };
+    function _ts(d) { if (!d) return null; d = String(d); return d.length <= 10 ? d + ' 00:00:00' : d.slice(0, 19); }
+
+    var projId = _scalar(db, "SELECT C_Project_ID FROM C_Project WHERE Value=?", [building]);
+    if (projId == null) {
+      projId = id('C_Project', 'C_Project_ID');
+      var curId = opts.currencyId != null ? opts.currencyId : 100;
+      db.run("INSERT INTO C_Project (C_Project_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
+        "Value,Name,IsSummary,C_Currency_ID,PlannedAmt,PlannedQty,IsCommitment,ProjInvoiceRule,ProjectLineLevel,Processed,C_Project_UU) " +
+        "VALUES (?,?,?,'Y',?,?,?,?,?,?,'N',?,0,0,'N','-','P','N',?)",
+        [projId, CL, OG, now, U, now, U, building, 'BIM: ' + building, curId, _uu()]);
+      created.projects = 1;
+    }
+
+    (phases || []).forEach(function (p, i) {
+      var nm = String(p.name || ('Phase ' + (i + 1)));
+      var seq = (p.seqno != null) ? p.seqno : (i + 1);
+      var s = _ts(p.start), e = _ts(p.end);
+      var amt = (p.plannedAmt != null) ? String(p.plannedAmt) : '0';
+      var phId = _scalar(db, "SELECT C_ProjectPhase_ID FROM C_ProjectPhase WHERE C_Project_ID=? AND Name=?", [projId, nm]);
+      if (phId == null) {
+        phId = id('C_ProjectPhase', 'C_ProjectPhase_ID');
+        db.run("INSERT INTO C_ProjectPhase (C_ProjectPhase_ID,C_Project_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
+          "Name,SeqNo,StartDate,EndDate,IsComplete,PlannedAmt,Qty,C_ProjectPhase_UU) VALUES (?,?,?,?,'Y',?,?,?,?,?,?,?,?,'N',?,0,?)",
+          [phId, projId, CL, OG, now, U, now, U, nm, seq, s, e, amt, _uu()]);
+        created.phases++;
+      } else {
+        db.run("UPDATE C_ProjectPhase SET SeqNo=?,StartDate=?,EndDate=?,PlannedAmt=? WHERE C_ProjectPhase_ID=?", [seq, s, e, amt, phId]);
+        created.updated++;
+      }
+    });
+    console.log('§PROJ_FOLD_AUTHORED project="' + building + '" phases=+' + created.phases + ' updated=' + created.updated + ' projId=' + projId);
+    return { projectId: projId, created: created };
+  }
+
+  var API = { foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, BIM_BASE: BIM_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ProjFold = API;
 })(typeof self !== 'undefined' ? self : this);
