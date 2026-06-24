@@ -36,6 +36,28 @@
     'Finish to Finish': 'FF', 'Start to Finish': 'SF',
   };
 
+  // ── §B1 BIM-Bind token (prompts/AUTOBIND_BY_CONVENTION.md) ──────────────────────────────────────
+  // A DECLARED predicate the planner appends to the activity NAME (free-text in XER/PMXML/MSPDI):
+  //     @<discipline>:<IfcClass>[|<IfcClass>…][:<storey>]
+  //   e.g.  "Columns @STR:IfcColumn"   "Internal Finishes @ARC:IfcCovering:Level 3"
+  //         "Structural Framing @STR:IfcMember|IfcBeam"
+  // NOT a GUID (rots on re-export) and NOT a fuzzy name guess — a model-independent selector we EXECUTE.
+  // parseBindToken(name) → { cleanName, selector|null }. selector = {discipline, classes[], storey}.
+  // Tolerant: a name with no '@…' token returns {cleanName:trimmed, selector:null}. The token is parsed
+  // OFF so the stored/displayed WBS label is the clean name (the convention never pollutes the schedule).
+  // Case-exact (documented): discipline/class/storey match elements_meta verbatim.
+  var _BIND_TOKEN = /@([A-Za-z][\w]*):([A-Za-z][\w]*(?:\|[A-Za-z][\w]*)*)(?::([^@]+?))?\s*$/;
+  function parseBindToken(name) {
+    var s = String(name == null ? '' : name);
+    var m = s.match(_BIND_TOKEN);
+    if (!m) return { cleanName: s.trim(), selector: null };
+    var clean = s.slice(0, m.index).replace(/\s+$/, '').trim();
+    return {
+      cleanName: clean || s.trim(),
+      selector: { discipline: m[1], classes: m[2].split('|'), storey: (m[3] != null ? m[3].trim() : null) },
+    };
+  }
+
   // ── XER reader: tab-delimited %T(table) / %F(fields) / %R(record) ────────────────────────────────
   function parseXER(text) {
     var lines = String(text).split(/\r?\n/);
@@ -226,11 +248,12 @@
         freeFloat: null, totalFloat: null, isCritical: null, status: null,
       });
     });
-    // leaf rows from activities
+    // leaf rows from activities. §B1: parse any BIM-Bind token OFF the name → cleaned label + selector.
     parsed.activities.forEach(function (a) {
+      var bt = parseBindToken(a.name);
       tasks.push({
         id: 'A:' + a.id, scheduleId: schedId, wbsParent: (a.wbs != null ? 'W:' + a.wbs : null),
-        name: a.name, predefinedType: null, isSummary: 0,
+        name: bt.cleanName, bindSelector: bt.selector, predefinedType: null, isSummary: 0,
         scheduleStart: a.start, scheduleFinish: a.finish,
         scheduleDuration: (a.durDays != null ? 'P' + a.durDays + 'D' : null),
         earlyStart: null, earlyFinish: null, lateStart: null, lateFinish: null,
@@ -294,6 +317,9 @@
     db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
     db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
     db.run('CREATE TABLE IF NOT EXISTS calendars (name TEXT, recurrence_type TEXT, raw TEXT)');
+    // §B2 — persist any DECLARED bind selector so autoBind(db, scheduleId) is self-contained and the
+    // selector survives a model re-export (re-resolvable; a guid list could not). Reviewable, opt-in.
+    db.run('CREATE TABLE IF NOT EXISTS task_bind_selectors (task_id TEXT PRIMARY KEY, selector_json TEXT)');
     db.run('BEGIN');
     var sc = db.prepare('INSERT OR IGNORE INTO schedules VALUES (?,?,?,?)');
     data.schedules.forEach(function (s) { sc.run([s.id, s.name, s.status, s.created]); }); sc.free();
@@ -307,14 +333,63 @@
     data.taskSequences.forEach(function (q) { sq.run([q.predId, q.succId, q.type, q.lag]); }); sq.free();
     var cl = db.prepare('INSERT INTO calendars VALUES (?,?,?)');
     data.calendars.forEach(function (c) { cl.run([c.name, c.recurrenceType, c.raw]); }); cl.free();
+    var nSel = 0;
+    var bs = db.prepare('INSERT OR REPLACE INTO task_bind_selectors VALUES (?,?)');
+    data.tasks.forEach(function (t) { if (t.bindSelector) { bs.run([t.id, JSON.stringify(t.bindSelector)]); nSel++; } }); bs.free();
     db.run('COMMIT');
+    if (nSel) console.log('§FOREIGN_BIND_SELECTORS stored=' + nSel + ' (declared @disc:class tokens — run autoBind to resolve)');
     console.log('§FOREIGN_ADOPT schedule=' + data.schedules[0].id + ' summary=' + data._meta.summaryCount +
       ' leaf=' + data._meta.leafCount + ' sequences=' + data.taskSequences.length + ' hpd=' + data._meta.hoursPerDay);
     return { scheduleId: data.schedules[0].id, tasks: data.tasks.length, sequences: data.taskSequences.length };
   }
 
+  // ── §B2 autoBind: resolve the DECLARED selectors against the model, pre-bind task_elements ───────
+  // autoBind(db, scheduleId) — for every task carrying a stored bind selector, run the EXACT predicate
+  //   SELECT guid FROM elements_meta WHERE ifc_class IN(…) [AND discipline=…] [AND storey=…]
+  // and bind each matched guid (DELETE-then-INSERT = ScheduleAuthor.assignElement's effect, kept inline
+  // so foreign_schedule.js stays dependency-free). This is the SAME predicate the manual sidecar
+  // (Hospital_GW_binding.json) declared, folded INTO the file — so it reproduces the manual bind exactly.
+  // OPT-IN (the caller decides to invoke it) and REVIEWABLE — returns a per-activity summary, never
+  // silent. Coarse on purpose (binds ALL matches per task); refine later with breakdownByAttribute.
+  // Returns { bound, perActivity:[{taskId,name,selector,matched}], unresolved:[{taskId,name,selector}] }.
+  function _sqlStr(s) { return "'" + String(s).replace(/'/g, "''") + "'"; }
+  function autoBind(db, scheduleId) {
+    db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+    var perActivity = [], unresolved = [], bound = 0;
+    var sr;
+    try {
+      sr = db.exec('SELECT s.task_id, s.selector_json, t.name FROM task_bind_selectors s ' +
+        'JOIN tasks t ON t.task_id=s.task_id' + (scheduleId ? ' WHERE t.schedule_id=' + _sqlStr(scheduleId) : ''));
+    } catch (e) { console.log('§AUTOBIND_NONE no task_bind_selectors table'); return { bound: 0, perActivity: [], unresolved: [] }; }
+    if (!sr.length || !sr[0].values.length) { console.log('§AUTOBIND_NONE schedule=' + scheduleId + ' (no declared selectors)'); return { bound: 0, perActivity: [], unresolved: [] }; }
+    sr[0].values.forEach(function (row) {
+      var taskId = row[0], name = row[2], sel;
+      try { sel = JSON.parse(row[1]); } catch (e) { return; }
+      var classes = (sel.classes || []).filter(Boolean);
+      if (!classes.length) { unresolved.push({ taskId: taskId, name: name, selector: sel }); return; }
+      var inList = classes.map(_sqlStr).join(',');
+      var sql = 'SELECT guid FROM elements_meta WHERE ifc_class IN (' + inList + ')' +
+        (sel.discipline ? ' AND discipline=' + _sqlStr(sel.discipline) : '') +
+        (sel.storey ? ' AND storey=' + _sqlStr(sel.storey) : '');
+      var gr = db.exec(sql);
+      var guids = (gr.length && gr[0].values.length) ? gr[0].values.map(function (x) { return x[0]; }) : [];
+      guids.forEach(function (g) {
+        db.run('DELETE FROM task_elements WHERE guid=?', [g]);
+        db.run('INSERT OR IGNORE INTO task_elements VALUES (?,?)', [taskId, g]);
+      });
+      var selStr = (sel.discipline ? sel.discipline + ':' : '') + classes.join('|') + (sel.storey ? ':' + sel.storey : '');
+      console.log('§AUTOBIND task=' + taskId + ' selector=' + selStr + ' matched=' + guids.length);
+      bound += guids.length;
+      if (guids.length) perActivity.push({ taskId: taskId, name: name, selector: sel, matched: guids.length });
+      else unresolved.push({ taskId: taskId, name: name, selector: sel });
+    });
+    console.log('§AUTOBIND_SUMMARY schedule=' + scheduleId + ' boundElements=' + bound +
+      ' activities=' + perActivity.length + ' unresolved=' + unresolved.length);
+    return { bound: bound, perActivity: perActivity, unresolved: unresolved };
+  }
+
   var API = { parseXER: parseXER, parsePMXML: parsePMXML, parseMSPDI: parseMSPDI, parseForeign: parseForeign,
-    toScheduleData: toScheduleData, adoptIntoDb: adoptIntoDb };
+    toScheduleData: toScheduleData, adoptIntoDb: adoptIntoDb, parseBindToken: parseBindToken, autoBind: autoBind };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else (global || globalThis).ForeignSchedule = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
