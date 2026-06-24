@@ -135,13 +135,24 @@
       + (reframe ? ' <a class="sm-rf" href="' + COMPARE + '">Read further&nbsp;&rsaquo;</a>' : '') + '</td></tr>';
   }
 
-  // field-health rows — one per widget, with a status dot (paradigm vitals; the G2 observability remedy)
-  var FH_DOT = { ok: '#2e9e4f', warn: '#d98a00', alert: '#d23b3b', na: '#9aa4b1' };
-  function fhRows(fh) {
-    if (!fh || !fh.widgets) return '';
-    var rows = fh.widgets.map(function (w) {
-      var dot = '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + FH_DOT[w.status] + ';margin-right:7px;vertical-align:middle"></span>';
-      return '<tr><th>' + dot + esc(w.label) + '</th><td><b style="color:' + FH_DOT[w.status] + '">' + esc(String(w.value)) + '</b> <span class="sm-dim">' + esc(w.detail) + '</span></td></tr>';
+  // field-health rows — one per widget, with a status dot (paradigm vitals; the G2 observability remedy).
+  // On open the dots PULSE amber ("checking…") while gather() does its real async work (SW round-trip, storage
+  // estimate, version.json fetch), then SETTLE — lighting up one-by-one to their real colour. The settle is a
+  // reveal of the REAL fold (non-invent); the pulse just gives the live check a visible heartbeat.
+  var FH_DOT = { ok: '#2e9e4f', warn: '#d98a00', alert: '#d23b3b', na: '#9aa4b1', checking: '#c98300' };
+  // the fixed 4-widget set — used to draw the "checking…" skeleton before the real fold arrives.
+  var FH_SKELETON = [{ label: 'Field errors' }, { label: 'Durability' }, { label: 'Op-log DB' }, { label: 'Environment' }];
+  function fhRows(fh, checking) {
+    var list = checking ? FH_SKELETON : (fh && fh.widgets);
+    if (!list) return '';
+    var rows = list.map(function (w, i) {
+      var color = FH_DOT[checking ? 'checking' : w.status] || FH_DOT.na;
+      var dotStyle = 'background:' + color + (checking ? '' : ';animation-delay:' + (i * 110) + 'ms');
+      var dot = '<span class="sm-fhdot ' + (checking ? 'sm-checking' : 'sm-settle') + '" style="' + dotStyle + '"></span>';
+      var val = checking
+        ? '<span class="sm-dim sm-checking-txt">checking…</span>'
+        : '<b style="color:' + color + '">' + esc(String(w.value)) + '</b> <span class="sm-dim">' + esc(w.detail) + '</span>';
+      return '<tr><th>' + dot + esc(w.label) + '</th><td>' + val + '</td></tr>';
     }).join('');
     return '<tr class="sm-grp"><td colspan="2">Field health · paradigm vitals</td></tr>' + rows;
   }
@@ -160,7 +171,7 @@
           + (d.releaseHref ? ' &mdash; <span class="sm-dim">release notes &rsaquo;</span>' : '')) +
         row('Environment', esc(d.os)) +
         row('Client', esc(d.ua)) +
-        fhRows(d.fieldHealth) +
+        fhRows(d.fieldHealth, d._checking) +
         '<tr class="sm-grp"><td colspan="2">Memory</td></tr>' +
         row('Heap usage', esc(d.heap)) +
         '<tr class="sm-grp"><td colspan="2">Cache</td></tr>' +
@@ -198,7 +209,15 @@
     '#sm-root .sm-rf:hover{text-decoration:underline}' +
     '#sm-root .sm-reset{background:#0a4ea3;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}' +
     '#sm-root .sm-nuke{background:#b23030}' +
-    '#sm-root .sm-dim{color:#8a95a3;font-size:11px}';
+    '#sm-root .sm-dim{color:#8a95a3;font-size:11px}' +
+    // field-health dot states: pulse while checking, then settle (staggered light-up) to the real colour.
+    '#sm-root .sm-fhdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle}' +
+    '#sm-root .sm-checking{animation:sm-pulse .85s ease-in-out infinite}' +
+    '#sm-root .sm-settle{animation:sm-settle .45s ease-out both}' +
+    '#sm-root .sm-checking-txt{animation:sm-fade .85s ease-in-out infinite}' +
+    '@keyframes sm-pulse{0%,100%{opacity:.3;transform:scale(.78);box-shadow:0 0 0 0 rgba(201,131,0,.45)}50%{opacity:1;transform:scale(1.06);box-shadow:0 0 0 4px rgba(201,131,0,0)}}' +
+    '@keyframes sm-settle{0%{opacity:0;transform:scale(.3)}55%{opacity:1;transform:scale(1.22)}100%{opacity:1;transform:scale(1)}}' +
+    '@keyframes sm-fade{0%,100%{opacity:.45}50%{opacity:.9}}';
 
   function ensureCss() { if (document.getElementById('sm-css')) return; var s = document.createElement('style'); s.id = 'sm-css'; s.textContent = CSS; document.head.appendChild(s); }
 
@@ -310,18 +329,34 @@
   }
 
   function close() { var r = document.getElementById('sm-root'); if (r) r.remove(); }
+  function bindPanel(root) {
+    root.querySelectorAll('[data-sm-close]').forEach(function (el) { el.addEventListener('click', close); });
+    var rb = root.querySelector('[data-sm-reset]'); if (rb) rb.addEventListener('click', resetToSeed);
+    var rsb = root.querySelector('[data-sm-reset-seed]'); if (rsb) rsb.addEventListener('click', resetSeedClients);
+  }
+  // the "checking…" skeleton — full panel chrome with the vitals pulsing while gather() runs (placeholders
+  // become real values once the async fold resolves). _checking drives fhRows + the per-row "checking…" text.
+  var CHECKING_D = { _checking: true, release: 'checking…', releaseHref: null, os: 'checking…', ua: 'checking…',
+    heap: 'checking…', storage: 'checking…', tenants: null, tenantNames: null, fieldHealth: null };
+  var MIN_CHECK_MS = 520;   // keep the heartbeat visible even when the device answers instantly
   function open() {
     ensureCss();
     close();
     var root = document.createElement('div'); root.id = 'sm-root';
-    root.innerHTML = '<div class="sm-modal"><div class="sm-head"><img class="sm-mark" src="doublebubble.jpg?v=2" alt="" width="22" height="22"><b>System Monitor</b><span class="sm-sub">loading…</span></div></div><div class="sm-backdrop" data-sm-close></div>';
+    root.innerHTML = panelHTML(CHECKING_D);            // structure + pulsing vitals immediately (feels alive)
     document.body.appendChild(root);
-    console.log('§SYSTEM-MONITOR open');
+    bindPanel(root);
+    console.log('§SYSTEM-MONITOR open (checking…)');
+    var t0 = (global.performance && performance.now) ? performance.now() : 0;
     gather().then(function (d) {
-      root.innerHTML = panelHTML(d);
-      root.querySelectorAll('[data-sm-close]').forEach(function (el) { el.addEventListener('click', close); });
-      var rb = root.querySelector('[data-sm-reset]'); if (rb) rb.addEventListener('click', resetToSeed);
-      var rsb = root.querySelector('[data-sm-reset-seed]'); if (rsb) rsb.addEventListener('click', resetSeedClients);
+      var elapsed = ((global.performance && performance.now) ? performance.now() : 0) - t0;
+      var wait = Math.max(0, MIN_CHECK_MS - elapsed);
+      setTimeout(function () {
+        if (!document.getElementById('sm-root')) return;   // closed mid-check
+        root.innerHTML = panelHTML(d);                       // dots SETTLE (staggered light-up) to real status
+        bindPanel(root);
+        console.log('§SYSTEM-MONITOR settled release=' + d.release + ' fieldHealth=' + (d.fieldHealth ? d.fieldHealth.overall : 'n/a'));
+      }, wait);
     });
   }
 
