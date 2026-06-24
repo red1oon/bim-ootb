@@ -105,6 +105,7 @@
   <span class="sub">WBS outline + dependencies</span>
   <button id="se-import-btn" title="Import a Primavera P6 programme (.xer or .xml/PMXML) — adopt its WBS, logic and dates onto this model, then bind tasks to elements">⤓ Import P6</button>
   <input id="se-import-file" type="file" accept=".xer,.xml" style="display:none">
+  <label id="se-autobind-wrap" title="If the activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="se-autobind-cb" type="checkbox" checked> auto-bind by convention</label>
   <span id="se-bld">—</span>
 </header>
 <div id="se-status">Initialising…</div>

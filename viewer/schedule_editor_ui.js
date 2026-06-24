@@ -364,14 +364,31 @@
         FSx.adoptIntoDb(db, data);
         schedId = data.schedules[0].id;
         var b = $('se-bld'); if (b) b.textContent = (file.name) + '  •  ' + schedId;
+        // §B3 — auto-bind by convention (opt-in, reviewable). If the file carried @disc:class tokens
+        // (data.tasks[].bindSelector → stored task_bind_selectors) AND the checkbox is on, resolve them
+        // now and report the pre-bound counts. The binding is the signed task_elements (rename-proof) and
+        // the user can adjust/clear it per task — a deterministic SUGGESTION, never a silent assertion.
+        var tokened = data.tasks.filter(function (t) { return t.bindSelector; }).length;
+        var ab = $('se-autobind-cb'); var bindMsg = '';
+        if (tokened && (!ab || ab.checked) && FSx.autoBind) {
+          var r = FSx.autoBind(db, schedId);
+          bindMsg = ' Pre-bound ' + r.bound + ' elements across ' + r.perActivity.length +
+            ' activities by convention' + (r.unresolved.length ? ' (' + r.unresolved.length + ' selector(s) matched nothing — review)' : '') +
+            ' — review/clear per task in ✎ Author. ';
+          console.log('§SE_AUTOBIND schedule=' + schedId + ' bound=' + r.bound +
+            ' activities=' + r.perActivity.length + ' unresolved=' + r.unresolved.length);
+        } else if (tokened) {
+          bindMsg = ' (' + tokened + ' activities carry a bind token — tick "auto-bind by convention" to resolve.) ';
+        }
         collapsed = {}; critSet = {};
         renderWbs(); renderDeps(); renderGantt(); fillAddForm();
         status('Imported ' + det.format + ' "' + file.name + '" → ' +
           data._meta.summaryCount + ' WBS / ' + data._meta.leafCount + ' activities / ' +
-          data.taskSequences.length + ' links — press ▶ Compute CPM for the critical path. ' +
-          'Bind tasks to elements in the viewer ✎ Author to make it 4D.');
+          data.taskSequences.length + ' links — press ▶ Compute CPM for the critical path.' + bindMsg +
+          (bindMsg ? '' : ' Bind tasks to elements in the viewer ✎ Author to make it 4D.'));
         console.log('§SE_IMPORT_P6 file=' + file.name + ' format=' + det.format +
-          ' schedule=' + schedId + ' wbs=' + data._meta.summaryCount + ' activities=' + data._meta.leafCount);
+          ' schedule=' + schedId + ' wbs=' + data._meta.summaryCount + ' activities=' + data._meta.leafCount +
+          ' tokened=' + tokened);
       } catch (e) { status('⚠ import failed: ' + e.message); console.error('§SE_IMPORT_P6 ERROR', e); }
     };
     rdr.readAsText(file);
