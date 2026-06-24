@@ -359,19 +359,18 @@
     rdr.onload = function () {
       try {
         var txt = String(rdr.result);
-        var isXml = /\.xml$/i.test(file.name) || /^\s*<\?xml/.test(txt);
-        var parsed = isXml ? FSx.parsePMXML(txt) : FSx.parseXER(txt);
-        var data = FSx.toScheduleData(parsed);
+        var det = FSx.parseForeign(txt, file.name);   // sniff P6-XER / P6-XML(PMXML) / MS Project(MSPDI)
+        var data = FSx.toScheduleData(det.parsed);
         FSx.adoptIntoDb(db, data);
         schedId = data.schedules[0].id;
         var b = $('se-bld'); if (b) b.textContent = (file.name) + '  •  ' + schedId;
         collapsed = {}; critSet = {};
         renderWbs(); renderDeps(); renderGantt(); fillAddForm();
-        status('Imported ' + (isXml ? 'PMXML' : 'XER') + ' "' + file.name + '" → ' +
+        status('Imported ' + det.format + ' "' + file.name + '" → ' +
           data._meta.summaryCount + ' WBS / ' + data._meta.leafCount + ' activities / ' +
           data.taskSequences.length + ' links — press ▶ Compute CPM for the critical path. ' +
           'Bind tasks to elements in the viewer ✎ Author to make it 4D.');
-        console.log('§SE_IMPORT_P6 file=' + file.name + ' format=' + (isXml ? 'PMXML' : 'XER') +
+        console.log('§SE_IMPORT_P6 file=' + file.name + ' format=' + det.format +
           ' schedule=' + schedId + ' wbs=' + data._meta.summaryCount + ' activities=' + data._meta.leafCount);
       } catch (e) { status('⚠ import failed: ' + e.message); console.error('§SE_IMPORT_P6 ERROR', e); }
     };
