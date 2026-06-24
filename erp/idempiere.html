@@ -464,6 +464,7 @@
   </main>
 </div>
 
+<script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="ad_parser.js?v=24"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
@@ -496,7 +497,8 @@
 <script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
 <script src="genesis.js?v=2"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
-<script src="system_monitor.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) -->
+<script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
+<script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
 <script src="plugin_release.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
@@ -523,7 +525,14 @@
 <!-- MIGRATE_ERP_PICKER.md §SPEC — still loaded: the login front-door tenant picker (ErpPicker.manifest). -->
 <script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
-<script src="kernel_ops.js?v=2"></script>
+<script src="kernel_ops.js?v=3"></script>
+<script src="op_upcaster.js?v=1"></script><!-- D2 (prompts/D2_REMEDY_VERSIONING.md): schema_version stamp + read-time upcaster registry -->
+<script>/* D2: make schema_version stamping the default write seam. install() self-guards (logs SKIPPED if the
+   kernel lacks setVersionStamper), so this is safe; stamping is forward-only + inert to every reducer
+   (witnessed W-D2-* PASS). */
+  try { if (window.ERP && window.ERP.OpUpcaster) window.ERP.OpUpcaster.install(window.KernelOps); }
+  catch (e) { console.warn('§OP_UPCASTER install failed', e); }
+</script>
 <script src="erp_signer.js?v=1"></script>
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>

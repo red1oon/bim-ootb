@@ -82,17 +82,18 @@
     // Forward-reconciled from the app's erp/ copy on the §INTEG-COLLAPSE (2026-06-08); the substrate's
     // byte-stable period-close replay depends on it. See prompts/ERP_SUBSTRATE_INTEGRATION.md §ARCHIVE.
     var stamp = (ts != null) ? ts : Date.now();
+    var vParams = _stamp(opType, params);                  // D2: brand schema version into params (signed) if wired
     db.run(
       'INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid) ' +
       'VALUES (?, ?, ?, ?, ?, ?)',
-      [uuid, stamp, opType, JSON.stringify(params),
+      [uuid, stamp, opType, JSON.stringify(vParams),
        inputGuids ? JSON.stringify(inputGuids) : null,
        outputGuid || null]
     );
     var r = db.exec('SELECT last_insert_rowid()');
     var opId = r[0].values[0][0];
     console.log('§KERNEL_OP committed id=' + opId + ' uuid=' + (uuid ? uuid.slice(0, 8) : 'null') +
-                ' type=' + opType + ' params=' + JSON.stringify(params));
+                ' type=' + opType + ' params=' + JSON.stringify(vParams));
     // S243 §3.7: persist modified DB back to IndexedDB so refresh survives
     _persistToIdb(db);
     return opId;
@@ -133,6 +134,16 @@
   // Set an edge signer to turn on W-SIGN. Key custody lives at the edge (the device/merchant),
   // never in this module. Leave unset for W-CHAIN-only (tamper-evidence without signatures).
   function setSigner(signer) { _signer = signer; }
+
+  // D2 (prompts/D2_REMEDY_VERSIONING.md): an optional version-stamper that brands every NEW op's params with
+  // its schema version BEFORE hashing — so the version is a signed fact. fn(opType, params) -> params'. Wired
+  // by ERP.OpUpcaster.install(KernelOps) at app boot; UNSET = legacy behaviour (ops carry no _sv = version 1).
+  // The kernel stays decoupled — it never imports the upcaster, just calls this hook if installed.
+  var _versionStamp = null;
+  function setVersionStamper(fn) { _versionStamp = fn; }
+  function _stamp(opType, params) {
+    return (_versionStamp && params && typeof params === 'object') ? _versionStamp(opType, params) : params;
+  }
 
   function _canonical(op) {   // stable serialisation — every mutating field, fixed order
     return op.id + '|' + op.timestamp + '|' + op.op_type + '|' +
@@ -289,6 +300,7 @@
     for (var i = 0; i < opsArray.length; i++) {
       var src = opsArray[i];
       var params = src.params != null ? src.params : src.parameters;
+      params = _stamp(src.op_type, params);                  // D2: brand schema version (signed) if wired
       // §I-J (W-RATE-INPUT) — currency-determinism precondition: a conversion-bearing op MUST carry its
       // recorded rate inputs (rate/rateDate/rateSource), else the WHOLE group is rejected (all-or-none,
       // commits NOTHING). Today nothing is conversion-bearing → inert but enforced. NEVER looks up a rate.
@@ -598,6 +610,7 @@
     commitGroup:  commitGroup,   // §I-K (W-OPGROUP): N ops, ONE group hash, all-or-none, sealed once (async)
     verifyChain:  verifyChain,   // W-CHAIN/W-SIGN: prove tamper-evidence (async)
     setSigner:    setSigner,     // W-SIGN: install an edge signer (opt-in)
+    setVersionStamper: setVersionStamper, // D2: install a schema-version stamper (opt-in; ERP.OpUpcaster.install)
     assertRateAsInput: assertRateAsInput, // §I-J (W-RATE-INPUT): currency-determinism guard (pure, rate-as-op-input)
     branchOps:    branchOps,     // BLUE FUTURE (W-BLUE-FUTURE): the ops of a speculative branch (id order)
     discardBranch: discardBranch, // BLUE FUTURE: shirk the blues — fold the whole branch away atomically

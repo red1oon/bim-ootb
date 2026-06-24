@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v751';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v752';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -38,6 +38,9 @@ const PRECACHE_ASSETS = [
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
   'ad_table_map.js',
   'vfs_detect.js',    // CONSTRAINT_MITIGATION item 3 — OPFS/IDB detection at boot (§VFS monitor)
+  'error_beacon.js',  // SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed)
+  'field_health.js',  // SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth)
+  'op_upcaster.js',   // D2 — schema_version stamp + read-time upcaster registry (default write seam)
   'ad_ui.js',
   'erp_panel.js',
   'erp_persist.js',
