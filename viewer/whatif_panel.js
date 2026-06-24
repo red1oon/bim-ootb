@@ -292,5 +292,13 @@
     });
   }
 
-  global.WhatIfPanel = { open: open };
+  // refresh() — re-read the OPFS store (which the Author wizard's Apply just re-folded) and, if the panel
+  // is open, re-pick the project + re-render in place. Nulls the cached _db so _loadDb re-reads from disk.
+  function refresh() {
+    _db = null;
+    if (document.getElementById('whatif-panel')) { console.log('§WHATIF-UI refresh — panel open, reloading'); open(); }
+    else console.log('§WHATIF-UI refresh — panel closed, will reload on next open');
+  }
+
+  global.WhatIfPanel = { open: open, refresh: refresh };
 })(typeof self !== 'undefined' ? self : this);
