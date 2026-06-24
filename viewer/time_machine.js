@@ -3533,6 +3533,34 @@
     }).catch(function(e) { console.warn('§CACHE_PUT_ERR ' + e.message); });
   }
 
+  // Delete a cached JSON key (e.g. the stale 'gantt' fast-path) so cacheGet() returns null and activate()
+  // recomputes from the live tables. Used by tmRefoldSchedule after an external 4D edit.
+  function cacheDel(prefix) {
+    var app = A();
+    if (!app || !app.openCacheDB) return;
+    app.openCacheDB().then(function(cacheDb) {
+      if (!cacheDb) return;
+      var key = _cacheKey(prefix);
+      var tx = cacheDb.transaction(app.CACHE_STORE, 'readwrite');
+      tx.objectStore(app.CACHE_STORE).delete(key);
+      console.log('§CACHE_DEL key=' + key);
+    }).catch(function(e) { console.warn('§CACHE_DEL_ERR ' + e.message); });
+  }
+
+  // §TM-REFOLD core: drop the cached schedule so the NEXT activate() re-reads the (possibly just-edited)
+  // tasks table via injectGantt's _cap, instead of replaying the stale kernel_ops ELEMENT_PLACE fast-path.
+  // Returns the count of place-ops cleared. db is sql.js (app.db); the witness drives the same API.
+  function _invalidateSchedule(db) {
+    if (!db) return 0;
+    var n = 0;
+    try {
+      var r = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
+      n = (r.length && r[0].values.length) ? r[0].values[0][0] : 0;
+      db.run("DELETE FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
+    } catch (e) { /* no kernel_ops table → nothing to invalidate */ }
+    return n;
+  }
+
   // ── Activate / Deactivate ──
   function setToolbarHighlight(on) {
     var btn = document.getElementById('time-machine-btn');
@@ -3787,6 +3815,24 @@
   }
 
   window.toggleTimeMachine = toggle;
+
+  // §TM-REFOLD (W-TM-REFOLD): rebuild the 4D from the LIVE tasks table after an external schedule edit
+  // (the bim_4d 4D_SCHED_EDIT consumer in main.js). Replaces the old toggle-off → setTimeout(toggle-on, 60ms)
+  // dance, which (a) raced the async activate() on a fixed timer and (b) silently REPLAYED the stale cached
+  // schedule (cacheGet('gantt') fast-path + reused kernel_ops) so the edit never showed. This invalidates the
+  // stale gantt cache + kernel_ops places first, then re-activates off the synchronous deactivate() — no timer.
+  // No-op (returns false) if the Time Machine is closed. _expose for the witness too.
+  function refoldSchedule() {
+    var wasActive = _active;
+    if (_active) deactivate();
+    cacheDel('gantt');
+    var app = A();
+    var cleared = (app && app.db) ? _invalidateSchedule(app.db) : 0;
+    console.log('§TM_REFOLD wasActive=' + wasActive + ' clearedPlaceOps=' + cleared);
+    if (wasActive) activate();   // async; injectGantt re-reads the edited tasks. No fixed-timer race.
+    return wasActive;
+  }
+  window.tmRefoldSchedule = refoldSchedule;
 
   // §S2 (TM_4D5D_VARIANCE_LANE) — juncture jump: land the cursor at the START of a named phase's window so the
   // scene is rendered PARTIALLY-BUILT at that moment (the IFC cost panel's "View at this moment"). The phase
