@@ -141,6 +141,72 @@
     };
   }
 
+  // ── MSPDI reader: MS Project XML (schemas.microsoft.com/project) ─────────────────────────────────
+  // Differs from P6: no separate WBS objects — summary tasks ARE the WBS, hierarchy from OutlineLevel;
+  // durations are ISO PT#H#M#S; TotalSlack/LinkLag are integers in TENTHS OF A MINUTE; relationship
+  // Type is a code (0=FF,1=FS,2=SF,3=SS) on a <PredecessorLink> inside the SUCCESSOR task.
+  var MSP_TYPE = { '0': 'FF', '1': 'FS', '2': 'SF', '3': 'SS' };
+  function _ptHours(s) {
+    if (!s) return null;
+    var m = String(s).match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!m) { var n = parseFloat(s); return isNaN(n) ? null : n; }
+    return (parseInt(m[1] || 0, 10)) + (parseInt(m[2] || 0, 10)) / 60 + (parseInt(m[3] || 0, 10)) / 3600;
+  }
+  function parseMSPDI(text) {
+    text = String(text);
+    var head = text.split(/<Tasks>/)[0];
+    var mpd = parseFloat(_tag(head, 'MinutesPerDay'));
+    var hpd = (mpd && mpd > 0) ? mpd / 60 : 8;
+    var tenthsToDays = function (v) { var n = parseFloat(v); return isNaN(n) ? null : n / 10 / 60 / hpd; };
+
+    var wbs = [], activities = [], relationships = [];
+    var parentAt = {};   // outlineLevel -> uid of last task seen at that level
+    _blocks(text, 'Task').forEach(function (b) {
+      var uid = _tag(b, 'UID');
+      if (uid == null) return;
+      var lvl = parseInt(_tag(b, 'OutlineLevel') || '1', 10);
+      var isSummary = _tag(b, 'Summary') === '1';
+      var parent = (lvl > 1 && parentAt[lvl - 1] != null) ? parentAt[lvl - 1] : null;
+      parentAt[lvl] = uid;
+      Object.keys(parentAt).forEach(function (k) { if (+k > lvl) delete parentAt[k]; });
+      // PredecessorLink(s) → relationships (this task is the successor)
+      _blocks(b, 'PredecessorLink').forEach(function (pl) {
+        var pu = _tag(pl, 'PredecessorUID');
+        if (pu == null) return;
+        relationships.push({ pred: pu, succ: uid, type: MSP_TYPE[_tag(pl, 'Type')] || 'FS', lagDays: tenthsToDays(_tag(pl, 'LinkLag')) || 0 });
+      });
+      if (isSummary) {
+        wbs.push({ id: uid, code: _tag(b, 'OutlineNumber') || '', name: _tag(b, 'Name'), parent: parent });
+      } else {
+        var tf = tenthsToDays(_tag(b, 'TotalSlack'));
+        activities.push({
+          id: uid, code: uid, name: _tag(b, 'Name'), wbs: parent,
+          start: dateOnly(_tag(b, 'Start')), finish: dateOnly(_tag(b, 'Finish')),
+          durDays: (function () { var h = _ptHours(_tag(b, 'Duration')); return h == null ? null : h / hpd; })(),
+          totalFloatDays: tf, freeFloatDays: tenthsToDays(_tag(b, 'FreeSlack')),
+          critical: _tag(b, 'Critical') === '1' || (tf != null && tf <= 0),
+          status: null,
+        });
+      }
+    });
+    return {
+      project: { id: _tag(head, 'Title') || _tag(head, 'Name') || 'MSP', name: _tag(head, 'Name') || 'MS Project', hpd: hpd },
+      calendars: [{ name: _tag(head, 'Name') || 'Standard', hpd: hpd, raw: String(mpd || hpd * 60) }],
+      wbs: wbs, activities: activities, relationships: relationships,
+    };
+  }
+
+  // ── parseForeign(text, filename) — content-sniff dispatcher across the three readers ─────────────
+  function parseForeign(text, filename) {
+    var t = String(text), f = String(filename || '');
+    if (/\.xer$/i.test(f) || /^\s*(ERMHDR|%T)\b/.test(t)) return { format: 'XER', parsed: parseXER(t) };
+    if (/schemas\.microsoft\.com\/project/.test(t) || (/<Tasks>/.test(t) && /<OutlineLevel>/.test(t))) return { format: 'MSPDI', parsed: parseMSPDI(t) };
+    if (/APIBusinessObjects/.test(t) || /<Activity>/.test(t)) return { format: 'PMXML', parsed: parsePMXML(t) };
+    // last resort: try XER then PMXML
+    try { var x = parseXER(t); if (x.activities.length) return { format: 'XER', parsed: x }; } catch (e) {}
+    return { format: 'PMXML', parsed: parsePMXML(t) };
+  }
+
   // ── common mapper: neutral parse → IFC-native rows (import_db_builder shape) ──────────────────────
   // Namespacing: WBS ids → 'W:<id>', activity ids → 'A:<id>' so they can never collide and TASKPRED
   // (which references activity ids) re-points through the 'A:' namespace. statusMap is best-effort.
@@ -247,7 +313,8 @@
     return { scheduleId: data.schedules[0].id, tasks: data.tasks.length, sequences: data.taskSequences.length };
   }
 
-  var API = { parseXER: parseXER, parsePMXML: parsePMXML, toScheduleData: toScheduleData, adoptIntoDb: adoptIntoDb };
+  var API = { parseXER: parseXER, parsePMXML: parsePMXML, parseMSPDI: parseMSPDI, parseForeign: parseForeign,
+    toScheduleData: toScheduleData, adoptIntoDb: adoptIntoDb };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else (global || globalThis).ForeignSchedule = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
