@@ -21,6 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Stamp the deployed-build provenance the System Monitor Release row reads (prompts/RESUME_SYSMON_RELEASE_LINK.md
+      # §FIX A.2). DETERMINISTIC source of truth: the sw CACHE_VERSION + this commit — no SW-timing race. Generated
+      # into the artifact only (never committed); NOT precached, so it's always the freshly-deployed version.
+      - name: Stamp erp/version.json (Release-row provenance)
+        run: |
+          VER=$(grep -oE "CACHE_VERSION = '[^']+'" erp/sw.js | head -1 | sed "s/.*'\([^']*\)'.*/\1/")
+          SHA=$(git rev-parse --short HEAD)
+          PR=$(git log -1 --pretty=%s | grep -oE '\(#[0-9]+\)' | tr -d '(#)' || true)
+          DATE=$(date -u +%Y-%m-%d)
+          printf '{"version":"%s","sha":"%s","pr":%s,"date":"%s"}\n' "$VER" "$SHA" "${PR:-null}" "$DATE" > erp/version.json
+          echo "§SYSMON-RELEASE stamped erp/version.json: $(cat erp/version.json)"
       # Minify OUR OWN JS in the ephemeral checkout only (prompts/UI_PAYLOAD_PERF.md Win #1).
       # The repo source in git is NEVER changed — readable-source ethos preserved; only the
       # uploaded Pages artifact is minified. Whitespace+syntax only (no identifier mangling),

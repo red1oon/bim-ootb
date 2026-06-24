@@ -72,7 +72,7 @@
 
   // ── Widget 3: op-log DB size gauge (B1 — the REAL ceiling) — the reassuring optic ─────────────────
   function _dbSize(db) {
-    if (!db || typeof db.exec !== 'function') return { id: 'db_size_gauge', label: 'Op-log DB', value: 'n/a', status: 'na', detail: 'no db handle' };
+    if (!db || typeof db.exec !== 'function') return { id: 'db_size_gauge', label: 'Op-log DB', value: 'n/a', status: 'na', detail: 'no op-log yet — fold a rule or post a doc to populate' };
     var pc, ps;
     try {
       pc = db.exec('PRAGMA page_count'); ps = db.exec('PRAGMA page_size');
