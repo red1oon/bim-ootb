@@ -561,6 +561,72 @@
     return { projectDuration: PF, projectStart: projStart, tasks: out, criticalIds: critical };
   }
 
+  // ── §SE-WBS: deepen the WBS — add a task, or break a phase down by an element attribute ──────────────
+  // addTask(db, scheduleId, opts) — the Editor's "＋ sub-task" / "＋ sibling". opts: { taskId?, name?,
+  // wbsParent? }. A new task is a LEAF (is_summary=0) and INHERITS its parent's date window so it shows in
+  // the TM at once. The parent is NOT forced to a summary — it keeps its own elements + _cap coverage (only
+  // breakdown, which empties the parent, marks it summary). Pass taskId for cross-tab replay determinism;
+  // else TASK_<slug(name)> with a numeric suffix on collision. Returns { ok, taskId, parent }.
+  function addTask(db, scheduleId, opts) {
+    opts = opts || {};
+    _ensureWideTasks(db);
+    var parent = opts.wbsParent || null;
+    var ps = null, pf = null, pdur = null;
+    if (parent) {
+      var pr = db.exec('SELECT schedule_start, schedule_finish, schedule_duration FROM tasks WHERE task_id=? AND schedule_id=?', [parent, scheduleId]);
+      if (!pr.length || !pr[0].values.length) { console.log('§SE_ADDTASK_FAIL parent=' + parent + ' reason=no_such_parent'); return { ok: false, reason: 'no_such_parent' }; }
+      ps = pr[0].values[0][0]; pf = pr[0].values[0][1]; pdur = pr[0].values[0][2];
+    }
+    var name = opts.name || 'New Task';
+    var tid = opts.taskId;
+    if (!tid) {
+      var base = 'TASK_' + (_slug(name) || 'X'); tid = base; var k = 1;
+      while (true) { var ex = db.exec('SELECT 1 FROM tasks WHERE task_id=?', [tid]); if (!ex.length || !ex[0].values.length) break; tid = base + '_' + (++k); }
+    }
+    db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,0,?,?,?,?,?)',
+      [tid, scheduleId, parent, name, 'CONSTRUCTION', ps, pf, pdur, null, 'PLANNED']);
+    console.log('§SE_ADDTASK id=' + tid + ' parent=' + (parent || '(root)') + ' name="' + name + '"');
+    return { ok: true, taskId: tid, parent: parent };
+  }
+
+  // breakdownByAttribute(db, scheduleId, taskId, attr) — auto-split a leaf phase's assigned elements into
+  // child sub-tasks grouped by an elements_meta attribute (storey | ifc_class/type | discipline). Each
+  // distinct value → child "<parent> · <value>" (DETERMINISTIC id parentId__<slug(value)> so a peer replay
+  // converges), the parent's elements move to the matching child, and the parent becomes a summary roll-up
+  // (is_summary=1 → dropped from _cap; children inherit its window so coverage is preserved). Returns
+  // { ok, parent, attr, groups:[{taskId,value,count}], created }.
+  var _BREAKDOWN_ATTRS = { storey: 'storey', ifc_class: 'ifc_class', class: 'ifc_class', type: 'ifc_class', discipline: 'discipline' };
+  function breakdownByAttribute(db, scheduleId, taskId, attr) {
+    _ensureWideTasks(db);
+    var col = _BREAKDOWN_ATTRS[String(attr || '').toLowerCase()];
+    if (!col) { console.log('§SE_BREAKDOWN_FAIL reason=bad_attr attr=' + attr); return { ok: false, reason: 'bad_attr' }; }
+    var pr = db.exec('SELECT name, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE task_id=? AND schedule_id=?', [taskId, scheduleId]);
+    if (!pr.length || !pr[0].values.length) { console.log('§SE_BREAKDOWN_FAIL reason=no_such_task task=' + taskId); return { ok: false, reason: 'no_such_task' }; }
+    var pName = pr[0].values[0][0] || taskId, ps = pr[0].values[0][1], pf = pr[0].values[0][2], pdur = pr[0].values[0][3];
+    var gr = db.exec("SELECT COALESCE(NULLIF(m." + col + ",''),'(none)') v, te.guid FROM task_elements te " +
+      "JOIN elements_meta m ON m.guid=te.guid WHERE te.task_id=? ORDER BY v", [taskId]);
+    if (!gr.length || !gr[0].values.length) { console.log('§SE_BREAKDOWN_FAIL reason=no_elements task=' + taskId); return { ok: false, reason: 'no_elements' }; }
+    var groups = {};
+    gr[0].values.forEach(function (row) { (groups[row[0]] || (groups[row[0]] = [])).push(row[1]); });
+    var vals = Object.keys(groups).sort();
+    if (vals.length < 2) { console.log('§SE_BREAKDOWN_SKIP task=' + taskId + ' attr=' + col + ' reason=single_group'); return { ok: false, reason: 'single_group', groups: vals }; }
+    var out = [], created = 0;
+    vals.forEach(function (v) {
+      var cid = taskId + '__' + (_slug(v) || 'none');
+      var ex = db.exec('SELECT 1 FROM tasks WHERE task_id=?', [cid]);
+      if (!ex.length || !ex[0].values.length) {
+        db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,0,?,?,?,?,?)',
+          [cid, scheduleId, taskId, pName + ' · ' + v, 'CONSTRUCTION', ps, pf, pdur, null, 'PLANNED']);
+        created++;
+      }
+      groups[v].forEach(function (g) { db.run('DELETE FROM task_elements WHERE guid=?', [g]); db.run('INSERT OR IGNORE INTO task_elements VALUES (?,?)', [cid, g]); });
+      out.push({ taskId: cid, value: v, count: groups[v].length });
+    });
+    db.run('UPDATE tasks SET is_summary=1 WHERE task_id=? AND schedule_id=?', [taskId, scheduleId]);
+    console.log('§SE_BREAKDOWN parent=' + taskId + ' attr=' + col + ' groups=' + vals.length + ' created=' + created);
+    return { ok: true, parent: taskId, attr: col, groups: out, created: created };
+  }
+
   var API = {
     matchRule: matchRule,
     materializeDefault: materializeDefault,
@@ -576,7 +642,9 @@
     removeDependency: removeDependency,
     updateDependency: updateDependency,
     computeCpm: computeCpm,
-    moveTask: moveTask
+    moveTask: moveTask,
+    addTask: addTask,
+    breakdownByAttribute: breakdownByAttribute
   };
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
