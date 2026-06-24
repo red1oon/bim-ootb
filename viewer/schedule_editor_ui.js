@@ -76,10 +76,52 @@
           tf <= 0 ? 'critical' : ('float ' + tf + 'd')));
       }
       if (node.start) row.appendChild(el('span', 'se-dates', node.start + (node.finish ? ' → ' + node.finish : '')));
+      // §SE-WBS deepen-the-tree actions: ＋ add a sub-task (any node) · break a populated leaf down by attribute
+      var act = el('span'); act.style.cssText = 'margin-left:auto;display:inline-flex;gap:4px;align-items:center';
+      var addBtn = el('button', null, '＋'); addBtn.title = 'Add a sub-task under ' + node.name;
+      addBtn.style.cssText = 'font-size:11px;line-height:1;padding:1px 5px;cursor:pointer';
+      addBtn.onclick = function (ev) { ev.stopPropagation(); doAddTask(node.id, node.name); };
+      act.appendChild(addBtn);
+      if (!node.isSummary && node.guidCount > 1) {
+        var sel = el('select'); sel.title = 'Break this phase into sub-tasks grouped by…';
+        sel.style.cssText = 'font-size:10px;padding:0 2px;cursor:pointer';
+        sel.appendChild(new Option('break by…', ''));
+        ['storey', 'type', 'discipline'].forEach(function (o) { sel.appendChild(new Option(o, o)); });
+        sel.onclick = function (ev) { ev.stopPropagation(); };
+        sel.onchange = function () { if (sel.value) doBreakdown(node.id, sel.value); };
+        act.appendChild(sel);
+      }
+      row.appendChild(act);
       host.appendChild(row);
       if (hasKids && !collapsed[node.id]) node.children.forEach(function (c) { walk(c, depth + 1); });
     }
     roots.forEach(function (r) { walk(r, 0); });
+  }
+
+  // §SE-WBS — deepen the WBS: add a sub-task, or auto-split a phase by an element attribute. Each edit runs
+  // the engine verb on our db, broadcasts a deterministic op so peer surfaces (2nd tab, the Viewer TM) converge,
+  // then refreshFold() invalidates any stale CPM and re-renders. New leaves inherit the parent's date window.
+  function doAddTask(parentId, parentName) {
+    var name = (window.prompt('New sub-task under "' + parentName + '":', 'New task') || '').trim();
+    if (!name) return;
+    var r = SA().addTask(db, schedId, { name: name, wbsParent: parentId });
+    if (!r || !r.ok) { status('add sub-task failed: ' + (r && r.reason)); return; }
+    broadcast({ op: 'addtask', schedId: schedId, taskId: r.taskId, name: name, wbsParent: parentId });
+    status('added "' + name + '" under ' + parentName);
+    collapsed[parentId] = false;   // reveal the new child
+    refreshFold();
+  }
+  function doBreakdown(taskId, attr) {
+    var r = SA().breakdownByAttribute(db, schedId, taskId, attr);   // 'type' maps to ifc_class in the engine
+    if (!r || !r.ok) {
+      status('break down: ' + (r && r.reason === 'single_group' ? ('only one ' + attr + ' here — nothing to split')
+        : (r && r.reason === 'no_elements' ? 'no elements on this task' : (r && r.reason))));
+      renderWbs(); return;
+    }
+    broadcast({ op: 'breakdown', schedId: schedId, taskId: taskId, attr: attr });
+    status('split into ' + r.groups.length + ' sub-tasks by ' + attr);
+    collapsed[taskId] = false;
+    refreshFold();
   }
 
   // ── STEP 2: dependency view + edit ───────────────────────────────────────────

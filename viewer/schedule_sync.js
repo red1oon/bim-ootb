@@ -11,7 +11,7 @@
   var CHANNEL = 'bim_4d';        // the rail main.js already listens on (S240)
   var TYPE = '4D_SCHED_EDIT';
 
-  function SA() { return global.ScheduleAuthor; }
+  function SA() { return global.ScheduleAuthor || (typeof globalThis !== 'undefined' ? globalThis.ScheduleAuthor : null); }
 
   // applyOp(db, op) — replay one schedule op on a receiver db via the matching ScheduleAuthor verb.
   // PURE (no DOM, no channel). Returns the verb's result, or {ok:false, reason} for bad input.
@@ -24,6 +24,9 @@
       case 'retype': return SA().updateDependency(db, op.predId, op.succId, { type: op.value });
       case 'lag':    return SA().updateDependency(db, op.predId, op.succId, { lag: op.value });
       case 'cpm':    return SA().computeCpm(db, op.schedule, {});
+      // §SE-WBS structural edits — deterministic (explicit taskId / stable child ids) so peers converge.
+      case 'addtask':   return SA().addTask(db, op.schedId, { taskId: op.taskId, name: op.name, wbsParent: op.wbsParent });
+      case 'breakdown': return SA().breakdownByAttribute(db, op.schedId, op.taskId, op.attr);
       default:       return { ok: false, reason: 'unknown_op:' + (op.op || '?') };
     }
   }
