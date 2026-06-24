@@ -1,0 +1,29 @@
+# Batched semantic-version releases — the curated "what's new" stream.
+# prompts/RESUME_SYSMON_RELEASE_LINK.md §FIX B (revised 2026-06-25, user: batched + semver, not per-deploy).
+#
+# How it works (zero LLM — deterministic from our conventional-commit prefixes):
+#   - On every push to main, release-please reads the commits since the last release and keeps ONE rolling
+#     "release PR" that ACCUMULATES them, grouped into Features / Fixes / Docs (the batch).
+#   - The bump level is computed from the prefixes: fix:/docs: → PATCH, feat: → MINOR, feat!:/BREAKING → MAJOR.
+#     ("a small increment as convention" when nothing substantial; a sub/major when it is.)
+#   - You publish on YOUR cadence by merging that PR (daily, or "when there's a substantial amount"). Merging it
+#     cuts the GitHub Release + tag vX.Y.Z with the categorised notes as the changelog.
+#   The per-deploy build id (erp/sw.js CACHE_VERSION = vNNN) is SEPARATE — cache-bust only, no release per build.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # config = release-please-config.json + .release-please-manifest.json (repo root, manifest mode)

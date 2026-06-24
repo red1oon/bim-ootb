@@ -56,18 +56,22 @@
     });
   }
 
-  // PURE: pick the release version to show. version.json wins (deterministic deployed build); SW is the
-  // fallback (and carries the honest "controlled" flag). Never invents — null version ⇒ caller shows the
-  // honest "(uncontrolled)" placeholder. Exported for the node witness (poc_sysmon_release).
+  // PURE: pick what the Release row shows. TWO ids (decoupled 2026-06-25):
+  //   version = the SEMVER release (vX.Y.Z, cut by release-please — the curated "what's new" the row LINKS to).
+  //   build   = the precise deployed bits on THIS device (the sw CACHE_VERSION vNNN — cache-bust id).
+  // version.json carries both; SW (GET_PRECACHE) only knows the build, so it's the build-only fallback.
+  // Never invents — null ⇒ caller shows the honest "(uncontrolled)" placeholder. Exported for the node witness.
   function resolveRelease(sw, vj) {
-    var version = (vj && vj.version) || (sw && sw.version) || null;
+    var version = (vj && vj.version) || (sw && sw.version) || null;   // semver if version.json present, else build
+    var build = (vj && vj.build) || (sw && sw.version) || null;
     var source = (vj && vj.version) ? 'version.json' : ((sw && sw.version) ? 'sw' : 'none');
-    return { version: version, source: source, controlled: !!(sw && sw.controlled),
+    return { version: version, build: build, source: source, controlled: !!(sw && sw.controlled),
       sha: (vj && vj.sha) || null, pr: (vj && vj.pr) || null };
   }
-  // PURE: the GH release page for a vNNN tag — null for anything that isn't a clean release tag (non-invent).
+  // PURE: the GH release page for a SEMVER tag (vX.Y or vX.Y.Z) — null for a bare build id (vNNN) or anything
+  // else, so the row never links to a tag that doesn't exist (the build id has no release of its own).
   function releaseHref(version) {
-    return (typeof version === 'string' && /^v\d+$/.test(version))
+    return (typeof version === 'string' && /^v\d+\.\d+(\.\d+)?$/.test(version))
       ? 'https://github.com/' + REPO + '/releases/tag/' + version : null;
   }
   function storageEstimate() {
@@ -110,10 +114,11 @@
     return Promise.all([swVersion(), storageEstimate(), persistedP(), versionJson()]).then(function (r) {
       var sw = r[0], est = r[1], persisted = r[2], vj = r[3], h = heap(), tenants = residentTenants();
       var rel = resolveRelease(sw, vj), href = releaseHref(rel.version);
-      console.log('§SYSMON-RELEASE version=' + (rel.version || '(uncontrolled)') + ' source=' + rel.source + ' controlled=' + (rel.controlled ? 'Y' : 'N'));
-      if (href) console.log('§SYSMON-RELEASE-LINK href=' + href + ' kind=release autocut=Y');
+      console.log('§SYSMON-RELEASE version=' + (rel.version || '(uncontrolled)') + ' build=' + (rel.build || '?') + ' source=' + rel.source + ' controlled=' + (rel.controlled ? 'Y' : 'N'));
+      if (href) console.log('§SYSMON-RELEASE-LINK href=' + href + ' kind=release');
       var d = {
         release: rel.version || '(uncontrolled)',
+        releaseBuild: (rel.build && rel.build !== rel.version) ? rel.build : null,
         releaseHref: href,
         os: (navigator.platform || '—') + ' · ' + (navigator.hardwareConcurrency || '?') + ' cores',
         ua: (navigator.userAgent || '').replace(/^Mozilla\/\S+\s*/, '').slice(0, 60),
@@ -156,8 +161,9 @@
         '<tr class="sm-grp"><td colspan="2">System</td></tr>' +
         row('Release', '<b>' + (d.releaseHref
             ? '<a class="sm-rf" href="' + esc(d.releaseHref) + '" target="_blank" rel="noopener">' + esc(d.release) + '</a>'
-            : esc(d.release)) + '</b> &middot; this device&rsquo;s deployed build'
-          + (d.releaseHref ? ' &mdash; <span class="sm-dim">release notes &rsaquo;</span>' : '')) +
+            : esc(d.release)) + '</b>'
+          + (d.releaseBuild ? ' <span class="sm-dim">&middot; build ' + esc(d.releaseBuild) + '</span>' : '')
+          + (d.releaseHref ? ' &mdash; <span class="sm-dim">release notes &rsaquo;</span>' : ' &middot; <span class="sm-dim">this device&rsquo;s deployed build</span>')) +
         row('Environment', esc(d.os)) +
         row('Client', esc(d.ua)) +
         fhRows(d.fieldHealth) +
