@@ -19,7 +19,10 @@
            background: linear-gradient(180deg, #1b2230, #161b25); border-bottom: 1px solid #2a3342; }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; color: #eaf1fb; }
   header .sub { color: #7d8aa0; font-size: 11px; }
-  #se-bld { margin-left: auto; color: #4fc3f7; font-size: 11px; }
+  #se-import-btn { margin-left: auto; background: #243042; border: 1px solid #34465e; color: #cdd7e4;
+    font-size: 12px; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+  #se-import-btn:hover { background: #2c3a50; }
+  #se-bld { color: #4fc3f7; font-size: 11px; margin-left: 12px; }
   #se-status { padding: 6px 16px; background: #0d1118; color: #9fb0c6; font-size: 11px;
                border-bottom: 1px solid #222b38; min-height: 26px; }
   main { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.2fr); gap: 0;
@@ -100,6 +103,8 @@
 <header>
   <h1>Schedule Editor</h1>
   <span class="sub">WBS outline + dependencies</span>
+  <button id="se-import-btn" title="Import a Primavera P6 programme (.xer or .xml/PMXML) — adopt its WBS, logic and dates onto this model, then bind tasks to elements">⤓ Import P6</button>
+  <input id="se-import-file" type="file" accept=".xer,.xml" style="display:none">
   <span id="se-bld">—</span>
 </header>
 <div id="se-status">Initialising…</div>
@@ -133,6 +138,7 @@
 <script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
 <script src="rates.js?v=4" onerror="console.warn('§LOAD_FAIL rates.js')"></script>
 <script src="schedule_author.js?v=8" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="foreign_schedule.js?v=1" onerror="console.warn('§LOAD_FAIL foreign_schedule.js')"></script>
 <script src="schedule_sync.js?v=2" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
 <script src="schedule_editor_ui.js?v=6" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
 </body>

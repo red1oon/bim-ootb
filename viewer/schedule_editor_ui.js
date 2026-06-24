@@ -347,6 +347,37 @@
     });
   }
 
+  // ── §X5: import a Primavera P6 programme (.xer / PMXML .xml) into THIS editor's db ──────────────
+  // Adopt via ForeignSchedule into the live in-memory db, switch the editor to the adopted schedule,
+  // and re-render — the imported WBS, dependencies, CPM and Gantt appear immediately. task_elements
+  // stays empty (P6 carries no model guids); binding is the separate ✎ Author / assignElement craft.
+  function doImportP6(file) {
+    var FSx = global.ForeignSchedule;
+    if (!FSx) { status('⚠ foreign_schedule.js not loaded'); return; }
+    if (!db) { status('⚠ no model db open yet'); return; }
+    var rdr = new FileReader();
+    rdr.onload = function () {
+      try {
+        var txt = String(rdr.result);
+        var isXml = /\.xml$/i.test(file.name) || /^\s*<\?xml/.test(txt);
+        var parsed = isXml ? FSx.parsePMXML(txt) : FSx.parseXER(txt);
+        var data = FSx.toScheduleData(parsed);
+        FSx.adoptIntoDb(db, data);
+        schedId = data.schedules[0].id;
+        var b = $('se-bld'); if (b) b.textContent = (file.name) + '  •  ' + schedId;
+        collapsed = {}; critSet = {};
+        renderWbs(); renderDeps(); renderGantt(); fillAddForm();
+        status('Imported ' + (isXml ? 'PMXML' : 'XER') + ' "' + file.name + '" → ' +
+          data._meta.summaryCount + ' WBS / ' + data._meta.leafCount + ' activities / ' +
+          data.taskSequences.length + ' links — press ▶ Compute CPM for the critical path. ' +
+          'Bind tasks to elements in the viewer ✎ Author to make it 4D.');
+        console.log('§SE_IMPORT_P6 file=' + file.name + ' format=' + (isXml ? 'PMXML' : 'XER') +
+          ' schedule=' + schedId + ' wbs=' + data._meta.summaryCount + ' activities=' + data._meta.leafCount);
+      } catch (e) { status('⚠ import failed: ' + e.message); console.error('§SE_IMPORT_P6 ERROR', e); }
+    };
+    rdr.readAsText(file);
+  }
+
   // ── boot ─────────────────────────────────────────────────────────────────────
   function init() {
     if (!SA() || !SA().wbsTree) { status('engine not loaded'); return; }
@@ -387,6 +418,11 @@
         renderWbs(); renderDeps(); renderGantt();
         var addBtn = $('se-add-btn'); if (addBtn) addBtn.onclick = onAdd;
         var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
+        var impBtn = $('se-import-btn'), impFile = $('se-import-file');
+        if (impBtn && impFile) {
+          impBtn.onclick = function () { impFile.click(); };
+          impFile.onchange = function () { if (impFile.files && impFile.files[0]) doImportP6(impFile.files[0]); impFile.value = ''; };
+        }
         window.addEventListener('resize', renderGantt);
       })
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
