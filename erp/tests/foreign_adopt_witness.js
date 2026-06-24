@@ -97,20 +97,27 @@ function loadRates() {
   // ── W-FOREIGN-BIND: resolve sidecar → real Hospital elements → assignElement → foldCost > 0 ─────
   var binding = JSON.parse(fs.readFileSync(path.join(FIX, 'Hospital_GW_binding.json'), 'utf8'));
   var rates = loadRates();
-  var boundTotal = 0, boundActs = 0, PER = 40;   // bind up to 40 real elements per activity (demo subset)
-  binding.activities.forEach(function (a) {
-    var inList = a.ifcClasses.map(function (c) { return "'" + c + "'"; }).join(',');
-    var q = "SELECT guid FROM elements_meta WHERE ifc_class IN (" + inList + ")" +
-      (a.discipline ? " AND discipline='" + a.discipline + "'" : '') + " LIMIT " + PER;
-    var r = db.exec(q);
-    var guids = (r.length && r[0].values.length) ? r[0].values.map(function (x) { return x[0]; }) : [];
-    guids.forEach(function (g) { SA.assignElement(db, g, 'A:' + a.code); });
-    if (guids.length) boundActs++;
-    boundTotal += guids.length;
-  });
+  // bind by NAME (format-agnostic — task_id schemes differ across XER/PMXML/MSPDI, names don't).
+  function bindByName(d, sid) {
+    var total = 0, acts = 0, PER = 40;
+    binding.activities.forEach(function (a) {
+      var tr = d.exec("SELECT task_id FROM tasks WHERE schedule_id='" + sid + "' AND (is_summary IS NULL OR is_summary=0) AND name='" + a.name.replace(/'/g, "''") + "' LIMIT 1");
+      if (!tr.length || !tr[0].values.length) return;
+      var tid = tr[0].values[0][0];
+      var inList = a.ifcClasses.map(function (c) { return "'" + c + "'"; }).join(',');
+      var r = d.exec("SELECT guid FROM elements_meta WHERE ifc_class IN (" + inList + ")" +
+        (a.discipline ? " AND discipline='" + a.discipline + "'" : '') + " LIMIT " + PER);
+      var guids = (r.length && r[0].values.length) ? r[0].values.map(function (x) { return x[0]; }) : [];
+      guids.forEach(function (g) { SA.assignElement(d, g, tid); });
+      if (guids.length) acts++;
+      total += guids.length;
+    });
+    return { total: total, acts: acts };
+  }
+  var bx = bindByName(db, 'GW-HOSP');
   var teCount = db.exec('SELECT COUNT(*) FROM task_elements')[0].values[0][0];
-  check('W-FOREIGN-BIND elements', teCount > 0 && teCount === boundTotal, 'task_elements=' + teCount + ' bound across ' + boundActs + ' activities');
-  check('bind-real-guids', boundActs >= 12, 'activities with real Hospital elements=' + boundActs + '/14');
+  check('W-FOREIGN-BIND elements', teCount > 0 && teCount === bx.total, 'task_elements=' + teCount + ' bound across ' + bx.acts + ' activities');
+  check('bind-real-guids', bx.acts >= 12, 'activities with real Hospital elements=' + bx.acts + '/14');
 
   var fold = SA.foldCost(db, 'GW-HOSP', rates.RATES, rates.RATES_DEFAULT, 'USD');
   check('W-FOREIGN-BIND cost>0', fold.total > 0, '5D total folded onto imported plan = ' + fold.total);
@@ -124,6 +131,27 @@ function loadRates() {
     var refold = SA.foldCost(db, 'GW-HOSP', rates.RATES, rates.RATES_DEFAULT, 'USD');
     check('reassign-total-invariant', refold.total === beforeFold, 'cost moved A1010->A2010, project total unchanged=' + refold.total);
   }
+
+  // ── W-FOREIGN-MSPDI: MS Project XML rides the SAME seam (fresh Hospital db) ─────────────────────
+  var mspTxt = fs.readFileSync(path.join(FIX, 'Hospital_GW_MSProject.xml'), 'utf8');
+  var det = FS_.parseForeign(mspTxt, 'Hospital_GW_MSProject.xml');
+  check('mspdi-sniffed', det.format === 'MSPDI', 'parseForeign detected format=' + det.format);
+  var dataM = FS_.toScheduleData(det.parsed);
+  check('mspdi-counts', dataM._meta.summaryCount === 6 && dataM._meta.leafCount === 14 && dataM.taskSequences.length === 14,
+    'WBS=' + dataM._meta.summaryCount + ' activities=' + dataM._meta.leafCount + ' links=' + dataM.taskSequences.length);
+  check('mspdi-all-four-types', ['FS', 'SS', 'FF'].every(function (t) { return dataM.taskSequences.some(function (s) { return s.type === t; }); }),
+    'types=' + Array.from(new Set(dataM.taskSequences.map(function (s) { return s.type; }))).join(','));
+  var dbM = new SQL.Database(new Uint8Array(fs.readFileSync(HOSPITAL_DB)));
+  FS_.adoptIntoDb(dbM, dataM);
+  var actM = SA.activeSchedule(dbM);
+  var sidM = dataM.schedules[0].id;
+  check('W-FOREIGN-MSPDI adopt', !!actM && actM.id === sidM && actM.captured === true, 'active=' + (actM && actM.id) + ' captured=' + (actM && actM.captured));
+  var cpmM = SA.computeCpm(dbM, sidM);
+  check('W-FOREIGN-MSPDI cpm', cpmM.projectDuration === 300 && cpmM.criticalIds.length === 13,
+    'projectDuration=' + cpmM.projectDuration + ' critical=' + cpmM.criticalIds.length + '/14 (matches the same plan)');
+  var bm = bindByName(dbM, sidM);
+  var foldM = SA.foldCost(dbM, sidM, rates.RATES, rates.RATES_DEFAULT, 'USD');
+  check('W-FOREIGN-MSPDI bind+cost', bm.acts >= 12 && foldM.total > 0, 'bound ' + bm.acts + '/14 activities → 5D total=' + foldM.total);
 
   console.log('\n§W-FGN SUMMARY pass=' + pass + ' fail=' + fail);
   process.exit(fail ? 1 : 0);

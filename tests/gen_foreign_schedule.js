@@ -232,6 +232,59 @@ function emitPMXML() {
   return x.join('\n') + '\n';
 }
 
+// ── MSPDI emitter (MS Project XML) — summary tasks ARE the WBS (OutlineLevel), PT durations, ──────
+//    TotalSlack/LinkLag in tenths-of-a-minute, relationship Type code (0=FF,1=FS,2=SF,3=SS). ────────
+var MSP_CODE = { FF: 0, FS: 1, SF: 2, SS: 3 };
+function emitMSPDI() {
+  var uidOf = {};                      // wbsId or actId -> integer UID
+  WBS.forEach(function (w, i) { uidOf[w.id] = i + 1; });           // summaries 1..6
+  ACT.forEach(function (a, i) { uidOf[a.id] = 100 + i; });         // activities 100..
+  var tenths = function (days) { return Math.round(days * HPD * 60 * 10); };
+  var predsOf = {}; ACT.forEach(function (a) { predsOf[a.id] = []; });
+  REL.forEach(function (r) { predsOf[r.succ].push(r); });
+
+  var x = [];
+  x.push('<?xml version="1.0" encoding="UTF-8"?>');
+  x.push('<Project xmlns="http://schemas.microsoft.com/project">');
+  x.push('  <Title>' + PROJECT.id + '</Title>');
+  x.push('  <Name>' + esc(PROJECT.name) + ' (MS Project)</Name>');
+  x.push('  <MinutesPerDay>' + (HPD * 60) + '</MinutesPerDay>');
+  x.push('  <Tasks>');
+  WBS.forEach(function (w) {
+    x.push('    <Task>');
+    x.push('      <UID>' + uidOf[w.id] + '</UID>');
+    x.push('      <Name>' + esc(w.name) + '</Name>');
+    x.push('      <OutlineLevel>1</OutlineLevel>');
+    x.push('      <OutlineNumber>' + esc(w.code) + '</OutlineNumber>');
+    x.push('      <Summary>1</Summary>');
+    x.push('    </Task>');
+    ACT.filter(function (a) { return a.wbs === w.id; }).forEach(function (a) {
+      var c = CP[a.id];
+      x.push('    <Task>');
+      x.push('      <UID>' + uidOf[a.id] + '</UID>');
+      x.push('      <Name>' + esc(a.name) + '</Name>');
+      x.push('      <OutlineLevel>2</OutlineLevel>');
+      x.push('      <Summary>0</Summary>');
+      x.push('      <Start>' + iso(c.es, '08:00:00') + '</Start>');
+      x.push('      <Finish>' + iso(c.ef, '17:00:00') + '</Finish>');
+      x.push('      <Duration>PT' + (a.dur * HPD) + 'H0M0S</Duration>');
+      x.push('      <TotalSlack>' + tenths(c.tf) + '</TotalSlack>');
+      x.push('      <Critical>' + (c.critical ? 1 : 0) + '</Critical>');
+      predsOf[a.id].forEach(function (r) {
+        x.push('      <PredecessorLink>');
+        x.push('        <PredecessorUID>' + uidOf[r.pred] + '</PredecessorUID>');
+        x.push('        <Type>' + MSP_CODE[r.type] + '</Type>');
+        x.push('        <LinkLag>' + tenths(r.lag) + '</LinkLag>');
+        x.push('      </PredecessorLink>');
+      });
+      x.push('    </Task>');
+    });
+  });
+  x.push('  </Tasks>');
+  x.push('</Project>');
+  return x.join('\n') + '\n';
+}
+
 // ── binding sidecar — activity -> real-element predicate (grounds the demo 4D bind) ──────────────
 function emitBinding() {
   return JSON.stringify({
@@ -248,6 +301,7 @@ function emitBinding() {
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'Hospital_GW_Programme.xer'), emitXER());
 fs.writeFileSync(path.join(OUT, 'Hospital_GW_Programme.xml'), emitPMXML());
+fs.writeFileSync(path.join(OUT, 'Hospital_GW_MSProject.xml'), emitMSPDI());
 fs.writeFileSync(path.join(OUT, 'Hospital_GW_binding.json'), emitBinding());
 
 var crit = ACT.filter(function (a) { return CP[a.id].critical; }).map(function (a) { return a.id; });
