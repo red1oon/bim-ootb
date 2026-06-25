@@ -185,6 +185,11 @@
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=1" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=1" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
+<!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
+     (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
+<script src="str_walker.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
+<script src="str_walker_bridge.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="str_walker_outliner.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=14" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -1744,9 +1749,15 @@ window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', mat
     const lod = window.Bonsai.library ? window.Bonsai.library.lodFor(op.id, op.parameters.lod) : op.parameters.lod;
     return { id: op.id, label: (c ? (c.name || c.ifc_class.replace('Ifc', '')) : 'Component'),
       sub: ((a && (a.x || a.y)) ? ((a.x || '·') + '-' + (a.y || '·')) : '#' + op.id) + ' ·LOD' + lod + ((mv.dx || mv.dy || mv.dz) ? ' ·moved' : '') }; } });
+// Query string — declared here (BEFORE the register hooks). FIX 2026-06-26: was a top-level `const qs` declared
+// ~90 lines below, so the ?bomtree hook (and now ?strwalk) referenced it in its TDZ → "Cannot access 'qs' before
+// initialization" threw on EVERY load, killing __sceneReady. Hoisted up; the later duplicate declaration removed.
+const qs = new URLSearchParams(location.search);
 // BOM Tree composition facet (the ARC BOM editor) — flag-gated ?bomtree for now; Open any extracted.db → editable BOM
 // tree in the Outliner, re-parent = signed BOM_REPARENT (geometry untouched). SPATIAL_DEPENDENCY_GRAPH §OUTLINER-COHERENCE.
 if (qs.get('bomtree') !== null && window.BOMTreeOutliner) { window.BOMTreeOutliner.register(); console.log('§MODELLER BOM Tree editor ON (?bomtree)'); }
+// STR Walker (?strwalk) — STR as a WALKED discipline: 🏗 open an STR building → walk; grid drag re-walks + flags.
+if (qs.get('strwalk') !== null && window.STRWalkerOutliner) { window.STRWalkerOutliner.register(); console.log('§MODELLER STR Walker ON (?strwalk)'); }
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
@@ -1834,10 +1845,10 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
 })();
 
 // Headless witness hooks. ?author=wall|opening|both auto-authors the sample ops.
-const qs = new URLSearchParams(location.search);
+// (`const qs` hoisted up to before the register hooks — see the FIX note above.)
 // PERSISTENCE: restore the saved signed model on boot so work survives a reload — unless a demo hook runs
 // (demos clear() and drive their own state). Folds the restored op-log to the scene + refreshes panels.
-if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|routewalk|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera|regen)$/.test(k))) {
+if (![...qs.keys()].some(k => /^(author|recipe|preload|outliner|grid|ifc|signed|fastauthor|sweep|route|routewalk|fillet|constrain|gridmove|gmpreview|sketch|insert|place|edit|ux|numdim|camera|regen|bomtree|strwalk)$/.test(k))) {
   (async () => { try { const n = await window.Bonsai.oplog.restore(); if (n) { syncHistory(); setStat('restored ' + n + ' feature' + (n === 1 ? '' : 's') + ' from your last session'); } } catch (e) { console.warn('§MODELLER restore fail ' + e); } window.__restoreDone = true; })();
 }
 const q = qs.get('author');
