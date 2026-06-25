@@ -84,7 +84,11 @@
     _paint() {
       const tree = this._el.querySelector('#bo-tree'); if (!tree) return;
       const ops = (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps() : [];
-      const groups = this._categories.map(cat => ({ cat, nodes: ops.filter(cat.match).map(cat.node) }));
+      // FLAT categories (op-log feature groups — Walls/Openings/etc., unchanged). TREE categories (deep, seeded,
+      // editable — the BOM Tree composition facet, SPATIAL_DEPENDENCY_GRAPH §OUTLINER-COHERENCE) take a separate path.
+      const flatCats = this._categories.filter(c => !c.tree);
+      const treeCats = this._categories.filter(c => c.tree);
+      const groups = flatCats.map(cat => ({ cat, nodes: ops.filter(cat.match).map(cat.node) }));
       const f = this._find;
       const match = n => !f || (n.label + ' ' + n.sub).toLowerCase().includes(f);
       let total = 0, shown = 0;
@@ -105,6 +109,7 @@
             LEAF + n.label + '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span></div>';
         });
       });
+      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); html += r.html; total += r.total; shown += r.shown; });
       tree.innerHTML = html;
       tree.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._paint(); });
       tree.querySelectorAll('[data-fid]').forEach(d => d.onclick = () => {
@@ -112,10 +117,70 @@
         if (window.Bonsai.select) window.Bonsai.select(fid);   // → highlight() → setActive(): restyle only, no rebuild
         else this.setActive(fid);
       });
+      this._wireTrees(treeCats);
       const foot = this._el.querySelector('#bo-foot');
       const tip = (window.Bonsai.oplog && window.Bonsai.oplog._lastTip) || '';
       foot.textContent = (f ? shown + '/' + total + ' shown' : total + ' features') + (tip ? '  🔒 ' + tip.slice(0, 8) : '');
-      console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '"');
+      console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '" trees=' + treeCats.length);
+    },
+
+    // ── DEEP / EDITABLE tree category (the BOM Tree composition facet). cat.tree() → [rootNode];
+    //    node = {id,label,sub,kind,children}. Drag a node onto another → cat.onReparent(childId,targetId) (signed op
+    //    upstream). GREP-CLEAN of geometry: this renders pointers only, never touches a placement.
+    _treeHtml(cat, match) {
+      const roots = (cat.tree ? cat.tree() : []) || [];
+      const ckey = 'tcat|' + cat.key, col = this._collapsed[ckey];
+      let leafTotal = 0; const countLeaves = ns => ns.forEach(n => { if (n.kind === 'element') leafTotal++; if (n.children) countLeaves(n.children); });
+      countLeaves(roots);
+      let html = '<div data-tcat="' + cat.key + '" style="padding:2px 6px 2px 16px;color:#6f7a8b;cursor:pointer">' +
+        CHEV(!col) + cat.label + ' <span style="color:#454e5d">(' + leafTotal + ')</span></div>';
+      let shown = 0;
+      if (!col) { const r = this._renderNodes(roots, 1, cat.key, match); html += r.html; shown = r.shown; }
+      return { html: html, total: leafTotal, shown: shown };
+    },
+    _renderNodes(nodes, depth, ckey, match) {
+      let html = '', shown = 0;
+      (nodes || []).forEach(n => {
+        const kids = n.children || [];
+        const isLeaf = n.kind === 'element';
+        const vis = !this._find || this._subtreeMatches(n, match);
+        if (!vis) return;
+        if (isLeaf) shown++;
+        const ncol = this._collapsed['bn|' + n.id];
+        const active = window.Bonsai._selId === n.id;
+        const pad = 16 + depth * 14;
+        html += '<div data-bnode="' + n.id + '" data-tcat="' + ckey + '" data-leaf="' + (isLeaf ? 1 : 0) + '" draggable="true" ' +
+          'style="padding:3px 6px 3px ' + pad + 'px;cursor:' + (isLeaf ? 'grab' : 'pointer') + ';border-radius:4px;' +
+          (active ? 'background:#26456b;color:#dce6f4' : 'color:#c7cdd8') + '">' +
+          (kids.length ? CHEV(!ncol) : LEAF) + n.label +
+          (n.sub ? '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span>' : '') + '</div>';
+        if (kids.length && !ncol) { const r = this._renderNodes(kids, depth + 1, ckey, match); html += r.html; shown += r.shown; }
+      });
+      return { html: html, shown: shown };
+    },
+    _subtreeMatches(n, match) { if (match({ label: n.label, sub: n.sub || '' })) return true; return (n.children || []).some(c => this._subtreeMatches(c, match)); },
+    _wireTrees(treeCats) {
+      if (!this._el || !treeCats.length) return;
+      const byKey = {}; treeCats.forEach(c => byKey[c.key] = c);
+      this._el.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.onclick = () => {
+        const k = 'tcat|' + d.getAttribute('data-tcat'); this._collapsed[k] = !this._collapsed[k]; this._paint();
+      });
+      this._el.querySelectorAll('[data-bnode]').forEach(d => {
+        const id = d.getAttribute('data-bnode'), isLeaf = d.getAttribute('data-leaf') === '1';
+        d.onclick = () => {
+          if (isLeaf) { const num = +id; if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id); }
+          else { this._collapsed['bn|' + id] = !this._collapsed['bn|' + id]; this._paint(); }
+        };
+        d.ondragstart = e => { e.dataTransfer.setData('text/bnode', id); this._dragSrc = id; };
+        d.ondragover = e => { e.preventDefault(); d.style.outline = '1px dashed #4a78b8'; };
+        d.ondragleave = () => { d.style.outline = 'none'; };
+        d.ondrop = e => {
+          e.preventDefault(); d.style.outline = 'none';
+          const src = (e.dataTransfer && e.dataTransfer.getData('text/bnode')) || this._dragSrc;
+          const cat = byKey[d.getAttribute('data-tcat')];
+          if (src && cat && cat.onReparent && src !== id) cat.onReparent(src, id);
+        };
+      });
     }
   };
 
