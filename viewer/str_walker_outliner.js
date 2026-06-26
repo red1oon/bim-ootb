@@ -89,13 +89,17 @@
       if (window.BOMTreeOutliner && window.BOMTreeOutliner.loadFromDb) {
         try { window.BOMTreeOutliner.loadFromDb(db, name); } catch (e) { console.warn(TAG + ' bom-graph seed failed', e && e.message); }
       }
-      // Derive the typed cross-edges (the GRAPH half) on-the-fly from the bbox substrate — kept pristine,
-      // not baked. Slice 1 = `abuts` (face-touch); stashed on window for the bom-graph render.
-      if (window.CrossEdges && window.CrossEdges.deriveAdjacency) {
+      // Derive/read the FULL typed cross-edge set (the GRAPH half) on-the-fly from the pristine substrate —
+      // NOT baked (W-UX-6 Phase 2; user fork = JS-derive). Geometric edges abuts/anchored/spans are JS-derived
+      // (witnessed == Python, W-SDG-JS-PARITY); fills/aggregates are RECOVERED IFC reads. Stashed on window for
+      // the bom-graph adjacency lens (element↔element abuts/fills/aggregates highlight; anchored/spans annotate).
+      if (window.CrossEdges && window.CrossEdges.deriveAll) {
         try {
-          var abuts = window.CrossEdges.deriveAdjacency(db);
-          window.swXEdges = { abuts: abuts };
-          console.log(TAG + ' §XEDGE-ABUTS ' + abuts.length + ' face-touch edges derived (provenance=derived:face-touch)');
+          window.swXEdges = window.CrossEdges.deriveAll(db);
+          var X = window.swXEdges;
+          console.log(TAG + ' §XEDGE-ALL abuts=' + X.abuts.length + ' anchored=' + X.anchored.length +
+            ' spans=' + X.spans.length + ' fills=' + X.fills.length + ' aggregates=' + X.aggregates.length +
+            ' datums=' + X.datums.length + ' (abuts/anchored/spans derived; fills/aggregates recovered)');
         } catch (e) { console.warn(TAG + ' cross-edge derive failed', e && e.message); }
       }
       db.close();

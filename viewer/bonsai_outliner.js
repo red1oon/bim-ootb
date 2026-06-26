@@ -44,21 +44,33 @@
     addCategory(cat) { this._categories.push(cat); this.refresh(); return this; },   // seam for Room/Phase/ERP
 
     // ── W-UX-6 adjacency lens helpers ────────────────────────────────────────────────────────────────
-    // Build guid → Set(neighbour guids) from ALL window.swXEdges arrays (each edge = {a,b,...}, a/b guids).
-    // Undirected. abuts ships today; later derived edge types (anchored/spans/fills/aggregates) union in free.
+    // Build guid → Map(neighbour guid → Set(edge kinds)) from the ELEMENT↔ELEMENT cross-edges in
+    // window.swXEdges (each carries {a,b} guids): abuts (derived), fills + aggregates (recovered). Element↔
+    // DATUM edges (anchored/spans) have no a/b → naturally skipped here; they annotate the selected row instead.
+    _ADJ_GLYPH: { abuts: '⇄', fills: '⌂', aggregates: '⧉' },
     _buildAdjMap() {
       const map = {}, X = (typeof window !== 'undefined' && window.swXEdges) || {};
+      function add(a, b, kind) { if (a == null || b == null || a === b) return; var m = map[a] || (map[a] = new Map()); if (!m.has(b)) m.set(b, new Set()); m.get(b).add(kind); }
       Object.keys(X).forEach(kind => {
         const edges = X[kind]; if (!Array.isArray(edges)) return;
-        edges.forEach(e => {
-          if (e == null || e.a == null || e.b == null) return;
-          (map[e.a] || (map[e.a] = new Set())).add(e.b);
-          (map[e.b] || (map[e.b] = new Set())).add(e.a);
-        });
+        edges.forEach(e => { if (e && e.a != null && e.b != null) { add(e.a, e.b, e.kind || kind); add(e.b, e.a, e.kind || kind); } });
       });
       return map;
     },
-    _adjCount() { const X = (typeof window !== 'undefined' && window.swXEdges) || {}; return Object.keys(X).reduce((s, k) => s + (Array.isArray(X[k]) ? X[k].length : 0), 0); },
+    // Per-kind edge stats for the footer + the selected-row annotation (element↔element + element↔datum).
+    _adjStats() {
+      const X = (typeof window !== 'undefined' && window.swXEdges) || {};
+      const c = k => Array.isArray(X[k]) ? X[k].length : 0;
+      return { abuts: c('abuts'), fills: c('fills'), aggregates: c('aggregates'), anchored: c('anchored'), spans: c('spans'), datums: c('datums') };
+    },
+    _adjCount() { const s = this._adjStats(); return s.abuts + s.fills + s.aggregates; },   // element↔element edges
+    // Count a guid's element↔datum relations (anchored datums / span axes) for the selected-row annotation.
+    _datumRels(guid) {
+      const X = (typeof window !== 'undefined' && window.swXEdges) || {};
+      const anc = Array.isArray(X.anchored) ? X.anchored.filter(a => a.element_guid === guid).length : 0;
+      const spn = Array.isArray(X.spans) ? X.spans.filter(s => s.element_guid === guid).length : 0;
+      return { anchored: anc, spans: spn };
+    },
 
     mount(parentSel) {
       if (this._el) return this._el;
@@ -159,7 +171,8 @@
       this._wireTrees(treeCats);
       const foot = this._el.querySelector('#bo-foot');
       const tip = (window.Bonsai.oplog && window.Bonsai.oplog._lastTip) || '';
-      const lens = this._adjLens ? ('  ⇄ ' + this._adjCount() + ' edges') : '';
+      let lens = '';
+      if (this._adjLens) { const s = this._adjStats(); lens = '  ⇄' + s.abuts + ' ⌂' + s.fills + ' ⧉' + s.aggregates + ' ⊥' + s.datums; }
       foot.textContent = (f ? shown + '/' + total + ' shown' : total + ' features') + lens + (tip ? '  🔒 ' + tip.slice(0, 8) : '');
       console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '" trees=' + treeCats.length);
     },
@@ -191,13 +204,25 @@
         const pad = 16 + depth * 14;
         // W-UX-4: a DISCIPLINE node (n.disc) is a WALKER entry point — render a ▶ walk affordance + carry data-disc.
         const walkGlyph = n.disc ? ' <span class="bn-walk" title="Walk this discipline" style="color:#4fc3f7">▶</span>' : '';
-        // W-UX-6: adjacency lens — a NEIGHBOUR of the selected element gets a ⇄ badge + amber tint; the selected
-        // element shows its neighbour COUNT. Both read the derived map (window.swXEdges), never a baked table.
-        const nbrSet = (this._adjLens && isLeaf && this._adjMap) ? this._adjMap[window.Bonsai._selId] : null;
-        const isNbr = !!(nbrSet && nbrSet.has(n.id) && n.id !== window.Bonsai._selId);
-        const selDeg = (this._adjLens && active && isLeaf && this._adjMap && this._adjMap[n.id]) ? this._adjMap[n.id].size : 0;
-        const adjBadge = isNbr ? ' <span class="bn-adj" title="abuts the selected element" style="color:#e0a23a">⇄</span>'
-          : (selDeg ? ' <span class="bn-deg" style="color:#e0a23a;font-family:ui-monospace,monospace">⇄' + selDeg + '</span>' : '');
+        // W-UX-6: adjacency lens — a NEIGHBOUR of the selected element gets a per-EDGE-TYPE badge (⇄ abuts ·
+        // ⌂ fills · ⧉ aggregates) + amber tint; the selected element shows its per-kind degree + its element↔
+        // datum relations (⊥ anchored · ↕ spans). All read the derived map (window.swXEdges), never a baked table.
+        const nbrMap = (this._adjLens && isLeaf && this._adjMap) ? this._adjMap[window.Bonsai._selId] : null;
+        const nbrKinds = (nbrMap && n.id !== window.Bonsai._selId) ? nbrMap.get(n.id) : null;
+        const isNbr = !!nbrKinds;
+        let adjBadge = '';
+        if (isNbr) {
+          let g = ''; ['abuts', 'fills', 'aggregates'].forEach(k => { if (nbrKinds.has(k)) g += (this._ADJ_GLYPH[k] || '·'); });
+          adjBadge = ' <span class="bn-adj" data-kinds="' + Array.from(nbrKinds).sort().join(',') + '" title="' + Array.from(nbrKinds).sort().join(', ') + ' the selected element" style="color:#e0a23a">' + (g || '⇄') + '</span>';
+        } else if (this._adjLens && active && isLeaf && this._adjMap && this._adjMap[n.id]) {
+          const m = this._adjMap[n.id], cnt = { abuts: 0, fills: 0, aggregates: 0 };
+          m.forEach(ks => ks.forEach(k => { if (k in cnt) cnt[k]++; })); // per-kind neighbour counts
+          const dr = this._datumRels(n.id);
+          let parts = [];
+          if (cnt.abuts) parts.push('⇄' + cnt.abuts); if (cnt.fills) parts.push('⌂' + cnt.fills); if (cnt.aggregates) parts.push('⧉' + cnt.aggregates);
+          if (dr.anchored) parts.push('⊥' + dr.anchored); if (dr.spans) parts.push('↕' + dr.spans);
+          if (parts.length) adjBadge = ' <span class="bn-deg" style="color:#e0a23a;font-family:ui-monospace,monospace">' + parts.join(' ') + '</span>';
+        }
         const rowBg = active ? 'background:#26456b;color:#dce6f4' : (isNbr ? 'background:#2c2616;color:#e6dcc2' : 'color:#c7cdd8');
         html += '<div data-bnode="' + n.id + '" data-tcat="' + ckey + '" data-leaf="' + (isLeaf ? 1 : 0) + '"' +
           (n.disc ? ' data-disc="' + n.disc + '"' : '') + (isNbr ? ' data-adj="1"' : '') + ' draggable="true" ' +
