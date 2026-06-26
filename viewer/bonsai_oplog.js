@@ -74,6 +74,27 @@
       return this.length;
     },
 
+    // §MO — point the op-log at a per-building EDITABLE INSTANCE (key 'mo_<building>'). The loaded
+    // building DB (the fetched meta.db) is the PRISTINE REFERENCE — it lives in IndexedDB and is never
+    // written here; this op-log is the editable fold and persists to localStorage under its OWN key. So
+    // each resident carries its own signed edit history, and switching buildings never mutates either
+    // the reference or another building's instance. Default key (the scratch model) is untouched until
+    // a building sets one. (RESUME_MODELLER_WALK_SUBSTRATE task 3 — the mo_ editable instance.)
+    async setModelKey(key) {
+      if (!key || key === this._KEY) return this.length;
+      this._save();                                       // flush the current instance under its OLD key
+      if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache();
+      if (this.db) { try { this.db.close(); } catch (e) { } }
+      this.db = null; this._n = 0; this._cursor = 0;
+      this._KEY = key;                                    // the editable instance is now mo_<building>
+      await this._ensureDb();                             // load THIS building's saved op-log (empty on first open)
+      this._cursor = this.length;
+      if (this.length) await this._foldUpto(this._cursor);
+      this._emit();
+      console.log(TAG + ' model key → ' + key + ' active=' + this.length + ' (reference stays pristine)');
+      return this.length;
+    },
+
     _emit() { try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
     clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
 
