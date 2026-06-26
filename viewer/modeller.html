@@ -1774,6 +1774,38 @@ if (window.BOMTreeOutliner) window.BOMTreeOutliner.register();   // ARC = the le
 if (window.STRWalkerOutliner) window.STRWalkerOutliner.register();   // STR Walker result tab + grid-drag re-walk
 console.log('§MODELLER outliner ready — ARC (bom-graph) leads + STR Walker tab (Open via the pill rail)');
 
+// ── DISC = WALKER (W-UX-4): a discipline node in the bom-graph is a WALKER entry point. Clicking it dispatches
+// to that discipline's walker over the substrate the Open already loaded. STR is already walked at Open (swbInit);
+// clicking STR SURFACES that walk (grid/columns/girders) and expands the STR Walker tab. MEP-family discs route
+// via RouteWalker (anchor-dependent) — and when the open building has no anchors/recipe we REFUSE honestly (no
+// fabricated run, non-invent). ARC is the base substrate the others fill, not a walked layer.
+// RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-4. (RouteWalker-in-modeller anchors for arbitrary buildings = the
+// SEPARATE engine task flagged in the substrate handoff §0 — not this UX slice.)
+window.discWalk = function (disc, ctx) {
+  disc = String(disc || '').toUpperCase();
+  var name = (ctx && ctx.building) || '';
+  if (disc === 'STR') {
+    var d = window.swbTabData && window.swbTabData();
+    if (d) {
+      if (window.Bonsai.outliner) { window.Bonsai.outliner._collapsed['tcat|strwalk'] = false; window.Bonsai.outliner.refresh(); }
+      setStat('STR walk — ' + d.columns + ' columns · ' + d.girders + ' girders');
+      console.log('§DISC-WALK STR surfaced grid=' + d.grid + ' columns=' + d.columns + ' girders=' + d.girders);
+    } else { console.log('§DISC-WALK STR no-walk (open a building first)'); }
+    return;
+  }
+  if (disc === 'ARC') { setStat('ARC is the base layer — the disciplines fill it'); console.log('§DISC-WALK ARC is the base substrate (not a walked discipline)'); return; }
+  // MEP family (MEP/PLB/ELEC/ACMV/FP/…) → RouteWalker, anchor-dependent → honest refusal when unanchored.
+  (async function () {
+    try {
+      var ready = (typeof _rwReadyOnce === 'function') ? await _rwReadyOnce() : false;
+      var segs = (ready && typeof rwRouteSegments === 'function' && name) ? (rwRouteSegments(null, name) || []) : [];
+      var mine = segs.filter(function (s) { return String(s.disc || '').toUpperCase() === disc; });
+      if (mine.length) { setStat(disc + ' — ' + mine.length + ' routed segments'); console.log('§DISC-WALK ' + disc + ' routed ' + mine.length + ' segment(s) (RouteWalker)'); }
+      else { setStat(disc + ' — no walk (no anchors for ' + name + ')'); console.log('§DISC-WALK ' + disc + ' no-walk — RouteWalker has no anchors/recipe for "' + name + '" (honest refusal, no fabricated run)'); }
+    } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); }
+  })();
+};
+
 // ── OPEN (W-UX-1): the pill-rail verb that replaced the old top-left drop panels. Clicking #b-open opens a
 // small chooser of the 4 permanent residents (reusing RESIDENTS[] from str_walker_outliner.js) + a local-.db
 // door (the dev/arbitrary-DB path). A pick calls the SHIPPED openResident()/openStrDb() — which swbInit-walks

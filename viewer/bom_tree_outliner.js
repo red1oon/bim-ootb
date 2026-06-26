@@ -34,6 +34,8 @@ function treeNodes(tree) {
       label: isLeaf ? shortGuid(n.guid != null ? n.guid : n.label) : n.label,
       sub: isLeaf ? (n.prov === 'user-authored' ? '✎ moved' : '') : ('(' + leafCount(id) + ')'),
       children: isLeaf ? [] : ch.map(build).sort(byLabel) };
+    // W-UX-4: tag a DISCIPLINE node so the Outliner can make it a WALKER entry point (click → walk that disc).
+    if (n.kind === 'disc') node.disc = n.label;
     return node;
   }
   return tree.roots.map(build);
@@ -82,7 +84,11 @@ if (typeof window !== 'undefined' && window.document) {
         // validate on a throwaway fold (cycle/self/missing refused, geometry untouched) before signing
         if (!T.reparent(currentTree(), childId, toParent)) { console.warn('§BOMTREE reparent refused', childId, '→', toParent); return; }
         commitReparent(childId, toParent);
-      }
+      },
+      // W-UX-4: a discipline node is a WALKER entry point — click it → walk that disc. The cross-engine
+      // dispatch (STR=swbInit walk, already done at Open; MEP/etc=RouteWalker or an honest refusal) lives in
+      // window.discWalk (modeller.html UX glue) so this category stays a pure BOM-graph view.
+      onWalk: function (disc) { if (window.discWalk) window.discWalk(disc, { building: State.building }); }
     };
   }
 
