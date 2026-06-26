@@ -10,8 +10,7 @@ Beside it runs a full ERP kernel, folded from the Compiere → ADempiere → iDe
 
 **Why this exists, plainly.** The big tools are cathedrals — and cathedrals are worth building. They house real work, they employ brilliant engineers, they carry decades of hard-won domain knowledge. This stands on all of that, gratefully. What it adds is a **bazaar beside the cathedral** — open, composable, running in a browser tab — because the best ideas in this industry deserve to reach the widest possible hands. The ambition is to become the first truly unified BIM-ERP platform: not by displacing what came before, but by taking the next step nobody has taken yet.
 
-**Who's doing this.** I'm Redhuan D. Oon — *red1*. I've been learning something new almost every day building this, and that's the honest reason it keeps going. One person, a machine, and a genuine curiosity about how far the discipline can actually stretch — watching a building become a procurement order, watching geometry fold into accounts, watching it all fit inside a single browser tab. It's been a blast, and I'd love to see more people come build it further.
-
+**Who's doing this.** I'm Redhuan D. Oon — *red1*. I've been learning something new almost every day building this, and that's the honest reason it keeps going. One person, a machine, various AI led by Claude Code as pair programmer that overworks and overdrank, and a genuine curiosity about how far the discipline can actually stretch — watching a building become a procurement order, watching geometry fold into accounts, watching it all fit inside a single browser tab.
 **How it's built — the only three rules.**
 - **Extract or compile, never invent.** Every number traces to a real source.
 - **Talk is cheap.** Every claim here has a witness you can run; corrupt the rule and the number goes wrong. If it doesn't reproduce, it isn't true.
@@ -92,7 +91,7 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 
 **BIM — authoring.** The DAGeVu modeller (above) now brings B-rep authoring to the browser over the op-log; next:
 
-1. **2D Grid Editor modelling** — author and edit the model from the 2D grid, not just the 3D kernel.
+1. **Modeller 3D Grid** — the DAGeVu modeller now drives authoring through a live 3D grid (stretch ≠ scale, wall-opening containment, conformity indicators); the old 2D canvas overlay has given way to this as the active frontier.
 
 **Common — across both engines.** *Connect Scene* now shares selection, timeline and identity across the modeller, the viewer and the ERP over the one op-log; next:
 
@@ -204,6 +203,10 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 | **Documentation** | [red1oon.github.io/BIMCompiler](https://red1oon.github.io/BIMCompiler/) |
 | **Parent project** | [github.com/red1oon/BIMCompiler](https://github.com/red1oon/BIMCompiler) |
 | **OCI backup** | [ootb-dev bucket](https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/index.html) |
+
+## Contributors
+
+- **Redhuan D. Oon** (*red1*) — architecture, compiler, viewer, ERP engine, everything
 
 ## License
 
