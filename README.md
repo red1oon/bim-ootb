@@ -3,6 +3,9 @@
 
 [![CI](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml/badge.svg)](https://github.com/red1oon/bim-ootb/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status: Alpha](https://img.shields.io/badge/Status-Alpha-red.svg)]()
+
+> **⚠ Alpha software.** Expect sharp edges, breaking changes, and missing features. Not for production use.
 
 A building is a manufactured product with coordinates. Drop an IFC file into a browser tab and watch it become what it always should have been — a thing you can query, cost, schedule, and *own*. No installer. No seat license. No server to rent. No salesman to call.
 
