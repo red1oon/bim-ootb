@@ -18,9 +18,28 @@
   if (typeof window === 'undefined') return;
   var ready = false, lastEx = [];
 
+  // The Modeller's permanent residents — a guided, curated set fetched from the cloud (OCI building
+  // bucket) on Open and cached LOCAL (IndexedDB) so the next Open is instant. Substrate = pristine
+  // meta.db (bboxes only — no m_bom, no mesh blobs). The set spans BOTH walker branches: SH/DX are
+  // wall-bearing (ARC-only auto-pick → semi-grid), SC/Terminal are column-framed. More of the 20+
+  // building list follow later. (RESUME_MODELLER_WALK_SUBSTRATE §0 — guided tool.)
+  var RESIDENTS = [
+    { key: 'SampleHouse',    label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_meta.db' },
+    { key: 'Duplex',         label: 'Duplex · wall-bearing',             db: 'Duplex_meta.db' },
+    { key: 'Schependomlaan', label: 'Schependomlaan · column-framed',    db: 'Schependomlaan_meta.db' },
+    { key: 'Terminal',       label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db' }
+  ];
+
+  // OCI building-bucket base (matches config.js A.PROD_BASE). Self-resolve when the modeller is itself
+  // served from OCI; else fall back to the known prod base (GH-Pages-hosted app → cloud DBs).
+  function _ociBase() {
+    var m = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
+    return m ? m[1] : 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
+  }
+
   function tabRows() {
     var d = window.swbTabData && window.swbTabData();
-    if (!d) return [{ id: 'sw-empty', label: 'Open an STR building (🏗) to walk', sub: '' }];
+    if (!d) return [{ id: 'sw-empty', label: 'Open a resident (▾) or local .db (🏗) to walk', sub: '' }];
     var rows = [
       { id: 'sw-grid', label: 'Grid ' + d.grid, sub: d.columns + ' columns' },
       { id: 'sw-gird', label: d.girders + ' girders', sub: 'RED ' + d.signals.RED + ' · ORANGE ' + d.signals.ORANGE + ' · GREEN ' + d.signals.GREEN }
@@ -56,32 +75,119 @@
     };
   }
 
-  // Open an extracted.db and init the walker from its STR columns (the walk anchors).
+  // Open core (shared by local-file + resident fetch): init the walker from a DB's bytes. The bridge
+  // swbInit AUTO-PICKS column-framed (STR columns) vs wall-bearing (ARC-only → semi-grid) — §STRWALK-INIT.
+  function _openBuffer(buf, name) {
+    if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return false; }
+    try {
+      var db = new window.SQL.Database(new Uint8Array(buf));
+      var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
+      db.close();
+      ready = !!st; lastEx = [];
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+      console.log(TAG + ' init from "' + name + '" ready=' + ready);
+      return ready;
+    } catch (e) { console.warn(TAG + ' open failed', e && e.message); return false; }
+  }
+
+  // Open a local extracted.db / meta.db file (the 🏗 STR path).
   function openStrDb(file) {
-    if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return; }
     var fr = new FileReader();
-    fr.onload = function () {
-      try {
-        var db = new window.SQL.Database(new Uint8Array(fr.result));
-        var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
-        db.close();
-        ready = !!st; lastEx = [];
-        if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
-        console.log(TAG + ' init from "' + (file.name || 'db') + '" ready=' + ready);
-      } catch (e) { console.warn(TAG + ' open failed', e && e.message); }
-    };
+    fr.onload = function () { _openBuffer(fr.result, file.name || 'db'); };
     fr.readAsArrayBuffer(file);
+  }
+
+  // Reuse the viewer's IndexedDB building cache (bim_ootb_cache / store 'dbs', keyed by URL — the same
+  // store scene.js A.cachedFetch + the Schedule Editor use, PR #517 W-SE-DB-CACHE). Read = a miss falls
+  // through to network; opened WITHOUT a version so we never clobber the viewer's schema (drift trap).
+  function _idbGetDb(url) {
+    return new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('bim_ootb_cache');
+        rq.onsuccess = function () {
+          var idb = rq.result;
+          if (!idb.objectStoreNames.contains('dbs')) { resolve(null); return; }
+          try {
+            var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
+            g.onsuccess = function () { resolve(g.result || null); };
+            g.onerror = function () { resolve(null); };
+          } catch (e) { resolve(null); }
+        };
+        rq.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  // Persist a fetched DB so the next Open is LOCAL (the "fetch once → local resident" contract). If the
+  // shared 'dbs' store doesn't exist yet (modeller-only user who never streamed in the viewer), create
+  // it via a single version+1 upgrade. All failures are swallowed → caching is best-effort, never fatal.
+  function _idbPutDb(url, buf) {
+    return new Promise(function (resolve) {
+      function put(idb) {
+        try {
+          var tx = idb.transaction('dbs', 'readwrite');
+          tx.objectStore('dbs').put(buf, url);
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = function () { resolve(false); };
+        } catch (e) { resolve(false); }
+      }
+      try {
+        var rq = indexedDB.open('bim_ootb_cache');
+        rq.onsuccess = function () {
+          var idb = rq.result;
+          if (idb.objectStoreNames.contains('dbs')) { put(idb); return; }
+          var v = idb.version; idb.close();
+          var up = indexedDB.open('bim_ootb_cache', v + 1);
+          up.onupgradeneeded = function () { var d = up.result; if (!d.objectStoreNames.contains('dbs')) d.createObjectStore('dbs'); };
+          up.onsuccess = function () { put(up.result); };
+          up.onerror = function () { resolve(false); };
+        };
+        rq.onerror = function () { resolve(false); };
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  // Open a permanent resident: cache-first (local), else fetch the pristine meta.db from the cloud and
+  // cache it. Terminal_meta.db is served gzip (content-encoding) → fetch().arrayBuffer() auto-inflates.
+  function openResident(res) {
+    var url = _ociBase() + 'buildings/' + res.db;
+    _idbGetDb(url).then(function (cached) {
+      if (cached) {
+        console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');
+        _openBuffer(cached, res.key);
+        return;
+      }
+      console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-MISS → fetch ' + url);
+      fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
+        .then(function (buf) {
+          var ok = _openBuffer(buf, res.key);
+          if (ok) _idbPutDb(url, buf).then(function (p) {
+            console.log(TAG + ' §STRWALK-CACHE ' + res.db + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024).toFixed(0) + 'KB');
+          });
+        })
+        .catch(function (e) { console.warn(TAG + ' §STRWALK-OPEN resident fetch FAILED ' + res.db, e && e.message); });
+    });
   }
 
   function mountButton() {
     if (document.getElementById('strwalk-open')) return;
+    // ▾ resident picker — the guided drop surface (cloud → local cache → walk).
+    var sel = document.createElement('select'); sel.id = 'strwalk-resident';
+    sel.title = 'Open a resident building (fetched from the cloud, then cached on your device)';
+    sel.style.cssText = 'position:fixed;top:8px;left:336px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
+      'border:1px solid #2c303a;border-radius:6px;padding:5px 8px;font:12px system-ui;cursor:pointer';
+    var ph = document.createElement('option'); ph.value = ''; ph.textContent = '▾ Open building…'; sel.appendChild(ph);
+    RESIDENTS.forEach(function (r) { var o = document.createElement('option'); o.value = r.key; o.textContent = r.label; sel.appendChild(o); });
+    sel.onchange = function () { var r = RESIDENTS.filter(function (x) { return x.key === sel.value; })[0]; if (r) openResident(r); sel.value = ''; };
+    document.body.appendChild(sel);
+    // 🏗 STR — open a LOCAL .db (kept alongside the curated residents).
     var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.db,.sqlite';
     inp.style.display = 'none'; inp.id = 'strwalk-file';
     inp.onchange = function () { if (inp.files && inp.files[0]) openStrDb(inp.files[0]); };
     document.body.appendChild(inp);
-    var btn = document.createElement('button'); btn.id = 'strwalk-open'; btn.title = 'Open an STR building → walk the structure';
-    btn.textContent = '🏗 STR';
-    btn.style.cssText = 'position:fixed;top:8px;left:336px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
+    var btn = document.createElement('button'); btn.id = 'strwalk-open'; btn.title = 'Open a local STR building file → walk the structure';
+    btn.textContent = '🏗';
+    btn.style.cssText = 'position:fixed;top:8px;left:486px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
       'border:1px solid #2c303a;border-radius:6px;padding:5px 10px;font:12px system-ui;cursor:pointer';
     btn.onclick = function () { inp.click(); };
     document.body.appendChild(btn);
@@ -121,6 +227,7 @@
       wrapGridMove();
       console.log(TAG + ' registered — STR Walker category + 🏗 open + grid-drag re-walk (the wedge)');
     },
-    _openStrDb: openStrDb, _category: category
+    _openStrDb: openStrDb, _category: category,
+    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _ociBase: _ociBase
   };
 })();
