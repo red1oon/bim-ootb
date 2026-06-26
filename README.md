@@ -41,6 +41,8 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **4D Time Machine** — construction sequence playback from BOM data
 - **5D Cost Estimation** — 17 country rate templates, Excel export
 - **BOM Engine** — Bill of Materials extraction and verb expansion, fully in JavaScript
+- **Rosetta Stone benchmarks** — every geometry claim verified to 0.000 mm against the original IFC extraction; position, rotation and facing each have a named witness script that must pass before a commit lands
+- **System Monitor** — live health dashboard under the System login: service-worker version, release row linked to the auto-cut GitHub release, op-log gauge, field vitals that animate on open
 - **PWA** — works offline after first visit
 - **18 Languages** — auto-detected from browser locale
 
