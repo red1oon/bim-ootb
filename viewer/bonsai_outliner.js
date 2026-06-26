@@ -26,6 +26,10 @@
 
   const Outliner = {
     _el: null, _find: '', _collapsed: {}, _categories: [],
+    // W-UX-6: the "⇄ adjacency" lens — when ON, selecting an element highlights its typed cross-edge
+    // neighbours (Find-style) on the containment backbone. Edges are READ from window.swXEdges (derived
+    // on-the-fly from the pristine substrate, NON-INVENT — abuts ships today; later edge types slot in).
+    _adjLens: false, _adjMap: null,
 
     // Default categories — extensible. A category = { key, label, match(op)->bool, node(op)->{id,label,sub} }.
     _defaults() {
@@ -39,6 +43,23 @@
     },
     addCategory(cat) { this._categories.push(cat); this.refresh(); return this; },   // seam for Room/Phase/ERP
 
+    // ── W-UX-6 adjacency lens helpers ────────────────────────────────────────────────────────────────
+    // Build guid → Set(neighbour guids) from ALL window.swXEdges arrays (each edge = {a,b,...}, a/b guids).
+    // Undirected. abuts ships today; later derived edge types (anchored/spans/fills/aggregates) union in free.
+    _buildAdjMap() {
+      const map = {}, X = (typeof window !== 'undefined' && window.swXEdges) || {};
+      Object.keys(X).forEach(kind => {
+        const edges = X[kind]; if (!Array.isArray(edges)) return;
+        edges.forEach(e => {
+          if (e == null || e.a == null || e.b == null) return;
+          (map[e.a] || (map[e.a] = new Set())).add(e.b);
+          (map[e.b] || (map[e.b] = new Set())).add(e.a);
+        });
+      });
+      return map;
+    },
+    _adjCount() { const X = (typeof window !== 'undefined' && window.swXEdges) || {}; return Object.keys(X).reduce((s, k) => s + (Array.isArray(X[k]) ? X[k].length : 0), 0); },
+
     mount(parentSel) {
       if (this._el) return this._el;
       if (!this._categories.length) this._categories = this._defaults();
@@ -50,14 +71,27 @@
         'z-index:20;display:flex;flex-direction:column;user-select:none';
       el.innerHTML =
         '<div style="padding:9px 11px;font-size:11px;letter-spacing:.12em;color:#5b6473;border-bottom:1px solid #2c303a">OUTLINER</div>' +
-        '<div style="padding:7px 9px;border-bottom:1px solid #2c303a">' +
-        '<input id="bo-find" placeholder="🔍 find…" style="width:100%;box-sizing:border-box;background:#13151a;' +
-        'border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 8px;font-size:12px;outline:none"></div>' +
+        '<div style="padding:7px 9px;border-bottom:1px solid #2c303a;display:flex;gap:6px;align-items:center">' +
+        '<input id="bo-find" placeholder="🔍 find…" style="flex:1;min-width:0;box-sizing:border-box;background:#13151a;' +
+        'border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 8px;font-size:12px;outline:none">' +
+        '<button id="bo-adj" title="Adjacency lens — highlight a selected element’s abutting neighbours" ' +
+        'style="flex:0 0 auto;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#7f8aa0;' +
+        'padding:4px 8px;font-size:13px;cursor:pointer;line-height:1">⇄</button></div>' +
         '<div id="bo-tree" style="flex:1;overflow:auto;padding:5px 4px"></div>' +
         '<div id="bo-foot" style="padding:6px 11px;border-top:1px solid #2c303a;font-size:10px;color:#4a5260"></div>';
       host.appendChild(el);
       this._el = el;
       el.querySelector('#bo-find').addEventListener('input', e => { this._find = e.target.value.toLowerCase(); this._paint(); });
+      el.querySelector('#bo-adj').addEventListener('click', () => {
+        this._adjLens = !this._adjLens;
+        const b = this._el.querySelector('#bo-adj');
+        b.style.background = this._adjLens ? '#23364a' : '#13151a';
+        b.style.borderColor = this._adjLens ? '#3a6ea5' : '#2c303a';
+        b.style.color = this._adjLens ? '#cfe3f6' : '#7f8aa0';
+        const n = this._adjLens ? this._adjCount() : 0;
+        console.log(TAG + ' §XEDGE-LENS adjacency=' + this._adjLens + ' edges=' + n);
+        this._paint();
+      });
       window.addEventListener('bonsai:oplog', () => this.refresh());
       this.refresh();
       console.log(TAG + ' mounted categories=' + this._categories.map(c => c.key).join(','));
@@ -83,6 +117,8 @@
 
     _paint() {
       const tree = this._el.querySelector('#bo-tree'); if (!tree) return;
+      // W-UX-6: refresh the adjacency map for this paint when the lens is ON (cheap; reads window.swXEdges).
+      this._adjMap = this._adjLens ? this._buildAdjMap() : null;
       const ops = (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps() : [];
       // FLAT categories (op-log feature groups — Walls/Openings/etc., unchanged). TREE categories (deep, seeded,
       // editable — the BOM Tree composition facet, SPATIAL_DEPENDENCY_GRAPH §OUTLINER-COHERENCE) take a separate path.
@@ -123,7 +159,8 @@
       this._wireTrees(treeCats);
       const foot = this._el.querySelector('#bo-foot');
       const tip = (window.Bonsai.oplog && window.Bonsai.oplog._lastTip) || '';
-      foot.textContent = (f ? shown + '/' + total + ' shown' : total + ' features') + (tip ? '  🔒 ' + tip.slice(0, 8) : '');
+      const lens = this._adjLens ? ('  ⇄ ' + this._adjCount() + ' edges') : '';
+      foot.textContent = (f ? shown + '/' + total + ' shown' : total + ' features') + lens + (tip ? '  🔒 ' + tip.slice(0, 8) : '');
       console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '" trees=' + treeCats.length);
     },
 
@@ -154,11 +191,18 @@
         const pad = 16 + depth * 14;
         // W-UX-4: a DISCIPLINE node (n.disc) is a WALKER entry point — render a ▶ walk affordance + carry data-disc.
         const walkGlyph = n.disc ? ' <span class="bn-walk" title="Walk this discipline" style="color:#4fc3f7">▶</span>' : '';
+        // W-UX-6: adjacency lens — a NEIGHBOUR of the selected element gets a ⇄ badge + amber tint; the selected
+        // element shows its neighbour COUNT. Both read the derived map (window.swXEdges), never a baked table.
+        const nbrSet = (this._adjLens && isLeaf && this._adjMap) ? this._adjMap[window.Bonsai._selId] : null;
+        const isNbr = !!(nbrSet && nbrSet.has(n.id) && n.id !== window.Bonsai._selId);
+        const selDeg = (this._adjLens && active && isLeaf && this._adjMap && this._adjMap[n.id]) ? this._adjMap[n.id].size : 0;
+        const adjBadge = isNbr ? ' <span class="bn-adj" title="abuts the selected element" style="color:#e0a23a">⇄</span>'
+          : (selDeg ? ' <span class="bn-deg" style="color:#e0a23a;font-family:ui-monospace,monospace">⇄' + selDeg + '</span>' : '');
+        const rowBg = active ? 'background:#26456b;color:#dce6f4' : (isNbr ? 'background:#2c2616;color:#e6dcc2' : 'color:#c7cdd8');
         html += '<div data-bnode="' + n.id + '" data-tcat="' + ckey + '" data-leaf="' + (isLeaf ? 1 : 0) + '"' +
-          (n.disc ? ' data-disc="' + n.disc + '"' : '') + ' draggable="true" ' +
-          'style="padding:3px 6px 3px ' + pad + 'px;cursor:' + (isLeaf ? 'grab' : 'pointer') + ';border-radius:4px;' +
-          (active ? 'background:#26456b;color:#dce6f4' : 'color:#c7cdd8') + '">' +
-          (kids.length ? CHEV(!ncol) : LEAF) + n.label + walkGlyph +
+          (n.disc ? ' data-disc="' + n.disc + '"' : '') + (isNbr ? ' data-adj="1"' : '') + ' draggable="true" ' +
+          'style="padding:3px 6px 3px ' + pad + 'px;cursor:' + (isLeaf ? 'grab' : 'pointer') + ';border-radius:4px;' + rowBg + '">' +
+          (kids.length ? CHEV(!ncol) : LEAF) + n.label + walkGlyph + adjBadge +
           (n.sub ? '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span>' : '') + '</div>';
         if (kids.length && !ncol) { const r = this._renderNodes(kids, depth + 1, ckey, match); html += r.html; shown += r.shown; }
       });
@@ -175,7 +219,12 @@
         const id = d.getAttribute('data-bnode'), isLeaf = d.getAttribute('data-leaf') === '1';
         const disc = d.getAttribute('data-disc');
         d.onclick = () => {
-          if (isLeaf) { const num = +id; if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id); }
+          if (isLeaf) {
+            const num = +id; if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id);
+            // W-UX-6: with the adjacency lens ON, a fresh selection re-folds neighbour highlights (full repaint —
+            // setActive only restyles flat data-fid rows; the bom-graph bnode highlights are computed in _paint).
+            if (this._adjLens) { const deg = (this._adjMap && this._adjMap[id]) ? this._adjMap[id].size : 0; console.log(TAG + ' §XEDGE-LENS select=' + String(id).slice(0, 10) + ' neighbours=' + deg); this._paint(); }
+          }
           else {
             // W-UX-4: a discipline node WALKS on click (and still toggles its subtree). The walker dispatch
             // (STR walk / RouteWalker / honest refusal) is the category's onWalk; pure pointer, no geometry.
