@@ -82,6 +82,10 @@
     try {
       var db = new window.SQL.Database(new Uint8Array(buf));
       var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
+      // Same meta.db ALSO seeds the bom-graph tab (DISC/ARC): building→storey→room→disc→class→element.
+      if (window.BOMTreeOutliner && window.BOMTreeOutliner.loadFromDb) {
+        try { window.BOMTreeOutliner.loadFromDb(db, name); } catch (e) { console.warn(TAG + ' bom-graph seed failed', e && e.message); }
+      }
       db.close();
       ready = !!st; lastEx = [];
       if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();

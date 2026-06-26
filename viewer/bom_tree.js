@@ -36,12 +36,36 @@ function seedTree(elements, opts) {
     var dc = e.disc == null ? 'ARC' : e.disc;
     var cl = e.cls == null ? 'Unknown' : e.cls;
     var sId = ensure('S|' + st, st, ROOT, 'storey');
-    var dId = ensure(sId + '|D|' + dc, dc, sId, 'disc');
+    // ROOM level (the spatial `contains` edge) — inserted between storey and discipline ONLY when the
+    // element has a real IfcSpace container (e.room, derived from rel_contained_in_space). Buildings with
+    // no IfcSpace (rooms = weak handle) simply skip this level — NON-INVENT, never a fabricated room.
+    var underStorey = sId;
+    if (e.room != null && e.room !== '') underStorey = ensure(sId + '|R|' + e.room, e.room, sId, 'room');
+    var dId = ensure(underStorey + '|D|' + dc, dc, underStorey, 'disc');
     var cId = ensure(dId + '|C|' + cl, cl, dId, 'class');
     // element leaf — guid is the id (globally unique, GUID-bound = rename/regroup-proof)
     nodes[e.guid] = { id: e.guid, label: e.guid, parent: cId, kind: 'element', prov: 'derived-seed', guid: e.guid };
   }
   return { nodes: nodes, roots: [ROOT] };
+}
+
+// SEED FROM a building DB (meta.db or extracted.db) — reads elements_meta + the spatial `contains` edge.
+// Room = the name of the spatial container an element sits in, MEASURED class-agnostically: a container
+// is a "room" when it carries a VOLUME (size_x present) — storeys/building have none, only spaces do
+// (measure-don't-whitelist; no IFC class literal). Absent spatial tables → no room level (graceful).
+// PURE over the DB (node-witnessable with sql.js). NON-INVENT: every group comes from a real row.
+function seedFromDb(db, opts) {
+  opts = opts || {};
+  var r = db.exec("SELECT guid, ifc_class, storey, discipline FROM elements_meta");
+  var els = (r.length ? r[0].values : []).map(function (v) { return { guid: v[0], cls: v[1], storey: v[2], disc: v[3] }; });
+  var room = {};
+  try {
+    var rr = db.exec("SELECT r.element_guid, s.name FROM rel_contained_in_space r " +
+      "JOIN spatial_structure s ON s.guid = r.space_guid WHERE s.size_x IS NOT NULL AND s.name IS NOT NULL");
+    if (rr.length) rr[0].values.forEach(function (v) { room[v[0]] = v[1]; });
+  } catch (e) { /* no spatial tables → storey-only tree (graceful) */ }
+  for (var i = 0; i < els.length; i++) els[i].room = room[els[i].guid] || null;
+  return seedTree(els, opts);
 }
 
 // ── REPARENT — the one composition edit. Pure pointer move; refuses cycle / self / missing (data integrity). ──
@@ -104,7 +128,7 @@ function leaves(tree) {
   return Object.keys(tree.nodes).filter(function (k) { return tree.nodes[k].kind === 'element'; });
 }
 
-var API = { seedTree: seedTree, reparent: reparent, applyOp: applyOp, foldOps: foldOps, bloc: bloc,
+var API = { seedTree: seedTree, seedFromDb: seedFromDb, reparent: reparent, applyOp: applyOp, foldOps: foldOps, bloc: bloc,
             leaves: leaves, wouldCycle: wouldCycle };
 window.BOMTree = API;
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
