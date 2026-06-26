@@ -92,7 +92,114 @@
     return uniq;
   }
 
-  var API = { deriveAdjacency: deriveAdjacency, faceTouch: faceTouch, TOL: TOL, MIN_OVERLAP: MIN_OVERLAP };
+  // ── §ANCHORED + §SPANS — the GRID cross-edges, JS-derived on-the-fly (user fork 2026-06-26 = JS-derive,
+  //    not the baked tables). Faithful ports of extractIFCtoDB.derive_datums_and_anchors + derive_spans
+  //    (W-SDG-ANCHORED / W-SDG-SPANS) over the SAME pristine AABBs (element_transforms center±bbox/2). A datum
+  //    EMERGES where ≥min_support distinct element faces align within tol — never a recovered IfcGrid. These are
+  //    element↔DATUM edges (not element↔element), so the adjacency lens reads them as per-element annotations.
+  function _round(x, p) { var m = Math.pow(10, p); return Math.round(x * m) / m; }
+
+  // Port of derive_datums_and_anchors(tol=0.05, min_support=3). Returns {datums, anchored}. datum_id is a
+  // GLOBAL running counter in axis order X→Y→Z (matches the Python → datum ids line up with the baked table).
+  function deriveDatumsAnchored(db, opts) {
+    opts = opts || {};
+    var tol = opts.tol != null ? opts.tol : 0.05, minSupport = opts.minSupport != null ? opts.minSupport : 3;
+    var boxes = _readBoxes(db);
+    var byGuid = {}; boxes.forEach(function (e) { byGuid[e.guid] = e.aabb; });
+    var datums = [], anchored = [], datumId = 0;
+    for (var ax = 0; ax < 3; ax++) {
+      var cand = [];
+      boxes.forEach(function (e) { cand.push([e.aabb[2 * ax], e.guid]); cand.push([e.aabb[2 * ax + 1], e.guid]); });
+      // Sort by (coord, guid) — EXACTLY the Python tuple sort — so the cluster-mean float SUMMATION ORDER is
+      // identical (float + is non-associative; on big clusters a coord-only sort drifts the mean a sub-micron,
+      // flipping the 3rd-decimal mm offset). This makes anchored offsets bit-for-bit equal to the oracle.
+      cand.sort(function (p, q) { return p[0] - q[0] || (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0); });
+      var i = 0;
+      while (i < cand.length) {
+        var start = cand[i][0], j = i;
+        while (j < cand.length && cand[j][0] - start <= tol) j++;
+        var group = cand.slice(i, j); i = j;
+        var gset = {}; group.forEach(function (c) { gset[c[1]] = 1; });
+        var guids = Object.keys(gset);
+        if (guids.length < minSupport) continue;
+        var sum = 0; group.forEach(function (c) { sum += c[0]; });
+        var coord = sum / group.length;
+        datumId++;
+        datums.push({ datum_id: datumId, axis: 'XYZ'[ax], coord: _round(coord, 6), support_count: guids.length, provenance: 'derived:cadence' });
+        guids.forEach(function (g) {
+          var b = byGuid[g], f0 = b[2 * ax] - coord, f1 = b[2 * ax + 1] - coord;
+          var off = Math.abs(f1) < Math.abs(f0) ? f1 : f0;   // closest face → signed offset (ties keep min face)
+          anchored.push({ element_guid: g, datum_id: datumId, axis: 'XYZ'[ax], offset_mm: _round(off * 1000, 3), provenance: 'derived:cadence-snap' });
+        });
+      }
+    }
+    return { datums: datums, anchored: anchored };
+  }
+
+  // Port of derive_spans(tol=0.05). Reuses the emerged datums. Returns [{element_guid,axis,datum_lo_id,
+  // datum_hi_id,span_m}]. An element SPANS an axis when its min face is near one datum and its max face near a
+  // DIFFERENT datum (both within tol). Nearest-datum picks the FIRST on a tie (matches Python min()).
+  function deriveSpans(db, datums, opts) {
+    opts = opts || {};
+    var tol = opts.tol != null ? opts.tol : 0.05;
+    var byAxis = { 0: [], 1: [], 2: [] };
+    (datums || []).forEach(function (d) { byAxis['XYZ'.indexOf(d.axis)].push([d.datum_id, d.coord]); });
+    function nearest(arr, face) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var dd = Math.abs(arr[i][1] - face); if (dd < bd) { bd = dd; best = arr[i]; } } return best; }
+    var boxes = _readBoxes(db), spans = [];
+    boxes.forEach(function (e) {
+      var b = e.aabb;
+      for (var ax = 0; ax < 3; ax++) {
+        var arr = byAxis[ax]; if (!arr.length) continue;
+        var loFace = b[2 * ax], hiFace = b[2 * ax + 1];
+        var lo = nearest(arr, loFace), hi = nearest(arr, hiFace);
+        if (!lo || !hi) continue;
+        if (Math.abs(lo[1] - loFace) > tol || Math.abs(hi[1] - hiFace) > tol || lo[0] === hi[0]) continue;
+        var dLo = lo, dHi = hi; if (lo[1] > hi[1]) { dLo = hi; dHi = lo; }
+        spans.push({ element_guid: e.guid, axis: 'XYZ'[ax], datum_lo_id: dLo[0], datum_hi_id: dHi[0], span_m: _round(hiFace - loFace, 6), provenance: 'derived:bbox-spans-datums' });
+      }
+    });
+    return spans;
+  }
+
+  // ── §FILLS-HOST + §AGGREGATES — RECOVERED IFC relationships (provenance ifc:recovered), NOT derivable from
+  //    geometry → READ from the recovered rows the extractor wrote (Path B: IfcRelFillsElement; IfcRelAggregates).
+  //    Emitted as element↔element edges {a,b} so the adjacency lens highlights them: a door↔its host wall, a
+  //    child↔its aggregate parent. Absent tables → [] (graceful; e.g. a local .db with no recovered rels).
+  function readFillsHost(db) {
+    try {
+      var r = db.exec("SELECT opening_guid, host_guid, filling_guid, host_class, filling_class FROM rel_fills_host");
+      if (!r.length) return [];
+      return r[0].values.map(function (v) {
+        // lens edge = the FILLING (door/window, a real leaf) ↔ its HOST (wall); opening kept for provenance.
+        return { a: v[2] || v[0], b: v[1], opening_guid: v[0], host_guid: v[1], filling_guid: v[2],
+          host_class: v[3], filling_class: v[4], kind: 'fills', provenance: 'ifc:recovered' };
+      }).filter(function (e) { return e.a != null && e.b != null; });
+    } catch (e) { return []; }
+  }
+  function readAggregates(db) {
+    try {
+      var r = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+      if (!r.length) return [];
+      return r[0].values.map(function (v) { return { a: v[0], b: v[1], parent_guid: v[0], child_guid: v[1], kind: 'aggregates', provenance: 'ifc:recovered' }; });
+    } catch (e) { return []; }
+  }
+
+  // Derive/read the FULL SDG edge set in one call (the modeller stashes this on window.swXEdges on Open).
+  // Geometric edges (abuts/anchored/spans) are JS-derived; recovered relations (fills/aggregates) are read.
+  function deriveAll(db, opts) {
+    var da = deriveDatumsAnchored(db, opts);
+    return {
+      abuts: deriveAdjacency(db, opts),
+      anchored: da.anchored, datums: da.datums,
+      spans: deriveSpans(db, da.datums, opts),
+      fills: readFillsHost(db),
+      aggregates: readAggregates(db)
+    };
+  }
+
+  var API = { deriveAdjacency: deriveAdjacency, faceTouch: faceTouch, TOL: TOL, MIN_OVERLAP: MIN_OVERLAP,
+    deriveDatumsAnchored: deriveDatumsAnchored, deriveSpans: deriveSpans,
+    readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll };
   window.CrossEdges = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : this);
