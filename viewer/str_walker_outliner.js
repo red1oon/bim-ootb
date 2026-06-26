@@ -147,6 +147,15 @@
     });
   }
 
+  // Fork the per-building EDITABLE INSTANCE (op-log key 'mo_<building>') so this resident's signed edits
+  // fold into its own instance while the loaded meta.db REFERENCE (the IDB cache entry) stays pristine.
+  function _forkEditable(res) {
+    var O = window.Bonsai && window.Bonsai.oplog;
+    if (O && O.setModelKey) O.setModelKey('mo_' + res.key).then(function (n) {
+      console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
+    });
+  }
+
   // Open a permanent resident: cache-first (local), else fetch the pristine meta.db from the cloud and
   // cache it. Terminal_meta.db is served gzip (content-encoding) → fetch().arrayBuffer() auto-inflates.
   function openResident(res) {
@@ -154,16 +163,19 @@
     _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');
-        _openBuffer(cached, res.key);
+        if (_openBuffer(cached, res.key)) _forkEditable(res);
         return;
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-MISS → fetch ' + url);
       fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
         .then(function (buf) {
           var ok = _openBuffer(buf, res.key);
-          if (ok) _idbPutDb(url, buf).then(function (p) {
-            console.log(TAG + ' §STRWALK-CACHE ' + res.db + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024).toFixed(0) + 'KB');
-          });
+          if (ok) {
+            _forkEditable(res);
+            _idbPutDb(url, buf).then(function (p) {
+              console.log(TAG + ' §STRWALK-CACHE ' + res.db + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024).toFixed(0) + 'KB');
+            });
+          }
         })
         .catch(function (e) { console.warn(TAG + ' §STRWALK-OPEN resident fetch FAILED ' + res.db, e && e.message); });
     });
