@@ -25,6 +25,24 @@
       { id: 'sw-grid', label: 'Grid ' + d.grid, sub: d.columns + ' columns' },
       { id: 'sw-gird', label: d.girders + ' girders', sub: 'RED ' + d.signals.RED + ' · ORANGE ' + d.signals.ORANGE + ' · GREEN ' + d.signals.GREEN }
     ];
+    // CALIBRATED confidence (the EARNED gauge — fitted on the Terminal RosettaStone, never the raw
+    // number; spec §4). Surface a mean + the least-trustworthy girders, highlighted.
+    if (typeof d.lowConfidence === 'number') {
+      var els = d.elements || [];
+      var mean = els.length ? els.reduce(function (s, e) { return s + e.confidence; }, 0) / els.length : 0;
+      var thr = Math.round((d.lowConfThreshold || 0.8) * 100);
+      rows.push({ id: 'sw-conf', label: 'Confidence ' + Math.round(mean * 100) + '% mean',
+        sub: d.lowConfidence ? ('⚠ ' + d.lowConfidence + ' low-confidence (<' + thr + '%) — calibrated on Terminal')
+                             : ('✓ all girders ≥' + thr + '% (oracle-calibrated)') });
+      els.filter(function (e) { return e.lowConfidence; })
+         .sort(function (a, b) { return a.confidence - b.confidence; })
+         .slice(0, 6)
+         .forEach(function (e, i) {
+           rows.push({ id: 'sw-lc' + i, conf: e.confidence, low: true,
+             label: '⚠ ' + Math.round(e.confidence * 100) + '%  girder @' + e.span.toFixed(1) + 'm',
+             sub: 'signal ' + e.signal + ' — least-trustworthy walk (oracle-calibrated)' });
+         });
+    }
     lastEx.forEach(function (e, i) {
       rows.push({ id: 'sw-ex' + i, label: '⛔ ' + e.oldSignal + '→' + e.newSignal + ' @' + e.span.toFixed(1) + 'm', sub: e.message });
     });
