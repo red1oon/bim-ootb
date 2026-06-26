@@ -129,6 +129,7 @@
 <canvas id="c"></canvas>
 <div id="bar">
   <button id="b-home" title="Back to the Matrix" onclick="location.href='../index.html?home=1'"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span>Home</span></button>
+  <button id="b-open" title="Open a building — load a resident or a local .db → walk + bom-graph"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg><span>Open</span></button>
   <button id="b-fit" title="Zoom to fit (F) — frames the selection, or all"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span>Fit</span></button>
   <button id="b-view" title="Cycle view: Iso / Top"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg><span>Iso</span></button>
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
@@ -181,10 +182,10 @@
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=3" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=4" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
-<script src="bom_tree_outliner.js?v=2" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
+<script src="bom_tree_outliner.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
 <script src="cross_edges.js?v=1" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
@@ -192,7 +193,7 @@
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
 <script src="walker_confidence.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
 <script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=7" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=8" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=14" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -1756,17 +1757,94 @@ window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', mat
 // ~90 lines below, so the ?bomtree hook (and now ?strwalk) referenced it in its TDZ → "Cannot access 'qs' before
 // initialization" threw on EVERY load, killing __sceneReady. Hoisted up; the later duplicate declaration removed.
 const qs = new URLSearchParams(location.search);
-// BOM Tree composition facet (the ARC BOM editor) — flag-gated ?bomtree for now; Open any extracted.db → editable BOM
-// tree in the Outliner, re-parent = signed BOM_REPARENT (geometry untouched). SPATIAL_DEPENDENCY_GRAPH §OUTLINER-COHERENCE.
-if (qs.get('bomtree') !== null && window.BOMTreeOutliner) { window.BOMTreeOutliner.register(); console.log('§MODELLER BOM Tree editor ON (?bomtree)'); }
-// STR Walker (?strwalk) — STR as a WALKED discipline: 🏗 open an STR building → walk; grid drag re-walks + flags.
-// The guided tool registers BOTH the STR Walker tab AND the bom-graph tab (DISC/ARC) so a resident Open
-// populates the containment tree (building→storey→room→disc→class→element) alongside the structural walk.
-if (qs.get('strwalk') !== null && window.STRWalkerOutliner) {
-  window.STRWalkerOutliner.register();
-  if (window.BOMTreeOutliner) window.BOMTreeOutliner.register();
-  console.log('§MODELLER STR Walker + bom-graph tab ON (?strwalk)');
+// (W-UX-1 2026-06-26) Expose the sql.js factory as window.SQL so the pill **Open** can build an SQL.Database
+// from a resident's / local .db bytes (str_walker_outliner._openBuffer + bom_tree_outliner.openExtractedDb both
+// read window.SQL synchronously). bonsai_oplog inits its own copy for the op-log; this is a tiny parallel init
+// for the OPEN path (initSqlJs returns the same emscripten module shape; idempotent enough). NON-INVENT: just bytes→db.
+if (!window.SQL && window.initSqlJs) {
+  window.initSqlJs({ locateFile: f => 'lib/' + f }).then(function (S) { window.SQL = S; console.log('§MODELLER sql.js ready (window.SQL set for Open)'); })
+    .catch(function (e) { console.warn('§MODELLER sql.js init fail ' + (e && e.message)); });
 }
+// (W-UX-3 2026-06-26) ARC LEADS, by DEFAULT. The Outliner IS the modeller's primary surface now, so the
+// containment categories register on EVERY load (no longer flag-gated behind ?bomtree/?strwalk — those flags
+// are still accepted, as no-ops, by the restore-skip list below). ORDER matters: register the BOM-graph (ARC)
+// category FIRST so it leads the tree, then the STR Walker result tab. A pill "Open" (below) seeds them from a
+// resident or a local .db. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-1/§W-UX-3.
+if (window.BOMTreeOutliner) window.BOMTreeOutliner.register();   // ARC = the lead containment tree
+if (window.STRWalkerOutliner) window.STRWalkerOutliner.register();   // STR Walker result tab + grid-drag re-walk
+console.log('§MODELLER outliner ready — ARC (bom-graph) leads + STR Walker tab (Open via the pill rail)');
+
+// ── OPEN (W-UX-1): the pill-rail verb that replaced the old top-left drop panels. Clicking #b-open opens a
+// small chooser of the 4 permanent residents (reusing RESIDENTS[] from str_walker_outliner.js) + a local-.db
+// door (the dev/arbitrary-DB path). A pick calls the SHIPPED openResident()/openStrDb() — which swbInit-walks
+// + seeds the bom-graph (ARC) tab + derives cross-edges in one go. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-1.
+(function initOpenChooser() {
+  const bOpen = document.getElementById('b-open');
+  const SW = window.STRWalkerOutliner;
+  if (!bOpen || !SW) { if (bOpen) bOpen.disabled = true; return; }
+  const residents = SW._residents || [];
+  let panel = null, fileInp = null;
+  function ensureOutlinerOpen() {
+    try { localStorage.setItem('dagevu_modeller_ol_open', '1'); } catch (e) {}
+    document.body.classList.remove('ol-collapsed');
+  }
+  function pick(res) {
+    console.log('§MODELLER-OPEN chooser pick resident=' + res.key);
+    SW._openResident(res); ensureOutlinerOpen(); close();
+  }
+  function pickLocal() {
+    if (!fileInp) {
+      fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.db,.sqlite';
+      fileInp.style.display = 'none'; fileInp.id = 'm-open-file';
+      fileInp.onchange = function () {
+        if (fileInp.files && fileInp.files[0]) {
+          console.log('§MODELLER-OPEN chooser pick local=' + fileInp.files[0].name);
+          SW._openStrDb(fileInp.files[0]); ensureOutlinerOpen();
+        }
+        fileInp.value = '';
+      };
+      document.body.appendChild(fileInp);
+    }
+    fileInp.click(); close();
+  }
+  function build() {
+    panel = document.createElement('div'); panel.id = 'm-open-panel';
+    panel.style.cssText = 'position:fixed;bottom:74px;right:70px;z-index:41;width:248px;display:none;padding:10px;' +
+      'background:rgba(20,22,30,0.94);border:1px solid #2c303a;border-radius:12px;color:#c7cdd8;' +
+      'font:12px system-ui,sans-serif;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);' +
+      'box-shadow:0 8px 30px rgba(0,0,0,0.5)';
+    let h = '<div style="font-size:10px;letter-spacing:.14em;color:#5b6473;margin:2px 4px 8px">OPEN A BUILDING</div>';
+    residents.forEach(function (r) {
+      h += '<div class="mo-row" data-key="' + r.key + '" style="display:flex;align-items:center;gap:9px;padding:7px 8px;' +
+        'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">🏠</span><span>' + r.label + '</span></div>';
+    });
+    h += '<div style="border-top:1px solid #23262e;margin:7px 2px 6px"></div>';
+    h += '<div class="mo-row" data-key="__local" style="display:flex;align-items:center;gap:9px;padding:7px 8px;' +
+      'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">📁</span><span>Open local .db…</span></div>';
+    panel.innerHTML = h;
+    document.body.appendChild(panel);
+    panel.querySelectorAll('.mo-row').forEach(function (d) {
+      d.onmouseover = function () { d.style.background = '#23262e'; };
+      d.onmouseout = function () { d.style.background = 'transparent'; };
+      d.onclick = function () {
+        const k = d.getAttribute('data-key');
+        if (k === '__local') return pickLocal();
+        const r = residents.filter(function (x) { return x.key === k; })[0]; if (r) pick(r);
+      };
+    });
+  }
+  function close() { if (panel) panel.style.display = 'none'; bOpen.classList.remove('on'); }
+  bOpen.onclick = function (e) {
+    e.stopPropagation();
+    if (!panel) build();
+    const open = panel.style.display !== 'block';
+    panel.style.display = open ? 'block' : 'none'; bOpen.classList.toggle('on', open);
+    console.log('§MODELLER-OPEN chooser open=' + open + ' residents=' + residents.length);
+  };
+  document.addEventListener('pointerdown', function (e) {
+    if (panel && panel.style.display === 'block' && !panel.contains(e.target) && !bOpen.contains(e.target)) close();
+  });
+})();
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));

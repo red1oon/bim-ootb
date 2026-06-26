@@ -38,10 +38,11 @@ function serve() {
   page.on('console', function (m) { logs.push(m.text()); });
   page.on('pageerror', function (e) { logs.push('PAGEERROR ' + e.message); });
 
-  await page.goto('http://localhost:' + port + '/modeller.html?strwalk', { waitUntil: 'load', timeout: 30000 });
+  // DEFAULT load (no flag) — the modeller's outliner now registers ARC + STR Walker on EVERY load (W-UX-3).
+  await page.goto('http://localhost:' + port + '/modeller.html', { waitUntil: 'load', timeout: 30000 });
   // wait for the register hook to fire (or scene ready)
   await page.waitForFunction(function () {
-    return window.__sceneReady === true || (window.STRWalkerOutliner && document.getElementById('strwalk-open'));
+    return window.__sceneReady === true || (window.STRWalkerOutliner && document.getElementById('b-open'));
   }, { timeout: 20000 }).catch(function () {});
   await page.waitForTimeout(800);
 
@@ -52,22 +53,26 @@ function serve() {
       olLoaded: !!window.STRWalkerOutliner,
       categoryAdded: !!(window.Bonsai && window.Bonsai.outliner && window.Bonsai.outliner._categories &&
         window.Bonsai.outliner._categories.some(function (c) { return c.key === 'strwalk'; })),
-      buttonMounted: !!document.getElementById('strwalk-open'),
+      // W-UX-2: the OLD top-left drop controls are gone; W-UX-1: the pill Open replaces them.
+      oldButtonGone: !document.getElementById('strwalk-open') && !document.getElementById('bomtree-open') &&
+        !document.getElementById('strwalk-resident'),
+      openPill: !!document.getElementById('b-open'),
       gridWrapped: !!(window.Bonsai && window.Bonsai.gridmove && window.Bonsai.gridmove._strWrapped)
     };
   });
 
   var pass = 0, fail = 0;
   function chk(name, cond) { if (cond) { pass++; console.log('  ✅ ' + name); } else { fail++; console.log('  ❌ ' + name); } }
-  console.log('═══ §STRWALK-SMOKE — ?strwalk wiring (headless) ═══');
+  console.log('═══ §STRWALK-SMOKE — modeller default wiring (headless) ═══');
   chk('C1 engine loaded (str_walker.js)', r.engineLoaded);
   chk('C2 bridge loaded (str_walker_bridge.js)', r.bridgeLoaded);
   chk('C3 outliner-wiring loaded (STRWalkerOutliner)', r.olLoaded);
-  chk('C4 STR category registered in Outliner', r.categoryAdded);
-  chk('C5 🏗 STR button mounted', r.buttonMounted);
+  chk('C4 STR category registered in Outliner (default load, no flag)', r.categoryAdded);
+  chk('C5 old top-left drop panel GONE (strwalk/bomtree open buttons removed)', r.oldButtonGone);
+  chk('C5b Open pill (#b-open) present', r.openPill);
   chk('C6 Bonsai.gridmove.commit wrapped (re-walk hook)', r.gridWrapped);
-  var registered = logs.some(function (l) { return /§MODELLER STR Walker ON/.test(l); });
-  chk('C7 §MODELLER STR Walker ON logged', registered);
+  var registered = logs.some(function (l) { return /§MODELLER outliner ready/.test(l); });
+  chk('C7 §MODELLER outliner ready logged', registered);
   var loadFail = logs.filter(function (l) { return /STRWALK LOAD_FAIL/.test(l); });
   chk('C8 no STRWALK script LOAD_FAIL', loadFail.length === 0);
 

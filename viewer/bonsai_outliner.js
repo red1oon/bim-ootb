@@ -93,6 +93,10 @@
       const match = n => !f || (n.label + ' ' + n.sub).toLowerCase().includes(f);
       let total = 0, shown = 0;
       let html = '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'DAGeVu Model</div>';
+      // ARC LEADS (W-UX-3): the seeded containment TREE categories (BOM-graph Storey→Room→disc→class→element,
+      // then STR Walker) render FIRST — they are the loaded building, the primary surface. The FLAT op-log
+      // groups (Walls/Openings/Routes/… = what the user has authored, empty until they edit) follow below.
+      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); html += r.html; total += r.total; shown += r.shown; });
       groups.forEach(g => {
         const vis = g.nodes.filter(match); total += g.nodes.length; shown += vis.length;
         if (f && !vis.length) return;
@@ -109,7 +113,6 @@
             LEAF + n.label + '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span></div>';
         });
       });
-      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); html += r.html; total += r.total; shown += r.shown; });
       tree.innerHTML = html;
       tree.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._paint(); });
       tree.querySelectorAll('[data-fid]').forEach(d => d.onclick = () => {

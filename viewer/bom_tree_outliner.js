@@ -112,25 +112,14 @@ if (typeof window !== 'undefined' && window.document) {
     fr.readAsArrayBuffer(file);
   }
 
-  function mountOpenIcon() {
-    if (document.getElementById('bomtree-open')) return;
-    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.db,.sqlite'; inp.style.display = 'none';
-    inp.id = 'bomtree-file';
-    inp.onchange = function () { if (inp.files && inp.files[0]) openExtractedDb(inp.files[0]); };
-    document.body.appendChild(inp);
-    var btn = document.createElement('button'); btn.id = 'bomtree-open'; btn.title = 'Open an extracted.db building';
-    btn.textContent = '📂 Open';
-    btn.style.cssText = 'position:fixed;top:8px;left:252px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
-      'border:1px solid #2c303a;border-radius:6px;padding:5px 10px;font:12px system-ui;cursor:pointer';
-    btn.onclick = function () { inp.click(); };
-    document.body.appendChild(btn);
-  }
+  // (W-UX-2 2026-06-26) The old top-left `📂 Open` icon was REMOVED — Open is now a pill-rail verb (the chooser
+  // of the 4 residents + a local .db door). `openExtractedDb` (local-file → seed the BOM-graph tab) stays exported
+  // for that pill path. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-2.
 
   window.BOMTreeOutliner = {
     register: function () {
       if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.addCategory(category());
-      mountOpenIcon();
-      console.log('§BOMTREE registered — Open icon + BOM Tree category (ARC BOM editor, signed re-parent, geometry untouched)');
+      console.log('§BOMTREE registered — BOM-graph (ARC) category (signed re-parent, geometry untouched); Open re-homed to the pill rail');
     },
     openExtractedDb: openExtractedDb, loadFromDb: loadFromDb, _category: category, _currentTree: currentTree
   };

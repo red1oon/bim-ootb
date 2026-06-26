@@ -215,29 +215,10 @@
     });
   }
 
-  function mountButton() {
-    if (document.getElementById('strwalk-open')) return;
-    // ▾ resident picker — the guided drop surface (cloud → local cache → walk).
-    var sel = document.createElement('select'); sel.id = 'strwalk-resident';
-    sel.title = 'Open a resident building (fetched from the cloud, then cached on your device)';
-    sel.style.cssText = 'position:fixed;top:8px;left:336px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
-      'border:1px solid #2c303a;border-radius:6px;padding:5px 8px;font:12px system-ui;cursor:pointer';
-    var ph = document.createElement('option'); ph.value = ''; ph.textContent = '▾ Open building…'; sel.appendChild(ph);
-    RESIDENTS.forEach(function (r) { var o = document.createElement('option'); o.value = r.key; o.textContent = r.label; sel.appendChild(o); });
-    sel.onchange = function () { var r = RESIDENTS.filter(function (x) { return x.key === sel.value; })[0]; if (r) openResident(r); sel.value = ''; };
-    document.body.appendChild(sel);
-    // 🏗 STR — open a LOCAL .db (kept alongside the curated residents).
-    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.db,.sqlite';
-    inp.style.display = 'none'; inp.id = 'strwalk-file';
-    inp.onchange = function () { if (inp.files && inp.files[0]) openStrDb(inp.files[0]); };
-    document.body.appendChild(inp);
-    var btn = document.createElement('button'); btn.id = 'strwalk-open'; btn.title = 'Open a local STR building file → walk the structure';
-    btn.textContent = '🏗';
-    btn.style.cssText = 'position:fixed;top:8px;left:486px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
-      'border:1px solid #2c303a;border-radius:6px;padding:5px 10px;font:12px system-ui;cursor:pointer';
-    btn.onclick = function () { inp.click(); };
-    document.body.appendChild(btn);
-  }
+  // (W-UX-2 2026-06-26) The old top-left drop panel (▾ resident picker + 🏗 local-file button) was REMOVED —
+  // it is redundant now the bottom-right pill rail carries **Open** (the chooser of the 4 residents + a local
+  // .db door), wired to `openResident`/`openStrDb` below. The Open verbs stay here (the walker owns them);
+  // only the redundant DOM is gone. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-2.
 
   // Wrap the grid-move controller so a real drag re-walks STR + commits the signed cascade.
   function wrapGridMove() {
@@ -274,9 +255,8 @@
   window.STRWalkerOutliner = {
     register: function () {
       if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.addCategory(category());
-      mountButton();
       wrapGridMove();
-      console.log(TAG + ' registered — STR Walker category + 🏗 open + grid-drag re-walk (the wedge)');
+      console.log(TAG + ' registered — STR Walker category + grid-drag re-walk (the wedge); Open re-homed to the pill rail');
     },
     _openStrDb: openStrDb, _category: category,
     _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase
