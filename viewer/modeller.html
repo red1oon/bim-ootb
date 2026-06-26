@@ -150,6 +150,7 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
+  <button id="b-guide" title="Modeller User Guide — how to Open, walk, edit & export"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Guide</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
@@ -1877,6 +1878,49 @@ window.discWalk = function (disc, ctx) {
     if (panel && panel.style.display === 'block' && !panel.contains(e.target) && !bOpen.contains(e.target)) close();
   });
 })();
+
+// ── MODELLER USER GUIDE (W-UX-5): a self-contained overlay (no viewer/OCI dependency — §101 Drift Law)
+// describing the REAL modeller verbs the rest of this UX shipped. Prose only; no fabricated data. Toggled
+// from the #b-guide pill. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-5.
+(function initGuide() {
+  const bGuide = document.getElementById('b-guide');
+  if (!bGuide) return;
+  const SECTIONS = [
+    ['Open', 'Pill ▸ Open → pick one of the 4 residents (or a local .db). It walks the structure (STR) and seeds the ARC bom-graph — no separate drop panel.'],
+    ['Outliner — ARC leads', 'The one panel is the surface: Building ▸ Storey ▸ Room ▸ discipline ▸ class ▸ element (real door/AABB-qualified rooms; door-less storeys read "· layer"). The find box filters across it.'],
+    ['Disc = walker', 'Click a discipline node to walk it: STR surfaces the structural walk; an MEP-family disc routes when anchored, else it refuses honestly ("no walk") — never a fabricated run.'],
+    ['3D Grid', 'The grid is the primary handle. Grid shows/hides the datums; Move Grid drags a gridline so attached walls RECOMPOSE — stretch, not scale (openings stay host-constrained).'],
+    ['Author', 'Sketch a profile, Insert a catalog component (assemble, don\'t draw), Cut an opening, Route an MEP run, Fillet an edge. Every edit is one signed op in the log.'],
+    ['History', 'Scrub the bottom timeline to fold the model to any point; Ctrl+Z / Ctrl+⇧Z undo/redo. Geometry is a deterministic fold over the signed op-log.'],
+    ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). IFC exports a standards IFC4 file from the same log.']
+  ];
+  let panel = null;
+  function build() {
+    panel = document.createElement('div'); panel.id = 'm-guide-panel';
+    panel.style.cssText = 'position:fixed;bottom:74px;right:70px;z-index:42;width:320px;max-height:calc(100vh - 150px);' +
+      'overflow:auto;display:none;padding:14px 16px;background:rgba(20,22,30,0.95);border:1px solid #2c303a;' +
+      'border-radius:12px;color:#c7cdd8;font:12.5px/1.55 system-ui,sans-serif;' +
+      'backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 30px rgba(0,0,0,0.55)';
+    let h = '<div style="font-size:10px;letter-spacing:.14em;color:#5b6473;margin-bottom:10px">MODELLER · USER GUIDE</div>';
+    SECTIONS.forEach(function (s) {
+      h += '<div class="mg-sec" style="margin-bottom:11px"><div style="color:#9fd4f7;font-weight:600;margin-bottom:2px">' + s[0] + '</div>' +
+        '<div style="color:#aab3c2">' + s[1] + '</div></div>';
+    });
+    panel.innerHTML = h;
+    document.body.appendChild(panel);
+  }
+  bGuide.onclick = function (e) {
+    e.stopPropagation();
+    if (!panel) build();
+    const open = panel.style.display !== 'block';
+    panel.style.display = open ? 'block' : 'none'; bGuide.classList.toggle('on', open);
+    console.log('§MODELLER-GUIDE open=' + open + ' sections=' + SECTIONS.length);
+  };
+  document.addEventListener('pointerdown', function (e) {
+    if (panel && panel.style.display === 'block' && !panel.contains(e.target) && !bGuide.contains(e.target)) { panel.style.display = 'none'; bGuide.classList.remove('on'); }
+  });
+})();
+
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
