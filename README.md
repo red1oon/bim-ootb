@@ -41,7 +41,6 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **4D Time Machine** — construction sequence playback from BOM data
 - **5D Cost Estimation** — 17 country rate templates, Excel export
 - **BOM Engine** — Bill of Materials extraction and verb expansion, fully in JavaScript
-- **Grid System** — 2D plan canvas: drag grids, dimension chains, door arcs, scissors cuts, kinematics
 - **City Mode** — 786 buildings loaded simultaneously via ray-blast streaming; whole-city facade stays resident as you fly
 - **PWA** — works offline after first visit
 - **18 Languages** — auto-detected from browser locale
