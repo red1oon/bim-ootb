@@ -67,6 +67,29 @@ function swDeriveGrid(columns, opts) {
   };
 }
 
+// ─── SEMI-GRID: derive the structural grid from ARC (the spec's "missing 4th handle") ──
+// Per convention (§VISION-LOCK): DROP ARC only, then WALK. The datums emerge from the ARC itself —
+// wall centerlines + any column centroids — so a WALL-BEARING building (no column frame, e.g.
+// residential SC) still yields a grid. A wall running in X sits at a constant Y → a Y-line; a
+// Y-running wall → an X-line; a column contributes both. NON-INVENT: lines = means of real ARC
+// coordinates; never seeded from STR (keeps "STR walks FROM ARC" non-circular).
+//   arcElements: [{ cx, cy, lx, ly, isColumn? }]   (lx/ly = bbox extents; long axis = run direction)
+function swDeriveSemiGrid(arcElements, opts) {
+  opts = opts || {};
+  var gap = opts.gapTol != null ? opts.gapTol : SW_GRID_GAP_TOL;
+  var xPts = [], yPts = [];
+  arcElements.forEach(function (e) {
+    if (e.isColumn) { xPts.push(e.cx); yPts.push(e.cy); }
+    else if (e.lx >= e.ly) { yPts.push(e.cy); }   // X-running wall → contributes a Y datum
+    else { xPts.push(e.cx); }                      // Y-running wall → contributes an X datum
+  });
+  return {
+    xLines: swClusterAxis(xPts, gap, 1e9).map(function (m) { return m.value; }),
+    yLines: swClusterAxis(yPts, gap, 1e9).map(function (m) { return m.value; }),
+    source: 'derived:arc-semigrid'
+  };
+}
+
 // ─── Nearest gridline ────────────────────────────────────────
 function swNearest(value, lines) {
   var best = lines[0], bestD = Math.abs(value - lines[0]);
@@ -210,6 +233,9 @@ function swConforms(span, depth, opts) {
 // plates: [{ x,y,z, bx,by,bz }]. opts.edgeTrim = fraction of extreme x-bands dropped as taper.
 function swDeriveTessellation(plates, opts) {
   opts = opts || {};
+  // NON-INVENT generality: a building with no space-frame (e.g. residential — walls, not a canopy)
+  // has NO tessellated system. Return null → the walker fabricates nothing. (W-STR-GENERAL-SC C2.)
+  if (!plates || !plates.length) return null;
   var edgeTrim = opts.edgeTrim != null ? opts.edgeTrim : 0.1;
   // modal unit = most common rounded bbox (the repeated cell)
   var hist = {};
@@ -342,7 +368,7 @@ function swWalkSkeleton(columns, opts) {
 // ─── Exports (node) + globals (browser eval) ─────────────────
 var _swApi = {
   SW_PREFIX: SW_PREFIX, SW_GRID_GAP_TOL: SW_GRID_GAP_TOL, SW_GRID_SPAN_MAX: SW_GRID_SPAN_MAX,
-  swClusterAxis: swClusterAxis, swDeriveGrid: swDeriveGrid, swNearest: swNearest,
+  swClusterAxis: swClusterAxis, swDeriveGrid: swDeriveGrid, swDeriveSemiGrid: swDeriveSemiGrid, swNearest: swNearest,
   swWalkColumns: swWalkColumns, swWalkGirders: swWalkGirders, swWalkSkeleton: swWalkSkeleton,
   SW_SPAN_RULES: SW_SPAN_RULES, swCheckGirder: swCheckGirder, swConforms: swConforms,
   swDeriveTessellation: swDeriveTessellation, swWalkTessellation: swWalkTessellation,

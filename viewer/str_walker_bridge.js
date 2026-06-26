@@ -25,14 +25,39 @@
     return res[0].values.map(function (r) { return { guid: r[0], x: r[1], y: r[2], z: r[3] }; });
   }
 
-  // Init the walker state from the opened building (the ARC twin's STR columns = the walk anchors).
+  // ARC walls = the dropped substrate for a wall-bearing (ARC-only) building. cx/cy + bbox extents
+  // (lx/ly) feed swDeriveSemiGrid; the long axis is the wall's run direction (non-invent, measured).
+  function _readArcWalls(db) {
+    var res = db.exec("SELECT t.center_x,t.center_y,t.bbox_x,t.bbox_y FROM elements_meta m " +
+      "JOIN element_transforms t ON t.guid=m.guid WHERE m.discipline='ARC' AND " +
+      "m.ifc_class IN ('IfcWall','IfcWallStandardCase')");
+    if (!res.length) return [];
+    return res[0].values.map(function (r) { return { cx: r[0], cy: r[1], lx: r[2], ly: r[3] }; });
+  }
+
+  // Init the walker state from the opened building. AUTO-PICK the grid source (the noted follow-up):
+  //   • STR columns present  → column-framed: swWalkSkeleton (grid from columns, walk girders).
+  //   • no STR columns       → wall-bearing (ARC-only drop): swDeriveSemiGrid from ARC walls = the
+  //                            editing datum/handle; impose NO column frame (W-STR-GENERAL-SC: the walk
+  //                            fabricates nothing). This is the user case — drop an ARC-only job, walk it.
   function swbInit(db, opts) {
+    opts = opts || {};
     var cols = _readColumns(db);
-    if (!cols.length) { console.warn('§STRWALK-INIT no STR columns in this building'); _state = null; return null; }
-    var base = SW.swWalkSkeleton(cols, opts || {});
-    _state = { base: base, columnCount: cols.length };
-    console.log('§STRWALK-INIT columns=' + cols.length + ' grid=' + base.grid.xLines.length + '×' +
-      base.grid.yLines.length + ' girders=' + base.girders.length);
+    if (cols.length) {
+      var base = SW.swWalkSkeleton(cols, opts);
+      _state = { base: base, columnCount: cols.length, system: 'column-framed' };
+      console.log('§STRWALK-INIT column-framed: columns=' + cols.length + ' grid=' + base.grid.xLines.length +
+        '×' + base.grid.yLines.length + ' girders=' + base.girders.length);
+      return _state;
+    }
+    // ARC-only / wall-bearing: derive the SEMI-GRID from ARC walls, fabricate no column skeleton.
+    var walls = _readArcWalls(db);
+    if (!walls.length) { console.warn('§STRWALK-INIT no STR columns AND no ARC walls — nothing to walk'); _state = null; return null; }
+    var grid = SW.swDeriveSemiGrid(walls, opts);
+    _state = { base: { grid: { xLines: grid.xLines, yLines: grid.yLines }, walked: [], girders: [] },
+               columnCount: 0, wallCount: walls.length, system: 'wall-bearing', gridSource: grid.source };
+    console.log('§STRWALK-INIT wall-bearing: 0 STR columns, ' + walls.length + ' ARC walls → semi-grid ' +
+      grid.xLines.length + '×' + grid.yLines.length + ' (' + grid.source + '; no column frame imposed)');
     return _state;
   }
 
@@ -93,7 +118,7 @@
                confidence: conf, lowConfidence: conf < STRWALK_LOW_CONF };
     });
     var lowConf = elements.filter(function (e) { return e.lowConfidence; }).length;
-    return { columns: g.walked.length, girders: g.girders.length,
+    return { columns: g.walked.length, girders: g.girders.length, system: _state.system || 'column-framed',
              grid: g.grid.xLines.length + '×' + g.grid.yLines.length, signals: sig,
              elements: elements, lowConfidence: lowConf, lowConfThreshold: STRWALK_LOW_CONF };
   }
