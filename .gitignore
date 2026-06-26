@@ -2,14 +2,18 @@
 !viewer/ad_seed.db
 !viewer/mep_rw.db
 !erp/glassbowl_data.db
-# MODELLER PLAYGROUND — the Modeller's OWN building set on GH Pages, SEPARATE from the viewer.
-# The viewer is never touched (it keeps fetching viewer/buildings → OCI). Only the modeller reads
-# modeller/. Small SINGLE-file buildings only (<100MB, own meshes, no split companion). Large meshes
-# (Terminal_geo = 261MB) can't live here: >100MB hard limit + GH Pages does NOT serve Git LFS → they
-# stay on OCI, self-healed by db_resolve.js (W-DB-404-OCI-RETRY).
+# MODELLER PLAYGROUND — the Modeller's OWN building set on GH, FULLY ISOLATED from the viewer (zero OCI).
+# The viewer is never touched (it keeps fetching viewer/buildings → OCI). Only the modeller reads modeller/.
+#   • Small SINGLE-file buildings (<100MB): regular git blobs, served directly by GH Pages (Range + gzip).
+#   • Terminal: split. meta.db (19MB bbox WALK substrate) = regular blob; geo.db (250MB meshes) = Git LFS
+#     (.gitattributes), so it clears git's 100MB push limit. NOTE GH PAGES serves the LFS POINTER, not the
+#     bytes — the mesh content is fetched from the LFS media endpoint (raw/media.githubusercontent.com),
+#     verified live post-merge. The WALK needs only meta (a regular blob), so the walker is unaffected either way.
 !modeller/SampleHouse_extracted.db
 !modeller/Duplex_extracted.db
 !modeller/SampleCastle_extracted.db
+!modeller/Terminal_meta.db
+!modeller/Terminal_geo.db
 *.bin
 node_modules/
 test-results/

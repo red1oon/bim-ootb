@@ -18,24 +18,25 @@
   if (typeof window === 'undefined') return;
   var ready = false, lastEx = [];
 
-  // The Modeller's permanent residents — a guided, curated set fetched from the cloud (OCI building
-  // bucket) on Open and cached LOCAL (IndexedDB) so the next Open is instant. Substrate = pristine
-  // meta.db (bboxes only — no m_bom, no mesh blobs). The set spans BOTH walker branches: SH/DX are
-  // wall-bearing (ARC-only auto-pick → semi-grid), SC/Terminal are column-framed. More of the 20+
-  // building list follow later. (RESUME_MODELLER_WALK_SUBSTRATE §0 — guided tool.)
+  // The Modeller's permanent residents — its OWN ISOLATED PLAYGROUND, hosted on GitHub Pages under the
+  // repo-root modeller/ dir (NOT the viewer's OCI bucket — the modeller never touches viewer hosting;
+  // §101 Drift Law). Fetched relative to modeller.html (../modeller/<db>) → cached LOCAL (IndexedDB) so
+  // the next Open is instant. The set spans BOTH walker branches: SH/DX are wall-bearing (ARC-only
+  // auto-pick → semi-grid), SC/Terminal are column-framed. (RESUME_MODELLER_WALK_SUBSTRATE §0 + §SESSION
+  // 2026-06-26b ISOLATION DECISION — guided tool, zero OCI dependency.)
+  //   • SH/DX/SC: <building>_extracted.db committed to GH modeller/ (small, no LFS — under 100MB).
+  //   • Terminal: split meta+geo. meta.db (19MB, the bbox WALK substrate) = regular GH blob; geo.db
+  //     (250MB meshes) = Git LFS. The WALK needs only meta; meshes are lazy. db = the substrate Open fetches.
   var RESIDENTS = [
-    { key: 'SampleHouse',    label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_meta.db' },
-    { key: 'Duplex',         label: 'Duplex · wall-bearing',             db: 'Duplex_meta.db' },
-    { key: 'Schependomlaan', label: 'Schependomlaan · column-framed',    db: 'Schependomlaan_meta.db' },
-    { key: 'Terminal',       label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db' }
+    { key: 'SampleHouse',  label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_extracted.db' },
+    { key: 'Duplex',       label: 'Duplex · wall-bearing',             db: 'Duplex_extracted.db' },
+    { key: 'SampleCastle', label: 'SampleCastle · column-framed',      db: 'SampleCastle_extracted.db' },
+    { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db' }
   ];
 
-  // OCI building-bucket base (matches config.js A.PROD_BASE). Self-resolve when the modeller is itself
-  // served from OCI; else fall back to the known prod base (GH-Pages-hosted app → cloud DBs).
-  function _ociBase() {
-    var m = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
-    return m ? m[1] : 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
-  }
+  // The modeller's own GH-Pages playground base — relative to viewer/modeller.html → repo-root modeller/.
+  // NO OCI: the modeller is fully isolated from the viewer's cloud hosting (§101 Drift Law).
+  function _modellerBase() { return '../modeller/'; }
 
   function tabRows() {
     var d = window.swbTabData && window.swbTabData();
@@ -178,10 +179,10 @@
     });
   }
 
-  // Open a permanent resident: cache-first (local), else fetch the pristine meta.db from the cloud and
-  // cache it. Terminal_meta.db is served gzip (content-encoding) → fetch().arrayBuffer() auto-inflates.
+  // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
+  // playground (../modeller/<db>) and cache it. GH Pages serves Range requests + gzip → fetch() auto-inflates.
   function openResident(res) {
-    var url = _ociBase() + 'buildings/' + res.db;
+    var url = _modellerBase() + res.db;
     _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');
@@ -267,6 +268,6 @@
       console.log(TAG + ' registered — STR Walker category + 🏗 open + grid-drag re-walk (the wedge)');
     },
     _openStrDb: openStrDb, _category: category,
-    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _ociBase: _ociBase
+    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase
   };
 })();
