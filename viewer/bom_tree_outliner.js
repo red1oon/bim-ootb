@@ -86,19 +86,27 @@ if (typeof window !== 'undefined' && window.document) {
     };
   }
 
+  // Seed the BOM Tree from an OPEN building DB (the contains backbone: building→storey→ROOM→disc→class→
+  // element). Shared by the standalone 📂 Open and the guided resident Open (DISC/ARC). seedFromDb adds the
+  // ROOM level from the spatial `contains` edge when the building has IfcSpace (else storey-only, graceful).
+  function loadFromDb(db, building) {
+    State.building = (building || 'Building').replace(/\.db$/i, '').replace(/_(meta|extracted)$/i, '');
+    State.seed = T.seedFromDb(db, { building: State.building });
+    var nRoom = Object.keys(State.seed.nodes).filter(function (k) { return State.seed.nodes[k].kind === 'room'; }).length;
+    var nElem = T.leaves(State.seed).length;
+    console.log('§BOMTREE seeded "' + State.building + '" elements=' + nElem + ' rooms=' + nRoom + ' → BOM-graph tab');
+    if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    return { elements: nElem, rooms: nRoom };
+  }
+
   function openExtractedDb(file) {
     if (!window.SQL) { console.warn('§BOMTREE sql.js not ready'); return; }
     var fr = new FileReader();
     fr.onload = function () {
       try {
         var db = new window.SQL.Database(new Uint8Array(fr.result));
-        var r = db.exec("SELECT guid, ifc_class, storey, discipline FROM elements_meta");
-        var els = (r.length ? r[0].values : []).map(function (v) { return { guid: v[0], cls: v[1], storey: v[2], disc: v[3] }; });
-        State.building = (file.name || 'Building').replace(/\.db$/i, '').replace(/_extracted$/i, '');
-        State.seed = seedFromElements(els, State.building);
-        console.log('§BOMTREE opened "' + State.building + '" elements=' + els.length + ' → BOM Tree seeded');
+        loadFromDb(db, file.name);
         db.close();
-        if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
       } catch (e) { console.warn('§BOMTREE open failed', e && e.message); }
     };
     fr.readAsArrayBuffer(file);
@@ -124,7 +132,7 @@ if (typeof window !== 'undefined' && window.document) {
       mountOpenIcon();
       console.log('§BOMTREE registered — Open icon + BOM Tree category (ARC BOM editor, signed re-parent, geometry untouched)');
     },
-    openExtractedDb: openExtractedDb, _category: category, _currentTree: currentTree
+    openExtractedDb: openExtractedDb, loadFromDb: loadFromDb, _category: category, _currentTree: currentTree
   };
 }
 

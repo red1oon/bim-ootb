@@ -183,14 +183,14 @@
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=3" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
-<script src="bom_tree.js?v=1" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
-<script src="bom_tree_outliner.js?v=1" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
+<script src="bom_tree.js?v=2" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
+<script src="bom_tree_outliner.js?v=2" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
      (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
 <script src="walker_confidence.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
 <script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=5" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=6" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=14" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -1758,7 +1758,13 @@ const qs = new URLSearchParams(location.search);
 // tree in the Outliner, re-parent = signed BOM_REPARENT (geometry untouched). SPATIAL_DEPENDENCY_GRAPH §OUTLINER-COHERENCE.
 if (qs.get('bomtree') !== null && window.BOMTreeOutliner) { window.BOMTreeOutliner.register(); console.log('§MODELLER BOM Tree editor ON (?bomtree)'); }
 // STR Walker (?strwalk) — STR as a WALKED discipline: 🏗 open an STR building → walk; grid drag re-walks + flags.
-if (qs.get('strwalk') !== null && window.STRWalkerOutliner) { window.STRWalkerOutliner.register(); console.log('§MODELLER STR Walker ON (?strwalk)'); }
+// The guided tool registers BOTH the STR Walker tab AND the bom-graph tab (DISC/ARC) so a resident Open
+// populates the containment tree (building→storey→room→disc→class→element) alongside the structural walk.
+if (qs.get('strwalk') !== null && window.STRWalkerOutliner) {
+  window.STRWalkerOutliner.register();
+  if (window.BOMTreeOutliner) window.BOMTreeOutliner.register();
+  console.log('§MODELLER STR Walker + bom-graph tab ON (?strwalk)');
+}
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
