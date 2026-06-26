@@ -14,6 +14,7 @@
 'use strict';
 (function () {
   var SW = (typeof require !== 'undefined') ? require('./str_walker.js') : (typeof window !== 'undefined' ? window : this);
+  var WC = (typeof require !== 'undefined') ? require('./walker_confidence.js') : (typeof window !== 'undefined' ? window : this);
 
   var _state = null;  // { base: {grid,walked,girders}, columnCount }
 
@@ -70,13 +71,31 @@
     return { committed: committed, exceptions: rw.exceptions, ops: rw.ops };
   }
 
-  // Data for the Outliner STR walker tab (the §VISION-LOCK Disc-tab follower view).
+  // Threshold below which a walked element is HIGHLIGHTED low-confidence in the Outliner Disc-tab.
+  // 0.8 sits above the shipped map's low block (P≈0.67) and below its high block (P≈0.93) → it flags
+  // exactly the elements the RosettaStone says are least trustworthy.
+  var STRWALK_LOW_CONF = 0.8;
+
+  // Data for the Outliner STR walker tab (the §VISION-LOCK Disc-tab follower view). Each girder carries
+  // a CALIBRATED confidence (raw guard/rule margin → the SHIPPED Terminal isotonic map) — the EARNED,
+  // RosettaStone-calibrated number, never the raw one (spec §4). Low-confidence girders are surfaced.
   function swbTabData() {
     if (!_state) return null;
     var g = _state.base, sig = { RED: 0, ORANGE: 0, GREEN: 0 };
-    g.girders.forEach(function (gd) { sig[SW.swCheckGirder(gd.span, {}).signal]++; });
+    var maxSpan = SW.SW_SPAN_RULES.STEEL.maxBeamSpan;
+    var elements = g.girders.map(function (gd) {
+      var chk = SW.swCheckGirder(gd.span, {});
+      sig[chk.signal]++;
+      var ruleMargin = (maxSpan - gd.span) / maxSpan;     // code comfort (the spread)
+      var raw = WC.wcRaw(1, ruleMargin);                  // guard margin ~1 (placed); rule margin varies
+      var conf = WC.wcCalibrated(raw);                    // EARNED: shipped Terminal isotonic map
+      return { guid: gd.guid, span: gd.span, signal: chk.signal,
+               confidence: conf, lowConfidence: conf < STRWALK_LOW_CONF };
+    });
+    var lowConf = elements.filter(function (e) { return e.lowConfidence; }).length;
     return { columns: g.walked.length, girders: g.girders.length,
-             grid: g.grid.xLines.length + '×' + g.grid.yLines.length, signals: sig };
+             grid: g.grid.xLines.length + '×' + g.grid.yLines.length, signals: sig,
+             elements: elements, lowConfidence: lowConf, lowConfThreshold: STRWALK_LOW_CONF };
   }
 
   var api = { swbInit: swbInit, swbOnGridMove: swbOnGridMove, swbTabData: swbTabData };
