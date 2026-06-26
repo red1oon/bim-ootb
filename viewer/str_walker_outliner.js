@@ -27,11 +27,13 @@
   //   • SH/DX/SC: <building>_extracted.db committed to GH modeller/ (small, no LFS — under 100MB).
   //   • Terminal: split meta+geo. meta.db (19MB, the bbox WALK substrate) = regular GH blob; geo.db
   //     (250MB meshes) = Git LFS. The WALK needs only meta; meshes are lazy. db = the substrate Open fetches.
+  //   • `v` busts the IndexedDB resident cache when a building's DB is re-extracted (cache keyed by URL;
+  //     bump v → new key → fresh fetch). v2 = re-extracted residents with REAL IfcSpace rooms + space AABB.
   var RESIDENTS = [
-    { key: 'SampleHouse',  label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_extracted.db' },
-    { key: 'Duplex',       label: 'Duplex · wall-bearing',             db: 'Duplex_extracted.db' },
-    { key: 'SampleCastle', label: 'SampleCastle · column-framed',      db: 'SampleCastle_extracted.db' },
-    { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db' }
+    { key: 'SampleHouse',  label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_extracted.db',  v: 2 },
+    { key: 'Duplex',       label: 'Duplex · wall-bearing',             db: 'Duplex_extracted.db',       v: 2 },
+    { key: 'SampleCastle', label: 'SampleCastle · column-framed',      db: 'SampleCastle_extracted.db', v: 2 },
+    { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db',          v: 1 }
   ];
 
   // The modeller's own GH-Pages playground base — relative to viewer/modeller.html → repo-root modeller/.
@@ -86,6 +88,15 @@
       // Same meta.db ALSO seeds the bom-graph tab (DISC/ARC): building→storey→room→disc→class→element.
       if (window.BOMTreeOutliner && window.BOMTreeOutliner.loadFromDb) {
         try { window.BOMTreeOutliner.loadFromDb(db, name); } catch (e) { console.warn(TAG + ' bom-graph seed failed', e && e.message); }
+      }
+      // Derive the typed cross-edges (the GRAPH half) on-the-fly from the bbox substrate — kept pristine,
+      // not baked. Slice 1 = `abuts` (face-touch); stashed on window for the bom-graph render.
+      if (window.CrossEdges && window.CrossEdges.deriveAdjacency) {
+        try {
+          var abuts = window.CrossEdges.deriveAdjacency(db);
+          window.swXEdges = { abuts: abuts };
+          console.log(TAG + ' §XEDGE-ABUTS ' + abuts.length + ' face-touch edges derived (provenance=derived:face-touch)');
+        } catch (e) { console.warn(TAG + ' cross-edge derive failed', e && e.message); }
       }
       db.close();
       ready = !!st; lastEx = [];
@@ -182,7 +193,7 @@
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
   // playground (../modeller/<db>) and cache it. GH Pages serves Range requests + gzip → fetch() auto-inflates.
   function openResident(res) {
-    var url = _modellerBase() + res.db;
+    var url = _modellerBase() + res.db + (res.v ? '?v=' + res.v : '');
     _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');

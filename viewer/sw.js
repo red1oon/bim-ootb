@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v735';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v736';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -98,6 +98,7 @@ const PRECACHE_ASSETS = [
   'walker_confidence.js',
   'str_walker_bridge.js',
   'str_walker_outliner.js',
+  'cross_edges.js',
   // SPATIAL_PICKING_SPEC §S-2..§S-5: warehouse pick-walk addon (data-gated pill)
   'wh_route.js',
   'wh_walk.js',
