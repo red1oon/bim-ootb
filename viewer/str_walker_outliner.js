@@ -147,12 +147,30 @@
     });
   }
 
+  // Re-apply this instance's recorded STR_WALK_EDIT ops onto the FRESH walk so prior edits re-appear
+  // VISUALLY on reopen. The reference re-derived clean (swbInit from pristine meta.db); swbReplay folds
+  // the recorded edits WITHOUT re-committing (they are already in the signed mo_ log).
+  function _replayEdits() {
+    var O = window.Bonsai && window.Bonsai.oplog;
+    if (!O || !O.db || !window.swbReplay) return;
+    try {
+      var res = O.db.exec("SELECT parameters FROM kernel_ops WHERE op_type='STR_WALK_EDIT' AND undone=0 ORDER BY id");
+      if (!res.length) return;
+      var edits = res[0].values.map(function (row) { var p = JSON.parse(row[0]); return { axis: p.axis, datum: p.datum, delta: p.delta }; });
+      var rr = window.swbReplay(edits, {});
+      if (rr) { lastEx = rr.exceptions || []; if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); }
+      console.log(TAG + ' §STRWALK-REPLAY restored ' + (rr ? rr.applied : 0) + ' edit(s) from mo_ instance');
+    } catch (e) { console.warn(TAG + ' replay failed', e && e.message); }
+  }
+
   // Fork the per-building EDITABLE INSTANCE (op-log key 'mo_<building>') so this resident's signed edits
   // fold into its own instance while the loaded meta.db REFERENCE (the IDB cache entry) stays pristine.
+  // Once the instance's op-log is loaded, replay its recorded edits back into the fresh walk.
   function _forkEditable(res) {
     var O = window.Bonsai && window.Bonsai.oplog;
     if (O && O.setModelKey) O.setModelKey('mo_' + res.key).then(function (n) {
       console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
+      _replayEdits();
     });
   }
 
@@ -222,7 +240,12 @@
               return window.Bonsai.oplog.commit({ op_type: t, parameters: Object.assign({}, p, i ? { inputGuids: i } : {}) }, {});
             };
             var r = window.swbOnGridMove({ axis: m.axis, datum: pos, delta: delta }, commit, {});
-            if (r) { lastEx = r.exceptions || []; if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); }
+            if (r) {
+              // persist the edit as a compact REPLAY record so reopening the mo_ instance re-applies it
+              // to the fresh walk (the visual restore). The walker snaps internally → store the raw datum.
+              commit('STR_WALK_EDIT', { axis: m.axis, datum: pos, delta: delta }, null, null);
+              lastEx = r.exceptions || []; if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+            }
           }
         }
       } catch (e) { console.warn(TAG + ' rewalk failed', e && e.message); }
