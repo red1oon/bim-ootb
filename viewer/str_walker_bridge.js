@@ -96,6 +96,29 @@
     return { committed: committed, exceptions: rw.exceptions, ops: rw.ops };
   }
 
+  // Replay recorded grid-move edits onto a FRESH walk (after swbInit) so reopening a building re-applies
+  // its prior edits WITHOUT re-committing — the ops are ALREADY in the signed log; this just re-folds the
+  // walker state to match. Deterministic: the SAME snap + swReWalk as the live edit path (swbOnGridMove),
+  // so the replayed state is bit-for-bit the edited state. Drives the mo_<key> instance's visual restore.
+  //   edits = [{ axis:'x'|'y', datum, delta }, …]  (in commit order, e.g. from STR_WALK_EDIT op rows)
+  function swbReplay(edits, opts) {
+    opts = opts || {};
+    if (!_state) { console.warn('§STRWALK-REPLAY no state — call swbInit first'); return null; }
+    if (!edits || !edits.length) return { applied: 0, exceptions: [] };
+    var applied = 0, allEx = [];
+    edits.forEach(function (e) {
+      var edit = { axis: e.axis, datum: e.datum, delta: e.delta, material: opts.material || 'STEEL' };
+      var lines = edit.axis === 'x' ? _state.base.grid.xLines : _state.base.grid.yLines;
+      if (lines && lines.length) edit.datum = SW.swNearest(edit.datum, lines).line;   // same snap as live
+      var rw = SW.swReWalk(_state.base, edit, opts);
+      _state.base = rw.after;                              // FOLD (no commit — already signed in the log)
+      allEx = allEx.concat(rw.exceptions);
+      applied++;
+    });
+    console.log('§STRWALK-REPLAY applied ' + applied + ' recorded edit(s) → ' + allEx.length + ' exception(s) (no re-commit)');
+    return { applied: applied, exceptions: allEx };
+  }
+
   // Threshold below which a walked element is HIGHLIGHTED low-confidence in the Outliner Disc-tab.
   // 0.8 sits above the shipped map's low block (P≈0.67) and below its high block (P≈0.93) → it flags
   // exactly the elements the RosettaStone says are least trustworthy.
@@ -123,7 +146,7 @@
              elements: elements, lowConfidence: lowConf, lowConfThreshold: STRWALK_LOW_CONF };
   }
 
-  var api = { swbInit: swbInit, swbOnGridMove: swbOnGridMove, swbTabData: swbTabData };
+  var api = { swbInit: swbInit, swbOnGridMove: swbOnGridMove, swbReplay: swbReplay, swbTabData: swbTabData };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') Object.keys(api).forEach(function (k) { window[k] = api[k]; });
 })();
