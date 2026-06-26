@@ -93,6 +93,10 @@
       const match = n => !f || (n.label + ' ' + n.sub).toLowerCase().includes(f);
       let total = 0, shown = 0;
       let html = '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'DAGeVu Model</div>';
+      // ARC LEADS (W-UX-3): the seeded containment TREE categories (BOM-graph Storey→Room→disc→class→element,
+      // then STR Walker) render FIRST — they are the loaded building, the primary surface. The FLAT op-log
+      // groups (Walls/Openings/Routes/… = what the user has authored, empty until they edit) follow below.
+      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); html += r.html; total += r.total; shown += r.shown; });
       groups.forEach(g => {
         const vis = g.nodes.filter(match); total += g.nodes.length; shown += vis.length;
         if (f && !vis.length) return;
@@ -109,7 +113,6 @@
             LEAF + n.label + '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span></div>';
         });
       });
-      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); html += r.html; total += r.total; shown += r.shown; });
       tree.innerHTML = html;
       tree.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._paint(); });
       tree.querySelectorAll('[data-fid]').forEach(d => d.onclick = () => {
@@ -149,10 +152,13 @@
         const ncol = this._collapsed['bn|' + n.id];
         const active = window.Bonsai._selId === n.id;
         const pad = 16 + depth * 14;
-        html += '<div data-bnode="' + n.id + '" data-tcat="' + ckey + '" data-leaf="' + (isLeaf ? 1 : 0) + '" draggable="true" ' +
+        // W-UX-4: a DISCIPLINE node (n.disc) is a WALKER entry point — render a ▶ walk affordance + carry data-disc.
+        const walkGlyph = n.disc ? ' <span class="bn-walk" title="Walk this discipline" style="color:#4fc3f7">▶</span>' : '';
+        html += '<div data-bnode="' + n.id + '" data-tcat="' + ckey + '" data-leaf="' + (isLeaf ? 1 : 0) + '"' +
+          (n.disc ? ' data-disc="' + n.disc + '"' : '') + ' draggable="true" ' +
           'style="padding:3px 6px 3px ' + pad + 'px;cursor:' + (isLeaf ? 'grab' : 'pointer') + ';border-radius:4px;' +
           (active ? 'background:#26456b;color:#dce6f4' : 'color:#c7cdd8') + '">' +
-          (kids.length ? CHEV(!ncol) : LEAF) + n.label +
+          (kids.length ? CHEV(!ncol) : LEAF) + n.label + walkGlyph +
           (n.sub ? '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span>' : '') + '</div>';
         if (kids.length && !ncol) { const r = this._renderNodes(kids, depth + 1, ckey, match); html += r.html; shown += r.shown; }
       });
@@ -167,9 +173,15 @@
       });
       this._el.querySelectorAll('[data-bnode]').forEach(d => {
         const id = d.getAttribute('data-bnode'), isLeaf = d.getAttribute('data-leaf') === '1';
+        const disc = d.getAttribute('data-disc');
         d.onclick = () => {
           if (isLeaf) { const num = +id; if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id); }
-          else { this._collapsed['bn|' + id] = !this._collapsed['bn|' + id]; this._paint(); }
+          else {
+            // W-UX-4: a discipline node WALKS on click (and still toggles its subtree). The walker dispatch
+            // (STR walk / RouteWalker / honest refusal) is the category's onWalk; pure pointer, no geometry.
+            if (disc) { const cat = byKey[d.getAttribute('data-tcat')]; if (cat && cat.onWalk) cat.onWalk(disc); }
+            this._collapsed['bn|' + id] = !this._collapsed['bn|' + id]; this._paint();
+          }
         };
         d.ondragstart = e => { e.dataTransfer.setData('text/bnode', id); this._dragSrc = id; };
         d.ondragover = e => { e.preventDefault(); d.style.outline = '1px dashed #4a78b8'; };

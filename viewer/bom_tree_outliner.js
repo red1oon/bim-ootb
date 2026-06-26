@@ -34,6 +34,8 @@ function treeNodes(tree) {
       label: isLeaf ? shortGuid(n.guid != null ? n.guid : n.label) : n.label,
       sub: isLeaf ? (n.prov === 'user-authored' ? '✎ moved' : '') : ('(' + leafCount(id) + ')'),
       children: isLeaf ? [] : ch.map(build).sort(byLabel) };
+    // W-UX-4: tag a DISCIPLINE node so the Outliner can make it a WALKER entry point (click → walk that disc).
+    if (n.kind === 'disc') node.disc = n.label;
     return node;
   }
   return tree.roots.map(build);
@@ -82,7 +84,11 @@ if (typeof window !== 'undefined' && window.document) {
         // validate on a throwaway fold (cycle/self/missing refused, geometry untouched) before signing
         if (!T.reparent(currentTree(), childId, toParent)) { console.warn('§BOMTREE reparent refused', childId, '→', toParent); return; }
         commitReparent(childId, toParent);
-      }
+      },
+      // W-UX-4: a discipline node is a WALKER entry point — click it → walk that disc. The cross-engine
+      // dispatch (STR=swbInit walk, already done at Open; MEP/etc=RouteWalker or an honest refusal) lives in
+      // window.discWalk (modeller.html UX glue) so this category stays a pure BOM-graph view.
+      onWalk: function (disc) { if (window.discWalk) window.discWalk(disc, { building: State.building }); }
     };
   }
 
@@ -112,25 +118,14 @@ if (typeof window !== 'undefined' && window.document) {
     fr.readAsArrayBuffer(file);
   }
 
-  function mountOpenIcon() {
-    if (document.getElementById('bomtree-open')) return;
-    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.db,.sqlite'; inp.style.display = 'none';
-    inp.id = 'bomtree-file';
-    inp.onchange = function () { if (inp.files && inp.files[0]) openExtractedDb(inp.files[0]); };
-    document.body.appendChild(inp);
-    var btn = document.createElement('button'); btn.id = 'bomtree-open'; btn.title = 'Open an extracted.db building';
-    btn.textContent = '📂 Open';
-    btn.style.cssText = 'position:fixed;top:8px;left:252px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
-      'border:1px solid #2c303a;border-radius:6px;padding:5px 10px;font:12px system-ui;cursor:pointer';
-    btn.onclick = function () { inp.click(); };
-    document.body.appendChild(btn);
-  }
+  // (W-UX-2 2026-06-26) The old top-left `📂 Open` icon was REMOVED — Open is now a pill-rail verb (the chooser
+  // of the 4 residents + a local .db door). `openExtractedDb` (local-file → seed the BOM-graph tab) stays exported
+  // for that pill path. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-2.
 
   window.BOMTreeOutliner = {
     register: function () {
       if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.addCategory(category());
-      mountOpenIcon();
-      console.log('§BOMTREE registered — Open icon + BOM Tree category (ARC BOM editor, signed re-parent, geometry untouched)');
+      console.log('§BOMTREE registered — BOM-graph (ARC) category (signed re-parent, geometry untouched); Open re-homed to the pill rail');
     },
     openExtractedDb: openExtractedDb, loadFromDb: loadFromDb, _category: category, _currentTree: currentTree
   };
