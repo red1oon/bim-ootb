@@ -73,6 +73,22 @@
     fr.readAsArrayBuffer(file);
   }
 
+  // One-click: fetch a pre-converted extracted.db by URL (the IFC→DB conversion already done at the
+  // Viewer) and init the walker directly — the GH-hosted Terminal RosettaStone for the str-walk demo.
+  function openStrUrl(url) {
+    if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return; }
+    console.log(TAG + ' fetching ' + url);
+    fetch(url).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then(function (buf) {
+        var db = new window.SQL.Database(new Uint8Array(buf));
+        var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
+        db.close();
+        ready = !!st; lastEx = [];
+        if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+        console.log(TAG + ' init from ' + url + ' ready=' + ready);
+      }).catch(function (e) { console.warn(TAG + ' url load failed', e && e.message); });
+  }
+
   function mountButton() {
     if (document.getElementById('strwalk-open')) return;
     var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.db,.sqlite';
@@ -85,6 +101,14 @@
       'border:1px solid #2c303a;border-radius:6px;padding:5px 10px;font:12px system-ui;cursor:pointer';
     btn.onclick = function () { inp.click(); };
     document.body.appendChild(btn);
+    // One-click demo: open the GH-hosted, pre-converted Terminal RosettaStone directly.
+    var demo = document.createElement('button'); demo.id = 'strwalk-demo';
+    demo.title = 'Open the GH-hosted Terminal RosettaStone → walk + calibrated confidence';
+    demo.textContent = 'Terminal ▸';
+    demo.style.cssText = 'position:fixed;top:8px;left:398px;z-index:30;background:#1b1d23;color:#c7cdd8;' +
+      'border:1px solid #2c303a;border-radius:6px;padding:5px 10px;font:12px system-ui;cursor:pointer';
+    demo.onclick = function () { openStrUrl('buildings/Terminal_extracted.db'); };
+    document.body.appendChild(demo);
   }
 
   // Wrap the grid-move controller so a real drag re-walks STR + commits the signed cascade.
@@ -121,6 +145,6 @@
       wrapGridMove();
       console.log(TAG + ' registered — STR Walker category + 🏗 open + grid-drag re-walk (the wedge)');
     },
-    _openStrDb: openStrDb, _category: category
+    _openStrDb: openStrDb, _openStrUrl: openStrUrl, _category: category
   };
 })();
