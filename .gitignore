@@ -2,6 +2,14 @@
 !viewer/ad_seed.db
 !viewer/mep_rw.db
 !erp/glassbowl_data.db
+# Building DBs migrated OCI→GH Pages (served from main@root). SMALL SINGLE-file buildings only —
+# they carry their own meshes (<100MB), no split companion. NEVER add a lone _meta.db without its
+# _geo.db (strands meshes — city.js goes split on a _meta.db HEAD 200). Large meshes (Terminal_geo
+# = 261MB) cannot live here: >100MB hard limit + GH Pages does NOT serve Git LFS → they stay on OCI,
+# self-healed by db_resolve.js (W-DB-404-OCI-RETRY). bboxes-on-GH + meshes-on-OCI = the scalable shape.
+!viewer/buildings/SampleHouse_extracted.db
+!viewer/buildings/Duplex_extracted.db
+!viewer/buildings/SampleCastle_extracted.db
 *.bin
 node_modules/
 test-results/
