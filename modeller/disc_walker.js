@@ -50,13 +50,53 @@
         ' [' + (m.clearance_summary || '') + ']');
     } catch (e) { console.log(TAG + ' §DW-PROV ' + file + ' rules_meta read failed: ' + e.message); }
   }
+  // §DW_IDB — OFFLINE cache for the rules DB. dwInit hits the network on EVERY open for
+  // terminal_rules.db / duplex_rules.db; wrap it with the SHARED bim_ootb_cache/'dbs' store
+  // (the same store kernel_ops.js seals into + scene.js cachedFetch reads), so a repeat visit
+  // opens the rules with NO network — making the modeller sw.js "terminal_rules.db cached in
+  // IndexedDB" claim true. Try IDB hit → on miss fetch + put → bare fetch fallback on any IDB
+  // error. Browser-only: node witnesses use dwOpen and never reach this path (indexedDB guard).
+  function _openCacheDB() {
+    if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+    if (ROOT.APP && ROOT.APP.openCacheDB) { try { return ROOT.APP.openCacheDB(); } catch (e) { /* fall through */ } }
+    return new Promise(function (res) {                       // no version → current (avoid VersionError drift below scene.js v2)
+      var rq = indexedDB.open('bim_ootb_cache');
+      rq.onsuccess = function () { res(rq.result); };
+      rq.onerror = function () { res(null); };
+    });
+  }
+  function _idbGet(idb, key) {
+    return new Promise(function (res) {
+      try { var rq = idb.transaction('dbs', 'readonly').objectStore('dbs').get(key);
+        rq.onsuccess = function () { res(rq.result || null); }; rq.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  }
+  function _idbPut(idb, key, buf) {
+    try { var tx = idb.transaction('dbs', 'readwrite'); tx.objectStore('dbs').put(buf, key);
+      tx.oncomplete = function () { console.log(TAG + ' §DW_IDB_WRITE ' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB'); };
+      tx.onerror = function () { console.warn(TAG + ' §DW_IDB_WRITE_ERR ' + (tx.error && tx.error.message)); };
+    } catch (e) { console.warn(TAG + ' §DW_IDB_WRITE_ERR ' + (e && e.message)); }
+  }
+  async function _loadDbBuf(url) {
+    var idb = await _openCacheDB();
+    if (idb && idb.objectStoreNames && idb.objectStoreNames.contains('dbs')) {
+      var hit = await _idbGet(idb, url);
+      if (hit) { console.log(TAG + ' §DW_IDB_HIT ' + url + ' size=' + (hit.byteLength / 1024).toFixed(0) + 'KB'); return hit; }
+      console.log(TAG + ' §DW_IDB_MISS ' + url + ' — fetching');
+      var buf = await (await fetch(url)).arrayBuffer();
+      _idbPut(idb, url, buf);                                 // fire-and-forget (mirrors kernel_ops persist)
+      return buf;
+    }
+    return (await fetch(url)).arrayBuffer();                  // no IDB / no 'dbs' store → bare fetch
+  }
   async function dwInit(SQL, baseUrl, rulesFile) {
     var file = rulesFile || 'terminal_rules.db';
     // Building-class select: reload only when the requested standard CHANGES (open a house
     // after a terminal → swap residential rules in). Same file already loaded → no-op.
     if (_ready && _loadedFile === file) return _ready;
     var url = (baseUrl || '../modeller/') + file;
-    var buf = await (await fetch(url)).arrayBuffer();
+    var buf = await _loadDbBuf(url);                          // §DW_IDB: IDB-cached, network only on first open
     _db = new SQL.Database(new Uint8Array(buf));
     _ready = true; _loadedFile = file;
     var n = function (t) { var r = _db.exec('SELECT COUNT(*) FROM ' + t); return r.length ? r[0].values[0][0] : 0; };
@@ -109,6 +149,14 @@
       var dens = _med(g.map(function (r) {
         return (r.src_storey_area_m2 > 0 && r.n_measured > 0) ? (r.n_measured / r.src_storey_area_m2) : null;
       }));
+      // §PRIM (W-DW-PRIM): the class's MEASURED median bbox (stamped by stamp_src_bbox.py off
+      // the source meta DB). Lets the modeller render each GENERATED fixture as a BOX of the real
+      // class footprint/height, not a uniform 0.18 cube. NON-INVENT: SIZE only — no position/count
+      // change; absent (NULL bbox / unstamped DB) → bbox=null → engine keeps the 0.18 fallback.
+      var bdx = _med(g.map(function (r) { return r.bbox_dx; }));
+      var bdy = _med(g.map(function (r) { return r.bbox_dy; }));
+      var bdz = _med(g.map(function (r) { return r.bbox_dz; }));
+      var bbox = (bdx > 0 && bdy > 0 && bdz > 0) ? { dx: bdx, dy: bdy, dz: bdz } : null;
       return {
         ifc_class: cls,
         ref_kind: g[0].ref_kind,
@@ -118,6 +166,7 @@
         density: dens || 0,
         n_measured: _med(g.map(function (r) { return r.n_measured; })),
         n_rules: g.length,
+        bbox: bbox,
         src: (g[0].src_guids || '').split(',')[0] || ''
       };
     });
@@ -170,6 +219,12 @@
   var _MAX_PER_STOREY = 50000;                               // legacy spacing-tile backstop (never silent)
   function place(disc, storeys, bdb) {
     var reps = repRules(disc), out = [];
+    // §PRIM: attach the class's MEASURED bbox (or null) to every placement so the modeller
+    // sizes its GENERATED-fixture box per class. SIZE only — count/position untouched.
+    function _emit(o, rp) {
+      o.bx = rp.bbox ? rp.bbox.dx : null; o.by = rp.bbox ? rp.bbox.dy : null; o.bz = rp.bbox ? rp.bbox.dz : null;
+      out.push(o);
+    }
     reps.forEach(function (rp) {
       storeys.forEach(function (st) {
         var w = st.x1 - st.x0, d = st.y1 - st.y0;
@@ -182,8 +237,8 @@
             var cap = cells.length, placeN = Math.min(count, cap), stride = cap / placeN;
             for (var c = 0; c < placeN; c++) {
               var cell = cells[Math.floor(c * stride)];
-              out.push({ disc: disc, ifc_class: rp.ifc_class, x: cell.x, y: cell.y, z: z,
-                storey: st.name, prov: 'placed:array-density', src: rp.src });
+              _emit({ disc: disc, ifc_class: rp.ifc_class, x: cell.x, y: cell.y, z: z,
+                storey: st.name, prov: 'placed:array-density', src: rp.src }, rp);
             }
             if (count > cap) console.log(TAG + ' §DW-CAP ' + disc + '/' + rp.ifc_class + ' storey=' + st.name +
               ' placed=' + placeN + ' of ' + count + ' (envelope is the ceiling)');
@@ -195,8 +250,8 @@
             console.log(TAG + ' §DW-CAP ' + disc + '/' + rp.ifc_class + ' storey=' + st.name + ' tile capped to ' + (nx * ny) + ' (no src area — re-bake to area-scale)');
           }
           for (var i = 0; i < nx; i++) for (var j = 0; j < ny; j++) {
-            out.push({ disc: disc, ifc_class: rp.ifc_class, x: st.x0 + (i + 0.5) * (w / nx),
-              y: st.y0 + (j + 0.5) * (d / ny), z: z, storey: st.name, prov: 'placed:array', src: rp.src });
+            _emit({ disc: disc, ifc_class: rp.ifc_class, x: st.x0 + (i + 0.5) * (w / nx),
+              y: st.y0 + (j + 0.5) * (d / ny), z: z, storey: st.name, prov: 'placed:array', src: rp.src }, rp);
           }
         } else if (rp.ref_kind === 'host' && bdb) {         // SHIM → tack onto real host walls
           var walls = hostWalls(bdb, st.name);
@@ -206,13 +261,13 @@
             var stride = walls.length / nP;
             for (var k = 0; k < nP; k++) {
               var wl = walls[Math.floor(k * stride)];
-              out.push({ disc: disc, ifc_class: rp.ifc_class, x: wl.cx, y: wl.cy, z: z,
-                yaw: wl.rot, storey: st.name, prov: 'shim:host-wall', host: wl.guid, src: rp.src });
+              _emit({ disc: disc, ifc_class: rp.ifc_class, x: wl.cx, y: wl.cy, z: z,
+                yaw: wl.rot, storey: st.name, prov: 'shim:host-wall', host: wl.guid, src: rp.src }, rp);
             }
           }                                                 // no walls → honest skip (no host surface)
         } else {                                            // single placement (datum rule, no host)
-          out.push({ disc: disc, ifc_class: rp.ifc_class, x: (st.x0 + st.x1) / 2, y: (st.y0 + st.y1) / 2,
-            z: z, storey: st.name, prov: 'placed:single', src: rp.src });
+          _emit({ disc: disc, ifc_class: rp.ifc_class, x: (st.x0 + st.x1) / 2, y: (st.y0 + st.y1) / 2,
+            z: z, storey: st.name, prov: 'placed:single', src: rp.src }, rp);
         }
       });
     });

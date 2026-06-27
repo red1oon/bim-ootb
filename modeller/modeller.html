@@ -1868,28 +1868,36 @@ function _renderDiscWalk(disc, placements) {
   _clearDiscWalk(disc);
   window.__dwWalks[disc] = placements;
   var base = DW_COLOR[disc] || 0xc0c0c0;
-  var geo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
   var matN = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.35 });
   var matG = new THREE.MeshStandardMaterial({ color: 0xe0a23a, emissive: 0xe0a23a, emissiveIntensity: 0.5 });   // gated (yielded) = ORANGE
   var matC = new THREE.MeshStandardMaterial({ color: 0xff2a2a, emissive: 0xff2a2a, emissiveIntensity: 0.85 });  // IRREDUCIBLE CLASH = RED
-  var n = placements.length;
-  var inst = new THREE.InstancedMesh(geo, matN, n);
-  // gated-but-resolved (orange) vs still-clashing (red): clash takes precedence so a human SEES it.
-  var gated = placements.filter(function (p) { return p.gated && !p.clash; });
-  var clashed = placements.filter(function (p) { return p.clash; });
   var m = new THREE.Matrix4();
-  placements.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); inst.setMatrixAt(i, m); });
-  inst.instanceMatrix.needsUpdate = true;
-  inst.userData.dwDisc = disc;
-  root.add(inst);
-  function _overlay(list, mat) {
-    if (!list.length) return;
-    var gi = new THREE.InstancedMesh(geo, mat, list.length);
-    list.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); gi.setMatrixAt(i, m); });
-    gi.instanceMatrix.needsUpdate = true; gi.userData.dwDisc = disc; root.add(gi);
-  }
-  _overlay(gated, matG);     // orange = yielded into the plenum (resolved)
-  _overlay(clashed, matC);   // red = irreducible clash (gate could not separate within the envelope)
+  // §PRIM (W-DW-PRIM): a GENERATED fixture's POSITION is plausible (no ground truth for an absent
+  // discipline — unchanged here), but its SIZE per ifc_class IS measured. Group by ifc_class → render
+  // a BOX of that class's MEASURED median bbox (bx/by/bz, stamped on the rules + carried by
+  // disc_walker.place). SIZE only; count/position untouched. A class with no measured bbox (bx null) →
+  // the 0.18 marker cube fallback (never a fabricated size). The 3-material split is preserved per class.
+  var byCls = {};
+  placements.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+  var dims = [];
+  Object.keys(byCls).forEach(function (cls) {
+    var list = byCls[cls], s = list[0];
+    var measured = (s.bx > 0 && s.by > 0 && s.bz > 0);
+    var bx = measured ? s.bx : 0.18, by = measured ? s.by : 0.18, bz = measured ? s.bz : 0.18;
+    var geo = new THREE.BoxGeometry(bx, by, bz);
+    function _mesh(sub, mat) {
+      if (!sub.length) return;
+      var im = new THREE.InstancedMesh(geo, mat, sub.length);
+      sub.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); im.setMatrixAt(i, m); });
+      im.instanceMatrix.needsUpdate = true; im.userData.dwDisc = disc; root.add(im);
+    }
+    // gated-but-resolved (orange) vs still-clashing (red): clash takes precedence so a human SEES it.
+    _mesh(list, matN);                                                          // all (normal box)
+    _mesh(list.filter(function (p) { return p.gated && !p.clash; }), matG);     // orange = yielded into the plenum
+    _mesh(list.filter(function (p) { return p.clash; }), matC);                 // red = irreducible clash
+    dims.push(cls.replace('Ifc', '') + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)'));
+  });
+  console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
 }
 // Cross-disc gate: re-fold ALL currently-walked disciplines through the measured place-order + clearances
