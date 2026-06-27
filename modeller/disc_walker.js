@@ -99,12 +99,24 @@
     rules.forEach(function (r) { (by[r.ifc_class] = by[r.ifc_class] || []).push(r); });
     return Object.keys(by).map(function (cls) {
       var g = by[cls];
+      // AREAL DENSITY (RouteWalker-aligned, supersedes bbox-tiling): when the rule carries the
+      // SOURCE storey footprint (src_storey_area_m2, stamped by the re-baked miner), the measured
+      // per-storey count n_measured scales by floor area — count = density × target_area — NOT by
+      // tiling the bbox at the local cluster pitch (which exploded SC residential PLB to 708k). The
+      // pitch (sx/sy) only ARRANGES the count locally. Density = median(n_measured / src_area) over
+      // the class's source rows. Rules WITHOUT src_storey_area (e.g. terminal_rules.db, already sparse)
+      // → density 0 → the legacy spacing-tile path (back-compat, numerically unchanged).
+      var dens = _med(g.map(function (r) {
+        return (r.src_storey_area_m2 > 0 && r.n_measured > 0) ? (r.n_measured / r.src_storey_area_m2) : null;
+      }));
       return {
         ifc_class: cls,
         ref_kind: g[0].ref_kind,
         sx: _med(g.map(function (r) { return r.spacing_x_m; })),
         sy: _med(g.map(function (r) { return r.spacing_y_m; })),
         dz: _med(g.map(function (r) { return r.dz; })),
+        density: dens || 0,
+        n_measured: _med(g.map(function (r) { return r.n_measured; })),
         n_rules: g.length,
         src: (g[0].src_guids || '').split(',')[0] || ''
       };
@@ -130,15 +142,58 @@
     return r.length ? _med(r.map(function (x) { return x.count_per; })) : 0;
   }
 
+  // ── ARC OCCUPANCY ENVELOPE ──────────────────────────────────────────────────────
+  // The disc_walker-native analogue of RouteWalker's arc_envelope: a coarse occupancy grid
+  // over the storey's REAL elements, so area-scaled fixtures land on built area (rooms/walls),
+  // never in the void between wings. Returns occupied cell centres. NON-INVENT: a cell is
+  // occupied only where a real element's XY footprint covers it. Per-element cell span is
+  // bounded so one giant slab can't blow up the grid (it still marks its own footprint).
+  var _OCC_SPAN = 256;                                       // max cells one element marks per axis
+  function occupancy(bdb, st, cell) {
+    cell = Math.max(cell > 0 ? cell : 1, 0.5);
+    var rows = _rows(bdb,
+      "SELECT t.center_x cx, t.center_y cy, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_ " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.storey='" + _esc(st.name) + "'");
+    var occ = {};
+    rows.forEach(function (e) {
+      var i0 = Math.floor((e.cx - e.bx / 2) / cell), i1 = Math.floor((e.cx + e.bx / 2) / cell);
+      var j0 = Math.floor((e.cy - e.by_ / 2) / cell), j1 = Math.floor((e.cy + e.by_ / 2) / cell);
+      for (var i = i0; i <= i1 && i < i0 + _OCC_SPAN; i++)
+        for (var j = j0; j <= j1 && j < j0 + _OCC_SPAN; j++) occ[i + ',' + j] = 1;
+    });
+    return Object.keys(occ).map(function (k) {
+      var ij = k.split(','); return { x: (+ij[0] + 0.5) * cell, y: (+ij[1] + 0.5) * cell };
+    });
+  }
+
   // ── PLACER ──────────────────────────────────────────────────────────────────────
+  var _MAX_PER_STOREY = 50000;                               // legacy spacing-tile backstop (never silent)
   function place(disc, storeys, bdb) {
     var reps = repRules(disc), out = [];
     reps.forEach(function (rp) {
       storeys.forEach(function (st) {
         var w = st.x1 - st.x0, d = st.y1 - st.y0;
         var z = st.z + (rp.dz || 0);
-        if (rp.sx > 0 && rp.sy > 0) {                       // measured array → tile the footprint
+        if (rp.density > 0 && rp.sx > 0) {                  // AREA-SCALED measured count, envelope-placed (FIXTURES only)
+          var count = Math.round(rp.density * w * d);       // n_measured × (target_area / src_area)
+          if (count > 0) {
+            var cells = occupancy(bdb, st, rp.sx);
+            if (!cells.length) cells = [{ x: (st.x0 + st.x1) / 2, y: (st.y0 + st.y1) / 2 }];
+            var cap = cells.length, placeN = Math.min(count, cap), stride = cap / placeN;
+            for (var c = 0; c < placeN; c++) {
+              var cell = cells[Math.floor(c * stride)];
+              out.push({ disc: disc, ifc_class: rp.ifc_class, x: cell.x, y: cell.y, z: z,
+                storey: st.name, prov: 'placed:array-density', src: rp.src });
+            }
+            if (count > cap) console.log(TAG + ' §DW-CAP ' + disc + '/' + rp.ifc_class + ' storey=' + st.name +
+              ' placed=' + placeN + ' of ' + count + ' (envelope is the ceiling)');
+          }
+        } else if (rp.sx > 0 && rp.sy > 0) {                // legacy measured array → tile the footprint (no src area)
           var nx = Math.max(1, Math.round(w / rp.sx)), ny = Math.max(1, Math.round(d / rp.sy));
+          if (nx * ny > _MAX_PER_STOREY) {                  // backstop: never silently emit a runaway count
+            var sc = Math.sqrt((nx * ny) / _MAX_PER_STOREY); nx = Math.max(1, Math.round(nx / sc)); ny = Math.max(1, Math.round(ny / sc));
+            console.log(TAG + ' §DW-CAP ' + disc + '/' + rp.ifc_class + ' storey=' + st.name + ' tile capped to ' + (nx * ny) + ' (no src area — re-bake to area-scale)');
+          }
           for (var i = 0; i < nx; i++) for (var j = 0; j < ny; j++) {
             out.push({ disc: disc, ifc_class: rp.ifc_class, x: st.x0 + (i + 0.5) * (w / nx),
               y: st.y0 + (j + 0.5) * (d / ny), z: z, storey: st.name, prov: 'placed:array', src: rp.src });
@@ -390,7 +445,7 @@
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwWalk: dwWalk, substrate: substrate, place: place,
     route: route, routeChains: routeChains, gate: gate, repRules: repRules, order: order, clearance: clearance,
-    hostWalls: hostWalls, countPer: countPer,
+    hostWalls: hostWalls, countPer: countPer, occupancy: occupancy,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
