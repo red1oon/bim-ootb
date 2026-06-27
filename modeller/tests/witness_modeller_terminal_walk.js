@@ -104,6 +104,21 @@ async function openResident(page, key) {
   var elPlaced = await page.evaluate(function () { return (window.__dwWalks && window.__dwWalks.ELEC) ? window.__dwWalks.ELEC.length : 0; });
   chk('T7 click ELEC → walked, placed>0 (2 disciplines now co-resident)', elPlaced > 0, 'placed=' + elPlaced);
 
+  // T7b — the gate flags IRREDUCIBLE clashes (clash=true) and they render RED (0xff2a2a). This is the
+  // no-handwave proof: a residual clash a human would SEE on canvas is asserted, not assumed. FP+ELEC at
+  // Terminal density+clearance cannot fully fit clash-free in a house → some ELEC stay flagged + red.
+  var clashRender = await page.evaluate(function () {
+    var ec = (window.__dwWalks && window.__dwWalks.ELEC) ? window.__dwWalks.ELEC.filter(function (p) { return p.clash; }).length : 0;
+    var g = window.Bonsai.group && window.Bonsai.group();
+    var root = g && g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
+    var redInst = 0;
+    if (root) root.children.forEach(function (o) { if (o.isInstancedMesh && o.material && o.material.color && o.material.color.getHex() === 0xff2a2a) redInst += o.count; });
+    return { clashFlagged: ec, redInst: redInst };
+  });
+  chk('T7b gate FLAGS irreducible clash + renders it RED (no silent clash)',
+    clashRender.clashFlagged > 0 && clashRender.redInst === clashRender.clashFlagged,
+    'clashFlagged=' + clashRender.clashFlagged + ' redMarkers=' + clashRender.redInst);
+
   // ── generic MEP (no measured rule) → honest refusal ─────────────────────────────────────────────
   logs.length = 0;
   var refused = await page.evaluate(function () {

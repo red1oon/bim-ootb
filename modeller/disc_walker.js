@@ -273,26 +273,64 @@
   }
   // Apply the gate to placements from ≥2 disciplines: the lower-priority disc YIELDS
   // (pushed down by min_clear) where it sits within min_clear of a higher-priority disc.
-  function gate(placements) {
-    var ord = order(), clr = clearance(), yields = 0;
-    var byDisc = {}; placements.forEach(function (p) { (byDisc[p.disc] = byDisc[p.disc] || []).push(p); });
-    var discs = Object.keys(byDisc);
+  // AvoidanceGate. A lower-priority discipline yields by dropping into the plenum
+  // (measured min_clear, as in Terminal). TWO fixes over the naive one-shot drop:
+  //  (1) ITERATE — a single drop+break leaves dense sets clashing (the dropped fixture
+  //      can still be < min_clear of a DIFFERENT high-priority element); loop until stable.
+  //  (2) STAY IN THE ENVELOPE + FLAG — never drop a fixture below the lowest MEASURED
+  //      z-band (`floor`): below that is fabricated underground space (a Duplex has no
+  //      Terminal-deep plenum to drop into). Anything that still clashes after we have
+  //      dropped as far as the envelope allows is IRREDUCIBLE → mark `clash=true` so the
+  //      UI renders it RED. NON-INVENT, no-handwave: clashes are RESOLVED or FLAGGED,
+  //      never silently rendered clean and never buried underground to fake a clean count.
+  function _gatePairs(byDisc, discs, ord, clr, cb) {
     for (var a = 0; a < discs.length; a++) for (var b = 0; b < discs.length; b++) {
       if (a === b) continue;
       var da = discs[a], dbb = discs[b];
       var oa = (ord[da] != null) ? ord[da] : 99, ob = (ord[dbb] != null) ? ord[dbb] : 99;
       if (!(oa < ob)) continue;                              // da is higher priority than dbb
       var k = [da, dbb].sort().join('|'); var c = clr[k]; if (!c) continue;
-      var hi = byDisc[da], lo = byDisc[dbb];
-      lo.forEach(function (pl) {
-        for (var i = 0; i < hi.length; i++) {
-          var ph = hi[i];
-          var d3 = Math.sqrt(Math.pow(pl.x - ph.x, 2) + Math.pow(pl.y - ph.y, 2) + Math.pow(pl.z - ph.z, 2));
-          if (d3 < c.min_clear) { pl.z -= c.min_clear; pl.gated = true; yields++; break; }
-        }
+      cb(byDisc[da], byDisc[dbb], c.min_clear);              // hi, lo, min_clear
+    }
+  }
+  function _d3(p, q) {
+    return Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) + (p.z - q.z) * (p.z - q.z));
+  }
+  function gate(placements) {
+    var ord = order(), clr = clearance(), yields = 0;
+    // remember each placement's ORIGINAL z once (idempotent across repeated gate() calls
+    // as the modeller re-gates the cumulative set after each new walk).
+    placements.forEach(function (p) { if (p._z0 == null) p._z0 = p.z; });
+    // floor = lowest measured band across the walked set — the bottom of real, measured space.
+    var floor = Infinity; placements.forEach(function (p) { if (p._z0 < floor) floor = p._z0; });
+    var byDisc = {}; placements.forEach(function (p) { (byDisc[p.disc] = byDisc[p.disc] || []).push(p); });
+    var discs = Object.keys(byDisc);
+    var MAXIT = 16, it = 0, changed = true;
+    while (changed && it < MAXIT) {
+      changed = false; it++;
+      _gatePairs(byDisc, discs, ord, clr, function (hi, lo, mc) {
+        lo.forEach(function (pl) {
+          for (var i = 0; i < hi.length; i++) {
+            if (_d3(pl, hi[i]) < mc) {
+              var nz = pl.z - mc;
+              if (nz >= floor - 1e-6) { pl.z = nz; if (!pl.gated) yields++; pl.gated = true; changed = true; }
+              break;                                          // re-checked next iteration
+            }
+          }
+        });
       });
     }
-    return { yields: yields, order: ord };
+    // honest residual pass: whatever STILL clashes can't be resolved inside the envelope → FLAG it.
+    var residual = 0;
+    placements.forEach(function (p) { p.clash = false; });
+    _gatePairs(byDisc, discs, ord, clr, function (hi, lo, mc) {
+      lo.forEach(function (pl) {
+        for (var i = 0; i < hi.length; i++) {
+          if (_d3(pl, hi[i]) < mc) { if (!pl.clash) { pl.clash = true; residual++; } break; }
+        }
+      });
+    });
+    return { yields: yields, residual: residual, iterations: it, floor: floor, order: ord };
   }
 
   // ── WALK (the disc-node onWalk entry point) ─────────────────────────────────────────
