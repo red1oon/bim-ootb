@@ -206,7 +206,7 @@
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=3" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=4" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- Modeller's OWN service worker (its own app folder now — trilogy viewer/·erp/·modeller/; mirrors erp/sw.js). -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -1827,13 +1827,17 @@ window.discWalk = function (disc, ctx) {
         console.log('§DISC-WALK ' + disc + ' REFUSE ' + (w.reason || 'no placements') + ' (honest, 0 fabricated)');
         return;
       }
-      // Gate: re-fold against any already-walked disciplines so this walk yields per the measured clearances.
+      // Gate: register THIS disc first so the gate sees it too, then re-fold the FULL cumulative
+      // set through the measured clearances (current disc yields against the ones already present,
+      // not only the next walk). Re-render every walked disc so fresh gated/clash flags show.
+      window.__dwWalks[disc] = w.placements;
       var gateRes = _discGate();
-      _renderDiscWalk(disc, w.placements);
-      var gatedN = w.placements.filter(function (p) { return p.gated; }).length;
+      _redrawAllDiscWalks();
+      var gatedN = w.placements.filter(function (p) { return p.gated && !p.clash; }).length;
+      var clashN = w.placements.filter(function (p) { return p.clash; }).length;
       var nSeg = (w.chainSegs && w.chainSegs.length) || 0;
-      setStat(disc + ' — ' + w.placed + ' placed across ' + w.storeys + ' storeys' + (gatedN ? ' · ' + gatedN + ' gated' : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.chains ? ' · ' + w.chains.length + ' routed' : '')));
-      console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' (DiscWalker/terminal_rules)');
+      setStat(disc + ' — ' + w.placed + ' placed across ' + w.storeys + ' storeys' + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.chains ? ' · ' + w.chains.length + ' routed' : '')));
+      console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' clash=' + clashN + ' (DiscWalker/terminal_rules)');
       // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
       await _commitDiscWalk(disc, w.placements);
       // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
@@ -1864,20 +1868,26 @@ function _renderDiscWalk(disc, placements) {
   var base = DW_COLOR[disc] || 0xc0c0c0;
   var geo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
   var matN = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.35 });
-  var matG = new THREE.MeshStandardMaterial({ color: 0xe0a23a, emissive: 0xe0a23a, emissiveIntensity: 0.5 });   // gated = ORANGE
+  var matG = new THREE.MeshStandardMaterial({ color: 0xe0a23a, emissive: 0xe0a23a, emissiveIntensity: 0.5 });   // gated (yielded) = ORANGE
+  var matC = new THREE.MeshStandardMaterial({ color: 0xff2a2a, emissive: 0xff2a2a, emissiveIntensity: 0.85 });  // IRREDUCIBLE CLASH = RED
   var n = placements.length;
   var inst = new THREE.InstancedMesh(geo, matN, n);
-  var gated = placements.filter(function (p) { return p.gated; });
+  // gated-but-resolved (orange) vs still-clashing (red): clash takes precedence so a human SEES it.
+  var gated = placements.filter(function (p) { return p.gated && !p.clash; });
+  var clashed = placements.filter(function (p) { return p.clash; });
   var m = new THREE.Matrix4();
   placements.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); inst.setMatrixAt(i, m); });
   inst.instanceMatrix.needsUpdate = true;
   inst.userData.dwDisc = disc;
   root.add(inst);
-  if (gated.length) {   // overlay gated markers in orange
-    var gi = new THREE.InstancedMesh(geo, matG, gated.length);
-    gated.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); gi.setMatrixAt(i, m); });
+  function _overlay(list, mat) {
+    if (!list.length) return;
+    var gi = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); gi.setMatrixAt(i, m); });
     gi.instanceMatrix.needsUpdate = true; gi.userData.dwDisc = disc; root.add(gi);
   }
+  _overlay(gated, matG);     // orange = yielded into the plenum (resolved)
+  _overlay(clashed, matC);   // red = irreducible clash (gate could not separate within the envelope)
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
 }
 // Cross-disc gate: re-fold ALL currently-walked disciplines through the measured place-order + clearances
