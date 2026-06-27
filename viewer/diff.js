@@ -343,7 +343,7 @@ function setupDiff(A) {
     }
     return fromOpfs().then(function (db) {
       if (db) { _voErpDb = db; console.log('[RP-F] §VO_DB src=opfs'); return db; }
-      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+      return APP.cachedFetch('../erp/ad_seed.db')
         .then(function (buf) { _voErpDb = new SQL.Database(new Uint8Array(buf)); console.log('[RP-F] §VO_DB src=seed'); return _voErpDb; })
         .catch(function (e) { console.log('[RP-F] §VO_DB_ERR ' + e.message); return null; });
     });

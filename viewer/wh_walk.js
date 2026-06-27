@@ -105,9 +105,7 @@
     if (!window.POSCore) await loadScript('../erp/pos_core.js?v=3');
     if (!window.InOutConfirm) await loadScript('../erp/inout_confirm.js?v=1');
     if (!W.erpDb) {
-      var r = await fetch('../erp/ad_seed.db');
-      if (!r.ok) throw new Error('ad_seed.db fetch ' + r.status);
-      var buf = new Uint8Array(await r.arrayBuffer());
+      var buf = new Uint8Array(await APP.cachedFetch('../erp/ad_seed.db'));
       W.erpDb = new A._SQL.Database(buf);
       log('SEED loaded bytes=' + buf.length);
     }

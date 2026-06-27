@@ -1019,7 +1019,7 @@
       if (_bimErpDb) return Promise.resolve(_bimErpDb);
       var SQL = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
       if (!SQL || !window.ProjFold) return Promise.resolve(null);
-      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+      return APP.cachedFetch('../erp/ad_seed.db')
         .then(function (buf) { _bimErpDb = new SQL.Database(new Uint8Array(buf)); return _bimErpDb; })
         .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
     }
