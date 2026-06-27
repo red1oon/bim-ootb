@@ -94,12 +94,8 @@ const PRECACHE_ASSETS = [
   'import.js',
   'mep_coordination.js',
   'routewalker.js',
-  'disc_walker.js',
-  'str_walker.js',
-  'walker_confidence.js',
-  'str_walker_bridge.js',
-  'str_walker_outliner.js',
-  'cross_edges.js',
+  // NOTE: the Modeller app (modeller.html + disc_walker/str_walker*/walker_confidence/cross_edges/
+  // bonsai_*) moved to /modeller/ with its own sw — see the trilogy refactor. Not precached here.
   // SPATIAL_PICKING_SPEC §S-2..§S-5: warehouse pick-walk addon (data-gated pill)
   'wh_route.js',
   'wh_walk.js',
