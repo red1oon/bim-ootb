@@ -57,7 +57,7 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **Alt+X envelope ghost** — disc-coloured instanced bbox wireframes (free, no hang) — see the model's skeleton through its skin
 - **Precision camera** — Auto-Pivot live re-centre orbit (room-centroid / selected element), keyboard cluster
 - **Synthesized SFX** — zero-asset cinematic audio overlay (Time-Machine score, nav cues, surface-aware ray-blast)
-- **DAGeVu authoring modeller** (`viewer/modeller.html`) — a browser BIM *authoring* surface beside the viewer: an occt-wasm B-rep kernel as a pure `ops → mesh` function, where the signed op-log **is** the feature tree and geometry is a deterministic fold. Insert library components at LOD from a BOM-hierarchy catalog (real meshes), drop a whole house / floor / room as a recursive BOM-assembly, sketch with a planegcs constraint solver, sweep / fillet / chamfer — all replayable and reversible. Real buildings with rooms, storeys and typed cross-edges load as resident assemblies; the 3D construction grid is the active authoring frontier. Renamed from "Bonsai" to avoid a brand clash
+- **DAGeVu authoring modeller** (`modeller/modeller.html`) — a browser BIM *authoring* surface beside the viewer: an occt-wasm B-rep kernel as a pure `ops → mesh` function, where the signed op-log **is** the feature tree and geometry is a deterministic fold. Insert library components at LOD from a BOM-hierarchy catalog (real meshes), drop a whole house / floor / room as a recursive BOM-assembly, sketch with a planegcs constraint solver, sweep / fillet / chamfer — all replayable and reversible. Real buildings with rooms, storeys and typed cross-edges load as resident assemblies; the 3D construction grid is the active authoring frontier. Renamed from "Bonsai" to avoid a brand clash
 - **Connect Scene** — shared cross-surface context over the one op-log: selection, timeline and identity cross between the DAGeVu modeller, the viewer and the ERP while the surfaces stay separate (one log → two folds that co-vanish on undo)
 - **4D/5D Schedule Editor** (`viewer/schedule_editor.html`) — a full authoring arc built on top of the Time Machine: collapsible WBS outline, dependency editing, bounded CPM with critical-path highlight, drag-to-reschedule Gantt bars with duration lock, and live cross-tab sync via BroadcastChannel — every edit replays on the 3D viewer's Time Machine in real time
 
@@ -198,7 +198,7 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 |---|---|
 | **Live viewer** | [red1oon.github.io/bim-ootb](https://red1oon.github.io/bim-ootb/) |
 | **Morpheus front door** | [red1oon.github.io/bim-ootb/index2.html](https://red1oon.github.io/bim-ootb/index2.html) |
-| **DAGeVu authoring modeller** | [red1oon.github.io/bim-ootb/viewer/modeller.html](https://red1oon.github.io/bim-ootb/viewer/modeller.html) |
+| **DAGeVu authoring modeller** | [red1oon.github.io/bim-ootb/modeller/modeller.html](https://red1oon.github.io/bim-ootb/modeller/modeller.html) |
 | **Film — BIM and ERP, one engine** | [youtu.be/hnLYNcRihzs](https://youtu.be/hnLYNcRihzs) |
 | **BIM feature paper** | [red1oon.github.io/BIMCompiler/FeatureComparison](https://red1oon.github.io/BIMCompiler/FeatureComparison/) |
 | **ERP migrate & compare paper** | [red1oon.github.io/BIMCompiler/MigrateComparisonPaper](https://red1oon.github.io/BIMCompiler/MigrateComparisonPaper/) |

@@ -446,8 +446,8 @@ function launchModeller(){
   // Bonsai authoring is desktop-only (heavy occt-wasm kernel). On mobile → polite note, no launch.
   if(isMobile()){ sfxPress(); L('§BONSAI-LAUNCH blocked mobile → desktop-only note'); toast('BIM authoring (DAGeVu) is a desktop experience &mdash; open it on a larger screen.'); return; }
   // lazy-mount: occt bytes are warm; the worker spins inside modeller.html on demand.
-  sfxPress(); L('§BONSAI-LAUNCH → viewer/modeller.html (occt bytes warm, worker spins there)');
-  location.href='viewer/modeller.html';
+  sfxPress(); L('§BONSAI-LAUNCH → modeller/modeller.html (occt bytes warm, worker spins there)');
+  location.href='modeller/modeller.html';
 }
 function toast(html){
   var t=document.getElementById('m-toast');
