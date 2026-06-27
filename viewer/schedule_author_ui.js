@@ -53,7 +53,7 @@
     } catch (e) {}
     return fromOpfs.then(function (d) {
       if (d) return d;
-      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+      return APP.cachedFetch('../erp/ad_seed.db')
         .then(function (buf) { return new SQL.Database(new Uint8Array(buf)); })
         .catch(function () { return null; });
     });

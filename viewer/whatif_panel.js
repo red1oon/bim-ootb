@@ -47,7 +47,7 @@
     } catch (e) { fromOpfs = Promise.resolve(null); }
     return fromOpfs.then(function (db) {
       if (db && _hasFoldedProject(db)) { _db = db; return _db; }
-      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); })
+      return APP.cachedFetch('../erp/ad_seed.db')
         .then(function (buf) { _db = new SQL.Database(new Uint8Array(buf)); return _db; })
         .catch(function (e) { console.log('§WHATIF-UI db-load-err ' + e.message); return null; });
     });

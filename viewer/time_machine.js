@@ -2751,7 +2751,7 @@
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     if (!SQL) { console.log('§TM_TWIN_DEFER no sql.js factory'); return Promise.resolve(null); }
     _twinLoading = true;
-    return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+    return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec("SELECT C_Project_ID,PlannedAmt,CommittedAmt FROM C_Project WHERE Value=?", [building]);
       if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project'); return null; }
@@ -2779,7 +2779,7 @@
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     if (!SQL) return Promise.resolve(null);
     _shopfloorLoading = true;
-    return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+    return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec('SELECT C_Project_ID FROM C_Project WHERE Value=?', [building]);
       if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; return null; }
@@ -3918,7 +3918,7 @@
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     function fetchOrder() {
       if (!SQL) { console.log('§TM_ORDER_JUMP skip=no-SQL order=' + ppOrderId); return Promise.resolve(null); }
-      return fetch('../erp/ad_seed.db').then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
         var db = new SQL.Database(new Uint8Array(buf));
         var r = db.exec('SELECT Description, DateStartSchedule, DateFinishSchedule, C_Project_ID FROM PP_Order WHERE PP_Order_ID=' + ppOrderId);
         if (!r.length || !r[0].values.length) { db.close(); return null; }
