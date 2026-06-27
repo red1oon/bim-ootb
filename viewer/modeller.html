@@ -203,6 +203,10 @@
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
 <script src="routewalker.js?v=5" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
+     terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
+     every disc walks on ANY opened building from rules measured off a real coordinated building. -->
+<script src="disc_walker.js?v=1" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
@@ -1795,16 +1799,114 @@ window.discWalk = function (disc, ctx) {
     return;
   }
   if (disc === 'ARC') { setStat('ARC is the base layer — the disciplines fill it'); console.log('§DISC-WALK ARC is the base substrate (not a walked discipline)'); return; }
-  // MEP family (MEP/PLB/ELEC/ACMV/FP/…) → RouteWalker, anchor-dependent → honest refusal when unanchored.
+  // MEP family (MEP/PLB/ELEC/ACMV/FP/…) → DiscWalker: the shared Placer/Router/Gate walks the OPEN building
+  // from rules MEASURED off Terminal (terminal_rules.db) — works on ANY building, honest-refuses where no rule
+  // covers the disc or the building lacks substrate. Supersedes the anchor-dependent RouteWalker recipes.
   (async function () {
     try {
-      var ready = (typeof _rwReadyOnce === 'function') ? await _rwReadyOnce() : false;
-      var segs = (ready && typeof rwRouteSegments === 'function' && name) ? (rwRouteSegments(null, name) || []) : [];
-      var mine = segs.filter(function (s) { return String(s.disc || '').toUpperCase() === disc; });
-      if (mine.length) { setStat(disc + ' — ' + mine.length + ' routed segments'); console.log('§DISC-WALK ' + disc + ' routed ' + mine.length + ' segment(s) (RouteWalker)'); }
-      else { setStat(disc + ' — no walk (no anchors for ' + name + ')'); console.log('§DISC-WALK ' + disc + ' no-walk — RouteWalker has no anchors/recipe for "' + name + '" (honest refusal, no fabricated run)'); }
+      if (!window.DiscWalker) { setStat(disc + ' — walker engine not loaded'); console.warn('§DISC-WALK no DiscWalker'); return; }
+      if (!window.DiscWalker._ready()) {
+        try { await window.DiscWalker.dwInit(window.SQL, '../modeller/'); }
+        catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return; }
+      }
+      if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return; }
+      var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
+      var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '');
+      bdb.close();
+      if (w.refused || !w.placed) {
+        _clearDiscWalk(disc);
+        setStat(disc + ' — no walk (' + (w.reason || 'no placements') + ')');
+        console.log('§DISC-WALK ' + disc + ' REFUSE ' + (w.reason || 'no placements') + ' (honest, 0 fabricated)');
+        return;
+      }
+      // Gate: re-fold against any already-walked disciplines so this walk yields per the measured clearances.
+      var gateRes = _discGate();
+      _renderDiscWalk(disc, w.placements);
+      var gatedN = w.placements.filter(function (p) { return p.gated; }).length;
+      setStat(disc + ' — ' + w.placed + ' placed across ' + w.storeys + ' storeys' + (gatedN ? ' · ' + gatedN + ' gated' : '') + (w.chains ? ' · ' + w.chains.length + ' routed' : ''));
+      console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' gated=' + gatedN + ' (DiscWalker/terminal_rules)');
     } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); }
   })();
+};
+
+// DiscWalker 3D render — markers for a walked discipline live in a dedicated child group of the editable
+// group, keyed by disc so a re-walk replaces cleanly. GREEN placements, ORANGE if the gate yielded them.
+window.__dwWalks = window.__dwWalks || {};   // disc -> placements (for the cross-disc gate re-fold)
+var DW_COLOR = { FP: 0xff5a4f, ELEC: 0xffd24a, ACMV: 0x4fd0ff, PLB: 0x4f7bff, MEP: 0x7fe07f, SP: 0x4fd0ff, CW: 0x4f7bff };
+function _dwRoot() {
+  var g = window.Bonsai.group && window.Bonsai.group(); if (!g) return null;
+  var root = g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
+  if (!root) { root = new THREE.Group(); root.userData.dwRoot = true; g.add(root); }
+  return root;
+}
+function _clearDiscWalk(disc) {
+  var root = _dwRoot(); if (!root) return;
+  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwDisc === disc) root.remove(o); });
+  delete window.__dwWalks[disc];
+}
+function _renderDiscWalk(disc, placements) {
+  var root = _dwRoot(); if (!root) return;
+  _clearDiscWalk(disc);
+  window.__dwWalks[disc] = placements;
+  var base = DW_COLOR[disc] || 0xc0c0c0;
+  var geo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+  var matN = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.35 });
+  var matG = new THREE.MeshStandardMaterial({ color: 0xe0a23a, emissive: 0xe0a23a, emissiveIntensity: 0.5 });   // gated = ORANGE
+  var n = placements.length;
+  var inst = new THREE.InstancedMesh(geo, matN, n);
+  var gated = placements.filter(function (p) { return p.gated; });
+  var m = new THREE.Matrix4();
+  placements.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); inst.setMatrixAt(i, m); });
+  inst.instanceMatrix.needsUpdate = true;
+  inst.userData.dwDisc = disc;
+  root.add(inst);
+  if (gated.length) {   // overlay gated markers in orange
+    var gi = new THREE.InstancedMesh(geo, matG, gated.length);
+    gated.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); gi.setMatrixAt(i, m); });
+    gi.instanceMatrix.needsUpdate = true; gi.userData.dwDisc = disc; root.add(gi);
+  }
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+}
+// Cross-disc gate: re-fold ALL currently-walked disciplines through the measured place-order + clearances
+// so a newly-walked disc yields against the ones already present ("as in Terminal"). Mutates placement z.
+function _discGate() {
+  if (!window.DiscWalker || !window.DiscWalker.gate) return { yields: 0 };
+  var all = [];
+  Object.keys(window.__dwWalks).forEach(function (d) { all = all.concat(window.__dwWalks[d]); });
+  if (all.length < 2) return { yields: 0 };
+  return window.DiscWalker.gate(all);
+}
+
+// ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
+// The bom-graph shows disc nodes only for disciplines PRESENT in a building — but the whole point of the
+// Terminal rules is to WALK a discipline that's ABSENT (FP on a house). So register a "Walk" Outliner
+// category listing the disciplines terminal_rules.db covers (DERIVED, not whitelisted); a click walks it
+// onto the open building via the shared DiscWalker. RESUME_TERMINAL_RULE_MINING §CONVERGENCE.
+var _discRosterReg = false;
+function _registerDiscRoster() {
+  if (_discRosterReg || !window.Bonsai || !window.Bonsai.outliner) return;
+  _discRosterReg = true;
+  window.Bonsai.outliner.addCategory({
+    key: 'discwalk', label: 'Walk · Disciplines (Terminal rules)',
+    tree: function () {
+      var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
+      if (!ds.length) return [{ id: 'dw-load', label: 'open a building to walk a discipline', kind: 'group', children: [] }];
+      return [{ id: 'dw-root', label: 'From terminal_rules.db (measured)', kind: 'group', children: ds.map(function (d) {
+        var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
+        return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
+      }) }];
+    },
+    onWalk: function (disc) { window.discWalk(disc, { building: window.__dwName }); }
+  });
+  console.log('§DISC-WALK roster registered disciplines=' + ((window.DiscWalker && window.DiscWalker.disciplines && window.DiscWalker.disciplines().join(',')) || ''));
+}
+// Ensure the engine is loaded (lazy fetch of terminal_rules.db) + the roster is registered. Called on open.
+window.__ensureDiscWalker = async function () {
+  try {
+    if (window.DiscWalker && !window.DiscWalker._ready()) await window.DiscWalker.dwInit(window.SQL, '../modeller/');
+  } catch (e) { console.warn('§DISC-WALK dwInit (roster) failed ' + (e && e.message)); }
+  _registerDiscRoster();
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
 };
 
 // ── OPEN (W-UX-1): the pill-rail verb that replaced the old top-left drop panels. Clicking #b-open opens a
