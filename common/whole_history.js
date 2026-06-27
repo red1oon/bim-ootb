@@ -48,6 +48,13 @@
 
   // record(entry) — the SINGLE writer every surface mirrors through. entry: {page, ts?, label, kind?, ref?}.
   // ADDITIVE + best-effort: never throws, never replaces a local bar. Returns the stored row (or null).
+  // Defect A fix: coalesce same-doc/same-day repeats — update ts instead of appending, so the doc
+  // gets ONE live dot per day that advances in time rather than spamming. op kind with distinct label
+  // (installs, deletes) and cross-day repeats each still get their own dot.
+  function _docId(e) {
+    if (e.ref && e.ref.table != null && e.ref.recordId != null) return e.page + ':' + e.ref.table + '#' + e.ref.recordId;
+    return e.page + '|' + e.label;
+  }
   function record(entry) {
     try {
       if (!entry || !entry.page) return null;
@@ -57,10 +64,24 @@
         ref: (entry.ref != null ? entry.ref : null),
         source: entry.page, type: entry.type || entry.kind || 'nav' };     // ← landing back-compat
       var arr = all();
-      arr.push(rec);
+      // Defect A: find an existing same-doc, same-day row to coalesce (never coalesce distinct labels
+      // for kind='op' since installs/deletes are genuinely different events).
+      var docId = _docId(rec), day = _dayKey(rec.ts);
+      var coalesced = false;
+      if (rec.kind !== 'op') {
+        for (var i = arr.length - 1; i >= 0; i--) {
+          if (_docId(arr[i]) === docId && _dayKey(arr[i].ts) === day) {
+            arr[i].ts = rec.ts;   // advance the timestamp, keep the dot count at 1 for that doc+day
+            coalesced = true;
+            break;
+          }
+        }
+      }
+      if (!coalesced) arr.push(rec);
       if (arr.length > MAX) arr = arr.slice(-MAX);
       ls.setItem(KEY, JSON.stringify(arr));
       try { new BroadcastChannel(CH).postMessage('sync'); } catch (e) {}
+      console.log('§WHOLE-DEDUP doc=' + docId + ' day=' + day + ' action=' + (coalesced ? 'coalesce' : 'append') + ' count=' + arr.length);
       console.log('§WHOLE-REC page=' + rec.page + ' kind=' + rec.kind + ' ts=' + rec.ts + ' label="' + rec.label + '"');
       return rec;
     } catch (err) { return null; }
