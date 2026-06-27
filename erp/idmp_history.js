@@ -249,4 +249,38 @@
   window.IdmpHistory = { push: push, pushCrumb: pushCrumb, registerRestore: registerRestore, undo: undo, redo: redo,
     render: render, clear: clear, list: list, toggleBar: toggleBar, canStep: canStep,
     setDraftPip: setDraftPip, clearDraftPip: clearDraftPip };   // Item 1 (W-DRAFT-RESTORE-LIVE): amber unsaved-edit pip
+
+  // Defect B fix: seed _hist from the persisted WholeHistory log (page=idempiere entries only).
+  // READ-ONLY: does NOT call WholeHistory.record() back — no echo, no double-write.
+  // Called deferred so the host page has time to assign window.WholeHistory before we read it.
+  function _seed() {
+    try {
+      if (typeof WholeHistory === 'undefined' || !WholeHistory.entries) {
+        console.log('§IDMP-HIST seed skip WholeHistory absent');
+        return;
+      }
+      var rows = WholeHistory.entries().filter(function (e) { return e.page === 'idempiere'; });
+      if (!rows.length) { console.log('§IDMP-HIST seed restored=0 (log empty)'); return; }
+      rows.forEach(function (e) {
+        var ref = e.ref || {};
+        var m = { kind: e.kind || 'nav', label: e.label || e.kind || 'nav',
+                  windowId: ref.window != null ? ref.window : null,
+                  tabIdx: ref.tab != null ? ref.tab : null,
+                  table: ref.table || null, recordId: ref.recordId != null ? ref.recordId : null,
+                  view: ref.view || null };
+        if (m.windowId == null) return;   // crumb/unknown — skip (push() would drop it anyway)
+        var sig = _sig(m);
+        // coalesce: skip if tip is the same moment (WholeHistory may already dedup, but be safe)
+        if (_hist.length > 0 && _hist[_hist.length - 1].sig === sig) return;
+        _hist.push({ seq: _seq++, sig: sig, kind: m.kind, label: m.label,
+                     windowId: m.windowId, tabIdx: m.tabIdx, table: m.table,
+                     recordId: m.recordId, view: m.view });
+      });
+      _idx = _hist.length - 1;
+      console.log('§IDMP-HIST seed page=idempiere restored=' + _hist.length + ' idx=' + _idx);
+      if (typeof document !== 'undefined' && document.body) render();
+    } catch (e) { console.warn('§IDMP-HIST seed-err', e); }
+  }
+  // Defer seed so whole_history.js has fully executed and WholeHistory is on window.
+  if (typeof setTimeout !== 'undefined') setTimeout(_seed, 0);
 })();
