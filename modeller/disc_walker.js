@@ -13,7 +13,8 @@
 // The rules carry RELATIVE dz + spacing (these transfer to a new building); absolute Terminal
 // z-bands do NOT transfer and are not used for placement. Honest-REFUSE when no rule covers a
 // disc, or the building lacks the substrate (no storeys / no network elements to route).
-// SOURCE COPY lives in bim-compiler/build/; the deployed copy is bim-ootb/viewer/disc_walker.js.
+// SOURCE COPY lives in bim-compiler/build/; the deployed copy is bim-ootb/modeller/disc_walker.js
+// (the Modeller is its own top-level app now — trilogy viewer/·erp/·modeller/).
 (function () {
   'use strict';
   var TAG = '§DW';
@@ -156,6 +157,97 @@
     return chains;
   }
 
+  // ── ROUTER nn-CHAINS (live geometry) ────────────────────────────────────────────────
+  // route() above only COUNTS endpoint classes (does the building have both?). routeChains
+  // PRODUCES the real network: for each measured 'nn' rule, pair every from-element to its
+  // NEAREST to-element in 3D, bounded by the measured max gap. A spatial hash (cell=bound)
+  // keeps it O(n) — NOT brute-force n×m (4243×3821 pipe pairs would be 16M). NON-INVENT: every
+  // segment joins TWO REAL elements at their REAL element_transforms positions; the only derived
+  // thing is the nearest-neighbour pairing, capped at the measured gap so no implausibly long run
+  // is fabricated. A from-element with no neighbour within the bound is HONESTLY skipped + counted.
+  function _gapParams(pj) {
+    var p = {}; try { p = JSON.parse(pj || '{}'); } catch (e) { p = {}; }
+    return {                                                  // PLB uses *_m keys; ACMV uses nn_dist_*_m — accept both
+      avg: (p.avg_gap_m != null) ? p.avg_gap_m : p.nn_dist_avg_m,
+      max: (p.max_m != null) ? p.max_m : p.nn_dist_max_m,
+      min: (p.min_m != null) ? p.min_m : p.nn_dist_min_m
+    };
+  }
+  function _loadXYZ(bdb, cls) {
+    return _rows(bdb,
+      "SELECT m.guid g, t.center_x x, t.center_y y, t.center_z z " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class='" + _esc(cls) + "'");
+  }
+  var _DERIVED_MAX_K = 4;                                     // when a rule has no measured max, bound = K×avg (logged)
+  // ONE nn pass: for each ANCHOR element find the nearest CAND within `bound` (spatial-hash, O(n)).
+  // Returns the paired list {ai, ci, gap} + the no-neighbour count + the mean gap of paired.
+  function _nnPass(anchor, cand, bound) {
+    var CELL = bound > 0 ? bound : 1, grid = {};
+    var ck = function (a, b, c) { return a + ',' + b + ',' + c; };
+    cand.forEach(function (p, i) {
+      var k = ck(Math.floor(p.x / CELL), Math.floor(p.y / CELL), Math.floor(p.z / CELL));
+      (grid[k] = grid[k] || []).push(i);
+    });
+    var pairs = [], noNbr = 0, sum = 0;
+    anchor.forEach(function (f, fi) {
+      var ix = Math.floor(f.x / CELL), iy = Math.floor(f.y / CELL), iz = Math.floor(f.z / CELL);
+      var best = Infinity, bj = -1;
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
+        var arr = grid[ck(ix + dx, iy + dy, iz + dz)]; if (!arr) continue;
+        for (var a = 0; a < arr.length; a++) {
+          var p = cand[arr[a]];
+          if (p.g === f.g) continue;                         // self-pair guard (same-class nn, e.g. IfcMember→IfcMember)
+          var d = Math.sqrt((f.x - p.x) * (f.x - p.x) + (f.y - p.y) * (f.y - p.y) + (f.z - p.z) * (f.z - p.z));
+          if (d < best) { best = d; bj = arr[a]; }
+        }
+      }
+      if (bj >= 0 && best <= bound) { pairs.push({ ai: fi, ci: bj, gap: best }); sum += best; }
+      else { noNbr++; }
+    });
+    return { pairs: pairs, noNbr: noNbr, mean: pairs.length ? sum / pairs.length : Infinity };
+  }
+  function routeChains(disc, bdb) {
+    var rr = _rows(_db, "SELECT * FROM rule_routing WHERE disc='" + _esc(disc) + "' AND pattern='nn'");
+    var segs = [], byRule = [];
+    rr.forEach(function (r) {
+      var gp = _gapParams(r.params_json);
+      if (gp.avg == null && gp.max == null) {                // no measured gap → cannot bound → honest skip
+        byRule.push({ from: r.from_kind, to: r.to_kind, segs: 0, noNbr: 0, skipped: 'no-measured-gap' });
+        return;
+      }
+      var bound = (gp.max != null) ? gp.max : _DERIVED_MAX_K * gp.avg;
+      var gapSource = (gp.max != null) ? 'measured-max' : 'derived-from-avg';
+      var from = _loadXYZ(bdb, r.from_kind), to = _loadXYZ(bdb, r.to_kind);
+      if (!from.length || !to.length) {                      // building lacks one endpoint class → honest 0
+        byRule.push({ from: r.from_kind, to: r.to_kind, segs: 0, noNbr: 0, skipped: 'no-endpoints' });
+        return;
+      }
+      // The rule declares from→to, but its measured avg gap was mined from whichever endpoint set is the
+      // LEAF (one connection per device). Routing the wrong way pairs sparse devices across the room (inflated
+      // mean, fabricated long links). So run nn BOTH orientations and KEEP THE TIGHTER (smaller mean gap) — the
+      // direction where every iterated element has a genuine nearby partner = the real connectivity. NON-INVENT:
+      // both passes use only real positions; we choose the orientation that fabricates the least gap. Segments
+      // always record from_guid/to_guid by the RULE's from_kind/to_kind, regardless of which set we iterated.
+      var fwd = _nnPass(from, to, bound);                    // anchor=from, cand=to
+      var rev = _nnPass(to, from, bound);                    // anchor=to,   cand=from
+      var useRev = rev.mean < fwd.mean;
+      var chosen = useRev ? rev : fwd;
+      var iterDir = useRev ? 'to→from' : 'from→to';
+      chosen.pairs.forEach(function (pr) {
+        // map the paired indices back to from-class / to-class endpoints (rule semantics, not iteration order)
+        var fEl = useRev ? from[pr.ci] : from[pr.ai];
+        var tEl = useRev ? to[pr.ai] : to[pr.ci];
+        segs.push({ disc: disc, rule: 'nn', from_kind: r.from_kind, to_kind: r.to_kind,
+          from_guid: fEl.g, to_guid: tEl.g, from: [fEl.x, fEl.y, fEl.z], to: [tEl.x, tEl.y, tEl.z],
+          gap: +pr.gap.toFixed(4), bound: +(+bound).toFixed(4), gapSource: gapSource });
+      });
+      byRule.push({ from: r.from_kind, to: r.to_kind, segs: chosen.pairs.length, noNbr: chosen.noNbr,
+        bound: +(+bound).toFixed(4), gapSource: gapSource, avg_measured: gp.avg, iterDir: iterDir,
+        meanGap: +chosen.mean.toFixed(4) });
+    });
+    return { segs: segs, byRule: byRule };
+  }
+
   // ── GATE (place-order + avoidance) ─────────────────────────────────────────────────
   // Global per-disc order = the median order_index across the measured place_order rows.
   function order() {
@@ -218,9 +310,12 @@
     }
     var placements = place(disc, sub, bdb);
     var chains = route(disc, bdb);
+    var rc = routeChains(disc, bdb);                         // LIVE nn-chain geometry (real on MEP-rich bldgs, 0 on residents)
     console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
-      ' chains=' + chains.length + ' storeys=' + sub.length);
-    return { disc: disc, refused: false, placed: placements.length, placements: placements, chains: chains, storeys: sub.length };
+      ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
+      (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
+    return { disc: disc, refused: false, placed: placements.length, placements: placements,
+      chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length };
   }
 
   // The walkable disciplines the measured rules cover — drives the Outliner "Walk" roster so a
@@ -234,7 +329,7 @@
   }
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwWalk: dwWalk, substrate: substrate, place: place,
-    route: route, gate: gate, repRules: repRules, order: order, clearance: clearance,
+    route: route, routeChains: routeChains, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer,
     disciplines: disciplines, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
