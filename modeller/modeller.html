@@ -1942,23 +1942,50 @@ async function _commitDiscWalk(disc, placements) {
 // to the signed op-log as GEOM_SWEEP (occt is per-sweep — RouteWalker shipped ~200; the full network is the
 // line view, the op-log proves the signed/foldable mechanism). parameters._dw carries the two real guids+gap.
 window.__dwChains = window.__dwChains || {};   // disc -> chain segments (for the redraw-after-scrub)
-window.DW_CHAIN_COMMIT_CAP = 60;               // op-log GEOM_SWEEP cap (occt is per-sweep, so this is a signed sample); the full network always renders as lines (window-scoped so a witness can shrink it)
+window.DW_CHAIN_COMMIT_CAP = 60;               // op-log GEOM_SWEEP cap (occt is per-sweep, so this is a signed sample); the full network always renders (window-scoped so a witness can shrink it)
+// LANDED routed network → LOD MESH: cylinder TUBES between the REAL element endpoints, not flat lines.
+// This is the PROVEN-EXACT layer (witness_disc_route_nnchain R2: every segment joins two real
+// elements_meta rows at their real element_transforms position, ≤1e-6), so it renders as solid 3D
+// geometry placed AT the real positions — the disc-walker analogue of the Java compiler placing catalog
+// geometry. (GENERATED fixtures stay LOD marker cubes in _renderDiscWalk — plausible, no ground truth;
+// the visual split tube-vs-cube IS the LANDED-vs-GENERATED honesty made visible.)
+var DW_TUBE_R = { PLB: 0.04, ACMV: 0.12, ELEC: 0.03, FP: 0.04, SP: 0.05, CW: 0.05, MEP: 0.05 };  // representative LOD radii (m)
 function _renderDiscChains(disc, segs) {
   var root = _dwRoot(); if (!root) return;
   root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwChain === disc) root.remove(o); });   // clear prior
   window.__dwChains[disc] = segs;
+  if (!segs.length) { if (window.A && A.requestRender) A.requestRender(); return; }
   var base = DW_COLOR[disc] || 0xc0c0c0;
-  var pts = new Float32Array(segs.length * 6);
+  var r = DW_TUBE_R[disc] || 0.05;
+  var geo = new THREE.CylinderGeometry(r, r, 1, 6);            // unit tube along +Y, low-LOD (6 sides), scaled per segment
+  var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.25, metalness: 0.1, roughness: 0.6 });
+  var inst = new THREE.InstancedMesh(geo, mat, segs.length);
+  var up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), mid = new THREE.Vector3();
+  var q = new THREE.Quaternion(), sc = new THREE.Vector3(), m = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3();
   for (var i = 0; i < segs.length; i++) {
     var s = segs[i];
-    pts[i * 6] = s.from[0]; pts[i * 6 + 1] = s.from[1]; pts[i * 6 + 2] = s.from[2];
-    pts[i * 6 + 3] = s.to[0]; pts[i * 6 + 4] = s.to[1]; pts[i * 6 + 5] = s.to[2];
+    a.set(s.from[0], s.from[1], s.from[2]); b.set(s.to[0], s.to[1], s.to[2]);
+    dir.subVectors(b, a); var len = dir.length() || 1e-6;
+    mid.addVectors(a, b).multiplyScalar(0.5);
+    q.setFromUnitVectors(up, dir.clone().normalize());
+    sc.set(1, len, 1);
+    inst.setMatrixAt(i, m.compose(mid, q, sc));               // unit-cylinder ±Y/2 → from/to (exact)
   }
-  var g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-  var lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: base }));
-  lines.userData.dwChain = disc;
-  root.add(lines);
+  inst.instanceMatrix.needsUpdate = true;
+  inst.userData.dwChain = disc;
+  root.add(inst);
+  // §-WHITEBOX: the LOD mesh must sit AT the real endpoints — reconstruct each tube's ±Y/2 ends from its
+  // instance transform and compare to the real from/to (the position the witness proved exact). The RENDER
+  // must not drift from the proven-exact data. (Sampled; full set is identical by construction.)
+  var drift = 0, k = Math.min(segs.length, 300), t = new THREE.Vector3(), bo = new THREE.Vector3();
+  for (var j = 0; j < k; j++) {
+    inst.getMatrixAt(j, m);
+    t.set(0, 0.5, 0).applyMatrix4(m); bo.set(0, -0.5, 0).applyMatrix4(m);
+    var s2 = segs[j]; a.set(s2.from[0], s2.from[1], s2.from[2]); b.set(s2.to[0], s2.to[1], s2.to[2]);
+    drift = Math.max(drift, Math.min(t.distanceTo(b) + bo.distanceTo(a), t.distanceTo(a) + bo.distanceTo(b)));
+  }
+  console.log('§DW-TUBE ' + disc + ' tubes=' + segs.length + ' r=' + r.toFixed(3) +
+    ' endpointDrift(' + k + ')=' + drift.toExponential(1) + 'm (LANDED LOD mesh @ real endpoints)');
   if (window.A && A.requestRender) A.requestRender();
 }
 async function _commitDiscChains(disc, segs) {
