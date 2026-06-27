@@ -206,7 +206,7 @@
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=2" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=3" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- Modeller's OWN service worker (its own app folder now — trilogy viewer/·erp/·modeller/; mirrors erp/sw.js). -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -1831,10 +1831,13 @@ window.discWalk = function (disc, ctx) {
       var gateRes = _discGate();
       _renderDiscWalk(disc, w.placements);
       var gatedN = w.placements.filter(function (p) { return p.gated; }).length;
-      setStat(disc + ' — ' + w.placed + ' placed across ' + w.storeys + ' storeys' + (gatedN ? ' · ' + gatedN + ' gated' : '') + (w.chains ? ' · ' + w.chains.length + ' routed' : ''));
-      console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' gated=' + gatedN + ' (DiscWalker/terminal_rules)');
+      var nSeg = (w.chainSegs && w.chainSegs.length) || 0;
+      setStat(disc + ' — ' + w.placed + ' placed across ' + w.storeys + ' storeys' + (gatedN ? ' · ' + gatedN + ' gated' : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.chains ? ' · ' + w.chains.length + ' routed' : '')));
+      console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' (DiscWalker/terminal_rules)');
       // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
       await _commitDiscWalk(disc, w.placements);
+      // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
+      if (nSeg) { _renderDiscChains(disc, w.chainSegs); await _commitDiscChains(disc, w.chainSegs); }
     } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); }
   })();
 };
@@ -1910,14 +1913,73 @@ async function _commitDiscWalk(disc, placements) {
   }
   if (committed) {
     await O.scrubTo(O.length);
-    // foldChainToScene clears the editable group — restore the walk markers on top of committed geometry
-    _renderDiscWalk(disc, placements);
+    // foldChainToScene clears the editable group — restore ALL walked markers + chains on top of committed geometry
+    _redrawAllDiscWalks();
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     syncHistory(); audioCue('rollout');
   }
   console.log('§DISC-WALK-COMMIT disc=' + disc + ' placements=' + placements.length + ' committed=' + committed);
   window.__dwLastCommitDisc = disc;   // sentinel for witnesses
   return committed;
+}
+
+// ── ROUTER nn-CHAIN render + op-log fold (§ROUTER-NNCHAIN) ──────────────────────────────────────────
+// The Router produces real nearest-neighbour-3d segments between actual MEP elements (pipe fittings↔
+// segments, ducts↔terminals), measured on the OPEN building's own element positions. Render the WHOLE
+// network as cheap 3D lines (instant, all visible = "the Router half live"); fold a BOUNDED + LOGGED sample
+// to the signed op-log as GEOM_SWEEP (occt is per-sweep — RouteWalker shipped ~200; the full network is the
+// line view, the op-log proves the signed/foldable mechanism). parameters._dw carries the two real guids+gap.
+window.__dwChains = window.__dwChains || {};   // disc -> chain segments (for the redraw-after-scrub)
+window.DW_CHAIN_COMMIT_CAP = 60;               // op-log GEOM_SWEEP cap (occt is per-sweep, so this is a signed sample); the full network always renders as lines (window-scoped so a witness can shrink it)
+function _renderDiscChains(disc, segs) {
+  var root = _dwRoot(); if (!root) return;
+  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwChain === disc) root.remove(o); });   // clear prior
+  window.__dwChains[disc] = segs;
+  var base = DW_COLOR[disc] || 0xc0c0c0;
+  var pts = new Float32Array(segs.length * 6);
+  for (var i = 0; i < segs.length; i++) {
+    var s = segs[i];
+    pts[i * 6] = s.from[0]; pts[i * 6 + 1] = s.from[1]; pts[i * 6 + 2] = s.from[2];
+    pts[i * 6 + 3] = s.to[0]; pts[i * 6 + 4] = s.to[1]; pts[i * 6 + 5] = s.to[2];
+  }
+  var g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+  var lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: base }));
+  lines.userData.dwChain = disc;
+  root.add(lines);
+  if (window.A && A.requestRender) A.requestRender();
+}
+async function _commitDiscChains(disc, segs) {
+  var O = window.Bonsai && window.Bonsai.oplog; if (!O) return 0;
+  var color = DW_COLOR[disc] || 0xc0c0c0;
+  var capMax = window.DW_CHAIN_COMMIT_CAP || 120;
+  var cap = Math.min(segs.length, capMax);
+  var committed = 0;
+  for (var i = 0; i < cap; i++) {                     // commit optimistically (LEAF append, no per-commit re-fold)
+    var s = segs[i];
+    var op = { op_type: 'GEOM_SWEEP',
+      parameters: { profile: { w: 0.05, h: 0.05 }, path: [s.from.slice(), s.to.slice()],
+                    _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
+                           from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap } } };
+    try { var res = await O.commit(op, { color: color }); if (res) committed++; }
+    catch (e) { console.warn('§ROUTER-CHAIN-COMMIT fail i=' + i + ' ' + (e && e.message)); }
+  }
+  if (committed) {
+    await O.scrubTo(O.length);                        // ONE authoritative re-fold (mirrors RouteWalker autoRouteMEP)
+    _redrawAllDiscWalks();
+    if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    syncHistory(); audioCue('rollout');
+  }
+  console.log('§ROUTER-CHAIN-COMMIT disc=' + disc + ' folded=' + committed + '/' + segs.length +
+    (segs.length > cap ? ' (cap=' + capMax + ', occt-bounded; full ' + segs.length + ' rendered live)' : ''));
+  window.__dwLastChainDisc = disc;                    // sentinel for witnesses
+  return committed;
+}
+// foldChainToScene clears the editable group on every scrub — re-render every walked disc's placement markers
+// AND chain lines so a co-resident walk (FP+ELEC, or PLB placements+chains) survives a later commit's re-fold.
+function _redrawAllDiscWalks() {
+  Object.keys(window.__dwWalks).forEach(function (d) { if (window.__dwWalks[d]) _renderDiscWalk(d, window.__dwWalks[d]); });
+  Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d]); });
 }
 
 // ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
