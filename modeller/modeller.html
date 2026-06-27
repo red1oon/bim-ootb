@@ -1833,6 +1833,8 @@ window.discWalk = function (disc, ctx) {
       var gatedN = w.placements.filter(function (p) { return p.gated; }).length;
       setStat(disc + ' — ' + w.placed + ' placed across ' + w.storeys + ' storeys' + (gatedN ? ' · ' + gatedN + ' gated' : '') + (w.chains ? ' · ' + w.chains.length + ' routed' : ''));
       console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' gated=' + gatedN + ' (DiscWalker/terminal_rules)');
+      // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
+      await _commitDiscWalk(disc, w.placements);
     } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); }
   })();
 };
@@ -1883,6 +1885,39 @@ function _discGate() {
   Object.keys(window.__dwWalks).forEach(function (d) { all = all.concat(window.__dwWalks[d]); });
   if (all.length < 2) return { yields: 0 };
   return window.DiscWalker.gate(all);
+}
+// Tack-chain op-log emit (W-DW-OPLOG): commit each disc-walk placement as a signed GEOM_INSERT so the walk
+// is undoable and folds to the enterprise (same doctrine as dropLeaves/RouteWalker GEOM_SWEEP).
+// parameters._dw carries disc/storey/prov/ifc/host and persists in the DB via JSON.stringify(params).
+// Hash: exact ifc_class match in catalog, else first catalog entry (box proxy — identity lives in _dw.ifc).
+async function _commitDiscWalk(disc, placements) {
+  var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
+  if (!O || !L) return 0;
+  var cat = L.catalog() || [];
+  var color = DW_COLOR[disc] || 0xc0c0c0;
+  var committed = 0;
+  for (var i = 0; i < placements.length; i++) {
+    var p = placements[i];
+    var found = cat.find(function (c) { return c.ifc_class === p.ifc_class; });
+    var hash = found ? found.hash : (cat[0] ? cat[0].hash : null);
+    if (!hash) continue;
+    var op = { op_type: 'GEOM_INSERT',
+      parameters: { hash: hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: p.yaw || 0 },
+                    lod: '200', color: color,
+                    _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null } } };
+    try { var res = await O.commit(op); if (res) committed++; }
+    catch (e) { console.warn('§DISC-WALK-COMMIT fail i=' + i + ' ' + (e && e.message)); }
+  }
+  if (committed) {
+    await O.scrubTo(O.length);
+    // foldChainToScene clears the editable group — restore the walk markers on top of committed geometry
+    _renderDiscWalk(disc, placements);
+    if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    syncHistory(); audioCue('rollout');
+  }
+  console.log('§DISC-WALK-COMMIT disc=' + disc + ' placements=' + placements.length + ' committed=' + committed);
+  window.__dwLastCommitDisc = disc;   // sentinel for witnesses
+  return committed;
 }
 
 // ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
