@@ -78,6 +78,7 @@
       var g = by[cls];
       return {
         ifc_class: cls,
+        ref_kind: g[0].ref_kind,
         sx: _med(g.map(function (r) { return r.spacing_x_m; })),
         sy: _med(g.map(function (r) { return r.spacing_y_m; })),
         dz: _med(g.map(function (r) { return r.dz; })),
@@ -87,8 +88,27 @@
     });
   }
 
+  // ── SHIM (host-attach) ────────────────────────────────────────────────────────────
+  // Prior-art _shim_attributes/ShimMatcher model: a host-attached device tacks off its
+  // host SURFACE frame, not the room centre. We adopt the MODEL (not the Java code): for a
+  // ref_kind='host' rule, the device tacks onto a REAL wall in the target storey —
+  // position=wall centre, z=floor+measured dz, yaw=wall rotation_z (the host normal = the
+  // SHIM facing). NON-INVENT: every position is a real wall; height + count are measured.
+  function hostWalls(bdb, storeyName) {
+    return _rows(bdb,
+      "SELECT t.center_x cx, t.center_y cy, t.rotation_z rot, m.guid guid " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE m.storey='" + _esc(storeyName) + "' AND m.ifc_class LIKE '%Wall%'");
+  }
+  // Measured per-storey count for a host class (rule_space_bom); 0 = unknown -> one per host.
+  function countPer(disc, cls) {
+    var r = _rows(_db, "SELECT count_per FROM rule_space_bom WHERE disc='" + _esc(disc) +
+      "' AND ifc_class='" + _esc(cls) + "'");
+    return r.length ? _med(r.map(function (x) { return x.count_per; })) : 0;
+  }
+
   // ── PLACER ──────────────────────────────────────────────────────────────────────
-  function place(disc, storeys) {
+  function place(disc, storeys, bdb) {
     var reps = repRules(disc), out = [];
     reps.forEach(function (rp) {
       storeys.forEach(function (st) {
@@ -100,7 +120,19 @@
             out.push({ disc: disc, ifc_class: rp.ifc_class, x: st.x0 + (i + 0.5) * (w / nx),
               y: st.y0 + (j + 0.5) * (d / ny), z: z, storey: st.name, prov: 'placed:array', src: rp.src });
           }
-        } else {                                            // single placement (host/datum rule)
+        } else if (rp.ref_kind === 'host' && bdb) {         // SHIM → tack onto real host walls
+          var walls = hostWalls(bdb, st.name);
+          if (walls.length) {
+            var cap = countPer(disc, rp.ifc_class);
+            var nP = (cap > 0) ? Math.min(cap, walls.length) : walls.length;
+            var stride = walls.length / nP;
+            for (var k = 0; k < nP; k++) {
+              var wl = walls[Math.floor(k * stride)];
+              out.push({ disc: disc, ifc_class: rp.ifc_class, x: wl.cx, y: wl.cy, z: z,
+                yaw: wl.rot, storey: st.name, prov: 'shim:host-wall', host: wl.guid, src: rp.src });
+            }
+          }                                                 // no walls → honest skip (no host surface)
+        } else {                                            // single placement (datum rule, no host)
           out.push({ disc: disc, ifc_class: rp.ifc_class, x: (st.x0 + st.x1) / 2, y: (st.y0 + st.y1) / 2,
             z: z, storey: st.name, prov: 'placed:single', src: rp.src });
         }
@@ -184,7 +216,7 @@
       console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' REFUSE no-substrate');
       return { disc: disc, refused: true, reason: 'no habitable storeys', placed: 0 };
     }
-    var placements = place(disc, sub);
+    var placements = place(disc, sub, bdb);
     var chains = route(disc, bdb);
     console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
       ' chains=' + chains.length + ' storeys=' + sub.length);
@@ -203,6 +235,7 @@
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwWalk: dwWalk, substrate: substrate, place: place,
     route: route, gate: gate, repRules: repRules, order: order, clearance: clearance,
+    hostWalls: hostWalls, countPer: countPer,
     disciplines: disciplines, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
