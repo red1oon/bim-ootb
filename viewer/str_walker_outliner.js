@@ -84,6 +84,9 @@
     if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return false; }
     try {
       var db = new window.SQL.Database(new Uint8Array(buf));
+      // Stash the open buffer + name so the disc-walker (DiscWalker.dwWalk) can re-open this building
+      // read-only on a discipline click (this db is closed below after seeding). NON-INVENT substrate.
+      window.__dwBuf = buf; window.__dwName = name;
       var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
       // Same meta.db ALSO seeds the bom-graph tab (DISC/ARC): building→storey→room→disc→class→element.
       if (window.BOMTreeOutliner && window.BOMTreeOutliner.loadFromDb) {
@@ -105,6 +108,9 @@
       db.close();
       ready = !!st; lastEx = [];
       if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+      // Ensure the shared DiscWalker engine + the "Walk · Disciplines" roster are ready for this building
+      // (lazy-loads terminal_rules.db; lets an ABSENT discipline be walked). Fire-and-forget.
+      if (window.__ensureDiscWalker) window.__ensureDiscWalker();
       console.log(TAG + ' init from "' + name + '" ready=' + ready);
       return ready;
     } catch (e) { console.warn(TAG + ' open failed', e && e.message); return false; }

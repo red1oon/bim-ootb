@@ -14,6 +14,7 @@
 !modeller/SampleCastle_extracted.db
 !modeller/Terminal_meta.db
 !modeller/Terminal_geo.db
+!modeller/terminal_rules.db
 *.bin
 node_modules/
 test-results/

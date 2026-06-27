@@ -90,9 +90,12 @@ async function openResidentAndSeed(page, key) {
   // discWalk MEP is async (rwInit + route); wait for its honest-refusal (or routed) log to land
   await page.waitForTimeout(900);
   var sweepsAfter = await page.evaluate(function () { return (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; }).length : 0; });
-  var mepRefused = logs.some(function (l) { return /§DISC-WALK MEP no-walk/.test(l); });
-  var mepRouted = logs.some(function (l) { return /§DISC-WALK MEP routed/.test(l); });
-  chk('B6 click MEP → honest §DISC-WALK MEP no-walk (no anchors)', mepRefused && !mepRouted, logs.filter(function (l) { return /DISC-WALK MEP/.test(l); })[0] || '');
+  // DiscWalker (terminal_rules.db) now backs the MEP-family disc click. The generic 'MEP' disc has NO
+  // measured rule in terminal_rules.db → honest REFUSE (the named PLB/ACMV/FP/ELEC DO walk — see
+  // witness_modeller_terminal_walk.js). Either the old no-walk or the new REFUSE log is an honest refusal.
+  var mepRefused = logs.some(function (l) { return /§DISC-WALK MEP (no-walk|REFUSE)/.test(l); });
+  var mepRouted = logs.some(function (l) { return /§DISC-WALK MEP (routed|placed)/.test(l); });
+  chk('B6 click MEP → honest §DISC-WALK MEP refusal (no measured rule)', mepRefused && !mepRouted, logs.filter(function (l) { return /DISC-WALK MEP/.test(l); })[0] || '');
   chk('B7 NO fabricated run — GEOM_SWEEP count unchanged', sweepsAfter === sweepsBefore, 'before=' + sweepsBefore + ' after=' + sweepsAfter);
 
   var loadFail = logs.concat([]).filter(function (l) { return /LOAD_FAIL|PAGEERROR/.test(l); });
