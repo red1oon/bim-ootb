@@ -20,6 +20,17 @@
   #bar button .ic { width: 15px; height: 15px; flex: 0 0 auto; }
   #stat { position: fixed; bottom: 10px; left: 252px; color: #6b7488; font-size: 11px; z-index: 10;
     font-family: ui-monospace, monospace; white-space: pre; }
+  /* W-BONSAI-TOAST (#8): persistent error/info notice that the next status update can't overwrite. */
+  #toast-stack { position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%); z-index: 60;
+    display: flex; flex-direction: column-reverse; gap: 8px; align-items: center; pointer-events: none; }
+  .toast { pointer-events: auto; max-width: 460px; padding: 10px 14px; border-radius: 10px; font-size: 13px;
+    background: rgba(20,22,30,0.96); border: 1px solid #2c303a; color: #c7cdd8; cursor: pointer;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45); opacity: 0; transform: translateY(8px);
+    transition: opacity .18s ease, transform .18s ease; display: flex; gap: 9px; align-items: flex-start; line-height: 1.35; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { border-color: #7a2e2e; background: rgba(40,20,22,0.96); color: #f3c9c9; }
+  .toast.ok { border-color: #2e6a3a; color: #c7e8cf; }
+  .toast .ti { font-weight: 700; flex: 0 0 auto; }
   #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
 
   /* ── Toolbar as a bottom-right WRAPPING pill rail (a new style): icon-only glass pills stack UP from the ⋯
@@ -229,7 +240,36 @@ THREE.OrbitControls = OrbitControls;
 THREE.ColorManagement.enabled = false;
 
 const stat = document.getElementById('stat');
-const setStat = (m) => { stat.textContent = m; };
+// W-BONSAI-TOAST (#8): error feedback used to live ONLY in the 11px status bar, which the very next action
+// overwrites — a failed op could vanish before it was read. toast() raises a persistent notice (errors linger
+// ~7s, click to dismiss, stack capped) that the status bar can't clobber. setStat auto-toasts any 'FAIL …' so all
+// 11 catch-block error paths surface without touching each one; the status bar still shows the terse line.
+let _toastStack = null;
+function toast(msg, kind) {
+  if (!_toastStack) { _toastStack = document.createElement('div'); _toastStack.id = 'toast-stack'; document.body.appendChild(_toastStack); }
+  const t = document.createElement('div'); t.className = 'toast' + (kind ? ' ' + kind : '');
+  const icon = kind === 'error' ? '⚠' : kind === 'ok' ? '✓' : 'ℹ';
+  const safe = String(msg).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+  t.innerHTML = '<span class="ti">' + icon + '</span><span>' + safe + '</span>';
+  _toastStack.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  let done = false;
+  const dismiss = () => { if (done) return; done = true; t.classList.remove('show'); setTimeout(() => t.remove(), 220); };
+  t.addEventListener('click', dismiss);
+  setTimeout(dismiss, kind === 'error' ? 7000 : 4000);   // errors linger longer than info
+  while (_toastStack.children.length > 4) _toastStack.removeChild(_toastStack.firstChild);   // cap the stack
+  console.log('§TOAST kind=' + (kind || 'info') + ' ' + msg);
+  return t;
+}
+window.toast = toast;   // expose the UI util (other surfaces + witnesses can raise a notice)
+const setStat = (m) => { stat.textContent = m; if (/^FAIL\b/.test(String(m))) toast(String(m).replace(/^FAIL[:\s]*/, ''), 'error'); };
+// uncaught async op failures currently vanish silently → surface them too (deduped against a repeat burst)
+let _lastRej = '';
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e && e.reason; const msg = (r && r.message) || String(r || 'unknown error');
+  if (msg === _lastRej) return; _lastRej = msg; setTimeout(() => { _lastRej = ''; }, 1500);
+  toast(msg, 'error');
+});
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
