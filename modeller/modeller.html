@@ -207,7 +207,7 @@
 <script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
 <script src="str_walker_outliner.js?v=9" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=15" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=16" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -1539,6 +1539,7 @@ const bInsert = document.getElementById('b-insert');
 const bLod = document.getElementById('b-lod');
 let inserting = false, insertHash = null, lastInsertId = null, insertPanel = null;
 let insRot = 0, insElev = 0, ghostMesh = null, ghostXY = null;   // pending placement: yaw(deg) + elevation(z), live ghost
+let _asmGhost = null;   // M7: cached rich assembly-ghost child cluster (rebuilt only on hash/yaw/elev change)
 function isInsert(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && o.op_type === 'GEOM_INSERT'; }
 // standalone B-rep solids the worker can spin in place (GEOM_ROTATE): extrude/poly walls, swept runs, filleted solids.
 const SOLID_OPS = new Set(['GEOM_EXTRUDE', 'GEOM_EXTRUDE_POLY', 'GEOM_SWEEP', 'GEOM_FILLET']);
@@ -1549,7 +1550,7 @@ function paintLod() {
   const lod = id != null ? window.Bonsai.library.lodFor(id, '200') : '200';
   bLod.querySelector('span').textContent = 'LOD ' + lod; bLod.classList.toggle('on', lod === '300');
 }
-function clearGhost() { if (ghostMesh) { scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh.material.dispose(); ghostMesh = null; } ghostXY = null; }
+function clearGhost() { if (ghostMesh) { scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh.material.dispose(); ghostMesh = null; } ghostXY = null; _asmGhost = null; }
 // After a drop, DISARM the pending pick so the ghost stops sticking to the pointer (user: "shake off once Insert
 // done"). Panel stays open; re-click a part/set to arm the next placement.
 function disarmPick() { insertHash = null; clearGhost(); if (insertPanel) insertPanel.querySelectorAll('.ins-c,.ins-a').forEach(x => x.style.borderColor = ''); }
@@ -1558,13 +1559,27 @@ function showGhost(x, y) {                                        // translucent
   const L = window.Bonsai.library, asm = L.isAssembly(insertHash) ? L.assembly(insertHash) : null;
   let pa;
   if (asm) {
-    // assembly ghost = the TRUE leaf footprint, centred on the cursor + rotated by the drop yaw — the SAME rigid
-    // transform dropLeaves applies to the parts, so the preview box exactly encloses where they land. (The old ghost
-    // used the declared aabb asm.w/d = the parent-PRODUCT box → preview and landing disagreed. W-BOM-DROP-CENTER.)
-    const fp = L.footprintAABB(insertHash, { x: 0, y: 0, z: 0, rot: 0 });
-    pa = fp
-      ? L.previewBox([fp.minX - fp.cx, fp.maxX - fp.cx, fp.minY - fp.cy, fp.maxY - fp.cy, fp.minZ, fp.maxZ], { x, y, z: insElev, rot: insRot })
-      : L.previewBox([-(asm.w || 0.2) / 2, (asm.w || 0.2) / 2, -(asm.d || 0.2) / 2, (asm.d || 0.2) / 2, 0, asm.h || 0.1], { x, y, z: insElev, rot: insRot });
+    // M7 (#6): the RICH ghost = the N CHILD boxes at their real landing positions (the SAME dropLeaves transform
+    // the commit uses), so the preview shows the actual child set, not just the enclosing aabb. Built ONCE per
+    // (hash, yaw, elev) at the origin and cached, then rigidly TRANSLATED to the cursor each pointermove (the
+    // per-leaf expand + host-rotation runs only on arm/rotate/elevate, never per move). A whole-building drop
+    // (> cap) falls back to the TRUE footprint box (W-BOM-DROP-CENTER), logged. yaw=0 ⇒ footprint centred on cursor.
+    if (!_asmGhost || _asmGhost.hash !== insertHash || _asmGhost.rot !== insRot || _asmGhost.elev !== insElev) {
+      const lb = L.previewLeafBoxes(insertHash, { x: 0, y: 0, z: insElev, rot: insRot });
+      if (lb && lb.tooMany) console.log('§MODELLER asm-ghost leaves=' + lb.tooMany + ' > cap → footprint box');
+      _asmGhost = { hash: insertHash, rot: insRot, elev: insElev,
+        positions: (lb && lb.positions) || null, indices: (lb && lb.indices) || null, count: (lb && lb.count) || 0 };
+    }
+    if (_asmGhost.positions) {                                     // translate the cached child cluster to the cursor
+      const src = _asmGhost.positions, p2 = new Float32Array(src.length);
+      for (let i = 0; i < src.length; i += 3) { p2[i] = src[i] + x; p2[i + 1] = src[i + 1] + y; p2[i + 2] = src[i + 2]; }
+      pa = { positions: p2, indices: _asmGhost.indices };
+    } else {                                                       // cap fallback → the TRUE leaf-footprint aabb box
+      const fp = L.footprintAABB(insertHash, { x: 0, y: 0, z: 0, rot: 0 });
+      pa = fp
+        ? L.previewBox([fp.minX - fp.cx, fp.maxX - fp.cx, fp.minY - fp.cy, fp.maxY - fp.cy, fp.minZ, fp.maxZ], { x, y, z: insElev, rot: insRot })
+        : L.previewBox([-(asm.w || 0.2) / 2, (asm.w || 0.2) / 2, -(asm.d || 0.2) / 2, (asm.d || 0.2) / 2, 0, asm.h || 0.1], { x, y, z: insElev, rot: insRot });
+    }
   } else {
     pa = L.previewArrays(insertHash, { x, y, z: insElev, rot: insRot });
   }
@@ -3217,6 +3232,63 @@ if (qs.get('dropcenter') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER dropcenter fail ' + e); }
     window.__dropCenterResult = out; window.__dropCenterDone = true;
     console.log('§MODELLER dropcenter-done ' + JSON.stringify(out));
+  })();
+}
+// ?asmpreview=demo proves M7 RICH assembly ghost (W-BONSAI-ASM-PREVIEW, RESUME_MODELLER_POLISH.md #6): the drop
+// preview shows the N CHILD boxes at their real landing positions, not just one enclosing aabb box.
+if (qs.get('asmpreview') === 'demo') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library;
+    const near = (a, b, t) => Math.abs(a - b) <= (t || 1e-2);
+    try {
+      await L.ready();
+      const pick = L.assemblies().map(a => ({ a, n: L.expandAssembly(a.id, { x: 0, y: 0, z: 0, rot: 0 }).length }))
+        .filter(x => x.n >= 2 && x.n <= 24 && (x.a.w || 0) > 0.5 && (x.a.d || 0) > 0.5)
+        .sort((x, y) => (y.a.w * y.a.d) - (x.a.w * x.a.d)).map(x => x.a)[0];
+      if (!pick) { out.error = 'no suitable SET assembly'; }
+      else {
+        const X = 4, Y = 3;
+        const leaves = L.dropLeaves(pick.id, X, Y, 0, 0);            // the REAL landing positions
+        const lb = L.previewLeafBoxes(pick.id, { x: X, y: Y, z: 0, rot: 0 });
+        out.pick = pick.id; out.N = leaves.length;
+        out.boxCount = lb && lb.count;
+        out.indexCount = lb && lb.indices.length;                    // N boxes × 36 (NOT 36 = a single aabb box)
+        out.boxesPerLeaf = out.indexCount / 36 === out.N;
+        // each ghost child box centroid (8 verts) sits on its leaf's landing (XY) — the preview == the real drop.
+        let matched = 0;
+        for (let i = 0; i < leaves.length; i++) {
+          let sx = 0, sy = 0; for (let v = 0; v < 8; v++) { sx += lb.positions[(i * 8 + v) * 3]; sy += lb.positions[(i * 8 + v) * 3 + 1]; }
+          sx /= 8; sy /= 8;
+          if (near(sx, leaves[i].x, 0.02) && near(sy, leaves[i].y, 0.02)) matched++;
+        }
+        out.matched = matched; out.boxesAtLanding = matched === leaves.length;
+        // rigid translation: re-preview shifted by (+10,+5) ⇒ every vertex moves exactly (10,5,0).
+        const lb2 = L.previewLeafBoxes(pick.id, { x: X + 10, y: Y + 5, z: 0, rot: 0 });
+        let md = 0; for (let k = 0; k < lb.positions.length; k += 3) {
+          md = Math.max(md, Math.abs(lb2.positions[k] - (lb.positions[k] + 10)),
+            Math.abs(lb2.positions[k + 1] - (lb.positions[k + 1] + 5)), Math.abs(lb2.positions[k + 2] - lb.positions[k + 2]));
+        }
+        out.translateExact = md < 1e-4; out.maxTransDrift = +md.toFixed(6);
+        // WIRING: arm + showGhost → the scene ghost carries N boxes; a pointer move shifts every vertex rigidly.
+        insRot = 0; insElev = 0; inserting = true; insertHash = pick.id; _asmGhost = null;
+        showGhost(X, Y);
+        out.ghostIdx = ghostMesh ? ghostMesh.geometry.getIndex().count : 0;   // expect N×36
+        out.ghostRich = out.ghostIdx === out.N * 36;
+        const p0 = ghostMesh.geometry.getAttribute('position').array.slice();
+        showGhost(X + 7, Y);
+        const p1 = ghostMesh.geometry.getAttribute('position').array;
+        let dmax = -Infinity, dmin = Infinity;
+        for (let k = 0; k < p0.length; k += 3) { const dx = p1[k] - p0[k]; if (dx > dmax) dmax = dx; if (dx < dmin) dmin = dx; }
+        out.ghostMoved = near(dmax, 7, 1e-3) && near(dmin, 7, 1e-3);          // every vertex +7 in x (cached translate)
+        // robustness: the biggest assembly never throws — returns child boxes OR an honest {tooMany} cap.
+        const big = L.assemblies().map(a => ({ a, n: L.expandAssembly(a.id, { x: 0, y: 0, z: 0, rot: 0 }).length })).sort((x, y) => y.n - x.n)[0];
+        const bl = big ? L.previewLeafBoxes(big.a.id, { x: 0, y: 0, z: 0, rot: 0 }) : null;
+        out.bigN = big && big.n; out.bigOk = !!(bl && (bl.tooMany || bl.positions));
+        clearGhost(); inserting = false; insertHash = null;
+      }
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER asmpreview fail ' + e); }
+    window.__asmPreviewResult = out; window.__asmPreviewDone = true;
+    console.log('§MODELLER asmpreview-done ' + JSON.stringify(out));
   })();
 }
 // ?edit=demo proves EDITABILITY (W-BONSAI-EDIT): delete a single feature, cascade-delete a parent (its cut child

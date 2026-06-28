@@ -388,6 +388,33 @@
     previewBox(bbox, placement) {
       const base = boxArrays(bbox);
       return { positions: place(base.positions, placement, bbox), indices: base.indices, bbox };
+    },
+    // RICH ASSEMBLY GHOST (M7 / RESUME_MODELLER_POLISH.md #6): the N CHILD boxes at their REAL landing positions
+    // — the SAME dropLeaves transform the commit uses (footprint centred on the cursor + drop yaw + host-rotation),
+    // merged into one geometry — so the preview shows the actual child set, not just the enclosing aabb. Capped at
+    // MAX leaves: a whole-building drop returns {tooMany:n} and the caller falls back to the footprint box (logged),
+    // protecting the per-pointermove path. Returns {positions,indices,count} | {tooMany:n} | null.
+    previewLeafBoxes(id, placement) {
+      const pl = placement || { x: 0, y: 0, z: 0, rot: 0 };
+      const leaves = this.dropLeaves(id, pl.x || 0, pl.y || 0, pl.rot || 0, pl.z || 0);
+      if (!leaves || !leaves.length) return null;
+      const MAX = 2000;
+      if (leaves.length > MAX) return { tooMany: leaves.length };
+      let nv = 0, ni = 0; const parts = [];
+      for (let i = 0; i < leaves.length; i++) {
+        const lf = leaves[i], c = this.get(lf.hash), bb = (c && c.bbox) || [-0.05, 0.05, -0.05, 0.05, 0, 0.1];
+        const ba = boxArrays(bb);
+        const pos = place(ba.positions, { x: lf.x, y: lf.y, z: lf.z, rot: lf.rot }, bb);
+        parts.push({ pos: pos, idx: ba.indices }); nv += pos.length / 3; ni += ba.indices.length;
+      }
+      const positions = new Float32Array(nv * 3), indices = new Uint32Array(ni);
+      let vo = 0, io = 0;
+      for (let j = 0; j < parts.length; j++) {
+        const p = parts[j]; positions.set(p.pos, vo * 3);
+        for (let k = 0; k < p.idx.length; k++) indices[io + k] = p.idx[k] + vo;
+        vo += p.pos.length / 3; io += p.idx.length;
+      }
+      return { positions: positions, indices: indices, count: leaves.length };
     }
   };
 
