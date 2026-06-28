@@ -156,10 +156,18 @@
         else { a.fx *= P.fx != null ? P.fx : 1; a.fy *= P.fy != null ? P.fy : 1; a.fz *= P.fz != null ? P.fz : 1; }   // GEOM_SCALE: net multiplicative scale (W-BONSAI-SCALE PATH B)
         moveBy.set(P.parent, a);
       }
+      // §STRETCH-1: GEOM_GRID_MOVE makes inserts grid-STRETCHABLE host-side. Collect each op's per-feature commands
+      // IN OP ORDER (the worker folds B-rep solids; inserts are skipped there → host-side here, NO double-apply).
+      const gridBy = new Map();                                          // featureId -> [command,…] (ordered)
+      for (const op of ops) {
+        if (op.op_type !== 'GEOM_GRID_MOVE') continue;
+        const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
+        for (const cmd of (P.commands || [])) { if (cmd.featureId == null) continue; const list = gridBy.get(cmd.featureId) || []; list.push(cmd); gridBy.set(cmd.featureId, list); }
+      }
       const d = kernelOps.length ? await this._foldChain(kernelOps) : { meshes: [] };
       const meshes = (d.meshes || []).slice();
       if (window.Bonsai.library) {
-        for (const op of insertOps) { try { meshes.push(window.Bonsai.library.foldInsert(op, moveBy.get(op.id))); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
+        for (const op of insertOps) { try { meshes.push(window.Bonsai.library.foldInsert(op, moveBy.get(op.id), gridBy.get(op.id))); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
       }
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
       let totalTris = 0;

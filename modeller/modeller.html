@@ -1097,12 +1097,18 @@ async function commitGridMove() {
   if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }
   const { id, delta } = _dragGrid;
   setStat('recomposing…');
+  const _gateBefore = _gateBoxes();                            // §STRETCH-1: snapshot AABBs BEFORE the stretch (delta-honest gate)
   try {
     const res = await window.Bonsai.gridmove.commit(id, delta);
-    setStat('grid ' + id + ' moved ' + delta.toFixed(2) + '  recomposed=' + res.commands.length + '  verify=' + res.verify);
+    // §STRETCH-1 (W-SDG-GATE): gate the STRETCH like a move — RED (a stretched wall now clashing, or a door fallen
+    // out of its host) / ORANGE (clearance). The changed set = the engine's recompose commands' featureIds.
+    const gateMsg = _runGate(_gateBefore, (res.commands || []).map(c => c.featureId).filter(f => f != null));
+    window.__lastGate = gateMsg;
+    setStat('grid ' + id + ' moved ' + delta.toFixed(2) + '  recomposed=' + res.commands.length + '  verify=' + res.verify + (gateMsg ? '  ' + gateMsg : ''));
     audioCue('commit'); exitGridMove(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
 }
+window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };   // test hook (§STRETCH-GATE smoke)
 canvas.addEventListener('pointerup', () => { if (gridMoving && _dragGrid) commitGridMove(); });
 
 // ── MOVE (direct-manipulation of a PLACED object) ─────────────────────────────────────────────────

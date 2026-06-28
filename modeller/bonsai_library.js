@@ -334,7 +334,7 @@
     // host and applied here BEFORE place() so the existing yaw + ground-seat math (place() subtracts bbox[4]) runs
     // unchanged and the delta lands in the position BUFFER → geo.computeBoundingBox sees world coords for free
     // (gridmove.elementData + bCut bbox stay correct with zero consumer edits).
-    foldInsert(op, mv) {
+    foldInsert(op, mv, gridCmds) {
       const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
       // §ARC-1: a RAW-BBOX insert (no catalog hash, P.bbox = a MEASURED box from element_transforms) is the
       // editable-ARC substrate path — a real building wall/door seeded as a signed GEOM_INSERT carrying its own
@@ -379,6 +379,24 @@
         pl = { x: ox, y: oy, z: oz, rot };
       }
       const positions = place(base.positions, pl, base.bbox || (c ? c.bbox : rawBox));   // real mesh seats on its own bbox
+      // §STRETCH-1: GEOM_GRID_MOVE makes an insert grid-STRETCHABLE host-side (the worker folds only B-rep solids).
+      // Each command applies to the WORLD positions, IN OP ORDER — a faithful mirror of the worker's TRANSLATE/SCALE
+      // (bonsai_kernel_worker.js): TRANSLATE shifts the axis by delta; SCALE is non-uniform, anchored at the
+      // stationary world MIN edge: coord = f·coord + (min·(1−f) + translateDelta). min is recomputed from the CURRENT
+      // positions before each scale (self-consistent under stacked grid moves). NON-INVENT: pure geometry, no rule.
+      if (gridCmds && gridCmds.length) {
+        for (let g = 0; g < gridCmds.length; g++) {
+          const cmd = gridCmds[g], k = cmd.axis === 'x' ? 0 : cmd.axis === 'y' ? 1 : 2;
+          if (cmd.action === 'TRANSLATE') {
+            const d = cmd.delta || 0; for (let i = k; i < positions.length; i += 3) positions[i] += d;
+          } else {                                                       // SCALE about the world min edge
+            const f = cmd.newScale != null ? cmd.newScale : 1;
+            let mn = Infinity; for (let i = k; i < positions.length; i += 3) if (positions[i] < mn) mn = positions[i];
+            const tx = mn * (1 - f) + (cmd.translateDelta || 0);
+            for (let i = k; i < positions.length; i += 3) positions[i] = f * positions[i] + tx;
+          }
+        }
+      }
       // PER-MESH colour: a signed GEOM_INSERT may carry parameters.color (hex int) — RouteWalker fixtures persist
       // their discipline colour there so each box keeps it through scrub/replay (the fold is otherwise one colour).
       return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices, color: (P.color != null ? P.color : undefined) };
