@@ -202,6 +202,7 @@
 <script src="cross_edges.js?v=2" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <script src="arc_editable.js?v=1" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
+<script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
      (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
@@ -1416,9 +1417,37 @@ async function commitMoveDrag() {
   await commitMove(+dx.toFixed(4), +dy.toFixed(4), +dz.toFixed(4));
 }
 canvas.addEventListener('pointerup', () => { if (moving && _moveDrag) commitMoveDrag(); });
+// §GATE-1 helpers (RESUME_MODELLER_CONFORMITY_GATE.md). Snapshot every editable mesh's world AABB → {fid: box}.
+function _gateBoxes() {
+  const g = window.Bonsai && window.Bonsai.group && window.Bonsai.group(); const out = {};
+  if (g) g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
+  return out;
+}
+// rel for the gate: hosted-by (door-in-wall) + abuts (face-touch) are EXPECTED contact (never a clash); hostOf
+// drives the door-out-of-host check. Resolved guid→fid through the §ARC-1 bridge over the recovered edges.
+function _gateRel() {
+  const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {}, relSet = {}, hostOf = {};
+  (X.fills || []).forEach(e => { const h = fbg[e.host_guid], f = fbg[e.filling_guid]; if (h != null && f != null) { relSet[Math.min(h, f) + '|' + Math.max(h, f)] = 1; hostOf[f] = h; } });
+  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; });
+  return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf };
+}
+// evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
+function _runGate(before, moved) {
+  if (!(window.SdgGate && window.__arcFidByGuid)) return '';
+  const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), {});
+  if (!res.red.length && !res.orange.length) return '';
+  console.log('§GATE red=' + res.red.length + ' orange=' + res.orange.length + ' ' + JSON.stringify(res.red.slice(0, 3)) + ' ' + JSON.stringify(res.orange.slice(0, 3)));
+  const hot = new Set(); res.red.forEach(r => { hot.add(r.a); hot.add(r.b); }); res.orange.forEach(o => { hot.add(o.a); hot.add(o.b); });
+  const hex = res.red.length ? 0x661010 : 0x5a3a10;          // RED vs ORANGE emissive flash on the offending meshes
+  const g = window.Bonsai.group(); if (g) g.children.forEach(m => { if (m.isMesh && m.userData && hot.has(m.userData.featureId)) _emis(m, hex); });
+  if (res.red.length) toast('⛔ ' + res.red.length + ' conformity violation' + (res.red.length > 1 ? 's' : '') + ': ' + res.red.map(r => r.kind).join(', '), 'error');
+  else toast('⚠ ' + res.orange.length + ' tight clearance — accept or ignore', 'info');
+  return res.red.length ? ('⛔ ' + res.red.length + ' RED') : ('⚠ ' + res.orange.length + ' ORANGE');
+}
 async function commitMove(dx, dy, dz) {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
   if (!ids.length) return;                                     // guard: never move an absent/undone feature
+  const _gateBefore = _gateBoxes();                            // §GATE-1: snapshot AABBs BEFORE the edit (delta-honest)
   setStat(ids.length > 1 ? ('moving ' + ids.length + ' objects…') : 'moving…');
   try {
     let lastVerify = true;
@@ -1438,7 +1467,12 @@ async function commitMove(dx, dy, dz) {
       console.log('§SDG-CASCADE hosted-by rider=' + rfid + ' rides host-move dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' verify=' + rr.verify);
     }
     if (riders.length) console.log('§SDG-CASCADE hosted-by hosts=' + ids.length + ' riders=' + riders.length);
-    setStat((ids.length > 1 ? ('moved ' + ids.length + ' objects') : ('moved #' + ids[0])) + (riders.length ? (' +' + riders.length + ' hosted') : '') + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')  verify=' + lastVerify);
+    // §GATE-1 (W-SDG-GATE): the planner's gate — after the ride, CHECK what the edit BROKE. RED = hard violation
+    // (wall clash / door out of its host), ORANGE = soft accept/ignore (tight clearance). REPORTS (does not revert);
+    // the signed op stands, the user decides (spine: no auto-converge, user-gated).
+    const gateMsg = _runGate(_gateBefore, ids.concat(riders));
+    window.__lastGate = gateMsg;                          // test hook (W-SDG-GATE smoke): last gate status
+    setStat((ids.length > 1 ? ('moved ' + ids.length + ' objects') : ('moved #' + ids[0])) + (riders.length ? (' +' + riders.length + ' hosted') : '') + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')  verify=' + lastVerify + (gateMsg ? '  ' + gateMsg : ''));
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();      // re-fold replaced the meshes → always re-grab fresh refs (no stale)
     if (moving) buildMoveGizmo();                         // reposition the gizmo on the moved selection (move mode only)
@@ -1447,6 +1481,7 @@ async function commitMove(dx, dy, dz) {
     setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER move fail ' + err);
   }
 }
+window.__commitMove = commitMove;   // test hook (W-SDG-GATE smoke): drive a deterministic move through the real path
 // H3 yaw commit — rotate the selection about the SET centroid (W-BONSAI-ROTATE-GROUP). Each child gets a signed
 // GEOM_ROTATE (spins it in place about its OWN centre) plus, when it is off the centroid, a GEOM_MOVE that orbits
 // its centre about the set centroid by the same angle: Tᵢ = G + Rθ(Cᵢ−G). A single selection ⇒ Cᵢ==G ⇒ no move
