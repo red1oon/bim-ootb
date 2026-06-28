@@ -1193,8 +1193,8 @@ function setupPanels(A) {
         fn: function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },
         isActive: function() { return !!window._autoPivot; } },
       { id: 'home',       name: 'Home',            icon: I.home.svg, fn: function() {
-          // §S283: In standalone PWA, open online hub in system browser (backdoor)
-          if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+          // §S283: Standalone PWA — open live hub only when online; fall back to cached index offline
+          if ((window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) && navigator.onLine) {
             window.open('https://red1oon.github.io/bim-ootb/', '_blank');
             console.log('§PWA_HOME opened');
           } else {
