@@ -198,7 +198,28 @@
     if (O && O.setModelKey) O.setModelKey('mo_' + res.key).then(function (n) {
       console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
       _replayEdits();
+      _seedArcEditable(O, res.key);
     });
+  }
+
+  // §ARC-1 — seed the REAL ARC building as gizmo-EDITABLE, guid-carrying GEOM_INSERT op-rows, so the SDG cascade
+  // (drag wall → door rides) has a real wall to grab. Re-opens the building buffer (kept on __dwBuf by _openBuffer)
+  // read-only, derives the measured seed ops, and commits them ONE signed group via the oplog. IDEMPOTENT by
+  // 'arcseed-<key>' → safe to call every open (already-seeded = no-op). NON-INVENT: bbox/centre are MEASURED.
+  function _seedArcEditable(O, key) {
+    if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) return;
+    var bdb = null;
+    try {
+      bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      window.ArcEditable.seedArc(bdb, {
+        commitGroup: function (ops, gid) { return O.commitSeedGroup(ops, gid); },
+        building: key
+      }).then(function (r) {
+        console.log(TAG + ' §ARC-SEED-WIRE ' + key + ' editable ARC elements=' + r.committed + ' skipped=' + r.skipped +
+          ' (featureId↔guid bridge ready)');
+      }).catch(function (e) { console.warn(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message)); })
+        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } });
+    } catch (e) { console.warn(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message)); if (bdb) { try { bdb.close(); } catch (e2) { } } }
   }
 
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
