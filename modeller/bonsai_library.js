@@ -336,9 +336,16 @@
     // (gridmove.elementData + bCut bbox stay correct with zero consumer edits).
     foldInsert(op, mv) {
       const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
-      const c = this.get(P.hash); if (!c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
+      // §ARC-1: a RAW-BBOX insert (no catalog hash, P.bbox = a MEASURED box from element_transforms) is the
+      // editable-ARC substrate path — a real building wall/door seeded as a signed GEOM_INSERT carrying its own
+      // measured extent. Box-proxy (LOD-200) only: there is no catalog mesh to refine to. A declared hash that is
+      // UNKNOWN still errors (unchanged); a hash-less op with no bbox is a malformed insert.
+      const c = P.hash ? this.get(P.hash) : null;
+      if (P.hash && !c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
+      const rawBox = (!c && Array.isArray(P.bbox)) ? P.bbox : null;
+      if (!c && !rawBox) throw new Error('GEOM_INSERT needs a hash or a measured bbox');
       const lod = this.lodFor(op.id, P.lod);
-      let base = (lod === '300') ? this.meshArrays(P.hash) : boxArrays(c.bbox);
+      let base = (c && lod === '300') ? this.meshArrays(P.hash) : boxArrays(c ? c.bbox : rawBox);
       let pl = P.placement;
       // W-BONSAI-SCALE PATH B: net GEOM_SCALE folds host-side on the insert's LOCAL geometry — EDGE-ANCHORED at the
       // local bbox min per axis (stretch the object along its own length), so it composes with the existing yaw +
@@ -362,7 +369,7 @@
           // W-BONSAI-ROTATE: yaw the insert about its bbox CENTRE (the visible centre, == the gizmo ring centre) so it
           // SPINS in place rather than orbiting the placement origin. place() rotates local coords about (0,0) then
           // adds (ox,oy); to keep the world centre fixed under the new yaw, solve (ox,oy) from the centre invariant.
-          const bb = base.bbox || c.bbox, lcx = (bb[0] + bb[1]) / 2, lcy = (bb[2] + bb[3]) / 2;
+          const bb = base.bbox || (c ? c.bbox : rawBox), lcx = (bb[0] + bb[1]) / 2, lcy = (bb[2] + bb[3]) / 2;
           const r0 = pr * Math.PI / 180, c0 = Math.cos(r0), s0 = Math.sin(r0);
           const wcx = c0 * lcx - s0 * lcy + ox, wcy = s0 * lcx + c0 * lcy + oy;   // current world centre
           rot = pr + mv.drot;
@@ -371,7 +378,7 @@
         }
         pl = { x: ox, y: oy, z: oz, rot };
       }
-      const positions = place(base.positions, pl, base.bbox || c.bbox);   // real mesh seats on its own bbox
+      const positions = place(base.positions, pl, base.bbox || (c ? c.bbox : rawBox));   // real mesh seats on its own bbox
       // PER-MESH colour: a signed GEOM_INSERT may carry parameters.color (hex int) — RouteWalker fixtures persist
       // their discipline colour there so each box keeps it through scrub/replay (the fold is otherwise one colour).
       return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices, color: (P.color != null ? P.color : undefined) };

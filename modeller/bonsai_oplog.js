@@ -148,6 +148,26 @@
       return { id: rowId, verify: v.ok, tip: v.tip, signed, ...r };
     },
 
+    // §ARC-1 (RESUME_ARC_EDITABLE_SUBSTRATE.md): seed a BATCH of RECOVERED building ops (each carrying its real
+    // IFC guid as output_guid) as ONE signed group — the editable-ARC substrate. Mirrors commit() (verify +
+    // persist + fold) but writes N ops + their guids at once. IDEMPOTENT by gid ('arcseed-<building>') so
+    // re-opening a building never double-seeds. opsArray = [{op_type:'GEOM_INSERT', params, outputGuid}, …].
+    // Returns {ids, idempotent}: ids[i] == the kernel_ops row id == featureId of ops[i] (the bridge anchor).
+    async commitSeedGroup(opsArray, gid) {
+      const db = await this._ensureDb();
+      if (!opsArray.length) return { ids: [], idempotent: false };
+      const baseTs = 1700000000000;                           // fixed → deterministic seed-row timestamps (replay-stable)
+      const res = await window.KernelOps.commitGroup(db, opsArray, { gid, baseTs });
+      if (!res.committed) throw new Error('commitSeedGroup rejected: ' + res.reason);
+      if (!res.idempotent) this._n = Math.max(this._n, res.ids.length);   // push future geom-grp gids past the seed
+      const v = await window.KernelOps.verifyChain(db);
+      this._lastTip = v.tip;
+      await this._foldUpto();                                 // redraw the chain → the seeded boxes appear, gizmo-ready
+      this._emit();                                           // persist mo_<building> + notify (autosave)
+      console.log(TAG + ' commitSeedGroup gid=' + gid + ' ops=' + res.ids.length + ' verify=' + v.ok + ' idempotent=' + !!res.idempotent);
+      return { ids: res.ids, idempotent: !!res.idempotent };
+    },
+
     // History scrubber: fold the first `upto` GEOM rows of the verified log. Deterministic prefix replay.
     async scrubTo(upto) {
       const r = await this._foldUpto(upto);
