@@ -114,7 +114,9 @@
 
     // Pick-select is FREQUENT (every click) and changes ONLY which row is active — so restyle the existing
     // rows in place instead of re-querying the DB + rebuilding the whole tree (the old refresh() on each pick
-    // was the select-side jank). Full _paint() still runs on actual op-log changes (commit/clear/find).
+    // was the select-side jank). M8 (incremental): the active-blue is NEVER baked into the section HTML — it is
+    // painted here over the cached DOM for BOTH the flat op-log rows ([data-fid]) AND the seeded BOM-tree leaf
+    // rows ([data-bnode][data-leaf="1"]). A neighbour row (adjacency lens, data-adj=1) falls back to amber.
     setActive(id) {
       window.Bonsai._selId = id;
       if (!this._el) return;
@@ -125,56 +127,92 @@
         d.onmouseover = () => { d.style.background = on ? '#26456b' : '#23262e'; };
         d.onmouseout = () => { d.style.background = on ? '#26456b' : 'transparent'; };
       });
+      this._el.querySelectorAll('[data-bnode][data-leaf="1"]').forEach(d => {
+        const on = String(d.getAttribute('data-bnode')) === String(id);
+        const nbr = d.getAttribute('data-adj') === '1';     // adjacency-lens neighbour → amber base
+        d.style.background = on ? '#26456b' : (nbr ? '#2c2616' : 'transparent');
+        d.style.color = on ? '#dce6f4' : (nbr ? '#e6dcc2' : '#c7cdd8');
+      });
     },
 
+    // M8 INCREMENTAL (RESUME_MODELLER_POLISH.md #7): the Outliner has TWO sections — the seeded BOM-tree
+    // categories (the loaded building: storey→room→disc→class→element, thousands of nodes, RE-FOLDED only on a
+    // reparent/seed/walk) and the FLAT op-log groups (what the user authored, grows on every geometry commit).
+    // The old _paint rebuilt BOTH on EVERY `bonsai:oplog` change → re-folding + re-parsing + re-wiring the whole
+    // building tree on each move/cut = the "jank at 100+ features". Now each section is rendered to its OWN
+    // persistent container and the freshly-built HTML is STRING-DIFFED against the last render: an identical
+    // section is left UNTOUCHED (no innerHTML reparse, no querySelectorAll re-wire — the costly DOM work). A
+    // geometry commit changes only the flat HTML → the seeded tree DOM is reused as-is (identity preserved).
+    // Selection is applied by setActive() over whichever DOM survived, so a pure pick never rebuilds either side.
+    _ensureSections(tree) {
+      if (tree.querySelector('#bo-trees')) return;
+      tree.innerHTML =
+        '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'DAGeVu Model</div>' +
+        '<div id="bo-trees"></div><div id="bo-flats"></div>';
+      this._treesCache = this._flatsCache = null;   // fresh skeleton → force both sections to refill (no stale-cache desync)
+    },
     _paint() {
       const tree = this._el.querySelector('#bo-tree'); if (!tree) return;
+      this._ensureSections(tree);
       // W-UX-6: refresh the adjacency map for this paint when the lens is ON (cheap; reads window.swXEdges).
       this._adjMap = this._adjLens ? this._buildAdjMap() : null;
       const ops = (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps() : [];
-      // FLAT categories (op-log feature groups — Walls/Openings/etc., unchanged). TREE categories (deep, seeded,
-      // editable — the BOM Tree composition facet, SPATIAL_DEPENDENCY_GRAPH §OUTLINER-COHERENCE) take a separate path.
       const flatCats = this._categories.filter(c => !c.tree);
       const treeCats = this._categories.filter(c => c.tree);
-      const groups = flatCats.map(cat => ({ cat, nodes: ops.filter(cat.match).map(cat.node) }));
       const f = this._find;
       const match = n => !f || (n.label + ' ' + n.sub).toLowerCase().includes(f);
       let total = 0, shown = 0;
-      let html = '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'DAGeVu Model</div>';
-      // ARC LEADS (W-UX-3): the seeded containment TREE categories (BOM-graph Storey→Room→disc→class→element,
-      // then STR Walker) render FIRST — they are the loaded building, the primary surface. The FLAT op-log
-      // groups (Walls/Openings/Routes/… = what the user has authored, empty until they edit) follow below.
-      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); html += r.html; total += r.total; shown += r.shown; });
+
+      // ── SEEDED TREE section (ARC LEADS, W-UX-3) — re-rendered only when its HTML actually changes ──────────
+      let treesHtml = '';
+      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); treesHtml += r.html; total += r.total; shown += r.shown; });
+      let treeBuilt = false;
+      if (treesHtml !== this._treesCache) {
+        const c = tree.querySelector('#bo-trees'); c.innerHTML = treesHtml; this._wireTrees(c, treeCats);
+        this._treesCache = treesHtml; treeBuilt = true;
+      }
+
+      // ── FLAT op-log groups — grows with authored features; the only section a geometry commit changes ──────
+      const groups = flatCats.map(cat => ({ cat, nodes: ops.filter(cat.match).map(cat.node) }));
+      let flatsHtml = '';
       groups.forEach(g => {
         const vis = g.nodes.filter(match); total += g.nodes.length; shown += vis.length;
         if (f && !vis.length) return;
         const col = this._collapsed[g.cat.key];
-        html += '<div data-grp="' + g.cat.key + '" style="padding:2px 6px 2px 16px;color:#6f7a8b;cursor:pointer">' +
+        flatsHtml += '<div data-grp="' + g.cat.key + '" style="padding:2px 6px 2px 16px;color:#6f7a8b;cursor:pointer">' +
           CHEV(!col) + g.cat.label + ' <span style="color:#454e5d">(' + g.nodes.length + ')</span></div>';
         if (col) return;
-        vis.forEach(n => {
-          const active = window.Bonsai._selId === n.id;
-          html += '<div data-fid="' + n.id + '" style="padding:3px 6px 3px 32px;cursor:pointer;border-radius:4px;' +
-            (active ? 'background:#26456b;color:#dce6f4' : 'color:#c7cdd8') + '" ' +
-            'onmouseover="this.style.background=\'' + (active ? '#26456b' : '#23262e') + '\'" ' +
-            'onmouseout="this.style.background=\'' + (active ? '#26456b' : 'transparent') + '\'">' +
+        vis.forEach(n => {                                   // active-blue NOT baked — setActive() paints it
+          flatsHtml += '<div data-fid="' + n.id + '" style="padding:3px 6px 3px 32px;cursor:pointer;border-radius:4px;color:#c7cdd8" ' +
+            'onmouseover="this.style.background=\'#23262e\'" onmouseout="this.style.background=\'transparent\'">' +
             LEAF + n.label + '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span></div>';
         });
       });
-      tree.innerHTML = html;
-      tree.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._paint(); });
-      tree.querySelectorAll('[data-fid]').forEach(d => d.onclick = () => {
-        const fid = +d.getAttribute('data-fid');
-        if (window.Bonsai.select) window.Bonsai.select(fid);   // → highlight() → setActive(): restyle only, no rebuild
-        else this.setActive(fid);
-      });
-      this._wireTrees(treeCats);
+      let flatBuilt = false;
+      if (flatsHtml !== this._flatsCache) {
+        const c = tree.querySelector('#bo-flats'); c.innerHTML = flatsHtml; this._wireFlat(c);
+        this._flatsCache = flatsHtml; flatBuilt = true;
+      }
+
+      // selection highlight (over whichever DOM survived) + footer
+      this.setActive(window.Bonsai._selId);
       const foot = this._el.querySelector('#bo-foot');
       const tip = (window.Bonsai.oplog && window.Bonsai.oplog._lastTip) || '';
       let lens = '';
       if (this._adjLens) { const s = this._adjStats(); lens = '  ⇄' + s.abuts + ' ⌂' + s.fills + ' ⧉' + s.aggregates + ' ⊥' + s.datums; }
       foot.textContent = (f ? shown + '/' + total + ' shown' : total + ' features') + lens + (tip ? '  🔒 ' + tip.slice(0, 8) : '');
-      console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '" trees=' + treeCats.length);
+      this._lastPaint = { tree: treeBuilt, flat: flatBuilt };   // whitebox witness reads this (W-BONSAI-OUTLINER-INCR)
+      console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '" trees=' + treeCats.length +
+        ' treeBuilt=' + treeBuilt + ' flatBuilt=' + flatBuilt);
+    },
+    // Flat op-log group/row wiring (scoped to the #bo-flats container so it re-wires only on a flat rebuild).
+    _wireFlat(root) {
+      root.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._paint(); });
+      root.querySelectorAll('[data-fid]').forEach(d => d.onclick = () => {
+        const fid = +d.getAttribute('data-fid');
+        if (window.Bonsai.select) window.Bonsai.select(fid);   // → highlight() → setActive(): restyle only, no rebuild
+        else this.setActive(fid);
+      });
     },
 
     // ── DEEP / EDITABLE tree category (the BOM Tree composition facet). cat.tree() → [rootNode];
@@ -223,7 +261,9 @@
           if (dr.anchored) parts.push('⊥' + dr.anchored); if (dr.spans) parts.push('↕' + dr.spans);
           if (parts.length) adjBadge = ' <span class="bn-deg" style="color:#e0a23a;font-family:ui-monospace,monospace">' + parts.join(' ') + '</span>';
         }
-        const rowBg = active ? 'background:#26456b;color:#dce6f4' : (isNbr ? 'background:#2c2616;color:#e6dcc2' : 'color:#c7cdd8');
+        // active-blue is NOT baked here (M8) — setActive() paints the selected row over the cached DOM so a pure
+        // pick never forces a tree rebuild. Neighbour-amber (adjacency lens) stays structural (depends on selId).
+        const rowBg = isNbr ? 'background:#2c2616;color:#e6dcc2' : 'color:#c7cdd8';
         html += '<div data-bnode="' + n.id + '" data-tcat="' + ckey + '" data-leaf="' + (isLeaf ? 1 : 0) + '"' +
           (n.disc ? ' data-disc="' + n.disc + '"' : '') + (isNbr ? ' data-adj="1"' : '') + ' draggable="true" ' +
           'style="padding:3px 6px 3px ' + pad + 'px;cursor:' + (isLeaf ? 'grab' : 'pointer') + ';border-radius:4px;' + rowBg + '">' +
@@ -234,13 +274,13 @@
       return { html: html, shown: shown };
     },
     _subtreeMatches(n, match) { if (match({ label: n.label, sub: n.sub || '' })) return true; return (n.children || []).some(c => this._subtreeMatches(c, match)); },
-    _wireTrees(treeCats) {
-      if (!this._el || !treeCats.length) return;
+    _wireTrees(root, treeCats) {
+      if (!root || !treeCats.length) return;
       const byKey = {}; treeCats.forEach(c => byKey[c.key] = c);
-      this._el.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.onclick = () => {
+      root.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.onclick = () => {
         const k = 'tcat|' + d.getAttribute('data-tcat'); this._collapsed[k] = !this._collapsed[k]; this._paint();
       });
-      this._el.querySelectorAll('[data-bnode]').forEach(d => {
+      root.querySelectorAll('[data-bnode]').forEach(d => {
         const id = d.getAttribute('data-bnode'), isLeaf = d.getAttribute('data-leaf') === '1';
         const disc = d.getAttribute('data-disc');
         d.onclick = () => {
