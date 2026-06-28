@@ -607,16 +607,29 @@ const bConstrain = document.getElementById('b-constrain');
 const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square' };
 function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.querySelector('span').textContent = CON_LABEL[m] || m; bConstrain.classList.toggle('on', m !== 'axis'); }
 bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); };
+// #4 POINT RECOVERY (RESUME_MODELLER_POLISH.md): in-progress sketch/route points are transient (not op-log) — a
+// stray Escape used to lose them all. Now a cancel-exit BUFFERS them for the session; re-opening the tool RESTORES
+// them. A commit clears the draft; cancelling with no points discards it (the Backspace-to-empty = "start fresh").
+let _sketchDraft = null, _routeDraft = null;
 function enterSketch() {
   sketching = true; window.Bonsai.sketch.reset(); applyModeCursor();
+  if (_sketchDraft && _sketchDraft.length) {                     // restore a buffered in-progress sketch
+    _sketchDraft.forEach(pt => window.Bonsai.sketch.addPoint(pt.x, pt.y));
+    if (window.toast) toast('restored ' + _sketchDraft.length + ' in-progress sketch points (Backspace to trim)', 'ok');
+  }
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone(), up: camera.up.clone() };
   camera.up.set(0, 1, 0);   // top-down plan needs Y-up (looking down −Z with Z-up is degenerate)
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
   bExtrude.style.display = ''; bExtrude.disabled = false; dimDepth.style.display = ''; bSketch.innerHTML = SK_CANCEL;
   bConstrain.style.display = ''; bConstrain.disabled = false; paintConstrain();
-  sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
+  const np = window.Bonsai.sketch.points.length;
+  sketchMarkers(); setStat(np ? ('sketch: ' + np + ' points restored — continue or Extrude') : 'sketch: click ≥3 points on the grid, then Extrude');
 }
-function exitSketch() {
+function exitSketch(committed) {
+  const p = window.Bonsai.sketch.points;                         // buffer in-progress points on a CANCEL (not a commit)
+  if (committed) _sketchDraft = null;
+  else if (p && p.length) { _sketchDraft = p.map(pt => ({ x: pt.x, y: pt.y })); if (window.toast) toast(p.length + ' sketch points saved — re-open Sketch to continue', 'info'); }
+  else _sketchDraft = null;                                      // cancelled with no points → discard any old draft
   sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
@@ -642,7 +655,7 @@ bExtrude.onclick = async () => {
     // leg 3: a sketched wall is committed as a FEATURE in the op-log (not a one-shot author).
     const res = await window.Bonsai.sketch.commitExtrude(parseFloat(dimDepth.value) || 3, { color: 0x9fd6b4 });
     setStat('committed wall #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
-    audioCue('commit'); exitSketch(); syncHistory();
+    audioCue('commit'); exitSketch(true); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
 };
 
@@ -831,13 +844,20 @@ function routeMarkers() {
 }
 function enterRoute() {
   routing = true; routePts = []; applyModeCursor();
+  if (_routeDraft && _routeDraft.length) {                       // restore a buffered in-progress route
+    routePts = _routeDraft.map(p => p.slice());
+    if (window.toast) toast('restored ' + routePts.length + ' in-progress route points (Backspace to trim)', 'ok');
+  }
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone(), up: camera.up.clone() };
   camera.up.set(0, 1, 0);   // top-down route plan: Y-up (Z-up degenerate looking down −Z)
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
-  bRun.style.display = ''; bRun.disabled = true; dimProf.style.display = ''; bRoute.innerHTML = RT_CANCEL;
-  routeMarkers(); setStat('route: click ≥2 points on the grid to lay a run, then Sweep Run');
+  bRun.style.display = ''; bRun.disabled = routePts.length < 2; dimProf.style.display = ''; bRoute.innerHTML = RT_CANCEL;
+  routeMarkers(); setStat(routePts.length ? ('route: ' + routePts.length + ' points restored — continue or Sweep Run') : 'route: click ≥2 points on the grid to lay a run, then Sweep Run');
 }
-function exitRoute() {
+function exitRoute(committed) {
+  if (committed) _routeDraft = null;                             // buffer in-progress points on a CANCEL (not a commit)
+  else if (routePts && routePts.length) { _routeDraft = routePts.map(p => p.slice()); if (window.toast) toast(routePts.length + ' route points saved — re-open Route to continue', 'info'); }
+  else _routeDraft = null;                                       // cancelled with no points → discard any old draft
   routing = false; bRun.style.display = 'none'; dimProf.style.display = 'none'; bRoute.innerHTML = RT_ROUTE; applyModeCursor();
   if (routeGroup) { while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
@@ -862,7 +882,7 @@ bRun.onclick = async () => {
   try {
     const pw = parseFloat(dimProf.value) || 0.3;
     const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_SWEEP', parameters: { profile: { w: pw, h: pw }, path: routePts.slice() } }, { color: 0xffb74f });
-    setStat('swept run #' + res.id + '  verify=' + res.verify + '  tris=' + res.triangleCount); audioCue('commit'); exitRoute(); syncHistory();
+    setStat('swept run #' + res.id + '  verify=' + res.verify + '  tris=' + res.triangleCount); audioCue('commit'); exitRoute(true); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER route fail ' + err); }
 };
 
