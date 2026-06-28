@@ -204,6 +204,15 @@ function buildSolids(kernel, ops) {
           shapeCache.set(ckey, out); solids.set(op.parent, { shape: out, hash: ckey });   // parent cached → NOT released
         }
       }
+    } else if (op.op_type === 'GEOM_SCALE') {          // non-uniform EDGE-ANCHORED scale (W-BONSAI-SCALE) — INSERTS only.
+      // The gizmo only offers scale handles on INSERTS (catalog components), which fold host-side in pure JS
+      // (library.foldInsert PATH B: scale base geometry edge-anchored, net factor accumulated in bonsai_kernel) —
+      // deterministic + composes exactly, no occt. A B-rep SOLID scale is DEFERRED: occt-wasm generalTransform uses
+      // BRepBuilderAPI_GTransform with Copy=false, so the derived shape ALIASES the shared base TShape and an
+      // intervening scrub/release corrupts it → a 2nd scale (or scale-X-then-Y, both real gizmo flows) leaks the prior
+      // factor onto the untouched axes (witnessed: x×2 then x×1.5 → z×2). The fix is a kernel-level Copy=true
+      // GTransform / bake primitive in lib/kernel — a separate effort, not a polish leg. So GEOM_SCALE on a worker
+      // solid is a TOLERANT NO-OP here until that lands (the gizmo never emits it for solids). RESUME_MODELLER_POLISH.md #3b.
     } else {                                           // LEAF feature (extrude/poly/sweep/opening)
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.id, { shape: shapeCache.get(key), hash: key }); continue; }
       _stats.rebuilt++;

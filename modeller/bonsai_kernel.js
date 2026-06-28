@@ -19,7 +19,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=4', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin (W-BONSAI-ROTATE-SOLID)
+      const url = new URL('bonsai_kernel_worker.js?v=5', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b)
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};
@@ -148,11 +148,12 @@
       const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');   // KEEPS GEOM_MOVE → PATH A translates moved walls
       const moveBy = new Map();                                          // targetFeatureId -> {dx,dy,dz,drot} (net, summed)
       for (const op of ops) {
-        if (op.op_type !== 'GEOM_MOVE' && op.op_type !== 'GEOM_ROTATE') continue;
+        if (op.op_type !== 'GEOM_MOVE' && op.op_type !== 'GEOM_ROTATE' && op.op_type !== 'GEOM_SCALE') continue;
         const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
-        const a = moveBy.get(P.parent) || { dx: 0, dy: 0, dz: 0, drot: 0 };
+        const a = moveBy.get(P.parent) || { dx: 0, dy: 0, dz: 0, drot: 0, fx: 1, fy: 1, fz: 1 };
         if (op.op_type === 'GEOM_MOVE') { a.dx += P.dx || 0; a.dy += P.dy || 0; a.dz += P.dz || 0; }
-        else { a.drot += P.drot || 0; }                                  // GEOM_ROTATE: net yaw (about Z), applied host-side to inserts (W-BONSAI-ROTATE PATH B)
+        else if (op.op_type === 'GEOM_ROTATE') { a.drot += P.drot || 0; }   // net yaw (about Z), host-side to inserts (W-BONSAI-ROTATE PATH B)
+        else { a.fx *= P.fx != null ? P.fx : 1; a.fy *= P.fy != null ? P.fy : 1; a.fz *= P.fz != null ? P.fz : 1; }   // GEOM_SCALE: net multiplicative scale (W-BONSAI-SCALE PATH B)
         moveBy.set(P.parent, a);
       }
       const d = kernelOps.length ? await this._foldChain(kernelOps) : { meshes: [] };

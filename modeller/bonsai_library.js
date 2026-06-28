@@ -338,8 +338,22 @@
       const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
       const c = this.get(P.hash); if (!c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
       const lod = this.lodFor(op.id, P.lod);
-      const base = (lod === '300') ? this.meshArrays(P.hash) : boxArrays(c.bbox);
+      let base = (lod === '300') ? this.meshArrays(P.hash) : boxArrays(c.bbox);
       let pl = P.placement;
+      // W-BONSAI-SCALE PATH B: net GEOM_SCALE folds host-side on the insert's LOCAL geometry — EDGE-ANCHORED at the
+      // local bbox min per axis (stretch the object along its own length), so it composes with the existing yaw +
+      // ground-seat math (place() seats on the SCALED bbox). SIZE only — scales geometry, never the placement.
+      if (mv && ((mv.fx != null && mv.fx !== 1) || (mv.fy != null && mv.fy !== 1) || (mv.fz != null && mv.fz !== 1))) {
+        const fx = mv.fx != null ? mv.fx : 1, fy = mv.fy != null ? mv.fy : 1, fz = mv.fz != null ? mv.fz : 1;
+        const bb = base.bbox || c.bbox;                                  // [xmin,xmax,ymin,ymax,zmin,zmax]
+        const ax = bb[0], ay = bb[2], az = bb[4];
+        const sp = base.positions.slice();                              // don't mutate the cached catalog arrays
+        for (let i = 0; i < sp.length; i += 3) {
+          sp[i] = ax + fx * (sp[i] - ax); sp[i + 1] = ay + fy * (sp[i + 1] - ay); sp[i + 2] = az + fz * (sp[i + 2] - az);
+        }
+        const sbb = [ax, ax + fx * (bb[1] - ax), ay, ay + fy * (bb[3] - ay), az, az + fz * (bb[5] - az)];
+        base = { positions: sp, indices: base.indices, bbox: sbb };
+      }
       if (mv && (mv.dx || mv.dy || mv.dz || mv.drot)) {
         let ox = (P.placement.x || 0) + (mv.dx || 0), oy = (P.placement.y || 0) + (mv.dy || 0);
         const oz = (P.placement.z || 0) + (mv.dz || 0), pr = P.placement.rot || 0;
