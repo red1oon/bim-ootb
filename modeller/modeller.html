@@ -1298,6 +1298,20 @@ function moveDragPoint(axis, ndc, c0) {
   raycaster.setFromCamera(ndc, camera); const hit = new THREE.Vector3();
   return raycaster.ray.intersectPlane(moveDragPlane(axis, c0), hit) ? hit.clone() : null;
 }
+// H1 (RESUME_MODELLER_POLISH.md #9): in a PURE top view the camera looks straight down −Z, so the 'z' drag
+// plane (vertical, facing the camera) degenerates — the ray runs parallel to it and Z-drag is a no-op. Detect
+// that and map vertical SCREEN motion → world-Z instead (drag UP = +Z). Pure, witnessable functions.
+function _camTopDown() {                                       // camera within ~3° of straight down/up → 'z' plane degenerate
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  return Math.hypot(dir.x, dir.y) < 0.05;
+}
+function _zWorldPerPixel(c0) {                                 // perspective: world units per screen pixel at c0's depth
+  const D = camera.position.distanceTo(c0);
+  const h = 2 * D * Math.tan((camera.fov * Math.PI / 180) / 2);   // world height filling the viewport at depth D
+  const hpx = canvas.clientHeight || canvas.height || window.innerHeight || 1;
+  return h / hpx;
+}
+function zScreenDelta(downPx, curPx, c0) { return (downPx - curPx) * _zWorldPerPixel(c0); }   // screen↑ (smaller Y) ⇒ +Z
 canvas.addEventListener('pointerdown', (e) => {
   if (!moving || e.button !== 0 || e.shiftKey || !moveGizmo) return;
   const r = canvas.getBoundingClientRect();
@@ -1323,6 +1337,11 @@ canvas.addEventListener('pointerdown', (e) => {
     const down = moveDragPoint(ax, ndc, c0); if (!down) return;
     _moveDrag = { axis, ax, c0, down, ext, amin, f: 1 };
     setStat('scale ' + ax.toUpperCase() + ' — drag the cube out (edge-anchored), release to commit');
+    return;
+  }
+  if (axis === 'z' && _camTopDown()) {                          // H1: top view → vertical screen drag drives Z (plane degenerate)
+    _moveDrag = { axis, c0, screenZ: true, downPx: e.clientY, dx: 0, dy: 0, dz: 0 };
+    setStat('move Z — top view: drag vertically (screen ↕ = height), release to commit');
     return;
   }
   const down = moveDragPoint(axis, ndc, c0); if (!down) return;
@@ -1351,6 +1370,14 @@ canvas.addEventListener('pointermove', (e) => {
     f = Math.max(0.1, f);                                       // never collapse past 0.1× (degenerate solid)
     _moveDrag.f = f; scaleGhostShow(ax, f);
     setStat('scale ' + ax.toUpperCase() + ' ×' + f.toFixed(2) + (e.shiftKey ? '' : '  (0.25 snap)'));
+    return;
+  }
+  if (_moveDrag.screenZ) {                                      // H1 top-view Z: vertical screen pixels → world-Z
+    const dz = zScreenDelta(_moveDrag.downPx, e.clientY, _moveDrag.c0);
+    _moveDrag.dx = 0; _moveDrag.dy = 0; _moveDrag.dz = dz;
+    const c = _moveDrag.c0; const sn = snappedMoveDelta('z', c, 0, 0, dz);
+    moveGhostShow(sn.dx, sn.dy, sn.dz); showSnapMarker(sn.kind === 'geom' ? sn.marker : null);
+    setStat('move Z Δz=' + sn.dz.toFixed(2) + '  (top-view screen drag)');
     return;
   }
   const p = moveDragPoint(_moveDrag.axis, ndc, _moveDrag.c0); if (!p) return;
@@ -2569,6 +2596,37 @@ if (qs.get('outliner') === 'incr') {
     window.__incrResult = out;
     window.__incrDone = true;
     console.log('§MODELLER outliner-incr-done ' + JSON.stringify(out));
+  })();
+}
+// ?ztop=demo proves H1 Z-drag in PURE top view (W-BONSAI-ZTOP, RESUME_MODELLER_POLISH.md #9): when the camera
+// looks straight down −Z the 'z' drag plane degenerates → vertical SCREEN motion now drives world-Z (drag up = +Z).
+if (qs.get('ztop') === 'demo') {
+  (async () => {
+    const out = {};
+    try {
+      window.Bonsai.grid.define({ xs: [0, 4], ys: [0, 3], xlabels: ['A', 'B'], ylabels: ['1', '2'] });
+      const O = window.Bonsai.oplog; O.clear();
+      const w = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [4, 0], [4, 0.2], [0, 0.2]] }, depth: 3 } }, { color: 0x9fb4c8 });
+      window.Bonsai.select(w.id);
+      const c0 = selCentre() || new THREE.Vector3(2, 0.1, 1.5);
+      out.isoTopDown = _camTopDown();                                  // default iso camera → NOT degenerate
+      const sv = { pos: camera.position.clone(), tgt: controls.target.clone(), up: camera.up.clone() };
+      controls.target.copy(c0); camera.up.set(0, 1, 0); camera.position.set(c0.x, c0.y, c0.z + 12); controls.update();
+      out.topTopDown = _camTopDown();                                  // pure top view → degenerate (the fix triggers)
+      out.wpp = +_zWorldPerPixel(c0).toFixed(6);
+      out.dzUp = +zScreenDelta(300, 200, c0).toFixed(4);              // drag UP 100px ⇒ +Z
+      out.dzDown = +zScreenDelta(300, 400, c0).toFixed(4);            // drag DOWN 100px ⇒ −Z
+      out.dzExpected = +(100 * _zWorldPerPixel(c0)).toFixed(4);       // |Δ| = pixels × worldPerPixel
+      // WIRING: a real pointermove in screenZ mode sets _moveDrag.dz (drag up 100px → +Z, matches the pure math).
+      const rect = canvas.getBoundingClientRect();
+      moving = true; _moveDrag = { axis: 'z', c0, screenZ: true, downPx: rect.top + 300, dx: 0, dy: 0, dz: 0 };
+      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: rect.left + 10, clientY: rect.top + 200, bubbles: true }));
+      out.wiredDz = +_moveDrag.dz.toFixed(4);
+      moving = false; _moveDrag = null;
+      camera.position.copy(sv.pos); controls.target.copy(sv.tgt); camera.up.copy(sv.up); controls.update();
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§ZTOP demo fail ' + e); }
+    window.__ztopResult = out; window.__ztopDone = true;
+    console.log('§MODELLER ztop-done ' + JSON.stringify(out));
   })();
 }
 // ?grid=demo proves 2D correlation (W-BONSAI-GRID): define a column grid, snap NOISY clicks to it,
