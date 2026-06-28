@@ -201,6 +201,7 @@
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
 <script src="cross_edges.js?v=2" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <script src="arc_editable.js?v=1" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
      (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
@@ -1426,7 +1427,18 @@ async function commitMove(dx, dy, dz) {
       lastVerify = res.verify;
       console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
     }
-    setStat((ids.length > 1 ? ('moved ' + ids.length + ' objects') : ('moved #' + ids[0])) + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')  verify=' + lastVerify);
+    // §SDG-CASCADE (W-SDG-CASCADE-MODELLER): a moved HOST drags its hosted FILLINGS (door/window rides the wall),
+    // resolved through the §ARC-1 featureId↔guid bridge over REAL rel_fills_host edges. Same delta = rigid ride
+    // (rosetta-invertible). Directional + one-hop; deduped against the moved set so a co-selected door never double-moves.
+    const riders = (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid)
+      ? window.SdgCascade.ridersFor(ids, window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, new Set(ids))
+      : [];
+    for (const rfid of riders) {
+      const rr = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: rfid, dx, dy, dz, induced: 'hosted-by' } }, {});
+      console.log('§SDG-CASCADE hosted-by rider=' + rfid + ' rides host-move dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' verify=' + rr.verify);
+    }
+    if (riders.length) console.log('§SDG-CASCADE hosted-by hosts=' + ids.length + ' riders=' + riders.length);
+    setStat((ids.length > 1 ? ('moved ' + ids.length + ' objects') : ('moved #' + ids[0])) + (riders.length ? (' +' + riders.length + ' hosted') : '') + ' Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ',' + dz.toFixed(2) + ')  verify=' + lastVerify);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();      // re-fold replaced the meshes → always re-grab fresh refs (no stale)
     if (moving) buildMoveGizmo();                         // reposition the gizmo on the moved selection (move mode only)
