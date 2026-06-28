@@ -568,7 +568,7 @@ const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square' };
 function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.querySelector('span').textContent = CON_LABEL[m] || m; bConstrain.classList.toggle('on', m !== 'axis'); }
 bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); };
 function enterSketch() {
-  sketching = true; window.Bonsai.sketch.reset();
+  sketching = true; window.Bonsai.sketch.reset(); applyModeCursor();
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone(), up: camera.up.clone() };
   camera.up.set(0, 1, 0);   // top-down plan needs Y-up (looking down −Z with Z-up is degenerate)
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
@@ -577,7 +577,7 @@ function enterSketch() {
   sketchMarkers(); setStat('sketch: click ≥3 points on the grid, then Extrude');
 }
 function exitSketch() {
-  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH;
+  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
@@ -717,6 +717,19 @@ canvas.addEventListener('pointerdown', (e) => {           // bare (no-shift) pic
 // Raycast under the cursor BEFORE any click and give the feature a faint glow (dimmer than selection) + a
 // pointer cursor — the affordance every competitor has and DAGeVu's silent pick lacked. Skips selected meshes
 // (keeps their selection emissive), and is suppressed while a button is held (orbit) or any non-select mode/drag.
+// W-BONSAI-CURSOR (#5): the canvas cursor reflects the ACTIVE mode/tool so the pointer signals what a click does —
+// crosshair = place a point/edge, copy = drop a component, grab = drag a gridline, move = drag the transform gizmo.
+// Composes with the M3 hover-pointer: a mode that owns the cursor WINS; in plain browsing (no mode), hovering an
+// object still shows 'pointer'. One mode is active at a time, but the order is defensive. Pure CSS cursor, no deps.
+function modeCursor() {
+  if (inserting) return 'copy';                 // dropping a new component onto the grid
+  if (sketching || routing) return 'crosshair'; // drawing sketch points / a route
+  if (edgePicking) return 'crosshair';          // picking edges to fillet
+  if (gridMoving) return 'grab';                // grabbing a gridline to drag
+  if (moving) return 'move';                    // dragging the transform gizmo
+  return null;                                  // default browsing → hover decides
+}
+function applyModeCursor() { canvas.style.cursor = modeCursor() || ''; }
 let _hoverMesh = null, _hoverId = null;
 function setHover(mesh) {
   const hid = mesh ? mesh.userData.featureId : null;
@@ -724,7 +737,7 @@ function setHover(mesh) {
   if (_hoverMesh && !selectedIds.has(_hoverMesh.userData.featureId)) _emis(_hoverMesh, 0x000000);   // restore prev (unless it's selected)
   _hoverMesh = mesh; _hoverId = hid;
   if (mesh && !selectedIds.has(hid)) _emis(mesh, 0x14324a);   // faint hover tint (< selection 0x2b5a8c)
-  canvas.style.cursor = mesh ? 'pointer' : '';
+  canvas.style.cursor = modeCursor() || (mesh ? 'pointer' : '');   // a mode owns the cursor; else hover shows pointer
   if (window.A && A.requestRender) A.requestRender();
 }
 canvas.addEventListener('pointermove', (e) => {
@@ -777,7 +790,7 @@ function routeMarkers() {
   }
 }
 function enterRoute() {
-  routing = true; routePts = [];
+  routing = true; routePts = []; applyModeCursor();
   savedCam = { pos: camera.position.clone(), tgt: controls.target.clone(), up: camera.up.clone() };
   camera.up.set(0, 1, 0);   // top-down route plan: Y-up (Z-up degenerate looking down −Z)
   camera.position.set(2, 1.5, 12); controls.target.set(2, 1.5, 0); controls.update();
@@ -785,7 +798,7 @@ function enterRoute() {
   routeMarkers(); setStat('route: click ≥2 points on the grid to lay a run, then Sweep Run');
 }
 function exitRoute() {
-  routing = false; bRun.style.display = 'none'; dimProf.style.display = 'none'; bRoute.innerHTML = RT_ROUTE;
+  routing = false; bRun.style.display = 'none'; dimProf.style.display = 'none'; bRoute.innerHTML = RT_ROUTE; applyModeCursor();
   if (routeGroup) { while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
@@ -840,14 +853,14 @@ async function enterFillet() {
   try {
     const r = await window.Bonsai.queryEdges(selectedId);
     window._edgeList = r.edges || [];
-    edgePicking = true; pickedEdges = new Set();
+    edgePicking = true; pickedEdges = new Set(); applyModeCursor();
     bApplyFillet.style.display = ''; bApplyFillet.disabled = true; dimRad.style.display = ''; bFillet.innerHTML = FIL_CANCEL;
     edgeMarkers(window._edgeList);
     setStat('fillet: click edges (' + window._edgeList.length + ' available), then Apply');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§MODELLER fillet edges fail ' + e); }
 }
 function exitFillet() {
-  edgePicking = false; bApplyFillet.style.display = 'none'; dimRad.style.display = 'none'; bFillet.innerHTML = FIL_FILLET;
+  edgePicking = false; bApplyFillet.style.display = 'none'; dimRad.style.display = 'none'; bFillet.innerHTML = FIL_FILLET; applyModeCursor();
   if (edgeGroup) { while (edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]); }
 }
 bFillet.onclick = () => edgePicking ? exitFillet() : enterFillet();
@@ -981,11 +994,11 @@ function gmTint(commands) {
 }
 function enterGridMove() {
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
-  gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false;   // grab gridlines, not the camera
+  gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false; applyModeCursor();   // grab gridlines, not the camera
   setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch)');
 }
 function exitGridMove() {
-  gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true;
+  gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
@@ -1206,13 +1219,13 @@ function clearSnapMarker() { if (snapMarker) { scene.remove(snapMarker); snapMar
 function enterMove() {
   if (selectedId == null) { setStat('select an object first, then Move'); return; }
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
-  moving = true; _moveDrag = null; bMove.innerHTML = MV_CANCEL; bMove.classList.add('on'); controls.enabled = false;
+  moving = true; _moveDrag = null; bMove.innerHTML = MV_CANCEL; bMove.classList.add('on'); controls.enabled = false; applyModeCursor();
   if (dimMove) dimMove.style.display = '';
   buildMoveGizmo();
   setStat('move: drag an axis handle (X/Y/Z) or the hub (XY plane); snaps to grid + nearby geometry (G toggles), arrow-nudge ' + moveStep().toFixed(2) + 'm — Esc to exit');
 }
 function exitMove() {
-  moving = false; _moveDrag = null; bMove.innerHTML = MV_MOVE; bMove.classList.remove('on'); controls.enabled = true;
+  moving = false; _moveDrag = null; bMove.innerHTML = MV_MOVE; bMove.classList.remove('on'); controls.enabled = true; applyModeCursor();
   if (dimMove) dimMove.style.display = 'none';
   clearMoveGizmo(); clearMoveGhost(); clearSnapMarker();
 }
@@ -1772,8 +1785,8 @@ function buildInsertPanel() {
   window.Bonsai.library.ready().then(renderCatalog);   // populate once the BOM catalog JSON has loaded
   return p;
 }
-function enterInsert() { inserting = true; buildInsertPanel().style.display = 'block'; renderCatalog(); bInsert.classList.add('on'); bLod.style.display = ''; bLod.disabled = (lastInsertId == null); paintLod(); setStat('insert: pick from the BOM catalog, aim on the grid (R rotates), click to place'); }
-function exitInsert() { inserting = false; clearGhost(); if (insertPanel) insertPanel.style.display = 'none'; bInsert.classList.remove('on'); setStat('ready'); }
+function enterInsert() { inserting = true; buildInsertPanel().style.display = 'block'; renderCatalog(); applyModeCursor(); bInsert.classList.add('on'); bLod.style.display = ''; bLod.disabled = (lastInsertId == null); paintLod(); setStat('insert: pick from the BOM catalog, aim on the grid (R rotates), click to place'); }
+function exitInsert() { inserting = false; clearGhost(); applyModeCursor(); if (insertPanel) insertPanel.style.display = 'none'; bInsert.classList.remove('on'); setStat('ready'); }
 bInsert.onclick = () => inserting ? exitInsert() : enterInsert();
 bLod.onclick = async () => {
   const id = lodTargetId(); if (id == null) return;
