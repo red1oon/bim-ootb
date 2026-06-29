@@ -12,12 +12,67 @@
 //     subscribeOps   →  window 'bonsai:oplog' event
 //     bus            →  BroadcastChannel('bim_teams')  (Tier-1 awareness)
 'use strict';
-var crypto = (typeof require !== 'undefined') ? require('crypto') : null;
+// NOTE: must NOT be named `crypto` — at browser top-level scope `var crypto` aliases the read-only
+// `window.crypto` getter and THROWS on load (kills the module → downstream `_util` undefined).
+var _nodeCrypto = (typeof require !== 'undefined') ? (function () { try { return require('crypto'); } catch (e) { return null; } })() : null;
 
+// Real SHA-256, pure JS — byte-identical to node's crypto sha256 (standard algorithm + UTF-8 input).
+// Used in the BROWSER so a chain signed in node verifies in the browser and vice-versa (cross-env
+// determinism — the prior djb2 fallback produced a DIFFERENT, 8-char digest → chains never verified).
+var _K256 = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+function _utf8Bytes(s) {
+  var b = [];
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 0x80) b.push(c);
+    else if (c < 0x800) b.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    else if (c >= 0xd800 && c < 0xdc00) {
+      var c2 = s.charCodeAt(++i), cp = 0x10000 + ((c & 0x3ff) << 10) + (c2 & 0x3ff);
+      b.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+    } else b.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+  }
+  return b;
+}
+function _jsSha256(str) {
+  function rotr(n, x) { return (x >>> n) | (x << (32 - n)); }
+  var m = _utf8Bytes(str), l = m.length;
+  var H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  m.push(0x80); while (m.length % 64 !== 56) m.push(0);
+  var bits = l * 8, hi = Math.floor(bits / 0x100000000), lo = bits >>> 0;
+  m.push((hi >>> 24) & 255, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255,
+         (lo >>> 24) & 255, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255);
+  var w = new Array(64);
+  for (var i = 0; i < m.length; i += 64) {
+    for (var t = 0; t < 16; t++) w[t] = (m[i+4*t] << 24) | (m[i+4*t+1] << 16) | (m[i+4*t+2] << 8) | m[i+4*t+3];
+    for (t = 16; t < 64; t++) {
+      var s0 = rotr(7, w[t-15]) ^ rotr(18, w[t-15]) ^ (w[t-15] >>> 3);
+      var s1 = rotr(17, w[t-2]) ^ rotr(19, w[t-2]) ^ (w[t-2] >>> 10);
+      w[t] = (w[t-16] + s0 + w[t-7] + s1) | 0;
+    }
+    var a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+    for (t = 0; t < 64; t++) {
+      var S1 = rotr(6,e) ^ rotr(11,e) ^ rotr(25,e), ch = (e & f) ^ (~e & g);
+      var t1 = (h + S1 + ch + _K256[t] + w[t]) | 0;
+      var S0 = rotr(2,a) ^ rotr(13,a) ^ rotr(22,a), mj = (a & b) ^ (a & c) ^ (b & c);
+      var t2 = (S0 + mj) | 0;
+      h=g; g=f; f=e; e=(d+t1)|0; d=c; c=b; b=a; a=(t1+t2)|0;
+    }
+    H[0]=(H[0]+a)|0; H[1]=(H[1]+b)|0; H[2]=(H[2]+c)|0; H[3]=(H[3]+d)|0;
+    H[4]=(H[4]+e)|0; H[5]=(H[5]+f)|0; H[6]=(H[6]+g)|0; H[7]=(H[7]+h)|0;
+  }
+  var hex = ''; for (i = 0; i < 8; i++) hex += ('00000000' + (H[i] >>> 0).toString(16)).slice(-8);
+  return hex;
+}
 function sha256(s) {
-  if (crypto) return crypto.createHash('sha256').update(String(s)).digest('hex');
-  var h = 5381; s = String(s); for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-  return ('00000000' + h.toString(16)).slice(-8);
+  s = String(s);
+  return _nodeCrypto ? _nodeCrypto.createHash('sha256').update(s).digest('hex') : _jsSha256(s);
 }
 // stable, RECURSIVELY key-sorted serialization (don't use JSON.stringify's array arg — it acts as a
 // nested property allowlist and silently drops params.box.* → tamper-blind hashes).
