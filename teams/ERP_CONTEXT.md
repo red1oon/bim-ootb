@@ -6,9 +6,10 @@
 > (the universal dot-layer optics shared with the BIM Modeller/Viewer). Spec-first: this is the plan; build
 > follows in witnessed slices (§9). All file:line cites are real ERP code in bim-ootb `erp/`.
 >
-> ▶ **RESUME (new session): review → execute.** Concept is LOCKED (design dialogue 2026-06-30). Build = §9 here +
-> [[TEAM_OPTICS.md]] §8. Nothing built yet. Lead surface = the **Dashboard-Flow** (§5, §5.1); Team = a non-invasive
-> **optics toggle** ([[TEAM_OPTICS.md]]); WhatsApp = a conceptual batched-op transport ([[COMPETE.md]]).
+> ▶ **RESUME (new session): review → execute.** Concept is LOCKED (design dialogue 2026-06-30). **Execution sequence =
+> [[ROADMAP.md]]** (session-by-session, with the Regression Gate §G + risk register) — start there. Slice detail =
+> §9 here + [[TEAM_OPTICS.md]] §8. Nothing built yet. Lead surface = the **Dashboard-Flow** (§5, §5.1, §5.2 Organiser);
+> Team = a non-invasive **optics toggle** ([[TEAM_OPTICS.md]]); WhatsApp = a conceptual batched-op transport ([[COMPETE.md]]).
 
 ## §0 — The thesis: ERP already IS a World/History engine
 The Teams core says *World = fold(History)*. **ERP already implements both halves** — so the overlay is
