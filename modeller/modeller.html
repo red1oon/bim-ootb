@@ -2071,8 +2071,10 @@ window.discWalk = function (disc, ctx) {
       // large-complex (terminal_rules.db) standard otherwise. dwInit is idempotent (no-op if the
       // same file is already loaded; reloads on a class change). The residential clearances (~0.5m)
       // stop the airport-plenum numbers from manufacturing phantom clashes on a small building.
+      await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
       try { await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(name || window.__dwName)); }
       catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return; }
+      await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
       if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return; }
       var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
       var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '');
@@ -2117,6 +2119,15 @@ function _clearDiscWalk(disc) {
   root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwDisc === disc) root.remove(o); });
   delete window.__dwWalks[disc];
 }
+// §LOD-SEAM (docs/WalkerDoctrine.md §5): a GENERATED fixture's render geometry is selected by its semantic
+// prim KIND (disc_walker._primFor → p.prim: sprinkler/diffuser/light/outlet/alarm/valve/run/box). POC = a BOX
+// sized to the class's MEASURED median bbox for EVERY kind — the box's DIMENSIONS carry the only real info; a
+// fabricated cone/cylinder/grille mesh would INVENT geometry (forbidden by W-DW-PRIM). This function is the
+// SINGLE swap point: the finish state plugs a fine LOD400 component-library mesh per prim kind in HERE, same
+// placement. Override window._dwPrimGeo to wire the component library. Returns a THREE.BufferGeometry.
+window._dwPrimGeo = window._dwPrimGeo || function (prim, bx, by, bz) {
+  return new THREE.BoxGeometry(bx, by, bz);   // POC: measured box for every kind; LOD400 mesh swaps in here
+};
 function _renderDiscWalk(disc, placements) {
   var root = _dwRoot(); if (!root) return;
   _clearDiscWalk(disc);
@@ -2138,7 +2149,8 @@ function _renderDiscWalk(disc, placements) {
     var list = byCls[cls], s = list[0];
     var measured = (s.bx > 0 && s.by > 0 && s.bz > 0);
     var bx = measured ? s.bx : 0.18, by = measured ? s.by : 0.18, bz = measured ? s.bz : 0.18;
-    var geo = new THREE.BoxGeometry(bx, by, bz);
+    var prim = s.prim || 'box';                                                 // §LOD-SEAM render kind (sprinkler/light/…)
+    var geo = window._dwPrimGeo(prim, bx, by, bz);                              // POC box (measured) → LOD400 mesh swaps in here
     function _mesh(sub, mat) {
       if (!sub.length) return;
       var im = new THREE.InstancedMesh(geo, mat, sub.length);
@@ -2149,7 +2161,7 @@ function _renderDiscWalk(disc, placements) {
     _mesh(list, matN);                                                          // all (normal box)
     _mesh(list.filter(function (p) { return p.gated && !p.clash; }), matG);     // orange = yielded into the plenum
     _mesh(list.filter(function (p) { return p.clash; }), matC);                 // red = irreducible clash
-    dims.push(cls.replace('Ifc', '') + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)'));
+    dims.push(cls.replace('Ifc', '') + '/' + prim + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)'));
   });
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
@@ -2315,10 +2327,52 @@ window._dwRules = function (nm) {
   return /duplex|sample.?house|sample.?castle|schependomlaan|(^|[^A-Z])(SH|DX|SC)([^A-Z]|$)/i.test(nm || '')
     ? 'duplex_rules.db' : 'terminal_rules.db';
 };
+// §DW-RULES-BUST: the rules DBs (terminal_rules/duplex_rules) are MUTABLE at a FIXED url, but disc_walker's
+// §DW_IDB caches them in bim_ootb_cache/'dbs' keyed by url with NO version → a returning user keeps the OLD
+// rules across a deploy (silently missing e.g. the new FP sprinkler shim). On a rules-version change, evict the
+// two rules keys ONCE so the fresh DBs load + re-cache normally. Bump window.__dwRulesVer whenever a *_rules.db
+// changes (in lock-step with sw.js CACHE_VERSION). Building *_extracted.db are immutable per url → never evicted.
+window.__dwRulesVer = 'v20';
+window._dwBustStaleRulesCache = async function () {
+  try {
+    var KEY = 'dw_rules_ver', cur = window.__dwRulesVer;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(KEY) === cur) return;   // already fresh
+    await new Promise(function (res) {
+      var rq = indexedDB.open('bim_ootb_cache');
+      rq.onsuccess = function () {
+        var idb = rq.result;
+        if (!idb.objectStoreNames || !idb.objectStoreNames.contains('dbs')) { res(); return; }
+        try {
+          var tx = idb.transaction('dbs', 'readwrite'), os = tx.objectStore('dbs');
+          os.delete('./terminal_rules.db'); os.delete('./duplex_rules.db');
+          tx.oncomplete = function () { console.log('§DW-RULES-BUST evicted stale rules DBs for ' + cur); res(); };
+          tx.onerror = function () { res(); };
+        } catch (e) { res(); }
+      };
+      rq.onerror = function () { res(); };
+    });
+    if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, cur);
+  } catch (e) { console.warn('§DW-RULES-BUST failed ' + (e && e.message)); }
+};
+// §BORROW (docs/WalkerDoctrine.md §2): a residential building (duplex_rules primary) walks ELEC/ACMV/PLB
+// natively but lacks FP/sprinkler — BORROW FP from terminal_rules WITHOUT switching the building's class. The
+// engine routes FP's MEASURED placement/shim/bbox rows to terminal_rules; the gate + cross-disc clearances stay
+// on the PRIMARY residential DB (NON-INVENT: FP reuses Terminal's measured rows — SC sprinklers host-bind to real
+// IfcCovering ceilings, or honestly refuse). dwBorrowFile is IDB-cached + idempotent per file. When the primary
+// IS terminal_rules, FP is native → clear any borrow so FP isn't double-sourced.
+window._dwEnsureBorrow = async function () {
+  if (!window.DiscWalker || !window.DiscWalker.dwBorrowFile) return;
+  var primary = (window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || '';
+  if (primary === 'terminal_rules.db') { if (window.DiscWalker.dwBorrow) window.DiscWalker.dwBorrow('FP', null); return; }
+  try { await window.DiscWalker.dwBorrowFile('FP', window.SQL, './', 'terminal_rules.db'); }
+  catch (e) { console.warn('§DISC-WALK borrow FP←terminal failed ' + (e && e.message)); }
+};
 // Ensure the engine is loaded (building-class rules fetch) + the roster is registered. Called on open.
 window.__ensureDiscWalker = async function () {
   try {
+    await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
     if (window.DiscWalker) await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(window.__dwName));
+    await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
   } catch (e) { console.warn('§DISC-WALK dwInit (roster) failed ' + (e && e.message)); }
   _registerDiscRoster();
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
