@@ -4,7 +4,14 @@
 //   modeller coupling is Connectors (swap its stub bodies to go live). teams/.
 'use strict';
 var Connectors = require('./connectors');
+var ConnectorsLive = require('./connectors_live');   // feature-detected live bindings (stub fallback)
 var Engine = require('./engine');
 var Gate = require('./gate');
 var Chatlog = require('./chatlog');
-module.exports = { Connectors: Connectors, Engine: Engine, Gate: Gate, Chatlog: Chatlog };
+var Protocol = require('./protocol');                // CAS seam · heartbeat · op-message default
+var Facilitator = require('./facilitator');          // optional trustless relay (DESIGN.md §7)
+var View = require('./view/teams_view');             // view-model builders + DOM renderers
+module.exports = {
+  Connectors: Connectors, ConnectorsLive: ConnectorsLive, Engine: Engine, Gate: Gate,
+  Chatlog: Chatlog, Protocol: Protocol, Facilitator: Facilitator, View: View
+};
