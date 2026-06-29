@@ -63,6 +63,19 @@ BIM already does this — **we port the pattern, universal**:
 - **Channels = transports** (the post office, [[DESIGN.md]] §7): the **Team feed**, **WhatsApp** (batched ops, [[ERP_CONTEXT.md]]),
   a **link/QR**. WhatsApp is just one share target, not a feature of its own.
 
+## §5.1 — Additions (design dialogue 2026-06-30): Organiser · Broadcast · World-at-T · Work-summary
+- **The Organiser** (cross-product) — a filterable **Team tab** = scope filter (`mine ↔ anyone`, by
+  role/project/location/space) + multi-select charts (mirror the **Graph** feature). The *same* control governs which
+  **person dots / POVs** you see — the dial from personal to whole-team (anti-overwhelm, anti-miscommunication).
+  BIM filters by discipline/space; ERP by role/org/project ([[ERP_CONTEXT.md]] §5.2).
+- **Broadcast anchor** — extend the anchor set (§4) with `broadcast` (target = all / level / role). An admin
+  announcement is just a signed `annot` with a broadcast anchor = a system-wide sticky. (Broadcast-eligible gated.)
+- **World-at-T** (the "time-travel" optic) — because `World = fold(History)`, fold a **prefix** → re-render a
+  record/panel **as of any instant**: *exact + deterministic*, NOT the existing flaky view-scrubber (that restores a
+  UI view). Per-record/panel first ("this doc as of T"), global later. Pairs with hover-blame (click a who/when → rewind).
+- **On-the-fly work summary** — bunch-&-share's sibling: fold a flow/period → a readable digest (`what · who · when`),
+  **exportable + editable**, doubling as the **replay/training script** (the step-recorder narrates it). The log → a report, free.
+
 ## §6 — Gating gradient ("eligible users")
 - **Everyone** (general group, read-only): the activity feed + presence dots — see what others do.
 - **Eligible roles** (team-lead / supervisor / `isShowAcct` in ERP; project role in BIM): the deeper optics — field

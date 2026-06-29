@@ -52,3 +52,23 @@ documents — the draft-vs-craft model ([[RESUME_DISTRIBUTED_BRANCHES]]) applied
 ### My pick if we want maximum signal for minimum build
 **A (time-travel scrub)** + **C (co-sign)** + **D (replay-onboarding)** are all *low effort + native + demo-friendly*,
 and **B (unified BIM↔ERP presence)** is the one true moat worth investing in. F/G/H are strong follow-ons.
+
+---
+## User verdicts + net-new concepts (design dialogue 2026-06-30)
+**All accepted.** A (clarified) · B (clarified) · C (+broadcast +legal signoff) · D · E (folds into Organiser) ·
+F (guarded) · G (upgraded) · H (stub now).
+
+**Three net-new concepts — promoted to spec:**
+- **The Organiser = the Team tab in the Dashboard** — a filterable 360 lens (scope filter `mine ↔ anyone` by
+  role/project/location/space + multi-select charts like the Graph feature). Unifies B's filter + C's overwhelm-toggle
+  + the Team-tab idea. → [[ERP_CONTEXT.md]] §5.2, [[TEAM_OPTICS.md]] §5.1.
+- **Broadcast** — admin → all/level/role announcement = a signed `annot` with a `broadcast` anchor (system-wide sticky).
+- **On-the-fly work summary** (G+D) — fold a flow/period → readable digest (what·who·when), exportable + editable,
+  doubles as the training/replay script. "Summary of work done on the fly."
+
+**Clarifications:**
+- **A** = re-FOLD data "as of T" (exact, deterministic) — NOT the existing flaky view-scrubber. Per-record/panel first.
+- **C** = app-level **signoff** flips `docStatus→Approved` + carries office legality (confirmed memo, saves paperwork);
+  non-repudiation from the op signature; real PKI optional later.
+- **F** = ONE clear orange nudge per item, dismissible (never a wall).
+- **H** = a visible "new feature" placeholder stub now; build later.

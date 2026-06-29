@@ -110,6 +110,16 @@ responsible; approval hierarchy; **Workflow Activities** = a pending-task queue)
 - **Sequencing:** discovery-first (flow + bottleneck + involvement from the log alone, zero setup) → conformance
   (needs an `AD_Workflow` to-be) as a later slice. Keep it proportionate (a Flow lens, not a Celonis install).
 
+## §5.2 — The Organiser (the Team tab in the Dashboard)  (user 2026-06-30)
+Promote a first-class **Team tab** in the Dashboard = a filterable **360 lens** (the anti-overwhelm "unified view").
+It folds three earlier asides into one surface (B-filter + C overwhelm-toggle + "Team tab like Graph"):
+- **Scope filter:** `mine only` ↔ `anyone`, narrowed by **role / project / location / space** — dial from your own
+  assigned items to the whole team's POV (anti-miscommunication). Same scope key as §2 (role/org + project/loc/space).
+- **Multi-select charts** (mirror the existing **Graph** feature): involvement, flow/bottleneck (§5.1), presence, nudges.
+- It's where **presence + POVs + broadcasts** converge. Cross-product: reuses the BIM multi-chart pattern ([[TEAM_OPTICS.md]]).
+- **Broadcast:** a SystemAdmin → all/level/role **announcement** = a signed `annot` op with a `broadcast` anchor (a
+  system-wide post-it). Same primitive as a sticky, wider target; surfaces in the Organiser + as a dot. (Broadcast-eligible gated.)
+
 ## §6 — Cross-device: the facilitator IS the missing ERP transport
 `DistributedERP.md` (§6, §0.53-77) specifies a **serverless "dumb post office"**: accept + total-order + persist +
 relay signed ops; rebuildable from the logs; business-time (not real-time) sync; ordered-handoff for ownership.
