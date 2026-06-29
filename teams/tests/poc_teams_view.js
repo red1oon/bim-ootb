@@ -2,7 +2,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — W-VIEW (prompts/RESUME_DISTRIBUTED_BRANCHES.md §8).
-//   Node-only witness over the PURE view-model builders in view/teams_view.js. Reuses the
+//   Node-only witness over the PURE view-model builders in overlay/teams_view.js. Reuses the
 //   two-branch SampleHouse-like scenario from poc_teams_cross_branch.js (Col-204 × Duct-7 clash +
 //   over-budget STR + a stale branch) and proves the view-models reflect ONLY what the engine/gate
 //   emit — no invented color, count, or verdict. Runs through the connector STUB seam, touches NO
@@ -20,7 +20,7 @@
 'use strict';
 var path = require('path');
 var RP = require(path.join(__dirname, '..', 'index.js'));
-var V = require(path.join(__dirname, '..', 'view', 'teams_view.js'));
+var V = require(path.join(__dirname, '..', 'overlay', 'teams_view.js'));
 var E = RP.Engine, G = RP.Gate, L = RP.Chatlog;
 
 var fails = 0;

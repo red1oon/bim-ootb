@@ -98,5 +98,53 @@ var Connectors = {
   _util: { sha256: sha256, canonical: canonical, overlap: overlap }
 };
 
+// ── SELF-UPGRADE TO LIVE — THE seam swap (DESIGN.md §3) ────────────────────────
+// connectors.js IS the single coupling point: engine/gate/chatlog all require('./connectors'), so
+// upgrading THIS singleton in place takes the whole layer live with ZERO edits to them or to the
+// modeller. Behavior is IDENTICAL to the stub when no live host is present (node/tests stay green).
+// Detection mirrors connectors_live.js (window/self only — NOT globalThis, so node BroadcastChannel/
+// crypto never false-bind). NON-INVENT: a present binding routes verbatim; an absent one keeps the stub.
+function _detectHost() {
+  return (typeof window !== 'undefined') ? window : (typeof self !== 'undefined') ? self : null;
+}
+Connectors._bindings = { evaluateGate: 'stub', foldCost: 'stub', sign: 'stub', verifyChain: 'stub', subscribeOps: 'stub', bus: 'stub' };
+Connectors.goLive = function (host) {
+  host = host || _detectHost(); if (!host) return Connectors;
+  var b = Connectors._bindings;
+  if (host.sdg_gate && typeof host.sdg_gate.evaluate === 'function') {
+    Connectors.evaluateGate = function (w, o) { return host.sdg_gate.evaluate(w, o); }; b.evaluateGate = 'live';
+  }
+  if (host.rates && typeof host.rates.foldCost === 'function') {
+    Connectors.foldCost = function (w, br) { return host.rates.foldCost(w, br); }; b.foldCost = 'live';
+  }
+  var ko = host.kernel_ops, kv = ko && (ko.verifyChain || ko.verify);   // sign+verify bound as a pair
+  if (ko && typeof ko.sign === 'function' && typeof kv === 'function') {
+    Connectors.sign = function (op, prev) { return ko.sign(op, prev); };
+    Connectors.verifyChain = function (ops) { return kv.call(ko, ops); };
+    b.sign = b.verifyChain = 'live';
+  }
+  if (typeof host.addEventListener === 'function') {                    // live op stream: 'bonsai:oplog'
+    Connectors.subscribeOps = function (cb) {
+      var h = function (e) { cb(e && e.detail); };
+      host.addEventListener('bonsai:oplog', h);
+      return function () { host.removeEventListener('bonsai:oplog', h); };
+    }; b.subscribeOps = 'live';
+  }
+  if (typeof host.BroadcastChannel === 'function') {                    // Tier-1 awareness bus
+    var ch = new host.BroadcastChannel('bim_teams');
+    Connectors.bus = { on: function (c, cb) { ch.onmessage = function (e) { cb(e && e.data); }; },
+                       send: function (c, m) { ch.postMessage(m); } }; b.bus = 'live';
+  }
+  Connectors._isStub = (b.evaluateGate === 'stub' && b.foldCost === 'stub' && b.sign === 'stub' &&
+                        b.subscribeOps === 'stub' && b.bus === 'stub');
+  return Connectors;
+};
+// auto-upgrade on load ONLY when a real modeller host is present (gate/rates/kernel_ops) — no-op in
+// node → stays the deterministic stub. A standalone page may call Connectors.goLive(window) explicitly.
+(function () {
+  var h = _detectHost();
+  if (h && (h.sdg_gate || h.rates || h.kernel_ops)) Connectors.goLive(h);
+})();
+
 if (typeof module === 'object' && module.exports) module.exports = Connectors;
 else (typeof self !== 'undefined' ? self : this).TeamsConnectors = Connectors;

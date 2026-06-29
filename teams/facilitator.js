@@ -7,7 +7,7 @@
 //   verdict (the gate runs client-side). Worst case = withhold/reorder/replay → clients still converge
 //   (total order = (ts,id); dedup by op_hash; replay idempotent). Remove it and Tier-0/1 still work.
 //   Pure over inputs: NO Date.now / Math.random. In-memory loopback stub; live binding (serverless /
-//   ERP edge suite, scripts/erp_seam.js) swaps in later WITHOUT touching engine/view/witnesses.
+//   ERP edge suite, scripts/erp_seam.js) swaps in later WITHOUT touching engine, overlay, or witnesses.
 //   Read the log after every run.
 'use strict';
 var C = (typeof require !== 'undefined') ? require('./connectors') : (self.TeamsConnectors);

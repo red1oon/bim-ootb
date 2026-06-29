@@ -89,7 +89,7 @@ Per-element/-cell state, computed by the gate over the merged World:
 
 ## 5. The view — World/History surfaces (domain-agnostic view-model)
 
-The view-model builders (`view/teams_view.js`) take engine+gate output and emit pure models; the DOM renderer
+The view-model builders (`overlay/teams_view.js`) take engine+gate output and emit pure models; the DOM renderer
 styles them. All three surfaces are just lenses on World+History:
 
 - **Tree** (blame-tinted World) — elements/documents tinted by last author (History) + ladder color (verdict).
@@ -98,6 +98,17 @@ styles them. All three surfaces are just lenses on World+History:
 - **Dashboard** — scope×scope clash/conflict matrix, per-branch budget/limit rails, branch freshness.
 - **(future) Timeline scrubber** — fold a prefix of History to view the World at any point; diff two branches.
 - **Canvas markers** — World elements colored by the ladder (BIM 3D; ERP could be a doc/board layout).
+
+### Embedding — an overlay, not a takeover
+Teams is a self-contained `teams/` module **overlaid** into host apps — `erp/` and `modeller/` — behind a **Teams
+icon** (the 2-person toggle, wired later, not now). "See what others are doing" turns the overlay **on**:
+- The renderers mount into a **host-provided container** (`renderTree(rootEl, …)`), so the overlay can appear
+  **in-frame / split-screen** alongside the host without owning the page or its state.
+- `teams.html` doubles as the **standalone demo** AND the **iframe content** for an in-frame embed (cheapest
+  isolation: the host drops an `<iframe src="teams/teams.html">` in a split pane; the overlay talks home over the
+  `BroadcastChannel('bim_teams')` bus / `'bonsai:oplog'` seam — no DOM entanglement with the host).
+- The folder is named **`teams/overlay/`** on purpose — it is *the embeddable overlay surface*, **not** the host
+  app's own `view/` layer. No conflation: nothing in `teams/` assumes it owns the page.
 
 ## 6. Invariants (carry across BIM and ERP)
 
@@ -190,7 +201,7 @@ view, and witnesses do not change.
 | `chatlog.js` | **History → chat** projection + tamper-check | ✅ core |
 | `connectors.js` / `connectors_live.js` | the seam (stub + feature-detected live) | ✅ the coupling point |
 | `protocol.js` | shared-datum CAS seam · Tier-1 heartbeat · op-message default | ✅ core |
-| `view/teams_view.js` | view-model builders + DOM renderer | ✅ (scope-agnostic) |
+| `overlay/teams_view.js` | view-model builders + DOM renderer | ✅ (scope-agnostic) |
 | `index.js` | barrel | ✅ |
 
 BIM and ERP each add only: a scope source, a `gate`/`foldCost` binding, and a domain vocabulary of verbs — nothing
