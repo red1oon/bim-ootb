@@ -20,6 +20,30 @@
   var TAG = '§DW';
   var ROOT = (typeof window !== 'undefined') ? window : {};
   var _db = null, _ready = false, _loadedFile = null;
+  // §BORROW — per-discipline source map (docs/WalkerDoctrine.md §2). The PRIMARY _db is the building-class
+  // ruleset (e.g. duplex_rules.db for residential). A discipline ABSENT from the residential set (e.g. FP/
+  // sprinkler) can be BORROWED from another ruleset (e.g. terminal_rules.db) WITHOUT switching the building's
+  // class: per-discipline reads (placement/space_bom/routing/shim) route to _dbFor(disc); cross-disc tables
+  // (rule_avoidance/place_order, the gate) stay on the PRIMARY _db (residential clearance standard). NON-INVENT:
+  // a borrowed discipline reuses that DB's MEASURED rows; nothing is fabricated.
+  var _borrow = {};                                              // disc -> borrowed sql.js db handle
+  function _dbFor(disc) { return _borrow[disc] || _db; }
+  // Register/clear a borrowed discipline source. dwBorrow('FP', terminalDb) → FP rules read from terminalDb.
+  function dwBorrow(disc, db) { if (db) _borrow[disc] = db; else delete _borrow[disc]; return _borrow; }
+  // Browser borrow-by-FILE (docs/WalkerDoctrine.md §2): IDB-cached load + open + register a borrowed discipline
+  // from ANOTHER rules file WITHOUT switching the primary. A residential build (duplex_rules primary) lacks FP →
+  // dwBorrowFile('FP', SQL, './', 'terminal_rules.db') routes FP's MEASURED rows to terminal_rules; the gate +
+  // cross-disc clearances stay on the primary. Reuses _loadDbBuf (same offline cache as dwInit). Idempotent per
+  // file. Browser-only (node witnesses use dwBorrow with an fs-opened handle and never reach _loadDbBuf's fetch).
+  async function dwBorrowFile(disc, SQL, baseUrl, file) {
+    if (_borrow[disc] && _borrow[disc]._dwFile === file) return _borrow[disc];   // already borrowed this file
+    var url = (baseUrl || '../modeller/') + file;
+    var buf = await _loadDbBuf(url);
+    var db = new SQL.Database(new Uint8Array(buf));
+    db._dwFile = file; _borrow[disc] = db;
+    console.log(TAG + ' §DW-BORROW ' + disc + ' ← ' + file);
+    return db;
+  }
 
   function _rows(db, sql) {
     var r = db.exec(sql);
@@ -28,6 +52,20 @@
     return vals.map(function (v) { var o = {}; cols.forEach(function (c, i) { o[c] = v[i]; }); return o; });
   }
   function _esc(s) { return String(s).replace(/'/g, "''"); }
+  // §LOD-SEAM (docs/WalkerDoctrine.md §5): map a fixture ifc_class → a SEMANTIC primitive kind. The modeller renders a
+  // recognizable shape per kind NOW (POC) and swaps a fine LOD400 component-library mesh later — one seam, same placement.
+  // Pure classification (no geometry, no invention); unknown classes fall back to 'box'.
+  function _primFor(cls) {
+    cls = String(cls || '');
+    if (/FireSuppressionTerminal|Sprinkler/i.test(cls)) return 'sprinkler';
+    if (/AirTerminal|Diffuser/i.test(cls)) return 'diffuser';
+    if (/LightFixture|Lamp/i.test(cls)) return 'light';
+    if (/Alarm|Sensor/i.test(cls)) return 'alarm';
+    if (/Outlet|ElectricAppliance|SwitchingDevice/i.test(cls)) return 'outlet';
+    if (/Valve|FlowController/i.test(cls)) return 'valve';
+    if (/Pipe|Duct|FlowSegment|FlowFitting/i.test(cls)) return 'run';
+    return 'box';
+  }
   function _med(arr) { var a = arr.filter(function (v) { return v != null; }).sort(function (x, y) { return x - y; }); return a.length ? a[Math.floor(a.length / 2)] : 0; }
 
   // ── INIT ────────────────────────────────────────────────────────────────────────
@@ -134,7 +172,7 @@
   // (median spacing + dz) — on a new building we have no storey mapping, so we apply
   // the measured cadence once per target storey rather than the Terminal's per-storey rows.
   function repRules(disc) {
-    var rules = _rows(_db, "SELECT * FROM rule_placement WHERE disc='" + _esc(disc) + "'");
+    var rules = _rows(_dbFor(disc), "SELECT * FROM rule_placement WHERE disc='" + _esc(disc) + "'");
     var by = {};
     rules.forEach(function (r) { (by[r.ifc_class] = by[r.ifc_class] || []).push(r); });
     return Object.keys(by).map(function (cls) {
@@ -186,7 +224,7 @@
   }
   // Measured per-storey count for a host class (rule_space_bom); 0 = unknown -> one per host.
   function countPer(disc, cls) {
-    var r = _rows(_db, "SELECT count_per FROM rule_space_bom WHERE disc='" + _esc(disc) +
+    var r = _rows(_dbFor(disc), "SELECT count_per FROM rule_space_bom WHERE disc='" + _esc(disc) +
       "' AND ifc_class='" + _esc(cls) + "'");
     return r.length ? _med(r.map(function (x) { return x.count_per; })) : 0;
   }
@@ -223,6 +261,7 @@
     // sizes its GENERATED-fixture box per class. SIZE only — count/position untouched.
     function _emit(o, rp) {
       o.bx = rp.bbox ? rp.bbox.dx : null; o.by = rp.bbox ? rp.bbox.dy : null; o.bz = rp.bbox ? rp.bbox.dz : null;
+      o.prim = _primFor(o.ifc_class);                         // §LOD-SEAM: semantic primitive kind (modeller render hint)
       out.push(o);
     }
     reps.forEach(function (rp) {
@@ -266,7 +305,20 @@
             }
           }                                                 // no walls → honest skip (no host surface)
         } else {                                            // single placement (datum rule, no host)
-          _emit({ disc: disc, ifc_class: rp.ifc_class, x: (st.x0 + st.x1) / 2, y: (st.y0 + st.y1) / 2,
+          // ENVELOPE-BIND the single too: a lone datum fixture must still sit on BUILT area, not in a courtyard
+          // void at the raw bbox centre. Snap the centre to the nearest occupied cell (same envelope as the array
+          // path). NON-INVENT: the cell is a real ARC footprint cell; no occupancy (bare DB) → keep the centre.
+          var scx = (st.x0 + st.x1) / 2, scy = (st.y0 + st.y1) / 2;
+          var scells = occupancy(bdb, st, rp.sx > 0 ? rp.sx : 1);
+          if (scells.length) {
+            var sbest = scells[0], sbd = Infinity;
+            for (var sc = 0; sc < scells.length; sc++) {
+              var sdd = (scells[sc].x - scx) * (scells[sc].x - scx) + (scells[sc].y - scy) * (scells[sc].y - scy);
+              if (sdd < sbd) { sbd = sdd; sbest = scells[sc]; }
+            }
+            scx = sbest.x; scy = sbest.y;
+          }
+          _emit({ disc: disc, ifc_class: rp.ifc_class, x: scx, y: scy,
             z: z, storey: st.name, prov: 'placed:single', src: rp.src }, rp);
         }
       });
@@ -274,11 +326,99 @@
     return out;
   }
 
+  // ── HOST-BIND (the anti-float fix for host-bound standalone disciplines) ────────────
+  // Density/storey placement scatters fixtures at FOOTPRINT-cell centres → they float mid-room (SH ELEC: 38/38
+  // ~3.9m off any wall). But "host-bound standalone" classes (taxonomy class-2: ELEC outlets→wall SIDE, FP
+  // alarms→covering BOTTOM, vent grilles→window TOP) are governed by a HOST + a mount face — NOT a joined
+  // network (class-1) and NOT a proximity run (class-3). This snaps each placement onto the nearest real host
+  // of `shim.host_ifc_class`, on the mount face named by `shim.mount`:
+  //   SIDE   — project onto the host's CENTRELINE (host line = centre ± half its dominant horizontal axis),
+  //            push to the room-side FACE by half-thickness + shim offset, yaw = host run axis. (walls)
+  //   TOP    — snap XY to the host centre, set Z to the host top-face (centre_z + bbox_z/2) + shim offset;
+  //            yaw = host run axis. (window grilles, slab-top risers)
+  //   BOTTOM — snap XY to the host centre, set Z to the host bottom-face (centre_z − bbox_z/2) − shim offset.
+  //            (ceiling-covering alarms/diffusers)
+  // NON-INVENT: the host + its geometry are REAL; the shim percept {host_ifc_class, mount, offset_m, height_m}
+  // is supplied (sourced from ERP.db `_shim_attributes`), never guessed. A placement with no host within
+  // `reach_m` is REFUSED (kept floating + counted) — REFUSE beats fabricate. host_ifc_class matches as a
+  // substring so 'IfcWall' still picks up IfcWallStandardCase (backward-compatible with the wall-only path).
+  function hostBind(placements, bdb, shim) {
+    shim = shim || {};
+    var reach = shim.reach_m != null ? shim.reach_m : 6;
+    var hostClass = shim.host_ifc_class || 'IfcWall';
+    var mount = (shim.mount || 'SIDE').toUpperCase();
+    var hosts = _rows(bdb,
+      "SELECT m.guid g, m.storey st, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class LIKE '%" + _esc(hostClass) + "%'");
+    if (!hosts.length) return { bound: [], refused: placements.length, noHost: true, hostClass: hostClass };
+    var off = shim.offset_m || 0;
+    var bound = [], refused = 0, refusedList = [];
+
+    if (mount === 'SIDE') {
+      // ── wall-face projection (the original, unchanged geometry) ──
+      var lines = hosts.map(function (w) {
+        var horiz = w.bx >= w.by_ ? 0 : 1;                       // dominant horizontal axis = host run
+        var hlen = (horiz === 0 ? w.bx : w.by_) / 2, thick = (horiz === 0 ? w.by_ : w.bx);
+        var a = [w.x, w.y], b = [w.x, w.y]; a[horiz] -= hlen; b[horiz] += hlen;
+        return { a: a, b: b, horiz: horiz, thick: thick, w: w };
+      });
+      placements.forEach(function (p) {
+        var best = Infinity, bl = null, bpt = null;
+        for (var i = 0; i < lines.length; i++) {
+          var L = lines[i], abx = L.b[0] - L.a[0], aby = L.b[1] - L.a[1];
+          var l2 = abx * abx + aby * aby;
+          var t = l2 > 0 ? ((p.x - L.a[0]) * abx + (p.y - L.a[1]) * aby) / l2 : 0;
+          t = t < 0 ? 0 : (t > 1 ? 1 : t);
+          var cx = L.a[0] + t * abx, cy = L.a[1] + t * aby;
+          var d = Math.hypot(p.x - cx, p.y - cy);
+          if (d < best) { best = d; bl = L; bpt = [cx, cy]; }
+        }
+        if (!bl || best > reach) { refused++; refusedList.push(p); return; }  // no host in reach → honest refuse (stays floating)
+        // push from centreline to the room-side face: perpendicular toward the original (floating) point.
+        var perpx = p.x - bpt[0], perpy = p.y - bpt[1], pl = Math.hypot(perpx, perpy) || 1;
+        var faceOff = bl.thick / 2 + off;
+        var fx = bpt[0] + (perpx / pl) * faceOff, fy = bpt[1] + (perpy / pl) * faceOff;
+        // Z: preserve the MEASURED rule-z by default (non-invent); use the shim mount height only when the
+        // witness supplies a storey base (height isn't measured for that building).
+        var pz = (shim.height_m != null && p.storeyZ != null) ? (p.storeyZ + shim.height_m) : p.z;
+        bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
+          storey: p.storey, host: bl.w.g, mount: 'SIDE', prov: 'shim:host-' + hostClass + '-side',
+          bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4) });
+      });
+      return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount };
+    }
+
+    // ── TOP / BOTTOM / CENTER: nearest host by XY, bind to its top/bottom/centre face ──
+    // CENTER (z = host centre + signed offset) is the natural anchor when the device rides at a fixed rise off
+    // the host centre (e.g. SC vent grilles sit 0.415m above their same-storey window centre). TOP/BOTTOM add a
+    // half-extent to reach the named face. `shim.same_storey` constrains host selection to the placement's own
+    // storey — required for vertically STACKED hosts (windows stack floor-on-floor; nearest-XY alone is ambiguous).
+    var sign = mount === 'BOTTOM' ? -1 : 1;                       // TOP=+half above, BOTTOM=−half below, CENTER=face 0
+    var faceHalf = mount === 'CENTER' ? 0 : 1;                    // CENTER rides the centre; TOP/BOTTOM the face
+    var sameStorey = !!shim.same_storey;
+    placements.forEach(function (p) {
+      var best = Infinity, bh = null;
+      for (var i = 0; i < hosts.length; i++) {
+        var h = hosts[i];
+        if (sameStorey && p.storey != null && h.st !== p.storey) continue;  // stacked-host disambiguation
+        var d = Math.hypot(p.x - h.x, p.y - h.y);                 // XY proximity = host association
+        if (d < best) { best = d; bh = h; }
+      }
+      if (!bh || best > reach) { refused++; refusedList.push(p); return; }  // no host in reach → honest refuse
+      var horiz = bh.bx >= bh.by_ ? 0 : 1;                        // host run axis (for yaw)
+      var pz = bh.z + sign * faceHalf * (bh.bz / 2) + sign * off; // named face of the REAL host + offset
+      bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
+        storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
+        bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4) });
+    });
+    return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount };
+  }
+
   // ── ROUTER ────────────────────────────────────────────────────────────────────────
   // Chain rules need real from/to elements in the TARGET building. Residents have no MEP
   // network → honest 0 (refusal), not a fabricated run.
   function route(disc, bdb) {
-    var rr = _rows(_db, "SELECT * FROM rule_routing WHERE disc='" + _esc(disc) + "' AND pattern='nn'");
+    var rr = _rows(_dbFor(disc), "SELECT * FROM rule_routing WHERE disc='" + _esc(disc) + "' AND pattern='nn'");
     var chains = [];
     rr.forEach(function (r) {
       var nf = _rows(bdb, "SELECT COUNT(*) c FROM elements_meta WHERE ifc_class='" + _esc(r.from_kind) + "'");
@@ -310,6 +450,12 @@
       "SELECT m.guid g, t.center_x x, t.center_y y, t.center_z z " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class='" + _esc(cls) + "'");
   }
+  // Same, with the AABB extent — needed for FACE routing (a run's physical line = centre ± half its dominant axis).
+  function _loadXYZB(bdb, cls) {
+    return _rows(bdb,
+      "SELECT m.guid g, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class='" + _esc(cls) + "'");
+  }
   var _DERIVED_MAX_K = 4;                                     // when a rule has no measured max, bound = K×avg (logged)
   // ONE nn pass: for each ANCHOR element find the nearest CAND within `bound` (spatial-hash, O(n)).
   // Returns the paired list {ai, ci, gap} + the no-neighbour count + the mean gap of paired.
@@ -338,8 +484,61 @@
     });
     return { pairs: pairs, noNbr: noNbr, mean: pairs.length ? sum / pairs.length : Infinity };
   }
-  function routeChains(disc, bdb) {
-    var rr = _rows(_db, "SELECT * FROM rule_routing WHERE disc='" + _esc(disc) + "' AND pattern='nn'");
+  // ── FACE routing (opt-in) ───────────────────────────────────────────────────────────
+  // A duct/pipe RUN connects to a fitting at its END/FACE, not its CENTRE. Centre-nn pairs a large duct by its
+  // far centre (inflated gap, wrong partner); FACE-nn measures the node→run LINE distance so the genuine touching
+  // run is chosen. NON-INVENT: the line endpoints are MEASURED (centre ± half the dominant AABB axis; rotations are
+  // π/2-multiples so the AABB long axis IS the run axis), no invented constant. Default OFF — live dwWalk is unchanged.
+  function _segLine(s) {
+    var ext = [s.bx || 0, s.by_ || 0, s.bz || 0], ax = 0;
+    if (ext[1] > ext[ax]) ax = 1; if (ext[2] > ext[ax]) ax = 2;
+    var h = ext[ax] / 2, a = [s.x, s.y, s.z], b = [s.x, s.y, s.z];
+    a[ax] -= h; b[ax] += h; return { a: a, b: b };
+  }
+  function _ptSeg(px, py, pz, a, b) {
+    var abx = b[0] - a[0], aby = b[1] - a[1], abz = b[2] - a[2];
+    var apx = px - a[0], apy = py - a[1], apz = pz - a[2];
+    var l2 = abx * abx + aby * aby + abz * abz;
+    var t = l2 > 0 ? (apx * abx + apy * aby + apz * abz) / l2 : 0;
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    var cx = a[0] + t * abx, cy = a[1] + t * aby, cz = a[2] + t * abz;
+    return Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy) + (pz - cz) * (pz - cz));
+  }
+  // For each NODE (fitting/terminal) find the nearest RUN by point-to-LINE distance within bound (spatial-hash on
+  // the run's endpoints + midpoint, so a long run that spans many cells is still found from the node's cell).
+  function _nnPassFace(nodes, runs, bound) {
+    var CELL = bound > 0 ? bound : 1, grid = {};
+    var ck = function (a, b, c) { return a + ',' + b + ',' + c; };
+    var lines = runs.map(_segLine);
+    runs.forEach(function (r, i) {
+      var L = lines[i];
+      [L.a, L.b, [(L.a[0] + L.b[0]) / 2, (L.a[1] + L.b[1]) / 2, (L.a[2] + L.b[2]) / 2]].forEach(function (q) {
+        var k = ck(Math.floor(q[0] / CELL), Math.floor(q[1] / CELL), Math.floor(q[2] / CELL));
+        (grid[k] = grid[k] || []).push(i);
+      });
+    });
+    var pairs = [], noNbr = 0, sum = 0;
+    nodes.forEach(function (f, fi) {
+      var ix = Math.floor(f.x / CELL), iy = Math.floor(f.y / CELL), iz = Math.floor(f.z / CELL);
+      var best = Infinity, bj = -1, seen = {};
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
+        var arr = grid[ck(ix + dx, iy + dy, iz + dz)]; if (!arr) continue;
+        for (var a = 0; a < arr.length; a++) {
+          var si = arr[a]; if (seen[si]) continue; seen[si] = 1;
+          if (runs[si].g === f.g) continue;
+          var d = _ptSeg(f.x, f.y, f.z, lines[si].a, lines[si].b);
+          if (d < best) { best = d; bj = si; }
+        }
+      }
+      if (bj >= 0 && best <= bound) { pairs.push({ ni: fi, ri: bj, gap: best }); sum += best; }
+      else { noNbr++; }
+    });
+    return { pairs: pairs, noNbr: noNbr, mean: pairs.length ? sum / pairs.length : Infinity };
+  }
+  function routeChains(disc, bdb, opts) {
+    // (rule source = _dbFor(disc) below, so a borrowed discipline routes from its own ruleset)
+    opts = opts || {};
+    var rr = _rows(_dbFor(disc), "SELECT * FROM rule_routing WHERE disc='" + _esc(disc) + "' AND pattern='nn'");
     var segs = [], byRule = [];
     rr.forEach(function (r) {
       var gp = _gapParams(r.params_json);
@@ -352,6 +551,26 @@
       var from = _loadXYZ(bdb, r.from_kind), to = _loadXYZ(bdb, r.to_kind);
       if (!from.length || !to.length) {                      // building lacks one endpoint class → honest 0
         byRule.push({ from: r.from_kind, to: r.to_kind, segs: 0, noNbr: 0, skipped: 'no-endpoints' });
+        return;
+      }
+      // FACE mode (opt-in): pair each NODE to the nearest RUN by point-to-line distance (the run's real face),
+      // not centre-to-centre. The RUN is the *Segment class; the NODE is the other. from_guid/to_guid still follow
+      // the rule's from_kind/to_kind. NON-INVENT: real positions + measured AABB line; bounded by the measured gap.
+      if (opts.toFace) {
+        var fromIsRun = /Segment/.test(r.from_kind);
+        var runCls = fromIsRun ? r.from_kind : r.to_kind, nodeCls = fromIsRun ? r.to_kind : r.from_kind;
+        var runs = _loadXYZB(bdb, runCls), nodes = _loadXYZ(bdb, nodeCls);
+        var fp = _nnPassFace(nodes, runs, bound);
+        fp.pairs.forEach(function (pr) {
+          var nEl = nodes[pr.ni], rEl = runs[pr.ri];
+          var fEl = fromIsRun ? rEl : nEl, tEl = fromIsRun ? nEl : rEl;
+          segs.push({ disc: disc, rule: 'nn', from_kind: r.from_kind, to_kind: r.to_kind,
+            from_guid: fEl.g, to_guid: tEl.g, from: [fEl.x, fEl.y, fEl.z], to: [tEl.x, tEl.y, tEl.z],
+            gap: +pr.gap.toFixed(4), bound: +(+bound).toFixed(4), gapSource: gapSource, mode: 'face' });
+        });
+        byRule.push({ from: r.from_kind, to: r.to_kind, segs: fp.pairs.length, noNbr: fp.noNbr,
+          bound: +(+bound).toFixed(4), gapSource: gapSource, avg_measured: gp.avg, iterDir: 'node→run-face',
+          meanGap: +fp.mean.toFixed(4), mode: 'face' });
         return;
       }
       // The rule declares from→to, but its measured avg gap was mined from whichever endpoint set is the
@@ -466,11 +685,67 @@
   }
 
   // ── WALK (the disc-node onWalk entry point) ─────────────────────────────────────────
-  function dwWalk(disc, bdb, buildingName) {
+  // opts.shims (optional) = array of host-bind percepts from disc_patterns.db `_shim_attributes` (physically
+  // library/ERP.db until the rename slice lands), or any {product_value, host_ifc_class, mount,
+  // offset_mm|offset_m, height_mm|height_m, reach_m?, same_storey?}. This is the CALLER-PASSED interim; the
+  // hardened spec (§NAMING DIRECTIVE §SHIM) supersedes it with a `rule_shim` table projected into the *_rules.db
+  // that dwWalk reads directly — not yet wired (selection-key per disc/ifc_class is an open design point).
+  // When supplied AND a percept's discipline (product_value prefix before '_') matches `disc`, the FLOATING
+  // density placements are routed through hostBind so the host-bound class (ELEC outlets→wall, grilles→window)
+  // ADHERES to a real host instead of scattering mid-room. Count is PRESERVED (bound ∪ refused), refusals kept
+  // floating + counted (REFUSE beats fabricate). DEFAULT (no opts.shims) → live walk byte-identical.
+  // §SHIM PROJECTION SOURCE: the FIRST-CLASS source is the `rule_shim` table projected into the *_rules.db (read
+  // from `_db` via _loadRuleShims) — same flow as routing/placement. A caller-passed opts.shims OVERRIDES it
+  // (witness/host override). Both row shapes are accepted: rule_shim carries `disc`+`offset_m`+`priority`; the raw
+  // disc_patterns `_shim_attributes` row carries `product_value`(prefix=disc)+`offset_mm`. Returns [] if neither.
+  function _loadRuleShims(disc) {
+    // disc-aware: when a disc is given, read its shims from _dbFor(disc) (a borrowed discipline carries its own
+    // per-fixture rule_shim rows in the borrowed DB). With no disc → primary _db (back-compat).
+    try { return _rows(_dbFor(disc), "SELECT * FROM rule_shim"); } catch (e) { return []; }   // table absent → []
+  }
+  function _discOf(s) { return s.disc != null ? s.disc : String(s.product_value || '').split('_')[0]; }
+  function _shimForDisc(shims, disc) {
+    if (!shims || !shims.length) return null;
+    // disc-level fallback rows = no fixture_ifc_class (NULL/empty). Per-fixture rows are handled by _shimForFixture.
+    var m = shims.filter(function (s) { return _discOf(s) === disc && !s.fixture_ifc_class; });
+    if (!m.length) m = shims.filter(function (s) { return _discOf(s) === disc; });  // caller-passed raw rows have no col
+    if (!m.length) return null;
+    // SELECTION KEY (disc-level fallback): a disc may carry >1 shim (ELEC wall+ceiling). Deterministic pick = lowest
+    // `priority` (rule_shim stamps SIDE/wall anti-float = 0). Per-fixture-ifc_class refinement = _shimForFixture (§SHIM-SELECT).
+    m.sort(function (a, b) { return (a.priority != null ? a.priority : 9) - (b.priority != null ? b.priority : 9); });
+    if (m.length > 1) console.log(TAG + ' §SHIM-AMBIG disc=' + disc + ' has ' + m.length + ' disc-level shims — picked ' +
+      (m[0].host_ifc_class || '') + '/' + (m[0].mount || '') + ' by priority (no per-fixture row matched)');
+    return _normShim(m[0]);
+  }
+  // Normalize a rule_shim / raw _shim_attributes row to the percept shape hostBind consumes.
+  function _normShim(s) {
+    return {
+      host_ifc_class: s.host_ifc_class, mount: s.mount,
+      offset_m: s.offset_m != null ? s.offset_m : (s.offset_mm != null ? s.offset_mm / 1000 : 0),
+      height_m: s.height_m != null ? s.height_m : (s.height_mm ? s.height_mm / 1000 : null),
+      reach_m: s.reach_m != null ? s.reach_m : 6, same_storey: !!s.same_storey,
+      product_value: s.product_value || (_discOf(s) + ':' + s.host_ifc_class + '/' + s.mount)
+    };
+  }
+  // §SHIM-SELECT — the SELECTION KEY: pick the shim by (disc, fixture ifc_class). A per-fixture row
+  // (rule_shim.fixture_ifc_class == ifcClass, MEASURED nearest host) wins; else fall back to the disc-level
+  // pick (_shimForDisc). This is what stops ELEC ceiling-lights mis-binding to walls: lights carry their own
+  // IfcCovering row, wall-outlets their own IfcWall row. Caller-passed raw rows (no fixture_ifc_class column)
+  // never match the exact branch → disc-level fallback = byte-identical to the interim path.
+  function _shimForFixture(shims, disc, ifcClass) {
+    if (!shims || !shims.length) return null;
+    var m = shims.filter(function (s) { return _discOf(s) === disc && s.fixture_ifc_class && s.fixture_ifc_class === ifcClass; });
+    if (m.length) {
+      m.sort(function (a, b) { return (a.priority != null ? a.priority : 9) - (b.priority != null ? b.priority : 9); });
+      return _normShim(m[0]);
+    }
+    return _shimForDisc(shims, disc);
+  }
+  function dwWalk(disc, bdb, buildingName, opts) {
     if (!_ready) { console.warn(TAG + ' not initialised'); return { disc: disc, refused: true, reason: 'engine not initialised', placed: 0 }; }
     var reps = repRules(disc);
     var sub = substrate(bdb);
-    if (!reps.length && !_rows(_db, "SELECT 1 FROM rule_routing WHERE disc='" + _esc(disc) + "' LIMIT 1").length) {
+    if (!reps.length && !_rows(_dbFor(disc), "SELECT 1 FROM rule_routing WHERE disc='" + _esc(disc) + "' LIMIT 1").length) {
       console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' REFUSE no-measured-rule');
       return { disc: disc, refused: true, reason: 'no measured rule for ' + disc, placed: 0 };
     }
@@ -479,12 +754,64 @@
       return { disc: disc, refused: true, reason: 'no habitable storeys', placed: 0 };
     }
     var placements = place(disc, sub, bdb);
+    // ── HOST-BIND from the PROJECTION: snap floating host-bound placements onto a real host (anti-float),
+    // count-preserving. Source = caller opts.shims (override) ELSE the projected `rule_shim` table (the
+    // first-class §SHIM flow — same as routing/placement). §SHIM-SELECT made this DEFAULT-ON (2026-06-30): the
+    // per-fixture-ifc_class selection key removed the mis-bind risk (ELEC ceiling-lights → IfcCovering, wall-outlets
+    // → IfcWall) so the live walk now anti-floats by default. CORRECTNESS-SAFE: a fixture binds only to its MEASURED
+    // host when one exists in reach, else it stays floating (REFUSE) — never fabricated, count always preserved.
+    // ESCAPE HATCHES: opts.noHostBind=true (or opts.hostBind===false) restores the raw floating generation walk
+    // (used by the GENERATION-layer count checks in witness_disc_walk_generalize.js). opts.shims forces the caller
+    // override. A discipline with NO matching shim row is a no-op (floats as before). The floating set is GROUPED BY
+    // ifc_class and each group binds with its OWN shim; a class with no per-fixture row falls back to the disc-level
+    // shim. Caller-passed raw rows (no fixture_ifc_class) → disc-level fallback.
+    var hbInfo = null;
+    var shimSrc = (opts && opts.shims) || _loadRuleShims(disc);
+    var doBind = (opts && opts.shims) ? true : !(opts && (opts.noHostBind || opts.hostBind === false));
+    // Only FLOATING density placements (prov 'placed:*') are anti-float candidates. Placements already tacked to a
+    // real host by the ref_kind='host' path (prov 'shim:host-*') are LEFT UNTOUCHED — re-binding them would move a
+    // correctly-hosted fixture. So host-bind rescues only what actually floats; already-hosted walks are invariant.
+    var floating = [], fixed = [];
+    placements.forEach(function (p) { (/^placed:/.test(p.prov || '') ? floating : fixed).push(p); });
+    if (doBind && floating.length) {
+      var stZ = {}; sub.forEach(function (st) { stZ[st.name] = st.z; });
+      floating.forEach(function (p) { if (p.storeyZ == null) p.storeyZ = stZ[p.storey]; });
+      // group floating by ifc_class → each group picks its own shim via the selection key.
+      var byCls = {}; floating.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+      var rebuilt = fixed.slice(), totBound = 0, totRefused = 0, byClassInfo = [], hostsSeen = {}, perceptsSeen = {}, mountsSeen = {}, anyBound = false;
+      Object.keys(byCls).forEach(function (cls) {
+        var grp = byCls[cls];
+        var shim = _shimForFixture(shimSrc, disc, cls);
+        if (!shim) { rebuilt = rebuilt.concat(grp); totRefused += 0; return; }   // no shim for class → leave floating
+        var hb = hostBind(grp, bdb, shim);
+        if (hb.noHost) {
+          rebuilt = rebuilt.concat(grp);                                          // host class absent in bldg → kept floating
+          console.log(TAG + ' §WALK-HOSTBIND disc=' + disc + '/' + cls + ' percept=' + shim.product_value +
+            ' REFUSE no-host (' + shim.host_ifc_class + ' absent) — kept floating');
+          byClassInfo.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: 0, refused: grp.length, noHost: true });
+          return;
+        }
+        rebuilt = rebuilt.concat(hb.bound, hb.refusedList || []);                 // count preserved per group
+        totBound += hb.bound.length; totRefused += hb.refused; anyBound = anyBound || hb.bound.length > 0;
+        if (hb.bound.length) { hostsSeen[shim.host_ifc_class] = 1; perceptsSeen[shim.product_value] = 1; mountsSeen[shim.mount] = 1; }
+        byClassInfo.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: hb.bound.length, refused: hb.refused });
+        console.log(TAG + ' §WALK-HOSTBIND disc=' + disc + '/' + cls + ' percept=' + shim.product_value + ' host=' +
+          shim.host_ifc_class + '/' + shim.mount + ' floating=' + grp.length + ' bound=' + hb.bound.length + ' refused=' + hb.refused + ' (count preserved)');
+      });
+      if (anyBound || byClassInfo.length) {
+        placements = rebuilt;
+        var hostKeys = Object.keys(hostsSeen), perceptKeys = Object.keys(perceptsSeen), mountKeys = Object.keys(mountsSeen);
+        function _agg(keys) { return keys.length === 1 ? keys[0] : (keys.length ? 'MIXED' : null); }
+        hbInfo = { bound: totBound, refused: totRefused, floating: floating.length,
+          host: _agg(hostKeys), mount: _agg(mountKeys), percept: _agg(perceptKeys), byClass: byClassInfo };
+      }
+    }
     var chains = route(disc, bdb);
     var rc = routeChains(disc, bdb);                         // LIVE nn-chain geometry (real on MEP-rich bldgs, 0 on residents)
     console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
-    return { disc: disc, refused: false, placed: placements.length, placements: placements,
+    return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo,
       chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length };
   }
 
@@ -495,12 +822,16 @@
     // Only WALKABLE disciplines — those with a placement or routing rule. (rule_place_order alone, e.g. the
     // generic 'MEP' band, is not walkable: it would always refuse, so it stays off the roster.)
     var r = _db.exec("SELECT disc FROM rule_placement UNION SELECT disc FROM rule_routing");
-    return r.length ? r[0].values.map(function (v) { return v[0]; }).filter(function (d) { return d && d !== 'ARC'; }) : [];
+    var ds = r.length ? r[0].values.map(function (v) { return v[0]; }) : [];
+    // §BORROW: borrowed disciplines (e.g. FP from terminal_rules) are walkable too → add to the roster.
+    Object.keys(_borrow).forEach(function (d) { if (ds.indexOf(d) < 0) ds.push(d); });
+    return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { dwInit: dwInit, dwOpen: dwOpen, dwWalk: dwWalk, substrate: substrate, place: place,
+  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, substrate: substrate, place: place, hostBind: hostBind,
     route: route, routeChains: routeChains, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy,
+    _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
