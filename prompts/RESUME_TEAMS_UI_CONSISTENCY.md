@@ -138,6 +138,17 @@ Over the real embed + a host fixture exposing `A.icon`/`A.createPanel` + `--idmp
 4. an identity dot colour ∉ the HR state palette set (R5).
 5. OFF (default) still pixel-identical (doctrine §P① unchanged).
 
+## 3b. OPEN edges (carried in from the 2026-07-01 design dialogue — resolve here, don't lose them)
+1. **4D-Gantt is the genuine exception** — it's an authored *schedule* artifact (tasks×calendar), NOT an oplog
+   projection like ②/③. Keep it visibly separate; don't force-unify it into the World/History engine.
+2. **The PERT merge-GATE does not exist yet** — only the spatial/cross-branch gate is built
+   (`W-GATE-CROSS-BRANCH 11/11`). Viewer-side SCHEDULE What-If needs a NEW gate (dependency/resource conflict),
+   not new git. (Context-free git engine is done; the gate is the per-context plug-in — §1a ③.)
+3. **Discipline@4D / Role@7D partition** is the working read (user "by role" + construction crews) but NOT hard-
+   confirmed — one word locks or adjusts it.
+4. **Project as a facet icon** — it's the design SPINE but isn't in the icon row; open whether it earns a glyph or
+   stays implicit on the Modeller surface.
+
 ## 4. Doctrine (unchanged — `teams/ROADMAP.md §P`)
 Additive only · Team OFF = pixel-identical · witness-first (`§`-log green before chrome) · consume-don't-impose ·
 determinism + NON-INVENT. Files touched live in `teams/` + the two default-off `erp/` hooks; no new `erp/` edits.
