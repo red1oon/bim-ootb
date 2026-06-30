@@ -24,12 +24,16 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 ## §RESUME — new-session handoff (2026-06-30)
 
-> **▶ NEW SESSION START HERE.** Branch `lane/hr-overlay` (worktree `/tmp/wt-hr`), all pushed, suite GREEN
-> (**13 witnesses**, see below). Shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D timeline (#4c),
-> real storey derivation, §WATERMARK 19/19, **T&A slice-1/2** (check-in + presence lens), **Leave/Absence**,
-> **T&A access**, **Room Occupancy / Availability** (iDempiere Resource-Assignment), **R_Request / ticket**
-> workflow, and the **occupancy dashboard** (Chart.js over pivot — just landed).
-> **▶ NEXT — pick a Phase-F differentiator or a UI surface:**
+> **▶ NEW SESSION START HERE.** Branch `lane/hr-overlay` (worktree `/tmp/wt-hr`), all pushed (tip `b8a2223`),
+> suite GREEN (**14 witnesses**, see below). Shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D
+> timeline (#4c), real storey derivation, §WATERMARK 19/19, **T&A slice-1/2** (check-in + presence lens),
+> **Leave/Absence**, **T&A access**, **Room Occupancy / Availability** (iDempiere Resource-Assignment),
+> **R_Request / ticket** workflow, the **occupancy dashboard** (Chart.js over pivot), and its **viewer pane +
+> pills wired** (additive, zero-impact). User Guides (bim-compiler `docs/ERPUserGuide.md` + `BIMUserGuide.md`)
+> updated + **DEPLOYED live** to gh-pages (canaries 200).
+> **▶ ONE OPEN RESIDUAL (live-3D, like #2b):** observe the HBA pane + pills + lenses painting in a REAL browser
+> (Playwright/deploy smoke) — all logic is node-witnessed via stub DOM/Chart; off-by-default + data-gated so a
+> live build is unchanged until a pill is clicked. **▶ THEN — pick a Phase-F differentiator or a new UI surface:**
 > -1. ✅ **DONE — R_Request / ticket** (`request.js`, **W-HBA-REQ 15/15**) + **occupancy dashboard**
 >    (`dashboard.js`, **W-HBA-DASH 7/7**, demo `demo/occupancy_dashboard.html`). The ticket is a SIGNED status
 >    FSM (OPEN→ASSIGN→START→RESOLVE→CLOSE/REOPEN; illegal transition → REFUSE) threaded to the SHARED room/asset
