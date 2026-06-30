@@ -94,21 +94,32 @@
   // opens the rules with NO network — making the modeller sw.js "terminal_rules.db cached in
   // IndexedDB" claim true. Try IDB hit → on miss fetch + put → bare fetch fallback on any IDB
   // error. Browser-only: node witnesses use dwOpen and never reach this path (indexedDB guard).
+  // The IndexedDB cache is an OFFLINE OPTIMISATION, never the source of truth — so NO IDB operation may ever block
+  // a rules load. Under concurrent IDB use of the SHARED bim_ootb_cache 'dbs' store (scene.js caching the building
+  // DB + a fire-and-forget put + this get all contend), an open/get can hang WITHOUT firing success OR error — the
+  // classic silent-inactive-transaction failure. That stalled discWalk's pre-walk borrow → the whole Walk tool
+  // rendered nothing for the user (W-E2E-WALK proved this; nondeterministic race). Every IDB await is therefore
+  // timeout-guarded: a stall resolves to null and _loadDbBuf falls back to a bare network fetch (deterministic, no hang).
+  var IDB_TIMEOUT_MS = 1500;
+  function _withTimeout(p, ms, fallback) {
+    return Promise.race([p, new Promise(function (res) { setTimeout(function () { res(fallback); }, ms); })]);
+  }
   function _openCacheDB() {
     if (typeof indexedDB === 'undefined') return Promise.resolve(null);
-    if (ROOT.APP && ROOT.APP.openCacheDB) { try { return ROOT.APP.openCacheDB(); } catch (e) { /* fall through */ } }
-    return new Promise(function (res) {                       // no version → current (avoid VersionError drift below scene.js v2)
+    if (ROOT.APP && ROOT.APP.openCacheDB) { try { return _withTimeout(Promise.resolve(ROOT.APP.openCacheDB()), IDB_TIMEOUT_MS, null); } catch (e) { /* fall through */ } }
+    return _withTimeout(new Promise(function (res) {          // no version → current (avoid VersionError drift below scene.js v2)
       var rq = indexedDB.open('bim_ootb_cache');
       rq.onsuccess = function () { res(rq.result); };
       rq.onerror = function () { res(null); };
-    });
+      rq.onblocked = function () { res(null); };              // another connection blocks the open → don't wait, fall back to fetch
+    }), IDB_TIMEOUT_MS, null);
   }
   function _idbGet(idb, key) {
-    return new Promise(function (res) {
+    return _withTimeout(new Promise(function (res) {
       try { var rq = idb.transaction('dbs', 'readonly').objectStore('dbs').get(key);
         rq.onsuccess = function () { res(rq.result || null); }; rq.onerror = function () { res(null); };
       } catch (e) { res(null); }
-    });
+    }), IDB_TIMEOUT_MS, null);                                // a hung readonly tx (store-lock contention) → null → MISS → fetch
   }
   function _idbPut(idb, key, buf) {
     try { var tx = idb.transaction('dbs', 'readwrite'); tx.objectStore('dbs').put(buf, key);
@@ -493,7 +504,14 @@
     var ext = [s.bx || 0, s.by_ || 0, s.bz || 0], ax = 0;
     if (ext[1] > ext[ax]) ax = 1; if (ext[2] > ext[ax]) ax = 2;
     var h = ext[ax] / 2, a = [s.x, s.y, s.z], b = [s.x, s.y, s.z];
-    a[ax] -= h; b[ax] += h; return { a: a, b: b };
+    a[ax] -= h; b[ax] += h; return { a: a, b: b, ax: ax };
+  }
+  // §FACE-SURFACE: MEASURED half-extent of an element's cross-section PERPENDICULAR to a run axis (mean of the two
+  // perp half-extents). centre-to-line over-states a bulky element's gap by ~this much; subtracting it (clamped ≥0)
+  // yields the surface-to-surface gap. NON-INVENT: bbox-derived, never a constant; 0 bbox → 0 (centre fallback).
+  function _perpHalf(bx, by, bz, ax) {
+    var e = [bx || 0, by || 0, bz || 0], perp = [0, 1, 2].filter(function (i) { return i !== ax; });
+    return (e[perp[0]] / 2 + e[perp[1]] / 2) / 2;
   }
   function _ptSeg(px, py, pz, a, b) {
     var abx = b[0] - a[0], aby = b[1] - a[1], abz = b[2] - a[2];
@@ -530,7 +548,12 @@
           if (d < best) { best = d; bj = si; }
         }
       }
-      if (bj >= 0 && best <= bound) { pairs.push({ ni: fi, ri: bj, gap: best }); sum += best; }
+      if (bj >= 0 && best <= bound) {
+        // §FACE-SURFACE: surface-to-surface gap = centre-line gap − both perp half-sections (measured), clamped ≥0.
+        var ax = lines[bj].ax, r = runs[bj];
+        var gSurf = Math.max(0, best - _perpHalf(r.bx, r.by_, r.bz, ax) - _perpHalf(f.bx, f.by_, f.bz, ax));
+        pairs.push({ ni: fi, ri: bj, gap: best, gapSurface: gSurf }); sum += best;
+      }
       else { noNbr++; }
     });
     return { pairs: pairs, noNbr: noNbr, mean: pairs.length ? sum / pairs.length : Infinity };
@@ -559,14 +582,15 @@
       if (opts.toFace) {
         var fromIsRun = /Segment/.test(r.from_kind);
         var runCls = fromIsRun ? r.from_kind : r.to_kind, nodeCls = fromIsRun ? r.to_kind : r.from_kind;
-        var runs = _loadXYZB(bdb, runCls), nodes = _loadXYZ(bdb, nodeCls);
+        var runs = _loadXYZB(bdb, runCls), nodes = _loadXYZB(bdb, nodeCls);  // nodes WITH bbox → §FACE-SURFACE gapSurface
         var fp = _nnPassFace(nodes, runs, bound);
         fp.pairs.forEach(function (pr) {
           var nEl = nodes[pr.ni], rEl = runs[pr.ri];
           var fEl = fromIsRun ? rEl : nEl, tEl = fromIsRun ? nEl : rEl;
           segs.push({ disc: disc, rule: 'nn', from_kind: r.from_kind, to_kind: r.to_kind,
             from_guid: fEl.g, to_guid: tEl.g, from: [fEl.x, fEl.y, fEl.z], to: [tEl.x, tEl.y, tEl.z],
-            gap: +pr.gap.toFixed(4), bound: +(+bound).toFixed(4), gapSource: gapSource, mode: 'face' });
+            gap: +pr.gap.toFixed(4), gapSurface: +pr.gapSurface.toFixed(4),  // §FACE-SURFACE: surface-to-surface gap
+            bound: +(+bound).toFixed(4), gapSource: gapSource, mode: 'face' });
         });
         byRule.push({ from: r.from_kind, to: r.to_kind, segs: fp.pairs.length, noNbr: fp.noNbr,
           bound: +(+bound).toFixed(4), gapSource: gapSource, avg_measured: gp.avg, iterDir: 'node→run-face',
@@ -597,6 +621,138 @@
         meanGap: +chosen.mean.toFixed(4) });
     });
     return { segs: segs, byRule: byRule };
+  }
+
+  // ── ROUTE → ASSEMBLE bridge (docs/WalkerDoctrine.md roadmap #3) ──────────────────────────────────
+  // routeChains gives the real nn-NETWORK (segments between real extracted element guids). assemble() turns that
+  // network into instantiated catalog PARTS: at each routed NODE (a real element endpoint), instantiate the matching
+  // catalog piece (disc_patterns._import_joint_piece_types, keyed by ifc_class) — POSE from the REAL node, TYPE+Ø
+  // from the catalog (MEASURED, mined off the source building), ORIENTATION from the incident run direction.
+  // NON-INVENT: nothing fabricated — pose is a real element's position, size is a measured catalog Ø, direction is
+  // real segment geometry. A node whose class has no catalog part is honestly SKIPPED (no fabricated part).
+  // opts.catalog = [{ifc_class, piece_type, diameter_mm, length_mm}] — caller-passed percept from the pattern store
+  // (mirrors the host-bind shim's caller-passed start; a projected `rule_joint_piece` is the later first-class step).
+  // opts.toFace forwards to routeChains. Returns {parts, joints, segs, nodes} or {refused, reason}.
+  function assemble(disc, bdb, opts) {
+    opts = opts || {};
+    var rc = routeChains(disc, bdb, opts);
+    if (!rc.segs.length) return { disc: disc, refused: true, reason: 'no routed network', parts: [], joints: [] };
+    // CATALOG source: caller-passed opts.catalog (raw _import_joint_piece_types rows) ELSE the first-class
+    // PROJECTED `rule_joint_piece` table in the (borrowed-aware) rules DB — the §SHIM-SELECT/routing pattern, so
+    // assemble needs no caller percept. Each projected row is ALREADY the per-(disc,ifc_class) measured median
+    // (one row per class), so _part()'s _med over a single row returns that exact value (no re-aggregation drift).
+    var cat = opts.catalog || _loadJointPieces(disc);
+    if (!cat.length) return { disc: disc, refused: true, reason: 'no catalog (pass opts.catalog or project rule_joint_piece)', parts: [], joints: [] };
+    var byCls = {};
+    cat.forEach(function (c) { (byCls[c.ifc_class] = byCls[c.ifc_class] || []).push(c); });
+    function _part(cls) {
+      var g = byCls[cls]; if (!g) return null;
+      return { piece_type: g[0].piece_type,                       // representative type (one per class in the catalog)
+        diameter_mm: _med(g.map(function (c) { return c.diameter_mm; })),   // MEASURED median Ø for the class
+        length_mm: _med(g.map(function (c) { return c.length_mm; })) };
+    }
+    // unique nodes from the network; accumulate incident run unit-vectors at each node for orientation.
+    var nodes = {}, joints = [];
+    function _touch(guid, kind, xyz, dir) {
+      var n = nodes[guid] || (nodes[guid] = { guid: guid, ifc_class: kind, x: xyz[0], y: xyz[1], z: xyz[2], dirs: [] });
+      if (dir) n.dirs.push(dir);
+    }
+    rc.segs.forEach(function (s) {
+      var dx = s.to[0] - s.from[0], dy = s.to[1] - s.from[1], dz = s.to[2] - s.from[2];
+      var L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1, u = [dx / L, dy / L, dz / L];
+      _touch(s.from_guid, s.from_kind, s.from, u);                // run leaves the from-end along +u
+      _touch(s.to_guid, s.to_kind, s.to, [-u[0], -u[1], -u[2]]);  // and arrives at the to-end along -u
+      var pf = _part(s.from_kind), pt = _part(s.to_kind);
+      joints.push({ from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap,
+        dia_from_mm: pf ? pf.diameter_mm : null, dia_to_mm: pt ? pt.diameter_mm : null });
+    });
+    var parts = [], skipped = 0;
+    Object.keys(nodes).forEach(function (g) {
+      var n = nodes[g], p = _part(n.ifc_class);
+      if (!p) { skipped++; return; }                              // no catalog part for this class → honest skip
+      var ax = 0, ay = 0, az = 0;                                 // orientation = mean incident run vector, renormalized
+      n.dirs.forEach(function (d) { ax += d[0]; ay += d[1]; az += d[2]; });
+      var aL = Math.sqrt(ax * ax + ay * ay + az * az);
+      var dir = aL > 1e-9 ? [ax / aL, ay / aL, az / aL] : [0, 0, 1];
+      parts.push({ disc: disc, guid: n.guid, ifc_class: n.ifc_class, piece_type: p.piece_type,
+        diameter_mm: p.diameter_mm, length_mm: p.length_mm, pos: [n.x, n.y, n.z], dir: dir,
+        prim: _primFor(n.ifc_class), prov: 'assembled:catalog+routed-node' });
+    });
+    return { disc: disc, refused: false, parts: parts, joints: joints, segs: rc.segs.length,
+      nodes: Object.keys(nodes).length, skipped: skipped };
+  }
+
+  // ── CONNECTOR + CLEARANCE (roadmap #3b) ──────────────────────────────────────────────────────────
+  // The FIXTURE→SERVICE hookup: a named assembly (disc_patterns.ad_assembly_connector) declares which FACE
+  // connects to which SERVICE at what Ø (e.g. SPRINKLER TOP SUPPLY_IN Ø25 → FP_MAIN; TOILET BOTTOM WASTE_OUT
+  // Ø100 → PLUMBING_STACK), and ad_assembly_manifest gives the standoff CLEARANCE per face. _faceDir maps the
+  // measured FACE NAME to its local-frame axis — a frame CONVENTION (the face name is the datum), not invented data.
+  function _faceDir(face) {
+    switch (String(face).toUpperCase()) {
+      case 'TOP': return [0, 0, 1];
+      case 'BOTTOM': return [0, 0, -1];
+      case 'BACK': return [0, -1, 0];
+      case 'FRONT': return [0, 1, 0];
+      case 'LEFT': return [-1, 0, 0];
+      case 'RIGHT': return [1, 0, 0];
+      default: return null;
+    }
+  }
+  // Resolve the service connector + standoff for a named assembly. Picks the connector that names a SERVICE
+  // (connects_to) — the hookup that orients the part — else the first connector. NON-INVENT: face/type/Ø/
+  // connects_to/clearance are READ verbatim from the tables; only faceDir is the convention. null if no connector.
+  function connectorFor(assemblyId, connectors, manifest) {
+    var conns = (connectors || []).filter(function (c) { return c.assembly_id === assemblyId; });
+    if (!conns.length) return null;
+    var c = conns.filter(function (x) { return x.connects_to; })[0] || conns[0];
+    var mf = (manifest || []).filter(function (m) { return m.assembly_id === assemblyId && m.face === c.face; });
+    return { assembly_id: assemblyId, face: c.face, faceDir: _faceDir(c.face), connector_type: c.connector_type,
+      dia_mm: c.diameter_mm, connects_to: c.connects_to || null, standoff_m: mf.length ? mf[0].clearance_m : 0,
+      all: conns.map(function (x) { return { face: x.face, type: x.connector_type, dia_mm: x.diameter_mm, to: x.connects_to || null }; }) };
+  }
+  // Enrich placed parts/fixtures with their assembly connector + stand the pose OFF along the connector face by
+  // the measured manifest clearance (toward the service). opts.assemblyKey = {ifc_class: assembly_id} OR a fn(part)
+  // (caller-passed — a projected rule_connector is the later first-class step, mirroring rule_shim/rule_joint_piece).
+  // NON-INVENT: a part with no mapped assembly or no connector is LEFT UNTOUCHED (no fabricated hookup); the pose
+  // offset is exactly faceDir·standoff (0 standoff = flush hookup, the common measured case); count preserved.
+  // Two source modes (additive — the caller path is byte-identical to before):
+  //  • CALLER-PASSED (opts.connectors present): assemblyKey {ifc_class:id}|fn(part) + connectors + manifest, as before.
+  //  • PROJECTED (no opts.connectors): read the first-class `rule_connector` table per (part.disc, part.ifc_class)
+  //    via _loadConnectors — so the modeller enriches with NO caller percept. Each part needs .disc + .ifc_class.
+  function connectorEnrich(parts, opts) {
+    opts = opts || {};
+    var key = opts.assemblyKey || {}, conns = opts.connectors, manifest = opts.manifest || [], n = 0;
+    var projMap = null;
+    if (!conns) {                                              // PROJECTED path: ifc_class→connector per disc
+      projMap = {};
+      var discs = {};
+      (parts || []).forEach(function (p) { if (p.disc != null) discs[p.disc] = 1; });
+      Object.keys(discs).forEach(function (d) {
+        _loadConnectors(d).forEach(function (r) {
+          projMap[d + '|' + r.ifc_class] = { assembly_id: r.assembly_id, face: r.face, faceDir: _faceDir(r.face),
+            connector_type: r.connector_type, dia_mm: r.diameter_mm, connects_to: r.connects_to || null,
+            standoff_m: r.standoff_m || 0 };
+        });
+      });
+    }
+    (parts || []).forEach(function (p) {
+      var con;
+      if (conns) {                                             // caller-passed (UNCHANGED)
+        var aid = (typeof key === 'function') ? key(p) : key[p.ifc_class];
+        if (!aid) return;
+        con = connectorFor(aid, conns, manifest);
+      } else {                                                 // projected
+        con = projMap[p.disc + '|' + p.ifc_class] || null;
+      }
+      if (!con || !con.faceDir) return;
+      p.connector = con; p.standoff_m = con.standoff_m;
+      var pos = p.pos || [p.x, p.y, p.z];
+      p.posStood = [pos[0] + con.faceDir[0] * con.standoff_m,
+                    pos[1] + con.faceDir[1] * con.standoff_m,
+                    pos[2] + con.faceDir[2] * con.standoff_m];
+      n++;
+    });
+    return { enriched: n, total: (parts || []).length };
   }
 
   // ── GATE (place-order + avoidance) ─────────────────────────────────────────────────
@@ -702,6 +858,21 @@
     // disc-aware: when a disc is given, read its shims from _dbFor(disc) (a borrowed discipline carries its own
     // per-fixture rule_shim rows in the borrowed DB). With no disc → primary _db (back-compat).
     try { return _rows(_dbFor(disc), "SELECT * FROM rule_shim"); } catch (e) { return []; }   // table absent → []
+  }
+  // The first-class PROJECTED catalog for assemble (roadmap #3a): per-(disc,ifc_class) measured piece + Ø + length,
+  // projected from disc_patterns._import_joint_piece_types by build/project_rule_joint_piece.py. Borrow-aware
+  // (_dbFor) and table-absent-safe → []. Shape matches a caller's opts.catalog row, so assemble's _part() is uniform.
+  function _loadJointPieces(disc) {
+    try { return _rows(_dbFor(disc), "SELECT ifc_class, piece_type, diameter_mm, length_mm FROM rule_joint_piece WHERE disc='" + _esc(disc) + "'"); }
+    catch (e) { return []; }
+  }
+  // The first-class PROJECTED connector hookup (§3c): per-(disc,ifc_class) fixture→service connector
+  // (face/Ø/connects_to + standoff), projected from disc_patterns.ad_assembly_connector/manifest by
+  // build/project_rule_connector.py. Borrow-aware (_dbFor) + table-absent-safe → []. Lets connectorEnrich
+  // read the hookup with NO caller percept (the modeller carries only *_rules.db, never disc_patterns.db).
+  function _loadConnectors(disc) {
+    try { return _rows(_dbFor(disc), "SELECT ifc_class, assembly_id, face, connector_type, diameter_mm, connects_to, standoff_m FROM rule_connector WHERE disc='" + _esc(disc) + "'"); }
+    catch (e) { return []; }
   }
   function _discOf(s) { return s.disc != null ? s.disc : String(s.product_value || '').split('_')[0]; }
   function _shimForDisc(shims, disc) {
@@ -815,6 +986,40 @@
       chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length };
   }
 
+  // ── SEED PICKER (human-in-the-loop service entry; W-SEED-TRUNK / W-SEED-DEFAULT) ──────────────────
+  // When the user walks a GENERATED discipline (Outliner.DISC.MEP) the modeller checks for an assigned SEED (the
+  // service entry the trunk radiates from). If none, it shows this DEFAULT in a popup → the user OKs or picks another.
+  // NON-INVENT: the default is a REAL element (IfcDoor, +IfcStair for vertical) picked DETERMINISTICALLY — the most
+  // EXTERNAL entry (nearest the footprint boundary) on the LOWEST storey = the service-entry proxy. It is a HEURISTIC
+  // the human confirms; we never claim it is correct, which is exactly why the popup exists. opts.seed (a guid) →
+  // the user's explicit choice WINS (returned verbatim). No entry element → honest REFUSE (no fabricated seed).
+  function defaultSeed(bdb, opts) {
+    opts = opts || {};
+    var classes = opts.classes || (opts.vertical ? ['IfcDoor', 'IfcStair'] : ['IfcDoor']);
+    var like = classes.map(function (c) { return "m.ifc_class LIKE '%" + _esc(c) + "%'"; }).join(' OR ');
+    var cand = _rows(bdb, "SELECT m.guid g, m.ifc_class c, m.storey st, t.center_x x, t.center_y y, t.center_z z " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE " + like);
+    if (opts.seed) {                                          // user's explicit choice wins — resolve to the real element
+      var s = cand.filter(function (e) { return e.g === opts.seed; })[0] ||
+        _rows(bdb, "SELECT m.guid g, m.ifc_class c, m.storey st, t.center_x x, t.center_y y, t.center_z z " +
+          "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.guid='" + _esc(opts.seed) + "'")[0];
+      if (!s) return { refused: true, reason: 'assigned seed guid not found: ' + opts.seed };
+      return { guid: s.g, ifc_class: s.c, storey: s.st, x: s.x, y: s.y, z: s.z, source: 'user-assigned',
+        reason: 'user-assigned seed', candidates: cand.map(_seedLabel) };
+    }
+    if (!cand.length) return { refused: true, reason: 'no entry element (' + classes.join('/') + ') in model — ask the user to assign a seed' };
+    // footprint bbox from ALL elements → externality = min distance to a footprint edge (small = near the perimeter)
+    var bb = _rows(bdb, "SELECT MIN(center_x) x0, MAX(center_x) x1, MIN(center_y) y0, MAX(center_y) y1 FROM element_transforms")[0];
+    cand.forEach(function (e) { e.ext = Math.min(e.x - bb.x0, bb.x1 - e.x, e.y - bb.y0, bb.y1 - e.y); });
+    // deterministic: most external (smallest ext) → lowest storey (smallest z) → smallest guid
+    cand.sort(function (a, b) { return (a.ext - b.ext) || (a.z - b.z) || (a.g < b.g ? -1 : a.g > b.g ? 1 : 0); });
+    var d = cand[0];
+    return { guid: d.g, ifc_class: d.c, storey: d.st, x: d.x, y: d.y, z: d.z, externality: +d.ext.toFixed(4),
+      source: 'default-heuristic', reason: 'most external ' + d.c + ' on storey ' + d.st + ' (service-entry proxy; ' +
+      d.ext.toFixed(2) + 'm from footprint edge) — confirm or choose another', candidates: cand.map(_seedLabel) };
+  }
+  function _seedLabel(e) { return { guid: e.g, ifc_class: e.c, storey: e.st, x: e.x, y: e.y, z: e.z }; }
+
   // The walkable disciplines the measured rules cover — drives the Outliner "Walk" roster so a
   // discipline ABSENT from the open building (e.g. FP on a house) is still walkable. Derived, not whitelisted.
   function disciplines() {
@@ -828,9 +1033,9 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, substrate: substrate, place: place, hostBind: hostBind,
+  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind,
     route: route, routeChains: routeChains, gate: gate, repRules: repRules, order: order, clearance: clearance,
-    hostWalls: hostWalls, countPer: countPer, occupancy: occupancy,
+    hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
