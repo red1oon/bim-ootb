@@ -13,6 +13,7 @@
 //   REQUEST RELATION: `linkRequest` maps an R_Request to its availability effect via the shared resource guid
 //   (move-in→ASSIGN · move-out→RELEASE · maintenance→UNAVAIL) — the full ticket workflow is a later slice.
 //   Caller supplies `ts` (no Date.now) → deterministic + replayable. Read the log after every run.
+(function () {
 'use strict';
 var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
 var C = _r ? require('./connectors') : _g.HrConnectors;
@@ -171,3 +172,4 @@ var O = { assign: assign, release: release, unavailable: unavailable, availabili
   summary: summary, fingerprint: fingerprint, demoSeed: demoSeed };
 if (typeof module === 'object' && module.exports) module.exports = O;
 else (typeof self !== 'undefined' ? self : this).HbaOccupancy = O;
+})();

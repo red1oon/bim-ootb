@@ -11,6 +11,7 @@
 //       is DENIED with an honest reason; a grant is returned ONLY when every check passes
 //     • the caller supplies `ts` (no Date.now) → verification is deterministic + replayable
 //   Read the log after every run.
+(function () {
 'use strict';
 var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
 var C = _r ? require('./connectors') : _g.HrConnectors;
@@ -76,3 +77,4 @@ function pass(token, locale) {
 var A = { grant: grant, revoke: revoke, verify: verify, buildReader: buildReader, pass: pass };
 if (typeof module === 'object' && module.exports) module.exports = A;
 else (typeof self !== 'undefined' ? self : this).HbaAccess = A;
+})();

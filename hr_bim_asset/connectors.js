@@ -14,10 +14,13 @@
 //     resolveGuid         →  viewer APP.guidMap  (unit_guid→mesh; MeshPort real impl = reverse lookup)
 //     injectData          →  bim_orders_overlay band-overlay (HBA high-PK band → live ad_seed.db at boot)
 'use strict';
-var crypto = (typeof require !== 'undefined') ? require('crypto') : null;
+// NOTE: must NOT be named `crypto` — in a browser classic script that aliases the read-only global
+// `window.crypto`, and assigning to it under 'use strict' THROWS at load (aborts this file → HrConnectors
+// never registers, breaking every HBA engine's signer). Caught by the live browser smoke; node never hit it.
+var _nodeCrypto = (typeof require !== 'undefined') ? require('crypto') : null;
 
 function sha256(s) {
-  if (crypto) return crypto.createHash('sha256').update(String(s)).digest('hex');
+  if (_nodeCrypto) return _nodeCrypto.createHash('sha256').update(String(s)).digest('hex');
   var h = 5381; s = String(s); for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
   return ('00000000' + h.toString(16)).slice(-8);
 }

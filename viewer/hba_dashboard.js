@@ -51,13 +51,20 @@
       c.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;', k[0])); kp.appendChild(c);
     });
     pane.appendChild(kp);
-    // charts
-    var cfgs = [dash.charts.byStorey, dash.charts.aging, dash.charts.trend];
-    cfgs.forEach(function (cfg) {
-      var wrap = el('div', 'padding:6px 12px;'); var cv = document.createElement('canvas'); wrap.appendChild(cv); pane.appendChild(wrap);
-      if (G.Chart) { try { _charts.push(new G.Chart(cv, cfg)); } catch (e) { console.warn('§HBA_DASH chart err ' + e.message); } }
+    // charts — build the canvases (in sized, fixed-height wrappers) and ATTACH the pane FIRST, then render:
+    // Chart.js sizes to the canvas's parent, so it must be in the document with a real height before `new Chart`.
+    var cfgs = [dash.charts.byStorey, dash.charts.aging, dash.charts.trend], canvases = [];
+    cfgs.forEach(function () {
+      var wrap = el('div', 'padding:6px 12px;height:170px;position:relative;');
+      var cv = document.createElement('canvas'); cv.style.cssText = 'display:block;';
+      wrap.appendChild(cv); pane.appendChild(wrap); canvases.push(cv);
     });
     (document.body || document.documentElement).appendChild(pane);
+    if (pane.offsetHeight) { /* force a reflow so the canvases have layout before Chart measures them */ }
+    if (G.Chart) cfgs.forEach(function (cfg, i) {
+      cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false, animation: false }, cfg.options || {});
+      try { _charts.push(new G.Chart(canvases[i], cfg)); } catch (e) { console.warn('§HBA_DASH chart err ' + e.message); }
+    });
     _pane = pane;
     console.log('§HBA_DASH mounted rooms=' + dash.kpi.rooms + ' util=' + dash.kpi.avgUtilization + ' open=' + dash.kpi.openTickets);
     return true;

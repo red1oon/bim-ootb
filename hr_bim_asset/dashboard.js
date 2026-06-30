@@ -5,6 +5,7 @@
 //   display: the chart pane just renders these configs (lib already bundled at viewer/lib/chart.umd.min.js).
 //   Every series value is READ from the replayed pivot/aging (NON-INVENT — no fabricated numbers). Watermarked.
 //   Deterministic (no Date.now). Read the log after every run. Demo page: demo/occupancy_dashboard.html.
+(function () {
 'use strict';
 var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
 var Oc = _r ? require('./occupancy') : _g.HbaOccupancy;
@@ -60,3 +61,4 @@ function build(occLog, reqLog, periods, opts) {
 var D = { PALETTE: PALETTE, occupancyByStorey: occupancyByStorey, occupancyTrend: occupancyTrend, ticketAging: ticketAging, build: build };
 if (typeof module === 'object' && module.exports) module.exports = D;
 else (typeof self !== 'undefined' ? self : this).HbaDashboard = D;
+})();

@@ -10,6 +10,7 @@
 //     • the current status/assignee are REPLAYED from the ops, never a stored flag
 //   REQUEST↔OCCUPANCY: effect() maps a request to its availability op via the shared guid (maintenance→UNAVAIL,
 //   move-in→ASSIGN, move-out→RELEASE). Caller supplies `ts` (no Date.now). Read the log after every run.
+(function () {
 'use strict';
 var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
 var C = _r ? require('./connectors') : _g.HrConnectors;
@@ -122,3 +123,4 @@ var R = { FSM: FSM, open: open, transition: transition, state: state, requests: 
   myWork: myWork, aging: aging, effect: effect, summary: summary, fingerprint: fingerprint };
 if (typeof module === 'object' && module.exports) module.exports = R;
 else (typeof self !== 'undefined' ? self : this).HbaRequest = R;
+})();

@@ -9,6 +9,7 @@
 //     • session hours are computed from REAL in/out ts pairs (no fabricated durations)
 //     • a check-in with no check-out = an OPEN session (no fabricated finish)
 //   No viewer/door hardware here (later integration). Read the log after every run.
+(function () {
 'use strict';
 var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
 var C = _r ? require('./connectors') : _g.HrConnectors;
@@ -86,3 +87,4 @@ var A = { checkIn: checkIn, checkOut: checkOut, sessions: sessions, timesheet: t
           presenceByZone: presenceByZone, fingerprint: fingerprint };
 if (typeof module === 'object' && module.exports) module.exports = A;
 else (typeof self !== 'undefined' ? self : this).HbaAttendance = A;
+})();

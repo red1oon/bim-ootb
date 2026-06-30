@@ -10,6 +10,7 @@
 //       overdraw, not a fabricated deduction; no unpaid days → no payroll line (no phantom)
 //     • an incomplete/zero op is REFUSED (no signed op) — never a fabricated entry
 //   The caller supplies `ts` + `dayRate` (no Date.now). Pure + deterministic. Read the log after every run.
+(function () {
 'use strict';
 var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
 var C = _r ? require('./connectors') : _g.HrConnectors;
@@ -107,3 +108,4 @@ var L = { PAID_DEFAULT: PAID_DEFAULT, isPaid: isPaid, accrue: accrue, take: take
   classify: classify, unpaidDays: unpaidDays, leaveDeduction: leaveDeduction, summary: summary, fingerprint: fingerprint };
 if (typeof module === 'object' && module.exports) module.exports = L;
 else (typeof self !== 'undefined' ? self : this).HbaLeave = L;
+})();
