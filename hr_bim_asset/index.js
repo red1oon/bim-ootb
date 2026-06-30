@@ -12,5 +12,6 @@ module.exports = {
   Overlay: require('./overlay'),
   Lens: require('./lens'),
   Binding: require('./binding'),
-  Timeline: require('./timeline')
+  Timeline: require('./timeline'),
+  Attendance: require('./attendance')
 };

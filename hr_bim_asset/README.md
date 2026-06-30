@@ -47,6 +47,15 @@ the loaded building (`APP.guidMap`, keyed meshId→guid). A non-matching guid is
 tinted. The demo lease/parcel bind to real HHS rooms (`RM_Level_1_1/2`, extracted into `fixtures/hhs_rooms.json`).
 Witnessed — `tests/witness_bind.js` (W-HBA-BIND 9/9).
 
+## Time & Attendance — signed spatial check-in (alpha, §PILLAR 2)
+`attendance.js` is the edge engine: an employee emits a **signed presence `kernel_op`** at a **real building
+zone**, which folds offline into a **timesheet** + **headcount-by-zone**. Reuses `Connectors.sign`/`verifyChain`
+(W-SIGN, tamper-evident), `binding.resolveGuid` (the spatial gate — an un-located zone is honestly **refused**,
+never a faked presence), and the watermark. Hours come from real in/out `ts` pairs; an unmatched check-in is an
+honest **OPEN** session (no fabricated finish). Pure + deterministic (caller supplies `ts`). The headcount feeds
+the same density overlay tenancy uses → the spatial moat. Witnessed — `tests/witness_attendance.js`
+(W-HBA-ATTEND 8/8). *Door hardware (reader/turnstile) is a later integration, not a build.*
+
 ## 7D maintenance timeline (derived, non-invent)
 `timeline.js` derives a preventive-maintenance 4D schedule from the real `PM_Asset` fields — due dates =
 `next_due` stepped by `pm_cycle`, each task a **milestone** (duration 0, day floored: only the due *month* is a
@@ -66,5 +75,5 @@ materials); instanced-mesh `_N` slots use the same `A.guidMap[obj.id]` lookup as
 
 ## Files
 `connectors.js` · `rules.js` · `watermark.js` · `models.js` · `binding.js` · `engine.js` · `overlay.js` ·
-`lens.js` · `timeline.js` · `index.js` · `fixtures/build_hhs_rooms.js` (+ `hhs_rooms.json`) ·
-`tests/witness_{run,view,bind,wire,timeline}.js` · (viewer wire) `../viewer/hba_lens.js`
+`lens.js` · `timeline.js` · `attendance.js` · `index.js` · `fixtures/build_hhs_rooms.js` (+ `hhs_rooms.json`) ·
+`tests/witness_{run,view,bind,wire,timeline,watermark,attendance}.js` · (viewer wire) `../viewer/hba_lens.js`

@@ -6,7 +6,7 @@
 //   ANY miss = FAIL. This is the §WATERMARK coverage check named in §DISCLAIMER. Run:
 //     node hr_bim_asset/tests/witness_watermark.js
 'use strict';
-var E = require('../engine'), M = require('../models'), L = require('../lens'), T = require('../timeline'), Wm = require('../watermark');
+var E = require('../engine'), M = require('../models'), L = require('../lens'), T = require('../timeline'), At = require('../attendance'), B = require('../binding'), Wm = require('../watermark');
 var EN = Wm.mark('en'), MS = Wm.mark('ms');
 var checks = [];
 function ok(tag, cond, msg) { checks.push(!!cond); console.log('§HBA-WM ' + (cond ? 'PASS' : 'FAIL') + ' ' + tag + ' — ' + msg); }
@@ -33,6 +33,12 @@ surfaces['lens rows'] = L.tenancyRows('2026-06').concat(L.iotRows());
 // 4. derived PM schedule — the schedule container + every task (each exportable)
 var pm = T.buildSchedule(M.records('Asset'), { from: '2026-07', months: 6 });
 surfaces['PM schedule'] = [pm.schedule].concat(pm.tasks);
+
+// 5. T&A timesheet — sign an in/out pair against a real zone, then fold (the output must be watermarked)
+var zone = M.records('Tenancy')[0].unit_guid, known = [zone];   // a real room guid = a real zone
+var r = At.checkIn({ employee: 'EMP001', zone: zone, ts: '2026-06-30T08:00:00Z' }, known);
+var r2 = At.checkOut({ employee: 'EMP001', zone: zone, ts: '2026-06-30T17:00:00Z' }, known, r.op.op_hash);
+surfaces['T&A timesheet'] = [At.timesheet([r.op, r2.op], '2026-06')];
 
 // ---- coverage: each surface, count carrying the mark == count of artifacts (no silent miss) ---------------
 var totalArtifacts = 0, totalMarked = 0;

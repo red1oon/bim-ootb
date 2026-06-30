@@ -203,6 +203,30 @@ The one external piece is **physical door hardware** (reader/turnstile via QR-on
 payslip back in the same pocket (signed ack) → GL post (dotted line)`. One signed, replayable,
 offline-capable chain from clock-in to net pay; privacy holds the whole way.
 
+### §T&A SLICE-1 — the signed spatial check-in engine ✅ DONE 2026-06-30 (`attendance.js`, W-HBA-ATTEND 8/8)
+Engine shipped: `checkIn`/`checkOut` (signed, spatial-gated → honest REFUSE on un-located zone) · `sessions`
+(in→out pairs, OPEN on unmatched) · `timesheet` (hours/employee+zone, tamper-evident, watermarked) ·
+`presenceByZone` (headcount → density overlay) · `fingerprint` (replay==live). Reuses W-SIGN + binding +
+watermark; deterministic. §WATERMARK coverage now 19/19 (incl the timesheet). **NEXT T&A slices:** viewer presence
+lens (reuse density dots) · access = signed capability over a zone · then Leave/Absence. Original spec ↓.
+**Scope:** the engine half of Pillar 2 — an employee emits a **signed presence `kernel_op`** at a **real
+spatial zone**, foldable offline into a **timesheet** + a **headcount-by-zone** presence count. Module
+`hr_bim_asset/attendance.js` (`HbaAttendance`), reusing what tenancy shipped: `Connectors.sign`/`verifyChain`
+(W-SIGN), `binding.resolveGuid` (spatial gate), the storey/zone derivation, the watermark. **No viewer/door
+hardware in this slice** (that's a later integration). Pure + deterministic — caller supplies `ts` (no Date.now).
+**NON-INVENT gates:** zone must resolve to a REAL building guid → else honest **REFUSE** (never a faked presence);
+session hours computed from REAL in/out `ts` pairs; an unmatched check-in = an honest **OPEN** session, never a
+fabricated end. **Witness claims (W-HBA-ATTEND — write the test, then implement):**
+- A1 check-in to a REAL zone → a signed presence op; the chain `verifyChain` is OK.
+- A2 check-in to a non-existent zone → **REFUSE** (no op, honest).
+- A3 amend a signed presence param → `verifyChain` **breaks** (tamper-evident).
+- A4 `timesheet(ops, period)` folds in→out pairs → correct hours per employee/zone (deterministic).
+- A5 check-in with no check-out → an **OPEN** session (no fabricated finish).
+- A6 `presenceByZone` → headcount per REAL zone (the spatial moat; feeds the density overlay).
+- A7 deterministic — same ops → identical timesheet fingerprint (replay == live).
+- A8 every receipt/output carries the CONTOH/SAMPLE watermark (§DISCLAIMER).
+Follow-on slices: viewer presence lens (reuse density dots) · access = signed capability over a zone · Leave/Absence.
+
 ---
 
 ## §PILLAR 3 — Malaysian RegTech: E-Invoice + LHDN tax/EPF (privacy-first counter-proposal)
