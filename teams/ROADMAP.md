@@ -33,7 +33,7 @@
 ---
 
 ## Phase A — Read-only foundation (zero impact)
-**S1 · ERP read-bridge** — prove the Teams core can READ a live ERP log without touching `erp/`.
+**S1 · ERP read-bridge — ✅ DONE (W-ERP-SIGN + W-ERP-FOLD 9/9, zero `erp/` edits).** prove the Teams core can READ a live ERP log without touching `erp/`.
 - Build `teams/erp/erp_bridge.js`: adapter binding `connectors.sign/verifyChain` → `KernelOps`/`erp_signer`
   (per-op `sign(hashHex)` wrap); World via `erp_kernel.replay`; blame = last `actor` per doc.
 - Witness **W-ERP-SIGN** (a real `kernel_ops` chain verifies through the Teams connector; tamper rejected) +
