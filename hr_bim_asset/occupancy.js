@@ -154,16 +154,26 @@ function fingerprint(log, periods, opts) {
 function demoSeed(rooms) {
   var g = (rooms || []).map(function (r) { return r.guid; });
   var log = [], n = 0;
-  function ts() { return '2025-12-01T00:00:' + ('0' + (n++)).slice(-2) + 'Z'; }   // deterministic ordering
-  function push(res) { if (res.op) log.push(res.op); }
+  function ts() { var m = ('0' + Math.floor(n / 60)).slice(-2), s = ('0' + (n % 60)).slice(-2); n++; return '2025-12-01T00:' + m + ':' + s + 'Z'; } // deterministic; min:sec robust beyond 60 ops
+  function push(res) { if (res && res.op) log.push(res.op); }
   function prev() { return log.length ? log[log.length - 1].op_hash : 'GENESIS'; }
-  if (g[0]) push(assign({ resource: g[0], party: 'BP-TEN-1', from: '2026-01', to: '2026-12', ts: ts() }, null, prev())); // occupied all year
-  if (g[1]) push(assign({ resource: g[1], party: 'BP-TEN-2', from: '2026-01', to: '2026-06', ts: ts() }, null, prev())); // expiring mid-year
-  if (g[3]) push(assign({ resource: g[3], party: 'BP-TEN-3', from: '2026-01', to: '2026-12', ts: ts() }, null, prev())); // occupied, then renovated
-  if (g[3]) push(unavailable({ resource: g[3], from: '2026-03', to: '2026-04', reason: 'renovation', ts: ts() }, null, prev())); // blackout
-  if (g[4]) push(assign({ resource: g[4], party: 'BP-TEN-4', from: '2026-01', to: '2026-12', ts: ts() }, null, prev())); // assigned…
-  if (g[4]) push(release({ resource: g[4], party: 'BP-TEN-4', at: '2026-08', ts: ts() }, prev()));                       // …early move-out Aug
-  // g[2], g[5..] left with NO op → genuinely VACANT (vacancy from absence, never fabricated)
+  // §RICH-DEMO (P2, 2026-07-01) — spread a DETERMINISTIC, meaningful MIX across EVERY room so ALL storeys
+  // populate (the user flagged the old seed lit only Level 1: it hard-coded g[0..4]). State cycles by room index
+  // — occupied → expiring → VACANT(no op) → occupied+renovation-blackout → assigned-then-released — so each run of
+  // 5 rooms shows the full mix. g[0..4] behave EXACTLY as the prior seed (existing witnesses preserved). Real room
+  // guids; demonstrator (watermarked-context) parties/dates; vacancy is genuine ABSENCE (never a fabricated op).
+  for (var i = 0; i < g.length; i++) {
+    var party = 'BP-TEN-' + (i + 1);
+    switch (i % 5) {
+      case 0: push(assign({ resource: g[i], party: party, from: '2026-01', to: '2026-12', ts: ts() }, null, prev())); break;             // occupied all year
+      case 1: push(assign({ resource: g[i], party: party, from: '2026-01', to: '2026-06', ts: ts() }, null, prev())); break;             // expiring mid-year
+      case 2: break;                                                                                                                      // VACANT (no op)
+      case 3: push(assign({ resource: g[i], party: party, from: '2026-01', to: '2026-12', ts: ts() }, null, prev()));                     // occupied…
+              push(unavailable({ resource: g[i], from: '2026-03', to: '2026-04', reason: 'renovation', ts: ts() }, null, prev())); break;  // …renovation blackout
+      case 4: push(assign({ resource: g[i], party: party, from: '2026-01', to: '2026-12', ts: ts() }, null, prev()));                     // assigned…
+              push(release({ resource: g[i], party: party, at: '2026-08', ts: ts() }, prev())); break;                                    // …early move-out Aug
+    }
+  }
   return { log: log, rooms: g };
 }
 

@@ -59,10 +59,19 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   stub InstancedMesh/BatchedMesh; M6 = the un-rendered-room gap the synthetics missed) + LIVE harness GREEN
   (`§DIAG2 … tintedMeshes=19`) + real lens-applied screenshot (cyan occupancy tints across HHS). Witness mocks in
   `witness_{view,presence}.js` made faithful (setTint no-ops an unresolved zone, like the real port). Closes #2b.
-- **P2 — RICH DEMO DATA (the richness standard).** Enrich the gate seeds (`occupancy.demoSeed` /
-  `attendance.demoSeed` / class declarations / one asset) to populate ALL real storeys/rooms with a meaningful
-  MIX per the acceptance bar, so the dashboard + lenses look like a real operating building. Re-screenshot to
-  confirm the standard (whitebox first: assert the pivot has N storeys, M states, etc.).
+- **P2 — RICH DEMO DATA (the richness standard). ✅ CORE DONE+LIVE 2026-07-01 (occupancy + presence).** The old
+  `occupancy.demoSeed`/`attendance.demoSeed` hard-coded only `g[0..4]` → only Level 1 populated (the sparse look).
+  Rewrote both to spread a DETERMINISTIC, index-cycled MIX across EVERY room (g[0..4] behave identically → existing
+  witnesses preserved): occupancy cycles occupied→expiring→vacant→occupied+renovation-blackout→assigned-then-
+  released; presence spreads varied headcount bands over i≥3 (g0=3/g1=1 kept). LIVE on HHS (`§RICH`): **3 storeys
+  populated** (util Level 1:0.71 / 2:0.92 / 3:0.33, was only L1), occupancy lens **lit 4→11 rooms** across all
+  levels, **tintedMeshes 19→77**, 2026-03 mix occ8/vac3/unavail3, presence 11 zones / 3 storeys / 6 bands [1-6].
+  Witness `tests/witness_richdemo.js` **W-HBA-RICHDEMO 7/7** (all storeys populated · 4-state mix · varied presence
+  · real guids · deterministic). Existing witnesses updated for the richer counts (O3/O4b/O6b/O9, dashboard D2).
+  **RESIDUAL (carried forward):** class is a correct 3-way mix (office/commercial/residential) but only on the 3
+  leased units (class is a unit-level lease/strata attribute by design — spreading to all rooms = a `classRows`
+  semantics change, decide if wanted); assets=1 (meets ≥1); **ticket-aging is EMPTY (Request records=0)** — needs a
+  separate aging-spread request-log seed for the dashboard's ticket buckets. ⇒ next P2 slice = seed tickets.
 - **P3 — PREP SAMPLE GW DATA (user).** GardenWorld (`buildings/warehouse_gardenworld.db`, 61KB — fast/headless-
   friendly, vs HHS 73MB). Check its spatial tables; build a GW room/members fixture + bind rich demo HBA records
   to its real guids so the FM lenses + dashboard light on GW. Use GW as the primary documented sample (fast loop).

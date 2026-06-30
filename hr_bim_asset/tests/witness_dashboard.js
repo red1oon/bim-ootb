@@ -37,8 +37,8 @@ var occRow = tr.data.datasets.filter(function (d) { return d.label === 'occupied
 var unavailRow = tr.data.datasets.filter(function (d) { return d.label === 'unavailable'; })[0];
 ok('D2-trend-series', tr.data.labels.join(',') === PERIODS.join(',')
   && occRow.data.every(function (v, i) { return v === pv.byPeriod[PERIODS[i]].occupied; })
-  && unavailRow.data[2] === pv.byPeriod['2026-03'].unavailable && unavailRow.data[2] === 1,
-  'trend stacked-bar: labels = periods, datasets = per-period state counts (Mar unavailable = 1)');
+  && unavailRow.data[2] === pv.byPeriod['2026-03'].unavailable && unavailRow.data[2] === 3,
+  'trend stacked-bar: labels = periods, datasets = per-period state counts (§RICH-DEMO: Mar unavailable = 3)');
 
 // ---- D3: aging doughnut == request.aging buckets ----------------------------------------------------------
 var ag = Rq.aging(reqLog, '2026-05-10T00:00:00Z');

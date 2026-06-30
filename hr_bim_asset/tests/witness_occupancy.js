@@ -42,15 +42,15 @@ ok('O2d-unavailable', Oc.availability(log, G[3], '2026-03').state === 'unavailab
   'g3 renovation blackout 2026-03 → unavailable (wins); 2026-01 → occupied (S_ResourceUnAvailable honored)');
 
 // ---- O3: early RELEASE caps the term -----------------------------------------------------------------------
-ok('O3-early-release', Oc.occupancyAt(log, G[4], '2026-07') === 'BP-TEN-4' && Oc.availability(log, G[4], '2026-09').state === 'vacant',
+ok('O3-early-release', Oc.occupancyAt(log, G[4], '2026-07') === 'BP-TEN-5' && Oc.availability(log, G[4], '2026-09').state === 'vacant',
   'g4 released Aug → occupied through Jul, vacant from Sep (early move-out respected, not the original to-date)');
 
 // ---- O4: PIVOT — room×period matrix + utilization + per-storey + per-period (the dashboard data) ----------
 var pv = Oc.pivot(log, PERIODS, { allResources: G, storeyOf: function (r) { return storeyOf[r]; }, locale: 'en' });
 ok('O4a-util', pv.byRoom[G[0]].utilization === 1 && pv.byRoom[G[4]].utilization === 0.67 && pv.byRoom[G[2]].utilization === 0,
   'per-room utilization: g0=1.0 (full year), g4=0.67 (8/12, released Aug), g2=0 (vacant)');
-ok('O4b-period-rollup', pv.byPeriod['2026-03'].unavailable === 1 && pv.byPeriod['2026-03'].total === G.length,
-  'per-period rollup: 2026-03 has 1 unavailable room; total = all ' + G.length + ' rooms (vacancies counted)');
+ok('O4b-period-rollup', pv.byPeriod['2026-03'].unavailable === 3 && pv.byPeriod['2026-03'].total === G.length,
+  'per-period rollup: 2026-03 has 3 unavailable rooms (§RICH-DEMO: every i%5==3 room g3/g8/g13 in renovation blackout); total = all ' + G.length + ' rooms (vacancies counted)');
 ok('O4c-overall-storey', pv.overall.rooms === G.length && pv.byStorey.length >= 1 && pv.byStorey.every(function (s) { return s.utilization >= 0 && s.utilization <= 1; }),
   'overall covers all ' + G.length + ' rooms; per-storey utilization in [0,1] (pivot is dashboard-ready)');
 
@@ -74,11 +74,11 @@ ok('O6a-map', Oc.linkRequest({ type: 'move-out', resource: G[0], party: 'BP-TEN-
   && Oc.linkRequest({ type: 'move-in', resource: G[2], party: 'BP-NEW', from: '2026-07', to: '2026-12', ts: 't' }).kind === 'ASSIGN'
   && Oc.linkRequest({ type: 'complaint', resource: G[0], ts: 't' }) === null,
   'linkRequest: move-out→RELEASE · maintenance→UNAVAIL · move-in→ASSIGN · complaint→null (pure ticket)');
-var link = Oc.linkRequest({ type: 'maintenance', resource: G[5], from: '2026-05', to: '2026-06', ts: '2026-04-20T00:00:00Z' });
+var link = Oc.linkRequest({ type: 'maintenance', resource: G[7], from: '2026-05', to: '2026-06', ts: '2026-04-20T00:00:00Z' }); // G[7] (i%5==2) = vacant in the seed
 var prev = log[log.length - 1].op_hash;
 var effect = Oc.unavailable(link.ev, FX, prev);                   // apply the request's effect
 var log2 = log.concat([effect.op]);
-ok('O6b-effect', effect.op && Oc.availability(log2, G[5], '2026-05').state === 'unavailable' && Oc.availability(log, G[5], '2026-05').state === 'vacant',
+ok('O6b-effect', effect.op && Oc.availability(log2, G[7], '2026-05').state === 'unavailable' && Oc.availability(log, G[7], '2026-05').state === 'vacant',
   'applying a maintenance request → the shared room goes unavailable (Request drives occupancy via the guid)');
 
 // ---- O7: tamper-evident — edit an ASSIGN param → verifyChain breaks ---------------------------------------
@@ -93,8 +93,8 @@ ok('O7-tamper', v.ok === false && v.at === ai && v.why === 'op_hash',
 ok('O8-deterministic', Oc.fingerprint(log, PERIODS, { allResources: G }) === Oc.fingerprint(JSON.parse(JSON.stringify(log)), PERIODS, { allResources: G }),
   'pivot fingerprint is deterministic (replay == live)');
 var sum = Oc.summary(log, '2026-03', { resources: G }, 'ms');
-ok('O9-watermark', sum._watermark === 'CONTOH — TIDAK RASMI' && sum.rollup.unavailable === 1 && sum.chainOk === true,
-  'availability summary is a watermarked output (ms) with the replayed rollup + chainOk');
+ok('O9-watermark', sum._watermark === 'CONTOH — TIDAK RASMI' && sum.rollup.unavailable === 3 && sum.chainOk === true,
+  'availability summary is a watermarked output (ms) with the replayed rollup (3 unavailable @2026-03) + chainOk');
 
 // ====== WIRE: drive the ACTUAL adapter viewer/hba_lens.js (reuses buildMeshPort over A.guidMap) ===========
 global.self = global;

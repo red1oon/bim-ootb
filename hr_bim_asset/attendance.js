@@ -91,12 +91,21 @@ function demoSeed(rooms, period) {
   var g = (rooms || []).map(function (r) { return r.guid; });
   period = period || '2026-01';
   var log = [], n = 0;
-  function ts() { return period + '-15T08:' + ('0' + (n++)).slice(-2) + ':00Z'; }   // deterministic ordering
+  function ts() { var m = ('0' + (8 + Math.floor(n / 60))).slice(-2), s = ('0' + (n % 60)).slice(-2); n++; return period + '-15T' + m + ':' + s + ':00Z'; } // deterministic; robust beyond 60
   function prev() { return log.length ? log[log.length - 1].op_hash : 'GENESIS'; }
   function ci(emp, zone) { var r = checkIn({ employee: emp, zone: zone, ts: ts() }, null, prev()); if (r.op) log.push(r.op); }
   if (g[0]) { ci('EMP-1', g[0]); ci('EMP-2', g[0]); ci('EMP-3', g[0]); }   // zone0 → 3 present (med band)
   if (g[1]) { ci('EMP-4', g[1]); }                                          // zone1 → 1 present  (low band)
-  // g[2..] left with NO check-in → genuinely zero headcount (presence from absence, never fabricated)
+  // §RICH-DEMO (P2) — spread VARIED headcounts across the REMAINING zones (i>=3, skipping g[2]) so presence shows
+  // a real mix of bands across ALL storeys, not just Level 1. Deterministic count per index; some zones stay 0
+  // (genuine absence). g[0..2] are UNCHANGED (existing presence/presspane witnesses use ≤3-room lists). Non-invent:
+  // real zone guids, demonstrator employee ids, deterministic ts.
+  var BAND = [4, 2, 0, 5, 1, 3, 0, 6, 2, 4];   // varied low/med/high + genuine zeros
+  for (var i = 3; i < g.length; i++) {
+    var hc = BAND[(i - 3) % BAND.length];
+    for (var k = 0; k < hc; k++) ci('EMP-' + (i * 10 + k), g[i]);
+  }
+  // g[2] (and any BAND==0 zone) left with NO check-in → genuinely zero headcount (presence from absence, never fabricated)
   return { log: log, zones: g };
 }
 
