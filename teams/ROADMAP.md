@@ -62,7 +62,7 @@ hover-blame (`W-FIELD-LINEAGE`, the deeper kill-`AD_ChangeLog` fold; **we ADD th
 Impact: none.
 
 ## Phase D — Live integration (the ONLY edits to `erp/` runtime — additive, flag-guarded, reversible)
-**S7 · subscribe hook + bus vocab + scope key** — the two risky touches, isolated together, each behind the Team flag:
+**S7 · subscribe hook + bus vocab + scope key — ✅ DONE (W-EMIT + W-SCOPE 11/11; byte-identical default-off proven; node-erp regression 0; ⚠ browser/playwright erp suite NOT run — see note).** the two risky touches, isolated together, each behind the Team flag:
 - `kernel_ops.commitGroup`: **emit** an op-event on success (GAP-SUBSCRIBE) — additive, after-commit only, no change to
   the commit result/timing. `BroadcastChannel` team vocab (`TEAM_OP`/`TEAM_PRESENCE`), distinct from BIM highlight msgs.
 - `erp_seam.read`/`dispatch`: an **optional** `scope={role,org,project,…}` param (GAP-PARTITION-KEY) — **default =
