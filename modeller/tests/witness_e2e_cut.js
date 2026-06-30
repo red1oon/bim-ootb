@@ -9,6 +9,14 @@
  *   C3 CHAIN-OK   — verifyChain passes after the cut.
  *   C4 VISIBLE    — the framebuffer changed (the void shows).
  *   C5 REVERSIBLE — undo via the history slider restores the pre-cut cursor.
+ *   C6 GEOMETRY-REVERSIBLE — after undo the framebuffer returns EXACTLY to the pre-cut frame (the void closed).
+ *
+ * §CUT-ON-ARC ROOT-CAUSE (this session): the resume flagged a C5 "undo→0" anomaly. The real bug was deeper — a
+ * seeded ARC wall is a BAKED GEOM_INSERT mesh, not a worker B-rep, so the occt fold of GEOM_CUT threw "parent not
+ * found": the op committed to the signed log (C2/C3 pass) but never rendered (C4 fail) and the failed fold skipped
+ * syncHistory(), leaving the slider dead so undo collapsed to 0 (C5 fail). Fix: a box-like insert that is a cut
+ * target is PROMOTED to a B-rep box built from its EXACT measured corners (bonsai_kernel._insertCutBox + worker
+ * seedBoxes) — non-invent (box == baked mesh vertex-for-vertex); rotated/non-box inserts are refused up front.
  */
 'use strict';
 const { runE2E } = require('./e2e_harness');
@@ -28,6 +36,8 @@ runE2E('W-E2E-CUT', async (t) => {
   t.assert('C3 CHAIN-OK (verifyChain)', chain === true, 'verifyChain=' + chain);
   t.assert('C4 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
   await t.undoToCursor(before.cur);
-  const undo = await t.oplog();
+  const undo = await t.oplog(); const pix2 = await t.pixsum();
+  await t.shot('04-undone');
   t.assert('C5 REVERSIBLE (undo restores cursor)', undo.cur === before.cur, 'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ')');
+  t.assert('C6 GEOMETRY-REVERSIBLE (void closed, frame == pre-cut)', pix2 === pix0, 'pix0=' + pix0 + ' postCut=' + pix1 + ' postUndo=' + pix2);
 });

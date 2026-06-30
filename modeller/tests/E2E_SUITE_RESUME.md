@@ -22,18 +22,22 @@ Branch: lane/modeller-e2e-suite (WIP, NOT merged — two other lane sessions act
 `assert(name,cond,detail)`, `sleep`. Auto: server, swiftshader launch, §-console + pageerror capture, NO-ERROR assert,
 exit code. The disc-walk meshes live under the `dwRoot` SUB-group (census walks g.children + dwRoot.children).
 
-## FIRST CONSUMER — `witness_e2e_cut.js` (validates the rig) — 4/6, TWO OPEN FINDINGS
-- ✅ C1 select · ✅ C2 GEOM_CUT commits on selection (len+1, parent==fid) · ✅ C3 verifyChain.
-- ❌ **C4 VISIBLE** — pixsum (stride-257 checksum) didn't flip on a small internal cut. FIX: region-targeted readPixels
-  around the cut void, or a finer checksum. (Likely a weak METRIC, not an app bug.)
-- ❌ **C5 REVERSIBLE — REAL FINDING TO INVESTIGATE:** undo via the history slider after a `GEOM_CUT` drove the cursor
-  254→**0** (expected 253). The IDENTICAL undo worked for `GEOM_MOVE` (W-E2E-MOVE) → this is CUT-specific (GEOM_CUT
-  mutates the parent in place). Either a real scrub/undo bug for in-place-mutation ops, OR a slider/scrub interaction.
-  Diagnose first next session (it may be a 3rd genuine tool defect the suite caught, like the Walk hang).
+## ✅ CUT DONE — `witness_e2e_cut.js` 7/7 (the suite caught a 3rd genuine tool defect, like the Walk hang)
+- ✅ C1 select · ✅ C2 GEOM_CUT commits (len+1, parent==fid) · ✅ C3 verifyChain · ✅ C4 VISIBLE (pix flips) ·
+  ✅ C5 REVERSIBLE (cursor 254→253) · ✅ C6 GEOMETRY-REVERSIBLE (undo returns the frame EXACTLY: pix0==postUndo).
+- **ROOT CAUSE (deeper than the resume's "undo bug" guess):** a seeded ARC wall is a BAKED `GEOM_INSERT` mesh, not a
+  worker B-rep, so the occt fold of `GEOM_CUT` threw `parent not found`. The op committed to the signed log (C2/C3
+  green) but never RENDERED (C4) and the failed fold skipped `syncHistory()`, leaving the slider dead at max=0 →
+  undo collapsed to 0 (C5). The undo→0 was a downstream SYMPTOM, not the bug.
+- **FIX (non-invent):** a box-like insert that is a `GEOM_CUT`/`GEOM_FILLET` target is PROMOTED to a worker B-rep box
+  built from its EXACT measured world-AABB corners (`bonsai_kernel._insertCutBox` → `_foldChain` `seedBoxes` →
+  worker `buildSolids` pre-seed). The box == the baked mesh vertex-for-vertex (ARC walls are 8-vert axis-aligned
+  boxes, verified). Rotated/non-box inserts return null → the cut handler REFUSES up front (honest, logged) — a
+  measured future-work boundary, never an invented shape. Worker cache bumped v5→v6.
 
 ## ROSTER — build a real-user E2E for each (then mark "developed")
 Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring tools:
-1. ✅ MOVE (GEOM_MOVE)   2. ✅ WALK (discWalk)   3. ◑ CUT (GEOM_CUT — C4/C5 open)
+1. ✅ MOVE (GEOM_MOVE)   2. ✅ WALK (discWalk)   3. ✅ CUT (GEOM_CUT — 7/7, §CUT-ON-ARC fix)
 4. ☐ INSERT (b-insert → catalog picker → drop on grid → GEOM_INSERT; `showGhost`, `bInsert`, `insertHash`)
 5. ☐ SCALE (select INSERT → Move mode → drag cube handle → GEOM_SCALE; gizmo `scaleHandle`, axis 'scaleX/Y/Z')
 6. ☐ ROTATE (select INSERT/SOLID → Move mode → drag yaw ring → GEOM_ROTATE; axis 'rotZ')

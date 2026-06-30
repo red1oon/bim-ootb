@@ -808,6 +808,14 @@ canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(n
 // thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
 bCut.onclick = async () => {
   if (selectedId == null || !selectedMesh) { setStat('select a wall first'); return; }
+  // §CUT-ON-ARC: a seeded ARC wall is a baked GEOM_INSERT — cutting it promotes it to a B-rep box from its EXACT
+  // measured corners (bonsai_kernel._insertCutBox). Only an axis-aligned BOX can be promoted without inventing
+  // geometry; a rotated/non-box insert returns null → refuse the cut HERE (never write an un-foldable op).
+  const _selOp = (window.Bonsai.oplog._geomOps() || []).find(o => o.id === selectedId);
+  if (_selOp && _selOp.op_type === 'GEOM_INSERT' && !window.Bonsai._insertCutBox(_selOp)) {
+    setStat('cut needs a box-shaped wall — this element is rotated or non-box (not yet supported)');
+    toast('⛔ cut needs a box-shaped wall (rotated / non-box element not yet supported)', 'error'); return;
+  }
   selectedMesh.geometry.computeBoundingBox();
   const bb = selectedMesh.geometry.boundingBox, mn = bb.min, mx = bb.max;
   const ext = [mx.x - mn.x, mx.y - mn.y, mx.z - mn.z];
