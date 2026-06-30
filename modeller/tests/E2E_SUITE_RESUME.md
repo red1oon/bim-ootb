@@ -59,9 +59,13 @@ Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring
    edges, renders markers) → click an edge marker → radius → Apply pill → GEOM_FILLET. ATOMIC by the wall's
    triangle count (12→40, the round adds geometry), REVERSIBLE (→12). Needs a B-rep SOLID (ARC inserts have no
    worker edges) so it authors one first; clearing to an empty model makes select + edge-pick unambiguous.
-10. ☐ OPENING (GEOM_OPENING — find the trigger; likely opening tool on a wall)
+10. ✅ OPENING — RESOLVED by extraction: GEOM_OPENING has NO user-facing trigger. It is a legacy SAMPLE PRIMITIVE
+    (`const OPENING` line ~369; comment "real authoring is Sketch + Insert; WALL/OPENING are the sample primitives
+    the witness folds directly") folded via the dev `author()` path behind a `?q=opening` param. The real-user
+    "make an opening in a wall" IS the CUT tool (GEOM_CUT) → covered by W-E2E-CUT 7/7. Not a separate tool.
 11. ☐ GRID-STRETCH (b-gridmove → drag a gridline → GEOM_GRID_MOVE; `commitGridMove`, hook `window.__gridStretch(id,delta)`)
-12. ☐ DELETE (select → b-del / Del key → `deleteSelected`; assert removal + reversible)
+12. ✅ DELETE (`witness_e2e_delete.js` 6/6) — select → Delete pill → soft-delete (active op-count −1, mesh removed,
+    undone=1 so verifyChain stays valid); real-user reverse = Redo (Ctrl+Y) → count + mesh restored. ATOMIC by census.
 13. ☐ SEED-TRUNK full user flow (Outliner "Route trunk" → `_seedPopup` choose entry → render+animate; render gate
     W-SEED-TRUNK-RENDER already exists — add the POPUP user flow on top)
 14. ☐ (optional) SDG-CASCADE as a user flow (move a host wall → door rides) — W-SDG-CASCADE-MODELLER is node-only.
