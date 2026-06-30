@@ -12,10 +12,17 @@ var MODELS = {
   Tenancy: {
     table: 'HR_Lease', label: 'Tenancy', doc_type: 'LEASE',
     fields: [{ name: 'lease_no', type: 'id' }, { name: 'unit_guid', type: 'bim_ref' }, { name: 'tenant', type: 'party' },
-             { name: 'rent', type: 'amount' }, { name: 'term_start', type: 'period' }, { name: 'term_end', type: 'period' }, { name: 'deposit', type: 'amount' }],
+             { name: 'rent', type: 'amount' }, { name: 'term_start', type: 'period' }, { name: 'term_end', type: 'period' }, { name: 'deposit', type: 'amount' },
+             { name: 'unit_class', type: 'list' }],   // §CLASS facet — building-use class (residential/commercial/office)
     // unit_guid = a REAL HHS IfcSpace room (≈ Level 1 R1) — see fixtures/hhs_rooms.json (NON-INVENT: the
     // join hits a real unit; a fabricated guid would honestly show un-linked, never a faked binding).
-    records: [{ lease_no: 'L-0001', unit_guid: 'RM_Level_1_1', tenant: 'BP-TEN-1', rent: 1800, term_start: '2026-01', term_end: '2026-12', deposit: 3600 }]
+    // unit_class = a DECLARED business datum on the lease (CONTOH/SAMPLE demonstrator), NOT a geometric claim:
+    // the HHS model carries NO real IfcSpace predefined_type (all 'INTERNAL'), so the class facet sources class
+    // from the lease record. The resolver still PREFERS a real model predefined_type when a building has one
+    // (viewer/hba_lens.js classRows). Guids are real; classes are sample lease declarations.
+    records: [{ lease_no: 'L-0001', unit_guid: 'RM_Level_1_1', tenant: 'BP-TEN-1', rent: 1800, term_start: '2026-01', term_end: '2026-12', deposit: 3600, unit_class: 'office' },
+              { lease_no: 'L-0002', unit_guid: 'RM_Level_1_3', tenant: 'BP-TEN-5', rent: 2400, term_start: '2026-01', term_end: '2026-12', deposit: 4800, unit_class: 'commercial' },
+              { lease_no: 'L-0003', unit_guid: 'RM_Level_1_4', tenant: 'BP-TEN-6', rent: 1500, term_start: '2026-01', term_end: '2026-12', deposit: 3000, unit_class: 'residential' }]
   },
   PropertyManagement: {
     table: 'PM_Property', label: 'Property Management',

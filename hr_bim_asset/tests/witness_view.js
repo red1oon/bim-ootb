@@ -30,7 +30,10 @@ var UNIT = M.records('Tenancy')[0].unit_guid, ASSET = M.records('Asset')[0].bim_
 
 // ---- OVERLAY (MeshPort): sparse, ghost-rest, one-mode, restore-on-off -----------------------------
 var tplan = O.computeOverlay('tenancy', '2026-06');
-ok('V1-sparse', tplan.linked.length === 1 && tplan.linked[0] === UNIT, 'tenancy overlay tints ONLY the 1 linked unit (no building-wide wash)');
+// sparse = tints ONLY the leased units (== the lease records), never a building-wide wash. (Lease set grew to
+// 3 demonstrator leases for the §CLASS facet — assert against the real record count, not a hardcoded 1.)
+ok('V1-sparse', tplan.linked.length === M.records('Tenancy').length && tplan.linked.indexOf(UNIT) >= 0,
+  'tenancy overlay tints ONLY the ' + M.records('Tenancy').length + ' linked unit(s) (no building-wide wash)');
 var port = makePort([UNIT, 'GUID-X1', 'GUID-X2']);
 O.applyOverlay(port, tplan);
 ok('V2-ghost-rest', port.tintGuids().length === 1 && port.ghostN() === 2, 'tints the linked unit, ghosts the other 2 (focus by contrast, not marks)');

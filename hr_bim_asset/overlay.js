@@ -98,7 +98,34 @@ function applyOverlay(port, plan) {
 }
 function clearOverlay(port) { port.restoreAll(); }       // toggle OFF = full restore, zero residue
 
-var O = { COLORS: COLORS, PRESENCE: PRESENCE, presenceBucket: presenceBucket, computeOverlay: computeOverlay,
-          computePresence: computePresence, computeOccupancy: computeOccupancy, applyOverlay: applyOverlay, clearOverlay: clearOverlay };
+// CLASS palette (§CLASS facet, user 2026-07-01) — building-USE class of a unit. Distinct hues per class so
+// residential/commercial/office read at a glance; unclassified = grey (honest absence, never guessed).
+var CLASS = { residential: '#43a047', commercial: '#fb8c00', office: '#3949ab', unclassified: '#9e9e9e' };
+function classBucket(c) { return CLASS.hasOwnProperty(c) ? c : 'unclassified'; }
+
+// CLASS overlay plan from rows [{zone, class}] — color each LINKED unit by its use-class. SAME plan shape as
+// computeOverlay → applyOverlay reuses the EXISTING MeshPort seam (zero new viewer-core). NON-INVENT: the class
+// is taken VERBATIM from the row (a declared lease datum or a real model predefined_type), never inferred; an
+// unknown/missing class → 'unclassified' (grey), never a fabricated label. opts.knownGuids GATES (unresolved
+// guid → unlinked, never tinted). opts.classFilter (optional) → the FILTER facet: tint ONLY units of that
+// class, leaving the rest of the model untouched (still non-invent — a filter, not a fabrication).
+function computeClassOverlay(rows, opts) {
+  opts = opts || {}; var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  var filter = opts.classFilter ? classBucket(opts.classFilter) : null, tints = {}, unlinked = [];
+  (rows || []).forEach(function (r) {
+    if (!r || !r.zone) return;
+    var c = classBucket(r.class);
+    if (filter && c !== filter) return;                              // FILTER: skip other classes
+    if (gate && !gate.has(r.zone)) { unlinked.push(r.zone); return; }   // honest un-linked: no tint
+    tints[r.zone] = { state: 'class_' + c, color: CLASS[c], unitClass: c, detail: 'Unit ' + r.zone + ' · ' + c };
+  });
+  return { mode: 'class', period: opts.period || null, classFilter: filter, tints: tints,
+           linked: Object.keys(tints), unlinked: unlinked,
+           legend: Object.keys(CLASS).map(function (k) { return { state: k, color: CLASS[k] }; }) };
+}
+
+var O = { COLORS: COLORS, PRESENCE: PRESENCE, CLASS: CLASS, presenceBucket: presenceBucket, classBucket: classBucket,
+          computeOverlay: computeOverlay, computePresence: computePresence, computeOccupancy: computeOccupancy,
+          computeClassOverlay: computeClassOverlay, applyOverlay: applyOverlay, clearOverlay: clearOverlay };
 if (typeof module === 'object' && module.exports) module.exports = O;
 else (typeof self !== 'undefined' ? self : this).HbaOverlay = O;

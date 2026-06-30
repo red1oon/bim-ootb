@@ -77,6 +77,11 @@
       for (var k = 0; k < orows.length; k++) if (h.B.resolveGuid(orows[k].zone, A.guidMap)) return true;
       return false;
     }
+    if (mode === 'class') {                                   // §CLASS facet — gate on a classifiable, located unit
+      var crows = classRows(A);
+      for (var m = 0; m < crows.length; m++) if (h.B.resolveGuid(crows[m].zone, A.guidMap)) return true;
+      return false;
+    }
     var recs = mode === 'maintenance' ? h.M.records('Asset') : h.M.records('Tenancy');
     var field = mode === 'maintenance' ? 'bim_guid' : 'unit_guid';
     for (var i = 0; i < recs.length; i++) if (h.B.resolveGuid(recs[i][field], A.guidMap)) return true;
@@ -90,6 +95,28 @@
     if (!h.A || !A) return [];
     var log = A._hbaAttendanceLog || [];
     return h.A.presenceByZone(log, period(A));
+  }
+
+  // §CLASS facet (user 2026-07-01) — resolve each leased/owned unit's building-USE class for THIS building.
+  // PRIORITY (non-invent): (1) a REAL model IfcSpace predefined_type (A._hbaSpaceClass, mapped from the model
+  // in bindStoreysFromModel) — EXTRACTED; (2) the record's declared unit_class — a business datum; (3)
+  // 'unclassified' — never guessed. HHS carries no real space-type (all 'INTERNAL') → falls to the declared
+  // lease class. Returns [{zone, class}] candidates; the overlay's knownGuids gate scopes them to the building.
+  function classOf(guid, declared, A) {
+    var m = A && A._hbaSpaceClass;
+    if (m && m[guid]) return m[guid];                          // real model class wins when a building has one
+    return declared || 'unclassified';                        // declared lease class, else honest unclassified
+  }
+  function classRows(A) {
+    var h = HBA(); if (!h.M || !A) return [];
+    var rows = [], seen = {};
+    ['Tenancy', 'Strata'].forEach(function (model) {
+      h.M.records(model).forEach(function (r) {
+        var g = r.unit_guid; if (!g || seen[g]) return; seen[g] = true;
+        rows.push({ zone: g, class: classOf(g, r.unit_class, A) });
+      });
+    });
+    return rows;
   }
 
   // Resource-Assignment — room availability rows for the CURRENT period from the host-injected signed
@@ -108,11 +135,18 @@
     var h = HBA();
     if (_storeysBound || !h.L || !h.L.bindStoreys || !A || typeof A.dbQuery !== 'function') return;
     try {
-      var rows = A.dbQuery("SELECT s.guid, p.name FROM spatial_structure s LEFT JOIN spatial_structure p "
+      var rows = A.dbQuery("SELECT s.guid, p.name, s.predefined_type FROM spatial_structure s LEFT JOIN spatial_structure p "
         + "ON s.parent_guid=p.guid AND p.type='IfcBuildingStorey' WHERE s.type='IfcSpace'");
       var map = {}; (rows || []).forEach(function (r) { if (r[0] && r[1]) map[r[0]] = r[1]; });
       h.L.bindStoreys(map); _storeysBound = true;
       console.log('§HBA_STOREY bound ' + Object.keys(map).length + ' rooms→storey from model');
+      // §CLASS facet — map a REAL IfcSpace predefined_type → our use-class (extracted, non-invent). Only a
+      // genuine IfcSpaceTypeEnum use-class counts; INTERNAL/EXTERNAL/COMPILED/NOTDEFINED/USERDEFINED are NOT a
+      // use-class → skipped (the class then falls back to the declared lease unit_class). HHS = all INTERNAL.
+      var CLS = { RESIDENTIAL: 'residential', OFFICE: 'office', COMMERCIAL: 'commercial', RETAIL: 'commercial', SHOP: 'commercial' };
+      var sc = {}; (rows || []).forEach(function (r) { var pt = (r[2] || '').toUpperCase(); if (CLS[pt]) sc[r[0]] = CLS[pt]; });
+      A._hbaSpaceClass = sc;
+      if (Object.keys(sc).length) console.log('§HBA_CLASS mapped ' + Object.keys(sc).length + ' rooms→use-class from model predefined_type');
       // stash the real rooms + seed a (watermarked, demonstrator) occupancy ledger so the Occupancy lens +
       // Dashboard pane have data on a building that carries rooms. ADDITIVE: sets only A._hba* fields.
       var rooms = Object.keys(map).map(function (g) { return { guid: g, storey: map[g] }; });
@@ -148,7 +182,9 @@
       ? h.O.computePresence(presenceRows(A), { knownGuids: A.guidMap, period: period(A) })
       : (mode === 'occupancy')                                                  // Resource-Assignment — same seam
         ? h.O.computeOccupancy(occupancyRows(A), { knownGuids: A.guidMap, period: period(A) })
-        : h.O.computeOverlay(mode, period(A), { knownGuids: A.guidMap });        // non-invent gate (all paths)
+        : (mode === 'class')                                                     // §CLASS facet — same seam
+          ? h.O.computeClassOverlay(classRows(A), { knownGuids: A.guidMap, classFilter: A._hbaClassFilter || null })
+          : h.O.computeOverlay(mode, period(A), { knownGuids: A.guidMap });      // non-invent gate (all paths)
     _port = buildMeshPort(A, { ghost: false });
     var n = h.O.applyOverlay(_port, plan);
     _active = mode;
@@ -187,7 +223,7 @@
     clearInterval(_poll);
     bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
     var acts = G._mainPillActions || [], on = { hbaTenancy: detect(A, 'tenancy'), hbaIot: detect(A, 'maintenance'),
-      hbaOccupancy: detect(A, 'occupancy'), hbaPresence: detect(A, 'presence'),
+      hbaOccupancy: detect(A, 'occupancy'), hbaPresence: detect(A, 'presence'), hbaClass: detect(A, 'class'),
       hbaDash: !!(G.HBADashPane && G.HBADashPane.detect(A)) };
     var any = false;
     for (var i = 0; i < acts.length; i++) {
@@ -196,6 +232,7 @@
     if (any && A._buildPill) A._buildPill();
     console.log('§HBA_GATE tenancy=' + (on.hbaTenancy ? 'on' : 'off') + ' iot=' + (on.hbaIot ? 'on' : 'off')
       + ' occupancy=' + (on.hbaOccupancy ? 'on' : 'off') + ' presence=' + (on.hbaPresence ? 'on' : 'off')
-      + ' dash=' + (on.hbaDash ? 'on' : 'off') + ' (guidMap=' + Object.keys(A.guidMap).length + ')');
+      + ' class=' + (on.hbaClass ? 'on' : 'off') + ' dash=' + (on.hbaDash ? 'on' : 'off')
+      + ' (guidMap=' + Object.keys(A.guidMap).length + ')');
   }, 500);
 })();

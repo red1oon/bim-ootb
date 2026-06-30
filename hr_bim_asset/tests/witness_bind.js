@@ -41,13 +41,14 @@ ok('B4-honest-unlinked', bound[0].linked === true && bound[0].status === 'linked
 //   Inject a fake-guid lease, then gate the overlay by the real room set → fake stays unlinked.
 var saved = M.MODELS.Tenancy.records.slice();
 M.MODELS.Tenancy.records = saved.concat([{ lease_no: 'L-FAKE', unit_guid: FAKE, tenant: 'BP-X', rent: 1, term_start: '2026-01', term_end: '2026-12' }]);
+var realN = saved.length;                                                       // real leases (all resolve in FX)
 var planUngated = O.computeOverlay('tenancy', '2026-06');                       // legacy path: tints everything
 var planGated = O.computeOverlay('tenancy', '2026-06', { knownGuids: FX });     // gated: only real units tint
 M.MODELS.Tenancy.records = saved;                                              // restore (zero residue)
-ok('B5-gate-tints-real-only', planUngated.linked.length === 2
-  && planGated.linked.length === 1 && planGated.linked[0] === leaseGuid
+ok('B5-gate-tints-real-only', planUngated.linked.length === realN + 1
+  && planGated.linked.length === realN && planGated.linked.indexOf(leaseGuid) >= 0
   && planGated.unlinked.indexOf(FAKE) >= 0,
-  'gated overlay tints ONLY the real-guid unit (1 of 2); the fabricated guid is honestly un-linked, never tinted');
+  'gated overlay tints ONLY the real-guid units (' + realN + ' of ' + (realN + 1) + '); the fabricated guid is honestly un-linked, never tinted');
 
 // B6 — enrich pulls REAL room meta (name + occupancy from rel_contained_in_space) — extracted, not invented.
 var enriched = B.enrich(B.bindRecords([{ lease_no: 'L-0001', unit_guid: leaseGuid }], FX), FX)[0];

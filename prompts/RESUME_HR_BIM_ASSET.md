@@ -94,9 +94,17 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
 `safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave access
-occupancy request dashboard dashpane presspane; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18
-· VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 ·
-ACCESS 13 · OCC 21 · REQ 15 · DASH 7 · DASHPANE 8 · **PRESPANE 10**. (15 witnesses, all GREEN.)
+occupancy request dashboard dashpane presspane class; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA:
+ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE
+13 · ACCESS 13 · OCC 21 · REQ 15 · DASH 7 · DASHPANE 8 · **PRESPANE 10** · **CLASS 9**. (16 witnesses, all GREEN.)
+
+**⚠ COORDINATION (user 2026-07-01):** another active session — the **Teams overlay** lane (`lane/teams-overlay`,
+worktree `/tmp/wt-redpill`) — also targets **HHS** for its overlay + Find-panel lens. Verified NO collision:
+Teams keeps everything in `teams/` (self-mounts its own `teams_pill.js`, does NOT touch `viewer/panels.js`) and
+paints DOM dots (`dot_layer.js`), while HBA tints **mesh emissive** via the MeshPort + adds pills to `panels.js`.
+Different seams → they coexist on HHS at runtime; no git conflict. **Keep it that way:** HBA pills stay additive
+in `panels.js` (on any future merge, KEEP BOTH lanes' additions — panels.js is the conflict magnet); HBA overlays
+stay on the emissive MeshPort with restore-on-off; never grab Teams' DOM nodes.
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
@@ -332,10 +340,29 @@ slice). This wires it following the EXACT data-gated pattern of `hbaTenancy`/`hb
   building classes; nothing class-specific to build for the lens itself.
 **W-HBA-PRESPANE 10/10 PASS.** Witness file `hr_bim_asset/tests/witness_presspane.js`; add `presspane` to the
 suite loop. **Open (like #2b):** observe the pill/tint in a real browser (live-3D smoke) — node-witnessed via
-stub DOM here. **⛔ ONE user decision (cannot extract):** do you want **building-class (residential / commercial
-/ office)** surfaced as a DISTINCT lens facet — e.g. color/filter units by class, or a per-class occupancy KPI on
-the dashboard? That needs a `class`/`unit_type` field on the space/tenancy record (an IfcSpace ObjectType read or
-a seed column) — the lens engine is already agnostic, so this is a labeling/faceting choice, not a new engine.
+stub DOM here.
+
+### §CLASS — color/filter units by building-use class ✅ DONE 2026-07-01 (`W-HBA-CLASS 9/9`)
+**Decision (user 2026-07-01):** "Yes — color/filter by class." **Non-invent finding:** HHS carries NO real
+IfcSpace use-class — every `IfcSpace` is `object_type='COMPILED'`, `predefined_type='INTERNAL'`, generic names.
+So class CANNOT be extracted from this model; the honest source is the **seed column** the chosen option
+anticipated. Built:
+- `models.js` — added a declared `unit_class` field to Tenancy + **3 demonstrator leases** over REAL HHS room
+  guids: `L-0001` office (RM_Level_1_1) · `L-0002` commercial (RM_Level_1_3) · `L-0003` residential
+  (RM_Level_1_4). DECLARED business data (CONTOH/SAMPLE watermark), real guids — NOT a geometric claim.
+- `overlay.js` — `CLASS` palette (residential/commercial/office + grey unclassified) + `computeClassOverlay`
+  (color by class; `classFilter` = the FILTER facet → tint ONLY one class; same plan shape → reuses MeshPort).
+- `viewer/hba_lens.js` — `classRows`/`classOf` resolver (PRIORITY: real model `predefined_type` → declared
+  `unit_class` → `unclassified`, never guessed; HHS falls to declared) + `'class'` lens mode + `hbaClass`
+  data-gate + a model→use-class map from `predefined_type` (only genuine IfcSpaceTypeEnum counts).
+- `panels.js` — additive data-gated `hbaClass` pill (Lucide `layers`), `fn → HBALens.toggle(A,'class')`.
+**Witness W-HBA-CLASS 9/9** (`hr_bim_asset/tests/witness_class.js`): resolver priority (model wins over declared;
+strata→unclassified; unreferenced unit untouched) · palette color + deterministic · classFilter tints one class ·
+gate (unresolved→unlinked) · toggle restore (zero residue) · data-gate · static wiring · declared field +
+watermark. **NOTE:** adding 2 leases updated `witness_view` V1 + `witness_bind` B5 (were hardcoded to "exactly 1
+lease" → now assert against the real record count). **Filter UX:** the engine takes `A._hbaClassFilter`; a class
+dropdown/chip in the pill UI is a later browser bite. **Open (like #2b):** observe the class colors in a live 3D
+browser.
 
 ---
 
