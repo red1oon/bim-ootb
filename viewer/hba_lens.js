@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -71,6 +71,12 @@
       for (var j = 0; j < rows.length; j++) if (h.B.resolveGuid(rows[j].zone, A.guidMap)) return true;
       return false;
     }
+    if (mode === 'occupancy') {                               // Resource-Assignment — gate on a located room op
+      if (!h.OC) return false;
+      var orows = occupancyRows(A);
+      for (var k = 0; k < orows.length; k++) if (h.B.resolveGuid(orows[k].zone, A.guidMap)) return true;
+      return false;
+    }
     var recs = mode === 'maintenance' ? h.M.records('Asset') : h.M.records('Tenancy');
     var field = mode === 'maintenance' ? 'bim_guid' : 'unit_guid';
     for (var i = 0; i < recs.length; i++) if (h.B.resolveGuid(recs[i][field], A.guidMap)) return true;
@@ -84,6 +90,15 @@
     if (!h.A || !A) return [];
     var log = A._hbaAttendanceLog || [];
     return h.A.presenceByZone(log, period(A));
+  }
+
+  // Resource-Assignment — room availability rows for the CURRENT period from the host-injected signed
+  // occupancy log (A._hbaOccupancyLog). Honest empty when no log/engine present.
+  function occupancyRows(A) {
+    var h = HBA();
+    if (!h.OC || !A) return [];
+    var log = A._hbaOccupancyLog || [];
+    return h.OC.lensRows(log, period(A));
   }
 
   // bind the Find-lens storey index from the LIVE model (rooms→IfcBuildingStorey) so density dots use real
@@ -116,7 +131,9 @@
     var h = HBA();
     var plan = (mode === 'presence')                                            // §T&A SLICE-2 — reuse the SAME seam
       ? h.O.computePresence(presenceRows(A), { knownGuids: A.guidMap, period: period(A) })
-      : h.O.computeOverlay(mode, period(A), { knownGuids: A.guidMap });          // non-invent gate (both paths)
+      : (mode === 'occupancy')                                                  // Resource-Assignment — same seam
+        ? h.O.computeOccupancy(occupancyRows(A), { knownGuids: A.guidMap, period: period(A) })
+        : h.O.computeOverlay(mode, period(A), { knownGuids: A.guidMap });        // non-invent gate (all paths)
     _port = buildMeshPort(A, { ghost: false });
     var n = h.O.applyOverlay(_port, plan);
     _active = mode;

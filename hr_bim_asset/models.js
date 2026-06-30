@@ -39,6 +39,18 @@ var MODELS = {
     // (NON-INVENT: the asset binds to actual geometry; the maintenance timeline is derived from next_due+pm_cycle).
     records: [{ asset: 'AHU-03', bim_guid: '04i7IlvuLBuOmBXGMxmbgo', iot_device: 'IOT-AHU03-TEMP', category: 'HVAC',
                 operator: 'BP-OPR-1', vendor: 'BP-VEND-1', personnel: 'EMP002', pm_cycle: 'monthly', next_due: '2026-07' }]
+  },
+  Occupancy: {
+    table: 'S_ResourceAssignment', label: 'Room Occupancy / Availability', doc_type: 'RESOURCE_ASSIGNMENT',
+    // iDempiere Resource-Assignment: the ROOM is a Resource (IS-A M_Product); an assignment books it over a
+    // date range. This is the AD shape only — the LIVE availability is a REPLAY of occupancy.js's signed
+    // ASSIGN/RELEASE/UNAVAIL op-log over the 14 REAL HHS rooms. assign_to=null → open-ended.
+    fields: [{ name: 'assignment_no', type: 'id' }, { name: 's_resource', type: 'bim_ref' }, { name: 'resource_product', type: 'product' },
+             { name: 'party', type: 'party' }, { name: 'assign_from', type: 'period' }, { name: 'assign_to', type: 'period' }, { name: 'qty', type: 'number' }],
+    // s_resource = a REAL HHS IfcSpace room (≈ Level 1 R1); the occupancy graph over the other rooms is seeded
+    // by occupancy.demoSeed(rooms) from fixtures/hhs_rooms.json (NON-INVENT: vacancy = absence of an assignment).
+    records: [{ assignment_no: 'RA-0001', s_resource: 'RM_Level_1_1', resource_product: 'ROOM-RM_Level_1_1',
+                party: 'BP-TEN-1', assign_from: '2026-01', assign_to: '2026-12', qty: 1 }]
   }
 };
 

@@ -11,7 +11,7 @@ var M = _r ? require('./models') : _g.HbaModels;
 var B = _r ? require('./binding') : _g.HbaBinding;
 
 // color ladder — state-encoding (no labels needed). green/amber/red/grey + ghost.
-var COLORS = { occupied: '#2e7d32', vacant: '#9e9e9e', expiring: '#f9a825',
+var COLORS = { occupied: '#2e7d32', vacant: '#9e9e9e', expiring: '#f9a825', unavailable: '#8e24aa',
                ok: '#2e7d32', due: '#f9a825', overdue: '#c62828', ghost: '#dddddd' };
 
 // PRESENCE density ramp (§T&A SLICE-2) — headcount INTENSITY (blue, the HBA presence band). The live
@@ -68,6 +68,24 @@ function computePresence(rows, opts) {
            unlinked: unlinked, legend: [ { state: '1', color: PRESENCE.low }, { state: '2-4', color: PRESENCE.med }, { state: '5+', color: PRESENCE.high } ] };
 }
 
+// OCCUPANCY overlay plan (Resource-Assignment slice) from occupancy.lensRows ([{zone, state, party, to}]).
+// SAME plan shape as computeOverlay → applyOverlay reuses the EXISTING MeshPort seam. Unlike tenancy/presence
+// this is DENSE on purpose — vacant rooms are tinted grey (the availability picture wants the whole floor).
+// NON-INVENT: opts.knownGuids GATES — a room tints ONLY when it resolves to a real mesh; else unlinked.
+function computeOccupancy(rows, opts) {
+  opts = opts || {}; var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  var tints = {}, unlinked = [];
+  (rows || []).forEach(function (r) {
+    if (!r || !r.zone) return;
+    if (gate && !gate.has(r.zone)) { unlinked.push(r.zone); return; }
+    var st = r.state || 'vacant';
+    tints[r.zone] = { state: st, color: COLORS[st] || COLORS.vacant, party: r.party || null,
+      detail: 'Room ' + r.zone + ' · ' + st + (r.party ? ' · ' + r.party : '') + (r.to ? ' · to ' + r.to : '') };
+  });
+  return { mode: 'occupancy', period: opts.period || null, tints: tints, linked: Object.keys(tints), unlinked: unlinked,
+    legend: ['occupied', 'vacant', 'expiring', 'unavailable'].map(function (s) { return { state: s, color: COLORS[s] }; }) };
+}
+
 // apply via the MeshPort SEAM only. port = { allGuids(), setTint(guid,color), setGhost(guid), restoreAll() }.
 function applyOverlay(port, plan) {
   port.restoreAll();                                    // clear any prior mode FIRST (no stacked colors)
@@ -81,6 +99,6 @@ function applyOverlay(port, plan) {
 function clearOverlay(port) { port.restoreAll(); }       // toggle OFF = full restore, zero residue
 
 var O = { COLORS: COLORS, PRESENCE: PRESENCE, presenceBucket: presenceBucket, computeOverlay: computeOverlay,
-          computePresence: computePresence, applyOverlay: applyOverlay, clearOverlay: clearOverlay };
+          computePresence: computePresence, computeOccupancy: computeOccupancy, applyOverlay: applyOverlay, clearOverlay: clearOverlay };
 if (typeof module === 'object' && module.exports) module.exports = O;
 else (typeof self !== 'undefined' ? self : this).HbaOverlay = O;
