@@ -73,9 +73,10 @@ that cross-tabs against a **phase-dependent spine**:
 - **SURFACE OWNERSHIP (refined 2026-07-01): the axis is AUTHOR vs CONSUME, not strictly time vs space.**
   - **Modeller = AUTHORING ONLY** (confined to traditional BIM authoring): creates geometry/structure AND
     **authors the 4D-Phase + 5D-cost data into the DB**. Opening a DB under the **Modeller lens reveals the deeper
-    4D/5D** authoring depth. The Modeller HOSTS its own History — the **What-If / Blue-dot timeline** (git-style
-    parallel branching + merge-back across users over the kernel oplog `branch_id`, BLUE FUTURE) — but NOT the
-    *linear 4D/5D Time-Machine playback* (that's the Viewer). Branching-speculative ≠ linear-realized.
+    4D/5D** authoring depth. The Modeller HOSTS a **DESIGN What-If / Blue-dot History** (git branching + merge-back
+    across users over the oplog `branch_id`, BLUE FUTURE — "you build that wing, I build this") — but NOT the *4D-Gantt
+    Time-Machine playback* (that's the Viewer). NB the Viewer runs the SAME context-free git engine on SCHEDULE/PERT
+    ops (see the THREE-TIMELINES note, ③); Blue-dot is universal, only its op-vocabulary + merge GATE are per-context.
   - **Viewer = CONSUME / HANDOFF / BACKOFFICE-ADMIN + operate.** The **Time Machine = the 4D Gantt-chart schedule
     playback specifically** (a SEPARATE timeline, tasks×calendar), and it STAYS in the Viewer, NOT the Modeller
     (decided 2026-07-01) — the user authors in the Modeller, then SWITCHES to the Viewer as the handoff/review/admin
@@ -85,9 +86,13 @@ that cross-tabs against a **phase-dependent spine**:
   - **THREE DISTINCT TIMELINES — DO NOT CONFLATE (clarified 2026-07-01):** ① **4D Gantt — Time Machine**
     (tasks×calendar, the construction *schedule*; Viewer playback). ② **Kernel oplog — World/History** (ops×log-order,
     who/what/when *events*; the Teams CORE — blame · World-at-T · replay; a substrate on BOTH surfaces). ③ **What-If —
-    Blue dot** (git-style branches+merge over the oplog `branch_id`/BLUE FUTURE; Modeller authoring; the flagship
-    oplog showcase, W-GATE-CROSS-BRANCH 11/11). The Teams World/History (②) is its OWN event timeline — NOT the 4D
-    Gantt (①). It UNDERPINS the Modeller Blue-dot (③, authoring) and serves World-at-T review; it is not the Time Machine.
+    Blue dot** (git-style branches+merge over the oplog `branch_id`/BLUE FUTURE; the flagship oplog showcase,
+    W-GATE-CROSS-BRANCH 11/11). **③ is CONTEXT-FREE GIT — it runs on BOTH surfaces; only the op-vocabulary + merge
+    GATE differ:** Modeller = **DESIGN** branching ("you build that wing, I build this, join up"); Viewer = **SCHEDULE/
+    PERT** branching ("construct this first? delay? resequence?"). The branch/merge/diff/blame machinery is UNIVERSAL
+    git; the per-context plug-in is the **merge GATE** (spatial-join clash ↔ PERT dependency/resource conflict). The
+    Teams World/History (②) is its OWN event timeline — NOT the 4D Gantt (①). It UNDERPINS the Blue-dot (③) on both
+    surfaces and serves World-at-T review; it is not the Time Machine.
 - **Design / build — 4D construction** (Modeller Outliner, `bonsai_outliner.js`; Product/Project hat; building =
   **BIM: Hospital** `C_Project 990000`) → spine = **Project → Task/Element**, team grouped by **Discipline**
   (ARC/STR/MEP crews — `disc*` icons already exist), **inherently PHASED** (the Modeller has 4D, so the construction
