@@ -14,6 +14,12 @@ var B = _r ? require('./binding') : _g.HbaBinding;
 var COLORS = { occupied: '#2e7d32', vacant: '#9e9e9e', expiring: '#f9a825',
                ok: '#2e7d32', due: '#f9a825', overdue: '#c62828', ghost: '#dddddd' };
 
+// PRESENCE density ramp (§T&A SLICE-2) — headcount INTENSITY (blue, the HBA presence band). The live
+// "density-dots" become a headcount-by-zone heat: 1 → low, 2–4 → med, 5+ → high. Display mapping only;
+// the headcount itself is a REAL distinct-employee count from the signed log (never fabricated).
+var PRESENCE = { low: '#90caf9', med: '#1976d2', high: '#0d47a1' };
+function presenceBucket(n) { return n >= 5 ? 'high' : n >= 2 ? 'med' : 'low'; }
+
 function monthDiff(from, to) { var a = from.split('-'), b = to.split('-'); return (b[0] - a[0]) * 12 + (b[1] - a[1]); }
 
 // compute the overlay PLAN for ONE mode — LINKED guids only (sparse by construction).
@@ -44,6 +50,24 @@ function computeOverlay(mode, period, opts) {
            legend: legend.map(function (s) { return { state: s, color: COLORS[s] }; }) };
 }
 
+// PRESENCE overlay plan (§T&A SLICE-2) from attendance.presenceByZone rows ([{zone, headcount}]). SAME plan
+// shape as computeOverlay → applyOverlay reuses the EXISTING MeshPort/density seam (zero new viewer-core).
+// NON-INVENT: opts.knownGuids GATES — a zone tints ONLY when it resolves to a real mesh; un-located zones go
+// to `unlinked`, never tinted, never fabricated. Zero/empty headcount shows nothing. Pure + deterministic.
+function computePresence(rows, opts) {
+  opts = opts || {}; var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  var tints = {}, unlinked = [];
+  (rows || []).forEach(function (r) {
+    if (!r || !r.zone || !r.headcount) return;                     // nothing present → nothing to show
+    if (gate && !gate.has(r.zone)) { unlinked.push(r.zone); return; }  // honest un-linked: no tint
+    var b = presenceBucket(r.headcount);
+    tints[r.zone] = { state: 'presence_' + b, color: PRESENCE[b], headcount: r.headcount,
+                      detail: 'Zone ' + r.zone + ' · ' + r.headcount + ' present' };
+  });
+  return { mode: 'presence', period: opts.period || null, tints: tints, linked: Object.keys(tints),
+           unlinked: unlinked, legend: [ { state: '1', color: PRESENCE.low }, { state: '2-4', color: PRESENCE.med }, { state: '5+', color: PRESENCE.high } ] };
+}
+
 // apply via the MeshPort SEAM only. port = { allGuids(), setTint(guid,color), setGhost(guid), restoreAll() }.
 function applyOverlay(port, plan) {
   port.restoreAll();                                    // clear any prior mode FIRST (no stacked colors)
@@ -56,6 +80,7 @@ function applyOverlay(port, plan) {
 }
 function clearOverlay(port) { port.restoreAll(); }       // toggle OFF = full restore, zero residue
 
-var O = { COLORS: COLORS, computeOverlay: computeOverlay, applyOverlay: applyOverlay, clearOverlay: clearOverlay };
+var O = { COLORS: COLORS, PRESENCE: PRESENCE, presenceBucket: presenceBucket, computeOverlay: computeOverlay,
+          computePresence: computePresence, applyOverlay: applyOverlay, clearOverlay: clearOverlay };
 if (typeof module === 'object' && module.exports) module.exports = O;
 else (typeof self !== 'undefined' ? self : this).HbaOverlay = O;

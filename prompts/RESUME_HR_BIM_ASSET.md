@@ -25,11 +25,15 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 ## §RESUME — new-session handoff (2026-06-30)
 
 > **▶ NEW SESSION START HERE.** Branch `lane/hr-overlay` (worktree `/tmp/wt-hr`), all pushed, suite GREEN
-> (7 witnesses, see below). Last session shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D
-> timeline (#4c), real storey derivation, §WATERMARK 19/19, and **Time & Attendance slice-1** (signed spatial
-> check-in engine). **▶ NEXT BITE (pick one):**
-> 1. **T&A slice-2 — viewer presence lens:** render `attendance.presenceByZone` headcount on the model via the
->    EXISTING density-dots seam in `viewer/hba_lens.js` (reuse, zero new viewer-core). Node-witnessable.
+> (**8 witnesses**, see below). Last session shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D
+> timeline (#4c), real storey derivation, §WATERMARK 19/19, **Time & Attendance slice-1** (signed spatial
+> check-in engine), and **T&A slice-2 — viewer presence lens** (just landed). **▶ NEXT BITE (pick one):**
+> 1. ✅ **DONE — T&A slice-2 viewer presence lens** (`overlay.computePresence` + `viewer/hba_lens.js` `presence`
+>    mode, **W-HBA-PRES 14/14**). `attendance.presenceByZone` headcount folds to a blue density ladder (1→low /
+>    2-4→med / 5+→high) that RIDES the EXISTING `applyOverlay` MeshPort seam — zero new viewer-core; one-mode,
+>    restore-on-off, render-side non-invent gate (un-located zone → un-linked, never tinted). Sourced from the
+>    host-injected signed log `A._hbaAttendanceLog`. **Open sub-item (like #2b): live 3D pill toggle + browser
+>    smoke** — no pill icon wired yet (panels.js untouched this slice); engine + adapter path are node-witnessed.
 > 2. **Leave/Absence** (★★★★ T1) — accrual=op, balance=replay, feeds payroll. New engine slice + witness.
 > 3. **T&A access** — signed capability token over a zone (W-SIGN), reader verifies offline.
 > ⛔ Still need a USER decision/dependency: #2b live 3D browser smoke · #3 ERP dotted lines (ERP must load) ·
@@ -38,9 +42,9 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 **Module = HR_BIM_Asset** (NOT "Payroll" — payroll is just RUN profile #1). Lives in **bim-ootb ONLY**:
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
-`safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance; do node
+`safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence; do node
 hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 ·
-WATERMARK 9 (19/19 surfaces) · ATTEND 8.
+WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14.
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**

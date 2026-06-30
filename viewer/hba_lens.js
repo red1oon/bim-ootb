@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -64,10 +64,26 @@
   // in the loaded building? Drives whether the pill icon appears at all (no data → no icon, no clutter).
   function detect(A, mode) {
     if (!ready() || !A || !A.guidMap) return false;
-    var h = HBA(), recs = mode === 'maintenance' ? h.M.records('Asset') : h.M.records('Tenancy');
+    var h = HBA();
+    if (mode === 'presence') {                                // §T&A SLICE-2 — gate on a real, located check-in
+      if (!h.A) return false;
+      var rows = presenceRows(A);
+      for (var j = 0; j < rows.length; j++) if (h.B.resolveGuid(rows[j].zone, A.guidMap)) return true;
+      return false;
+    }
+    var recs = mode === 'maintenance' ? h.M.records('Asset') : h.M.records('Tenancy');
     var field = mode === 'maintenance' ? 'bim_guid' : 'unit_guid';
     for (var i = 0; i < recs.length; i++) if (h.B.resolveGuid(recs[i][field], A.guidMap)) return true;
     return false;
+  }
+
+  // §T&A SLICE-2 — presence rows for the CURRENT period from the host-injected signed attendance log
+  // (A._hbaAttendanceLog; seam, not a viewer-core dependency). Honest empty when no log/engine present.
+  function presenceRows(A) {
+    var h = HBA();
+    if (!h.A || !A) return [];
+    var log = A._hbaAttendanceLog || [];
+    return h.A.presenceByZone(log, period(A));
   }
 
   // bind the Find-lens storey index from the LIVE model (rooms→IfcBuildingStorey) so density dots use real
@@ -98,7 +114,9 @@
     if (_port) { _port.restoreAll(); _port = null; }            // clear prior mode first (one mode at a time)
     if (_active === mode) { _active = null; console.log('§HBA_LENS off mode=' + mode); if (A.markDirty) A.markDirty(); return false; }
     var h = HBA();
-    var plan = h.O.computeOverlay(mode, period(A), { knownGuids: A.guidMap });   // non-invent gate
+    var plan = (mode === 'presence')                                            // §T&A SLICE-2 — reuse the SAME seam
+      ? h.O.computePresence(presenceRows(A), { knownGuids: A.guidMap, period: period(A) })
+      : h.O.computeOverlay(mode, period(A), { knownGuids: A.guidMap });          // non-invent gate (both paths)
     _port = buildMeshPort(A, { ghost: false });
     var n = h.O.applyOverlay(_port, plan);
     _active = mode;
