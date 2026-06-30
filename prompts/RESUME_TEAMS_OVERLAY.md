@@ -28,6 +28,7 @@ preamble until Phase F is `✅ DONE` or this file is retired.
 # in a fresh worktree off origin/main-merged lane/teams-overlay:
 node teams/tests/run_all.js            # 20 node witness files — must be ✅ ALL PASS
 node teams/tests/wire_teams_pill.js    # W-TEAM-WIRE 4/4 (Playwright/chromium)
+node erp/tests/wire_teams_embed.js     # W-EMBED-WIRE 4/4 (the production-chrome embed: OFF pixel-identical · ON mounts)
 ```
 - **sql.js / WebCrypto shim:** the ERP-side node witnesses (`poc_teams_erp_*`, `poc_teams_phase_d`,
   `poc_teams_my_work`, `poc_teams_erp_sync`) drive the REAL `erp/` modules in node. They self-shim
@@ -78,11 +79,28 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
   This is the slice the user is waiting on.** Witness **W-XPRESENCE**. *(S10 + S12 — the two zero-BIM-risk Phase-F
   slices — are done; S11 is all that's left in Phase F, plus the gated embed below.)*
 
-### Gated follow-up (separate from Phase F, needs EXPLICIT GO + full-app verification)
-- **Land the Teams pill into PRODUCTION `erp/kanban_host.js` chrome.** The launcher (`overlay/teams_pill.js`)
-  is proven standalone (§S9, §P5); the line-edit into the live iDempiere chrome is intentionally NOT done —
-  it needs the full-app harness (unavailable in this env) + a `sw.js` `CACHE_VERSION` bump + the
-  no-overwrite deploy discipline. Off-by-default → inert when off, but verify in the real app before shipping.
+### Gated embed — ✅ CODE-LANDED + in-app verified (2026-06-30, user GO); remaining = live data + deploy
+- **The Teams pill is now embedded into PRODUCTION `erp/idempiere.html` chrome** — flag-guarded, additive:
+  - `erp/teams_embed.js` (NEW) — ONE inert guarded bootstrap. OFF (default) → `init()` returns immediately,
+    NO pill/pane/module-fetch = **pixel-identical**. ON (`localStorage.teamsEmbed='1'` | `?teams=1`) → it
+    lazy-loads the proven `teams/` trio (dot_layer/erp_optics/teams_pill) + mounts the **distinct** Teams pill
+    INTO the live `#idmp-pill` bar; the pane folds a host-provided read-only op-log (`window.TeamsEmbedOps()`),
+    absent → an honest empty pane (NON-INVENT). Reversible.
+  - `erp/idempiere.html` — 2 additive guarded lines: `<script src="teams_embed.js?v=1">` + a flag-guarded
+    `TeamsEmbed.init({header:#idmp-pill})` right after `IdmpPills.mount()`. `erp/sw.js` bumped `v755→v756`
+    + precache `teams_embed.js`.
+  - **Witness `erp/tests/wire_teams_embed.js` (W-EMBED-WIRE 4/4, chromium)** over a minimal host fixture:
+    OFF=no pill + no module fetch + header byte-identical · ON=pill mounts into `#idmp-pill` (lens pill intact,
+    no redpill/zoom collision) · pane folds the host ops (involvement + dots) · reversible.
+  - **In-app smoke (real `erp/idempiere.html`, headless chromium):** OFF → `TeamsEmbed` defined, `isEnabled()=false`,
+    no `#teams-pill`, **0 teams-attributable console/page errors**. ON (`?teams=1`) → deps lazy-loaded, distinct
+    `#teams-pill` mounted with `parentNode==#idmp-pill`. (Exceeded the "harness unavailable" caveat — the bar
+    mounted in-env.)
+- **REMAINING (the user runs these):** (1) wire `window.TeamsEmbedOps()` to fold the LIVE signed `kernel_ops`
+  log into the shape `{id,ts,author,role,cls,verb,target}` (left unwired — needs the live projection schema
+  confirmed in the real app; NON-INVENT, no schema guessing) — until then the pane shows the honest empty state;
+  (2) optional `rowSelector`/`docOf` so row-dots paint on idempiere's real grid rows; (3) **deploy to production**
+  (OCI/gh-pages) only with the no-overwrite deploy discipline + a human eyes-on check — NOT done here (outward-facing).
 
 ## 4. Deploy notes (when a slice ships a live page)
 - Push branch → GitHub-raw serves the source automatically. For a renderable page, **OCI** is the target:
