@@ -26,7 +26,7 @@ preamble until Phase F is `✅ DONE` or this file is retired.
 ## 1. FIRST — run the regression gate (§G), confirm green before any new work
 ```sh
 # in a fresh worktree off origin/main-merged lane/teams-overlay:
-node teams/tests/run_all.js            # 18 node witness files — must be ✅ ALL PASS
+node teams/tests/run_all.js            # 19 node witness files — must be ✅ ALL PASS
 node teams/tests/wire_teams_pill.js    # W-TEAM-WIRE 4/4 (Playwright/chromium)
 ```
 - **sql.js / WebCrypto shim:** the ERP-side node witnesses (`poc_teams_erp_*`, `poc_teams_phase_d`,
@@ -52,6 +52,7 @@ node teams/tests/wire_teams_pill.js    # W-TEAM-WIRE 4/4 (Playwright/chromium)
 | S7 | **the gate** — 2 default-off `erp/` hooks: `kernel_ops.setOpEmitter` (post-commit `TEAM_OP`) + `erp_seam` optional `scope`; teams-side `erp/op_subscribe.js` | W-EMIT+W-SCOPE 11/11 (byte-identical when off) |
 | S8 | `erp/erp_sync.js` — export/verify/import a `kernel_ops` branch over the transport; CAS shared masters | W-ERP-SYNC 7/7 |
 | S9 | `overlay/teams_pill.js` distinct 2-person launcher + standalone demo `demo/erp_teams_pill.html` | W-TEAM-WIRE 4/4 (chromium) |
+| S10 | `overlay/world_at_t.js` (re-fold prefix → record/world as-of T) + `erp/cosign.js` (maker-checker four-eyes + legal signoff) + `overlay/broadcast.js` (eligible-gated system-wide sticky) | W-WORLD-AT-T+COSIGN+BROADCAST 16/16 (`poc_teams_s10.js`) |
 
 **Deployed live (S9):** OCI dev bucket `…/o/teams-demo/demo/erp_teams_pill.html` (text/html; deps
 `text/javascript`) + GitHub-raw on `lane/teams-overlay`. Live chromium smoke green (OFF pixel-identical →
@@ -60,10 +61,12 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
 ## 3. OPEN / NEXT — Phase F (the differentiators) + the one gated embed
 **Pick up at `ROADMAP.md` Phase F.** Same recipe each slice: cite the spec → build additive in `teams/` →
 `§`-witness (logs read) → §G gate green → commit + push (0 local-only) → update `ROADMAP.md` + memory.
-- **S10 — World-at-T + maker-checker + broadcast.** Per-record fold-to-T (deterministic prefix replay, NOT
-  the flaky view-scrubber); two-signature POST/Approve carrying office legality (non-repudiation from the op
-  sig); broadcast = signed `annot` with a `broadcast` anchor. Witnesses **W-WORLD-AT-T / W-COSIGN / W-BROADCAST**.
-  *(All ERP-side / standalone — zero BIM risk; good next slice.)*
+- **S10 — World-at-T + maker-checker + broadcast.** ✅ **DONE** — `overlay/world_at_t.js` (re-fold a PREFIX →
+  record/world as-of T; `before(opId)` = blame→time) + `erp/cosign.js` (maker-checker four-eyes + legal signoff;
+  REFUSES self-approval/ineligible; `tampered` on a broken chain) + `overlay/broadcast.js` (eligible-gated
+  system-wide sticky; all/role/level targeting; ACK+REVOKE). All standalone pure folds, **zero erp/ edits**;
+  **W-WORLD-AT-T+COSIGN+BROADCAST 16/16** (`poc_teams_s10.js`; run_all 19/19). Engine-only, no new chrome
+  (like S5–S8). ⚠ a standalone `demo/` page for these three optics is an OPTIONAL follow-on if a surface is wanted.
 - **S11 — Cross-product BIM↔ERP unified presence (the moat).** One presence/identity fabric over the shared
   bus+facilitator; colour=signer across both products. **⚠ TOUCHES THE BIM SIDE — schedule ONLY when the
   Modeller session has settled (coordinate). This is the slice the user is waiting on.** Witness **W-XPRESENCE**.

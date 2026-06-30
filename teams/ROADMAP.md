@@ -2,9 +2,9 @@
 # Team overlay — implementation ROADMAP (session-by-session)
 
 > ▶ **NEW SESSION START HERE: [`prompts/RESUME_TEAMS_OVERLAY.md`](../prompts/RESUME_TEAMS_OVERLAY.md)** — fast-start +
-> handoff. **Phases A–E (S1–S9) ✅ DONE & witnessed; deployed live.** Remaining = **Phase F** (S10–S12) + the
-> gated production `kanban_host.js` pill embed. Run the §G gate first (`node teams/tests/run_all.js` = 18 green
-> + `wire_teams_pill.js` 4/4).
+> handoff. **Phases A–E (S1–S9) ✅ DONE & witnessed; deployed live. §S10 ✅ DONE (W-WORLD-AT-T+COSIGN+BROADCAST
+> 16/16).** Remaining = **Phase F** (S11–S12) + the gated production `kanban_host.js` pill embed. Run the §G gate
+> first (`node teams/tests/run_all.js` = 19 green + `wire_teams_pill.js` 4/4).
 >
 > The execution plan for [[DESIGN.md]] + [[ERP_CONTEXT.md]] + [[TEAM_OPTICS.md]] + [[IDEAS.md]]. Ordered so risk
 > rises slowly: **read-only/zero-impact first → standalone optics → ERP surfaces → the two guarded `erp/` runtime
@@ -85,10 +85,19 @@ ERP branch, verifies, replays to the **same projectionHash**). Live smoke on GH+
 **Team-OFF pixel-identical** check. EXPLICIT GO → deploy. Impact: chrome (flag-guarded; off = identical).
 
 ## Phase F — The differentiators (the "wow")
-**S10 · World-at-T (A) + maker-checker/legal signoff (C) + broadcast** — per-record fold-to-T (deterministic, distinct
-from the flaky view-scrubber); two-signature `POST`/`Approve` carrying office legality (flips `docStatus→Approved`,
-non-repudiation from the op sig); broadcast = signed `annot` w/ broadcast anchor. Witnesses **W-WORLD-AT-T**,
-**W-COSIGN**, **W-BROADCAST**.
+**S10 · World-at-T (A) + maker-checker/legal signoff (C) + broadcast** ✅ **DONE** (standalone, zero erp/ edits) —
+three Phase-F differentiators, each a pure deterministic fold of the ONE signed log:
+- `overlay/world_at_t.js` — re-FOLD a PREFIX of the log → any record/world **as-of T** (`prefix`/`worldAt`/`recordAt`/
+  `before`/`verifyAt`). Deterministic + exact (NOT the flaky view-scrubber); pairs with blame (`before(opId)` =
+  "this doc before Bob's edit"); a prefix of a valid chain still verifies.
+- `erp/cosign.js` — maker-checker four-eyes: maker `SUBMIT` + eligible **different** checker `APPROVE` on one doc
+  (matched by `params.group`) → `coSignState` flips to **Approved** + carries the legal signoff memo; REFUSES
+  self-approval + ineligible-role checker; `tampered` if the chain breaks (non-repudiation from the op sigs);
+  `requireCoSign(amount, threshold)` gates co-sign vs single `POST`.
+- `overlay/broadcast.js` — system-wide sticky = signed `annot` on the universal `broadcast` anchor; eligible-GATED
+  emit (ineligible throws, never minted); `all`/`role:<R>`/`level:<N>` targeting; ACK + admin REVOKE; `broadcastsFor`
+  filters to the viewer, unacked-first.
+Witness `teams/tests/poc_teams_s10.js` — **W-WORLD-AT-T 6/6 · W-COSIGN 6/6 · W-BROADCAST 4/4 = 16/16** (run_all 19/19).
 **S11 · Cross-product BIM↔ERP unified presence (B) — the moat** — one presence/identity fabric over the shared
 bus+facilitator; colour=signer across both products; a person's dot reads across BIM↔ERP. ⚠ touches BIM-side — additive
 + isolated, **only when the modeller has settled** (coordinate). Witness **W-XPRESENCE**.
