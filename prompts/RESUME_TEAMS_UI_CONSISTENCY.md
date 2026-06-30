@@ -73,15 +73,21 @@ that cross-tabs against a **phase-dependent spine**:
 - **SURFACE OWNERSHIP (refined 2026-07-01): the axis is AUTHOR vs CONSUME, not strictly time vs space.**
   - **Modeller = AUTHORING ONLY** (confined to traditional BIM authoring): creates geometry/structure AND
     **authors the 4D-Phase + 5D-cost data into the DB**. Opening a DB under the **Modeller lens reveals the deeper
-    4D/5D** authoring depth. It does NOT host playback widgets.
-  - **Viewer = CONSUME / HANDOFF / BACKOFFICE-ADMIN + operate.** The **Time Machine (4D/5D playback) STAYS in the
-    Viewer**, NOT the Modeller (decided 2026-07-01) — the user authors in the Modeller, then SWITCHES to the Viewer
-    as the handoff/review/admin surface. So Time Machine = a Viewer timeline-scrubber, no longer a Find-Panel
-    *facet*. **`Phase` is deprecated AS A FACET** (the pre-Modeller relic), but 4D/5D REVIEW lives on as the Viewer
-    Time Machine. The Find Panel keeps only SPACE/operate facets (Storey, Disc, Material) + operate lenses.
-  - **Teams tie-in:** the Teams **World/History** (World-at-T / replay, S10/S12) IS a *people-aware Time Machine* →
-    its playback belongs to the Viewer/consume side; authoring-side Teams = live Discipline presence/branches in the
-    Modeller. So even Teams splits author(live, Modeller) vs consume(World/History playback, Viewer).
+    4D/5D** authoring depth. The Modeller HOSTS its own History — the **What-If / Blue-dot timeline** (git-style
+    parallel branching + merge-back across users over the kernel oplog `branch_id`, BLUE FUTURE) — but NOT the
+    *linear 4D/5D Time-Machine playback* (that's the Viewer). Branching-speculative ≠ linear-realized.
+  - **Viewer = CONSUME / HANDOFF / BACKOFFICE-ADMIN + operate.** The **Time Machine = the 4D Gantt-chart schedule
+    playback specifically** (a SEPARATE timeline, tasks×calendar), and it STAYS in the Viewer, NOT the Modeller
+    (decided 2026-07-01) — the user authors in the Modeller, then SWITCHES to the Viewer as the handoff/review/admin
+    surface. So **`Phase` is deprecated as a Find-Panel FACET** (the pre-Modeller relic), but 4D schedule REVIEW
+    lives on as the Viewer's 4D-Gantt Time Machine. The Find Panel keeps only SPACE/operate facets (Storey, Disc,
+    Material) + operate lenses.
+  - **THREE DISTINCT TIMELINES — DO NOT CONFLATE (clarified 2026-07-01):** ① **4D Gantt — Time Machine**
+    (tasks×calendar, the construction *schedule*; Viewer playback). ② **Kernel oplog — World/History** (ops×log-order,
+    who/what/when *events*; the Teams CORE — blame · World-at-T · replay; a substrate on BOTH surfaces). ③ **What-If —
+    Blue dot** (git-style branches+merge over the oplog `branch_id`/BLUE FUTURE; Modeller authoring; the flagship
+    oplog showcase, W-GATE-CROSS-BRANCH 11/11). The Teams World/History (②) is its OWN event timeline — NOT the 4D
+    Gantt (①). It UNDERPINS the Modeller Blue-dot (③, authoring) and serves World-at-T review; it is not the Time Machine.
 - **Design / build — 4D construction** (Modeller Outliner, `bonsai_outliner.js`; Product/Project hat; building =
   **BIM: Hospital** `C_Project 990000`) → spine = **Project → Task/Element**, team grouped by **Discipline**
   (ARC/STR/MEP crews — `disc*` icons already exist), **inherently PHASED** (the Modeller has 4D, so the construction
