@@ -31,4 +31,5 @@ quick-push.sh
 BIM_CONTEXT/
 !erp/preview_demo.db
 !buildings/warehouse_gardenworld.db
+!buildings/HHS_Office_Federated_extracted.db
 

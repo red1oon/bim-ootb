@@ -476,7 +476,7 @@ var BUILDINGS={
   'LTU_AHouse':{db:'LTU_AHouse_extracted.db'},'Hospital':{db:'Hospital_extracted.db'},
   'Hospital_3':{db:'Hospital_3_extracted.db'},'Terminal':{db:'Terminal_extracted.db'},
   'Clinic':{db:'Clinic_extracted.db'},'Ifc4_Revit':{db:'Ifc4_Revit_extracted.db'},
-  'WBDG_Office':{db:'WBDG_Office_extracted.db'},'HHS_Office_Federated':{db:'HHS_Office_Federated_extracted.db'},
+  'WBDG_Office':{db:'WBDG_Office_extracted.db'},'HHS_Office_Federated':{db:'HHS_Office_Federated_extracted.db',gh:'https://red1oon.github.io/bim-ootb/'},
   'HITOS':{db:'HITOS_extracted.db'},'Esplanades':{db:'Esplanades_extracted.db'},
   'HospitalGarage':{db:'HospitalGarage_extracted.db'},'HospitalGarage_2':{db:'HospitalGarage_2_extracted.db'},
   'Schependomlaan':{db:'Schependomlaan_extracted.db'},'SampleCastle':{db:'SampleCastle_extracted.db'},
@@ -486,7 +486,8 @@ function openHub(){ document.getElementById('hub').classList.add('active'); buil
 function closeHub(){ document.getElementById('hub').classList.remove('active'); }
 function openBuilding(name){
   var bld=BUILDINGS[name]; if(!bld){ toast('No DB for '+name); return; }
-  var url='viewer/viewer.html?db='+_prodBase+'buildings/'+bld.db+'&ghost=1';   // same form as index.html openViewer
+  var base=bld.gh||_prodBase;   // §HBA: HHS_Office_Federated served from GH bim-ootb (gh override); others from OCI _prodBase
+  var url='viewer/viewer.html?db='+base+'buildings/'+bld.db+'&ghost=1';   // same form as index.html openViewer
   sfxPress(); L('§BUILDING_OPEN '+name+' → '+bld.db);
   try { if(window.WholeHistory && WholeHistory.record){ WholeHistory.record({ page:'viewer', label:name, kind:'nav' }); } } catch(e){}
   var win=window.open(url,'bim_'+name); if(!win){ location.href=url; }

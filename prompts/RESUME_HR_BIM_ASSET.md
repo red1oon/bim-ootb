@@ -6,7 +6,7 @@ GL-account posting and `C_BPartner.isEmployee`. Three pillars: (1) Glass-box Pay
 (2) Mobile signed-edge (check-in / access / signing), (3) Malaysian RegTech (E-Invoice/MyInvois +
 LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free demo only.
 
-**Status:** DESIGN DIALOGUE captured 2026-06-30 (3-turn user dialogue). NO CODE YET. Spec-first.
+**Status:** ALPHA FRAMEWORK BUILT + WITNESSED 2026-06-30, in **bim-ootb `hr_bim_asset/`** only. See §RESUME below.
 
 **Discipline (PRIME DIRECTIVE — Deterministic · Non-invent · Extract):**
 - **Regulatory facts are a NON-INVENT GATE.** No LHDN/EPF/PCB/MyInvois threshold, deadline, field
@@ -19,6 +19,35 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   (payslip, invoice, report, export, print) MUST carry the **locale-aware** watermark
   **`CONTOH — TIDAK RASMI`** (MS) / **`SAMPLE — NOT OFFICIAL`** (EN). Witnessed criterion, not a footnote.
 - Read the log after every run. Honour this block until the spec is DONE.
+
+---
+
+## §RESUME — new-session handoff (2026-06-30)
+
+**Module = HR_BIM_Asset** (NOT "Payroll" — payroll is just RUN profile #1). Lives in **bim-ootb ONLY**:
+`hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
+bim-compiler work. Witness: `node hr_bim_asset/tests/witness_run.js && node hr_bim_asset/tests/witness_view.js`.
+
+**DONE + witnessed:**
+- Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
+- 4 AD models, singular demo records (Tenancy/PropertyManagement/Strata/Asset); Asset = bim_guid↔iot + operator/vendor/personnel + schedule.
+- Spatial view (`overlay.js`+`lens.js`): 2 Find flaticon lenses (Tenancy=`users` blue-band · IoT=`cpu` · word-on-hover), storey density-dots, click→zoom→dummy→IFC-popup. Zero-impact (MeshPort/ScenePort seams). **W-HBA-VIEW 13/13.**
+- Watermark CONTOH/SAMPLE on every output. §BINDING (guid join + bim_orders_overlay inject). §CROSS-APP (Viewer·ERP·HR spine).
+
+**DEMO BUILDING:** `HHS_Office_Federated` (73MB, 6871 elems; HAS rooms — `rel_contained_in_space`, rooms
+`RM_Level_1_*`) copied into `bim-ootb/buildings/` (gitignore `!` exception) — **GH-served, NOT OCI**. Landing
+`index.html`: HHS entry carries `gh:'https://red1oon.github.io/bim-ootb/'`; `openBuilding` uses it → loads from
+GH bim-ootb. Other buildings untouched (OCI `_prodBase`).
+
+**NEXT (in order):**
+1. Bind a demo lease to a REAL HHS IfcSpace room guid (`RM_Level_1_*`) → Tenancy lens lights a real unit.
+   NON-INVENT: real guid, or the lens honestly shows un-linked.
+2. Viewer wire-in (the ONLY viewer-core touch): 2 `A.icon` buttons (`panels.js`) + MeshPort hook to `APP.guidMap`.
+3. ERP/HR dotted lines (agreement/product/AR · attendance/access) when they go live (swap connector stubs).
+
+**⏳ STILL TRYING TO GO ONLINE — TimeMachine.Editor (4D Gantt chart):** the schedule/task editor (HHS carries
+`tasks`/`task_sequences`/`task_elements`/`schedules` — 4D data is present). NOT yet live; work in progress,
+flagged for the next session.
 
 ---
 
