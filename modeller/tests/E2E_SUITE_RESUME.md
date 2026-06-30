@@ -38,7 +38,9 @@ exit code. The disc-walk meshes live under the `dwRoot` SUB-group (census walks 
 ## ROSTER — build a real-user E2E for each (then mark "developed")
 Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring tools:
 1. ✅ MOVE (GEOM_MOVE)   2. ✅ WALK (discWalk)   3. ✅ CUT (GEOM_CUT — 7/7, §CUT-ON-ARC fix)
-4. ☐ INSERT (b-insert → catalog picker → drop on grid → GEOM_INSERT; `showGhost`, `bInsert`, `insertHash`)
+4. ✅ INSERT (`witness_e2e_insert.js` 7/7) — Insert pill → catalog `.ins-c` leaf → ground click → GEOM_INSERT;
+   ATOMIC by scene census (mesh featureId==op id), VISIBLE, REVERSIBLE (cursor + mesh gone). NOTE census evals the
+   predicate SOURCE in-page → bake literals in (no node closure): `new Function('o','return o.featureId==='+id)`.
 5. ☐ SCALE (select INSERT → Move mode → drag cube handle → GEOM_SCALE; gizmo `scaleHandle`, axis 'scaleX/Y/Z')
 6. ☐ ROTATE (select INSERT/SOLID → Move mode → drag yaw ring → GEOM_ROTATE; axis 'rotZ')
 7. ☐ SKETCH→EXTRUDE (b-sketch place points → b-extrude → GEOM_EXTRUDE/_POLY; `enterSketch`, `_sketchDraft`)
