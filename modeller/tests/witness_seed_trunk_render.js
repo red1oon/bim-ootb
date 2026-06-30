@@ -63,27 +63,30 @@ const server = http.createServer((q, r) => {
   const errs = [];
   pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
 
-  console.log('═══ W-SEED-TRUNK-RENDER — seed→3D trunk render paints + render==planTrunk net (headless, Duplex ELEC) ═══');
+  // Standing gate = Duplex ELEC; argv overrides for the held-out generalization check (e.g. SampleCastle ELEC, 7-storey).
+  const BUILDING = process.argv[2] || 'Duplex';
+  const DISC = process.argv[3] || 'ELEC';
+  console.log('═══ W-SEED-TRUNK-RENDER — seed→3D trunk render paints + render==planTrunk net (headless, ' + BUILDING + ' ' + DISC + ') ═══');
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.SQL && !!window.DiscWalker && !!window.SeedTrunk && !!window.__seedTrunkProbe',
     { timeout: 30000 }).catch(() => {});
 
-  // open Duplex (sets window.__dwBuf + establishes the scene/dwRoot host)
+  // open the building (sets window.__dwBuf + establishes the scene/dwRoot host)
   await pg.click('#b-open'); await sleep(200);
-  await pg.click('#m-open-panel .mo-row[data-key="Duplex"]');
+  await pg.click('#m-open-panel .mo-row[data-key="' + BUILDING + '"]');
   await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
   await sleep(500);
 
   // Drive the ELEC walk + seed + trunk plan via the IDB-FREE engine API, then render via __seedTrunkProbe (the seam
   // that calls the SAME _renderSeedTrunk window.seedTrunk() calls). Return the net summary + the scene-graph census.
   logs.length = 0;
-  const res = await pg.evaluate(async () => {
+  const res = await pg.evaluate(async (BUILDING, DISC) => {
     try {
       const SQL = window.SQL, DW = window.DiscWalker, ST = window.SeedTrunk;
       const dxBuf = await (await fetch('./duplex_rules.db')).arrayBuffer();
       DW.dwOpen(new SQL.Database(new Uint8Array(dxBuf)));               // residential rules (duplex_rules.db)
       const bdb = new SQL.Database(new Uint8Array(window.__dwBuf));
-      const w = DW.dwWalk('ELEC', bdb, 'Duplex');
+      const w = DW.dwWalk(DISC, bdb, BUILDING);
       const fixtures = w.placements;
       const seed = DW.defaultSeed(bdb, { vertical: true });             // door/stair entry (deterministic default)
       // storey levels (the modeller's caller path): each named storey at its median fixture z
@@ -105,12 +108,12 @@ const server = http.createServer((q, r) => {
       net.storeys.forEach(s => (s.edges || []).forEach(poly => { expCorridor += Math.max(0, poly.length - 1); }));
       const expRiserClimb = net.risers.filter(r => Math.abs(r.z1 - r.z0) > 1e-6).length;
       const expSegs = expCorridor + net.risers.length;
-      window.__stNet = net;                                            // keep for the animated/reduced-motion runs (P7/P8)
-      const probe = window.__seedTrunkProbe('ELEC', net);              // ← RENDERS (instant) via _renderSeedTrunk + censuses dwRoot
+      window.__stNet = net; window.__stDisc = DISC;                    // keep for the animated/reduced-motion runs (P7/P8)
+      const probe = window.__seedTrunkProbe(DISC, net);                // ← RENDERS (instant) via _renderSeedTrunk + censuses dwRoot
       return { fixtures: fixtures.length, served: net.served, refused: net.refused, risers: net.risers.length,
         expCorridor, expRiserClimb, expSegs, probe };
     } catch (e) { return { err: String(e && e.message) + ' | ' + ((e.stack || '').split('\n')[1] || '') }; }
-  });
+  }, BUILDING, DISC);
   await sleep(300);
 
   if (res.err) { console.log('  §ERR ' + res.err); if (res.diag) console.log('  §DIAG ' + JSON.stringify(res.diag)); await br.close(); server.close(); console.log('W-SEED-TRUNK-RENDER: 0 PASS / 1 FAIL'); process.exit(1); }
@@ -123,10 +126,10 @@ const server = http.createServer((q, r) => {
   // P7 — drive the ANIMATED render path (no instant), let rAF run to completion, read the §SEED-TRUNK-ANIM log.
   logs.length = 0;
   await pg.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
-  await pg.evaluate(() => window.__seedTrunkRender('ELEC', window.__stNet));   // animated (opts default)
+  await pg.evaluate(() => window.__seedTrunkRender(window.__stDisc, window.__stNet));   // animated (opts default)
   await pg.waitForFunction(() => !!window.console, { timeout: 100 }).catch(() => {});
   await sleep(2800);                                                  // DUR=2000ms + margin for rAF to settle
-  const animLog = logs.find(l => /§SEED-TRUNK-ANIM ELEC mode=animated/.test(l)) || '';
+  const animLog = logs.find(l => /§SEED-TRUNK-ANIM \S+ mode=animated/.test(l)) || '';
   const animSegs = (animLog.match(/finalSegs=(\d+)/) || [])[1];
   const animFrames = +((animLog.match(/frames=(\d+)/) || [])[1] || 0);
   console.log('  ' + (animLog || '(no animated §SEED-TRUNK-ANIM)'));
@@ -134,9 +137,9 @@ const server = http.createServer((q, r) => {
   // P8 — reduced-motion instant fallback.
   logs.length = 0;
   await pg.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
-  await pg.evaluate(() => window.__seedTrunkRender('ELEC', window.__stNet));
+  await pg.evaluate(() => window.__seedTrunkRender(window.__stDisc, window.__stNet));
   await sleep(300);
-  const rmLog = logs.find(l => /§SEED-TRUNK-ANIM ELEC mode=reduced-motion/.test(l)) || '';
+  const rmLog = logs.find(l => /§SEED-TRUNK-ANIM \S+ mode=reduced-motion/.test(l)) || '';
   const rmSegs = (rmLog.match(/finalSegs=(\d+)/) || [])[1];
   console.log('  ' + (rmLog || '(no reduced-motion §SEED-TRUNK-ANIM)'));
 
