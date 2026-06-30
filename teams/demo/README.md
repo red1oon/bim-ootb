@@ -37,6 +37,17 @@ round-trips by content key · presence summarizes peers.
 `?base=<url>`, e.g. the OCI base) and renders the Tree / Chat / Dashboard / canvas from the pulled,
 signed, folded model. Read-only remote peer (no writes). No icon / launcher wired.
 
+## Pill demo — `erp_teams_pill.html` (ROADMAP §S9)
+The distinct **Teams pill** (2-person icon) over a mock ERP **AR Dashboard**. Default = pixel-identical to
+the bare chrome (no overlay DOM); click the pill → the universal dot-layer paints person/`+N` clusters onto
+the rows and an **involvement** pane mounts; click again → reverts to the exact baseline (reversible).
+Self-contained (seeded, read-only); proven by `teams/tests/wire_teams_pill.js` (**W-TEAM-WIRE 4/4**, chromium).
+- **Live (OCI, renders as HTML):**
+  `https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/teams-demo/demo/erp_teams_pill.html`
+- **Source (GitHub-raw):** `…/red1oon/bim-ootb/lane/teams-overlay/teams/demo/erp_teams_pill.html`
+- ⚠ The line-edit mounting this pill into the **production** `erp/kanban_host.js` chrome is a gated
+  follow-up — the launcher is proven standalone first (§P5).
+
 ## Lifecycle (DESIGN §7)
 First peer = senior host → **promote** to durable: this demo *is* the promotion target (GitHub / OCI).
 GH/OCI are async store-and-forward (Tier-2); Tier-1 live presence degrades to last-seen polling here.
