@@ -220,7 +220,7 @@
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=5" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=6" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <script src="seed_trunk.js?v=1" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
 <!-- Modeller's OWN service worker (its own app folder now — trilogy viewer/·erp/·modeller/; mirrors erp/sw.js). -->
 <script>
@@ -2274,27 +2274,34 @@ async function _commitDiscWalk(disc, placements) {
   if (!O || !L) return 0;
   var cat = L.catalog() || [];
   var color = DW_COLOR[disc] || 0xc0c0c0;
-  var committed = 0;
+  // BATCH the placements into ONE signed group. Was a loop of N awaited O.commit() — each commit seals the chain +
+  // verifyChain + re-folds the WHOLE scene, ~0.4s each → a 267-fixture ELEC walk FROZE the UI for 112s (W-E2E-WALK
+  // measured it: walk+render done at 1.0s, commit ran to 113s). commitSeedGroup seals ONCE (one verifyChain, one
+  // fold) — same signed-chain result, ~1s. Safe: kernel_ops orders by rowid (ORDER BY id), never timestamp, so the
+  // shared group baseTs never affects ordering/hash. gid unique per walk (O.length) so a re-walk commits afresh.
+  var ops = [];
   for (var i = 0; i < placements.length; i++) {
     var p = placements[i];
     var found = cat.find(function (c) { return c.ifc_class === p.ifc_class; });
     var hash = found ? found.hash : (cat[0] ? cat[0].hash : null);
     if (!hash) continue;
-    var op = { op_type: 'GEOM_INSERT',
-      parameters: { hash: hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: p.yaw || 0 },
-                    lod: '200', color: color,
-                    _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null } } };
-    try { var res = await O.commit(op); if (res) committed++; }
-    catch (e) { console.warn('§DISC-WALK-COMMIT fail i=' + i + ' ' + (e && e.message)); }
+    ops.push({ op_type: 'GEOM_INSERT',
+      params: { hash: hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: p.yaw || 0 },
+                lod: '200', color: color,
+                _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null } } });
+  }
+  var committed = 0;
+  if (ops.length) {
+    try { var res = await O.commitSeedGroup(ops, 'dwwalk-' + disc + '-' + O.length); committed = (res.ids || []).length; }
+    catch (e) { console.warn('§DISC-WALK-COMMIT batch fail ' + (e && e.message)); }
   }
   if (committed) {
-    await O.scrubTo(O.length);
-    // foldChainToScene clears the editable group — restore ALL walked markers + chains on top of committed geometry
+    // commitSeedGroup already folded the chain (clears the editable group) — restore the walked markers + chains
     _redrawAllDiscWalks();
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     syncHistory(); audioCue('rollout');
   }
-  console.log('§DISC-WALK-COMMIT disc=' + disc + ' placements=' + placements.length + ' committed=' + committed);
+  console.log('§DISC-WALK-COMMIT disc=' + disc + ' placements=' + placements.length + ' committed=' + committed + ' (1 signed group)');
   window.__dwLastCommitDisc = disc;   // sentinel for witnesses
   return committed;
 }

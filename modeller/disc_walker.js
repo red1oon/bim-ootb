@@ -94,21 +94,32 @@
   // opens the rules with NO network — making the modeller sw.js "terminal_rules.db cached in
   // IndexedDB" claim true. Try IDB hit → on miss fetch + put → bare fetch fallback on any IDB
   // error. Browser-only: node witnesses use dwOpen and never reach this path (indexedDB guard).
+  // The IndexedDB cache is an OFFLINE OPTIMISATION, never the source of truth — so NO IDB operation may ever block
+  // a rules load. Under concurrent IDB use of the SHARED bim_ootb_cache 'dbs' store (scene.js caching the building
+  // DB + a fire-and-forget put + this get all contend), an open/get can hang WITHOUT firing success OR error — the
+  // classic silent-inactive-transaction failure. That stalled discWalk's pre-walk borrow → the whole Walk tool
+  // rendered nothing for the user (W-E2E-WALK proved this; nondeterministic race). Every IDB await is therefore
+  // timeout-guarded: a stall resolves to null and _loadDbBuf falls back to a bare network fetch (deterministic, no hang).
+  var IDB_TIMEOUT_MS = 1500;
+  function _withTimeout(p, ms, fallback) {
+    return Promise.race([p, new Promise(function (res) { setTimeout(function () { res(fallback); }, ms); })]);
+  }
   function _openCacheDB() {
     if (typeof indexedDB === 'undefined') return Promise.resolve(null);
-    if (ROOT.APP && ROOT.APP.openCacheDB) { try { return ROOT.APP.openCacheDB(); } catch (e) { /* fall through */ } }
-    return new Promise(function (res) {                       // no version → current (avoid VersionError drift below scene.js v2)
+    if (ROOT.APP && ROOT.APP.openCacheDB) { try { return _withTimeout(Promise.resolve(ROOT.APP.openCacheDB()), IDB_TIMEOUT_MS, null); } catch (e) { /* fall through */ } }
+    return _withTimeout(new Promise(function (res) {          // no version → current (avoid VersionError drift below scene.js v2)
       var rq = indexedDB.open('bim_ootb_cache');
       rq.onsuccess = function () { res(rq.result); };
       rq.onerror = function () { res(null); };
-    });
+      rq.onblocked = function () { res(null); };              // another connection blocks the open → don't wait, fall back to fetch
+    }), IDB_TIMEOUT_MS, null);
   }
   function _idbGet(idb, key) {
-    return new Promise(function (res) {
+    return _withTimeout(new Promise(function (res) {
       try { var rq = idb.transaction('dbs', 'readonly').objectStore('dbs').get(key);
         rq.onsuccess = function () { res(rq.result || null); }; rq.onerror = function () { res(null); };
       } catch (e) { res(null); }
-    });
+    }), IDB_TIMEOUT_MS, null);                                // a hung readonly tx (store-lock contention) → null → MISS → fetch
   }
   function _idbPut(idb, key, buf) {
     try { var tx = idb.transaction('dbs', 'readwrite'); tx.objectStore('dbs').put(buf, key);
