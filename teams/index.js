@@ -14,9 +14,10 @@ var Transport = require('./transport');              // facilitator-over-HTTP (G
 var View = require('./overlay/teams_view');          // view-model builders + DOM renderers
 var DotLayer = require('./overlay/dot_layer');        // §S2 universal dot optics (person/post-it dots, fan-out)
 var Postit = require('./overlay/postit');             // §S3 post-it annot op + universal anchor + organise/recall
+var ShareBundle = require('./overlay/share_bundle');  // §S4 bunch-&-share + work-summary (channels = facilitator transports)
 var App = require('./overlay/teams_app');            // demo scenario + computeView orchestration
 module.exports = {
   Connectors: Connectors, ConnectorsLive: ConnectorsLive, Engine: Engine, Gate: Gate,
   Chatlog: Chatlog, Protocol: Protocol, Facilitator: Facilitator, Transport: Transport,
-  View: View, DotLayer: DotLayer, Postit: Postit, App: App
+  View: View, DotLayer: DotLayer, Postit: Postit, ShareBundle: ShareBundle, App: App
 };

@@ -47,7 +47,7 @@ collapsed→hover-blurb→click, **off = no-op**. Record-grain blame (`W-RECINFO
 **S3 · Post-it — ✅ DONE (W-POSTIT 9/9, standalone, signed annot + 7-kind anchor + organise/recall).** `teams/overlay/postit.js`: signed `annot` op + universal **anchor** model
 (`doc|field|screen|dashboard|flow|element|broadcast`), private-first, organise axes (anchor/age/status/mention),
 **contextual recall**. Witness **W-POSTIT**. Impact: none.
-**S4 · Bunch-&-share + work-summary** — `teams/overlay/share_bundle.js`: bundle N post-its → digest; reuse the
+**S4 · Bunch-&-share + work-summary — ✅ DONE (W-BUNDLE-SHARE + W-WORK-SUMMARY 10/10, standalone). Phase B COMPLETE.** `teams/overlay/share_bundle.js`: bundle N post-its → digest; reuse the
 universal share sheet + facilitator transports (Team feed / WhatsApp-stub / link); the **on-the-fly work summary**
 (fold→`what·who·when`, exportable+editable = training script). Witness **W-BUNDLE-SHARE**, **W-WORK-SUMMARY**. Impact: none.
 
