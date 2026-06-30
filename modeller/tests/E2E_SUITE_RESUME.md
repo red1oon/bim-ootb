@@ -53,7 +53,8 @@ Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring
    (Extrude, Run, Apply-fillet, dim-* inputs) stranded at its default position:fixed origin (0,0), top-left under
    the panel, UNCLICKABLE for real users too. Fix: a MutationObserver on #bar button `style` re-runs layoutRail on
    any display toggle (disconnect around our own writes → no loop). modeller.html. ⚠ bump sw CACHE_VERSION on deploy.
-8. ☐ ROUTE→RUN (b-route place points → b-run → GEOM_SWEEP; `_routeDraft`)
+8. ✅ ROUTE→RUN (`witness_e2e_route.js` 8/8) — Route pill → ≥2 ground clicks (a spine) → profile → Sweep-Run pill →
+   GEOM_SWEEP (occt pipe B-rep). ATOMIC by census, VISIBLE, REVERSIBLE. Confirms the rail fix unblocks the Run pill.
 9. ☐ FILLET (b-fillet edge-pick → b-applyfillet → GEOM_FILLET; `edgePicking`)
 10. ☐ OPENING (GEOM_OPENING — find the trigger; likely opening tool on a wall)
 11. ☐ GRID-STRETCH (b-gridmove → drag a gridline → GEOM_GRID_MOVE; `commitGridMove`, hook `window.__gridStretch(id,delta)`)
