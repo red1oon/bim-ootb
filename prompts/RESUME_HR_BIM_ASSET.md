@@ -386,6 +386,35 @@ not a new engine. So: **rental → periodic RUN · purchase → installment plan
 
 ---
 
+## §BINDING — how tenancy data maps to the model + gets injected (user 2026-06-30)
+
+Q: does the blue band come on "when tenancy detected", and how do we inject/map the data like Items↔ProjectOrder?
+
+**Activation (two states):** the Tenancy lens **icon appears only when ≥1 lease binds to a guid in THIS building**
+(the join hits) = "detected"; no data → no icon (no clutter). The **blue band = the user toggling the lens ON**.
+Detection gates the icon; the band is the on-state.
+
+**Mapping key = `guid` — identical to Items↔ProjectOrder:**
+- A lease carries `unit_guid` = the **IfcSpace (room) guid** — the SAME `e.room` handle the Outliner already
+  derives from `rel_contained_in_space` (`viewer/bom_tree.js`). No IfcSpace → bind to the unit-container/storey
+  guid (honest floor-level fallback).
+- The viewer **already exposes `APP.guidMap`** (guid→mesh, incl. instanced `_N`). So the `MeshPort` real impl is a
+  reverse lookup: `lease.unit_guid → APP.guidMap → mesh → tint/dummy`. Nothing new to render-plumb.
+
+**Injection = the bim_orders_overlay delta-band pattern (reuse, don't reinvent):** `erp/bim_orders_overlay.js`
+binds ERP docs to BIM via a **high-PK band (`≥ BIM_BASE`)** in a separate db (`bim_project_orders.db`), overlaid
+onto the live `ad_seed.db` at boot (authoritative clear-then-insert; base never stale). HBA does the SAME — tenancy/
+asset records (HR_Lease/PM_*) sit in an **HBA band**, overlaid at boot so leases surface in the standard AD windows
+AND drive the lens. Standalone (no ERP): the lens reads the HBA seed directly. A lease = another bridge doc keyed
+by the unit guid.
+
+**NON-INVENT:** a demo lease must reference a **real IfcSpace guid** from the building → the join hits, the unit
+lights up; a non-matching guid makes the lens **honestly show un-linked** (never fabricates a binding).
+Detection = the join hits. Connector REAL seams: `resolveGuid → APP.guidMap` · `injectData → bim_orders_overlay
+band-overlay` · `persist → OPFS HBA db`.
+
+---
+
 ## §NEXT (spec-first order)
 1. Spec the `PAYRUN` doc lifecycle + element-rule decision-table shape (Pillar 1) — witness the
    glass-box payslip trace + deterministic re-run (`replay-hash`).

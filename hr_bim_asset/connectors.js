@@ -11,6 +11,8 @@
 //     persist             →  sql.js 5-table  (documents/document_lines/items/journal) — NEXT slice
 //     glPost              →  erp/doc_poster.js  journal  (GL dotted line; only when ERP present)
 //     resolveEmployee     →  C_BPartner WHERE isEmployee='Y'  (identity dotted line)
+//     resolveGuid         →  viewer APP.guidMap  (unit_guid→mesh; MeshPort real impl = reverse lookup)
+//     injectData          →  bim_orders_overlay band-overlay (HBA high-PK band → live ad_seed.db at boot)
 'use strict';
 var crypto = (typeof require !== 'undefined') ? require('crypto') : null;
 
