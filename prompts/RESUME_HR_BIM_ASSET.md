@@ -48,10 +48,15 @@ bim-compiler work. Witness: `node hr_bim_asset/tests/witness_run.js && node hr_b
 GH bim-ootb. Other buildings untouched (OCI `_prodBase`).
 
 **NEXT (in order):**
-1. ✅ DONE — see §RESUME above (real-guid binding + W-HBA-BIND 7/7).
-2. Viewer wire-in (the ONLY viewer-core touch): 2 `A.icon` buttons (`panels.js`) + MeshPort hook to `APP.guidMap`
-   (the `resolveGuid` seam is built — `Connectors.resolveGuid(guid, APP.guidMap)` already gates by the join).
-3. ERP/HR dotted lines (agreement/product/AR · attendance/access) when they go live (swap connector stubs).
+1. ✅ DONE — see §RESUME above (real-guid binding + W-HBA-BIND 9/9).
+2. ⛔ BLOCKED (needs user go-ahead): Viewer wire-in = the ONLY viewer-core touch — register 2 `A.icon` buttons in
+   `viewer/panels.js` + MeshPort hook to `APP.guidMap`. The **engine half is DONE + witnessed** — the seam
+   `Connectors.resolveGuid(guid, APP.guidMap)` returns the mesh-id handle (W-HBA-BIND B8/B9); all that remains is
+   the literal viewer-core edit + adding `users`/`cpu` SVGs to the viewer ICONS registry (neither is present yet).
+   Held by the spec's standing rule **"no icon wired until told"** (§FOLDER). **One question:** wire the HBA lens
+   icons into the live viewer now, or keep additive-only until the modeller session settles?
+3. ⛔ BLOCKED (external dependency): ERP/HR dotted lines (agreement/product/AR · attendance/access) — light up only
+   when ERP/HR are loaded; swap the connector stubs then. Not actionable standalone.
 
 **⏳ STILL TRYING TO GO ONLINE — TimeMachine.Editor (4D Gantt chart):** the schedule/task editor (HHS carries
 `tasks`/`task_sequences`/`task_elements`/`schedules` — 4D data is present). NOT yet live; work in progress,
