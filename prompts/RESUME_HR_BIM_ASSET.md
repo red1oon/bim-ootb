@@ -61,12 +61,21 @@ GH bim-ootb. Other buildings untouched (OCI `_prodBase`).
    `sw.js` untouched. **Sub-item NEXT#2b open:** live 3D Playwright/deploy smoke (observe the tint in a browser).
 3. ⛔ BLOCKED (external dependency): ERP/HR dotted lines (agreement/product/AR · attendance/access) — light up only
    when ERP/HR are loaded; swap the connector stubs then. Not actionable standalone.
-4. (was ⏳) TimeMachine.Editor 4D Gantt — HHS carries `tasks`/`task_sequences`/`task_elements`/`schedules`; wire
-   the schedule editor online. Independent of the binding/wire work above.
+4. ⛔ DE-SCOPED — TimeMachine.Editor 4D Gantt: premise false (HHS 4D tables EMPTY); editor already shipped on
+   mainline (#504–#521). Needs a REAL schedule (non-invent) → see the corrected ⛔ block in §RESUME for the one
+   decision. HBA's only in-scope slice = (c) derive a maintenance timeline from PM_Asset (the `maintenance` RUN).
 
-**⏳ STILL TRYING TO GO ONLINE — TimeMachine.Editor (4D Gantt chart):** the schedule/task editor (HHS carries
-`tasks`/`task_sequences`/`task_elements`/`schedules` — 4D data is present). NOT yet live; work in progress,
-flagged for the next session.
+**⛔ TimeMachine.Editor (4D Gantt) — premise CORRECTED 2026-06-30 (non-invent):** earlier note claimed "HHS
+carries 4D data." FALSE — HHS has the 4D SCHEMA (`tasks`/`task_sequences`/`task_elements`/`schedules`) but **ZERO
+rows** (verified `sqlite3 … SELECT count(*)`). There is no extracted schedule to show. The TM editor + P6/MSP
+importers **already exist and are MERGED on mainline** (`§SE-1..4` + PRs #504–#521: CPM, drag-Gantt, cross-surface
+sync, P6/MSP/XER import, auto-bind) — NOT HBA-lane work; the TM "Schedule Editor" button already opens
+`schedule_editor.html?db=<current DB_URL>`. A live 4D demo therefore needs a REAL schedule, which cannot be
+INVENTED: either (a) import the one real plan in the repo `tests/fixtures/Hospital_GW_Programme(.bound).xer`
+(GardenWorld-bound, not HHS), or (b) the user supplies a real P6/MSP plan, or (c) the HBA-native path: derive a
+maintenance timeline from PM_Asset `next_due`/`pm_cycle` (the witnessed `maintenance` RUN profile = derived, not
+invented). **⛔ ONE DECISION (cannot extract): which real schedule, on which building, for the live 4D demo?**
+De-scoped from the HBA backlog → belongs to the viewer TM/4D lane (already shipped); HBA's slice is at most (c).
 
 ---
 
