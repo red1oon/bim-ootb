@@ -221,6 +221,12 @@
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
 <script src="disc_walker.js?v=4" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<!-- §TEAMS-EMBED — GATED Teams overlay over the live scene (teams/ROADMAP.md §S11). ONE inert guarded script:
+     OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
+     (localStorage.teamsEmbed='1' | ?teams=1) → a distinct floating Teams pill mounts; click → contextual dots
+     on the Outliner rows + a presence pane. Additive, reversible. Witness: modeller/tests/wire_teams_embed_modeller.js. -->
+<script src="teams_embed.js?v=1" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — modeller runs without the Teams overlay')"></script>
+<script>if (window.TeamsEmbedBim && window.TeamsEmbedBim.init) window.TeamsEmbedBim.init();</script>
 <!-- Modeller's OWN service worker (its own app folder now — trilogy viewer/·erp/·modeller/; mirrors erp/sw.js). -->
 <script>
 if ('serviceWorker' in navigator) {
