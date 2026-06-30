@@ -56,6 +56,33 @@ function enrich(binding, source) {
   });
 }
 
-var B = { knownGuidSet: knownGuidSet, resolveGuid: resolveGuid, meshIdForGuid: meshIdForGuid, bindRecords: bindRecords, enrich: enrich };
+// §REAL-BIND (2026-07-01) — on a REAL model the rendered meshes carry IFC GlobalIds, but an IfcSpace ROOM is
+// usually NOT rendered (it has no mesh). So a lease keyed to a room guid resolves to NOTHING and tints nothing
+// (the live-3D gap the whitebox log exposed: roomsInGuidMap=0 on HHS). FIX: a room tints via its rendered
+// CONTAINED members (rel_contained_in_space). These two pure helpers carry that logic so it is node-witnessable.
+//
+// augmentKnown: the resolvable-guid set = every rendered mesh guid PLUS any room that has ≥1 RENDERED member
+// (so a lease on that room is honestly "located"). roomMembers = { roomGuid: [memberGuid,...] }.
+function augmentKnown(source, roomMembers) {
+  var base = knownGuidSet(source);
+  if (!roomMembers) return base;
+  var out = new Set(base);
+  Object.keys(roomMembers).forEach(function (room) {
+    var mem = roomMembers[room] || [];
+    for (var i = 0; i < mem.length; i++) { if (base.has(mem[i])) { out.add(room); break; } }
+  });
+  return out;
+}
+// zoneMeshGuids: the guids to ACTUALLY tint for a zone — the zone itself if it is a rendered mesh, else its
+// rendered contained members. NON-INVENT: only guids that exist in the rendered set are returned (never faked).
+function zoneMeshGuids(zone, source, roomMembers) {
+  var base = knownGuidSet(source);
+  if (base.has(zone)) return [zone];
+  var mem = (roomMembers && roomMembers[zone]) || [];
+  return mem.filter(function (g) { return base.has(g); });
+}
+
+var B = { knownGuidSet: knownGuidSet, resolveGuid: resolveGuid, meshIdForGuid: meshIdForGuid, bindRecords: bindRecords,
+          enrich: enrich, augmentKnown: augmentKnown, zoneMeshGuids: zoneMeshGuids };
 if (typeof module === 'object' && module.exports) module.exports = B;
 else (typeof self !== 'undefined' ? self : this).HbaBinding = B;

@@ -26,7 +26,11 @@
     var touched = [];                                   // [{m, e?, o?, t?}] — saved originals for full restore
     function meshes() { return A.collectMeshes(function (o) { return o.isMesh; }); }
     function meshesFor(guid) {
-      var out = []; meshes().forEach(function (obj) { if (A.guidMap[obj.id] === guid) out.push(obj); }); return out;
+      // §REAL-BIND — a zone tints via the zone's own mesh if rendered, else its rendered contained members.
+      var want = HBA().B.zoneMeshGuids(guid, A.guidMap, A._hbaRoomMembers || null);
+      if (!want.length) return [];
+      var set = {}; want.forEach(function (g) { set[g] = 1; });
+      var out = []; meshes().forEach(function (obj) { if (set[A.guidMap[obj.id]]) out.push(obj); }); return out;
     }
     return {
       allGuids: function () {
@@ -60,31 +64,36 @@
 
   var _port = null, _active = null;   // current MeshPort + active mode ('tenancy'|'maintenance'|null)
 
+  // §REAL-BIND — the resolvable-guid set for THIS building: rendered mesh guids PLUS rooms that have ≥1 rendered
+  // contained member (so a lease on a non-rendered IfcSpace still resolves via its members). Falls back to the
+  // raw guidMap when no member map is bound (witnesses / buildings without rel_contained_in_space).
+  function _known(A) { return HBA().B.augmentKnown(A.guidMap, A._hbaRoomMembers || null); }
+
   // detect = the DATA GATE (§BINDING activation): does ANY HBA record of this lens resolve to a real guid
   // in the loaded building? Drives whether the pill icon appears at all (no data → no icon, no clutter).
   function detect(A, mode) {
     if (!ready() || !A || !A.guidMap) return false;
-    var h = HBA();
+    var h = HBA(), known = _known(A);
     if (mode === 'presence') {                                // §T&A SLICE-2 — gate on a real, located check-in
       if (!h.A) return false;
       var rows = presenceRows(A);
-      for (var j = 0; j < rows.length; j++) if (h.B.resolveGuid(rows[j].zone, A.guidMap)) return true;
+      for (var j = 0; j < rows.length; j++) if (h.B.resolveGuid(rows[j].zone, known)) return true;
       return false;
     }
     if (mode === 'occupancy') {                               // Resource-Assignment — gate on a located room op
       if (!h.OC) return false;
       var orows = occupancyRows(A);
-      for (var k = 0; k < orows.length; k++) if (h.B.resolveGuid(orows[k].zone, A.guidMap)) return true;
+      for (var k = 0; k < orows.length; k++) if (h.B.resolveGuid(orows[k].zone, known)) return true;
       return false;
     }
     if (mode === 'class') {                                   // §CLASS facet — gate on a classifiable, located unit
       var crows = classRows(A);
-      for (var m = 0; m < crows.length; m++) if (h.B.resolveGuid(crows[m].zone, A.guidMap)) return true;
+      for (var m = 0; m < crows.length; m++) if (h.B.resolveGuid(crows[m].zone, known)) return true;
       return false;
     }
     var recs = mode === 'maintenance' ? h.M.records('Asset') : h.M.records('Tenancy');
     var field = mode === 'maintenance' ? 'bim_guid' : 'unit_guid';
-    for (var i = 0; i < recs.length; i++) if (h.B.resolveGuid(recs[i][field], A.guidMap)) return true;
+    for (var i = 0; i < recs.length; i++) if (h.B.resolveGuid(recs[i][field], known)) return true;
     return false;
   }
 
@@ -151,6 +160,15 @@
       // Dashboard pane have data on a building that carries rooms. ADDITIVE: sets only A._hba* fields.
       var rooms = Object.keys(map).map(function (g) { return { guid: g, storey: map[g] }; });
       A._hbaRooms = rooms; A._hbaStoreyOf = map;
+      // §REAL-BIND — a room is NOT a rendered mesh; tint it via its CONTAINED elements (rel_contained_in_space),
+      // which ARE rendered. Build room→members so binding.augmentKnown/zoneMeshGuids can resolve + paint rooms on
+      // the live model. Honest no-op if the table is absent. This is the fix for the "lens shows no data" gap.
+      try {
+        var crows = A.dbQuery("SELECT space_guid, element_guid FROM rel_contained_in_space");
+        var mm = {}; (crows || []).forEach(function (r) { if (r[0] && r[1]) { (mm[r[0]] = mm[r[0]] || []).push(r[1]); } });
+        A._hbaRoomMembers = mm;
+        console.log('§HBA_MEMBERS bound ' + Object.keys(mm).length + ' rooms→contained-element members (rel_contained_in_space)');
+      } catch (e) { A._hbaRoomMembers = A._hbaRoomMembers || {}; }
       if (!A._hbaOccupancyLog && h.OC && rooms.length) {
         A._hbaOccupancyLog = h.OC.demoSeed(rooms).log;
         console.log('§HBA_OCC seeded ' + A._hbaOccupancyLog.length + ' assignment ops from ' + rooms.length + ' rooms (demonstrator)');
@@ -178,13 +196,14 @@
     if (_port) { _port.restoreAll(); _port = null; }            // clear prior mode first (one mode at a time)
     if (_active === mode) { _active = null; console.log('§HBA_LENS off mode=' + mode); if (A.markDirty) A.markDirty(); return false; }
     var h = HBA();
+    var known = _known(A);                                                       // §REAL-BIND — rooms resolve via rendered members
     var plan = (mode === 'presence')                                            // §T&A SLICE-2 — reuse the SAME seam
-      ? h.O.computePresence(presenceRows(A), { knownGuids: A.guidMap, period: period(A) })
+      ? h.O.computePresence(presenceRows(A), { knownGuids: known, period: period(A) })
       : (mode === 'occupancy')                                                  // Resource-Assignment — same seam
-        ? h.O.computeOccupancy(occupancyRows(A), { knownGuids: A.guidMap, period: period(A) })
+        ? h.O.computeOccupancy(occupancyRows(A), { knownGuids: known, period: period(A) })
         : (mode === 'class')                                                     // §CLASS facet — same seam
-          ? h.O.computeClassOverlay(classRows(A), { knownGuids: A.guidMap, classFilter: A._hbaClassFilter || null })
-          : h.O.computeOverlay(mode, period(A), { knownGuids: A.guidMap });      // non-invent gate (all paths)
+          ? h.O.computeClassOverlay(classRows(A), { knownGuids: known, classFilter: A._hbaClassFilter || null })
+          : h.O.computeOverlay(mode, period(A), { knownGuids: known });          // non-invent gate (all paths)
     _port = buildMeshPort(A, { ghost: false });
     var n = h.O.applyOverlay(_port, plan);
     _active = mode;
