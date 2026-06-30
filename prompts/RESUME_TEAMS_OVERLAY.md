@@ -69,7 +69,17 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
   REFUSES self-approval/ineligible; `tampered` on a broken chain) + `overlay/broadcast.js` (eligible-gated
   system-wide sticky; all/role/level targeting; ACK+REVOKE). All standalone pure folds, **zero erp/ edits**;
   **W-WORLD-AT-T+COSIGN+BROADCAST 16/16** (`poc_teams_s10.js`; run_all 19/19). Engine-only, no new chrome
-  (like S5–S8). ⚠ a standalone `demo/` page for these three optics is an OPTIONAL follow-on if a surface is wanted.
+  (like S5–S8).
+  - **✅ SHOWCASE DEMO LIVE (deployed 2026-06-30, OCI `teams-demo/`):** `teams/demo/phase_f_showcase.html` —
+    a standalone clickable page for all six Phase-F optics (World-at-T · co-sign · broadcast · replay · nudges ·
+    presence), each a pure fold over seeded non-invent data.
+    URL `https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/teams-demo/demo/phase_f_showcase.html`
+    — live chromium smoke GREEN (6 cards, World-at-T verify ✓, co-sign Approved, 3 nudges, 5 presence dots, 0
+    console errors). ⚠ Building it surfaced + fixed a real bug: `postit`/`cosign`/`broadcast` leaked private
+    `_op`/`_append` into global scope (Node-isolated so witnesses passed, but browser <script> co-load collided
+    → cosign built a broadcast op). FIXED by IIFE-wrapping the three (like `erp_bridge.js`); zero behaviour change.
+    LESSON: a teams module co-loaded as a browser `<script>` MUST be IIFE-wrapped if it defines common helper
+    names — node `require` isolation hides the collision from the witnesses.
 - **S12 — Replay-onboarding + nudges + "new feature" stub.** ✅ **DONE** — `overlay/replay.js` (step-recorder,
   state re-folds as-of each step) + `erp/nudges.js` (one dismissible nudge/item vs a MEASURED baseline; too few
   samples → REFUSE) + `overlay/feature_stub.js` (honest disabled "propose-changes" placeholder). All standalone
