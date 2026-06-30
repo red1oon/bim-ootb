@@ -220,7 +220,8 @@
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=4" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=5" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="seed_trunk.js?v=1" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
 <!-- Modeller's OWN service worker (its own app folder now — trilogy viewer/·erp/·modeller/; mirrors erp/sw.js). -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -2383,7 +2384,92 @@ function _redrawAllDiscWalks() {
   Object.keys(window.__dwWalks).forEach(function (d) { if (window.__dwWalks[d]) _renderDiscWalk(d, window.__dwWalks[d]); });
   Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d]); });
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
+  if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
 }
+
+// ── SEED → 3D CORRIDOR TRUNK (seed_trunk.js; W-SEED-TRUNK / -CORRIDOR / -RISER / -ENGINE, bim-compiler) ──────
+// The engineer assigns the service ENTRY (a real door/stair); SeedTrunk.planTrunk routes a corridor-aware trunk
+// from it — around real walls, through real doors — joined across storeys by RISERS at real stairs. NON-INVENT:
+// every blocked nav cell is a real wall, every passage a real door, every riser a real IfcStair; unreachable
+// fixtures are REFUSED, never forced. GENERATED/plausible (no ground truth for an absent discipline). Rendered
+// as disc-coloured LineSegments under dwRoot (cleared/redrawn with the disc walk).
+window.__dwTrunk = window.__dwTrunk || {};
+function _renderSeedTrunk(disc, net) {
+  var root = _dwRoot(); if (!root) return;
+  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwTrunk === disc) root.remove(o); });
+  window.__dwTrunk[disc] = net;
+  if (!net || net.refused || !net.storeys) { if (window.A && A.requestRender) A.requestRender(); return; }
+  var pts = [];
+  net.storeys.forEach(function (s) { (s.edges || []).forEach(function (poly) {
+    for (var i = 0; i + 1 < poly.length; i++) { pts.push(poly[i][0], poly[i][1], poly[i][2], poly[i + 1][0], poly[i + 1][1], poly[i + 1][2]); }
+  }); });
+  net.risers.forEach(function (r) { pts.push(r.x, r.y, r.z0, r.x, r.y, r.z1); });   // vertical riser at the real stair XY
+  if (!pts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
+  var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  var col = DW_COLOR[disc] || 0xffa500;
+  var line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col, linewidth: 2 }));
+  line.userData.dwTrunk = disc; root.add(line);
+  console.log('§SEED-TRUNK ' + disc + ' served=' + net.served + ' refused=' + net.refused + ' risers=' + net.risers.length +
+    ' totalLen=' + net.totalLen.toFixed(1) + 'm segs=' + (pts.length / 6) + ' (corridor-aware, real-stair risers, non-invent)');
+  if (window.A && A.requestRender) A.requestRender();
+}
+// risers = real IfcStair columns (deduped by XY); storeys = the building's floors (z = lowest element per storey,
+// deduped ≥2m apart, named storeys only) — the structural levels the riser climbs, not the elevated fixture z.
+function _seedRisers(bdb) {
+  var r = bdb.exec("SELECT m.guid g, t.center_x x, t.center_y y FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class LIKE '%Stair%'");
+  var out = []; if (r.length) r[0].values.forEach(function (v) { var s = { guid: v[0], x: v[1], y: v[2] };
+    if (!out.some(function (o) { return Math.hypot(o.x - s.x, o.y - s.y) < 0.5; })) out.push(s); }); return out;
+}
+// storey levels = each fixture-storey at its MEDIAN fixture z (robust: MIN-z / foundation slabs create false
+// near-duplicate levels and could drop the real ground floor). Named storeys only; the riser climbs these and
+// the trunk roots at the SEED's storey (planTrunk groundStorey).
+function _seedStoreys(bdb, fixtures) {
+  var byS = {}; fixtures.forEach(function (p) { if (p.storey && !/^unknown$/i.test(p.storey)) (byS[p.storey] = byS[p.storey] || []).push(p.z); });
+  return Object.keys(byS).map(function (nm) { var zs = byS[nm].slice().sort(function (a, b) { return a - b; });
+    return { name: nm, z: zs[zs.length >> 1] }; }).sort(function (a, b) { return a.z - b.z; });
+}
+function _seedPopup(disc, seedInfo) {
+  return new Promise(function (resolve) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1b1b1b;color:#eee;border:1px solid #555;border-radius:8px;padding:18px 20px;min-width:360px;font:13px system-ui,sans-serif;box-shadow:0 8px 40px rgba(0,0,0,.6);';
+    var cands = seedInfo.candidates || [];
+    var optHtml = cands.map(function (c) { var sel = c.guid === seedInfo.guid ? ' selected' : '';
+      return '<option value="' + c.guid + '"' + sel + '>' + (c.ifc_class || 'entry') + ' @ ' + (c.storey || '?') +
+        ' (' + c.x.toFixed(1) + ',' + c.y.toFixed(1) + ')</option>'; }).join('');
+    box.innerHTML = '<div style="font-weight:600;margin-bottom:6px;">Route ' + disc + ' trunk — service entry (seed)</div>' +
+      '<div style="opacity:.8;margin-bottom:10px;font-size:12px;line-height:1.4;">' + (seedInfo.reason || '') + '<br>Confirm the default entry or choose another:</div>' +
+      '<select id="_seedSel" style="width:100%;padding:6px;background:#111;color:#eee;border:1px solid #555;border-radius:4px;">' + optHtml + '</select>' +
+      '<div style="margin-top:14px;text-align:right;"><button id="_seedCancel" style="margin-right:8px;background:#333;color:#eee;border:1px solid #555;padding:6px 12px;border-radius:4px;cursor:pointer;">Cancel</button>' +
+      '<button id="_seedOk" style="background:#ffd24a;color:#111;border:none;padding:6px 16px;border-radius:4px;font-weight:600;cursor:pointer;">Route ▶</button></div>';
+    ov.appendChild(box); document.body.appendChild(ov);
+    function done(v) { if (ov.parentNode) document.body.removeChild(ov); resolve(v); }
+    box.querySelector('#_seedCancel').onclick = function () { done(null); };
+    box.querySelector('#_seedOk').onclick = function () { var g = box.querySelector('#_seedSel').value;
+      done(cands.filter(function (x) { return x.guid === g; })[0] || null); };
+    ov.onclick = function (e) { if (e.target === ov) done(null); };
+  });
+}
+// CHECK → DEFAULT → CONFIRM/OVERRIDE → ROUTE (the Outliner.DISC popup flow). Requires a prior disc walk (fixtures).
+window.seedTrunk = async function (disc) {
+  if (!window.SeedTrunk || !window.DiscWalker || !window.SQL) { console.warn('§SEED-TRUNK not ready'); return; }
+  var fixtures = (window.__dwWalks && window.__dwWalks[disc]) || [];
+  if (!fixtures.length) { alert('Walk ' + disc + ' first — there are no placed fixtures to route a trunk through.'); return; }
+  if (!window.__dwBuf) { alert('Open a building first.'); return; }
+  var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+  try {
+    var seedInfo = window.DiscWalker.defaultSeed(bdb);
+    if (seedInfo.refused) { alert('No entry element (door/stair) to seed the trunk from: ' + seedInfo.reason); return; }
+    var chosen = await _seedPopup(disc, seedInfo);
+    if (!chosen) return;                                    // user cancelled
+    var net = window.SeedTrunk.planTrunk(bdb, fixtures, { x: chosen.x, y: chosen.y, storey: chosen.storey },
+      _seedRisers(bdb), { storeys: _seedStoreys(bdb, fixtures), groundStorey: chosen.storey });
+    if (net.refused) { alert('Could not route a trunk: ' + (net.reason || 'no storeys')); return; }
+    _renderSeedTrunk(disc, net);
+    if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  } finally { bdb.close(); }
+};
 // §4 WITNESS SEAM: re-expose the (module-scope) disc-walk render entry points so a headless witness can drive
 // the render directly via the IDB-free engine API (dwOpen/dwBorrow with plain-fetched rules DBs) — the
 // production walk path (discWalk → dwInit/dwBorrowFile) goes through the bim_ootb_cache IndexedDB layer, which
@@ -2442,6 +2528,19 @@ function _registerDiscRoster() {
       }) }];
     },
     onWalk: function (disc) { window.discWalk(disc, { building: window.__dwName }); }
+  });
+  // SEED-TRUNK roster: route a service trunk from a human-assigned entry through the WALKED fixtures (corridor-aware,
+  // real-stair risers). Lists only disciplines already walked (they have placed fixtures to route). onWalk → popup.
+  window.Bonsai.outliner.addCategory({
+    key: 'disctrunk', label: 'Route trunk · from entry (seed)',
+    tree: function () {
+      var walked = Object.keys(window.__dwWalks || {}).filter(function (d) { return window.__dwWalks[d] && window.__dwWalks[d].length; });
+      if (!walked.length) return [{ id: 'dt-load', label: 'walk a discipline first, then route its trunk', kind: 'group', children: [] }];
+      return [{ id: 'dt-root', label: 'Service trunk from a chosen entry', kind: 'group', children: walked.map(function (d) {
+        return { id: 'dt-' + d, label: d, kind: 'disc', disc: d, sub: (window.__dwTrunk && window.__dwTrunk[d]) ? 'routed ▶' : '▶ route' };
+      }) }];
+    },
+    onWalk: function (disc) { window.seedTrunk(disc); }
   });
   console.log('§DISC-WALK roster registered disciplines=' + ((window.DiscWalker && window.DiscWalker.disciplines && window.DiscWalker.disciplines().join(',')) || ''));
 }
