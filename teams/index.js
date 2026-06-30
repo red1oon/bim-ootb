@@ -12,9 +12,10 @@ var Protocol = require('./protocol');                // CAS seam · heartbeat ·
 var Facilitator = require('./facilitator');          // optional trustless relay (DESIGN.md §7)
 var Transport = require('./transport');              // facilitator-over-HTTP (GitHub / OCI)
 var View = require('./overlay/teams_view');          // view-model builders + DOM renderers
+var DotLayer = require('./overlay/dot_layer');        // §S2 universal dot optics (person/post-it dots, fan-out)
 var App = require('./overlay/teams_app');            // demo scenario + computeView orchestration
 module.exports = {
   Connectors: Connectors, ConnectorsLive: ConnectorsLive, Engine: Engine, Gate: Gate,
   Chatlog: Chatlog, Protocol: Protocol, Facilitator: Facilitator, Transport: Transport,
-  View: View, App: App
+  View: View, DotLayer: DotLayer, App: App
 };

@@ -41,7 +41,7 @@
 - Impact: NONE (new module, read-only). Exit: both witnesses green + Gate.
 
 ## Phase B — Universal optics core (off-by-default, standalone; built once in `teams/overlay/`)
-**S2 · Dot-layer + record hover-blame** — `teams/overlay/dot_layer.js`: person + post-it dots, fan-out `+N`,
+**S2 · Dot-layer + record hover-blame — ✅ DONE (W-DOT-LAYER + W-BLAME-RECORD 11/11, standalone, off=no-op).** `teams/overlay/dot_layer.js`: person + post-it dots, fan-out `+N`,
 collapsed→hover-blurb→click, **off = no-op**. Record-grain blame (`W-RECINFO`) fold. Witnesses **W-DOT-LAYER**,
 **W-BLAME-RECORD**. Headless smoke: off renders nothing. Impact: none (standalone).
 **S3 · Post-it** — `teams/overlay/postit.js`: signed `annot` op + universal **anchor** model
