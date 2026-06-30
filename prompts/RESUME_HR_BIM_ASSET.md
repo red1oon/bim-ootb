@@ -65,6 +65,18 @@ GH bim-ootb. Other buildings untouched (OCI `_prodBase`).
    mainline (#504–#521). **(c) ✅ DONE** — HBA-native derived PM schedule (`timeline.js`, W-HBA-TIMELINE 7/7,
    foldable by the merged editor). **(a)/(b) ⛔** still need a user decision (which real external plan/building).
 
+**▶ NEXT HR TARGET (spec review 2026-06-30) — Time & Attendance: signed · spatial · offline check-in (§PILLAR 2).**
+The triage's own pick: §MARKET TRIAGE rates **T&A ★★★★★ "T1 moat"** (offline + signed non-repudiable + spatial),
+the deskless/construction strategic cut. It is the highest-fit, lowest-new-primitive next target because it
+**reuses what tenancy just shipped**: the guid→element binding (`resolveGuid`/`meshIdForGuid`) becomes the
+**spatial scope** of a check-in (Site→Building→Floor→zone), the storey derivation gives the zones, the connector's
+**W-SIGN** (`sign`/`verifyChain`) signs each presence `kernel_op`, and the density-dots overlay becomes a live
+**headcount-by-zone** presence lens. It closes the loop the spec describes — *check-in (signed, spatial, offline)
+→ timesheet/leave (edge ops) → deterministic pay run (payroll = profile #1, already witnessed) → payslip back in
+pocket*. Honest boundary (§PILLAR 2): the ONLY external piece is physical door hardware (reader/turnstile) — an
+integration, not a build; every software primitive already exists. **Follow-on:** Leave/Absence (★★★★ T1 —
+accrual=op, balance=replay, feeds payroll). Anti-scope reminder: T3 (ATS/LMS/benefits) stays OUT (§MARKET TRIAGE).
+
 **⛔ TimeMachine.Editor (4D Gantt) — premise CORRECTED 2026-06-30 (non-invent):** earlier note claimed "HHS
 carries 4D data." FALSE — HHS has the 4D SCHEMA (`tasks`/`task_sequences`/`task_elements`/`schedules`) but **ZERO
 rows** (verified `sqlite3 … SELECT count(*)`). There is no extracted schedule to show. The TM editor + P6/MSP
