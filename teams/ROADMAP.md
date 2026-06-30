@@ -57,7 +57,7 @@ ladder), the **Flow lens** (process-mining discovery from the log: actual path, 
 (participants/role-headcount/active per flow·doc), and the **Organiser** (Team tab = scope filter `mine↔anyone` by
 role/project/loc/space + multi-select charts). Standalone demo page. Witnesses **W-ERP-GATE**, **W-ERP-FLOW**,
 **W-INVOLVE**, **W-ORGANISER**. Impact: none (reads seeded log).
-**S6 · My Work inbox + field lineage** — the Activities "waiting-for-me" per-role queue (`W-ERP-MYWORK`) + field-grain
+**S6 · My Work inbox + field lineage — ✅ DONE (W-ERP-MYWORK + W-FIELD-LINEAGE 10/10, read-only, AD_ChangeLog NOT removed). Phase C COMPLETE.** the Activities "waiting-for-me" per-role queue (`W-ERP-MYWORK`) + field-grain
 hover-blame (`W-FIELD-LINEAGE`, the deeper kill-`AD_ChangeLog` fold; **we ADD the fold, we do NOT remove AD_ChangeLog**).
 Impact: none.
 
