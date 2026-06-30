@@ -211,9 +211,13 @@ Over the real embed + a host fixture exposing `A.icon`/`A.createPanel` + `--idmp
 ## 3b. OPEN edges (carried in from the 2026-07-01 design dialogue — resolve here, don't lose them)
 1. **4D-Gantt is the genuine exception** — it's an authored *schedule* artifact (tasks×calendar), NOT an oplog
    projection like ②/③. Keep it visibly separate; don't force-unify it into the World/History engine.
-2. **The PERT merge-GATE does not exist yet** — only the spatial/cross-branch gate is built
-   (`W-GATE-CROSS-BRANCH 11/11`). Viewer-side SCHEDULE What-If needs a NEW gate (dependency/resource conflict),
-   not new git. (Context-free git engine is done; the gate is the per-context plug-in — §1a ③.)
+2. ~~**The PERT merge-GATE does not exist yet**~~ **✅ DONE 2026-07-01 — `teams/pert_gate.js` (W-PERT-GATE 9/9).**
+   The SCHEDULE-context twin of the spatial `teams/gate.js`, SAME shape (hint Tier-1 · settle Tier-2 red>orange>green
+   · ladder staleness · matrix). Conflicts: dependency violation (finish-to-start broken, with `by`), dependency
+   cycle (DFS), resource double-booking (overlapping same-resource windows). `foldSchedule` folds SCHEDULE ops
+   (SCHEDULE/RESCHEDULE/SETDEP/ASSIGN/DELETE, last-writer) → tasks; deterministic, no Date.now, NON-INVENT. The
+   context-free git engine + this gate = Viewer-side SCHEDULE What-If is now unblocked (wiring to a Viewer UI is the
+   remaining chrome). suite 25/25, lane-clean.
 3. **Discipline@4D / Role@7D partition** is the working read (user "by role" + construction crews) but NOT hard-
    confirmed — one word locks or adjusts it.
 4. **Project as a facet icon** — it's the design SPINE but isn't in the icon row; open whether it earns a glyph or
