@@ -53,8 +53,28 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
 - **R5 — Identity vs State colour MUST be distinguishable.** The signer-hued identity dots (`dot_layer` `colorOf`)
   must NOT collide with HR's state palette (R0) — reserve a hue family or use a ring/badge so "who" never reads as
   "state." When Teams shows STATE, reuse HR's exact palette.
-- **R6 — Find-panel placement.** WHO-dots append to the SAME Storey→Rooms result rows, AFTER the state chip,
-  anchored by room guid (`docOf = row => row.guid`); storey-level cluster `+N` matches HR's density-dot grammar.
+- **R6 — Find-panel placement (OPERATE-phase pivot — see §1a).** WHO-dots append to the SAME Storey→Rooms result
+  rows, AFTER the state chip, anchored by room guid (`docOf = row => row.guid`); storey-level cluster `+N` matches
+  HR's density-dot grammar. The DESIGN-phase counterpart pivots Role×Project→Element on the Modeller Outliner (same
+  `dotLayerModel`, `anchorOf = element/task`). Both grouped by Role; smart-search (`erp_search.js`) is the entry.
+
+## 1a. SETTLED ARCHITECTURE — the People dimension (resolved 2026-07-01, after a drift check)
+The Team overlay is NOT a peer subject-pane to Tenancy/IoT and NOT nailed under Storey. It is **one
+cross-cutting People dimension, grouped by ROLE** (`AD_Role` + the HR operator·vendor·personnel roles),
+that cross-tabs against a **phase-dependent spine**:
+- **Design / build** (Modeller Outliner, `bonsai_outliner.js`; Product/Project hat) → spine = **Project →
+  Task/Element**. A role-team CUTS ACROSS zones/buildings (a project spans storeys).
+- **Operate / maintain — 7D FM · IoT · the Tandem (digital-twin) handover** (Viewer Find Panel,
+  `navigate_find.js`; Asset/Resource hat) → spine = **Space zone (Storey → Room)**. The role-team is
+  ALIGNED to the zone it services. (This is why Storey holds operationally — confirmed.)
+- **ROLE is the constant; only the SPINE swaps (Project ↔ Zone) at the design→operate handover.** The
+  Tandem handover is the hinge; the **World/History timeline carries the same role-team across it**
+  (re-anchored from "what they designed" → "what zone they now maintain") — the cross-product continuity moat.
+- **Smart search = the universal entry on BOTH surfaces** — REUSE `erp/erp_search.js` (FTS5 across all AD
+  tables: C_BPartner/AD_User/M_Product/C_Project/A_Asset…, BM25 typeahead, deep-links to the AD window).
+  Find any tenant/staff/device/project/element → see its role-team in the active spine's context. Do NOT rebuild.
+- **Engine = one Role×Spine matrix, rendered two ways** (operate: Role×Zone; design: Role×Project) — same
+  `dotLayerModel` clusters, different `anchorOf`. R6 below is the OPERATE-phase pivot specifically.
 
 ## 1b. Dashboard Graphs — Teams folds FEED iDempiere > Dashboard > Graph/s (rich info)
 The Teams optics are not only a Find-panel/pill overlay — their folds can populate **native iDempiere Dashboard
