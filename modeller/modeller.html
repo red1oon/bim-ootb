@@ -2879,6 +2879,13 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     dots.onclick = () => { pOpen = !pOpen; try { localStorage.setItem(PK, pOpen ? '1' : '0'); } catch (e) {} applyPill(true); console.log('§MODELLER pill open=' + pOpen); };
     window.addEventListener('resize', () => { if (pOpen) layoutRail(); });
     applyPill(false);
+    // Pills revealed on mode-enter (Extrude/Run/Apply-fillet + the dim-* inputs) must JOIN the L-rail — layoutRail
+    // only positions CURRENTLY-visible buttons and runs at startup/resize/toggle, NOT on reveal. Without this a
+    // freshly-shown button keeps its default position:fixed origin (0,0), stranded top-left under the panel and
+    // UNCLICKABLE (W-E2E-SKETCH caught the Extrude pill stuck there). Re-layout on any #bar button display change;
+    // disconnect around our OWN style writes so layoutRail's positioning never re-triggers the observer (no loop).
+    const _railObs = new MutationObserver(() => { if (!pOpen) return; _railObs.disconnect(); layoutRail(); _railObs.observe(bar, { attributes: true, attributeFilter: ['style'], subtree: true }); });
+    _railObs.observe(bar, { attributes: true, attributeFilter: ['style'], subtree: true });
 
     // ? Help — the PILL REGISTRY: every visible tool's icon + name + keyboard shortcut, built from the live #bar.
     const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-del': 'Del' };   // Undo/Redo are keyboard-only rows below

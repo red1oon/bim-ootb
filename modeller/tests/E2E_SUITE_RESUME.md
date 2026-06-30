@@ -47,7 +47,12 @@ Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring
    the rotate branch (bonsai_library.js). EVERY ARC wall is a raw-bbox insert, so scale-vanish hit all of them.
 6. ✅ ROTATE (`witness_e2e_rotate.js` 7/7) — select → Move pill → drag yaw RING 30° → GEOM_ROTATE drot; ATOMIC by
    the rendered footprint AABB (X-extent == ex·cosθ + ey·sinθ), REVERSIBLE. Single insert = exactly +1 op.
-7. ☐ SKETCH→EXTRUDE (b-sketch place points → b-extrude → GEOM_EXTRUDE/_POLY; `enterSketch`, `_sketchDraft`)
+7. ✅ SKETCH→EXTRUDE (`witness_e2e_sketch.js` 8/8) — Sketch pill → 4 ground clicks → depth → Extrude pill →
+   GEOM_EXTRUDE_POLY (real occt B-rep). ⚠ caught + fixed a 5th real defect (UX-breaking): the L-rail `layoutRail()`
+   positions only currently-VISIBLE pills + runs at startup/resize/toggle, NOT on reveal — so a mode-revealed pill
+   (Extrude, Run, Apply-fillet, dim-* inputs) stranded at its default position:fixed origin (0,0), top-left under
+   the panel, UNCLICKABLE for real users too. Fix: a MutationObserver on #bar button `style` re-runs layoutRail on
+   any display toggle (disconnect around our own writes → no loop). modeller.html. ⚠ bump sw CACHE_VERSION on deploy.
 8. ☐ ROUTE→RUN (b-route place points → b-run → GEOM_SWEEP; `_routeDraft`)
 9. ☐ FILLET (b-fillet edge-pick → b-applyfillet → GEOM_FILLET; `edgePicking`)
 10. ☐ OPENING (GEOM_OPENING — find the trigger; likely opening tool on a wall)
