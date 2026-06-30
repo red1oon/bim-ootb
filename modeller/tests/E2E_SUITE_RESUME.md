@@ -41,8 +41,12 @@ Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring
 4. ✅ INSERT (`witness_e2e_insert.js` 7/7) — Insert pill → catalog `.ins-c` leaf → ground click → GEOM_INSERT;
    ATOMIC by scene census (mesh featureId==op id), VISIBLE, REVERSIBLE (cursor + mesh gone). NOTE census evals the
    predicate SOURCE in-page → bake literals in (no node closure): `new Function('o','return o.featureId==='+id)`.
-5. ☐ SCALE (select INSERT → Move mode → drag cube handle → GEOM_SCALE; gizmo `scaleHandle`, axis 'scaleX/Y/Z')
-6. ☐ ROTATE (select INSERT/SOLID → Move mode → drag yaw ring → GEOM_ROTATE; axis 'rotZ')
+5. ✅ SCALE (`witness_e2e_scale.js` 7/7) — select → Move pill → drag +X scale CUBE → GEOM_SCALE fx; ATOMIC by the
+   measured X-extent ratio == fx. ⚠ caught + fixed a 4th real defect: `foldInsert` scale branch did `base.bbox ||
+   c.bbox` with c==null for a RAW-bbox ARC insert → threw → the wall VANISHED. Guarded `(c ? c.bbox : rawBox)` like
+   the rotate branch (bonsai_library.js). EVERY ARC wall is a raw-bbox insert, so scale-vanish hit all of them.
+6. ✅ ROTATE (`witness_e2e_rotate.js` 7/7) — select → Move pill → drag yaw RING 30° → GEOM_ROTATE drot; ATOMIC by
+   the rendered footprint AABB (X-extent == ex·cosθ + ey·sinθ), REVERSIBLE. Single insert = exactly +1 op.
 7. ☐ SKETCH→EXTRUDE (b-sketch place points → b-extrude → GEOM_EXTRUDE/_POLY; `enterSketch`, `_sketchDraft`)
 8. ☐ ROUTE→RUN (b-route place points → b-run → GEOM_SWEEP; `_routeDraft`)
 9. ☐ FILLET (b-fillet edge-pick → b-applyfillet → GEOM_FILLET; `edgePicking`)
