@@ -11,6 +11,8 @@
 //     • uninterpretable pm_cycle → HONEST SKIP (logged), never a guessed cadence.
 //   Pure + deterministic (no Date.now — caller passes `today`/`from`). Read the log after run.
 'use strict';
+// browser-safe import (see models.js): node → require; browser <script> → self.HbaWatermark global.
+var W = (typeof require !== 'undefined') ? require('./watermark') : (typeof self !== 'undefined' ? self : this).HbaWatermark;
 
 // known cadences → month step. Anything else = we cannot interpret it → skip (non-invent).
 var CYCLE_MONTHS = { weekly: null, monthly: 1, bimonthly: 2, 'bi-monthly': 2, quarterly: 3,
@@ -66,6 +68,10 @@ function buildSchedule(assets, opts) {
       prev = tid;
     });
   });
+  // §DISCLAIMER: the derived schedule is a generated/exportable output → watermark the container AND each task
+  // (tasks can be exported individually). Locale-aware; default EN. NON-INVENT is unaffected (mark is metadata).
+  var locale = opts.locale || 'en';
+  if (W) { W.stamp(sched, locale); tasks.forEach(function (t) { W.stamp(t, locale); }); }
   return { schedule: sched, tasks: tasks, task_elements: elems, task_sequences: seqs, skipped: skipped };
 }
 

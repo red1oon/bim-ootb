@@ -19,14 +19,15 @@ var vm = require('vm'), fs = require('fs'), path = require('path');
 var browserSelf = {};
 var sandbox = { self: browserSelf, console: { log: function () {}, warn: function () {} } };
 vm.createContext(sandbox);
-['watermark', 'models', 'binding', 'overlay', 'lens'].forEach(function (f) {   // dependency order = load order
+['watermark', 'models', 'binding', 'overlay', 'lens', 'timeline'].forEach(function (f) {   // dependency order = load order
   var code = fs.readFileSync(path.join(__dirname, '..', f + '.js'), 'utf8');
   vm.runInContext(code, sandbox, { filename: f + '.js' });
 });
-ok('W0-browser-path', browserSelf.HbaModels && browserSelf.HbaOverlay && browserSelf.HbaBinding && browserSelf.HbaLens
+ok('W0-browser-path', browserSelf.HbaModels && browserSelf.HbaOverlay && browserSelf.HbaBinding && browserSelf.HbaLens && browserSelf.HbaTimeline
   && browserSelf.HbaModels.records('Tenancy')[0]._watermark === 'SAMPLE — NOT OFFICIAL'
-  && browserSelf.HbaModels.records('Tenancy')[0].unit_guid === 'RM_Level_1_1',
-  'engine files load as <script> (no require) → self.Hba* globals set, models stamped + bound to RM_Level_1_1');
+  && browserSelf.HbaModels.records('Tenancy')[0].unit_guid === 'RM_Level_1_1'
+  && browserSelf.HbaTimeline.buildSchedule(browserSelf.HbaModels.records('Asset'), { from: '2026-07', months: 3 }).tasks.length === 4,
+  'engine files (incl timeline) load as <script> (no require) → self.Hba* globals set, models bound + timeline derives');
 
 // ---- the rest of the witness drives the adapter via node require (its node branch returns before the DOM gate)
 global.self = global;
