@@ -37,6 +37,12 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
   second icon set.) Teams's toggle is a PEER icon in that same row. `teams_pill.js` already renders an icon glyph +
   hover title (✅ icon-not-label) — the remaining work is: (a) prefer `A.icon` when the host exposes it (fall back
   to the self-contained glyph only on the standalone demo), (b) use the host's active-band colour, not `#3a6df0`.
+  - **Agreed icon map (user 2026-07-01, "improvise if you like" → these Lucide keys, verified vs the registry):**
+    Storey `layers` (or `home`=house; `layers`=stacked-floors disambiguates from the nav Home button) · Disc
+    `wrench` (spanner) · Phase `clock` (✅ exists) · Material `contrast` (a half-lit circle = shaded 3D sphere;
+    ✅ exists — true-sphere alt: add `globe`) · Tenancy `users` · IoT `cpu` · Teams `share` (collab-network,
+    distinct from Tenancy `users`; ✅ exists). **Need ADDING to `viewer/panels.js` ICONS: `wrench`, `users`,
+    `cpu`, and (if chosen) `layers`/`globe`** — add to the ONE registry, never fork a second set.
 - **R2 — Pane = host shell.** Use `A.createPanel()` / the Find-panel pane rails; drop the bespoke fixed-right drawer
   with its own border/shadow. Reuse `.bim-panel` + `.bim-panel-close` + draggable + focus-register.
 - **R3 — Tabs = ONE schema.** Unify the pane's tabs with the existing Outliner tabs (blame-Tree / Chat-is-oplog /
