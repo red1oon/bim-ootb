@@ -8,7 +8,7 @@
 //   Run: node hr_bim_asset/tests/witness_bind.js
 'use strict';
 var fs = require('fs'), path = require('path');
-var B = require('../binding'), O = require('../overlay'), M = require('../models'), C = require('../connectors');
+var B = require('../binding'), O = require('../overlay'), M = require('../models'), C = require('../connectors'), L = require('../lens');
 var checks = [];
 function ok(tag, cond, msg) { checks.push(!!cond); console.log('§HBA-BIND ' + (cond ? 'PASS' : 'FAIL') + ' ' + tag + ' — ' + msg); }
 
@@ -69,6 +69,20 @@ ok('B8-guidmap-reverse', B.meshIdForGuid(leaseGuid, guidMap) === '4012' && B.mes
 // B9 — connector seam over a real-shaped guidMap returns the MESH-ID handle (browser tint/zoom target), not bool.
 ok('B9-seam-meshid', C.resolveGuid(leaseGuid, guidMap) === '4012' && C.resolveGuid(FAKE, guidMap) === null,
   'Connectors.resolveGuid over APP.guidMap → returns mesh-id handle (real) / null (un-linked) — the live MeshPort hook');
+
+// B10 — real storey derivation (kills the 'S?' stub): bind storeys from the fixture, then the demo lease's
+//   row carries the REAL storey of its bound room (Level N), not a placeholder. Unknown guid → honest 'S?'.
+L.bindStoreys(FX.rooms);
+var realStorey = realRoom.storey;
+var trow = L.tenancyRows('2026-06')[0];
+ok('B10-real-storey', realStorey && trow.storey === realStorey && L.deriveStorey('NO-SUCH-GUID') === 'S?',
+  'deriveStorey is real: lease unit → "' + trow.storey + '" (from IfcBuildingStorey), unknown guid → honest S?');
+
+// B11 — density dots group by REAL storey: an occupied lease on a real storey produces a density entry keyed
+//   by that storey (non-invent — count from records, storey from the model).
+var dens = L.densityPlan(L.tenancyRows('2026-06'));
+ok('B11-density-real-storey', dens.length >= 1 && dens.some(function (d) { return d.storey === realStorey && d.count >= 1; }),
+  'population-density dot keyed by the real storey "' + realStorey + '" (count from leases, storey from the model)');
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-BIND ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));

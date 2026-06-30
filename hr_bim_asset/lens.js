@@ -16,7 +16,15 @@ var LENSES = {
   iot:     { icon: 'cpu',   label: 'IoT / Assets', mode: 'maintenance' }
 };
 
-function deriveStorey(guid) { return 'S?'; }   // STUB: real = unit→storey containment from the model
+// unit→storey index, bound from REAL data (the extracted room fixture in the witness; the model's
+// rel_contained_in_space / elements_meta.storey in the browser). NON-INVENT: unknown guid → honest 'S?'.
+var _storeyOf = {};
+function bindStoreys(rooms) {   // rooms = [{guid, storey}] (fixture) or a {guid:storey} map
+  if (Array.isArray(rooms)) rooms.forEach(function (r) { if (r && r.guid && r.storey) _storeyOf[r.guid] = r.storey; });
+  else if (rooms && typeof rooms === 'object') Object.keys(rooms).forEach(function (g) { if (rooms[g]) _storeyOf[g] = rooms[g]; });
+  return _storeyOf;
+}
+function deriveStorey(guid) { return _storeyOf[guid] || 'S?'; }   // real storey when bound, honest 'S?' otherwise
 
 // occupancy rows for the Find list — rooms→tenants. (recs override lets witnesses inject a fixture.)
 function tenancyRows(period, recs) {
@@ -54,6 +62,6 @@ function onPick(lensKey, row, scene) {
   return row.guid;
 }
 
-var L = { LENSES: LENSES, tenancyRows: tenancyRows, iotRows: iotRows, densityPlan: densityPlan, onPick: onPick };
+var L = { LENSES: LENSES, bindStoreys: bindStoreys, deriveStorey: deriveStorey, tenancyRows: tenancyRows, iotRows: iotRows, densityPlan: densityPlan, onPick: onPick };
 if (typeof module === 'object' && module.exports) module.exports = L;
 else (typeof self !== 'undefined' ? self : this).HbaLens = L;

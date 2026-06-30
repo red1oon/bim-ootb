@@ -16,9 +16,11 @@ var sha = crypto.createHash('sha256').update(fs.readFileSync(DB)).digest('hex').
 function q(sql) { return JSON.parse(cp.execFileSync('sqlite3', ['-json', DB, sql], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) || '[]'); }
 
 var rooms = q("SELECT s.guid AS guid, s.name AS name, s.center_x AS cx, s.center_y AS cy, s.center_z AS cz, "
+        + "p.name AS storey, "   // parent IfcBuildingStorey name = the REAL storey (no parsing/guessing)
         + "(SELECT count(*) FROM rel_contained_in_space r WHERE r.space_guid=s.guid) AS contained "
-        + "FROM spatial_structure s WHERE s.type='IfcSpace' ORDER BY s.guid;").map(function (r) {
-  return { guid: r.guid, name: r.name,
+        + "FROM spatial_structure s LEFT JOIN spatial_structure p ON s.parent_guid=p.guid AND p.type='IfcBuildingStorey' "
+        + "WHERE s.type='IfcSpace' ORDER BY s.guid;").map(function (r) {
+  return { guid: r.guid, name: r.name, storey: r.storey || null,
            center: [+r.cx.toFixed(3), +r.cy.toFixed(3), +r.cz.toFixed(3)],
            contained: r.contained };   // # of building elements rel_contained_in_space → real occupancy proxy
 });

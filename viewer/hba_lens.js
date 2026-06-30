@@ -70,6 +70,21 @@
     return false;
   }
 
+  // bind the Find-lens storey index from the LIVE model (rooms→IfcBuildingStorey) so density dots use real
+  // storeys — non-invent, honest no-op on a building without spatial_structure. Uses the viewer's A.dbQuery.
+  var _storeysBound = false;
+  function bindStoreysFromModel(A) {
+    var h = HBA();
+    if (_storeysBound || !h.L || !h.L.bindStoreys || !A || typeof A.dbQuery !== 'function') return;
+    try {
+      var rows = A.dbQuery("SELECT s.guid, p.name FROM spatial_structure s LEFT JOIN spatial_structure p "
+        + "ON s.parent_guid=p.guid AND p.type='IfcBuildingStorey' WHERE s.type='IfcSpace'");
+      var map = {}; (rows || []).forEach(function (r) { if (r[0] && r[1]) map[r[0]] = r[1]; });
+      h.L.bindStoreys(map); _storeysBound = true;
+      console.log('§HBA_STOREY bound ' + Object.keys(map).length + ' rooms→storey from model');
+    } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
+  }
+
   // period helper — current month YYYY-MM (the overlay's "now"); host may override via A._hbaPeriod.
   function period(A) {
     if (A && A._hbaPeriod) return A._hbaPeriod;
@@ -120,6 +135,7 @@
     var hasMesh = A && A.guidMap && Object.keys(A.guidMap).length > 0;
     if (!ready() || !hasMesh) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — engine/guidMap not ready'); } return; }
     clearInterval(_poll);
+    bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
     var acts = G._mainPillActions || [], on = { hbaTenancy: detect(A, 'tenancy'), hbaIot: detect(A, 'maintenance') };
     var any = false;
     for (var i = 0; i < acts.length; i++) {
