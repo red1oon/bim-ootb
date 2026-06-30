@@ -23,23 +23,49 @@
   // A.guidMap is meshId→guid (guids are VALUES; instanced meshes carry `_N` keys) — verified 2026-06-30.
   function buildMeshPort(A, opts) {
     opts = opts || {};
-    var touched = [];                                   // [{m, e?, o?, t?}] — saved originals for full restore
-    function meshes() { return A.collectMeshes(function (o) { return o.isMesh; }); }
-    function meshesFor(guid) {
+    var touched = [];                                   // [{m, e?|inst?|batch?|o?, ...}] — saved originals for restore
+    var _byId = null;                                   // meshId → THREE object (rebuilt each restore cycle)
+    // scratch THREE.Color for per-slot (instanced/batched) tint — instanced meshes carry no per-instance emissive,
+    // so a single instance is recoloured via setColorAt (DIFFUSE). null in node-without-THREE (regular path only).
+    var _C = (typeof THREE !== 'undefined' && THREE.Color) ? new THREE.Color() : null;
+    function meshById() {
+      if (_byId) return _byId;
+      _byId = {};
+      A.collectMeshes(function (o) { return o.isMesh || o.isInstancedMesh || o.isBatchedMesh; })
+        .forEach(function (o) { _byId[o.id] = o; });
+      return _byId;
+    }
+    function targetsFor(guid) {
       // §REAL-BIND — a zone tints via the zone's own mesh if rendered, else its rendered contained members.
       var want = HBA().B.zoneMeshGuids(guid, A.guidMap, A._hbaRoomMembers || null);
       if (!want.length) return [];
-      var set = {}; want.forEach(function (g) { set[g] = 1; });
-      var out = []; meshes().forEach(function (obj) { if (set[A.guidMap[obj.id]]) out.push(obj); }); return out;
+      // §INSTANCED-TINT — reverse-index handling the `_N` slot suffix (the tintedMeshes=0 bug on instanced/batched).
+      var byId = meshById(), out = [];
+      HBA().B.guidTargets(want, A.guidMap).forEach(function (t) {
+        var m = byId[t.meshId]; if (m) out.push({ m: m, slot: t.slot });
+      });
+      return out;
     }
     return {
-      allGuids: function () {
-        var s = {}; meshes().forEach(function (obj) { var g = A.guidMap[obj.id]; if (g) s[g] = 1; }); return Object.keys(s);
+      allGuids: function () {                            // every rendered guid (bare + `_N`-keyed instanced/batched)
+        var s = {}, gm = A.guidMap || {}; for (var k in gm) { if (gm[k]) s[gm[k]] = 1; } return Object.keys(s);
       },
       setTint: function (guid, color) {
         var hex = toHex(color);
-        meshesFor(guid).forEach(function (m) {
-          if (m.material && m.material.emissive) { touched.push({ m: m, e: m.material.emissive.getHex() }); m.material.emissive.setHex(hex); }
+        targetsFor(guid).forEach(function (tt) {
+          var m = tt.m;
+          if (tt.slot == null) {                         // whole mesh (regular/merged) — emissive glow (nlp.js pattern)
+            if (m.material && m.material.emissive) { touched.push({ m: m, e: m.material.emissive.getHex() }); m.material.emissive.setHex(hex); }
+          } else if (m.isInstancedMesh && m.setColorAt && _C) {   // one instance — per-instance diffuse colour
+            var had = !!m.instanceColor, prev = 0xffffff;          // un-set instanceColor multiplies WHITE (identity)
+            if (had) { m.getColorAt(tt.slot, _C); prev = _C.getHex(); }
+            touched.push({ m: m, inst: tt.slot, c: prev });
+            m.setColorAt(tt.slot, _C.setHex(hex)); m.instanceColor.needsUpdate = true;
+          } else if (m.isBatchedMesh && m.setColorAt && _C) {      // one batched slot — per-slot diffuse colour
+            var pb = 0xffffff; try { m.getColorAt(tt.slot, _C); pb = _C.getHex(); } catch (e) {}
+            touched.push({ m: m, batch: tt.slot, c: pb });
+            try { m.setColorAt(tt.slot, _C.setHex(hex)); } catch (e2) {}
+          }
         });
       },
       // ghost = de-emphasise the rest. DEFAULT OFF for the first live wire: materials are often SHARED across
@@ -47,18 +73,22 @@
       // visually verified. The engine still iterates every non-linked guid; this is a safe visual no-op.
       setGhost: function (guid) {
         if (!opts.ghost) return;
-        meshesFor(guid).forEach(function (m) {
-          if (m.material) { touched.push({ m: m, o: m.material.opacity, t: m.material.transparent }); m.material.transparent = true; m.material.opacity = 0.12; }
+        targetsFor(guid).forEach(function (tt) {
+          var m = tt.m;                                  // ghost only whole-mesh targets (per-slot opacity not supported)
+          if (tt.slot == null && m.material) { touched.push({ m: m, o: m.material.opacity, t: m.material.transparent }); m.material.transparent = true; m.material.opacity = 0.12; }
         });
       },
       restoreAll: function () {
         touched.forEach(function (s) {
-          if (s.e != null && s.m.material && s.m.material.emissive) s.m.material.emissive.setHex(s.e);
+          if (s.inst != null && s.m.instanceColor && _C) { s.m.setColorAt(s.inst, _C.setHex(s.c)); s.m.instanceColor.needsUpdate = true; }
+          else if (s.batch != null && s.m.setColorAt && _C) { try { s.m.setColorAt(s.batch, _C.setHex(s.c)); } catch (e) {} }
+          else if (s.e != null && s.m.material && s.m.material.emissive) s.m.material.emissive.setHex(s.e);
           if (s.o != null && s.m.material) { s.m.material.opacity = s.o; s.m.material.transparent = s.t; }
         });
-        touched = [];
+        touched = []; _byId = null;
         if (A.markDirty) A.markDirty();
-      }
+      },
+      tintedCount: function () { return touched.length; }   // whitebox: # of targets currently tinted (§DIAG truth)
     };
   }
 
@@ -297,7 +327,11 @@
     return sch;
   }
 
-  G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort,
+  // §INSTANCED-TINT whitebox accessor — # of mesh targets the ACTIVE lens currently tints (regular emissive +
+  // instanced/batched per-slot). The live driver asserts this > 0 (the old emissive-only count missed instanced).
+  function tintedCount() { return _port ? _port.tintedCount() : 0; }
+
+  G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, tintedCount: tintedCount,
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready };
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate

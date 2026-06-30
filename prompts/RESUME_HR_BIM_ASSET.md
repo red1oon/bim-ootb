@@ -45,14 +45,20 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
    `safe_gh_deploy.sh` only after the screens meet the standard.
 
 ### BACKLOG (priority order) — work to zero
-- **P1 — INSTANCED-TINT (the live lens actually paints). §-log proven half-done.** §REAL-BIND (commit this
-  session) made every lens *resolve* on the live model — driver `§DIAG2`: `leaseRoomsResolved=3/3`,
-  `available=[occupancy:on,presence:on,class:on,maintenance:on,dash:on]` (was 0/5). BUT `tintedMeshes=0`: HHS is
-  **716 instanced groups**, so member meshes are keyed `guidMap[meshId + '_' + N]` (batched/instanced), which
-  `viewer/hba_lens.js buildMeshPort.meshesFor` (`A.guidMap[obj.id]`, no suffix) misses; and one instance must be
-  recoloured via `InstancedMesh.setColorAt`/`instanceColor`, NOT `material.emissive`. FIX buildMeshPort to (a)
-  reverse-index guid→meshKeys handling the `_N` suffix, (b) tint instanced via setColorAt + restore. Witness with
-  the live harness asserting `tintedMeshes>0`. This is THE blocker for a real lens-applied screenshot + closes #2b.
+- **P1 — INSTANCED-TINT (the live lens actually paints). ✅ DONE+LIVE 2026-07-01 — `tintedMeshes=19` on HHS
+  (was 0), `emissiveOnly=0` ⇒ ALL 19 are instanced/batched per-slot tints.** TWO root causes, both fixed (the
+  prompt's "just the `_N` suffix" diagnosis was incomplete):
+  1. **`hr_bim_asset/overlay.js applyOverlay` drove `setTint` from `allGuids() ∩ linked`** — but `plan.linked` is
+     ROOM guids and a room is NOT a rendered guid, so the intersection was EMPTY → `setTint` never fired for any
+     room → 0 paint. The synthetic witnesses MASKED this (they put the room guid AS a rendered mesh value). FIX:
+     iterate `plan.linked` directly (`port.setTint(zone)`), letting the port resolve zone→members; ghost the rest.
+  2. **`viewer/hba_lens.js buildMeshPort` bare-id lookup** missed instanced/batched members keyed `<meshId>_<N>`
+     and tinted whole-mesh `emissive` (no per-instance). FIX: new pure `binding.guidTargets()` reverse-indexes the
+     `_N` suffix → `{meshId, slot}`; the port tints whole-mesh via emissive, per-slot via `setColorAt` (+ restore).
+  Whitebox witness `tests/witness_meshport.js` **W-HBA-MESHPORT 8/8** (drives the REAL port + applyOverlay through
+  stub InstancedMesh/BatchedMesh; M6 = the un-rendered-room gap the synthetics missed) + LIVE harness GREEN
+  (`§DIAG2 … tintedMeshes=19`) + real lens-applied screenshot (cyan occupancy tints across HHS). Witness mocks in
+  `witness_{view,presence}.js` made faithful (setTint no-ops an unresolved zone, like the real port). Closes #2b.
 - **P2 — RICH DEMO DATA (the richness standard).** Enrich the gate seeds (`occupancy.demoSeed` /
   `attendance.demoSeed` / class declarations / one asset) to populate ALL real storeys/rooms with a meaningful
   MIX per the acceptance bar, so the dashboard + lenses look like a real operating building. Re-screenshot to

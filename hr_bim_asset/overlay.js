@@ -87,13 +87,16 @@ function computeOccupancy(rows, opts) {
 }
 
 // apply via the MeshPort SEAM only. port = { allGuids(), setTint(guid,color), setGhost(guid), restoreAll() }.
+// §REAL-BIND/§INSTANCED-TINT — drive setTint from the LINKED ZONE list, NOT from allGuids ∩ linked. A linked
+// zone is often an un-rendered IfcSpace ROOM whose guid never appears in allGuids() (the rendered set), so the
+// old `allGuids().forEach → tint if linked` intersection was EMPTY for rooms → nothing painted (the live
+// tintedMeshes=0). The port resolves a zone to its real mesh(es): the zone's own mesh if rendered, else its
+// rendered contained members (instanced/batched slots included). Ghost the rest by contrast (opt-in / no-op off).
 function applyOverlay(port, plan) {
   port.restoreAll();                                    // clear any prior mode FIRST (no stacked colors)
   var linked = {}; plan.linked.forEach(function (g) { linked[g] = true; });
-  port.allGuids().forEach(function (g) {
-    if (linked[g]) port.setTint(g, plan.tints[g].color); // tint the few that are linked
-    else port.setGhost(g);                               // ghost the rest → focus by contrast, not marks
-  });
+  plan.linked.forEach(function (g) { port.setTint(g, plan.tints[g].color); }); // tint each linked zone (→ members)
+  port.allGuids().forEach(function (g) { if (!linked[g]) port.setGhost(g); });  // ghost the rest (zero residue off)
   return plan.linked.length;
 }
 function clearOverlay(port) { port.restoreAll(); }       // toggle OFF = full restore, zero residue

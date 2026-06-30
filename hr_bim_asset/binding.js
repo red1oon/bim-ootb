@@ -82,7 +82,32 @@ function zoneMeshGuids(zone, source, roomMembers) {
   return mem.filter(function (g) { return base.has(g); });
 }
 
+// §INSTANCED-TINT (2026-07-01) — reverse the viewer guidMap for a set of want-guids into TINT TARGETS, HANDLING
+// the instanced/batched `_N` slot suffix that the naive `guidMap[obj.id]` lookup dropped (the live bug the
+// whitebox log exposed: tintedMeshes=0 on HHS's 716 instanced groups — a member mesh is keyed `<meshId>_<slot>`,
+// never the bare `<meshId>`, so the old port matched NONE of them). Returns [{ guid, meshId, slot }] where
+// slot===null is a whole-mesh (regular/merged) target and slot is the instance/batch index for a per-slot target.
+// Pure + deterministic; the browser port maps meshId→THREE object and tints whole-mesh via emissive, per-slot via
+// setColorAt. NON-INVENT: only guidMap keys whose VALUE is in the want set become targets.
+function guidTargets(wantGuids, guidMap) {
+  if (!guidMap || typeof guidMap !== 'object') return [];
+  var want = Object.create(null);
+  (wantGuids || []).forEach(function (g) { want[g] = 1; });
+  var out = [], keys = Object.keys(guidMap);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i], g = guidMap[k];
+    if (!want[g]) continue;
+    var us = k.indexOf('_'), slot = null, meshId = k;     // mesh.id is a plain integer → first '_' splits the suffix
+    if (us > 0) {
+      var tail = k.slice(us + 1);
+      if (/^[0-9]+$/.test(tail)) { slot = parseInt(tail, 10); meshId = k.slice(0, us); }
+    }
+    out.push({ guid: g, meshId: parseInt(meshId, 10), slot: slot });
+  }
+  return out;
+}
+
 var B = { knownGuidSet: knownGuidSet, resolveGuid: resolveGuid, meshIdForGuid: meshIdForGuid, bindRecords: bindRecords,
-          enrich: enrich, augmentKnown: augmentKnown, zoneMeshGuids: zoneMeshGuids };
+          enrich: enrich, augmentKnown: augmentKnown, zoneMeshGuids: zoneMeshGuids, guidTargets: guidTargets };
 if (typeof module === 'object' && module.exports) module.exports = B;
 else (typeof self !== 'undefined' ? self : this).HbaBinding = B;

@@ -11,8 +11,11 @@ function ok(tag, cond, msg) { checks.push(!!cond); console.log('§HBA-VIEW ' + (
 // stub MeshPort + ScenePort — the ONLY seams the viewer slice may touch (zero-impact proof)
 function makePort(guids) {
   var st = { tint: {}, ghost: {}, calls: [] };
+  var known = {}; guids.forEach(function (g) { known[g] = 1; });   // the rendered domain the real port resolves to
   return { _st: st, allGuids: function () { st.calls.push('allGuids'); return guids.slice(); },
-    setTint: function (g, c) { st.calls.push('setTint'); st.tint[g] = c; delete st.ghost[g]; },
+    // faithful to buildMeshPort: a zone tints ONLY if it resolves to a rendered mesh/member (here: in the rendered
+    // set); an un-rendered/unknown zone is a no-op (the real port returns 0 targets — never a fabricated tint).
+    setTint: function (g, c) { st.calls.push('setTint'); if (known[g]) { st.tint[g] = c; delete st.ghost[g]; } },
     setGhost: function (g) { st.calls.push('setGhost'); st.ghost[g] = true; delete st.tint[g]; },
     restoreAll: function () { st.calls.push('restoreAll'); st.tint = {}; st.ghost = {}; },
     tintGuids: function () { return Object.keys(st.tint); }, ghostN: function () { return Object.keys(st.ghost).length; } };

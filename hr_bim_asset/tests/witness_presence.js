@@ -59,8 +59,10 @@ ok('P3b-bucket-fn', O.presenceBucket(1) === 'low' && O.presenceBucket(4) === 'me
 // ---- P4: rides the EXISTING density seam — applyOverlay over a stub MeshPort (zero new viewer-core) --------
 function makePort(guids) {
   var st = { tint: {}, ghost: {} };
+  var known = {}; guids.forEach(function (g) { known[g] = 1; });   // the rendered domain the real port resolves to
   return { _st: st, allGuids: function () { return guids.slice(); },
-    setTint: function (g, c) { st.tint[g] = c; delete st.ghost[g]; },
+    // faithful to buildMeshPort: tint only a zone that resolves to a rendered mesh/member; unresolved zone = no-op.
+    setTint: function (g, c) { if (known[g]) { st.tint[g] = c; delete st.ghost[g]; } },
     setGhost: function (g) { st.ghost[g] = true; delete st.tint[g]; },
     restoreAll: function () { st.tint = {}; st.ghost = {}; },
     tintGuids: function () { return Object.keys(st.tint); }, ghostN: function () { return Object.keys(st.ghost).length; } };
