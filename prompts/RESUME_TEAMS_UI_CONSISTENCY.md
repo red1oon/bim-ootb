@@ -149,8 +149,24 @@ The overlay now SPEAKS THE HOST LANGUAGE when a host factory is injected:
 Storey/Disc/Material/Tenancy/IoT) belong to the **HR/viewer Find-Panel icon-ification** (§2), which already owns
 `viewer/panels.js`. Add them there, to the ONE registry — do NOT fork from the Teams lane.
 
-**REMAINING (chrome, follow-on):** R3 tab-schema unification with the Outliner tabs, R6 Find-panel dot placement on
-Storey→Rooms rows + Modeller Role×Project pivot, §1b Teams Dashboard graphs (`teams/erp/teams_dashboard.js`), and §3b's
+## ✅ R6 DONE — Find-panel placement: ONE Role×Spine matrix, two renderings (2026-07-01)
+**W-FIND-PLACEMENT 8/8** (node engine) + **W-FIND-PLACEMENT-DOM 4/4** (chromium render). New module
+`teams/overlay/find_placement.js` (REUSES dot_layer — colorOf · dotLayerModel · clusterByAnchor, no fork):
+- **`placementModel(ops, spine, opts)`** folds the op-log onto a spine; the SAME engine renders both pivots,
+  only `anchorOf` differs (§1a) — built **design/Project-spine FIRST** (anti-drift), operate second:
+  - **DESIGN** (home): Role × Project→Element, `anchorOf = element id`, parent = project/task.
+  - **OPERATE** (handover): Role × Zone Storey→Rooms, `anchorOf = room guid`, parent = storey.
+- **Storey rollup** = child dots re-anchored to the parent → `clusterByAnchor` → `+N` density cluster (HR's grammar).
+- **By-role partition** per leaf AND parent = distinct persons per role, every name traced to an op (NON-INVENT).
+- **`unplaced`** — an op whose anchor has NO spine node is reported, NEVER invented onto a row.
+- **`paintFindPlacement(container, model, opts)`** (browser-only, no-op in node) appends WHO-dots AFTER the row's
+  state chip + a `+N` storey-density badge, reusing the `.tcluster/.tdot/.tbadge` classes. OFF = pixel-identical.
+- Fixtures: `teams/tests/fixtures/find_rows.html` (operate Storey→Rooms). Node suite 23/23. Lane-clean (teams/ only).
+- **Smart-search entry (§R6 "erp_search.js is the entry") = NOT wired here** — the engine is search-agnostic; wiring
+  the FTS typeahead → spine selection is a follow-on once the host Find panel exposes its row set.
+
+**REMAINING (chrome, follow-on):** R3 tab-schema unification with the Outliner tabs, the Modeller Role×Project pivot
+WIRED to `bonsai_outliner.js` (engine ready), §1b Teams Dashboard graphs (`teams/erp/teams_dashboard.js`), and §3b's
 4 open edges. Start from the Modeller/Project spine (§1a anti-drift), not HHS/Viewer.FindPanel.
 
 ## 3. Witness (add before any chrome) — W-TEAMS-UI-CONSISTENT (chromium)

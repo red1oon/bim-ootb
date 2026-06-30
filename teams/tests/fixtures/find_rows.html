@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — OPERATE Find-panel fixture for W-FIND-PLACEMENT-DOM (RESUME_TEAMS_UI_CONSISTENCY §R6).
+     A mock Viewer Find panel: Storey headers → Room rows ({guid, storey, state chip}). The Teams placement
+     paints WHO-dots AFTER each row's state chip and a `+N` density badge on each storey header — HR's
+     density-dot grammar, the SAME .tcluster/.tdot/.tbadge classes. OFF = the rows are pixel-identical.
+     Read-only seeded ops; no network. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Find panel · Storey→Rooms · Teams placement</title>
+<style>
+  :root { --idmp-panel:#fff; --idmp-border:#cdd4de; --idmp-text:#2b333d; --idmp-muted:#6b7681; --idmp-blue:#1c5fa8; }
+  * { box-sizing:border-box; } body { margin:0; font:13px/1.45 system-ui,sans-serif; color:var(--idmp-text); background:#eef1f5; padding:16px; }
+  .find { max-width:420px; background:var(--idmp-panel); border:1px solid var(--idmp-border); border-radius:6px; overflow:hidden; }
+  .storey-hdr { display:flex; align-items:center; gap:8px; padding:8px 12px; background:#f3f6fa; border-bottom:1px solid var(--idmp-border);
+    font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--idmp-muted); font-weight:700; }
+  .find-row { display:flex; align-items:center; gap:10px; padding:9px 12px; border-bottom:1px solid var(--idmp-border); }
+  .find-row .lbl { font-weight:600; width:90px; } .find-row .st { font-size:11px; color:#fff; background:var(--idmp-muted); border-radius:10px; padding:1px 8px; }
+  .tcluster { display:inline-flex; align-items:center; gap:2px; }
+  .tdot { width:18px; height:18px; border-radius:50%; display:inline-grid; place-items:center; font-size:8px; font-weight:700; color:#fff; background:var(--c,#888); }
+  .tbadge { font-size:11px; font-weight:700; color:var(--idmp-muted); }
+</style>
+</head>
+<body>
+<div class="find" id="find">
+  <div class="storey-hdr" data-storey="L1">Level 1</div>
+  <div class="find-row" data-guid="GUID-A"><span class="lbl">Room A</span><span class="st">occupied</span></div>
+  <div class="find-row" data-guid="GUID-B"><span class="lbl">Room B</span><span class="st">vacant</span></div>
+  <div class="storey-hdr" data-storey="L2">Level 2</div>
+  <div class="find-row" data-guid="GUID-C"><span class="lbl">Room C</span><span class="st">occupied</span></div>
+</div>
+
+<script src="../../overlay/dot_layer.js"></script>
+<script src="../../overlay/find_placement.js"></script>
+<script>
+(function () {
+  'use strict';
+  var FP = window.TeamsFindPlacement;
+  var T = 1719700000000;
+  function op(id, ts, author, role, verb, guid) { return { id:id, ts:ts, author:author, role:role, cls:'bim', verb:verb, target:guid, params:{} }; }
+  // Room A: ada(ARC)+stan(STR)=2 · Room B: mary(MEP)=1 · Room C: ada,ana,stan,mary,moe=5 (fan-out +3).
+  var ops = [
+    op('o1',T+10,'ada','ARC','PLACE','GUID-A'), op('o2',T+20,'stan','STR','PLACE','GUID-A'),
+    op('o3',T+30,'mary','MEP','ROUTE','GUID-B'),
+    op('o4',T+40,'ada','ARC','PLACE','GUID-C'), op('o5',T+50,'ana','ARC','EDIT','GUID-C'),
+    op('o6',T+60,'stan','STR','PLACE','GUID-C'), op('o7',T+70,'mary','MEP','ROUTE','GUID-C'), op('o8',T+80,'moe','MEP','EDIT','GUID-C')
+  ];
+  var spine = { mode:'operate', leaves: [
+    { id:'GUID-A', parent:'L1', label:'Room A' }, { id:'GUID-B', parent:'L1', label:'Room B' },
+    { id:'GUID-C', parent:'L2', label:'Room C' }
+  ] };
+  var container = document.getElementById('find');
+  var paintOpts = { rowSel:'.find-row', stateSel:'.st', rowKey:function(r){return r.getAttribute('data-guid');},
+                    headerSel:'.storey-hdr', headerKey:function(h){return h.getAttribute('data-storey');} };
+
+  window.__teamsBaseline = container.innerHTML;                 // OFF baseline
+  window.__teamsPaint = function () { var m = FP.placementModel(ops, spine, { on:true, mode:'operate', anchorOf:function(o){return o.target;}, maxVisible:2 }); FP.paintFindPlacement(container, m, paintOpts); };
+  window.__teamsClear = function () { FP.paintFindPlacement(container, { on:false }, paintOpts); };
+  window.__teamsReady = true;
+})();
+</script>
+</body>
+</html>
