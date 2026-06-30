@@ -87,12 +87,16 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   mix · presence+tickets · non-invent). ⚠ LOCAL-SERVE NOTE: the viewer fetches `buildings/X` relative to
   `viewer/`; HHS is silently rescued by the OCI-prod retry (`W-DB-404-OCI-RETRY`) but GW isn't on OCI → for a local
   GW smoke pass `?db=../buildings/warehouse_gardenworld.db`. HHS remains the richer sample; GW = the fast loop.
-- **P4 — NEWBIE GUIDE REWRITE (user).** The deployed `docs/HRBIMAssetGuide.md` is reference-style; rewrite it as
-  a **task-oriented manual** modelled on great manuals: *Getting started* (numbered: open the building → find the
-  FM pill → open the drawer → toggle a lens), *task walkthroughs* ("see which rooms are occupied" step-by-step),
-  *the data model* (op-log, records, guid→members binding, the periodic RUN engine, S_Resource), *reference*
-  (lens table + legends + watermark), *troubleshooting* ("pill not showing = no data"). Use the REAL lens-applied
-  screenshots once P1 lands.
+- **P4 — NEWBIE GUIDE REWRITE. ✅ DONE 2026-07-01 (NOT deployed — "deploy when happy").** Rewrote
+  **`docs/HRBIMAssetGuide.md`** (lives in the **bim-compiler** repo, in the mkdocs nav as "HR / Tenancy / Operate
+  Module") from reference-style into a **task-oriented manual**: *Getting started* (numbered open→pill→drawer→
+  toggle), *Common tasks* (occupancy/presence/assets/class/dashboard step-by-step), *Aisle-zones* section for
+  room-less warehouses (GW), *lens reference* (exact colour legends + watermark), *Under the hood* (signed op-log
+  · records · guid→members binding · `S_Resource` occupancy ledger · the periodic RUN engine + 4 profiles),
+  *Troubleshooting* table ("no pill = no operate data", "greyed = no data"). Uses the REAL lens-applied
+  screenshots `img/hba_occupancy_live.png` (HHS, 3 storeys) + `img/hba_gardenworld_aisles.png` (warehouse
+  aisle-zones). All image/cross-link refs verified. Committed on bim-compiler branch **`docs/hba-guide-rewrite`**
+  (pushed); **NOT gh-deployed** — review + `safe_gh_deploy.sh` when happy.
 - **P5 — ERP INTEGRATION / SPATIAL-ERP DOC (user).** Document how Viewer + ERP + HR integrate over ONE building +
   ONE signed op-log so **ERP users appreciate the delightful, find-everything, no-redundancy UI** (the FM family
   pill = one entry not six; wake-aware greying; records on geometry). Tie into `docs/SpatialERP_OOTB.md`.
