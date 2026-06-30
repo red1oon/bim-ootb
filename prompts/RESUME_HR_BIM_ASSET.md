@@ -26,15 +26,23 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 **Module = HR_BIM_Asset** (NOT "Payroll" — payroll is just RUN profile #1). Lives in **bim-ootb ONLY**:
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
-bim-compiler work. Witness: `node hr_bim_asset/tests/witness_run.js && node hr_bim_asset/tests/witness_view.js
-&& node hr_bim_asset/tests/witness_bind.js`.
+bim-compiler work. Witness: `for w in run view bind wire; do node hr_bim_asset/tests/witness_$w.js; done`
+(W-HBA-ALPHA 18 · W-HBA-VIEW 13 · W-HBA-BIND 9 · W-HBA-WIRE 9).
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
 - 4 AD models, singular demo records (Tenancy/PropertyManagement/Strata/Asset); Asset = bim_guid↔iot + operator/vendor/personnel + schedule.
 - Spatial view (`overlay.js`+`lens.js`): 2 Find flaticon lenses (Tenancy=`users` blue-band · IoT=`cpu` · word-on-hover), storey density-dots, click→zoom→dummy→IFC-popup. Zero-impact (MeshPort/ScenePort seams). **W-HBA-VIEW 13/13.**
 - Watermark CONTOH/SAMPLE on every output. §BINDING (guid join + bim_orders_overlay inject). §CROSS-APP (Viewer·ERP·HR spine).
-- **NEXT#1 ✅ DONE 2026-06-30 — real-guid binding (`binding.js` + `fixtures/hhs_rooms.json` + `W-HBA-BIND 7/7`).**
+- **NEXT#2 ✅ DONE 2026-06-30 — viewer wire-in (`viewer/hba_lens.js` + `W-HBA-WIRE 9/9`).** Two DATA-GATED pill
+  icons in `viewer/panels.js` (`hbaTenancy`/`hbaIot`, `users`/`cpu` Lucide added to ICONS) — `pill:false` until
+  `hba_lens.js` detects a real binding in the loaded building, then flips + `A._buildPill()` (the whwalk precedent).
+  `hba_lens.js` (additive, host-injected, imports nothing) binds the WITNESSED overlay engine to the scene via a
+  real **MeshPort over `A.guidMap`** (emissive tint, reused from `nlp.js`); toggle-off restores every material
+  (zero residue). HBA engine made browser-safe (guarded `require` → `self.Hba*` globals) + loaded in `viewer.html`.
+  ZERO new shared-file risk beyond the sanctioned 2-icon touch; `sw.js` untouched (§OPS). **Remaining = live 3D
+  Playwright/deploy smoke (NEXT#2b)** — §-log value-verification done, browser render not yet observed.
+- **NEXT#1 ✅ DONE 2026-06-30 — real-guid binding (`binding.js` + `fixtures/hhs_rooms.json` + `W-HBA-BIND 9/9`).**
   Demo lease `L-0001` + strata parcel now reference REAL HHS IfcSpace rooms (`RM_Level_1_1` ≈ Level 1 R1 /
   `RM_Level_1_2`), extracted into a provenance-stamped fixture (14 real rooms, src sha16 6498f86f, occupancy
   from `rel_contained_in_space`). `binding.resolveGuid`/`bindRecords` = the **non-invent JOIN gate**: a guid
@@ -49,14 +57,12 @@ GH bim-ootb. Other buildings untouched (OCI `_prodBase`).
 
 **NEXT (in order):**
 1. ✅ DONE — see §RESUME above (real-guid binding + W-HBA-BIND 9/9).
-2. ⛔ BLOCKED (needs user go-ahead): Viewer wire-in = the ONLY viewer-core touch — register 2 `A.icon` buttons in
-   `viewer/panels.js` + MeshPort hook to `APP.guidMap`. The **engine half is DONE + witnessed** — the seam
-   `Connectors.resolveGuid(guid, APP.guidMap)` returns the mesh-id handle (W-HBA-BIND B8/B9); all that remains is
-   the literal viewer-core edit + adding `users`/`cpu` SVGs to the viewer ICONS registry (neither is present yet).
-   Held by the spec's standing rule **"no icon wired until told"** (§FOLDER). **One question:** wire the HBA lens
-   icons into the live viewer now, or keep additive-only until the modeller session settles?
+2. ✅ DONE — see §RESUME above (viewer wire-in + W-HBA-WIRE 9/9). Icons data-gated, MeshPort over `A.guidMap`,
+   `sw.js` untouched. **Sub-item NEXT#2b open:** live 3D Playwright/deploy smoke (observe the tint in a browser).
 3. ⛔ BLOCKED (external dependency): ERP/HR dotted lines (agreement/product/AR · attendance/access) — light up only
    when ERP/HR are loaded; swap the connector stubs then. Not actionable standalone.
+4. (was ⏳) TimeMachine.Editor 4D Gantt — HHS carries `tasks`/`task_sequences`/`task_elements`/`schedules`; wire
+   the schedule editor online. Independent of the binding/wire work above.
 
 **⏳ STILL TRYING TO GO ONLINE — TimeMachine.Editor (4D Gantt chart):** the schedule/task editor (HHS carries
 `tasks`/`task_sequences`/`task_elements`/`schedules` — 4D data is present). NOT yet live; work in progress,

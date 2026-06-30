@@ -6,7 +6,9 @@
 //   + a pick handler driven through the ScenePort seam. High level = population-density dots per storey;
 //   drill = click → zoom → human dummy → IFC-style popup. Pure + deterministic. Read log after run.
 'use strict';
-var M = require('./models'), O = require('./overlay');
+// browser-safe imports (see models.js): node → require; browser <script> → self.Hba* globals.
+var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
+var M = _r ? require('./models') : _g.HbaModels, O = _r ? require('./overlay') : _g.HbaOverlay;
 
 // a lens = flaticon toggle + a row provider. Reuses panels.js A.icon(icon,{title,onClick}).
 var LENSES = {

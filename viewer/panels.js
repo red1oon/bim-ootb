@@ -65,7 +65,10 @@ var ICONS = {
   // "Z" per-page timeline — three small overlapping dots, the MIDDLE one filled.
   docHist:   { svg: '<circle cx="8" cy="12" r="3"/><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="16" cy="12" r="3"/>', trl: null, key: 'z', desc: 'Page history' },
   // Clear history (bomb) — Lucide bomb (lives in the W long-press drawer, NO keyboard shortcut).
-  bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' }
+  bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' },
+  // HR_BIM_Asset lenses (RESUME_HR_BIM_ASSET.md §SPATIAL-VIEW). Lucide 'users' (Tenancy) + 'cpu' (IoT/Asset).
+  users:     { svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', trl: null, key: null, desc: 'Tenancy' },
+  cpu:       { svg: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>', trl: null, key: null, desc: 'IoT / Assets' }
 };
 
 // HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
@@ -1146,6 +1149,18 @@ function setupPanels(A) {
         isActive: function() { return !!(window.WHWalk && WHWalk.isOpen && WHWalk.isOpen()); },
         children: [ { name: 'Route over locators (walk order)' }, { name: 'Fly-to next bin, FIND-lens depth' }, { name: 'Scan bin QR / type code' }, { name: 'Signed pick group per bin' } ] },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
+      // HR_BIM_Asset spatial lenses (RESUME_HR_BIM_ASSET.md §RESUME NEXT#2). DATA-GATED like whwalk: start
+      // pill:false; viewer/hba_lens.js flips it on + rebuilds ONLY when ≥1 HBA record's guid resolves to a
+      // real mesh in the loaded building (the §BINDING join hits → no data, no icon). fn drives the WITNESSED
+      // overlay engine through the MeshPort over A.guidMap. Inert if hr_bim_asset/* did not load.
+      { id: 'hbaTenancy', name: 'Tenancy',          pill: false, icon: I.users.svg,
+        fn: function() { if (window.HBALens) HBALens.toggle(A, 'tenancy'); },
+        isActive: function() { return !!(window.HBALens && HBALens.isActive('tenancy')); },
+        children: [ { name: 'Color units by lease status (occupied/vacant/expiring)' }, { name: 'Lights only units bound to a real room guid' }, { name: 'Toggle off restores the model' } ] },
+      { id: 'hbaIot',     name: 'IoT / Assets',     pill: false, icon: I.cpu.svg,
+        fn: function() { if (window.HBALens) HBALens.toggle(A, 'maintenance'); },
+        isActive: function() { return !!(window.HBALens && HBALens.isActive('maintenance')); },
+        children: [ { name: 'Color assets by maintenance due (ok/due/overdue)' }, { name: 'Asset = a BIM element (bim_guid ↔ IoT device)' }, { name: 'Toggle off restores the model' } ] },
       { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },

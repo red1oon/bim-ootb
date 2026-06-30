@@ -5,8 +5,10 @@
 //   scene/picking/streaming). ZERO-CLUTTER by design — tints only linked guids, ghosts the rest, ONE mode
 //   at a time, state-as-color (detail on hover). Pure + deterministic. Read log after run.
 'use strict';
-var M = require('./models');
-var B = require('./binding');
+// browser-safe imports (see models.js): node → require; browser <script> → self.Hba* globals.
+var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
+var M = _r ? require('./models') : _g.HbaModels;
+var B = _r ? require('./binding') : _g.HbaBinding;
 
 // color ladder — state-encoding (no labels needed). green/amber/red/grey + ghost.
 var COLORS = { occupied: '#2e7d32', vacant: '#9e9e9e', expiring: '#f9a825',

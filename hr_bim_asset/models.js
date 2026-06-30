@@ -5,7 +5,8 @@
 //   compiles into the ERP AD when present (dotted line), but seeds standalone. Demo values only — any real
 //   rate/fee is behind the §RESEARCH GATE. Expand per a big user request. Read log after run.
 'use strict';
-var W = require('./watermark');
+// browser-safe import: node → require; browser <script> → the self.Hba* global the dep set on load.
+var W = (typeof require !== 'undefined') ? require('./watermark') : (typeof self !== 'undefined' ? self : this).HbaWatermark;
 
 var MODELS = {
   Tenancy: {
