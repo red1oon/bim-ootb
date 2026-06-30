@@ -108,11 +108,13 @@
 </script>
 <script src="../../overlay/dot_layer.js"></script>
 <script src="../../erp/erp_optics.js"></script>
+<script src="../../overlay/teams_tabs.js"></script>
+<script src="../../overlay/embed_outliner.js"></script>
 <script src="../../overlay/teams_pill.js"></script>
 <script>
 (function () {
   'use strict';
-  var D = window.TeamsDotLayer, O = window.TeamsErpOptics, TP = window.TeamsPill;
+  var D = window.TeamsDotLayer, O = window.TeamsErpOptics, TP = window.TeamsPill, EO = window.TeamsEmbedOutliner;
   var T = 1719700000000;
   function op(id, ts, author, role, verb, target) { return { id:id, ts:ts, author:author, role:role, cls:'erp', verb:verb, target:target, params:{} }; }
   var ops = [
@@ -136,14 +138,8 @@
       if (cl.badge) { var b = document.createElement('span'); b.className='tbadge'; b.textContent=cl.badge; wrap.appendChild(b); }
       row.appendChild(wrap);
     });
-    pane.appendChild((function(){ var h=document.createElement('h3'); h.textContent='Involvement · who is on each doc'; return h; })());
-    inv.hot.forEach(function (h, i) {
-      var d = inv.perDoc[h.doc];
-      var e = document.createElement('div'); e.className = 'pe';
-      var dd = document.createElement('span'); dd.className = 'd' + (i===0?' hot':''); dd.textContent = h.doc;
-      var nn = document.createElement('span'); nn.className = 'n'; nn.textContent = h.count + ' people · ' + d.participants.join(', ');
-      e.appendChild(dd); e.appendChild(nn); pane.appendChild(e);
-    });
+    // §R3 — the pane Outliner uses the ONE canonical tab shell (Tree / Chat / Dashboard), same schema as teams.html.
+    EO.renderEmbedOutliner(pane, ops, { involvement: inv });
   }
   function unrenderOverlay() {
     document.querySelectorAll('#chrome .row-dots').forEach(function (n) { n.remove(); });

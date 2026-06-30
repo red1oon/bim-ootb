@@ -165,9 +165,28 @@ Storey/Disc/Material/Tenancy/IoT) belong to the **HR/viewer Find-Panel icon-ific
 - **Smart-search entry (§R6 "erp_search.js is the entry") = NOT wired here** — the engine is search-agnostic; wiring
   the FTS typeahead → spine selection is a follow-on once the host Find panel exposes its row set.
 
-**REMAINING (chrome, follow-on):** R3 tab-schema unification with the Outliner tabs, the Modeller Role×Project pivot
-WIRED to `bonsai_outliner.js` (engine ready), §1b Teams Dashboard graphs (`teams/erp/teams_dashboard.js`), and §3b's
-4 open edges. Start from the Modeller/Project spine (§1a anti-drift), not HHS/Viewer.FindPanel.
+## ✅ R3 DONE — tabs = ONE schema (2026-07-01)
+**W-TEAMS-TABS 5/5** (chromium, schema parity with `teams.html`). The embed pane's Outliner now uses the SAME
+tab markup/class set as `teams/teams.html` (the ported branches_mock Outliner) — never a second tab schema:
+- **`teams/overlay/teams_tabs.js`** — the ONE tab shell: canonical `.tabs > .tab(.on)[data-t]` + `.pane#pane-<id>`
+  markup (verbatim from teams.html), switch = toggle `.on` + show/hide pane (identical to teams.html's `tab()`).
+  Active band resolves `--idmp-blue`/`--accent` (§R4), scoped to `.teams-pane`/`.bim-panel` (no leak). Node-testable
+  `tabsModel(defs)`.
+- **`teams/overlay/embed_outliner.js`** — fills the 3 canonical tabs from folds ALREADY in the embed (NON-INVENT):
+  Tree = per-anchor blame (`dot_layer.recordBlame`) · Chat = the signed op-log itself · Dashboard = involvement
+  (`erp_optics`). Both demo pages (`teams/demo/erp_teams_pill.html`, `teams/tests/fixtures/idmp_host.html`) call it.
+- **Parity proven from source:** the witness reads teams.html's own `data-t` set and asserts the embed matches
+  `[tree,chat,dash]` — not a hardcode. Switch + default-tree + OFF-pixel-identical all green.
+- Unregressed: W-TEAM-WIRE 4/4 (`.pe` now under pane-dash, still resolves) · W-TEAMS-UI-CONSISTENT 6/6 · suite 23/23.
+  Lane-clean (teams/ only — teams.html itself UNCHANGED; it is the reference, the shell matches it).
+
+**↪ FOLLOW-ON (content, not schema):** the embed Tree/Chat/Dashboard reuse the blame/op-log/involvement folds;
+wiring the FULL engine view-models (`teams_view.treeModel/chatModel/dashboardModel` — ladder verdicts, clash matrix,
+5D budgets) into the ERP embed is a richer content pass (needs the settle/ladder result on the ERP side).
+
+**REMAINING (chrome, follow-on):** the Modeller Role×Project pivot WIRED to `bonsai_outliner.js` (engine ready),
+§1b Teams Dashboard graphs (`teams/erp/teams_dashboard.js`), and §3b's 4 open edges. Start from the Modeller/Project
+spine (§1a anti-drift), not HHS/Viewer.FindPanel.
 
 ## 3. Witness (add before any chrome) — W-TEAMS-UI-CONSISTENT (chromium)
 Over the real embed + a host fixture exposing `A.icon`/`A.createPanel` + `--idmp-*`:
