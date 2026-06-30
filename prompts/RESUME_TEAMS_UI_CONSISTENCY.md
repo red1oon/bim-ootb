@@ -184,9 +184,21 @@ tab markup/class set as `teams/teams.html` (the ported branches_mock Outliner) �
 wiring the FULL engine view-models (`teams_view.treeModel/chatModel/dashboardModel` — ladder verdicts, clash matrix,
 5D budgets) into the ERP embed is a richer content pass (needs the settle/ladder result on the ERP side).
 
-**REMAINING (chrome, follow-on):** the Modeller Role×Project pivot WIRED to `bonsai_outliner.js` (engine ready),
-§1b Teams Dashboard graphs (`teams/erp/teams_dashboard.js`), and §3b's 4 open edges. Start from the Modeller/Project
-spine (§1a anti-drift), not HHS/Viewer.FindPanel.
+## ✅ §1b DONE — Teams Dashboard graphs (2026-07-01)
+**W-TEAMS-DASHBOARD 8/8** (node). `teams/erp/teams_dashboard.js` = pure Chart.js config builders, the SAME schema
+as `hr_bim_asset/dashboard.js` (type bar|doughnut · shared palette · kpi block · watermarked · no `Date.now`),
+so the graphs drop into `PA_DashboardContent` gadgets beside HR's. Every series READ from a Teams fold (NON-INVENT):
+- **Involvement** bar = people per doc (`erp_optics.involvement.hot`), colour `--idmp-blue`.
+- **Flow** bar = avg dwell per transition, bottleneck in red (`erp_optics.flowLens`, mines DATA ops not post-its).
+- **Gate ladder** doughnut = verified green/orange/red/provisional counts (`erp_optics.evaluateGate.counts`, data ops).
+- **Post-it aging** doughnut = open annotations by age, REUSING HR's `AGE_COLORS` verbatim (one aging language).
+- **Presence heat** bar = active participants per product (`overlay/presence`) — added ONLY when beats supplied.
+- `build(ops, {asOf})` → `{ charts, kpi:{docs,people,openPostits,bottleneck,gate}, watermark }`. `asOf` defaults to
+  max op ts (deterministic, never the wall clock). Read-only folds, zero erp/ edits. Suite 24/24, lane-clean.
+
+**REMAINING (chrome, follow-on):** the Modeller Role×Project pivot WIRED to `bonsai_outliner.js` (engine ready —
+DEFERRED: would touch the modeller lane mid-heavy-session, "no icon till told"), and §3b's 4 open edges. Start from
+the Modeller/Project spine (§1a anti-drift), not HHS/Viewer.FindPanel.
 
 ## 3. Witness (add before any chrome) — W-TEAMS-UI-CONSISTENT (chromium)
 Over the real embed + a host fixture exposing `A.icon`/`A.createPanel` + `--idmp-*`:
