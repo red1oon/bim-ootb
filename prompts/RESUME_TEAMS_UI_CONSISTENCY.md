@@ -196,9 +196,10 @@ so the graphs drop into `PA_DashboardContent` gadgets beside HR's. Every series 
 - `build(ops, {asOf})` → `{ charts, kpi:{docs,people,openPostits,bottleneck,gate}, watermark }`. `asOf` defaults to
   max op ts (deterministic, never the wall clock). Read-only folds, zero erp/ edits. Suite 24/24, lane-clean.
 
-**REMAINING (chrome, follow-on):** the Modeller Role×Project pivot WIRED to `bonsai_outliner.js` (engine ready —
-DEFERRED: would touch the modeller lane mid-heavy-session, "no icon till told"), and §3b's 4 open edges. Start from
-the Modeller/Project spine (§1a anti-drift), not HHS/Viewer.FindPanel.
+**REMAINING (chrome, follow-on):** the Modeller Role×Project pivot — **DECISION (user 2026-07-01): KEEP ENGINE-READY,
+DO NOT WIRE** (`find_placement` design mode stays unwired; no `modeller/` edits until the modeller session settles +
+the Teams icon go-ahead). §3b edges 1–4 are now all settled (1 doctrine note · 2 PERT gate built · 3 partition
+confirmed · 4 Project implicit). Start any future pivot from the Modeller/Project spine (§1a anti-drift), not HHS.
 
 ## 3. Witness (add before any chrome) — W-TEAMS-UI-CONSISTENT (chromium)
 Over the real embed + a host fixture exposing `A.icon`/`A.createPanel` + `--idmp-*`:
@@ -218,10 +219,11 @@ Over the real embed + a host fixture exposing `A.icon`/`A.createPanel` + `--idmp
    (SCHEDULE/RESCHEDULE/SETDEP/ASSIGN/DELETE, last-writer) → tasks; deterministic, no Date.now, NON-INVENT. The
    context-free git engine + this gate = Viewer-side SCHEDULE What-If is now unblocked (wiring to a Viewer UI is the
    remaining chrome). suite 25/25, lane-clean.
-3. **Discipline@4D / Role@7D partition** is the working read (user "by role" + construction crews) but NOT hard-
-   confirmed — one word locks or adjusts it.
-4. **Project as a facet icon** — it's the design SPINE but isn't in the icon row; open whether it earns a glyph or
-   stays implicit on the Modeller surface.
+3. ~~**Discipline@4D / Role@7D partition** is the working read~~ **✅ CONFIRMED (user 2026-07-01).** The team
+   partition IS Discipline (4D construction) → Role (7D operate); Discipline is construction's expression of "role,"
+   both partition and spine hand over at the Tandem hinge. LOCKED — do not re-litigate.
+4. ~~**Project as a facet icon**~~ **✅ RESOLVED (user 2026-07-01): STAYS IMPLICIT.** Project is the design SPINE,
+   not a Find-panel facet toggle — it earns NO glyph. The facet row keeps Storey/Disc/Material + operate lenses.
 
 ## 4. Doctrine (unchanged — `teams/ROADMAP.md §P`)
 Additive only · Team OFF = pixel-identical · witness-first (`§`-log green before chrome) · consume-don't-impose ·
