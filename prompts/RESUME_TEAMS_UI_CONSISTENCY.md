@@ -59,6 +59,12 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
   `dotLayerModel`, `anchorOf = element/task`). Both grouped by Role; smart-search (`erp_search.js`) is the entry.
 
 ## 1a. SETTLED ARCHITECTURE — the People dimension (resolved 2026-07-01, after a drift check)
+> ⚠ **ANTI-DRIFT (root cause, do not repeat):** the 2026-07-01 drift came from anchoring Teams on
+> **HHS_Office HR, which is a `Viewer.FindPanel` artifact (operate / SPACE-spine)** — while the Teams overlay's
+> HOME is the **Modeller/Team side (design / PROJECT-spine)**. HHS was reached for only because it had live
+> data; its space-spine is the *operate-phase projection*, NOT the universal model. **When picking up this work,
+> start from the Modeller/Project spine; treat HHS/Viewer.FindPanel as the handover (operate) end, not the seed.**
+
 The Team overlay is NOT a peer subject-pane to Tenancy/IoT and NOT nailed under Storey. It is **one
 cross-cutting People dimension, grouped by ROLE** (`AD_Role` + the HR operator·vendor·personnel roles),
 that cross-tabs against a **phase-dependent spine**:
