@@ -25,10 +25,19 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 ## §RESUME — new-session handoff (2026-06-30)
 
 > **▶ NEW SESSION START HERE.** Branch `lane/hr-overlay` (worktree `/tmp/wt-hr`), all pushed, suite GREEN
-> (**11 witnesses**, see below). Shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D timeline (#4c),
+> (**13 witnesses**, see below). Shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D timeline (#4c),
 > real storey derivation, §WATERMARK 19/19, **T&A slice-1/2** (check-in + presence lens), **Leave/Absence**,
-> **T&A access**, and **Room Occupancy / Availability** (iDempiere Resource-Assignment — just landed).
+> **T&A access**, **Room Occupancy / Availability** (iDempiere Resource-Assignment), **R_Request / ticket**
+> workflow, and the **occupancy dashboard** (Chart.js over pivot — just landed).
 > **▶ NEXT — pick a Phase-F differentiator or a UI surface:**
+> -1. ✅ **DONE — R_Request / ticket** (`request.js`, **W-HBA-REQ 15/15**) + **occupancy dashboard**
+>    (`dashboard.js`, **W-HBA-DASH 7/7**, demo `demo/occupancy_dashboard.html`). The ticket is a SIGNED status
+>    FSM (OPEN→ASSIGN→START→RESOLVE→CLOSE/REOPEN; illegal transition → REFUSE) threaded to the SHARED room/asset
+>    guid; `effect()` emits its occupancy op (maintenance→UNAVAIL) closing the Request↔occupancy loop. `aging`/
+>    `myWork` = SLA + deskless-queue views. The dashboard = pure Chart.js config builders over `occupancy.pivot()`
+>    + `request.aging()` (per-storey bar · availability trend stacked-bar · ticket-aging doughnut + KPIs), rendered
+>    by the ALREADY-BUNDLED `viewer/lib/chart.umd.min.js` in the standalone demo pane. **Open: wire the dashboard
+>    pane + an occupancy/ticket lens pill into the viewer UI (panels.js — the live-3D surface, like #2b).**
 > 0. ✅ **DONE — Room Occupancy / Availability** (`occupancy.js`, **W-HBA-OCC 21/21**; AD model `Occupancy` =
 >    `S_ResourceAssignment`, Room=`S_Resource` IS-A `M_Product`). Signed `ASSIGN`/`RELEASE`/`UNAVAIL`
 >    (S_ResourceUnAvailable blackout) op-log → `availability(room,period)` by **REPLAY** (occupied/vacant/
@@ -67,8 +76,9 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
 `safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave access
-occupancy; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 ·
-TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 · ACCESS 13 · OCC 21.
+occupancy request dashboard; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW 13 · BIND
+11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 · ACCESS 13 · OCC 21 ·
+REQ 15 · DASH 7.
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
