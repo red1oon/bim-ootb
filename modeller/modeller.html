@@ -2085,6 +2085,12 @@ window.discWalk = function (disc, ctx) {
         console.log('§DISC-WALK ' + disc + ' REFUSE ' + (w.reason || 'no placements') + ' (honest, 0 fabricated)');
         return;
       }
+      // §3c CONNECTOR ENRICH: stamp each walked fixture with its projected FIXTURE→SERVICE hookup
+      // (rule_connector in the *_rules.db — no caller percept). Mutates placements in place so the
+      // connector rides through every _redrawAllDiscWalks; the hookup EDGE is drawn in _renderDiscWalk.
+      var connN = 0;
+      try { connN = (window.DiscWalker.connectorEnrich ? window.DiscWalker.connectorEnrich(w.placements).enriched : 0); }
+      catch (e) { console.warn('§DW-ASSEMBLE enrich ' + disc + ' ' + (e && e.message)); }
       // Gate: register THIS disc first so the gate sees it too, then re-fold the FULL cumulative
       // set through the measured clearances (current disc yields against the ones already present,
       // not only the next walk). Re-render every walked disc so fresh gated/clash flags show.
@@ -2100,6 +2106,26 @@ window.discWalk = function (disc, ctx) {
       await _commitDiscWalk(disc, w.placements);
       // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
       if (nSeg) { _renderDiscChains(disc, w.chainSegs); await _commitDiscChains(disc, w.chainSegs); }
+      // §3c ASSEMBLE: when a routed network exists, instantiate the projected catalog PARTS at the real
+      // routed NODES (rule_joint_piece — pose from the node, Ø from the measured catalog, orientation from
+      // the run vector) + enrich them with their connector hookup. Rendered as boxes via the _dwPrimGeo LOD
+      // seam. No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
+      var asmN = 0;
+      try {
+        if (window.DiscWalker.assemble) {
+          var abdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+          var asm = window.DiscWalker.assemble(disc, abdb);
+          abdb.close();
+          if (asm && !asm.refused && asm.parts && asm.parts.length) {
+            window.DiscWalker.connectorEnrich(asm.parts);
+            _renderDiscAssembly(disc, asm.parts);
+            asmN = asm.parts.length;
+          }
+          console.log('§DW-ASSEMBLE ' + disc + ' connectors=' + connN + '/' + w.placements.length +
+            ' parts=' + asmN + (asm && asm.refused ? ' (assemble REFUSE: ' + asm.reason + ')' :
+            ' joints=' + ((asm && asm.joints) ? asm.joints.length : 0)));
+        }
+      } catch (e) { console.warn('§DW-ASSEMBLE ' + disc + ' failed ' + (e && e.message)); }
     } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); }
   })();
 };
@@ -2116,8 +2142,9 @@ function _dwRoot() {
 }
 function _clearDiscWalk(disc) {
   var root = _dwRoot(); if (!root) return;
-  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwDisc === disc) root.remove(o); });
+  root.children.slice().forEach(function (o) { if (o.userData && (o.userData.dwDisc === disc || o.userData.dwAsm === disc)) root.remove(o); });
   delete window.__dwWalks[disc];
+  if (window.__dwAssembly) delete window.__dwAssembly[disc];
 }
 // §LOD-SEAM (docs/WalkerDoctrine.md §5): a GENERATED fixture's render geometry is selected by its semantic
 // prim KIND (disc_walker._primFor → p.prim: sprinkler/diffuser/light/outlet/alarm/valve/run/box). POC = a BOX
@@ -2163,8 +2190,70 @@ function _renderDiscWalk(disc, placements) {
     _mesh(list.filter(function (p) { return p.clash; }), matC);                 // red = irreducible clash
     dims.push(cls.replace('Ifc', '') + '/' + prim + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)'));
   });
+  // §3c CONNECTOR EDGES: every fixture connectorEnrich stamped (.connector, projected from rule_connector)
+  // draws its FIXTURE→SERVICE hookup as a short line from the fixture along the connector faceDir (e.g. each
+  // sprinkler TOP→FP_MAIN points up toward the supply main). Length = measured standoff, else a 0.3m stub so
+  // a flush (0m) hookup is still visible. NON-INVENT: direction + standoff are read from the connector; the
+  // stub length is a render hint only. One LineSegments per disc (cheap), removed with the disc on re-walk.
+  var enriched = placements.filter(function (p) { return p.connector && p.connector.faceDir; });
+  if (enriched.length) {
+    var STUB = 0.3, verts = [];
+    enriched.forEach(function (p) {
+      var d = p.connector.faceDir, L = (p.standoff_m > 0 ? p.standoff_m : STUB);
+      verts.push(p.x, p.y, p.z, p.x + d[0] * L, p.y + d[1] * L, p.z + d[2] * L);
+    });
+    var cg = new THREE.BufferGeometry();
+    cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));   // service hookup = pale cyan
+    cl.userData.dwDisc = disc; root.add(cl);
+    console.log('§DW-CONNECT disc=' + disc + ' hookups=' + enriched.length + ' (' +
+      (enriched[0].connector.assembly_id + ' ' + enriched[0].connector.face + '→' + enriched[0].connector.connects_to) +
+      ', standoff=' + enriched[0].standoff_m + 'm)');
+  }
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+}
+// §3c ASSEMBLE render — catalog PARTS instantiated at the real routed NODES (disc_walker.assemble): each part
+// is a BOX via the _dwPrimGeo LOD seam, oriented by its run vector (part.dir), tinted by disc, plus its
+// connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
+// analogue of the tube network); stored so a later commit re-fold redraws it. Refuses honestly when no network.
+window.__dwAssembly = window.__dwAssembly || {};   // disc -> assembled parts (for redraw-after-scrub)
+function _renderDiscAssembly(disc, parts) {
+  var root = _dwRoot(); if (!root) return;
+  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwAsm === disc) root.remove(o); });   // clear prior
+  window.__dwAssembly[disc] = parts;
+  if (!parts || !parts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
+  var base = DW_COLOR[disc] || 0xc0c0c0;
+  var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.4, metalness: 0.2, roughness: 0.5 });
+  var up = new THREE.Vector3(0, 0, 1), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pos = new THREE.Vector3();
+  var sc = new THREE.Vector3(1, 1, 1), m = new THREE.Matrix4();
+  var byCls = {};
+  parts.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+  var verts = [];
+  Object.keys(byCls).forEach(function (cls) {
+    var list = byCls[cls];
+    var d = (list[0].diameter_mm || 100) / 1000, L = (list[0].length_mm || 200) / 1000;   // measured Ø/length → box (m)
+    var geo = window._dwPrimGeo('run', d, d, L);                                            // LOD seam (POC box of catalog dims)
+    var im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach(function (p, i) {
+      var v = p.dir || [0, 0, 1]; dir.set(v[0], v[1], v[2]).normalize();
+      q.setFromUnitVectors(up, dir); pos.set(p.pos[0], p.pos[1], p.pos[2]);
+      im.setMatrixAt(i, m.compose(pos, q, sc));
+      if (p.connector && p.connector.faceDir) {
+        var fd = p.connector.faceDir, off = (p.standoff_m > 0 ? p.standoff_m : 0.3);
+        verts.push(p.pos[0], p.pos[1], p.pos[2], p.pos[0] + fd[0] * off, p.pos[1] + fd[1] * off, p.pos[2] + fd[2] * off);
+      }
+    });
+    im.instanceMatrix.needsUpdate = true; im.userData.dwAsm = disc; root.add(im);
+  });
+  if (verts.length) {
+    var cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));
+    cl.userData.dwAsm = disc; root.add(cl);
+  }
+  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' classes=' + Object.keys(byCls).length +
+    ' connectorEdges=' + (verts.length / 6));
+  if (window.A && A.requestRender) A.requestRender();
 }
 // Cross-disc gate: re-fold ALL currently-walked disciplines through the measured place-order + clearances
 // so a newly-walked disc yields against the ones already present ("as in Terminal"). Mutates placement z.
@@ -2293,6 +2382,7 @@ async function _commitDiscChains(disc, segs) {
 function _redrawAllDiscWalks() {
   Object.keys(window.__dwWalks).forEach(function (d) { if (window.__dwWalks[d]) _renderDiscWalk(d, window.__dwWalks[d]); });
   Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d]); });
+  if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
 }
 
 // ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
@@ -2332,7 +2422,7 @@ window._dwRules = function (nm) {
 // rules across a deploy (silently missing e.g. the new FP sprinkler shim). On a rules-version change, evict the
 // two rules keys ONCE so the fresh DBs load + re-cache normally. Bump window.__dwRulesVer whenever a *_rules.db
 // changes (in lock-step with sw.js CACHE_VERSION). Building *_extracted.db are immutable per url → never evicted.
-window.__dwRulesVer = 'v20';
+window.__dwRulesVer = 'v21';
 window._dwBustStaleRulesCache = async function () {
   try {
     var KEY = 'dw_rules_ver', cur = window.__dwRulesVer;
