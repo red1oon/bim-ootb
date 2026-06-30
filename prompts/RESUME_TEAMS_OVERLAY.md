@@ -26,7 +26,7 @@ preamble until Phase F is `✅ DONE` or this file is retired.
 ## 1. FIRST — run the regression gate (§G), confirm green before any new work
 ```sh
 # in a fresh worktree off origin/main-merged lane/teams-overlay:
-node teams/tests/run_all.js            # 19 node witness files — must be ✅ ALL PASS
+node teams/tests/run_all.js            # 20 node witness files — must be ✅ ALL PASS
 node teams/tests/wire_teams_pill.js    # W-TEAM-WIRE 4/4 (Playwright/chromium)
 ```
 - **sql.js / WebCrypto shim:** the ERP-side node witnesses (`poc_teams_erp_*`, `poc_teams_phase_d`,
@@ -53,6 +53,7 @@ node teams/tests/wire_teams_pill.js    # W-TEAM-WIRE 4/4 (Playwright/chromium)
 | S8 | `erp/erp_sync.js` — export/verify/import a `kernel_ops` branch over the transport; CAS shared masters | W-ERP-SYNC 7/7 |
 | S9 | `overlay/teams_pill.js` distinct 2-person launcher + standalone demo `demo/erp_teams_pill.html` | W-TEAM-WIRE 4/4 (chromium) |
 | S10 | `overlay/world_at_t.js` (re-fold prefix → record/world as-of T) + `erp/cosign.js` (maker-checker four-eyes + legal signoff) + `overlay/broadcast.js` (eligible-gated system-wide sticky) | W-WORLD-AT-T+COSIGN+BROADCAST 16/16 (`poc_teams_s10.js`) |
+| S12 | `overlay/replay.js` (step-recorder replay, state re-folds as-of each step) + `erp/nudges.js` (one dismissible nudge/item vs MEASURED baseline) + `overlay/feature_stub.js` (honest disabled "propose-changes" placeholder) | W-REPLAY+NUDGE+FEATURE-STUB 13/13 (`poc_teams_s12.js`) |
 
 **Deployed live (S9):** OCI dev bucket `…/o/teams-demo/demo/erp_teams_pill.html` (text/html; deps
 `text/javascript`) + GitHub-raw on `lane/teams-overlay`. Live chromium smoke green (OFF pixel-identical →
@@ -67,12 +68,15 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
   system-wide sticky; all/role/level targeting; ACK+REVOKE). All standalone pure folds, **zero erp/ edits**;
   **W-WORLD-AT-T+COSIGN+BROADCAST 16/16** (`poc_teams_s10.js`; run_all 19/19). Engine-only, no new chrome
   (like S5–S8). ⚠ a standalone `demo/` page for these three optics is an OPTIONAL follow-on if a surface is wanted.
-- **S11 — Cross-product BIM↔ERP unified presence (the moat).** One presence/identity fabric over the shared
-  bus+facilitator; colour=signer across both products. **⚠ TOUCHES THE BIM SIDE — schedule ONLY when the
-  Modeller session has settled (coordinate). This is the slice the user is waiting on.** Witness **W-XPRESENCE**.
-- **S12 — Replay-onboarding + nudges + "new feature" stub.** Step-recorder replay narrated by the work
-  summary; ONE deterministic dismissible nudge per item (variance vs measured baseline); a "propose changes"
-  placeholder. Witnesses **W-REPLAY / W-NUDGE**.
+- **S12 — Replay-onboarding + nudges + "new feature" stub.** ✅ **DONE** — `overlay/replay.js` (step-recorder,
+  state re-folds as-of each step) + `erp/nudges.js` (one dismissible nudge/item vs a MEASURED baseline; too few
+  samples → REFUSE) + `overlay/feature_stub.js` (honest disabled "propose-changes" placeholder). All standalone
+  pure folds, **zero erp/ edits**; **W-REPLAY+NUDGE+FEATURE-STUB 13/13** (`poc_teams_s12.js`; run_all 20/20).
+- **S11 — Cross-product BIM↔ERP unified presence (the moat). ⛔ THE ONE REMAINING Phase-F slice — BLOCKED.**
+  One presence/identity fabric over the shared bus+facilitator; colour=signer across both products. **⚠ TOUCHES
+  THE BIM SIDE — schedule ONLY when the Modeller session has settled (a coordination call only the user can make).
+  This is the slice the user is waiting on.** Witness **W-XPRESENCE**. *(S10 + S12 — the two zero-BIM-risk Phase-F
+  slices — are done; S11 is all that's left in Phase F, plus the gated embed below.)*
 
 ### Gated follow-up (separate from Phase F, needs EXPLICIT GO + full-app verification)
 - **Land the Teams pill into PRODUCTION `erp/kanban_host.js` chrome.** The launcher (`overlay/teams_pill.js`)

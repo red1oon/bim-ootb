@@ -2,9 +2,10 @@
 # Team overlay — implementation ROADMAP (session-by-session)
 
 > ▶ **NEW SESSION START HERE: [`prompts/RESUME_TEAMS_OVERLAY.md`](../prompts/RESUME_TEAMS_OVERLAY.md)** — fast-start +
-> handoff. **Phases A–E (S1–S9) ✅ DONE & witnessed; deployed live. §S10 ✅ DONE (W-WORLD-AT-T+COSIGN+BROADCAST
-> 16/16).** Remaining = **Phase F** (S11–S12) + the gated production `kanban_host.js` pill embed. Run the §G gate
-> first (`node teams/tests/run_all.js` = 19 green + `wire_teams_pill.js` 4/4).
+> handoff. **Phases A–E (S1–S9) ✅ DONE & witnessed; deployed live. §S10 ✅ DONE (W-S10 16/16). §S12 ✅ DONE
+> (W-S12 13/13).** Remaining = **§S11** (cross-product BIM↔ERP presence — ⚠ BIM-side, only after the modeller
+> settles) + the gated production `kanban_host.js` pill embed. Run the §G gate first (`node teams/tests/run_all.js`
+> = 20 green + `wire_teams_pill.js` 4/4).
 >
 > The execution plan for [[DESIGN.md]] + [[ERP_CONTEXT.md]] + [[TEAM_OPTICS.md]] + [[IDEAS.md]]. Ordered so risk
 > rises slowly: **read-only/zero-impact first → standalone optics → ERP surfaces → the two guarded `erp/` runtime
@@ -101,9 +102,17 @@ Witness `teams/tests/poc_teams_s10.js` — **W-WORLD-AT-T 6/6 · W-COSIGN 6/6 ·
 **S11 · Cross-product BIM↔ERP unified presence (B) — the moat** — one presence/identity fabric over the shared
 bus+facilitator; colour=signer across both products; a person's dot reads across BIM↔ERP. ⚠ touches BIM-side — additive
 + isolated, **only when the modeller has settled** (coordinate). Witness **W-XPRESENCE**.
-**S12 · Replay-onboarding (D) + nudges (F) + "new feature" stub (H)** — step-recorder replay narrated by the work
-summary; ONE dismissible deterministic nudge per item (variance vs measured baseline); a visible **"new feature"**
-placeholder stub for blue-branch "propose changes / PR for docs". Witnesses **W-REPLAY**, **W-NUDGE**.
+**S12 · Replay-onboarding (D) + nudges (F) + "new feature" stub (H)** ✅ **DONE** (standalone, zero erp/ edits) —
+- `overlay/replay.js` — a step-recorder over a scoped flow: `makeReplay` → ordered steps (each ← one op),
+  `stepState` re-FOLDS the record/world AS-OF a step (via world_at_t), `narrationScript` = the workSummary
+  digest (the training text), `step` clamps the cursor. Deterministic, NON-INVENT.
+- `erp/nudges.js` — ONE dismissible ORANGE nudge per item, variance vs a **MEASURED** baseline (measure-don't-
+  whitelist): `slow` (dwell past measured pXX of the status), `skipped` (missing the majority-variant activity),
+  `rate` (author > rateK × measured median). Too few samples → REFUSE (no guessed alarm); `dismiss` = a signed
+  annot that folds one out.
+- `overlay/feature_stub.js` — the honest "new feature" placeholder (blue-branch propose-changes): a DISABLED
+  chip + `invoke` returns `not-implemented` (NEVER fakes the action); unknown → rejected.
+Witness `teams/tests/poc_teams_s12.js` — **W-REPLAY 4/4 · W-NUDGE 6/6 · W-FEATURE-STUB 3/3 = 13/13** (run_all 20/20).
 
 ---
 
