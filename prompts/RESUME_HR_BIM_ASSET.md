@@ -22,6 +22,61 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 ---
 
+## ▶▶ NEXT SESSION — "Demonstrate a true Spatial ERP" (user 2026-07-01)
+
+> The mission distilled (user, 2026-07-01): **demonstrate a TRUE Spatial ERP** — ERP/operate records living ON
+> the building geometry, found spatially, with a **delightful UI where a user finds things easily and there is no
+> redundancy**. Everything below serves that. **Branch `lane/hr-overlay` (worktree `/tmp/wt-hr`), 18 witnesses
+> GREEN, all pushed.**
+
+### STANDING RULES this work is judged by (do NOT regress)
+1. **WHITEBOX-FIRST (user directive).** The §-log / witness must TELL you the truth — never rely on visually
+   eyeballing a screenshot. A driver `§DIAG` line caught `roomsInGuidMap=0` and `tintedMeshes=0` before any
+   image was opened. Add a `§`-log/witness for every claim; screenshots are *confirmation*, not verification.
+   The reusable live-3D harness is `hr_bim_asset/tests/live/cdp_shot.js` (zero-dep CDP driver; serve the worktree
+   with `python3 -m http.server 8099`, drive the REAL viewer, print `§DIAG`).
+2. **DEMO-DATA RICHNESS STANDARD (user directive).** The seed must be **well-populated and meaningful** so the
+   panel/dashboard/lenses *present richly* — NOT the current sparse look (dashboard showed only Level-1 populated,
+   "8 rooms / 38% / 3 tickets"; lenses said "no data"). **Acceptance bar:** multiple storeys populated; occupancy
+   shows a real mix (occupied/expiring/vacant/unavailable); presence shows varied headcounts; class shows a
+   residential/commercial/office mix; ≥1 asset; ticket-aging spread across buckets. Non-invent (real guids,
+   watermarked sample values), but RICH.
+3. **Serve localhost; deploy only when happy** (user). The public docs site is already live; re-deploy via
+   `safe_gh_deploy.sh` only after the screens meet the standard.
+
+### BACKLOG (priority order) — work to zero
+- **P1 — INSTANCED-TINT (the live lens actually paints). §-log proven half-done.** §REAL-BIND (commit this
+  session) made every lens *resolve* on the live model — driver `§DIAG2`: `leaseRoomsResolved=3/3`,
+  `available=[occupancy:on,presence:on,class:on,maintenance:on,dash:on]` (was 0/5). BUT `tintedMeshes=0`: HHS is
+  **716 instanced groups**, so member meshes are keyed `guidMap[meshId + '_' + N]` (batched/instanced), which
+  `viewer/hba_lens.js buildMeshPort.meshesFor` (`A.guidMap[obj.id]`, no suffix) misses; and one instance must be
+  recoloured via `InstancedMesh.setColorAt`/`instanceColor`, NOT `material.emissive`. FIX buildMeshPort to (a)
+  reverse-index guid→meshKeys handling the `_N` suffix, (b) tint instanced via setColorAt + restore. Witness with
+  the live harness asserting `tintedMeshes>0`. This is THE blocker for a real lens-applied screenshot + closes #2b.
+- **P2 — RICH DEMO DATA (the richness standard).** Enrich the gate seeds (`occupancy.demoSeed` /
+  `attendance.demoSeed` / class declarations / one asset) to populate ALL real storeys/rooms with a meaningful
+  MIX per the acceptance bar, so the dashboard + lenses look like a real operating building. Re-screenshot to
+  confirm the standard (whitebox first: assert the pivot has N storeys, M states, etc.).
+- **P3 — PREP SAMPLE GW DATA (user).** GardenWorld (`buildings/warehouse_gardenworld.db`, 61KB — fast/headless-
+  friendly, vs HHS 73MB). Check its spatial tables; build a GW room/members fixture + bind rich demo HBA records
+  to its real guids so the FM lenses + dashboard light on GW. Use GW as the primary documented sample (fast loop).
+- **P4 — NEWBIE GUIDE REWRITE (user).** The deployed `docs/HRBIMAssetGuide.md` is reference-style; rewrite it as
+  a **task-oriented manual** modelled on great manuals: *Getting started* (numbered: open the building → find the
+  FM pill → open the drawer → toggle a lens), *task walkthroughs* ("see which rooms are occupied" step-by-step),
+  *the data model* (op-log, records, guid→members binding, the periodic RUN engine, S_Resource), *reference*
+  (lens table + legends + watermark), *troubleshooting* ("pill not showing = no data"). Use the REAL lens-applied
+  screenshots once P1 lands.
+- **P5 — ERP INTEGRATION / SPATIAL-ERP DOC (user).** Document how Viewer + ERP + HR integrate over ONE building +
+  ONE signed op-log so **ERP users appreciate the delightful, find-everything, no-redundancy UI** (the FM family
+  pill = one entry not six; wake-aware greying; records on geometry). Tie into `docs/SpatialERP_OOTB.md`.
+- **P6 — AVATAR LOD "WOW" (user idea, for a session once P1–P2 land).** Little human avatars in each room when
+  zoomed in; **hover → AD_User / `C_BPartner.image`** (plan an image field like `M_Product.image` if absent);
+  proximity-based tips that appear as you draw nearer; reduce to **dots / minified avatars** when far (an LOD
+  ladder over the presence lens). Non-invent: an avatar only where a real signed check-in/occupancy binds a real
+  person to a real (now member-resolved) room.
+
+---
+
 ## §RESUME — new-session handoff (2026-06-30)
 
 > **▶ NEW SESSION START HERE.** Branch `lane/hr-overlay` (worktree `/tmp/wt-hr`), all pushed (tip `b8a2223`),
@@ -94,10 +149,11 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
 `safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave access
-occupancy request dashboard dashpane presspane class family; do node hr_bim_asset/tests/witness_$w.js; done` —
-W-HBA: ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 ·
-LEAVE 13 · ACCESS 13 · OCC 21 · REQ 15 · DASH 7 · DASHPANE 8 · **PRESPANE 10** · **CLASS 9** · **FAMILY 8**.
-(17 witnesses, all GREEN.) Browser smoke/screenshot demos: `demo/occupancy_dashboard.html`, `demo/fm_panel.html`.
+occupancy request dashboard dashpane presspane class family realbind; do node hr_bim_asset/tests/witness_$w.js;
+done` — W-HBA: ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 ·
+PRES 14 · LEAVE 13 · ACCESS 13 · OCC 21 · REQ 15 · DASH 7 · DASHPANE 8 · **PRESPANE 10** · **CLASS 9** ·
+**FAMILY 8** · **REALBIND 6**. (18 witnesses, all GREEN.) Demos: `demo/occupancy_dashboard.html`,
+`demo/fm_panel.html`. Live-3D whitebox harness: `tests/live/cdp_shot.js` (see §NEXT-SESSION rule 1).
 
 ### §FM-FAMILY — group HBA lenses under one wake-aware "FM/Operate" pill ✅ DONE 2026-07-01 (`W-HBA-FAMILY 8/8`)
 **User concern (2026-07-01):** *clutter / conflate / losing the plot* — the HBA pills had grown to **6**
