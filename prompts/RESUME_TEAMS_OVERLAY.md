@@ -26,7 +26,7 @@ preamble until Phase F is `✅ DONE` or this file is retired.
 ## 1. FIRST — run the regression gate (§G), confirm green before any new work
 ```sh
 # in a fresh worktree off origin/main-merged lane/teams-overlay:
-node teams/tests/run_all.js            # 20 node witness files — must be ✅ ALL PASS
+node teams/tests/run_all.js            # 21 node witness files — must be ✅ ALL PASS
 node teams/tests/wire_teams_pill.js    # W-TEAM-WIRE 4/4 (Playwright/chromium)
 node erp/tests/wire_teams_embed.js     # W-EMBED-WIRE 4/4 (the production-chrome embed: OFF pixel-identical · ON mounts)
 ```
@@ -54,6 +54,7 @@ node erp/tests/wire_teams_embed.js     # W-EMBED-WIRE 4/4 (the production-chrome
 | S8 | `erp/erp_sync.js` — export/verify/import a `kernel_ops` branch over the transport; CAS shared masters | W-ERP-SYNC 7/7 |
 | S9 | `overlay/teams_pill.js` distinct 2-person launcher + standalone demo `demo/erp_teams_pill.html` | W-TEAM-WIRE 4/4 (chromium) |
 | S10 | `overlay/world_at_t.js` (re-fold prefix → record/world as-of T) + `erp/cosign.js` (maker-checker four-eyes + legal signoff) + `overlay/broadcast.js` (eligible-gated system-wide sticky) | W-WORLD-AT-T+COSIGN+BROADCAST 16/16 (`poc_teams_s10.js`) |
+| S11 | `overlay/presence.js` — unified BIM↔ERP presence: one identity/colour fabric over the shared bus; `whereIs`/`crossProduct` (the moat); zero modeller/erp edits | W-XPRESENCE 7/7 (`poc_teams_presence.js`) |
 | S12 | `overlay/replay.js` (step-recorder replay, state re-folds as-of each step) + `erp/nudges.js` (one dismissible nudge/item vs MEASURED baseline) + `overlay/feature_stub.js` (honest disabled "propose-changes" placeholder) | W-REPLAY+NUDGE+FEATURE-STUB 13/13 (`poc_teams_s12.js`) |
 
 **Deployed live (S9):** OCI dev bucket `…/o/teams-demo/demo/erp_teams_pill.html` (text/html; deps
@@ -73,11 +74,14 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
   state re-folds as-of each step) + `erp/nudges.js` (one dismissible nudge/item vs a MEASURED baseline; too few
   samples → REFUSE) + `overlay/feature_stub.js` (honest disabled "propose-changes" placeholder). All standalone
   pure folds, **zero erp/ edits**; **W-REPLAY+NUDGE+FEATURE-STUB 13/13** (`poc_teams_s12.js`; run_all 20/20).
-- **S11 — Cross-product BIM↔ERP unified presence (the moat). ⛔ THE ONE REMAINING Phase-F slice — BLOCKED.**
-  One presence/identity fabric over the shared bus+facilitator; colour=signer across both products. **⚠ TOUCHES
-  THE BIM SIDE — schedule ONLY when the Modeller session has settled (a coordination call only the user can make).
-  This is the slice the user is waiting on.** Witness **W-XPRESENCE**. *(S10 + S12 — the two zero-BIM-risk Phase-F
-  slices — are done; S11 is all that's left in Phase F, plus the gated embed below.)*
+- **S11 — Cross-product BIM↔ERP unified presence (the moat). ✅ DONE** (modeller paused → unblocked; built
+  additive, ZERO modeller/erp edits). `overlay/presence.js`: one identity/colour fabric folded from `presence`
+  heartbeats on the SAME shared `BroadcastChannel('bim_teams')` bus both products use — `makePresence` (fixed
+  schema, product∈{bim,erp}, NON-INVENT) → `foldPresence` (per-identity, one colour=signer, active-window) →
+  `whereIs` / `crossProduct` (an ERP viewer reads BIM peers + vice-versa) / `presenceDots`. The BIM/ERP sides
+  only EMIT a heartbeat onto the bus seam — no host file edited (§R5). **W-XPRESENCE 7/7** (`poc_teams_presence.js`;
+  run_all 21/21). **→ Phase F (S10/S11/S12) is fully DRAINED.** The only thing the BIM/ERP hosts add later is a
+  one-line heartbeat emit on nav (a thin bus `postMessage`, not a code-coupling) — wire when each product is touched.
 
 ### Gated embed — ✅ CODE-LANDED + in-app verified (2026-06-30, user GO); remaining = live data + deploy
 - **The Teams pill is now embedded into PRODUCTION `erp/idempiere.html` chrome** — flag-guarded, additive:

@@ -2,10 +2,10 @@
 # Team overlay — implementation ROADMAP (session-by-session)
 
 > ▶ **NEW SESSION START HERE: [`prompts/RESUME_TEAMS_OVERLAY.md`](../prompts/RESUME_TEAMS_OVERLAY.md)** — fast-start +
-> handoff. **Phases A–E (S1–S9) ✅ DONE & witnessed; deployed live. §S10 ✅ DONE (W-S10 16/16). §S12 ✅ DONE
-> (W-S12 13/13).** Remaining = **§S11** (cross-product BIM↔ERP presence — ⚠ BIM-side, only after the modeller
-> settles) + the gated production `kanban_host.js` pill embed. Run the §G gate first (`node teams/tests/run_all.js`
-> = 20 green + `wire_teams_pill.js` 4/4).
+> handoff. **Phases A–F (S1–S12) ✅ ALL DONE & witnessed.** §S10 (W-S10 16/16) · §S11 (W-XPRESENCE 7/7) · §S12
+> (W-S12 13/13); the gated production embed is CODE-LANDED + in-app verified (W-EMBED-WIRE 4/4). Phase F is DRAINED.
+> Run the §G gate first (`node teams/tests/run_all.js` = 21 green + `wire_teams_pill.js` 4/4 + `erp/tests/
+> wire_teams_embed.js` 4/4). Remaining = live op-log wiring + production deploy (admin) — see RESUME §3.
 >
 > The execution plan for [[DESIGN.md]] + [[ERP_CONTEXT.md]] + [[TEAM_OPTICS.md]] + [[IDEAS.md]]. Ordered so risk
 > rises slowly: **read-only/zero-impact first → standalone optics → ERP surfaces → the two guarded `erp/` runtime
@@ -99,9 +99,15 @@ three Phase-F differentiators, each a pure deterministic fold of the ONE signed 
   emit (ineligible throws, never minted); `all`/`role:<R>`/`level:<N>` targeting; ACK + admin REVOKE; `broadcastsFor`
   filters to the viewer, unacked-first.
 Witness `teams/tests/poc_teams_s10.js` — **W-WORLD-AT-T 6/6 · W-COSIGN 6/6 · W-BROADCAST 4/4 = 16/16** (run_all 19/19).
-**S11 · Cross-product BIM↔ERP unified presence (B) — the moat** — one presence/identity fabric over the shared
-bus+facilitator; colour=signer across both products; a person's dot reads across BIM↔ERP. ⚠ touches BIM-side — additive
-+ isolated, **only when the modeller has settled** (coordinate). Witness **W-XPRESENCE**.
+**S11 · Cross-product BIM↔ERP unified presence (B) — the moat** ✅ **DONE** (additive, ZERO modeller/erp edits) —
+`overlay/presence.js`: ONE identity/colour fabric folded from `presence` heartbeats that ride the SAME shared
+`BroadcastChannel('bim_teams')` bus both products use. `makePresence` (fixed-schema, product∈{bim,erp},
+product-shaped location, NON-INVENT) → `foldPresence` unifies per IDENTITY (latest per-product + overall, one
+colour=signer via dot_layer.colorOf, active-window flag) → `whereIs` (unified where-now), `crossProduct` (THE MOAT:
+an ERP viewer reads BIM peers + vice-versa), `presenceDots` (same colour both products). The BIM/ERP sides only
+EMIT a heartbeat onto the existing bus seam — no host file edited (§R5). Witness `teams/tests/poc_teams_presence.js`
+**W-XPRESENCE 7/7** (unified-id · colour=signer · latest · cross-read · active-window · bus round-trip · determinism;
+the bus-fold caught + fixed a perProduct key-order non-determinism). run_all 21/21.
 **S12 · Replay-onboarding (D) + nudges (F) + "new feature" stub (H)** ✅ **DONE** (standalone, zero erp/ edits) —
 - `overlay/replay.js` — a step-recorder over a scoped flow: `makeReplay` → ordered steps (each ← one op),
   `stepState` re-FOLDS the record/world AS-OF a step (via world_at_t), `narrationScript` = the workSummary
