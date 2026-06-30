@@ -81,6 +81,18 @@ var Connectors = {
   // ---- STUB: identity (REAL: C_BPartner WHERE isEmployee='Y') ----------------
   resolveEmployee: function (empId, roster) { return (roster || {})[empId] || null; },
 
+  // ---- STUB: guid binding (REAL: viewer APP.guidMap reverse lookup) ----------
+  // NON-INVENT gate (§BINDING). source = the building's real guid set (room fixture / APP.guidMap).
+  //   • real APP.guidMap (meshId→guid)  → returns the MESH-ID handle to tint/zoom, or null (honest un-linked)
+  //   • fixture / Set / array of guids  → returns boolean linkage
+  resolveGuid: function (guid, source) {
+    var B = (typeof require !== 'undefined') ? require('./binding') : (self.HbaBinding);
+    if (source && typeof source === 'object' && !Array.isArray(source) && !(source instanceof Set) && !source.rooms) {
+      return B.meshIdForGuid(guid, source);        // real APP.guidMap → mesh-id handle (or null)
+    }
+    return B.resolveGuid(guid, source) || false;   // stub / fixture → boolean linkage
+  },
+
   _util: { sha256: sha256, canonical: canonical, stableStringify: stableStringify }
 };
 

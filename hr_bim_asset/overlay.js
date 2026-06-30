@@ -6,6 +6,7 @@
 //   at a time, state-as-color (detail on hover). Pure + deterministic. Read log after run.
 'use strict';
 var M = require('./models');
+var B = require('./binding');
 
 // color ladder — state-encoding (no labels needed). green/amber/red/grey + ghost.
 var COLORS = { occupied: '#2e7d32', vacant: '#9e9e9e', expiring: '#f9a825',
@@ -14,22 +15,30 @@ var COLORS = { occupied: '#2e7d32', vacant: '#9e9e9e', expiring: '#f9a825',
 function monthDiff(from, to) { var a = from.split('-'), b = to.split('-'); return (b[0] - a[0]) * 12 + (b[1] - a[1]); }
 
 // compute the overlay PLAN for ONE mode — LINKED guids only (sparse by construction).
+// opts.knownGuids (optional) = the building's real guid set (room fixture / APP.guidMap). When supplied it
+// is the NON-INVENT GATE: a record tints a unit ONLY when its guid resolves to a real mesh; non-matching
+// guids are collected in `unlinked` (honest — never tinted, never fabricated). Absent → no gate (legacy path).
 function computeOverlay(mode, period, opts) {
-  opts = opts || {}; var horizon = opts.expiringMonths || 2, tints = {}, legend;
+  opts = opts || {}; var horizon = opts.expiringMonths || 2, tints = {}, unlinked = [], legend;
+  var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  function place(guid, entry) {
+    if (gate && !gate.has(guid)) { unlinked.push(guid); return; }   // honest un-linked: no tint
+    tints[guid] = entry;
+  }
   if (mode === 'tenancy') {
     M.records('Tenancy').forEach(function (r) {
       var state = !r.tenant ? 'vacant' : (monthDiff(period, r.term_end) <= horizon ? 'expiring' : 'occupied');
-      tints[r.unit_guid] = { state: state, color: COLORS[state], detail: 'Lease ' + r.lease_no + ' · ' + (r.tenant || 'VACANT') + ' · ends ' + r.term_end };
+      place(r.unit_guid, { state: state, color: COLORS[state], detail: 'Lease ' + r.lease_no + ' · ' + (r.tenant || 'VACANT') + ' · ends ' + r.term_end });
     });
     legend = ['occupied', 'vacant', 'expiring'];
   } else if (mode === 'maintenance') {
     M.records('Asset').forEach(function (r) {
       var d = monthDiff(period, r.next_due), state = d > 0 ? 'ok' : d === 0 ? 'due' : 'overdue';
-      tints[r.bim_guid] = { state: state, color: COLORS[state], detail: r.asset + ' · ' + r.category + ' · due ' + r.next_due + ' · ' + r.personnel };
+      place(r.bim_guid, { state: state, color: COLORS[state], detail: r.asset + ' · ' + r.category + ' · due ' + r.next_due + ' · ' + r.personnel });
     });
     legend = ['ok', 'due', 'overdue'];
   } else throw new Error('unknown overlay mode: ' + mode);
-  return { mode: mode, period: period, tints: tints, linked: Object.keys(tints),
+  return { mode: mode, period: period, tints: tints, linked: Object.keys(tints), unlinked: unlinked,
            legend: legend.map(function (s) { return { state: s, color: COLORS[s] }; }) };
 }
 

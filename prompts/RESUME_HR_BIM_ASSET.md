@@ -26,13 +26,21 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 **Module = HR_BIM_Asset** (NOT "Payroll" — payroll is just RUN profile #1). Lives in **bim-ootb ONLY**:
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
-bim-compiler work. Witness: `node hr_bim_asset/tests/witness_run.js && node hr_bim_asset/tests/witness_view.js`.
+bim-compiler work. Witness: `node hr_bim_asset/tests/witness_run.js && node hr_bim_asset/tests/witness_view.js
+&& node hr_bim_asset/tests/witness_bind.js`.
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
 - 4 AD models, singular demo records (Tenancy/PropertyManagement/Strata/Asset); Asset = bim_guid↔iot + operator/vendor/personnel + schedule.
 - Spatial view (`overlay.js`+`lens.js`): 2 Find flaticon lenses (Tenancy=`users` blue-band · IoT=`cpu` · word-on-hover), storey density-dots, click→zoom→dummy→IFC-popup. Zero-impact (MeshPort/ScenePort seams). **W-HBA-VIEW 13/13.**
 - Watermark CONTOH/SAMPLE on every output. §BINDING (guid join + bim_orders_overlay inject). §CROSS-APP (Viewer·ERP·HR spine).
+- **NEXT#1 ✅ DONE 2026-06-30 — real-guid binding (`binding.js` + `fixtures/hhs_rooms.json` + `W-HBA-BIND 7/7`).**
+  Demo lease `L-0001` + strata parcel now reference REAL HHS IfcSpace rooms (`RM_Level_1_1` ≈ Level 1 R1 /
+  `RM_Level_1_2`), extracted into a provenance-stamped fixture (14 real rooms, src sha16 6498f86f, occupancy
+  from `rel_contained_in_space`). `binding.resolveGuid`/`bindRecords` = the **non-invent JOIN gate**: a guid
+  lights a unit ONLY when it resolves to a real mesh; a fabricated guid is honestly **un-linked**, never tinted
+  (proven by `overlay.computeOverlay(..,{knownGuids})` gating 2→1). `Connectors.resolveGuid` = the MeshPort seam
+  (swap fixture→`APP.guidMap` to go live). Fixture re-built by `fixtures/build_hhs_rooms.js`.
 
 **DEMO BUILDING:** `HHS_Office_Federated` (73MB, 6871 elems; HAS rooms — `rel_contained_in_space`, rooms
 `RM_Level_1_*`) copied into `bim-ootb/buildings/` (gitignore `!` exception) — **GH-served, NOT OCI**. Landing
@@ -40,9 +48,9 @@ bim-compiler work. Witness: `node hr_bim_asset/tests/witness_run.js && node hr_b
 GH bim-ootb. Other buildings untouched (OCI `_prodBase`).
 
 **NEXT (in order):**
-1. Bind a demo lease to a REAL HHS IfcSpace room guid (`RM_Level_1_*`) → Tenancy lens lights a real unit.
-   NON-INVENT: real guid, or the lens honestly shows un-linked.
-2. Viewer wire-in (the ONLY viewer-core touch): 2 `A.icon` buttons (`panels.js`) + MeshPort hook to `APP.guidMap`.
+1. ✅ DONE — see §RESUME above (real-guid binding + W-HBA-BIND 7/7).
+2. Viewer wire-in (the ONLY viewer-core touch): 2 `A.icon` buttons (`panels.js`) + MeshPort hook to `APP.guidMap`
+   (the `resolveGuid` seam is built — `Connectors.resolveGuid(guid, APP.guidMap)` already gates by the join).
 3. ERP/HR dotted lines (agreement/product/AR · attendance/access) when they go live (swap connector stubs).
 
 **⏳ STILL TRYING TO GO ONLINE — TimeMachine.Editor (4D Gantt chart):** the schedule/task editor (HHS carries
@@ -427,8 +435,11 @@ Detection gates the icon; the band is the on-state.
 - A lease carries `unit_guid` = the **IfcSpace (room) guid** — the SAME `e.room` handle the Outliner already
   derives from `rel_contained_in_space` (`viewer/bom_tree.js`). No IfcSpace → bind to the unit-container/storey
   guid (honest floor-level fallback).
-- The viewer **already exposes `APP.guidMap`** (guid→mesh, incl. instanced `_N`). So the `MeshPort` real impl is a
-  reverse lookup: `lease.unit_guid → APP.guidMap → mesh → tint/dummy`. Nothing new to render-plumb.
+- The viewer **already exposes `APP.guidMap`** — but it is keyed **`meshId→guid`** (the GUIDS ARE THE VALUES;
+  instanced meshes carry a `_N` slot suffix on the key — verified against `viewer/streaming.js` +
+  `ghostglass.js`/`picking.js`, 2026-06-30; the earlier "guid→mesh" here was inverted). So the `MeshPort` real
+  impl is a VALUE reverse-lookup: `lease.unit_guid → scan guidMap values → meshId → tint/dummy`. Built as
+  `binding.meshIdForGuid` / `Connectors.resolveGuid(guid, APP.guidMap)` (W-HBA-BIND B8/B9). Nothing new to render-plumb.
 
 **Injection = the bim_orders_overlay delta-band pattern (reuse, don't reinvent):** `erp/bim_orders_overlay.js`
 binds ERP docs to BIM via a **high-PK band (`≥ BIM_BASE`)** in a separate db (`bim_project_orders.db`), overlaid

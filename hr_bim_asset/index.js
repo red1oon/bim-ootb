@@ -10,5 +10,6 @@ module.exports = {
   Models: require('./models'),
   Engine: require('./engine'),
   Overlay: require('./overlay'),
-  Lens: require('./lens')
+  Lens: require('./lens'),
+  Binding: require('./binding')
 };

@@ -12,7 +12,9 @@ var MODELS = {
     table: 'HR_Lease', label: 'Tenancy', doc_type: 'LEASE',
     fields: [{ name: 'lease_no', type: 'id' }, { name: 'unit_guid', type: 'bim_ref' }, { name: 'tenant', type: 'party' },
              { name: 'rent', type: 'amount' }, { name: 'term_start', type: 'period' }, { name: 'term_end', type: 'period' }, { name: 'deposit', type: 'amount' }],
-    records: [{ lease_no: 'L-0001', unit_guid: 'GUID-UNIT-A1203', tenant: 'BP-TEN-1', rent: 1800, term_start: '2026-01', term_end: '2026-12', deposit: 3600 }]
+    // unit_guid = a REAL HHS IfcSpace room (≈ Level 1 R1) — see fixtures/hhs_rooms.json (NON-INVENT: the
+    // join hits a real unit; a fabricated guid would honestly show un-linked, never a faked binding).
+    records: [{ lease_no: 'L-0001', unit_guid: 'RM_Level_1_1', tenant: 'BP-TEN-1', rent: 1800, term_start: '2026-01', term_end: '2026-12', deposit: 3600 }]
   },
   PropertyManagement: {
     table: 'PM_Property', label: 'Property Management',
@@ -23,7 +25,8 @@ var MODELS = {
     table: 'PM_Strata_Parcel', label: 'Strata Title / Ownership',
     fields: [{ name: 'parcel', type: 'id' }, { name: 'unit_guid', type: 'bim_ref' }, { name: 'owner', type: 'party' },
              { name: 'share_units', type: 'number' }, { name: 'maint_fee', type: 'amount' }, { name: 'sinking_fund', type: 'amount' }],
-    records: [{ parcel: 'A-12-03', unit_guid: 'GUID-UNIT-A1203', owner: 'BP-OWN-1', share_units: 120, maint_fee: 280, sinking_fund: 56 }]
+    // unit_guid = a REAL HHS IfcSpace room (≈ Level 1 R2) — strata parcel bound to actual geometry, not a placeholder.
+    records: [{ parcel: 'A-12-03', unit_guid: 'RM_Level_1_2', owner: 'BP-OWN-1', share_units: 120, maint_fee: 280, sinking_fund: 56 }]
   },
   Asset: {
     table: 'PM_Asset', label: 'Asset / Equipment',
