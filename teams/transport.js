@@ -64,6 +64,11 @@ function makeHttpFacilitator(opts) {
   if (typeof opts.get !== 'function' || typeof opts.put !== 'function')
     throw new Error('makeHttpFacilitator: opts.get and opts.put are required (the injected transport seam)');
   var base = opts.base ? String(opts.base).replace(/\/+$/, '') + '/' : '';
+  // §S8 (teams/ROADMAP.md Phase E): the chain verifier is INJECTABLE. Default = Connectors.verifyChain
+  // (the BIM teams canonical) — UNCHANGED for every existing caller. An ERP caller passes the kernel_ops
+  // canonical verifier (teams/erp/erp_sync.erpVerifyChain) so the SAME transport store-and-forwards a real
+  // ERP kernel_ops branch. The transport still holds NO truth — it only runs whichever verifier it's given.
+  var verifyChain = (typeof opts.verifyChain === 'function') ? opts.verifyChain : C.verifyChain;
 
   function path(p) { return base + p; }
   function logPath(branch)   { return path('branches/' + branch + '.log.json'); }
@@ -105,7 +110,7 @@ function makeHttpFacilitator(opts) {
       var self = this;
       return readJson(logPath(branch)).then(function (prev) {
         prev = prev || [];
-        var v = C.verifyChain(ops);
+        var v = verifyChain(ops);
         if (!v.ok) { _reject('verifyChain:' + v.why, branch + '@' + v.at); return { accepted: 0, rejected: [{ at: v.at, why: v.why }] }; }
         if (!F._extendsPrefix(_hashes(prev), _hashes(ops))) {
           _reject('rewrite', branch + ' prev=' + prev.length + ' next=' + ops.length);
@@ -126,7 +131,7 @@ function makeHttpFacilitator(opts) {
     pullOps: function (branch, sinceHash) {
       return readJson(logPath(branch)).then(function (log) {
         log = log || [];
-        var v = C.verifyChain(log);
+        var v = verifyChain(log);
         if (!v.ok) { _reject('verifyChain:' + v.why, 'pull ' + branch + '@' + v.at); return []; }
         if (!sinceHash || sinceHash === 'GENESIS') return log.slice();
         for (var i = 0; i < log.length; i++) if (log[i].op_hash === sinceHash) return log.slice(i + 1);

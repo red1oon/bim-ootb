@@ -72,7 +72,7 @@ Impact: none.
 - Impact: the only production-code change in the whole roadmap; ⚠ smallest possible, reversible by the flag.
 
 ## Phase E — Sync + embed (deploy)
-**S8 · ERP sync over GH/OCI** — point `teams/transport.js` `pushOps/pullOps` at the ERP `kernel_ops` log (one branch
+**S8 · ERP sync over GH/OCI — ✅ DONE (W-ERP-SYNC 7/7; transport verifier now injectable, default unchanged; live GH/OCI smoke deferred to S9 deploy).** point `teams/transport.js` `pushOps/pullOps` at the ERP `kernel_ops` log (one branch
 per role/`branch_id`); CAS shared masters (BPartner/Product/acctschema). Witness **W-ERP-SYNC** (remote peer pulls an
 ERP branch, verifies, replays to the **same projectionHash**). Live smoke on GH+OCI like `teams/demo/`. Impact: none (transport).
 **S9 · Pill + embed + deploy** — a **distinct Teams pill** (2-person icon) in `kanban_host`/ERP chrome via

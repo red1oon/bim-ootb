@@ -19,10 +19,12 @@ var ErpBridge = require('./erp/erp_bridge');          // §S1 read-only ERP kern
 var ErpOptics = require('./erp/erp_optics');          // §S5 ERP Dashboard optics (gate/flow/involvement/organiser)
 var MyWork = require('./erp/my_work');                // §S6 waiting-for-me inbox + field-grain lineage
 var ErpOpSubscribe = require('./erp/op_subscribe');   // §S7 teams-side wiring: kernel emit → team bus (TEAM_OP)
+var ErpSync = require('./erp/erp_sync');              // §S8 ERP kernel_ops sync over the transport (GH/OCI)
 var App = require('./overlay/teams_app');            // demo scenario + computeView orchestration
 module.exports = {
   Connectors: Connectors, ConnectorsLive: ConnectorsLive, Engine: Engine, Gate: Gate,
   Chatlog: Chatlog, Protocol: Protocol, Facilitator: Facilitator, Transport: Transport,
   View: View, DotLayer: DotLayer, Postit: Postit, ShareBundle: ShareBundle,
-  ErpBridge: ErpBridge, ErpOptics: ErpOptics, MyWork: MyWork, ErpOpSubscribe: ErpOpSubscribe, App: App
+  ErpBridge: ErpBridge, ErpOptics: ErpOptics, MyWork: MyWork, ErpOpSubscribe: ErpOpSubscribe,
+  ErpSync: ErpSync, App: App
 };
