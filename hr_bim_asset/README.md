@@ -34,5 +34,13 @@ the **7D Viewer overlay** seam).
 `doc_poster.js` GL · `C_BPartner.isEmployee`). The module boots & runs standalone with the stubs;
 swap stub bodies to go live — engine + witness never change.
 
+## Spatial view (Viewer slice — alpha)
+Two Find lenses as flaticon toggles (`users`=Tenancy, `cpu`=IoT; word on hover, active=blue band) on the
+existing search→results→zoom→popup rails. High level = storey **population-density dots**; drill = click→zoom→
+**human dummy**→IFC-style popup. Zero-impact: only the `MeshPort`/`ScenePort` seams; toggle-off restores fully.
+Witnessed — `node hr_bim_asset/tests/witness_view.js` (W-HBA-VIEW). HBA is a **spine across 3 apps** (Viewer
+spatial · ERP agreement/product/AR · HR details/attendance/access) — see `prompts/RESUME_HR_BIM_ASSET.md §CROSS-APP`.
+
 ## Files
-`connectors.js` · `rules.js` · `watermark.js` · `models.js` · `engine.js` · `index.js` · `tests/witness_run.js`
+`connectors.js` · `rules.js` · `watermark.js` · `models.js` · `engine.js` · `overlay.js` · `lens.js` ·
+`index.js` · `tests/witness_run.js` · `tests/witness_view.js`

@@ -8,5 +8,7 @@ module.exports = {
   Rules: require('./rules'),
   Watermark: require('./watermark'),
   Models: require('./models'),
-  Engine: require('./engine')
+  Engine: require('./engine'),
+  Overlay: require('./overlay'),
+  Lens: require('./lens')
 };

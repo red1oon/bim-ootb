@@ -360,6 +360,32 @@ All records carry the CONTOH/SAMPLE watermark (alpha). AD-shaped so they compile
 
 ---
 
+## §CROSS-APP — HR_BIM_Asset threads Viewer + ERP + HR over BIM (user 2026-06-30)
+
+HR_BIM_Asset is NOT one app — it is a **thin spine that cuts through three apps**, each contributing one facet
+over the shared BIM model + signed op-log. A **tenancy** is the worked example that exercises all three:
+
+| App | Contributes | Entities / connector dotted-line |
+|---|---|---|
+| **Viewer** (building — NOW) | the **SPATIAL view** — unit on the model · occupancy lens (2-head flaticon, blue active-band, word-on-hover) · storey **population-density dots** · click→zoom→**human dummy**→IFC-style popup · IoT/asset overlay | the WHERE rendered; reuses `navigate_engine` zoom+popup, `panels.js` `A.icon` |
+| **ERP** | the **DEAL + MONEY** — Tenancy **agreement** (lease `documents` row) · **product** = rental / purchase / unit-type / **parking** (`M_Product` catalog; deal-type rental vs purchase) · **accounting** (AR: `C_Invoice→C_Payment→allocation→GL`) | `doc_poster` GL · `M_Product` · `C_Invoice/C_Payment` |
+| **HR** | the **PEOPLE + ACCESS** — tenant **details** (party = `C_BPartner`) · **clock in/out** (attendance, signed-edge) · **security card** (access = signed capability over the unit's spatial zone) | `C_BPartner` · `kernel_ops` signed check-in · W-SIGN access token |
+
+**BIM** underneath = the unit/space/asset geometry. The **signed op-log is the shared spine** all three write
+to. ONE lease threads all three: the unit *(Viewer/BIM)* ← agreement + product + AR *(ERP)* ← tenant + access +
+attendance *(HR)*. Each app stays its OWN module (§FOLDER); HBA is the thin spine that **references** each via the
+connector dotted-lines — it does NOT absorb them.
+
+**Build order:** Viewer spatial slice NOW (alpha, this commit); ERP agreement/product/AR and HR
+details/attendance/access wire in when those dotted lines go live (swap the relevant connector stubs).
+
+**Product Dashboard — installments (user 2026-06-30):** for products *purchased* on payment terms, the product
+table's **Dashboard graph view** plots the **installment schedule** (paid vs outstanding over time). Reuses ERP
+§0.7 self-graphing + `C_OrderPaySchedule`/`C_InvoicePaySchedule` (already mapped to `document_lines`) — a graph,
+not a new engine. So: **rental → periodic RUN · purchase → installment plan**, both off the same op-log.
+
+---
+
 ## §NEXT (spec-first order)
 1. Spec the `PAYRUN` doc lifecycle + element-rule decision-table shape (Pillar 1) — witness the
    glass-box payslip trace + deterministic re-run (`replay-hash`).
