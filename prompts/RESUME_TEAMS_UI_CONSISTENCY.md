@@ -30,7 +30,9 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
 
 ## 1. The consistency requirements (the spec)
 - **R1 — Icon, not label — for the WHOLE facet axis.** The entire Find-panel facet row is icon-driven, not just
-  the Teams lens: **Storey | Disc | Phase | Material | Tenancy | IoT | Teams** are ALL Lucide glyphs from the ONE
+  the Teams lens: **Storey | Disc | Material | Tenancy | IoT | Teams** are ALL Lucide glyphs from the ONE
+  (⚠ **Phase is NO LONGER a Find-Panel facet** — see §1a: it was a pre-Modeller Time-Machine relic; the Modeller
+  now owns the 4D Phase/5D dimension natively. Drop `Phase`/`clock` from the Viewer facet row.)
   `viewer/panels.js` `ICONS` registry — same `size`, same `title`-on-hover, same `active` blue band, one row, no
   mixed icon/text. (Existing in the registry: `disciplines`/`discMEP*` for Disc, `next` for Phase, `users`/`cpu`
   for Tenancy/IoT; ADD registry entries for **Storey** (e.g. `layers`) and **Material** if missing — never fork a
@@ -39,7 +41,7 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
   to the self-contained glyph only on the standalone demo), (b) use the host's active-band colour, not `#3a6df0`.
   - **Agreed icon map (user 2026-07-01, "improvise if you like" → these Lucide keys, verified vs the registry):**
     Storey `layers` (or `home`=house; `layers`=stacked-floors disambiguates from the nav Home button) · Disc
-    `wrench` (spanner) · Phase `clock` (✅ exists) · Material `contrast` (a half-lit circle = shaded 3D sphere;
+    `wrench` (spanner) · Material `contrast` (a half-lit circle = shaded 3D sphere;
     ✅ exists — true-sphere alt: add `globe`) · Tenancy `users` · IoT `cpu` · Teams `share` (collab-network,
     distinct from Tenancy `users`; ✅ exists). **Need ADDING to `viewer/panels.js` ICONS: `wrench`, `users`,
     `cpu`, and (if chosen) `layers`/`globe`** — add to the ONE registry, never fork a second set.
@@ -68,12 +70,20 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
 The Team overlay is NOT a peer subject-pane to Tenancy/IoT and NOT nailed under Storey. It is **one
 cross-cutting People dimension, grouped by ROLE** (`AD_Role` + the HR operator·vendor·personnel roles),
 that cross-tabs against a **phase-dependent spine**:
-- **Design / build** (Modeller Outliner, `bonsai_outliner.js`; Product/Project hat) → spine = **Project →
-  Task/Element**. A role-team CUTS ACROSS zones/buildings (a project spans storeys).
+- **SURFACE OWNERSHIP (rethink 2026-07-01): Modeller owns TIME, Viewer owns SPACE.** The Modeller owns the
+  **4D Phase + 5D cost** dimension natively (you BUILD the phases) — so **`Phase` is deprecated as a Find-Panel
+  facet** (it was a pre-Modeller relic: the Viewer scrubbing a post-developed building's baked-in 4D/5D via the
+  **Time Machine**). The Viewer Find Panel keeps only SPACE/operate facets (Storey, Disc, Material) + operate lenses.
+- **Design / build — 4D construction** (Modeller Outliner, `bonsai_outliner.js`; Product/Project hat; building =
+  **BIM: Hospital** `C_Project 990000`) → spine = **Project → Task/Element**, team grouped by **Discipline**
+  (ARC/STR/MEP crews — `disc*` icons already exist), **inherently PHASED** (the Modeller has 4D, so the construction
+  matrix carries the phase axis for free). A discipline-team CUTS ACROSS zones/buildings.
 - **Operate / maintain — 7D FM · IoT · the Tandem (digital-twin) handover** (Viewer Find Panel,
-  `navigate_find.js`; Asset/Resource hat) → spine = **Space zone (Storey → Room)**. The role-team is
-  ALIGNED to the zone it services. (This is why Storey holds operationally — confirmed.)
-- **ROLE is the constant; only the SPINE swaps (Project ↔ Zone) at the design→operate handover.** The
+  `navigate_find.js`; Asset/Resource hat; building = **HHS_Office**) → spine = **Space zone (Storey → Room)**,
+  team grouped by **Role** (FM operator/vendor/personnel), **phase-less** (7D = a present-state world). The role-team
+  is ALIGNED to the zone it services. (This is why Storey holds operationally — confirmed.)
+- **The TEAM PARTITION is itself phase-shaped: Discipline (4D construction) → Role (7D operate)** — Discipline IS
+  construction's expression of "role." Both the PARTITION and the SPINE (Project↔Zone) hand over at design→operate. The
   Tandem handover is the hinge; the **World/History timeline carries the same role-team across it**
   (re-anchored from "what they designed" → "what zone they now maintain") — the cross-product continuity moat.
 - **Smart search = the universal entry on BOTH surfaces** — REUSE `erp/erp_search.js` (FTS5 across all AD
