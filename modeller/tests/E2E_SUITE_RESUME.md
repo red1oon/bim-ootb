@@ -63,7 +63,11 @@ Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring
     (`const OPENING` line ~369; comment "real authoring is Sketch + Insert; WALL/OPENING are the sample primitives
     the witness folds directly") folded via the dev `author()` path behind a `?q=opening` param. The real-user
     "make an opening in a wall" IS the CUT tool (GEOM_CUT) → covered by W-E2E-CUT 7/7. Not a separate tool.
-11. ☐ GRID-STRETCH (b-gridmove → drag a gridline → GEOM_GRID_MOVE; `commitGridMove`, hook `window.__gridStretch(id,delta)`)
+11. ✅ GRID-STRETCH (`witness_e2e_gridstretch.js` 7/7) — seed a grid {xs:[0,4,8]} + a wall spanning A→B (scene
+    setup, like opening a building), then Move-Grid pill → REAL drag of gridline B → GEOM_GRID_MOVE recomposes the
+    wall. ATOMIC by the wall's X-extent (4.000→5.500 == drag Δ), REVERSIBLE (→4.000). ⚠ SETUP GOTCHA: clear via the
+    #b-clear BUTTON, not a direct oplog.clear() — the latter leaves stale building meshes in the THREE group that a
+    LEAF extrude optimistic-appends onto → fid collision (mismeasure). Drove the real pointer drag, not __gridStretch.
 12. ✅ DELETE (`witness_e2e_delete.js` 6/6) — select → Delete pill → soft-delete (active op-count −1, mesh removed,
     undone=1 so verifyChain stays valid); real-user reverse = Redo (Ctrl+Y) → count + mesh restored. ATOMIC by census.
 13. ☐ SEED-TRUNK full user flow (Outliner "Route trunk" → `_seedPopup` choose entry → render+animate; render gate
