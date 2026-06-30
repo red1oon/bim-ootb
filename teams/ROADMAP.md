@@ -1,10 +1,9 @@
 <!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
 # Team overlay — implementation ROADMAP (session-by-session)
 
-> ▶ **NEW SESSION START HERE: [`prompts/RESUME_TEAMS_OVERLAY.md`](../prompts/RESUME_TEAMS_OVERLAY.md)** — fast-start +
-> handoff. **Phases A–E (S1–S9) ✅ DONE & witnessed; deployed live.** Remaining = **Phase F** (S10–S12) + the
-> gated production `kanban_host.js` pill embed. Run the §G gate first (`node teams/tests/run_all.js` = 18 green
-> + `wire_teams_pill.js` 4/4).
+> **Phases A–E (S1–S9) ✅ DONE & witnessed; deployed live.** Remaining = **Phase F** (S10–S12) + the gated
+> production `kanban_host.js` pill embed. Run the §G gate first (`node teams/tests/run_all.js` = 18 green +
+> `wire_teams_pill.js` 4/4). *(A fast-start handoff note is kept locally by the operator, not in this repo.)*
 >
 > The execution plan for [[DESIGN.md]] + [[ERP_CONTEXT.md]] + [[TEAM_OPTICS.md]] + [[IDEAS.md]]. Ordered so risk
 > rises slowly: **read-only/zero-impact first → standalone optics → ERP surfaces → the two guarded `erp/` runtime

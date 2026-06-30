@@ -32,3 +32,6 @@ BIM_CONTEXT/
 !erp/preview_demo.db
 !buildings/warehouse_gardenworld.db
 
+
+# Local session-handoff note (operator-only; never in GH) — §RESUME
+prompts/RESUME_TEAMS_OVERLAY.md
