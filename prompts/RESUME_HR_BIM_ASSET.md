@@ -67,8 +67,10 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 >    mode, **W-HBA-PRES 14/14**). `attendance.presenceByZone` headcount folds to a blue density ladder (1→low /
 >    2-4→med / 5+→high) that RIDES the EXISTING `applyOverlay` MeshPort seam — zero new viewer-core; one-mode,
 >    restore-on-off, render-side non-invent gate (un-located zone → un-linked, never tinted). Sourced from the
->    host-injected signed log `A._hbaAttendanceLog`. **Open sub-item (like #2b): live 3D pill toggle + browser
->    smoke** — no pill icon wired yet (panels.js untouched this slice); engine + adapter path are node-witnessed.
+>    host-injected signed log `A._hbaAttendanceLog`. **✅ PILL WIRED 2026-07-01 (W-HBA-PRESPANE 10/10, see §T&A
+>    SLICE-2 PILL):** data-gated `hbaPresence` pill (Lucide `footprints`) in `panels.js` + gate seed
+>    `HbaAttendance.demoSeed`; actor-/building-class-agnostic — serves a tenant checking into a residential/
+>    commercial/office unit (PP8). **Remaining open sub-item (like #2b): live 3D browser smoke.**
 > 2. ✅ **DONE — Leave/Absence** (`leave.js`, **W-HBA-LEAVE 13/13**). The three primitives: ACCRUAL = a signed
 >    op (C.sign/verifyChain) · BALANCE = a REPLAY of the op-log (Σ ACCRUE − Σ TAKE, carry-forward via asOf, may
 >    overdraw — honest) · FEEDS PAYROLL = `leaveDeduction` splits an over-drawn/LWP take into unpaid days →
@@ -92,9 +94,9 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
 `safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave access
-occupancy request dashboard dashpane; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW
-13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 · ACCESS 13 ·
-OCC 21 · REQ 15 · DASH 7 · DASHPANE 8.
+occupancy request dashboard dashpane presspane; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18
+· VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 ·
+ACCESS 13 · OCC 21 · REQ 15 · DASH 7 · DASHPANE 8 · **PRESPANE 10**. (15 witnesses, all GREEN.)
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
@@ -293,6 +295,47 @@ fabricated end. **Witness claims (W-HBA-ATTEND — write the test, then implemen
 - A7 deterministic — same ops → identical timesheet fingerprint (replay == live).
 - A8 every receipt/output carries the CONTOH/SAMPLE watermark (§DISCLAIMER).
 Follow-on slices: viewer presence lens (reuse density dots) · access = signed capability over a zone · Leave/Absence.
+
+### §T&A SLICE-2 PILL — viewer presence-lens pill wire-in ✅ DONE 2026-06-30 (`W-HBA-PRESPANE`)
+**Scope:** the LAST open sub-item of presence (#1 in §RESUME) — the engine + `presence` lens-mode + `computePresence`
+seam were already node-witnessed (W-HBA-PRES 14/14), but **no pill icon was wired** (panels.js untouched that
+slice). This wires it following the EXACT data-gated pattern of `hbaTenancy`/`hbaIot`/`hbaOccupancy`/`hbaDash`:
+- **Seed parity (non-invent):** the gate auto-seeds `A._hbaOccupancyLog` so the Occupancy lens lights on a
+  building that carries rooms — presence had NO equivalent, so the pill could never light. Add
+  `HbaAttendance.demoSeed(rooms, period)` = a deterministic, SIGNED (`verifyChain`-OK) check-in log over the
+  model's REAL room guids for the QUERIED period (ts derived from the host-supplied `period`, no `Date.now`),
+  producing honest headcounts (zone0→3 present/med band · zone1→1/low · rest→0, vacancy from absence). The gate
+  injects it parallel to occupancy.
+- **Gate entry:** add `hbaPresence: detect(A, 'presence')` to the `on` map so the icon flips on ONLY when a
+  located check-in resolves to a real mesh in THIS building (no data → no icon).
+- **panels.js pill:** one ADDITIVE action `hbaPresence` (Lucide `footprints` icon), `pill:false` until the gate
+  flips it, `fn → HBALens.toggle(A, 'presence')`, `isActive → HBALens.isActive('presence')`. Reuses the SAME
+  MeshPort seam (zero new viewer-core); one-mode-at-a-time; toggle-off restores every material (zero residue).
+**Witness claims (W-HBA-PRESPANE — write the test, then implement):**
+- PP1 `demoSeed(rooms, period)` → a SIGNED check-in log; `verifyChain` OK; `presenceByZone` gives the expected
+  headcounts over the REAL zones (deterministic — same inputs → identical log).
+- PP2 data-gate: `detect('presence')` is FALSE with no attendance log / on a building whose zones aren't present,
+  and flips TRUE once the seed is injected over a real-guid building (icon shows / honestly absent → no clutter).
+- PP3 `toggle('presence')` ON tints ONLY the meshes of present zones (density band), other meshes untouched.
+- PP4 toggle OFF restores every touched material (emissive→0), lens inactive (zero residue / zero-impact).
+- PP5 non-invent: a check-in to a zone ABSENT from `guidMap` → `unlinked`, never tinted.
+- PP6 static wiring: `panels.js` registers an `hbaPresence` action whose `fn` calls `HBALens.toggle(.,'presence')`,
+  and `hba_lens.js` gate `on` map includes `hbaPresence` (proves the pill exists + is data-gated).
+- PP7 watermark: the timesheet folded from the seeded log carries the CONTOH/SAMPLE disclaimer (§DISCLAIMER).
+- PP8 **actor- & building-class-agnostic** (user 2026-07-01): the SAME presence/occupancy primitive serves a
+  TENANT checking into a **residential / commercial / office** unit, not just an employee at a site. The op's
+  actor is just a party id (employee OR tenant BP); the lens keys on the room GUID — the IfcSpace CLASS is a
+  label on the space, never hardcoded in the lens. Proven: a tenant-party check-in lights presence (headcount=2)
+  AND a tenant move-in (ASSIGN) lights occupancy=occupied over the same unit guid.
+  → **Occupancy lens** = unit availability by tenant move-in/out (assign/release, W-HBA-OCC) · **Presence lens**
+  = live "who's-in-the-unit-now" headcount from signed check-ins (this slice). Both already serve tenants across
+  building classes; nothing class-specific to build for the lens itself.
+**W-HBA-PRESPANE 10/10 PASS.** Witness file `hr_bim_asset/tests/witness_presspane.js`; add `presspane` to the
+suite loop. **Open (like #2b):** observe the pill/tint in a real browser (live-3D smoke) — node-witnessed via
+stub DOM here. **⛔ ONE user decision (cannot extract):** do you want **building-class (residential / commercial
+/ office)** surfaced as a DISTINCT lens facet — e.g. color/filter units by class, or a per-class occupancy KPI on
+the dashboard? That needs a `class`/`unit_type` field on the space/tenancy record (an IfcSpace ObjectType read or
+a seed column) — the lens engine is already agnostic, so this is a labeling/faceting choice, not a new engine.
 
 ---
 

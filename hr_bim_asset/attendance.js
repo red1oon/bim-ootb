@@ -83,8 +83,25 @@ function fingerprint(ts) {
   return C._util.sha256(C._util.stableStringify(proj));
 }
 
+// demonstrator seed (§T&A SLICE-2 PILL) — a deterministic, SIGNED check-in log over the model's REAL room guids
+// so the presence lens/pill lights on a building that carries rooms (parity with occupancy.demoSeed). ts is
+// derived from the host-supplied `period` (YYYY-MM) — NO Date.now; vacancy stays honest (a zone with no
+// check-in has zero headcount, never fabricated). Open sessions (no check-out) still count as present.
+function demoSeed(rooms, period) {
+  var g = (rooms || []).map(function (r) { return r.guid; });
+  period = period || '2026-01';
+  var log = [], n = 0;
+  function ts() { return period + '-15T08:' + ('0' + (n++)).slice(-2) + ':00Z'; }   // deterministic ordering
+  function prev() { return log.length ? log[log.length - 1].op_hash : 'GENESIS'; }
+  function ci(emp, zone) { var r = checkIn({ employee: emp, zone: zone, ts: ts() }, null, prev()); if (r.op) log.push(r.op); }
+  if (g[0]) { ci('EMP-1', g[0]); ci('EMP-2', g[0]); ci('EMP-3', g[0]); }   // zone0 → 3 present (med band)
+  if (g[1]) { ci('EMP-4', g[1]); }                                          // zone1 → 1 present  (low band)
+  // g[2..] left with NO check-in → genuinely zero headcount (presence from absence, never fabricated)
+  return { log: log, zones: g };
+}
+
 var A = { checkIn: checkIn, checkOut: checkOut, sessions: sessions, timesheet: timesheet,
-          presenceByZone: presenceByZone, fingerprint: fingerprint };
+          presenceByZone: presenceByZone, fingerprint: fingerprint, demoSeed: demoSeed };
 if (typeof module === 'object' && module.exports) module.exports = A;
 else (typeof self !== 'undefined' ? self : this).HbaAttendance = A;
 })();

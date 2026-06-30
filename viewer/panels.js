@@ -71,6 +71,8 @@ var ICONS = {
   cpu:       { svg: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>', trl: null, key: null, desc: 'IoT / Assets' },
   // HR_BIM_Asset occupancy (Resource-Assignment) lens + dashboard pane. Lucide 'door-open' + 'bar-chart-3'.
   doorOpen:  { svg: '<path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.562z"/>', trl: null, key: null, desc: 'Occupancy' },
+  // HR_BIM_Asset T&A presence (headcount-by-zone) lens. Lucide 'footprints' — who-was-where presence on site.
+  footprints:{ svg: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>', trl: null, key: null, desc: 'Presence' },
   barChart:  { svg: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: null, key: null, desc: 'Occupancy dashboard' }
 };
 
@@ -1170,6 +1172,12 @@ function setupPanels(A) {
         fn: function() { if (window.HBALens) HBALens.toggle(A, 'occupancy'); },
         isActive: function() { return !!(window.HBALens && HBALens.isActive('occupancy')); },
         children: [ { name: 'Color rooms by availability (occupied/expiring/vacant/unavailable)' }, { name: 'Room = iDempiere Resource (S_ResourceAssignment); state = replay of the booking log' }, { name: 'Toggle off restores the model' } ] },
+      // Presence lens (§T&A SLICE-2) — headcount-by-zone density from the signed check-in log. Data-gated +
+      // additive like the others; reuses the SAME MeshPort seam (HBALens 'presence' mode).
+      { id: 'hbaPresence', name: 'Presence',         pill: false, icon: I.footprints.svg,
+        fn: function() { if (window.HBALens) HBALens.toggle(A, 'presence'); },
+        isActive: function() { return !!(window.HBALens && HBALens.isActive('presence')); },
+        children: [ { name: 'Color zones by live headcount (1 / 2-4 / 5+ density band)' }, { name: 'Headcount = replay of signed, spatial, offline check-in ops (W-SIGN)' }, { name: 'Toggle off restores the model' } ] },
       { id: 'hbaDash',    name: 'Occupancy dashboard', pill: false, icon: I.barChart.svg,
         fn: function() { if (window.HBADashPane) HBADashPane.toggle(A); },
         isActive: function() { return !!(window.HBADashPane && HBADashPane.isActive()); },

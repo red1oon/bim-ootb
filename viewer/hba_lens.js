@@ -121,6 +121,13 @@
         A._hbaOccupancyLog = h.OC.demoSeed(rooms).log;
         console.log('§HBA_OCC seeded ' + A._hbaOccupancyLog.length + ' assignment ops from ' + rooms.length + ' rooms (demonstrator)');
       }
+      // §T&A SLICE-2 PILL — seed a (watermarked-context, demonstrator) signed check-in log over the SAME real
+      // rooms for the CURRENT period so the Presence lens + pill light up. Parallel to occupancy; ts derived
+      // from period (no Date.now); honest zero headcount on rooms with no check-in. ADDITIVE: sets only A._hba*.
+      if (!A._hbaAttendanceLog && h.A && h.A.demoSeed && rooms.length) {
+        A._hbaAttendanceLog = h.A.demoSeed(rooms, period(A)).log;
+        console.log('§HBA_ATT seeded ' + A._hbaAttendanceLog.length + ' check-in ops from ' + rooms.length + ' rooms (demonstrator, ' + period(A) + ')');
+      }
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 
@@ -180,13 +187,15 @@
     clearInterval(_poll);
     bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
     var acts = G._mainPillActions || [], on = { hbaTenancy: detect(A, 'tenancy'), hbaIot: detect(A, 'maintenance'),
-      hbaOccupancy: detect(A, 'occupancy'), hbaDash: !!(G.HBADashPane && G.HBADashPane.detect(A)) };
+      hbaOccupancy: detect(A, 'occupancy'), hbaPresence: detect(A, 'presence'),
+      hbaDash: !!(G.HBADashPane && G.HBADashPane.detect(A)) };
     var any = false;
     for (var i = 0; i < acts.length; i++) {
       if (on.hasOwnProperty(acts[i].id)) { acts[i].pill = on[acts[i].id] ? undefined : false; if (on[acts[i].id]) any = true; }
     }
     if (any && A._buildPill) A._buildPill();
     console.log('§HBA_GATE tenancy=' + (on.hbaTenancy ? 'on' : 'off') + ' iot=' + (on.hbaIot ? 'on' : 'off')
-      + ' (guidMap=' + Object.keys(A.guidMap).length + ')');
+      + ' occupancy=' + (on.hbaOccupancy ? 'on' : 'off') + ' presence=' + (on.hbaPresence ? 'on' : 'off')
+      + ' dash=' + (on.hbaDash ? 'on' : 'off') + ' (guidMap=' + Object.keys(A.guidMap).length + ')');
   }, 500);
 })();
