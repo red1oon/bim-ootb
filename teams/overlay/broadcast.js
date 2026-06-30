@@ -11,6 +11,7 @@
 //   (overlay/postit.js makeAnchor 'broadcast') + the connector seam (sign/verifyChain). Witness:
 //   teams/tests/poc_teams_s10.js (W-BROADCAST).
 'use strict';
+(function () {                                       // IIFE — keep `_op`/`_append`/`_order` OUT of global scope
 var C = (typeof require !== 'undefined') ? require('../connectors') : self.TeamsConnectors;
 var P = (typeof require !== 'undefined') ? require('./postit') : self.TeamsPostit;
 
@@ -116,3 +117,4 @@ var B = { targetRef: targetRef, targetsViewer: targetsViewer, emit: emit, ack: a
           foldBroadcasts: foldBroadcasts, broadcastsFor: broadcastsFor, verify: verify };
 if (typeof module === 'object' && module.exports) module.exports = B;
 else (typeof self !== 'undefined' ? self : this).TeamsBroadcast = B;
+})();

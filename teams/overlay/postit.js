@@ -10,6 +10,7 @@
 //   PURE + deterministic (no Date.now / Math.random — `now`/`ts` are INPUTS). Depends only on the
 //   connector seam (connectors.js sign/verifyChain). Witness: teams/tests/poc_teams_postit.js (W-POSTIT).
 'use strict';
+(function () {                                       // IIFE — keep `_op`/`_append`/`_order` OUT of global scope
 var C = (typeof require !== 'undefined') ? require('../connectors') : self.TeamsConnectors;
 
 // universal anchor kinds (TEAM_OPTICS §4 + §5.1 broadcast). The SAME set across BIM and ERP.
@@ -173,3 +174,4 @@ var P = {
 };
 if (typeof module === 'object' && module.exports) module.exports = P;
 else (typeof self !== 'undefined' ? self : this).TeamsPostit = P;
+})();

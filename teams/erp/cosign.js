@@ -17,6 +17,7 @@
 //   Dashboard optics vocab (SET_STATUS/POST/SUBMIT/APPROVE). Depends only on the connector seam (sign/
 //   verifyChain). Witness: teams/tests/poc_teams_s10.js (W-COSIGN).
 'use strict';
+(function () {                                       // IIFE — keep `_op`/`_append`/`_order` OUT of global scope
 var C = (typeof require !== 'undefined') ? require('../connectors') : self.TeamsConnectors;
 
 function _order(ops) {
@@ -117,3 +118,4 @@ function coSignState(ops, doc, opts) {
 var X = { requireCoSign: requireCoSign, submit: submit, approve: approve, post: post, coSignState: coSignState };
 if (typeof module === 'object' && module.exports) module.exports = X;
 else (typeof self !== 'undefined' ? self : this).TeamsCoSign = X;
+})();
