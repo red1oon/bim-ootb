@@ -29,7 +29,8 @@ function detectHost() {
 function isFn(f) { return typeof f === 'function'; }
 
 // Factory: returns a stub-surface object bound to whatever live modeller APIs `host` exposes.
-function makeConnectors(host) {
+function makeConnectors(host, opts) {
+  opts = opts || {};
   if (arguments.length === 0 || host === undefined) host = detectHost();
 
   var bindings = { evaluateGate: 'stub', foldCost: 'stub', sign: 'stub', subscribeOps: 'stub', bus: 'stub' };
@@ -83,11 +84,15 @@ function makeConnectors(host) {
       }
     : function (op) { return Stub.emitOp.call(conn, op); };
 
-  // ---- bus → BroadcastChannel('bim_teams') (else in-memory, stub semantics) -
+  // ---- bus → BroadcastChannel(channel) (default 'bim_teams'; else in-memory, stub semantics) -
+  //   channel is INJECTABLE (opts.channel) so the live suite binds presence/awareness to whatever
+  //   BroadcastChannel both products share — cross-product presence (S11) meets only on ONE channel.
   var liveBus = !!(host && isFn(host.BroadcastChannel));
+  var channel = opts.channel || 'bim_teams';
+  conn._channel = channel;
   if (liveBus) {
     bindings.bus = 'live';
-    var bc = new host.BroadcastChannel('bim_teams');
+    var bc = new host.BroadcastChannel(channel);
     conn.bus = {
       on: function (ch, cb) {
         bc.addEventListener('message', function (e) {

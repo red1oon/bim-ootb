@@ -163,8 +163,13 @@ function _detectHost() {
   return (typeof window !== 'undefined') ? window : (typeof self !== 'undefined') ? self : null;
 }
 Connectors._bindings = { evaluateGate: 'stub', foldCost: 'stub', sign: 'stub', verifyChain: 'stub', subscribeOps: 'stub', bus: 'stub' };
-Connectors.goLive = function (host) {
+// the awareness-bus channel name. Default 'bim_teams' (the team vocab). INJECTABLE via goLive(host,{channel})
+// so the LIVE suite can bind presence/awareness to whatever BroadcastChannel both products actually share
+// (e.g. ERP's existing 'bim_erp') — cross-product presence (S11) only meets if everyone is on one channel.
+Connectors._channel = 'bim_teams';
+Connectors.goLive = function (host, opts) {
   host = host || _detectHost(); if (!host) return Connectors;
+  opts = opts || {};
   var b = Connectors._bindings;
   if (host.sdg_gate && typeof host.sdg_gate.evaluate === 'function') {
     Connectors.evaluateGate = function (w, o) { return host.sdg_gate.evaluate(w, o); }; b.evaluateGate = 'live';
@@ -186,7 +191,9 @@ Connectors.goLive = function (host) {
     }; b.subscribeOps = 'live';
   }
   if (typeof host.BroadcastChannel === 'function') {                    // Tier-1 awareness bus
-    var ch = new host.BroadcastChannel('bim_teams');
+    var channel = opts.channel || Connectors._channel || 'bim_teams';   // injectable shared channel (S11)
+    Connectors._channel = channel;
+    var ch = new host.BroadcastChannel(channel);
     Connectors.bus = { on: function (c, cb) { ch.onmessage = function (e) { cb(e && e.data); }; },
                        send: function (c, m) { ch.postMessage(m); } }; b.bus = 'live';
   }

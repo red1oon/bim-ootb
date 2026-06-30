@@ -54,9 +54,38 @@ var brS = Es.makeBranch('arc', 'ana', 'ARC', 'walker', 'GENESIS');
 var resS = Es.append([], brS, { id: 'b1', ts: 10, branch: 'arc', author: 'ana', cls: Es.GEOM, verb: 'INSERT', target: 'W1', params: { box: { x: 0, y: 0, z: 0, w: 1, d: 1, h: 1 }, disc: 'ARC' } });
 ok(resS.ok && resS.log[0].op_hash !== 'LIVE-b1' && /^[0-9a-f]{64}$/.test(resS.log[0].op_hash), 'W-GOLIVE engine.append signs via STUB sha256 chain when no host', resS.log[0].op_hash.slice(0, 12) + '…');
 
+// ── C. CHANNEL INJECTION (S11) — the awareness bus binds to an injectable shared channel ──
+//   Default 'bim_teams'; goLive(host,{channel}) / makeConnectors(host,{channel}) binds whatever channel the
+//   live suite shares (e.g. ERP's 'bim_erp') — cross-product presence meets only on ONE channel. A recording
+//   mock BroadcastChannel proves the REAL channel name used (routing, not fabrication).
+function recBus() {
+  var rec = { names: [], posts: [] };
+  function BC(name) { rec.names.push(name); this.name = name;
+    this.postMessage = function (m) { rec.posts.push({ name: name, m: m }); };
+    this.addEventListener = function () {}; }
+  return { BroadcastChannel: BC, _rec: rec };
+}
+delete global.window;
+fresh();
+var Cc = require(P('connectors.js'));
+ok(Cc._channel === 'bim_teams', 'W-GOLIVE channel default = bim_teams (before goLive)', Cc._channel);
+var h1 = recBus(); Cc.goLive(h1);                                      // no opts → default channel
+ok(Cc._channel === 'bim_teams' && h1._rec.names[0] === 'bim_teams', 'W-GOLIVE goLive(host) opens the default bim_teams channel', h1._rec.names.join(','));
+fresh();
+var Cc2 = require(P('connectors.js'));
+var h2 = recBus(); Cc2.goLive(h2, { channel: 'bim_erp' });            // INJECT the shared channel
+ok(Cc2._channel === 'bim_erp' && h2._rec.names[0] === 'bim_erp', 'W-GOLIVE goLive(host,{channel}) binds the injected channel', h2._rec.names.join(','));
+Cc2.bus.send('whatever', { hi: 1 });
+ok(h2._rec.posts.length === 1 && h2._rec.posts[0].name === 'bim_erp', 'W-GOLIVE bus.send routes to the injected channel', h2._rec.posts[0] && h2._rec.posts[0].name);
+fresh();
+var CL = require(P('connectors_live.js'));
+var h3 = recBus(); var connF = CL.makeConnectors(h3, { channel: 'suite_shared' });
+ok(connF._channel === 'suite_shared' && h3._rec.names[0] === 'suite_shared', 'W-GOLIVE makeConnectors(host,{channel}) binds the injected channel (factory)', h3._rec.names.join(','));
+ok(CL.makeConnectors()._channel === 'bim_teams', 'W-GOLIVE makeConnectors() defaults to bim_teams', CL.makeConnectors()._channel);
+
 // restore clean module state for any later requirer
 fresh();
 
-var total = 9;
+var total = 15;
 console.log('\n' + (fails === 0 ? '✅ W-GOLIVE ' + total + '/' + total + ' PASS' : '❌ ' + fails + ' FAIL') + '\n');
 process.exit(fails === 0 ? 0 : 1);

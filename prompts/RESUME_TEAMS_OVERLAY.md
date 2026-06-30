@@ -82,6 +82,12 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
   only EMIT a heartbeat onto the bus seam — no host file edited (§R5). **W-XPRESENCE 7/7** (`poc_teams_presence.js`;
   run_all 21/21). **→ Phase F (S10/S11/S12) is fully DRAINED.** The only thing the BIM/ERP hosts add later is a
   one-line heartbeat emit on nav (a thin bus `postMessage`, not a code-coupling) — wire when each product is touched.
+  - **Live-wiring ready (channel hook):** the awareness bus channel is now INJECTABLE —
+    `connectors.goLive(host,{channel})` / `connectors_live.makeConnectors(host,{channel})` (default `'bim_teams'`,
+    exposed as `Connectors._channel`). ⚠ The live ERP host opens `BroadcastChannel('bim_erp')` (in `erp/ad_ui.js`)
+    and the modeller opens **none** yet — so to make cross-product presence actually MEET, bind the overlay to the
+    suite's shared channel (e.g. `goLive(window,{channel:'bim_erp'})`) AND have the modeller emit on the same one.
+    This is the existing GAP-BUS-SCOPE seam decision; the migration did NOT touch the bus. W-GOLIVE 15/15 covers it.
 
 ### Gated embed — ✅ CODE-LANDED + in-app verified (2026-06-30, user GO); remaining = live data + deploy
 - **The Teams pill is now embedded into PRODUCTION `erp/idempiere.html` chrome** — flag-guarded, additive:
