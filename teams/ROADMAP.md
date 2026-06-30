@@ -2,7 +2,14 @@
 # Team overlay — implementation ROADMAP (session-by-session)
 
 > ▶ **NEW SESSION START HERE: [`prompts/RESUME_TEAMS_OVERLAY.md`](../prompts/RESUME_TEAMS_OVERLAY.md)** — fast-start +
-> handoff. **Phases A–F (S1–S12) ✅ ALL DONE & witnessed.** §S10 (W-S10 16/16) · §S11 (W-XPRESENCE 7/7) · §S12
+> handoff.
+> 🟦 **QUEUED NEXT DEDICATED SESSION (2026-07-01): [`prompts/RESUME_TEAMS_UI_CONSISTENCY.md`](../prompts/RESUME_TEAMS_UI_CONSISTENCY.md)**
+> — Find-Panel/widget/pane/tab consistency + the SETTLED multi-surface architecture (§1a: People dimension ·
+> phase-shaped partition Discipline⇄Role · spine Project⇄Zone · author/consume split · THREE timelines ·
+> context-free-git Blue-dot · smart-search entry · Dashboard-graph feed). ⚠ START FROM THE MODELLER/PROJECT SPINE
+> (anti-drift). Coordinate icon-not-label with the HR lane. Live data feed already DONE: `teams/erp/teams_embed_ops.js`,
+> W-EMBED-OPS 7/7.
+> **Phases A–F (S1–S12) ✅ ALL DONE & witnessed.** §S10 (W-S10 16/16) · §S11 (W-XPRESENCE 7/7) · §S12
 > (W-S12 13/13); the gated production embed is CODE-LANDED + in-app verified (W-EMBED-WIRE 4/4). Phase F is DRAINED.
 > Run the §G gate first (`node teams/tests/run_all.js` = **22 green** + `wire_teams_pill.js` 4/4 + `erp/tests/
 > wire_teams_embed.js` 4/4). Remaining = live op-log wiring + production deploy (admin) — see RESUME §3.
