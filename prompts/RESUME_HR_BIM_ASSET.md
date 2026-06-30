@@ -31,9 +31,16 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 > **R_Request / ticket** workflow, the **occupancy dashboard** (Chart.js over pivot), and its **viewer pane +
 > pills wired** (additive, zero-impact). User Guides (bim-compiler `docs/ERPUserGuide.md` + `BIMUserGuide.md`)
 > updated + **DEPLOYED live** to gh-pages (canaries 200).
-> **▶ ONE OPEN RESIDUAL (live-3D, like #2b):** observe the HBA pane + pills + lenses painting in a REAL browser
-> (Playwright/deploy smoke) — all logic is node-witnessed via stub DOM/Chart; off-by-default + data-gated so a
-> live build is unchanged until a pill is clicked. **▶ THEN — pick a Phase-F differentiator or a new UI surface:**
+> **▶ LIVE BROWSER SMOKE ✅ DONE** (`hr_bim_asset/tests/smoke_hba.html`, headless Chrome): the dashboard pane +
+> charts render REAL replayed data (util 21%, availability 'occupied'), watermark, KPIs; OFF=no DOM, ON mounts one
+> overlay (3 sized canvases), OFF zero-residue, 0 console errors; standalone demo page renders too. **It caught 3
+> real browser-only bugs node missed** (fixed `dc563d1`): connectors `var crypto` aliased the read-only global
+> window.crypto → threw at load; the signed-op engines weren't IIFE-wrapped → top-level helpers (`_signed`/`_ops`/…)
+> leaked to GLOBALS and the last-loaded file clobbered them (occupancy.availability ran request._ops → every room
+> 'vacant'); Chart created on a DETACHED pane → blank. **LESSON:** any HBA engine file loaded as a browser
+> `<script>` MUST be IIFE-wrapped; node module-isolation hides these — keep a live browser smoke. Full-viewer
+> in-app load (3D + building stream) is the only thing not yet observed (heavy/flaky headless; pane+engine proven).
+> **▶ THEN — pick a Phase-F differentiator or a new UI surface:**
 > -1. ✅ **DONE — R_Request / ticket** (`request.js`, **W-HBA-REQ 15/15**) + **occupancy dashboard**
 >    (`dashboard.js`, **W-HBA-DASH 7/7**, demo `demo/occupancy_dashboard.html`). The ticket is a SIGNED status
 >    FSM (OPEN→ASSIGN→START→RESOLVE→CLOSE/REOPEN; illegal transition → REFUSE) threaded to the SHARED room/asset
