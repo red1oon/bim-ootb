@@ -13,7 +13,7 @@ var checks = [];
 function ok(tag, cond, msg) { checks.push(!!cond); console.log('§HBA-RICHDEMO ' + (cond ? 'PASS' : 'FAIL') + ' ' + tag + ' — ' + msg); }
 
 var fs = require('fs'), path = require('path');
-var Oc = require('../occupancy'), At = require('../attendance');
+var Oc = require('../occupancy'), At = require('../attendance'), Rq = require('../request'), B = require('../binding');
 var FX = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'hhs_rooms.json'), 'utf8'));
 var G = FX.rooms.map(function (r) { return r.guid; });
 var storeyOf = {}; FX.rooms.forEach(function (r) { storeyOf[r.guid] = r.storey; });
@@ -64,6 +64,21 @@ ok('R5-noninvent-real-guids', occReal && presReal && occZones.length >= 8,
 // ---- R6 — DETERMINISTIC: same fixture → identical seed (the rich demo replays exactly, no Date.now/random).
 ok('R6-deterministic', Oc.fingerprint(occLog, PERIODS, { allResources: G }) === Oc.fingerprint(Oc.demoSeed(FX.rooms).log, PERIODS, { allResources: G }),
   'the enriched seed is fully deterministic (re-seed → identical pivot fingerprint)');
+
+// ---- R7 — TICKET-AGING: the request seed populates ALL 4 SLA buckets (<1d/1-3d/3-7d/>7d) — the dashboard's
+//   doughnut was empty (Request log unseeded). Resource-gated to real rooms; deterministic; tickets stay OPEN.
+var ASOF = '2026-05-10T00:00:00Z';
+var known = B.augmentKnown(G, null);                          // G = real room guids → all resolve (no fabrication)
+var reqLog = Rq.demoSeed(FX.rooms, ASOF, known).log;
+var ag = Rq.aging(reqLog, ASOF);
+var bucketsFilled = Object.keys(ag.buckets).filter(function (b) { return ag.buckets[b] > 0; }).length;
+ok('R7-ticket-aging-buckets', ag.openCount >= 4 && bucketsFilled === 4 && ag.open.every(function (t) { return realSet.has(t.resource); }),
+  'ticket-aging populates ALL 4 SLA buckets ' + JSON.stringify(ag.buckets) + ' (' + ag.openCount + ' open, all on real rooms) — dashboard doughnut now rich');
+
+// ---- R8 — ticket NON-INVENT: a ticket on an un-located room is REFUSED (spatial gate, never fabricated).
+var refusedLog = Rq.demoSeed([{ guid: 'RM_DOES_NOT_EXIST' }], ASOF, new Set(['SOME-REAL-GUID'])).log;
+ok('R8-ticket-noninvent', refusedLog.length === 0,
+  'a ticket whose room is not in the building is REFUSED (resource spatial gate) — no fabricated ticket');
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-RICHDEMO ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));

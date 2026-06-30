@@ -66,12 +66,15 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   released; presence spreads varied headcount bands over i≥3 (g0=3/g1=1 kept). LIVE on HHS (`§RICH`): **3 storeys
   populated** (util Level 1:0.71 / 2:0.92 / 3:0.33, was only L1), occupancy lens **lit 4→11 rooms** across all
   levels, **tintedMeshes 19→77**, 2026-03 mix occ8/vac3/unavail3, presence 11 zones / 3 storeys / 6 bands [1-6].
-  Witness `tests/witness_richdemo.js` **W-HBA-RICHDEMO 7/7** (all storeys populated · 4-state mix · varied presence
-  · real guids · deterministic). Existing witnesses updated for the richer counts (O3/O4b/O6b/O9, dashboard D2).
-  **RESIDUAL (carried forward):** class is a correct 3-way mix (office/commercial/residential) but only on the 3
-  leased units (class is a unit-level lease/strata attribute by design — spreading to all rooms = a `classRows`
-  semantics change, decide if wanted); assets=1 (meets ≥1); **ticket-aging is EMPTY (Request records=0)** — needs a
-  separate aging-spread request-log seed for the dashboard's ticket buckets. ⇒ next P2 slice = seed tickets.
+  Also added **`request.demoSeed`** (varied-age OPEN tickets → ALL 4 dashboard SLA buckets) wired into
+  `bindStoreysFromModel` (`§HBA_REQ`); LIVE: **7 tickets, buckets {<1d:2,1-3d:1,3-7d:2,>7d:2}** (was empty). Gated
+  on the REAL ROOM set (spatial_structure — available at seed time; the rendered-mesh set still streams then).
+  Witness `tests/witness_richdemo.js` **W-HBA-RICHDEMO 9/9** (all storeys populated · 4-state mix · varied presence
+  · ticket buckets all 4 · ticket non-invent · real guids · deterministic). Existing witnesses updated for the
+  richer counts (O3/O4b/O6b/O9, dashboard D2). **RESIDUAL (carried forward):** class is a correct 3-way mix
+  (office/commercial/residential) but only on the 3 leased units (class is a unit-level lease/strata attribute by
+  design — spreading to all rooms = a `classRows` semantics change, decide if wanted); assets=1 (meets ≥1). ⇒ P2
+  acceptance bar MET (occupancy/presence/ticket-aging multi-storey rich); only the optional class-spread remains.
 - **P3 — PREP SAMPLE GW DATA (user).** GardenWorld (`buildings/warehouse_gardenworld.db`, 61KB — fast/headless-
   friendly, vs HHS 73MB). Check its spatial tables; build a GW room/members fixture + bind rich demo HBA records
   to its real guids so the FM lenses + dashboard light on GW. Use GW as the primary documented sample (fast loop).

@@ -210,6 +210,17 @@
         A._hbaAttendanceLog = h.A.demoSeed(rooms, period(A)).log;
         console.log('§HBA_ATT seeded ' + A._hbaAttendanceLog.length + ' check-in ops from ' + rooms.length + ' rooms (demonstrator, ' + period(A) + ')');
       }
+      // §RICH-DEMO (P2) — seed a spread of OPEN service tickets (varied ages) over the SAME real rooms so the
+      // Dashboard's ticket-aging doughnut populates all 4 SLA buckets (was empty: Request log unseeded). Gated on
+      // the AUGMENTED known set so a ticket resolves via the room's rendered members (non-invent). ADDITIVE.
+      if (!A._hbaRequestLog && G.HbaRequest && G.HbaRequest.demoSeed && rooms.length) {
+        // gate on the REAL ROOM set (from spatial_structure — fully available now), NOT the rendered-mesh set
+        // (guidMap still streams at this point). A ticket's non-invent gate is "is this a real room"; the lens
+        // resolves room→rendered-members later at paint time.
+        var reqKnown = {}; rooms.forEach(function (r) { reqKnown[r.guid] = r.guid; });
+        A._hbaRequestLog = G.HbaRequest.demoSeed(rooms, '2026-05-10T00:00:00Z', reqKnown).log;
+        console.log('§HBA_REQ seeded ' + A._hbaRequestLog.length + ' open tickets from ' + rooms.length + ' rooms (demonstrator, aging @2026-05-10)');
+      }
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 

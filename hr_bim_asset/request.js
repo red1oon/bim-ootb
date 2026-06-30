@@ -119,8 +119,30 @@ function fingerprint(log) {
   return C._util.sha256(C._util.stableStringify(proj));
 }
 
+// DEMO SEED (P2 §RICH-DEMO, 2026-07-01) — a deterministic spread of OPEN service/maintenance tickets across REAL
+// rooms with VARIED ages so the dashboard's ticket-aging doughnut populates ALL FOUR SLA buckets (<1d/1-3d/3-7d/
+// >7d) instead of reading empty. `asOf` anchors the ages (numeric Date math → no Date.now, fully deterministic).
+// Resource-gated to real guids (knownGuids — pass the AUGMENTED known set so room-resourced tickets resolve via
+// rendered members); an un-located room is skipped (non-invent). Tickets stay OPEN (no CLOSE) → all appear in aging.
+function demoSeed(rooms, asOf, knownGuids) {
+  var g = (rooms || []).map(function (r) { return r.guid; });
+  var anchor = Date.parse(asOf || '2026-05-10T00:00:00Z'), DAY = 86400000;
+  var AGES = [0.5, 2, 5, 9, 0.7, 4, 14, 1.5];                 // → <1d,1-3d,3-7d,>7d,<1d,3-7d,>7d,1-3d (all buckets)
+  var TYPES = ['maintenance', 'service', 'complaint', 'maintenance', 'service'], PRIO = ['high', 'medium', 'low'];
+  var log = [], k = 0;
+  function prev() { return log.length ? log[log.length - 1].op_hash : 'GENESIS'; }
+  for (var i = 0; i < g.length; i += 2) {                     // ~half the rooms carry an open ticket (a realistic spread)
+    var opened = new Date(anchor - AGES[k % AGES.length] * DAY).toISOString();
+    var r = open({ request_no: 'REQ-' + ('00' + (k + 1)).slice(-3), type: TYPES[k % TYPES.length], resource: g[i],
+      priority: PRIO[k % PRIO.length], summary: 'Demo service request', ts: opened }, knownGuids != null ? knownGuids : null, prev());
+    if (r.op) log.push(r.op);
+    k++;
+  }
+  return { log: log };
+}
+
 var R = { FSM: FSM, open: open, transition: transition, state: state, requests: requests, byResource: byResource,
-  myWork: myWork, aging: aging, effect: effect, summary: summary, fingerprint: fingerprint };
+  myWork: myWork, aging: aging, effect: effect, summary: summary, fingerprint: fingerprint, demoSeed: demoSeed };
 if (typeof module === 'object' && module.exports) module.exports = R;
 else (typeof self !== 'undefined' ? self : this).HbaRequest = R;
 })();

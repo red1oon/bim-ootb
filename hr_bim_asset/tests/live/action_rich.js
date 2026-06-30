@@ -12,6 +12,12 @@ var att = A._hbaAttendanceLog || [];
 var pres = At.presenceByZone(att, '2026-07').filter(function (x) { return x.headcount > 0; });
 var presStoreys = {}; pres.forEach(function (x) { presStoreys[storeyOf[x.zone]] = 1; });
 console.log('§RICH presence zones=' + pres.length + ' storeys=' + Object.keys(presStoreys).length + ' bands=' + JSON.stringify([...new Set(pres.map(function (x) { return x.headcount; }))].sort()));
+// ticket-aging (dashboard doughnut) from the live request seed
+var Rq = self.HbaRequest;
+if (Rq && A._hbaRequestLog) {
+  var ag = Rq.aging(A._hbaRequestLog, '2026-05-10T00:00:00Z');
+  console.log('§RICH tickets open=' + ag.openCount + ' buckets=' + JSON.stringify(ag.buckets));
+}
 // paint occupancy and report tinted target count (the live lens)
 HBALens.toggle(A, 'occupancy');
 console.log('§RICH afterToggle activeOcc=' + HBALens.isActive('occupancy') + ' tintedMeshes=' + HBALens.tintedCount());
