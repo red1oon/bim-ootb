@@ -4,8 +4,13 @@
 > ▶ **NEW SESSION START HERE: [`prompts/RESUME_TEAMS_OVERLAY.md`](../prompts/RESUME_TEAMS_OVERLAY.md)** — fast-start +
 > handoff. **Phases A–F (S1–S12) ✅ ALL DONE & witnessed.** §S10 (W-S10 16/16) · §S11 (W-XPRESENCE 7/7) · §S12
 > (W-S12 13/13); the gated production embed is CODE-LANDED + in-app verified (W-EMBED-WIRE 4/4). Phase F is DRAINED.
-> Run the §G gate first (`node teams/tests/run_all.js` = 21 green + `wire_teams_pill.js` 4/4 + `erp/tests/
+> Run the §G gate first (`node teams/tests/run_all.js` = **22 green** + `wire_teams_pill.js` 4/4 + `erp/tests/
 > wire_teams_embed.js` 4/4). Remaining = live op-log wiring + production deploy (admin) — see RESUME §3.
+> **Live data feed DONE (2026-07-01):** `teams/erp/teams_embed_ops.js` maps the REAL iDempiere model
+> (AD_User→C_BPartner[IsEmployee]→ad_role; C_Project; real HHS_Office IfcSpace rooms) → canonical ops,
+> **W-EMBED-OPS 7/7** (NON-INVENT). **NEXT (dedicated session): [`prompts/RESUME_TEAMS_UI_CONSISTENCY.md`](../prompts/RESUME_TEAMS_UI_CONSISTENCY.md)**
+> — icon-not-label across the WHOLE facet axis (Storey|Disc|Phase|Material|Tenancy|IoT|Teams), host token/pane/tab
+> consistency, AND Teams folds feeding iDempiere>Dashboard>Graphs (match `hr_bim_asset/dashboard.js` schema).
 >
 > The execution plan for [[DESIGN.md]] + [[ERP_CONTEXT.md]] + [[TEAM_OPTICS.md]] + [[IDEAS.md]]. Ordered so risk
 > rises slowly: **read-only/zero-impact first → standalone optics → ERP surfaces → the two guarded `erp/` runtime
