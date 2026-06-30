@@ -55,7 +55,10 @@ Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring
    any display toggle (disconnect around our own writes → no loop). modeller.html. ⚠ bump sw CACHE_VERSION on deploy.
 8. ✅ ROUTE→RUN (`witness_e2e_route.js` 8/8) — Route pill → ≥2 ground clicks (a spine) → profile → Sweep-Run pill →
    GEOM_SWEEP (occt pipe B-rep). ATOMIC by census, VISIBLE, REVERSIBLE. Confirms the rail fix unblocks the Run pill.
-9. ☐ FILLET (b-fillet edge-pick → b-applyfillet → GEOM_FILLET; `edgePicking`)
+9. ✅ FILLET (`witness_e2e_fillet.js` 8/8) — Clear → Sketch→Extrude a lone wall → select → Fillet pill (reads 12
+   edges, renders markers) → click an edge marker → radius → Apply pill → GEOM_FILLET. ATOMIC by the wall's
+   triangle count (12→40, the round adds geometry), REVERSIBLE (→12). Needs a B-rep SOLID (ARC inserts have no
+   worker edges) so it authors one first; clearing to an empty model makes select + edge-pick unambiguous.
 10. ☐ OPENING (GEOM_OPENING — find the trigger; likely opening tool on a wall)
 11. ☐ GRID-STRETCH (b-gridmove → drag a gridline → GEOM_GRID_MOVE; `commitGridMove`, hook `window.__gridStretch(id,delta)`)
 12. ☐ DELETE (select → b-del / Del key → `deleteSelected`; assert removal + reversible)
