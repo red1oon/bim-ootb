@@ -99,8 +99,14 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
     suite's shared channel (e.g. `goLive(window,{channel:'bim_erp'})`) AND have the modeller emit on the same one.
     This is the existing GAP-BUS-SCOPE seam decision; the migration did NOT touch the bus. W-GOLIVE 15/15 covers it.
 
-### Gated embed — ✅ CODE-LANDED + in-app verified (2026-06-30, user GO); remaining = live data + deploy
-- **The Teams pill is now embedded into PRODUCTION `erp/idempiere.html` chrome** — flag-guarded, additive:
+### Gated embed — ✅ CODE-LANDED in BOTH products + in-app verified (2026-06-30, user GO); remaining = live data + deploy
+- **Modeller (BIM-side) overlay — ✅ landed** (`modeller/teams_embed.js`, W-EMBED-BIM 4/4): OFF (default) =
+  pixel-identical; ON (`?teams=1`) → a distinct FLOATING Teams pill mounts (modeller has no toolbar) → click paints
+  contextual dots on the Outliner rows (`#bonsai-outliner [data-fid]`, colour=signer = who's on each element) + a
+  presence pane (current BIM actor, cross-product-ready) + emits a `bim` heartbeat on the shared bus. `modeller.html`
+  +2 guarded lines; `modeller/sw.js` v19→v20 (⚠ main is v23 from the building migration → on merge take the higher
+  version + keep both precache adds). In-app smoke on REAL `modeller.html`: OFF inert/0 errors, ON pill mounts/0 errors.
+- **The Teams pill is also embedded into PRODUCTION `erp/idempiere.html` chrome** — flag-guarded, additive:
   - `erp/teams_embed.js` (NEW) — ONE inert guarded bootstrap. OFF (default) → `init()` returns immediately,
     NO pill/pane/module-fetch = **pixel-identical**. ON (`localStorage.teamsEmbed='1'` | `?teams=1`) → it
     lazy-loads the proven `teams/` trio (dot_layer/erp_optics/teams_pill) + mounts the **distinct** Teams pill
