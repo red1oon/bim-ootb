@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — TEAMS PILL DEMO (teams/ROADMAP.md §S9, Phase E). A STANDALONE page (à la gh_demo.html):
+     a mock ERP Dashboard chrome + the distinct Teams pill. Team OFF (default) = the chrome is pixel-identical;
+     click the 2-person pill → the overlay (dot-layer + involvement) mounts in a pane; off again → reverts.
+     Proven by teams/tests/wire_teams_pill.js (W-TEAM-WIRE). Read-only seeded data; no writes, no network. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP Dashboard · Teams overlay (pill demo)</title>
+<style>
+  :root { --ink:#1d2330; --dim:#7b869c; --line:#e6e9f2; --bg:#f5f7fb; --accent:#3a6df0; }
+  * { box-sizing:border-box; } body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px; background:#fff; border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; margin:0; font-weight:700; } header .sp { flex:1; }
+  .teams-pill { width:34px; height:30px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--dim);
+    cursor:pointer; display:grid; place-items:center; padding:0; } .teams-pill.on { color:#fff; background:var(--accent); border-color:var(--accent); }
+  main { padding:16px; max-width:760px; } .card { background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); margin:0; padding:11px 14px; border-bottom:1px solid var(--line); }
+  .row { display:flex; align-items:center; gap:12px; padding:11px 14px; border-bottom:1px solid var(--line); } .row:last-child { border-bottom:0; }
+  .row .doc { font-weight:600; width:90px; } .row .st { font-size:12px; color:var(--dim); width:90px; } .row .who { font-size:12px; color:var(--dim); flex:1; }
+  /* overlay pane — created ONLY when Team is ON (zero DOM when off) */
+  .teams-pane { position:fixed; top:51px; right:0; bottom:0; width:320px; background:#fff; border-left:1px solid var(--line);
+    box-shadow:-8px 0 24px rgba(20,30,60,.08); padding:14px; overflow:auto; }
+  .teams-pane h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); margin:0 0 10px; }
+  .tcluster { display:inline-flex; align-items:center; gap:2px; margin:2px 0; }
+  .tdot { width:20px; height:20px; border-radius:50%; display:inline-grid; place-items:center; font-size:9px; font-weight:700; color:#fff; background:var(--c,#888); }
+  .tdot.postit { border-radius:4px; background:#ff5b8a; } .tdot.faded { opacity:.4; }
+  .tbadge { font-size:11px; font-weight:700; color:var(--dim); margin-left:3px; }
+  .pe { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dashed var(--line); } .pe .d { font-weight:600; width:80px; }
+  .pe .n { font-size:12px; color:var(--dim); } .hot { color:var(--accent); font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Accounts Receivable · Dashboard</h1>
+  <div class="sp"></div>
+  <span id="mountpt"></span>
+</header>
+<main>
+  <div class="card" id="chrome">
+    <h2>Open documents</h2>
+    <div class="row" data-doc="INV-001"><span class="doc">INV-001</span><span class="st">Posted</span><span class="who">last: alice</span></div>
+    <div class="row" data-doc="INV-002"><span class="doc">INV-002</span><span class="st">Drafted</span><span class="who">last: carol</span></div>
+    <div class="row" data-doc="SO-9"><span class="doc">SO-9</span><span class="st">In review</span><span class="who">last: hank</span></div>
+  </div>
+</main>
+
+<script src="../overlay/dot_layer.js"></script>
+<script src="../erp/erp_optics.js"></script>
+<script src="../overlay/teams_pill.js"></script>
+<script>
+(function () {
+  'use strict';
+  var D = window.TeamsDotLayer, O = window.TeamsErpOptics, TP = window.TeamsPill;
+  // seeded ERP op-log (read-only; the SAME shape the optics fold). NON-INVENT demo data.
+  var T = 1719700000000;
+  function op(id, ts, author, role, verb, target) { return { id:id, ts:ts, author:author, role:role, cls:'erp', verb:verb, target:target, params:{} }; }
+  var ops = [
+    op('a1',T+10,'alice','AP','CREATE','INV-001'), op('b1',T+20,'bob','AP','EDIT','INV-001'), op('a2',T+30,'alice','AP','POST','INV-001'),
+    op('c1',T+40,'carol','Sales','CREATE','INV-002'),
+    op('d1',T+50,'dave','Sales','CREATE','SO-9'), op('e1',T+60,'erin','Sales','EDIT','SO-9'),
+    op('f1',T+70,'frank','Mgr','EDIT','SO-9'), op('g1',T+80,'gita','Mgr','EDIT','SO-9'), op('h1',T+90,'hank','AP','EDIT','SO-9'),
+    { id:'p1', ts:T+100, author:'bob', cls:'annot', verb:'PIN', target:'INV-001', params:{ pinId:'P1', msg:'check tax line' } }
+  ];
+
+  function renderOverlay(pane) {
+    var model = D.dotLayerModel(ops, { on:true, maxVisible:2 });
+    var inv = O.involvement(ops, {});
+    // 1) paint dots onto the chrome rows (the universal dot-layer) — additive, removed on close.
+    document.querySelectorAll('#chrome .row').forEach(function (row) {
+      var anchor = row.getAttribute('data-doc');
+      var cl = model.clusters.filter(function (c) { return c.anchor === anchor && c.kind === 'person'; })[0];
+      if (!cl) return;
+      var wrap = document.createElement('span'); wrap.className = 'tcluster row-dots';
+      cl.visible.forEach(function (d) { var dot = document.createElement('span'); dot.className = 'tdot person';
+        dot.style.setProperty('--c', d.color); dot.textContent = d.initials; dot.title = d.blurb; wrap.appendChild(dot); });
+      if (cl.badge) { var b = document.createElement('span'); b.className='tbadge'; b.textContent=cl.badge; wrap.appendChild(b); }
+      row.appendChild(wrap);
+    });
+    // 2) the pane = involvement summary (who's involved per doc + the hot cell).
+    pane.appendChild((function(){ var h=document.createElement('h3'); h.textContent='Involvement · who is on each doc'; return h; })());
+    inv.hot.forEach(function (h, i) {
+      var d = inv.perDoc[h.doc];
+      var e = document.createElement('div'); e.className = 'pe' + (i === 0 ? ' ' : '');
+      var dd = document.createElement('span'); dd.className = 'd' + (i===0?' hot':''); dd.textContent = h.doc;
+      var nn = document.createElement('span'); nn.className = 'n'; nn.textContent = h.count + ' people · ' + d.participants.join(', ');
+      e.appendChild(dd); e.appendChild(nn); pane.appendChild(e);
+    });
+  }
+  function unrenderOverlay() {
+    document.querySelectorAll('#chrome .row-dots').forEach(function (n) { n.remove(); });   // back to OFF baseline
+  }
+
+  // mount the distinct Teams pill — OFF by default (zero overlay DOM until clicked).
+  TP.mountTeamsPill(document.getElementById('mountpt'), {
+    label: 'Teams overlay', paneHost: document.body,
+    onMount: renderOverlay, onUnmount: unrenderOverlay
+  });
+  window.__teamsReady = true;   // wire-witness readiness flag
+})();
+</script>
+</body>
+</html>

@@ -75,7 +75,7 @@ Impact: none.
 **S8 · ERP sync over GH/OCI — ✅ DONE (W-ERP-SYNC 7/7; transport verifier now injectable, default unchanged; live GH/OCI smoke deferred to S9 deploy).** point `teams/transport.js` `pushOps/pullOps` at the ERP `kernel_ops` log (one branch
 per role/`branch_id`); CAS shared masters (BPartner/Product/acctschema). Witness **W-ERP-SYNC** (remote peer pulls an
 ERP branch, verifies, replays to the **same projectionHash**). Live smoke on GH+OCI like `teams/demo/`. Impact: none (transport).
-**S9 · Pill + embed + deploy** — a **distinct Teams pill** (2-person icon) in `kanban_host`/ERP chrome via
+**S9 · Pill + embed + deploy — ✅ DONE (W-TEAM-WIRE 4/4 chromium; standalone page deployed live GH-raw + OCI; Team-OFF pixel-identical proven). Phase E COMPLETE. NOTE: the line-edit into PRODUCTION kanban_host.js is the gated follow-up (off-by-default launcher proven standalone first, per §P5) — not landed in the live app this slice.** a **distinct Teams pill** (2-person icon) in `kanban_host`/ERP chrome via
 `pill_builder.js` (NOT `redpill`/`ZoomAcross`); overlay mounts in a pane/iframe. Witness **W-TEAM-WIRE** + the
 **Team-OFF pixel-identical** check. EXPLICIT GO → deploy. Impact: chrome (flag-guarded; off = identical).
 
