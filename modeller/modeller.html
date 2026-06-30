@@ -2384,6 +2384,42 @@ function _redrawAllDiscWalks() {
   Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d]); });
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
 }
+// §4 WITNESS SEAM: re-expose the (module-scope) disc-walk render entry points so a headless witness can drive
+// the render directly via the IDB-free engine API (dwOpen/dwBorrow with plain-fetched rules DBs) — the
+// production walk path (discWalk → dwInit/dwBorrowFile) goes through the bim_ootb_cache IndexedDB layer, which
+// is unreliable under puppeteer+swiftshader (fine in real browsers). This seam is render-only (no new behaviour;
+// it calls the same functions the live walk calls), used by modeller/tests/witness_dw_pixelprobe.js.
+window.__dwRender = { walk: _renderDiscWalk, assembly: _renderDiscAssembly, redraw: _redrawAllDiscWalks };
+// §4 WHITEBOX PIXEL PROBE (roadmap #4): a headless readback proving the disc-walk render actually painted —
+// (1) a scene-graph census of the dwRoot group for a disc (fixture box InstancedMesh, §3c connector-edge
+// LineSegments, routed tubes, assembled parts) so a witness confirms the render WIRED the expected objects,
+// and (2) renders one frame + readPixels the whole canvas → litPct, so before/after a walk a witness confirms
+// the geometry actually PAINTED (not behind camera / zero-size). NON-INVENT: pure readback of the rendered
+// frame + the live scene graph, no synthetic data. Returns the census + litPct; logs §DW-PIXELPROBE.
+window.__dwPixelProbe = function (disc) {
+  var out = { disc: disc, boxes: 0, instances: 0, edges: 0, tubes: 0, parts: 0, asmEdges: 0, litPct: 0 };
+  try {
+    var g = window.Bonsai && window.Bonsai.group && window.Bonsai.group();
+    var root = g && g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
+    if (root) root.children.forEach(function (o) {
+      var d = o.userData || {};
+      if (d.dwDisc === disc) { if (o.isLineSegments) out.edges++; else if (o.isInstancedMesh) { out.boxes++; out.instances += (o.count || 0); } }
+      else if (d.dwChain === disc) { if (o.isInstancedMesh) out.tubes++; }
+      else if (d.dwAsm === disc) { if (o.isLineSegments) out.asmEdges++; else if (o.isInstancedMesh) out.parts++; }
+    });
+  } catch (e) { out.err = 'census ' + (e && e.message); }
+  try {
+    var r = window.A.renderer; r.render(window.A.scene, window.A.camera); var gl = r.getContext();
+    var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); var lit = 0;
+    for (var i = 0; i < px.length; i += 4) { if (px[i] > 40 || px[i + 1] > 44 || px[i + 2] > 52) lit++; }
+    out.litPct = +(100 * lit / (w * h)).toFixed(2);
+  } catch (e) { out.err = (out.err ? out.err + '; ' : '') + 'readPixels ' + (e && e.message); }
+  console.log('§DW-PIXELPROBE disc=' + disc + ' boxes=' + out.boxes + ' instances=' + out.instances +
+    ' connectorEdges=' + out.edges + ' tubes=' + out.tubes + ' parts=' + out.parts + ' asmEdges=' + out.asmEdges +
+    ' litPixels=' + out.litPct + '%' + (out.err ? ' err=' + out.err : ''));
+  return out;
+};
 
 // ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
 // The bom-graph shows disc nodes only for disciplines PRESENT in a building — but the whole point of the
