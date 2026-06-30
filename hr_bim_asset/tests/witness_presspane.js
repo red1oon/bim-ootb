@@ -94,15 +94,14 @@ ok('PP5-noninvent', plan.linked.indexOf(ZONE0) !== -1 && plan.unlinked.indexOf(U
   'a check-in to a guid absent from the building → unlinked (no tint, never fabricated); the real zone still lights — '
   + JSON.stringify({ linked: plan.linked, unlinked: plan.unlinked }));
 
-// ---- PP6 — static wiring: panels.js registers hbaPresence (fn → toggle 'presence'), hba_lens.js gates it.
-var panelsSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'viewer', 'panels.js'), 'utf8');
-var lensSrc   = fs.readFileSync(path.join(__dirname, '..', '..', 'viewer', 'hba_lens.js'), 'utf8');
-var panelOk = /id:\s*'hbaPresence'/.test(panelsSrc) && /HBALens\.toggle\(A,\s*'presence'\)/.test(panelsSrc)
-  && /I\.footprints\.svg/.test(panelsSrc) && /footprints:\s*\{ svg:/.test(panelsSrc);
-var gateOk = /hbaPresence:\s*detect\(A,\s*'presence'\)/.test(lensSrc)
-  && /h\.A\.demoSeed\(rooms,\s*period\(A\)\)/.test(lensSrc);
-ok('PP6-wiring', panelOk && gateOk,
-  'panels.js has the hbaPresence pill (footprints icon, fn→toggle presence) AND hba_lens.js data-gates it + seeds the log');
+// ---- PP6 — static wiring (post §FM-FAMILY): presence is reached via the FM family drawer, not a standalone
+//   pill. Assert the FAMILY lists 'presence' (so the drawer surfaces it + the gate counts it) and the gate seeds
+//   the attendance log. The toggle path HBALens.toggle(A,'presence') is exercised live in PP3.
+var lensSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'viewer', 'hba_lens.js'), 'utf8');
+var familyHasPresence = HBALens.FAMILY.some(function (f) { return f.mode === 'presence'; });
+var gateOk = /h\.A\.demoSeed\(rooms,\s*period\(A\)\)/.test(lensSrc) && /availableLenses\(A\)/.test(lensSrc);
+ok('PP6-wiring', familyHasPresence && gateOk && typeof HBALens.openFamilyDrawer === 'function',
+  'presence is a FAMILY entry surfaced by the FM drawer; hba_lens.js seeds the attendance log + gates via availableLenses');
 
 // ---- PP7 — watermark: the timesheet folded from the seeded log carries the disclaimer (§DISCLAIMER).
 var sheet = ATT.timesheet(seed.log, PERIOD, 'en');

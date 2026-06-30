@@ -196,6 +196,75 @@
 
   function isActive(mode) { return _active === mode; }
 
+  // ── §FM-FAMILY (user 2026-07-01) — group the HBA lenses under ONE "FM / Operate" pill to keep the main bar
+  //   uncluttered, and make each lens WAKE-AWARE (enabled only when its data exists in the loaded building, else
+  //   greyed). De-conflate: Tenancy is folded into Occupancy (occupancy = the op-log superset incl. lease
+  //   status), so the family lists DISTINCT questions only. The 'tenancy' engine mode still exists (back-compat
+  //   + witnesses) but is no longer a separate surface. `availableLenses` = the pure, witnessed core that drives
+  //   both the family-pill gate and the per-entry greying; `openFamilyDrawer` = the thin browser renderer.
+  var _ic = {  // self-contained Lucide paths (the drawer owns its icons; no panels.js coupling)
+    doorOpen:  '<path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.562z"/>',
+    footprints:'<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
+    layers:    '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+    cpu:       '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
+    barChart:  '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'
+  };
+  var FAMILY = [
+    { kind: 'lens', mode: 'occupancy',   icon: 'doorOpen',   label: 'Occupancy',    detail: 'Availability — occupied / expiring / vacant / unavailable (incl. lease status)' },
+    { kind: 'lens', mode: 'presence',    icon: 'footprints', label: 'Presence',     detail: 'Live headcount-by-zone from signed check-ins' },
+    { kind: 'lens', mode: 'class',       icon: 'layers',     label: 'Unit class',   detail: 'Use-class — residential / commercial / office' },
+    { kind: 'lens', mode: 'maintenance', icon: 'cpu',        label: 'Assets / IoT', detail: 'Equipment maintenance due — ok / due / overdue' },
+    { kind: 'pane', id:   'dash',        icon: 'barChart',   label: 'Dashboard',    detail: 'Occupancy / availability / ticket-aging charts (extra pane)' }
+  ];
+  function _entryActive(f) {
+    return f.kind === 'pane' ? !!(G.HBADashPane && G.HBADashPane.isActive && G.HBADashPane.isActive()) : isActive(f.mode);
+  }
+  function _entryAvailable(A, f) {
+    return f.kind === 'pane' ? !!(G.HBADashPane && G.HBADashPane.detect && G.HBADashPane.detect(A)) : detect(A, f.mode);
+  }
+  // pure, witnessed: the wake-aware availability + active state of every family entry for THIS building.
+  function availableLenses(A) {
+    return FAMILY.map(function (f) {
+      return { kind: f.kind, mode: f.mode || null, id: f.id || f.mode, icon: f.icon, label: f.label,
+               detail: f.detail, available: !!_entryAvailable(A, f), active: !!_entryActive(f) };
+    });
+  }
+  function familyHasData(A) { return availableLenses(A).some(function (x) { return x.available; }); }     // gates the pill
+  function familyActive() {
+    var drawerOpen = (typeof document !== 'undefined') && !!document.getElementById('hba-fm-drawer');
+    return availableLenses(G.APP || G.A || {}).some(function (x) { return x.active; }) || drawerOpen;
+  }
+  function activateLens(A, entry) { if (entry.kind === 'pane') { if (G.HBADashPane) G.HBADashPane.toggle(A); } else { toggle(A, entry.mode); } }
+
+  // the thin BROWSER renderer — a small drawer of the family entries; available → clickable, unavailable → greyed
+  // (wake-aware), active → highlighted. Re-tap the FM pill toggles it shut. No node path (returns if no document).
+  function openFamilyDrawer(A) {
+    if (typeof document === 'undefined') return null;
+    var ex = document.getElementById('hba-fm-drawer'); if (ex) { ex.remove(); return null; }
+    var list = availableLenses(A), d = document.createElement('div'); d.id = 'hba-fm-drawer';
+    d.style.cssText = 'position:fixed;z-index:10000;right:64px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
+      + 'color:#fff;border-radius:10px;padding:8px;box-shadow:0 8px 28px rgba(0,0,0,.45);font:13px/1.3 system-ui,sans-serif;min-width:230px;';
+    var hdr = document.createElement('div'); hdr.textContent = 'FM / Operate'; hdr.style.cssText = 'font-weight:700;padding:4px 8px 8px;opacity:.85;';
+    d.appendChild(hdr);
+    list.forEach(function (e) {
+      var row = document.createElement('button'); row.disabled = !e.available;
+      row.setAttribute('data-lens', e.id); row.setAttribute('data-available', e.available ? '1' : '0'); row.setAttribute('data-active', e.active ? '1' : '0');
+      row.title = e.detail + (e.available ? '' : ' — no data in this building');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-radius:8px;margin:2px 0;'
+        + 'padding:8px 10px;color:#fff;cursor:' + (e.available ? 'pointer' : 'default') + ';opacity:' + (e.available ? '1' : '0.4')
+        + ';background:' + (e.active ? '#1976d2' : 'transparent') + ';';
+      row.innerHTML = '<span style="display:inline-flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (_ic[e.icon] || '') + '</svg></span>'
+        + '<span style="flex:1">' + e.label + '</span>'
+        + '<span style="opacity:.7;font-size:11px">' + (e.available ? (e.active ? '● on' : '') : 'no data') + '</span>';
+      if (e.available) row.addEventListener('click', function () { activateLens(A, e); d.remove(); if (A.markDirty) A.markDirty(); });
+      d.appendChild(row);
+    });
+    document.body.appendChild(d);
+    console.log('§HBA_FM drawer open — ' + list.filter(function (x) { return x.available; }).length + '/' + list.length + ' lenses available');
+    return d;
+  }
+
   // §7D / NEXT#4(c): hand the merged 4D editor a DERIVED preventive-maintenance schedule (viewer schema), for
   // assets that bind to a REAL element in THIS building. Non-invent (dates from next_due+pm_cycle, milestones).
   // The TM "Schedule Editor" / importer can fold this without any HBA edit to the editor. Returns null if the
@@ -209,7 +278,9 @@
     return sch;
   }
 
-  G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, maintenanceSchedule: maintenanceSchedule, _ready: ready };
+  G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort,
+    maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
+    familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready };
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------
@@ -222,17 +293,15 @@
     if (!ready() || !hasMesh) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — engine/guidMap not ready'); } return; }
     clearInterval(_poll);
     bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
-    var acts = G._mainPillActions || [], on = { hbaTenancy: detect(A, 'tenancy'), hbaIot: detect(A, 'maintenance'),
-      hbaOccupancy: detect(A, 'occupancy'), hbaPresence: detect(A, 'presence'), hbaClass: detect(A, 'class'),
-      hbaDash: !!(G.HBADashPane && G.HBADashPane.detect(A)) };
-    var any = false;
+    // ONE family pill (hbaFM) — flip it on when ANY lens has data (familyHasData = the wake-aware gate). The
+    // per-lens availability/greying is computed live in the drawer (availableLenses), not on the bar.
+    var acts = G._mainPillActions || [], lenses = availableLenses(A), any = familyHasData(A);
     for (var i = 0; i < acts.length; i++) {
-      if (on.hasOwnProperty(acts[i].id)) { acts[i].pill = on[acts[i].id] ? undefined : false; if (on[acts[i].id]) any = true; }
+      if (acts[i].id === 'hbaFM') { acts[i].pill = any ? undefined : false; }
     }
     if (any && A._buildPill) A._buildPill();
-    console.log('§HBA_GATE tenancy=' + (on.hbaTenancy ? 'on' : 'off') + ' iot=' + (on.hbaIot ? 'on' : 'off')
-      + ' occupancy=' + (on.hbaOccupancy ? 'on' : 'off') + ' presence=' + (on.hbaPresence ? 'on' : 'off')
-      + ' class=' + (on.hbaClass ? 'on' : 'off') + ' dash=' + (on.hbaDash ? 'on' : 'off')
-      + ' (guidMap=' + Object.keys(A.guidMap).length + ')');
+    console.log('§HBA_GATE FM=' + (any ? 'on' : 'off') + ' available=['
+      + lenses.filter(function (x) { return x.available; }).map(function (x) { return x.id; }).join(',')
+      + '] (guidMap=' + Object.keys(A.guidMap).length + ')');
   }, 500);
 })();

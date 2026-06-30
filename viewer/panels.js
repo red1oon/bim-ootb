@@ -66,15 +66,9 @@ var ICONS = {
   docHist:   { svg: '<circle cx="8" cy="12" r="3"/><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="16" cy="12" r="3"/>', trl: null, key: 'z', desc: 'Page history' },
   // Clear history (bomb) — Lucide bomb (lives in the W long-press drawer, NO keyboard shortcut).
   bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' },
-  // HR_BIM_Asset lenses (RESUME_HR_BIM_ASSET.md §SPATIAL-VIEW). Lucide 'users' (Tenancy) + 'cpu' (IoT/Asset).
-  users:     { svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', trl: null, key: null, desc: 'Tenancy' },
-  cpu:       { svg: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>', trl: null, key: null, desc: 'IoT / Assets' },
-  // HR_BIM_Asset occupancy (Resource-Assignment) lens + dashboard pane. Lucide 'door-open' + 'bar-chart-3'.
-  doorOpen:  { svg: '<path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.562z"/>', trl: null, key: null, desc: 'Occupancy' },
-  // HR_BIM_Asset T&A presence (headcount-by-zone) lens. Lucide 'footprints' — who-was-where presence on site.
-  footprints:{ svg: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>', trl: null, key: null, desc: 'Presence' },
-  // HR_BIM_Asset unit-class facet (§CLASS) — color units by building-use class. Lucide 'layers'.
-  layers:    { svg: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>', trl: null, key: null, desc: 'Unit class' },
+  // HR_BIM_Asset — ONE "FM / Operate" family icon (the 6 lenses now live in a drawer owned by hba_lens.js,
+  // which carries its own per-lens icons). Lucide 'building-2' = the operate-phase / facilities cockpit.
+  fmCockpit: { svg: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>', trl: null, key: null, desc: 'FM / Operate' },
   barChart:  { svg: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: null, key: null, desc: 'Occupancy dashboard' }
 };
 
@@ -1156,40 +1150,16 @@ function setupPanels(A) {
         isActive: function() { return !!(window.WHWalk && WHWalk.isOpen && WHWalk.isOpen()); },
         children: [ { name: 'Route over locators (walk order)' }, { name: 'Fly-to next bin, FIND-lens depth' }, { name: 'Scan bin QR / type code' }, { name: 'Signed pick group per bin' } ] },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
-      // HR_BIM_Asset spatial lenses (RESUME_HR_BIM_ASSET.md §RESUME NEXT#2). DATA-GATED like whwalk: start
-      // pill:false; viewer/hba_lens.js flips it on + rebuilds ONLY when ≥1 HBA record's guid resolves to a
-      // real mesh in the loaded building (the §BINDING join hits → no data, no icon). fn drives the WITNESSED
-      // overlay engine through the MeshPort over A.guidMap. Inert if hr_bim_asset/* did not load.
-      { id: 'hbaTenancy', name: 'Tenancy',          pill: false, icon: I.users.svg,
-        fn: function() { if (window.HBALens) HBALens.toggle(A, 'tenancy'); },
-        isActive: function() { return !!(window.HBALens && HBALens.isActive('tenancy')); },
-        children: [ { name: 'Color units by lease status (occupied/vacant/expiring)' }, { name: 'Lights only units bound to a real room guid' }, { name: 'Toggle off restores the model' } ] },
-      { id: 'hbaIot',     name: 'IoT / Assets',     pill: false, icon: I.cpu.svg,
-        fn: function() { if (window.HBALens) HBALens.toggle(A, 'maintenance'); },
-        isActive: function() { return !!(window.HBALens && HBALens.isActive('maintenance')); },
-        children: [ { name: 'Color assets by maintenance due (ok/due/overdue)' }, { name: 'Asset = a BIM element (bim_guid ↔ IoT device)' }, { name: 'Toggle off restores the model' } ] },
-      // Occupancy lens (Resource-Assignment) + the dashboard pane. Both data-gated (pill:false until hba_lens.js
-      // detects rooms in the loaded building) and ADDITIVE — they never disturb the rest of the viewer.
-      { id: 'hbaOccupancy', name: 'Occupancy',      pill: false, icon: I.doorOpen.svg,
-        fn: function() { if (window.HBALens) HBALens.toggle(A, 'occupancy'); },
-        isActive: function() { return !!(window.HBALens && HBALens.isActive('occupancy')); },
-        children: [ { name: 'Color rooms by availability (occupied/expiring/vacant/unavailable)' }, { name: 'Room = iDempiere Resource (S_ResourceAssignment); state = replay of the booking log' }, { name: 'Toggle off restores the model' } ] },
-      // Presence lens (§T&A SLICE-2) — headcount-by-zone density from the signed check-in log. Data-gated +
-      // additive like the others; reuses the SAME MeshPort seam (HBALens 'presence' mode).
-      { id: 'hbaPresence', name: 'Presence',         pill: false, icon: I.footprints.svg,
-        fn: function() { if (window.HBALens) HBALens.toggle(A, 'presence'); },
-        isActive: function() { return !!(window.HBALens && HBALens.isActive('presence')); },
-        children: [ { name: 'Color zones by live headcount (1 / 2-4 / 5+ density band)' }, { name: 'Headcount = replay of signed, spatial, offline check-in ops (W-SIGN)' }, { name: 'Toggle off restores the model' } ] },
-      // Unit-class facet (§CLASS) — color units by building-use class (residential/commercial/office). Data-gated
-      // + additive; reuses the SAME MeshPort seam (HBALens 'class' mode). Filter via A._hbaClassFilter (engine).
-      { id: 'hbaClass',   name: 'Unit class',       pill: false, icon: I.layers.svg,
-        fn: function() { if (window.HBALens) HBALens.toggle(A, 'class'); },
-        isActive: function() { return !!(window.HBALens && HBALens.isActive('class')); },
-        children: [ { name: 'Color units by use-class (residential / commercial / office)' }, { name: 'Class = real IfcSpace predefined_type if present, else the declared lease class (never guessed)' }, { name: 'Toggle off restores the model' } ] },
-      { id: 'hbaDash',    name: 'Occupancy dashboard', pill: false, icon: I.barChart.svg,
-        fn: function() { if (window.HBADashPane) HBADashPane.toggle(A); },
-        isActive: function() { return !!(window.HBADashPane && HBADashPane.isActive()); },
-        children: [ { name: 'Open the occupancy / availability dashboard (an extra pane)' }, { name: 'Per-storey utilization · availability trend · open-ticket aging' }, { name: 'Additive overlay — does NOT disturb the model or other panels' } ] },
+      // HR_BIM_Asset — ONE "FM / Operate" family pill (RESUME_HR_BIM_ASSET.md §FM-FAMILY, user 2026-07-01).
+      // De-clutter: the 6 HBA lenses (Tenancy folded into Occupancy = de-conflate) live under one pill that opens
+      // a wake-aware drawer (Occupancy · Presence · Unit class · Assets/IoT · Dashboard). DATA-GATED like whwalk:
+      // pill:false until viewer/hba_lens.js detects ≥1 lens with data in the loaded building. The drawer logic +
+      // per-lens greying live in hba_lens.js (the additive HBA module) — panels.js carries ONLY this one entry,
+      // keeping the shared bar (and the Teams-adjacent file) minimal. Inert if hr_bim_asset/* did not load.
+      { id: 'hbaFM',      name: 'FM / Operate',     pill: false, icon: I.fmCockpit.svg,
+        fn: function() { if (window.HBALens && HBALens.openFamilyDrawer) HBALens.openFamilyDrawer(A); },
+        isActive: function() { return !!(window.HBALens && HBALens.familyActive && HBALens.familyActive()); },
+        children: [ { name: 'Operate-phase (7D) cockpit — one model, lenses each answering ONE question' }, { name: 'Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard' }, { name: 'Wake-aware: only lenses with data in THIS building are enabled (others greyed)' }, { name: 'All off one signed op-log; toggle a lens off restores the model' } ] },
       { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },

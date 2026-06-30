@@ -94,9 +94,31 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
 `safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave access
-occupancy request dashboard dashpane presspane class; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA:
-ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE
-13 · ACCESS 13 · OCC 21 · REQ 15 · DASH 7 · DASHPANE 8 · **PRESPANE 10** · **CLASS 9**. (16 witnesses, all GREEN.)
+occupancy request dashboard dashpane presspane class family; do node hr_bim_asset/tests/witness_$w.js; done` —
+W-HBA: ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 ·
+LEAVE 13 · ACCESS 13 · OCC 21 · REQ 15 · DASH 7 · DASHPANE 8 · **PRESPANE 10** · **CLASS 9** · **FAMILY 8**.
+(17 witnesses, all GREEN.) Browser smoke/screenshot demos: `demo/occupancy_dashboard.html`, `demo/fm_panel.html`.
+
+### §FM-FAMILY — group HBA lenses under one wake-aware "FM/Operate" pill ✅ DONE 2026-07-01 (`W-HBA-FAMILY 8/8`)
+**User concern (2026-07-01):** *clutter / conflate / losing the plot* — the HBA pills had grown to **6**
+(Tenancy·IoT·Occupancy·Presence·Class·Dashboard) on an already-~35-pill bar, and Tenancy ≈ Occupancy conflated.
+**Decision (user):** "Group + de-conflate." Done:
+- **Group 6 → 1.** `viewer/panels.js` now carries ONE data-gated `hbaFM` pill (Lucide `building-2`) →
+  `HBALens.openFamilyDrawer(A)`. The drawer + per-lens icons live in `viewer/hba_lens.js` (the additive HBA
+  module) so panels.js (the conflict-magnet, Teams-adjacent) stays minimal. The 6 old pills + their 5 icon defs
+  were removed.
+- **De-conflate.** Tenancy folded into Occupancy (occupancy = the op-log superset incl. lease status). The
+  `'tenancy'` engine mode still exists (back-compat + witnesses) but is no longer a separate surface. Family =
+  **Occupancy · Presence · Unit class · Assets/IoT · Dashboard** (5 distinct questions).
+- **Wake-aware.** `availableLenses(A)` (pure, witnessed) drives both the pill gate (`familyHasData` → pill shows
+  iff ≥1 lens has data) and per-entry greying in the drawer (enabled-if-data, else greyed "no data"). Proven live:
+  the `demo/fm_panel.html` screenshot shows Occupancy/Presence/Class/Dashboard enabled, **Assets/IoT greyed** (no
+  asset guid in HHS). **The plot, restated in the drawer header:** *one model, lenses each answering one question,
+  off one signed op-log.*
+**Witness W-HBA-FAMILY 8/8** (`witness_family.js`): de-conflate (no standalone tenancy) · wake-aware greying ·
+gate · activateLens routing (lens→toggle / pane→dashboard) · one-pill-in-source. Updated `witness_presspane` PP6
++ `witness_class` C7 to the family wiring. **Browser smoke + screenshot:** `demo/fm_panel.html` (headless Chrome,
+0 errors). **Open (like #2b):** the drawer entries actually tinting the live 3D model.
 
 **⚠ COORDINATION (user 2026-07-01):** another active session — the **Teams overlay** lane (`lane/teams-overlay`,
 worktree `/tmp/wt-redpill`) — also targets **HHS** for its overlay + Find-panel lens. Verified NO collision:

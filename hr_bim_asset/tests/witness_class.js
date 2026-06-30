@@ -88,13 +88,13 @@ var Aempty = makeAPP({ '1': 'X', '2': 'Y' });
 ok('C6-gate-detect', HBALens.detect(A, 'class') === true && HBALens.detect(Aempty, 'class') === false,
   'data-gate: a building with a lease/parcel guid → icon shows; one without → honestly off (no clutter)');
 
-// ---- C7 — static wiring: panels.js registers hbaClass (fn→toggle 'class', layers icon); hba_lens.js gates it.
+// ---- C7 — static wiring (post §FM-FAMILY): class is reached via the FM family drawer. Assert the FAMILY lists
+//   'class' (drawer surfaces it + gate counts it) and panels.js carries the single hbaFM pill → openFamilyDrawer.
 var panelsSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'viewer', 'panels.js'), 'utf8');
-var lensSrc   = fs.readFileSync(path.join(__dirname, '..', '..', 'viewer', 'hba_lens.js'), 'utf8');
-var wired = /id:\s*'hbaClass'/.test(panelsSrc) && /HBALens\.toggle\(A,\s*'class'\)/.test(panelsSrc)
-  && /I\.layers\.svg/.test(panelsSrc) && /layers:\s*\{ svg:/.test(panelsSrc)
-  && /hbaClass:\s*detect\(A,\s*'class'\)/.test(lensSrc);
-ok('C7-wiring', wired, 'panels.js has the hbaClass pill (layers icon, fn→toggle class) AND hba_lens.js data-gates it');
+var familyHasClass = HBALens.FAMILY.some(function (f) { return f.mode === 'class'; });
+var wired = familyHasClass && /id:\s*'hbaFM'/.test(panelsSrc) && /HBALens\.openFamilyDrawer\(A\)/.test(panelsSrc)
+  && typeof HBALens.openFamilyDrawer === 'function';
+ok('C7-wiring', wired, 'class is a FAMILY entry; panels.js carries the single hbaFM pill → HBALens.openFamilyDrawer');
 
 // ---- C8 — the declared class field is present + the record carries the CONTOH/SAMPLE watermark (§DISCLAIMER).
 var leases = M.records('Tenancy');
