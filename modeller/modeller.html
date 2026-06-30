@@ -2394,24 +2394,74 @@ function _redrawAllDiscWalks() {
 // fixtures are REFUSED, never forced. GENERATED/plausible (no ground truth for an absent discipline). Rendered
 // as disc-coloured LineSegments under dwRoot (cleared/redrawn with the disc walk).
 window.__dwTrunk = window.__dwTrunk || {};
-function _renderSeedTrunk(disc, net) {
+function _renderSeedTrunk(disc, net, opts) {
+  opts = opts || {};
   var root = _dwRoot(); if (!root) return;
   root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwTrunk === disc) root.remove(o); });
   window.__dwTrunk[disc] = net;
-  if (!net || net.refused || !net.storeys) { if (window.A && A.requestRender) A.requestRender(); return; }
-  var pts = [];
-  net.storeys.forEach(function (s) { (s.edges || []).forEach(function (poly) {
-    for (var i = 0; i + 1 < poly.length; i++) { pts.push(poly[i][0], poly[i][1], poly[i][2], poly[i + 1][0], poly[i + 1][1], poly[i + 1][2]); }
-  }); });
-  net.risers.forEach(function (r) { pts.push(r.x, r.y, r.z0, r.x, r.y, r.z1); });   // vertical riser at the real stair XY
+  // NB: net.refused on a SUCCESS net is the integer COUNT of unreachable fixtures (≥0), NOT a refusal flag — only the
+  // planTrunk early-return uses refused===true. Guarding on the truthy count wrongly blanked the trunk whenever any
+  // fixture was unreachable (caught by W-SEED-TRUNK-RENDER). Bail only on a genuine boolean refusal / missing storeys.
+  if (!net || net.refused === true || !net.storeys) { if (window.A && A.requestRender) A.requestRender(); return; }
+  // ── SEGMENTS KEYED BY GRAPH-PATH DISTANCE FROM THE SEED (Task 2 construction animation; prompts/RESUME_SEED_TRUNK.md
+  // §TASK 2). Each backbone polyline walks a fixture (leaf) BACK to its source: poly[last] is the SEED end on the ground
+  // storey (net.storeys[0], which planTrunk always pushes first), or the feeding riser base on an upper storey. We key
+  // every segment by its cumulative path length from that seed end, banded ground-corridor → riser-climb → upper-corridor,
+  // so the reveal grows OUTWARD from the seed. The order is DERIVED from the engine's own coords — it invents no order
+  // beyond the seed-distance the backbone already encodes (RENDER-only; the data/geometry is unchanged, just revealed).
+  var segs = [];   // { k:sortKey, v:[ax,ay,az,bx,by,bz] }
+  function addPoly(poly, base) {
+    var cum = 0;
+    for (var i = poly.length - 1; i > 0; i--) {           // walk from the seed end (poly[last]) toward the leaf (poly[0])
+      var a = poly[i], b = poly[i - 1];                   // a = nearer the seed, b = nearer the leaf
+      segs.push({ k: base + cum, v: [a[0], a[1], a[2], b[0], b[1], b[2]] });
+      cum += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    }
+    return cum;
+  }
+  var groundMax = 0;
+  (net.storeys[0].edges || []).forEach(function (poly) { if (poly.length >= 2) groundMax = Math.max(groundMax, addPoly(poly, 0)); });
+  var RISER_BAND = groundMax + 1;
+  net.risers.forEach(function (r, i) { segs.push({ k: RISER_BAND + i * 1e-3, v: [r.x, r.y, r.z0, r.x, r.y, r.z1] }); });   // riser climbs after the ground corridor
+  var UPPER_BAND = RISER_BAND + 1;
+  for (var si = 1; si < net.storeys.length; si++) {
+    (net.storeys[si].edges || []).forEach(function (poly) { if (poly.length >= 2) addPoly(poly, UPPER_BAND); });
+  }
+  segs.sort(function (a, b) { return a.k - b.k; });
+  var pts = []; segs.forEach(function (s) { pts.push(s.v[0], s.v[1], s.v[2], s.v[3], s.v[4], s.v[5]); });
   if (!pts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
   var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   var col = DW_COLOR[disc] || 0xffa500;
   var line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col, linewidth: 2 }));
-  line.userData.dwTrunk = disc; root.add(line);
+  line.userData.dwTrunk = disc; line.userData.dwTrunkSegs = segs.length; root.add(line);
+  var _segs = segs.length, _riserSegs = net.risers.length, _corridorSegs = _segs - _riserSegs;
   console.log('§SEED-TRUNK ' + disc + ' served=' + net.served + ' refused=' + net.refused + ' risers=' + net.risers.length +
-    ' totalLen=' + net.totalLen.toFixed(1) + 'm segs=' + (pts.length / 6) + ' (corridor-aware, real-stair risers, non-invent)');
-  if (window.A && A.requestRender) A.requestRender();
+    ' totalLen=' + net.totalLen.toFixed(1) + 'm segs=' + _segs + ' (rendered corridorSegs=' + _corridorSegs +
+    ' riserSegs=' + _riserSegs + '; seed-outward ordered; corridor-aware, real-stair risers, non-invent)');
+  // CONSTRUCTION ANIMATION — reveal seed-outward via the geometry draw-range. RENDER-only effect; ends EXACTLY on the
+  // full proven geometry (gate-asserted via §SEED-TRUNK-ANIM finalSegs==net). prefers-reduced-motion → instant fallback.
+  var TOTAL_V = pts.length / 3;                            // vertices (non-indexed: 2 per segment)
+  var reduced = false; try { reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  if (opts.instant || reduced) {
+    g.setDrawRange(0, TOTAL_V);
+    console.log('§SEED-TRUNK-ANIM ' + disc + ' mode=' + (opts.instant ? 'instant' : 'reduced-motion') + ' frames=0 ms=0 finalSegs=' + _segs + ' (no animation; full geometry)');
+    if (window.A && A.requestRender) A.requestRender(); return;
+  }
+  g.setDrawRange(0, 0);
+  var DUR = 2000, t0 = null, frames = 0;
+  (function step(now) {
+    if (t0 === null) t0 = now; frames++;
+    var u = Math.min(1, (now - t0) / DUR), e = 1 - Math.pow(1 - u, 3);   // easeOutCubic
+    g.setDrawRange(0, Math.floor(e * _segs) * 2);
+    if (window.A && A.requestRender) A.requestRender();
+    if (u < 1) { requestAnimationFrame(step); }
+    else {
+      g.setDrawRange(0, TOTAL_V); var finalSegs = g.drawRange.count / 2;
+      console.log('§SEED-TRUNK-ANIM ' + disc + ' mode=animated frames=' + frames + ' ms=' + Math.round(now - t0) +
+        ' finalSegs=' + finalSegs + ' (' + (finalSegs === _segs ? 'EXACT==net' : 'MISMATCH net=' + _segs) + '; ends at full proven geometry)');
+      if (window.A && A.requestRender) A.requestRender();
+    }
+  })(typeof performance !== 'undefined' && performance.now ? performance.now() : 0);
 }
 // risers = real IfcStair columns (deduped by XY); storeys = the building's floors (z = lowest element per storey,
 // deduped ≥2m apart, named storeys only) — the structural levels the riser climbs, not the elevated fixture z.
@@ -2465,7 +2515,7 @@ window.seedTrunk = async function (disc) {
     if (!chosen) return;                                    // user cancelled
     var net = window.SeedTrunk.planTrunk(bdb, fixtures, { x: chosen.x, y: chosen.y, storey: chosen.storey },
       _seedRisers(bdb), { storeys: _seedStoreys(bdb, fixtures), groundStorey: chosen.storey });
-    if (net.refused) { alert('Could not route a trunk: ' + (net.reason || 'no storeys')); return; }
+    if (net.refused === true) { alert('Could not route a trunk: ' + (net.reason || 'no storeys')); return; }   // boolean refusal only (refused is else a fixture COUNT)
     _renderSeedTrunk(disc, net);
     if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   } finally { bdb.close(); }
@@ -2476,6 +2526,9 @@ window.seedTrunk = async function (disc) {
 // is unreliable under puppeteer+swiftshader (fine in real browsers). This seam is render-only (no new behaviour;
 // it calls the same functions the live walk calls), used by modeller/tests/witness_dw_pixelprobe.js.
 window.__dwRender = { walk: _renderDiscWalk, assembly: _renderDiscAssembly, redraw: _redrawAllDiscWalks };
+// render-only seam for the seed-trunk render gate (W-SEED-TRUNK-RENDER): drives the SAME _renderSeedTrunk the live
+// "Route trunk" calls (with opts, so the witness can exercise the animated path as well as the instant census path).
+window.__seedTrunkRender = _renderSeedTrunk;
 // §4 WHITEBOX PIXEL PROBE (roadmap #4): a headless readback proving the disc-walk render actually painted —
 // (1) a scene-graph census of the dwRoot group for a disc (fixture box InstancedMesh, §3c connector-edge
 // LineSegments, routed tubes, assembled parts) so a witness confirms the render WIRED the expected objects,
@@ -2503,6 +2556,61 @@ window.__dwPixelProbe = function (disc) {
   } catch (e) { out.err = (out.err ? out.err + '; ' : '') + 'readPixels ' + (e && e.message); }
   console.log('§DW-PIXELPROBE disc=' + disc + ' boxes=' + out.boxes + ' instances=' + out.instances +
     ' connectorEdges=' + out.edges + ' tubes=' + out.tubes + ' parts=' + out.parts + ' asmEdges=' + out.asmEdges +
+    ' litPixels=' + out.litPct + '%' + (out.err ? ' err=' + out.err : ''));
+  return out;
+};
+// T1 SEED-TRUNK RENDER GATE (prompts/RESUME_SEED_TRUNK.md §TASK 1; W-SEED-TRUNK-RENDER) — the seed-trunk analogue
+// of __dwPixelProbe. Renders the trunk via the SAME _renderSeedTrunk the live walk calls, then returns a SCENE-GRAPH
+// CENSUS of the dwTrunk LineSegments under dwRoot so a headless witness machine-verifies the render == planTrunk's net
+// (closing the "eyeball gap"). WHITEBOX (like §DW-TUBE endpointDrift): the rendered vertices are read back and the
+// witness asserts they match net's coords + counts — the gate asserts render==data, never a magic number. NON-INVENT:
+// pure readback of the rendered frame + scene graph; no synthetic data. Returns the census + litPct; logs §SEED-TRUNK-PROBE.
+window.__seedTrunkProbe = function (disc, net) {
+  _renderSeedTrunk(disc, net, { instant: true });          // SAME render the Outliner "Route trunk" calls; instant = final geometry for the gate
+  var out = { disc: disc, lineSegments: 0, vertices: 0, segments: 0, verticalSegs: 0, corridorSegs: 0, maxDrift: 0, samples: 0, litPct: 0 };
+  var rendered = [];                                        // [[x,y,z]..] every rendered vertex (for the no-drift check)
+  try {
+    var root = _dwRoot();
+    var lines = root ? root.children.filter(function (o) { return o.isLineSegments && o.userData && o.userData.dwTrunk === disc; }) : [];
+    out.lineSegments = lines.length;
+    lines.forEach(function (line) {
+      var pos = line.geometry.getAttribute('position'); if (!pos) return;
+      out.vertices += pos.count;
+      for (var i = 0; i + 1 < pos.count; i += 2) {           // each pair (i, i+1) = one rendered segment
+        var ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i), bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
+        rendered.push([ax, ay, az], [bx, by, bz]);
+        out.segments++;
+        // a riser is a vertical segment (same XY, Δz≠0); a corridor segment lies in a storey plane (Δz≈0)
+        if (Math.abs(ax - bx) < 1e-4 && Math.abs(ay - by) < 1e-4 && Math.abs(az - bz) > 1e-4) out.verticalSegs++;
+        else out.corridorSegs++;
+      }
+    });
+    // NO-DRIFT (order-independent, whitebox like §DW-TUBE endpointDrift): sample net's own polyline+riser points and
+    // confirm each maps to a rendered vertex within tol → the render carries planTrunk's coords verbatim. Order-free so
+    // the seed-outward animation reorder (Task 2) cannot perturb it.
+    if (net && net.storeys && rendered.length) {
+      var samplePts = [];
+      net.storeys.forEach(function (s) { (s.edges || []).forEach(function (poly) { poly.forEach(function (p) { samplePts.push(p); }); }); });
+      (net.risers || []).forEach(function (r) { samplePts.push([r.x, r.y, r.z0], [r.x, r.y, r.z1]); });
+      var stride = Math.max(1, Math.floor(samplePts.length / 60));   // cap ≈60 samples
+      for (var si = 0; si < samplePts.length; si += stride) {
+        var p = samplePts[si], best = Infinity;
+        for (var ri = 0; ri < rendered.length; ri++) { var q = rendered[ri];
+          var d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); if (d < best) { best = d; if (best < 1e-6) break; } }
+        if (best > out.maxDrift) out.maxDrift = best; out.samples++;
+      }
+    }
+  } catch (e) { out.err = 'census ' + (e && e.message); }
+  try {
+    var r = window.A.renderer; r.render(window.A.scene, window.A.camera); var gl = r.getContext();
+    var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); var lit = 0;
+    for (var i = 0; i < px.length; i += 4) { if (px[i] > 40 || px[i + 1] > 44 || px[i + 2] > 52) lit++; }
+    out.litPct = +(100 * lit / (w * h)).toFixed(2);
+  } catch (e) { out.err = (out.err ? out.err + '; ' : '') + 'readPixels ' + (e && e.message); }
+  console.log('§SEED-TRUNK-PROBE disc=' + disc + ' lineSegments=' + out.lineSegments + ' vertices=' + out.vertices +
+    ' segments=' + out.segments + ' corridorSegs=' + out.corridorSegs + ' verticalSegs(risers)=' + out.verticalSegs +
+    ' maxDrift=' + out.maxDrift.toExponential(2) + 'm samples=' + out.samples +
     ' litPixels=' + out.litPct + '%' + (out.err ? ' err=' + out.err : ''));
   return out;
 };
