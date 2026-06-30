@@ -35,6 +35,7 @@ self.HbaModels = require('../models');
 self.HbaBinding = require('../binding');
 self.HbaOverlay = require('../overlay');
 self.HbaLens = require('../lens');
+self.HbaTimeline = require('../timeline');
 var loaded = !!(self.HbaModels && self.HbaOverlay && self.HbaBinding);
 ok('W1-node-load', loaded && self.HbaModels.records('Tenancy').length >= 1,
   'HBA engine modules also load under node require (witness-drive path)');
@@ -83,12 +84,21 @@ ok('W6-iot-honest', HBALens.detect(A, 'maintenance') === false,
   'IoT lens: the demo asset guid is absent from THIS building → honestly un-detected (never a faked tint)');
 
 // W7 — one mode at a time: switching modes restores the prior before applying the next (no stacked tint).
-var GBLD = makeAPP({ '5012': leaseGuid, '5013': 'GUID-MEP-AHU03' });   // building that has BOTH a lease + the asset
+var assetGuid = self.HbaModels.records('Asset')[0].bim_guid;            // the real asset bim_guid (model-driven)
+var GBLD = makeAPP({ '5012': leaseGuid, '5013': assetGuid });          // building that has BOTH a lease + the asset
 HBALens.toggle(GBLD, 'tenancy');                                       // tenancy on → 5012 green
 HBALens.toggle(GBLD, 'maintenance');                                   // switch → tenancy restored, asset tinted
 ok('W7-one-mode', emissiveOf(GBLD, 5012) === 0 && emissiveOf(GBLD, 5013) !== 0 && HBALens.isActive('maintenance'),
   'switching lens restores the prior mode first (5012 cleared) then tints the new (5013 lit) — no stacking');
 HBALens.toggle(GBLD, 'maintenance');                                   // clean up
+
+// W8 — §7D accessor: maintenanceSchedule(A) returns a DERIVED schedule for assets bound to THIS building only.
+//   GBLD has the asset (5013) → tasks emitted + bound; A (no asset guid) → filtered to empty.
+var schBound = HBALens.maintenanceSchedule(GBLD, { from: '2026-07', months: 6 });
+var schNone = HBALens.maintenanceSchedule(A, { from: '2026-07', months: 6 });
+ok('W8-pm-schedule', schBound && schBound.tasks.length === 7 && schBound.task_elements.every(function (e) { return e.guid === assetGuid; })
+  && schNone && schNone.tasks.length === 0,
+  'maintenanceSchedule: building WITH the asset → 7 derived PM milestones bound to its real guid; building without → empty (no un-located tasks)');
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-WIRE ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));

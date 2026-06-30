@@ -35,7 +35,9 @@ var MODELS = {
     fields: [{ name: 'asset', type: 'id' }, { name: 'bim_guid', type: 'bim_ref' }, { name: 'iot_device', type: 'iot_ref' }, { name: 'category', type: 'list' },
              { name: 'operator', type: 'party' }, { name: 'vendor', type: 'party' }, { name: 'personnel', type: 'party' },
              { name: 'pm_cycle', type: 'list' }, { name: 'next_due', type: 'period' }],
-    records: [{ asset: 'AHU-03', bim_guid: 'GUID-MEP-AHU03', iot_device: 'IOT-AHU03-TEMP', category: 'HVAC',
+    // bim_guid = a REAL HHS IfcFlowTerminal (HVAC supply diffuser) — see fixtures/hhs_rooms.json.assets
+    // (NON-INVENT: the asset binds to actual geometry; the maintenance timeline is derived from next_due+pm_cycle).
+    records: [{ asset: 'AHU-03', bim_guid: '04i7IlvuLBuOmBXGMxmbgo', iot_device: 'IOT-AHU03-TEMP', category: 'HVAC',
                 operator: 'BP-OPR-1', vendor: 'BP-VEND-1', personnel: 'EMP002', pm_cycle: 'monthly', next_due: '2026-07' }]
   }
 };

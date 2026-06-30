@@ -47,6 +47,15 @@ the loaded building (`APP.guidMap`, keyed meshId→guid). A non-matching guid is
 tinted. The demo lease/parcel bind to real HHS rooms (`RM_Level_1_1/2`, extracted into `fixtures/hhs_rooms.json`).
 Witnessed — `tests/witness_bind.js` (W-HBA-BIND 9/9).
 
+## 7D maintenance timeline (derived, non-invent)
+`timeline.js` derives a preventive-maintenance 4D schedule from the real `PM_Asset` fields — due dates =
+`next_due` stepped by `pm_cycle`, each task a **milestone** (duration 0, day floored: only the due *month* is a
+real datum), bound to the asset's **real** `bim_guid`; an uninterpretable cadence is honestly skipped. It is
+emitted in the **viewer's own 4D schema** (`schedules`/`tasks`/`task_elements`/`task_sequences`) so the merged
+TM editor/importer (#504–#521) folds it with no editor edits. `HBALens.maintenanceSchedule(A)` returns it for
+assets bound in the loaded building. Witnessed — `tests/witness_timeline.js` (W-HBA-TIMELINE 7/7). *Note: HHS's
+4D tables are empty (schema only) — this DERIVES a schedule from the asset model, it does not invent one.*
+
 ## Viewer wire (live)
 `viewer/hba_lens.js` (additive, host-injected) binds the witnessed overlay engine to the scene through a real
 **MeshPort over `APP.guidMap`**, and data-gates two pill icons in `viewer/panels.js` — they appear ONLY when a
@@ -57,5 +66,5 @@ materials); instanced-mesh `_N` slots use the same `A.guidMap[obj.id]` lookup as
 
 ## Files
 `connectors.js` · `rules.js` · `watermark.js` · `models.js` · `binding.js` · `engine.js` · `overlay.js` ·
-`lens.js` · `index.js` · `fixtures/build_hhs_rooms.js` (+ `hhs_rooms.json`) · `tests/witness_{run,view,bind,wire}.js`
-· (viewer wire) `../viewer/hba_lens.js`
+`lens.js` · `timeline.js` · `index.js` · `fixtures/build_hhs_rooms.js` (+ `hhs_rooms.json`) ·
+`tests/witness_{run,view,bind,wire,timeline}.js` · (viewer wire) `../viewer/hba_lens.js`

@@ -11,5 +11,6 @@ module.exports = {
   Engine: require('./engine'),
   Overlay: require('./overlay'),
   Lens: require('./lens'),
-  Binding: require('./binding')
+  Binding: require('./binding'),
+  Timeline: require('./timeline')
 };

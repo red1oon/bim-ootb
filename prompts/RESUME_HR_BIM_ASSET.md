@@ -26,8 +26,8 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 **Module = HR_BIM_Asset** (NOT "Payroll" — payroll is just RUN profile #1). Lives in **bim-ootb ONLY**:
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
-bim-compiler work. Witness: `for w in run view bind wire; do node hr_bim_asset/tests/witness_$w.js; done`
-(W-HBA-ALPHA 18 · W-HBA-VIEW 13 · W-HBA-BIND 9 · W-HBA-WIRE 9).
+bim-compiler work. Witness: `for w in run view bind wire timeline; do node hr_bim_asset/tests/witness_$w.js; done`
+(W-HBA-ALPHA 18 · W-HBA-VIEW 13 · W-HBA-BIND 9 · W-HBA-WIRE 10 · W-HBA-TIMELINE 7).
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
@@ -61,9 +61,9 @@ GH bim-ootb. Other buildings untouched (OCI `_prodBase`).
    `sw.js` untouched. **Sub-item NEXT#2b open:** live 3D Playwright/deploy smoke (observe the tint in a browser).
 3. ⛔ BLOCKED (external dependency): ERP/HR dotted lines (agreement/product/AR · attendance/access) — light up only
    when ERP/HR are loaded; swap the connector stubs then. Not actionable standalone.
-4. ⛔ DE-SCOPED — TimeMachine.Editor 4D Gantt: premise false (HHS 4D tables EMPTY); editor already shipped on
-   mainline (#504–#521). Needs a REAL schedule (non-invent) → see the corrected ⛔ block in §RESUME for the one
-   decision. HBA's only in-scope slice = (c) derive a maintenance timeline from PM_Asset (the `maintenance` RUN).
+4. PARTIAL — TimeMachine.Editor 4D Gantt: premise was false (HHS 4D tables EMPTY); editor already shipped on
+   mainline (#504–#521). **(c) ✅ DONE** — HBA-native derived PM schedule (`timeline.js`, W-HBA-TIMELINE 7/7,
+   foldable by the merged editor). **(a)/(b) ⛔** still need a user decision (which real external plan/building).
 
 **⛔ TimeMachine.Editor (4D Gantt) — premise CORRECTED 2026-06-30 (non-invent):** earlier note claimed "HHS
 carries 4D data." FALSE — HHS has the 4D SCHEMA (`tasks`/`task_sequences`/`task_elements`/`schedules`) but **ZERO
@@ -74,8 +74,14 @@ sync, P6/MSP/XER import, auto-bind) — NOT HBA-lane work; the TM "Schedule Edit
 INVENTED: either (a) import the one real plan in the repo `tests/fixtures/Hospital_GW_Programme(.bound).xer`
 (GardenWorld-bound, not HHS), or (b) the user supplies a real P6/MSP plan, or (c) the HBA-native path: derive a
 maintenance timeline from PM_Asset `next_due`/`pm_cycle` (the witnessed `maintenance` RUN profile = derived, not
-invented). **⛔ ONE DECISION (cannot extract): which real schedule, on which building, for the live 4D demo?**
-De-scoped from the HBA backlog → belongs to the viewer TM/4D lane (already shipped); HBA's slice is at most (c).
+invented). **(c) ✅ DONE 2026-06-30 — `timeline.js` + `W-HBA-TIMELINE 7/7`:** derives a PM schedule in the
+viewer's OWN 4D schema (schedules·tasks·task_elements·task_sequences) so the merged editor folds it with ZERO
+editor edits; due dates = next_due stepped by pm_cycle, tasks = milestones (duration 0, day floored — only the
+real datum asserted), bound to the demo asset's REAL HHS guid (`04i7…` IfcFlowTerminal); uninterpretable cadence
+→ honest skip; deterministic. Viewer accessor `HBALens.maintenanceSchedule(A)` filters to assets bound in the
+loaded building (W-HBA-WIRE W8). **⛔ STILL OPEN (a)/(b) — ONE DECISION (cannot extract): for a schedule from
+EXTERNAL/observed plans, which real schedule on which building?** (a) import repo P6 `Hospital_GW_Programme.xer`,
+or (b) user supplies a plan. The DERIVED-PM path needs no such decision and is shipped.
 
 ---
 

@@ -2,9 +2,9 @@
   "_provenance": {
     "source": "buildings/HHS_Office_Federated_extracted.db",
     "source_sha16": "6498f86f43598350",
-    "table": "spatial_structure WHERE type=IfcSpace",
+    "tables": "spatial_structure(IfcSpace) + elements_meta(IfcFlowTerminal)",
     "extracted_by": "fixtures/build_hhs_rooms.js",
-    "note": "EXTRACTED not invented — real IfcSpace rooms of HHS_Office_Federated"
+    "note": "EXTRACTED not invented — real IfcSpace rooms + real equipment elements of HHS_Office_Federated"
   },
   "count": 14,
   "rooms": [
@@ -147,6 +147,45 @@
         8.746
       ],
       "contained": 7
+    }
+  ],
+  "asset_count": 6,
+  "assets": [
+    {
+      "guid": "04i7IlvuLBuOmBXGMxmbgo",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:490149",
+      "storey": "Level 3"
+    },
+    {
+      "guid": "07A8OFMrj5IeMQd6aflvMZ",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414359",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0B2Nysi4bEIBgg6BXJzBCa",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414296",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0B2Nysi4bEIBgg6BXJzBCb",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414297",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0B2Nysi4bEIBgg6BXJzBCu",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414276",
+      "storey": "Level 2"
+    },
+    {
+      "guid": "0BO$IIcSv1beKQqgkpQd4O",
+      "ifc_class": "IfcFlowTerminal",
+      "name": "M_Supply Diffuser - Rectangular Face Round Neck:600x600 - 250 Neck:600x600 - 250 Neck:414681",
+      "storey": "Level 2"
     }
   ]
 }

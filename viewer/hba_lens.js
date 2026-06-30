@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -95,7 +95,20 @@
 
   function isActive(mode) { return _active === mode; }
 
-  G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, _ready: ready };
+  // §7D / NEXT#4(c): hand the merged 4D editor a DERIVED preventive-maintenance schedule (viewer schema), for
+  // assets that bind to a REAL element in THIS building. Non-invent (dates from next_due+pm_cycle, milestones).
+  // The TM "Schedule Editor" / importer can fold this without any HBA edit to the editor. Returns null if the
+  // timeline engine is absent. Filters to real bindings so nothing un-located is emitted.
+  function maintenanceSchedule(A, opts) {
+    var h = HBA(); if (!h.T || !h.M) return null;
+    var assets = h.M.records('Asset');
+    if (A && A.guidMap) assets = assets.filter(function (a) { return h.B.resolveGuid(a.bim_guid, A.guidMap); });
+    var sch = h.T.buildSchedule(assets, opts || {});
+    console.log('§HBA_PM derived schedule: assets=' + assets.length + ' tasks=' + sch.tasks.length + ' binds=' + sch.task_elements.length + ' skipped=' + sch.skipped.length);
+    return sch;
+  }
+
+  G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, maintenanceSchedule: maintenanceSchedule, _ready: ready };
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------
