@@ -75,18 +75,18 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   (office/commercial/residential) but only on the 3 leased units (class is a unit-level lease/strata attribute by
   design — spreading to all rooms = a `classRows` semantics change, decide if wanted); assets=1 (meets ≥1). ⇒ P2
   acceptance bar MET (occupancy/presence/ticket-aging multi-storey rich); only the optional class-spread remains.
-- **P3 — PREP SAMPLE GW DATA. ⛔ BLOCKED 2026-07-01 (one product decision).** Inspected
-  `buildings/warehouse_gardenworld.db` (60KB, 26 elements): tables are `elements_meta/element_instances/
-  element_transforms` ONLY — there is **NO `spatial_structure` and NO `rel_contained_in_space`**, hence **zero
-  IfcSpace rooms**. The whole HBA lens is room-centric (leases/occupancy/presence bind to IfcSpace rooms via
-  rel_contained_in_space; the FM pill won't even appear with no rooms). GW elements = 11 IfcFurnishingElement /
-  11 IfcBuildingElementProxy / 4 IfcSlab, grouped by a `storey` column = **SITE / AISLE_A / AISLE_B / AISLE_C**.
-  **THE ONE QUESTION:** what is an HBA "unit" in a room-less warehouse? **Recommended default (extractable,
-  non-invent):** treat each **AISLE as a pseudo-zone** (zone id = the real aisle label, members = the element
-  guids whose `storey`=that aisle) and bind demo occupancy/presence/tickets to aisles — gives a real room-like
-  substrate without inventing geometry. Alternative: bind HBA records directly to element guids (each furnishing =
-  a "unit"). Needs the user's call before building (don't invent a fake IfcSpace layer). Until then GW is not a
-  usable HBA sample; HHS remains the witnessed sample.
+- **P3 — PREP SAMPLE GW DATA. ✅ DONE+LIVE 2026-07-01 (user chose "aisles as zones").** GardenWorld
+  (`buildings/warehouse_gardenworld.db`, 60KB, 26 elements) has **NO `spatial_structure`/`rel_contained_in_space`**
+  → zero IfcSpace rooms. Added **§AISLE-ZONES fallback** to `hba_lens.js bindStoreysFromModel`: a building with no
+  IfcSpace rooms groups its elements by the real `elements_meta.storey` (SITE/AISLE_A/B/C) → AISLE-as-ZONE (zone =
+  the aisle, whose floor-slab guid is a real rendered element; members = the element guids in that aisle — all
+  EXTRACTED, non-invent; SITE skipped). The spatial_structure query is now try-wrapped so a room-less db doesn't
+  abort. LIVE on GW: `§HBA_AISLE 3 aisle-zones (A=5/B=9/C=11 members)`, occupancy lit 2, presence 2 zones, 2
+  tickets; FM drawer greys Unit-class/Assets (wake-aware, no data) — correct. Fixture `fixtures/gw_aisles.json`
+  (extracted) + witness `tests/witness_gw_aisles.js` **W-HBA-GW-AISLES 6/6** (aisles resolve · paint · occupancy
+  mix · presence+tickets · non-invent). ⚠ LOCAL-SERVE NOTE: the viewer fetches `buildings/X` relative to
+  `viewer/`; HHS is silently rescued by the OCI-prod retry (`W-DB-404-OCI-RETRY`) but GW isn't on OCI → for a local
+  GW smoke pass `?db=../buildings/warehouse_gardenworld.db`. HHS remains the richer sample; GW = the fast loop.
 - **P4 — NEWBIE GUIDE REWRITE (user).** The deployed `docs/HRBIMAssetGuide.md` is reference-style; rewrite it as
   a **task-oriented manual** modelled on great manuals: *Getting started* (numbered: open the building → find the
   FM pill → open the drawer → toggle a lens), *task walkthroughs* ("see which rooms are occupied" step-by-step),

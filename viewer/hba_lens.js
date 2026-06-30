@@ -174,8 +174,11 @@
     var h = HBA();
     if (_storeysBound || !h.L || !h.L.bindStoreys || !A || typeof A.dbQuery !== 'function') return;
     try {
-      var rows = A.dbQuery("SELECT s.guid, p.name, s.predefined_type FROM spatial_structure s LEFT JOIN spatial_structure p "
-        + "ON s.parent_guid=p.guid AND p.type='IfcBuildingStorey' WHERE s.type='IfcSpace'");
+      var rows;
+      try {
+        rows = A.dbQuery("SELECT s.guid, p.name, s.predefined_type FROM spatial_structure s LEFT JOIN spatial_structure p "
+          + "ON s.parent_guid=p.guid AND p.type='IfcBuildingStorey' WHERE s.type='IfcSpace'");
+      } catch (eSp) { rows = []; }   // a building with NO spatial_structure (e.g. a warehouse) → §AISLE-ZONES fallback below
       var map = {}; (rows || []).forEach(function (r) { if (r[0] && r[1]) map[r[0]] = r[1]; });
       h.L.bindStoreys(map); _storeysBound = true;
       console.log('§HBA_STOREY bound ' + Object.keys(map).length + ' rooms→storey from model');
@@ -199,6 +202,25 @@
         A._hbaRoomMembers = mm;
         console.log('§HBA_MEMBERS bound ' + Object.keys(mm).length + ' rooms→contained-element members (rel_contained_in_space)');
       } catch (e) { A._hbaRoomMembers = A._hbaRoomMembers || {}; }
+      // §AISLE-ZONES (P3, 2026-07-01 — user: "aisles as zones") — a building with NO IfcSpace rooms (a warehouse:
+      // GardenWorld) still groups its elements by a REAL `storey` in elements_meta (SITE/AISLE_A/B/C). Fall back to
+      // AISLE-as-ZONE: zone = the aisle (its floor-slab guid is a real rendered element), members = every element
+      // guid in that aisle (all real, EXTRACTED — non-invent). Lets the FM lenses + dashboard light a room-less
+      // building. Skips SITE (the ground plane). No-op when IfcSpace rooms already exist (HHS) or no elements_meta.
+      if (!rooms.length) {
+        try {
+          var arows = A.dbQuery("SELECT guid, storey FROM elements_meta WHERE storey IS NOT NULL AND storey != '' AND storey != 'SITE'");
+          var amap = {}; (arows || []).forEach(function (r) { if (r[0] && r[1]) { (amap[r[1]] = amap[r[1]] || []).push(r[0]); } });
+          var aisles = Object.keys(amap).sort();
+          if (aisles.length) {
+            rooms = aisles.map(function (a) { return { guid: a, storey: a }; });
+            var smap = {}; aisles.forEach(function (a) { smap[a] = a; });
+            A._hbaRooms = rooms; A._hbaStoreyOf = smap; A._hbaRoomMembers = amap; _storeysBound = true;
+            if (h.L && h.L.bindStoreys) h.L.bindStoreys(smap);
+            console.log('§HBA_AISLE fallback: ' + aisles.length + ' aisle-zones (no IfcSpace rooms) — ' + aisles.join(',') + ' (members: ' + aisles.map(function (a) { return a + '=' + amap[a].length; }).join(' ') + ')');
+          }
+        } catch (eA) { /* no elements_meta either → honest no-op */ }
+      }
       if (!A._hbaOccupancyLog && h.OC && rooms.length) {
         A._hbaOccupancyLog = h.OC.demoSeed(rooms).log;
         console.log('§HBA_OCC seeded ' + A._hbaOccupancyLog.length + ' assignment ops from ' + rooms.length + ' rooms (demonstrator)');
