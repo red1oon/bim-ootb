@@ -36,8 +36,13 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 >    guid; `effect()` emits its occupancy op (maintenance→UNAVAIL) closing the Request↔occupancy loop. `aging`/
 >    `myWork` = SLA + deskless-queue views. The dashboard = pure Chart.js config builders over `occupancy.pivot()`
 >    + `request.aging()` (per-storey bar · availability trend stacked-bar · ticket-aging doughnut + KPIs), rendered
->    by the ALREADY-BUNDLED `viewer/lib/chart.umd.min.js` in the standalone demo pane. **Open: wire the dashboard
->    pane + an occupancy/ticket lens pill into the viewer UI (panels.js — the live-3D surface, like #2b).**
+>    by the ALREADY-BUNDLED `viewer/lib/chart.umd.min.js`. **VIEWER UI WIRED ✅** (`viewer/hba_dashboard.js`,
+>    **W-HBA-DASHPANE 8/8**): the dashboard is an **EXTRA, ADDITIVE pane** (own overlay div + canvases, host-
+>    injected, imports nothing) + two data-gated pills in `panels.js` (`hbaOccupancy` lens · `hbaDash` pane).
+>    OFF = no DOM (pixel-identical); ON mounts one overlay; OFF removes it + destroys its charts (zero residue) —
+>    never touches the 3D scene, other panels, or `sw.js`. `hba_lens.js` seeds a watermarked demonstrator
+>    occupancy ledger from the model's real rooms so the lens + pane light up. **Open (live-3D, like #2b):
+>    observe the pane/pills in a real browser (Playwright/deploy smoke) — node-witnessed via stub DOM + Chart.**
 > 0. ✅ **DONE — Room Occupancy / Availability** (`occupancy.js`, **W-HBA-OCC 21/21**; AD model `Occupancy` =
 >    `S_ResourceAssignment`, Room=`S_Resource` IS-A `M_Product`). Signed `ASSIGN`/`RELEASE`/`UNAVAIL`
 >    (S_ResourceUnAvailable blackout) op-log → `availability(room,period)` by **REPLAY** (occupied/vacant/
@@ -76,9 +81,9 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
 `safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave access
-occupancy request dashboard; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW 13 · BIND
-11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 · ACCESS 13 · OCC 21 ·
-REQ 15 · DASH 7.
+occupancy request dashboard dashpane; do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW
+13 · BIND 11 · WIRE 10 · TIMELINE 7 · WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 · ACCESS 13 ·
+OCC 21 · REQ 15 · DASH 7 · DASHPANE 8.
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**

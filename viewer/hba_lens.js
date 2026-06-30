@@ -113,6 +113,14 @@
       var map = {}; (rows || []).forEach(function (r) { if (r[0] && r[1]) map[r[0]] = r[1]; });
       h.L.bindStoreys(map); _storeysBound = true;
       console.log('§HBA_STOREY bound ' + Object.keys(map).length + ' rooms→storey from model');
+      // stash the real rooms + seed a (watermarked, demonstrator) occupancy ledger so the Occupancy lens +
+      // Dashboard pane have data on a building that carries rooms. ADDITIVE: sets only A._hba* fields.
+      var rooms = Object.keys(map).map(function (g) { return { guid: g, storey: map[g] }; });
+      A._hbaRooms = rooms; A._hbaStoreyOf = map;
+      if (!A._hbaOccupancyLog && h.OC && rooms.length) {
+        A._hbaOccupancyLog = h.OC.demoSeed(rooms).log;
+        console.log('§HBA_OCC seeded ' + A._hbaOccupancyLog.length + ' assignment ops from ' + rooms.length + ' rooms (demonstrator)');
+      }
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 
@@ -171,7 +179,8 @@
     if (!ready() || !hasMesh) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — engine/guidMap not ready'); } return; }
     clearInterval(_poll);
     bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
-    var acts = G._mainPillActions || [], on = { hbaTenancy: detect(A, 'tenancy'), hbaIot: detect(A, 'maintenance') };
+    var acts = G._mainPillActions || [], on = { hbaTenancy: detect(A, 'tenancy'), hbaIot: detect(A, 'maintenance'),
+      hbaOccupancy: detect(A, 'occupancy'), hbaDash: !!(G.HBADashPane && G.HBADashPane.detect(A)) };
     var any = false;
     for (var i = 0; i < acts.length; i++) {
       if (on.hasOwnProperty(acts[i].id)) { acts[i].pill = on[acts[i].id] ? undefined : false; if (on[acts[i].id]) any = true; }

@@ -68,7 +68,10 @@ var ICONS = {
   bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' },
   // HR_BIM_Asset lenses (RESUME_HR_BIM_ASSET.md §SPATIAL-VIEW). Lucide 'users' (Tenancy) + 'cpu' (IoT/Asset).
   users:     { svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', trl: null, key: null, desc: 'Tenancy' },
-  cpu:       { svg: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>', trl: null, key: null, desc: 'IoT / Assets' }
+  cpu:       { svg: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>', trl: null, key: null, desc: 'IoT / Assets' },
+  // HR_BIM_Asset occupancy (Resource-Assignment) lens + dashboard pane. Lucide 'door-open' + 'bar-chart-3'.
+  doorOpen:  { svg: '<path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.562z"/>', trl: null, key: null, desc: 'Occupancy' },
+  barChart:  { svg: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: null, key: null, desc: 'Occupancy dashboard' }
 };
 
 // HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
@@ -1161,6 +1164,16 @@ function setupPanels(A) {
         fn: function() { if (window.HBALens) HBALens.toggle(A, 'maintenance'); },
         isActive: function() { return !!(window.HBALens && HBALens.isActive('maintenance')); },
         children: [ { name: 'Color assets by maintenance due (ok/due/overdue)' }, { name: 'Asset = a BIM element (bim_guid ↔ IoT device)' }, { name: 'Toggle off restores the model' } ] },
+      // Occupancy lens (Resource-Assignment) + the dashboard pane. Both data-gated (pill:false until hba_lens.js
+      // detects rooms in the loaded building) and ADDITIVE — they never disturb the rest of the viewer.
+      { id: 'hbaOccupancy', name: 'Occupancy',      pill: false, icon: I.doorOpen.svg,
+        fn: function() { if (window.HBALens) HBALens.toggle(A, 'occupancy'); },
+        isActive: function() { return !!(window.HBALens && HBALens.isActive('occupancy')); },
+        children: [ { name: 'Color rooms by availability (occupied/expiring/vacant/unavailable)' }, { name: 'Room = iDempiere Resource (S_ResourceAssignment); state = replay of the booking log' }, { name: 'Toggle off restores the model' } ] },
+      { id: 'hbaDash',    name: 'Occupancy dashboard', pill: false, icon: I.barChart.svg,
+        fn: function() { if (window.HBADashPane) HBADashPane.toggle(A); },
+        isActive: function() { return !!(window.HBADashPane && HBADashPane.isActive()); },
+        children: [ { name: 'Open the occupancy / availability dashboard (an extra pane)' }, { name: 'Per-storey utilization · availability trend · open-ticket aging' }, { name: 'Additive overlay — does NOT disturb the model or other panels' } ] },
       { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
