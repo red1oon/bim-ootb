@@ -70,9 +70,18 @@ Toolbar (id=b-*) + op types are the ground truth (grep modeller.html). Authoring
     LEAF extrude optimistic-appends onto → fid collision (mismeasure). Drove the real pointer drag, not __gridStretch.
 12. ✅ DELETE (`witness_e2e_delete.js` 6/6) — select → Delete pill → soft-delete (active op-count −1, mesh removed,
     undone=1 so verifyChain stays valid); real-user reverse = Redo (Ctrl+Y) → count + mesh restored. ATOMIC by census.
-13. ☐ SEED-TRUNK full user flow (Outliner "Route trunk" → `_seedPopup` choose entry → render+animate; render gate
-    W-SEED-TRUNK-RENDER already exists — add the POPUP user flow on top)
+13. ✅ SEED-TRUNK (`witness_e2e_seedtrunk.js` 6/6) — Walk ELEC (production discWalk → 267 fixtures) → seedTrunk (the
+    Outliner "Route trunk" handler) → the REAL _seedPopup modal (14 candidate entries + Route ▶) → choosing routes +
+    renders the trunk (a dwTrunk=ELEC LineSegments, 5494 segs, 4 storeys, not refused) where there was none; VISIBLE.
+    Render-only (not op-log), so no slider-undo claim; builds the popup flow ON TOP of W-SEED-TRUNK-RENDER.
 14. ☐ (optional) SDG-CASCADE as a user flow (move a host wall → door rides) — W-SDG-CASCADE-MODELLER is node-only.
+
+## ✅ ROSTER COMPLETE — 12 tools each have a green real-user, maths-asserted E2E (#1-#13; #10 OPENING = CUT; #14
+optional). 3 REAL DEFECTS the suite caught + fixed this pass: §CUT-ON-ARC (cut vanished on seeded ARC walls —
+parent-not-found, never rendered), SCALE-vanish (foldInsert `c.bbox` on a null catalog → ARC wall disappeared),
+RAIL-STRAND (mode-revealed pills — Extrude/Run/Apply-fillet — stranded at (0,0), unclickable). All on the
+lane/modeller-e2e-suite branch. Run the whole suite: `for w in move walk cut insert scale rotate sketch route
+fillet delete gridstretch seedtrunk; do node modeller/tests/witness_e2e_$w.js; done`. NEXT = the GUIDE (below).
 Each: real input → assert COMMIT (op-log +N, right op_type/params), ATOMIC (rendered == committed by maths),
 VISIBLE (readPixels), REVERSIBLE (undo restores cursor + geometry), verifyChain ok, shot() at key moments.
 
