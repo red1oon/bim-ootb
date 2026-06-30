@@ -70,10 +70,18 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
 The Team overlay is NOT a peer subject-pane to Tenancy/IoT and NOT nailed under Storey. It is **one
 cross-cutting People dimension, grouped by ROLE** (`AD_Role` + the HR operator·vendor·personnel roles),
 that cross-tabs against a **phase-dependent spine**:
-- **SURFACE OWNERSHIP (rethink 2026-07-01): Modeller owns TIME, Viewer owns SPACE.** The Modeller owns the
-  **4D Phase + 5D cost** dimension natively (you BUILD the phases) — so **`Phase` is deprecated as a Find-Panel
-  facet** (it was a pre-Modeller relic: the Viewer scrubbing a post-developed building's baked-in 4D/5D via the
-  **Time Machine**). The Viewer Find Panel keeps only SPACE/operate facets (Storey, Disc, Material) + operate lenses.
+- **SURFACE OWNERSHIP (refined 2026-07-01): the axis is AUTHOR vs CONSUME, not strictly time vs space.**
+  - **Modeller = AUTHORING ONLY** (confined to traditional BIM authoring): creates geometry/structure AND
+    **authors the 4D-Phase + 5D-cost data into the DB**. Opening a DB under the **Modeller lens reveals the deeper
+    4D/5D** authoring depth. It does NOT host playback widgets.
+  - **Viewer = CONSUME / HANDOFF / BACKOFFICE-ADMIN + operate.** The **Time Machine (4D/5D playback) STAYS in the
+    Viewer**, NOT the Modeller (decided 2026-07-01) — the user authors in the Modeller, then SWITCHES to the Viewer
+    as the handoff/review/admin surface. So Time Machine = a Viewer timeline-scrubber, no longer a Find-Panel
+    *facet*. **`Phase` is deprecated AS A FACET** (the pre-Modeller relic), but 4D/5D REVIEW lives on as the Viewer
+    Time Machine. The Find Panel keeps only SPACE/operate facets (Storey, Disc, Material) + operate lenses.
+  - **Teams tie-in:** the Teams **World/History** (World-at-T / replay, S10/S12) IS a *people-aware Time Machine* →
+    its playback belongs to the Viewer/consume side; authoring-side Teams = live Discipline presence/branches in the
+    Modeller. So even Teams splits author(live, Modeller) vs consume(World/History playback, Viewer).
 - **Design / build — 4D construction** (Modeller Outliner, `bonsai_outliner.js`; Product/Project hat; building =
   **BIM: Hospital** `C_Project 990000`) → spine = **Project → Task/Element**, team grouped by **Discipline**
   (ARC/STR/MEP crews — `disc*` icons already exist), **inherently PHASED** (the Modeller has 4D, so the construction
