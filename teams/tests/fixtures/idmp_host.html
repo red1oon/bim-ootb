@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — HOST FIXTURE for W-TEAMS-UI-CONSISTENT (RESUME_TEAMS_UI_CONSISTENCY §3).
+     A faithful MINIMAL iDempiere host: the audited `A.icon` / `A.createPanel` factory contract (copied verbatim
+     from viewer/panels.js §0) + the real `--idmp-*` design tokens + `.bim-panel` / `.active` styled FROM those
+     tokens. The Teams overlay mounts with `host: A` and must SPEAK THIS host's visual language (icon-from-registry,
+     active-band = --idmp-blue, pane = .bim-panel) — never impose `#3a6df0`. Read-only seeded data; no network. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iDempiere host fixture · Teams overlay consistency</title>
+<style>
+  /* §0 iDempiere (ERP) tokens — verbatim from RESUME_TEAMS_UI_CONSISTENCY §0. */
+  :root {
+    --idmp-bg:#eef1f5; --idmp-panel:#fff; --idmp-border:#cdd4de; --idmp-header:#1c5fa8;
+    --idmp-blue:#1c5fa8; --idmp-text:#2b333d; --idmp-muted:#6b7681; --idmp-hover:#e8f0fa; --idmp-sel:#d6e6f7;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; color:var(--idmp-text); background:var(--idmp-bg); }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--idmp-panel); border-bottom:1px solid var(--idmp-border); }
+  header h1 { font-size:15px; margin:0; font-weight:700; color:var(--idmp-header); } header .sp { flex:1; }
+  main { padding:16px; max-width:760px; }
+  .card { background:var(--idmp-panel); border:1px solid var(--idmp-border); border-radius:6px; overflow:hidden; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--idmp-muted); margin:0; padding:11px 14px; border-bottom:1px solid var(--idmp-border); }
+  .row { display:flex; align-items:center; gap:12px; padding:11px 14px; border-bottom:1px solid var(--idmp-border); } .row:last-child { border-bottom:0; }
+  .row .doc { font-weight:600; width:90px; } .row .st { font-size:12px; color:var(--idmp-muted); width:90px; } .row .who { font-size:12px; color:var(--idmp-muted); flex:1; }
+
+  /* host icon-button look — active band resolves the host token (NEVER a foreign hardcoded blue). */
+  button.teams-pill, header button { width:34px; height:30px; border:1px solid var(--idmp-border); border-radius:6px;
+    background:var(--idmp-panel); color:var(--idmp-muted); cursor:pointer; display:grid; place-items:center; padding:0; }
+  button.teams-pill.active { color:#fff; background:var(--idmp-blue); border-color:var(--idmp-blue); }
+
+  /* §R2 — the host `.bim-panel` shell (the standard pane), tokened. */
+  .bim-panel { position:fixed; top:51px; right:0; bottom:0; width:320px; background:var(--idmp-panel);
+    border-left:1px solid var(--idmp-border); box-shadow:-8px 0 24px rgba(20,30,60,.08); padding:14px; overflow:auto; color:var(--idmp-text); }
+  .bim-panel-close { position:absolute; top:8px; right:10px; cursor:pointer; color:var(--idmp-muted); font-size:18px; }
+  .bim-panel h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--idmp-muted); margin:0 0 10px; }
+
+  /* dot-layer optics (identity hue dots — distinct from any state palette, §R5). */
+  .tcluster { display:inline-flex; align-items:center; gap:2px; margin:2px 0; }
+  .tdot { width:20px; height:20px; border-radius:50%; display:inline-grid; place-items:center; font-size:9px; font-weight:700; color:#fff; background:var(--c,#888); }
+  .tbadge { font-size:11px; font-weight:700; color:var(--idmp-muted); margin-left:3px; }
+  .pe { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dashed var(--idmp-border); }
+  .pe .d { font-weight:600; width:80px; } .pe .n { font-size:12px; color:var(--idmp-muted); } .hot { color:var(--idmp-blue); font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Accounts Receivable · Dashboard</h1>
+  <div class="sp"></div>
+  <span id="mountpt"></span>
+</header>
+<main>
+  <div class="card" id="chrome">
+    <h2>Open documents</h2>
+    <div class="row" data-doc="INV-001"><span class="doc">INV-001</span><span class="st">Posted</span><span class="who">last: alice</span></div>
+    <div class="row" data-doc="INV-002"><span class="doc">INV-002</span><span class="st">Drafted</span><span class="who">last: carol</span></div>
+    <div class="row" data-doc="SO-9"><span class="doc">SO-9</span><span class="st">In review</span><span class="who">last: hank</span></div>
+  </div>
+</main>
+
+<script>
+// ── Minimal host `A` — the audited factory contract copied verbatim from viewer/panels.js §0 ──
+(function () {
+  'use strict';
+  var ICONS = {
+    // `share` = the collab-network glyph the Teams pill consumes (verbatim from the host registry).
+    share: { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', trl: 'ui_tt_share', desc: 'Share' }
+  };
+  var A = {};
+  // A.icon(name, opts) — copied verbatim from viewer/panels.js (S265 Phase 5).
+  A.icon = function (name, opts) {
+    opts = opts || {};
+    var ic = ICONS[name];
+    if (!ic) { console.warn('§ICON_MISS name=' + name); return document.createElement('button'); }
+    var btn = document.createElement('button');
+    var size = opts.size || 20;
+    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ic.svg + '</svg>';
+    btn.title = opts.title || ic.desc || '';
+    if (opts.active) btn.classList.add('active');
+    if (opts.id) btn.id = opts.id;
+    if (opts.onClick) btn.addEventListener('pointerup', function (e) { e.stopPropagation(); opts.onClick(e); });
+    return btn;
+  };
+  // A.createPanel(id, opts) — copied verbatim (minus modeller-only focus/drag wiring, stubbed).
+  A.createPanel = function (id, opts) {
+    opts = opts || {};
+    var el = document.createElement('div');
+    el.id = id;
+    el.className = 'bim-panel';
+    if (opts.style) Object.assign(el.style, opts.style);
+    if (opts.closable !== false) {
+      var closeBtn = document.createElement('span');
+      closeBtn.className = 'bim-panel-close';
+      closeBtn.innerHTML = '&times;';
+      closeBtn.addEventListener('pointerup', function (e) { e.stopPropagation(); el.style.display = 'none'; if (opts.onClose) opts.onClose(); });
+      el.appendChild(closeBtn);
+    }
+    if (opts.content) { if (typeof opts.content === 'string') el.insertAdjacentHTML('beforeend', opts.content); else el.appendChild(opts.content); }
+    el.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    console.log('§PANEL_CREATE id=' + id);
+    return el;
+  };
+  window.A = A;
+})();
+</script>
+<script src="../../overlay/dot_layer.js"></script>
+<script src="../../erp/erp_optics.js"></script>
+<script src="../../overlay/teams_pill.js"></script>
+<script>
+(function () {
+  'use strict';
+  var D = window.TeamsDotLayer, O = window.TeamsErpOptics, TP = window.TeamsPill;
+  var T = 1719700000000;
+  function op(id, ts, author, role, verb, target) { return { id:id, ts:ts, author:author, role:role, cls:'erp', verb:verb, target:target, params:{} }; }
+  var ops = [
+    op('a1',T+10,'alice','AP','CREATE','INV-001'), op('b1',T+20,'bob','AP','EDIT','INV-001'), op('a2',T+30,'alice','AP','POST','INV-001'),
+    op('c1',T+40,'carol','Sales','CREATE','INV-002'),
+    op('d1',T+50,'dave','Sales','CREATE','SO-9'), op('e1',T+60,'erin','Sales','EDIT','SO-9'),
+    op('f1',T+70,'frank','Mgr','EDIT','SO-9'), op('g1',T+80,'gita','Mgr','EDIT','SO-9'), op('h1',T+90,'hank','AP','EDIT','SO-9'),
+    { id:'p1', ts:T+100, author:'bob', cls:'annot', verb:'PIN', target:'INV-001', params:{ pinId:'P1', msg:'check tax line' } }
+  ];
+
+  function renderOverlay(pane) {
+    var model = D.dotLayerModel(ops, { on:true, maxVisible:2 });
+    var inv = O.involvement(ops, {});
+    document.querySelectorAll('#chrome .row').forEach(function (row) {
+      var anchor = row.getAttribute('data-doc');
+      var cl = model.clusters.filter(function (c) { return c.anchor === anchor && c.kind === 'person'; })[0];
+      if (!cl) return;
+      var wrap = document.createElement('span'); wrap.className = 'tcluster row-dots';
+      cl.visible.forEach(function (d) { var dot = document.createElement('span'); dot.className = 'tdot person';
+        dot.style.setProperty('--c', d.color); dot.textContent = d.initials; dot.title = d.blurb; wrap.appendChild(dot); });
+      if (cl.badge) { var b = document.createElement('span'); b.className='tbadge'; b.textContent=cl.badge; wrap.appendChild(b); }
+      row.appendChild(wrap);
+    });
+    pane.appendChild((function(){ var h=document.createElement('h3'); h.textContent='Involvement · who is on each doc'; return h; })());
+    inv.hot.forEach(function (h, i) {
+      var d = inv.perDoc[h.doc];
+      var e = document.createElement('div'); e.className = 'pe';
+      var dd = document.createElement('span'); dd.className = 'd' + (i===0?' hot':''); dd.textContent = h.doc;
+      var nn = document.createElement('span'); nn.className = 'n'; nn.textContent = h.count + ' people · ' + d.participants.join(', ');
+      e.appendChild(dd); e.appendChild(nn); pane.appendChild(e);
+    });
+  }
+  function unrenderOverlay() {
+    document.querySelectorAll('#chrome .row-dots').forEach(function (n) { n.remove(); });
+  }
+
+  // mount the distinct Teams pill — passing the HOST factory so it speaks the host's visual language.
+  TP.mountTeamsPill(document.getElementById('mountpt'), {
+    label: 'Teams overlay', host: window.A,
+    onMount: renderOverlay, onUnmount: unrenderOverlay
+  });
+  window.__teamsReady = true;
+})();
+</script>
+</body>
+</html>

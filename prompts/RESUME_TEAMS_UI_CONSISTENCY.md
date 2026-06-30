@@ -130,6 +130,29 @@ The HR lane is independently moving its Find Panel to **icons instead of labels*
 from the ONE `viewer/panels.js` `ICONS` registry (tenancy `users`, IoT `cpu`, pick a Teams presence glyph), and
 (b) the SAME active-band colour, so both lanes match pixel-for-pixel. Do not fork a second icon set.
 
+## ✅ STATUS — R1/R2/R4/R5 + OFF DONE (2026-07-01, lane/teams-overlay, /tmp/wt-redpill)
+**W-TEAMS-UI-CONSISTENT 6/6 GREEN** (`teams/tests/ui_consistent.js`, chromium over `teams/tests/fixtures/idmp_host.html`).
+The overlay now SPEAKS THE HOST LANGUAGE when a host factory is injected:
+- **R1 (icon):** `teams_pill.js` takes `opts.host`; when `host.icon` exists the pill is built via `host.icon('share', …)`
+  from the host's ONE registry (`share` already exists — no registry edit needed), active band = host `.active` class.
+  Self-contained glyph fallback retained for the standalone demo (no host). §UI-ICON.
+- **R2/R3 (pane):** when `host.createPanel` exists the pane is the host `.bim-panel` shell (closable, draggable),
+  removed on close for reversibility. §UI-PANE.
+- **R4 (tokens):** active band resolves `--idmp-blue`; the overlay injects NO `#3a6df0` (witness scans all sheets/inline). §UI-TOKEN.
+- **R5 (dot ≠ state):** identity dot `colorOf` (hsl) ∉ HR state palette. §UI-DOTID.
+- **OFF / reversible:** pixel-identical, `W-TEAM-WIRE 4/4` (demo fallback) + node suite 22/22 unregressed. §UI-OFF.
+- **⚠ LANE DISCIPLINE (held):** this lane touched ONLY `teams/` — `viewer/panels.js` is the HBA/viewer seam and a
+  conflict magnet; Teams CONSUMES the host factory at runtime, never edits it. (Initial drift — adding facet icons to
+  `panels.js` — was caught and reverted.) The fixture self-contains only the `share` glyph the pill needs.
+
+**↪ CROSS-LANE HAND-OFF (NOT this lane):** the R1 facet-icon ADDS (`users`/`cpu`/`wrench`/`layers`/`globe` for
+Storey/Disc/Material/Tenancy/IoT) belong to the **HR/viewer Find-Panel icon-ification** (§2), which already owns
+`viewer/panels.js`. Add them there, to the ONE registry — do NOT fork from the Teams lane.
+
+**REMAINING (chrome, follow-on):** R3 tab-schema unification with the Outliner tabs, R6 Find-panel dot placement on
+Storey→Rooms rows + Modeller Role×Project pivot, §1b Teams Dashboard graphs (`teams/erp/teams_dashboard.js`), and §3b's
+4 open edges. Start from the Modeller/Project spine (§1a anti-drift), not HHS/Viewer.FindPanel.
+
 ## 3. Witness (add before any chrome) — W-TEAMS-UI-CONSISTENT (chromium)
 Over the real embed + a host fixture exposing `A.icon`/`A.createPanel` + `--idmp-*`:
 1. toggle is built via `A.icon` (an `<svg>`/icon button, NOT a text node) and carries a hover `title`.
