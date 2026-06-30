@@ -25,9 +25,10 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 ## §RESUME — new-session handoff (2026-06-30)
 
 > **▶ NEW SESSION START HERE.** Branch `lane/hr-overlay` (worktree `/tmp/wt-hr`), all pushed, suite GREEN
-> (**9 witnesses**, see below). Last session shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D
+> (**10 witnesses**, see below). Last session shipped: real-guid binding (#1), viewer wire (#2), derived PM 4D
 > timeline (#4c), real storey derivation, §WATERMARK 19/19, **T&A slice-1** (signed spatial check-in engine),
-> **T&A slice-2 — viewer presence lens**, and **Leave/Absence** (just landed). **▶ NEXT BITE (pick one):**
+> **T&A slice-2 — viewer presence lens**, **Leave/Absence**, and **T&A access** (just landed — the NEXT BITE
+> list is now DRAINED). **▶ NEXT BITE — list drained; pick a Phase-F differentiator or a UI surface:**
 > 1. ✅ **DONE — T&A slice-2 viewer presence lens** (`overlay.computePresence` + `viewer/hba_lens.js` `presence`
 >    mode, **W-HBA-PRES 14/14**). `attendance.presenceByZone` headcount folds to a blue density ladder (1→low /
 >    2-4→med / 5+→high) that RIDES the EXISTING `applyOverlay` MeshPort seam — zero new viewer-core; one-mode,
@@ -40,16 +41,25 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 >    a FIXED SUB element on the already-witnessed pay run (net 3000→2600, GL still balanced). No unpaid days →
 >    no phantom line; tamper-evident; deterministic; watermarked summary. **Open: a leave UI surface** (the
 >    engine + payroll feed are node-witnessed; no panel wired).
-> 3. **T&A access** — signed capability token over a zone (W-SIGN), reader verifies offline. ← next open build.
+> 3. ✅ **DONE — T&A access** (`access.js`, **W-HBA-ACCESS 13/13**). A grantor mints a SIGNED capability token
+>    scoped to REAL zone(s) for a time window; a door reader VERIFIES it OFFLINE (pure crypto + a local trust
+>    anchor + a local revocation set, no network/db). Phantom-zone grant → REFUSE; forged scope → bad-signature;
+>    out-of-scope/early/expired/wrong-holder/untrusted-grantor/revoked → honest DENY; a forged revoke is ignored
+>    (can't deny by forgery). Watermarked pass. **Open: the physical reader/turnstile (hardware integration, not
+>    a build) + a grant/verify UI surface.**
+>
+> **▶ NEXT OPEN (no NEXT BITE remaining):** Phase-F differentiators (per §VISION/§MARKET TRIAGE) or a UI surface
+> for leave/access/presence. ⛔ Still user-gated: #2b live 3D browser smoke · #3-ERP dotted lines (ERP must load)
+> · #4(a/b) a real external P6/MSP plan + building.
 > ⛔ Still need a USER decision/dependency: #2b live 3D browser smoke · #3 ERP dotted lines (ERP must load) ·
 > #4(a/b) import a real external P6/MSP plan (which plan, which building).
 
 **Module = HR_BIM_Asset** (NOT "Payroll" — payroll is just RUN profile #1). Lives in **bim-ootb ONLY**:
 `hr_bim_asset/` + this spec in `bim-ootb/prompts/`. Worktree `/tmp/wt-hr`, branch `lane/hr-overlay`. ZERO
 bim-compiler work (EXCEPT the user-directed ERP/Viewer User-Guide doc updates 2026-06-30, deployed via
-`safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave; do
-node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 ·
-WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13.
+`safe_gh_deploy.sh`). Witness: `for w in run view bind wire timeline watermark attendance presence leave access;
+do node hr_bim_asset/tests/witness_$w.js; done` — W-HBA: ALPHA 18 · VIEW 13 · BIND 11 · WIRE 10 · TIMELINE 7 ·
+WATERMARK 9 (19/19 surfaces) · ATTEND 8 · PRES 14 · LEAVE 13 · ACCESS 13.
 
 **DONE + witnessed:**
 - Generic RUN engine — payroll · tenancy · strata · maintenance (ONE engine). **W-HBA-ALPHA 18/18.**
