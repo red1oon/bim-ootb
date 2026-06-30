@@ -44,7 +44,7 @@
 **S2 · Dot-layer + record hover-blame — ✅ DONE (W-DOT-LAYER + W-BLAME-RECORD 11/11, standalone, off=no-op).** `teams/overlay/dot_layer.js`: person + post-it dots, fan-out `+N`,
 collapsed→hover-blurb→click, **off = no-op**. Record-grain blame (`W-RECINFO`) fold. Witnesses **W-DOT-LAYER**,
 **W-BLAME-RECORD**. Headless smoke: off renders nothing. Impact: none (standalone).
-**S3 · Post-it** — `teams/overlay/postit.js`: signed `annot` op + universal **anchor** model
+**S3 · Post-it — ✅ DONE (W-POSTIT 9/9, standalone, signed annot + 7-kind anchor + organise/recall).** `teams/overlay/postit.js`: signed `annot` op + universal **anchor** model
 (`doc|field|screen|dashboard|flow|element|broadcast`), private-first, organise axes (anchor/age/status/mention),
 **contextual recall**. Witness **W-POSTIT**. Impact: none.
 **S4 · Bunch-&-share + work-summary** — `teams/overlay/share_bundle.js`: bundle N post-its → digest; reuse the
