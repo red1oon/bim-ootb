@@ -15,9 +15,12 @@ var View = require('./overlay/teams_view');          // view-model builders + DO
 var DotLayer = require('./overlay/dot_layer');        // §S2 universal dot optics (person/post-it dots, fan-out)
 var Postit = require('./overlay/postit');             // §S3 post-it annot op + universal anchor + organise/recall
 var ShareBundle = require('./overlay/share_bundle');  // §S4 bunch-&-share + work-summary (channels = facilitator transports)
+var ErpBridge = require('./erp/erp_bridge');          // §S1 read-only ERP kernel_ops bridge
+var ErpOptics = require('./erp/erp_optics');          // §S5 ERP Dashboard optics (gate/flow/involvement/organiser)
 var App = require('./overlay/teams_app');            // demo scenario + computeView orchestration
 module.exports = {
   Connectors: Connectors, ConnectorsLive: ConnectorsLive, Engine: Engine, Gate: Gate,
   Chatlog: Chatlog, Protocol: Protocol, Facilitator: Facilitator, Transport: Transport,
-  View: View, DotLayer: DotLayer, Postit: Postit, ShareBundle: ShareBundle, App: App
+  View: View, DotLayer: DotLayer, Postit: Postit, ShareBundle: ShareBundle,
+  ErpBridge: ErpBridge, ErpOptics: ErpOptics, App: App
 };

@@ -52,7 +52,7 @@ universal share sheet + facilitator transports (Team feed / WhatsApp-stub / link
 (fold→`what·who·when`, exportable+editable = training script). Witness **W-BUNDLE-SHARE**, **W-WORK-SUMMARY**. Impact: none.
 
 ## Phase C — ERP optics surfaces (standalone demos, read-only)
-**S5 · ERP gate + Dashboard-Flow + Involvement + Organiser** — `teams/erp/`: `evaluateGate` (two-branch conflict/
+**S5 · ERP gate + Dashboard-Flow + Involvement + Organiser — ✅ DONE (W-ERP-GATE+W-ERP-FLOW+W-INVOLVE+W-ORGANISER 13/13, reads seeded log, zero erp/ edits). Standalone demo page deferred to Phase E/S9 (per §P5, only witnessed core shipped now).** `teams/erp/`: `evaluateGate` (two-branch conflict/
 ladder), the **Flow lens** (process-mining discovery from the log: actual path, variants, bottleneck), **involvement**
 (participants/role-headcount/active per flow·doc), and the **Organiser** (Team tab = scope filter `mine↔anyone` by
 role/project/loc/space + multi-select charts). Standalone demo page. Witnesses **W-ERP-GATE**, **W-ERP-FLOW**,
