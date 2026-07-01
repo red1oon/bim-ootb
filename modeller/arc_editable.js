@@ -104,7 +104,11 @@
   // file — out of scope for this single-db reader; that resident keeps its existing raw-bbox behaviour,
   // unregressed). Measured 2026-07-02: SampleCastle_ARC/SampleHouse/SampleCastle/Duplex extracted.db all have
   // 0 unresolved hashes — this path is a safety net, not the common case.
-  function buildSeedOps(db) {
+  // geoDb (optional) — a SEPARATE sql.js Database that carries component_geometries/base_geometries when the
+  // building's mesh substrate lives in its own file (§GEO-SPLIT, Terminal_geo.db vs Terminal_meta.db). Defaults
+  // to `db` — every existing single-file call site (SampleHouse/Duplex/SampleCastle/SampleCastle-ARC, every
+  // pure-node witness) is byte-identical, unchanged.
+  function buildSeedOps(db, geoDb) {
     var hasDisc = _hasDiscipline(db);
     var where = hasDisc ? "m.discipline='ARC'"
       : '(' + ARC_CLASSES.map(function (c) { return "m.ifc_class='" + c + "'"; }).join(' OR ') + ')';
@@ -114,7 +118,7 @@
       "t.bbox_x, t.bbox_y, t.bbox_z, t.rotation_x, t.rotation_y, t.rotation_z FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid = m.guid WHERE " + where + " ORDER BY " + (hasId ? 'm.id' : 'm.guid');
     var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0;
-    var geomIdx = RealGeometry ? RealGeometry.buildGeometryIndex(db) : { table: null, byGuid: {}, resolved: {} };
+    var geomIdx = RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} };
     var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0;
     if (r.length) r[0].values.forEach(function (v) {
       var guid = v[0], cls = v[1], cx = v[2], cy = v[3], cz = v[4], bx = v[5], by = v[6], bz = v[7], rx = v[8] || 0, ry = v[9] || 0, rz = v[10] || 0;
@@ -217,6 +221,9 @@
   //   io.commitGroup(opsArray, gid) -> Promise<{ids, committed, idempotent}>   (the only writer)
   //   io.fold()  -> Promise   (optional: redraw the chain after seeding)
   //   io.building -> string   (deterministic gid 'arcseed-<building>' → idempotent re-seed)
+  //   io.geoDb -> sql.js Database   (OPTIONAL, §GEO-SPLIT: a SEPARATE db carrying component_geometries/
+  //     base_geometries, e.g. Terminal_geo.db vs buildingDb=Terminal_meta.db. Absent/undefined → buildSeedOps
+  //     resolves geometry against buildingDb itself, i.e. every existing single-file caller is unaffected.)
   //   io.registerGeometry(assets) -> void   (OPTIONAL: browser-only. Registers the real per-element meshes
   //     resolved by buildSeedOps into the render layer — bonsai_library.js's Library.registerRealGeometry —
   //     BEFORE commit/fold so foldInsert sees them the first time it folds. A caller that omits this (every
@@ -226,7 +233,7 @@
   async function seedArc(buildingDb, io) {
     io = io || {};
     var name = io.building || 'building';
-    var built = buildSeedOps(buildingDb);
+    var built = buildSeedOps(buildingDb, io.geoDb);
     if (io.registerGeometry && built.geomAssets.length) {
       try { io.registerGeometry(built.geomAssets); } catch (e) { _log(TAG + ' §REAL-GEOM registerGeometry failed ' + (e && e.message)); }
     }

@@ -29,12 +29,17 @@
   //     (250MB meshes) = Git LFS. The WALK needs only meta; meshes are lazy. db = the substrate Open fetches.
   //   • `v` busts the IndexedDB resident cache when a building's DB is re-extracted (cache keyed by URL;
   //     bump v → new key → fresh fetch). v2 = re-extracted residents with REAL IfcSpace rooms + space AABB.
+  //   • §GEO-SPLIT (2026-07-02): an optional `geoDb` field names a SEPARATE file carrying the real per-element
+  //     mesh substrate (component_geometries), fetched+cached independently (its own IndexedDB URL key, own
+  //     `geoV` cache-bust) ONLY for residents that declare it — Terminal is the sole split-file resident today;
+  //     every other entry has no `geoDb` and takes ZERO extra network/IDB path (see openResident/_fetchGeoDb).
   var RESIDENTS = [
     { key: 'SampleHouse',  label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_extracted.db',  v: 2 },
     { key: 'Duplex',       label: 'Duplex · wall-bearing',             db: 'Duplex_extracted.db',       v: 2 },
     { key: 'SampleCastle', label: 'SampleCastle · column-framed',      db: 'SampleCastle_extracted.db', v: 2 },
     { key: 'SampleCastle-ARC', label: 'SampleCastle · ARC only (diagnostic)', db: 'SampleCastle_ARC_extracted.db', v: 1 },
-    { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db',          v: 1 }
+    { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db',          v: 1,
+      geoDb: 'Terminal_geo.db', geoV: 1 }
   ];
 
   // The modeller's own GH-Pages playground base — modeller.html and its resident DBs now share the
@@ -191,6 +196,29 @@
     } catch (e) { console.warn(TAG + ' replay failed', e && e.message); }
   }
 
+  // §GEO-SPLIT: lazily fetch+cache a resident's SEPARATE geometry-mesh db (Terminal_geo.db), reusing the
+  // exact same IndexedDB cache pattern (_idbGetDb/_idbPutDb, its own URL key so it caches independently of
+  // the meta db) — cache-first, else fetch+persist. Residents with no `geoDb` field resolve null IMMEDIATELY,
+  // no network/IDB call at all (SampleHouse/Duplex/SampleCastle/SampleCastle-ARC are untouched).
+  function _fetchGeoDb(res) {
+    if (!res.geoDb) return Promise.resolve(null);
+    var url = _modellerBase() + res.geoDb + ((res.geoV || res.v) ? '?v=' + (res.geoV || res.v) : '');
+    return _idbGetDb(url).then(function (cached) {
+      if (cached) {
+        console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-HIT (local) ' + (cached.byteLength / 1024 / 1024).toFixed(1) + 'MB');
+        return cached;
+      }
+      console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-MISS → fetch ' + url);
+      return fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
+        .then(function (buf) {
+          _idbPutDb(url, buf).then(function (p) {
+            console.log(TAG + ' §STRWALK-CACHE ' + res.geoDb + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024 / 1024).toFixed(1) + 'MB');
+          });
+          return buf;
+        });
+    });
+  }
+
   // Fork the per-building EDITABLE INSTANCE (op-log key 'mo_<building>') so this resident's signed edits
   // fold into its own instance while the loaded meta.db REFERENCE (the IDB cache entry) stays pristine.
   // Once the instance's op-log is loaded, replay its recorded edits back into the fresh walk.
@@ -199,7 +227,12 @@
     if (O && O.setModelKey) O.setModelKey('mo_' + res.key).then(function (n) {
       console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
       _replayEdits();
-      _seedArcEditable(O, res.key);
+      _fetchGeoDb(res).then(function (geoBuf) {
+        _seedArcEditable(O, res.key, geoBuf);
+      }).catch(function (e) {
+        console.warn(TAG + ' §STRWALK-OPEN geoDb fetch failed for ' + res.key + ' — seeding meta-only (no real geometry)', e && e.message);
+        _seedArcEditable(O, res.key, null);
+      });
     });
   }
 
@@ -207,11 +240,20 @@
   // (drag wall → door rides) has a real wall to grab. Re-opens the building buffer (kept on __dwBuf by _openBuffer)
   // read-only, derives the measured seed ops, and commits them ONE signed group via the oplog. IDEMPOTENT by
   // 'arcseed-<key>' → safe to call every open (already-seeded = no-op). NON-INVENT: bbox/centre are MEASURED.
-  function _seedArcEditable(O, key) {
+  // geoBuf (optional, §GEO-SPLIT) — bytes of a SEPARATE geometry db (Terminal_geo.db) fetched by _fetchGeoDb;
+  // opened here as its own sql.js Database and threaded through as io.geoDb so buildSeedOps resolves each
+  // element's real mesh against IT instead of `bdb` (which, for Terminal, carries no geometry tables at all).
+  // Absent/null (every other resident) → io.geoDb stays undefined, buildSeedOps falls back to `bdb` itself —
+  // byte-identical to pre-existing behaviour.
+  function _seedArcEditable(O, key, geoBuf) {
     if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) return;
-    var bdb = null;
+    var bdb = null, gdb = null;
     try {
       bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      if (geoBuf) {
+        try { gdb = new window.SQL.Database(new Uint8Array(geoBuf)); }
+        catch (e) { console.error(TAG + ' §GEOM-HARDFAIL geoDb open failed for ' + key + ' — falling back to meta-only (no real geometry)', e && e.message); gdb = null; }
+      }
       window.ArcEditable.seedArc(bdb, {
         // §LOD400-STALL: skip commitSeedGroup's default full verifyChain() for the ARC seed — it always seeds
         // into a FRESH mo_<building> instance (nothing pre-existing to lose coverage on), so the redundant
@@ -225,6 +267,9 @@
         registerGeometry: function (assets) {
           if (window.Bonsai.library && window.Bonsai.library.registerRealGeometry) window.Bonsai.library.registerRealGeometry(assets);
         },
+        // §GEO-SPLIT: undefined for every non-split resident (bdb itself carries the geometry tables, exactly
+        // as before); the opened Terminal_geo.db handle for Terminal.
+        geoDb: gdb || undefined,
         building: key
       }).then(function (r) {
         console.log(TAG + ' §ARC-SEED-WIRE ' + key + ' editable ARC elements=' + r.committed + ' skipped=' + r.skipped +
@@ -234,8 +279,8 @@
       // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
       // impossible-to-miss line in devtools/CI logs (still just a log line — no new UI surface, per scope).
       }).catch(function (e) { console.error(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message) + ' — building=' + key + ' seeded ZERO ops (no geometry will render)'); })
-        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } });
-    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } }
+        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } });
+    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } }
   }
 
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH

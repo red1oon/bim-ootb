@@ -60,34 +60,61 @@
     return null;
   }
 
-  // buildGeometryIndex(db) — ONE pass over element_instances × the geometry table -> {
+  // buildGeometryIndex(db, geoDb) — ONE pass over element_instances (in `db`) × the geometry table (in
+  // `geoDb`, DEFAULTS to `db` — the original single-file behaviour, byte-identical) -> {
   //   table,                              the table name used ('component_geometries'|'base_geometries'|null)
   //   byGuid:     { guid: geometry_hash|null },     every element_instances row (null hash = no instance link)
   //   resolved:   { geometry_hash: {positions,faces,bbox} }   DECODED + RECENTRED once per DISTINCT hash
   // }. Many guids instance the SAME hash (component reuse) — decoding once per hash (not per guid) avoids
   // redundant base64/typed-array work on a 3000+-element building sharing ~2300 distinct meshes.
-  function buildGeometryIndex(db) {
-    var table = geometryTable(db);
+  //
+  // §GEO-SPLIT (2026-07-02, Terminal resident): Terminal_meta.db (element_instances/elements_meta, the WALK
+  // substrate) and Terminal_geo.db (component_geometries, the 250MB mesh substrate) are SEPARATE sqlite files
+  // — sql.js can't JOIN across two independently-opened Database handles, so this two-pass form replaces the
+  // original single JOIN: (1) read guid→hash + the set of DISTINCT needed hashes from `db` alone, (2) resolve
+  // only those hashes against `geoDb` (batched IN-lists — Terminal needs ~1,027 distinct hashes out of 9,394).
+  // When geoDb === db (every OTHER resident — SampleHouse/Duplex/SampleCastle/SampleCastle-ARC, all single-
+  // file), this produces the EXACT same byGuid/resolved sets as the old one-shot JOIN — same skip rules
+  // (null hash / missing blob / degenerate vert-or-face count all stay unresolved, same as before).
+  function buildGeometryIndex(db, geoDb) {
+    geoDb = geoDb || db;
+    var table = geometryTable(geoDb);
     var out = { table: table, byGuid: {}, resolved: {} };
     if (!table || !_hasTable(db, 'element_instances')) return out;
     var r;
     try {
-      r = db.exec("SELECT ei.guid, ei.geometry_hash, g.vertices, g.faces FROM element_instances ei " +
-        "LEFT JOIN " + table + " g ON g.geometry_hash = ei.geometry_hash");
+      r = db.exec("SELECT guid, geometry_hash FROM element_instances");
     } catch (e) { _log(TAG + ' index query failed ' + (e && e.message)); return out; }
     if (!r.length) return out;
+    var neededHashes = {}, anyNeeded = false;
     r[0].values.forEach(function (v) {
-      var guid = v[0], hash = v[1], vBlob = v[2], fBlob = v[3];
+      var guid = v[0], hash = v[1];
       out.byGuid[guid] = hash;
-      if (hash == null || out.resolved[hash]) return;           // no link, or already decoded this hash
-      if (!vBlob || !fBlob) return;                              // hash present but blob missing → stays unresolved
-      try {
-        var raw = toFloat32(vBlob), faces = toUint32(fBlob);
-        if (raw.length < 9 || faces.length < 3) return;          // degenerate (<3 verts / <1 tri) → unresolved
-        var rc = recenter(raw);
-        out.resolved[hash] = { positions: rc.positions, faces: faces, bbox: rc.bbox };
-      } catch (e) { /* leave unresolved — caller's hardfail path logs+skips */ }
+      if (hash != null) { neededHashes[hash] = true; anyNeeded = true; }
     });
+    if (!anyNeeded) return out;
+    var hashList = Object.keys(neededHashes);
+    var BATCH = 500;   // stay well under sqlite's expression-count limits on a huge building
+    for (var i = 0; i < hashList.length; i += BATCH) {
+      var batch = hashList.slice(i, i + BATCH);
+      var placeholders = batch.map(function (h) { return "'" + String(h).replace(/'/g, "''") + "'"; }).join(',');
+      var gr;
+      try {
+        gr = geoDb.exec("SELECT geometry_hash, vertices, faces FROM " + table + " WHERE geometry_hash IN (" + placeholders + ")");
+      } catch (e) { _log(TAG + ' geo batch query failed ' + (e && e.message)); continue; }
+      if (!gr.length) continue;
+      gr[0].values.forEach(function (v) {
+        var hash = v[0], vBlob = v[1], fBlob = v[2];
+        if (out.resolved[hash]) return;                            // already decoded this hash
+        if (!vBlob || !fBlob) return;                              // hash present but blob missing → stays unresolved
+        try {
+          var raw = toFloat32(vBlob), faces = toUint32(fBlob);
+          if (raw.length < 9 || faces.length < 3) return;          // degenerate (<3 verts / <1 tri) → unresolved
+          var rc = recenter(raw);
+          out.resolved[hash] = { positions: rc.positions, faces: faces, bbox: rc.bbox };
+        } catch (e) { /* leave unresolved — caller's hardfail path logs+skips */ }
+      });
+    }
     return out;
   }
 
