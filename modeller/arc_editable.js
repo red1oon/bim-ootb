@@ -128,16 +128,26 @@
         // so only the z seat needs compensating for the catalog/measured height difference; x/y are placement-direct.
         seatHalfZ = (m.catBbox[5] - m.catBbox[4]) / 2;
       } else { unmatched++; }
-      // ground-seat: place() seats local zmin (=-seatHalfZ) at placement.z → world centre z = z + seatHalfZ; set
-      // z = cz - seatHalfZ so the world-centre lands EXACTLY on (cx,cy,cz). Yaw about Z is centre-invariant.
-      // §ARC-ROT-UNIT fix: element_transforms.rotation_z is stored in RADIANS (the Viewer applies it straight
-      // into THREE's native-radian Euler — viewer/streaming.js:748 `_euler.set(el.rotX, el.rotZ, -el.rotY)`,
-      // no conversion). bonsai_library.js's place() expects DEGREES (`pl.rot * Math.PI/180`) — every OTHER
-      // caller (catalog drops, gizmo GEOM_ROTATE deltas) already feeds it degrees. Passing rz straight through
-      // silently shrank every rotated ARC wall's yaw by ~57x (e.g. a true -90° wall rotated only -1.57°) —
-      // walls meant to form a perpendicular room corner instead rendered nearly parallel/overlapping (the
-      // "geometry hell" screenshot). Convert once here so ARC lands on the SAME true angle the Viewer renders.
-      params.placement = { x: cx, y: cy, z: cz - seatHalfZ, rot: rz * 180 / Math.PI };
+      if (rx || ry) {
+        // §ARC-3AXIS: genuine tilt (497/3317 on modeller/SampleCastle_extracted.db, per §ARC-YAW-ONLY audit
+        // above) — bbox is already centred at local origin (this function centres it a few lines up), so
+        // translate the rotated box directly by the MEASURED centre, no ground-seat step (matches
+        // viewer/streaming.js's own compose(pos,quat,scale), which places centres not bottoms). RAW RADIANS
+        // throughout — bonsai_library.js's 3-axis branch consumes radians directly, same as the Viewer; do
+        // NOT apply the rz*180/Math.PI conversion below, that's only for the DEGREES-based yaw-only path.
+        params.placement = { x: cx, y: cy, z: cz, rotX: rx, rotY: ry, rotZRad: rz };
+      } else {
+        // ground-seat: place() seats local zmin (=-seatHalfZ) at placement.z → world centre z = z + seatHalfZ; set
+        // z = cz - seatHalfZ so the world-centre lands EXACTLY on (cx,cy,cz). Yaw about Z is centre-invariant.
+        // §ARC-ROT-UNIT fix: element_transforms.rotation_z is stored in RADIANS (the Viewer applies it straight
+        // into THREE's native-radian Euler — viewer/streaming.js:748 `_euler.set(el.rotX, el.rotZ, -el.rotY)`,
+        // no conversion). bonsai_library.js's place() expects DEGREES (`pl.rot * Math.PI/180`) — every OTHER
+        // caller (catalog drops, gizmo GEOM_ROTATE deltas) already feeds it degrees. Passing rz straight through
+        // silently shrank every rotated ARC wall's yaw by ~57x (e.g. a true -90° wall rotated only -1.57°) —
+        // walls meant to form a perpendicular room corner instead rendered nearly parallel/overlapping (the
+        // "geometry hell" screenshot). Convert once here so ARC lands on the SAME true angle the Viewer renders.
+        params.placement = { x: cx, y: cy, z: cz - seatHalfZ, rot: rz * 180 / Math.PI };
+      }
       ops.push({ op_type: 'GEOM_INSERT', params: params, outputGuid: guid });
     });
     return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted };
