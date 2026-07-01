@@ -25,6 +25,12 @@ var MODELS = {
               { lease_no: 'L-0003', unit_guid: 'RM_Level_1_4', tenant: 'BP-TEN-6', rent: 1500, term_start: '2026-01', term_end: '2026-12', deposit: 3000, unit_class: 'residential' }]
   },
   PropertyManagement: {
+    // ALPHA DEMO RECORD ONLY (kept, like Strata's below) — the COMPILE-LAYER finding is in ad_tenancy.js:
+    // this table's concept is COVERED by the Building=M_Warehouse mapping (`toWarehouseRow`, AD-TEN0-proven),
+    // not a separate PM_Property table. `units` should be DERIVED (`ad_tenancy.propertyUnits`, AD-TEN6), never
+    // a stored duplicate of the room count. `manager` is a GENUINE NATIVE GAP (no column anywhere in ad_full.db)
+    // — AD-TEN6 proves the nearest native chain (ad_user.c_bpartner_id → ad_user_orgaccess → m_warehouse.ad_org_id
+    // is an access-control fact, not "who manages this building") — flagged, not fabricated onto this row.
     table: 'PM_Property', label: 'Property Management',
     fields: [{ name: 'property', type: 'id' }, { name: 'building_guid', type: 'bim_ref' }, { name: 'units', type: 'number' }, { name: 'manager', type: 'party' }],
     records: [{ property: 'PROP-001', building_guid: 'GUID-BLDG-1', units: 48, manager: 'BP-MGR-1' }]

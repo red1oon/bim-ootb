@@ -21,7 +21,20 @@ var REAL_COLS = {
     'updatedby', 'value', 'm_warehouse_id', 'priorityno', 'isdefault', 'x', 'y', 'z', 'm_locator_uu', 'm_locatortype_id'],
   c_subscription: ['c_subscription_id', 'ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby',
     'updated', 'updatedby', 'name', 'c_bpartner_id', 'm_product_id', 'c_subscriptiontype_id', 'startdate',
-    'paiduntildate', 'isdue', 'renewaldate', 'c_subscription_uu']
+    'paiduntildate', 'isdue', 'renewaldate', 'c_subscription_uu'],
+  // for the PM_Property↔M_Warehouse "manager" gap check (AD-TEN6) — sourced the SAME way as the tables above.
+  ad_user: ['ad_user_id', 'ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby',
+    'name', 'description', 'password', 'email', 'supervisor_id', 'c_bpartner_id', 'processing', 'emailuser',
+    'emailuserpw', 'c_bpartner_location_id', 'c_greeting_id', 'title', 'comments', 'phone', 'phone2', 'fax',
+    'lastcontact', 'lastresult', 'birthday', 'ad_orgtrx_id', 'emailverify', 'emailverifydate', 'notificationtype',
+    'isfullbpaccess', 'c_job_id', 'ldapuser', 'connectionprofile', 'value', 'userpin', 'isinpayroll', 'ad_user_uu',
+    'ismenuautoexpand', 'salt', 'islocked', 'dateaccountlocked', 'failedlogincount', 'datepasswordchanged',
+    'datelastlogin', 'isnopasswordreset', 'isexpired', 'securityquestion', 'answer', 'issaleslead', 'c_location_id',
+    'leadsource', 'leadstatus', 'leadsourcedescription', 'leadstatusdescription', 'c_campaign_id', 'salesrep_id',
+    'bpname', 'bp_location_id', 'isaddmailtextautomatically', 'r_defaultmailtext_id', 'ad_image_id', 'isnoexpire',
+    'issupportuser', 'isbillto', 'isshipto', 'isvendorlead', 'authenticationtype', 'passwordhashalgorithm', 'saltalgorithm'],
+  ad_user_orgaccess: ['ad_user_id', 'ad_org_id', 'ad_client_id', 'isactive', 'created', 'createdby', 'updated',
+    'updatedby', 'isreadonly', 'ad_user_orgaccess_uu']
 };
 function keysSubset(row, table) { return Object.keys(row).every(function (k) { return REAL_COLS[table].indexOf(k) >= 0; }); }
 
@@ -77,6 +90,18 @@ ok('AD-TEN5-strata-different-role-and-type', strataSub.c_bpartner_id === strata.
   'the ONLY differences are the party role (owner vs tenant) and the C_SubscriptionType (quarterly strata fee vs monthly rent) — confirmed distinct real subscription-type rows');
 ok('AD-TEN5-subscriptiontype-shapes', AD.SUBSCRIPTION_TYPES.QUARTERLY_STRATA_FEE.frequency === 3 && AD.SUBSCRIPTION_TYPES.MONTHLY_RENT.frequency === 1,
   'both subscription types are real, distinct native C_SubscriptionType rows (frequency 1 vs 3), not a hardcoded cadence string');
+
+// ---- AD-TEN6: PM_Property↔M_Warehouse check (session backlog item) — `units` is DERIVED (never a stored
+//   duplicate), `manager` is a GENUINE NATIVE GAP (no column anywhere), never fabricated onto the row ----------
+var loc2 = AD.toLocatorRow(rooms[1], wh.m_warehouse_id, seedId);          // 2nd room, SAME warehouse
+var locOther = AD.toLocatorRow(rooms[2], 999, seedId);                    // a room in a DIFFERENT warehouse
+ok('AD-TEN6-units-derived', AD.propertyUnits(wh.m_warehouse_id, [loc, loc2, locOther]) === 2,
+  'propertyUnits COUNTS the real m_locator rows for this warehouse (2 of 3) — never a stored/guessed number');
+ok('AD-TEN6-manager-no-column', REAL_COLS.m_warehouse.indexOf('manager') === -1 && REAL_COLS.m_warehouse.every(function (c) { return c.indexOf('manager') === -1; }),
+  'm_warehouse has NO manager-shaped column (independently sourced) — PropertyManagement.manager cannot compile onto the Warehouse row itself');
+ok('AD-TEN6-manager-chain-real', REAL_COLS.ad_user.indexOf('c_bpartner_id') >= 0 && REAL_COLS.ad_user_orgaccess.indexOf('ad_user_id') >= 0 &&
+  REAL_COLS.ad_user_orgaccess.indexOf('ad_org_id') >= 0 && REAL_COLS.m_warehouse.indexOf('ad_org_id') >= 0,
+  'the nearest native mechanism DOES exist (ad_user.c_bpartner_id -> ad_user_orgaccess(ad_user_id,ad_org_id) -> m_warehouse.ad_org_id) — an access-control chain, not a business "manager" fact; flagged, not built (no live engine needs it)');
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-AD-TENANCY ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));

@@ -33,6 +33,26 @@
 //   advance — the genuine Order-engine dependency. Left null; never fabricate a paid-through date. Declaring
 //   the BIM-set AD_Attachment on the Warehouse is bim_embed.js's job (ERP-side, already built) — NOT
 //   reimplemented here; this module only produces the row shapes, per the "dotted lines only" doctrine.
+//
+//   PM_Property↔M_Warehouse CHECK (2026-07-02, session backlog item, low priority — no live engine depends on
+//   it): `models.js PropertyManagement` (`property`/`building_guid`/`units`/`manager`) is COVERED by the SAME
+//   Building=M_Warehouse mapping above, not a separate table:
+//     • `property`/`building_guid` — already the Warehouse row itself (`toWarehouseRow`, AD-TEN0-proven) + the
+//       existing `bim_embed.js` AD_Attachment (the guid link is NOT a Warehouse column, per the header above).
+//     • `units` — NEVER a stored field (a redundant duplicate of the room count). Derive it: COUNT the
+//       `M_Locator` rows whose `m_warehouse_id` matches (`propertyUnits`, below) — non-invent (compute, don't
+//       store a number that can drift from the real locators).
+//     • `manager` — a GENUINE NATIVE GAP, same treatment as Occupancy's party gap (P-OCC-RETRO): grepped every
+//       table in `ad_full.db` for a `%manager%` column — NONE exists, `M_Warehouse` included. The nearest native
+//       mechanism is an ACCESS-CONTROL chain, not a business fact on the row: `ad_user.c_bpartner_id` (a login
+//       account's linked BPartner) granted `ad_user_orgaccess(ad_user_id, ad_org_id)` on `m_warehouse.ad_org_id`
+//       (every AD row carries `ad_org_id`) — "who has org-access" is a role assignment, not "who manages this
+//       building." NOT built here (no live engine needs it) — flagged, not fabricated into a `manager` column
+//       that doesn't exist. `models.js`'s `PropertyManagement` demo record is UNCHANGED (kept, like Strata's
+//       demo record, as the alpha-existence proof — the compile-layer finding lives here, not there).
+function propertyUnits(m_warehouse_id, locatorRows) {
+  return (locatorRows || []).filter(function (l) { return l && l.m_warehouse_id === m_warehouse_id; }).length;
+}
 'use strict';
 (function () {
 var W = (typeof require !== 'undefined') ? require('./watermark') : (typeof self !== 'undefined' ? self : this).HbaWatermark;
@@ -78,7 +98,7 @@ function toSubscriptionRow(record, m_product_id, subscriptionType, seedId) {
 }
 
 var AD = { SUBSCRIPTION_TYPES: SUBSCRIPTION_TYPES, toWarehouseRow: toWarehouseRow,
-  toLocatorRow: toLocatorRow, toProductRow: toProductRow, toSubscriptionRow: toSubscriptionRow };
+  toLocatorRow: toLocatorRow, toProductRow: toProductRow, toSubscriptionRow: toSubscriptionRow, propertyUnits: propertyUnits };
 if (typeof module === 'object' && module.exports) module.exports = AD;
 else (typeof self !== 'undefined' ? self : this).HbaAdTenancy = AD;
 })();
