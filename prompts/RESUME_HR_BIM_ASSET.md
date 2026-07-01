@@ -24,9 +24,9 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 ## ▶ SESSION CLOSEOUT 2026-07-02 — NEW SESSION START HERE
 
-**This session's work is DONE + PUSHED** (`bim-ootb` `lane/hr-overlay`, worktree `/tmp/wt-hr`, 6 commits,
-`fb29e40` tip, **0 local-only commits** — verified `git rev-list --count origin/lane/hr-overlay..HEAD` = 0).
-**22 witness files, 235 checks total, all GREEN, zero regression** at every step.
+**This session's work is DONE + PUSHED** (`bim-ootb` `lane/hr-overlay`, worktree `/tmp/wt-hr`, 7 commits,
+`eb69978` tip, **0 local-only commits** — verified `git rev-list --count origin/lane/hr-overlay..HEAD` = 0).
+**28 witness files, 244 checks total, all GREEN, zero regression** at every step.
 
 **What shipped (the whole §CRITICAL "Compile not Model" arc, closed end-to-end this session):**
 `ad_payroll.js` (payroll → `hr_process`/`hr_movement`/`hr_concept*` + leave-seam) · `occupancy.js`
@@ -34,21 +34,31 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 `ad_tenancy.js` (Tenancy+Strata → `M_Warehouse`/`M_Locator`/`M_Product`/`C_Subscription`, WMS-address corrected).
 Full detail in `§CRITICAL` below — read it before touching any of these files again.
 
+**P7 ✅ DONE 2026-07-02 (`viewer/hba_payslip.js`, `W-HBA-PAYSLIP 9/9`).** The payslip UI pane, mirroring
+`hba_dashboard.js`'s additive/host-injected/mount-unmount pattern: employee picker + gross/net KPIs + per-concept
+line trace, watermarked — renders `ad_payroll.js`'s already-witnessed `payslip()` reader, no new schema. Added
+`ad_payroll.demoSpec()` (the SAME EMP001/EMP002 baseline already accepted by `witness_ad_payroll.js` AD1, reused
+not reinvented) seeded in `hba_lens.js bindStoreysFromModel` alongside occupancy/attendance/request — payroll has
+no spatial guid to resolve (unlike Occupancy/Asset), so it seeds unconditionally once a building has rooms.
+FAMILY grew 5→6 entries (`witness_family.js` F1/F7 updated); pane routing generalized to an id→global registry
+(`dash`/`payslip`) instead of one hardcoded pane name. **Live chromium smoke** (`cdp_shot.js` against
+`hr_bim_asset/demo/fm_panel.html`): FM drawer → Payslip pane → employee reselect (real click path), `§HBA_PAYSLIP`
+log matches the rendered numbers (EMP001 net=4234, EMP002 net=2870), 0 console errors, screenshot confirms both
+watermarks + the FM pill highlighted. `viewer.html` gained 3 script tags: `rules.js` (was missing entirely —
+`ad_payroll.js` needs it), `ad_payroll.js`, `hba_payslip.js`.
+
 **What's still open, in order:**
-1. **P7 — the payslip UI VIEW itself.** The compile layer (`ad_payroll.js`) is done and gives you `payslip()` —
-   a watermarked, trace-carrying per-employee read — but no viewer PANE was built this session (the original P7
-   ask). Mirror `viewer/hba_dashboard.js`'s pane pattern (additive, host-injected, mount/unmount, data-gated pill
-   in the FM-family drawer per §FM-FAMILY). Not started.
-2. **P8 — the Leave UI surface.** Engine done, native-checked (no retarget needed), payroll seam closed. No
-   panel built. Not started.
-3. **Strata UI / PM_Property mapping** — `PM_Property` (the building-level manager record) hasn't been checked
+1. **P8 — the Leave UI surface.** Engine done, native-checked (no retarget needed), payroll seam closed. No
+   panel built. Not started. Natural next step: same pane pattern as P7, over `leave.js`'s accrual/balance replay.
+2. **Strata UI / PM_Property mapping** — `PM_Property` (the building-level manager record) hasn't been checked
    against `M_Warehouse` yet (likely folds into it directly — a Warehouse row probably covers what PM_Property
    was for). Low priority, no live engine depends on it.
-4. **P9 — §RESEARCH GATE.** Still explicitly paused (user 2026-07-02) — do not start without being asked.
-5. **The Building/Warehouse/Locator/Subscription model is SPECCED, not yet seeded into a live pane or `ad_full.db`
+3. **P9 — §RESEARCH GATE.** Still explicitly paused (user 2026-07-02) — do not start without being asked.
+4. **The Building/Warehouse/Locator/Subscription model is SPECCED, not yet seeded into a live pane or `ad_full.db`
    itself** — `ad_tenancy.js`'s compile functions are witnessed in isolation (pure row-shape proofs); nothing
    writes them into a real sqlite db or wires a viewer pane yet. That's the natural next build step if this
    pillar continues.
+5. **Find↔FM linking (from the Future roadmap addendum)** — not started this session, see the roadmap doc.
 
 ---
 
