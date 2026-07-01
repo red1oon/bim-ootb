@@ -1,0 +1,71 @@
+{
+  "provenance": "EXTRACTED from buildings/warehouse_gardenworld.db 2026-07-01 — warehouse, NO IfcSpace rooms; aisle-as-zone (user choice P3)",
+  "building": "GardenWorld",
+  "renderedGuids": [
+    "101",
+    "102",
+    "50000",
+    "50001",
+    "50002",
+    "50003",
+    "50004",
+    "50005",
+    "50006",
+    "50007",
+    "50008",
+    "AISLE_A",
+    "AISLE_B",
+    "AISLE_C",
+    "GW_SITE_FLOOR",
+    "RACK_FERTILIZER",
+    "RACK_FERTILIZER_T",
+    "RACK_FURNITURE",
+    "RACK_FURNITURE_T",
+    "RACK_HQ",
+    "RACK_HQT",
+    "RACK_STORE_CENTRAL",
+    "RACK_STORE_EAST",
+    "RACK_STORE_NORTH",
+    "RACK_STORE_SOUTH",
+    "RACK_STORE_WEST"
+  ],
+  "aisleZones": [
+    "AISLE_A",
+    "AISLE_B",
+    "AISLE_C"
+  ],
+  "aisleMembers": {
+    "AISLE_A": [
+      "AISLE_A",
+      "RACK_HQ",
+      "101",
+      "RACK_HQT",
+      "50000"
+    ],
+    "AISLE_B": [
+      "AISLE_B",
+      "RACK_FURNITURE",
+      "50004",
+      "RACK_FURNITURE_T",
+      "50008",
+      "RACK_FERTILIZER",
+      "50001",
+      "RACK_FERTILIZER_T",
+      "50007"
+    ],
+    "AISLE_C": [
+      "AISLE_C",
+      "RACK_STORE_CENTRAL",
+      "102",
+      "RACK_STORE_NORTH",
+      "50002",
+      "RACK_STORE_SOUTH",
+      "50003",
+      "RACK_STORE_EAST",
+      "50005",
+      "RACK_STORE_WEST",
+      "50006"
+    ]
+  },
+  "roomsRenderedDirectly": 3
+}

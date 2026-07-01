@@ -65,7 +65,11 @@ var ICONS = {
   // "Z" per-page timeline — three small overlapping dots, the MIDDLE one filled.
   docHist:   { svg: '<circle cx="8" cy="12" r="3"/><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="16" cy="12" r="3"/>', trl: null, key: 'z', desc: 'Page history' },
   // Clear history (bomb) — Lucide bomb (lives in the W long-press drawer, NO keyboard shortcut).
-  bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' }
+  bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' },
+  // HR_BIM_Asset — ONE "FM / Operate" family icon (the 6 lenses now live in a drawer owned by hba_lens.js,
+  // which carries its own per-lens icons). Lucide 'building-2' = the operate-phase / facilities cockpit.
+  fmCockpit: { svg: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>', trl: null, key: null, desc: 'FM / Operate' },
+  barChart:  { svg: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: null, key: null, desc: 'Occupancy dashboard' }
 };
 
 // HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
@@ -1146,6 +1150,16 @@ function setupPanels(A) {
         isActive: function() { return !!(window.WHWalk && WHWalk.isOpen && WHWalk.isOpen()); },
         children: [ { name: 'Route over locators (walk order)' }, { name: 'Fly-to next bin, FIND-lens depth' }, { name: 'Scan bin QR / type code' }, { name: 'Signed pick group per bin' } ] },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
+      // HR_BIM_Asset — ONE "FM / Operate" family pill (RESUME_HR_BIM_ASSET.md §FM-FAMILY, user 2026-07-01).
+      // De-clutter: the 6 HBA lenses (Tenancy folded into Occupancy = de-conflate) live under one pill that opens
+      // a wake-aware drawer (Occupancy · Presence · Unit class · Assets/IoT · Dashboard). DATA-GATED like whwalk:
+      // pill:false until viewer/hba_lens.js detects ≥1 lens with data in the loaded building. The drawer logic +
+      // per-lens greying live in hba_lens.js (the additive HBA module) — panels.js carries ONLY this one entry,
+      // keeping the shared bar (and the Teams-adjacent file) minimal. Inert if hr_bim_asset/* did not load.
+      { id: 'hbaFM',      name: 'FM / Operate',     pill: false, icon: I.fmCockpit.svg,
+        fn: function() { if (window.HBALens && HBALens.openFamilyDrawer) HBALens.openFamilyDrawer(A); },
+        isActive: function() { return !!(window.HBALens && HBALens.familyActive && HBALens.familyActive()); },
+        children: [ { name: 'Operate-phase (7D) cockpit — one model, lenses each answering ONE question' }, { name: 'Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard' }, { name: 'Wake-aware: only lenses with data in THIS building are enabled (others greyed)' }, { name: 'All off one signed op-log; toggle a lens off restores the model' } ] },
       { id: 'measure',    name: 'Measure',         key: 'm', keepOpen: true, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },

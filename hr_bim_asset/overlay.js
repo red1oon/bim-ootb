@@ -1,0 +1,134 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// ⚠ DO NOT REMOVE — HR_BIM_ASSET SPATIAL OVERLAY (§SPATIAL-VIEW / §7D). The 7D cockpit: color the model
+//   by HBA state. ZERO-IMPACT by design — touches the viewer ONLY through the MeshPort seam (no edits to
+//   scene/picking/streaming). ZERO-CLUTTER by design — tints only linked guids, ghosts the rest, ONE mode
+//   at a time, state-as-color (detail on hover). Pure + deterministic. Read log after run.
+'use strict';
+// browser-safe imports (see models.js): node → require; browser <script> → self.Hba* globals.
+var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
+var M = _r ? require('./models') : _g.HbaModels;
+var B = _r ? require('./binding') : _g.HbaBinding;
+
+// color ladder — state-encoding (no labels needed). green/amber/red/grey + ghost.
+var COLORS = { occupied: '#2e7d32', vacant: '#9e9e9e', expiring: '#f9a825', unavailable: '#8e24aa',
+               ok: '#2e7d32', due: '#f9a825', overdue: '#c62828', ghost: '#dddddd' };
+
+// PRESENCE density ramp (§T&A SLICE-2) — headcount INTENSITY (blue, the HBA presence band). The live
+// "density-dots" become a headcount-by-zone heat: 1 → low, 2–4 → med, 5+ → high. Display mapping only;
+// the headcount itself is a REAL distinct-employee count from the signed log (never fabricated).
+var PRESENCE = { low: '#90caf9', med: '#1976d2', high: '#0d47a1' };
+function presenceBucket(n) { return n >= 5 ? 'high' : n >= 2 ? 'med' : 'low'; }
+
+function monthDiff(from, to) { var a = from.split('-'), b = to.split('-'); return (b[0] - a[0]) * 12 + (b[1] - a[1]); }
+
+// compute the overlay PLAN for ONE mode — LINKED guids only (sparse by construction).
+// opts.knownGuids (optional) = the building's real guid set (room fixture / APP.guidMap). When supplied it
+// is the NON-INVENT GATE: a record tints a unit ONLY when its guid resolves to a real mesh; non-matching
+// guids are collected in `unlinked` (honest — never tinted, never fabricated). Absent → no gate (legacy path).
+function computeOverlay(mode, period, opts) {
+  opts = opts || {}; var horizon = opts.expiringMonths || 2, tints = {}, unlinked = [], legend;
+  var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  function place(guid, entry) {
+    if (gate && !gate.has(guid)) { unlinked.push(guid); return; }   // honest un-linked: no tint
+    tints[guid] = entry;
+  }
+  if (mode === 'tenancy') {
+    M.records('Tenancy').forEach(function (r) {
+      var state = !r.tenant ? 'vacant' : (monthDiff(period, r.term_end) <= horizon ? 'expiring' : 'occupied');
+      place(r.unit_guid, { state: state, color: COLORS[state], detail: 'Lease ' + r.lease_no + ' · ' + (r.tenant || 'VACANT') + ' · ends ' + r.term_end });
+    });
+    legend = ['occupied', 'vacant', 'expiring'];
+  } else if (mode === 'maintenance') {
+    M.records('Asset').forEach(function (r) {
+      var d = monthDiff(period, r.next_due), state = d > 0 ? 'ok' : d === 0 ? 'due' : 'overdue';
+      place(r.bim_guid, { state: state, color: COLORS[state], detail: r.asset + ' · ' + r.category + ' · due ' + r.next_due + ' · ' + r.personnel });
+    });
+    legend = ['ok', 'due', 'overdue'];
+  } else throw new Error('unknown overlay mode: ' + mode);
+  return { mode: mode, period: period, tints: tints, linked: Object.keys(tints), unlinked: unlinked,
+           legend: legend.map(function (s) { return { state: s, color: COLORS[s] }; }) };
+}
+
+// PRESENCE overlay plan (§T&A SLICE-2) from attendance.presenceByZone rows ([{zone, headcount}]). SAME plan
+// shape as computeOverlay → applyOverlay reuses the EXISTING MeshPort/density seam (zero new viewer-core).
+// NON-INVENT: opts.knownGuids GATES — a zone tints ONLY when it resolves to a real mesh; un-located zones go
+// to `unlinked`, never tinted, never fabricated. Zero/empty headcount shows nothing. Pure + deterministic.
+function computePresence(rows, opts) {
+  opts = opts || {}; var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  var tints = {}, unlinked = [];
+  (rows || []).forEach(function (r) {
+    if (!r || !r.zone || !r.headcount) return;                     // nothing present → nothing to show
+    if (gate && !gate.has(r.zone)) { unlinked.push(r.zone); return; }  // honest un-linked: no tint
+    var b = presenceBucket(r.headcount);
+    tints[r.zone] = { state: 'presence_' + b, color: PRESENCE[b], headcount: r.headcount,
+                      detail: 'Zone ' + r.zone + ' · ' + r.headcount + ' present' };
+  });
+  return { mode: 'presence', period: opts.period || null, tints: tints, linked: Object.keys(tints),
+           unlinked: unlinked, legend: [ { state: '1', color: PRESENCE.low }, { state: '2-4', color: PRESENCE.med }, { state: '5+', color: PRESENCE.high } ] };
+}
+
+// OCCUPANCY overlay plan (Resource-Assignment slice) from occupancy.lensRows ([{zone, state, party, to}]).
+// SAME plan shape as computeOverlay → applyOverlay reuses the EXISTING MeshPort seam. Unlike tenancy/presence
+// this is DENSE on purpose — vacant rooms are tinted grey (the availability picture wants the whole floor).
+// NON-INVENT: opts.knownGuids GATES — a room tints ONLY when it resolves to a real mesh; else unlinked.
+function computeOccupancy(rows, opts) {
+  opts = opts || {}; var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  var tints = {}, unlinked = [];
+  (rows || []).forEach(function (r) {
+    if (!r || !r.zone) return;
+    if (gate && !gate.has(r.zone)) { unlinked.push(r.zone); return; }
+    var st = r.state || 'vacant';
+    tints[r.zone] = { state: st, color: COLORS[st] || COLORS.vacant, party: r.party || null,
+      detail: 'Room ' + r.zone + ' · ' + st + (r.party ? ' · ' + r.party : '') + (r.to ? ' · to ' + r.to : '') };
+  });
+  return { mode: 'occupancy', period: opts.period || null, tints: tints, linked: Object.keys(tints), unlinked: unlinked,
+    legend: ['occupied', 'vacant', 'expiring', 'unavailable'].map(function (s) { return { state: s, color: COLORS[s] }; }) };
+}
+
+// apply via the MeshPort SEAM only. port = { allGuids(), setTint(guid,color), setGhost(guid), restoreAll() }.
+// §REAL-BIND/§INSTANCED-TINT — drive setTint from the LINKED ZONE list, NOT from allGuids ∩ linked. A linked
+// zone is often an un-rendered IfcSpace ROOM whose guid never appears in allGuids() (the rendered set), so the
+// old `allGuids().forEach → tint if linked` intersection was EMPTY for rooms → nothing painted (the live
+// tintedMeshes=0). The port resolves a zone to its real mesh(es): the zone's own mesh if rendered, else its
+// rendered contained members (instanced/batched slots included). Ghost the rest by contrast (opt-in / no-op off).
+function applyOverlay(port, plan) {
+  port.restoreAll();                                    // clear any prior mode FIRST (no stacked colors)
+  var linked = {}; plan.linked.forEach(function (g) { linked[g] = true; });
+  plan.linked.forEach(function (g) { port.setTint(g, plan.tints[g].color); }); // tint each linked zone (→ members)
+  port.allGuids().forEach(function (g) { if (!linked[g]) port.setGhost(g); });  // ghost the rest (zero residue off)
+  return plan.linked.length;
+}
+function clearOverlay(port) { port.restoreAll(); }       // toggle OFF = full restore, zero residue
+
+// CLASS palette (§CLASS facet, user 2026-07-01) — building-USE class of a unit. Distinct hues per class so
+// residential/commercial/office read at a glance; unclassified = grey (honest absence, never guessed).
+var CLASS = { residential: '#43a047', commercial: '#fb8c00', office: '#3949ab', unclassified: '#9e9e9e' };
+function classBucket(c) { return CLASS.hasOwnProperty(c) ? c : 'unclassified'; }
+
+// CLASS overlay plan from rows [{zone, class}] — color each LINKED unit by its use-class. SAME plan shape as
+// computeOverlay → applyOverlay reuses the EXISTING MeshPort seam (zero new viewer-core). NON-INVENT: the class
+// is taken VERBATIM from the row (a declared lease datum or a real model predefined_type), never inferred; an
+// unknown/missing class → 'unclassified' (grey), never a fabricated label. opts.knownGuids GATES (unresolved
+// guid → unlinked, never tinted). opts.classFilter (optional) → the FILTER facet: tint ONLY units of that
+// class, leaving the rest of the model untouched (still non-invent — a filter, not a fabrication).
+function computeClassOverlay(rows, opts) {
+  opts = opts || {}; var gate = opts.knownGuids ? B.knownGuidSet(opts.knownGuids) : null;
+  var filter = opts.classFilter ? classBucket(opts.classFilter) : null, tints = {}, unlinked = [];
+  (rows || []).forEach(function (r) {
+    if (!r || !r.zone) return;
+    var c = classBucket(r.class);
+    if (filter && c !== filter) return;                              // FILTER: skip other classes
+    if (gate && !gate.has(r.zone)) { unlinked.push(r.zone); return; }   // honest un-linked: no tint
+    tints[r.zone] = { state: 'class_' + c, color: CLASS[c], unitClass: c, detail: 'Unit ' + r.zone + ' · ' + c };
+  });
+  return { mode: 'class', period: opts.period || null, classFilter: filter, tints: tints,
+           linked: Object.keys(tints), unlinked: unlinked,
+           legend: Object.keys(CLASS).map(function (k) { return { state: k, color: CLASS[k] }; }) };
+}
+
+var O = { COLORS: COLORS, PRESENCE: PRESENCE, CLASS: CLASS, presenceBucket: presenceBucket, classBucket: classBucket,
+          computeOverlay: computeOverlay, computePresence: computePresence, computeOccupancy: computeOccupancy,
+          computeClassOverlay: computeClassOverlay, applyOverlay: applyOverlay, clearOverlay: clearOverlay };
+if (typeof module === 'object' && module.exports) module.exports = O;
+else (typeof self !== 'undefined' ? self : this).HbaOverlay = O;
