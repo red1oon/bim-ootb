@@ -49,15 +49,21 @@ var MODELS = {
   },
   Occupancy: {
     table: 'S_ResourceAssignment', label: 'Room Occupancy / Availability', doc_type: 'RESOURCE_ASSIGNMENT',
-    // iDempiere Resource-Assignment: the ROOM is a Resource (IS-A M_Product); an assignment books it over a
-    // date range. This is the AD shape only — the LIVE availability is a REPLAY of occupancy.js's signed
-    // ASSIGN/RELEASE/UNAVAIL op-log over the 14 REAL HHS rooms. assign_to=null → open-ended.
-    fields: [{ name: 'assignment_no', type: 'id' }, { name: 's_resource', type: 'bim_ref' }, { name: 'resource_product', type: 'product' },
-             { name: 'party', type: 'party' }, { name: 'assign_from', type: 'period' }, { name: 'assign_to', type: 'period' }, { name: 'qty', type: 'number' }],
-    // s_resource = a REAL HHS IfcSpace room (≈ Level 1 R1); the occupancy graph over the other rooms is seeded
+    // CORRECTED 2026-07-02 (§CRITICAL "Compile not Model", P-OCC-RETRO) — field names below are now the REAL
+    // s_resourceassignment columns, verified against build/erp/ad_full.db `PRAGMA table_info`, not paraphrases.
+    // The FK direction is Product→Resource (m_product.s_resource_id, verified — the earlier "Room IS-A
+    // M_Product" here had it backwards). s_resourceassignment natively has NO party/tenant column — `party` is
+    // a carry-along for the caller's own use (it threads onto C_Order/C_Invoice.c_bpartner_id when a real lease
+    // exists), never a real column on this table (occupancy.js `toResourceAssignmentRow` enforces this — see its
+    // header + W-HBA-AD-OCC). The LIVE availability is a REPLAY of occupancy.js's signed ASSIGN/RELEASE/UNAVAIL
+    // op-log over the 14 REAL HHS rooms; this record is a static single-record showcase only. assigndateto=null → open-ended.
+    fields: [{ name: 's_resourceassignment_id', type: 'id' }, { name: 's_resource_id', type: 'bim_ref' },
+             { name: 'party', type: 'party' }, { name: 'assigndatefrom', type: 'period' }, { name: 'assigndateto', type: 'period' },
+             { name: 'qty', type: 'number' }, { name: 'isconfirmed', type: 'flag' }],
+    // s_resource_id = a REAL HHS IfcSpace room (≈ Level 1 R1); the occupancy graph over the other rooms is seeded
     // by occupancy.demoSeed(rooms) from fixtures/hhs_rooms.json (NON-INVENT: vacancy = absence of an assignment).
-    records: [{ assignment_no: 'RA-0001', s_resource: 'RM_Level_1_1', resource_product: 'ROOM-RM_Level_1_1',
-                party: 'BP-TEN-1', assign_from: '2026-01', assign_to: '2026-12', qty: 1 }]
+    records: [{ s_resourceassignment_id: 'RA-0001', s_resource_id: 'RM_Level_1_1',
+                party: 'BP-TEN-1', assigndatefrom: '2026-01', assigndateto: '2026-12', qty: 1, isconfirmed: 'Y' }]
   }
 };
 

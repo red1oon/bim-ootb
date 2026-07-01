@@ -177,9 +177,23 @@ function demoSeed(rooms) {
   return { log: log, rooms: g };
 }
 
+// COMPILE (not model) — project a signed ASSIGN op onto the REAL native `s_resourceassignment` shape
+// (prompts/RESUME_HR_BIM_ASSET.md §CRITICAL, P-OCC-RETRO). Columns verified against build/erp/ad_full.db
+// `PRAGMA table_info(s_resourceassignment)` — s_resource_id/name/description/assigndatefrom/assigndateto/
+// qty/isconfirmed are the REAL columns; there is NO party/tenant column on this table natively (verified —
+// the full column list has none), so `party` is carried alongside for the caller to thread onto the
+// commercial document (C_Order/C_Invoice.c_bpartner_id) instead, never bolted onto the assignment row itself.
+function toResourceAssignmentRow(assignOp, seedId) {
+  if (!assignOp || assignOp.verb !== 'ASSIGN') return null;
+  var p = assignOp.params;
+  return { s_resourceassignment_id: seedId ? seedId() : 1, s_resource_id: assignOp.target,
+    name: assignOp.target, description: 'ASSIGN ' + p.party + ' ' + p.from + (p.to ? ('..' + p.to) : ''),
+    assigndatefrom: p.from, assigndateto: p.to, qty: 1, isconfirmed: 'Y', _party: p.party };
+}
+
 var O = { assign: assign, release: release, unavailable: unavailable, availability: availability,
   occupancyAt: occupancyAt, resources: resources, lensRows: lensRows, pivot: pivot, linkRequest: linkRequest,
-  summary: summary, fingerprint: fingerprint, demoSeed: demoSeed };
+  summary: summary, fingerprint: fingerprint, demoSeed: demoSeed, toResourceAssignmentRow: toResourceAssignmentRow };
 if (typeof module === 'object' && module.exports) module.exports = O;
 else (typeof self !== 'undefined' ? self : this).HbaOccupancy = O;
 })();
