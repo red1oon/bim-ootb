@@ -97,9 +97,15 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   screenshots `img/hba_occupancy_live.png` (HHS, 3 storeys) + `img/hba_gardenworld_aisles.png` (warehouse
   aisle-zones). All image/cross-link refs verified. Committed on bim-compiler branch **`docs/hba-guide-rewrite`**
   (pushed); **NOT gh-deployed** — review + `safe_gh_deploy.sh` when happy.
-- **P5 — ERP INTEGRATION / SPATIAL-ERP DOC (user).** Document how Viewer + ERP + HR integrate over ONE building +
-  ONE signed op-log so **ERP users appreciate the delightful, find-everything, no-redundancy UI** (the FM family
-  pill = one entry not six; wake-aware greying; records on geometry). Tie into `docs/SpatialERP_OOTB.md`.
+- **P5 — ERP INTEGRATION / SPATIAL-ERP DOC. ✅ DONE+DEPLOYED 2026-07-01.** New **`docs/SpatialERPIntegration.md`**
+  (bim-compiler): "One Building, One Log, Three Surfaces" — the shared substrate (one model + one signed
+  `kernel_ops` log), the three no-overlap surfaces (Viewer=spatial/where · ERP=money+docs/how-much · HR=people/who),
+  the find-everything-no-clutter UX (one FM pill not six · wake-aware greying · records on geometry), one lease
+  threaded through all three, the non-invent guid join, boots-standalone/lights-up-with-ERP. Added to mkdocs nav
+  (Go Deeper) + reciprocal cross-link from `SpatialERP_OOTB.md`. Reuses the real lens screenshots. On branch
+  `docs/hba-guide-rewrite` (pushed). **DEPLOYED LIVE** via `scripts/safe_gh_deploy.sh` (guard PASS, blessed benign
+  `.nojekyll`; live 184→198 files, superset): P4+P5 both live 200 — `https://red1oon.github.io/BIMCompiler/
+  HRBIMAssetGuide/` + `/SpatialERPIntegration/` (+ images 200), all 7 canaries 200.
 - **P6 — AVATAR LOD "WOW" (user idea, for a session once P1–P2 land).** Little human avatars in each room when
   zoomed in; **hover → AD_User / `C_BPartner.image`** (plan an image field like `M_Product.image` if absent);
   proximity-based tips that appear as you draw nearer; reduce to **dots / minified avatars** when far (an LOD
