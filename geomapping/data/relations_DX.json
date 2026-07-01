@@ -8130,6 +8130,28 @@
    "storey": "Roof"
   }
  },
+ "storeys": {
+  "Level 1": {
+   "elevation": 0.0,
+   "guid": "0o8nNAbaT5OQLV8C9mNFXU",
+   "src": "internal/UNMERGED/Ifc2x3_Duplex_MEP.ifc"
+  },
+  "Level 2": {
+   "elevation": 3.100000000000372,
+   "guid": "0o8nNAbaT5OQLV8C9mNFlV",
+   "src": "internal/UNMERGED/Ifc2x3_Duplex_MEP.ifc"
+  },
+  "Roof": {
+   "elevation": 6.000000000000384,
+   "guid": "0o8nNAbaT5OQLV8C9mLSZW",
+   "src": "internal/UNMERGED/Ifc2x3_Duplex_MEP.ifc"
+  },
+  "T/FDN": {
+   "elevation": -1.25,
+   "guid": "1xS3BCk291UvhgP2dvNsgp",
+   "src": "internal/sources/Ifc2x3_Duplex_Architecture.ifc"
+  }
+ },
  "wall_connects": [
   {
    "a": "0dxE1Sy6nDqfpDb5vIMN_Z",

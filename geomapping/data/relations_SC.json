@@ -31762,6 +31762,38 @@
    "storey": "00 begane grond"
   }
  },
+ "storeys": {
+  "-1 fundering": {
+   "elevation": -1000.0,
+   "guid": "1Q6PG1Po9C5hoyWBnJmRby",
+   "src": "internal/sources/Ifc2x3_SampleCastle.ifc"
+  },
+  "00 begane grond": {
+   "elevation": 0.0,
+   "guid": "2SWZMQPyD9pfT9q87pgXa1",
+   "src": "internal/sources/Ifc2x3_SampleCastle.ifc"
+  },
+  "01 eerste verdieping": {
+   "elevation": 3000.0,
+   "guid": "0u4wgLe6n0ABVaiXyikbkA",
+   "src": "internal/sources/Ifc2x3_SampleCastle.ifc"
+  },
+  "02 tweede verdieping": {
+   "elevation": 6000.0,
+   "guid": "0wPqxf9KX0nPDjgzD8mXwD",
+   "src": "internal/sources/Ifc2x3_SampleCastle.ifc"
+  },
+  "03 derde verdieping": {
+   "elevation": 9000.0,
+   "guid": "2Hyat1fsPEGfyYPyim12A1",
+   "src": "internal/sources/Ifc2x3_SampleCastle.ifc"
+  },
+  "04 dak": {
+   "elevation": 12000.0,
+   "guid": "0oaSdYqubDuuJF4k9AqHjC",
+   "src": "internal/sources/Ifc2x3_SampleCastle.ifc"
+  }
+ },
  "wall_connects": [
   {
    "a": "0$RTdmvvT3l9YpswDBjUUh",
