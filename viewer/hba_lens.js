@@ -375,12 +375,18 @@
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------
   // a real binding in the loaded building, then rebuild the pill. No data → icons stay hidden (no clutter).
+  // §HBA_GATE_FIX (RESUME_OVERLAY_PILL_ICONS.md) — geometry streams incrementally; guidMap goes non-empty
+  // long before every element has arrived (bbox-first flush order), so gating on "any keys" caught the model
+  // half-streamed and settled the family list too early (observed: only [dash] available, FM never lit).
+  // A.streaming is the real stream-complete signal (viewer/streaming.js streamTick flips it false once the
+  // queue drains) — wait for it before locking in availableLenses(), same non-invent gate, just not premature.
   var _tries = 0, _poll = setInterval(function () {
     _tries++;
     var A = G.APP || G.A;
     // guidMap fills as geometry streams — wait for it (and for the HBA engine to have loaded).
     var hasMesh = A && A.guidMap && Object.keys(A.guidMap).length > 0;
     if (!ready() || !hasMesh) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — engine/guidMap not ready'); } return; }
+    if (A.streaming) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — still streaming'); } return; }
     clearInterval(_poll);
     bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
     // ONE family pill (hbaFM) — flip it on when ANY lens has data (familyHasData = the wake-aware gate). The
