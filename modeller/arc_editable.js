@@ -108,7 +108,16 @@
   // building's mesh substrate lives in its own file (§GEO-SPLIT, Terminal_geo.db vs Terminal_meta.db). Defaults
   // to `db` — every existing single-file call site (SampleHouse/Duplex/SampleCastle/SampleCastle-ARC, every
   // pure-node witness) is byte-identical, unchanged.
-  function buildSeedOps(db, geoDb) {
+  // opts (OPTIONAL, §GEOMAP-WIRE audit channel — bim-compiler RESUME_IFC_BOM_GEOMAPPING.md §WIRE-SPEC):
+  //   opts.classify = { validate(cls, dims3) } — injected geomap validator (GeomapBridge.gmValidate curried
+  //   with the building key). AUDIT-FIRST: this NEVER touches op params/order/count — witness W-GEOMAP-WIRE W1
+  //   proves ops byte-identical with/without it. Results land in the returned `geomap` block + §GEOMAP-VALIDATE
+  //   logs only. Absent (every pre-existing caller + pure-node witnesses) ⇒ zero new code paths run.
+  function buildSeedOps(db, geoDb, opts) {
+    opts = opts || {};
+    var gm = opts.classify && typeof opts.classify.validate === 'function' ? opts.classify : null;
+    var gmAudit = gm ? { checked: 0, flagged: [], noBand: 0 } : null;
+    var GM_FLAG_LOG_CAP = 20; // Terminal-scale seeds: log the first N flags individually, summarize the rest
     var hasDisc = _hasDiscipline(db);
     var where = hasDisc ? "m.discipline='ARC'"
       : '(' + ARC_CLASSES.map(function (c) { return "m.ifc_class='" + c + "'"; }).join(' OR ') + ')';
@@ -144,6 +153,23 @@
           console.error(TAG + ' §GEOM-HARDFAIL guid=' + guid + ' class=' + cls + ' no real geometry — skipped, not rendered');
           skipped.push({ guid: guid, ifc_class: cls, reason: 'no-real-geometry' }); return;
         }
+      }
+      // §GEOMAP-VALIDATE (audit-only — see opts.classify contract above): own-class measured-band check on the
+      // MEASURED dims. tier 2 ⇒ counted (in-band or flagged with z + why); tier 0 ⇒ noBand (class has no
+      // measured band / building has no rules — honest refuse, NOT a flag). Never touches the op below.
+      if (gm) {
+        var gv = null;
+        try { gv = gm.validate(cls, [bx, by, bz]); } catch (e) { gv = null; }
+        if (gv && gv.tier === 2) {
+          gmAudit.checked++;
+          if (!gv.class_or_fact.in_band) {
+            gmAudit.flagged.push({ guid: guid, ifc_class: cls, z: gv.class_or_fact.z, why: gv.why });
+            if (gmAudit.flagged.length <= GM_FLAG_LOG_CAP) {
+              _log(TAG + ' §GEOMAP-VALIDATE FLAG guid=' + guid + ' class=' + cls + ' z=' + gv.class_or_fact.z +
+                ' dims=' + bx.toFixed(3) + 'x' + by.toFixed(3) + 'x' + bz.toFixed(3) + 'm outside own-class measured band');
+            }
+          }
+        } else gmAudit.noBand++;
       }
       var bbox = [-bx / 2, bx / 2, -by / 2, by / 2, -bz / 2, bz / 2];   // MEASURED local box, centred in x/y/z (kept
       // on every op regardless of match — audit trail: what was actually measured, vs what mesh got stamped).
@@ -201,8 +227,18 @@
       }
       ops.push({ op_type: 'GEOM_INSERT', params: params, outputGuid: guid });
     });
+    if (gmAudit) {
+      var gmRate = gmAudit.checked ? Math.round(1000 * (gmAudit.checked - gmAudit.flagged.length) / gmAudit.checked) / 1000 : null;
+      if (gmAudit.flagged.length > GM_FLAG_LOG_CAP) {
+        _log(TAG + ' §GEOMAP-VALIDATE ...' + (gmAudit.flagged.length - GM_FLAG_LOG_CAP) + ' more flag(s) suppressed (all carried in the returned geomap.flagged)');
+      }
+      _log(TAG + ' §GEOMAP-VALIDATE summary checked=' + gmAudit.checked + ' flagged=' + gmAudit.flagged.length +
+        ' noBand=' + gmAudit.noBand + ' inBandRate=' + gmRate +
+        ' (audit-only: op substrate untouched; measured own-class in-band expectation ~93-96%, see geomap_rules.json)');
+      gmAudit.inBandRate = gmRate;
+    }
     return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted,
-      geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, geomTable: geomIdx.table };
+      geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, geomTable: geomIdx.table, geomap: gmAudit };
   }
 
   // buildBridge(ops, ids) — ops[i] committed as kernel_ops row ids[i] (== its featureId). Build both directions
@@ -233,7 +269,9 @@
   async function seedArc(buildingDb, io) {
     io = io || {};
     var name = io.building || 'building';
-    var built = buildSeedOps(buildingDb, io.geoDb);
+    // io.classify (OPTIONAL, §GEOMAP-WIRE): threaded straight through to buildSeedOps's audit channel —
+    // absent for every pre-existing caller, and provably incapable of altering the committed ops (W1).
+    var built = buildSeedOps(buildingDb, io.geoDb, io.classify ? { classify: io.classify } : undefined);
     if (io.registerGeometry && built.geomAssets.length) {
       try { io.registerGeometry(built.geomAssets); } catch (e) { _log(TAG + ' §REAL-GEOM registerGeometry failed ' + (e && e.message)); }
     }
@@ -262,7 +300,8 @@
     _log(TAG + ' §GEOM-HARDFAIL total=' + built.hardfail + ' of ' + (built.ops.length + built.hardfail) +
       ' (geomTable=' + (built.geomTable || 'none') + ' realResolved=' + built.realResolved + '/' + built.ops.length + ')');
     return { committed: ids.length, skipped: built.skipped.length, ids: ids, bridge: bridge, ops: built.ops,
-      matched: built.matched, unmatched: built.unmatched, tilted: built.tilted, realResolved: built.realResolved, hardfail: built.hardfail };
+      matched: built.matched, unmatched: built.unmatched, tilted: built.tilted, realResolved: built.realResolved, hardfail: built.hardfail,
+      geomap: built.geomap };
   }
 
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }

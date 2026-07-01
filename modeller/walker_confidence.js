@@ -97,9 +97,26 @@ function wcEce(samples, confFn, nBins) {
   return wcReliability(mapped, nBins).ece;
 }
 
+// ── §GEOMAP-WIRE (bim-compiler RESUME_IFC_BOM_GEOMAPPING.md §WIRE-SPEC deliverable 3): per-element
+// Tier-1/2/0 confidence + why from a ClassifyGeom/GeomapBridge result — the REAL, measured classification
+// signal walkers can consume instead of each inventing its own heuristic. This is a SEPARATE channel from
+// the guard-margin path above: it must NEVER silently replace the calibrated wcCalibrated display (that
+// number is RosettaStone-earned; this one is the geomap artifact's own measured rate). Mapping is a pure
+// read-through of what each tier already measured — nothing asserted here:
+//   tier 1 → conf 1.0  (relational read-through; ground-truth agreement measured 100%, witness_geomap_tier1.py)
+//   tier 2 → the result's OWN confidence (the building's measured split-half top-1 / in-band rate)
+//   tier 0 → conf 0    (honest refuse — carries the refusal's why, never a fabricated number)
+function wcGeomapSignal(classifyResult) {
+  if (!classifyResult) return { conf: 0, tier: 0, why: 'no classify result — refusing to fabricate a confidence' };
+  var t = classifyResult.tier | 0;
+  var conf = t === 1 ? 1.0 : (t === 2 ? _clamp01(classifyResult.confidence) : 0);
+  return { conf: conf, tier: t, why: classifyResult.why || 'result carried no why (should not happen — ClassifyGeom always cites)' };
+}
+
 var _wcApi = {
   WC_CALIBRATION: WC_CALIBRATION, wcCalibrated: wcCalibrated,
-  wcRaw: wcRaw, wcReliability: wcReliability, wcFitIsotonic: wcFitIsotonic, wcEce: wcEce
+  wcRaw: wcRaw, wcReliability: wcReliability, wcFitIsotonic: wcFitIsotonic, wcEce: wcEce,
+  wcGeomapSignal: wcGeomapSignal
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = _wcApi;
 if (typeof window !== 'undefined') Object.keys(_wcApi).forEach(function (k) { window[k] = _wcApi[k]; });
