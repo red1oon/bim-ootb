@@ -13,14 +13,14 @@ integrated. **Read the log after every run.** Honour this preamble until `✅ DO
 ---
 
 ## §RESUME — START HERE (new session)
-**Status:** F1 ✅ · F4 ✅ · F5 ✅ (folded). **Outward steps ✅ ALL DONE 2026-07-01** (PR #10 merged into
-`docs/hba-guide-rewrite` @ `a5afeae45`, deployed live, `lane/modeller-e2e-suite-2` folded via PR #588 — see
-`## MERGE / DEPLOY`). **ONE substantive gap remains — §F2**: bring *all* guide frames to a single polished 2×
-standard (spec'd below with its decisions + work-list).
+**Status: ALL GAPS CLOSED 2026-07-01.** F1 ✅ · F2 ✅ · F4 ✅ · F5 ✅. Outward steps ✅ ALL DONE too (PR #10
+merged into `docs/hba-guide-rewrite` @ `a5afeae45`, deployed live, `lane/modeller-e2e-suite-2` folded via
+PR #588, `lane/modeller-guide-f2` folded via PR #590 — see `## MERGE / DEPLOY`). **Nothing left on this
+spec** — if picking this up again, it's for a NEW gap, not one of F1/F2/F4/F5.
 
-**First moves, in order:**
-1. **Sync + locate.** PR #10 is merged (`docs/hba-guide-rewrite` tip `a5afeae45`) — branch §F2 work off that
-   tip. Witness edits already landed via PR #588 (bim-ootb `main`).
+**If a new gap surfaces, first moves:**
+1. **Sync + locate.** `docs/hba-guide-rewrite` tip `a5afeae45` on bim-compiler has the current live guide;
+   bim-ootb `main` has all the witness `shot()` instrumentation (PR #588 + #590).
 2. **Study the two DONE examples as the template.** The `shot()` + crop pattern in
    `witness_e2e_{move,walk}.js` (bim-ootb `lane/modeller-e2e-suite-2`) → produced `docs/img/modeller/`
    `move-gizmo.png` + `walk-fixtures.png` (2× DPR, canvas-cropped to 1360×1080). §F2 generalises exactly this
@@ -60,8 +60,7 @@ standard (spec'd below with its decisions + work-list).
 
 ## §F — the polish gaps to close (each is one bounded task)
 
-**Order:** F1 ✅ · F4 ✅ · F5 ✅ (folded). **Only §F2 remains** — and F4 already proved the whole capture+crop
-pattern on 2 frames, so §F2 is "do that for the other ~18, to ONE standard." It needs the app/harness.
+**Order:** F1 ✅ · F2 ✅ · F4 ✅ · F5 ✅ — **all closed 2026-07-01.**
 
 > **Refs are pinned to 2026-07-01.** Branch names + PR numbers below (`lane/modeller-e2e-suite`, PR #584/#585,
 > `docs/modeller-guide-integrate` = PR #10) may have merged/renamed since. If anything looks stale, re-check
@@ -91,10 +90,20 @@ The guide had per-tool click-steps but not the outer HR-guide frame. Add:
 > Troubleshooting; every Troubleshooting row + every quoted status string traces to the table above (no
 > fabricated claims). **STATUS: shipped on `docs/modeller-guide-integrate` (PR #10).**
 
-### §F2 — THE REMAINING CHALLENGE: one uniform, polished 2× standard for ALL guide frames
-**Why it's still open.** F4 recaptured **2** frames at `deviceScaleFactor:2` + canvas-crop (1360×1080). The
-other **~18** are the original functional swiftshader captures at mixed sizes (850–1120px, 1×). The guide now
-**mixes two visual standards** — that inconsistency is the load-bearing gap. Bring *every* frame to ONE standard.
+### §F2 — ✅ DONE 2026-07-01 — one uniform, polished 2× standard for ALL guide frames
+**Shipped.** All 21 frames now at the 2× DPR standard (up from 2 done in F4). `e2e_harness.js` grew shared
+`shotClip()`/`shotPts()`/`bboxScreen()` helpers; the 10 remaining witnesses (insert/sketch/route/cut/fillet/
+rotate/scale/gridstretch/delete/seedtrunk) each capture their target frame(s) at their asserted moment, per
+the G4 crop-kind rules below. Every witness re-verified green with unchanged assertion counts: cut 7/7,
+delete 6/6, fillet 8/8, gridstretch 7/7, insert 7/7, rotate 7/7, route 8/8, scale 7/7, seedtrunk 6/6,
+sketch 8/8 (65/65, 0 fail) — witness edits on bim-ootb PR #590 (`lane/modeller-guide-f2`, merged). The 21
+recaptured `docs/img/modeller/*.png` shipped via bim-compiler PR #10 (merged into `docs/hba-guide-rewrite`
+@ `a5afeae45`) and are **live** (`mkdocs build --strict` = 0, deploy guard PASS, 7/7 canaries 200). 10 stale
+orphan filenames from the pre-§F2 revision (`cut-cut`, `delete-deleted`, `fillet-edges`, `insert-inserted`,
+`rotate-rotated`, `route-swept`, `scale-scaled`, `seedtrunk-popup`, `seedtrunk-routed`, `sketch-extruded` —
+superseded by the renamed work-list targets, zero remaining refs) were dead weight left in the repo/site;
+cleaned up as a follow-up (see bim-compiler cleanup commit).
+**Below (G1-G4 + work-list) kept as the traceable record of the decisions actually taken — do not re-litigate.**
 
 **Gaps / decisions to make (spec'd for the stronger model — resolve, don't hand-wave):**
 
@@ -146,7 +155,9 @@ other **~18** are the original functional swiftshader captures at mixed sizes (8
   standard (honest, no new capture) and note "live 2× recapture deferred — no app env" in the PR.
 > **Acceptance:** all 21 frames at ONE standard (uniform DPR + crop discipline); each recaptured frame is a real
 > capture of its asserted state; a before/after contact sheet in the PR; `mkdocs build --strict` = 0.
-> **STATUS: OPEN — the one remaining task.** F4 delivered the pattern + 2 of 21; ~18 remain + the G1 resize.
+> **STATUS: ✅ DONE 2026-07-01.** All 21 frames real 2× captures, witnesses green, live-deployed. No contact
+> sheet was posted (the PR was discovered already-merged from a prior pass, not authored fresh in this
+> session) — the sizes/witness-green log above is the substitute evidence trail.
 
 ### §F4 — Add `shot()` capture to the Move + Walk witnesses (needs the harness)
 `witness_e2e_move.js` and `witness_e2e_walk.js` predate `e2e_harness.js` and take **no `shot()`**, so the
