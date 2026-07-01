@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — HBA GATE-STREAM harness (hr_bim_asset/tests/witness_gate_stream.js,
+     RESUME_OVERLAY_PILL_ICONS.md). Simulates INCREMENTAL streaming: guidMap gets a first (irrelevant) guid
+     while A.streaming is still true, then the real asset guid arrives mid-stream, then A.streaming flips
+     false. Proves viewer/hba_lens.js's FM-pill data-gate poll waits for the real stream-complete signal
+     instead of settling on the first tick guidMap is merely non-empty. -->
+<html><head><meta charset="utf-8"></head><body>
+<script>
+  // Minimal HBA engine stubs — enough to make hba_lens.js's ready()/detect() paths exercise the FM gate.
+  window.HbaOverlay = { computeOverlay: function(){ return {unlinked:[]}; }, applyOverlay: function(){ return 0; } };
+  window.HbaBinding = { resolveGuid: function(g, known){ return !!(known && known[g]); }, zoneMeshGuids: function(){ return []; }, guidTargets: function(){ return []; },
+    augmentKnown: function(gm){ var k = {}; for (var i in (gm||{})) { k[gm[i]] = 1; } return k; } };
+  window.HbaModels = { records: function(model){ return model === 'Asset' ? [{ bim_guid: 'M-ASSET-1' }] : []; } };
+  // simulated APP — guidMap grows incrementally (only 1 of 2 real guids present at first "settle" point,
+  // mirroring the reported bug: bbox-first / instanced flush order means guidMap is non-empty long before
+  // the model carrying the maintenance-lens guid has streamed in).
+  window.APP = { guidMap: {}, streaming: false, _buildPill: function(){ window.__pillBuilds = (window.__pillBuilds||0)+1; } };
+  window._mainPillActions = [{ id: 'hbaFM', pill: false }];   // §HBA_GATE reads G._mainPillActions, NOT A._mainPillActions
+  window.__log = [];
+  var _origLog = console.log; console.log = function(m){ window.__log.push(String(m)); _origLog(m); };
+</script>
+<script src="/viewer/hba_lens.js"></script>
+<script>
+  // t=0: streaming starts, first (irrelevant) guid streams in — guidMap non-empty, streaming still true.
+  window.APP.streaming = true;
+  window.APP.guidMap = { 1: 'OTHER-GUID' };
+  // t=700ms (poll tick 1): the real asset guid streams in, but streaming is STILL true (model not done).
+  setTimeout(function(){
+    window.APP.guidMap = { 1: 'OTHER-GUID', 2: 'M-ASSET-1' };
+  }, 700);
+  // t=1600ms (poll tick ~3): streaming finally completes.
+  setTimeout(function(){
+    window.APP.streaming = false;
+  }, 1300);
+</script>
+</body></html>

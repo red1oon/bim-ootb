@@ -575,6 +575,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="../viewer/connect_scene.js?v=1"></script><!-- §CONNECT-ERP: shared Connect bus (BroadcastChannel+postMessage); ERP registers as 'erp' on first Zoom-Across launch -->
 <script src="zoom_across.js?v=1"></script>
 <script src="idmp_pills.js?v=15"></script>
+<!-- §TEAMS-EMBED — the GATED Teams overlay pill (teams/ROADMAP.md §S9 follow-up). ONE inert guarded script:
+     OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
+     (localStorage.teamsEmbed='1' | ?teams=1) → it lazy-loads the proven teams/ modules + mounts a distinct
+     Teams pill into #idmp-pill. Additive, reversible. Witness: erp/tests/wire_teams_embed.js (W-EMBED-WIRE). -->
+<script src="teams_embed.js?v=1" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — chrome runs without the Teams pill')"></script>
 <!-- §B ERP_BOTTOM_BAR — cross-tab history scrubber (Glassbowl #scrub pattern): records semantic nav moments
      across the window tabs; double-tap blooms chips; dot click = read-only restore (never mutates the op-log). -->
 <script src="../common/history_tap.js?v=6" onerror="console.warn('§IDMP-HIST-TAP history_tap.js absent — bar runs without view-depth')"></script>
@@ -4557,6 +4562,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
+    // §TEAMS-EMBED — mount the Teams pill into the just-built #idmp-pill bar. Flag-guarded: OFF (default)
+    // → init() is a no-op (pixel-identical). The host may later set window.TeamsEmbedOps() to fold the live
+    // signed op-log into the pane; absent → an honest empty pane (NON-INVENT). Reversible, additive.
+    if (window.TeamsEmbed && window.TeamsEmbed.init) window.TeamsEmbed.init({ header: document.getElementById('idmp-pill') });
   }
   function _syncPillStage() {
     if (window.IdmpPills && window.IdmpPills.setStage) window.IdmpPills.setStage();

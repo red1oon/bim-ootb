@@ -43,6 +43,7 @@ runE2E('W-E2E-GRIDSTRETCH', async (t) => {
   // gridMoving is a module-local; the Move-Grid pill toggling to its CANCEL label is the visible proof.
   t.assert('X2 GRID-MODE (Move-Grid pill armed)', true, 'gridMoving=' + gm);
   await t.shot('03-gridmode');
+  await t.shot('gridstretch-before-raw');
 
   // X3 real-drag gridline B (x=4) outward by Δx=+1.5 along the ground. Click on the line, drag in +x.
   const DX = 1.5;
@@ -55,6 +56,7 @@ runE2E('W-E2E-GRIDSTRETCH', async (t) => {
   let ext1 = await xext(t, wallId);
   for (let i = 0; i < 10 && !ext1; i++) { await t.sleep(300); ext1 = await xext(t, wallId); }
   await t.shot('04-stretched');
+  await t.shot('gridstretch-after-raw');
 
   t.assert('X3 STRETCH (one GEOM_GRID_MOVE with recompose commands)',
     after.len === before.len + 1 && last && last.op_type === 'GEOM_GRID_MOVE' && last.parameters && (last.parameters.commands || []).length >= 1,
@@ -69,4 +71,4 @@ runE2E('W-E2E-GRIDSTRETCH', async (t) => {
   t.assert('X6 REVERSIBLE (undo restores cursor + X-extent)',
     undo.cur === before.cur && ext2 && Math.abs(ext2 - ext0) < 1e-2,
     'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ') ext ' + (ext2 || 0).toFixed(3) + ' (want ' + (ext0 || 0).toFixed(3) + ')');
-});
+}, { width: 1200, height: 850, dpr: 2 });

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!-- ⚠ DO NOT REMOVE — §FM-FAMILY demo + browser smoke (RESUME_HR_BIM_ASSET.md). Mounts the REAL
+     HBALens.openFamilyDrawer over a mock APP whose guidMap/logs make 4 lenses detect and 1 (Assets/IoT) grey
+     out — proving wake-awareness. Self-contained: loads the witnessed engines as <script> globals, no 3D
+     stream. Doubles as the guide screenshot. -->
+<html lang="en"><head><meta charset="utf-8"><title>HR_BIM_Asset — FM / Operate</title>
+<style>
+  html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,sans-serif;background:#0b1220;color:#e8eef6;overflow:hidden}
+  /* faux 3D viewport backdrop */
+  #stage{position:absolute;inset:0;background:radial-gradient(120% 120% at 30% 20%,#16263b 0%,#0b1220 70%)}
+  #stage .floor{position:absolute;left:8%;top:22%;width:46%;height:56%;transform:skewY(-8deg) rotate(-2deg);
+    border:1px solid #2b3f59;border-radius:6px;background:linear-gradient(135deg,#11203352,#0b122000)}
+  #stage .rm{position:absolute;border:1px solid #34507044;border-radius:3px}
+  .wm{position:absolute;left:18px;bottom:14px;color:#f9a82599;font-weight:700;letter-spacing:.04em;font-size:12px}
+  .title{position:absolute;left:18px;top:14px;font-weight:800;font-size:18px}
+  .title small{display:block;font-weight:500;opacity:.65;font-size:12px;margin-top:2px}
+  /* faux right-edge pill strip with the single FM pill highlighted */
+  #strip{position:fixed;right:14px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:5}
+  .pill{width:42px;height:42px;border-radius:12px;background:#16263b;display:flex;align-items:center;justify-content:center;
+    color:#9fb4cc;border:1px solid #243750}
+  .pill.fm{background:#13345a;color:#cfe3ff;border-color:#2f6fb0;box-shadow:0 0 0 3px #2f6fb033}
+  .cap{position:fixed;right:64px;top:calc(50% - 86px);font-size:12px;color:#9fb4cc;opacity:.8}
+</style></head>
+<body>
+  <div id="stage">
+    <div class="floor"></div>
+    <div class="title">HR_BIM_Asset — FM / Operate cockpit<small>HHS_Office_Federated · one model, lenses each answering one question, off one signed op-log</small></div>
+    <div class="wm">SAMPLE — NOT OFFICIAL · CONTOH — TIDAK RASMI</div>
+  </div>
+  <div id="strip">
+    <div class="pill">⌕</div><div class="pill">▣</div>
+    <div class="pill fm" title="FM / Operate">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+    </div>
+    <div class="pill">◫</div>
+  </div>
+  <div class="cap">FM pill → opens the wake-aware lens drawer ⟶</div>
+
+  <!-- witnessed engines (browser <script> → self.Hba* globals); dependency order -->
+  <script src="../watermark.js"></script>
+  <script src="../models.js"></script>
+  <script src="../binding.js"></script>
+  <script src="../connectors.js"></script>
+  <script src="../overlay.js"></script>
+  <script src="../lens.js"></script>
+  <script src="../timeline.js"></script>
+  <script src="../attendance.js"></script>
+  <script src="../occupancy.js"></script>
+  <script src="../request.js"></script>
+  <script src="../dashboard.js"></script>
+  <script src="../../viewer/hba_dashboard.js"></script>
+  <script src="../../viewer/hba_lens.js"></script>
+  <script>
+    // mock APP: real lease-room guids (Occupancy/Presence/Class detect) + seeded signed logs; NO asset guid →
+    // Assets/IoT greys out (wake-aware). Dashboard detects (browser DOM present).
+    var rooms = [ { guid:'RM_Level_1_1', storey:'Level 1' }, { guid:'RM_Level_1_3', storey:'Level 1' }, { guid:'RM_Level_1_4', storey:'Level 1' } ];
+    var guidMap = {}; rooms.forEach(function(r,i){ guidMap[String(7000+i)] = r.guid; });
+    var A = { guidMap: guidMap, _hbaRooms: rooms, _hbaPeriod: '2026-07', status:{textContent:''},
+      markDirty: function(){}, collectMeshes: function(){ return []; } };
+    A._hbaOccupancyLog = self.HbaOccupancy.demoSeed(rooms).log;
+    A._hbaAttendanceLog = self.HbaAttendance.demoSeed(rooms, '2026-07').log;
+    window.APP = A;
+    // open the REAL family drawer (the same call panels.js makes)
+    var d = self.HBALens.openFamilyDrawer(A);
+    var avail = self.HBALens.availableLenses(A);
+    console.log('§FM_DEMO drawer rendered=' + !!d + ' available=' + avail.filter(function(x){return x.available;}).map(function(x){return x.id;}).join(','));
+    document.title = 'FM ready · ' + avail.filter(function(x){return x.available;}).length + '/5 lenses';
+  </script>
+</body></html>

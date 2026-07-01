@@ -48,6 +48,7 @@ runE2E('W-E2E-SCALE', async (t) => {
   let ext1 = await xext(t, sel.fid);
   for (let i = 0; i < 10 && !ext1; i++) { await t.sleep(300); ext1 = await xext(t, sel.fid); }   // re-fold may still be replacing meshes
   await t.shot('03-scaled');
+  await t.shotClip('scale-stretched', sel.fid, 150);
 
   t.assert('S3 SCALE-COMMIT (one GEOM_SCALE, fx>1)',
     after.len === before.len + 1 && last && last.op_type === 'GEOM_SCALE' && last.parameters && last.parameters.fx > 1.0001,
@@ -63,4 +64,4 @@ runE2E('W-E2E-SCALE', async (t) => {
   t.assert('S6 REVERSIBLE (undo restores cursor + X-extent)',
     undo.cur === before.cur && ext2 && Math.abs(ext2 - ext0) < 1e-3,
     'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ') ext ' + (ext2 || 0).toFixed(3) + ' (want ' + (ext0 || 0).toFixed(3) + ')');
-});
+}, { width: 1200, height: 850, dpr: 2 });

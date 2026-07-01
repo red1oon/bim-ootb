@@ -38,6 +38,7 @@ runE2E('W-E2E-SEEDTRUNK', async (t) => {
   const popup = await t.pg.waitForFunction(() => { const s = document.getElementById('_seedSel'); const ok = document.getElementById('_seedOk'); return s && ok ? { opts: s.options.length } : null; }, { timeout: 12000, polling: 150 }).then(h => h.jsonValue()).catch(() => null);
   t.assert('T2 POPUP (real modal with ≥1 candidate entry + Route button)', popup && popup.opts >= 1, 'options=' + (popup && popup.opts));
   await t.shot('03-popup');
+  await t.shot('seedtrunk-entry');
   if (!popup) return;
 
   // Choose an entry (default is pre-selected) and click Route ▶ — the real button.
@@ -48,8 +49,9 @@ runE2E('W-E2E-SEEDTRUNK', async (t) => {
   const pix1 = await t.pixsum();
   const plan = await t.pg.evaluate(() => { const net = window.__dwTrunk && window.__dwTrunk.ELEC; return net ? { storeys: (net.storeys || []).length, refused: net.refused === true } : null; });
   await t.shot('04-routed');
+  await t.shot('seedtrunk-trunk-raw');
 
   t.assert('T3 ROUTED (Route ▶ renders a dwTrunk=ELEC line where there was none)', trunk0.n === 0 && trunk1.n >= 1 && trunk1.segs > 0, 'trunk ' + trunk0.n + '→' + trunk1.n + ' segs0=' + trunk0.segs + ' segs1=' + trunk1.segs + ' entry=' + (chosen && chosen.guid));
   t.assert('T4 PLANNED (net has storeys, not refused; rendered segs>0)', !!plan && plan.refused === false && plan.storeys >= 1 && trunk1.segs > 0, 'plan=' + JSON.stringify(plan) + ' segs=' + trunk1.segs);
   t.assert('T5 VISIBLE (framebuffer changed after routing)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
-});
+}, { width: 1200, height: 850, dpr: 2 });

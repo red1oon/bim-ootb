@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v755';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v756';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -116,6 +116,7 @@ const PRECACHE_ASSETS = [
   'manifest.json',
   'pills.json',
   'idmp_pills.js',     // §A — iDempiere bar registration layer (binds pills_idmp.json fn BY ID to IdmpPillActions)
+  'teams_embed.js',    // §TEAMS-EMBED — gated Teams overlay pill (off by default = inert; lazy-loads teams/ when ON)
   'pills_idmp.json',   // §A — sibling manifest for the iDempiere renderer surface (GATE-1: separate from pills.json)
   'zoom_across.js',    // abstract cross-surface Zoom Across registry (record → related surface; window.ZoomAcross)
   'redpill.png',       // RED PILL img — the contextual "Zoom Across" pill (showWhen:zoom-across)

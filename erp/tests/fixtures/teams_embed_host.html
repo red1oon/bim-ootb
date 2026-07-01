@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — TEAMS EMBED HOST FIXTURE (erp/tests/wire_teams_embed.js). A MINIMAL stand-in for the
+     iDempiere chrome: a #idmp-pill bar (with an existing lens pill) + record rows + a read-only op-log hook.
+     It loads ONLY the production /erp/teams_embed.js (one guarded script) — teams_embed lazy-loads the proven
+     teams/ modules ITSELF when the flag is ON, exactly as production does. NOT the full app (that harness is
+     unavailable in-env); this isolates the EMBED contract: OFF=pixel-identical · ON=mounts into the host bar. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iDempiere (embed host fixture)</title>
+</head>
+<body>
+  <!-- the existing pill bar — the embed mounts the Teams pill into #idmp-pill (alongside lens pills). -->
+  <div id="idmp-pillbar"><div id="idmp-pill"><button id="pill-kanban" type="button">K</button></div><span id="idmp-pill-trigger">⋯</span></div>
+  <div id="grid">
+    <div class="rec" data-doc="INV-001">INV-001 · Posted</div>
+    <div class="rec" data-doc="INV-002">INV-002 · Drafted</div>
+    <div class="rec" data-doc="SO-9">SO-9 · In review</div>
+  </div>
+
+  <script>
+    // the host hands the embed a READ-ONLY signed op-log (here, seeded NON-INVENT demo data; in production
+    // this comes from the live kernel_ops fold). The embed folds it — it never writes.
+    (function () {
+      var T = 1719700000000;
+      function op(id, ts, author, role, verb, target) { return { id: id, ts: ts, author: author, role: role, cls: 'erp', verb: verb, target: target, params: {} }; }
+      var OPS = [
+        op('a1', T + 10, 'alice', 'AP', 'CREATE', 'INV-001'), op('b1', T + 20, 'bob', 'AP', 'EDIT', 'INV-001'), op('a2', T + 30, 'alice', 'AP', 'POST', 'INV-001'),
+        op('c1', T + 40, 'carol', 'Sales', 'CREATE', 'INV-002'),
+        op('d1', T + 50, 'dave', 'Sales', 'CREATE', 'SO-9'), op('e1', T + 60, 'erin', 'Sales', 'EDIT', 'SO-9'),
+        op('f1', T + 70, 'frank', 'Mgr', 'EDIT', 'SO-9'), op('g1', T + 80, 'gita', 'Mgr', 'EDIT', 'SO-9'), op('h1', T + 90, 'hank', 'AP', 'EDIT', 'SO-9')
+      ];
+      window.TeamsEmbedOps = function () { return OPS; };
+    })();
+  </script>
+  <!-- the ONE production script (absolute path so its lazy-load base resolves to /teams/). -->
+  <script src="/erp/teams_embed.js"></script>
+  <script>
+    // production idempiere.html calls this once after the pill bar mounts; OFF (default) → inert.
+    window.TeamsEmbed.init({ header: document.getElementById('idmp-pill'), rowSelector: '#grid .rec' })
+      .then(function (r) { window.__embedInit = r; });
+  </script>
+</body>
+</html>
