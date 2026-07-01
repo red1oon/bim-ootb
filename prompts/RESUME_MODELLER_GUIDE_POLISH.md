@@ -13,14 +13,14 @@ integrated. **Read the log after every run.** Honour this preamble until `✅ DO
 ---
 
 ## §RESUME — START HERE (new session)
-**Status:** F1 ✅ · F4 ✅ · F5 ✅ (folded). **ONE substantive gap remains — §F2**: bring *all* guide frames to a
-single polished 2× standard (spec'd below with its decisions + work-list). Everything else is merge + deploy,
-owned by the maintainer (see `## MERGE / DEPLOY`).
+**Status:** F1 ✅ · F4 ✅ · F5 ✅ (folded). **Outward steps ✅ ALL DONE 2026-07-01** (PR #10 merged into
+`docs/hba-guide-rewrite` @ `a5afeae45`, deployed live, `lane/modeller-e2e-suite-2` folded via PR #588 — see
+`## MERGE / DEPLOY`). **ONE substantive gap remains — §F2**: bring *all* guide frames to a single polished 2×
+standard (spec'd below with its decisions + work-list).
 
 **First moves, in order:**
-1. **Sync + locate.** `git -C ~/bim-compiler fetch origin` then `gh pr view 10` — if PR #10 merged, branch §F2
-   work off the merged tip; else off `origin/docs/modeller-guide-integrate`. Confirm the witness edits landed:
-   `gh pr view 585` / bim-ootb `lane/modeller-e2e-suite-2`.
+1. **Sync + locate.** PR #10 is merged (`docs/hba-guide-rewrite` tip `a5afeae45`) — branch §F2 work off that
+   tip. Witness edits already landed via PR #588 (bim-ootb `main`).
 2. **Study the two DONE examples as the template.** The `shot()` + crop pattern in
    `witness_e2e_{move,walk}.js` (bim-ootb `lane/modeller-e2e-suite-2`) → produced `docs/img/modeller/`
    `move-gizmo.png` + `walk-fixtures.png` (2× DPR, canvas-cropped to 1360×1080). §F2 generalises exactly this
@@ -169,16 +169,24 @@ imply a separate Opening tool. (Resolved in the guide copy; keep it that way.)
 
 ---
 
-## MERGE / DEPLOY — the outward steps (maintainer-owned; tracked here so the new session knows what's open)
-Verify each with `gh pr view <n>` before assuming state — refs pinned 2026-07-01.
-- **bim-ootb PR #585** — the 12-tool E2E suite (`lane/modeller-e2e-suite`). Merge on its own tool-truth merit.
-- **bim-ootb `lane/modeller-e2e-suite-2`** — the F4 witness `shot()` edits + the `E2E_SUITE_RESUME.md`
-  handoff notes. Fold into #585 or PR it separately.
-- **bim-compiler PR #10** (`docs/modeller-guide-integrate`) — the guide + §F1/§F4 frames. Merge → then deploy.
-- **bim-ootb PR #586** (`prompt-main`) — this spec on `main`.
-- **DEPLOY (last, maintainer only):** after PR #10 merges, `ALLOW_SHRINK=1 paths="ModellerUserGuide/"
-  scripts/safe_gh_deploy.sh` (blesses the orphan-page removal; the seatbelt aborts otherwise). Never bare
-  `mkdocs gh-deploy`.
+## MERGE / DEPLOY — the outward steps — **✅ ALL DONE 2026-07-01**
+- **bim-ootb PR #585** — the 12-tool E2E suite (`lane/modeller-e2e-suite`). **MERGED** (prior session).
+- **bim-ootb `lane/modeller-e2e-suite-2`** — folded via **PR #588** (`lane/e2e-f4-fold`, cherry-pick of the
+  one real remaining commit — the F4 `shot()` edits; the branch's other commits were stale doc/release-please
+  bookkeeping already superseded on `main` by PR #587, so they were NOT reintroduced). Witnesses re-verified
+  green post-cherry-pick (`witness_e2e_move.js` 9/9, `witness_e2e_walk.js` 8/8) before merge. **MERGED**
+  (CI auto-merge, 2026-07-01T05:34:38Z).
+- **bim-compiler PR #10** (`docs/modeller-guide-integrate` → base `docs/hba-guide-rewrite`) — **MERGED**
+  (squash, 2026-07-01T05:34:49Z, commit `a5afeae45`). Note: base was `docs/hba-guide-rewrite`, not `master`
+  (330 commits ahead of `master`, no open PR back) — merge landed on that branch, not `master`.
+- **bim-ootb PR #586** — superseded by **PR #587** (already merged, corrected/complete §F2 spec on `main`).
+- **DEPLOY — ✅ DONE.** Ran `scripts/safe_gh_deploy.sh` from a clean worktree of `docs/hba-guide-rewrite`
+  (post-PR#10-merge) with `ALLOW_SHRINK=1 paths="ModellerUserGuide/index.html,.nojekyll"` (the guard blesses
+  by **exact path**, not prefix — `paths="ModellerUserGuide/"` alone does NOT match `ModellerUserGuide/index.html`).
+  `mkdocs build --strict` = 0 first. Guard PASS (blessed the orphan-page deletion + the always-benign
+  `.nojekyll`), deploy published, all 7 canaries 200. Live content verified against the `gh-pages` git object
+  directly (not the CDN-fronted URL, which lags a few minutes after push) — `Getting started`/`Troubleshooting`
+  sections present.
 
 ---
 
