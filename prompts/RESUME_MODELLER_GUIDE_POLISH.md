@@ -94,7 +94,14 @@ guide's Move/Walk sections reuse neighbouring frames. Port both onto the harness
 capture `move-gizmo`, `walk-fixtures` (the Walk frame already exists; Move does not) so both sections show
 their *own* asserted moment.
 > **Acceptance:** both witnesses stay green with the added captures; new frames land under
-> `modeller/tests/e2e_shots/` and are copied into `docs/img/modeller/`; guide embeds them. **STATUS: OPEN.**
+> `modeller/tests/e2e_shots/` and are copied into `docs/img/modeller/`; guide embeds them. **STATUS: ✅ DONE
+> 2026-07-01** — `witness_e2e_move.js` (9/9) captures `W-E2E-MOVE-{gizmo,moved}.png`; `witness_e2e_walk.js`
+> (8/8) captures `W-E2E-WALK-fixtures.png` **and** the real `#stat` line `ELEC — 267 placed across 5 storeys ·
+> 0 routed` (used to correct an invented Troubleshooting string). Frames captured at `deviceScaleFactor:2`,
+> canvas-cropped to the tight style, copied into `docs/img/modeller/` (`move-gizmo.png` new, `walk-fixtures.png`
+> replaced in place) and embedded — bim-compiler PR #10; witness edits on `lane/modeller-e2e-suite-2`. This also
+> **partially satisfies §F2**: the two new frames are already real 2× captures — only the *other 18* frames
+> remain to recapture from the polished live app.
 
 ### §F5 — Note the OPENING naming/UX inconsistency (docs-only) — **folded into §F1 Troubleshooting**
 `GEOM_OPENING` has no user-facing trigger; the real "make an opening" is the **Cut** tool. The guide should not
