@@ -16,8 +16,8 @@
 // instance or measured band; `frame` echoes the building's F5 frame contract from the artifact
 // ({frame, units, rotation_semantics}) so no consumer can silently mix frames.
 //
-// Data files live in geomapping/data/ — VERBATIM copies of bim-compiler library/geomap/* (one source of
-// truth = bim-compiler miner tools/mine_geomap.py; plain-copy doctrine, never re-derive here).
+// Data files live in geomapping/data/ — VERBATIM copies of bim-compiler geomap/* (one source of
+// truth = bim-compiler miner tools/mine_geomap.py (artifacts geomap/); plain-copy doctrine, never re-derive here).
 //
 // Dual-export (window + node) like arc_editable.js/cross_edges.js, so witnesses run pure-node.
 (function (root, factory) {
