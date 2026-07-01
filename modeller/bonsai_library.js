@@ -65,9 +65,32 @@
   // component sits ON the ground, not half-buried (a door spanning local z ∈ [−1.05,+1.05] at z=0
   // would otherwise sink 1.05 below grade). Yaw is about Z so it does not change z → seat is yaw-invariant.
   function place(positions, pl, bbox) {
+    const ox = (pl && pl.x) || 0, oy = (pl && pl.y) || 0, oz = (pl && pl.z) || 0;
+    // §ARC-3AXIS: caller-supplied rotX/rotY (radians, alongside rotZRad) ⇒ a genuine 3-axis tilt this yaw-only
+    // path cannot represent. This box's local origin is ALREADY its measured CENTRE (buildSeedOps centres bbox
+    // at 0,0,0), so rotate-about-origin then translate-by-centre directly — mirrors viewer/streaming.js's own
+    // `_pos.set(cx,cy,cz); _quat.setFromEuler(_euler); _m4.compose(_pos,_quat,_scale)` exactly (it has no
+    // ground-seat step either, because it places centres, not bottoms). Reuses window.THREE — the SAME
+    // vendored r184 build both Modeller+Viewer load ("reuse the viewer's THREE stack", modeller.html:240) —
+    // this is NOT a re-derived quaternion formula, it's the identical algorithm both sides already run.
+    if (pl && (pl.rotX || pl.rotY) && typeof window !== 'undefined' && window.THREE) {
+      const T = window.THREE;
+      const euler = new T.Euler(pl.rotX || 0, pl.rotZRad || 0, -(pl.rotY || 0));
+      const q = new T.Quaternion().setFromEuler(euler);
+      const v = new T.Vector3();
+      const out = new Float32Array(positions.length);
+      for (let i = 0; i < positions.length; i += 3) {
+        v.set(positions[i], positions[i + 1], positions[i + 2]).applyQuaternion(q);
+        out[i] = v.x + ox; out[i + 1] = v.y + oy; out[i + 2] = v.z + oz;
+      }
+      return out;
+    }
+    // rotate (yaw, about +Z) about the component's local origin → translate to placement.
+    // GROUND-SEAT: the component's local bbox BOTTOM (zmin) lands at placement.z (default 0) so a
+    // component sits ON the ground, not half-buried (a door spanning local z ∈ [−1.05,+1.05] at z=0
+    // would otherwise sink 1.05 below grade). Yaw is about Z so it does not change z → seat is yaw-invariant.
     const rad = ((pl && pl.rot) || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
-    const ox = (pl && pl.x) || 0, oy = (pl && pl.y) || 0;
-    const seatZ = ((pl && pl.z) || 0) - (bbox ? bbox[4] : 0);   // bbox[4] = local zmin → placement.z (elevation)
+    const seatZ = oz - (bbox ? bbox[4] : 0);   // bbox[4] = local zmin → placement.z (elevation)
     const out = new Float32Array(positions.length);
     for (let i = 0; i < positions.length; i += 3) {
       const x = positions[i], y = positions[i + 1], z = positions[i + 2];
