@@ -75,11 +75,40 @@ globe:  { svg: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0
 (`share`, `contrast`, `disciplines`, `next`, `home` already exist. Material may reuse `contrast` — a half-lit
 sphere — instead of `globe`; pick one.)
 
-> **Why the single (viewer/HR) session owns this, not the Teams lane:** `viewer/panels.js` is the HBA/viewer
-> seam and a conflict magnet — memory `feedback_hba_teams_share_hhs_no_collision`: **the Teams lane must NOT
-> touch `panels.js`.** The session that already edits the viewer adds these keys; the Teams overlay just
-> consumes them at runtime. (The Teams lane once drifted by adding these here and reverted — do not repeat from
-> the Teams side.)
+> ⚠ **RECONCILE THE REGISTRY FIRST (HR session correction, §E):** there are TWO icon homes — (1) `viewer/panels.js`
+> `ICONS` = the `A.icon()` Lucide set (modeller / Find-panel facets; Teams consumes `A.icon('share')` here);
+> (2) the **`pill_builder` registry** = the viewer **toolbar pills** (HR's FM pill). **Toolbar pills must REUSE a
+> real `pill_builder` registry glyph — NO inline SVG** — and `tests/.../test_pills_manifest.js` is the **parity
+> guard** (it fails on inline/forked icons). So: for a *facet* glyph, add to `panels.js ICONS`; for a *toolbar
+> pill* glyph, add/reuse in the `pill_builder` registry, never inline. The SVGs above are the agreed *shapes* —
+> place each in the correct registry, then run `test_pills_manifest.js` + `action_regression.js` (zero residue,
+> jsErrors=0) to prove parity. Decide the home per icon; do not paste inline SVG onto a pill.
+
+> **Why the single (viewer/HR) session owns this, not the Teams lane:** `viewer/panels.js` + `pill_builder` are
+> the HBA/viewer seam and a conflict magnet — memory `feedback_hba_teams_share_hhs_no_collision`: **the Teams lane
+> must NOT touch them.** The viewer/HR session adds/reuses the glyphs; the Teams overlay consumes them at runtime.
+> (The Teams lane once drifted by adding these to `panels.js` and reverted — do not repeat from the Teams side.)
+
+---
+
+## E. Folded-in HR session closeout (2026-07-01 — that session has CLOSED; skip its diagnosis, build on it)
+**Already DIAGNOSED (do NOT re-diagnose):**
+- Pills ARE built — `§PILL_BUILDER ready actions=32`; the store is **`window._mainPillActions`** (NOT `APP.`).
+- **The FM/Operate gate fires TOO EARLY** — `§HBA_GATE FM=on available=[dash] (guidMap=500)`: geometry is still
+  streaming, and the poll **clears its interval on first-ready so it never re-evaluates** → the pill shows only
+  `dash`, the operate lenses never light. **Likely fix:** re-run `availableLenses(A)` + **rebuild the pill after
+  stream-complete** (or gate on a higher `guidMap` threshold). This is the PREREQUISITE for the HR guide's
+  step-by-step (users must see the real toolbar pill to know where to click).
+- **Icons:** reuse a real `pill_builder` registry glyph, **no inline SVG** — `test_pills_manifest.js` is the parity
+  guard; verify with `action_regression.js` (zero residue, `jsErrors=0`). (This is the §C reconciliation above.)
+
+**Still OPEN (this unified session picks up), depends on the pill-gate fix landing first:**
+- Both guides' **genuine step-by-step navigation** + **reframed/cropped screenshots** (§A). HR's need the real
+  toolbar pill visible. Reframing helper already started: **`tests/live/shot_occ.js`**.
+
+**Already DONE by HR this session (P1–P6, live + pushed — do NOT redo):** lens paints · rich multi-storey data +
+tickets · GardenWorld aisle-zones · task-oriented HR guide + Spatial-ERP integration doc (deployed to gh-pages) ·
+avatar-LOD · Chart.js dashboard fix. 22 witnesses green, regression clean, 0 local-only on both branches.
 
 ---
 
@@ -90,5 +119,12 @@ sphere — instead of `globe`; pick one.)
 - **Docs branch:** `bim-compiler` `docs/hba-guide-rewrite` (both guides + images live here; use an isolated
   worktree, never disrupt a live shared checkout). Deploy ONLY via `scripts/safe_gh_deploy.sh` — never bare `mkdocs gh-deploy`.
 
-**Definition of done:** both guides read as genuine click-by-click walkthroughs with tightly-framed screenshots;
-the 5 facet icons are in the ONE registry; `mkdocs` builds; deploy left to the branch owner.
+**Order of work (dependencies):** (1) fix the FM/Operate pill-gate so the real toolbar pill lights (§E) →
+(2) reconcile + place the icons in the correct registry, parity-guarded (§C) → (3) recapture tightly-framed
+screenshots WITH the real pill visible (§A/§B, helper `tests/live/shot_occ.js`) → (4) rewrite both guides as
+click-by-click walkthroughs.
+
+**Definition of done:** the FM pill lights its lenses after stream-complete (gate fix witnessed); the agreed
+glyphs sit in the correct ONE registry with `test_pills_manifest.js` + `action_regression.js` green (no inline
+SVG, jsErrors=0); both guides read as genuine click-by-click walkthroughs with tightly-framed screenshots;
+`mkdocs` builds; deploy left to the branch owner via `scripts/safe_gh_deploy.sh`.
