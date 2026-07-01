@@ -29,6 +29,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const ROOT = path.join(__dirname, '..', '..');
+const SHOTS = path.join(__dirname, 'e2e_shots'); try { fs.mkdirSync(SHOTS, { recursive: true }); } catch (e) {}
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream' };
 const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller/modeller.html';
   fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end('404'); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); }); });
@@ -36,8 +37,10 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
 (async () => {
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
+  const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
   const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+  // F4: capture the real Walk guide frame at the asserted moment (2× DPR; non-invent — the actual app frame)
+  const shot = (label) => pg.screenshot({ path: path.join(SHOTS, 'W-E2E-WALK-' + label + '.png') }).catch(() => {});
 
   console.log('═══ W-E2E-WALK — real user: open → Walk ELEC (production discWalk) → render+commit → undo (maths) ═══');
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
@@ -79,6 +82,12 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   // W5 — verifyChain on the live kernel_ops db
   const chain = await pg.evaluate(async () => { try { const db = await window.Bonsai.oplog._ensureDb(); const v = await window.KernelOps.verifyChain(db); return !!v.ok; } catch (e) { return 'ERR:' + e.message; } });
 
+  // capture the REAL status-bar line the Walk emits (before Fit overwrites it) — for truthful guide copy
+  const statusLine = await pg.evaluate(() => (document.getElementById('stat') || {}).textContent || '');
+  // guide frame: the walked ELEC fixtures rendered across the Duplex (W2/W7 asserted). Fit first to frame them.
+  const fitB = await pg.$('#b-fit'); if (fitB) { await fitB.click(); await sleep(600); }
+  await shot('fixtures');
+
   // W6 — UNDO via the real history slider back to pre-walk cursor
   await pg.evaluate(c => { const s = document.getElementById('hist-slider'); s.value = c; s.dispatchEvent(new Event('input', { bubbles: true })); }, before.cur);
   await sleep(800);
@@ -91,6 +100,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   console.log('  §BEFORE ' + JSON.stringify(before));
   console.log('  §WALK completed=' + completed + ' walkMs=' + walkMs + ' ' + JSON.stringify(after));
   console.log('  §CHAIN verifyChain=' + chain);
+  console.log('  §STATUS ' + JSON.stringify(statusLine));
   console.log('  §UNDO ' + JSON.stringify(undo));
 
   let pass = 0, fail = 0;
