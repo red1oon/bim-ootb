@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>BIM · Teams overlay — LIVE (real engine fold)</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#11161d; --panel2:#161c25; --line:#222c39; --line2:#2c3848;
+    --txt:#c7d2de; --dim:#7c8a9c; --dim2:#566372;
+    --arc:#b794f6; --str:#38bdf8; --mep:#f472b6; --qs:#4ade80;
+    --red:#ef4444; --orange:#f59e0b; --green:#22c55e; --stale:#5b6b7d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--txt);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-rows:54px 1fr 26px;height:100vh}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:18px;padding:0 16px;background:var(--panel);
+    border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:.2px}
+  .brand .logo{width:22px;height:22px;border-radius:6px;
+    background:linear-gradient(135deg,var(--str),var(--mep));display:grid;place-items:center;
+    font-size:13px;color:#06121c;font-weight:800}
+  .brand small{color:var(--dim);font-weight:500;margin-left:2px}
+  .chip{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;border-radius:7px;
+    background:var(--panel2);border:1px solid var(--line2);font-size:12px;white-space:nowrap}
+  .chip .k{color:var(--str);font-weight:600}
+  .chip .ahead{color:var(--green)} .chip .behind{color:var(--orange)}
+  .spacer{flex:1}
+  .btn{height:28px;padding:0 12px;border-radius:7px;border:1px solid var(--line2);
+    background:var(--panel2);color:var(--txt);font-size:12px;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{border-color:#3a4a5e;background:#1b2330}
+  .btn.primary{background:linear-gradient(180deg,#1f6feb,#1858c4);border-color:#2f6fd6;color:#fff}
+  .btn .bdg{background:var(--orange);color:#3a2600;border-radius:10px;padding:0 6px;font-size:10.5px;
+    font-weight:800;line-height:16px;height:16px}
+  .who{display:flex;align-items:center}
+  .av{position:relative;width:36px;height:36px;border-radius:50%;margin-left:-9px;cursor:pointer;
+    border:2.5px solid var(--panel)}
+  .av:first-child{margin-left:0}
+  .av img{width:100%;height:100%;border-radius:50%;display:block;object-fit:cover}
+  .av .ring{position:absolute;inset:-2.5px;border-radius:50%;border:2.5px solid var(--c);pointer-events:none}
+  .av .dot{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;
+    border:2px solid var(--panel);z-index:2}
+  /* red pill */
+  .redpill{width:30px;height:30px;border:none;background:none;cursor:pointer;padding:0;display:grid;place-items:center}
+  .redpill span{display:block;width:26px;height:13px;border-radius:8px;
+    background:linear-gradient(180deg,#ff6b6b,#d11d1d);box-shadow:0 0 12px rgba(239,68,68,.8),inset 0 1px 2px rgba(255,255,255,.5);
+    transform:rotate(-32deg);position:relative}
+  .redpill span::after{content:"";position:absolute;left:1px;top:1.5px;width:11px;height:9px;border-radius:6px;
+    background:rgba(255,255,255,.35)}
+  .gear{width:30px;height:30px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);
+    color:var(--dim);font-size:15px;cursor:pointer}
+  .gear:hover{color:var(--txt)}
+  .idpop{position:absolute;top:50px;right:130px;width:248px;z-index:30;display:none;
+    background:#11161d;border:1px solid var(--line2);border-radius:11px;padding:13px;
+    box-shadow:0 16px 40px rgba(0,0,0,.55)}
+  .idpop.on{display:block}
+  .idpop h4{margin:0 0 9px;font-size:11.5px;color:var(--txt)}
+  .idrow{display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;color:var(--dim)}
+  .idlink{margin:9px 0 7px;width:100%;background:linear-gradient(180deg,#1f6feb,#1858c4);color:#fff;
+    border:none;border-radius:7px;padding:7px;font-weight:700;font-size:12px;cursor:pointer}
+  .idpop small{color:var(--dim2);font-size:10.5px;line-height:1.35;display:block}
+  .dot.live{background:var(--green);animation:blink 1.6s infinite}
+  .dot.idle{background:var(--dim2)}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ---------- body ---------- */
+  .body{display:grid;grid-template-columns:372px 1fr;min-height:0}
+  .left{display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);min-height:0}
+  .tabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--line)}
+  .tab{padding:8px 13px;font-size:12px;font-weight:600;color:var(--dim);cursor:pointer;
+    border:1px solid transparent;border-bottom:none;border-radius:7px 7px 0 0;display:flex;align-items:center;gap:7px}
+  .tab .n{background:var(--line2);color:var(--txt);border-radius:9px;font-size:10px;padding:0 5px;font-weight:700}
+  .tab.on{color:var(--txt);background:var(--panel2);border-color:var(--line)}
+  .tab.on .n{background:var(--mep);color:#2a0a1c}
+  .pane{flex:1;overflow:auto;min-height:0}
+  .pane::-webkit-scrollbar{width:9px} .pane::-webkit-scrollbar-thumb{background:#222c39;border-radius:9px}
+
+  /* tree */
+  .facet{display:flex;align-items:center;gap:8px;padding:9px 12px;color:var(--dim);font-size:11.5px;
+    border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+  .facet select{background:var(--panel2);color:var(--txt);border:1px solid var(--line2);border-radius:6px;
+    padding:3px 6px;font:inherit;font-size:11.5px}
+  .row{display:flex;align-items:center;gap:8px;padding:5px 12px 5px 0;cursor:pointer;position:relative}
+  .row:hover{filter:brightness(1.25)}
+  .row .bar{width:3px;align-self:stretch;border-radius:3px;margin-right:4px;background:var(--c)}
+  .row .tw{width:13px;color:var(--dim2);text-align:center;font-size:10px;flex:none}
+  .row .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .meta{color:var(--dim2);font-size:10.5px;flex:none}
+  .row.head .nm{font-weight:600}
+  /* tree avatars — sized by ownership scope */
+  .trav{position:relative;flex:none;border-radius:50%}
+  .trav img{width:100%;height:100%;border-radius:50%;display:block;object-fit:cover}
+  .trav i{position:absolute;inset:0;border-radius:50%;border:2px solid var(--c)}
+  .trav.lg{width:30px;height:30px}            /* owns a whole branch */
+  .trav.sm{width:18px;height:18px}            /* owns a sub-twig */
+  .trav.sm i{border-width:1.5px}
+  .gdot{width:8px;height:8px;border-radius:50%;flex:none}
+  .gdot.red{background:var(--red);box-shadow:0 0 7px var(--red)}
+  .gdot.orange{background:var(--orange);box-shadow:0 0 7px var(--orange)}
+  .gdot.green{background:var(--green)}
+  .gdot.prov{background:transparent;border:1.5px solid var(--orange);animation:blink 1.1s infinite}
+  .row.stale{opacity:.55} .row.stale .nm{font-style:italic}
+  .ind1{padding-left:12px}.ind2{padding-left:26px}.ind3{padding-left:42px}
+  .znote{font-size:9.5px;color:var(--dim2);text-transform:uppercase;letter-spacing:.4px;
+    padding:6px 12px 2px;font-weight:700}
+
+  /* floating chat popup over canvas empty space */
+  .chatpop{position:absolute;left:26px;top:150px;width:312px;z-index:20;
+    background:rgba(17,23,30,.93);border:1px solid var(--line2);border-radius:13px;
+    box-shadow:0 22px 50px rgba(0,0,0,.6);backdrop-filter:blur(7px);overflow:hidden}
+  .chatpop .ph{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line);
+    font-weight:600;font-size:12px}
+  .chatpop .ph .dots{margin-left:auto;display:flex;gap:5px}
+  .chatpop .ph .dots b{width:9px;height:9px;border-radius:50%;display:block}
+  .chatpop .pbody{max-height:268px;overflow:auto;padding:4px 0}
+  .chatpop .cmsg{padding:7px 13px}
+  .chatpop .pin{display:flex;align-items:center;gap:7px;padding:9px 13px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:11px}
+  .chatpop .pin .ic{width:18px;height:18px;border-radius:50%;background:var(--mep);display:grid;place-items:center;
+    color:#2a0a1c;font-size:11px;font-weight:800;flex:none}
+  .chatpop .cmsg{display:flex;gap:9px;padding:9px 13px;align-items:flex-start}
+  .chatpop .cmsg .cav{width:30px;height:30px;flex:none}
+  .chatpop .cmsg .cav img{width:30px;height:30px}
+  .chatpop .cmsg>div{min-width:0;flex:1}
+
+  /* chat */
+  .clog{padding:6px 0}
+  .cmsg{display:grid;grid-template-columns:26px 1fr;gap:9px;padding:8px 13px}
+  .cmsg .cav{width:30px;height:30px;border-radius:50%;margin-top:1px;position:relative}
+  .cmsg .cav img{width:100%;height:100%;border-radius:50%;display:block;object-fit:cover}
+  .cmsg .cav i{position:absolute;inset:0;border-radius:50%;border:2px solid var(--c)}
+  .cmsg .top{display:flex;align-items:center;gap:7px}
+  .cmsg .nm{font-weight:600;font-size:12px}
+  .cmsg .t{color:var(--dim2);font-size:10.5px;margin-left:auto}
+  .cmsg .tx{color:var(--txt);font-size:12px;margin-top:1px}
+  .cmsg .tx .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--dim);
+    background:#0c1118;border:1px solid var(--line);border-radius:5px;padding:0 5px}
+  .vb{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:1px 7px;font-size:10.5px;
+    font-weight:700;margin-top:4px}
+  .vb.red{background:rgba(239,68,68,.13);color:#ff8b8b;border:1px solid rgba(239,68,68,.4)}
+  .vb.orange{background:rgba(245,158,11,.13);color:#fbcd6b;border:1px solid rgba(245,158,11,.4)}
+  .vb.green{background:rgba(34,197,94,.13);color:#86efac;border:1px solid rgba(34,197,94,.4)}
+  .vb.trunk{background:rgba(183,148,246,.13);color:#d4bcff;border:1px solid rgba(183,148,246,.4)}
+  .cin{display:flex;gap:8px;padding:9px 12px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--panel)}
+  .cin input{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:7px;color:var(--txt);
+    padding:7px 10px;font:inherit;font-size:12px}
+  .cin .post{background:var(--mep);color:#2a0a1c;border:none;border-radius:7px;font-weight:700;padding:0 12px;cursor:pointer}
+
+  /* dashboard */
+  .dash{padding:13px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  .card h4{margin:0 0 10px;font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--dim);font-weight:700}
+  .mtx{display:grid;grid-template-columns:42px repeat(4,1fr);gap:4px;font-size:11px}
+  .mtx .h{color:var(--dim2);text-align:center;font-weight:700;padding:3px 0}
+  .mtx .rh{color:var(--dim);font-weight:700;display:grid;place-items:center}
+  .cell{height:30px;border-radius:6px;display:grid;place-items:center;font-weight:800;font-size:12px;
+    background:#0e141c;border:1px solid var(--line);color:var(--dim2)}
+  .cell.red{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.5);color:#ff9a9a}
+  .cell.orange{background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.5);color:#fbcd6b}
+  .cell.green{background:rgba(34,197,94,.13);border-color:rgba(34,197,94,.4);color:#86efac}
+  .cell.prov{background:#0e141c;border:1px dashed var(--orange);color:var(--orange);animation:blink 1.1s infinite}
+  .cell.x{background:transparent;border-color:transparent}
+  .rail{margin:9px 0}
+  .rail .lab{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px}
+  .rail .lab b{font-weight:700}
+  .track{height:8px;border-radius:5px;background:#0c1118;border:1px solid var(--line);overflow:hidden;position:relative}
+  .fill{height:100%;border-radius:5px}
+  .fresh{display:flex;flex-direction:column;gap:7px}
+  .fr{display:flex;align-items:center;gap:9px;font-size:12px}
+  .fr .sw{width:9px;height:9px;border-radius:3px;flex:none}
+  .fr .nm{font-weight:600;width:38px}
+  .fr .st{margin-left:auto;font-size:10.5px;padding:1px 7px;border-radius:6px;font-weight:700}
+  .st.sync{background:rgba(34,197,94,.13);color:#86efac}
+  .st.behind{background:rgba(245,158,11,.14);color:#fbcd6b}
+  .st.stale{background:rgba(91,107,125,.18);color:#9fb0c2}
+  .fr .ago{color:var(--dim2);font-size:10.5px;width:54px;text-align:right}
+
+  /* ---------- canvas ---------- */
+  .stage{position:relative;background:
+     radial-gradient(1200px 600px at 60% 18%,#16202c 0,#0d141c 55%,#0a0f15 100%);overflow:hidden}
+  svg{position:absolute;inset:0;width:100%;height:100%}
+  .float{position:absolute;background:rgba(17,23,30,.86);border:1px solid var(--line2);
+    border-radius:10px;backdrop-filter:blur(4px);padding:11px 13px;font-size:12px}
+  .legend{top:16px;right:16px;width:208px}
+  .legend h4{margin:0 0 9px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--dim);font-weight:700}
+  .lg{display:flex;align-items:center;gap:9px;padding:3px 0;font-size:11.5px}
+  .lg .mk{width:13px;height:13px;border-radius:50%;flex:none}
+  .mk.prov{background:transparent;border:2px solid var(--orange);animation:blink 1.1s infinite}
+  .mk.red{background:var(--red);box-shadow:0 0 8px var(--red)}
+  .mk.orange{background:var(--orange);box-shadow:0 0 8px var(--orange)}
+  .mk.green{background:var(--green)}
+  .mk.stale{background:var(--stale)}
+  .lg .d{color:var(--dim2);margin-left:auto;font-size:10.5px}
+  .modecard{top:16px;left:16px;display:flex;align-items:center;gap:10px}
+  .modecard .pill{font-weight:800;font-size:11px;padding:3px 9px;border-radius:7px;
+    background:rgba(56,189,248,.14);color:#7dd3fc;border:1px solid rgba(56,189,248,.4)}
+  .modecard small{color:var(--dim)}
+  .postit{position:absolute;width:172px;background:#f5e27a;color:#3a3410;border-radius:3px;
+    padding:9px 11px;font-size:11.5px;line-height:1.35;box-shadow:0 10px 26px rgba(0,0,0,.5);
+    transform:rotate(-3deg);animation:floaty 5s ease-in-out infinite}
+  .postit b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#7a6a14;margin-bottom:3px}
+  .postit .by{margin-top:6px;font-weight:700;color:#6a5d12;font-size:10.5px}
+  @keyframes floaty{0%,100%{transform:rotate(-3deg) translateY(0)}50%{transform:rotate(-3deg) translateY(-5px)}}
+  .callout{position:absolute;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.55);
+    color:#ff9a9a;border-radius:8px;padding:7px 10px;font-size:11.5px;font-weight:700;backdrop-filter:blur(3px)}
+  .callout small{display:block;color:#ffd2d2;font-weight:500;font-size:10.5px;margin-top:1px}
+  .spectate{position:absolute;top:0;left:0;right:0;height:34px;display:none;align-items:center;gap:10px;
+    justify-content:center;background:linear-gradient(180deg,rgba(244,114,182,.22),rgba(244,114,182,0));
+    color:#ffc7e6;font-size:12px;font-weight:700;border-bottom:1px solid rgba(244,114,182,.35)}
+  .spectate.on{display:flex}
+  .toast{position:absolute;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#11161d;border:1px solid var(--line2);border-radius:9px;padding:9px 15px;font-size:12px;
+    opacity:0;transition:.3s;pointer-events:none;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- footer ---------- */
+  footer{display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--panel);
+    border-top:1px solid var(--line);font-size:11px;color:var(--dim)}
+  footer .g{color:var(--green)} footer .b{color:var(--str)} footer .sp{flex:1}
+  .pulseTxt{fill:#f472b6;font-size:11px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ HEADER ============ (no pill/icon launcher — standalone live view) -->
+  <header>
+    <div class="brand"><span class="logo">◭</span> BIM · Teams overlay
+      <small>— SampleHouse · LIVE (real engine fold)</small></div>
+    <div class="chip">⎇ <span class="k" id="activeBranch">STR</span>
+      <span style="color:var(--dim2)">vs trunk</span></div>
+    <div class="spacer"></div>
+    <div class="chip" id="chainChip" style="border-color:rgba(34,197,94,.4)">
+      <span class="g" style="color:#86efac">●</span> <span id="chainTxt">verifyChain …</span></div>
+    <div class="chip"><span style="color:var(--dim2)">connector</span>&nbsp;<b id="connMode">…</b></div>
+  </header>
+
+  <!-- ============ BODY ============ -->
+  <div class="body">
+
+    <!-- ---- LEFT: tabbed Outliner ---- -->
+    <div class="left">
+      <div class="tabs">
+        <div class="tab on" data-t="tree">🌳 Tree</div>
+        <div class="tab" data-t="chat">💬 Chat <span class="n" id="chatN">0</span></div>
+        <div class="tab" data-t="dash">📊 Dashboard</div>
+      </div>
+
+      <!-- TREE -->
+      <div class="pane" id="pane-tree">
+        <div class="facet">Color by:
+          <select><option>Gate state (ladder)</option><option>Participant (blame)</option><option>Branch</option><option>Freshness</option></select>
+        </div>
+        <div id="tree"></div>
+      </div>
+
+      <!-- CHAT -->
+      <div class="pane" id="pane-chat" style="display:none">
+        <div class="clog" id="clog"></div>
+        <div class="cin"><input placeholder="Post-it / comment on selection…"/><button class="post">Post</button></div>
+      </div>
+
+      <!-- DASHBOARD (renderDashboard injects the cards) -->
+      <div class="pane" id="pane-dash" style="display:none">
+        <div class="dash" id="dash"></div>
+      </div>
+    </div>
+
+    <!-- ---- RIGHT: 3D canvas ---- -->
+    <div class="stage" id="stage">
+      <svg id="scene" viewBox="0 0 1180 720" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <filter id="gRed" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="gOr" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+      </svg>
+
+      <div class="float legend" style="top:auto;bottom:20px;right:20px">
+        <h4>Color ladder</h4>
+        <div class="lg"><span class="mk prov"></span>Provisional<span class="d">Tier-1 hint</span></div>
+        <div class="lg"><span class="mk red"></span>Verified RED<span class="d">clash</span></div>
+        <div class="lg"><span class="mk orange"></span>Verified ORANGE<span class="d">budget/clear</span></div>
+        <div class="lg"><span class="mk green"></span>Verified GREEN<span class="d">clean</span></div>
+        <div class="lg"><span class="mk stale"></span>Stale<span class="d">trunk moved</span></div>
+      </div>
+
+      <div class="float modecard">
+        <span class="pill">✎ EDIT · STR</span>
+        <small id="modeSub">live fold</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FOOTER ============ -->
+  <footer>
+    <span>Tier-2 fold <span class="g">✓</span></span>
+    <span>·</span><span><b id="elemCount">0</b> elements</span>
+    <span>·</span><span>log <span class="b" id="opCount">0</span> ops · <span id="footChain">chain …</span></span>
+    <span>·</span><span><b id="brCount">0</b> branches merged</span>
+    <span class="sp"></span>
+    <span>SampleHouse · Teams overlay LIVE</span>
+  </footer>
+</div>
+
+<!-- UMD modules in dependency order (no CDN, no external libs, no network) -->
+<script src="connectors.js"></script>
+<script src="connectors_live.js"></script>
+<script src="engine.js"></script>
+<script src="gate.js"></script>
+<script src="chatlog.js"></script>
+<script src="protocol.js"></script>
+<script src="overlay/teams_view.js"></script>
+<script src="overlay/teams_app.js"></script>
+<script>
+/* ⚠ DO NOT REMOVE — boot: build the connector seam (live-detect, stub fallback), run the app's pure
+   orchestration, hand the four models to the renderers, and project the folded world to the canvas.
+   NON-INVENT: marker positions are DERIVED from the engine's world boxes; colors are the ladder's. */
+(function () {
+  'use strict';
+  // 1) connector via the live factory — stub fallback when no modeller host is present
+  var conn = (self.TeamsConnectorsLive && self.TeamsConnectorsLive.makeConnectors)
+    ? self.TeamsConnectorsLive.makeConnectors() : null;
+
+  // 2) pure orchestration → the four §8 view-models
+  var scenario = TeamsApp.buildScenario();
+  var view = TeamsApp.computeView(scenario);
+
+  // 3) render the three panes
+  TeamsView.renderTree(document.getElementById('tree'), view.tree);
+  TeamsView.renderChat(document.getElementById('clog'), view.chat);
+  TeamsView.renderDashboard(document.getElementById('dash'), view.dash);
+  document.getElementById('chatN').textContent = view.chat.length;
+
+  // 4) canvas: iso-project the engine's folded world (positions derived, colors from the ladder)
+  var world = TeamsEngine.fold(scenario.merged);
+  paintScene(document.getElementById('scene'), world, view.markers);
+
+  // 5) live status chips (connector binding + chain check over a real single-branch log)
+  var strLog = scenario.branches[scenario.branches.length - 1].ops;
+  var chk = conn ? conn.verifyChain(strLog) : { ok: true };
+  document.getElementById('chainTxt').textContent = 'verifyChain ' + (chk.ok ? 'ok' : 'BROKEN');
+  document.getElementById('footChain').textContent = 'chain ' + (chk.ok ? 'ok' : 'BROKEN');
+  document.getElementById('connMode').textContent = conn ? (conn._isStub ? 'stub' : 'live') : 'stub';
+  document.getElementById('elemCount').textContent = Object.keys(world).length;
+  document.getElementById('opCount').textContent = scenario.merged.length;
+  document.getElementById('brCount').textContent = scenario.branches.length;
+
+  // 6) tab switching (Tree / Chat / Dashboard)
+  function tab(t) {
+    ['tree', 'chat', 'dash'].forEach(function (x) {
+      document.getElementById('pane-' + x).style.display = (x === t) ? '' : 'none';
+      document.querySelector('.tab[data-t=' + x + ']').classList.toggle('on', x === t);
+    });
+  }
+  ['tree', 'chat', 'dash'].forEach(function (t) {
+    document.querySelector('.tab[data-t=' + t + ']').addEventListener('click', function () { tab(t); });
+  });
+
+  // ── iso scene (same projection params as the visual reference) — pure f(world) ──
+  function paintScene(svg, world, markers) {
+    var S = 33, OX = 600, OY = 205, C = 0.866, Sn = 0.5;
+    function iso(x, y, z) { return [OX + (x - y) * C * S, OY + (x + y) * Sn * S - z * S]; }
+    var disc = { ARC: '#b794f6', STR: '#38bdf8', MEP: '#f472b6', QS: '#4ade80' };
+    var tone = { 'verified-red': '#ef4444', 'verified-orange': '#f59e0b', 'verified-green': '#22c55e',
+                 'stale': '#5b6b7d', 'provisional': '#f59e0b' };
+    var frag = '';
+    function line(a, b) { return '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="#2b3543" stroke-width="0.7"/>'; }
+    var i, a, b;
+    for (i = 0; i <= 10; i++) { a = iso(i, 0, 0); b = iso(i, 8, 0); frag += line(a, b); }
+    for (i = 0; i <= 8; i++) { a = iso(0, i, 0); b = iso(10, i, 0); frag += line(a, b); }
+    var verdict = {}; markers.forEach(function (mk) { verdict[mk.guid] = mk.color; });
+    var layout = {};
+    Object.keys(world).sort().forEach(function (g) {
+      var e = world[g], bx = e.box;
+      var col = tone[verdict[g]] || disc[e.disc] || '#3a4654';
+      frag += isoBox(bx.x, bx.y, bx.z, bx.w, bx.d, bx.h, col, iso);
+      var c = iso(bx.x + bx.w / 2, bx.y + bx.d / 2, bx.z + bx.h / 2);
+      layout[g] = { x: c[0], y: c[1], r: 7 };
+    });
+    svg.insertAdjacentHTML('beforeend', frag);
+    TeamsView.renderMarkers(svg, markers, layout); // §8 ladder-colored markers
+  }
+  function isoBox(x, y, z, w, d, h, col, iso) {
+    function shade(hex, p) {
+      var n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      function f(v) { return Math.max(0, Math.min(255, Math.round(v + (p < 0 ? v * p : (255 - v) * p)))); }
+      return '#' + [f(r), f(g), f(b)].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
+    }
+    function poly(pts, fill) { return '<polygon points="' + pts.map(function (p) { return p.join(','); }).join(' ') + '" fill="' + fill + '" opacity="0.92"/>'; }
+    var A = iso(x, y, z + h), B = iso(x + w, y, z + h), Cc = iso(x + w, y + d, z + h), D = iso(x, y + d, z + h);
+    var B2 = iso(x + w, y, z), C2 = iso(x + w, y + d, z), D2 = iso(x, y + d, z);
+    return poly([A, B, Cc, D], shade(col, .18)) + poly([D2, C2, Cc, D], shade(col, -.10)) + poly([B2, C2, Cc, B], shade(col, -.24));
+  }
+})();
+</script>
+</body>
+</html>

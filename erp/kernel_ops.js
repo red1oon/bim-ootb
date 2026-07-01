@@ -145,6 +145,15 @@
     return (_versionStamp && params && typeof params === 'object') ? _versionStamp(opType, params) : params;
   }
 
+  // §S7 (teams/ROADMAP.md Phase D, GAP-SUBSCRIBE / W-EMIT): an OPTIONAL post-commit op-event emitter for
+  // the Teams overlay. UNSET (default) = today's behaviour EXACTLY — no emit, no overhead, commit byte-
+  // identical. Fires ONLY AFTER a group is committed + sealed + persisted (never on the staging/hash
+  // path), wrapped so an emitter error can NEVER break or alter the commit. The kernel stays decoupled:
+  // it emits a fixed TEAM_OP payload; the BroadcastChannel('bim_teams') wiring lives in teams/, not here.
+  var _opEmitter = null;
+  function setOpEmitter(fn) { _opEmitter = fn; }
+  function _emitOps(evt) { if (_opEmitter) { try { _opEmitter(evt); } catch (e) { console.log('§KRN_EMIT_ERR ' + e.message); } } }
+
   function _canonical(op) {   // stable serialisation — every mutating field, fixed order
     return op.id + '|' + op.timestamp + '|' + op.op_type + '|' +
            (op.parameters || '') + '|' + (op.input_guids || '') + '|' + (op.output_guid || '');
@@ -366,6 +375,10 @@
     console.log('§KRN_GROUP committed gid=' + gid + ' ops=' + ids.length + ' groupHash=' + groupHash.slice(0, 12) +
                 '… tip=' + sealRes.tip.slice(0, 12) + '… sealed=' + sealRes.sealed + ' (WHOLE — all-or-none)');
     _persistToIdb(db);
+    // §S7 (W-EMIT): AFTER-commit op-event for the Teams overlay. No-op unless setOpEmitter wired → the
+    // return value, the rows, the chain, and the timing above are all unchanged when no emitter is set.
+    _emitOps({ kind: 'TEAM_OP', gid: gid, ids: ids, op_hashes: opHashes, tip: sealRes.tip,
+               branch_id: branchId, count: ids.length });
     return { gid: gid, ids: ids, op_hashes: opHashes, tip: sealRes.tip,
              sealed: sealRes.sealed, committed: true, group_hash: groupHash };
   }
@@ -610,6 +623,7 @@
     commitGroup:  commitGroup,   // §I-K (W-OPGROUP): N ops, ONE group hash, all-or-none, sealed once (async)
     verifyChain:  verifyChain,   // W-CHAIN/W-SIGN: prove tamper-evidence (async)
     setSigner:    setSigner,     // W-SIGN: install an edge signer (opt-in)
+    setOpEmitter: setOpEmitter,  // §S7 (W-EMIT): install an OPTIONAL post-commit op-event emitter (Teams, opt-in)
     setVersionStamper: setVersionStamper, // D2: install a schema-version stamper (opt-in; ERP.OpUpcaster.install)
     assertRateAsInput: assertRateAsInput, // §I-J (W-RATE-INPUT): currency-determinism guard (pure, rate-as-op-input)
     branchOps:    branchOps,     // BLUE FUTURE (W-BLUE-FUTURE): the ops of a speculative branch (id order)
@@ -617,5 +631,5 @@
     acceptBranchUpTo: acceptBranchUpTo // BLUE FUTURE: long-click a blue dot → accept-up-to-here (chain stays valid)
   };
 
-  console.log('§KERNEL_OPS_LOADED v9 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE)');
+  console.log('§KERNEL_OPS_LOADED v9 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT)');
 })();
