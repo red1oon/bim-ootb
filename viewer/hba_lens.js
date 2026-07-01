@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll, Lv: G.HbaLeave }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -251,6 +251,16 @@
         A._hbaPayrollSpec = h.AD.demoSpec();
         console.log('§HBA_PAY seeded payroll spec — ' + A._hbaPayrollSpec.employees.length + ' employees, period ' + A._hbaPayrollSpec.period + ' (demonstrator)');
       }
+      // P8 — seed a (watermarked, demonstrator) leave spec so the Leave pane has data, same reasoning as
+      // Payroll above (no spatial guid to resolve). Reuses the SAME employee identities as the payroll spec
+      // (EMP001/EMP002) and the SAME accrue/take schedule already accepted by witness_leave.js, per employee.
+      if (!A._hbaLeaveSpec && h.Lv && h.Lv.demoLog && h.AD && h.AD.demoSpec && rooms.length) {
+        var payEmps = h.AD.demoSpec().employees;
+        var leaveEmps = payEmps.map(function (e) { return { id: e.name, name: e.name }; });
+        var leaveLogs = {}; leaveEmps.forEach(function (e) { leaveLogs[e.id] = h.Lv.demoLog(e.id); });
+        A._hbaLeaveSpec = { period: null, policy: null, locale: 'en', employees: leaveEmps, log: leaveLogs };
+        console.log('§HBA_LEAVE seeded leave spec — ' + leaveEmps.length + ' employees (demonstrator)');
+      }
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 
@@ -302,7 +312,8 @@
     layers:    '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
     cpu:       '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
     barChart:  '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
-    banknote:  '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>'
+    banknote:  '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+    calendar:  '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>'
   };
   var FAMILY = [
     { kind: 'lens', mode: 'occupancy',   icon: 'doorOpen',   label: 'Occupancy',    detail: 'Availability — occupied / expiring / vacant / unavailable (incl. lease status)' },
@@ -310,11 +321,13 @@
     { kind: 'lens', mode: 'class',       icon: 'layers',     label: 'Unit class',   detail: 'Use-class — residential / commercial / office' },
     { kind: 'lens', mode: 'maintenance', icon: 'cpu',        label: 'Assets / IoT', detail: 'Equipment maintenance due — ok / due / overdue' },
     { kind: 'pane', id:   'dash',        icon: 'barChart',   label: 'Dashboard',    detail: 'Occupancy / availability / ticket-aging charts (extra pane)' },
-    { kind: 'pane', id:   'payslip',     icon: 'banknote',   label: 'Payslip',      detail: 'Payroll run → per-employee payslip (glass-box, watermarked)' }
+    { kind: 'pane', id:   'payslip',     icon: 'banknote',   label: 'Payslip',      detail: 'Payroll run → per-employee payslip (glass-box, watermarked)' },
+    { kind: 'pane', id:   'leave',       icon: 'calendar',   label: 'Leave',        detail: 'Leave balance & statement — accrual/take replay (glass-box)' }
   ];
-  // pane entries route by `id` to their own additive pane module (dash→HBADashPane, payslip→HBAPayslipPane) —
-  // a small registry instead of hardcoding one pane name, so adding a pane never touches the lens/toggle path.
-  var PANE_GLOBALS = { dash: 'HBADashPane', payslip: 'HBAPayslipPane' };
+  // pane entries route by `id` to their own additive pane module (dash→HBADashPane, payslip→HBAPayslipPane,
+  // leave→HBALeavePane) — a small registry instead of hardcoding one pane name, so adding a pane never touches
+  // the lens/toggle path.
+  var PANE_GLOBALS = { dash: 'HBADashPane', payslip: 'HBAPayslipPane', leave: 'HBALeavePane' };
   function paneFor(f) { return G[PANE_GLOBALS[f.id]]; }
   function _entryActive(f) {
     return f.kind === 'pane' ? !!(paneFor(f) && paneFor(f).isActive && paneFor(f).isActive()) : isActive(f.mode);

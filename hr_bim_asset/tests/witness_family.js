@@ -50,8 +50,8 @@ function entry(id) { return lenses.filter(function (x) { return x.id === id; })[
 
 // ---- F1 — de-conflate: the family lists DISTINCT questions; Tenancy is folded into Occupancy (no 'tenancy').
 var ids = lenses.map(function (x) { return x.id; });
-ok('F1-deconflate', ids.join(',') === 'occupancy,presence,class,maintenance,dash,payslip' && ids.indexOf('tenancy') === -1,
-  'family = Occupancy · Presence · Unit class · Assets/IoT · Dashboard · Payslip (Tenancy folded into Occupancy — no standalone tenancy pill) — ' + JSON.stringify(ids));
+ok('F1-deconflate', ids.join(',') === 'occupancy,presence,class,maintenance,dash,payslip,leave' && ids.indexOf('tenancy') === -1,
+  'family = Occupancy · Presence · Unit class · Assets/IoT · Dashboard · Payslip · Leave (Tenancy folded into Occupancy — no standalone tenancy pill) — ' + JSON.stringify(ids));
 
 // ---- F2 — WAKE-AWARE: on a building with rooms+leases+logs but NO asset, occupancy/presence/class are
 //   available; maintenance (assets) is GREYED (available:false) — the icon is present but disabled, never faked.
@@ -89,8 +89,8 @@ ok('F6-one-pill', /id:\s*'hbaFM'/.test(panelsSrc) && /HBALens\.openFamilyDrawer\
 
 // ---- F7 — drawer renderer is node-safe (no document → returns null, never throws) + exposes the family list.
 var nullInNode = HBALens.openFamilyDrawer(A) === null;
-ok('F7-drawer-nodesafe', nullInNode && HBALens.FAMILY.length === 6,
-  'openFamilyDrawer is a no-op without a DOM (null, no throw); FAMILY exposes the 6 entries for the browser drawer');
+ok('F7-drawer-nodesafe', nullInNode && HBALens.FAMILY.length === 7,
+  'openFamilyDrawer is a no-op without a DOM (null, no throw); FAMILY exposes the 7 entries for the browser drawer');
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-FAMILY ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));

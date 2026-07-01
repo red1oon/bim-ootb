@@ -49,9 +49,11 @@
   <script src="../attendance.js"></script>
   <script src="../occupancy.js"></script>
   <script src="../request.js"></script>
+  <script src="../leave.js"></script>
   <script src="../dashboard.js"></script>
   <script src="../../viewer/hba_dashboard.js"></script>
   <script src="../../viewer/hba_payslip.js"></script>
+  <script src="../../viewer/hba_leave.js"></script>
   <script src="../../viewer/hba_lens.js"></script>
   <script>
     // mock APP: real lease-room guids (Occupancy/Presence/Class detect) + seeded signed logs; NO asset guid →
@@ -63,11 +65,14 @@
     A._hbaOccupancyLog = self.HbaOccupancy.demoSeed(rooms).log;
     A._hbaAttendanceLog = self.HbaAttendance.demoSeed(rooms, '2026-07').log;
     A._hbaPayrollSpec = self.HbaAdPayroll.demoSpec();   // P7 — payroll has no spatial binding to check, seeded like the others
+    var payEmps = A._hbaPayrollSpec.employees.map(function(e){ return { id: e.name, name: e.name }; });
+    var leaveLogs = {}; payEmps.forEach(function(e){ leaveLogs[e.id] = self.HbaLeave.demoLog(e.id); });
+    A._hbaLeaveSpec = { period: null, policy: null, locale: 'en', employees: payEmps, log: leaveLogs };   // P8 — same reasoning
     window.APP = A;
     // open the REAL family drawer (the same call panels.js makes)
     var d = self.HBALens.openFamilyDrawer(A);
     var avail = self.HBALens.availableLenses(A);
     console.log('§FM_DEMO drawer rendered=' + !!d + ' available=' + avail.filter(function(x){return x.available;}).map(function(x){return x.id;}).join(','));
-    document.title = 'FM ready · ' + avail.filter(function(x){return x.available;}).length + '/6 lenses';
+    document.title = 'FM ready · ' + avail.filter(function(x){return x.available;}).length + '/7 lenses';
   </script>
 </body></html>
