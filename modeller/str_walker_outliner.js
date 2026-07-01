@@ -33,6 +33,7 @@
     { key: 'SampleHouse',  label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_extracted.db',  v: 2 },
     { key: 'Duplex',       label: 'Duplex · wall-bearing',             db: 'Duplex_extracted.db',       v: 2 },
     { key: 'SampleCastle', label: 'SampleCastle · column-framed',      db: 'SampleCastle_extracted.db', v: 2 },
+    { key: 'SampleCastle-ARC', label: 'SampleCastle · ARC only (diagnostic)', db: 'SampleCastle_ARC_extracted.db', v: 1 },
     { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db',          v: 1 }
   ];
 
