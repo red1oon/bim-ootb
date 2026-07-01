@@ -21,25 +21,41 @@ runE2E('W-E2E-ROUTE', async (t) => {
   const armed = await t.pg.evaluate(() => document.getElementById('b-run').style.display !== 'none');
   t.assert('U1 ROUTE-MODE (Route pill arms + Sweep-Run revealed)', armed, 'runShown=' + armed);
 
-  const ref = await t.pg.evaluate(() => {
-    const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId != null);
-    const b = new window.THREE.Box3().setFromObject(m); const c = new window.THREE.Vector3(); b.getCenter(c);
-    return [c.x, c.y];
-  });
-  const x0 = ref[0] + 1, y0 = ref[1] + 1;
-  const path = [[x0, y0], [x0 + 3, y0], [x0 + 3, y0 + 3]];      // L-shaped spine, 3 points
-  for (const [wx, wy] of path) { const p = await t.proj(wx, wy, 0); await t.pg.mouse.move(p[0], p[1]); await t.sleep(40); await t.pg.mouse.down(); await t.sleep(40); await t.pg.mouse.up(); await t.sleep(120); }
+  // enterRoute() hard-resets the camera to the same fixed top-down plan view as Sketch (looking at world
+  // (2, 1.5)) — (2,0)-(4.4,2.4) is verified-clear open ground near that look-at point (§F2 sketch witness probe).
+  const x0 = 2, y0 = 0;
+  const path = [[x0, y0], [x0 + 2, y0], [x0 + 2, y0 + 2]];      // L-shaped spine, 3 points
+  const screenPts = [];
+  for (const [wx, wy] of path) { const p = await t.proj(wx, wy, 0); screenPts.push(p); await t.pg.mouse.move(p[0], p[1]); await t.sleep(40); await t.pg.mouse.down(); await t.sleep(40); await t.pg.mouse.up(); await t.sleep(120); }
   const nPts = await t.pg.evaluate(() => window.routePts ? window.routePts.length : null);
   // routePts is a module-local; assert via the Sweep-Run pill becoming enabled (it gates on ≥2 points).
   const runEnabled = await t.pg.evaluate(() => !document.getElementById('b-run').disabled);
   t.assert('U2 POINTS (≥2 route points placed → Run enabled)', runEnabled, 'runEnabled=' + runEnabled + ' nPts=' + nPts);
   await t.shot('02-routed');
+  await t.shotPts('route-spine', screenPts);   // guide frame (§F2 G4): clipped around the laid spine (route mode zooms the camera in)
 
   const before = await t.oplog(); const pix0 = await t.pixsum();
   await t.pg.evaluate(() => { document.getElementById('dim-prof').value = '0.4'; });
   await t.clickSel('#b-run'); await t.sleep(1600);
   const after = await t.oplog(); const last = await t.lastOp(); const chain = await t.verifyChain(); const pix1 = await t.pixsum();
   await t.shot('03-swept');
+
+  // guide frame (§F2 G4): exitRoute already restored the wide camera — select the new run + click the real
+  // Fit pill (frames the selection), same trick as the Sketch witness's sketch-wall frame.
+  {
+    const runCentre = await t.centre(last && last.id);
+    if (runCentre) { const wp = await t.proj(runCentre[0], runCentre[1], runCentre[2]); await t.pg.mouse.click(wp[0], wp[1]); await t.sleep(200); }
+    await t.clickSel('#b-fit'); await t.sleep(500);
+    // the run's 0.4m profile is thin — Fit alone zooms in too tight to read as a duct; dolly back a little
+    // for surrounding context (equivalent to a real user's scroll-to-zoom-out after an over-tight auto-fit).
+    await t.pg.evaluate(() => {
+      const dir = new window.THREE.Vector3().subVectors(window.A.camera.position, window.A.controls.target);
+      window.A.camera.position.copy(window.A.controls.target).add(dir.multiplyScalar(3));
+      window.A.controls.update();
+    });
+    await t.sleep(150);
+    await t.shot('route-run');
+  }
 
   t.assert('U3 SWEEP (one GEOM_SWEEP with path+profile)',
     after.len === before.len + 1 && last && last.op_type === 'GEOM_SWEEP' && last.parameters && (last.parameters.path || []).length >= 2 && last.parameters.profile,
@@ -55,4 +71,4 @@ runE2E('W-E2E-ROUTE', async (t) => {
   const undo = await t.oplog(); const gone = await t.census(new Function('o,obj', 'return o.featureId === ' + newId));
   await t.shot('04-undone');
   t.assert('U6 REVERSIBLE (undo restores cursor + removes run)', undo.cur === before.cur && gone.n === 0, 'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ') meshFid' + newId + '=' + gone.n);
-});
+}, { width: 1200, height: 850, dpr: 2 });

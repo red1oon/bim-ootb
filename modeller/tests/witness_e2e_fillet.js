@@ -61,6 +61,7 @@ runE2E('W-E2E-FILLET', async (t) => {
   const applyEnabled = await t.pg.evaluate(() => !document.getElementById('b-applyfillet').disabled);
   t.assert('F4 PICK (one edge marker selected → Apply enabled)', applyEnabled, 'picked=' + nPicked + ' applyEnabled=' + applyEnabled);
   await t.shot('04-picked');
+  await t.shotClip('fillet-edges2', wallId, 180);
 
   const before = await t.oplog(); const tw0 = await tris(t, wallId);
   await t.pg.evaluate(() => { document.getElementById('dim-rad').value = '0.2'; });
@@ -69,6 +70,7 @@ runE2E('W-E2E-FILLET', async (t) => {
   let tw1 = await tris(t, wallId);
   for (let i = 0; i < 10 && !tw1; i++) { await t.sleep(300); tw1 = await tris(t, wallId); }
   await t.shot('05-filleted');
+  await t.shotClip('fillet-rounded', wallId, 100);
 
   t.assert('F5 FILLET (one GEOM_FILLET on the wall, edge+radius)',
     after.len === before.len + 1 && last && last.op_type === 'GEOM_FILLET' && last.parameters && last.parameters.parent === wallId && (last.parameters.edges || []).length >= 1 && last.parameters.radius > 0,
@@ -79,4 +81,4 @@ runE2E('W-E2E-FILLET', async (t) => {
   const undo = await t.oplog(); const tw2 = await tris(t, wallId);
   await t.shot('06-undone');
   t.assert('F7 REVERSIBLE (undo restores cursor + triangle count)', undo.cur === before.cur && tw2 === tw0, 'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ') tris ' + tw2 + ' (want ' + tw0 + ')');
-});
+}, { width: 1200, height: 850, dpr: 2 });

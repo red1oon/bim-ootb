@@ -25,6 +25,7 @@ runE2E('W-E2E-DELETE', async (t) => {
   await t.clickSel('#b-del'); await t.sleep(900);
   const after = await t.oplog(); const gone = await t.census(fidPred); const chain = await t.verifyChain();
   await t.shot('03-deleted');
+  await t.shot('delete-gone-raw');
   t.assert('D2 DELETE (active count −1 AND mesh removed)', after.len === before.len - 1 && gone.n === 0, 'len ' + before.len + '→' + after.len + ' meshFid' + sel.fid + '=' + gone.n);
   t.assert('D3 CHAIN-OK (verifyChain — soft-delete, payload untouched)', chain === true, 'verifyChain=' + chain);
 
@@ -33,4 +34,4 @@ runE2E('W-E2E-DELETE', async (t) => {
   const redo = await t.oplog(); const back = await t.census(fidPred);
   await t.shot('04-redone');
   t.assert('D4 REVERSIBLE (Redo restores active count + mesh)', redo.len === before.len && back.n === 1, 'len ' + after.len + '→' + redo.len + ' (want ' + before.len + ') meshFid' + sel.fid + '=' + back.n);
-});
+}, { width: 1200, height: 850, dpr: 2 });

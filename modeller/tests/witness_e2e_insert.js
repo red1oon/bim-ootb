@@ -16,6 +16,7 @@ const { runE2E } = require('./e2e_harness');
 runE2E('W-E2E-INSERT', async (t) => {
   await t.open('Duplex');
   await t.shot('01-open');
+  await t.shot('workspace-open');   // guide frame (§F2 G4 HMI): full workspace after Open+Fit
 
   // I1 ARM: open the Insert panel, click the first catalog COMPONENT leaf (.ins-c, not an .ins-a assembly).
   await t.clickSel('#b-insert'); await t.sleep(300);
@@ -32,6 +33,7 @@ runE2E('W-E2E-INSERT', async (t) => {
   });
   t.assert('I1 ARM (Insert panel open + catalog leaf armed)', !!armed.selHash && armed.panelShown, 'hash=' + armed.selHash + ' panel=' + armed.panelShown);
   await t.shot('02-armed');
+  await t.shot('insert-catalog');   // guide frame (§F2 G4 HMI): catalog panel armed
 
   // Ground target: a real element's footprint centre dropped to z=0 → project to a client pixel that raycasts
   // to the ground plane (the same plane the place handler intersects). Snap inside the handler decides the cell.
@@ -61,8 +63,11 @@ runE2E('W-E2E-INSERT', async (t) => {
   t.assert('I4 ATOMIC (mesh featureId==new op id in scene)', present.n === 1, 'meshes with fid=' + newId + ' → ' + present.n);
   t.assert('I5 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
 
+  await t.clickSel('#b-insert'); await t.sleep(200);   // real toggle-off (exitInsert) — closes the catalog panel, no model change
+  await t.shot('insert-placed-raw');   // guide frame (§F2 G4 canvas-crop): raw, cropped post-capture → insert-placed
+
   await t.undoToCursor(before.cur);
   const undo = await t.oplog(); const gone = await t.census(fidPred);
   await t.shot('04-undone');
   t.assert('I6 REVERSIBLE (undo restores cursor + removes mesh)', undo.cur === before.cur && gone.n === 0, 'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ') meshFid' + newId + '=' + gone.n);
-});
+}, { width: 1200, height: 850, dpr: 2 });

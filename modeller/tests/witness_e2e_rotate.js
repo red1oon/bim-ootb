@@ -37,6 +37,7 @@ runE2E('W-E2E-ROTATE', async (t) => {
   t.assert('R2 GIZMO (yaw ring present)', !!giz, giz ? 'R=' + giz.R.toFixed(2) : 'no ring');
   if (!giz) return;
   await t.shot('02-gizmo');
+  await t.shotClip('gizmo', sel.fid, 200);
 
   // Drag the ring from angle 0° to 30° about the centre (on the horizontal plane through c0). 15°-snap → 30°.
   const th = 30 * Math.PI / 180, R = giz.R, c = giz.centre;
@@ -49,6 +50,7 @@ runE2E('W-E2E-ROTATE', async (t) => {
   let b1 = await aabb(t, sel.fid);
   for (let i = 0; i < 10 && !b1; i++) { await t.sleep(300); b1 = await aabb(t, sel.fid); }
   await t.shot('03-rotated');
+  await t.shotClip('rotate-yaw', sel.fid, 100);
 
   t.assert('R3 ROT-COMMIT (one GEOM_ROTATE, drot≈30)',
     after.len === before.len + 1 && last && last.op_type === 'GEOM_ROTATE' && last.parameters && Math.abs(Math.abs(last.parameters.drot) - 30) < 0.6,
@@ -66,4 +68,4 @@ runE2E('W-E2E-ROTATE', async (t) => {
   t.assert('R6 REVERSIBLE (undo restores cursor + footprint)',
     undo.cur === before.cur && b2 && b0 && Math.abs(b2.ex - b0.ex) < 1e-3 && Math.abs(b2.ey - b0.ey) < 1e-3,
     'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ') ex ' + (b2 ? b2.ex.toFixed(3) : '?') + ' (want ' + (b0 ? b0.ex.toFixed(3) : '?') + ')');
-});
+}, { width: 1200, height: 850, dpr: 2 });
