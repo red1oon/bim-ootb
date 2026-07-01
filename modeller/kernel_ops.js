@@ -164,6 +164,27 @@
     throw new Error('crypto.subtle unavailable — cannot seal chain');
   }
 
+  // §LOD400-STALL: the hash chain (op_hash[i] depends on op_hash[i-1] via `prev`) is a HARD sequential
+  // dependency — cannot parallelize the per-op crypto.subtle.digest calls without breaking the chain. What
+  // CAN be fixed is visibility: yield to the event loop every YIELD_EVERY ops so the browser actually gets a
+  // turn to paint a progress line between chunks, instead of running thousands of awaited-but-microtask-only
+  // crypto calls back-to-back with zero macrotask yield (indistinguishable from a hang to the user). rAF ties
+  // the yield to the paint cycle in a browser; setTimeout(0) is the fallback for a non-browser host (node
+  // witnesses shim `window` but have neither rAF nor a real event-loop-driven paint — setTimeout still yields
+  // the microtask queue there, which is all a pure-node witness needs).
+  var YIELD_EVERY = 1500;
+  function _yieldFrame() {
+    return new Promise(function (resolve) {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { resolve(); });
+      else setTimeout(resolve, 0);
+    });
+  }
+  // Report progress via the host's status-line if one is wired (modeller.html's setStat, exposed on
+  // window — see §LOD400-STALL). Absent in node witnesses / hosts that don't wire it → no-op, never throws.
+  function _reportProgress(msg) {
+    if (typeof window !== 'undefined' && typeof window.setStat === 'function') { try { window.setStat(msg); } catch (e) { } }
+  }
+
   // sealChain — (re)compute prev_hash/op_hash for the WHOLE log in id order, idempotently.
   // Full recompute (not incremental) because compact() may delete/collapse ops; re-sealing after
   // compaction keeps the chain correct over the current log. Signs ops lacking a sig if a signer is set.
@@ -200,19 +221,30 @@
   async function sealFrom(db, fromTip) {
     ensureTable(db);
     var tip = fromTip || _lastSealedTip(db);
-    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig FROM kernel_ops WHERE id > ' + tip.id + ' ORDER BY id');
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig,prev_hash,op_hash FROM kernel_ops WHERE id > ' + tip.id + ' ORDER BY id');
     if (!r.length) { return { sealed: 0, tip: tip.hash, fromId: tip.id }; }
-    var rows = r[0].values, prev = tip.hash, sealed = 0;
+    var rows = r[0].values, prev = tip.hash, sealed = 0, reused = 0;
     for (var i = 0; i < rows.length; i++) {
       var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
                  parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5] };
-      var sig = rows[i][6];
-      var h = await _sha256(prev + '|' + _canonical(op));
+      var sig = rows[i][6], storedPrev = rows[i][7], storedHash = rows[i][8], h;
+      // §LOD400-STALL perf fix: commitGroup STAGES each row's op_hash (chained off the real tip) BEFORE the
+      // INSERT — so by the time sealFrom runs, the row already carries its correct, final op_hash (this is
+      // what "sealFrom is idempotent over them" in commitGroup's comment always meant). Re-deriving the exact
+      // same deterministic sha256(prev|canonical(op)) here was a pure duplicate computation — cheap for a
+      // handful of ops, but for a large op-group (Terminal ARC seed: 35,552 rows) it silently TRIPLED the
+      // sequential-crypto cost (stage + seal + the caller's later verifyChain each independently re-hash every
+      // row). Trust-but-verify the CHEAP half first (string-compare the recorded prev_hash against the tip
+      // we're chaining from); only pay for crypto.subtle.digest when the row is genuinely unsealed or the
+      // chain link doesn't already hold (any future caller that inserts raw/unsealed rows still gets the full,
+      // correct recompute below — this is a pure no-op-when-already-true optimisation, not a weaker check).
+      if (storedHash != null && storedPrev === prev) { h = storedHash; reused++; }
+      else { h = await _sha256(prev + '|' + _canonical(op)); }
       if (_signer && !sig) { try { sig = await _signer.sign(h); } catch (e) { sig = null; } }
       db.run('UPDATE kernel_ops SET prev_hash=?, op_hash=?, sig=? WHERE id=?', [prev, h, sig || null, op.id]);
       prev = h; sealed++;
     }
-    console.log('§KRN_SEAL_FROM fromId=' + tip.id + ' sealed=' + sealed + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
+    console.log('§KRN_SEAL_FROM fromId=' + tip.id + ' sealed=' + sealed + ' reused=' + reused + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
     return { sealed: sealed, tip: prev, fromId: tip.id };
   }
 
@@ -327,6 +359,13 @@
       if (_signer) { try { sig = await _signer.sign(h); } catch (e) { sig = null; } }
       row.sig = sig;
       staged.push(row); opHashes.push(h); prev = h;
+      // §LOD400-STALL: yield + report progress periodically — small commits (typical single-op edits) never
+      // hit this (opsArray.length stays well under YIELD_EVERY), so today's fast path is byte-identical;
+      // only a large op-group (a seed) pays the yield, and only to become VISIBLE, not slower in substance.
+      if ((i + 1) % YIELD_EVERY === 0 && i + 1 < opsArray.length) {
+        _reportProgress('signing ' + (i + 1) + '/' + opsArray.length + ' elements…');
+        await _yieldFrame();
+      }
     }
     // derive ONE group hash binding the whole group to the tip (§I-K SPEC step 1).
     var groupHash = await _sha256([tipRow.hash].concat(opHashes).join('|'));
@@ -408,6 +447,13 @@
         return { ok: false, brokeAt: op.id, why: fail };
       }
       prev = storedHash;
+      // §LOD400-STALL: same defensive yield as commitGroup's staging loop — a full-log verify is normally tiny
+      // (single-op commit() calls it every time), but if some future caller ever verifies a large log, this
+      // keeps it from blocking the main thread silently. No-op for the common small-N case (never triggers).
+      if ((i + 1) % YIELD_EVERY === 0 && i + 1 < rows.length) {
+        _reportProgress('verifying ' + (i + 1) + '/' + rows.length + ' elements…');
+        await _yieldFrame();
+      }
     }
     console.log('§KRN_CHAIN verify OK len=' + rows.length + ' tip=' + prev.slice(0, 12) + '…');
     return { ok: true, len: rows.length, tip: prev };

@@ -93,26 +93,32 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   chk('A2 featureId↔guid bridge bijective + all guids real + round-trips',
     allMembers && bijective && roundTrips, 'fids=' + fids.length + ' guids=' + guids.length);
 
-  // A3/A4/A5 — fold every seed op through the REAL foldInsert (raw-bbox path) and check geometry fidelity
-  var posOk = 0, boxConstrOk = 0, foldExtentOk = 0, fidOk = 0, rotZeroN = 0, n = seed.ops.length;
+  // A3/A4/A5 — fold every seed op through the REAL foldInsert (raw-bbox OR, since Bug-2's honest partial fix,
+  // matched-LOD300-mesh path) and check geometry fidelity. A MATCHED op (op.params.hash set) folds to the REAL
+  // catalog mesh, not the raw measured box — its AABB extent is then the CATALOG's extent (not the measured
+  // element's), by design (§5 doctrine "same placement, richer mesh"); it is excluded from the rot≈0-AABB==measured
+  // check for that reason (a SEPARATE assertion below proves its world-centre still lands on the measured point,
+  // which is the placement invariant this witness actually cares about).
+  var posOk = 0, boxConstrOk = 0, foldExtentOk = 0, fidOk = 0, rotZeroN = 0, n = seed.ops.length, matchedN = 0;
   seed.ops.forEach(function (op) {
     var g = op.outputGuid, T = truth[g], fid = seed.bridge.fidByGuid[g];
     var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
     var bb = aabb(d.positions);
-    if (approx(bb.cx, T.cx) && approx(bb.cy, T.cy) && approx(bb.cz, T.cz)) posOk++;        // world centre == measured (rot-invariant)
-    // construction-level: the seed box extent == measured bbox (exact)
+    if (approx(bb.cx, T.cx) && approx(bb.cy, T.cy) && approx(bb.cz, T.cz)) posOk++;        // world centre == measured (rot-invariant) — holds for BOTH raw-bbox and matched-mesh ops
+    // construction-level: the seed box extent == measured bbox (exact) — always true, hash or not (audit trail kept)
     var pe = op.params.bbox;
     if (approx(pe[1] - pe[0], T.bx) && approx(pe[3] - pe[2], T.by) && approx(pe[5] - pe[4], T.bz)) boxConstrOk++;
-    // geometry-level extent: only axis-aligned (rot≈0) boxes keep AABB == measured
-    if (approx(T.rz % 360, 0, 1e-3) || approx(Math.abs(T.rz % 360), 360, 1e-3)) {
+    if (op.params.hash) matchedN++;                                    // Bug-2: LOD-300 real-mesh match, extent is the CATALOG's — skip below
+    // geometry-level extent: only axis-aligned (rot≈0), UNMATCHED (still raw-bbox) elements keep AABB == measured
+    else if (approx(T.rz % 360, 0, 1e-3) || approx(Math.abs(T.rz % 360), 360, 1e-3)) {
       rotZeroN++;
       if (approx(bb.ex, T.bx) && approx(bb.ey, T.by) && approx(bb.ez, T.bz)) foldExtentOk++;
     }
     if (d.featureId === fid) fidOk++;
   });
   chk('A3 folded mesh world-centre == measured center_xyz within 1e-6 (NO invented offset)', posOk === n, posOk + '/' + n);
-  chk('A4 seed box extent == measured bbox (exact) + rot≈0 AABB extent == measured', boxConstrOk === n && foldExtentOk === rotZeroN && rotZeroN > 0,
-    'boxConstr=' + boxConstrOk + '/' + n + ' foldExtent=' + foldExtentOk + '/' + rotZeroN);
+  chk('A4 seed box extent == measured bbox (exact) + rot≈0 unmatched AABB extent == measured', boxConstrOk === n && foldExtentOk === rotZeroN && rotZeroN > 0,
+    'boxConstr=' + boxConstrOk + '/' + n + ' foldExtent=' + foldExtentOk + '/' + rotZeroN + ' (matched-LOD300 excluded: ' + matchedN + ')');
   chk('A5 each folded mesh carries featureId == its op id (gizmo-selectable + GEOM_MOVE-able)', fidOk === n, fidOk + '/' + n);
 
   // A6 — output_guid persisted on kernel_ops, queryable by featureId(=id)
@@ -140,6 +146,49 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   var skippedVictim = built2.skipped.some(function (s) { return s.guid === victim && s.reason === 'no-bbox'; });
   chk('A8 NULL-bbox element SKIPPED (not fabricated), logged, excluded from count',
     skippedVictim && built2.ops.length === arcTotal - 1, 'ops=' + built2.ops.length + ' (was ' + arcTotal + ') skipped=' + built2.skipped.length);
+
+  // A9 — Bug-2 partial fix: a matched op STRUCTURALLY folds to the REAL catalog mesh (not the 8-vert/12-tri box
+  // signature), an unmatched op stays the box signature, and matched+unmatched accounts for every seeded element
+  // (no silent drop, honest gap visible). boxArrays() = 8 positions/24 indices always (12 tris); any matched mesh
+  // (Column vc=16/fc=24, Beam vc=16/fc=24, Door vc=32/fc=52 per bonsai_library.js CATALOG) differs from that.
+  var matchedOps = seed.ops.filter(function (op) { return !!op.params.hash; });
+  var unmatchedOps = seed.ops.filter(function (op) { return !op.params.hash; });
+  var matchedRealMesh = matchedOps.every(function (op) {
+    var fid = seed.bridge.fidByGuid[op.outputGuid];
+    var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
+    var c = Library.get(op.params.hash);
+    return c && d.positions.length / 3 !== 8 && d.indices.length / 3 !== 12 &&
+      d.positions.length / 3 === c.vc && d.indices.length / 3 === c.fc;
+  });
+  var unmatchedIsBox = unmatchedOps.every(function (op) {
+    var fid = seed.bridge.fidByGuid[op.outputGuid];
+    var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
+    return d.positions.length / 3 === 8 && d.indices.length / 3 === 12;
+  });
+  chk('A9 matched⇒real catalog mesh (NOT box signature, vert/face counts == matched catalog entry); unmatched⇒still box signature; matched+unmatched==total',
+    matchedOps.length === seed.matched && unmatchedOps.length === seed.unmatched &&
+    seed.matched + seed.unmatched === n && matchedRealMesh && unmatchedIsBox && matchedOps.length > 0,
+    'matched=' + seed.matched + ' unmatched=' + seed.unmatched + ' total=' + n);
+
+  // A10 — §ARC-ROT-UNIT regression guard: element_transforms.rotation_z is RADIANS; an UNMATCHED (still
+  // raw-bbox) rotated element's folded world AABB must match the analytic rotated-box extent (halfX=hx|cosθ|+
+  // hy|sinθ|, halfY=hx|sinθ|+hy|cosθ|) computed from the TRUE θ=T.rz — not the near-zero angle a
+  // radians-fed-as-degrees bug would silently produce. Matched-LOD300 ops are excluded (their extent is the
+  // catalog mesh's own shape, not the raw box formula — same exclusion doctrine as A4).
+  var rotOk = 0, rotN = 0;
+  unmatchedOps.forEach(function (op) {
+    var T = truth[op.outputGuid];
+    if (approx(T.rz, 0, 1e-6)) return;                          // true zero rotation — nothing to distinguish
+    rotN++;
+    var fid = seed.bridge.fidByGuid[op.outputGuid];
+    var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
+    var bb = aabb(d.positions);
+    var c = Math.abs(Math.cos(T.rz)), s = Math.abs(Math.sin(T.rz));
+    var expEx = T.bx * c + T.by * s, expEy = T.bx * s + T.by * c;
+    if (approx(bb.ex, expEx, 1e-3) && approx(bb.ey, expEy, 1e-3)) rotOk++;
+  });
+  chk('A10 unmatched rotated element folds to the ANALYTIC true-angle AABB (radians-as-degrees bug would fail this)',
+    rotOk === rotN && rotN > 0, rotOk + '/' + rotN);
 
   console.log('W-ARC-EDITABLE: ' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
