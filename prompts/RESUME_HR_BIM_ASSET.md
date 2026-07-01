@@ -106,11 +106,28 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   `docs/hba-guide-rewrite` (pushed). **DEPLOYED LIVE** via `scripts/safe_gh_deploy.sh` (guard PASS, blessed benign
   `.nojekyll`; live 184→198 files, superset): P4+P5 both live 200 — `https://red1oon.github.io/BIMCompiler/
   HRBIMAssetGuide/` + `/SpatialERPIntegration/` (+ images 200), all 7 canaries 200.
-- **P6 — AVATAR LOD "WOW" (user idea, for a session once P1–P2 land).** Little human avatars in each room when
-  zoomed in; **hover → AD_User / `C_BPartner.image`** (plan an image field like `M_Product.image` if absent);
-  proximity-based tips that appear as you draw nearer; reduce to **dots / minified avatars** when far (an LOD
-  ladder over the presence lens). Non-invent: an avatar only where a real signed check-in/occupancy binds a real
-  person to a real (now member-resolved) room.
+- **P6 — AVATAR LOD "WOW". ✅ DONE+LIVE 2026-07-01.** Pure engine `hr_bim_asset/avatars.js` (avatarPlan folds
+  `attendance.sessions` → one avatar per present person per RESOLVED zone, count==presenceByZone headcount,
+  ring-placed around the zone centroid · avatarLOD: >30m dot / 12–30m mini / ≤12m full · avatarTip = watermarked
+  card {name=AD_User, image=`C_BPartner.image` PLANNED field, null till sourced}). Browser renderer
+  `viewer/hba_avatars.js` (additive, host-injected): one scene Group of Sprites (canvas person/dot glyph),
+  centroids from rendered member meshes (reuses §REAL-BIND guidTargets, instanced/batched aware), LOD on camera
+  'change', mousemove-raycast → the person's card, nearest-full auto-labels on approach. Wired to the presence
+  toggle in hba_lens.js (mount on-presence / unmount on any clear → zero residue). W-HBA-AVATARS 6/6. LIVE HHS:
+  §HBA_AVATARS **34 avatars over 10 zones**, screenshot = blue people standing in rooms, ringed where several share
+  one. Non-invent (no check-in → no avatar). **ROADMAP P1-P6 ALL COMPLETE.**
+- **P4-REVISIT + DASHBOARD FIX (user: "screenshots must tell the detail flow; if no-data, review to get them").**
+  Found+fixed a REAL bug: `viewer/viewer.html` never loaded Chart.js (the local `lib/chart.umd.min.js`, already
+  precached in sw.js) → the FM Dashboard KPI tiles rendered but the 3 canvases were **BLANK**. Added the script →
+  LIVE `chartLib=true`, dashboard now renders rich (3-storey utilisation bar · 4-bucket ticket-aging doughnut ·
+  12-month availability trend). Recaptured the full **detail-flow screenshot set** on live HHS (drawer · occupancy
+  · **presence avatars** · rich dashboard · GW aisles) and rewrote `docs/HRBIMAssetGuide.md` with a shot at every
+  task step + a Presence-avatars walkthrough. **REDEPLOYED LIVE** (guard PASS, blessed intentional image
+  replacement + `.nojekyll`): guide + all 5 images 200 on gh-pages.
+- **REGRESSION (user: "check if u break any other features or panes").** Live driver on HHS after P1–P6:
+  avatars mount 34 → unmount 0 (scene 724→725→724, group removed, **residue=false**); occupancy tint 77→0, scene
+  back to base; switch presence→occupancy clears avatars; core features intact (HBALens/DashPane/Avatars/dbQuery/
+  collectMeshes/camera/controls); **jsErrors=0**. All changes additive + gated — nothing else broken.
 
 ---
 
