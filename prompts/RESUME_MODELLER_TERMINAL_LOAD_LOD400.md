@@ -73,12 +73,36 @@ to confirm the Node 9.5x gap holds in the actual swiftshader/puppeteer environme
 undershot the REAL measured 6-7s in-browser signing phase by ~10x already, so browser dispatch overhead is evidently
 worse than Node's; re-verify, don't assume).
 
-**Recommendation for whoever picks this up:** try Candidate B first — it's smaller, doesn't touch selection/pick/
-edit semantics at all (just swaps the hash primitive), and if the in-browser benchmark confirms even half of the
-Node gap, it alone could take Terminal from ~14s to low single digits with far less risk than Candidate A. Candidate
-A remains worth doing eventually (matches Viewer's architecture more completely, and is the ONLY way an unedited
-building could ever hit true near-zero signing cost regardless of hash speed) but is bigger and touches more of the
-app. Do NOT do both in the same uncoordinated pass — pick one, verify, then reassess.
+### Candidate C — batch-sign bulk/non-individually-edited classes as ONE row, not N (user-suggested 2026-07-01,
+smallest + most targeted, NOT YET DONE) — **try this FIRST**
+Today the whole building already commits as ONE atomic group (`gid='arcseed-<building>'`), but EVERY element inside
+that group still gets its own individual hash-chain link + signature — 71,104 crypto calls for Terminal's 35,552
+rows. Terminal's roof (33,324 `IfcPlate`, 93.7% of its ARC-seedable rows) is exactly the kind of class nobody
+individually gizmo-selects (a user grabs a wall or a door, never one cladding panel of an airport roof). Store that
+class's real, MEASURED placements (still non-generative, still real data — see the roof-placement note below) as
+**ONE signed row carrying a batch payload** (all 33,324 placements serialized together) instead of 33,324 separate
+signed `GEOM_INSERT` rows. That alone would cut Terminal's crypto work from ~71,104 calls to roughly ~4,456 (just
+the remaining ~2,228 individually-meaningful walls/doors/columns × 2) — **an ~16x reduction**, achieved entirely at
+SEED TIME with ZERO changes to selection/pick/edit code (unlike Candidate A). Walls/doors/furniture/columns — the
+classes a user actually edits — stay as individual signed ops exactly as today; only bulk/decorative/cladding
+classes (roof plates being the obvious first case, decide the general rule — e.g. by `ifc_class` allowlist or a
+per-class row-count threshold) get batched.
+Open design question to resolve before implementing: how does a batched-class element get edited if a user DOES
+need to touch one (e.g. replace one roof panel)? Options: (a) refuse individual edit on batched classes for now
+(honest scope-cut, document it), or (b) on first touch, unpack the ONE batch row into N individual signed ops
+(same "promotion" idea as Candidate A, but ONLY triggered for the rare edit of a batched-class element, not for
+every element — much smaller blast radius than full Candidate A). Pick (a) first unless the roster of Modeller
+tools already needs per-plate roof editing (check before assuming — likely not, given the Walker Doctrine's own
+§5 treats the roof as a class-level LOD/render concern, not an individually-authored one).
+
+**Recommendation for whoever picks this up:** try **Candidate C first** — it's the smallest, most targeted, and
+doesn't touch selection/pick/edit semantics for the classes people actually edit at all; combined with Candidate B
+(sync hash for whatever's left) it could plausibly get Terminal's signing cost to near-zero without needing
+Candidate A's larger promotion-on-touch redesign at all. Candidate B alone is still worth doing regardless (helps
+every building, not just roof-heavy ones like Terminal). Candidate A remains the most complete match to the
+Viewer's architecture (the only way to get non-batched classes to near-zero too) but is the biggest/riskiest — treat
+it as a later step only if C+B together don't close the gap enough. Do NOT do more than one in the same
+uncoordinated pass — pick one, verify, then reassess.
 
 ## ⛔ OPEN — second bottleneck once signing is fixed: op-log autosave has no working cache (confirmed bug)
 The Viewer's raw building-DB bytes ARE IndexedDB-cached (`bim_ootb_cache`/`dbs` store, `_idbGetDb` in
@@ -102,10 +126,11 @@ tessellation unit + reconstructs a GENERATED distribution, `predictedN` vs `extr
 discipline" problem, not "place 33K elements whose real positions are already fully known." Using it here would
 throw away real, measured position data in favour of a generative approximation that doesn't need to exist.
 
-**The correct framing:** this is purely an EFFICIENT BULK PLACEMENT problem — same category as Candidates A/B above
-(the roof's 33,324 plates are simply 93.7% of Terminal's total ARC-seedable row count; the general "make placing/
-signing 35,552 real elements fast" fix already covers them). Do NOT resurrect `swbCanopyOps`/the canopy-walker
-approach for this — it solves a different problem (generation) that doesn't apply here (these are real rows).
+**The correct framing:** this is purely an EFFICIENT BULK PLACEMENT problem — **Candidate C above (batch-sign as ONE
+row) is the direct, concrete answer**, precisely because the roof is real measured data with no per-plate individual-
+edit need: bundle the 33,324 real placements into one signed batch row instead of fabricating a generative
+substitute for them. Do NOT resurrect `swbCanopyOps`/the canopy-walker approach for this — it solves a different
+problem (generation) that doesn't apply here (these are real rows, not an absent discipline to infer).
 If a future session considers the canopy-walker branch again, first re-confirm this framing hasn't changed (i.e.,
 confirm the roof plates are still real `elements_meta` rows, not something that became unmeasured/absent).
 
