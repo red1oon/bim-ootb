@@ -1,100 +1,121 @@
 <!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
-# ⚠ DO NOT REMOVE — RESUME: Modeller — Terminal load stall + illegal LOD200 geometry
+# ⚠ DO NOT REMOVE — RESUME: Modeller — Terminal open speed (signing gap) + roof/IfcPlate fast-placement
 
-**Scope.** Two defects the user hit live-testing the Modeller on 2026-07-01, AFTER the 12-tool real-user E2E suite
-was already fully green. Root-caused (read-only, no fix yet) by an Explore agent the same day. **Read the log after
-every run.** Honour this preamble until `✅ DONE`.
+**Scope.** Follow-on to the 2026-07-01 session that fixed three confirmed defects (Terminal never opened, illegal
+LOD200 geometry, and the actual root cause — a rotation radians/degrees unit bug corrupting every rotated wall in
+every building). Those three fixes are **DONE, committed, and pushed**: bim-ootb branch
+`fix/modeller-terminal-load-lod400` (PR: https://github.com/red1oon/bim-ootb/pull/new/fix/modeller-terminal-load-lod400,
+not yet opened/merged — open it before continuing). **Read the log after every run.** Honour this preamble until
+the remaining item below is `✅ DONE`.
 
-> **Why the green suite missed this — read first, don't re-litigate:** every one of the 12 `witness_e2e_*.js` files
-> opens ONLY `'Duplex'` (small, 265 rows) — Terminal (48,428 rows) has ZERO E2E coverage, so a load stall there is
-> invisible to a fully-green suite. And no witness asserts LOD TIER — `census()`/tri-count checks prove *a mesh
-> exists*, which is true for a crude box AND a real component mesh alike. See memory
-> `feedback_test_real_user_path_not_seams.md` §RECURRENCE for the full lesson — the fix for THIS bug must ship with
-> a Terminal-scale witness + an LOD-tier assertion, or it repeats again.
+## ✅ DONE this session (2026-07-01, commit d28b4c7 on the branch above)
+1. **Terminal never opened** — `arc_editable.js buildSeedOps` hardcoded `ORDER BY m.id`; `Terminal_meta.db`'s
+   `elements_meta` has no `id` column (guid-only PK). Fixed: runtime schema detection, falls back to `ORDER BY guid`.
+2. **119-180s+ stall once seeding worked** — 3x-redundant crypto hash/sign pass, O(char-concat) base64 autosave
+   (~108s alone), and an Outliner "Components" category building one DOM row per raw-bbox ARC insert (~80s). Fixed:
+   `sealFrom` trusts an already-chained hash, chunked base64, chunked+yielded mesh-build with `setStat` progress,
+   Components category excludes hash-less ARC rows. **Terminal now opens in ~14s** (from never-loads).
+3. **Illegal LOD200 boxy geometry** — honest partial fix: ARC-seeded + DiscWalker elements now match against the 3
+   existing real-mesh catalog items (Column/Beam/Door) by class+dimension (5% tolerance); matches upgrade to LOD-300,
+   rest stays honestly LOD-200 (logged). Full LOD400 buildout (23,888-row `component_library.db`) still open, separate.
+4. **THE root cause of "geometry hell"** (user screenshot, Duplex) — `element_transforms.rotation_z` is RADIANS; the
+   ARC seed path fed it straight into a DEGREES-expecting pipeline (`bonsai_library.js place()`), shrinking every
+   rotated wall's yaw ~57x. Fixed at the seed boundary (`rot: rz * 180 / Math.PI`). Verified numerically across
+   SampleHouse (19/19), SampleCastle (1942/1942), Duplex (134/134) rotated elements now landing at their true angle.
+   New falsifiable regression guard (A9/A10 in `witness_arc_editable.js`) — proven to actually catch the bug
+   (reverted the fix, watched it fail 0/19, restored, confirmed pass).
 
----
+All green: 12/12 `witness_e2e_*.js`, `witness_arc_editable.js` 10/10, new `witness_e2e_terminal_open.js` 7/7, new
+`witness_e2e_lod_match.js` 6/6.
 
-## §RESUME — START HERE (new session)
-1. **Sync.** `git -C ~/bim-ootb fetch origin && git -C ~/bim-ootb merge --ff-only origin/main` (or merge if diverged
-   — check first). Work in a FRESH `/tmp/wt-*` worktree off `origin/main`, never the shared `~/bim-ootb` checkout
-   (PreToolUse hook blocks direct edits there).
-2. Read `docs/WalkerDoctrine.md` (LOD400 finish-bar doctrine) and `modeller/tests/E2E_SUITE_RESUME.md` before
-   touching `bonsai_kernel.js`/`bonsai_library.js`/`arc_editable.js` — these are load-bearing, many-dependency files.
-3. Reproduce BOTH bugs first, by hand, before any code change (per Log Mandate — confirm the diagnosis below still
-   holds against current `origin/main`; code may have moved).
+## ⛔ OPEN — Terminal's remaining 14s vs the Viewer's near-instant load (even at LTU's 122K elements)
+**User's standard (re-stated 2026-07-01): the Modeller must follow the Viewer's proven approach, not maintain a
+separately-reinvented one.** The Viewer never signs anything (pure read-only display: stream rows → `InstancedMesh`/
+`BatchedMesh`, zero crypto). The Modeller's ARC-editable substrate signs **every** seeded element (all 35,552 of
+Terminal's ARC rows) as an individually hash-chained, signed `GEOM_INSERT` op, eagerly, before anything renders —
+because `arc_editable.js` (§ARC-1) was built to make every element gizmo-editable/undo-safe via the signed op-log.
 
----
+Profiled 2026-07-01 (`witness_e2e_terminal_open.js`'s `§STAT-TRACE`): of the 14.1s open, **~6-7s is the crypto
+signing phase alone** (`kernel_ops.js commitGroup`'s per-op `_sha256`/`_signer.sign` loop — 71,104 total async
+`crypto.subtle.digest` calls for 35,552 ops: one for the hash chain, one for the signature).
 
-## BUG 1 — Terminal building stalls/fails to open
-**Symptom (user, live):** opening Terminal in the Modeller looks "completely not loaded" — no bbox/placeholder
-paints first, just an apparent hang.
+**Two candidate fixes were scoped, NEITHER fully implemented/verified yet — pick up here:**
 
-**Root cause (traced 2026-07-01):**
-- Open flow: `#b-open` → `initOpenChooser` (`modeller/modeller.html:2733-2799`) → `STRWalkerOutliner._openResident`
-  (`modeller/str_walker_outliner.js:227-248`) → `_openBuffer` (same file, `:84-118`) → `_seedArcEditable` (`:209-223`)
-  → `ArcEditable.seedArc` (`modeller/arc_editable.js:84-98`), which commits EVERY ARC-class element as its own
-  signed `GEOM_INSERT` box.
-- `foldChainToScene` (`modeller/bonsai_kernel.js:165-222`) builds ONE non-instanced `THREE.Mesh` per op
-  **synchronously, in a single pass** (line 215), then swaps the whole scene group at once (line 211: clear-then-
-  refold). No batching, no `requestAnimationFrame` yield, no bbox-first placeholder pass — despite comments
-  elsewhere in the codebase describing bbox-only proxies as if they existed.
-- Scale that breaks this: Duplex = 265 rows, SampleCastle = 3,583 rows, **`Terminal_meta.db` = 48,428 rows**
-  (`elements_meta`/`element_transforms`, confirmed via `sqlite3`). `cross_edges.js` was explicitly optimized for
-  "the 48k Terminal substrate" (comment at `cross_edges.js:19`) — but the ARC seed/fold path was NOT.
-- The 250MB `Terminal_geo.db` (Git-LFS) is **never referenced anywhere in the JS** (repo-wide grep confirmed) — it's
-  dead/unused, so there is no lazy-geometry loading path for Terminal at all today.
-- **No user feedback on a slow/failed open:** no `setTimeout`/`AbortController`/`setStat(...)` call anywhere in
-  `_openBuffer`/`_openResident`/`seedArc` — failures only `console.warn` (`str_walker_outliner.js:246`). A slow
-  synchronous fold just blocks the main thread with no spinner/progress — indistinguishable from "broken" to a user.
+### Candidate A — lazy signing / promote-on-touch (bigger, riskier, was in progress, PAUSED not lost)
+Render the pristine substrate unsigned (Viewer-style — `InstancedMesh` grouped by `ifc_class`, zero op-log commit).
+Only promote ONE element to a signed `GEOM_INSERT` op the moment a user actually edits it (Move/Rotate/Scale/Cut/
+Delete/Fillet). An agent was mid-investigation on this (reading `modeller.html`'s move/rotate/scale drag handlers,
+`_dwRoot`, script load order) when the session was closed — **it had NOT yet written any code** (confirmed via
+`git status` — worktree was unchanged from the committed state when stopped), so there is no partial/broken work to
+clean up, but also no head start beyond the brief itself. Full task brief (file:line pointers, exact constraints,
+witness requirements) is preserved in this session's transcript if picked up by the same agent framework — otherwise
+re-derive from the "concrete scope" list: pristine `InstancedMesh` render path, guid↔instance addressing (mirror
+`dlod.js`'s `_instanceMeta` pattern), promotion mechanism, idempotent-reopen reconciliation (mirror `_replayEdits`/
+`swbReplay`'s pattern for STR), undo/redo scope decision.
 
-**Fix shape (not yet implemented — decide/spec before coding):**
-1. Batch + yield `foldChainToScene`'s per-op mesh build (e.g. `requestAnimationFrame`/chunked loop) instead of one
-   synchronous pass, OR add a genuine bbox-first placeholder pass that paints immediately, refining after.
-2. Add a `setStat(...)` progress line + a soft timeout/abort in `_openBuffer`/`seedArc` so a slow open is VISIBLE,
-   never a silent hang.
-3. Gate any batching specifically for large opens (~48k-row scale) — don't regress Duplex/SampleCastle's already-
-   fine load time with unneeded overhead.
+### Candidate B — stop paying async dispatch overhead per hash (smaller, lower-risk, evidence-backed, NOT YET DONE)
+`kernel_ops.js _sha256` and `bonsai_oplog.js sha256hex` both use `crypto.subtle.digest` — the **async** Web Crypto
+API — called sequentially (unavoidable for the hash-CHAIN half, since `op_hash[i]` depends on `op_hash[i-1]`; the
+SIGNATURE half is NOT chain-dependent and could be `Promise.all`-batched independently, a separate smaller win).
+Node benchmark (2026-07-01, this session, `node -e` one-liner, not yet re-verified in-browser): 35,552 sequential
+links —
+- `crypto.subtle.digest` (async, current): **618ms**
+- `crypto.createHash('sha256')` (sync, node-only API): **65ms** — **~9.5x faster**
 
-## BUG 2 — illegal LOD200 boxy geometry (LOD400 required)
-**Symptom (user, live, screenshot `~/Pictures/Screenshots/Screenshot from 2026-07-01 12-07-54.png`):** Duplex's
-walls/columns/furniture render as plain boxy primitives, not real component-library meshes. User: this is **illegal**,
-not an acceptable interim state — LOD400 is the stated finish bar (`docs/WalkerDoctrine.md`).
+Browsers have NO synchronous native crypto API (by W3C design, to avoid blocking the main thread) — matching that
+65ms number in-browser requires a **pure-JS synchronous SHA-256 implementation** for the hot chain-computation path,
+used ONLY where correctness is verified byte-identical to `crypto.subtle.digest` output (this is the security-
+critical signing primitive — do not swap it in until proven exact on real op-canonical-string inputs, not just
+random test vectors). **A first isolated in-browser benchmark attempt this session failed** (`about:blank` has no
+secure-context `crypto.subtle` — must navigate via `e2e_harness.js`'s local `http://localhost:<port>/...` server
+pattern instead, secure-context works there) — redo the isolated browser benchmark BEFORE touching production code,
+to confirm the Node 9.5x gap holds in the actual swiftshader/puppeteer environment (it may not — Node's number
+undershot the REAL measured 6-7s in-browser signing phase by ~10x already, so browser dispatch overhead is evidently
+worse than Node's; re-verify, don't assume).
 
-**Root cause (traced 2026-07-01):**
-- `bonsai_library.js` only ever implements TWO tiers. `lodFor` (`bonsai_library.js:297`) defaults to `'200'`,
-  upgradeable only to `'300'` (real catalog mesh) via `setLod`/the `#b-lod` button (`modeller.html:1602-1614, 1956`).
-  **There is no LOD400 tier anywhere in the engine — it was never built. This is not a fallback-on-error.**
-- Seeded/pre-existing building geometry (Duplex's own walls/columns — exactly what the screenshot shows) is
-  inserted by `ArcEditable.buildSeedOps` (`arc_editable.js:38-65`) as a **raw-bbox `GEOM_INSERT` with no `hash`
-  field at all**. `foldInsert` (`bonsai_library.js:333-348`) explicitly documents: *"Box-proxy (LOD-200) only:
-  there is no catalog mesh to refine to."* This is the PERMANENT path for the whole base building, not an edge
-  case — it explains why the ENTIRE seeded Duplex (not just new inserts) renders boxy.
-- DiscWalker-generated fixtures ALSO hard-code `lod:'200'` (`modeller.html:2298`) and render via
-  `window._dwPrimGeo` (`modeller.html:2164`) — a documented "LOD400 swap point" in comments. Grep confirms
-  `_dwPrimGeo` is assigned exactly ONCE, to the default `THREE.BoxGeometry` stub, and never overridden anywhere.
-  The intended component-library wiring for this swap point was never built.
+**Recommendation for whoever picks this up:** try Candidate B first — it's smaller, doesn't touch selection/pick/
+edit semantics at all (just swaps the hash primitive), and if the in-browser benchmark confirms even half of the
+Node gap, it alone could take Terminal from ~14s to low single digits with far less risk than Candidate A. Candidate
+A remains worth doing eventually (matches Viewer's architecture more completely, and is the ONLY way an unedited
+building could ever hit true near-zero signing cost regardless of hash speed) but is bigger and touches more of the
+app. Do NOT do both in the same uncoordinated pass — pick one, verify, then reassess.
 
-**Fix shape (not yet implemented — decide/spec before coding):**
-1. Decide whether ARC-seeded elements should carry a catalog `hash` (matched by geometry/type at seed time) so
-   `foldInsert` can resolve a real LOD300/400 mesh instead of falling to raw bbox.
-2. Wire `window._dwPrimGeo` to `bonsai_library`'s real catalog resolution before shipping ANY "LOD400 finish" claim
-   for disc-walked fixtures.
-3. If a true LOD400 tier doesn't exist yet in `bonsai_library.js`, that's the actual gap — spec it (what makes a
-   mesh "400" vs "300"?) before wiring anything to it.
+## ⛔ OPEN — second bottleneck once signing is fixed: op-log autosave has no working cache (confirmed bug)
+The Viewer's raw building-DB bytes ARE IndexedDB-cached (`bim_ootb_cache`/`dbs` store, `_idbGetDb` in
+`str_walker_outliner.js`) — reopening Terminal doesn't re-fetch over network. But the **signed op-log** persists via
+`bonsai_oplog.js _save()` to **localStorage** (`_KEY: 'bonsai_model_v1'`), which has a ~5-10MB per-origin quota.
+Terminal's signed log export is multi-MB and **confirmed hits `QuotaExceededError`** (now logged loudly via
+`console.error`, was previously silent) — meaning even after paying the full signing cost once, it is NEVER actually
+saved, so EVERY future open re-pays the full cost from scratch. Fix: migrate `bonsai_oplog.js`'s persistence off
+localStorage onto IndexedDB (same `bim_ootb_cache` database, a proper object store instead of a size-capped string
+blob). This is complementary to (not a substitute for) Candidates A/B above — even a fast signing pass is wasted
+work if it can never be cached across sessions.
 
----
+## ⛔ OPEN — the 33,324-IfcPlate Terminal roof: re-confirm this is a FAST-PLACEMENT problem, not a WALK problem
+**User clarification (2026-07-01, re-stated from an earlier-established point): do NOT treat the roof as a
+disc-walker "walk" (generative/inferred placement) problem.** The 33,324 `IfcPlate` roof elements are **REAL,
+already-measured** `elements_meta`/`element_transforms` rows — their exact positions are a defined, known geometry
+over a defined ARC/STR envelope (the Terminal roof structure), not an absent/inferred discipline the way DiscWalker
+MEP fixtures are. This means the unmerged `lane/arc-mesh-readpixels` branch's `§8E-2a swbCanopyOps` work (measures a
+tessellation unit + reconstructs a GENERATED distribution, `predictedN` vs `extractedN` proven to ~1.4% error) is
+**the wrong tool for this** — it was built for the disc-walker's "infer a plausible position for a MISSING
+discipline" problem, not "place 33K elements whose real positions are already fully known." Using it here would
+throw away real, measured position data in favour of a generative approximation that doesn't need to exist.
 
-## NON-NEGOTIABLE — how "done" must be proven this time (per the recurrence lesson)
-Per `feedback_test_real_user_path_not_seams.md` §RECURRENCE, a green witness suite ALREADY failed to catch these
-once. Before claiming either bug fixed:
-- Add a **Terminal-scale witness** (opens Terminal, not Duplex) asserting a load-time bound AND that SOME geometry
-  (even a placeholder) paints before full detail — not just "op-log committed".
-- Add an **LOD-tier assertion** that can actually distinguish a box from a real component mesh — e.g. assert a
-  seeded/inserted mesh's `userData` carries a catalog `hash`/id, or a minimum geometry complexity a synthetic
-  `BoxGeometry` structurally cannot satisfy. "tris > 0" or "mesh exists" is NOT sufficient — a box has tris too.
-- Both new assertions go in `modeller/tests/` alongside the existing `witness_e2e_*.js` suite; read the log, not
-  just the exit code.
+**The correct framing:** this is purely an EFFICIENT BULK PLACEMENT problem — same category as Candidates A/B above
+(the roof's 33,324 plates are simply 93.7% of Terminal's total ARC-seedable row count; the general "make placing/
+signing 35,552 real elements fast" fix already covers them). Do NOT resurrect `swbCanopyOps`/the canopy-walker
+approach for this — it solves a different problem (generation) that doesn't apply here (these are real rows).
+If a future session considers the canopy-walker branch again, first re-confirm this framing hasn't changed (i.e.,
+confirm the roof plates are still real `elements_meta` rows, not something that became unmeasured/absent).
 
-## MERGE / DEPLOY
-Not yet started — this is a fresh investigation handoff, no branch/PR exists for the fix yet. Follow the same
-worktree + Log Mandate + Spec-First discipline as every other Modeller session (see `~/bim-compiler/CLAUDE.md`).
+## §RESUME — START HERE (next session)
+1. `git -C ~/bim-ootb fetch origin && git -C ~/bim-ootb merge --ff-only origin/main` (or merge if diverged). Open
+   PR https://github.com/red1oon/bim-ootb/pull/new/fix/modeller-terminal-load-lod400 if not already open, review/
+   merge it (the 4 committed fixes are independent of everything below — no need to hold them hostage to the
+   signing-speed work).
+2. Fresh `/tmp/wt-*` worktree off latest `origin/main` (post-merge) for the signing-speed work.
+3. Re-run `witness_e2e_terminal_open.js` to reconfirm the ~14s baseline still holds (code may have moved since).
+4. Redo the in-browser crypto benchmark (via `e2e_harness.js`'s server pattern, NOT `about:blank`) before choosing
+   Candidate A vs B — the numbers above are Node-only and already known to undershoot real browser overhead by ~10x.
+5. Same Log Mandate / non-invent / witness-first discipline as the rest of this repo. Don't touch `deploy/live/`.
