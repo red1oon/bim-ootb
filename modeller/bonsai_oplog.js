@@ -110,14 +110,27 @@
       return this.length;
     },
 
-    _emit() { try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
+    // §OUTLINER-STALL: every real mutating flow (commit — incl. the LEAF optimistic-append path, which does
+    // NOT go through _foldUpto — commitSeedGroup, delete/undo/redo) calls _emit() unconditionally right after
+    // touching kernel_ops. That makes _emit() the one safe choke point to invalidate the _geomOps() memo below;
+    // clearing it in _foldUpto() alone (the originally drafted fix) would MISS the LEAF-commit path (bonsai_
+    // oplog.js commit(): LEAF ops skip _foldUpto and append optimistically, but still _emit()).
+    _emit() { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
     clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
 
     // Read the live GEOM ops out of the signed log, mapped to fold-op shape (parent rides in parameters).
+    // §OUTLINER-STALL: memoized on db-object identity (auto-invalidates on setModelKey/reload/clear, which all
+    // swap in a NEW SQL.Database instance) + explicitly cleared in _emit() (see comment there) on every real
+    // mutation. Before this fix: a FRESH SQL scan+JSON.parse of every GEOM row, on EVERY call — the Outliner's
+    // "Components" category calls moveDeltaFor(id) ONCE PER matching row during paint, so painting N disc-walk
+    // fixtures cost O(N × total-ops). Measured (real browser, SampleCastle ELEC walk, 2648 fixtures): a single
+    // Outliner paint went 176ms → 41,576ms (236x) as cumulative Components rows grew 3,597→6,245.
     _geomOps() {
+      if (this._opsCache && this._opsCacheDb === this.db) return this._opsCache;
       const r = this.db.exec("SELECT id, op_type, parameters, op_hash FROM kernel_ops WHERE undone=0 AND " + GEOM + " ORDER BY id");
-      if (!r.length) return [];
-      return r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parameters: p, parent: p.parent, op_hash: v[3] }; });
+      const out = !r.length ? [] : r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parameters: p, parent: p.parent, op_hash: v[3] }; });
+      this._opsCache = out; this._opsCacheDb = this.db;
+      return out;
     },
     get length() { return this.db ? this._geomOps().length : 0; },
     get cursor() { return this._cursor; },
@@ -136,6 +149,12 @@
       const gid = 'geom-grp-' + (++this._n);
       const res = await window.KernelOps.commitGroup(db, [{ op_type: op.op_type, params: op.parameters }], { gid, baseTs });
       if (!res.committed) throw new Error('commitGroup rejected: ' + res.reason);
+      // §OUTLINER-STALL: invalidate the _geomOps() memo RIGHT HERE, at the actual DB write — this.db is a
+      // mutable SQL.js Database mutated IN PLACE (commitGroup's INSERT doesn't change object identity), so
+      // clearing only in _emit() is too late for the _foldUpto()/this.length calls a few lines below, which
+      // run BEFORE _emit() in this same function and would otherwise reuse a stale (possibly pre-seed empty)
+      // cached array keyed to this same db object.
+      this._opsCache = null;
       const rowId = res.ids[res.ids.length - 1];
       const v = await window.KernelOps.verifyChain(db);
       const signed = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
@@ -185,6 +204,7 @@
       const baseTs = 1700000000000;                           // fixed → deterministic seed-row timestamps (replay-stable)
       const res = await window.KernelOps.commitGroup(db, opsArray, { gid, baseTs });
       if (!res.committed) throw new Error('commitSeedGroup rejected: ' + res.reason);
+      this._opsCache = null;   // §OUTLINER-STALL: see commit()'s identical comment — must precede _foldUpto() below
       if (!res.idempotent) this._n = Math.max(this._n, res.ids.length);   // push future geom-grp gids past the seed
       const doVerify = opts.verify !== false;
       const v = doVerify ? await window.KernelOps.verifyChain(db) : { ok: res.committed, tip: res.tip, skipped: true };
@@ -213,7 +233,10 @@
       if (!r.length) return [];
       return r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parent: p.parent, undone: v[3] }; });
     },
-    _setUndone(ids, val) { if (ids.length) this.db.run("UPDATE kernel_ops SET undone=" + (val ? 1 : 0) + " WHERE id IN (" + ids.join(',') + ")"); },
+    // §OUTLINER-STALL: the other real mutation primitive (delete/undo/redo all funnel through this) — invalidate
+    // here too, same reason as commit()/commitSeedGroup(): this.db is mutated in place, cache must clear at the
+    // write, not deferred to _emit() (which runs after the callers' own _foldUpto()).
+    _setUndone(ids, val) { if (ids.length) { this.db.run("UPDATE kernel_ops SET undone=" + (val ? 1 : 0) + " WHERE id IN (" + ids.join(',') + ")"); this._opsCache = null; } },
 
     // Delete ONE feature (+ its children that reference it as parent) — soft, reversible via redo.
     async deleteFeature(featureId) {
