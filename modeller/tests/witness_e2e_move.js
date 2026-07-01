@@ -28,6 +28,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const ROOT = path.join(__dirname, '..', '..');
+const SHOTS = path.join(__dirname, 'e2e_shots'); try { fs.mkdirSync(SHOTS, { recursive: true }); } catch (e) {}
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream' };
 const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller/modeller.html';
   fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end('404 ' + p); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); }); });
@@ -35,9 +36,11 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
 (async () => {
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
+  const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
   const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
   const slog = []; pg.on('console', m => { const t = m.text(); if (/^§(MOVE|SDG|GATE)/.test(t)) slog.push(t); });
+  // F4: capture real guide frames at the asserted moments (2× DPR; non-invent — these ARE the app frames)
+  const shot = (label) => pg.screenshot({ path: path.join(SHOTS, 'W-E2E-MOVE-' + label + '.png') }).catch(() => {});
 
   console.log('═══ W-E2E-MOVE — real user: open → pick → move gizmo drag → commit → undo (maths-asserted, atomic) ═══');
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
@@ -102,6 +105,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     return { on: document.getElementById('b-move').classList.contains('on'), hasGizmo: !!giz,
       handleWorld: wp ? [wp.x, wp.y, wp.z] : null };
   });
+  await shot('gizmo');   // guide frame: the XYZ transform gizmo raised on the selected element (A3 asserted)
 
   // A4/A5/A6 — real drag of the X handle: down on the shaft, move +1.0m along world-X, release
   let dragErr = '';
@@ -125,6 +129,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
       centre: window.__e2e.centre(f) };
   }, fid);
   const pix1 = await pg.evaluate(() => window.__e2e.pixsum());
+  await shot('moved');   // guide frame: the element after the committed X-axis GEOM_MOVE (A5/A7 asserted)
 
   // A8 — UNDO via the real history slider (range input → scrubToShared → oplog.scrubTo)
   await pg.evaluate(() => { const s = document.getElementById('hist-slider'); s.value = Math.max(0, (window.Bonsai.oplog.cursor - 1)); s.dispatchEvent(new Event('input', { bubbles: true })); });
