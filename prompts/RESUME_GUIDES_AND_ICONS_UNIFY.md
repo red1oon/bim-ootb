@@ -119,6 +119,38 @@ avatar-LOD · Chart.js dashboard fix. 22 witnesses green, regression clean, 0 lo
 - **Docs branch:** `bim-compiler` `docs/hba-guide-rewrite` (both guides + images live here; use an isolated
   worktree, never disrupt a live shared checkout). Deploy ONLY via `scripts/safe_gh_deploy.sh` — never bare `mkdocs gh-deploy`.
 
+---
+
+## F. Gaps surfaced by the guide-as-E2E-testing flow (work on later)
+> **The guide IS a real-user E2E test.** Writing genuine click-by-click navigation forces you to actually reach
+> each screen — **if you can't write a runnable click-path to a screen, that screen isn't reachable = a gap.**
+> Treat every "…once it's wired / once the pill lights" hedge in a guide as a logged defect, not prose. Gaps this
+> pass exposed (each blocks a step the guide wants to write):
+
+1. **Teams overlay is unwired in the live toolbars** (blocks the Teams guide's real step-by-step). It is
+   off-by-default / demo-only — the guide currently navigates the standalone demo pages, not the product. GAP:
+   mount the Teams pill into the Viewer / Modeller / ERP toolbars behind the off-by-default flag, so there is a
+   real click-path ("open ERP → click the share pill → …"). Until then the guide is honest-but-not-the-product.
+2. **HR FM/Operate pill-gate fires too early** (blocks the HR guide's step-by-step) — only `dash` lights; §E fix
+   (re-run `availableLenses` + rebuild after stream-complete). Screenshots need the real pill visible.
+3. **Icons not yet unified** — the 5 facet glyphs missing from `panels.js ICONS`; toolbar pills need a
+   `pill_builder` glyph (no inline SVG, `test_pills_manifest.js` guard). §C.
+4. **Smart-search → spine is unwired** (Teams `find_placement`). The engine is search-agnostic; the
+   `erp/erp_search.js` FTS typeahead → spine-row selection hookup doesn't exist yet — so the guide can't show
+   "search a tenant/element → jump to their team in context." GAP: wire the search entry.
+5. **Modeller Role×Project pivot unwired** into `bonsai_outliner.js` (engine-ready `find_placement` design mode,
+   deferred per user — no `modeller/` edits till it settles + icon go-ahead). The guide can't yet walk the
+   design-side placement.
+6. **Screenshots are demo-page, not live-app** (follows from #1/#2). Once the pills are wired/lit, RE-CAPTURE the
+   guide shots from the real app (helper `tests/live/shot_occ.js`), so the guide shows the product not a mock.
+7. **Guide-data illustration gaps** — the SAMPLE scenario renders the flow graph in raw ms (huge unreadable
+   numbers → format as days/hours) and an all-green gate doughnut (seed a scenario with a real dep/resource
+   conflict + an over-budget item so the gate ladder + PERT gate visibly show RED/ORANGE, not only green).
+
+Add any NEW gap the next pass hits to this list — the guide flow is the cheapest E2E we have.
+
+---
+
 **Order of work (dependencies):** (1) fix the FM/Operate pill-gate so the real toolbar pill lights (§E) →
 (2) reconcile + place the icons in the correct registry, parity-guarded (§C) → (3) recapture tightly-framed
 screenshots WITH the real pill visible (§A/§B, helper `tests/live/shot_occ.js`) → (4) rewrite both guides as
