@@ -123,8 +123,22 @@ function edgeMidpoints(kernel, solid) {
 // `hash` (op_hash that produced the current shape) keys the mesh cache. Cached shapes/inputs are NEVER released
 // here — the cache owns them (released only by clearCache). Only LOCAL intermediates (void box, edge subshapes)
 // are released. A cache MISS rebuilds via occt (and counts); a HIT skips occt entirely.
-function buildSolids(kernel, ops) {
+function buildSolids(kernel, ops, seedBoxes) {
   const solids = new Map();
+  // §CUT-ON-ARC (W-E2E-CUT): a seeded ARC wall is a baked GEOM_INSERT mesh, not a worker B-rep — so a GEOM_CUT/
+  // GEOM_FILLET on it had no parent solid to subtract from (threw "parent not found"). The host PROMOTES a box-like
+  // insert that is a cut/fillet target to a B-rep box built from its EXACT measured world-AABB corners (non-invent:
+  // the box == the baked mesh vertex-for-vertex; only axis-aligned boxes are promoted, rotated/non-box refused
+  // host-side). Seed those boxes BEFORE the loop so the in-order GEOM_MOVE/ROTATE/CUT/FILLET branches find them
+  // (order among independent solids is geometry-irrelevant). The seed box is always cut/filleted away, so its own
+  // mesh-cache key need only be deterministic.
+  if (seedBoxes) {
+    for (const fid in seedBoxes) {
+      const b = seedBoxes[fid]; const v = (a) => ({ x: a[0], y: a[1], z: a[2] });
+      const box = kernel.makeBoxFromCorners(v(b.c1), v(b.c2));
+      solids.set(+fid, { shape: box, hash: 'seedbox:' + fid + ':' + b.c1.join(',') + ':' + b.c2.join(',') });
+    }
+  }
   for (const op of ops) {
     const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
     const key = op.op_hash || ('nohash:' + op.id);    // op_hash = unique per immutable prefix → the cache key
@@ -222,8 +236,8 @@ function buildSolids(kernel, ops) {
   }
   return solids;
 }
-function foldChain(kernel, ops) {
-  const solids = buildSolids(kernel, ops);
+function foldChain(kernel, ops, seedBoxes) {
+  const solids = buildSolids(kernel, ops, seedBoxes);
   const meshes = [];
   for (const [fid, ent] of solids) {
     let m = meshCache.get(ent.hash);
@@ -260,7 +274,7 @@ self.onmessage = async (e) => {
     }
     if (ops) {                                       // CHAIN fold (feature tree) -> array of meshes
       _stats = { rebuilt: 0, hits: 0, tess: 0, tessHits: 0 };
-      const meshes = foldChain(kernel, ops);
+      const meshes = foldChain(kernel, ops, e.data.seedBoxes);
       const transfer = [];
       meshes.forEach(m => { transfer.push(m.positions.buffer); if (m.normals) transfer.push(m.normals.buffer); if (m.indices) transfer.push(m.indices.buffer); });
       self.postMessage({ id, ok: true, meshes, stats: _stats }, transfer);

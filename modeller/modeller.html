@@ -220,7 +220,8 @@
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=4" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=6" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="seed_trunk.js?v=1" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
 <!-- §TEAMS-EMBED — GATED Teams overlay over the live scene (teams/ROADMAP.md §S11). ONE inert guarded script:
      OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
      (localStorage.teamsEmbed='1' | ?teams=1) → a distinct floating Teams pill mounts; click → contextual dots
@@ -813,6 +814,14 @@ canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(n
 // thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
 bCut.onclick = async () => {
   if (selectedId == null || !selectedMesh) { setStat('select a wall first'); return; }
+  // §CUT-ON-ARC: a seeded ARC wall is a baked GEOM_INSERT — cutting it promotes it to a B-rep box from its EXACT
+  // measured corners (bonsai_kernel._insertCutBox). Only an axis-aligned BOX can be promoted without inventing
+  // geometry; a rotated/non-box insert returns null → refuse the cut HERE (never write an un-foldable op).
+  const _selOp = (window.Bonsai.oplog._geomOps() || []).find(o => o.id === selectedId);
+  if (_selOp && _selOp.op_type === 'GEOM_INSERT' && !window.Bonsai._insertCutBox(_selOp)) {
+    setStat('cut needs a box-shaped wall — this element is rotated or non-box (not yet supported)');
+    toast('⛔ cut needs a box-shaped wall (rotated / non-box element not yet supported)', 'error'); return;
+  }
   selectedMesh.geometry.computeBoundingBox();
   const bb = selectedMesh.geometry.boundingBox, mn = bb.min, mx = bb.max;
   const ext = [mx.x - mn.x, mx.y - mn.y, mx.z - mn.z];
@@ -2077,8 +2086,10 @@ window.discWalk = function (disc, ctx) {
       // large-complex (terminal_rules.db) standard otherwise. dwInit is idempotent (no-op if the
       // same file is already loaded; reloads on a class change). The residential clearances (~0.5m)
       // stop the airport-plenum numbers from manufacturing phantom clashes on a small building.
+      await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
       try { await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(name || window.__dwName)); }
       catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return; }
+      await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
       if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return; }
       var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
       var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '');
@@ -2089,6 +2100,12 @@ window.discWalk = function (disc, ctx) {
         console.log('§DISC-WALK ' + disc + ' REFUSE ' + (w.reason || 'no placements') + ' (honest, 0 fabricated)');
         return;
       }
+      // §3c CONNECTOR ENRICH: stamp each walked fixture with its projected FIXTURE→SERVICE hookup
+      // (rule_connector in the *_rules.db — no caller percept). Mutates placements in place so the
+      // connector rides through every _redrawAllDiscWalks; the hookup EDGE is drawn in _renderDiscWalk.
+      var connN = 0;
+      try { connN = (window.DiscWalker.connectorEnrich ? window.DiscWalker.connectorEnrich(w.placements).enriched : 0); }
+      catch (e) { console.warn('§DW-ASSEMBLE enrich ' + disc + ' ' + (e && e.message)); }
       // Gate: register THIS disc first so the gate sees it too, then re-fold the FULL cumulative
       // set through the measured clearances (current disc yields against the ones already present,
       // not only the next walk). Re-render every walked disc so fresh gated/clash flags show.
@@ -2104,6 +2121,26 @@ window.discWalk = function (disc, ctx) {
       await _commitDiscWalk(disc, w.placements);
       // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
       if (nSeg) { _renderDiscChains(disc, w.chainSegs); await _commitDiscChains(disc, w.chainSegs); }
+      // §3c ASSEMBLE: when a routed network exists, instantiate the projected catalog PARTS at the real
+      // routed NODES (rule_joint_piece — pose from the node, Ø from the measured catalog, orientation from
+      // the run vector) + enrich them with their connector hookup. Rendered as boxes via the _dwPrimGeo LOD
+      // seam. No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
+      var asmN = 0;
+      try {
+        if (window.DiscWalker.assemble) {
+          var abdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+          var asm = window.DiscWalker.assemble(disc, abdb);
+          abdb.close();
+          if (asm && !asm.refused && asm.parts && asm.parts.length) {
+            window.DiscWalker.connectorEnrich(asm.parts);
+            _renderDiscAssembly(disc, asm.parts);
+            asmN = asm.parts.length;
+          }
+          console.log('§DW-ASSEMBLE ' + disc + ' connectors=' + connN + '/' + w.placements.length +
+            ' parts=' + asmN + (asm && asm.refused ? ' (assemble REFUSE: ' + asm.reason + ')' :
+            ' joints=' + ((asm && asm.joints) ? asm.joints.length : 0)));
+        }
+      } catch (e) { console.warn('§DW-ASSEMBLE ' + disc + ' failed ' + (e && e.message)); }
     } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); }
   })();
 };
@@ -2120,9 +2157,19 @@ function _dwRoot() {
 }
 function _clearDiscWalk(disc) {
   var root = _dwRoot(); if (!root) return;
-  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwDisc === disc) root.remove(o); });
+  root.children.slice().forEach(function (o) { if (o.userData && (o.userData.dwDisc === disc || o.userData.dwAsm === disc)) root.remove(o); });
   delete window.__dwWalks[disc];
+  if (window.__dwAssembly) delete window.__dwAssembly[disc];
 }
+// §LOD-SEAM (docs/WalkerDoctrine.md §5): a GENERATED fixture's render geometry is selected by its semantic
+// prim KIND (disc_walker._primFor → p.prim: sprinkler/diffuser/light/outlet/alarm/valve/run/box). POC = a BOX
+// sized to the class's MEASURED median bbox for EVERY kind — the box's DIMENSIONS carry the only real info; a
+// fabricated cone/cylinder/grille mesh would INVENT geometry (forbidden by W-DW-PRIM). This function is the
+// SINGLE swap point: the finish state plugs a fine LOD400 component-library mesh per prim kind in HERE, same
+// placement. Override window._dwPrimGeo to wire the component library. Returns a THREE.BufferGeometry.
+window._dwPrimGeo = window._dwPrimGeo || function (prim, bx, by, bz) {
+  return new THREE.BoxGeometry(bx, by, bz);   // POC: measured box for every kind; LOD400 mesh swaps in here
+};
 function _renderDiscWalk(disc, placements) {
   var root = _dwRoot(); if (!root) return;
   _clearDiscWalk(disc);
@@ -2144,7 +2191,8 @@ function _renderDiscWalk(disc, placements) {
     var list = byCls[cls], s = list[0];
     var measured = (s.bx > 0 && s.by > 0 && s.bz > 0);
     var bx = measured ? s.bx : 0.18, by = measured ? s.by : 0.18, bz = measured ? s.bz : 0.18;
-    var geo = new THREE.BoxGeometry(bx, by, bz);
+    var prim = s.prim || 'box';                                                 // §LOD-SEAM render kind (sprinkler/light/…)
+    var geo = window._dwPrimGeo(prim, bx, by, bz);                              // POC box (measured) → LOD400 mesh swaps in here
     function _mesh(sub, mat) {
       if (!sub.length) return;
       var im = new THREE.InstancedMesh(geo, mat, sub.length);
@@ -2155,10 +2203,72 @@ function _renderDiscWalk(disc, placements) {
     _mesh(list, matN);                                                          // all (normal box)
     _mesh(list.filter(function (p) { return p.gated && !p.clash; }), matG);     // orange = yielded into the plenum
     _mesh(list.filter(function (p) { return p.clash; }), matC);                 // red = irreducible clash
-    dims.push(cls.replace('Ifc', '') + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)'));
+    dims.push(cls.replace('Ifc', '') + '/' + prim + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)'));
   });
+  // §3c CONNECTOR EDGES: every fixture connectorEnrich stamped (.connector, projected from rule_connector)
+  // draws its FIXTURE→SERVICE hookup as a short line from the fixture along the connector faceDir (e.g. each
+  // sprinkler TOP→FP_MAIN points up toward the supply main). Length = measured standoff, else a 0.3m stub so
+  // a flush (0m) hookup is still visible. NON-INVENT: direction + standoff are read from the connector; the
+  // stub length is a render hint only. One LineSegments per disc (cheap), removed with the disc on re-walk.
+  var enriched = placements.filter(function (p) { return p.connector && p.connector.faceDir; });
+  if (enriched.length) {
+    var STUB = 0.3, verts = [];
+    enriched.forEach(function (p) {
+      var d = p.connector.faceDir, L = (p.standoff_m > 0 ? p.standoff_m : STUB);
+      verts.push(p.x, p.y, p.z, p.x + d[0] * L, p.y + d[1] * L, p.z + d[2] * L);
+    });
+    var cg = new THREE.BufferGeometry();
+    cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));   // service hookup = pale cyan
+    cl.userData.dwDisc = disc; root.add(cl);
+    console.log('§DW-CONNECT disc=' + disc + ' hookups=' + enriched.length + ' (' +
+      (enriched[0].connector.assembly_id + ' ' + enriched[0].connector.face + '→' + enriched[0].connector.connects_to) +
+      ', standoff=' + enriched[0].standoff_m + 'm)');
+  }
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+}
+// §3c ASSEMBLE render — catalog PARTS instantiated at the real routed NODES (disc_walker.assemble): each part
+// is a BOX via the _dwPrimGeo LOD seam, oriented by its run vector (part.dir), tinted by disc, plus its
+// connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
+// analogue of the tube network); stored so a later commit re-fold redraws it. Refuses honestly when no network.
+window.__dwAssembly = window.__dwAssembly || {};   // disc -> assembled parts (for redraw-after-scrub)
+function _renderDiscAssembly(disc, parts) {
+  var root = _dwRoot(); if (!root) return;
+  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwAsm === disc) root.remove(o); });   // clear prior
+  window.__dwAssembly[disc] = parts;
+  if (!parts || !parts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
+  var base = DW_COLOR[disc] || 0xc0c0c0;
+  var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.4, metalness: 0.2, roughness: 0.5 });
+  var up = new THREE.Vector3(0, 0, 1), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pos = new THREE.Vector3();
+  var sc = new THREE.Vector3(1, 1, 1), m = new THREE.Matrix4();
+  var byCls = {};
+  parts.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+  var verts = [];
+  Object.keys(byCls).forEach(function (cls) {
+    var list = byCls[cls];
+    var d = (list[0].diameter_mm || 100) / 1000, L = (list[0].length_mm || 200) / 1000;   // measured Ø/length → box (m)
+    var geo = window._dwPrimGeo('run', d, d, L);                                            // LOD seam (POC box of catalog dims)
+    var im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach(function (p, i) {
+      var v = p.dir || [0, 0, 1]; dir.set(v[0], v[1], v[2]).normalize();
+      q.setFromUnitVectors(up, dir); pos.set(p.pos[0], p.pos[1], p.pos[2]);
+      im.setMatrixAt(i, m.compose(pos, q, sc));
+      if (p.connector && p.connector.faceDir) {
+        var fd = p.connector.faceDir, off = (p.standoff_m > 0 ? p.standoff_m : 0.3);
+        verts.push(p.pos[0], p.pos[1], p.pos[2], p.pos[0] + fd[0] * off, p.pos[1] + fd[1] * off, p.pos[2] + fd[2] * off);
+      }
+    });
+    im.instanceMatrix.needsUpdate = true; im.userData.dwAsm = disc; root.add(im);
+  });
+  if (verts.length) {
+    var cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));
+    cl.userData.dwAsm = disc; root.add(cl);
+  }
+  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' classes=' + Object.keys(byCls).length +
+    ' connectorEdges=' + (verts.length / 6));
+  if (window.A && A.requestRender) A.requestRender();
 }
 // Cross-disc gate: re-fold ALL currently-walked disciplines through the measured place-order + clearances
 // so a newly-walked disc yields against the ones already present ("as in Terminal"). Mutates placement z.
@@ -2178,27 +2288,34 @@ async function _commitDiscWalk(disc, placements) {
   if (!O || !L) return 0;
   var cat = L.catalog() || [];
   var color = DW_COLOR[disc] || 0xc0c0c0;
-  var committed = 0;
+  // BATCH the placements into ONE signed group. Was a loop of N awaited O.commit() — each commit seals the chain +
+  // verifyChain + re-folds the WHOLE scene, ~0.4s each → a 267-fixture ELEC walk FROZE the UI for 112s (W-E2E-WALK
+  // measured it: walk+render done at 1.0s, commit ran to 113s). commitSeedGroup seals ONCE (one verifyChain, one
+  // fold) — same signed-chain result, ~1s. Safe: kernel_ops orders by rowid (ORDER BY id), never timestamp, so the
+  // shared group baseTs never affects ordering/hash. gid unique per walk (O.length) so a re-walk commits afresh.
+  var ops = [];
   for (var i = 0; i < placements.length; i++) {
     var p = placements[i];
     var found = cat.find(function (c) { return c.ifc_class === p.ifc_class; });
     var hash = found ? found.hash : (cat[0] ? cat[0].hash : null);
     if (!hash) continue;
-    var op = { op_type: 'GEOM_INSERT',
-      parameters: { hash: hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: p.yaw || 0 },
-                    lod: '200', color: color,
-                    _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null } } };
-    try { var res = await O.commit(op); if (res) committed++; }
-    catch (e) { console.warn('§DISC-WALK-COMMIT fail i=' + i + ' ' + (e && e.message)); }
+    ops.push({ op_type: 'GEOM_INSERT',
+      params: { hash: hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: p.yaw || 0 },
+                lod: '200', color: color,
+                _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null } } });
+  }
+  var committed = 0;
+  if (ops.length) {
+    try { var res = await O.commitSeedGroup(ops, 'dwwalk-' + disc + '-' + O.length); committed = (res.ids || []).length; }
+    catch (e) { console.warn('§DISC-WALK-COMMIT batch fail ' + (e && e.message)); }
   }
   if (committed) {
-    await O.scrubTo(O.length);
-    // foldChainToScene clears the editable group — restore ALL walked markers + chains on top of committed geometry
+    // commitSeedGroup already folded the chain (clears the editable group) — restore the walked markers + chains
     _redrawAllDiscWalks();
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     syncHistory(); audioCue('rollout');
   }
-  console.log('§DISC-WALK-COMMIT disc=' + disc + ' placements=' + placements.length + ' committed=' + committed);
+  console.log('§DISC-WALK-COMMIT disc=' + disc + ' placements=' + placements.length + ' committed=' + committed + ' (1 signed group)');
   window.__dwLastCommitDisc = disc;   // sentinel for witnesses
   return committed;
 }
@@ -2287,7 +2404,237 @@ async function _commitDiscChains(disc, segs) {
 function _redrawAllDiscWalks() {
   Object.keys(window.__dwWalks).forEach(function (d) { if (window.__dwWalks[d]) _renderDiscWalk(d, window.__dwWalks[d]); });
   Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d]); });
+  if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
+  if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
 }
+
+// ── SEED → 3D CORRIDOR TRUNK (seed_trunk.js; W-SEED-TRUNK / -CORRIDOR / -RISER / -ENGINE, bim-compiler) ──────
+// The engineer assigns the service ENTRY (a real door/stair); SeedTrunk.planTrunk routes a corridor-aware trunk
+// from it — around real walls, through real doors — joined across storeys by RISERS at real stairs. NON-INVENT:
+// every blocked nav cell is a real wall, every passage a real door, every riser a real IfcStair; unreachable
+// fixtures are REFUSED, never forced. GENERATED/plausible (no ground truth for an absent discipline). Rendered
+// as disc-coloured LineSegments under dwRoot (cleared/redrawn with the disc walk).
+window.__dwTrunk = window.__dwTrunk || {};
+function _renderSeedTrunk(disc, net, opts) {
+  opts = opts || {};
+  var root = _dwRoot(); if (!root) return;
+  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwTrunk === disc) root.remove(o); });
+  window.__dwTrunk[disc] = net;
+  // NB: net.refused on a SUCCESS net is the integer COUNT of unreachable fixtures (≥0), NOT a refusal flag — only the
+  // planTrunk early-return uses refused===true. Guarding on the truthy count wrongly blanked the trunk whenever any
+  // fixture was unreachable (caught by W-SEED-TRUNK-RENDER). Bail only on a genuine boolean refusal / missing storeys.
+  if (!net || net.refused === true || !net.storeys) { if (window.A && A.requestRender) A.requestRender(); return; }
+  // ── SEGMENTS KEYED BY GRAPH-PATH DISTANCE FROM THE SEED (Task 2 construction animation; prompts/RESUME_SEED_TRUNK.md
+  // §TASK 2). Each backbone polyline walks a fixture (leaf) BACK to its source: poly[last] is the SEED end on the ground
+  // storey (net.storeys[0], which planTrunk always pushes first), or the feeding riser base on an upper storey. We key
+  // every segment by its cumulative path length from that seed end, banded ground-corridor → riser-climb → upper-corridor,
+  // so the reveal grows OUTWARD from the seed. The order is DERIVED from the engine's own coords — it invents no order
+  // beyond the seed-distance the backbone already encodes (RENDER-only; the data/geometry is unchanged, just revealed).
+  var segs = [];   // { k:sortKey, v:[ax,ay,az,bx,by,bz] }
+  function addPoly(poly, base) {
+    var cum = 0;
+    for (var i = poly.length - 1; i > 0; i--) {           // walk from the seed end (poly[last]) toward the leaf (poly[0])
+      var a = poly[i], b = poly[i - 1];                   // a = nearer the seed, b = nearer the leaf
+      segs.push({ k: base + cum, v: [a[0], a[1], a[2], b[0], b[1], b[2]] });
+      cum += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    }
+    return cum;
+  }
+  var groundMax = 0;
+  (net.storeys[0].edges || []).forEach(function (poly) { if (poly.length >= 2) groundMax = Math.max(groundMax, addPoly(poly, 0)); });
+  var RISER_BAND = groundMax + 1;
+  net.risers.forEach(function (r, i) { segs.push({ k: RISER_BAND + i * 1e-3, v: [r.x, r.y, r.z0, r.x, r.y, r.z1] }); });   // riser climbs after the ground corridor
+  var UPPER_BAND = RISER_BAND + 1;
+  for (var si = 1; si < net.storeys.length; si++) {
+    (net.storeys[si].edges || []).forEach(function (poly) { if (poly.length >= 2) addPoly(poly, UPPER_BAND); });
+  }
+  segs.sort(function (a, b) { return a.k - b.k; });
+  var pts = []; segs.forEach(function (s) { pts.push(s.v[0], s.v[1], s.v[2], s.v[3], s.v[4], s.v[5]); });
+  if (!pts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
+  var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  var col = DW_COLOR[disc] || 0xffa500;
+  var line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col, linewidth: 2 }));
+  line.userData.dwTrunk = disc; line.userData.dwTrunkSegs = segs.length; root.add(line);
+  var _segs = segs.length, _riserSegs = net.risers.length, _corridorSegs = _segs - _riserSegs;
+  console.log('§SEED-TRUNK ' + disc + ' served=' + net.served + ' refused=' + net.refused + ' risers=' + net.risers.length +
+    ' totalLen=' + net.totalLen.toFixed(1) + 'm segs=' + _segs + ' (rendered corridorSegs=' + _corridorSegs +
+    ' riserSegs=' + _riserSegs + '; seed-outward ordered; corridor-aware, real-stair risers, non-invent)');
+  // CONSTRUCTION ANIMATION — reveal seed-outward via the geometry draw-range. RENDER-only effect; ends EXACTLY on the
+  // full proven geometry (gate-asserted via §SEED-TRUNK-ANIM finalSegs==net). prefers-reduced-motion → instant fallback.
+  var TOTAL_V = pts.length / 3;                            // vertices (non-indexed: 2 per segment)
+  var reduced = false; try { reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  if (opts.instant || reduced) {
+    g.setDrawRange(0, TOTAL_V);
+    console.log('§SEED-TRUNK-ANIM ' + disc + ' mode=' + (opts.instant ? 'instant' : 'reduced-motion') + ' frames=0 ms=0 finalSegs=' + _segs + ' (no animation; full geometry)');
+    if (window.A && A.requestRender) A.requestRender(); return;
+  }
+  g.setDrawRange(0, 0);
+  var DUR = 2000, t0 = null, frames = 0;
+  (function step(now) {
+    if (t0 === null) t0 = now; frames++;
+    var u = Math.min(1, (now - t0) / DUR), e = 1 - Math.pow(1 - u, 3);   // easeOutCubic
+    g.setDrawRange(0, Math.floor(e * _segs) * 2);
+    if (window.A && A.requestRender) A.requestRender();
+    if (u < 1) { requestAnimationFrame(step); }
+    else {
+      g.setDrawRange(0, TOTAL_V); var finalSegs = g.drawRange.count / 2;
+      console.log('§SEED-TRUNK-ANIM ' + disc + ' mode=animated frames=' + frames + ' ms=' + Math.round(now - t0) +
+        ' finalSegs=' + finalSegs + ' (' + (finalSegs === _segs ? 'EXACT==net' : 'MISMATCH net=' + _segs) + '; ends at full proven geometry)');
+      if (window.A && A.requestRender) A.requestRender();
+    }
+  })(typeof performance !== 'undefined' && performance.now ? performance.now() : 0);
+}
+// risers = real IfcStair columns (deduped by XY); storeys = the building's floors (z = lowest element per storey,
+// deduped ≥2m apart, named storeys only) — the structural levels the riser climbs, not the elevated fixture z.
+function _seedRisers(bdb) {
+  var r = bdb.exec("SELECT m.guid g, t.center_x x, t.center_y y FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class LIKE '%Stair%'");
+  var out = []; if (r.length) r[0].values.forEach(function (v) { var s = { guid: v[0], x: v[1], y: v[2] };
+    if (!out.some(function (o) { return Math.hypot(o.x - s.x, o.y - s.y) < 0.5; })) out.push(s); }); return out;
+}
+// storey levels = each fixture-storey at its MEDIAN fixture z (robust: MIN-z / foundation slabs create false
+// near-duplicate levels and could drop the real ground floor). Named storeys only; the riser climbs these and
+// the trunk roots at the SEED's storey (planTrunk groundStorey).
+function _seedStoreys(bdb, fixtures) {
+  var byS = {}; fixtures.forEach(function (p) { if (p.storey && !/^unknown$/i.test(p.storey)) (byS[p.storey] = byS[p.storey] || []).push(p.z); });
+  return Object.keys(byS).map(function (nm) { var zs = byS[nm].slice().sort(function (a, b) { return a - b; });
+    return { name: nm, z: zs[zs.length >> 1] }; }).sort(function (a, b) { return a.z - b.z; });
+}
+function _seedPopup(disc, seedInfo) {
+  return new Promise(function (resolve) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1b1b1b;color:#eee;border:1px solid #555;border-radius:8px;padding:18px 20px;min-width:360px;font:13px system-ui,sans-serif;box-shadow:0 8px 40px rgba(0,0,0,.6);';
+    var cands = seedInfo.candidates || [];
+    var optHtml = cands.map(function (c) { var sel = c.guid === seedInfo.guid ? ' selected' : '';
+      return '<option value="' + c.guid + '"' + sel + '>' + (c.ifc_class || 'entry') + ' @ ' + (c.storey || '?') +
+        ' (' + c.x.toFixed(1) + ',' + c.y.toFixed(1) + ')</option>'; }).join('');
+    box.innerHTML = '<div style="font-weight:600;margin-bottom:6px;">Route ' + disc + ' trunk — service entry (seed)</div>' +
+      '<div style="opacity:.8;margin-bottom:10px;font-size:12px;line-height:1.4;">' + (seedInfo.reason || '') + '<br>Confirm the default entry or choose another:</div>' +
+      '<select id="_seedSel" style="width:100%;padding:6px;background:#111;color:#eee;border:1px solid #555;border-radius:4px;">' + optHtml + '</select>' +
+      '<div style="margin-top:14px;text-align:right;"><button id="_seedCancel" style="margin-right:8px;background:#333;color:#eee;border:1px solid #555;padding:6px 12px;border-radius:4px;cursor:pointer;">Cancel</button>' +
+      '<button id="_seedOk" style="background:#ffd24a;color:#111;border:none;padding:6px 16px;border-radius:4px;font-weight:600;cursor:pointer;">Route ▶</button></div>';
+    ov.appendChild(box); document.body.appendChild(ov);
+    function done(v) { if (ov.parentNode) document.body.removeChild(ov); resolve(v); }
+    box.querySelector('#_seedCancel').onclick = function () { done(null); };
+    box.querySelector('#_seedOk').onclick = function () { var g = box.querySelector('#_seedSel').value;
+      done(cands.filter(function (x) { return x.guid === g; })[0] || null); };
+    ov.onclick = function (e) { if (e.target === ov) done(null); };
+  });
+}
+// CHECK → DEFAULT → CONFIRM/OVERRIDE → ROUTE (the Outliner.DISC popup flow). Requires a prior disc walk (fixtures).
+window.seedTrunk = async function (disc) {
+  if (!window.SeedTrunk || !window.DiscWalker || !window.SQL) { console.warn('§SEED-TRUNK not ready'); return; }
+  var fixtures = (window.__dwWalks && window.__dwWalks[disc]) || [];
+  if (!fixtures.length) { alert('Walk ' + disc + ' first — there are no placed fixtures to route a trunk through.'); return; }
+  if (!window.__dwBuf) { alert('Open a building first.'); return; }
+  var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+  try {
+    var seedInfo = window.DiscWalker.defaultSeed(bdb);
+    if (seedInfo.refused) { alert('No entry element (door/stair) to seed the trunk from: ' + seedInfo.reason); return; }
+    var chosen = await _seedPopup(disc, seedInfo);
+    if (!chosen) return;                                    // user cancelled
+    var net = window.SeedTrunk.planTrunk(bdb, fixtures, { x: chosen.x, y: chosen.y, storey: chosen.storey },
+      _seedRisers(bdb), { storeys: _seedStoreys(bdb, fixtures), groundStorey: chosen.storey });
+    if (net.refused === true) { alert('Could not route a trunk: ' + (net.reason || 'no storeys')); return; }   // boolean refusal only (refused is else a fixture COUNT)
+    _renderSeedTrunk(disc, net);
+    if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  } finally { bdb.close(); }
+};
+// §4 WITNESS SEAM: re-expose the (module-scope) disc-walk render entry points so a headless witness can drive
+// the render directly via the IDB-free engine API (dwOpen/dwBorrow with plain-fetched rules DBs) — the
+// production walk path (discWalk → dwInit/dwBorrowFile) goes through the bim_ootb_cache IndexedDB layer, which
+// is unreliable under puppeteer+swiftshader (fine in real browsers). This seam is render-only (no new behaviour;
+// it calls the same functions the live walk calls), used by modeller/tests/witness_dw_pixelprobe.js.
+window.__dwRender = { walk: _renderDiscWalk, assembly: _renderDiscAssembly, redraw: _redrawAllDiscWalks };
+// render-only seam for the seed-trunk render gate (W-SEED-TRUNK-RENDER): drives the SAME _renderSeedTrunk the live
+// "Route trunk" calls (with opts, so the witness can exercise the animated path as well as the instant census path).
+window.__seedTrunkRender = _renderSeedTrunk;
+// §4 WHITEBOX PIXEL PROBE (roadmap #4): a headless readback proving the disc-walk render actually painted —
+// (1) a scene-graph census of the dwRoot group for a disc (fixture box InstancedMesh, §3c connector-edge
+// LineSegments, routed tubes, assembled parts) so a witness confirms the render WIRED the expected objects,
+// and (2) renders one frame + readPixels the whole canvas → litPct, so before/after a walk a witness confirms
+// the geometry actually PAINTED (not behind camera / zero-size). NON-INVENT: pure readback of the rendered
+// frame + the live scene graph, no synthetic data. Returns the census + litPct; logs §DW-PIXELPROBE.
+window.__dwPixelProbe = function (disc) {
+  var out = { disc: disc, boxes: 0, instances: 0, edges: 0, tubes: 0, parts: 0, asmEdges: 0, litPct: 0 };
+  try {
+    var g = window.Bonsai && window.Bonsai.group && window.Bonsai.group();
+    var root = g && g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
+    if (root) root.children.forEach(function (o) {
+      var d = o.userData || {};
+      if (d.dwDisc === disc) { if (o.isLineSegments) out.edges++; else if (o.isInstancedMesh) { out.boxes++; out.instances += (o.count || 0); } }
+      else if (d.dwChain === disc) { if (o.isInstancedMesh) out.tubes++; }
+      else if (d.dwAsm === disc) { if (o.isLineSegments) out.asmEdges++; else if (o.isInstancedMesh) out.parts++; }
+    });
+  } catch (e) { out.err = 'census ' + (e && e.message); }
+  try {
+    var r = window.A.renderer; r.render(window.A.scene, window.A.camera); var gl = r.getContext();
+    var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); var lit = 0;
+    for (var i = 0; i < px.length; i += 4) { if (px[i] > 40 || px[i + 1] > 44 || px[i + 2] > 52) lit++; }
+    out.litPct = +(100 * lit / (w * h)).toFixed(2);
+  } catch (e) { out.err = (out.err ? out.err + '; ' : '') + 'readPixels ' + (e && e.message); }
+  console.log('§DW-PIXELPROBE disc=' + disc + ' boxes=' + out.boxes + ' instances=' + out.instances +
+    ' connectorEdges=' + out.edges + ' tubes=' + out.tubes + ' parts=' + out.parts + ' asmEdges=' + out.asmEdges +
+    ' litPixels=' + out.litPct + '%' + (out.err ? ' err=' + out.err : ''));
+  return out;
+};
+// T1 SEED-TRUNK RENDER GATE (prompts/RESUME_SEED_TRUNK.md §TASK 1; W-SEED-TRUNK-RENDER) — the seed-trunk analogue
+// of __dwPixelProbe. Renders the trunk via the SAME _renderSeedTrunk the live walk calls, then returns a SCENE-GRAPH
+// CENSUS of the dwTrunk LineSegments under dwRoot so a headless witness machine-verifies the render == planTrunk's net
+// (closing the "eyeball gap"). WHITEBOX (like §DW-TUBE endpointDrift): the rendered vertices are read back and the
+// witness asserts they match net's coords + counts — the gate asserts render==data, never a magic number. NON-INVENT:
+// pure readback of the rendered frame + scene graph; no synthetic data. Returns the census + litPct; logs §SEED-TRUNK-PROBE.
+window.__seedTrunkProbe = function (disc, net) {
+  _renderSeedTrunk(disc, net, { instant: true });          // SAME render the Outliner "Route trunk" calls; instant = final geometry for the gate
+  var out = { disc: disc, lineSegments: 0, vertices: 0, segments: 0, verticalSegs: 0, corridorSegs: 0, maxDrift: 0, samples: 0, litPct: 0 };
+  var rendered = [];                                        // [[x,y,z]..] every rendered vertex (for the no-drift check)
+  try {
+    var root = _dwRoot();
+    var lines = root ? root.children.filter(function (o) { return o.isLineSegments && o.userData && o.userData.dwTrunk === disc; }) : [];
+    out.lineSegments = lines.length;
+    lines.forEach(function (line) {
+      var pos = line.geometry.getAttribute('position'); if (!pos) return;
+      out.vertices += pos.count;
+      for (var i = 0; i + 1 < pos.count; i += 2) {           // each pair (i, i+1) = one rendered segment
+        var ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i), bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
+        rendered.push([ax, ay, az], [bx, by, bz]);
+        out.segments++;
+        // a riser is a vertical segment (same XY, Δz≠0); a corridor segment lies in a storey plane (Δz≈0)
+        if (Math.abs(ax - bx) < 1e-4 && Math.abs(ay - by) < 1e-4 && Math.abs(az - bz) > 1e-4) out.verticalSegs++;
+        else out.corridorSegs++;
+      }
+    });
+    // NO-DRIFT (order-independent, whitebox like §DW-TUBE endpointDrift): sample net's own polyline+riser points and
+    // confirm each maps to a rendered vertex within tol → the render carries planTrunk's coords verbatim. Order-free so
+    // the seed-outward animation reorder (Task 2) cannot perturb it.
+    if (net && net.storeys && rendered.length) {
+      var samplePts = [];
+      net.storeys.forEach(function (s) { (s.edges || []).forEach(function (poly) { poly.forEach(function (p) { samplePts.push(p); }); }); });
+      (net.risers || []).forEach(function (r) { samplePts.push([r.x, r.y, r.z0], [r.x, r.y, r.z1]); });
+      var stride = Math.max(1, Math.floor(samplePts.length / 60));   // cap ≈60 samples
+      for (var si = 0; si < samplePts.length; si += stride) {
+        var p = samplePts[si], best = Infinity;
+        for (var ri = 0; ri < rendered.length; ri++) { var q = rendered[ri];
+          var d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); if (d < best) { best = d; if (best < 1e-6) break; } }
+        if (best > out.maxDrift) out.maxDrift = best; out.samples++;
+      }
+    }
+  } catch (e) { out.err = 'census ' + (e && e.message); }
+  try {
+    var r = window.A.renderer; r.render(window.A.scene, window.A.camera); var gl = r.getContext();
+    var w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); var lit = 0;
+    for (var i = 0; i < px.length; i += 4) { if (px[i] > 40 || px[i + 1] > 44 || px[i + 2] > 52) lit++; }
+    out.litPct = +(100 * lit / (w * h)).toFixed(2);
+  } catch (e) { out.err = (out.err ? out.err + '; ' : '') + 'readPixels ' + (e && e.message); }
+  console.log('§SEED-TRUNK-PROBE disc=' + disc + ' lineSegments=' + out.lineSegments + ' vertices=' + out.vertices +
+    ' segments=' + out.segments + ' corridorSegs=' + out.corridorSegs + ' verticalSegs(risers)=' + out.verticalSegs +
+    ' maxDrift=' + out.maxDrift.toExponential(2) + 'm samples=' + out.samples +
+    ' litPixels=' + out.litPct + '%' + (out.err ? ' err=' + out.err : ''));
+  return out;
+};
 
 // ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
 // The bom-graph shows disc nodes only for disciplines PRESENT in a building — but the whole point of the
@@ -2311,6 +2658,19 @@ function _registerDiscRoster() {
     },
     onWalk: function (disc) { window.discWalk(disc, { building: window.__dwName }); }
   });
+  // SEED-TRUNK roster: route a service trunk from a human-assigned entry through the WALKED fixtures (corridor-aware,
+  // real-stair risers). Lists only disciplines already walked (they have placed fixtures to route). onWalk → popup.
+  window.Bonsai.outliner.addCategory({
+    key: 'disctrunk', label: 'Route trunk · from entry (seed)',
+    tree: function () {
+      var walked = Object.keys(window.__dwWalks || {}).filter(function (d) { return window.__dwWalks[d] && window.__dwWalks[d].length; });
+      if (!walked.length) return [{ id: 'dt-load', label: 'walk a discipline first, then route its trunk', kind: 'group', children: [] }];
+      return [{ id: 'dt-root', label: 'Service trunk from a chosen entry', kind: 'group', children: walked.map(function (d) {
+        return { id: 'dt-' + d, label: d, kind: 'disc', disc: d, sub: (window.__dwTrunk && window.__dwTrunk[d]) ? 'routed ▶' : '▶ route' };
+      }) }];
+    },
+    onWalk: function (disc) { window.seedTrunk(disc); }
+  });
   console.log('§DISC-WALK roster registered disciplines=' + ((window.DiscWalker && window.DiscWalker.disciplines && window.DiscWalker.disciplines().join(',')) || ''));
 }
 // BUILDING-CLASS → disc-rule standard (mirrors rules_meta.building_class in each *_rules.db):
@@ -2321,10 +2681,52 @@ window._dwRules = function (nm) {
   return /duplex|sample.?house|sample.?castle|schependomlaan|(^|[^A-Z])(SH|DX|SC)([^A-Z]|$)/i.test(nm || '')
     ? 'duplex_rules.db' : 'terminal_rules.db';
 };
+// §DW-RULES-BUST: the rules DBs (terminal_rules/duplex_rules) are MUTABLE at a FIXED url, but disc_walker's
+// §DW_IDB caches them in bim_ootb_cache/'dbs' keyed by url with NO version → a returning user keeps the OLD
+// rules across a deploy (silently missing e.g. the new FP sprinkler shim). On a rules-version change, evict the
+// two rules keys ONCE so the fresh DBs load + re-cache normally. Bump window.__dwRulesVer whenever a *_rules.db
+// changes (in lock-step with sw.js CACHE_VERSION). Building *_extracted.db are immutable per url → never evicted.
+window.__dwRulesVer = 'v21';
+window._dwBustStaleRulesCache = async function () {
+  try {
+    var KEY = 'dw_rules_ver', cur = window.__dwRulesVer;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(KEY) === cur) return;   // already fresh
+    await new Promise(function (res) {
+      var rq = indexedDB.open('bim_ootb_cache');
+      rq.onsuccess = function () {
+        var idb = rq.result;
+        if (!idb.objectStoreNames || !idb.objectStoreNames.contains('dbs')) { res(); return; }
+        try {
+          var tx = idb.transaction('dbs', 'readwrite'), os = tx.objectStore('dbs');
+          os.delete('./terminal_rules.db'); os.delete('./duplex_rules.db');
+          tx.oncomplete = function () { console.log('§DW-RULES-BUST evicted stale rules DBs for ' + cur); res(); };
+          tx.onerror = function () { res(); };
+        } catch (e) { res(); }
+      };
+      rq.onerror = function () { res(); };
+    });
+    if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, cur);
+  } catch (e) { console.warn('§DW-RULES-BUST failed ' + (e && e.message)); }
+};
+// §BORROW (docs/WalkerDoctrine.md §2): a residential building (duplex_rules primary) walks ELEC/ACMV/PLB
+// natively but lacks FP/sprinkler — BORROW FP from terminal_rules WITHOUT switching the building's class. The
+// engine routes FP's MEASURED placement/shim/bbox rows to terminal_rules; the gate + cross-disc clearances stay
+// on the PRIMARY residential DB (NON-INVENT: FP reuses Terminal's measured rows — SC sprinklers host-bind to real
+// IfcCovering ceilings, or honestly refuse). dwBorrowFile is IDB-cached + idempotent per file. When the primary
+// IS terminal_rules, FP is native → clear any borrow so FP isn't double-sourced.
+window._dwEnsureBorrow = async function () {
+  if (!window.DiscWalker || !window.DiscWalker.dwBorrowFile) return;
+  var primary = (window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || '';
+  if (primary === 'terminal_rules.db') { if (window.DiscWalker.dwBorrow) window.DiscWalker.dwBorrow('FP', null); return; }
+  try { await window.DiscWalker.dwBorrowFile('FP', window.SQL, './', 'terminal_rules.db'); }
+  catch (e) { console.warn('§DISC-WALK borrow FP←terminal failed ' + (e && e.message)); }
+};
 // Ensure the engine is loaded (building-class rules fetch) + the roster is registered. Called on open.
 window.__ensureDiscWalker = async function () {
   try {
+    await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
     if (window.DiscWalker) await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(window.__dwName));
+    await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
   } catch (e) { console.warn('§DISC-WALK dwInit (roster) failed ' + (e && e.message)); }
   _registerDiscRoster();
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
@@ -2483,6 +2885,13 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     dots.onclick = () => { pOpen = !pOpen; try { localStorage.setItem(PK, pOpen ? '1' : '0'); } catch (e) {} applyPill(true); console.log('§MODELLER pill open=' + pOpen); };
     window.addEventListener('resize', () => { if (pOpen) layoutRail(); });
     applyPill(false);
+    // Pills revealed on mode-enter (Extrude/Run/Apply-fillet + the dim-* inputs) must JOIN the L-rail — layoutRail
+    // only positions CURRENTLY-visible buttons and runs at startup/resize/toggle, NOT on reveal. Without this a
+    // freshly-shown button keeps its default position:fixed origin (0,0), stranded top-left under the panel and
+    // UNCLICKABLE (W-E2E-SKETCH caught the Extrude pill stuck there). Re-layout on any #bar button display change;
+    // disconnect around our OWN style writes so layoutRail's positioning never re-triggers the observer (no loop).
+    const _railObs = new MutationObserver(() => { if (!pOpen) return; _railObs.disconnect(); layoutRail(); _railObs.observe(bar, { attributes: true, attributeFilter: ['style'], subtree: true }); });
+    _railObs.observe(bar, { attributes: true, attributeFilter: ['style'], subtree: true });
 
     // ? Help — the PILL REGISTRY: every visible tool's icon + name + keyboard shortcut, built from the live #bar.
     const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-del': 'Del' };   // Undo/Redo are keyboard-only rows below

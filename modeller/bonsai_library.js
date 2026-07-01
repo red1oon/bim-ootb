@@ -352,7 +352,7 @@
       // ground-seat math (place() seats on the SCALED bbox). SIZE only — scales geometry, never the placement.
       if (mv && ((mv.fx != null && mv.fx !== 1) || (mv.fy != null && mv.fy !== 1) || (mv.fz != null && mv.fz !== 1))) {
         const fx = mv.fx != null ? mv.fx : 1, fy = mv.fy != null ? mv.fy : 1, fz = mv.fz != null ? mv.fz : 1;
-        const bb = base.bbox || c.bbox;                                  // [xmin,xmax,ymin,ymax,zmin,zmax]
+        const bb = base.bbox || (c ? c.bbox : rawBox);                   // [xmin,xmax,ymin,ymax,zmin,zmax] — RAW-bbox ARC insert has c==null (guard like the rotate branch; else scaling an ARC wall threw → the mesh vanished)
         const ax = bb[0], ay = bb[2], az = bb[4];
         const sp = base.positions.slice();                              // don't mutate the cached catalog arrays
         for (let i = 0; i < sp.length; i += 3) {
