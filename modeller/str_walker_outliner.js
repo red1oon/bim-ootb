@@ -219,9 +219,16 @@
         // A Terminal-scale seed (35,552 ops) this alone saves ~half the wall-clock; other commitSeedGroup
         // callers (e.g. the disc-walk trunk commit in modeller.html) are untouched — still opt-in, still verify.
         commitGroup: function (ops, gid) { return O.commitSeedGroup(ops, gid, { verify: false }); },
+        // §REAL-GEOM (2026-07-02, "no silent box fallback"): register the per-element real meshes ArcEditable
+        // resolved from THIS SAME db (component_geometries/base_geometries) into the render layer BEFORE
+        // commit/fold, so the very first fold already picks up real geometry instead of a raw-bbox proxy.
+        registerGeometry: function (assets) {
+          if (window.Bonsai.library && window.Bonsai.library.registerRealGeometry) window.Bonsai.library.registerRealGeometry(assets);
+        },
         building: key
       }).then(function (r) {
         console.log(TAG + ' §ARC-SEED-WIRE ' + key + ' editable ARC elements=' + r.committed + ' skipped=' + r.skipped +
+          ' realGeom=' + (r.realResolved || 0) + ' hardfail=' + (r.hardfail || 0) +
           ' (featureId↔guid bridge ready)');
       // §LOD400-STALL: a seed failure here used to be console.warn-only — easy to miss (no pageerror, no UI
       // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
