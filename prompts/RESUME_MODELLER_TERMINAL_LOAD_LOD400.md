@@ -95,14 +95,52 @@ every element — much smaller blast radius than full Candidate A). Pick (a) fir
 tools already needs per-plate roof editing (check before assuming — likely not, given the Walker Doctrine's own
 §5 treats the roof as a class-level LOD/render concern, not an individually-authored one).
 
-**Recommendation for whoever picks this up:** try **Candidate C first** — it's the smallest, most targeted, and
-doesn't touch selection/pick/edit semantics for the classes people actually edit at all; combined with Candidate B
-(sync hash for whatever's left) it could plausibly get Terminal's signing cost to near-zero without needing
-Candidate A's larger promotion-on-touch redesign at all. Candidate B alone is still worth doing regardless (helps
-every building, not just roof-heavy ones like Terminal). Candidate A remains the most complete match to the
-Viewer's architecture (the only way to get non-batched classes to near-zero too) but is the biggest/riskiest — treat
-it as a later step only if C+B together don't close the gap enough. Do NOT do more than one in the same
-uncoordinated pass — pick one, verify, then reassess.
+**Reconciling Candidate C with `swbCanopyOps` (user synthesis, 2026-07-01):** the two are not actually opposed —
+`swbCanopyOps`'s correct STRUCTURAL insight is "treat the roof as ONE unit" (it calls it "one measured unit,
+instanced-by-n"), which is exactly this repo's own **BOM PRINCIPLE** (`CLAUDE.md`: "one parent, N children, each
+child can itself be a BOM... each level atomic and self-contained"). The 33,324 plates were never architecturally
+33,324 independent top-level elements — they're one roof's tessellation detail. Where `swbCanopyOps` goes wrong is
+only the DATA-FIDELITY choice: it re-derives a statistically-reconstructed distribution (`predictedN` vs
+`extractedN`, ~1.4% error) instead of using the exact real per-plate positions we already have. **Candidate C is the
+same "one roof = one parent unit" correction, done right**: one signed row (the parent), the 33,324 REAL measured
+placements as its batch payload (the children/tessellation detail) — same structural fix `swbCanopyOps` reached for,
+without discarding real data for a generative estimate. Whoever implements Candidate C should frame it exactly this
+way: it's a BOM-PRINCIPLE fix (wrong parent/child modeling), not merely a performance hack.
+
+### Candidate D — decouple PAINT from SIGNING entirely (user-suggested 2026-07-01, orthogonal to A/B/C, likely the
+biggest immediate win, NOT YET DONE)
+Rendering an element only needs its already-computed `bbox`/`placement`/`hash`/`lod` (available the instant
+`buildSeedOps` builds the op object, before any crypto runs) — the `op_hash`/`sig` fields are needed ONLY by the
+audit/tamper-evidence chain (`verifyChain`), never by `foldInsert`/`_buildMesh`. Today's flow serializes them
+(`commitGroup` signs+persists ALL ops, THEN `foldChainToScene` renders), so paint waits on signing for no reason.
+**Fix: paint immediately from the unsigned op params, run the hash-chain sealing as a SEPARATE background/chunked
+pass afterward** — reuse the SAME `requestAnimationFrame`-yielded loop shape already added to `bonsai_kernel.js`
+this session (the `_nextFrame`/`_reportProgress` chunking added for mesh-building), applied to the signing loop
+instead. The user sees the full building instantly; the signed/verifiable audit trail catches up asynchronously in
+the background with its own `setStat` progress line (e.g. "sealing 12000/35552…").
+Two open design questions to resolve before implementing (don't hand-wave either):
+1. **featureId availability for picking/gizmo before sealing completes** — `featureId` today = the committed
+   `kernel_ops` row's `id`, assigned when the row is INSERTed. Check whether `kernel_ops.js`'s `commitGroup` can
+   INSERT rows immediately (id assigned, `op_hash`/`sig` left NULL) and let a separate pass backfill those columns
+   later — `sealFrom` (already in this codebase, and already touched this session — see its `§LOD400-STALL perf fix`
+   comment) is BUILT for exactly this ("trusts an already-correctly-chained hash… only pay for crypto.subtle.digest
+   when the row is genuinely unsealed") — likely the right primitive to run as the background pass, not something
+   new to write.
+2. **Chain-tip handling for a commit that arrives WHILE sealing is still in progress** — e.g. a user's first real
+   edit, or the STR walker's own commit, needs to know the current chain tip to link onto. If the ARC seed's tip is
+   still "pending" (rows inserted but not yet hashed), decide: does a subsequent commit block until sealing catches
+   up to a stable tip, or can it start its OWN chain segment and reconcile later? Don't assume either answer — trace
+   every other `commitGroup`/`commitSeedGroup` caller (STR walker trunk commit, disc-walk fixtures, user edits) to
+   see what tip-dependency they actually have before designing this.
+
+**Recommendation for whoever picks this up:** **Candidate D (decouple paint from signing) is likely the single
+biggest, most direct win** — it doesn't reduce total crypto work like B/C do, but it removes crypto from the
+CRITICAL PATH entirely, which is what the user actually experiences as "the stall." Pair it with **Candidate C**
+(fewer total signed rows for bulk classes, the correct BOM-PRINCIPLE fix for the roof) for the best combined result;
+**Candidate B** (faster hash) helps whatever background signing work remains regardless of A/C. **Candidate A**
+(full lazy promote-on-touch) remains the most complete match to the Viewer's architecture but is the biggest/riskiest
+— treat it as a later step only if D+C+B together don't close the gap enough. Do NOT do all four in one uncoordinated
+pass — implement one, verify with real witness evidence, then reassess before the next.
 
 ## ⛔ OPEN — second bottleneck once signing is fixed: op-log autosave has no working cache (confirmed bug)
 The Viewer's raw building-DB bytes ARE IndexedDB-cached (`bim_ootb_cache`/`dbs` store, `_idbGetDb` in
@@ -115,24 +153,21 @@ localStorage onto IndexedDB (same `bim_ootb_cache` database, a proper object sto
 blob). This is complementary to (not a substitute for) Candidates A/B above — even a fast signing pass is wasted
 work if it can never be cached across sessions.
 
-## ⛔ OPEN — the 33,324-IfcPlate Terminal roof: re-confirm this is a FAST-PLACEMENT problem, not a WALK problem
-**User clarification (2026-07-01, re-stated from an earlier-established point): do NOT treat the roof as a
-disc-walker "walk" (generative/inferred placement) problem.** The 33,324 `IfcPlate` roof elements are **REAL,
-already-measured** `elements_meta`/`element_transforms` rows — their exact positions are a defined, known geometry
-over a defined ARC/STR envelope (the Terminal roof structure), not an absent/inferred discipline the way DiscWalker
-MEP fixtures are. This means the unmerged `lane/arc-mesh-readpixels` branch's `§8E-2a swbCanopyOps` work (measures a
-tessellation unit + reconstructs a GENERATED distribution, `predictedN` vs `extractedN` proven to ~1.4% error) is
-**the wrong tool for this** — it was built for the disc-walker's "infer a plausible position for a MISSING
-discipline" problem, not "place 33K elements whose real positions are already fully known." Using it here would
-throw away real, measured position data in favour of a generative approximation that doesn't need to exist.
+## ⛔ OPEN — the 33,324-IfcPlate Terminal roof: ONE BOM-level parent unit, not 33,324 independent elements
+**User clarification + synthesis (2026-07-01): the roof is ONE piece over a defined roof area — a BOM-PRINCIPLE
+modeling correction, not a walk/generation problem.** The 33,324 `IfcPlate` roof elements are **REAL,
+already-measured** `elements_meta`/`element_transforms` rows over a defined ARC/STR envelope (the Terminal roof
+structure) — never architecturally 33,324 independent top-level elements; they're one roof's tessellation detail
+(exactly `CLAUDE.md`'s BOM PRINCIPLE: "one parent, N children… each level atomic and self-contained"). The unmerged
+`lane/arc-mesh-readpixels` branch's `§8E-2a swbCanopyOps` had the right STRUCTURAL instinct ("one measured unit,
+instanced-by-n") but the wrong DATA-FIDELITY choice — it reconstructs a GENERATED distribution (`predictedN` vs
+`extractedN`, ~1.4% error) instead of using the exact real per-plate positions already in hand. **Candidate C (see
+above) is the same one-parent correction done right**: one signed row, the 33,324 REAL placements as its payload —
+don't resurrect `swbCanopyOps`'s generative estimation, but DO keep its "treat the roof as one unit" insight.
 
-**The correct framing:** this is purely an EFFICIENT BULK PLACEMENT problem — **Candidate C above (batch-sign as ONE
-row) is the direct, concrete answer**, precisely because the roof is real measured data with no per-plate individual-
-edit need: bundle the 33,324 real placements into one signed batch row instead of fabricating a generative
-substitute for them. Do NOT resurrect `swbCanopyOps`/the canopy-walker approach for this — it solves a different
-problem (generation) that doesn't apply here (these are real rows, not an absent discipline to infer).
-If a future session considers the canopy-walker branch again, first re-confirm this framing hasn't changed (i.e.,
-confirm the roof plates are still real `elements_meta` rows, not something that became unmeasured/absent).
+If a future session considers the canopy-walker branch (`lane/arc-mesh-readpixels`) again for anything else, first
+re-confirm this framing hasn't changed (i.e., confirm the roof plates are still real `elements_meta` rows, not
+something that became unmeasured/absent) before reusing any of its generative logic.
 
 ## §RESUME — START HERE (next session)
 1. `git -C ~/bim-ootb fetch origin && git -C ~/bim-ootb merge --ff-only origin/main` (or merge if diverged). Open
@@ -142,5 +177,17 @@ confirm the roof plates are still real `elements_meta` rows, not something that 
 2. Fresh `/tmp/wt-*` worktree off latest `origin/main` (post-merge) for the signing-speed work.
 3. Re-run `witness_e2e_terminal_open.js` to reconfirm the ~14s baseline still holds (code may have moved since).
 4. Redo the in-browser crypto benchmark (via `e2e_harness.js`'s server pattern, NOT `about:blank`) before choosing
-   Candidate A vs B — the numbers above are Node-only and already known to undershoot real browser overhead by ~10x.
-5. Same Log Mandate / non-invent / witness-first discipline as the rest of this repo. Don't touch `deploy/live/`.
+   which candidate(s) to implement — the Node numbers above are known to undershoot real browser overhead by ~10x.
+5. Pick ONE candidate (D or C first per the recommendation above), implement, verify with real witness evidence,
+   THEN reassess before adding another — don't stack multiple uncoordinated changes to the same signing path.
+6. **Before declaring anything done: re-run the FULL walker regression sweep**, not just the ARC/LOD/Terminal-open
+   witnesses this session focused on. The fixes here touched shared substrate the disc-walker and STR-walker both
+   depend on (`kernel_ops.js`, `bonsai_kernel.js`, `arc_editable.js`, `bonsai_oplog.js`) — confirm nothing walker-side
+   regressed: `witness_e2e_walk.js` (already green this session, re-run again after further changes), plus this
+   repo's broader walker witness set per `docs/WalkerDoctrine.md` §6 (`witness_disc_walk_generalize.js` §DWG,
+   `witness_disc_walk_duplex_generalize.js` §DXG, `witness_shim_select.js`, `witness_dwwalk_hostbind.js`,
+   `witness_hostbind_agnostic.js`, `witness_elec_hostbind.js`, `witness_walkback_mep.js`) and the STR-into-ARC set
+   (`witness_str_canopy.js` if `lane/arc-mesh-readpixels` is ever touched again, `W-STR-INTO-ARC`). Don't assume
+   "the 12 E2E + ARC witnesses were green" means walkers are unaffected — they weren't in this session's scope, so
+   they haven't been checked since these substrate files changed.
+7. Same Log Mandate / non-invent / witness-first discipline as the rest of this repo. Don't touch `deploy/live/`.
