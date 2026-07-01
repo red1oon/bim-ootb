@@ -42,7 +42,10 @@ var CONCEPTS = {
   BASE:      { hr_concept_id: 1, value: 'BASE',      name: 'Base Salary',     hr_concept_category_id: 1, accountsign: '+', type: 'D', columntype: 'A', rule: null }, // amount = employee.base directly
   ALLOWANCE: { hr_concept_id: 2, value: 'ALLOWANCE',  name: 'Allowance',       hr_concept_category_id: 1, accountsign: '+', type: 'D', columntype: 'A', rule: { kind: 'FIXED', amount: 200 } },
   EPF:       { hr_concept_id: 3, value: 'EPF',        name: 'EPF (demo)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'RATE', of: 'base', pct: 0.11 } },
-  PCB:       { hr_concept_id: 4, value: 'PCB',        name: 'PCB (demo)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'BRACKET', of: 'gross', table: [[2000, 0], [4000, 0.03], [6000, 0.08], [1e12, 0.13]] } }
+  PCB:       { hr_concept_id: 4, value: 'PCB',        name: 'PCB (demo)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'BRACKET', of: 'gross', table: [[2000, 0], [4000, 0.03], [6000, 0.08], [1e12, 0.13]] } },
+  // amount is PER-EMPLOYEE-PER-PERIOD (leave.js's leaveDeduction), same reason BASE.rule is null — fed via
+  // emp.extra, not evaluated by rules.js. Closes the P8 leave→payroll seam onto the native shape (was engine.js).
+  UNPAID_LEAVE: { hr_concept_id: 5, value: 'UNPAID_LEAVE', name: 'Leave without pay', hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: null }
 };
 
 // ---- native hr_concept_acct rows — the GL account mapping the deduction side posts through -----------------
@@ -51,7 +54,8 @@ var CONCEPTS = {
 // naming, now sourced from a lookup table instead of a string convention).
 var CONCEPT_ACCT = {
   EPF: { hr_concept_acct_id: 1, hr_concept_id: 3, hr_expense_acct: 'epf_payable', c_acctschema_id: 1 },
-  PCB: { hr_concept_acct_id: 2, hr_concept_id: 4, hr_expense_acct: 'pcb_payable', c_acctschema_id: 1 }
+  PCB: { hr_concept_acct_id: 2, hr_concept_id: 4, hr_expense_acct: 'pcb_payable', c_acctschema_id: 1 },
+  UNPAID_LEAVE: { hr_concept_acct_id: 3, hr_concept_id: 5, hr_expense_acct: 'unpaid_leave_payable', c_acctschema_id: 1 }
 };
 var WAGES_EXPENSE_ACCT = 'wages_expense', NET_PAY_PAYABLE_ACCT = 'net_pay_payable';
 
@@ -84,6 +88,15 @@ function buildMovements(emp, period, hr_process_id, seedId) {
     rows.push({ hr_movement_id: seedId(), hr_process_id: hr_process_id, c_bpartner_id: emp.c_bpartner_id,
       hr_concept_id: c.hr_concept_id, hr_concept_category_id: c.hr_concept_category_id,
       amount: e.amount, accountsign: '-', qty: 1, servicedate: period, description: e.trace });
+  });
+  // variable per-employee-per-period deductions computed elsewhere (e.g. leave.js leaveDeduction()) — fed in
+  // by VALUE (the concept's real business key), not evaluated here; no line when the caller supplies none
+  // (no phantom deduction, matching leave.js's own L6 "no phantom" guarantee).
+  (emp.extra || []).forEach(function (x) {
+    var c = CONCEPTS[x.value]; if (!c || !(x.amount > 0)) return;
+    rows.push({ hr_movement_id: seedId(), hr_process_id: hr_process_id, c_bpartner_id: emp.c_bpartner_id,
+      hr_concept_id: c.hr_concept_id, hr_concept_category_id: c.hr_concept_category_id,
+      amount: R.round2(x.amount), accountsign: c.accountsign, qty: 1, servicedate: period, description: x.trace || ('FIXED ' + x.amount) });
   });
   return rows;
 }

@@ -12,7 +12,7 @@
 //   If a future edit adds a key to any emitted row that ISN'T in these lists, AD0 fails — that IS the
 //   "no invention outside the AD" rule enforced, not just documented.
 'use strict';
-var AD = require('../ad_payroll'), C = require('../connectors'), R = require('../rules');
+var AD = require('../ad_payroll'), C = require('../connectors'), R = require('../rules'), Lv = require('../leave');
 var checks = [];
 function ok(tag, cond, msg) { checks.push(!!cond); console.log('§HBA-AD-PAYROLL ' + (cond ? 'PASS' : 'FAIL') + ' ' + tag + ' — ' + msg); }
 
@@ -82,6 +82,17 @@ var slip = AD.payslip(run1.hr_movement, 1001, 'ms');
 ok('AD9-payslip-reader', slip._watermark === 'CONTOH — TIDAK RASMI' && slip.net === 4234 && slip.lines.length === 4,
   'payslip(1001) groups 4 concept lines, net=4234, watermarked (ms locale) — this is what P7 renders');
 ok('AD9-payslip-trace', slip.lines.every(function (l) { return !!l.trace; }), 'every payslip line carries its rule trace (glass-box)');
+
+// ---- AD10: the P8 leave→payroll seam feeds a REAL hr_movement row (was engine.js's generic `elements`) --------
+var lvLog = [Lv.accrue({ employee: 'e-1004', type: 'annual', days: 2, ts: '2026-06-01T00:00:00Z' }).op];
+var ded = Lv.leaveDeduction(lvLog.concat([Lv.take({ employee: 'e-1004', type: 'annual', days: 6, ts: '2026-06-15T00:00:00Z' }, lvLog[0].op_hash).op]),
+  'e-1004', '2026-06', 100); // accrued 2, took 6 → 4 unpaid days × 100 = 400
+var runWithLeave = AD.runPeriod({ period: '2026-06', actor: 'hba', employees: [
+  { c_bpartner_id: 1004, base: 3000, conceptIds: ['BASE'], extra: [{ value: 'UNPAID_LEAVE', amount: ded.rule.amount, trace: ded.name }] } ] });
+var leaveRow = runWithLeave.hr_movement.filter(function (m) { return m.hr_concept_id === AD.CONCEPTS.UNPAID_LEAVE.hr_concept_id; })[0];
+ok('AD10-leave-feeds-native', ded.rule.amount === 400 && leaveRow && leaveRow.amount === 400 && leaveRow.accountsign === '-' && runWithLeave.gl.balanced,
+  'leave.leaveDeduction() (4 unpaid days × 100) lands as a REAL hr_movement row (concept UNPAID_LEAVE, accountsign -), GL still balances — no engine.js `elements` shape needed');
+ok('AD0-hr_movement-shape-leave', keysSubset(leaveRow, 'hr_movement'), 'the leave-fed movement row is ALSO shape-clean (non-invent gate applies to every path, not just the default concepts)');
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-AD-PAYROLL ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));
