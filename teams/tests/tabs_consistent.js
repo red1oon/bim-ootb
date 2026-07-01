@@ -41,6 +41,9 @@ function teamsHtmlDataT() {
   var browser = await reqPw().chromium.launch();
   try {
     var page = await browser.newPage();
+    var consoleErrs = [];                                        // silent-failure guard (IIFE-wrap doctrine)
+    page.on('console', function (m) { if (m.type() === 'error') consoleErrs.push(m.text()); });
+    page.on('pageerror', function (e) { consoleErrs.push(e.message); });
     await page.goto('http://localhost:' + port + '/', { waitUntil: 'load' });
     await page.waitForFunction('window.__teamsReady === true', { timeout: 8000 });
 
@@ -84,11 +87,14 @@ function teamsHtmlDataT() {
     });
     verdict(sw.treeHidden && sw.chatShown && sw.active === 'chat', '§TABS-SWITCH  click Chat switches pane + active tab',
       'treeHidden=' + sw.treeHidden + ' chatShown=' + sw.chatShown + ' active=' + sw.active);
+
+    // §TABS-NOERR — no console.error / pageerror across the whole run.
+    verdict(consoleErrs.length === 0, '§TABS-NOERR  0 console errors (no silent JS failure)', 'errs=' + consoleErrs.length + (consoleErrs.length ? ' :: ' + consoleErrs.join(' | ') : ''));
   } finally {
     await browser.close(); server.close();
   }
 
-  var n = 5;
+  var n = 6;
   console.log('\n' + (fails === 0 ? '✅ W-TEAMS-TABS ' + n + '/' + n + ' PASS' : '❌ ' + fails + '/' + n + ' FAIL') + '\n');
   process.exit(fails === 0 ? 0 : 1);
 })().catch(function (e) { console.log('🔴 THREW ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 4).join('\n')); process.exit(1); });

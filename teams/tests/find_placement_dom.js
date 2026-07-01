@@ -31,6 +31,9 @@ function verdict(ok, label, detail) { if (!ok) fails++; console.log('   ' + (ok 
   var browser = await reqPw().chromium.launch();
   try {
     var page = await browser.newPage();
+    var consoleErrs = [];                                        // silent-failure guard (IIFE-wrap doctrine)
+    page.on('console', function (m) { if (m.type() === 'error') consoleErrs.push(m.text()); });
+    page.on('pageerror', function (e) { consoleErrs.push(e.message); });
     await page.goto('http://localhost:' + port + '/', { waitUntil: 'load' });
     await page.waitForFunction('window.__teamsReady === true', { timeout: 8000 });
     var baseline = await page.$eval('#find', function (n) { return n.innerHTML; });
@@ -68,11 +71,14 @@ function verdict(ok, label, detail) { if (!ok) fails++; console.log('   ' + (ok 
     });
     verdict(after.added === 0 && after.html === baseline, '§FP-OFF  clear === OFF baseline (zero footprint)',
       'added=' + after.added + ' identical=' + (after.html === baseline));
+
+    // §FP-NOERR — no console.error / pageerror across the whole run.
+    verdict(consoleErrs.length === 0, '§FP-NOERR  0 console errors (no silent JS failure)', 'errs=' + consoleErrs.length + (consoleErrs.length ? ' :: ' + consoleErrs.join(' | ') : ''));
   } finally {
     await browser.close(); server.close();
   }
 
-  var n = 4;
+  var n = 5;
   console.log('\n' + (fails === 0 ? '✅ W-FIND-PLACEMENT-DOM ' + n + '/' + n + ' PASS' : '❌ ' + fails + '/' + n + ' FAIL') + '\n');
   process.exit(fails === 0 ? 0 : 1);
 })().catch(function (e) { console.log('🔴 THREW ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 4).join('\n')); process.exit(1); });
