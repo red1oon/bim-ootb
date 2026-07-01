@@ -455,6 +455,18 @@
    "storey": "Ground Floor"
   }
  },
+ "storeys": {
+  "Ground Floor": {
+   "elevation": 0.0,
+   "guid": "1o0c33arXF9AEePDYchjCY",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  },
+  "Roof": {
+   "elevation": 2500.0,
+   "guid": "1o0c33arXF9AEePDYchj2Z",
+   "src": "internal/sources/Ifc4_SampleHouse.ifc"
+  }
+ },
  "wall_connects": [
   {
    "a": "3cUkl32yn9qRSPvBJVyWXt",
