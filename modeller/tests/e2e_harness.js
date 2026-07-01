@@ -76,12 +76,27 @@ async function runE2E(NAME, body, opts) {
           centre(fid) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; const b = new window.THREE.Box3().setFromObject(m); const c = new window.THREE.Vector3(); b.getCenter(c); return [c.x, c.y, c.z]; },
           pixsum() { const r = window.A.renderer; r.render(window.A.scene, window.A.camera); const gl = r.getContext(); const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); let s = 0; for (let i = 0; i < px.length; i += 257) s = (s + px[i]) >>> 0; return s; },
           candidates() { const g = window.Bonsai.group(); const out = []; const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(); for (const m of g.children) { if (!m.isMesh || m.userData.featureId == null) continue; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) continue; const c = new window.THREE.Vector3(); b.getCenter(c); const p = this.proj(c.x, c.y, c.z); if (p[0] < r.left + 24 || p[0] > r.right - 24 || p[1] < r.top + 24 || p[1] > r.bottom - 24 || p[2] > 1) continue; const sz = new window.THREE.Vector3(); b.getSize(sz); out.push({ fid: m.userData.featureId, sx: p[0], sy: p[1], vol: sz.x * sz.y * sz.z }); } out.sort((a, b) => b.vol - a.vol); return out.slice(0, 14); }
+          , bboxScreen(fid) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return null; let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; for (let i = 0; i < 8; i++) { const x = (i & 1) ? b.max.x : b.min.x, y = (i & 2) ? b.max.y : b.min.y, z = (i & 4) ? b.max.z : b.min.z; const p = this.proj(x, y, z); if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; } return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }; }
         }; return true;
       });
     },
     proj(x, y, z) { return pg.evaluate((a, b, c) => window.__e2e.proj(a, b, c), x, y, z); },
     centre(fid) { return pg.evaluate(f => window.__e2e.centre(f), fid); },
     pixsum() { return pg.evaluate(() => window.__e2e.pixsum()); },
+    async bboxScreen(fid) { return pg.evaluate(f => window.__e2e.bboxScreen(f), fid); },
+    async shotClip(label, fid, margin) {
+      const b = await this.bboxScreen(fid); if (!b) return this.shot(label);
+      const m = margin == null ? 48 : margin;
+      const clip = { x: Math.max(0, b.x - m), y: Math.max(0, b.y - m), width: b.width + m * 2, height: b.height + m * 2 };
+      try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png'), clip }); } catch (e) { await this.shot(label); }
+    },
+    async shotPts(label, pts, margin) {   // clip around a set of known client-space [x,y] points (e.g. a sketch profile)
+      const m = margin == null ? 120 : margin;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [x, y] of pts) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+      const clip = { x: Math.max(0, minX - m), y: Math.max(0, minY - m), width: (maxX - minX) + m * 2, height: (maxY - minY) + m * 2 };
+      try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png'), clip }); } catch (e) { await this.shot(label); }
+    },
     async pick() {
       const cands = await pg.evaluate(() => window.__e2e.candidates());
       for (const c of cands) { await pg.mouse.move(c.sx, c.sy); await sleep(40); await pg.mouse.click(c.sx, c.sy); await sleep(120);

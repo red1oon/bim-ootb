@@ -27,11 +27,13 @@ runE2E('W-E2E-CUT', async (t) => {
   t.assert('C1 SELECT (real click selects element)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
   await t.shot('02-selected');
+  await t.shotClip('cut-select', sel.fid, 80);   // guide frame (§F2 G4 element-clip): the wall, selected
   const before = await t.oplog(); const pix0 = await t.pixsum();
   await t.clickSel('#b-cut'); await t.sleep(900);
   const after = await t.oplog(); const last = await t.lastOp(); const pix1 = await t.pixsum();
   const chain = await t.verifyChain();
   await t.shot('03-cut');
+  await t.shotClip('cut-open', sel.fid, 80);   // guide frame (§F2 G4 element-clip): the opening, cut
   t.assert('C2 CUT-COMMIT (one GEOM_CUT on selection)', after.len === before.len + 1 && last && last.op_type === 'GEOM_CUT' && last.parameters && last.parameters.parent === sel.fid, 'len ' + before.len + '→' + after.len + ' op=' + (last && last.op_type) + ' parent=' + (last && last.parameters && last.parameters.parent));
   t.assert('C3 CHAIN-OK (verifyChain)', chain === true, 'verifyChain=' + chain);
   t.assert('C4 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
@@ -40,4 +42,4 @@ runE2E('W-E2E-CUT', async (t) => {
   await t.shot('04-undone');
   t.assert('C5 REVERSIBLE (undo restores cursor)', undo.cur === before.cur, 'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ')');
   t.assert('C6 GEOMETRY-REVERSIBLE (void closed, frame == pre-cut)', pix2 === pix0, 'pix0=' + pix0 + ' postCut=' + pix1 + ' postUndo=' + pix2);
-});
+}, { width: 1200, height: 850, dpr: 2 });
