@@ -19,7 +19,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=5', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b)
+      const url = new URL('bonsai_kernel_worker.js?v=6', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET)
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};
@@ -106,14 +106,40 @@
     },
 
     // Fold a whole op-log CHAIN -> array of mesh payloads (the feature tree, evaluated in one pass).
-    _foldChain(ops) {
+    // seedBoxes (optional): {featureId: {c1,c2}} pre-seeds B-rep boxes for box-like inserts that are cut/fillet
+    // targets (§CUT-ON-ARC) so the worker can subtract a void from a baked ARC wall.
+    _foldChain(ops, seedBoxes) {
       const w = this.init();
       if (!w) return Promise.reject(new Error('bonsai unsupported'));
       const id = ++this._seq;
       return new Promise((resolve, reject) => {
         this._pending.set(id, { resolve, reject });
-        w.postMessage({ id, ops });
+        w.postMessage({ id, ops, seedBoxes });
       });
+    },
+
+    // §CUT-ON-ARC (W-E2E-CUT): the exact world-AABB corners of a box-like insert, or null if the placed geometry
+    // is NOT an axis-aligned box (rotated wall / non-box component) → the caller refuses the cut (non-invent: we
+    // never approximate a non-box shape). Built from foldInsert's UN-MOVED placement so the worker's in-order
+    // GEOM_MOVE/ROTATE branches still apply transforms to the promoted box.
+    _insertCutBox(op) {
+      if (!window.Bonsai.library) return null;
+      let fold; try { fold = window.Bonsai.library.foldInsert(op, null, null); } catch (e) { return null; }
+      const p = fold && fold.positions; if (!p || p.length < 24) return null;   // need ≥ 8 verts
+      let xmin = Infinity, ymin = Infinity, zmin = Infinity, xmax = -Infinity, ymax = -Infinity, zmax = -Infinity;
+      for (let i = 0; i < p.length; i += 3) {
+        if (p[i] < xmin) xmin = p[i]; if (p[i] > xmax) xmax = p[i];
+        if (p[i + 1] < ymin) ymin = p[i + 1]; if (p[i + 1] > ymax) ymax = p[i + 1];
+        if (p[i + 2] < zmin) zmin = p[i + 2]; if (p[i + 2] > zmax) zmax = p[i + 2];
+      }
+      const sx = xmax - xmin, sy = ymax - ymin, sz = zmax - zmin;
+      if (!(sx > 1e-6 && sy > 1e-6 && sz > 1e-6)) return null;                  // degenerate
+      const tol = 1e-4 * Math.max(sx, sy, sz);
+      const near = (v, lo, hi) => Math.abs(v - lo) <= tol || Math.abs(v - hi) <= tol;
+      for (let i = 0; i < p.length; i += 3) {                                   // every vert ON an AABB face plane → axis-aligned box
+        if (!(near(p[i], xmin, xmax) && near(p[i + 1], ymin, ymax) && near(p[i + 2], zmin, zmax))) return null;
+      }
+      return { c1: [xmin, ymin, zmin], c2: [xmax, ymax, zmax] };
     },
 
     _buildMesh(d, opts) {
@@ -144,7 +170,20 @@
       // rides the occt worker so a move can TRANSLATE a wall's B-rep in place (PATH A). GEOM_MOVE rows are ALSO
       // summed here into a net per-parent delta — applied host-side to inserts via foldInsert (PATH B). A move
       // whose parent is an insert harmlessly reaches the worker too: PATH A no-ops (the insert isn't a worker solid).
-      const insertOps = ops.filter(o => o.op_type === 'GEOM_INSERT');
+      // §CUT-ON-ARC: a box-like insert that is the parent of a GEOM_CUT/GEOM_FILLET is PROMOTED to a worker B-rep
+      // box (seedBoxes) and rendered by the worker (with the void subtracted) — NOT host-side (else the uncut baked
+      // mesh would paint over the cut). Rotated/non-box inserts return null from _insertCutBox → stay host-side
+      // (the cut handler refuses them up front, so no dead op reaches here).
+      const cutFilletParents = new Set();
+      for (const o of ops) { if (o.op_type === 'GEOM_CUT' || o.op_type === 'GEOM_FILLET') { const P = typeof o.parameters === 'string' ? JSON.parse(o.parameters) : o.parameters; if (P && P.parent != null) cutFilletParents.add(P.parent); } }
+      const seedBoxes = {}; const promoted = new Set();
+      for (const o of ops) {
+        if (o.op_type !== 'GEOM_INSERT' || !cutFilletParents.has(o.id)) continue;
+        const box = this._insertCutBox(o);
+        if (box) { seedBoxes[o.id] = box; promoted.add(o.id); }
+      }
+      const hasSeed = promoted.size > 0;
+      const insertOps = ops.filter(o => o.op_type === 'GEOM_INSERT' && !promoted.has(o.id));
       const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');   // KEEPS GEOM_MOVE → PATH A translates moved walls
       const moveBy = new Map();                                          // targetFeatureId -> {dx,dy,dz,drot} (net, summed)
       for (const op of ops) {
@@ -164,7 +203,7 @@
         const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
         for (const cmd of (P.commands || [])) { if (cmd.featureId == null) continue; const list = gridBy.get(cmd.featureId) || []; list.push(cmd); gridBy.set(cmd.featureId, list); }
       }
-      const d = kernelOps.length ? await this._foldChain(kernelOps) : { meshes: [] };
+      const d = (kernelOps.length || hasSeed) ? await this._foldChain(kernelOps, hasSeed ? seedBoxes : undefined) : { meshes: [] };
       const meshes = (d.meshes || []).slice();
       if (window.Bonsai.library) {
         for (const op of insertOps) { try { meshes.push(window.Bonsai.library.foldInsert(op, moveBy.get(op.id), gridBy.get(op.id))); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
