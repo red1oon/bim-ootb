@@ -22,6 +22,186 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 ---
 
+## ▶ SESSION CLOSEOUT 2026-07-02 — NEW SESSION START HERE
+
+**This session's work is DONE + PUSHED** (`bim-ootb` `lane/hr-overlay`, worktree `/tmp/wt-hr`, 6 commits,
+`fb29e40` tip, **0 local-only commits** — verified `git rev-list --count origin/lane/hr-overlay..HEAD` = 0).
+**22 witness files, 235 checks total, all GREEN, zero regression** at every step.
+
+**What shipped (the whole §CRITICAL "Compile not Model" arc, closed end-to-end this session):**
+`ad_payroll.js` (payroll → `hr_process`/`hr_movement`/`hr_concept*` + leave-seam) · `occupancy.js`
+`toResourceAssignmentRow()` (→ `s_resourceassignment`) · `models.js` `toAssetRow()` (→ `a_asset`) ·
+`ad_tenancy.js` (Tenancy+Strata → `M_Warehouse`/`M_Locator`/`M_Product`/`C_Subscription`, WMS-address corrected).
+Full detail in `§CRITICAL` below — read it before touching any of these files again.
+
+**What's still open, in order:**
+1. **P7 — the payslip UI VIEW itself.** The compile layer (`ad_payroll.js`) is done and gives you `payslip()` —
+   a watermarked, trace-carrying per-employee read — but no viewer PANE was built this session (the original P7
+   ask). Mirror `viewer/hba_dashboard.js`'s pane pattern (additive, host-injected, mount/unmount, data-gated pill
+   in the FM-family drawer per §FM-FAMILY). Not started.
+2. **P8 — the Leave UI surface.** Engine done, native-checked (no retarget needed), payroll seam closed. No
+   panel built. Not started.
+3. **Strata UI / PM_Property mapping** — `PM_Property` (the building-level manager record) hasn't been checked
+   against `M_Warehouse` yet (likely folds into it directly — a Warehouse row probably covers what PM_Property
+   was for). Low priority, no live engine depends on it.
+4. **P9 — §RESEARCH GATE.** Still explicitly paused (user 2026-07-02) — do not start without being asked.
+5. **The Building/Warehouse/Locator/Subscription model is SPECCED, not yet seeded into a live pane or `ad_full.db`
+   itself** — `ad_tenancy.js`'s compile functions are witnessed in isolation (pure row-shape proofs); nothing
+   writes them into a real sqlite db or wires a viewer pane yet. That's the natural next build step if this
+   pillar continues.
+
+---
+
+## ▶▶▶ CRITICAL — READ FIRST (2026-07-02): "Compile not Model" — HBA reinvented tables that already exist
+
+**User doctrine restated (2026-07-02):** *"No invention outside the iDempiere AD."* Our hallmark vs. the outside
+BIM/ERP world is **Compile, not Model** — a compiled BIM element lands as a row in the SAME dictionary the ERP
+already runs on (Product/BPartner/Document), not a parallel schema glued on by an integration/ETL step (which is
+what Autodesk↔Procore↔Yardi↔Workday do to each other). **This gates P7/P8 below — do not build a view on an
+invented schema when the native table is sitting unused one folder over.**
+
+### What was checked, and how (falsifiable — re-run these if in doubt)
+Verified against **real iDempiere source** (`~/idempiere-dev-setup/idempiere`, actual upstream git history —
+migration SQL under `migration/i*/postgresql/*.sql`, generated model classes under
+`org.adempiere.base/src/org/eevolution/model/`) **and** this project's own compiled
+**`build/erp/ad_full.db`** (`sqlite3 build/erp/ad_full.db "PRAGMA table_info(<table>);"` / `.tables` / `SELECT count(*)`).
+Not assumed from the spec's prose — the spec's prose was WRONG on one load-bearing claim (below).
+
+### Finding 1 — the vision doc's core premise is FALSE, and needs correcting
+`§VISION` says *"iDempiere/ADempiere never shipped real Payroll, so there is no incumbent to merely match."*
+**False.** iDempiere ships a full native HR/Payroll dictionary (the eEvolution contribution, present in upstream
+history back to early migrations): `hr_employee`, `hr_contract`, `hr_department`, `hr_job`,
+`hr_concept`/`hr_concept_category` (= pay elements/rules), `hr_payroll` (= the run), `hr_payrollconcept`,
+**`hr_movement`** (= the calculated pay line), `hr_process` (= the run document, docstatus/docaction/posted),
+`hr_concept_acct` (= the GL account mapping), `hr_period`/`hr_year`. **All 19 tables are already present, right
+now, in this project's own `build/erp/ad_full.db`** (and `internal/ad_full_idempiere_gardenworld.db`) — **0 rows**,
+dormant. `C_BPartner.isemployee` is likewise REAL (col present, `TEXT`, confirmed via a genuine `AD_Val_Rule`
+migration `migration/i5.1/postgresql/201709181100_Ticket_1008477.sql` referencing `SELECT IsEmployee FROM
+C_BPartner`). **The corrected, SHARPER pitch:** not "no incumbent has payroll" (falsifiable, wrong) but *"iDempiere
+carries a two-decade-old native HR/Payroll dictionary that is functionally dormant everywhere it's deployed — no
+engine runs it, no UI surfaces it. We're first to activate those exact tables with a signed, glass-box,
+deterministic-replay engine, and first to compile a real building's geometry straight into that same dictionary."*
+Any doc asserting the old claim (`docs/SpatialERPIntegration.md`, `docs/HRBIMAssetGuide.md`, this file's own
+`§VISION`) needs this correction before further public use — flagged, not yet edited (ask first, these are
+deployed/live docs).
+
+### Finding 2 — table-by-table: HBA's invented shape → the native AD table it should compile into instead
+
+| HBA invented shape (`hr_bim_asset/*`) | Native AD table (verified columns) | Notes |
+|---|---|---|
+| `documents` (`doc_type=PAYRUN`), lifecycle draft→calculate→approve→post | **`hr_process`** — `hr_payroll_id`, `hr_period_id`, `docstatus`, `docaction`, `documentno`, `posted`, `processed`, `c_doctype_id` | This IS the PAYRUN doc, natively, with real doc-lifecycle columns HBA's version doesn't even have (docaction/docstatus workflow). |
+| `document_lines` (one payslip/employee: base/ADD/SUB elements + `.trace`) | **`hr_movement`** — `c_bpartner_id`, `hr_concept_id`, `hr_concept_category_id`, `amount`, `qty`, `accountsign`, `servicedate`, `validfrom/to`, `hr_process_id` | The calculated line. `accountsign` ('+'/'-') **is** HBA's `side: ADD/SUB` — already a native column, not something to invent. |
+| pay-element rule (`elements[]`: `kind` FIXED/%/FORMULA, `side`) | **`hr_concept`** (`accountsign`, `type`, `columntype`, `value`, `ispaid`, `isreceipt`) grouped by **`hr_concept_category`** | `hr_concept_category.hr_concept_acct` even points at the GL mapping row directly. |
+| formula evaluation (`rules.js` `evalRule`, JSON-declarative, produces `.trace`) | **`hr_payrollconcept.ad_rule_id`** (an `AD_Rule` script object) | Native iDempiere evaluates via an opaque AD_Rule script — HBA's declarative JSON-rule-with-trace is a GENUINE improvement (glass-box, auditable) worth KEEPING as the execution engine, while the concept's *identity/category/account* still compiles into `hr_concept`/`hr_concept_acct`. Don't throw this part out. |
+| GL post (`glFor()` hand-rolled Dr/Cr) | **`hr_concept_acct`** — `hr_revenue_acct`, `hr_expense_acct`, `c_acctschema_id`, `isbalancing` | The dotted GL line already has a native mapping table; `glFor` should read/write through it, not invent its own account-string convention. |
+| Employee (`party.base`/`party.ctx`) | **`hr_employee`** (`c_bpartner_id`, `hr_department_id`, `hr_job_id`, `hr_payroll_id`, `startdate/enddate`) + **`hr_contract`** (`c_bpartner_id`, `validfrom/validto`, `netdays`) | Contract term is `hr_contract.validfrom/validto`, not a generic `p.term` bolted onto every profile. |
+| Occupancy `models.js` (`assignment_no`/`s_resource`/`resource_product`/`party`/`assign_from`/`assign_to`/`qty`) | **`s_resourceassignment`** (real cols: `s_resource_id`, `name`, `description`, `assigndatefrom`, `assigndateto`, `qty`, `isconfirmed`) + **`s_resource`** (`value`, `name`, `s_resourcetype_id`, `isavailable`, `chargeableqty`, `percentutilization`) | Field names are close paraphrases, not the real columns, and live in a separate `hr_seed.db` that never touches `ad_full.db`. **11 real `s_resource` rows and 2 real `s_resourceassignment` rows already exist** in `ad_full.db` today (stock 2003 GardenWorld demo content — "Fertilizer Plant," "Garden Layout" — not this project's buildings, but proof the table is live, not just schema). |
+| Room ↔ Resource conceptual link (spec said "Room = S_Resource IS-A M_Product") | **REVERSED from what the spec says**: `m_product.s_resource_id` is the real FK (Product → Resource), confirmed by grepping every table for the column. Combined with the **BOM PRINCIPLE** (a BIM element already compiles to an `M_Product` row) — **a room's bookable-resource identity should hang off the SAME compiled Product row**, no separate `bim_guid` field needed on a hand-rolled Occupancy shape at all. |
+| ⚠ **genuine native gap, not an HBA invention**: `s_resourceassignment` carries **no party/tenant column** at all (verified — full column list has none). | — | The booking record is pure calendar (dates/qty/confirmed); "who" leased/booked it natively lives on the **commercial document** (`C_Order`/`C_Invoice.c_bpartner_id`), not on the resource assignment. HBA's `party` field on Occupancy isn't reinventing a wheel here — it's filling a real native gap, but it belongs on the ORDER/INVOICE side, not bolted onto `s_resourceassignment`. |
+| Tenancy (`HR_Lease`: unit/tenant/rent/term) as an invented `documents doc_type=RENTRUN` | **`c_recurring`** (`recurringtype`, `c_order_id`, `c_invoice_id`, `frequencytype`, `frequency`, `runsmax`, `datenextrun`) + **`c_subscription`**/`c_subscriptiontype` + `c_orderpayschedule`/`c_invoicepayschedule` | Native recurring-billing off a base `C_Order`/`C_Invoice` — a lease is just an Order with a `C_Recurring` header generating periodic invoices. **No RENTRUN/FEERUN doc-type needs inventing** — profile #2 (tenancy) and #4 (strata) both collapse into this ONE native mechanism, differing only by which BPartner/product they recur against. `c_recurring` has **1 real row already** in `ad_full.db`. |
+| `PM_Asset` (`bim_guid`↔`iot_device`↔`operator`/`vendor`/`personnel`↔`pm_cycle`↔`next_due`) | **`a_asset`** (Fixed Asset module, 20 sibling tables) — has `m_product_id` (direct!), `c_bpartner_id`, `lease_bpartner_id`, `leaseterminationdate`, `lastmaintenencedate`/`nextmaintenencedate`, `isowned`, `a_asset_group_id` + **`a_asset_product`** (asset↔product join) | Already carries **3 real rows** in `ad_full.db`. Because `a_asset.m_product_id` links directly to a Product, and a BIM element already compiles to a Product (BOM PRINCIPLE), **the asset↔BIM link is already native — no separate `bim_guid` field needed.** This single table covers most of Pillar-4's §7D asset/maintenance ambition already. |
+| `PM_Property`/`PM_Strata_Parcel` (hand-rolled) | Not yet matched to a native table — **NOT VERIFIED**, flagged as an open item, do not assume invented-is-necessary without checking (e.g. `C_BPartner_Location`/`M_Locator`/a dedicated strata concept may or may not exist natively). | Lower priority than Payroll/Occupancy/Asset above — check before building, don't build then check. |
+
+### What HBA got RIGHT and should keep (the genuine differentiator, not reinvention)
+- **The signed op-log (W-SIGN) over every domain** — no native AD table is tamper-evident or replay-verifiable;
+  this is real, additive value sitting *on top of* the native rows, not competing with them.
+- **The declarative JSON rule + `.trace`** (`rules.js`) — strictly better than opaque `AD_Rule` scripts for the
+  glass-box story; keep it as the *execution engine* for `hr_concept`/`hr_payrollconcept`, not as a schema.
+- **The guid↔mesh spatial binding** (`binding.js`) — genuinely new; no native AD table carries a BIM guid or mesh
+  reference anywhere (grepped every table for `s_resource_id` reverse-refs and for any guid-shaped column — none
+  found). This is the actual moat, unchanged by this finding.
+
+### Revised priority (supersedes the P7/P8/P9 order below until this is resolved)
+- **P7-PRE ✅ DONE 2026-07-02 (`hr_bim_asset/ad_payroll.js`, `W-HBA-AD-PAYROLL 13/13`).** New module compiles
+  payroll into native `hr_process` (the run) / `hr_movement` (one row per employee×concept) / `hr_concept`+
+  `hr_concept_category` (pay-element identity, `accountsign` IS the native ADD/SUB column) / `hr_concept_acct`
+  (GL mapping — `epf_payable`/`pcb_payable` resolved per-concept, not a hardcoded profile string) / `hr_contract`
+  term-scoping. Kept ON TOP (genuinely ours, not invented, not native either): the declarative `rules.js`
+  FIXED/RATE/BRACKET rule + `.trace` as the execution engine (native iDempiere only offers an opaque `ad_rule_id`
+  script here), and the signed op-log (W-SIGN) wrapping every `hr_process`/`hr_movement` write. **W-HBA-AD-PAYROLL
+  13/13**: AD0×2 = the NON-INVENT GATE itself (every emitted row's keys ⊆ an INDEPENDENTLY-sourced real-column
+  list, captured fresh via `PRAGMA table_info` — not imported from the implementation, so it can't grade its own
+  homework) · AD1 arithmetic identical to the already-accepted `witness_run.js` demo baseline (EMP001 gross=5200
+  net=4234, reused not reinvented) · AD2 `accountsign` native · AD3 GL balances Dr=Cr=8400 through the
+  `hr_concept_acct` lookup · AD4/AD5 signed+tamper-evident · AD6/AD7 deterministic replay==live · AD8 `hr_contract`
+  term-scoping (lapsed contract → honestly excluded) · AD9 `payslip()` reader (groups movements per employee,
+  watermarked, trace-carrying) — **this is what P7's view will render off**, not a new schema. `connectors.js`'s
+  header comment (the wrong "PAYRUN→documents/PAYSLIP→document_lines" mapping) corrected in place. Full existing
+  suite re-run **zero regression** (18 files, all still green). `engine.js`'s generic payroll profile
+  intentionally left in place (untouched) — `witness_leave.js` still depends on it; retiring it is a follow-up
+  once Leave (P8) is itself native-checked, not bundled into this slice.
+- **P-OCC-RETRO ✅ DONE 2026-07-02 (`occupancy.js` `toResourceAssignmentRow()`, `W-HBA-AD-OCC 4/4`).** The signed
+  ASSIGN/RELEASE/UNAVAIL op-log + REPLAY availability engine (21/21, already sound) is UNCHANGED — added a
+  projection of an ASSIGN op onto the real `s_resourceassignment` columns (`s_resource_id`/`assigndatefrom`/
+  `assigndateto`/`qty`/`isconfirmed`). Confirmed `s_resourceassignment` has **no native party/tenant column at
+  all** — `party` is carried alongside for the caller to thread onto `C_Order`/`C_Invoice.c_bpartner_id` instead
+  (a real native gap, not an HBA omission). Also fixed `models.js`'s decorative Occupancy demo record to the
+  real column names (was a hand-paraphrased shape) and corrected the backwards FK claim ("Room IS-A M_Product" →
+  the real FK is `m_product.s_resource_id`, Product→Resource).
+- **P-ASSET-RETRO ✅ DONE 2026-07-02 (`models.js` `toAssetRow()`, `W-HBA-AD-ASSET 4/4`).** Projects the `PM_Asset`
+  demo record onto real `a_asset` columns (`m_product_id`=the asset's `bim_guid` directly — the BOM PRINCIPLE
+  means a BIM element already compiles to a Product, so no separate guid column is needed; `c_bpartner_id`,
+  `isowned`, `nextmaintenencedate`). Honest gap: `a_asset` has ONE `c_bpartner_id`, not three — `vendor`/
+  `personnel` are carried outside the row (`_vendor`/`_personnel`), never forced into a column that can't hold
+  all three parties. `timeline.js`'s shipped consumption (`W-HBA-TIMELINE 7/7`, merged into the 4D editor) is
+  UNTOUCHED — this is an additive projection, not a replacement.
+- **P8 (Leave) ✅ VERIFIED, NOT GATED (2026-07-02)** — searched upstream iDempiere + this project's own
+  `ad_full.db` for any `HR_Leave`/`Vacation`/`Absence`-shaped table: **none exists, anywhere.** `leave.js` is
+  genuinely novel, not a reinvention — proceed on it same as before, no native retarget needed. Its payroll feed
+  is now closed onto the native shape too: `ad_payroll.js` gained an `UNPAID_LEAVE` concept + `emp.extra[]` (the
+  honest feed-point for a per-employee-per-period deduction computed elsewhere) — `W-HBA-AD-PAYROLL` AD10 proves
+  `leave.leaveDeduction()`'s output lands as a real `hr_movement` row, GL still balances. **`W-HBA-AD-PAYROLL` now
+  15/15.**
+- **P9 (Research Gate)** — unchanged, still paused per user 2026-07-02.
+- **Tenancy + Strata (`§PILLAR 4` profiles #2/#4) ✅ DONE 2026-07-02 (`hr_bim_asset/ad_tenancy.js`,
+  `W-HBA-AD-TENANCY 12/12`).** User design review (2 rounds) corrected the model twice before landing:
+
+  1. **`c_recurring` was the WRONG table** — it's a header that POINTS AT an existing `C_Order`/`C_Invoice`
+     (needs one to pre-exist). The right native table is **`C_Subscription`** (`c_bpartner_id`=party,
+     `m_product_id`=the leased unit — itself already a compiled BIM element per the BOM PRINCIPLE,
+     `c_subscriptiontype_id`=frequency, `startdate`/`paiduntildate`/`renewaldate`/`isdue`) — **self-contained,
+     no Order/Invoice pre-req.** `C_InvoicePaySchedule`/`C_OrderPaySchedule`/`C_PaymentTerm` remain correct for
+     the OTHER already-distinguished case (purchase-with-terms), not rental.
+  2. **`M_Locator.X/Y/Z` are NOT Cartesian coordinates** (first-pass mistake, caught by user WMS review) —
+     verified against `ad_full.db`'s own `AD_Element` dictionary: `X`="Aisle (X)", `Y`="Bin (Y)", `Z`="Level (Z)"
+     — the classic WMS bin-address triple (e.g. `02-B-03` = aisle/row, bin/rack-section, level/shelf-height).
+     Aisle+Bin are horizontal, Level is vertical — so **Level maps onto a building's storey** (floors stack
+     vertically; the fixture's real extracted `room.storey` field, e.g. `"Level 1"`), **Aisle maps onto a
+     block/wing** (real when a building has one; honestly `null` for HHS's single tower — never guessed), and
+     **Bin has no building-side analog** (left unset, not forced). The room's real geometry (precise position)
+     stays authoritative on the BIM/viewer side, joined back only by guid (`m_locator.value`) — this AD record
+     is a WMS-style business ADDRESS for ERP-side lookup, not a duplicate coordinate store.
+  3. **Strata needs NO new table** — it is the IDENTICAL `C_Subscription` mechanism as Tenancy: same
+     `c_bpartner_id` (owner instead of tenant), same `m_product_id` (the same unit), just a different native
+     `C_SubscriptionType` row (`QUARTERLY_STRATA_FEE`, frequency=3, vs `MONTHLY_RENT`, frequency=1).
+     `PM_Strata_Parcel` retires entirely — `toSubscriptionRow(record, m_product_id, subscriptionType, seedId)`
+     serves both profiles.
+
+  **"Building" precedent (verified, not hypothetical):** `build/erp/bim_embed.js` §B4 ("the framework proof")
+  already attaches a standard `AD_Attachment` row (table 254, `ad_table_id=190` M_Warehouse, `record_id=103`,
+  title `"HQ Warehouse (Terminal model)"`) pointing at the compiled Terminal viewer — i.e. `M_Warehouse` is
+  ALREADY used as "a Building" in this exact repo. `M_Product.m_locator_id` is a real column, so
+  **Product(unit) → Locator(room, WMS address) → Warehouse(building)** is wired natively, schema-only.
+  Declaring the BIM-set attachment on a new HHS warehouse row stays `bim_embed.js`'s job (ERP-side, when ERP
+  co-loads) — not reimplemented in HBA, per the "dotted lines only" doctrine.
+
+  **The model, shipped:**
+  | Concept | Native AD row |
+  |---|---|
+  | Building | ONE `M_Warehouse` row per building (new — HHS has none yet, unlike GardenWorld/Terminal) |
+  | Room / leasable unit | `M_Locator` (WMS address: `z`=real storey, `x`=block-when-real) + `M_Product` (`m_locator_id` link) |
+  | Lease (tenant) | `C_Subscription` (`c_bpartner_id`=tenant, type=`MONTHLY_RENT`) |
+  | Strata (owner) | `C_Subscription` (`c_bpartner_id`=owner, type=`QUARTERLY_STRATA_FEE`) — same table, same function |
+  | Rent/fee received | **honest gap, isolated to one field:** `paiduntildate` stays `null` until a real `C_Invoice`/`C_Payment` exists (the one remaining Order-engine dependency) |
+  `W-HBA-AD-TENANCY 12/12`: non-invent gate (3 tables) · WMS-address correctness (level=storey, no fabricated
+  coordinates) · Product→Locator→Warehouse chain · self-contained subscription (no Order/Invoice FK) · honest
+  `paiduntildate` gap · Strata same-shape + different-role/type proof. Zero regression across the full 22-file
+  HBA suite. `WM_DeliverySchedule` (a user-recalled Red1 WMS plugin) was searched for on this machine
+  (`~/Projects/red1_plugins/`, whole home) — not found, no Bitbucket remote configured anywhere; not factored in,
+  flagged rather than guessed at.
+
+---
+
 ## ▶▶ NEXT SESSION — "Demonstrate a true Spatial ERP" (user 2026-07-01)
 
 > The mission distilled (user, 2026-07-01): **demonstrate a TRUE Spatial ERP** — ERP/operate records living ON
