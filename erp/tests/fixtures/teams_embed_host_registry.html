@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — TEAMS EMBED HOST FIXTURE, REGISTRY VARIANT (erp/tests/wire_teams_embed_icon.js,
+     RESUME_OVERLAY_PILL_ICONS.md). SAME minimal #idmp-pill stand-in as teams_embed_host.html, but ALSO
+     loads /erp/icons.js BEFORE teams_embed.js — matching production idempiere.html's real load order
+     (icons.js → pill_builder.js → teams_embed.js). Isolates the icon-registry contract: with window.ICONS
+     present, the Teams pill must draw the SAME 'share' glyph the rest of the #idmp-pill bar uses, not its
+     own hardcoded inline SVG. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iDempiere (embed host fixture, registry variant)</title>
+</head>
+<body>
+  <div id="idmp-pillbar"><div id="idmp-pill"><button id="pill-kanban" type="button">K</button></div><span id="idmp-pill-trigger">⋯</span></div>
+  <div id="grid">
+    <div class="rec" data-doc="INV-001">INV-001 · Posted</div>
+  </div>
+  <script>
+    (function () {
+      window.TeamsEmbedOps = function () { return []; };
+    })();
+  </script>
+  <!-- production load order: icons.js (window.ICONS) → teams_embed.js -->
+  <script src="/erp/icons.js"></script>
+  <script src="/erp/teams_embed.js"></script>
+  <script>
+    window.TeamsEmbed.init({ header: document.getElementById('idmp-pill'), rowSelector: '#grid .rec' })
+      .then(function (r) { window.__embedInit = r; });
+  </script>
+</body>
+</html>

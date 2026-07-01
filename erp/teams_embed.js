@@ -65,6 +65,31 @@
 
   var _handle = null;
 
+  // §ICON-REGISTRY (RESUME_OVERLAY_PILL_ICONS.md) — mountTeamsPill already supports a host-registry icon
+  // (opts.host.icon(name,opts), teams_pill.js §R1) but production idempiere.html never passed one, so the
+  // pill always drew its own hardcoded inline SVG instead of the SAME Lucide glyph set the rest of the
+  // #idmp-pill bar uses (window.ICONS, erp/icons.js — verbatim-copied from panels.js ICONS, the source of
+  // truth). Build a minimal host adapter ONLY when the real registry is present (production chrome loads
+  // icons.js before this file); absent (e.g. a minimal test fixture) → undefined, mountTeamsPill falls back
+  // to its own inline glyph exactly as before — no change to anything that doesn't carry the registry.
+  function _registryHost() {
+    if (typeof global.ICONS !== 'object' || !global.ICONS) return null;
+    return {
+      icon: function (name, iconOpts) {
+        iconOpts = iconOpts || {};
+        var ic = global.ICONS[name];
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        if (iconOpts.id) btn.id = iconOpts.id;
+        if (iconOpts.title) btn.title = iconOpts.title;
+        var sz = iconOpts.size || 18;
+        btn.innerHTML = '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+          + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (ic ? ic.svg : '') + '</svg>';
+        return btn;
+      }
+    };
+  }
+
   // init(opts) — mount the Teams pill IFF enabled. opts = { header?, paneHost?, rowSelector?, docOf?, readOps? }.
   //   header     — where the pill attaches (default: the live #idmp-pill bar, else document.body).
   //   rowSelector/docOf — best-effort row-dot painting onto host records (default: [data-doc] → data-doc attr).
@@ -119,8 +144,8 @@
 
       // a styled pane (fixed right drawer), so the production overlay reads like the S9 demo.
       _injectPaneStyle();
-      _handle = TP.mountTeamsPill(header, { label: 'Teams overlay', paneHost: document.body, onMount: onMount, onUnmount: onUnmount });
-      log('ON — Teams pill mounted into ' + (header.id ? '#' + header.id : 'body'));
+      _handle = TP.mountTeamsPill(header, { label: 'Teams overlay', paneHost: document.body, host: _registryHost(), onMount: onMount, onUnmount: onUnmount });
+      log('ON — Teams pill mounted into ' + (header.id ? '#' + header.id : 'body') + ' icon=' + (_registryHost() ? 'registry' : 'inline-fallback'));
       global.__teamsEmbedReady = true;
       return { enabled: true, mounted: !!_handle, handle: _handle };
     }).catch(function (e) { log('init failed ' + e.message); return { enabled: true, mounted: false, error: e.message }; });
