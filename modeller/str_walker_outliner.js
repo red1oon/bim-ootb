@@ -47,6 +47,11 @@
   // NO OCI: the modeller is fully isolated from the viewer's cloud hosting (§101 Drift Law).
   function _modellerBase() { return './'; }   // modeller.html now lives IN modeller/ → residents are same-dir
 
+  // §GEOMAP-WIRE: start the geomap artifact fetch NOW (module init) so it usually beats the (multi-MB)
+  // resident DB fetch and the ARC seed's best-effort audit finds gmReady()===true. Failure-tolerant by
+  // contract: load failure logs once inside gmLoad and every consumer degrades to "no audit".
+  if (typeof window !== 'undefined' && window.GeomapBridge) window.GeomapBridge.gmLoad('../geomapping/');
+
   function tabRows() {
     var d = window.swbTabData && window.swbTabData();
     if (!d) return [{ id: 'sw-empty', label: 'Open a resident (▾) or local .db (🏗) to walk', sub: '' }];
@@ -270,11 +275,23 @@
         // §GEO-SPLIT: undefined for every non-split resident (bdb itself carries the geometry tables, exactly
         // as before); the opened Terminal_geo.db handle for Terminal.
         geoDb: gdb || undefined,
+        // §GEOMAP-WIRE (RESUME_IFC_BOM_GEOMAPPING.md §WIRE-SPEC): best-effort AUDIT channel — own-class
+        // measured-band check on every seeded element (return block + §GEOMAP-VALIDATE logs; op substrate
+        // provably untouched, W-GEOMAP-WIRE W1). Gated on the bridge's data actually having loaded (gmLoad
+        // kicked off at module init below); not ready / not loaded ⇒ undefined ⇒ seed byte-identical to today.
+        classify: (window.GeomapBridge && window.GeomapBridge.gmReady())
+          ? { validate: function (cls, dims) { return window.GeomapBridge.gmValidate(key, dims, cls); } }
+          : undefined,
         building: key
       }).then(function (r) {
         console.log(TAG + ' §ARC-SEED-WIRE ' + key + ' editable ARC elements=' + r.committed + ' skipped=' + r.skipped +
           ' realGeom=' + (r.realResolved || 0) + ' hardfail=' + (r.hardfail || 0) +
           ' (featureId↔guid bridge ready)');
+        // §GEOMAP-WIRE: surface the audit for the Outliner (read-only; null when the bridge wasn't ready)
+        if (r.geomap) {
+          window.__gmSeedAudit = window.__gmSeedAudit || {};
+          window.__gmSeedAudit[key] = r.geomap;
+        }
       // §LOD400-STALL: a seed failure here used to be console.warn-only — easy to miss (no pageerror, no UI
       // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
       // impossible-to-miss line in devtools/CI logs (still just a log line — no new UI surface, per scope).

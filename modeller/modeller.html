@@ -203,15 +203,20 @@
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
      Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
 <script src="real_geometry.js?v=1" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
-<script src="arc_editable.js?v=3" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="arc_editable.js?v=4" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
      (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
-<script src="walker_confidence.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
+<script src="walker_confidence.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
+<!-- §GEOMAP-WIRE (RESUME_IFC_BOM_GEOMAPPING.md §WIRE-SPEC): IFC→BOM classifier + bridge — AUDIT-ONLY channel
+     (op substrate provably untouched, W-GEOMAP-WIRE W1). Load-failure tolerant: the ARC seed gates on
+     window.GeomapBridge && gmReady(), so a missing/failed script just means "no audit", never a broken seed. -->
+<script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
+<script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
 <script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=11" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=12" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=17" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
