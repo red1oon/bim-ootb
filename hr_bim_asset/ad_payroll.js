@@ -170,9 +170,21 @@ function payslip(hr_movement, c_bpartner_id, locale) {
   return W ? W.stamp(out, locale || 'en') : out;
 }
 
+// demonstrator payroll spec for the P7 viewer pane — the SAME EMP001/EMP002 identities+concepts already
+// accepted by witness_ad_payroll.js AD1 (EMP001 gross=5200/net=4234) — reused, not re-invented. Payroll
+// identity (c_bpartner_id) has no spatial binding to check (unlike Occupancy/Asset), so this seeds
+// unconditionally rather than gating on a guid resolving — the honesty gate here is "reuse the accepted
+// numbers", not "resolve to a mesh".
+function demoSpec() {
+  return { period: '2026-06', actor: 'hba', locale: 'en', employees: [
+    { c_bpartner_id: 1001, name: 'EMP001', base: 5000, conceptIds: ['BASE', 'ALLOWANCE', 'EPF', 'PCB'] },
+    { c_bpartner_id: 1002, name: 'EMP002', base: 3000, conceptIds: ['BASE', 'ALLOWANCE', 'EPF'] }
+  ] };
+}
+
 var AD = { CATEGORIES: CATEGORIES, CONCEPTS: CONCEPTS, CONCEPT_ACCT: CONCEPT_ACCT,
   WAGES_EXPENSE_ACCT: WAGES_EXPENSE_ACCT, NET_PAY_PAYABLE_ACCT: NET_PAY_PAYABLE_ACCT,
-  runPeriod: runPeriod, runHash: runHash, replayHash: replayHash, payslip: payslip, glFor: glFor };
+  runPeriod: runPeriod, runHash: runHash, replayHash: replayHash, payslip: payslip, glFor: glFor, demoSpec: demoSpec };
 if (typeof module === 'object' && module.exports) module.exports = AD;
 else (typeof self !== 'undefined' ? self : this).HbaAdPayroll = AD;
 })();

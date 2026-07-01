@@ -41,6 +41,8 @@
   <script src="../models.js"></script>
   <script src="../binding.js"></script>
   <script src="../connectors.js"></script>
+  <script src="../rules.js"></script>
+  <script src="../ad_payroll.js"></script>
   <script src="../overlay.js"></script>
   <script src="../lens.js"></script>
   <script src="../timeline.js"></script>
@@ -49,6 +51,7 @@
   <script src="../request.js"></script>
   <script src="../dashboard.js"></script>
   <script src="../../viewer/hba_dashboard.js"></script>
+  <script src="../../viewer/hba_payslip.js"></script>
   <script src="../../viewer/hba_lens.js"></script>
   <script>
     // mock APP: real lease-room guids (Occupancy/Presence/Class detect) + seeded signed logs; NO asset guid →
@@ -59,11 +62,12 @@
       markDirty: function(){}, collectMeshes: function(){ return []; } };
     A._hbaOccupancyLog = self.HbaOccupancy.demoSeed(rooms).log;
     A._hbaAttendanceLog = self.HbaAttendance.demoSeed(rooms, '2026-07').log;
+    A._hbaPayrollSpec = self.HbaAdPayroll.demoSpec();   // P7 — payroll has no spatial binding to check, seeded like the others
     window.APP = A;
     // open the REAL family drawer (the same call panels.js makes)
     var d = self.HBALens.openFamilyDrawer(A);
     var avail = self.HBALens.availableLenses(A);
     console.log('§FM_DEMO drawer rendered=' + !!d + ' available=' + avail.filter(function(x){return x.available;}).map(function(x){return x.id;}).join(','));
-    document.title = 'FM ready · ' + avail.filter(function(x){return x.available;}).length + '/5 lenses';
+    document.title = 'FM ready · ' + avail.filter(function(x){return x.available;}).length + '/6 lenses';
   </script>
 </body></html>

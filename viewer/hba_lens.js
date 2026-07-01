@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -243,6 +243,14 @@
         A._hbaRequestLog = G.HbaRequest.demoSeed(rooms, '2026-05-10T00:00:00Z', reqKnown).log;
         console.log('§HBA_REQ seeded ' + A._hbaRequestLog.length + ' open tickets from ' + rooms.length + ' rooms (demonstrator, aging @2026-05-10)');
       }
+      // P7 — seed a (watermarked, demonstrator) payroll spec so the Payslip pane has data on a building that
+      // carries rooms (mirrors the occupancy/attendance/request gate above). Payroll identity (c_bpartner_id)
+      // has NO spatial binding to check (unlike Occupancy/Asset) — reuses the SAME EMP001/EMP002 baseline
+      // already accepted by witness_ad_payroll.js, not a per-building invention.
+      if (!A._hbaPayrollSpec && h.AD && h.AD.demoSpec && rooms.length) {
+        A._hbaPayrollSpec = h.AD.demoSpec();
+        console.log('§HBA_PAY seeded payroll spec — ' + A._hbaPayrollSpec.employees.length + ' employees, period ' + A._hbaPayrollSpec.period + ' (demonstrator)');
+      }
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 
@@ -293,20 +301,26 @@
     footprints:'<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
     layers:    '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
     cpu:       '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
-    barChart:  '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'
+    barChart:  '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+    banknote:  '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>'
   };
   var FAMILY = [
     { kind: 'lens', mode: 'occupancy',   icon: 'doorOpen',   label: 'Occupancy',    detail: 'Availability — occupied / expiring / vacant / unavailable (incl. lease status)' },
     { kind: 'lens', mode: 'presence',    icon: 'footprints', label: 'Presence',     detail: 'Live headcount-by-zone from signed check-ins' },
     { kind: 'lens', mode: 'class',       icon: 'layers',     label: 'Unit class',   detail: 'Use-class — residential / commercial / office' },
     { kind: 'lens', mode: 'maintenance', icon: 'cpu',        label: 'Assets / IoT', detail: 'Equipment maintenance due — ok / due / overdue' },
-    { kind: 'pane', id:   'dash',        icon: 'barChart',   label: 'Dashboard',    detail: 'Occupancy / availability / ticket-aging charts (extra pane)' }
+    { kind: 'pane', id:   'dash',        icon: 'barChart',   label: 'Dashboard',    detail: 'Occupancy / availability / ticket-aging charts (extra pane)' },
+    { kind: 'pane', id:   'payslip',     icon: 'banknote',   label: 'Payslip',      detail: 'Payroll run → per-employee payslip (glass-box, watermarked)' }
   ];
+  // pane entries route by `id` to their own additive pane module (dash→HBADashPane, payslip→HBAPayslipPane) —
+  // a small registry instead of hardcoding one pane name, so adding a pane never touches the lens/toggle path.
+  var PANE_GLOBALS = { dash: 'HBADashPane', payslip: 'HBAPayslipPane' };
+  function paneFor(f) { return G[PANE_GLOBALS[f.id]]; }
   function _entryActive(f) {
-    return f.kind === 'pane' ? !!(G.HBADashPane && G.HBADashPane.isActive && G.HBADashPane.isActive()) : isActive(f.mode);
+    return f.kind === 'pane' ? !!(paneFor(f) && paneFor(f).isActive && paneFor(f).isActive()) : isActive(f.mode);
   }
   function _entryAvailable(A, f) {
-    return f.kind === 'pane' ? !!(G.HBADashPane && G.HBADashPane.detect && G.HBADashPane.detect(A)) : detect(A, f.mode);
+    return f.kind === 'pane' ? !!(paneFor(f) && paneFor(f).detect && paneFor(f).detect(A)) : detect(A, f.mode);
   }
   // pure, witnessed: the wake-aware availability + active state of every family entry for THIS building.
   function availableLenses(A) {
@@ -320,7 +334,7 @@
     var drawerOpen = (typeof document !== 'undefined') && !!document.getElementById('hba-fm-drawer');
     return availableLenses(G.APP || G.A || {}).some(function (x) { return x.active; }) || drawerOpen;
   }
-  function activateLens(A, entry) { if (entry.kind === 'pane') { if (G.HBADashPane) G.HBADashPane.toggle(A); } else { toggle(A, entry.mode); } }
+  function activateLens(A, entry) { if (entry.kind === 'pane') { var p = paneFor(entry); if (p) p.toggle(A); } else { toggle(A, entry.mode); } }
 
   // the thin BROWSER renderer — a small drawer of the family entries; available → clickable, unavailable → greyed
   // (wake-aware), active → highlighted. Re-tap the FM pill toggles it shut. No node path (returns if no document).
