@@ -257,6 +257,7 @@
   function toggle(A, mode) {
     if (!ready()) { if (A && A.status) A.status.textContent = 'HR overlay not loaded'; return false; }
     if (_port) { _port.restoreAll(); _port = null; }            // clear prior mode first (one mode at a time)
+    if (G.HBAAvatars && G.HBAAvatars.isActive()) G.HBAAvatars.unmount(A);   // §AVATAR-LOD — avatars ride the presence lens; clear them with it
     if (_active === mode) { _active = null; console.log('§HBA_LENS off mode=' + mode); if (A.markDirty) A.markDirty(); return false; }
     var h = HBA();
     var known = _known(A);                                                       // §REAL-BIND — rooms resolve via rendered members
@@ -270,6 +271,9 @@
     _port = buildMeshPort(A, { ghost: false });
     var n = h.O.applyOverlay(_port, plan);
     _active = mode;
+    // §AVATAR-LOD (P6) — when Presence lights up, stand a little person in each room where a real check-in put
+    // one, with an LOD ladder (dot→mini→full) + hover card. Additive; unmounted above when the lens clears.
+    if (mode === 'presence' && G.HBAAvatars) { try { G.HBAAvatars.mount(A); } catch (e) { console.warn('§HBA_AVATARS mount skipped: ' + e.message); } }
     if (A.status) A.status.textContent = 'HR · ' + mode + ' · ' + n + ' unit' + (n === 1 ? '' : 's') + ' lit' + (plan.unlinked.length ? ' (' + plan.unlinked.length + ' un-linked)' : '');
     console.log('§HBA_LENS on mode=' + mode + ' lit=' + n + ' unlinked=' + plan.unlinked.length + ' linked=[' + plan.linked.join(',') + ']');
     if (A.markDirty) A.markDirty();
