@@ -212,14 +212,22 @@
     try {
       bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
       window.ArcEditable.seedArc(bdb, {
-        commitGroup: function (ops, gid) { return O.commitSeedGroup(ops, gid); },
+        // §LOD400-STALL: skip commitSeedGroup's default full verifyChain() for the ARC seed — it always seeds
+        // into a FRESH mo_<building> instance (nothing pre-existing to lose coverage on), so the redundant
+        // re-hash of every just-sealed row buys nothing here (see bonsai_oplog.js commitSeedGroup comment).
+        // A Terminal-scale seed (35,552 ops) this alone saves ~half the wall-clock; other commitSeedGroup
+        // callers (e.g. the disc-walk trunk commit in modeller.html) are untouched — still opt-in, still verify.
+        commitGroup: function (ops, gid) { return O.commitSeedGroup(ops, gid, { verify: false }); },
         building: key
       }).then(function (r) {
         console.log(TAG + ' §ARC-SEED-WIRE ' + key + ' editable ARC elements=' + r.committed + ' skipped=' + r.skipped +
           ' (featureId↔guid bridge ready)');
-      }).catch(function (e) { console.warn(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message)); })
+      // §LOD400-STALL: a seed failure here used to be console.warn-only — easy to miss (no pageerror, no UI
+      // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
+      // impossible-to-miss line in devtools/CI logs (still just a log line — no new UI surface, per scope).
+      }).catch(function (e) { console.error(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message) + ' — building=' + key + ' seeded ZERO ops (no geometry will render)'); })
         .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } });
-    } catch (e) { console.warn(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message)); if (bdb) { try { bdb.close(); } catch (e2) { } } }
+    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } }
   }
 
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH

@@ -42,10 +42,25 @@
     // ---- PERSISTENCE: autosave the whole signed op-log to localStorage on every change; restore on boot.
     // A modelling session's kernel_ops db is small (KB–tens of KB) → well within the localStorage budget.
     _KEY: 'bonsai_model_v1',
-    _b64(u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); },
+    // §LOD400-STALL: byte-by-byte `s += String.fromCharCode(u8[i])` is a MILLIONS-of-calls string-concat loop —
+    // invisible for the small db this comment's original assumption covers, but for a Terminal-scale ARC seed
+    // (35,552 signed rows → a multi-MB db export) this turned out to be the SINGLE BIGGEST stall in the whole
+    // open path: ~108s measured, dwarfing the (already-fixed) kernel_ops signing loop. Chunked
+    // String.fromCharCode.apply produces the byte-for-byte IDENTICAL binary string (same btoa output) with
+    // thousands of chunk calls instead of millions of single-char ones — a pure speed fix, zero output change.
+    _b64(u8) {
+      let s = '';
+      const CHUNK = 0x8000;   // 32768 — safely under engines' String.fromCharCode.apply argument-count ceiling
+      for (let i = 0; i < u8.length; i += CHUNK) { s += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK)); }
+      return btoa(s);
+    },
     _unb64(b64) { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; },
     _loadBytes() { try { const s = localStorage.getItem(this._KEY); return s ? this._unb64(s) : null; } catch (e) { return null; } },
-    _save() { try { if (this.db) localStorage.setItem(this._KEY, this._b64(this.db.export())); } catch (e) { console.warn(TAG + ' save failed ' + e); } },
+    // A save failure (e.g. QuotaExceededError — localStorage is typically ~5-10MB/origin, and a Terminal-scale
+    // export can approach or exceed that) used to be console.warn-only. console.error makes it loud (matches
+    // the §ARC-SEED-WIRE visibility fix) — the user's edits still work in-session either way (autosave is
+    // best-effort), but a silently-failed autosave meant "your edits didn't survive a reload" with zero signal.
+    _save() { try { if (this.db) localStorage.setItem(this._KEY, this._b64(this.db.export())); } catch (e) { console.error(TAG + ' autosave FAILED (edits stay in-session but will NOT survive a reload) ' + e); } },
 
     // Boot-time restore: ensure the db (loads saved bytes), then fold it to the scene if non-empty.
     async restore() {
@@ -153,18 +168,30 @@
     // persist + fold) but writes N ops + their guids at once. IDEMPOTENT by gid ('arcseed-<building>') so
     // re-opening a building never double-seeds. opsArray = [{op_type:'GEOM_INSERT', params, outputGuid}, …].
     // Returns {ids, idempotent}: ids[i] == the kernel_ops row id == featureId of ops[i] (the bridge anchor).
-    async commitSeedGroup(opsArray, gid) {
+    // opts.verify (default true — UNCHANGED behaviour for every existing caller, incl. modeller.html's
+    // disc-walk trunk commit): §LOD400-STALL — KernelOps.verifyChain() re-derives sha256(prev|canonical(op))
+    // (+ re-checks the signature) for EVERY row in the log, INCLUDING the rows commitGroup+sealFrom just
+    // staged/sealed moments earlier with the exact same deterministic function — for a big seed (Terminal:
+    // 35,552 ops) that's a fully redundant 3rd hash pass (see kernel_ops.js commitGroup/sealFrom comments),
+    // ~half the total wall-clock. commitGroup's own returned {committed,sealed,tip} already proves the group
+    // inserted atomically and chained correctly — enough for the ARC-seed path (str_walker_outliner.js), which
+    // always seeds into a FRESH mo_<building> instance (nothing "pre-existing" to lose coverage on). Opt-in
+    // per call site, not a global default change — any other caller keeps the full check unless it explicitly
+    // asks not to.
+    async commitSeedGroup(opsArray, gid, opts) {
+      opts = opts || {};
       const db = await this._ensureDb();
       if (!opsArray.length) return { ids: [], idempotent: false };
       const baseTs = 1700000000000;                           // fixed → deterministic seed-row timestamps (replay-stable)
       const res = await window.KernelOps.commitGroup(db, opsArray, { gid, baseTs });
       if (!res.committed) throw new Error('commitSeedGroup rejected: ' + res.reason);
       if (!res.idempotent) this._n = Math.max(this._n, res.ids.length);   // push future geom-grp gids past the seed
-      const v = await window.KernelOps.verifyChain(db);
+      const doVerify = opts.verify !== false;
+      const v = doVerify ? await window.KernelOps.verifyChain(db) : { ok: res.committed, tip: res.tip, skipped: true };
       this._lastTip = v.tip;
       await this._foldUpto();                                 // redraw the chain → the seeded boxes appear, gizmo-ready
       this._emit();                                           // persist mo_<building> + notify (autosave)
-      console.log(TAG + ' commitSeedGroup gid=' + gid + ' ops=' + res.ids.length + ' verify=' + v.ok + ' idempotent=' + !!res.idempotent);
+      console.log(TAG + ' commitSeedGroup gid=' + gid + ' ops=' + res.ids.length + ' verify=' + (doVerify ? v.ok : 'SKIPPED(trusted commitGroup, tip=' + String(v.tip).slice(0, 12) + '…)') + ' idempotent=' + !!res.idempotent);
       return { ids: res.ids, idempotent: !!res.idempotent };
     },
 

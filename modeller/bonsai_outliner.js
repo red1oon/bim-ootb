@@ -152,6 +152,7 @@
       this._treesCache = this._flatsCache = null;   // fresh skeleton → force both sections to refill (no stale-cache desync)
     },
     _paint() {
+      const __t0 = performance.now();
       const tree = this._el.querySelector('#bo-tree'); if (!tree) return;
       this._ensureSections(tree);
       // W-UX-6: refresh the adjacency map for this paint when the lens is ON (cheap; reads window.swXEdges).
@@ -203,7 +204,7 @@
       foot.textContent = (f ? shown + '/' + total + ' shown' : total + ' features') + lens + (tip ? '  🔒 ' + tip.slice(0, 8) : '');
       this._lastPaint = { tree: treeBuilt, flat: flatBuilt };   // whitebox witness reads this (W-BONSAI-OUTLINER-INCR)
       console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '" trees=' + treeCats.length +
-        ' treeBuilt=' + treeBuilt + ' flatBuilt=' + flatBuilt);
+        ' treeBuilt=' + treeBuilt + ' flatBuilt=' + flatBuilt + ' §PAINT_MS=' + (performance.now() - __t0).toFixed(1));
     },
     // Flat op-log group/row wiring (scoped to the #bo-flats container so it re-wires only on a flat rebuild).
     _wireFlat(root) {

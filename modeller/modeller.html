@@ -177,14 +177,14 @@
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
-<script src="bonsai_kernel.js?v=4" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=5" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
 <script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
-<script src="kernel_ops.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
+<script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=5" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=6" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
@@ -194,13 +194,13 @@
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=7" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=8" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
 <script src="cross_edges.js?v=2" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
-<script src="arc_editable.js?v=1" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="arc_editable.js?v=2" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
@@ -208,7 +208,7 @@
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
 <script src="walker_confidence.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
 <script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=9" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=10" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=16" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -273,6 +273,11 @@ function toast(msg, kind) {
 }
 window.toast = toast;   // expose the UI util (other surfaces + witnesses can raise a notice)
 const setStat = (m) => { stat.textContent = m; if (/^FAIL\b/.test(String(m))) toast(String(m).replace(/^FAIL[:\s]*/, ''), 'error'); };
+// §LOD400-STALL: expose on window — kernel_ops.js/bonsai_kernel.js (plain <script>, outside this module's
+// scope) report LONG-OPERATION progress (a Terminal-scale open/seed) through the SAME status-line mechanism
+// the rest of the UI already uses, instead of inventing a second one. Guarded (`typeof window.setStat ===
+// 'function'`) everywhere it's called, so this stays a pure addition — nothing regresses if absent.
+window.setStat = setStat;
 // uncaught async op failures currently vanish silently → surface them too (deduped against a repeat burst)
 let _lastRej = '';
 window.addEventListener('unhandledrejection', (e) => {
@@ -2028,7 +2033,17 @@ window.Bonsai.outliner.addCategory({ key: 'gridmoves', label: 'Grid Moves', matc
   node: op => ({ id: op.id, label: 'Move ' + op.parameters.gridId,
     sub: (op.parameters.delta > 0 ? '+' : '') + (+op.parameters.delta).toFixed(2) + ' ·' + (op.parameters.commands ? op.parameters.commands.length : 0) + ' recomp' }) });
 // Components category: inserted library components (§OOTB Item 2 = assemble, don't draw). Registered via the seam.
-window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', match: op => op.op_type === 'GEOM_INSERT',
+// §LOD400-STALL fix #4: match EXCLUDES raw-bbox (hash-less) inserts — the ARC-seed substrate (arc_editable.js,
+// no `params.hash`, a MEASURED bbox instead) is not a user-placed catalog component; it already has its own
+// efficient (collapsed-by-default) representation in the BOM-graph TREE category above. Before this fix, a
+// Terminal-scale open (35,552 raw-bbox ARC inserts, ALL matching op.op_type==='GEOM_INSERT') built one flat
+// <div data-fid=…> row per element (a multi-MB innerHTML string) + wired a click handler on each via
+// querySelectorAll(...).forEach(...) on every bonsai:oplog event — measured ~80s+ blocked, the single
+// biggest stall in the whole open path once the other three (query/signing/autosave) were fixed. Real
+// user-placed components (Insert-pill catalog drops, disc-walk MEP fixtures) ALWAYS carry params.hash — this
+// filter drops NOTHING a user would look for in "Components", only the substrate that was never meant to be
+// there. Verified: modeller/tests/scene_grid_outliner_live.js (catalog "Bed King" insert, has hash) unaffected.
+window.Bonsai.outliner.addCategory({ key: 'components', label: 'Components', match: op => op.op_type === 'GEOM_INSERT' && op.parameters && op.parameters.hash != null,
   node: op => { const p = op.parameters.placement, c = window.Bonsai.library && window.Bonsai.library.get(op.parameters.hash);
     const mv = window.Bonsai.oplog.moveDeltaFor ? window.Bonsai.oplog.moveDeltaFor(op.id) : { dx: 0, dy: 0 };   // a moved insert shows its NEW grid ref
     const a = (p && window.Bonsai.grid.refAt) ? window.Bonsai.grid.refAt((p.x || 0) + mv.dx, (p.y || 0) + mv.dy) : null;
@@ -2167,8 +2182,38 @@ function _clearDiscWalk(disc) {
 // fabricated cone/cylinder/grille mesh would INVENT geometry (forbidden by W-DW-PRIM). This function is the
 // SINGLE swap point: the finish state plugs a fine LOD400 component-library mesh per prim kind in HERE, same
 // placement. Override window._dwPrimGeo to wire the component library. Returns a THREE.BufferGeometry.
-window._dwPrimGeo = window._dwPrimGeo || function (prim, bx, by, bz) {
-  return new THREE.BoxGeometry(bx, by, bz);   // POC: measured box for every kind; LOD400 mesh swaps in here
+//
+// Bug-2 partial fix (honest, user-approved scope — "illegal LOD200 geometry"): before falling back to the POC
+// box, try the SAME 3-item real-mesh catalog match (ArcEditable.matchLod300 — ifc_class + measured-dims
+// tolerance, arc_editable.js) already wired for the seeded ARC substrate. A match swaps in the REAL catalog
+// mesh (Library.meshArrays — synchronous for these 3 hashes, their v/f are baked in, no fetch/race). No extra
+// placement math needed here: the InstancedMesh below places fixtures by a PURE translate to (p.x,p.y,p.z)
+// (never a ground-seat), and the catalog mesh is symmetric about its own local origin (verified against its
+// baked vertex buffer), so its centre lands exactly where the box's centre would have. Geometry carries
+// userData.lod300 so the caller can log an honest matched-vs-unmatched tally (never silently "fixed").
+// No match (the overwhelming majority — DiscWalker fixtures are MEP devices: sprinklers/diffusers/outlets/
+// valves/runs, none of which are Column/Beam/Door) → the SAME honest POC box as before, unchanged.
+window._dwPrimGeo = window._dwPrimGeo || function (prim, bx, by, bz, ifcClass) {
+  try {
+    var AE = window.ArcEditable, L = window.Bonsai && window.Bonsai.library;
+    if (AE && L && ifcClass) {
+      var mt = AE.matchLod300(ifcClass, bx, by, bz);
+      if (mt) {
+        var d = L.meshArrays(mt.hash);
+        if (d && d.positions && d.indices) {
+          var geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(d.positions, 3));
+          geo.setIndex(new THREE.BufferAttribute(d.indices, 1));
+          geo.computeVertexNormals();
+          geo.userData.lod300 = true; geo.userData.hash = mt.hash;
+          return geo;
+        }
+      }
+    }
+  } catch (e) { console.warn('§DW-PRIM-LOD match failed ' + (e && e.message)); }
+  var bg = new THREE.BoxGeometry(bx, by, bz);   // POC: measured box for every kind (unmatched, or no catalog available)
+  bg.userData.lod300 = false;
+  return bg;
 };
 function _renderDiscWalk(disc, placements) {
   var root = _dwRoot(); if (!root) return;
@@ -2187,12 +2232,15 @@ function _renderDiscWalk(disc, placements) {
   var byCls = {};
   placements.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
   var dims = [];
+  var lod300N = 0, lod200N = 0;                                                 // Bug-2 honesty tally (matched vs unmatched)
   Object.keys(byCls).forEach(function (cls) {
     var list = byCls[cls], s = list[0];
     var measured = (s.bx > 0 && s.by > 0 && s.bz > 0);
     var bx = measured ? s.bx : 0.18, by = measured ? s.by : 0.18, bz = measured ? s.bz : 0.18;
     var prim = s.prim || 'box';                                                 // §LOD-SEAM render kind (sprinkler/light/…)
-    var geo = window._dwPrimGeo(prim, bx, by, bz);                              // POC box (measured) → LOD400 mesh swaps in here
+    var geo = window._dwPrimGeo(prim, bx, by, bz, cls);                         // POC box (measured), catalog-matched LOD300 mesh, or → LOD400 mesh swaps in here
+    var isLod300 = !!(geo.userData && geo.userData.lod300);
+    if (isLod300) lod300N += list.length; else lod200N += list.length;
     function _mesh(sub, mat) {
       if (!sub.length) return;
       var im = new THREE.InstancedMesh(geo, mat, sub.length);
@@ -2203,7 +2251,7 @@ function _renderDiscWalk(disc, placements) {
     _mesh(list, matN);                                                          // all (normal box)
     _mesh(list.filter(function (p) { return p.gated && !p.clash; }), matG);     // orange = yielded into the plenum
     _mesh(list.filter(function (p) { return p.clash; }), matC);                 // red = irreducible clash
-    dims.push(cls.replace('Ifc', '') + '/' + prim + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)'));
+    dims.push(cls.replace('Ifc', '') + '/' + prim + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)') + (isLod300 ? '(LOD300)' : ''));
   });
   // §3c CONNECTOR EDGES: every fixture connectorEnrich stamped (.connector, projected from rule_connector)
   // draws its FIXTURE→SERVICE hookup as a short line from the fixture along the connector faceDir (e.g. each
@@ -2226,6 +2274,8 @@ function _renderDiscWalk(disc, placements) {
       ', standoff=' + enriched[0].standoff_m + 'm)');
   }
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
+  console.log('§DW-PRIM-LOD disc=' + disc + ' lod300=' + lod300N + ' lod200=' + lod200N +
+    ' (Bug-2 partial fix: lod300=matched real catalog mesh, lod200=unchanged POC box; honest gap, not silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
 }
 // §3c ASSEMBLE render — catalog PARTS instantiated at the real routed NODES (disc_walker.assemble): each part
@@ -2248,6 +2298,12 @@ function _renderDiscAssembly(disc, parts) {
   Object.keys(byCls).forEach(function (cls) {
     var list = byCls[cls];
     var d = (list[0].diameter_mm || 100) / 1000, L = (list[0].length_mm || 200) / 1000;   // measured Ø/length → box (m)
+    // Bug-2 scope: NOT wired to the LOD300 catalog match here (deliberately, unlike _renderDiscWalk above) — this
+    // BoxGeometry(d,d,L)'s long axis is Z BY CONSTRUCTION (THREE.BoxGeometry(w,h,depth) → depth=Z=L), which the
+    // quaternion below (up=(0,0,1) → p.dir) relies on to orient the run along its real direction. The 3 catalog
+    // meshes are baked with their long axis on X (Beam/Door) — swapping one in under the SAME Z→dir quaternion
+    // would rotate it 90° off its real run direction (a WRONG, not just approximate, render) — worse than the
+    // honest box. No ifcClass passed ⇒ _dwPrimGeo's match guard short-circuits ⇒ same box as before, unchanged.
     var geo = window._dwPrimGeo('run', d, d, L);                                            // LOD seam (POC box of catalog dims)
     var im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach(function (p, i) {
