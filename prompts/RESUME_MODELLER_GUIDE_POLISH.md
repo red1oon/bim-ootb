@@ -25,8 +25,9 @@ owned by the maintainer (see `## MERGE / DEPLOY`).
    `witness_e2e_{move,walk}.js` (bim-ootb `lane/modeller-e2e-suite-2`) → produced `docs/img/modeller/`
    `move-gizmo.png` + `walk-fixtures.png` (2× DPR, canvas-cropped to 1360×1080). §F2 generalises exactly this
    to the other ~18 frames.
-3. **Resolve decision G2 BEFORE capturing** (swiftshader-2× vs GPU-headed — see §F2). It changes the whole
-   approach; do not guess. Evidence says swiftshader-2× is already clean.
+3. **G2 is SETTLED (architect ruling):** "polished" = the **HMI UI** (Outliner/pills/status/scrubber/layout),
+   NOT 3D render quality. swiftshader-2× is the standard — do NOT chase GPU rendering. Compose each frame so the
+   relevant HMI reads well (see G4); if the HMI itself looks unpolished, that's an app-side UI fix, not a crop.
 4. Execute §F2's work-list; keep every frame witness-traceable; `mkdocs build --strict` = 0 after each batch.
 
 ---
@@ -97,30 +98,37 @@ other **~18** are the original functional swiftshader captures at mixed sizes (8
 
 **Gaps / decisions to make (spec'd for the stronger model — resolve, don't hand-wave):**
 
+- **G2 — "Polished" = the HMI UI, NOT the 3D render (architect ruling 2026-07-01, settled — do not re-open).**
+  "Polished look" is about the **whole human-machine interface**: the Outliner, the pill toolbar, the status
+  bar + history scrubber, typography, panel layout, control states/affordances — reading clean, complete and
+  consistent. It is **NOT** GPU render quality (anti-aliasing, lighting, materials). ⇒ **swiftshader-2× IS the
+  standard; the GPU-headed capture idea is DROPPED — it solved the wrong problem.** The real work is *composing
+  each frame so the relevant HMI reads well* (see G4), and — if the HMI itself looks unpolished in a frame —
+  that's an **app-side UI fix**, not a render/capture problem (raise it as a modeller UI item, don't paper over
+  it with a crop). No model/GPU decision to make; go straight to capture.
 - **G1 — Consistency is the concrete defect.** `identify docs/img/modeller/*.png`: 2 frames @1360×1080, 18 @
-  850–1120. Pick ONE standard (recommend **2× DPR, canvas-region crop ≈1360×1080**) and bring all 21 to it.
-  A frame you don't recapture must still be *resized/re-cropped* to the standard, or it will read as sloppy.
-- **G2 — "Polished live look" is undefined — DECIDE THIS FIRST; it changes everything.** The old bar said "not
-  the swiftshader look", but the 2 F4 swiftshader-2× frames are demonstrably clean. Two paths:
-  - **(a) Adopt swiftshader-2× as the standard** — cheap, repeatable, fully in-harness, every frame stays
-    *asserted* + witness-traceable. **Recommended** unless the architect judges the anti-aliasing wanting.
-  - **(b) GPU-headed capture** off the deployed `viewer/modeller.html` — true AA, prettier, but **manual,
-    not asserted, not reproducible in CI**. Only if (a) is rejected on look.
-  This is an **architect judgment call** (the user is the app architect). Present both, get the call, then commit.
+  850–1120. Pick ONE **2× DPR** standard and bring all 21 to it (framing/crop *kind* per G4 — NOT a single
+  canvas-only crop; HMI frames keep their chrome). A frame you don't recapture must still be resized to the
+  standard, or it reads as sloppy.
 - **G3 — No uniform recapture harness yet.** F4 hand-added `shot()` to 2 witnesses. For all 12 tools, EITHER add
   one `shot('<label>')` at each witness's asserted moment (12 files, the F4 pattern — keeps each frame asserted)
   OR write one orchestrator that replays every click-path. **Prefer per-witness `shot()`** (traceability > DRY).
-- **G4 — Crop is not one-size.** Whole-building shots crop to the canvas region
-  (`convert IN -crop 1360x1080+600+360 +repage OUT` on a 1200×850@2× frame). **Element close-ups** (fillet
-  edges = 13 KB tiny, cut, rotate, scale) need a **computed clip** around the asserted element: project its
-  world-bbox → client rect + margin → `pg.screenshot({clip})`. Spec each frame's crop kind (see work-list).
+- **G4 — Crop is not one-size, and per G2 it must SHOW the HMI where the frame teaches it.** Three kinds:
+  - **HMI-in-action** (`workspace-open`, `insert-catalog`, `seedtrunk-entry`, and any status-line/scrubber
+    moment): frame the relevant UI chrome — the armed pill, the open panel, the status bar/scrubber — *with*
+    the canvas. **Do NOT crop the HMI away**; that chrome is the thing being taught. Capture at full viewport
+    (or a generous clip that keeps the panel), don't reduce to bare canvas.
+  - **Whole-building result** (`walk`, `gridstretch`, `delete`): canvas-region crop
+    (`convert IN -crop 1360x1080+600+360 +repage OUT` on a 1200×850@2× frame).
+  - **Element close-up** (`fillet` edges = 13 KB tiny, `cut`, `rotate`, `scale`): computed clip around the
+    asserted element — project world-bbox → client rect + margin → `pg.screenshot({clip})`.
 
 **Work-list — frame → witness → asserted moment → crop kind** (18 open; `move-gizmo`+`walk-fixtures` ✅ done):
 
 | Frame(s) | Witness | Moment to `shot()` | Crop |
 |---|---|---|---|
-| `workspace-open` | the open flow (any witness post-`t.open`) | after Open + Fit | canvas |
-| `insert-catalog`, `insert-placed` | `witness_e2e_insert.js` | catalog armed / after ground-click | canvas |
+| `workspace-open` | the open flow (any witness post-`t.open`) | after Open + Fit | **HMI** (full workspace: Outliner + pills + scrubber) |
+| `insert-catalog`, `insert-placed` | `witness_e2e_insert.js` | catalog armed / after ground-click | **HMI** (catalog panel) / canvas |
 | `sketch-profile`, `sketch-wall` | `witness_e2e_sketch.js` | profile laid / after Extrude | canvas → element-clip |
 | `route-spine`, `route-run` | `witness_e2e_route.js` | spine laid / after Sweep-Run | canvas |
 | `cut-select`, `cut-open` | `witness_e2e_cut.js` | wall selected / opening cut | element-clip (the wall) |
@@ -130,7 +138,7 @@ other **~18** are the original functional swiftshader captures at mixed sizes (8
 | `rotate-yaw` | `witness_e2e_rotate.js` | after rotate commit | element-clip |
 | `gridstretch-before`, `gridstretch-after` | `witness_e2e_gridstretch.js` | before / after gridline drag | canvas |
 | `delete-gone` | `witness_e2e_delete.js` | after soft-delete | canvas |
-| `seedtrunk-entry`, `seedtrunk-trunk` | `witness_e2e_seedtrunk.js` | popup shown / trunk routed | canvas |
+| `seedtrunk-entry`, `seedtrunk-trunk` | `witness_e2e_seedtrunk.js` | popup shown / trunk routed | **HMI** (the entry popup) / canvas |
 
 - **Replace `docs/img/modeller/*.png` in place** (same filenames → zero ref churn). **Non-invent:** the frame
   must show the *real* committed result (op-log/scene-graph agreeing) — capture, never composite.
@@ -153,7 +161,7 @@ their *own* asserted moment.
 > canvas-cropped to the tight style, copied into `docs/img/modeller/` (`move-gizmo.png` new, `walk-fixtures.png`
 > replaced in place) and embedded — bim-compiler PR #10; witness edits on `lane/modeller-e2e-suite-2`. This also
 > **partially satisfies §F2**: the two new frames are already real 2× captures — only the *other 18* frames
-> remain to recapture from the polished live app.
+> remain to bring to the one 2× standard (with HMI-aware framing per G2/G4).
 
 ### §F5 — Note the OPENING naming/UX inconsistency (docs-only) — **folded into §F1 Troubleshooting**
 `GEOM_OPENING` has no user-facing trigger; the real "make an opening" is the **Cut** tool. The guide should not
