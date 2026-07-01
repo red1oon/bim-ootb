@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- ⚠ DO NOT REMOVE — TEAMS GUIDE SHOWCASE (docs/TeamsOverlayGuide.md screenshots). A standalone, richer
+     iDempiere-styled AR Dashboard with the Teams overlay: WHO-dots on rows + the tabbed Outliner + the §1b
+     dashboard graphs, all off ONE seeded (SAMPLE) op-log. Read-only, no network. ?on=1 auto-opens the pane. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kernel-ERP · Accounts Receivable · Teams overlay (showcase)</title>
+<style>
+  :root { --idmp-bg:#eef1f5; --idmp-panel:#fff; --idmp-border:#cdd4de; --idmp-header:#1c5fa8;
+    --idmp-blue:#1c5fa8; --idmp-text:#2b333d; --idmp-muted:#6b7681; --idmp-hover:#e8f0fa; --idmp-sel:#d6e6f7; }
+  * { box-sizing:border-box; } body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; color:var(--idmp-text); background:var(--idmp-bg); }
+  .wm { background:repeating-linear-gradient(45deg,#fff6d6,#fff6d6 14px,#fff0bd 14px,#fff0bd 28px); color:#8a6d1a;
+    font-size:11px; font-weight:700; text-align:center; padding:4px; letter-spacing:.06em; border-bottom:1px solid #e6d38a; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--idmp-panel); border-bottom:1px solid var(--idmp-border); }
+  header h1 { font-size:15px; margin:0; font-weight:700; color:var(--idmp-header); } header .sp { flex:1; }
+  main { padding:16px; max-width:960px; margin:0 auto; }
+  .card { background:var(--idmp-panel); border:1px solid var(--idmp-border); border-radius:6px; overflow:hidden; margin-bottom:16px; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--idmp-muted); margin:0; padding:11px 14px; border-bottom:1px solid var(--idmp-border); }
+  .row { display:flex; align-items:center; gap:12px; padding:11px 14px; border-bottom:1px solid var(--idmp-border); } .row:last-child { border-bottom:0; }
+  .row .doc { font-weight:600; width:96px; } .row .amt { width:96px; color:var(--idmp-muted); font-variant-numeric:tabular-nums; }
+  .row .st { font-size:11px; color:#fff; border-radius:10px; padding:1px 9px; }
+  .st.posted { background:#2e7d32; } .st.drafted { background:#9e9e9e; } .st.review { background:#f9a825; color:#3a2f00; } .st.overdue { background:#c62828; }
+  .row .who { font-size:12px; color:var(--idmp-muted); flex:1; text-align:right; }
+  button.teams-pill, header button { width:34px; height:30px; border:1px solid var(--idmp-border); border-radius:6px; background:var(--idmp-panel); color:var(--idmp-muted); cursor:pointer; display:grid; place-items:center; padding:0; }
+  button.teams-pill.active { color:#fff; background:var(--idmp-blue); border-color:var(--idmp-blue); }
+  .bim-panel { position:fixed; top:74px; right:0; bottom:0; width:340px; background:var(--idmp-panel); border-left:1px solid var(--idmp-border); box-shadow:-8px 0 24px rgba(20,30,60,.10); padding:14px; overflow:auto; color:var(--idmp-text); }
+  .bim-panel-close { position:absolute; top:8px; right:10px; cursor:pointer; color:var(--idmp-muted); font-size:18px; }
+  .bim-panel h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--idmp-muted); margin:0 0 8px; }
+  .tcluster { display:inline-flex; align-items:center; gap:2px; }
+  .tdot { width:20px; height:20px; border-radius:50%; display:inline-grid; place-items:center; font-size:9px; font-weight:700; color:#fff; background:var(--c,#888); box-shadow:0 0 0 2px #fff; }
+  .tbadge { font-size:11px; font-weight:700; color:var(--idmp-muted); margin-left:2px; }
+  /* Outliner tab + content classes (same schema as teams.html) */
+  .row2 { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--idmp-border); }
+  .row2 .gdot { width:8px; height:8px; border-radius:50%; background:#2e7d32; } .row2 .nm { font-weight:600; } .row2 .meta { font-size:11px; color:var(--idmp-muted); margin-left:auto; }
+  .cmsg { padding:6px 0; border-bottom:1px dashed var(--idmp-border); } .cmsg .top { display:flex; gap:6px; align-items:baseline; }
+  .cmsg .nm { font-weight:600; } .cmsg .mono { font-size:11px; color:var(--idmp-blue); font-family:ui-monospace,monospace; } .cmsg .t { font-size:10px; color:var(--idmp-muted); margin-left:auto; } .cmsg .tx { font-size:12px; color:var(--idmp-text); }
+  .pe { display:flex; gap:8px; padding:6px 0; border-bottom:1px dashed var(--idmp-border); } .pe .d { font-weight:600; width:88px; } .pe .n { font-size:12px; color:var(--idmp-muted); } .hot { color:var(--idmp-blue); }
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:14px; } .chartbox { background:var(--idmp-panel); border:1px solid var(--idmp-border); border-radius:6px; padding:10px; }
+  .kpis { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px; } .kpi { background:var(--idmp-sel); color:var(--idmp-blue); border-radius:6px; padding:6px 12px; font-weight:700; } .kpi span { display:block; font-size:10px; color:var(--idmp-muted); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wm">SAMPLE — NOT OFFICIAL · CONTOH — TIDAK RASMI · demonstrator, illustrative values only</div>
+<header>
+  <h1>Kernel-ERP · Accounts Receivable · Dashboard</h1>
+  <div class="sp"></div>
+  <span id="mountpt"></span>
+</header>
+<main>
+  <div class="card" id="chrome">
+    <h2>Open documents · who is on each</h2>
+    <div class="row" data-doc="INV-1001"><span class="doc">INV-1001</span><span class="amt">RM 12,400</span><span class="st posted">posted</span><span class="who">last: aisha</span></div>
+    <div class="row" data-doc="INV-1002"><span class="doc">INV-1002</span><span class="amt">RM 3,900</span><span class="st drafted">drafted</span><span class="who">last: carlos</span></div>
+    <div class="row" data-doc="INV-1003"><span class="doc">INV-1003</span><span class="amt">RM 27,150</span><span class="st review">in review</span><span class="who">last: mei</span></div>
+    <div class="row" data-doc="SO-2201"><span class="doc">SO-2201</span><span class="amt">RM 8,000</span><span class="st review">in review</span><span class="who">last: hank</span></div>
+    <div class="row" data-doc="SO-2202"><span class="doc">SO-2202</span><span class="amt">RM 41,600</span><span class="st overdue">overdue</span><span class="who">last: priya</span></div>
+    <div class="row" data-doc="INV-1004"><span class="doc">INV-1004</span><span class="amt">RM 1,250</span><span class="st posted">posted</span><span class="who">last: aisha</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Teams · Dashboard graphs — folded from the same signed log</h2>
+    <div style="padding:12px 14px">
+      <div class="kpis" id="kpis"></div>
+      <div class="charts">
+        <div class="chartbox"><canvas id="ch-involvement" height="150"></canvas></div>
+        <div class="chartbox"><canvas id="ch-flow" height="150"></canvas></div>
+        <div class="chartbox"><canvas id="ch-gate" height="150"></canvas></div>
+        <div class="chartbox"><canvas id="ch-aging" height="150"></canvas></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="../../viewer/lib/chart.umd.min.js"></script>
+<script>
+// minimal host `A` (audited A.icon/A.createPanel contract) so the overlay speaks the host language.
+(function () { 'use strict';
+  var ICONS = { share: { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', desc: 'Teams' } };
+  var A = {};
+  A.icon = function (name, opts) { opts = opts || {}; var ic = ICONS[name]; if (!ic) return document.createElement('button');
+    var b = document.createElement('button'); b.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="' + (opts.size||20) + '" height="' + (opts.size||20) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ic.svg + '</svg>';
+    b.title = opts.title || ic.desc || ''; if (opts.active) b.classList.add('active'); if (opts.id) b.id = opts.id; return b; };
+  A.createPanel = function (id, opts) { opts = opts || {}; var el = document.createElement('div'); el.id = id; el.className = 'bim-panel';
+    var c = document.createElement('span'); c.className = 'bim-panel-close'; c.innerHTML = '&times;'; c.addEventListener('pointerup', function (e){ e.stopPropagation(); el.style.display='none'; if(opts.onClose)opts.onClose(); }); el.appendChild(c);
+    el.style.display = 'none'; document.body.appendChild(el); return el; };
+  window.A = A;
+})();
+</script>
+<script src="../overlay/dot_layer.js"></script>
+<script src="../erp/erp_optics.js"></script>
+<script src="../erp/teams_dashboard.js"></script>
+<script src="../overlay/teams_tabs.js"></script>
+<script src="../overlay/embed_outliner.js"></script>
+<script src="../overlay/teams_pill.js"></script>
+<script>
+(function () {
+  'use strict';
+  var D = window.TeamsDotLayer, O = window.TeamsErpOptics, TD = window.TeamsDashboard, EO = window.TeamsEmbedOutliner, TP = window.TeamsPill;
+  var T = 1719700000000, DAY = 86400000;
+  function op(id, ts, author, role, verb, target, params, cls) { return { id:id, ts:ts, author:author, role:role, cls:cls||'erp', verb:verb, target:target, params:params||{} }; }
+  // richer SAMPLE op-log: 6 docs · 7 people · 3 roles · a fast + a slow flow + 3 post-its (NON-INVENT folds).
+  var ops = [
+    op('a1',T+1*DAY,'aisha','AR','CREATE','INV-1001'), op('a2',T+1*DAY+3600e3,'bob','AR','EDIT','INV-1001'), op('a3',T+1*DAY+7200e3,'aisha','AR','POST','INV-1001'),
+    op('b1',T+2*DAY,'carlos','Sales','CREATE','INV-1002'),
+    op('c1',T+2*DAY,'mei','AR','CREATE','INV-1003'), op('c2',T+2*DAY+1800e3,'bob','AR','EDIT','INV-1003'), op('c3',T+3*DAY,'mei','AR','EDIT','INV-1003'), op('c4',T+3*DAY,'ravi','Mgr','EDIT','INV-1003'),
+    op('d1',T+1*DAY,'dave','Sales','CREATE','SO-2201'), op('d2',T+1*DAY+3600e3,'erin','Sales','EDIT','SO-2201'), op('d3',T+2*DAY,'frank','Mgr','EDIT','SO-2201'), op('d4',T+2*DAY,'hank','AR','EDIT','SO-2201'),
+    op('e1',T+1*DAY,'priya','Sales','CREATE','SO-2202'), op('e2',T+6*DAY,'priya','Sales','EDIT','SO-2202'),   // slow → bottleneck
+    op('f1',T+4*DAY,'aisha','AR','CREATE','INV-1004'), op('f2',T+4*DAY+1800e3,'aisha','AR','POST','INV-1004'),
+    op('p1',T+9.6*DAY,'bob','AR','PIN','INV-1003',{ pinId:'P1', msg:'tax line looks off — recheck' },'annot'),
+    op('p2',T+5*DAY,'frank','Mgr','PIN','SO-2202',{ pinId:'P2', msg:'why overdue? chase customer' },'annot'),
+    op('p3',T+9.9*DAY,'mei','AR','PIN','INV-1001',{ pinId:'P3', msg:'nice, clean close' },'annot')
+  ];
+  var asOf = T + 10 * DAY;
+
+  function paintDots() {
+    var model = D.dotLayerModel(ops, { on:true, maxVisible:3 });
+    document.querySelectorAll('#chrome .row').forEach(function (row) {
+      var cl = model.clusters.filter(function (c) { return c.anchor === row.getAttribute('data-doc') && c.kind === 'person'; })[0];
+      if (!cl) return;
+      var wrap = document.createElement('span'); wrap.className = 'tcluster row-dots';
+      cl.visible.forEach(function (d) { var dot = document.createElement('span'); dot.className='tdot person'; dot.style.setProperty('--c',d.color); dot.textContent=d.initials; dot.title=d.blurb; wrap.appendChild(dot); });
+      if (cl.badge) { var b=document.createElement('span'); b.className='tbadge'; b.textContent=cl.badge; wrap.appendChild(b); }
+      row.querySelector('.who').before(wrap);
+    });
+  }
+
+  function renderCharts() {
+    var d = TD.build(ops, { asOf: asOf });
+    var k = d.kpi;
+    document.getElementById('kpis').innerHTML =
+      '<div class="kpi">' + k.docs + '<span>DOCS</span></div><div class="kpi">' + k.people + '<span>PEOPLE</span></div>' +
+      '<div class="kpi">' + k.openPostits + '<span>OPEN NOTES</span></div><div class="kpi">' + (k.bottleneck||'—') + '<span>BOTTLENECK</span></div>';
+    new Chart(document.getElementById('ch-involvement'), d.charts.involvement);
+    new Chart(document.getElementById('ch-flow'), d.charts.flow);
+    new Chart(document.getElementById('ch-gate'), d.charts.gate);
+    new Chart(document.getElementById('ch-aging'), d.charts.aging);
+  }
+
+  var ctl = TP.mountTeamsPill(document.getElementById('mountpt'), {
+    label: 'Teams overlay', host: window.A,
+    onMount: function (pane) { paintDots(); var h=document.createElement('h3'); h.textContent='Teams · Outliner'; pane.appendChild(h);
+      EO.renderEmbedOutliner(pane, ops, { involvement: O.involvement(ops, {}) }); },
+    onUnmount: function () { document.querySelectorAll('#chrome .row-dots').forEach(function(n){ n.remove(); }); }
+  });
+  renderCharts();
+  if (/[?&]on=1/.test(location.search) && ctl) ctl.open();   // screenshot ON state
+  window.__teamsReady = true;
+})();
+</script>
+</body>
+</html>
