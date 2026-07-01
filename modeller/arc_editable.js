@@ -10,9 +10,9 @@
 //
 // Dual-export (window + node) like cross_edges.js, so the value witness (W-ARC-EDITABLE) runs pure-node.
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory();
-  else root.ArcEditable = factory();
-})(typeof window !== 'undefined' ? window : this, function () {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./real_geometry.js'));
+  else root.ArcEditable = factory(root.RealGeometry);
+})(typeof window !== 'undefined' ? window : this, function (RealGeometry) {
   'use strict';
   var TAG = '§ARC';
 
@@ -87,7 +87,28 @@
 
   // buildSeedOps(db) — PURE read of a sql.js *_extracted.db → {ops, skipped, discipline}. Each op is the exact
   // GEOM_INSERT shape foldInsert consumes for a raw-bbox (hash-less) insert.
-  function buildSeedOps(db) {
+  //
+  // §REAL-GEOM (2026-07-02, "no silent box fallback" — user directive): the building's OWN per-element mesh
+  // (component_geometries/base_geometries, keyed by element_instances.geometry_hash — see real_geometry.js)
+  // is resolved HERE, once per db, and stamped onto each op as a SEPARATE, ADDITIVE field `params.realGeomHash`
+  // — deliberately NOT reusing `params.hash`/`matched`/`unmatched` (the pre-existing LOD300_CATALOG generic-
+  // component match, Bug-2's "honest partial fix"). Kept orthogonal so:
+  //   (a) LOD300_CATALOG's own matched/unmatched bookkeeping (W-ARC-EDITABLE A9) is untouched byte-for-byte;
+  //   (b) a caller that never registers real geometry (any pure-node witness, incl. this file's own) folds
+  //       EXACTLY as before — foldInsert only consults `_geom[realGeomHash]` if something registered it there
+  //       (bonsai_library.js registerRealGeometry, wired browser-side by str_walker_outliner.js), so old
+  //       node-side witnesses are provably unaffected by this addition.
+  // HARD-FAIL (no silent box): only fires when THIS db actually carries a geometry substrate (geomTable != null)
+  // — i.e. only for a genuinely broken per-element link, never for a resident/fixture that has no geometry
+  // tables at all (e.g. Terminal_meta.db's ARC-seed buffer, whose geometry lives in a SEPARATE Terminal_geo.db
+  // file — out of scope for this single-db reader; that resident keeps its existing raw-bbox behaviour,
+  // unregressed). Measured 2026-07-02: SampleCastle_ARC/SampleHouse/SampleCastle/Duplex extracted.db all have
+  // 0 unresolved hashes — this path is a safety net, not the common case.
+  // geoDb (optional) — a SEPARATE sql.js Database that carries component_geometries/base_geometries when the
+  // building's mesh substrate lives in its own file (§GEO-SPLIT, Terminal_geo.db vs Terminal_meta.db). Defaults
+  // to `db` — every existing single-file call site (SampleHouse/Duplex/SampleCastle/SampleCastle-ARC, every
+  // pure-node witness) is byte-identical, unchanged.
+  function buildSeedOps(db, geoDb) {
     var hasDisc = _hasDiscipline(db);
     var where = hasDisc ? "m.discipline='ARC'"
       : '(' + ARC_CLASSES.map(function (c) { return "m.ifc_class='" + c + "'"; }).join(' OR ') + ')';
@@ -97,6 +118,8 @@
       "t.bbox_x, t.bbox_y, t.bbox_z, t.rotation_x, t.rotation_y, t.rotation_z FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid = m.guid WHERE " + where + " ORDER BY " + (hasId ? 'm.id' : 'm.guid');
     var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0;
+    var geomIdx = RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} };
+    var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0;
     if (r.length) r[0].values.forEach(function (v) {
       var guid = v[0], cls = v[1], cx = v[2], cy = v[3], cz = v[4], bx = v[5], by = v[6], bz = v[7], rx = v[8] || 0, ry = v[9] || 0, rz = v[10] || 0;
       // §ARC-YAW-ONLY (code-parity audit vs the Viewer): viewer/streaming.js applies the FULL 3-axis Euler
@@ -110,6 +133,17 @@
       // honest-refuse: never fabricate a box for a NULL/degenerate-bbox element (skipped + logged, excluded from count)
       if (cx == null || cy == null || cz == null || !(bx > 0) || !(by > 0) || !(bz > 0)) {
         skipped.push({ guid: guid, ifc_class: cls, reason: 'no-bbox' }); return;
+      }
+      // §GEOM-HARDFAIL: this db HAS a geometry substrate but THIS element's own link into it is broken
+      // (no instance row / null hash / hash doesn't resolve to a blob) — refuse the element entirely rather
+      // than render a normal-looking (but fake) solid-palette box. Safety net only (see block comment above).
+      if (geomIdx.table) {
+        var linkedHash = geomIdx.byGuid[guid];
+        if (linkedHash == null || !geomIdx.resolved[linkedHash]) {
+          hardfail++;
+          console.error(TAG + ' §GEOM-HARDFAIL guid=' + guid + ' class=' + cls + ' no real geometry — skipped, not rendered');
+          skipped.push({ guid: guid, ifc_class: cls, reason: 'no-real-geometry' }); return;
+        }
       }
       var bbox = [-bx / 2, bx / 2, -by / 2, by / 2, -bz / 2, bz / 2];   // MEASURED local box, centred in x/y/z (kept
       // on every op regardless of match — audit trail: what was actually measured, vs what mesh got stamped).
@@ -128,6 +162,23 @@
         // so only the z seat needs compensating for the catalog/measured height difference; x/y are placement-direct.
         seatHalfZ = (m.catBbox[5] - m.catBbox[4]) / 2;
       } else { unmatched++; }
+      // §REAL-GEOM: if THIS element's own real mesh resolved (above), it wins over the generic 3-item catalog
+      // at FOLD time (bonsai_library.js foldInsert checks realGeomHash before hash/lod) — the element's OWN
+      // scanned shape is strictly more faithful than a coincidentally-dimension-matched generic component.
+      // NOTE: seatHalfZ here is deliberately left as the box/catalog value computed above (NOT the real mesh's
+      // own extent) — placement.z below is computed from THAT seatHalfZ so a caller that never registers real
+      // geometry (any pure-node witness) still lands EXACTLY on its existing box/catalog seat, byte-for-byte.
+      // Whether real geometry is actually available is only known by the FOLD (registration is browser-side,
+      // optional, and may race the first fold) — so foldInsert itself re-derives the true seat and RE-SEATS
+      // onto the real mesh's own half-height at fold time (see bonsai_library.js foldInsert §REAL-GEOM).
+      if (geomIdx.table) {
+        var rHash = geomIdx.byGuid[guid], real = rHash != null ? geomIdx.resolved[rHash] : null;
+        if (real) {
+          params.realGeomHash = rHash;
+          realResolved++;
+          if (!geomSeen[rHash]) { geomSeen[rHash] = true; geomAssets.push({ hash: rHash, ifc_class: cls, bbox: real.bbox, v: real.positions, f: real.faces }); }
+        }
+      }
       if (rx || ry) {
         // §ARC-3AXIS: genuine tilt (497/3317 on modeller/SampleCastle_extracted.db, per §ARC-YAW-ONLY audit
         // above) — bbox is already centred at local origin (this function centres it a few lines up), so
@@ -150,7 +201,8 @@
       }
       ops.push({ op_type: 'GEOM_INSERT', params: params, outputGuid: guid });
     });
-    return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted };
+    return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted,
+      geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, geomTable: geomIdx.table };
   }
 
   // buildBridge(ops, ids) — ops[i] committed as kernel_ops row ids[i] (== its featureId). Build both directions
@@ -169,11 +221,22 @@
   //   io.commitGroup(opsArray, gid) -> Promise<{ids, committed, idempotent}>   (the only writer)
   //   io.fold()  -> Promise   (optional: redraw the chain after seeding)
   //   io.building -> string   (deterministic gid 'arcseed-<building>' → idempotent re-seed)
+  //   io.geoDb -> sql.js Database   (OPTIONAL, §GEO-SPLIT: a SEPARATE db carrying component_geometries/
+  //     base_geometries, e.g. Terminal_geo.db vs buildingDb=Terminal_meta.db. Absent/undefined → buildSeedOps
+  //     resolves geometry against buildingDb itself, i.e. every existing single-file caller is unaffected.)
+  //   io.registerGeometry(assets) -> void   (OPTIONAL: browser-only. Registers the real per-element meshes
+  //     resolved by buildSeedOps into the render layer — bonsai_library.js's Library.registerRealGeometry —
+  //     BEFORE commit/fold so foldInsert sees them the first time it folds. A caller that omits this (every
+  //     pure-node witness today) gets EXACTLY today's raw-bbox/LOD300_CATALOG fold behaviour: realGeomHash is
+  //     still stamped on the ops (harmless, unread) but nothing is registered to resolve it against.
   // commits the WHOLE building as ONE op-group (atomic, one hash-chain, idempotent by gid) then folds once.
   async function seedArc(buildingDb, io) {
     io = io || {};
     var name = io.building || 'building';
-    var built = buildSeedOps(buildingDb);
+    var built = buildSeedOps(buildingDb, io.geoDb);
+    if (io.registerGeometry && built.geomAssets.length) {
+      try { io.registerGeometry(built.geomAssets); } catch (e) { _log(TAG + ' §REAL-GEOM registerGeometry failed ' + (e && e.message)); }
+    }
     var gid = 'arcseed-' + name;
     var groupOps = built.ops.map(function (o) { return { op_type: o.op_type, params: o.params, outputGuid: o.outputGuid }; });
     var res = await io.commitGroup(groupOps, gid);
@@ -193,8 +256,13 @@
     if (built.tilted) _log(TAG + ' §ARC-YAW-ONLY building=' + name + ' tilted=' + built.tilted +
       ' element(s) have non-zero rotation_x/rotation_y that this yaw-only ARC seed CANNOT represent (rendered' +
       ' upright instead) — see viewer/streaming.js for the full-Euler reference this seed does not yet match');
+    // §GEOM-HARDFAIL summary — the "no silent box" honesty line: total elements refused (broken geometry link)
+    // vs the whole seedable set. 0/N is the expected/measured case for SampleCastle/SampleCastle_ARC/SampleHouse/
+    // Duplex (every element_instances.geometry_hash resolves) — a nonzero count is real data-integrity signal.
+    _log(TAG + ' §GEOM-HARDFAIL total=' + built.hardfail + ' of ' + (built.ops.length + built.hardfail) +
+      ' (geomTable=' + (built.geomTable || 'none') + ' realResolved=' + built.realResolved + '/' + built.ops.length + ')');
     return { committed: ids.length, skipped: built.skipped.length, ids: ids, bridge: bridge, ops: built.ops,
-      matched: built.matched, unmatched: built.unmatched, tilted: built.tilted };
+      matched: built.matched, unmatched: built.unmatched, tilted: built.tilted, realResolved: built.realResolved, hardfail: built.hardfail };
   }
 
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }

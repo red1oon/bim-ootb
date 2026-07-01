@@ -200,7 +200,10 @@
 <script src="bom_tree_outliner.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
 <script src="cross_edges.js?v=2" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
-<script src="arc_editable.js?v=2" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
+     Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
+<script src="real_geometry.js?v=1" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
+<script src="arc_editable.js?v=3" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
@@ -208,9 +211,9 @@
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
 <script src="walker_confidence.js?v=1" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
 <script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=10" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=11" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=16" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=17" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -721,6 +724,39 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook (
   highlight(m || null); return selectedId;
 };
 window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids.length) ? fids[fids.length - 1] : null); return Array.from(selectedIds); };
+// ── Outliner→scene camera fly-to (2026-07-02, RESUME §3): click an Outliner row → besides the existing
+// select/highlight (window.Bonsai.select → setActive), smoothly orbit the camera in CLOSER, framed on that
+// element's own bbox centre — mirrors viewer/measure.js's _flyToClash/_animFly easing pattern (ease-in-out
+// cubic lerp of camera.position + controls.target), simplified: one element, no clash-pair overlap-zone math.
+// Deliberately NOT called from a 3D-canvas pick (pickAt/highlight) — you're already looking at what you
+// clicked there; only an Outliner-row click (which may be scrolled off-screen from the current view) needs it.
+window.Bonsai.frameFeature = (fid) => {
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  if (!m || !m.geometry) return false;
+  m.geometry.computeBoundingBox();
+  const bb = m.geometry.boundingBox;
+  if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x)) return false;
+  // foldInsert bakes WORLD-space positions straight into the geometry buffer (bonsai_kernel.js._buildMesh sets
+  // no mesh.position/rotation) — so the geometry's own bbox IS already the world-space bbox, no matrixWorld needed.
+  const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
+  const diag = bb.min.distanceTo(bb.max);
+  const dist = Math.max(diag, 2) * 1.8;
+  const dir = new THREE.Vector3(1, -1, 1.1).normalize();   // same oblique iso-ish approach angle as the app's default view
+  const startPos = camera.position.clone(), startTarget = controls.target.clone();
+  const endTarget = c.clone(), endPos = c.clone().addScaledVector(dir, dist);
+  const t0 = performance.now(), duration = 1100;
+  (function step() {
+    const t = Math.min((performance.now() - t0) / duration, 1);
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;   // ease-in-out cubic
+    camera.position.lerpVectors(startPos, endPos, e);
+    controls.target.lerpVectors(startTarget, endTarget, e);
+    controls.update();
+    if (t < 1) requestAnimationFrame(step);
+  })();
+  console.log('§FRAME_FEATURE fid=' + fid + ' centre=[' + c.toArray().map(v => v.toFixed(2)).join(',') + '] dist=' + dist.toFixed(2));
+  return true;
+};
 function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting); }
 function pickAt(clientX, clientY) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return null;
