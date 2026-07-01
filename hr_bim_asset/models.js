@@ -70,9 +70,24 @@ var MODELS = {
 // alpha discipline: watermark every demo record
 Object.keys(MODELS).forEach(function (k) { MODELS[k].records.forEach(function (r) { W.stamp(r, 'en'); }); });
 
+// COMPILE (not model) — project an Asset record onto the REAL native `a_asset` shape (§CRITICAL, follow-on to
+// P-OCC-RETRO). Columns verified against build/erp/ad_full.db `PRAGMA table_info(a_asset)`. timeline.js's OWN
+// consumption (asset/bim_guid/pm_cycle/next_due/category — the shipped, witnessed W-HBA-TIMELINE 7/7 engine,
+// merged into the 4D editor) is UNCHANGED by this — this is an additional projection, not a replacement.
+// NON-INVENT gap, honestly carried, not forced: `a_asset` has ONE `c_bpartner_id` (a single responsible party),
+// but the Asset model tracks THREE parties (operator/vendor/personnel) — there is no native 3-way split, so only
+// `operator` maps to the real column; `vendor`/`personnel` are carried as `_vendor`/`_personnel` for the caller,
+// never forced into a column that doesn't exist for them.
+function toAssetRow(asset) {
+  if (!asset) return null;
+  return { a_asset_id: 1, value: asset.asset, name: asset.asset, m_product_id: asset.bim_guid,
+    c_bpartner_id: asset.operator || null, isowned: 'Y', nextmaintenencedate: asset.next_due || null,
+    _vendor: asset.vendor || null, _personnel: asset.personnel || null };
+}
+
 function model(name) { return MODELS[name]; }
 function records(name) { return (MODELS[name] || {}).records || []; }
 
-var M = { MODELS: MODELS, model: model, records: records };
+var M = { MODELS: MODELS, model: model, records: records, toAssetRow: toAssetRow };
 if (typeof module === 'object' && module.exports) module.exports = M;
 else (typeof self !== 'undefined' ? self : this).HbaModels = M;
