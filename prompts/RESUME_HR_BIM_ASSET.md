@@ -128,6 +128,30 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
   avatars mount 34 → unmount 0 (scene 724→725→724, group removed, **residue=false**); occupancy tint 77→0, scene
   back to base; switch presence→occupancy clears avatars; core features intact (HBALens/DashPane/Avatars/dbQuery/
   collectMeshes/camera/controls); **jsErrors=0**. All changes additive + gated — nothing else broken.
+- **P7 — PAYSLIP UI VIEW ⛔ OPEN (user 2026-07-01: "payroll proper" is the next gap).** Engine is DONE+witnessed
+  (§PILLAR 1 shape: `documents doc_type=PAYRUN` draft→calculate→approve→post, `document_lines`=one payslip/employee,
+  `W-HBA-ALPHA` E1–E8 incl. E8-gl-balanced Dr=8400 Cr=8400) but **no view was ever built** — §PILLAR 1's own spec
+  says it needs "...+ one new payslip view," never delivered. Every other module (Occupancy/Presence/Dashboard) got
+  a viewer pane+pill; payroll never did. **Scope:** a payslip pane (same additive/host-injected/data-gated pattern
+  as `hba_dashboard.js`) rendering the glass-box trace — every line (base/allowance/tax/EPF/SOCSO/net) click-through
+  to the `kernel_op` that produced it (the Glassbowl thesis). **Not blocked on §RESEARCH GATE below** — render
+  against the EXISTING demo pay-element rates (already computing E8's Dr=8400/Cr=8400), watermarked
+  `CONTOH — TIDAK RASMI`/`SAMPLE — NOT OFFICIAL` same as every other output. Witness pattern: `witness_payslip.js`
+  mirroring `witness_dashpane.js` (mount/unmount zero-residue, real trace assertions, watermark present).
+- **P8 — LEAVE UI SURFACE ⛔ OPEN.** Engine DONE+witnessed (`leave.js`, `W-HBA-LEAVE 13/13`: ACCRUAL=signed op,
+  BALANCE=replay, feeds payroll via `leaveDeduction`) but flagged open since 2026-06-30: "the engine + payroll feed
+  are node-witnessed; no panel wired." **Scope:** a leave pane/pill (balance display + accrual history + request
+  action) on the same FM-family drawer pattern as Occupancy/Presence. Also not blocked on §RESEARCH GATE.
+- **P9 — §RESEARCH GATE ⛔ OPEN (prerequisite for REAL statutory numbers only, not for P7/P8 UI).** §PILLAR 3's
+  own checklist (line ~533) has **all 7 items unchecked** — current PCB (income-tax withholding) brackets, EPF/
+  SOCSO/EIS contribution rate tables, MyInvois mandate thresholds/format, whether LHDN legally requires clearance
+  vs. an attestation model is reachable, governing IFRS/MFRS clauses, PDPA constraints. Doc says outright: "Until
+  filled, Pillar 3 stays DESIGN-ONLY." **Scope:** a research-only session (WebSearch/deep-research, NOT code) that
+  sources + cites each item; only once cited can real statutory brackets replace the demo pay-element rates P7
+  renders. Flag to the user that regulatory compliance design needs professional verification before any public
+  claim — do not assert compliance on the project's behalf.
+- **⛔ STILL BLOCKED (unchanged, not actionable standalone):** ERP/HR dotted-line integration (agreement/product/AR
+  · attendance/access) — lights up only once ERP/HR are loaded together; swap the connector stubs then.
 
 ---
 
