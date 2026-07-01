@@ -24,9 +24,9 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 ## ▶ SESSION CLOSEOUT 2026-07-02 — NEW SESSION START HERE
 
-**This session's work is DONE + PUSHED** (`bim-ootb` `lane/hr-overlay`, worktree `/tmp/wt-hr`, 7 commits,
-`eb69978` tip, **0 local-only commits** — verified `git rev-list --count origin/lane/hr-overlay..HEAD` = 0).
-**28 witness files, 244 checks total, all GREEN, zero regression** at every step.
+**This session's work is DONE + PUSHED** (`bim-ootb` `lane/hr-overlay`, worktree `/tmp/wt-hr`, 9 commits,
+`f569bec` tip, **0 local-only commits** — verified `git rev-list --count origin/lane/hr-overlay..HEAD` = 0).
+**29 witness files, 260 checks total, all GREEN, zero regression** at every step.
 
 **What shipped (the whole §CRITICAL "Compile not Model" arc, closed end-to-end this session):**
 `ad_payroll.js` (payroll → `hr_process`/`hr_movement`/`hr_concept*` + leave-seam) · `occupancy.js`
@@ -47,18 +47,39 @@ log matches the rendered numbers (EMP001 net=4234, EMP002 net=2870), 0 console e
 watermarks + the FM pill highlighted. `viewer.html` gained 3 script tags: `rules.js` (was missing entirely —
 `ad_payroll.js` needs it), `ad_payroll.js`, `hba_payslip.js`.
 
-**What's still open, in order:**
-1. **P8 — the Leave UI surface.** Engine done, native-checked (no retarget needed), payroll seam closed. No
-   panel built. Not started. Natural next step: same pane pattern as P7, over `leave.js`'s accrual/balance replay.
-2. **Strata UI / PM_Property mapping** — `PM_Property` (the building-level manager record) hasn't been checked
-   against `M_Warehouse` yet (likely folds into it directly — a Warehouse row probably covers what PM_Property
-   was for). Low priority, no live engine depends on it.
-3. **P9 — §RESEARCH GATE.** Still explicitly paused (user 2026-07-02) — do not start without being asked.
-4. **The Building/Warehouse/Locator/Subscription model is SPECCED, not yet seeded into a live pane or `ad_full.db`
+**P8 ✅ DONE 2026-07-02 (`viewer/hba_leave.js`, `W-HBA-LEAVE-PANE 11/11`).** The Leave UI pane, same pattern as
+P7 — employee picker + taken/unpaid/per-type-balance KPIs + chain-integrity line + per-entry paid/unpaid
+statement, watermarked — renders `leave.js`'s already-witnessed `summary()` reader (balance = REPLAY, never a
+stored number), no new schema. Added `leave.demoLog(emp)` (the SAME accrue/take schedule already accepted by
+`witness_leave.js` L0-L9, reused per-employee). FAMILY grew 6→7 entries. **Live chromium smoke**: FM drawer →
+Leave pane → employee reselect, `§HBA_LEAVE_PANE` log matches the rendered statement (unpaid=4, annual
+balance=-3, chain verifies), 0 console errors.
+
+**PM_Property↔M_Warehouse check ✅ DONE 2026-07-02 (`ad_tenancy.js` `propertyUnits`, `W-HBA-AD-TENANCY` 12→15/15).**
+`PM_Property` is COVERED by the Building=M_Warehouse mapping already established (`toWarehouseRow`, AD-TEN0) —
+no separate table. `units` → derive via `propertyUnits(warehouseId, locatorRows)` (COUNT the real M_Locator rows,
+never a stored duplicate). `manager` → a **genuine native gap** (grepped every table in `ad_full.db`, no
+manager-shaped column exists anywhere) — the nearest native mechanism is an access-control chain
+(`ad_user.c_bpartner_id` → `ad_user_orgaccess(ad_user_id,ad_org_id)` → `m_warehouse.ad_org_id`), which is a role
+assignment, not a "who manages this building" business fact — flagged (AD-TEN6), not built (no live engine needs
+it). `models.js`'s `PropertyManagement` demo record kept unchanged (alpha-existence proof, same as Strata's).
+
+**What's still open:**
+1. **⛔ BLOCKED (needs a design decision, not a fact) — Find↔FM linking.** The doc that introduces this
+   (`docs/HRBIMAssetGuide.md` §Future roadmap addendum, bim-compiler repo) explicitly frames it as *"two
+   directions under consideration, **not yet built**"* — extending the Viewer's Find search index to cover
+   HR_BIM_Asset records (tenant name/lease number/ticket ID) and deep-linking a search hit into the FM drawer
+   pre-scoped to that record. This is NOT a same-shape additive-pane task like P7/P8: it touches Find's search
+   index (a shared, non-HBA-owned surface), not just an HBA-additive file. Per the Spec-First rule, this needs
+   a written spec (what does Find index, what does "deep-link into FM" mean operationally, does it apply to a
+   single building or the multi-building portfolio note in the same addendum) BEFORE any implementation —
+   **the one question:** does the user want that spec written now, or is this genuinely a "someday" roadmap
+   note to leave alone until asked? Not started, correctly not attempted without that answer.
+2. **P9 — §RESEARCH GATE.** Still explicitly paused (user 2026-07-02) — do not start without being asked.
+3. **The Building/Warehouse/Locator/Subscription model is SPECCED, not yet seeded into a live pane or `ad_full.db`
    itself** — `ad_tenancy.js`'s compile functions are witnessed in isolation (pure row-shape proofs); nothing
    writes them into a real sqlite db or wires a viewer pane yet. That's the natural next build step if this
    pillar continues.
-5. **Find↔FM linking (from the Future roadmap addendum)** — not started this session, see the roadmap doc.
 
 ---
 
