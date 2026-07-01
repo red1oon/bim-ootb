@@ -1,6 +1,13 @@
 # RESUME — Modeller real-user E2E suite + world-class ModellerUserGuide (continue fresh session)
 
 ```
+# ⚠⚠ NEW SESSION: REVIEW FIRST, CAREFULLY, BEFORE WRITING ANYTHING ⚠⚠
+This work fans across TWO repos + several branches and overlaps a SEPARATE guide-unification effort.
+Re-verify the whole picture is coherent (branches, cross-links, ownership) BEFORE editing. Parallel guide
+edits COLLIDE on the shared docs branch (it already happened once). Do the review pass, THEN act. See §HANDOFF.
+```
+
+```
 # ⚠ DO NOT REMOVE
 SCOPE: build a FULL real-user, maths-asserted, atomic E2E for EVERY authoring tool, and populate a world-class
 ModellerUserGuide whose screenshots are CAPTURED FROM THE REAL APP during the E2E runs (NON-INVENT — never fabricate
@@ -101,3 +108,76 @@ VISIBLE (readPixels), REVERSIBLE (undo restores cursor + geometry), verifyChain 
 - Witness-first, run to GREEN, read the §-log, never claim done without the green real-user E2E.
 - Memory: [[feedback_test_real_user_path_not_seams]] is the load-bearing rule.
 ```
+
+---
+
+## §HANDOFF — state at session close (2026-07-01) + the multi-agent orchestration plan (REVIEW FIRST)
+
+### What is DONE + pushed (do NOT redo)
+- **Modeller E2E suite = COMPLETE.** 12 tools each have a green real-user, maths-asserted E2E
+  (`modeller/tests/witness_e2e_*.js` + `e2e_harness.js`). Full suite 88 assertions, 0 fail. Branch
+  `lane/modeller-e2e-suite`, **PR red1oon/bim-ootb#585**, SW cache v25→v26. This is the §F "guide-as-E2E"
+  principle already applied to the Modeller (a runnable click-path per tool; unreachable screens were fixed,
+  not hedged). KEEP INDEPENDENT of the docs work — it's tool-truth, merge on its own merit.
+- **3 real defects caught + fixed by the suite** (all "op commits + verifyChain green, but user sees
+  nothing/wrong"): §CUT-ON-ARC (cut vanished on seeded ARC walls), SCALE-vanish (`foldInsert` `c.bbox` on a
+  null catalog → ARC wall disappeared), RAIL-STRAND (mode-revealed pills stranded at (0,0), unclickable).
+- **Guide draft PRESERVED:** `ModellerGuide.md` revamped (per-tool screenshot walkthrough, keeps the
+  open-and-edit vision + Walk-evidence tables) + 20 real E2E frames TIGHT-CROPPED → branch
+  `bim-compiler docs/modeller-guide-revamp` (pushed, own lane, disjoint files, does NOT touch shared nav).
+
+### The big picture the new session must RE-REVIEW before writing
+- The Modeller guide is a THIRD guide alongside a SEPARATE unified effort for HR + Teams + the icon set:
+  **`bim-ootb lane/teams-overlay : prompts/RESUME_GUIDES_AND_ICONS_UNIFY.md`** is that effort's source of
+  truth (same quality bar A1 step-by-step / A2 tight-crop; §E two-icon-registry reconcile; §F gap log).
+  It currently covers HR + Teams only — the Modeller guide needs a **§B3** added there (or folded in).
+- Docs topology (verify — it's tangled): `master` is FROZEN/stale (2026-06-16, no Modeller in USER_GUIDE);
+  the live docs superset is `origin/docs/hba-guide-rewrite` (+~510). `USER_GUIDE.md → [Guide](ModellerGuide.md)`
+  is the real trace — so `ModellerGuide.md` (NOT the orphan `ModellerUserGuide.md`) is the live file. gh-pages
+  already serves ModellerGuide/, ModellerUserGuide/ (orphan) + img/modeller/*. A read-only coherence-review
+  agent was launched at close to map links/nav/gh-pages/collisions — RE-RUN or finish that review FIRST.
+
+### The orchestration plan (review-first → fan out isolated → re-check)
+- **Phase 0 — coherence review (read-only, FIRST):** inventory every guide + cross-links + mkdocs nav + what
+  gh-pages serves + branch-collision map; output a **disjoint-file partition**. Gates the fan-out.
+- **Phase 1 — fan out, EACH IN ITS OWN WORKTREE (isolation), DISJOINT files:** Modeller (`ModellerGuide.md`
+  + `img/modeller/*`, base = `docs/modeller-guide-revamp`) · HR (`HRBIMAssetGuide.md` + `img/hba_*`) · Teams
+  (`TeamsOverlayGuide.md` + `img/teams_*`, demo-page nav, keep the demo-only caveat) · Icons (`viewer/panels.js`
+  ICONS + pill_builder reconcile). Same quality bar for all.
+- **SERIALIZE (one owner, never parallel — the collision surfaces):** `mkdocs.yml` nav · `USER_GUIDE.md`
+  cross-links · `viewer/panels.js`. Apply AFTER the guide agents return.
+- **Phase 2 — coherence re-check + integrate:** confirm one voice, all cross-links resolve, consolidate the
+  `ModellerUserGuide.md` orphan INTO `ModellerGuide.md`, clean the nav; branch/PR per slice; deploy is the
+  ONE outward step via `scripts/safe_gh_deploy.sh` (no-shrink seatbelt) — USER triggers it, not the agent.
+
+### ⛔ COHERENCE REVIEW RESULT (read-only agent, 2026-07-01) — GATING items, fix these FIRST
+1. **`docs/modeller-guide-revamp` is STALE-BASED — do NOT merge as-is.** Its tip `3e3c03517` is the direct
+   PARENT of the live docs superset tip `origin/docs/hba-guide-rewrite` = `0967ebcdd`. That parent predates the
+   commit that added the whole Teams deliverable + HR reframe, so a naive merge/diff **looks like it deletes
+   TeamsOverlayGuide.md + all `img/teams_*` + the Teams nav line + the Teams cross-links** (a false collision from
+   the stale base, NOT from Modeller edits). **FIX = rebase the branch onto `0967ebcdd` first.** Expect a small
+   `ModellerGuide.md` conflict (hba tip added +8 lines there — the Teams cross-link) owned by the Modeller lane.
+2. **The revamp DROPPED the Teams cross-link.** hba's `ModellerGuide.md` links `TeamsOverlayGuide.md` (line ~308,
+   a card invariant: BIM/ERP/Modeller all link Teams). The rewritten draft links only USER_GUIDE + index →
+   RESTORE the Teams link on rebase.
+3. **Orphan `ModellerUserGuide.md` vs `ModellerGuide.md`.** Both are in nav with near-identical labels; only
+   `ModellerGuide.md` is linked from the front door (`USER_GUIDE.md` line 39); `ModellerUserGuide.md` has ZERO
+   inbound links (its content already folded into hba). The revamp renames ModellerGuide's H1 to
+   "DAGeVu Modeller — User Guide", DUPLICATING the orphan's nav label → **consolidate: delete/redirect the orphan,
+   collapse to ONE Modeller nav entry** (a SHARED `mkdocs.yml` edit — serialize to the nav owner).
+- **Partition CONFIRMED disjoint** (guide files + image folders don't overlap) → safe to parallel-fan-out **iff
+  each lane branches off `0967ebcdd`**. SERIALIZE only: `mkdocs.yml`, `USER_GUIDE.md`, `viewer/panels.js`+`pill_builder`.
+- **The unified card covers HR + Teams ONLY** — the Modeller guide is a SEPARATE, un-carded effort (add a §B3, or
+  run Modeller as its own lane A in parallel). Card §F#5 says "no `modeller/` app edits till the pivot settles" —
+  the guide (docs-only) is unaffected; the E2E suite already did its app fixes on `lane/modeller-e2e-suite` (fine).
+- gh-pages live img path is `img/modeller/` (a subfolder), NOT `img/modeller_*`. HR=`img/hba_*`, Teams=`img/teams_*`.
+
+### Modeller guide §F gaps still to close (for the unified pass)
+1. Step-by-step scaffold — add the HR-guide shape (Getting started → Common tasks → Under the hood →
+   Troubleshooting); the draft has per-tool click-steps but not the full navigational frame (user A1).
+2. Recapture frames from the LIVE app at `deviceScaleFactor:2` (current 20 are headless-swiftshader E2E
+   captures — functional + tight-cropped, but not the polished live app) (user A2).
+3. Consolidate orphan `ModellerUserGuide.md` → `ModellerGuide.md`; fix `mkdocs.yml` nav (one entry) +
+   `USER_GUIDE.md` link (SHARED files — serialize).
+4. Move/Walk witnesses are pre-harness (no `shot()`) → add capture for their guide frames.
+5. `OPENING` has no user trigger (it's the CUT tool) — a naming/UX inconsistency to note.
