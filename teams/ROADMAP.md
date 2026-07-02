@@ -143,6 +143,7 @@ Witness `teams/tests/poc_teams_s12.js` — **W-REPLAY 4/4 · W-NUDGE 6/6 · W-FE
 | **R4** lose `AD_ChangeLog` | S2/S6 lineage | we ADD the fold; we do NOT remove `AD_ChangeLog` (removal = a separate future, gated decision) |
 | **R5** disturb the modeller | S11 BIM presence | additive + isolated worktree; schedule only after the modeller session settles |
 | **R6** stale checkout / drift | all | branch off fresh `origin/main`; consolidate in bim-ootb; never commit others' work |
+| **R7** ship an undocumented feature | production deploy (S9 embed) | R5's principle extended whole-lane, 2026-07-02 (user): do NOT push `teams_embed.js` into live `modeller.html`/`erp/idempiere.html` until the Modeller lane's open threads settle; refresh `docs/TeamsOverlayGuide.md` (real screenshots + step-by-step) in the SAME session as the deploy — see `prompts/RESUME_TEAMS_OVERLAY.md`'s DEPLOY GATE callout. Standalone `teams-demo/` pages are unaffected. |
 
 ## §D — Definition of done (per session)
 spec section cited → built additive → `§`-witnessed (logs read) → **Regression Gate §G green** → demo (if a surface) →

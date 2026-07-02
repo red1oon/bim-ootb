@@ -8,6 +8,28 @@ preamble until Phase F is `✅ DONE` or this file is retired.
 > Paste this prompt to start the next Teams session. Source of truth for the plan = **`teams/ROADMAP.md`**;
 > this file is the fast-start + handoff. The work lives in **bim-ootb**, branch **`lane/teams-overlay`**.
 
+> **⚠ DEPLOY GATE (user, 2026-07-02) — NOT pushed to production yet, and stays that way until the Modeller
+> lane's in-flight work completes.** Verified against the live `bim-ootb-live`/`bim-ootb-dev` OCI buckets
+> 2026-07-02: `teams/`, `teams_embed.js` are 404 everywhere in production — the whole overlay exists only in
+> git (`main` + this branch), never uploaded. Do NOT run the OCI `oci os object put` deploy steps in §4 below
+> for the production app chrome (`modeller/teams_embed.js` into `modeller.html`, `erp/teams_embed.js` into
+> `erp/idempiere.html`) until the Modeller lane's currently-open threads (Terminal-scale perf-guard,
+> SampleCastle LOD-catalog-match, guide-screenshot mis-framing — see `bim-compiler prompts/
+> RESUME_MODELLER_LOD400_REAL_GEOMETRY.md` / `RESUME_MODELLER_GUIDE_SCREENSHOT_FIX.md`) are settled — same
+> "schedule only after the modeller session settles" principle `teams/ROADMAP.md §R5` already applies to S11,
+> now extended to the production deploy as a whole. The standalone demo pages (`teams-demo/` prefix on
+> `bim-ootb-dev`) are NOT gated by this — those are already live and fine to keep updating.
+> **Scope is intentionally Modeller + ERP only — the 3D Viewer is deliberately NOT wired and that's fine,
+> not a gap to close** (Viewer already carries HBA's Human-Asset overlay; Teams' who-dots/optics answer a
+> different question there via `hba_lens.js`'s own surfaces, no need to duplicate the mechanism a third way
+> unless asked).
+> **`docs/TeamsOverlayGuide.md` needs more/better context screenshots + a step-by-step walkthrough before the
+> production deploy** — today it has 4 hero/context screenshots and no numbered walk-through, thin compared to
+> `ModellerGuide`'s 21-frame 2× DPR standard (`prompts/RESUME_MODELLER_GUIDE_POLISH.md` pattern) or the HBA
+> guide's per-feature capture pass. Do this as part of the SAME session that does the gated production deploy —
+> capture screenshots off the real embedded pill (`?teams=1` in `modeller.html`/`erp/idempiere.html`), not the
+> standalone demo pages, so the guide matches what a user actually sees.
+
 ---
 
 ## 0. Orientation (where everything is)
@@ -126,7 +148,10 @@ ON mounts pane+dots, 0 console errors). Earlier remote-peer demo `demo/gh_demo.h
   log into the shape `{id,ts,author,role,cls,verb,target}` (left unwired — needs the live projection schema
   confirmed in the real app; NON-INVENT, no schema guessing) — until then the pane shows the honest empty state;
   (2) optional `rowSelector`/`docOf` so row-dots paint on idempiere's real grid rows; (3) **deploy to production**
-  (OCI/gh-pages) only with the no-overwrite deploy discipline + a human eyes-on check — NOT done here (outward-facing).
+  (OCI/gh-pages) only with the no-overwrite deploy discipline + a human eyes-on check — NOT done here (outward-facing),
+  **AND gated on the Modeller lane completing (see the DEPLOY GATE callout at the top of this file, 2026-07-02)**;
+  (4) refresh `docs/TeamsOverlayGuide.md` with real embedded-pill screenshots + a numbered step-by-step, same
+  session as (3) — see the DEPLOY GATE callout.
 
 ## 4. Deploy notes (when a slice ships a live page)
 - Push branch → GitHub-raw serves the source automatically. For a renderable page, **OCI** is the target:
