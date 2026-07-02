@@ -163,6 +163,7 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
+  <button id="b-bcf" disabled title="Export a BCF 2.1 issue (.bcfzip) — current view + selection as Component references"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="11" cy="14" r="2"/><path d="m14.5 17.5-1.7-1.7"/></svg><span>BCF</span></button>
   <button id="b-guide" title="Modeller User Guide — how to Open, walk, edit & export"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Guide</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
@@ -190,6 +191,7 @@
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
+<script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
 <!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
@@ -929,7 +931,7 @@ function _instUntint(ref) {
   ref.im.instanceColor.needsUpdate = true;
   if (window.A && A.requestRender) A.requestRender();
 }
-function clearInstPick() { if (_instPick) { _instUntint(_instPick); _instPick = null; } }
+function clearInstPick() { if (_instPick) { _instUntint(_instPick); _instPick = null; window.__instPickActive = null; } }
 function setHoverInstance(im, i) {
   if (im && _instHover && _instHover.im === im && _instHover.i === i) return;
   if (_instHover) { _instUntint(_instHover); _instHover = null; }
@@ -947,6 +949,7 @@ function pickInstance(im, i) {
   setStat('walked ' + disc + ' · ' + String(p.ifc_class || p.piece_type || 'fixture').replace(/^Ifc/, '') +
     (p.storey ? ' · ' + p.storey : '') + (gid ? ' · ' + String(gid).slice(0, 10) : '') + '  (generated — identify only)');
   window.__lastInstPick = { disc: disc, i: i, ifc_class: p.ifc_class || null, x: x, y: y, z: z, guid: gid || null };   // witness oracle
+  window.__instPickActive = window.__lastInstPick;   // LIVE pick (nulled by clearInstPick) — BCF export reads this, not the sticky oracle
   console.log('§PICK inst disc=' + disc + ' i=' + i + ' class=' + (p.ifc_class || p.piece_type || '?') +
     ' xyz=(' + (+x).toFixed(3) + ',' + (+y).toFixed(3) + ',' + (+z).toFixed(3) + ')' + (gid ? ' guid=' + String(gid).slice(0, 10) : ''));
   return true;
@@ -1837,6 +1840,19 @@ bIfc.onclick = async () => {
     setStat('IFC exported  walls=' + r.walls + '  openings=' + r.openings + '  ' + r.bytes.length + ' bytes (downloaded)'); audioCue('export');
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
 };
+// ── BCF EXPORT (§Q3 RESUME_MODELLER_POLISH2.md — Witness: W-E2E-BCF) ────────────────────────────
+// One real .bcfzip: current camera as the BCF viewpoint, canvas snapshot, selection (+ an active §Q2
+// instance pick with a real guid) as Component references. Mirrors the bIfc handler pattern exactly.
+const bBcf = document.getElementById('b-bcf');
+bBcf.onclick = () => {
+  if (!window.Bonsai.bcf) { setStat('BCF module not loaded'); return; }
+  setStat('exporting BCF…');
+  try {
+    const r = window.Bonsai.bcf.exportBcf({});
+    setStat('BCF exported  topic=' + r.topicGuid.slice(0, 8) + '  components=' + r.components.length + '  ' + r.bytes.length + ' bytes (downloaded)');
+    audioCue('export');
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§BCF export fail ' + err); }
+};
 
 // ── INSERT LIBRARY COMPONENT (§OOTB Item 2: assemble, don't draw) ───────────────────────────────
 // A picked catalog component is placed on the grid as ONE signed GEOM_INSERT op-row; geometry folds
@@ -2251,7 +2267,7 @@ window.addEventListener('keydown', (e) => {
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
-bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
+bClear.disabled = bSketch.disabled = bIfc.disabled = bBcf.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
