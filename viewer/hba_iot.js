@@ -68,10 +68,15 @@
     var chartsWrap = el('div', 'display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 12px;');
     var canvases = [];
     deps_.IoT.SENSORS.forEach(function (s) {
-      var wrap = el('div', 'height:110px;position:relative;background:#f8f9fb;border-radius:6px;padding:4px;');
+      var wrap = el('div', 'background:#f8f9fb;border-radius:6px;padding:4px;');
       wrap.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;', s.label + ' (' + s.uom_symbol + ')'));
+      // the canvas's OWN wrapper must hold NOTHING else — Chart.js's `responsive` resize reads THIS parent's
+      // box (position:relative + a fixed height), so a sibling label inside the SAME box breaks the sizing
+      // (matches hba_dashboard.js's own wrap-holds-only-the-canvas convention).
+      var chartBox = el('div', 'height:80px;position:relative;');
       var cv = document.createElement('canvas'); cv.style.cssText = 'display:block;';
-      wrap.appendChild(cv); chartsWrap.appendChild(wrap); canvases.push({ cv: cv, sensor: s });
+      chartBox.appendChild(cv); wrap.appendChild(chartBox);
+      chartsWrap.appendChild(wrap); canvases.push({ cv: cv, sensor: s });
     });
     pane.appendChild(chartsWrap);
 
@@ -103,6 +108,7 @@
 
     (document.body || document.documentElement).appendChild(pane);
     if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
+    if (pane.offsetHeight) { /* force a reflow so the canvases have layout before Chart measures them (hba_dashboard.js pattern) */ }
 
     // charts must attach to the DOM before Chart.js measures the canvas (same ordering as hba_dashboard.js)
     if (G.Chart) canvases.forEach(function (c) {

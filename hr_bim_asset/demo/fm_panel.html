@@ -53,6 +53,9 @@
   <script src="../dashboard.js"></script>
   <script src="../ad_tenancy.js"></script>
   <script src="../iot.js"></script>
+  <!-- window.Chart — needed by hba_dashboard.js AND hba_iot.js's sensor charts (was missing entirely; both
+       panes' chart-creation code is guarded `if (G.Chart)` so it silently no-op'd without this tag). -->
+  <script src="../../viewer/lib/chart.umd.min.js"></script>
   <script src="../../viewer/hba_dashboard.js"></script>
   <script src="../../viewer/hba_payslip.js"></script>
   <script src="../../viewer/hba_leave.js"></script>

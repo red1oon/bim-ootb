@@ -322,6 +322,43 @@ sensor readings themselves are synthetic/demo (same CONTOH/SAMPLE watermark as e
    extends `fm_panel.html`: IoT pane opens with 6 rendered charts + 6 CCTV tiles + billing rows, drag the
    Tenancy pane by its header moves it, 0 console errors, screenshot.
 
+**Follow-up fix (2026-07-02, doc-screenshot session):** `demo/fm_panel.html` never loaded
+`viewer/lib/chart.umd.min.js` — `window.Chart` was undefined, so EVERY chart in the demo (Dashboard's bar/
+doughnut/trend AND IoT's 6 line charts) silently no-op'd (`if (G.Chart)` guard) and rendered as blank boxes.
+Fixed: added the script tag. Also fixed `hba_iot.js`'s per-sensor chart wrapper — a label `<div>` was sharing
+the SAME `position:relative` box Chart.js measures for `responsive` sizing (the canvas's own box must hold
+ONLY the canvas, per `hba_dashboard.js`'s existing convention) — split into an outer label box + an inner
+canvas-only box. Both fixes verified live (`hr_bim_asset/tests/live/cdp_shot.js`): all 6 sensor curves now
+render. Doc screenshots `docs/img/hba_iot_sensors.png` + `hba_iot_cctv.png` published to `HRBIMAssetGuide.md`
+§"Spot equipment that needs service" (bim-compiler repo, via `safe_gh_deploy.sh`).
+
+---
+
+## ▶ §P10c — QUEUED, NOT STARTED (user 2026-07-02, do in a NEW session)
+
+**User ask:** *"add some audio effects to the IoT panel, so each bar movement has own tone."* Not scoped or
+built this session — spec it here for the next one.
+
+**Reading of the ask (to confirm/refine next session, don't just start coding):** the IoT pane's 6 sensor line
+charts move as new values come in (currently they're static 24h snapshots — no live "bar movement" yet, so
+this ties to a FUTURE live-update tick, not the current one-shot render). Per-sensor, a value change should
+play its own tone — plausible mapping: each of the 6 `SENSORS` gets a distinct pitch/timbre (e.g. by
+`sensor.key`), the tone's pitch or volume scaled by the reading's delta or its position in-range (baseline vs
+amplitude), fired via the Web Audio API (`AudioContext` — no external audio asset, no fetched sample,
+consistent with the CCTV mockup's "generate, don't fetch" discipline). Needs an explicit mute/volume control
+(a pane full of sensors chiming is real user-hostile without one) and must be OFF by default (opt-in, like
+every other HBA additive surface) — the existing `HbaDraggable`-style shared-utility pattern
+(`hr_bim_asset/iot.js` for the tone-mapping math, a new `viewer/hba_audio.js`?) is probably the right shape,
+mirroring how `flyToZone`/`HbaDraggable` were built as ONE shared primitive reused across panes rather than
+per-pane copies — reuse across future audio-bearing panes if any.
+
+**Open questions for the user before building (Spec-First — write the spec section proper before code):**
+1. Does "bar movement" mean the pane needs a LIVE tick (values changing over time in front of the user), or
+   is a tone-per-sensor-on-open/on-hover/on-click enough for this mockup? (No live-tick engine exists yet —
+   the current series is a static 24h snapshot rendered once.)
+2. Per-sensor tone design — pick from a scale, or literally map the reading value to a frequency (sonification)?
+3. Mute/volume default and control placement (pane header? a global HBA audio toggle?).
+
 ---
 
 ## ▶▶▶ CRITICAL — READ FIRST (2026-07-02): "Compile not Model" — HBA reinvented tables that already exist
