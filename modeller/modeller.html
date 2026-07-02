@@ -163,6 +163,7 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
+  <button id="b-bcf" disabled title="Export a BCF 2.1 issue (.bcfzip) — current view + selection as Component references"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="11" cy="14" r="2"/><path d="m14.5 17.5-1.7-1.7"/></svg><span>BCF</span></button>
   <button id="b-guide" title="Modeller User Guide — how to Open, walk, edit & export"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Guide</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
@@ -190,6 +191,7 @@
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
+<script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
 <!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
@@ -737,17 +739,7 @@ window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids
 // cubic lerp of camera.position + controls.target), simplified: one element, no clash-pair overlap-zone math.
 // Deliberately NOT called from a 3D-canvas pick (pickAt/highlight) — you're already looking at what you
 // clicked there; only an Outliner-row click (which may be scrolled off-screen from the current view) needs it.
-window.Bonsai.frameFeature = (fid) => {
-  const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
-  if (!m || !m.geometry) return false;
-  m.geometry.computeBoundingBox();
-  const bb = m.geometry.boundingBox;
-  if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x)) return false;
-  // foldInsert bakes WORLD-space positions straight into the geometry buffer (bonsai_kernel.js._buildMesh sets
-  // no mesh.position/rotation) — so the geometry's own bbox IS already the world-space bbox, no matrixWorld needed.
-  const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
-  const diag = bb.min.distanceTo(bb.max);
+function _frameTo(c, diag, tag) {                          // §Q2: shared camera-lerp tail (fid meshes AND DB-framed elements)
   const dist = Math.max(diag, 2) * 1.8;
   const dir = new THREE.Vector3(1, -1, 1.1).normalize();   // same oblique iso-ish approach angle as the app's default view
   const startPos = camera.position.clone(), startTarget = controls.target.clone();
@@ -761,16 +753,64 @@ window.Bonsai.frameFeature = (fid) => {
     controls.update();
     if (t < 1) requestAnimationFrame(step);
   })();
-  console.log('§FRAME_FEATURE fid=' + fid + ' centre=[' + c.toArray().map(v => v.toFixed(2)).join(',') + '] dist=' + dist.toFixed(2));
+  console.log('§FRAME_FEATURE ' + tag + ' centre=[' + c.toArray().map(v => v.toFixed(2)).join(',') + '] dist=' + dist.toFixed(2));
   return true;
+}
+window.Bonsai.frameFeature = (fid) => {
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  if (!m || !m.geometry) return false;
+  m.geometry.computeBoundingBox();
+  const bb = m.geometry.boundingBox;
+  if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x)) return false;
+  // foldInsert bakes WORLD-space positions straight into the geometry buffer (bonsai_kernel.js._buildMesh sets
+  // no mesh.position/rotation) — so the geometry's own bbox IS already the world-space bbox, no matrixWorld needed.
+  const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
+  return _frameTo(c, bb.min.distanceTo(bb.max), 'fid=' + fid);
+};
+// §Q2 (W-E2E-INSTPICK c): an Outliner leaf for a non-ARC EXTRACTED element has no featureId (only ARC seeds
+// build the guid→fid bridge) — but its REAL transform is in the open building DB. Frame straight from
+// elements_meta⋈element_transforms (the same convention every walker host-query uses; window.__dwBuf re-open
+// is the file's established pattern). Non-invent: DB values only. Returns false (caller keeps the honest
+// toast) when no DB is open or the guid has no transform row.
+window.Bonsai.frameElementByGuid = (guid) => {
+  if (!window.__dwBuf || !window.SQL || !guid) return false;
+  let db = null;
+  try {
+    db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+    const r = db.exec("SELECT t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z " +
+      "FROM element_transforms t WHERE t.guid='" + String(guid).replace(/'/g, "''") + "'");
+    if (!r.length || !r[0].values.length) return false;
+    const v = r[0].values[0];
+    const c = new THREE.Vector3(+v[0] || 0, +v[1] || 0, +v[2] || 0);
+    const diag = Math.hypot(+v[3] || 0, +v[4] || 0, +v[5] || 0) || 2;
+    window.__lastGuidFrame = { guid: guid, c: [c.x, c.y, c.z], diag: diag };   // witness oracle
+    return _frameTo(c, diag, 'guid=' + String(guid).slice(0, 10));
+  } catch (e) { console.warn('§FRAME_GUID fail ' + (e && e.message)); return false; }
+  finally { if (db) { try { db.close(); } catch (e) { } } }
 };
 function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting); }
-function pickAt(clientX, clientY) {
+// §Q2 (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-INSTPICK): walked fixtures live as InstancedMesh buckets
+// under dwRoot (NOT direct children of g), so the old non-recursive intersect never even raycast them — a
+// canvas click on a walked fixture was a silent miss, instanceId or not. Include the buckets; THREE populates
+// hit.instanceId on an InstancedMesh for free. Hover raycasts are per-pointermove, and InstancedMesh.raycast
+// iterates EVERY instance — cap hover (not click) at DW_PICK_HOVER_CAP total instances so Terminal-scale
+// walks (35k+) never pay a per-frame cost (same doctrine as DW_ALL_PROXY_THRESHOLD).
+window.DW_PICK_HOVER_CAP = window.DW_PICK_HOVER_CAP || 20000;
+function _dwPickables(hoverOnly) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
+  const root = g.children.find(o => o.userData && o.userData.dwRoot); if (!root) return [];
+  const ims = root.children.filter(o => o.isInstancedMesh && o.userData.dwSub);
+  if (hoverOnly && ims.reduce((s, im) => s + im.count, 0) > window.DW_PICK_HOVER_CAP) return [];
+  return ims;
+}
+function pickAt(clientX, clientY, opts) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return null;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  return raycaster.intersectObjects(g.children.filter(o => o.isMesh), false)[0] || null;
+  const list = g.children.filter(o => o.isMesh).concat(_dwPickables(opts && opts.hover));
+  return raycaster.intersectObjects(list, false)[0] || null;   // sorted by distance — nearest wins, authored or instanced
 }
 // ── MARQUEE (shift-drag box) ───────────────────────────────────────────────────────────────────
 // Bare left-drag is OrbitControls' rotate, so SHIFT is the multi gesture (no conflict). A CAPTURE-phase pointerdown
@@ -810,6 +850,7 @@ window.addEventListener('pointerup', (e) => {             // on WINDOW so an OFF
   const m = marquee; marquee = null; marqueeDraw(); controls.enabled = true;
   if (!m.moved) {                                          // shift-CLICK → toggle the hit object
     const hit = pickAt(e.clientX, e.clientY);
+    if (hit && hit.object.isInstancedMesh) { pickInstance(hit.object, hit.instanceId); return; }   // §Q2: identify (no _selSet entry)
     if (hit) { toggleSelect(hit.object); setStat('toggled #' + hit.object.userData.featureId + '  (' + selectedIds.size + ' selected)'); }
     return;
   }
@@ -822,7 +863,8 @@ window.addEventListener('pointerup', (e) => {             // on WINDOW so an OFF
 canvas.addEventListener('pointerdown', (e) => {           // bare (no-shift) pick → replace-select
   if (!inSelectCtx() || e.button !== 0 || e.shiftKey) return;
   const hit = pickAt(e.clientX, e.clientY);
-  if (hit) { highlight(hit.object); setStat('selected feature #' + selectedId); }
+  if (hit && hit.object.isInstancedMesh) { pickInstance(hit.object, hit.instanceId); return; }   // §Q2: walked fixture → identify
+  if (hit) { clearInstPick(); highlight(hit.object); setStat('selected feature #' + selectedId); }
 });
 // ── M3 HOVER PRE-PICK (W-BONSAI-HOVER) ──────────────────────────────────────────────────────────
 // Raycast under the cursor BEFORE any click and give the feature a faint glow (dimmer than selection) + a
@@ -852,11 +894,13 @@ function setHover(mesh) {
   if (window.A && A.requestRender) A.requestRender();
 }
 canvas.addEventListener('pointermove', (e) => {
-  if (!inSelectCtx() || marquee || _moveDrag || e.buttons) { if (_hoverId != null) setHover(null); return; }   // not while orbiting/dragging/another mode
-  const hit = pickAt(e.clientX, e.clientY);
+  if (!inSelectCtx() || marquee || _moveDrag || e.buttons) { if (_hoverId != null) setHover(null); setHoverInstance(null); return; }   // not while orbiting/dragging/another mode
+  const hit = pickAt(e.clientX, e.clientY, { hover: true });   // §Q2: instanced buckets included (capped at Terminal scale)
+  if (hit && hit.object.isInstancedMesh) { setHover(null); setHoverInstance(hit.object, hit.instanceId); return; }
+  setHoverInstance(null);
   setHover(hit ? hit.object : null);
 });
-canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(null); });
+canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(null); setHoverInstance(null); });
 // §P2 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-OL-SYNC): the hover tint above was a local closure only
 // the canvas raycast could reach — an Outliner row hover had no way to answer back. Expose it so a row
 // mouseover lights the SAME faint pre-pick glow on its mesh (fid=null clears). Selected meshes keep their
@@ -867,6 +911,49 @@ window.Bonsai.hoverFeature = (fid) => {
   setHover(m || null);
   return !!m;
 };
+// ── §Q2 INSTANCE PICK IDENTITY (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-INSTPICK) ────────────
+// Each walked InstancedMesh bucket carries userData.dwSub (the placement sub-array it was built from — an
+// array REFERENCE, zero new objects at Terminal scale), so hit.instanceId resolves to the exact placement
+// record. Read-only identify + tint: instances never enter _selSet (walked fixtures are not editable
+// inserts — editing stays op-log-governed). Tint via setColorAt (whole-material _emis would light the
+// entire batch); the previous per-instance colour is saved/restored so it composes with _flashSettleDisc.
+let _instPick = null, _instHover = null;   // {im, i, prev:[r,g,b]}
+function _instTint(ref, hex) {
+  if (!ref.im.instanceColor) ref.im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(ref.im.count * 3).fill(1), 3);
+  const a = ref.im.instanceColor;
+  ref.prev = [a.getX(ref.i), a.getY(ref.i), a.getZ(ref.i)];
+  ref.im.setColorAt(ref.i, new THREE.Color(hex)); a.needsUpdate = true;
+  if (window.A && A.requestRender) A.requestRender();
+}
+function _instUntint(ref) {
+  if (!ref || !ref.im.instanceColor || !ref.prev) return;
+  ref.im.setColorAt(ref.i, new THREE.Color(ref.prev[0], ref.prev[1], ref.prev[2]));
+  ref.im.instanceColor.needsUpdate = true;
+  if (window.A && A.requestRender) A.requestRender();
+}
+function clearInstPick() { if (_instPick) { _instUntint(_instPick); _instPick = null; window.__instPickActive = null; } }
+function setHoverInstance(im, i) {
+  if (im && _instHover && _instHover.im === im && _instHover.i === i) return;
+  if (_instHover) { _instUntint(_instHover); _instHover = null; }
+  if (im && !(_instPick && _instPick.im === im && _instPick.i === i)) { _instHover = { im: im, i: i }; _instTint(_instHover, 0x9be7ff); }
+  if (im) canvas.style.cursor = modeCursor() || 'pointer';
+}
+function pickInstance(im, i) {
+  const p = im.userData.dwSub && im.userData.dwSub[i]; if (!p) return false;
+  if (_instHover && _instHover.im === im && _instHover.i === i) { _instUntint(_instHover); _instHover = null; }   // pick wins over hover
+  clearInstPick();
+  _instPick = { im: im, i: i }; _instTint(_instPick, 0x4fc3f7);
+  const disc = im.userData.dwDisc || im.userData.dwAsm || '?';
+  const gid = p.guid || p.host || p.src || '';
+  const x = p.x != null ? p.x : (p.pos ? p.pos[0] : 0), y = p.y != null ? p.y : (p.pos ? p.pos[1] : 0), z = p.z != null ? p.z : (p.pos ? p.pos[2] : 0);
+  setStat('walked ' + disc + ' · ' + String(p.ifc_class || p.piece_type || 'fixture').replace(/^Ifc/, '') +
+    (p.storey ? ' · ' + p.storey : '') + (gid ? ' · ' + String(gid).slice(0, 10) : '') + '  (generated — identify only)');
+  window.__lastInstPick = { disc: disc, i: i, ifc_class: p.ifc_class || null, x: x, y: y, z: z, guid: gid || null };   // witness oracle
+  window.__instPickActive = window.__lastInstPick;   // LIVE pick (nulled by clearInstPick) — BCF export reads this, not the sticky oracle
+  console.log('§PICK inst disc=' + disc + ' i=' + i + ' class=' + (p.ifc_class || p.piece_type || '?') +
+    ' xyz=(' + (+x).toFixed(3) + ',' + (+y).toFixed(3) + ',' + (+z).toFixed(3) + ')' + (gid ? ' guid=' + String(gid).slice(0, 10) : ''));
+  return true;
+}
 
 // Cut an opening into the SELECTED wall: derive a window void from the wall bbox (full through the
 // thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
@@ -1227,13 +1314,33 @@ function axisHandle(axis, color, L) {                          // one pickable c
 }
 // W-BONSAI-SCALE: a pickable CUBE handle at the +axis end → drag it out to non-uniformly stretch the selection
 // (edge-anchored: the opposite face stays put). Distinct cube (vs the move arrow) so the two never confuse.
-function scaleHandle(axis, color, L) {
-  const dir = axis === 'x' ? new THREE.Vector3(1, 0, 0) : axis === 'y' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+// §Q1 (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-SCALEROT): GEOM_SCALE folds on the insert's LOCAL axes
+// (bonsai_library foldInsert), so the cubes sit on the yaw-rotated local axes — the handle you grab is the
+// axis that will actually stretch. yaw=0 keeps today's world-aligned positions exactly.
+function scaleAxisDir(axis, yawRad) {                        // local axis unit vector in WORLD space (yaw about +Z)
+  const cs = Math.cos(yawRad || 0), sn = Math.sin(yawRad || 0);
+  return axis === 'x' ? new THREE.Vector3(cs, sn, 0) : axis === 'y' ? new THREE.Vector3(-sn, cs, 0) : new THREE.Vector3(0, 0, 1);
+}
+function scaleHandle(axis, color, L, yawRad) {
+  const dir = scaleAxisDir(axis, yawRad);
   const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false });
   const cube = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), mat);
   cube.position.copy(dir.clone().multiplyScalar(L + 0.5));
   cube.userData.moveAxis = 'scale' + axis.toUpperCase();   // scaleX / scaleY / scaleZ
   return cube;
+}
+// §Q1: net yaw of an INSERT composed exactly as the fold does it (bonsai_kernel moveBy: placement.rot + Σ active
+// GEOM_ROTATE.drot). Authored meshes carry IDENTITY transforms (place() bakes rotation into the vertices), so the
+// op-log is the only rotation source. 3-axis (rotX/rotY) placements return null → caller falls back to world axes.
+function netYawDeg(fid) {
+  const ops = window.Bonsai.oplog._geomOps();
+  const ins = ops.find(o => o.id === fid && o.op_type === 'GEOM_INSERT');
+  if (!ins) return null;
+  const pl = (ins.parameters && ins.parameters.placement) || {};
+  if (pl.rotX || pl.rotY) return null;
+  let deg = pl.rot || 0;
+  ops.forEach(o => { if (o.op_type === 'GEOM_ROTATE' && o.parameters && o.parameters.parent === fid) deg += o.parameters.drot || 0; });
+  return deg;
 }
 function buildMoveGizmo() {
   clearMoveGizmo(); const c = selCentre(); if (!c) return;
@@ -1252,7 +1359,11 @@ function buildMoveGizmo() {
     // W-BONSAI-SCALE: cube scale-handles on a single INSERT (catalog component). Edge-anchored, pure-JS fold (robust,
     // composes). NOT offered on B-rep SOLIDS yet — occt-wasm generalTransform Copy=false leaks on compose (#3b, a
     // kernel fix); showing a handle that scales wrong would be dishonest, so we gate to where scale is reliable.
-    if (_rotIds.length === 1 && isInsert(_rotIds[0])) moveGizmo.add(scaleHandle('x', 0xe2553b, L), scaleHandle('y', 0x46b955, L), scaleHandle('z', 0x4f93e0, L));
+    if (_rotIds.length === 1 && isInsert(_rotIds[0])) {
+      const yawRad = ((netYawDeg(_rotIds[0]) || 0) * Math.PI) / 180;   // §Q1: cubes on LOCAL axes so preview == fold
+      moveGizmo.userData.scaleYawRad = yawRad;
+      moveGizmo.add(scaleHandle('x', 0xe2553b, L, yawRad), scaleHandle('y', 0x46b955, L, yawRad), scaleHandle('z', 0x4f93e0, L, yawRad));
+    }
   }
   moveGizmo.traverse(o => { o.renderOrder = 1000; });          // draw over the solids like the insert ghost
   moveGizmo.position.copy(c); scene.add(moveGizmo);
@@ -1276,17 +1387,49 @@ function selBox() {                                            // combined world
   const box = new THREE.Box3(); ms.forEach(m => { m.geometry.computeBoundingBox(); box.expandByObject(m); });
   return isFinite(box.min.x) ? box : null;
 }
+// §Q1: AABB of the selection's baked-world geometry measured in the yaw-UNROTATED (local) frame. Equals the
+// fold's local bbox up to a rigid translation, and edge-anchored scale commutes with translation — so anchoring
+// on this min matches foldInsert's local-bbox-min anchor exactly. yaw=0 degenerates to selBox().
+function localFrameBox(yawRad) {
+  const ms = selMeshes(); if (!ms.length && selectedMesh) ms.push(selectedMesh); if (!ms.length) return null;
+  const cs = Math.cos(-(yawRad || 0)), sn = Math.sin(-(yawRad || 0));
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  ms.forEach(m => {
+    const p = m.geometry.getAttribute('position'); if (!p) return;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), lz = p.getZ(i), lx = cs * x - sn * y, ly = sn * x + cs * y;
+      if (lx < min[0]) min[0] = lx; if (lx > max[0]) max[0] = lx;
+      if (ly < min[1]) min[1] = ly; if (ly > max[1]) max[1] = ly;
+      if (lz < min[2]) min[2] = lz; if (lz > max[2]) max[2] = lz;
+    }
+  });
+  return isFinite(min[0]) ? { min, max } : null;
+}
 function scaleGhostShow(ax, f) {                               // W-BONSAI-SCALE: clones stretched ×f, EDGE-ANCHORED at the selection min along ax
   const ms = selMeshes(); if (!ms.length && selectedMesh) ms.push(selectedMesh); if (!ms.length || !_moveDrag) return;
   if (!moveGhost) {
     moveGhost = new THREE.Group();
     ms.forEach(m => { const gm = new THREE.Mesh(m.geometry.clone(), new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.35, depthWrite: false })); gm.renderOrder = 998; moveGhost.add(gm); });
+    moveGhost.matrixAutoUpdate = false;                        // §Q1: transform set as a full matrix below
+    moveGhost.name = 'ScaleGhost';                             // findable by W-E2E-SCALEROT (preview==fold assert)
     scene.add(moveGhost);
   }
-  const amin = _moveDrag.amin;                                 // group scaled ×f about origin → x'=f·x; edge-anchor: x'=amin+f(x−amin)=f·x+amin(1−f)
+  // §Q1 (W-E2E-SCALEROT): preview EXACTLY what foldInsert will commit. The fold scales the LOCAL geometry
+  // about the local bbox min, then the drot branch re-anchors so the SCALED shape's centre sits at
+  // o + lc' (placement frame) — net world semantics, derived + pinned by W-E2E-SCALEROT S3/S5:
+  //   scale ×f about the shape's world centre wc along the ROTATED local axis, then translate the centre
+  //   by Δ = (f−1)·ext/2 along the WORLD axis of the same letter. M = T(wc+Δ)·Rz·S·Rz⁻¹·T(−wc).
+  // yaw=0 reduces to the old edge-anchored world path (centre scale + Δ shift == anchor at min). The fold is
+  // the CONTRACT (changing it would re-fold existing signed logs) — the preview follows it, not vice versa.
+  const yaw = _moveDrag.yaw || 0, wc = _moveDrag.wc;
   const s = { x: 1, y: 1, z: 1 }; s[ax] = f;
-  const off = { x: 0, y: 0, z: 0 }; off[ax] = amin * (1 - f);
-  moveGhost.scale.set(s.x, s.y, s.z); moveGhost.position.set(off.x, off.y, off.z);
+  const dW = { x: 0, y: 0, z: 0 }; dW[ax] = (f - 1) * _moveDrag.ext / 2;
+  const M = new THREE.Matrix4().makeTranslation(wc.x + dW.x, wc.y + dW.y, wc.z + dW.z)
+    .multiply(new THREE.Matrix4().makeRotationZ(yaw))
+    .multiply(new THREE.Matrix4().makeScale(s.x, s.y, s.z))
+    .multiply(new THREE.Matrix4().makeRotationZ(-yaw))
+    .multiply(new THREE.Matrix4().makeTranslation(-wc.x, -wc.y, -wc.z));
+  moveGhost.matrix.copy(M); moveGhost.matrixWorldNeedsUpdate = true;
   if (window.A && A.requestRender) A.requestRender();
 }
 function rotGhostShow(theta) {                                 // H3: translucent clones spun θ about the selection centre (pivot = ring centre)
@@ -1427,12 +1570,18 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (axis.indexOf('scale') === 0) {                            // W-BONSAI-SCALE: cube-handle drag → edge-anchored non-uniform stretch
     const ax = axis.slice(5).toLowerCase();                     // scaleX → 'x'
-    const sb = selBox(); if (!sb) return;
-    const ext = ax === 'x' ? sb.max.x - sb.min.x : ax === 'y' ? sb.max.y - sb.min.y : sb.max.z - sb.min.z;
-    const amin = ax === 'x' ? sb.min.x : ax === 'y' ? sb.min.y : sb.min.z;
+    // §Q1 (W-E2E-SCALEROT): extent/anchor from the LOCAL frame (the axes GEOM_SCALE folds on), drag measured
+    // along the handle's world direction. yaw=0 ⇒ local==world ⇒ identical to the old selBox() path.
+    const yaw = (moveGizmo && moveGizmo.userData.scaleYawRad) || 0;
+    const lb = localFrameBox(yaw); if (!lb) return;
+    const k = ax === 'x' ? 0 : ax === 'y' ? 1 : 2;
+    const ext = lb.max[k] - lb.min[k], amin = lb.min[k];
     if (!(ext > 1e-4)) { setStat('scale: zero extent on ' + ax.toUpperCase()); return; }
     const down = moveDragPoint(ax, ndc, c0); if (!down) return;
-    _moveDrag = { axis, ax, c0, down, ext, amin, f: 1 };
+    // wc = the fold's centre = world image of the LOCAL bbox centre, Rz(yaw)·mLocal — exact, no symmetry assumption
+    const ml = [(lb.min[0] + lb.max[0]) / 2, (lb.min[1] + lb.max[1]) / 2, (lb.min[2] + lb.max[2]) / 2];
+    const wc = new THREE.Vector3(ml[0], ml[1], ml[2]).applyAxisAngle(new THREE.Vector3(0, 0, 1), yaw);
+    _moveDrag = { axis, ax, c0, down, ext, amin, yaw, wc, dir: scaleAxisDir(ax, yaw), f: 1 };
     setStat('scale ' + ax.toUpperCase() + ' — drag the cube out (edge-anchored), release to commit');
     return;
   }
@@ -1461,7 +1610,7 @@ canvas.addEventListener('pointermove', (e) => {
     const ax = _moveDrag.ax;
     const p = moveDragPoint(ax, ndc, _moveDrag.c0); if (!p) return;
     const d = p.clone().sub(_moveDrag.down);
-    const delta = ax === 'x' ? d.x : ax === 'y' ? d.y : d.z;
+    const delta = _moveDrag.dir ? d.dot(_moveDrag.dir) : (ax === 'x' ? d.x : ax === 'y' ? d.y : d.z);   // §Q1: along the LOCAL axis
     let f = (_moveDrag.ext + delta) / _moveDrag.ext;
     if (!e.shiftKey) f = Math.round(f / 0.25) * 0.25;          // 0.25 snap unless Shift = free
     f = Math.max(0.1, f);                                       // never collapse past 0.1× (degenerate solid)
@@ -1690,6 +1839,19 @@ bIfc.onclick = async () => {
     const r = await window.Bonsai.ifc.exportModel({ name: 'bonsai_model.ifc' });
     setStat('IFC exported  walls=' + r.walls + '  openings=' + r.openings + '  ' + r.bytes.length + ' bytes (downloaded)'); audioCue('export');
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
+};
+// ── BCF EXPORT (§Q3 RESUME_MODELLER_POLISH2.md — Witness: W-E2E-BCF) ────────────────────────────
+// One real .bcfzip: current camera as the BCF viewpoint, canvas snapshot, selection (+ an active §Q2
+// instance pick with a real guid) as Component references. Mirrors the bIfc handler pattern exactly.
+const bBcf = document.getElementById('b-bcf');
+bBcf.onclick = () => {
+  if (!window.Bonsai.bcf) { setStat('BCF module not loaded'); return; }
+  setStat('exporting BCF…');
+  try {
+    const r = window.Bonsai.bcf.exportBcf({});
+    setStat('BCF exported  topic=' + r.topicGuid.slice(0, 8) + '  components=' + r.components.length + '  ' + r.bytes.length + ' bytes (downloaded)');
+    audioCue('export');
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§BCF export fail ' + err); }
 };
 
 // ── INSERT LIBRARY COMPONENT (§OOTB Item 2: assemble, don't draw) ───────────────────────────────
@@ -2095,7 +2257,7 @@ window.addEventListener('keydown', (e) => {
   if (typing) return;
   if (e.key === 'Escape') {                                       // cancel whatever mode is active
     if (sketching) exitSketch(); else if (routing) exitRoute(); else if (edgePicking) exitFillet();
-    else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); }
+    else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); clearInstPick(); }
     return;
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
@@ -2105,7 +2267,7 @@ window.addEventListener('keydown', (e) => {
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
-bClear.disabled = bSketch.disabled = bIfc.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
+bClear.disabled = bSketch.disabled = bIfc.disabled = bBcf.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -2345,7 +2507,9 @@ function _renderDiscWalk(disc, placements) {
       if (!sub.length) return;
       var im = new THREE.InstancedMesh(geo, mat, sub.length);
       sub.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); im.setMatrixAt(i, m); });
-      im.instanceMatrix.needsUpdate = true; im.userData.dwDisc = disc; root.add(im);
+      im.instanceMatrix.needsUpdate = true; im.userData.dwDisc = disc;
+      im.userData.dwSub = sub;   // §Q2 (W-E2E-INSTPICK): instanceId i ↔ sub[i] — array REFERENCE, no per-instance objects
+      root.add(im);
     }
     // gated-but-resolved (orange) vs still-clashing (red): clash takes precedence so a human SEES it.
     _mesh(list, matN);                                                          // all (normal box)
@@ -2535,7 +2699,9 @@ function _renderDiscAssembly(disc, parts) {
         verts.push(p.pos[0], p.pos[1], p.pos[2], p.pos[0] + fd[0] * off, p.pos[1] + fd[1] * off, p.pos[2] + fd[2] * off);
       }
     });
-    im.instanceMatrix.needsUpdate = true; im.userData.dwAsm = disc; root.add(im);
+    im.instanceMatrix.needsUpdate = true; im.userData.dwAsm = disc;
+    im.userData.dwSub = list;   // §Q2: assembled parts carry real node guids — same instanceId↔record contract
+    root.add(im);
   });
   if (verts.length) {
     var cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));

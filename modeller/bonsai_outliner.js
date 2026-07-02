@@ -352,12 +352,17 @@
             let num = +id;
             if (isNaN(num) && window.__arcFidByGuid && window.__arcFidByGuid[id] != null) num = window.__arcFidByGuid[id];
             if (!isNaN(num) && this._ctrlToggle(e, num)) return;   // §P4 multi-toggle (resolved fid) wins here too
-            // §P5 (W-OL-DEADCLICK): a walked/generated fixture's GUID never lands in __arcFidByGuid (bridge is
-            // ARC-seed-only) — the select/fly-to below silently no-ops while the row still highlights, reading
-            // as a broken click. Say so instead of nothing (full per-instance pick identity is §NEEDS-DESIGN).
+            // §P5 (W-OL-DEADCLICK) → upgraded by §Q2 (W-E2E-INSTPICK): a non-ARC leaf's GUID never lands in
+            // __arcFidByGuid (bridge is ARC-seed-only), but the element's REAL transform is in the open
+            // building DB — fly the camera there (frameElementByGuid, elements_meta⋈element_transforms).
+            // Only when the DB has no row (or no DB is open) does the honest toast remain.
             if (isNaN(num)) {
-              if (window.toast) window.toast('no 3D pick for generated elements yet — walked fixtures render as one batch', 'info');
-              console.log(TAG + ' §OLSYNC deadclick guid=' + String(id).slice(0, 12) + ' (no featureId bridge — generated element)');
+              if (window.Bonsai.frameElementByGuid && window.Bonsai.frameElementByGuid(id)) {
+                console.log(TAG + ' §OLSYNC instframe guid=' + String(id).slice(0, 12) + ' (framed from real element_transforms row)');
+              } else {
+                if (window.toast) window.toast('no 3D pick for generated elements yet — walked fixtures render as one batch', 'info');
+                console.log(TAG + ' §OLSYNC deadclick guid=' + String(id).slice(0, 12) + ' (no featureId bridge — generated element)');
+              }
             }
             if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id);
             // Outliner→scene camera fly-to (2026-07-02): ONLY on this Outliner-row click, mirrors the flat-row
