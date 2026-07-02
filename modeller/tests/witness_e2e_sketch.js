@@ -16,25 +16,26 @@ const { runE2E } = require('./e2e_harness');
 runE2E('W-E2E-SKETCH', async (t) => {
   await t.open('Duplex'); await t.shot('01-open');
 
+  // §F2-FRAMING: derive a PLAN-CLEAR, camera-visible, unoccluded ground square from the live scene while
+  // the wide fit view is up — the old hardcoded (2,0)-(4.4,2.4) spot is clear of standing meshes at ground
+  // level but sits UNDER THE ROOF, so every plan capture there was occluded.
+  const S = 2.4;
+  const [x0, y0] = await t.clearGround(S + 0.6);
+  const corners = [[x0, y0], [x0 + S, y0], [x0 + S, y0 + S], [x0, y0 + S]];
+
   await t.clickSel('#b-sketch'); await t.sleep(300);
   const armed = await t.pg.evaluate(() => ({ sketching: !!window.sketching, extrudeShown: document.getElementById('b-extrude').style.display !== 'none' }));
   // sketching is a module-local; fall back to the visible Extrude pill (revealed only in sketch mode) as the proof.
   t.assert('K1 SKETCH-MODE (Sketch pill arms + Extrude revealed)', armed.extrudeShown, 'extrudeShown=' + armed.extrudeShown);
-
-  // A reference ground point clear of the building footprint (open ground, unoccluded for the guide frame),
-  // then a ~2.4m square profile at z=0 (4 ground clicks).
-  // enterSketch() hard-resets the camera to a fixed top-down plan view looking at world (2, 1.5) — the
-  // sketchable area is centred there, not on the building's own bbox. (2,0)-(4.4,2.4) is open ground near
-  // that look-at point (verified clear of any standing mesh by a downward raycast sweep), so all 4 markers
-  // land in view and unoccluded.
-  const S = 2.4, x0 = 2, y0 = 0;
-  const corners = [[x0, y0], [x0 + S, y0], [x0 + S, y0 + S], [x0, y0 + S]];
+  // Sketch mode enters at a fixed plan view over (2,1.5); pan it over the derived spot (real user pan).
+  await t.overheadTo(x0 + S / 2, y0 + S / 2, 12);
   const screenPts = [];
   for (const [wx, wy] of corners) { const p = await t.proj(wx, wy, 0); screenPts.push(p); await t.pg.mouse.move(p[0], p[1]); await t.sleep(40); await t.pg.mouse.down(); await t.sleep(40); await t.pg.mouse.up(); await t.sleep(120); }
   const nPts = await t.pg.evaluate(() => window.Bonsai.sketch.points.length);
   t.assert('K2 POINTS (≥3 sketch points placed)', nPts >= 3, 'points=' + nPts);
   await t.shot('02-sketched');
-  await t.shotPts('sketch-profile', screenPts);   // guide frame (§F2 G4): clipped around the laid profile (sketch mode zooms the camera in)
+  // guide frame (§F2 G4): the closed profile on open grid, plan view — camera already panned over the spot
+  await t.shotPts('sketch-profile', screenPts, 150);
 
   const before = await t.oplog(); const pix0 = await t.pixsum();
   await t.pg.evaluate(() => { document.getElementById('dim-depth').value = '2.5'; });

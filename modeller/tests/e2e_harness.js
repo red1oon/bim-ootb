@@ -75,7 +75,64 @@ async function runE2E(NAME, body, opts) {
           proj(x, y, z) { const v = new window.THREE.Vector3(x, y, z).project(window.A.camera); const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(); return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top, v.z]; },
           centre(fid) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; const b = new window.THREE.Box3().setFromObject(m); const c = new window.THREE.Vector3(); b.getCenter(c); return [c.x, c.y, c.z]; },
           pixsum() { const r = window.A.renderer; r.render(window.A.scene, window.A.camera); const gl = r.getContext(); const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); let s = 0; for (let i = 0; i < px.length; i += 257) s = (s + px[i]) >>> 0; return s; },
-          candidates() { const g = window.Bonsai.group(); const out = []; const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(); for (const m of g.children) { if (!m.isMesh || m.userData.featureId == null) continue; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) continue; const c = new window.THREE.Vector3(); b.getCenter(c); const p = this.proj(c.x, c.y, c.z); if (p[0] < r.left + 24 || p[0] > r.right - 24 || p[1] < r.top + 24 || p[1] > r.bottom - 24 || p[2] > 1) continue; const sz = new window.THREE.Vector3(); b.getSize(sz); out.push({ fid: m.userData.featureId, sx: p[0], sy: p[1], vol: sz.x * sz.y * sz.z }); } out.sort((a, b) => b.vol - a.vol); return out.slice(0, 14); }
+          candidates() { const g = window.Bonsai.group(); const out = []; const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(); for (const m of g.children) { if (!m.isMesh || m.userData.featureId == null) continue; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) continue; const c = new window.THREE.Vector3(); b.getCenter(c); const p = this.proj(c.x, c.y, c.z); if (p[0] < r.left + 24 || p[0] > r.right - 24 || p[1] < r.top + 24 || p[1] > r.bottom - 24 || p[2] > 1) continue; const sz = new window.THREE.Vector3(); b.getSize(sz); out.push({ fid: m.userData.featureId, sx: p[0], sy: p[1], vol: sz.x * sz.y * sz.z, sz: [sz.x, sz.y, sz.z] }); } out.sort((a, b) => b.vol - a.vol); return out.slice(0, 40); }
+          // §F2-FRAMING: dolly the camera to a genuine element CLOSE-UP (spec G4) along the CURRENT view
+          // direction — target the element's bbox centre, distance so the element fills `fill` of the frame
+          // height. Pure camera maths off the real mesh bbox; no scene mutation.
+          , frame(fid, fill) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return false; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return false; const c = new window.THREE.Vector3(); b.getCenter(c); const s = new window.THREE.Vector3(); b.getSize(s); const rad = Math.max(s.x, s.y, s.z) * 0.5 || 1; const cam = window.A.camera, ctl = window.A.controls; const dir = new window.THREE.Vector3().subVectors(cam.position, ctl.target).normalize(); const dist = Math.max(rad / Math.tan(cam.fov * Math.PI / 360) / fill, rad * 1.5); ctl.target.copy(c); cam.position.copy(c).addScaledVector(dir, dist); ctl.update(); if (window.A.requestRender) window.A.requestRender(); return true; }
+          , dolly(f) { const cam = window.A.camera, ctl = window.A.controls; const d = new window.THREE.Vector3().subVectors(cam.position, ctl.target); cam.position.copy(ctl.target).addScaledVector(d, f); ctl.update(); if (window.A.requestRender) window.A.requestRender(); return true; }
+          // §F2-FRAMING: deterministic overhead plan view over (cx,cy) at height h — the exact camera pattern
+          // the app itself uses for its own top-down moments (modeller.html §deep-link: up=(0,1,0), position
+          // above, target below). Saved/restored so tool state after the shot is untouched.
+          , overhead(cx, cy, h) { const cam = window.A.camera, ctl = window.A.controls; this._camSave = { pos: cam.position.clone(), tgt: ctl.target.clone(), up: cam.up.clone() }; cam.up.set(0, 1, 0); cam.position.set(cx, cy, h); ctl.target.set(cx, cy, 0); ctl.update(); if (window.A.requestRender) window.A.requestRender(); return true; }
+          , camRestore() { if (!this._camSave) return false; const cam = window.A.camera, ctl = window.A.controls; cam.position.copy(this._camSave.pos); ctl.target.copy(this._camSave.tgt); cam.up.copy(this._camSave.up); ctl.update(); this._camSave = null; if (window.A.requestRender) window.A.requestRender(); return true; }
+          // §F2-FRAMING: find a ground square that is clear IN PLAN (no mesh bbox above it at ANY height —
+          // roofs included), nearest the building for context. EXTRACTED from the live scene, not a hardcoded
+          // "known clear" constant (the old (2,0)-(4.4,2.4) spot sits under the Duplex roof: clear at ground
+          // level, roof-occluded from above — every plan capture there was doomed).
+          , clearGround(size) {
+            const g = window.Bonsai.group();
+            const boxes = []; const all = new window.THREE.Box3();
+            for (const m of g.children) { if (!m.isMesh) continue; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) continue; boxes.push(b); all.union(b); }
+            // Nearest-to-centroid finds interior COURTYARDS — plan-clear but wall-occluded from the camera,
+            // so the tool's ground clicks hit walls instead (measured: 1/4 sketch points registered there).
+            // Require: plan-clear AND outside the building footprint AND on the CAMERA side — the square
+            // just outside the bbox edge facing the camera has open sightlines by construction.
+            const camP = window.A.camera.position;
+            const tx = Math.min(Math.max(camP.x, all.min.x), all.max.x), ty = Math.min(Math.max(camP.y, all.min.y), all.max.y);
+            const cands = [];
+            for (let x = all.min.x - 10; x <= all.max.x + 10; x += 1) for (let y = all.min.y - 10; y <= all.max.y + 10; y += 1) cands.push([x, y]);
+            cands.sort((a, b) => ((a[0] - tx) ** 2 + (a[1] - ty) ** 2) - ((b[0] - tx) ** 2 + (b[1] - ty) ** 2));
+            const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect();
+            const meshes = g.children.filter(m => m.isMesh);
+            // Prefer squares ON the rendered grid (the guide captions say "on the grid"; the floor is black
+            // beyond the GridHelper) — measured from the actual helper in the scene, fallback = anywhere.
+            let gridBox = null;
+            window.A.scene.children.forEach(o => { if (o.type === 'GridHelper') gridBox = new window.THREE.Box3().setFromObject(o); });
+            const inGrid = ([x, y]) => !gridBox || (x >= gridBox.min.x && x + size <= gridBox.max.x && y >= gridBox.min.y && y + size <= gridBox.max.y);
+            cands.sort((a, b) => (inGrid(a) === inGrid(b)) ? 0 : (inGrid(a) ? -1 : 1));
+            const rc = new window.THREE.Raycaster();
+            const occluded = (px, py) => {   // a mesh between the camera and this ground point ⇒ the click would hit IT, not the ground
+              const gp = new window.THREE.Vector3(px, py, 0);
+              const dir = gp.clone().sub(camP); const dist = dir.length(); dir.normalize();
+              rc.set(camP, dir); rc.far = dist - 0.05;
+              return rc.intersectObjects(meshes, false).length > 0;
+            };
+            for (const [x0, y0] of cands) {
+              let clear = true;
+              for (const b of boxes) { if (x0 + size > b.min.x && x0 < b.max.x && y0 + size > b.min.y && y0 < b.max.y) { clear = false; break; } }
+              if (!clear) continue;
+              // every corner must PROJECT inside the canvas (pointerdown listens on the canvas only) AND be
+              // unoccluded from the camera (a courtyard square is plan-clear but its clicks hit the walls)
+              let ok = true;
+              for (const [px, py] of [[x0, y0], [x0 + size, y0], [x0, y0 + size], [x0 + size, y0 + size]]) {
+                const p = this.proj(px, py, 0);
+                if (p[0] < r.left + 24 || p[0] > r.right - 24 || p[1] < r.top + 24 || p[1] > r.bottom - 24 || p[2] > 1 || occluded(px, py)) { ok = false; break; }
+              }
+              if (ok) return [x0, y0];
+            }
+            return null;
+          }
           , bboxScreen(fid) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return null; let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; for (let i = 0; i < 8; i++) { const x = (i & 1) ? b.max.x : b.min.x, y = (i & 2) ? b.max.y : b.min.y, z = (i & 4) ? b.max.z : b.min.z; const p = this.proj(x, y, z); if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; } return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }; }
         }; return true;
       });
@@ -84,23 +141,68 @@ async function runE2E(NAME, body, opts) {
     centre(fid) { return pg.evaluate(f => window.__e2e.centre(f), fid); },
     pixsum() { return pg.evaluate(() => window.__e2e.pixsum()); },
     async bboxScreen(fid) { return pg.evaluate(f => window.__e2e.bboxScreen(f), fid); },
+    // §F2-FRAMING: fly the camera to a real element close-up (spec G4 "element close-up") — use BEFORE
+    // shotClip so the clip region is a legible close-up, not a sliver of a wide shot. fill≈0.4 → the element
+    // spans ~40% of the frame height. Logged so a silent no-op (mesh not found) can't hide again.
+    async frameElement(fid, fill) {
+      const ok = await pg.evaluate((f, fl) => window.__e2e.frame(f, fl), fid, fill == null ? 0.4 : fill);
+      await sleep(350);
+      console.log('  §SHOTFRAME fid=' + fid + ' fill=' + (fill == null ? 0.4 : fill) + ' ok=' + ok);
+      return ok;
+    },
+    async dolly(f) { await pg.evaluate(x => window.__e2e.dolly(x), f); await sleep(250); },
+    async clearGround(size) { const r = await pg.evaluate(s => window.__e2e.clearGround(s), size); console.log('  §CLEARGROUND size=' + size + ' -> ' + JSON.stringify(r)); return r; },
+    // §F2-FRAMING: pan the (already plan) mode camera over (cx,cy) — the deterministic stand-in for the real
+    // user panning to their drawing area. Sketch/Route enter at a FIXED plan view over (2,1.5), which on the
+    // Duplex is roof — everything drawn there is roof-occluded in every capture. No restore needed mid-mode:
+    // exitSketch/exitRoute restore their own savedCam.
+    async overheadTo(cx, cy, h) { await pg.evaluate((a, b, c) => window.__e2e.overhead(a, b, c), cx, cy, h == null ? 12 : h); await sleep(350); },
+    // §F2-FRAMING fix (guide-screenshot card): the old clip was NOT clamped to the viewport — any element
+    // whose bbox+margin left the page made puppeteer THROW, and the catch fell back to a full wide shot,
+    // SILENTLY. That silent fallback (plus pick() always choosing the biggest slab) is exactly how 8 broken
+    // guide frames shipped. Now: clamp to the viewport, enforce a minimum legible clip, and LOG the §SHOTCLIP
+    // decision so a fallback is visible in the witness log.
+    _clampClip(clip) {
+      const vw = pg.viewport().width, vh = pg.viewport().height;
+      const MIN = 320;   // a clip smaller than this is an unreadable sliver — grow it around its centre
+      let { x, y, width, height } = clip;
+      if (width < MIN) { x -= (MIN - width) / 2; width = MIN; }
+      if (height < MIN) { y -= (MIN - height) / 2; height = MIN; }
+      x = Math.max(0, Math.min(x, vw - 16)); y = Math.max(0, Math.min(y, vh - 16));
+      width = Math.min(width, vw - x); height = Math.min(height, vh - y);
+      return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+    },
     async shotClip(label, fid, margin) {
-      const b = await this.bboxScreen(fid); if (!b) return this.shot(label);
+      const b = await this.bboxScreen(fid);
+      if (!b) { console.log('  §SHOTCLIP ' + label + ' FALLBACK=full (no bbox for fid=' + fid + ')'); return this.shot(label); }
       const m = margin == null ? 48 : margin;
-      const clip = { x: Math.max(0, b.x - m), y: Math.max(0, b.y - m), width: b.width + m * 2, height: b.height + m * 2 };
-      try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png'), clip }); } catch (e) { await this.shot(label); }
+      const clip = this._clampClip({ x: b.x - m, y: b.y - m, width: b.width + m * 2, height: b.height + m * 2 });
+      console.log('  §SHOTCLIP ' + label + ' clip=' + JSON.stringify(clip) + ' (bbox ' + Math.round(b.width) + 'x' + Math.round(b.height) + ' +m' + m + ')');
+      try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png'), clip }); }
+      catch (e) { console.log('  §SHOTCLIP ' + label + ' FALLBACK=full (screenshot threw: ' + String(e && e.message).slice(0, 80) + ')'); await this.shot(label); }
     },
     async shotPts(label, pts, margin) {   // clip around a set of known client-space [x,y] points (e.g. a sketch profile)
       const m = margin == null ? 120 : margin;
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const [x, y] of pts) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
-      const clip = { x: Math.max(0, minX - m), y: Math.max(0, minY - m), width: (maxX - minX) + m * 2, height: (maxY - minY) + m * 2 };
-      try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png'), clip }); } catch (e) { await this.shot(label); }
+      const clip = this._clampClip({ x: minX - m, y: minY - m, width: (maxX - minX) + m * 2, height: (maxY - minY) + m * 2 });
+      console.log('  §SHOTCLIP ' + label + ' clip=' + JSON.stringify(clip) + ' (pts=' + pts.length + ' +m' + m + ')');
+      try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png'), clip }); }
+      catch (e) { console.log('  §SHOTCLIP ' + label + ' FALLBACK=full (screenshot threw: ' + String(e && e.message).slice(0, 80) + ')'); await this.shot(label); }
     },
-    async pick() {
-      const cands = await pg.evaluate(() => window.__e2e.candidates());
+    // opts.prefer='wall': §F2-FRAMING — guide frames captioned "the wall" used to get the BIGGEST element
+    // (always a floor/roof slab; vol-desc order). Prefer wall-like candidates (tall, thin, room-scale) and
+    // require the click to have selected THAT candidate (the old code returned whatever got selected).
+    async pick(opts) {
+      opts = opts || {};
+      let cands = await pg.evaluate(() => window.__e2e.candidates());
+      if (opts.prefer === 'wall') {
+        const wallish = c => c.sz && c.sz[2] >= 1.2 && Math.min(c.sz[0], c.sz[1]) <= 0.6 && Math.max(c.sz[0], c.sz[1]) >= 1.0 && Math.max(c.sz[0], c.sz[1]) <= 8;
+        cands = cands.filter(wallish).concat(cands.filter(c => !wallish(c)));
+      }
       for (const c of cands) { await pg.mouse.move(c.sx, c.sy); await sleep(40); await pg.mouse.click(c.sx, c.sy); await sleep(120);
-        const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || [])); if (sel.length === 1) return { fid: sel[0], centre: await this.centre(sel[0]) }; }
+        const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
+        if (sel.length === 1 && (!opts.prefer || sel[0] === c.fid)) return { fid: sel[0], centre: await this.centre(sel[0]) }; }
       return null;
     },
     clickSel(sel) { return pg.click(sel); },

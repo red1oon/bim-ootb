@@ -117,22 +117,40 @@
     // was the select-side jank). M8 (incremental): the active-blue is NEVER baked into the section HTML — it is
     // painted here over the cached DOM for BOTH the flat op-log rows ([data-fid]) AND the seeded BOM-tree leaf
     // rows ([data-bnode][data-leaf="1"]). A neighbour row (adjacency lens, data-adj=1) falls back to amber.
+    // scene→Outliner sync (2026-07-02): a 3D pick (click a mesh in the canvas) already routes here via
+    // window.Bonsai.select→highlight→setActive — so the ONLY missing piece was making the now-active row
+    // actually SCROLL INTO VIEW (a building with thousands of seeded rows can leave the active row scrolled
+    // off, looking like the pick "didn't do anything" in the Outliner). `id` may be a numeric featureId
+    // (flat op-log rows) or a string bnode id (seeded ARC-tree rows) — try both containers, whichever hit.
     setActive(id) {
       window.Bonsai._selId = id;
       if (!this._el) return;
+      // GUID↔featureId cross-match (2026-07-02): the seeded ARC-BOM tree's leaf rows are keyed by GUID
+      // (bom_tree.js `id: e.guid`), but a 3D pick / window.Bonsai.select() always passes the NUMERIC
+      // featureId — so a bnode-row match on `id` alone misses every ARC-seeded row. Resolve the OTHER
+      // representation via arc_editable.js's featureId↔guid bridge (window.__arcFidByGuid/__arcGuidByFid)
+      // so a pick highlights the right row regardless of which id flavour the caller used.
+      const guidByFid = (typeof window !== 'undefined' && window.__arcGuidByFid) || {};
+      const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
+      const altId = guidByFid[id] != null ? guidByFid[id] : fidByGuid[id];
+      let activeEl = null;
       this._el.querySelectorAll('[data-fid]').forEach(d => {
         const on = (+d.getAttribute('data-fid')) === id;
         d.style.background = on ? '#26456b' : 'transparent';
         d.style.color = on ? '#dce6f4' : '#c7cdd8';
         d.onmouseover = () => { d.style.background = on ? '#26456b' : '#23262e'; };
         d.onmouseout = () => { d.style.background = on ? '#26456b' : 'transparent'; };
+        if (on) activeEl = d;
       });
       this._el.querySelectorAll('[data-bnode][data-leaf="1"]').forEach(d => {
-        const on = String(d.getAttribute('data-bnode')) === String(id);
+        const bn = d.getAttribute('data-bnode');
+        const on = bn === String(id) || (altId != null && bn === String(altId));
         const nbr = d.getAttribute('data-adj') === '1';     // adjacency-lens neighbour → amber base
         d.style.background = on ? '#26456b' : (nbr ? '#2c2616' : 'transparent');
         d.style.color = on ? '#dce6f4' : (nbr ? '#e6dcc2' : '#c7cdd8');
+        if (on) activeEl = d;
       });
+      if (activeEl && activeEl.scrollIntoView) activeEl.scrollIntoView({ block: 'nearest' });
     },
 
     // M8 INCREMENTAL (RESUME_MODELLER_POLISH.md #7): the Outliner has TWO sections — the seeded BOM-tree
@@ -152,6 +170,7 @@
       this._treesCache = this._flatsCache = null;   // fresh skeleton → force both sections to refill (no stale-cache desync)
     },
     _paint() {
+      const __t0 = performance.now();
       const tree = this._el.querySelector('#bo-tree'); if (!tree) return;
       this._ensureSections(tree);
       // W-UX-6: refresh the adjacency map for this paint when the lens is ON (cheap; reads window.swXEdges).
@@ -203,7 +222,7 @@
       foot.textContent = (f ? shown + '/' + total + ' shown' : total + ' features') + lens + (tip ? '  🔒 ' + tip.slice(0, 8) : '');
       this._lastPaint = { tree: treeBuilt, flat: flatBuilt };   // whitebox witness reads this (W-BONSAI-OUTLINER-INCR)
       console.log(TAG + ' paint total=' + total + ' shown=' + shown + ' find="' + f + '" trees=' + treeCats.length +
-        ' treeBuilt=' + treeBuilt + ' flatBuilt=' + flatBuilt);
+        ' treeBuilt=' + treeBuilt + ' flatBuilt=' + flatBuilt + ' §PAINT_MS=' + (performance.now() - __t0).toFixed(1));
     },
     // Flat op-log group/row wiring (scoped to the #bo-flats container so it re-wires only on a flat rebuild).
     _wireFlat(root) {
@@ -212,6 +231,10 @@
         const fid = +d.getAttribute('data-fid');
         if (window.Bonsai.select) window.Bonsai.select(fid);   // → highlight() → setActive(): restyle only, no rebuild
         else this.setActive(fid);
+        // Outliner→scene camera fly-to (2026-07-02): ONLY on an Outliner-row click, not a 3D pick (you're
+        // already looking at what you clicked in the canvas) — window.Bonsai.frameFeature is modeller.html-only
+        // (needs camera/controls), so guard for other hosts/tests that don't define it.
+        if (window.Bonsai.frameFeature) window.Bonsai.frameFeature(fid);
       });
     },
 
@@ -285,7 +308,17 @@
         const disc = d.getAttribute('data-disc');
         d.onclick = () => {
           if (isLeaf) {
-            const num = +id; if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id);
+            // The seeded ARC-BOM tree's leaf id IS THE GUID (bom_tree.js `id: e.guid`) — window.Bonsai.select
+            // only accepts a NUMERIC featureId, so resolve guid→featureId via arc_editable.js's bridge
+            // (window.__arcFidByGuid) first. A node whose id is ALREADY numeric (a flat/authored tree) is
+            // used as-is — this is what actually drives the 3D emissive highlight for an ARC-seeded pick,
+            // not just the Outliner row's own paint (setActive's cross-match, see above, handles the rest).
+            let num = +id;
+            if (isNaN(num) && window.__arcFidByGuid && window.__arcFidByGuid[id] != null) num = window.__arcFidByGuid[id];
+            if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id);
+            // Outliner→scene camera fly-to (2026-07-02): ONLY on this Outliner-row click, mirrors the flat-row
+            // wiring above (_wireFlat) — guarded since frameFeature is modeller.html-only.
+            if (!isNaN(num) && window.Bonsai.frameFeature) window.Bonsai.frameFeature(num);
             // W-UX-6: with the adjacency lens ON, a fresh selection re-folds neighbour highlights (full repaint —
             // setActive only restyles flat data-fid rows; the bom-graph bnode highlights are computed in _paint).
             if (this._adjLens) { const deg = (this._adjMap && this._adjMap[id]) ? this._adjMap[id].size : 0; console.log(TAG + ' §XEDGE-LENS select=' + String(id).slice(0, 10) + ' neighbours=' + deg); this._paint(); }

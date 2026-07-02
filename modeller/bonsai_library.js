@@ -65,9 +65,32 @@
   // component sits ON the ground, not half-buried (a door spanning local z ∈ [−1.05,+1.05] at z=0
   // would otherwise sink 1.05 below grade). Yaw is about Z so it does not change z → seat is yaw-invariant.
   function place(positions, pl, bbox) {
+    const ox = (pl && pl.x) || 0, oy = (pl && pl.y) || 0, oz = (pl && pl.z) || 0;
+    // §ARC-3AXIS: caller-supplied rotX/rotY (radians, alongside rotZRad) ⇒ a genuine 3-axis tilt this yaw-only
+    // path cannot represent. This box's local origin is ALREADY its measured CENTRE (buildSeedOps centres bbox
+    // at 0,0,0), so rotate-about-origin then translate-by-centre directly — mirrors viewer/streaming.js's own
+    // `_pos.set(cx,cy,cz); _quat.setFromEuler(_euler); _m4.compose(_pos,_quat,_scale)` exactly (it has no
+    // ground-seat step either, because it places centres, not bottoms). Reuses window.THREE — the SAME
+    // vendored r184 build both Modeller+Viewer load ("reuse the viewer's THREE stack", modeller.html:240) —
+    // this is NOT a re-derived quaternion formula, it's the identical algorithm both sides already run.
+    if (pl && (pl.rotX || pl.rotY) && typeof window !== 'undefined' && window.THREE) {
+      const T = window.THREE;
+      const euler = new T.Euler(pl.rotX || 0, pl.rotZRad || 0, -(pl.rotY || 0));
+      const q = new T.Quaternion().setFromEuler(euler);
+      const v = new T.Vector3();
+      const out = new Float32Array(positions.length);
+      for (let i = 0; i < positions.length; i += 3) {
+        v.set(positions[i], positions[i + 1], positions[i + 2]).applyQuaternion(q);
+        out[i] = v.x + ox; out[i + 1] = v.y + oy; out[i + 2] = v.z + oz;
+      }
+      return out;
+    }
+    // rotate (yaw, about +Z) about the component's local origin → translate to placement.
+    // GROUND-SEAT: the component's local bbox BOTTOM (zmin) lands at placement.z (default 0) so a
+    // component sits ON the ground, not half-buried (a door spanning local z ∈ [−1.05,+1.05] at z=0
+    // would otherwise sink 1.05 below grade). Yaw is about Z so it does not change z → seat is yaw-invariant.
     const rad = ((pl && pl.rot) || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
-    const ox = (pl && pl.x) || 0, oy = (pl && pl.y) || 0;
-    const seatZ = ((pl && pl.z) || 0) - (bbox ? bbox[4] : 0);   // bbox[4] = local zmin → placement.z (elevation)
+    const seatZ = oz - (bbox ? bbox[4] : 0);   // bbox[4] = local zmin → placement.z (elevation)
     const out = new Float32Array(positions.length);
     for (let i = 0; i < positions.length; i += 3) {
       const x = positions[i], y = positions[i + 1], z = positions[i + 2];
@@ -319,6 +342,25 @@
       return this._geomP.then(() => this.hasMesh(hash));
     },
 
+    // §REAL-GEOM (2026-07-02): register PER-ELEMENT meshes — component_geometries/base_geometries, resolved by
+    // real_geometry.js and offered up via arc_editable.js's buildSeedOps/seedArc (io.registerGeometry) — keyed
+    // directly by their OWN geometry_hash, NAMESPACED ('rg:' prefix) so they can never collide with the curated
+    // catalog's `_geom[c.gh]` entries (a totally different id space, dagevu_geometries.json). These are NOT
+    // Library.get()-visible catalog "products" (not pickable/insertable) — just render data for an already-
+    // signed ARC seed op that carries params.realGeomHash; foldInsert reads this store directly.
+    registerRealGeometry(entries) {
+      if (!entries || !entries.length) return 0;
+      if (!this._geom) this._geom = {};
+      let n = 0;
+      entries.forEach(e => {
+        if (!e || !e.hash) return;
+        const key = 'rg:' + e.hash;
+        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox }; n++; }
+      });
+      console.log(TAG + ' §REAL-GEOM registered ' + n + ' distinct element mesh(es) (of ' + entries.length + ' offered)');
+      return n;
+    },
+
     meshArrays(hash) {                          // LOD-300: real extracted mesh if loaded, else box proxy (dims-only)
       const c = this.get(hash); if (!c) throw new Error('no component ' + hash);
       const g = (c.gh && this._geom && this._geom[c.gh]) ? this._geom[c.gh] : (c.v && c.f ? c : null);
@@ -344,9 +386,36 @@
       if (P.hash && !c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
       const rawBox = (!c && Array.isArray(P.bbox)) ? P.bbox : null;
       if (!c && !rawBox) throw new Error('GEOM_INSERT needs a hash or a measured bbox');
+      // §REAL-GEOM (2026-07-02, "no silent box fallback"): a per-element real mesh (component_geometries/
+      // base_geometries, registered by the browser wiring via registerRealGeometry BEFORE fold — see
+      // arc_editable.js buildSeedOps/seedArc) is a SEPARATE, ADDITIVE field (P.realGeomHash) — orthogonal to
+      // the LOD300_CATALOG hash/lod mechanism above (P.hash/P.lod, completely untouched). A caller that never
+      // registers real geometry (every pure-node witness today) sees this._geom[P.realGeomHash] absent and
+      // folds EXACTLY as before. When present, it WINS over both the box and the generic 3-item catalog — this
+      // element's OWN scanned shape is always more faithful than a coincidentally-dimension-matched generic.
+      const realMesh = (P.realGeomHash && this._geom && this._geom['rg:' + P.realGeomHash]) ? this._geom['rg:' + P.realGeomHash] : null;
       const lod = this.lodFor(op.id, P.lod);
-      let base = (c && lod === '300') ? this.meshArrays(P.hash) : boxArrays(c ? c.bbox : rawBox);
+      let base = realMesh
+        ? { positions: realMesh.v instanceof Float32Array ? realMesh.v : new Float32Array(b64ToBuf(realMesh.v)),
+            indices: realMesh.f instanceof Uint32Array ? realMesh.f : new Uint32Array(b64ToBuf(realMesh.f)),
+            bbox: realMesh.bbox }
+        : (c && lod === '300') ? this.meshArrays(P.hash) : boxArrays(c ? c.bbox : rawBox);
+      // §REAL-GEOM RE-SEAT: P.placement.z was computed at SEED TIME assuming the box/catalog seat half-height
+      // (arc_editable.js buildSeedOps deliberately does NOT know whether real geometry will actually be
+      // registered by fold time — registration is browser-side/optional). Recover the measured world-centre z
+      // from that assumption, then re-seat on the REAL mesh's own (recentred, symmetric) half-height so the
+      // world CENTRE still lands exactly on the measured point — same "same placement, richer mesh" doctrine
+      // as the LOD300_CATALOG seat correction (arc_editable.js buildSeedOps). x/y need no correction: the real
+      // mesh was recentred about its own bbox centre (real_geometry.js), same convention as every other local
+      // mesh here, so rotate-about-origin + translate-by-(placement.x,y) already lands the x/y centroid right.
       let pl = P.placement;
+      if (realMesh) {
+        const assumedBbox = c ? c.bbox : rawBox;
+        const assumedHalfZ = assumedBbox ? (assumedBbox[5] - assumedBbox[4]) / 2 : 0;
+        const cz = (P.placement.z || 0) + assumedHalfZ;
+        const realHalfZ = (realMesh.bbox[5] - realMesh.bbox[4]) / 2;
+        pl = Object.assign({}, P.placement, { z: cz - realHalfZ });
+      }
       // W-BONSAI-SCALE PATH B: net GEOM_SCALE folds host-side on the insert's LOCAL geometry — EDGE-ANCHORED at the
       // local bbox min per axis (stretch the object along its own length), so it composes with the existing yaw +
       // ground-seat math (place() seats on the SCALED bbox). SIZE only — scales geometry, never the placement.
@@ -363,7 +432,9 @@
       }
       if (mv && (mv.dx || mv.dy || mv.dz || mv.drot)) {
         let ox = (P.placement.x || 0) + (mv.dx || 0), oy = (P.placement.y || 0) + (mv.dy || 0);
-        const oz = (P.placement.z || 0) + (mv.dz || 0), pr = P.placement.rot || 0;
+        const oz = (pl.z || 0) + (mv.dz || 0), pr = P.placement.rot || 0;   // pl.z (not P.placement.z): carries the
+        // §REAL-GEOM re-seat correction above through a GEOM_MOVE fold — for every non-real-mesh op pl===P.placement
+        // (unchanged reference), so this is byte-identical to the old `P.placement.z` read in that case.
         let rot = pr;
         if (mv.drot) {
           // W-BONSAI-ROTATE: yaw the insert about its bbox CENTRE (the visible centre, == the gizmo ring centre) so it

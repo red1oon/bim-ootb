@@ -19,7 +19,7 @@ const xext = (t, fid) => t.pg.evaluate((f) => {
 }, fid);
 runE2E('W-E2E-SCALE', async (t) => {
   await t.open('Duplex'); await t.shot('01-open');
-  const sel = await t.pick();
+  const sel = await t.pick({ prefer: 'wall' });   // §F2-FRAMING: gizmo close-ups need an element-scale subject, not the roof slab
   t.assert('S1 SELECT (insert selected)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
   const ext0 = await xext(t, sel.fid);
@@ -35,6 +35,7 @@ runE2E('W-E2E-SCALE', async (t) => {
   });
   t.assert('S2 GIZMO (scaleX cube handle present)', !!giz, giz ? 'cube@' + giz.cube.map(n => n.toFixed(2)) : 'no gizmo/cube');
   if (!giz) return;
+  await t.frameElement(sel.fid, 0.3);   // §F2-FRAMING (spec G4): element close-up; drag px are projected AFTER this, so the drag stays valid
   await t.shot('02-gizmo');
 
   // Drag the cube outward +X by ~0.6·ext (f≈1.5 after 0.25-snap). down = cube px; up = (cube + Δx) px.

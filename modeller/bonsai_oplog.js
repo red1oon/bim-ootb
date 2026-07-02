@@ -42,10 +42,25 @@
     // ---- PERSISTENCE: autosave the whole signed op-log to localStorage on every change; restore on boot.
     // A modelling session's kernel_ops db is small (KB–tens of KB) → well within the localStorage budget.
     _KEY: 'bonsai_model_v1',
-    _b64(u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); },
+    // §LOD400-STALL: byte-by-byte `s += String.fromCharCode(u8[i])` is a MILLIONS-of-calls string-concat loop —
+    // invisible for the small db this comment's original assumption covers, but for a Terminal-scale ARC seed
+    // (35,552 signed rows → a multi-MB db export) this turned out to be the SINGLE BIGGEST stall in the whole
+    // open path: ~108s measured, dwarfing the (already-fixed) kernel_ops signing loop. Chunked
+    // String.fromCharCode.apply produces the byte-for-byte IDENTICAL binary string (same btoa output) with
+    // thousands of chunk calls instead of millions of single-char ones — a pure speed fix, zero output change.
+    _b64(u8) {
+      let s = '';
+      const CHUNK = 0x8000;   // 32768 — safely under engines' String.fromCharCode.apply argument-count ceiling
+      for (let i = 0; i < u8.length; i += CHUNK) { s += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK)); }
+      return btoa(s);
+    },
     _unb64(b64) { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; },
     _loadBytes() { try { const s = localStorage.getItem(this._KEY); return s ? this._unb64(s) : null; } catch (e) { return null; } },
-    _save() { try { if (this.db) localStorage.setItem(this._KEY, this._b64(this.db.export())); } catch (e) { console.warn(TAG + ' save failed ' + e); } },
+    // A save failure (e.g. QuotaExceededError — localStorage is typically ~5-10MB/origin, and a Terminal-scale
+    // export can approach or exceed that) used to be console.warn-only. console.error makes it loud (matches
+    // the §ARC-SEED-WIRE visibility fix) — the user's edits still work in-session either way (autosave is
+    // best-effort), but a silently-failed autosave meant "your edits didn't survive a reload" with zero signal.
+    _save() { try { if (this.db) localStorage.setItem(this._KEY, this._b64(this.db.export())); } catch (e) { console.error(TAG + ' autosave FAILED (edits stay in-session but will NOT survive a reload) ' + e); } },
 
     // Boot-time restore: ensure the db (loads saved bytes), then fold it to the scene if non-empty.
     async restore() {
@@ -95,14 +110,27 @@
       return this.length;
     },
 
-    _emit() { try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
+    // §OUTLINER-STALL: every real mutating flow (commit — incl. the LEAF optimistic-append path, which does
+    // NOT go through _foldUpto — commitSeedGroup, delete/undo/redo) calls _emit() unconditionally right after
+    // touching kernel_ops. That makes _emit() the one safe choke point to invalidate the _geomOps() memo below;
+    // clearing it in _foldUpto() alone (the originally drafted fix) would MISS the LEAF-commit path (bonsai_
+    // oplog.js commit(): LEAF ops skip _foldUpto and append optimistically, but still _emit()).
+    _emit() { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
     clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
 
     // Read the live GEOM ops out of the signed log, mapped to fold-op shape (parent rides in parameters).
+    // §OUTLINER-STALL: memoized on db-object identity (auto-invalidates on setModelKey/reload/clear, which all
+    // swap in a NEW SQL.Database instance) + explicitly cleared in _emit() (see comment there) on every real
+    // mutation. Before this fix: a FRESH SQL scan+JSON.parse of every GEOM row, on EVERY call — the Outliner's
+    // "Components" category calls moveDeltaFor(id) ONCE PER matching row during paint, so painting N disc-walk
+    // fixtures cost O(N × total-ops). Measured (real browser, SampleCastle ELEC walk, 2648 fixtures): a single
+    // Outliner paint went 176ms → 41,576ms (236x) as cumulative Components rows grew 3,597→6,245.
     _geomOps() {
+      if (this._opsCache && this._opsCacheDb === this.db) return this._opsCache;
       const r = this.db.exec("SELECT id, op_type, parameters, op_hash FROM kernel_ops WHERE undone=0 AND " + GEOM + " ORDER BY id");
-      if (!r.length) return [];
-      return r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parameters: p, parent: p.parent, op_hash: v[3] }; });
+      const out = !r.length ? [] : r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parameters: p, parent: p.parent, op_hash: v[3] }; });
+      this._opsCache = out; this._opsCacheDb = this.db;
+      return out;
     },
     get length() { return this.db ? this._geomOps().length : 0; },
     get cursor() { return this._cursor; },
@@ -121,6 +149,12 @@
       const gid = 'geom-grp-' + (++this._n);
       const res = await window.KernelOps.commitGroup(db, [{ op_type: op.op_type, params: op.parameters }], { gid, baseTs });
       if (!res.committed) throw new Error('commitGroup rejected: ' + res.reason);
+      // §OUTLINER-STALL: invalidate the _geomOps() memo RIGHT HERE, at the actual DB write — this.db is a
+      // mutable SQL.js Database mutated IN PLACE (commitGroup's INSERT doesn't change object identity), so
+      // clearing only in _emit() is too late for the _foldUpto()/this.length calls a few lines below, which
+      // run BEFORE _emit() in this same function and would otherwise reuse a stale (possibly pre-seed empty)
+      // cached array keyed to this same db object.
+      this._opsCache = null;
       const rowId = res.ids[res.ids.length - 1];
       const v = await window.KernelOps.verifyChain(db);
       const signed = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE sig IS NOT NULL")[0].values[0][0];
@@ -153,18 +187,31 @@
     // persist + fold) but writes N ops + their guids at once. IDEMPOTENT by gid ('arcseed-<building>') so
     // re-opening a building never double-seeds. opsArray = [{op_type:'GEOM_INSERT', params, outputGuid}, …].
     // Returns {ids, idempotent}: ids[i] == the kernel_ops row id == featureId of ops[i] (the bridge anchor).
-    async commitSeedGroup(opsArray, gid) {
+    // opts.verify (default true — UNCHANGED behaviour for every existing caller, incl. modeller.html's
+    // disc-walk trunk commit): §LOD400-STALL — KernelOps.verifyChain() re-derives sha256(prev|canonical(op))
+    // (+ re-checks the signature) for EVERY row in the log, INCLUDING the rows commitGroup+sealFrom just
+    // staged/sealed moments earlier with the exact same deterministic function — for a big seed (Terminal:
+    // 35,552 ops) that's a fully redundant 3rd hash pass (see kernel_ops.js commitGroup/sealFrom comments),
+    // ~half the total wall-clock. commitGroup's own returned {committed,sealed,tip} already proves the group
+    // inserted atomically and chained correctly — enough for the ARC-seed path (str_walker_outliner.js), which
+    // always seeds into a FRESH mo_<building> instance (nothing "pre-existing" to lose coverage on). Opt-in
+    // per call site, not a global default change — any other caller keeps the full check unless it explicitly
+    // asks not to.
+    async commitSeedGroup(opsArray, gid, opts) {
+      opts = opts || {};
       const db = await this._ensureDb();
       if (!opsArray.length) return { ids: [], idempotent: false };
       const baseTs = 1700000000000;                           // fixed → deterministic seed-row timestamps (replay-stable)
       const res = await window.KernelOps.commitGroup(db, opsArray, { gid, baseTs });
       if (!res.committed) throw new Error('commitSeedGroup rejected: ' + res.reason);
+      this._opsCache = null;   // §OUTLINER-STALL: see commit()'s identical comment — must precede _foldUpto() below
       if (!res.idempotent) this._n = Math.max(this._n, res.ids.length);   // push future geom-grp gids past the seed
-      const v = await window.KernelOps.verifyChain(db);
+      const doVerify = opts.verify !== false;
+      const v = doVerify ? await window.KernelOps.verifyChain(db) : { ok: res.committed, tip: res.tip, skipped: true };
       this._lastTip = v.tip;
       await this._foldUpto();                                 // redraw the chain → the seeded boxes appear, gizmo-ready
       this._emit();                                           // persist mo_<building> + notify (autosave)
-      console.log(TAG + ' commitSeedGroup gid=' + gid + ' ops=' + res.ids.length + ' verify=' + v.ok + ' idempotent=' + !!res.idempotent);
+      console.log(TAG + ' commitSeedGroup gid=' + gid + ' ops=' + res.ids.length + ' verify=' + (doVerify ? v.ok : 'SKIPPED(trusted commitGroup, tip=' + String(v.tip).slice(0, 12) + '…)') + ' idempotent=' + !!res.idempotent);
       return { ids: res.ids, idempotent: !!res.idempotent };
     },
 
@@ -186,7 +233,10 @@
       if (!r.length) return [];
       return r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parent: p.parent, undone: v[3] }; });
     },
-    _setUndone(ids, val) { if (ids.length) this.db.run("UPDATE kernel_ops SET undone=" + (val ? 1 : 0) + " WHERE id IN (" + ids.join(',') + ")"); },
+    // §OUTLINER-STALL: the other real mutation primitive (delete/undo/redo all funnel through this) — invalidate
+    // here too, same reason as commit()/commitSeedGroup(): this.db is mutated in place, cache must clear at the
+    // write, not deferred to _emit() (which runs after the callers' own _foldUpto()).
+    _setUndone(ids, val) { if (ids.length) { this.db.run("UPDATE kernel_ops SET undone=" + (val ? 1 : 0) + " WHERE id IN (" + ids.join(',') + ")"); this._opsCache = null; } },
 
     // Delete ONE feature (+ its children that reference it as parent) — soft, reversible via redo.
     async deleteFeature(featureId) {

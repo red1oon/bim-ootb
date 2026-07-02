@@ -8,6 +8,19 @@
   const TAG = '§BONSAI';
   const _self = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src : (typeof location !== 'undefined' ? location.href : '');
 
+  // §LOD400-STALL: yield to the browser between CHUNKS of a large fold so it actually gets a paint turn
+  // (rAF ties the yield to the paint cycle; setTimeout(0) is the fallback for a non-browser host). Mirrors
+  // kernel_ops.js's _yieldFrame — same pattern, separate module (no shared state needed).
+  function _nextFrame() {
+    return new Promise(resolve => {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+      else setTimeout(resolve, 0);
+    });
+  }
+  function _reportProgress(msg) {
+    if (typeof window !== 'undefined' && typeof window.setStat === 'function') { try { window.setStat(msg); } catch (e) { } }
+  }
+
   const Bonsai = {
     _worker: null, _seq: 0, _pending: new Map(), _group: null,
 
@@ -205,14 +218,38 @@
       }
       const d = (kernelOps.length || hasSeed) ? await this._foldChain(kernelOps, hasSeed ? seedBoxes : undefined) : { meshes: [] };
       const meshes = (d.meshes || []).slice();
-      if (window.Bonsai.library) {
-        for (const op of insertOps) { try { meshes.push(window.Bonsai.library.foldInsert(op, moveBy.get(op.id), gridBy.get(op.id))); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
-      }
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
       let totalTris = 0;
       // PER-MESH colour wins over the fold-level colour: a folded insert (RouteWalker fixture) carries md.color
       // (its discipline hex from parameters.color); B-rep solids have none → fall back to the fold-level opts.color.
       meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
+
+      // §LOD400-STALL: GEOM_INSERT folds HOST-side (bonsai.library) — CHUNKED + YIELDED above CHUNK ops so a
+      // Terminal-scale open (tens of thousands of raw-bbox ARC inserts) actually PAINTS PROGRESSIVELY between
+      // batches instead of computing+building everything in one synchronous tick with zero feedback. Small/
+      // medium buildings (Duplex 265, SampleCastle 3,583 ARC elements) stay UNDER CHUNK → the ORIGINAL
+      // single-pass path, unchanged — same op-log, same final scene, byte-identical result either way; only
+      // the add-order/paint cadence differs when a fold is large enough to chunk.
+      const CHUNK = 5000;
+      if (window.Bonsai.library) {
+        const buildOne = (op) => {
+          const md = window.Bonsai.library.foldInsert(op, moveBy.get(op.id), gridBy.get(op.id));
+          meshes.push(md);
+          const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color });
+          totalTris += md.triangleCount; if (g) g.add(m);
+        };
+        if (insertOps.length > CHUNK) {
+          for (let i = 0; i < insertOps.length; i += CHUNK) {
+            const end = Math.min(i + CHUNK, insertOps.length);
+            for (let k = i; k < end; k++) { try { buildOne(insertOps[k]); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
+            _reportProgress('loading ' + end + '/' + insertOps.length + ' elements…');
+            if (window.A && typeof A.requestRender === 'function') A.requestRender();   // progressive reveal — paint what landed so far
+            await _nextFrame();
+          }
+        } else {
+          for (const op of insertOps) { try { buildOne(op); } catch (e) { console.warn(TAG + ' insert fold fail ' + e); } }
+        }
+      }
       this._lastRegenStats = d.stats || null;   // {rebuilt, hits, tess, tessHits} — incremental-regen cache witness hook
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
       const st = d.stats ? ' regen[rebuilt=' + d.stats.rebuilt + ' hits=' + d.stats.hits + ' tess=' + d.stats.tess + ' tessHits=' + d.stats.tessHits + ']' : '';

@@ -43,16 +43,50 @@
         delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge }));
     },
 
+    // §STRETCH-RIDE snapshot: pre-stretch AABBs of every authored mesh, the SAME shape modeller.html's own
+    // _gateBoxes() builds for the conformity gate — SdgCascade.stretchRide needs the rider's + host's PRE-edit
+    // boxes to derive the induced move (see sdg_cascade.js header). Read BEFORE this drag's commit so it's honest.
+    _boxByFid() {
+      const g = window.Bonsai.group && window.Bonsai.group(); const out = {}; if (!g) return out;
+      g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null) {
+        m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
+        out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
+      return out;
+    },
+
     // Commit ONE signed GEOM_GRID_MOVE per drag-release; the worker folds the recompose deterministically.
+    // Implementing RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE.
     async commit(gridId, delta) {
-      const commands = this.computeCommands(gridId, delta);
+      let commands = this.computeCommands(gridId, delta);
+      let riders = [];
+      // §STRETCH-RIDE: a hosted opening must NOT divorce or scale when its host wall is grid-stretched — the
+      // engine classifies EVERY authored mesh independently (doors/windows included), so strip any rider's OWN
+      // command and induce ONE rigid move instead, resolved ONLY over the REAL rel_fills_host edges through the
+      // §ARC-1 bridge (non-invent — never a proximity heuristic). Absent the bridge (no fills data for this
+      // resident, e.g. SampleCastle — see RESUME_CASCADE_INTO_STRETCH.md recon) stretchRide already no-ops
+      // byte-identically, so this branch is a pure regression-safe extension, never a behavior change when unfed.
+      if (window.SdgCascade && window.SdgCascade.stretchRide &&
+          window.__arcGuidByFid && window.__arcFidByGuid && window.swXEdges && window.swXEdges.fills) {
+        const boxByFid = this._boxByFid();
+        const ride = window.SdgCascade.stretchRide(commands, window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, boxByFid);
+        commands = ride.commands; riders = ride.riders;
+        if (riders.length) console.log(TAG + ' §STRETCH-RIDE stripped=' + riders.length + ' rider cmd(s) → induced move instead: ' + riders.map(r => r.featureId).join(','));
+      }
       const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_GRID_MOVE',
         parameters: { gridId, delta, commands } }, {});
       // The authoring gridline advances via Grid.foldFromOplog — a FOLD of the op-log fired on this commit's
       // bonsai:oplog event — NOT mutated here, so undo/redo/scrub revert it deterministically (M1 fix).
       console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
         ' verify=' + res.verify + ' tris=' + res.triangleCount);
-      return { ...res, commands };
+      // §STRETCH-RIDE: one induced GEOM_MOVE per rider, same signed-op idiom as commitMove's hosted-by ride
+      // (modeller.html commitMove ~line 1532-1534) — a SEPARATE op so undo/scrub/rosetta treat it like any move.
+      for (const r of riders) {
+        const rr = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE',
+          parameters: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } }, {});
+        console.log(TAG + ' §STRETCH-RIDE hosted-by rider=' + r.featureId + ' induced dx=' + r.dx.toFixed(3) +
+          ' dy=' + r.dy.toFixed(3) + ' dz=' + r.dz.toFixed(3) + ' verify=' + rr.verify);
+      }
+      return { ...res, commands, riders };
     }
   };
   window.Bonsai = window.Bonsai || {};
