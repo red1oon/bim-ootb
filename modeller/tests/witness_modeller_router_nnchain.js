@@ -88,13 +88,18 @@ async function openResident(page, key) {
   var nSeg = parseInt((walkLog.match(/chainSegs=(\d+)/) || [0, 0])[1], 10);
   chk('N1 walk PLB → chainSegs>0 (Router routes real nn-chains)', nSeg > 0, walkLog || 'no walk log');
 
-  // N2 chains rendered as 3D lines
+  // N2 chains rendered in the DiscWalker root. STALE-CHECK FIX (found via W-TERMINAL-WALKALL-PERF regression
+  // sweep, failed IDENTICALLY on unmodified main): §DW-TUBE upgraded the chain render from LineSegments to
+  // InstancedMesh cylinder tubes (userData.dwChain unchanged) and this check was never updated — it counted
+  // isLineSegments only, so it has been asserting 0 > 0 since the tube upgrade. Count tube instances (and
+  // keep LineSegments for back-compat with any pre-tube build).
   var lineSegs = await page.evaluate(function () {
     var g = window.Bonsai.group && window.Bonsai.group(); if (!g) return -1;
     var root = g.children.find(function (o) { return o.userData && o.userData.dwRoot; }); if (!root) return 0;
-    return root.children.filter(function (o) { return o.isLineSegments && o.userData.dwChain; }).reduce(function (n, o) { return n + (o.geometry.getAttribute('position').count / 2); }, 0);
+    return root.children.filter(function (o) { return (o.isInstancedMesh || o.isLineSegments) && o.userData.dwChain; })
+      .reduce(function (n, o) { return n + (o.isInstancedMesh ? (o.count || 0) : o.geometry.getAttribute('position').count / 2); }, 0);
   });
-  chk('N2 chains rendered as 3D lines in DiscWalker root', lineSegs > 0, 'lineSegments=' + lineSegs);
+  chk('N2 chains rendered as 3D tubes in DiscWalker root', lineSegs > 0, 'tubeSegments=' + lineSegs);
 
   // N3 + N5 chain commit logged + cap honored
   var commitLog = logs.find(function (l) { return /§ROUTER-CHAIN-COMMIT disc=PLB/.test(l); }) || '';

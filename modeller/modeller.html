@@ -2384,18 +2384,27 @@ function _flashSettleDisc(disc) {
       }, HOLD);
       return;
     }
+    // §WALKALL-TERMINAL-SCALE fix (W-TERMINAL-WALKALL-PERF): the old setInterval(DURATION/n) settled ONE
+    // instance per tick — but setInterval clamps near ~4ms, so any n in the thousands blew straight through
+    // the DURATION budget (measured at REAL Terminal scale: ACMV n=2829 took 39,319ms against a 1200ms
+    // budget, sceneElements=35552 < threshold=50000 so the proxy guard never fired — and 35,552 IS our
+    // largest real building, the exact scale the guard was written for). Time-budgeted rAF batch instead:
+    // each frame settles every instance whose share of DURATION has elapsed, so the stagger LOOK is kept
+    // and the wall-clock is ≤ DURATION + one frame at ANY n / any render cost. Same instances, same colours,
+    // same log line — only the scheduling changed.
     var DURATION = Math.min(1200, Math.max(200, total * 6)), n = idx.length, k = 0, startT = Date.now();
-    var timer = setInterval(function () {
+    var step = function () {
+      var due = Math.min(n, Math.ceil(n * (Date.now() - startT) / DURATION));
+      while (k < due) { var e = idx[k]; e.im.setColorAt(e.i, e.base); e.im.instanceColor.needsUpdate = true; k++; }
+      if (window.A && A.requestRender) A.requestRender();
       if (k >= n) {
-        clearInterval(timer);
-        if (window.A && A.requestRender) A.requestRender();
-        console.log('§DISCWALK-ALL-FLASH ' + disc + ' per-instance instances=' + total + ' ms=' + (Date.now() - startT));
+        console.log('§DISCWALK-ALL-FLASH ' + disc + ' per-instance instances=' + total + ' ms=' + (Date.now() - startT) + ' budgetMs=' + DURATION);
         resolve();
         return;
       }
-      var e = idx[k]; e.im.setColorAt(e.i, e.base); e.im.instanceColor.needsUpdate = true; k++;
-      if (window.A && A.requestRender) A.requestRender();
-    }, DURATION / n);
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   });
 }
 // §DISCWALK-ALL: loops DiscWalker.disciplines() SEQUENTIALLY (never parallel — _discGate() re-folds the
@@ -2602,27 +2611,39 @@ function _renderDiscChains(disc, segs) {
 }
 async function _commitDiscChains(disc, segs) {
   var O = window.Bonsai && window.Bonsai.oplog; if (!O) return 0;
-  var color = DW_COLOR[disc] || 0xc0c0c0;
   var capMax = window.DW_CHAIN_COMMIT_CAP || 120;
   var cap = Math.min(segs.length, capMax);
-  var committed = 0;
-  for (var i = 0; i < cap; i++) {                     // commit optimistically (LEAF append, no per-commit re-fold)
+  // §WALKALL-TERMINAL-SCALE fix (W-TERMINAL-WALKALL-PERF): was a loop of `cap` awaited O.commit() — each one
+  // seals the chain + full verifyChain + Outliner repaint + autosave; measured at REAL Terminal scale that's
+  // ~1.6-2s PER SWEEP (§KRN_CHAIN verify over 38k rows + a 51k-row Outliner paint each time) → minutes per
+  // chained discipline inside Walk-ALL. Batch into ONE signed group instead — the exact pattern
+  // _commitDiscWalk (above) already uses for the same reason ("267-fixture ELEC walk FROZE the UI for 112s").
+  // Same ops, same parameters._dw identity payload, same row-granular undo (undo() toggles per ROW, not per
+  // gid — W-ROUTER-NNCHAIN N6 unaffected); one seal, one verify, one fold, one repaint. The old per-commit
+  // {color} opt is dropped, not lost: any re-fold already forgot it (B-rep solids fall back to fold-level
+  // colour — see bonsai_kernel.js "PER-MESH colour wins" comment), and the final scrubTo here always re-folded.
+  var ops = [];
+  for (var i = 0; i < cap; i++) {
     var s = segs[i];
-    var op = { op_type: 'GEOM_SWEEP',
-      parameters: { profile: { w: 0.05, h: 0.05 }, path: [s.from.slice(), s.to.slice()],
-                    _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
-                           from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap } } };
-    try { var res = await O.commit(op, { color: color }); if (res) committed++; }
-    catch (e) { console.warn('§ROUTER-CHAIN-COMMIT fail i=' + i + ' ' + (e && e.message)); }
+    ops.push({ op_type: 'GEOM_SWEEP',
+      params: { profile: { w: 0.05, h: 0.05 }, path: [s.from.slice(), s.to.slice()],
+                _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
+                       from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap } } });
+  }
+  var committed = 0;
+  if (ops.length) {
+    try { var res = await O.commitSeedGroup(ops, 'dwchain-' + disc + '-' + O.length); committed = (res.ids || []).length; }
+    catch (e) { console.warn('§ROUTER-CHAIN-COMMIT batch fail ' + (e && e.message)); }
   }
   if (committed) {
-    await O.scrubTo(O.length);                        // ONE authoritative re-fold (mirrors RouteWalker autoRouteMEP)
+    // commitSeedGroup already folded the chain authoritatively (no scrubTo needed) — restore decoration
     _redrawAllDiscWalks();
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     syncHistory(); audioCue('rollout');
   }
   console.log('§ROUTER-CHAIN-COMMIT disc=' + disc + ' folded=' + committed + '/' + segs.length +
-    (segs.length > cap ? ' (cap=' + capMax + ', occt-bounded; full ' + segs.length + ' rendered live)' : ''));
+    (segs.length > cap ? ' (cap=' + capMax + ', occt-bounded; full ' + segs.length + ' rendered live)' : '') +
+    ' (1 signed group)');
   window.__dwLastChainDisc = disc;                    // sentinel for witnesses
   return committed;
 }
