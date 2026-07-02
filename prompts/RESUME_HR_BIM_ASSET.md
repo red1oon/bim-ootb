@@ -1341,3 +1341,87 @@ band-overlay` · `persist → OPFS HBA db`.
 
 Companion: `docs/ERP.md §0.3` (product-scope decision — add a pointer here when this leaves design-only).
 Doctrine: DistributedERP.md §6 (dumb facilitator), §8 (accounting-as-reconciler), §0.20 (secured axis / W-SIGN).
+
+---
+
+## §P10d — DONE + LIVE (2026-07-02, this session)
+
+Both queued items shipped and verified live on GH Pages (`https://red1oon.github.io/bim-ootb/`):
+
+1. **lane/hr-overlay → main merge.** Surfaced a real collision doing it: PR #592 (merged 2026-07-01, a
+   DIFFERENT session) had independently built the SAME `hr_bim_asset/`+`viewer/hba_*.js` module under the same
+   filenames — `lane/hr-overlay` branched from `ce52497`, which predates `18437e1` (#592), so it never saw that
+   merge. `git merge` produced add/add conflicts on ~10 files. Verified file-by-file (line counts + content
+   diff) that `lane/hr-overlay` was a STRICT SUPERSET everywhere (same design, later/more-complete continuation,
+   e.g. `panels.js`'s pill label "FM / Operate"→"Human-Asset" rename) — resolved via `git merge origin/main -X
+   ours` (keep lane's content), full `hr_bim_asset` witness suite re-verified green after, shipped as PR #609.
+   **Lesson for next time a branch shows unexpected add/add conflicts against main: check `git merge-base
+   --is-ancestor <the-other-PR-commit> <branch-point>` before assuming it's a simple two-line conflict — it may
+   be two independent lineages of the same feature.**
+2. **CCTV real still.** `viewer/hba_cctv_still.jpg` (user's ContaCam capture) replaces the procedural-only
+   mockup tiles — sliced into 6 distinct crops (source is itself a multi-cam dashboard screenshot), dimmed,
+   scanline overlay, diagonal "STUB READY" watermark.
+
+**Also shipped same session (PR #611, follow-up after live-testing found real bugs):**
+- IoT sensors: replaced the 6 Chart.js line charts with **animated horizontal bars** (style extracted from the
+  local `~/IfcOpenShell/src/bonsai/bonsai/bim/module/federation/river/equipment_operators.py` `draw_callback_px`
+  — the actual RiverIoT/Federation reference the original `hr_bim_asset/iot.js` header already cited but never
+  implemented), one distinct colour per sensor (`SENSOR_COLORS` in `viewer/hba_iot.js`), running value at each
+  bar's leading edge, loops the 24h deterministic series. `tick(pt)` is the stub seam for real sensor wiring later.
+- Billing table: dropped the "reading" column (`viewer/hba_iot.js` §c) — it duplicated the bar's live value
+  AND the qty column (same number, shown 3x). Table now carries only qty(+unit) + net.
+- Clicking a sensor bar OR a presence-roster row now actually flies the camera + drops a self-restoring gold
+  highlight pulse on the real bound element. Root cause of "doesn't zoom": `HBALens.flyToZone` (`viewer/hba_lens.js`)
+  matched mesh targets via `o.userData.guid`, which only ever finds REGULAR (non-instanced) meshes. HHS_Office_Federated
+  renders most geometry as instanced/batched groups (§INSTANCED-TINT's `_N` slot suffix) — the exact same class
+  of bug `buildMeshPort`'s `setTint` was already fixed for (see M6 in `witness_meshport.js`). `flyToZone` now
+  reuses `HBA().B.guidTargets()` + `getMatrixAt()`/`matrixWorld` the same way `setTint` does.
+- `viewer/pill_builder.js`: `btn.title` was hardcoded to `act.id` (e.g. every pill's tooltip showed its internal
+  id, not its label) — fixed to `act.name || act.id`. Affects EVERY pill in the toolbar, not just Human-Asset.
+
+Deploy chain used: PR (not direct push — `main` has required-status-checks branch protection,
+`enforce_admins:true`) → `gh pr merge --auto --squash` → GH Actions `deploy-pages.yml`. **Squash-merge trap hit
+live**: after #609 squash-merged, `lane/hr-overlay`'s remaining local commits could NOT be PR'd again directly
+(diffing against squashed main re-shows the WHOLE original diff, ~2800 lines, not just the new commit) — the fix
+was `git worktree add -b fix/hba-p10d-followup /tmp/... origin/main` (fresh off `main`) + `git cherry-pick
+<the-one-new-commit>`, exactly per CLAUDE.md's "start the follow-up off fresh origin/main" rule. `lane/hr-overlay`
+itself is now fully superseded (safe to delete, left alone this session).
+
+---
+
+## ▶ §P11 — QUEUED, NOT STARTED (user 2026-07-02, do in a NEW session)
+
+User, after using the live deploy: **"make zoom to the iDempiere.html from dashboard when we hover over a
+Resource or Employee Payroll as all are modelled with real underlying AD. Make it balanced."** + **"IoT sensors
+still not zoomed to the Order/Line to indicate that its a doc ready ops for mgmt billing follow up."** + "This
+can all be put into the user guide too."
+
+**Reading of the ask:** a cross-app deep-link from the Viewer's HBA panes into the real iDempiere ERP UI,
+wherever a pane shows a record that is genuinely backed by a real AD table row (per the "Compile not Model"
+doctrine — see `▶▶▶ CRITICAL` block below — everything in this module already compiles onto real AD tables, so
+this is just SURFACING an existing real PK, not inventing a new link):
+1. **Dashboard → iDempiere**: hovering/clicking a Resource row or an Employee Payroll line in `hba_dashboard.js`
+   / `hba_payslip.js` should deep-link to that record's real iDempiere window (open in a new tab/link, not a
+   navigation-away — matches the existing pattern, see below).
+2. **"Balanced"** — apply the SAME treatment consistently across entity types (Resource, Employee/Payroll,
+   presumably also Tenancy/Occupancy/Asset where each already compiles to a real row) — not a one-off on a
+   single pane. Audit which `hba_*.js` panes already show a real AD PK (most do, per the `ad_*.js` compile
+   functions) and wire the SAME link affordance on all of them for consistency.
+3. **IoT billing → C_Order/C_OrderLine**: `viewer/hba_iot.js` §c (the billing table, just simplified this
+   session) shows real `c_order`/`c_orderline` shaped rows (`hr_bim_asset/iot.js billingLines()`) but has NO
+   click-through yet — add one, so clicking a billing row deep-links to that order/line in iDempiere, visibly
+   signaling "this is a real billable document ready for management's billing follow-up", not just a mockup
+   number.
+4. **Doc it** in `docs/HRBIMAssetGuide.md` once built (screenshots too, matching the existing guide format).
+
+**The exact precedent to reuse (found this session, do NOT reinvent the link mechanism):**
+`viewer/navigate_find.js` (`_surfaceExistingOrder`, ~line 1069-1088) already does exactly this kind of deep-link
+for BIM→Project: an anchor tag (`elErpOpen`, `#find-erp-open`) whose `href` is set to
+`'../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(pid)` (window `130` = the
+GardenWorld Project window; `record` = the real `C_Project_ID`). The HBA panes need the SAME URL shape with the
+right `window=<AD_Window_ID>` per entity type (Resource/HR window, Payroll/HR_Movement or payslip window,
+C_Order window for billing) + the real PK each `ad_*.js` compile function already produces — look up the actual
+`AD_Window_ID` values for each window from `build/erp/ad_full.db` (`SELECT AD_Window_ID, Name FROM AD_Window`)
+before wiring, never guess the window number.
+
+**Not started this session** — user explicitly closed for a new session before scoping/implementing this.
