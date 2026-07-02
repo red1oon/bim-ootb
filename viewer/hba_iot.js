@@ -12,7 +12,9 @@
 //   horizontal with the running value printed at the bar's leading edge; NO Chart.js dependency for this
 //   section (hba_dashboard.js still uses Chart.js for its own KPI trend charts — untouched). Each bar's
 //   tick(pt) setter is the STUB SEAM for later real physical sensor wiring: swap the setInterval driver for a
-//   real telemetry callback and the same rows/bars update — nothing else in this file needs to change.
+//   real telemetry callback and the same rows/bars update — nothing else in this file needs to change. Each
+//   bar is one distinct colour (SENSOR_COLORS) and clicking it flies the camera to the bound asset's real
+//   location via HBALens.flyToZone — so "there's a live sensor" also means "here's exactly where it is".
 //   (b) a 2x3 CCTV grid — plain <canvas>, now painted from a REAL dimmed still photo (`hba_cctv_still.jpg`,
 //   user-supplied ContaCam capture, copied into this repo — NOT a feed of THIS building, still captioned
 //   MOCKUP) with a scanline overlay + a diagonal "STUB READY" watermark (this tile is the placeholder seam
@@ -87,17 +89,25 @@
     };
   }
 
+  // one distinct accent colour per sensor — purely visual differentiation between the 6 racing bars (matches
+  // the reference Bonsai federation/river panel's per-channel colour coding, no invented data behind it).
+  var SENSOR_COLORS = { temp: '#1976d2', pressure: '#7b1fa2', sound: '#00897b', dust: '#ef6c00', solar: '#fbc02d', electrical: '#43a047' };
+
   // one animated horizontal bar row per sensor — width + the running value at the bar's leading edge both
   // move together (matching CSS transition) as tick(pt) is fed new points. min/max are DATA-DERIVED (the
-  // sensor's own baseline±amplitude from hr_bim_asset/iot.js), never an invented threshold.
-  function renderSensorBar(sensor, min, max) {
-    var row = el('div', 'padding:4px 0;');
+  // sensor's own baseline±amplitude from hr_bim_asset/iot.js), never an invented threshold. Clicking the row
+  // flies the camera to the bound asset's real location (HBALens.flyToZone) — "locate the device outright".
+  function renderSensorBar(A, asset, sensor, min, max) {
+    var color = SENSOR_COLORS[sensor.key] || '#1976d2';
+    var row = el('div', 'padding:4px 0;cursor:pointer;');
+    row.title = 'Locate ' + asset.asset + ' in the model';
     row.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;margin-bottom:2px;', sensor.label));
     var track = el('div', 'position:relative;height:16px;background:#eef2f6;border-radius:3px;');
-    var fill = el('div', 'position:absolute;left:0;top:0;bottom:0;width:2%;background:#1976d2;border-radius:3px;transition:width 0.7s ease;');
+    var fill = el('div', 'position:absolute;left:0;top:0;bottom:0;width:2%;background:' + color + ';border-radius:3px;transition:width 0.7s ease;');
     var val = el('span', 'position:absolute;top:50%;left:2%;transform:translateY(-50%);font-size:10px;font-weight:600;color:#102a43;white-space:nowrap;transition:left 0.7s ease;padding-left:6px;');
     track.appendChild(fill); track.appendChild(val);
     row.appendChild(track);
+    row.addEventListener('click', function () { if (G.HBALens && G.HBALens.flyToZone) G.HBALens.flyToZone(A, asset.bim_guid); });
     var tick = function (pt) {
       var pct = Math.max(2, Math.min(100, ((pt.v - min) / (max - min)) * 100));
       fill.style.width = pct + '%';
@@ -135,7 +145,7 @@
       var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
       if (max === min) max = min + 1;   // guard degenerate flat series
       var headroom = (max - min) * 0.15;
-      var b = renderSensorBar(s, min - headroom, max + headroom);
+      var b = renderSensorBar(A, asset, s, min - headroom, max + headroom);
       barsWrap.appendChild(b.row); bars.push({ b: b, sensor: s, pts: pts });
     });
     pane.appendChild(barsWrap);
@@ -152,15 +162,16 @@
     }
     pane.appendChild(cctvWrap);
 
-    // (c) ERP billing table — iot.billingLines() -> real c_orderline shape
+    // (c) ERP billing table — iot.billingLines() -> real c_orderline shape. The reading itself is already
+    // shown live by the bar above (§P10d) — this table carries only what the bars DON'T: qty billed + net
+    // amount, i.e. the actual ERP compile, not a second copy of the sensor value.
     pane.appendChild(el('div', 'font-size:11px;color:#627d98;text-transform:uppercase;padding:8px 12px 0;',
       'Billable — ' + billing.order.documentno));
     var tbl = el('table', 'width:100%;border-collapse:collapse;font-size:12px;margin:4px 12px 10px;width:calc(100% - 24px);');
     billing.lines.forEach(function (ln) {
       var tr = el('tr', 'border-top:1px solid #eee;');
       tr.appendChild(el('td', 'padding:4px 2px;', ln.sensor.label));
-      tr.appendChild(el('td', 'padding:4px 2px;text-align:right;', ln.reading.v + ' ' + ln.sensor.uom_symbol));
-      tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#627d98;', 'qty ' + ln.row.qtyordered));
+      tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#627d98;', 'qty ' + ln.row.qtyordered + ' ' + ln.sensor.uom_symbol));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#2e7d32;font-weight:600;', ln.row.linenetamt.toFixed(2)));
       tbl.appendChild(tr);
     });
