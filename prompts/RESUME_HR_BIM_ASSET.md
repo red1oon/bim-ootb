@@ -1425,3 +1425,40 @@ C_Order window for billing) + the real PK each `ad_*.js` compile function alread
 before wiring, never guess the window number.
 
 **Not started this session** — user explicitly closed for a new session before scoping/implementing this.
+
+---
+
+## ▶ §P11 — ✅ DONE + LIVE 2026-07-02 (bim-ootb PR #614, merged to main `5a83955`)
+
+Shipped exactly as specced above, plus a mid-build user extension ("Payslip, Leave can zoom into the ERP side
+also" — Payslip was already in scope; Leave was the new ask, triaged and added). `hba_lens.js` gained a shared
+`erpLink(windowId, record)` builder + `AD_WINDOWS` constant (RESOURCE=236, PAYROLL_MOVEMENT=53042,
+SUBSCRIPTION=316, ORDER=143, PAYROLL_CONCEPT=53036 — every id looked up from `build/erp/ad_full.db`, none
+guessed), reused by all 5 panes:
+- **Dashboard** — each real room now compiles a native `S_Resource` header row (`occupancy.js` new
+  `toResourceTypeRow`/`toResourceRow`/`compileResources` — an on-demand "Room" `S_ResourceType` since this
+  repo's only real types are Consultant/Plants/Work Center, same on-demand-dictionary precedent as
+  `C_UOM`/`M_Warehouse`). A new "Resources" list under the charts links each room → window 236.
+- **Payslip** — `ad_payroll.js payslip()` now surfaces the real `hr_movement_id` per line → window 53042.
+- **Leave** — verified (again) it has NO native AD table anywhere in iDempiere. Rather than invent one, an
+  unpaid entry links to the REAL `hr_concept_id` (UNPAID_LEAVE, already compiled+witnessed by
+  W-HBA-AD-PAYROLL) it feeds into on payroll → window 53036 (Payroll Concept Catalog) — the honest "what this
+  actually compiles onto", not a fabricated leave-record window.
+- **Tenancy** — existing `c_subscription_id` → window 316, alongside (not replacing) the existing flyToZone
+  row-click.
+- **IoT billing** — existing `c_order_id` → window 143 ("ready for management billing follow-up", per the
+  user's second ask).
+
+**Witnessed:** new `witness_erp_deeplink.js` (19/19 — window-id ground truth independently re-sourced from
+`ad_full.db`, URL shape, S_Resource non-invent gate, real-PK passthrough on every pane's compile source, the
+Leave→concept link target). Full 34-file HBA node suite re-run, **zero regression**. Live chromium smoke
+(`cdp_shot.js` against `demo/fm_panel.html`, `fm_panel.html` also gained `A._hbaResourceSpec` seeding so the
+Dashboard link has data): opened all 5 panes, confirmed real `href`s render with the correct window/record
+pairs, 0 console errors, 5 screenshots captured.
+
+**Docs: DONE.** `docs/HRBIMAssetGuide.md` (bim-compiler repo) gained: a "Jump straight to the ERP record"
+explainer (the pattern + the window/table reference table) plus — since they'd never been documented at all —
+new "Payroll — payslip" / "Leave — balance & statement" / "Tenancy — AD compile" sections, each with a fresh
+screenshot. Not done: recapturing the intro `hba_fm_drawer.png` screenshot against a live 8-lens HHS session
+(still shows the old 5-lens drawer) — flagged inline in the guide with a footnote instead of a stale/misleading
+silent gap.
