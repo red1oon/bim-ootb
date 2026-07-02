@@ -34,9 +34,15 @@
   // this codebase (bonsai_library.js's 3-item CATALOG, arc_editable.js's synthetic raw-bbox insert) is
   // stored/built symmetric-about-origin, because place()'s (bonsai_library.js) rotate-about-(0,0)-then-
   // translate-by-(placement.x,y) math implicitly assumes local (0,0) == the shape's own geometric centre.
-  // A real IFC-extracted mesh's own local origin is an arbitrary placement point (often NOT its bbox
-  // centre) — re-centring here (a pure rigid translation of the SAME vertices, no shape change, NON-INVENT)
-  // makes it drop into that same convention with zero changes to place()/foldInsert's math.
+  //
+  // §ARC-ANCHOR (W-MV-PARITY, 2026-07-02): the blob's local origin is NOT arbitrary — it is the IFC
+  // local-placement ANCHOR that element_transforms.center_xyz points at (extractIFCtoDB.py writes
+  // center = shape.transformation.matrix[:3,3] and the raw verts UN-rebased: world = center + R·rawVerts;
+  // the Viewer has always rendered exactly that). So the (cx,cy,cz) subtracted here is REAL placement
+  // information — returned as `anchorOffset` so the fold (bonsai_library.js foldInsert §ARC-ANCHOR) can
+  // put it back, rotated with the element: worldVert = center + R·anchorOffset + R·recentredVert.
+  // Dropping it (the pre-fix behaviour: seat the AABB centre ON center_xyz) displaced every element whose
+  // blob has a non-zero local origin — measured Duplex: 253/265 elements >0.5 m off, max 18.03 m.
   function recenter(positions) {
     var bb = bboxOf(positions);
     var cx = (bb[0] + bb[1]) / 2, cy = (bb[2] + bb[3]) / 2, cz = (bb[4] + bb[5]) / 2;
@@ -44,7 +50,8 @@
     for (var i = 0; i < positions.length; i += 3) {
       out[i] = positions[i] - cx; out[i + 1] = positions[i + 1] - cy; out[i + 2] = positions[i + 2] - cz;
     }
-    return { positions: out, bbox: [bb[0] - cx, bb[1] - cx, bb[2] - cy, bb[3] - cy, bb[4] - cz, bb[5] - cz] };
+    return { positions: out, bbox: [bb[0] - cx, bb[1] - cx, bb[2] - cy, bb[3] - cy, bb[4] - cz, bb[5] - cz],
+             anchorOffset: [cx, cy, cz] };
   }
 
   function _hasTable(db, name) {
@@ -111,7 +118,7 @@
           var raw = toFloat32(vBlob), faces = toUint32(fBlob);
           if (raw.length < 9 || faces.length < 3) return;          // degenerate (<3 verts / <1 tri) → unresolved
           var rc = recenter(raw);
-          out.resolved[hash] = { positions: rc.positions, faces: faces, bbox: rc.bbox };
+          out.resolved[hash] = { positions: rc.positions, faces: faces, bbox: rc.bbox, anchorOffset: rc.anchorOffset };
         } catch (e) { /* leave unresolved — caller's hardfail path logs+skips */ }
       });
     }

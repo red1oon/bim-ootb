@@ -34,16 +34,20 @@
  *              (b) AABB-CENTRE semantics (modeller ARC seed: re-centre blob, seat AABB centre ON center)
  *                  →  displacement vs that ground truth: mean 2.74 m, max 18.03 m (run-2, 253 elements).
  *            ⇒ center_xyz in *_extracted.db is the IFC LOCAL-PLACEMENT ANCHOR, NOT the volumetric centre.
- *            arc_editable.js's recenter()+seat-on-center therefore MISPLACES every element whose vertex
- *            blob has a non-zero local origin — visually confirmed: viewer assembles a closed duplex from
- *            the modeller file, the modeller's own render splays (screenshots, session 2026-07-02).
+ *            recenter()+seat-on-center therefore MISPLACED every element whose vertex blob has a non-zero
+ *            local origin (visually confirmed 2026-07-02: viewer assembled a closed duplex from the modeller
+ *            file while the modeller's own render splayed). FIXED render-side: real_geometry.js recenter()
+ *            now returns the subtracted centre as anchorOffset and bonsai_library.js foldInsert §ARC-ANCHOR
+ *            adds back R·anchorOffset at fold time — signed op params byte-identical, replay-stable.
  *
- * CLAIMS: M1 join complete · M2 seat-on-center consistency (modeller's OWN convention, maxDC ≤ pinned)
- *         M3 LOD400 (boxFallback=0, triExact=n/n) · T1 anchor semantics ≡ native extraction
- *         T2 modeller placement ≡ ground truth (EXPECTED RED until the ARC-seed recentring bug is fixed)
- *         V1 join + anchor-corrected spatial on the same file · X1 cross-app spatial (EXPECTED RED, same
- *         root cause as T2 — the two apps genuinely disagree where elements sit; the modeller is the one
- *         diverging from ground truth) · V2 viewer LOD400 + anchor-corrected spatial native · NO-ERROR.
+ * CLAIMS: M1 join complete · M2 seat-on-anchor (rendered centre ≡ center + R·blobCentre — the modeller's
+ *         convention SINCE the §ARC-ANCHOR fix; pre-fix it seated the AABB centre ON center_xyz, displacing
+ *         253/265 elements) · M3 LOD400 (boxFallback=0, triExact=n/n) · T1 anchor semantics ≡ native
+ *         extraction · T2 modeller placement ≡ ground truth (was the deliberate RED that exposed the bug;
+ *         GREEN since the fold-side anchorOffset fix, bonsai_library.js §ARC-ANCHOR — do NOT let it regress)
+ *         V1 join + anchor-corrected spatial on the same file · X1 cross-app spatial (was the second
+ *         deliberate RED, same root cause as T2; GREEN since the same fix — the two apps now agree where
+ *         every element sits) · V2 viewer LOD400 + anchor-corrected spatial native · NO-ERROR.
  * DISCIPLINE: save output to /tmp/wt-mv-parity/mv_parity_run<N>.log and READ THE LOG before conclusions —
  * exit code is not evidence.
  */
@@ -58,8 +62,9 @@ const ROOT = path.join(__dirname, '..', '..');
 // M seat-on-center measured maxDC=6.79e-7 m (float32 blob noise)                  → pin 1e-3 m
 // T1 anchor-vs-native measured max residual=1.44e-5 m (215/215)                   → pin 1e-3 m
 // V anchor-corrected maxDC=9.04e-7 m · V2 anchor-corrected maxDC=4.74e-7 m        → pin 1e-3 m
-// T2/X pinned to the SAME 1e-3 spatial standard — they FAIL RED at meanDisp=2.74 m / maxDisp=18.03 m,
-// which is the finding this witness exists to expose (do NOT loosen to hide it).
+// T2/X pinned to the SAME 1e-3 spatial standard — pre-fix they FAILED RED at meanDisp=2.74 m /
+// maxDisp=18.03 m (the finding this witness exposed); the §ARC-ANCHOR fold fix flips them green at the
+// UNCHANGED tolerance (do NOT loosen it, ever — a loosened pin is how the bug hid for weeks).
 const TOL_M = 1e-3, TOL_V = 1e-3, TOL_X = 1e-3, TOL_T = 1e-3;
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream' };
@@ -216,6 +221,10 @@ async function openViewer(br, dbUrl, tag) {
   await new Promise(r => server.listen(0, r));
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 
+  // anchor ground truth for the modeller file (pure node) — hoisted above Leg M since the §ARC-ANCHOR fix:
+  // M2 now asserts the rendered scene against THIS (center + R·blobCentre), the proven semantics, not raw center_xyz.
+  const mTruth = anchorTruth(path.join(ROOT, 'modeller', 'Duplex_extracted.db'), 'base_geometries');
+
   // ════ Leg M — Modeller vs its own DB truth (real user open path) ════
   console.log('═══ W-MV-PARITY Leg M — Modeller opens Duplex (real click path) → live AABB/tris vs element_transforms/base_geometries ═══');
   let legM;
@@ -270,11 +279,16 @@ async function openViewer(br, dbUrl, tag) {
     });
     legM.errs = errs;
     const s = dcStats(legM.rows);
-    console.log(`§MV-PARITY-M building=Duplex rendered=${legM.rendered} joined=${legM.joined} maxDC=${fmt(s.max)} meanDC=${fmt(s.mean)} triExact=${legM.triExact}/${legM.joined} boxFallback=${legM.boxFallback} unresolved=${legM.rendered - legM.joined} geoTable=${legM.geoTable} kernelOpsGuids=${legM.kernelOps} dbElems=${legM.dbElems} seeded=${seeded}`);
-    s.top5.forEach(o => console.log(`§MV-PARITY-M-OFFENDER guid=${o.guid} dc=${fmt(o.dc)} class=${o.cls} tris=${o.tris} dbTris=${o.dbTris}`));
+    // anchor-corrected spatial (the post-fix convention): rendered centre vs center + R·blobCentre. dc vs RAW
+    // center_xyz is still logged — under anchor semantics it measures each blob's local-origin offset (max ≈18 m
+    // on this file), NOT a rendering error; it stays as the audit trail of what the old convention would claim.
+    const aM = []; for (const g in legM.per) { if (mTruth[g]) aM.push({ guid: g, dc: dist3(legM.per[g], mTruth[g]), cls: (legM.rows.find(r => r.guid === g) || {}).cls || '?' }); }
+    const sM = dcStats(aM);
+    console.log(`§MV-PARITY-M building=Duplex rendered=${legM.rendered} joined=${legM.joined} maxDC=${fmt(s.max)} meanDC=${fmt(s.mean)} maxDCanchor=${fmt(sM.max)} meanDCanchor=${fmt(sM.mean)} triExact=${legM.triExact}/${legM.joined} boxFallback=${legM.boxFallback} unresolved=${legM.rendered - legM.joined} geoTable=${legM.geoTable} kernelOpsGuids=${legM.kernelOps} dbElems=${legM.dbElems} seeded=${seeded}`);
+    sM.top5.forEach(o => console.log(`§MV-PARITY-M-OFFENDER guid=${o.guid} dcAnchor=${fmt(o.dc)} class=${o.cls}`));
 
     chk('M1 JOIN-COMPLETE (every rendered ARC element resolves featureId→guid→transforms)', legM.joined === legM.rendered && legM.rendered > 250, `joined=${legM.joined}/${legM.rendered}`);
-    chk(`M2 SEAT-ON-CENTER (modeller's OWN convention: AABB centre lands on center_xyz, maxDC ≤ ${TOL_M} m)`, s.max <= TOL_M, `maxDC=${fmt(s.max)} meanDC=${fmt(s.mean)}`);
+    chk(`M2 SEAT-ON-ANCHOR (rendered AABB centre ≡ center + R·blobCentre, maxDC ≤ ${TOL_M} m on >200 joined — the proven semantics, §ARC-ANCHOR)`, aM.length > 200 && sM.max <= TOL_M, `maxDCanchor=${fmt(sM.max)} meanDCanchor=${fmt(sM.mean)} joined=${aM.length}`);
     chk('M3 LOD400 (boxFallback=0, triExact=n/n)', legM.boxFallback === 0 && legM.triExact === legM.joined, `triExact=${legM.triExact}/${legM.joined} boxFallback=${legM.boxFallback}`);
     chk('M-NO-ERROR', errs.length === 0, errs.slice(0, 2).join(' | '));
     await pg.close();
@@ -282,9 +296,8 @@ async function openViewer(br, dbUrl, tag) {
 
   // ════ Leg T — semantics ground truth (pure node): what does center_xyz MEAN in *_extracted.db? ════
   console.log('═══ W-MV-PARITY Leg T — anchor vs AABB-centre semantics, disambiguated against the native deployed extraction (215 shared guids) ═══');
-  let mTruth, nTruth;
+  let nTruth;
   {
-    mTruth = anchorTruth(path.join(ROOT, 'modeller', 'Duplex_extracted.db'), 'base_geometries');
     nTruth = anchorTruth(path.join(ROOT, 'viewer', 'buildings', 'Duplex_extracted.db'), 'component_geometries');
     // T1 — ANCHOR semantics: modeller-file anchor-placed centres vs native extraction, per shared guid,
     // after removing any constant frame offset (a rigid-translation fit, NOT a naive cross-file compare).
@@ -302,7 +315,7 @@ async function openViewer(br, dbUrl, tag) {
     const s2 = dcStats(rows);
     console.log(`§MV-PARITY-M-TRUTH joined=${rows.length} maxDisp=${fmt(s2.max)} meanDisp=${fmt(s2.mean)} — modeller ARC-seed recentring vs anchor ground truth`);
     s2.top5.forEach(o => console.log(`§MV-PARITY-M-TRUTH-OFFENDER guid=${o.guid} disp=${fmt(o.dc)} class=${o.cls}`));
-    chk(`T2 MODELLER ≡ GROUND TRUTH (maxDisp ≤ ${TOL_T} m) — EXPECTED RED: arc_editable recenter()+seat-on-center misplaces blob-offset elements`, s2.max <= TOL_T, `maxDisp=${fmt(s2.max)} meanDisp=${fmt(s2.mean)}`);
+    chk(`T2 MODELLER ≡ GROUND TRUTH (maxDisp ≤ ${TOL_T} m) — was the deliberate RED (maxDisp 18.03 m); green = the §ARC-ANCHOR fold fix holds`, s2.max <= TOL_T, `maxDisp=${fmt(s2.max)} meanDisp=${fmt(s2.mean)}`);
   }
 
   // ════ Leg V — Viewer on the SAME modeller file ════
@@ -355,7 +368,7 @@ async function openViewer(br, dbUrl, tag) {
     const denom = Math.min(Object.keys(legM.per).length, Object.keys(legV.per).length);
     console.log(`§MV-PARITY-X joined=${xr.length}/${denom} maxDC=${fmt(s.max)} meanDC=${fmt(s.mean)}`);
     s.top5.forEach(o => console.log(`§MV-PARITY-X-OFFENDER guid=${o.guid} dc=${fmt(o.dc)} class=${o.cls}`));
-    chk('X1 CROSS-APP SPATIAL (joined>0, maxDC ≤ ' + TOL_X + ' m) — EXPECTED RED: same root cause as T2 (modeller diverges from ground truth; viewer matches it)', xr.length > 0 && s.max <= TOL_X, `joined=${xr.length}/${denom} maxDC=${fmt(s.max)}`);
+    chk('X1 CROSS-APP SPATIAL (joined>0, maxDC ≤ ' + TOL_X + ' m) — was the second deliberate RED (18.03 m), same root cause as T2; green = both apps agree per-element', xr.length > 0 && s.max <= TOL_X, `joined=${xr.length}/${denom} maxDC=${fmt(s.max)}`);
   }
 
   // ════ Leg V2 — Viewer LOD400 on its NATIVE file ════
