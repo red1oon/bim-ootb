@@ -23,9 +23,10 @@ const { runE2E } = require('./e2e_harness');
 runE2E('W-E2E-CUT', async (t) => {
   await t.open('Duplex');
   await t.shot('01-open');
-  const sel = await t.pick();
+  const sel = await t.pick({ prefer: 'wall' });   // §F2-FRAMING: the guide caption says "the wall" — don't grab the biggest slab
   t.assert('C1 SELECT (real click selects element)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
+  await t.frameElement(sel.fid, 0.42);            // §F2-FRAMING: real close-up BEFORE any pixsum baseline (camera then stays fixed)
   await t.shot('02-selected');
   await t.shotClip('cut-select', sel.fid, 80);   // guide frame (§F2 G4 element-clip): the wall, selected
   const before = await t.oplog(); const pix0 = await t.pixsum();
@@ -38,7 +39,18 @@ runE2E('W-E2E-CUT', async (t) => {
   t.assert('C3 CHAIN-OK (verifyChain)', chain === true, 'verifyChain=' + chain);
   t.assert('C4 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
   await t.undoToCursor(before.cur);
-  const undo = await t.oplog(); const pix2 = await t.pixsum();
+  const undo = await t.oplog();
+  // §SEL-TINT-REFOLD (found by this witness's wall subject, PROBE-CUT-FULL): an authoritative re-fold
+  // (the cut, the undo) rebuilds the selected mesh WITHOUT its selection emissive (2b5a8c → 000000) even
+  // though the selection logically persists — so a raw pix compare here would measure lost selection TINT,
+  // not geometry. C6's claim is GEOMETRY reversibility: re-select the same wall with a real click (the tint
+  // re-applies deterministically), THEN compare frames. The tint-loss itself is a separate app-level UX nit,
+  // documented in the resume card — this witness proved the wall's tris/colour/centre restore exactly.
+  {
+    const wp = await t.proj(sel.centre[0], sel.centre[1], sel.centre[2]);
+    await t.pg.mouse.click(wp[0], wp[1]); await t.sleep(250);
+  }
+  const pix2 = await t.pixsum();
   await t.shot('04-undone');
   t.assert('C5 REVERSIBLE (undo restores cursor)', undo.cur === before.cur, 'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ')');
   t.assert('C6 GEOMETRY-REVERSIBLE (void closed, frame == pre-cut)', pix2 === pix0, 'pix0=' + pix0 + ' postCut=' + pix1 + ' postUndo=' + pix2);

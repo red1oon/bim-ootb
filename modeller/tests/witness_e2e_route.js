@@ -17,14 +17,17 @@ const { runE2E } = require('./e2e_harness');
 runE2E('W-E2E-ROUTE', async (t) => {
   await t.open('Duplex'); await t.shot('01-open');
 
+  // §F2-FRAMING: derive PLAN-CLEAR, camera-visible, unoccluded ground from the live scene while the wide
+  // fit view is up (the old hardcoded (2,0) spot is under the Duplex roof — clear at ground level, but
+  // roof-covered in plan, so every capture there was occluded).
+  const [x0, y0] = await t.clearGround(3);
+  const path = [[x0, y0], [x0 + 2, y0], [x0 + 2, y0 + 2]];      // L-shaped spine, 3 points
+
   await t.clickSel('#b-route'); await t.sleep(300);
   const armed = await t.pg.evaluate(() => document.getElementById('b-run').style.display !== 'none');
   t.assert('U1 ROUTE-MODE (Route pill arms + Sweep-Run revealed)', armed, 'runShown=' + armed);
-
-  // enterRoute() hard-resets the camera to the same fixed top-down plan view as Sketch (looking at world
-  // (2, 1.5)) — (2,0)-(4.4,2.4) is verified-clear open ground near that look-at point (§F2 sketch witness probe).
-  const x0 = 2, y0 = 0;
-  const path = [[x0, y0], [x0 + 2, y0], [x0 + 2, y0 + 2]];      // L-shaped spine, 3 points
+  // Route mode enters at a fixed plan view over (2,1.5) — pan it over the derived clear spot (real user pan)
+  await t.overheadTo(x0 + 1, y0 + 1, 12);
   const screenPts = [];
   for (const [wx, wy] of path) { const p = await t.proj(wx, wy, 0); screenPts.push(p); await t.pg.mouse.move(p[0], p[1]); await t.sleep(40); await t.pg.mouse.down(); await t.sleep(40); await t.pg.mouse.up(); await t.sleep(120); }
   const nPts = await t.pg.evaluate(() => window.routePts ? window.routePts.length : null);
@@ -32,7 +35,8 @@ runE2E('W-E2E-ROUTE', async (t) => {
   const runEnabled = await t.pg.evaluate(() => !document.getElementById('b-run').disabled);
   t.assert('U2 POINTS (≥2 route points placed → Run enabled)', runEnabled, 'runEnabled=' + runEnabled + ' nPts=' + nPts);
   await t.shot('02-routed');
-  await t.shotPts('route-spine', screenPts);   // guide frame (§F2 G4): clipped around the laid spine (route mode zooms the camera in)
+  // guide frame (§F2 G4): the laid spine on open grid, plan view — camera already panned over the clear spot
+  await t.shotPts('route-spine', screenPts, 150);
 
   const before = await t.oplog(); const pix0 = await t.pixsum();
   await t.pg.evaluate(() => { document.getElementById('dim-prof').value = '0.4'; });
@@ -40,20 +44,12 @@ runE2E('W-E2E-ROUTE', async (t) => {
   const after = await t.oplog(); const last = await t.lastOp(); const chain = await t.verifyChain(); const pix1 = await t.pixsum();
   await t.shot('03-swept');
 
-  // guide frame (§F2 G4): exitRoute already restored the wide camera — select the new run + click the real
-  // Fit pill (frames the selection), same trick as the Sketch witness's sketch-wall frame.
+  // guide frame (§F2 G4): §F2-FRAMING frameElement on the new run directly — NO click-to-select first (the
+  // old click at the run's projected centre hit whatever furniture was in front, e.g. feature #152, and the
+  // old click-Fit-then-dolly-3x landed on a confusing interior angle — the shipped route-run.png was
+  // unreadable). The run sits on derived plan-clear ground, so the iso close-up is unoccluded.
   {
-    const runCentre = await t.centre(last && last.id);
-    if (runCentre) { const wp = await t.proj(runCentre[0], runCentre[1], runCentre[2]); await t.pg.mouse.click(wp[0], wp[1]); await t.sleep(200); }
-    await t.clickSel('#b-fit'); await t.sleep(500);
-    // the run's 0.4m profile is thin — Fit alone zooms in too tight to read as a duct; dolly back a little
-    // for surrounding context (equivalent to a real user's scroll-to-zoom-out after an over-tight auto-fit).
-    await t.pg.evaluate(() => {
-      const dir = new window.THREE.Vector3().subVectors(window.A.camera.position, window.A.controls.target);
-      window.A.camera.position.copy(window.A.controls.target).add(dir.multiplyScalar(3));
-      window.A.controls.update();
-    });
-    await t.sleep(150);
+    await t.frameElement(last && last.id, 0.25);
     await t.shot('route-run');
   }
 
