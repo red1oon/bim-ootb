@@ -191,9 +191,36 @@ function toResourceAssignmentRow(assignOp, seedId) {
     assigndatefrom: p.from, assigndateto: p.to, qty: 1, isconfirmed: 'Y', _party: p.party };
 }
 
+// COMPILE (not model) — a REAL `s_resource` header row for a room (§P11, RESUME_HR_BIM_ASSET.md, deep-link
+// "hover a Resource" ask). Columns verified against build/erp/ad_full.db `PRAGMA table_info(s_resource)`:
+// value/name/s_resourcetype_id/isavailable are real. `s_resourcetype_id` needs a REAL S_ResourceType row —
+// this repo's ad_full.db only carries Consultant(100)/Plants(50000)/Work Center(50001), none of which fit
+// "Room" — so ONE new dictionary row is compiled on demand, the SAME "extend the dictionary with the missing
+// master row" precedent already used by ad_tenancy.js's toWarehouseRow and iot.js's toUomRow, never forced
+// onto an ill-fitting existing type.
+function toResourceTypeRow(seedId) {
+  return { s_resourcetype_id: seedId ? seedId() : 1, name: 'Room' };
+}
+function toResourceRow(room, s_resourcetype_id, seedId) {
+  if (!room || !room.guid) return null;
+  return { s_resource_id: seedId ? seedId() : 1, value: room.guid, name: room.name || room.guid,
+    s_resourcetype_id: s_resourcetype_id, isavailable: 'Y' };
+}
+// compile the WHOLE building's rooms into S_Resource headers in one pass — {resourceType, resources:[{row,guid}],
+// _watermark}. ONE resource type shared by every room (real rooms only — never fabricates a resource for a
+// guid that isn't in `rooms`).
+function compileResources(rooms) {
+  rooms = rooms || [];
+  var seq = 0; function seedId() { return ++seq; }
+  var resourceType = toResourceTypeRow(function () { return 1; });
+  var resources = rooms.map(function (r) { return { row: toResourceRow(r, resourceType.s_resourcetype_id, seedId), guid: r.guid }; });
+  return W.stamp({ resourceType: resourceType, resources: resources }, 'en');
+}
+
 var O = { assign: assign, release: release, unavailable: unavailable, availability: availability,
   occupancyAt: occupancyAt, resources: resources, lensRows: lensRows, pivot: pivot, linkRequest: linkRequest,
-  summary: summary, fingerprint: fingerprint, demoSeed: demoSeed, toResourceAssignmentRow: toResourceAssignmentRow };
+  summary: summary, fingerprint: fingerprint, demoSeed: demoSeed, toResourceAssignmentRow: toResourceAssignmentRow,
+  toResourceTypeRow: toResourceTypeRow, toResourceRow: toResourceRow, compileResources: compileResources };
 if (typeof module === 'object' && module.exports) module.exports = O;
 else (typeof self !== 'undefined' ? self : this).HbaOccupancy = O;
 })();

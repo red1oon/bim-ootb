@@ -268,6 +268,12 @@
         A._hbaTenancySpec = h.ADT.compileBuilding(A.buildingName || 'This Building', rooms, h.M.records('Tenancy'), h.M.records('Strata'));
         console.log('§HBA_TEN compiled tenancy spec — units=' + A._hbaTenancySpec.units + ' subscriptions=' + A._hbaTenancySpec.subscriptions.length + ' skipped=' + A._hbaTenancySpec.skipped.length);
       }
+      // §P11 — compile each REAL room into a native S_Resource header row (Dashboard's "hover a Resource"
+      // deep-link needs a real numeric s_resource_id per room; see occupancy.js compileResources header).
+      if (!A._hbaResourceSpec && h.OC && h.OC.compileResources && rooms.length) {
+        A._hbaResourceSpec = h.OC.compileResources(rooms);
+        console.log('§HBA_RES compiled ' + A._hbaResourceSpec.resources.length + ' S_Resource rows from ' + rooms.length + ' rooms');
+      }
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 
@@ -444,6 +450,24 @@
     return { flew: true, guid: want[0], center: center };
   }
 
+  // §P11 (RESUME_HR_BIM_ASSET.md §P11, user 2026-07-02) — cross-app deep-link from an HBA pane into the real
+  // iDempiere ERP UI, reusing the SAME URL shape navigate_find.js's `_surfaceExistingOrder` already proved
+  // (`../erp/idempiere.html?client=garden&window=<AD_Window_ID>&record=<pk>`), NOT a new mechanism. Every id
+  // below was LOOKED UP from this repo's own `build/erp/ad_full.db` (`SELECT AD_Window_ID,Name FROM AD_Window`),
+  // never guessed — RESOURCE=236 "Resource" (table S_Resource), PAYROLL_MOVEMENT=53042 "Payroll Movement"
+  // (table HR_Movement), SUBSCRIPTION=316 "Subscription" (table C_Subscription), ORDER=143 "Sales Order"
+  // (table C_Order, issotrx='Y' matches iot.js's compiled order header). ONE shared source so every pane wires
+  // the same numbers instead of re-typing them.
+  // PAYROLL_CONCEPT=53036 "Payroll Concept Catalog" (table HR_Concept) — Leave has NO native AD table of its
+  // own anywhere (verified §CRITICAL P8 finding, re-checked here) so a per-entry link would be invented; what
+  // IS real is the "Leave without pay" pay-element identity (hr_concept_id) an unpaid entry feeds INTO — the
+  // Leave pane links there, never to a fabricated leave-record window.
+  var AD_WINDOWS = { RESOURCE: 236, PAYROLL_MOVEMENT: 53042, SUBSCRIPTION: 316, ORDER: 143, PAYROLL_CONCEPT: 53036 };
+  function erpLink(windowId, record) {
+    if (windowId == null || record == null) return null;
+    return '../erp/idempiere.html?client=garden&window=' + windowId + '&record=' + encodeURIComponent(record);
+  }
+
   // §P10a — Presence roster (user 2026-07-02): a second small drawer beside the FM drawer, listing every
   // attendance session for the current period. Person resolved via MODELS.Official by attendance's own
   // `employee` id — an honest miss shows the bare code, never a fabricated name (attendance's auto-generated
@@ -608,7 +632,8 @@
   G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, tintedCount: tintedCount,
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
-    flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer };
+    flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
+    erpLink: erpLink, AD_WINDOWS: AD_WINDOWS };
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------

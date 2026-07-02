@@ -44,9 +44,20 @@
       var tr = el('tr', 'border-top:1px solid #eee;');
       tr.appendChild(el('td', 'padding:4px 2px;', l.name));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:' + (l.accountsign === '+' ? '#2e7d32' : '#c62828') + ';', (l.accountsign === '+' ? '+' : '-') + l.amount));
+      // §P11 — deep-link this movement line into its real hr_movement AD record (Payroll Movement window).
+      var linkTd = el('td', 'padding:4px 2px;text-align:right;');
+      if (l.hr_movement_id != null && G.HBALens && G.HBALens.erpLink) {
+        var a = document.createElement('a');
+        a.href = G.HBALens.erpLink(G.HBALens.AD_WINDOWS.PAYROLL_MOVEMENT, l.hr_movement_id);
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'open ↗';
+        a.title = 'Open this movement in iDempiere Payroll Movement';
+        a.style.cssText = 'color:#1976d2;text-decoration:none;font-size:11px;';
+        linkTd.appendChild(a);
+      }
+      tr.appendChild(linkTd);
       tbl.appendChild(tr);
       var trace = el('tr', '');
-      var td2 = el('td', 'padding:0 2px 6px;color:#627d98;font-size:10px;', l.trace); td2.colSpan = 2;
+      var td2 = el('td', 'padding:0 2px 6px;color:#627d98;font-size:10px;', l.trace); td2.colSpan = 3;
       trace.appendChild(td2); tbl.appendChild(trace);
     });
     body.appendChild(tbl);
