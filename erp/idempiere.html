@@ -556,7 +556,12 @@
      ring/pay/complete earcons pos_lens.js fires via window.__sfx.play, no per-button tick spam). Guarded:
      pos_lens._sfx no-ops if absent. -->
 <script src="../viewer/sfx.js?v=1" onerror="console.warn('§POS-AUDIO sfx.js absent — POS earcons silent (guarded)')"></script>
-<script src="pos_lens.js?v=9"></script>
+<script src="pos_lens.js?v=10"></script>
+<!-- Kitchen Display (RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS §T2-SPEC) — queue = FOLD over the op log
+     (KitchenCore, == bim-compiler build/erp source of truth, W-KDS-QUEUE headless) + the dumb-terminal
+     lens (KitchenLens). Serve rides pos_core's completeShipmentOps — load AFTER pos_core. -->
+<script src="kitchen_core.js?v=1"></script>
+<script src="kitchen_lens.js?v=1"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
@@ -4236,6 +4241,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // so the warehouse-walk page can fold a deliver-later sale; same store the Kanban write path persists.
       persist: function () { return window.KanbanHost.persist(window.ERP.opDb, _KPROJ); } });
   }
+  // 🍳 Kitchen Display (§T2-SPEC) — the "ordered, not yet delivered" queue: KitchenCore folds the SAME
+  // published op log the POS writes (deliver-later shipments born DR) ∪ the §S-2 seed selector; Serve =
+  // ONE signed group riding completeShipmentOps. Same write-path bootstrap as openPosFor.
+  async function openKitchenFor() {
+    console.log('§KDS-PILL action=open');
+    if (!_session) { status('Log in first'); return; }
+    if (!window.KitchenLens || !window.KitchenCore || !window.POSCore) { status('Kitchen lens not loaded.'); return; }
+    var ok = await _ensureKanbanERP();
+    if (!ok || !window.ERP) { status('Kitchen: write path unavailable (window.ERP not published)'); console.log('§KDS-PILL write-path=absent'); return; }
+    KitchenLens.open({ b3: _b3(window.__idmpDb), opDb: window.ERP.opDb, KO: window.KernelOps,
+      seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status });
+  }
   // ⚖ Rule — THE ONE GESTURE: edit one rule → K records re-fold live, signed + reversible (RuleFold).
   function openRuleFor() {
     console.log('§RULE-PILL action=open');
@@ -4321,7 +4338,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.IdmpPillActions = {
       dashboard: openDashboard,   // unified multi-view (Graph/Cards/Pivot/List/Timeline) — replaces the 3 separate lens pills
       graph: openGraphFor, kanban: openKanbanFor, pivot: openPivotFor,   // kept: openDashboard fans into them
-      rule: openRuleFor, pos: openPosFor,
+      rule: openRuleFor, pos: openPosFor, kitchen: openKitchenFor,
       share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
       erpdoc: openReadCompare,
       // RED PILL — abstract ZOOM ACROSS (zoom_across.js): collect the cross-surface destinations available for

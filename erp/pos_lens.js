@@ -36,18 +36,18 @@
       '#pos-grid  { display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;flex:1;align-content:start;width:100%; }',
 
       /* U-1: album card style */
-      '.pos-card { display:flex;flex-direction:column;border:1px solid #2a6;border-radius:10px;',
-      '            background:#0b1f17;color:#cfe;cursor:pointer;overflow:hidden;',
+      '.pos-card { display:flex;flex-direction:column;border:1px solid #33334a;border-radius:10px;',
+      '            background:#16161d;color:#e8e8ed;cursor:pointer;overflow:hidden;',
       '            transition:background .15s,transform .1s;user-select:none; }',
-      '.pos-card:hover { background:#133a22; }',
+      '.pos-card:hover { background:rgba(108,159,255,0.16); }',
       '.pos-card:active { transform:scale(0.96); }',
-      '.pos-card-img { width:100%;height:100px;object-fit:cover;background:#071409;',
-      '               display:flex;align-items:center;justify-content:center;color:#3a7;flex-shrink:0; }',
+      '.pos-card-img { width:100%;height:100px;object-fit:cover;background:#121218;',
+      '               display:flex;align-items:center;justify-content:center;color:#55556a;flex-shrink:0; }',
       '.pos-card-img img { width:100%;height:100px;object-fit:cover;display:block; }',
       '.pos-card-img svg { opacity:.45; }',
       '.pos-card-name { font-size:11px;padding:5px 6px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }',
-      '.pos-card-price { font-size:15px;font-weight:bold;color:#8fd;padding:0 6px 7px;letter-spacing:.3px; }',
-      '.pos-card.flash { background:#1d4a2e !important;transform:scale(0.94); }',
+      '.pos-card-price { font-size:15px;font-weight:bold;color:#cdd6e4;padding:0 6px 7px;letter-spacing:.3px; }',
+      '.pos-card.flash { background:rgba(95,208,138,0.24) !important;transform:scale(0.94); }',
 
       /* §P-6 mobile layout — scoped @media ≤640px (desktop two-col row UNCHANGED — falsifier) */
       '@media (max-width:640px) {',
@@ -61,71 +61,78 @@
       /* §P-7 pill icon bar */
       '#pos-pill-bar  { display:flex;gap:6px;margin-bottom:8px;align-items:center; }',
       '.pos-pill-btn  { display:flex;align-items:center;gap:4px;padding:5px 10px;',
-      '                 border:1px solid #2a6;border-radius:20px;background:#0b1f17;',
-      '                 color:#cfe;cursor:pointer;font-size:12px;transition:background .15s; }',
-      '.pos-pill-btn:hover { background:#133a22; }',
-      '.pos-pill-btn.active { background:#1d4a2e;border-color:#4dcc88; }',
+      '                 border:1px solid #33334a;border-radius:20px;background:#16161d;',
+      '                 color:#e8e8ed;cursor:pointer;font-size:12px;transition:background .15s; }',
+      '.pos-pill-btn:hover { background:rgba(108,159,255,0.16); }',
+      '.pos-pill-btn.active { background:rgba(95,208,138,0.24);border-color:#5fd08a; }',
       '.pos-pill-btn svg { flex-shrink:0; }',
 
       /* §P-8 scan overlay */
       '#pos-scan-overlay { display:none;position:fixed;inset:0;background:#000d;z-index:9500;',
       '                    flex-direction:column;align-items:center;justify-content:flex-start;padding-top:8vh; }',
       '#pos-scan-overlay.active { display:flex; }',
-      '#pos-scan-video  { width:min(340px,92vw);border:2px solid #2a6;border-radius:8px;background:#000; }',
-      '#pos-scan-input  { margin-top:12px;padding:8px 14px;border-radius:6px;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;font-size:16px;width:min(340px,92vw);text-align:center; }',
-      '#pos-scan-hint   { color:#8fd;font-size:13px;margin-top:6px; }',
-      '#pos-scan-total  { color:#4dcc88;font-size:26px;font-weight:bold;margin-top:10px;transition:opacity .25s; }',
+      '#pos-scan-video  { width:min(340px,92vw);border:2px solid #33334a;border-radius:8px;background:#000; }',
+      '#pos-scan-input  { margin-top:12px;padding:8px 14px;border-radius:6px;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;font-size:16px;width:min(340px,92vw);text-align:center; }',
+      '#pos-scan-hint   { color:#cdd6e4;font-size:13px;margin-top:6px; }',
+      '#pos-scan-total  { color:#5fd08a;font-size:26px;font-weight:bold;margin-top:10px;transition:opacity .25s; }',
       '#pos-scan-total.flash { opacity:.1; }',
-      '#pos-scan-msg    { color:#fa8;font-size:13px;margin-top:4px;min-height:18px; }',
-      '#pos-scan-close  { margin-top:16px;padding:8px 24px;border-radius:6px;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;font-size:14px; }',
+      '#pos-scan-msg    { color:#ff6b6b;font-size:13px;margin-top:4px;min-height:18px; }',
+      '#pos-scan-close  { margin-top:16px;padding:8px 24px;border-radius:6px;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;cursor:pointer;font-size:14px; }',
 
       /* §R2-1/§R2-2 top bar: [🛒 cart-toggle]  RUNNING TOTAL  …  [scan QR] */
       '#pos-top-bar     { display:flex;align-items:center;gap:8px;margin-bottom:8px;',
-      '                   padding:6px 12px;border:1px solid #2a6;border-radius:24px;background:#0b1f17; }',
-      '.pos-top-btn     { width:36px;height:36px;border-radius:50%;border:1px solid #2a6;background:#0d1f14;',
-      '                   color:#cfe;cursor:pointer;display:flex;align-items:center;justify-content:center;',
+      '                   padding:6px 12px;border:1px solid #33334a;border-radius:24px;background:#16161d; }',
+      '.pos-top-btn     { width:36px;height:36px;border-radius:50%;border:1px solid #33334a;background:#1a1a24;',
+      '                   color:#e8e8ed;cursor:pointer;display:flex;align-items:center;justify-content:center;',
       '                   padding:0;flex-shrink:0;transition:background .15s; }',
-      '.pos-top-btn:hover { background:#1a5040; }',
-      '#pos-top-total   { flex:1;text-align:center;font-size:24px;font-weight:bold;color:#4dcc88;letter-spacing:.5px; }',
+      '.pos-top-btn:hover { background:rgba(95,208,138,0.24); }',
+      '#pos-top-total   { flex:1;text-align:center;font-size:24px;font-weight:bold;color:#5fd08a;letter-spacing:.5px; }',
 
       /* §R2-3/§R2-4 the pay panel — RIMS RETIRED, draggable via the grab header */
       '#pos-float-panel { position:fixed;bottom:70px;right:20px;z-index:9500;',
       '                   width:min(340px,calc(100vw - 20px));',
-      '                   background:#0d1f14;border:1px solid #2a6;border-radius:12px;',
+      '                   background:#1a1a24;border:1px solid #33334a;border-radius:12px;',
       '                   display:none;flex-direction:column;box-shadow:0 8px 32px #000a; }',
       '#pos-float-panel.open { display:flex; }',
       '.pos-drag-hdr    { display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:grab;',
-      '                   color:#8fd;font-size:13px;font-weight:bold;user-select:none;touch-action:none;',
-      '                   border-bottom:1px solid #1a3d24;border-radius:12px 12px 0 0;background:#0b1c14; }',
-      '.pos-drag-grip   { color:#456;font-size:14px;letter-spacing:-2px; }',
-      '.pos-section-hdr { padding:6px 12px 2px;color:#6a9;font-size:11px;font-weight:bold; }',
+      '                   color:#cdd6e4;font-size:13px;font-weight:bold;user-select:none;touch-action:none;',
+      '                   border-bottom:1px solid rgba(255,255,255,0.08);border-radius:12px 12px 0 0;background:#121218; }',
+      '.pos-drag-grip   { color:#55556a;font-size:14px;letter-spacing:-2px; }',
+      '.pos-section-hdr { padding:6px 12px 2px;color:#9aa4b8;font-size:11px;font-weight:bold; }',
       '.pos-items-body  { padding:0 12px 4px;overflow-y:auto;max-height:24vh; }',
       '#pos-float-cart  { margin-bottom:2px; }',
       '.pos-float-cart-line { display:flex;justify-content:space-between;',
-      '                       color:#cfe;font-size:12px;padding:3px 0;border-bottom:1px solid #112; }',
+      '                       color:#e8e8ed;font-size:12px;padding:3px 0;border-bottom:1px solid #22222e; }',
       '.pos-pay-row     { display:flex;justify-content:flex-end;padding:6px 12px; }',
-      '#pos-float-tender { width:52px;height:44px;border-radius:10px;border:1px solid #4dcc88;',
-      '                    background:#11331f;color:#4dcc88;cursor:pointer;',
+      '#pos-float-tender { width:52px;height:44px;border-radius:10px;border:1px solid #5fd08a;',
+      '                    background:rgba(95,208,138,0.12);color:#5fd08a;cursor:pointer;',
       '                    display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s; }',
-      '#pos-float-tender:hover { background:#1a5040; }',
-      '#pos-float-bp    { box-sizing:border-box;margin:2px 12px;width:calc(100% - 24px);padding:5px;background:#071409;',
-      '                   border:1px solid #2a6;border-radius:6px;color:#cfe;font-size:12px; }',
-      '#pos-float-receipt { margin:2px 12px 4px;font-size:11px;color:#9cb;min-height:14px; }',
-      '.pos-repl-body   { padding:0 12px 8px;overflow-y:auto;max-height:20vh; }',
+      '#pos-float-tender:hover { background:rgba(95,208,138,0.24); }',
+      '#pos-float-bp    { box-sizing:border-box;margin:2px 12px;width:calc(100% - 24px);padding:5px;background:#121218;',
+      '                   border:1px solid #33334a;border-radius:6px;color:#e8e8ed;font-size:12px; }',
+      '#pos-float-receipt { margin:2px 12px 4px;font-size:11px;color:#9aa4b8;min-height:14px; }',
+      '.pos-repl-body   { padding:0 12px 8px;overflow-y:auto;max-height:22vh; }',
+      /* §T1.6 HMI — replenish rows are stylesheet classes now (were 11px inline cssText) */
+      '.pos-replenish-row { display:block;width:100%;text-align:left;margin:3px 0;padding:6px 8px;',
+      '                     border-radius:6px;border:1px solid #33334a;background:#16161d;',
+      '                     color:#e8e8ed;cursor:pointer;font-size:12px;line-height:1.35;transition:background .15s; }',
+      '.pos-replenish-row:hover { background:rgba(108,159,255,0.16); }',
+      '.pos-replenish-row.no-vendor { border-color:#555;background:#121218;color:#9aa4b8;cursor:default; }',
+      '.pos-replenish-row.no-vendor:hover { background:#121218; }',
       /* §D-3 ⋯ dock */
       '#pos-dock        { position:fixed;bottom:20px;right:20px;z-index:9550;',
       '                   display:flex;flex-direction:column;align-items:flex-end;gap:5px; }',
-      '#pos-dock-trigger{ width:36px;height:36px;border-radius:50%;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;font-size:18px;',
+      '#pos-dock-trigger{ width:36px;height:36px;border-radius:50%;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;cursor:pointer;font-size:18px;',
       '                   display:flex;align-items:center;justify-content:center; }',
       '#pos-dock-items  { display:none;flex-direction:column;align-items:flex-end;gap:5px; }',
       '#pos-dock-items.open { display:flex; }',
-      '.pos-dock-item   { width:36px;height:36px;border-radius:50%;border:1px solid #2a6;',
-      '                   background:#0b1f17;color:#cfe;cursor:pointer;',
+      '.pos-dock-item   { width:36px;height:36px;border-radius:50%;border:1px solid #33334a;',
+      '                   background:#16161d;color:#e8e8ed;cursor:pointer;',
       '                   display:flex;align-items:center;justify-content:center;padding:0; }',
-      '.pos-dock-item:hover { background:#133a22; }',
+      '.pos-dock-item:hover { background:rgba(108,159,255,0.16); }',
       /* §R2-3 the receipt-preview modal is retired (single Pay icon completes directly) */
 
       /* U-3: import overlay */
@@ -133,52 +140,52 @@
       '                      flex-direction:column;align-items:center;justify-content:flex-start;',
       '                      padding-top:6vh;overflow-y:auto; }',
       '#pos-import-overlay.active { display:flex; }',
-      '#pos-import-card { background:#0d1f14;border:1px solid #2a6;border-radius:12px;padding:20px 24px;',
+      '#pos-import-card { background:#1a1a24;border:1px solid #33334a;border-radius:12px;padding:20px 24px;',
       '                   max-width:min(400px,96vw);width:100%;box-sizing:border-box; }',
-      '#pos-import-title { color:#8fd;font-size:14px;font-weight:bold;margin-bottom:14px;',
-      '                    border-bottom:1px solid #2a6;padding-bottom:8px; }',
+      '#pos-import-title { color:#cdd6e4;font-size:14px;font-weight:bold;margin-bottom:14px;',
+      '                    border-bottom:1px solid #33334a;padding-bottom:8px; }',
       '#pos-import-steps { display:flex;gap:4px;margin-bottom:14px; }',
       '.pos-import-step  { flex:1;padding:4px 2px;text-align:center;font-size:11px;',
-      '                    border-radius:4px;color:#6a9;border:1px solid #1a3d24; }',
-      '.pos-import-step.active { color:#4dcc88;border-color:#2a6;background:#071409; }',
-      '.pos-import-step.done { color:#3a7;background:#071409; }',
+      '                    border-radius:4px;color:#9aa4b8;border:1px solid rgba(255,255,255,0.08); }',
+      '.pos-import-step.active { color:#5fd08a;border-color:#33334a;background:#121218; }',
+      '.pos-import-step.done { color:#55556a;background:#121218; }',
       '#pos-import-body  { min-height:80px; }',
-      '#pos-import-video { width:min(300px,86vw);border:2px solid #2a6;border-radius:8px;background:#000;display:block; }',
+      '#pos-import-video { width:min(300px,86vw);border:2px solid #33334a;border-radius:8px;background:#000;display:block; }',
       '#pos-import-canvas { display:none; }',
       '.pos-import-btn   { display:inline-flex;align-items:center;gap:6px;padding:9px 20px;',
-      '                    border-radius:8px;border:1px solid #2a6;background:#0b1f17;',
-      '                    color:#cfe;cursor:pointer;font-size:13px;margin-top:8px; }',
+      '                    border-radius:8px;border:1px solid #33334a;background:#16161d;',
+      '                    color:#e8e8ed;cursor:pointer;font-size:13px;margin-top:8px; }',
       '.pos-import-btn:disabled { opacity:.4;cursor:default; }',
       '.pos-import-input { width:100%;box-sizing:border-box;padding:8px 12px;margin-top:8px;',
-      '                    border-radius:6px;border:1px solid #2a6;',
-      '                    background:#071409;color:#cfe;font-size:15px; }',
-      '#pos-import-hint  { color:#8fd;font-size:12px;margin-top:8px; }',
+      '                    border-radius:6px;border:1px solid #33334a;',
+      '                    background:#121218;color:#e8e8ed;font-size:15px; }',
+      '#pos-import-hint  { color:#cdd6e4;font-size:12px;margin-top:8px; }',
       '#pos-import-thumb { max-width:120px;max-height:120px;border-radius:6px;',
       '                    display:none;margin-top:8px;object-fit:cover; }',
-      '#pos-import-err   { color:#fa8;font-size:12px;margin-top:6px;min-height:16px; }',
+      '#pos-import-err   { color:#ff6b6b;font-size:12px;margin-top:6px;min-height:16px; }',
       '#pos-import-close { margin-top:12px;display:block;width:100%;padding:9px;border-radius:8px;',
-      '                    border:1px solid #556;background:#0b1209;color:#9cb;cursor:pointer;font-size:13px; }',
+      '                    border:1px solid #556;background:#16161d;color:#9aa4b8;cursor:pointer;font-size:13px; }',
 
       /* §P-11 receipt overlay */
       '#pos-receipt-overlay { display:none;position:fixed;inset:0;background:#0009;z-index:9600;',
       '                       align-items:center;justify-content:center; }',
       '#pos-receipt-overlay.active { display:flex; }',
-      '#pos-receipt-card { background:#0d1f14;border:1px solid #2a6;border-radius:12px;padding:20px 24px;',
+      '#pos-receipt-card { background:#1a1a24;border:1px solid #33334a;border-radius:12px;padding:20px 24px;',
       '                    max-width:min(400px,96vw);width:100%;max-height:90vh;overflow-y:auto; }',
-      '.pos-rcpt-header  { color:#8fd;font-size:13px;margin-bottom:10px;border-bottom:1px solid #2a6;padding-bottom:6px; }',
-      '.pos-rcpt-line    { display:flex;justify-content:space-between;color:#cfe;font-size:13px;padding:4px 0;border-bottom:1px solid #132; }',
+      '.pos-rcpt-header  { color:#cdd6e4;font-size:13px;margin-bottom:10px;border-bottom:1px solid #33334a;padding-bottom:6px; }',
+      '.pos-rcpt-line    { display:flex;justify-content:space-between;color:#e8e8ed;font-size:13px;padding:4px 0;border-bottom:1px solid #22222e; }',
       '.pos-rcpt-line.last { transition:opacity .4s; }',
-      '#pos-rcpt-total   { font-size:30px;font-weight:bold;color:#4dcc88;text-align:center;margin:14px 0 6px; }',
+      '#pos-rcpt-total   { font-size:30px;font-weight:bold;color:#5fd08a;text-align:center;margin:14px 0 6px; }',
       '#pos-rcpt-qr      { text-align:center;margin:10px 0; }',
       '#pos-rcpt-qr canvas,#pos-rcpt-qr svg,#pos-rcpt-qr img { display:block;margin:0 auto; }',
       /* U-4: DEMO payment QR styles */
-      '#pos-pay-qr       { text-align:center;margin:14px 0 6px;padding-top:12px;border-top:1px solid #2a6; }',
+      '#pos-pay-qr       { text-align:center;margin:14px 0 6px;padding-top:12px;border-top:1px solid #33334a; }',
       '#pos-pay-qr-label { font-weight:bold;color:#fa0;font-size:13px;margin-bottom:6px; }',
       '#pos-pay-qr-wrap  { margin:6px 0; }',
       '#pos-pay-qr-wrap canvas,#pos-pay-qr-wrap svg,#pos-pay-qr-wrap img { display:block;margin:0 auto; }',
-      '#pos-pay-qr-caption { color:#8fd;font-size:11px;margin-top:4px; }',
+      '#pos-pay-qr-caption { color:#cdd6e4;font-size:11px;margin-top:4px; }',
       '#pos-receipt-close{ display:block;width:100%;margin-top:14px;padding:10px;border-radius:8px;',
-      '                    border:1px solid #2a6;background:#134;color:#cfe;cursor:pointer;font-size:14px; }'
+      '                    border:1px solid #33334a;background:rgba(108,159,255,0.24);color:#e8e8ed;cursor:pointer;font-size:14px; }'
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -630,9 +637,8 @@
         var row = el('button', 'pos-replenish-row',
           '· ' + (nm ? nm.name : s.m_product_id) + ' → order ' + s.qtytoorder +
           ' (wh ' + s.m_warehouse_id + ')' + (vendor ? ' ← ' + vendor.c_bpartner_id : ' [no vendor]'));
-        row.style.cssText = 'display:block;width:100%;text-align:left;margin:2px 0;padding:4px 6px;border-radius:4px;' +
-          'border:1px solid ' + (vendor ? '#2a6' : '#553') + ';background:' + (vendor ? '#0b1f17' : '#1a1209') +
-          ';color:' + (vendor ? '#cfe' : '#987') + ';cursor:' + (vendor ? 'pointer' : 'default') + ';font-size:11px';
+        // §T1.6 HMI — class-styled rows (stylesheet above), vendor-less rows visibly inert
+        if (!vendor) row.classList.add('no-vendor');
         if (vendor) {
           row.addEventListener('click', function () {
             var enriched = [Object.assign({}, s, { c_bpartner_id: vendor.c_bpartner_id, pricepo: vendor.pricepo })];
@@ -691,7 +697,7 @@
           var qr = window.qrcode(10, 'M'); qr.addData(rcptUrl); qr.make(); ov.qrEl.innerHTML = qr.createSvgTag(3, 2);
         } catch (e) { ov.qrEl.textContent = rcptUrl; }
       } else {
-        var a = document.createElement('a'); a.href = rcptUrl; a.style.cssText = 'color:#4dcc88;font-size:11px;word-break:break-all'; a.textContent = rcptUrl;
+        var a = document.createElement('a'); a.href = rcptUrl; a.style.cssText = 'color:#5fd08a;font-size:11px;word-break:break-all'; a.textContent = rcptUrl;
         ov.qrEl.appendChild(a);
       }
       console.log('§POS-RECEIPT orderId=' + orderId + ' grandTotal=' + grandTotal + ' chainOk=' + chainOk + ' linesN=' + saleCart.length);
@@ -1038,7 +1044,7 @@
         barcodeInput.placeholder = 'Barcode / UPC — scan or type + Enter';
         ie.body.appendChild(barcodeInput);
 
-        var scanHint = _buildDyn('div', ''); scanHint.style.cssText = 'color:#8fd;font-size:11px;margin-top:6px;';
+        var scanHint = _buildDyn('div', ''); scanHint.style.cssText = 'color:#cdd6e4;font-size:11px;margin-top:6px;';
         var hasBD = typeof BarcodeDetector !== 'undefined';
         if (hasBD) {
           scanHint.textContent = 'BarcodeDetector active — point camera at barcode OR type above.';
@@ -1282,7 +1288,7 @@
 
     // station info inside the items body (visible when items drawer is open)
     var stationInfo = document.createElement('div');
-    stationInfo.style.cssText = 'color:#6a9;font-size:11px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #1a3d24';
+    stationInfo.style.cssText = 'color:#9aa4b8;font-size:11px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,0.08)';
     stationInfo.textContent = pos.name + ' · wh ' + pos.m_warehouse_id + ' · pricelist v' + plv.v;
     itemsBody.insertBefore(stationInfo, cartBox);
 
