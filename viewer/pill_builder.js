@@ -200,7 +200,7 @@
         if (act.pill === false) return;
         if (hidden.indexOf(act.id) >= 0) return;
         var btn = document.createElement('button');
-        btn.title = act.id;
+        btn.title = act.name || act.id;
         btn.id = 'pill-' + act.id;
         if (act.img) btn.innerHTML = '<img src="' + act.img + '" width="20" height="20" style="pointer-events:none">';
         else if (act.icon) btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
@@ -211,7 +211,7 @@
         if (_wrongPlatform) {
           btn.style.opacity = '0.35'; btn.style.cursor = 'not-allowed';
           var _msg = act.platform === 'mobile' ? 'Mobile use' : 'Desktop use';
-          btn.title = act.id + ' — ' + _msg;
+          btn.title = (act.name || act.id) + ' — ' + _msg;
           btn.addEventListener('pointerup', function(e) {
             e.stopPropagation();
             if (A.status) A.status.textContent = _msg;
