@@ -26,6 +26,13 @@
 
   const Outliner = {
     _el: null, _find: '', _collapsed: {}, _categories: [],
+    // §P9 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-OL-PERSIST): collapsed-state survives a reload.
+    // Stored as plain JSON under one key (tiny — a handful of 'tcat|…'/'bn|…' flags); load once at mount,
+    // save on every toggle. try-wrapped both ways: no localStorage (node/tests) ⇒ silently in-memory as before.
+    // _adjLens deliberately NOT persisted — it's a lens you switch on to look, not layout.
+    _CKEY: 'dagevu_modeller_ol_collapsed',
+    _loadCollapsed() { try { const s = localStorage.getItem(this._CKEY); if (s) { const o = JSON.parse(s); if (o && typeof o === 'object') this._collapsed = o; } } catch (e) { } },
+    _saveCollapsed() { try { localStorage.setItem(this._CKEY, JSON.stringify(this._collapsed)); } catch (e) { } },
     // W-UX-6: the "⇄ adjacency" lens — when ON, selecting an element highlights its typed cross-edge
     // neighbours (Find-style) on the containment backbone. Edges are READ from window.swXEdges (derived
     // on-the-fly from the pristine substrate, NON-INVENT — abuts ships today; later edge types slot in).
@@ -75,6 +82,7 @@
     mount(parentSel) {
       if (this._el) return this._el;
       if (!this._categories.length) this._categories = this._defaults();
+      this._loadCollapsed();                                   // §P9: restore last session's collapse layout
       const host = (parentSel ? document.querySelector(parentSel) : null) || document.body;
       const el = document.createElement('div');
       el.id = 'bonsai-outliner';
@@ -133,21 +141,38 @@
       const guidByFid = (typeof window !== 'undefined' && window.__arcGuidByFid) || {};
       const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
       const altId = guidByFid[id] != null ? guidByFid[id] : fidByGuid[id];
+      // §P3/§P4 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-OL-SYNC): the canvas already paints EVERY
+      // selected mesh (primary bright, secondaries dimmer — modeller.html _paintSel) but this restyle only
+      // ever compared against the ONE primary id — a shift-click/marquee multi-select looked single in the
+      // Outliner. Same single-id assumption both directions, same fix: a membership check against the live
+      // selection set. Secondary tint deliberately echoes _paintSel's dimmer 0x1f3f5c family.
+      const selSet = (typeof window !== 'undefined' && window.Bonsai && window.Bonsai._selSet) || null;
+      const inSel = fid => !!(selSet && fid != null && selSet.has(fid));
+      const hov = fid => { if (window.Bonsai && window.Bonsai.hoverFeature) window.Bonsai.hoverFeature(fid); };   // §P2 row hover → canvas glow
       let activeEl = null;
       this._el.querySelectorAll('[data-fid]').forEach(d => {
-        const on = (+d.getAttribute('data-fid')) === id;
-        d.style.background = on ? '#26456b' : 'transparent';
-        d.style.color = on ? '#dce6f4' : '#c7cdd8';
-        d.onmouseover = () => { d.style.background = on ? '#26456b' : '#23262e'; };
-        d.onmouseout = () => { d.style.background = on ? '#26456b' : 'transparent'; };
+        const fid = +d.getAttribute('data-fid');
+        const on = fid === id;
+        const sec = !on && inSel(fid);                      // secondary member of the multi-select
+        const base = on ? '#26456b' : (sec ? '#1d3550' : 'transparent');
+        d.style.background = base;
+        d.style.color = on ? '#dce6f4' : (sec ? '#c3d2e6' : '#c7cdd8');
+        d.onmouseover = () => { d.style.background = on ? '#26456b' : '#23262e'; hov(fid); };
+        d.onmouseout = () => { d.style.background = base; hov(null); };
         if (on) activeEl = d;
       });
       this._el.querySelectorAll('[data-bnode][data-leaf="1"]').forEach(d => {
         const bn = d.getAttribute('data-bnode');
         const on = bn === String(id) || (altId != null && bn === String(altId));
+        // resolve this ROW's own featureId (bnode id is a guid for seeded rows, numeric for authored ones)
+        const bnFid = fidByGuid[bn] != null ? fidByGuid[bn] : (isNaN(+bn) ? null : +bn);
+        const sec = !on && inSel(bnFid);
         const nbr = d.getAttribute('data-adj') === '1';     // adjacency-lens neighbour → amber base
-        d.style.background = on ? '#26456b' : (nbr ? '#2c2616' : 'transparent');
-        d.style.color = on ? '#dce6f4' : (nbr ? '#e6dcc2' : '#c7cdd8');
+        const base = on ? '#26456b' : (sec ? '#1d3550' : (nbr ? '#2c2616' : 'transparent'));
+        d.style.background = base;
+        d.style.color = on ? '#dce6f4' : (sec ? '#c3d2e6' : (nbr ? '#e6dcc2' : '#c7cdd8'));
+        d.onmouseover = () => { d.style.background = on ? '#26456b' : '#23262e'; if (bnFid != null) hov(bnFid); };   // §P2 both row flavours
+        d.onmouseout = () => { d.style.background = base; if (bnFid != null) hov(null); };
         if (on) activeEl = d;
       });
       if (activeEl && activeEl.scrollIntoView) activeEl.scrollIntoView({ block: 'nearest' });
@@ -225,10 +250,21 @@
         ' treeBuilt=' + treeBuilt + ' flatBuilt=' + flatBuilt + ' §PAINT_MS=' + (performance.now() - __t0).toFixed(1));
     },
     // Flat op-log group/row wiring (scoped to the #bo-flats container so it re-wires only on a flat rebuild).
+    // §P4 (W-OL-SYNC): ctrl/cmd-click a row toggles it IN/OUT of the live multi-selection (the same set the
+    // canvas shift-click builds) — the Outliner side of multi-select. Returns true when it consumed the click.
+    _ctrlToggle(e, fid) {
+      if (!(e && (e.ctrlKey || e.metaKey)) || fid == null || !window.Bonsai.selectMany || !window.Bonsai._selSet) return false;
+      const ids = new Set(window.Bonsai._selSet);
+      if (ids.has(fid)) ids.delete(fid); else ids.add(fid);
+      window.Bonsai.selectMany(Array.from(ids));
+      console.log(TAG + ' §OLSYNC ctrl-toggle fid=' + fid + ' n=' + ids.size);
+      return true;                                          // no fly-to on a multi-toggle (matches canvas shift-click)
+    },
     _wireFlat(root) {
-      root.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._paint(); });
-      root.querySelectorAll('[data-fid]').forEach(d => d.onclick = () => {
+      root.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._saveCollapsed(); this._paint(); });
+      root.querySelectorAll('[data-fid]').forEach(d => d.onclick = (e) => {
         const fid = +d.getAttribute('data-fid');
+        if (this._ctrlToggle(e, fid)) return;                // §P4 multi-toggle wins over replace-select
         if (window.Bonsai.select) window.Bonsai.select(fid);   // → highlight() → setActive(): restyle only, no rebuild
         else this.setActive(fid);
         // Outliner→scene camera fly-to (2026-07-02): ONLY on an Outliner-row click, not a 3D pick (you're
@@ -301,12 +337,12 @@
       if (!root || !treeCats.length) return;
       const byKey = {}; treeCats.forEach(c => byKey[c.key] = c);
       root.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.onclick = () => {
-        const k = 'tcat|' + d.getAttribute('data-tcat'); this._collapsed[k] = !this._collapsed[k]; this._paint();
+        const k = 'tcat|' + d.getAttribute('data-tcat'); this._collapsed[k] = !this._collapsed[k]; this._saveCollapsed(); this._paint();
       });
       root.querySelectorAll('[data-bnode]').forEach(d => {
         const id = d.getAttribute('data-bnode'), isLeaf = d.getAttribute('data-leaf') === '1';
         const disc = d.getAttribute('data-disc');
-        d.onclick = () => {
+        d.onclick = (e) => {
           if (isLeaf) {
             // The seeded ARC-BOM tree's leaf id IS THE GUID (bom_tree.js `id: e.guid`) — window.Bonsai.select
             // only accepts a NUMERIC featureId, so resolve guid→featureId via arc_editable.js's bridge
@@ -315,6 +351,14 @@
             // not just the Outliner row's own paint (setActive's cross-match, see above, handles the rest).
             let num = +id;
             if (isNaN(num) && window.__arcFidByGuid && window.__arcFidByGuid[id] != null) num = window.__arcFidByGuid[id];
+            if (!isNaN(num) && this._ctrlToggle(e, num)) return;   // §P4 multi-toggle (resolved fid) wins here too
+            // §P5 (W-OL-DEADCLICK): a walked/generated fixture's GUID never lands in __arcFidByGuid (bridge is
+            // ARC-seed-only) — the select/fly-to below silently no-ops while the row still highlights, reading
+            // as a broken click. Say so instead of nothing (full per-instance pick identity is §NEEDS-DESIGN).
+            if (isNaN(num)) {
+              if (window.toast) window.toast('no 3D pick for generated elements yet — walked fixtures render as one batch', 'info');
+              console.log(TAG + ' §OLSYNC deadclick guid=' + String(id).slice(0, 12) + ' (no featureId bridge — generated element)');
+            }
             if (window.Bonsai.select && !isNaN(num)) window.Bonsai.select(num); else this.setActive(id);
             // Outliner→scene camera fly-to (2026-07-02): ONLY on this Outliner-row click, mirrors the flat-row
             // wiring above (_wireFlat) — guarded since frameFeature is modeller.html-only.
@@ -327,7 +371,7 @@
             // W-UX-4: a discipline node WALKS on click (and still toggles its subtree). The walker dispatch
             // (STR walk / RouteWalker / honest refusal) is the category's onWalk; pure pointer, no geometry.
             if (disc) { const cat = byKey[d.getAttribute('data-tcat')]; if (cat && cat.onWalk) cat.onWalk(disc); }
-            this._collapsed['bn|' + id] = !this._collapsed['bn|' + id]; this._paint();
+            this._collapsed['bn|' + id] = !this._collapsed['bn|' + id]; this._saveCollapsed(); this._paint();
           }
         };
         d.ondragstart = e => { e.dataTransfer.setData('text/bnode', id); this._dragSrc = id; };

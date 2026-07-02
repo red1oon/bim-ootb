@@ -147,6 +147,8 @@
   <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-move" disabled title="Move the selected object — drag an axis handle or nudge with arrow keys (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg><span>Move</span></button>
   <input id="dim-move" type="number" step="0.1" min="0.05" value="1" title="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-rot" type="number" step="1" placeholder="°" title="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-scale" placeholder="x1.5" title="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)" style="display:none;width:54px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
   <input id="dim-depth" type="number" step="0.1" min="0.1" value="3" title="Wall height / extrude depth (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
@@ -855,6 +857,16 @@ canvas.addEventListener('pointermove', (e) => {
   setHover(hit ? hit.object : null);
 });
 canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(null); });
+// §P2 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-OL-SYNC): the hover tint above was a local closure only
+// the canvas raycast could reach — an Outliner row hover had no way to answer back. Expose it so a row
+// mouseover lights the SAME faint pre-pick glow on its mesh (fid=null clears). Selected meshes keep their
+// selection emissive (setHover already skips them).
+window.Bonsai.hoverFeature = (fid) => {
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const m = (fid != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === fid) : null;
+  setHover(m || null);
+  return !!m;
+};
 
 // Cut an opening into the SELECTED wall: derive a window void from the wall bbox (full through the
 // thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
@@ -1189,6 +1201,7 @@ const MV_MOVE = _ico('<path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="
 const MV_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
 let moving = false, _moveDrag = null, moveGizmo = null, moveGhost = null;
 const dimMove = document.getElementById('dim-move');
+const dimRot = document.getElementById('dim-rot'), dimScale = document.getElementById('dim-scale');
 function moveStep() {                                          // typed magnitude (P2); else grid pitch; else 0.1m
   const v = parseFloat(dimMove && dimMove.value); if (v > 0) return v;
   const G = window.Bonsai.grid;
@@ -1357,12 +1370,20 @@ function enterMove() {
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
   moving = true; _moveDrag = null; bMove.innerHTML = MV_CANCEL; bMove.classList.add('on'); controls.enabled = false; applyModeCursor();
   if (dimMove) dimMove.style.display = '';
+  // §P6 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-E2E-NUMROT): typed numeric input for Rotate/Scale,
+  // shown ONLY when the matching gizmo sub-handle would be offered (same gates as buildMoveGizmo: ring =
+  // every selected id INSERT/SOLID; cubes = a single INSERT) — never an input the drag couldn't honour.
+  const _numIds = selectedIds.size ? Array.from(selectedIds) : [selectedId];
+  if (dimRot) dimRot.style.display = (_numIds.length >= 1 && _numIds.every(id => isInsert(id) || isSolid(id))) ? '' : 'none';
+  if (dimScale) dimScale.style.display = (_numIds.length === 1 && isInsert(_numIds[0])) ? '' : 'none';
   buildMoveGizmo();
   setStat('move: drag an axis handle (X/Y/Z) or the hub (XY plane); snaps to grid + nearby geometry (G toggles), arrow-nudge ' + moveStep().toFixed(2) + 'm — Esc to exit');
 }
 function exitMove() {
   moving = false; _moveDrag = null; bMove.innerHTML = MV_MOVE; bMove.classList.remove('on'); controls.enabled = true; applyModeCursor();
   if (dimMove) dimMove.style.display = 'none';
+  if (dimRot) dimRot.style.display = 'none';
+  if (dimScale) dimScale.style.display = 'none';
   clearMoveGizmo(); clearMoveGhost(); clearSnapMarker();
 }
 bMove.onclick = () => moving ? exitMove() : enterMove();
@@ -1639,6 +1660,25 @@ window.addEventListener('keydown', (e) => {
     if (_moveDrag) { const c = _moveDrag.c0, sn = snappedMoveDelta(_moveDrag.axis, c, _moveDrag.dx, _moveDrag.dy, _moveDrag.dz); moveGhostShow(sn.dx, sn.dy, sn.dz); showSnapMarker(sn.kind === 'geom' ? sn.marker : null); }
     setStat('snap-to-geometry ' + (geomSnapOn ? 'ON' : 'OFF'));
   }
+});
+// §P6 typed Rotate/Scale (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-E2E-NUMROT): Enter in #dim-rot
+// commits ONE signed GEOM_ROTATE by the typed degrees through the SAME commitRotate path as the ring drag;
+// Enter in #dim-scale parses '<axis><factor>' (x1.5 / y2 / z0.5) into commitScale — the cube-handle path.
+// Malformed input is refused with a hint, never guessed. Gating mirrors the gizmo (see enterMove §P6).
+if (dimRot) dimRot.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const deg = parseFloat(dimRot.value);
+  if (!isFinite(deg) || Math.abs(deg) < 0.01) { setStat('rotate: type degrees, e.g. 90'); return; }
+  dimRot.value = ''; console.log('§NUMROT rotate typed=' + deg);
+  commitRotate(+deg.toFixed(2));
+});
+if (dimScale) dimScale.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const m = /^([xyz])\s*([0-9.]+)$/i.exec((dimScale.value || '').trim());
+  const f = m ? parseFloat(m[2]) : NaN;
+  if (!m || !isFinite(f) || f < 0.1) { setStat('scale: type axis+factor ≥0.1, e.g. x1.5'); return; }
+  dimScale.value = ''; console.log('§NUMROT scale typed=' + m[1].toLowerCase() + f);
+  commitScale(m[1].toLowerCase(), +f.toFixed(4));
 });
 
 // ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
@@ -3147,7 +3187,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     _railObs.observe(bar, { attributes: true, attributeFilter: ['style'], subtree: true });
 
     // ? Help — the PILL REGISTRY: every visible tool's icon + name + keyboard shortcut, built from the live #bar.
-    const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-del': 'Del' };   // Undo/Redo are keyboard-only rows below
+    const SHORTCUTS = { 'b-fit': 'F', 'b-insert': 'R', 'b-del': 'Del', 'b-move': 'M' };   // Undo/Redo are keyboard-only rows below (§P7: M was a real, undocumented shortcut)
     const help = document.createElement('button'); help.id = 'm-help'; help.title = 'Help — toolbar & shortcuts';
     help.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>';
     bar.insertBefore(help, bar.firstChild);   // ? is the FIRST button IN the rail (in line, nearest the ⋯), not floating outside
@@ -3167,6 +3207,8 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg></span><span class="hp-name">Undo</span>' + _kbd('Ctrl+Z') + '</div>';
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg></span><span class="hp-name">Redo</span>' + _kbd('Ctrl+⇧Z') + '</div>';
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="hp-name">Cancel current mode</span>' + _kbd('Esc') + '</div>';
+      // §P7: G (snap-to-geometry toggle while moving) was a real, working shortcut the panel never listed.
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="hp-name">Snap-to-geometry on/off (while moving)</span>' + _kbd('G') + '</div>';
       hpanel.innerHTML = h;
     }
     help.onclick = e => { e.stopPropagation(); const open = hpanel.style.display !== 'block'; if (open) buildHelp();
