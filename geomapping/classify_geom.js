@@ -30,12 +30,30 @@
 
   var _rules = null;       // geomap_rules.json
   var _relations = {};     // TAG -> relations_<TAG>.json
+  var _aliases = null;     // alias_map.json (§ALIAS-SPEC — mined type_class -> ifc_class distribution)
+
+  // ── §ALIAS-SPEC rename table: DOCUMENTED IFC schema facts only (not mined, not guessed) — each row
+  // carries its citation. Used when a band lookup misses because the corpus and the queried element sit on
+  // opposite sides of a schema-generation rename. Bidirectional by construction below.
+  var RENAMES = [
+    { a: 'IfcWallStandardCase', b: 'IfcWall',
+      cite: 'IFC4 schema: IfcWallStandardCase deprecated/merged into IfcWall (buildingSMART IFC4 release notes)' }
+  ];
+  function _renamesOf(cls) {
+    var out = [];
+    RENAMES.forEach(function (r) {
+      if (r.a === cls) out.push({ cls: r.b, cite: r.cite });
+      if (r.b === cls) out.push({ cls: r.a, cite: r.cite });
+    });
+    return out;
+  }
 
   // ── data wiring: browser host INJECTS loaded JSON; node lazy-loads from ./data ──
   function init(opts) {
     opts = opts || {};
     if (opts.rules) _rules = opts.rules;
     if (opts.relations) _relations = opts.relations;
+    if (opts.aliases) _aliases = opts.aliases;
   }
   function _nodeLoad(rel) {
     var fs = require('fs'), path = require('path');
@@ -74,6 +92,52 @@
     return { tier: 0, class_or_fact: 'unknown', confidence: 0, why: why, frame: frame || null };
   }
 
+  function _aliasMap() {
+    if (!_aliases) {
+      if (typeof module === 'undefined' || !module.exports) return null; // browser: must init()
+      try { _aliases = _nodeLoad('alias_map.json'); } catch (e) { _aliases = null; }
+    }
+    return _aliases;
+  }
+
+  // ── §ALIAS-SPEC alias(): graph-context class infusion for unknown/badly-annotated elements. ──
+  // Source is ONLY (a) the element's REAL IfcRelDefinesByType type_class through the MINED observed
+  // distribution (measured LOBO in-set 98.3-100% across all 7 buildings — alias_map.json.measured), or
+  // (b) the documented schema-rename table. No geometry guessing; no match -> honest null.
+  // Returns { candidates: {cls: count}|null, winner, ambiguous, why } or null.
+  function alias(typeClass, ifcClass) {
+    var am = _aliasMap();
+    if (typeClass && am && am.map[typeClass]) {
+      var row = am.map[typeClass];
+      return {
+        candidates: row.classes, winner: row.winner, ambiguous: row.ambiguous,
+        why: 'IfcRelDefinesByType type_class=' + typeClass + ' -> mined observed distribution (n=' + row.n +
+          (row.ambiguous ? ', AMBIGUOUS ' + Object.keys(row.classes).join('|') : '') + ') — alias_map.json'
+      };
+    }
+    if (ifcClass) {
+      var rn = _renamesOf(ifcClass);
+      if (rn.length) {
+        var cands = {};
+        rn.forEach(function (r) { cands[r.cls] = null; });
+        return { candidates: cands, winner: rn[0].cls, ambiguous: rn.length > 1, why: rn[0].cite };
+      }
+    }
+    return null; // honest: nothing real to infuse from
+  }
+
+  // resolve a class that has NO band in this building to one that does, via alias/rename — or null.
+  function _aliasToBanded(entry, ifcClass, typeClass) {
+    var a = alias(typeClass, ifcClass);
+    if (!a) return null;
+    // try winner first, then remaining candidates deterministically (sorted)
+    var tries = [a.winner].concat(Object.keys(a.candidates).sort().filter(function (c) { return c !== a.winner; }));
+    for (var i = 0; i < tries.length; i++) {
+      if (entry.classes[tries[i]]) return { cls: tries[i], ambiguous: a.ambiguous, why: a.why };
+    }
+    return null;
+  }
+
   // ── Tier 1: relationship facts for a guid (REAL mined relations only) ──
   function tier1(building, guid) {
     var rel = _relFor(building);
@@ -104,7 +168,7 @@
   }
 
   // ── Tier 2: per-building measured band ranking / validation ──
-  function tier2(building, dims, claimedClass) {
+  function tier2(building, dims, claimedClass, typeClass) {
     var entry = _rulesFor(building);
     if (!entry) return _refuse('no measured bands for building "' + building + '" — cross-building bands are REFUSED (' + (_rules ? _rules.cross_building : 'rules not loaded') + ')', null);
     var frame = entry.frame;
@@ -125,16 +189,32 @@
     var inBandRate = m.n ? _round(m.own_class_in_band / m.n, 3) : 0;
 
     if (claimedClass) { // validator use — the extraction-correctness check
+      var aliasNote = null, effClass = claimedClass;
       var b = entry.classes[claimedClass];
-      if (!b) return _refuse('class "' + claimedClass + '" has no measured band in ' + building + ' (<3 samples or absent) — cannot validate, refusing to guess', frame);
-      var ok = scored.filter(function (s) { return s.cls === claimedClass; })[0];
-      return {
+      if (!b) {
+        // §ALIAS-SPEC: unknown/proxy/renamed class — try graph-context alias to a banded class,
+        // never silently: the result carries alias_of/alias_why.
+        var al = _aliasToBanded(entry, claimedClass, typeClass);
+        if (!al) return _refuse('class "' + claimedClass + '" has no measured band in ' + building + ' (<3 samples or absent) and no real alias signal (type relation / documented rename) — cannot validate, refusing to guess', frame);
+        effClass = al.cls;
+        b = entry.classes[effClass];
+        aliasNote = al;
+      }
+      var ok = scored.filter(function (s) { return s.cls === effClass; })[0];
+      var res = {
         tier: 2,
-        class_or_fact: { validate: claimedClass, in_band: ok.in_band, z: ok.z },
+        class_or_fact: { validate: effClass, in_band: ok.in_band, z: ok.z },
         confidence: inBandRate, // measured own-class in-band rate = expected true-accept rate
-        why: 'measured band for ' + claimedClass + ' in ' + building + ' (n=' + b.count + ', dims_m ' + _bandM(b).join(' ') + '); own-class in-band measured ' + m.own_class_in_band + '/' + m.n,
+        why: 'measured band for ' + effClass + ' in ' + building + ' (n=' + b.count + ', dims_m ' + _bandM(b).join(' ') + '); own-class in-band measured ' + m.own_class_in_band + '/' + m.n,
         frame: frame
       };
+      if (aliasNote) {
+        res.alias_of = claimedClass;
+        res.alias_ambiguous = aliasNote.ambiguous;
+        res.alias_why = aliasNote.why;
+        res.why = 'ALIAS ' + claimedClass + '->' + effClass + ' (' + aliasNote.why + '); ' + res.why;
+      }
+      return res;
     }
 
     var anyBand = scored.some(function (s) { return s.in_band; });
@@ -159,7 +239,7 @@
       if (t1.tier === 1) return t1;
       if (!input.dims) return t1; // nothing else to fall to — honest refuse from tier 1
     }
-    if (input.dims) return tier2(building, input.dims, input.ifc_class || null);
+    if (input.dims) return tier2(building, input.dims, input.ifc_class || null, input.type_class || null);
     return _refuse('no usable signal (need guid for Tier 1 or dims for Tier 2)', (_rulesFor(building) || {}).frame);
   }
 
@@ -176,7 +256,7 @@
     };
   }
 
-  var api = { init: init, classify: classify, describe: describe, TAG: TAG };
+  var api = { init: init, classify: classify, describe: describe, alias: alias, RENAMES: RENAMES, TAG: TAG };
 
   // ── CLI: node geomapping/classify_geom.js '{"building":"DX","dims":[0.1,0.9,2.1]}' ──
   if (typeof module !== 'undefined' && module.exports && typeof require !== 'undefined' &&
