@@ -202,7 +202,10 @@
         if (real) {
           params.realGeomHash = rHash;
           realResolved++;
-          if (!geomSeen[rHash]) { geomSeen[rHash] = true; geomAssets.push({ hash: rHash, ifc_class: cls, bbox: real.bbox, v: real.positions, f: real.faces }); }
+          // §ARC-ANCHOR: anchorOffset (the blob-local AABB centre recenter() subtracted) rides the ASSET, not
+          // the signed op — the fold re-applies it rotated (bonsai_library.js foldInsert §ARC-ANCHOR), so every
+          // committed GEOM_INSERT param stays byte-identical to the pre-fix substrate (replay-stable).
+          if (!geomSeen[rHash]) { geomSeen[rHash] = true; geomAssets.push({ hash: rHash, ifc_class: cls, bbox: real.bbox, v: real.positions, f: real.faces, anchorOffset: real.anchorOffset }); }
         }
       }
       if (rx || ry) {

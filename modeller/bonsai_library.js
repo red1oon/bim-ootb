@@ -98,6 +98,22 @@
     }
     return out;
   }
+  // §ARC-ANCHOR (W-MV-PARITY fix, 2026-07-02): rotate a blob-local anchorOffset by the element's OWN rotation,
+  // mirroring place()'s two branches EXACTLY (3-axis quaternion when rotX/rotY present, else yaw about +Z) so the
+  // offset moves rigidly with the mesh. Ground truth (triple-verified, RESUME_MODELLER_ARC_ANCHOR_PLACEMENT.md):
+  // element_transforms.center_xyz is the IFC local-placement ANCHOR, world = center + R·rawVerts — recenter()
+  // (real_geometry.js) rebased the verts by their bbox centre, so the fold must add back R·anchorOffset.
+  function rotAnchor(pl, ao) {
+    const ax = (ao && ao[0]) || 0, ay = (ao && ao[1]) || 0, az = (ao && ao[2]) || 0;
+    if (pl && (pl.rotX || pl.rotY) && typeof window !== 'undefined' && window.THREE) {
+      const T = window.THREE;
+      const q = new T.Quaternion().setFromEuler(new T.Euler(pl.rotX || 0, pl.rotZRad || 0, -(pl.rotY || 0)));
+      const v = new T.Vector3(ax, ay, az).applyQuaternion(q);
+      return [v.x, v.y, v.z];
+    }
+    const rad = ((pl && pl.rot) || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
+    return [cs * ax - sn * ay, sn * ax + cs * ay, az];
+  }
   // 12-tri box from a local bbox = the LOD-200 proxy (corner-indexed, two tris per face).
   // bbox layout is [minx,maxx,miny,maxy,minz,maxz] (NOT [x0,y0,z0,x1,y1,z1]) — map axes explicitly.
   function boxArrays(bb) {
@@ -355,7 +371,7 @@
       entries.forEach(e => {
         if (!e || !e.hash) return;
         const key = 'rg:' + e.hash;
-        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox }; n++; }
+        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset }; n++; }
       });
       console.log(TAG + ' §REAL-GEOM registered ' + n + ' distinct element mesh(es) (of ' + entries.length + ' offered)');
       return n;
@@ -400,21 +416,28 @@
             indices: realMesh.f instanceof Uint32Array ? realMesh.f : new Uint32Array(b64ToBuf(realMesh.f)),
             bbox: realMesh.bbox }
         : (c && lod === '300') ? this.meshArrays(P.hash) : boxArrays(c ? c.bbox : rawBox);
-      // §REAL-GEOM RE-SEAT: P.placement.z was computed at SEED TIME assuming the box/catalog seat half-height
-      // (arc_editable.js buildSeedOps deliberately does NOT know whether real geometry will actually be
-      // registered by fold time — registration is browser-side/optional). Recover the measured world-centre z
-      // from that assumption, then re-seat on the REAL mesh's own (recentred, symmetric) half-height so the
-      // world CENTRE still lands exactly on the measured point — same "same placement, richer mesh" doctrine
-      // as the LOD300_CATALOG seat correction (arc_editable.js buildSeedOps). x/y need no correction: the real
-      // mesh was recentred about its own bbox centre (real_geometry.js), same convention as every other local
-      // mesh here, so rotate-about-origin + translate-by-(placement.x,y) already lands the x/y centroid right.
+      // §REAL-GEOM RE-SEAT + §ARC-ANCHOR: P.placement.z was computed at SEED TIME assuming the box/catalog seat
+      // half-height (arc_editable.js buildSeedOps deliberately does NOT know whether real geometry will actually
+      // be registered by fold time — registration is browser-side/optional). Recover the measured anchor z from
+      // that assumption, then re-seat on the REAL mesh's own (recentred, symmetric) half-height AND add back the
+      // rotated anchorOffset (W-MV-PARITY fix, see rotAnchor above): center_xyz is the PLACEMENT ANCHOR, not the
+      // volumetric centre — the true world centre is center + R·anchorOffset, in x/y as well as z. The signed op
+      // params are untouched: placement.x/y/z KEEP meaning "anchor" (extractIFCtoDB.py's own convention); this is
+      // a pure render-side fold correction, byte-identical op-log.
       let pl = P.placement;
       if (realMesh) {
-        const assumedBbox = c ? c.bbox : rawBox;
-        const assumedHalfZ = assumedBbox ? (assumedBbox[5] - assumedBbox[4]) / 2 : 0;
-        const cz = (P.placement.z || 0) + assumedHalfZ;
-        const realHalfZ = (realMesh.bbox[5] - realMesh.bbox[4]) / 2;
-        pl = Object.assign({}, P.placement, { z: cz - realHalfZ });
+        const ro = rotAnchor(P.placement, realMesh.anchorOffset);
+        if (P.placement.rotX || P.placement.rotY) {
+          // §ARC-3AXIS seed: placement.z IS the anchor (no seat subtraction at seed time) and place()'s 3-axis
+          // branch translates directly (no ground-seat) — so the anchor offset is the ONLY correction needed.
+          pl = Object.assign({}, P.placement, { x: (P.placement.x || 0) + ro[0], y: (P.placement.y || 0) + ro[1], z: (P.placement.z || 0) + ro[2] });
+        } else {
+          const assumedBbox = c ? c.bbox : rawBox;
+          const assumedHalfZ = assumedBbox ? (assumedBbox[5] - assumedBbox[4]) / 2 : 0;
+          const cz = (P.placement.z || 0) + assumedHalfZ;                 // the measured anchor z (seed subtracted assumedHalfZ)
+          const realHalfZ = (realMesh.bbox[5] - realMesh.bbox[4]) / 2;
+          pl = Object.assign({}, P.placement, { x: (P.placement.x || 0) + ro[0], y: (P.placement.y || 0) + ro[1], z: cz + ro[2] - realHalfZ });
+        }
       }
       // W-BONSAI-SCALE PATH B: net GEOM_SCALE folds host-side on the insert's LOCAL geometry — EDGE-ANCHORED at the
       // local bbox min per axis (stretch the object along its own length), so it composes with the existing yaw +
@@ -431,10 +454,10 @@
         base = { positions: sp, indices: base.indices, bbox: sbb };
       }
       if (mv && (mv.dx || mv.dy || mv.dz || mv.drot)) {
-        let ox = (P.placement.x || 0) + (mv.dx || 0), oy = (P.placement.y || 0) + (mv.dy || 0);
-        const oz = (pl.z || 0) + (mv.dz || 0), pr = P.placement.rot || 0;   // pl.z (not P.placement.z): carries the
-        // §REAL-GEOM re-seat correction above through a GEOM_MOVE fold — for every non-real-mesh op pl===P.placement
-        // (unchanged reference), so this is byte-identical to the old `P.placement.z` read in that case.
+        let ox = (pl.x || 0) + (mv.dx || 0), oy = (pl.y || 0) + (mv.dy || 0);
+        const oz = (pl.z || 0) + (mv.dz || 0), pr = P.placement.rot || 0;   // pl.x/y/z (not P.placement.*): carries the
+        // §REAL-GEOM re-seat + §ARC-ANCHOR corrections above through a GEOM_MOVE fold — for every non-real-mesh op
+        // pl===P.placement (unchanged reference), so this is byte-identical to the old P.placement.* reads there.
         let rot = pr;
         if (mv.drot) {
           // W-BONSAI-ROTATE: yaw the insert about its bbox CENTRE (the visible centre, == the gizmo ring centre) so it
