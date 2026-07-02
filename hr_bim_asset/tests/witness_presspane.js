@@ -41,8 +41,10 @@ function makeAPP(guidMap, period) {
 function emissiveOf(A, meshId) { return A._meshes.filter(function (m) { return m.id === meshId; })[0].material.emissive.getHex(); }
 
 var PERIOD = '2026-07';
-// Two REAL rooms in this building (meshId→guid). 7001→zone0 (3 present), 7002→zone1 (1 present),
+// Two REAL rooms in this building (meshId→guid). 7001→zone0 (2 present), 7002→zone1 (1 present),
 // 7009→a present-irrelevant element. A third REAL room guid exists in the model but is NOT in guidMap (un-located).
+// Headcounts re-pinned 2026-07-03: demoSeed's roster is EMP001/EMP002 ONLY (RESUME_HBA_ERP_GOVERNED_DISPLAY.md
+// §Q-RESOLUTION Q2 — every demo identity must resolve to a real seeded C_BPartner), so zone0 max is 2 (med band).
 var ZONE0 = 'RM_Level_1_1', ZONE1 = 'RM_Level_1_2', UNLOCATED = 'RM_Level_9_9';
 var guidMap = { '7001': ZONE0, '7002': ZONE1, '7009': 'SOME-OTHER-ELEMENT' };
 var A = makeAPP(guidMap, PERIOD);
@@ -56,9 +58,9 @@ var verify = C.verifyChain(seed.log);
 var pbz = ATT.presenceByZone(seed.log, PERIOD);
 function headOf(zone) { var r = pbz.filter(function (x) { return x.zone === zone; })[0]; return r ? r.headcount : 0; }
 var seed2 = ATT.demoSeed(rooms, PERIOD);
-ok('PP1-seed-signed', verify.ok && headOf(ZONE0) === 3 && headOf(ZONE1) === 1 && headOf(UNLOCATED) === 0
+ok('PP1-seed-signed', verify.ok && headOf(ZONE0) === 2 && headOf(ZONE1) === 1 && headOf(UNLOCATED) === 0
   && JSON.stringify(seed.log) === JSON.stringify(seed2.log),
-  'demoSeed → signed chain (verifyChain ok), headcounts zone0=3/zone1=1/un-checked=0, deterministic (replay==live) — '
+  'demoSeed → signed chain (verifyChain ok), headcounts zone0=2/zone1=1/un-checked=0 (EMP001/EMP002-only roster), deterministic (replay==live) — '
   + JSON.stringify(pbz));
 
 // ---- PP2 — data-gate: FALSE with no attendance log; TRUE once the seed is injected over a real-guid building.
@@ -73,7 +75,7 @@ ok('PP2-gate', detectBefore === false && detectAfter === true && HBALens.detect(
 HBALens.toggle(A, 'presence');
 var e0 = emissiveOf(A, 7001), e1 = emissiveOf(A, 7002), e9 = emissiveOf(A, 7009);
 ok('PP3-tint-present-only', e0 !== 0 && e1 !== 0 && e0 !== e1 && e9 === 0,
-  'MeshPort tints ONLY present zones: 7001(3→med) and 7002(1→low) lit with DIFFERENT band colors; 7009 (no presence) untouched — '
+  'MeshPort tints ONLY present zones: 7001(2→med) and 7002(1→low) lit with DIFFERENT band colors; 7009 (no presence) untouched — '
   + JSON.stringify({ z0: e0.toString(16), z1: e1.toString(16), other: e9 }));
 ok('PP3b-status', /2 units lit/.test(A.status.textContent) && A._dirty > 0,
   'status reports "2 units lit" + markDirty fired — ' + JSON.stringify(A.status.textContent));

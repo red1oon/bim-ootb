@@ -112,9 +112,11 @@ presRow['_on_click']();
 var presDrawer = document.getElementById('hba-presence-drawer');
 ok('P1-roster-opens', !!presDrawer, 'clicking Presence opens a second roster drawer beside the FM drawer');
 ok('P2-roster-count', presDrawer.children.length - 1 === A._hbaAttendanceLog ? true : true, 'sanity — session rows rendered');
-var knownRow = presDrawer.children.filter(function (r) { return r['attr_data-employee'] === 'EMP-1'; })[0];
-ok('P3-name-resolved', knownRow && knownRow['attr_data-label'].indexOf('EMP-1') >= 0 && knownRow['attr_data-label'].indexOf('+60') >= 0,
-  'a session for a KNOWN identity (EMP-1, has an Official row) shows name+phone, not the bare code alone — "' + (knownRow && knownRow['attr_data-label']) + '"');
+// identity re-pinned 2026-07-03 (§Q-RESOLUTION Q2): demoSeed's roster is EMP001/EMP002 — EMP001 has an
+// Official row (ad_user_id 1, phone +60 12-345 6001), same known-identity property the old EMP-1 probe proved.
+var knownRow = presDrawer.children.filter(function (r) { return r['attr_data-employee'] === 'EMP001'; })[0];
+ok('P3-name-resolved', knownRow && knownRow['attr_data-label'].indexOf('EMP001') >= 0 && knownRow['attr_data-label'].indexOf('+60') >= 0,
+  'a session for a KNOWN identity (EMP001, has an Official row) shows name+phone, not the bare code alone — "' + (knownRow && knownRow['attr_data-label']) + '"');
 var overflowRow = presDrawer.children.filter(function (r) { return /^EMP-3\d$/.test(r['attr_data-employee'] || ''); })[0];
 ok('P4-honest-miss', !overflowRow || overflowRow['attr_data-label'] === overflowRow['attr_data-employee'],
   'an overflow attendance identity with NO Official row shows the bare code — never a fabricated name');
