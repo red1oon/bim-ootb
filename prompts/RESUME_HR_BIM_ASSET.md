@@ -361,6 +361,39 @@ per-pane copies — reuse across future audio-bearing panes if any.
 
 ---
 
+## ▶ §P10d — QUEUED, NOT STARTED (user 2026-07-02, do in a NEW session)
+
+**1. The live-vs-branch gap — CHECKED, here's the honest state.** User asked *"Is the feature working online in
+GH?"* Checked both halves separately (they're two different sites):
+- **`bim-compiler` docs site** (`https://red1oon.github.io/BIMCompiler/HRBIMAssetGuide/`) — **LIVE, confirmed**:
+  page 200, the new "IoT sensor + CCTV cockpit" section text present, both screenshots 200 (`img/hba_iot_sensors.png`
+  / `img/hba_iot_cctv.png`).
+- **`bim-ootb` GH Pages** (`https://red1oon.github.io/bim-ootb/hr_bim_asset/demo/fm_panel.html`) — **200, but
+  STALE**: `curl`'d the live HTML and it still reads **"FM / Operate"**, not "Human-Asset" — i.e. GH Pages
+  serves `bim-ootb`'s `main` branch, and this whole arc (§P10-BUILD/§P10a/§P10b/the chart-load fix) lives ONLY
+  on **`lane/hr-overlay`**, never merged. **The actual interactive feature (the real viewer, the real demo
+  page) is NOT live for any real user right now** — only the documentation (static text + screenshots) is.
+  **Next session: confirm with the user whether `lane/hr-overlay` should merge to `main`** (this repo's normal
+  release path — check `~/bim-ootb`'s branch-protection/PR flow before merging solo) before calling this
+  genuinely "live."
+
+**2. Swap the CCTV mockup for a real still — `~/Pictures/Screenshots/contacam.jpeg`.** User supplied a real
+image (verified present: `652x666` JPEG, 118KB, a ContaCam capture — i.e. actual CCTV-monitoring-software
+output, not a stock photo) to use **in place of** the placeholder canvas-scanline tiles, **in BOTH places**:
+- **The live viewer** (`viewer/hba_iot.js` `renderCctvTile` — currently a pure-canvas scanline+caption mockup,
+  zero image asset) — swap to render this JPEG (as a `background-image` or drawn into the canvas via
+  `drawImage`), still captioned "MOCKUP — NO REAL FEED" (it's a real photo, not a real feed of THIS building —
+  don't blur that line). Needs the asset copied into `hr_bim_asset/` or `viewer/` (check the project's asset
+  convention — `viewer/lib/` holds bundled libs, is there an `img/`/`assets/` folder already for viewer-local
+  images?) and referenced by a relative path, not a hardcoded `~/Pictures` path (that's a local-machine path,
+  won't resolve for anyone else — copy it into the repo).
+- **The doc guide** (`docs/img/hba_iot_cctv.png`) — recapture the CCTV-grid screenshot with the swapped tile so
+  the published guide shows the same thing the live viewer now does.
+**Not done this session per explicit user instruction ("do it next session").** No code/asset changes made yet
+— this section is the pointer + the located source file, not the implementation.
+
+---
+
 ## ▶▶▶ CRITICAL — READ FIRST (2026-07-02): "Compile not Model" — HBA reinvented tables that already exist
 
 **User doctrine restated (2026-07-02):** *"No invention outside the iDempiere AD."* Our hallmark vs. the outside
