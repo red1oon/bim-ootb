@@ -2,7 +2,7 @@
  "buildings": {
   "CL": 13799,
   "DX": 1003,
-  "HHS": 4722,
+  "HHS": 6730,
   "HO": 51021,
   "SC": 3335,
   "SH": 34,
@@ -21,9 +21,9 @@
    "ambiguous": true,
    "classes": {
     "IfcAirTerminal": 289,
-    "IfcFlowTerminal": 701
+    "IfcFlowTerminal": 749
    },
-   "n": 990,
+   "n": 1038,
    "winner": "IfcFlowTerminal"
   },
   "IfcAlarmType": {
@@ -86,9 +86,9 @@
   "IfcColumnType": {
    "ambiguous": false,
    "classes": {
-    "IfcColumn": 1111
+    "IfcColumn": 1237
    },
-   "n": 1111,
+   "n": 1237,
    "winner": "IfcColumn"
   },
   "IfcControllerType": {
@@ -129,9 +129,9 @@
   "IfcDoorStyle": {
    "ambiguous": false,
    "classes": {
-    "IfcDoor": 473
+    "IfcDoor": 490
    },
-   "n": 473,
+   "n": 490,
    "winner": "IfcDoor"
   },
   "IfcDoorType": {
@@ -146,18 +146,18 @@
    "ambiguous": true,
    "classes": {
     "IfcDuctFitting": 5453,
-    "IfcFlowFitting": 2206
+    "IfcFlowFitting": 2487
    },
-   "n": 7659,
+   "n": 7940,
    "winner": "IfcDuctFitting"
   },
   "IfcDuctSegmentType": {
    "ambiguous": true,
    "classes": {
     "IfcDuctSegment": 5384,
-    "IfcFlowSegment": 1511
+    "IfcFlowSegment": 2345
    },
-   "n": 6895,
+   "n": 7729,
    "winner": "IfcDuctSegment"
   },
   "IfcElectricApplianceType": {
@@ -181,9 +181,9 @@
    "ambiguous": true,
    "classes": {
     "IfcFireSuppressionTerminal": 2263,
-    "IfcFlowTerminal": 5
+    "IfcFlowTerminal": 6
    },
-   "n": 2268,
+   "n": 2269,
    "winner": "IfcFireSuppressionTerminal"
   },
   "IfcFurnitureType": {
@@ -198,10 +198,10 @@
   "IfcLightFixtureType": {
    "ambiguous": true,
    "classes": {
-    "IfcFlowTerminal": 1553,
+    "IfcFlowTerminal": 1558,
     "IfcLightFixture": 2086
    },
-   "n": 3639,
+   "n": 3644,
    "winner": "IfcLightFixture"
   },
   "IfcMemberType": {
@@ -223,19 +223,19 @@
   "IfcPipeFittingType": {
    "ambiguous": true,
    "classes": {
-    "IfcFlowFitting": 3914,
+    "IfcFlowFitting": 4160,
     "IfcPipeFitting": 17864
    },
-   "n": 21778,
+   "n": 22024,
    "winner": "IfcPipeFitting"
   },
   "IfcPipeSegmentType": {
    "ambiguous": true,
    "classes": {
-    "IfcFlowSegment": 3399,
+    "IfcFlowSegment": 3849,
     "IfcPipeSegment": 18273
    },
-   "n": 21672,
+   "n": 22122,
    "winner": "IfcPipeSegment"
   },
   "IfcPlateType": {
@@ -382,7 +382,7 @@
    "lobo": {
     "in_set": 13664,
     "n": 13664,
-    "winner": 2382
+    "winner": 2822
    },
    "resub": {
     "in_set": 13799,
@@ -404,21 +404,21 @@
   },
   "HHS": {
    "lobo": {
-    "in_set": 4702,
-    "n": 4718,
-    "winner": 3440
+    "in_set": 6709,
+    "n": 6726,
+    "winner": 3631
    },
    "resub": {
-    "in_set": 4722,
-    "n": 4722,
-    "winner": 3444
+    "in_set": 6730,
+    "n": 6730,
+    "winner": 3635
    }
   },
   "HO": {
    "lobo": {
     "in_set": 49897,
     "n": 50758,
-    "winner": 37289
+    "winner": 22837
    },
    "resub": {
     "in_set": 51021,
