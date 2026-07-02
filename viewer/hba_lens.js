@@ -376,16 +376,50 @@
   // {flew, guid, center} synchronously (witnessable without a real THREE/camera) and, when a real
   // camera+controls+THREE ARE present, also performs the actual browser fly. Honest no-op (logged, flew:false)
   // when the zone has no rendered members in THIS building — never a fabricated position.
+  // world position for one guidTargets() resolution — slot===null is a whole regular/merged mesh (getWorldPosition);
+  // a non-null slot is one instance/batch index within an InstancedMesh/BatchedMesh (§INSTANCED-TINT's `_N` suffix)
+  // — those carry NO per-instance Object3D, so the position must come from getMatrixAt() premultiplied by the
+  // mesh's own matrixWorld, the SAME math buildMeshPort's setTint already relies on for per-slot tinting.
+  function _posForTarget(m, slot) {
+    if (slot == null) {
+      if (m.getWorldPosition && typeof THREE !== 'undefined') { var wp = new THREE.Vector3(); m.getWorldPosition(wp); return wp; }
+      return m.position || null;
+    }
+    if (m.getMatrixAt && typeof THREE !== 'undefined') {
+      var mat = new THREE.Matrix4(); m.getMatrixAt(slot, mat);
+      if (m.matrixWorld) mat.premultiply(m.matrixWorld);
+      return new THREE.Vector3().setFromMatrixPosition(mat);
+    }
+    return null;
+  }
+
   function flyToZone(A, guid) {
     if (!A || !A.guidMap || !ready()) { console.log('§HBA_FLY no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
     var want = HBA().B.zoneMeshGuids(guid, A.guidMap, A._hbaRoomMembers || null);
     if (!want.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no rendered members)'); return { flew: false, reason: 'no-members' }; }
-    var set = {}; want.forEach(function (g) { set[g] = true; });
-    var meshes = A.collectMeshes ? A.collectMeshes(function (o) { return o.userData && set[o.userData.guid]; }) : [];
-    if (!meshes.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no matching mesh)'); return { flew: false, reason: 'no-mesh' }; }
+    var pts = [];
+    // §INSTANCED-TINT reuse — the SAME meshId/slot resolution buildMeshPort uses for tinting (the naive
+    // `userData.guid` match below misses every instanced/batched target — HHS's 716 instanced groups are
+    // exactly the bug this was silently eating: "no matching mesh" on a real building with real members).
+    if (A.collectMeshes) {
+      var targets = HBA().B.guidTargets(want, A.guidMap);
+      if (targets.length) {
+        var byId = {};
+        A.collectMeshes(function (o) { return o.isMesh || o.isInstancedMesh || o.isBatchedMesh; }).forEach(function (o) { byId[o.id] = o; });
+        targets.forEach(function (t) {
+          var m = byId[t.meshId]; if (!m) return;
+          var p = _posForTarget(m, t.slot); if (p) pts.push(p);
+        });
+      }
+      if (!pts.length) {   // fallback — plain userData.guid match (regular meshes, and node-witness mocks)
+        var set = {}; want.forEach(function (g) { set[g] = true; });
+        A.collectMeshes(function (o) { return o.userData && set[o.userData.guid]; }).forEach(function (o) { if (o.position) pts.push(o.position); });
+      }
+    }
+    if (!pts.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no matching mesh)'); return { flew: false, reason: 'no-mesh' }; }
     var cx = 0, cy = 0, cz = 0;
-    meshes.forEach(function (m) { var p = m.position || { x: 0, y: 0, z: 0 }; cx += p.x; cy += p.y; cz += p.z; });
-    var n = meshes.length, center = { x: cx / n, y: cy / n, z: cz / n };
+    pts.forEach(function (p) { cx += p.x; cy += p.y; cz += p.z; });
+    var n = pts.length, center = { x: cx / n, y: cy / n, z: cz / n };
     if (A.camera && A.controls && typeof THREE !== 'undefined' && typeof requestAnimationFrame === 'function') {
       var c3 = new THREE.Vector3(center.x, center.y, center.z), dist = 8;
       var end = c3.clone().add(new THREE.Vector3(0.5, 0.5, 0.7).normalize().multiplyScalar(dist));
@@ -399,6 +433,12 @@
         if (A.markDirty) A.markDirty();
         if (t < 1) requestAnimationFrame(anim);
       })();
+      // a brief highlight pulse at the destination — so the fly is unmistakably "here's the thing", not just a
+      // camera move to an empty-looking spot. Reuses buildMeshPort's own tint math (regular + instanced/batched);
+      // self-restoring, so it never leaves a stray tint behind (zero residue, same discipline as every HBA lens).
+      var pulsePort = buildMeshPort(A);
+      pulsePort.setTint(guid, 0xffcc00);
+      setTimeout(function () { pulsePort.restoreAll(); }, 1600);
     }
     console.log('§HBA_FLY guid=' + guid + ' center=(' + center.x.toFixed(1) + ',' + center.y.toFixed(1) + ',' + center.z.toFixed(1) + ')');
     return { flew: true, guid: want[0], center: center };
