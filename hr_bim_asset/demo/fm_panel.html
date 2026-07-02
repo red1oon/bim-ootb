@@ -3,7 +3,7 @@
      HBALens.openFamilyDrawer over a mock APP whose guidMap/logs make 4 lenses detect and 1 (Assets/IoT) grey
      out — proving wake-awareness. Self-contained: loads the witnessed engines as <script> globals, no 3D
      stream. Doubles as the guide screenshot. -->
-<html lang="en"><head><meta charset="utf-8"><title>HR_BIM_Asset — FM / Operate</title>
+<html lang="en"><head><meta charset="utf-8"><title>HR_BIM_Asset — Human-Asset</title>
 <style>
   html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,sans-serif;background:#0b1220;color:#e8eef6;overflow:hidden}
   /* faux 3D viewport backdrop */
@@ -24,46 +24,70 @@
 <body>
   <div id="stage">
     <div class="floor"></div>
-    <div class="title">HR_BIM_Asset — FM / Operate cockpit<small>HHS_Office_Federated · one model, lenses each answering one question, off one signed op-log</small></div>
+    <div class="title">HR_BIM_Asset — Human-Asset cockpit<small>HHS_Office_Federated · one model, lenses each answering one question, off one signed op-log</small></div>
     <div class="wm">SAMPLE — NOT OFFICIAL · CONTOH — TIDAK RASMI</div>
   </div>
   <div id="strip">
     <div class="pill">⌕</div><div class="pill">▣</div>
-    <div class="pill fm" title="FM / Operate">
+    <div class="pill fm" title="Human-Asset">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
     </div>
     <div class="pill">◫</div>
   </div>
-  <div class="cap">FM pill → opens the wake-aware lens drawer ⟶</div>
+  <div class="cap">Human-Asset pill → opens the wake-aware lens drawer ⟶</div>
 
   <!-- witnessed engines (browser <script> → self.Hba* globals); dependency order -->
   <script src="../watermark.js"></script>
   <script src="../models.js"></script>
   <script src="../binding.js"></script>
   <script src="../connectors.js"></script>
+  <script src="../rules.js"></script>
+  <script src="../ad_payroll.js"></script>
   <script src="../overlay.js"></script>
   <script src="../lens.js"></script>
   <script src="../timeline.js"></script>
   <script src="../attendance.js"></script>
   <script src="../occupancy.js"></script>
   <script src="../request.js"></script>
+  <script src="../leave.js"></script>
   <script src="../dashboard.js"></script>
+  <script src="../ad_tenancy.js"></script>
+  <script src="../iot.js"></script>
+  <!-- window.Chart — needed by hba_dashboard.js AND hba_iot.js's sensor charts (was missing entirely; both
+       panes' chart-creation code is guarded `if (G.Chart)` so it silently no-op'd without this tag). -->
+  <script src="../../viewer/lib/chart.umd.min.js"></script>
   <script src="../../viewer/hba_dashboard.js"></script>
+  <script src="../../viewer/hba_payslip.js"></script>
+  <script src="../../viewer/hba_leave.js"></script>
+  <script src="../../viewer/hba_draggable.js"></script>
+  <script src="../../viewer/hba_tenancy.js"></script>
+  <script src="../../viewer/hba_iot.js"></script>
   <script src="../../viewer/hba_lens.js"></script>
   <script>
-    // mock APP: real lease-room guids (Occupancy/Presence/Class detect) + seeded signed logs; NO asset guid →
-    // Assets/IoT greys out (wake-aware). Dashboard detects (browser DOM present).
-    var rooms = [ { guid:'RM_Level_1_1', storey:'Level 1' }, { guid:'RM_Level_1_3', storey:'Level 1' }, { guid:'RM_Level_1_4', storey:'Level 1' } ];
-    var guidMap = {}; rooms.forEach(function(r,i){ guidMap[String(7000+i)] = r.guid; });
-    var A = { guidMap: guidMap, _hbaRooms: rooms, _hbaPeriod: '2026-07', status:{textContent:''},
-      markDirty: function(){}, collectMeshes: function(){ return []; } };
+    // mock APP: real lease-room guids (Occupancy/Presence/Tenancy/Class detect) + a real asset guid (Assets/IoT
+    // detects too, per §P10b) + seeded signed logs. Dashboard detects (browser DOM present).
+    var rooms = [ { guid:'RM_Level_1_1', name:'≈ Level 1 R1', storey:'Level 1' }, { guid:'RM_Level_1_3', name:'≈ Level 1 R3', storey:'Level 1' }, { guid:'RM_Level_1_4', name:'≈ Level 1 R4', storey:'Level 1' } ];
+    var assetGuid = self.HbaModels.records('Asset')[0].bim_guid;
+    var guidMap = {}; rooms.forEach(function(r,i){ guidMap[String(7000+i)] = r.guid; }); guidMap['8000'] = assetGuid;
+    var A = { guidMap: guidMap, _hbaRooms: rooms, _hbaStoreyOf: {}, _hbaRoomMembers: {}, _hbaPeriod: '2026-07', status:{textContent:''},
+      markDirty: function(){}, collectMeshes: function(pred){
+        var ms = rooms.map(function(r,i){ return { isMesh:true, userData:{guid:r.guid}, position:{x:i*4,y:0,z:0} }; })
+          .concat([{ isMesh:true, userData:{guid:assetGuid}, position:{x:12,y:0,z:0} }]);
+        return pred ? ms.filter(pred) : ms;
+      } };
+    rooms.forEach(function(r){ A._hbaStoreyOf[r.guid]=r.storey; A._hbaRoomMembers[r.guid]=[r.guid]; });
     A._hbaOccupancyLog = self.HbaOccupancy.demoSeed(rooms).log;
     A._hbaAttendanceLog = self.HbaAttendance.demoSeed(rooms, '2026-07').log;
+    A._hbaPayrollSpec = self.HbaAdPayroll.demoSpec();   // P7 — payroll has no spatial binding to check, seeded like the others
+    var payEmps = A._hbaPayrollSpec.employees.map(function(e){ return { id: e.name, name: e.name }; });
+    var leaveLogs = {}; payEmps.forEach(function(e){ leaveLogs[e.id] = self.HbaLeave.demoLog(e.id); });
+    A._hbaLeaveSpec = { period: null, policy: null, locale: 'en', employees: payEmps, log: leaveLogs };   // P8 — same reasoning
+    A._hbaTenancySpec = self.HbaAdTenancy.compileBuilding('HHS_Office_Federated', rooms, self.HbaModels.records('Tenancy'), self.HbaModels.records('Strata'));   // §P10-BUILD/§P10a
     window.APP = A;
     // open the REAL family drawer (the same call panels.js makes)
     var d = self.HBALens.openFamilyDrawer(A);
     var avail = self.HBALens.availableLenses(A);
     console.log('§FM_DEMO drawer rendered=' + !!d + ' available=' + avail.filter(function(x){return x.available;}).map(function(x){return x.id;}).join(','));
-    document.title = 'FM ready · ' + avail.filter(function(x){return x.available;}).length + '/5 lenses';
+    document.title = 'Human-Asset ready · ' + avail.filter(function(x){return x.available;}).length + '/8 lenses';
   </script>
 </body></html>

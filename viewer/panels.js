@@ -1150,13 +1150,14 @@ function setupPanels(A) {
         isActive: function() { return !!(window.WHWalk && WHWalk.isOpen && WHWalk.isOpen()); },
         children: [ { name: 'Route over locators (walk order)' }, { name: 'Fly-to next bin, FIND-lens depth' }, { name: 'Scan bin QR / type code' }, { name: 'Signed pick group per bin' } ] },
       { id: 'share',      name: 'Share',           key: '/', icon: I.share.svg, fn: function() { if (A.quickShare) A.quickShare(); } },
-      // HR_BIM_Asset — ONE "FM / Operate" family pill (RESUME_HR_BIM_ASSET.md §FM-FAMILY, user 2026-07-01).
-      // De-clutter: the 6 HBA lenses (Tenancy folded into Occupancy = de-conflate) live under one pill that opens
-      // a wake-aware drawer (Occupancy · Presence · Unit class · Assets/IoT · Dashboard). DATA-GATED like whwalk:
-      // pill:false until viewer/hba_lens.js detects ≥1 lens with data in the loaded building. The drawer logic +
-      // per-lens greying live in hba_lens.js (the additive HBA module) — panels.js carries ONLY this one entry,
-      // keeping the shared bar (and the Teams-adjacent file) minimal. Inert if hr_bim_asset/* did not load.
-      { id: 'hbaFM',      name: 'FM / Operate',     pill: false, icon: I.fmCockpit.svg,
+      // HR_BIM_Asset — ONE "Human-Asset" family pill (RESUME_HR_BIM_ASSET.md §FM-FAMILY + §P10a, user 2026-07-01
+      // / renamed 2026-07-02). De-clutter: the HBA lenses+panes (Tenancy folded into Occupancy = de-conflate)
+      // live under one pill that opens a wake-aware drawer. DATA-GATED like whwalk: pill:false until
+      // viewer/hba_lens.js detects ≥1 lens with data in the loaded building. The drawer logic + per-lens greying
+      // live in hba_lens.js (the additive HBA module) — panels.js carries ONLY this one entry, keeping the
+      // shared bar (and the Teams-adjacent file) minimal. Inert if hr_bim_asset/* did not load. id stays `hbaFM`
+      // (internal, unrenamed — 29+ witness files reference it); only the user-visible label changed.
+      { id: 'hbaFM',      name: 'Human-Asset',     pill: false, icon: I.fmCockpit.svg,
         fn: function() { if (window.HBALens && HBALens.openFamilyDrawer) HBALens.openFamilyDrawer(A); },
         isActive: function() { return !!(window.HBALens && HBALens.familyActive && HBALens.familyActive()); },
         children: [ { name: 'Operate-phase (7D) cockpit — one model, lenses each answering ONE question' }, { name: 'Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard' }, { name: 'Wake-aware: only lenses with data in THIS building are enabled (others greyed)' }, { name: 'All off one signed op-log; toggle a lens off restores the model' } ] },

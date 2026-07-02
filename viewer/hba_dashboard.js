@@ -60,6 +60,7 @@
       wrap.appendChild(cv); pane.appendChild(wrap); canvases.push(cv);
     });
     (document.body || document.documentElement).appendChild(pane);
+    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
     if (pane.offsetHeight) { /* force a reflow so the canvases have layout before Chart measures them */ }
     if (G.Chart) cfgs.forEach(function (cfg, i) {
       cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false, animation: false }, cfg.options || {});

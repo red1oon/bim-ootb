@@ -104,8 +104,28 @@ function fingerprint(log, emp, policy) {
   return C._util.sha256(C._util.stableStringify(rows));
 }
 
+// demonstrator leave log for the P8 viewer pane — the SAME accrue/take schedule already accepted by
+// witness_leave.js L0-L9 (3×2d annual accrued Jan-Mar, 4d taken Apr, 5d taken May [splits paid2/unpaid3],
+// 1d unpaid-type taken May) — reused per-employee, not re-invented. Independently signed+chained per emp.
+function demoLog(emp) {
+  var log = [];
+  function add(fn, type, days, ts) {
+    var prev = log.length ? log[log.length - 1].op_hash : 'GENESIS';
+    var r = fn({ employee: emp, type: type, days: days, ts: ts }, prev);
+    if (r.op) log.push(r.op);
+  }
+  add(accrue, 'annual', 2, '2026-01-31T00:00:00Z');
+  add(accrue, 'annual', 2, '2026-02-28T00:00:00Z');
+  add(accrue, 'annual', 2, '2026-03-31T00:00:00Z');
+  add(take,   'annual', 4, '2026-04-10T00:00:00Z');
+  add(take,   'annual', 5, '2026-05-12T00:00:00Z');
+  add(take,   'unpaid', 1, '2026-05-20T00:00:00Z');
+  return log;
+}
+
 var L = { PAID_DEFAULT: PAID_DEFAULT, isPaid: isPaid, accrue: accrue, take: take, balance: balance,
-  classify: classify, unpaidDays: unpaidDays, leaveDeduction: leaveDeduction, summary: summary, fingerprint: fingerprint };
+  classify: classify, unpaidDays: unpaidDays, leaveDeduction: leaveDeduction, summary: summary, fingerprint: fingerprint,
+  demoLog: demoLog };
 if (typeof module === 'object' && module.exports) module.exports = L;
 else (typeof self !== 'undefined' ? self : this).HbaLeave = L;
 })();

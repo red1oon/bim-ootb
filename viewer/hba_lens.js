@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll, Lv: G.HbaLeave, ADT: G.HbaAdTenancy, IoT: G.HbaIot }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -243,6 +243,31 @@
         A._hbaRequestLog = G.HbaRequest.demoSeed(rooms, '2026-05-10T00:00:00Z', reqKnown).log;
         console.log('§HBA_REQ seeded ' + A._hbaRequestLog.length + ' open tickets from ' + rooms.length + ' rooms (demonstrator, aging @2026-05-10)');
       }
+      // P7 — seed a (watermarked, demonstrator) payroll spec so the Payslip pane has data on a building that
+      // carries rooms (mirrors the occupancy/attendance/request gate above). Payroll identity (c_bpartner_id)
+      // has NO spatial binding to check (unlike Occupancy/Asset) — reuses the SAME EMP001/EMP002 baseline
+      // already accepted by witness_ad_payroll.js, not a per-building invention.
+      if (!A._hbaPayrollSpec && h.AD && h.AD.demoSpec && rooms.length) {
+        A._hbaPayrollSpec = h.AD.demoSpec();
+        console.log('§HBA_PAY seeded payroll spec — ' + A._hbaPayrollSpec.employees.length + ' employees, period ' + A._hbaPayrollSpec.period + ' (demonstrator)');
+      }
+      // P8 — seed a (watermarked, demonstrator) leave spec so the Leave pane has data, same reasoning as
+      // Payroll above (no spatial guid to resolve). Reuses the SAME employee identities as the payroll spec
+      // (EMP001/EMP002) and the SAME accrue/take schedule already accepted by witness_leave.js, per employee.
+      if (!A._hbaLeaveSpec && h.Lv && h.Lv.demoLog && h.AD && h.AD.demoSpec && rooms.length) {
+        var payEmps = h.AD.demoSpec().employees;
+        var leaveEmps = payEmps.map(function (e) { return { id: e.name, name: e.name }; });
+        var leaveLogs = {}; leaveEmps.forEach(function (e) { leaveLogs[e.id] = h.Lv.demoLog(e.id); });
+        A._hbaLeaveSpec = { period: null, policy: null, locale: 'en', employees: leaveEmps, log: leaveLogs };
+        console.log('§HBA_LEAVE seeded leave spec — ' + leaveEmps.length + ' employees (demonstrator)');
+      }
+      // §P10-BUILD/§P10a — compile the WHOLE building's tenancy+strata into native AD shapes (Warehouse/
+      // Locator/Product/Subscription) so the Tenancy pane has data on a building that carries rooms. Uses the
+      // model's OWN building name (A.buildingName, honest fallback to a generic label) — never invented.
+      if (!A._hbaTenancySpec && h.ADT && h.ADT.compileBuilding && h.M && rooms.length) {
+        A._hbaTenancySpec = h.ADT.compileBuilding(A.buildingName || 'This Building', rooms, h.M.records('Tenancy'), h.M.records('Strata'));
+        console.log('§HBA_TEN compiled tenancy spec — units=' + A._hbaTenancySpec.units + ' subscriptions=' + A._hbaTenancySpec.subscriptions.length + ' skipped=' + A._hbaTenancySpec.skipped.length);
+      }
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 
@@ -293,20 +318,31 @@
     footprints:'<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
     layers:    '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
     cpu:       '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
-    barChart:  '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'
+    barChart:  '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+    banknote:  '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+    calendar:  '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    fileText:  '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>'
   };
   var FAMILY = [
     { kind: 'lens', mode: 'occupancy',   icon: 'doorOpen',   label: 'Occupancy',    detail: 'Availability — occupied / expiring / vacant / unavailable (incl. lease status)' },
-    { kind: 'lens', mode: 'presence',    icon: 'footprints', label: 'Presence',     detail: 'Live headcount-by-zone from signed check-ins' },
+    { kind: 'lens', mode: 'presence',    icon: 'footprints', label: 'Presence',     detail: 'Live headcount-by-zone from signed check-ins — click opens the roster, click a person to zoom' },
     { kind: 'lens', mode: 'class',       icon: 'layers',     label: 'Unit class',   detail: 'Use-class — residential / commercial / office' },
-    { kind: 'lens', mode: 'maintenance', icon: 'cpu',        label: 'Assets / IoT', detail: 'Equipment maintenance due — ok / due / overdue' },
-    { kind: 'pane', id:   'dash',        icon: 'barChart',   label: 'Dashboard',    detail: 'Occupancy / availability / ticket-aging charts (extra pane)' }
+    { kind: 'lens', mode: 'maintenance', icon: 'cpu',        label: 'Assets / IoT', detail: 'Equipment maintenance due — click opens 24h sensor charts + CCTV mockup + billing' },
+    { kind: 'pane', id:   'tenancy',     icon: 'fileText',   label: 'Tenancy / AD', detail: 'Lease/strata compiled to native AD (Warehouse/Locator/Product/Subscription)' },
+    { kind: 'pane', id:   'dash',        icon: 'barChart',   label: 'Dashboard',    detail: 'Occupancy / availability / ticket-aging charts (extra pane)' },
+    { kind: 'pane', id:   'payslip',     icon: 'banknote',   label: 'Payslip',      detail: 'Payroll run → per-employee payslip (glass-box, watermarked)' },
+    { kind: 'pane', id:   'leave',       icon: 'calendar',   label: 'Leave',        detail: 'Leave balance & statement — accrual/take replay (glass-box)' }
   ];
+  // pane entries route by `id` to their own additive pane module (dash→HBADashPane, payslip→HBAPayslipPane,
+  // leave→HBALeavePane, tenancy→HBATenancyPane) — a small registry instead of hardcoding one pane name, so
+  // adding a pane never touches the lens/toggle path.
+  var PANE_GLOBALS = { dash: 'HBADashPane', payslip: 'HBAPayslipPane', leave: 'HBALeavePane', tenancy: 'HBATenancyPane' };
+  function paneFor(f) { return G[PANE_GLOBALS[f.id]]; }
   function _entryActive(f) {
-    return f.kind === 'pane' ? !!(G.HBADashPane && G.HBADashPane.isActive && G.HBADashPane.isActive()) : isActive(f.mode);
+    return f.kind === 'pane' ? !!(paneFor(f) && paneFor(f).isActive && paneFor(f).isActive()) : isActive(f.mode);
   }
   function _entryAvailable(A, f) {
-    return f.kind === 'pane' ? !!(G.HBADashPane && G.HBADashPane.detect && G.HBADashPane.detect(A)) : detect(A, f.mode);
+    return f.kind === 'pane' ? !!(paneFor(f) && paneFor(f).detect && paneFor(f).detect(A)) : detect(A, f.mode);
   }
   // pure, witnessed: the wake-aware availability + active state of every family entry for THIS building.
   function availableLenses(A) {
@@ -320,19 +356,144 @@
     var drawerOpen = (typeof document !== 'undefined') && !!document.getElementById('hba-fm-drawer');
     return availableLenses(G.APP || G.A || {}).some(function (x) { return x.active; }) || drawerOpen;
   }
-  function activateLens(A, entry) { if (entry.kind === 'pane') { if (G.HBADashPane) G.HBADashPane.toggle(A); } else { toggle(A, entry.mode); } }
+  function activateLens(A, entry) { if (entry.kind === 'pane') { var p = paneFor(entry); if (p) p.toggle(A); } else { toggle(A, entry.mode); } }
 
-  // the thin BROWSER renderer — a small drawer of the family entries; available → clickable, unavailable → greyed
-  // (wake-aware), active → highlighted. Re-tap the FM pill toggles it shut. No node path (returns if no document).
-  function openFamilyDrawer(A) {
+  // remove every child via removeChild/remove (NOT `.innerHTML = ''` — matches the codebase's own convention,
+  // see hba_leave.js/hba_payslip.js headers: innerHTML-clearing isn't reliable across the lightweight witness
+  // DOM stub used by every node test in this repo).
+  function _clear(el) { while (el.children && el.children.length) { var c = el.children[0]; if (c.remove) c.remove(); else el.removeChild(c); } }
+
+  function _closePresenceDrawer() {
+    if (typeof document === 'undefined') return;
+    var ex = document.getElementById('hba-presence-drawer'); if (ex) ex.remove();
+  }
+
+  // §P10a shared fly-to primitive (user 2026-07-02) — the Tenancy pane row-click AND the Presence roster
+  // row-click AND the smart-search hits all fly through this ONE function (no duplicate camera code).
+  // Centroid via the REAL-BIND idiom (zoneMeshGuids over A.guidMap+_hbaRoomMembers — same as buildMeshPort
+  // above); flight = the navigate_find direction-preserving ease-lerp idiom, reimplemented here (hba_lens.js
+  // is host-injected/additive — it cannot reach into navigate_find's private closure). Returns
+  // {flew, guid, center} synchronously (witnessable without a real THREE/camera) and, when a real
+  // camera+controls+THREE ARE present, also performs the actual browser fly. Honest no-op (logged, flew:false)
+  // when the zone has no rendered members in THIS building — never a fabricated position.
+  function flyToZone(A, guid) {
+    if (!A || !A.guidMap || !ready()) { console.log('§HBA_FLY no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
+    var want = HBA().B.zoneMeshGuids(guid, A.guidMap, A._hbaRoomMembers || null);
+    if (!want.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no rendered members)'); return { flew: false, reason: 'no-members' }; }
+    var set = {}; want.forEach(function (g) { set[g] = true; });
+    var meshes = A.collectMeshes ? A.collectMeshes(function (o) { return o.userData && set[o.userData.guid]; }) : [];
+    if (!meshes.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no matching mesh)'); return { flew: false, reason: 'no-mesh' }; }
+    var cx = 0, cy = 0, cz = 0;
+    meshes.forEach(function (m) { var p = m.position || { x: 0, y: 0, z: 0 }; cx += p.x; cy += p.y; cz += p.z; });
+    var n = meshes.length, center = { x: cx / n, y: cy / n, z: cz / n };
+    if (A.camera && A.controls && typeof THREE !== 'undefined' && typeof requestAnimationFrame === 'function') {
+      var c3 = new THREE.Vector3(center.x, center.y, center.z), dist = 8;
+      var end = c3.clone().add(new THREE.Vector3(0.5, 0.5, 0.7).normalize().multiplyScalar(dist));
+      var start = A.camera.position.clone(), t = 0;
+      (function anim() {
+        t += 0.05; if (t > 1) t = 1;
+        var e = 1 - Math.pow(1 - t, 3);
+        A.camera.position.lerpVectors(start, end, e);
+        A.controls.target.copy(c3);
+        A.controls.update();
+        if (A.markDirty) A.markDirty();
+        if (t < 1) requestAnimationFrame(anim);
+      })();
+    }
+    console.log('§HBA_FLY guid=' + guid + ' center=(' + center.x.toFixed(1) + ',' + center.y.toFixed(1) + ',' + center.z.toFixed(1) + ')');
+    return { flew: true, guid: want[0], center: center };
+  }
+
+  // §P10a — Presence roster (user 2026-07-02): a second small drawer beside the FM drawer, listing every
+  // attendance session for the current period. Person resolved via MODELS.Official by attendance's own
+  // `employee` id — an honest miss shows the bare code, never a fabricated name (attendance's auto-generated
+  // overflow employees past EMP-4 have no Official row on purpose — see models.js Official header). Row click
+  // flies the camera to the person's zone via flyToZone.
+  function openPresenceDrawer(A) {
     if (typeof document === 'undefined') return null;
-    var ex = document.getElementById('hba-fm-drawer'); if (ex) { ex.remove(); return null; }
-    var list = availableLenses(A), d = document.createElement('div'); d.id = 'hba-fm-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;right:64px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
-      + 'color:#fff;border-radius:10px;padding:8px;box-shadow:0 8px 28px rgba(0,0,0,.45);font:13px/1.3 system-ui,sans-serif;min-width:230px;';
-    var hdr = document.createElement('div'); hdr.textContent = 'FM / Operate'; hdr.style.cssText = 'font-weight:700;padding:4px 8px 8px;opacity:.85;';
-    d.appendChild(hdr);
-    list.forEach(function (e) {
+    _closePresenceDrawer();
+    var h = HBA();
+    var log = (A && A._hbaAttendanceLog) || [];
+    var sess = (h.A && h.A.sessions) ? h.A.sessions(log, period(A)) : [];
+    var d = document.createElement('div'); d.id = 'hba-presence-drawer';
+    d.style.cssText = 'position:fixed;z-index:10000;right:326px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
+      + 'color:#fff;border-radius:10px;padding:8px;box-shadow:0 8px 28px rgba(0,0,0,.45);font:13px/1.3 system-ui,sans-serif;'
+      + 'min-width:220px;max-height:70vh;overflow:auto;';
+    var hdr = document.createElement('div'); hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 4px 8px;';
+    var title = document.createElement('span'); title.textContent = 'Presence — ' + sess.length + (sess.length === 1 ? ' session' : ' sessions');
+    title.style.cssText = 'font-weight:700;opacity:.85;';
+    var closeBtn = document.createElement('button'); closeBtn.textContent = '✕'; closeBtn.title = 'Close';
+    closeBtn.style.cssText = 'background:transparent;border:0;color:#fff;opacity:.6;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;';
+    closeBtn.addEventListener('click', function () { d.remove(); });
+    hdr.appendChild(title); hdr.appendChild(closeBtn); d.appendChild(hdr);
+    if (!sess.length) {
+      var empty = document.createElement('div'); empty.textContent = 'No check-ins in this building/period.'; empty.style.cssText = 'padding:8px;opacity:.6;';
+      d.appendChild(empty);
+    }
+    sess.forEach(function (s) {
+      var official = h.M ? h.M.officialByName(s.employee) : null;
+      var label = official ? official.name + (official.phone ? ' · ' + official.phone : '') : s.employee;
+      var storey = (A._hbaStoreyOf && A._hbaStoreyOf[s.zone]) || null;
+      var row = document.createElement('button');
+      row.setAttribute('data-employee', s.employee); row.setAttribute('data-zone', s.zone); row.setAttribute('data-label', label);
+      row.style.cssText = 'display:block;width:100%;text-align:left;border:0;border-radius:8px;margin:2px 0;'
+        + 'padding:8px 10px;color:#fff;cursor:pointer;background:transparent;';
+      row.innerHTML = '<div style="font-weight:600">' + label + '</div>'
+        + '<div style="opacity:.7;font-size:11px">' + (storey ? storey + ' · ' : '') + (s.open ? 'checked in ' + s.in : s.in + ' → ' + s.out) + '</div>';
+      row.addEventListener('click', function () { flyToZone(A, s.zone); });
+      d.appendChild(row);
+    });
+    document.body.appendChild(d);
+    console.log('§HBA_PRESENCE_DRAWER open — ' + sess.length + ' sessions');
+    return d;
+  }
+
+  // §P10a smart search — Room name/storey (A._hbaRooms, the SAME data Find's own Storey/Room tree reads —
+  // bindStoreysFromModel populates it) + AD_User name/email/phone. Intentionally redundant with Find's own
+  // search index (its tree lives in a private closure inside navigate_find.js, not exported — true reuse isn't
+  // mechanically available); user accepted the duplication for this POC. Honest empty on no match.
+  function _renderSearch(A, q, resultsEl) {
+    _clear(resultsEl);
+    q = (q || '').trim().toLowerCase();
+    if (!q) return;
+    function hit(s) { return s && String(s).toLowerCase().indexOf(q) >= 0; }
+    var rooms = (A._hbaRooms || []).filter(function (r) { return hit(r.name) || hit(r.guid) || hit(r.storey); }).slice(0, 5);
+    var people = (HBA().M ? HBA().M.records('Official') : []).filter(function (o) { return hit(o.name) || hit(o.phone) || hit(o.email); }).slice(0, 5);
+    if (!rooms.length && !people.length) {
+      var empty = document.createElement('div'); empty.textContent = 'No match.';
+      empty.style.cssText = 'padding:4px 8px;opacity:.5;font-size:12px;'; resultsEl.appendChild(empty); return;
+    }
+    function resultRow(text, onClick) {
+      var row = document.createElement('button'); row.textContent = text;
+      row.style.cssText = 'display:block;width:100%;text-align:left;border:0;border-radius:6px;margin:1px 0;'
+        + 'padding:5px 8px;color:#fff;cursor:pointer;background:#132436;font-size:12px;';
+      row.addEventListener('click', onClick);
+      resultsEl.appendChild(row);
+    }
+    rooms.forEach(function (r) {
+      resultRow('Room · ' + (r.name || r.guid) + (r.storey ? ' · ' + r.storey : ''), function () { flyToZone(A, r.guid); });
+    });
+    people.forEach(function (o) {
+      resultRow('Person · ' + o.name + (o.phone ? ' · ' + o.phone : ''), function () {
+        var log = (A && A._hbaAttendanceLog) || [];
+        var h = HBA();
+        var sess = (h.A && h.A.sessions) ? h.A.sessions(log, period(A)) : [];
+        var openSess = sess.filter(function (s) { return s.employee === o.name && s.open; })[0];
+        if (openSess) flyToZone(A, openSess.zone);
+        else console.log('§HBA_SEARCH ' + o.name + ' has no open session in this period (no zone to fly to)');
+      });
+    });
+  }
+
+  // the thin BROWSER renderer — a small drawer of the family entries; available → clickable, unavailable →
+  // greyed (wake-aware), active → highlighted. §P10a (user 2026-07-02): close is DELIBERATE ONLY — the ✕
+  // button or re-tapping the pill (familyActive() toggle); a row click activates its lens/pane and re-renders
+  // the row list IN PLACE, it never removes the drawer. Persistent container + `_renderRows` inner rebuild (no
+  // remove/recreate flicker). A top search box flies the camera to a match via the shared flyToZone. No node
+  // path (returns if no document).
+  function _renderRows(A, d, rowsEl) {
+    _clear(rowsEl);
+    availableLenses(A).forEach(function (e) {
       var row = document.createElement('button'); row.disabled = !e.available;
       row.setAttribute('data-lens', e.id); row.setAttribute('data-available', e.available ? '1' : '0'); row.setAttribute('data-active', e.active ? '1' : '0');
       row.title = e.detail + (e.available ? '' : ' — no data in this building');
@@ -343,11 +504,47 @@
         + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (_ic[e.icon] || '') + '</svg></span>'
         + '<span style="flex:1">' + e.label + '</span>'
         + '<span style="opacity:.7;font-size:11px">' + (e.available ? (e.active ? '● on' : '') : 'no data') + '</span>';
-      if (e.available) row.addEventListener('click', function () { activateLens(A, e); d.remove(); if (A.markDirty) A.markDirty(); });
-      d.appendChild(row);
+      if (e.available) row.addEventListener('click', function () {
+        activateLens(A, e);
+        if (e.mode === 'presence') { if (isActive('presence')) openPresenceDrawer(A); else _closePresenceDrawer(); }
+        if (e.mode === 'maintenance' && G.HBAIotPane) G.HBAIotPane.toggle(A);   // §P10b — tint stays, IoT sensor/CCTV/billing pane opens alongside
+        _renderRows(A, d, rowsEl);                          // refresh highlight/badges — drawer stays open (§P10a point 2)
+        if (A.markDirty) A.markDirty();
+      });
+      rowsEl.appendChild(row);
     });
+  }
+  function openFamilyDrawer(A) {
+    if (typeof document === 'undefined') return null;
+    var ex = document.getElementById('hba-fm-drawer'); if (ex) { ex.remove(); _closePresenceDrawer(); return null; }
+    var d = document.createElement('div'); d.id = 'hba-fm-drawer';
+    d.style.cssText = 'position:fixed;z-index:10000;right:64px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
+      + 'color:#fff;border-radius:10px;padding:8px;box-shadow:0 8px 28px rgba(0,0,0,.45);font:13px/1.3 system-ui,sans-serif;min-width:250px;';
+
+    var hdr = document.createElement('div'); hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 4px 8px;';
+    var title = document.createElement('span'); title.textContent = 'Human-Asset'; title.style.cssText = 'font-weight:700;opacity:.85;';
+    var closeBtn = document.createElement('button'); closeBtn.textContent = '✕'; closeBtn.title = 'Close'; closeBtn.setAttribute('data-role', 'close');
+    closeBtn.style.cssText = 'background:transparent;border:0;color:#fff;opacity:.6;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;';
+    closeBtn.addEventListener('click', function () { d.remove(); _closePresenceDrawer(); });
+    hdr.appendChild(title); hdr.appendChild(closeBtn);
+    d.appendChild(hdr);
+
+    var searchWrap = document.createElement('div'); searchWrap.style.cssText = 'padding:0 4px 8px;';
+    var search = document.createElement('input'); search.type = 'text'; search.id = 'hba-fm-search';
+    search.placeholder = 'Search room no / name / phone…';
+    search.style.cssText = 'width:100%;box-sizing:border-box;background:#132436;color:#fff;border:1px solid #2b415a;'
+      + 'border-radius:6px;padding:6px 8px;font:12px system-ui,sans-serif;';
+    var results = document.createElement('div'); results.id = 'hba-fm-search-results'; results.style.cssText = 'margin-top:4px;';
+    search.addEventListener('input', function () { _renderSearch(A, search.value, results); });
+    searchWrap.appendChild(search); searchWrap.appendChild(results);
+    d.appendChild(searchWrap);
+
+    var rows = document.createElement('div'); rows.id = 'hba-fm-rows';
+    d.appendChild(rows);
+    _renderRows(A, d, rows);
+
     document.body.appendChild(d);
-    console.log('§HBA_FM drawer open — ' + list.filter(function (x) { return x.available; }).length + '/' + list.length + ' lenses available');
+    console.log('§HBA_FM drawer open — ' + availableLenses(A).filter(function (x) { return x.available; }).length + '/' + FAMILY.length + ' lenses available');
     return d;
   }
 
@@ -370,7 +567,8 @@
 
   G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, tintedCount: tintedCount,
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
-    familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready };
+    familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
+    flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer };
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------

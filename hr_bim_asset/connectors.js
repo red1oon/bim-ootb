@@ -64,9 +64,15 @@ var Connectors = {
   },
 
   // ---- STUB: persistence (REAL: sql.js 5-table — NEXT slice) -----------------
-  // In-mem op-log + projection. The shape mirrors the ERP 5-table bridge:
-  //   PAYRUN  → documents      · PAYSLIP → document_lines · employee/element → items
-  //   GL post → journal.
+  // In-mem op-log + projection. CORRECTED 2026-07-02 (prompts/RESUME_HR_BIM_ASSET.md §CRITICAL
+  // "Compile not Model" — the original mapping below was an INVENTED parallel schema; iDempiere
+  // already ships these tables natively, verified against build/erp/ad_full.db). The payroll profile
+  // now compiles into them directly (ad_payroll.js); engine.js's generic `documents`/`document_lines`
+  // stays only for tenancy/strata/maintenance until THEY are re-targeted the same way:
+  //   hr_process (the run) · hr_movement (one row per employee × pay-concept, the payslip line) ·
+  //   hr_concept/hr_concept_category (the pay-element identity) · hr_concept_acct (the GL mapping) ·
+  //   hr_employee/hr_contract (the party + term). GL post → journal (via hr_concept_acct, not a
+  //   hardcoded profile-level account string).
   _log: [],
   persist: function (op) { this._log.push(op); return op; },
   log: function () { return this._log.slice(); },

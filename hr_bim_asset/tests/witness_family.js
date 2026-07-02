@@ -48,10 +48,13 @@ var A = makeAPP(LEASE, { occ: true, att: true });
 var lenses = HBALens.availableLenses(A);
 function entry(id) { return lenses.filter(function (x) { return x.id === id; })[0]; }
 
-// ---- F1 — de-conflate: the family lists DISTINCT questions; Tenancy is folded into Occupancy (no 'tenancy').
+// ---- F1 — de-conflate: the family lists DISTINCT questions; the LENS-level Tenancy (lease status) stays
+//   folded into Occupancy (no standalone tenancy LENS). §P10-BUILD (2026-07-02) adds a DIFFERENT concern back
+//   as a PANE — the AD-compile view (Warehouse/Locator/Product/Subscription) — so 'tenancy' now exists again,
+//   but as kind:'pane', never kind:'lens' (the de-conflate principle still holds at the lens layer).
 var ids = lenses.map(function (x) { return x.id; });
-ok('F1-deconflate', ids.join(',') === 'occupancy,presence,class,maintenance,dash' && ids.indexOf('tenancy') === -1,
-  'family = Occupancy · Presence · Unit class · Assets/IoT · Dashboard (Tenancy folded into Occupancy — no standalone tenancy pill) — ' + JSON.stringify(ids));
+ok('F1-deconflate', ids.join(',') === 'occupancy,presence,class,maintenance,tenancy,dash,payslip,leave' && entry('tenancy').kind === 'pane',
+  'family = Occupancy · Presence · Unit class · Assets/IoT · Tenancy/AD(pane) · Dashboard · Payslip · Leave (lease-status Tenancy still folded into the Occupancy LENS; the tenancy PANE is a distinct AD-compile concern) — ' + JSON.stringify(ids));
 
 // ---- F2 — WAKE-AWARE: on a building with rooms+leases+logs but NO asset, occupancy/presence/class are
 //   available; maintenance (assets) is GREYED (available:false) — the icon is present but disabled, never faked.
@@ -89,8 +92,8 @@ ok('F6-one-pill', /id:\s*'hbaFM'/.test(panelsSrc) && /HBALens\.openFamilyDrawer\
 
 // ---- F7 — drawer renderer is node-safe (no document → returns null, never throws) + exposes the family list.
 var nullInNode = HBALens.openFamilyDrawer(A) === null;
-ok('F7-drawer-nodesafe', nullInNode && HBALens.FAMILY.length === 5,
-  'openFamilyDrawer is a no-op without a DOM (null, no throw); FAMILY exposes the 5 entries for the browser drawer');
+ok('F7-drawer-nodesafe', nullInNode && HBALens.FAMILY.length === 8,
+  'openFamilyDrawer is a no-op without a DOM (null, no throw); FAMILY exposes the 8 entries for the browser drawer');
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-FAMILY ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));
