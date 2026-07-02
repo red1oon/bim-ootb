@@ -1,20 +1,31 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// ⚠ DO NOT REMOVE — HR_BIM_ASSET → VIEWER IoT PANE (RESUME_HR_BIM_ASSET.md §P10b, user 2026-07-02). An EXTRA,
-//   ADDITIVE pane mirroring hba_dashboard.js's pattern — NOT a change to the rest of the viewer. ADDITIVE +
-//   HOST-INJECTED: imports NOTHING from viewer internals; the host hands it `A` (APP). Opens as a supplementary
-//   pane when the Assets/IoT FAMILY row is clicked (the tint lens stays untouched — same dual-action pattern as
-//   the Presence roster). 3 sections, ALL EXPLICITLY MOCKUP (§P10b): (a) 6 Chart.js line charts over
-//   hr_bim_asset/iot.js's deterministic synthetic series (reuses the ALREADY-BUNDLED Chart.js, same engine
-//   hba_dashboard.js uses — no new charting dependency); (b) a 2x3 CCTV MOCKUP grid — plain <canvas> scanline
-//   animation + "MOCK FEED" caption, NO invented video/GIF asset, NO external URL fetch (PRIME RULE); (c) the
-//   ERP billing table — iot.billingLines() rendered as sensor/reading/uom/C_OrderLine qty·price·net, watermarked.
-//   ZERO-IMPACT: OFF = no DOM; toggle ON mounts ONE fixed overlay; toggle OFF removes it + destroys charts +
-//   stops the CCTV animation (zero residue). Read the log after run.
+// ⚠ DO NOT REMOVE — HR_BIM_ASSET → VIEWER IoT PANE (RESUME_HR_BIM_ASSET.md §P10b/§P10d, user 2026-07-02). An
+//   EXTRA, ADDITIVE pane mirroring hba_dashboard.js's pattern — NOT a change to the rest of the viewer.
+//   ADDITIVE + HOST-INJECTED: imports NOTHING from viewer internals; the host hands it `A` (APP). Opens as a
+//   supplementary pane when the Assets/IoT FAMILY row is clicked (the tint lens stays untouched — same
+//   dual-action pattern as the Presence roster). 3 sections, ALL EXPLICITLY MOCKUP: (a) 6 ANIMATED HORIZONTAL
+//   BARS over hr_bim_asset/iot.js's deterministic synthetic series — style extracted from the actual
+//   `RiverIoT`/Federation sensor-bar panel in the local IfcOpenShell/Bonsai checkout
+//   (~/IfcOpenShell/src/bonsai/bonsai/bim/module/federation/river/equipment_operators.py
+//   draw_callback_px — colored bars, smooth day-to-day interpolation, value readout per bar), adapted
+//   horizontal with the running value printed at the bar's leading edge; NO Chart.js dependency for this
+//   section (hba_dashboard.js still uses Chart.js for its own KPI trend charts — untouched). Each bar's
+//   tick(pt) setter is the STUB SEAM for later real physical sensor wiring: swap the setInterval driver for a
+//   real telemetry callback and the same rows/bars update — nothing else in this file needs to change.
+//   (b) a 2x3 CCTV grid — plain <canvas>, now painted from a REAL dimmed still photo (`hba_cctv_still.jpg`,
+//   user-supplied ContaCam capture, copied into this repo — NOT a feed of THIS building, still captioned
+//   MOCKUP) with a scanline overlay + a diagonal "STUB READY" watermark (this tile is the placeholder seam
+//   for later real physical camera wiring, not a claim of a live feed), NO invented video/GIF asset, NO
+//   external URL fetch (PRIME RULE). (c) the
+//   ERP billing table — iot.billingLines() rendered as sensor/reading/uom/C_OrderLine qty·price·net,
+//   watermarked. ZERO-IMPACT: OFF = no DOM; toggle ON mounts ONE fixed overlay; toggle OFF removes it +
+//   stops all animation timers (zero residue). Read the log after run.
 (function () {
   'use strict';
   var G = (typeof self !== 'undefined' ? self : this);
-  var _pane = null, _charts = [], _cctvTimer = null;
+  var _pane = null, _cctvTimer = null, _barTimer = null;
+  var _cctvImg = null, _cctvImgReady = false;
 
   function deps() { return { M: G.HbaModels, IoT: G.HbaIot }; }
   function ready() { return !!(deps().M && deps().IoT && typeof document !== 'undefined'); }
@@ -32,18 +43,68 @@
 
   function el(tag, css, txt) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
 
+  function loadCctvImage() {
+    if (_cctvImg || typeof Image === 'undefined') return;
+    _cctvImg = new Image();
+    _cctvImg.onload = function () { _cctvImgReady = true; };
+    _cctvImg.onerror = function () { console.warn('§HBA_IOT_CCTV still image load failed'); };
+    _cctvImg.src = 'hba_cctv_still.jpg?v=1';
+  }
+
+  // the source still (hba_cctv_still.jpg) is itself a ContaCam MULTI-camera dashboard screenshot — so each
+  // tile n gets a DIFFERENT crop (a 3x2 grid over the source), not the same centered crop repeated 6x. Dimmed
+  // so the blue scanline + caption stay legible and the tile still visibly reads as an OVERLAY, not a genuine
+  // live camera frame.
   function renderCctvTile(canvas, n) {
     var ctx = canvas.getContext && canvas.getContext('2d');
     if (!ctx) return null;
     var y = 0;
+    var col = (n - 1) % 3, row = Math.floor((n - 1) / 3);
     return function tick() {
       ctx.fillStyle = '#0a1622'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (_cctvImgReady && _cctvImg.naturalWidth) {
+        var iw = _cctvImg.naturalWidth, ih = _cctvImg.naturalHeight;
+        var cw = iw / 3, ch = ih / 2, sx = col * cw, sy = row * ch;
+        ctx.globalAlpha = 0.55;
+        ctx.drawImage(_cctvImg, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1;
+      }
+      // diagonal "STUB READY" watermark — this tile is a placeholder wired to a real still photo, not a
+      // real feed; the label doubles as the seam name for later real physical camera wiring (see file header).
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(-Math.PI / 8);
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('STUB READY', 0, 0);
+      ctx.restore();
       ctx.strokeStyle = '#1976d2'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();   // scanline
       y = (y + 3) % canvas.height;
-      ctx.fillStyle = '#7fa8c9'; ctx.font = '10px monospace';
-      ctx.fillText('CAM ' + n + ' · MOCK FEED', 4, canvas.height - 6);
+      ctx.fillStyle = '#eaf3fb'; ctx.font = '10px monospace';
+      ctx.fillText('CAM ' + n + ' · MOCKUP', 4, canvas.height - 6);
     };
+  }
+
+  // one animated horizontal bar row per sensor — width + the running value at the bar's leading edge both
+  // move together (matching CSS transition) as tick(pt) is fed new points. min/max are DATA-DERIVED (the
+  // sensor's own baseline±amplitude from hr_bim_asset/iot.js), never an invented threshold.
+  function renderSensorBar(sensor, min, max) {
+    var row = el('div', 'padding:4px 0;');
+    row.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;margin-bottom:2px;', sensor.label));
+    var track = el('div', 'position:relative;height:16px;background:#eef2f6;border-radius:3px;');
+    var fill = el('div', 'position:absolute;left:0;top:0;bottom:0;width:2%;background:#1976d2;border-radius:3px;transition:width 0.7s ease;');
+    var val = el('span', 'position:absolute;top:50%;left:2%;transform:translateY(-50%);font-size:10px;font-weight:600;color:#102a43;white-space:nowrap;transition:left 0.7s ease;padding-left:6px;');
+    track.appendChild(fill); track.appendChild(val);
+    row.appendChild(track);
+    var tick = function (pt) {
+      var pct = Math.max(2, Math.min(100, ((pt.v - min) / (max - min)) * 100));
+      fill.style.width = pct + '%';
+      val.style.left = pct + '%';
+      val.textContent = pt.v + ' ' + sensor.uom_symbol;
+    };
+    return { row: row, tick: tick };
   }
 
   function mount(A) {
@@ -64,23 +125,22 @@
     pane.appendChild(el('div', 'background:#fff8e1;color:#a06b00;font-weight:700;letter-spacing:1px;font-size:11px;padding:4px 12px;',
       seriesSpec._watermark + ' · CONTOH — TIDAK RASMI · synthetic mockup, not a real sensor read'));
 
-    // (a) 6 sensor charts, last-24h
-    var chartsWrap = el('div', 'display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 12px;');
-    var canvases = [];
+    // (a) 6 animated horizontal sensor bars, driven by the last-24h series (loops hour 0..23) — stub seam for
+    // later real physical sensor wiring, see file header.
+    var barsWrap = el('div', 'padding:10px 12px;');
+    var bars = [];
     deps_.IoT.SENSORS.forEach(function (s) {
-      var wrap = el('div', 'background:#f8f9fb;border-radius:6px;padding:4px;');
-      wrap.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;', s.label + ' (' + s.uom_symbol + ')'));
-      // the canvas's OWN wrapper must hold NOTHING else — Chart.js's `responsive` resize reads THIS parent's
-      // box (position:relative + a fixed height), so a sibling label inside the SAME box breaks the sizing
-      // (matches hba_dashboard.js's own wrap-holds-only-the-canvas convention).
-      var chartBox = el('div', 'height:80px;position:relative;');
-      var cv = document.createElement('canvas'); cv.style.cssText = 'display:block;';
-      chartBox.appendChild(cv); wrap.appendChild(chartBox);
-      chartsWrap.appendChild(wrap); canvases.push({ cv: cv, sensor: s });
+      var pts = seriesSpec.series[s.key];
+      var vals = pts.map(function (p) { return p.v; });
+      var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+      if (max === min) max = min + 1;   // guard degenerate flat series
+      var headroom = (max - min) * 0.15;
+      var b = renderSensorBar(s, min - headroom, max + headroom);
+      barsWrap.appendChild(b.row); bars.push({ b: b, sensor: s, pts: pts });
     });
-    pane.appendChild(chartsWrap);
+    pane.appendChild(barsWrap);
 
-    // (b) CCTV mockup grid — 6 tiles, plain canvas scanline animation, explicitly labeled MOCK FEED
+    // (b) CCTV mockup grid — 6 tiles, real dimmed still + canvas scanline animation, explicitly labeled MOCKUP
     pane.appendChild(el('div', 'font-size:11px;color:#627d98;text-transform:uppercase;padding:6px 12px 0;', 'CCTV (mockup — no real feed)'));
     var cctvWrap = el('div', 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:6px 12px;');
     var cctvTicks = [];
@@ -108,17 +168,22 @@
 
     (document.body || document.documentElement).appendChild(pane);
     if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
-    if (pane.offsetHeight) { /* force a reflow so the canvases have layout before Chart measures them (hba_dashboard.js pattern) */ }
 
-    // charts must attach to the DOM before Chart.js measures the canvas (same ordering as hba_dashboard.js)
-    if (G.Chart) canvases.forEach(function (c) {
-      var pts = seriesSpec.series[c.sensor.key];
-      var cfg = { type: 'line', data: { labels: pts.map(function (p) { return p.h + 'h'; }),
-        datasets: [{ data: pts.map(function (p) { return p.v; }), borderColor: '#1976d2', borderWidth: 1.5, pointRadius: 0, tension: 0.3 }] },
-        options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } },
-          scales: { x: { display: false }, y: { display: false } } } };
-      try { _charts.push(new G.Chart(c.cv, cfg)); } catch (e) { console.warn('§HBA_IOT chart err ' + e.message); }
-    });
+    loadCctvImage();
+    // prime the bars at hour 0 immediately, then advance one hour per tick so the race is visible
+    var hourIdx = 0;
+    bars.forEach(function (r) { r.b.tick(r.pts[hourIdx]); });
+    if (typeof setInterval === 'function') {
+      _barTimer = setInterval(function () {
+        hourIdx = (hourIdx + 1) % 24;
+        bars.forEach(function (r) { r.b.tick(r.pts[hourIdx]); });
+      }, 900);
+    }
+    // paint every CCTV tile once immediately (rAF alone can be throttled/parked in some hosts, e.g. a
+    // backgrounded tab) — real browsers then keep animating via the rAF loop below; if the still image was
+    // still loading at this exact instant, its 'load' event re-paints all tiles the moment it lands.
+    cctvTicks.forEach(function (t) { t(); });
+    if (_cctvImg && !_cctvImgReady) _cctvImg.addEventListener('load', function () { cctvTicks.forEach(function (t) { t(); }); });
     // CCTV animation loop — mockup only, stopped on unmount
     if (typeof requestAnimationFrame === 'function') {
       (function loop() {
@@ -129,19 +194,18 @@
     }
 
     _pane = pane;
-    console.log('§HBA_IOT_PANE mounted asset=' + asset.asset + ' sensors=' + deps_.IoT.SENSORS.length + ' billingLines=' + billing.lines.length);
+    console.log('§HBA_IOT_PANE mounted asset=' + asset.asset + ' sensors=' + deps_.IoT.SENSORS.length + ' bars=' + bars.length + ' billingLines=' + billing.lines.length);
     return true;
   }
 
   function unmount() {
-    _charts.forEach(function (c) { try { c.destroy(); } catch (e) {} });
-    _charts = [];
+    if (_barTimer) { clearInterval(_barTimer); _barTimer = null; }
     if (_cctvTimer && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(_cctvTimer);
     _cctvTimer = null;
     if (_pane && _pane.parentNode) _pane.parentNode.removeChild(_pane);
     else if (_pane && typeof _pane.remove === 'function') _pane.remove();
     _pane = null;
-    console.log('§HBA_IOT_PANE unmounted (charts destroyed, CCTV loop stopped, zero residue)');
+    console.log('§HBA_IOT_PANE unmounted (bar timer + CCTV loop stopped, zero residue)');
     return false;
   }
 
