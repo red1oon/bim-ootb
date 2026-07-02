@@ -1162,10 +1162,16 @@ async function commitGridMove() {
   try {
     const res = await window.Bonsai.gridmove.commit(id, delta);
     // §STRETCH-1 (W-SDG-GATE): gate the STRETCH like a move — RED (a stretched wall now clashing, or a door fallen
-    // out of its host) / ORANGE (clearance). The changed set = the engine's recompose commands' featureIds.
-    const gateMsg = _runGate(_gateBefore, (res.commands || []).map(c => c.featureId).filter(f => f != null));
+    // out of its host) / ORANGE (clearance). The changed set = the engine's recompose commands' featureIds
+    // PLUS §STRETCH-RIDE riders (RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE): a rider's
+    // OWN command was STRIPPED by gridmove.commit (it moved via an induced GEOM_MOVE instead), so it would
+    // otherwise be invisible to the gate's changed set — the door-out oracle must still check it moved.
+    const gateMsg = _runGate(_gateBefore, (res.commands || []).map(c => c.featureId).filter(f => f != null)
+      .concat((res.riders || []).map(r => r.featureId)));
     window.__lastGate = gateMsg;
-    setStat('grid ' + id + ' moved ' + delta.toFixed(2) + '  recomposed=' + res.commands.length + '  verify=' + res.verify + (gateMsg ? '  ' + gateMsg : ''));
+    setStat('grid ' + id + ' moved ' + delta.toFixed(2) + '  recomposed=' + res.commands.length +
+      (res.riders && res.riders.length ? ('  §STRETCH-RIDE riders=' + res.riders.length) : '') +
+      '  verify=' + res.verify + (gateMsg ? '  ' + gateMsg : ''));
     audioCue('commit'); exitGridMove(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
 }
