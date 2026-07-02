@@ -20,7 +20,7 @@ const aabb = (t, fid) => t.pg.evaluate((f) => {
 }, fid);
 runE2E('W-E2E-ROTATE', async (t) => {
   await t.open('Duplex'); await t.shot('01-open');
-  const sel = await t.pick();
+  const sel = await t.pick({ prefer: 'wall' });   // §F2-FRAMING: gizmo close-ups need an element-scale subject, not the roof slab
   t.assert('R1 SELECT (insert selected)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
   const b0 = await aabb(t, sel.fid);
@@ -36,6 +36,7 @@ runE2E('W-E2E-ROTATE', async (t) => {
   });
   t.assert('R2 GIZMO (yaw ring present)', !!giz, giz ? 'R=' + giz.R.toFixed(2) : 'no ring');
   if (!giz) return;
+  await t.frameElement(sel.fid, 0.35);   // §F2-FRAMING (spec G4): "element close-up" — was a wide whole-building shot via the silent clip fallback
   await t.shot('02-gizmo');
   await t.shotClip('gizmo', sel.fid, 200);
 
