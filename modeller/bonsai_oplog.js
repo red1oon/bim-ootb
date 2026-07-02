@@ -33,8 +33,11 @@
         verify: async (h, s) => s === await sha256hex(SECRET + '|' + h)
       });
       this._signed = true;
-      // restore the group counter so new commits mint fresh gids (max existing group ordinal).
-      try { const r = this.db.exec("SELECT gid FROM kernel_ops WHERE gid LIKE 'geom-grp-%'"); if (r.length) this._n = r[0].values.reduce((m, v) => Math.max(m, parseInt(String(v[0]).replace('geom-grp-', '')) || 0), 0); } catch (e) { }
+      // restore the group counter so new commits mint fresh gids (max existing group ordinal). §P8: scan BOTH
+      // minted prefixes — a reloaded session whose max ordinal lives on a gesture-grp gid would otherwise
+      // re-mint that ordinal and commitGroup's idempotency would SILENTLY return the old group instead of
+      // committing the new gesture.
+      try { const r = this.db.exec("SELECT gid FROM kernel_ops WHERE gid LIKE 'geom-grp-%' OR gid LIKE 'gesture-grp-%'"); if (r.length) this._n = r[0].values.reduce((m, v) => Math.max(m, parseInt(String(v[0]).replace(/^(geom|gesture)-grp-/, '')) || 0), 0); } catch (e) { }
       console.log(TAG + ' signed DB ready (kernel_ops chain + edge signer) groups=' + this._n);
       return this.db;
     },
@@ -182,6 +185,27 @@
       return { id: rowId, verify: v.ok, tip: v.tip, signed, ...r };
     },
 
+    // §P8 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-GESTURE-UNDO): commit ONE user gesture that lands as
+    // SEVERAL ops (grid-stretch + its induced rider moves) as ONE signed group under a 'gesture-grp-*' gid, so
+    // undo()/redo() treat it as one step (see the gesture-aware branches below). Mirrors commit() exactly
+    // (same deterministic baseTs band, same verify + authoritative re-fold + emit); the ONLY difference is N
+    // ops share the gid. opsArray = [{op_type, params}, …] in commit order.
+    async commitGesture(opsArray) {
+      const db = await this._ensureDb();
+      if (!opsArray || !opsArray.length) return { ids: [], verify: true };
+      const baseTs = 1700000000000 + this._n * 1000;
+      const gid = 'gesture-grp-' + (++this._n);
+      const res = await window.KernelOps.commitGroup(db, opsArray, { gid, baseTs });
+      if (!res.committed) throw new Error('commitGroup rejected: ' + res.reason);
+      this._opsCache = null;                                   // §OUTLINER-STALL: see commit()'s identical comment
+      const v = await window.KernelOps.verifyChain(db);
+      this._lastTip = v.tip;
+      const r = await this._foldUpto();                        // a gesture mutates prior solids → authoritative re-fold
+      this._emit();
+      console.log(TAG + ' commitGesture gid=' + gid + ' ops=' + res.ids.length + ' verify=' + v.ok + ' tip=' + (v.tip || '').slice(0, 12));
+      return { ids: res.ids, id: res.ids[res.ids.length - 1], gid, verify: v.ok, tip: v.tip, ...r };
+    },
+
     // §ARC-1 (RESUME_ARC_EDITABLE_SUBSTRATE.md): seed a BATCH of RECOVERED building ops (each carrying its real
     // IFC guid as output_guid) as ONE signed group — the editable-ARC substrate. Mirrors commit() (verify +
     // persist + fold) but writes N ops + their guids at once. IDEMPOTENT by gid ('arcseed-<building>') so
@@ -229,10 +253,14 @@
     // every "edit" is reversible — features are hidden/shown, never rewritten. Invariant kept: never leave an
     // ACTIVE child (GEOM_CUT/FILLET/…) whose referenced parent is undone (that would break the fold).
     _allGeom() {
-      const r = this.db.exec("SELECT id, op_type, parameters, undone FROM kernel_ops WHERE " + GEOM + " ORDER BY id");
+      const r = this.db.exec("SELECT id, op_type, parameters, undone, gid FROM kernel_ops WHERE " + GEOM + " ORDER BY id");
       if (!r.length) return [];
-      return r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parent: p.parent, undone: v[3] }; });
+      return r[0].values.map(v => { const p = JSON.parse(v[2]); return { id: v[0], op_type: v[1], parent: p.parent, undone: v[3], gid: v[4] }; });
     },
+    // §P8 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-GESTURE-UNDO): ONLY a 'gesture-grp-*' gid undoes/
+    // redoes as one unit — one user gesture, one Ctrl+Z. Every other gid keeps the one-row behaviour: the
+    // 'arcseed-*' whole-building group must NEVER mass-undo, 'geom-grp-*' singles are one row anyway.
+    _isGestureGid(gid) { return typeof gid === 'string' && gid.indexOf('gesture-grp-') === 0; },
     // §OUTLINER-STALL: the other real mutation primitive (delete/undo/redo all funnel through this) — invalidate
     // here too, same reason as commit()/commitSeedGroup(): this.db is mutated in place, cache must clear at the
     // write, not deferred to _emit() (which runs after the callers' own _foldUpto()).
@@ -249,28 +277,34 @@
       return { deleted: ids };
     },
     // Undo = soft-delete the most-recent ACTIVE feature (LIFO; newest has no active dependents).
+    // §P8: if the top row belongs to a gesture group, the WHOLE group undoes together (one gesture = one Ctrl+Z —
+    // a grid-stretch's induced rider moves revert with the stretch, never a half-reverted gesture).
     async undo() {
       if (!this.db) return { undone: null };
       const active = this._allGeom().filter(o => !o.undone);
       if (!active.length) return { undone: null };
-      const top = active[active.length - 1].id;
-      this._setUndone([top], 1);
+      const topRow = active[active.length - 1], top = topRow.id;
+      const ids = this._isGestureGid(topRow.gid) ? active.filter(o => o.gid === topRow.gid).map(o => o.id) : [top];
+      this._setUndone(ids, 1);
       await this._foldUpto(); this._emit();
-      console.log(TAG + ' undo id=' + top + ' active=' + this.length);
-      return { undone: top };
+      console.log(TAG + ' undo id=' + top + (ids.length > 1 ? ' §GESTURE-UNDO group=' + topRow.gid + ' rows=' + ids.length : '') + ' active=' + this.length);
+      return { undone: top, group: ids.length > 1 ? ids : undefined };
     },
     // Redo = reactivate the most-recent undone feature, walking UP any undone ancestor chain (keep the invariant).
+    // §P8: a gesture group reactivates whole (mirror of the group undo above), each member still ancestor-walked.
     async redo() {
       if (!this.db) return { redone: null };
       const all = this._allGeom(); const undoneRows = all.filter(o => o.undone);
       if (!undoneRows.length) return { redone: null };
       const byId = new Map(all.map(o => [o.id, o]));
-      const on = []; let cur = undoneRows[undoneRows.length - 1]; const top = cur.id;
-      while (cur && cur.undone) { on.push(cur.id); cur = cur.parent != null ? byId.get(cur.parent) : null; }
+      const topRow = undoneRows[undoneRows.length - 1], top = topRow.id;
+      const seeds = this._isGestureGid(topRow.gid) ? undoneRows.filter(o => o.gid === topRow.gid) : [topRow];
+      const on = [];
+      seeds.forEach(s => { let cur = s; while (cur && cur.undone && on.indexOf(cur.id) < 0) { on.push(cur.id); cur = cur.parent != null ? byId.get(cur.parent) : null; } });
       this._setUndone(on, 0);
       await this._foldUpto(); this._emit();
-      console.log(TAG + ' redo id=' + top + (on.length > 1 ? ' +ancestors' : '') + ' active=' + this.length);
-      return { redone: top };
+      console.log(TAG + ' redo id=' + top + (seeds.length > 1 ? ' §GESTURE-REDO group=' + topRow.gid + ' rows=' + seeds.length : (on.length > 1 ? ' +ancestors' : '')) + ' active=' + this.length);
+      return { redone: top, group: seeds.length > 1 ? seeds.map(s => s.id) : undefined };
     },
 
     // W-BONSAI-MOVE: net translation applied to a feature by its ACTIVE GEOM_MOVE rows (parent===id). Read-only,
