@@ -266,7 +266,15 @@
       var max = ci(r.level_max), min = ci(r.level_min), qto = null;
       if (r.replenishtype === '1') qto = (available <= min) ? (max - available) : 0;       // reorder-below-min
       else if (r.replenishtype === '2') qto = (max - available);                            // maintain-max
-      if (qto != null && qto >= 100) out.push({ m_product_id: r.m_product_id, m_warehouse_id: r.m_warehouse_id, qtytoorder: qto / 100 });
+      // Implementing RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS.md §T1-SPEC core.1 — Witness: W-REPLEN-STAGE.
+      // Round UP to the policy's QtyBatchSize multiple (the real ReplenishReport rounding);
+      // NULL/0 batch → byte-identical to the un-batched fold.
+      var batch = ci(r.qtybatchsize);
+      if (qto != null && qto > 0 && batch > 0) qto = Math.ceil(qto / batch) * batch;
+      if (qto != null && qto >= 100) out.push({
+        m_product_id: r.m_product_id, m_warehouse_id: r.m_warehouse_id, qtytoorder: qto / 100,
+        qtybatchsize: r.qtybatchsize || null, m_warehousesource_id: r.m_warehousesource_id || null
+      });
     });
     return out;
   }
@@ -274,10 +282,37 @@
   var REPLENISH_PO_SPEC = {
     docTable: 'C_Order', lineTable: 'C_OrderLine', parentId: 'm_warehouse_id', lineParentId: 'm_product_id',
     qtyTo: 'qtyordered', qtyFrom: 'qtytoorder',
-    header: function (p) { return { issotrx: 'N', m_warehouse_id: p.m_warehouse_id }; }
+    // §T1-SPEC core.4: vendor rides the header ONLY when the caller stages one (real C_Order column);
+    // vendor-less callers get the exact pre-§T1 header.
+    header: function (p) { var h = { issotrx: 'N', m_warehouse_id: p.m_warehouse_id }; if (p.c_bpartner_id != null) h.c_bpartner_id = p.c_bpartner_id; return h; }
   };
-  function buildReplenishPO(warehouseId, suggestions) {
-    return E.buildDoc(REPLENISH_PO_SPEC, { m_warehouse_id: warehouseId }, suggestions);
+  function buildReplenishPO(warehouseId, suggestions, vendorId) {
+    return E.buildDoc(REPLENISH_PO_SPEC, { m_warehouse_id: warehouseId, c_bpartner_id: vendorId }, suggestions);
+  }
+  // ── §T1-SPEC core.2/core.3 (staged Generate Replenishment) — Witness: W-REPLEN-STAGE ──
+  // routeReplenishment: the policy row's own M_WarehouseSource_ID semantics — source warehouse set →
+  // inter-warehouse Move (grouped per source), absent → external PO. Pure splitter, nothing invented.
+  function routeReplenishment(suggestions) {
+    var po = [], moves = {};
+    suggestions.forEach(function (s) {
+      if (s.m_warehousesource_id) (moves[s.m_warehousesource_id] = moves[s.m_warehousesource_id] || []).push(s);
+      else po.push(s);
+    });
+    return { po: po, moves: moves };
+  }
+  // The Move through the SAME buildDoc archetype (newVerbs=[]): M_Movement + M_MovementLine are the real
+  // seed tables; the route is line-level in real iDempiere (m_locator_id → m_locatorto_id), so each line
+  // carries the HOST-INJECTED locators (the lens resolves the warehouses' locators from b3; core stays pure).
+  var REPLENISH_MOVE_SPEC = {
+    docTable: 'M_Movement', lineTable: 'M_MovementLine', parentId: 'm_warehousesource_id', lineParentId: 'm_product_id',
+    qtyTo: 'movementqty', qtyFrom: 'qtytoorder'
+  };
+  function buildReplenishMove(route, suggestions) {
+    var ops = E.buildDoc(REPLENISH_MOVE_SPEC, { m_warehousesource_id: route.m_warehousesource_id }, suggestions);
+    ops.forEach(function (o) {
+      if (o.op_type === 'CREATE_LINE') { o.m_locator_id = route.locatorFrom; o.m_locatorto_id = route.locatorTo; }
+    });
+    return ops;
   }
 
   // ══ §3b DIY master data — §P-9 register / §P-10 edit (POS_ADDON_SPEC.md, decisions §P-9.1-.4) ══
@@ -465,6 +500,7 @@
     ringLine: ringLine, cartTotal: cartTotal, buildSaleGroup: buildSaleGroup,
     saleMovements: saleMovements, replenishSuggest: replenishSuggest,
     buildReplenishPO: buildReplenishPO, REPLENISH_PO_SPEC: REPLENISH_PO_SPEC,
+    routeReplenishment: routeReplenishment, buildReplenishMove: buildReplenishMove, REPLENISH_MOVE_SPEC: REPLENISH_MOVE_SPEC,
     buildRegisterGroup: buildRegisterGroup, buildEditGroup: buildEditGroup,
     buildHoldGroup: buildHoldGroup, buildRecallCompleteGroup: buildRecallCompleteGroup,
     deliverLaterPolicy: deliverLaterPolicy, buildDeliverLaterGroup: buildDeliverLaterGroup,
