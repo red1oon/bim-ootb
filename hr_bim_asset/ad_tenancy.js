@@ -70,12 +70,17 @@ function toWarehouseRow(buildingName, seedId) {
 }
 
 // ONE M_Locator row per room — a WMS bin-ADDRESS (block/storey), NOT a coordinate (see header). Level(Z)=the
-// real extracted storey; Aisle(X)=a real block/wing when the building has one (blank otherwise, never guessed);
-// Bin(Y) has no building-side analog — left unset. room = { guid, name, storey, block? } (fixture shape).
+// real extracted storey; Aisle(X)=a real block/wing when the building has one; Bin(Y) has no building-side
+// analog. §P10-CHECK CORRECTION (2026-07-02, sourced): unused dimensions = '0', the NATIVE empty-address
+// default (MLocator constructor setXYZ("0","0","0"); every real GardenWorld row shows '0') — not null/absent,
+// and never a guessed real address. isdefault='N': a room locator is never the warehouse's default locator.
+// ⚠ MLocator.get() coalesces by (warehouse,X,Y,Z) — rooms on one storey share an ABL address, so locator
+// identity rides on value=guid; never create/look up room locators via the combination. room = { guid, name,
+// storey, block? } (fixture shape).
 function toLocatorRow(room, m_warehouse_id, seedId) {
   if (!room || !room.guid) return null;
   return { m_locator_id: seedId ? seedId() : 1, m_warehouse_id: m_warehouse_id, value: room.guid,
-    x: room.block || null, z: room.storey || null };
+    x: room.block || '0', y: '0', z: room.storey || '0', isdefault: 'N' };
 }
 
 // the leasable unit itself — an M_Product row whose m_locator_id names its real room/zone.

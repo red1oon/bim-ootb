@@ -81,6 +81,54 @@ it). `models.js`'s `PropertyManagement` demo record kept unchanged (alpha-existe
    writes them into a real sqlite db or wires a viewer pane yet. That's the natural next build step if this
    pillar continues.
 
+## ▶ §P10 SPEC — Tenancy AD-compile pane + Find↔FM spatial link (2026-07-02, user GO)
+
+User re-scoped the two opens in one breath: *"Find to FM small matter — just a link"* (deep spec ceremony
+retired; it's a wiring slice) + *"yes check the WMS usage in 1. Building map to warehouse ABL, 3. and 4"*
+(verify the native semantics BEFORE seeding live). Spec-first, this section gates the implementation.
+
+### §P10-CHECK — WMS usage verified vs REAL iDempiere (falsifiable; re-run these if in doubt)
+Sources: `~/idempiere-dev-setup/idempiere` `org.compiere.model/{X_M_Locator,MLocator,X_M_Product}.java` +
+`build/erp/ad_full.db` PRAGMA/rows. Findings:
+1. **Building→M_Warehouse + ABL ✓.** `X_M_Locator` documents X="Aisle (X)", Y="Bin (Y)", Z="Level" — free-text
+   dimension addresses. Aisle→block/wing, Level→storey is the native idiom. **CORRECTION adopted:** native
+   locators default UNUSED dimensions to `'0'` (`MLocator` constructor `setXYZ("0","0","0")`; every real GW row
+   shows `'0'`) — `toLocatorRow` emitted `null`/absent; now emits `'0'` + `isdefault:'N'` (a room locator is
+   never the warehouse default). ⚠ `MLocator.get()` COALESCES by (warehouse,X,Y,Z) — two rooms on one storey
+   share an ABL address, so locator identity must ride on `value`=guid (it does); never create via the
+   combination-lookup. Witness AD-TEN1 updated to assert the SOURCED `'0'` default (supersedes the old
+   "honestly null" reading — same non-invent intent, now aligned to what the native engine itself writes).
+2. **unit→M_Product.m_locator_id ✓ unchanged.** Plain "Warehouse Locator" default-storage pointer, zero engine
+   logic in MProduct — a fixed unit "stored at" its room is semantically exact.
+3. **lease/strata→C_Subscription ✓ schema-exact, engine-DORMANT in core iDempiere.** Only generated `X_/I_`
+   classes exist — NO process advances `paiduntildate`/`isdue` or writes `C_Subscription_Delivery`. Our
+   `paiduntildate=null` honest gap IS the native reality; `C_Subscription_Delivery` is the natural child table
+   if recurrence is ever animated.
+
+### §P10-BUILD (P7/P8 additive pattern, all edits in /tmp/wt-hr on lane/hr-overlay)
+1. **Engine** `ad_tenancy.js` (additive): apply the `'0'`/`isdefault` correction; new
+   `compileBuilding(buildingName, rooms, leases, strata)` → `{warehouse, locators, products, subscriptions,
+   skipped, units, _watermark}`. Per room → locator+product; lease→subscription(MONTHLY_RENT, party=tenant);
+   strata→subscription(QUARTERLY_STRATA_FEE, party=owner); a record whose `unit_guid` is NOT a real room is
+   SKIPPED into `skipped[]` (never fabricate a locator); `units` DERIVED via `propertyUnits`. Subscriptions
+   wrapped `{row, unit_guid, kind, storey}` — the AD row stays column-pure; the wrapper is VIEW trace.
+2. **Seed** `hba_lens.js bindStoreysFromModel` (same gate as P7/P8): `A._hbaTenancySpec = compileBuilding(...)`
+   from the REAL room set + `models.js` Tenancy/Strata records; `§HBA_TEN` log.
+3. **Pane** `viewer/hba_tenancy.js` (`HBATenancyPane`, mirrors `hba_leave.js`): watermark; KPI chips
+   (Warehouse · Units-derived · Leases · Strata); per-subscription rows (ref · party · unit+storey · cadence ·
+   start→renewal · paid-until honest "—"); skipped-count footer when non-empty.
+4. **§FIND-FM-LINK (the "just a link"):** each row click → fly the camera to the unit's room centroid —
+   centroid via the avatars idiom (`zoneMeshGuids`+`guidTargets` over `A.guidMap`+`_hbaRoomMembers`), flight
+   via the `navigate_find` idiom (direction-preserving ease lerp of `camera.position`+`controls.target`).
+   `§HBA_TEN_LINK guid=… center=(…)` log; honest no-op (logged) when the room has no rendered members.
+5. **FAMILY 7→8**: `{kind:'pane', id:'tenancy', label:'Tenancy / AD'}` + `PANE_GLOBALS.tenancy`; drawer icon
+   self-contained. `viewer.html` gains `ad_tenancy.js` + `hba_tenancy.js` script tags.
+6. **Witnesses:** `witness_ad_tenancy.js` AD-TEN1 updated ('0' default) + AD-TEN7 (compileBuilding: counts,
+   derived units, skip-non-room, both types, watermark, column-pure rows); NEW `witness_tenancy_pane.js`
+   (W-HBA-TEN-PANE: off=no-DOM, data-gate, mount KPIs match compile, row click captures the fly target ≈ stub
+   centroid, unmount zero-residue, watermark); `witness_family.js` 7→8 entries. Live chromium smoke
+   (`cdp_shot.js` HHS): FM drawer → Tenancy → row click → camera moves, `§HBA_TEN_LINK`, jsErrors=0, shot.
+
 ---
 
 ## ▶▶▶ CRITICAL — READ FIRST (2026-07-02): "Compile not Model" — HBA reinvented tables that already exist

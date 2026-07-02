@@ -59,8 +59,8 @@ ok('AD-TEN0-subscription-shape', keysSubset(sub, 'c_subscription'), 'c_subscript
 // ---- AD-TEN1: WMS bin-ADDRESS, not coordinates — Level(Z)=real storey, Aisle(X)=block-when-real, Bin(Y)=unused --
 ok('AD-TEN1-level-is-storey', loc.z === room1.storey && room1.storey === 'Level 1',
   'm_locator.z ("' + AD_ELEMENT_LABEL.z + '") = the REAL extracted storey ("' + room1.storey + '") — vertical axis maps to floor, not a fabricated coordinate');
-ok('AD-TEN1-no-block-honest', loc.x === null && !('y' in loc),
-  'HHS has no real block/wing to extract → aisle(x) honestly null (never guessed); bin(y) has no building-side analog → not even present, not forced to a fake value');
+ok('AD-TEN1-native-empty-address', loc.x === '0' && loc.y === '0' && loc.isdefault === 'N',
+  '§P10-CHECK correction (sourced MLocator.java setXYZ("0","0","0") + every real GW locator row): unused aisle(x)/bin(y) = the NATIVE \'0\' empty-address default — never a guessed real address, never null-drift from what the native engine writes; isdefault=N (a room locator is never the warehouse default)');
 ok('AD-TEN1-not-cartesian', !('center' in loc) && typeof loc.z === 'string',
   'no Cartesian x/y/z centroid leaks into this row — real geometry stays authoritative on the BIM/viewer side, joined only by guid (m_locator.value)');
 
