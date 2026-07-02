@@ -1,6 +1,17 @@
 <!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
 # ⚠ DO NOT REMOVE — SPEC: Modeller polish batch 2 (§DECISIONS build: scale-preview parity, instance pick identity, BCF export MVP)
 
+**Status: ✅ ALL 3 DONE 2026-07-03** (branch `lane/modeller-polish-2`). New witnesses green: W-E2E-SCALEROT 6/6
+(preview==fold dMax 4.8e-7) · W-E2E-INSTPICK 7/7 (incl. Terminal-scale guard untouched) · W-E2E-BCF 7/7
+(container validated by independent Info-ZIP). Findings that adjusted the spec mid-build (all pinned by witnesses):
+(1) the fold's TRUE scale-on-rotated semantics recentre via the drot branch — ghost matrix is
+`T(wc+Δ)·Rz·S·Rz⁻¹·T(−wc)`, Δ=(f−1)·ext/2 on the WORLD axis letter (spec'd edge-anchor formula was wrong,
+measured by the witness's first honest RED); (2) the W-E2E-SCALE Duplex wall carries yaw=180° (not unrotated) —
+its drag updated to cube-outward-along-its-axis; (3) post-commit a fixture click lands on the folded signed
+`_dw` twin (nearest hit) — the instanced branch is the no-twin path (assembly parts, render-only), witnessed
+through the production `__dwRender.assembly` seam; (4) Outliner no-bridge rows now FRAME from
+`elements_meta⋈element_transforms` (better than the toast — real DB truth), W-OL-SYNC S5 re-pinned accordingly.
+
 **Scope:** implement the 3 decisions of bim-compiler `prompts/RESUME_MODELLER_COMPETITIVE_POLISH.md §DECISIONS`
 (all resolved 2026-07-03, nothing needs a further scope call). Branch `lane/modeller-polish-2` off main `1e5713f`.
 **Read the log after every run.** Every claim below closes only on a `§`-tagged witness line. Non-invent:
