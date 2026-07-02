@@ -121,6 +121,27 @@
       '.pos-replenish-row:hover { background:rgba(108,159,255,0.16); }',
       '.pos-replenish-row.no-vendor { border-color:#555;background:#121218;color:#9aa4b8;cursor:default; }',
       '.pos-replenish-row.no-vendor:hover { background:#121218; }',
+      /* §T1-SPEC staged Generate Replenishment — propose→stage→review/edit→confirm */
+      '#pos-repl-generate { display:inline-flex;align-items:center;gap:6px;margin:4px 0 2px;padding:7px 14px;',
+      '                     border-radius:8px;border:1px solid #33334a;background:#16161d;color:#6c9fff;',
+      '                     cursor:pointer;font-size:12px;transition:background .15s; }',
+      '#pos-repl-generate:hover { background:rgba(108,159,255,0.16); }',
+      '.pos-repl-stage-row { display:flex;align-items:center;gap:6px;margin:3px 0;padding:6px 8px;',
+      '                      border-radius:6px;border:1px solid #33334a;background:#16161d;',
+      '                      color:#e8e8ed;font-size:12px;line-height:1.35; }',
+      '.pos-repl-stage-row.no-vendor { border-color:#555;background:#121218;color:#9aa4b8; }',
+      '.pos-repl-stage-row.excluded { opacity:.45; }',
+      '.pos-repl-name  { flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }',
+      '.pos-repl-route { font-size:10px;color:#9aa4b8;border:1px solid #33334a;border-radius:4px;',
+      '                  padding:1px 5px;white-space:nowrap; }',
+      '.pos-repl-route.move { color:#6c9fff;border-color:#6c9fff; }',
+      '.pos-repl-qty   { width:56px;box-sizing:border-box;padding:4px 6px;border-radius:6px;',
+      '                  border:1px solid #33334a;background:#121218;color:#e8e8ed;font-size:12px;text-align:right; }',
+      '#pos-repl-commit { display:none;width:100%;margin:6px 0 2px;padding:9px;border-radius:8px;',
+      '                   border:1px solid #33334a;background:rgba(108,159,255,0.24);color:#e8e8ed;',
+      '                   cursor:pointer;font-size:13px; }',
+      '#pos-repl-commit:disabled { opacity:.4;cursor:default; }',
+      '#pos-repl-empty { color:#9aa4b8;font-size:11px;margin:4px 0; }',
       /* §D-3 ⋯ dock */
       '#pos-dock        { position:fixed;bottom:20px;right:20px;z-index:9550;',
       '                   display:flex;flex-direction:column;align-items:flex-end;gap:5px; }',
@@ -243,6 +264,37 @@
     return ev;
   }
 
+  // §T1-SPEC lens.4 — pending inbound: qty already committed to arrive but not yet received/moved,
+  // folded from the SIGNED op log (gid links a group's CREATE_DOCUMENT to its CREATE_LINEs, kernel_ops §I-K):
+  // open replenish-PO C_OrderLine.qtyordered for the warehouse + open M_MovementLine.movementqty whose
+  // m_locatorto_id is in the warehouse. Commit → re-generate proposes ZERO for the committed products —
+  // the real ReplenishReport's open-order subtraction, no double order. Returns { pid: centiQty }.
+  function pendingInbound(opDb, b3, wh) {
+    var out = {};
+    try {
+      var locWh = {};
+      qa(b3, 'SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=?', wh).forEach(function (l) { locWh[l.i] = 1; });
+      var r = opDb.exec('SELECT gid, op_type, parameters FROM kernel_ops ORDER BY id');
+      var rows = (r[0] ? r[0].values : []).map(function (v) {
+        var p; try { p = JSON.parse(v[2]); } catch (e) { return null; }
+        p = p && p.params ? p.params : p;
+        return p ? { gid: v[0], p: p } : null;
+      }).filter(function (x) { return !!x; });
+      var poGids = {};
+      rows.forEach(function (x) {
+        if (x.p.op_type === 'CREATE_DOCUMENT' && x.p.table === 'C_Order' && x.p.issotrx === 'N' &&
+            Number(x.p.m_warehouse_id) === Number(wh)) poGids[x.gid] = 1;
+      });
+      rows.forEach(function (x) {
+        if (x.p.op_type === 'CREATE_LINE' && x.p.table === 'C_OrderLine' && poGids[x.gid])
+          out[x.p.m_product_id] = (out[x.p.m_product_id] || 0) + Math.round(Number(x.p.qtyordered || 0) * 100);
+        if (x.p.op_type === 'CREATE_LINE' && x.p.table === 'M_MovementLine' && locWh[x.p.m_locatorto_id])
+          out[x.p.m_product_id] = (out[x.p.m_product_id] || 0) + Math.round(Number(x.p.movementqty || 0) * 100);
+      });
+    } catch (e) {}
+    return out;
+  }
+
   function suggestAll(b3, opDb) {
     var whs = qa(b3, "SELECT DISTINCT m_warehouse_id AS w FROM m_replenish WHERE replenishtype<>'0'");
     var pend = logMovements(opDb), out = [];
@@ -250,12 +302,16 @@
       var locs = {};
       qa(b3, 'SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=?', r.w).forEach(function (l) { locs[l.i] = 1; });
       var txns = qa(b3, 'SELECT m_product_id, m_locator_id, movementtype, movementqty FROM m_transaction').filter(function (t) { return locs[t.m_locator_id]; });
+      var inbound = pendingInbound(opDb, b3, r.w);
       var rctx = {
-        replenishRows: qa(b3, "SELECT m_product_id, m_warehouse_id, level_min, level_max, replenishtype FROM m_replenish WHERE m_warehouse_id=? AND replenishtype<>'0'", r.w),
+        // §T1-SPEC core.1: qtybatchsize + m_warehousesource_id now ride the policy row (real m_replenish columns)
+        replenishRows: qa(b3, "SELECT m_product_id, m_warehouse_id, level_min, level_max, replenishtype, qtybatchsize, m_warehousesource_id FROM m_replenish WHERE m_warehouse_id=? AND replenishtype<>'0'", r.w),
         txns: txns,
         reservation: function (pid, so) {
           var x = q1(b3, 'SELECT COALESCE(SUM(qty),0) AS q FROM m_storagereservation WHERE m_product_id=? AND m_warehouse_id=? AND issotrx=?', pid, r.w, so);
-          return Math.round(Number((x && x.q) || 0) * 100);
+          var v = Math.round(Number((x && x.q) || 0) * 100);
+          if (so === 'N') v += (inbound[pid] || 0);              // §T1-SPEC lens.4 pending inbound counts as on-order
+          return v;
         }
       };
       out = out.concat(POS.replenishSuggest(rctx, pend.filter(function (e) { return e.m_warehouse_id === r.w; })));
@@ -501,11 +557,15 @@
 
     var receipt  = document.createElement('div'); receipt.id = 'pos-float-receipt';
 
-    // replenishment list (below, no rim)
+    // §T1-SPEC lens.1 replenishment section — explicit trigger, staged review, one confirm (no auto-fire)
     var replHdr  = document.createElement('div'); replHdr.className = 'pos-section-hdr'; replHdr.id = 'pos-repl-hdr';
+    replHdr.textContent = 'Replenishment';
+    var replGen  = document.createElement('button'); replGen.id = 'pos-repl-generate';
+    replGen.innerHTML = _svgIcon('clipboard', 14) + ' Generate Replenishment';
     var replBox  = document.createElement('div'); replBox.id = 'pos-float-replenish';
+    var replCommit = document.createElement('button'); replCommit.id = 'pos-repl-commit';
     var replBody = document.createElement('div'); replBody.className = 'pos-repl-body';
-    replBody.appendChild(replBox);
+    replBody.appendChild(replGen); replBody.appendChild(replBox); replBody.appendChild(replCommit);
 
     floatPanel.appendChild(dragHdr);
     floatPanel.appendChild(itemsHdr); floatPanel.appendChild(itemsBody);
@@ -627,44 +687,128 @@
       return q1(b3, "SELECT c_bpartner_id, pricepo FROM m_product_po WHERE m_product_id=? AND iscurrentvendor='Y' ORDER BY m_product_id LIMIT 1", pid) || null;
     }
 
-    function renderReplenish() {
-      replBox.textContent = '';
+    // ── §T1-SPEC lens.1-.3 staged Generate Replenishment — Witness: W-REPLEN-STAGE + W-REPLEN-LIVE ──
+    // The pre-§T1 drawer (auto-fire on open + after every sale, one tap = one committed PO, no review)
+    // is retired: propose → stage → review/edit → confirm — the real ReplenishReport shape.
+    var staged = [];               // transient client-side staging; real ops ONLY on Confirm
+    var replCommitting = false;    // in-flight guard — no double-commit
+
+    function refreshCommitBtn() {
+      var picked = staged.filter(function (r) { return r.include && r.qty > 0 && (r.move || r.vendor); });
+      replCommit.style.display = staged.length ? 'block' : 'none';
+      replCommit.disabled = replCommitting || !picked.length;
+      replCommit.textContent = 'Confirm ' + picked.length + ' line' + (picked.length === 1 ? '' : 's');
+      return picked;
+    }
+
+    function clearStage() {
+      staged = []; replBox.textContent = ''; refreshCommitBtn();
+      replHdr.textContent = 'Replenishment';
+    }
+
+    function generateReplenish() {
+      staged = []; replBox.textContent = '';
       var sugg = suggestAll(b3, cfg.opDb);
-      // §R2-3 the section header (replHdr) carries the count now — no duplicate inner header.
       sugg.forEach(function (s) {
         var nm = q1(b3, 'SELECT name FROM m_product WHERE m_product_id=?', s.m_product_id);
-        var vendor = vendorOf(s.m_product_id);
-        var row = el('button', 'pos-replenish-row',
-          '· ' + (nm ? nm.name : s.m_product_id) + ' → order ' + s.qtytoorder +
-          ' (wh ' + s.m_warehouse_id + ')' + (vendor ? ' ← ' + vendor.c_bpartner_id : ' [no vendor]'));
-        // §T1.6 HMI — class-styled rows (stylesheet above), vendor-less rows visibly inert
-        if (!vendor) row.classList.add('no-vendor');
-        if (vendor) {
-          row.addEventListener('click', function () {
-            var enriched = [Object.assign({}, s, { c_bpartner_id: vendor.c_bpartner_id, pricepo: vendor.pricepo })];
-            var poOps = POS.buildReplenishPO(s.m_warehouse_id, enriched);
-            cfg.KO.commitGroup(cfg.opDb, poOps.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
-              .then(function (res) {
-                return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
-                  return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
-                }).then(function (cv) {
-                  console.log('§POS-REPLENISH-PO product=' + s.m_product_id + ' qty=' + s.qtytoorder +
-                    ' vendor=' + vendor.c_bpartner_id + ' pricepo=' + vendor.pricepo +
-                    ' newVerbs=[] gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N'));
-                  cfg.status('PO created · product ' + s.m_product_id + ' qty ' + s.qtytoorder + ' vendor ' + vendor.c_bpartner_id);
-                  renderReplenish();
-                });
-              })
-              .catch(function (e) { cfg.status('PO commit failed: ' + e); console.log('§POS-REPLENISH-PO FAIL ' + e); });
-          });
-        }
+        var vendor = s.m_warehousesource_id ? null : vendorOf(s.m_product_id);
+        var move = !!s.m_warehousesource_id;
+        var entry = { s: s, include: move || !!vendor, qty: s.qtytoorder, vendor: vendor, move: move };
+        staged.push(entry);
+
+        var row = document.createElement('div'); row.className = 'pos-repl-stage-row';
+        var chk = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'pos-repl-include';
+        chk.checked = entry.include; chk.disabled = !move && !vendor;
+        var name = el('span', 'pos-repl-name', (nm ? nm.name : s.m_product_id) + ' · wh ' + s.m_warehouse_id +
+          (s.qtybatchsize ? ' · batch ' + s.qtybatchsize : ''));
+        name.title = 'product ' + s.m_product_id;
+        var route = el('span', 'pos-repl-route',
+          move ? 'Move ← wh ' + s.m_warehousesource_id
+               : (vendor ? 'PO → ' + vendor.c_bpartner_id : 'no vendor'));
+        if (move) route.classList.add('move');
+        var qty = document.createElement('input'); qty.type = 'number'; qty.className = 'pos-repl-qty';
+        qty.min = '0'; qty.step = s.qtybatchsize ? String(s.qtybatchsize) : '1';
+        qty.value = String(s.qtytoorder); qty.disabled = !move && !vendor;
+        row.appendChild(chk); row.appendChild(name); row.appendChild(route); row.appendChild(qty);
+        if (!move && !vendor) { row.classList.add('no-vendor'); entry.include = false; chk.checked = false; }
+
+        chk.addEventListener('change', function () {
+          entry.include = chk.checked; row.classList.toggle('excluded', !chk.checked);
+          console.log('§POS-REPLENISH-EDIT product=' + s.m_product_id + ' include=' + chk.checked + ' qty=' + entry.qty);
+          refreshCommitBtn();
+        });
+        qty.addEventListener('input', function () {
+          entry.qty = Math.max(0, Number(qty.value) || 0);
+          console.log('§POS-REPLENISH-EDIT product=' + s.m_product_id + ' include=' + entry.include + ' qty=' + entry.qty);
+          refreshCommitBtn();
+        });
         replBox.appendChild(row);
       });
-      // §R2-3 replenishment section header carries the live count (no rim)
-      replHdr.textContent = 'Replenishment (' + sugg.length + ')';
-      console.log('§POS-LIVE-REPLENISH suggestions=' + sugg.length + ' (suggest-by-default; PO via buildDoc on tap)');
+      if (!sugg.length) {
+        var empty = el('div', '', 'Nothing to replenish — levels are above min / already on order.');
+        empty.id = 'pos-repl-empty'; replBox.appendChild(empty);
+      }
+      var nMove = staged.filter(function (r) { return r.move; }).length;
+      var nBatch = staged.filter(function (r) { return !!r.s.qtybatchsize; }).length;
+      replHdr.textContent = 'Replenishment (' + sugg.length + ' staged)';
+      refreshCommitBtn();
+      console.log('§POS-REPLENISH-GEN suggestions=' + sugg.length + ' po=' + (sugg.length - nMove) +
+        ' moves=' + nMove + ' batchRounded=' + nBatch + ' (staged for review — nothing committed)');
       return sugg;
     }
+
+    // pick a warehouse's locator the way the seed itself routes (IsDefault first — extracted, not invented)
+    function locatorOf(wh) {
+      var l = q1(b3, "SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=? ORDER BY CASE WHEN isdefault='Y' THEN 0 ELSE 1 END, m_locator_id LIMIT 1", Number(wh));
+      return l ? l.i : null;
+    }
+
+    function commitStaged() {
+      if (replCommitting) return;
+      var picked = refreshCommitBtn();
+      if (!picked.length) { cfg.status('Nothing staged to commit'); return; }
+      // §T1-SPEC lens.3 route + build: PO per (warehouse, vendor) + Move per source warehouse — ONE signed group
+      var enriched = picked.map(function (r) {
+        return Object.assign({}, r.s, { qtytoorder: r.qty, c_bpartner_id: r.vendor ? r.vendor.c_bpartner_id : null });
+      });
+      var routed = POS.routeReplenishment(enriched);
+      var ops = [], nPo = 0, nMv = 0;
+      var poGroups = {};
+      routed.po.forEach(function (s) {
+        var k = s.m_warehouse_id + ':' + s.c_bpartner_id;
+        (poGroups[k] = poGroups[k] || []).push(s);
+      });
+      Object.keys(poGroups).sort().forEach(function (k) {
+        var lines = poGroups[k];
+        ops = ops.concat(POS.buildReplenishPO(lines[0].m_warehouse_id, lines, lines[0].c_bpartner_id)); nPo++;
+      });
+      Object.keys(routed.moves).sort().forEach(function (src) {
+        var lines = routed.moves[src];
+        ops = ops.concat(POS.buildReplenishMove({
+          m_warehousesource_id: Number(src),
+          locatorFrom: locatorOf(src), locatorTo: locatorOf(lines[0].m_warehouse_id)
+        }, lines)); nMv++;
+      });
+      replCommitting = true; refreshCommitBtn();
+      cfg.KO.commitGroup(cfg.opDb, ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
+        .then(function (res) {
+          return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
+            return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
+          }).then(function (cv) {
+            console.log('§POS-REPLENISH-COMMIT pos=' + nPo + ' moves=' + nMv + ' lines=' + picked.length +
+              ' ops=' + ops.length + ' newVerbs=[] gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N'));
+            cfg.status('Replenishment committed · ' + nPo + ' PO / ' + nMv + ' move · ' + picked.length + ' lines');
+            replCommitting = false; clearStage();
+          });
+        })
+        .catch(function (e) {
+          replCommitting = false; refreshCommitBtn();
+          cfg.status('Replenishment commit failed: ' + e); console.log('§POS-REPLENISH-COMMIT FAIL ' + e);
+        });
+    }
+
+    replGen.addEventListener('click', generateReplenish);
+    replCommit.addEventListener('click', commitStaged);
 
     // ── §P-11 receipt overlay ──────────────────────────────────────────────────────────────────
     var _rcptOv = null;
@@ -1238,7 +1382,7 @@
             _showReceipt(saleCart, ids.orderId, grandTotal, res.gid, chainOk);
             rcptBtn.style.display = '';
             receipt.textContent = '✓ ' + grandTotal + ' tendered · order ' + ids.orderId + ' · group ' + String(res.gid).slice(0, 8) + '… · signed=' + chainOk;
-            cart = []; renderCart(); renderReplenish();
+            cart = []; renderCart();   // §T1-SPEC lens.1: replenishment no longer auto-fires after a sale
           });
         })
         .catch(function (e) { cfg.status('commit failed: ' + e); console.log('§POS-LIVE commit FAIL ' + e); });
@@ -1295,7 +1439,8 @@
     renderCart();
     cfg.overlay('POS — ' + pos.name, wrap);
     console.log('§POS-LIVE open station=' + pos.c_pos_id + ' tiles=' + tiles.length + ' priced=' + tiles.length + ' handAuthored=0');
-    renderReplenish();
+    // §T1-SPEC lens.1: no auto-fire on open — replenishment is generated on the explicit button
+    console.log('§POS-REPLENISH-IDLE trigger=#pos-repl-generate (staged review; nothing proposed until asked)');
   }
 
   root.PosLens = { open: open };
