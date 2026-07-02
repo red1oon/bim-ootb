@@ -14,7 +14,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
   var _pane = null, _sel = null;
 
-  function deps() { return { Lv: G.HbaLeave }; }
+  function deps() { return { Lv: G.HbaLeave, AD: G.HbaAdPayroll, Lens: G.HBALens }; }
   function ready() { return !!(deps().Lv && typeof document !== 'undefined'); }
 
   // the spec driving this pane — host-injected (per-building demo employees) or honestly absent.
@@ -43,12 +43,27 @@
     body.appendChild(el('div', 'font-size:11px;color:' + (sum.chainOk ? '#2e7d32' : '#c62828') + ';padding:2px 0 6px;',
       sum.chainOk ? '✓ signed chain verifies' : '✗ chain tamper detected'));
     var tbl = el('table', 'width:100%;border-collapse:collapse;font-size:12px;');
+    // §P11 — Leave has NO native AD table of its own (verified §CRITICAL P8 finding) — an unpaid entry's
+    // REAL AD identity is the "Leave without pay" pay-element it feeds INTO (ad_payroll.js CONCEPTS.UNPAID_LEAVE,
+    // hr_concept_id), not a fabricated leave-record window. Only entries that actually carry unpaid days get
+    // the link — an honest reflection of "this is what would post to payroll", not every row.
+    var d = deps(), concept = d.AD && d.AD.CONCEPTS && d.AD.CONCEPTS.UNPAID_LEAVE;
     sum.entries.forEach(function (r) {
       var tr = el('tr', 'border-top:1px solid #eee;');
       tr.appendChild(el('td', 'padding:4px 2px;', r.period + ' · ' + r.type));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;', r.days + 'd'));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:' + (r.unpaidDays > 0 ? '#c62828' : '#627d98') + ';',
         r.unpaidDays > 0 ? (r.unpaidDays + 'd unpaid') : 'paid'));
+      var linkTd = el('td', 'padding:4px 2px;text-align:right;');
+      if (r.unpaidDays > 0 && concept && d.Lens && d.Lens.erpLink) {
+        var a = document.createElement('a');
+        a.href = d.Lens.erpLink(d.Lens.AD_WINDOWS.PAYROLL_CONCEPT, concept.hr_concept_id);
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'open ↗';
+        a.title = 'Open the native "Leave without pay" payroll concept this feeds';
+        a.style.cssText = 'color:#1976d2;text-decoration:none;font-size:11px;';
+        linkTd.appendChild(a);
+      }
+      tr.appendChild(linkTd);
       tbl.appendChild(tr);
     });
     body.appendChild(tbl);

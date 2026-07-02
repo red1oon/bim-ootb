@@ -173,6 +173,17 @@
       tr.appendChild(el('td', 'padding:4px 2px;', ln.sensor.label));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#627d98;', 'qty ' + ln.row.qtyordered + ' ' + ln.sensor.uom_symbol));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#2e7d32;font-weight:600;', ln.row.linenetamt.toFixed(2)));
+      // §P11 — deep-link this billing line into the real C_Order it compiled onto (management billing follow-up).
+      var linkTd = el('td', 'padding:4px 2px;text-align:right;');
+      if (ln.row.c_order_id != null && G.HBALens && G.HBALens.erpLink) {
+        var a = document.createElement('a');
+        a.href = G.HBALens.erpLink(G.HBALens.AD_WINDOWS.ORDER, ln.row.c_order_id);
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'open ↗';
+        a.title = 'Open ' + billing.order.documentno + ' in iDempiere — billable, ready for management follow-up';
+        a.style.cssText = 'color:#1976d2;text-decoration:none;font-size:11px;';
+        linkTd.appendChild(a);
+      }
+      tr.appendChild(linkTd);
       tbl.appendChild(tr);
     });
     pane.appendChild(tbl);

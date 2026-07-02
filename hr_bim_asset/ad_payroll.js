@@ -165,7 +165,8 @@ function payslip(hr_movement, c_bpartner_id, locale) {
   var out = { c_bpartner_id: c_bpartner_id, gross: gross, net: net,
     lines: rows.map(function (r) {
       var v = Object.keys(CONCEPTS).filter(function (k) { return CONCEPTS[k].hr_concept_id === r.hr_concept_id; })[0];
-      return { concept: v, name: CONCEPTS[v] ? CONCEPTS[v].name : v, accountsign: r.accountsign, amount: r.amount, trace: r.description };
+      return { concept: v, name: CONCEPTS[v] ? CONCEPTS[v].name : v, accountsign: r.accountsign, amount: r.amount,
+        trace: r.description, hr_movement_id: r.hr_movement_id };   // §P11 — the real native PK, surfaced for the deep-link view
     }) };
   return W ? W.stamp(out, locale || 'en') : out;
 }

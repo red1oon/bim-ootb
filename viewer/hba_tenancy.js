@@ -64,6 +64,20 @@
       tr.appendChild(el('td', 'padding:6px 4px;color:#627d98;', s.storey || '—'));
       tr.appendChild(el('td', 'padding:6px 4px;text-align:right;', cadenceName(s.row.c_subscriptiontype_id)));
       tr.appendChild(el('td', 'padding:6px 4px;text-align:right;color:#627d98;', (s.row.startdate || '—') + '→' + (s.row.renewaldate || '—')));
+      // §P11 — "balanced" deep-link into the real C_Subscription record, alongside the existing flyToZone
+      // click (stopPropagation so the anchor doesn't also fire the row's camera-fly).
+      var linkTd = el('td', 'padding:6px 4px;text-align:right;');
+      var lens0 = deps().Lens;
+      if (s.row.c_subscription_id != null && lens0 && lens0.erpLink) {
+        var a = document.createElement('a');
+        a.href = lens0.erpLink(lens0.AD_WINDOWS.SUBSCRIPTION, s.row.c_subscription_id);
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'open ↗';
+        a.title = 'Open this subscription in iDempiere';
+        a.style.cssText = 'color:#1976d2;text-decoration:none;font-size:11px;';
+        a.addEventListener('click', function (e) { e.stopPropagation(); });
+        linkTd.appendChild(a);
+      }
+      tr.appendChild(linkTd);
       tr.addEventListener('click', function () {
         var lens = deps().Lens;
         var res = lens && lens.flyToZone ? lens.flyToZone(A, s.unit_guid) : { flew: false };
