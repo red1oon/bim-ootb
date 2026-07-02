@@ -118,17 +118,28 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     selAfterCtrl2 = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
   }
 
-  // S5 — dead-click: a leaf row whose guid has NO fid bridge (non-ARC discipline element in the seeded tree)
+  // S5 (§Q2 upgrade, RESUME_MODELLER_POLISH2.md): a leaf row whose guid has NO fid bridge now FRAMES the
+  // camera from the element's real element_transforms row instead of toasting — the toast remains only for
+  // guids the DB cannot answer. Pick a no-bridge row the DB CAN answer, expect frame + NO dead-click toast.
   const deadSel = await pg.evaluate(() => {
     const rows = Array.from(document.querySelectorAll('[data-bnode][data-leaf="1"]'));
     const d = rows.find(r => { const bn = r.getAttribute('data-bnode');
-      return isNaN(+bn) && (!window.__arcFidByGuid || window.__arcFidByGuid[bn] == null); });
+      if (!isNaN(+bn) || (window.__arcFidByGuid && window.__arcFidByGuid[bn] != null)) return false;
+      try { const db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+        const q = db.exec("SELECT center_x FROM element_transforms WHERE guid='" + bn.replace(/'/g, "''") + "'");
+        db.close(); return q.length && q[0].values.length; } catch (e) { return false; }
+    });
     return d ? '[data-bnode="' + d.getAttribute('data-bnode') + '"]' : null;
   });
-  let toastText = '';
+  let toastText = '', framed = null;
   if (deadSel) {
-    await pg.click(deadSel); await sleep(250);
+    await pg.click(deadSel); await sleep(1500);   // 1.1s camera lerp + margin
     toastText = await pg.evaluate(() => { const t = document.querySelector('#toast-stack'); return t ? t.textContent : ''; });
+    framed = await pg.evaluate(() => {
+      const f = window.__lastGuidFrame; if (!f) return null;
+      const tg = window.A.controls.target;
+      return { guid: f.guid, d: Math.hypot(tg.x - f.c[0], tg.y - f.c[1], tg.z - f.c[2]) };
+    });
   }
 
   await br.close(); server.close();
@@ -151,7 +162,9 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   chk('S4 OL-CTRL-TOGGLE 2→3→2 in the LIVE canvas set',
     selAfterCtrl && selAfterCtrl.length === 3 && selAfterCtrl.includes(fidC) && selAfterCtrl2 && selAfterCtrl2.length === 2 && !selAfterCtrl2.includes(fidC),
     JSON.stringify({ a: selAfterCtrl && selAfterCtrl.length, b: selAfterCtrl2 && selAfterCtrl2.length }));
-  chk('S5 DEADCLICK-SAYS-SO toast raised', !!deadSel && /no 3D pick/.test(toastText), 'toast="' + toastText.slice(0, 60) + '"');
+  chk('S5 WALKED-ROW-FRAMES (§Q2: no-bridge row flies to its DB transform, toast gone)',
+    !!deadSel && framed && framed.d < 1e-3 && !/no 3D pick/.test(toastText),
+    'Δtarget=' + (framed ? framed.d.toExponential(2) : '?') + ' toast="' + toastText.slice(0, 40) + '"');
   chk('S6 NO-ERROR', errs.length === 0, errs.slice(0, 2).join(' | '));
 
   console.log('W-OL-SYNC: ' + pass + ' PASS / ' + fail + ' FAIL');

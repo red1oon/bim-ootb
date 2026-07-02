@@ -737,17 +737,7 @@ window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids
 // cubic lerp of camera.position + controls.target), simplified: one element, no clash-pair overlap-zone math.
 // Deliberately NOT called from a 3D-canvas pick (pickAt/highlight) — you're already looking at what you
 // clicked there; only an Outliner-row click (which may be scrolled off-screen from the current view) needs it.
-window.Bonsai.frameFeature = (fid) => {
-  const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
-  if (!m || !m.geometry) return false;
-  m.geometry.computeBoundingBox();
-  const bb = m.geometry.boundingBox;
-  if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x)) return false;
-  // foldInsert bakes WORLD-space positions straight into the geometry buffer (bonsai_kernel.js._buildMesh sets
-  // no mesh.position/rotation) — so the geometry's own bbox IS already the world-space bbox, no matrixWorld needed.
-  const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
-  const diag = bb.min.distanceTo(bb.max);
+function _frameTo(c, diag, tag) {                          // §Q2: shared camera-lerp tail (fid meshes AND DB-framed elements)
   const dist = Math.max(diag, 2) * 1.8;
   const dir = new THREE.Vector3(1, -1, 1.1).normalize();   // same oblique iso-ish approach angle as the app's default view
   const startPos = camera.position.clone(), startTarget = controls.target.clone();
@@ -761,16 +751,64 @@ window.Bonsai.frameFeature = (fid) => {
     controls.update();
     if (t < 1) requestAnimationFrame(step);
   })();
-  console.log('§FRAME_FEATURE fid=' + fid + ' centre=[' + c.toArray().map(v => v.toFixed(2)).join(',') + '] dist=' + dist.toFixed(2));
+  console.log('§FRAME_FEATURE ' + tag + ' centre=[' + c.toArray().map(v => v.toFixed(2)).join(',') + '] dist=' + dist.toFixed(2));
   return true;
+}
+window.Bonsai.frameFeature = (fid) => {
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  if (!m || !m.geometry) return false;
+  m.geometry.computeBoundingBox();
+  const bb = m.geometry.boundingBox;
+  if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x)) return false;
+  // foldInsert bakes WORLD-space positions straight into the geometry buffer (bonsai_kernel.js._buildMesh sets
+  // no mesh.position/rotation) — so the geometry's own bbox IS already the world-space bbox, no matrixWorld needed.
+  const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
+  return _frameTo(c, bb.min.distanceTo(bb.max), 'fid=' + fid);
+};
+// §Q2 (W-E2E-INSTPICK c): an Outliner leaf for a non-ARC EXTRACTED element has no featureId (only ARC seeds
+// build the guid→fid bridge) — but its REAL transform is in the open building DB. Frame straight from
+// elements_meta⋈element_transforms (the same convention every walker host-query uses; window.__dwBuf re-open
+// is the file's established pattern). Non-invent: DB values only. Returns false (caller keeps the honest
+// toast) when no DB is open or the guid has no transform row.
+window.Bonsai.frameElementByGuid = (guid) => {
+  if (!window.__dwBuf || !window.SQL || !guid) return false;
+  let db = null;
+  try {
+    db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+    const r = db.exec("SELECT t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z " +
+      "FROM element_transforms t WHERE t.guid='" + String(guid).replace(/'/g, "''") + "'");
+    if (!r.length || !r[0].values.length) return false;
+    const v = r[0].values[0];
+    const c = new THREE.Vector3(+v[0] || 0, +v[1] || 0, +v[2] || 0);
+    const diag = Math.hypot(+v[3] || 0, +v[4] || 0, +v[5] || 0) || 2;
+    window.__lastGuidFrame = { guid: guid, c: [c.x, c.y, c.z], diag: diag };   // witness oracle
+    return _frameTo(c, diag, 'guid=' + String(guid).slice(0, 10));
+  } catch (e) { console.warn('§FRAME_GUID fail ' + (e && e.message)); return false; }
+  finally { if (db) { try { db.close(); } catch (e) { } } }
 };
 function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting); }
-function pickAt(clientX, clientY) {
+// §Q2 (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-INSTPICK): walked fixtures live as InstancedMesh buckets
+// under dwRoot (NOT direct children of g), so the old non-recursive intersect never even raycast them — a
+// canvas click on a walked fixture was a silent miss, instanceId or not. Include the buckets; THREE populates
+// hit.instanceId on an InstancedMesh for free. Hover raycasts are per-pointermove, and InstancedMesh.raycast
+// iterates EVERY instance — cap hover (not click) at DW_PICK_HOVER_CAP total instances so Terminal-scale
+// walks (35k+) never pay a per-frame cost (same doctrine as DW_ALL_PROXY_THRESHOLD).
+window.DW_PICK_HOVER_CAP = window.DW_PICK_HOVER_CAP || 20000;
+function _dwPickables(hoverOnly) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
+  const root = g.children.find(o => o.userData && o.userData.dwRoot); if (!root) return [];
+  const ims = root.children.filter(o => o.isInstancedMesh && o.userData.dwSub);
+  if (hoverOnly && ims.reduce((s, im) => s + im.count, 0) > window.DW_PICK_HOVER_CAP) return [];
+  return ims;
+}
+function pickAt(clientX, clientY, opts) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return null;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  return raycaster.intersectObjects(g.children.filter(o => o.isMesh), false)[0] || null;
+  const list = g.children.filter(o => o.isMesh).concat(_dwPickables(opts && opts.hover));
+  return raycaster.intersectObjects(list, false)[0] || null;   // sorted by distance — nearest wins, authored or instanced
 }
 // ── MARQUEE (shift-drag box) ───────────────────────────────────────────────────────────────────
 // Bare left-drag is OrbitControls' rotate, so SHIFT is the multi gesture (no conflict). A CAPTURE-phase pointerdown
@@ -810,6 +848,7 @@ window.addEventListener('pointerup', (e) => {             // on WINDOW so an OFF
   const m = marquee; marquee = null; marqueeDraw(); controls.enabled = true;
   if (!m.moved) {                                          // shift-CLICK → toggle the hit object
     const hit = pickAt(e.clientX, e.clientY);
+    if (hit && hit.object.isInstancedMesh) { pickInstance(hit.object, hit.instanceId); return; }   // §Q2: identify (no _selSet entry)
     if (hit) { toggleSelect(hit.object); setStat('toggled #' + hit.object.userData.featureId + '  (' + selectedIds.size + ' selected)'); }
     return;
   }
@@ -822,7 +861,8 @@ window.addEventListener('pointerup', (e) => {             // on WINDOW so an OFF
 canvas.addEventListener('pointerdown', (e) => {           // bare (no-shift) pick → replace-select
   if (!inSelectCtx() || e.button !== 0 || e.shiftKey) return;
   const hit = pickAt(e.clientX, e.clientY);
-  if (hit) { highlight(hit.object); setStat('selected feature #' + selectedId); }
+  if (hit && hit.object.isInstancedMesh) { pickInstance(hit.object, hit.instanceId); return; }   // §Q2: walked fixture → identify
+  if (hit) { clearInstPick(); highlight(hit.object); setStat('selected feature #' + selectedId); }
 });
 // ── M3 HOVER PRE-PICK (W-BONSAI-HOVER) ──────────────────────────────────────────────────────────
 // Raycast under the cursor BEFORE any click and give the feature a faint glow (dimmer than selection) + a
@@ -852,11 +892,13 @@ function setHover(mesh) {
   if (window.A && A.requestRender) A.requestRender();
 }
 canvas.addEventListener('pointermove', (e) => {
-  if (!inSelectCtx() || marquee || _moveDrag || e.buttons) { if (_hoverId != null) setHover(null); return; }   // not while orbiting/dragging/another mode
-  const hit = pickAt(e.clientX, e.clientY);
+  if (!inSelectCtx() || marquee || _moveDrag || e.buttons) { if (_hoverId != null) setHover(null); setHoverInstance(null); return; }   // not while orbiting/dragging/another mode
+  const hit = pickAt(e.clientX, e.clientY, { hover: true });   // §Q2: instanced buckets included (capped at Terminal scale)
+  if (hit && hit.object.isInstancedMesh) { setHover(null); setHoverInstance(hit.object, hit.instanceId); return; }
+  setHoverInstance(null);
   setHover(hit ? hit.object : null);
 });
-canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(null); });
+canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(null); setHoverInstance(null); });
 // §P2 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-OL-SYNC): the hover tint above was a local closure only
 // the canvas raycast could reach — an Outliner row hover had no way to answer back. Expose it so a row
 // mouseover lights the SAME faint pre-pick glow on its mesh (fid=null clears). Selected meshes keep their
@@ -867,6 +909,48 @@ window.Bonsai.hoverFeature = (fid) => {
   setHover(m || null);
   return !!m;
 };
+// ── §Q2 INSTANCE PICK IDENTITY (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-INSTPICK) ────────────
+// Each walked InstancedMesh bucket carries userData.dwSub (the placement sub-array it was built from — an
+// array REFERENCE, zero new objects at Terminal scale), so hit.instanceId resolves to the exact placement
+// record. Read-only identify + tint: instances never enter _selSet (walked fixtures are not editable
+// inserts — editing stays op-log-governed). Tint via setColorAt (whole-material _emis would light the
+// entire batch); the previous per-instance colour is saved/restored so it composes with _flashSettleDisc.
+let _instPick = null, _instHover = null;   // {im, i, prev:[r,g,b]}
+function _instTint(ref, hex) {
+  if (!ref.im.instanceColor) ref.im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(ref.im.count * 3).fill(1), 3);
+  const a = ref.im.instanceColor;
+  ref.prev = [a.getX(ref.i), a.getY(ref.i), a.getZ(ref.i)];
+  ref.im.setColorAt(ref.i, new THREE.Color(hex)); a.needsUpdate = true;
+  if (window.A && A.requestRender) A.requestRender();
+}
+function _instUntint(ref) {
+  if (!ref || !ref.im.instanceColor || !ref.prev) return;
+  ref.im.setColorAt(ref.i, new THREE.Color(ref.prev[0], ref.prev[1], ref.prev[2]));
+  ref.im.instanceColor.needsUpdate = true;
+  if (window.A && A.requestRender) A.requestRender();
+}
+function clearInstPick() { if (_instPick) { _instUntint(_instPick); _instPick = null; } }
+function setHoverInstance(im, i) {
+  if (im && _instHover && _instHover.im === im && _instHover.i === i) return;
+  if (_instHover) { _instUntint(_instHover); _instHover = null; }
+  if (im && !(_instPick && _instPick.im === im && _instPick.i === i)) { _instHover = { im: im, i: i }; _instTint(_instHover, 0x9be7ff); }
+  if (im) canvas.style.cursor = modeCursor() || 'pointer';
+}
+function pickInstance(im, i) {
+  const p = im.userData.dwSub && im.userData.dwSub[i]; if (!p) return false;
+  if (_instHover && _instHover.im === im && _instHover.i === i) { _instUntint(_instHover); _instHover = null; }   // pick wins over hover
+  clearInstPick();
+  _instPick = { im: im, i: i }; _instTint(_instPick, 0x4fc3f7);
+  const disc = im.userData.dwDisc || im.userData.dwAsm || '?';
+  const gid = p.guid || p.host || p.src || '';
+  const x = p.x != null ? p.x : (p.pos ? p.pos[0] : 0), y = p.y != null ? p.y : (p.pos ? p.pos[1] : 0), z = p.z != null ? p.z : (p.pos ? p.pos[2] : 0);
+  setStat('walked ' + disc + ' · ' + String(p.ifc_class || p.piece_type || 'fixture').replace(/^Ifc/, '') +
+    (p.storey ? ' · ' + p.storey : '') + (gid ? ' · ' + String(gid).slice(0, 10) : '') + '  (generated — identify only)');
+  window.__lastInstPick = { disc: disc, i: i, ifc_class: p.ifc_class || null, x: x, y: y, z: z, guid: gid || null };   // witness oracle
+  console.log('§PICK inst disc=' + disc + ' i=' + i + ' class=' + (p.ifc_class || p.piece_type || '?') +
+    ' xyz=(' + (+x).toFixed(3) + ',' + (+y).toFixed(3) + ',' + (+z).toFixed(3) + ')' + (gid ? ' guid=' + String(gid).slice(0, 10) : ''));
+  return true;
+}
 
 // Cut an opening into the SELECTED wall: derive a window void from the wall bbox (full through the
 // thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
@@ -2157,7 +2241,7 @@ window.addEventListener('keydown', (e) => {
   if (typing) return;
   if (e.key === 'Escape') {                                       // cancel whatever mode is active
     if (sketching) exitSketch(); else if (routing) exitRoute(); else if (edgePicking) exitFillet();
-    else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); }
+    else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); clearInstPick(); }
     return;
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
@@ -2407,7 +2491,9 @@ function _renderDiscWalk(disc, placements) {
       if (!sub.length) return;
       var im = new THREE.InstancedMesh(geo, mat, sub.length);
       sub.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); im.setMatrixAt(i, m); });
-      im.instanceMatrix.needsUpdate = true; im.userData.dwDisc = disc; root.add(im);
+      im.instanceMatrix.needsUpdate = true; im.userData.dwDisc = disc;
+      im.userData.dwSub = sub;   // §Q2 (W-E2E-INSTPICK): instanceId i ↔ sub[i] — array REFERENCE, no per-instance objects
+      root.add(im);
     }
     // gated-but-resolved (orange) vs still-clashing (red): clash takes precedence so a human SEES it.
     _mesh(list, matN);                                                          // all (normal box)
@@ -2597,7 +2683,9 @@ function _renderDiscAssembly(disc, parts) {
         verts.push(p.pos[0], p.pos[1], p.pos[2], p.pos[0] + fd[0] * off, p.pos[1] + fd[1] * off, p.pos[2] + fd[2] * off);
       }
     });
-    im.instanceMatrix.needsUpdate = true; im.userData.dwAsm = disc; root.add(im);
+    im.instanceMatrix.needsUpdate = true; im.userData.dwAsm = disc;
+    im.userData.dwSub = list;   // §Q2: assembled parts carry real node guids — same instanceId↔record contract
+    root.add(im);
   });
   if (verts.length) {
     var cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
