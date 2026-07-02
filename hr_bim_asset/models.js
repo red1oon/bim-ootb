@@ -70,6 +70,33 @@ var MODELS = {
     // by occupancy.demoSeed(rooms) from fixtures/hhs_rooms.json (NON-INVENT: vacancy = absence of an assignment).
     records: [{ s_resourceassignment_id: 'RA-0001', s_resource_id: 'RM_Level_1_1',
                 party: 'BP-TEN-1', assigndatefrom: '2026-01', assigndateto: '2026-12', qty: 1, isconfirmed: 'Y' }]
+  },
+  // §P10a (RESUME_HR_BIM_ASSET.md, user 2026-07-02) — the PRIMARY spatial-side identity for a person: the
+  // native `ad_user` table already carries name/email/phone AND an OPTIONAL c_bpartner_id (verified
+  // build/erp/ad_full.db PRAGMA table_info(ad_user) — notnull=0). `c_bpartner_id` is populated ONLY where a
+  // real link already exists elsewhere in this codebase (ad_payroll.js EMP001->1001/EMP002->1002 — HR/Payroll
+  // IS involved for those two); tenant rows stay null — no real C_BPartner backs a bare BP-TEN-* label here,
+  // same non-invent discipline as PropertyManagement.manager (AD-TEN6). email/phone are CONTOH/SAMPLE demo
+  // contact details (watermarked below, like every other demo field in this file — rent/deposit are equally
+  // invented sample numbers, watermarked the same way).
+  Official: {
+    table: 'AD_User', label: 'Officials & Contacts',
+    fields: [{ name: 'ad_user_id', type: 'id' }, { name: 'name', type: 'text' }, { name: 'email', type: 'email' },
+             { name: 'phone', type: 'text' }, { name: 'c_bpartner_id', type: 'party' }],
+    // EMP-1..EMP-4 are attendance.js demoSeed's own canonical check-in identities (its own namespace, distinct
+    // from ad_payroll.js's EMP001/EMP002 — verified: `demoSeed` hardcodes 'EMP-1'..'EMP-4' for zones g[0]/g[1],
+    // the 4 the existing witnesses probe; the auto-generated overflow past g[3] ('EMP-30' etc) has no Official
+    // row — an honest miss, never fabricated). c_bpartner_id null: presence/check-in alone doesn't prove an
+    // HR/Payroll BPartner link (unlike ad_payroll.js's own EMP001/EMP002, which do).
+    records: [{ ad_user_id: 1, name: 'EMP001', email: 'emp001@contoh.my', phone: '+60 12-345 6001', c_bpartner_id: 1001 },
+              { ad_user_id: 2, name: 'EMP002', email: 'emp002@contoh.my', phone: '+60 12-345 6002', c_bpartner_id: 1002 },
+              { ad_user_id: 3, name: 'BP-TEN-1', email: 'ten1@contoh.my', phone: '+60 12-345 7001', c_bpartner_id: null },
+              { ad_user_id: 4, name: 'BP-TEN-5', email: 'ten5@contoh.my', phone: '+60 12-345 7005', c_bpartner_id: null },
+              { ad_user_id: 5, name: 'BP-TEN-6', email: 'ten6@contoh.my', phone: '+60 12-345 7006', c_bpartner_id: null },
+              { ad_user_id: 6, name: 'EMP-1', email: 'emp-1@contoh.my', phone: '+60 12-345 8001', c_bpartner_id: null },
+              { ad_user_id: 7, name: 'EMP-2', email: 'emp-2@contoh.my', phone: '+60 12-345 8002', c_bpartner_id: null },
+              { ad_user_id: 8, name: 'EMP-3', email: 'emp-3@contoh.my', phone: '+60 12-345 8003', c_bpartner_id: null },
+              { ad_user_id: 9, name: 'EMP-4', email: 'emp-4@contoh.my', phone: '+60 12-345 8004', c_bpartner_id: null }]
   }
 };
 
@@ -93,7 +120,12 @@ function toAssetRow(asset) {
 
 function model(name) { return MODELS[name]; }
 function records(name) { return (MODELS[name] || {}).records || []; }
+// §P10a lookup — resolve a bare code (attendance `employee` id, lease `party`/`tenant`) to its AD_User contact
+// record. Honest miss: returns null rather than fabricating a name for a code with no Official row.
+function officialByName(name) {
+  return records('Official').filter(function (o) { return o.name === name; })[0] || null;
+}
 
-var M = { MODELS: MODELS, model: model, records: records, toAssetRow: toAssetRow };
+var M = { MODELS: MODELS, model: model, records: records, toAssetRow: toAssetRow, officialByName: officialByName };
 if (typeof module === 'object' && module.exports) module.exports = M;
 else (typeof self !== 'undefined' ? self : this).HbaModels = M;

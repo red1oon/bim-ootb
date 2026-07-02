@@ -84,6 +84,7 @@
     var sum = renderStatement(body, sp, _sel);
     pane.appendChild(body);
     (document.body || document.documentElement).appendChild(pane);
+    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
     _pane = pane;
     console.log('§HBA_LEAVE_PANE mounted employees=' + sp.employees.length + ' period=' + sp.period + ' selected=' + _sel + ' unpaid=' + sum.unpaid);
     return true;

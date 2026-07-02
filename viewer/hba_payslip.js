@@ -83,6 +83,7 @@
     var slip = renderSlip(body, run, sp, _sel);
     pane.appendChild(body);
     (document.body || document.documentElement).appendChild(pane);
+    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
     _pane = pane;
     console.log('§HBA_PAYSLIP mounted employees=' + sp.employees.length + ' period=' + sp.period + ' selected=' + _sel + ' net=' + slip.net);
     return true;

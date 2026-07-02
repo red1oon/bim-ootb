@@ -22,11 +22,63 @@ LHDN income-tax/PCB + EPF) framed as a **privacy-first counter-proposal**, free 
 
 ---
 
-## ▶ SESSION CLOSEOUT 2026-07-02 — NEW SESSION START HERE
+## ▶ SESSION CLOSEOUT 2026-07-02b — §P10a + §P10b DONE — NEW SESSION START HERE
 
-**This session's work is DONE + PUSHED** (`bim-ootb` `lane/hr-overlay`, worktree `/tmp/wt-hr`, 9 commits,
-`f569bec` tip, **0 local-only commits** — verified `git rev-list --count origin/lane/hr-overlay..HEAD` = 0).
-**29 witness files, 260 checks total, all GREEN, zero regression** at every step.
+**This session shipped BOTH §P10a (UX/data-model triage) and §P10b (IoT/CCTV/ERP-link/draggable) in full** —
+see the two spec sections above for the design; below is what's ACTUALLY BUILT + WITNESSED (`bim-ootb`
+`lane/hr-overlay`, worktree `/tmp/wt-hr`). **33 witness files, GREEN, zero regression** (full suite re-run
+after every change). Live chromium smoke (`cdp_shot.js` against the extended `demo/fm_panel.html`): 8/8 lenses
+available, `§SMOKE after-occ-click drawer-present=true | presence-drawer=true | tenancy-pane=true | iot-pane=true
+| search-results=1 | jsErrors=0` — screenshot confirms the IoT/CCTV pane + Presence roster render.
+
+**§P10a shipped:**
+1. **Rename** — pill + drawer header → **"Human-Asset"** (`panels.js:1159`, `hba_lens.js`). Internal id `hbaFM`
+   unchanged (witness stability).
+2. **Deliberate close** — `openFamilyDrawer` refactored to a persistent container + `_renderRows`/`_clear`
+   inner rebuild; a row click activates+re-renders IN PLACE (drawer never removed by it); an explicit **✕**
+   button (or re-tapping the pill) is the only close.
+3. **AD_User primary identity** — `models.js` `MODELS.Official` (9 records: EMP001/EMP002 with REAL
+   `c_bpartner_id` 1001/1002 from `ad_payroll.js`; BP-TEN-1/5/6 + EMP-1..EMP-4 with `c_bpartner_id:null` — no
+   real BPartner backs them, honest gap) + `ad_tenancy.toUserRow`. `models.officialByName(code)` — honest
+   `null` on miss, never fabricated.
+4. **`ad_tenancy.compileBuilding(buildingName, rooms, leases, strata)`** — the whole-building AD compile
+   (Warehouse/Locator/Product/Subscription), skip-non-room honesty, derived `units`.
+5. **`viewer/hba_tenancy.js`** (NEW pane) — party resolves through `Official` (name+phone, not a bare code);
+   row click → `flyToZone` (the "Find↔FM link"). FAMILY 7→8 (`tenancy` pane entry).
+6. **Presence roster** — `openPresenceDrawer` (session list via `attendance.sessions`, name resolved via
+   `Official`, honest bare-code miss on overflow identities); row click → `flyToZone`.
+7. **Smart search** — top `<input>` in the drawer, Room name/storey (`A._hbaRooms`) + `Official` name/phone/
+   email; honest "No match." — explicitly redundant with Find's own (private, unexported) index.
+8. **`flyToZone(A, guid)`** — ONE shared camera fly-to primitive (Tenancy pane + Presence roster + search all
+   route through it); returns `{flew, guid, center}` synchronously (witnessable without a real THREE/camera),
+   performs the real browser lerp when `camera`/`controls`/`THREE` are present.
+
+**§P10b shipped (mid-session user request — sensor mockup + CCTV mockup + ERP billing + draggable panels):**
+1. **`hr_bim_asset/iot.js`** (NEW engine) — 6 sensors (temp/boiler pressure/sound/dust/solar/electrical),
+   DETERMINISTIC 24h synthetic series (sin curve + fixed offset table, never `Math.random`/`Date.now`); compiles
+   onto REAL `c_order`/`c_orderline`/`c_uom` columns (verified `ad_full.db` PRAGMA — see §P10b-CHECK); new
+   `C_UOM` rows created on demand for the missing physical units (°C/bar/dB/µg/m³/W/m²/kWh), same precedent as
+   `ad_tenancy.js`'s `toWarehouseRow`.
+2. **`viewer/hba_iot.js`** (NEW pane) — opens as a SUPPLEMENT to the existing `maintenance` tint lens (same
+   dual-action pattern as Presence): 6 Chart.js sensor charts, a 2×3 CCTV MOCKUP grid (canvas scanline +
+   "MOCK FEED" caption, **no invented video/GIF, no external URL fetch**), the ERP billing table
+   (`iot.billingLines()`).
+3. **`viewer/hba_draggable.js`** (NEW shared utility) — `HbaDraggable.enable(pane, handle)`, pointer-event
+   drag-follow clamped to the viewport; retrofit into ALL 5 panes (`hba_dashboard.js`, `hba_payslip.js`,
+   `hba_leave.js`, `hba_tenancy.js`, `hba_iot.js`) — one line added to each `mount()`.
+
+**Witnesses (NEW):** `witness_p10a.js` (24/24 — AD_User/compileBuilding/rename/close/roster/search),
+`witness_tenancy_pane.js` (10/10), `witness_p10b.js` (22/22 — iot engine/pane/draggable). **Updated:**
+`witness_family.js` (F1/F7 → FAMILY 8 entries, tenancy re-added as a PANE not a lens — de-conflate still holds
+at the lens layer). Demo: `demo/fm_panel.html` extended with a real asset guid + tenancy spec (all 8 lenses now
+demo-available, was 7 max before). `viewer.html` gained 5 script tags (`ad_tenancy.js`, `iot.js`,
+`hba_draggable.js`, `hba_tenancy.js`, `hba_iot.js`); `hba_lens.js` cache-bumped `?v=3`→`?v=4`.
+
+**Not yet done (flag, don't silently drop):** live Playwright/deploy smoke of the drag mechanics in the REAL
+in-app viewer (witnessed here via `cdp_shot.js` against the standalone demo page + a stub-DOM node witness for
+the pointer math, not the full 3D viewer); the Tenancy/IoT/Presence panes all default-mount at the SAME
+`top:54px;right:12px` anchor so opening several at once stacks them (exactly what dragging is for — not a bug,
+but worth a smarter default cascade-offset if this becomes a real workflow, not just a POC).
 
 **What shipped (the whole §CRITICAL "Compile not Model" arc, closed end-to-end this session):**
 `ad_payroll.js` (payroll → `hr_process`/`hr_movement`/`hr_concept*` + leave-seam) · `occupancy.js`
@@ -128,6 +180,147 @@ Sources: `~/idempiere-dev-setup/idempiere` `org.compiere.model/{X_M_Locator,MLoc
    (W-HBA-TEN-PANE: off=no-DOM, data-gate, mount KPIs match compile, row click captures the fly target ≈ stub
    centroid, unmount zero-residue, watermark); `witness_family.js` 7→8 entries. Live chromium smoke
    (`cdp_shot.js` HHS): FM drawer → Tenancy → row click → camera moves, `§HBA_TEN_LINK`, jsErrors=0, shot.
+
+---
+
+## ▶ §P10a — UX/data-model triage (user 2026-07-02, post-first-use feedback), folded into §P10-BUILD
+
+User tried the drawer live and filed 3 findings + a design brief ("triage as a system designer, suggest more
+elegant presentation + data modelling"). Resolved by dialogue, then re-confirmed point-by-point. This section
+supersedes the plain version of §P10-BUILD above — build the ENRICHED version below, not the bare one.
+
+**1. Naming — "Human-Asset".** The pill already showed a decent label (`FM / Operate`, `panels.js:1159`) but
+its icon is literally named `fmCockpit` — a stray, unpromoted name. User's replacement: **"Human-Asset"**
+(captures People+Asset in one phrase, matches the module's own name `hr_bim_asset/`). Change the DISPLAY text
+only — pill `name:` (`panels.js:1159`) and drawer header (`hba_lens.js:354`). Keep the internal id `hbaFM` and
+all function/global names unchanged (29 witness files + `demo/fm_panel.html` reference them) — renaming those
+is a mechanical, unrelated-risk refactor the user didn't ask for.
+
+**2. Close = deliberate ✕ only.** Bug, not a preference: `hba_lens.js:373` currently does
+`activateLens(A, e); d.remove();` on EVERY row click — selecting a lens always kills the drawer as a side
+effect. Fix: row click activates the lens/pane and RE-RENDERS the row list in place (updated highlight/●on
+badges) — the drawer element itself is never removed by a row click. Add one explicit **✕** button in the
+header; it (and re-tapping the pill, which already toggles via `familyActive()`) are the only two ways to
+close. `openFamilyDrawer` is refactored into a persistent-container + `_renderRows()` inner function so a
+row click can refresh without a remove/recreate flicker.
+
+**3. AD_User is the primary identity; C_BPartner only for HR/Payroll; scope = spatial only, not ERP financials.**
+Verified against `build/erp/ad_full.db PRAGMA table_info(ad_user)`: the REAL native `ad_user` table already
+carries `name`/`email`/`phone`/`phone2` AND an optional (nullable) `c_bpartner_id` — so "AD_User with or without
+a BPartner link" is not a workaround, it's the native shape. Decision:
+- New `MODELS.Official` (`models.js`, table `AD_User`) — one row per person the FAMILY drawer needs to name:
+  the 2 payroll employees (`EMP001`/`EMP002`) and the 3 demo tenants (`BP-TEN-1/5/6`). Fields: `ad_user_id`,
+  `name`, `email`, `phone`, `c_bpartner_id`. **`c_bpartner_id` populated ONLY where a real link already exists
+  in this codebase** — `ad_payroll.js`'s `EMP001→1001`/`EMP002→1002` (HR/Payroll IS involved) — and left `null`
+  for the tenant rows (no real `C_BPartner` row backs a bare `BP-TEN-*` label in this demo set; forcing one
+  would be invention — same discipline already applied to `PropertyManagement.manager`, AD-TEN6). Compiles via
+  a new `ad_tenancy.toUserRow(person)` → the literal native `ad_user` shape.
+- **Scope wall (the "avoid clutter/redundancy" ask):** every Viewer-side HBA surface (lenses + panes) shows
+  ONLY data that resolves to a spatial element in THIS building — occupant identity for a room, asset location,
+  a lease's unit+party+cadence. It does **not** attempt portfolio-wide financial rollups (aggregate rent
+  roll across buildings, GL postings, invoice aging) — those belong on a **separate ERP-side Dashboard**
+  (out of scope for this Viewer work; noted as a FUTURE surface, not built here, not invented a shape for here).
+  This is a scope boundary, not a feature to build now.
+
+**4. Presence → a side drawer of persons, click-to-zoom.** Today "Presence" only tints room density (a color,
+no names). New: clicking the Presence row ALSO opens a second small drawer beside the FM drawer, listing every
+`attendance.sessions(log)` entry for the current period (person via `MODELS.Official` lookup by name-match on
+the attendance `employee` id — e.g. `EMP001`; zone = room name/storey) with in/out time; row click flies the
+camera to that person's zone. Reuses the SAME fly-to primitive as §P10-BUILD point 4 (below) — build it ONCE
+as `flyToZone(A, guid)` in `hba_lens.js`, call it from both the Tenancy pane row-click and the Presence-drawer
+row-click (no duplicate camera code).
+
+**5. Top smart search — Room No / `AD_User` phone, borrowing Find's Storey/Room facets, OK to be redundant.**
+A single `<input>` at the top of the FM drawer (below the header, above rows) filtering across: `A._hbaRooms`
+(room name/storey — already populated by `bindStoreysFromModel`, the exact data Find's own Storey/Room tree
+reads) + `MODELS.Official` (name/email/phone). On a room match → `flyToZone`; on a person match with an open
+attendance session → `flyToZone` to their current zone. **Explicitly redundant with Find's own index** (Find's
+tree lives in a private closure inside `navigate_find.js` and isn't exported — true reuse isn't mechanically
+available) — user accepted the duplication for this POC ("ok to be redundant, just for convenience and early
+showcasing").
+
+### §P10a-BUILD (execution order — extends §P10-BUILD, same files + 2 new ones)
+1. `models.js` — add `MODELS.Official` (5 records, watermarked for free by the existing stamp loop).
+2. `ad_tenancy.js` — add `toUserRow(person)`.
+3. `panels.js:1159` — pill `name: 'Human-Asset'` (id/fn/isActive unchanged).
+4. `hba_lens.js` — header text → `'Human-Asset'`; `openFamilyDrawer` refactor (persistent container, ✕ button,
+   row click no longer removes); `flyToZone(A, guid)` shared helper; `openPresenceDrawer(A)` (person list +
+   row-click→flyToZone); search `<input>` wired to the same filter+flyToZone path; FAMILY 7→8
+   (`{kind:'pane', id:'tenancy', label:'Tenancy / AD'}`, per §P10-BUILD point 5).
+5. `viewer/hba_tenancy.js` (NEW, per §P10-BUILD points 2-3) — built AD_User-aware from the start: party column
+   resolves through `MODELS.Official` to show name+email+phone, not a bare `BP-TEN-1` code.
+6. `viewer.html` — add `ad_tenancy.js` + `hba_tenancy.js` script tags (per §P10-BUILD point 5).
+7. **Witnesses:** extend `witness_family.js` (header text, ✕-only close, row click keeps drawer, FAMILY 7→8);
+   NEW `witness_ad_user.js` (toUserRow shape, c_bpartner_id populated iff HR/Payroll-linked, watermark); NEW
+   `witness_tenancy_pane.js` (per §P10-BUILD point 6, AD_User party display); NEW `witness_presence_drawer.js`
+   (session list, person-name resolution, flyToZone target capture, honest no-op when a zone has no rendered
+   members); NEW `witness_smart_search.js` (room-name match, phone match, no-match honest empty). Live chromium
+   smoke (`cdp_shot.js` HHS, extends the existing `fm_panel.html` harness): drawer opens, ✕ closes, row click
+   keeps it open, Presence drawer lists + zooms, search finds a room by name and a person by phone digit,
+   0 console errors, screenshot.
+
+---
+
+## ▶ §P10b — IoT sensor mockup + CCTV mockup + ERP C_Order billing link + draggable panels (user 2026-07-02)
+
+User, mid-§P10a build: clicking **Assets/IoT** should pop a 24h sensor-reading mockup (temperature, boiler
+pressure, sound, dust, solar-panel output, electrical) — reference cited: the RiverIoT/Federation pattern in
+IfcOpenShell/Bonsai (an external inspiration for the SHAPE of the idea, not a library dependency here) — plus a
+6-camera CCTV mockup panel, an ERP link projecting each sensor reading as a **billable `C_Order`/`C_OrderLine`**
+row (product=sensor, qty+UOM=the reading), and **every HBA pane becomes draggable**. Explicitly labeled a
+**mockup** by the user — no real IoT hardware, no real video feed; the discipline that still applies is
+**non-invent on the SHAPE**: reuse the REAL native AD tables for the ERP-link half, and be honest that the
+sensor readings themselves are synthetic/demo (same CONTOH/SAMPLE watermark as every other HBA demo record).
+
+### §P10b-CHECK — native shapes verified (`build/erp/ad_full.db` PRAGMA table_info, falsifiable)
+- `c_orderline`: `c_order_id · line · c_bpartner_id · m_product_id · c_uom_id · qtyordered · priceactual ·
+  linenetamt` — a sensor reading compiles cleanly onto this (product=the sensor, qty=the reading, uom=the
+  physical unit) — SAME pattern as `ad_tenancy.toSubscriptionRow`, no new table.
+- `c_order`: header carries `documentno · docstatus · issotrx` — ONE order per building/period groups the
+  sensor lines (mirrors `toWarehouseRow`'s "one row per building, created since the demo building has none yet").
+- `c_uom`: existing rows cover `Each/Hour/Day/Litre/...` but **NOT** the physical units these 6 sensors need
+  (°C, bar, dB, µg/m³, W/m², kWh) — a genuine dictionary gap, same treatment as `M_Warehouse`/`C_SubscriptionType`
+  being CREATED on demand in `ad_tenancy.js` (the established precedent: extend the native dictionary with the
+  missing master row, never bolt on a parallel unit system). New `C_UOM` rows are compiled, not invented ad hoc.
+
+### §P10b-BUILD
+1. **`hr_bim_asset/iot.js`** (NEW engine, additive): `SENSORS` catalog — 6 entries `{key, label, uom_name,
+   uom_symbol, baseline, amplitude}` (temp °C, boiler pressure bar, sound dB, dust µg/m³, solar W/m², electrical
+   kWh). `demoSeries(assetGuid, hours)` — DETERMINISTIC synthetic 24-hourly-point series per sensor (a smooth
+   sinusoid + a fixed per-hour offset table, NOT `Math.random()` — reproducible, watermarked, explicitly a
+   MOCKUP series, never claimed as a real telemetry read). `toUomRow(sensorKey, seedId)` / `toOrderRow(building,
+   period, seedId)` / `toOrderLineRow(sensor, reading, c_order_id, m_product_id, c_uom_id, line, seedId)` — the
+   native compile functions (mirrors `ad_tenancy.js`'s pattern exactly, same file-header discipline).
+   `billingLines(assetGuid, series)` — the reading-at-latest-hour compiled to one `C_OrderLine` PER sensor,
+   wrapped `{row, sensor, reading}` (column-pure `row`, wrapper = view trace, same convention as
+   `ad_tenancy.compileBuilding`'s subscription wrapper).
+2. **`viewer/hba_iot.js`** (NEW pane, mirrors `hba_leave.js`): mounts on the `maintenance` FAMILY entry's row
+   click (Assets/IoT already tints the model — kind:'lens' — this ADDS a supplementary pane, same dual-action
+   pattern already built for Presence in §P10a point 4: tint stays, richer detail opens alongside). 3 sections:
+   (a) 6 small `Chart.js` line charts (reuses the ALREADY-BUNDLED `viewer/lib/chart.umd.min.js`, same engine
+   `hba_dashboard.js` already uses — no new charting dependency), one per sensor, 24 hourly points, watermarked;
+   (b) a 2×3 CCTV MOCKUP grid — 6 tiles, each a small `<canvas>` with a **clearly-labeled placeholder pattern**
+   (moving scanline + "CAM n · MOCK FEED" caption) — **no invented video/GIF asset, no external URL fetch**
+   (PRIME RULE: never fetch/guess a URL); honest that there is no real camera; (c) the ERP billing table —
+   `iot.billingLines()` rendered as sensor · latest reading+uom · `C_OrderLine` qty/uom/priceactual/linenetamt ·
+   a "Billable" badge, with the compiled `C_Order.documentno` shown as the grouping header.
+3. **`viewer/hba_draggable.js`** (NEW tiny shared utility, additive): `HbaDraggable.enable(paneEl, handleEl)` —
+   pointer-down on `handleEl` switches the pane from its fixed `right/top` anchor to a `left/top` drag-follow
+   (clamped to the viewport), pointer-up releases; returns a `disable()` fn. Pure DOM, zero THREE/viewer-core
+   coupling. Retrofit into the 5 existing panes' header (`hba_dashboard.js`, `hba_payslip.js`, `hba_leave.js`,
+   the new `hba_tenancy.js`, the new `hba_iot.js`) — one `HbaDraggable.enable(pane, head)` call added to each
+   `mount()`, everything else about those files unchanged.
+4. **FAMILY entry:** `maintenance`'s `detail` text gains "— click opens sensor charts + CCTV mockup + billing";
+   no new FAMILY row (IoT reuses the existing Assets/IoT entry — the pane opens as a side effect of that same
+   click, same convention as Presence's roster).
+5. **Witnesses:** NEW `witness_iot.js` (SENSORS shape, deterministic series — same input → same output, twice —
+   toOrderLineRow/toOrderRow/toUomRow native-column shape, billingLines wrapper, watermark on every output);
+   NEW `witness_iot_pane.js` (off=no-DOM, data-gate on a real asset guid, mount renders 6 charts + 6 CCTV tiles
+   + N billing rows, unmount zero-residue); NEW `witness_draggable.js` (enable binds pointer handlers, a
+   simulated pointerdown→pointermove→pointerup sequence moves the pane's left/top, disable removes the
+   handlers — stub DOM + stub pointer events, no real browser needed for the mechanics). Live chromium smoke
+   extends `fm_panel.html`: IoT pane opens with 6 rendered charts + 6 CCTV tiles + billing rows, drag the
+   Tenancy pane by its header moves it, 0 console errors, screenshot.
 
 ---
 

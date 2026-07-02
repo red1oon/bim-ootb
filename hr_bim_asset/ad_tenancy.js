@@ -102,8 +102,52 @@ function toSubscriptionRow(record, m_product_id, subscriptionType, seedId) {
     startdate: record.term_start, renewaldate: record.term_end, paiduntildate: null, isdue: 'Y' };
 }
 
+// §P10a — the native `ad_user` row for a person (see models.js `Official` header for the c_bpartner_id
+// discipline: populated only where a real HR/Payroll link exists, null for pure tenancy contacts). person =
+// a models.js Official record ({ad_user_id,name,email,phone,c_bpartner_id}); column-pure passthrough — the
+// non-invent decision already happened where the record was seeded.
+function toUserRow(person) {
+  if (!person) return null;
+  return { ad_user_id: person.ad_user_id, name: person.name, email: person.email || null,
+    phone: person.phone || null, c_bpartner_id: person.c_bpartner_id || null };
+}
+
+// §P10-BUILD point 1 — compile a WHOLE building's tenancy+strata into the native AD shapes in one pass:
+// {warehouse, locators, products, subscriptions, skipped, units, _watermark}. Per REAL room -> locator+product;
+// per lease -> subscription(MONTHLY_RENT, party=tenant); per strata parcel -> subscription(QUARTERLY_STRATA_FEE,
+// party=owner). A lease/strata record whose unit_guid is NOT a real room in `rooms` is SKIPPED (never fabricate
+// a locator for it) into `skipped[]` with a reason, not silently dropped. `units` is DERIVED via propertyUnits
+// (never a stored duplicate of the room count). Subscriptions come back WRAPPED {row, unit_guid, kind, storey}
+// — `row` stays column-pure AD; the wrapper is caller/view trace only, never written back as an AD column.
+function compileBuilding(buildingName, rooms, leases, strata) {
+  rooms = rooms || []; leases = leases || []; strata = strata || [];
+  var seq = { loc: 0, prod: 0, sub: 0 };
+  var seedLoc = function () { return ++seq.loc; }, seedProd = function () { return ++seq.prod; }, seedSub = function () { return ++seq.sub; };
+  var warehouse = toWarehouseRow(buildingName, function () { return 1; });
+  var byGuid = {}; rooms.forEach(function (r) { byGuid[r.guid] = r; });
+  var locators = [], products = [], productIdByGuid = {};
+  rooms.forEach(function (r) {
+    var loc = toLocatorRow(r, warehouse.m_warehouse_id, seedLoc); locators.push(loc);
+    var prod = toProductRow(r, loc.m_locator_id, seedProd); products.push(prod); productIdByGuid[r.guid] = prod.m_product_id;
+  });
+  var subscriptions = [], skipped = [];
+  function compileCharge(record, kind, subType, refField, partyField) {
+    var guid = record.unit_guid, room = byGuid[guid];
+    if (!room) { skipped.push({ ref: record[refField] || null, unit_guid: guid, kind: kind, reason: 'unit_guid is not a real room in this building' }); return; }
+    var norm = { ref_no: record[refField], unit_guid: guid, party: record[partyField], term_start: record.term_start, term_end: record.term_end };
+    var row = toSubscriptionRow(norm, productIdByGuid[guid], subType, seedSub);
+    subscriptions.push({ row: row, unit_guid: guid, kind: kind, storey: room.storey || null });
+  }
+  leases.forEach(function (l) { compileCharge(l, 'tenancy', SUBSCRIPTION_TYPES.MONTHLY_RENT, 'lease_no', 'tenant'); });
+  strata.forEach(function (s) { compileCharge(s, 'strata', SUBSCRIPTION_TYPES.QUARTERLY_STRATA_FEE, 'parcel', 'owner'); });
+  var units = propertyUnits(warehouse.m_warehouse_id, locators);
+  var out = { warehouse: warehouse, locators: locators, products: products, subscriptions: subscriptions, skipped: skipped, units: units };
+  return W.stamp(out, 'en');
+}
+
 var AD = { SUBSCRIPTION_TYPES: SUBSCRIPTION_TYPES, toWarehouseRow: toWarehouseRow,
-  toLocatorRow: toLocatorRow, toProductRow: toProductRow, toSubscriptionRow: toSubscriptionRow, propertyUnits: propertyUnits };
+  toLocatorRow: toLocatorRow, toProductRow: toProductRow, toSubscriptionRow: toSubscriptionRow,
+  toUserRow: toUserRow, compileBuilding: compileBuilding, propertyUnits: propertyUnits };
 if (typeof module === 'object' && module.exports) module.exports = AD;
 else (typeof self !== 'undefined' ? self : this).HbaAdTenancy = AD;
 })();
