@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v29';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v30';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -73,6 +73,7 @@ const PRECACHE_ASSETS = [
   '../geomapping/data/relations_SH.json',
   '../geomapping/data/relations_DX.json',
   '../geomapping/data/relations_SC.json',
+  '../geomapping/data/alias_map.json',
 ];
 
 self.addEventListener('install', (event) => {

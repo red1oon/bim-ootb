@@ -25,7 +25,11 @@
     'Duplex': 'DX',
     'SampleCastle': 'SC',
     'SampleCastle-ARC': 'SC',
-    'Terminal': 'Terminal'
+    'Terminal': 'Terminal',
+    // Viewer-side buildings (not modeller residents, mapped for gmValidate/gmSignal consumers there)
+    'HHS_Office_Federated': 'HHS',
+    'Clinic': 'CL',
+    'Hospital': 'HO'
   };
 
   function gmTag(buildingKey) {
@@ -43,16 +47,17 @@
     if (typeof fetch !== 'function') { _loaded = Promise.resolve(false); return _loaded; }
     var base = (baseUrl || '../geomapping/') + 'data/';
     function j(rel) { return fetch(base + rel).then(function (r) { if (!r.ok) throw new Error(rel + ' ' + r.status); return r.json(); }); }
+    var aliasP = j('alias_map.json').catch(function () { return null; }); // §ALIAS-SPEC (8KB; optional)
     _loaded = j('geomap_rules.json').then(function (rules) {
       // relation sidecars are per-tag and optional (Terminal has none yet — honest absence, F4/F11);
       // fetch what exists, tolerate what doesn't.
       var tags = ['SH', 'DX', 'SC'];
       return Promise.all(tags.map(function (t) {
         return j('relations_' + t + '.json').catch(function () { return null; });
-      })).then(function (rels) {
+      }).concat([aliasP])).then(function (rels) {
         var relations = {};
         tags.forEach(function (t, i) { relations[t] = rels[i]; });
-        ClassifyGeom.init({ rules: rules, relations: relations });
+        ClassifyGeom.init({ rules: rules, relations: relations, aliases: rels[tags.length] || undefined });
         _ready = true;
         _log(TAG + ' data loaded (rules + ' + rels.filter(Boolean).length + '/' + tags.length + ' relation sidecars)');
         return true;
@@ -79,7 +84,7 @@
   function gmSignal(buildingKey, el) {
     var t = gmTag(buildingKey);
     if (!t) return { tier: 0, class_or_fact: 'unknown', confidence: 0, why: 'building key "' + buildingKey + '" has no mined geomap tag — refusing to guess', frame: null };
-    return ClassifyGeom.classify({ building: t, guid: el.guid, dims: el.dims, ifc_class: el.ifc_class });
+    return ClassifyGeom.classify({ building: t, guid: el.guid, dims: el.dims, ifc_class: el.ifc_class, type_class: el.type_class });
   }
 
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
