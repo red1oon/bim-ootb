@@ -53,8 +53,11 @@ function entry(id) { return lenses.filter(function (x) { return x.id === id; })[
 //   as a PANE — the AD-compile view (Warehouse/Locator/Product/Subscription) — so 'tenancy' now exists again,
 //   but as kind:'pane', never kind:'lens' (the de-conflate principle still holds at the lens layer).
 var ids = lenses.map(function (x) { return x.id; });
-ok('F1-deconflate', ids.join(',') === 'occupancy,presence,class,maintenance,tenancy,dash,payslip,leave' && entry('tenancy').kind === 'pane',
-  'family = Occupancy · Presence · Unit class · Assets/IoT · Tenancy/AD(pane) · Dashboard · Payslip · Leave (lease-status Tenancy still folded into the Occupancy LENS; the tenancy PANE is a distinct AD-compile concern) — ' + JSON.stringify(ids));
+// §STAGE3 adds the BIM BOM pane (RESUME_HBA_ERP_STAGE3.md item 2) — a pane (ERP-governed pp_product_bom lens),
+// never a lens-layer entry, so the de-conflate principle still holds.
+ok('F1-deconflate', ids.join(',') === 'occupancy,presence,class,maintenance,tenancy,bom,dash,payslip,leave'
+  && entry('tenancy').kind === 'pane' && entry('bom').kind === 'pane',
+  'family = Occupancy · Presence · Unit class · Assets/IoT · Tenancy/AD(pane) · BIM BOM(pane) · Dashboard · Payslip · Leave (lease-status Tenancy still folded into the Occupancy LENS; tenancy + bom PANES are distinct AD concerns) — ' + JSON.stringify(ids));
 
 // ---- F2 — WAKE-AWARE: on a building with rooms+leases+logs but NO asset, occupancy/presence/class are
 //   available; maintenance (assets) is GREYED (available:false) — the icon is present but disabled, never faked.
@@ -92,8 +95,20 @@ ok('F6-one-pill', /id:\s*'hbaFM'/.test(panelsSrc) && /HBALens\.openFamilyDrawer\
 
 // ---- F7 — drawer renderer is node-safe (no document → returns null, never throws) + exposes the family list.
 var nullInNode = HBALens.openFamilyDrawer(A) === null;
-ok('F7-drawer-nodesafe', nullInNode && HBALens.FAMILY.length === 8,
-  'openFamilyDrawer is a no-op without a DOM (null, no throw); FAMILY exposes the 8 entries for the browser drawer');
+ok('F7-drawer-nodesafe', nullInNode && HBALens.FAMILY.length === 9,
+  'openFamilyDrawer is a no-op without a DOM (null, no throw); FAMILY exposes the 9 entries (incl. §STAGE3 BIM BOM pane) for the browser drawer');
+
+// ---- F8 — §STAGE3 live-smoke finding (2026-07-03): ad_payroll.js reads self.HbaMockRates.MOCK_RATES at EVAL
+//   time (PR #628) — a page loading ad_payroll.js WITHOUT mock_rates.js first kills the whole IIFE silently
+//   (HbaAdPayroll undefined → payslip/leave dead, payroll governance stuck literal). Node witnesses can't see
+//   this (require() resolves it); assert the <script> ORDER in both HBA-loading pages instead.
+['../../viewer/viewer.html', '../demo/fm_panel.html'].forEach(function (rel) {
+  var src = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+  // match the <script src> tags themselves (an HTML comment naming the files must not satisfy the check)
+  var iMock = src.search(/<script[^>]+src="[^"]*mock_rates\.js/), iPay = src.search(/<script[^>]+src="[^"]*ad_payroll\.js/);
+  ok('F8-mockrates-order-' + rel.replace(/.*\//, ''), iMock >= 0 && iPay >= 0 && iMock < iPay,
+    rel + ' <script>-loads mock_rates.js BEFORE ad_payroll.js (eval-time dependency — the silent live-kill #628 shipped)');
+});
 
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-FAMILY ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));

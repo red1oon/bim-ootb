@@ -343,18 +343,15 @@
         h.M.records('Tenancy'), h.M.records('Strata'), { erpQuery: eq });
       n++;
     }
-    // §DESIGN-ATTENDANCE — compile the signed presence sessions onto real C_Attendance child rows (partner/
-    // locator maps built from the real seeded AD_User/M_Locator). Stage 3 retargets the Presence drawer onto
-    // this governed spec; Stage 2 produces it. Sessions whose id/zone has no real row are honestly SKIPPED.
+    // §PREREQUISITE retarget (RESUME_HBA_ERP_STAGE3.md) — compile the signed presence sessions onto the REAL
+    // NATIVE S_ResourceAssignment shape (resource map from the real seeded S_Resource rows — the Mary-
+    // Consultant pattern; the invented C_Attendance is retired). The ZONE stays a BIM op-log fact, carried in
+    // the spec's `spatial` view-trace. Sessions whose employee has no real S_Resource are honestly SKIPPED.
     if (h.ADA && h.A && A._hbaAttendanceLog && A._hbaRooms) {
       var sessions = h.A.sessions(A._hbaAttendanceLog, period(A));
-      var userRows = eq('SELECT Name AS name, C_BPartner_ID AS c_bpartner_id FROM AD_User WHERE C_BPartner_ID IS NOT NULL AND IsActive=?', ['Y']);
-      var locRows = eq('SELECT M_Locator_ID AS m_locator_id, Value AS value FROM M_Locator', []);
-      var procRow = eq('SELECT HR_Process_ID AS id FROM HR_Process ORDER BY HR_Process_ID LIMIT 1', []);
+      var resRows = eq('SELECT S_Resource_ID AS s_resource_id, Value AS value FROM S_Resource WHERE AD_User_ID IS NOT NULL AND IsActive=?', ['Y']);
       A._hbaAttendanceSpec = h.ADA.compileAttendance(sessions, {
-        processId: (procRow[0] ? Number(procRow[0].id) : null),
-        partnerMap: h.ADA.partnerMapFromUsers(userRows),
-        locatorMap: h.ADA.locatorMapFromLocators(locRows) });
+        resourceMap: h.ADA.resourceMapFromResources(resRows) });
       n++;
     }
     // §BOM-ERP-CENTERED — read the BIM BOM as a LENS over the real seeded pp_product_bom (ad_bom.readBom), the
@@ -368,7 +365,7 @@
     console.log('§HBA_GOVERN on — re-compiled ' + n + ' governable spec(s) off real ad_seed.db (payroll _governed='
       + !!(A._hbaPayrollSpec && A._hbaPayrollSpec._governed)
       + ' warehouse=' + (A._hbaTenancySpec ? A._hbaTenancySpec.warehouse.m_warehouse_id : 'n/a')
-      + ' C_Attendance=' + (A._hbaAttendanceSpec ? (A._hbaAttendanceSpec.rows.length + '/' + (A._hbaAttendanceSpec.rows.length + A._hbaAttendanceSpec.skipped.length)) : 'n/a')
+      + ' S_ResourceAssignment=' + (A._hbaAttendanceSpec ? (A._hbaAttendanceSpec.rows.length + '/' + (A._hbaAttendanceSpec.rows.length + A._hbaAttendanceSpec.skipped.length)) : 'n/a')
       + ' BOM=' + (A._hbaBomSpec ? (A._hbaBomSpec.assemblies.length + ' assemblies') : 'n/a') + ')');
     if (A.markDirty) A.markDirty();
   }
@@ -417,7 +414,8 @@
     barChart:  '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
     banknote:  '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
     calendar:  '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
-    fileText:  '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>'
+    fileText:  '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+    box:       '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'
   };
   var FAMILY = [
     { kind: 'lens', mode: 'occupancy',   icon: 'doorOpen',   label: 'Occupancy',    detail: 'Availability — occupied / expiring / vacant / unavailable (incl. lease status)' },
@@ -425,6 +423,7 @@
     { kind: 'lens', mode: 'class',       icon: 'layers',     label: 'Unit class',   detail: 'Use-class — residential / commercial / office' },
     { kind: 'lens', mode: 'maintenance', icon: 'cpu',        label: 'Assets / IoT', detail: 'Equipment maintenance due — click opens 24h sensor charts + CCTV mockup + billing' },
     { kind: 'pane', id:   'tenancy',     icon: 'fileText',   label: 'Tenancy / AD', detail: 'Lease/strata compiled to native AD (Warehouse/Locator/Product/Subscription)' },
+    { kind: 'pane', id:   'bom',         icon: 'box',        label: 'BIM BOM',      detail: 'Room assemblies → component lines, read as a lens over native pp_product_bom (ERP is the authority)' },
     { kind: 'pane', id:   'dash',        icon: 'barChart',   label: 'Dashboard',    detail: 'Occupancy / availability / ticket-aging charts (extra pane)' },
     { kind: 'pane', id:   'payslip',     icon: 'banknote',   label: 'Payslip',      detail: 'Payroll run → per-employee payslip (glass-box, watermarked)' },
     { kind: 'pane', id:   'leave',       icon: 'calendar',   label: 'Leave',        detail: 'Leave balance & statement — accrual/take replay (glass-box)' }
@@ -432,7 +431,7 @@
   // pane entries route by `id` to their own additive pane module (dash→HBADashPane, payslip→HBAPayslipPane,
   // leave→HBALeavePane, tenancy→HBATenancyPane) — a small registry instead of hardcoding one pane name, so
   // adding a pane never touches the lens/toggle path.
-  var PANE_GLOBALS = { dash: 'HBADashPane', payslip: 'HBAPayslipPane', leave: 'HBALeavePane', tenancy: 'HBATenancyPane' };
+  var PANE_GLOBALS = { dash: 'HBADashPane', payslip: 'HBAPayslipPane', leave: 'HBALeavePane', tenancy: 'HBATenancyPane', bom: 'HBABomPane' };
   function paneFor(f) { return G[PANE_GLOBALS[f.id]]; }
   function _entryActive(f) {
     return f.kind === 'pane' ? !!(paneFor(f) && paneFor(f).isActive && paneFor(f).isActive()) : isActive(f.mode);
@@ -552,7 +551,9 @@
   // own anywhere (verified §CRITICAL P8 finding, re-checked here) so a per-entry link would be invented; what
   // IS real is the "Leave without pay" pay-element identity (hr_concept_id) an unpaid entry feeds INTO — the
   // Leave pane links there, never to a fabricated leave-record window.
-  var AD_WINDOWS = { RESOURCE: 236, PAYROLL_MOVEMENT: 53042, SUBSCRIPTION: 316, ORDER: 143, PAYROLL_CONCEPT: 53036 };
+  // BOM=53006 "Bill of Materials and Formula" (table PP_Product_BOM) — looked up live in both ad_seed.db and
+  // bim-compiler build/erp/ad_full.db (2026-07-03), the §STAGE3 BOM pane's per-assembly deep-link.
+  var AD_WINDOWS = { RESOURCE: 236, PAYROLL_MOVEMENT: 53042, SUBSCRIPTION: 316, ORDER: 143, PAYROLL_CONCEPT: 53036, BOM: 53006 };
   function erpLink(windowId, record) {
     if (windowId == null || record == null) return null;
     return '../erp/idempiere.html?client=garden&window=' + windowId + '&record=' + encodeURIComponent(record);
@@ -568,13 +569,32 @@
     _closePresenceDrawer();
     var h = HBA();
     var log = (A && A._hbaAttendanceLog) || [];
-    var sess = (h.A && h.A.sessions) ? h.A.sessions(log, period(A)) : [];
+    // §STAGE3.1 (RESUME_HBA_ERP_STAGE3.md item 1) — GOVERNED read: when _regovern has compiled the sessions
+    // onto the real native S_ResourceAssignment rows (A._hbaAttendanceSpec), the roster renders THOSE rows —
+    // check-in/out, hours (Qty) and the maker-checker IsConfirmed come from the governed spec. The ZONE stays
+    // the BIM op-log fact (room-granularity call): each row joins back to its zone via the spec's `spatial`
+    // view-trace, keyed by the row PK — so fly-to-zone still works without a fabricated room FK. Honest-open
+    // preserved (NULL AssignDateTo → 'checked in …'). Ungoverned (no ERP db) → the raw signed-op-log fold,
+    // byte-identical to the pre-Stage-3 drawer.
+    var gov = (A && A._hbaAttendanceSpec && A._hbaAttendanceSpec.rows && A._hbaAttendanceSpec.spatial) ? A._hbaAttendanceSpec : null;
+    var sess;
+    if (gov) {
+      var zoneByRa = {}; gov.spatial.forEach(function (sp) { zoneByRa[sp.s_resourceassignment_id] = sp; });
+      sess = gov.rows.map(function (r) {
+        var sp = zoneByRa[r.s_resourceassignment_id] || {};
+        return { employee: sp.employee != null ? sp.employee : r.name, zone: sp.zone, in: r.assigndatefrom,
+                 out: r.assigndateto, hours: r.qty, confirmed: r.isconfirmed, open: r.assigndateto == null };
+      });
+    } else {
+      sess = (h.A && h.A.sessions) ? h.A.sessions(log, period(A)) : [];
+    }
     var d = document.createElement('div'); d.id = 'hba-presence-drawer';
     d.style.cssText = 'position:fixed;z-index:10000;right:326px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
       + 'color:#fff;border-radius:10px;padding:8px;box-shadow:0 8px 28px rgba(0,0,0,.45);font:13px/1.3 system-ui,sans-serif;'
       + 'min-width:220px;max-height:70vh;overflow:auto;';
     var hdr = document.createElement('div'); hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 4px 8px;';
-    var title = document.createElement('span'); title.textContent = 'Presence — ' + sess.length + (sess.length === 1 ? ' session' : ' sessions');
+    var title = document.createElement('span'); title.textContent = 'Presence — ' + sess.length + (sess.length === 1 ? ' session' : ' sessions')
+      + (gov ? ' · ERP-governed' : '');
     title.style.cssText = 'font-weight:700;opacity:.85;';
     var closeBtn = document.createElement('button'); closeBtn.textContent = '✕'; closeBtn.title = 'Close';
     closeBtn.style.cssText = 'background:transparent;border:0;color:#fff;opacity:.6;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;';
@@ -592,13 +612,20 @@
       row.setAttribute('data-employee', s.employee); row.setAttribute('data-zone', s.zone); row.setAttribute('data-label', label);
       row.style.cssText = 'display:block;width:100%;text-align:left;border:0;border-radius:8px;margin:2px 0;'
         + 'padding:8px 10px;color:#fff;cursor:pointer;background:transparent;';
+      // governed rows carry the REAL Qty hours + IsConfirmed maker-checker state; the raw fold has neither.
+      var govBadge = gov ? ((s.hours != null ? ' · ' + s.hours + 'h' : '') + (s.open ? '' : (s.confirmed === 'Y' ? ' · ✓' : ' · unconfirmed'))) : '';
       row.innerHTML = '<div style="font-weight:600">' + label + '</div>'
-        + '<div style="opacity:.7;font-size:11px">' + (storey ? storey + ' · ' : '') + (s.open ? 'checked in ' + s.in : s.in + ' → ' + s.out) + '</div>';
+        + '<div style="opacity:.7;font-size:11px">' + (storey ? storey + ' · ' : '') + (s.open ? 'checked in ' + s.in : s.in + ' → ' + s.out) + govBadge + '</div>';
       row.addEventListener('click', function () { flyToZone(A, s.zone); });
       d.appendChild(row);
     });
+    if (gov && gov.skipped && gov.skipped.length) {   // honest: sessions whose identity had no real S_Resource
+      var sk = document.createElement('div'); sk.textContent = gov.skipped.length + ' session(s) skipped — no real S_Resource (never fabricated)';
+      sk.style.cssText = 'padding:6px 8px;opacity:.6;font-size:11px;color:#ffab91;';
+      d.appendChild(sk);
+    }
     document.body.appendChild(d);
-    console.log('§HBA_PRESENCE_DRAWER open — ' + sess.length + ' sessions');
+    console.log('§HBA_PRESENCE_DRAWER open — ' + sess.length + ' sessions' + (gov ? ' (ERP-governed S_ResourceAssignment, skipped=' + gov.skipped.length + ')' : ' (op-log fold)'));
     return d;
   }
 

@@ -899,6 +899,10 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="../hr_bim_asset/binding.js?v=1" onerror="console.warn('§LOAD_FAIL hr binding.js')"></script>
 <script src="../hr_bim_asset/connectors.js?v=1" onerror="console.warn('§LOAD_FAIL hr connectors.js')"></script>
 <script src="../hr_bim_asset/rules.js?v=1" onerror="console.warn('§LOAD_FAIL hr rules.js')"></script>
+<!-- §STAGE3 live-smoke finding 2026-07-03: PR #628 made ad_payroll.js read self.HbaMockRates.MOCK_RATES at
+     eval time — without mock_rates.js loaded FIRST the whole ad_payroll IIFE throws and HbaAdPayroll never
+     exists (payslip/leave panes dead, payroll governance silently literal). Must precede ad_payroll.js. -->
+<script src="../hr_bim_asset/mock_rates.js?v=1" onerror="console.warn('§LOAD_FAIL hr mock_rates.js')"></script>
 <script src="../hr_bim_asset/ad_payroll.js?v=1" onerror="console.warn('§LOAD_FAIL hr ad_payroll.js')"></script>
 <script src="../hr_bim_asset/overlay.js?v=2" onerror="console.warn('§LOAD_FAIL hr overlay.js')"></script>
 <script src="../hr_bim_asset/lens.js?v=1" onerror="console.warn('§LOAD_FAIL hr lens.js')"></script>
@@ -924,6 +928,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="hba_payslip.js?v=1" onerror="console.warn('§LOAD_FAIL hba_payslip.js')"></script>
 <script src="hba_leave.js?v=1" onerror="console.warn('§LOAD_FAIL hba_leave.js')"></script>
 <script src="hba_tenancy.js?v=1" onerror="console.warn('§LOAD_FAIL hba_tenancy.js')"></script>
+<script src="hba_bom.js?v=1" onerror="console.warn('§LOAD_FAIL hba_bom.js')"></script>
 <script src="hba_iot.js?v=3" onerror="console.warn('§LOAD_FAIL hba_iot.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->

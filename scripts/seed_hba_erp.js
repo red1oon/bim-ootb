@@ -25,21 +25,28 @@
 //      the 2026-06 HR_Period, and the HR_Process + 7 HR_Movement rows produced by RUNNING the real engine
 //      (AdPayroll.runPeriod(demoSpec())) — the payslip numbers land in the DB from the SAME code path the
 //      witnesses already accept (EMP001 gross=5200/net=4234), zero hand-arithmetic.
-//   5. Ninja-stage C_Attendance via the REAL NinjaStage.stageModels bootstrap (same sequence as
-//      scripts/poc_ninja_callout.js / poc_asset_status.js in bim-compiler) — AD_Table/AD_Column/AD_Tab/
-//      AD_Field/AD_Window/AD_Menu rows at the deterministic NINJA_BASE=7,000,000 ids (verified free here).
-//      Name kept `C_Attendance` per the user's explicit direction (§DESIGN-ATTENDANCE naming note).
-//   6. ad_infowindow/ad_infocolumn physical tables (REAL native lens mechanism, previously absent from
-//      ad_seed.db) + the Attendance lens row — fromclause = §DESIGN-ATTENDANCE's exact JOIN. InfoWindow ids
-//      use NINJA_BASE+600000 (the next free 100000-block after stageModels' own +500000 cols block), so the
-//      standard Ninja rollback idiom (IsActive='N' WHERE id>=NINJA_BASE) covers them symmetrically.
-//   7. C_Attendance rows folded from attendance.js's OWN demoSeed sessions for period 2026-06 (post
-//      §Q-RESOLUTION re-scope: EMP001/EMP002 only) — employee resolved to the REAL C_BPartner_ID, zone guid
-//      resolved to the REAL M_Locator_ID, open sessions keep CheckOutTime/Qty NULL (no fabricated finish).
-//   8. SELF-WITNESS (W-HBA-ERP-SEED): runs the §DESIGN-ATTENDANCE InfoWindow JOIN live and asserts NO row is
-//      lost (every FK resolves through HR_Process→C_BPartner→M_Locator→M_Warehouse), the warehouse is the
-//      pinned HHS row, and the DB-summed payslip == the engine's payslip. This NAMES the issue it proves:
-//      pane data CAN be derived from a real queryable AD relational chain (§CONVENTION), not a JS literal.
+//   5. RETIRE the invented C_Attendance (bim-compiler prompts/RESUME_HBA_ERP_STAGE3.md §PREREQUISITE,
+//      watchdog 2026-07-03): C_Attendance is NOT a real iDempiere table (AD_Table LIKE '%ttendance%' → 0 rows
+//      in ad_full.db) — a PRIME RULE violation shipped in the first revision of this script. Standard Ninja
+//      rollback idiom (ninja_stage.js header): SET IsActive='N' on every dictionary row id>=NINJA_BASE; the
+//      physical c_attendance table is DROPPED; the old 7600000 C_Attendance lens rows are removed (replaced
+//      in §6 by the native lens over a REAL AD_Table).
+//   6. REPLACE with the real native fit — the "Mary Consultant" GardenWorld pattern (S_Resource 100) sitting
+//      unused in this same DB: one S_ResourceType 'Employee' (proto-cloned from the real person-type row 100),
+//      one S_Resource per person (ad_user_id = the Stage-1 AD_User, m_warehouse_id = the pinned HHS warehouse,
+//      proto-cloned from Mary's row — exact column map), and the ad_infowindow 7600000 lens re-declared over
+//      S_ResourceAssignment ⋈ S_Resource ⋈ AD_User ⋈ M_Warehouse (ad_table_id = the REAL AD_Table 485,
+//      not a staged id). Row shapes come from ad_attendance.js's builders (ONE shape definition, reused).
+//   7. s_resourceassignment rows folded from attendance.js's OWN demoSeed sessions for period 2026-06
+//      (EMP001/EMP002 only) — employee resolved to the REAL seeded S_Resource, assigndatefrom/to = the real
+//      in/out ts, open sessions keep assigndateto/qty NULL + isconfirmed='N' (no fabricated finish/approval).
+//      The ZONE stays a BIM op-log fact (room-granularity call, RESUME_HBA_ERP_STAGE3.md — no native room
+//      column on S_ResourceAssignment; never a fabricated FK).
+//   8. SELF-WITNESS (W-HBA-ERP-SEED): runs the native InfoWindow JOIN live and asserts NO row is lost (every
+//      FK resolves through S_Resource→AD_User + S_Resource→M_Warehouse), the warehouse is the pinned HHS row,
+//      the invention is GONE (dictionary inactive, physical table absent, lens on the real table), the
+//      readPresence lens read round-trips, and the DB-summed payslip == the engine's payslip. NAMES the issue:
+//      pane data derives from a real queryable NATIVE AD chain (§CONVENTION), not an invented table.
 //
 // IDEMPOTENT: find-or-create everywhere (a 2nd run adds 0 rows — §-log says so). Deterministic: pinned ids,
 // fixed NOW timestamp, no Date.now/random. EXTRACT-only: every schema below was dumped live from
@@ -57,17 +64,18 @@ const ROOT = path.join(__dirname, '..');
 const SEED = path.join(ROOT, 'erp', 'ad_seed.db');
 const LOC_FIXTURE = path.join(ROOT, 'hr_bim_asset', 'fixtures', 'hhs_room_locators.json');
 
-const NinjaModel = require(path.join(ROOT, 'erp', 'ninja_model.js'));
-const NinjaStage = require(path.join(ROOT, 'erp', 'ninja_stage.js'));
+const NinjaStage = require(path.join(ROOT, 'erp', 'ninja_stage.js'));   // NINJA_BASE only (rollback of the retired staging)
 const AdPayroll = require(path.join(ROOT, 'hr_bim_asset', 'ad_payroll.js'));
 const Attendance = require(path.join(ROOT, 'hr_bim_asset', 'attendance.js'));
+const AdAttendance = require(path.join(ROOT, 'hr_bim_asset', 'ad_attendance.js'));
 const ROOMS_FX = require(path.join(ROOT, 'hr_bim_asset', 'fixtures', 'hhs_rooms.json'));
 
 const NOW = '2026-07-03 00:00:00';           // fixed seed timestamp (house style: seed_fin_uom.js)
 const BIM_BASE = 990000;                      // BIM-added master-row id floor (house style: seed_fin_*.js)
 const PERIOD = '2026-06';                     // ad_payroll.demoSpec()'s own period — reused, not re-chosen
 const HHS_VALUE = 'HHS_Office_Federated';     // Q1: durable Value, pinned ONCE (== the building/source name)
-const INFO_BASE = NinjaStage.NINJA_BASE + 600000;  // next free ninja 100000-block (cols end at +500000)
+const INFO_BASE = NinjaStage.NINJA_BASE + 600000;  // 7600000 — the attendance lens id block, RETAINED across the
+                                                   // §5 retarget (same id, new native fromclause) for continuity
 
 function scalar(db, sql, p) { var r = db.exec(sql, p || []); return (r.length && r[0].values.length) ? r[0].values[0][0] : null; }
 function rows(db, sql, p) {
@@ -82,6 +90,14 @@ function ins(db, table, obj) {
     ks.map(function (k) { return obj[k]; }));
 }
 function std(id) { return { AD_Client_ID: 11, AD_Org_ID: 0, IsActive: 'Y', Created: NOW, CreatedBy: 100, Updated: NOW, UpdatedBy: 100 }; }
+// proto-clone (house idiom, same as seed_hba_bom.js): read a REAL row of `table`, keep its populated columns,
+// apply overrides — guarantees the EXACT iDempiere column map, never a hand-built partial row.
+function protoClone(db, table, whereSql, params, overrides) {
+  var r = db.exec('SELECT * FROM ' + table + (whereSql ? (' WHERE ' + whereSql) : '') + ' LIMIT 1', params || []);
+  if (!r.length || !r[0].values.length) return null;
+  var proto = {}; r[0].columns.forEach(function (c, i) { if (r[0].values[0][i] != null) proto[c] = r[0].values[0][i]; });
+  return Object.assign({}, proto, overrides);
+}
 
 // CREATE TABLE from a REAL column list (dumped from ad_full.db PRAGMA table_info, 2026-07-03) — SQLite typing
 // heuristic mirrors ad_seed.db's own convention (M_Warehouse PRAGMA: *_id/By NUMERIC, rest TEXT).
@@ -123,10 +139,6 @@ const DDL = {
     'c_campaign_id', 'c_project_id', 'c_projectphase_id', 'c_projecttask_id', 'ad_orgtrx_id', 'user1_id',
     'user2_id', 'pp_cost_collector_id', 'c_bp_group_id', 'c_bp_bankaccount_id',
     'ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby', 'hr_movement_uu'],
-  // §DESIGN-ATTENDANCE child table — columns == exactly what stageModels stages (standard set + 8 user cols).
-  C_Attendance: ['C_Attendance_ID', 'C_Attendance_UU', 'AD_Client_ID', 'AD_Org_ID', 'IsActive', 'Created',
-    'CreatedBy', 'Updated', 'UpdatedBy', 'HR_Process_ID', 'C_BPartner_ID', 'M_Locator_ID', 'ServiceDate',
-    'CheckInTime', 'CheckOutTime', 'Qty', 'Description'],
   ad_infowindow: ['ad_infowindow_id', 'ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby',
     'updated', 'updatedby', 'name', 'description', 'help', 'ad_table_id', 'entitytype', 'fromclause',
     'otherclause', 'processing', 'ad_infowindow_uu', 'whereclause', 'isdefault', 'isdistinct', 'orderbyclause',
@@ -149,7 +161,7 @@ const DDL = {
   if (!fs.existsSync(SEED)) { L('§SEED_HBA FAIL — erp/ad_seed.db not found at ' + SEED); process.exit(1); }
   const SQL = await initSqlJs();
   const db = new SQL.Database(fs.readFileSync(SEED));
-  var added = { warehouse: 0, locators: 0, bpartners: 0, users: 0, tables: 0, hr_rows: 0, ninja: null, info: 0, attendance: 0 };
+  var added = { warehouse: 0, locators: 0, bpartners: 0, users: 0, tables: 0, hr_rows: 0, retired: 0, restype: 0, resources: 0, info: 0, attendance: 0 };
 
   // ── 1. M_Warehouse — Q1 pinned durable Value; proto = the seed's own HQ row (client 11 / org 11) ─────────
   var whId = scalar(db, 'SELECT M_Warehouse_ID FROM M_Warehouse WHERE Value=?', [HHS_VALUE]);
@@ -272,51 +284,86 @@ const DDL = {
         hr_employee_uu: 'hba-hremp-' + e.name.toLowerCase() });
   });
 
-  // ── 5. Ninja-stage C_Attendance — the REAL bootstrap (same sequence as poc_ninja_callout.js §3) ─────────
-  // romo sheet grammar: bare *_ID → TableDir; *Date → Date; *Time → DateTime; Qty → Quantity (ninja_model.js
-  // parseColDef, ported verbatim from NinjaProcessor.java). Standard cols are auto-added by buildTable.
-  var sheetRows = [
-    ['RO_ModelHeader_ID', 'SeqNo', 'WorkflowStructure', 'KanbanBoard', 'Master', 'Name', 'Help', 'ColumnSet'],
-    ['HBA Attendance', '1', 'N', 'N', '', 'C_Attendance',
-     'ERP-governed attendance child table (HHS pilot) — RESUME_HBA_ERP_GOVERNED_DISPLAY.md §DESIGN-ATTENDANCE',
-     'HR_Process_ID,C_BPartner_ID,M_Locator_ID,ServiceDate,CheckInTime,CheckOutTime,Qty,Description']
-  ];
-  var model = NinjaModel.parseSheet(sheetRows, { format: 'romo' });
-  added.ninja = NinjaStage.stageModels(db, model, 0);
-  L('§SEED_HBA_NINJA staged tables=' + added.ninja.tables + ' cols=' + added.ninja.cols + ' windows=' + added.ninja.windows
-    + ' tabs=' + added.ninja.tabs + ' fields=' + added.ninja.fields + ' menus=' + added.ninja.menus + ' skipped=' + added.ninja.skipped
-    + ' (re-run reactivates, adds 0)');
-  var attTableId = scalar(db, "SELECT AD_Table_ID FROM AD_Table WHERE TableName='C_Attendance'");
-  must('NINJA-DICT', attTableId != null && Number(attTableId) >= NinjaStage.NINJA_BASE,
-    'C_Attendance staged in AD_Table at deterministic ninja id — got ' + attTableId);
+  // ── 5. RETIRE the invented C_Attendance (RESUME_HBA_ERP_STAGE3.md §PREREQUISITE) ─────────────────────────
+  // Ninja rollback idiom (ninja_stage.js header): IsActive='N' on every dictionary row id>=NINJA_BASE; drop
+  // the invented physical table; remove the OLD 7600000 lens rows (identified by their staged ad_table_id —
+  // the §6 replacement re-declares 7600000 over the REAL AD_Table, so a re-run never deletes the new lens).
+  var retired = 0;
+  ['AD_Table', 'AD_Column', 'AD_Window', 'AD_Tab', 'AD_Field', 'AD_Menu'].forEach(function (t) {
+    try {
+      db.run("UPDATE " + t + " SET IsActive='N' WHERE " + t + "_ID>=" + NinjaStage.NINJA_BASE + " AND IsActive='Y'");
+      retired += db.getRowsModified();
+    } catch (e) { /* table absent in a minimal seed → nothing staged there */ }
+  });
+  if (db.exec("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)='c_attendance'").length) {
+    db.run('DROP TABLE C_Attendance'); retired++;
+    L('§SEED_HBA_RETIRE dropped physical C_Attendance table (invented — no such table in the real dictionary)');
+  }
+  var oldLensTable = scalar(db, 'SELECT ad_table_id FROM ad_infowindow WHERE ad_infowindow_id=?', [INFO_BASE]);
+  if (oldLensTable != null && Number(oldLensTable) >= NinjaStage.NINJA_BASE) {
+    db.run('DELETE FROM ad_infocolumn WHERE ad_infowindow_id=?', [INFO_BASE]); retired += db.getRowsModified();
+    db.run('DELETE FROM ad_infowindow WHERE ad_infowindow_id=?', [INFO_BASE]); retired += db.getRowsModified();
+    L('§SEED_HBA_RETIRE removed old C_Attendance lens rows (ad_infowindow ' + INFO_BASE + ' pointed at staged table ' + oldLensTable + ')');
+  }
+  added.retired = retired;
+  L('§SEED_HBA_RETIRE C_Attendance invention rollback — changes=' + retired + ' (2nd run: 0)');
 
-  // ── 6. Physical C_Attendance + ad_infowindow/ad_infocolumn + the lens rows ───────────────────────────────
-  ['C_Attendance', 'ad_infowindow', 'ad_infocolumn'].forEach(function (t) {
+  // ── 6. REPLACE with native S_Resource/S_ResourceAssignment (the Mary-Consultant pattern) ─────────────────
+  ['ad_infowindow', 'ad_infocolumn'].forEach(function (t) {
     if (createTable(db, t, DDL[t])) { added.tables++; L('§SEED_HBA_DDL CREATE ' + t); }
   });
-
-  // §DESIGN-ATTENDANCE's EXACT lens JOIN — who / where(building+room) / when / period.
-  var FROM = 'C_Attendance ATT JOIN HR_Process P ON ATT.HR_Process_ID=P.HR_Process_ID'
-    + ' JOIN C_BPartner BP ON ATT.C_BPartner_ID=BP.C_BPartner_ID'
-    + ' JOIN M_Locator L ON ATT.M_Locator_ID=L.M_Locator_ID'
-    + ' JOIN M_Warehouse W ON L.M_Warehouse_ID=W.M_Warehouse_ID';
+  // 6a. S_ResourceType 'Employee' — proto-cloned from the REAL person-type row (Consultant 100).
+  var restypeId = scalar(db, "SELECT s_resourcetype_id FROM s_resourcetype WHERE value='Employee'");
+  if (restypeId == null) {
+    restypeId = Math.max(Number(scalar(db, 'SELECT COALESCE(MAX(s_resourcetype_id),0) FROM s_resourcetype')), BIM_BASE - 1) + 1;
+    var rtRow = protoClone(db, 's_resourcetype', 's_resourcetype_id=100', [],
+      { s_resourcetype_id: restypeId, value: 'Employee', name: 'Employee',
+        description: 'HBA person resource type (HHS pilot) — proto-cloned from Consultant 100',
+        created: NOW, updated: NOW, createdby: 100, updatedby: 100, s_resourcetype_uu: 'hba-restype-employee' });
+    if (!rtRow) { must('RESTYPE-PROTO', false, 'no proto s_resourcetype row 100 (Consultant) to clone'); }
+    else { ins(db, 's_resourcetype', rtRow); added.restype = 1; L('§SEED_HBA_RESTYPE ADD Employee id=' + restypeId + ' (proto=Consultant 100)'); }
+  } else L('§SEED_HBA_RESTYPE SKIP Employee exists id=' + restypeId);
+  // 6b. S_Resource per person — ad_attendance.toPersonResourceRow shape + Mary(100) proto for the exact map.
+  added.resources = 0;
+  var resByCode = {};
+  PEOPLE.forEach(function (p) {
+    var rid = scalar(db, 'SELECT s_resource_id FROM s_resource WHERE value=?', [p.name]);
+    if (rid == null) {
+      rid = Math.max(Number(scalar(db, 'SELECT COALESCE(MAX(s_resource_id),0) FROM s_resource')), BIM_BASE - 1) + 1;
+      var core = AdAttendance.toPersonResourceRow({ code: p.name, name: p.name, ad_user_id: p.user, m_warehouse_id: whId },
+        restypeId, function () { return rid; });
+      var rRow = protoClone(db, 's_resource', 's_resource_id=100', [], Object.assign({}, core,
+        { description: 'CONTOH/SAMPLE demo employee resource (HHS pilot) — proto-cloned from Mary Consultant 100',
+          created: NOW, updated: NOW, createdby: 100, updatedby: 100, s_resource_uu: 'hba-res-' + p.name.toLowerCase() }));
+      if (!rRow) { must('RESOURCE-PROTO', false, 'no proto s_resource row 100 (Mary) to clone'); return; }
+      ins(db, 's_resource', rRow); added.resources++;
+      L('§SEED_HBA_RES ADD S_Resource ' + rid + ' ' + p.name + ' → AD_User ' + p.user + ' @ warehouse ' + whId);
+    } else L('§SEED_HBA_RES SKIP S_Resource ' + p.name + ' exists id=' + rid);
+    resByCode[p.name] = Number(rid);
+  });
+  // 6c. the native attendance lens — ad_infowindow 7600000 over the REAL AD_Table (S_ResourceAssignment=485).
+  var raTableId = scalar(db, "SELECT AD_Table_ID FROM AD_Table WHERE TableName='S_ResourceAssignment'");
+  must('RA-TABLE-REAL', raTableId != null && Number(raTableId) < NinjaStage.NINJA_BASE,
+    'S_ResourceAssignment is a REAL dictionary table (AD_Table ' + raTableId + ', below the ninja block)');
+  var FROM = 'S_ResourceAssignment RA JOIN S_Resource R ON RA.S_Resource_ID=R.S_Resource_ID'
+    + ' JOIN AD_User U ON R.AD_User_ID=U.AD_User_ID'
+    + ' JOIN M_Warehouse W ON R.M_Warehouse_ID=W.M_Warehouse_ID';
   if (scalar(db, 'SELECT ad_infowindow_id FROM ad_infowindow WHERE ad_infowindow_id=?', [INFO_BASE]) == null) {
-    ins(db, 'ad_infowindow', Object.assign({ ad_infowindow_id: INFO_BASE, ad_client_id: 11, ad_org_id: 0,
+    ins(db, 'ad_infowindow', { ad_infowindow_id: INFO_BASE, ad_client_id: 11, ad_org_id: 0,
       isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100,
-      name: 'HHS Attendance', description: 'Attendance lens — who/where/when over the real AD chain (Stage 1)',
-      ad_table_id: attTableId, entitytype: 'U', fromclause: FROM, orderbyclause: 'ATT.CheckInTime',
-      isvalid: 'Y', isdefault: 'N', isdistinct: 'N', seqno: 10, ad_infowindow_uu: 'hba-infowin-attendance' }));
+      name: 'HHS Attendance', description: 'Attendance lens — who/building/when over the NATIVE S_Resource chain (§PREREQUISITE retarget)',
+      ad_table_id: raTableId, entitytype: 'U', fromclause: FROM, orderbyclause: 'RA.AssignDateFrom',
+      isvalid: 'Y', isdefault: 'N', isdistinct: 'N', seqno: 10, ad_infowindow_uu: 'hba-infowin-attendance' });
     added.info++;
-    L('§SEED_HBA_INFOWIN ADD id=' + INFO_BASE + ' fromclause per §DESIGN-ATTENDANCE');
+    L('§SEED_HBA_INFOWIN ADD id=' + INFO_BASE + ' over REAL AD_Table ' + raTableId + ' (S_ResourceAssignment)');
   } else L('§SEED_HBA_INFOWIN SKIP exists id=' + INFO_BASE);
   var INFO_COLS = [
-    { name: 'Who', sel: 'BP.Name', col: 'Name' },
+    { name: 'Who', sel: 'U.Name', col: 'Name' },
     { name: 'Building', sel: 'W.Name', col: 'WarehouseName' },
-    { name: 'Room', sel: 'L.Value', col: 'LocatorValue' },
-    { name: 'Date', sel: 'ATT.ServiceDate', col: 'ServiceDate' },
-    { name: 'Check In', sel: 'ATT.CheckInTime', col: 'CheckInTime' },
-    { name: 'Check Out', sel: 'ATT.CheckOutTime', col: 'CheckOutTime' },
-    { name: 'Period', sel: 'P.HR_Period_ID', col: 'HR_Period_ID' }
+    { name: 'Check In', sel: 'RA.AssignDateFrom', col: 'AssignDateFrom' },
+    { name: 'Check Out', sel: 'RA.AssignDateTo', col: 'AssignDateTo' },
+    { name: 'Hours', sel: 'RA.Qty', col: 'Qty' },
+    { name: 'Confirmed', sel: 'RA.IsConfirmed', col: 'IsConfirmed' }
   ];
   INFO_COLS.forEach(function (c, i) {
     var id = INFO_BASE + 1 + i;
@@ -329,39 +376,49 @@ const DDL = {
   });
   L('§SEED_HBA_INFOCOL rows=' + INFO_COLS.length + ' (added this run: see summary)');
 
-  // ── 7. C_Attendance rows — attendance.js's OWN demoSeed sessions (Q2 re-scoped: EMP001/EMP002 only) ─────
+  // ── 7. s_resourceassignment rows — attendance.js's OWN demoSeed sessions (EMP001/EMP002 only) ────────────
+  // Row shape from ad_attendance.toAssignmentRow (ONE builder, reused); zone stays a BIM op-log fact.
   var att = Attendance.demoSeed(ROOMS_FX.rooms, PERIOD);
   var sess = Attendance.sessions(att.log, PERIOD);
-  var bpOf = { EMP001: 1001, EMP002: 1002 };
-  var attId = 0;
   sess.forEach(function (s) {
-    var bp = bpOf[s.employee], loc = locByGuid[s.zone];
-    attId++;
-    if (bp == null || loc == null) { must('ATT-RESOLVE', false, 'unresolvable session ' + s.employee + '@' + s.zone); return; }
-    if (Number(scalar(db, 'SELECT COUNT(*) FROM C_Attendance WHERE C_BPartner_ID=? AND CheckInTime=?', [bp, s.in]))) return;
-    ins(db, 'C_Attendance', Object.assign(std(), { C_Attendance_ID: attId, C_Attendance_UU: 'hba-att-' + attId,
-      HR_Process_ID: run.hr_process.hr_process_id, C_BPartner_ID: bp, M_Locator_ID: loc,
-      ServiceDate: String(s.in).slice(0, 10), CheckInTime: s.in, CheckOutTime: s.open ? null : s.out,
-      Qty: s.open ? null : s.hours,          // hours DERIVED from real in/out (mirrors hr_movement.qty); open → honest NULL
-      Description: s.open ? 'demo session (open — no fabricated finish)' : 'demo session' }));
+    var rid = resByCode[s.employee];
+    if (rid == null) { must('ATT-RESOLVE', false, 'unresolvable session ' + s.employee + ' (no real S_Resource)'); return; }
+    if (Number(scalar(db, 'SELECT COUNT(*) FROM s_resourceassignment WHERE s_resource_id=? AND assigndatefrom=?', [rid, s.in]))) return;
+    var raId = Math.max(Number(scalar(db, 'SELECT COALESCE(MAX(s_resourceassignment_id),0) FROM s_resourceassignment')), BIM_BASE - 1) + 1;
+    var raRow = AdAttendance.toAssignmentRow(s, rid, function () { return raId; });
+    ins(db, 's_resourceassignment', Object.assign(raRow, { ad_client_id: 11, ad_org_id: 11, isactive: 'Y',
+      created: NOW, createdby: 100, updated: NOW, updatedby: 100, s_resourceassignment_uu: 'hba-ra-' + raId }));
     added.attendance++;
   });
-  L('§SEED_HBA_ATT sessions=' + sess.length + ' added=' + added.attendance + ' (open sessions keep NULL checkout/qty)');
+  L('§SEED_HBA_ATT sessions=' + sess.length + ' added=' + added.attendance + ' (open sessions keep NULL assigndateto/qty, isconfirmed=N)');
 
-  // ── 8. SELF-WITNESS — the lens JOIN must resolve EVERY row through the real chain ────────────────────────
-  var joined = rows(db, 'SELECT BP.Name AS who, W.Name AS building, L.Value AS room, ATT.CheckInTime AS tin,'
-    + ' ATT.CheckOutTime AS tout, ATT.Qty AS qty FROM ' + FROM + ' ORDER BY ATT.CheckInTime');
-  var total = Number(scalar(db, 'SELECT COUNT(*) FROM C_Attendance'));
+  // ── 8. SELF-WITNESS — the native lens JOIN must resolve EVERY row through the real chain ─────────────────
+  var joined = rows(db, 'SELECT U.Name AS who, W.Name AS building, RA.AssignDateFrom AS tin,'
+    + ' RA.AssignDateTo AS tout, RA.Qty AS qty, RA.IsConfirmed AS conf FROM ' + FROM
+    + ' WHERE W.Value=? ORDER BY RA.AssignDateFrom', [HHS_VALUE]);
+  var total = Number(scalar(db, 'SELECT COUNT(*) FROM s_resourceassignment RA JOIN s_resource R ON RA.s_resource_id=R.s_resource_id WHERE R.m_warehouse_id=?', [whId]));
   must('LENS-JOIN-LOSSLESS', joined.length === total && total === sess.length,
-    'InfoWindow JOIN resolves ALL ' + total + '/' + sess.length + ' C_Attendance rows (no dangling FK) — joined=' + joined.length);
+    'native InfoWindow JOIN resolves ALL ' + total + '/' + sess.length + ' HBA s_resourceassignment rows (no dangling FK) — joined=' + joined.length);
   must('LENS-WAREHOUSE', joined.length > 0 && joined.every(function (r) { return r.building === HHS_VALUE; }),
     'every session lands in the pinned HHS warehouse (Q1 Value=' + HHS_VALUE + ')');
   must('LENS-IDENTITY', joined.every(function (r) { return r.who === 'EMP001' || r.who === 'EMP002'; }),
-    'every session resolves to a REAL seeded person (Q2: EMP001/EMP002 only) — ' + JSON.stringify(joined.map(function (r) { return r.who + '@' + r.room; })));
+    'every session resolves to a REAL seeded person via S_Resource.ad_user_id→AD_User — ' + JSON.stringify(joined.map(function (r) { return r.who; })));
   var openRows = joined.filter(function (r) { return r.tout == null; });
   must('LENS-HONEST-OPEN', openRows.length === sess.filter(function (s) { return s.open; }).length
-    && openRows.every(function (r) { return r.qty == null; }),
-    openRows.length + ' open sessions keep NULL CheckOutTime AND NULL Qty (no fabricated finish/hours)');
+    && openRows.every(function (r) { return r.qty == null && r.conf === 'N'; }),
+    openRows.length + ' open sessions keep NULL AssignDateTo AND NULL Qty AND IsConfirmed=N (no fabricated finish/hours/approval)');
+  // the invention is GONE — dictionary inactive, physical table absent, lens re-pointed at the real table.
+  var stagedActive = Number(scalar(db, "SELECT COUNT(*) FROM AD_Table WHERE AD_Table_ID>=" + NinjaStage.NINJA_BASE + " AND IsActive='Y'"));
+  var physGone = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)='c_attendance'").length === 0;
+  var lensTable = Number(scalar(db, 'SELECT ad_table_id FROM ad_infowindow WHERE ad_infowindow_id=?', [INFO_BASE]));
+  must('INVENTION-GONE', stagedActive === 0 && physGone && lensTable === Number(raTableId),
+    'C_Attendance invention retired: staged dictionary rows inactive (' + stagedActive + ' active), physical table gone=' + physGone
+    + ', lens ' + INFO_BASE + ' points at REAL AD_Table ' + lensTable);
+  // readPresence round-trip — the module's own lens read returns the same sessions (the pane's data path).
+  var lensRead = AdAttendance.readPresence(function (sql, p) { return rows(db, sql, p); }, { m_warehouse_id: whId });
+  must('READPRESENCE-LENS', lensRead.sessions.length === total
+    && lensRead.sessions.every(function (r) { return r.building === HHS_VALUE && (r.who === 'EMP001' || r.who === 'EMP002'); }),
+    'ad_attendance.readPresence returns ' + lensRead.sessions.length + '/' + total + ' sessions through the native JOIN (honest-open survives the round-trip)');
 
   // payslip: DB-summed movements == the engine's payslip (gross/net land in HR_Movement losslessly)
   var slip = AdPayroll.payslip(run.hr_movement, 1001, 'en');
@@ -374,8 +431,7 @@ const DDL = {
 
   // ── write-back + summary ─────────────────────────────────────────────────────────────────────────────────
   var changed = added.warehouse + added.locators + added.bpartners + added.users + added.tables + added.hr_rows
-    + added.info + added.attendance + (added.ninja ? (added.ninja.tables + added.ninja.cols + added.ninja.windows
-    + added.ninja.tabs + added.ninja.fields + added.ninja.menus) : 0);
+    + added.info + added.attendance + added.retired + added.restype + added.resources;
   if (changed > 0 && fails === 0) { fs.writeFileSync(SEED, Buffer.from(db.export())); L('§SEED_HBA WROTE erp/ad_seed.db (' + changed + ' additions)'); }
   else if (fails === 0) L('§SEED_HBA NO-OP — seed already current (idempotent 2nd run)');
   else L('§SEED_HBA NOT WRITTEN — ' + fails + ' witness failure(s), DB left untouched');
