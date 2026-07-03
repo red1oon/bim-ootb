@@ -47,25 +47,52 @@ function exportBranch(db, opts) {
   opts = opts || {};
   var where = '';
   if (opts.branchId != null && opts.branchId !== '*') where = ' WHERE branch_id = ' + JSON.stringify(String(opts.branchId));
-  var r = db.exec('SELECT id,op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id FROM kernel_ops' + where + ' ORDER BY id');
+  var r = db.exec('SELECT id,op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id,user_tag FROM kernel_ops' + where + ' ORDER BY id');
   if (!r.length) return [];
   var cols = r[0].columns;
   return r[0].values.map(function (v) { var o = {}; cols.forEach(function (c, i) { o[c] = v[i]; }); return o; });
 }
 
-// importBranch(ops, host, makeDb) — a remote peer materialises a pulled branch: rebuild its kernel_ops
-// rows verbatim, then erp_kernel.replay → projectionHash. The replay re-applies the stored rich payloads
-// (frozen effects) so the rebuilt World is byte-identical to the origin's. Returns {projectionHash, ops}.
-function importBranch(ops, host, makeDb) {
+// importBranch(ops, host, makeDb, opts) — a remote peer materialises a pulled branch: rebuild its
+// kernel_ops rows verbatim, then erp_kernel.replay → projectionHash. The replay re-applies the stored rich
+// payloads (frozen effects) so the rebuilt World is byte-identical to the origin's. Returns {projectionHash, ops}.
+//
+// T1 (W-ROSTER-VERIFY, KERNEL_HARDENING_BATCH1_SPEC §NEXT SESSION): pass opts.roster (the HQ-signed device
+// roster) to CLOSE the audit's security#1 gap — without it this path checked the keyless chain only, so a
+// forged foreign-key op with a self-consistent re-sealed chain was SILENTLY ACCEPTED. With opts.roster the
+// import is gated on erp_key_epochs.verifyEpochSigsOps (roster + ROTATE/REVOKE key-epoch map; v2 rows
+// verified over their T2 content hash so a merge-renumbered branch still verifies) and THROWS on any
+// forged/rotated-away/revoked signature. ADDITIVE: opts absent → legacy sync behaviour, byte-identical.
+// With opts.roster the function is ASYNC (returns a Promise — signature verification is webcrypto).
+function importBranch(ops, host, makeDb, opts) {
   host = host || (typeof window !== 'undefined' ? window : {});
+  if (opts && opts.roster) {
+    var EP = opts.epochs || host.ErpKeyEpochs ||
+             (typeof require !== 'undefined' ? require('../../erp/erp_key_epochs.js') : null) ||
+             (typeof self !== 'undefined' ? self.ErpKeyEpochs : null);
+    if (!EP) throw new Error('erp_sync: opts.roster given but erp_key_epochs.js not loadable');
+    var chain = erpVerifyChain(ops || []);
+    if (!chain.ok) throw new Error('erp_sync: import REJECTED — chain ' + chain.why + ' at ' + chain.at);
+    return EP.verifyEpochSigsOps(ops, opts).then(function (sv) {
+      if (!sv.ok) throw new Error('erp_sync: import REJECTED — ' + sv.why + (sv.brokeAt != null ? ' (op id=' + sv.brokeAt + ')' : ''));
+      console.log('§SYNC_IMPORT roster-verified len=' + sv.len + ' activeKid=' + sv.activeKid);
+      var out = _materialize(ops, host, makeDb);
+      out.sigCheck = sv;
+      return out;
+    });
+  }
+  return _materialize(ops, host, makeDb);
+}
+function _materialize(ops, host, makeDb) {
   var KernelOps = host.KernelOps, ERPKernel = host.ERPKernel;
   if (!ERPKernel) throw new Error('erp_sync: host.ERPKernel required for importBranch');
   var logDb = makeDb();
   if (KernelOps && KernelOps.ensureTable) KernelOps.ensureTable(logDb);
   else logDb.run('CREATE TABLE IF NOT EXISTS kernel_ops (id INTEGER PRIMARY KEY, op_uuid TEXT, timestamp INTEGER, op_type TEXT, parameters TEXT, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0, prev_hash TEXT, op_hash TEXT, sig TEXT, gid TEXT, branch_id TEXT)');
   (ops || []).forEach(function (o) {
-    logDb.run('INSERT INTO kernel_ops (id,op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-      [o.id, o.op_uuid, o.timestamp, o.op_type, o.parameters, o.input_guids, o.output_guid, o.prev_hash, o.op_hash, o.sig, o.gid, o.branch_id]);
+    // user_tag rides along (T2 _canonicalV2 hashes it as `actor`) — default 'local' preserves old exports.
+    logDb.run('INSERT INTO kernel_ops (id,op_uuid,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,branch_id,user_tag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [o.id, o.op_uuid, o.timestamp, o.op_type, o.parameters, o.input_guids, o.output_guid, o.prev_hash, o.op_hash, o.sig, o.gid, o.branch_id, (o.user_tag != null ? o.user_tag : 'local')]);
   });
   var projDb = makeDb();
   var rep = ERPKernel.replay(logDb, projDb);

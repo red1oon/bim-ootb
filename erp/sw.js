@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v759';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v760';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -59,6 +59,7 @@ const PRECACHE_ASSETS = [
   'system_monitor.js', // SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor (serverless reframe, window.SystemMonitor)
   'plugin_release.js', // SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update (window.PluginRelease)
   'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
+  'erp_key_epochs.js', // T1 (W-ROSTER-VERIFY): HQ-signed device roster + ROTATE/REVOKE key epochs on verify/import
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
   'idmp_session.js',
   'erp_descriptor.js',  // DESCRIPTOR SEAM (IDEMPIERE_2.md pivot, renderer #2) — one chrome, N dictionaries; AD = first descriptor
