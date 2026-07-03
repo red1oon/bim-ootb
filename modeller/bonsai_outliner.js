@@ -326,6 +326,7 @@
         const mark = (n) => {
           let h = false;
           if (n.kind === 'element') h = fidByGuid[n.id] != null || !isNaN(+n.id);
+          if (n.dwp) h = true;   // §I5 (W-E2E-INSTHIDE): a walked-instance row acts via setPlacementVisible
           if (n.disc) h = true;
           (n.children || []).forEach(c => { if (mark(c)) h = true; });
           n._hidable = h; return h;
@@ -335,7 +336,11 @@
 
       // ── SEEDED TREE section (ARC LEADS, W-UX-3) — re-rendered only when its HTML actually changes ──────────
       let treesHtml = '';
-      treeCats.forEach(cat => { const r = this._treeHtml(cat, match); treesHtml += r.html; total += r.total; shown += r.shown; });
+      treeCats.forEach(cat => {
+        // §I5: a hideWhenEmpty category with an empty fold contributes NOTHING (no dead header pre-walk)
+        if (cat.hideWhenEmpty && !(this._lastRoots[cat.key] || []).length) return;
+        const r = this._treeHtml(cat, match); treesHtml += r.html; total += r.total; shown += r.shown;
+      });
       let treeBuilt = false;
       if (treesHtml !== this._treesCache) {
         const c = tree.querySelector('#bo-trees'); c.innerHTML = treesHtml; this._wireTrees(c, treeCats);
@@ -533,6 +538,10 @@
           const fid = fidByGuid[n.id] != null ? fidByGuid[n.id] : (isNaN(+n.id) ? null : +n.id);
           if (fid != null && B.setFeatureVisible && B.setFeatureVisible(fid, false)) applied++;
         }
+        // §I5 (SPEC_INSTANCE_HIDE.md §I5d — Witness: W-E2E-INSTHIDE): a walked-instance node hides its
+        // exact (im, instanceId) twins inside the InstancedMesh bucket(s) + the folded authored _dw twin
+        // (§I5b-TWIN) — the §V1-deferred per-instance leg. n.dwp.asm=true → an assembly part (§I5b-ASM).
+        if (n.dwp && B.setPlacementVisible) applied += B.setPlacementVisible(n.dwp.disc, n.dwp.idx, false, n.dwp.asm);
         if (n.disc && B.setDiscVisible) applied += B.setDiscVisible(n.disc, false);
         (n.children || []).forEach(hideNode);
       };
@@ -570,7 +579,12 @@
             // building DB — fly the camera there (frameElementByGuid, elements_meta⋈element_transforms).
             // Only when the DB has no row (or no DB is open) does the honest toast remain.
             if (isNaN(num)) {
-              if (window.Bonsai.frameElementByGuid && window.Bonsai.frameElementByGuid(id)) {
+              // §I5: a Walked-Fixtures row (dwp|disc|idx) identifies + frames its exact instance — the
+              // production pickInstance path, not the "walked fixtures render as one batch" toast (stale
+              // since §Q2 landed instance identity).
+              if (window.Bonsai.frameInstanceRow && window.Bonsai.frameInstanceRow(id)) {
+                console.log(TAG + ' §OLSYNC instrow id=' + String(id).slice(0, 18) + ' (identified + framed walked instance)');
+              } else if (window.Bonsai.frameElementByGuid && window.Bonsai.frameElementByGuid(id)) {
                 console.log(TAG + ' §OLSYNC instframe guid=' + String(id).slice(0, 12) + ' (framed from real element_transforms row)');
               } else {
                 if (window.toast) window.toast('no 3D pick for generated elements yet — walked fixtures render as one batch', 'info');

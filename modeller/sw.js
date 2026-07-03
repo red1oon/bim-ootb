@@ -55,6 +55,7 @@ const PRECACHE_ASSETS = [
   'sdg_cascade.js',
   'sdg_gate.js',
   'disc_walker.js',
+  'dw_instances_outliner.js',   // §I5 Walked Fixtures per-instance rows (W-E2E-INSTHIDE)
   'teams_embed.js',   // §TEAMS-EMBED — gated Teams overlay (off by default = inert; lazy-loads teams/ when ON)
   'seed_trunk.js',
   'str_walker.js',
