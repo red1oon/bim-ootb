@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll, Lv: G.HbaLeave, ADT: G.HbaAdTenancy, IoT: G.HbaIot }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll, Lv: G.HbaLeave, ADT: G.HbaAdTenancy, ADA: G.HbaAdAttendance, IoT: G.HbaIot }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -270,10 +270,18 @@
       }
       // §P11 — compile each REAL room into a native S_Resource header row (Dashboard's "hover a Resource"
       // deep-link needs a real numeric s_resource_id per room; see occupancy.js compileResources header).
+      // §DESIGN-RESOURCE-AVAILABILITY (Stage 2) — thread the SAME signed occupancy replay (A._hbaOccupancyLog,
+      // seeded just above) so isavailable/percentutilization are the room's REAL availability, not a hardcoded 'Y'.
       if (!A._hbaResourceSpec && h.OC && h.OC.compileResources && rooms.length) {
-        A._hbaResourceSpec = h.OC.compileResources(rooms);
-        console.log('§HBA_RES compiled ' + A._hbaResourceSpec.resources.length + ' S_Resource rows from ' + rooms.length + ' rooms');
+        A._hbaResourceSpec = h.OC.compileResources(rooms, { log: A._hbaOccupancyLog || null,
+          period: period(A), periods: [period(A)],
+          storeyOf: function (g) { return (A._hbaStoreyOf && A._hbaStoreyOf[g]) || 'Unknown'; } });
+        var unavail = A._hbaResourceSpec.resources.filter(function (r) { return r.row.isavailable === 'N'; }).length;
+        console.log('§HBA_RES compiled ' + A._hbaResourceSpec.resources.length + ' S_Resource rows from ' + rooms.length + ' rooms (real availability: ' + unavail + ' unavailable, percentutilization threaded)');
       }
+      // §STAGE2 — now that the literal specs are seeded, attempt ERP-governance (async ad_seed.db load →
+      // re-compile the ERP-sourced specs off real rows). ADDITIVE: a failure leaves the literal specs standing.
+      _ensureErpGovern(A);
     } catch (e) { /* no spatial_structure → honest no-op (density falls back to S?) */ }
   }
 
@@ -281,6 +289,79 @@
   function period(A) {
     if (A && A._hbaPeriod) return A._hbaPeriod;
     var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  }
+
+  // §STAGE2 (RESUME_HBA_ERP_GOVERNED_DISPLAY.md Stage 2) — the ERP-GOVERNANCE seam. ADDITIVE + ZERO-IMPACT:
+  // the seeding gate above already seeds LITERAL specs (unchanged — panes work immediately, every existing
+  // witness/behaviour intact). This lazily loads the REAL erp/ad_seed.db (the SAME db navigate_find.js's
+  // _ensureErpDb loads) and, ONCE it is available, RE-COMPILES the governable specs (payroll identities,
+  // tenancy warehouse/locators, attendance→C_Attendance) off the real seeded rows, then swaps them in. If the
+  // SQL factory / cachedFetch seam is absent (off the ERP-capable page), or the fetch fails, or the db lacks
+  // the HHS rows, NOTHING changes — the literal specs stand (the fallback the module builders guarantee).
+  var _erpDb = null, _erpTried = false;
+  function _erpQueryFrom(db) {
+    return function (sql, params) {                         // SYNC reader → [{col:val,…}] row-objects
+      var r = db.exec(sql, params || []); if (!r.length) return [];
+      var cs = r[0].columns;
+      return r[0].values.map(function (v) { var o = {}; cs.forEach(function (c, i) { o[c] = v[i]; }); return o; });
+    };
+  }
+  function _ensureErpGovern(A) {
+    if (_erpTried || !A) return;                            // one attempt per session (governance is monotonic)
+    _erpTried = true;
+    var SQL = A._SQL || G.SQL || G._SQL_CACHED;             // viewer caches the sql.js factory as A._SQL; absent off the ERP page
+    var fetchDb = A.cachedFetch || (G.APP && G.APP.cachedFetch);
+    if (!SQL || typeof fetchDb !== 'function') { console.log('§HBA_GOVERN skip — no SQL/cachedFetch seam (literal specs stand)'); return; }
+    Promise.resolve(fetchDb('../erp/ad_seed.db'))
+      .then(function (buf) {
+        _erpDb = new SQL.Database(new Uint8Array(buf));
+        var eq = _erpQueryFrom(_erpDb);
+        A.erpQuery = eq;                                    // expose the sync seam (Stage 3 panes/lenses reuse it)
+        _regovern(A, eq);
+      })
+      .catch(function (e) { console.log('§HBA_GOVERN skip — ad_seed.db load failed: ' + e.message + ' (literal specs stand)'); });
+  }
+  // recompute ONLY the ERP-sourced specs off the real rows and swap them in (idempotent). The signed op-logs /
+  // leave / request specs are untouched. Honest no-op per spec if a dependency (rooms/engine) is missing.
+  // the REAL building name — the warehouse MATCH KEY (Value). A.buildingName is unset in the streaming path,
+  // so EXTRACT it from the model's own project_metadata (the SAME source seed_hba_erp.js pinned the warehouse
+  // Value from — 'HHS_Office_Federated'); honest fallback to A.buildingName only when the model lacks the row.
+  function _buildingName(A) {
+    try {
+      if (typeof A.dbQuery === 'function') {
+        var rows = A.dbQuery("SELECT value FROM project_metadata WHERE key='building_name'");
+        if (rows && rows[0] && rows[0][0]) return rows[0][0];
+      }
+    } catch (e) { /* no project_metadata → honest fallback below */ }
+    return A.buildingName || 'This Building';
+  }
+  function _regovern(A, eq) {
+    var h = HBA(), n = 0, bname = _buildingName(A);
+    if (h.AD && h.AD.demoSpec) { A._hbaPayrollSpec = h.AD.demoSpec(eq); n++; }
+    if (h.ADT && h.ADT.compileBuilding && h.M && A._hbaRooms) {
+      A._hbaTenancySpec = h.ADT.compileBuilding(bname, A._hbaRooms,
+        h.M.records('Tenancy'), h.M.records('Strata'), { erpQuery: eq });
+      n++;
+    }
+    // §DESIGN-ATTENDANCE — compile the signed presence sessions onto real C_Attendance child rows (partner/
+    // locator maps built from the real seeded AD_User/M_Locator). Stage 3 retargets the Presence drawer onto
+    // this governed spec; Stage 2 produces it. Sessions whose id/zone has no real row are honestly SKIPPED.
+    if (h.ADA && h.A && A._hbaAttendanceLog && A._hbaRooms) {
+      var sessions = h.A.sessions(A._hbaAttendanceLog, period(A));
+      var userRows = eq('SELECT Name AS name, C_BPartner_ID AS c_bpartner_id FROM AD_User WHERE C_BPartner_ID IS NOT NULL AND IsActive=?', ['Y']);
+      var locRows = eq('SELECT M_Locator_ID AS m_locator_id, Value AS value FROM M_Locator', []);
+      var procRow = eq('SELECT HR_Process_ID AS id FROM HR_Process ORDER BY HR_Process_ID LIMIT 1', []);
+      A._hbaAttendanceSpec = h.ADA.compileAttendance(sessions, {
+        processId: (procRow[0] ? Number(procRow[0].id) : null),
+        partnerMap: h.ADA.partnerMapFromUsers(userRows),
+        locatorMap: h.ADA.locatorMapFromLocators(locRows) });
+      n++;
+    }
+    console.log('§HBA_GOVERN on — re-compiled ' + n + ' governable spec(s) off real ad_seed.db (payroll _governed='
+      + !!(A._hbaPayrollSpec && A._hbaPayrollSpec._governed)
+      + ' warehouse=' + (A._hbaTenancySpec ? A._hbaTenancySpec.warehouse.m_warehouse_id : 'n/a')
+      + ' C_Attendance=' + (A._hbaAttendanceSpec ? (A._hbaAttendanceSpec.rows.length + '/' + (A._hbaAttendanceSpec.rows.length + A._hbaAttendanceSpec.skipped.length)) : 'n/a') + ')');
+    if (A.markDirty) A.markDirty();
   }
 
   // toggle a lens ON/OFF. ON → drive the WITNESSED engine through the real MeshPort, GATED by A.guidMap so a
@@ -633,7 +714,8 @@
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
     flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
-    erpLink: erpLink, AD_WINDOWS: AD_WINDOWS };
+    erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
+    _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern };  // §STAGE2 — witness hooks (additive)
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------

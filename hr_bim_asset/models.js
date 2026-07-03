@@ -120,12 +120,39 @@ function toAssetRow(asset) {
 
 function model(name) { return MODELS[name]; }
 function records(name) { return (MODELS[name] || {}).records || []; }
+
+// §STAGE2 (RESUME_HBA_ERP_GOVERNED_DISPLAY.md Stage 2) — resolve an Official contact from the REAL seeded
+// AD_User row when an ad_seed.db reader (`erpQuery`, the viewer's A.erpQuery seam / a witness handle) is
+// supplied. Stage 1 seeded AD_User 1/2 for EMP001/EMP002 with real EMail/Phone/C_BPartner_ID (seed §3); the
+// tenant/overflow contacts (BP-TEN-*, EMP-1..EMP-4) have NO real AD_User by design (the accepted 2-person
+// tradeoff), so those honestly fall back to the literal record. This is a DB-first-per-name JOIN, never a
+// blanket replace: a name with a real AD_User is GOVERNED, a name without stays literal — the honest gap.
+function _adUserByName(erpQuery, name) {
+  if (typeof erpQuery !== 'function' || !name) return null;
+  try {
+    var r = erpQuery('SELECT AD_User_ID AS ad_user_id, Name AS name, EMail AS email, Phone AS phone, '
+      + 'C_BPartner_ID AS c_bpartner_id FROM AD_User WHERE Name=? AND IsActive=?', [name, 'Y']);
+    if (!r || !r.length) return null;
+    var u = r[0];
+    return { ad_user_id: Number(u.ad_user_id), name: u.name, email: u.email || null, phone: u.phone || null,
+      c_bpartner_id: (u.c_bpartner_id == null ? null : Number(u.c_bpartner_id)), _governed: true };
+  } catch (e) { return null; }
+}
+// the Official set, GOVERNED where a real AD_User backs the name (else the literal record verbatim). No
+// erpQuery → the pure literal set (every existing caller unchanged).
+function officialRecords(erpQuery) {
+  var lit = records('Official');
+  if (typeof erpQuery !== 'function') return lit;
+  return lit.map(function (o) { return _adUserByName(erpQuery, o.name) || o; });
+}
 // §P10a lookup — resolve a bare code (attendance `employee` id, lease `party`/`tenant`) to its AD_User contact
-// record. Honest miss: returns null rather than fabricating a name for a code with no Official row.
-function officialByName(name) {
-  return records('Official').filter(function (o) { return o.name === name; })[0] || null;
+// record. §STAGE2: DB-first when erpQuery supplied (real AD_User), literal fallback (honest miss → null, never
+// a fabricated name for a code with no Official row and no real user).
+function officialByName(name, erpQuery) {
+  return _adUserByName(erpQuery, name) || records('Official').filter(function (o) { return o.name === name; })[0] || null;
 }
 
-var M = { MODELS: MODELS, model: model, records: records, toAssetRow: toAssetRow, officialByName: officialByName };
+var M = { MODELS: MODELS, model: model, records: records, toAssetRow: toAssetRow,
+  officialByName: officialByName, officialRecords: officialRecords };
 if (typeof module === 'object' && module.exports) module.exports = M;
 else (typeof self !== 'undefined' ? self : this).HbaModels = M;
