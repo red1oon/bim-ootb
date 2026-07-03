@@ -30,6 +30,7 @@ self.HbaOccupancy = require('../occupancy');
 self.HbaAdPayroll = require('../ad_payroll');
 self.HbaAdTenancy = require('../ad_tenancy');
 self.HbaAdAttendance = require('../ad_attendance');
+self.HbaAdBom = require('../ad_bom');
 self.HbaIot = require('../iot');
 var HBALens = require('../../viewer/hba_lens');   // exports the API incl. the §STAGE2 witness hooks
 
@@ -73,6 +74,11 @@ initSqlJs().then(function (SQL) {
      && spec.rows.every(function (r) { return (r.C_BPartner_ID === 1001 || r.C_BPartner_ID === 1002) && r.M_Locator_ID != null && r.HR_Process_ID != null; })
      && (spec.rows.length + spec.skipped.length) === sessCount,
      'A._hbaAttendanceSpec: ' + spec.rows.length + '/' + sessCount + ' sessions → real C_Attendance rows (every FK real, none lost)');
+  // WIRE4 — §BOM-ERP-CENTERED: _regovern reads the native BOM as a lens over the real seeded pp_product_bom.
+  var bom = A._hbaBomSpec;
+  ok('WIRE4-bom-lens', bom && bom.assemblies.length > 0
+     && bom.assemblies.every(function (a) { return a.building === 'HHS_Office_Federated' && a.lines.length > 0; }),
+     'A._hbaBomSpec: ' + (bom ? bom.assemblies.length : 0) + ' BIM assemblies read as a lens over real pp_product_bom (ERP is the authority, not Java m_bom)');
 
   db.close();
   fin();

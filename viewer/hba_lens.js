@@ -12,7 +12,7 @@
   var G = (typeof self !== 'undefined' ? self : this);
 
   // the WITNESSED engine (loaded as <script> before this file → self.Hba* globals)
-  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll, Lv: G.HbaLeave, ADT: G.HbaAdTenancy, ADA: G.HbaAdAttendance, IoT: G.HbaIot }; }
+  function HBA() { return { O: G.HbaOverlay, B: G.HbaBinding, M: G.HbaModels, L: G.HbaLens, T: G.HbaTimeline, A: G.HbaAttendance, OC: G.HbaOccupancy, AD: G.HbaAdPayroll, Lv: G.HbaLeave, ADT: G.HbaAdTenancy, ADA: G.HbaAdAttendance, ADB: G.HbaAdBom, IoT: G.HbaIot }; }
   function ready() { var h = HBA(); return !!(h.O && h.B && h.M); }
 
   // hex '#2e7d32' | int → int for THREE emissive.setHex
@@ -357,10 +357,19 @@
         locatorMap: h.ADA.locatorMapFromLocators(locRows) });
       n++;
     }
+    // §BOM-ERP-CENTERED — read the BIM BOM as a LENS over the real seeded pp_product_bom (ad_bom.readBom), the
+    // ERP being the authority (never the Java m_bom). Scoped to THIS building's warehouse. Stage 3 renders a
+    // BOM pane off this spec; here we make the governed lens data available. Honest empty if no 'B' BOMs.
+    if (h.ADB && h.ADB.readBom) {
+      var whId = (A._hbaTenancySpec && A._hbaTenancySpec.warehouse) ? A._hbaTenancySpec.warehouse.m_warehouse_id : null;
+      A._hbaBomSpec = h.ADB.readBom(eq, whId != null ? { m_warehouse_id: whId } : {});
+      n++;
+    }
     console.log('§HBA_GOVERN on — re-compiled ' + n + ' governable spec(s) off real ad_seed.db (payroll _governed='
       + !!(A._hbaPayrollSpec && A._hbaPayrollSpec._governed)
       + ' warehouse=' + (A._hbaTenancySpec ? A._hbaTenancySpec.warehouse.m_warehouse_id : 'n/a')
-      + ' C_Attendance=' + (A._hbaAttendanceSpec ? (A._hbaAttendanceSpec.rows.length + '/' + (A._hbaAttendanceSpec.rows.length + A._hbaAttendanceSpec.skipped.length)) : 'n/a') + ')');
+      + ' C_Attendance=' + (A._hbaAttendanceSpec ? (A._hbaAttendanceSpec.rows.length + '/' + (A._hbaAttendanceSpec.rows.length + A._hbaAttendanceSpec.skipped.length)) : 'n/a')
+      + ' BOM=' + (A._hbaBomSpec ? (A._hbaBomSpec.assemblies.length + ' assemblies') : 'n/a') + ')');
     if (A.markDirty) A.markDirty();
   }
 
