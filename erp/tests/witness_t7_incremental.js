@@ -234,6 +234,48 @@ function memStore() {
   verdict(rOff.sharded === false && rOff.reason === 'below-threshold', '§T7-OFF below-threshold maybeShard is a no-op', 'n=' + rOff.n + ' threshold=' + rOff.threshold);
   verdict(b1.length === b2.length && Buffer.from(b1).equals(Buffer.from(b2)), '§T7-OFF export bytes BYTE-IDENTICAL', b1.length + ' bytes');
 
+  // ── §T7-ANCHOR (review finding B) — verifyShards must NOT trust an unverified hot anchor ──
+  var hotSnapId = db.exec("SELECT id FROM kernel_ops WHERE op_type='SHARD_SNAPSHOT' ORDER BY id DESC LIMIT 1")[0].values[0][0];
+  var origSnapP = db.exec('SELECT parameters FROM kernel_ops WHERE id=' + hotSnapId)[0].values[0][0];
+  db.run('UPDATE kernel_ops SET parameters=? WHERE id=?', [origSnapP.replace('"baseTipHash":"', '"baseTipHash":"ff'), hotSnapId]);
+  var walkA = await Shard.verifyShards(db, store, 'poslog');
+  verdict(walkA.ok === false && /hot chain verify failed/.test(walkA.why),
+    '§T7-ANCHOR tampered hot-snapshot anchor REFUSED (hot chain verified inside verifyShards)', 'why=' + walkA.why);
+  db.run('UPDATE kernel_ops SET parameters=? WHERE id=?', [origSnapP, hotSnapId]);
+  var walkA2 = await Shard.verifyShards(db, store, 'poslog');
+  verdict(walkA2.ok === true, '§T7-ANCHOR restored anchor walks clean again', 'shards=' + walkA2.shards);
+
+  // ── §T7-RACE (review finding A) — a commit interleaved into shard()'s archive awaits must ABORT,
+  // never silently delete an unarchived sealed op. The race store commits ONE op inside store.put.
+  var raceStore = memStore(), rawPut = raceStore.put, raced = false;
+  raceStore.put = function (k, b) {
+    if (raced) return rawPut.call(raceStore, k, b);
+    raced = true;
+    return K.commitGroup(db2, [statusOp(99001)], { gid: 'g-race', baseTs: 4000000 })
+      .then(function () { return rawPut.call(raceStore, k, b); });
+  };
+  var preRaceLen = db2.exec('SELECT COUNT(*) FROM kernel_ops')[0].values[0][0];
+  var rRace = await Shard.shard(db2, { store: raceStore, key: 'race', ts: 4000001 });
+  verdict(rRace.sharded === false && /concurrent commit/.test(rRace.reason),
+    '§T7-RACE interleaved commit during archive ⇒ ABORT (no delete)', rRace.reason);
+  var postRaceLen = db2.exec('SELECT COUNT(*) FROM kernel_ops')[0].values[0][0];
+  var vRace = await K.verifyChain(db2);
+  verdict(postRaceLen === preRaceLen + 1 && vRace.ok === true,
+    '§T7-RACE the raced op SURVIVES, chain verifies (nothing lost, snapshot rolled back)', 'ops=' + postRaceLen + ' verify=' + vRace.ok);
+  var rRetry = await Shard.shard(db2, { store: raceStore, key: 'race', ts: 4000002 });
+  verdict(rRetry.sharded === true && rRetry.archived === postRaceLen,
+    '§T7-RACE retry shards cleanly WITH the raced op archived', 'archived=' + rRetry.archived);
+
+  // ── §T7-INJECT (review finding C) — forged projState column name must throw, never reach SQL ──
+  var db3 = new SQL.Database(); EK.initProjection(db3);
+  var evilRow = {}; evilRow['id, doc_type) VALUES (1,2); DROP TABLE journal; --'] = 'x';
+  await K.commitGroup(db3, [{ op_type: 'SHARD_SNAPSHOT', op_uuid: 'evil-1',
+    params: { payload: { op_type: 'SHARD_SNAPSHOT', uuid: 'SNAPSHOT:evil', shardSeq: 1, projState: { documents: [evilRow] } }, actor: 'evil' } }],
+    { gid: 'g-evil', baseTs: 5000000 });
+  var threw = false, injMsg = '';
+  try { EK.replay(db3, new SQL.Database()); } catch (e) { threw = true; injMsg = e.message; }
+  verdict(threw && /illegal column name/.test(injMsg), '§T7-INJECT forged projState column REJECTED loudly at replay', injMsg.slice(0, 90));
+
   K.setSigner(null); K.setContentSigning(false);
   console.log('\n' + (fails === 0 ? '✅ W-T7-INC ALL PASS' : '❌ W-T7-INC ' + fails + ' FAIL') + '\n');
   process.exit(fails === 0 ? 0 : 1);

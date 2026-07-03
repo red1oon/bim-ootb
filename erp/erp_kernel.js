@@ -175,6 +175,12 @@ function applyOne(db, op, state) {
       (ps[t] || []).forEach(function (row) {
         var cols = Object.keys(row);
         if (!cols.length) return;
+        // projState is op-log-carried data reachable via replay/import BEFORE any signature gate —
+        // column names must be plain identifiers or a forged op injects SQL at the interpolation
+        // (adversarial review finding C, MED). Values stay parameterized; a bad key throws LOUDLY.
+        cols.forEach(function (c) {
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(c)) throw new Error('SHARD_SNAPSHOT projState: illegal column name ' + JSON.stringify(c));
+        });
         db.run('INSERT OR REPLACE INTO ' + t + ' (' + cols.join(',') + ') VALUES (' +
                cols.map(function () { return '?'; }).join(',') + ')',
                cols.map(function (c) { return row[c]; }));

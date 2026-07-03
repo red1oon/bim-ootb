@@ -145,6 +145,21 @@
       }
     }
 
+    // 3c. RACE GUARD (adversarial review finding A, HIGH): any op committed between exportOps and
+    // the snapshot commit (the store.put/get + sha awaits are real interleave windows in a browser)
+    // lands in (baseTipId, snapId) — it would be DELETED below but was never archived: silent loss
+    // of a sealed, signed op. Refuse instead: remove ONLY the snapshot we just added, re-seal,
+    // abort (caller retries). This check → DELETE below runs in ONE synchronous tick (no awaits),
+    // so no further commit can interleave past it.
+    var strag = db.exec('SELECT COUNT(*) FROM kernel_ops WHERE id > ' + Number(baseTipId) + ' AND id < ' + Number(snapId));
+    if (Number(strag[0].values[0][0]) > 0) {
+      console.log('§SHARD ABORT concurrent commit during shard (ops in (' + baseTipId + ',' + snapId + ')) — retry');
+      db.run('DELETE FROM kernel_ops WHERE id = ' + Number(snapId));
+      await K.sealChain(db);
+      db.__krnVerifiedTip = null;
+      return { sharded: false, reason: 'concurrent commit during shard — retry' };
+    }
+
     // 4. drop the archived prefix, re-seal the hot chain from GENESIS (prior head is inside the
     //    signed snapshot params). Invalidate every incremental cache — the log changed shape.
     db.run('DELETE FROM kernel_ops WHERE id < ' + Number(snapId));
@@ -180,6 +195,13 @@
   // verifyShards — walk the archive BACKWARD from the hot snapshot to GENESIS: each shard verifies
   // internally AND its tip equals the NEXT snapshot's recorded baseTipHash (the boundary link).
   async function verifyShards(db, store, key) {
+    // Anchor first (adversarial review finding B, MED): the backward walk is only as trustworthy as
+    // the hot snapshot it starts from — a caller-side "remember to verifyChain first" contract is
+    // not a contract. Verify the HOT chain (hash links + sigs) here, unconditionally, before
+    // trusting the snapshot payload's baseTipHash as the root anchor.
+    var K = _K();
+    var hv = await K.verifyChain(db);
+    if (!hv.ok) return { ok: false, why: 'hot chain verify failed: ' + hv.why, at: hv.brokeAt };
     var snap = _latestSnapshotPayload(db);
     if (!snap) return { ok: true, shards: 0, note: 'no snapshot — nothing archived' };
     var expectTip = snap.baseTipHash, checked = 0;
