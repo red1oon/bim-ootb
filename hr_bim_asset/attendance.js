@@ -83,10 +83,15 @@ function fingerprint(ts) {
   return C._util.sha256(C._util.stableStringify(proj));
 }
 
-// demonstrator seed (§T&A SLICE-2 PILL) — a deterministic, SIGNED check-in log over the model's REAL room guids
-// so the presence lens/pill lights on a building that carries rooms (parity with occupancy.demoSeed). ts is
-// derived from the host-supplied `period` (YYYY-MM) — NO Date.now; vacancy stays honest (a zone with no
-// check-in has zero headcount, never fabricated). Open sessions (no check-out) still count as present.
+// demonstrator seed (§T&A SLICE-2 PILL · re-scoped 2026-07-03) — a deterministic, SIGNED check-in log over the
+// model's REAL room guids. Implementing RESUME_HBA_ERP_GOVERNED_DISPLAY.md §STAGED-PLAN Stage 1 / §Q-RESOLUTION
+// Q2: the demo roster is EMP001/EMP002 ONLY — the same two people ad_payroll.js demoSpec() pays and Stage 1
+// seeds as REAL C_BPartner rows (1001/1002) in erp/ad_seed.db — so EVERY check-in identity resolves to a real
+// c_bpartner_id (the old EMP-1..EMP-4 + §RICH-DEMO overflow ids resolved to nothing; with 2 real people the
+// max per-zone band is 'med' (2-4) — the accepted Q2 tradeoff, richness comes back when real headcount does).
+// Movement across zones/storeys is HONEST multi-session data: earlier CLOSED in→out pairs (real derivable
+// hours) plus final OPEN check-ins (no fabricated finish). ts derived from the host-supplied `period`
+// (YYYY-MM) — NO Date.now; vacancy stays honest (a zone with no check-in has zero headcount, never fabricated).
 function demoSeed(rooms, period) {
   var g = (rooms || []).map(function (r) { return r.guid; });
   period = period || '2026-01';
@@ -94,18 +99,15 @@ function demoSeed(rooms, period) {
   function ts() { var m = ('0' + (8 + Math.floor(n / 60))).slice(-2), s = ('0' + (n % 60)).slice(-2); n++; return period + '-15T' + m + ':' + s + ':00Z'; } // deterministic; robust beyond 60
   function prev() { return log.length ? log[log.length - 1].op_hash : 'GENESIS'; }
   function ci(emp, zone) { var r = checkIn({ employee: emp, zone: zone, ts: ts() }, null, prev()); if (r.op) log.push(r.op); }
-  if (g[0]) { ci('EMP-1', g[0]); ci('EMP-2', g[0]); ci('EMP-3', g[0]); }   // zone0 → 3 present (med band)
-  if (g[1]) { ci('EMP-4', g[1]); }                                          // zone1 → 1 present  (low band)
-  // §RICH-DEMO (P2) — spread VARIED headcounts across the REMAINING zones (i>=3, skipping g[2]) so presence shows
-  // a real mix of bands across ALL storeys, not just Level 1. Deterministic count per index; some zones stay 0
-  // (genuine absence). g[0..2] are UNCHANGED (existing presence/presspane witnesses use ≤3-room lists). Non-invent:
-  // real zone guids, demonstrator employee ids, deterministic ts.
-  var BAND = [4, 2, 0, 5, 1, 3, 0, 6, 2, 4];   // varied low/med/high + genuine zeros
-  for (var i = 3; i < g.length; i++) {
-    var hc = BAND[(i - 3) % BAND.length];
-    for (var k = 0; k < hc; k++) ci('EMP-' + (i * 10 + k), g[i]);
-  }
-  // g[2] (and any BAND==0 zone) left with NO check-in → genuinely zero headcount (presence from absence, never fabricated)
+  function co(emp, zone) { var r = checkOut({ employee: emp, zone: zone, ts: ts() }, null, prev()); if (r.op) log.push(r.op); }
+  // earlier CLOSED sessions — the two real people moving through the building (other storeys when present):
+  if (g[3]) { ci('EMP001', g[3]); co('EMP001', g[3]); }
+  if (g[8]) { ci('EMP001', g[8]); co('EMP001', g[8]); ci('EMP002', g[8]); co('EMP002', g[8]); }
+  if (g[12]) { ci('EMP002', g[12]); co('EMP002', g[12]); }
+  // the "now" picture: zone0 = EMP002 (closed) + EMP001 (OPEN) → headcount 2 (med); zone1 = EMP002 OPEN → 1 (low)
+  if (g[0]) { ci('EMP002', g[0]); co('EMP002', g[0]); ci('EMP001', g[0]); }
+  if (g[1]) { ci('EMP002', g[1]); }
+  // g[2] (and every unvisited zone) left with NO check-in → genuinely zero headcount (presence from absence, never fabricated)
   return { log: log, zones: g };
 }
 

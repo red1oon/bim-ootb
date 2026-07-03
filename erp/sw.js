@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v756';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v759';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -102,6 +102,8 @@ const PRECACHE_ASSETS = [
   'pos_core.js',       // POS_ADDON_SPEC §P-1..§P-4 — POS fold glue (window.POSCore), == bim-compiler build/erp source
   'img_store.js',      // POS_KILLER_DEMO E-3 — device-local images folder (IDB, window.ImgStore), == bim-compiler build/erp source
   'pos_lens.js',       // POS_ADDON_SPEC — dumb-terminal POS lens (window.PosLens): record/pay/SEND, zero client state
+  'kitchen_core.js',   // §T2-SPEC Kitchen Display fold (window.KitchenCore, W-KDS-QUEUE), == bim-compiler build/erp source
+  'kitchen_lens.js',   // §T2-SPEC Kitchen Display lens (window.KitchenLens): fold-rendered tickets, Serve = one signed group
   'sfx.json',          // §R2-AUDIO — ERP-surface SFX config (subtle POS earcons; sfx.js itself rides the viewer scope)
   'ninja_excel.js',   // NINJA EXCEL — Excel-as-report-binder engine (read/gate/run/verify; == bim-compiler build/erp)
   'ninja_rule.js',    // NINJA EXCEL — RULE tier: business phrase → SQL candidates from the AD dictionary (§7)

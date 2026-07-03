@@ -47,12 +47,15 @@ var mar = pv.byPeriod['2026-03'];
 ok('R3-period-spread', mar.occupied >= 3 && mar.vacant >= 2 && mar.unavailable >= 2 && (mar.occupied + mar.vacant + mar.unavailable + mar.expiring) === G.length,
   '2026-03 snapshot is a real operating mix: occupied=' + mar.occupied + ' expiring=' + mar.expiring + ' vacant=' + mar.vacant + ' unavailable=' + mar.unavailable + ' (Σ=' + G.length + ')');
 
-// ---- R4 — PRESENCE varied: headcounts span ≥2 storeys with ≥3 distinct nonzero band values (not one zone).
+// ---- R4 — PRESENCE varied: headcounts span ≥2 storeys with ≥2 distinct nonzero band values (not one zone).
+//   Re-pinned 2026-07-03 (RESUME_HBA_ERP_GOVERNED_DISPLAY.md §Q-RESOLUTION Q2): the demo roster is
+//   EMP001/EMP002 ONLY (every id resolves to a real seeded C_BPartner), so the max distinct headcounts is 2
+//   ({1,2}) — variety now comes from the two real people MOVING across zones/storeys, not invented ids.
 var att = At.demoSeed(FX.rooms, '2026-07').log;
 var pres = At.presenceByZone(att, '2026-07').filter(function (x) { return x.headcount > 0; });
 var presStoreys = {}; pres.forEach(function (x) { presStoreys[storeyOf[x.zone]] = 1; });
 var bands = Object.keys(pres.reduce(function (s, x) { s[x.headcount] = 1; return s; }, {}));
-ok('R4-presence-varied', Object.keys(presStoreys).length >= 2 && bands.length >= 3 && pres.length >= 4,
+ok('R4-presence-varied', Object.keys(presStoreys).length >= 2 && bands.length >= 2 && pres.length >= 4,
   'presence spans ' + Object.keys(presStoreys).length + ' storeys, ' + pres.length + ' occupied zones, ' + bands.length + ' distinct headcount bands [' + bands.sort(function (a, b) { return a - b; }).join(',') + ']');
 
 // ---- R5 — NON-INVENT: every populated occupancy/presence zone is a REAL fixture room guid (no fabricated rooms).

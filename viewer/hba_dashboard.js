@@ -8,6 +8,10 @@
 //   removes it + destroys its charts (zero residue). It never touches the 3D scene, other panels, or sw.js.
 //   Data source = host-injected A._hbaOccupancyLog / A._hbaRequestLog (seeded from the model's real rooms by
 //   hba_lens.js); honest empty when none. Read the log after run.
+//   §P11 (RESUME_HR_BIM_ASSET.md §P11, user 2026-07-02) — a "Resources" list under the charts, one row per
+//   real room (dash.pivot.byRoom, already computed by occupancy.pivot — no new numbers), each with an
+//   "open ↗" deep-link into the room's real S_Resource row in iDempiere (A._hbaResourceSpec, compiled by
+//   occupancy.js compileResources via hba_lens.js). Honest no-link when a room hasn't compiled a resource yet.
 (function () {
   'use strict';
   var G = (typeof self !== 'undefined' ? self : this);
@@ -59,6 +63,36 @@
       var cv = document.createElement('canvas'); cv.style.cssText = 'display:block;';
       wrap.appendChild(cv); pane.appendChild(wrap); canvases.push(cv);
     });
+    // §P11 — Resources list: one row per real room (dash.pivot.byRoom), storey + utilization, "open ↗" into
+    // the room's compiled S_Resource row (A._hbaResourceSpec) when one exists (honest no-link otherwise).
+    var resById = {};
+    ((A._hbaResourceSpec && A._hbaResourceSpec.resources) || []).forEach(function (r) { if (r.row) resById[r.guid] = r.row.s_resource_id; });
+    var roomName = {}; (A._hbaRooms || []).forEach(function (r) { roomName[r.guid] = r.name || r.guid; });
+    var byRoom = dash.pivot.byRoom, roomGuids = Object.keys(byRoom).sort();
+    var linked = 0;
+    if (roomGuids.length) {
+      pane.appendChild(el('div', 'font-size:11px;color:#627d98;text-transform:uppercase;padding:8px 12px 0;', 'Resources'));
+      var tbl = el('table', 'width:100%;border-collapse:collapse;font-size:12px;margin:4px 12px 10px;width:calc(100% - 24px);');
+      roomGuids.forEach(function (guid) {
+        var rb = byRoom[guid], sResId = resById[guid];
+        var tr = el('tr', 'border-top:1px solid #eee;');
+        tr.appendChild(el('td', 'padding:4px 2px;', roomName[guid] || guid));
+        tr.appendChild(el('td', 'padding:4px 2px;color:#627d98;', rb.storey || '—'));
+        tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#627d98;', Math.round(rb.utilization * 100) + '%'));
+        var linkTd = el('td', 'padding:4px 2px;text-align:right;');
+        if (sResId != null && G.HBALens && G.HBALens.erpLink) {
+          var a = document.createElement('a');
+          a.href = G.HBALens.erpLink(G.HBALens.AD_WINDOWS.RESOURCE, sResId);
+          a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'open ↗';
+          a.title = 'Open this room’s Resource record in iDempiere';
+          a.style.cssText = 'color:#1976d2;text-decoration:none;font-size:11px;';
+          linkTd.appendChild(a); linked++;
+        }
+        tr.appendChild(linkTd);
+        tbl.appendChild(tr);
+      });
+      pane.appendChild(tbl);
+    }
     (document.body || document.documentElement).appendChild(pane);
     if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
     if (pane.offsetHeight) { /* force a reflow so the canvases have layout before Chart measures them */ }
@@ -67,7 +101,7 @@
       try { _charts.push(new G.Chart(canvases[i], cfg)); } catch (e) { console.warn('§HBA_DASH chart err ' + e.message); }
     });
     _pane = pane;
-    console.log('§HBA_DASH mounted rooms=' + dash.kpi.rooms + ' util=' + dash.kpi.avgUtilization + ' open=' + dash.kpi.openTickets);
+    console.log('§HBA_DASH mounted rooms=' + dash.kpi.rooms + ' util=' + dash.kpi.avgUtilization + ' open=' + dash.kpi.openTickets + ' resourceLinks=' + linked);
     return true;
   }
 

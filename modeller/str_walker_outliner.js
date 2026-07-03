@@ -77,6 +77,28 @@
              sub: 'signal ' + e.signal + ' — least-trustworthy walk (oracle-calibrated)' });
          });
     }
+    // §GM-SURFACE (RESUME_MODELLER_POLISH_BATCH.md §P1 — Witness: W-GM-SURFACE): the ARC seed's geomap
+    // audit (buildSeedOps → window.__gmSeedAudit[key], stashed by _seedArcEditable below) was console-only —
+    // "we computed something valuable and hid it". Same render idiom as the sw-conf/sw-lc calibrated-
+    // confidence rows above: one summary row + the top-6 most-anomalous flags (|z| desc). Read-only; no
+    // audit for the open building (bridge not ready / non-resident) ⇒ zero new rows, list byte-identical.
+    var gm = (window.__gmSeedAudit && window.__dwName) ? window.__gmSeedAudit[window.__dwName] : null;
+    if (gm && typeof gm.checked === 'number' && gm.checked > 0) {
+      var gmPct = gm.inBandRate != null ? Math.round(gm.inBandRate * 100) : null;
+      var nf = (gm.flagged || []).length;
+      rows.push({ id: 'sw-gm', label: 'Geomap ' + (gmPct != null ? gmPct + '% in-band' : gm.checked + ' checked'),
+        sub: nf ? ('⚠ ' + nf + ' outside own-class band · ' + gm.noBand + ' no-band')
+                : ('✓ all ' + gm.checked + ' in measured band · ' + gm.noBand + ' no-band') });
+      (gm.flagged || []).slice()
+        .sort(function (a, b) { return Math.abs(b.z) - Math.abs(a.z); })
+        .slice(0, 6)
+        .forEach(function (fl, i) {
+          rows.push({ id: 'sw-gmf' + i, low: true,
+            label: '⚠ z=' + (typeof fl.z === 'number' ? fl.z.toFixed(1) : fl.z) + '  ' +
+              String(fl.ifc_class).replace(/^Ifc/, '') + ' ' + String(fl.guid).slice(0, 10) + '…',
+            sub: fl.why || 'outside own-class measured band' });
+        });
+    }
     lastEx.forEach(function (e, i) {
       rows.push({ id: 'sw-ex' + i, label: '⛔ ' + e.oldSignal + '→' + e.newSignal + ' @' + e.span.toFixed(1) + 'm', sub: e.message });
     });

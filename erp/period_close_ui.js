@@ -65,7 +65,34 @@
     });
   }
 
-  // close — fold the live ops → signed checkpoint → compact → re-persist the sidecar. Returns a Promise.
+  // _archiveSink(period) — the CONFIRMED cold-archive the T3 gate requires before the compaction DELETE.
+  // Serializes the full pre-close signed log to a `.log.json` and hands it to the browser download; the
+  // artifact exists BEFORE any history is dropped. Any failure → {ok:false} → closePeriod compacts NOTHING
+  // (the live log keeps its full history — never a silent loss). A caller may inject opts.archiveSink to
+  // route to CAS/OCI instead. Stronger operator-confirms-saved is a future hardening; a produced download
+  // already closes the audit's T3 timebomb (delete-without-archive).
+  function _archiveSink(period) {
+    return function (snapshot) {
+      try {
+        var name = 'period-' + period + '-close-archive.log.json';
+        var payload = { kind: 'PERIOD_CLOSE_ARCHIVE', period: period, ops: snapshot, count: snapshot.length };
+        var blob = new global.Blob([JSON.stringify(payload)], { type: 'application/json' });
+        var url = global.URL.createObjectURL(blob);
+        var a = global.document.createElement('a');
+        a.href = url; a.download = name;
+        (global.document.body || global.document.documentElement).appendChild(a);
+        a.click(); a.remove();
+        setTimeout(function () { try { global.URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+        console.log(TAG + ' archive written ' + name + ' ops=' + snapshot.length + ' (T3 gate satisfied)');
+        return Promise.resolve({ ok: true, ref: name });
+      } catch (e) {
+        console.warn(TAG + ' archive FAILED — compaction will be skipped, history retained', e && e.message);
+        return Promise.resolve({ ok: false, reason: (e && e.message) || 'archive write failed' });
+      }
+    };
+  }
+
+  // close — fold the live ops → signed checkpoint → (archive-gated) compact → re-persist the sidecar. Promise.
   function close(opts) {
     opts = opts || {};
     if (!_ready()) return Promise.reject(new Error('period-close: engine/signer/crud not loaded'));
@@ -75,10 +102,12 @@
           if (!db) { reject(new Error('period-close: no sidecar db')); return; }
           var period = (opts.period != null) ? opts.period : _nextPeriod(db);
           var ts = (opts.ts != null) ? opts.ts : _stamp();   // recorded close ts (deterministic INPUT)
-          Promise.resolve(global.ErpPeriodClose.closePeriod(db, global.KernelOps, signer, { period: period, ts: ts }))
+          var archiveSink = (typeof opts.archiveSink === 'function') ? opts.archiveSink : _archiveSink(period);
+          Promise.resolve(global.ErpPeriodClose.closePeriod(db, global.KernelOps, signer, { period: period, ts: ts, archiveSink: archiveSink }))
             .then(function (res) {
               if (global.__crud && typeof global.__crud.persist === 'function') global.__crud.persist();
-              console.log(TAG + ' closed period=' + res.period + ' archived=' + res.archived + '→live=' + res.liveLen +
+              console.log(TAG + ' closed period=' + res.period + ' compacted=' + res.compacted +
+                          ' archived=' + res.archived + '→live=' + res.liveLen + ' archiveRef=' + (res.archive_ref || 'none') +
                           ' accounts=' + Object.keys(res.closing_balances).length +
                           ' closing=' + JSON.stringify(res.closing_balances) +
                           ' tip=' + (res.tip || '').slice(0, 12) + '… signed=' + (res.sig ? 'Y' : 'N') + ' by=' + res.signed_by);

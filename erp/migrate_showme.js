@@ -175,11 +175,16 @@
       _$('ms-copy').innerHTML = 'Copied ' + _ico('check', 12);
     };
   }
+  // Implementing prompts/CODEBASE_QUALITY_AUDIT_2026-07-02.md §5 (bim-compiler) — Witness: W-XSS-FILENAME.
+  // Filenames come from the user's <input type=file>; same _escHtml as erp/ad_ui.js.
+  function _escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
   function _wireWatch() {
     var inp = _$('ms-db'); if (!inp) return;
     inp.onchange = function () {
       var f = inp.files && inp.files[0]; if (!f) return;
-      var stream = _$('ms-stream'); stream.innerHTML = '<div class="ms-dim">Reading ' + f.name + '…</div>';
+      var stream = _$('ms-stream'); stream.innerHTML = '<div class="ms-dim">Reading ' + _escHtml(f.name) + '…</div>';
       f.arrayBuffer().then(function (ab) {
         var bytes = new Uint8Array(ab);
         _sha256(bytes).then(function (h) { _hashes.push(h); });
@@ -259,5 +264,5 @@
     document.head.appendChild(s);
   }
 
-  window.MigrateShowMe = { open: open, close: close };
+  window.MigrateShowMe = { open: open, close: close, _escHtml: _escHtml };
 })();

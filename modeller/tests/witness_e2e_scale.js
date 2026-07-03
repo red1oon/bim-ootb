@@ -38,10 +38,14 @@ runE2E('W-E2E-SCALE', async (t) => {
   await t.frameElement(sel.fid, 0.3);   // §F2-FRAMING (spec G4): element close-up; drag px are projected AFTER this, so the drag stays valid
   await t.shot('02-gizmo');
 
-  // Drag the cube outward +X by ~0.6·ext (f≈1.5 after 0.25-snap). down = cube px; up = (cube + Δx) px.
+  // Drag the cube OUTWARD along its own axis by ~0.6·ext (f≈1.5 after 0.25-snap). §Q1: the scaleX cube sits on
+  // the insert's LOCAL x (netYawDeg) — this Duplex wall carries yaw=180°, so "outward" is centre→cube, NOT
+  // world +X (the old world-+X drag became an inward shrink and honestly flagged the change, fx=0.5).
   const dxWorld = Math.max(0.6, 0.6 * ext0);
+  const od = [giz.cube[0] - giz.centre[0], giz.cube[1] - giz.centre[1], giz.cube[2] - giz.centre[2]];
+  const oL = Math.hypot(od[0], od[1], od[2]) || 1;
   const down = await t.proj(giz.cube[0], giz.cube[1], giz.cube[2]);
-  const up = await t.proj(giz.cube[0] + dxWorld, giz.cube[1], giz.cube[2]);
+  const up = await t.proj(giz.cube[0] + od[0] / oL * dxWorld, giz.cube[1] + od[1] / oL * dxWorld, giz.cube[2] + od[2] / oL * dxWorld);
   const before = await t.oplog();
   await t.drag(down, up, 10);                                   // real mouse down→move→up on the cube
   await t.sleep(1500);                                          // full-chain re-fold (253 ops) settles

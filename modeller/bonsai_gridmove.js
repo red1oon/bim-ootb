@@ -72,20 +72,28 @@
         commands = ride.commands; riders = ride.riders;
         if (riders.length) console.log(TAG + ' §STRETCH-RIDE stripped=' + riders.length + ' rider cmd(s) → induced move instead: ' + riders.map(r => r.featureId).join(','));
       }
+      // §P8 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-GESTURE-UNDO): with riders, the stretch + its
+      // induced rider moves are ONE user gesture — commit them as ONE signed gesture group so a single
+      // Ctrl+Z reverts the whole thing (before: GEOM_GRID_MOVE then N separate GEOM_MOVEs = N+1 undos, a
+      // half-reverted stretch in between). Rider ops stay byte-identical GEOM_MOVE {parent,d*,induced} rows —
+      // only the grouping changes. Zero riders ⇒ the existing single-op path below, untouched.
+      if (riders.length && window.Bonsai.oplog.commitGesture) {
+        const ops = [{ op_type: 'GEOM_GRID_MOVE', params: { gridId, delta, commands } }]
+          .concat(riders.map(r => ({ op_type: 'GEOM_MOVE',
+            params: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } })));
+        const gres = await window.Bonsai.oplog.commitGesture(ops);
+        console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
+          ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount);
+        riders.forEach(r => console.log(TAG + ' §STRETCH-RIDE hosted-by rider=' + r.featureId + ' induced dx=' + r.dx.toFixed(3) +
+          ' dy=' + r.dy.toFixed(3) + ' dz=' + r.dz.toFixed(3) + ' (in gesture group)'));
+        return { ...gres, commands, riders };
+      }
       const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_GRID_MOVE',
         parameters: { gridId, delta, commands } }, {});
       // The authoring gridline advances via Grid.foldFromOplog — a FOLD of the op-log fired on this commit's
       // bonsai:oplog event — NOT mutated here, so undo/redo/scrub revert it deterministically (M1 fix).
       console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
         ' verify=' + res.verify + ' tris=' + res.triangleCount);
-      // §STRETCH-RIDE: one induced GEOM_MOVE per rider, same signed-op idiom as commitMove's hosted-by ride
-      // (modeller.html commitMove ~line 1532-1534) — a SEPARATE op so undo/scrub/rosetta treat it like any move.
-      for (const r of riders) {
-        const rr = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE',
-          parameters: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } }, {});
-        console.log(TAG + ' §STRETCH-RIDE hosted-by rider=' + r.featureId + ' induced dx=' + r.dx.toFixed(3) +
-          ' dy=' + r.dy.toFixed(3) + ' dz=' + r.dz.toFixed(3) + ' verify=' + rr.verify);
-      }
       return { ...res, commands, riders };
     }
   };
