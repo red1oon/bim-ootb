@@ -49,6 +49,7 @@ function submit(log, args) {
   var op = _op(args.id, args.ts, args.author, args.role, 'SUBMIT', args.doc,
     { group: group, amount: args.amount, legal: args.legal != null ? args.legal : '',
       to: 'Submitted', fields: args.fields });
+  if (args.attrib) op.params.attrib = args.attrib;   // T1: {emp, dev} PIN attribution — signed with the op
   return { ok: true, log: _append(log, op), op: op, group: group };
 }
 
@@ -59,6 +60,7 @@ function approve(log, args) {
   var op = _op(args.id, args.ts, args.author, args.role, 'APPROVE', args.doc,
     { group: args.group != null ? args.group : args.doc, legal: args.legal != null ? args.legal : '',
       to: 'Approved' });
+  if (args.attrib) op.params.attrib = args.attrib;   // T1: {emp, dev} PIN attribution — signed with the op
   return { ok: true, log: _append(log, op), op: op };
 }
 
@@ -95,12 +97,23 @@ function coSignState(ops, doc, opts) {
   var base = { doc: doc, maker: maker.author, group: group, amount: amount };
 
   // the binding checker: an APPROVE on the same group, after the maker, by a DIFFERENT eligible author.
-  var checker = null, sawSelf = false, sawIneligible = false;
+  // T1 (W-T1-ATTRIB, FABLE5_WRAPUP §3): attribution-aware four-eyes. When BOTH ops carry recorded PIN
+  // attribution (params.attrib = {emp, dev} — audit metadata, signed with the op), enforce at EMPLOYEE
+  // and DEVICE grain: same emp = self-approval even across devices/typed names; same dev = one keyboard
+  // typed both identities (the "two typed names" bypass the audit flagged). opts.attribRequired makes an
+  // UNATTRIBUTED op ineligible entirely (PIN-at-action-time policy). Absent attribution + no flag →
+  // behaviour identical to before (back-compat, W-COSIGN unchanged). NON-INVENT: never flips on a guess.
+  var mA = (maker.params || {}).attrib || null;
+  var checker = null, sawSelf = false, sawIneligible = false, sawSameDevice = false, sawUnattributed = false;
   approvals.forEach(function (op) {
     if (checker) return;
     if ((op.params || {}).group !== group) return;             // must bind THIS submission
     if (op.ts < maker.ts) return;                              // an approval can't precede its submission
-    if (op.author === maker.author) { sawSelf = true; return; }            // four-eyes breach
+    var cA = (op.params || {}).attrib || null;
+    if (opts.attribRequired && (!mA || !cA)) { sawUnattributed = true; return; }   // PIN identity mandatory
+    if (mA && cA && cA.emp === mA.emp) { sawSelf = true; return; }        // same employee (PIN) — four-eyes breach
+    if (mA && cA && cA.dev === mA.dev) { sawSameDevice = true; return; }  // same device typed both identities
+    if (op.author === maker.author) { sawSelf = true; return; }            // four-eyes breach (name grain)
     if (!eligible(op.author, op.role)) { sawIneligible = true; return; }    // not an eligible checker
     checker = op;
   });
@@ -111,6 +124,8 @@ function coSignState(ops, doc, opts) {
       reason: 'co-signed: ' + maker.author + ' → ' + checker.author });
   return Object.assign(base, { status: 'Submitted',
     reason: sawSelf ? 'REFUSE: self-approval (four-eyes)'
+      : sawSameDevice ? 'REFUSE: same device (four-eyes needs two devices)'
+      : sawUnattributed ? 'REFUSE: checker/maker unattributed (PIN identity required)'
       : sawIneligible ? 'REFUSE: checker not eligible'
       : 'awaiting checker' });
 }

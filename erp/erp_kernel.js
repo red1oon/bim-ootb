@@ -190,6 +190,10 @@ function apply(db, ops, ctx) {
     var res = applyOne(db, op, state);
     // RICH op (§0.6 keystone): payload (now carrying the recorded uuid) + actor + before/after + lineage GUIDs.
     var rich = { payload: op, actor: actor, before: res.before, after: res.after, lineage: { input_guids: res.input_guids, output_guid: res.output_guid } };
+    // T1 (W-T1-ATTRIB, FABLE5_WRAPUP §3): employee attribution rides the CONTENT-SIGNED parameters as
+    // audit metadata — user_tag stays the device actor (owner-gate grain unchanged), the sig stays the
+    // device key. Conditional: absent ctx.attrib → byte-identical rich op (back-compat, default-off).
+    if (ctx.attrib) rich.attrib = ctx.attrib;
     db.run('INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid, user_tag) VALUES (?,?,?,?,?,?,?)',
       [op.op_uuid, ts + gseq, op.op_type, JSON.stringify(rich), JSON.stringify(res.input_guids), res.output_guid, actor]);
     committed++; ids.push(res.output_guid);

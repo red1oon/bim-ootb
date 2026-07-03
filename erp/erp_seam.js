@@ -138,7 +138,8 @@ function makeSeam(cfg) {
     }
     // (c) apply through the kernel (state-machine legal → handler → kernel-owned write).
     var cellCtx = { wfmc: wfmc, guards: [], query: function (s, p) { return projQ(projDb, s, p); },
-                    actor: ctx.actor || 'local', baseTs: intent.baseTs || 5000 };
+                    actor: ctx.actor || 'local', baseTs: intent.baseTs || 5000,
+                    attrib: ctx.attrib || null };   // T1: employee PIN attribution → rich op (audit metadata)
     var doc = {}; Object.keys(intent).forEach(function (k) { doc[k] = intent[k]; });
     var r = K.dispatch(projDb, cellCtx, doc);
     if (!r.ok) return { rejected: true, why: r.stage + ':' + r.reason };
