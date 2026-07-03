@@ -82,7 +82,7 @@
     // Forward-reconciled from the app's erp/ copy on the §INTEG-COLLAPSE (2026-06-08); the substrate's
     // byte-stable period-close replay depends on it. See prompts/ERP_SUBSTRATE_INTEGRATION.md §ARCHIVE.
     var stamp = (ts != null) ? ts : Date.now();
-    var vParams = _stamp(opType, params);                  // D2: brand schema version into params (signed) if wired
+    var vParams = _stampSigv(_stamp(opType, params));      // D2 schema version + T2 `_sigv:2` (both signed facts)
     db.run(
       'INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid) ' +
       'VALUES (?, ?, ?, ?, ?, ?)',
@@ -181,6 +181,66 @@
   // never in this module. Leave unset for W-CHAIN-only (tamper-evidence without signatures).
   function setSigner(signer) { _signer = signer; }
 
+  // T2 (prompts/KERNEL_HARDENING_BATCH1_SPEC.md §NEXT SESSION, bim-compiler) — Witness: W-CONTENT-SIGN.
+  // CONTENT-ADDRESSED SIGNING, additive-version (no flag-day, history never re-signed):
+  //   v1 (default, everything before T2): sig attests over op_hash — which hashes _canonical incl. the
+  //       LOCAL rowid `id`, so any renumbering (a merge) breaks every signature (§T2 permanence trap).
+  //   v2 (opt-in via setContentSigning(true)): NEW ops are stamped `_sigv:2` INSIDE parameters (a SIGNED
+  //       fact, same pattern as D2's `_sv`) and their sig attests over sha256('cs2|' + _canonicalV2(op))
+  //       — a JSON-canonical payload with NO id and NO prev_hash, so the sig survives id shifts and is
+  //       the merge/roster trust object (T1). The CHAIN (op_hash) formula is UNCHANGED for all rows —
+  //       v1 canonical incl. id stays the local integrity+order layer; only what the sig ATTESTS differs.
+  //   Gate = dedicated `_sigv`, NOT D2's `_sv`: `_sv` is the per-op-type SCHEMA version (op_upcaster.js);
+  //       reusing it would flip signature semantics whenever an op type's schema bumps — wrong coupling.
+  //   Coverage: _canonicalV2 keeps input_guids/output_guid (the spec's shorthand field list omitted them;
+  //       dropping them would let a re-sealed exported branch alter guids without breaking the sig —
+  //       NEVER shrink signed coverage). `actor` (user_tag, default 'local') is a PLACEHOLDER field —
+  //       identity binds to it in T1 (roster), it is just part of the signed payload here.
+  var _sigCanonical = 1;
+  function setContentSigning(on) { _sigCanonical = on ? 2 : 1; }
+
+  // stable, RECURSIVELY key-sorted serialization — MUST AGREE byte-for-byte with teams/connectors.js
+  // stableStringify (the teams canonical): one algorithm across kernel + teams closes the '|' delimiter
+  // injection (two field partitions can no longer collide to one signed payload — W-CONTENT-SIGN §CS-DELIM).
+  function stableStringify(v) {
+    if (v === null || v === undefined || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+    if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
+    return '{' + Object.keys(v).sort().map(function (k) {
+      return JSON.stringify(k) + ':' + stableStringify(v[k]);
+    }).join(',') + '}';
+  }
+
+  // _canonicalV2 — the content-addressed signable payload. Field values are the STORED column values
+  // verbatim (parameters as its stored TEXT — never reparsed/renormalised, so the hash is stable).
+  function _canonicalV2(op) {
+    return stableStringify({
+      actor: (op.user_tag != null ? op.user_tag : 'local'),   // placeholder until T1 binds identity
+      in_guids: (op.input_guids != null ? op.input_guids : null),
+      op_type: op.op_type,
+      op_uuid: (op.op_uuid != null ? op.op_uuid : null),
+      out_guid: (op.output_guid != null ? op.output_guid : null),
+      params: (op.parameters != null ? op.parameters : null),
+      ts: op.timestamp
+    });
+  }
+  // 'cs2|' domain-separates the content hash from chain hashes (a sig over one can never replay as the other).
+  function _contentHash(op) { return _sha256('cs2|' + _canonicalV2(op)); }
+
+  // _isV2(paramStr) — is this row content-signed? Read the SIGNED `_sigv` marker out of stored parameters.
+  function _isV2(paramStr) {
+    if (typeof paramStr !== 'string' || paramStr.indexOf('"_sigv"') === -1) return false;
+    try { return JSON.parse(paramStr)._sigv === 2; } catch (e) { return false; }
+  }
+  // _sigBase — the message a row's signature attests: v2 → content hash; v1 → the chain hash (as before).
+  function _sigBase(op, chainHash) { return _isV2(op.parameters) ? _contentHash(op) : Promise.resolve(chainHash); }
+  // stamp `_sigv:2` into an op's params OBJECT when content-signing is on (copy — never mutate the caller's).
+  function _stampSigv(params) {
+    if (_sigCanonical !== 2 || !params || typeof params !== 'object') return params;
+    var out = {}; for (var k in params) if (Object.prototype.hasOwnProperty.call(params, k)) out[k] = params[k];
+    out._sigv = 2;
+    return out;
+  }
+
   // D2 (prompts/D2_REMEDY_VERSIONING.md): an optional version-stamper that brands every NEW op's params with
   // its schema version BEFORE hashing — so the version is a signed fact. fn(opType, params) -> params'. Wired
   // by ERP.OpUpcaster.install(KernelOps) at app boot; UNSET = legacy behaviour (ops carry no _sv = version 1).
@@ -218,15 +278,16 @@
   // compaction keeps the chain correct over the current log. Signs ops lacking a sig if a signer is set.
   async function sealChain(db) {
     ensureTable(db);
-    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig FROM kernel_ops ORDER BY id');
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig,op_uuid,user_tag FROM kernel_ops ORDER BY id');
     if (!r.length) return { sealed: 0, tip: GENESIS };
     var rows = r[0].values, prev = GENESIS, sealed = 0;
     for (var i = 0; i < rows.length; i++) {
       var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
-                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5] };
+                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5],
+                 op_uuid: rows[i][7], user_tag: rows[i][8] };
       var sig = rows[i][6];
       var h = await _sha256(prev + '|' + _canonical(op));
-      if (_signer && !sig) { try { sig = await _signer.sign(h); } catch (e) { sig = null; } }
+      if (_signer && !sig) { try { sig = await _signer.sign(await _sigBase(op, h)); } catch (e) { sig = null; } }
       db.run('UPDATE kernel_ops SET prev_hash=?, op_hash=?, sig=? WHERE id=?', [prev, h, sig || null, op.id]);
       prev = h; sealed++;
     }
@@ -249,15 +310,16 @@
   async function sealFrom(db, fromTip) {
     ensureTable(db);
     var tip = fromTip || _lastSealedTip(db);
-    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig FROM kernel_ops WHERE id > ' + tip.id + ' ORDER BY id');
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig,op_uuid,user_tag FROM kernel_ops WHERE id > ' + tip.id + ' ORDER BY id');
     if (!r.length) { return { sealed: 0, tip: tip.hash, fromId: tip.id }; }
     var rows = r[0].values, prev = tip.hash, sealed = 0;
     for (var i = 0; i < rows.length; i++) {
       var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
-                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5] };
+                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5],
+                 op_uuid: rows[i][7], user_tag: rows[i][8] };
       var sig = rows[i][6];
       var h = await _sha256(prev + '|' + _canonical(op));
-      if (_signer && !sig) { try { sig = await _signer.sign(h); } catch (e) { sig = null; } }
+      if (_signer && !sig) { try { sig = await _signer.sign(await _sigBase(op, h)); } catch (e) { sig = null; } }
       db.run('UPDATE kernel_ops SET prev_hash=?, op_hash=?, sig=? WHERE id=?', [prev, h, sig || null, op.id]);
       prev = h; sealed++;
     }
@@ -355,7 +417,8 @@
     for (var i = 0; i < opsArray.length; i++) {
       var src = opsArray[i];
       var params = src.params != null ? src.params : src.parameters;
-      params = _stamp(src.op_type, params);                  // D2: brand schema version (signed) if wired
+      params = _stampSigv(_stamp(src.op_type, params));      // D2 schema version + T2 `_sigv:2` (object params only —
+                                                             // a pre-stringified params string stays v1-signed)
       // §I-J (W-RATE-INPUT) — currency-determinism precondition: a conversion-bearing op MUST carry its
       // recorded rate inputs (rate/rateDate/rateSource), else the WHOLE group is rejected (all-or-none,
       // commits NOTHING). Today nothing is conversion-bearing → inert but enforced. NEVER looks up a rate.
@@ -373,11 +436,13 @@
       var uuid = src.op_uuid || src.opUuid ||
                  ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null);
       var row = { id: nextId + i, timestamp: baseTs, op_type: src.op_type, parameters: paramStr,
-                  input_guids: inStr, output_guid: outG || null, op_uuid: uuid };
+                  input_guids: inStr, output_guid: outG || null, op_uuid: uuid,
+                  user_tag: 'local' };   // T2: must equal the column DEFAULT the INSERT below produces —
+                                         // _canonicalV2 hashes user_tag, staging and verify must agree.
       var h = await _sha256(prev + '|' + _canonical(row));
       row.op_hash = h; row.prev_hash = prev;
       var sig = null;
-      if (_signer) { try { sig = await _signer.sign(h); } catch (e) { sig = null; } }
+      if (_signer) { try { sig = await _signer.sign(await _sigBase(row, h)); } catch (e) { sig = null; } }
       row.sig = sig;
       staged.push(row); opHashes.push(h); prev = h;
     }
@@ -434,12 +499,13 @@
   // "tamper at op N" exactly as scripts/poc_chain.js does.
   async function verifyChain(db) {
     ensureTable(db);
-    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid FROM kernel_ops ORDER BY id');
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,op_uuid,user_tag FROM kernel_ops ORDER BY id');
     if (!r.length) return { ok: true, len: 0, tip: GENESIS };
     var rows = r[0].values, prev = GENESIS;
     for (var i = 0; i < rows.length; i++) {
       var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
-                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5] };
+                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5],
+                 op_uuid: rows[i][10], user_tag: rows[i][11] };
       var storedPrev = rows[i][6], storedHash = rows[i][7], sig = rows[i][8], gid = rows[i][9];
       var fail = null;
       if (storedHash == null) { fail = 'unsealed'; }
@@ -447,7 +513,8 @@
       else {
         var h = await _sha256(prev + '|' + _canonical(op));
         if (h !== storedHash) { fail = 'payload altered'; }
-        else if (_signer && !(await _signer.verify(storedHash, sig))) { fail = 'signature'; }
+        // T2 (W-CONTENT-SIGN): the sig attests the CONTENT hash for v2 rows, op_hash for v1 rows.
+        else if (_signer && !(await _signer.verify(await _sigBase(op, storedHash), sig))) { fail = 'signature'; }
       }
       if (fail) {
         // Implementing ENGINE_FULL_ERP_ISSUES.md §I-K — Witness: W-OPGROUP
@@ -675,8 +742,13 @@
     branchOps:    branchOps,     // BLUE FUTURE (W-BLUE-FUTURE): the ops of a speculative branch (id order)
     discardBranch: discardBranch, // BLUE FUTURE: shirk the blues — fold the whole branch away atomically
     acceptBranchUpTo: acceptBranchUpTo, // BLUE FUTURE: long-click a blue dot → accept-up-to-here (chain stays valid)
-    _storedTipIsAncestor: _storedTipIsAncestor // T6 (W-CROSS-TAB-PERSIST): the multi-tab clobber guard (pure)
+    _storedTipIsAncestor: _storedTipIsAncestor, // T6 (W-CROSS-TAB-PERSIST): the multi-tab clobber guard (pure)
+    setContentSigning: setContentSigning, // T2 (W-CONTENT-SIGN): opt NEW ops into v2 content-addressed sigs
+    stableStringify: stableStringify,     // T2: the shared canonical serializer (agrees with teams/connectors.js)
+    _canonicalV2: _canonicalV2,           // T2: content-addressed signable payload (no id/prev — merge-safe)
+    _contentHash: _contentHash,           // T2: sha256('cs2|' + _canonicalV2) — what a v2 sig attests (async)
+    _isV2: _isV2                          // T2: is this row content-signed? (reads the SIGNED _sigv marker)
   };
 
-  console.log('§KERNEL_OPS_LOADED v10 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard)');
+  console.log('§KERNEL_OPS_LOADED v11 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign)');
 })();
