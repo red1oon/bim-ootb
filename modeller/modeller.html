@@ -198,7 +198,7 @@
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=9" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=10" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
@@ -233,6 +233,9 @@
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
 <script src="disc_walker.js?v=6" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
+     walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
+<script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
 <script src="seed_trunk.js?v=1" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
 <!-- §TEAMS-EMBED — GATED Teams overlay over the live scene (teams/ROADMAP.md §S11). ONE inert guarded script:
      OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
@@ -819,11 +822,110 @@ window.Bonsai.setDiscVisible = (disc, vis) => {
   if (window.A && A.requestRender) A.requestRender();
   return n;
 };
+// ── §I5 PER-INSTANCE HIDE (Implementing prompts/SPEC_INSTANCE_HIDE.md §I5a-§I5e — Witness: W-E2E-INSTHIDE;
+// FABLE5_WRAPUP_2026-07-03 Item 5, the leg §V1 deferred per §DECISIONS-2). Hide ONE instance inside a walked
+// InstancedMesh bucket, keyed by the §Q2 identity (instanceId i ↔ dwSub[i] record). Technique: save the exact
+// instance matrix (16 floats) then write a ZERO-BASIS matrix (rotation/scale columns zeroed, translation kept)
+// → no fragments; show restores the saved floats VERBATIM (round-trip byte-equality, asserted). A record can be
+// instanced into SEVERAL buckets (_renderDiscWalk renders all/gated/clash overlays from the same records) — the
+// ref map is keyed by the RECORD, so hide/show hits every twin. Session LENS like §V1: a re-walk/re-fold that
+// rebuilds buckets resets it. Hidden instances are UNPICKABLE via the explicit pickAt filter (§I5c) — the
+// zero-basis degeneracy alone is NOT the contract.
+window.__dwInstVer = 0;                                   // bumped on every bucket build/clear → ref-map cache key
+let _instRefCache = null;
+function _instRefMap() {
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const root = g && g.children.find(o => o.userData && o.userData.dwRoot);
+  if (_instRefCache && _instRefCache.ver === window.__dwInstVer && _instRefCache.root === root) return _instRefCache.map;
+  const map = new Map();                                   // placement RECORD → [{im,i}] twins (§Q2 object identity)
+  if (root) root.children.forEach(im => {
+    if (!im.isInstancedMesh || !Array.isArray(im.userData.dwSub)) return;
+    im.userData.dwSub.forEach((p, i) => {
+      if (!p || typeof p !== 'object') return;
+      let a = map.get(p); if (!a) map.set(p, a = []);
+      a.push({ im: im, i: i });
+    });
+  });
+  _instRefCache = { ver: window.__dwInstVer, root: root, map: map };
+  return map;
+}
+const _ihM4 = new THREE.Matrix4();
+function _setInstanceHidden(im, i, hide) {
+  const hid = im.userData.dwHidden || (im.userData.dwHidden = new Set());
+  const store = im.userData.dwHiddenMat || (im.userData.dwHiddenMat = new Map());
+  if (hide === hid.has(i)) return false;                   // idempotent — never double-save (round-trip safety)
+  if (hide) {
+    im.getMatrixAt(i, _ihM4);
+    store.set(i, _ihM4.elements.slice());                  // the EXACT prior matrix — §I5b round-trip contract
+    const z = _ihM4.elements; for (let k = 0; k < 12; k++) z[k] = 0;   // zero basis, keep translation → no fragments
+    im.setMatrixAt(i, _ihM4);
+    hid.add(i);
+  } else {
+    const el = store.get(i); if (!el) return false;
+    im.setMatrixAt(i, _ihM4.fromArray(el));                // restore verbatim
+    store.delete(i); hid.delete(i);
+  }
+  im.instanceMatrix.needsUpdate = true;
+  return true;
+}
+window.Bonsai.isInstanceHidden = (im, i) => !!(im && im.userData && im.userData.dwHidden && im.userData.dwHidden.has(i));
+// §I5b-TWIN (measured, build/probe_frontmost.log): a committed walk placement ALSO folds an authored GEOM_INSERT
+// mesh at the SAME xyz (parameters._dw, _commitDiscWalk) which wins the raycast and fully covers the marker —
+// hiding only the instance changes ZERO pixels. The placement's fids are matched by _dw.disc + placement xyz
+// toFixed(4) (the exact rounding _commitDiscWalk wrote).
+function _dwTwinFids(disc, rec) {
+  const O = window.Bonsai.oplog; if (!O || !O._geomOps || rec.x == null) return [];
+  const kx = (+rec.x).toFixed(4), ky = (+rec.y).toFixed(4), kz = (+rec.z).toFixed(4);
+  const out = [];
+  (O._geomOps() || []).forEach(o => {
+    const pm = o.parameters;
+    if (pm && pm._dw && pm._dw.disc === disc && pm.placement &&
+        (+pm.placement.x).toFixed(4) === kx && (+pm.placement.y).toFixed(4) === ky && (+pm.placement.z).toFixed(4) === kz) out.push(o.id);
+  });
+  return out;
+}
+// Outliner seam (§I5d): hide/show ONE walked placement (disc + index into window.__dwWalks[disc]; asm=true →
+// window.__dwAssembly[disc], §I5b-ASM) across every bucket that instanced it, PLUS its folded authored _dw
+// twin mesh(es) (§I5b-TWIN — without this leg the eye visibly does nothing, measured probe_pixels.log 0/12).
+// Returns the number of twins toggled — 0 = nothing to act on (honest no-op).
+window.Bonsai.setPlacementVisible = (disc, idx, vis, asm) => {
+  const rec = (asm ? ((window.__dwAssembly && window.__dwAssembly[disc]) || [])
+                   : ((window.__dwWalks && window.__dwWalks[disc]) || []))[idx];
+  if (!rec) return 0;
+  const refs = _instRefMap().get(rec) || [];
+  let n = 0;
+  refs.forEach(ref => { if (_setInstanceHidden(ref.im, ref.i, !vis)) n++; });
+  if (!asm) _dwTwinFids(disc, rec).forEach(fid => { if (window.Bonsai.setFeatureVisible(fid, vis)) n++; });
+  if (n) {
+    if (window.A && A.requestRender) A.requestRender();
+    console.log('§INSTHIDE disc=' + disc + ' idx=' + idx + ' vis=' + !!vis + ' asm=' + !!asm + ' twins=' + n);
+  }
+  return n;
+};
+// §I5d: a "Walked Fixtures" Outliner row CLICK identifies (the SAME production pickInstance a canvas pick uses)
+// + frames its instance — instead of the stale "no 3D pick" toast. dwp|<disc>|<idx> (walk) / dwa|… (assembly).
+window.Bonsai.frameInstanceRow = (rowId) => {
+  const m = /^(dwp|dwa)\|(.+)\|(\d+)$/.exec(String(rowId || '')); if (!m) return false;
+  const rec = (m[1] === 'dwa' ? ((window.__dwAssembly && window.__dwAssembly[m[2]]) || [])
+                              : ((window.__dwWalks && window.__dwWalks[m[2]]) || []))[+m[3]];
+  if (!rec) return false;
+  const refs = _instRefMap().get(rec) || []; if (!refs.length) return false;
+  pickInstance(refs[0].im, refs[0].i);
+  const x = rec.x != null ? rec.x : (rec.pos ? rec.pos[0] : 0),
+        y = rec.y != null ? rec.y : (rec.pos ? rec.pos[1] : 0),
+        z = rec.z != null ? rec.z : (rec.pos ? rec.pos[2] : 0);
+  return _frameTo(new THREE.Vector3(x, y, z), 1.5, m[1] + '=' + m[2] + '/' + m[3]);
+};
 window.Bonsai.setAllVisible = () => {                     // reset before deterministically re-applying every hidden subtree
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   g.children.forEach(o => {
     if (o.isMesh && o.userData.featureId != null) o.visible = true;
-    if (o.userData && o.userData.dwRoot) o.children.forEach(c => { c.visible = true; });
+    if (o.userData && o.userData.dwRoot) o.children.forEach(c => {
+      c.visible = true;
+      // §I5: the reset leg also restores every per-instance hide (then _applyHidden re-applies the hidden set)
+      if (c.isInstancedMesh && c.userData.dwHidden && c.userData.dwHidden.size)
+        Array.from(c.userData.dwHidden).forEach(i => _setInstanceHidden(c, i, false));
+    });
   });
   _selOutlines.forEach(o => { o.line.visible = true; });
   if (window.A && A.requestRender) A.requestRender();
@@ -974,7 +1076,15 @@ function pickAt(clientX, clientY, opts) {
   raycaster.setFromCamera(ndc, camera);
   // §V1: o.visible filter — hidden means hidden (unpickable), see _dwPickables note.
   const list = g.children.filter(o => o.isMesh && o.visible).concat(_dwPickables(opts && opts.hover));
-  return raycaster.intersectObjects(list, false)[0] || null;   // sorted by distance — nearest wins, authored or instanced
+  // §I5c (W-E2E-INSTHIDE c): a hidden INSTANCE is unpickable too — skip its hits so the ray falls through to
+  // the object behind (or nothing). §V1's bucket-level filter stays in _dwPickables; this is the per-instance
+  // leg, and it covers EVERY hover/click/shift-click path (they all raycast through here).
+  const hits = raycaster.intersectObjects(list, false);   // sorted by distance — nearest SURVIVING hit wins
+  for (let k = 0; k < hits.length; k++) {
+    if (hits[k].object.isInstancedMesh && window.Bonsai.isInstanceHidden(hits[k].object, hits[k].instanceId)) continue;
+    return hits[k];
+  }
+  return null;
 }
 // ── MARQUEE (shift-drag box) ───────────────────────────────────────────────────────────────────
 // Bare left-drag is OrbitControls' rotate, so SHIFT is the multi gesture (no conflict). A CAPTURE-phase pointerdown
@@ -2583,6 +2693,7 @@ if (!window.SQL && window.initSqlJs) {
 // resident or a local .db. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-1/§W-UX-3.
 if (window.BOMTreeOutliner) window.BOMTreeOutliner.register();   // ARC = the lead containment tree
 if (window.STRWalkerOutliner) window.STRWalkerOutliner.register();   // STR Walker result tab + grid-drag re-walk
+if (window.DWInstancesOutliner) window.DWInstancesOutliner.register();   // §I5 Walked Fixtures — per-instance rows/eyes
 console.log('§MODELLER outliner ready — ARC (bom-graph) leads + STR Walker tab (Open via the pill rail)');
 
 // ── DISC = WALKER (W-UX-4): a discipline node in the bom-graph is a WALKER entry point. Clicking it dispatches
@@ -2702,6 +2813,7 @@ function _clearDiscWalk(disc) {
   root.children.slice().forEach(function (o) { if (o.userData && (o.userData.dwDisc === disc || o.userData.dwAsm === disc)) root.remove(o); });
   delete window.__dwWalks[disc];
   if (window.__dwAssembly) delete window.__dwAssembly[disc];
+  window.__dwInstVer++;   // §I5: bucket set changed → invalidate the record→(im,i) ref map
 }
 // §LOD-SEAM (docs/WalkerDoctrine.md §5): a GENERATED fixture's render geometry is selected by its semantic
 // prim KIND (disc_walker._primFor → p.prim: sprinkler/diffuser/light/outlet/alarm/valve/run/box). POC = a BOX
@@ -2802,6 +2914,7 @@ function _renderDiscWalk(disc, placements) {
       (enriched[0].connector.assembly_id + ' ' + enriched[0].connector.face + '→' + enriched[0].connector.connects_to) +
       ', standoff=' + enriched[0].standoff_m + 'm)');
   }
+  window.__dwInstVer++;   // §I5: fresh buckets → invalidate the record→(im,i) ref map (hidden lens resets, §V1 doctrine)
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   console.log('§DW-PRIM-LOD disc=' + disc + ' lod300=' + lod300N + ' lod200=' + lod200N +
     ' (Bug-2 partial fix: lod300=matched real catalog mesh, lod200=unchanged POC box; honest gap, not silently "fixed")');
@@ -2937,6 +3050,7 @@ function _renderDiscAssembly(disc, parts) {
   var root = _dwRoot(); if (!root) return;
   root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwAsm === disc) root.remove(o); });   // clear prior
   window.__dwAssembly[disc] = parts;
+  window.__dwInstVer++;   // §I5: bucket set changed (cleared here, maybe rebuilt below) → invalidate the ref map
   if (!parts || !parts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
   var base = DW_COLOR[disc] || 0xc0c0c0;
   var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.4, metalness: 0.2, roughness: 0.5 });
@@ -2976,6 +3090,7 @@ function _renderDiscAssembly(disc, parts) {
   }
   console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' classes=' + Object.keys(byCls).length +
     ' connectorEdges=' + (verts.length / 6));
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();   // §I5d: assembly parts get Walked-Fixtures rows too
   if (window.A && A.requestRender) A.requestRender();
 }
 // Cross-disc gate: re-fold ALL currently-walked disciplines through the measured place-order + clearances
