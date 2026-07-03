@@ -597,7 +597,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      overlay fetches crud_ops.json at enable. The host adapter (in the inline script below) provides
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
-<script src="crud_overlay.js?v=19"></script>
+<!-- T7 (W-T7-INC): memoized tip-folds (fix 3) + signed shard boundary (fix 4/4b) — load BEFORE crud_overlay so it delegates. -->
+<script src="tip_fold.js?v=1"></script>
+<script src="erp_shard.js?v=1"></script>
+<script src="crud_overlay.js?v=20"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order

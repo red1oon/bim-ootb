@@ -123,7 +123,10 @@
   // '<dbUrl>::tip' key records the stored chain tip so the guard is O(1), no blob re-open.
   var _persistTimer = null;
   function _idbPersist(db, dbUrl) {
-    return sealChain(db).then(function() {
+    // T7 fix 1 (W-T7-INC, prompts/T7_INCREMENTAL_SHARD_SPEC.md): seal INCREMENTALLY on the persist
+    // path — sealFrom is O(new ops), sealChain was O(whole log) on every debounced persist. Full
+    // sealChain remains the post-compaction/post-import/post-shard re-seal (those renumber/delete).
+    return sealFrom(db).then(function() {
       var myTip = _lastSealedTip(db).hash;
       var buf = db.export().buffer;
       return new Promise(function(resolve) {
@@ -526,15 +529,72 @@
           var gFirst = db.exec('SELECT MIN(id) FROM kernel_ops WHERE gid = ' + JSON.stringify(gid));
           var brokeAt = (gFirst.length && gFirst[0].values.length) ? gFirst[0].values[0][0] : op.id;
           console.log('§KRN_CHAIN group-torn gid=' + gid + ' failAt id=' + op.id + ' why=' + fail + ' brokeAt(group)=' + brokeAt);
+          db.__krnVerifiedTip = null;                                    // T7: a broken chain must never warm the cache
           return { ok: false, brokeAt: brokeAt, why: 'group torn', gid: gid, opFail: fail, failAt: op.id };
         }
         console.log('§KRN_CHAIN verify ' + fail + ' at id=' + op.id);
+        db.__krnVerifiedTip = null;                                      // T7: a broken chain must never warm the cache
         return { ok: false, brokeAt: op.id, why: fail };
       }
       prev = storedHash;
     }
     console.log('§KRN_CHAIN verify OK len=' + rows.length + ' tip=' + prev.slice(0, 12) + '…');
+    db.__krnVerifiedTip = { id: rows[rows.length - 1][0], hash: prev };  // T7 fix 2: warm the incremental cache
     return { ok: true, len: rows.length, tip: prev };
+  }
+
+  // T7 fix 2 (W-T7-INC, FABLE5_WRAPUP §4 / prompts/T7_INCREMENTAL_SHARD_SPEC.md): tip-cached
+  // incremental verify for the HOT paths (per-SEND/save/DocAction full-log verify was O(history)
+  // with per-op ECDSA — the audit's 1-5s-per-sale climb). The FIRST verify of a session is always
+  // FULL (cold cache delegates to verifyChain, which warms it); after that only rows PAST the cached
+  // verified tip are re-checked, seeded off an O(1) guard that the cached row still holds the cached
+  // hash (catches deletes/re-seals/sharding under our feet → falls back to full).
+  // SEMANTICS (witnessed §T7-VERIFY): the prefix is trusted because THIS session already verified it
+  // against the same in-RAM db; an in-RAM tamper BEHIND the tip is caught by the next FULL verify
+  // (boot, restore, import, snapshot) — the same trust window full-verify-per-action had BETWEEN
+  // two actions. Boot/import/merge paths must keep calling verifyChain.
+  async function verifyChainIncremental(db) {
+    ensureTable(db);
+    var c = db.__krnVerifiedTip;
+    if (!c || !c.id) return verifyChain(db);
+    var g = db.exec('SELECT op_hash FROM kernel_ops WHERE id = ' + Number(c.id));
+    if (!g.length || !g[0].values.length || g[0].values[0][0] !== c.hash) {
+      db.__krnVerifiedTip = null;                       // log changed shape under the cache → FULL verify
+      return verifyChain(db);
+    }
+    var total = db.exec('SELECT COUNT(*) FROM kernel_ops')[0].values[0][0];
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,op_uuid,user_tag FROM kernel_ops WHERE id > ' + Number(c.id) + ' ORDER BY id');
+    if (!r.length || !r[0].values.length) return { ok: true, len: total, tip: c.hash, incremental: true, checked: 0 };
+    var rows = r[0].values, prev = c.hash;
+    for (var i = 0; i < rows.length; i++) {
+      var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
+                 parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5],
+                 op_uuid: rows[i][10], user_tag: rows[i][11] };
+      var storedPrev = rows[i][6], storedHash = rows[i][7], sig = rows[i][8], gid = rows[i][9];
+      var fail = null;
+      if (storedHash == null) { fail = 'unsealed'; }
+      else if (storedPrev !== prev) { fail = 'prev_hash link'; }
+      else {
+        var h = await _sha256(prev + '|' + _canonical(op));
+        if (h !== storedHash) { fail = 'payload altered'; }
+        else if (_signer && !(await _signer.verify(await _sigBase(op, storedHash), sig))) { fail = 'signature'; }
+      }
+      if (fail) {
+        db.__krnVerifiedTip = null;
+        if (gid != null) {                              // same group-torn rule as the full verify
+          var gFirst = db.exec('SELECT MIN(id) FROM kernel_ops WHERE gid = ' + JSON.stringify(gid));
+          var brokeAt = (gFirst.length && gFirst[0].values.length) ? gFirst[0].values[0][0] : op.id;
+          console.log('§KRN_CHAIN verify-incr group-torn gid=' + gid + ' failAt id=' + op.id + ' why=' + fail + ' brokeAt(group)=' + brokeAt);
+          return { ok: false, brokeAt: brokeAt, why: 'group torn', gid: gid, opFail: fail, failAt: op.id };
+        }
+        console.log('§KRN_CHAIN verify-incr ' + fail + ' at id=' + op.id);
+        return { ok: false, brokeAt: op.id, why: fail };
+      }
+      prev = storedHash;
+    }
+    db.__krnVerifiedTip = { id: rows[rows.length - 1][0], hash: prev };
+    console.log('§KRN_CHAIN verify-incr OK checked=' + rows.length + ' skipped=' + (total - rows.length) + ' tip=' + prev.slice(0, 12) + '…');
+    return { ok: true, len: total, tip: prev, incremental: true, checked: rows.length };
   }
 
   /**
@@ -735,6 +795,8 @@
     sealFrom:     sealFrom,      // §I-K (W-OPGROUP): incremental seal-from-tip (the I-D flattening)
     commitGroup:  commitGroup,   // §I-K (W-OPGROUP): N ops, ONE group hash, all-or-none, sealed once (async)
     verifyChain:  verifyChain,   // W-CHAIN/W-SIGN: prove tamper-evidence (async)
+    verifyChainIncremental: verifyChainIncremental, // T7 (W-T7-INC): tip-cached hot-path verify (async)
+    _canonical:   _canonical,    // T7: the v1 chain canonical (erp_shard.js re-verifies archived shards with it)
     setSigner:    setSigner,     // W-SIGN: install an edge signer (opt-in)
     setOpEmitter: setOpEmitter,  // §S7 (W-EMIT): install an OPTIONAL post-commit op-event emitter (Teams, opt-in)
     setVersionStamper: setVersionStamper, // D2: install a schema-version stamper (opt-in; ERP.OpUpcaster.install)
@@ -750,5 +812,5 @@
     _isV2: _isV2                          // T2: is this row content-signed? (reads the SIGNED _sigv marker)
   };
 
-  console.log('§KERNEL_OPS_LOADED v11 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign)');
+  console.log('§KERNEL_OPS_LOADED v12 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental)');
 })();
