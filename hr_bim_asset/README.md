@@ -73,7 +73,27 @@ globals) before `hba_lens.js` in `viewer/viewer.html`. Witnessed — `tests/witn
 Remaining: live 3D Playwright/deploy smoke. *Known v1 limits:* emissive tint (no ghost-the-rest yet; shared
 materials); instanced-mesh `_N` slots use the same `A.guidMap[obj.id]` lookup as `viewer/nlp.js`.
 
+## E-Invoice — §PILLAR 3 counter-proposal stub (mockup, not a certified filer)
+`einvoice.js` demonstrates the local-first counter-proposal mechanism against a MyInvois-shaped invoice
+document (UBL 2.1 field names — that part is real, sourced schema): sign **locally** instead of streaming to
+a central server (`issue`, reuses `connectors.sign`/`verifyChain`); **selective disclosure** — a gov
+audit-sampler sees only a `commitment` hash by default, full line-item detail only on an explicit `'full'`
+grant (`disclose`); deterministic **replay-hash audit** (`auditReplay`) — trust = recompute from the signed
+log, not "the platform saw it". Both `CLEARANCE` and `SELF_ATTESTED` modes are demo-able (`demoSeed`) because
+the underlying legal question (does the statute *mandate* clearance, or is self-attestation legally reachable
+— §RESEARCH GATE box 3) is genuinely unresolved and explicitly OUT OF SCOPE for this stub.
+
+`mock_rates.js` is the SINGLE seam for every regulatory value this pillar touches (mandate phase bands, PCB
+brackets, EPF/SOCSO/EIS rates, MFRS 15 note, PDPA cross-border rule) — each entry tagged `_gate`
+(`sourced`/`partial`/`open`) + `_citation`, per the deep-research pass recorded in
+`prompts/RESUME_HR_BIM_ASSET.md` §RESEARCH GATE. A later real interested party (accountant / Malaysian tax
+lawyer / MyInvois integration partner) overwrites values in this ONE file — the engine and witness never
+change. `ad_payroll.js`'s EPF/PCB concepts now source from here too (same numbers, one less inline copy); new
+SOCSO/EIS concepts are available but not wired into the accepted demo baseline. Witnessed —
+`tests/witness_einvoice.js` (W-HBA-EINVOICE 19/19).
+
 ## Files
 `connectors.js` · `rules.js` · `watermark.js` · `models.js` · `binding.js` · `engine.js` · `overlay.js` ·
-`lens.js` · `timeline.js` · `attendance.js` · `index.js` · `fixtures/build_hhs_rooms.js` (+ `hhs_rooms.json`) ·
-`tests/witness_{run,view,bind,wire,timeline,watermark,attendance}.js` · (viewer wire) `../viewer/hba_lens.js`
+`lens.js` · `timeline.js` · `attendance.js` · `mock_rates.js` · `einvoice.js` · `index.js` ·
+`fixtures/build_hhs_rooms.js` (+ `hhs_rooms.json`) ·
+`tests/witness_{run,view,bind,wire,timeline,watermark,attendance,einvoice}.js` · (viewer wire) `../viewer/hba_lens.js`

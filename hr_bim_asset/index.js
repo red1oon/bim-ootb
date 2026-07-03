@@ -13,5 +13,7 @@ module.exports = {
   Lens: require('./lens'),
   Binding: require('./binding'),
   Timeline: require('./timeline'),
-  Attendance: require('./attendance')
+  Attendance: require('./attendance'),
+  MockRates: require('./mock_rates'),
+  EInvoice: require('./einvoice')
 };

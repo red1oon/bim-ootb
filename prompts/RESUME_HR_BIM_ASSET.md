@@ -1076,19 +1076,113 @@ privacy preserved.
 - Strategy = build a **ground-swell** that pressures a more consumer-friendly mandate **without compromising
   legal commitment** (the books are correct and provable; only the *disclosure mechanism* is the proposal).
 
-### ⚠ §RESEARCH GATE (NON-INVENT — must be SOURCED + CITED before ANY code)
-None of the following may be assumed from memory. Each needs a current, citable source:
-- [ ] MyInvois mandate **current state** — phased thresholds (turnover bands), live deadlines, any deferrals.
-- [ ] E-Invoice **format & transport** — UBL 2.1 fields, JSON/XML schema, the API/portal submission model.
-- [ ] What LHDN legally **accepts as proof of issue** (does the law *mandate* clearance, or is an
-      attestation/deferred model legally reachable? — load-bearing for the whole counter-proposal).
-- [ ] **PCB** (income-tax withholding) brackets/formulae + relief tables — current year.
-- [ ] **EPF (KWSP)** + **SOCSO/EIS** contribution rate tables — current year.
-- [ ] Which **IFRS/MFRS** clauses govern invoice recognition / the books we claim to comply with.
-- [ ] Data-protection law (PDPA Malaysia) constraints that the privacy claim must satisfy.
-> Run via `WebSearch`/deep-research; record each source. Until filled, Pillar 3 stays DESIGN-ONLY.
-> **Legal note:** regulatory/tax compliance design should be verified by a qualified professional before
-> any claim is made publicly — flag this to the user; do not assert compliance on the project's behalf.
+### ⚠ §RESEARCH GATE — RECLASSIFIED AS MOCKUP/STUB (user decision 2026-07-03)
+**Pillar 3 is a demo mockup, not a real filer.** Do not keep sinking research passes into lawyer-grade
+closure of every box — user call 2026-07-03: build it as a **stub**, with every regulatory value/rule
+clearly labeled non-authoritative, behind a seam that lets a later interested party (accountant, Malaysian
+tax lawyer, MyInvois-integration partner) drop in the real mapping without a design change. Concretely:
+- Any PCB bracket, EPF/SOCSO/EIS rate, or MFRS clause used in code = a **placeholder constant**, name-tagged
+  `MOCK_` or equivalent, sourced from whatever partial citation exists below (never invented from nothing),
+  with a single obvious injection point (config/table) for a real professional to overwrite later.
+- The clearance-vs-self-attestation legal question (box 3) does **not** block building the demo — the
+  counter-proposal's *mechanism* (local signing, selective disclosure, replay-hash audit) can be built and
+  demonstrated on mock data; the legal question only matters if/when this moves toward a real compliance claim.
+- The 2 research passes below stay as reference — useful partial citations for the stub's placeholder
+  values — but the gate is no longer a blocker for Pillar 3 coding work. Second pass was interrupted by a
+  session-limit mid-run; one bonus finding survived: a fetched Finance Act text
+  (`myttx.customs.gov.my/wp-content/uploads/2024/02/WJW23%EF%80%A21341-BI.pdf`) contains what reads as
+  **Income Tax Act 1967 §82C(1)** — "a person shall, in a year of assessment, issue an electronic invoice for
+  each transaction..." (3-0 confirmed) — a real statutory citation for the mock's "e-invoice issuance is a
+  codified duty" placeholder, though the deeper clearance-vs-attestation legal question this box asked was
+  never resolved and is now explicitly out of scope for the stub.
+- **✅ STUB BUILT 2026-07-03** (this session, `lane/hr-overlay`): `hr_bim_asset/mock_rates.js` (the single
+  `_gate`/`_citation`-tagged seam for every regulatory value below) + `hr_bim_asset/einvoice.js` (the
+  counter-proposal mechanism: local sign, selective disclosure, replay-hash audit, CLEARANCE/SELF_ATTESTED
+  mode toggle so box 3 is demoed both ways, never asserted) + `ad_payroll.js` EPF/PCB now source from
+  `mock_rates.js` (same numbers) + new SOCSO/EIS concepts available. Witnessed `tests/witness_einvoice.js`
+  W-HBA-EINVOICE 19/19; full 32-suite regression green, zero regressions.
+
+**⏭ NEXT (queued for a fresh session, e.g. Fable5 — 2026-07-03):** `lane/hr-overlay` is committed+pushed
+(`048708a`) but **NOT PR'd**. Before opening a PR: (1) `git fetch origin && git merge origin/main` — branch
+is 66 ahead / 17 behind main as of this note, expect the usual `sw.js`/shared-file conflict spots per
+CLAUDE.md; (2) re-run the FULL `hr_bim_asset/tests/witness_*.js` suite post-merge (32 files, all green
+before merge) — must stay green, esp. `witness_ad_payroll.js` AD1 (gross=5200/net=4234 baseline) and the new
+`witness_einvoice.js` (19/19); (3) open the PR (`gh pr create`) once green. Do NOT re-run the deep-research
+workflow — the 7-box gate is deliberately staying at its current sourced/partial/open state (see stub
+decision above); this is a git-sync + PR task only.
+
+**First deep-research pass run 2026-07-03** (105-agent fan-out, 23 primary/secondary sources fetched, 81
+claims extracted, 25 adversarially verified 3-vote — 21 confirmed / 4 refuted). Result: 2 of 7 fully sourced,
+5 have real gaps. Full transcript in this session's workflow journal (`wf_5ac9fdc0-8f1`).
+
+- [~] **1. MyInvois mandate current state** — PARTIAL. The widely-repeated phase grid (Phase 1 >RM100m from
+      1 Aug 2024; Phase 2 RM25–100m from 1 Jan 2025; Phase 3 RM5–25m from 1 Jul 2025; Phase 4 RM1–5m from
+      1 Jan 2026) is corroborated by *multiple independent secondary sources* (vatcalc.com, ifca.asia,
+      cleartax.com, goldsoft.com.my) but a claim asserting it as a primary-source fact was explicitly
+      **REFUTED (0-3)** — the cited LHDN page could not be confirmed to state it, and a direct FAQ-PDF fetch
+      surfaced a conflicting fragment ("1 September 2023... RM25 million") suspected to be an extraction
+      artifact. A "RM1m turnover = total exemption" claim was also **REFUTED (1-2)**. → Re-fetch
+      `hasil.gov.my/en/e-invoice/implementation-of-e-invoicing-in-malaysia/e-invoice-implementation-timeline/`
+      fresh before quoting exact dates anywhere design-facing.
+- [x] **2. E-Invoice format & transport** — CONFIRMED, high confidence, 9/9 claims 3-0. UBL 2.1-based,
+      JSON or XML, two channels (MyInvois Portal manual entry / REST API for ERP integration). API's Submit
+      Documents call does only synchronous structural validation + returns a submission ID; full validation
+      is async via separate Get Submission/Get Document Details polling (~3-5s interval). "Invoice" is the
+      primary document type; v1.0 ≈ v1.1 minus signature validation (v1.0 slated for deprecation). Sources:
+      `sdk.myinvois.hasil.gov.my` (official LHDN SDK, primary), `sdk.myinvois.hasil.gov.my/einvoicingapi/02-submit-documents/`,
+      `sdk.myinvois.hasil.gov.my/documents/invoice-v1-0/`.
+- [ ] **3. LHDN legal proof-of-issue (load-bearing)** — STILL OPEN, the single highest-risk gap for the
+      whole counter-proposal. Confirmed (3-0): LHDN's official FAQ (#34) describes near-real-time validation
+      (<2s typical) + mandatory Unique Identifier Number assignment before an invoice is valid/shareable
+      (72h cancel/reissue window) — operationally a Continuous Transaction Control (CTC) pre-clearance model,
+      same family as France/Italy/Poland. **But no claim in this pass answers the actual legal question** —
+      whether Malaysian *statute* (Income Tax Act 1967 as amended / the e-Invoice-enabling Finance Act
+      provisions) strictly *mandates* clearance, or whether a deferred/self-attestation alternative is
+      legally reachable. A claim that real-time validation applies uniformly across B2B/B2C/B2G was
+      **REFUTED (1-2)** — B2C consolidated e-Invoices are typically batched/periodic, not per-transaction —
+      so even the operational picture has an unresolved nuance. Needs either a direct read of the statutory
+      text or a qualified Malaysian tax lawyer's opinion before this pillar's core thesis can be called sourced.
+- [~] **4. PCB (Potongan Cukai Bulanan)** — PARTIAL, structure confirmed high-confidence (5/5 claims 3-0),
+      numeric brackets NOT yet pulled. Officially Kaedah 3, Income Tax (Deduction from Remuneration) Rules
+      1994. For YA2026 the MTD *formula* is unchanged — only relief line-items on Forms TP1(2026)/TP3(2026)
+      changed (7 Budget-2026 relief items: vaccination, parent/grandparent medical, childcare, life/education/
+      medical insurance, learning-disability treatment, tourism admission, EV-charging/CCTV). Resident
+      employees use 1 of 5 formula categories (Normal, Additional, Returning Expert, Knowledge Workers in
+      Specified Region, C-Suite non-citizen residents); non-resident/unknown-residency = flat 30%, no
+      brackets/relief. Sources: `hasil.gov.my/media/arvlrzh5/spesifikasi-kaedah-pengiraan-berkomputer-pcb-2026.pdf`
+      (official LHDN 2026 spec PDF), `hasil.gov.my/majikan/pembayaran-pcb/`. **GAP:** the actual progressive
+      rate-bracket/threshold table (Category 1/2/3 numeric schedule) still needs a direct pull from the
+      e-Jadual PCB or the full spec PDF's rate tables — not yet verified.
+- [~] **5. EPF (KWSP) + SOCSO/EIS (PERKESO)** — PARTIAL, and EPF is a full gap. SOCSO/EIS monthly wage
+      ceiling confirmed (3-0, high confidence): raised RM5,000→RM6,000 effective 1 Oct 2024, with a 6-month
+      enforcement grace period through 31 Mar 2025 (source: `perkeso.gov.my/en/rate-of-contribution.html` +
+      PERKESO Employers Circular No. 3/2024). But PERKESO's own page does **not** display the %-rate
+      breakdown inline — only links out to Act 4 (SOCSO) / Act 800 (EIS) PDFs, which were not fetched. The
+      commonly-quoted ~1.75%/0.5% (SOCSO Cat 1) and ~0.2%/0.2% (EIS) figures are secondary-source only, **not
+      primary-confirmed**. **EPF/KWSP contribution rates were not researched at all this pass** — genuine
+      full gap, need a direct pull of KWSP's official Third Schedule rate table.
+- [ ] **6. IFRS/MFRS** — STILL OPEN, substantively unanswered. The only document actually fetched under the
+      MFRS 15 URL (`masb.org.my/pdf_file/MFRS%2015.pdf`) is a single-page MASB staff FAQ (explicitly
+      disclaimed as staff views, not Board views) on one narrow property-sale timing question (¶35(c)) — not
+      the standard itself. No 5-step revenue-recognition model, no disclosure requirements, no IFRS-15
+      convergence statement was verified. The full standard (reachable via an embedded link, not resolved
+      this pass) still needs to be pulled and read before any "books reconciled locally" claim can cite MFRS 15.
+- [x] **7. PDPA Malaysia** — CONFIRMED, high confidence (3/3 claims 3-0), and favorable to the design.
+      Section 129 (cross-border transfer) amended by the Personal Data Protection (Amendment) Act 2024
+      (passed Dewan Rakyat 16 Jul 2024, Dewan Negara 31 Jul 2024, gazetted 17 Oct 2024, effective 1 Apr 2025):
+      **deletes** the old Minister-gazetted country whitelist entirely, replacing it with a controller
+      self-assessed two-limb adequacy test (destination law "substantially similar" to PDPA, or "adequate...
+      at least equivalent" protection) via a self-assessed Transfer Impact Assessment (valid up to 3 years) —
+      no pre-approval required. Source: JPDP (Dept. of Personal Data Protection) consultation paper
+      `pdp.gov.my/.../JPDP-FSB-241001-Cross-Border-PCP-ENG-TC.pdf`, cross-corroborated by Mayer Brown, Rödl &
+      Partner, HSF Kramer, CMS, Allen & Gledhill. This directly supports a local-first/selective-disclosure
+      design: no whitelist pre-clearance, self-assessed adequacy gives design latitude for local processing.
+
+> **Net (superseded by the stub decision above):** boxes 2 and 7 are sourced enough to build against as-is.
+> Boxes 1, 4, 5 are partially sourced — good enough for a labeled placeholder value. Boxes 3 and 6 are
+> genuinely open and NOT worth another research pass for a mockup — stub them and move on.
+> **Legal note (unchanged):** if this ever moves beyond mockup toward a real compliance claim, every value
+> must be verified by a qualified professional first — do not assert compliance on the project's behalf.
 
 ---
 
