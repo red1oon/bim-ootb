@@ -1102,6 +1102,15 @@ tax lawyer, MyInvois-integration partner) drop in the real mapping without a des
   `mock_rates.js` (same numbers) + new SOCSO/EIS concepts available. Witnessed `tests/witness_einvoice.js`
   W-HBA-EINVOICE 19/19; full 32-suite regression green, zero regressions.
 
+**⏭ NEXT (queued for a fresh session, e.g. Fable5 — 2026-07-03):** `lane/hr-overlay` is committed+pushed
+(`048708a`) but **NOT PR'd**. Before opening a PR: (1) `git fetch origin && git merge origin/main` — branch
+is 66 ahead / 17 behind main as of this note, expect the usual `sw.js`/shared-file conflict spots per
+CLAUDE.md; (2) re-run the FULL `hr_bim_asset/tests/witness_*.js` suite post-merge (32 files, all green
+before merge) — must stay green, esp. `witness_ad_payroll.js` AD1 (gross=5200/net=4234 baseline) and the new
+`witness_einvoice.js` (19/19); (3) open the PR (`gh pr create`) once green. Do NOT re-run the deep-research
+workflow — the 7-box gate is deliberately staying at its current sourced/partial/open state (see stub
+decision above); this is a git-sync + PR task only.
+
 **First deep-research pass run 2026-07-03** (105-agent fan-out, 23 primary/secondary sources fetched, 81
 claims extracted, 25 adversarially verified 3-vote — 21 confirmed / 4 refuted). Result: 2 of 7 fully sourced,
 5 have real gaps. Full transcript in this session's workflow journal (`wf_5ac9fdc0-8f1`).
