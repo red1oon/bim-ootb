@@ -57,15 +57,32 @@ function propertyUnits(m_warehouse_id, locatorRows) {
 (function () {
 var W = (typeof require !== 'undefined') ? require('./watermark') : (typeof self !== 'undefined' ? self : this).HbaWatermark;
 
+// §STAGE2 — MATCH-OR-CREATE against the REAL seeded AD rows (RESUME_HBA_ERP_GOVERNED_DISPLAY.md Stage 2,
+// §IMPLICATIONS point 2 "identity-key stability is the crux design risk"). `erpQuery(sql, params)` is a SYNC
+// reader over the loaded ad_seed.db (the viewer's A.erpQuery seam / a witness's injected handle) returning an
+// array of row-objects; ABSENT (undefined/null) → every builder falls back to the prior deterministic mint, so
+// every existing node witness (which passes no erpQuery) is byte-for-byte unchanged. `_one` returns the first
+// matched row or null, never throws (a missing table / bad db degrades to the mint path, honest no-op).
+function _one(erpQuery, sql, params) {
+  if (typeof erpQuery !== 'function') return null;
+  try { var r = erpQuery(sql, params || []); return (r && r.length) ? r[0] : null; } catch (e) { return null; }
+}
+function _num(v) { return (v == null) ? v : Number(v); }
+
 // ---- native C_SubscriptionType rows — ONE demo cadence per profile, both real columns only ------------------
 var SUBSCRIPTION_TYPES = {
   MONTHLY_RENT: { c_subscriptiontype_id: 1, name: 'Monthly Rent', description: 'Residential/commercial unit lease, billed monthly', frequencytype: 'M', frequency: 1 },
   QUARTERLY_STRATA_FEE: { c_subscriptiontype_id: 2, name: 'Quarterly Strata Fee', description: 'Owner maintenance/sinking-fund charge, billed quarterly', frequencytype: 'M', frequency: 3 }
 };
 
-// ONE M_Warehouse row per building — new, since a demo building like HHS_Office_Federated has none yet
-// (unlike GardenWorld/Terminal, which already have real M_Warehouse rows in ad_full.db).
-function toWarehouseRow(buildingName, seedId) {
+// ONE M_Warehouse row per building. §STAGE2 — MATCH-OR-CREATE by Value: when `erpQuery` is present, resolve
+// the REAL seeded warehouse row (Q1 pinned Value='HHS_Office_Federated' at id 990000, seed_hba_erp.js §1) so
+// the building's identity is the DURABLE seeded id, NOT a blind `1` re-minted every compile (the §IMPLICATIONS
+// pt-2 determinism landmine — GeoMapping W-GEOMAP-TIER1 discipline). No match (a building not yet seeded, or no
+// db loaded) → the prior deterministic mint, unchanged. Value is the match key exactly as pinned in Stage 1.
+function toWarehouseRow(buildingName, seedId, erpQuery) {
+  var hit = _one(erpQuery, 'SELECT M_Warehouse_ID AS id, Value AS value, Name AS name FROM M_Warehouse WHERE Value=?', [buildingName]);
+  if (hit) return { m_warehouse_id: _num(hit.id), value: hit.value, name: hit.name || hit.value };
   return { m_warehouse_id: seedId ? seedId() : 1, value: buildingName, name: buildingName };
 }
 
@@ -77,15 +94,24 @@ function toWarehouseRow(buildingName, seedId) {
 // ⚠ MLocator.get() coalesces by (warehouse,X,Y,Z) — rooms on one storey share an ABL address, so locator
 // identity rides on value=guid; never create/look up room locators via the combination. room = { guid, name,
 // storey, block? } (fixture shape).
-function toLocatorRow(room, m_warehouse_id, seedId) {
+function toLocatorRow(room, m_warehouse_id, seedId, erpQuery) {
   if (!room || !room.guid) return null;
-  return { m_locator_id: seedId ? seedId() : 1, m_warehouse_id: m_warehouse_id, value: room.guid,
+  // §STAGE2 — resolve the REAL seeded M_Locator for this room (seed_hba_erp.js §2 persisted one per HHS room,
+  // keyed Value=guid under the warehouse) so the room's spatial address is the durable seeded id; else mint.
+  var hit = _one(erpQuery, 'SELECT M_Locator_ID AS id FROM M_Locator WHERE M_Warehouse_ID=? AND Value=?', [m_warehouse_id, room.guid]);
+  var id = hit ? _num(hit.id) : (seedId ? seedId() : 1);
+  return { m_locator_id: id, m_warehouse_id: m_warehouse_id, value: room.guid,
     x: room.block || '0', y: '0', z: room.storey || '0', isdefault: 'N' };
 }
 
-// the leasable unit itself — an M_Product row whose m_locator_id names its real room/zone.
-function toProductRow(room, m_locator_id, seedId) {
+// the leasable unit itself — an M_Product row whose m_locator_id names its real room/zone. §STAGE2 — reuse a
+// REAL seeded M_Product row (Value=guid) when one exists; else mint (Stage 1 seeded no per-room Products, so
+// this ordinarily mints a deterministic compile-projection id over the resolved locator — honest, not a
+// fabricated master).
+function toProductRow(room, m_locator_id, seedId, erpQuery) {
   if (!room || !room.guid) return null;
+  var hit = _one(erpQuery, 'SELECT M_Product_ID AS id, Name AS name FROM M_Product WHERE Value=?', [room.guid]);
+  if (hit) return { m_product_id: _num(hit.id), value: room.guid, name: hit.name || room.name || room.guid, m_locator_id: m_locator_id };
   return { m_product_id: seedId ? seedId() : 1, value: room.guid, name: room.name || room.guid, m_locator_id: m_locator_id };
 }
 
@@ -119,16 +145,17 @@ function toUserRow(person) {
 // a locator for it) into `skipped[]` with a reason, not silently dropped. `units` is DERIVED via propertyUnits
 // (never a stored duplicate of the room count). Subscriptions come back WRAPPED {row, unit_guid, kind, storey}
 // — `row` stays column-pure AD; the wrapper is caller/view trace only, never written back as an AD column.
-function compileBuilding(buildingName, rooms, leases, strata) {
-  rooms = rooms || []; leases = leases || []; strata = strata || [];
+function compileBuilding(buildingName, rooms, leases, strata, opts) {
+  rooms = rooms || []; leases = leases || []; strata = strata || []; opts = opts || {};
+  var erpQuery = opts.erpQuery;   // §STAGE2 — SYNC ad_seed.db reader (viewer A.erpQuery / witness handle) or null
   var seq = { loc: 0, prod: 0, sub: 0 };
   var seedLoc = function () { return ++seq.loc; }, seedProd = function () { return ++seq.prod; }, seedSub = function () { return ++seq.sub; };
-  var warehouse = toWarehouseRow(buildingName, function () { return 1; });
+  var warehouse = toWarehouseRow(buildingName, function () { return 1; }, erpQuery);
   var byGuid = {}; rooms.forEach(function (r) { byGuid[r.guid] = r; });
   var locators = [], products = [], productIdByGuid = {};
   rooms.forEach(function (r) {
-    var loc = toLocatorRow(r, warehouse.m_warehouse_id, seedLoc); locators.push(loc);
-    var prod = toProductRow(r, loc.m_locator_id, seedProd); products.push(prod); productIdByGuid[r.guid] = prod.m_product_id;
+    var loc = toLocatorRow(r, warehouse.m_warehouse_id, seedLoc, erpQuery); locators.push(loc);
+    var prod = toProductRow(r, loc.m_locator_id, seedProd, erpQuery); products.push(prod); productIdByGuid[r.guid] = prod.m_product_id;
   });
   var subscriptions = [], skipped = [];
   function compileCharge(record, kind, subType, refField, partyField) {

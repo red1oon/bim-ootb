@@ -171,12 +171,38 @@ function payslip(hr_movement, c_bpartner_id, locale) {
   return W ? W.stamp(out, locale || 'en') : out;
 }
 
-// demonstrator payroll spec for the P7 viewer pane — the SAME EMP001/EMP002 identities+concepts already
-// accepted by witness_ad_payroll.js AD1 (EMP001 gross=5200/net=4234) — reused, not re-invented. Payroll
-// identity (c_bpartner_id) has no spatial binding to check (unlike Occupancy/Asset), so this seeds
-// unconditionally rather than gating on a guid resolving — the honesty gate here is "reuse the accepted
-// numbers", not "resolve to a mesh".
-function demoSpec() {
+// ---- §STAGE2 — demoSpec resolves its employee IDENTITIES from the REAL seeded rows -----------------------
+// RESUME_HBA_ERP_GOVERNED_DISPLAY.md Stage 2: `demoSpec` gains an optional `erpQuery` (a SYNC ad_seed.db
+// reader — the viewer's A.erpQuery seam / a witness's injected handle). When present it JOINs the REAL seeded
+// HR_Employee⋈C_BPartner rows (Stage 1 §3/§4) so `c_bpartner_id`/`name` TRACE TO A QUERIED ROW instead of a
+// literal. The pay-RULE inputs (`base`/`conceptIds`) are NOT employee-master columns — they stay the demo
+// payroll config (already flagged demo/unsourced, §RESEARCH GATE) keyed by the real employee code. The
+// resulting run is numerically IDENTICAL to the seeded HR_Movement rows (proven equal by W-HBA-ERP-SEED
+// PAYSLIP-DB==ENGINE) — so the displayed payslip already traces to the seeded rows; this closes the identity
+// half. No db / no rows → the prior literal (all existing witnesses call demoSpec() argless → unchanged).
+var DEMO_PAY_CONFIG = {   // demo pay-rule inputs, keyed by employee code (base salary + which concepts apply)
+  EMP001: { base: 5000, conceptIds: ['BASE', 'ALLOWANCE', 'EPF', 'PCB'] },
+  EMP002: { base: 3000, conceptIds: ['BASE', 'ALLOWANCE', 'EPF'] }
+};
+function _num2(v) { return (v == null) ? v : Number(v); }
+function _employeesFromDb(erpQuery) {
+  if (typeof erpQuery !== 'function') return null;
+  try {
+    var r = erpQuery('SELECT e.HR_Employee_ID AS id, e.Code AS code, e.Name AS name, e.C_BPartner_ID AS c_bpartner_id '
+      + 'FROM HR_Employee e WHERE e.IsActive=? ORDER BY e.HR_Employee_ID', ['Y']);
+    if (!r || !r.length) return null;
+    return r.map(function (row) { return { id: _num2(row.id), code: row.code, name: row.name, c_bpartner_id: _num2(row.c_bpartner_id) }; });
+  } catch (e) { return null; }
+}
+function demoSpec(erpQuery) {
+  var emps = _employeesFromDb(erpQuery);
+  if (emps) {
+    return { period: '2026-06', actor: 'hba', locale: 'en', _governed: true,
+      employees: emps.map(function (e) {
+        var cfg = DEMO_PAY_CONFIG[e.code] || DEMO_PAY_CONFIG[e.name] || { base: 0, conceptIds: ['BASE'] };
+        return { c_bpartner_id: e.c_bpartner_id, name: e.name || e.code, base: cfg.base, conceptIds: cfg.conceptIds };
+      }) };
+  }
   return { period: '2026-06', actor: 'hba', locale: 'en', employees: [
     { c_bpartner_id: 1001, name: 'EMP001', base: 5000, conceptIds: ['BASE', 'ALLOWANCE', 'EPF', 'PCB'] },
     { c_bpartner_id: 1002, name: 'EMP002', base: 3000, conceptIds: ['BASE', 'ALLOWANCE', 'EPF'] }

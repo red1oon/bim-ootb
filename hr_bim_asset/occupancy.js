@@ -201,20 +201,54 @@ function toResourceAssignmentRow(assignOp, seedId) {
 function toResourceTypeRow(seedId) {
   return { s_resourcetype_id: seedId ? seedId() : 1, name: 'Room' };
 }
-function toResourceRow(room, s_resourcetype_id, seedId) {
+// §DESIGN-RESOURCE-AVAILABILITY (RESUME_HBA_ERP_GOVERNED_DISPLAY.md, 2026-07-03) — `isavailable` and
+// `percentutilization` are REAL S_Resource columns (verified against build/erp/ad_full.db PRAGMA — the
+// witness_erp_deeplink.js `s_resource` REAL_COLS list carries both). They were previously a hardcoded
+// `isavailable:'Y'` for EVERY room (a fabricated constant that never consulted the already-witnessed 21/21
+// ASSIGN/RELEASE/UNAVAIL signed-replay availability() engine). This threads the REPLAYED state onto the real
+// columns instead:
+//   • isavailable — the NATIVE master on/off gate ("is this resource in service / bookable at all"). Set 'N'
+//     ONLY when the room's replayed state is 'unavailable' (a real S_ResourceUnAvailable blackout / maintenance
+//     — genuinely out of service). occupied/expiring/vacant are all 'Y' (the resource EXISTS and is schedulable;
+//     WHO holds it WHEN is tracked by S_ResourceAssignment slots, not by flipping the master gate). This is the
+//     honest native semantics — never a guessed flag.
+//   • percentutilization — the room's REAL utilization from occupancy.pivot() (occupiedPeriods/totalPeriods),
+//     ×100 to the column's percentage grain. A currently-inert dictionary column (no native engine consumes it)
+//     populated meaningfully from a value we already compute — non-invent, the source already exists+is witnessed.
+// `avail` = { state, percentutilization } supplied by compileResources from the SAME signed occupancy replay
+// the Occupancy lens uses. ABSENT (avail null) → back-compat: master 'Y', no percentutilization (the prior
+// behaviour verbatim — every existing witness that calls compileResources(rooms) with no log stays green).
+function toResourceRow(room, s_resourcetype_id, seedId, avail) {
   if (!room || !room.guid) return null;
-  return { s_resource_id: seedId ? seedId() : 1, value: room.guid, name: room.name || room.guid,
-    s_resourcetype_id: s_resourcetype_id, isavailable: 'Y' };
+  var row = { s_resource_id: seedId ? seedId() : 1, value: room.guid, name: room.name || room.guid,
+    s_resourcetype_id: s_resourcetype_id, isavailable: (avail && avail.state === 'unavailable') ? 'N' : 'Y' };
+  if (avail && avail.percentutilization != null) row.percentutilization = avail.percentutilization;
+  return row;
 }
 // compile the WHOLE building's rooms into S_Resource headers in one pass — {resourceType, resources:[{row,guid}],
 // _watermark}. ONE resource type shared by every room (real rooms only — never fabricates a resource for a
-// guid that isn't in `rooms`).
-function compileResources(rooms) {
-  rooms = rooms || [];
+// guid that isn't in `rooms`). §DESIGN-RESOURCE-AVAILABILITY: when `opts.log` (the signed occupancy op-log,
+// e.g. A._hbaOccupancyLog) + `opts.period`/`opts.periods` are supplied, each room's real availability state +
+// utilization are REPLAYED (never stored/guessed) and threaded onto the row's real isavailable/
+// percentutilization columns. No log → unchanged legacy behaviour (master 'Y', no utilization).
+function compileResources(rooms, opts) {
+  rooms = rooms || []; opts = opts || {};
   var seq = 0; function seedId() { return ++seq; }
   var resourceType = toResourceTypeRow(function () { return 1; });
-  var resources = rooms.map(function (r) { return { row: toResourceRow(r, resourceType.s_resourcetype_id, seedId), guid: r.guid }; });
-  return W.stamp({ resourceType: resourceType, resources: resources }, 'en');
+  var log = opts.log || null, period = opts.period || null;
+  var periods = opts.periods || (period ? [period] : null);
+  // pivot over the SAME rooms so VACANT rooms still get a (0%) utilization — allResources = the real room guids.
+  var pv = (log && periods && periods.length) ? pivot(log, periods, { allResources: rooms.map(function (r) { return r.guid; }), storeyOf: opts.storeyOf }) : null;
+  var resources = rooms.map(function (r) {
+    var avail = null;
+    if (log) {
+      var st = period ? availability(log, r.guid, period, opts).state : null;
+      var util = (pv && pv.byRoom[r.guid]) ? Math.round(pv.byRoom[r.guid].utilization * 100) : null;
+      avail = { state: st, percentutilization: util };
+    }
+    return { row: toResourceRow(r, resourceType.s_resourcetype_id, seedId, avail), guid: r.guid };
+  });
+  return W.stamp({ resourceType: resourceType, resources: resources }, opts.locale || 'en');
 }
 
 var O = { assign: assign, release: release, unavailable: unavailable, availability: availability,
