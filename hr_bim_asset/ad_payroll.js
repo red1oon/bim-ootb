@@ -20,14 +20,18 @@
 //   additive value sitting ON TOP of the native rows, not competing with them.
 //
 //   Demo concept rates (BASE/ALLOWANCE/EPF/PCB) are the SAME accepted demo baseline already witnessed in
-//   `tests/witness_run.js` (E1-E8) — reused, not re-invented — and remain flagged as demo/unsourced pending
-//   §RESEARCH GATE (P9, paused) before any real statutory rate replaces them.
+//   `tests/witness_run.js` (E1-E8) — reused, not re-invented. Pillar 3 was reclassified 2026-07-03 as a
+//   MOCKUP (not a certified filer, see mock_rates.js header) — EPF/PCB numbers now source from the single
+//   `mock_rates.js` seam (same numeric values, so the AD1 baseline gross=5200/net=4234 is unchanged) instead
+//   of being inlined here, so a later real professional has ONE file to overwrite. SOCSO/EIS added as
+//   available concepts (box 5b) but NOT wired into demoSpec()'s employees, to avoid perturbing that baseline.
 'use strict';
 (function () {
 var _r = (typeof require !== 'undefined');
 var C = _r ? require('./connectors') : (self.HrConnectors);
 var R = _r ? require('./rules') : (self.HrRules);
 var W = _r ? require('./watermark') : (self.HbaWatermark);
+var MOCK = (_r ? require('./mock_rates') : (self.HbaMockRates)).MOCK_RATES;
 
 // ---- native hr_concept_category rows (the EARNINGS/DEDUCTIONS grouping the native dictionary expects) ----
 var CATEGORIES = {
@@ -41,11 +45,15 @@ var CATEGORIES = {
 var CONCEPTS = {
   BASE:      { hr_concept_id: 1, value: 'BASE',      name: 'Base Salary',     hr_concept_category_id: 1, accountsign: '+', type: 'D', columntype: 'A', rule: null }, // amount = employee.base directly
   ALLOWANCE: { hr_concept_id: 2, value: 'ALLOWANCE',  name: 'Allowance',       hr_concept_category_id: 1, accountsign: '+', type: 'D', columntype: 'A', rule: { kind: 'FIXED', amount: 200 } },
-  EPF:       { hr_concept_id: 3, value: 'EPF',        name: 'EPF (demo)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'RATE', of: 'base', pct: 0.11 } },
-  PCB:       { hr_concept_id: 4, value: 'PCB',        name: 'PCB (demo)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'BRACKET', of: 'gross', table: [[2000, 0], [4000, 0.03], [6000, 0.08], [1e12, 0.13]] } },
+  EPF:       { hr_concept_id: 3, value: 'EPF',        name: 'EPF (mock)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'RATE', of: 'base', pct: MOCK.EPF_RATE.pct } },
+  PCB:       { hr_concept_id: 4, value: 'PCB',        name: 'PCB (mock)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'BRACKET', of: 'gross', table: MOCK.PCB_BRACKETS.table } },
   // amount is PER-EMPLOYEE-PER-PERIOD (leave.js's leaveDeduction), same reason BASE.rule is null — fed via
   // emp.extra, not evaluated by rules.js. Closes the P8 leave→payroll seam onto the native shape (was engine.js).
-  UNPAID_LEAVE: { hr_concept_id: 5, value: 'UNPAID_LEAVE', name: 'Leave without pay', hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: null }
+  UNPAID_LEAVE: { hr_concept_id: 5, value: 'UNPAID_LEAVE', name: 'Leave without pay', hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: null },
+  // box 5b (§RESEARCH GATE) — available but NOT in demoSpec()'s employees, so the AD1 witness baseline
+  // (gross=5200/net=4234) is untouched; rates are MOCK_RATES.SOCSO_RATE/EIS_RATE (partial-sourced, see there).
+  SOCSO:     { hr_concept_id: 6, value: 'SOCSO',      name: 'SOCSO (mock)',   hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'RATE', of: 'base', pct: MOCK.SOCSO_RATE.employeePct } },
+  EIS:       { hr_concept_id: 7, value: 'EIS',        name: 'EIS (mock)',     hr_concept_category_id: 2, accountsign: '-', type: 'D', columntype: 'A', rule: { kind: 'RATE', of: 'base', pct: MOCK.EIS_RATE.employeePct } }
 };
 
 // ---- native hr_concept_acct rows — the GL account mapping the deduction side posts through -----------------
@@ -55,7 +63,9 @@ var CONCEPTS = {
 var CONCEPT_ACCT = {
   EPF: { hr_concept_acct_id: 1, hr_concept_id: 3, hr_expense_acct: 'epf_payable', c_acctschema_id: 1 },
   PCB: { hr_concept_acct_id: 2, hr_concept_id: 4, hr_expense_acct: 'pcb_payable', c_acctschema_id: 1 },
-  UNPAID_LEAVE: { hr_concept_acct_id: 3, hr_concept_id: 5, hr_expense_acct: 'unpaid_leave_payable', c_acctschema_id: 1 }
+  UNPAID_LEAVE: { hr_concept_acct_id: 3, hr_concept_id: 5, hr_expense_acct: 'unpaid_leave_payable', c_acctschema_id: 1 },
+  SOCSO: { hr_concept_acct_id: 4, hr_concept_id: 6, hr_expense_acct: 'socso_payable', c_acctschema_id: 1 },
+  EIS: { hr_concept_acct_id: 5, hr_concept_id: 7, hr_expense_acct: 'eis_payable', c_acctschema_id: 1 }
 };
 var WAGES_EXPENSE_ACCT = 'wages_expense', NET_PAY_PAYABLE_ACCT = 'net_pay_payable';
 
