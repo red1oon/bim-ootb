@@ -1,85 +1,131 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// ⚠ DO NOT REMOVE — ATTENDANCE COMPILED ONTO THE NATIVE (Ninja-staged) C_Attendance CHILD TABLE
-//   (bim-compiler prompts/RESUME_HBA_ERP_GOVERNED_DISPLAY.md §DESIGN-ATTENDANCE, Stage 2). This module's
-//   whole job is the gap flagged in §EVIDENCE point 3: resolve attendance.js's bare `EMP-n`/`EMP00n` ids and
-//   room guids to the REAL c_bpartner_id / m_locator_id seeded in Stage 1, so a presence row STOPS being a
-//   self-signed op keyed by a bare string and BECOMES a real AD child row that JOINs
-//   C_Attendance→HR_Process→C_BPartner→M_Locator→M_Warehouse (the §DESIGN-ATTENDANCE InfoWindow lens).
+// ⚠ DO NOT REMOVE — ATTENDANCE COMPILED ONTO THE **REAL NATIVE** S_Resource / S_ResourceAssignment TABLES
+//   (bim-compiler prompts/RESUME_HBA_ERP_STAGE3.md §PREREQUISITE, watchdog finding 2026-07-03 — Witness:
+//   W-HBA-AD-ATTENDANCE). The previous revision compiled onto a Ninja-staged `C_Attendance` — but C_Attendance
+//   is NOT a real iDempiere table (AD_Table LIKE '%ttendance%' → 0 rows in ad_full.db): it was an INVENTED
+//   dictionary extension, the same violation class WATCHDOG_BIM_ERP_SOURCE_OF_TRUTH.md exists to kill. The
+//   REAL native fit is the "Mary Consultant" GardenWorld pattern sitting unused in the same DB:
+//     person   → S_Resource (ad_user_id → AD_User — the SAME identity spine ad_payroll.js/models.js resolve;
+//                m_warehouse_id → M_Warehouse — the SAME building FK ad_tenancy.js resolves onto)
+//     session  → S_ResourceAssignment (assigndatefrom = check-in, assigndateto = check-out — NULL = OPEN, the
+//                exact honest-open semantic this module always had; qty = the REAL derived hours;
+//                isconfirmed = the maker-checker gate: 'Y' closed, 'N' open — never a fabricated approval)
 //
-//   NON-INVENT GATE (mirrors ad_tenancy.compileBuilding's `skipped[]` discipline): a session whose employee
-//   or zone does NOT resolve to a real seeded id is SKIPPED into `skipped[]` with a reason — NEVER given a
-//   fabricated FK. The row builder is column-pure: it emits ONLY columns that exist on the seeded physical
-//   C_Attendance table (seed_hba_erp.js DDL.C_Attendance — dumped live from the Ninja-staged AD_Column set);
-//   the AD system columns (AD_Client_ID/AD_Org_ID/IsActive/Created…) are the PERSISTER's job, exactly as
-//   ad_payroll.js's hrIns and ad_tenancy.js's builders leave them (see those headers).
+//   ROOM GRANULARITY (the ONE design decision, accepted per RESUME_HBA_ERP_STAGE3.md): S_ResourceAssignment
+//   has NO m_locator_id/room column natively (verified live) — the native model is person@building/from→to/
+//   hours/confirmed. The ZONE therefore stays a **BIM spatial-overlay fact** (attendance.js's signed op-log
+//   `zone` param), carried BESIDE the AD rows in the `spatial` view-trace (keyed by the row PK) — the same
+//   idiom ad_bom.js uses for geometry. It is NEVER forced into a fabricated FK column.
 //
-//   HONEST-OPEN preserved (attendance.js's own §SLICE-1 contract): a session with no check-out is OPEN —
-//   CheckOutTime AND Qty stay NULL (no fabricated finish/hours). Qty = the REAL derived hours (attendance.js
-//   _hoursBetween over the real in/out ts), mirroring hr_movement.qty; never an independently-stored number.
+//   BUILDER DELEGATION (don't duplicate): the s_resourceassignment/s_resource COLUMN SHAPES are owned by
+//   occupancy.js's already-witnessed toResourceAssignmentRow/toResourceRow (W-HBA-AD-OCC — same tables, room-
+//   type resource). This module wraps those builders with the attendance semantics (person-type resource,
+//   hours-as-qty, honest-open NULLs) instead of re-declaring the column set.
 //
-//   SOURCE = attendance.js's already-witnessed `sessions(log, period)` reader (UNCHANGED — no re-implementation
-//   of the fold). This module takes those sessions + three injected resolution maps (processId, partnerMap,
-//   locatorMap) and produces the child rows. The maps come from the REAL seeded rows at compile time (the
-//   viewer's erpQuery seam / a witness's injected ad_seed.db handle) — so every emitted FK traces to a queried
-//   row, per the §CONVENTION "any info panel in BIM has to be just a lens from such source."
+//   NON-INVENT GATE (unchanged discipline): a session whose employee does NOT resolve to a real seeded
+//   S_Resource is SKIPPED into `skipped[]` with a reason — NEVER given a fabricated FK. Rows are column-pure;
+//   AD system columns (ad_client_id/isactive/created…) are the PERSISTER's job (see ad_payroll.js hrIns).
+//
+//   SOURCE = attendance.js's already-witnessed `sessions(log, period)` reader (UNCHANGED). readPresence() is
+//   the LENS READ back over the persisted rows — the ad_infowindow 7600000 JOIN (S_ResourceAssignment ⋈
+//   S_Resource ⋈ AD_User ⋈ M_Warehouse), mirroring ad_bom.readBom. Read the log after every run.
 'use strict';
 (function () {
-var W = (typeof require !== 'undefined') ? require('./watermark') : (typeof self !== 'undefined' ? self : this).HbaWatermark;
+var _r = (typeof require !== 'undefined'), _g = (typeof self !== 'undefined' ? self : this);
+var W = _r ? require('./watermark') : _g.HbaWatermark;
+var O = _r ? require('./occupancy') : _g.HbaOccupancy;
 
-// ONE C_Attendance child row for ONE presence session. Column-pure: keys are a SUBSET of the seeded physical
-// table's columns (the non-invent gate the witness enforces). `session` = an attendance.js session
-// ({employee, zone, in, out, hours, open}); the caller has already resolved employee→c_bpartner_id and
-// zone→m_locator_id (both REAL seeded ids) and supplies the parent hr_process_id + a seedId sequencer.
-function toAttendanceRow(session, hr_process_id, c_bpartner_id, m_locator_id, seedId) {
-  if (!session || c_bpartner_id == null || m_locator_id == null) return null;
-  var open = !!session.open;
-  return { C_Attendance_ID: seedId ? seedId() : 1, HR_Process_ID: hr_process_id != null ? hr_process_id : null,
-    C_BPartner_ID: c_bpartner_id, M_Locator_ID: m_locator_id,
-    ServiceDate: session.in ? String(session.in).slice(0, 10) : null,
-    CheckInTime: session.in || null,
-    CheckOutTime: open ? null : (session.out || null),      // OPEN → honest NULL (no fabricated finish)
-    Qty: open ? null : (session.hours != null ? session.hours : null),   // hours DERIVED from real in/out; open → NULL
-    Description: open ? 'demo session (open — no fabricated finish)' : 'demo session' };
+// ONE s_resource header row for ONE person. Delegates the column shape to occupancy.toResourceRow (the ONE
+// witnessed builder for this table), then threads the two REAL person columns the room path never needed:
+// ad_user_id (identity spine) + m_warehouse_id (building FK) — both verified real S_Resource columns.
+// `person` = { code, name?, ad_user_id, m_warehouse_id? }; code rides Value (the same Value=identity idiom
+// the trades/rooms rows use). Honest null when identity is missing — never a person without a real AD_User.
+function toPersonResourceRow(person, s_resourcetype_id, seedId) {
+  if (!person || person.code == null || person.ad_user_id == null || !O) return null;
+  var row = O.toResourceRow({ guid: person.code, name: person.name || person.code }, s_resourcetype_id, seedId, null);
+  if (!row) return null;
+  row.ad_user_id = person.ad_user_id;
+  if (person.m_warehouse_id != null) row.m_warehouse_id = person.m_warehouse_id;
+  return row;
 }
 
-// compile a WHOLE period's presence sessions into native C_Attendance rows in one pass →
-// {rows, skipped, _watermark}. `opts` supplies the REAL resolution:
-//   opts.processId   — the parent HR_Process this attendance period folds under (real seeded hr_process_id)
-//   opts.partnerMap  — { <employee id> : c_bpartner_id }  (real seeded C_BPartner ids, e.g. EMP001→1001)
-//   opts.locatorMap  — { <zone guid>   : m_locator_id }   (real seeded M_Locator ids, keyed by room guid)
-// A session whose employee OR zone is not in the maps is SKIPPED (never a fabricated FK), captured in
-// `skipped[]` with a reason — same non-invent contract as ad_tenancy.compileBuilding. Deterministic:
-// C_Attendance_ID is a 1-based sequence over the accepted rows (no Date.now/random).
+// ONE s_resourceassignment row for ONE presence session. Delegates the column shape to occupancy.
+// toResourceAssignmentRow (same table, witnessed), then applies the attendance semantics:
+//   assigndatefrom = check-in ts · assigndateto = check-out ts | NULL (OPEN — no fabricated finish)
+//   qty = the REAL derived hours (attendance.js _hoursBetween) | NULL when open (no fabricated duration)
+//   isconfirmed = 'Y' only on a CLOSED session (a real completed in→out pair); an open one is honestly 'N'
+// The `_party` carry-along is dropped: the person identity rides S_Resource.ad_user_id (a real FK), not a
+// bolt-on. The zone is NOT here — see the header (spatial view-trace, never a fabricated column).
+function toAssignmentRow(session, s_resource_id, seedId) {
+  if (!session || s_resource_id == null || !O) return null;
+  var open = !!session.open;
+  var row = O.toResourceAssignmentRow({ verb: 'ASSIGN', target: s_resource_id,
+    params: { party: session.employee, from: session.in || null, to: open ? null : (session.out || null) } }, seedId);
+  if (!row) return null;
+  delete row._party;
+  row.name = session.employee != null ? String(session.employee) : null;
+  row.description = open ? 'presence session (open — no fabricated finish)' : 'presence session';
+  row.assigndateto = open ? null : (session.out || null);
+  row.qty = open ? null : (session.hours != null ? session.hours : null);
+  row.isconfirmed = open ? 'N' : 'Y';
+  return row;
+}
+
+// compile a WHOLE period's presence sessions into native s_resourceassignment rows in one pass →
+// { rows, skipped, spatial, _watermark }. `opts.resourceMap` = { <employee code> : s_resource_id } built from
+// REAL queried rows (resourceMapFromResources over the viewer's erpQuery / a witness's ad_seed.db handle).
+// A session whose employee is not in the map is SKIPPED (never a fabricated FK). `spatial` carries the BIM
+// zone fact per accepted row (keyed by the row PK) — the room-granularity split, see header. Deterministic:
+// s_resourceassignment_id is a 1-based sequence over accepted rows (no Date.now/random).
 function compileAttendance(sessions, opts) {
   sessions = sessions || []; opts = opts || {};
-  var partnerMap = opts.partnerMap || {}, locatorMap = opts.locatorMap || {}, processId = (opts.processId != null ? opts.processId : null);
+  var resourceMap = opts.resourceMap || {};
   var seq = 0; function seedId() { return ++seq; }
-  var rows = [], skipped = [];
+  var rows = [], skipped = [], spatial = [];
   sessions.forEach(function (s) {
-    var bp = partnerMap[s.employee], loc = locatorMap[s.zone];
-    if (bp == null) { skipped.push({ employee: s.employee, zone: s.zone, reason: 'employee id resolves to no real C_BPartner' }); return; }
-    if (loc == null) { skipped.push({ employee: s.employee, zone: s.zone, reason: 'zone guid resolves to no real M_Locator' }); return; }
-    rows.push(toAttendanceRow(s, processId, bp, loc, seedId));
+    var rid = resourceMap[s.employee];
+    if (rid == null) { skipped.push({ employee: s.employee, zone: s.zone, reason: 'employee code resolves to no real S_Resource' }); return; }
+    var row = toAssignmentRow(s, rid, seedId);
+    if (!row) { skipped.push({ employee: s.employee, zone: s.zone, reason: 'session incomplete — no row built' }); return; }
+    rows.push(row);
+    spatial.push({ s_resourceassignment_id: row.s_resourceassignment_id, employee: s.employee, zone: s.zone, in: s.in });
   });
-  return W ? W.stamp({ rows: rows, skipped: skipped }, opts.locale || 'en') : { rows: rows, skipped: skipped };
+  var out = { rows: rows, skipped: skipped, spatial: spatial };
+  return W ? W.stamp(out, opts.locale || 'en') : out;
 }
 
-// build the two resolution maps from injected real rows (the viewer's erpQuery / a witness's ad_seed.db).
-// partnerMap: employee code → C_BPartner_ID via the AD_User contact (Name==code) → its C_BPartner_ID; falls
-// back to a bare {code: bp} table when the caller already holds it. locatorMap: room guid → M_Locator_ID via
-// M_Locator.Value==guid. Both are pure lookups over rows the CALLER queried — this module never touches a DB.
-function partnerMapFromUsers(userRows) {
-  var m = {}; (userRows || []).forEach(function (u) { if (u && u.name != null && u.c_bpartner_id != null) m[u.name] = u.c_bpartner_id; });
-  return m;
-}
-function locatorMapFromLocators(locatorRows) {
-  var m = {}; (locatorRows || []).forEach(function (l) { if (l && l.value != null && l.m_locator_id != null) m[l.value] = l.m_locator_id; });
+// build the employee→resource map from injected real rows (the viewer's erpQuery / a witness's db handle):
+// S_Resource.Value == the employee code (the Value=identity idiom). Pure lookup — never touches a DB itself.
+function resourceMapFromResources(resourceRows) {
+  var m = {}; (resourceRows || []).forEach(function (r) { if (r && r.value != null && r.s_resource_id != null) m[r.value] = r.s_resource_id; });
   return m;
 }
 
-var AD = { toAttendanceRow: toAttendanceRow, compileAttendance: compileAttendance,
-  partnerMapFromUsers: partnerMapFromUsers, locatorMapFromLocators: locatorMapFromLocators };
+// ★ LENS READ — the persisted attendance read back through the native JOIN (the ad_infowindow 7600000 lens
+// seed_hba_erp.js declares), mirroring ad_bom.readBom: S_ResourceAssignment ⋈ S_Resource ⋈ AD_User ⋈
+// M_Warehouse. Honest empty when no db. opts.m_warehouse_id scopes to one building. Returns
+// { sessions: [{assignment_id, who, building, checkin, checkout, hours, confirmed}], _watermark } — open
+// sessions surface with NULL checkout/hours (honest-open survives the round-trip).
+function readPresence(erpQuery, opts) {
+  opts = opts || {};
+  if (typeof erpQuery !== 'function') return W ? W.stamp({ sessions: [] }, opts.locale || 'en') : { sessions: [] };
+  var where = '', params = [];
+  if (opts.m_warehouse_id != null) { where = ' WHERE W.M_Warehouse_ID=?'; params.push(opts.m_warehouse_id); }
+  var sql = 'SELECT RA.S_ResourceAssignment_ID AS assignment_id, U.Name AS who, W.Name AS building,'
+    + ' RA.AssignDateFrom AS checkin, RA.AssignDateTo AS checkout, RA.Qty AS hours, RA.IsConfirmed AS confirmed'
+    + ' FROM S_ResourceAssignment RA JOIN S_Resource R ON RA.S_Resource_ID=R.S_Resource_ID'
+    + ' JOIN AD_User U ON R.AD_User_ID=U.AD_User_ID'
+    + ' JOIN M_Warehouse W ON R.M_Warehouse_ID=W.M_Warehouse_ID' + where + ' ORDER BY RA.AssignDateFrom';
+  var rows;
+  try { rows = erpQuery(sql, params); } catch (e) { rows = []; }
+  var out = { sessions: rows || [] };
+  return W ? W.stamp(out, opts.locale || 'en') : out;
+}
+
+var AD = { toPersonResourceRow: toPersonResourceRow, toAssignmentRow: toAssignmentRow,
+  compileAttendance: compileAttendance, resourceMapFromResources: resourceMapFromResources,
+  readPresence: readPresence };
 if (typeof module === 'object' && module.exports) module.exports = AD;
 else (typeof self !== 'undefined' ? self : this).HbaAdAttendance = AD;
 })();

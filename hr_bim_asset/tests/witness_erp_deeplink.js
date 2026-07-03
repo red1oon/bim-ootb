@@ -43,7 +43,8 @@ var REAL_WINDOWS = {
   PAYROLL_MOVEMENT: 53042, // "Payroll Movement" — table HR_Movement
   SUBSCRIPTION: 316,       // "Subscription" — table C_Subscription
   ORDER: 143,              // "Sales Order" — table C_Order (issotrx='Y', matches iot.js's compiled order)
-  PAYROLL_CONCEPT: 53036   // "Payroll Concept Catalog" — table HR_Concept
+  PAYROLL_CONCEPT: 53036,  // "Payroll Concept Catalog" — table HR_Concept
+  BOM: 53006               // "Bill of Materials and Formula" — table PP_Product_BOM (§STAGE3 BOM pane)
 };
 Object.keys(REAL_WINDOWS).forEach(function (k) {
   ok('L1-window-' + k, HBALens.AD_WINDOWS[k] === REAL_WINDOWS[k],
