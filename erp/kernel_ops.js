@@ -99,28 +99,74 @@
     return opId;
   }
 
+  // T6 (prompts/KERNEL_HARDENING_BATCH1_SPEC.md, audit §T6) — the multi-tab last-writer-wins guard.
+  // _storedTipIsAncestor(db, storedTip): does THIS db's chain build ON the currently-stored tip? True iff
+  // the stored tip is empty/genesis, or appears as an op_hash somewhere in this db's chain (so my log
+  // is at-or-ahead of what's stored → overwriting is a safe fast-forward). False ⇒ another tab advanced
+  // the stored log to a tip my (stale) copy never saw → overwriting would silently DROP its ops; refuse.
+  // Fail-OPEN on any query error (never worse than today's blind overwrite; only the confirmed-foreign
+  // case blocks). Pure read; exported for W-CROSS-TAB-PERSIST.
+  function _storedTipIsAncestor(db, storedTip) {
+    if (storedTip == null || storedTip === GENESIS) return true;
+    try {
+      var r = db.exec('SELECT 1 FROM kernel_ops WHERE op_hash = ' + JSON.stringify(String(storedTip)) + ' LIMIT 1');
+      return !!(r.length && r[0].values.length);
+    } catch (e) { return true; }
+  }
+
   // Debounced IDB write — avoids hammering IndexedDB on rapid ops (e.g. drag).
   // The at-rest copy is hash-chain SEALED first (W-CHAIN) so a persisted log is tamper-evident.
   // Sealing happens HERE (the persistence seam, business-time) — never on the hot commit path,
   // so the 0ms UI is untouched. See docs/DistributedERP.md §0 (the two-domain split).
+  // T6: serialized across tabs via navigator.locks AND tip-guarded — a stale tab can no longer clobber a
+  // newer tab's committed, sealed, signed ops (the zero-op-count-threshold data-loss bomb). A companion
+  // '<dbUrl>::tip' key records the stored chain tip so the guard is O(1), no blob re-open.
   var _persistTimer = null;
+  function _idbPersist(db, dbUrl) {
+    return sealChain(db).then(function() {
+      var myTip = _lastSealedTip(db).hash;
+      var buf = db.export().buffer;
+      return new Promise(function(resolve) {
+        var req = indexedDB.open('bim_ootb_cache', 1);
+        req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+        req.onerror = function() { console.warn('§KRN_PERSIST_ERR open failed'); resolve(); };
+        req.onsuccess = function() {
+          try {
+            var store = req.result.transaction('dbs', 'readwrite').objectStore('dbs');
+            var tipKey = dbUrl + '::tip';
+            var getReq = store.get(tipKey);
+            var writeAndDone = function() {
+              store.put(buf, dbUrl); store.put(myTip, tipKey);
+              console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB tip=' + String(myTip).slice(0,12) + '…');
+              resolve();
+            };
+            getReq.onsuccess = function() {
+              var storedTip = getReq.result || null;
+              if (!_storedTipIsAncestor(db, storedTip)) {
+                console.warn('§KRN_PERSIST_STALE url=' + dbUrl + ' storedTip=' + String(storedTip).slice(0,12) +
+                             '… is not an ancestor of myTip=' + String(myTip).slice(0,12) +
+                             '… — refusing to clobber a newer log (T6); reload to merge.');
+                resolve(); return;
+              }
+              writeAndDone();
+            };
+            getReq.onerror = function() { writeAndDone(); };   // fail-open (no worse than today)
+          } catch(e) { console.warn('§KRN_PERSIST_ERR', e); resolve(); }
+        };
+      });
+    }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
+  }
   function _persistToIdb(db) {
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
-      sealChain(db).then(function() {
-        try {
-          var dbUrl = window.APP && APP.DB_URL;
-          if (!dbUrl) return;
-          var buf = db.export().buffer;
-          var req = indexedDB.open('bim_ootb_cache', 1);
-          req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
-          req.onsuccess = function() {
-            var tx = req.result.transaction('dbs', 'readwrite');
-            tx.objectStore('dbs').put(buf, dbUrl);
-            console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB');
-          };
-        } catch(e) { console.warn('§KRN_PERSIST_ERR', e); }
-      }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
+      var dbUrl = (typeof window !== 'undefined' && window.APP && APP.DB_URL) || null;
+      if (!dbUrl) return;
+      // T6: serialize same-origin tabs so the read-guard-write is not interleaved. Fallback runs direct.
+      if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
+        navigator.locks.request('krn_persist:' + dbUrl, function() { return _idbPersist(db, dbUrl); });
+      } else {
+        _idbPersist(db, dbUrl);
+      }
     }, 2000);
   }
 
@@ -628,8 +674,9 @@
     assertRateAsInput: assertRateAsInput, // §I-J (W-RATE-INPUT): currency-determinism guard (pure, rate-as-op-input)
     branchOps:    branchOps,     // BLUE FUTURE (W-BLUE-FUTURE): the ops of a speculative branch (id order)
     discardBranch: discardBranch, // BLUE FUTURE: shirk the blues — fold the whole branch away atomically
-    acceptBranchUpTo: acceptBranchUpTo // BLUE FUTURE: long-click a blue dot → accept-up-to-here (chain stays valid)
+    acceptBranchUpTo: acceptBranchUpTo, // BLUE FUTURE: long-click a blue dot → accept-up-to-here (chain stays valid)
+    _storedTipIsAncestor: _storedTipIsAncestor // T6 (W-CROSS-TAB-PERSIST): the multi-tab clobber guard (pure)
   };
 
-  console.log('§KERNEL_OPS_LOADED v9 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT)');
+  console.log('§KERNEL_OPS_LOADED v10 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard)');
 })();

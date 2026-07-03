@@ -128,6 +128,13 @@
       btn.disabled = true;
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
         .then(function (res) {
+          // T6: commitGroup RESOLVES {committed:false} — guard or a lost Serve reports success + strands the ticket.
+          if (!res || !res.committed) {
+            btn.disabled = false;
+            console.log('§KDS-SERVE committed=N inout=' + ticket.m_inout_id + ' reason=' + ((res && res.reason) || 'unknown'));
+            cfg.status('Serve NOT committed: ' + ((res && res.reason) || 'group rejected'));
+            return;
+          }
           return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
             return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
           }).then(function (cv) {
