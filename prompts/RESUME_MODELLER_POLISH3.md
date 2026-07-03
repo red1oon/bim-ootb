@@ -91,17 +91,28 @@ Logs saved under `modeller/tests/logs/` and READ before any DONE claim.
   SAME number the status bar computes (never a second math path): move `ΔX +1.20m` (snapped delta), rotate
   `+15°`, scale `X ×1.25`, grid-drag `A Δ0.60m`. Hidden on commit/cancel/exit. Seam: `dimLabelShow(text,pos)` /
   `dimLabelHide()` + `window.__dimLabel` witness oracle.
-- **§V8 R/S shortcuts (item 10): ⛔ BLOCKED — needs the user/Sonnet nod the research spec already flagged,**
-  plus a NEW fact found here: the industry `R`=rotate convention COLLIDES with the modeller's existing
-  `R`=Insert shortcut (modeller.html SHORTCUTS map + help panel). Arming rotate/scale sub-modes is mechanical
-  once keys are chosen; choosing keys (rebind Insert? pick other letters?) is a user-facing UX decision, not
-  an EXTRACT. One question: which bindings — (a) keep R=Insert, use e.g. `T`(turn)/`S`(scale), or (b) rebind
-  Insert (Blender uses Shift+A) and take R/S?
+- **§V8 R/S shortcuts (item 10): ✅ DECIDED 2026-07-03 (user delegated: "please decide for me") → option (a).**
+  Keep `R`=Insert (it already has double duty — toolbar Insert + rotate-while-inserting; rebinding breaks
+  muscle memory/help/witnesses for zero gain); add **`T`=arm the rotate ring ("turn") and `S`=arm the scale
+  cubes** as Move-gizmo sub-mode ARMING keys (SketchUp precedent S=scale). SPEC: on `T`/`S` (not typing, no
+  Ctrl/Meta/Alt — Ctrl+S stays browser-save, no other mode active): selection exists → enter Move if needed →
+  if the matching handle set is offered by the gizmo's existing gates (ring = all selected INSERT/SOLID,
+  cubes = single INSERT) arm it — matching handles keep full opacity, all other handles dim, status hint says
+  what to drag; gate not met → refuse with a hint, arm nothing. Same key again = disarm (restore all).
+  Arming changes NO fold and NO commit path — the drag still commits through the untouched rotZ/scale
+  pointer handlers; arming is affordance only. Esc/exit-Move clears the arm. Oracle: `window.__rsArm`,
+  §-tag `§RSARM`. Help panel gains T/S keyboard rows (R row untouched).
 
 - **W-E2E-FLOATDIM** (§V7): real move-gizmo drag held mid-drag → a `dimLabel` sprite is IN the scene, its
   text equals the status bar's snapped delta (same number, maths-compared), positioned within the element's
   neighbourhood (≤ diag of the drag), constant-screen-size scale > 0; release → hidden. Rotate ring drag →
   `°` text matches the snapped angle. No pageerror.
+- **W-E2E-RSARM** (§V8): real keypress path on a real selected insert — `T` (outside Move) auto-enters Move
+  AND arms rot (`__rsArm.kind==='rot'`, non-ring handles dimmed below base opacity); ring drag while armed
+  commits exactly ONE `GEOM_ROTATE` (the right op type); `S` switches the arm to scale (cubes full, ring
+  dimmed); cube drag commits exactly ONE `GEOM_SCALE`; `S` again disarms (opacities restored to base);
+  `Ctrl+S` arms NOTHING; typing `s` inside a dim-* input arms NOTHING; Esc exits Move and clears the arm.
+  No pageerror.
 
 ## # DONE appendix (fill as items land — every claim needs a § log line)
 
@@ -117,3 +128,13 @@ Logs saved under `modeller/tests/logs/` and READ before any DONE claim.
   ghost ≤5cm, +30° on the ring, hidden on release). Regression: W-E2E-MOVE 9/9 · W-E2E-ROTATE 7/7 ·
   W-E2E-SCALE 7/7 · W-E2E-GRIDSTRETCH 7/7 (logs modeller/tests/logs/). §V8 (item 10 R/S shortcuts) stays
   ⛔ BLOCKED on the key-binding question above.
+- 2026-07-03 §V8 SHIPPED (lane/modeller-polish-5) — T/S Move-gizmo sub-mode arming per the decision above
+  (R kept as Insert). W-E2E-RSARM 8/8 (§RSARM log lines; logs modeller/tests/logs/w_e2e_rsarm.log): T
+  auto-enters Move + arms rot with the other handle sets dimmed, armed drags commit exactly one
+  GEOM_SCALE/GEOM_ROTATE through the untouched pointer paths, arm survives the post-commit gizmo rebuild,
+  toggle-off restores base opacities, Ctrl+S / typing guards hold, Esc clears. TWO first-RED findings:
+  (1) arrow shaft+tip SHARE one material → base opacity must be recorded on the material, not per-object
+  (restore re-dimmed arrows otherwise); (2) a fixed 0.6m cube drag 0.25-snaps to ×1.00 on a long wall
+  (probe-verified the raycast was fine) → witness drags 0.6·ext like W-E2E-SCALE. Regression: W-E2E-MOVE
+  9/9 · W-E2E-ROTATE 7/7 · W-E2E-SCALE 7/7 · W-E2E-NUMROT 7/7 · W-E2E-FLOATDIM 6/6. Help panel gained
+  T/S keyboard rows.

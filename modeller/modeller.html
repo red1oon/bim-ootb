@@ -1575,6 +1575,7 @@ function buildMoveGizmo() {
   }
   moveGizmo.traverse(o => { o.renderOrder = 1000; });          // draw over the solids like the insert ghost
   moveGizmo.position.copy(c); scene.add(moveGizmo);
+  if (armedSub) applyArmDim();                                  // §V8: re-apply T/S arm dimming across gizmo rebuilds (post-commit)
   if (window.A && A.requestRender) A.requestRender();
 }
 function clearMoveGizmo() { if (moveGizmo) { scene.remove(moveGizmo); moveGizmo.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); moveGizmo = null; } }
@@ -1732,6 +1733,7 @@ function enterMove() {
 }
 function exitMove() {
   moving = false; _moveDrag = null; bMove.innerHTML = MV_MOVE; bMove.classList.remove('on'); controls.enabled = true; applyModeCursor();
+  armedSub = null; window.__rsArm = null;                       // §V8: leaving Move always clears the T/S arm
   dimLabelHide();                                               // §V7
   if (dimMove) dimMove.style.display = 'none';
   if (dimRot) dimRot.style.display = 'none';
@@ -1739,6 +1741,44 @@ function exitMove() {
   clearMoveGizmo(); clearMoveGhost(); clearSnapMarker();
 }
 bMove.onclick = () => moving ? exitMove() : enterMove();
+// §V8 T/S sub-mode arming (RESUME_MODELLER_POLISH3.md §V8 — Witness: W-E2E-RSARM). R stays Insert (decided
+// 2026-07-03: it already has toolbar+rotate-while-inserting double duty); T ("turn") arms the rotate ring,
+// S arms the scale cubes. Arming is AFFORDANCE ONLY — matching handles keep full opacity, the rest dim, the
+// status line says what to drag; the drag itself still commits through the untouched rotZ/scale pointer
+// handlers, so no fold or commit path changes here.
+let armedSub = null;                                            // null | 'rot' | 'scale'
+function _armSetOf(o) { const ax = (o.userData && o.userData.moveAxis) || ''; return ax === 'rotZ' ? 'rot' : (ax.indexOf('scale') === 0 ? 'scale' : 'move'); }
+function applyArmDim() {
+  if (moveGizmo) moveGizmo.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    // base opacity lives on the MATERIAL: arrow shaft+tip SHARE one material, so a per-object record
+    // captures the already-dimmed value on the second traversal and restore re-dims (W-E2E-RSARM first RED)
+    if (o.material.userData._baseOpacity == null) o.material.userData._baseOpacity = o.material.opacity;
+    o.material.opacity = (!armedSub || _armSetOf(o) === armedSub || _armSetOf(o.parent) === armedSub) ? o.material.userData._baseOpacity : 0.15;
+  });
+  window.__rsArm = armedSub ? { kind: armedSub } : null;        // W-E2E-RSARM oracle
+  if (window.A && A.requestRender) A.requestRender();
+}
+function armSubMode(kind) {
+  if (sketching || routing || edgePicking || gridMoving || inserting) return;
+  if (selectedId == null && !moving) { setStat((kind === 'rot' ? 'rotate' : 'scale') + ': select an object first'); return; }
+  if (!moving) enterMove();
+  if (!moving || !moveGizmo) return;                            // enterMove refused (no selection / no gizmo)
+  if (armedSub === kind) {
+    armedSub = null; applyArmDim();
+    setStat((kind === 'rot' ? 'rotate' : 'scale') + ': disarmed'); console.log('§RSARM disarmed=' + kind); return;
+  }
+  const has = { rot: false, scale: false };
+  moveGizmo.traverse(o => { const s = _armSetOf(o); if (s !== 'move') has[s] = true; });
+  if (!has[kind]) {                                             // same gates as buildMoveGizmo — never arm a handle that isn't offered
+    setStat(kind === 'rot' ? 'rotate: ring not offered on this selection' : 'scale: cubes only on a single catalog component');
+    console.log('§RSARM refuse=' + kind); return;
+  }
+  armedSub = kind; applyArmDim();
+  setStat(kind === 'rot' ? 'rotate armed — drag the yellow ring (Shift = free, else 15° snap), T disarms'
+    : 'scale armed — drag a cube out (edge-anchored), S disarms');
+  console.log('§RSARM armed=' + kind);
+}
 function moveDragPlane(axis, c0) {                             // x/y/xy → horizontal plane through c0; z → vertical plane facing camera
   if (axis === 'z') { const n = new THREE.Vector3(); camera.getWorldDirection(n); n.z = 0; if (n.lengthSq() < 1e-6) n.set(0, 1, 0); n.normalize(); return new THREE.Plane().setFromNormalAndCoplanarPoint(n, c0); }
   return new THREE.Plane(new THREE.Vector3(0, 0, 1), -c0.z);
@@ -2020,6 +2060,13 @@ window.addEventListener('keydown', (e) => {
   if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;
   if ((e.key === 'm' || e.key === 'M') && !sketching && !routing && !edgePicking && !gridMoving && !inserting) {
     if (selectedId != null || moving) { e.preventDefault(); bMove.onclick(); }
+  }
+  // §V8 (RESUME_MODELLER_POLISH3.md §V8 — Witness: W-E2E-RSARM): T arms the rotate ring ("turn"), S arms the
+  // scale cubes — Move-gizmo sub-mode arming only; R stays Insert (decided 2026-07-03). Ctrl/Meta/Alt skipped
+  // so Ctrl+S stays the browser's save and no chord ever arms by accident.
+  if ((e.key === 't' || e.key === 'T' || e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey && !e.altKey &&
+      !sketching && !routing && !edgePicking && !gridMoving && !inserting) {
+    if (selectedId != null || moving) { e.preventDefault(); armSubMode((e.key === 't' || e.key === 'T') ? 'rot' : 'scale'); }
   }
   // G toggles snap-to-geometry while moving (suppress the inference like SketchUp's Alt) — re-preview the live drag.
   if ((e.key === 'g' || e.key === 'G') && moving) {
@@ -3594,6 +3641,9 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="hp-name">Cancel current mode</span>' + _kbd('Esc') + '</div>';
       // §P7: G (snap-to-geometry toggle while moving) was a real, working shortcut the panel never listed.
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="hp-name">Snap-to-geometry on/off (while moving)</span>' + _kbd('G') + '</div>';
+      // §V8: T/S arm the Move gizmo's rotate-ring / scale-cube sub-modes (R stays Insert — decided 2026-07-03).
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></span><span class="hp-name">Arm rotate ring (turn, in Move)</span>' + _kbd('T') + '</div>';
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M14 4v6h6"/></svg></span><span class="hp-name">Arm scale cubes (in Move)</span>' + _kbd('S') + '</div>';
       hpanel.innerHTML = h;
     }
     help.onclick = e => { e.stopPropagation(); const open = hpanel.style.display !== 'block'; if (open) buildHelp();
