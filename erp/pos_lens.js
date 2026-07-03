@@ -792,6 +792,14 @@
       replCommitting = true; refreshCommitBtn();
       cfg.KO.commitGroup(cfg.opDb, ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
         .then(function (res) {
+          // T6: commitGroup RESOLVES {committed:false} on torn-group/rate-reject/id-collision — it does
+          // NOT reject. Guard it or a lost group reports as success (silent loss, even in the §-log).
+          if (!res || !res.committed) {
+            replCommitting = false; refreshCommitBtn();
+            console.log('§POS-REPLENISH-COMMIT committed=N reason=' + ((res && res.reason) || 'unknown') + ' — NOTHING committed');
+            cfg.status('Replenishment NOT committed: ' + ((res && res.reason) || 'group rejected'));
+            return;
+          }
           return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
             return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
           }).then(function (cv) {
@@ -1278,6 +1286,12 @@
 
         cfg.KO.commitGroup(cfg.opDb, r.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
           .then(function (res) {
+            // T6: guard {committed:false} — a rejected group must not report as a completed sale.
+            if (!res || !res.committed) {
+              console.log('§POS-SALE committed=N reason=' + ((res && res.reason) || 'unknown') + ' — sale NOT recorded');
+              cfg.status('Sale NOT completed: ' + ((res && res.reason) || 'group rejected'));
+              return;
+            }
             // store full-res blob in ImgStore if available
             if (_state.imageThumb && _state.imageKey && window.ImgStore && typeof window.ImgStore.put === 'function') {
               try {
@@ -1360,6 +1374,12 @@
       if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-LIVE complete REFUSED reason=' + g.reason); return; }
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
         .then(function (res) {
+          // T6: commitGroup RESOLVES {committed:false} (torn/rate/id-collision) — guard or a lost sale reports success.
+          if (!res || !res.committed) {
+            console.log('§POS-SALE committed=N reason=' + ((res && res.reason) || 'unknown') + ' — sale NOT recorded');
+            cfg.status('Sale NOT completed: ' + ((res && res.reason) || 'group rejected'));
+            return;
+          }
           return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
             return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
           }).then(function (cv) {
@@ -1406,6 +1426,12 @@
       if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-DELIVERLATER REFUSED reason=' + g.reason); return; }
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
         .then(function (res) {
+          // T6: commitGroup RESOLVES {committed:false} (torn/rate/id-collision) — guard or a lost sale reports success.
+          if (!res || !res.committed) {
+            console.log('§POS-SALE committed=N reason=' + ((res && res.reason) || 'unknown') + ' — sale NOT recorded');
+            cfg.status('Sale NOT completed: ' + ((res && res.reason) || 'group rejected'));
+            return;
+          }
           return Promise.resolve(cfg.seal ? cfg.seal() : null).then(function () {
             return cfg.chainVerify ? cfg.chainVerify() : { ok: false };
           }).then(function (cv) {
