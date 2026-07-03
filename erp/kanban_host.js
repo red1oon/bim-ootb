@@ -88,8 +88,11 @@
     global.ERP = {
       dispatch: seam.dispatch, ctx: ctx, read: seam.read, verify: seam.verify,
       opDb: projDb,
-      seal: function () { return global.KernelOps.sealChain(projDb); },                 // sign every unsigned op
-      chainVerify: function () { return global.KernelOps.verifyChain(projDb); }          // {ok,len,tip} incl. sig
+      // T7 (W-T7-INC): the HOT paths (POS SEND, kitchen, replenish — every sale) seal + verify
+      // INCREMENTALLY — O(new ops), not O(whole history) with per-op ECDSA. First verify of a session
+      // is still FULL (cold cache in verifyChainIncremental); boot/import paths keep full verifyChain.
+      seal: function () { return global.KernelOps.sealFrom(projDb); },                    // sign the NEW ops
+      chainVerify: function () { return (global.KernelOps.verifyChainIncremental || global.KernelOps.verifyChain)(projDb); }
     };
     log('§SEAM-LIVE window.ERP published: dispatch,verify,seal,chainVerify · actor=' + ctx.actor + ' grants=' + grants.length + ' pubKey=' + (ctx.pubKey ? 'Y' : 'none'));
     // T1 (W-T1-ATTRIB, FABLE5_WRAPUP §3): PIN → employee attribution as AUDIT METADATA. cfg.attribDirectory

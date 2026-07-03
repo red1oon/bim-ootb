@@ -514,6 +514,9 @@
   // in JS (no json_extract dependency) so it runs on any sql.js build.
   // BLUE FUTURE: `branch` (optional) — official docstatus by default; the blue VIEW folds blue SET_STATUS too.
   function readTip(db, table, id, branch) {
+    // T7 fix 3 (W-T7-INC): memoized tip-fold (tip_fold.js) — O(new ops) per paint instead of a full
+    // scan per (table,id). Verdict identical by construction (§T7-TIP); absent/erroring → legacy scan.
+    if (global.TipFold) { try { return global.TipFold.readTip(db, table, id, branch); } catch (e) {} }
     try {
       var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='SET_STATUS' AND undone=0" + _branchClause(branch) + " ORDER BY id DESC");
       if (!r.length || !r[0].values.length) return null;
@@ -546,6 +549,8 @@
   // fold-back, and every reader agree on the tip value. JS-side filter (no json_extract dependency).
   // BLUE FUTURE: `branch` (optional) — official field tip by default; the blue VIEW folds blue CRUD_UPDATE too.
   function tipValues(db, table, id, branch) {
+    // T7 fix 3 (W-T7-INC): memoized (tip_fold.js), same fallback contract as readTip above.
+    if (global.TipFold) { try { return global.TipFold.tipValues(db, table, id, branch); } catch (e) {} }
     var out = {};
     try {
       var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='CRUD_UPDATE' AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
@@ -1743,7 +1748,8 @@
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
         return Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
-          return Promise.resolve(K.verifyChain(db)).then(function (v) {
+          // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
+          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(db)).then(function (v) {
             _sidePersist();
             var lastId = res.ids[res.ids.length - 1];
             var row = db.exec('SELECT op_uuid FROM kernel_ops WHERE id=' + lastId);
@@ -2198,7 +2204,8 @@
         var groupOps = [{ op_type: op.op_type, op_uuid: op.op_uuid || null, params: params }];
         Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); return; }
-          return Promise.resolve(K.verifyChain(db)).then(function (v) {
+          // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
+          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(db)).then(function (v) {
             _sidePersist();
             var cols = op.changes ? Object.keys(op.changes).join(',') : (op.fields ? Object.keys(op.fields).join(',') : '-');
             console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
