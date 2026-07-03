@@ -85,8 +85,10 @@ runE2E('W-E2E-BCF', async (t) => {
   const magic = png.length > 8 && png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4E && png[3] === 0x47;
   t.assert('B5 SNAPSHOT (PNG magic, >1KB rendered frame)', magic && png.length > 1024, 'bytes=' + png.length);
 
-  // B6 — the real toolbar button drives the same path
-  await t.clickSel('#b-bcf'); await t.sleep(600);
+  // B6 — the real toolbar path drives the same export: Export pill ▸ BCF menu row (the flat #b-bcf
+  // button was consolidated into the #b-export menu — prompts/EXPORT_MENU_NATIVE_DB.md; handler unchanged).
+  await t.clickSel('#b-export'); await t.sleep(250);
+  await t.clickSel('#m-export-panel .me-row[data-key="bcf"]'); await t.sleep(600);
   const stat = await t.pg.evaluate(() => document.getElementById('stat').textContent);
-  t.assert('B6 BUTTON (#b-bcf → "BCF exported" in #stat)', /BCF exported/.test(stat), 'stat="' + stat.slice(0, 70) + '"');
+  t.assert('B6 BUTTON (#b-export ▸ BCF → "BCF exported" in #stat)', /BCF exported/.test(stat), 'stat="' + stat.slice(0, 70) + '"');
 }, { width: 1200, height: 850, dpr: 1 });

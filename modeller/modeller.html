@@ -162,8 +162,7 @@
   <input id="dim-rad" type="number" step="0.05" min="0.01" value="0.1" title="Fillet / chamfer radius (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
-  <button id="b-ifc" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>IFC</span></button>
-  <button id="b-bcf" disabled title="Export a BCF 2.1 issue (.bcfzip) — current view + selection as Component references"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="11" cy="14" r="2"/><path d="m14.5 17.5-1.7-1.7"/></svg><span>BCF</span></button>
+  <button id="b-export" disabled title="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>Export</span></button>
   <button id="b-guide" title="Modeller User Guide — how to Open, walk, edit & export"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Guide</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
@@ -187,7 +186,7 @@
 <script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
 <script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=6" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=7" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
@@ -220,7 +219,7 @@
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
 <script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=12" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=13" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=17" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -2095,21 +2094,22 @@ if (dimScale) dimScale.addEventListener('keydown', (e) => {
   commitScale(m[1].toLowerCase(), +f.toFixed(4));
 });
 
-// ── IFC EXPORT ──────────────────────────────────────────────────────────────────────────────────
-const bIfc = document.getElementById('b-ifc');
-bIfc.onclick = async () => {
+// ── EXPORT MENU (prompts/EXPORT_MENU_NATIVE_DB.md — Witness: W-E2E-EXPORT-DB) ───────────────────
+// ONE Export pill (#b-export) replaces the two flat #b-ifc/#b-bcf pills; a small chooser (the exact
+// #m-open-panel idiom from initOpenChooser) offers Native .db / IFC / BCF. IFC + BCF handler bodies
+// are UNCHANGED (pure UI move); Native .db is the NEW symmetric save of what #b-open loads.
+async function doIfcExport() {
   if (window.Bonsai.oplog.length === 0) { setStat('author something first'); return; }
   setStat('exporting IFC…');
   try {
     const r = await window.Bonsai.ifc.exportModel({ name: 'bonsai_model.ifc' });
     setStat('IFC exported  walls=' + r.walls + '  openings=' + r.openings + '  ' + r.bytes.length + ' bytes (downloaded)'); audioCue('export');
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§IFC export fail ' + err); }
-};
-// ── BCF EXPORT (§Q3 RESUME_MODELLER_POLISH2.md — Witness: W-E2E-BCF) ────────────────────────────
-// One real .bcfzip: current camera as the BCF viewpoint, canvas snapshot, selection (+ an active §Q2
-// instance pick with a real guid) as Component references. Mirrors the bIfc handler pattern exactly.
-const bBcf = document.getElementById('b-bcf');
-bBcf.onclick = () => {
+}
+// (§Q3 RESUME_MODELLER_POLISH2.md — Witness: W-E2E-BCF) One real .bcfzip: current camera as the BCF
+// viewpoint, canvas snapshot, selection (+ an active §Q2 instance pick with a real guid) as Component
+// references. Mirrors the IFC handler pattern exactly.
+function doBcfExport() {
   if (!window.Bonsai.bcf) { setStat('BCF module not loaded'); return; }
   setStat('exporting BCF…');
   try {
@@ -2117,7 +2117,80 @@ bBcf.onclick = () => {
     setStat('BCF exported  topic=' + r.topicGuid.slice(0, 8) + '  components=' + r.components.length + '  ' + r.bytes.length + ' bytes (downloaded)');
     audioCue('export');
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§BCF export fail ' + err); }
+}
+// NATIVE .db EXPORT — the FULL-fidelity artifact (signed op-log + hash chain; IFC/BCF are lossy
+// translations). Same writer _persistToIdb uses (sealChain → db.export().buffer — kernel_ops.js),
+// same download idiom as bonsai_ifc.js/bcf_export.js. opts.download===false returns bytes only
+// (the witness seam, mirroring ifc.exportModel). Re-opens via #b-open ▸ "Open local .db…".
+window.Bonsai.exportDb = async function (opts) {
+  const O = window.Bonsai.oplog;
+  if (!O || !O.db || O.length === 0) { setStat('author something first'); return null; }
+  const seal = await window.KernelOps.sealChain(O.db);   // the seal _persistToIdb does — never skipped
+  const bytes = O.db.export();                           // same native writer as kernel_ops _persistToIdb
+  console.log('§EXPORT-NATIVE ops=' + O.length + ' sealed=' + seal.sealed + ' tip=' + seal.tip.slice(0, 12) + ' bytes=' + bytes.length);
+  if (!opts || opts.download !== false) {
+    try {
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });   // same download idiom as bonsai_ifc.js
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = (window.__dwName || 'model') + '.db'; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    } catch (e) { console.warn('§EXPORT-NATIVE download failed ' + e); }
+  }
+  return { bytes, sealed: seal.sealed, tip: seal.tip };
 };
+async function doDbExport() {
+  setStat('exporting .db…');
+  try {
+    const r = await window.Bonsai.exportDb();
+    if (r) { setStat('.db exported  ops=' + window.Bonsai.oplog.length + '  tip=' + r.tip.slice(0, 8) + '  ' + r.bytes.length + ' bytes (downloaded)'); audioCue('export'); }
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§EXPORT-NATIVE fail ' + err); }
+}
+// The chooser — the SAME small-panel idiom as initOpenChooser's #m-open-panel (build/close/outside-click).
+(function initExportMenu() {
+  const bExport = document.getElementById('b-export');
+  if (!bExport) return;
+  const ITEMS = [
+    { key: 'native', icon: '⛁', label: 'Native .db', sub: 'full fidelity — the signed op-log', run: doDbExport },
+    { key: 'ifc', icon: '⬇', label: 'IFC (IFC4)', sub: 'geometry translation via web-ifc', run: doIfcExport },
+    { key: 'bcf', icon: '⚑', label: 'BCF issue (.bcfzip)', sub: 'current view + selection', run: doBcfExport }
+  ];
+  let panel = null;
+  function build() {
+    panel = document.createElement('div'); panel.id = 'm-export-panel';
+    panel.style.cssText = 'position:fixed;bottom:74px;right:70px;z-index:41;width:248px;display:none;padding:10px;' +
+      'background:rgba(20,22,30,0.94);border:1px solid #2c303a;border-radius:12px;color:#c7cdd8;' +
+      'font:12px system-ui,sans-serif;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);' +
+      'box-shadow:0 8px 30px rgba(0,0,0,0.5)';
+    let h = '<div style="font-size:10px;letter-spacing:.14em;color:#5b6473;margin:2px 4px 8px">EXPORT</div>';
+    ITEMS.forEach(function (it) {
+      h += '<div class="me-row" data-key="' + it.key + '" style="display:flex;align-items:center;gap:9px;padding:7px 8px;' +
+        'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">' + it.icon + '</span>' +
+        '<span>' + it.label + '<br><span style="color:#5b6473;font-size:10.5px">' + it.sub + '</span></span></div>';
+    });
+    panel.innerHTML = h;
+    document.body.appendChild(panel);
+    panel.querySelectorAll('.me-row').forEach(function (d) {
+      d.onmouseover = function () { d.style.background = '#23262e'; };
+      d.onmouseout = function () { d.style.background = 'transparent'; };
+      d.onclick = function () {
+        const it = ITEMS.filter(function (x) { return x.key === d.getAttribute('data-key'); })[0];
+        close();
+        if (it) { console.log('§EXPORT-MENU pick=' + it.key); it.run(); }
+      };
+    });
+  }
+  function close() { if (panel) panel.style.display = 'none'; bExport.classList.remove('on'); }
+  bExport.onclick = function (e) {
+    e.stopPropagation();
+    if (!panel) build();
+    const open = panel.style.display !== 'block';
+    panel.style.display = open ? 'block' : 'none'; bExport.classList.toggle('on', open);
+    console.log('§EXPORT-MENU open=' + open + ' items=' + ITEMS.length);
+  };
+  document.addEventListener('pointerdown', function (e) {
+    if (panel && panel.style.display === 'block' && !panel.contains(e.target) && !bExport.contains(e.target)) close();
+  });
+})();
 
 // ── INSERT LIBRARY COMPONENT (§OOTB Item 2: assemble, don't draw) ───────────────────────────────
 // A picked catalog component is placed on the grid as ONE signed GEOM_INSERT op-row; geometry folds
@@ -2532,7 +2605,7 @@ window.addEventListener('keydown', (e) => {
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
-bClear.disabled = bSketch.disabled = bIfc.disabled = bBcf.disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
+bClear.disabled = bSketch.disabled = document.getElementById('b-export').disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -3542,7 +3615,7 @@ window.__ensureDiscWalker = async function () {
     ['3D Grid', 'The grid is the primary handle. Grid shows/hides the datums; Move Grid drags a gridline so attached walls RECOMPOSE — stretch, not scale (openings stay host-constrained).'],
     ['Author', 'Sketch a profile, Insert a catalog component (assemble, don\'t draw), Cut an opening, Route an MEP run, Fillet an edge. Every edit is one signed op in the log.'],
     ['History', 'Scrub the bottom timeline to fold the model to any point; Ctrl+Z / Ctrl+⇧Z undo/redo. Geometry is a deterministic fold over the signed op-log.'],
-    ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). IFC exports a standards IFC4 file from the same log.']
+    ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log — re-opens via Open ▸ local .db), IFC4, or a BCF 2.1 issue.']
   ];
   let panel = null;
   function build() {
