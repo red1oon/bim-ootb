@@ -114,8 +114,13 @@
       return dtid == null ? null : q1(b3, 'SELECT * FROM c_doctype WHERE c_doctype_id=?', dtid) || null;
     }
 
+    // T7-HOST (prompts/T7_HOST_WIRING_SPEC.md §Build 4 — Witness: §T7-LAZY): the queue is a FULL-history
+    // fold — a deliver-later ticket older than a shard boundary is still owed to the customer. Archived
+    // (pre-shard) ops are lazily fetched ONCE at open (verified back to GENESIS by ErpShard) and prepended;
+    // a refused archive (tamper/missing) folds hot-only and SAYS so — honest, never a silently-thin queue.
+    var _archived = [];
     function currentQueue() {
-      var folded = KDS.foldTickets(_opRows(cfg.opDb));
+      var folded = KDS.foldTickets(_archived.concat(_opRows(cfg.opDb)));
       var seen = {};
       folded.forEach(function (t) { if (t.m_inout_id != null) seen[t.m_inout_id] = 1; });
       var seed = _seedTickets(b3).filter(function (t) { return !seen[t.m_inout_id]; });
@@ -195,6 +200,13 @@
     render();
     cfg.overlay('Kitchen Display', wrap);
     console.log('§KDS-OPEN tickets=' + currentQueue().length + ' (fold(opDb) ∪ §S-2 seed selector, oldest-first)');
+    if (cfg.archivedOps) {
+      Promise.resolve(cfg.archivedOps()).then(function (arch) {
+        if (arch && arch.ok === false) { console.log('§KDS-ARCHIVE REFUSED why=' + arch.why + ' seq=' + arch.seq + ' — queue folds hot log ONLY'); cfg.status('History archive unreadable (' + arch.why + ') — kitchen queue from the hot log only'); return; }
+        _archived = (arch && arch.ops) || [];
+        if (_archived.length) { render(); console.log('§KDS-ARCHIVE folded archivedOps=' + _archived.length + ' shards=' + arch.shards + ' tickets=' + currentQueue().length); }
+      }).catch(function (e) { console.log('§KDS-ARCHIVE fetch failed: ' + ((e && e.message) || e)); });
+    }
   }
 
   root.KitchenLens = { open: open };
