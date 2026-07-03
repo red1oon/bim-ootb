@@ -3,7 +3,7 @@
  * W-UX-VERBS — headless witness for the pill-rail verbs (RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-5).
  *   • UserGuide  — NEW pill #b-guide opens a self-contained modeller guide overlay (the gap this slice fills)
  *   • 3D Grid    — #b-grid pill is present + enabled; clicking toggles the grid datums (already shipped)
- *   • Export/IFC — #b-ifc pill present + enabled (the export verb, already shipped)
+ *   • Export — #b-export pill present + enabled (the ONE export menu: Native .db / IFC / BCF)
  *   • History    — the #hist-slider timeline surface is present (already shipped)
  * Every #bar button auto-joins the rail + the ? help registry, so these are all discoverable pills.
  * Pure-UI wiring gate; serves viewer/ only (no building DB needed).
@@ -51,12 +51,12 @@ function serve() {
 
   var present = await page.evaluate(function () {
     function btn(id) { var b = document.getElementById(id); return b ? { exists: true, disabled: b.disabled, inBar: b.closest('#bar') != null } : { exists: false }; }
-    return { guide: btn('b-guide'), grid: btn('b-grid'), ifc: btn('b-ifc'), open: btn('b-open'),
+    return { guide: btn('b-guide'), grid: btn('b-grid'), exp: btn('b-export'), open: btn('b-open'),
       hist: !!document.getElementById('hist-slider') };
   });
   chk('D1 UserGuide pill #b-guide present in the rail', present.guide.exists && present.guide.inBar);
   chk('D2 3D Grid pill #b-grid present + enabled', present.grid.exists && present.grid.inBar && !present.grid.disabled, 'disabled=' + present.grid.disabled);
-  chk('D3 Export/IFC pill #b-ifc present + enabled', present.ifc.exists && present.ifc.inBar && !present.ifc.disabled, 'disabled=' + present.ifc.disabled);
+  chk('D3 Export pill #b-export present + enabled (the one Export menu, ex #b-ifc/#b-bcf)', present.exp.exists && present.exp.inBar && !present.exp.disabled, 'disabled=' + present.exp.disabled);
   chk('D4 History timeline (#hist-slider) present', present.hist);
 
   // UserGuide overlay opens with the real sections

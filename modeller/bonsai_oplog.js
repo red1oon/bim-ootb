@@ -92,6 +92,31 @@
       return this.length;
     },
 
+    // §EXPORT-NATIVE (prompts/EXPORT_MENU_NATIVE_DB.md — Witness: W-E2E-EXPORT-DB): load a native .db
+    // (a signed kernel_ops op-log exported by Export ▸ Native .db) as the CURRENT model — the symmetric
+    // READ of Bonsai.exportDb's sealChain→db.export() write. Discriminated + routed by _openBuffer (the
+    // same code path #b-open uses) on its kernel_ops table; building-substrate .db files never reach here.
+    // Verify the imported chain, fold to tip, persist under the current key. NON-INVENT: bytes are the model.
+    async importBytes(u8) {
+      await this._ensureDb();                             // SQL runtime + edge signer ready
+      if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache();
+      const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, _base).href });   // cached module
+      if (this.db) { try { this.db.close(); } catch (e) { } }
+      this.db = new SQL.Database(u8);
+      window.KernelOps.ensureTable(this.db);
+      // restore the group counter — the exact _ensureDb idiom (both minted gid prefixes, §P8)
+      this._n = 0;
+      try { const r = this.db.exec("SELECT gid FROM kernel_ops WHERE gid LIKE 'geom-grp-%' OR gid LIKE 'gesture-grp-%'"); if (r.length) this._n = r[0].values.reduce((m, v) => Math.max(m, parseInt(String(v[0]).replace(/^(geom|gesture)-grp-/, '')) || 0), 0); } catch (e) { }
+      let v = null;
+      try { v = await window.KernelOps.verifyChain(this.db); } catch (e) { console.warn(TAG + ' import verify threw ' + e); }
+      this._cursor = this.length;
+      await this._foldUpto(this._cursor);
+      this._save();                                       // the imported model persists like any authored one
+      this._emit();
+      console.log(TAG + ' §EXPORT-NATIVE imported ops=' + this.length + ' verify=' + !!(v && v.ok) + ' cursor=' + this._cursor);
+      return { ops: this.length, verify: !!(v && v.ok) };
+    },
+
     // §MO — point the op-log at a per-building EDITABLE INSTANCE (key 'mo_<building>'). The loaded
     // building DB (the fetched meta.db) is the PRISTINE REFERENCE — it lives in IndexedDB and is never
     // written here; this op-log is the editable fold and persists to localStorage under its OWN key. So

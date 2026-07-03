@@ -26,8 +26,11 @@ const server = http.createServer((q, r) => {
   const r = await pg.evaluate(async () => {
     const out = {}; const O = window.Bonsai.oplog, L = window.Bonsai.library;
     const has = id => !!document.getElementById(id);
-    out.removed = { wall: has('b-wall'), open: has('b-open'), undo: has('b-undo'), redo: has('b-redo') };  // all should be false
-    out.survivors = { del: has('b-del'), insert: has('b-insert'), clear: has('b-clear'), ifc: has('b-ifc') };  // all true
+    // NOTE (2026-07-03): the old "Opening" pill's id `b-open` was legitimately RE-USED by the shipped
+    // Open-a-building chooser (W-UX-1, RESUME_MODELLER_UX_OUTLINER_PILL) — so `b-open` existing is now
+    // CORRECT, not clutter. The stale `open:false` expectation kept this witness red on main for months.
+    out.removed = { wall: has('b-wall'), undo: has('b-undo'), redo: has('b-redo') };  // all should be false
+    out.survivors = { del: has('b-del'), insert: has('b-insert'), clear: has('b-clear'), exp: has('b-export'), open: has('b-open') };  // all true (#b-export = the one Export menu, ex #b-ifc/#b-bcf; #b-open = the W-UX-1 chooser)
     // functional Ctrl+Z: commit one insert via the real path, then fire the keyboard verb → active length drops
     O.clear();
     const hash = L.catalog().find(c => c.ifc_class === 'IfcDoor').hash;
@@ -54,7 +57,8 @@ const server = http.createServer((q, r) => {
   const checks = {
     noPageError:   pageErr === null,
     wallGone:      r.removed.wall === false,
-    openGone:      r.removed.open === false,
+    openKept:      r.survivors.open === true,      // b-open now = the W-UX-1 Open chooser (see NOTE above)
+    exportKept:    r.survivors.exp === true,       // the ONE Export menu pill (ex #b-ifc/#b-bcf)
     undoBtnGone:   r.removed.undo === false,
     redoBtnGone:   r.removed.redo === false,
     delKept:       r.survivors.del === true,

@@ -118,6 +118,19 @@
     if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return false; }
     try {
       var db = new window.SQL.Database(new Uint8Array(buf));
+      // §EXPORT-NATIVE (prompts/EXPORT_MENU_NATIVE_DB.md — Witness: W-E2E-EXPORT-DB): a NATIVE op-log .db
+      // (Export ▸ Native .db) carries a kernel_ops table — no resident/substrate .db does (probed all 8,
+      // 2026-07-03). Route it to the op-log import (the symmetric read of the export) instead of the
+      // walker; every building-substrate .db falls through byte-identically to the path below.
+      var isNative = false;
+      try { isNative = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='kernel_ops'").length > 0; } catch (e) { }
+      if (isNative) {
+        db.close();
+        console.log(TAG + ' §EXPORT-NATIVE "' + name + '" is a native op-log .db → oplog import');
+        var O = window.Bonsai && window.Bonsai.oplog;
+        if (O && O.importBytes) { O.importBytes(new Uint8Array(buf)); return true; }
+        console.warn(TAG + ' §EXPORT-NATIVE oplog.importBytes unavailable — cannot open'); return false;
+      }
       // Stash the open buffer + name so the disc-walker (DiscWalker.dwWalk) can re-open this building
       // read-only on a discipline click (this db is closed below after seeding). NON-INVENT substrate.
       window.__dwBuf = buf; window.__dwName = name;
