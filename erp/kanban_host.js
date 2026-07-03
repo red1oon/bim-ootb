@@ -92,6 +92,23 @@
       chainVerify: function () { return global.KernelOps.verifyChain(projDb); }          // {ok,len,tip} incl. sig
     };
     log('§SEAM-LIVE window.ERP published: dispatch,verify,seal,chainVerify · actor=' + ctx.actor + ' grants=' + grants.length + ' pubKey=' + (ctx.pubKey ? 'Y' : 'none'));
+    // T1 (W-T1-ATTRIB, FABLE5_WRAPUP §3): PIN → employee attribution as AUDIT METADATA. cfg.attribDirectory
+    // is the ORG-supplied {sha256(pin) → {emp,name}} map (ErpAttrib.makeDirectory). Identity rides ctx.attrib
+    // → rich op parameters (content-signed by the DEVICE key — no per-PIN keys, no new trust root). No
+    // directory / unknown PIN → REFUSED, never guessed (non-invent). Default-off: nothing changes till used.
+    ctx.attrib = null;
+    global.ERP.identify = function (pin) {
+      var A = global.ErpAttrib;
+      if (!A) { log('§T1_ATTRIB REFUSED — erp_attrib.js not loaded'); return Promise.resolve({ ok: false, why: 'erp_attrib.js not loaded' }); }
+      if (!cfg.attribDirectory) { log('§T1_ATTRIB REFUSED — no attribDirectory supplied'); return Promise.resolve({ ok: false, why: 'no attribDirectory' }); }
+      return A.identify(pin, cfg.attribDirectory).then(function (id) {
+        if (!id) { log('§T1_ATTRIB REFUSED — unknown PIN (identity never guessed)'); return { ok: false, why: 'unknown PIN' }; }
+        ctx.attrib = A.attrib(id, ctx.actor);
+        log('§T1_ATTRIB identified emp=' + id.emp + ' dev=' + ctx.actor + ' (metadata only — device key still signs)');
+        return { ok: true, emp: id.emp, name: id.name };
+      });
+    };
+    global.ERP.identifyClear = function () { ctx.attrib = null; log('§T1_ATTRIB cleared'); };
     return { projDb: projDb, ctx: ctx };
   }
 
