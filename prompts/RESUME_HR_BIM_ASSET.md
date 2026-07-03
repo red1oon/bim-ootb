@@ -1102,14 +1102,18 @@ tax lawyer, MyInvois-integration partner) drop in the real mapping without a des
   `mock_rates.js` (same numbers) + new SOCSO/EIS concepts available. Witnessed `tests/witness_einvoice.js`
   W-HBA-EINVOICE 19/19; full 32-suite regression green, zero regressions.
 
-**⏭ NEXT (queued for a fresh session, e.g. Fable5 — 2026-07-03):** `lane/hr-overlay` is committed+pushed
-(`048708a`) but **NOT PR'd**. Before opening a PR: (1) `git fetch origin && git merge origin/main` — branch
-is 66 ahead / 17 behind main as of this note, expect the usual `sw.js`/shared-file conflict spots per
-CLAUDE.md; (2) re-run the FULL `hr_bim_asset/tests/witness_*.js` suite post-merge (32 files, all green
-before merge) — must stay green, esp. `witness_ad_payroll.js` AD1 (gross=5200/net=4234 baseline) and the new
-`witness_einvoice.js` (19/19); (3) open the PR (`gh pr create`) once green. Do NOT re-run the deep-research
-workflow — the 7-box gate is deliberately staying at its current sourced/partial/open state (see stub
-decision above); this is a git-sync + PR task only.
+**✅ DONE 2026-07-03 (Fable5) — the queued sync+PR task landed as PR #628 (squash `e42a96b` on main).**
+Executed exactly as queued: (1) merged `origin/main` into `lane/hr-overlay` — 12 conflicted files, mostly
+add/add artifacts of the #609 squash; re-merged 3-way against PR #609's real head (`cc67ed3`) → ALL 12
+resolved clean as the UNION of both sides (S2 `_regovern` #622 + §BOM-ERP-CENTERED #626 kept intact alongside
+the P10b/E-Invoice work — no hunk dropped); (2) FULL witness suite post-merge **39/39 green** (32 ours + main's
+new S2/BOM witnesses green IN this branch: W-HBA-ERP-GOVERNED 9/9, W-HBA-BOM-GOVERNED 6/6,
+W-HBA-ERP-GOVERN-WIRE 5/5) — AD1 baseline held (gross=5200/net=4234), W-HBA-EINVOICE 19/19; ⚠ the 3
+sql.js-dependent witnesses need `NODE_PATH=~/bim-ootb/node_modules` in a bare worktree (no local
+node_modules — env gap, not a code failure); (3) PR #628 opened, auto-merge, MERGED + verified landed
+(`mock_rates.js`/`einvoice.js` present on origin/main tip). **`lane/hr-overlay` is now squash-merged — per
+CLAUDE.md do NOT reuse the branch; next HBA slice starts off fresh `origin/main`.** The deep-research 7-box
+gate stays at its sourced/partial/open state per the stub decision above.
 
 **First deep-research pass run 2026-07-03** (105-agent fan-out, 23 primary/secondary sources fetched, 81
 claims extracted, 25 adversarially verified 3-vote — 21 confirmed / 4 refuted). Result: 2 of 7 fully sourced,
