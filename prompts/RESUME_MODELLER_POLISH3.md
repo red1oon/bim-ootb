@@ -83,4 +83,37 @@ whole-bucket here. Read the log after every run; exit code is not evidence.
 must stay green (they exercise every seam this batch touches: setActive, hover, pick, walk render, materials).
 Logs saved under `modeller/tests/logs/` and READ before any DONE claim.
 
+## §V7 — follow-up slice (items 8 + 10 of §NEEDS-DESIGN, named in the same watchdog assignment)
+
+- **§V7 floating dimension readout (item 8):** ONE reusable canvas-texture `THREE.Sprite` (core build, no
+  CSS2DRenderer — not vendored), `depthTest:false` + high renderOrder so it reads over geometry, scaled by
+  camera distance to hold constant screen size. Shown DURING every gizmo drag at the live drag point with the
+  SAME number the status bar computes (never a second math path): move `ΔX +1.20m` (snapped delta), rotate
+  `+15°`, scale `X ×1.25`, grid-drag `A Δ0.60m`. Hidden on commit/cancel/exit. Seam: `dimLabelShow(text,pos)` /
+  `dimLabelHide()` + `window.__dimLabel` witness oracle.
+- **§V8 R/S shortcuts (item 10): ⛔ BLOCKED — needs the user/Sonnet nod the research spec already flagged,**
+  plus a NEW fact found here: the industry `R`=rotate convention COLLIDES with the modeller's existing
+  `R`=Insert shortcut (modeller.html SHORTCUTS map + help panel). Arming rotate/scale sub-modes is mechanical
+  once keys are chosen; choosing keys (rebind Insert? pick other letters?) is a user-facing UX decision, not
+  an EXTRACT. One question: which bindings — (a) keep R=Insert, use e.g. `T`(turn)/`S`(scale), or (b) rebind
+  Insert (Blender uses Shift+A) and take R/S?
+
+- **W-E2E-FLOATDIM** (§V7): real move-gizmo drag held mid-drag → a `dimLabel` sprite is IN the scene, its
+  text equals the status bar's snapped delta (same number, maths-compared), positioned within the element's
+  neighbourhood (≤ diag of the drag), constant-screen-size scale > 0; release → hidden. Rotate ring drag →
+  `°` text matches the snapped angle. No pageerror.
+
 ## # DONE appendix (fill as items land — every claim needs a § log line)
+
+- 2026-07-03 §V1–§V6 SHIPPED — bim-ootb PR #625 (squash 5715364). Witnesses: W-E2E-OLVIRT 5/5 ·
+  W-E2E-OLEYE 5/5 · W-E2E-OLFILTER 4/4 · W-E2E-SELOUTLINE 5/5 · W-E2E-SHADOWS 5/5 (logs
+  modeller/tests/logs/w_e2e_*.log). Regression: W-OL-SYNC 6/6 · W-E2E-INSTPICK 7/7 · W-E2E-MOVE 9/9 ·
+  W-E2E-WALK-ALL 10/10. Pre-existing env reds (before==after, baseline-verified): bonsai_outliner_live,
+  bonsai_outliner_incr_live, bonsai_multiselect_live, bonsai_hover_live. Two real findings measured by
+  first-RED witnesses: THREE Raycaster does NOT skip invisible objects (pick paths filter o.visible now);
+  r184 deprecated PCFSoftShadowMap (setter coerces to PCFShadowMap).
+- 2026-07-03 §V7 SHIPPED (follow-up slice, lane/modeller-polish-4) — floating dimension readout on all four
+  drag flavours (move/rotZ/scale/grid). W-E2E-FLOATDIM 6/6 (mid-drag held: ΔX +1.00m == status bar, at the
+  ghost ≤5cm, +30° on the ring, hidden on release). Regression: W-E2E-MOVE 9/9 · W-E2E-ROTATE 7/7 ·
+  W-E2E-SCALE 7/7 · W-E2E-GRIDSTRETCH 7/7 (logs modeller/tests/logs/). §V8 (item 10 R/S shortcuts) stays
+  ⛔ BLOCKED on the key-binding question above.
