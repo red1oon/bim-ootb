@@ -16,7 +16,7 @@
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');   // repo root — pages moved to /erp/ URLs so ../common/pill_builder.js resolves (PILLS_CONSOLIDATION_REVIEW_2026-07-03)
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.json':'application/json',
   '.db':'application/octet-stream', '.png':'image/png', '.css':'text/css', '.wasm':'application/wasm' };
 const server = http.createServer((req, res) => {
@@ -42,7 +42,7 @@ const gone = (page, sel) => page.$(sel).then(el => !el);
   let page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
-  await page.goto(`http://localhost:${port}/glassbowl.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/erp/glassbowl.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500);
 
   const gbLog   = logs.find(l => l.startsWith('§GB-PILLS')) || '(no §GB-PILLS log)';
@@ -115,7 +115,7 @@ const gone = (page, sel) => page.$(sel).then(el => !el);
   page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => errs.push(e.message));
-  await page.goto(`http://localhost:${port}/glassbowl_gravity.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${port}/erp/glassbowl_gravity.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500);
 
   const grvLog  = logs.find(l => l.startsWith('§GRV-PILLS')) || '(no §GRV-PILLS log)';
