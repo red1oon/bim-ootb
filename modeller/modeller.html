@@ -198,7 +198,7 @@
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=8" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=9" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
@@ -326,6 +326,34 @@ controls.target.set(2, 1.5, 0);   // orbit/target on the FLOOR (z=0) so the grid
 
 scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202028, 1.1));
 const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(5, 10, 7); scene.add(key);
+// §POLISH3 §V6 (RESUME_MODELLER_POLISH3.md — Witness: W-E2E-SHADOWS): real shadow mapping. The key light
+// becomes the one shadow caster; its ortho frustum is FITTED to the model bbox by frameBox/_applyShadowFlags
+// so small residents and Terminal-scale scenes both get a tight (artifact-free) map. SSAO/EffectComposer is
+// DEFERRED — the vendored three build ships no postprocessing modules (verified lib/, spec §V6).
+renderer.shadowMap.enabled = true;
+// r184: PCFSoftShadowMap is DEPRECATED (the setter coerces it to PCFShadowMap with a console warning —
+// measured by W-E2E-SHADOWS H1's first RED); PCF is this build's soft filtering path.
+renderer.shadowMap.type = THREE.PCFShadowMap;
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
+scene.add(key.target);
+// Ground catcher at z=0 (Z-up world): ShadowMaterial renders NOTHING but the received shadow — the grid
+// stays visually identical, the model just grounds itself. Slightly below z=0 so floor slabs don't z-fight.
+const shadowGround = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.ShadowMaterial({ opacity: 0.22 }));
+shadowGround.position.z = -0.02; shadowGround.receiveShadow = true; shadowGround.userData.shadowGround = true;
+scene.add(shadowGround);
+function _fitShadowTo(box) {                               // fit the shadow ortho frustum to a world box
+  if (!box || box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+  const diag = Math.max(s.length(), 4);
+  key.position.copy(c).addScaledVector(new THREE.Vector3(5, 10, 7).normalize(), diag * 1.5);
+  key.target.position.copy(c); key.target.updateMatrixWorld();
+  const sc = key.shadow.camera, half = diag * 0.75;
+  sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+  sc.near = diag * 0.1; sc.far = diag * 4;
+  sc.updateProjectionMatrix();
+}
 const grid = new THREE.GridHelper(40, 40, 0x2a3040, 0x21262f);
 grid.rotation.x = Math.PI / 2;   // GridHelper defaults to the XZ plane (Y-up); rotate onto XY so it lies FLAT in our Z-up world (was standing up as a wall)
 scene.add(grid);
@@ -369,6 +397,7 @@ function frameBox(box, dir) {
   const d = (dir || VIEWS[_viewIdx].dir).clone().normalize();
   if (VIEWS[_viewIdx].up) camera.up.copy(VIEWS[_viewIdx].up);   // Z-up for iso, Y-up for the top/plan view
   controls.target.copy(c); camera.position.copy(c).addScaledVector(d, dist); controls.update();
+  _fitShadowTo(box);                                       // §POLISH3 §V6: keep the shadow frustum tight on what you frame
   if (window.A && A.requestRender) A.requestRender();
   return true;
 }
@@ -697,10 +726,46 @@ let selectedIds = new Set();
 window.Bonsai._selSet = selectedIds;
 function selMeshes() { const g = window.Bonsai.group && window.Bonsai.group(); return g ? g.children.filter(o => o.isMesh && selectedIds.has(o.userData.featureId)) : []; }
 function _emis(mesh, hex) { if (mesh && mesh.material && mesh.material.emissive) mesh.material.emissive.setHex(hex); }
+// §POLISH3 §V5 (RESUME_MODELLER_POLISH3.md — Witness: W-E2E-SELOUTLINE): a real EDGE OUTLINE on every selected
+// mesh (primary bright, secondaries dimmer), on top of the kept emissive fill — the "professional tool" selection
+// read (SketchUp/Blender-style) the flat tint alone lacked. EdgesGeometry over the mesh's own world-baked buffer
+// (no transform needed — foldInsert bakes world space), cached per geometry.uuid so a repeated repaint is free and
+// a re-fold (new geometry → new uuid) rebuilds automatically. Chosen over inverted-hull (flat normals on B-rep
+// boxes → corner gaps) and OutlinePass (needs EffectComposer, not in the vendored build) — spec §V5.
+const _selOutlines = new Map();                           // fid → { line, geoUuid }
+function _dropOutline(fid) {
+  const o = _selOutlines.get(fid); if (!o) return;
+  if (o.line.parent) o.line.parent.remove(o.line);
+  o.line.geometry.dispose(); o.line.material.dispose();
+  _selOutlines.delete(fid);
+}
+function _syncSelOutlines() {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) { Array.from(_selOutlines.keys()).forEach(_dropOutline); return; }
+  const meshByFid = {}; g.children.forEach(o => { if (o.isMesh && o.userData.featureId != null) meshByFid[o.userData.featureId] = o; });
+  Array.from(_selOutlines.keys()).forEach(fid => {        // drop stale: deselected, mesh gone, refolded geometry, or orphaned by a group clear
+    const m = meshByFid[fid], o = _selOutlines.get(fid);
+    if (!selectedIds.has(fid) || !m || m.geometry.uuid !== o.geoUuid || o.line.parent !== g) _dropOutline(fid);
+  });
+  selectedIds.forEach(fid => {
+    const m = meshByFid[fid]; if (!m) return;
+    let o = _selOutlines.get(fid);
+    if (!o) {
+      const line = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30), new THREE.LineBasicMaterial({ color: 0x4fc3f7 }));
+      line.userData.selOutline = true; line.userData.outlineFor = fid; line.raycast = () => {};   // outline never steals a pick
+      g.add(line); o = { line, geoUuid: m.geometry.uuid }; _selOutlines.set(fid, o);
+    }
+    o.line.material.color.setHex(fid === selectedId ? 0x4fc3f7 : 0x2b6a9c);   // primary bright, secondary dimmer
+    o.line.visible = m.visible;                            // an eye-hidden mesh hides its outline too (§V1)
+  });
+  window.__selOutlineCount = _selOutlines.size;            // witness oracle
+}
 function _paintSel() {                                    // emissive: primary brighter, secondaries dimmer, the rest off
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   g.children.forEach(o => { if (o.isMesh) _emis(o, selectedIds.has(o.userData.featureId) ? (o.userData.featureId === selectedId ? 0x2b5a8c : 0x1f3f5c) : 0x000000); });
+  _syncSelOutlines();
 }
+// a re-fold rebuilds meshes (new geometry uuids) — re-sync outlines onto the fresh meshes
+window.addEventListener('bonsai:oplog', () => { try { _paintSel(); } catch (e) { } });
 function setSelectionIds(ids, primary) {
   selectedIds = new Set((ids || []).filter(x => x != null)); window.Bonsai._selSet = selectedIds;
   const g = window.Bonsai.group && window.Bonsai.group();
@@ -733,6 +798,102 @@ window.Bonsai.select = (fid) => {                 // witness/programmatic hook (
   highlight(m || null); return selectedId;
 };
 window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids.length) ? fids[fids.length - 1] : null); return Array.from(selectedIds); };
+// ── §POLISH3 §V1 (Witness: W-E2E-OLEYE): Outliner eye-toggle scene seams. Per-ELEMENT for anything with a
+// featureId mesh; whole-BUCKET for a walked discipline's InstancedMesh batches (per-instance hide stays
+// DEFERRED per §POLISH2 §DECISIONS-2 — don't reintroduce the Terminal-scale cost the buckets exist to avoid).
+// mesh.visible=false also removes it from raycast picking for free (THREE skips invisible objects).
+// Visibility is a session LENS: a re-walk/re-fold that rebuilds meshes resets it (documented, spec §V1).
+window.Bonsai.setFeatureVisible = (fid, vis) => {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return false;
+  const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return false;
+  m.visible = !!vis;
+  const o = _selOutlines.get(fid); if (o) o.line.visible = m.visible;   // §V5: outline follows its mesh
+  if (window.A && A.requestRender) A.requestRender();
+  return true;
+};
+window.Bonsai.setDiscVisible = (disc, vis) => {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return 0;
+  const root = g.children.find(o => o.userData && o.userData.dwRoot); if (!root) return 0;
+  let n = 0;
+  root.children.forEach(o => { if (o.userData && (o.userData.dwDisc === disc || o.userData.dwAsm === disc)) { o.visible = !!vis; n++; } });
+  if (window.A && A.requestRender) A.requestRender();
+  return n;
+};
+window.Bonsai.setAllVisible = () => {                     // reset before deterministically re-applying every hidden subtree
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
+  g.children.forEach(o => {
+    if (o.isMesh && o.userData.featureId != null) o.visible = true;
+    if (o.userData && o.userData.dwRoot) o.children.forEach(c => { c.visible = true; });
+  });
+  _selOutlines.forEach(o => { o.line.visible = true; });
+  if (window.A && A.requestRender) A.requestRender();
+};
+// ── §POLISH3 §V2 (Witness: W-E2E-OLFILTER): filter→scene DIM. Non-matching elements ghost to opacity .15
+// (materials are per-mesh MeshStandardMaterial — no shared-material bleed); a walked bucket dims whole-bucket
+// when NO leaf of its discipline matches (bucket granularity, same §DECISIONS-2 rule). null restores exactly
+// from the saved pre-dim snapshot. DIM (not hide) keeps spatial context and stays out of the raycaster's way.
+let _dimActive = false;
+function _dimMat(mat, keep) {
+  if (!mat) return;
+  if (!mat.userData._preDim) mat.userData._preDim = { t: mat.transparent, o: mat.opacity, dw: mat.depthWrite };
+  if (keep) { mat.transparent = mat.userData._preDim.t; mat.opacity = mat.userData._preDim.o; mat.depthWrite = mat.userData._preDim.dw; }
+  else { mat.transparent = true; mat.opacity = 0.15; mat.depthWrite = false; }
+  mat.needsUpdate = true;
+}
+window.Bonsai.dimExcept = (sel) => {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return 0;
+  if (!sel && !_dimActive) return 0;                      // idle keystrokes with no dim in force: no-op
+  let dimmed = 0;
+  const root = g.children.find(o => o.userData && o.userData.dwRoot);
+  g.children.forEach(o => {
+    if (!o.isMesh || o.userData.featureId == null) return;
+    const keep = !sel || sel.fids.has(o.userData.featureId);
+    _dimMat(o.material, keep); if (!keep) dimmed++;
+  });
+  if (root) root.children.forEach(o => {
+    const disc = o.userData && (o.userData.dwDisc || o.userData.dwAsm); if (!disc) return;
+    const keep = !sel || sel.discs.has(disc);
+    _dimMat(o.material, keep); if (!keep) dimmed++;
+  });
+  _dimActive = !!sel;
+  if (window.A && A.requestRender) A.requestRender();
+  console.log('§MODELLER §OLFILTER-DIM ' + (sel ? ('dimmed=' + dimmed + ' keepFids=' + sel.fids.size + ' keepDiscs=' + sel.discs.size) : 'restored'));
+  return dimmed;
+};
+// ── §POLISH3 §V6 (Witness: W-E2E-SHADOWS): event-driven shadow flags + the PERF GUARD. Same doctrine as
+// DW_ALL_PROXY_THRESHOLD: above SHADOW_MAX_ELEMENTS total elements (authored meshes + walked instances) the
+// shadow pass auto-disables — Terminal-scale walks never pay a per-frame shadow render. Flags are applied on
+// every fold/walk (bonsai:oplog + _renderDiscWalk), never per-frame.
+window.SHADOW_MAX_ELEMENTS = window.SHADOW_MAX_ELEMENTS || 20000;
+let _shadowMode = 'auto';                                 // 'auto' | true (force on) | false (off)
+function _sceneElementCount() {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return 0;
+  let n = 0;
+  g.children.forEach(o => {
+    if (o.isMesh && o.userData.featureId != null) n++;
+    if (o.userData && o.userData.dwRoot) o.children.forEach(c => { if (c.isInstancedMesh) n += (c.count || 0); });
+  });
+  return n;
+}
+function _applyShadowFlags() {
+  const n = _sceneElementCount();
+  let on = _shadowMode === true || (_shadowMode === 'auto' && n <= window.SHADOW_MAX_ELEMENTS);
+  if (_shadowMode === 'auto' && n > window.SHADOW_MAX_ELEMENTS)
+    console.log('§SHADOW guard elements=' + n + ' > max=' + window.SHADOW_MAX_ELEMENTS + ' → shadows off (perf, same doctrine as DW_ALL_PROXY_THRESHOLD)');
+  if (renderer.shadowMap.enabled !== on) {
+    renderer.shadowMap.enabled = on;
+    scene.traverse(o => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });   // recompile with/without shadow uniforms
+  }
+  const g = window.Bonsai.group && window.Bonsai.group();
+  if (on && g) g.traverse(o => {
+    if ((o.isMesh || o.isInstancedMesh) && !o.userData.selOutline) { o.castShadow = true; o.receiveShadow = true; }
+  });
+  if (on) { const box = _authoredBox(); if (box) _fitShadowTo(box); }
+  console.log('§SHADOW apply on=' + on + ' elements=' + n + ' mode=' + _shadowMode);
+  return on;
+}
+window.Bonsai.setShadows = (v) => { _shadowMode = (v === 'auto') ? 'auto' : !!v; return _applyShadowFlags(); };
+window.addEventListener('bonsai:oplog', () => { try { _applyShadowFlags(); } catch (e) { } });
 // ── Outliner→scene camera fly-to (2026-07-02, RESUME §3): click an Outliner row → besides the existing
 // select/highlight (window.Bonsai.select → setActive), smoothly orbit the camera in CLOSER, framed on that
 // element's own bbox centre — mirrors viewer/measure.js's _flyToClash/_animFly easing pattern (ease-in-out
@@ -800,7 +961,9 @@ window.DW_PICK_HOVER_CAP = window.DW_PICK_HOVER_CAP || 20000;
 function _dwPickables(hoverOnly) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
   const root = g.children.find(o => o.userData && o.userData.dwRoot); if (!root) return [];
-  const ims = root.children.filter(o => o.isInstancedMesh && o.userData.dwSub);
+  // §POLISH3 §V1: eye-hidden buckets excluded — THREE's Raycaster does NOT skip invisible objects itself
+  // (measured by W-E2E-OLEYE E3's first RED: a hidden mesh still answered the click), so hide must opt out here.
+  const ims = root.children.filter(o => o.isInstancedMesh && o.userData.dwSub && o.visible);
   if (hoverOnly && ims.reduce((s, im) => s + im.count, 0) > window.DW_PICK_HOVER_CAP) return [];
   return ims;
 }
@@ -809,7 +972,8 @@ function pickAt(clientX, clientY, opts) {
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const list = g.children.filter(o => o.isMesh).concat(_dwPickables(opts && opts.hover));
+  // §V1: o.visible filter — hidden means hidden (unpickable), see _dwPickables note.
+  const list = g.children.filter(o => o.isMesh && o.visible).concat(_dwPickables(opts && opts.hover));
   return raycaster.intersectObjects(list, false)[0] || null;   // sorted by distance — nearest wins, authored or instanced
 }
 // ── MARQUEE (shift-drag box) ───────────────────────────────────────────────────────────────────
@@ -825,7 +989,7 @@ function featuresInRect(x0, y0, x1, y1) {                  // features whose pro
   const lo = { x: Math.min(x0, x1), y: Math.min(y0, y1) }, hi = { x: Math.max(x0, x1), y: Math.max(y0, y1) };
   const out = [];
   g.children.forEach(o => {
-    if (!o.isMesh || o.userData.featureId == null) return;
+    if (!o.isMesh || o.userData.featureId == null || !o.visible) return;   // §V1: hidden = not marquee-selectable either
     o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox;
     const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2).project(camera);
     const sx = r.left + (c.x + 1) / 2 * r.width, sy = r.top + (1 - c.y) / 2 * r.height;
@@ -2541,6 +2705,7 @@ function _renderDiscWalk(disc, placements) {
   console.log('§DW-PRIM-LOD disc=' + disc + ' lod300=' + lod300N + ' lod200=' + lod200N +
     ' (Bug-2 partial fix: lod300=matched real catalog mesh, lod200=unchanged POC box; honest gap, not silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
 }
 // §DISCWALK-ALL-FLASH: "each element flashes ORANGE as it resolves, then settles to its real colour" — a
 // genuine PER-INSTANCE reveal, not a mesh-level material swap. Reuses THREE.InstancedMesh.setColorAt/
