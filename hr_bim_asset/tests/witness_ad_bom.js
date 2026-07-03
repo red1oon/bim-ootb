@@ -1,10 +1,11 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// ⚠ DO NOT REMOVE — W-HBA-AD-BOM witness (bim-compiler RESUME_HBA_ERP_GOVERNED_DISPLAY.md §DESIGN-BOM-COMPILE,
-//   Stage 2). Proves ad_bom.js compiles a BIM recipe tree onto the native pp_product_bom/pp_product_bomline
-//   pair with the thread's non-invent discipline. NOTE (honest): the SOURCE (m_bom/m_bom_line) is bim-compiler's
-//   transient Java output, NOT present viewer-side in bim-ootb (see ad_bom.js header) — so this witnesses the
-//   PURE TRANSFORM against a real-SHAPED fixture; live wiring awaits a viewer-side BOM source. Each check names
+// ⚠ DO NOT REMOVE — W-HBA-AD-BOM witness (bim-compiler RESUME_HBA_ERP_GOVERNED_DISPLAY.md §DESIGN-BOM-COMPILE +
+//   §BOM-ERP-CENTERED). Proves the ad_bom.js TRANSFORM (toBomRow/toBomLineRow/compileBom) — the shape-builders
+//   scripts/seed_hba_bom.js reuses to write the native pp_product_bom/pp_product_bomline rows — with the
+//   non-invent discipline the whole thread rests on. (The BOM now LIVES in iDempiere, sourced from the REAL IFC
+//   extraction, read back by ad_bom.readBom — proven end-to-end by W-HBA-BOM-GOVERNED against the shipped
+//   ad_seed.db; THIS witness pins the transform in isolation against a real-shaped fixture.) Each check names
 //   the issue it proves:
 //     • BOM0 — every emitted row's keys ⊆ the REAL pp_product_bom / pp_product_bomline columns (independently
 //       sourced via PRAGMA table_info against bim-compiler build/erp/ad_full.db, 2026-07-03).

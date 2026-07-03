@@ -1,32 +1,34 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// ⚠ DO NOT REMOVE — BIM RECIPE TREE COMPILED ONTO NATIVE iDempiere MRP `pp_product_bom`/`pp_product_bomline`
-//   (bim-compiler prompts/RESUME_HBA_ERP_GOVERNED_DISPLAY.md §DESIGN-BOM-COMPILE, Stage 2). The BOM PRINCIPLE
-//   (one parent, N children each with a quantity, recursive) projected onto the REAL, live MRP pair — the
-//   cleanest AD fit found across the whole thread (pp_product_bom carries NO doc-lifecycle columns, so a static
-//   BIM recipe needs no workflow/approval handling — §DESIGN-BOM-COMPILE finding).
+// ⚠ DO NOT REMOVE — BIM RECIPE TREE **LIVES IN** NATIVE iDempiere `pp_product_bom`/`pp_product_bomline`
+//   (bim-compiler prompts/RESUME_HBA_ERP_GOVERNED_DISPLAY.md §DESIGN-BOM-COMPILE + §BOM-ERP-CENTERED). The
+//   BOM PRINCIPLE (one parent, N children each with a quantity, recursive) is expressed as REAL rows in the
+//   stock iDempiere MRP pair — the cleanest AD fit in the whole thread (pp_product_bom carries NO doc-lifecycle
+//   columns, so a static BIM recipe needs no workflow/approval handling).
 //
-//   ⚠ RUNTIME-SOURCE GAP (honest, flagged not hidden): the SOURCE this compiles FROM — m_bom/m_bom_line
-//   (library/schema_snapshot_bom.sql, walked by DAGCompiler/BOMWalker.java) — is **bim-compiler's** transient
-//   Java pipeline output (library/*_BOM.db, deleted every run by scripts/rebuild_erp.sh). It is NOT present
-//   viewer-side in bim-ootb (the streamed building DBs carry spatial_structure/elements_meta/element_transforms
-//   but NO bom table — verified live 2026-07-03). So this module is the PURE, WITNESSED TRANSFORM (proven
-//   against a real-SHAPED fixture in tests/witness_ad_bom.js); LIVE viewer wiring awaits a viewer-side BOM
-//   source (either bim-compiler emitting a persisted *_BOM.db the viewer can fetch, or the compile running
-//   bim-compiler-side). Do NOT fabricate a BOM source to make it "live" — that would violate the PRIME RULE.
+//   ★ ERP-CENTERED (user directive 2026-07-03: "the Java era is not source of truth, the ERP is; all BIM data
+//   models are ERP-centered"). The AUTHORITY for the BOM is iDempiere — the pp_product_bom rows SEEDED into
+//   erp/ad_seed.db by scripts/seed_hba_bom.js from the REAL IFC extraction (a building's own
+//   rel_contained_in_space room→elements containment). The BIM BOM panel is a LENS (readBom, an AD_InfoWindow
+//   JOIN pp_product_bom⋈pp_product_bomline⋈M_Product⋈M_Locator⋈M_Warehouse) over those rows — never a store.
+//   The Java `m_bom`/`m_bom_line` (X_M_BOM.java / schema_snapshot_bom.sql / BOMWalker.java) is a TRANSITIONAL
+//   MIGRATION SOURCE being ABSORBED into the one iDempiere base ([[project_erp_one_base_doctrine]]), NOT an
+//   authority anything reads from. This module is therefore two ERP-native halves:
+//     (1) the SEED row-builders (toBomRow/toBomLineRow/compileBom) — the ONE shape definition the seed reuses,
+//         fed by the real building extraction (never Java m_bom); and
+//     (2) readBom(erpQuery) — the lens read over the real seeded rows (the panel's data source).
 //
-//   ⚠ TWO "M_Product" LANDMINE (load-bearing, §DESIGN-BOM-COMPILE item ⚠): m_bom_line.child_product_id is a
-//   TEXT id into library/component_library.db's OWN internal M_Product catalog — NOT the real AD dictionary's
-//   integer m_product_id that pp_product_bomline FKs into. The caller MUST pass a `productResolver` that maps
-//   the BIM-catalog TEXT id → the real AD m_product_id already minted by ProductRegistrar.java / ad_tenancy.js
-//   toProductRow for that same guid. This module NEVER mints a competing Product identity; a line whose child
-//   does not resolve is SKIPPED (non-invent), never given a fabricated FK.
+//   ⚠ TWO "M_Product" IDENTITY DISCIPLINE (load-bearing): a BIM element's guid is NOT an AD id. compileBom
+//   resolves each guid → the REAL AD m_product_id (seeded by seed_hba_bom.js / minted by ad_tenancy.js
+//   toProductRow / ProductRegistrar.java for that same guid) via an injected `productResolver`. This module
+//   NEVER mints a competing Product identity; a node/line whose product does not resolve is SKIPPED
+//   (non-invent), never given a fabricated FK.
 //
-//   ⚠ bomtype='B' (BIM) — §DESIGN-BOM-COMPILE item 1: pp_product_bom.BOMType is AD_Ref_List 347 ("M_BOM Type").
-//   'B'="BIM" is NOT a stock value (A/C/F/K/M/O/P/R/S) — it must be added as an AD_Ref_List row (a Stage-1 SEED
-//   step, the same "extend the dictionary with a missing master value" idiom as C_UOM/M_Warehouse). That seed
-//   is NOT yet done (flagged for whoever seeds the BOM source). Accepted tradeoff: a 'B' BOM is invisible to
-//   native costing/MRP/production-explosion (which hardcode 'A') — correct for a structural/spatial BIM recipe.
+//   bomtype='B' (BIM) — pp_product_bom.BOMType is AD_Ref_List 347 ("M_BOM Type"). 'B'="BIM" is NOT a stock
+//   value (A/C/F/K/M/O/P/R/S); seed_hba_bom.js ADDS the AD_Ref_List row (the "extend the dictionary with a
+//   missing master value" idiom, exact iDempiere mapping — real AD_Ref_List columns, FK to AD_Reference 347).
+//   Accepted tradeoff: a 'B' BOM is invisible to native costing/MRP/production-explosion (which hardcode 'A')
+//   — correct for a structural/spatial BIM recipe (not a manufacturing plan).
 'use strict';
 (function () {
 var W = (typeof require !== 'undefined') ? require('./watermark') : (typeof self !== 'undefined' ? self : this).HbaWatermark;
@@ -95,8 +97,41 @@ function compileBom(nodes, productResolver, opts) {
   return W ? W.stamp(out, opts.locale || 'en') : out;
 }
 
+// ★ ERP-CENTERED LENS READ — the BIM BOM panel's data source. Reads the REAL seeded pp_product_bom rows back
+// through the native JOIN (the AD_InfoWindow lens seed_hba_bom.js also declares): every assembly + its
+// components resolve pp_product_bom→M_Product(assembly)→M_Locator(room)→M_Warehouse(building) and each line
+// →M_Product(component). `erpQuery` = the SAME sync ad_seed.db reader ad_tenancy/ad_payroll use (A.erpQuery /
+// a witness handle). Honest empty when no db / no 'B' BOMs. opts.m_warehouse_id scopes to one building.
+// Returns { assemblies: [{ bom_id, assembly_guid, assembly_name, room, building, lines: [{line_id,
+// component_guid, component_name, qty}] }], _watermark } — NOTHING is stored here; it is purely a lens.
+function readBom(erpQuery, opts) {
+  opts = opts || {};
+  if (typeof erpQuery !== 'function') return W ? W.stamp({ assemblies: [] }, opts.locale || 'en') : { assemblies: [] };
+  var where = "WHERE H.BOMType='B'", params = [];
+  if (opts.m_warehouse_id != null) { where += ' AND W.M_Warehouse_ID=?'; params.push(opts.m_warehouse_id); }
+  var sql = 'SELECT H.PP_Product_BOM_ID AS bom_id, HP.Value AS assembly_guid, HP.Name AS assembly_name,'
+    + ' W.Name AS building, L.Value AS room, BL.PP_Product_BOMLine_ID AS line_id, CP.Value AS component_guid,'
+    + ' CP.Name AS component_name, BL.QtyBOM AS qty'
+    + ' FROM PP_Product_BOM H JOIN M_Product HP ON H.M_Product_ID=HP.M_Product_ID'
+    + ' LEFT JOIN M_Locator L ON HP.M_Locator_ID=L.M_Locator_ID'
+    + ' LEFT JOIN M_Warehouse W ON L.M_Warehouse_ID=W.M_Warehouse_ID'
+    + ' JOIN PP_Product_BOMLine BL ON BL.PP_Product_BOM_ID=H.PP_Product_BOM_ID'
+    + ' JOIN M_Product CP ON BL.M_Product_ID=CP.M_Product_ID ' + where + ' ORDER BY H.PP_Product_BOM_ID, BL.Line';
+  var rows;
+  try { rows = erpQuery(sql, params); } catch (e) { rows = []; }
+  var byBom = {}, order = [];
+  (rows || []).forEach(function (r) {
+    var b = byBom[r.bom_id];
+    if (!b) { b = byBom[r.bom_id] = { bom_id: r.bom_id, assembly_guid: r.assembly_guid, assembly_name: r.assembly_name,
+      room: r.room, building: r.building, lines: [] }; order.push(r.bom_id); }
+    b.lines.push({ line_id: r.line_id, component_guid: r.component_guid, component_name: r.component_name, qty: r.qty });
+  });
+  var out = { assemblies: order.map(function (id) { return byBom[id]; }) };
+  return W ? W.stamp(out, opts.locale || 'en') : out;
+}
+
 var AD = { BOM_TYPE_BIM: BOM_TYPE_BIM, BOM_USE_MASTER: BOM_USE_MASTER,
-  toBomRow: toBomRow, toBomLineRow: toBomLineRow, compileBom: compileBom };
+  toBomRow: toBomRow, toBomLineRow: toBomLineRow, compileBom: compileBom, readBom: readBom };
 if (typeof module === 'object' && module.exports) module.exports = AD;
 else (typeof self !== 'undefined' ? self : this).HbaAdBom = AD;
 })();
