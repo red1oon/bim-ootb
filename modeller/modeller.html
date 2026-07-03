@@ -1387,6 +1387,7 @@ function enterGridMove() {
 function exitGridMove() {
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
+  if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
 canvas.addEventListener('pointerdown', (e) => {
@@ -1416,8 +1417,10 @@ canvas.addEventListener('pointermove', (e) => {
   gmPreviewLine(_dragGrid.axis, _dragGrid.coord + _dragGrid.delta);
   try { const r2 = gmTint(window.Bonsai.gridmove.computeCommands(_dragGrid.id, _dragGrid.delta));   // PREVIEW which walls move/stretch
     setStat('grid ' + _dragGrid.id + ' Δ' + _dragGrid.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch'); } catch (err) { }
+  if (typeof dimLabelShow === 'function') dimLabelShow(_dragGrid.id + ' Δ' + (_dragGrid.delta >= 0 ? '+' : '') + _dragGrid.delta.toFixed(2) + 'm', hit);   // §V7
 });
 async function commitGridMove() {
+  if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7 (also covers the FAIL path below)
   if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }
   const { id, delta } = _dragGrid;
   setStat('recomposing…');
@@ -1453,6 +1456,47 @@ const MV_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>
 let moving = false, _moveDrag = null, moveGizmo = null, moveGhost = null;
 const dimMove = document.getElementById('dim-move');
 const dimRot = document.getElementById('dim-rot'), dimScale = document.getElementById('dim-scale');
+// ── §POLISH3 §V7 (RESUME_MODELLER_POLISH3.md — Witness: W-E2E-FLOATDIM): in-scene floating dimension
+// readout during a drag. ONE reusable canvas-texture Sprite (core build — CSS2DRenderer is not vendored),
+// depthTest:false + high renderOrder so it reads over geometry, scaled by camera distance to hold a constant
+// screen size. Every caller passes the SAME number the status bar shows (never a second math path).
+let _dimLabel = null;
+function _dimLabelSprite() {
+  if (_dimLabel) return _dimLabel;
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+  const tex = new THREE.CanvasTexture(cv);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.renderOrder = 1000; sp.visible = false; sp.userData.dimLabel = true;
+  scene.add(sp);
+  _dimLabel = { sp, cv, tex, text: '' };
+  return _dimLabel;
+}
+function dimLabelShow(text, pos) {
+  const L = _dimLabelSprite();
+  if (text !== L.text) {                                   // redraw only when the value actually changes
+    const ctx = L.cv.getContext('2d');
+    ctx.clearRect(0, 0, 256, 64);
+    ctx.font = '600 26px ui-monospace, monospace';
+    const w = Math.min(ctx.measureText(text).width + 28, 254);
+    ctx.fillStyle = 'rgba(19,21,26,0.88)';
+    ctx.beginPath(); ctx.roundRect((256 - w) / 2, 8, w, 46, 10); ctx.fill();
+    ctx.strokeStyle = '#3a6ea5'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#cfe3f6'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 32);
+    L.tex.needsUpdate = true; L.text = text;
+  }
+  const d = Math.max(camera.position.distanceTo(pos), 0.5);
+  L.sp.position.set(pos.x, pos.y, pos.z + 0.05 * d);       // float just above the drag point
+  L.sp.scale.set(0.09 * d, 0.0225 * d, 1);                 // 4:1 canvas aspect, constant on screen
+  L.sp.visible = true;
+  window.__dimLabel = { text: text, x: pos.x, y: pos.y, z: pos.z, scale: L.sp.scale.x };   // witness oracle
+  if (window.A && A.requestRender) A.requestRender();
+}
+function dimLabelHide() {
+  if (_dimLabel) _dimLabel.sp.visible = false;
+  window.__dimLabel = null;
+  if (window.A && A.requestRender) A.requestRender();
+}
 function moveStep() {                                          // typed magnitude (P2); else grid pitch; else 0.1m
   const v = parseFloat(dimMove && dimMove.value); if (v > 0) return v;
   const G = window.Bonsai.grid;
@@ -1688,6 +1732,7 @@ function enterMove() {
 }
 function exitMove() {
   moving = false; _moveDrag = null; bMove.innerHTML = MV_MOVE; bMove.classList.remove('on'); controls.enabled = true; applyModeCursor();
+  dimLabelHide();                                               // §V7
   if (dimMove) dimMove.style.display = 'none';
   if (dimRot) dimRot.style.display = 'none';
   if (dimScale) dimScale.style.display = 'none';
@@ -1768,6 +1813,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (!e.shiftKey) deg = Math.round(deg / 15) * 15;          // 15° snap unless Shift = free angle
     _moveDrag.drot = deg; rotGhostShow(deg * Math.PI / 180);
     setStat('rotate ' + (deg >= 0 ? '+' : '') + deg.toFixed(e.shiftKey ? 1 : 0) + '°' + (e.shiftKey ? '' : '  (15° snap)'));
+    dimLabelShow((deg >= 0 ? '+' : '') + deg.toFixed(e.shiftKey ? 1 : 0) + '°', pr);   // §V7: same snapped number as the status line
     return;
   }
   if (_moveDrag.axis && _moveDrag.axis.indexOf('scale') === 0) {   // W-BONSAI-SCALE: factor = (extent + drag)/extent, edge-anchored
@@ -1780,12 +1826,14 @@ canvas.addEventListener('pointermove', (e) => {
     f = Math.max(0.1, f);                                       // never collapse past 0.1× (degenerate solid)
     _moveDrag.f = f; scaleGhostShow(ax, f);
     setStat('scale ' + ax.toUpperCase() + ' ×' + f.toFixed(2) + (e.shiftKey ? '' : '  (0.25 snap)'));
+    dimLabelShow(ax.toUpperCase() + ' ×' + f.toFixed(2), p);   // §V7
     return;
   }
   if (_moveDrag.screenZ) {                                      // H1 top-view Z: vertical screen pixels → world-Z
     const dz = zScreenDelta(_moveDrag.downPx, e.clientY, _moveDrag.c0);
     _moveDrag.dx = 0; _moveDrag.dy = 0; _moveDrag.dz = dz;
     const c = _moveDrag.c0; const sn = snappedMoveDelta('z', c, 0, 0, dz);
+    dimLabelShow('ΔZ ' + (sn.dz >= 0 ? '+' : '') + sn.dz.toFixed(2) + 'm', new THREE.Vector3(c.x, c.y, c.z + sn.dz));   // §V7
     moveGhostShow(sn.dx, sn.dy, sn.dz); showSnapMarker(sn.kind === 'geom' ? sn.marker : null);
     setStat('move Z Δz=' + sn.dz.toFixed(2) + '  (top-view screen drag)');
     return;
@@ -1801,9 +1849,15 @@ canvas.addEventListener('pointermove', (e) => {
   const ref = window.Bonsai.grid.refAt ? window.Bonsai.grid.refAt(c.x + sn.dx, c.y + sn.dy) : null;
   setStat('move ' + _moveDrag.axis.toUpperCase() + ' Δ(' + sn.dx.toFixed(2) + ',' + sn.dy.toFixed(2) + ',' + sn.dz.toFixed(2) + ')' +
     (sn.kind === 'geom' ? '  ⬥ snap-to-geometry' : (ref && (ref.x || ref.y) ? ' → ' + ((ref.x || '·') + '-' + (ref.y || '·')) : '')));
+  // §V7: floating readout at the ghost position — the SAME snapped delta the status line just printed
+  const ax7 = _moveDrag.axis;
+  dimLabelShow(ax7 === 'xy' ? ('Δ ' + sn.dx.toFixed(2) + ', ' + sn.dy.toFixed(2))
+    : ('Δ' + ax7.toUpperCase() + ' ' + (sn['d' + ax7] >= 0 ? '+' : '') + sn['d' + ax7].toFixed(2) + 'm'),
+    new THREE.Vector3(c.x + sn.dx, c.y + sn.dy, c.z + sn.dz));
 });
 async function commitMoveDrag() {
   const md = _moveDrag; _moveDrag = null; if (!md) return;
+  dimLabelHide();                                               // §V7: readout lives only while the drag is live
   if (md.axis === 'rotZ') {                                     // H3 yaw commit
     clearSnapMarker(); const deg = +(md.drot || 0).toFixed(2);
     if (Math.abs(deg) < 0.5) { clearMoveGhost(); buildMoveGizmo(); setStat('rotate: no change'); return; }
