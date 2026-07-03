@@ -5,7 +5,7 @@
 §GB-WITNESS-5 conceptWM={"op":1,"pe":"none","txt":""}
 §GB-WITNESS-6 collapse afterToggle1=block afterToggle2=none
 §GB-WITNESS-8 worldDrawer chips=2
-§GB-WITNESS-7 home logged=true url=http://localhost:35447/erp.html
+§GB-WITNESS-7 home logged=true url=http://localhost:33333/erp/erp.html
 §GB-RESULT PASS idsOk=true bar=true looseGone=true iconClean=true noErr=true wmOk=true home=true
 §GRV-WITNESS-1 §GRV-PILLS source=registry built=4 handAuthored=0 pills=4 overflow=⋯ hidden=0 ids=[home,worldhist,edit,showme]
 §GRV-WITNESS-2 bar=present ids=[home,worldhist,edit,showme]

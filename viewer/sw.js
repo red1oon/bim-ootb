@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v739';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v740';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -150,7 +150,7 @@ const PRECACHE_ASSETS = [
   'print_sheet.js',
   'ghostglass.js',
   'qrcode.min.js',
-  'pill_builder.js',   // shared with the ERP app (ERP keeps its own copy at /erp/)
+  '../common/pill_builder.js',   // THE one canonical builder (PILLS_CONSOLIDATION_REVIEW_2026-07-03 — fork retired)
   // NOTE: the ERP app (erp.html, idempiere.html, ad_*/erp_* modules, icons.js, erp_pills.js,
   // pills.json, redpill/aplus.png) moved to /erp/ with its own sw — see ERP_FOLDER_HOME.md.
   // erp.html/idempiere.html below are now reroute STUBS that live in viewer/.

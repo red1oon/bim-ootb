@@ -885,7 +885,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <script>(function(){function m(){if(!(window.PeriodClose&&window.__crud&&window.ErpPeriodClose)){return setTimeout(m,300);}var p=document.getElementById('panel');if(p&&!p.querySelector('.pclose-ctl')){try{window.PeriodClose.renderInto(p,{});console.log('§INTEG-WIRE control mounted in #panel');}catch(e){console.warn('§INTEG-WIRE mount',e&&e.message);}}}if(document.readyState!=='loading')m();else document.addEventListener('DOMContentLoaded',m);})();</script>
 <!-- §GB-PILLS — shared ⋯ pill registry (PILLS_TO_GLASSBOWL_CONSOLIDATE.md): icons.js (glyph DATA) + pill_builder.js (renderer, used as-is) + glassbowl_pills.js (binds fn BY ID) + pills_glassbowl.json (manifest). Replaces the hand-rolled .ctl bar + loose about/qr/needHelp/crud-mode controls. -->
 <script src="icons.js?v=3"></script>
-<script src="pill_builder.js?v=4"></script>
+<script src="../common/pill_builder.js?v=1"></script>
 <script src="glassbowl_pills.js?v=5"></script>
 <script>(function(){
   // Bind the registry fn BY ID to the REAL existing host handlers (published as window.* by the inline scripts above).
@@ -919,7 +919,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
       showme:function(){return _ckOn('needHelpCk');},
       about: function(){var a=document.getElementById('about');return !!(a&&a.classList.contains('open'));}
     };
-    window.GlassbowlPills.mount({manifest:'pills_glassbowl.json?v=2',storageKey:'glassbowl_pill_config',tag:'§GB-PILLS'});
+    window.GlassbowlPills.mount({manifest:'pills_glassbowl.json?v=3',storageKey:'glassbowl_pill_config',tag:'§GB-PILLS'});
   }
   if(document.readyState!=='loading')mount();else window.addEventListener('load',mount);
 })();</script>

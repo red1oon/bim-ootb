@@ -6,6 +6,26 @@
  * pill_builder.js — §S281: Declarative pill icon + panel builder.
  *
  * ═══════════════════════════════════════════════════════════════════
+ *  THE ONE CANONICAL BUILDER (PILLS_CONSOLIDATION_REVIEW_2026-07-03)
+ * ═══════════════════════════════════════════════════════════════════
+ *  This file superseded the silently-forked erp/pill_builder.js + viewer/pill_builder.js pair.
+ *  ALL pill surfaces (viewer.html, erp.html, idempiere.html, glassbowl.html, glassbowl_gravity.html,
+ *  index.html) load THIS module. Do not copy it back into erp/ or viewer/ — the witness
+ *  erp/tests/witness_pill_canonical.js fails on any second PillBuilder definition (anti-re-fork).
+ *
+ *  Contract decided 2026-07-03 (see that prompt's §DECISIONS for the evidence):
+ *    · CLOSE: only a deliberate ⋯ (trigger) tap collapses the rail — NO outside-tap close, on
+ *      EVERY surface. (User decree 2026-07-02: "outside-tap-to-close was too easy to trigger by
+ *      accident" — supersedes the 2026-06-09 wrap; the old opts.persistent knob had zero callers
+ *      and is DELETED.)
+ *    · HOVER: btn.title = act.title || act.name || act.id — `name` is populated by every manifest,
+ *      `title` is the optional richer override (e.g. "Verify Ledger — hash-chain tamper check").
+ *    · LAYOUT: default = CSS flow inside the pill container (the erp strips). opts.layout:'rail'
+ *      opts in the viewer's L-PATH position:fixed rail (stack UP the right edge, wrap along the
+ *      top) — it REQUIRES the surface CSS to declare the buttons position:fixed (viewer.html does;
+ *      the erp surfaces deliberately keep flow layout).
+ *
+ * ═══════════════════════════════════════════════════════════════════
  *  HOW TO USE (for developers adding new icons/panels)
  * ═══════════════════════════════════════════════════════════════════
  *
@@ -43,6 +63,8 @@
  *
  *  PROPERTIES:
  *    id        (required) Unique string. Button gets id="pill-{id}", panel gets id="{id}-panel".
+ *    name      Friendly label — the hover tooltip (all manifests populate it).
+ *    title     Optional richer hover override (wins over name when set).
  *    icon      SVG inner markup (inside <svg viewBox="0 0 24 24">).
  *    img       PNG/image path (used instead of icon SVG if set).
  *    fn        Function called on tap. Auto-generated if panel is set.
@@ -68,6 +90,7 @@
    * @param {Array}       opts.actions    Array of action descriptors (see HOW TO USE above)
    * @param {Array}       [opts.order]   Default icon order (array of id strings)
    * @param {string}      [opts.storageKey] localStorage key for persisted order
+   * @param {string}      [opts.layout]  'rail' = L-PATH position:fixed layout (viewer); default = CSS flow
    * @returns {Object}     { build, sync, actions, isOpen, toggle, close }
    */
   function PillBuilder(opts) {
@@ -78,7 +101,7 @@
     var _defaultOrder = opts.order || _actions.map(function(a) { return a.id; });
     var _CFG_KEY = opts.storageKey || 'bim_pill_config';
     var _pillOpen = false;
-    var _persistent = !!opts.persistent;   // persistent dock: ⋯ still toggles, but an outside tap does NOT auto-close
+    var _rail = opts.layout === 'rail';   // viewer L-PATH rail (buttons position:fixed); erp strips stay CSS flow
     var HOLD_MS = 450;
 
     // ── Config persistence: { order: [], hidden: [] } ──
@@ -201,7 +224,8 @@
         if (act.pill === false) return;
         if (hidden.indexOf(act.id) >= 0) return;
         var btn = document.createElement('button');
-        btn.title = act.title || act.id;   // optional friendly hover label (e.g. "Glassbowl — CONCEPT"); falls back to id
+        var _label = act.title || act.name || act.id;   // canonical hover contract (title = rich override, name = manifest label)
+        btn.title = _label;
         btn.id = 'pill-' + act.id;
         if (act.img) btn.innerHTML = '<img src="' + act.img + '" width="20" height="20" style="pointer-events:none">';
         else if (act.icon) btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + act.icon + '</svg>';
@@ -212,7 +236,7 @@
         if (_wrongPlatform) {
           btn.style.opacity = '0.35'; btn.style.cursor = 'not-allowed';
           var _msg = act.platform === 'mobile' ? 'Mobile use' : 'Desktop use';
-          btn.title = act.id + ' — ' + _msg;
+          btn.title = _label + ' — ' + _msg;
           btn.addEventListener('pointerup', function(e) {
             e.stopPropagation();
             if (A.status) A.status.textContent = _msg;
@@ -249,38 +273,58 @@
     }
 
     // ── Open/close ──
-    function _close() { pill.style.display = 'none'; pill.classList.remove('pill-revealing'); _pillOpen = false; }
+    // L-PATH layout (rail mode only — ported from the Modeller addd8fe layoutRail): buttons are
+    // position:fixed — stack UP the right edge from the ⋯, then turn the corner and flow LEFT along
+    // the top when the column fills. Per-index transitionDelay drives the sequential roll-out
+    // (forward out, reverse in). Requires the surface CSS to declare the buttons position:fixed.
+    function _layoutRail() {
+      var btns = pill.querySelectorAll('button');
+      var S = 40, G = 7, M = 16, startBottom = 70;                 // clear the ⋯ trigger cluster bottom-right
+      var upRoom = window.innerHeight - M - 40 - startBottom;      // headroom before the top edge
+      var colN = Math.max(1, Math.floor(upRoom / (S + G)) + 1);    // how many fit up the right edge
+      for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        if (i < colN) { b.style.right = M + 'px'; b.style.bottom = (startBottom + i * (S + G)) + 'px'; b.style.top = 'auto'; b.style.left = 'auto'; }
+        else { var k = i - colN; b.style.top = M + 'px'; b.style.right = (M + (k + 1) * (S + G)) + 'px'; b.style.bottom = 'auto'; b.style.left = 'auto'; }
+        b.style.transitionDelay = (_pillOpen ? i * 26 : (btns.length - i) * 14) + 'ms';
+      }
+    }
+    function _close() {
+      _pillOpen = false;
+      pill.classList.remove('pill-revealing');
+      if (_rail) { _layoutRail(); setTimeout(function(){ if (!_pillOpen) pill.style.display = 'none'; }, 360); }
+      else pill.style.display = 'none';
+    }
     function _toggle() {
       _pillOpen = !_pillOpen;
-      pill.style.display = _pillOpen ? 'block' : 'none';
       if (_pillOpen) {
+        pill.style.display = 'block';
         _sync();
-        // Reveal-UP cue (user wrap 2026-06-09 — consistent across ALL pill surfaces): on every open the strip
-        // RISES into view from behind the bottom-anchored ⋯, so the user sees what was hidden. It STAYS open
-        // (persistent dock — only a ⋯ re-tap collapses it). Re-trigger by reflow so the animation replays each
-        // open. The surface CSS defines `.pill-revealing` + its @keyframes (no second animation system).
+        // Reveal cue (user wrap 2026-06-09 — consistent across ALL pill surfaces): on every open the
+        // strip RISES into view from behind the bottom-anchored ⋯, so the user sees what was hidden.
+        // Re-trigger by reflow so the animation replays each open. The surface CSS defines
+        // `.pill-revealing` + its @keyframes (no second animation system).
+        if (_rail) _layoutRail();                                   // place buttons + stage per-index delays
         pill.classList.remove('pill-revealing'); void pill.offsetWidth; pill.classList.add('pill-revealing');
       } else {
         pill.classList.remove('pill-revealing');
+        if (_rail) { _layoutRail(); setTimeout(function(){ if (!_pillOpen) pill.style.display = 'none'; }, 360); }  // let the roll-IN finish
+        else pill.style.display = 'none';
       }
       console.log('§PILL open=' + _pillOpen);
     }
+    // Reposition on resize so the L-PATH wrap recomputes (Modeller parity).
+    if (_rail) window.addEventListener('resize', function() { if (_pillOpen) _layoutRail(); });
 
-    // Close on outside tap — skipped for a persistent dock (the iDempiere bottom/side bar stays open;
-    // only the ⋯ trigger collapses it). erp.html/BIM keep the default (no opts.persistent) — behaviour unchanged.
-    if (!_persistent) {
-      document.addEventListener('pointerdown', function(e) {
-        // PILL_REOPEN_FIX: use trigger.contains() — a tap on the ⋯ trigger lands on its inner <svg>/<circle>,
-        // so `e.target !== trigger` mis-classified the trigger's own tap as "outside" and _close()d the pill
-        // on pointerdown; _toggle() (pointerup) then re-opened it, so it never stayed collapsed (never re-folded).
-        if (_pillOpen && !pill.contains(e.target) && !trigger.contains(e.target)) _close();
-      });
-    }
+    // Once expanded, the rail stays open — ONLY a deliberate ⋯ press (_toggle) closes it, on EVERY
+    // surface. (User decree 2026-07-02: outside-tap-to-close was too easy to trigger by accident.
+    // Supersedes the 2026-06-09 outside-close wrap; the dead opts.persistent knob was deleted with it —
+    // no caller ever passed it. See PILLS_CONSOLIDATION_REVIEW_2026-07-03 §DECISIONS.) No outside-close.
 
     // ── Init ──
     _initPanels();
     _build();
-    console.log('§PILL_BUILDER ready actions=' + _actions.length);
+    console.log('§PILL_BUILDER ready actions=' + _actions.length + ' layout=' + (_rail ? 'rail' : 'flow'));
 
     return {
       build:   _build,

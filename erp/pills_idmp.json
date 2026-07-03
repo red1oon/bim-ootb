@@ -34,9 +34,9 @@
       "id": "rule",
       "name": "Rule",
       "key": "",
-      "icon": "checkList",
+      "icon": "scale",
       "order": 4,
-      "note": "lifecycle-as-data governance gate (openRuleFor) — compliance checkList glyph."
+      "note": "lifecycle-as-data governance gate (openRuleFor) — Lucide scale glyph (rules/governance) — de-collided from checkList, which stays UBBL Compliance (PILLS_CONSOLIDATION_REVIEW_2026-07-03 §ICON MAP)."
     },
     {
       "id": "pos",
