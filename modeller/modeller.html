@@ -218,8 +218,8 @@
      window.GeomapBridge && gmReady(), so a missing/failed script just means "no audit", never a broken seed. -->
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
-<script src="str_walker_bridge.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=13" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_bridge.js?v=5" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="str_walker_outliner.js?v=14" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=17" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -2994,6 +2994,7 @@ function _renderDiscWalk(disc, placements) {
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
 }
+window.__renderDiscWalk = _renderDiscWalk;   // §8E-2b test hook: deterministic disc-walk render for W-DW-DENSITY-TE
 // §DISCWALK-ALL-FLASH: "each element flashes ORANGE as it resolves, then settles to its real colour" — a
 // genuine PER-INSTANCE reveal, not a mesh-level material swap. Reuses THREE.InstancedMesh.setColorAt/
 // instanceColor (r109+, USE_INSTANCING_COLOR shader chunk present in modeller/lib/three.module.min.js —
@@ -3759,6 +3760,85 @@ window.__ensureDiscWalker = async function () {
   });
 })();
 
+// §ARC-MESH (GAP 2): read-only pixel probe — fit camera to the seeded scene, render ONE frame, gl.readPixels →
+// the non-background fraction + per-mesh in-frustum count + real-mesh (tris>12) count. Proves the ARC actually
+// RASTERIZES on canvas by MATHS (no eyeball). Renders synchronously then reads the drawing buffer in the SAME task.
+window.__arcPixelProbe = function (isolateFids) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { error: 'no-group' };
+  const iso = isolateFids ? new Set(isolateFids) : null;   // isolate a SUBSET's footprint (else the whole group)
+  const box = new THREE.Box3().setFromObject(g); if (box.isEmpty()) return { meshes: 0, empty: true };
+  const c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+  const r = Math.max(sz.x, sz.y, sz.z) || 1;
+  camera.position.set(c.x + r * 1.1, c.y + r * 1.1, c.z + r * 1.1);
+  camera.near = Math.max(r / 1000, 0.01); camera.far = r * 20; camera.lookAt(c); camera.updateProjectionMatrix();
+  const gl = renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+  // A/B ISOLATION: render WITH the ARC group, read; render WITHOUT it (group hidden), read; the pixels that CHANGE
+  // are the ARC's OWN rasterized footprint — immune to scene background / grid / lights painting non-bg pixels.
+  renderer.render(scene, camera);
+  const pxA = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pxA);
+  // hide the isolated subset (or the whole group) for the B frame
+  let restore = [];
+  if (iso) { g.children.forEach(function (m) { if (m.isMesh && iso.has(m.userData && m.userData.featureId)) { restore.push(m); m.visible = false; } }); }
+  else { restore = [g]; g.visible = false; }
+  renderer.render(scene, camera);
+  const pxB = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pxB);
+  restore.forEach(function (o) { o.visible = true; }); renderer.render(scene, camera);
+  let arcPainted = 0, nonBg = 0;
+  const cc = new THREE.Color(); renderer.getClearColor(cc);
+  const bg = [Math.round(cc.r * 255), Math.round(cc.g * 255), Math.round(cc.b * 255)];
+  for (let i = 0; i < pxA.length; i += 4) {
+    if (Math.abs(pxA[i] - pxB[i]) > 8 || Math.abs(pxA[i + 1] - pxB[i + 1]) > 8 || Math.abs(pxA[i + 2] - pxB[i + 2]) > 8) arcPainted++;
+    if (Math.abs(pxA[i] - bg[0]) > 8 || Math.abs(pxA[i + 1] - bg[1]) > 8 || Math.abs(pxA[i + 2] - bg[2]) > 8) nonBg++;
+  }
+  const px = pxA;
+  const _v = new THREE.Vector3(); let meshes = 0, realMeshes = 0, inFr = 0, tris = 0;
+  g.children.forEach(function (m) {
+    if (!m.isMesh) return; meshes++;
+    const tc = m.geometry.index ? m.geometry.index.count / 3 : (m.geometry.attributes.position ? m.geometry.attributes.position.count / 3 : 0);
+    tris += tc; if (tc > 12) realMeshes++;                 // >12 tris ⇒ NOT a 12-tri box proxy ⇒ real extracted mesh
+    m.getWorldPosition(_v); _v.project(camera);
+    if (_v.x >= -1 && _v.x <= 1 && _v.y >= -1 && _v.y <= 1 && _v.z >= -1 && _v.z <= 1) inFr++;
+  });
+  return { w: w, h: h, total: w * h, nonBg: nonBg, nonBgFrac: nonBg / (w * h), bg: bg,
+    arcPainted: arcPainted, arcPaintedFrac: arcPainted / (w * h),
+    meshes: meshes, realMeshes: realMeshes, inFrustum: inFr, tris: tris };
+};
+// §8E-2b — A/B-isolate the disc-walk (_dwRoot) layer for readPixels, the disc-walk sibling of __arcPixelProbe.
+// The disc-walk markers are InstancedMeshes in _dwRoot (no op-log featureId), so __arcPixelProbe's fid-isolation
+// can't reach them — here we hide the _dwRoot children (optionally one disc) and diff the frame. Same anti-collusion
+// A/B method: pixels that CHANGE when the MEP layer is hidden ARE the MEP's own rasterized footprint over the ARC.
+window.__dwPixelProbe = function (disc) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { error: 'no-group' };
+  const root = g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
+  if (!root) return { error: 'no-dwRoot', dwPainted: 0 };
+  const box = new THREE.Box3().setFromObject(g); if (box.isEmpty()) return { dwPainted: 0, empty: true };
+  const c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+  const r = Math.max(sz.x, sz.y, sz.z) || 1;
+  camera.position.set(c.x + r * 1.1, c.y + r * 1.1, c.z + r * 1.1);
+  camera.near = Math.max(r / 1000, 0.01); camera.far = r * 20; camera.lookAt(c); camera.updateProjectionMatrix();
+  const gl = renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+  renderer.render(scene, camera);
+  const pxA = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pxA);
+  const hidden = [];
+  root.children.forEach(function (m) {
+    if (disc && !(m.userData && m.userData.dwDisc === disc)) return;
+    if (m.visible) { hidden.push(m); m.visible = false; }
+  });
+  renderer.render(scene, camera);
+  const pxB = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pxB);
+  hidden.forEach(function (m) { m.visible = true; }); renderer.render(scene, camera);
+  let dwPainted = 0, meshes = 0, inFr = 0;
+  for (let i = 0; i < pxA.length; i += 4) {
+    if (Math.abs(pxA[i] - pxB[i]) > 8 || Math.abs(pxA[i + 1] - pxB[i + 1]) > 8 || Math.abs(pxA[i + 2] - pxB[i + 2]) > 8) dwPainted++;
+  }
+  const _v = new THREE.Vector3();
+  root.children.forEach(function (m) {
+    if (!m.isMesh) return; if (disc && !(m.userData && m.userData.dwDisc === disc)) return;
+    meshes++; m.getWorldPosition(_v); _v.project(camera);
+    if (_v.x >= -1 && _v.x <= 1 && _v.y >= -1 && _v.y <= 1 && _v.z >= -1 && _v.z <= 1) inFr++;
+  });
+  return { w: w, h: h, dwPainted: dwPainted, dwPaintedFrac: dwPainted / (w * h), meshes: meshes, inFrustum: inFr };
+};
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));

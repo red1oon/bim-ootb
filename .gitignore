@@ -34,3 +34,11 @@ BIM_CONTEXT/
 !buildings/warehouse_gardenworld.db
 !buildings/HHS_Office_Federated_extracted.db
 
+# §8E-1b/§8E-2a proof fixtures + witness screenshots (rebuilt on demand by build_*_fixture.sh, not source)
+modeller/Terminal_arcstr_proof.db
+modeller/Terminal_plates_proof.db
+modeller/tests/str_into_arc.png
+modeller/tests/str_canopy.png
+modeller/tests/disc_density.png
+modeller/tests/disc_clash.png
+

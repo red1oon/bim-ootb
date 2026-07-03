@@ -327,12 +327,30 @@
           window.__gmSeedAudit = window.__gmSeedAudit || {};
           window.__gmSeedAudit[key] = r.geomap;
         }
+        _seedStrWalk(O, key);   // §8E-1b — overlay the walked STR skeleton (columns + girders) onto the laid ARC
       // §LOD400-STALL: a seed failure here used to be console.warn-only — easy to miss (no pageerror, no UI
       // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
       // impossible-to-miss line in devtools/CI logs (still just a log line — no new UI surface, per scope).
       }).catch(function (e) { console.error(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message) + ' — building=' + key + ' seeded ZERO ops (no geometry will render)'); })
         .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } });
     } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } }
+  }
+
+  // §8E-1b — render the walked STR SKELETON (columns + girders) into the laid ARC as signed GEOM_INSERT op-rows
+  // (mirror of _seedArcEditable, for STR). The walk is ALREADY held by swbInit (_state.base); swbRenderOps turns it
+  // into renderable ops. IDEMPOTENT by 'strwalk-<key>' → safe every open. NON-INVENT: column size = measured bbox,
+  // girder length = derived bay span, girder section = measured IfcBeam median. No-op for wall-bearing (0 columns).
+  function _seedStrWalk(O, key) {
+    if (!(window.swbRenderOps && O && O.commitSeedGroup)) return;
+    try {
+      var rr = window.swbRenderOps();
+      if (!rr || !rr.ops.length) { console.log(TAG + ' §STRWALK-RENDER-WIRE ' + key + ' nothing to render (wall-bearing / 0 columns)'); return; }
+      O.commitSeedGroup(rr.ops, 'strwalk-' + key).then(function (sr) {
+        console.log(TAG + ' §STRWALK-RENDER-WIRE ' + key + ' STR skeleton columns=' + rr.columnN + ' girders=' + rr.girderN +
+          ' committed=' + (sr.ids ? sr.ids.length : 0) + ' idempotent=' + !!sr.idempotent +
+          ' section=' + rr.section.width.toFixed(3) + '×' + rr.section.depth.toFixed(3) + 'm');
+      }).catch(function (e) { console.warn(TAG + ' §STRWALK-RENDER-WIRE failed ' + (e && e.message)); });
+    } catch (e) { console.warn(TAG + ' §STRWALK-RENDER-WIRE threw ' + (e && e.message)); }
   }
 
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
