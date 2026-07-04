@@ -122,12 +122,26 @@ if (typeof window !== 'undefined' && window.document) {
   // of the 4 residents + a local .db door). `openExtractedDb` (local-file → seed the BOM-graph tab) stays exported
   // for that pill path. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-2.
 
+  // §GRID-CLEAR-LEAK ROUND 2 (RESUME_SESSION_2026-07-04_GATE_BACKPROP.md §OPEN item 4): `#b-clear` never
+  // reset `State.seed`/`State.building` — the SAME class of bug fixed for STR's walker (see
+  // str_walker_outliner.js onClear). `category().tree()` degrades gracefully to `[]` when State.seed is
+  // null (no crash today), but the tab kept showing the PREVIOUS building's full BOM tree after a Clear +
+  // opening a different building — a real display/data-integrity gap (a reparent drag on the stale tree
+  // would sign a BOM_REPARENT against the wrong building's GUIDs; `bom_tree.js`'s reparent guards against a
+  // hard crash, but the wrong-building intent was never surfaced).
+  function onClear() {
+    State.seed = null; State.building = null; State.seq = 0;
+    if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    console.log('§BOMTREE §GRID-CLEAR-LEAK onClear — State.seed cleared');
+  }
+
   window.BOMTreeOutliner = {
     register: function () {
       if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.addCategory(category());
       console.log('§BOMTREE registered — BOM-graph (ARC) category (signed re-parent, geometry untouched); Open re-homed to the pill rail');
     },
-    openExtractedDb: openExtractedDb, loadFromDb: loadFromDb, _category: category, _currentTree: currentTree
+    openExtractedDb: openExtractedDb, loadFromDb: loadFromDb, _category: category, _currentTree: currentTree,
+    onClear: onClear
   };
 }
 
