@@ -70,6 +70,8 @@ const Attendance = require(path.join(ROOT, 'hr_bim_asset', 'attendance.js'));
 const AdAttendance = require(path.join(ROOT, 'hr_bim_asset', 'ad_attendance.js'));
 const Leave = require(path.join(ROOT, 'hr_bim_asset', 'leave.js'));
 const AdLeave = require(path.join(ROOT, 'hr_bim_asset', 'ad_leave.js'));
+const AdTenancy = require(path.join(ROOT, 'hr_bim_asset', 'ad_tenancy.js'));
+const Models = require(path.join(ROOT, 'hr_bim_asset', 'models.js'));
 const ROOMS_FX = require(path.join(ROOT, 'hr_bim_asset', 'fixtures', 'hhs_rooms.json'));
 
 const NOW = '2026-07-03 00:00:00';           // fixed seed timestamp (house style: seed_fin_uom.js)
@@ -152,7 +154,18 @@ const DDL = {
     'ad_reference_value_id', 'ad_val_rule_id', 'iscentrallymaintained', 'displaylogic', 'columnname',
     'queryoperator', 'queryfunction', 'isidentifier', 'seqnoselection', 'defaultvalue', 'ismandatory', 'iskey',
     'isreadonly', 'placeholder', 'inputfieldvalidation', 'ad_fieldstyle_id', 'isautocomplete',
-    'isqueryafterchange', 'isrange', 'defaultvalue2', 'placeholder2']
+    'isqueryafterchange', 'isrange', 'defaultvalue2', 'placeholder2'],
+  // §2026-07-04c (RESUME_HR_BIM_ASSET.md, reverse Zoom-Across build) — live PRAGMA/AD_Column dump from
+  // bim-compiler build/erp/ad_full.db (2026-07-04): C_Subscription/C_SubscriptionType exist in the AD
+  // dictionary (real AD_Table rows 669/668) but carried ZERO physical rows anywhere — same dormant-native
+  // pattern as HR_* before Stage 1. Needed so the Tenancy pane's existing "open ↗" (AD_WINDOWS.SUBSCRIPTION
+  // 316, already shipped) points at a REAL row, and so the c_subscription reverse zoom-across branch has a
+  // real record to launch from (not dead code over an empty table).
+  C_SubscriptionType: ['c_subscriptiontype_id', 'name', 'description', 'frequency', 'frequencytype',
+    'ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby', 'c_subscriptiontype_uu'],
+  C_Subscription: ['c_subscription_id', 'name', 'c_bpartner_id', 'm_product_id', 'c_subscriptiontype_id',
+    'startdate', 'renewaldate', 'paiduntildate', 'isdue',
+    'ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby', 'c_subscription_uu']
 };
 
 (async function () {
@@ -163,7 +176,7 @@ const DDL = {
   if (!fs.existsSync(SEED)) { L('§SEED_HBA FAIL — erp/ad_seed.db not found at ' + SEED); process.exit(1); }
   const SQL = await initSqlJs();
   const db = new SQL.Database(fs.readFileSync(SEED));
-  var added = { warehouse: 0, locators: 0, bpartners: 0, users: 0, tables: 0, hr_rows: 0, retired: 0, restype: 0, resources: 0, info: 0, attendance: 0, leave: 0 };
+  var added = { warehouse: 0, locators: 0, bpartners: 0, users: 0, tables: 0, hr_rows: 0, retired: 0, restype: 0, resources: 0, info: 0, attendance: 0, leave: 0, tenant_bp: 0, subtypes: 0, subscriptions: 0 };
 
   // ── 1. M_Warehouse — Q1 pinned durable Value; proto = the seed's own HQ row (client 11 / org 11) ─────────
   var whId = scalar(db, 'SELECT M_Warehouse_ID FROM M_Warehouse WHERE Value=?', [HHS_VALUE]);
@@ -418,7 +431,88 @@ const DDL = {
   });
   L('§SEED_HBA_LEAVE_UA added=' + (added.leave || 0) + ' (EMP001/EMP002 demoLog TAKE ops → real S_ResourceUnAvailable rows)');
 
-  // ── 9. SELF-WITNESS — the native lens JOIN must resolve EVERY row through the real chain ─────────────────
+  // ── 9. C_SubscriptionType + C_Subscription (Tenancy/Strata, §2026-07-04c) ─────────────────────────────────
+  // Physical tables didn't exist anywhere (both dormant AD dictionary rows — see DDL comment above). Tenant/
+  // owner party codes (BP-TEN-1/5/6, BP-OWN-1 — models.js Tenancy/Strata records) have NO real C_BPartner row
+  // either (verified — same honest gap already flagged for AD_User.c_bpartner_id, §P10a). Minting one C_BPartner
+  // master row per code is the SAME dictionary-completion precedent already used for C_UOM (§P10b) and
+  // M_Warehouse (§1 above) — not a new business fact, just the master row a real FK requires. The 3 tenant
+  // codes already have a real AD_User row (id 3/4/5, §P10a) with c_bpartner_id=null — closing that gap here
+  // too (one UPDATE) so officialByName's DB-first governed lookup picks up the real link, same as EMP001/EMP002.
+  // §2026-07-04c discovery — window 316 "Subscription" (the Tenancy pane's OWN AD_WINDOWS.SUBSCRIPTION link,
+  // hba_lens.js, shipped PR #645) is genuinely IN the real upstream dictionary (verified build/erp/ad_full.db:
+  // AD_Window 316 exists, Name='Subscription', its Tab 621 + 12 AD_Field rows already ACTIVE in ad_seed.db) —
+  // but stock iDempiere ships the WINDOW header itself IsActive='N' (a rarely-used module, dormant like the
+  // HR_* tables Stage 1 activated), and ad_seed.db's curation dropped the row entirely (374 windows vs
+  // ad_full.db's 458 — an extraction gap, not an HBA edit). getWindow() requires AD_Window_ID+IsActive='Y' to
+  // resolve at all, so the pane's own forward link has been silently dead since it shipped. EXTRACT (not
+  // invent): the row below is byte-for-byte the real ad_full.db values except IsActive Y (the SAME "activate a
+  // dormant native window" precedent as HR_Process/HR_Movement — Client/Org 0/0 preserved as the real system row).
+  if (scalar(db, 'SELECT AD_Window_ID FROM AD_Window WHERE AD_Window_ID=316') == null) {
+    ins(db, 'AD_Window', { AD_Window_ID: 316, AD_Client_ID: 0, AD_Org_ID: 0, IsActive: 'Y',
+      Created: NOW, CreatedBy: 0, Updated: NOW, UpdatedBy: 0, Name: 'Subscription',
+      Description: 'Maintain Subscriptions and Deliveries',
+      Help: 'Subscription of a Business Partner of a Product to renew', WindowType: 'M', IsSOTrx: 'Y',
+      EntityType: 'D', Processing: 'N', IsDefault: 'N', IsBetaFunctionality: 'N',
+      AD_Window_UU: '5887bdad-0434-40ee-89db-7d12b33084af' });
+    added.tables++;
+    L('§SEED_HBA_WINDOW316 ADD AD_Window 316 "Subscription" (real upstream row, activated Y — its Tab 621 was already live)');
+  } else L('§SEED_HBA_WINDOW316 SKIP exists');
+
+  ['C_SubscriptionType', 'C_Subscription'].forEach(function (t) { if (createTable(db, t, DDL[t])) { added.tables++; L('§SEED_HBA_DDL CREATE ' + t + ' (' + DDL[t].length + ' real cols per ad_full.db AD_Column)'); } });
+  Object.keys(AdTenancy.SUBSCRIPTION_TYPES).forEach(function (k) {
+    var st = AdTenancy.SUBSCRIPTION_TYPES[k];
+    if (scalar(db, 'SELECT c_subscriptiontype_id FROM C_SubscriptionType WHERE c_subscriptiontype_id=?', [st.c_subscriptiontype_id]) == null) {
+      ins(db, 'C_SubscriptionType', { c_subscriptiontype_id: st.c_subscriptiontype_id, name: st.name, description: st.description,
+        frequency: st.frequency, frequencytype: st.frequencytype, ad_client_id: 11, ad_org_id: 0, isactive: 'Y',
+        created: NOW, createdby: 100, updated: NOW, updatedby: 100, c_subscriptiontype_uu: 'hba-subtype-' + k.toLowerCase() });
+      added.subtypes++; L('§SEED_HBA_SUBTYPE ADD ' + k + ' id=' + st.c_subscriptiontype_id);
+    } else L('§SEED_HBA_SUBTYPE SKIP ' + k + ' exists');
+  });
+  // party codes referenced by Tenancy leases + Strata parcels → real C_BPartner (find-or-mint)
+  var partyCodes = Models.records('Tenancy').map(function (r) { return r.tenant; })
+    .concat(Models.records('Strata').map(function (r) { return r.owner; }));
+  var bpByCode = {};
+  partyCodes.forEach(function (code) {
+    var id = scalar(db, 'SELECT C_BPartner_ID FROM C_BPartner WHERE Value=?', [code]);
+    if (id == null) {
+      id = Math.max(Number(scalar(db, 'SELECT COALESCE(MAX(C_BPartner_ID),0) FROM C_BPartner')), BIM_BASE - 1) + 1;
+      ins(db, 'C_BPartner', { C_BPartner_ID: id, AD_Client_ID: 11, AD_Org_ID: 0, IsActive: 'Y',
+        Created: NOW, CreatedBy: 100, Updated: NOW, UpdatedBy: 100, Value: code, Name: code,
+        Description: 'CONTOH/SAMPLE demo tenancy party (HHS pilot) — real BPartner master row, minted to ' +
+          'complete the C_Subscription FK (dictionary-completion precedent, same as C_UOM/M_Warehouse)',
+        IsSummary: 'N', C_BP_Group_ID: 105, IsEmployee: 'N', IsVendor: 'N', IsCustomer: 'Y', IsSalesRep: 'N',
+        C_BPartner_UU: 'hba-bp-' + code.toLowerCase() });
+      added.tenant_bp++;
+      L('§SEED_HBA_TENANT_BP ADD C_BPartner ' + id + ' ' + code + ' IsCustomer=Y');
+    } else L('§SEED_HBA_TENANT_BP SKIP C_BPartner ' + code + ' exists id=' + id);
+    bpByCode[code] = Number(id);
+    // close the AD_User.c_bpartner_id gap for the 3 tenant codes that already have a real AD_User (§P10a id 3/4/5)
+    var uid = scalar(db, 'SELECT AD_User_ID FROM AD_User WHERE Name=? AND C_BPartner_ID IS NULL', [code]);
+    if (uid != null) { db.run('UPDATE AD_User SET C_BPartner_ID=? WHERE AD_User_ID=?', [id, uid]); L('§SEED_HBA_TENANT_BP_LINK AD_User ' + uid + ' (' + code + ') → C_BPartner ' + id); }
+  });
+  // compile Tenancy+Strata onto the REAL seeded rooms/locators/products (compileBuilding's own erpQuery
+  // match-or-create, AD-TEN7-proven) — reuse .subscriptions, never re-derive the shape by hand.
+  var compiled = AdTenancy.compileBuilding(HHS_VALUE, ROOMS_FX.rooms, Models.records('Tenancy'), Models.records('Strata'),
+    { erpQuery: function (sql, p) { return rows(db, sql, p); } });
+  must('TENANCY-GOVERNED', !!compiled._governed, 'compileBuilding resolved the REAL seeded HHS warehouse (governed, not a throwaway mint)');
+  compiled.subscriptions.forEach(function (s) {
+    var code = s.row.c_bpartner_id, bpId = bpByCode[code];
+    if (bpId == null) { must('SUB-BP-RESOLVE', false, 'no real C_BPartner for party code ' + code); return; }
+    if (Number(scalar(db, 'SELECT COUNT(*) FROM C_Subscription WHERE M_Product_ID=? AND C_BPartner_ID=? AND C_SubscriptionType_ID=?',
+      [s.row.m_product_id, bpId, s.row.c_subscriptiontype_id]))) return;
+    var subId = Math.max(Number(scalar(db, 'SELECT COALESCE(MAX(C_Subscription_ID),0) FROM C_Subscription')), BIM_BASE - 1) + 1;
+    ins(db, 'C_Subscription', { c_subscription_id: subId, name: s.row.name, c_bpartner_id: bpId,
+      m_product_id: s.row.m_product_id, c_subscriptiontype_id: s.row.c_subscriptiontype_id,
+      startdate: s.row.startdate || null, renewaldate: s.row.renewaldate || null, paiduntildate: null, isdue: s.row.isdue,
+      ad_client_id: 11, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100,
+      c_subscription_uu: 'hba-sub-' + subId });
+    added.subscriptions++;
+    L('§SEED_HBA_SUB ADD C_Subscription ' + subId + ' ' + s.kind + ' ' + s.row.name + ' party=' + code + '(' + bpId + ') unit=' + s.unit_guid);
+  });
+  L('§SEED_HBA_SUB total=' + compiled.subscriptions.length + ' added=' + added.subscriptions + ' skipped=' + compiled.skipped.length);
+
+  // ── 10. SELF-WITNESS — the native lens JOIN must resolve EVERY row through the real chain ────────────────
   var joined = rows(db, 'SELECT U.Name AS who, W.Name AS building, RA.AssignDateFrom AS tin,'
     + ' RA.AssignDateTo AS tout, RA.Qty AS qty, RA.IsConfirmed AS conf FROM ' + FROM
     + ' WHERE W.Value=? ORDER BY RA.AssignDateFrom', [HHS_VALUE]);
@@ -470,9 +564,24 @@ const DDL = {
   must('LEAVE-UA-LENS', uaLens.blackouts.length >= uaTotal,
     'ad_leave.readUnavailability returns the persisted rows through the native JOIN (the pane/seed data path)');
 
+  // §2026-07-04c — every persisted C_Subscription resolves through M_Product→M_Locator→M_Warehouse (the
+  // reverse zoom-across branch's own join) AND through C_BPartner (a real party, never a dangling code string).
+  var subJoined = rows(db, 'SELECT S.C_Subscription_ID AS id, BP.Value AS party, W.Value AS bld, P.Value AS unit_guid'
+    + ' FROM C_Subscription S JOIN C_BPartner BP ON S.C_BPartner_ID=BP.C_BPartner_ID'
+    + ' JOIN M_Product P ON S.M_Product_ID=P.M_Product_ID JOIN M_Locator L ON P.M_Locator_ID=L.M_Locator_ID'
+    + ' JOIN M_Warehouse W ON L.M_Warehouse_ID=W.M_Warehouse_ID WHERE W.Value=?', [HHS_VALUE]);
+  var subTotal = Number(scalar(db, 'SELECT COUNT(*) FROM C_Subscription'));
+  must('SUB-JOIN-LOSSLESS', subJoined.length === subTotal && subTotal === compiled.subscriptions.length,
+    'every seeded C_Subscription (' + subTotal + '/' + compiled.subscriptions.length + ') resolves through the '
+    + 'REAL Product→Locator→Warehouse chain AND a real C_BPartner — none dangling, none skipped silently');
+  var win316 = scalar(db, "SELECT Name FROM AD_Window WHERE AD_Window_ID=316 AND IsActive='Y'");
+  must('WINDOW316-LIVE', win316 === 'Subscription',
+    'the Tenancy pane\'s own AD_WINDOWS.SUBSCRIPTION=316 link now resolves (was silently dead — window row absent from ad_seed.db\'s curated extract)');
+
   // ── write-back + summary ─────────────────────────────────────────────────────────────────────────────────
   var changed = added.warehouse + added.locators + added.bpartners + added.users + added.tables + added.hr_rows
-    + added.info + added.attendance + added.retired + added.restype + added.resources + (added.leave || 0);
+    + added.info + added.attendance + added.retired + added.restype + added.resources + (added.leave || 0)
+    + (added.tenant_bp || 0) + (added.subtypes || 0) + (added.subscriptions || 0);
   if (changed > 0 && fails === 0) { fs.writeFileSync(SEED, Buffer.from(db.export())); L('§SEED_HBA WROTE erp/ad_seed.db (' + changed + ' additions)'); }
   else if (fails === 0) L('§SEED_HBA NO-OP — seed already current (idempotent 2nd run)');
   else L('§SEED_HBA NOT WRITTEN — ' + fails + ' witness failure(s), DB left untouched');

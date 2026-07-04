@@ -773,7 +773,8 @@
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
     flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
-    _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern };  // §STAGE2 — witness hooks (additive)
+    _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
+    _consumeFindGuid: _consumeFindGuid };  // §STAGE2 / §2026-07-04c — witness hooks (additive)
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------
@@ -781,6 +782,28 @@
   // §HBA_GATE_FIX (RESUME_OVERLAY_PILL_ICONS.md) — geometry streams incrementally; guidMap goes non-empty
   // long before every element has arrived (bbox-first flush order), so gating on "any keys" caught the model
   // half-streamed and settled the family list too early (observed: only [dash] available, FM never lit).
+  // §2026-07-04c — consume the ERP→BIM reverse Zoom-Across's finer scope (viewer/config.js A.FIND_GUID, set
+  // from ?find=<guid|employee-code>, erp/idempiere.html _zoomScope()). Two paths, neither fabricates a
+  // position: (1) A.FIND_GUID resolves to a rendered mesh member → flyToZone flies directly (its own honest
+  // no-op covers "no such member"); (2) it doesn't (a bare employee code, e.g. "EMP001", carries no rendered
+  // guid) → resolve via that employee's OPEN attendance session zone — the SAME BIM-side view-trace fact the
+  // erp/idempiere.html ad_user branch explicitly couldn't reach from ERP data alone (§2026-07-04c Gap 1) — and
+  // fly there instead. An unresolvable code is logged, never silently dropped.
+  function _consumeFindGuid(A) {
+    if (!A || !A.FIND_GUID) return;
+    var direct = flyToZone(A, A.FIND_GUID);
+    if (direct.flew) { console.log('§HBA_FIND_GUID flew directly guid=' + A.FIND_GUID); return; }
+    var h = HBA();
+    var sess = (h.A && A._hbaAttendanceLog) ? h.A.sessions(A._hbaAttendanceLog, period(A)) : [];
+    var open = sess.filter(function (s) { return s.employee === A.FIND_GUID && s.open; })[0];
+    if (open && open.zone) {
+      var viaAtt = flyToZone(A, open.zone);
+      console.log('§HBA_FIND_GUID employee=' + A.FIND_GUID + ' → open session zone=' + open.zone + ' flew=' + viaAtt.flew);
+    } else {
+      console.log('§HBA_FIND_GUID no-op code=' + A.FIND_GUID + ' (not a rendered guid, no open attendance session)');
+    }
+  }
+
   // A.streaming is the real stream-complete signal (viewer/streaming.js streamTick flips it false once the
   // queue drains) — wait for it before locking in availableLenses(), same non-invent gate, just not premature.
   var _tries = 0, _poll = setInterval(function () {
@@ -792,6 +815,7 @@
     if (A.streaming) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — still streaming'); } return; }
     clearInterval(_poll);
     bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
+    _consumeFindGuid(A);       // §2026-07-04c — the reverse Zoom-Across's finer scope (viewer/config.js A.FIND_GUID)
     // ONE family pill (hbaFM) — flip it on when ANY lens has data (familyHasData = the wake-aware gate). The
     // per-lens availability/greying is computed live in the drawer (availableLenses), not on the bar.
     var acts = G._mainPillActions || [], lenses = availableLenses(A), any = familyHasData(A);

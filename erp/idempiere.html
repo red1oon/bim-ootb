@@ -4493,6 +4493,42 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (!ppr || !ppr.value) return null;
         return { bld: String(ppr.value), find: null, tm: { order: Number(ppId) } };   // .tm ⇒ TimeMachine target
       }
+      // §2026-07-04c (RESUME_HR_BIM_ASSET.md — close the Zoom Across loop for HBA entities) — the SAME
+      // {bld,find} shape as the branches above, same registered 'viewer' destination/launch, no new mechanism.
+      if (tn === 'm_warehouse') {                                  // a Building record itself — bld only, a
+        var wv = recVal(ctx.rec, 'Value');                        //   Warehouse record isn't finer than that.
+        return wv ? { bld: String(wv), find: null } : null;
+      }
+      if (tn === 'c_subscription') {                                // a Tenancy/Strata charge → its leased unit.
+        var prodId = recVal(ctx.rec, 'M_Product_ID');               // C_Subscription carries no guid column
+        if (prodId == null) return null;                           // (column-pure, per ad_tenancy.toSubscriptionRow)
+        var pr2 = _sqlRows('SELECT p.value AS guid, w.value AS bld FROM m_product p'  // — re-derive it via the
+          + ' JOIN m_locator l ON p.m_locator_id=l.m_locator_id'                     //   SAME Product→Locator→
+          + ' JOIN m_warehouse w ON l.m_warehouse_id=w.m_warehouse_id WHERE p.m_product_id=' + Number(prodId))[0]; // Warehouse join c_projectline already does.
+        if (!pr2 || !pr2.bld) return null;
+        return { bld: String(pr2.bld), find: pr2.guid ? String(pr2.guid) : null };
+      }
+      if (tn === 's_resource' || tn === 's_resourceunavailable') {   // both tables carry the SAME S_Resource_ID
+        var resId = recVal(ctx.rec, 'S_Resource_ID');               // column (own PK on s_resource, FK on the
+        if (resId == null) return null;                            // unavailability child) — one query serves both.
+        var rr = _sqlRows('SELECT r.value AS val, r.ad_user_id AS uid, w.value AS bld FROM s_resource r'
+          + ' JOIN m_warehouse w ON r.m_warehouse_id=w.m_warehouse_id WHERE r.s_resource_id=' + Number(resId))[0];
+        if (!rr || !rr.bld) return null;
+        // S_Resource.Value holds EITHER a room guid (occupancy.toResourceRow, ad_user_id NULL) OR an employee
+        // code like "EMP001" (ad_attendance.toPersonResourceRow, ad_user_id NOT NULL) — same column, two
+        // meanings. Both are REAL sourced facts off this record; pass either through as `find` and let the
+        // Viewer decide what it means (a rendered guid flies directly; a bare code resolves via that
+        // employee's open attendance session — see viewer/config.js FIND_GUID + hba_lens.js boot consumption).
+        return { bld: String(rr.bld), find: rr.val ? String(rr.val) : null };
+      }
+      if (tn === 'ad_user') {                                       // HONEST GAP: no zone column anywhere on
+        var auId = recVal(ctx.rec, 'AD_User_ID');                  // AD_User — this person's CURRENT room is a
+        if (auId == null) return null;                             // BIM-side view-trace fact (ad_attendance.js
+        var ur = _sqlRows('SELECT w.value AS bld FROM s_resource r'  // compileAttendance's spatial array), never
+          + ' JOIN m_warehouse w ON r.m_warehouse_id=w.m_warehouse_id WHERE r.ad_user_id=' + Number(auId))[0]; // a column here.
+        if (!ur || !ur.bld) return null;
+        return { bld: String(ur.bld), find: null };                 // never fabricate a zone lookup that doesn't exist
+      }
       return null;
     }
     if (window.ZoomAcross) window.ZoomAcross.register({
