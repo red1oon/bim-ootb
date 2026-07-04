@@ -3569,31 +3569,50 @@ window.__seedTrunkProbe = function (disc, net) {
 
 // ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
 // The bom-graph shows disc nodes only for disciplines PRESENT in a building — but the whole point of the
-// Terminal rules is to WALK a discipline that's ABSENT (FP on a house). So register a "Walk" Outliner
-// category listing the disciplines terminal_rules.db covers (DERIVED, not whitelisted); a click walks it
-// onto the open building via the shared DiscWalker. RESUME_TERMINAL_RULE_MINING §CONVERGENCE.
+// Terminal rules is to WALK a discipline that's ABSENT (FP on a house). §ONE-DISC-TAB (2026-07-04, user
+// UX review): this used to be a SEPARATE "Walk · Disciplines" Outliner category, sitting alongside "BOM
+// Tree" — meaning "click a discipline to walk it" and "browse the disc/class/element tree" lived in two
+// different tabs, even though they're the same facet. MERGED: the roster is now appended as an extra
+// branch INSIDE the existing 'bomtree' category (wrapping its tree()/onWalk, not touching
+// bom_tree_outliner.js's own signed-op logic) — one Disc tab, present disciplines show their real
+// class/element subtree (unchanged), absent ones show up with a "▶ walk" click action in the SAME tree.
+// RESUME_TERMINAL_RULE_MINING §CONVERGENCE.
 var _discRosterReg = false;
 function _registerDiscRoster() {
   if (_discRosterReg || !window.Bonsai || !window.Bonsai.outliner) return;
   _discRosterReg = true;
-  window.Bonsai.outliner.addCategory({
-    key: 'discwalk', label: 'Walk · Disciplines (class-matched rules)',
-    tree: function () {
-      var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
-      if (!ds.length) return [{ id: 'dw-load', label: 'open a building to walk a discipline', kind: 'group', children: [] }];
-      var rf = (window.DiscWalker && window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'terminal_rules.db';
-      // §DISCWALK-ALL: one synthetic "Walk ALL" row at the TOP of the SAME group — folds the 3-lookalike-row
-      // problem (the walk-all spec's "fold under one clearly-grouped Walk section") into the EXISTING discwalk
-      // category rather than a risky Outliner restructure. disc:'__ALL__' is not a real discipline code
-      // (DiscWalker.disciplines() never returns it) — onWalk below special-cases it.
-      var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Disciplines', kind: 'disc', disc: '__ALL__', sub: ds.length + ' disc · x-ray reveal' };
-      return [{ id: 'dw-root', label: 'From ' + rf + ' (measured)', kind: 'group', children: [allNode].concat(ds.map(function (d) {
-        var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
-        return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
-      })) }];
-    },
-    onWalk: function (disc) { if (disc === '__ALL__') { window.discWalkAll({ building: window.__dwName }); return; } window.discWalk(disc, { building: window.__dwName }); }
-  });
+  (function mergeDiscRosterIntoBomTree() {
+    var bomCat = window.Bonsai.outliner._categories.filter(function (c) { return c.key === 'bomtree'; })[0];
+    if (!bomCat) { console.warn('§DISC-WALK bomtree category not found — roster merge skipped'); return; }
+    var origTree = bomCat.tree, origOnWalk = bomCat.onWalk;
+    bomCat.tree = function () {
+      var roots = origTree.call(bomCat) || [];
+      try {
+        var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
+        if (!ds.length) return roots;
+        // disciplines already rendered as REAL nodes anywhere in the current tree (n.disc is tagged by
+        // bom_tree_outliner.js's treeNodes() for every disc-kind node) — don't duplicate those here.
+        var present = {};
+        (function walk(nodes) { (nodes || []).forEach(function (n) { if (n.disc) present[n.disc] = true; if (n.children) walk(n.children); }); })(roots);
+        var absent = ds.filter(function (d) { return !present[d]; });
+        if (!absent.length) return roots;
+        var rf = (window.DiscWalker && window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'terminal_rules.db';
+        // §DISCWALK-ALL: one synthetic "Walk ALL" row — disc:'__ALL__' is not a real discipline code
+        // (DiscWalker.disciplines() never returns it) — onWalk below special-cases it.
+        var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Disciplines', kind: 'disc', disc: '__ALL__', sub: absent.length + ' not extracted · x-ray reveal' };
+        var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.map(function (d) {
+          var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
+          return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
+        })) };
+        return roots.concat([rosterNode]);
+      } catch (e) { console.warn('§DISC-WALK roster merge failed', e && e.message); return roots; }
+    };
+    bomCat.onWalk = function (disc) {
+      if (disc === '__ALL__') { window.discWalkAll({ building: window.__dwName }); return; }
+      if (origOnWalk) return origOnWalk(disc);
+    };
+    console.log('§DISC-WALK merged into bomtree — one Disc tab (present disciplines drill in, absent ones walk)');
+  })();
   // SEED-TRUNK roster: route a service trunk from a human-assigned entry through the WALKED fixtures (corridor-aware,
   // real-stair risers). Lists only disciplines already walked (they have placed fixtures to route). onWalk → popup.
   window.Bonsai.outliner.addCategory({
