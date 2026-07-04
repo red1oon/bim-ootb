@@ -10,6 +10,10 @@
  *   A4 door-out   — slide a DOOR off its wall ⇒ red door-out{door,host}; move the HOST (door rides) ⇒ none
  *   A5 ORANGE     — bring a wall within < CLEARANCE of a neighbour (gap shrinks) ⇒ orange clearance{…}; far ⇒ none
  *   A6 non-invent — gate reads only the passed AABBs + edges; CLEARANCE is an explicit param
+ *   A7 door-crush — host shrunk on its run axis below the door's OWN real width ⇒ red door-crush{door,host},
+ *                   even though the door's centre never left the host (door-out, A4, can't see this); a shrink
+ *                   that still leaves room ⇒ no door-crush (DOOR_WIDTH_CRUSH_GATE.md — closes the named gap in
+ *                   §STRETCH-RIDE: "still centred" is not "still fits")
  */
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -109,6 +113,42 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   // A6 — non-invent: explicit CLEARANCE param changes the band, nothing hardcoded/fabricated
   var g6 = SdgGate.evaluate(bb, aTight, [A], { related: function () { return false; } }, { clearance: 0.2 });   // 0.3 gap > 0.2 → no orange
   chk('A6 non-invent: CLEARANCE is an explicit param (0.2 ⇒ 0.3m gap no longer ORANGE)', g6.orange.length === 0, 'orange@0.2=' + g6.orange.length);
+
+  // A7 — door-crush: reuse the SAME real host/door pair A4 already validated (recon in DOOR_WIDTH_CRUSH_GATE.md
+  // confirms every genuinely-hosted pair fits fully on the host's run axis pre-edit, never on Y/Z — a real door
+  // frame commonly overhangs the wall's thickness even in pristine as-extracted geometry). Ride EVERY filling on
+  // the host (like the real cascade does, A4's `hostFillings` — host=1 here carries TWO doors; leaving one behind
+  // under a shrunk host would trip its OWN door-out/door-crush and confound the assertion, not a gate bug).
+  // Shrink the host on its run axis (anchored-min SCALE — the exact mapping sdg_cascade.js/bonsai_library
+  // foldInsert already use in production) to 60% of `door`'s own measured width → it cannot fit regardless of ride.
+  var hb7 = base[host], db7 = base[door];
+  var axLens = [hb7[1] - hb7[0], hb7[3] - hb7[2], hb7[5] - hb7[4]];
+  var k7 = axLens.indexOf(Math.max.apply(null, axLens));             // the wall's run axis (its longest extent)
+  var m7 = hb7[2 * k7], doorW = db7[2 * k7 + 1] - db7[2 * k7], hostExt = axLens[k7];
+  function scaleAlong(box, k, f, m) {                                 // anchored-min SCALE, mirrors sdg_cascade.js
+    var c = ctr(box)[k], cNew = f * c + m * (1 - f), d = cNew - c, out = box.slice();
+    out[2 * k] += d; out[2 * k + 1] += d; return out;
+  }
+  function rideHost(f) {                                              // shrink host by f, ride every real filling on it
+    var hostS = hb7.slice(); hostS[2 * k7] = m7; hostS[2 * k7 + 1] = m7 + f * hostExt;
+    var after = {}; Object.keys(base).forEach(function (fid) { after[fid] = base[fid]; });
+    after[host] = hostS;
+    hostFillings.forEach(function (fid) { after[fid] = scaleAlong(base[fid], k7, f, m7); });
+    return SdgGate.evaluate(base, after, [host].concat(hostFillings), rel, {});
+  }
+  var fCrush = (doorW * 0.6) / hostExt;
+  var g7 = rideHost(fCrush);
+  chk('A7 RED door-crush: host shrunk below the door\'s own real width (axis ' + 'xyz'[k7] + ') → red door-crush{door,host}',
+    hasKind(g7.red, 'door-crush', door, host),
+    'doorW=' + doorW.toFixed(2) + ' newHostExt=' + (fCrush * hostExt).toFixed(2) + ' red=' + JSON.stringify(g7.red.filter(function (r) { return r.kind === 'door-crush'; })));
+
+  // A7c — control: a modest 10% shrink (host stays far wider than any hosted door) → no door-crush for ANY
+  // filling on this host (proves this isn't "any shrink is RED" — only a real crush is). Other kinds (e.g. a
+  // synthetic clash vs a nearby window the ride happens to approach) are out of scope for this assertion — this
+  // witness is about door-crush specifically, not a claim that a 10% wall shrink is globally consequence-free.
+  var g7c = rideHost(0.9);
+  chk('A7c control: a modest shrink that still leaves plenty of room → no door-crush',
+    !g7c.red.some(function (r) { return r.kind === 'door-crush'; }), 'red=' + JSON.stringify(g7c.red));
 
   console.log('W-SDG-GATE: ' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
