@@ -456,7 +456,7 @@ async function author(op, color) {
     audioCue('author');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
 }
-bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); _xrayOn = false; if (typeof paintXray === 'function') paintXray(); setStat('cleared'); };
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); _xrayOn = false; if (typeof paintXray === 'function') paintXray(); if (window.STRWalkerOutliner && window.STRWalkerOutliner.onClear) window.STRWalkerOutliner.onClear(); setStat('cleared'); };
 
 // ── X-RAY REVEAL (step D) ───────────────────────────────────────────────────────────────────────
 // Mirror of the Viewer's ghostglass.js glass→glow doctrine (opacity 0.06 glass; emissive glow + depthTest off so
