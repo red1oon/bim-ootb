@@ -95,9 +95,9 @@
     };
   }
 
-  // one distinct accent colour per sensor — purely visual differentiation between the 6 racing bars (matches
+  // one distinct accent colour per sensor — purely visual differentiation between the racing bars (matches
   // the reference Bonsai federation/river panel's per-channel colour coding, no invented data behind it).
-  var SENSOR_COLORS = { temp: '#1976d2', pressure: '#7b1fa2', sound: '#00897b', dust: '#ef6c00', solar: '#fbc02d', electrical: '#43a047' };
+  var SENSOR_COLORS = { temp: '#1976d2', pressure: '#7b1fa2', sound: '#00897b', dust: '#ef6c00', solar: '#fbc02d', electrical: '#43a047', movement: '#c62828' };
 
   // §2026-07-05 (§BUILD ORDER point 3) — "locate the device outright": fly the camera to its OWN real bound
   // position (iot.js DEVICES/CAMERAS, one per device — no longer every device sharing the single AHU-03 guid)
@@ -105,14 +105,60 @@
   // 0xffcc00 arrival pulse (1.6s, auto-restoring) so "you clicked THIS device" stays visible after the fly
   // finishes, not just during the flight. Self-restoring (setTimeout→restoreAll), zero residue, same discipline
   // as every other HBA tint. Honest no-op (flyToZone's own §HBA_FLY log) when the guid has no rendered member.
-  var ORANGE = 0xff8800, ORANGE_HOLD_MS = 4000;
+  // §2026-07-05c (user: "zooms to the device, not too near, surrounding") — DEVICE_ZOOM_DIST widens
+  // flyToZone's own default (8) so the shot is an establishing view of the device's room/plant/entrance, not a
+  // nose-to-mesh close-up; flyToZone itself is UNCHANGED for every other caller (opts.dist defaults to 8).
+  var ORANGE = 0xff8800, ORANGE_HOLD_MS = 4000, DEVICE_ZOOM_DIST = 18;
   function locateAndHighlight(A, guid) {
     if (!G.HBALens || !G.HBALens.flyToZone) return;
-    G.HBALens.flyToZone(A, guid);
+    G.HBALens.flyToZone(A, guid, { dist: DEVICE_ZOOM_DIST });
     if (G.HBALens.buildMeshPort) {
       var port = G.HBALens.buildMeshPort(A);
       port.setTint(guid, ORANGE);
       setTimeout(function () { port.restoreAll(); }, ORANGE_HOLD_MS);
+    }
+  }
+
+  // §2026-07-05c (§P10c, user: "just simple tones but goes high pitch indicating danger" / "a combi of sirens
+  // ... for respective sensors" / "identify by the sound right away") — a distinct waveform+blip-count PER
+  // sensor so the SOUND ALONE identifies which sensor is alarming, independent of the shared pitch-vs-danger
+  // mapping (iot.js toneFreqFor). Only 4 native Web Audio waveforms exist, so 2 pairs share a waveform but
+  // differ in blip count (a single sustained tone vs a quick double/triple chirp) — still 7 distinct signatures.
+  var SENSOR_TONE = {
+    temp: { wave: 'sine', blips: 1 }, pressure: { wave: 'square', blips: 1 }, sound: { wave: 'triangle', blips: 1 },
+    dust: { wave: 'sawtooth', blips: 1 }, solar: { wave: 'sine', blips: 2 }, electrical: { wave: 'square', blips: 2 },
+    movement: { wave: 'triangle', blips: 3 }
+  };
+  var _audioCtx = null, _audioOn = false;
+  function ensureAudioCtx() {
+    if (_audioCtx) return _audioCtx;
+    var Ctx = G.AudioContext || G.webkitAudioContext;
+    if (!Ctx) return null;
+    _audioCtx = new Ctx();
+    return _audioCtx;
+  }
+  // one short "whoop" per blip: frequency ramps from 0.85x up to the target (a quick siren-like rise), a fast
+  // attack/decay gain envelope (low peak gain 0.05 — several sensors alarming together must not be jarring,
+  // "a combi of sirens" not a wall of noise). OFF by default (_audioOn) — every other HBA additive surface's
+  // zero-impact-off convention; the mute button's click is also the required user-gesture to start/resume ctx.
+  function playSiren(sensorKey, freq) {
+    if (!_audioOn) return;
+    var ctx = ensureAudioCtx(); if (!ctx) return;
+    var tone = SENSOR_TONE[sensorKey] || { wave: 'sine', blips: 1 };
+    var blipMs = 150, gapMs = 70;
+    for (var i = 0; i < tone.blips; i++) {
+      (function (delay) {
+        var t0 = ctx.currentTime + delay / 1000;
+        var osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = tone.wave;
+        osc.frequency.setValueAtTime(freq * 0.85, t0);
+        osc.frequency.exponentialRampToValueAtTime(Math.max(freq, 40), t0 + blipMs / 1000);
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.05, t0 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + blipMs / 1000);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0 + blipMs / 1000 + 0.02);
+      })(i * (blipMs + gapMs));
     }
   }
 
@@ -156,14 +202,28 @@
     pane.id = 'hba-iot-pane';
     var head = el('div', 'display:flex;justify-content:space-between;align-items:center;background:#102a43;color:#fff;padding:10px 12px;border-radius:10px 10px 0 0;');
     head.appendChild(el('div', 'font-size:14px;font-weight:600;', 'Assets / IoT · ' + asset.asset + ' (mockup)'));
+    // §2026-07-05c — mute/unmute toggle, OFF by default (opt-in, zero-impact — same discipline as every other
+    // HBA additive surface). The click IS the required user-gesture to create/resume the AudioContext.
+    var mute = el('button', 'background:none;border:none;color:#fff;font-size:16px;cursor:pointer;line-height:1;margin-right:8px;',
+      _audioOn ? '🔊' : '🔇');
+    mute.title = 'Toggle per-sensor alarm tones';
+    mute.addEventListener('click', function () {
+      _audioOn = !_audioOn;
+      mute.textContent = _audioOn ? '🔊' : '🔇';
+      if (_audioOn) { var ctx = ensureAudioCtx(); if (ctx && ctx.state === 'suspended') ctx.resume(); }
+      console.log('§HBA_IOT_AUDIO ' + (_audioOn ? 'on' : 'off'));
+    });
+    head.appendChild(mute);
     var x = el('button', 'background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1;', '×');
     x.title = 'Close'; x.addEventListener('click', function () { toggle(A); });
     head.appendChild(x); pane.appendChild(head);
     pane.appendChild(el('div', 'background:#fff8e1;color:#a06b00;font-weight:700;letter-spacing:1px;font-size:11px;padding:4px 12px;',
       seriesSpec._watermark + ' · CONTOH — TIDAK RASMI · synthetic mockup, not a real sensor read'));
 
-    // (a) 6 animated horizontal sensor bars, driven by the last-24h series (loops hour 0..23) — stub seam for
-    // later real physical sensor wiring, see file header.
+    // (a) animated horizontal sensor bars (one per SENSORS entry), driven by the last-24h series (loops hour
+    // 0..23) — stub seam for later real physical sensor wiring, see file header. Each tick ALSO plays a
+    // per-sensor siren tone (§2026-07-05c) when the mute toggle is on — min/max (the SAME bounds the bar's
+    // headroom uses) feed iot.js's toneFreqFor, so "danger" pitch and bar position agree.
     var barsWrap = el('div', 'padding:10px 12px;');
     var bars = [];
     deps_.IoT.SENSORS.forEach(function (s) {
@@ -172,8 +232,9 @@
       var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
       if (max === min) max = min + 1;   // guard degenerate flat series
       var headroom = (max - min) * 0.15;
-      var b = renderSensorBar(A, deps_.IoT.DEVICES[s.key], s, min - headroom, max + headroom);
-      barsWrap.appendChild(b.row); bars.push({ b: b, sensor: s, pts: pts });
+      var lo = min - headroom, hi = max + headroom;
+      var b = renderSensorBar(A, deps_.IoT.DEVICES[s.key], s, lo, hi);
+      barsWrap.appendChild(b.row); bars.push({ b: b, sensor: s, pts: pts, lo: lo, hi: hi });
     });
     pane.appendChild(barsWrap);
 
@@ -236,7 +297,11 @@
     if (typeof setInterval === 'function') {
       _barTimer = setInterval(function () {
         hourIdx = (hourIdx + 1) % 24;
-        bars.forEach(function (r) { r.b.tick(r.pts[hourIdx]); });
+        bars.forEach(function (r) {
+          var pt = r.pts[hourIdx];
+          r.b.tick(pt);
+          if (_audioOn) playSiren(r.sensor.key, deps_.IoT.toneFreqFor(pt.v, r.lo, r.hi));
+        });
       }, 900);
     }
     // paint every CCTV tile once immediately (rAF alone can be throttled/parked in some hosts, e.g. a

@@ -20,8 +20,8 @@ global.self = global;
 self.HbaWatermark = require('../watermark');
 var IoT = self.HbaIot = require('../iot');
 
-ok('I1-catalog', IoT.SENSORS.length === 6 && IoT.SENSORS.map(function (s) { return s.key; }).join(',') === 'temp,pressure,sound,dust,solar,electrical',
-  'the 6 sensors named by the user (temp/boiler pressure/sound/dust/solar/electrical) are ALL present');
+ok('I1-catalog', IoT.SENSORS.length === 7 && IoT.SENSORS.map(function (s) { return s.key; }).join(',') === 'temp,pressure,sound,dust,solar,electrical,movement',
+  'the 6 sensors named by the user (temp/boiler pressure/sound/dust/solar/electrical) + movement/PIR (§2026-07-05c) are ALL present');
 var s1 = IoT.demoSeries('AHU-03', 24), s2 = IoT.demoSeries('AHU-03', 24);
 ok('I2-deterministic', JSON.stringify(s1) === JSON.stringify(s2),
   'demoSeries is DETERMINISTIC — same asset+hours -> byte-identical output twice (no Math.random/Date.now)');
@@ -32,7 +32,7 @@ ok('I4-watermark', s1._watermark === 'SAMPLE — NOT OFFICIAL', 'the series is w
 var billing = IoT.billingLines('AHU-03', s1.series, 'HHS_Office_Federated', '24h');
 ok('I5-native-order', /^IOT-/.test(billing.order.documentno) && billing.order.docstatus === 'DR',
   'toOrderRow compiles onto the real c_order columns (documentno/docstatus/issotrx)');
-ok('I6-native-lines', billing.lines.length === 6 && billing.lines.every(function (l) {
+ok('I6-native-lines', billing.lines.length === 7 && billing.lines.every(function (l) {
   return typeof l.row.c_orderline_id === 'number' && l.row.c_order_id === billing.order.c_order_id
     && typeof l.row.qtyordered === 'number' && typeof l.row.c_uom_id === 'number' && typeof l.row.linenetamt === 'number';
 }), 'ONE billable c_orderline PER sensor, real column shape (c_order_id/qtyordered/c_uom_id/linenetamt) — ' + billing.lines.length + ' lines');
@@ -44,8 +44,8 @@ ok('I8-latest-reading', billing.lines[0].reading.h === 23 && billing.lines[0].ro
 // §2026-07-05 (RESUME_HR_BIM_ASSET.md §2026-07-04d §BUILD ORDER) — per-device positions, Product/Order
 // persistence (§STAGE2 match-or-create), USD/RM currency.
 var devGuids = Object.keys(IoT.DEVICES).map(function (k) { return IoT.DEVICES[k].bim_guid; });
-ok('I9-devices-distinct', devGuids.length === 6 && new Set(devGuids).size === 6,
-  'DEVICES carries 6 DISTINCT real guids — sensors no longer all share the single AHU-03 position');
+ok('I9-devices-distinct', devGuids.length === 7 && new Set(devGuids).size === 7,
+  'DEVICES carries 7 DISTINCT real guids (6 original + movement) — sensors no longer all share the single AHU-03 position');
 ok('I9b-temp-unchanged', IoT.DEVICES.temp.bim_guid === require('../models').records('Asset')[0].bim_guid,
   'the temp sensor still binds to the pre-existing models.js Asset AHU-03 guid — byte-identical, not renumbered');
 var camGuids = IoT.CAMERAS.map(function (c) { return c.bim_guid; });
@@ -74,6 +74,12 @@ ok('I14-usd-honest-null', ungovBilling.lines.every(function (l) { return l.usd =
   'no erpQuery → usd stays null (honest — no rate to convert with, never a fabricated FX)');
 ok('I15-cameras-products', govBilling.cameras.length === 6 && govBilling.cameras.every(function (c) { return typeof c.row.m_product_id === 'number'; }),
   'each of the 6 cameras ALSO compiles a real M_Product row (no billing line — no metered reading to charge)');
+
+// §2026-07-05c — toneFreqFor: pure, deterministic pitch-vs-danger mapping (user: "high pitch indicating danger").
+ok('I16-tone-low', IoT.toneFreqFor(10, 10, 20) === IoT.TONE_BASE_HZ, 'the reading AT the range floor -> the calm/low base pitch (220Hz)');
+ok('I17-tone-high', IoT.toneFreqFor(20, 10, 20) === IoT.TONE_DANGER_HZ, 'the reading AT the range ceiling -> the high/danger pitch (880Hz)');
+ok('I18-tone-mid', IoT.toneFreqFor(15, 10, 20) === Math.round((IoT.TONE_BASE_HZ + IoT.TONE_DANGER_HZ) / 2), 'a mid-range reading -> a mid pitch');
+ok('I19-tone-degenerate', IoT.toneFreqFor(5, 5, 5) === Math.round((IoT.TONE_BASE_HZ + IoT.TONE_DANGER_HZ) / 2), 'min===max (degenerate range) -> mid-range tone, no divide-by-zero');
 
 // ============================================================================================================
 // (2) viewer/hba_iot.js
@@ -113,7 +119,7 @@ var barsWrap = pane.children[2];
 var cctvGrid = pane.children.filter(function (c) { return c.style.cssText.indexOf('grid-template-columns:1fr 1fr 1fr') >= 0; })[0];
 ok('IP5-cctv-tiles', cctvGrid && cctvGrid.children.length === 6, '6 CCTV mockup tiles rendered — got ' + (cctvGrid && cctvGrid.children.length));
 var billTbl = pane.children[pane.children.length - 1];
-ok('IP6-billing-rows', billTbl.children.length === 6, '6 billing rows (one per sensor) rendered in the ERP table — got ' + billTbl.children.length);
+ok('IP6-billing-rows', billTbl.children.length === 7, '7 billing rows (one per sensor, incl. movement) rendered in the ERP table — got ' + billTbl.children.length);
 
 // per-device fly target — clicking the "pressure" bar (index 1) must fly to ITS OWN guid, NOT the shared AHU-03
 // asset guid every bar used to fly to (the bug §BUILD ORDER point 2 fixed).
@@ -145,6 +151,41 @@ ok('IP12-usd-governed', amtTd2.children.length === 1 && amtTd2.children[0].textC
 
 IotPane.toggle(A);
 ok('IP13-unmount', IotPane.isActive() === false && body.children.length === 0, 'toggle OFF removes the pane, destroys charts, stops the CCTV loop (zero residue)');
+
+// §2026-07-05c — zoom distance (locateAndHighlight passes {dist:18} to flyToZone, wider than the shared
+// default of 8, per user: "zooms to the device, not too near, surrounding") + per-sensor siren audio, OFF by
+// default, ON only after the mute button is clicked (the required user-gesture to start an AudioContext).
+var flyOpts = null;
+self.HBALens.flyToZone = function (Aarg, guid, opts) { flyCalls.push(guid); flyOpts = opts; };
+function FakeAudioNode() { this.frequency = { setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {} };
+  this.gain = { setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {} }; this.type = null; }
+FakeAudioNode.prototype.connect = function () {}; FakeAudioNode.prototype.start = function () {}; FakeAudioNode.prototype.stop = function () {};
+var oscLog = [];
+function FakeAudioContext() { this.currentTime = 0; this.state = 'running'; this.destination = {}; }
+FakeAudioContext.prototype.createOscillator = function () { var o = new FakeAudioNode(); oscLog.push(o); return o; };
+FakeAudioContext.prototype.createGain = function () { return new FakeAudioNode(); };
+FakeAudioContext.prototype.resume = function () {};
+global.AudioContext = FakeAudioContext;
+var capturedTick = null;
+global.setInterval = function (fn) { capturedTick = fn; return 999; };
+global.clearInterval = function () {};
+
+IotPane.toggle(A);   // mount — captures the tick callback, does NOT invoke it yet
+var pane3 = body.children.filter(function (c) { return c.id === 'hba-iot-pane'; })[0];
+var barsWrap3 = pane3.children[2];
+barsWrap3.children[1]._on_click();   // pressure bar, same as IP7
+ok('IP14-zoom-dist', flyOpts && flyOpts.dist === 18 && flyOpts.dist > 8, 'clicking a device passes a WIDER zoom distance (18) than flyToZone\'s shared default (8) — "not too near", surrounding stays visible');
+
+ok('IP15-audio-off-default', capturedTick && (capturedTick(), oscLog.length === 0), 'a bar tick with audio OFF (default) plays ZERO tones — opt-in, zero-impact by default');
+
+var muteBtn = pane3.children[0].children[1];   // head: [title, mute, close]
+muteBtn._on_click();
+capturedTick();
+var expectBlips = self.HbaIot.SENSORS.reduce(function (n, s) { return n + (({ temp: 1, pressure: 1, sound: 1, dust: 1, solar: 2, electrical: 2, movement: 3 })[s.key] || 1); }, 0);
+ok('IP16-audio-on-plays', oscLog.length === expectBlips, 'once muted->on, a tick plays the expected total blip count across all 7 sensors (1+1+1+1+2+2+3=' + expectBlips + ') — got ' + oscLog.length);
+ok('IP17-distinct-waveforms', new Set(oscLog.map(function (o) { return o.type; })).size >= 3, 'multiple DISTINCT waveforms are used across sensors — "identify by the sound right away", not one uniform beep — got types ' + JSON.stringify(oscLog.map(function (o) { return o.type; })));
+
+IotPane.toggle(A);   // unmount
 
 // ============================================================================================================
 // (3) viewer/hba_draggable.js
