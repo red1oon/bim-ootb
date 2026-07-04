@@ -3647,14 +3647,23 @@ window.__ensureDiscWalker = async function () {
 };
 
 // ── OPEN (W-UX-1): the pill-rail verb that replaced the old top-left drop panels. Clicking #b-open opens a
-// small chooser of the 4 permanent residents (reusing RESIDENTS[] from str_walker_outliner.js) + a local-.db
-// door (the dev/arbitrary-DB path). A pick calls the SHIPPED openResident()/openStrDb() — which swbInit-walks
-// + seeds the bom-graph (ARC) tab + derives cross-edges in one go. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-1.
+// small chooser of the 4 permanent residents (reusing RESIDENTS[] from str_walker_outliner.js) + the IFC/
+// source folder (ARC-only .ifc per building — 2026-07-04, see IFC/README.md) + a local .db/.ifc door (the
+// dev/arbitrary-file path). A pick calls the SHIPPED openResident()/openStrDb()/openIfcFile() — all three
+// converge on _openBuffer: swbInit-walks + seeds the bom-graph (ARC) tab + derives cross-edges in one go.
+// RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-1 + prompts/ARC_GEO_FETCH_SPEC.md §3D (IFC-direct-open).
 (function initOpenChooser() {
   const bOpen = document.getElementById('b-open');
   const SW = window.STRWalkerOutliner;
   if (!bOpen || !SW) { if (bOpen) bOpen.disabled = true; return; }
   const residents = SW._residents || [];
+  // IFC/ folder manifest — ARC-only source .ifc per building, the Modeller's default "open a raw design"
+  // location (IFC/README.md tracks which residents are populated; NOT yet: SampleCastle/Hospital/Clinic/
+  // LTU/Terminal — see README §Status). Fetched relative to modeller.html (../IFC/<file>).
+  const ifcSources = [
+    { key: 'SampleHouse-IFC', label: 'SampleHouse · ARC.ifc', file: 'SampleHouse_ARC.ifc' },
+    { key: 'Duplex-IFC',      label: 'Duplex · ARC.ifc',      file: 'Duplex_ARC.ifc' }
+  ];
   let panel = null, fileInp = null;
   function ensureOutlinerOpen() {
     try { localStorage.setItem('dagevu_modeller_ol_open', '1'); } catch (e) {}
@@ -3664,14 +3673,30 @@ window.__ensureDiscWalker = async function () {
     console.log('§MODELLER-OPEN chooser pick resident=' + res.key);
     SW._openResident(res); ensureOutlinerOpen(); close();
   }
+  // Fetch an ARC-only .ifc from the IFC/ folder and route it through the SAME openIfcFile() a
+  // local/dropped .ifc uses (Stage 1 parse + Stage 2 _openBuffer, str_walker_outliner.js) — no
+  // separate code path for "our" buildings vs a user's own file.
+  function pickIfc(entry) {
+    console.log('§MODELLER-OPEN chooser pick ifc=' + entry.file);
+    fetch('../IFC/' + entry.file).then(function (r) {
+      if (!r.ok) throw new Error('fetch failed ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      SW._openIfcFile(new File([blob], entry.file, { type: 'application/octet-stream' }));
+      ensureOutlinerOpen();
+    }).catch(function (err) { console.warn('§MODELLER-OPEN ifc fetch failed ' + (err && err.message)); });
+    close();
+  }
   function pickLocal() {
     if (!fileInp) {
-      fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.db,.sqlite';
+      fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.db,.sqlite,.ifc';
       fileInp.style.display = 'none'; fileInp.id = 'm-open-file';
       fileInp.onchange = function () {
-        if (fileInp.files && fileInp.files[0]) {
-          console.log('§MODELLER-OPEN chooser pick local=' + fileInp.files[0].name);
-          SW._openStrDb(fileInp.files[0]); ensureOutlinerOpen();
+        var f = fileInp.files && fileInp.files[0];
+        if (f) {
+          console.log('§MODELLER-OPEN chooser pick local=' + f.name);
+          if (/\.ifc$/i.test(f.name)) { SW._openIfcFile(f); } else { SW._openStrDb(f); }
+          ensureOutlinerOpen();
         }
         fileInp.value = '';
       };
@@ -3691,16 +3716,23 @@ window.__ensureDiscWalker = async function () {
         'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">🏠</span><span>' + r.label + '</span></div>';
     });
     h += '<div style="border-top:1px solid #23262e;margin:7px 2px 6px"></div>';
+    h += '<div style="font-size:10px;letter-spacing:.14em;color:#5b6473;margin:2px 4px 6px">FROM IFC (ARC only)</div>';
+    ifcSources.forEach(function (r) {
+      h += '<div class="mo-row" data-ifc="' + r.key + '" style="display:flex;align-items:center;gap:9px;padding:7px 8px;' +
+        'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">📐</span><span>' + r.label + '</span></div>';
+    });
+    h += '<div style="border-top:1px solid #23262e;margin:7px 2px 6px"></div>';
     h += '<div class="mo-row" data-key="__local" style="display:flex;align-items:center;gap:9px;padding:7px 8px;' +
-      'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">📁</span><span>Open local .db…</span></div>';
+      'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">📁</span><span>Open local .db / .ifc…</span></div>';
     panel.innerHTML = h;
     document.body.appendChild(panel);
     panel.querySelectorAll('.mo-row').forEach(function (d) {
       d.onmouseover = function () { d.style.background = '#23262e'; };
       d.onmouseout = function () { d.style.background = 'transparent'; };
       d.onclick = function () {
-        const k = d.getAttribute('data-key');
+        const k = d.getAttribute('data-key'), ik = d.getAttribute('data-ifc');
         if (k === '__local') return pickLocal();
+        if (ik) { const s = ifcSources.filter(function (x) { return x.key === ik; })[0]; if (s) pickIfc(s); return; }
         const r = residents.filter(function (x) { return x.key === k; })[0]; if (r) pick(r);
       };
     });
