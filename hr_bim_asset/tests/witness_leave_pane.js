@@ -56,6 +56,22 @@ ok('LP4-first-emp-shown', txt1.indexOf('SAMPLE — NOT OFFICIAL') >= 0 && txt1.i
 ok('LP5-chain-verifies', txt1.indexOf('signed chain verifies') >= 0,
   'the chain-integrity line reflects summary().chainOk (true for an untampered log)');
 
+// ---- LP5b: §2026-07-04 thread C — Resource click-through is honestly ABSENT when ungoverned (no
+// A._hbaEmpResourceMap — ERP db not loaded) — never a fabricated S_Resource id ------------------------------
+ok('LP5b-resource-link-absent-ungoverned', allText(paneInBody()[0]).join(' ').indexOf('Resource ↗') === -1,
+  'no A._hbaEmpResourceMap → no "Resource ↗" link rendered (honest absence, not a guessed id)');
+
+// ---- LP5c: with A._hbaEmpResourceMap present (the governed path, real S_Resource ids), re-selecting renders
+// the SAME "Resource ↗" pattern the other 4 panes already use — window=236 (RESOURCE), record=the resolved id.
+self.HBALens = { erpLink: function (w, r) { return '../erp/idempiere.html?client=garden&window=' + w + '&record=' + encodeURIComponent(r); },
+  AD_WINDOWS: { RESOURCE: 236 } };
+A._hbaEmpResourceMap = { EMP001: 990109, EMP002: 990110 };
+var btn1 = pickerButtons()[0]; btn1._on_click();
+var linkNode = paneInBody()[0].children[2].children.filter(function (c) { return c.tagName === 'a'; })[0];
+ok('LP5d-resource-link-present-governed', !!linkNode && /window=236/.test(linkNode.href) && /record=990109/.test(linkNode.href),
+  'A._hbaEmpResourceMap present → "Resource ↗" links to window=236 (Resource) record=990109 (EMP001\'s real S_Resource id)');
+delete self.HBALens; A._hbaEmpResourceMap = null;   // restore ungoverned state for the rest of the suite
+
 // ---- LP6: selecting the SECOND employee re-renders (real interaction, not static) ---------------------------
 var sum2 = Lv.summary(LOG['EMP002'], 'EMP002', null, null, 'en');
 ok('LP6-same-schedule-sanity', sum1.unpaid === sum2.unpaid && sum1.balances.annual === sum2.balances.annual,

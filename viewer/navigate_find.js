@@ -99,6 +99,14 @@
       '  flex-shrink: 0; min-height: 32px; line-height: 1.6; text-decoration: none; white-space: nowrap;',
       '  transition: background 0.15s; }',
       '#find-erp-open:hover { background: rgba(76,175,80,0.5); color: #fff; }',
+      // §2026-07-04 thread A: Room/storey tap → "zoom to iDempiere" (the Construction AD_Window over the
+      // building's compiled M_Warehouse row). Same shape as #find-erp-open, blue to read as a DIFFERENT
+      // target (this building's Construction record, not a Project Order).
+      '#find-construction-open { display: none; background: rgba(79,195,247,0.28); color: #4fc3f7;',
+      '  border: none; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer;',
+      '  flex-shrink: 0; min-height: 32px; line-height: 1.6; text-decoration: none; white-space: nowrap;',
+      '  transition: background 0.15s; }',
+      '#find-construction-open:hover { background: rgba(79,195,247,0.5); color: #fff; }',
       '#find-count { font-size: 9px; color: #666; padding: 2px 10px 0; }',
       // §S281: Chips visible as slim hint row
       '#find-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }',
@@ -179,7 +187,7 @@
       '</div>',
       // S275: Selected item summary + inline navigate button
       // BIM\u2192Project TASK A: indicative 5D cost of the selection (docs/BIMtoProject.md \u00A7A)
-      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><a id="find-erp-open" target="_blank" rel="noopener" title="Open the created Project Order in iDempiere (GardenWorld)">open \u2197</a><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><a id="find-erp-open" target="_blank" rel="noopener" title="Open the created Project Order in iDempiere (GardenWorld)">open \u2197</a><a id="find-construction-open" target="_blank" rel="noopener" title="Open this building in iDempiere (Construction)">iDempiere \u2197</a><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
@@ -206,6 +214,7 @@
     var elNavBtn = document.getElementById('find-navigate-btn');
     var elErpBtn = document.getElementById('find-erp-btn');   // BIM→Project TASK C: > to ERP push
     var elErpOpen = document.getElementById('find-erp-open'); // BIM→Project: deep-link to the created record
+    var elConstructionOpen = document.getElementById('find-construction-open'); // §2026-07-04 A: Room/storey → Construction window
     var _lastSelSet = null, _lastSelLabel = '';               // current selection, for the ERP push
     var elClose = document.getElementById('find-close');
     var elChips = document.getElementById('find-chips');
@@ -1086,6 +1095,39 @@
         console.log('[RP-C] §PROJ_LINK_EXISTING building="' + A.activeBuilding + '" project=' + pid + ' url=' + url);
       }).catch(function () { /* additive — never impact Find */ });
     }
+    // §2026-07-04 thread A ("zoom to iDempiere" from Room/storey) — a Building already compiles onto a real
+    // M_Warehouse row (HBA's ad_tenancy.js compileBuilding, threaded onto A._hbaTenancySpec.warehouse by
+    // hba_lens.js's bindStoreysFromModel) and a SECOND AD_Window "Construction" now exists over that same
+    // row (scripts/seed_hba_construction.js) alongside window 139. Room-tap/storey-tap surfaces an "iDempiere
+    // ↗" link to it — building-grain (the same warehouse record for every room in this building, honestly;
+    // there is no per-room AD_Window, only per-room M_Locator/M_Product, which is a different, deeper link
+    // not in scope here). PURELY ADDITIVE: only touches #find-construction-open; HBA absent/inactive →
+    // honest no-op (never fabricates a warehouse id), same discipline as _surfaceExistingOrder above.
+    //
+    // §GOVERNANCE-GATE (design review, 2026-07-04): compileBuilding's `warehouse.m_warehouse_id` is a REAL
+    // persisted id only once ERP governance has resolved (`_hbaTenancySpec._governed===true` — a DB hit via
+    // erpQuery, ad_tenancy.js); before that it's a throwaway session-local mint (always the literal `1`) that
+    // matches nothing in the real dictionary. A link built off the ungoverned id would SOMETIMES 404/point at
+    // the wrong record depending on load timing — that's a correctness bug, not a feature gap. Gate on it.
+    function _surfaceConstructionLink(guid, label) {
+      if (!elConstructionOpen) return;
+      elConstructionOpen.style.display = 'none';
+      elConstructionOpen.removeAttribute('href');
+      try {
+        var HL = (typeof HBALens !== 'undefined') ? HBALens : (typeof window !== 'undefined' ? window.HBALens : null);
+        var spec = A._hbaTenancySpec;
+        var whId = spec && spec.warehouse ? spec.warehouse.m_warehouse_id : null;
+        if (!HL || !HL.erpLink || !HL.AD_WINDOWS || whId == null || !spec._governed) {
+          console.log('[RP-TA] §CONSTRUCTION_LINK skip guid=' + guid + ' (HBA inactive, no compiled warehouse, or not yet governed — honest no-op)');
+          return;
+        }
+        var url = HL.erpLink(HL.AD_WINDOWS.CONSTRUCTION, whId);
+        elConstructionOpen.setAttribute('href', url);
+        elConstructionOpen.style.display = 'inline-block';
+        elConstructionOpen.title = 'Open ' + (A.buildingName || 'this building') + ' in iDempiere (Construction) — via ' + (label || guid);
+        console.log('[RP-TA] §CONSTRUCTION_LINK guid=' + guid + ' warehouse=' + whId + ' url=' + url);
+      } catch (e) { console.log('[RP-TA] §CONSTRUCTION_LINK err=' + e.message); }
+    }
     function _pct(planned, committed) { return planned > 0 ? Math.round((committed - planned) * 100 / planned) : 0; }
     function _showClassCost(ifcClass, matchCount, guid) {
       var box = document.getElementById('info-cost'); if (!box) return;
@@ -1553,6 +1595,7 @@
     // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
     function _roomSelect(guid) {
       var set = new Set(), name = guid, storeySet = null, zoomBox = null;
+      try { _surfaceConstructionLink(guid, guid); } catch (e) {}
       try {
         var nm = A.dbQuery("SELECT s.name, p.name, s.center_x, s.center_y, s.center_z, s.size_x, s.size_y, s.size_z" +
           " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid WHERE s.guid = ?", [guid]);
@@ -1599,6 +1642,7 @@
     // building(parent) = 0.1. (groupRooms = [{key,label}] for this header, captured at build time.)
     function _roomGroupSelect(gk, groupRooms) {
       var set = new Set();
+      try { _surfaceConstructionLink(gk, gk); } catch (e) {}
       try {
         if (_roomGroupBy === 'type') {
           var keys = (groupRooms || []).map(function(r) { return r.key; });

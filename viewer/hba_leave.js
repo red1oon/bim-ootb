@@ -26,7 +26,7 @@
   function el(tag, css, txt) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
 
   // render ONE employee's leave statement into `body` (called fresh on mount and on every employee re-select).
-  function renderStatement(body, sp, empId) {
+  function renderStatement(body, sp, empId, A) {
     var Lv = deps().Lv;
     var sum = Lv.summary(sp.log[empId] || [], empId, sp.period, sp.policy, sp.locale || 'en');
     body.appendChild(el('div', 'background:#fff8e1;color:#a06b00;font-weight:700;letter-spacing:1px;font-size:11px;padding:4px 0;', sum._watermark));
@@ -42,6 +42,21 @@
     body.appendChild(kp);
     body.appendChild(el('div', 'font-size:11px;color:' + (sum.chainOk ? '#2e7d32' : '#c62828') + ';padding:2px 0 6px;',
       sum.chainOk ? '✓ signed chain verifies' : '✗ chain tamper detected'));
+    // §2026-07-04 thread C — Leave ALSO surfaces as a resource-availability fact (S_ResourceUnAvailable, tab
+    // 416 of window 236 "Resource" — the SAME window Dashboard already deep-links into), not just a payroll
+    // line. This session is click-through only (the compile itself lives in ad_leave.js + is seeded into
+    // ad_seed.db by scripts/seed_hba_erp.js) — an honest no-link when the employee has no resolved S_Resource
+    // (A._hbaEmpResourceMap absent/ungoverned), never a fabricated id.
+    var d0 = deps();
+    var rid = A && A._hbaEmpResourceMap ? A._hbaEmpResourceMap[empId] : null;
+    if (rid != null && d0.Lens && d0.Lens.erpLink) {
+      var ra = document.createElement('a');
+      ra.href = d0.Lens.erpLink(d0.Lens.AD_WINDOWS.RESOURCE, rid);
+      ra.target = '_blank'; ra.rel = 'noopener'; ra.textContent = 'Resource ↗';
+      ra.title = 'Open ' + empId + ' as a Resource (Unavailability tab shows leave-driven blackouts)';
+      ra.style.cssText = 'display:inline-block;color:#1976d2;text-decoration:none;font-size:11px;padding-bottom:4px;';
+      body.appendChild(ra);
+    }
     var tbl = el('table', 'width:100%;border-collapse:collapse;font-size:12px;');
     // §P11 — Leave has NO native AD table of its own (verified §CRITICAL P8 finding) — an unpaid entry's
     // REAL AD identity is the "Leave without pay" pay-element it feeds INTO (ad_payroll.js CONCEPTS.UNPAID_LEAVE,
@@ -96,7 +111,7 @@
     });
     pane.appendChild(picker);
     var body = el('div', 'padding:6px 12px 12px;');
-    var sum = renderStatement(body, sp, _sel);
+    var sum = renderStatement(body, sp, _sel, A);
     pane.appendChild(body);
     (document.body || document.documentElement).appendChild(pane);
     if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header

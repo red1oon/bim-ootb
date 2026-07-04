@@ -103,6 +103,25 @@ ok('AD-TEN6-manager-chain-real', REAL_COLS.ad_user.indexOf('c_bpartner_id') >= 0
   REAL_COLS.ad_user_orgaccess.indexOf('ad_org_id') >= 0 && REAL_COLS.m_warehouse.indexOf('ad_org_id') >= 0,
   'the nearest native mechanism DOES exist (ad_user.c_bpartner_id -> ad_user_orgaccess(ad_user_id,ad_org_id) -> m_warehouse.ad_org_id) — an access-control chain, not a business "manager" fact; flagged, not built (no live engine needs it)');
 
+// ---- AD-TEN7: `_governed` — an honest, explicit signal that warehouse.m_warehouse_id is the REAL persisted
+//   id (a DB hit) vs. this session's throwaway local mint (always the literal 1) — the Find-panel "zoom to
+//   iDempiere" review (2026-07-04) caught a live bug: without this flag, a deep-link could be built off a
+//   session-local id that matches nothing in the real dictionary, depending on load timing. Kept OFF the
+//   `warehouse` row itself (would fail the AD-TEN0 non-invent gate) — a sibling flag, same idiom as
+//   ad_payroll.js's demoSpec()._governed.
+var specNoErp = AD.compileBuilding('HHS_Office_Federated', rooms, [], []);
+ok('AD-TEN7-ungoverned-honest', specNoErp._governed === false && specNoErp.warehouse.m_warehouse_id === 1,
+  'no erpQuery → _governed=false, warehouse id is the literal session-local mint (1) — never mistaken for a real persisted id');
+function stubQuery(sql, params) {
+  if (/FROM M_Warehouse/.test(sql) && params[0] === 'HHS_Office_Federated') return [{ id: 990000, value: 'HHS_Office_Federated', name: 'HHS_Office_Federated' }];
+  return [];
+}
+var specGoverned = AD.compileBuilding('HHS_Office_Federated', rooms, [], [], { erpQuery: stubQuery });
+ok('AD-TEN7-governed-real-id', specGoverned._governed === true && specGoverned.warehouse.m_warehouse_id === 990000,
+  'erpQuery hits a real seeded row → _governed=true, warehouse id is the REAL persisted id (990000), not a re-mint');
+ok('AD-TEN7-warehouse-row-still-column-pure', keysSubset(specGoverned.warehouse, 'm_warehouse') && keysSubset(specNoErp.warehouse, 'm_warehouse'),
+  '_governed lives OUTSIDE the warehouse row — the row itself stays column-pure in both the governed and ungoverned case (AD-TEN0 gate unaffected)');
+
 var pass = checks.filter(Boolean).length, fail = checks.length - pass;
 console.log('\n§HBA-AD-TENANCY ' + pass + '/' + checks.length + ' PASS' + (fail ? (' — ' + fail + ' FAIL') : ''));
 process.exit(fail ? 1 : 0);

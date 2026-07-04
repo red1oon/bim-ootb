@@ -26,6 +26,10 @@ function setupConfig(A) {
   A.EMBEDDED = _params.get('embedded') === 'true';
   A.RECORD_ID = _params.get('record') || null;
   A.HOME_URL = _params.get('home') || null;
+  // §2026-07-04c — the ERP→BIM reverse Zoom-Across's finer scope (erp/idempiere.html _zoomScope()'s `find`,
+  // carried by ZoomAcross's 'viewer' destination launch(): ?find=<guid|employee-code>). Consumed on boot by
+  // hba_lens.js's own readiness poll (flyToZone / attendance-log zone resolution) — see that file's header.
+  A.FIND_GUID = _params.get('find') || null;
 
   // Discipline colours (same as Blender addon)
   A.DISC_COLORS = {

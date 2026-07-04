@@ -350,8 +350,11 @@
     if (h.ADA && h.A && A._hbaAttendanceLog && A._hbaRooms) {
       var sessions = h.A.sessions(A._hbaAttendanceLog, period(A));
       var resRows = eq('SELECT S_Resource_ID AS s_resource_id, Value AS value FROM S_Resource WHERE AD_User_ID IS NOT NULL AND IsActive=?', ['Y']);
-      A._hbaAttendanceSpec = h.ADA.compileAttendance(sessions, {
-        resourceMap: h.ADA.resourceMapFromResources(resRows) });
+      // exposed standalone (not just folded into compileAttendance) so OTHER panes needing employee→S_Resource
+      // (e.g. the Leave pane's §2026-07-04 thread C click-through) reuse the SAME real-row-sourced map, never
+      // re-query/re-derive it themselves.
+      A._hbaEmpResourceMap = h.ADA.resourceMapFromResources(resRows);
+      A._hbaAttendanceSpec = h.ADA.compileAttendance(sessions, { resourceMap: A._hbaEmpResourceMap });
       n++;
     }
     // §BOM-ERP-CENTERED — read the BIM BOM as a LENS over the real seeded pp_product_bom (ad_bom.readBom), the
@@ -553,7 +556,13 @@
   // Leave pane links there, never to a fabricated leave-record window.
   // BOM=53006 "Bill of Materials and Formula" (table PP_Product_BOM) — looked up live in both ad_seed.db and
   // bim-compiler build/erp/ad_full.db (2026-07-03), the §STAGE3 BOM pane's per-assembly deep-link.
-  var AD_WINDOWS = { RESOURCE: 236, PAYROLL_MOVEMENT: 53042, SUBSCRIPTION: 316, ORDER: 143, PAYROLL_CONCEPT: 53036, BOM: 53006 };
+  // USER=108 "User" (table AD_User) — §2026-07-04 thread B: Presence's forward link, record=ad_user_id (always
+  // populated on every MODELS.Official row, unlike c_bpartner_id which is null for the demo tenant records).
+  // CONSTRUCTION=7800000 "Construction" (table M_Warehouse) — §2026-07-04 thread A: a SECOND AD_Window minted
+  // over the same M_Warehouse row window 139 already covers (scripts/seed_hba_construction.js), same
+  // established iDempiere convention as C_BPartner's 10 distinct windows over one table. record=m_warehouse_id.
+  var AD_WINDOWS = { RESOURCE: 236, PAYROLL_MOVEMENT: 53042, SUBSCRIPTION: 316, ORDER: 143, PAYROLL_CONCEPT: 53036,
+                     BOM: 53006, USER: 108, CONSTRUCTION: 7800000 };
   function erpLink(windowId, record) {
     if (windowId == null || record == null) return null;
     return '../erp/idempiere.html?client=garden&window=' + windowId + '&record=' + encodeURIComponent(record);
@@ -608,14 +617,27 @@
       var official = h.M ? h.M.officialByName(s.employee) : null;
       var label = official ? official.name + (official.phone ? ' · ' + official.phone : '') : s.employee;
       var storey = (A._hbaStoreyOf && A._hbaStoreyOf[s.zone]) || null;
-      var row = document.createElement('button');
+      // §2026-07-04 thread B — the one HBA entity with no bidirectional click-through (every other pane
+      // carries an "open ↗"). Forward link only: AD_User.ad_user_id is always populated on every real
+      // MODELS.Official row (unlike c_bpartner_id, null for the demo tenant records) — so this is the
+      // honest, always-resolvable target, never a fabricated fallback.
+      var row = document.createElement('div');
       row.setAttribute('data-employee', s.employee); row.setAttribute('data-zone', s.zone); row.setAttribute('data-label', label);
-      row.style.cssText = 'display:block;width:100%;text-align:left;border:0;border-radius:8px;margin:2px 0;'
-        + 'padding:8px 10px;color:#fff;cursor:pointer;background:transparent;';
+      row.style.cssText = 'position:relative;display:block;width:100%;text-align:left;border:0;border-radius:8px;margin:2px 0;'
+        + 'padding:8px 10px;color:#fff;cursor:pointer;background:transparent;box-sizing:border-box;';
       // governed rows carry the REAL Qty hours + IsConfirmed maker-checker state; the raw fold has neither.
       var govBadge = gov ? ((s.hours != null ? ' · ' + s.hours + 'h' : '') + (s.open ? '' : (s.confirmed === 'Y' ? ' · ✓' : ' · unconfirmed'))) : '';
       row.innerHTML = '<div style="font-weight:600">' + label + '</div>'
         + '<div style="opacity:.7;font-size:11px">' + (storey ? storey + ' · ' : '') + (s.open ? 'checked in ' + s.in : s.in + ' → ' + s.out) + govBadge + '</div>';
+      if (official && official.ad_user_id != null) {
+        var a = document.createElement('a');
+        a.href = erpLink(AD_WINDOWS.USER, official.ad_user_id);
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'open ↗';
+        a.title = 'Open ' + official.name + ' in iDempiere (AD_User)';
+        a.style.cssText = 'position:absolute;right:10px;top:8px;color:#4fc3f7;text-decoration:none;font-size:11px;';
+        a.addEventListener('click', function (e) { e.stopPropagation(); });
+        row.appendChild(a);
+      }
       row.addEventListener('click', function () { flyToZone(A, s.zone); });
       d.appendChild(row);
     });
@@ -751,7 +773,8 @@
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
     flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
-    _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern };  // §STAGE2 — witness hooks (additive)
+    _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
+    _consumeFindGuid: _consumeFindGuid };  // §STAGE2 / §2026-07-04c — witness hooks (additive)
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------
@@ -759,6 +782,28 @@
   // §HBA_GATE_FIX (RESUME_OVERLAY_PILL_ICONS.md) — geometry streams incrementally; guidMap goes non-empty
   // long before every element has arrived (bbox-first flush order), so gating on "any keys" caught the model
   // half-streamed and settled the family list too early (observed: only [dash] available, FM never lit).
+  // §2026-07-04c — consume the ERP→BIM reverse Zoom-Across's finer scope (viewer/config.js A.FIND_GUID, set
+  // from ?find=<guid|employee-code>, erp/idempiere.html _zoomScope()). Two paths, neither fabricates a
+  // position: (1) A.FIND_GUID resolves to a rendered mesh member → flyToZone flies directly (its own honest
+  // no-op covers "no such member"); (2) it doesn't (a bare employee code, e.g. "EMP001", carries no rendered
+  // guid) → resolve via that employee's OPEN attendance session zone — the SAME BIM-side view-trace fact the
+  // erp/idempiere.html ad_user branch explicitly couldn't reach from ERP data alone (§2026-07-04c Gap 1) — and
+  // fly there instead. An unresolvable code is logged, never silently dropped.
+  function _consumeFindGuid(A) {
+    if (!A || !A.FIND_GUID) return;
+    var direct = flyToZone(A, A.FIND_GUID);
+    if (direct.flew) { console.log('§HBA_FIND_GUID flew directly guid=' + A.FIND_GUID); return; }
+    var h = HBA();
+    var sess = (h.A && A._hbaAttendanceLog) ? h.A.sessions(A._hbaAttendanceLog, period(A)) : [];
+    var open = sess.filter(function (s) { return s.employee === A.FIND_GUID && s.open; })[0];
+    if (open && open.zone) {
+      var viaAtt = flyToZone(A, open.zone);
+      console.log('§HBA_FIND_GUID employee=' + A.FIND_GUID + ' → open session zone=' + open.zone + ' flew=' + viaAtt.flew);
+    } else {
+      console.log('§HBA_FIND_GUID no-op code=' + A.FIND_GUID + ' (not a rendered guid, no open attendance session)');
+    }
+  }
+
   // A.streaming is the real stream-complete signal (viewer/streaming.js streamTick flips it false once the
   // queue drains) — wait for it before locking in availableLenses(), same non-invent gate, just not premature.
   var _tries = 0, _poll = setInterval(function () {
@@ -770,6 +815,7 @@
     if (A.streaming) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — still streaming'); } return; }
     clearInterval(_poll);
     bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
+    _consumeFindGuid(A);       // §2026-07-04c — the reverse Zoom-Across's finer scope (viewer/config.js A.FIND_GUID)
     // ONE family pill (hbaFM) — flip it on when ANY lens has data (familyHasData = the wake-aware gate). The
     // per-lens availability/greying is computed live in the drawer (availableLenses), not on the bar.
     var acts = G._mainPillActions || [], lenses = availableLenses(A), any = familyHasData(A);
