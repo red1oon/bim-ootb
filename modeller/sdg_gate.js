@@ -37,7 +37,8 @@
   // evaluate(before, after, moved, rel, opts) → {red:[{kind,a,b,depth?}], orange:[{kind,a,b,gap}]}. PURE.
   //   before/after = {fid: aabb}      moved = [fid,…] (host + cascade riders)
   //   rel = { related(a,b)->bool  (hosted-by/abuts/anchored = EXPECTED contact, never a clash),
-  //           hostOf: {fillingFid: hostFid} }      opts = {clashTol, clearance}
+  //           hostOf: {fillingFid: hostFid}, abuts: [{a,b}] (real face-touch fid pairs) }
+  //   opts = {clashTol, clearance}
   function evaluate(before, after, moved, rel, opts) {
     opts = opts || {}; rel = rel || {};
     var clashTol = opts.clashTol != null ? opts.clashTol : CLASH_TOL;
@@ -97,6 +98,39 @@
         var fitAfter  = after[f][2 * k]  >= after[h][2 * k]  - 0.05 && after[f][2 * k + 1]  <= after[h][2 * k + 1]  + 0.05;
         if (fitBefore && !fitAfter) { red.push({ kind: 'door-crush', a: f, b: h, axis: 'xyz'[k] }); break; }
       }
+    });
+
+    // (4) ABUTS REALIGN — a neighbour PULLED AWAY from a real face-touch partner during THIS edit (one side
+    // moved, the other didn't) → propose an ORANGE Δ that would restore the touch (SPATIAL_DEPENDENCY_GRAPH.md's
+    // `abuts` backward signal: "neighbor pulled away → gap → ORANGE realign"). REPORTS ONLY — proposedDelta is a
+    // suggestion; applying it is a future accept-gated op (SDG_BACKPROP_ABUTS_REALIGN.md), not this function's
+    // concern (mirrors clash/door-out/door-crush: never mutates, only flags). One-hop, delta-honest: a pair
+    // already separated beyond tol in `before` can't trigger it (the edit didn't cause it).
+    // "Touching" mirrors cross_edges.js's OWN faceTouch contract (min-|overlap| axis, SIGN-AGNOSTIC — a flush or
+    // slightly-interpenetrating pair counts as contact, not just a gapped one): this is the edge's own definition,
+    // not sdg_gate's stricter `faceGap` (built for clearance, gap-only) — reusing faceGap here would silently
+    // never fire on a real flush (ov≈0, non-negative) abuts pair, the common case (recon: DOOR_WIDTH_CRUSH_GATE.md
+    // pattern — verify against real data before shipping a check that could be permanently dead).
+    var ABUTS_TOL = 0.03;   // m — SAME touch tolerance cross_edges.js uses to derive the edge (non-invent reuse)
+    function touchAxis(a, b, tol) {
+      var ov = overlaps(a, b), k = 0;
+      for (var i = 1; i < 3; i++) if (Math.abs(ov[i]) < Math.abs(ov[k])) k = i;
+      return Math.abs(ov[k]) <= tol ? k : -1;
+    }
+    (rel.abuts || []).forEach(function (pr) {
+      var a = pr.a, b = pr.b;
+      if (!after[a] || !after[b] || !before[a] || !before[b]) return;
+      var movedA = !!movedSet[a], movedB = !!movedSet[b];
+      if (movedA === movedB) return;                                  // both or neither moved — nothing pulled away
+      var nb = movedA ? b : a, mv = movedA ? a : b;                    // nb = neighbour (unmoved), mv = the moved side
+      var k = touchAxis(before[a], before[b], ABUTS_TOL);
+      if (k < 0) return;                                               // wasn't genuinely touching before this edit
+      var ovAfterK = overlaps(after[a], after[b])[k];
+      var gapAfter = ovAfterK < 0 ? -ovAfterK : 0;
+      if (gapAfter <= ABUTS_TOL) return;                               // still touching (within tol) — no realign needed
+      var dir = centre(after[mv])[k] - centre(after[nb])[k] >= 0 ? 1 : -1;
+      var delta = [0, 0, 0]; delta[k] = dir * gapAfter;
+      orange.push({ kind: 'abuts-realign', a: nb, b: mv, gap: +gapAfter.toFixed(4), axis: 'xyz'[k], proposedDelta: delta });
     });
 
     return { red: red, orange: orange };
