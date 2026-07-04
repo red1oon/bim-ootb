@@ -20,20 +20,14 @@
  * CLAIMS per resident/open-mode pair (X1-X6 = witness_e2e_gridstretch.js's own numbering, reused verbatim):
  *   X1 SETUP, X2 GRID-MODE, X3 STRETCH, X4 CHAIN-OK, X5 ATOMIC, X6 REVERSIBLE.
  *
- * ⚠ KNOWN RED (X7, SampleCastle leg only) — a REAL, REPRODUCIBLE finding, not test flakiness (traced via a
- * step-tagged console/pageerror diagnostic, not guessed): `#b-clear` resets the THREE scene + the op-log, but
- * NOT `str_walker_outliner.js`'s own module-local STR-walker state (`ready`/the loaded column-girder skeleton
- * — see its `register()`/`_openBuffer` closure vars). So after opening SampleCastle (real STR skeleton: 23
- * columns/13 girders) → Clear → author an UNRELATED synthetic grid+wall → drag a gridline, `wrapGridMove`'s
- * `if (ready && window.swbOnGridMove)` guard is STILL true from the cleared building, and fires a real STR
- * re-walk against SampleCastle's still-resident (in-memory, not on-canvas) skeleton. That re-walk's 4 computed
- * STR ops collide on `kernel_ops.id` with the freshly-reset op-log's own counter and roll back
- * (`§KRN_GROUP ROLLBACK … committedRows=0 (all-or-NONE)` — the SAFE outcome: no partial/corrupt commit, just
- * a loud rejected-toast + 4 console errors). Confirmed NOT a timing artifact (reran twice, byte-identical
- * repro both times; ruled out async ARC-seed race first — SampleCastle's 3261-op substrate was already
- * fully loaded and stable before Clear was ever clicked). NOT fixed here — the correct fix touches `#b-clear`'s
- * contract (should it reset EVERY walker module's state, not just THREE+oplog?) which is a design-scope
- * question, not a 2-line patch, so left for a deliberate follow-up rather than an autonomous fix mid-session.
+ * §GRID-CLEAR-LEAK — FIXED (prompts/GRID_CLEAR_STATE_LEAK_FIX.md, decision B — narrow reset, 2026-07-04).
+ * Was: `#b-clear` reset the THREE scene + the op-log, but NOT `str_walker_outliner.js`'s own module-local
+ * STR-walker state (`ready`/the loaded column-girder skeleton), so a grid-drag after Clear could re-walk a
+ * cleared building's still-resident (in-memory) skeleton and collide on `kernel_ops.id` against the freshly-
+ * reset op-log — a safe rollback but a spurious rejected-toast + console errors. Fix: `str_walker_outliner.js`
+ * exposes `STRWalkerOutliner.onClear()` (resets `ready`/`lastEx`/`window.__dwBuf`/`window.__dwName`), wired
+ * into `#b-clear`'s onclick in modeller.html. Narrow scope per the decision doc — does not touch DiscWalker/
+ * CrossEdges/bom-graph module state (unaudited, left for a future full-reset pass if ever needed).
  * Read the §-log after every run — exit code alone is not evidence (CLAUDE.md Log Mandate).
  */
 'use strict';

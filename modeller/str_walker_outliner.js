@@ -491,12 +491,25 @@
     console.log(TAG + ' wrapped Bonsai.gridmove.commit → STR re-walk on grid drag');
   }
 
+  // §GRID-CLEAR-LEAK (prompts/GRID_CLEAR_STATE_LEAK_FIX.md, decision B — narrow reset): `#b-clear` clears
+  // the THREE scene + op-log but is not the walker's own module — so it must call back into here to drop
+  // `ready` (and the stashed __dwBuf/__dwName substrate pointer) too. Without this, wrapGridMove's
+  // `if (ready && …)` guard survives a Clear and can re-walk a building that's no longer on-canvas,
+  // colliding on kernel_ops.id against the freshly-reset op-log (safe rollback, but a spurious error).
+  function onClear() {
+    ready = false; lastEx = [];
+    window.__dwBuf = null; window.__dwName = null;
+    if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    console.log(TAG + ' §GRID-CLEAR-LEAK onClear — ready=false, __dwBuf cleared');
+  }
+
   window.STRWalkerOutliner = {
     register: function () {
       if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.addCategory(category());
       wrapGridMove();
       console.log(TAG + ' registered — STR Walker category + grid-drag re-walk (the wedge); Open re-homed to the pill rail');
     },
+    onClear: onClear,
     _openStrDb: openStrDb, _openIfcFile: openIfcFile, _category: category,
     _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase
   };
