@@ -168,6 +168,7 @@
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
   <button id="b-connect" title="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span>Connect</span></button>
+  <button id="b-teams" title="Teams — who's on this scene (presence &amp; activity). Click to enable."><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Teams</span></button>
   <button id="b-xray" title="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg><span>X-ray</span></button>
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
@@ -242,6 +243,27 @@
      on the Outliner rows + a presence pane. Additive, reversible. Witness: modeller/tests/wire_teams_embed_modeller.js. -->
 <script src="teams_embed.js?v=1" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — modeller runs without the Teams overlay')"></script>
 <script>if (window.TeamsEmbedBim && window.TeamsEmbedBim.init) window.TeamsEmbedBim.init();</script>
+<!-- §b-teams (2026-07-04): the pill-rail icon is now ALWAYS visible — supersedes the "no pill unless
+     opted in" half of the OFF=pixel-identical rule above (user decision: it must show up in the rail;
+     "stubby is fine, not priority"). The DEEPER mount (module fetch, dots, presence pane) still only
+     happens on click — same real teams_embed.js code, just reachable without a URL flag. Once mounted,
+     the floating teams-pill's own toggle (open/close pane) takes over; this button just forwards to it. -->
+<script>
+(function () {
+  var btn = document.getElementById('b-teams');
+  if (!btn) return;
+  if (!window.TeamsEmbedBim) { btn.disabled = true; return; }
+  btn.addEventListener('click', function () {
+    var existing = document.getElementById('teams-pill');
+    if (existing) { existing.click(); return; }   // already mounted — forward to its own open/close toggle
+    try { localStorage.setItem('teamsEmbed', '1'); } catch (e) {}
+    window.TeamsEmbedBim.init().then(function (r) {
+      console.log('§TEAMS-PILL bar-button activated mounted=' + (r && r.mounted));
+      btn.classList.toggle('on', !!(r && r.mounted));
+    });
+  });
+})();
+</script>
 <!-- Modeller's OWN service worker (its own app folder now — trilogy viewer/·erp/·modeller/; mirrors erp/sw.js). -->
 <script>
 if ('serviceWorker' in navigator) {
