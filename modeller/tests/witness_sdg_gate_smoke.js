@@ -28,13 +28,27 @@ function serve() { return new Promise(function (r) { var s = http.createServer(f
   await page.waitForFunction(function () { return !!(window.__arcFidByGuid && Object.keys(window.__arcFidByGuid).length > 0) && !!(window.SdgGate); }, { timeout: 25000 }).catch(function () {});
   await page.waitForTimeout(400);
 
-  // pick the two MOST-SEPARATED editable elements (guaranteed unrelated) → moving A onto B is a clean clash
+  // pick the two MOST-SEPARATED editable elements (guaranteed unrelated) → moving A onto B is a clean clash.
+  // §XEDGE-REAL-AABB regression (cross_edges.js now correctly resolves real per-element abuts — see
+  // RESUME_SESSION_2026-07-04_GATE_BACKPROP.md item 3 / witness_cross_edges_real_aabb.js): the "clean lift"
+  // leg needs an element with ZERO real abuts edges (e.g. a wall resting flush on the floor slab now
+  // correctly reads as touching it — lifting it away is a REAL, correct abuts-realign ORANGE, not a bug).
+  // bestA is picked from the isolated set for the lift; bestB stays "most separated from bestA" over ALL
+  // boxes for the clash-drive leg (unaffected by this constraint).
   var plan = await page.evaluate(function () {
     var g = window.Bonsai.group(); var boxes = [];
     g.children.forEach(function (m) { if (m.isMesh && m.userData && m.userData.featureId != null && window.__arcGuidByFid[m.userData.featureId] != null) { m.geometry.computeBoundingBox(); var b = m.geometry.boundingBox; boxes.push({ fid: m.userData.featureId, c: [(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2] }); } });
+    var fbg = window.__arcFidByGuid || {}, X = window.swXEdges || {}, touched = {};
+    (X.abuts || []).forEach(function (e) { var a = fbg[e.a], b = fbg[e.b]; if (a != null) touched[a] = 1; if (b != null) touched[b] = 1; });
+    var isolated = boxes.filter(function (bx) { return !touched[bx.fid]; });
+    var pool = isolated.length ? isolated : boxes;   // graceful: if somehow everything abuts, fall back (old behaviour)
     var bestA = null, bestB = null, bd = -1;
-    for (var i = 0; i < boxes.length; i++) for (var j = i + 1; j < boxes.length; j++) { var d = Math.hypot(boxes[i].c[0] - boxes[j].c[0], boxes[i].c[1] - boxes[j].c[1], boxes[i].c[2] - boxes[j].c[2]); if (d > bd) { bd = d; bestA = boxes[i]; bestB = boxes[j]; } }
-    return { aFid: bestA.fid, bFid: bestB.fid, delta: [bestB.c[0] - bestA.c[0], bestB.c[1] - bestA.c[1], bestB.c[2] - bestA.c[2]], n: boxes.length };
+    for (var i = 0; i < pool.length; i++) for (var j = 0; j < boxes.length; j++) {
+      if (pool[i].fid === boxes[j].fid) continue;
+      var d = Math.hypot(pool[i].c[0] - boxes[j].c[0], pool[i].c[1] - boxes[j].c[1], pool[i].c[2] - boxes[j].c[2]);
+      if (d > bd) { bd = d; bestA = pool[i]; bestB = boxes[j]; }
+    }
+    return { aFid: bestA.fid, bFid: bestB.fid, delta: [bestB.c[0] - bestA.c[0], bestB.c[1] - bestA.c[1], bestB.c[2] - bestA.c[2]], n: boxes.length, isolatedN: isolated.length };
   });
   chk('G1 substrate ready (editable elements + SdgGate loaded)', plan.n > 0 && plan.aFid != null, 'elements=' + plan.n);
 

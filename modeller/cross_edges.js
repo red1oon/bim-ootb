@@ -14,7 +14,25 @@
  * shared-face contact (provenance 'derived:face-touch'); NO proximity radius, NO IFC class names (grep-clean).
  *
  * AABB convention (scripts/backfill_bbox.py): element_transforms.bbox_k = FULL extent (maxK-minK),
- * center_k = (minK+maxK)/2 → minK = center_k - bbox_k/2, maxK = center_k + bbox_k/2.
+ * center_k = (minK+maxK)/2 → minK = center_k - bbox_k/2, maxK = center_k + bbox_k/2. This is a FALLBACK
+ * only (§REAL-AABB below) — measured to disagree with the actual rendered scene on 924/9817 (9.4%) of a
+ * real building's abuts pairs (SampleCastle, RESUME_SESSION_2026-07-04_GATE_BACKPROP.md item 3 audit), not
+ * a narrow edge case.
+ *
+ * §REAL-AABB (2026-07-04 fix): `element_transforms.center_xyz`/`bbox_xyz` is a coarser measure than the
+ * REAL per-element vertex blob (`component_geometries`/`base_geometries`, keyed by `element_instances.
+ * geometry_hash`) `bonsai_library.js`'s `foldInsert` actually renders — the two disagree whenever a real
+ * blob is resolvable (SampleCastle resolves 100% of its 3225 elements; most classes, not just furniture,
+ * show a real mismatch). Where a real blob IS resolvable, `_readBoxes()` now computes the TRUE world AABB
+ * straight from it — `real_geometry.js`'s own documented ground truth: world = center_xyz + R(rotation_z)·
+ * rawVert, for every raw vertex (envelope of the ROTATED+TRANSLATED mesh, not just a centre-shift) —
+ * reusing `RealGeometry.buildGeometryIndex` (a sibling pure-DB module, same design as this file) rather
+ * than re-deriving the same decode/dedup logic. Yaw-only (`rotation_z`): every building measured so far has
+ * `rotation_x=rotation_y=0` (arc_editable.js's own recon, §ARC-3AXIS) — a genuinely 3-axis-rotated element
+ * falls back to the coarse bbox below rather than risk an under-tested quaternion port (same conservative
+ * non-invent choice arc_editable.js made). Falls back to the coarse `element_transforms` bbox when no real
+ * blob resolves (RealGeometry absent, no `geometry_hash`, missing blob, or degenerate <3 verts) — today's
+ * behaviour, unchanged for that case.
  *
  * Scale: sweep-and-prune on X (sort by minX, active window pruned by maxX) → near-linear on the 48k
  * Terminal substrate, replacing the Python rtree candidate query. Pure over the DB (node-witnessable).
@@ -22,6 +40,61 @@
 (function (window) {
   'use strict';
   var TOL = 0.03, MIN_OVERLAP = 0.02;   // metres — identical to the Python defaults (W-SDG-ABUTS)
+
+  // Soft dependency — real_geometry.js is a sibling "pure over the DB, dual-export" module (same design
+  // philosophy as this file); absent (older page, load-order race, or a witness that doesn't need it) →
+  // gracefully degrades to the coarse element_transforms bbox everywhere (unchanged prior behaviour).
+  // Resolved LAZILY (at call time, inside _getRealGeometry() below), NOT at IIFE-load time: modeller.html's
+  // <script> order loads this file BEFORE real_geometry.js, so a module-scope `var` capture here would see
+  // `window.RealGeometry` still undefined and freeze that null forever (caught live: abuts stayed at the
+  // OLD pre-fix count in the browser even though window.RealGeometry was present moments later).
+  var _requiredRealGeometry;   // node-only cache of the require() result — window.RealGeometry itself is
+                                // ALWAYS re-checked fresh (cheap property read, matches this codebase's own
+                                // "check window.X fresh at call time" pattern elsewhere, e.g. STRWalkerOutliner).
+  function _getRealGeometry() {
+    if (typeof window !== 'undefined' && window.RealGeometry) return window.RealGeometry;
+    if (_requiredRealGeometry !== undefined) return _requiredRealGeometry;
+    _requiredRealGeometry = (typeof require === 'function') ? (function () { try { return require('./real_geometry.js'); } catch (e) { return null; } })() : null;
+    return _requiredRealGeometry;
+  }
+
+  // §REAL-AABB — world AABB of a REAL vertex blob: rotate every raw vertex by yaw (rotation_z, radians)
+  // about Z, translate by the placement anchor (center_xyz), envelope the result. Mirrors real_geometry.js's
+  // own documented convention (world = center + R·rawVert) — NOT bonsai_library.js's recenter/anchorOffset
+  // detour (that exists for RENDERING reasons over a symmetric-local-origin mesh; an AABB just needs the
+  // raw vertices transformed directly, same final numbers, fewer steps).
+  function _realAabb(positions, cx, cy, cz, rz) {
+    var cs = Math.cos(rz), sn = Math.sin(rz);
+    var mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity, mnz = Infinity, mxz = -Infinity;
+    for (var i = 0; i < positions.length; i += 3) {
+      var x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      var wx = cs * x - sn * y + cx, wy = sn * x + cs * y + cy, wz = z + cz;
+      if (wx < mnx) mnx = wx; if (wx > mxx) mxx = wx;
+      if (wy < mny) mny = wy; if (wy > mxy) mxy = wy;
+      if (wz < mnz) mnz = wz; if (wz > mxz) mxz = wz;
+    }
+    return [mnx, mxx, mny, mxy, mnz, mxz];
+  }
+
+  // Build guid -> RAW vertex blob (un-recentred: recentred positions + anchorOffset added back per vertex —
+  // see real_geometry.js's own `recenter()` for why positions/anchorOffset are split that way; this undoes
+  // the split to get the blob real_geometry.js's own header says the world formula operates on directly).
+  function _buildRealVerts(db, geoDb) {
+    var RealGeometry = _getRealGeometry();
+    if (!RealGeometry || !RealGeometry.buildGeometryIndex) return null;
+    var idx;
+    try { idx = RealGeometry.buildGeometryIndex(db, geoDb); } catch (e) { return null; }
+    if (!idx || !idx.table) return null;
+    var out = {};
+    Object.keys(idx.byGuid).forEach(function (guid) {
+      var hash = idx.byGuid[guid], rc = hash != null ? idx.resolved[hash] : null;
+      if (!rc) return;
+      var ao = rc.anchorOffset, p = rc.positions, raw = new Float32Array(p.length);
+      for (var i = 0; i < p.length; i += 3) { raw[i] = p[i] + ao[0]; raw[i + 1] = p[i + 1] + ao[1]; raw[i + 2] = p[i + 2] + ao[2]; }
+      out[guid] = raw;
+    });
+    return out;
+  }
 
   // Is the AABB pair (a,b) a FACE-TOUCH? Returns {axis, gap_m, contact_m2} or null. Exact port of the
   // witnessed Python _face_touch — references NO IFC class. a,b = [minX,maxX,minY,maxY,minZ,maxZ].
@@ -41,15 +114,23 @@
     return { axis: 'XYZ'[axis], gap_m: Math.abs(ov[axis]), contact_m2: ov[o0] * ov[o1] };
   }
 
-  // Read the pristine bboxes from element_transforms → [{guid, aabb}]. AABB = center ± bbox/2.
-  function _readBoxes(db) {
+  // Read the AABBs → [{guid, aabb}]. §REAL-AABB: prefer the TRUE world AABB from the real per-element
+  // vertex blob (rotated by yaw + translated by center_xyz) when resolvable; fall back to the coarse
+  // `element_transforms` bbox ± convention otherwise (today's original behaviour for that case, unchanged).
+  function _readBoxes(db, geoDb) {
     var boxes = [];
+    var realVerts = _buildRealVerts(db, geoDb);
     try {
-      var r = db.exec("SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z " +
+      var r = db.exec("SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z, rotation_x, rotation_y, rotation_z " +
                       "FROM element_transforms WHERE bbox_x IS NOT NULL");
       if (r.length) r[0].values.forEach(function (v) {
-        var cx = v[1], cy = v[2], cz = v[3], bx = v[4], by = v[5], bz = v[6];
-        boxes.push({ guid: v[0], aabb: [cx - bx / 2, cx + bx / 2, cy - by / 2, cy + by / 2, cz - bz / 2, cz + bz / 2] });
+        var guid = v[0], cx = v[1], cy = v[2], cz = v[3], bx = v[4], by = v[5], bz = v[6];
+        var rx = v[7], ry = v[8], rz = v[9];
+        var raw = realVerts ? realVerts[guid] : null;
+        var aabb = (raw && Math.abs(rx || 0) < 1e-9 && Math.abs(ry || 0) < 1e-9)
+          ? _realAabb(raw, cx, cy, cz, rz || 0)
+          : [cx - bx / 2, cx + bx / 2, cy - by / 2, cy + by / 2, cz - bz / 2, cz + bz / 2];
+        boxes.push({ guid: guid, aabb: aabb });
       });
     } catch (e) { /* no element_transforms / no bbox → no geometric edges (graceful) */ }
     return boxes;
@@ -60,7 +141,7 @@
   function deriveAdjacency(db, opts) {
     opts = opts || {};
     var tol = opts.tol != null ? opts.tol : TOL, minOv = opts.minOverlap != null ? opts.minOverlap : MIN_OVERLAP;
-    var boxes = _readBoxes(db);
+    var boxes = _readBoxes(db, opts.geoDb);
     // sweep-and-prune on X: sort by minX, keep an active window of boxes whose maxX still reaches the cursor.
     boxes.sort(function (p, q) { return p.aabb[0] - q.aabb[0]; });
     var edges = [], active = [];
@@ -104,7 +185,7 @@
   function deriveDatumsAnchored(db, opts) {
     opts = opts || {};
     var tol = opts.tol != null ? opts.tol : 0.05, minSupport = opts.minSupport != null ? opts.minSupport : 3;
-    var boxes = _readBoxes(db);
+    var boxes = _readBoxes(db, opts.geoDb);
     var byGuid = {}; boxes.forEach(function (e) { byGuid[e.guid] = e.aabb; });
     var datums = [], anchored = [], datumId = 0;
     for (var ax = 0; ax < 3; ax++) {
@@ -145,7 +226,7 @@
     var byAxis = { 0: [], 1: [], 2: [] };
     (datums || []).forEach(function (d) { byAxis['XYZ'.indexOf(d.axis)].push([d.datum_id, d.coord]); });
     function nearest(arr, face) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var dd = Math.abs(arr[i][1] - face); if (dd < bd) { bd = dd; best = arr[i]; } } return best; }
-    var boxes = _readBoxes(db), spans = [];
+    var boxes = _readBoxes(db, opts.geoDb), spans = [];
     boxes.forEach(function (e) {
       var b = e.aabb;
       for (var ax = 0; ax < 3; ax++) {
