@@ -225,7 +225,19 @@
           try {
             var filtered = _filterArc(msg);
             var dbs = buildImportDBs(window.SQL, filtered);
-            _openBuffer(dbs.extractedDb, file.name.replace(/\.ifc$/i, ''));
+            var name = file.name.replace(/\.ifc$/i, '');
+            // §IFC-OPEN-KEY-FIX (2026-07-04, found by witness_e2e_walk_ifcopen.js's cross-building diag):
+            // without this, an IFC-opened building never forks its own op-log instance (unlike a .db
+            // resident's _forkEditable → setModelKey('mo_'+key)) — it just keeps writing to whatever key
+            // is currently active (the shared default on a fresh tab). Opening building A via IFC, walking
+            // it, then opening building B via IFC in the SAME tab silently folds A's signed ops onto B's
+            // scene (confirmed: Duplex inherited SampleHouse's 80 walked-MEP ops under 'bonsai_model_v1').
+            // 'mo_ifc_' prefix (not 'mo_', which .db residents use) so an IFC-opened building never
+            // collides with a same-named .db resident's own instance either.
+            var O = window.Bonsai && window.Bonsai.oplog;
+            var openIt = function () { _openBuffer(dbs.extractedDb, name); };
+            if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
+            else openIt();
           } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
         }
       };
