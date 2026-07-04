@@ -10,6 +10,32 @@
   const TAG = '§GRIDMOVE';
   const GM = {
     _map: {},
+    // §GREEN-EXCLUDE (GRID_PREDRAG_GREENORANGE_PREVIEW.md): per-drag-session opt-out set. Orange (proportional
+    // follow) is the DEFAULT for every governed element — this set holds the featureIds the user ctrl-clicked
+    // OUT of the current drag (green). Seeded empty every session (modeller.html enterGridMove/exitGridMove
+    // call resetOverrides()) — NOT persisted, NOT a per-user config (that's explicitly deferred).
+    _overrides: new Set(),
+    resetOverrides() { this._overrides = new Set(); console.log(TAG + ' §GREEN-EXCLUDE reset (new drag session, all orange)'); },
+    // toggleOverride(fid) → true if now EXCLUDED (green), false if now back to included (orange). Bidirectional.
+    toggleOverride(fid) {
+      const wasExcluded = this._overrides.has(fid);
+      if (wasExcluded) this._overrides.delete(fid); else this._overrides.add(fid);
+      console.log(TAG + ' §GREEN-EXCLUDE toggle fid=' + fid + ' -> ' + (wasExcluded ? 'orange(included)' : 'green(excluded)'));
+      return !wasExcluded;
+    },
+    isExcluded(fid) { return this._overrides.has(fid); },
+    excludedList() { return Array.from(this._overrides); },
+    // Pure filter — strips any excluded (green) featureId's command/rider. Shared by previewCommands() (live
+    // gmTint) AND commit() below so the live preview and the actual commit can NEVER disagree (item 4).
+    applyOverrides(commands, riders) {
+      riders = riders || [];
+      const ov = this._overrides;
+      if (!ov.size) return { commands, riders, excluded: [] };
+      const excluded = [];
+      const commands2 = commands.filter(c => { const hit = c && c.featureId != null && ov.has(c.featureId); if (hit) excluded.push(c.featureId); return !hit; });
+      const riders2 = riders.filter(r => { const hit = r && r.featureId != null && ov.has(r.featureId); if (hit) excluded.push(r.featureId); return !hit; });
+      return { commands: commands2, riders: riders2, excluded };
+    },
 
     // The engine's elementData = each authored solid's centre + bbox extents (the geometry it must recompose).
     elementData() {
@@ -54,9 +80,12 @@
       return out;
     },
 
-    // Commit ONE signed GEOM_GRID_MOVE per drag-release; the worker folds the recompose deterministically.
-    // Implementing RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE.
-    async commit(gridId, delta) {
+    // §PREDRAG shared pipeline (GRID_PREDRAG_GREENORANGE_PREVIEW.md): computeCommands → stretchRide (hosted-
+    // opening override — fixes the gap where the live gmTint preview saw only the engine's raw, possibly-WRONG
+    // per-element command for a door/window) → applyOverrides (green opt-out, item 3/4). Used by BOTH the live
+    // gmTint preview (modeller.html pointermove) AND commit() below — one code path, so preview and the actual
+    // commit can never disagree.
+    previewCommands(gridId, delta) {
       let commands = this.computeCommands(gridId, delta);
       let riders = [];
       // §STRETCH-RIDE: a hosted opening must NOT divorce or scale when its host wall is grid-stretched — the
@@ -70,8 +99,18 @@
         const boxByFid = this._boxByFid();
         const ride = window.SdgCascade.stretchRide(commands, window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, boxByFid);
         commands = ride.commands; riders = ride.riders;
-        if (riders.length) console.log(TAG + ' §STRETCH-RIDE stripped=' + riders.length + ' rider cmd(s) → induced move instead: ' + riders.map(r => r.featureId).join(','));
       }
+      const applied = this.applyOverrides(commands, riders);
+      return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded };
+    },
+
+    // Commit ONE signed GEOM_GRID_MOVE per drag-release; the worker folds the recompose deterministically.
+    // Implementing RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE.
+    async commit(gridId, delta) {
+      const preview = this.previewCommands(gridId, delta);
+      let commands = preview.commands, riders = preview.riders;
+      if (preview.excluded.length) console.log(TAG + ' §GREEN-EXCLUDE commit skipped=' + preview.excluded.length + ' fid(s) (green, did not move): ' + preview.excluded.join(','));
+      if (riders.length) console.log(TAG + ' §STRETCH-RIDE stripped=' + riders.length + ' rider cmd(s) → induced move instead: ' + riders.map(r => r.featureId).join(','));
       // §P8 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-GESTURE-UNDO): with riders, the stretch + its
       // induced rider moves are ONE user gesture — commit them as ONE signed gesture group so a single
       // Ctrl+Z reverts the whole thing (before: GEOM_GRID_MOVE then N separate GEOM_MOVEs = N+1 undos, a
