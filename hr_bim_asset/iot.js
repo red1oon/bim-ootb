@@ -68,6 +68,18 @@ var CAMERAS = [
   { bim_guid: '1Jil894uX328zr$s_sQLvj', element: 'Corridor door', storey: 'Level 3' }
 ];
 
+// §2026-07-05d (user: "ready utils that talk or connects between them") — a TRIVIAL connector: every DEVICES/
+// CAMERAS entry already carries a real `storey`, so "which camera(s) cover this sensor's floor" is a plain
+// filter over data already present — no new geometry/distance work, no invented "coverage radius". Devs can
+// call `camerasNearDevice(key)` to go from an alarming sensor straight to the camera(s) that can see its floor.
+function camerasOnStorey(storey) {
+  return CAMERAS.filter(function (c) { return c.storey === storey; });
+}
+function camerasNearDevice(deviceKey) {
+  var d = DEVICES[deviceKey];
+  return d ? camerasOnStorey(d.storey) : [];
+}
+
 // MYR 301 / USD 100 / conversion type 114 — the REAL rows scripts/seed_fin_currency.js already seeded
 // (verified erp/ad_seed.db, 2026-07-05); never a second invented rate.
 var MYR_CURRENCY_ID = 301, USD_CURRENCY_ID = 100;
@@ -76,22 +88,26 @@ function usdRate(erpQuery) {
   return hit ? Number(hit.r) : null;
 }
 
-// 6 sensors, one mockup monitoring point per bound asset. uom_name/uom_symbol seed a NEW C_UOM row (a genuine
-// native dictionary gap — °C/bar/dB/µg/m³/W/m²/kWh don't exist in this repo's ad_full.db c_uom set; same
-// on-demand-dictionary-row precedent as ad_tenancy.js's toWarehouseRow/SUBSCRIPTION_TYPES).
+// 7 sensors, one mockup monitoring point per bound asset. uom_name/uom_symbol seed a NEW C_UOM row (a genuine
+// native dictionary gap — °C/bar/dB/µg/m³/W/m²/kWh/% don't exist in this repo's ad_full.db c_uom set; same
+// on-demand-dictionary-row precedent as ad_tenancy.js's toWarehouseRow/SUBSCRIPTION_TYPES). `icon` (§2026-07-05d,
+// user: "using their icons") is a plain-text emoji glyph — purely a UI/docs label, never read by any compile
+// function; reused verbatim by viewer/hba_iot.js's bar labels AND docs/HRBIMAssetGuide.md so the running app and
+// the guide show the SAME identifier per sensor.
 var SENSORS = [
-  { key: 'temp',       label: 'Temperature',    uom_name: 'Celsius',      uom_symbol: '°C',  baseline: 24,  amplitude: 3,   rate: 0 },
-  { key: 'pressure',   label: 'Boiler Pressure', uom_name: 'Bar',         uom_symbol: 'bar',       baseline: 2.4, amplitude: 0.3, rate: 0 },
-  { key: 'sound',      label: 'Sound Level',     uom_name: 'Decibel',     uom_symbol: 'dB',        baseline: 42,  amplitude: 8,   rate: 0 },
-  { key: 'dust',       label: 'Dust (PM2.5)',    uom_name: 'Microgram/m3', uom_symbol: 'µg/m³', baseline: 18, amplitude: 10, rate: 0.05 },
-  { key: 'solar',      label: 'Solar Output',    uom_name: 'Watt/m2',     uom_symbol: 'W/m²', baseline: 300, amplitude: 300, rate: 0 },
-  { key: 'electrical', label: 'Electrical Load', uom_name: 'Kilowatt-hour', uom_symbol: 'kWh',     baseline: 12,  amplitude: 5,   rate: 0.02 },
+  { key: 'temp',       label: 'Temperature',    icon: '🌡️', uom_name: 'Celsius',      uom_symbol: '°C',  baseline: 24,  amplitude: 3,   rate: 0 },
+  { key: 'pressure',   label: 'Boiler Pressure', icon: '🔧', uom_name: 'Bar',         uom_symbol: 'bar',       baseline: 2.4, amplitude: 0.3, rate: 0 },
+  { key: 'sound',      label: 'Sound Level',     icon: '🔊', uom_name: 'Decibel',     uom_symbol: 'dB',        baseline: 42,  amplitude: 8,   rate: 0 },
+  { key: 'dust',       label: 'Dust (PM2.5)',    icon: '🌫️', uom_name: 'Microgram/m3', uom_symbol: 'µg/m³', baseline: 18, amplitude: 10, rate: 0.05 },
+  { key: 'solar',      label: 'Solar Output',    icon: '☀️', uom_name: 'Watt/m2',     uom_symbol: 'W/m²', baseline: 300, amplitude: 300, rate: 0 },
+  { key: 'electrical', label: 'Electrical Load', icon: '⚡', uom_name: 'Kilowatt-hour', uom_symbol: 'kWh',     baseline: 12,  amplitude: 5,   rate: 0.02 },
   // §2026-07-05c (user: "there can also be a sensor for movement") — a 7th, PIR/motion-style security sensor.
   // Reuses the SAME deterministic sine generator, no special-casing: baseline+amplitude puts it near-zero at
   // night and peaking at midday — a genuinely plausible real motion-level pattern for an occupied office
   // building, not a fabricated waveform shape.
-  { key: 'movement',   label: 'Motion (PIR)',    uom_name: 'Motion Level', uom_symbol: '%',  baseline: 15,  amplitude: 15,  rate: 0 }
+  { key: 'movement',   label: 'Motion (PIR)',    icon: '🚶', uom_name: 'Motion Level', uom_symbol: '%',  baseline: 15,  amplitude: 15,  rate: 0 }
 ];
+var CAMERA_ICON = '📷';
 
 // deterministic 24-hourly-point curve: baseline + amplitude*sin (a plausible daily shape, trough near
 // midnight/peak near midday) + a tiny FIXED per-hour offset table — NOT Math.random/Date.now, so the same
@@ -199,9 +215,10 @@ function toneFreqFor(value, min, max) {
   return Math.round(TONE_BASE_HZ + norm * (TONE_DANGER_HZ - TONE_BASE_HZ));
 }
 
-var IoT = { SENSORS: SENSORS, DEVICES: DEVICES, CAMERAS: CAMERAS, MYR_CURRENCY_ID: MYR_CURRENCY_ID,
-  USD_CURRENCY_ID: USD_CURRENCY_ID, TONE_BASE_HZ: TONE_BASE_HZ, TONE_DANGER_HZ: TONE_DANGER_HZ,
-  seriesFor: seriesFor, demoSeries: demoSeries, toUomRow: toUomRow, toneFreqFor: toneFreqFor,
+var IoT = { SENSORS: SENSORS, DEVICES: DEVICES, CAMERAS: CAMERAS, CAMERA_ICON: CAMERA_ICON,
+  MYR_CURRENCY_ID: MYR_CURRENCY_ID, USD_CURRENCY_ID: USD_CURRENCY_ID, TONE_BASE_HZ: TONE_BASE_HZ,
+  TONE_DANGER_HZ: TONE_DANGER_HZ, seriesFor: seriesFor, demoSeries: demoSeries, toUomRow: toUomRow,
+  toneFreqFor: toneFreqFor, camerasOnStorey: camerasOnStorey, camerasNearDevice: camerasNearDevice,
   toOrderRow: toOrderRow, toProductRow: toProductRow, toOrderLineRow: toOrderLineRow, usdRate: usdRate,
   billingLines: billingLines };
 if (typeof module === 'object' && module.exports) module.exports = IoT;

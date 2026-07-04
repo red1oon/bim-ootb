@@ -165,18 +165,19 @@
   // one animated horizontal bar row per sensor — width + the running value at the bar's leading edge both
   // move together (matching CSS transition) as tick(pt) is fed new points. min/max are DATA-DERIVED (the
   // sensor's own baseline±amplitude from hr_bim_asset/iot.js), never an invented threshold. Clicking the row
-  // flies the camera to THIS sensor's OWN real bound location (locateAndHighlight) — "locate the device outright".
-  function renderSensorBar(A, device, sensor, min, max) {
+  // fires `onClick` (mount() wires it to locateAndHighlight + the same-storey camera flash, see
+  // iot.js camerasNearDevice) — "locate the device outright, and show me what can see it".
+  function renderSensorBar(sensor, min, max, title, onClick) {
     var color = SENSOR_COLORS[sensor.key] || '#1976d2';
     var row = el('div', 'padding:4px 0;cursor:pointer;');
-    row.title = 'Locate ' + sensor.label + ' (' + (device ? device.element : sensor.label) + ') in the model';
-    row.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;margin-bottom:2px;', sensor.label));
+    row.title = title;
+    row.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;margin-bottom:2px;', (sensor.icon || '') + ' ' + sensor.label));
     var track = el('div', 'position:relative;height:16px;background:#eef2f6;border-radius:3px;');
     var fill = el('div', 'position:absolute;left:0;top:0;bottom:0;width:2%;background:' + color + ';border-radius:3px;transition:width 0.7s ease;');
     var val = el('span', 'position:absolute;top:50%;left:2%;transform:translateY(-50%);font-size:10px;font-weight:600;color:#102a43;white-space:nowrap;transition:left 0.7s ease;padding-left:6px;');
     track.appendChild(fill); track.appendChild(val);
     row.appendChild(track);
-    row.addEventListener('click', function () { if (device) locateAndHighlight(A, device.bim_guid); });
+    row.addEventListener('click', function () { if (onClick) onClick(); });
     var tick = function (pt) {
       var pct = Math.max(2, Math.min(100, ((pt.v - min) / (max - min)) * 100));
       fill.style.width = pct + '%';
@@ -224,6 +225,25 @@
     // 0..23) — stub seam for later real physical sensor wiring, see file header. Each tick ALSO plays a
     // per-sensor siren tone (§2026-07-05c) when the mute toggle is on — min/max (the SAME bounds the bar's
     // headroom uses) feed iot.js's toneFreqFor, so "danger" pitch and bar position agree.
+    //
+    // (b) CCTV mockup grid tiles are built FIRST (not yet appended to the DOM) so the bars below can wire a
+    // same-storey highlight — §2026-07-05d (user: "ready utils that talk or connects between them"): clicking
+    // a sensor ALSO briefly rings the CCTV tile(s) sharing its floor (iot.js camerasNearDevice — a plain
+    // storey-match filter over data already present, no new geometry/distance math).
+    var cctvTileEls = [];   // [{el, cam}] — index i matches iot.js CAMERAS[i]
+    var CAM_RING = '0 0 0 3px #ff8800aa';
+    function flashCamerasForDevice(deviceKey) {
+      var cams = deps_.IoT.camerasNearDevice(deviceKey);
+      if (!cams.length) return;
+      var guids = {}; cams.forEach(function (c) { guids[c.bim_guid] = true; });
+      cctvTileEls.forEach(function (t) {
+        if (!t.cam || !guids[t.cam.bim_guid]) return;
+        t.el.style.boxShadow = CAM_RING;
+        setTimeout(function () { t.el.style.boxShadow = ''; }, ORANGE_HOLD_MS);
+      });
+      console.log('§HBA_IOT_CONNECT device=' + deviceKey + ' camerasOnFloor=' + cams.length);
+    }
+
     var barsWrap = el('div', 'padding:10px 12px;');
     var bars = [];
     deps_.IoT.SENSORS.forEach(function (s) {
@@ -233,25 +253,32 @@
       if (max === min) max = min + 1;   // guard degenerate flat series
       var headroom = (max - min) * 0.15;
       var lo = min - headroom, hi = max + headroom;
-      var b = renderSensorBar(A, deps_.IoT.DEVICES[s.key], s, lo, hi);
+      var device = deps_.IoT.DEVICES[s.key];
+      var title = 'Locate ' + s.label + ' (' + (device ? device.element : s.label) + ') in the model';
+      var b = renderSensorBar(s, lo, hi, title, function () {
+        if (!device) return;
+        locateAndHighlight(A, device.bim_guid);
+        flashCamerasForDevice(s.key);
+      });
       barsWrap.appendChild(b.row); bars.push({ b: b, sensor: s, pts: pts, lo: lo, hi: hi });
     });
     pane.appendChild(barsWrap);
 
-    // (b) CCTV mockup grid — 6 tiles, real dimmed still + canvas scanline animation, explicitly labeled MOCKUP.
+    // CCTV mockup grid — 6 tiles, real dimmed still + canvas scanline animation, explicitly labeled MOCKUP.
     // §2026-07-05 (§BUILD ORDER point 3) — each tile is now ALSO clickable: locates+orange-highlights its OWN
     // real bound camera position (iot.js CAMERAS[i], a real entrance/circulation door — see file header), not
     // just a static image crop.
-    pane.appendChild(el('div', 'font-size:11px;color:#627d98;text-transform:uppercase;padding:6px 12px 0;', 'CCTV (mockup — no real feed, click to locate)'));
+    pane.appendChild(el('div', 'font-size:11px;color:#627d98;text-transform:uppercase;padding:6px 12px 0;', deps_.IoT.CAMERA_ICON + ' CCTV (mockup — no real feed, click to locate)'));
     var cctvWrap = el('div', 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:6px 12px;');
     var cctvTicks = [];
     for (var i = 1; i <= 6; i++) {
       var cv2 = document.createElement('canvas'); cv2.width = 120; cv2.height = 68;
-      cv2.style.cssText = 'display:block;width:100%;border-radius:4px;background:#0a1622;cursor:pointer;';
+      cv2.style.cssText = 'display:block;width:100%;border-radius:4px;background:#0a1622;cursor:pointer;transition:box-shadow 0.3s ease;';
       var cam = deps_.IoT.CAMERAS[i - 1];
-      if (cam) { cv2.title = 'Locate CCTV Camera ' + i + ' (' + cam.element + ', ' + cam.storey + ') in the model'; }
+      if (cam) { cv2.title = deps_.IoT.CAMERA_ICON + ' Locate CCTV Camera ' + i + ' (' + cam.element + ', ' + cam.storey + ') in the model'; }
       cv2.addEventListener('click', (function (camGuid) { return function () { if (camGuid) locateAndHighlight(A, camGuid); }; })(cam && cam.bim_guid));
       cctvWrap.appendChild(cv2);
+      cctvTileEls.push({ el: cv2, cam: cam });
       var tick = renderCctvTile(cv2, i); if (tick) cctvTicks.push(tick);
     }
     pane.appendChild(cctvWrap);
@@ -264,7 +291,7 @@
     var tbl = el('table', 'width:100%;border-collapse:collapse;font-size:12px;margin:4px 12px 10px;width:calc(100% - 24px);');
     billing.lines.forEach(function (ln) {
       var tr = el('tr', 'border-top:1px solid #eee;');
-      tr.appendChild(el('td', 'padding:4px 2px;', ln.sensor.label));
+      tr.appendChild(el('td', 'padding:4px 2px;', (ln.sensor.icon || '') + ' ' + ln.sensor.label));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#627d98;', 'qty ' + ln.row.qtyordered + ' ' + ln.sensor.uom_symbol));
       // §2026-07-05 (§BUILD ORDER point 4) — RM is the real c_currency_id (301) the row itself is billed in;
       // USD is the SAME already-seeded C_Conversion_Rate (never a second invented rate) — shown only when
