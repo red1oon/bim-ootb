@@ -3798,13 +3798,14 @@ window.__ensureDiscWalker = async function () {
   const bGuide = document.getElementById('b-guide');
   if (!bGuide) return;
   const SECTIONS = [
-    ['Open', 'Pill ▸ Open → pick one of the 4 residents (or a local .db). It walks the structure (STR) and seeds the ARC bom-graph — no separate drop panel.'],
-    ['Outliner — ARC leads', 'The one panel is the surface: Building ▸ Storey ▸ Room ▸ discipline ▸ class ▸ element (real door/AABB-qualified rooms; door-less storeys read "· layer"). The find box filters across it.'],
-    ['Disc = walker', 'Click a discipline node to walk it: STR surfaces the structural walk; an MEP-family disc routes when anchored, else it refuses honestly ("no walk") — never a fabricated run.'],
+    ['Open', 'Pill ▸ Open → pick a resident, an ARC-only .ifc FROM IFC (parses via the same engine the Viewer uses, always filtered to ARC — never a second parser, never a non-ARC discipline), or a local .db/.ifc. Either way it walks the structure (STR) and seeds the ARC bom-graph — no separate drop panel.'],
+    ['Outliner — ARC leads, ONE Disc tab', 'The one panel is the surface: Building ▸ Storey ▸ Room ▸ discipline ▸ class ▸ element (real door/AABB-qualified rooms; door-less storeys read "· layer"). Disciplines PRESENT in the building drill into their real elements; disciplines ABSENT from it (e.g. no MEP was ever extracted) show up in the SAME tree with a "▶ walk" click — one Disc facet, not a separate tab. The find box filters across every category, auto-expands past any collapsed branch to reveal a match, and highlights the exact matching row.'],
+    ['Disc = walker', 'Click a discipline node — present or absent — to walk it: STR surfaces the structural walk; an MEP-family disc routes when anchored, else it refuses honestly ("no walk") — never a fabricated run. "▶▶ Walk ALL Disciplines" walks every absent one at once (x-ray reveal).'],
     ['3D Grid', 'The grid is the primary handle. Grid shows/hides the datums; Move Grid drags a gridline so attached walls RECOMPOSE — stretch, not scale (openings stay host-constrained).'],
     ['Author', 'Sketch a profile, Insert a catalog component (assemble, don\'t draw), Cut an opening, Route an MEP run, Fillet an edge. Every edit is one signed op in the log.'],
     ['History', 'Scrub the bottom timeline to fold the model to any point; Ctrl+Z / Ctrl+⇧Z undo/redo. Geometry is a deterministic fold over the signed op-log.'],
-    ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log — re-opens via Open ▸ local .db), IFC4, or a BCF 2.1 issue.']
+    ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log, conventionally saved into IFC/BimDB/ — re-opens via Open ▸ local .db), IFC4, or a BCF 2.1 issue.'],
+    ['Teams', 'Pill ▸ Teams (top-right of the bar) — click to see who else is on this scene. Off by default; first click turns on presence dots + a pane, same as ?teams=1.']
   ];
   let panel = null;
   function build() {
