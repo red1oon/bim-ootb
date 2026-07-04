@@ -13,16 +13,22 @@
 //   section (hba_dashboard.js still uses Chart.js for its own KPI trend charts — untouched). Each bar's
 //   tick(pt) setter is the STUB SEAM for later real physical sensor wiring: swap the setInterval driver for a
 //   real telemetry callback and the same rows/bars update — nothing else in this file needs to change. Each
-//   bar is one distinct colour (SENSOR_COLORS) and clicking it flies the camera to the bound asset's real
-//   location via HBALens.flyToZone — so "there's a live sensor" also means "here's exactly where it is".
-//   (b) a 2x3 CCTV grid — plain <canvas>, now painted from a REAL dimmed still photo (`hba_cctv_still.jpg`,
-//   user-supplied ContaCam capture, copied into this repo — NOT a feed of THIS building, still captioned
-//   MOCKUP) with a scanline overlay + a diagonal "STUB READY" watermark (this tile is the placeholder seam
-//   for later real physical camera wiring, not a claim of a live feed), NO invented video/GIF asset, NO
-//   external URL fetch (PRIME RULE). (c) the
-//   ERP billing table — iot.billingLines() rendered as sensor/reading/uom/C_OrderLine qty·price·net,
-//   watermarked. ZERO-IMPACT: OFF = no DOM; toggle ON mounts ONE fixed overlay; toggle OFF removes it +
-//   stops all animation timers (zero residue). Read the log after run.
+//   bar is one distinct colour (SENSOR_COLORS) and clicking it flies the camera to THAT SENSOR'S OWN real
+//   bound position (locateAndHighlight — §2026-07-05: iot.js DEVICES, one real guid per sensor, no longer all
+//   6 sharing the single PM_Asset AHU-03 guid) + holds a distinct ORANGE tint — "there's a live sensor" also
+//   means "here's exactly where it is". (b) a 2x3 CCTV grid — plain <canvas>, now painted from a REAL dimmed
+//   still photo (`hba_cctv_still.jpg`, user-supplied ContaCam capture, copied into this repo — NOT a feed of
+//   THIS building, still captioned MOCKUP) with a scanline overlay + a diagonal "STUB READY" watermark (this
+//   tile is the placeholder seam for later real physical camera wiring, not a claim of a live feed), NO
+//   invented video/GIF asset, NO external URL fetch (PRIME RULE); §2026-07-05: each tile is ALSO clickable,
+//   locating+highlighting its OWN real bound camera position (iot.js CAMERAS, 6 real entrance/circulation
+//   doors). (c) the ERP billing table — iot.billingLines() rendered as sensor/reading/uom/C_OrderLine
+//   qty·RM·≈USD (§2026-07-05: c_currency_id=the real seeded MYR row, USD via the real seeded conversion rate,
+//   never a fabricated FX) · an "open ↗" deep-link into the real persisted C_Order/C_OrderLine (once
+//   scripts/seed_hba_erp.js §11 has run — see that script's header), watermarked. `boundAssets`/`detect` still
+//   gate the PANE'S visibility on the pre-existing single PM_Asset (AHU-03) record — unchanged, low-risk; only
+//   the PER-DEVICE fly/tint target changed. ZERO-IMPACT: OFF = no DOM; toggle ON mounts ONE fixed overlay;
+//   toggle OFF removes it + stops all animation timers (zero residue). Read the log after run.
 (function () {
   'use strict';
   var G = (typeof self !== 'undefined' ? self : this);
@@ -93,21 +99,38 @@
   // the reference Bonsai federation/river panel's per-channel colour coding, no invented data behind it).
   var SENSOR_COLORS = { temp: '#1976d2', pressure: '#7b1fa2', sound: '#00897b', dust: '#ef6c00', solar: '#fbc02d', electrical: '#43a047' };
 
+  // §2026-07-05 (§BUILD ORDER point 3) — "locate the device outright": fly the camera to its OWN real bound
+  // position (iot.js DEVICES/CAMERAS, one per device — no longer every device sharing the single AHU-03 guid)
+  // AND hold a distinct ORANGE tint (0xff8800) on it — deliberately a different hue from flyToZone's own brief
+  // 0xffcc00 arrival pulse (1.6s, auto-restoring) so "you clicked THIS device" stays visible after the fly
+  // finishes, not just during the flight. Self-restoring (setTimeout→restoreAll), zero residue, same discipline
+  // as every other HBA tint. Honest no-op (flyToZone's own §HBA_FLY log) when the guid has no rendered member.
+  var ORANGE = 0xff8800, ORANGE_HOLD_MS = 4000;
+  function locateAndHighlight(A, guid) {
+    if (!G.HBALens || !G.HBALens.flyToZone) return;
+    G.HBALens.flyToZone(A, guid);
+    if (G.HBALens.buildMeshPort) {
+      var port = G.HBALens.buildMeshPort(A);
+      port.setTint(guid, ORANGE);
+      setTimeout(function () { port.restoreAll(); }, ORANGE_HOLD_MS);
+    }
+  }
+
   // one animated horizontal bar row per sensor — width + the running value at the bar's leading edge both
   // move together (matching CSS transition) as tick(pt) is fed new points. min/max are DATA-DERIVED (the
   // sensor's own baseline±amplitude from hr_bim_asset/iot.js), never an invented threshold. Clicking the row
-  // flies the camera to the bound asset's real location (HBALens.flyToZone) — "locate the device outright".
-  function renderSensorBar(A, asset, sensor, min, max) {
+  // flies the camera to THIS sensor's OWN real bound location (locateAndHighlight) — "locate the device outright".
+  function renderSensorBar(A, device, sensor, min, max) {
     var color = SENSOR_COLORS[sensor.key] || '#1976d2';
     var row = el('div', 'padding:4px 0;cursor:pointer;');
-    row.title = 'Locate ' + asset.asset + ' in the model';
+    row.title = 'Locate ' + sensor.label + ' (' + (device ? device.element : sensor.label) + ') in the model';
     row.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;margin-bottom:2px;', sensor.label));
     var track = el('div', 'position:relative;height:16px;background:#eef2f6;border-radius:3px;');
     var fill = el('div', 'position:absolute;left:0;top:0;bottom:0;width:2%;background:' + color + ';border-radius:3px;transition:width 0.7s ease;');
     var val = el('span', 'position:absolute;top:50%;left:2%;transform:translateY(-50%);font-size:10px;font-weight:600;color:#102a43;white-space:nowrap;transition:left 0.7s ease;padding-left:6px;');
     track.appendChild(fill); track.appendChild(val);
     row.appendChild(track);
-    row.addEventListener('click', function () { if (G.HBALens && G.HBALens.flyToZone) G.HBALens.flyToZone(A, asset.bim_guid); });
+    row.addEventListener('click', function () { if (device) locateAndHighlight(A, device.bim_guid); });
     var tick = function (pt) {
       var pct = Math.max(2, Math.min(100, ((pt.v - min) / (max - min)) * 100));
       fill.style.width = pct + '%';
@@ -122,7 +145,11 @@
     if (!assets.length) return false;
     var deps_ = deps(), asset = assets[0];
     var seriesSpec = deps_.IoT.demoSeries(asset.asset, 24);
-    var billing = deps_.IoT.billingLines(asset.asset, seriesSpec.series, (A && A.buildingName) || 'This Building', seriesSpec.hours + 'h');
+    // §2026-07-05 — pass A.erpQuery (the SAME sync seam Tenancy/Payroll already reuse, set once ad_seed.db
+    // loads) so billingLines() resolves the REAL persisted C_UOM/M_Product/C_Order/C_Currency rows
+    // (scripts/seed_hba_erp.js §11) instead of the ungoverned in-memory mint. Absent → prior mint, unchanged.
+    var billing = deps_.IoT.billingLines(asset.asset, seriesSpec.series, (A && A.buildingName) || 'This Building',
+      seriesSpec.hours + 'h', { erpQuery: A && A.erpQuery });
 
     var pane = el('div', 'position:fixed;top:54px;right:12px;width:420px;max-height:86vh;overflow:auto;z-index:10050;' +
       'background:#fff;border-radius:10px;box-shadow:0 6px 24px #0005;font-family:system-ui,sans-serif;color:#222;');
@@ -145,18 +172,24 @@
       var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
       if (max === min) max = min + 1;   // guard degenerate flat series
       var headroom = (max - min) * 0.15;
-      var b = renderSensorBar(A, asset, s, min - headroom, max + headroom);
+      var b = renderSensorBar(A, deps_.IoT.DEVICES[s.key], s, min - headroom, max + headroom);
       barsWrap.appendChild(b.row); bars.push({ b: b, sensor: s, pts: pts });
     });
     pane.appendChild(barsWrap);
 
-    // (b) CCTV mockup grid — 6 tiles, real dimmed still + canvas scanline animation, explicitly labeled MOCKUP
-    pane.appendChild(el('div', 'font-size:11px;color:#627d98;text-transform:uppercase;padding:6px 12px 0;', 'CCTV (mockup — no real feed)'));
+    // (b) CCTV mockup grid — 6 tiles, real dimmed still + canvas scanline animation, explicitly labeled MOCKUP.
+    // §2026-07-05 (§BUILD ORDER point 3) — each tile is now ALSO clickable: locates+orange-highlights its OWN
+    // real bound camera position (iot.js CAMERAS[i], a real entrance/circulation door — see file header), not
+    // just a static image crop.
+    pane.appendChild(el('div', 'font-size:11px;color:#627d98;text-transform:uppercase;padding:6px 12px 0;', 'CCTV (mockup — no real feed, click to locate)'));
     var cctvWrap = el('div', 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:6px 12px;');
     var cctvTicks = [];
     for (var i = 1; i <= 6; i++) {
       var cv2 = document.createElement('canvas'); cv2.width = 120; cv2.height = 68;
-      cv2.style.cssText = 'display:block;width:100%;border-radius:4px;background:#0a1622;';
+      cv2.style.cssText = 'display:block;width:100%;border-radius:4px;background:#0a1622;cursor:pointer;';
+      var cam = deps_.IoT.CAMERAS[i - 1];
+      if (cam) { cv2.title = 'Locate CCTV Camera ' + i + ' (' + cam.element + ', ' + cam.storey + ') in the model'; }
+      cv2.addEventListener('click', (function (camGuid) { return function () { if (camGuid) locateAndHighlight(A, camGuid); }; })(cam && cam.bim_guid));
       cctvWrap.appendChild(cv2);
       var tick = renderCctvTile(cv2, i); if (tick) cctvTicks.push(tick);
     }
@@ -172,7 +205,12 @@
       var tr = el('tr', 'border-top:1px solid #eee;');
       tr.appendChild(el('td', 'padding:4px 2px;', ln.sensor.label));
       tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#627d98;', 'qty ' + ln.row.qtyordered + ' ' + ln.sensor.uom_symbol));
-      tr.appendChild(el('td', 'padding:4px 2px;text-align:right;color:#2e7d32;font-weight:600;', ln.row.linenetamt.toFixed(2)));
+      // §2026-07-05 (§BUILD ORDER point 4) — RM is the real c_currency_id (301) the row itself is billed in;
+      // USD is the SAME already-seeded C_Conversion_Rate (never a second invented rate) — shown only when
+      // resolvable (governed/erpQuery present), an honest dash otherwise (no fabricated FX).
+      var amtTd = el('td', 'padding:4px 2px;text-align:right;color:#2e7d32;font-weight:600;', 'RM ' + ln.row.linenetamt.toFixed(2));
+      if (ln.usd != null) amtTd.appendChild(el('div', 'font-weight:400;color:#627d98;font-size:10px;', '≈ USD ' + ln.usd.toFixed(2)));
+      tr.appendChild(amtTd);
       // §P11 — deep-link this billing line into the real C_Order it compiled onto (management billing follow-up).
       var linkTd = el('td', 'padding:4px 2px;text-align:right;');
       if (ln.row.c_order_id != null && G.HBALens && G.HBALens.erpLink) {

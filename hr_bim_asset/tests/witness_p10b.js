@@ -41,6 +41,40 @@ ok('I7-uom-per-sensor', billing.lines.every(function (l) { return l.uom.uomsymbo
 ok('I8-latest-reading', billing.lines[0].reading.h === 23 && billing.lines[0].row.qtyordered === billing.lines[0].reading.v,
   'the billed qty is the LATEST hourly reading (h=23), read from the series, not invented');
 
+// §2026-07-05 (RESUME_HR_BIM_ASSET.md §2026-07-04d §BUILD ORDER) — per-device positions, Product/Order
+// persistence (§STAGE2 match-or-create), USD/RM currency.
+var devGuids = Object.keys(IoT.DEVICES).map(function (k) { return IoT.DEVICES[k].bim_guid; });
+ok('I9-devices-distinct', devGuids.length === 6 && new Set(devGuids).size === 6,
+  'DEVICES carries 6 DISTINCT real guids — sensors no longer all share the single AHU-03 position');
+ok('I9b-temp-unchanged', IoT.DEVICES.temp.bim_guid === require('../models').records('Asset')[0].bim_guid,
+  'the temp sensor still binds to the pre-existing models.js Asset AHU-03 guid — byte-identical, not renumbered');
+var camGuids = IoT.CAMERAS.map(function (c) { return c.bim_guid; });
+ok('I10-cameras-distinct', camGuids.length === 6 && new Set(camGuids).size === 6, 'CAMERAS carries 6 distinct real guids (real HHS doors)');
+
+// governed match-or-create: a stub erpQuery backed by an in-memory row set proves billingLines resolves the
+// REAL ids (not the internal ++counter mint) and _governed flips true — same §STAGE2 idiom as ad_tenancy.js.
+var stubRows = { uom: {}, product: {}, order: null, rate: 0.25 };
+function stubErpQuery(sql, params) {
+  if (/FROM C_UOM/.test(sql)) { var u = stubRows.uom[params[0]]; return u ? [{ id: u }] : []; }
+  if (/FROM M_Product/.test(sql)) { var p = stubRows.product[params[0]]; return p ? [{ id: p, name: params[0] }] : []; }
+  if (/FROM C_Order /.test(sql)) { return stubRows.order != null ? [{ id: stubRows.order }] : []; }
+  if (/C_Conversion_Rate/.test(sql)) { return [{ r: stubRows.rate }]; }
+  return [];
+}
+IoT.SENSORS.forEach(function (s, i) { stubRows.uom[s.uom_name] = 9000 + i; stubRows.product['IOT-' + s.key.toUpperCase() + '-HHS'] = 9100 + i; });
+stubRows.order = 9200;
+var govBilling = IoT.billingLines('AHU-03', s1.series, 'HHS_Office_Federated', '24h', { erpQuery: stubErpQuery });
+ok('I11-governed', govBilling._governed === true, 'billingLines() with a matching erpQuery reports _governed:true');
+ok('I12-governed-ids', govBilling.order.c_order_id === 9200 && govBilling.lines.every(function (l, i) { return l.row.m_product_id === 9100 + i; }),
+  'governed compile resolves the REAL seeded order/product ids from erpQuery, not a fresh internal mint');
+ok('I13-usd-rate', govBilling.lines.every(function (l) { return l.usd === Math.round(l.row.linenetamt * 0.25 * 100) / 100; }),
+  'usd is the linenetamt converted via the (stub, standing in for the real seeded) MYR→USD rate');
+var ungovBilling = IoT.billingLines('AHU-03', s1.series, 'HHS_Office_Federated', '24h');
+ok('I14-usd-honest-null', ungovBilling.lines.every(function (l) { return l.usd === null; }),
+  'no erpQuery → usd stays null (honest — no rate to convert with, never a fabricated FX)');
+ok('I15-cameras-products', govBilling.cameras.length === 6 && govBilling.cameras.every(function (c) { return typeof c.row.m_product_id === 'number'; }),
+  'each of the 6 cameras ALSO compiles a real M_Product row (no billing line — no metered reading to charge)');
+
 // ============================================================================================================
 // (2) viewer/hba_iot.js
 // ============================================================================================================
@@ -63,16 +97,54 @@ ok('IP1-off-nodom', body.children.length === 0 && IotPane.isActive() === false, 
 ok('IP2-gate-nomatch', IotPane.detect({ guidMap: { '1': 'not-a-real-guid' } }) === false, 'no bound asset guid in this building → unavailable, no clutter');
 ok('IP3-gate-match', IotPane.detect(A) === true, 'the asset guid resolves in guidMap → available (SAME gate as the maintenance lens)');
 
+// §2026-07-05 — stub HBALens (recording calls) so the per-device fly/orange-tint wiring (locateAndHighlight)
+// is witnessable without a real THREE/camera, same convention as flyToZone's own {flew,guid,center} return.
+var flyCalls = [], tintCalls = [], restoreCount = 0;
+self.HBALens = {
+  flyToZone: function (Aarg, guid) { flyCalls.push(guid); },
+  buildMeshPort: function () { return { setTint: function (guid, color) { tintCalls.push({ guid: guid, color: color }); }, restoreAll: function () { restoreCount++; } }; },
+  erpLink: function (w, r) { return '#w=' + w + '&r=' + r; }, AD_WINDOWS: { ORDER: 143 }
+};
+
 var r1 = IotPane.toggle(A);
 var pane = body.children.filter(function (c) { return c.id === 'hba-iot-pane'; })[0];
 ok('IP4-mount', r1 === true && IotPane.isActive() === true && !!pane, 'toggle ON mounts exactly one IoT pane');
+var barsWrap = pane.children[2];
 var cctvGrid = pane.children.filter(function (c) { return c.style.cssText.indexOf('grid-template-columns:1fr 1fr 1fr') >= 0; })[0];
 ok('IP5-cctv-tiles', cctvGrid && cctvGrid.children.length === 6, '6 CCTV mockup tiles rendered — got ' + (cctvGrid && cctvGrid.children.length));
 var billTbl = pane.children[pane.children.length - 1];
 ok('IP6-billing-rows', billTbl.children.length === 6, '6 billing rows (one per sensor) rendered in the ERP table — got ' + billTbl.children.length);
 
+// per-device fly target — clicking the "pressure" bar (index 1) must fly to ITS OWN guid, NOT the shared AHU-03
+// asset guid every bar used to fly to (the bug §BUILD ORDER point 2 fixed).
+barsWrap.children[1]._on_click();
+ok('IP7-per-device-fly', flyCalls[0] === self.HbaIot.DEVICES.pressure.bim_guid && flyCalls[0] !== assetGuid,
+  'clicking the pressure bar flies to its OWN real guid, distinct from the shared AHU-03 asset guid');
+ok('IP8-orange-tint', tintCalls[0] && tintCalls[0].color === 0xff8800 && tintCalls[0].guid === flyCalls[0],
+  'the click also holds a distinct 0xff8800 ORANGE tint on the same guid (not flyToZone\'s own 0xffcc00 arrival pulse)');
+
+// CCTV tile click — tile 3 (0-indexed 2) must fly to CAMERAS[2]'s own guid, distinct per tile.
+cctvGrid.children[2]._on_click();
+ok('IP9-cctv-fly', flyCalls[1] === self.HbaIot.CAMERAS[2].bim_guid, 'clicking CCTV tile 3 locates its OWN real camera guid (CAMERAS[2]), not a shared position');
+
+// RM/USD display — ungoverned (no A.erpQuery) mount shows RM only; a governed remount (A.erpQuery present) also
+// shows the ≈USD sub-line.
+var rmRow = billTbl.children[0];
+var amtTd = rmRow.children[2];
+ok('IP10-rm-shown', amtTd.textContent.indexOf('RM ') === 0, 'the billing amount is labelled RM (the real seeded MYR currency), not a bare number — got "' + amtTd.textContent + '"');
+ok('IP11-usd-honest-absent', amtTd.children.length === 0, 'ungoverned (no erpQuery): no ≈USD sub-line — honest, no rate to convert with');
+
+IotPane.toggle(A);   // unmount
+A.erpQuery = stubErpQuery;
+IotPane.toggle(A);   // remount, governed
+var pane2 = body.children.filter(function (c) { return c.id === 'hba-iot-pane'; })[0];
+var billTbl2 = pane2.children[pane2.children.length - 1];
+var amtTd2 = billTbl2.children[0].children[2];
+ok('IP12-usd-governed', amtTd2.children.length === 1 && amtTd2.children[0].textContent.indexOf('≈ USD') === 0,
+  'governed (A.erpQuery present, a real conversion rate resolves): the ≈USD sub-line renders — got "' + (amtTd2.children[0] && amtTd2.children[0].textContent) + '"');
+
 IotPane.toggle(A);
-ok('IP7-unmount', IotPane.isActive() === false && body.children.length === 0, 'toggle OFF removes the pane, destroys charts, stops the CCTV loop (zero residue)');
+ok('IP13-unmount', IotPane.isActive() === false && body.children.length === 0, 'toggle OFF removes the pane, destroys charts, stops the CCTV loop (zero residue)');
 
 // ============================================================================================================
 // (3) viewer/hba_draggable.js
