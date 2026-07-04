@@ -65,6 +65,12 @@
     return { equal: max === 0, maxDiffCents: max };
   }
 
+  function _maxId(db) {
+    var r = db.exec('SELECT MAX(id) FROM kernel_ops');
+    if (!r.length || r[0].values[0][0] == null) return 0;
+    return Number(r[0].values[0][0]);
+  }
+
   // ── _snapshotLog — the full signed pre-close rows as a self-describing cold-archive array.
   //    Every mutating + chain column travels so the archive is independently verifiable AND re-foldable
   //    (foldBalances reads op_type + parameters). This is what the DELETE is about to destroy.
@@ -103,6 +109,15 @@
     if (!pre.ok) throw new Error('closePeriod: pre-close chain does not verify (brokeAt=' + pre.brokeAt + ' ' + pre.why + ')');
     var prevTip = pre.tip, archived = pre.len;
 
+    // §PCLOSE-RACE (feedback_toctou_race_scrutiny_pattern.md, same shape as erp_shard.js §T7-RACE):
+    // pin the compaction boundary HERE, synchronously, BEFORE the archiveSink await below — never
+    // derive it from ckptId (minted AFTER that await). A concurrent commit landing during the await
+    // (e.g. a POS sale mid period-close) gets id > baseTipId: it was not in the archived snapshot, so
+    // it must NOT be deleted either — it rides the hot log across the boundary, uncompacted, and is
+    // picked up whole by the next fold. Witness: erp/tests/witness_pclose_race.js (pre-fix: FAIL, the
+    // racing op vanished — archived nowhere, deleted anyway).
+    var baseTipId = _maxId(db);
+
     // 2. fold the live ops → closing balances (integer cents).
     var live = kernel.replayOps(db);
     var closing = foldBalances(live, null).bal;
@@ -111,7 +126,7 @@
     //    a confirmation. No sink ⇒ no compaction (retain history). Sink rejects ⇒ THROW (destroy nothing).
     var willCompact = false, archiveRef = null;
     if (archiveSink) {
-      var snapshot = _snapshotLog(db, null);                 // the whole live log, pre-checkpoint
+      var snapshot = _snapshotLog(db, baseTipId + 1);        // the live log up to the PINNED boundary
       var res = await archiveSink(snapshot);
       if (!res || !res.ok) {
         throw new Error('closePeriod: archive NOT confirmed (' + ((res && res.reason) || 'sink returned !ok') +
@@ -126,11 +141,12 @@
 
     // 4. commit ONE checkpoint op carrying the deterministic payload (+ the archive ref); re-stamp to ts.
     var ckptId = kernel.commitOp(db, CKPT_TYPE,
-      { period: period, closing_balances: closing, prev_tip: prevTip, archive_ref: archiveRef });
+      { period: period, closing_balances: closing, prev_tip: prevTip, archive_ref: archiveRef, base_tip_id: baseTipId });
     db.run('UPDATE kernel_ops SET timestamp=? WHERE id=?', [ts, ckptId]);
 
-    // 5. compact ONLY when the archive was confirmed: drop every pre-checkpoint op from the LIVE log.
-    if (willCompact) db.run('DELETE FROM kernel_ops WHERE id < ?', [ckptId]);
+    // 5. compact ONLY when the archive was confirmed: drop the ARCHIVED prefix ONLY (id <= baseTipId —
+    //    a §PCLOSE-RACE survivor, id > baseTipId, keeps its row and is never touched here).
+    if (willCompact) db.run('DELETE FROM kernel_ops WHERE id <= ?', [baseTipId]);
 
     // 6. re-seal the (possibly compacted) live log; the new tip is the fingerprint of [PERIOD_CLOSE].
     var sealRes = await kernel.sealChain(db);
