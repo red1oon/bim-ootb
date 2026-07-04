@@ -2058,10 +2058,10 @@ function _gateBoxes() {
 // rel for the gate: hosted-by (door-in-wall) + abuts (face-touch) are EXPECTED contact (never a clash); hostOf
 // drives the door-out-of-host check. Resolved guid→fid through the §ARC-1 bridge over the recovered edges.
 function _gateRel() {
-  const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {}, relSet = {}, hostOf = {};
+  const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {}, relSet = {}, hostOf = {}, abuts = [];
   (X.fills || []).forEach(e => { const h = fbg[e.host_guid], f = fbg[e.filling_guid]; if (h != null && f != null) { relSet[Math.min(h, f) + '|' + Math.max(h, f)] = 1; hostOf[f] = h; } });
-  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; });
-  return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf };
+  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) { relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; abuts.push({ a, b }); } });
+  return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf, abuts: abuts };
 }
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
 function _runGate(before, moved) {
@@ -2073,7 +2073,7 @@ function _runGate(before, moved) {
   const hex = res.red.length ? 0x661010 : 0x5a3a10;          // RED vs ORANGE emissive flash on the offending meshes
   const g = window.Bonsai.group(); if (g) g.children.forEach(m => { if (m.isMesh && m.userData && hot.has(m.userData.featureId)) _emis(m, hex); });
   if (res.red.length) toast('⛔ ' + res.red.length + ' conformity violation' + (res.red.length > 1 ? 's' : '') + ': ' + res.red.map(r => r.kind).join(', '), 'error');
-  else toast('⚠ ' + res.orange.length + ' tight clearance — accept or ignore', 'info');
+  else toast('⚠ ' + res.orange.length + ' suggestion' + (res.orange.length > 1 ? 's' : '') + ': ' + res.orange.map(o => o.kind).join(', ') + ' — accept or ignore', 'info');
   return res.red.length ? ('⛔ ' + res.red.length + ' RED') : ('⚠ ' + res.orange.length + ' ORANGE');
 }
 async function commitMove(dx, dy, dz) {

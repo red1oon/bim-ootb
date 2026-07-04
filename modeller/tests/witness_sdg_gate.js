@@ -14,6 +14,14 @@
  *                   even though the door's centre never left the host (door-out, A4, can't see this); a shrink
  *                   that still leaves room ⇒ no door-crush (DOOR_WIDTH_CRUSH_GATE.md — closes the named gap in
  *                   §STRETCH-RIDE: "still centred" is not "still fits")
+ *   A8 abuts-realign — a face-touch neighbour PULLED AWAY during the edit ⇒ orange abuts-realign{nb,mv} with a
+ *                   proposedDelta that re-verifies (gradient-checking) to close the gap back to ≈0; a move that
+ *                   stays within tol ⇒ none (A8b); a pair ALREADY separated before the edit ⇒ none, delta-honest
+ *                   (A8c). Real wall + a CONSTRUCTED flush neighbour (A5's own precedent) — recon found NEITHER
+ *                   of SampleHouse's 2 real seeded abuts pairs is within tol on the seeded/foldInsert boxes this
+ *                   gate operates on (a frame/consistency gap vs cross_edges.js's raw-extraction-table numbers,
+ *                   flagged separately, out of scope here) (SDG_BACKPROP_ABUTS_REALIGN.md — first W-SDG-BACKPROP
+ *                   slice)
  */
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -47,15 +55,19 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   var seed = await ArcEditable.seedArc(bdb, { commitGroup: function (ops, gid) { return KernelOps.commitGroup(oplog, ops, { gid: gid, baseTs: 1700000000000 }); }, building: 'SampleHouse' });
   var fbg = seed.bridge.fidByGuid, gbf = seed.bridge.guidByFid;
   var opByFid = {}; seed.ops.forEach(function (o) { opByFid[fbg[o.outputGuid]] = o; });
-  var fills = CrossEdges.deriveAll(bdb).fills;
+  var xedges = CrossEdges.deriveAll(bdb);
+  var fills = xedges.fills;
 
   // base (seeded) boxes for every fid
   var base = {}; Object.keys(opByFid).forEach(function (fid) { base[fid] = aabb(Library.foldInsert({ id: +fid, op_type: 'GEOM_INSERT', parameters: opByFid[fid].params }).positions); });
 
-  // rel: hosted-by pairs are EXPECTED contact (never a clash); hostOf for door-out
+  // real abuts pairs among SEEDED (editable) fids only — resolved through the SAME §ARC-1 bridge production uses
+  var abutsPairs = xedges.abuts.map(function (e) { return { a: fbg[e.a], b: fbg[e.b] }; }).filter(function (p) { return p.a != null && p.b != null; });
+
+  // rel: hosted-by pairs are EXPECTED contact (never a clash); hostOf for door-out; abuts feeds abuts-realign
   var fillsPairs = {}, hostOf = {};
   fills.forEach(function (e) { var hf = fbg[e.host_guid], ff = fbg[e.filling_guid]; if (hf != null && ff != null) { fillsPairs[Math.min(hf, ff) + '|' + Math.max(hf, ff)] = 1; hostOf[ff] = hf; } });
-  var rel = { related: function (a, b) { return !!fillsPairs[Math.min(a, b) + '|' + Math.max(a, b)]; }, hostOf: hostOf };
+  var rel = { related: function (a, b) { return !!fillsPairs[Math.min(a, b) + '|' + Math.max(a, b)]; }, hostOf: hostOf, abuts: abutsPairs };
 
   // the seeded walls
   var walls = Object.keys(opByFid).filter(function (fid) { var c = opByFid[fid].params.ifc_class; return c === 'IfcWall' || c === 'IfcWallStandardCase'; }).map(Number);
@@ -149,6 +161,53 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   var g7c = rideHost(0.9);
   chk('A7c control: a modest shrink that still leaves plenty of room → no door-crush',
     !g7c.red.some(function (r) { return r.kind === 'door-crush'; }), 'red=' + JSON.stringify(g7c.red));
+
+  // A8 — abuts-realign: SDG_BACKPROP_ABUTS_REALIGN.md recon found 2 real abuts pairs among SampleHouse's 39
+  // seeded elements (both wall↔furniture per cross_edges.js, derived from raw `element_transforms`) — but
+  // NEITHER is within ABUTS_TOL when re-measured on the SEEDED/foldInsert boxes this gate actually operates on
+  // (ov=0.29m / 0.10m on their own reported touch axis — a real frame/consistency gap between the raw-extraction
+  // table cross_edges reads and the ARC-seeded scene geometry, flagged separately, out of THIS slice's scope).
+  // So — exactly like A5's ORANGE clearance test already does for the SAME reason (no qualifying real fixture) —
+  // use a REAL wall's measured geometry (base[A]) + a CONSTRUCTED neighbour placed genuinely flush against it
+  // (ov=0 exactly on the touch axis, real overlap on the other two) to test the gate's own math honestly.
+  var wA = base[A];
+  // touch on the wall's SHORTEST axis (its thickness/normal face) — touching it on its LONG run axis would let
+  // a modest move just slide the neighbour further INSIDE the wall's own huge span, never separating (checked
+  // this the hard way — see git history of this file). k8 = argmin extent = the physically correct face-normal.
+  var ext8 = [wA[1] - wA[0], wA[3] - wA[2], wA[5] - wA[4]], k8 = ext8.indexOf(Math.min.apply(null, ext8));
+  var touchNb = wA.slice(); touchNb[2 * k8] = wA[2 * k8 + 1]; touchNb[2 * k8 + 1] = wA[2 * k8 + 1] + 0.1;   // flush against A's + face on k8
+  var relAbuts = { related: function () { return false; }, hostOf: {}, abuts: [{ a: A, b: 9002 }] };
+  var b8 = { }; b8[A] = wA; b8[9002] = touchNb;                         // ISOLATED (2 keys only, mirrors A5) — no incidental clashes vs the rest of the building
+  var mv8 = [0, 0, 0]; mv8[k8] = ext8[k8] + 0.5;                        // move A past its own extent on k8 → genuinely clears the fixed neighbour
+
+  // A8 RED-free ORANGE: A (the moved side, grid-attached analogue) leaves the NEIGHBOUR (9002, unmoved) behind
+  // past tol → flagged with a proposedDelta that re-closes the gap (gradient-checking: re-verify by re-measuring
+  // the proposed after-state, never trust the Δ blindly)
+  var a8 = { }; a8[A] = tr(wA, mv8); a8[9002] = touchNb;
+  var g8 = SdgGate.evaluate(b8, a8, [A], relAbuts, {});
+  var hit8 = g8.orange.find(function (o) { return o.kind === 'abuts-realign' && ((o.a === 9002 && o.b === A) || (o.a === A && o.b === 9002)); });
+  var reMeasured = hit8 ? SdgGate.overlaps(a8[A], tr(touchNb, hit8.proposedDelta))[k8] : null;   // re-close on axis k8
+  chk('A8 RED-free ORANGE abuts-realign: neighbour left behind past tol → orange{nb,mv} with a proposedDelta that RE-CLOSES the gap (gradient-checked)',
+    !!hit8 && g8.red.length === 0 && reMeasured != null && Math.abs(reMeasured) < 1e-9,
+    'hit=' + JSON.stringify(hit8) + ' reMeasuredOverlap=' + reMeasured);
+
+  // A8b — control: move A only slightly (stays within ABUTS_TOL) → no abuts-realign (not a blanket
+  // every-move-is-orange)
+  var mv8Small = [0, 0, 0]; mv8Small[k8] = 0.01;
+  var a8b = {}; Object.keys(b8).forEach(function (f) { a8b[f] = b8[f]; }); a8b[A] = tr(wA, mv8Small);
+  var g8b = SdgGate.evaluate(b8, a8b, [A], relAbuts, {});
+  chk('A8b control: a move that stays within tol → no abuts-realign',
+    !g8b.orange.some(function (o) { return o.kind === 'abuts-realign'; }), 'orange=' + JSON.stringify(g8b.orange));
+
+  // A8c — delta-honest: the pair is ALREADY separated beyond tol in `before` (a pre-existing gap, mirroring A3's
+  // pattern) → moving it FURTHER does not fire abuts-realign for this pair (the edit didn't cause the separation)
+  var alreadyGapped = {}; Object.keys(b8).forEach(function (f) { alreadyGapped[f] = b8[f]; }); alreadyGapped[A] = tr(wA, mv8);   // before already gapped
+  var mv8More = mv8.slice(); mv8More[k8] += 0.5;
+  var afterFurther = {}; Object.keys(alreadyGapped).forEach(function (f) { afterFurther[f] = alreadyGapped[f]; }); afterFurther[A] = tr(wA, mv8More);
+  var g8c = SdgGate.evaluate(alreadyGapped, afterFurther, [A], relAbuts, {});
+  chk('A8c delta-honest: pair already separated beyond tol before this edit → moving it further does not (re)flag abuts-realign for this pair',
+    !g8c.orange.some(function (o) { return o.kind === 'abuts-realign' && ((o.a === 9002 && o.b === A) || (o.a === A && o.b === 9002)); }),
+    'orange=' + JSON.stringify(g8c.orange));
 
   console.log('W-SDG-GATE: ' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
