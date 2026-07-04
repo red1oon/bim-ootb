@@ -1494,35 +1494,83 @@ function gmPreviewLine(axis, coord) {
 }
 // Live preview of the recompose: tint the walls a drag WOULD affect — blue = translate (moves rigidly),
 // orange = stretch (non-uniform scale) — so you SEE what'll happen before releasing. Pure (no commit).
+// §GREEN-EXCLUDE (GRID_PREDRAG_GREENORANGE_PREVIEW.md): a 3rd state — GREEN — for elements the user ctrl-clicked
+// OUT of this drag (opt-out, non-default; orange/blue stays default). riders = hosted openings that RIDE their
+// host (§STRETCH-RIDE induced move, fixed here to tint correctly instead of showing their own raw — possibly
+// WRONG — command); excludedFids = green, always wins over blue/orange.
+const GM_GREEN = 0x1ea83c;
 function gmClearTints() {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   g.children.forEach(m => { if (m.isMesh && m.material && m.material.emissive) m.material.emissive.setHex(0x000000); });
 }
-function gmTint(commands) {
-  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { t: 0, s: 0 };
-  gmClearTints(); let t = 0, s = 0;
+function gmTint(commands, riders, excludedFids) {
+  const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { t: 0, s: 0, x: 0 };
+  gmClearTints(); let t = 0, s = 0, x = 0;
   commands.forEach(c => {
     const m = g.children.find(o => o.isMesh && o.userData.featureId === c.featureId);
     if (!m || !m.material || !m.material.emissive) return;
     if (c.action === 'TRANSLATE') { m.material.emissive.setHex(0x1e66c8); t++; }   // blue = moves rigidly
     else if (c.action === 'SCALE') { m.material.emissive.setHex(0xc8731e); s++; }   // orange = stretches
   });
+  // §STRETCH-RIDE fix (item 1): a rider (hosted door/window) never gets its own SCALE — it RIDES its host via an
+  // induced rigid move — so it tints BLUE like any translate, never orange. Before this fix gmTint never saw
+  // riders at all and would leave the opening showing its raw (possibly SCALE/orange) engine command — wrong.
+  (riders || []).forEach(r => {
+    const m = g.children.find(o => o.isMesh && o.userData.featureId === r.featureId);
+    if (!m || !m.material || !m.material.emissive) return;
+    m.material.emissive.setHex(0x1e66c8); t++;
+  });
+  // §GREEN-EXCLUDE: opt-out always wins — force green over whatever blue/orange the element would otherwise show.
+  (excludedFids || []).forEach(fid => {
+    const m = g.children.find(o => o.isMesh && o.userData.featureId === fid);
+    if (!m || !m.material || !m.material.emissive) return;
+    _emis(m, GM_GREEN); x++;
+  });
   if (window.A && A.requestRender) A.requestRender();
-  return { t, s };
+  return { t, s, x };
 }
 function enterGridMove() {
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
   gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false; applyModeCursor();   // grab gridlines, not the camera
-  setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch)');
+  // §GREEN-EXCLUDE: fresh empty opt-out set every session — seeded empty, scoped to THIS drag session only (not
+  // persisted, not a per-user default — GRID_PREDRAG_GREENORANGE_PREVIEW.md explicitly defers that).
+  if (window.Bonsai.gridmove && window.Bonsai.gridmove.resetOverrides) window.Bonsai.gridmove.resetOverrides();
+  setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch, ctrl+click=opt-out green)');
 }
 function exitGridMove() {
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
+  if (window.Bonsai.gridmove && window.Bonsai.gridmove.resetOverrides) window.Bonsai.gridmove.resetOverrides();   // §GREEN-EXCLUDE: end of session
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
 canvas.addEventListener('pointerdown', (e) => {
   if (!gridMoving || e.button !== 0 || e.shiftKey) return;
+  // §GREEN-EXCLUDE (GRID_PREDRAG_GREENORANGE_PREVIEW.md item 3): ctrl/cmd+click on an element toggles its
+  // opt-out (green) state for THIS drag session — bidirectional, live. This never grabs a gridline (early
+  // return), so it can happen any time while in grid-move mode, before or between gridline grabs ("pre-drag").
+  if (e.ctrlKey || e.metaKey) {
+    const hit = pickAt(e.clientX, e.clientY);
+    const fid = hit && hit.object && hit.object.userData ? hit.object.userData.featureId : null;
+    if (fid != null) {
+      const nowExcluded = window.Bonsai.gridmove.toggleOverride(fid);
+      if (_dragGrid && _dragGrid.delta != null) {
+        // a gridline is already grabbed (mid-drag delta known) — recompute the full preview so the toggle is
+        // reflected exactly as commit() would see it (riders + overrides), not just this one mesh.
+        try {
+          const preview = window.Bonsai.gridmove.previewCommands(_dragGrid.id, _dragGrid.delta);
+          const r2 = gmTint(preview.commands, preview.riders, preview.excluded);
+          setStat('grid ' + _dragGrid.id + ' Δ' + _dragGrid.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch, ' + r2.x + ' excluded(green)');
+        } catch (err) { }
+      } else {
+        // no gridline grabbed yet — nothing to recompute against; give immediate feedback on this one mesh.
+        _emis(hit.object, nowExcluded ? GM_GREEN : 0x000000);
+        if (window.A && A.requestRender) A.requestRender();
+        setStat((nowExcluded ? 'excluded (green) ' : 're-included (orange) ') + '#' + fid + ' for this grid-move — now hover/drag a gridline');
+      }
+    }
+    return;   // ctrl+click never grabs a gridline
+  }
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -1546,8 +1594,13 @@ canvas.addEventListener('pointermove', (e) => {
   const cur = _dragGrid.axis === 'x' ? hit.x : hit.y;
   _dragGrid.delta = cur - _dragGrid.downAt;
   gmPreviewLine(_dragGrid.axis, _dragGrid.coord + _dragGrid.delta);
-  try { const r2 = gmTint(window.Bonsai.gridmove.computeCommands(_dragGrid.id, _dragGrid.delta));   // PREVIEW which walls move/stretch
-    setStat('grid ' + _dragGrid.id + ' Δ' + _dragGrid.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch'); } catch (err) { }
+  // PREVIEW which walls move/stretch — previewCommands() applies §STRETCH-RIDE (openings ride, never their own
+  // raw command) AND §GREEN-EXCLUDE (opt-out) BEFORE tinting, so this can never disagree with commit() below
+  // (both call the SAME bonsai_gridmove.js pipeline).
+  try { const preview = window.Bonsai.gridmove.previewCommands(_dragGrid.id, _dragGrid.delta);
+    const r2 = gmTint(preview.commands, preview.riders, preview.excluded);
+    setStat('grid ' + _dragGrid.id + ' Δ' + _dragGrid.delta.toFixed(2) + ' — ' + r2.t + ' move, ' + r2.s + ' stretch' +
+      (r2.x ? ', ' + r2.x + ' excluded(green)' : '')); } catch (err) { }
   if (typeof dimLabelShow === 'function') dimLabelShow(_dragGrid.id + ' Δ' + (_dragGrid.delta >= 0 ? '+' : '') + _dragGrid.delta.toFixed(2) + 'm', hit);   // §V7
 });
 async function commitGridMove() {
