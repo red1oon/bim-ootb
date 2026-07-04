@@ -330,6 +330,21 @@ async function handleImportFile(file) {
   if (!fmt.route) { document.getElementById('import-status').textContent = 'Unsupported: .' + fmt.ext + ' — Accepted: IFC, OBJ, DAE, GLB, STL, FBX, 3DS'; return; }
   const status = document.getElementById('import-status');
   const progressBar = document.getElementById('import-progress-bar');
+
+  // §VERSION_MERGE: catalog-similarity check BEFORE the heavy parse — one popup max, no card/list.
+  var _mergeTarget = null;
+  var _similar = await _findSimilarProject(file.name);
+  if (_similar) {
+    if (_confirmVersionMerge(_similar.name)) {
+      _mergeTarget = _similar;
+      console.log('§VERSION_MERGE_ACCEPT_PENDING existingKey=' + _similar.key + ' newFile=' + file.name);
+    } else {
+      console.log('§VERSION_MERGE_DECLINE key=' + file.name + ' existingKey=' + _similar.key);
+    }
+  } else {
+    console.log('§VERSION_MERGE_NOMATCH key=' + file.name);
+  }
+
   const sizeMB = (file.size / 1024 / 1024).toFixed(1);
   status.textContent = 'Reading ' + file.name + ' (' + sizeMB + 'MB)...';
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
@@ -359,12 +374,26 @@ async function handleImportFile(file) {
         }
         const dbs = buildImportDBs(SQL, msg);
         const dbBuf = dbs.extractedDb;
-        var projectKey = file.name;
         var _recSplit = dbs.metaDb && dbs.geoDb;
-        var newRecord = { meta: msg.meta, versions: [{ key: file.name, importDate: new Date().toISOString(), db: _recSplit ? null : dbBuf }], latestVersion: 0 };
-        if (_recSplit) { newRecord.metaDb = dbs.metaDb; newRecord.geoDb = dbs.geoDb; }
-        await saveProject(projectKey, newRecord);
-        console.log('§IMPORT_SAVED key=' + projectKey + ' elements=' + msg.meta.elementCount + ' split=' + !!_recSplit);
+        var projectKey, _rec;
+        if (_mergeTarget) {
+          // §VERSION_MERGE accept path: append onto the EXISTING record, don't create a new one.
+          projectKey = _mergeTarget.key;
+          _rec = (await getProject(projectKey)) || _mergeTarget.record;
+          if (!_rec.versions) _rec.versions = [];
+          _rec.versions.push({ key: file.name, importDate: new Date().toISOString(), db: _recSplit ? null : dbBuf });
+          _rec.latestVersion = _rec.versions.length - 1;
+          _rec.meta = msg.meta;
+          if (_recSplit) { _rec.metaDb = dbs.metaDb; _rec.geoDb = dbs.geoDb; }
+          await saveProject(projectKey, _rec);
+          console.log('§VERSION_MERGE_ACCEPT existingKey=' + projectKey + ' versions=' + _rec.versions.length + ' latestVersion=' + _rec.latestVersion);
+        } else {
+          projectKey = file.name;
+          _rec = { meta: msg.meta, versions: [{ key: file.name, importDate: new Date().toISOString(), db: _recSplit ? null : dbBuf }], latestVersion: 0 };
+          if (_recSplit) { _rec.metaDb = dbs.metaDb; _rec.geoDb = dbs.geoDb; }
+          await saveProject(projectKey, _rec);
+          console.log('§IMPORT_SAVED key=' + projectKey + ' elements=' + msg.meta.elementCount + ' split=' + !!_recSplit);
+        }
         var _cacheDb = await openCacheDB();
         if (_cacheDb && dbs.metaDb && dbs.geoDb) {
           var _ck = projectKey;
@@ -389,6 +418,99 @@ async function handleImportFile(file) {
   };
   worker.onerror = function (err) { status.textContent = 'Worker error: ' + err.message; progressBar.style.background = '#cc4444'; worker.terminate(); };
   worker.postMessage(workerMsg, [arrayBuffer]);
+}
+
+// ── §VERSION_MERGE: stem-match-ignoring-trailing-version-suffix catalog similarity check ──
+// LANDING_VERSION_MERGE_PROMPT.md §OPEN DESIGN CALL — decision picked (DEFAULT while user was away from
+// keyboard, flagged for confirmation not a hard sign-off): strip a trailing version-ish suffix from BOTH the
+// new drop's stem and each existing catalog record's stem, then require the STRIPPED stems to match exactly.
+// Deliberately NOT using _commonPrefix() here — the spec flags loose partial-prefix matching as the riskiest
+// option (false positives on short prefixes matching unrelated buildings); _commonPrefix stays reserved for
+// naming a multi-file merge's combined building only.
+// Suffix patterns chosen (reasonable-judgment set, documented per the decision): trailing "_v<N>"/"-v<N>",
+// " (<N>)", "-copy"/"_copy"/" copy", "-final"/"_final", "-rev<N>"/"_rev<N>", "-r<N>"/"_r<N>", "-new"/"_new",
+// "-old"/"_old", "-updated"/"_updated", "-revised"/"_revised". Stripped repeatedly so e.g.
+// "MyBuilding_v2_final" fully reduces to "MyBuilding".
+var _VERSION_SUFFIX_PATTERNS = [
+  /[_\-]v\d+$/i,
+  /\s*\(\d+\)$/,
+  /[_\-\s]copy$/i,
+  /[_\-]final\d*$/i,
+  /[_\-]rev\d*$/i,
+  /[_\-]r\d+$/i,
+  /[_\-]new$/i,
+  /[_\-]old$/i,
+  /[_\-]updated$/i,
+  /[_\-]revised$/i,
+];
+function _stripVersionSuffix(stem) {
+  var s = String(stem || '');
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (var i = 0; i < _VERSION_SUFFIX_PATTERNS.length; i++) {
+      var stripped = s.replace(_VERSION_SUFFIX_PATTERNS[i], '');
+      if (stripped !== s) { s = stripped; changed = true; }
+    }
+  }
+  return s;
+}
+function _stemOf(nameOrKey) {
+  return String(nameOrKey || '').replace(/\.(ifc|IFC)$/, '');
+}
+
+// Lightweight: existing catalog KEYS only (no full-record read) for the similarity scan.
+async function _getAllProjectKeys() {
+  const db = await openImportDB();
+  if (!db) return [];
+  return new Promise(resolve => {
+    const tx = db.transaction(IMPORT_STORE, 'readonly');
+    const req = tx.objectStore(IMPORT_STORE).getAllKeys();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+}
+
+// Find the closest existing catalog record whose stripped stem matches the new drop's stripped stem.
+// Returns { key, record, name } or null — NEVER a list. If several records match, picks the single closest
+// (exact raw-stem match wins first, else the longest shared raw stem) and the caller's popup names only that one.
+async function _findSimilarProject(newName) {
+  var newStem = _stemOf(newName);
+  var newStripped = _stripVersionSuffix(newStem);
+  var keys = await _getAllProjectKeys();
+  var candidates = [];
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var record = await getProject(key);
+    if (!record) continue;
+    var existingName = (record.meta && record.meta.name) || _stemOf(key);
+    var existingKeyStripped = _stripVersionSuffix(_stemOf(key));
+    var existingNameStripped = _stripVersionSuffix(_stemOf(existingName));
+    if (existingKeyStripped === newStripped || existingNameStripped === newStripped) {
+      candidates.push({
+        key: key, record: record, name: existingName,
+        exact: (_stemOf(key) === newStem),
+        sharedLen: existingKeyStripped.length
+      });
+    }
+  }
+  if (!candidates.length) return null;
+  candidates.sort(function (a, b) {
+    if (a.exact !== b.exact) return a.exact ? -1 : 1;
+    return b.sharedLen - a.sharedLen;
+  });
+  return candidates[0];
+}
+
+// ONE lightweight, one-time, contextual popup — NOT a persistent card, NOT a candidate list (the caller has
+// already narrowed to the single closest match before this is called). Native confirm() is deliberately used:
+// guaranteed single modal popup, no custom card/list UI to build or maintain.
+function _confirmVersionMerge(existingName) {
+  return confirm(
+    "Similar to existing '" + existingName + "' — merge as a new version, or import separately?\n\n" +
+    "OK = merge as a new version of '" + existingName + "'\n" +
+    "Cancel = import as a separate, unrelated project"
+  );
 }
 
 // ── common prefix (building name from N IFC stems) — VERBATIM from index.html import.js ──
@@ -443,6 +565,20 @@ async function importMultiIFC(files) {
   for (var i = 0; i < files.length; i++) stems.push(files[i].name.replace(/\.(ifc|IFC)$/, ''));
   var buildingName = _commonPrefix(stems).replace(/[_\-]+$/, '') || stems[0];
 
+  // §VERSION_MERGE: catalog-similarity check on the COMBINED building name, before the (slow) N-file parse.
+  var _mergeTarget = null;
+  var _similar = await _findSimilarProject(buildingName + '.ifc');
+  if (_similar) {
+    if (_confirmVersionMerge(_similar.name)) {
+      _mergeTarget = _similar;
+      console.log('§VERSION_MERGE_ACCEPT_PENDING existingKey=' + _similar.key + ' newFile=' + buildingName + '.ifc');
+    } else {
+      console.log('§VERSION_MERGE_DECLINE key=' + buildingName + '.ifc existingKey=' + _similar.key);
+    }
+  } else {
+    console.log('§VERSION_MERGE_NOMATCH key=' + buildingName + '.ifc');
+  }
+
   console.log('§MULTI_IMPORT_START files=' + files.length + ' building=' + buildingName +
     ' names=' + Array.prototype.map.call(files, function (f) { return f.name; }).join(','));
   if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
@@ -485,11 +621,26 @@ async function importMultiIFC(files) {
       elements: allElements, geometries: allGeometries, transforms: allTransforms,
     };
     var dbs = buildImportDBs(SQL, mergedData);
-    var projectKey = buildingName + '.ifc';
     var _recSplit = dbs.metaDb && dbs.geoDb;
-    var newRecord = { meta: mergedData.meta, versions: [{ key: projectKey, importDate: new Date().toISOString(), db: _recSplit ? null : dbs.extractedDb }], latestVersion: 0 };
-    if (_recSplit) { newRecord.metaDb = dbs.metaDb; newRecord.geoDb = dbs.geoDb; }
-    await saveProject(projectKey, newRecord);
+    var _newVersionKey = buildingName + '.ifc';
+    var projectKey, _rec;
+    if (_mergeTarget) {
+      // §VERSION_MERGE accept path: append onto the EXISTING record, don't create a new one.
+      projectKey = _mergeTarget.key;
+      _rec = (await getProject(projectKey)) || _mergeTarget.record;
+      if (!_rec.versions) _rec.versions = [];
+      _rec.versions.push({ key: _newVersionKey, importDate: new Date().toISOString(), db: _recSplit ? null : dbs.extractedDb });
+      _rec.latestVersion = _rec.versions.length - 1;
+      _rec.meta = mergedData.meta;
+      if (_recSplit) { _rec.metaDb = dbs.metaDb; _rec.geoDb = dbs.geoDb; }
+      await saveProject(projectKey, _rec);
+      console.log('§VERSION_MERGE_ACCEPT existingKey=' + projectKey + ' versions=' + _rec.versions.length + ' latestVersion=' + _rec.latestVersion);
+    } else {
+      projectKey = _newVersionKey;
+      _rec = { meta: mergedData.meta, versions: [{ key: projectKey, importDate: new Date().toISOString(), db: _recSplit ? null : dbs.extractedDb }], latestVersion: 0 };
+      if (_recSplit) { _rec.metaDb = dbs.metaDb; _rec.geoDb = dbs.geoDb; }
+      await saveProject(projectKey, _rec);
+    }
     var _cacheDb = await openCacheDB();
     if (_cacheDb && dbs.metaDb && dbs.geoDb) {
       var _cDbUrl = 'import://' + projectKey + '/' + projectKey.replace(/\.ifc$/i, '_extracted.db');
