@@ -170,6 +170,82 @@
     fr.readAsArrayBuffer(file);
   }
 
+  // ── Open a raw .ifc file directly (2026-07-04 — the Modeller becomes its own IFC ingestion
+  // point, not just the Viewer, because a direct launch — URL/desktop icon — may never pass
+  // through the Viewer first). Reuses the Viewer's OWN parse engine (import_worker.js's web-ifc
+  // wasm parse + import_db_builder.js's buildImportDBs) — not a second parser. ALWAYS filters to
+  // discipline==='ARC' before building the db, regardless of what the source file actually
+  // contains — that is the hard invariant (ARC is the sole edited substrate, VISION-LOCK), not a
+  // convenience for already-ARC-only files. Output lands in the exact same table schema _openBuffer
+  // already reads, so zero changes below this point: same walker-init, same BOM-tab seed, same
+  // cross-edge derive as any resident/.db open.
+  var _ifcEngineLoaded = false;
+  function _ensureIfcEngine() {
+    if (_ifcEngineLoaded || typeof buildImportDBs === 'function') { _ifcEngineLoaded = true; return Promise.resolve(); }
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = '../viewer/import_db_builder.js?v=1';
+      s.onload = function () { _ifcEngineLoaded = true; resolve(); };
+      s.onerror = function () { reject(new Error('import_db_builder.js load failed')); };
+      document.head.appendChild(s);
+    });
+  }
+  function _getWebIfcWasmBytes() {
+    return fetch('../viewer/lib/web-ifc.wasm').then(function (r) {
+      if (!r || !r.ok) throw new Error('web-ifc.wasm fetch failed (' + (r && r.status) + ')');
+      return r.arrayBuffer();
+    });
+  }
+  // NON-INVENT: drop rows, never re-derive them — a straight discipline filter over what the
+  // parser actually classified (same classifyDisc heuristic the Viewer's own import already uses).
+  function _filterArc(parsed) {
+    var kept = {}, elements = [];
+    for (var i = 0; i < parsed.elements.length; i++) {
+      var el = parsed.elements[i];
+      if (el.discipline === 'ARC') { kept[el.guid] = true; elements.push(el); }
+    }
+    var transforms = parsed.transforms.filter(function (t) { return kept[t.guid]; });
+    var geometries = parsed.geometries.filter(function (g) { return kept[g.guid]; });
+    var bomTree = (parsed.bomTree || []).filter(function (bt) { return kept[bt.parentGuid] && kept[bt.childGuid]; });
+    console.log(TAG + ' §IFC-OPEN-ARC-FILTER discs=' + JSON.stringify(parsed.meta && parsed.meta.disciplines || {}) +
+      ' total=' + parsed.elements.length + ' kept-arc=' + elements.length);
+    return { meta: parsed.meta, elements: elements, transforms: transforms, geometries: geometries, bomTree: bomTree };
+  }
+  function openIfcFile(file) {
+    console.log(TAG + ' §IFC-OPEN start file=' + file.name + ' size=' + (file.size / 1048576).toFixed(1) + 'MB');
+    Promise.all([file.arrayBuffer(), _getWebIfcWasmBytes(), _ensureIfcEngine()]).then(function (r) {
+      var arrayBuffer = r[0], wasmBytes = r[1];
+      var worker = new Worker(new URL('../viewer/import_worker.js?v=8', location.href).href);
+      worker.onmessage = function (e) {
+        var msg = e.data;
+        if (msg.type === 'progress') { console.log(TAG + ' §IFC-OPEN-PROGRESS ' + msg.phase); return; }
+        if (msg.type === 'error') { console.warn(TAG + ' §IFC-OPEN-ERROR ' + msg.message); worker.terminate(); return; }
+        if (msg.type === 'done') {
+          worker.terminate();
+          try {
+            var filtered = _filterArc(msg);
+            var dbs = buildImportDBs(window.SQL, filtered);
+            var name = file.name.replace(/\.ifc$/i, '');
+            // §IFC-OPEN-KEY-FIX (2026-07-04, found by witness_e2e_walk_ifcopen.js's cross-building diag):
+            // without this, an IFC-opened building never forks its own op-log instance (unlike a .db
+            // resident's _forkEditable → setModelKey('mo_'+key)) — it just keeps writing to whatever key
+            // is currently active (the shared default on a fresh tab). Opening building A via IFC, walking
+            // it, then opening building B via IFC in the SAME tab silently folds A's signed ops onto B's
+            // scene (confirmed: Duplex inherited SampleHouse's 80 walked-MEP ops under 'bonsai_model_v1').
+            // 'mo_ifc_' prefix (not 'mo_', which .db residents use) so an IFC-opened building never
+            // collides with a same-named .db resident's own instance either.
+            var O = window.Bonsai && window.Bonsai.oplog;
+            var openIt = function () { _openBuffer(dbs.extractedDb, name); };
+            if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
+            else openIt();
+          } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
+        }
+      };
+      worker.onerror = function (err) { console.warn(TAG + ' §IFC-OPEN-WORKER-ERROR ' + err.message); worker.terminate(); };
+      worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: wasmBytes }, [arrayBuffer]);
+    }).catch(function (err) { console.warn(TAG + ' §IFC-OPEN-FAIL ' + (err && err.message)); });
+  }
+
   // Reuse the viewer's IndexedDB building cache (bim_ootb_cache / store 'dbs', keyed by URL — the same
   // store scene.js A.cachedFetch + the Schedule Editor use, PR #517 W-SE-DB-CACHE). Read = a miss falls
   // through to network; opened WITHOUT a version so we never clobber the viewer's schema (drift trap).
@@ -415,13 +491,26 @@
     console.log(TAG + ' wrapped Bonsai.gridmove.commit → STR re-walk on grid drag');
   }
 
+  // §GRID-CLEAR-LEAK (prompts/GRID_CLEAR_STATE_LEAK_FIX.md, decision B — narrow reset): `#b-clear` clears
+  // the THREE scene + op-log but is not the walker's own module — so it must call back into here to drop
+  // `ready` (and the stashed __dwBuf/__dwName substrate pointer) too. Without this, wrapGridMove's
+  // `if (ready && …)` guard survives a Clear and can re-walk a building that's no longer on-canvas,
+  // colliding on kernel_ops.id against the freshly-reset op-log (safe rollback, but a spurious error).
+  function onClear() {
+    ready = false; lastEx = [];
+    window.__dwBuf = null; window.__dwName = null;
+    if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    console.log(TAG + ' §GRID-CLEAR-LEAK onClear — ready=false, __dwBuf cleared');
+  }
+
   window.STRWalkerOutliner = {
     register: function () {
       if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.addCategory(category());
       wrapGridMove();
       console.log(TAG + ' registered — STR Walker category + grid-drag re-walk (the wedge); Open re-homed to the pill rail');
     },
-    _openStrDb: openStrDb, _category: category,
+    onClear: onClear,
+    _openStrDb: openStrDb, _openIfcFile: openIfcFile, _category: category,
     _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase
   };
 })();

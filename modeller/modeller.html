@@ -168,6 +168,7 @@
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
   <button id="b-sound" title="Authoring sound feedback" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><span>Sound</span></button>
   <button id="b-connect" title="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span>Connect</span></button>
+  <button id="b-teams" title="Teams — who's on this scene (presence &amp; activity). Click to enable."><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Teams</span></button>
   <button id="b-xray" title="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg><span>X-ray</span></button>
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
@@ -242,6 +243,27 @@
      on the Outliner rows + a presence pane. Additive, reversible. Witness: modeller/tests/wire_teams_embed_modeller.js. -->
 <script src="teams_embed.js?v=1" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — modeller runs without the Teams overlay')"></script>
 <script>if (window.TeamsEmbedBim && window.TeamsEmbedBim.init) window.TeamsEmbedBim.init();</script>
+<!-- §b-teams (2026-07-04): the pill-rail icon is now ALWAYS visible — supersedes the "no pill unless
+     opted in" half of the OFF=pixel-identical rule above (user decision: it must show up in the rail;
+     "stubby is fine, not priority"). The DEEPER mount (module fetch, dots, presence pane) still only
+     happens on click — same real teams_embed.js code, just reachable without a URL flag. Once mounted,
+     the floating teams-pill's own toggle (open/close pane) takes over; this button just forwards to it. -->
+<script>
+(function () {
+  var btn = document.getElementById('b-teams');
+  if (!btn) return;
+  if (!window.TeamsEmbedBim) { btn.disabled = true; return; }
+  btn.addEventListener('click', function () {
+    var existing = document.getElementById('teams-pill');
+    if (existing) { existing.click(); return; }   // already mounted — forward to its own open/close toggle
+    try { localStorage.setItem('teamsEmbed', '1'); } catch (e) {}
+    window.TeamsEmbedBim.init().then(function (r) {
+      console.log('§TEAMS-PILL bar-button activated mounted=' + (r && r.mounted));
+      btn.classList.toggle('on', !!(r && r.mounted));
+    });
+  });
+})();
+</script>
 <!-- Modeller's OWN service worker (its own app folder now — trilogy viewer/·erp/·modeller/; mirrors erp/sw.js). -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -434,7 +456,7 @@ async function author(op, color) {
     audioCue('author');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
 }
-bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); _xrayOn = false; if (typeof paintXray === 'function') paintXray(); setStat('cleared'); };
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); _xrayOn = false; if (typeof paintXray === 'function') paintXray(); if (window.STRWalkerOutliner && window.STRWalkerOutliner.onClear) window.STRWalkerOutliner.onClear(); setStat('cleared'); };
 
 // ── X-RAY REVEAL (step D) ───────────────────────────────────────────────────────────────────────
 // Mirror of the Viewer's ghostglass.js glass→glow doctrine (opacity 0.06 glass; emissive glow + depthTest off so
@@ -2036,10 +2058,10 @@ function _gateBoxes() {
 // rel for the gate: hosted-by (door-in-wall) + abuts (face-touch) are EXPECTED contact (never a clash); hostOf
 // drives the door-out-of-host check. Resolved guid→fid through the §ARC-1 bridge over the recovered edges.
 function _gateRel() {
-  const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {}, relSet = {}, hostOf = {};
+  const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {}, relSet = {}, hostOf = {}, abuts = [];
   (X.fills || []).forEach(e => { const h = fbg[e.host_guid], f = fbg[e.filling_guid]; if (h != null && f != null) { relSet[Math.min(h, f) + '|' + Math.max(h, f)] = 1; hostOf[f] = h; } });
-  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; });
-  return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf };
+  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) { relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; abuts.push({ a, b }); } });
+  return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf, abuts: abuts };
 }
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
 function _runGate(before, moved) {
@@ -2051,7 +2073,7 @@ function _runGate(before, moved) {
   const hex = res.red.length ? 0x661010 : 0x5a3a10;          // RED vs ORANGE emissive flash on the offending meshes
   const g = window.Bonsai.group(); if (g) g.children.forEach(m => { if (m.isMesh && m.userData && hot.has(m.userData.featureId)) _emis(m, hex); });
   if (res.red.length) toast('⛔ ' + res.red.length + ' conformity violation' + (res.red.length > 1 ? 's' : '') + ': ' + res.red.map(r => r.kind).join(', '), 'error');
-  else toast('⚠ ' + res.orange.length + ' tight clearance — accept or ignore', 'info');
+  else toast('⚠ ' + res.orange.length + ' suggestion' + (res.orange.length > 1 ? 's' : '') + ': ' + res.orange.map(o => o.kind).join(', ') + ' — accept or ignore', 'info');
   return res.red.length ? ('⛔ ' + res.red.length + ' RED') : ('⚠ ' + res.orange.length + ' ORANGE');
 }
 async function commitMove(dx, dy, dz) {
@@ -3547,31 +3569,50 @@ window.__seedTrunkProbe = function (disc, net) {
 
 // ── DISCIPLINE ROSTER (the convergence end-point) ───────────────────────────────────────────────────
 // The bom-graph shows disc nodes only for disciplines PRESENT in a building — but the whole point of the
-// Terminal rules is to WALK a discipline that's ABSENT (FP on a house). So register a "Walk" Outliner
-// category listing the disciplines terminal_rules.db covers (DERIVED, not whitelisted); a click walks it
-// onto the open building via the shared DiscWalker. RESUME_TERMINAL_RULE_MINING §CONVERGENCE.
+// Terminal rules is to WALK a discipline that's ABSENT (FP on a house). §ONE-DISC-TAB (2026-07-04, user
+// UX review): this used to be a SEPARATE "Walk · Disciplines" Outliner category, sitting alongside "BOM
+// Tree" — meaning "click a discipline to walk it" and "browse the disc/class/element tree" lived in two
+// different tabs, even though they're the same facet. MERGED: the roster is now appended as an extra
+// branch INSIDE the existing 'bomtree' category (wrapping its tree()/onWalk, not touching
+// bom_tree_outliner.js's own signed-op logic) — one Disc tab, present disciplines show their real
+// class/element subtree (unchanged), absent ones show up with a "▶ walk" click action in the SAME tree.
+// RESUME_TERMINAL_RULE_MINING §CONVERGENCE.
 var _discRosterReg = false;
 function _registerDiscRoster() {
   if (_discRosterReg || !window.Bonsai || !window.Bonsai.outliner) return;
   _discRosterReg = true;
-  window.Bonsai.outliner.addCategory({
-    key: 'discwalk', label: 'Walk · Disciplines (class-matched rules)',
-    tree: function () {
-      var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
-      if (!ds.length) return [{ id: 'dw-load', label: 'open a building to walk a discipline', kind: 'group', children: [] }];
-      var rf = (window.DiscWalker && window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'terminal_rules.db';
-      // §DISCWALK-ALL: one synthetic "Walk ALL" row at the TOP of the SAME group — folds the 3-lookalike-row
-      // problem (the walk-all spec's "fold under one clearly-grouped Walk section") into the EXISTING discwalk
-      // category rather than a risky Outliner restructure. disc:'__ALL__' is not a real discipline code
-      // (DiscWalker.disciplines() never returns it) — onWalk below special-cases it.
-      var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Disciplines', kind: 'disc', disc: '__ALL__', sub: ds.length + ' disc · x-ray reveal' };
-      return [{ id: 'dw-root', label: 'From ' + rf + ' (measured)', kind: 'group', children: [allNode].concat(ds.map(function (d) {
-        var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
-        return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
-      })) }];
-    },
-    onWalk: function (disc) { if (disc === '__ALL__') { window.discWalkAll({ building: window.__dwName }); return; } window.discWalk(disc, { building: window.__dwName }); }
-  });
+  (function mergeDiscRosterIntoBomTree() {
+    var bomCat = window.Bonsai.outliner._categories.filter(function (c) { return c.key === 'bomtree'; })[0];
+    if (!bomCat) { console.warn('§DISC-WALK bomtree category not found — roster merge skipped'); return; }
+    var origTree = bomCat.tree, origOnWalk = bomCat.onWalk;
+    bomCat.tree = function () {
+      var roots = origTree.call(bomCat) || [];
+      try {
+        var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
+        if (!ds.length) return roots;
+        // disciplines already rendered as REAL nodes anywhere in the current tree (n.disc is tagged by
+        // bom_tree_outliner.js's treeNodes() for every disc-kind node) — don't duplicate those here.
+        var present = {};
+        (function walk(nodes) { (nodes || []).forEach(function (n) { if (n.disc) present[n.disc] = true; if (n.children) walk(n.children); }); })(roots);
+        var absent = ds.filter(function (d) { return !present[d]; });
+        if (!absent.length) return roots;
+        var rf = (window.DiscWalker && window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'terminal_rules.db';
+        // §DISCWALK-ALL: one synthetic "Walk ALL" row — disc:'__ALL__' is not a real discipline code
+        // (DiscWalker.disciplines() never returns it) — onWalk below special-cases it.
+        var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Disciplines', kind: 'disc', disc: '__ALL__', sub: absent.length + ' not extracted · x-ray reveal' };
+        var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.map(function (d) {
+          var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
+          return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
+        })) };
+        return roots.concat([rosterNode]);
+      } catch (e) { console.warn('§DISC-WALK roster merge failed', e && e.message); return roots; }
+    };
+    bomCat.onWalk = function (disc) {
+      if (disc === '__ALL__') { window.discWalkAll({ building: window.__dwName }); return; }
+      if (origOnWalk) return origOnWalk(disc);
+    };
+    console.log('§DISC-WALK merged into bomtree — one Disc tab (present disciplines drill in, absent ones walk)');
+  })();
   // SEED-TRUNK roster: route a service trunk from a human-assigned entry through the WALKED fixtures (corridor-aware,
   // real-stair risers). Lists only disciplines already walked (they have placed fixtures to route). onWalk → popup.
   window.Bonsai.outliner.addCategory({
@@ -3647,14 +3688,23 @@ window.__ensureDiscWalker = async function () {
 };
 
 // ── OPEN (W-UX-1): the pill-rail verb that replaced the old top-left drop panels. Clicking #b-open opens a
-// small chooser of the 4 permanent residents (reusing RESIDENTS[] from str_walker_outliner.js) + a local-.db
-// door (the dev/arbitrary-DB path). A pick calls the SHIPPED openResident()/openStrDb() — which swbInit-walks
-// + seeds the bom-graph (ARC) tab + derives cross-edges in one go. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-1.
+// small chooser of the 4 permanent residents (reusing RESIDENTS[] from str_walker_outliner.js) + the IFC/
+// source folder (ARC-only .ifc per building — 2026-07-04, see IFC/README.md) + a local .db/.ifc door (the
+// dev/arbitrary-file path). A pick calls the SHIPPED openResident()/openStrDb()/openIfcFile() — all three
+// converge on _openBuffer: swbInit-walks + seeds the bom-graph (ARC) tab + derives cross-edges in one go.
+// RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-1 + prompts/ARC_GEO_FETCH_SPEC.md §3D (IFC-direct-open).
 (function initOpenChooser() {
   const bOpen = document.getElementById('b-open');
   const SW = window.STRWalkerOutliner;
   if (!bOpen || !SW) { if (bOpen) bOpen.disabled = true; return; }
   const residents = SW._residents || [];
+  // IFC/ folder manifest — ARC-only source .ifc per building, the Modeller's default "open a raw design"
+  // location (IFC/README.md tracks which residents are populated; NOT yet: SampleCastle/Hospital/Clinic/
+  // LTU/Terminal — see README §Status). Fetched relative to modeller.html (../IFC/<file>).
+  const ifcSources = [
+    { key: 'SampleHouse-IFC', label: 'SampleHouse · ARC.ifc', file: 'SampleHouse_ARC.ifc' },
+    { key: 'Duplex-IFC',      label: 'Duplex · ARC.ifc',      file: 'Duplex_ARC.ifc' }
+  ];
   let panel = null, fileInp = null;
   function ensureOutlinerOpen() {
     try { localStorage.setItem('dagevu_modeller_ol_open', '1'); } catch (e) {}
@@ -3664,14 +3714,30 @@ window.__ensureDiscWalker = async function () {
     console.log('§MODELLER-OPEN chooser pick resident=' + res.key);
     SW._openResident(res); ensureOutlinerOpen(); close();
   }
+  // Fetch an ARC-only .ifc from the IFC/ folder and route it through the SAME openIfcFile() a
+  // local/dropped .ifc uses (Stage 1 parse + Stage 2 _openBuffer, str_walker_outliner.js) — no
+  // separate code path for "our" buildings vs a user's own file.
+  function pickIfc(entry) {
+    console.log('§MODELLER-OPEN chooser pick ifc=' + entry.file);
+    fetch('../IFC/' + entry.file).then(function (r) {
+      if (!r.ok) throw new Error('fetch failed ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      SW._openIfcFile(new File([blob], entry.file, { type: 'application/octet-stream' }));
+      ensureOutlinerOpen();
+    }).catch(function (err) { console.warn('§MODELLER-OPEN ifc fetch failed ' + (err && err.message)); });
+    close();
+  }
   function pickLocal() {
     if (!fileInp) {
-      fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.db,.sqlite';
+      fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.db,.sqlite,.ifc';
       fileInp.style.display = 'none'; fileInp.id = 'm-open-file';
       fileInp.onchange = function () {
-        if (fileInp.files && fileInp.files[0]) {
-          console.log('§MODELLER-OPEN chooser pick local=' + fileInp.files[0].name);
-          SW._openStrDb(fileInp.files[0]); ensureOutlinerOpen();
+        var f = fileInp.files && fileInp.files[0];
+        if (f) {
+          console.log('§MODELLER-OPEN chooser pick local=' + f.name);
+          if (/\.ifc$/i.test(f.name)) { SW._openIfcFile(f); } else { SW._openStrDb(f); }
+          ensureOutlinerOpen();
         }
         fileInp.value = '';
       };
@@ -3691,16 +3757,23 @@ window.__ensureDiscWalker = async function () {
         'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">🏠</span><span>' + r.label + '</span></div>';
     });
     h += '<div style="border-top:1px solid #23262e;margin:7px 2px 6px"></div>';
+    h += '<div style="font-size:10px;letter-spacing:.14em;color:#5b6473;margin:2px 4px 6px">FROM IFC (ARC only)</div>';
+    ifcSources.forEach(function (r) {
+      h += '<div class="mo-row" data-ifc="' + r.key + '" style="display:flex;align-items:center;gap:9px;padding:7px 8px;' +
+        'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">📐</span><span>' + r.label + '</span></div>';
+    });
+    h += '<div style="border-top:1px solid #23262e;margin:7px 2px 6px"></div>';
     h += '<div class="mo-row" data-key="__local" style="display:flex;align-items:center;gap:9px;padding:7px 8px;' +
-      'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">📁</span><span>Open local .db…</span></div>';
+      'border-radius:8px;cursor:pointer"><span style="width:20px;text-align:center">📁</span><span>Open local .db / .ifc…</span></div>';
     panel.innerHTML = h;
     document.body.appendChild(panel);
     panel.querySelectorAll('.mo-row').forEach(function (d) {
       d.onmouseover = function () { d.style.background = '#23262e'; };
       d.onmouseout = function () { d.style.background = 'transparent'; };
       d.onclick = function () {
-        const k = d.getAttribute('data-key');
+        const k = d.getAttribute('data-key'), ik = d.getAttribute('data-ifc');
         if (k === '__local') return pickLocal();
+        if (ik) { const s = ifcSources.filter(function (x) { return x.key === ik; })[0]; if (s) pickIfc(s); return; }
         const r = residents.filter(function (x) { return x.key === k; })[0]; if (r) pick(r);
       };
     });
@@ -3725,13 +3798,14 @@ window.__ensureDiscWalker = async function () {
   const bGuide = document.getElementById('b-guide');
   if (!bGuide) return;
   const SECTIONS = [
-    ['Open', 'Pill ▸ Open → pick one of the 4 residents (or a local .db). It walks the structure (STR) and seeds the ARC bom-graph — no separate drop panel.'],
-    ['Outliner — ARC leads', 'The one panel is the surface: Building ▸ Storey ▸ Room ▸ discipline ▸ class ▸ element (real door/AABB-qualified rooms; door-less storeys read "· layer"). The find box filters across it.'],
-    ['Disc = walker', 'Click a discipline node to walk it: STR surfaces the structural walk; an MEP-family disc routes when anchored, else it refuses honestly ("no walk") — never a fabricated run.'],
+    ['Open', 'Pill ▸ Open → pick a resident, an ARC-only .ifc FROM IFC (parses via the same engine the Viewer uses, always filtered to ARC — never a second parser, never a non-ARC discipline), or a local .db/.ifc. Either way it walks the structure (STR) and seeds the ARC bom-graph — no separate drop panel.'],
+    ['Outliner — ARC leads, ONE Disc tab', 'The one panel is the surface: Building ▸ Storey ▸ Room ▸ discipline ▸ class ▸ element (real door/AABB-qualified rooms; door-less storeys read "· layer"). Disciplines PRESENT in the building drill into their real elements; disciplines ABSENT from it (e.g. no MEP was ever extracted) show up in the SAME tree with a "▶ walk" click — one Disc facet, not a separate tab. The find box filters across every category, auto-expands past any collapsed branch to reveal a match, and highlights the exact matching row.'],
+    ['Disc = walker', 'Click a discipline node — present or absent — to walk it: STR surfaces the structural walk; an MEP-family disc routes when anchored, else it refuses honestly ("no walk") — never a fabricated run. "▶▶ Walk ALL Disciplines" walks every absent one at once (x-ray reveal).'],
     ['3D Grid', 'The grid is the primary handle. Grid shows/hides the datums; Move Grid drags a gridline so attached walls RECOMPOSE — stretch, not scale (openings stay host-constrained).'],
     ['Author', 'Sketch a profile, Insert a catalog component (assemble, don\'t draw), Cut an opening, Route an MEP run, Fillet an edge. Every edit is one signed op in the log.'],
     ['History', 'Scrub the bottom timeline to fold the model to any point; Ctrl+Z / Ctrl+⇧Z undo/redo. Geometry is a deterministic fold over the signed op-log.'],
-    ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log — re-opens via Open ▸ local .db), IFC4, or a BCF 2.1 issue.']
+    ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log, conventionally saved into IFC/BimDB/ — re-opens via Open ▸ local .db), IFC4, or a BCF 2.1 issue.'],
+    ['Teams', 'Pill ▸ Teams (top-right of the bar) — click to see who else is on this scene. Off by default; first click turns on presence dots + a pane, same as ?teams=1.']
   ];
   let panel = null;
   function build() {
