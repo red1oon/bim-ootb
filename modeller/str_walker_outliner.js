@@ -496,11 +496,19 @@
   // `ready` (and the stashed __dwBuf/__dwName substrate pointer) too. Without this, wrapGridMove's
   // `if (ready && …)` guard survives a Clear and can re-walk a building that's no longer on-canvas,
   // colliding on kernel_ops.id against the freshly-reset op-log (safe rollback, but a spurious error).
+  //
+  // §GRID-CLEAR-LEAK ROUND 2 (RESUME_SESSION_2026-07-04_GATE_BACKPROP.md §OPEN item 4): the round-1 fix
+  // above dropped ready/__dwBuf/__dwName but MISSED `window.swXEdges` — set here at Open (line ~148) from
+  // the SAME building's substrate, cached for the bom-graph adjacency lens + `_gateRel()`'s abuts feed. Not
+  // resetting it meant a Clear followed by opening a DIFFERENT building left the FIRST building's abuts/
+  // fills/anchored/spans edges live — `_gateRel()` would resolve them through the new building's
+  // `__arcFidByGuid` bridge and could silently exclude/misjudge a clash using stale-building adjacency.
   function onClear() {
     ready = false; lastEx = [];
     window.__dwBuf = null; window.__dwName = null;
+    window.swXEdges = null;
     if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
-    console.log(TAG + ' §GRID-CLEAR-LEAK onClear — ready=false, __dwBuf cleared');
+    console.log(TAG + ' §GRID-CLEAR-LEAK onClear — ready=false, __dwBuf cleared, swXEdges cleared');
   }
 
   window.STRWalkerOutliner = {

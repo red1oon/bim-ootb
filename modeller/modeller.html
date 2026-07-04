@@ -456,7 +456,7 @@ async function author(op, color) {
     audioCue('author');
   } catch (e) { setStat('FAIL ' + (e && e.message || e)); console.warn('§BONSAI author fail ' + e); }
 }
-bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); _xrayOn = false; if (typeof paintXray === 'function') paintXray(); if (window.STRWalkerOutliner && window.STRWalkerOutliner.onClear) window.STRWalkerOutliner.onClear(); setStat('cleared'); };
+bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group(); if (g) { while (g.children.length) g.remove(g.children[0]); } window.Bonsai.oplog.clear(); selectedId = null; selectedMesh = null; selectedIds = new Set(); window.Bonsai._selSet = selectedIds; if (typeof bCut !== 'undefined') bCut.disabled = true; if (typeof syncHistory === 'function') syncHistory(); _xrayOn = false; if (typeof paintXray === 'function') paintXray(); if (window.STRWalkerOutliner && window.STRWalkerOutliner.onClear) window.STRWalkerOutliner.onClear(); if (window.BOMTreeOutliner && window.BOMTreeOutliner.onClear) window.BOMTreeOutliner.onClear(); if (typeof _clearAllDiscWalks === 'function') _clearAllDiscWalks(); setStat('cleared'); };
 
 // ── X-RAY REVEAL (step D) ───────────────────────────────────────────────────────────────────────
 // Mirror of the Viewer's ghostglass.js glass→glow doctrine (opacity 0.06 glass; emissive glow + depthTest off so
@@ -2909,6 +2909,22 @@ function _clearDiscWalk(disc) {
   delete window.__dwWalks[disc];
   if (window.__dwAssembly) delete window.__dwAssembly[disc];
   window.__dwInstVer++;   // §I5: bucket set changed → invalidate the record→(im,i) ref map
+}
+// §GRID-CLEAR-LEAK ROUND 2 (RESUME_SESSION_2026-07-04_GATE_BACKPROP.md §OPEN item 4): `#b-clear` empties
+// the THREE group (which already drops dwRoot + its meshes from the SCENE — nothing visually resurrects),
+// but never reset the per-discipline JS dictionaries below. `_redrawAllDiscWalks()` (called on storey-scrub)
+// unconditionally re-renders every key still in these dicts, and `_discGate()` folds them into the clash/gate
+// computation — so after Clear + opening a DIFFERENT building, the FIRST building's disc-walk placements
+// could silently resurrect as phantom meshes and get folded into that building's gate result, with no error
+// signal (worse than the STR leak this mirrors, which at least threw a rejected-toast). Called from
+// bClear.onclick alongside STRWalkerOutliner.onClear()/BOMTreeOutliner.onClear().
+function _clearAllDiscWalks() {
+  window.__dwWalks = {};
+  if (window.__dwChains) window.__dwChains = {};
+  if (window.__dwAssembly) window.__dwAssembly = {};
+  if (window.__dwTrunk) window.__dwTrunk = {};
+  window.__dwInstVer++;   // §I5: bucket set changed → invalidate the record→(im,i) ref map
+  console.log('§DISC-WALK §GRID-CLEAR-LEAK onClear — __dwWalks/__dwChains/__dwAssembly/__dwTrunk cleared');
 }
 // §LOD-SEAM (docs/WalkerDoctrine.md §5): a GENERATED fixture's render geometry is selected by its semantic
 // prim KIND (disc_walker._primFor → p.prim: sprinkler/diffuser/light/outlet/alarm/valve/run/box). POC = a BOX
