@@ -47,8 +47,10 @@
 
   var COLS = 'id,timestamp,op_type,parameters,input_guids,output_guid,prev_hash,op_hash,sig,gid,op_uuid,user_tag,undone,branch_id';
   // exportOps — the archived-shard shape: FULL rows, id order (superset of exportBranch's needs).
-  function exportOps(db) {
-    var r = db.exec('SELECT ' + COLS + ' FROM kernel_ops ORDER BY id');
+  // maxId (optional) bounds the export to the rows shard() has PINNED as this shard's contents — an op
+  // committed concurrently (id > maxId) must neither ride the archive nor be deleted (§T7-RACE).
+  function exportOps(db, maxId) {
+    var r = db.exec('SELECT ' + COLS + ' FROM kernel_ops' + (maxId != null ? ' WHERE id <= ' + Number(maxId) : '') + ' ORDER BY id');
     if (!r.length) return [];
     var names = COLS.split(',');
     return r[0].values.map(function (v) { var o = {}; names.forEach(function (c, i) { o[c] = v[i]; }); return o; });
@@ -70,6 +72,15 @@
     return { ok: true, tip: prev, len: ops.length };
   }
 
+  // _firstSnapshotPayload — the first SHARD_SNAPSHOT row in an archived ops array (the prior
+  // boundary). Scanned by op_type, not position — a §T7-RACE survivor can sit ahead of it.
+  function _firstSnapshotPayload(ops) {
+    for (var i = 0; i < ops.length; i++) {
+      if (ops[i].op_type !== 'SHARD_SNAPSHOT') continue;
+      try { var rich = JSON.parse(ops[i].parameters); return rich.payload || null; } catch (e) { return null; }
+    }
+    return null;
+  }
   function _latestSnapshotPayload(db) {
     var r = db.exec("SELECT parameters FROM kernel_ops WHERE op_type='SHARD_SNAPSHOT' ORDER BY id DESC LIMIT 1");
     if (!r.length || !r[0].values.length) return null;
@@ -109,7 +120,12 @@
     var baseTipId = Number(lastIdR[0].values[0][0]);
 
     // 2. ARCHIVE FIRST + read back + re-verify — only a CONFIRMED copy unlocks the delete (T3).
-    var ops = exportOps(db);
+    // §T7-RACE: everything below runs across awaits (crypto, the store) — a POS commitGroup CAN land
+    // mid-shard. The shard's contents are PINNED to id ≤ baseTipId: an op that arrives later is neither
+    // archived NOR deleted (step 4 deletes id ≤ baseTipId only) — it simply rides the hot log across
+    // the boundary. An op landing between verifyChain and the MAX(id) read makes av.tip ≠ v.tip below
+    // ⇒ safe ABORT (retry on the next debounce). No interleaving can lose a committed op.
+    var ops = exportOps(db, baseTipId);
     var blobKey = String(opts.key) + '::shard:' + seq;
     try { await opts.store.put(blobKey, JSON.stringify(ops)); }
     catch (e) { console.log('§SHARD ABORT archive put failed: ' + e.message); return { sharded: false, reason: 'archive put failed: ' + e.message }; }
@@ -124,37 +140,51 @@
     console.log('§SHARD archive CONFIRMED key=' + blobKey + ' ops=' + back.length + ' tip=' + av.tip.slice(0, 12) + '…');
 
     // 3. the signed snapshot op — projState is the recorded input replay re-seeds from.
+    // T7-HOST (prompts/T7_HOST_WIRING_SPEC.md §Build 1): opCounts = CUMULATIVE per-op_type counts of
+    // every op up to this boundary — a recorded INPUT for counter-style walkers (pos_lens.nextIds)
+    // that must stay collision-free on the SYNC sale path where a lazy archive fetch is impossible.
+    // Derived from the ARCHIVED array itself (prev snapshot's counts + exactly the ops this shard
+    // archives) — never from a live re-count, so a mid-shard commit can't drift/double-count it
+    // (§T7-RACE: a survivor is counted by the NEXT shard, the one that archives it).
+    var opCounts = {}; if (prev && prev.opCounts) Object.keys(prev.opCounts).forEach(function (t) { opCounts[t] = Number(prev.opCounts[t]); });
+    ops.forEach(function (o) { opCounts[o.op_type] = (opCounts[o.op_type] || 0) + 1; });
     var payload = { op_type: 'SHARD_SNAPSHOT', uuid: 'SNAPSHOT:' + seq, shardSeq: seq,
-                    baseTipId: baseTipId, baseTipHash: v.tip, count: n, archivedKey: blobKey,
-                    projState: _projState(db) };
+                    baseTipId: baseTipId, baseTipHash: v.tip, count: ops.length, archivedKey: blobKey,
+                    opCounts: opCounts, projState: _projState(db) };
     var res = await K.commitGroup(db, [{ op_type: 'SHARD_SNAPSHOT', params: { payload: payload, actor: opts.actor || 'shard' } }],
                                    { gid: opts.gid || ('shard-' + seq + '-' + v.tip.slice(0, 8)), baseTs: opts.ts });
     if (!res || res.committed !== true) return { sharded: false, reason: 'snapshot commit failed: ' + (res && res.reason) };
     var snapId = res.ids[0];
 
-    // 3b. T2 guard: with a signer installed the snapshot MUST be content-signed (v2) — a position-
-    // signed (v1) snapshot would orphan its own sig on the re-seal below. Refuse rather than corrupt.
+    // 3b. T2 guard: with a signer installed, EVERY row that survives into the re-sealed hot chain
+    // (the snapshot AND any §T7-RACE mid-shard survivor, id > baseTipId) must be content-signed (v2)
+    // — a position-signed (v1) row would orphan its own sig on the re-seal below. Refuse rather
+    // than corrupt.
     if (K._isV2) {
-      var srow = db.exec('SELECT parameters, sig FROM kernel_ops WHERE id = ' + Number(snapId));
-      var sParams = srow[0].values[0][0], sSig = srow[0].values[0][1];
-      if (sSig && !K._isV2(sParams)) {
-        console.log('§SHARD ABORT snapshot is v1-signed — enable KernelOps.setContentSigning(true) first (T2)');
+      var srows = db.exec('SELECT id, parameters, sig FROM kernel_ops WHERE id > ' + Number(baseTipId));
+      var v1row = null;
+      if (srows.length) srows[0].values.forEach(function (r) { if (!v1row && r[2] && !K._isV2(r[1])) v1row = r[0]; });
+      if (v1row != null) {
+        console.log('§SHARD ABORT v1-signed row id=' + v1row + ' would not survive the re-seal — enable KernelOps.setContentSigning(true) first (T2)');
         db.run('DELETE FROM kernel_ops WHERE id = ' + Number(snapId));   // remove ONLY the op we just added
         await K.sealChain(db);
         return { sharded: false, reason: 'content signing (v2) required with a signer — T2' };
       }
     }
 
-    // 4. drop the archived prefix, re-seal the hot chain from GENESIS (prior head is inside the
-    //    signed snapshot params). Invalidate every incremental cache — the log changed shape.
-    db.run('DELETE FROM kernel_ops WHERE id < ' + Number(snapId));
+    // 4. drop the ARCHIVED prefix ONLY (id ≤ baseTipId — a §T7-RACE survivor keeps its row), re-seal
+    //    the hot chain from GENESIS (prior head is inside the signed snapshot params). Invalidate
+    //    every incremental cache — the log changed shape.
+    db.run('DELETE FROM kernel_ops WHERE id <= ' + Number(baseTipId));
+    db.run('VACUUM');   // reclaim the deleted prefix's pages — without this the exported/persisted hot
+                        // blob KEEPS the freelist and first paint gains nothing (W-T7-HOST §T7-HOST).
     var sealed = await K.sealChain(db);
     db.__krnVerifiedTip = null;
     db.__tipFoldCache = null;
     var v2 = await K.verifyChain(db);
-    console.log('§SHARD seq=' + seq + ' archived=' + n + ' hotOps=' + v2.len + ' snapId=' + snapId +
+    console.log('§SHARD seq=' + seq + ' archived=' + ops.length + ' hotOps=' + v2.len + ' snapId=' + snapId +
                 ' verify=' + (v2.ok ? 'ok' : 'FAIL') + ' tip=' + String(v2.tip).slice(0, 12) + '…');
-    return { sharded: true, seq: seq, snapId: snapId, archivedKey: blobKey, archived: n, hotLen: v2.len, tip: v2.tip, ok: v2.ok, sealedTip: sealed.tip };
+    return { sharded: true, seq: seq, snapId: snapId, archivedKey: blobKey, archived: ops.length, hotLen: v2.len, tip: v2.tip, ok: v2.ok, sealedTip: sealed.tip };
   }
 
   // maybeShard — the opt-in trigger: shard only past a threshold (DEFAULT OFF semantics — a small
@@ -188,20 +218,51 @@
       if (!s.ok) return { ok: false, seq: seq, why: s.why, at: s.at };
       if (s.tip !== expectTip) return { ok: false, seq: seq, why: 'boundary link (tip != recorded baseTipHash)' };
       checked++;
-      // the shard's FIRST row is the previous SHARD_SNAPSHOT op (seq-1) — its recorded baseTipHash
-      // is the next (older) boundary; shard 1 starts at true GENESIS.
-      var firstSnap = null;
+      // the shard CONTAINS the previous SHARD_SNAPSHOT op (seq-1) — usually its first row, but a
+      // §T7-RACE survivor (committed mid-shard, id > that boundary's baseTipId) can precede it, so
+      // scan for it. Its recorded baseTipHash is the next (older) boundary; shard 1 starts at GENESIS.
       if (seq > 1) {
-        try { var rich = JSON.parse(s.ops[0].parameters); firstSnap = rich.payload || null; } catch (e) { firstSnap = null; }
-        if (!firstSnap || firstSnap.op_type !== 'SHARD_SNAPSHOT') return { ok: false, seq: seq, why: 'missing prior snapshot at shard head' };
-        expectTip = firstSnap.baseTipHash;
+        var headSnap = _firstSnapshotPayload(s.ops);
+        if (!headSnap) return { ok: false, seq: seq, why: 'missing prior snapshot at shard head' };
+        expectTip = headSnap.baseTipHash;
       }
     }
     console.log('§SHARD verify-archive ok shards=' + checked + ' back-to=GENESIS');
     return { ok: true, shards: checked };
   }
 
+  // loadArchivedOps — the lazy Time-Machine/fold seam (T7_HOST_WIRING_SPEC §Build 1): walk the archive
+  // BACKWARD from the hot snapshot (each shard verified internally by loadShard; boundary link = the
+  // recorded baseTipHash, the same rule verifyShards enforces), return the WHOLE archived prefix in
+  // ASCENDING op order. Cached on db.__shardArchive = {atSeq, ops} — fetched ONCE per shard generation
+  // (a newer snapshot bumps shardSeq → refetch). Tamper/missing ⇒ {ok:false, why, seq} — an HONEST
+  // refusal; callers fold hot-only and say so, never a silently-thin history.
+  async function loadArchivedOps(db, store, key) {
+    var snap = _latestSnapshotPayload(db);
+    if (!snap) return { ok: true, ops: [], shards: 0, note: 'no snapshot — nothing archived' };
+    var atSeq = Number(snap.shardSeq);
+    if (db.__shardArchive && db.__shardArchive.atSeq === atSeq) {
+      return { ok: true, ops: db.__shardArchive.ops, shards: atSeq, cached: true };
+    }
+    var expectTip = snap.baseTipHash, ops = [];
+    for (var seq = atSeq; seq >= 1; seq--) {
+      var s = await loadShard(store, key, seq);
+      if (!s.ok) { console.log('§SHARD lazy-load REFUSED seq=' + seq + ' why=' + s.why); return { ok: false, why: s.why, at: s.at, seq: seq }; }
+      if (s.tip !== expectTip) { console.log('§SHARD lazy-load REFUSED seq=' + seq + ' why=boundary link'); return { ok: false, why: 'boundary link (tip != recorded baseTipHash)', seq: seq }; }
+      ops = s.ops.concat(ops);                          // walking backward ⇒ each older shard PREPENDS
+      if (seq > 1) {                                    // next (older) boundary from this shard's contained snapshot
+        var headSnap = _firstSnapshotPayload(s.ops);    // scan, not ops[0] — a §T7-RACE survivor can precede it
+        if (!headSnap) return { ok: false, why: 'missing prior snapshot at shard head', seq: seq };
+        expectTip = headSnap.baseTipHash;
+      }
+    }
+    db.__shardArchive = { atSeq: atSeq, ops: ops };
+    console.log('§SHARD lazy-load ok shards=' + atSeq + ' archivedOps=' + ops.length + ' (verified back to GENESIS, cached)');
+    return { ok: true, ops: ops, shards: atSeq };
+  }
+
   var API = { shard: shard, maybeShard: maybeShard, loadShard: loadShard, verifyShards: verifyShards,
+              loadArchivedOps: loadArchivedOps,
               verifyShardOps: verifyShardOps, exportOps: exportOps, _projState: _projState };
   if (typeof window !== 'undefined') window.ErpShard = API;   // window-only, like kernel_ops.js
   console.log('§SHARD_LOADED erp_shard.js (T7 fix 4/4b — signed snapshot boundary, archive-confirmed, lazy-verified)');

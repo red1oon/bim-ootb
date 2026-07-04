@@ -238,19 +238,40 @@
     var st = b3.prepare(sql); return st.all.apply(st, a);
   }
 
-  // count prior CREATE_DOCUMENT ops → deterministic doc ids (no Date.now/Math.random)
+  // count prior CREATE_DOCUMENT ops → deterministic doc ids (no Date.now/Math.random).
+  // T7-HOST (prompts/T7_HOST_WIRING_SPEC.md §Build 3a — Witness: §T7-COUNT): once the log shards, the
+  // hot COUNT collapses — the latest SHARD_SNAPSHOT's cumulative opCounts carries the archived count so
+  // PKs stay collision-free WITHOUT an async archive fetch (this runs SYNC on the Pay path).
+  // _archivedOpCount — the pre-shard count of an op_type from the latest SHARD_SNAPSHOT's cumulative
+  // opCounts (0 when the log has never sharded). Sync + O(1): safe on the Pay path.
+  function _archivedOpCount(opDb, opType) {
+    try {
+      var s = opDb.exec("SELECT parameters FROM kernel_ops WHERE op_type='SHARD_SNAPSHOT' ORDER BY id DESC LIMIT 1");
+      if (s.length && s[0].values.length) {
+        var pl = JSON.parse(s[0].values[0][0]).payload;
+        if (pl && pl.opCounts && pl.opCounts[opType]) return Number(pl.opCounts[opType]);
+      }
+    } catch (e) {}
+    return 0;
+  }
   function nextIds(opDb) {
     var n = 0;
     try { var r = opDb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type='CREATE_DOCUMENT'"); n = (r[0] && Number(r[0].values[0][0])) || 0; } catch (e) {}
+    n += _archivedOpCount(opDb, 'CREATE_DOCUMENT');
     var base = 910000 + n * 10;
     return { orderId: base + 1, inoutId: base + 2, invoiceId: base + 3 };
   }
 
-  function logMovements(opDb) {
+  // archivedRows — lazily-fetched pre-shard ops (T7_HOST_WIRING_SPEC §Build 3b): full-history folds
+  // below prepend these so a shard boundary never thins stock/pending arithmetic. [] until a host
+  // injects cfg.archivedOps AND the log has actually sharded.
+  function logMovements(opDb, archivedRows) {
     var ev = [], hdr = null;
     try {
       var r = opDb.exec('SELECT op_type, parameters FROM kernel_ops ORDER BY id');
-      (r[0] ? r[0].values : []).forEach(function (row) {
+      var live = (r[0] ? r[0].values : []);
+      var all = (archivedRows || []).map(function (o) { return [o.op_type, o.parameters]; }).concat(live);
+      all.forEach(function (row) {
         var p; try { p = JSON.parse(row[1]); } catch (e) { return; }
         p = p && p.params ? p.params : p;
         if (!p) return;
@@ -269,13 +290,16 @@
   // open replenish-PO C_OrderLine.qtyordered for the warehouse + open M_MovementLine.movementqty whose
   // m_locatorto_id is in the warehouse. Commit → re-generate proposes ZERO for the committed products —
   // the real ReplenishReport's open-order subtraction, no double order. Returns { pid: centiQty }.
-  function pendingInbound(opDb, b3, wh) {
+  function pendingInbound(opDb, b3, wh, archivedRows) {
     var out = {};
     try {
       var locWh = {};
       qa(b3, 'SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=?', wh).forEach(function (l) { locWh[l.i] = 1; });
       var r = opDb.exec('SELECT gid, op_type, parameters FROM kernel_ops ORDER BY id');
-      var rows = (r[0] ? r[0].values : []).map(function (v) {
+      var live = (r[0] ? r[0].values : []);
+      // T7-HOST: archived (pre-shard) rows fold FIRST — an open PO older than the shard boundary must
+      // still count as on-order (the no-double-order guard, §T1-SPEC lens.4).
+      var rows = (archivedRows || []).map(function (o) { return [o.gid, o.op_type, o.parameters]; }).concat(live).map(function (v) {
         var p; try { p = JSON.parse(v[2]); } catch (e) { return null; }
         p = p && p.params ? p.params : p;
         return p ? { gid: v[0], p: p } : null;
@@ -295,14 +319,14 @@
     return out;
   }
 
-  function suggestAll(b3, opDb) {
+  function suggestAll(b3, opDb, archivedRows) {
     var whs = qa(b3, "SELECT DISTINCT m_warehouse_id AS w FROM m_replenish WHERE replenishtype<>'0'");
-    var pend = logMovements(opDb), out = [];
+    var pend = logMovements(opDb, archivedRows), out = [];
     whs.forEach(function (r) {
       var locs = {};
       qa(b3, 'SELECT m_locator_id AS i FROM m_locator WHERE m_warehouse_id=?', r.w).forEach(function (l) { locs[l.i] = 1; });
       var txns = qa(b3, 'SELECT m_product_id, m_locator_id, movementtype, movementqty FROM m_transaction').filter(function (t) { return locs[t.m_locator_id]; });
-      var inbound = pendingInbound(opDb, b3, r.w);
+      var inbound = pendingInbound(opDb, b3, r.w, archivedRows);
       var rctx = {
         // §T1-SPEC core.1: qtybatchsize + m_warehousesource_id now ride the policy row (real m_replenish columns)
         replenishRows: qa(b3, "SELECT m_product_id, m_warehouse_id, level_min, level_max, replenishtype, qtybatchsize, m_warehousesource_id FROM m_replenish WHERE m_warehouse_id=? AND replenishtype<>'0'", r.w),
@@ -411,6 +435,20 @@
     };
 
     var cart = [];
+
+    // T7 host opt-in (prompts/T7_HOST_WIRING_SPEC.md §Build 3c — Witness: W-T7-HOST): after a commit
+    // lands, nudge the host's shard check on a debounce (the kernel_ops._persistToIdb 2s idiom).
+    // DEFAULT OFF — a host that doesn't inject cfg.maybeShard behaves byte-identically to before.
+    var _shardTimer = null;
+    function maybeShardSoon() {
+      if (!cfg.maybeShard) return;
+      clearTimeout(_shardTimer);
+      _shardTimer = setTimeout(function () {
+        Promise.resolve(cfg.maybeShard()).then(function (r) {
+          if (r && r.sharded) console.log('§POS-SHARD closed seq=' + r.seq + ' archived=' + r.archived + ' hotOps=' + r.hotLen);
+        }).catch(function (e) { console.log('§POS-SHARD check failed: ' + ((e && e.message) || e)); });
+      }, 2000);
+    }
 
     // U-3: track products registered THIS session (for §POS-FIRSTSELL witness)
     var _sessionProductIds = {};  // { [productId]: true }
@@ -641,12 +679,14 @@
     dock.appendChild(dockItems); dock.appendChild(dockTrigger);
     document.body.appendChild(dock);
 
+    // PILL CLOSE DECREE (user decree 2026-07-02, witness_pill_canonical W2 — DECIDED for POS in
+    // FABLE5_FOLLOWUP_2026-07-04 §Item 3, Witness: W-POS-PILLBAR §PB-DECREE): the ⋯ dock is a pill
+    // RAIL in miniature, so the universal "no outside-tap close" decree governs it even though it is
+    // not PillBuilder-hosted — ONLY the deliberate ⋯ tap toggles it. Lens overlays with their own
+    // ✕/Done affordances (scan, import, receipt, float panel) are PANELS, not rails — decree-exempt.
     dockTrigger.addEventListener('click', function () {
       var open = dockItems.classList.toggle('open');
-      if (!open) return;
-      document.addEventListener('pointerdown', function _close(ev) {
-        if (!dock.contains(ev.target)) { dockItems.classList.remove('open'); document.removeEventListener('pointerdown', _close); }
-      });
+      console.log('§POS-DOCK toggle=' + (open ? 'open' : 'close') + ' (decree: only the ⋯ tap toggles)');
     });
 
     // swipe-down to dismiss (touch)
@@ -706,9 +746,21 @@
       replHdr.textContent = 'Replenishment';
     }
 
+    // T7-HOST (T7_HOST_WIRING_SPEC §Build 3b): the replenish fold walks the FULL history — lazily
+    // fetch pre-shard ops first (panel-open path — async is fine HERE, never on the Pay path). A
+    // refused archive (tamper/missing) folds hot-only and SAYS so — honest, never silently thin.
     function generateReplenish() {
+      return Promise.resolve(cfg.archivedOps ? cfg.archivedOps() : { ok: true, ops: [] }).then(function (arch) {
+        if (arch && arch.ok === false) {
+          console.log('§POS-REPLENISH archive REFUSED why=' + arch.why + ' seq=' + arch.seq + ' — folding hot log ONLY');
+          cfg.status('History archive unreadable (' + arch.why + ') — replenishment from the hot log only');
+        }
+        return _generateReplenishNow((arch && arch.ok && arch.ops) || []);
+      });
+    }
+    function _generateReplenishNow(archivedRows) {
       staged = []; replBox.textContent = '';
-      var sugg = suggestAll(b3, cfg.opDb);
+      var sugg = suggestAll(b3, cfg.opDb, archivedRows);
       sugg.forEach(function (s) {
         var nm = q1(b3, 'SELECT name FROM m_product WHERE m_product_id=?', s.m_product_id);
         var vendor = s.m_warehousesource_id ? null : vendorOf(s.m_product_id);
@@ -807,6 +859,7 @@
               ' ops=' + ops.length + ' newVerbs=[] gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N'));
             cfg.status('Replenishment committed · ' + nPo + ' PO / ' + nMv + ' move · ' + picked.length + ' lines');
             replCommitting = false; clearStage();
+            maybeShardSoon();          // T7-HOST: debounced shard check after the replenish group
           });
         })
         .catch(function (e) {
@@ -1069,7 +1122,8 @@
 
       function priorCreateCount() {
         var r = cfg.opDb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type='CRUD_CREATE'");
-        return (r[0] && Number(r[0].values[0][0])) || 0;
+        // T7-HOST (§T7-COUNT): + the pre-shard count — the register PK band must not restart post-shard.
+        return ((r[0] && Number(r[0].values[0][0])) || 0) + _archivedOpCount(cfg.opDb, 'CRUD_CREATE');
       }
 
       return {
@@ -1311,6 +1365,7 @@
             console.log('§POS-IMPORT registered productId=' + r.productId + ' barcode=' + _state.barcode +
               ' price=' + priceStr + ' hasPhoto=' + (!!_state.imageThumb) +
               ' gid=' + res.gid + ' ops=' + res.ids.length);
+            maybeShardSoon();          // T7-HOST: debounced shard check after the register group
             _closeImport();
           })
           .catch(function (e) {
@@ -1403,6 +1458,7 @@
             rcptBtn.style.display = '';
             receipt.textContent = '✓ ' + grandTotal + ' tendered · order ' + ids.orderId + ' · group ' + String(res.gid).slice(0, 8) + '… · signed=' + chainOk;
             cart = []; renderCart();   // §T1-SPEC lens.1: replenishment no longer auto-fires after a sale
+            maybeShardSoon();          // T7-HOST: the ~5k-op cliff check rides every sale (debounced)
           });
         })
         .catch(function (e) { cfg.status('commit failed: ' + e); console.log('§POS-LIVE commit FAIL ' + e); });
@@ -1450,6 +1506,7 @@
               var whUrl = (window.location.href.split('/erp/')[0] || '..') + '/viewer/viewer.html?db=../buildings/warehouse_gardenworld.db';
               window.open(whUrl, '_blank');
               console.log('§POS-DELIVERLATER walk-tab=opened url=' + whUrl);
+              maybeShardSoon();        // T7-HOST: debounced shard check after the deliver-later group
             });
           });
         })
@@ -1470,5 +1527,10 @@
   }
 
   root.PosLens = { open: open };
+  // node-witness seam (W-T7-HOST — prompts/T7_HOST_WIRING_SPEC.md): the shard-aware pure folds only;
+  // open() stays DOM-bound and untestable headless by design.
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { open: open, _t7: { nextIds: nextIds, logMovements: logMovements, pendingInbound: pendingInbound } };
+  }
   console.log('§POS-LENS loaded (dumb terminal — record, pay, send; the fold does the rest)');
 })(typeof window !== 'undefined' ? window : this);

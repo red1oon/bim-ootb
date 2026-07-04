@@ -8,6 +8,11 @@
 //     §WIRE-OFF      — Team OFF (default) = pixel-identical: no overlay pane, no dots; chrome DOM == baseline.
 //     §WIRE-ON       — click the pill → the overlay pane mounts + dots paint onto the rows.
 //     §WIRE-REVERSIBLE — click again → pane removed + chrome DOM === the OFF baseline (off = identical, reversible).
+//     §WIRE-CLOSE-X  — FABLE5_FOLLOWUP_2026-07-04 §Item 2: the STANDALONE fallback pane carries a visible
+//                      close affordance (.teams-pane-close ✕ — the host `.bim-panel-close` analogue) and
+//                      clicking IT routes through the same close(): pane gone, pill un-pressed, OFF baseline.
+//                      ISSUE PROVED: pre-fix the standalone pane had NO close button (only the PillBuilder-
+//                      hosted variant did) — the only way out was knowing to re-click the pill.
 //   Run: node teams/tests/wire_teams_pill.js 2>&1 | tee teams/logs/wire_teams_pill.log — then READ the log.
 'use strict';
 var path = require('path'), http = require('http'), fs = require('fs');
@@ -65,11 +70,23 @@ function verdict(ok, label, detail) { if (!ok) fails++; console.log('   ' + (ok 
     });
     verdict(after.pane === false && after.html === baseline,
       '§WIRE-REVERSIBLE  off again === OFF baseline (reversible)', 'pane=' + after.pane + ' chromeIdentical=' + (after.html === baseline));
+
+    // §WIRE-CLOSE-X — re-open, then close via the pane's OWN ✕ (not the pill): same close(), same baseline.
+    await page.click('#teams-pill');
+    var xBtn = await page.$('#teams-pane .teams-pane-close');
+    verdict(!!xBtn, '§WIRE-CLOSE-X  standalone pane carries a visible close affordance', 'sel=#teams-pane .teams-pane-close');
+    if (xBtn) await xBtn.click();
+    var afterX = await page.evaluate(function () {
+      return { pane: !!document.getElementById('teams-pane'), pressed: document.getElementById('teams-pill').getAttribute('aria-pressed'),
+               html: document.getElementById('chrome').innerHTML };
+    });
+    verdict(afterX.pane === false && afterX.pressed === 'false' && afterX.html === baseline,
+      '§WIRE-CLOSE-X  ✕ routes through close(): pane gone, pill un-pressed, OFF baseline', 'pane=' + afterX.pane + ' pressed=' + afterX.pressed + ' chromeIdentical=' + (afterX.html === baseline));
   } finally {
     await browser.close(); server.close();
   }
 
-  var n = 4;
+  var n = 6;
   console.log('\n' + (fails === 0 ? '✅ W-TEAM-WIRE ' + n + '/' + n + ' PASS' : '❌ ' + fails + '/' + n + ' FAIL') + '\n');
   process.exit(fails === 0 ? 0 : 1);
 })().catch(function (e) { console.log('🔴 THREW ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 4).join('\n')); process.exit(1); });

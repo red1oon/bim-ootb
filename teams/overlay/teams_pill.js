@@ -75,6 +75,19 @@ function mountTeamsPill(headerEl, opts) {
     } else {
       pane = _el('div', 'teams-pane');                            // the overlay pane (created ONLY when ON)
       pane.id = 'teams-pane';
+      // FABLE5_FOLLOWUP_2026-07-04 §Item 2 (Witness: W-TEAM-WIRE close leg): the standalone pane gets
+      // the SAME deliberate close affordance the host `.bim-panel` shell provides (`.bim-panel-close`
+      // → onClose) — a visible ✕ wired to the EXISTING close() (the pill's own toggle idiom; no new
+      // interaction, and no reliance on "click the pill again" being discoverable). float:right keeps
+      // it in normal flow so it never fights the demo's own `.teams-pane` positioning.
+      var x = _el('button', 'teams-pane-close', '✕');
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Close ' + label);
+      x.title = 'Close';
+      x.style.cssText = 'float:right;margin:2px 2px 6px 8px;padding:0 6px;background:none;border:none;' +
+                        'color:inherit;font:inherit;font-size:14px;line-height:1.4;cursor:pointer;opacity:.7';
+      x.addEventListener('click', close);
+      pane.appendChild(x);
       (opts.paneHost || document.body).appendChild(pane);
     }
     if (opts.onMount) opts.onMount(pane);

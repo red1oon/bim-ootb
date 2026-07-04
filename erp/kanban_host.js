@@ -129,5 +129,45 @@
     catch (e) { log('§KANBAN-PERSIST err ' + e.message); return Promise.resolve(false); }
   }
 
-  global.KanbanHost = { publish: publish, tip: tip, persist: persist, _rows: _rows };
+  // ── T7 host wiring (prompts/T7_HOST_WIRING_SPEC.md §Build 2 — Witness: W-T7-HOST) ─────────────────
+  // The shard opt-in for the POS/kanban op log. DEFAULT OFF stays true: nothing below runs unless a
+  // page calls it. Shard blobs ride the SAME IDB store the hot blob lives in (bim_ootb_cache/dbs,
+  // keys '<projKey>::shard:<seq>').
+  var SHARD_THRESHOLD = 5000;   // the tested value — erp_shard.maybeShard default + W-T7-INC's ~4.9k log
+  function shardStore() {
+    return { get: function (k) { return idbGetBlob(IDB, STORE, k); },
+             put: function (k, v) { return idbPutBlob(IDB, STORE, k, v); } };
+  }
+  // maybeShard — call after commits (debounced by the caller): past the threshold, close the shard and
+  // PERSIST the shrunk hot blob — that persisted [snapshot + open shard] IS the instant first paint
+  // (boot/restore loads it unchanged). Below threshold: byte-identical no-op (§T7-OFF).
+  function maybeShard(projDb, projKey, opts) {
+    opts = opts || {};
+    var Sh = global.ErpShard;
+    if (!Sh) return Promise.resolve({ sharded: false, reason: 'erp_shard.js not loaded' });
+    var store = opts.store || shardStore();
+    return Sh.maybeShard(projDb, { store: store, key: projKey,
+                                   threshold: opts.threshold != null ? opts.threshold : SHARD_THRESHOLD })
+      .then(function (r) {
+        if (r && r.sharded) {
+          log('§POS-SHARD sharded key=' + projKey + ' seq=' + r.seq + ' archived=' + r.archived + ' hotOps=' + r.hotLen);
+          if (opts.persist === false) return r;               // node witness: no IDB, store injected
+          return persist(projDb, projKey).then(function () { return r; });
+        }
+        if (r && r.reason !== 'below-threshold') log('§POS-SHARD skipped key=' + projKey + ' reason=' + r.reason);
+        return r;
+      });
+  }
+  // archivedOps — the lazy history seam for full-log folds (kitchen queue, replenish pending): the
+  // archived prefix, verified backward to GENESIS, cached per shard generation. {ok:false} on
+  // tamper/missing — callers fold hot-only and SAY so (honest degradation, never fabricated history).
+  function archivedOps(projDb, projKey, opts) {
+    opts = opts || {};
+    var Sh = global.ErpShard;
+    if (!Sh || !Sh.loadArchivedOps) return Promise.resolve({ ok: true, ops: [], shards: 0, note: 'erp_shard.js not loaded' });
+    return Sh.loadArchivedOps(projDb, opts.store || shardStore(), projKey);
+  }
+
+  global.KanbanHost = { publish: publish, tip: tip, persist: persist, _rows: _rows,
+                        maybeShard: maybeShard, archivedOps: archivedOps, shardStore: shardStore };
 })(typeof window !== 'undefined' ? window : this);
