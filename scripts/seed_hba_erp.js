@@ -578,10 +578,87 @@ const DDL = {
   must('WINDOW316-LIVE', win316 === 'Subscription',
     'the Tenancy pane\'s own AD_WINDOWS.SUBSCRIPTION=316 link now resolves (was silently dead — window row absent from ad_seed.db\'s curated extract)');
 
+  // ── 11. C_UOM + M_Product + C_Order/C_OrderLine — IoT devices (§2026-07-05, RESUME_HR_BIM_ASSET.md
+  // §2026-07-04d §BUILD ORDER items 2/4/5) ────────────────────────────────────────────────────────────────────
+  // iot.js billingLines()'s m_product_id/c_order_id/c_orderline_id were a SEQUENTIAL IN-MEMORY MINT — same
+  // "compiled but never persisted" gap this section's §9 already fixed for C_Subscription. Two-phase, same
+  // idiom as §2/§9: (a) insert the master rows here with PROPER MAX-based ids (never the internal ++counter —
+  // that would collide with real existing M_Product/C_UOM/C_Order ids); (b) THEN call IoT.billingLines() with
+  // erpQuery so its OWN match-or-create (iot.js §STAGE2) resolves every id back to the row just inserted —
+  // _governed:true proves it, never the mint fallback. All 4 tables are REAL, already-physical (298/43/110/18
+  // rows respectively per PRAGMA — no createTable needed, unlike HR_*).
+  added.iot_uom = 0; added.iot_product = 0; added.iot_order = 0; added.iot_orderline = 0;
+  function nextId(table, idCol) { return Math.max(Number(scalar(db, 'SELECT COALESCE(MAX(' + idCol + '),0) FROM ' + table)), BIM_BASE - 1) + 1; }
+  var IoT = require(path.join(ROOT, 'hr_bim_asset', 'iot.js'));
+  IoT.SENSORS.forEach(function (s) {
+    if (scalar(db, 'SELECT C_UOM_ID FROM C_UOM WHERE Name=?', [s.uom_name]) != null) return;
+    var id = nextId('C_UOM', 'C_UOM_ID');
+    ins(db, 'C_UOM', { C_UOM_ID: id, AD_Client_ID: 11, AD_Org_ID: 0, IsActive: 'Y', Created: NOW, CreatedBy: 100,
+      Updated: NOW, UpdatedBy: 100, UOMSymbol: s.uom_symbol, Name: s.uom_name,
+      Description: 'CONTOH/SAMPLE IoT sensor physical unit (HHS pilot) — dictionary gap, real column shape',
+      StdPrecision: 2, CostingPrecision: 2, IsDefault: 'N', UOMType: 'O', C_UOM_UU: 'hba-iot-uom-' + s.key });
+    added.iot_uom++;
+    L('§SEED_HBA_IOT_UOM ADD ' + s.uom_name + ' id=' + id);
+  });
+  var DEVICE_PRODUCTS = IoT.SENSORS.map(function (s) { return { key: s.key, label: s.label + ' (' + (IoT.DEVICES[s.key] || {}).element + ')' }; })
+    .concat(IoT.CAMERAS.map(function (c, i) { return { key: 'cam' + (i + 1), label: 'CCTV Camera ' + (i + 1) + ' (' + c.element + ', ' + c.storey + ')' }; }));
+  DEVICE_PRODUCTS.forEach(function (d) {
+    var value = 'IOT-' + d.key.toUpperCase() + '-HHS';
+    if (scalar(db, 'SELECT M_Product_ID FROM M_Product WHERE Value=?', [value]) != null) return;
+    var id = nextId('M_Product', 'M_Product_ID');
+    ins(db, 'M_Product', { M_Product_ID: id, AD_Client_ID: 11, AD_Org_ID: 0, IsActive: 'Y', Created: NOW,
+      CreatedBy: 100, Updated: NOW, UpdatedBy: 100, Value: value, Name: d.label,
+      Description: 'CONTOH/SAMPLE IoT device compiled as a real M_Product (HHS pilot) — BOM PRINCIPLE: the BIM-bound device IS the product',
+      IsSummary: 'N', IsStocked: 'N', IsPurchased: 'N', IsSold: 'N', IsBOM: 'N', IsInvoicePrintDetails: 'Y',
+      IsPickListPrintDetails: 'Y', IsVerified: 'N', Discontinued: 'N', Processing: 'N', ProductType: 'S',
+      IsWebStoreFeatured: 'N', IsSelfService: 'N', IsDropShip: 'N', IsExcludeAutoDelivery: 'N', istoformule: 'N',
+      IsKanban: 'N', IsManufactured: 'N', IsPhantom: 'N', IsOwnBox: 'N', IsAutoProduce: 'N',
+      M_Product_UU: 'hba-iot-prod-' + d.key });
+    added.iot_product++;
+    L('§SEED_HBA_IOT_PRODUCT ADD ' + value + ' id=' + id);
+  });
+  var iotDocNo = 'IOT-' + HHS_VALUE + '-latest';
+  if (scalar(db, 'SELECT C_Order_ID FROM C_Order WHERE DocumentNo=?', [iotDocNo]) == null) {
+    var ordId = nextId('C_Order', 'C_Order_ID');
+    ins(db, 'C_Order', { C_Order_ID: ordId, AD_Client_ID: 11, AD_Org_ID: 0, IsActive: 'Y', Created: NOW,
+      CreatedBy: 100, Updated: NOW, UpdatedBy: 100, IsSOTrx: 'Y', DocumentNo: iotDocNo, DocStatus: 'DR',
+      DocAction: 'CO', Processed: 'N',
+      Description: 'CONTOH/SAMPLE IoT sensor billing order (HHS pilot) — utility/security readings compiled to real C_OrderLine rows',
+      DateOrdered: NOW, M_Warehouse_ID: whId, C_Currency_ID: IoT.MYR_CURRENCY_ID, IsDiscountPrinted: 'N',
+      C_Order_UU: 'hba-iot-order-latest' });
+    added.iot_order++;
+    L('§SEED_HBA_IOT_ORDER ADD ' + iotDocNo + ' id=' + ordId + ' warehouse=' + whId + ' currency=MYR(' + IoT.MYR_CURRENCY_ID + ')');
+  }
+  var eq = function (sql, p) { return rows(db, sql, p); };
+  var iotAsset = Models.records('Asset')[0];
+  var iotSeries = IoT.demoSeries(iotAsset.asset, 24);
+  var iotBilling = IoT.billingLines(iotAsset.asset, iotSeries.series, HHS_VALUE, 'latest', { erpQuery: eq });
+  must('IOT-GOVERNED', !!iotBilling._governed, 'iot.js billingLines() resolved every C_UOM/M_Product/C_Order match against the REAL rows just inserted (governed, not a throwaway mint)');
+  iotBilling.lines.forEach(function (ln) {
+    if (Number(scalar(db, 'SELECT COUNT(*) FROM C_OrderLine WHERE C_Order_ID=? AND M_Product_ID=?', [ln.row.c_order_id, ln.row.m_product_id]))) return;
+    var lnId = nextId('C_OrderLine', 'C_OrderLine_ID');
+    ins(db, 'C_OrderLine', { C_OrderLine_ID: lnId, AD_Client_ID: 11, AD_Org_ID: 0, IsActive: 'Y', Created: NOW,
+      CreatedBy: 100, Updated: NOW, UpdatedBy: 100, C_Order_ID: ln.row.c_order_id, Line: ln.row.line,
+      Description: ln.sensor.label + ' — latest reading', M_Product_ID: ln.row.m_product_id, M_Warehouse_ID: whId,
+      C_UOM_ID: ln.row.c_uom_id, QtyOrdered: ln.row.qtyordered, C_Currency_ID: ln.row.c_currency_id,
+      PriceActual: ln.row.priceactual, LineNetAmt: ln.row.linenetamt, C_OrderLine_UU: 'hba-iot-line-' + ln.sensor.key });
+    added.iot_orderline++;
+  });
+  L('§SEED_HBA_IOT_LINES lines=' + iotBilling.lines.length + ' added=' + added.iot_orderline
+    + ' cameras(M_Product only)=' + iotBilling.cameras.length);
+  must('IOT-PRODUCT-COUNT', Number(scalar(db, "SELECT COUNT(*) FROM M_Product WHERE Value LIKE 'IOT-%-HHS'")) === 12,
+    '12 real M_Product rows (6 sensors + 6 cameras) — got ' + scalar(db, "SELECT COUNT(*) FROM M_Product WHERE Value LIKE 'IOT-%-HHS'"));
+  var usdRate = IoT.usdRate(eq);
+  must('IOT-USD-RATE-REAL', usdRate != null, 'iot.js usdRate() resolved the REAL already-seeded MYR(301)->USD(100) C_Conversion_Rate, not a fabricated one — rate=' + usdRate);
+  var lineJoin = rows(db, 'SELECT L.LineNetAmt AS rm, L.C_Currency_ID AS cur FROM C_OrderLine L JOIN C_Order O ON L.C_Order_ID=O.C_Order_ID WHERE O.DocumentNo=?', [iotDocNo]);
+  must('IOT-LINES-MYR', lineJoin.length === 6 && lineJoin.every(function (r) { return Number(r.cur) === IoT.MYR_CURRENCY_ID; }),
+    'all 6 persisted C_OrderLine rows bill in the real MYR currency row (301) — got ' + lineJoin.length + ' rows');
+
   // ── write-back + summary ─────────────────────────────────────────────────────────────────────────────────
   var changed = added.warehouse + added.locators + added.bpartners + added.users + added.tables + added.hr_rows
     + added.info + added.attendance + added.retired + added.restype + added.resources + (added.leave || 0)
-    + (added.tenant_bp || 0) + (added.subtypes || 0) + (added.subscriptions || 0);
+    + (added.tenant_bp || 0) + (added.subtypes || 0) + (added.subscriptions || 0)
+    + added.iot_uom + added.iot_product + added.iot_order + added.iot_orderline;
   if (changed > 0 && fails === 0) { fs.writeFileSync(SEED, Buffer.from(db.export())); L('§SEED_HBA WROTE erp/ad_seed.db (' + changed + ' additions)'); }
   else if (fails === 0) L('§SEED_HBA NO-OP — seed already current (idempotent 2nd run)');
   else L('§SEED_HBA NOT WRITTEN — ' + fails + ' witness failure(s), DB left untouched');
