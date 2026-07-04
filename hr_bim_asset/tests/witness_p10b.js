@@ -185,6 +185,29 @@ var expectBlips = self.HbaIot.SENSORS.reduce(function (n, s) { return n + (({ te
 ok('IP16-audio-on-plays', oscLog.length === expectBlips, 'once muted->on, a tick plays the expected total blip count across all 7 sensors (1+1+1+1+2+2+3=' + expectBlips + ') — got ' + oscLog.length);
 ok('IP17-distinct-waveforms', new Set(oscLog.map(function (o) { return o.type; })).size >= 3, 'multiple DISTINCT waveforms are used across sensors — "identify by the sound right away", not one uniform beep — got types ' + JSON.stringify(oscLog.map(function (o) { return o.type; })));
 
+// §2026-07-05d — icons: every bar label leads with its sensor's icon (the SAME glyph the docs guide reuses).
+ok('IP18-bar-icons', bars_ok(), 'every bar row label leads with the sensor\'s icon (7 sensors, incl. 🚶 movement)');
+function bars_ok() {
+  return barsWrap3.children.length === 7 && Array.prototype.every.call(barsWrap3.children, function (row, i) {
+    var icon = self.HbaIot.SENSORS[i].icon;
+    return row.children[0].textContent.indexOf(icon) === 0;
+  });
+}
+
+// §2026-07-05d — "ready utils that talk or connects between them": clicking 'electrical' (bound to the real
+// Level-1 MDP-1 panel) must ring the CCTV tile(s) ALSO on Level 1 (iot.js camerasNearDevice), and leave the
+// Level-2/3 tiles untouched — the connector is storey-scoped, not "ring everything".
+ok('I20-cameras-near-device', self.HbaIot.camerasNearDevice('electrical').length === 2
+  && self.HbaIot.camerasNearDevice('electrical').every(function (c) { return c.storey === 'Level 1'; })
+  && self.HbaIot.camerasNearDevice('pressure').length === 0,
+  'camerasNearDevice: electrical(Level 1) -> 2 real Level-1 cameras; pressure(Roof Level) -> 0 (honest, no camera up there) — a plain storey filter, no invented coverage radius');
+
+var cctvGrid3 = pane3.children[4];
+barsWrap3.children[5]._on_click();   // electrical bar (index 5) — Level 1, same floor as CAMERAS[0]/[1]
+ok('IP19-connect-flash', cctvGrid3.children[0].style.boxShadow.indexOf('ff8800') >= 0 && cctvGrid3.children[1].style.boxShadow.indexOf('ff8800') >= 0
+  && !cctvGrid3.children[2].style.boxShadow && !cctvGrid3.children[4].style.boxShadow,
+  'clicking a Level-1 sensor rings ONLY the Level-1 CCTV tiles (0,1), leaving Level-2/3 tiles (2,4) untouched — the two stubs genuinely "talk" via a real shared fact (storey), not just a coincidence');
+
 IotPane.toggle(A);   // unmount
 
 // ============================================================================================================
