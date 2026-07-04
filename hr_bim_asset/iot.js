@@ -27,6 +27,13 @@
 //      — a sensor's a local-site utility/security cost, MYR is the natural billing currency. USD equivalent is
 //      read from the SAME already-seeded `C_Conversion_Rate` (301→100), never a second invented rate; absent
 //      erpQuery → usd stays null (honest, no rate to convert with).
+//
+//   §2026-07-05b (§P10c, user: "just simple tones but goes high pitch indicating danger") — `toneFreqFor` is
+//   the PURE, deterministic sonification mapping: a sensor's CURRENT reading position within its OWN observed
+//   min/max range (the exact bounds `viewer/hba_iot.js`'s bar already computes for its headroom — never a
+//   fabricated "danger threshold") maps to a pitch between TONE_BASE_HZ (calm/low) and TONE_DANGER_HZ (the
+//   extreme end of the sensor's own range = "danger", high-pitched). The actual Web Audio playback lives in
+//   viewer/hba_iot.js (DOM/browser-only); this stays pure so it is node-witnessable without an AudioContext.
 //   Read the log after run.
 'use strict';
 var W = (typeof require !== 'undefined') ? require('./watermark') : (typeof self !== 'undefined' ? self : this).HbaWatermark;
@@ -48,7 +55,8 @@ var DEVICES = {
   sound:      { bim_guid: '07A8OFMrj5IeMQd6aflvMZ', element: 'Supply Diffuser (Level 2)', storey: 'Level 2' },
   dust:       { bim_guid: '0B2Nysi4bEIBgg6BXJzBCa', element: 'Supply Diffuser (Level 2)', storey: 'Level 2' },
   solar:      { bim_guid: '3XrBtx9eX7mQE6EqWHPey$', element: 'Roof sun-shading floor', storey: 'Roof Level' },
-  electrical: { bim_guid: '1Atj4lkpv3qwTaPKeAZIaj', element: 'Main Distribution Panel MDP-1', storey: 'Level 1' }
+  electrical: { bim_guid: '1Atj4lkpv3qwTaPKeAZIaj', element: 'Main Distribution Panel MDP-1', storey: 'Level 1' },
+  movement:   { bim_guid: '3XrBtx9eX7mQE6EqWHPfzR', element: 'Entrance door (motion/PIR)', storey: 'Level 1' }
 };
 // 6 real entrance/circulation doors, 2 per storey — CCTV placement idiom, not a random pick.
 var CAMERAS = [
@@ -77,7 +85,12 @@ var SENSORS = [
   { key: 'sound',      label: 'Sound Level',     uom_name: 'Decibel',     uom_symbol: 'dB',        baseline: 42,  amplitude: 8,   rate: 0 },
   { key: 'dust',       label: 'Dust (PM2.5)',    uom_name: 'Microgram/m3', uom_symbol: 'µg/m³', baseline: 18, amplitude: 10, rate: 0.05 },
   { key: 'solar',      label: 'Solar Output',    uom_name: 'Watt/m2',     uom_symbol: 'W/m²', baseline: 300, amplitude: 300, rate: 0 },
-  { key: 'electrical', label: 'Electrical Load', uom_name: 'Kilowatt-hour', uom_symbol: 'kWh',     baseline: 12,  amplitude: 5,   rate: 0.02 }
+  { key: 'electrical', label: 'Electrical Load', uom_name: 'Kilowatt-hour', uom_symbol: 'kWh',     baseline: 12,  amplitude: 5,   rate: 0.02 },
+  // §2026-07-05c (user: "there can also be a sensor for movement") — a 7th, PIR/motion-style security sensor.
+  // Reuses the SAME deterministic sine generator, no special-casing: baseline+amplitude puts it near-zero at
+  // night and peaking at midday — a genuinely plausible real motion-level pattern for an occupied office
+  // building, not a fabricated waveform shape.
+  { key: 'movement',   label: 'Motion (PIR)',    uom_name: 'Motion Level', uom_symbol: '%',  baseline: 15,  amplitude: 15,  rate: 0 }
 ];
 
 // deterministic 24-hourly-point curve: baseline + amplitude*sin (a plausible daily shape, trough near
@@ -177,8 +190,18 @@ function billingLines(assetId, series, buildingName, period, opts) {
   return W.stamp({ order: order, lines: lines, cameras: cameras, _governed: !!erpQuery }, 'en');
 }
 
+// §2026-07-05b — pitch = the reading's position within [min,max] (its own observed range), never a fabricated
+// threshold. min===max (degenerate) → mid-range tone, not a divide-by-zero.
+var TONE_BASE_HZ = 220, TONE_DANGER_HZ = 880;
+function toneFreqFor(value, min, max) {
+  var span = max - min;
+  var norm = span ? Math.max(0, Math.min(1, (value - min) / span)) : 0.5;
+  return Math.round(TONE_BASE_HZ + norm * (TONE_DANGER_HZ - TONE_BASE_HZ));
+}
+
 var IoT = { SENSORS: SENSORS, DEVICES: DEVICES, CAMERAS: CAMERAS, MYR_CURRENCY_ID: MYR_CURRENCY_ID,
-  USD_CURRENCY_ID: USD_CURRENCY_ID, seriesFor: seriesFor, demoSeries: demoSeries, toUomRow: toUomRow,
+  USD_CURRENCY_ID: USD_CURRENCY_ID, TONE_BASE_HZ: TONE_BASE_HZ, TONE_DANGER_HZ: TONE_DANGER_HZ,
+  seriesFor: seriesFor, demoSeries: demoSeries, toUomRow: toUomRow, toneFreqFor: toneFreqFor,
   toOrderRow: toOrderRow, toProductRow: toProductRow, toOrderLineRow: toOrderLineRow, usdRate: usdRate,
   billingLines: billingLines };
 if (typeof module === 'object' && module.exports) module.exports = IoT;

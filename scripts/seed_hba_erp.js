@@ -646,13 +646,17 @@ const DDL = {
   });
   L('§SEED_HBA_IOT_LINES lines=' + iotBilling.lines.length + ' added=' + added.iot_orderline
     + ' cameras(M_Product only)=' + iotBilling.cameras.length);
-  must('IOT-PRODUCT-COUNT', Number(scalar(db, "SELECT COUNT(*) FROM M_Product WHERE Value LIKE 'IOT-%-HHS'")) === 12,
-    '12 real M_Product rows (6 sensors + 6 cameras) — got ' + scalar(db, "SELECT COUNT(*) FROM M_Product WHERE Value LIKE 'IOT-%-HHS'"));
+  // §2026-07-05c — expected counts DERIVE from DEVICE_PRODUCTS/iotBilling.lines (never a hardcoded literal) so
+  // adding/removing a sensor (e.g. the movement/PIR sensor) can't silently desync this self-witness again.
+  var expectProducts = DEVICE_PRODUCTS.length;
+  must('IOT-PRODUCT-COUNT', Number(scalar(db, "SELECT COUNT(*) FROM M_Product WHERE Value LIKE 'IOT-%-HHS'")) === expectProducts,
+    expectProducts + ' real M_Product rows (' + IoT.SENSORS.length + ' sensors + ' + IoT.CAMERAS.length + ' cameras) — got '
+    + scalar(db, "SELECT COUNT(*) FROM M_Product WHERE Value LIKE 'IOT-%-HHS'"));
   var usdRate = IoT.usdRate(eq);
   must('IOT-USD-RATE-REAL', usdRate != null, 'iot.js usdRate() resolved the REAL already-seeded MYR(301)->USD(100) C_Conversion_Rate, not a fabricated one — rate=' + usdRate);
   var lineJoin = rows(db, 'SELECT L.LineNetAmt AS rm, L.C_Currency_ID AS cur FROM C_OrderLine L JOIN C_Order O ON L.C_Order_ID=O.C_Order_ID WHERE O.DocumentNo=?', [iotDocNo]);
-  must('IOT-LINES-MYR', lineJoin.length === 6 && lineJoin.every(function (r) { return Number(r.cur) === IoT.MYR_CURRENCY_ID; }),
-    'all 6 persisted C_OrderLine rows bill in the real MYR currency row (301) — got ' + lineJoin.length + ' rows');
+  must('IOT-LINES-MYR', lineJoin.length === iotBilling.lines.length && lineJoin.every(function (r) { return Number(r.cur) === IoT.MYR_CURRENCY_ID; }),
+    'all ' + iotBilling.lines.length + ' persisted C_OrderLine rows bill in the real MYR currency row (301) — got ' + lineJoin.length + ' rows');
 
   // ── write-back + summary ─────────────────────────────────────────────────────────────────────────────────
   var changed = added.warehouse + added.locators + added.bpartners + added.users + added.tables + added.hr_rows
