@@ -500,20 +500,31 @@
         }
         // active-blue is NOT baked here (M8) — setActive() paints the selected row over the cached DOM so a pure
         // pick never forces a tree rebuild. Neighbour-amber (adjacency lens) stays structural (depends on selId).
-        const rowBg = isNbr ? 'background:#2c2616;color:#e6dcc2' : 'color:#c7cdd8';
+        // §FIND-HIGHLIGHT (2026-07-04): a row whose OWN label/sub matches the find text (not just an ancestor
+        // of a match) gets a distinct highlight — "found it, right here" vs. "this folder contains a match
+        // somewhere below". Reuses the SAME `match` closure _subtreeMatches already applies; no new match logic.
+        const selfMatch = !!this._find && match({ label: n.label, sub: n.sub || '' });
+        const rowBg = selfMatch ? 'background:#123a44;color:#bdeaf7' : isNbr ? 'background:#2c2616;color:#e6dcc2' : 'color:#c7cdd8';
         // §V1 eye toggle: own-hidden shows eye-off; a row inside a hidden ancestor renders dimmed too.
         // Only _hidable rows get an eye (marked in _paint — never a toggle that silently does nothing).
         const ownHid = !!this._hidden[n.id], hid = ownHid || ancHidden;
         const eye = !n._hidable ? '' : '<span class="bn-eye" data-eye="' + n.id + '" title="' + (ownHid ? 'show' : 'hide') + ' in 3D" ' +
           'style="float:right;padding:0 2px;color:' + (ownHid ? '#e0a23a' : '#5b6473') + ';opacity:' + (ownHid ? '1' : '.55') + '">' +
           (ownHid ? EYE_OFF : EYE) + '</span>';
+        // §FIND-EXPAND (2026-07-04): while searching, a match hiding inside a COLLAPSED ancestor used to be
+        // completely invisible — _subtreeMatches correctly kept the ancestor row shown, but the recursion
+        // below never opened it, so the actual matching leaf/twig never rendered at all (silent false-negative
+        // from the user's POV: "I searched and got nothing" when the row existed, just collapsed). `visNodes`
+        // above already restricts this branch to ones that DO contain a match, so forcing it open here only
+        // ever reveals real hits — never "expand everything" while searching.
+        const showKids = kids.length && (!ncol || !!this._find);
         html += '<div data-bnode="' + n.id + '" data-tcat="' + ckey + '" data-leaf="' + (isLeaf ? 1 : 0) + '"' +
           (n.disc ? ' data-disc="' + n.disc + '"' : '') + (isNbr ? ' data-adj="1"' : '') + (hid ? ' data-hid="1"' : '') + ' draggable="true" ' +
           'style="padding:3px 6px 3px ' + pad + 'px;cursor:' + (isLeaf ? 'grab' : 'pointer') + ';border-radius:4px;' +
           (hid ? 'opacity:.45;' : '') + rowBg + '">' + eye +
-          (kids.length ? CHEV(!ncol) : LEAF) + n.label + walkGlyph + adjBadge +
+          (kids.length ? CHEV(showKids) : LEAF) + n.label + walkGlyph + adjBadge +
           (n.sub ? '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span>' : '') + '</div>';
-        if (kids.length && !ncol) { const r = this._renderNodes(kids, depth + 1, ckey, match, String(n.id), hid); html += r.html; shown += r.shown; }
+        if (showKids) { const r = this._renderNodes(kids, depth + 1, ckey, match, String(n.id), hid); html += r.html; shown += r.shown; }
       });
       if (visNodes.length > cap) html += this._moreRow(parentKey, visNodes.length - cap, 16 + depth * 14);
       return { html: html, shown: shown };
