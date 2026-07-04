@@ -163,6 +163,7 @@
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-export" disabled title="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>Export</span></button>
+  <button id="b-save" disabled title="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg><span>Save</span></button>
   <button id="b-guide" title="Modeller User Guide — how to Open, walk, edit & export"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Guide</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
@@ -210,6 +211,11 @@
 <script src="arc_editable.js?v=4" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
+<!-- §SAVE-1/2 (MODELLER_SAVE_COMPLETEIT.md): Save = validated snapshot promotion. sdg_save.js = pure
+     classify/plan-op core (auto-heal planning); save_catalog.js = the shared landing-page IndexedDB
+     versions[]/latestVersion catalog writer (same store import_own.js reads/writes). -->
+<script src="sdg_save.js?v=1" onerror="console.warn('§SAVE LOAD_FAIL sdg_save.js')"></script>
+<script src="save_catalog.js?v=1" onerror="console.warn('§SAVE LOAD_FAIL save_catalog.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
      (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
 <script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
@@ -401,6 +407,7 @@ window.addEventListener('resize', () => {
 // ── CAMERA: zoom-to-fit + view presets (operability v4) — geometry is Z-up but camera.up stays Y so the
 // sketch plan view (looking straight down −Z) isn't degenerate; presets are limited to Iso/Top accordingly.
 const bFit = document.getElementById('b-fit'), bView = document.getElementById('b-view');
+const bSave = document.getElementById('b-save');
 // up per view: Iso/3D = Z-up (objects stand); Top = Y-up (plan of the XY ground, non-degenerate looking down −Z).
 // Iso = front-elevated (mostly +Y, slight +X), up=Z → grid reads as a flat floor (not a lopsided diamond) +
 // objects stand. Top = plan looking down −Z, up=Y (non-degenerate).
@@ -2064,6 +2071,8 @@ function _gateRel() {
   return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf, abuts: abuts };
 }
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
+window.__gateBoxes = _gateBoxes;   // test hook (mirrors window.__commitMove) — read live world AABBs, W-SAVE-COMPLETEIT E2E fixture engineering
+window.__gateRel = _gateRel;       // test hook — read the live abuts/hostOf relation (same)
 function _runGate(before, moved) {
   if (!(window.SdgGate && window.__arcFidByGuid)) return '';
   const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), {});
@@ -2114,6 +2123,126 @@ async function commitMove(dx, dy, dz) {
   }
 }
 window.__commitMove = commitMove;   // test hook (W-SDG-GATE smoke): drive a deterministic move through the real path
+
+// ── SAVE (MODELLER_SAVE_COMPLETEIT.md — Witness: W-SAVE-COMPLETEIT) ─────────────────────────────
+// "Save" = a validated snapshot promotion, CompleteIt-SHAPED (mirrors erp/ad_docfsm.js's Error/Clean plain-
+// object signal — {ok, reason, ...} — for consistency) but NEVER calls DocumentEngine/processIt and NEVER
+// drives any real ERP DocStatus transition. Modeller authoring stays fully decoupled from ERP posting state
+// (DECISION 1, defaulted by the assistant while the user was away from keyboard — flagged for confirmation).
+//
+// §SAVE-BASELINE: SdgGate.evaluate() is DELTA-based (before vs after) — a pre-existing as-extracted overlap is
+// never a violation, "the building shipped that way". For Save to mean anything it needs a real `before`
+// snapshot: the scene state as of the LAST successful Save (or, if never saved this session, as of Open —
+// armed by __saveGateInit(), called once the ARC/STR seed settles — see str_walker_outliner.js _seedStrWalk).
+// Never armed (e.g. a re-opened native op-log .db, which skips ARC/STR seeding) → falls back to the CURRENT
+// state (first Save after that sees zero delta — conservative, never retroactively flags old geometry).
+window.__saveGateBaseline = null;
+window.__saveGateInit = function () {
+  if (!(window.SdgGate && window.__arcFidByGuid)) return;
+  window.__saveGateBaseline = _gateBoxes();
+  console.log('§SAVE_BASELINE armed name=' + (window.__dwName || '?') + ' elements=' + Object.keys(window.__saveGateBaseline).length);
+};
+// _diffMoved(before, after) -> [fid,...] whose AABB actually differs since the baseline (or is new). REQUIRED
+// for a whole-scene Save check: SdgGate's door-out/door-crush/abuts-realign kinds gate on `moved` meaning
+// "exactly one side of this pair changed" (movedA !== movedB) — passing EVERY fid as "moved" would make that
+// test vacuous (both sides always "moved"). Only the clash/clearance kinds (1)/(3) don't care about this flag
+// beyond using `moved` as the outer iteration set, so a correct moved-since-baseline set is right for all four.
+function _diffMoved(before, after) {
+  const out = [];
+  Object.keys(after).forEach(function (k) {
+    const f = +k, b = before[f], a = after[f];
+    if (!b || b.length !== a.length || b.some(function (v, i) { return Math.abs(v - a[i]) > 1e-9; })) out.push(f);
+  });
+  return out;
+}
+
+async function runSave() {
+  if (!(window.SdgGate && window.SdgSave && window.Bonsai && window.Bonsai.oplog)) {
+    setStat('Save: gate unavailable'); return { ok: false, reason: 'gate-unavailable' };
+  }
+  if (!window.Bonsai.oplog.db || window.Bonsai.oplog.length === 0) { setStat('Save: author something first'); return { ok: false, reason: 'nothing-to-save' }; }
+  setStat('Save: checking…');
+  const rel = _gateRel();
+  const before = window.__saveGateBaseline || _gateBoxes();     // conservative fallback — see §SAVE-BASELINE above
+  let after = _gateBoxes();
+  let res = window.SdgGate.evaluate(before, after, _diffMoved(before, after), rel, {});
+  const origOrange = res.orange;
+  console.log('§SAVE_GATE red=' + res.red.length + ' orange=' + res.orange.length +
+    (res.red.length ? ' redKinds=' + res.red.map(r => r.kind).join(',') : '') +
+    (res.orange.length ? ' orangeKinds=' + res.orange.map(o => o.kind).join(',') : ''));
+
+  // AUTO-HEAL — first, before the block/clean decision. ONE pass only off the ORIGINAL findings (never
+  // re-plans off its own output → structurally one-hop: a new issue a heal opens at a neighbour is reported,
+  // never chased). RED is NEVER auto-resolved, regardless of any delta.
+  const plan = window.SdgSave.planHeal(res.orange);
+  let healedLog = [];
+  if (plan.healable.length) {
+    // Build the heal ops PLUS a cascade ride for any REAL hosted fillings of the healed target — mirrors
+    // commitMove()'s own SdgCascade.ridersFor block (a moved HOST drags its door/window riders). Without this,
+    // healing a wall by translating it would silently manufacture a BRAND NEW door-out RED (the wall's real
+    // door left behind), which would then re-block the very Save the heal was trying to unblock.
+    const healTargets = new Set(plan.healable.map(f => f.a));
+    const riderSeen = new Set();
+    const ops = [];
+    plan.healable.forEach(function (f) {
+      const op = window.SdgSave.healOp(f);
+      ops.push(op);
+      if (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid) {
+        const riders = window.SdgCascade.ridersFor([f.a], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, healTargets);
+        riders.forEach(function (rfid) {
+          if (riderSeen.has(rfid)) return; riderSeen.add(rfid);
+          ops.push({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx: op.params.dx, dy: op.params.dy, dz: op.params.dz, induced: 'sdg-autoheal-ride' } });
+        });
+      }
+    });
+    await window.Bonsai.oplog.commitGesture(ops);               // ONE undo step for the whole auto-heal pass
+    healedLog = plan.healable.map(function (f) { return { kind: f.kind, target: f.a, against: f.b, delta: f.proposedDelta }; });
+    console.log('§SAVE_AUTOHEAL fixed=' + plan.healable.length + ' riders=' + riderSeen.size + ' targets=' + plan.healable.map(f => f.a).join(',') +
+      ' deltas=' + JSON.stringify(plan.healable.map(f => f.proposedDelta)));
+    // PER-FINDING RE-VERIFY — re-measure THIS SPECIFIC pair's real post-commit gap directly (never trust the
+    // delta blindly). Mirrors witness_sdg_gate.js A8's own gradient-check convention, applied to the REAL
+    // committed geometry (not a synthetic copy — the heal op-log commit already happened for real).
+    after = _gateBoxes();
+    plan.healable.forEach(function (f) {
+      const rv = window.SdgSave.reverifyGap(f, after, window.SdgGate.overlaps);
+      console.log('§SAVE_AUTOHEAL_REVERIFY target=' + f.a + ' against=' + f.b + ' axis=' + f.axis +
+        ' overlapAfter=' + (rv.overlap == null ? 'n/a' : rv.overlap.toFixed(4)) + ' closed=' + rv.closed);
+    });
+    // FULL RE-EVALUATE — re-run the whole-scene check against the SAME before-baseline, over the post-heal
+    // state, to decide block/clean AND to catch any one-hop cascade issue a heal opened at a neighbour.
+    res = window.SdgGate.evaluate(before, after, _diffMoved(before, after), rel, {});
+    console.log('§SAVE_REVERIFY red=' + res.red.length + ' orange=' + res.orange.length + ' result=' + (res.red.length ? 'still-RED' : 'Clean'));
+    // ONE-HOP PROOF: anything in the re-verified orange list that was NOT in the ORIGINAL orange list is a
+    // genuinely NEW item this heal pass opened at a neighbour (or a pre-existing separate finding) — surfaced,
+    // never auto-fixed a second time (this function never loops back into planHeal on `res`).
+    const fresh = window.SdgSave.newFindings(origOrange, res.orange);
+    if (fresh.length) console.log('§SAVE_AUTOHEAL_ONEHOP stoppedAt=' + fresh.map(f => f.b).join(',') + ' newIssue=' + JSON.stringify(fresh));
+  }
+
+  if (res.red.length) {
+    const detail = res.red.map(r => r.kind + '(' + r.a + ',' + r.b + ')').join('; ');
+    toast('⛔ Save blocked — ' + res.red.length + ' RED: ' + res.red.map(r => r.kind).join(', '), 'error');
+    console.log('§SAVE_BLOCKED reason=RED_CLASH count=' + res.red.length + ' detail=' + detail + ' healed=' + healedLog.length);
+    setStat('Save: BLOCKED — ' + res.red.length + ' RED remaining');
+    return { ok: false, reason: 'red-blocked', red: res.red, orange: res.orange, healed: healedLog, ubbl: null };   // ubbl slot: not yet available (UBBL_RULES_GATE.md)
+  }
+
+  console.log('§SAVE_CLEAN result=Clean healed=' + healedLog.length + ' residualOrange=' + res.orange.length);
+  toast('Clean, saving…', 'ok');
+  setStat('Save: writing snapshot…');
+  const snap = await window.Bonsai.exportDb({ download: false });      // REUSED fold logic — the same signed writer Export ▸ Native .db uses
+  if (!snap) { setStat('Save: FAIL — nothing to export'); return { ok: false, reason: 'export-empty' }; }
+  const pushRes = await window.SaveCatalog.pushVersion(window.__dwName || 'model', snap.bytes);
+  window.__saveGateBaseline = after;     // roll the baseline forward — the NEXT Save diffs from THIS known-good state
+  console.log('§SAVE_SNAPSHOT key=' + pushRes.key + ' versions=' + pushRes.versions + ' latestVersion=' + pushRes.latestVersion +
+    ' created=' + !!pushRes.created + ' bytes=' + snap.bytes.length + ' tip=' + snap.tip.slice(0, 12));
+  setStat('Saved — v' + pushRes.latestVersion + ' (' + pushRes.versions + ' version' + (pushRes.versions === 1 ? '' : 's') + ')');
+  audioCue('export');
+  return { ok: true, reason: 'clean', healed: healedLog, snapshot: pushRes };
+}
+window.__runSave = async function () { const r = await runSave(); window.__lastSaveResult = r; return r; };   // test hook (mirrors window.__commitMove); stashes the result for E2E assertions
+if (bSave) bSave.onclick = function () { runSave().then(function (r) { window.__lastSaveResult = r; }); };
+
 // H3 yaw commit — rotate the selection about the SET centroid (W-BONSAI-ROTATE-GROUP). Each child gets a signed
 // GEOM_ROTATE (spins it in place about its OWN centre) plus, when it is off the centroid, a GEOM_MOVE that orbits
 // its centre about the set centroid by the same angle: Tᵢ = G + Rθ(Cᵢ−G). A single selection ⇒ Cᵢ==G ⇒ no move
@@ -2737,7 +2866,7 @@ window.addEventListener('keydown', (e) => {
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
-bClear.disabled = bSketch.disabled = document.getElementById('b-export').disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = false;
+bClear.disabled = bSketch.disabled = document.getElementById('b-export').disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = bSave.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the

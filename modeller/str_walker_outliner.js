@@ -417,16 +417,26 @@
   // into renderable ops. IDEMPOTENT by 'strwalk-<key>' → safe every open. NON-INVENT: column size = measured bbox,
   // girder length = derived bay span, girder section = measured IfcBeam median. No-op for wall-bearing (0 columns).
   function _seedStrWalk(O, key) {
-    if (!(window.swbRenderOps && O && O.commitSeedGroup)) return;
+    // §SAVE-BASELINE (MODELLER_SAVE_COMPLETEIT.md): this is the LAST step of a full Open (ARC seed → STR
+    // skeleton), so it's the right moment to arm the Save gate's "before" AABB snapshot — every exit path
+    // below arms it, whether or not an STR skeleton was actually rendered (wall-bearing/ARC-only buildings
+    // still need a baseline). window.__saveGateInit is defined in modeller.html; guarded, so a load-order
+    // change or a pure-node witness (no modeller.html loaded) never throws.
+    if (!(window.swbRenderOps && O && O.commitSeedGroup)) { if (window.__saveGateInit) window.__saveGateInit(); return; }
     try {
       var rr = window.swbRenderOps();
-      if (!rr || !rr.ops.length) { console.log(TAG + ' §STRWALK-RENDER-WIRE ' + key + ' nothing to render (wall-bearing / 0 columns)'); return; }
+      if (!rr || !rr.ops.length) {
+        console.log(TAG + ' §STRWALK-RENDER-WIRE ' + key + ' nothing to render (wall-bearing / 0 columns)');
+        if (window.__saveGateInit) window.__saveGateInit();
+        return;
+      }
       O.commitSeedGroup(rr.ops, 'strwalk-' + key).then(function (sr) {
         console.log(TAG + ' §STRWALK-RENDER-WIRE ' + key + ' STR skeleton columns=' + rr.columnN + ' girders=' + rr.girderN +
           ' committed=' + (sr.ids ? sr.ids.length : 0) + ' idempotent=' + !!sr.idempotent +
           ' section=' + rr.section.width.toFixed(3) + '×' + rr.section.depth.toFixed(3) + 'm');
-      }).catch(function (e) { console.warn(TAG + ' §STRWALK-RENDER-WIRE failed ' + (e && e.message)); });
-    } catch (e) { console.warn(TAG + ' §STRWALK-RENDER-WIRE threw ' + (e && e.message)); }
+      }).catch(function (e) { console.warn(TAG + ' §STRWALK-RENDER-WIRE failed ' + (e && e.message)); })
+        .finally(function () { if (window.__saveGateInit) window.__saveGateInit(); });
+    } catch (e) { console.warn(TAG + ' §STRWALK-RENDER-WIRE threw ' + (e && e.message)); if (window.__saveGateInit) window.__saveGateInit(); }
   }
 
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
