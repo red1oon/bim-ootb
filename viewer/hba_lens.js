@@ -491,7 +491,12 @@
     return null;
   }
 
-  function flyToZone(A, guid) {
+  // opts.dist (§2026-07-05c, user: "zooms to the device, not too near — surrounding") — the establishing-shot
+  // distance from the target centroid; default 8 (unchanged, every pre-existing caller). IoT's device zoom
+  // passes a larger value so the surrounding context (the room/plant/entrance the device sits in) stays visible
+  // — a "wow, here's the room this thing lives in" shot, not a nose-to-the-mesh close-up.
+  function flyToZone(A, guid, opts) {
+    opts = opts || {};
     if (!A || !A.guidMap || !ready()) { console.log('§HBA_FLY no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
     var want = HBA().B.zoneMeshGuids(guid, A.guidMap, A._hbaRoomMembers || null);
     if (!want.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no rendered members)'); return { flew: false, reason: 'no-members' }; }
@@ -519,7 +524,7 @@
     pts.forEach(function (p) { cx += p.x; cy += p.y; cz += p.z; });
     var n = pts.length, center = { x: cx / n, y: cy / n, z: cz / n };
     if (A.camera && A.controls && typeof THREE !== 'undefined' && typeof requestAnimationFrame === 'function') {
-      var c3 = new THREE.Vector3(center.x, center.y, center.z), dist = 8;
+      var c3 = new THREE.Vector3(center.x, center.y, center.z), dist = opts.dist || 8;
       var end = c3.clone().add(new THREE.Vector3(0.5, 0.5, 0.7).normalize().multiplyScalar(dist));
       var start = A.camera.position.clone(), t = 0;
       (function anim() {
