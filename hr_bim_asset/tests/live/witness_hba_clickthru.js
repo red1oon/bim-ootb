@@ -66,8 +66,14 @@ const CASES = [
     // AD dictionary parse (589 menu / 371 windows / 20928 fields) + record resolve genuinely takes a few
     // seconds — confirmed via §AD_PARSER/§IDEMPIERE-DEEPLINK console timing, not an arbitrary guess.
     await sleep(5000);
-    const bodyText = await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
-    const found = bodyText.indexOf(c.expect) >= 0;
+    // the target value may render as static text (innerText) OR as an editable <input>'s .value (e.g. Name
+    // fields on most tabs) — innerText alone misses the latter (confirmed: HR_Concept's Name field renders as
+    // an input, "Leave without pay" is only visible via .value, not document.body.innerText).
+    const rendered = await page.evaluate(() => ({
+      text: document.body ? document.body.innerText : '',
+      inputs: Array.from(document.querySelectorAll('input,textarea')).map(function (i) { return i.value; }),
+    })).catch(() => ({ text: '', inputs: [] }));
+    const found = rendered.text.indexOf(c.expect) >= 0 || rendered.inputs.some(function (v) { return v === c.expect; });
     W(found, '§CLICKTHRU-' + c.name + ' window=' + c.window + ' record=' + c.record +
       ' expect="' + c.expect + '" found=' + found + (found ? '' : ' pageErrors=' + errs.length));
     if (found) passCount++;
