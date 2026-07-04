@@ -1103,15 +1103,22 @@
     // there is no per-room AD_Window, only per-room M_Locator/M_Product, which is a different, deeper link
     // not in scope here). PURELY ADDITIVE: only touches #find-construction-open; HBA absent/inactive →
     // honest no-op (never fabricates a warehouse id), same discipline as _surfaceExistingOrder above.
+    //
+    // §GOVERNANCE-GATE (design review, 2026-07-04): compileBuilding's `warehouse.m_warehouse_id` is a REAL
+    // persisted id only once ERP governance has resolved (`_hbaTenancySpec._governed===true` — a DB hit via
+    // erpQuery, ad_tenancy.js); before that it's a throwaway session-local mint (always the literal `1`) that
+    // matches nothing in the real dictionary. A link built off the ungoverned id would SOMETIMES 404/point at
+    // the wrong record depending on load timing — that's a correctness bug, not a feature gap. Gate on it.
     function _surfaceConstructionLink(guid, label) {
       if (!elConstructionOpen) return;
       elConstructionOpen.style.display = 'none';
       elConstructionOpen.removeAttribute('href');
       try {
         var HL = (typeof HBALens !== 'undefined') ? HBALens : (typeof window !== 'undefined' ? window.HBALens : null);
-        var whId = A._hbaTenancySpec && A._hbaTenancySpec.warehouse ? A._hbaTenancySpec.warehouse.m_warehouse_id : null;
-        if (!HL || !HL.erpLink || !HL.AD_WINDOWS || whId == null) {
-          console.log('[RP-TA] §CONSTRUCTION_LINK skip guid=' + guid + ' (HBA inactive or no compiled warehouse — honest no-op)');
+        var spec = A._hbaTenancySpec;
+        var whId = spec && spec.warehouse ? spec.warehouse.m_warehouse_id : null;
+        if (!HL || !HL.erpLink || !HL.AD_WINDOWS || whId == null || !spec._governed) {
+          console.log('[RP-TA] §CONSTRUCTION_LINK skip guid=' + guid + ' (HBA inactive, no compiled warehouse, or not yet governed — honest no-op)');
           return;
         }
         var url = HL.erpLink(HL.AD_WINDOWS.CONSTRUCTION, whId);

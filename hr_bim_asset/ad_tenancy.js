@@ -168,7 +168,14 @@ function compileBuilding(buildingName, rooms, leases, strata, opts) {
   leases.forEach(function (l) { compileCharge(l, 'tenancy', SUBSCRIPTION_TYPES.MONTHLY_RENT, 'lease_no', 'tenant'); });
   strata.forEach(function (s) { compileCharge(s, 'strata', SUBSCRIPTION_TYPES.QUARTERLY_STRATA_FEE, 'parcel', 'owner'); });
   var units = propertyUnits(warehouse.m_warehouse_id, locators);
-  var out = { warehouse: warehouse, locators: locators, products: products, subscriptions: subscriptions, skipped: skipped, units: units };
+  // §2026-07-04 (Find-panel "zoom to iDempiere" review) — explicit, honest signal that `warehouse.m_warehouse_id`
+  // is the REAL, PERSISTED seeded row (a DB hit via erpQuery), not this session's throwaway local mint (the
+  // `seedId` fallback above always yields the literal 1 when ungoverned). Kept OFF the `warehouse` row itself
+  // (would fail the AD-TEN0 non-invent gate — the row must stay column-pure) — a sibling flag instead, same
+  // `_governed` idiom ad_payroll.js's demoSpec() already uses. A caller building a deep-link off this id MUST
+  // check this before trusting the id refers to anything that exists in the real dictionary.
+  var governed = !!(erpQuery && _one(erpQuery, 'SELECT M_Warehouse_ID AS id FROM M_Warehouse WHERE Value=?', [buildingName]));
+  var out = { warehouse: warehouse, locators: locators, products: products, subscriptions: subscriptions, skipped: skipped, units: units, _governed: governed };
   return W.stamp(out, 'en');
 }
 
