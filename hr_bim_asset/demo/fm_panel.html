@@ -85,6 +85,7 @@
     A._hbaLeaveSpec = { period: null, policy: null, locale: 'en', employees: payEmps, log: leaveLogs };   // P8 — same reasoning
     A._hbaTenancySpec = self.HbaAdTenancy.compileBuilding('HHS_Office_Federated', rooms, self.HbaModels.records('Tenancy'), self.HbaModels.records('Strata'));   // §P10-BUILD/§P10a
     A._hbaResourceSpec = self.HbaOccupancy.compileResources(rooms);   // §P11 — Dashboard's "hover a Resource" deep-link source
+    A._hbaEmpResourceMap = { EMP001: 990109, EMP002: 990110 };   // §2026-07-04 thread C — real seeded S_Resource ids (Leave's "Resource ↗")
     window.APP = A;
     // open the REAL family drawer (the same call panels.js makes)
     var d = self.HBALens.openFamilyDrawer(A);

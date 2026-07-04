@@ -129,6 +129,14 @@ initSqlJs().then(function (SQL) {
      && openRows.length === spec.rows.filter(function (r) { return r.assigndateto == null; }).length,
      'openPresenceDrawer renders the GOVERNED S_ResourceAssignment rows: title "' + title + '", ' + rows.length
      + ' rows == spec.rows, every row keeps its BIM zone for fly-to, real Qty hours shown, ' + openRows.length + ' honest-open');
+
+  // ---- WIRE6 — §2026-07-04 thread B: Presence's missing forward click-through (the one HBA entity with no
+  // bidirectional link, per every other pane's "open ↗"). Every row here is EMP001/EMP002 — real MODELS.Official
+  // rows with a real ad_user_id (1/2) — so the link must ALWAYS resolve, never an honest-miss for this fixture.
+  var linkedRows = rows.map(function (r) { return r.children.filter(function (c) { return c.tagName === 'a'; })[0]; });
+  ok('WIRE6-presence-erplink', linkedRows.length === rows.length
+     && linkedRows.every(function (a) { return a && /window=108/.test(a.href) && /record=/.test(a.href); }),
+     rows.length + '/' + rows.length + ' presence rows carry an "open ↗" AD_User(108) deep-link (thread B forward link)');
   drawer.remove();
 
   db.close();

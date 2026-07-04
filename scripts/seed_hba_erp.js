@@ -68,6 +68,8 @@ const NinjaStage = require(path.join(ROOT, 'erp', 'ninja_stage.js'));   // NINJA
 const AdPayroll = require(path.join(ROOT, 'hr_bim_asset', 'ad_payroll.js'));
 const Attendance = require(path.join(ROOT, 'hr_bim_asset', 'attendance.js'));
 const AdAttendance = require(path.join(ROOT, 'hr_bim_asset', 'ad_attendance.js'));
+const Leave = require(path.join(ROOT, 'hr_bim_asset', 'leave.js'));
+const AdLeave = require(path.join(ROOT, 'hr_bim_asset', 'ad_leave.js'));
 const ROOMS_FX = require(path.join(ROOT, 'hr_bim_asset', 'fixtures', 'hhs_rooms.json'));
 
 const NOW = '2026-07-03 00:00:00';           // fixed seed timestamp (house style: seed_fin_uom.js)
@@ -161,7 +163,7 @@ const DDL = {
   if (!fs.existsSync(SEED)) { L('§SEED_HBA FAIL — erp/ad_seed.db not found at ' + SEED); process.exit(1); }
   const SQL = await initSqlJs();
   const db = new SQL.Database(fs.readFileSync(SEED));
-  var added = { warehouse: 0, locators: 0, bpartners: 0, users: 0, tables: 0, hr_rows: 0, retired: 0, restype: 0, resources: 0, info: 0, attendance: 0 };
+  var added = { warehouse: 0, locators: 0, bpartners: 0, users: 0, tables: 0, hr_rows: 0, retired: 0, restype: 0, resources: 0, info: 0, attendance: 0, leave: 0 };
 
   // ── 1. M_Warehouse — Q1 pinned durable Value; proto = the seed's own HQ row (client 11 / org 11) ─────────
   var whId = scalar(db, 'SELECT M_Warehouse_ID FROM M_Warehouse WHERE Value=?', [HHS_VALUE]);
@@ -392,7 +394,31 @@ const DDL = {
   });
   L('§SEED_HBA_ATT sessions=' + sess.length + ' added=' + added.attendance + ' (open sessions keep NULL assigndateto/qty, isconfirmed=N)');
 
-  // ── 8. SELF-WITNESS — the native lens JOIN must resolve EVERY row through the real chain ─────────────────
+  // ── 8. s_resourceunavailable rows — leave.js's OWN demoLog TAKE ops (§2026-07-04 thread C) ─────────────────
+  // Additive to the payroll feed (leaveDeduction), not a replacement — a TAKE ALSO surfaces as a resource-
+  // availability blackout, the same native mechanism a room's maintenance blackout already uses. Row shape
+  // from ad_leave.toUnavailableRow (ONE builder, reused); proto-cloned columns via the stock row (id=100,
+  // "Training class") for the exact iDempiere map, same precedent as the S_Resource proto-clone above.
+  var protoUA = rows(db, 'SELECT * FROM s_resourceunavailable WHERE s_resourceunavailable_id=100')[0];
+  must('UA-PROTO-REAL', !!protoUA, 'a real proto s_resourceunavailable row (100, GardenWorld stock) exists to clone');
+  PEOPLE.forEach(function (p) {
+    var pLog = Leave.demoLog(p.name);
+    var comp = AdLeave.compileLeaveUnavailability(pLog, resByCode);
+    comp.rows.forEach(function (r) {
+      if (Number(scalar(db, 'SELECT COUNT(*) FROM s_resourceunavailable WHERE s_resource_id=? AND datefrom=?', [r.s_resource_id, r.datefrom]))) return;
+      var uaId = Math.max(Number(scalar(db, 'SELECT COALESCE(MAX(s_resourceunavailable_id),0) FROM s_resourceunavailable')), BIM_BASE - 1) + 1;
+      var uaRow = protoUA ? Object.assign({}, protoUA, { s_resourceunavailable_id: uaId, s_resource_id: r.s_resource_id,
+        datefrom: r.datefrom, dateto: r.dateto, description: r.description, ad_client_id: 11, ad_org_id: 11, isactive: 'Y',
+        created: NOW, createdby: 100, updated: NOW, updatedby: 100, s_resourceunavailable_uu: 'hba-ua-' + uaId })
+        : Object.assign({}, r, { s_resourceunavailable_id: uaId, ad_client_id: 11, ad_org_id: 11, isactive: 'Y',
+        created: NOW, createdby: 100, updated: NOW, updatedby: 100, s_resourceunavailable_uu: 'hba-ua-' + uaId });
+      ins(db, 's_resourceunavailable', uaRow);
+      added.leave = (added.leave || 0) + 1;
+    });
+  });
+  L('§SEED_HBA_LEAVE_UA added=' + (added.leave || 0) + ' (EMP001/EMP002 demoLog TAKE ops → real S_ResourceUnAvailable rows)');
+
+  // ── 9. SELF-WITNESS — the native lens JOIN must resolve EVERY row through the real chain ─────────────────
   var joined = rows(db, 'SELECT U.Name AS who, W.Name AS building, RA.AssignDateFrom AS tin,'
     + ' RA.AssignDateTo AS tout, RA.Qty AS qty, RA.IsConfirmed AS conf FROM ' + FROM
     + ' WHERE W.Value=? ORDER BY RA.AssignDateFrom', [HHS_VALUE]);
@@ -429,9 +455,24 @@ const DDL = {
   var hrEmp = Number(scalar(db, 'SELECT COUNT(*) FROM HR_Employee'));
   must('HR-EMPLOYEE-EXISTS', hrEmp === 2, 'HR_Employee carries the 2 real rows (was ZERO anywhere — §EVIDENCE pt 1) — got ' + hrEmp);
 
+  // §2026-07-04 thread C — leave-driven S_ResourceUnAvailable rows resolve through the SAME native chain the
+  // Resource window (236, tab 416 "Unavailability") reads: every row's s_resource_id → a real seeded S_Resource
+  // with a real ad_user_id — i.e. this is genuinely visible in "the standard iDempiere Resource Schedule", not
+  // a floating unlinked row.
+  var uaJoined = rows(db, 'SELECT UA.S_ResourceUnAvailable_ID AS id, U.Name AS who, UA.DateFrom AS df, UA.DateTo AS dt'
+    + ' FROM s_resourceunavailable UA JOIN s_resource R ON UA.S_Resource_ID=R.S_Resource_ID'
+    + ' JOIN AD_User U ON R.AD_User_ID=U.AD_User_ID WHERE UA.S_ResourceUnAvailable_ID>=' + BIM_BASE);
+  var uaTotal = Number(scalar(db, 'SELECT COUNT(*) FROM s_resourceunavailable WHERE s_resourceunavailable_id>=' + BIM_BASE));
+  must('LEAVE-UA-JOIN-LOSSLESS', uaJoined.length === uaTotal && uaTotal === 6,
+    'every leave-driven S_ResourceUnAvailable row (' + uaTotal + '/6 — 3 TAKE ops × 2 employees) resolves through '
+    + 'the REAL Resource↔AD_User chain the window-236 tab-416 "Unavailability" grid reads — none dangling');
+  var uaLens = AdLeave.readUnavailability(function (sql, p) { return rows(db, sql, p); }, {});
+  must('LEAVE-UA-LENS', uaLens.blackouts.length >= uaTotal,
+    'ad_leave.readUnavailability returns the persisted rows through the native JOIN (the pane/seed data path)');
+
   // ── write-back + summary ─────────────────────────────────────────────────────────────────────────────────
   var changed = added.warehouse + added.locators + added.bpartners + added.users + added.tables + added.hr_rows
-    + added.info + added.attendance + added.retired + added.restype + added.resources;
+    + added.info + added.attendance + added.retired + added.restype + added.resources + (added.leave || 0);
   if (changed > 0 && fails === 0) { fs.writeFileSync(SEED, Buffer.from(db.export())); L('§SEED_HBA WROTE erp/ad_seed.db (' + changed + ' additions)'); }
   else if (fails === 0) L('§SEED_HBA NO-OP — seed already current (idempotent 2nd run)');
   else L('§SEED_HBA NOT WRITTEN — ' + fails + ' witness failure(s), DB left untouched');

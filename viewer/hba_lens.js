@@ -350,8 +350,11 @@
     if (h.ADA && h.A && A._hbaAttendanceLog && A._hbaRooms) {
       var sessions = h.A.sessions(A._hbaAttendanceLog, period(A));
       var resRows = eq('SELECT S_Resource_ID AS s_resource_id, Value AS value FROM S_Resource WHERE AD_User_ID IS NOT NULL AND IsActive=?', ['Y']);
-      A._hbaAttendanceSpec = h.ADA.compileAttendance(sessions, {
-        resourceMap: h.ADA.resourceMapFromResources(resRows) });
+      // exposed standalone (not just folded into compileAttendance) so OTHER panes needing employee→S_Resource
+      // (e.g. the Leave pane's §2026-07-04 thread C click-through) reuse the SAME real-row-sourced map, never
+      // re-query/re-derive it themselves.
+      A._hbaEmpResourceMap = h.ADA.resourceMapFromResources(resRows);
+      A._hbaAttendanceSpec = h.ADA.compileAttendance(sessions, { resourceMap: A._hbaEmpResourceMap });
       n++;
     }
     // §BOM-ERP-CENTERED — read the BIM BOM as a LENS over the real seeded pp_product_bom (ad_bom.readBom), the
@@ -553,7 +556,13 @@
   // Leave pane links there, never to a fabricated leave-record window.
   // BOM=53006 "Bill of Materials and Formula" (table PP_Product_BOM) — looked up live in both ad_seed.db and
   // bim-compiler build/erp/ad_full.db (2026-07-03), the §STAGE3 BOM pane's per-assembly deep-link.
-  var AD_WINDOWS = { RESOURCE: 236, PAYROLL_MOVEMENT: 53042, SUBSCRIPTION: 316, ORDER: 143, PAYROLL_CONCEPT: 53036, BOM: 53006 };
+  // USER=108 "User" (table AD_User) — §2026-07-04 thread B: Presence's forward link, record=ad_user_id (always
+  // populated on every MODELS.Official row, unlike c_bpartner_id which is null for the demo tenant records).
+  // CONSTRUCTION=7800000 "Construction" (table M_Warehouse) — §2026-07-04 thread A: a SECOND AD_Window minted
+  // over the same M_Warehouse row window 139 already covers (scripts/seed_hba_construction.js), same
+  // established iDempiere convention as C_BPartner's 10 distinct windows over one table. record=m_warehouse_id.
+  var AD_WINDOWS = { RESOURCE: 236, PAYROLL_MOVEMENT: 53042, SUBSCRIPTION: 316, ORDER: 143, PAYROLL_CONCEPT: 53036,
+                     BOM: 53006, USER: 108, CONSTRUCTION: 7800000 };
   function erpLink(windowId, record) {
     if (windowId == null || record == null) return null;
     return '../erp/idempiere.html?client=garden&window=' + windowId + '&record=' + encodeURIComponent(record);
@@ -608,14 +617,27 @@
       var official = h.M ? h.M.officialByName(s.employee) : null;
       var label = official ? official.name + (official.phone ? ' · ' + official.phone : '') : s.employee;
       var storey = (A._hbaStoreyOf && A._hbaStoreyOf[s.zone]) || null;
-      var row = document.createElement('button');
+      // §2026-07-04 thread B — the one HBA entity with no bidirectional click-through (every other pane
+      // carries an "open ↗"). Forward link only: AD_User.ad_user_id is always populated on every real
+      // MODELS.Official row (unlike c_bpartner_id, null for the demo tenant records) — so this is the
+      // honest, always-resolvable target, never a fabricated fallback.
+      var row = document.createElement('div');
       row.setAttribute('data-employee', s.employee); row.setAttribute('data-zone', s.zone); row.setAttribute('data-label', label);
-      row.style.cssText = 'display:block;width:100%;text-align:left;border:0;border-radius:8px;margin:2px 0;'
-        + 'padding:8px 10px;color:#fff;cursor:pointer;background:transparent;';
+      row.style.cssText = 'position:relative;display:block;width:100%;text-align:left;border:0;border-radius:8px;margin:2px 0;'
+        + 'padding:8px 10px;color:#fff;cursor:pointer;background:transparent;box-sizing:border-box;';
       // governed rows carry the REAL Qty hours + IsConfirmed maker-checker state; the raw fold has neither.
       var govBadge = gov ? ((s.hours != null ? ' · ' + s.hours + 'h' : '') + (s.open ? '' : (s.confirmed === 'Y' ? ' · ✓' : ' · unconfirmed'))) : '';
       row.innerHTML = '<div style="font-weight:600">' + label + '</div>'
         + '<div style="opacity:.7;font-size:11px">' + (storey ? storey + ' · ' : '') + (s.open ? 'checked in ' + s.in : s.in + ' → ' + s.out) + govBadge + '</div>';
+      if (official && official.ad_user_id != null) {
+        var a = document.createElement('a');
+        a.href = erpLink(AD_WINDOWS.USER, official.ad_user_id);
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'open ↗';
+        a.title = 'Open ' + official.name + ' in iDempiere (AD_User)';
+        a.style.cssText = 'position:absolute;right:10px;top:8px;color:#4fc3f7;text-decoration:none;font-size:11px;';
+        a.addEventListener('click', function (e) { e.stopPropagation(); });
+        row.appendChild(a);
+      }
       row.addEventListener('click', function () { flyToZone(A, s.zone); });
       d.appendChild(row);
     });
