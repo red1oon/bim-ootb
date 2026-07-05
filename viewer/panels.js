@@ -218,7 +218,8 @@ function setupPanels(A) {
     if (!existing) return;
     // Replace the placeholder with a proper bim-panel
     existing.className = 'bim-panel';
-    existing.style.cssText = 'display:none; top:90px; right:70px; min-width:220px; max-width:280px;';
+    // §PANEL-SPREAD: upper-left — was top:90/right:70, same spot as Settings/drawers/JSON editor.
+    existing.style.cssText = 'display:none; top:70px; left:16px; min-width:220px; max-width:280px;';
 
     // Close button
     var closeBtn = document.createElement('span');
@@ -1346,9 +1347,17 @@ function setupPanels(A) {
           rows.push(row);
           wrap.appendChild(row);
         });
+        // §PANEL-SPREAD: left side of screen, staggered per drawer — was hardcoded top:90/
+        // right:70 for ALL 3 drawers (+ Palette/Settings/JSON-editor also clustered there),
+        // stacking directly on top of each other and covering the pill rail. Fixed 2026-07-06.
+        // Own dedicated column (left:928), stacked vertically — kept OUT of Settings'/JSON-
+        // editor's columns since those run much taller (700px+) and would otherwise overlap
+        // anything sharing their column further down the same column.
+        var _pos = { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
+                     camview: { top: '520px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
         panel = A.createPanel(panelId, {
           closable: true,
-          style: { position: 'fixed', top: '90px', right: '70px', zIndex: '1100', width: '230px', padding: '10px 8px' },
+          style: { position: 'fixed', top: _pos.top, left: _pos.left, zIndex: '1100', width: '230px', padding: '10px 8px' },
           content: '<h3 style="margin:0 0 8px 6px;color:#4fc3f7;font-size:13px">' + title + '</h3>',
           onClose: function() { console.log('§DRAWER_CLOSE id=' + masterId); }
         });
@@ -1435,7 +1444,9 @@ function setupPanels(A) {
       });
       content.appendChild(resetBtn);
 
-      p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'60px', right:'60px', zIndex:'1100', width:'300px', padding:'0' },
+      // §PANEL-SPREAD: top row (tall content needs headroom) — was top:60/right:60, same
+      // cluster as Palette/drawers/JSON editor, all stacking on the pill rail.
+      p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'70px', left:'320px', zIndex:'1100', width:'300px', padding:'0' },
         content: content,
         onClose: function() { _syncPillHighlights(); } });
       document.body.appendChild(p);
@@ -1909,8 +1920,10 @@ function setupPanels(A) {
           }
         }
 
+        // §PANEL-SPREAD: own dedicated column (tall content) — was top:80/right:80, same
+        // cluster as the rest.
         var p = A.createPanel(id, { closable: true,
-          style: { position:'fixed', top:'80px', right:'80px', zIndex:'1101', width:'320px', padding:'16px' },
+          style: { position:'fixed', top:'70px', left:'624px', zIndex:'1101', width:'320px', padding:'16px' },
           content: content });
         document.body.appendChild(p);
         p.style.display = '';   // createPanel returns hidden; reveal this fresh panel
