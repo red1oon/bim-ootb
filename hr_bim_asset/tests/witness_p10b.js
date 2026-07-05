@@ -81,6 +81,24 @@ ok('I17-tone-high', IoT.toneFreqFor(20, 10, 20) === IoT.TONE_DANGER_HZ, 'the rea
 ok('I18-tone-mid', IoT.toneFreqFor(15, 10, 20) === Math.round((IoT.TONE_BASE_HZ + IoT.TONE_DANGER_HZ) / 2), 'a mid-range reading -> a mid pitch');
 ok('I19-tone-degenerate', IoT.toneFreqFor(5, 5, 5) === Math.round((IoT.TONE_BASE_HZ + IoT.TONE_DANGER_HZ) / 2), 'min===max (degenerate range) -> mid-range tone, no divide-by-zero');
 
+// §FIX 2026-07-06 (user: "the IoT bars animation is not realistic — too linear. Make them cycle around near
+// actual values, with a red bar when they exceed") — dangerThresholdFor/jitterFor/isDanger, pure + deterministic,
+// same node-witnessable convention as toneFreqFor above.
+IoT.SENSORS.forEach(function (s) {
+  ok('I21-threshold-past-peak-' + s.key, IoT.dangerThresholdFor(s) > s.baseline + s.amplitude,
+    s.key + '\'s danger threshold sits PAST the sensor\'s own normal daily peak (baseline+amplitude) — an honest "just past normal", never a value the base curve alone would ever cross');
+});
+var jA = IoT.jitterFor(IoT.SENSORS[0], 3, 1), jB = IoT.jitterFor(IoT.SENSORS[0], 3, 1);
+ok('I22-jitter-deterministic', jA === jB, 'jitterFor(sensor, hourIdx, tickCounter) is DETERMINISTIC — same inputs -> byte-identical output twice (no Math.random/Date.now)');
+ok('I23-jitter-bounded', IoT.SENSORS.every(function (s) {
+  for (var h = 0; h < 24; h++) for (var t = 0; t < 4; t++) if (Math.abs(IoT.jitterFor(s, h, t)) > s.amplitude * 0.12 + 1e-9) return false;
+  return true;
+}), 'jitterFor never exceeds ±12% of the sensor\'s OWN amplitude — a wiggle, not a fabricated spike');
+ok('I24-jitter-varies', new Set([0, 1, 2, 3, 4, 5].map(function (t) { return IoT.jitterFor(IoT.SENSORS[0], 5, t); })).size > 1,
+  'jitterFor actually varies across ticks (not a constant offset masquerading as "jitter")');
+ok('I25-danger-below', IoT.isDanger(IoT.SENSORS[0], IoT.SENSORS[0].baseline) === false, 'a normal-range reading (at baseline) is NOT flagged danger');
+ok('I26-danger-above', IoT.isDanger(IoT.SENSORS[0], IoT.dangerThresholdFor(IoT.SENSORS[0]) + 1) === true, 'a reading past the threshold IS flagged danger');
+
 // ============================================================================================================
 // (2) viewer/hba_iot.js
 // ============================================================================================================
@@ -105,9 +123,10 @@ ok('IP3-gate-match', IotPane.detect(A) === true, 'the asset guid resolves in gui
 
 // §2026-07-05 — stub HBALens (recording calls) so the per-device fly/orange-tint wiring (locateAndHighlight)
 // is witnessable without a real THREE/camera, same convention as flyToZone's own {flew,guid,center} return.
-var flyCalls = [], tintCalls = [], restoreCount = 0;
+var flyCalls = [], flyOptsLog = [], tintCalls = [], restoreCount = 0, povCalls = [];
 self.HBALens = {
-  flyToZone: function (Aarg, guid) { flyCalls.push(guid); },
+  flyToZone: function (Aarg, guid, opts) { flyCalls.push(guid); flyOptsLog.push(opts); },
+  flyToPOV: function (Aarg, fromGuid, atGuid, opts) { povCalls.push({ from: fromGuid, at: atGuid, opts: opts }); },
   buildMeshPort: function () { return { setTint: function (guid, color) { tintCalls.push({ guid: guid, color: color }); }, restoreAll: function () { restoreCount++; } }; },
   erpLink: function (w, r) { return '#w=' + w + '&r=' + r; }, AD_WINDOWS: { ORDER: 143 }
 };
@@ -156,7 +175,7 @@ ok('IP13-unmount', IotPane.isActive() === false && body.children.length === 0, '
 // default of 8, per user: "zooms to the device, not too near, surrounding") + per-sensor siren audio, OFF by
 // default, ON only after the mute button is clicked (the required user-gesture to start an AudioContext).
 var flyOpts = null;
-self.HBALens.flyToZone = function (Aarg, guid, opts) { flyCalls.push(guid); flyOpts = opts; };
+self.HBALens.flyToZone = function (Aarg, guid, opts) { flyCalls.push(guid); flyOptsLog.push(opts); flyOpts = opts; };
 function FakeAudioNode() { this.frequency = { setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {} };
   this.gain = { setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {} }; this.type = null; }
 FakeAudioNode.prototype.connect = function () {}; FakeAudioNode.prototype.start = function () {}; FakeAudioNode.prototype.stop = function () {};
@@ -207,6 +226,62 @@ barsWrap3.children[5]._on_click();   // electrical bar (index 5) — Level 1, sa
 ok('IP19-connect-flash', cctvGrid3.children[0].style.boxShadow.indexOf('ff8800') >= 0 && cctvGrid3.children[1].style.boxShadow.indexOf('ff8800') >= 0
   && !cctvGrid3.children[2].style.boxShadow && !cctvGrid3.children[4].style.boxShadow,
   'clicking a Level-1 sensor rings ONLY the Level-1 CCTV tiles (0,1), leaving Level-2/3 tiles (2,4) untouched — the two stubs genuinely "talk" via a real shared fact (storey), not just a coincidence');
+
+// §FIX 2026-07-06 (user: "when a sensor is pressed, scene zooms to the sensor... pressing the sensor again,
+// scene zoom to the nearest cam POV that has the sensor in sight, or best effort") — a per-sensor 2-state
+// toggle. The 'electrical' bar was ALREADY clicked once above (IP19, the "device view" state) — clicking it
+// AGAIN must swap to flyToPOV(nearestCamera, device) instead of a 2nd locateAndHighlight; a 3rd click reverts.
+var flyCallsBeforePov = flyCalls.length;
+barsWrap3.children[5]._on_click();   // electrical, 2nd click -> camera POV
+ok('IP20-pov-on-2nd-click', povCalls.length === 1 && flyCalls.length === flyCallsBeforePov,
+  '2nd click of the SAME sensor calls flyToPOV (not another flyToZone/locateAndHighlight) — povCalls=' + povCalls.length);
+ok('IP21-pov-targets', povCalls[0].from === self.HbaIot.CAMERAS[0].bim_guid && povCalls[0].at === self.HbaIot.DEVICES.electrical.bim_guid,
+  'flyToPOV stands the camera AT the nearest REAL camera on electrical\'s floor (CAMERAS[0], Level 1) and looks AT the electrical device\'s own guid — got from=' + JSON.stringify(povCalls[0]));
+ok('IP22-pov-close-dist', povCalls[0].opts && povCalls[0].opts.dist === 4 && povCalls[0].opts.dist < 18,
+  'the POV shot uses the CLOSE camera-distance (4), not the wider sensor establishing shot (18)');
+barsWrap3.children[5]._on_click();   // electrical, 3rd click -> back to device view
+ok('IP23-toggle-reverts', flyCalls.length === flyCallsBeforePov + 1 && povCalls.length === 1,
+  '3rd click reverts to the device establishing shot (flyToZone), not a 2nd POV call — flyCalls=' + flyCalls.length + ' povCalls=' + povCalls.length);
+
+// pressure is Roof Level — camerasNearDevice('pressure') is honestly EMPTY (no camera up there); the 2nd click
+// must NEVER invent a camera to stand at — honest fallback to the device shot again, not a crash/no-op-silence.
+var povCallsBefore = povCalls.length, flyCallsBefore2 = flyCalls.length;
+barsWrap3.children[1]._on_click();   // pressure, 1st click (device view)
+barsWrap3.children[1]._on_click();   // pressure, 2nd click — no real camera anywhere near it
+ok('IP24-pov-honest-fallback', povCalls.length === povCallsBefore && flyCalls.length === flyCallsBefore2 + 2,
+  'a sensor with NO camera on its floor (Roof Level) never fabricates a POV target — both clicks fall back to the honest device shot');
+
+// §FIX 2026-07-06 — CCTV tile click uses the CLOSE camera distance (4), distinct from a sensor's wider shot (18).
+var cctvFlyIdx = flyCalls.length;
+cctvGrid3.children[0]._on_click();
+ok('IP25-cctv-close-dist', flyOptsLog[cctvFlyIdx] && flyOptsLog[cctvFlyIdx].dist === 4,
+  'clicking a CCTV tile zooms in CLOSE to the camera device (dist=4), "right to the device position" — got ' + JSON.stringify(flyOptsLog[cctvFlyIdx]));
+
+// §FIX 2026-07-06 — bar realism: the displayed value is the raw stored point PLUS IoT.jitterFor (never the raw
+// value verbatim) — computed via the SAME pure function the pane itself calls, so this proves the wiring, not
+// just the math (already separately proven pure in I21-I26 above). Two 900ms ticks have already fired by this
+// point (IP15's capturedTick() + IP16's mute-then-tick) — hourIdx=2, tickCounter=2 for every bar.
+var assetRec = self.HbaModels.records('Asset')[0];
+var seriesCheck = self.HbaIot.demoSeries(assetRec.asset, 24);
+var tempSensor = self.HbaIot.SENSORS[0];
+var expPt = seriesCheck.series[tempSensor.key][2];
+var expJitter = self.HbaIot.jitterFor(tempSensor, 2, 2);
+var expDisplay = Math.round((expPt.v + expJitter) * 100) / 100;
+var tempVal = barsWrap3.children[0].children[1].children[1];
+ok('IP26-jitter-applied', expJitter !== 0 && tempVal.textContent.indexOf(String(expDisplay)) === 0 && expDisplay !== expPt.v,
+  'the rendered bar shows the JITTERED display value (' + expDisplay + '), not the raw stored point verbatim (' + expPt.v + ') — got "' + tempVal.textContent + '"');
+
+// force IoT.isDanger() to true (same object reference the pane's deps_.IoT reads live) to directly prove the
+// red-fill wiring, independent of whether today's demo series happens to cross the mockup threshold on its own.
+var realIsDanger = self.HbaIot.isDanger;
+self.HbaIot.isDanger = function () { return true; };
+IotPane.toggle(A);   // unmount pane3
+IotPane.toggle(A);   // remount — captures a FRESH tick callback under the forced-danger stub
+var paneD = body.children.filter(function (c) { return c.id === 'hba-iot-pane'; })[0];
+var fillD = paneD.children[2].children[0].children[1].children[0];
+capturedTick();
+ok('IP27-danger-red', fillD.style.background === '#e53935', 'when IoT.isDanger() reports a reading past the threshold, the bar fill turns the DANGER red — got "' + fillD.style.background + '"');
+self.HbaIot.isDanger = realIsDanger;
 
 IotPane.toggle(A);   // unmount
 

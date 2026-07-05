@@ -109,14 +109,47 @@
   // flyToZone's own default (8) so the shot is an establishing view of the device's room/plant/entrance, not a
   // nose-to-mesh close-up; flyToZone itself is UNCHANGED for every other caller (opts.dist defaults to 8).
   var ORANGE = 0xff8800, ORANGE_HOLD_MS = 4000, DEVICE_ZOOM_DIST = 18;
-  function locateAndHighlight(A, guid) {
+  // §FIX 2026-07-06 (user: "pressing camera... zoom in to the cam device, right to the device position") — a
+  // CAMERA tile gets a CLOSE shot (right at the device), distinct from a SENSOR's wider establishing shot
+  // (DEVICE_ZOOM_DIST=18, "not too near — surrounding"). Both still route through the SAME flyToZone/dist seam.
+  var CAMERA_ZOOM_DIST = 4;
+  function locateAndHighlight(A, guid, dist) {
     if (!G.HBALens || !G.HBALens.flyToZone) return;
-    G.HBALens.flyToZone(A, guid, { dist: DEVICE_ZOOM_DIST });
+    G.HBALens.flyToZone(A, guid, { dist: dist != null ? dist : DEVICE_ZOOM_DIST });
     if (G.HBALens.buildMeshPort) {
       var port = G.HBALens.buildMeshPort(A);
       port.setTint(guid, ORANGE);
       setTimeout(function () { port.restoreAll(); }, ORANGE_HOLD_MS);
     }
+  }
+
+  // §FIX 2026-07-06 (user: "pressing the sensor again, scene zoom to the nearest cam POV that has the sensor in
+  // sight, or best effort") — real 3D distance over the ACTUAL extracted element_transforms rows (never a
+  // fabricated position), never the camera's own declared facing (that's the still-blocked Item 2 decision —
+  // this only needs a known REAL target to look at, the sensor itself, so it sidesteps that blocker entirely).
+  // Best-effort fallback to the existing storey-match connector (camerasNearDevice) when A.dbQuery is
+  // unavailable (e.g. a node witness stub) or no real position resolves for either end — honest null otherwise
+  // (e.g. Roof-Level sensors: no CCTV camera exists up there at all, never invented one).
+  function nearestCameraFor(A, deviceKey) {
+    var IoT = deps().IoT; if (!IoT) return null;
+    var device = IoT.DEVICES[deviceKey];
+    if (!device || !A || typeof A.dbQuery !== 'function') return (IoT.camerasNearDevice(deviceKey) || [])[0] || null;
+    function posOf(guid) {
+      try {
+        var rows = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms WHERE guid = ?', [guid]);
+        return (rows && rows.length) ? { x: rows[0][0], y: rows[0][1], z: rows[0][2] } : null;
+      } catch (e) { return null; }
+    }
+    var dPos = posOf(device.bim_guid);
+    if (!dPos) return (IoT.camerasNearDevice(deviceKey) || [])[0] || null;
+    var best = null, bestD = Infinity;
+    IoT.CAMERAS.forEach(function (cam) {
+      var cPos = posOf(cam.bim_guid); if (!cPos) return;
+      var dx = cPos.x - dPos.x, dy = cPos.y - dPos.y, dz = cPos.z - dPos.z;
+      var d = dx * dx + dy * dy + dz * dz;
+      if (d < bestD) { bestD = d; best = cam; }
+    });
+    return best || (IoT.camerasNearDevice(deviceKey) || [])[0] || null;
   }
 
   // §2026-07-05c (§P10c, user: "just simple tones but goes high pitch indicating danger" / "a combi of sirens
@@ -162,27 +195,38 @@
     }
   }
 
+  // §FIX 2026-07-06 — the danger-exceeded bar colour (user: "a red bar when they exceed", citing the RiverIoT/
+  // Federation reference's own above-threshold colour split). Never overrides the sensor's own accent colour
+  // unless IoT.isDanger() actually says so.
+  var DANGER_COLOR = '#e53935';
+
   // one animated horizontal bar row per sensor — width + the running value at the bar's leading edge both
-  // move together (matching CSS transition) as tick(pt) is fed new points. min/max are DATA-DERIVED (the
+  // move together (matching CSS transition) as tick(pt, opts) is fed new points. min/max are DATA-DERIVED (the
   // sensor's own baseline±amplitude from hr_bim_asset/iot.js), never an invented threshold. Clicking the row
   // fires `onClick` (mount() wires it to locateAndHighlight + the same-storey camera flash, see
   // iot.js camerasNearDevice) — "locate the device outright, and show me what can see it".
+  // §FIX 2026-07-06 — tick(pt, opts) now accepts an optional displayVal (the jittered "cycle around near actual
+  // values" reading — the RAW pt.v stays the ERP-billed value, unchanged) + danger (true → DANGER_COLOR fill,
+  // per IoT.isDanger()).
   function renderSensorBar(sensor, min, max, title, onClick) {
     var color = SENSOR_COLORS[sensor.key] || '#1976d2';
     var row = el('div', 'padding:4px 0;cursor:pointer;');
     row.title = title;
     row.appendChild(el('div', 'font-size:10px;color:#627d98;text-transform:uppercase;margin-bottom:2px;', (sensor.icon || '') + ' ' + sensor.label));
     var track = el('div', 'position:relative;height:16px;background:#eef2f6;border-radius:3px;');
-    var fill = el('div', 'position:absolute;left:0;top:0;bottom:0;width:2%;background:' + color + ';border-radius:3px;transition:width 0.7s ease;');
+    var fill = el('div', 'position:absolute;left:0;top:0;bottom:0;width:2%;background:' + color + ';border-radius:3px;transition:width 0.7s ease,background 0.3s ease;');
     var val = el('span', 'position:absolute;top:50%;left:2%;transform:translateY(-50%);font-size:10px;font-weight:600;color:#102a43;white-space:nowrap;transition:left 0.7s ease;padding-left:6px;');
     track.appendChild(fill); track.appendChild(val);
     row.appendChild(track);
     row.addEventListener('click', function () { if (onClick) onClick(); });
-    var tick = function (pt) {
-      var pct = Math.max(2, Math.min(100, ((pt.v - min) / (max - min)) * 100));
+    var tick = function (pt, opts) {
+      opts = opts || {};
+      var v = opts.displayVal != null ? opts.displayVal : pt.v;
+      var pct = Math.max(2, Math.min(100, ((v - min) / (max - min)) * 100));
       fill.style.width = pct + '%';
+      fill.style.background = opts.danger ? DANGER_COLOR : color;
       val.style.left = pct + '%';
-      val.textContent = pt.v + ' ' + sensor.uom_symbol;
+      val.textContent = v + ' ' + sensor.uom_symbol;
     };
     return { row: row, tick: tick };
   }
@@ -244,6 +288,13 @@
       console.log('§HBA_IOT_CONNECT device=' + deviceKey + ' camerasOnFloor=' + cams.length);
     }
 
+    // §FIX 2026-07-06 (user: "when a sensor is pressed, scene zooms to the sensor... when pressing the sensor
+    // again, scene zoom to the nearest cam POV that has the sensor in sight, or best effort") — a per-sensor
+    // 2-state toggle, LOCAL to this mount (fresh on every mount/unmount, same zero-residue discipline as every
+    // other HBA additive state). First click of a given sensor = unchanged prior behaviour (device establishing
+    // shot + same-floor camera flash); the NEXT click of that SAME sensor swaps to the nearest real camera's
+    // position, looking AT the sensor (flyToPOV) — then the click after THAT reverts to the device shot again.
+    var _sensorViewState = {};
     var barsWrap = el('div', 'padding:10px 12px;');
     var bars = [];
     deps_.IoT.SENSORS.forEach(function (s) {
@@ -254,11 +305,22 @@
       var headroom = (max - min) * 0.15;
       var lo = min - headroom, hi = max + headroom;
       var device = deps_.IoT.DEVICES[s.key];
-      var title = 'Locate ' + s.label + ' (' + (device ? device.element : s.label) + ') in the model';
+      var title = 'Locate ' + s.label + ' (' + (device ? device.element : s.label) + ') in the model — click again for the nearest camera\'s POV';
       var b = renderSensorBar(s, lo, hi, title, function () {
         if (!device) return;
-        locateAndHighlight(A, device.bim_guid);
-        flashCamerasForDevice(s.key);
+        if (!_sensorViewState[s.key]) {
+          locateAndHighlight(A, device.bim_guid);
+          flashCamerasForDevice(s.key);
+          _sensorViewState[s.key] = true;
+        } else {
+          var cam = nearestCameraFor(A, s.key);
+          if (cam && G.HBALens && G.HBALens.flyToPOV) {
+            G.HBALens.flyToPOV(A, cam.bim_guid, device.bim_guid, { dist: CAMERA_ZOOM_DIST });
+          } else {
+            locateAndHighlight(A, device.bim_guid);   // honest fallback — no camera exists anywhere near this device
+          }
+          _sensorViewState[s.key] = false;
+        }
       });
       barsWrap.appendChild(b.row); bars.push({ b: b, sensor: s, pts: pts, lo: lo, hi: hi });
     });
@@ -276,7 +338,11 @@
       cv2.style.cssText = 'display:block;width:100%;border-radius:4px;background:#0a1622;cursor:pointer;transition:box-shadow 0.3s ease;';
       var cam = deps_.IoT.CAMERAS[i - 1];
       if (cam) { cv2.title = deps_.IoT.CAMERA_ICON + ' Locate CCTV Camera ' + i + ' (' + cam.element + ', ' + cam.storey + ') in the model'; }
-      cv2.addEventListener('click', (function (camGuid) { return function () { if (camGuid) locateAndHighlight(A, camGuid); }; })(cam && cam.bim_guid));
+      // §FIX 2026-07-06 (user: "zoom in to the cam device, right to the device position") — a close shot at the
+      // camera itself (CAMERA_ZOOM_DIST), not the wider sensor establishing shot. Turning to actually ASSUME the
+      // camera's own POV needs its declared facing vector — still the one open blocker (RESUME_HR_BIM_ASSET.md
+      // §2026-07-05e Item 2); not built here.
+      cv2.addEventListener('click', (function (camGuid) { return function () { if (camGuid) locateAndHighlight(A, camGuid, CAMERA_ZOOM_DIST); }; })(cam && cam.bim_guid));
       cctvWrap.appendChild(cv2);
       cctvTileEls.push({ el: cv2, cam: cam });
       var tick = renderCctvTile(cv2, i); if (tick) cctvTicks.push(tick);
@@ -321,16 +387,27 @@
     )(pane, head, A);
 
     loadCctvImage();
-    // prime the bars at hour 0 immediately, then advance one hour per tick so the race is visible
-    var hourIdx = 0;
-    bars.forEach(function (r) { r.b.tick(r.pts[hourIdx]); });
+    // §FIX 2026-07-06 — prime the bars at hour 0, then advance one hour per tick. Each displayed reading is the
+    // stored hourly point PLUS a small deterministic jitter (IoT.jitterFor — "cycle around near actual values",
+    // never a smooth monotonic sweep); the RAW pt.v (unjittered) still feeds the ERP billing table + audio pitch
+    // unchanged. IoT.isDanger() flags the bar red when the jittered display value exceeds the sensor's own
+    // honest mockup threshold (baseline+amplitude*1.15) — this can happen even when the base curve alone never
+    // would, exactly the "occasionally in the red" behaviour the reference RiverIoT panel shows.
+    var hourIdx = 0, tickCounter = 0;
+    bars.forEach(function (r) {
+      var pt0 = r.pts[hourIdx], dv0 = Math.round((pt0.v + deps_.IoT.jitterFor(r.sensor, hourIdx, tickCounter)) * 100) / 100;
+      r.b.tick(pt0, { displayVal: dv0, danger: deps_.IoT.isDanger(r.sensor, dv0) });
+    });
     if (typeof setInterval === 'function') {
       _barTimer = setInterval(function () {
         hourIdx = (hourIdx + 1) % 24;
+        tickCounter++;
         bars.forEach(function (r) {
           var pt = r.pts[hourIdx];
-          r.b.tick(pt);
-          if (_audioOn) playSiren(r.sensor.key, deps_.IoT.toneFreqFor(pt.v, r.lo, r.hi));
+          var displayVal = Math.round((pt.v + deps_.IoT.jitterFor(r.sensor, hourIdx, tickCounter)) * 100) / 100;
+          var danger = deps_.IoT.isDanger(r.sensor, displayVal);
+          r.b.tick(pt, { displayVal: displayVal, danger: danger });
+          if (_audioOn) playSiren(r.sensor.key, deps_.IoT.toneFreqFor(displayVal, r.lo, r.hi));
         });
       }, 900);
     }
