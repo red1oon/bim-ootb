@@ -59,13 +59,23 @@ var DEVICES = {
   movement:   { bim_guid: '3XrBtx9eX7mQE6EqWHPfzR', element: 'Entrance door (motion/PIR)', storey: 'Level 1' }
 };
 // 6 real entrance/circulation doors, 2 per storey — CCTV placement idiom, not a random pick.
+// §2026-07-06 `facing` — declared via maths (structural-centroid direction heuristic), NOT an extracted fact:
+// `rotation_x/y/z` is uniformly (0,0,0) across all 6830 elements in this extraction, so a real facing direction
+// can never be read off the data directly (RESUME_HR_BIM_ASSET.md §2026-07-06). The facing AXIS comes from each
+// door's own bbox (one unambiguously-thin dimension = the wall-normal); the SIGN comes from computing, per
+// storey, the mean (x,y) of every real IfcWallStandardCase/IfcWall/IfcSlab/IfcColumn/IfcCurtainWall element on
+// that floor (the building's actual structural/enclosure mass — hundreds of elements, not the ~14 sparse
+// IfcSpace rooms an earlier attempt tried and found inconclusive) and picking the side of the door's thin-axis
+// that mass sits on — a door should face INTO the building it serves, not out into the void. Every door's
+// answer was unambiguous (centroid 19.7-47.2m to one clear side); the two same-(x,y) door pairs at different
+// floors (doors 3&5) gave identical answers, an internal-consistency check this heuristic passes.
 var CAMERAS = [
-  { bim_guid: '0LmR_Oafz6LvpHnBLJOGi$', element: 'Entrance door', storey: 'Level 1' },
-  { bim_guid: '1UDlgEuSLAZ9OyOKOB0RyW', element: 'Entrance door', storey: 'Level 1' },
-  { bim_guid: '0Z1xu3E5b8zPJTx3GNZg8Y', element: 'Corridor door', storey: 'Level 2' },
-  { bim_guid: '0lKZdaAjTCjBh_cVCMRZrh', element: 'Corridor door', storey: 'Level 2' },
-  { bim_guid: '0TgQK$gCn8wu43pHf2VHup', element: 'Corridor door', storey: 'Level 3' },
-  { bim_guid: '1Jil894uX328zr$s_sQLvj', element: 'Corridor door', storey: 'Level 3' }
+  { bim_guid: '0LmR_Oafz6LvpHnBLJOGi$', element: 'Entrance door', storey: 'Level 1', facing: [0, -1, 0] },
+  { bim_guid: '1UDlgEuSLAZ9OyOKOB0RyW', element: 'Entrance door', storey: 'Level 1', facing: [1, 0, 0] },
+  { bim_guid: '0Z1xu3E5b8zPJTx3GNZg8Y', element: 'Corridor door', storey: 'Level 2', facing: [0, -1, 0] },
+  { bim_guid: '0lKZdaAjTCjBh_cVCMRZrh', element: 'Corridor door', storey: 'Level 2', facing: [0, 1, 0] },
+  { bim_guid: '0TgQK$gCn8wu43pHf2VHup', element: 'Corridor door', storey: 'Level 3', facing: [0, -1, 0] },
+  { bim_guid: '1Jil894uX328zr$s_sQLvj', element: 'Corridor door', storey: 'Level 3', facing: [0, 1, 0] }
 ];
 
 // §2026-07-05d (user: "ready utils that talk or connects between them") — a TRIVIAL connector: every DEVICES/

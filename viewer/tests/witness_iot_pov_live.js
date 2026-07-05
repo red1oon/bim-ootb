@@ -1,11 +1,11 @@
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser proof for the §2026-07-06 IoT pane fixes (viewer/hba_iot.js + viewer/hba_lens.js
-// flyToPOV), per the user's own description:
+// flyToPOV/flyToFacing), per the user's own description:
 //   (a) "when a sensor is pressed, scene zooms to the sensor... pressing the sensor again, scene zoom to the
 //       nearest cam POV that has the sensor in sight, or best effort" — a per-sensor 2-state click toggle.
 //   (b) "pressing camera it simply zoom in to the cam device, right to the device position" — a CLOSE camera
-//       zoom, distinct from a sensor's wider establishing shot (the camera's own POV-assume turn stays blocked
-//       on the still-undeclared facing vectors — not attempted here).
+//       zoom that now ASSUMES the camera's own fixed POV (flyToFacing), now that iot.js CAMERAS carries a
+//       declared `facing` vector (structural-centroid heuristic, RESUME_HR_BIM_ASSET.md §2026-07-06).
 // Drives the REAL viewer.html + HHS_Office_Federated_extracted.db (no stub/mock) through the actual user click
 // path: overflow trigger → Human-Asset pill → "Assets / IoT" row → sensor bar clicks → CCTV tile click.
 // Run:  node viewer/tests/witness_iot_pov_live.js
@@ -40,6 +40,10 @@ async function waitReady(page) {
 }
 function camPos(cons) {
   const lines = cons.filter(l => /§HBA_(FLY|POV)/.test(l));
+  return lines.length ? lines[lines.length - 1] : null;
+}
+function facingLine(cons) {
+  const lines = cons.filter(l => /§HBA_FACING/.test(l));
   return lines.length ? lines[lines.length - 1] : null;
 }
 
@@ -97,8 +101,10 @@ function camPos(cons) {
   const flyLine3 = camPos(cons);
   verdict(!!flyLine3 && /§HBA_FLY/.test(flyLine3), '3rd click reverts to §HBA_FLY (device shot again) — a real 2-state toggle, not a one-way switch', flyLine3);
 
-  // ── (b) CCTV tile click: a CLOSE zoom to the camera device itself ───────────────────────────────────────────
+  // ── (b) CCTV tile click: ASSUME that camera's own fixed POV (flyToFacing, declared facing vector) ──────────
   const camPosBefore = await page.evaluate(() => ({ x: window.APP.camera.position.x, y: window.APP.camera.position.y, z: window.APP.camera.position.z }));
+  const camGuid0 = await page.evaluate(() => window.HbaIot.CAMERAS[0].bim_guid);
+  const camFacing0 = await page.evaluate(() => window.HbaIot.CAMERAS[0].facing);
   await page.evaluate(() => {
     const grids = document.querySelectorAll('#hba-iot-pane div[style*="grid-template-columns"]');
     const tile = grids[0].children[0];
@@ -106,8 +112,10 @@ function camPos(cons) {
   });
   await page.waitForTimeout(2000);
   const camPosAfter = await page.evaluate(() => ({ x: window.APP.camera.position.x, y: window.APP.camera.position.y, z: window.APP.camera.position.z }));
-  const camFlyLine = camPos(cons);
-  verdict(!!camFlyLine && /§HBA_FLY/.test(camFlyLine), 'CCTV tile click flies via flyToZone (locateAndHighlight)', camFlyLine);
+  const camFacingLine = facingLine(cons);
+  verdict(!!camFacingLine && camFacingLine.indexOf(camGuid0) >= 0, 'CCTV tile click flies via flyToFacing (assumes the camera\'s own declared POV)', camFacingLine);
+  verdict(!!camFacingLine && camFacingLine.indexOf('facing=(' + camFacing0[0] + ',' + camFacing0[1] + ',' + camFacing0[2] + ')') >= 0,
+    'the logged facing vector matches iot.js CAMERAS[0]\'s own declared facing', camFacingLine + ' expected=' + JSON.stringify(camFacing0));
   const camMoved = Math.abs(camPosBefore.x - camPosAfter.x) + Math.abs(camPosBefore.y - camPosAfter.y) + Math.abs(camPosBefore.z - camPosAfter.z) > 0.5;
   verdict(camMoved, 'the CCTV tile click moved the camera to its OWN real position (distinct from the prior sensor shots)');
 
