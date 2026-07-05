@@ -126,11 +126,6 @@
   #hub .hub-card .mt { color:#7a8294; font-size:10.5px; margin-top:4px; }
   #hub .hub-card .db { display:flex; gap:2px; margin-top:8px; height:5px; }
   #hub .hub-card .db i { display:block; height:100%; border-radius:2px; }
-  #hub .hub-import { max-width:920px; margin:0 auto 22px; }
-  #hub .hub-drop { display:block; text-align:center; text-decoration:none; border:2px dashed rgba(79,195,247,.4);
-    border-radius:12px; padding:20px; color:#4fc3f7; font-weight:600; font-size:14px; cursor:pointer; transition:border-color .15s,background .15s; }
-  #hub .hub-drop:hover { border-color:rgba(79,195,247,.7); }
-  #hub .hub-drop.drag { border-color:#0277bd; background:rgba(2,119,189,.12); }
   @media (max-width:560px){ #hub .hub-grid { grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; } }
 </style>
 </head>
@@ -539,15 +534,10 @@ var _hubBuilt=false;
 async function buildHubBody(){
   if(_hubBuilt) return; _hubBuilt=true;
   var b=document.getElementById('hub-body');
-  b.innerHTML='<div class="hub-import">'+
-      '<div id="m-import-zone" class="hub-drop">&#8595; Drop IFC / 3D files here &mdash; or tap to browse<br><span style="font-size:11px;opacity:.7">multiple discipline files merge into one building</span></div>'+
-      '<input type="file" id="m-import-file" accept=".ifc,.dae,.obj,.glb,.gltf,.3ds,.fbx,.stl" multiple style="display:none">'+
-      '<div id="import-status" style="text-align:center;color:#cfe3ef;font-size:12px;margin-top:8px;min-height:16px"></div>'+
-      '<div style="display:none;margin:8px auto 0;max-width:400px;height:4px;background:#222;border-radius:2px;overflow:hidden">'+
-        '<div id="import-progress-bar" style="height:100%;width:0%;background:#0277bd;border-radius:2px;transition:width .3s"></div></div>'+
-    '</div>'+
-    '<div id="hub-status" style="text-align:center;color:#667;font-size:12px;padding:20px">loading building manifest&hellip;</div>';
-  if(typeof wireImportZone==='function') wireImportZone(); else L('§HUB import_own.js not loaded');
+  // §OPEN_BUTTON_IFC_MERGE: the drop-IFC gesture retired from here (2026-07-06, user: reads as an
+  // upload/privacy prompt) — bring-your-own-IFC now lives ONLY on the Viewer's Open button, which
+  // accepts single/multi IFC (auto-merge) alongside native .db. See viewer/scene.js A.openModelDb.
+  b.innerHTML='<div id="hub-status" style="text-align:center;color:#667;font-size:12px;padding:20px">loading building manifest&hellip;</div>';
   try {
     var data=await fetch('manifest.json').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
     if(!data||!Array.isArray(data.archetypes)) throw new Error('manifest missing archetypes');
