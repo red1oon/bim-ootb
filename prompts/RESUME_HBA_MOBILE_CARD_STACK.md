@@ -253,3 +253,45 @@ Genuinely **open** (please confirm — not facts I can extract, real product cho
 
 No data/geometry decisions arise in this feature (pure presentation) — the non-invent rule has nothing
 to bite on here.
+
+---
+
+## ✅ DONE — Phases 1-4 BUILT + witnessed (2026-07-05)
+
+**Files:** new `viewer/hba_mobile_stack.js` (`G.HbaPaneHost`); the 6 panes' mount-tail swapped to the §2a
+one-liner (`hba_leave/payslip/dashboard/tenancy/bom/iot.js`); `<script>` in `viewer.html` (between draggable
+and the panes) + `hr_bim_asset/demo/fm_panel.html`. Witness `viewer/tests/poc_hba_mobile_stack.js` (§-log
+`viewer/tests/poc_hba_mobile_stack.log`), 19/19 🟢 `§W-HBA-MOBILE-STACK PASS`.
+
+Design deltas from the spec (both simplifications, same observable behaviour):
+- **Single-level focus model** (`_focus` = -1 deck | index) replaces the multi-level `_nav` stack — the user's
+  "open several → deck → back → pick another / left-right between full-screen cards" is exactly this; far
+  fewer index-math bugs. `back_()` always minimises to the deck ("usually the deck" per the spec table).
+- **De-dupe by `pane.id` in `present()`** handles the leave/payslip `reselect()` churn (unmount→mount) by
+  reusing the SAME slot; the pending MutationObserver then sees the slot non-empty and does NOT drop it → zero
+  card churn on an employee re-select. (The MutationObserver only drops a card when its slot is STILL empty.)
+- **Launcher reachability fix (`syncLauncher` + `＋ Panes` FAB)** — the real gap the spec's §2d/§7-Q4 flagged:
+  the full-screen card (`#hba-card-stack` z-10060, `inset:0`) covers the family drawer (`#hba-fm-drawer`
+  z-10000), so "keep the drawer as-is" was actually BROKEN on mobile. Fix WITHOUT touching `hba_lens.js`: the
+  host raises the existing drawer ABOVE the stack in deck state (z-10070), drops it behind in full-screen, and
+  a `＋ Panes` chip (deck-only) re-opens it. So the launcher is always reachable, the pane still reads clean
+  full-screen.
+
+Witness verdicts (`§W-HBA-MOBILE-STACK`, mobile @390px unless noted; desktop @1280px):
+- P1 leave pane re-parented into `#hba-card-stack` (NOT `document.body`), 1 card, focus=0.
+- P2 payslip stacks as a 2nd card, opens full-screen (focus=1). P2b `back` → deck (focus=-1), BOTH panes
+  still open. P2c tap deck card → full-screen (push).
+- P3 `carousel(+1)` switches focus without leaving full-screen; at the last card = no-op. P3b a REAL
+  left-swipe `page.mouse` drag advances the carousel (wiring, not just the state API).
+- P4 pane's own × removes ONE card (deck rebuilds); last × tears the host + `<style>` down to zero residue.
+- P5 all 5 data-available panes (leave/payslip/dash/tenancy/iot) stack as cards — **bom is data-greyed in
+  this mock building** (identical 1-line wiring, `node --check`'d; renders when a building carries BOM rows).
+  iot re-parented + its `_barTimer` PROVEN alive after re-parent (sensor bars advance over >900ms) + × stops
+  it (`isActive()=false`, zero residue). 0 pageerrors at both viewports.
+- DESK desktop (`_isMobile=false`) is a provable no-op: leave pane appends to `document.body`, NO card-stack.
+
+Open (§7 UX calls, all shipped on the spec's DEFAULTS — surfaced for the user, not blockers): fling-to-remove
+(none — safer), new pane opens full-screen (yes), large-touchscreen gate (plain `_isMobile`), drawer form
+(kept as-is + z-order fix + FAB), SNAP_MS=200. Not-yet-built: phase-5 hardening (rotate/resize, deep-link
+fly-to while full-screen, Esc/back-button). `sw.js` untouched — HBA panes aren't precached (load fresh with
+`?v=`), so no CACHE_VERSION bump is owed until a viewer deploy.

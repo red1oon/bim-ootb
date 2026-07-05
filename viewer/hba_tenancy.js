@@ -91,8 +91,10 @@
         sp.skipped.length + ' record(s) skipped — unit_guid not a real room in this building (never fabricated)'));
     }
     pane.appendChild(body);
-    (document.body || document.documentElement).appendChild(pane);
-    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
+    // §MOBILE-STACK — desktop unchanged; mobile = card-stack host (inline fallback if module absent).
+    (G.HbaPaneHost ? G.HbaPaneHost.present
+      : function (p, h) { (document.body || document.documentElement).appendChild(p); if (G.HbaDraggable) G.HbaDraggable.enable(p, h); }
+    )(pane, head, A);
     _pane = pane;
     console.log('§HBA_TEN_PANE mounted units=' + sp.units + ' leases=' + leases + ' strata=' + strata + ' skipped=' + sp.skipped.length);
     return true;

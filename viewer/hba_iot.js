@@ -314,8 +314,11 @@
     });
     pane.appendChild(tbl);
 
-    (document.body || document.documentElement).appendChild(pane);
-    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
+    // §MOBILE-STACK — desktop unchanged; mobile = card-stack host. Re-parents the SAME live node (NOT a clone),
+    // so the _barTimer/_cctvTimer intervals + their canvas targets survive; unmount() still stops them.
+    (G.HbaPaneHost ? G.HbaPaneHost.present
+      : function (p, h) { (document.body || document.documentElement).appendChild(p); if (G.HbaDraggable) G.HbaDraggable.enable(p, h); }
+    )(pane, head, A);
 
     loadCctvImage();
     // prime the bars at hour 0 immediately, then advance one hour per tick so the race is visible

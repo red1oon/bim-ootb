@@ -113,8 +113,11 @@
     var body = el('div', 'padding:6px 12px 12px;');
     var sum = renderStatement(body, sp, _sel, A);
     pane.appendChild(body);
-    (document.body || document.documentElement).appendChild(pane);
-    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
+    // §MOBILE-STACK — desktop = append-to-body + drag-by-header (unchanged); mobile = card-stack host.
+    // Inline fallback preserves today's behaviour for node witnesses / if hba_mobile_stack.js fails to load.
+    (G.HbaPaneHost ? G.HbaPaneHost.present
+      : function (p, h) { (document.body || document.documentElement).appendChild(p); if (G.HbaDraggable) G.HbaDraggable.enable(p, h); }
+    )(pane, head, A);
     _pane = pane;
     console.log('§HBA_LEAVE_PANE mounted employees=' + sp.employees.length + ' period=' + sp.period + ' selected=' + _sel + ' unpaid=' + sum.unpaid);
     return true;

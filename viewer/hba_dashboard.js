@@ -93,8 +93,10 @@
       });
       pane.appendChild(tbl);
     }
-    (document.body || document.documentElement).appendChild(pane);
-    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
+    // §MOBILE-STACK — desktop unchanged; mobile = card-stack host (inline fallback if module absent).
+    (G.HbaPaneHost ? G.HbaPaneHost.present
+      : function (p, h) { (document.body || document.documentElement).appendChild(p); if (G.HbaDraggable) G.HbaDraggable.enable(p, h); }
+    )(pane, head, A);
     if (pane.offsetHeight) { /* force a reflow so the canvases have layout before Chart measures them */ }
     if (G.Chart) cfgs.forEach(function (cfg, i) {
       cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false, animation: false }, cfg.options || {});
