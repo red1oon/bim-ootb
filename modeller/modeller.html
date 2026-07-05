@@ -4004,7 +4004,7 @@ window.__ensureDiscWalker = async function () {
     ['Author', 'Sketch a profile, Insert a catalog component (assemble, don\'t draw), Cut an opening, Route an MEP run, Fillet an edge. Every edit is one signed op in the log.'],
     ['History', 'Scrub the bottom timeline to fold the model to any point; Ctrl+Z / Ctrl+⇧Z undo/redo. Geometry is a deterministic fold over the signed op-log.'],
     ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log, conventionally saved into IFC/BimDB/ — re-opens via Open ▸ local .db), IFC4, or a BCF 2.1 issue.'],
-    ['Teams', 'Pill ▸ Teams (top-right of the bar) — click to see who else is on this scene. Off by default; first click turns on presence dots + a pane, same as ?teams=1.']
+    ['Teams', 'Pill ▸ Teams (top-right of the bar) — click to see who else is editing THIS MODEL right now: presence dots + a blame/chat pane over the design op-log. Off by default; first click turns it on, same as ?teams=1. This is <i>authoring</i> collaboration (Modeller + ERP chrome) — a different feature from "HBA" (tenancy/IoT/occupancy pills), which is a separate <i>Viewer-only</i> operations overlay for a live building and does not exist in the Modeller.']
   ];
   let panel = null;
   function build() {

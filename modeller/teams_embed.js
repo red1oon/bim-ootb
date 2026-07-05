@@ -62,7 +62,7 @@
     return 0;
   }
 
-  var _handle = null, _conn = null;
+  var _handle = null, _conn = null, _peerBeats = [], _pane = null, _renderPresence = null;
 
   function init(opts) {
     opts = opts || {};
@@ -74,6 +74,19 @@
       // bind the awareness bus to the suite's shared channel (default 'bim_teams'); presence is distinguished
       // by message kind, so it never collides with the host's other bus traffic. Cross-product meets here.
       _conn = (C && C.goLive) ? C.goLive(global, { channel: opts.channel || 'bim_teams' }) : C;
+      // §E2E-CROSS fix (TEAMS_OVERLAY_LIVE_E2E_TEST.md): the send-side heartbeat existed, but nothing ever
+      // SUBSCRIBED to the bus, so a peer's beat was silently dropped (window.__teamsPeerBeats was read here
+      // but never written anywhere in the codebase — a real dual-session E2E reproduced it: each session only
+      // ever saw its own row). Subscribe ONCE at init and re-render the open pane live on each peer heartbeat.
+      try {
+        if (_conn && _conn.bus && _conn.bus.on) {
+          _conn.bus.on(opts.channel || 'bim_teams', function (msg) {
+            if (!msg || msg.kind !== 'presence') return;
+            _peerBeats.push(msg);
+            if (_pane && _renderPresence) _renderPresence(_pane);
+          });
+        }
+      } catch (e) { log('bus.on err ' + e.message); }
 
       // a self-created floating mount (top-right) — nothing exists until ON, so OFF stays pixel-identical.
       var mount = document.createElement('div'); mount.id = 'teams-embed-mount';
@@ -85,6 +98,23 @@
       var fidOf = opts.docOf || function (row) { return row.getAttribute('data-fid'); };
       var me = opts.user || global.TeamsEmbedUser || 'me';
       var loc = opts.location || { discipline: 'ARC' };
+
+      function renderPresence(pane) {
+        var old = pane.querySelector('.teams-presence-list'); if (old) old.parentNode.removeChild(old);
+        var wrap = document.createElement('div'); wrap.className = 'teams-presence-list';
+        var beats = [PR.makePresence({ user: me, product: 'bim', location: loc, ts: _nowTs(opts) })].concat(_peerBeats);
+        var folded = PR.foldPresence(beats, { now: _nowTs(opts), activeMs: opts.activeMs != null ? opts.activeMs : 60000 });
+        PR.presenceDots(folded).forEach(function (p) {
+          var r = document.createElement('div'); r.style.cssText = 'display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed #2c303a';
+          r.innerHTML = '<span style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;color:#fff;background:' + p.color + (p.faded ? ';opacity:.4' : '') + '">' + p.initials + '</span>' +
+            '<span style="font-weight:600">' + p.user + '</span><span style="font-size:11px;font-weight:700;color:#7f8aa0">' + p.product.toUpperCase() + '</span>' +
+            '<span style="font-size:12px;color:#7f8aa0">' + p.locText + '</span>';
+          wrap.appendChild(r);
+        });
+        pane.appendChild(wrap);
+        log('presence re-rendered (' + folded.length + ' peer' + (folded.length === 1 ? '' : 's') + ')');
+      }
+      _renderPresence = renderPresence;
 
       function onMount(pane) {
         var ops = _hostOps(opts);
@@ -105,26 +135,20 @@
             row.appendChild(wrap);
           });
         }
-        // 2) presence — emit my BIM heartbeat on the shared bus + fold what's present (self + any peers).
-        var beats = [PR.makePresence({ user: me, product: 'bim', location: loc, ts: _nowTs(opts) })];
-        try { if (_conn && _conn.bus) { _conn.bus.send(opts.channel || 'bim_teams', beats[0]); } } catch (e) {}
-        (global.__teamsPeerBeats || []).forEach(function (h) { if (h && h.kind === 'presence') beats.push(h); });
-        var folded = PR.foldPresence(beats, { now: _nowTs(opts), activeMs: opts.activeMs != null ? opts.activeMs : 60000 });
+        // 2) presence — emit my BIM heartbeat on the shared bus (peers pick it up via THEIR bus.on
+        //    subscription above); render self + any peer beats already collected via _peerBeats.
+        var mine = PR.makePresence({ user: me, product: 'bim', location: loc, ts: _nowTs(opts) });
+        try { if (_conn && _conn.bus) { _conn.bus.send(opts.channel || 'bim_teams', mine); } } catch (e) {}
 
         var h = document.createElement('h3'); h.textContent = 'Teams · presence';
         h.style.cssText = 'font:600 11px system-ui;letter-spacing:.06em;text-transform:uppercase;color:#7f8aa0;margin:0 0 8px';
         pane.appendChild(h);
-        PR.presenceDots(folded).forEach(function (p) {
-          var r = document.createElement('div'); r.style.cssText = 'display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed #2c303a';
-          r.innerHTML = '<span style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;color:#fff;background:' + p.color + (p.faded ? ';opacity:.4' : '') + '">' + p.initials + '</span>' +
-            '<span style="font-weight:600">' + p.user + '</span><span style="font-size:11px;font-weight:700;color:#7f8aa0">' + p.product.toUpperCase() + '</span>' +
-            '<span style="font-size:12px;color:#7f8aa0">' + p.locText + '</span>';
-          pane.appendChild(r);
-        });
+        _pane = pane;
+        renderPresence(pane);
         if (!ops.length) { var e0 = document.createElement('div'); e0.style.cssText = 'color:#7f8aa0;font:12px system-ui;margin-top:8px'; e0.textContent = 'No element activity on this scene yet.'; pane.appendChild(e0); }
         log('ON — presence emitted (' + me + '/bim), ' + (ops.length ? 'dots on rows' : 'no host ops'));
       }
-      function onUnmount() { Array.prototype.forEach.call(document.querySelectorAll('.teams-row-dots'), function (n) { n.remove(); }); }
+      function onUnmount() { _pane = null; Array.prototype.forEach.call(document.querySelectorAll('.teams-row-dots'), function (n) { n.remove(); }); }
 
       _handle = TP.mountTeamsPill(mount, { label: 'Teams overlay', paneHost: document.body, onMount: onMount, onUnmount: onUnmount });
       global.__teamsEmbedReady = true;
