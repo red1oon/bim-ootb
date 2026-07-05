@@ -12,6 +12,11 @@
 //   Item 3: Shadow+Ground cloud-icon cycle — the 'shadow' action's fn checked a bare `toggleShadow`
 //     identifier instead of `A.toggleShadow`; fixed to call A.toggleShadow() directly (removes the
 //     indirection entirely, the concrete failure mode item 3's own candidate-1 flagged).
+//   Item 4 (same-day follow-up, user): the Z page-timeline lived ONLY behind World History's
+//     long-press mini-drawer, next to the dangerous clear-history bomb, for no reason (Z is
+//     read-only). Promoted to its own row in the Navigate drawer (same panel as World History);
+//     bomb stays long-press-only. Existing 'z' keyboard shortcut (scene.js _shortcuts) unchanged —
+//     just now actually discoverable via the row label instead of buried in a hold-only chip.
 // §-log first — READ tests/witness_pill_drawer_followup_2026-07-06.log before any conclusion.
 // Run:  node viewer/tests/witness_pill_drawer_followup_2026-07-06.js
 'use strict';
@@ -61,8 +66,11 @@ async function waitReady(page) {
 
   // Rail icons live inside #mobile-pill, revealed by #mobile-trigger (same overflow drawer at
   // both viewport sizes in this codebase — confirmed via witness_class_outline_live.js precedent).
+  // Pill construction (PillBuilder) can finish a beat after the model-ready check above — wait for
+  // it explicitly instead of racing a fixed click timeout against it.
+  await page.waitForFunction(() => window._mainPillActions && window._mainPillActions.length > 0, { timeout: 15000 }).catch(() => {});
   let triggerClicked = true;
-  try { await page.click('#mobile-trigger', { timeout: 5000 }); } catch (e) { triggerClicked = false; log.push('  [trigger-click-err] ' + e.message); }
+  try { await page.click('#mobile-trigger', { timeout: 10000 }); } catch (e) { triggerClicked = false; log.push('  [trigger-click-err] ' + e.message); }
   verdict(triggerClicked, 'clicked #mobile-trigger to reveal the overflow pill rail');
   await page.waitForTimeout(300);
 
@@ -133,6 +141,46 @@ async function waitReady(page) {
     return key === 'off' ? !on : on;
   });
   verdict(shadowOnMatches, 'A._shadowOn matches the new cycle state (off => shadow off, else shadow on)');
+
+  // ── Item 4 (2026-07-06 follow-up): Z page-timeline promoted out of World History's long-press
+  // mini-drawer into its own visible row in the SAME panel (Navigate drawer). Bomb (clear history)
+  // stays long-press-only — too dangerous to expose directly. ──────────────────────────────────
+  S('\n── Item 4: Page History (Z) row promoted into Navigate drawer, bomb stays hidden ──');
+  await page.click('#pill-navigate', { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const navOpen = await page.evaluate(() => { var p = document.getElementById('navigate-drawer-panel'); return !!(p && p.style.display !== 'none'); });
+  if (!navOpen) await page.click('#pill-navigate', { timeout: 5000 });
+  await page.waitForTimeout(200);
+  const docHistRow = await page.evaluate(() => {
+    var row = document.getElementById('drawer-row-docHist');
+    return row ? row.textContent.trim().replace(/\s+/g, ' ') : null;
+  });
+  verdict(!!docHistRow, 'drawer-row-docHist exists inside the Navigate drawer', docHistRow);
+  verdict(!!docHistRow && docHistRow.indexOf('z') >= 0, 'row shows the existing "z" keyboard shortcut', docHistRow);
+  let docHistClicked = true;
+  try { await page.click('#drawer-row-docHist', { timeout: 5000 }); } catch (e) { docHistClicked = false; log.push('  [dochist-click-err] ' + e.message); }
+  verdict(docHistClicked, 'clicked the Page History row');
+  await page.waitForTimeout(200);
+  const barOpen = await page.evaluate(() => { var b = document.getElementById('universal-hist-btns'); return !!(b && b.style.display !== 'none'); });
+  verdict(barOpen, 'clicking the row opens the real per-page timeline bar (#universal-hist-btns)');
+  await page.click('#drawer-row-docHist', { timeout: 5000 }); // close again, don't leak state
+  await page.waitForTimeout(200);
+
+  const whRow = await page.$('#drawer-row-worldhist');
+  verdict(!!whRow, 'drawer-row-worldhist still present in Navigate drawer');
+  if (whRow) {
+    const box = await whRow.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(500); // hold past the 450ms long-press threshold
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const miniDrawerHtml = await page.evaluate(() => { var d = document.getElementById('whist-drawer'); return d ? d.innerHTML : null; });
+    verdict(!!miniDrawerHtml, 'long-press still opens the mini chip-drawer');
+    const hasOnlyBomb = !!miniDrawerHtml && miniDrawerHtml.indexOf('Clear history') >= 0 && miniDrawerHtml.toLowerCase().indexOf('page history') === -1;
+    verdict(hasOnlyBomb, 'mini chip-drawer now holds ONLY the bomb (Z chip removed)');
+    await page.evaluate(() => { var d = document.getElementById('whist-drawer'); if (d) d.remove(); });
+  }
 
   verdict(errs.length === 0, '0 page errors', errs.join(' | '));
 

@@ -87,8 +87,9 @@ var ICONS = {
   waypoints:   { svg: '<circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/><circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/><circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/><circle cx="12" cy="19.5" r="2.5"/>', trl: null, key: null, desc: 'Untangle Graph' }
 };
 
-// HISTORY_KNOB_DIAL.md — the W pill's long-press drawer: two stacked chips above the pill.
-//   Z (docHist) = open THIS page's dot-timeline bar · bomb = clear history (warns first, no shortcut).
+// HISTORY_KNOB_DIAL.md — the W pill's long-press drawer.
+//   §2026-07-06: Z (docHist) moved OUT to its own row in the Navigate drawer (see panels.js
+//   _actions 'docHist') — only the dangerous bomb (clear history, warns first) stays hidden here.
 function _histIconSvg(name, color) {
   var ic = ICONS[name];
   return '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" ' +
@@ -146,14 +147,12 @@ function _worldHistDrawer(srcBtn) {
     return b;
   }
   d.appendChild(chip('bomb', 'Clear history…', '#ff6b6b', _clearHistoryWithWarning));
-  d.appendChild(chip('docHist', 'Page history (Z) — this page\'s dot timeline', '#4fc3f7',
-    function () { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }));
   document.body.appendChild(d);
   setTimeout(function () {
     var off = function (ev) { var dd = document.getElementById('whist-drawer'); if (dd && !dd.contains(ev.target)) { dd.remove(); document.removeEventListener('pointerdown', off, true); } };
     document.addEventListener('pointerdown', off, true);
   }, 0);
-  console.log('§PILL_DRAWER worldhist items=Z,bomb');
+  console.log('§PILL_DRAWER worldhist items=bomb');
 }
 
 function setupPanels(A) {
@@ -1107,13 +1106,24 @@ function setupPanels(A) {
       { id: 'help',       name: 'Help',            key: 'F1', icon: I.circleHelp.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
       // HISTORY_KNOB_DIAL.md rework: ONE "W" World-history pill replaces the old History pill.
       //   TAP        = open the cross-page overlay (which building/doc/page).
-      //   LONG-PRESS = a small drawer: Z (this page's dot-timeline bar) + bomb (clear history, warns first).
+      //   LONG-PRESS = the bomb only now (clear history, warns first) — Z moved out, see 'docHist'
+      //     below (2026-07-06, user: the dangerous action stays hidden, the safe one doesn't).
       // PILL_DRAWER_REORGANIZATION.md §2: absorbed into Navigate — own tap/long-press UNCHANGED per spec.
       { id: 'worldhist',  name: 'World History',   key: 'w', pill: false, icon: I.worldHist.svg,
         fn: function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); },
         hold: function(btn) { _worldHistDrawer(btn); },
         isActive: function() { var p = document.getElementById('whole-hist-panel'); return !!(p && p.classList.contains('show')); },
-        children: [ { name: 'History across ALL pages — viewer, iDempiere, Gravity' }, { name: 'Whole | This page toggle' }, { name: 'Day strip — step back/forward by day' }, { name: 'Tap a card to jump to that building/doc' }, { name: 'Long-press → Z page-timeline + clear (bomb)' } ] },
+        children: [ { name: 'History across ALL pages — viewer, iDempiere, Gravity' }, { name: 'Whole | This page toggle' }, { name: 'Day strip — step back/forward by day' }, { name: 'Tap a card to jump to that building/doc' }, { name: 'Long-press → clear (bomb), warns first' } ] },
+      // §2026-07-06 (user): the Z page-timeline used to live ONLY behind World History's long-press
+      // chip, alongside the bomb — buried next to a genuinely dangerous action for no reason (Z is
+      // read-only). Promoted to its own visible row in the SAME panel (Navigate drawer), right next
+      // to World History. Existing 'z' key (already wired in scene.js _shortcuts, ICONS.docHist.key)
+      // is unchanged — now it's actually discoverable (shows in this row + Help) instead of hiding
+      // inside a hold-only chip. Bomb stays long-press-only on 'worldhist' above, unchanged.
+      { id: 'docHist',    name: 'Page History',    key: 'z', pill: false, icon: I.docHist.svg,
+        fn: function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); },
+        isActive: function() { var b = document.getElementById('universal-hist-btns'); return !!(b && b.style.display !== 'none'); },
+        children: [ { name: 'This page\'s own dot timeline' }, { name: 'Step back/forward through your edits' } ] },
       // PILL_DRAWER_REORGANIZATION.md §2: absorbed into Navigate on mobile — still NEVER on desktop
       // (the Navigate drawer row-builder re-applies the same platform gate).
       { id: 'walk',       name: 'Walk',            platform: 'mobile', pill: false, icon: '<ellipse cx="15" cy="5" rx="3" ry="4"/><ellipse cx="15" cy="11" rx="2" ry="1.5"/><ellipse cx="9" cy="13" rx="3" ry="4"/><ellipse cx="9" cy="19" rx="2" ry="1.5"/>', fn: function() { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }, isActive: function() { return !!A._walkMode; } },
@@ -1430,7 +1440,7 @@ function setupPanels(A) {
       };
     }
 
-    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'worldhist', 'home', 'walk']);
+    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'worldhist', 'docHist', 'home', 'walk']);
     var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report', 'fly']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
 
@@ -1991,7 +2001,7 @@ function setupPanels(A) {
     // absorbed into a drawer or Help/Settings-only — still present here so Settings' pill editor
     // and any localStorage-order migration have a stable position for them).
     var _defaultOrder = ['save','open','navigate','inspect','palette','camview','share','settings','help',
-      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','worldhist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk'];
+      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({
