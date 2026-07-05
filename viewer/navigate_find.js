@@ -3511,7 +3511,22 @@
       return lit;
     };
     // Read-only teardown — drop the focus overlay + restore x-ray (same path as a lens reset).
-    A.clearFocusElement = function () { _highlightLensReset(); console.log('[RP-TB] §FOCUS_ELEM_CLEAR'); };
+    // §SHAKE-OUT (user, 2026-07-06): "Both [X-Ray and Bbox] should shake out of their states upon
+    // click outside or select again to deselect item." _highlightLensReset() deliberately PRESERVES
+    // a manually-toggled Alt+Z mode (X-Ray restored to its normal 0.3 dim, ghost left alone) for its
+    // OTHER callers (room/phase/material lens switches elsewhere in this file) — that nuance stays.
+    // But THIS is the neutral deselect/click-outside primitive picking.js calls on every empty-click
+    // and re-click-to-deselect; the user wants those two triggers to fully exit BOTH view modes, not
+    // just tear down the focus highlight. Scoped here (not in _highlightLensReset itself) so the
+    // other lens-reset call sites keep their existing manual-toggle-preserving behavior.
+    A.clearFocusElement = function () {
+      _highlightLensReset();
+      if (A.xrayOn && A.toggleXray) { A.toggleXray(); console.log('[RP-TB] §SHAKE_OUT xray→off'); }
+      if (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn() && window.toggleGhostXray) {
+        window.toggleGhostXray(); console.log('[RP-TB] §SHAKE_OUT ghost→off');
+      }
+      console.log('[RP-TB] §FOCUS_ELEM_CLEAR');
+    };
 
     // ── Zoom-Across SCOPE consume (ZOOM_ACROSS_SCOPE_SESSION §SPEC) ─────────────────────────────────────────
     // The ERP "Zoom Across" pill cold-opens the viewer with ?find=<scope>; we run the INCUMBENT Find on it and

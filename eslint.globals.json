@@ -153,5 +153,6 @@
   "WizardStoreys": "readonly",
   "WORK_PACKAGES": "readonly",
   "XLSX": "readonly",
-  "HistoryTap": "readonly"
+  "HistoryTap": "readonly",
+  "ICONS": "readonly"
 }

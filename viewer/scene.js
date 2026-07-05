@@ -1129,13 +1129,10 @@ async function setupScene(A) {
       'padding:8px 10px;font-size:13px;outline:none;box-sizing:border-box">' +
       '</div>' +
       '<div id="cmd-list" style="max-height:260px;overflow-y:auto;padding:4px 0"></div>' +
-      '<div style="padding:8px 14px;border-top:1px solid #333;text-align:center">' +
-      '<span id="cmd-report" style="color:#ff8a65;font-size:12px;cursor:pointer;font-weight:600">' +
-      '\uD83D\uDEDF Report Bug</span>' +
-      '<span style="color:#555;margin:0 8px">|</span>' +
-      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/MOBILE_DEPLOY/" target="_blank" ' +
-      'style="color:#4fc3f7;font-size:12px;text-decoration:none;font-weight:600">' +
-      '\uD83D\uDCDA Documentation</a></div>';
+      '<div style="padding:8px 14px;border-top:1px solid #333;text-align:center;display:flex;align-items:center;justify-content:center;gap:14px">' +
+      '<span id="cmd-report" title="Report Bug" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
+      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="Viewer User Guide" ' +
+      'style="color:#4fc3f7;line-height:0">' + _ic(ICONS.lightbulb.svg) + '</a></div>';
     pal.innerHTML = html;
     document.body.appendChild(pal);
 

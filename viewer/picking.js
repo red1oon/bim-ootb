@@ -401,6 +401,13 @@ function setupPicking(A) {
     }
     if (!guid) {
       console.log(`§PICK no guid for mesh.id=${hit.object.id}`);
+      // §SHAKE-OUT (user, 2026-07-06): the Bbox/ghost view mode hides the real solids and replaces
+      // them with one merged ghost-box mesh — clicking almost anywhere on the building while that
+      // mode is active hits the ghost mesh, not a real element, and lands here with no resolvable
+      // guid. From the user's perspective that's indistinguishable from "clicked outside a real,
+      // selectable item" — treat it the same way so Bbox/X-Ray can actually be shaken out by
+      // clicking, not just by pressing Alt+Z again.
+      if (A.clearFocusElement) A.clearFocusElement();
       return;
     }
 
