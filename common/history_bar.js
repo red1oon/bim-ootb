@@ -178,9 +178,19 @@ window.HistoryBar = (function () {
         return;
       }
     }
+    var kids = _kidsOf(_cursorNode);
+    // HISTORY_TIMELINE_UNDO_DOTS: fork-don't-wipe is for genuine model divergence (a real op,
+    // readonly:false) — undo-then-edit legitimately opens a new universe. A read-only crumb
+    // (view/pick/tap-drained NAVIGATE/XRAY/FOCUS/PICK) never mutates the model, so after an undo
+    // (cursor sits on a node that already has a kid) it must NOT fork a new sibling dot — that's
+    // what made the timeline look like it "spawns more dots on undo" for routine looking-around.
+    // Drop it instead; it only ever existed to paint a dot, and forking one for it is the bug.
+    if (entry.readonly && kids.length > 0) {
+      console.log('§HIST_DROP source=' + entry.bucket + ' type=' + entry.type + ' reason=readonly-post-undo label="' + (entry.label || '') + '"');
+      return;
+    }
     entry.seq = ++_seq;
     entry.kids = []; entry.active = 0; entry.parent = _cursorNode;
-    var kids = _kidsOf(_cursorNode);
     var forked = kids.length > 0;          // already had a child → this push FORKS a sibling universe
     var keptSibling = forked ? _tipOf(kids[_activeOf(_cursorNode)]) : null;
     kids.push(entry);
