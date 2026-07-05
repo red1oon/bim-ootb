@@ -104,32 +104,32 @@
     var _rail = opts.layout === 'rail';   // viewer L-PATH rail (buttons position:fixed); erp strips stay CSS flow
     var HOLD_MS = 450;
 
-    // ── Config persistence: { order: [], hidden: [] } ──
+    // §STATIC-RAIL (user, 2026-07-06): bump-to-end-on-click is gone (see the click handlers
+    // below), but browsers that already clicked their way to a scrambled order have that
+    // scramble sitting in localStorage from before this fix — a version bump discards any
+    // saved order from an older version, so the fixed _defaultOrder actually takes effect.
+    var _ORDER_VERSION = 2;
+    // ── Config persistence: { order: [], hidden: [], orderVersion } ──
     function _getConfig() {
       try {
         var s = localStorage.getItem(_CFG_KEY);
         if (s) {
           var cfg = JSON.parse(s);
           // Migration: old format was plain array (order only)
-          if (Array.isArray(cfg)) return { order: cfg, hidden: [] };
+          if (Array.isArray(cfg)) return { order: _defaultOrder.slice(), hidden: [] };
+          if (cfg.orderVersion !== _ORDER_VERSION) return { order: _defaultOrder.slice(), hidden: cfg.hidden || [] };
           return { order: cfg.order || _defaultOrder.slice(), hidden: cfg.hidden || [] };
         }
       } catch(e) {}
       return { order: _defaultOrder.slice(), hidden: [] };
     }
     function _setConfig(cfg) {
+      cfg.orderVersion = _ORDER_VERSION;   // stamp so this save survives the next load (only a
+                                            // pre-§STATIC-RAIL save gets discarded, see _getConfig)
       try { localStorage.setItem(_CFG_KEY, JSON.stringify(cfg)); } catch(e) {}
       console.log('§SETTINGS_SAVE items=' + cfg.order.length + ' hidden=' + (cfg.hidden ? cfg.hidden.length : 0));
     }
     function _getOrder() { return _getConfig().order; }
-    function _bumpAction(id) {
-      var cfg = _getConfig();
-      var idx = cfg.order.indexOf(id);
-      if (idx >= 0) cfg.order.splice(idx, 1);
-      cfg.order.push(id);
-      _setConfig(cfg);
-      return cfg.order;
-    }
     function _resetConfig() {
       try { localStorage.removeItem(_CFG_KEY); } catch(e) {}
       console.log('§SETTINGS_RESET defaults restored');
@@ -256,14 +256,18 @@
           btn.addEventListener('pointerup', function(e) {
             e.stopPropagation(); _cancelHold();
             if (_held) { _held = false; return; }
-            _bumpAction(act.id); act.fn(); _sync();
+            // §STATIC-RAIL (user, 2026-07-06): was _bumpAction(act.id) here — moved the clicked
+            // icon to the end of the order + re-saved, so the rail visibly reshuffled on every
+            // click. Rail order is now fixed (see _defaultOrder / §ORDER_VERSION below); manual
+            // reordering is still available, opt-in, via the Settings pill editor only.
+            act.fn(); _sync();
             console.log('§PILL action=' + act.id);
           });
           btn.addEventListener('pointerleave', _cancelHold);
           btn.addEventListener('pointercancel', _cancelHold);
         } else if (act.fn) {
           btn.addEventListener('pointerup', function(e) {
-            e.stopPropagation(); _bumpAction(act.id);
+            e.stopPropagation();
             act.fn(); _sync();
             console.log('§PILL action=' + act.id);
           });
