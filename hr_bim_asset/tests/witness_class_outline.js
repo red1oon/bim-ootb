@@ -52,12 +52,22 @@ var ROWS = [
   ['RM_B', 'Level 1', 'INTERNAL', 2.782, -9.72, 1.686, 1.8, 4.6, 3.158],
   ['RM_NOSIZE', 'Level 1', 'INTERNAL', 99, 99, 99, null, null, null]   // honest gap — no real size extracted
 ];
+// §FIX 2026-07-06 — a REAL, non-zero A.modelOffset + A.ifc2three (the exact transform scene.js:370 gives every
+// other rendered element: subtract modelOffset, swap Y/Z into THREE's up-axis convention). The ORIGINAL witness
+// never modeled this at all (no A.ifc2three, no A.modelOffset), so it couldn't have caught `_drawOutlines()`
+// positioning a box at the raw un-recentred IFC coordinate — exactly the bug the user hit live (boxes rendered
+// outside the building). Any correct fix MUST route through this same transform; a witness that skips it is
+// blind to the whole bug class, per this project's "test the real user path" standard.
+var MODEL_OFFSET = { x: 5, y: 3, z: 2 };
+function ifc2three(ix, iy, iz) { return { x: ix - MODEL_OFFSET.x, y: iz - MODEL_OFFSET.z, z: -(iy - MODEL_OFFSET.y) }; }
 function makeAPP() {
   var A = {
     guidMap: { '1': 'MEMBER_A', '2': 'MEMBER_B' },     // rooms themselves are NOT rendered (§REAL-BIND)
     status: { textContent: '' }, _dirty: 0, markDirty: function () { this._dirty++; },
     collectMeshes: function () { return []; },
     scene: makeScene(),
+    modelOffset: MODEL_OFFSET,
+    ifc2three: ifc2three,
     dbQuery: function (sql) {
       if (/FROM spatial_structure/.test(sql)) return ROWS;
       return [];
@@ -97,11 +107,34 @@ ok('F4-class-on', onResult === true && A.scene.children.length === 1,
 var group = A.scene.children[0];
 ok('F5-outline-per-linked-room', group.name === 'hba-class-outlines' && group.children.length === 2,
   'the outline group carries one LineSegments per LINKED+footprinted room (RM_A, RM_B) — got ' + (group && group.children.length));
-var lineA = group.children.filter(function (l) { return l.position.x === -0.118; })[0];
-ok('F6-outline-position-real', !!lineA && lineA.position.y === -9.72 && lineA.position.z === 1.686,
-  'each outline is positioned at its room\'s REAL extracted center — RM_A at (-0.118,-9.72,1.686)');
+// §FIX 2026-07-06 — F6 now asserts the box sits at the TRANSFORMED (ifc2three) position, not the raw
+// spatial_structure value, and pins it against a non-zero MODEL_OFFSET so a regression back to
+// `lines.position.set(fp.cx, fp.cy, fp.cz)` (the exact shipped bug) fails loudly instead of passing by
+// coincidence (which is what the old raw-value assertion did — it happened to match the buggy code 1:1).
+var expA = ifc2three(-0.118, -9.72, 1.686);
+var lineA = group.children.filter(function (l) { return Math.abs(l.position.x - expA.x) < 1e-9; })[0];
+ok('F6-outline-position-transformed', !!lineA && Math.abs(lineA.position.y - expA.y) < 1e-9 && Math.abs(lineA.position.z - expA.z) < 1e-9,
+  'each outline is positioned at ifc2three(footprint-center) — RM_A raw(-0.118,-9.72,1.686) → world(' + JSON.stringify(expA) + '), got ' + JSON.stringify(lineA && lineA.position));
 ok('F7-outline-color-matches-tint', group.children.every(function (l) { return typeof l.material.color === 'number' && l.material.color > 0; }),
   'each outline\'s colour is the SAME class colour as its tint, hex-converted (never a separate invented palette) — got ' + JSON.stringify(group.children.map(function (l) { return l.material.color.toString(16); })));
+
+// ---- F-ALIGN: the box must actually CONTAIN a real point inside the room it claims to outline — not just
+// exist at *some* THREE position. Take a point well inside RM_A's real raw footprint (center + a quarter of
+// each half-extent, still inside the room), run it through the SAME ifc2three the rest of the viewer uses for
+// its rendered members, and confirm it falls within the outline box's rendered bounds (half-extent per axis,
+// matching the geometry's own x/z/y size-swap). This is the "compares against a real member element's own
+// world position" check the old count-only witness was missing — it would have caught the shipped bug directly
+// (a box positioned at the raw un-recentred coordinate does NOT contain any real recentred point).
+var fpA = ROWS[0]; // RM_A raw row
+var insideRaw = { x: fpA[3] + fpA[6] / 4, y: fpA[4] + fpA[7] / 4, z: fpA[5] };
+var insideWorld = ifc2three(insideRaw.x, insideRaw.y, insideRaw.z);
+var half = { x: fpA[6] / 2, y: fpA[8] / 2, z: fpA[7] / 2 };   // geometry is (sx, sz, sy) post-swap
+var within = lineA
+  && Math.abs(insideWorld.x - lineA.position.x) <= half.x + 1e-9
+  && Math.abs(insideWorld.y - lineA.position.y) <= half.y + 1e-9
+  && Math.abs(insideWorld.z - lineA.position.z) <= half.z + 1e-9;
+ok('F-ALIGN-box-contains-real-point', within,
+  'a real point inside RM_A\'s footprint, transformed the same way as every rendered member, falls within the outline box\'s bounds — box@' + JSON.stringify(lineA && lineA.position) + ' half=' + JSON.stringify(half) + ' point=' + JSON.stringify(insideWorld));
 
 // ---- toggle OFF: zero residue — the outline group is removed from the scene, its geometry/material disposed.
 var geosBefore = group.children.map(function (l) { return l.geometry; });
