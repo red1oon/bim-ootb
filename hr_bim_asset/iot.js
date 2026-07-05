@@ -215,11 +215,38 @@ function toneFreqFor(value, min, max) {
   return Math.round(TONE_BASE_HZ + norm * (TONE_DANGER_HZ - TONE_BASE_HZ));
 }
 
+// §FIX 2026-07-06 (user: "the IoT bars animation is not realistic — too linear. Make them cycle around near
+// actual values, with a red bar when they exceed" — citing the RiverIoT/Federation panel in IfcOpenShell/Bonsai
+// as the SHAPE reference: equipment_operators.py's draw_callback_px splits each bar at a `threshold_max`,
+// falling back to an honest data-derived default (`max(day_values)*0.9`) when no real declared limit exists,
+// and colours the portion above it differently). Same shape here, same non-invent discipline:
+//
+// - `dangerThresholdFor` — an HONEST MOCKUP default (baseline + amplitude*1.15, i.e. just past the sensor's own
+//   normal daily peak) since no sourced regulatory/manufacturer limit exists for these demo sensors — never a
+//   silently-fabricated "safety limit". Pure + deterministic, same convention as toneFreqFor.
+// - `jitterFor` — a small, FIXED (never Math.random/Date.now) wiggle added on top of the smooth hourly sine
+//   curve, so consecutive displayed ticks vary a little instead of sweeping in one perfectly monotonic line —
+//   "cycle around near actual values". Bounded to ±12% of the sensor's own amplitude.
+// - `isDanger` — true when a (possibly jittered) reading exceeds dangerThresholdFor — the bar-colour decision,
+//   kept pure so it's node-witnessable without a DOM.
+var DANGER_THRESHOLD_FACTOR = 1.15;
+function dangerThresholdFor(sensor) {
+  return Math.round((sensor.baseline + sensor.amplitude * DANGER_THRESHOLD_FACTOR) * 100) / 100;
+}
+var JITTER_TABLE = [0.6, -0.4, 0.9, -0.8, 0.3, -0.6, 0.7, -0.9, 0.2, -0.3, 0.5, -0.7];
+function jitterFor(sensor, hourIdx, tickCounter) {
+  var idx = ((hourIdx || 0) * 3 + (tickCounter || 0)) % JITTER_TABLE.length;
+  return Math.round(JITTER_TABLE[idx] * sensor.amplitude * 0.12 * 100) / 100;
+}
+function isDanger(sensor, value) {
+  return value > dangerThresholdFor(sensor);
+}
+
 var IoT = { SENSORS: SENSORS, DEVICES: DEVICES, CAMERAS: CAMERAS, CAMERA_ICON: CAMERA_ICON,
   MYR_CURRENCY_ID: MYR_CURRENCY_ID, USD_CURRENCY_ID: USD_CURRENCY_ID, TONE_BASE_HZ: TONE_BASE_HZ,
   TONE_DANGER_HZ: TONE_DANGER_HZ, seriesFor: seriesFor, demoSeries: demoSeries, toUomRow: toUomRow,
   toneFreqFor: toneFreqFor, camerasOnStorey: camerasOnStorey, camerasNearDevice: camerasNearDevice,
   toOrderRow: toOrderRow, toProductRow: toProductRow, toOrderLineRow: toOrderLineRow, usdRate: usdRate,
-  billingLines: billingLines };
+  billingLines: billingLines, dangerThresholdFor: dangerThresholdFor, jitterFor: jitterFor, isDanger: isDanger };
 if (typeof module === 'object' && module.exports) module.exports = IoT;
 else (typeof self !== 'undefined' ? self : this).HbaIot = IoT;

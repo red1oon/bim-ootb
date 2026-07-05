@@ -550,15 +550,13 @@
     return null;
   }
 
-  // opts.dist (§2026-07-05c, user: "zooms to the device, not too near — surrounding") — the establishing-shot
-  // distance from the target centroid; default 8 (unchanged, every pre-existing caller). IoT's device zoom
-  // passes a larger value so the surrounding context (the room/plant/entrance the device sits in) stays visible
-  // — a "wow, here's the room this thing lives in" shot, not a nose-to-the-mesh close-up.
-  function flyToZone(A, guid, opts) {
-    opts = opts || {};
-    if (!A || !A.guidMap || !ready()) { console.log('§HBA_FLY no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
+  // §FIX 2026-07-06 — centroid resolution extracted out of flyToZone (unchanged logic, just named + shared) so
+  // flyToPOV (below) can resolve TWO guids' real rendered centroids — one to stand the camera AT, one to look
+  // TOWARD — without duplicating the instanced/batched mesh-target resolution.
+  function _zoneCentroid(A, guid) {
+    if (!A || !A.guidMap || !ready()) return null;
     var want = HBA().B.zoneMeshGuids(guid, A.guidMap, A._hbaRoomMembers || null);
-    if (!want.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no rendered members)'); return { flew: false, reason: 'no-members' }; }
+    if (!want.length) return null;
     var pts = [];
     // §INSTANCED-TINT reuse — the SAME meshId/slot resolution buildMeshPort uses for tinting (the naive
     // `userData.guid` match below misses every instanced/batched target — HHS's 716 instanced groups are
@@ -578,10 +576,27 @@
         A.collectMeshes(function (o) { return o.userData && set[o.userData.guid]; }).forEach(function (o) { if (o.position) pts.push(o.position); });
       }
     }
-    if (!pts.length) { console.log('§HBA_FLY no-op guid=' + guid + ' (no matching mesh)'); return { flew: false, reason: 'no-mesh' }; }
+    if (!pts.length) return null;
     var cx = 0, cy = 0, cz = 0;
     pts.forEach(function (p) { cx += p.x; cy += p.y; cz += p.z; });
-    var n = pts.length, center = { x: cx / n, y: cy / n, z: cz / n };
+    var n = pts.length;
+    return { center: { x: cx / n, y: cy / n, z: cz / n }, resolvedGuid: want[0] };
+  }
+
+  // opts.dist (§2026-07-05c, user: "zooms to the device, not too near — surrounding") — the establishing-shot
+  // distance from the target centroid; default 8 (unchanged, every pre-existing caller). IoT's device zoom
+  // passes a larger value so the surrounding context (the room/plant/entrance the device sits in) stays visible
+  // — a "wow, here's the room this thing lives in" shot, not a nose-to-the-mesh close-up.
+  function flyToZone(A, guid, opts) {
+    opts = opts || {};
+    if (!A || !A.guidMap || !ready()) { console.log('§HBA_FLY no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
+    var hit = _zoneCentroid(A, guid);
+    if (!hit) {
+      var reason = (HBA().B.zoneMeshGuids(guid, A.guidMap, A._hbaRoomMembers || null) || []).length ? 'no-mesh' : 'no-members';
+      console.log('§HBA_FLY no-op guid=' + guid + ' (' + (reason === 'no-mesh' ? 'no matching mesh' : 'no rendered members') + ')');
+      return { flew: false, reason: reason };
+    }
+    var center = hit.center;
     if (A.camera && A.controls && typeof THREE !== 'undefined' && typeof requestAnimationFrame === 'function') {
       var c3 = new THREE.Vector3(center.x, center.y, center.z), dist = opts.dist || 8;
       var end = c3.clone().add(new THREE.Vector3(0.5, 0.5, 0.7).normalize().multiplyScalar(dist));
@@ -603,7 +618,49 @@
       setTimeout(function () { pulsePort.restoreAll(); }, 1600);
     }
     console.log('§HBA_FLY guid=' + guid + ' center=(' + center.x.toFixed(1) + ',' + center.y.toFixed(1) + ',' + center.z.toFixed(1) + ')');
-    return { flew: true, guid: want[0], center: center };
+    return { flew: true, guid: hit.resolvedGuid, center: center };
+  }
+
+  // §FIX 2026-07-06 (user: "pressing the sensor again, scene zoom to the nearest cam POV that has the sensor in
+  // sight, or best effort") — position the camera AT `fromGuid`'s real rendered centroid (the nearest CCTV
+  // camera) and orient it TOWARD `atGuid`'s real rendered centroid (the sensor) — i.e. "look through that
+  // camera's eyes at this device". Deliberately does NOT need any declared facing vector (unlike assuming a
+  // camera's OWN fixed POV, still blocked on that one open decision — see RESUME_HR_BIM_ASSET.md) because the
+  // look-target here is a SPECIFIC known real point, not "whatever this camera happens to face".
+  function flyToPOV(A, fromGuid, atGuid, opts) {
+    opts = opts || {};
+    if (!A || !A.guidMap || !ready()) { console.log('§HBA_POV no-op from=' + fromGuid + ' at=' + atGuid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
+    var fromHit = _zoneCentroid(A, fromGuid), atHit = _zoneCentroid(A, atGuid);
+    if (!fromHit || !atHit) {
+      console.log('§HBA_POV no-op from=' + fromGuid + ' at=' + atGuid + ' (no rendered members)');
+      return { flew: false, reason: 'no-members' };
+    }
+    var eye = fromHit.center, look = atHit.center;
+    if (A.camera && A.controls && typeof THREE !== 'undefined' && typeof requestAnimationFrame === 'function') {
+      var eye3 = new THREE.Vector3(eye.x, eye.y, eye.z), dist = opts.dist != null ? opts.dist : 3;
+      var lookDir = new THREE.Vector3(look.x - eye.x, look.y - eye.y, look.z - eye.z);
+      if (lookDir.lengthSq() > 1e-9) lookDir.normalize(); else lookDir.set(0, 0, -1);
+      // stand back from the exact eye-point along the reverse look direction — an "assume this camera's view"
+      // shot needs a hair of standoff, or the near clip plane clips the camera's own mount geometry.
+      var end = eye3.clone().add(lookDir.clone().multiplyScalar(-dist * 0.15));
+      var look3 = new THREE.Vector3(look.x, look.y, look.z);
+      var start = A.camera.position.clone(), startTarget = A.controls.target.clone(), t = 0;
+      (function anim() {
+        t += 0.05; if (t > 1) t = 1;
+        var e = 1 - Math.pow(1 - t, 3);
+        A.camera.position.lerpVectors(start, end, e);
+        A.controls.target.lerpVectors(startTarget, look3, e);
+        A.controls.update();
+        if (A.markDirty) A.markDirty();
+        if (t < 1) requestAnimationFrame(anim);
+      })();
+      var pulsePort = buildMeshPort(A);
+      pulsePort.setTint(atGuid, 0xffcc00);
+      setTimeout(function () { pulsePort.restoreAll(); }, 1600);
+    }
+    console.log('§HBA_POV from=' + fromGuid + ' at=' + atGuid + ' eye=(' + eye.x.toFixed(1) + ',' + eye.y.toFixed(1) + ',' + eye.z.toFixed(1)
+      + ') look=(' + look.x.toFixed(1) + ',' + look.y.toFixed(1) + ',' + look.z.toFixed(1) + ')');
+    return { flew: true, from: fromHit.resolvedGuid, at: atHit.resolvedGuid, eye: eye, look: look };
   }
 
   // §P11 (RESUME_HR_BIM_ASSET.md §P11, user 2026-07-02) — cross-app deep-link from an HBA pane into the real
@@ -835,7 +892,7 @@
   G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, tintedCount: tintedCount,
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
-    flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
+    flyToZone: flyToZone, flyToPOV: flyToPOV, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
     _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
     _consumeFindGuid: _consumeFindGuid, bindStoreysFromModel: bindStoreysFromModel };  // §STAGE2 / §2026-07-04c / §2026-07-05e — witness hooks (additive)
