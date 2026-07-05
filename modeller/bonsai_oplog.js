@@ -414,14 +414,23 @@
       console.log(TAG + ' undo id=' + top + (ids.length > 1 ? ' §GESTURE-UNDO group=' + topRow.gid + ' rows=' + ids.length : '') + ' active=' + this.length);
       return { undone: top, group: ids.length > 1 ? ids : undefined };
     },
-    // Redo = reactivate the most-recent undone feature, walking UP any undone ancestor chain (keep the invariant).
+    // Redo = reactivate the EARLIEST-undone feature (LIFO: the row closest to the active boundary — the
+    // one undo() removed MOST RECENTLY), walking UP any undone ancestor chain (keep the invariant).
     // §P8: a gesture group reactivates whole (mirror of the group undo above), each member still ancestor-walked.
+    // §MODELLER_REDO_ORDER (MODELLER_GIT_FAITHFUL_HISTORY.md Phase 1): was `undoneRows[undoneRows.length-1]`
+    // — the HIGHEST-id undone row ("most recently created"), which is the OPPOSITE of correct LIFO redo and
+    // diverged from the proven invariant both `viewer/kernel_ops.js redoOp` and `erp/kernel_ops.js redoOp`
+    // already use (`ORDER BY id ASC LIMIT 1` = lowest-id undone first). Confirmed by trace: rows 1,2,3 active,
+    // undo() twice → undone={2,3} in that order; correct redo() must reactivate 2 first (it was undone LAST,
+    // i.e. it sits nearest the active/undone boundary), not 3. The old code picked 3 first — wrong order even
+    // with zero forking involved, and the root enabler of a later fork silently resurrecting alongside a
+    // diverged edit once a tree layer is added on top (see file header WHY #3/#4).
     async redo() {
       if (!this.db) return { redone: null };
       const all = this._allGeom(); const undoneRows = all.filter(o => o.undone);
       if (!undoneRows.length) return { redone: null };
       const byId = new Map(all.map(o => [o.id, o]));
-      const topRow = undoneRows[undoneRows.length - 1], top = topRow.id;
+      const topRow = undoneRows[0], top = topRow.id;
       const seeds = this._isGestureGid(topRow.gid) ? undoneRows.filter(o => o.gid === topRow.gid) : [topRow];
       const on = [];
       seeds.forEach(s => { let cur = s; while (cur && cur.undone && on.indexOf(cur.id) < 0) { on.push(cur.id); cur = cur.parent != null ? byId.get(cur.parent) : null; } });

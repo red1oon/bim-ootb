@@ -188,7 +188,12 @@
 <script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
 <script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=7" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<!-- §MODELLER-GIT-HISTORY (MODELLER_GIT_FAITHFUL_HISTORY.md Phase 2): the SAME git-faithful fork/undo/redo
+     tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
+     adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
+<script src="../common/history_bar.js?v=1" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
+<script src="modeller_history.js?v=1" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
@@ -2949,8 +2954,33 @@ window.addEventListener('keydown', (e) => {                       // R rotates t
 // Undo/Redo carry NO pill button — the history scrubber is the visible retreat (a strict superset). They live on
 // as the Ctrl+Z / Ctrl+⇧Z keyboard verbs (doUndo/doRedo) and a row in the ? help panel.
 const bDel = document.getElementById('b-del');
-async function doUndo() { const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); } }
-async function doRedo() { const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); } }
+// §MODELLER-GIT-HISTORY (MODELLER_GIT_FAITHFUL_HISTORY.md Phase 2): route through ModellerHistory (=
+// common/history_bar.js, the SAME git-faithful tree the Viewer's Ctrl+Z uses — viewer/grid_drag.js:836-855
+// is the exact same defensive pattern: shared-timeline call first, raw oplog only if the tree never
+// mounted). This keeps the tree's cursor from silently desyncing from the real op-log (the "shadow
+// tracker" bug the Viewer's own history_bar.js header explicitly calls out and forbids).
+async function doUndo() {
+  const MH = window.ModellerHistory;
+  if (MH && MH.undo) {
+    MH.undo();                                    // sync: moves the tree cursor + fires the real oplog.undo()
+    const r = await (MH.pending() || Promise.resolve({}));
+    if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); }
+    syncHistory();
+    return;
+  }
+  const r = await window.Bonsai.oplog.undo(); if (r.undone != null) { if (selectedId === r.undone) highlight(null); audioCue('clear'); setStat('undo #' + r.undone); syncHistory(); }
+}
+async function doRedo() {
+  const MH = window.ModellerHistory;
+  if (MH && MH.redo) {
+    MH.redo();
+    const r = await (MH.pending() || Promise.resolve({}));
+    if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); }
+    syncHistory();
+    return;
+  }
+  const r = await window.Bonsai.oplog.redo(); if (r.redone != null) { audioCue('tick'); setStat('redo #' + r.redone); syncHistory(); }
+}
 async function deleteSelected() {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
   if (!ids.length) return;

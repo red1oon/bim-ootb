@@ -158,6 +158,13 @@
       // Ensure the shared DiscWalker engine + the "Walk · Disciplines" roster are ready for this building
       // (lazy-loads terminal_rules.db; lets an ABSENT discipline be walked). Fire-and-forget.
       if (window.__ensureDiscWalker) window.__ensureDiscWalker();
+      // §MODELLER-GIT-HISTORY (MODELLER_GIT_FAITHFUL_HISTORY.md Phase 2): ONE read-only BUILDING_OPEN
+      // milestone anchoring this building's edit tree — mirrors the Viewer's own BUILDING_OPEN handling
+      // exactly (nothing to flip on undo/redo, it just roots the trail). Fires for every Open path
+      // (resident/local-.db/local-.ifc all fold through this one chokepoint). Best-effort, never-throw.
+      if (ready && window.ModellerHistory && window.ModellerHistory.recordBuildingOpen) {
+        try { window.ModellerHistory.recordBuildingOpen(name); } catch (e) { console.warn(TAG + ' §MHIST record failed', e && e.message); }
+      }
       console.log(TAG + ' init from "' + name + '" ready=' + ready);
       return ready;
     } catch (e) { console.warn(TAG + ' open failed', e && e.message); return false; }
