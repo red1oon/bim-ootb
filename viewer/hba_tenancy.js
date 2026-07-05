@@ -36,7 +36,8 @@
   function mount(A) {
     var sp = spec(A);
     if (!sp) return false;
-    var pane = el('div', 'position:fixed;top:54px;right:12px;width:380px;max-height:82vh;overflow:auto;z-index:10050;' +
+    // §FIX 2026-07-06c item B — cascade column 5 (right:1616) so this pane never overlaps the earlier columns.
+    var pane = el('div', 'position:fixed;top:54px;right:1616px;width:380px;max-height:82vh;overflow:auto;z-index:10050;' +
       'background:#fff;border-radius:10px;box-shadow:0 6px 24px #0005;font-family:system-ui,sans-serif;color:#222;');
     pane.id = 'hba-tenancy-pane';
     var head = el('div', 'display:flex;justify-content:space-between;align-items:center;background:#102a43;color:#fff;padding:10px 12px;border-radius:10px 10px 0 0;');
