@@ -191,6 +191,20 @@
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
+    // §FIND_VIS_TRACE (diagnostic, 2026-07-06): a "Find box appears on its own at onset" bug
+    // has been reported but not reproduced synthetically (cold load / simulated back-forward
+    // both stayed hidden). Log a stack trace every time this panel's visibility flips, so the
+    // NEXT real occurrence in the field pins down who/what set display=block.
+    (function () {
+      var _lastVis = panel.style.display === 'block';
+      new MutationObserver(function () {
+        var vis = panel.style.display === 'block';
+        if (vis === _lastVis) return;
+        _lastVis = vis;
+        console.log('§FIND_VIS_TRACE display=' + panel.style.display + ' at=' + Date.now() +
+          '\n' + (new Error().stack));
+      }).observe(panel, { attributes: true, attributeFilter: ['style'] });
+    })();
     // S265 Phase 5: make Find panel draggable — with a GENEROUS top grab-zone (user: the thin
     // default strip was "hard to drag, give me more margin to hold onto"). Taps inside still work.
     panel._dragStrip = window._isMobile ? 96 : 64;  // ~2× the default 50/30

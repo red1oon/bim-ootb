@@ -30,7 +30,8 @@ var ICONS = {
   camera:    { svg: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', trl: null, key: null, desc: 'Camera / View' },
   // PILL_DRAWER_REORGANIZATION.md §NEW ICONS — Lucide, pulled verbatim 2026-07-05 (unpkg.com/lucide-static)
   bone:      { svg: '<path d="M17 10c.7-.7 1.69 0 2.5 0a2.5 2.5 0 1 0 0-5 .5.5 0 0 1-.5-.5 2.5 2.5 0 1 0-5 0c0 .81.7 1.8 0 2.5l-7 7c-.7.7-1.69 0-2.5 0a2.5 2.5 0 0 0 0 5c.28 0 .5.22.5.5a2.5 2.5 0 1 0 5 0c0-.81-.7-1.8 0-2.5Z" />', trl: 'ui_tt_xray', key: null, desc: 'X-Ray' },
-  hardHat:   { svg: '<path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" /><path d="M14 6a6 6 0 0 1 6 6v3" /><path d="M4 15v-3a6 6 0 0 1 6-6" /><rect x="2" y="15" width="20" height="4" rx="1" />', trl: null, key: null, desc: 'Inspect' },
+  hardHat:   { svg: '<path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" /><path d="M14 6a6 6 0 0 1 6 6v3" /><path d="M4 15v-3a6 6 0 0 1 6-6" /><rect x="2" y="15" width="20" height="4" rx="1" />', trl: null, key: null, desc: 'Inspect (unused, replaced by draftingCompass)' },
+  draftingCompass: { svg: '<path d="m12.99 6.74 1.93 3.44" /><path d="M19.136 12a10 10 0 0 1-14.271 0" /><path d="m21 21-2.16-3.84" /><path d="m3 21 8.02-14.26" /><circle cx="12" cy="5" r="2" />', trl: null, key: null, desc: 'Inspect' },
   sailboat:  { svg: '<path d="M10 2v15" /><path d="M7 22a4 4 0 0 1-4-4 1 1 0 0 1 1-1h16a1 1 0 0 1 1 1 4 4 0 0 1-4 4z" /><path d="M9.159 2.46a1 1 0 0 1 1.521-.193l9.977 8.98A1 1 0 0 1 20 13H4a1 1 0 0 1-.824-1.567z" />', trl: null, key: null, desc: 'Navigate' },
   barChart:  { svg: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: 'ui_tt_export', key: null, desc: '4D/5D Export' },
   home:      { svg: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', trl: 'ui_tt_home', key: null, desc: 'Home' },
@@ -72,7 +73,8 @@ var ICONS = {
   bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' },
   // HR_BIM_Asset — ONE "FM / Operate" family icon (the 6 lenses now live in a drawer owned by hba_lens.js,
   // which carries its own per-lens icons). Lucide 'building-2' = the operate-phase / facilities cockpit.
-  fmCockpit: { svg: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>', trl: null, key: null, desc: 'FM / Operate' },
+  fmCockpit: { svg: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>', trl: null, key: null, desc: 'FM / Operate (unused, replaced by twoHeads)' },
+  twoHeads:  { svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.128a4 4 0 0 1 0 7.744" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" />', trl: null, key: null, desc: 'Human-Asset' },
   barChart:  { svg: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: null, key: null, desc: 'Occupancy dashboard' },
   // PILLS_CONSOLIDATION_REVIEW_2026-07-03 §ICON MAP — one glyph = ONE meaning everywhere. These five
   // (Lucide, verbatim) break up the confirmed glyph collisions: checkList stays UBBL-only, maximize stays
@@ -218,7 +220,8 @@ function setupPanels(A) {
     if (!existing) return;
     // Replace the placeholder with a proper bim-panel
     existing.className = 'bim-panel';
-    existing.style.cssText = 'display:none; top:90px; right:70px; min-width:220px; max-width:280px;';
+    // §PANEL-SPREAD: upper-left — was top:90/right:70, same spot as Settings/drawers/JSON editor.
+    existing.style.cssText = 'display:none; top:70px; left:16px; min-width:220px; max-width:280px;';
 
     // Close button
     var closeBtn = document.createElement('span');
@@ -309,6 +312,20 @@ function setupPanels(A) {
   if (_sb) _sb.classList.remove('overflow-open');
   var _sc = document.getElementById('overflow-scrim');
   if (_sc) _sc.classList.remove('active');
+
+  // §FIND_VIS_TRACE (diagnostic, 2026-07-06): same "appears on its own" report could also be
+  // THIS element (legacy id, today only hosts unrelated overflow buttons) rather than the real
+  // Find panel — watch it too so the class-toggle path isn't ruled out by assumption.
+  if (_sb) {
+    var _sbLastVis = _sb.classList.contains('overflow-open');
+    new MutationObserver(function () {
+      var vis = _sb.classList.contains('overflow-open');
+      if (vis === _sbLastVis) return;
+      _sbLastVis = vis;
+      console.log('§FIND_VIS_TRACE search-box overflow-open=' + vis + ' at=' + Date.now() +
+        '\n' + (new Error().stack));
+    }).observe(_sb, { attributes: true, attributeFilter: ['class'] });
+  }
 
   // Prevent touch/click on floating panels from reaching canvas underneath
   // S265 Phase 4: storey-panel/disc-panel removed (inside HUD now)
@@ -1114,7 +1131,7 @@ function setupPanels(A) {
       // live in hba_lens.js (the additive HBA module) — panels.js carries ONLY this one entry, keeping the
       // shared bar (and the Teams-adjacent file) minimal. Inert if hr_bim_asset/* did not load. id stays `hbaFM`
       // (internal, unrenamed — 29+ witness files reference it); only the user-visible label changed.
-      { id: 'hbaFM',      name: 'Human-Asset',     pill: false, icon: I.fmCockpit.svg,
+      { id: 'hbaFM',      name: 'Human-Asset',     pill: false, icon: I.twoHeads.svg,
         fn: function() { if (window.HBALens && HBALens.openFamilyDrawer) HBALens.openFamilyDrawer(A); },
         isActive: function() { return !!(window.HBALens && HBALens.familyActive && HBALens.familyActive()); },
         children: [ { name: 'Operate-phase (7D) cockpit — one model, lenses each answering ONE question' }, { name: 'Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard' }, { name: 'Wake-aware: only lenses with data in THIS building are enabled (others greyed)' }, { name: 'All off one signed op-log; toggle a lens off restores the model' } ] },
@@ -1123,17 +1140,20 @@ function setupPanels(A) {
       { id: 'measure',    name: 'Measure',         key: 'm', pill: false, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
-        isActive: function() { return !!A._measureOn; } },
+        isActive: function() { return !!A.measureActive; } },
       { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
       // PILL_DRAWER_REORGANIZATION.md §4: icon Eye→Bone (Eye freed, Bone = X-ray metaphor).
-      // Long-press→Bbox chip UNCHANGED.
-      { id: 'xray',       name: 'X-Ray',           key: 'Alt+Z', pill: false, icon: I.bone.svg, fn: function() { if (typeof toggleXray === 'function') toggleXray(); },
-        hold: function(btn) { _revealChip(btn, 'bbox', I.box.svg, function(){ if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }); },
-        isActive: function() { return !!A._xrayOn; } },
-      // Alt+X bounding-box envelope ghost — hold-chip off X-Ray (sibling x-ray mode); pill:false → Help/Settings only, no standalone pill.
-      { id: 'bbox',       name: 'Bounding Boxes',  key: 'Alt+X', pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
+      // REVISED (user, 2026-07-06): Alt+X retired — this row is now a 3-state cycle
+      // Off→X-Ray→Bbox→Off (A.cycleXrayBboxMode, tools.js), no more hold-to-reveal chip.
+      { id: 'xray',       name: 'X-Ray / Bbox',    key: 'Alt+Z', pill: false, icon: I.bone.svg,
+        fn: function() { if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); },
+        isActive: function() { return !!A.xrayOn || (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()); },
+        stateLabel: function() { return A.xrayOn ? 'X-Ray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'Bbox' : 'Off'); } },
+      // Bounding-box envelope ghost — absorbed into the 'xray' cycle above, key removed (was
+      // Alt+X). Entry kept (pill:false) only so Settings' pill editor still has a stable id.
+      { id: 'bbox',       name: 'Bounding Boxes',  key: null, pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
       { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
         children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
       { id: 'section',    name: 'Section Cut',     key: 'x', pill: false, icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
@@ -1143,7 +1163,7 @@ function setupPanels(A) {
       { id: 'background', name: 'Background',      key: 'b', pill: false, icon: I.contrast.svg,
         fn: function() { if (typeof window.toggleBackground === 'function') window.toggleBackground(); },
         isActive: function() { return !!A._whiteBg; } },
-      { id: 'night',      name: 'Night',           key: 'n', pill: false, icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightOn; } },
+      { id: 'night',      name: 'Night',           key: 'n', pill: false, icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightMode; } },
       { id: 'palette',    name: 'Palette',         key: 'p', icon: I.palette.svg, fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A.sunglassOn; },
         children: [ { name: 'Ambience 0–100' }, { name: 'Sun 0–5' }, { name: 'Exposure 0.1–3' }, { name: 'Ambient 0–2' }, { name: 'Hemisphere 0–2' }, { name: 'Night' }, { name: 'Shadow + Ground (cycle)' }, { name: 'Reverse background' }, { name: 'Sound FX' } ] },
       // §SHADOW-GROUND MERGE: one 4-state cycle (Off→Grass→Earth→Paved→Off) — A.toggleShadow's
@@ -1151,7 +1171,7 @@ function setupPanels(A) {
       // the 'h' shortcut + Help listing. Row rendered specially (real texture-swatch) — see
       // _buildShadowGroundRow() below, not the generic drawer-row.
       { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
-      { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A._flyOn; } },
+      { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
       { id: 'report',     name: '4D / 5D',         key: '4', pill: false, icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
         fn: function() { if (typeof toggleIssues === 'function') toggleIssues(); },
@@ -1195,7 +1215,7 @@ function setupPanels(A) {
       // after _navigateDrawer/_inspectDrawer/_camviewDrawer are assigned.
       { id: 'navigate',   name: 'Navigate',        icon: I.sailboat.svg,
         fn: function() { _navigateDrawer.toggle(); }, isActive: function() { return _navigateDrawer.isOpen(); } },
-      { id: 'inspect',    name: 'Inspect',         icon: I.hardHat.svg,
+      { id: 'inspect',    name: 'Inspect',         icon: I.draftingCompass.svg,
         fn: function() { _inspectDrawer.toggle(); }, isActive: function() { return _inspectDrawer.isOpen(); } },
       { id: 'camview',    name: 'Camera / View',   icon: I.camera.svg,
         fn: function() { _camviewDrawer.toggle(); }, isActive: function() { return _camviewDrawer.isOpen(); } }
@@ -1233,6 +1253,7 @@ function setupPanels(A) {
       row.appendChild(label);
 
       function _sync() {
+        if (act.stateLabel) { try { label.textContent = act.name + '  ·  ' + act.stateLabel(); } catch (e) {} }
         if (!act.isActive) return;
         var on = false; try { on = !!act.isActive(); } catch (e) {}
         row.classList.toggle('active', on);
@@ -1250,6 +1271,7 @@ function setupPanels(A) {
           e.stopPropagation(); _cancelHold();
           if (_held) { _held = false; return; }
           act.fn(); _sync();
+          setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
           console.log('§DRAWER_ROW action=' + act.id);
         });
         row.addEventListener('pointerleave', _cancelHold);
@@ -1258,6 +1280,7 @@ function setupPanels(A) {
         row.addEventListener('pointerup', function(e) {
           e.stopPropagation();
           act.fn(); _sync();
+          setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
           console.log('§DRAWER_ROW action=' + act.id);
         });
       }
@@ -1273,42 +1296,59 @@ function setupPanels(A) {
       var opt = (cfg.options || []).filter(function(o) { return o.key === key; })[0];
       return opt && opt.src;
     }
+    // REVISED (user, 2026-07-06): no text label — Cloud icon + the 3 ground types as static
+    // sample-image boxes, side by side. The boxes NEVER change image (each is a fixed real
+    // texture sample — grass/earth/paved); only the Cloud click advances WHICH box is lit
+    // (Off -> Grass -> Earth -> Paved -> Off). The boxes themselves aren't separately clickable.
     function _buildShadowGroundRow() {
       var act = _actionById('shadow');
-      var row = document.createElement('button');
+      var row = document.createElement('div');
       row.id = 'drawer-row-shadow';
       row.className = 'bim-drawer-row';
       row.title = 'Shadow + Ground — cycle Off → Grass → Earth → Paved';
-      var swatch = document.createElement('span');
-      swatch.id = 'shadow-ground-swatch';
-      swatch.className = 'bim-drawer-swatch';
-      row.appendChild(swatch);
-      var label = document.createElement('span');
-      label.className = 'bim-drawer-row-label';
-      label.id = 'shadow-ground-label';
-      row.appendChild(label);
 
-      var _LABELS = { off: 'Shadow + Ground: Off', grass: 'Shadow + Ground: Grass', earth: 'Shadow + Ground: Earth', paved: 'Shadow + Ground: Paved' };
-      function _paint() {
-        var key = A._shadowGroundKey || 'off';
-        label.textContent = (_LABELS[key] || 'Shadow + Ground') + '  ·  h';
-        if (key === 'off') {
-          swatch.style.backgroundImage = 'none';
-          swatch.style.backgroundColor = '#333';
-        } else {
+      var cloudBtn = document.createElement('button');
+      cloudBtn.id = 'shadow-ground-cloud-btn';
+      cloudBtn.className = 'bim-drawer-row-icon';
+      cloudBtn.style.cssText = 'border:none;background:transparent;padding:0;cursor:pointer;color:inherit;';
+      cloudBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + I.cloud.svg + '</svg>';
+      row.appendChild(cloudBtn);
+
+      var _keys = ['grass', 'earth', 'paved'];
+      var _boxes = {};
+      _keys.forEach(function(key) {
+        var box = document.createElement('span');
+        box.id = 'shadow-ground-box-' + key;
+        box.className = 'bim-drawer-swatch';
+        box.title = key.charAt(0).toUpperCase() + key.slice(1);
+        row.appendChild(box);
+        _boxes[key] = box;
+      });
+      // setupPanels() runs BEFORE setupTools() (main.js _mods order) — A._groundCfgDefault
+      // doesn't exist yet at construction time. Defer one tick so tools.js has run, then set
+      // each box's image ONCE (fixed per box, real sample — never re-painted after this).
+      setTimeout(function() {
+        _keys.forEach(function(key) {
+          if (_boxes[key].style.backgroundImage) return;
           var src = _sgSwatchSrc(key);
-          if (src) { swatch.style.backgroundImage = 'url(' + src + ')'; swatch.style.backgroundColor = ''; }
-          else { swatch.style.backgroundImage = 'none'; swatch.style.backgroundColor = '#4a7c3a'; }
-        }
-        row.classList.toggle('active', key !== 'off');
-        console.log('§SHADOW_GROUND_SWATCH key=' + key);
+          if (src) _boxes[key].style.backgroundImage = 'url(' + src + ')';
+        });
+      }, 0);
+
+      function _paint() {
+        var cur = A._shadowGroundKey || 'off';
+        _keys.forEach(function(key) {
+          _boxes[key].style.border = (key === cur) ? '2px solid #4fc3f7' : '1px solid rgba(255,255,255,0.25)';
+        });
+        row.classList.toggle('active', cur !== 'off');
+        console.log('§SHADOW_GROUND_SWATCH key=' + cur);
       }
       row._sync = _paint;
       // Re-paint whenever the ground texture actually changes (A._applyGroundTexture already
       // calls this hook — reused verbatim, no tools.js change needed beyond the cycle itself).
       A._refreshGroundBtns = _paint;
 
-      row.addEventListener('pointerup', function(e) {
+      cloudBtn.addEventListener('pointerup', function(e) {
         e.stopPropagation();
         if (act && act.fn) act.fn(); else if (typeof window.toggleShadow === 'function') window.toggleShadow();
         _paint();
@@ -1340,9 +1380,17 @@ function setupPanels(A) {
           rows.push(row);
           wrap.appendChild(row);
         });
+        // §PANEL-SPREAD: left side of screen, staggered per drawer — was hardcoded top:90/
+        // right:70 for ALL 3 drawers (+ Palette/Settings/JSON-editor also clustered there),
+        // stacking directly on top of each other and covering the pill rail. Fixed 2026-07-06.
+        // Own dedicated column (left:928), stacked vertically — kept OUT of Settings'/JSON-
+        // editor's columns since those run much taller (700px+) and would otherwise overlap
+        // anything sharing their column further down the same column.
+        var _pos = { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
+                     camview: { top: '640px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
         panel = A.createPanel(panelId, {
           closable: true,
-          style: { position: 'fixed', top: '90px', right: '70px', zIndex: '1100', width: '230px', padding: '10px 8px' },
+          style: { position: 'fixed', top: _pos.top, left: _pos.left, zIndex: '1100', width: '230px', padding: '10px 8px' },
           content: '<h3 style="margin:0 0 8px 6px;color:#4fc3f7;font-size:13px">' + title + '</h3>',
           onClose: function() { console.log('§DRAWER_CLOSE id=' + masterId); }
         });
@@ -1364,7 +1412,7 @@ function setupPanels(A) {
     }
 
     var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'worldhist', 'home', 'walk']);
-    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'xray', 'section', 'tm', 'report', 'fly']);
+    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report', 'fly']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at
@@ -1429,7 +1477,9 @@ function setupPanels(A) {
       });
       content.appendChild(resetBtn);
 
-      p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'60px', right:'60px', zIndex:'1100', width:'300px', padding:'0' },
+      // §PANEL-SPREAD: top row (tall content needs headroom) — was top:60/right:60, same
+      // cluster as Palette/drawers/JSON editor, all stacking on the pill rail.
+      p = A.createPanel('settings-panel', { closable: true, style: { position:'fixed', top:'70px', left:'320px', zIndex:'1100', width:'300px', padding:'0' },
         content: content,
         onClose: function() { _syncPillHighlights(); } });
       document.body.appendChild(p);
@@ -1903,8 +1953,10 @@ function setupPanels(A) {
           }
         }
 
+        // §PANEL-SPREAD: own dedicated column (tall content) — was top:80/right:80, same
+        // cluster as the rest.
         var p = A.createPanel(id, { closable: true,
-          style: { position:'fixed', top:'80px', right:'80px', zIndex:'1101', width:'320px', padding:'16px' },
+          style: { position:'fixed', top:'70px', left:'624px', zIndex:'1101', width:'320px', padding:'16px' },
           content: content });
         document.body.appendChild(p);
         p.style.display = '';   // createPanel returns hidden; reveal this fresh panel

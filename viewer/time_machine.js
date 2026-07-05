@@ -3681,6 +3681,7 @@
 
   function _finishActivate(app) {
     _active = true;
+    app._tmOn = true;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     _activeBuildingCount = app.activeBuildingTotal || 0;
     _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
@@ -3747,6 +3748,7 @@
     var varBox = document.getElementById('tm-var-box'); if (varBox) varBox.classList.remove('open');
     toggleDashDOM(false);
     _active = false;
+    if (app) app._tmOn = false;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     _panel.style.display = 'none';
     setToolbarHighlight(false);
     restoreVisibility();
