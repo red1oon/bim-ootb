@@ -93,8 +93,10 @@
     var body = el('div', 'padding:6px 12px 12px;');
     var slip = renderSlip(body, run, sp, _sel);
     pane.appendChild(body);
-    (document.body || document.documentElement).appendChild(pane);
-    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);   // §P10b — drag by the header
+    // §MOBILE-STACK — desktop unchanged; mobile = card-stack host (inline fallback if module absent).
+    (G.HbaPaneHost ? G.HbaPaneHost.present
+      : function (p, h) { (document.body || document.documentElement).appendChild(p); if (G.HbaDraggable) G.HbaDraggable.enable(p, h); }
+    )(pane, head, A);
     _pane = pane;
     console.log('§HBA_PAYSLIP mounted employees=' + sp.employees.length + ' period=' + sp.period + ' selected=' + _sel + ' net=' + slip.net);
     return true;

@@ -88,8 +88,10 @@
     });
     body.appendChild(tbl);
     pane.appendChild(body);
-    (document.body || document.documentElement).appendChild(pane);
-    if (G.HbaDraggable) G.HbaDraggable.enable(pane, head);
+    // §MOBILE-STACK — desktop unchanged; mobile = card-stack host (inline fallback if module absent).
+    (G.HbaPaneHost ? G.HbaPaneHost.present
+      : function (p, h) { (document.body || document.documentElement).appendChild(p); if (G.HbaDraggable) G.HbaDraggable.enable(p, h); }
+    )(pane, head, A);
     _pane = pane;
     console.log('§HBA_BOM_PANE mounted assemblies=' + sp.assemblies.length + ' components=' + totalLines + ' building=' + building);
     return true;
