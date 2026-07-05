@@ -10,6 +10,21 @@
   const TAG = '§GRIDMOVE';
   const GM = {
     _map: {},
+    // §SCALE_CHECK_FIX (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 1): previewCommands() used to build
+    // a BRAND-NEW GridKinematicEngine from elementData() (every authored mesh) + call attachGridToElements()
+    // (an O(n) reclassification of ALL scene elements against ALL grid lines) on EVERY pointermove frame of a
+    // drag — measured ~1.2-1.5s/frame at Terminal scale (35,818 elements), sustained across all 15 sampled
+    // frames. attachGridToElements()'s result does NOT change during a single drag (only dragGrid(gridId,delta)'s
+    // computation does — the classification is a function of element positions + grid lines, neither of which
+    // move mid-drag; the dragged gridline's on-canvas preview line is cosmetic only, the real grid.xs/ys array
+    // does not update until commit/fold). So: cache the built+attached engine (and the two other per-frame O(n)
+    // scans previewCommands() feeds — the mesh-by-featureId map gmTint() needs, and the pre-stretch box-by-fid
+    // map §STRETCH-RIDE needs) ONCE per drag SESSION (beginDragSession(), called on gridline-grab) and reuse
+    // across every subsequent pointermove frame of the SAME drag; endDragSession() (called on commit/cancel)
+    // drops the cache so the NEXT drag rebuilds fresh off the post-commit scene. Every caller that does NOT run
+    // inside a session (a direct computeCommands()/meshByFid()/_boxByFid() call, e.g. from a test) still
+    // build-and-discards exactly as before — byte-identical behavior, just not recomputed 15x per drag.
+    _engine: null, _meshCache: null, _boxCache: null,
     // §GREEN-EXCLUDE (GRID_PREDRAG_GREENORANGE_PREVIEW.md): per-drag-session opt-out set. Orange (proportional
     // follow) is the DEFAULT for every governed element — this set holds the featureIds the user ctrl-clicked
     // OUT of the current drag (green). Seeded empty every session (modeller.html enterGridMove/exitGridMove
@@ -57,28 +72,62 @@
       return lines;
     },
 
-    // PURE recompose: build the engine from the current state and ask it for the commands for this drag.
-    computeCommands(gridId, delta) {
+    // Build a fresh engine + attach map (the pre-fix per-call cost). Extracted so both the cached session path
+    // (beginDragSession) and the uncached fallback (no session active) share ONE implementation.
+    _buildEngine() {
       const Eng = window.GridKinematics && window.GridKinematics.GridKinematicEngine;
       if (!Eng) throw new Error('GridKinematics engine not loaded');
       const eng = new Eng(this.elementData(), this.gridLines());
       eng.attachGridToElements();
+      return eng;
+    },
+    // §SCALE_CHECK_FIX: call once on gridline-grab (pointerdown) — builds + CACHES the attach-map engine plus
+    // the two sibling per-frame O(n) scans (mesh-by-fid for gmTint, box-by-fid for §STRETCH-RIDE) for the
+    // duration of this ONE drag session. Logged so the cache lifecycle is visible in the console, not just
+    // inferred from timing.
+    beginDragSession() {
+      this._engine = this._buildEngine();
+      this._meshCache = this._buildMeshByFid();
+      this._boxCache = this._buildBoxByFid();
+      console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)');
+    },
+    // Called on commit/cancel — the NEXT drag (or any non-session caller) rebuilds fresh off the post-commit
+    // scene, so a scene edit between drags is never served a stale attach map.
+    endDragSession() {
+      if (this._engine) console.log(TAG + ' §SCALE_CHECK_FIX drag-session end — caches cleared');
+      this._engine = null; this._meshCache = null; this._boxCache = null;
+    },
+    // PURE recompose: use the cached attached engine if a drag session is active, else build-and-discard
+    // (unchanged fallback behavior for any caller outside a session, e.g. tests).
+    computeCommands(gridId, delta) {
+      const eng = this._engine || this._buildEngine();
       // engine guid === our featureId; carry it forward as featureId so the worker fold is unambiguous.
       return eng.dragGrid(gridId, delta).map(c => ({
         featureId: c.guid, action: c.action, axis: c.axis,
         delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge }));
     },
+    // fid -> mesh map (gmTint's per-command lookup — was g.children.find(), O(n) per command per frame).
+    _buildMeshByFid() {
+      const g = window.Bonsai.group && window.Bonsai.group(); const out = {}; if (!g) return out;
+      g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null) out[m.userData.featureId] = m; });
+      return out;
+    },
+    meshByFid() { return this._meshCache || this._buildMeshByFid(); },
 
     // §STRETCH-RIDE snapshot: pre-stretch AABBs of every authored mesh, the SAME shape modeller.html's own
     // _gateBoxes() builds for the conformity gate — SdgCascade.stretchRide needs the rider's + host's PRE-edit
-    // boxes to derive the induced move (see sdg_cascade.js header). Read BEFORE this drag's commit so it's honest.
-    _boxByFid() {
+    // boxes to derive the induced move (see sdg_cascade.js header). Read BEFORE this drag's commit so it's
+    // honest — and, being a snapshot of the PRE-edit state, it is by definition invariant across every frame of
+    // the same drag (no mesh transform actually changes until the commit folds), so it is safe and correct to
+    // cache it for the session exactly like the engine/mesh caches above (§SCALE_CHECK_FIX).
+    _buildBoxByFid() {
       const g = window.Bonsai.group && window.Bonsai.group(); const out = {}; if (!g) return out;
       g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null) {
         m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
         out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
       return out;
     },
+    _boxByFid() { return this._boxCache || this._buildBoxByFid(); },
 
     // §PREDRAG shared pipeline (GRID_PREDRAG_GREENORANGE_PREVIEW.md): computeCommands → stretchRide (hosted-
     // opening override — fixes the gap where the live gmTint preview saw only the engine's raw, possibly-WRONG

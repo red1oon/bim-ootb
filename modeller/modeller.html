@@ -1512,9 +1512,16 @@ function gmClearTints() {
 }
 function gmTint(commands, riders, excludedFids) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { t: 0, s: 0, x: 0 };
+  // §SCALE_CHECK_FIX (Finding 1): g.children.find() per command was an O(n) lookup per command per frame — at
+  // Terminal scale (35,818 elements) this compounded on top of the engine rebuild. bonsai_gridmove.js now caches
+  // a fid->mesh map ONCE per drag session (built alongside the attach-map engine on gridline-grab); reuse it here
+  // instead of re-scanning g.children per command. Falls back to the old find() if no session is active (e.g.
+  // called outside a real drag) — byte-identical result either way, just not re-derived every frame.
+  const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
+  const meshFor = (fid) => byFid ? byFid[fid] : g.children.find(o => o.isMesh && o.userData.featureId === fid);
   gmClearTints(); let t = 0, s = 0, x = 0;
   commands.forEach(c => {
-    const m = g.children.find(o => o.isMesh && o.userData.featureId === c.featureId);
+    const m = meshFor(c.featureId);
     if (!m || !m.material || !m.material.emissive) return;
     if (c.action === 'TRANSLATE') { m.material.emissive.setHex(0x1e66c8); t++; }   // blue = moves rigidly
     else if (c.action === 'SCALE') { m.material.emissive.setHex(0xc8731e); s++; }   // orange = stretches
@@ -1523,13 +1530,13 @@ function gmTint(commands, riders, excludedFids) {
   // induced rigid move — so it tints BLUE like any translate, never orange. Before this fix gmTint never saw
   // riders at all and would leave the opening showing its raw (possibly SCALE/orange) engine command — wrong.
   (riders || []).forEach(r => {
-    const m = g.children.find(o => o.isMesh && o.userData.featureId === r.featureId);
+    const m = meshFor(r.featureId);
     if (!m || !m.material || !m.material.emissive) return;
     m.material.emissive.setHex(0x1e66c8); t++;
   });
   // §GREEN-EXCLUDE: opt-out always wins — force green over whatever blue/orange the element would otherwise show.
   (excludedFids || []).forEach(fid => {
-    const m = g.children.find(o => o.isMesh && o.userData.featureId === fid);
+    const m = meshFor(fid);
     if (!m || !m.material || !m.material.emissive) return;
     _emis(m, GM_GREEN); x++;
   });
@@ -1548,6 +1555,10 @@ function exitGridMove() {
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
   if (window.Bonsai.gridmove && window.Bonsai.gridmove.resetOverrides) window.Bonsai.gridmove.resetOverrides();   // §GREEN-EXCLUDE: end of session
+  // §SCALE_CHECK_FIX (Finding 1): drop the per-drag attach-map/mesh/box caches — covers BOTH exit paths (Escape
+  // cancel mid-drag, and commitGridMove()'s own success call into exitGridMove()) so the NEXT drag always
+  // rebuilds fresh off whatever the scene looks like now.
+  if (window.Bonsai.gridmove && window.Bonsai.gridmove.endDragSession) window.Bonsai.gridmove.endDragSession();
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
@@ -1584,7 +1595,12 @@ canvas.addEventListener('pointerdown', (e) => {
   const hit = new THREE.Vector3();
   if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
   const gl = nearestGridline(hit.x, hit.y);
-  if (gl) { _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')'); }
+  if (gl) {
+    _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')');
+    // §SCALE_CHECK_FIX (Finding 1): gridline-grab = the drag session boundary — cache the attach-map engine +
+    // mesh/box maps ONCE here so every pointermove frame below reuses them instead of rebuilding from scratch.
+    if (window.Bonsai.gridmove && window.Bonsai.gridmove.beginDragSession) window.Bonsai.gridmove.beginDragSession();
+  }
 });
 canvas.addEventListener('pointermove', (e) => {
   if (!gridMoving) return;
@@ -2229,12 +2245,18 @@ async function runSave() {
   // never chased). RED is NEVER auto-resolved, regardless of any delta.
   const plan = window.SdgSave.planHeal(res.orange);
   let healedLog = [];
+  // §SAVE-BLOCKED-HEAL-CLARITY (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4 — item 4, UX-only, no
+  // behavior change): the set of featureIds the heal pass itself moved (target + hosted riders) — hoisted out
+  // of the `if` below so the block-message code further down can tell a heal-INDUCED new RED (an element THIS
+  // pass just moved landed in a new clash) apart from a pre-existing RED the heal never touched.
+  const healMovedFids = new Set();
   if (plan.healable.length) {
     // Build the heal ops PLUS a cascade ride for any REAL hosted fillings of the healed target — mirrors
     // commitMove()'s own SdgCascade.ridersFor block (a moved HOST drags its door/window riders). Without this,
     // healing a wall by translating it would silently manufacture a BRAND NEW door-out RED (the wall's real
     // door left behind), which would then re-block the very Save the heal was trying to unblock.
     const healTargets = new Set(plan.healable.map(f => f.a));
+    healTargets.forEach(fid => healMovedFids.add(fid));
     const riderSeen = new Set();
     const ops = [];
     plan.healable.forEach(function (f) {
@@ -2243,7 +2265,7 @@ async function runSave() {
       if (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid) {
         const riders = window.SdgCascade.ridersFor([f.a], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, healTargets);
         riders.forEach(function (rfid) {
-          if (riderSeen.has(rfid)) return; riderSeen.add(rfid);
+          if (riderSeen.has(rfid)) return; riderSeen.add(rfid); healMovedFids.add(rfid);
           ops.push({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx: op.params.dx, dy: op.params.dy, dz: op.params.dz, induced: 'sdg-autoheal-ride' } });
         });
       }
@@ -2274,9 +2296,24 @@ async function runSave() {
 
   if (res.red.length) {
     const detail = res.red.map(r => r.kind + '(' + r.a + ',' + r.b + ')').join('; ');
-    toast('⛔ Save blocked — ' + res.red.length + ' RED: ' + res.red.map(r => r.kind).join(', '), 'error');
-    console.log('§SAVE_BLOCKED reason=RED_CLASH count=' + res.red.length + ' detail=' + detail + ' healed=' + healedLog.length);
-    setStat('Save: BLOCKED — ' + res.red.length + ' RED remaining');
+    // §SAVE-BLOCKED-HEAL-CLARITY: distinguish a heal-INDUCED new RED (this Save's OWN auto-heal pass moved an
+    // element that then landed in a NEW clash with a third, unrelated element — Finding 2's real Terminal-scale
+    // failure mode: heal succeeded, but the whole Save still blocked) from a genuinely PRE-EXISTING RED the heal
+    // never touched. Message-clarity only — the block/rollback DECISION is unchanged (my call, per the findings
+    // doc: keep the current whole-Save-block behavior; automatic partial-heal-rollback is real complexity,
+    // unproven, and out of scope here) — this just tells the user WHY in the specific case it was the heal's
+    // own side-effect, not a pre-existing problem in their model.
+    const healInduced = healedLog.length > 0 && res.red.some(r => healMovedFids.has(r.a) || healMovedFids.has(r.b));
+    console.log('§SAVE_BLOCKED_REASON heal_induced=' + healInduced);
+    if (healInduced) {
+      const culprits = res.red.filter(r => healMovedFids.has(r.a) || healMovedFids.has(r.b));
+      const cdetail = culprits.map(r => '(' + r.a + ' vs ' + r.b + ')').join(', ');
+      toast('⛔ Save blocked — auto-heal fixed ' + healedLog.length + ' issue(s) but created a new clash while doing so ' + cdetail + ' — please resolve manually', 'error');
+    } else {
+      toast('⛔ Save blocked — ' + res.red.length + ' RED: ' + res.red.map(r => r.kind).join(', '), 'error');
+    }
+    console.log('§SAVE_BLOCKED reason=RED_CLASH count=' + res.red.length + ' detail=' + detail + ' healed=' + healedLog.length + ' healInduced=' + healInduced);
+    setStat('Save: BLOCKED — ' + res.red.length + ' RED remaining' + (healInduced ? ' (heal-induced)' : ''));
     // §UX-SAVE-BLOCKED-FOCUS (WATCHDOG_SCALE_AND_UX_SWEEP.md / SCALE_AND_UX_SWEEP.md §3.2): a text-only
     // "blocked" toast was a dead end — the user had no way to find WHICH element(s) are the problem. Point them
     // at it: select every element named in a RED finding (setSelectionIds — real emissive+outline highlight,
