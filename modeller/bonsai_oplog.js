@@ -22,10 +22,17 @@
     async _ensureDb() {
       if (this.db) return this.db;
       const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, _base).href });
-      // PERSISTENCE: restore the saved signed op-log from localStorage so work survives a reload.
-      const saved = this._loadBytes();
-      if (saved) { try { this.db = new SQL.Database(saved); console.log(TAG + ' restored saved model bytes=' + saved.length); } catch (e) { console.warn(TAG + ' restore failed ' + e); this.db = new SQL.Database(); } }
-      else this.db = new SQL.Database();
+      // PERSISTENCE: restore the saved signed op-log — localStorage first, IndexedDB fallback (§AUTOSAVE_FIX,
+      // SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4) if a Terminal-scale save overflowed localStorage's
+      // quota and had to persist there instead. See _loadBytesEither() for the precedence rule.
+      const restored = await this._loadBytesEither();
+      if (restored.bytes) {
+        try {
+          this.db = new SQL.Database(restored.bytes);
+          console.log(TAG + ' restored saved model bytes=' + restored.bytes.length + ' source=' + restored.source);
+          if (restored.source === 'idb') console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + restored.bytes.length + ' reload_restore=true');
+        } catch (e) { console.warn(TAG + ' restore failed ' + e); this.db = new SQL.Database(); }
+      } else this.db = new SQL.Database();
       window.KernelOps.ensureTable(this.db);
       // W-SIGN: install an edge signer so every committed op carries a verifiable signature over its op_hash.
       window.KernelOps.setSigner({
@@ -59,11 +66,103 @@
     },
     _unb64(b64) { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; },
     _loadBytes() { try { const s = localStorage.getItem(this._KEY); return s ? this._unb64(s) : null; } catch (e) { return null; } },
+
+    // ── §AUTOSAVE_FIX (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4) ──────────────────────────────
+    // localStorage is ~5-10MB/origin; a Terminal-scale signed op-log export (35k+ rows, base64-encoded) can
+    // exceed that — confirmed in the raw scale-check log: 20x "§OPLOG autosave FAILED ... QuotaExceededError
+    // ... 'mo_Terminal' exceeded the quota". Before this fix that was console.error-only: the edit stayed
+    // correct in-session but SILENTLY did not survive a reload — a real data-loss risk with zero visible signal.
+    // Fix: on a caught save failure, fall back to IndexedDB (typically hundreds of MB-to-GB quota), reusing the
+    // SAME 'bim_ootb_cache' IndexedDB database str_walker_outliner.js's _idbGetDb/_idbPutDb already use for the
+    // building-geometry cache (own dedicated object store here, 'oplog_fallback', so the two caches never
+    // collide on key-space) — no new IDB wrapper invented, same shape. IDB stores the raw Uint8Array directly
+    // (no base64 needed — IndexedDB's structured clone handles binary natively), which is also strictly cheaper
+    // than the localStorage path's chunked btoa() encode.
+    _idbGet(key) {
+      return new Promise((resolve) => {
+        try {
+          const rq = indexedDB.open('bim_ootb_cache');
+          rq.onsuccess = () => {
+            const idb = rq.result;
+            if (!idb.objectStoreNames.contains('oplog_fallback')) { resolve(null); return; }
+            try {
+              const g = idb.transaction('oplog_fallback', 'readonly').objectStore('oplog_fallback').get(key);
+              g.onsuccess = () => resolve(g.result || null);
+              g.onerror = () => resolve(null);
+            } catch (e) { resolve(null); }
+          };
+          rq.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      });
+    },
+    _idbPut(key, bytes) {
+      return new Promise((resolve) => {
+        function put(idb) {
+          try {
+            const tx = idb.transaction('oplog_fallback', 'readwrite');
+            tx.objectStore('oplog_fallback').put(bytes, key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+          } catch (e) { resolve(false); }
+        }
+        try {
+          const rq = indexedDB.open('bim_ootb_cache');
+          rq.onsuccess = () => {
+            const idb = rq.result;
+            if (idb.objectStoreNames.contains('oplog_fallback')) { put(idb); return; }
+            const v = idb.version; idb.close();
+            const up = indexedDB.open('bim_ootb_cache', v + 1);
+            up.onupgradeneeded = () => { const d = up.result; if (!d.objectStoreNames.contains('oplog_fallback')) d.createObjectStore('oplog_fallback'); };
+            up.onsuccess = () => put(up.result);
+            up.onerror = () => resolve(false);
+          };
+          rq.onerror = () => resolve(false);
+        } catch (e) { resolve(false); }
+      });
+    },
+    // Restore precedence: localStorage first (the common case, zero async cost); if empty, check the IDB
+    // fallback (a prior save that overflowed localStorage). If BOTH exist (localStorage held an older,
+    // pre-overflow save; IDB holds a later fallback save, or vice versa on a since-cleared localStorage),
+    // prefer the LONGER export — kernel_ops is append-only (only clear() shrinks it, which empties both keys
+    // together), so a longer byte length is measurably the more-complete history, never an invented guess.
+    async _loadBytesEither() {
+      const ls = this._loadBytes();
+      const idb = await this._idbGet(this._KEY);
+      if (ls && idb) {
+        if (idb.length > ls.length) { console.log(TAG + ' §AUTOSAVE_FIX both localStorage(' + ls.length + 'B) and IDB(' + idb.length + 'B) present for key=' + this._KEY + ' — IDB is longer (more complete), preferring it'); return { bytes: idb, source: 'idb' }; }
+        return { bytes: ls, source: 'localStorage' };
+      }
+      if (idb) return { bytes: idb, source: 'idb' };
+      if (ls) return { bytes: ls, source: 'localStorage' };
+      return { bytes: null, source: 'none' };
+    },
     // A save failure (e.g. QuotaExceededError — localStorage is typically ~5-10MB/origin, and a Terminal-scale
-    // export can approach or exceed that) used to be console.warn-only. console.error makes it loud (matches
-    // the §ARC-SEED-WIRE visibility fix) — the user's edits still work in-session either way (autosave is
-    // best-effort), but a silently-failed autosave meant "your edits didn't survive a reload" with zero signal.
-    _save() { try { if (this.db) localStorage.setItem(this._KEY, this._b64(this.db.export())); } catch (e) { console.error(TAG + ' autosave FAILED (edits stay in-session but will NOT survive a reload) ' + e); } },
+    // export can approach or exceed that) used to be console.error-only, no recovery — the user's edits stayed
+    // correct in-session but silently did NOT survive a reload. Now: fall back to the IndexedDB store above so
+    // the edit actually persists, and surface a one-time visible toast (reusing modeller.html's existing
+    // window.toast() mechanism — no new UI-notice code) so a silent-forever failure never recurs either.
+    _save() {
+      if (!this.db) return;
+      let bytes;
+      try { bytes = this.db.export(); } catch (e) { console.error(TAG + ' autosave FAILED — could not export db ' + e); return; }
+      try {
+        localStorage.setItem(this._KEY, this._b64(bytes));
+      } catch (e) {
+        console.error(TAG + ' autosave FAILED to localStorage (edits stay in-session; falling back to IndexedDB) ' + e);
+        this._idbPut(this._KEY, bytes).then((ok) => {
+          if (ok) {
+            console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + bytes.length + ' key=' + this._KEY);
+            if (!this._idbFallbackNotified && window.toast) {
+              this._idbFallbackNotified = true;
+              window.toast('This model is too large for quick-save storage — now autosaving via a larger backup store (your edits are safe).', 'info');
+            }
+          } else {
+            console.error(TAG + ' §AUTOSAVE_FIX path=idb_fallback FAILED bytes=' + bytes.length + ' key=' + this._KEY + ' — this edit may NOT survive a reload');
+            if (window.toast) window.toast('⚠ Autosave failed — this edit may not survive a reload. Use Export ▸ Native .db to be safe.', 'error');
+          }
+        });
+      }
+    },
 
     // Boot-time restore: ensure the db (loads saved bytes), then fold it to the scene if non-empty.
     async restore() {

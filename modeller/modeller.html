@@ -1512,9 +1512,16 @@ function gmClearTints() {
 }
 function gmTint(commands, riders, excludedFids) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { t: 0, s: 0, x: 0 };
+  // §SCALE_CHECK_FIX (Finding 1): g.children.find() per command was an O(n) lookup per command per frame — at
+  // Terminal scale (35,818 elements) this compounded on top of the engine rebuild. bonsai_gridmove.js now caches
+  // a fid->mesh map ONCE per drag session (built alongside the attach-map engine on gridline-grab); reuse it here
+  // instead of re-scanning g.children per command. Falls back to the old find() if no session is active (e.g.
+  // called outside a real drag) — byte-identical result either way, just not re-derived every frame.
+  const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
+  const meshFor = (fid) => byFid ? byFid[fid] : g.children.find(o => o.isMesh && o.userData.featureId === fid);
   gmClearTints(); let t = 0, s = 0, x = 0;
   commands.forEach(c => {
-    const m = g.children.find(o => o.isMesh && o.userData.featureId === c.featureId);
+    const m = meshFor(c.featureId);
     if (!m || !m.material || !m.material.emissive) return;
     if (c.action === 'TRANSLATE') { m.material.emissive.setHex(0x1e66c8); t++; }   // blue = moves rigidly
     else if (c.action === 'SCALE') { m.material.emissive.setHex(0xc8731e); s++; }   // orange = stretches
@@ -1523,13 +1530,13 @@ function gmTint(commands, riders, excludedFids) {
   // induced rigid move — so it tints BLUE like any translate, never orange. Before this fix gmTint never saw
   // riders at all and would leave the opening showing its raw (possibly SCALE/orange) engine command — wrong.
   (riders || []).forEach(r => {
-    const m = g.children.find(o => o.isMesh && o.userData.featureId === r.featureId);
+    const m = meshFor(r.featureId);
     if (!m || !m.material || !m.material.emissive) return;
     m.material.emissive.setHex(0x1e66c8); t++;
   });
   // §GREEN-EXCLUDE: opt-out always wins — force green over whatever blue/orange the element would otherwise show.
   (excludedFids || []).forEach(fid => {
-    const m = g.children.find(o => o.isMesh && o.userData.featureId === fid);
+    const m = meshFor(fid);
     if (!m || !m.material || !m.material.emissive) return;
     _emis(m, GM_GREEN); x++;
   });
@@ -1548,6 +1555,10 @@ function exitGridMove() {
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
   if (window.Bonsai.gridmove && window.Bonsai.gridmove.resetOverrides) window.Bonsai.gridmove.resetOverrides();   // §GREEN-EXCLUDE: end of session
+  // §SCALE_CHECK_FIX (Finding 1): drop the per-drag attach-map/mesh/box caches — covers BOTH exit paths (Escape
+  // cancel mid-drag, and commitGridMove()'s own success call into exitGridMove()) so the NEXT drag always
+  // rebuilds fresh off whatever the scene looks like now.
+  if (window.Bonsai.gridmove && window.Bonsai.gridmove.endDragSession) window.Bonsai.gridmove.endDragSession();
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
@@ -1584,7 +1595,12 @@ canvas.addEventListener('pointerdown', (e) => {
   const hit = new THREE.Vector3();
   if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
   const gl = nearestGridline(hit.x, hit.y);
-  if (gl) { _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')'); }
+  if (gl) {
+    _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')');
+    // §SCALE_CHECK_FIX (Finding 1): gridline-grab = the drag session boundary — cache the attach-map engine +
+    // mesh/box maps ONCE here so every pointermove frame below reuses them instead of rebuilding from scratch.
+    if (window.Bonsai.gridmove && window.Bonsai.gridmove.beginDragSession) window.Bonsai.gridmove.beginDragSession();
+  }
 });
 canvas.addEventListener('pointermove', (e) => {
   if (!gridMoving) return;
@@ -2229,12 +2245,18 @@ async function runSave() {
   // never chased). RED is NEVER auto-resolved, regardless of any delta.
   const plan = window.SdgSave.planHeal(res.orange);
   let healedLog = [];
+  // §SAVE-BLOCKED-HEAL-CLARITY (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4 — item 4, UX-only, no
+  // behavior change): the set of featureIds the heal pass itself moved (target + hosted riders) — hoisted out
+  // of the `if` below so the block-message code further down can tell a heal-INDUCED new RED (an element THIS
+  // pass just moved landed in a new clash) apart from a pre-existing RED the heal never touched.
+  const healMovedFids = new Set();
   if (plan.healable.length) {
     // Build the heal ops PLUS a cascade ride for any REAL hosted fillings of the healed target — mirrors
     // commitMove()'s own SdgCascade.ridersFor block (a moved HOST drags its door/window riders). Without this,
     // healing a wall by translating it would silently manufacture a BRAND NEW door-out RED (the wall's real
     // door left behind), which would then re-block the very Save the heal was trying to unblock.
     const healTargets = new Set(plan.healable.map(f => f.a));
+    healTargets.forEach(fid => healMovedFids.add(fid));
     const riderSeen = new Set();
     const ops = [];
     plan.healable.forEach(function (f) {
@@ -2243,7 +2265,7 @@ async function runSave() {
       if (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid) {
         const riders = window.SdgCascade.ridersFor([f.a], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, healTargets);
         riders.forEach(function (rfid) {
-          if (riderSeen.has(rfid)) return; riderSeen.add(rfid);
+          if (riderSeen.has(rfid)) return; riderSeen.add(rfid); healMovedFids.add(rfid);
           ops.push({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx: op.params.dx, dy: op.params.dy, dz: op.params.dz, induced: 'sdg-autoheal-ride' } });
         });
       }
@@ -2274,9 +2296,35 @@ async function runSave() {
 
   if (res.red.length) {
     const detail = res.red.map(r => r.kind + '(' + r.a + ',' + r.b + ')').join('; ');
-    toast('⛔ Save blocked — ' + res.red.length + ' RED: ' + res.red.map(r => r.kind).join(', '), 'error');
-    console.log('§SAVE_BLOCKED reason=RED_CLASH count=' + res.red.length + ' detail=' + detail + ' healed=' + healedLog.length);
-    setStat('Save: BLOCKED — ' + res.red.length + ' RED remaining');
+    // §SAVE-BLOCKED-HEAL-CLARITY: distinguish a heal-INDUCED new RED (this Save's OWN auto-heal pass moved an
+    // element that then landed in a NEW clash with a third, unrelated element — Finding 2's real Terminal-scale
+    // failure mode: heal succeeded, but the whole Save still blocked) from a genuinely PRE-EXISTING RED the heal
+    // never touched. Message-clarity only — the block/rollback DECISION is unchanged (my call, per the findings
+    // doc: keep the current whole-Save-block behavior; automatic partial-heal-rollback is real complexity,
+    // unproven, and out of scope here) — this just tells the user WHY in the specific case it was the heal's
+    // own side-effect, not a pre-existing problem in their model.
+    const healInduced = healedLog.length > 0 && res.red.some(r => healMovedFids.has(r.a) || healMovedFids.has(r.b));
+    console.log('§SAVE_BLOCKED_REASON heal_induced=' + healInduced);
+    if (healInduced) {
+      const culprits = res.red.filter(r => healMovedFids.has(r.a) || healMovedFids.has(r.b));
+      const cdetail = culprits.map(r => '(' + r.a + ' vs ' + r.b + ')').join(', ');
+      toast('⛔ Save blocked — auto-heal fixed ' + healedLog.length + ' issue(s) but created a new clash while doing so ' + cdetail + ' — please resolve manually', 'error');
+    } else {
+      toast('⛔ Save blocked — ' + res.red.length + ' RED: ' + res.red.map(r => r.kind).join(', '), 'error');
+    }
+    console.log('§SAVE_BLOCKED reason=RED_CLASH count=' + res.red.length + ' detail=' + detail + ' healed=' + healedLog.length + ' healInduced=' + healInduced);
+    setStat('Save: BLOCKED — ' + res.red.length + ' RED remaining' + (healInduced ? ' (heal-induced)' : ''));
+    // §UX-SAVE-BLOCKED-FOCUS (WATCHDOG_SCALE_AND_UX_SWEEP.md / SCALE_AND_UX_SWEEP.md §3.2): a text-only
+    // "blocked" toast was a dead end — the user had no way to find WHICH element(s) are the problem. Point them
+    // at it: select every element named in a RED finding (setSelectionIds — real emissive+outline highlight,
+    // same mechanism a normal click uses) and fly the camera to the primary one (fitView — same fn the 'F' key
+    // and the Fit pill call). Confirmed missing before this fix: the ONLY prior UI feedback was toast+setStat.
+    const redIds = Array.from(new Set(res.red.flatMap(function (r) { return [r.a, r.b]; })));
+    if (redIds.length) {
+      setSelectionIds(redIds, redIds[0]);
+      fitView();
+      console.log('§SAVE_RED_FOCUS selected=' + redIds.join(',') + ' primary=' + redIds[0]);
+    }
     return { ok: false, reason: 'red-blocked', red: res.red, orange: res.orange, healed: healedLog, ubbl: null };   // ubbl slot: not yet available (UBBL_RULES_GATE.md)
   }
 
@@ -2689,11 +2737,18 @@ async function placeAssembly(x, y) {
   // assembly lands centred at every yaw (W-BOM-DROP-CENTER 57/57 <1mm incl the mirror buildings).
   const leaves = L.dropLeaves(insertHash, x, y, insRot, insElev);
   if (!leaves.length) { setStat('assembly ' + insertHash + ' has no placeable leaves'); return null; }
-  const placed = [];
-  for (const lf of leaves) {                                     // each leaf = one signed op-row (the chain)
-    const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_INSERT', parameters: { hash: lf.hash, placement: { x: lf.x, y: lf.y, z: lf.z, rot: lf.rot }, lod: '200' } });
-    placed.push({ id: res.id, hash: lf.hash });
-  }
+  // §Q4-GROUP-LINKAGE (PARAMETRIC_DEPTH_RECON_FINDINGS.md Q4 / WATCHDOG_SCALE_AND_UX_SWEEP.md §4.2): was a loop
+  // of N awaited oplog.commit() calls — each one an INDEPENDENT unlinked GEOM_INSERT row (a "dining set" of
+  // table+N chairs committed as N separate signed ops with nothing tying them back together, AND N full
+  // seal+verify+fold passes — the exact same per-op-commit cost class _commitDiscWalk's own header measured at
+  // 267 placements = 112s UI freeze). commitSeedGroup (already proven by _commitDiscWalk, modeller.html:3403)
+  // batches every leaf into ONE signed group: one gid ties the whole assembly-drop together (undo/regroup can
+  // now treat "this dining set" as one unit) and it seals+verifies+folds ONCE instead of N times.
+  const O = window.Bonsai.oplog;
+  const asmOps = leaves.map(lf => ({ op_type: 'GEOM_INSERT', parameters: { hash: lf.hash, placement: { x: lf.x, y: lf.y, z: lf.z, rot: lf.rot }, lod: '200' } }));
+  const gres = await O.commitSeedGroup(asmOps, 'asm-' + insertHash + '-' + O.length);
+  const placed = gres.ids.map((id, i) => ({ id: id, hash: leaves[i].hash }));
+  console.log('§MODELLER assembly-drop-group gid=asm-' + insertHash + ' leaves=' + placed.length + ' (1 signed group)');
   lastInsertId = placed[placed.length - 1].id; bLod.style.display = ''; bLod.disabled = false; paintLod();
   setStat('assembled ' + (asm ? asm.name : insertHash) + ' → ' + placed.length + ' parts placed (signed)'); audioCue('commit'); syncHistory();
   console.log('§MODELLER assembly-drop ' + insertHash + ' parts=' + placed.length);
@@ -3999,12 +4054,12 @@ window.__ensureDiscWalker = async function () {
     ['Open', 'Pill ▸ Open → pick a resident, an ARC-only .ifc FROM IFC (parses via the same engine the Viewer uses, always filtered to ARC — never a second parser, never a non-ARC discipline), or a local .db/.ifc. Either way it walks the structure (STR) and seeds the ARC bom-graph — no separate drop panel.'],
     ['Outliner — ARC leads, ONE Disc tab', 'The one panel is the surface: Building ▸ Storey ▸ Room ▸ discipline ▸ class ▸ element (real door/AABB-qualified rooms; door-less storeys read "· layer"). Disciplines PRESENT in the building drill into their real elements; disciplines ABSENT from it (e.g. no MEP was ever extracted) show up in the SAME tree with a "▶ walk" click — one Disc facet, not a separate tab. The find box filters across every category, auto-expands past any collapsed branch to reveal a match, and highlights the exact matching row.'],
     ['Disc = walker', 'Click a discipline node — present or absent — to walk it: STR surfaces the structural walk; an MEP-family disc routes when anchored, else it refuses honestly ("no walk") — never a fabricated run. "▶▶ Walk ALL Disciplines" walks every absent one at once (x-ray reveal).'],
-    ['3D Grid', 'The grid is the primary handle. Grid shows/hides the datums; Move Grid drags a gridline so attached walls RECOMPOSE — stretch, not scale (openings stay host-constrained).'],
+    ['3D Grid', 'The grid is the primary handle. Grid shows/hides the datums; Move Grid drags a gridline so attached walls RECOMPOSE — stretch, not scale (openings stay host-constrained). While dragging, every governed wall LIVE-TINTS: blue = moves rigidly, orange = stretches. Ctrl/Cmd+click any tinted element (before or during a drag) to opt it OUT for this drag — it turns green and sits still, bidirectional (click again to re-include). Opt-outs reset every time you re-enter Move Grid.'],
     ['Conformity Gate', 'Every move/stretch is checked and reported (never auto-reverted). RED = a hard stop: a new clash, a door sliding off its wall, or a wall stretched narrower than a hosted door\'s own width (door-crush). ORANGE = a suggestion: a neighbour now sitting too close (clearance), or a real touching neighbour left behind by the edit (abuts-realign) — shown for now, accept/ignore wiring is next.'],
     ['Author', 'Sketch a profile, Insert a catalog component (assemble, don\'t draw), Cut an opening, Route an MEP run, Fillet an edge. Every edit is one signed op in the log.'],
     ['History', 'Scrub the bottom timeline to fold the model to any point; Ctrl+Z / Ctrl+⇧Z undo/redo. Geometry is a deterministic fold over the signed op-log.'],
     ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log, conventionally saved into IFC/BimDB/ — re-opens via Open ▸ local .db), IFC4, or a BCF 2.1 issue.'],
-    ['Teams', 'Pill ▸ Teams (top-right of the bar) — click to see who else is editing THIS MODEL right now: presence dots + a blame/chat pane over the design op-log. Off by default; first click turns it on, same as ?teams=1. This is <i>authoring</i> collaboration (Modeller + ERP chrome) — a different feature from "HBA" (tenancy/IoT/occupancy pills), which is a separate <i>Viewer-only</i> operations overlay for a live building and does not exist in the Modeller.']
+    ['Teams', 'Pill ▸ Teams (top-right of the bar) — click to see who else is editing THIS MODEL right now: presence dots + a blame/chat pane over the design op-log. Off by default; first click turns it on, same as ?teams=1. This is <i>authoring</i> collaboration (Modeller + ERP chrome) — a different feature from "HBA" (tenancy/IoT/occupancy pills), which is a separate <i>Viewer-only</i> operations overlay for a live building and does not exist in the Modeller. <b>v1 scope:</b> presence works across tabs/windows of the <i>same browser profile</i> only (it rides a same-profile broadcast channel) — a genuinely different person on a different device will not see your presence yet; that needs a server relay, not yet built.']
   ];
   let panel = null;
   function build() {
@@ -4972,6 +5027,43 @@ if (qs.get('dropcenter') === 'demo') {
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER dropcenter fail ' + e); }
     window.__dropCenterResult = out; window.__dropCenterDone = true;
     console.log('§MODELLER dropcenter-done ' + JSON.stringify(out));
+  })();
+}
+// ?q4group=demo proves W-Q4-GROUP-LINKAGE (PARAMETRIC_DEPTH_RECON_FINDINGS.md Q4 / SCALE_AND_UX_SWEEP.md §4.2):
+// placeAssembly now commits every dropped leaf as ONE signed commitSeedGroup, not N independent oplog.commit()
+// rows (was: a "dining set" of N leaves = N unlinked GEOM_INSERT rows + N full seal/verify/fold passes). This
+// hook stubs library.dropLeaves()/assembly() with a small synthetic 3-leaf set — isolating the batching fix
+// under test from the (separate, pre-existing, unrelated) library-assemblies-data gap that already makes
+// bom_dropcenter_live.js / bom_assembly_live.js report "no suitable SET assembly" in this checkout (confirmed
+// via `git stash` — identical failure on the pre-fix commit, not introduced by this change).
+if (qs.get('q4group') === 'demo') {
+  (async () => {
+    const out = {}; const L = window.Bonsai.library, O = window.Bonsai.oplog;
+    const realDropLeaves = L.dropLeaves, realAssembly = L.assembly;
+    try {
+      L.dropLeaves = function (hash, x, y, rot, elev) {
+        return [
+          { hash: '__q4_test_leaf__', x: x, y: y, z: 0, rot: 0 },
+          { hash: '__q4_test_leaf__', x: x + 1, y: y, z: 0, rot: 0 },
+          { hash: '__q4_test_leaf__', x: x, y: y + 1, z: 0, rot: 0 },
+        ];
+      };
+      L.assembly = function (hash) { return { name: 'Q4TestSet', level: 'SET' }; };   // 'SET' skips autoRouteMEP
+      insertHash = '__q4_test_asm__';
+      const before = O.length;
+      const res = await placeAssembly(5, 5);
+      const after = O.length;
+      const rows = O.db.exec('SELECT id, gid FROM kernel_ops WHERE id > ' + before + ' ORDER BY id');
+      const vals = rows.length ? rows[0].values : [];
+      const gids = Array.from(new Set(vals.map(v => v[1])));
+      const verify = await O.verify();
+      out.before = before; out.after = after; out.committed = after - before;
+      out.rowCount = vals.length; out.gids = gids; out.verifyOk = !!(verify && verify.ok);
+      out.resCount = res && res.count;
+    } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER q4group fail ' + e); }
+    finally { L.dropLeaves = realDropLeaves; L.assembly = realAssembly; }
+    window.__q4GroupResult = out; window.__q4GroupDone = true;
+    console.log('§MODELLER q4group-done ' + JSON.stringify(out));
   })();
 }
 // ?asmpreview=demo proves M7 RICH assembly ghost (W-BONSAI-ASM-PREVIEW, RESUME_MODELLER_POLISH.md #6): the drop

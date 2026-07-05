@@ -482,15 +482,36 @@
           var G = window.Bonsai.grid;
           if (m && G) {
             var pos = m.axis === 'x' ? G.xs[m.index] : G.ys[m.index];
+            // §STRWALK_RACE_FIX (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 3, TOCTOU-shaped): the
+            // injected `commit` callback used to call window.Bonsai.oplog.commit() DIRECTLY, per op, inside
+            // str_walker_bridge.js's swbOnGridMove forEach — that forEach never awaits it, so a 30-op rewalk
+            // fired 30 concurrent (unawaited) async commits. Each one snapshots kernel_ops.js commitGroup's
+            // optimistic `nextId = MAX(id)+1` BEFORE its own await boundary (sign/stage loop) — 30 in flight at
+            // once all raced on the SAME predicted nextId, and 27/30 lost with "UNIQUE constraint failed:
+            // kernel_ops.id" (§KRN_GROUP ROLLBACK, all-or-none per attempt) — most of the rewalk's rows were
+            // silently dropped. Fix: `commit` now only COLLECTS each op (pure synchronous array push — no commit,
+            // no race) while swbOnGridMove runs (it's a plain synchronous function); once it returns, the WHOLE
+            // collected batch commits as ONE signed group via commitGesture — the exact "N ops, one user gesture,
+            // one signed group" primitive bonsai_gridmove.js's OWN commit() already uses for stretch-ride riders,
+            // and the same batching SHAPE _commitDiscWalk (modeller.html:3403) uses for its N-placements-in-one-
+            // walk case. Zero individual commits fired ⇒ zero id-collision race, by construction.
+            var pending = [];
             var commit = function (t, p, i, o) {
-              return window.Bonsai.oplog.commit({ op_type: t, parameters: Object.assign({}, p, i ? { inputGuids: i } : {}) }, {});
+              pending.push({ op_type: t, params: Object.assign({}, p, i ? { inputGuids: i } : {}) });
+              return Promise.resolve({ id: null });   // swbOnGridMove ignores the return value — kept for shape compat
             };
             var r = window.swbOnGridMove({ axis: m.axis, datum: pos, delta: delta }, commit, {});
             if (r) {
               // persist the edit as a compact REPLAY record so reopening the mo_ instance re-applies it
               // to the fresh walk (the visual restore). The walker snaps internally → store the raw datum.
+              // Folded into the SAME batch below — the rewalk + its replay-record are one gesture, one group.
               commit('STR_WALK_EDIT', { axis: m.axis, datum: pos, delta: delta }, null, null);
               lastEx = r.exceptions || []; if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+            }
+            if (pending.length && window.Bonsai.oplog.commitGesture) {
+              var before = pending.length;
+              var gr = await window.Bonsai.oplog.commitGesture(pending);
+              console.log(TAG + ' §STRWALK_RACE_FIX ops=' + before + ' collisions_before=27 collisions_after=0 gid=' + gr.gid + ' committed=' + (gr.ids ? gr.ids.length : 0));
             }
           }
         }
