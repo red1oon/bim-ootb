@@ -8,7 +8,8 @@
 > phase-shaped partition Discipline⇄Role · spine Project⇄Zone · author/consume split · THREE timelines ·
 > context-free-git Blue-dot · smart-search entry · Dashboard-graph feed). ⚠ START FROM THE MODELLER/PROJECT SPINE
 > (anti-drift). Coordinate icon-not-label with the HR lane. Live data feed already DONE: `teams/erp/teams_embed_ops.js`,
-> W-EMBED-OPS 7/7.
+> W-EMBED-OPS 7/7. **⛔ 2026-07-05: the Viewer Find-panel facet-icon/Storey→Rooms half of that plan is RETIRED —
+> Teams embeds in Modeller + ERP only (user decision). See the retirement banner at the top of that file.**
 > **Phases A–F (S1–S12) ✅ ALL DONE & witnessed.** §S10 (W-S10 16/16) · §S11 (W-XPRESENCE 7/7) · §S12
 > (W-S12 13/13); the gated production embed is CODE-LANDED + in-app verified (W-EMBED-WIRE 4/4). Phase F is DRAINED.
 > Run the §G gate first (`node teams/tests/run_all.js` = **22 green** + `wire_teams_pill.js` 4/4 + `erp/tests/
@@ -93,7 +94,7 @@ Impact: none.
 **S8 · ERP sync over GH/OCI — ✅ DONE (W-ERP-SYNC 7/7; transport verifier now injectable, default unchanged; live GH/OCI smoke deferred to S9 deploy).** point `teams/transport.js` `pushOps/pullOps` at the ERP `kernel_ops` log (one branch
 per role/`branch_id`); CAS shared masters (BPartner/Product/acctschema). Witness **W-ERP-SYNC** (remote peer pulls an
 ERP branch, verifies, replays to the **same projectionHash**). Live smoke on GH+OCI like `teams/demo/`. Impact: none (transport).
-**S9 · Pill + embed + deploy — ✅ DONE (W-TEAM-WIRE 4/4 chromium; standalone page deployed live GH-raw + OCI; Team-OFF pixel-identical proven). Phase E COMPLETE. NOTE: the line-edit into PRODUCTION kanban_host.js is the gated follow-up (off-by-default launcher proven standalone first, per §P5) — not landed in the live app this slice.** a **distinct Teams pill** (2-person icon) in `kanban_host`/ERP chrome via
+**S9 · Pill + embed + deploy — ✅ DONE (W-TEAM-WIRE 4/4 chromium; standalone page deployed live GH-raw + OCI; Team-OFF pixel-identical proven). Phase E COMPLETE. UPDATE (2026-07-05): the "not landed in the live app" note below was stale — the `erp/idempiere.html` line-edit landed in the SAME PR #593 (`erp/teams_embed.js` + `<script src="teams_embed.js">` in idempiere.html, W-EMBED-WIRE 4/4) and is live in production ERP chrome today; confirmed via git log, not just re-cited from this doc. Same for `modeller/teams_embed.js` (Modeller-side, `#b-teams` pill).** a **distinct Teams pill** (2-person icon) in `kanban_host`/ERP chrome via
 `pill_builder.js` (NOT `redpill`/`ZoomAcross`); overlay mounts in a pane/iframe. Witness **W-TEAM-WIRE** + the
 **Team-OFF pixel-identical** check. EXPLICIT GO → deploy. Impact: chrome (flag-guarded; off = identical).
 
