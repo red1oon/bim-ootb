@@ -123,11 +123,18 @@ var CAMERA_ICON = '📷';
 // midnight/peak near midday) + a tiny FIXED per-hour offset table — NOT Math.random/Date.now, so the same
 // input always produces the same output (reproducible, witnessable).
 var OFFSET = [0.1, -0.2, 0.3, 0, -0.1, 0.2, -0.3, 0.1, 0.4, -0.2, 0.1, 0, 0.2, -0.1, 0.3, -0.2, 0.1, 0, -0.1, 0.2, 0.1, -0.2, 0.3, 0];
+// §FIX 2026-07-06c item C (user: bars still "grow long/short in lockstep" even after PR #671's jitter — root
+// cause was every sensor sharing the literal SAME sine phase, so all 7 peak/trough at the identical hour; the
+// small jitter on top wasn't enough to hide that). A FIXED (never random) per-sensor hour-offset shifts each
+// sensor's peak to a different time of day — a genuinely independent-looking real-world sensor shape — while
+// keeping the exact same deterministic sine+jitter machinery untouched.
+var PHASE_OFFSET_HOURS = { temp: 0, pressure: -3, sound: 5, dust: 2, solar: -6, electrical: 4, movement: -2 };
 function seriesFor(sensor, hours) {
   hours = hours || 24;
   var pts = [];
+  var offsetH = PHASE_OFFSET_HOURS[sensor.key] || 0;
   for (var h = 0; h < hours; h++) {
-    var phase = (h / 24) * Math.PI * 2 - Math.PI / 2;
+    var phase = ((h - offsetH) / 24) * Math.PI * 2 - Math.PI / 2;
     var v = sensor.baseline + sensor.amplitude * Math.sin(phase) + OFFSET[h % OFFSET.length] * sensor.amplitude * 0.1;
     pts.push({ h: h, v: Math.round(v * 100) / 100 });
   }

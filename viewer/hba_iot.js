@@ -242,7 +242,8 @@
     var billing = deps_.IoT.billingLines(asset.asset, seriesSpec.series, (A && A.buildingName) || 'This Building',
       seriesSpec.hours + 'h', { erpQuery: A && A.erpQuery });
 
-    var pane = el('div', 'position:fixed;top:54px;right:12px;width:420px;max-height:86vh;overflow:auto;z-index:10050;' +
+    // §FIX 2026-07-06c item B — cascade column 2 (right:428) so this pane never overlaps hba_bom.js's column 1.
+    var pane = el('div', 'position:fixed;top:54px;right:428px;width:420px;max-height:86vh;overflow:auto;z-index:10050;' +
       'background:#fff;border-radius:10px;box-shadow:0 6px 24px #0005;font-family:system-ui,sans-serif;color:#222;');
     pane.id = 'hba-iot-pane';
     var head = el('div', 'display:flex;justify-content:space-between;align-items:center;background:#102a43;color:#fff;padding:10px 12px;border-radius:10px 10px 0 0;');

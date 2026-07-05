@@ -420,8 +420,14 @@
       var pos = A.ifc2three(fp.cx, fp.cy, fp.cz);
       var geo = new THREE.BoxGeometry(fp.sx, fp.sz, fp.sy);               // size swap matches ifc2three's y<->z
       var edges = new THREE.EdgesGeometry(geo);
-      var mat = new THREE.LineBasicMaterial({ color: toHex(tint.color), linewidth: 2 });
+      // §FIX 2026-07-06c (user report: outline doesn't "shine through" occluding geometry) — plain depth-tested
+      // LineBasicMaterial was occluded by any wall/slab in front of it, same as an ordinary mesh. navigate_find.js's
+      // Find/pick highlight solves the same "see it through walls" ask via OutlinePass (a postprocess pass, built
+      // for solid selectedObjects — not applicable to bare LineSegments edges). depthTest:false + a high renderOrder
+      // is the equivalent for line geometry: always draws on top, regardless of what's in front of it in the scene.
+      var mat = new THREE.LineBasicMaterial({ color: toHex(tint.color), linewidth: 2, depthTest: false, transparent: true });
       var lines = new THREE.LineSegments(edges, mat);
+      lines.renderOrder = 999;
       lines.position.set(pos.x, pos.y, pos.z);
       group.add(lines); geo.dispose(); drawn++;
     });
@@ -914,7 +920,11 @@
     if (typeof document === 'undefined') return null;
     var ex = document.getElementById('hba-fm-drawer'); if (ex) { ex.remove(); _closePresenceDrawer(); return null; }
     var d = document.createElement('div'); d.id = 'hba-fm-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;right:64px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
+    // §FIX 2026-07-06c item B follow-on: this menu's rows are how a user opens a 2nd/3rd pane — it must stay
+    // clickable ABOVE any already-open pane (panes are z-index:10050), or opening the first pane hides the
+    // very menu needed to open the next one. Was z-index:10000 (below panes), found while live-verifying the
+    // panel-cascade fix (opening BOM then clicking Maintenance failed: BOM pane intercepted the pointer event).
+    d.style.cssText = 'position:fixed;z-index:10060;right:64px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
       + 'color:#fff;border-radius:10px;padding:8px;box-shadow:0 8px 28px rgba(0,0,0,.45);font:13px/1.3 system-ui,sans-serif;min-width:250px;';
 
     var hdr = document.createElement('div'); hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 4px 8px;';
