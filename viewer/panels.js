@@ -73,7 +73,8 @@ var ICONS = {
   bomb:      { svg: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 22-1.5-1.5"/><path d="m19 8 1-1"/>', trl: null, key: null, desc: 'Clear history' },
   // HR_BIM_Asset — ONE "FM / Operate" family icon (the 6 lenses now live in a drawer owned by hba_lens.js,
   // which carries its own per-lens icons). Lucide 'building-2' = the operate-phase / facilities cockpit.
-  fmCockpit: { svg: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>', trl: null, key: null, desc: 'FM / Operate' },
+  fmCockpit: { svg: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>', trl: null, key: null, desc: 'FM / Operate (unused, replaced by twoHeads)' },
+  twoHeads:  { svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.128a4 4 0 0 1 0 7.744" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" />', trl: null, key: null, desc: 'Human-Asset' },
   barChart:  { svg: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: null, key: null, desc: 'Occupancy dashboard' },
   // PILLS_CONSOLIDATION_REVIEW_2026-07-03 §ICON MAP — one glyph = ONE meaning everywhere. These five
   // (Lucide, verbatim) break up the confirmed glyph collisions: checkList stays UBBL-only, maximize stays
@@ -311,6 +312,20 @@ function setupPanels(A) {
   if (_sb) _sb.classList.remove('overflow-open');
   var _sc = document.getElementById('overflow-scrim');
   if (_sc) _sc.classList.remove('active');
+
+  // §FIND_VIS_TRACE (diagnostic, 2026-07-06): same "appears on its own" report could also be
+  // THIS element (legacy id, today only hosts unrelated overflow buttons) rather than the real
+  // Find panel — watch it too so the class-toggle path isn't ruled out by assumption.
+  if (_sb) {
+    var _sbLastVis = _sb.classList.contains('overflow-open');
+    new MutationObserver(function () {
+      var vis = _sb.classList.contains('overflow-open');
+      if (vis === _sbLastVis) return;
+      _sbLastVis = vis;
+      console.log('§FIND_VIS_TRACE search-box overflow-open=' + vis + ' at=' + Date.now() +
+        '\n' + (new Error().stack));
+    }).observe(_sb, { attributes: true, attributeFilter: ['class'] });
+  }
 
   // Prevent touch/click on floating panels from reaching canvas underneath
   // S265 Phase 4: storey-panel/disc-panel removed (inside HUD now)
@@ -1116,7 +1131,7 @@ function setupPanels(A) {
       // live in hba_lens.js (the additive HBA module) — panels.js carries ONLY this one entry, keeping the
       // shared bar (and the Teams-adjacent file) minimal. Inert if hr_bim_asset/* did not load. id stays `hbaFM`
       // (internal, unrenamed — 29+ witness files reference it); only the user-visible label changed.
-      { id: 'hbaFM',      name: 'Human-Asset',     pill: false, icon: I.fmCockpit.svg,
+      { id: 'hbaFM',      name: 'Human-Asset',     pill: false, icon: I.twoHeads.svg,
         fn: function() { if (window.HBALens && HBALens.openFamilyDrawer) HBALens.openFamilyDrawer(A); },
         isActive: function() { return !!(window.HBALens && HBALens.familyActive && HBALens.familyActive()); },
         children: [ { name: 'Operate-phase (7D) cockpit — one model, lenses each answering ONE question' }, { name: 'Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard' }, { name: 'Wake-aware: only lenses with data in THIS building are enabled (others greyed)' }, { name: 'All off one signed op-log; toggle a lens off restores the model' } ] },
@@ -1281,42 +1296,59 @@ function setupPanels(A) {
       var opt = (cfg.options || []).filter(function(o) { return o.key === key; })[0];
       return opt && opt.src;
     }
+    // REVISED (user, 2026-07-06): no text label — Cloud icon + the 3 ground types as static
+    // sample-image boxes, side by side. The boxes NEVER change image (each is a fixed real
+    // texture sample — grass/earth/paved); only the Cloud click advances WHICH box is lit
+    // (Off -> Grass -> Earth -> Paved -> Off). The boxes themselves aren't separately clickable.
     function _buildShadowGroundRow() {
       var act = _actionById('shadow');
-      var row = document.createElement('button');
+      var row = document.createElement('div');
       row.id = 'drawer-row-shadow';
       row.className = 'bim-drawer-row';
       row.title = 'Shadow + Ground — cycle Off → Grass → Earth → Paved';
-      var swatch = document.createElement('span');
-      swatch.id = 'shadow-ground-swatch';
-      swatch.className = 'bim-drawer-swatch';
-      row.appendChild(swatch);
-      var label = document.createElement('span');
-      label.className = 'bim-drawer-row-label';
-      label.id = 'shadow-ground-label';
-      row.appendChild(label);
 
-      var _LABELS = { off: 'Shadow + Ground: Off', grass: 'Shadow + Ground: Grass', earth: 'Shadow + Ground: Earth', paved: 'Shadow + Ground: Paved' };
-      function _paint() {
-        var key = A._shadowGroundKey || 'off';
-        label.textContent = (_LABELS[key] || 'Shadow + Ground') + '  ·  h';
-        if (key === 'off') {
-          swatch.style.backgroundImage = 'none';
-          swatch.style.backgroundColor = '#333';
-        } else {
+      var cloudBtn = document.createElement('button');
+      cloudBtn.id = 'shadow-ground-cloud-btn';
+      cloudBtn.className = 'bim-drawer-row-icon';
+      cloudBtn.style.cssText = 'border:none;background:transparent;padding:0;cursor:pointer;color:inherit;';
+      cloudBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + I.cloud.svg + '</svg>';
+      row.appendChild(cloudBtn);
+
+      var _keys = ['grass', 'earth', 'paved'];
+      var _boxes = {};
+      _keys.forEach(function(key) {
+        var box = document.createElement('span');
+        box.id = 'shadow-ground-box-' + key;
+        box.className = 'bim-drawer-swatch';
+        box.title = key.charAt(0).toUpperCase() + key.slice(1);
+        row.appendChild(box);
+        _boxes[key] = box;
+      });
+      // setupPanels() runs BEFORE setupTools() (main.js _mods order) — A._groundCfgDefault
+      // doesn't exist yet at construction time. Defer one tick so tools.js has run, then set
+      // each box's image ONCE (fixed per box, real sample — never re-painted after this).
+      setTimeout(function() {
+        _keys.forEach(function(key) {
+          if (_boxes[key].style.backgroundImage) return;
           var src = _sgSwatchSrc(key);
-          if (src) { swatch.style.backgroundImage = 'url(' + src + ')'; swatch.style.backgroundColor = ''; }
-          else { swatch.style.backgroundImage = 'none'; swatch.style.backgroundColor = '#4a7c3a'; }
-        }
-        row.classList.toggle('active', key !== 'off');
-        console.log('§SHADOW_GROUND_SWATCH key=' + key);
+          if (src) _boxes[key].style.backgroundImage = 'url(' + src + ')';
+        });
+      }, 0);
+
+      function _paint() {
+        var cur = A._shadowGroundKey || 'off';
+        _keys.forEach(function(key) {
+          _boxes[key].style.border = (key === cur) ? '2px solid #4fc3f7' : '1px solid rgba(255,255,255,0.25)';
+        });
+        row.classList.toggle('active', cur !== 'off');
+        console.log('§SHADOW_GROUND_SWATCH key=' + cur);
       }
       row._sync = _paint;
       // Re-paint whenever the ground texture actually changes (A._applyGroundTexture already
       // calls this hook — reused verbatim, no tools.js change needed beyond the cycle itself).
       A._refreshGroundBtns = _paint;
 
-      row.addEventListener('pointerup', function(e) {
+      cloudBtn.addEventListener('pointerup', function(e) {
         e.stopPropagation();
         if (act && act.fn) act.fn(); else if (typeof window.toggleShadow === 'function') window.toggleShadow();
         _paint();
@@ -1355,7 +1387,7 @@ function setupPanels(A) {
         // editor's columns since those run much taller (700px+) and would otherwise overlap
         // anything sharing their column further down the same column.
         var _pos = { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
-                     camview: { top: '520px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
+                     camview: { top: '640px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
         panel = A.createPanel(panelId, {
           closable: true,
           style: { position: 'fixed', top: _pos.top, left: _pos.left, zIndex: '1100', width: '230px', padding: '10px 8px' },
