@@ -1170,7 +1170,7 @@ function setupPanels(A) {
       // BODY changed in tools.js to do the cycling; this entry (id/key/fn UNCHANGED) still drives
       // the 'h' shortcut + Help listing. Row rendered specially (real texture-swatch) — see
       // _buildShadowGroundRow() below, not the generic drawer-row.
-      { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
+      { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof A.toggleShadow === 'function') A.toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
       { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
       { id: 'report',     name: '4D / 5D',         key: '4', pill: false, icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
@@ -1260,6 +1260,12 @@ function setupPanels(A) {
       }
       row._sync = _sync;
 
+      function _fire() {
+        act.fn(); _sync();
+        setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
+        console.log('§DRAWER_ROW action=' + act.id);
+      }
+
       if (act.hold) {
         var _holdTimer = 0, _held = false;
         row.addEventListener('pointerdown', function(e) {
@@ -1270,20 +1276,28 @@ function setupPanels(A) {
         row.addEventListener('pointerup', function(e) {
           e.stopPropagation(); _cancelHold();
           if (_held) { _held = false; return; }
-          act.fn(); _sync();
-          setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
-          console.log('§DRAWER_ROW action=' + act.id);
+          _fire();
         });
         row.addEventListener('pointerleave', _cancelHold);
         row.addEventListener('pointercancel', _cancelHold);
       } else {
         row.addEventListener('pointerup', function(e) {
           e.stopPropagation();
-          act.fn(); _sync();
-          setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
-          console.log('§DRAWER_ROW action=' + act.id);
+          _fire();
         });
       }
+      // §KEYBOARD-ACTIVATE (PILL_DRAWER_REORGANIZATION.md item 2, 2026-07-06): rows are real
+      // <button> elements so Tab already reaches them natively; the browser's own Space/Enter
+      // activation dispatches a synthetic 'click' with event.detail===0 (a real pointer click's
+      // 'click' always has detail>=1), which nothing here listened for — so keyboard activation
+      // silently did nothing. Listen for that synthetic click only, so a real pointer click can't
+      // double-fire through both this and the pointerup handler above.
+      row.addEventListener('click', function(e) {
+        if (e.detail !== 0) return;
+        e.stopPropagation();
+        _fire();
+        console.log('§DRAWER_ROW_KEY action=' + act.id);
+      });
       return row;
     }
 
@@ -1309,8 +1323,13 @@ function setupPanels(A) {
 
       var cloudBtn = document.createElement('button');
       cloudBtn.id = 'shadow-ground-cloud-btn';
-      cloudBtn.className = 'bim-drawer-row-icon';
-      cloudBtn.style.cssText = 'border:none;background:transparent;padding:0;cursor:pointer;color:inherit;';
+      // §2026-07-06 FIX (item 3 root cause, live-confirmed): viewer.html's shared CSS rule
+      // `.bim-drawer-row .bim-drawer-row-icon { pointer-events:none }` exists so the pure-decoration
+      // icon spans in the generic _buildDrawerActionRow rows never steal clicks from their parent
+      // <button>. This row reused that same class name for its ONE real interactive control —
+      // silently disabling every click on the cloud icon. Distinct class, flex-shrink kept inline.
+      cloudBtn.className = 'shadow-ground-cloud-icon';
+      cloudBtn.style.cssText = 'border:none;background:transparent;padding:0;cursor:pointer;color:inherit;flex-shrink:0;display:flex;';
       cloudBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + I.cloud.svg + '</svg>';
       row.appendChild(cloudBtn);
 
@@ -1392,7 +1411,7 @@ function setupPanels(A) {
           closable: true,
           style: { position: 'fixed', top: _pos.top, left: _pos.left, zIndex: '1100', width: '230px', padding: '10px 8px' },
           content: '<h3 style="margin:0 0 8px 6px;color:#4fc3f7;font-size:13px">' + title + '</h3>',
-          onClose: function() { console.log('§DRAWER_CLOSE id=' + masterId); }
+          onClose: function() { console.log('§DRAWER_CLOSE id=' + masterId); _syncPillHighlights(); }
         });
         panel.appendChild(wrap);
         if (window.InputReg) InputReg.register({ id: masterId + '-drawer', el: panel, kind: 'panel', release: function() { panel.style.display = 'none'; } });
