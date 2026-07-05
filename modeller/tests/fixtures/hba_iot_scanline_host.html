@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>hba_iot scanline fixture</title></head>
+<body>
+<script>
+  // minimal stand-ins for the 2 deps hba_iot.js reads via deps() — deterministic, no network.
+  window.HbaModels = {
+    records: function (kind) { return kind === 'Asset' ? [{ asset: 'AHU-03', bim_guid: 'g1' }] : []; }
+  };
+  window.HbaIot = {
+    SENSORS: [],   // empty roster ⇒ no bars — isolates the CCTV-loop path under test
+    DEVICES: {},
+    CAMERAS: [],
+    demoSeries: function () { return { series: {}, hours: 24, _watermark: 'TEST' }; },
+    billingLines: function () { return { lines: [], order: { c_order_id: 1, documentno: 'IOT-TEST-1', docstatus: 'DR', issotrx: 'Y' } }; },
+    camerasNearDevice: function () { return []; },
+    toneFreqFor: function () { return 440; }
+  };
+  window.__rafCalls = 0;
+  var _realRaf = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = function (cb) { window.__rafCalls++; return _realRaf(cb); };
+</script>
+<script src="../../../viewer/hba_iot.js"></script>
+<script>
+  window.__mountResult = window.HBAIotPane.toggle({ guidMap: { x: 'g1' }, buildingName: 'Test', status: null });
+</script>
+</body></html>

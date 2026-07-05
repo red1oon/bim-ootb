@@ -339,6 +339,11 @@
     // still loading at this exact instant, its 'load' event re-paints all tiles the moment it lands.
     cctvTicks.forEach(function (t) { t(); });
     if (_cctvImg && !_cctvImgReady) _cctvImg.addEventListener('load', function () { cctvTicks.forEach(function (t) { t(); }); });
+    // §SCALE-UX-SWEEP fix (WATCHDOG_SCALE_AND_UX_SWEEP.md §3.4): _pane MUST be set BEFORE the rAF loop's first
+    // invocation — the loop's own `if (!_pane) return` guard (its unmount check) was firing on its VERY FIRST
+    // call, since `_pane = pane` used to run AFTER this block, permanently killing the scanline animation
+    // (loop() returned before ever scheduling its own next frame). Ordering fix only — same guard, same loop.
+    _pane = pane;
     // CCTV animation loop — mockup only, stopped on unmount
     if (typeof requestAnimationFrame === 'function') {
       (function loop() {
@@ -348,7 +353,6 @@
       })();
     }
 
-    _pane = pane;
     console.log('§HBA_IOT_PANE mounted asset=' + asset.asset + ' sensors=' + deps_.IoT.SENSORS.length + ' bars=' + bars.length + ' billingLines=' + billing.lines.length);
     return true;
   }

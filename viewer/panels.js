@@ -755,22 +755,22 @@ function setupPanels(A) {
       Object.entries(A.discCounts).slice(0, 6).map(([d, c]) => `${d}:${c.toLocaleString()}`).join(' ') + '</small>';
   };
 
-  // §S281 P3: register overflow pill icons with InputReg once (idempotent).
-  // Exact same 7 button/flag pairs the old inline _s() block synced — pure refactor.
-  var _overflowIconsRegistered = false;
-  function _registerOverflowIcons() {
-    if (_overflowIconsRegistered || !window.InputReg) return;
-    var R = window.InputReg;
-    R.register({ id: 'xray',     kind: 'icon', btnId: 'xray-btn',           isActive: function() { return A.xrayOn; },     release: function() { if (A.xrayOn && A.toggleXray) A.toggleXray(); } });
-    R.register({ id: 'section',  kind: 'icon', btnId: 'section-btn',        isActive: function() { return A.sectionOn; },  release: function() { if (A.sectionOn && A.toggleSection) A.toggleSection(); } });
-    R.register({ id: 'sunglass', kind: 'icon', btnId: 'sunglass-btn',       isActive: function() { return A.sunglassOn; }, release: function() { if (A.sunglassOn && window.toggleSunglass) window.toggleSunglass(); } });
-    R.register({ id: 'fly',      kind: 'icon', btnId: 'fly-btn',            isActive: function() { return !!A.flyActive; }, release: function() { if (A.flyActive && window.toggleFlyAround) window.toggleFlyAround(); } });
-    R.register({ id: 'shadow',   kind: 'icon', btnId: 'shadow-overflow-btn', isActive: function() { return A._shadowOn; }, release: function() { if (A._shadowOn && window.toggleShadow) window.toggleShadow(); } });
-    R.register({ id: 'bg',       kind: 'icon', btnId: 'bg-overflow-btn',     isActive: function() { return A._whiteBg; },  release: function() { if (A._whiteBg && window.toggleBackground) window.toggleBackground(); } });
-    R.register({ id: 'grid2d',   kind: 'icon', btnId: 'grid-2d-btn',         isActive: function() { return !!(A._gridOverlayState && A._gridOverlayState.active); }, release: function() {} });
-    _overflowIconsRegistered = true;
-    console.log('§S281 overflow icons registered with InputReg');
-  }
+  // §PILL-AUDIT (WATCHDOG_SCALE_AND_UX_SWEEP.md / SCALE_AND_UX_SWEEP.md §3.6, 2026-07-05): the old
+  // _registerOverflowIcons() below registered 7 InputReg `kind:'icon'` entries (xray/section/sunglass/fly/
+  // shadow/bg/grid2d) keyed to a pre-§S280 overflow-menu's button ids (xray-btn, section-btn, sunglass-btn,
+  // fly-btn, shadow-overflow-btn, bg-overflow-btn, grid-2d-btn). Audited every one against the live DOM:
+  // #search-box (their container) is `display:none !important` in viewer.html (permanently retired), #more-btn
+  // doesn't exist at all, and only #section-btn survives as an empty hidden stub — the other 6 ids don't exist
+  // anywhere in the HTML or any createElement/innerHTML call (grepped clean). viewer/tour.js and
+  // viewer/grid_overlay.js already carry their own "may be null (pill removed button)" defensive null-checks
+  // for fly-btn/grid-2d-btn — the codebase already knows these are gone. The CANONICAL, live highlight path for
+  // these exact same toggles is common/pill_builder.js's own _sync() over the `_actions` array below (ids
+  // xray/section/shadow/fly/palette/background/2d, driving #pill-<id> buttons) — this stale registration was a
+  // pure pre-consolidation leftover (PR #635's "ONE canonical pill_builder.js" pass missed it), never fixed
+  // anything, and only risked shadowing a future InputReg._icons lookup with a dead entry. Deleted (not just
+  // 'shadow' — all 7, since none of their DOM targets are live); the canonical _actions-array path is unchanged.
+  // §PILL_AUDIT ids_checked=7 collisions=[xray,section,sunglass,fly,shadow,bg,grid2d] removed=[xray,section,sunglass,fly,shadow,bg,grid2d]
+  console.log('§PILL_AUDIT ids_checked=7 collisions=[xray,section,sunglass,fly,shadow,bg,grid2d] removed=[xray,section,sunglass,fly,shadow,bg,grid2d] (dead overflow-menu registration removed — canonical path = pill_builder.js _actions/_sync)');
 
   // ── S265: Icon Pill overflow toggle + §-tags ──
   window.toggleOverflow = function() {
@@ -782,24 +782,10 @@ function setupPanels(A) {
     box.classList.toggle('overflow-open', opening);
     if (scrim) scrim.classList.toggle('active', opening);
     if (moreBtn) moreBtn.classList.toggle('active', opening);
-    // S265: sync active state on open. §S281 P3: InputReg.syncActiveButtons() is the
-    // single highlight authority (icons registered once below). Identical button/flag
-    // mapping to the prior inline _s() block; falls back to inline if registry absent.
-    if (opening) {
-      if (window.InputReg) {
-        _registerOverflowIcons();
-        window.InputReg.syncActiveButtons();
-      } else {
-        var _s = function(id, on) { var b = document.getElementById(id); if (b) b.classList.toggle('active', !!on); };
-        _s('xray-btn', A.xrayOn);
-        _s('section-btn', A.sectionOn);
-        _s('sunglass-btn', A.sunglassOn);
-        _s('fly-btn', A.flyActive);
-        _s('shadow-overflow-btn', A._shadowOn);
-        _s('bg-overflow-btn', A._whiteBg);
-        _s('grid-2d-btn', A._gridOverlayState && A._gridOverlayState.active);
-      }
-    }
+    // §PILL-AUDIT: the legacy per-button _s() sync (and its InputReg _registerOverflowIcons() twin) targeted
+    // the same retired #search-box overflow menu (see note above) — removed. #search-box is permanently
+    // display:none, so this toggle is a harmless no-op today; kept only as the '.' shortcut's defensive
+    // fallback when window.toggleMobilePill is somehow absent (scene.js).
     console.log('§UI_OVERFLOW ' + (opening ? 'open' : 'close'));
   };
   // §-tag: pill rendered
