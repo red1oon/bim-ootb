@@ -27,12 +27,16 @@ const server = http.createServer((req, res) => {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const IFC_BASE   = path.join(ROOT, 'IFC', 'SampleHouse_ARC.ifc');
 const IFC_DUPLEX = path.join(ROOT, 'IFC', 'Duplex_ARC.ifc');
-const IFC_V2     = path.join(ROOT, 'tests', 'fixtures', 'SampleHouse_ARC_v2.ifc');
-const IFC_FINAL  = path.join(ROOT, 'tests', 'fixtures', 'SampleHouse_ARC_final.ifc');
+// PR657_FIXTURE_CLEANUP (2026-07-05): the §VERSION_MERGE similarity check keys on the FILENAME stem only, never
+// on file CONTENT — so cases 2 & 4 reuse the real corpus buffer under a renamed IN-MEMORY Playwright file object
+// ({name,mimeType,buffer}), instead of two byte-identical 2.2MB disk fixtures. Zero duplicate bytes committed.
+const BASE_BUF   = fs.readFileSync(IFC_BASE);
+const IFC_V2     = { name: 'SampleHouse_ARC_v2.ifc',    mimeType: 'text/plain', buffer: BASE_BUF };
+const IFC_FINAL  = { name: 'SampleHouse_ARC_final.ifc', mimeType: 'text/plain', buffer: BASE_BUF };
 
 (async () => {
   console.log('§E2E_START base=' + fs.existsSync(IFC_BASE) + ' duplex=' + fs.existsSync(IFC_DUPLEX) +
-    ' v2=' + fs.existsSync(IFC_V2) + ' final=' + fs.existsSync(IFC_FINAL));
+    ' v2=inmem final=inmem baseBufBytes=' + BASE_BUF.length);
   await new Promise(r => server.listen(0, r));
   const port = server.address().port;
   const browser = await chromium.launch({ headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--no-sandbox'] });
