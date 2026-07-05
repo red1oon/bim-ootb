@@ -4,6 +4,36 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.10.0](https://github.com/red1oon/bim-ootb/compare/v1.9.0...v1.10.0) (2026-07-05)
+
+
+### ✨ Features
+
+* **hba:** class-tint perimeter outline (real IfcSpace footprint) + mobile card-stack spec ([#659](https://github.com/red1oon/bim-ootb/issues/659)) ([e8dff13](https://github.com/red1oon/bim-ootb/commit/e8dff130af97bab672ed6ac87c71f5254b4174c5))
+* **hba:** Construction AD_Window + Person forward link + Leave-as-Resource ([#645](https://github.com/red1oon/bim-ootb/issues/645)) ([e854a0e](https://github.com/red1oon/bim-ootb/commit/e854a0e14e3057ec173e1c6a189cf596286e364b))
+* **hba:** IoT audio sirens (§P10c) + wider device zoom + movement/PIR sensor ([#653](https://github.com/red1oon/bim-ootb/issues/653)) ([af782ec](https://github.com/red1oon/bim-ootb/commit/af782ecd26fdee3d5586d4b502dac92a44485c92))
+* **hba:** IoT per-device positions + Product/Order persistence + orange highlight + USD/RM ([#652](https://github.com/red1oon/bim-ootb/issues/652)) ([d6e82e3](https://github.com/red1oon/bim-ootb/commit/d6e82e37c6206fd2318b4113e435312207fbee29))
+* **hba:** IoT per-sensor icons + camerasNearDevice connector + docs guide ([#655](https://github.com/red1oon/bim-ootb/issues/655)) ([2bdc241](https://github.com/red1oon/bim-ootb/commit/2bdc241060334b8b17c1bf9291175612c313c5a6))
+* **hba:** mobile card-stack host for the 6 Human-Asset panes (item0) ([#662](https://github.com/red1oon/bim-ootb/issues/662)) ([37b293f](https://github.com/red1oon/bim-ootb/commit/37b293f77f9dc21a1b23d3eb543e57f94e2d501f))
+* **iot:** IFC/LOD/ — real free LOD device objects (CCTV/sensor/solar/electrical) POC ([#651](https://github.com/red1oon/bim-ootb/issues/651)) ([bd76e9d](https://github.com/red1oon/bim-ootb/commit/bd76e9d31d9c423c77abdc479782df6521c52511))
+* **landing:** version-merge popup — catalog-similarity detection for repeat IFC drops ([#657](https://github.com/red1oon/bim-ootb/issues/657)) ([17f0791](https://github.com/red1oon/bim-ootb/commit/17f079164219bacd75958ad11047dc86dafc68ff))
+* **modeller:** §PREDRAG — grid-drag green/orange opt-out preview + live stretch-ride tint fix ([#656](https://github.com/red1oon/bim-ootb/issues/656)) ([8093e9a](https://github.com/red1oon/bim-ootb/commit/8093e9a6a3e27466841ea9a1f8776a195ef578db))
+* **modeller:** abuts-realign ORANGE — first W-SDG-BACKPROP slice ([#647](https://github.com/red1oon/bim-ootb/issues/647)) ([665d1a6](https://github.com/red1oon/bim-ootb/commit/665d1a6bbeefe031d4b070f139de1d4f96a1c053))
+* **modeller:** door-crush RED — hosted openings can be crushed by a wall shrink, not just slide out ([#646](https://github.com/red1oon/bim-ootb/issues/646)) ([a2567f6](https://github.com/red1oon/bim-ootb/commit/a2567f6ed917e062de579b89c0cb4878b598de0e))
+* **modeller:** Save = validated snapshot promotion (clash-check + auto-heal + gated physical-DB write) ([#658](https://github.com/red1oon/bim-ootb/issues/658)) ([9e5e400](https://github.com/red1oon/bim-ootb/commit/9e5e40005eba9fc51afa8be6977f30b5f4d53135))
+
+
+### 🐛 Fixes
+
+* **modeller:** #b-clear leaks STR-walker module state into later grid-drags ([#644](https://github.com/red1oon/bim-ootb/issues/644)) ([587622c](https://github.com/red1oon/bim-ootb/commit/587622c909599fb0b086f7301c8599ca0c16d9cd))
+* **modeller:** #b-clear round 2 — reset swXEdges, DiscWalker globals, BOM-tree State ([#649](https://github.com/red1oon/bim-ootb/issues/649)) ([1672238](https://github.com/red1oon/bim-ootb/commit/1672238ab25359e2c0d535bf81a1458468881df0))
+* **modeller:** cross_edges.js abuts uses real per-element AABB, not coarse bbox ([#650](https://github.com/red1oon/bim-ootb/issues/650)) ([eaae683](https://github.com/red1oon/bim-ootb/commit/eaae6837352ff0b40cc46d3e24faa056aa1ebe03))
+
+
+### 📝 Documentation
+
+* **modeller:** add Conformity Gate section to in-app User Guide ([#648](https://github.com/red1oon/bim-ootb/issues/648)) ([6a49c6c](https://github.com/red1oon/bim-ootb/commit/6a49c6c751e3d3ced3ec2866e57fe3ee5b2db0db))
+
 ## [1.9.0](https://github.com/red1oon/bim-ootb/compare/v1.8.0...v1.9.0) (2026-07-03)
 
 
