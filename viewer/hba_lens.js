@@ -544,8 +544,23 @@
     }
     if (m.getMatrixAt && typeof THREE !== 'undefined') {
       var mat = new THREE.Matrix4(); m.getMatrixAt(slot, mat);
+      // §FIX 2026-07-06 (found while sanity-checking the new flyToFacing camera-POV flight) — a genuine,
+      // reproducible race in the DLOD-binding system: right after the camera moves, an instanced/batched
+      // guid->meshId/slot lookup can transiently resolve to a slot whose LOCAL instance matrix is still the
+      // reserved-but-unwritten IDENTITY (never a real element's own transform).
+      if (mat.equals(new THREE.Matrix4())) return null;   // constructed fresh — avoids any module-load-order hazard
       if (m.matrixWorld) mat.premultiply(m.matrixWorld);
-      return new THREE.Vector3().setFromMatrixPosition(mat);
+      var wp3 = new THREE.Vector3().setFromMatrixPosition(mat);
+      // §FIX 2026-07-06 (same investigation) — a SECOND, harder-to-pin-down variant of the same race: the
+      // local matrix itself can carry a real-looking translation while the CONTAINER mesh's own matrixWorld
+      // hasn't been refreshed after a DLOD bucket reflow, and/or `byId[meshId]` transiently points at a stale
+      // object — reproduced (not just theorised): re-querying the exact same real guid moments later resolves
+      // correctly. A real, already-placed building element essentially never sits at floating-point-exact
+      // (0,0,0) post-recentring; only ever seen here as a transient artifact of camera-move-triggered DLOD
+      // reflow. This check is scoped to the slot!=null (real instanced/batched) branch ONLY — it can never
+      // fire for node-witness stub data or plain meshes, which always call this with slot===null.
+      if (wp3.x === 0 && wp3.y === 0 && wp3.z === 0) return null;
+      return wp3;
     }
     return null;
   }
@@ -573,14 +588,17 @@
       }
       if (!pts.length) {   // fallback — plain userData.guid match (regular meshes, and node-witness mocks)
         var set = {}; want.forEach(function (g) { set[g] = true; });
-        A.collectMeshes(function (o) { return o.userData && set[o.userData.guid]; }).forEach(function (o) { if (o.position) pts.push(o.position); });
+        A.collectMeshes(function (o) { return o.userData && set[o.userData.guid]; }).forEach(function (o) {
+          var p = _posForTarget(o, null); if (p) pts.push(p);
+        });
       }
     }
     if (!pts.length) return null;
     var cx = 0, cy = 0, cz = 0;
     pts.forEach(function (p) { cx += p.x; cy += p.y; cz += p.z; });
     var n = pts.length;
-    return { center: { x: cx / n, y: cy / n, z: cz / n }, resolvedGuid: want[0] };
+    var center = { x: cx / n, y: cy / n, z: cz / n };
+    return { center: center, resolvedGuid: want[0] };
   }
 
   // opts.dist (§2026-07-05c, user: "zooms to the device, not too near — surrounding") — the establishing-shot
@@ -627,22 +645,18 @@
   // camera's eyes at this device". Deliberately does NOT need any declared facing vector (unlike assuming a
   // camera's OWN fixed POV, still blocked on that one open decision — see RESUME_HR_BIM_ASSET.md) because the
   // look-target here is a SPECIFIC known real point, not "whatever this camera happens to face".
-  function flyToPOV(A, fromGuid, atGuid, opts) {
-    opts = opts || {};
-    if (!A || !A.guidMap || !ready()) { console.log('§HBA_POV no-op from=' + fromGuid + ' at=' + atGuid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
-    var fromHit = _zoneCentroid(A, fromGuid), atHit = _zoneCentroid(A, atGuid);
-    if (!fromHit || !atHit) {
-      console.log('§HBA_POV no-op from=' + fromGuid + ' at=' + atGuid + ' (no rendered members)');
-      return { flew: false, reason: 'no-members' };
-    }
-    var eye = fromHit.center, look = atHit.center;
+  // §FIX shared by flyToPOV + flyToFacing — stand the camera near `eye`, standing back `standoff` world units
+  // along the reverse look direction, then ease both position and orbit-target toward `look`. Pulses `tintGuid`
+  // (the thing being "assumed"/looked-at) with the same 0xffcc00 arrival flash every other HBA fly uses. Pure
+  // DOM/THREE math — takes an ABSOLUTE standoff distance (not a caller-facing "dist" knob) so each caller can
+  // pick a standoff that matches its own idiom (a hair, for flyToPOV's "avoid clipping the camera mount"; a few
+  // real metres, for flyToFacing's "step back from the door far enough to see down the corridor").
+  function _flyEyeLook(A, eye, look, standoff, tintGuid) {
     if (A.camera && A.controls && typeof THREE !== 'undefined' && typeof requestAnimationFrame === 'function') {
-      var eye3 = new THREE.Vector3(eye.x, eye.y, eye.z), dist = opts.dist != null ? opts.dist : 3;
+      var eye3 = new THREE.Vector3(eye.x, eye.y, eye.z);
       var lookDir = new THREE.Vector3(look.x - eye.x, look.y - eye.y, look.z - eye.z);
       if (lookDir.lengthSq() > 1e-9) lookDir.normalize(); else lookDir.set(0, 0, -1);
-      // stand back from the exact eye-point along the reverse look direction — an "assume this camera's view"
-      // shot needs a hair of standoff, or the near clip plane clips the camera's own mount geometry.
-      var end = eye3.clone().add(lookDir.clone().multiplyScalar(-dist * 0.15));
+      var end = eye3.clone().add(lookDir.clone().multiplyScalar(-standoff));
       var look3 = new THREE.Vector3(look.x, look.y, look.z);
       var start = A.camera.position.clone(), startTarget = A.controls.target.clone(), t = 0;
       (function anim() {
@@ -654,13 +668,71 @@
         if (A.markDirty) A.markDirty();
         if (t < 1) requestAnimationFrame(anim);
       })();
-      var pulsePort = buildMeshPort(A);
-      pulsePort.setTint(atGuid, 0xffcc00);
-      setTimeout(function () { pulsePort.restoreAll(); }, 1600);
+      if (tintGuid) {
+        var pulsePort = buildMeshPort(A);
+        pulsePort.setTint(tintGuid, 0xffcc00);
+        setTimeout(function () { pulsePort.restoreAll(); }, 1600);
+      }
     }
+  }
+
+  function flyToPOV(A, fromGuid, atGuid, opts) {
+    opts = opts || {};
+    if (!A || !A.guidMap || !ready()) { console.log('§HBA_POV no-op from=' + fromGuid + ' at=' + atGuid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
+    var fromHit = _zoneCentroid(A, fromGuid), atHit = _zoneCentroid(A, atGuid);
+    if (!fromHit || !atHit) {
+      console.log('§HBA_POV no-op from=' + fromGuid + ' at=' + atGuid + ' (no rendered members)');
+      return { flew: false, reason: 'no-members' };
+    }
+    var eye = fromHit.center, look = atHit.center;
+    // BYTE-IDENTICAL to the pre-refactor formula (dist*0.15, dist default 3) — only _flyEyeLook's parameter
+    // shape changed (dist -> absolute standoff), not this caller's own behaviour.
+    _flyEyeLook(A, eye, look, (opts.dist != null ? opts.dist : 3) * 0.15, atGuid);
     console.log('§HBA_POV from=' + fromGuid + ' at=' + atGuid + ' eye=(' + eye.x.toFixed(1) + ',' + eye.y.toFixed(1) + ',' + eye.z.toFixed(1)
       + ') look=(' + look.x.toFixed(1) + ',' + look.y.toFixed(1) + ',' + look.z.toFixed(1) + ')');
     return { flew: true, from: fromHit.resolvedGuid, at: atHit.resolvedGuid, eye: eye, look: look };
+  }
+
+  // §2026-07-06 — the actual "camera-POV-assume-flight" (RESUME_HR_BIM_ASSET.md §2026-07-05e Item 2), unblocked
+  // now that a `facing:[x,y,z]` unit vector has been DECLARED (structural-centroid heuristic, see iot.js
+  // CAMERAS header) for each real CCTV door. Unlike flyToPOV (which looks at a second KNOWN real point), this
+  // stands the viewer's camera AT the door's own centroid and orients it along the door's OWN declared facing
+  // — "assume this camera's fixed POV" rather than "look through it at something else". `look` is a synthetic
+  // point (eye + facing, arbitrary lookahead distance — only the DIRECTION matters), never a second real guid.
+  // §FIX 2026-07-06b (found while eyeballing the first live screenshot) — flyToPOV's tiny standoff (a "hair", to
+  // avoid clipping an existing camera's own mount) put the eye almost exactly ON the door's centroid here,
+  // which is INSIDE the door leaf/frame geometry — a clipped, unusable close-up, not a believable "camera view
+  // down the corridor". `opts.dist` is the REAL number of metres to step back along the reverse facing before
+  // looking forward (default 3m, a plausible corridor-camera standoff) — no ×0.15 dampening, unlike flyToPOV.
+  // §FIX 2026-07-06c (found while eyeballing CAM1's screenshot — a blank grey floor/ceiling close-up instead of
+  // a door view) — the 6 declared `facing` vectors were computed against the RAW extraction's own coordinate
+  // system (IfcWallStandardCase/IfcSlab/... positions, X=east/Y=north/Z=up — see iot.js CAMERAS header), but
+  // `_zoneCentroid`'s `eye` is already in THREE.js WORLD space, which swaps axes (`A.ifc2three`, scene.js:370:
+  // "IFC (X=east,Y=north,Z=up) -> Three.js (X=east,Y=up,Z=south)"). Adding a raw-space direction straight onto
+  // a world-space position silently pointed the camera along the WRONG axis (a facing with a raw Y-component
+  // became a Three.js Y — i.e. straight up/down — instead of the intended horizontal direction). Fix: rotate
+  // the declared direction through the SAME mapping ifc2three applies to positions (y<->z swap + z sign flip),
+  // WITHOUT the translation half (a direction has no origin to recentre) — `{x, y:z, z:-y}`. Confirmed by the
+  // live screenshot: CAM1 (facing had a Y-component) went from a blank grey plane to a real door-ahead shot
+  // after this fix; CAM2 (facing had none) was already correct either way, unaffected.
+  function _rawFacingToThree(A, facing) {
+    if (A && typeof A.ifc2three === 'function') return { x: facing[0], y: facing[2], z: -facing[1] };
+    return { x: facing[0], y: facing[1], z: facing[2] };  // node-witness/stub fallback — no ifc2three to mirror
+  }
+
+  function flyToFacing(A, guid, facing, opts) {
+    opts = opts || {};
+    if (!A || !A.guidMap || !ready()) { console.log('§HBA_FACING no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
+    if (!facing || facing.length !== 3) { console.log('§HBA_FACING no-op guid=' + guid + ' (no declared facing vector)'); return { flew: false, reason: 'no-facing' }; }
+    var hit = _zoneCentroid(A, guid);
+    if (!hit) { console.log('§HBA_FACING no-op guid=' + guid + ' (no rendered members)'); return { flew: false, reason: 'no-members' }; }
+    var eye = hit.center;
+    var f3 = _rawFacingToThree(A, facing);
+    var look = { x: eye.x + f3.x, y: eye.y + f3.y, z: eye.z + f3.z };
+    _flyEyeLook(A, eye, look, opts.dist != null ? opts.dist : 3, guid);
+    console.log('§HBA_FACING guid=' + guid + ' eye=(' + eye.x.toFixed(1) + ',' + eye.y.toFixed(1) + ',' + eye.z.toFixed(1)
+      + ') facing=(' + facing[0] + ',' + facing[1] + ',' + facing[2] + ')');
+    return { flew: true, guid: hit.resolvedGuid, eye: eye, facing: facing };
   }
 
   // §P11 (RESUME_HR_BIM_ASSET.md §P11, user 2026-07-02) — cross-app deep-link from an HBA pane into the real
@@ -892,7 +964,7 @@
   G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, tintedCount: tintedCount,
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
-    flyToZone: flyToZone, flyToPOV: flyToPOV, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
+    flyToZone: flyToZone, flyToPOV: flyToPOV, flyToFacing: flyToFacing, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
     _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
     _consumeFindGuid: _consumeFindGuid, bindStoreysFromModel: bindStoreysFromModel };  // §STAGE2 / §2026-07-04c / §2026-07-05e — witness hooks (additive)

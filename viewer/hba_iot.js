@@ -339,10 +339,21 @@
       var cam = deps_.IoT.CAMERAS[i - 1];
       if (cam) { cv2.title = deps_.IoT.CAMERA_ICON + ' Locate CCTV Camera ' + i + ' (' + cam.element + ', ' + cam.storey + ') in the model'; }
       // §FIX 2026-07-06 (user: "zoom in to the cam device, right to the device position") — a close shot at the
-      // camera itself (CAMERA_ZOOM_DIST), not the wider sensor establishing shot. Turning to actually ASSUME the
-      // camera's own POV needs its declared facing vector — still the one open blocker (RESUME_HR_BIM_ASSET.md
-      // §2026-07-05e Item 2); not built here.
-      cv2.addEventListener('click', (function (camGuid) { return function () { if (camGuid) locateAndHighlight(A, camGuid, CAMERA_ZOOM_DIST); }; })(cam && cam.bim_guid));
+      // camera itself (CAMERA_ZOOM_DIST). §FIX 2026-07-06b — now that iot.js CAMERAS carries a declared
+      // `facing` vector (structural-centroid heuristic), the click ASSUMES that camera's own fixed POV
+      // (flyToFacing: stand at the door, look along its facing) instead of just locating+highlighting it.
+      // Honest fallback to the old locate-only shot if flyToFacing is unavailable or the camera has no facing
+      // (neither should happen for any of the 6 real CAMERAS today, but a future camera entry might lack one).
+      cv2.addEventListener('click', (function (c) {
+        return function () {
+          if (!c || !c.bim_guid) return;
+          if (c.facing && G.HBALens && G.HBALens.flyToFacing) {
+            G.HBALens.flyToFacing(A, c.bim_guid, c.facing, { dist: CAMERA_ZOOM_DIST });
+          } else {
+            locateAndHighlight(A, c.bim_guid, CAMERA_ZOOM_DIST);
+          }
+        };
+      })(cam));
       cctvWrap.appendChild(cv2);
       cctvTileEls.push({ el: cv2, cam: cam });
       var tick = renderCctvTile(cv2, i); if (tick) cctvTicks.push(tick);
