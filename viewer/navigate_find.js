@@ -3471,8 +3471,20 @@
       _clearShapeOverlays();
       _clearHlOverlay();
       if (A.setOutline) A.setOutline([]);
-      if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
-      _dimXrayTo(0.1);                                                          // §DEPTH: rest = 0.1 ghost
+      // §PERF-50K (user, 2026-07-06): full per-material X-Ray (A.toggleXray iterates every
+      // material, flips transparent/opacity/side, forces a pipeline recompile) was ALWAYS
+      // auto-engaged here on every selection — fine at small scale, but "too heavy" once a
+      // building crosses ~50k elements (the same threshold time_machine.js already uses for
+      // its own perf cliff, LARGE_BUILDING). Above that, obscure the rest via the cheap
+      // VISIBILITY-only A.filterByGuids (the same primitive Alt+X's ghost/bbox mode already
+      // uses) instead of touching material state at all. Below threshold: unchanged.
+      var _bigBuilding = (A.activeBuildingTotal || 0) > 50000;
+      if (_bigBuilding) {
+        if (A.filterByGuids) A.filterByGuids(set);   // hide everything except the selection
+      } else {
+        if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
+        _dimXrayTo(0.1);                                                          // §DEPTH: rest = 0.1 ghost
+      }
       // color=null → opaque clone of each element's REAL material; solidOpacity=1 → fully solid.
       var _ovBefore = _shapeOverlays.length;
       var lit = _buildShapeMeshes(set, null, 1, null);
@@ -3494,7 +3506,8 @@
       if (opts.frame !== false) zoomed = (opts.item === false) ? _zoomToGroup(set) : _zoomToGuids(set, 1.1);
       if (A.markDirty) A.markDirty();
       console.log('[RP-TB] §FOCUS_ELEM guids=' + set.size + ' lit=' + lit + ' outline=' + _ovMeshes.length +
-        ' frame=' + (opts.frame !== false) + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+        ' frame=' + (opts.frame !== false) + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off') +
+        ' mode=' + (_bigBuilding ? 'filter-cheap(>50k)' : 'xray-dim'));
       return lit;
     };
     // Read-only teardown — drop the focus overlay + restore x-ray (same path as a lens reset).
