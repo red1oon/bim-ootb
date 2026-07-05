@@ -1,11 +1,23 @@
 <!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
 # ⚠ DO NOT REMOVE — RESUME: Teams overlay UI CONSISTENCY (dedicated session)
 
+> ⛔ **RETIRED 2026-07-05 (user decision): Teams does NOT embed in the Viewer.** Everything in §R1 and §R6
+> below about a Viewer Find-panel **Teams facet icon** / **Storey→Rooms WHO-dots** was a design-only plan —
+> it was never wired into `viewer.html` (confirmed by grep: zero `teams_embed.js`/`find_placement.js`
+> references there, and zero open/merged PRs touch it). The user confirmed Teams is only useful embedded in
+> **Modeller + ERP** (presence/collaboration during design + on ERP docs); HBA already owns the Viewer's
+> operate-phase Storey→Rooms Find-panel facet row (Tenancy/IoT), and adding a Teams facet there would be a
+> second, redundant way to comment on the same building on top of the Viewer's existing Share/Issues tools.
+> `teams/overlay/find_placement.js` + its demo fixture/witnesses stay in the repo as a proven-but-unused POC
+> (§P5 "demo before embed" — the demo step happened, the embed step is now cancelled, not "not yet done").
+> Do not resume §R1 (Viewer facet row) or §R6 (Viewer Find-panel placement) below without a fresh user GO.
+
 **Scope:** make every Teams overlay widget / pane / tab consistent in **schema + aesthetics** with the host
-product it embeds into (BIM Viewer/Modeller `viewer/panels.js`; ERP `erp/idempiere.html` iDempiere chrome).
-The Teams overlay must **speak the host's visual language, never impose its own** — that consistency IS the
-universal-optics thesis (one overlay, design→operate). **Read the log after every run** (Log Mandate). Honour
-this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; witness before chrome.
+product it embeds into (**Modeller** `viewer/panels.js` icon/panel factory; **ERP** `erp/idempiere.html`
+iDempiere chrome — see the retirement note above: NOT the Viewer). The Teams overlay must **speak the host's
+visual language, never impose its own** — that consistency IS the universal-optics thesis (one overlay,
+design→operate). **Read the log after every run** (Log Mandate). Honour this preamble until `✅ DONE` or
+retired. Spec-first: this file is the spec; witness before chrome.
 
 > Triggered 2026-07-01 in the Teams design dialogue (user: "ensure the UI widgets/panes/tabs are consistent
 > schema, aesthetics" + "use icons instead of labels in the Find Panel"). The data feed is already done +
@@ -29,7 +41,8 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
   1-3d #f9a825 / 3-7d #fb8c00 / >7d #c62828`.
 
 ## 1. The consistency requirements (the spec)
-- **R1 — Icon, not label — for the WHOLE facet axis.** The entire Find-panel facet row is icon-driven, not just
+- **R1 (⛔ RETIRED 2026-07-05 — Viewer Find-panel facet icon, see banner above; kept verbatim for history,
+  do not build against it) — Icon, not label — for the WHOLE facet axis.** The entire Find-panel facet row is icon-driven, not just
   the Teams lens: **Storey | Disc | Material | Tenancy | IoT | Teams** are ALL Lucide glyphs from the ONE
   (⚠ **Phase is NO LONGER a Find-Panel facet** — see §1a: it was a pre-Modeller Time-Machine relic; the Modeller
   now owns the 4D Phase/5D dimension natively. Drop `Phase`/`clock` from the Viewer facet row.)
@@ -55,10 +68,12 @@ this preamble until `✅ DONE` or retired. Spec-first: this file is the spec; wi
 - **R5 — Identity vs State colour MUST be distinguishable.** The signer-hued identity dots (`dot_layer` `colorOf`)
   must NOT collide with HR's state palette (R0) — reserve a hue family or use a ring/badge so "who" never reads as
   "state." When Teams shows STATE, reuse HR's exact palette.
-- **R6 — Find-panel placement (OPERATE-phase pivot — see §1a).** WHO-dots append to the SAME Storey→Rooms result
-  rows, AFTER the state chip, anchored by room guid (`docOf = row => row.guid`); storey-level cluster `+N` matches
-  HR's density-dot grammar. The DESIGN-phase counterpart pivots Role×Project→Element on the Modeller Outliner (same
-  `dotLayerModel`, `anchorOf = element/task`). Both grouped by Role; smart-search (`erp_search.js`) is the entry.
+- **R6 (⛔ RETIRED 2026-07-05 — Viewer Find-panel placement, see banner above; kept verbatim for history, do
+  not build against it) — Find-panel placement (OPERATE-phase pivot — see §1a).** WHO-dots append to the SAME
+  Storey→Rooms result rows, AFTER the state chip, anchored by room guid (`docOf = row => row.guid`); storey-level
+  cluster `+N` matches HR's density-dot grammar. The DESIGN-phase counterpart (Role×Project→Element on the
+  Modeller Outliner, `dotLayerModel`/`anchorOf = element/task`) is NOT retired — that half lives on Modeller,
+  which stays in scope.
 
 ## 1a. SETTLED ARCHITECTURE — the People dimension (resolved 2026-07-01, after a drift check)
 > ⚠ **ANTI-DRIFT (root cause, do not repeat):** the 2026-07-01 drift came from anchoring Teams on
@@ -149,7 +164,11 @@ The overlay now SPEAKS THE HOST LANGUAGE when a host factory is injected:
 Storey/Disc/Material/Tenancy/IoT) belong to the **HR/viewer Find-Panel icon-ification** (§2), which already owns
 `viewer/panels.js`. Add them there, to the ONE registry — do NOT fork from the Teams lane.
 
-## ✅ R6 DONE — Find-panel placement: ONE Role×Spine matrix, two renderings (2026-07-01)
+## ✅ R6 DONE (POC only — the OPERATE half is ⛔ RETIRED 2026-07-05, see banner) — Find-panel placement: ONE Role×Spine matrix, two renderings (2026-07-01)
+> "DONE" below means the standalone engine + `find_rows.html` fixture, never `viewer.html` (confirmed: zero
+> references to `find_placement.js` in any Viewer file, any commit, any PR). The DESIGN/Modeller-Outliner
+> rendering stays in scope; the OPERATE/Viewer-Find-panel rendering does not proceed without a fresh user GO.
+
 **W-FIND-PLACEMENT 8/8** (node engine) + **W-FIND-PLACEMENT-DOM 4/4** (chromium render). New module
 `teams/overlay/find_placement.js` (REUSES dot_layer — colorOf · dotLayerModel · clusterByAnchor, no fork):
 - **`placementModel(ops, spine, opts)`** folds the op-log onto a spine; the SAME engine renders both pivots,
