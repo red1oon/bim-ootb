@@ -1361,9 +1361,11 @@ function setupStreaming(A) {
     if (metaUrl === A.DB_URL) metaUrl = A.DB_URL.replace(/\.db$/, '_meta.db');
     if (metaUrl !== A.DB_URL) {
       try {
-        // For import:// URLs, use IDB _checkCache instead of HEAD fetch
-        if (A.DB_URL.startsWith('import://')) {
-          _splitMode = await A._checkCache(metaUrl);
+        // §OFFLINE-GATEWAY-LEAK: check IndexedDB before ever touching the network — a repeat/offline
+        // open of a building already downloaded must not re-probe the network to rediscover split-mode.
+        var _metaCached = await A._checkCache(metaUrl);
+        if (_metaCached || A.DB_URL.startsWith('import://')) {
+          _splitMode = !!_metaCached;
         } else {
           var headResp = await fetch(metaUrl, { method: 'HEAD' });
           _splitMode = headResp.ok;
@@ -1528,12 +1530,19 @@ function setupStreaming(A) {
     } else {
       // ── Single DB — always full download. Range streaming only works with split DBs
       // (split = meta instant + geo range). Without split, metadata scanning via range is too chatty.
+      // §OFFLINE-GATEWAY-LEAK: this size check is diagnostic-only (feeds one log line) — it must not
+      // touch the network for a building already sitting in IndexedDB.
       var _dbSize = 0;
-      try {
-        var headR = await fetch(A.DB_URL, { method: 'HEAD' });
-        _dbSize = parseInt(headR.headers.get('Content-Length') || '0', 10);
-      } catch(e) {}
-      console.log(`[S260] §DB_SIZE_CHECK size=${(_dbSize/1024/1024).toFixed(0)}MB`);
+      var _dbCached = await A._checkCache(A.DB_URL);
+      if (_dbCached) {
+        _dbSize = _dbCached.byteLength;
+      } else {
+        try {
+          var headR = await fetch(A.DB_URL, { method: 'HEAD' });
+          _dbSize = parseInt(headR.headers.get('Content-Length') || '0', 10);
+        } catch(e) {}
+      }
+      console.log(`[S260] §DB_SIZE_CHECK size=${(_dbSize/1024/1024).toFixed(0)}MB src=${_dbCached ? 'cache' : 'network'}`);
 
       // ── §S281: Single-DB instant bboxes — try the tiny positions.bin sidecar first (the same one
       // split builds use), so the wireframe preview paints before the full _extracted.db downloads.

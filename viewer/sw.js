@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v740';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v741';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -182,6 +182,9 @@ const PRECACHE_ASSETS = [
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',
   'textures/ground/grass_1k.jpg',
+  // §OFFLINE-GATEWAY-LEAK: was hardcoded network-first ("during tuning") — precached like every
+  // other config file now so it stops re-hitting the network once cached.
+  'sfx.json',
 ];
 
 self.addEventListener('install', (event) => {
@@ -229,7 +232,6 @@ function isNetworkFirst(url) {
   }
   // Precached local files — cache-first (CACHE_VERSION bump purges + refreshes)
   var filename = base.split('/').pop();
-  if (filename === 'sfx.json') return true;   // sfx config — always fresh (network-first) during tuning
   if (_PRECACHE_SET.has(filename)) return false;
   // Unknown JS/HTML not in precache list — network-first (safe default)
   if (base.endsWith('.html') || base.endsWith('.js')) return true;

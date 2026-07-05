@@ -654,7 +654,14 @@ function setupCity(A) {
       // inline → (2) libDb = db (mirrors streaming.js A.libDb = A.db). Else → (3) fetch library.
       let _split = false;
       if (metaUrl !== extUrl) {
-        try { const h = await fetch(metaUrl, { method: 'HEAD' }); _split = h.ok; } catch (e) { _split = false; }
+        // §OFFLINE-GATEWAY-LEAK: check IndexedDB before the network — an archetype already
+        // downloaded must resolve split-mode from cache, not re-probe the network every load.
+        const _metaCached = await A._checkCache(metaUrl);
+        if (_metaCached) {
+          _split = true;
+        } else {
+          try { const h = await fetch(metaUrl, { method: 'HEAD' }); _split = h.ok; } catch (e) { _split = false; }
+        }
       }
       let _mode, _mainDb, _auxDb, _mainMB = 0, _auxMB = 0;
       try {
