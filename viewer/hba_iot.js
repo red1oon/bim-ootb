@@ -16,10 +16,14 @@
 //   bar is one distinct colour (SENSOR_COLORS) and clicking it flies the camera to THAT SENSOR'S OWN real
 //   bound position (locateAndHighlight — §2026-07-05: iot.js DEVICES, one real guid per sensor, no longer all
 //   6 sharing the single PM_Asset AHU-03 guid) + holds a distinct ORANGE tint — "there's a live sensor" also
-//   means "here's exactly where it is". (b) a 2x3 CCTV grid — plain <canvas>, now painted from a REAL dimmed
-//   still photo (`hba_cctv_still.jpg`, user-supplied ContaCam capture, copied into this repo — NOT a feed of
-//   THIS building, still captioned MOCKUP) with a scanline overlay + a diagonal "STUB READY" watermark (this
-//   tile is the placeholder seam for later real physical camera wiring, not a claim of a live feed), NO
+//   means "here's exactly where it is". (b) a 2x3 CCTV grid — plain <canvas>, §2026-07-06c item D-followup:
+//   now painted from a REAL offscreen render of THIS building's OWN loaded scene, taken from that camera's own
+//   declared eye/facing (HBALens.captureFacingSnapshot, throttled every CAPTURE_REFRESH_MS — see renderCctvTile)
+//   — "by cam u will know its the cam POV" (user). Falls back to the older dimmed still photo (`hba_cctv_still.
+//   jpg`, user-supplied ContaCam capture — NOT a feed of THIS building) only when the engine/facing isn't
+//   available. A scanline overlay + a diagonal watermark ("IN-SCENE POV" for the real capture, "STUB READY" for
+//   the photo fallback) keeps both states honestly labeled — a static synthetic render, never a claim of a
+//   live video feed. NO
 //   invented video/GIF asset, NO external URL fetch (PRIME RULE); §2026-07-05: each tile is ALSO clickable,
 //   locating+highlighting its OWN real bound camera position (iot.js CAMERAS, 6 real entrance/circulation
 //   doors). (c) the ERP billing table — iot.billingLines() rendered as sensor/reading/uom/C_OrderLine
@@ -59,39 +63,61 @@
     _cctvImg.src = 'hba_cctv_still.jpg?v=1';
   }
 
-  // the source still (hba_cctv_still.jpg) is itself a ContaCam MULTI-camera dashboard screenshot — so each
-  // tile n gets a DIFFERENT crop (a 3x2 grid over the source), not the same centered crop repeated 6x. Dimmed
-  // so the blue scanline + caption stay legible and the tile still visibly reads as an OVERLAY, not a genuine
-  // live camera frame.
-  function renderCctvTile(canvas, n) {
+  // §FIX 2026-07-06c item D-followup (user, once picked up: "By cam u will know its the cam POV") — each tile
+  // now paints a REAL offscreen render of THIS building's own scene, taken from that camera's own declared
+  // eye/facing (HBALens.captureFacingSnapshot — the SAME ground truth flyToFacing flies to), instead of a crop
+  // of one shared static ContaCam photo of a DIFFERENT building. A real 3D render every rAF tick (x6 cameras)
+  // would be wasteful — CAPTURE_REFRESH_MS throttles the actual re-render; the cached ImageData is redrawn on
+  // every intermediate tick so the scanline/watermark overlay keeps animating smoothly between real captures.
+  // Honest fallback to the old static-photo crop (never a blank tile) when the engine/facing/renderer isn't
+  // available — same non-invent discipline as every other HBA fly.
+  var CAPTURE_REFRESH_MS = 1500;
+  function renderCctvTile(canvas, n, A, cam) {
     var ctx = canvas.getContext && canvas.getContext('2d');
     if (!ctx) return null;
     var y = 0;
     var col = (n - 1) % 3, row = Math.floor((n - 1) / 3);
+    var lastCaptureAt = 0, haveRealCapture = false, cachedImageData = null;
+    function tryCapture() {
+      if (!cam || !cam.facing || !G.HBALens || !G.HBALens.captureFacingSnapshot) return false;
+      var res = G.HBALens.captureFacingSnapshot(A, cam.bim_guid, cam.facing, ctx, { dist: CAMERA_ZOOM_DIST, width: canvas.width, height: canvas.height });
+      if (!res.captured) return false;
+      cachedImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      return true;
+    }
     return function tick() {
-      ctx.fillStyle = '#0a1622'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (_cctvImgReady && _cctvImg.naturalWidth) {
-        var iw = _cctvImg.naturalWidth, ih = _cctvImg.naturalHeight;
-        var cw = iw / 3, ch = ih / 2, sx = col * cw, sy = row * ch;
-        ctx.globalAlpha = 0.55;
-        ctx.drawImage(_cctvImg, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
-        ctx.globalAlpha = 1;
+      var now = (typeof Date !== 'undefined') ? Date.now() : 0;
+      if (!haveRealCapture || now - lastCaptureAt >= CAPTURE_REFRESH_MS) {
+        if (tryCapture()) { haveRealCapture = true; lastCaptureAt = now; }
       }
-      // diagonal "STUB READY" watermark — this tile is a placeholder wired to a real still photo, not a
-      // real feed; the label doubles as the seam name for later real physical camera wiring (see file header).
+      if (haveRealCapture && cachedImageData) {
+        ctx.putImageData(cachedImageData, 0, 0);
+      } else {
+        ctx.fillStyle = '#0a1622'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (_cctvImgReady && _cctvImg.naturalWidth) {
+          var iw = _cctvImg.naturalWidth, ih = _cctvImg.naturalHeight;
+          var cw = iw / 3, ch = ih / 2, sx = col * cw, sy = row * ch;
+          ctx.globalAlpha = 0.55;
+          ctx.drawImage(_cctvImg, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
+          ctx.globalAlpha = 1;
+        }
+      }
+      // diagonal watermark — real capture reads "IN-SCENE POV" (it IS this building's own geometry, from this
+      // camera's own eye/facing — just a static synthetic render, not a live video feed); the static-photo
+      // fallback keeps the older honest "STUB READY" label (a placeholder, not even this building).
       ctx.save();
       ctx.translate(canvas.width / 2, canvas.height / 2);
       ctx.rotate(-Math.PI / 8);
-      ctx.font = 'bold 13px monospace';
+      ctx.font = 'bold 12px monospace';
       ctx.fillStyle = 'rgba(255,255,255,0.35)';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('STUB READY', 0, 0);
+      ctx.fillText(haveRealCapture ? 'IN-SCENE POV' : 'STUB READY', 0, 0);
       ctx.restore();
       ctx.strokeStyle = '#1976d2'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();   // scanline
       y = (y + 3) % canvas.height;
       ctx.fillStyle = '#eaf3fb'; ctx.font = '10px monospace';
-      ctx.fillText('CAM ' + n + ' · MOCKUP', 4, canvas.height - 6);
+      ctx.fillText('CAM ' + n + (haveRealCapture ? ' · MOCKUP FEED' : ' · MOCKUP'), 4, canvas.height - 6);
     };
   }
 
@@ -357,7 +383,7 @@
       })(cam));
       cctvWrap.appendChild(cv2);
       cctvTileEls.push({ el: cv2, cam: cam });
-      var tick = renderCctvTile(cv2, i); if (tick) cctvTicks.push(tick);
+      var tick = renderCctvTile(cv2, i, A, cam); if (tick) cctvTicks.push(tick);
     }
     pane.appendChild(cctvWrap);
 
