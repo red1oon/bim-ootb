@@ -636,10 +636,26 @@ function setupTools(A) {
   };
 
   // §S259: Shadow toggle — user-controlled in Sunglass panel
+  // §SHADOW-GROUND MERGE (PILL_DRAWER_REORGANIZATION.md, 2026-07-05): A.toggleShadow is now a
+  // 4-state cycle Off→Grass→Earth→Paved→Off — replaces the old boolean Shadow toggle AND the 4
+  // separate Ground buttons with ONE function + one visual swatch (panels.js
+  // _buildShadowGroundRow). id/key('h')/isActive wiring in panels.js is UNCHANGED — only this
+  // function's BODY changed, so the 'h' shortcut keeps working untouched. The renderer/sun/sky/
+  // SSAO/frustum/shadow-traverse setup below is verbatim from the old boolean version, just
+  // gated to run on the Off→On and On→Off EDGES only (not on every Grass/Earth/Paved re-tint,
+  // which only needs to swap the ground texture — shadow map itself doesn't change).
   A._shadowOn = false;
+  A._shadowGroundKey = 'off';                 // 'off' | 'grass' | 'earth' | 'paved'
+  var _SG_CYCLE = ['off', 'grass', 'earth', 'paved'];
   A.toggleShadow = function() {
-    A._shadowOn = !A._shadowOn;
-    if (A._shadowOn) {
+    var prev = A._shadowGroundKey || 'off';
+    var next = _SG_CYCLE[(_SG_CYCLE.indexOf(prev) + 1) % _SG_CYCLE.length];
+    A._shadowGroundKey = next;
+    var turningOn = (prev === 'off' && next !== 'off');
+    var turningOff = (prev !== 'off' && next === 'off');
+    A._shadowOn = (next !== 'off');
+
+    if (turningOn) {
       // §S260: Full shadow setup on first enable — r160 needs this before any shadow render
       if (!A._shadowInited) {
         A.renderer.shadowMap.enabled = true;
@@ -659,14 +675,6 @@ function setupTools(A) {
       if (A._sky) { A._sky.visible = true; if (A.updateSky) A.updateSky(45, 180); }
       // §S277c: Enable SSAO with shadows
       if (A.toggleSSAO) A.toggleSSAO(true);
-    } else {
-      A.sun.castShadow = false;
-      // §S276b: Hide Sky when shadows off (unless TM sun cycle active)
-      if (A._sky && !A._sunCycleActive) A._sky.visible = false;
-      // §S277c: Disable SSAO with shadows
-      if (A.toggleSSAO) A.toggleSSAO(false);
-    }
-    if (A._shadowOn) {
       // §S276b: Scale shadow frustum to full building envelope — no reduction.
       // LTU is 426m wide — 0.7x was clipping shadow edges.
       var _env = 300;
@@ -698,8 +706,6 @@ function setupTools(A) {
         A.ground.visible = true;
         A.ground.receiveShadow = true;
         A._calcGroundY();
-        // §S280g: default ground texture appears with shadows (user retunes in Palette panel)
-        if (!A._groundUserPicked) A.applyDefaultGroundTexture();
       }
       // §S277b: Chunked shadow traverse — don't block main thread on 122K scenes
       var _shadowList = [];
@@ -719,7 +725,13 @@ function setupTools(A) {
         if (_si < _shadowList.length) setTimeout(_shadowChunk, 0);
         else { console.log('§SHADOW_TRAVERSE done count=' + _shadowList.length); }
       })();
-    } else {
+    }
+    if (turningOff) {
+      A.sun.castShadow = false;
+      // §S276b: Hide Sky when shadows off (unless TM sun cycle active)
+      if (A._sky && !A._sunCycleActive) A._sky.visible = false;
+      // §S277c: Disable SSAO with shadows
+      if (A.toggleSSAO) A.toggleSSAO(false);
       var _unshadowList = [];
       A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _unshadowList.push(o); });
       var _ui = 0;
@@ -730,11 +742,13 @@ function setupTools(A) {
       })();
       if (A.ground) A.ground.visible = false;
     }
+    // §SHADOW-GROUND MERGE: apply this cycle state's ground texture — Grass/Earth/Paved on,
+    // or clear back to None on Off (matches the spec's "OFF = Ground=None + Shadow off").
+    if (A.setGroundTexture) A.setGroundTexture(next === 'off' ? 'none' : next);
     var btn = document.getElementById('shadow-btn');
-    btn.style.background = A._shadowOn ? '#ff8c00' : '#333';
-    btn.style.color = A._shadowOn ? '#000' : '#aaa';
+    if (btn) { btn.style.background = A._shadowOn ? '#ff8c00' : '#333'; btn.style.color = A._shadowOn ? '#000' : '#aaa'; }
     if (A.markDirty) A.markDirty();
-    console.log('§SHADOW toggle=' + A._shadowOn);
+    console.log('§SHADOW_GROUND cycle=' + next + ' shadow=' + A._shadowOn);
   };
 
   // §S260: Background toggle — white background for print/presentation

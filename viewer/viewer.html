@@ -102,11 +102,31 @@
     flex-shrink: 0; opacity: 0; transition: opacity 0.3s;
   }
   .bim-panel .bim-slider-val.visible { opacity: 1; }
+  /* ── PILL_DRAWER_REORGANIZATION.md — drawer sub-action rows (Navigate/Inspect/Camera-View
+     panels + the Night/Shadow-Ground/Background/Audio rows appended to the Palette panel) ── */
+  .bim-drawer-row {
+    display: flex; align-items: center; gap: 8px; width: 100%; margin: 2px 0;
+    padding: 6px 8px; border: none; border-radius: 7px; background: transparent;
+    color: #e0e0e0; cursor: pointer; font-size: 12px; text-align: left;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .bim-drawer-row:hover { background: rgba(255,255,255,0.08); }
+  .bim-drawer-row.active { background: rgba(79,195,247,0.18); color: #4fc3f7; }
+  .bim-drawer-row .bim-drawer-row-icon { display: flex; flex-shrink: 0; pointer-events: none; }
+  .bim-drawer-row .bim-drawer-row-icon svg { width: 18px; height: 18px; }
+  .bim-drawer-row .bim-drawer-row-label { pointer-events: none; white-space: nowrap; }
+  .bim-drawer-swatch {
+    width: 24px; height: 24px; border-radius: 5px; flex-shrink: 0;
+    background-size: cover; background-position: center;
+    border: 1px solid rgba(255,255,255,0.25); pointer-events: none;
+  }
   @media (max-width: 600px) {
     .bim-panel { border-radius: 12px; }
     .bim-panel .bim-panel-close { font-size: 22px; padding: 8px 12px; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
     .bim-panel .bim-slider-row button { width: 44px; height: 44px; }
     .bim-panel .bim-slider-row button svg { width: 22px; height: 22px; }
+    .bim-drawer-row { padding: 10px 8px; font-size: 13px; }
+    .bim-drawer-row .bim-drawer-row-icon svg { width: 22px; height: 22px; }
   }
 
   /* §S280: HUD accordion CSS removed — storey/disc now in Find outliner */
