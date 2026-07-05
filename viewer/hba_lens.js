@@ -405,17 +405,24 @@
   }
   function _drawOutlines(A, plan) {
     _clearOutlines(A);
-    if (typeof THREE === 'undefined' || !A || !A.scene || !A._hbaRoomFootprint) return 0;
+    if (typeof THREE === 'undefined' || !A || !A.scene || !A._hbaRoomFootprint || !A.ifc2three) return 0;
     var group = new THREE.Group(); group.name = 'hba-class-outlines';
     var drawn = 0;
     (plan.linked || []).forEach(function (guid) {
       var fp = A._hbaRoomFootprint[guid]; if (!fp) return;               // honest no-op — no real footprint extracted
       var tint = plan.tints[guid]; if (!tint) return;
-      var geo = new THREE.BoxGeometry(fp.sx, fp.sy, fp.sz);
+      // §FIX 2026-07-06 (user report: boxes render outside the building) — fp.cx/cy/cz/sx/sy/sz are RAW
+      // extracted spatial_structure values (world coords, IFC axis convention X=east/Y=north/Z=up). Every OTHER
+      // rendered element goes through A.ifc2three (subtracts A.modelOffset, the per-building recentring offset
+      // every mesh in this viewer is shifted by — scene.js:370, streaming.js:1640) before becoming a THREE
+      // position. This box skipped that entirely, so it rendered at the raw un-recentred IFC coordinate —
+      // displaced by the full modelOffset from the actual (recentred) room geometry it was meant to outline.
+      var pos = A.ifc2three(fp.cx, fp.cy, fp.cz);
+      var geo = new THREE.BoxGeometry(fp.sx, fp.sz, fp.sy);               // size swap matches ifc2three's y<->z
       var edges = new THREE.EdgesGeometry(geo);
       var mat = new THREE.LineBasicMaterial({ color: toHex(tint.color), linewidth: 2 });
       var lines = new THREE.LineSegments(edges, mat);
-      lines.position.set(fp.cx, fp.cy, fp.cz);
+      lines.position.set(pos.x, pos.y, pos.z);
       group.add(lines); geo.dispose(); drawn++;
     });
     if (drawn) { A.scene.add(group); _outlineGroup = group; }
