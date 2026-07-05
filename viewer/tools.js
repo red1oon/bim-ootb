@@ -228,6 +228,30 @@ function setupTools(A) {
     console.log('§XRAY on=' + A.xrayOn + ' mats=' + (keys.length || 'scene'));
   };
 
+  // Alt+Z 3-state cycle: Off → X-Ray → Bbox(ghost) → Off. Replaces the old separate Alt+X
+  // (deleted — X-Ray and Bbox are mutually exclusive views of the same "see through" concept,
+  // no reason both could be on independently). toggleGhostXray lives in the lazy-loaded
+  // navigate_find.js — same load-on-demand fallback as the old Alt+X handler used.
+  A.cycleXrayBboxMode = function() {
+    var ghostOn = typeof window.ghostXrayOn === 'function' && window.ghostXrayOn();
+    var _toggleGhost = function() {
+      if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray();
+      else if (A.loadNavigate) A.loadNavigate().then(function() { if (window.toggleGhostXray) window.toggleGhostXray(); });
+    };
+    if (!A.xrayOn && !ghostOn) {
+      A.toggleXray();                       // Off → X-Ray
+      console.log('§XRAY_CYCLE off→xray');
+    } else if (A.xrayOn && !ghostOn) {
+      A.toggleXray();                       // X-Ray → Bbox
+      _toggleGhost();
+      console.log('§XRAY_CYCLE xray→bbox');
+    } else {
+      if (A.xrayOn) A.toggleXray();         // Bbox (or any stray combo) → Off
+      if (ghostOn) _toggleGhost();
+      console.log('§XRAY_CYCLE →off');
+    }
+  };
+
   // Section Cut
   A.sectionOn = false;
   A.sectionAxis = 'Y';

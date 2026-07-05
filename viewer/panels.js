@@ -1128,12 +1128,15 @@ function setupPanels(A) {
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
       // PILL_DRAWER_REORGANIZATION.md §4: icon Eye→Bone (Eye freed, Bone = X-ray metaphor).
-      // Long-press→Bbox chip UNCHANGED.
-      { id: 'xray',       name: 'X-Ray',           key: 'Alt+Z', pill: false, icon: I.bone.svg, fn: function() { if (typeof toggleXray === 'function') toggleXray(); },
-        hold: function(btn) { _revealChip(btn, 'bbox', I.box.svg, function(){ if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }); },
-        isActive: function() { return !!A.xrayOn; } },
-      // Alt+X bounding-box envelope ghost — hold-chip off X-Ray (sibling x-ray mode); pill:false → Help/Settings only, no standalone pill.
-      { id: 'bbox',       name: 'Bounding Boxes',  key: 'Alt+X', pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
+      // REVISED (user, 2026-07-06): Alt+X retired — this row is now a 3-state cycle
+      // Off→X-Ray→Bbox→Off (A.cycleXrayBboxMode, tools.js), no more hold-to-reveal chip.
+      { id: 'xray',       name: 'X-Ray / Bbox',    key: 'Alt+Z', pill: false, icon: I.bone.svg,
+        fn: function() { if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); },
+        isActive: function() { return !!A.xrayOn || (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()); },
+        stateLabel: function() { return A.xrayOn ? 'X-Ray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'Bbox' : 'Off'); } },
+      // Bounding-box envelope ghost — absorbed into the 'xray' cycle above, key removed (was
+      // Alt+X). Entry kept (pill:false) only so Settings' pill editor still has a stable id.
+      { id: 'bbox',       name: 'Bounding Boxes',  key: null, pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
       { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
         children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
       { id: 'section',    name: 'Section Cut',     key: 'x', pill: false, icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
@@ -1233,6 +1236,7 @@ function setupPanels(A) {
       row.appendChild(label);
 
       function _sync() {
+        if (act.stateLabel) { try { label.textContent = act.name + '  ·  ' + act.stateLabel(); } catch (e) {} }
         if (!act.isActive) return;
         var on = false; try { on = !!act.isActive(); } catch (e) {}
         row.classList.toggle('active', on);

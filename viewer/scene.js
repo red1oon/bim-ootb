@@ -1778,9 +1778,9 @@ async function setupScene(A) {
     if (document.getElementById('cmd-palette')) { console.log('§KBD_ROUTE palette active, pass-through key=' + e.key); return; }
 
     // Always-on modifier shortcuts
-    // §S282: Alt+Z = X-Ray (Blender convention) — restored
-    if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (typeof toggleXray === 'function') toggleXray(); console.log('§KBD_ROUTE Alt+Z → xray'); if (window.S) window.S('KBD_ROUTE', 'Alt+Z → xray', { xray: true }); return; }
-    if (e.altKey && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); console.log('§KBD_ROUTE Alt+X → ghost-xray'); if (window.S) window.S('KBD_ROUTE', 'Alt+X → ghost-xray', { ghost: true }); if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); else if (A.loadNavigate) A.loadNavigate().then(function(){ if (window.toggleGhostXray) window.toggleGhostXray(); }); return; }
+    // Alt+Z = 3-state cycle Off→X-Ray→Bbox→Off (Blender Alt+Z convention, extended). Alt+X
+    // deleted — merged into this single cycle, see A.cycleXrayBboxMode (tools.js).
+    if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); console.log('§KBD_ROUTE Alt+Z → xray-cycle'); if (window.S) window.S('KBD_ROUTE', 'Alt+Z → xray-cycle', { xray: true }); return; }
     if (e.key === 'F1') { e.preventDefault(); console.log('§KBD_ROUTE F1 → help'); showCommandPalette(); return; }
     if (e.key === 'F11') { e.preventDefault(); console.log('§KBD_ROUTE F11 → fullscreen'); A.toggleFullscreen(); return; }
     // Ctrl/Cmd+S = Save Building, Ctrl/Cmd+O = Open Building — preventDefault suppresses the browser's
