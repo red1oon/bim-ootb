@@ -1123,7 +1123,7 @@ function setupPanels(A) {
       { id: 'measure',    name: 'Measure',         key: 'm', pill: false, icon: I.ruler.svg,
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
-        isActive: function() { return !!A._measureOn; } },
+        isActive: function() { return !!A.measureActive; } },
       { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
@@ -1131,7 +1131,7 @@ function setupPanels(A) {
       // Long-press→Bbox chip UNCHANGED.
       { id: 'xray',       name: 'X-Ray',           key: 'Alt+Z', pill: false, icon: I.bone.svg, fn: function() { if (typeof toggleXray === 'function') toggleXray(); },
         hold: function(btn) { _revealChip(btn, 'bbox', I.box.svg, function(){ if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }); },
-        isActive: function() { return !!A._xrayOn; } },
+        isActive: function() { return !!A.xrayOn; } },
       // Alt+X bounding-box envelope ghost — hold-chip off X-Ray (sibling x-ray mode); pill:false → Help/Settings only, no standalone pill.
       { id: 'bbox',       name: 'Bounding Boxes',  key: 'Alt+X', pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
       { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
@@ -1143,7 +1143,7 @@ function setupPanels(A) {
       { id: 'background', name: 'Background',      key: 'b', pill: false, icon: I.contrast.svg,
         fn: function() { if (typeof window.toggleBackground === 'function') window.toggleBackground(); },
         isActive: function() { return !!A._whiteBg; } },
-      { id: 'night',      name: 'Night',           key: 'n', pill: false, icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightOn; } },
+      { id: 'night',      name: 'Night',           key: 'n', pill: false, icon: I.moon.svg, fn: function() { if (typeof toggleNightMode === 'function') toggleNightMode(); }, isActive: function() { return !!A._nightMode; } },
       { id: 'palette',    name: 'Palette',         key: 'p', icon: I.palette.svg, fn: function() { if (typeof toggleSunglass === 'function') toggleSunglass(); }, isActive: function() { return !!A.sunglassOn; },
         children: [ { name: 'Ambience 0–100' }, { name: 'Sun 0–5' }, { name: 'Exposure 0.1–3' }, { name: 'Ambient 0–2' }, { name: 'Hemisphere 0–2' }, { name: 'Night' }, { name: 'Shadow + Ground (cycle)' }, { name: 'Reverse background' }, { name: 'Sound FX' } ] },
       // §SHADOW-GROUND MERGE: one 4-state cycle (Off→Grass→Earth→Paved→Off) — A.toggleShadow's
@@ -1151,7 +1151,7 @@ function setupPanels(A) {
       // the 'h' shortcut + Help listing. Row rendered specially (real texture-swatch) — see
       // _buildShadowGroundRow() below, not the generic drawer-row.
       { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof toggleShadow === 'function') toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
-      { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A._flyOn; } },
+      { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
       { id: 'report',     name: '4D / 5D',         key: '4', pill: false, icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
         fn: function() { if (typeof toggleIssues === 'function') toggleIssues(); },
@@ -1250,6 +1250,7 @@ function setupPanels(A) {
           e.stopPropagation(); _cancelHold();
           if (_held) { _held = false; return; }
           act.fn(); _sync();
+          setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
           console.log('§DRAWER_ROW action=' + act.id);
         });
         row.addEventListener('pointerleave', _cancelHold);
@@ -1258,6 +1259,7 @@ function setupPanels(A) {
         row.addEventListener('pointerup', function(e) {
           e.stopPropagation();
           act.fn(); _sync();
+          setTimeout(_sync, 350);  // re-sync for actions that activate asynchronously (e.g. Time Machine op-log load)
           console.log('§DRAWER_ROW action=' + act.id);
         });
       }

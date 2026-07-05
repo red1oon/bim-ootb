@@ -284,6 +284,7 @@
   // expands a Reset icon sideways from the feather. Standard tap/hold pattern.
   window.togglePrecisionFine = function() {
     toggleFine();
+    window._precisionFine = _fine;  // exposed for pill isActive highlight (panels.js 'precision' entry)
     var b = document.getElementById('pill-precision');
     if (b) { b.classList.toggle('active', _fine); }
   };
