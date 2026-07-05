@@ -176,7 +176,8 @@
     try {
       var rows;
       try {
-        rows = A.dbQuery("SELECT s.guid, p.name, s.predefined_type FROM spatial_structure s LEFT JOIN spatial_structure p "
+        rows = A.dbQuery("SELECT s.guid, p.name, s.predefined_type, s.center_x, s.center_y, s.center_z, s.size_x, s.size_y, s.size_z "
+          + "FROM spatial_structure s LEFT JOIN spatial_structure p "
           + "ON s.parent_guid=p.guid AND p.type='IfcBuildingStorey' WHERE s.type='IfcSpace'");
       } catch (eSp) { rows = []; }   // a building with NO spatial_structure (e.g. a warehouse) → §AISLE-ZONES fallback below
       var map = {}; (rows || []).forEach(function (r) { if (r[0] && r[1]) map[r[0]] = r[1]; });
@@ -189,6 +190,20 @@
       var sc = {}; (rows || []).forEach(function (r) { var pt = (r[2] || '').toUpperCase(); if (CLS[pt]) sc[r[0]] = CLS[pt]; });
       A._hbaSpaceClass = sc;
       if (Object.keys(sc).length) console.log('§HBA_CLASS mapped ' + Object.keys(sc).length + ' rooms→use-class from model predefined_type');
+      // §2026-07-05e (user: "make the spaces tint shine thru? at least their outer total perimeter") — a room's
+      // REAL IfcSpace footprint (center_x/y/z, size_x/y/z — genuine extracted bounds, NOT a fabricated shape or
+      // a fragile "nearest real wall" proximity guess, which a same-session check found ambiguous: this
+      // building's rooms sit only 2.4-2.9m apart, closer than several real walls sit to any one room's centre,
+      // so a radius/nearest-wall heuristic would risk bleeding one room's colour onto its neighbour's wall).
+      // Honestly absent (no entry) for any room whose row lacks a real size (never a placeholder box).
+      var fp = {};
+      (rows || []).forEach(function (r) {
+        if (r[0] && r[6] != null && r[7] != null && r[8] != null) {
+          fp[r[0]] = { cx: r[3], cy: r[4], cz: r[5], sx: r[6], sy: r[7], sz: r[8] };
+        }
+      });
+      A._hbaRoomFootprint = fp;
+      if (Object.keys(fp).length) console.log('§HBA_FOOTPRINT bound ' + Object.keys(fp).length + ' rooms→real IfcSpace footprint (center+size)');
       // stash the real rooms + seed a (watermarked, demonstrator) occupancy ledger so the Occupancy lens +
       // Dashboard pane have data on a building that carries rooms. ADDITIVE: sets only A._hba* fields.
       var rooms = Object.keys(map).map(function (g) { return { guid: g, storey: map[g] }; });
@@ -373,11 +388,46 @@
     if (A.markDirty) A.markDirty();
   }
 
+  // §2026-07-05e — real-footprint PERIMETER OUTLINE (user: "make the spaces tint shine thru... their outer
+  // total perimeter"). The existing MeshPort tint (setTint) can only recolor a room's rendered CONTAINED
+  // members (small real fixtures) since an IfcSpace room usually isn't its own mesh — from a wide shot that
+  // reads as barely-visible. This draws an ADDITIONAL wireframe box at the room's own REAL IfcSpace bounds
+  // (A._hbaRoomFootprint, extracted center+size — see bindStoreysFromModel), coloured the SAME as its tint, so
+  // the room's actual footprint is visibly outlined even when its contained members are tiny/hidden. Pure
+  // ADDITIVE THREE geometry (mirrors hba_avatars.js's own-scene-Group precedent) — never touches/replaces any
+  // existing mesh material. Honest no-op per room when no real footprint was extracted (never a placeholder box).
+  var _outlineGroup = null;
+  function _clearOutlines(A) {
+    if (!_outlineGroup) return;
+    if (A && A.scene && A.scene.remove) A.scene.remove(_outlineGroup);
+    _outlineGroup.children.forEach(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    _outlineGroup = null;
+  }
+  function _drawOutlines(A, plan) {
+    _clearOutlines(A);
+    if (typeof THREE === 'undefined' || !A || !A.scene || !A._hbaRoomFootprint) return 0;
+    var group = new THREE.Group(); group.name = 'hba-class-outlines';
+    var drawn = 0;
+    (plan.linked || []).forEach(function (guid) {
+      var fp = A._hbaRoomFootprint[guid]; if (!fp) return;               // honest no-op — no real footprint extracted
+      var tint = plan.tints[guid]; if (!tint) return;
+      var geo = new THREE.BoxGeometry(fp.sx, fp.sy, fp.sz);
+      var edges = new THREE.EdgesGeometry(geo);
+      var mat = new THREE.LineBasicMaterial({ color: toHex(tint.color), linewidth: 2 });
+      var lines = new THREE.LineSegments(edges, mat);
+      lines.position.set(fp.cx, fp.cy, fp.cz);
+      group.add(lines); geo.dispose(); drawn++;
+    });
+    if (drawn) { A.scene.add(group); _outlineGroup = group; }
+    return drawn;
+  }
+
   // toggle a lens ON/OFF. ON → drive the WITNESSED engine through the real MeshPort, GATED by A.guidMap so a
   // non-matching guid never tints (honest). OFF (or switching mode) → full restore (zero residue).
   function toggle(A, mode) {
     if (!ready()) { if (A && A.status) A.status.textContent = 'HR overlay not loaded'; return false; }
     if (_port) { _port.restoreAll(); _port = null; }            // clear prior mode first (one mode at a time)
+    _clearOutlines(A);                                          // §2026-07-05e — perimeter outlines ride the SAME one-mode-at-a-time rule
     if (G.HBAAvatars && G.HBAAvatars.isActive()) G.HBAAvatars.unmount(A);   // §AVATAR-LOD — avatars ride the presence lens; clear them with it
     if (_active === mode) { _active = null; console.log('§HBA_LENS off mode=' + mode); if (A.markDirty) A.markDirty(); return false; }
     var h = HBA();
@@ -395,8 +445,10 @@
     // §AVATAR-LOD (P6) — when Presence lights up, stand a little person in each room where a real check-in put
     // one, with an LOD ladder (dot→mini→full) + hover card. Additive; unmounted above when the lens clears.
     if (mode === 'presence' && G.HBAAvatars) { try { G.HBAAvatars.mount(A); } catch (e) { console.warn('§HBA_AVATARS mount skipped: ' + e.message); } }
+    // §2026-07-05e — class tint additionally draws each linked room's REAL footprint outline (see _drawOutlines).
+    var outlined = (mode === 'class') ? _drawOutlines(A, plan) : 0;
     if (A.status) A.status.textContent = 'HR · ' + mode + ' · ' + n + ' unit' + (n === 1 ? '' : 's') + ' lit' + (plan.unlinked.length ? ' (' + plan.unlinked.length + ' un-linked)' : '');
-    console.log('§HBA_LENS on mode=' + mode + ' lit=' + n + ' unlinked=' + plan.unlinked.length + ' linked=[' + plan.linked.join(',') + ']');
+    console.log('§HBA_LENS on mode=' + mode + ' lit=' + n + ' unlinked=' + plan.unlinked.length + ' linked=[' + plan.linked.join(',') + ']' + (mode === 'class' ? ' outlined=' + outlined : ''));
     if (A.markDirty) A.markDirty();
     return true;
   }
@@ -779,7 +831,7 @@
     flyToZone: flyToZone, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
     _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
-    _consumeFindGuid: _consumeFindGuid };  // §STAGE2 / §2026-07-04c — witness hooks (additive)
+    _consumeFindGuid: _consumeFindGuid, bindStoreysFromModel: bindStoreysFromModel };  // §STAGE2 / §2026-07-04c / §2026-07-05e — witness hooks (additive)
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
 
   // ---- DATA-GATE poll (mirrors viewer/wh_walk.js): flip the pill icons ON only when a lens detects ------
