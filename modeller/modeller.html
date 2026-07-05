@@ -164,6 +164,7 @@
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-export" disabled title="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>Export</span></button>
   <button id="b-save" disabled title="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg><span>Save</span></button>
+  <button id="b-worldhist" title="World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/></svg><span>History</span></button>
   <button id="b-guide" title="Modeller User Guide — how to Open, walk, edit & export"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Guide</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
@@ -189,6 +190,22 @@
 <script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
 <script src="bonsai_oplog.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<!-- §WORLD-HIST-MODELLER (RESUME_WORLD_HISTORY_DEDUP_RESTORE.md 4-step handoff): the SAME cross-page
+     "W" log (common/whole_history.js) the Viewer/iDempiere/Gravity already write to. Loaded BEFORE
+     history_bar.js so its internal WholeHistory.record mirror (the BUILDING_OPEN doc-type) has a live
+     target instead of silently falling back to the un-deduped inline write. Modeller follows the viewer
+     LANE PARTITION — W only (open/view the log), no fork/refold, no long-press bomb-clear drawer (that
+     richer pill-drawer framework belongs to viewer/panels.js + erp/idmp_pills.js, not this page). -->
+<script src="../common/whole_history.js?v=1" onerror="console.warn('§WHOLE LOAD_FAIL whole_history.js')"></script>
+<script>
+if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'modeller', rootPrefix: '../', launcher: false });
+(function () {
+  var btn = document.getElementById('b-worldhist');
+  if (!btn) return;
+  if (!window.WholeHistory) { btn.disabled = true; return; }
+  btn.addEventListener('click', function () { WholeHistory.toggleOpen(); });
+})();
+</script>
 <!-- §MODELLER-GIT-HISTORY (MODELLER_GIT_FAITHFUL_HISTORY.md Phase 2): the SAME git-faithful fork/undo/redo
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
