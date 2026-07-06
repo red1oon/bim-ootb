@@ -1443,7 +1443,7 @@ function featLabel(op) {
   if (!op) return ''; const P = op.parameters || {};
   switch (op.op_type) {
     case 'GEOM_EXTRUDE_POLY': return 'Wall'; case 'GEOM_EXTRUDE': return 'Wall';
-    case 'GEOM_CUT': return 'Opening'; case 'GEOM_SWEEP': return 'Route';
+    case 'GEOM_CUT': return 'Opening'; case 'GEOM_SWEEP': return 'Route'; case 'GEOM_LOFT': return 'Loft';
     case 'GEOM_FILLET': return P.kind === 'chamfer' ? 'Chamfer' : 'Round'; case 'GEOM_GRID_MOVE': return 'Grid move';
     case 'GEOM_INSERT': { const c = window.Bonsai.library && window.Bonsai.library.get(P.hash); return c ? c.ifc_class.replace('Ifc', '') : 'Component'; }
     default: return op.op_type.replace('GEOM_', '');
@@ -2586,8 +2586,9 @@ let inserting = false, insertHash = null, lastInsertId = null, insertPanel = nul
 let insRot = 0, insElev = 0, ghostMesh = null, ghostXY = null;   // pending placement: yaw(deg) + elevation(z), live ghost
 let _asmGhost = null;   // M7: cached rich assembly-ghost child cluster (rebuilt only on hash/yaw/elev change)
 function isInsert(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && o.op_type === 'GEOM_INSERT'; }
-// standalone B-rep solids the worker can spin in place (GEOM_ROTATE): extrude/poly walls, swept runs, filleted solids.
-const SOLID_OPS = new Set(['GEOM_EXTRUDE', 'GEOM_EXTRUDE_POLY', 'GEOM_SWEEP', 'GEOM_FILLET']);
+// standalone B-rep solids the worker can spin in place (GEOM_ROTATE): extrude/poly walls, swept runs, filleted solids,
+// lofted solids (GEOM_LOFT — a fresh self-contained solid like GEOM_SWEEP, so it belongs in this set too).
+const SOLID_OPS = new Set(['GEOM_EXTRUDE', 'GEOM_EXTRUDE_POLY', 'GEOM_SWEEP', 'GEOM_FILLET', 'GEOM_LOFT']);
 function isSolid(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && SOLID_OPS.has(o.op_type); }
 function lodTargetId() { return (selectedId != null && isInsert(selectedId)) ? selectedId : lastInsertId; }
 function paintLod() {
@@ -3041,6 +3042,11 @@ window.Bonsai.outliner.addCategory({ key: 'gridmoves', label: 'Grid Moves', matc
 window.Bonsai.outliner.addCategory({ key: 'arrays', label: 'Arrays', match: op => op.op_type === 'GEOM_ARRAY',
   node: op => ({ id: op.id, label: 'Array ⮡ ' + op.parameters.parent,
     sub: (op.parameters.mode === 'along_curve' ? 'curve' : 'linear') + ' ·' + (op.parameters.count || 0) + ' inst' + (op.parameters.formula ? ' ·ƒ' : '') }) });
+// Lofts category (prompts/BONSAI_LOFT_SPEC.md Task 3): one row per signed GEOM_LOFT op — mirrors
+// routes/fillets/gridmoves exactly (a flat category, wire count shown inline in `sub`).
+window.Bonsai.outliner.addCategory({ key: 'lofts', label: 'Lofts', match: op => op.op_type === 'GEOM_LOFT',
+  node: op => ({ id: op.id, label: 'Loft',
+    sub: (op.parameters.wires ? op.parameters.wires.length : 0) + 'w' + (op.parameters.ruled ? ' ·ruled' : ' ·smooth') }) });
 // Components category: inserted library components (§OOTB Item 2 = assemble, don't draw). Registered via the seam.
 // §LOD400-STALL fix #4: match EXCLUDES raw-bbox (hash-less) inserts — the ARC-seed substrate (arc_editable.js,
 // no `params.hash`, a MEASURED bbox instead) is not a user-placed catalog component; it already has its own

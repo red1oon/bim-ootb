@@ -292,9 +292,14 @@
       // deterministic so the optimistic mesh == the eventual chain-fold mesh (no flicker); any later scrub/cut
       // reconciles to the authoritative foldChainToScene. Full incremental regen = the op_hash-cache card.
       let r;
-      // LEAF ops (extrude/sweep) build a fresh solid → O(1) optimistic append. Everything else (GEOM_CUT,
+      // LEAF ops (extrude/sweep/loft) build a fresh solid → O(1) optimistic append. Everything else (GEOM_CUT,
       // GEOM_FILLET, GEOM_GRID_MOVE) MUTATES prior solids in the fold → must take the authoritative re-fold.
-      const LEAF = op.op_type === 'GEOM_EXTRUDE' || op.op_type === 'GEOM_EXTRUDE_POLY' || op.op_type === 'GEOM_SWEEP';
+      // GEOM_LOFT (prompts/BONSAI_LOFT_SPEC.md): the wires ARE the payload — no `parent` reference, exactly
+      // GEOM_SWEEP's shape (a fresh self-contained solid from its own parameters), NOT GEOM_CUT/GEOM_FILLET/
+      // GEOM_ARRAY's shape (which all resolve+mutate/replace a referenced prior feature). Decided explicitly,
+      // not defaulted — checked against buildSolids()'s branching in bonsai_kernel_worker.js, where GEOM_LOFT
+      // falls into the same terminal `else` (applyFeature) branch as GEOM_SWEEP, not the parent-lookup branches.
+      const LEAF = op.op_type === 'GEOM_EXTRUDE' || op.op_type === 'GEOM_EXTRUDE_POLY' || op.op_type === 'GEOM_SWEEP' || op.op_type === 'GEOM_LOFT';
       if (!LEAF) {
         r = await this._foldUpto();                              // mutates a referenced solid → authoritative re-fold
       } else {

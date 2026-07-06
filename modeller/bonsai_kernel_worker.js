@@ -82,6 +82,35 @@ function applyFeature(kernel, op) {
     sedges.forEach(e => kernel.release(e)); kernel.release(spine);
     return solid;
   }
+  if (op.op_type === 'GEOM_LOFT') {                // BRepOffsetAPI_ThruSections: solid/shell lofted through N sketched profile wires
+    // Payload mirrors GEOM_EXTRUDE_POLY's `profile.points` ring EXACTLY (the real planegcs-solved-polygon
+    // representation the sketch tool already emits — see bonsai_sketch.js), generalized to N stacked
+    // profiles instead of one: each wire is { points: [[x,y],...], z } — the same 2D ring format, placed
+    // at its own z-height. NON-INVENT: no cross-section is synthesized here — occt's loft() interpolates
+    // the surface BETWEEN the wires the caller actually supplied; this branch only builds the wire handles.
+    const wires = P.wires;
+    if (!wires || wires.length < 2) throw new Error('GEOM_LOFT needs >=2 wire profiles');
+    const wireHandles = [];
+    const localEdges = [];
+    for (const w of wires) {
+      const pts = w.points;
+      const z = w.z || 0;
+      const edges = [];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        edges.push(kernel.makeLineEdge({ x: a[0], y: a[1], z }, { x: b[0], y: b[1], z }));
+      }
+      const wire = kernel.makeWire(edges);
+      wireHandles.push(wire);
+      localEdges.push(...edges);
+    }
+    const isSolid = P.isSolid !== false;   // default true (a closed loft between closed rings is a solid, not a shell)
+    const ruled = !!P.ruled;               // default false (smooth B-spline through sections) — see kernel.loft() doc comment
+    const solid = kernel.loft(wireHandles, isSolid, ruled);
+    localEdges.forEach(e => kernel.release(e));
+    wireHandles.forEach(w => kernel.release(w));
+    return solid;
+  }
   if (op.op_type === 'GEOM_OPENING') {            // IfcRelVoidsElement: base solid CUT by a void box
     const baseRect = kernel.makeRectangle(P.profile.w, P.profile.h);
     const wall = kernel.extrude(baseRect, P.dir[0], P.dir[1], P.dir[2]); kernel.release(baseRect);
