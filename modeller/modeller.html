@@ -3160,7 +3160,7 @@ async function _discWalkOne(disc, ctx, opts) {
     // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
     await _commitDiscWalk(disc, w.placements);
     // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
-    if (nSeg) { _renderDiscChains(disc, w.chainSegs); await _commitDiscChains(disc, w.chainSegs); }
+    if (nSeg) { _renderDiscChains(disc, w.chainSegs, { patternBridge: w.patternBridge ? { seed: w.patternBridge.seed, riser: w.patternBridge.riser } : null }); await _commitDiscChains(disc, w.chainSegs); }
     // §3c ASSEMBLE: when a routed network exists, instantiate the projected catalog PARTS at the real
     // routed NODES (rule_joint_piece — pose from the node, Ø from the measured catalog, orientation from
     // the run vector) + enrich them with their connector hookup. Rendered as boxes via the _dwPrimGeo LOD
@@ -3213,10 +3213,13 @@ function _clearDiscWalk(disc) {
 function _clearAllDiscWalks() {
   window.__dwWalks = {};
   if (window.__dwChains) window.__dwChains = {};
+  if (window.__dwChainMeta) window.__dwChainMeta = {};
+  if (window.__dwChainAnimating) window.__dwChainAnimating = {};
+  if (window.__dwChainRevealMeta) window.__dwChainRevealMeta = {};
   if (window.__dwAssembly) window.__dwAssembly = {};
   if (window.__dwTrunk) window.__dwTrunk = {};
   window.__dwInstVer++;   // §I5: bucket set changed → invalidate the record→(im,i) ref map
-  console.log('§DISC-WALK §GRID-CLEAR-LEAK onClear — __dwWalks/__dwChains/__dwAssembly/__dwTrunk cleared');
+  console.log('§DISC-WALK §GRID-CLEAR-LEAK onClear — __dwWalks/__dwChains/__dwChainMeta/__dwAssembly/__dwTrunk cleared');
 }
 // §LOD-SEAM (docs/WalkerDoctrine.md §5): a GENERATED fixture's render geometry is selected by its semantic
 // prim KIND (disc_walker._primFor → p.prim: sprinkler/diffuser/light/outlet/alarm/valve/run/box). POC = a BOX
@@ -3554,6 +3557,9 @@ async function _commitDiscWalk(disc, placements) {
 // to the signed op-log as GEOM_SWEEP (occt is per-sweep — RouteWalker shipped ~200; the full network is the
 // line view, the op-log proves the signed/foldable mechanism). parameters._dw carries the two real guids+gap.
 window.__dwChains = window.__dwChains || {};   // disc -> chain segments (for the redraw-after-scrub)
+window.__dwChainMeta = window.__dwChainMeta || {};   // disc -> { seed, riser } from routePattern's patternBridge (M4 reveal order only; redraw-after-scrub reuses it instant)
+window.__dwChainAnimating = window.__dwChainAnimating || {};   // disc -> true while an M4 reveal rAF loop is in flight
+window.__dwChainRevealMeta = window.__dwChainRevealMeta || {};   // disc -> { start, gen } — wall-clock reveal timeline, so a fold-triggered rebuild RESUMES it (see _renderDiscChains)
 window.DW_CHAIN_COMMIT_CAP = 60;               // op-log GEOM_SWEEP cap (occt is per-sweep, so this is a signed sample); the full network always renders (window-scoped so a witness can shrink it)
 // LANDED routed network → LOD MESH: cylinder TUBES between the REAL element endpoints, not flat lines.
 // This is the PROVEN-EXACT layer (witness_disc_route_nnchain R2: every segment joins two real
@@ -3562,20 +3568,52 @@ window.DW_CHAIN_COMMIT_CAP = 60;               // op-log GEOM_SWEEP cap (occt is
 // geometry. (GENERATED fixtures stay LOD marker cubes in _renderDiscWalk — plausible, no ground truth;
 // the visual split tube-vs-cube IS the LANDED-vs-GENERATED honesty made visible.)
 var DW_TUBE_R = { PLB: 0.04, ACMV: 0.12, ELEC: 0.03, FP: 0.04, SP: 0.05, CW: 0.05, MEP: 0.05 };  // representative LOD radii (m)
-function _renderDiscChains(disc, segs) {
+// §CAMPAIGN M4 — SEED-OUTWARD reveal order for a routePattern-bridged network (RESUME_MODELLER_WALK_SUBSTRATE.md
+// M4). FIRST DESIGN (superseded, found wrong by this milestone's own witness, not assumed): a BFS over the
+// segment graph rooted at routePattern's real METER/STACK anchor, mirroring _renderSeedTrunk's graph-path
+// technique — measured against a real Duplex PLB walk and found EVERY segment unreachable from the anchor.
+// Root cause (real, not a coding bug): the FOLLOW-UP fix's own authoritative envelope clash-filter
+// (_envelopeClash in routePattern) removes 10/13 CW and 9/40 SP candidate pairs — including, on THIS building,
+// every pair touching the anchor's own exact coordinate — and the SURVIVING pairs turn out to be a set of
+// mostly-disconnected short fragments (measured: 3 CW segs = 3 isolated pairs; 31 SP segs mostly isolated too),
+// not a connected corridor tree the way SeedTrunk's polylines are BY CONSTRUCTION. A graph BFS has nothing to
+// walk on data shaped like that, so it is not the right tool here — kept only as the honest description of why
+// this got simpler, not left in as dead code. CURRENT DESIGN: order directly by straight-line distance from the
+// segment's own real anchor (METER for a CW-pass segment, STACK/riser for an SP-pass segment) — still "invents
+// no order beyond distances the pattern-bridge's own topology encodes" (the invariant this milestone set out to
+// keep), just measured point-to-point instead of assuming a walkable backbone that this network doesn't have.
+function _seedOutwardChainOrder(segs, meta) {
+  function dist3(p, a) { return Math.hypot(p[0] - a.x, p[1] - a.y, p[2] - a.z); }
+  var UNANCHORED = Infinity;
+  var d = segs.map(function (s) {
+    var anchor = (s.from_kind === 'RW_SP') ? (meta && meta.riser) : (meta && meta.seed);
+    if (!anchor) return UNANCHORED;                              // honest: no real anchor for this seg's kind — pushed last, not hidden
+    return Math.min(dist3(s.from, anchor), dist3(s.to, anchor));   // nearer endpoint to the real anchor = this segment's reveal rank
+  });
+  var idx = segs.map(function (_, i) { return i; });
+  idx.sort(function (a, b) { return d[a] - d[b]; });
+  return { ordered: idx.map(function (i) { return segs[i]; }), unreached: d.filter(function (v) { return v === UNANCHORED; }).length };
+}
+function _renderDiscChains(disc, segs, opts) {
+  opts = opts || {};
   var root = _dwRoot(); if (!root) return;
   root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwChain === disc) root.remove(o); });   // clear prior
   window.__dwChains[disc] = segs;
+  if (opts.patternBridge !== undefined) window.__dwChainMeta[disc] = opts.patternBridge;   // persist for the redraw-after-scrub replay (instant there, see _redrawAllDiscWalks)
   if (!segs.length) { if (window.A && A.requestRender) A.requestRender(); return; }
+  var meta = opts.patternBridge !== undefined ? opts.patternBridge : window.__dwChainMeta[disc];
+  var reveal = !!(meta && meta.seed);                           // only routePattern-bridged (M1) networks carry a real seed anchor to reveal outward from
+  var orderInfo = reveal ? _seedOutwardChainOrder(segs, meta) : { ordered: segs, unreached: 0 };
+  var ordered = orderInfo.ordered;
   var base = DW_COLOR[disc] || 0xc0c0c0;
   var r = DW_TUBE_R[disc] || 0.05;
   var geo = new THREE.CylinderGeometry(r, r, 1, 6);            // unit tube along +Y, low-LOD (6 sides), scaled per segment
   var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.25, metalness: 0.1, roughness: 0.6 });
-  var inst = new THREE.InstancedMesh(geo, mat, segs.length);
+  var inst = new THREE.InstancedMesh(geo, mat, ordered.length);
   var up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), mid = new THREE.Vector3();
   var q = new THREE.Quaternion(), sc = new THREE.Vector3(), m = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3();
-  for (var i = 0; i < segs.length; i++) {
-    var s = segs[i];
+  for (var i = 0; i < ordered.length; i++) {
+    var s = ordered[i];
     a.set(s.from[0], s.from[1], s.from[2]); b.set(s.to[0], s.to[1], s.to[2]);
     dir.subVectors(b, a); var len = dir.length() || 1e-6;
     mid.addVectors(a, b).multiplyScalar(0.5);
@@ -3589,16 +3627,63 @@ function _renderDiscChains(disc, segs) {
   // §-WHITEBOX: the LOD mesh must sit AT the real endpoints — reconstruct each tube's ±Y/2 ends from its
   // instance transform and compare to the real from/to (the position the witness proved exact). The RENDER
   // must not drift from the proven-exact data. (Sampled; full set is identical by construction.)
-  var drift = 0, k = Math.min(segs.length, 300), t = new THREE.Vector3(), bo = new THREE.Vector3();
+  var drift = 0, k = Math.min(ordered.length, 300), t = new THREE.Vector3(), bo = new THREE.Vector3();
   for (var j = 0; j < k; j++) {
     inst.getMatrixAt(j, m);
     t.set(0, 0.5, 0).applyMatrix4(m); bo.set(0, -0.5, 0).applyMatrix4(m);
-    var s2 = segs[j]; a.set(s2.from[0], s2.from[1], s2.from[2]); b.set(s2.to[0], s2.to[1], s2.to[2]);
+    var s2 = ordered[j]; a.set(s2.from[0], s2.from[1], s2.from[2]); b.set(s2.to[0], s2.to[1], s2.to[2]);
     drift = Math.max(drift, Math.min(t.distanceTo(b) + bo.distanceTo(a), t.distanceTo(a) + bo.distanceTo(b)));
   }
-  console.log('§DW-TUBE ' + disc + ' tubes=' + segs.length + ' r=' + r.toFixed(3) +
-    ' endpointDrift(' + k + ')=' + drift.toExponential(1) + 'm (LANDED LOD mesh @ real endpoints)');
-  if (window.A && A.requestRender) A.requestRender();
+  console.log('§DW-TUBE ' + disc + ' tubes=' + ordered.length + ' r=' + r.toFixed(3) +
+    ' endpointDrift(' + k + ')=' + drift.toExponential(1) + 'm (LANDED LOD mesh @ real endpoints)' +
+    (reveal ? ' seedOutward=1 unreached=' + orderInfo.unreached : ''));
+  // §CAMPAIGN M4 — CONSTRUCTION ANIMATION for a routePattern-bridged network: reveal seed-outward via
+  // InstancedMesh.count (the instancing analogue of _renderSeedTrunk's BufferGeometry.drawRange — same
+  // easeOutCubic timing, same instant/reduced-motion fallback, same "ends EXACTLY on the full proven geometry"
+  // gate-asserted log line). RENDER-only; ordered[] is unchanged geometry, just revealed progressively.
+  var reduced = false; try { reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  if (!reveal) { inst.count = ordered.length; window.__dwChainAnimating[disc] = false; delete window.__dwChainRevealMeta[disc]; if (window.A && A.requestRender) A.requestRender(); return; }
+  if (opts.instant || reduced) {
+    inst.count = ordered.length;
+    window.__dwChainAnimating[disc] = false; delete window.__dwChainRevealMeta[disc];
+    console.log('§DW-CHAIN-ANIM ' + disc + ' mode=' + (opts.instant ? 'instant' : 'reduced-motion') + ' frames=0 ms=0 finalSegs=' + ordered.length + ' (no animation; full geometry)');
+    if (window.A && A.requestRender) A.requestRender(); return;
+  }
+  // §CAMPAIGN M4 fix (found running this milestone's own witness, not assumed): the SAME walk flow that starts
+  // this reveal also calls _commitDiscChains right after, which folds the op-log — commitSeedGroup rebuilds the
+  // editable THREE group from the op-log, so _redrawAllDiscWalks() must re-add this InstancedMesh into the NEW
+  // group a few ms into the reveal (real, observed: the ORIGINAL inst goes orphaned mid-animation otherwise, and
+  // an earlier version of this fix that just SKIPPED the redraw left the disc unrendered entirely — worse). Fix:
+  // key the ease curve off a STORED wall-clock start time (window.__dwChainRevealMeta), not this call's own local
+  // t0 — a redraw mid-reveal RESUMES the SAME timeline on the freshly-rebuilt InstancedMesh (seeded at the correct
+  // progress immediately, no restart-to-0 flash) instead of restarting or freezing. A generation token lets any
+  // still-running rAF loop on a now-superseded (orphaned) InstancedMesh detect it's stale and quietly stop.
+  var DUR = 2000, N = ordered.length;
+  var nowTs0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  var prevMeta = window.__dwChainRevealMeta[disc];
+  var resuming = !!(prevMeta && (nowTs0 - prevMeta.start) < DUR);
+  var startTs = resuming ? prevMeta.start : nowTs0;
+  var gen = (prevMeta ? prevMeta.gen : 0) + 1;
+  window.__dwChainRevealMeta[disc] = { start: startTs, gen: gen };
+  window.__dwChainAnimating[disc] = true;
+  inst.count = Math.max(0, Math.min(N, Math.round((1 - Math.pow(1 - Math.min(1, (nowTs0 - startTs) / DUR), 3)) * N)));   // seed at current progress — no 0-count flash on a mid-reveal rebuild
+  var frames = 0;
+  (function step(now) {
+    if (!window.__dwChainRevealMeta[disc] || window.__dwChainRevealMeta[disc].gen !== gen) return;   // superseded by a newer render call for this disc — stop quietly, don't touch the orphaned mesh
+    frames++;
+    var u = Math.min(1, (now - startTs) / DUR), e = 1 - Math.pow(1 - u, 3);   // easeOutCubic
+    inst.count = Math.max(0, Math.min(N, Math.round(e * N)));
+    if (window.A && A.requestRender) A.requestRender();
+    if (u < 1) { requestAnimationFrame(step); }
+    else {
+      inst.count = N;
+      window.__dwChainAnimating[disc] = false;
+      delete window.__dwChainRevealMeta[disc];
+      console.log('§DW-CHAIN-ANIM ' + disc + ' mode=animated frames=' + frames + ' ms=' + Math.round(now - startTs) +
+        ' finalSegs=' + inst.count + ' (' + (inst.count === N ? 'EXACT==net' : 'MISMATCH net=' + N) + '; seed-outward reveal)');
+      if (window.A && A.requestRender) A.requestRender();
+    }
+  })(nowTs0);
 }
 async function _commitDiscChains(disc, segs) {
   var O = window.Bonsai && window.Bonsai.oplog; if (!O) return 0;
@@ -3642,7 +3727,13 @@ async function _commitDiscChains(disc, segs) {
 // AND chain lines so a co-resident walk (FP+ELEC, or PLB placements+chains) survives a later commit's re-fold.
 function _redrawAllDiscWalks() {
   Object.keys(window.__dwWalks).forEach(function (d) { if (window.__dwWalks[d]) _renderDiscWalk(d, window.__dwWalks[d]); });
-  Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d]); });
+  // redraw-after-scrub: rebuilds fresh InstancedMeshes into the (possibly just-folded/replaced) editable group.
+  // A disc whose M4 reveal is still mid-flight (its own walk's _commitDiscChains triggers this SAME redraw a few
+  // ms after the reveal starts) must NOT be forced instant — that would either skip re-adding it (leaving nothing
+  // rendered, a real bug this milestone's own witness caught) or snap it to full early. Pass instant only for a
+  // disc that has actually finished (or never started) its reveal; _renderDiscChains's own wall-clock-keyed
+  // __dwChainRevealMeta then RESUMES an in-flight one on the fresh mesh instead of restarting it.
+  Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d], { instant: !window.__dwChainAnimating[d] }); });
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
   if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
 }
@@ -3789,6 +3880,11 @@ window.__dwRender = { walk: _renderDiscWalk, assembly: _renderDiscAssembly, redr
 // render-only seam for the seed-trunk render gate (W-SEED-TRUNK-RENDER): drives the SAME _renderSeedTrunk the live
 // "Route trunk" calls (with opts, so the witness can exercise the animated path as well as the instant census path).
 window.__seedTrunkRender = _renderSeedTrunk;
+// §CAMPAIGN M4 witness seams (W-SEED-OUTWARD-REVEAL): expose the SAME functions the live PLB pattern-bridge walk
+// calls — _renderDiscChains (opts-controlled, mirrors __seedTrunkRender above) and the ordering function itself,
+// so a witness can independently re-derive/assert the seed-outward property without re-implementing the BFS.
+window.__dwChainRender = _renderDiscChains;
+window.__dwChainOrder = _seedOutwardChainOrder;
 // §4 WHITEBOX PIXEL PROBE (roadmap #4): a headless readback proving the disc-walk render actually painted —
 // (1) a scene-graph census of the dwRoot group for a disc (fixture box InstancedMesh, §3c connector-edge
 // LineSegments, routed tubes, assembled parts) so a witness confirms the render WIRED the expected objects,
