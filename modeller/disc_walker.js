@@ -660,6 +660,49 @@
     r.forEach(function (s) { if (!out.some(function (o) { return Math.hypot(o.x - s.x, o.y - s.y) < 0.5; })) out.push(s); });
     return out;
   }
+  // Real STR members (columns/beams/struts) as clash boxes — SAME shape as routewalker.js's own
+  // _rwLoadArcEnvelope ({cx,cy,cz,w,d,h}), so the two arrays concat directly into ONE envelope _rwPairSegments
+  // already knows how to clash-check against. FOLLOW-UP fix (RESUME_MODELLER_WALK_SUBSTRATE.md, found by
+  // witness_str_mep_clash_gate.js M2, 1/63 real penetration): routewalker.js's OWN clash gate
+  // (_rwLoadArcEnvelope) only ever queried ARC walls/slabs/roof/covering — a real STR column was never in the
+  // bus a pattern-bridged pipe run was checked against. This is the ARC-envelope's exact sibling query, just
+  // discipline='STR' + the structural classes, so a routed run now honestly refuses (or the pairing engine
+  // routes AROUND it — same clash-skip `_rwPairSegments` already applies to ARC) when it would penetrate real
+  // structure, not just real architecture.
+  function _strEnvelope(bdb) {
+    return _rows(bdb,
+      "SELECT t.center_x cx, t.center_y cy, t.center_z cz, t.bbox_x w, t.bbox_y d, t.bbox_z h " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE m.discipline='STR' AND m.ifc_class IN ('IfcColumn','IfcBeam','IfcMember')")
+      .filter(function (b) { return b.w > 0 && b.d > 0 && b.h > 0; });
+  }
+  // Correct axis-aligned segment-vs-envelope-box overlap — the REAL fix, found while wiring the STR envelope
+  // above. routewalker.js's OWN _rwPairSegments clash-skip calls _rwClashesWithArc with a box shaped
+  // [crossSection, crossSection, LEN] — i.e. it ALWAYS treats the THIRD (Z) axis as the pipe's long axis,
+  // regardless of whether the run is actually horizontal (X or Y, the common case for a corridor/pattern run).
+  // A horizontal run's clash box is therefore a thin 0.075m×0.075m COLUMN at its midpoint that never reaches
+  // sideways along the run's real path — so adding _strEnvelope to arcEnv alone did NOT change the segment
+  // count (verified: re-ran witness_route_pattern_bridge.js/witness_str_mep_clash_gate.js, chainSegs unchanged,
+  // the 2.6cm penetration still present) — the missing envelope was never the actual blocker, the box
+  // orientation was. NOT fixed inside routewalker.js itself (a separate file with its own witness suite this
+  // session is careful not to widen scope into) — instead this is an ADDITIONAL, correctly-oriented AABB
+  // check disc_walker.js applies as an authoritative POST-filter on _rwPairSegments' output. Safe because every
+  // pattern step declares a direction_axis (X/Y/Z) — these runs are axis-aligned BY CONSTRUCTION, so a plain
+  // axis-aligned box (spanning the segment's real extent on whichever axis it actually moves along, inflated
+  // by the pipe's real half cross-section on the other two) is exact, not an approximation.
+  function _envelopeClash(from, to, envelope, halfWidth) {
+    var minX = Math.min(from[0], to[0]) - halfWidth, maxX = Math.max(from[0], to[0]) + halfWidth;
+    var minY = Math.min(from[1], to[1]) - halfWidth, maxY = Math.max(from[1], to[1]) + halfWidth;
+    var minZ = Math.min(from[2], to[2]) - halfWidth, maxZ = Math.max(from[2], to[2]) + halfWidth;
+    for (var i = 0; i < envelope.length; i++) {
+      var e = envelope[i];
+      var ox = Math.min(maxX, e.cx + e.w / 2) - Math.max(minX, e.cx - e.w / 2);
+      var oy = Math.min(maxY, e.cy + e.d / 2) - Math.max(minY, e.cy - e.d / 2);
+      var oz = Math.min(maxZ, e.cz + e.h / 2) - Math.max(minZ, e.cz - e.h / 2);
+      if (ox > 0 && oy > 0 && oz > 0) return true;
+    }
+    return false;
+  }
   // Sample SeedTrunk's corridor backbone every `step` metres into JUNCTION-role waypoint anchors. Pure position
   // derivation — no pairing decision made here (that is entirely _rwPairSegments' job on the anchors we hand it).
   function _corridorJunctions(bdb, seed, placements, sub, opts) {
@@ -715,7 +758,13 @@
     var fixtureAnchors = placements.map(function (p, i) {
       return { anchorId: 'FX' + i, anchorType: 'FIXTURE', x: p.x, y: p.y, z: p.z, storey: p.storey };
     });
-    var arcEnv = opts.arcEnvelope || (typeof loadArc === 'function' ? loadArc(bdb) : []);
+    // FOLLOW-UP fix: the clash envelope is ARC (walls/slabs/roof/covering, routewalker.js's own query) PLUS
+    // real STR members (columns/beams/struts) — a routed run must clash-refuse against BOTH, not just ARC.
+    // opts.arcEnvelope (a caller override) is honoured AS-IS (no STR appended) — that override existed before
+    // this fix and callers using it explicitly opt out of the default envelope entirely (e.g. a witness that
+    // wants to isolate the ARC-only behaviour). opts.strEnvelope lets a caller override the STR side alone.
+    var arcEnv = opts.arcEnvelope ||
+      (typeof loadArc === 'function' ? loadArc(bdb) : []).concat(opts.strEnvelope || _strEnvelope(bdb));
     var segs = [], byRule = [];
     rwDiscs.forEach(function (rwd) {
       // Defensive boundary: routewalker.js's rwInit has a KNOWN latent bug (found this pass, not fixed here —
@@ -737,11 +786,19 @@
         var anchors = fixtureAnchors.concat(junctions, [meterAnchor]);
         var out = [];
         pair(rwd, steps, anchors, arcEnv, out);
+        // Authoritative post-filter (see _envelopeClash above) — routewalker.js's own internal clash-skip
+        // mis-orients its box for horizontal runs, so re-check every emitted segment properly before accepting
+        // it. halfWidth mirrors routewalker.js's OWN measured pipe cross-section (RW_PIPE_CROSS/1000/2), not an
+        // invented constant; opts.pipeHalfWidth lets a caller override for a witness.
+        var halfW = (opts.pipeHalfWidth > 0) ? opts.pipeHalfWidth : (ROOT.RW_PIPE_CROSS ? ROOT.RW_PIPE_CROSS / 1000 / 2 : 0.0375);
+        var envClashed = 0;
         out.forEach(function (s) {
+          if (_envelopeClash(s.from, s.to, arcEnv, halfW)) { envClashed++; return; }
           segs.push({ disc: disc, rule: 'pattern:' + rwd, from_kind: 'RW_' + rwd, to_kind: 'RW_' + rwd,
             from: s.from, to: s.to, storey: s.storey, mode: 'pattern-bridge', axis: s.axis });
         });
-        byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: out.length, noNbr: 0, steps: steps.length, anchors: anchors.length });
+        byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: out.length - envClashed, noNbr: envClashed,
+          steps: steps.length, anchors: anchors.length, envelopeClashed: envClashed });
       } catch (e) {
         byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: 0, noNbr: 0, skipped: 'engine-error: ' + (e && e.message) });
       }
