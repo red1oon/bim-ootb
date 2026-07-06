@@ -73,9 +73,13 @@ async function rwInit(SQL, baseUrl) {
   var url = (baseUrl || '') + MEP_RW_DB_URL;
   try {
     var buf = await _rwFetchCached(url);
-    _rwDb = new SQL.Database(new Uint8Array(buf));
-    _rwReady = true;
-    var counts = _rwDb.exec(
+    var db = new SQL.Database(new Uint8Array(buf));
+    // §M1-FIX: validate via a REAL query BEFORE flipping _rwReady — `new SQL.Database(garbageBuf)` (e.g. a
+    // 404 body that slipped past _rwFetchCached) does not always throw at construction; the first real query
+    // is what surfaces "file is not a database". _rwReady used to flip true BEFORE this query, so a failed
+    // load left it wrongly true over a dead _rwDb handle — every later caller (routePattern's bridge included)
+    // would then skip its own "not ready" guard and crash deep inside a real query instead of refusing cleanly.
+    var counts = db.exec(
       "SELECT (SELECT COUNT(*) FROM ad_space_type_mep_bom) as bom, " +
       "(SELECT COUNT(*) FROM ad_mep_pattern) as pat, " +
       "(SELECT COUNT(*) FROM ad_mep_anchor) as anc, " +
@@ -83,6 +87,7 @@ async function rwInit(SQL, baseUrl) {
       "(SELECT COUNT(*) FROM _shim_attributes) as shim, " +
       "(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='arc_envelope') as has_arc"
     );
+    _rwDb = db; _rwReady = true;
     var r = counts[0].values[0];
     console.log('§RW_INIT mep_rw.db loaded bom=' + r[0] + ' patterns=' + r[1] +
                 ' anchors=' + r[2] + ' offsets=' + r[3] + ' shims=' + r[4] + ' arc_env=' + r[5]);
@@ -1236,13 +1241,29 @@ function _rwInsertElement(db, guid, ifcClass, name, building, storey, disc, rgba
 // IndexedDB cache for mep_rw.db
 // ═══════════════════════════════════════════════════════════════
 
+// §M1-FIX (found + fixed this pass, pre-existing latent bug — NOT introduced by the pattern bridge, just the
+// first thing that actually exercised this code path on a fresh IFC-open session): two real bugs, both now
+// defended —
+// (1) `bim_ootb_cache` can be created by ANOTHER caller first (disc_walker.js's own _openCacheDB, no version,
+//     no store) at version 1 with NO 'dbs' object store. This function's `indexedDB.open(…, 1)` then sees "no
+//     version change needed" → onupgradeneeded never fires → `idb.transaction('dbs', …)` throws NotFoundError
+//     SYNCHRONOUSLY inside a DOM event handler — a throw there is NOT caught by the wrapping `new Promise`
+//     executor (it's a callback, not a continuation of it) and surfaces as an UNCAUGHT pageerror that bypasses
+//     every .catch() in the chain (confirmed live: W-E2E-WALK-IFCOPEN G4-G6 failed with exactly this
+//     DOMException on a fresh IFC-open session). Fixed: guard every `idb.transaction('dbs', …)` in try/catch,
+//     falling back to a bare fetch on failure — mirrors disc_walker.js's own `_idbGet`/`_idbPut` defensive style.
+// (2) The two fallback fetch branches (get.onerror/req.onerror) never checked `resp.ok` — a 404 response body
+//     was silently accepted as if it were the database (confirmed live: a 404 "404" text body passed straight
+//     to `new SQL.Database()`, throwing "file is not a database"). Fixed: same `if (!resp.ok) throw` guard the
+//     primary path already had.
 function _rwFetchCached(url) {
   return new Promise(function(resolve, reject) {
     var req = indexedDB.open('bim_ootb_cache', 1);
-    req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+    req.onupgradeneeded = function() { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
     req.onsuccess = function() {
-      var idb = req.result;
-      var tx = idb.transaction('dbs', 'readonly');
+      var idb = req.result, tx;
+      try { tx = idb.transaction('dbs', 'readonly'); }
+      catch (e) { console.warn('§RW_CACHE_TX_FAIL ' + e.message + ' — bare fetch'); fetch(url).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(resolve).catch(reject); return; }
       var get = tx.objectStore('dbs').get('rw_' + url);
       get.onsuccess = function() {
         if (get.result) {
@@ -1263,11 +1284,11 @@ function _rwFetchCached(url) {
         }
       };
       get.onerror = function() {
-        fetch(url).then(function(r) { return r.arrayBuffer(); }).then(resolve).catch(reject);
+        fetch(url).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(resolve).catch(reject);
       };
     };
     req.onerror = function() {
-      fetch(url).then(function(r) { return r.arrayBuffer(); }).then(resolve).catch(reject);
+      fetch(url).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(resolve).catch(reject);
     };
   });
 }
