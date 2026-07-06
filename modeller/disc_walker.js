@@ -807,6 +807,175 @@
       anchorCounts: { fixture: fixtureAnchors.length, junction: junctions.length } };
   }
 
+  // ── M5: BEND/TEE FITTING PLACEMENT (RESUME_MODELLER_WALK_SUBSTRATE.md §CAMPAIGN M5 SPEC, 2026-07-07) ──────
+  // routePattern()'s (and routewalker.js's own rwRouteSegments()'s) segments are independent straight runs
+  // with NO adjacency/merge logic between them (routewalker.js's rwSweepOps maps each 1:1 to its own
+  // GEOM_SWEEP) — a direction change today is just two straight tubes meeting at a shared point, rendered as
+  // one continuous tube (M4). This bend-finder groups segments of the SAME sub-network (from_kind — 'RW_CW'
+  // vs 'RW_SP' are DIFFERENT pipe services and must never be joined into one fake fitting just because they
+  // independently sample the same shared corridor JUNCTION waypoint — routePattern computes `junctions` ONCE
+  // and re-uses it for BOTH the CW and SP passes, so a coincident coordinate across the two is a sampling
+  // artefact, not a real shared pipe joint) by COINCIDENT endpoint (a real shared anchor, rounded to
+  // BEND_ANCHOR_TOL decimal places) and classifies what meets there:
+  //   N=2, outward vectors ~antiparallel -> STRAIGHT (no fitting — M4's continuous-tube rendering is correct
+  //                                          as-is; this is the REGRESSION GUARD the M5 witness checks)
+  //   N=2, NOT antiparallel              -> ELBOW (2-way bend)
+  //   N=3                                -> TEE (the catalog's only 3-port generic fitting — a documented
+  //                                          simplification: this does not distinguish a true in-line branch
+  //                                          from a Y/wye junction; the catalog carries no separate wye/cross
+  //                                          part, so every 3-way junction maps to the one 3-port fitting it has)
+  //   N>=4                               -> REFUSE (no catalog fitting for a 4+-way cross — refuse-beats-
+  //                                          fabricate, logged, never a placeholder)
+  var BEND_ANCHOR_TOL = 3;                // decimal places for the coincident-endpoint key (~1mm at metre scale)
+  var BEND_STRAIGHT_DOT = 0.999;          // dot(u1,u2) <= -this = antiparallel enough to call it a straight run
+  function _bendKey(p) { return p[0].toFixed(BEND_ANCHOR_TOL) + ',' + p[1].toFixed(BEND_ANCHOR_TOL) + ',' + p[2].toFixed(BEND_ANCHOR_TOL); }
+  function _vSub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+  function _vAdd(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+  function _vLen(v) { return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+  function _vNorm(v) { var l = _vLen(v); return l > 1e-9 ? [v[0] / l, v[1] / l, v[2] / l] : [0, 0, 0]; }
+  function _vDot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function _vCross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+
+  // Group segs by shared anchor -> joint descriptors. opts.networkKey overrides the default (from_kind, falling
+  // back to disc) grouping — a witness can pass a stricter/looser key to prove the CW/SP separation matters.
+  function bendFinder(segs, opts) {
+    opts = opts || {};
+    var netKey = opts.networkKey || function (s) { return s.from_kind || s.disc; };
+    var nets = {};
+    (segs || []).forEach(function (s) {
+      if (_vLen(_vSub(s.to, s.from)) < 1e-6) return;              // zero-length segment — nothing to bend
+      var k = netKey(s); (nets[k] = nets[k] || []).push(s);
+    });
+    var out = [];
+    Object.keys(nets).forEach(function (nk) {
+      var byAnchor = {};
+      nets[nk].forEach(function (s) {
+        var dir = _vNorm(_vSub(s.to, s.from));
+        (byAnchor[_bendKey(s.from)] = byAnchor[_bendKey(s.from)] || []).push({ seg: s, out: dir });                 // outward = downstream, away from this anchor
+        (byAnchor[_bendKey(s.to)] = byAnchor[_bendKey(s.to)] || []).push({ seg: s, out: [-dir[0], -dir[1], -dir[2]] }); // outward = upstream, away from this anchor
+      });
+      Object.keys(byAnchor).forEach(function (ak) {
+        var touches = byAnchor[ak], n = touches.length;
+        if (n < 2) return;
+        var coord = ak.split(',').map(Number);
+        var vectors = touches.map(function (t) { return t.out; });
+        if (n === 2) {
+          var dp = _vDot(vectors[0], vectors[1]);
+          if (dp <= -BEND_STRAIGHT_DOT) return;                    // antiparallel -> straight-through, no fitting
+          out.push({ network: nk, anchor: coord, kind: 'ELBOW', n: 2, vectors: vectors, dot: dp });
+        } else if (n === 3) {
+          out.push({ network: nk, anchor: coord, kind: 'TEE', n: 3, vectors: vectors });
+        } else {
+          out.push({ network: nk, anchor: coord, kind: 'REFUSE', n: n, vectors: vectors,
+            reason: n + '-way junction has no catalog fitting (elbow/tee only)' });
+        }
+      });
+    });
+    return out;
+  }
+
+  // ── Fitting rotation: real angle-bisector trig between the adjoining run direction vectors — the genuinely
+  // NEW part (M5 SPEC item 4): searched disc_walker.js's own SIDE/TOP/BOTTOM hostBind branches + arc_editable.js's
+  // rotation handling for existing bisector/miter/atan2 two-vector-to-rotation logic — NONE found; every existing
+  // rotation in this codebase is either a stored single rotation_z or a dominant-AABB-axis pick (0/π/2 only, the
+  // M6 heuristic). This is new engineering, not reuse.
+  //
+  // PLACEMENT CONVENTION (a real decision this task must disclose, since the generic catalog meshes — measured
+  // directly, see session report — carry no documented canonical port axis: FITTING_ELBOW_GENERIC's own local
+  // mesh is close to symmetric about the anchor, likely a low-poly generic placeholder, not a faithfully-modeled
+  // bend): the fitting's LOCAL reference direction is +X; final orientation rotates local +X onto the BISECTOR
+  // of every adjoining outward run vector at the joint. For N=2 this is the standard angle-bisector formula
+  // normalize(u1+u2); it generalizes cleanly to a 3-way TEE as the vector-sum mean direction (no single true
+  // bisector exists for 3 non-coplanar vectors — the normalized sum is the well-defined, hand-checkable choice
+  // used here, consistent with assemble()'s own existing "mean incident run vector" orientation convention a few
+  // hundred lines up — same idea, extended here into a full rotation instead of a bare direction).
+  //
+  // Horizontal case (bisector.z ~ 0 — the common Manhattan-turn bend, and the ONLY case every OTHER rotation in
+  // this codebase supports, see M6's own finding): plain yaw (placement.rot degrees), matching place()'s yaw-only
+  // path. Non-horizontal (a REAL vertical run exists in Duplex's own SP network — the STACK riser drop) uses
+  // place()'s already-existing 3-axis quaternion path (rotX/rotY/rotZRad) via a dependency-free "rotate a
+  // reference vector onto a target vector" quaternion + XYZ-Euler decomposition — the SAME algorithm THREE.js's
+  // own Quaternion.setFromUnitVectors + Euler.setFromRotationMatrix('XYZ') use (ported here, not re-derived, so
+  // it runs identically in Node — this witness's hand-calculated proof, no window.THREE — and in the browser,
+  // where place() reconstructs the identical Euler from rotX/rotY/rotZRad using THREE itself).
+  var FIT_REF = [1, 0, 0];
+  var FIT_HORIZ_TOL = 1e-4;                // |bisector.z| below this -> treat the bend as horizontal (yaw-only)
+  function _quatFromTo(ref, target) {
+    var d = _vDot(ref, target);
+    if (d < -0.999999) {                   // ref and target opposite (180°) -> any axis perpendicular to ref works
+      var alt = Math.abs(ref[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      var axis = _vNorm(_vCross(ref, alt));
+      return [axis[0], axis[1], axis[2], 0];
+    }
+    var c = _vCross(ref, target), w = d + 1;
+    var l = Math.sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2] + w * w);
+    return l > 1e-12 ? [c[0] / l, c[1] / l, c[2] / l, w / l] : [0, 0, 0, 1];
+  }
+  // Quaternion -> Euler 'XYZ' (three.js's own Euler.setFromRotationMatrix('XYZ') algorithm, ported verbatim —
+  // MUST agree with it bit-for-bit, since place()'s 3-axis branch reconstructs a THREE.Euler from exactly these
+  // three numbers; a hand-rolled DIFFERENT formula would silently misplace every non-horizontal fitting).
+  function _quatToEulerXYZ(q) {
+    var x = q[0], y = q[1], z = q[2], w = q[3];
+    var m11 = 1 - 2 * (y * y + z * z), m12 = 2 * (x * y - w * z), m13 = 2 * (x * z + w * y);
+    var m21 = 2 * (x * y + w * z), m22 = 1 - 2 * (x * x + z * z), m23 = 2 * (y * z - w * x);
+    var m31 = 2 * (x * z - w * y), m32 = 2 * (y * z + w * x), m33 = 1 - 2 * (x * x + y * y);
+    var ey = Math.asin(Math.max(-1, Math.min(1, m13)));
+    var ex, ez;
+    if (Math.abs(m13) < 0.9999999) { ex = Math.atan2(-m23, m33); ez = Math.atan2(-m12, m11); }
+    else { ex = Math.atan2(m32, m22); ez = 0; }
+    return [ex, ey, ez];
+  }
+  // vectors: the outward run direction unit vectors touching one joint (2 for an elbow, 3 for a tee). Returns
+  // { bisector:[x,y,z], horizontal, rot (deg, yaw-only path), rotX, rotY, rotZRad (3-axis path, non-horizontal
+  // only) } — shape matches `place()`'s placement fields exactly (bonsai_library.js place()/foldInsert).
+  function fittingOrientation(vectors) {
+    var sum = (vectors || []).reduce(function (a, v) { return _vAdd(a, v); }, [0, 0, 0]);
+    if (_vLen(sum) < 1e-6) return { bisector: [0, 0, 0], degenerate: true, rot: 0 };  // exactly-opposing set — no well-defined bisector
+    var bis = _vNorm(sum);
+    if (Math.abs(bis[2]) < FIT_HORIZ_TOL) {
+      return { bisector: bis, horizontal: true, rot: Math.atan2(bis[1], bis[0]) * 180 / Math.PI };
+    }
+    var q = _quatFromTo(FIT_REF, bis), e = _quatToEulerXYZ(q);
+    return { bisector: bis, horizontal: false, rot: 0, rotX: e[0], rotZRad: e[1], rotY: -e[2] };
+  }
+  // Elbow (2-way) / Tee (3-way) -> the real catalog hashes (viewer/dagevu_catalog.json), verified present.
+  // ASMONLY DECISION (M5 SPEC item 2, disclosed not silently bypassed): grepped every consumer of the catalog's
+  // `asmOnly` field across modeller/*.js + modeller/*.html + viewer/*.js — it is set once (bonsai_library.js:38,
+  // copied from the catalog JSON) and read NOWHERE else in this codebase; foldInsert/Library.get/search() apply
+  // NO asmOnly check at all. So there is no live gate to bypass here — a direct GEOM_INSERT of these hashes is
+  // already structurally reachable today exactly like any other catalog placement. Flagging (not silently
+  // assuming) that `asmOnly:true` in the DATA still likely signals an INTENDED future restriction (e.g. hiding
+  // these parts from the general catalog browse/insert picker so a user can't hand-place a bare "assembly part"
+  // outside a real assembly) — if that gate gets wired later, it should stay scoped to the interactive catalog
+  // PICKER, not to this programmatic disc-walker placement (a different call path, analogous to how RouteWalker's
+  // own fixtures/pipes are placed via RW_IFC_MAP without going through that picker either).
+  function _fittingHash(kind) {
+    if (kind === 'ELBOW') return 'FITTING_ELBOW_GENERIC';
+    if (kind === 'TEE') return 'FITTING_TEE_GENERIC';
+    return null;
+  }
+  // Top-level: segs (rwRouteSegments()/routePattern().segs shape) -> fitting placements ready for a normal
+  // GEOM_INSERT ({hash, placement:{x,y,z,rot[,rotX,rotY,rotZRad]}}) — no new placement path, per M5 SPEC item 2.
+  function bendFittings(disc, segs, opts) {
+    opts = opts || {};
+    var joints = bendFinder(segs, opts), out = [], refused = 0;
+    joints.forEach(function (j) {
+      var hash = _fittingHash(j.kind);
+      if (!hash) { refused++; return; }
+      var orient = fittingOrientation(j.vectors);
+      if (orient.degenerate) { refused++; return; }
+      var pl = { x: j.anchor[0], y: j.anchor[1], z: j.anchor[2], rot: orient.rot };
+      if (!orient.horizontal) { pl.rotX = orient.rotX; pl.rotY = orient.rotY; pl.rotZRad = orient.rotZRad; }
+      out.push({ disc: disc, network: j.network, kind: j.kind, hash: hash, anchor: j.anchor,
+        placement: pl, n: j.n, bisector: orient.bisector, horizontal: !!orient.horizontal });
+    });
+    console.log(TAG + ' §BEND disc=' + disc + ' joints=' + joints.length +
+      ' elbow=' + out.filter(function (o) { return o.kind === 'ELBOW'; }).length +
+      ' tee=' + out.filter(function (o) { return o.kind === 'TEE'; }).length +
+      ' refused=' + refused + (joints.length ? ' (' + joints.map(function(j){return j.kind + ':' + j.n;}).join(' ') + ')' : ''));
+    return out;
+  }
+
   // ── ROUTE → ASSEMBLE bridge (docs/WalkerDoctrine.md roadmap #3) ──────────────────────────────────
   // routeChains gives the real nn-NETWORK (segments between real extracted element guids). assemble() turns that
   // network into instantiated catalog PARTS: at each routed NODE (a real element endpoint), instantiate the matching
@@ -1232,6 +1401,7 @@
     route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
+    bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
