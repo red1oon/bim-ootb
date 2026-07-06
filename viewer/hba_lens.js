@@ -726,6 +726,66 @@
     return { x: facing[0], y: facing[1], z: facing[2] };  // node-witness/stub fallback — no ifc2three to mirror
   }
 
+  // §2026-07-06c item D-followup — user: "the rest is OK as POC... By cam u will know its the cam POV" (once
+  // picked up). The CCTV tiles (viewer/hba_iot.js) painted crops of one SHARED static ContaCam still photo —
+  // not this building, not that camera's own viewpoint. This renders an ACTUAL frame of the REAL loaded scene
+  // from that camera's own eye/facing — the SAME ground-truth eye+direction flyToFacing already flies to —
+  // instead of moving the user's own live camera (flyToFacing) or leaving a static stub photo in place.
+  // Offscreen render only: a dedicated PerspectiveCamera + cached WebGLRenderTarget, never touches A.camera/
+  // A.controls, so a background capture never disturbs whatever the user is actually looking at. Honest no-op
+  // (no draw, {captured:false, reason}) when the engine/facing/rendered-members aren't available — same
+  // discipline as flyToFacing/flyToPOV, never a fabricated frame.
+  var _snapRT = null, _snapCam = null;
+  function _ensureSnap(w, h) {
+    if (!_snapRT || _snapRT.width !== w || _snapRT.height !== h) {
+      if (_snapRT && _snapRT.dispose) _snapRT.dispose();
+      _snapRT = new THREE.WebGLRenderTarget(w, h);
+    }
+    if (!_snapCam) _snapCam = new THREE.PerspectiveCamera(60, w / h, 0.1, 1000);
+    return { rt: _snapRT, cam: _snapCam };
+  }
+  function captureFacingSnapshot(A, guid, facing, ctx, opts) {
+    opts = opts || {};
+    var w = opts.width || (ctx && ctx.canvas ? ctx.canvas.width : 120);
+    var h = opts.height || (ctx && ctx.canvas ? ctx.canvas.height : 68);
+    if (!A || !A.renderer || !A.scene || typeof THREE === 'undefined' || !ready()) {
+      return { captured: false, reason: 'no-engine' };
+    }
+    if (!facing || facing.length !== 3) return { captured: false, reason: 'no-facing' };
+    var hit = _zoneCentroid(A, guid);
+    if (!hit) return { captured: false, reason: 'no-members' };
+    var eye = hit.center;
+    var f3 = _rawFacingToThree(A, facing);
+    var lookDir = new THREE.Vector3(f3.x, f3.y, f3.z);
+    if (lookDir.lengthSq() > 1e-9) lookDir.normalize(); else lookDir.set(0, 0, -1);
+    var standoff = opts.dist != null ? opts.dist : 3;                                  // matches flyToFacing's own default standoff
+    var eyePos = new THREE.Vector3(eye.x, eye.y, eye.z).addScaledVector(lookDir, -standoff);
+    var lookAt = new THREE.Vector3(eye.x, eye.y, eye.z).add(lookDir);                   // direction-only target, arbitrary lookahead
+
+    var s = _ensureSnap(w, h);
+    s.cam.aspect = w / h; s.cam.updateProjectionMatrix();
+    s.cam.position.copy(eyePos);
+    s.cam.lookAt(lookAt);
+
+    var prevTarget = A.renderer.getRenderTarget();
+    A.renderer.setRenderTarget(s.rt);
+    A.renderer.render(A.scene, s.cam);
+    A.renderer.setRenderTarget(prevTarget);   // restore immediately — never leaves the live view render-targeted offscreen
+
+    if (ctx) {
+      var buf = new Uint8Array(w * h * 4);
+      A.renderer.readRenderTargetPixels(s.rt, 0, 0, w, h, buf);
+      var imgData = ctx.createImageData(w, h);
+      // WebGL readback is bottom-up; canvas ImageData is top-down — flip rows on the way out.
+      for (var row = 0; row < h; row++) {
+        var srcRow = h - 1 - row;
+        imgData.data.set(buf.subarray(srcRow * w * 4, (srcRow + 1) * w * 4), row * w * 4);
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+    return { captured: true, guid: hit.resolvedGuid, eye: eyePos, look: lookAt };
+  }
+
   function flyToFacing(A, guid, facing, opts) {
     opts = opts || {};
     if (!A || !A.guidMap || !ready()) { console.log('§HBA_FACING no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
@@ -974,7 +1034,8 @@
   G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, tintedCount: tintedCount,
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
-    flyToZone: flyToZone, flyToPOV: flyToPOV, flyToFacing: flyToFacing, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
+    flyToZone: flyToZone, flyToPOV: flyToPOV, flyToFacing: flyToFacing, captureFacingSnapshot: captureFacingSnapshot,
+    openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
     _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
     _consumeFindGuid: _consumeFindGuid, bindStoreysFromModel: bindStoreysFromModel };  // §STAGE2 / §2026-07-04c / §2026-07-05e — witness hooks (additive)
