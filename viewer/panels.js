@@ -173,6 +173,17 @@ function setupPanels(A) {
   };
 
   // ── S265 Phase 5: A.createPanel() — reusable panel factory ──
+  // §PANEL-ABSTRACTION (2026-07-06) — every caller of createPanel gets, for free:
+  //   · draggable + close-by-× (pre-existing)
+  //   · correct pill highlight even when THIS panel's own × closes it (common/pill_builder.js's
+  //     MutationObserver auto-resyncs on any element add/remove — no manual call needed here)
+  //   · Tab (native, real <button> rows) + Arrow-key row traversal (viewer/panel_nav.js, already
+  //     built for the Find panel, now wired as every panel's default unless it opts out or brings
+  //     its own richer opts.zones)
+  //   · no-overlap desktop placement (A._placePanel) instead of every pane author hand-picking the
+  //     next unused magic-number offset (see the row-of-hardcoded right:12/428/864 columns in
+  //     hba_bom.js/hba_iot.js/hba_dashboard.js — that pattern silently collides the moment someone
+  //     adds a 4th pane and forgets to bump the number)
   A.createPanel = function(id, opts) {
     opts = opts || {};
     var el = document.createElement('div');
@@ -196,6 +207,14 @@ function setupPanels(A) {
       if (typeof opts.content === 'string') { el.insertAdjacentHTML('beforeend', opts.content); }
       else { el.appendChild(opts.content); }
     }
+    // §PANEL-NAV-AUTO: Arrow Up/Down through this panel's own <button> rows (Tab already reaches
+    // them natively; Enter/Space already fire native <button> clicks). Opt out with opts.nav:false
+    // (e.g. a panel with no row-shaped content), or supply opts.zones for accordion-style panels
+    // (see navigate_find.js's own richer zones — this default only covers the common flat-list case).
+    if (opts.nav !== false && window.PanelNav) {
+      var _zones = opts.zones || [{ id: 'rows', items: function() { return el.querySelectorAll('button:not(.bim-panel-close)'); } }];
+      window.PanelNav({ panel: el, zones: _zones, id: id, onClose: opts.onClose || function() { el.style.display = 'none'; } });
+    }
     // Draggable
     if (opts.draggable !== false && A._makeDraggable) {
       A._makeDraggable(el);
@@ -212,6 +231,60 @@ function setupPanels(A) {
     console.log('§PANEL_CREATE id=' + id);
     return el;
   };
+
+  // §PANEL-PLACE (2026-07-06) — nearest free slot instead of a hardcoded magic-number column.
+  // opts: { top, right, width, height } — width/height only need to be given when the panel is
+  // still display:none at call time (can't measure a hidden element's real box); pass the same
+  // numbers the panel's own inline style declares. Tries the default column, then cascades right→
+  // left in (width+gap) steps against every OTHER currently-visible .bim-panel (from window._panels,
+  // the existing panel-focus registry in scene.js — no new tracking list invented); falls back to
+  // the default slot (stacked) if every column in range is occupied, never throws/loops forever.
+  A._placePanel = function(el, opts) {
+    opts = opts || {};
+    var top = opts.top != null ? opts.top : 54;
+    var right0 = opts.right != null ? opts.right : 12;
+    var gap = 16;
+    var width = opts.width || el.offsetWidth || 320;
+    var height = opts.height || el.offsetHeight || 300;
+    function rectAt(right) {
+      var left = window.innerWidth - right - width;
+      return { left: left, right: left + width, top: top, bottom: top + height };
+    }
+    function overlaps(a, b) { return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }
+    var others = (window._panels || []).filter(function(p) {
+      return p.el !== el && p.el.classList && p.el.classList.contains('bim-panel') &&
+             p.el.style.display !== 'none' && p.el.offsetWidth > 0;
+    }).map(function(p) { var r = p.el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; });
+    for (var col = 0; col < 12; col++) {
+      var right = right0 + col * (width + gap);
+      var cand = rectAt(right);
+      if (cand.left < 8) break;   // ran off the left edge of the viewport
+      if (!others.some(function(o) { return overlaps(cand, o); })) {
+        el.style.right = right + 'px'; el.style.left = 'auto'; el.style.top = top + 'px';
+        console.log('§PANEL_PLACE id=' + el.id + ' col=' + col + ' right=' + right + ' others=' + others.length);
+        return;
+      }
+    }
+    el.style.right = right0 + 'px'; el.style.top = top + 'px';
+    console.log('§PANEL_PLACE_FALLBACK id=' + el.id + ' (no free column in range, others=' + others.length + ')');
+  };
+
+  // §PANEL-AUTOPLACE — call A._placePanel automatically the instant ANY .bim-panel transitions from
+  // hidden to visible, regardless of who created it or how. Only fires on that one transition (a
+  // per-element _bimPanelVisible flag), so it never fights A._makeDraggable's own left/top writes
+  // while a panel is already open and being dragged around.
+  if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
+    var _placeObserver = new MutationObserver(function(muts) {
+      muts.forEach(function(m) {
+        var pel = m.target;
+        if (!pel.classList || !pel.classList.contains('bim-panel')) return;
+        var visibleNow = pel.style.display !== 'none';
+        if (visibleNow && !pel._bimPanelVisible && !window._isMobile) A._placePanel(pel);
+        pel._bimPanelVisible = visibleNow;
+      });
+    });
+    _placeObserver.observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: true });
+  }
 
   // ── S265 Phase 5 P1: Build Color Palette slider panel ──
   A._buildSunglassPanel = function() {

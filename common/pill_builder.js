@@ -45,6 +45,20 @@
  *       - Register with InputReg (Esc close, Tab focus)
  *       - Sync highlight via _syncPillHighlights()
  *
+ *  §PILL-AUTOSYNC (2026-07-06) — you never need to call _syncPillHighlights() yourself, for a
+ *  panel built with `panel:` above OR a fully hand-rolled drawer (own DOM, own ✕ button, own
+ *  open/close logic — e.g. viewer/hba_lens.js's Human-Asset family drawer, panels.js's
+ *  _buildMasterDrawer masters). The builder watches document.body for element add/remove and
+ *  resyncs ALL highlights on the next frame, no matter which module opened or closed the element
+ *  and whether or not it remembered to call anything. Root cause this replaces: the Human-Asset
+ *  pill's own ✕ button used to `d.remove()` with no resync call, so re-tapping the pill worked
+ *  (the pill's OWN click handler already calls fn(); _sync()) but closing via the drawer's ✕ left
+ *  the pill stuck highlighted — a landmine for every future hand-rolled drawer, not just this one.
+ *  An isActive() that depends purely on in-memory state with NO matching DOM change (rare — most
+ *  panels/drawers in this codebase are literally a DOM node that exists or doesn't) still needs its
+ *  own act.fn() to call _sync(), same as always; the auto-heal is a safety net for the DOM case,
+ *  not a replacement for wiring isActive correctly.
+ *
  *  3. ICON + CUSTOM FN + isActive — full control:
  *
  *     { id: 'xray', icon: '<path d="..."/>',
@@ -205,6 +219,27 @@
         n++;
       });
       console.log('§PILL_SYNC synced=' + n);
+    }
+
+    // §PILL-AUTOSYNC (2026-07-06, see the doc block up top): resync on ANY element add/remove
+    // anywhere in the document, not just when a drawer's author remembers to call _sync(). This is
+    // the structural fix for the whole class of "custom drawer's own close button forgets to
+    // resync" bugs (found first on the Human-Asset/hbaFM family drawer, viewer/hba_lens.js — its ✕
+    // button did `d.remove()` with no resync call at all). childList+subtree (not `attributes`) is
+    // deliberately narrow: it fires on node insert/remove — exactly how every panel/drawer in this
+    // codebase opens and closes — and stays silent on the much noisier per-frame style/class churn
+    // (camera moves, canvas redraws, tooltips), so this stays cheap even during animation. Coalesced
+    // to at most once per rendered frame via rAF so a burst of DOM churn (e.g. a drawer's row list
+    // rebuilding several rows) still only pays for one _sync() pass.
+    if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
+      var _autoSyncQueued = false;
+      var _raf = window.requestAnimationFrame || function(cb) { return setTimeout(cb, 16); };
+      var _autoSyncObserver = new MutationObserver(function() {
+        if (_autoSyncQueued) return;
+        _autoSyncQueued = true;
+        _raf(function() { _autoSyncQueued = false; _sync(); });
+      });
+      _autoSyncObserver.observe(document.body, { childList: true, subtree: true });
     }
 
     // ── Build pill DOM ──
