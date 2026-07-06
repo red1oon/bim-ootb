@@ -3173,6 +3173,18 @@ async function _discWalkOne(disc, ctx, opts) {
     await _commitDiscWalk(disc, w.placements);
     // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
     if (nSeg) { _renderDiscChains(disc, w.chainSegs, { patternBridge: w.patternBridge ? { seed: w.patternBridge.seed, riser: w.patternBridge.riser } : null }); await _commitDiscChains(disc, w.chainSegs); }
+    // §CAMPAIGN M5: bend/tee FITTING placement at real bends in the M1 pattern-bridge network (routePattern's
+    // segs — rwRouteSegments()'s own straight-run pairing has no adjacency/merge logic between segments, so a
+    // direction change is otherwise just two straight tubes meeting at a point, M4's continuous-tube render).
+    // Scoped to w.patternBridge (the GENERATED network M1-M4 built+tested) — NOT routeChains' real nn-network,
+    // which already has its own separate (if currently-unwired) orientation mechanism via assemble()/rule_joint_piece.
+    if (nSeg && w.patternBridge && window.DiscWalker.bendFittings) {
+      try {
+        var fits = window.DiscWalker.bendFittings(disc, w.chainSegs, {});
+        window.__dwFittings[disc] = fits;
+        if (fits.length) await _commitDiscFittings(disc, fits);
+      } catch (e) { console.warn('§DW-FIT ' + disc + ' failed ' + (e && e.message)); }
+    }
     // §3c ASSEMBLE: when a routed network exists, instantiate the projected catalog PARTS at the real
     // routed NODES (rule_joint_piece — pose from the node, Ø from the measured catalog, orientation from
     // the run vector) + enrich them with their connector hookup. Rendered as boxes via the _dwPrimGeo LOD
@@ -3230,8 +3242,9 @@ function _clearAllDiscWalks() {
   if (window.__dwChainRevealMeta) window.__dwChainRevealMeta = {};
   if (window.__dwAssembly) window.__dwAssembly = {};
   if (window.__dwTrunk) window.__dwTrunk = {};
+  if (window.__dwFittings) window.__dwFittings = {};   // §CAMPAIGN M5 — bookkeeping only (committed rows already fold generically)
   window.__dwInstVer++;   // §I5: bucket set changed → invalidate the record→(im,i) ref map
-  console.log('§DISC-WALK §GRID-CLEAR-LEAK onClear — __dwWalks/__dwChains/__dwChainMeta/__dwAssembly/__dwTrunk cleared');
+  console.log('§DISC-WALK §GRID-CLEAR-LEAK onClear — __dwWalks/__dwChains/__dwChainMeta/__dwAssembly/__dwTrunk/__dwFittings cleared');
 }
 // §LOD-SEAM (docs/WalkerDoctrine.md §5): a GENERATED fixture's render geometry is selected by its semantic
 // prim KIND (disc_walker._primFor → p.prim: sprinkler/diffuser/light/outlet/alarm/valve/run/box). POC = a BOX
@@ -3733,6 +3746,51 @@ async function _commitDiscChains(disc, segs) {
     (segs.length > cap ? ' (cap=' + capMax + ', occt-bounded; full ' + segs.length + ' rendered live)' : '') +
     ' (1 signed group)');
   window.__dwLastChainDisc = disc;                    // sentinel for witnesses
+  return committed;
+}
+// ── §CAMPAIGN M5 — bend/tee FITTING commit (disc_walker.js bendFittings) ────────────────────────────────
+// Each fitting is a normal signed GEOM_INSERT (same shape _commitDiscWalk/the assembly-drop flow already use —
+// no new persistence mechanism, per M5 SPEC item 4). Committed LOD-200 first (batched, one seal/fold, same
+// W-Q4-GROUP-LINKAGE reason _commitDiscWalk/dropLeaves already document), then upgraded to the real LOD-300
+// catalog mesh via the SAME self-healing ensureMesh+setLod+scrubTo retry idiom the assembly-drop flow uses
+// (modeller.html's insert-drop handler) — reused, not reinvented.
+window.__dwFittings = window.__dwFittings || {};   // disc -> fitting placements (introspection/witness only; redraw
+                                                    // doesn't need to replay these — they are committed rows, folded
+                                                    // by the normal GEOM_INSERT path like any other insert)
+async function _commitDiscFittings(disc, fittings) {
+  var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
+  if (!O || !L || !fittings || !fittings.length) return 0;
+  var color = DW_COLOR[disc] || 0xc0c0c0;
+  var ops = fittings.map(function (f) {
+    return { op_type: 'GEOM_INSERT', params: { hash: f.hash, placement: f.placement, lod: '200', color: color,
+      _dw: { disc: disc, fit: f.kind, network: f.network, n: f.n } } };
+  });
+  var committed = 0, ids = [];
+  try { var res = await O.commitSeedGroup(ops, 'dwfit-' + disc + '-' + O.length); ids = res.ids || []; committed = ids.length; }
+  catch (e) { console.warn('§DW-FIT-COMMIT batch fail ' + (e && e.message)); }
+  if (committed) {
+    _redrawAllDiscWalks();
+    if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    syncHistory(); audioCue('rollout');
+    var placed = ids.map(function (id, i) { return { id: id, hash: fittings[i].hash }; });
+    var needs = placed.filter(function (p) { var c = L.get(p.hash); return c && c.gh; });
+    if (needs.length) {
+      var upgrade = function (tries) {
+        L.ensureMesh(needs[0].hash).then(function () {
+          needs.forEach(function (p) { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
+          return O.scrubTo(O.length);
+        }).then(function () {
+          if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+          var boxed = needs.filter(function (p) { return L.lodFor(p.id, '200') !== '300'; }).length;
+          console.log('§DW-FIT-MESH disc=' + disc + ' upgraded=' + (needs.length - boxed) + '/' + needs.length);
+          if (boxed && tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300);
+        }).catch(function () { if (tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300); });
+      };
+      upgrade(2);
+    }
+  }
+  console.log('§DW-FIT-COMMIT disc=' + disc + ' fittings=' + fittings.length + ' committed=' + committed + ' (1 signed group)');
+  window.__dwLastFitDisc = disc;                      // sentinel for witnesses
   return committed;
 }
 // foldChainToScene clears the editable group on every scrub — re-render every walked disc's placement markers
