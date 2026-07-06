@@ -46,6 +46,21 @@ function facingLine(cons) {
   const lines = cons.filter(l => /§HBA_FACING/.test(l));
   return lines.length ? lines[lines.length - 1] : null;
 }
+// the fly animation is a real requestAnimationFrame lerp (20 steps at whatever the real frame rate is) — under
+// headless/heavy-scene load a fixed 2s wait isn't always enough for it to fully settle. Poll until 3 consecutive
+// samples agree (camera genuinely stopped), rather than assume a fixed wall-clock duration.
+async function waitSettled(page, maxMs) {
+  let last = null, stable = 0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < (maxMs || 4000)) {
+    await page.waitForTimeout(100);
+    const p = await page.evaluate(() => ({ x: window.APP.camera.position.x, y: window.APP.camera.position.y, z: window.APP.camera.position.z }));
+    if (last && Math.abs(p.x - last.x) + Math.abs(p.y - last.y) + Math.abs(p.z - last.z) < 1e-6) { stable++; if (stable >= 3) return p; }
+    else stable = 0;
+    last = p;
+  }
+  return last;
+}
 
 (async () => {
   await new Promise(r => server.listen(0, r));
@@ -83,18 +98,46 @@ function facingLine(cons) {
   verdict(electricalIdx >= 0, 'found the electrical sensor bar row', 'idx=' + electricalIdx);
 
   await page.evaluate((i) => { document.querySelectorAll('#hba-iot-pane > div')[2].children[i].click(); }, electricalIdx);
-  await page.waitForTimeout(2000);
-  const pos1 = await page.evaluate(() => ({ x: window.APP.camera.position.x, y: window.APP.camera.position.y, z: window.APP.camera.position.z }));
+  const pos1 = await waitSettled(page);
   const flyLine1 = camPos(cons);
   verdict(!!flyLine1 && /§HBA_FLY/.test(flyLine1), '1st click -> §HBA_FLY (device establishing shot)', flyLine1);
 
+  // §FIX 2026-07-06g (user: "clicking again is same as clicking on webcam image... exact POV... zooming to get
+  // the exact POV also" / "truly approaching the webcam and turning into its POV") — the 2nd click must now be
+  // §HBA_FACING (flyToFacing: arrive at the covering camera + turn to ITS OWN declared facing), the exact same
+  // function+standoff a direct click on that camera's own CCTV tile uses — NOT §HBA_POV (a different function:
+  // stood at 0.15x the standoff and looked AT the device instead of along the camera's own facing).
   await page.evaluate((i) => { document.querySelectorAll('#hba-iot-pane > div')[2].children[i].click(); }, electricalIdx);
-  await page.waitForTimeout(2000);
-  const pos2 = await page.evaluate(() => ({ x: window.APP.camera.position.x, y: window.APP.camera.position.y, z: window.APP.camera.position.z }));
-  const flyLine2 = camPos(cons);
-  verdict(!!flyLine2 && /§HBA_POV/.test(flyLine2), '2nd click of the SAME sensor -> §HBA_POV (nearest-camera POV), not another §HBA_FLY', flyLine2);
+  const pos2 = await waitSettled(page);
+  const facingLine2 = facingLine(cons);
+  verdict(!!facingLine2, '2nd click of the SAME sensor -> §HBA_FACING (the covering camera\'s OWN POV), not §HBA_POV', facingLine2);
   const moved = Math.abs(pos1.x - pos2.x) + Math.abs(pos1.y - pos2.y) + Math.abs(pos1.z - pos2.z) > 0.5;
   verdict(moved, 'the camera actually moved to a DIFFERENT real position for the POV shot (not a no-op)', 'pos1=' + JSON.stringify(pos1) + ' pos2=' + JSON.stringify(pos2));
+
+  // Prove it's not just "some flyToFacing call" but the BYTE-IDENTICAL shot a direct click on that SAME
+  // camera's own CCTV tile produces: find which real camera the sensor click resolved to (from the §HBA_FACING
+  // log's guid), click THAT camera's own tile, and require the two landings to coincide.
+  const coveringGuid = (facingLine2 || '').match(/guid=(\S+)/);
+  const coveringCamIdx = coveringGuid ? await page.evaluate((g) => window.HbaIot.CAMERAS.findIndex(c => c.bim_guid === g), coveringGuid[1]) : -1;
+  verdict(coveringCamIdx >= 0, 'the covering camera from the §HBA_FACING log is a real entry in iot.js CAMERAS', 'guid=' + (coveringGuid && coveringGuid[1]));
+  if (coveringCamIdx >= 0) {
+    await page.evaluate((idx) => {
+      const grids = document.querySelectorAll('#hba-iot-pane div[style*="grid-template-columns"]');
+      grids[0].children[idx].click();
+    }, coveringCamIdx);
+    await page.waitForTimeout(300);   // just enough for the click handler's synchronous flyToFacing call+log; the
+    // animation itself is irrelevant here — OrbitControls damping keeps nudging camera.position for an
+    // indeterminate time afterward (an unrelated rendering-loop artifact), so pixel-position equality is NOT a
+    // reliable proof. The real, deterministic proof is that BOTH calls resolved the identical (eye, facing)
+    // INPUT to _flyEyeLook — same guid, same eye centroid, same declared facing vector — which is pure maths,
+    // logged verbatim by flyToFacing itself, unaffected by any downstream damping.
+    const facingLineTile = facingLine(cons);
+    const eyeFacing = (l) => (l || '').match(/eye=\(([^)]+)\).*facing=\(([^)]+)\)/);
+    const m2 = eyeFacing(facingLine2), mTile = eyeFacing(facingLineTile);
+    const samePOV = !!m2 && !!mTile && m2[1] === mTile[1] && m2[2] === mTile[2] && facingLineTile.indexOf(coveringGuid[1]) >= 0;
+    verdict(samePOV, 'sensor 2nd-click resolves the IDENTICAL (guid, eye, facing) as that SAME camera\'s own CCTV-tile click (the "exact POV" ask)',
+      'sensorClick[' + facingLine2 + '] tileClick[' + facingLineTile + ']');
+  }
 
   await page.evaluate((i) => { document.querySelectorAll('#hba-iot-pane > div')[2].children[i].click(); }, electricalIdx);
   await page.waitForTimeout(2000);
