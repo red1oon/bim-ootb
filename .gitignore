@@ -42,3 +42,4 @@ modeller/tests/str_canopy.png
 modeller/tests/disc_density.png
 modeller/tests/disc_clash.png
 
+__pycache__/
