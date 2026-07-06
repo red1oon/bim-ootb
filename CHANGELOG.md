@@ -4,6 +4,29 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.11.0](https://github.com/red1oon/bim-ootb/compare/v1.10.0...v1.11.0) (2026-07-06)
+
+
+### ✨ Features
+
+* **hba:** camera-POV-assume-flight — the 6 declared facing vectors, wired ([#674](https://github.com/red1oon/bim-ootb/issues/674)) ([77f41b9](https://github.com/red1oon/bim-ootb/commit/77f41b9b606c9aa727b98f1693126d903663e31b))
+* **hba:** sensor click toggles device-view/nearest-camera POV; closer camera-tile zoom; realistic IoT bars ([#671](https://github.com/red1oon/bim-ootb/issues/671)) ([a872078](https://github.com/red1oon/bim-ootb/commit/a8720789bb3c091d9ed0a381402fa90ff7860c51))
+* **modeller:** wire the World-History "W" pill (RESUME_WORLD_HISTORY_DEDUP_RESTORE.md 4-step handoff) ([#678](https://github.com/red1oon/bim-ootb/issues/678)) ([488fcf0](https://github.com/red1oon/bim-ootb/commit/488fcf0111c17222c00c8a5c706b3afb50e2f591))
+* **viewer:** pill rail reorg — 4 real drawers, Shadow+Ground merge, dead-icon cleanup ([#667](https://github.com/red1oon/bim-ootb/issues/667)) ([409a445](https://github.com/red1oon/bim-ootb/commit/409a445a500ad4addb76cb7b46e2256fabe32f3f))
+
+
+### 🐛 Fixes
+
+* **hba:** outline shine-through + panel cascade + IoT phase offset (§2026-07-06c A/B/C) ([#677](https://github.com/red1oon/bim-ootb/issues/677)) ([89f5aa6](https://github.com/red1oon/bim-ootb/commit/89f5aa6f29c5d6f889d6342d6e85e279856e24d7))
+* **hba:** recover orphaned IoT device-mesh commits (§2026-07-06c/d/e item D-followup + E) ([#679](https://github.com/red1oon/bim-ootb/issues/679)) ([234d41c](https://github.com/red1oon/bim-ootb/commit/234d41cc1141000832b7ce1b4d77001e3e59dd15))
+* **hba:** sensor 2nd-click = exact webcam POV; bar jitter now genuinely fluctuates ([#681](https://github.com/red1oon/bim-ootb/issues/681)) ([0d84bca](https://github.com/red1oon/bim-ootb/commit/0d84bca0d36fcf553dd492dbfc1434e201ef4946))
+* **hba:** Unit Class outline box now uses A.ifc2three (was rendering outside the building) ([#668](https://github.com/red1oon/bim-ootb/issues/668)) ([14154c8](https://github.com/red1oon/bim-ootb/commit/14154c84c340362429dcd9c48e36f377b0465c33))
+* **offline-gateway:** stop 3 always-network requests once data is already cached ([#666](https://github.com/red1oon/bim-ootb/issues/666)) ([c5ffc08](https://github.com/red1oon/bim-ootb/commit/c5ffc08933566e497b6401b8786a8ce574f3a944))
+* **viewer:** &gt;50k selection uses cheap filter instead of heavy X-Ray; kill pill-rail auto-reorder ([#672](https://github.com/red1oon/bim-ootb/issues/672)) ([7408ada](https://github.com/red1oon/bim-ootb/commit/7408ada65b4f4bd0e413ce375a37a588128b9807))
+* **viewer:** generalize pill-highlight desync fix + panel abstraction (Human-Asset pill) ([#682](https://github.com/red1oon/bim-ootb/issues/682)) ([01d8932](https://github.com/red1oon/bim-ootb/commit/01d89322679a776a6c8f30d149a40673ad9faeb2))
+* **viewer:** pill-drawer followup (master de-highlight, keyboard activate, Shadow+Ground) + Help icon-only footer ([#673](https://github.com/red1oon/bim-ootb/issues/673)) ([953d1e4](https://github.com/red1oon/bim-ootb/commit/953d1e427283ab94bb5c7ffaba0810c6f059bbba))
+* **viewer:** undo no longer forks new History-bar dots for read-only crumbs ([#670](https://github.com/red1oon/bim-ootb/issues/670)) ([d6bfb80](https://github.com/red1oon/bim-ootb/commit/d6bfb8078f13d665ff0d9e2506b312dcb2fdbff8))
+
 ## [1.10.0](https://github.com/red1oon/bim-ootb/compare/v1.9.0...v1.10.0) (2026-07-05)
 
 
