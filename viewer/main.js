@@ -13,7 +13,7 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupBcfExport, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -241,6 +241,7 @@ async function initViewer() {
   window.toggleBackground = APP.toggleBackground;
   window.toggleIssues = APP.toggleIssues;
   window.exportIssuesExcel = APP.exportIssuesExcel;
+  window.exportIssuesBcf = APP.exportBcf;
   window.clearAllIssues = APP.clearAllIssues;
   window._issueBackToList = APP._issueBackToList;
   window.toggleWalkMode = APP.toggleWalkMode;
