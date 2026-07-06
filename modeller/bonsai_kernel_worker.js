@@ -94,6 +94,118 @@ function applyFeature(kernel, op) {
   throw new Error('unknown op_type ' + op.op_type);
 }
 
+// ── GEOM_ARRAY (prompts/BONSAI_ARRAY_PATTERN_SPEC.md) ───────────────────────────────────────────────
+// "N instances of a referenced feature, placed along a line/curve, each instance's parameters
+// optionally varying by a deterministic formula." NON-INVENT: positions are COMPUTED transform math
+// (no Math.random/Date.now); the formula evaluator below is a whitelisted recursive-descent parser,
+// never eval()/Function() — see W-BONSAI-ARRAY witness for the hand-calculated per-instance proof.
+
+// Whitelisted dot-path get/set into a plain op-parameters object (used to read/override the ONE
+// numeric field a formula drives, e.g. 'depth' or 'profile.w'). Illegal characters are rejected
+// outright — this is the ONLY way GEOM_ARRAY ever touches a parameter, no dynamic eval.
+function getPath(obj, path) {
+  if (!/^[a-zA-Z0-9_.]+$/.test(path || '')) throw new Error('GEOM_ARRAY paramPath: illegal characters');
+  return path.split('.').reduce((o, k) => (o && typeof o === 'object') ? o[k] : undefined, obj);
+}
+function setPath(obj, path, val) {
+  const parts = path.split('.'); let o = obj;
+  for (let k = 0; k < parts.length - 1; k++) { o = o[parts[k]]; if (o == null) throw new Error('GEOM_ARRAY paramPath: missing segment ' + parts[k]); }
+  o[parts[parts.length - 1]] = val;
+}
+
+// Deterministic, whitelisted formula evaluator: `+ - * /`, parens, unary minus, the instance index `i`,
+// the count `n`, and the parent's base value at paramPath `v0`. NEVER eval()/Function() — a small
+// recursive-descent parser only. Any character outside the whitelist is rejected before parsing starts.
+function evalFormula(expr, vars) {
+  const s = String(expr == null ? '' : expr);
+  if (!/^[0-9.+\-*/()\s a-zA-Z_]*$/.test(s)) throw new Error('GEOM_ARRAY formula: illegal character in expression');
+  let pos = 0;
+  const peek = () => s[pos];
+  const skip = () => { while (pos < s.length && /\s/.test(s[pos])) pos++; };
+  function parseExpr() {
+    skip(); let v = parseTerm();
+    for (; ;) {
+      skip(); const c = peek();
+      if (c === '+') { pos++; v += parseTerm(); }
+      else if (c === '-') { pos++; v -= parseTerm(); }
+      else break;
+    }
+    return v;
+  }
+  function parseTerm() {
+    skip(); let v = parseFactor();
+    for (; ;) {
+      skip(); const c = peek();
+      if (c === '*') { pos++; v *= parseFactor(); }
+      else if (c === '/') { pos++; v /= parseFactor(); }
+      else break;
+    }
+    return v;
+  }
+  function parseFactor() {
+    skip();
+    if (peek() === '-') { pos++; return -parseFactor(); }
+    if (peek() === '+') { pos++; return parseFactor(); }
+    if (peek() === '(') { pos++; const v = parseExpr(); skip(); if (peek() !== ')') throw new Error('GEOM_ARRAY formula: expected )'); pos++; return v; }
+    const numMatch = /^[0-9]*\.?[0-9]+/.exec(s.slice(pos));
+    if (numMatch) { pos += numMatch[0].length; return parseFloat(numMatch[0]); }
+    const idMatch = /^[a-zA-Z_][a-zA-Z0-9_]*/.exec(s.slice(pos));
+    if (idMatch) {
+      pos += idMatch[0].length;
+      if (!(idMatch[0] in vars)) throw new Error('GEOM_ARRAY formula: unknown identifier ' + idMatch[0]);
+      return vars[idMatch[0]];
+    }
+    throw new Error('GEOM_ARRAY formula: unexpected token at ' + pos);
+  }
+  const result = parseExpr();
+  skip();
+  if (pos !== s.length) throw new Error('GEOM_ARRAY formula: trailing input');
+  return result;
+}
+
+// Per-instance translate DELTA from the reference instance (i=0, always zero delta — the reference
+// stays exactly where the parent feature was authored). 'linear': along a (normalized) axis vector,
+// `spacing` apart. 'along_curve': evenly spaced by ARC LENGTH along a polyline (>=2 points) — reuses
+// plain linear interpolation per segment (the same "walk the polyline" idea GEOM_SWEEP's spine uses,
+// no new curve-sampling primitive invented).
+function arrayDeltas(P, count) {
+  const out = [];
+  if (P.mode === 'along_curve') {
+    const pts = P.curve;
+    if (!pts || pts.length < 2) throw new Error('GEOM_ARRAY along_curve needs >=2 curve points');
+    const seglen = []; let total = 0;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const d = Math.hypot(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1], pts[k + 1][2] - pts[k][2]);
+      seglen.push(d); total += d;
+    }
+    const at = (s) => {
+      let acc = 0;
+      for (let k = 0; k < seglen.length; k++) {
+        if (s <= acc + seglen[k] || k === seglen.length - 1) {
+          const t = seglen[k] > 0 ? (s - acc) / seglen[k] : 0;
+          const a = pts[k], b = pts[k + 1];
+          return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])];
+        }
+        acc += seglen[k];
+      }
+      return pts[pts.length - 1];
+    };
+    const p0 = pts[0];
+    for (let i = 0; i < count; i++) {
+      const s = count > 1 ? (i / (count - 1)) * total : 0;
+      const p = at(s);
+      out.push({ dx: p[0] - p0[0], dy: p[1] - p0[1], dz: p[2] - p0[2] });
+    }
+  } else {   // 'linear' (default)
+    const axis = P.axis || [1, 0, 0];
+    const al = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+    const ux = axis[0] / al, uy = axis[1] / al, uz = axis[2] / al;
+    const sp = P.spacing != null ? P.spacing : 1;
+    for (let i = 0; i < count; i++) out.push({ dx: ux * sp * i, dy: uy * sp * i, dz: uz * sp * i });
+  }
+  return out;
+}
+
 function meshOf(kernel, shape, featureId) {
   const m = kernel.tessellate(shape);
   const positions = Float32Array.from(m.positions);
@@ -199,6 +311,42 @@ function buildSolids(kernel, ops, seedBoxes) {
           out = kernel.generalTransform(pe.shape, M);  // gp_GTrsf supports non-uniform scale (input cached → NOT released)
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
+      }
+    } else if (op.op_type === 'GEOM_ARRAY') {          // N real independent solids from ONE signed op (W-BONSAI-ARRAY).
+      // Unlike GEOM_CUT/FILLET/MOVE/ROTATE (which mutate the parent's SINGLE solid in place), an array REPLACES
+      // the one referenced template with N clones — so the template's own map entry is deleted and N fresh
+      // entries (synthetic featureIds 'arr:<op.id>:<i>') take its place. Each instance is a REAL, independent
+      // B-rep solid (fresh occt handle via translate, never a shared/aliased reference — see cache note below),
+      // not an instanced-render trick: this project's own instanced-by-n vs real-solids doctrine (Spatial
+      // Dependency Graph work) is decided explicitly HERE because array elements are frequently cut/filleted
+      // individually downstream, which an instanced mesh cannot support.
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_ARRAY parent ' + op.parent + ' not found');
+      const parentOp = ops.find(o => o.id === op.parent);
+      if (!parentOp) throw new Error('GEOM_ARRAY parent op-row ' + op.parent + ' not found in chain');
+      const count = Math.max(1, P.count | 0);
+      const deltas = arrayDeltas(P, count);
+      const parentP = typeof parentOp.parameters === 'string' ? JSON.parse(parentOp.parameters) : parentOp.parameters;
+      const v0 = P.formula ? getPath(parentP, P.paramPath) : null;
+      if (P.formula && typeof v0 !== 'number') throw new Error('GEOM_ARRAY paramPath ' + P.paramPath + ' is not a numeric field');
+      solids.delete(op.parent);
+      for (let i = 0; i < count; i++) {
+        const ikey = key + ':a' + i;              // op_hash-derived → same free incremental-regen-cache discipline
+        const fid = 'arr:' + op.id + ':' + i;
+        if (shapeCache.has(ikey)) { _stats.hits++; solids.set(fid, { shape: shapeCache.get(ikey), hash: ikey }); continue; }
+        _stats.rebuilt++;
+        let base;
+        if (P.formula) {
+          const val = evalFormula(P.formula, { i, n: count, v0 });
+          if (typeof val !== 'number' || !isFinite(val)) throw new Error('GEOM_ARRAY formula produced a non-finite value at i=' + i);
+          const modP = JSON.parse(JSON.stringify(parentP)); setPath(modP, P.paramPath, val);
+          base = applyFeature(kernel, { op_type: parentOp.op_type, parameters: modP });   // fresh, independently-parameterized solid
+        } else {
+          base = pe.shape;                          // no per-instance variation → clone the template as-is
+        }
+        const d = deltas[i];
+        const out = kernel.translate(base, d.dx, d.dy, d.dz);   // ALWAYS a fresh occt handle (translate never mutates input)
+        if (P.formula) kernel.release(base);         // base was a one-off regen, not the cached template → free it
+        shapeCache.set(ikey, out); solids.set(fid, { shape: out, hash: ikey });
       }
     } else if (op.op_type === 'GEOM_ROTATE') {         // yaw a referenced solid about its bbox-centre Z (W-BONSAI-ROTATE-SOLID).
       // Mirror of GEOM_MOVE: rotate the parent's B-rep IN PLACE so a later GEOM_CUT on the rotated wall reads the

@@ -3035,6 +3035,12 @@ window.Bonsai.outliner.addCategory({ key: 'fillets', label: 'Fillets', match: op
 window.Bonsai.outliner.addCategory({ key: 'gridmoves', label: 'Grid Moves', match: op => op.op_type === 'GEOM_GRID_MOVE',
   node: op => ({ id: op.id, label: 'Move ' + op.parameters.gridId,
     sub: (op.parameters.delta > 0 ? '+' : '') + (+op.parameters.delta).toFixed(2) + ' ·' + (op.parameters.commands ? op.parameters.commands.length : 0) + ' recomp' }) });
+// Arrays category (prompts/BONSAI_ARRAY_PATTERN_SPEC.md Task 4): one row per signed GEOM_ARRAY op, the
+// instance count + mode shown inline in `sub` — same "count in the row" convention Grid Moves/Fillets
+// already use, rather than inventing a new expandable-tree mechanic for a single flat category.
+window.Bonsai.outliner.addCategory({ key: 'arrays', label: 'Arrays', match: op => op.op_type === 'GEOM_ARRAY',
+  node: op => ({ id: op.id, label: 'Array ⮡ ' + op.parameters.parent,
+    sub: (op.parameters.mode === 'along_curve' ? 'curve' : 'linear') + ' ·' + (op.parameters.count || 0) + ' inst' + (op.parameters.formula ? ' ·ƒ' : '') }) });
 // Components category: inserted library components (§OOTB Item 2 = assemble, don't draw). Registered via the seam.
 // §LOD400-STALL fix #4: match EXCLUDES raw-bbox (hash-less) inserts — the ARC-seed substrate (arc_editable.js,
 // no `params.hash`, a MEASURED bbox instead) is not a user-placed catalog component; it already has its own
