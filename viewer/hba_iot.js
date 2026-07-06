@@ -332,7 +332,7 @@
       var headroom = (max - min) * 0.15;
       var lo = min - headroom, hi = max + headroom;
       var device = deps_.IoT.DEVICES[s.key];
-      var title = 'Locate ' + s.label + ' (' + (device ? device.element : s.label) + ') in the model — click again for the nearest camera\'s POV';
+      var title = 'Locate ' + s.label + ' (' + (device ? device.element : s.label) + ') in the model — click again for the nearest camera\'s own POV';
       var b = renderSensorBar(s, lo, hi, title, function () {
         if (!device) return;
         if (!_sensorViewState[s.key]) {
@@ -340,8 +340,19 @@
           flashCamerasForDevice(s.key);
           _sensorViewState[s.key] = true;
         } else {
+          // §FIX 2026-07-06g (user: "clicking again is same as clicking on webcam image... exact POV... zooming
+          // to get the exact POV also" / "truly approaching the webcam and turning into its POV") — this MUST be
+          // the byte-identical shot a direct click on that camera's own CCTV tile produces: same function
+          // (flyToFacing, arrive at the camera + turn to its own declared facing), same standoff
+          // (CAMERA_ZOOM_DIST), same camera. Previously this called flyToPOV (a DIFFERENT function: stands at
+          // 0.15x the standoff — effectively AT the lens — and looks AT the device instead of along the
+          // camera's own facing) — two different shots for what the user asked to be one. flyToPOV is kept only
+          // as an honest fallback for the (should-never-happen-today) case of a covering camera with no
+          // declared `facing`.
           var cam = nearestCameraFor(A, s.key);
-          if (cam && G.HBALens && G.HBALens.flyToPOV) {
+          if (cam && cam.facing && G.HBALens && G.HBALens.flyToFacing) {
+            G.HBALens.flyToFacing(A, cam.bim_guid, cam.facing, { dist: CAMERA_ZOOM_DIST });
+          } else if (cam && G.HBALens && G.HBALens.flyToPOV) {
             G.HBALens.flyToPOV(A, cam.bim_guid, device.bim_guid, { dist: CAMERA_ZOOM_DIST });
           } else {
             locateAndHighlight(A, device.bim_guid);   // honest fallback — no camera exists anywhere near this device

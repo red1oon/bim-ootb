@@ -251,8 +251,18 @@ function dangerThresholdFor(sensor) {
   return Math.round((sensor.baseline + sensor.amplitude * DANGER_THRESHOLD_FACTOR) * 100) / 100;
 }
 var JITTER_TABLE = [0.6, -0.4, 0.9, -0.8, 0.3, -0.6, 0.7, -0.9, 0.2, -0.3, 0.5, -0.7];
+// §FIX 2026-07-06g (user: "fluctuate around normal values", confirmed by tracing the maths — no browser needed).
+// The OLD index `(hourIdx*3 + tickCounter) % 12` was a bug, not a cycle: hba_iot.js's setInterval increments
+// hourIdx and tickCounter by 1 together every tick, so the index only ever advances by (3+1)=4 mod 12 — a
+// period-3 orbit landing on JUST indices {0,4,8}, i.e. JITTER_TABLE values {0.6, 0.3, 0.2} — all POSITIVE.
+// The bar could only ever bump ABOVE the smooth curve, never below it, which is why it still read as one-sided/
+// linear-ish despite item C's per-sensor phase fix. Decoupling the index from hourIdx (tickCounter alone, which
+// really does advance by 1 every tick) walks the FULL 12-entry table in order, so both positive and negative
+// swings actually occur. A per-sensor fixed offset (same discipline as PHASE_OFFSET_HOURS) keeps the 7 bars
+// from all landing on the identical table entry at the same tick.
+var SENSOR_JITTER_OFFSET = { temp: 0, pressure: 2, sound: 5, dust: 7, solar: 9, electrical: 4, movement: 11 };
 function jitterFor(sensor, hourIdx, tickCounter) {
-  var idx = ((hourIdx || 0) * 3 + (tickCounter || 0)) % JITTER_TABLE.length;
+  var idx = ((tickCounter || 0) + (SENSOR_JITTER_OFFSET[sensor.key] || 0)) % JITTER_TABLE.length;
   return Math.round(JITTER_TABLE[idx] * sensor.amplitude * 0.12 * 100) / 100;
 }
 function isDanger(sensor, value) {
