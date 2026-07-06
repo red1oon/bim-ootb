@@ -976,6 +976,25 @@
       rowsEl.appendChild(row);
     });
   }
+  // §PANEL-ABSTRACTION (2026-07-06) — this drawer used to be entirely hand-rolled (own DOM, own ✕,
+  // no drag, no keyboard nav, a hardcoded position). It now rides the shared panel infrastructure:
+  //   · the ✕'s original bug (closing here left the hbaFM pill stuck highlighted) is fixed
+  //     STRUCTURALLY by common/pill_builder.js's MutationObserver auto-resync — no manual call here.
+  //   · draggable (A._makeDraggable) + Arrow-key row traversal (window.PanelNav, the same module the
+  //     Find panel already uses) + a no-overlap desktop slot (A._placePanel, replacing what would
+  //     otherwise become another hand-picked magic-number position) — all opt-in, defensive (`&&`-
+  //     guarded) since this file is additive/host-injected and must stay inert if any of them is
+  //     absent from a page that doesn't load the full viewer.
+  //   · this stays a plain floating overlay on mobile too (NOT re-parented into G.HbaPaneHost's
+  //     card-stack) — deliberately, matching the existing z-index treatment in this same file's
+  //     syncLauncher(), which already treats 'hba-fm-drawer'/'hba-presence-drawer' as PERSISTENT
+  //     LAUNCHER chips that float above/behind the stack, never as stack content themselves. Tried
+  //     folding it into the stack first; live-testing (viewer/tests/poc_hba_mobile_stack.js) showed
+  //     this conflates two different roles — the drawer is the PICKER a user reopens to add more
+  //     panes, so it can never legitimately reach "zero cards" alongside the content it's used to
+  //     open, and tapping/swiping through the deck would displace the very picker needed to browse
+  //     the rest. Panes = content cards; this drawer = a menu. Keeping them structurally separate
+  //     is the correct generalization, not a shortcut.
   function openFamilyDrawer(A) {
     if (typeof document === 'undefined') return null;
     var ex = document.getElementById('hba-fm-drawer'); if (ex) { ex.remove(); _closePresenceDrawer(); return null; }
@@ -991,7 +1010,8 @@
     var title = document.createElement('span'); title.textContent = 'Human-Asset'; title.style.cssText = 'font-weight:700;opacity:.85;';
     var closeBtn = document.createElement('button'); closeBtn.textContent = '✕'; closeBtn.title = 'Close'; closeBtn.setAttribute('data-role', 'close');
     closeBtn.style.cssText = 'background:transparent;border:0;color:#fff;opacity:.6;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;';
-    closeBtn.addEventListener('click', function () { d.remove(); _closePresenceDrawer(); });
+    function _closeDrawer() { d.remove(); _closePresenceDrawer(); }
+    closeBtn.addEventListener('click', _closeDrawer);
     hdr.appendChild(title); hdr.appendChild(closeBtn);
     d.appendChild(hdr);
 
@@ -1010,6 +1030,12 @@
     _renderRows(A, d, rows);
 
     document.body.appendChild(d);
+    if (A && A._makeDraggable) A._makeDraggable(d);
+    if (A && A._placePanel && !G._isMobile) A._placePanel(d, { top: d.getBoundingClientRect().top, right: 64 });
+    if (G.PanelNav) {
+      G.PanelNav({ panel: d, id: 'hba-fm-drawer', onClose: _closeDrawer,
+        zones: [{ id: 'rows', items: function () { return rows.querySelectorAll('button'); } }] });
+    }
     console.log('§HBA_FM drawer open — ' + availableLenses(A).filter(function (x) { return x.available; }).length + '/' + FAMILY.length + ' lenses available');
     return d;
   }
