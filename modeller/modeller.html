@@ -3121,6 +3121,14 @@ async function _discWalkOne(disc, ctx, opts) {
     try { await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(name || window.__dwName)); }
     catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return { refused: true, reason: 'rules not available', placed: 0 }; }
     await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
+    // §CAMPAIGN M1: lazy-load mep_rw.db's ad_mep_pattern table (SAME _rwReadyOnce the BOM-drop flow already
+    // uses) so DiscWalker.dwWalk's routeChains-0 → routePattern bridge (disc_walker.js) can pair ARC-derived
+    // anchors through routewalker.js's proven pattern engine instead of refusing for "not loaded yet". Gated
+    // on disc==='PLB' — the ONLY discipline routePattern's _RW_PATTERN_DISC map covers today (ad_mep_pattern
+    // has CW/SP rows only) — so ELEC/ACMV/FP/STR walks never pay this fetch+parse cost for a bridge they can't
+    // use (W-E2E-WALK's own timing gate caught the unconditional version adding latency to every discipline).
+    // Best-effort: a failed/slow fetch does NOT block the walk — routePattern's own guard refuses honestly.
+    if (disc === 'PLB') { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
     if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return { refused: true, reason: 'no building open', placed: 0 }; }
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
     var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '');

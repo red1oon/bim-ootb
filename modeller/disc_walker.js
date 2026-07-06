@@ -623,6 +623,133 @@
     return { segs: segs, byRule: byRule };
   }
 
+  // ── PATTERN-TOPOLOGY BRIDGE (RESUME_MODELLER_WALK_SUBSTRATE.md §CAMPAIGN M1, REDIRECTED 2026-07-07: bridge
+  // ARC-derived anchors into routewalker.js's ALREADY-PROVEN ad_mep_pattern engine — do not reinvent a second,
+  // less-tested generation mechanism here) ──────────────────────────────────────────────────────────────────
+  // routewalker.js's _rwApplyPattern/_rwPairSegments is a faithful JS port of RouteWalker.java (same node-type
+  // mapping, same nearest-unmatched-anchor pairing, same GRADIENT slope rule, same ARC-clash skip — the engine
+  // DAGCompiler's RouteWalkerTest.java exercises 7/7 against HospitalAuckland, PR #450/#456). It is normally
+  // anchor-DEPENDENT: it reads PRE-MINED ad_mep_anchor rows keyed to one of 3 hardcoded building names via
+  // mep_rw.db (the "drop a BOM assembly" flow, modeller.html autoRouteMEP). This bridges the SAME pairing engine
+  // to an ARBITRARY opened ARC-only building by deriving the anchor roles LIVE, mirroring defaultSeed()'s own
+  // technique (a real element, heuristically picked, human-confirmable):
+  //   METER   = the service-entry door (defaultSeed, IfcDoor)            — CW's mains connection point.
+  //   STACK   = the nearest real stair/riser core (defaultSeed, IfcStair) — SP's vertical drain-stack point
+  //             (ad_mep_anchor's schema has no separate STACK anchor_type — a METER-typed anchor becomes a
+  //             STACK NODE only when the pattern discipline is SP; _rwToNodeType's own mapping, unchanged here).
+  //   FIXTURE = this discipline's OWN measured density-placed fixtures (place()) — already non-invented.
+  //   JUNCTION= real corridor WAYPOINTS, sampled off SeedTrunk.planTrunk's already-proven, wall-avoiding
+  //             Dijkstra backbone (reuses seed_trunk's corridor derivation for WAYPOINT POSITIONS ONLY — the
+  //             actual pairing/gradient/clash DECISION is routewalker's own _rwPairSegments, untouched).
+  // SCOPE, MEASURED not assumed: `ad_mep_pattern` carries rows for exactly two disciplines, 'CW' (pressurised
+  // cold-water supply) and 'SP' (gravity soil/waste drain) — both PLUMBING sub-networks (routewalker.js's own
+  // RW_DISC_TO_COORD: CW/SP→DWATER/DRAIN, same table PLB→DWATER). So this bridges disc_walker's 'PLB' discipline
+  // to a CW pass + an SP pass. ELEC/ACMV/FP have ZERO ad_mep_pattern rows (checked directly against ERP.db) —
+  // they honestly REFUSE via this bridge (no pattern to walk), which is the correct refuse-beats-fabricate
+  // answer, not a bug: covering them would need someone to MINE+author their own pattern rows first (a data
+  // task), not a code generalization this bridge can manufacture. NON-INVENT: every anchor is a real element
+  // position (door/stair/measured-generated-fixture) or a real wall-avoiding corridor waypoint; the pairing/
+  // gradient/clash logic is routewalker.js's own proven code, called, never re-implemented.
+  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'] };                 // disc_walker disc -> routewalker pattern discipline(s)
+  // real IfcStair columns, deduped by XY (mirrors modeller.html's own _seedRisers) — the riser/STACK candidates
+  // SeedTrunk climbs and this bridge treats as the SP discipline's STACK proxy.
+  function _risers(bdb) {
+    var r = _rows(bdb, "SELECT m.guid g, t.center_x x, t.center_y y FROM elements_meta m JOIN element_transforms t " +
+      "ON m.guid=t.guid WHERE m.ifc_class LIKE '%Stair%'");
+    var out = [];
+    r.forEach(function (s) { if (!out.some(function (o) { return Math.hypot(o.x - s.x, o.y - s.y) < 0.5; })) out.push(s); });
+    return out;
+  }
+  // Sample SeedTrunk's corridor backbone every `step` metres into JUNCTION-role waypoint anchors. Pure position
+  // derivation — no pairing decision made here (that is entirely _rwPairSegments' job on the anchors we hand it).
+  function _corridorJunctions(bdb, seed, placements, sub, opts) {
+    var ST = (opts && opts.SeedTrunk) || ROOT.SeedTrunk;
+    if (!ST) return [];
+    var risers = _risers(bdb);
+    var net = ST.planTrunk(bdb, placements, seed, risers, { storeys: sub, groundStorey: seed.storey });
+    if (net.refused === true) return [];
+    var STEP = (opts && opts.junctionStep > 0) ? opts.junctionStep : 3, out = [], seen = {}, n = 0;
+    net.storeys.forEach(function (st) {
+      (st.edges || []).forEach(function (poly) {
+        var acc = 0;
+        for (var i = 1; i < poly.length; i++) {
+          var a = poly[i - 1], b = poly[i];
+          acc += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]) + (b[2] - a[2]) * (b[2] - a[2]));
+          if (acc >= STEP) {
+            var k = b[0].toFixed(2) + ',' + b[1].toFixed(2) + ',' + b[2].toFixed(2);
+            if (!seen[k]) { seen[k] = 1; out.push({ anchorId: 'JN' + (n++), anchorType: 'GENERIC', x: b[0], y: b[1], z: b[2], storey: st.name }); }
+            acc = 0;
+          }
+        }
+      });
+    });
+    return out;
+  }
+  function routePattern(disc, bdb, opts) {
+    opts = opts || {};
+    var loadSteps = opts.loadPatternSteps || ROOT._rwLoadPatternSteps;
+    var pair = opts.pairSegments || ROOT._rwPairSegments;
+    var loadArc = opts.loadArcEnvelope || ROOT._rwLoadArcEnvelope;
+    if (typeof loadSteps !== 'function' || typeof pair !== 'function') {
+      return { segs: [], refused: true, reason: 'routewalker.js pattern engine not loaded' };
+    }
+    // routewalker.js's _rwLoadPatternSteps reads its OWN module-scope _rwDb (populated only after rwInit(SQL,
+    // baseUrl) resolves, today only awaited by the BOM-drop flow's _rwReadyOnce()). Rather than reach into that
+    // async init from here (this function stays sync, like routeChains/place — no new async surface on the
+    // live walk path), honestly refuse when it hasn't run yet; the caller wires rwInit() before Walk (see
+    // RESUME_MODELLER_WALK_SUBSTRATE.md M1 follow-on note) or passes opts.loadPatternSteps/opts.pairSegments
+    // directly (a witness's own explicit rwInit, as this file's tests do).
+    if (!opts.loadPatternSteps && !(opts.rwReady != null ? opts.rwReady : ROOT._rwReady)) {
+      return { segs: [], refused: true, reason: 'routewalker.js mep_rw.db pattern table not loaded (call rwInit first)' };
+    }
+    var rwDiscs = (opts.rwPatternDisc || _RW_PATTERN_DISC)[disc];
+    if (!rwDiscs) return { segs: [], refused: true, reason: 'no ad_mep_pattern coverage for ' + disc + ' (CW/SP only, PLB-mapped)' };
+    var sub = opts.storeys || substrate(bdb);
+    if (!sub.length) return { segs: [], refused: true, reason: 'no habitable storeys' };
+    var placements = opts.placements || place(disc, sub, bdb);
+    if (!placements.length) return { segs: [], refused: true, reason: 'no measured placement rule for ' + disc };
+    var seed = (opts.seed && opts.seed.guid) ? opts.seed : defaultSeed(bdb, {});
+    if (seed.refused) return { segs: [], refused: true, reason: seed.reason };
+    var riser = defaultSeed(bdb, { classes: ['IfcStair'] });    // STACK proxy; refusal here is honest (e.g. single-storey)
+    var junctions = _corridorJunctions(bdb, seed, placements, sub, opts);
+    var fixtureAnchors = placements.map(function (p, i) {
+      return { anchorId: 'FX' + i, anchorType: 'FIXTURE', x: p.x, y: p.y, z: p.z, storey: p.storey };
+    });
+    var arcEnv = opts.arcEnvelope || (typeof loadArc === 'function' ? loadArc(bdb) : []);
+    var segs = [], byRule = [];
+    rwDiscs.forEach(function (rwd) {
+      // Defensive boundary: routewalker.js's rwInit has a KNOWN latent bug (found this pass, not fixed here —
+      // out of scope, a separate file with its own witness suite) — it sets its readiness flag TRUE before
+      // confirming mep_rw.db actually parsed (a failed/404 fetch can leave _rwReady=true over a garbage DB
+      // handle); the first real query against it then throws deep inside loadSteps/pair. That must never crash
+      // the WHOLE walk (refuse-beats-fabricate applies to engine failures too, not just missing data) — so this
+      // pass is try/catched into an honest per-rwd skip, exactly like assemble()'s own try/catch in modeller.html.
+      try {
+        var steps = loadSteps(rwd, opts.buildingType || 'GENERIC');
+        if (!steps.length) { byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: 0, noNbr: 0, skipped: 'no-pattern-steps' }); return; }
+        // METER role: the door-seed feeds CW's mains entry; the stair-riser feeds SP's STACK (via _rwToNodeType's
+        // own METER->STACK mapping for discipline='SP') — kept SEPARATE per pass so a stair is never mistaken for
+        // a cold-water main and a door is never mistaken for a drain stack.
+        var meterAnchor = (rwd === 'SP')
+          ? (riser.refused ? null : { anchorId: 'STK0', anchorType: 'METER', x: riser.x, y: riser.y, z: riser.z, storey: riser.storey })
+          : { anchorId: 'MTR0', anchorType: 'METER', x: seed.x, y: seed.y, z: seed.z, storey: seed.storey };
+        if (!meterAnchor) { byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: 0, noNbr: 0, skipped: 'no-stack-riser' }); return; }
+        var anchors = fixtureAnchors.concat(junctions, [meterAnchor]);
+        var out = [];
+        pair(rwd, steps, anchors, arcEnv, out);
+        out.forEach(function (s) {
+          segs.push({ disc: disc, rule: 'pattern:' + rwd, from_kind: 'RW_' + rwd, to_kind: 'RW_' + rwd,
+            from: s.from, to: s.to, storey: s.storey, mode: 'pattern-bridge', axis: s.axis });
+        });
+        byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: out.length, noNbr: 0, steps: steps.length, anchors: anchors.length });
+      } catch (e) {
+        byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: 0, noNbr: 0, skipped: 'engine-error: ' + (e && e.message) });
+      }
+    });
+    return { segs: segs, refused: false, seed: seed, riser: riser.refused ? null : riser, byRule: byRule,
+      anchorCounts: { fixture: fixtureAnchors.length, junction: junctions.length } };
+  }
+
   // ── ROUTE → ASSEMBLE bridge (docs/WalkerDoctrine.md roadmap #3) ──────────────────────────────────
   // routeChains gives the real nn-NETWORK (segments between real extracted element guids). assemble() turns that
   // network into instantiated catalog PARTS: at each routed NODE (a real element endpoint), instantiate the matching
@@ -979,11 +1106,22 @@
     }
     var chains = route(disc, bdb);
     var rc = routeChains(disc, bdb);                         // LIVE nn-chain geometry (real on MEP-rich bldgs, 0 on residents)
+    // §CAMPAIGN M1 bridge: routeChains legitimately returns 0 on an ARC-only building (no real MEP elements
+    // exist to nn-pair — that is the whole reason the discipline needs GENERATING). When it does, try the
+    // ARC-derived-anchors → routewalker.js pattern-topology bridge (routePattern, PLB-only per its own measured
+    // ad_mep_pattern coverage) before falling back to an honest 0. opts.noPattern=true restores the old
+    // byte-identical behaviour (used by generalization/regression checks that want routeChains in isolation).
+    var patternInfo = null;
+    if (!rc.segs.length && !(opts && opts.noPattern)) {
+      var pat = routePattern(disc, bdb, { placements: placements, buildingType: buildingName });
+      if (!pat.refused && pat.segs.length) { rc = { segs: pat.segs, byRule: pat.byRule }; patternInfo = pat; }
+      else if (pat.refused) console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + pat.reason);
+    }
     console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
     return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo,
-      chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length };
+      chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length, patternBridge: patternInfo };
   }
 
   // ── SEED PICKER (human-in-the-loop service entry; W-SEED-TRUNK / W-SEED-DEFAULT) ──────────────────
@@ -1034,7 +1172,7 @@
   }
 
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind,
-    route: route, routeChains: routeChains, gate: gate, repRules: repRules, order: order, clearance: clearance,
+    route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
