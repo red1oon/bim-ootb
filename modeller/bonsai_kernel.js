@@ -32,7 +32,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=6', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET)
+      const url = new URL('bonsai_kernel_worker.js?v=7', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET) · v7: Tier 1 shoulders GEOM_REVOLVE/SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT + listFaces
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};
@@ -118,6 +118,20 @@
       });
     },
 
+    // §FACE-PICK (Tier 1 GEOM_SHELL/GEOM_DRAFT): ask the worker for the face midpoints of a parent feature's
+    // solid (canonical getSubShapes('face') order). Mirrors queryEdges() exactly — the picked indices ride a
+    // GEOM_SHELL (facesToRemove) or GEOM_DRAFT (the one pulled face) op.
+    queryFaces(parentId) {
+      const w = this.init();
+      if (!w) return Promise.reject(new Error('bonsai unsupported'));
+      const ops = (window.Bonsai.oplog && window.Bonsai.oplog._geomOps) ? window.Bonsai.oplog._geomOps() : [];
+      const id = ++this._seq;
+      return new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        w.postMessage({ id, listFaces: { ops, parentId } });
+      });
+    },
+
     // Fold a whole op-log CHAIN -> array of mesh payloads (the feature tree, evaluated in one pass).
     // seedBoxes (optional): {featureId: {c1,c2}} pre-seeds B-rep boxes for box-like inserts that are cut/fillet
     // targets (§CUT-ON-ARC) so the worker can subtract a void from a baked ARC wall.
@@ -187,8 +201,13 @@
       // box (seedBoxes) and rendered by the worker (with the void subtracted) — NOT host-side (else the uncut baked
       // mesh would paint over the cut). Rotated/non-box inserts return null from _insertCutBox → stay host-side
       // (the cut handler refuses them up front, so no dead op reaches here).
+      // Tier 1 (§GAP-TO-COMPETITIVE): GEOM_SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT are ALSO
+      // parent-mutating ops on a worker B-rep solid (same class as GEOM_CUT/GEOM_FILLET) — an ARC-seeded
+      // box-like insert must be promoted for these too, or shelling/drafting a seeded box would throw
+      // "parent not found" exactly like an un-promoted cut did before §CUT-ON-ARC.
+      const PARENT_MUTATING = new Set(['GEOM_CUT', 'GEOM_FILLET', 'GEOM_SHELL', 'GEOM_OFFSET', 'GEOM_FILLET_VARIABLE', 'GEOM_CHAMFER_DIST_ANGLE', 'GEOM_DRAFT']);
       const cutFilletParents = new Set();
-      for (const o of ops) { if (o.op_type === 'GEOM_CUT' || o.op_type === 'GEOM_FILLET') { const P = typeof o.parameters === 'string' ? JSON.parse(o.parameters) : o.parameters; if (P && P.parent != null) cutFilletParents.add(P.parent); } }
+      for (const o of ops) { if (PARENT_MUTATING.has(o.op_type)) { const P = typeof o.parameters === 'string' ? JSON.parse(o.parameters) : o.parameters; if (P && P.parent != null) cutFilletParents.add(P.parent); } }
       const seedBoxes = {}; const promoted = new Set();
       for (const o of ops) {
         if (o.op_type !== 'GEOM_INSERT' || !cutFilletParents.has(o.id)) continue;
