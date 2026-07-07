@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v741';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v742';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -93,6 +93,7 @@ const PRECACHE_ASSETS = [
   'variation_order.js',
   'import.js',
   'mep_coordination.js',
+  'real_placement_resolver.js',
   'routewalker.js',
   // NOTE: the Modeller app (modeller.html + disc_walker/str_walker*/walker_confidence/cross_edges/
   // bonsai_*) moved to /modeller/ with its own sw — see the trilogy refactor. Not precached here.
