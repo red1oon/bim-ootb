@@ -862,7 +862,7 @@ function exitSketch(committed) {
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
 bSketch.onclick = () => sketching ? exitSketch() : enterSketch();
-canvas.addEventListener('pointerdown', (e) => {
+canvas.addEventListener('pointerdown', async (e) => {   // async: the circle branch may run a tangent_lc solve; all other branches stay fully synchronous (no await before them)
   if (!sketching || e.button !== 0 || e.shiftKey) return;   // shift-drag still orbits
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -873,12 +873,18 @@ canvas.addEventListener('pointerdown', (e) => {
     const s = window.Bonsai.grid.snap(hit.x, hit.y);
     // Circle mode (W-E2E-SKETCH-CIRCLE): standard CAD convention — first click sets the CENTER, second
     // click sets the radius (distance centre→click); a typed #dim-radius also commits the pending centre.
+    // Tangent snap (W-E2E-SKETCH-TANGENT): if the raw radius lands within WELD_TOL of the perpendicular
+    // distance to the nearest ACTIVE gridline, a real planegcs tangent_lc solve pins the circle exactly
+    // tangent to it (centre fixed, radius solved) — same proximity-snap philosophy as the point weld.
     if (window.Bonsai.sketch.mode === 'circle') {
-      const res = window.Bonsai.sketch.addCirclePoint(s.x, s.y);
+      const res = await window.Bonsai.sketch.addCirclePointTangent(s.x, s.y);
       sketchMarkers();
+      if (!res) { setStat('sketch: rim point must be OFF the centre — click a point away from it'); return; }
       setStat(res.state === 'center'
         ? 'sketch: circle centre @ (' + res.cx.toFixed(2) + ',' + res.cy.toFixed(2) + ') — click a rim point or type the radius'
-        : 'sketch: circle r=' + res.circle.r.toFixed(2) + 'm — Extrude for a cylinder');
+        : 'sketch: circle r=' + res.circle.r.toFixed(2) + 'm' + (res.circle.tangentTo
+            ? ' ◦ tangent to grid ' + (res.circle.tangentTo.axis === 'x' ? 'x=' : 'y=') + res.circle.tangentTo.value.toFixed(2)
+            : '') + ' — Extrude for a cylinder');
       if (res.state === 'committed') audioCue('tick');
       sketchDimsRefresh();
       return;
