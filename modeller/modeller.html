@@ -3763,7 +3763,10 @@ async function _commitDiscFittings(disc, fittings) {
   var color = DW_COLOR[disc] || 0xc0c0c0;
   var ops = fittings.map(function (f) {
     return { op_type: 'GEOM_INSERT', params: { hash: f.hash, placement: f.placement, lod: '200', color: color,
-      _dw: { disc: disc, fit: f.kind, network: f.network, n: f.n } } };
+      // landed/prov: M6 mini-BOM RosettaStone lookup provenance (WalkerDoctrine.md §7) — true when this
+      // fitting's rotation was REPLAYED from a real extracted mep_rosettastone_miniset.db fragment, false when
+      // no real match existed and it fell back to fittingOrientation's bisector (flagged low-confidence).
+      _dw: { disc: disc, fit: f.kind, network: f.network, n: f.n, landed: !!f.landed, prov: f.prov } } };
   });
   var committed = 0, ids = [];
   try { var res = await O.commitSeedGroup(ops, 'dwfit-' + disc + '-' + O.length); ids = res.ids || []; committed = ids.length; }

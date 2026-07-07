@@ -938,6 +938,70 @@
     var q = _quatFromTo(FIT_REF, bis), e = _quatToEulerXYZ(q);
     return { bisector: bis, horizontal: false, rot: 0, rotX: e[0], rotZRad: e[1], rotY: -e[2] };
   }
+  // ── M6: REAL mini-BOM RosettaStone lookup, checked BEFORE fittingOrientation's bisector (WalkerDoctrine.md
+  // §7 / prompts/Modeller/DISC_Walker/DISC_ROSETTASTONE_MEP_MINISET.md Task 4) ─────────────────────────────
+  // fittingOrientation's bisector trig (above) is PROVEN WRONG on real data: on a real tee it predicts ~-45°
+  // vs the real ~135°-off π/2 axis-aligned turn; on a real reducer/transition (coaxial — path direction does
+  // NOT change) it predicts ZERO rotation vs the real compound (−π/2, π/2, 0) turn that re-orients the
+  // piece's own authored local mesh axes — something no path-vector bisector can see at all. Full numbers +
+  // GUIDs: prompts/Modeller/DISC_Walker/mep_rosettastone_miniset.db (`mep_run_piece` id=3 tee, id=4
+  // transition), extracted from a REAL SJTII_Terminal fire-suppression sprinkler branch. Per §4/§7's
+  // LANDED/GENERATED distinction: when a real mini-BOM fragment matches the discovered joint's topology
+  // shape, REPLAY its extracted rotation (LANDED) instead of computing one; only fall back to bisector
+  // (flagged low-confidence, never presented as equally solid) when genuinely no real match exists.
+  //
+  // HONESTY (per spec, not oversold): this reference set is EXACTLY these 2 real pieces from ONE real run —
+  // not a fitting library. `kind` here is a TOPOLOGY tag, not bendFinder's own `j.kind` ('ELBOW'/'TEE') —
+  // 'TEE' matches bendFinder's 3-way TEE 1:1. 'COAXIAL' (the transition/reducer — 2-way, NO directional
+  // turn) does NOT match bendFinder's 'ELBOW' (bendFinder's own doc above: N=2 antiparallel outward vectors
+  // -> STRAIGHT, no fitting emitted at all — see BEND_STRAIGHT_DOT). This is a REAL, DISCLOSED gap: a
+  // diameter-changing-but-direction-preserving fitting is invisible to bendFinder's direction-vector-only
+  // detection (segs carry no diameter/bbox at all — rwRouteSegments()'s `{disc,rule,from_kind,to_kind,
+  // from,to,storey,mode,axis}` shape has nothing to detect it from), so the COAXIAL entry is NOT reachable
+  // through the live bendFittings()->bendFinder() path today — extending bendFinder's DETECTION to notice a
+  // diameter-only change is a bigger, separate change (threading real diameter data from IFC extraction
+  // through rwRouteSegments) and is OUT OF SCOPE here (this task wires the ROTATION lookup for bends already
+  // discovered, not new detection). It is kept here, real and directly callable (`lookupRealFitting('COAXIAL',
+  // 2, ...)`, proven in witness_mep_rosettastone_lookup.js), documented rather than silently dropped, so a
+  // future bendFinder extension has a real value to replay instead of re-deriving one.
+  //
+  // Field mapping (replay, not invented trig): bonsai_library.js's OWN existing 3-axis placement contract
+  // (place()/foldInsert, bonsai_library.js:78/110) reconstructs `new THREE.Euler(pl.rotX, pl.rotZRad,
+  // -pl.rotY, 'XYZ')` for ANY placement carrying rotX/rotY — the SAME contract fittingOrientation's own
+  // non-horizontal branch already targets (`rotX: e[0], rotZRad: e[1], rotY: -e[2]`, e = XYZ-Euler decomp).
+  // The real extracted `rotation_x/rotation_y/rotation_z` (mep_run_piece, itself an XYZ-order Euler triple of
+  // the real world rotation) is replayed into that SAME existing contract: rotX=rotation_x, rotZRad=
+  // rotation_y, rotY=-rotation_z. No new trigonometry — only this existing field-order mapping. (The TEE case
+  // is single-axis (rotation_y=rotation_z=0) so this mapping is UNAMBIGUOUSLY correct regardless of Euler
+  // order; the transition's compound case relies on this file's own already-established XYZ convention.)
+  var MEP_REAL_FITTINGS = [
+    {
+      key: 'TEE_THREADED_FP', kind: 'TEE', n: 3,
+      diaMin: 0.0278, diaMax: 0.2855,                    // real 1,035-row family envelope (component_library.db)
+      rotation_x: 1.5707963267949, rotation_y: 0, rotation_z: 0,
+      source_guid: 'T0_Terminal_1c33yVIIL358EhW_$Ep9bA',
+      source: 'mep_rosettastone_miniset.db mep_run_piece id=3 (SJTII_Terminal, real threaded tee)'
+    },
+    {
+      key: 'TRANSITION_REDUCER_FP', kind: 'COAXIAL', n: 2,
+      diaMin: 0.0056, diaMax: 0.1132,                    // real 911-row HORIZONTAL-family envelope
+      rotation_x: -1.5707963267949, rotation_y: 1.5707963267949, rotation_z: 0,
+      source_guid: 'T0_Terminal_1c33yVIIL358EhW_$Ep9bx',
+      source: 'mep_rosettastone_miniset.db mep_run_piece id=4 (SJTII_Terminal, real coaxial transition/reducer)'
+    }
+  ];
+  // lookupRealFitting(topoKind, n, diameterHint) -> the matching real reference row, or null (honest no-match).
+  // Match = topoKind + n exact (never cross ELBOW<->COAXIAL, a real physical difference — see comment above).
+  // diameterHint narrows only when >1 candidate ties on topoKind+n; today there is exactly one of each, so a
+  // caller with no diameter data (production segs carry none) still gets a real, unambiguous match — this is
+  // the "generous enough to be useful" match the spec calls for, not diameter-strict.
+  function lookupRealFitting(topoKind, n, diameterHint) {
+    var cands = MEP_REAL_FITTINGS.filter(function (f) { return f.kind === topoKind && f.n === n; });
+    if (!cands.length) return null;
+    if (cands.length === 1 || diameterHint == null) return cands[0];
+    var narrowed = cands.filter(function (f) { return diameterHint >= f.diaMin && diameterHint <= f.diaMax; });
+    return narrowed.length ? narrowed[0] : cands[0];
+  }
   // Elbow (2-way) / Tee (3-way) -> the real catalog hashes (viewer/dagevu_catalog.json), verified present.
   // ASMONLY DECISION (M5 SPEC item 2, disclosed not silently bypassed): grepped every consumer of the catalog's
   // `asmOnly` field across modeller/*.js + modeller/*.html + viewer/*.js — it is set once (bonsai_library.js:38,
@@ -958,21 +1022,36 @@
   // GEOM_INSERT ({hash, placement:{x,y,z,rot[,rotX,rotY,rotZRad]}}) — no new placement path, per M5 SPEC item 2.
   function bendFittings(disc, segs, opts) {
     opts = opts || {};
-    var joints = bendFinder(segs, opts), out = [], refused = 0;
+    var joints = bendFinder(segs, opts), out = [], refused = 0, landedN = 0, computedN = 0;
     joints.forEach(function (j) {
       var hash = _fittingHash(j.kind);
       if (!hash) { refused++; return; }
-      var orient = fittingOrientation(j.vectors);
-      if (orient.degenerate) { refused++; return; }
-      var pl = { x: j.anchor[0], y: j.anchor[1], z: j.anchor[2], rot: orient.rot };
-      if (!orient.horizontal) { pl.rotX = orient.rotX; pl.rotY = orient.rotY; pl.rotZRad = orient.rotZRad; }
+      // M6: real mini-BOM RosettaStone lookup FIRST — replay an extracted rotation (LANDED) when a real
+      // fragment matches this joint's topology shape; only compute a bisector (flagged low-confidence) when
+      // genuinely no real match exists (docs/internal/WalkerDoctrine.md §7's LANDED/GENERATED distinction).
+      var real = lookupRealFitting(j.kind, j.n, opts.diameterHint);
+      var pl, landed, bisector, horizontal;
+      if (real) {
+        pl = { x: j.anchor[0], y: j.anchor[1], z: j.anchor[2], rot: 0,
+          rotX: real.rotation_x, rotZRad: real.rotation_y, rotY: -real.rotation_z };
+        landed = true; landedN++;
+      } else {
+        var orient = fittingOrientation(j.vectors);
+        if (orient.degenerate) { refused++; return; }
+        pl = { x: j.anchor[0], y: j.anchor[1], z: j.anchor[2], rot: orient.rot };
+        if (!orient.horizontal) { pl.rotX = orient.rotX; pl.rotY = orient.rotY; pl.rotZRad = orient.rotZRad; }
+        landed = false; computedN++; bisector = orient.bisector; horizontal = !!orient.horizontal;
+      }
       out.push({ disc: disc, network: j.network, kind: j.kind, hash: hash, anchor: j.anchor,
-        placement: pl, n: j.n, bisector: orient.bisector, horizontal: !!orient.horizontal });
+        placement: pl, n: j.n, bisector: bisector, horizontal: horizontal,
+        landed: landed, prov: landed ? 'landed:mep-rosettastone' : 'computed:bisector-lowconfidence',
+        realMatch: landed ? real.key : null, realSourceGuid: landed ? real.source_guid : null });
     });
     console.log(TAG + ' §BEND disc=' + disc + ' joints=' + joints.length +
       ' elbow=' + out.filter(function (o) { return o.kind === 'ELBOW'; }).length +
       ' tee=' + out.filter(function (o) { return o.kind === 'TEE'; }).length +
       ' refused=' + refused + (joints.length ? ' (' + joints.map(function(j){return j.kind + ':' + j.n;}).join(' ') + ')' : ''));
+    console.log(TAG + ' §MEP-RS disc=' + disc + ' landed=' + landedN + ' computed(bisector-lowconfidence)=' + computedN);
     return out;
   }
 
@@ -1402,6 +1481,7 @@
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,
+    lookupRealFitting: lookupRealFitting, MEP_REAL_FITTINGS: MEP_REAL_FITTINGS,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
