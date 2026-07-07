@@ -120,6 +120,27 @@
         } catch (e) { resolve(false); }
       });
     },
+    // §AUTOSAVE_FIX companion — clear()'s IndexedDB counterpart to localStorage.removeItem (Witness:
+    // W-E2E-OPLOG-CLEAR-IDB). Same defensive shape as _idbGet/_idbPut above: try/catch around indexedDB.open,
+    // every error path resolve(false), never throw. A missing store means nothing to delete → resolve(false).
+    _idbDelete(key) {
+      return new Promise((resolve) => {
+        try {
+          const rq = indexedDB.open('bim_ootb_cache');
+          rq.onsuccess = () => {
+            const idb = rq.result;
+            if (!idb.objectStoreNames.contains('oplog_fallback')) { resolve(false); return; }
+            try {
+              const tx = idb.transaction('oplog_fallback', 'readwrite');
+              tx.objectStore('oplog_fallback').delete(key);
+              tx.oncomplete = () => resolve(true);
+              tx.onerror = () => resolve(false);
+            } catch (e) { resolve(false); }
+          };
+          rq.onerror = () => resolve(false);
+        } catch (e) { resolve(false); }
+      });
+    },
     // Restore precedence: localStorage first (the common case, zero async cost); if empty, check the IDB
     // fallback (a prior save that overflowed localStorage). If BOTH exist (localStorage held an older,
     // pre-overflow save; IDB holds a later fallback save, or vice versa on a since-cleared localStorage),
@@ -243,7 +264,13 @@
     // clearing it in _foldUpto() alone (the originally drafted fix) would MISS the LEAF-commit path (bonsai_
     // oplog.js commit(): LEAF ops skip _foldUpto and append optimistically, but still _emit()).
     _emit() { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
-    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
+    // clear() empties BOTH persisted copies of this._KEY — localStorage AND the §AUTOSAVE_FIX IndexedDB fallback
+    // (the _loadBytesEither precedence comment above PROMISES "clear() ... empties both keys together"; before this
+    // fix only localStorage was removed, so a Terminal-scale model whose autosave had overflowed into IDB silently
+    // RESURRECTED from the stale IDB entry on the next open of the same key). The IDB purge is fire-and-forget —
+    // same style as _save()'s _idbPut — because no clear() call site awaits it; the synchronous localStorage
+    // removal + in-memory reset semantics stay exactly as before. Witness: W-E2E-OPLOG-CLEAR-IDB.
+    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } this._idbDelete(this._KEY); if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
 
     // Read the live GEOM ops out of the signed log, mapped to fold-op shape (parent rides in parameters).
     // §OUTLINER-STALL: memoized on db-object identity (auto-invalidates on setModelKey/reload/clear, which all
