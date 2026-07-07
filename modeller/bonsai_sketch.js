@@ -10,12 +10,16 @@
 
   const Sketch = {
     points: [],          // [{ id, x, y }] in sketch-plane (XY) coords, in click order
+    dims: {},            // { 0: number, 1: number } — user-pinned edge lengths (rect/square mode only,
+                          // edges 0/1 are the two independent dimensions; ∥/eq constraints carry 2→0, 3→1)
     _gcs: null,
     AXIS_TOL: 0.35,      // |dy| < AXIS_TOL*|dx| ⇒ treat edge as horizontal (and vice-versa)
     mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides)
     MODES: ['axis', 'rect', 'square'],
     setMode(m) { if (this.MODES.includes(m)) this.mode = m; return this.mode; },
     cycleMode() { this.mode = this.MODES[(this.MODES.indexOf(this.mode) + 1) % this.MODES.length]; return this.mode; },
+    setDimension(i, value) { this.dims[i] = +value; },
+    clearDims() { this.dims = {}; },
 
     async _ensure() {
       if (!this._gcs) {
@@ -26,7 +30,7 @@
       return this._gcs;
     },
 
-    reset() { this.points = []; },
+    reset() { this.points = []; this.dims = {}; },
     addPoint(x, y) { this.points.push({ id: 'p' + this.points.length, x: +x, y: +y }); return this.points.length; },
 
     // Classify each ring edge as horizontal / vertical from the clicked deltas, so the solver snaps
@@ -58,6 +62,16 @@
         { id: 'perp01', type: 'perpendicular_ll', l1_id: 'L0', l2_id: 'L1' } // one right angle ⇒ all four (with the ∥ pair)
       ];
       if (this.mode === 'square') cons.push({ id: 'eq01', type: 'equal_length', l1_id: 'L0', l2_id: 'L1' });
+      // Explicit dimension pins — the real "drag/type one dimension, everything else updates" primitive
+      // (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2, p2p_distance). Only edges 0/1 are independent
+      // here: edge 2 follows edge 0 via par02, edge 3 follows edge 1 via par13 (and in 'square' mode eq01
+      // ties edge 1 to edge 0 too, so pinning either pins both).
+      for (const i of [0, 1]) {
+        if (this.dims[i] != null) {
+          const a = this.points[i], b = this.points[(i + 1) % n];
+          cons.push({ id: 'dim' + i, type: 'p2p_distance', p1_id: a.id, p2_id: b.id, distance: this.dims[i] });
+        }
+      }
       return { lines, constraints: cons };
     },
 
@@ -73,9 +87,18 @@
       const status = gcs.solve();
       gcs.apply_solution();
       const solved = this.points.map(p => { const s = gcs.sketch_index.get_sketch_point(p.id); return { x: s.x, y: s.y }; });
+      const n = solved.length, edgeLengths = [];
+      for (let i = 0; i < n; i++) {
+        const a = solved[i], b = solved[(i + 1) % n];
+        edgeLengths.push(Math.hypot(b.x - a.x, b.y - a.y));
+      }
+      // Solve cleans up the rough clicked points — write the solved coords back so the NEXT solve (e.g. after
+      // a dimension edit) starts from the current shape, and so callers can redraw the live/updated ring.
+      solved.forEach((p, i) => { this.points[i].x = p.x; this.points[i].y = p.y; });
       console.log(TAG + ' solve mode=' + this.mode + ' status=' + status + ' pts=' + solved.length +
-        ' lines=' + built.lines.length + ' constraints=' + built.constraints.length);
-      return { status, points: solved, constraints: built.constraints.length, mode: this.mode };
+        ' lines=' + built.lines.length + ' constraints=' + built.constraints.length +
+        ' dims=' + JSON.stringify(this.dims) + ' edgeLengths=[' + edgeLengths.map(x => x.toFixed(3)).join(',') + ']');
+      return { status, points: solved, constraints: built.constraints.length, mode: this.mode, edgeLengths };
     },
 
     // Solve the sketch, then author the solved profile as a real solid in A.scene via the worker kernel.
