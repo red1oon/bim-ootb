@@ -1172,7 +1172,7 @@ function _rwPlaceFromBOM(buildingDb, buildingName, rooms, arcEnvelope) {
       var real;
       try {
         var RPR = (typeof window !== 'undefined' && window.RealPlacementResolver) ||
-          (typeof RealPlacementResolver !== 'undefined' ? RealPlacementResolver : null);
+          (typeof globalThis !== 'undefined' && globalThis.RealPlacementResolver) || null;
         if (!RPR) throw new Error('RealPlacementResolver module not loaded');
         real = RPR.resolveRealPlacement({ discipline: info.disc, category: product, ifc_class: info.cls, productHint: product });
       } catch (e) {
