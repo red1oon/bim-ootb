@@ -10,8 +10,9 @@
 
   const Sketch = {
     points: [],          // [{ id, x, y }] in sketch-plane (XY) coords, in click order
-    dims: {},            // { 0: number, 1: number } — user-pinned edge lengths (rect/square mode only,
-                          // edges 0/1 are the two independent dimensions; ∥/eq constraints carry 2→0, 3→1)
+    dims: {},            // { 0: number, 1: number, angle: number(deg) } — user-pinned edge lengths (rect/
+                          // square mode only, edges 0/1 are the two independent dimensions; ∥/eq constraints
+                          // carry 2→0, 3→1) + an optional corner angle override (default 90°, l2l_angle_ll).
     _gcs: null,
     AXIS_TOL: 0.35,      // |dy| < AXIS_TOL*|dx| ⇒ treat edge as horizontal (and vice-versa)
     mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides)
@@ -19,6 +20,7 @@
     setMode(m) { if (this.MODES.includes(m)) this.mode = m; return this.mode; },
     cycleMode() { this.mode = this.MODES[(this.MODES.indexOf(this.mode) + 1) % this.MODES.length]; return this.mode; },
     setDimension(i, value) { this.dims[i] = +value; },
+    setAngle(deg) { this.dims.angle = +deg; },
     clearDims() { this.dims = {}; },
 
     async _ensure() {
@@ -58,9 +60,21 @@
       for (let i = 0; i < n; i++) lines.push({ id: 'L' + i, type: 'line', p1_id: this.points[i].id, p2_id: this.points[(i + 1) % n].id });
       const cons = [
         { id: 'par02', type: 'parallel', l1_id: 'L0', l2_id: 'L2' },        // opposite edges parallel
-        { id: 'par13', type: 'parallel', l1_id: 'L1', l2_id: 'L3' },
-        { id: 'perp01', type: 'perpendicular_ll', l1_id: 'L0', l2_id: 'L1' } // one right angle ⇒ all four (with the ∥ pair)
+        { id: 'par13', type: 'parallel', l1_id: 'L1', l2_id: 'L3' }
       ];
+      // Corner angle L0/L1 — a parallelogram in general (par02+par13 alone), a RECTANGLE when this angle is
+      // 90°. Was hardcoded `perpendicular_ll` (rigidly 90° only); now `l2l_angle_ll` with a typed override
+      // (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2) — the same "one right angle ⇒ all four (with
+      // the ∥ pair)" geometric fact still holds for ANY pinned angle, not just 90°, on a closed quad.
+      // ⚠ Found+fixed live: l2l_angle_ll's own "angle" measures L0/L1's direction vectors (p1_id→p2_id,
+      // i.e. L0=p0->p1, L1=p1->p2) as rays from a common origin — the TURN angle, not the polygon's
+      // INTERIOR corner angle a user means by "70° corner." They're supplementary (turn = 180 - interior),
+      // identical only at 90° (why this was invisible until a non-90° value was actually typed and
+      // measured independently — confirmed empirically: typing 70 produced a measured 110° corner before
+      // this fix). Complement here so the USER-FACING angle is the intuitive interior one.
+      const angleDeg = this.dims.angle != null ? this.dims.angle : 90;
+      const turnAngleDeg = 180 - angleDeg;
+      cons.push({ id: 'ang01', type: 'l2l_angle_ll', l1_id: 'L0', l2_id: 'L1', angle: turnAngleDeg * Math.PI / 180 });
       if (this.mode === 'square') cons.push({ id: 'eq01', type: 'equal_length', l1_id: 'L0', l2_id: 'L1' });
       // Explicit dimension pins — the real "drag/type one dimension, everything else updates" primitive
       // (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2, p2p_distance). Only edges 0/1 are independent
@@ -92,13 +106,23 @@
         const a = solved[i], b = solved[(i + 1) % n];
         edgeLengths.push(Math.hypot(b.x - a.x, b.y - a.y));
       }
+      // Corner angle at p1 (between L0=p0->p1 and L1=p1->p2), degrees — for UI prefill/display. Independent
+      // of the constraint machinery above (plain vector maths on the SOLVED points), not re-derived from dims.
+      let cornerAngleDeg = null;
+      if (n === 4) {
+        const v01 = [solved[1].x - solved[0].x, solved[1].y - solved[0].y];
+        const v12 = [solved[2].x - solved[1].x, solved[2].y - solved[1].y];
+        const dot = v01[0] * v12[0] + v01[1] * v12[1], cr = v01[0] * v12[1] - v01[1] * v12[0];
+        cornerAngleDeg = Math.atan2(Math.abs(cr), -dot) * 180 / Math.PI;   // interior angle at p1, 0-180
+      }
       // Solve cleans up the rough clicked points — write the solved coords back so the NEXT solve (e.g. after
       // a dimension edit) starts from the current shape, and so callers can redraw the live/updated ring.
       solved.forEach((p, i) => { this.points[i].x = p.x; this.points[i].y = p.y; });
       console.log(TAG + ' solve mode=' + this.mode + ' status=' + status + ' pts=' + solved.length +
         ' lines=' + built.lines.length + ' constraints=' + built.constraints.length +
-        ' dims=' + JSON.stringify(this.dims) + ' edgeLengths=[' + edgeLengths.map(x => x.toFixed(3)).join(',') + ']');
-      return { status, points: solved, constraints: built.constraints.length, mode: this.mode, edgeLengths };
+        ' dims=' + JSON.stringify(this.dims) + ' edgeLengths=[' + edgeLengths.map(x => x.toFixed(3)).join(',') +
+        ']' + (cornerAngleDeg != null ? ' cornerAngleDeg=' + cornerAngleDeg.toFixed(3) : ''));
+      return { status, points: solved, constraints: built.constraints.length, mode: this.mode, edgeLengths, cornerAngleDeg };
     },
 
     // Solve the sketch, then author the solved profile as a real solid in A.scene via the worker kernel.
