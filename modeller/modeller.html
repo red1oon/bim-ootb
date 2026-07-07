@@ -182,14 +182,14 @@
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
-<script src="bonsai_kernel.js?v=5" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=6" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
 <script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
 <script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=8" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- §WORLD-HIST-MODELLER (RESUME_WORLD_HISTORY_DEDUP_RESTORE.md 4-step handoff): the SAME cross-page
      "W" log (common/whole_history.js) the Viewer/iDempiere/Gravity already write to. Loaded BEFORE
      history_bar.js so its internal WholeHistory.record mirror (the BUILDING_OPEN doc-type) has a live
@@ -1445,6 +1445,9 @@ function featLabel(op) {
     case 'GEOM_EXTRUDE_POLY': return 'Wall'; case 'GEOM_EXTRUDE': return 'Wall';
     case 'GEOM_CUT': return 'Opening'; case 'GEOM_SWEEP': return 'Route'; case 'GEOM_LOFT': return 'Loft';
     case 'GEOM_FILLET': return P.kind === 'chamfer' ? 'Chamfer' : 'Round'; case 'GEOM_GRID_MOVE': return 'Grid move';
+    case 'GEOM_REVOLVE': return 'Revolve'; case 'GEOM_SHELL': return 'Shell'; case 'GEOM_OFFSET': return 'Offset';
+    case 'GEOM_FILLET_VARIABLE': return 'Var. Fillet'; case 'GEOM_CHAMFER_DIST_ANGLE': return 'Chamfer∠';
+    case 'GEOM_DRAFT': return 'Draft';
     case 'GEOM_INSERT': { const c = window.Bonsai.library && window.Bonsai.library.get(P.hash); return c ? c.ifc_class.replace('Ifc', '') : 'Component'; }
     default: return op.op_type.replace('GEOM_', '');
   }
@@ -2588,7 +2591,11 @@ let _asmGhost = null;   // M7: cached rich assembly-ghost child cluster (rebuilt
 function isInsert(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && o.op_type === 'GEOM_INSERT'; }
 // standalone B-rep solids the worker can spin in place (GEOM_ROTATE): extrude/poly walls, swept runs, filleted solids,
 // lofted solids (GEOM_LOFT — a fresh self-contained solid like GEOM_SWEEP, so it belongs in this set too).
-const SOLID_OPS = new Set(['GEOM_EXTRUDE', 'GEOM_EXTRUDE_POLY', 'GEOM_SWEEP', 'GEOM_FILLET', 'GEOM_LOFT']);
+// Tier 1 (§GAP-TO-COMPETITIVE): GEOM_REVOLVE (fresh self-contained solid, same class as GEOM_LOFT) + the 5
+// parent-mutating shoulders (GEOM_SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT) — included alongside
+// GEOM_FILLET for the SAME reason GEOM_FILLET already is (defensive completeness for a pick-by-id lookup).
+const SOLID_OPS = new Set(['GEOM_EXTRUDE', 'GEOM_EXTRUDE_POLY', 'GEOM_SWEEP', 'GEOM_FILLET', 'GEOM_LOFT',
+  'GEOM_REVOLVE', 'GEOM_SHELL', 'GEOM_OFFSET', 'GEOM_FILLET_VARIABLE', 'GEOM_CHAMFER_DIST_ANGLE', 'GEOM_DRAFT']);
 function isSolid(id) { const o = window.Bonsai.oplog._geomOps().find(o => o.id === id); return !!o && SOLID_OPS.has(o.op_type); }
 function lodTargetId() { return (selectedId != null && isInsert(selectedId)) ? selectedId : lastInsertId; }
 function paintLod() {
@@ -3047,6 +3054,29 @@ window.Bonsai.outliner.addCategory({ key: 'arrays', label: 'Arrays', match: op =
 window.Bonsai.outliner.addCategory({ key: 'lofts', label: 'Lofts', match: op => op.op_type === 'GEOM_LOFT',
   node: op => ({ id: op.id, label: 'Loft',
     sub: (op.parameters.wires ? op.parameters.wires.length : 0) + 'w' + (op.parameters.ruled ? ' ·ruled' : ' ·smooth') }) });
+// Tier 1 (prompts/BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE) — one flat category per op, same convention
+// as routes/fillets/gridmoves/lofts above. Revolve is a fresh solid (own `id`, like Loft); the other 5 mutate
+// a referenced parent in place (own row `id` shown as a distinct feature, `⮡ parent` sub like Fillets does).
+window.Bonsai.outliner.addCategory({ key: 'revolves', label: 'Revolves', match: op => op.op_type === 'GEOM_REVOLVE',
+  node: op => ({ id: op.id, label: 'Revolve',
+    sub: (op.parameters.angleRad != null ? (op.parameters.angleRad * 180 / Math.PI).toFixed(0) : '360') + '°' }) });
+window.Bonsai.outliner.addCategory({ key: 'shells', label: 'Shells', match: op => op.op_type === 'GEOM_SHELL',
+  node: op => ({ id: op.parameters.parent, label: 'Shell',
+    sub: '⮡ ' + op.parameters.parent + ' ·t=' + (op.parameters.thickness != null ? op.parameters.thickness : 0.1) + 'm' }) });
+window.Bonsai.outliner.addCategory({ key: 'offsets', label: 'Offsets', match: op => op.op_type === 'GEOM_OFFSET',
+  node: op => ({ id: op.parameters.parent, label: 'Offset',
+    sub: '⮡ ' + op.parameters.parent + ' ·d=' + (op.parameters.distance != null ? op.parameters.distance : 0.1) + 'm' }) });
+window.Bonsai.outliner.addCategory({ key: 'filletvars', label: 'Var. Fillets', match: op => op.op_type === 'GEOM_FILLET_VARIABLE',
+  node: op => ({ id: op.parameters.parent, label: 'Var. Fillet',
+    sub: '⮡ ' + op.parameters.parent + ' ·' + (op.parameters.startRadius != null ? op.parameters.startRadius : 0.05) +
+      '→' + (op.parameters.endRadius != null ? op.parameters.endRadius : 0.2) }) });
+window.Bonsai.outliner.addCategory({ key: 'chamferdas', label: 'Chamfers∠', match: op => op.op_type === 'GEOM_CHAMFER_DIST_ANGLE',
+  node: op => ({ id: op.parameters.parent, label: 'Chamfer∠',
+    sub: '⮡ ' + op.parameters.parent + ' ·' + (op.parameters.distance != null ? op.parameters.distance : 0.1) +
+      'm@' + (op.parameters.angleDeg != null ? op.parameters.angleDeg : 45) + '°' }) });
+window.Bonsai.outliner.addCategory({ key: 'drafts', label: 'Drafts', match: op => op.op_type === 'GEOM_DRAFT',
+  node: op => ({ id: op.parameters.parent, label: 'Draft',
+    sub: '⮡ ' + op.parameters.parent + ' ·' + ((op.parameters.angleRad != null ? op.parameters.angleRad : 0.1) * 180 / Math.PI).toFixed(1) + '°' }) });
 // Components category: inserted library components (§OOTB Item 2 = assemble, don't draw). Registered via the seam.
 // §LOD400-STALL fix #4: match EXCLUDES raw-bbox (hash-less) inserts — the ARC-seed substrate (arc_editable.js,
 // no `params.hash`, a MEASURED bbox instead) is not a user-placed catalog component; it already has its own
