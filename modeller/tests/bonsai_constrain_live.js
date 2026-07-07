@@ -43,8 +43,8 @@ const server = http.createServer((q, r) => {
   const rectClean = x.rect && x.rect.status === 0 && x.rect.cons === 3 && x.rect.m.maxCorner < 0.5 && x.rect.m.par < 0.5;
   const squareClean = x.square && x.square.status === 0 && x.square.cons === 4 && x.square.m.maxCorner < 0.5 && x.square.m.sideRatio < 1.02;
   const symOK = x.sym && x.sym.status === 0 && x.sym.midErr < 1e-3;                      // centre is the midpoint ⇒ symmetric
-  // W-E2E-SKETCH-CIRCLE: the mode cycle grew a 4th stop (the circle primitive) — axis→rect→square→circle→axis.
-  const uiCycles = x.btnExists === true && JSON.stringify(x.cycleLabels) === JSON.stringify(['Rect', 'Square', 'Circle', 'Axis']);
+  // W-E2E-SKETCH-CIRCLE + W-E2E-SKETCH-ARC: the mode cycle is now 5 stops — axis→rect→square→circle→arc→axis.
+  const uiCycles = x.btnExists === true && JSON.stringify(x.cycleLabels) === JSON.stringify(['Rect', 'Square', 'Circle', 'Arc', 'Axis']);
   const pass = inputNoisy && rectClean && squareClean && symOK && uiCycles;
   console.log('  §BONSAI-CONSTRAIN VERDICT ' + (pass ? 'PASS' : 'FAIL') +
     ' — inputNoisy=' + inputNoisy + ' rectClean=' + rectClean + ' squareClean=' + squareClean + ' symmetry=' + symOK + ' uiCycles=' + uiCycles);

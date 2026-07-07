@@ -142,7 +142,8 @@ runE2E('W-E2E-SKETCH-CIRCLE', async (t) => {
   const g2 = await t.clearGround(S2 + 0.6);          // fresh clear spot (the cylinder now occupies the first)
   const corners = [[g2[0], g2[1]], [g2[0] + S2, g2[1]], [g2[0] + S2, g2[1] + S2], [g2[0], g2[1] + S2]];
   await t.clickSel('#b-sketch'); await t.sleep(300);          // re-enter (mode persisted as 'circle')
-  await t.clickSel('#b-constrain'); await t.sleep(120);       // circle → axis (wrap-around)
+  // circle → arc → axis (wrap-around — the cycle grew a 5th 'arc' stop, W-E2E-SKETCH-ARC)
+  for (let i = 0; i < 2; i++) { await t.clickSel('#b-constrain'); await t.sleep(120); }
   const mode2 = await t.pg.evaluate(() => window.Bonsai.sketch.mode);
   await t.overheadTo(g2[0] + S2 / 2, g2[1] + S2 / 2, 14);
   for (const [wx, wy] of corners) {

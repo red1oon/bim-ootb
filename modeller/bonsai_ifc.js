@@ -110,7 +110,7 @@
       for (const op of ops) {
         if (op.op_type === 'GEOM_EXTRUDE_POLY') {
           const pts = op.parameters.profile.points, depth = op.parameters.depth;
-          if (!pts) continue;   // HONEST SCOPE: circle profile (profile.circle) → IfcCircleProfileDef export is a scoped follow-up; skip, don't crash the export
+          if (!pts) continue;   // HONEST SCOPE: circle profile (profile.circle) → IfcCircleProfileDef export is a scoped follow-up; arc/sector profile (profile.arc) IFC export likewise a follow-up (compound arc+line profile); skip, don't crash the export
           const cpts = pts.map(pt => api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(pt[0]), len(pt[1])]));
           cpts.push(cpts[0]);                                 // close the ring
           const poly = api.CreateIfcEntity(mID, T.IFCPOLYLINE, cpts);
@@ -142,7 +142,7 @@
           const deltas = _arrayDeltas(P, count);
           const v0 = P.formula ? _getPath(pp, P.paramPath) : null;
           const pts = pp.profile.points;
-          if (!pts) continue;   // HONEST SCOPE: array of a circle-profile parent — same skip as the parent above
+          if (!pts) continue;   // HONEST SCOPE: array of a circle- or arc/sector-profile parent — same skip as the parent above
           const memberHandles = [];
           // No formula → every instance is geometrically IDENTICAL to the template → build the B-rep
           // representation ONCE and reuse it via an IfcRepresentationMap + per-instance IfcMappedItem

@@ -22,14 +22,24 @@
     // it (a circle isn't a closed point loop). Placement = the standard CAD convention: click sets CENTER,
     // then a second click (distance center→click) OR a typed #dim-radius value sets the radius. A lone
     // circle has nothing to constrain against, so it does NOT round-trip through planegcs (tangent/
-    // circle_radius solver wiring is the explicitly deferred next increment). Circle ONLY — arc placement
-    // UI is unsettled and out of scope here.
+    // circle_radius solver wiring is the explicitly deferred next increment). The arc sibling landed as
+    // the next increment (W-E2E-SKETCH-ARC, below).
     circles: [],         // [{ id, cx, cy, r }] committed circles, in placement order
     pendingCircle: null, // { cx, cy } — center clicked, radius not yet set
+    // Arc primitive (BONSAI_KERNEL_RESEARCH.md §Follow-up spec — circle/arc sketch primitive, arc leg —
+    // Witness: W-E2E-SKETCH-ARC): FreeCAD Sketcher's "Arc by center" convention, deliberately the SAME
+    // gesture shape as circle above — click 1 = CENTER (same as circle's click 1), click 2 = START point
+    // (radius = distance center→click, same maths as circle's click 2), click 3 = END point where ONLY the
+    // DIRECTION matters (its distance from center is IGNORED — the radius stays what click 2 set, matching
+    // FreeCAD's actual behavior). Angles are RADIANS via Math.atan2 (kernel convention, same as
+    // GEOM_REVOLVE's angleRad — NOT the degree convention of the unrelated dims.angle field above).
+    // A lone arc, like a lone circle, has nothing to constrain against → no planegcs round-trip.
+    arcs: [],            // [{ id, cx, cy, r, startAngle, endAngle }] committed arcs, in placement order
+    pendingArc: null,    // { cx, cy } center clicked · then { cx, cy, r, startAngle } start clicked · commit on end click
     _gcs: null,
     AXIS_TOL: 0.35,      // |dy| < AXIS_TOL*|dx| ⇒ treat edge as horizontal (and vice-versa)
-    mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides) | 'circle' (center+radius primitive)
-    MODES: ['axis', 'rect', 'square', 'circle'],
+    mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides) | 'circle' (center+radius primitive) | 'arc' (center+start+end primitive)
+    MODES: ['axis', 'rect', 'square', 'circle', 'arc'],
     setMode(m) { if (this.MODES.includes(m)) this.mode = m; return this.mode; },
     cycleMode() { this.mode = this.MODES[(this.MODES.indexOf(this.mode) + 1) % this.MODES.length]; return this.mode; },
     setDimension(i, value) { this.dims[i] = +value; },
@@ -45,7 +55,7 @@
       return this._gcs;
     },
 
-    reset() { this.points = []; this.dims = {}; this.weld = {}; this.circles = []; this.pendingCircle = null; },
+    reset() { this.points = []; this.dims = {}; this.weld = {}; this.circles = []; this.pendingCircle = null; this.arcs = []; this.pendingArc = null; },
     addPoint(x, y) { this.points.push({ id: 'p' + this.points.length, x: +x, y: +y }); return this.points.length; },
 
     // ── Circle placement (mode 'circle') — standard CAD center-then-radius convention ──────────────────
@@ -70,6 +80,27 @@
       last.r = +r;
       console.log(TAG + ' circle radius set id=' + last.id + ' r=' + last.r.toFixed(3));
       return { state: 'committed', circle: last };
+    },
+
+    // ── Arc placement (mode 'arc') — FreeCAD Sketcher "Arc by center": center, start, end ─────────────────
+    // Click 1 = center; click 2 = start point (radius = distance center→click, startAngle = its direction);
+    // click 3 = end point — DIRECTION ONLY (distance from center IGNORED, the radius stays click 2's).
+    addArcPoint(x, y) {
+      x = +x; y = +y;
+      if (!this.pendingArc) { this.pendingArc = { cx: x, cy: y }; return { state: 'center', cx: x, cy: y }; }
+      const p = this.pendingArc;
+      if (p.r == null) {
+        const r = Math.hypot(x - p.cx, y - p.cy);
+        if (!(r > 0)) return null;                               // start click ON the center — no direction, ignore
+        p.r = r; p.startAngle = Math.atan2(y - p.cy, x - p.cx);
+        return { state: 'start', cx: p.cx, cy: p.cy, r: p.r, startAngle: p.startAngle };
+      }
+      const endAngle = Math.atan2(y - p.cy, x - p.cx);            // click 3's direction only — distance ignored
+      const a = { id: 'a' + this.arcs.length, cx: p.cx, cy: p.cy, r: p.r, startAngle: p.startAngle, endAngle };
+      this.arcs.push(a); this.pendingArc = null;
+      console.log(TAG + ' arc committed id=' + a.id + ' center=(' + a.cx.toFixed(3) + ',' + a.cy.toFixed(3) + ') r=' + a.r.toFixed(3) +
+        ' startAngle=' + a.startAngle.toFixed(4) + ' endAngle=' + a.endAngle.toFixed(4));
+      return { state: 'committed', arc: a };
     },
 
     // Same as addPoint, but if (x,y) lands within WELD_TOL of an EARLIER point already in this sketch, pin
@@ -120,9 +151,9 @@
 
     _buildConstraints() {
       const n = this.points.length;
-      // Circle mode bypasses the point-ring solver machinery entirely — a lone circle has nothing to
-      // constrain against (tangent/circle_radius solver wiring is the deferred follow-up increment).
-      if (this.mode === 'circle') return { lines: [], constraints: [] };
+      // Circle/arc modes bypass the point-ring solver machinery entirely — a lone circle/arc has nothing
+      // to constrain against (tangent/circle_radius solver wiring is the deferred follow-up increment).
+      if (this.mode === 'circle' || this.mode === 'arc') return { lines: [], constraints: [] };
       if (this.mode === 'axis' || n !== 4) return { lines: [], constraints: this._autoConstraints().concat(this._weldConstraints()) };
       const lines = [];
       for (let i = 0; i < n; i++) lines.push({ id: 'L' + i, type: 'line', p1_id: this.points[i].id, p2_id: this.points[(i + 1) % n].id });
@@ -228,6 +259,21 @@
         console.log(TAG + ' commitExtrude circle center=(' + c.cx.toFixed(3) + ',' + c.cy.toFixed(3) + ') r=' + c.r.toFixed(3) +
           ' depth=' + depth + ' tris=' + res.triangleCount);
         return { solveStatus: 'circle', solved: [], ...res };
+      }
+      // Arc profile (W-E2E-SKETCH-ARC): payload carries profile.arc {cx,cy,r,startAngle,endAngle} as a
+      // SIBLING key to profile.points/profile.circle. A lone arc is an OPEN curve — the kernel handler
+      // closes it as the circular SECTOR (pie slice) center→start line + arc + end→center line, the only
+      // closure that uses ONLY the 3 authored points (a chord closure would silently discard the center).
+      if (this.mode === 'arc') {
+        const a = this.arcs[this.arcs.length - 1];
+        if (!a) throw new Error('no arc to extrude — click center, start, then end');
+        const res = await window.Bonsai.oplog.commit(
+          { op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { arc: { cx: a.cx, cy: a.cy, r: a.r, startAngle: a.startAngle, endAngle: a.endAngle } }, depth } },
+          opts || { color: 0x9fd6b4 });
+        console.log(TAG + ' commitExtrude arc center=(' + a.cx.toFixed(3) + ',' + a.cy.toFixed(3) + ') r=' + a.r.toFixed(3) +
+          ' startAngle=' + a.startAngle.toFixed(4) + ' endAngle=' + a.endAngle.toFixed(4) +
+          ' depth=' + depth + ' tris=' + res.triangleCount);
+        return { solveStatus: 'arc', solved: [], ...res };
       }
       const r = await this.solve();
       const pts = r.points.map(p => [p.x, p.y]);
