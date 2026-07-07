@@ -20,11 +20,13 @@
     // Circle primitive (BONSAI_KERNEL_RESEARCH.md §Follow-up spec — circle/arc sketch primitive — Witness:
     // W-E2E-SKETCH-CIRCLE): a REAL geometric-primitive list alongside the point-ring, NOT a repurposing of
     // it (a circle isn't a closed point loop). Placement = the standard CAD convention: click sets CENTER,
-    // then a second click (distance center→click) OR a typed #dim-radius value sets the radius. A lone
-    // circle has nothing to constrain against, so it does NOT round-trip through planegcs (tangent/
-    // circle_radius solver wiring is the explicitly deferred next increment). The arc sibling landed as
-    // the next increment (W-E2E-SKETCH-ARC, below).
-    circles: [],         // [{ id, cx, cy, r }] committed circles, in placement order
+    // then a second click (distance center→click) OR a typed #dim-radius value sets the radius. A LONE
+    // circle has nothing to constrain against — but a circle near a GRIDLINE does: the tangent_lc-to-
+    // gridline snap below (addCirclePointTangent, W-E2E-SKETCH-TANGENT) is the first REAL planegcs circle
+    // solve. tangent_cc/tangent_ca (circle↔circle/arc — needs a pick-an-entity UI) stays deferred. The arc
+    // sibling landed as W-E2E-SKETCH-ARC, below.
+    circles: [],         // [{ id, cx, cy, r, tangentTo? }] committed circles, in placement order;
+                         // tangentTo {axis:'x'|'y', value} records a gridline tangency pin (see weld above)
     pendingCircle: null, // { cx, cy } — center clicked, radius not yet set
     // Arc primitive (BONSAI_KERNEL_RESEARCH.md §Follow-up spec — circle/arc sketch primitive, arc leg —
     // Witness: W-E2E-SKETCH-ARC): FreeCAD Sketcher's "Arc by center" convention, deliberately the SAME
@@ -80,6 +82,77 @@
       last.r = +r;
       console.log(TAG + ' circle radius set id=' + last.id + ' r=' + last.r.toFixed(3));
       return { state: 'committed', circle: last };
+    },
+
+    // ── Tangent-to-gridline snap (W-E2E-SKETCH-TANGENT) — the FIRST real planegcs circle constraint ──────
+    // BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE (tangent leg): when the radius-defining click's raw
+    // radius lands within WELD_TOL of the perpendicular distance centre→NEAREST gridline, the circle snaps
+    // EXACTLY tangent to that line via a REAL tangent_lc solve — the same automatic-proximity philosophy
+    // as addPointWeld above (no modifier key). The centre stays FIXED at its authored position; ONLY the
+    // radius is solved. Gridlines are the constraint target because they are global + always-present and
+    // ARE the wall/structural alignment in this modeller (disc_walker's "ARC walls → semi-grid" doctrine)
+    // — no pick-an-entity UI needed. Scope: line-to-circle vs the GRID only; tangent_cc/tangent_ca defer.
+    // Gated on grid.active — the SAME rule as grid.snap(): a hidden grid never influences a sketch.
+    _nearestGridLine(cx, cy) {
+      const G = window.Bonsai && window.Bonsai.grid;   // read xs/ys FRESH at click time (they re-fold per op-log event)
+      if (!G || !G.active || typeof G._nearest !== 'function') return null;
+      const nx = (G.xs && G.xs.length) ? G._nearest(cx, G.xs) : null;   // vertical line x=v → perp distance |cx−v|
+      const ny = (G.ys && G.ys.length) ? G._nearest(cy, G.ys) : null;   // horizontal line y=v → perp distance |cy−v|
+      if (!nx && !ny) return null;
+      if (nx && (!ny || nx.d <= ny.d)) return { axis: 'x', value: nx.v, d: nx.d, index: nx.i };
+      return { axis: 'y', value: ny.v, d: ny.d, index: ny.i };
+    },
+
+    // One throwaway planegcs round-trip, the exact shape of solve() above (lazy _ensure → clear_data →
+    // push primitives → push constraint → solve → apply_solution → read back). The gridline enters as two
+    // FIXED throwaway points + a line primitive (push_line is ids-only); the circle as a FIXED centre point
+    // + a circle primitive whose ONLY free param is the radius (seeded with the raw clicked value) — field
+    // name is `radius` on the gcs side vs `r` on this file's circles[] entries. tangent_lc drives the
+    // radius to exact tangency. Read-back: apply_solution() → pull_circle re-sets the primitive in
+    // sketch_index with the SOLVED `radius` (gcs_wrapper.js, property_offsets.circle.radius) — so
+    // sketch_index.get_primitive(id).radius is the solved value (points-only get_sketch_point can't serve
+    // a circle). Nothing here persists: the next clear_data() wipes all throwaway ids.
+    async solveCircleTangent(cx, cy, r, line) {
+      const gcs = await this._ensure();
+      gcs.clear_data();
+      const vert = line.axis === 'x';
+      gcs.push_primitive({ id: 'tgp0', type: 'point', x: vert ? line.value : cx - 10, y: vert ? cy - 10 : line.value, fixed: true });
+      gcs.push_primitive({ id: 'tgp1', type: 'point', x: vert ? line.value : cx + 10, y: vert ? cy + 10 : line.value, fixed: true });
+      gcs.push_primitive({ id: 'tL', type: 'line', p1_id: 'tgp0', p2_id: 'tgp1' });
+      gcs.push_primitive({ id: 'tcc', type: 'point', x: cx, y: cy, fixed: true });   // CENTRE FIXED — only radius free
+      gcs.push_primitive({ id: 'tC', type: 'circle', c_id: 'tcc', radius: +r });
+      gcs.push_primitive({ id: 'tan0', type: 'tangent_lc', l_id: 'tL', c_id: 'tC' });
+      const status = gcs.solve();
+      gcs.apply_solution();
+      const solved = gcs.sketch_index.get_primitive('tC');
+      const radius = solved ? +solved.radius : NaN;
+      console.log(TAG + ' tangent_lc solve status=' + status + ' line ' + (vert ? 'x=' : 'y=') + (+line.value).toFixed(3) +
+        ' rawR=' + (+r).toFixed(3) + ' solvedR=' + (isFinite(radius) ? radius.toFixed(6) : String(radius)));
+      return { status, radius };
+    },
+
+    // The radius-defining click, tangent-aware (async because a solve may run). Falls back to the plain
+    // addCirclePoint path — bit-identical behaviour — when: no pending centre yet (this IS the centre
+    // click), grid hidden/empty, raw radius NOT within WELD_TOL of the nearest line's perpendicular
+    // distance, centre ON the line (degenerate radius-0 tangency), or the solve fails / returns a
+    // non-positive radius. tangentTo bookkeeping mirrors weld[idx]: record WHAT the circle is pinned to.
+    async addCirclePointTangent(x, y) {
+      if (!this.pendingCircle) return this.addCirclePoint(x, y);
+      const cx = this.pendingCircle.cx, cy = this.pendingCircle.cy;
+      const rawR = Math.hypot(+x - cx, +y - cy);
+      const line = this._nearestGridLine(cx, cy);
+      if (!(rawR > 0) || !line || !(line.d > 1e-9) || Math.abs(rawR - line.d) > this.WELD_TOL) return this.addCirclePoint(x, y);
+      let solvedR = NaN;
+      try { solvedR = (await this.solveCircleTangent(cx, cy, rawR, line)).radius; }
+      catch (e) { console.warn(TAG + ' tangent solve failed — raw radius kept: ' + (e && e.message || e)); }
+      if (!(solvedR > 0)) return this.addCirclePoint(x, y);
+      const res = this.commitCircleRadius(solvedR);
+      if (res && res.circle) {
+        res.circle.tangentTo = { axis: line.axis, value: line.value };
+        console.log(TAG + ' circle tangent-snapped id=' + res.circle.id + ' ' + (line.axis === 'x' ? 'x=' : 'y=') +
+          (+line.value).toFixed(3) + ' rawR=' + rawR.toFixed(3) + ' -> r=' + res.circle.r.toFixed(6));
+      }
+      return res;
     },
 
     // ── Arc placement (mode 'arc') — FreeCAD Sketcher "Arc by center": center, start, end ─────────────────
