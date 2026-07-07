@@ -202,7 +202,7 @@
     // Boot-time restore: ensure the db (loads saved bytes), then fold it to the scene if non-empty.
     async restore() {
       await this._ensureDb();
-      if (this.length) { await this._foldUpto(); this._emit(); }
+      if (this.length) { await this._foldUpto(); this._emit(false); }   // notify-only: bytes just came FROM storage
       console.log(TAG + ' restore active=' + this.length);
       return this.length;
     },
@@ -221,7 +221,7 @@
       await this._ensureDb();
       this._cursor = wasAtTip ? this.length : Math.min(prevCursor, this.length);
       await this._foldUpto(this._cursor);
-      this._emit();
+      this._emit(false);                   // notify-only: we just re-READ the shared store another surface wrote
       console.log(TAG + ' reload active=' + this.length + ' cursor=' + this._cursor);
       return this.length;
     },
@@ -267,7 +267,7 @@
       await this._ensureDb();                             // load THIS building's saved op-log (empty on first open)
       this._cursor = this.length;
       if (this.length) await this._foldUpto(this._cursor);
-      this._emit();
+      this._emit(false);                   // notify-only: NEW key's bytes just loaded FROM storage (OLD key was flushed above)
       console.log(TAG + ' model key → ' + key + ' active=' + this.length + ' (reference stays pristine)');
       return this.length;
     },
@@ -277,7 +277,11 @@
     // touching kernel_ops. That makes _emit() the one safe choke point to invalidate the _geomOps() memo below;
     // clearing it in _foldUpto() alone (the originally drafted fix) would MISS the LEAF-commit path (bonsai_
     // oplog.js commit(): LEAF ops skip _foldUpto and append optimistically, but still _emit()).
-    _emit() { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
+    // §AUTOSAVE_FIX (follow-on to Finding 4 / W-E2E-OPLOG-CLEAR-IDB): _emit(false) = notify-only, used by the
+    // 3 LOAD-only sites (restore/reload/setModelKey-after-load) that just read these exact bytes FROM storage —
+    // re-saving them was a pure no-op write that burned localStorage quota. Every mutation path still calls
+    // bare _emit() and persists exactly as before. Witness: W-E2E-OPLOG-LOAD-NO-AUTOSAVE.
+    _emit(persist) { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } if (persist !== false) this._save(); },
     // clear() empties BOTH persisted copies of this._KEY — localStorage AND the §AUTOSAVE_FIX IndexedDB fallback
     // (the _loadBytesEither precedence comment above PROMISES "clear() ... empties both keys together"; before this
     // fix only localStorage was removed, so a Terminal-scale model whose autosave had overflowed into IDB silently
