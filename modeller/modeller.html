@@ -742,10 +742,34 @@ function sketchMarkers() {
     sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rim), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
   });
   if (SK.pendingCircle) mark(SK.pendingCircle.cx, SK.pendingCircle.cy);
+  // Arc primitives (mode 'arc', W-E2E-SKETCH-ARC) — same click-updated preview mechanism, staged: after
+  // click 1 a centre marker; after click 2 (start) the full radius rubber-band rim + a start marker; after
+  // click 3 the committed swept SECTOR outline (centre→start + arc + end→centre — the extrude closure).
+  const arcPath = (cx, cy, r, a0, a1) => {   // sector polyline: centre→start, CCW arc a0→a1 (wrap if a1<a0), end→centre
+    const sweep = ((a1 - a0) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI;
+    const pts3 = [new THREE.Vector3(cx, cy, 0.01)];
+    const SEG = 64;
+    for (let i = 0; i <= SEG; i++) { const a = a0 + sweep * i / SEG; pts3.push(new THREE.Vector3(cx + r * Math.cos(a), cy + r * Math.sin(a), 0.01)); }
+    pts3.push(new THREE.Vector3(cx, cy, 0.01));
+    return pts3;
+  };
+  (SK.arcs || []).forEach(a => {
+    mark(a.cx, a.cy); mark(a.cx + a.r * Math.cos(a.startAngle), a.cy + a.r * Math.sin(a.startAngle));
+    sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPath(a.cx, a.cy, a.r, a.startAngle, a.endAngle)), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
+  });
+  if (SK.pendingArc) {
+    mark(SK.pendingArc.cx, SK.pendingArc.cy);
+    if (SK.pendingArc.r != null) {             // start clicked: radius rubber-band (full rim, like circle) + start marker
+      mark(SK.pendingArc.cx + SK.pendingArc.r * Math.cos(SK.pendingArc.startAngle), SK.pendingArc.cy + SK.pendingArc.r * Math.sin(SK.pendingArc.startAngle));
+      const rim = []; const SEG = 64;
+      for (let i = 0; i <= SEG; i++) { const a = i / SEG * Math.PI * 2; rim.push(new THREE.Vector3(SK.pendingArc.cx + SK.pendingArc.r * Math.cos(a), SK.pendingArc.cy + SK.pendingArc.r * Math.sin(a), 0.01)); }
+      sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rim), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
+    }
+  }
 }
 // Constraint-intent cycle (the planegcs shoulders): Axis (per-edge H/V) → Rect (∥+⊥) → Square (+ equal sides).
 const bConstrain = document.getElementById('b-constrain');
-const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square', circle: 'Circle' };
+const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square', circle: 'Circle', arc: 'Arc' };
 function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.querySelector('span').textContent = CON_LABEL[m] || m; bConstrain.classList.toggle('on', m !== 'axis'); }
 // Live editable dimensions (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2, p2p_distance): once a
 // rect/square quad has all 4 points, solve once to show W/H, and re-solve on every typed edit so the WHOLE
@@ -761,6 +785,13 @@ async function sketchDimsRefresh() {
     const last = S.circles[S.circles.length - 1];
     if (document.activeElement !== dimRadius && last) dimRadius.value = last.r.toFixed(2);
     sketchMarkers();
+    return;
+  }
+  // Arc mode (W-E2E-SKETCH-ARC): pure 3-click gesture, no typed-value field in this increment — hide all
+  // dim fields and keep the staged click preview live.
+  if (S.mode === 'arc') {
+    dimW.style.display = 'none'; dimH.style.display = 'none'; dimAngle.style.display = 'none'; dimRadius.style.display = 'none';
+    if (sketching) sketchMarkers();
     return;
   }
   dimRadius.style.display = 'none';
@@ -852,6 +883,21 @@ canvas.addEventListener('pointerdown', (e) => {
       sketchDimsRefresh();
       return;
     }
+    // Arc mode (W-E2E-SKETCH-ARC): FreeCAD "Arc by center" — click 1 CENTER, click 2 START (sets the
+    // radius, same maths as circle's click 2), click 3 END direction only (distance from centre IGNORED).
+    if (window.Bonsai.sketch.mode === 'arc') {
+      const res = window.Bonsai.sketch.addArcPoint(s.x, s.y);
+      sketchMarkers();
+      if (!res) { setStat('sketch: arc start must be OFF the centre — click a point away from it'); return; }
+      setStat(res.state === 'center'
+        ? 'sketch: arc centre @ (' + res.cx.toFixed(2) + ',' + res.cy.toFixed(2) + ') — click the START point'
+        : res.state === 'start'
+          ? 'sketch: arc r=' + res.r.toFixed(2) + 'm — click the END direction (its distance is ignored)'
+          : 'sketch: arc r=' + res.arc.r.toFixed(2) + 'm swept — Extrude for a pie-slice sector');
+      if (res.state === 'committed') audioCue('tick');
+      sketchDimsRefresh();
+      return;
+    }
     // addPointWeld: a click near an EARLIER sketch point pins the new one p2p_coincident to it instead of
     // a near-duplicate a few cm off (standard CAD-sketch vertex-weld convention).
     const added = window.Bonsai.sketch.addPointWeld(s.x, s.y); sketchMarkers();
@@ -865,12 +911,15 @@ bExtrude.onclick = async () => {
   if (SK.mode === 'circle') {
     if (SK.pendingCircle) { setStat('circle needs a radius — click a rim point or type it'); return; }
     if (!SK.circles.length) { setStat('need a circle — click its centre first'); return; }
+  } else if (SK.mode === 'arc') {
+    if (SK.pendingArc) { setStat(SK.pendingArc.r == null ? 'arc needs a start point — click it' : 'arc needs an end direction — click it'); return; }
+    if (!SK.arcs.length) { setStat('need an arc — click centre, start, then end'); return; }
   } else if (SK.points.length < 3) { setStat('need ≥3 points'); return; }
   setStat('solving…');
   try {
     // leg 3: a sketched wall is committed as a FEATURE in the op-log (not a one-shot author).
     const res = await SK.commitExtrude(parseFloat(dimDepth.value) || 3, { color: 0x9fd6b4 });
-    setStat('committed ' + (SK.mode === 'circle' ? 'cylinder' : 'wall') + ' #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
+    setStat('committed ' + (SK.mode === 'circle' ? 'cylinder' : SK.mode === 'arc' ? 'sector' : 'wall') + ' #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
     audioCue('commit'); exitSketch(true); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
 };
@@ -3142,6 +3191,9 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
   else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); doRedo(); }
   else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.mode === 'circle' && (window.Bonsai.sketch.pendingCircle || window.Bonsai.sketch.circles.length)) { e.preventDefault(); const SK = window.Bonsai.sketch; if (SK.pendingCircle) SK.pendingCircle = null; else SK.circles.pop(); sketchMarkers(); sketchDimsRefresh(); setStat('sketch: ' + SK.circles.length + ' circle' + (SK.circles.length === 1 ? '' : 's')); }
+  // Arc (W-E2E-SKETCH-ARC): step back ONE CLICK at a time — start clicked → back to centre-only; centre
+  // clicked → back to nothing; else drop the last committed arc (never an all-or-nothing clear).
+  else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.mode === 'arc' && (window.Bonsai.sketch.pendingArc || window.Bonsai.sketch.arcs.length)) { e.preventDefault(); const SK = window.Bonsai.sketch; if (SK.pendingArc && SK.pendingArc.r != null) { SK.pendingArc = { cx: SK.pendingArc.cx, cy: SK.pendingArc.cy }; } else if (SK.pendingArc) { SK.pendingArc = null; } else { SK.arcs.pop(); } sketchMarkers(); sketchDimsRefresh(); setStat('sketch: ' + SK.arcs.length + ' arc' + (SK.arcs.length === 1 ? '' : 's') + (SK.pendingArc ? (SK.pendingArc.r != null ? ' + pending start' : ' + pending centre') : '')); }
   else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.points.length) { e.preventDefault(); window.Bonsai.sketch.points.pop(); sketchMarkers(); setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points'); }
   else if (e.key === 'Backspace' && routing && routePts.length) { e.preventDefault(); routePts.pop(); routeMarkers(); bRun.disabled = routePts.length < 2; setStat('route: ' + routePts.length + ' points'); }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
@@ -5648,10 +5700,10 @@ if (qs.get('constrain') === 'demo') {
       const st = g.solve(); g.apply_solution();
       const A = g.sketch_index.get_sketch_point('a'), B = g.sketch_index.get_sketch_point('b'), C = g.sketch_index.get_sketch_point('c');
       out.sym = { status: st, midErr: +Math.hypot((A.x + B.x) / 2 - C.x, (A.y + B.y) / 2 - C.y).toFixed(4) };
-      // UI cycle: the Constrain button cycles axis→rect→square→circle→axis (label tracks the mode).
+      // UI cycle: the Constrain button cycles axis→rect→square→circle→arc→axis (label tracks the mode).
       out.btnExists = !!document.getElementById('b-constrain');
       S.setMode('axis'); const labels = [];
-      for (let k = 0; k < 4; k++) { bConstrain.onclick(); labels.push(bConstrain.querySelector('span').textContent); }
+      for (let k = 0; k < 5; k++) { bConstrain.onclick(); labels.push(bConstrain.querySelector('span').textContent); }
       out.cycleLabels = labels;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER constrain demo fail ' + e); }
     window.__constrainResult = out;

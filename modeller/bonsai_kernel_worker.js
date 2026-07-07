@@ -47,6 +47,28 @@ function applyFeature(kernel, op) {
       kernel.release(edges[0]); kernel.release(wire); kernel.release(face);
       return solid;
     }
+    // Arc profile (W-E2E-SKETCH-ARC): profile.arc {cx,cy,r,startAngle,endAngle} — angles in RADIANS, CCW
+    // (same kernel convention as GEOM_REVOLVE's angleRad). A lone arc is an OPEN curve, so it is closed as
+    // the circular SECTOR (pie slice): center→start line + the arc + end→center line — the only closure
+    // built from ONLY the 3 authored points (a chord closure would silently drop the center from the
+    // boundary). Start/end points are RECOMPUTED from center+r+angles so the closing lines land EXACTLY on
+    // the arc's true endpoints (raw click coords are noisy → OCCT wire-building gap).
+    if (P.profile.arc) {
+      const a = P.profile.arc;
+      const startPt = { x: a.cx + a.r * Math.cos(a.startAngle), y: a.cy + a.r * Math.sin(a.startAngle), z: 0 };
+      const endPt   = { x: a.cx + a.r * Math.cos(a.endAngle),   y: a.cy + a.r * Math.sin(a.endAngle),   z: 0 };
+      const centerPt = { x: a.cx, y: a.cy, z: 0 };
+      const edges = [
+        kernel.makeLineEdge(centerPt, startPt),
+        kernel.makeCircleArc(centerPt, { x: 0, y: 0, z: 1 }, a.r, a.startAngle, a.endAngle),
+        kernel.makeLineEdge(endPt, centerPt),
+      ];
+      const wire = kernel.makeWire(edges);
+      const face = kernel.makeFace(wire);
+      const solid = kernel.extrude(face, 0, 0, P.depth);
+      edges.forEach(e => kernel.release(e)); kernel.release(wire); kernel.release(face);
+      return solid;
+    }
     const pts = P.profile.points;                 // [[x,y],...] ring (auto-closed); same path as W-SKETCH-SOLVE
     const v = (x, y) => ({ x, y, z: 0 });
     const edges = [];

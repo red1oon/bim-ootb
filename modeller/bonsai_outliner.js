@@ -57,6 +57,10 @@
           node: op => { const prof = op.parameters.profile;
             // circle profile (W-E2E-SKETCH-CIRCLE): profile.circle {cx,cy,r} sibling key — no point ring to gridRef
             if (prof.circle) return { id: op.id, label: 'Column', sub: '⌀' + (2 * prof.circle.r).toFixed(2) + 'm' };
+            // arc profile (W-E2E-SKETCH-ARC): profile.arc {cx,cy,r,startAngle,endAngle} sibling key — the
+            // extruded solid is the closed pie-slice SECTOR, listed honestly as a Wedge with its CCW sweep.
+            if (prof.arc) { const sw = ((prof.arc.endAngle - prof.arc.startAngle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI;
+              return { id: op.id, label: 'Wedge', sub: '⌀' + (2 * prof.arc.r).toFixed(2) + 'm ∠' + (sw * 180 / Math.PI).toFixed(0) + '°' }; }
             const p = prof.points; const a = gridRef(p[0]), b = gridRef(p[1]);
             return { id: op.id, label: 'Wall', sub: (a && b) ? a + '·' + b : '#' + op.id }; } },
         { key: 'openings', label: 'Openings', match: op => op.op_type === 'GEOM_CUT',
