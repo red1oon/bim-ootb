@@ -6,7 +6,8 @@
 // EXACTLY 2 signed GEOM_MOVE by the SAME snapped delta — both selected centres move by it, the control door has
 // ZERO move-ops, the chain verifies + is signed (3 inserts + 2 moves), and Escape clears the set to 0.
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-multiselect', 'viewer');
+// 2026-07-08: was hardcoded to a long-dead worktree (/tmp/wt-multiselect/viewer) — serve THIS checkout instead.
+const VIEWER = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };
