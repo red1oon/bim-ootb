@@ -184,6 +184,7 @@
   <input id="dim-depth" type="number" step="0.1" min="0.1" value="3" title="Wall height / extrude depth (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-w" type="number" step="0.05" min="0.05" title="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-h" type="number" step="0.05" min="0.05" title="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-angle" type="number" step="1" min="1" max="179" title="Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-prof" type="number" step="0.05" min="0.05" value="0.3" title="Sweep profile size w×h (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-rad" type="number" step="0.05" min="0.01" value="0.1" title="Fillet / chamfer radius (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
 </div>
@@ -613,7 +614,7 @@ const bSketch = document.getElementById('b-sketch');
 const bExtrude = document.getElementById('b-extrude');
 // Numeric dimension inputs (operability v3): typed wall height / sweep profile / fillet radius instead of hardcoded.
 const dimDepth = document.getElementById('dim-depth'), dimProf = document.getElementById('dim-prof'), dimRad = document.getElementById('dim-rad');
-const dimW = document.getElementById('dim-w'), dimH = document.getElementById('dim-h');
+const dimW = document.getElementById('dim-w'), dimH = document.getElementById('dim-h'), dimAngle = document.getElementById('dim-angle');
 // Lucide line icons (verbatim) for the Sketch button's two states — no unicode glyphs on the surface.
 const _ico = (p) => '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>';
 const SK_SKETCH = _ico('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>') + '<span>Sketch</span>';
@@ -739,13 +740,15 @@ function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.quer
 // shape updates from one changed number — the "drag one dimension, everything updates" acceptance bar.
 async function sketchDimsRefresh() {
   const S = window.Bonsai.sketch;
-  if (!sketching || S.mode === 'axis' || S.points.length !== 4) { dimW.style.display = 'none'; dimH.style.display = 'none'; return; }
+  if (!sketching || S.mode === 'axis' || S.points.length !== 4) { dimW.style.display = 'none'; dimH.style.display = 'none'; dimAngle.style.display = 'none'; return; }
   const r = await S.solve();
-  dimW.style.display = ''; dimH.style.display = '';
+  dimW.style.display = ''; dimH.style.display = ''; dimAngle.style.display = '';
   if (document.activeElement !== dimW) dimW.value = r.edgeLengths[0].toFixed(2);
   if (document.activeElement !== dimH) dimH.value = r.edgeLengths[1].toFixed(2);
+  if (document.activeElement !== dimAngle && r.cornerAngleDeg != null) dimAngle.value = r.cornerAngleDeg.toFixed(1);
   sketchMarkers();
-  setStat('sketch: ' + S.mode + '  W=' + r.edgeLengths[0].toFixed(2) + 'm  H=' + r.edgeLengths[1].toFixed(2) + 'm');
+  setStat('sketch: ' + S.mode + '  W=' + r.edgeLengths[0].toFixed(2) + 'm  H=' + r.edgeLengths[1].toFixed(2) +
+    'm  ∠=' + (r.cornerAngleDeg != null ? r.cornerAngleDeg.toFixed(1) : '?') + '°');
 }
 async function sketchDimCommit(idx, val) {
   if (!(val > 0)) return;
@@ -753,8 +756,15 @@ async function sketchDimCommit(idx, val) {
   await sketchDimsRefresh();
   audioCue('tick');
 }
+async function sketchAngleCommit(deg) {
+  if (!(deg > 0 && deg < 180)) return;
+  window.Bonsai.sketch.setAngle(deg);
+  await sketchDimsRefresh();
+  audioCue('tick');
+}
 dimW.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchDimCommit(0, parseFloat(dimW.value)); dimW.blur(); } });
 dimH.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchDimCommit(1, parseFloat(dimH.value)); dimH.blur(); } });
+dimAngle.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchAngleCommit(parseFloat(dimAngle.value)); dimAngle.blur(); } });
 bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); sketchDimsRefresh(); };
 // #4 POINT RECOVERY (RESUME_MODELLER_POLISH.md): in-progress sketch/route points are transient (not op-log) — a
 // stray Escape used to lose them all. Now a cancel-exit BUFFERS them for the session; re-opening the tool RESTORES
@@ -780,7 +790,7 @@ function exitSketch(committed) {
   if (committed) _sketchDraft = null;
   else if (p && p.length) { _sketchDraft = p.map(pt => ({ x: pt.x, y: pt.y })); if (window.toast) toast(p.length + ' sketch points saved — re-open Sketch to continue', 'info'); }
   else _sketchDraft = null;                                      // cancelled with no points → discard any old draft
-  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; dimW.style.display = 'none'; dimH.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
+  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; dimW.style.display = 'none'; dimH.style.display = 'none'; dimAngle.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
