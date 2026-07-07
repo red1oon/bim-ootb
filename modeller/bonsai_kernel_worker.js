@@ -111,6 +111,28 @@ function applyFeature(kernel, op) {
     wireHandles.forEach(w => kernel.release(w));
     return solid;
   }
+  if (op.op_type === 'GEOM_REVOLVE') {            // BRepPrimAPI_MakeRevol via kernel.revolve — Tier 1 §GAP-TO-COMPETITIVE,
+    // highest-value shoulder: axisymmetric solids (round columns, tanks/vessels, turned parts) have NO authoring
+    // path today. Reuses GEOM_EXTRUDE_POLY's profile.points ring format EXACTLY (planegcs-solved polygon), just
+    // revolved about a caller-supplied axis instead of extruded along a direction. LEAF: builds a fresh
+    // self-contained solid from its OWN parameters (profile+axis+angle), no `parent` reference — same class as
+    // GEOM_SWEEP/GEOM_LOFT (checked against buildSolids()'s branching below: falls into the terminal `else`
+    // applyFeature() branch, not a parent-lookup branch), so bonsai_oplog.js's LEAF whitelist includes it.
+    const pts = P.profile.points;
+    const z = P.profile.z || 0;
+    const edges = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      edges.push(kernel.makeLineEdge({ x: a[0], y: a[1], z }, { x: b[0], y: b[1], z }));
+    }
+    const wire = kernel.makeWire(edges);
+    const face = kernel.makeFace(wire);
+    const axis = P.axis;   // { point:{x,y,z}, direction:{x,y,z} } — SAME shape as GEOM_ROTATE's axis object below
+    const angleRad = P.angleRad != null ? P.angleRad : 2 * Math.PI;   // default: full revolution
+    const solid = kernel.revolve(face, axis, angleRad);
+    edges.forEach(e => kernel.release(e)); kernel.release(wire); kernel.release(face);
+    return solid;
+  }
   if (op.op_type === 'GEOM_OPENING') {            // IfcRelVoidsElement: base solid CUT by a void box
     const baseRect = kernel.makeRectangle(P.profile.w, P.profile.h);
     const wall = kernel.extrude(baseRect, P.dir[0], P.dir[1], P.dir[2]); kernel.release(baseRect);
@@ -257,6 +279,20 @@ function edgeMidpoints(kernel, solid) {
   return out;
 }
 
+// Face midpoints of a solid in CANONICAL getSubShapes('face') order — the §FACE-PICK input device for
+// GEOM_SHELL (facesToRemove) and GEOM_DRAFT (the one pulled face), mirroring edgeMidpoints() above exactly.
+// Midpoint = bbox centre (exact for the planar faces of our box/extrude solids); index is stable across a
+// deterministic re-fold, so a face picked by index resolves to the same face on replay.
+function faceMidpoints(kernel, solid) {
+  const faces = kernel.getSubShapes(solid, 'face');
+  const out = faces.map((f, i) => {
+    const b = kernel.getBoundingBox(f, false);
+    return { i, mid: [(b.xmin + b.xmax) / 2, (b.ymin + b.ymax) / 2, (b.zmin + b.zmax) / 2] };
+  });
+  faces.forEach(f => kernel.release(f));
+  return out;
+}
+
 // THE FEATURE-TREE FOLD (solids map): an ordered op-log -> a set of live solids. GEOM_CUT and GEOM_FILLET
 // modify their referenced parent solid IN PLACE (the child references a prior feature by id), so the op-log
 // IS the feature tree and the rendered geometry is a pure fold of the chain — replaying ops[0..k] = history.
@@ -301,6 +337,91 @@ function buildSolids(kernel, ops, seedBoxes) {
       const r = P.radius != null ? P.radius : 0.1;
       const result = (P.kind === 'chamfer') ? kernel.chamfer(pe.shape, sel, r) : kernel.fillet(pe.shape, sel, r);
       all.forEach(e => kernel.release(e));            // local edge subshapes (parent cached → NOT released)
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_SHELL') {          // BRepOffsetAPI_MakeThickSolid via kernel.shell — hollow a
+      // solid to a wall thickness (cast-then-hollow modeling). PARENT-MUTATING like GEOM_FILLET (mutates the
+      // referenced solid in place, same solids-map key), NOT a leaf — checked against kernel.shell's real signature
+      // `shell(solid, facesToRemove, thickness, tolerance)` :286 of lib/kernel/index.js, which takes an existing
+      // solid. facesToRemove = face HANDLES (kernel.#withU32 marshals them), so P.faces are INDICES into the
+      // canonical getSubShapes('face') order (mirrors GEOM_FILLET's P.edges indices) — resolved via `listFaces`
+      // §FACE-PICK below, stable across deterministic re-folds.
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_SHELL parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const allFaces = kernel.getSubShapes(pe.shape, 'face');           // canonical order — must match faceMidpoints()
+      const remove = (P.faces || []).map(i => allFaces[i]).filter(s => s != null);
+      const thickness = P.thickness != null ? P.thickness : 0.1;
+      const tolerance = P.tolerance != null ? P.tolerance : 1e-3;       // coarser legacy tolerance (kernel doc: survives more inputs)
+      const result = kernel.shell(pe.shape, remove, thickness, tolerance);
+      allFaces.forEach(f => kernel.release(f));            // local face subshapes (parent cached → NOT released)
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_OFFSET') {         // BRepOffsetAPI_MakeOffsetShape via kernel.offset — grows/
+      // shrinks ALL faces of a solid by `distance` uniformly. PARENT-MUTATING (kernel.offset(solid,...) takes an
+      // existing solid — real signature `offset(solid, distance, tolerance)` :298, NO face-list arg at all, simpler
+      // than assumed in the task brief: it is a whole-solid operation, not a per-face pick).
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_OFFSET parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const distance = P.distance != null ? P.distance : 0.1;
+      const tolerance = P.tolerance != null ? P.tolerance : 1e-3;
+      const result = kernel.offset(pe.shape, distance, tolerance);
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_FILLET_VARIABLE') {   // BRepFilletAPI_MakeFillet(law) via kernel.filletVariable —
+      // a fillet whose radius VARIES start→end along ONE edge. PARENT-MUTATING like GEOM_FILLET. Real signature
+      // `filletVariable(solid, edge, startRadius, endRadius)` :1096 takes a SINGLE edge HANDLE (not an array like
+      // plain fillet/chamfer) — verified directly against lib/kernel/index.js, not assumed by analogy. P.edges[0]
+      // (an index into the SAME canonical getSubShapes('edge') order GEOM_FILLET's edge-pick already resolves) is
+      // used as the one edge; extra indices are ignored (documented, not silently dropped — see witness).
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_FILLET_VARIABLE parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const all = kernel.getSubShapes(pe.shape, 'edge');               // canonical order — same as GEOM_FILLET
+      const edgeIdx = (P.edges && P.edges.length) ? P.edges[0] : 0;
+      const edge = all[edgeIdx];
+      const r0 = P.startRadius != null ? P.startRadius : 0.05, r1 = P.endRadius != null ? P.endRadius : 0.2;
+      const result = kernel.filletVariable(pe.shape, edge, r0, r1);
+      all.forEach(e => kernel.release(e));
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_CHAMFER_DIST_ANGLE') {   // BRepFilletAPI_MakeChamfer(dist,angle) via
+      // kernel.chamferDistAngle — a chamfer variant taking distance+angle instead of one distance. PARENT-MUTATING
+      // like GEOM_FILLET's `kind:'chamfer'`; kept as its OWN op_type (not folded into GEOM_FILLET's kind switch)
+      // per the task's per-op witness requirement. Real signature `chamferDistAngle(solid, edges, distance,
+      // angleDeg)` :272 — `edges` IS an array (unlike filletVariable's single edge) and `angleDeg` is DEGREES
+      // (verified against the param name, not radians like most of this kernel's other angle args).
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_CHAMFER_DIST_ANGLE parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const all = kernel.getSubShapes(pe.shape, 'edge');
+      const sel = (P.edges || []).map(i => all[i]).filter(s => s != null);
+      const distance = P.distance != null ? P.distance : 0.1;
+      const angleDeg = P.angleDeg != null ? P.angleDeg : 45;
+      const result = kernel.chamferDistAngle(pe.shape, sel, distance, angleDeg);
+      all.forEach(e => kernel.release(e));
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_DRAFT') {          // BRepOffsetAPI_DraftAngle via kernel.draft — a draft/pull
+      // angle applied to ONE face (precast/formwork use). PARENT-MUTATING. Real signature `draft(shape, face,
+      // angleRad, direction)` :301 takes a SINGLE face HANDLE (not an array) — mirrors filletVariable's
+      // single-edge shape. P.faces[0] (an index into the SAME canonical getSubShapes('face') order GEOM_SHELL
+      // resolves via `listFaces`) is the one face.
+      // ⚠ VERIFIED CONVENTION (probed directly against this vendored wasm build, NOT assumed from generic
+      // OCCT docs — see the Tier 1 session's `direction` investigation): `direction` must be the PICKED
+      // FACE'S OWN OUTWARD NORMAL for a genuine taper on a SIDE (vertical) face — any angleRad then produces
+      // a real shift. A direction that does NOT match the face's own normal (e.g. a generic vertical "pull"
+      // vector on a side face) is accepted WITHOUT throwing but is a silent geometric no-op. Drafting a
+      // horizontal (top/bottom) face with its own normal as direction THROWS a WebAssembly exception (a
+      // degenerate neutral-plane case for a cap face). So GEOM_DRAFT is scoped here to SIDE faces only,
+      // `direction` == that face's own outward normal — the caller (UI/witness) is responsible for supplying
+      // a correct normal, same discipline as GEOM_FILLET/SHELL expecting real edge/face indices.
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_DRAFT parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const allFaces = kernel.getSubShapes(pe.shape, 'face');
+      const faceIdx = (P.faces && P.faces.length) ? P.faces[0] : 0;
+      const face = allFaces[faceIdx];
+      const angleRad = P.angleRad != null ? P.angleRad : 0.1;
+      const dir = P.direction || { x: 0, y: 0, z: 1 };
+      const result = kernel.draft(pe.shape, face, angleRad, dir);
+      allFaces.forEach(f => kernel.release(f));
       shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
     } else if (op.op_type === 'GEOM_MOVE') {          // free translate of one referenced solid (W-BONSAI-MOVE PATH A)
       // A signed GEOM_MOVE references a prior feature by `parent` and TRANSLATES its solid IN PLACE, so a later
@@ -447,6 +568,15 @@ self.onmessage = async (e) => {
       const pe = solids.get(parentId);
       const edges = pe ? edgeMidpoints(kernel, pe.shape) : [];   // solids are cached shapes — do NOT release
       self.postMessage({ id, ok: true, edges });
+      return;
+    }
+    if (e.data.listFaces) {                          // §FACE-PICK (GEOM_SHELL/GEOM_DRAFT): fold to the parent
+      // solid, report its face midpoints in canonical order — the SAME device shape as listEdges above.
+      const { ops: cops, parentId } = e.data.listFaces;
+      const solids = buildSolids(kernel, cops);
+      const pe = solids.get(parentId);
+      const faces = pe ? faceMidpoints(kernel, pe.shape) : [];   // solids are cached shapes — do NOT release
+      self.postMessage({ id, ok: true, faces });
       return;
     }
     if (ops) {                                       // CHAIN fold (feature tree) -> array of meshes

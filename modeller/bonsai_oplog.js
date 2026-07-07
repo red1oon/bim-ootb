@@ -299,7 +299,14 @@
       // GEOM_ARRAY's shape (which all resolve+mutate/replace a referenced prior feature). Decided explicitly,
       // not defaulted — checked against buildSolids()'s branching in bonsai_kernel_worker.js, where GEOM_LOFT
       // falls into the same terminal `else` (applyFeature) branch as GEOM_SWEEP, not the parent-lookup branches.
-      const LEAF = op.op_type === 'GEOM_EXTRUDE' || op.op_type === 'GEOM_EXTRUDE_POLY' || op.op_type === 'GEOM_SWEEP' || op.op_type === 'GEOM_LOFT';
+      // Tier 1 (§GAP-TO-COMPETITIVE, prompts/BONSAI_KERNEL_RESEARCH.md): GEOM_REVOLVE joins this LEAF set for
+      // the SAME reason as GEOM_LOFT — its profile+axis+angle payload builds a fresh self-contained solid with
+      // NO `parent` reference (checked against bonsai_kernel_worker.js applyFeature(), the terminal-else branch).
+      // GEOM_SHELL/GEOM_OFFSET/GEOM_FILLET_VARIABLE/GEOM_CHAMFER_DIST_ANGLE/GEOM_DRAFT are DELIBERATELY
+      // EXCLUDED — each references a `parent` and MUTATES that solid in place (same class as GEOM_CUT/
+      // GEOM_FILLET, checked against the same file's buildSolids() parent-lookup branches for each), so they
+      // must take the authoritative re-fold like GEOM_CUT/GEOM_FILLET do, not the optimistic leaf append.
+      const LEAF = op.op_type === 'GEOM_EXTRUDE' || op.op_type === 'GEOM_EXTRUDE_POLY' || op.op_type === 'GEOM_SWEEP' || op.op_type === 'GEOM_LOFT' || op.op_type === 'GEOM_REVOLVE';
       if (!LEAF) {
         r = await this._foldUpto();                              // mutates a referenced solid → authoritative re-fold
       } else {
