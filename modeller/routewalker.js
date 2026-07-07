@@ -182,7 +182,7 @@ function rwWalk(buildingDb, buildingName, opts) {
   var anchorKey = _rwFindAnchorKey(buildingName, dbBldName);
   var hasAnchors = anchorKey !== null;
 
-  var result = { fixtures: 0, pipes: 0, clashSkipped: 0, refused: 0, total: 0 };
+  var result = { fixtures: 0, pipes: 0, clashSkipped: 0, refused: 0, total: 0, fixturesRefused: 0 };
 
   if (hasAnchors && !opts.forceRegen) {
     // Path A: pattern walk using pre-mined anchors (Java port)
@@ -200,6 +200,7 @@ function rwWalk(buildingDb, buildingName, opts) {
     console.log('§RW_PATH_B building=' + dbBldName + ' rooms=' + rooms.length);
     var bomResult = _rwPlaceFromBOM(buildingDb, dbBldName, rooms, arcEnvelope);
     result.fixtures += bomResult.placed;
+    result.fixturesRefused += (bomResult.refused || 0);
 
     // If no pre-mined anchors, also generate pipe runs from placed fixtures
     if (!hasAnchors || opts.forceRegen) {
@@ -212,6 +213,7 @@ function rwWalk(buildingDb, buildingName, opts) {
 
   result.total = result.fixtures + result.pipes;
   console.log('§RW_WALK building=' + buildingName + ' fixtures=' + result.fixtures +
+              ' fixturesRefused=' + result.fixturesRefused +
               ' pipes=' + result.pipes + ' clashSkipped=' + result.clashSkipped +
               ' refused=' + result.refused + (result.refused ? ' (no real cross-section product, WalkerDoctrine.md §8)' : '') +
               ' total=' + result.total);
@@ -1117,7 +1119,7 @@ function _rwClassifyRoom(name, areaSqm) {
  * Reads ad_space_type_mep_bom + ad_placement_offset + _shim_attributes.
  */
 function _rwPlaceFromBOM(buildingDb, buildingName, rooms, arcEnvelope) {
-  var placed = 0;
+  var placed = 0, refused = 0, refusedList = [];
 
   // Load placement offsets (keyed by rule name)
   var offsets = {};
@@ -1163,27 +1165,45 @@ function _rwPlaceFromBOM(buildingDb, buildingName, rooms, arcEnvelope) {
 
       var info = RW_IFC_MAP[product] || RW_IFC_MAP._DEFAULT;
 
+      // WalkerDoctrine.md §10 / real_placement_resolver.js: the ONE shared gate every leaf placement routes
+      // through instead of a hardcoded box. Real dims are the SAME for every q in this product's qty loop
+      // (per-product, not per-instance), so resolve once per BOM row. NO MATCH -> honest refuse: this product
+      // is skipped entirely for this room (never a fabricated 0.15x0.15x0.15 box) and counted in `refused`.
+      var real;
+      try {
+        var RPR = (typeof window !== 'undefined' && window.RealPlacementResolver) ||
+          (typeof globalThis !== 'undefined' && globalThis.RealPlacementResolver) || null;
+        if (!RPR) throw new Error('RealPlacementResolver module not loaded');
+        real = RPR.resolveRealPlacement({ discipline: info.disc, category: product, ifc_class: info.cls, productHint: product });
+      } catch (e) {
+        refused += qty;
+        refusedList.push({ product: product, room: room.storey + '/' + room.type, qty: qty, reason: (e && e.message) || String(e) });
+        console.error('§RW_BOM_PLACE_REFUSE product=' + product + ' room=' + room.storey + '/' + room.type +
+          ' qty=' + qty + ' reason=' + ((e && e.message) || e) + ' — WALKER_GAP, no fabricated box, skipped');
+        return;
+      }
+
       for (var q = 0; q < qty; q++) {
         // Compute XYZ from room bbox + placement offset
         var pos = _rwComputePosition(room, offset, hostSurface, q, qty);
 
-        // Check ARC clash
-        if (_rwClashesWithArc(pos.x, pos.y, pos.z, 0.1, 0.1, 0.1, arcEnvelope)) continue;
+        // Check ARC clash (real dims, not a flat constant)
+        if (_rwClashesWithArc(pos.x, pos.y, pos.z, real.width, real.depth, real.height, arcEnvelope)) continue;
 
         var guid = _rwGuid(product);
         _rwInsertElement(buildingDb, guid, info.cls,
           product + ' ' + room.storey + (qty > 1 ? ' #' + (q + 1) : ''),
           buildingName, room.storey, info.disc, info.rgba,
           pos.x, pos.y, pos.z,
-          0.15, 0.15, 0.15  // fixture bbox — small
+          real.width, real.depth, real.height  // real ad_product_dim bbox — WalkerDoctrine.md §9/§10
         );
         placed++;
       }
     });
   });
 
-  console.log('§RW_BOM_PLACE rooms=' + rooms.length + ' fixtures=' + placed);
-  return { placed: placed };
+  console.log('§RW_BOM_PLACE rooms=' + rooms.length + ' fixtures=' + placed + ' refused=' + refused);
+  return { placed: placed, refused: refused, refusedList: refusedList };
 }
 
 /**
