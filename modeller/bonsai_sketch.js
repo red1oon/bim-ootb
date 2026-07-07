@@ -17,10 +17,19 @@
                           // THIS sketch is pinned p2p_coincident to it (a real solver constraint, tracks the
                           // target's SOLVED position through later edits) instead of a near-duplicate point.
     WELD_TOL: 0.4,       // same value as bonsai_grid.js's own snapTol — one shared "close enough" convention.
+    // Circle primitive (BONSAI_KERNEL_RESEARCH.md §Follow-up spec — circle/arc sketch primitive — Witness:
+    // W-E2E-SKETCH-CIRCLE): a REAL geometric-primitive list alongside the point-ring, NOT a repurposing of
+    // it (a circle isn't a closed point loop). Placement = the standard CAD convention: click sets CENTER,
+    // then a second click (distance center→click) OR a typed #dim-radius value sets the radius. A lone
+    // circle has nothing to constrain against, so it does NOT round-trip through planegcs (tangent/
+    // circle_radius solver wiring is the explicitly deferred next increment). Circle ONLY — arc placement
+    // UI is unsettled and out of scope here.
+    circles: [],         // [{ id, cx, cy, r }] committed circles, in placement order
+    pendingCircle: null, // { cx, cy } — center clicked, radius not yet set
     _gcs: null,
     AXIS_TOL: 0.35,      // |dy| < AXIS_TOL*|dx| ⇒ treat edge as horizontal (and vice-versa)
-    mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides)
-    MODES: ['axis', 'rect', 'square'],
+    mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides) | 'circle' (center+radius primitive)
+    MODES: ['axis', 'rect', 'square', 'circle'],
     setMode(m) { if (this.MODES.includes(m)) this.mode = m; return this.mode; },
     cycleMode() { this.mode = this.MODES[(this.MODES.indexOf(this.mode) + 1) % this.MODES.length]; return this.mode; },
     setDimension(i, value) { this.dims[i] = +value; },
@@ -36,8 +45,32 @@
       return this._gcs;
     },
 
-    reset() { this.points = []; this.dims = {}; this.weld = {}; },
+    reset() { this.points = []; this.dims = {}; this.weld = {}; this.circles = []; this.pendingCircle = null; },
     addPoint(x, y) { this.points.push({ id: 'p' + this.points.length, x: +x, y: +y }); return this.points.length; },
+
+    // ── Circle placement (mode 'circle') — standard CAD center-then-radius convention ──────────────────
+    // First click = center (pending); second click = radius as the Euclidean distance center→click.
+    addCirclePoint(x, y) {
+      if (!this.pendingCircle) { this.pendingCircle = { cx: +x, cy: +y }; return { state: 'center', cx: +x, cy: +y }; }
+      return this.commitCircleRadius(Math.hypot(+x - this.pendingCircle.cx, +y - this.pendingCircle.cy));
+    },
+    commitCircleRadius(r) {
+      if (!this.pendingCircle || !(r > 0)) return null;
+      const c = { id: 'c' + this.circles.length, cx: this.pendingCircle.cx, cy: this.pendingCircle.cy, r: +r };
+      this.circles.push(c); this.pendingCircle = null;
+      console.log(TAG + ' circle committed id=' + c.id + ' center=(' + c.cx.toFixed(3) + ',' + c.cy.toFixed(3) + ') r=' + c.r.toFixed(3));
+      return { state: 'committed', circle: c };
+    },
+    // Typed #dim-radius path: commits the pending circle at exactly r, or retro-edits the most recent one.
+    setCircleRadius(r) {
+      if (!(r > 0)) return null;
+      if (this.pendingCircle) return this.commitCircleRadius(+r);
+      const last = this.circles[this.circles.length - 1];
+      if (!last) return null;
+      last.r = +r;
+      console.log(TAG + ' circle radius set id=' + last.id + ' r=' + last.r.toFixed(3));
+      return { state: 'committed', circle: last };
+    },
 
     // Same as addPoint, but if (x,y) lands within WELD_TOL of an EARLIER point already in this sketch, pin
     // the new point p2p_coincident to that one (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2) — the
@@ -87,6 +120,9 @@
 
     _buildConstraints() {
       const n = this.points.length;
+      // Circle mode bypasses the point-ring solver machinery entirely — a lone circle has nothing to
+      // constrain against (tangent/circle_radius solver wiring is the deferred follow-up increment).
+      if (this.mode === 'circle') return { lines: [], constraints: [] };
       if (this.mode === 'axis' || n !== 4) return { lines: [], constraints: this._autoConstraints().concat(this._weldConstraints()) };
       const lines = [];
       for (let i = 0; i < n; i++) lines.push({ id: 'L' + i, type: 'line', p1_id: this.points[i].id, p2_id: this.points[(i + 1) % n].id });
@@ -180,6 +216,19 @@
     // Leg 3: commit the solved profile as a FEATURE in the op-log (vs solveAndExtrude's one-shot author).
     async commitExtrude(depth, opts) {
       depth = depth || 3;
+      // Circle profile: the payload carries profile.circle {cx,cy,r} as a SIBLING key to profile.points
+      // (same convention as the other leaf ops' payload extensions), consumed by the GEOM_EXTRUDE_POLY
+      // handler's makeCircleEdge branch in bonsai_kernel_worker.js. No planegcs round-trip needed.
+      if (this.mode === 'circle') {
+        const c = this.circles[this.circles.length - 1];
+        if (!c) throw new Error('no circle to extrude — click a centre, then set the radius');
+        const res = await window.Bonsai.oplog.commit(
+          { op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { circle: { cx: c.cx, cy: c.cy, r: c.r } }, depth } },
+          opts || { color: 0x9fd6b4 });
+        console.log(TAG + ' commitExtrude circle center=(' + c.cx.toFixed(3) + ',' + c.cy.toFixed(3) + ') r=' + c.r.toFixed(3) +
+          ' depth=' + depth + ' tris=' + res.triangleCount);
+        return { solveStatus: 'circle', solved: [], ...res };
+      }
       const r = await this.solve();
       const pts = r.points.map(p => [p.x, p.y]);
       const res = await window.Bonsai.oplog.commit(

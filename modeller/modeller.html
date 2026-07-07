@@ -185,6 +185,7 @@
   <input id="dim-w" type="number" step="0.05" min="0.05" title="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-h" type="number" step="0.05" min="0.05" title="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-angle" type="number" step="1" min="1" max="179" title="Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-radius" type="number" step="0.05" min="0.05" title="Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-prof" type="number" step="0.05" min="0.05" value="0.3" title="Sweep profile size w×h (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <input id="dim-rad" type="number" step="0.05" min="0.01" value="0.1" title="Fillet / chamfer radius (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
 </div>
@@ -614,7 +615,7 @@ const bSketch = document.getElementById('b-sketch');
 const bExtrude = document.getElementById('b-extrude');
 // Numeric dimension inputs (operability v3): typed wall height / sweep profile / fillet radius instead of hardcoded.
 const dimDepth = document.getElementById('dim-depth'), dimProf = document.getElementById('dim-prof'), dimRad = document.getElementById('dim-rad');
-const dimW = document.getElementById('dim-w'), dimH = document.getElementById('dim-h'), dimAngle = document.getElementById('dim-angle');
+const dimW = document.getElementById('dim-w'), dimH = document.getElementById('dim-h'), dimAngle = document.getElementById('dim-angle'), dimRadius = document.getElementById('dim-radius');
 // Lucide line icons (verbatim) for the Sketch button's two states — no unicode glyphs on the surface.
 const _ico = (p) => '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>';
 const SK_SKETCH = _ico('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>') + '<span>Sketch</span>';
@@ -730,16 +731,39 @@ function sketchMarkers() {
     const ring = pts.map(p => new THREE.Vector3(p.x, p.y, 0.01)); if (pts.length >= 3) ring.push(ring[0]);
     sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
   }
+  // Circle primitives (mode 'circle', W-E2E-SKETCH-CIRCLE) — same click-updated preview mechanism as the
+  // point markers above: a centre marker per circle (and per pending centre), plus a rim polyline.
+  const SK = window.Bonsai.sketch;
+  const mark = (x, y) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshBasicMaterial({ color: 0x4fc3f7 })); m.position.set(x, y, 0.01); sketchGroup.add(m); };
+  (SK.circles || []).forEach(c => {
+    mark(c.cx, c.cy);
+    const rim = []; const SEG = 64;
+    for (let i = 0; i <= SEG; i++) { const a = i / SEG * Math.PI * 2; rim.push(new THREE.Vector3(c.cx + c.r * Math.cos(a), c.cy + c.r * Math.sin(a), 0.01)); }
+    sketchGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rim), new THREE.LineBasicMaterial({ color: 0x4fc3f7 })));
+  });
+  if (SK.pendingCircle) mark(SK.pendingCircle.cx, SK.pendingCircle.cy);
 }
 // Constraint-intent cycle (the planegcs shoulders): Axis (per-edge H/V) → Rect (∥+⊥) → Square (+ equal sides).
 const bConstrain = document.getElementById('b-constrain');
-const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square' };
+const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square', circle: 'Circle' };
 function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.querySelector('span').textContent = CON_LABEL[m] || m; bConstrain.classList.toggle('on', m !== 'axis'); }
 // Live editable dimensions (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2, p2p_distance): once a
 // rect/square quad has all 4 points, solve once to show W/H, and re-solve on every typed edit so the WHOLE
 // shape updates from one changed number — the "drag one dimension, everything updates" acceptance bar.
 async function sketchDimsRefresh() {
   const S = window.Bonsai.sketch;
+  // Circle mode (W-E2E-SKETCH-CIRCLE): one radius field, gated on the MODE (not the quad-length check) —
+  // no planegcs round-trip (a lone circle has nothing to constrain against; solver wiring is deferred).
+  if (S.mode === 'circle') {
+    dimW.style.display = 'none'; dimH.style.display = 'none'; dimAngle.style.display = 'none';
+    if (!sketching) { dimRadius.style.display = 'none'; return; }
+    dimRadius.style.display = '';
+    const last = S.circles[S.circles.length - 1];
+    if (document.activeElement !== dimRadius && last) dimRadius.value = last.r.toFixed(2);
+    sketchMarkers();
+    return;
+  }
+  dimRadius.style.display = 'none';
   if (!sketching || S.mode === 'axis' || S.points.length !== 4) { dimW.style.display = 'none'; dimH.style.display = 'none'; dimAngle.style.display = 'none'; return; }
   const r = await S.solve();
   dimW.style.display = ''; dimH.style.display = ''; dimAngle.style.display = '';
@@ -762,9 +786,21 @@ async function sketchAngleCommit(deg) {
   await sketchDimsRefresh();
   audioCue('tick');
 }
+// Typed radius (W-E2E-SKETCH-CIRCLE): Enter sets the radius EXACTLY — commits a pending centre, or
+// retro-edits the most recent circle. Same field pattern as #dim-w/#dim-h above.
+async function sketchRadiusCommit(r) {
+  if (!(r > 0)) return;
+  const res = window.Bonsai.sketch.setCircleRadius(r);
+  if (!res) { setStat('sketch: click a circle centre first, then set the radius'); return; }
+  sketchMarkers();
+  setStat('sketch: circle r=' + res.circle.r.toFixed(2) + 'm @ (' + res.circle.cx.toFixed(2) + ',' + res.circle.cy.toFixed(2) + ') — Extrude for a cylinder');
+  await sketchDimsRefresh();
+  audioCue('tick');
+}
 dimW.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchDimCommit(0, parseFloat(dimW.value)); dimW.blur(); } });
 dimH.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchDimCommit(1, parseFloat(dimH.value)); dimH.blur(); } });
 dimAngle.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchAngleCommit(parseFloat(dimAngle.value)); dimAngle.blur(); } });
+dimRadius.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchRadiusCommit(parseFloat(dimRadius.value)); dimRadius.blur(); } });
 bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); sketchDimsRefresh(); };
 // #4 POINT RECOVERY (RESUME_MODELLER_POLISH.md): in-progress sketch/route points are transient (not op-log) — a
 // stray Escape used to lose them all. Now a cancel-exit BUFFERS them for the session; re-opening the tool RESTORES
@@ -790,7 +826,7 @@ function exitSketch(committed) {
   if (committed) _sketchDraft = null;
   else if (p && p.length) { _sketchDraft = p.map(pt => ({ x: pt.x, y: pt.y })); if (window.toast) toast(p.length + ' sketch points saved — re-open Sketch to continue', 'info'); }
   else _sketchDraft = null;                                      // cancelled with no points → discard any old draft
-  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; dimW.style.display = 'none'; dimH.style.display = 'none'; dimAngle.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
+  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; dimW.style.display = 'none'; dimH.style.display = 'none'; dimAngle.style.display = 'none'; dimRadius.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
@@ -804,6 +840,18 @@ canvas.addEventListener('pointerdown', (e) => {
   if (raycaster.ray.intersectPlane(GROUND, hit)) {
     // 2D correlation: if the grid is active, snap the click to the nearest gridlines (A-1, B-2…).
     const s = window.Bonsai.grid.snap(hit.x, hit.y);
+    // Circle mode (W-E2E-SKETCH-CIRCLE): standard CAD convention — first click sets the CENTER, second
+    // click sets the radius (distance centre→click); a typed #dim-radius also commits the pending centre.
+    if (window.Bonsai.sketch.mode === 'circle') {
+      const res = window.Bonsai.sketch.addCirclePoint(s.x, s.y);
+      sketchMarkers();
+      setStat(res.state === 'center'
+        ? 'sketch: circle centre @ (' + res.cx.toFixed(2) + ',' + res.cy.toFixed(2) + ') — click a rim point or type the radius'
+        : 'sketch: circle r=' + res.circle.r.toFixed(2) + 'm — Extrude for a cylinder');
+      if (res.state === 'committed') audioCue('tick');
+      sketchDimsRefresh();
+      return;
+    }
     // addPointWeld: a click near an EARLIER sketch point pins the new one p2p_coincident to it instead of
     // a near-duplicate a few cm off (standard CAD-sketch vertex-weld convention).
     const added = window.Bonsai.sketch.addPointWeld(s.x, s.y); sketchMarkers();
@@ -813,12 +861,16 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 });
 bExtrude.onclick = async () => {
-  if (window.Bonsai.sketch.points.length < 3) { setStat('need ≥3 points'); return; }
+  const SK = window.Bonsai.sketch;
+  if (SK.mode === 'circle') {
+    if (SK.pendingCircle) { setStat('circle needs a radius — click a rim point or type it'); return; }
+    if (!SK.circles.length) { setStat('need a circle — click its centre first'); return; }
+  } else if (SK.points.length < 3) { setStat('need ≥3 points'); return; }
   setStat('solving…');
   try {
     // leg 3: a sketched wall is committed as a FEATURE in the op-log (not a one-shot author).
-    const res = await window.Bonsai.sketch.commitExtrude(parseFloat(dimDepth.value) || 3, { color: 0x9fd6b4 });
-    setStat('committed wall #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
+    const res = await SK.commitExtrude(parseFloat(dimDepth.value) || 3, { color: 0x9fd6b4 });
+    setStat('committed ' + (SK.mode === 'circle' ? 'cylinder' : 'wall') + ' #' + res.id + '  solveStatus=' + res.solveStatus + '  tris=' + res.triangleCount);
     audioCue('commit'); exitSketch(true); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§SKETCH extrude fail ' + err); }
 };
@@ -3089,6 +3141,7 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
   else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); doRedo(); }
+  else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.mode === 'circle' && (window.Bonsai.sketch.pendingCircle || window.Bonsai.sketch.circles.length)) { e.preventDefault(); const SK = window.Bonsai.sketch; if (SK.pendingCircle) SK.pendingCircle = null; else SK.circles.pop(); sketchMarkers(); sketchDimsRefresh(); setStat('sketch: ' + SK.circles.length + ' circle' + (SK.circles.length === 1 ? '' : 's')); }
   else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.points.length) { e.preventDefault(); window.Bonsai.sketch.points.pop(); sketchMarkers(); setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points'); }
   else if (e.key === 'Backspace' && routing && routePts.length) { e.preventDefault(); routePts.pop(); routeMarkers(); bRun.disabled = routePts.length < 2; setStat('route: ' + routePts.length + ' points'); }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
@@ -5594,10 +5647,10 @@ if (qs.get('constrain') === 'demo') {
       const st = g.solve(); g.apply_solution();
       const A = g.sketch_index.get_sketch_point('a'), B = g.sketch_index.get_sketch_point('b'), C = g.sketch_index.get_sketch_point('c');
       out.sym = { status: st, midErr: +Math.hypot((A.x + B.x) / 2 - C.x, (A.y + B.y) / 2 - C.y).toFixed(4) };
-      // UI cycle: the Constrain button cycles axis→rect→square→axis (label tracks the mode).
+      // UI cycle: the Constrain button cycles axis→rect→square→circle→axis (label tracks the mode).
       out.btnExists = !!document.getElementById('b-constrain');
       S.setMode('axis'); const labels = [];
-      for (let k = 0; k < 3; k++) { bConstrain.onclick(); labels.push(bConstrain.querySelector('span').textContent); }
+      for (let k = 0; k < 4; k++) { bConstrain.onclick(); labels.push(bConstrain.querySelector('span').textContent); }
       out.cycleLabels = labels;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER constrain demo fail ' + e); }
     window.__constrainResult = out;

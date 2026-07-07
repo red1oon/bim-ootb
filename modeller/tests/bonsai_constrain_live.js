@@ -6,7 +6,7 @@
 // made mirror-symmetric by p2p_symmetric_ppp (the fixed centre lands on their midpoint); and a Constrain toolbar
 // button cycles the intent axis→rect→square. This is genuinely richer 2D parametrics earned with no new binding.
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-bonsai', 'viewer');
+const VIEWER = path.join(__dirname, '..');   // serve THIS tree's modeller/ (was a stale hardcoded /tmp/wt-bonsai path)
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };
@@ -43,7 +43,8 @@ const server = http.createServer((q, r) => {
   const rectClean = x.rect && x.rect.status === 0 && x.rect.cons === 3 && x.rect.m.maxCorner < 0.5 && x.rect.m.par < 0.5;
   const squareClean = x.square && x.square.status === 0 && x.square.cons === 4 && x.square.m.maxCorner < 0.5 && x.square.m.sideRatio < 1.02;
   const symOK = x.sym && x.sym.status === 0 && x.sym.midErr < 1e-3;                      // centre is the midpoint ⇒ symmetric
-  const uiCycles = x.btnExists === true && JSON.stringify(x.cycleLabels) === JSON.stringify(['Rect', 'Square', 'Axis']);
+  // W-E2E-SKETCH-CIRCLE: the mode cycle grew a 4th stop (the circle primitive) — axis→rect→square→circle→axis.
+  const uiCycles = x.btnExists === true && JSON.stringify(x.cycleLabels) === JSON.stringify(['Rect', 'Square', 'Circle', 'Axis']);
   const pass = inputNoisy && rectClean && squareClean && symOK && uiCycles;
   console.log('  §BONSAI-CONSTRAIN VERDICT ' + (pass ? 'PASS' : 'FAIL') +
     ' — inputNoisy=' + inputNoisy + ' rectClean=' + rectClean + ' squareClean=' + squareClean + ' symmetry=' + symOK + ' uiCycles=' + uiCycles);
