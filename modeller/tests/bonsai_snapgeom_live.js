@@ -5,7 +5,8 @@
 // far corner lands ~0.18m from B's corner: snap PULLS A's corner exactly onto B's vertex (5.2,5.2), a marker shows
 // mid-drag, and it BEATS the active grid (lands on 5.2, NOT the 5.0 gridline). Exactly ONE signed GEOM_MOVE; chain ok.
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-snapgeom', 'viewer');
+// 2026-07-08: was hardcoded to a long-dead worktree (/tmp/wt-snapgeom/viewer) — serve THIS checkout instead.
+const VIEWER = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };
