@@ -198,6 +198,7 @@ var _TRL_LOCALE = {
   ui_clear:          'Clear',
   ui_clear_all:      'Clear All',
   ui_export_excel:   'Export Excel',
+  ui_export_bcf:     'Export BCF',
   ui_share_whatsapp: 'Share \u2192 WhatsApp',
   ui_show_3d:        'Show in 3D',
   ui_snag:           'Snag',

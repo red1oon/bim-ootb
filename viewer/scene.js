@@ -547,25 +547,49 @@ async function setupScene(A) {
     location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
   };
 
+  // §OPEN_BUTTON_IFC_MERGE: Open now accepts native .db AND raw IFC (single or multi — 2+ IFCs
+  // silently merge into one building, reclaiming the landing page's drop-IFC engine verbatim —
+  // see import_own.js handleImportFiles/importMultiIFC, loaded here via ../import_own.js).
+  // The file extension already says what it is, so one widened picker replaces the old
+  // single-purpose one — no separate chooser menu needed (unlike Export, which needs one since
+  // format there is an INTENT the file itself can't carry).
+  A._routeOpenPicks = async function(files) {
+    var hasIfc = false;
+    for (var i = 0; i < files.length; i++) { if (/\.ifc$/i.test(files[i].name)) { hasIfc = true; break; } }
+    if (hasIfc) {
+      if (typeof window.handleImportFiles !== 'function') {
+        console.warn('§OPEN_IFC_MERGE_UNAVAILABLE import_own.js not loaded');
+        if (A.status) A.status.textContent = 'IFC import unavailable — reload the page';
+        return;
+      }
+      console.log('§OPEN_PICK_IFC count=' + files.length + ' names=' + Array.prototype.map.call(files, function(f){return f.name;}).join(','));
+      window.handleImportFiles(files, { sameTab: true });
+      return;
+    }
+    var file = files[0];
+    var buf = await file.arrayBuffer();
+    console.log('§OPEN_PICK_DB name=' + file.name + ' bytes=' + buf.byteLength);
+    await A._openDbBytes(file.name, new Uint8Array(buf));
+  };
+
   A.openModelDb = async function() {
     // Native Open… (Chromium FSA). Fallback = hidden <input type=file>.
     if (window.showOpenFilePicker) {
       try {
-        var picks = await window.showOpenFilePicker({ multiple: false,
-          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db', '.sqlite'] } }] });
-        var file = await picks[0].getFile();
-        var buf = await file.arrayBuffer();
-        console.log('§OPEN_PICK mode=fsa name=' + file.name + ' bytes=' + buf.byteLength);
-        await A._openDbBytes(file.name, new Uint8Array(buf));
+        var picks = await window.showOpenFilePicker({ multiple: true,
+          types: [
+            { description: 'Building database', accept: { 'application/x-sqlite3': ['.db', '.sqlite'] } },
+            { description: 'IFC (single or multi — auto-merges)', accept: { 'application/x-step': ['.ifc'] } }
+          ] });
+        var files = await Promise.all(picks.map(function(h){ return h.getFile(); }));
+        await A._routeOpenPicks(files);
         return;
       } catch (e) { if (e.name === 'AbortError') { console.log('§OPEN_CANCEL user'); return; } /* fall through */ }
     }
-    var input = document.createElement('input'); input.type = 'file'; input.accept = '.db,.sqlite'; input.style.display = 'none';
+    var input = document.createElement('input'); input.type = 'file'; input.accept = '.db,.sqlite,.ifc'; input.multiple = true; input.style.display = 'none';
     input.addEventListener('change', async function(){
       if (!input.files.length) return;
-      var file = input.files[0]; var buf = await file.arrayBuffer();
-      console.log('§OPEN_PICK mode=input name=' + file.name + ' bytes=' + buf.byteLength);
-      await A._openDbBytes(file.name, new Uint8Array(buf));
+      await A._routeOpenPicks(input.files);
       document.body.removeChild(input);
     });
     document.body.appendChild(input); input.click();
