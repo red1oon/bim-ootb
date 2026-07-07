@@ -54,7 +54,10 @@
     _defaults() {
       return [
         { key: 'walls', label: 'Walls', match: op => op.op_type === 'GEOM_EXTRUDE_POLY',
-          node: op => { const p = op.parameters.profile.points; const a = gridRef(p[0]), b = gridRef(p[1]);
+          node: op => { const prof = op.parameters.profile;
+            // circle profile (W-E2E-SKETCH-CIRCLE): profile.circle {cx,cy,r} sibling key — no point ring to gridRef
+            if (prof.circle) return { id: op.id, label: 'Column', sub: '⌀' + (2 * prof.circle.r).toFixed(2) + 'm' };
+            const p = prof.points; const a = gridRef(p[0]), b = gridRef(p[1]);
             return { id: op.id, label: 'Wall', sub: (a && b) ? a + '·' + b : '#' + op.id }; } },
         { key: 'openings', label: 'Openings', match: op => op.op_type === 'GEOM_CUT',
           node: op => ({ id: op.parent, label: 'Opening', sub: '⮡ Wall ' + op.parent }) }
