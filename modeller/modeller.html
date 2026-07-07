@@ -48,6 +48,11 @@
      turn the corner and flow horizontally LEFT along the top edge. They ROLL OUT in sequence on open. The ? help
      is the FIRST button in this rail (in line with the tools), not a separate floating button. */
   #bar { position: fixed; inset: 0; z-index: 11; pointer-events: none; display: block; }
+  /* pointer-events is inherited — #bar's own `none` (so empty toolbar space doesn't eat canvas drag/orbit)
+     silently propagated to every toolbar <input> too, only `button` got the override back. Real bug, found
+     live (2026-07-07): no dim-* field (rot/scale/move/depth/prof/rad, and the new sketch W/H) has EVER been
+     focusable by a genuine mouse click — confirmed on the pre-existing #dim-depth, not just a new field. */
+  #bar input { pointer-events: auto; }
   #bar button { position: fixed; width: 40px; height: 40px; padding: 0; justify-content: center;
     pointer-events: auto; border-radius: 50%; color: #fff; background: rgba(22,24,32,0.86);
     border: 1px solid rgba(255,255,255,0.12);
@@ -90,7 +95,7 @@
   #ol-show:hover { background: #2c3140; }
   body.ol-collapsed #bonsai-outliner { transform: translateX(-100%); }
   body.ol-collapsed #ol-show { display: flex; }
-  body.ol-collapsed #hist, body.ol-collapsed #stat, body.ol-collapsed #ins-panel { left: 12px; }
+  body.ol-collapsed #hist, body.ol-collapsed #stat, body.ol-collapsed #ins-panel, body.ol-collapsed #dim-row { left: 12px; }
 
   /* ── Insert panel (BOM catalog): one consistent surface — shared row component, no inline-style sprawl. ── */
   #ins-panel { position: fixed; left: 252px; top: 60px; width: 244px; background: #1b1d23;
@@ -146,20 +151,14 @@
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
   <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-move" disabled title="Move the selected object — drag an axis handle or nudge with arrow keys (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg><span>Move</span></button>
-  <input id="dim-move" type="number" step="0.1" min="0.05" value="1" title="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
-  <input id="dim-rot" type="number" step="1" placeholder="°" title="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
-  <input id="dim-scale" placeholder="x1.5" title="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)" style="display:none;width:54px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
-  <input id="dim-depth" type="number" step="0.1" min="0.1" value="3" title="Wall height / extrude depth (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-constrain" disabled style="display:none" title="Constraint intent the solver enforces on the sketch"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span>Axis</span></button>
   <button id="b-cut" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg><span>Cut</span></button>
   <button id="b-route" disabled title="Sweep a profile along a route (MEP run)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Route</span></button>
   <button id="b-run" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Sweep Run</span></button>
-  <input id="dim-prof" type="number" step="0.05" min="0.05" value="0.3" title="Sweep profile size w×h (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-fillet" disabled title="Round a selected solid's picked edges"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H7a4 4 0 0 1-4-4V3"/><path d="M21 3a14 14 0 0 0-14 14"/></svg><span>Fillet</span></button>
   <button id="b-applyfillet" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Apply</span></button>
-  <input id="dim-rad" type="number" step="0.05" min="0.01" value="0.1" title="Fillet / chamfer radius (m)" style="display:none;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
   <button id="b-insert" disabled title="Insert a library component (assemble, don't draw)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg><span>Insert</span></button>
   <button id="b-lod" disabled style="display:none" title="Refine the selected component's level of detail (same signed row)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>LOD 200</span></button>
   <button id="b-export" disabled title="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>Export</span></button>
@@ -172,6 +171,21 @@
   <button id="b-connect" title="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span>Connect</span></button>
   <button id="b-teams" title="Teams — who's on this scene (presence &amp; activity). Click to enable."><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Teams</span></button>
   <button id="b-xray" title="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg><span>X-ray</span></button>
+</div>
+<!-- Typed dimension fields (Move step/rotate/scale/depth/profile/radius/sketch W+H): found LIVE 2026-07-07 —
+     as plain flow children of #bar (position:fixed;inset:0;pointer-events:none), every one of these inputs
+     rendered at the flow origin (0,0), invisible under the Outliner panel and unfocusable by a real mouse
+     click (pointer-events inherited none, only #bar button got it back). Given its own fixed anchor, reusing
+     the SAME "clear the Outliner" convention already used by #hist/#stat (left:252px, 12px when collapsed). -->
+<div id="dim-row" style="position:fixed;bottom:62px;left:252px;z-index:15;display:flex;gap:8px;pointer-events:none">
+  <input id="dim-move" type="number" step="0.1" min="0.05" value="1" title="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-rot" type="number" step="1" placeholder="°" title="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-scale" placeholder="x1.5" title="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)" style="display:none;pointer-events:auto;width:54px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-depth" type="number" step="0.1" min="0.1" value="3" title="Wall height / extrude depth (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-w" type="number" step="0.05" min="0.05" title="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-h" type="number" step="0.05" min="0.05" title="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style" style="display:none;pointer-events:auto;width:56px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-prof" type="number" step="0.05" min="0.05" value="0.3" title="Sweep profile size w×h (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
+  <input id="dim-rad" type="number" step="0.05" min="0.01" value="0.1" title="Fillet / chamfer radius (m)" style="display:none;pointer-events:auto;width:50px;box-sizing:border-box;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px;font-size:11px;outline:none">
 </div>
 <div id="hist" style="position:fixed;bottom:36px;left:252px;right:10px;display:flex;align-items:center;gap:10px;z-index:10;color:#6b7488;font-size:11px;font-family:ui-monospace,monospace">
   <span>history</span>
@@ -599,6 +613,7 @@ const bSketch = document.getElementById('b-sketch');
 const bExtrude = document.getElementById('b-extrude');
 // Numeric dimension inputs (operability v3): typed wall height / sweep profile / fillet radius instead of hardcoded.
 const dimDepth = document.getElementById('dim-depth'), dimProf = document.getElementById('dim-prof'), dimRad = document.getElementById('dim-rad');
+const dimW = document.getElementById('dim-w'), dimH = document.getElementById('dim-h');
 // Lucide line icons (verbatim) for the Sketch button's two states — no unicode glyphs on the surface.
 const _ico = (p) => '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>';
 const SK_SKETCH = _ico('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>') + '<span>Sketch</span>';
@@ -719,7 +734,28 @@ function sketchMarkers() {
 const bConstrain = document.getElementById('b-constrain');
 const CON_LABEL = { axis: 'Axis', rect: 'Rect', square: 'Square' };
 function paintConstrain() { const m = window.Bonsai.sketch.mode; bConstrain.querySelector('span').textContent = CON_LABEL[m] || m; bConstrain.classList.toggle('on', m !== 'axis'); }
-bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); };
+// Live editable dimensions (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2, p2p_distance): once a
+// rect/square quad has all 4 points, solve once to show W/H, and re-solve on every typed edit so the WHOLE
+// shape updates from one changed number — the "drag one dimension, everything updates" acceptance bar.
+async function sketchDimsRefresh() {
+  const S = window.Bonsai.sketch;
+  if (!sketching || S.mode === 'axis' || S.points.length !== 4) { dimW.style.display = 'none'; dimH.style.display = 'none'; return; }
+  const r = await S.solve();
+  dimW.style.display = ''; dimH.style.display = '';
+  if (document.activeElement !== dimW) dimW.value = r.edgeLengths[0].toFixed(2);
+  if (document.activeElement !== dimH) dimH.value = r.edgeLengths[1].toFixed(2);
+  sketchMarkers();
+  setStat('sketch: ' + S.mode + '  W=' + r.edgeLengths[0].toFixed(2) + 'm  H=' + r.edgeLengths[1].toFixed(2) + 'm');
+}
+async function sketchDimCommit(idx, val) {
+  if (!(val > 0)) return;
+  window.Bonsai.sketch.setDimension(idx, val);
+  await sketchDimsRefresh();
+  audioCue('tick');
+}
+dimW.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchDimCommit(0, parseFloat(dimW.value)); dimW.blur(); } });
+dimH.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sketchDimCommit(1, parseFloat(dimH.value)); dimH.blur(); } });
+bConstrain.onclick = () => { const m = window.Bonsai.sketch.cycleMode(); paintConstrain(); audioCue('tick'); setStat('sketch constraint: ' + (CON_LABEL[m] || m)); sketchDimsRefresh(); };
 // #4 POINT RECOVERY (RESUME_MODELLER_POLISH.md): in-progress sketch/route points are transient (not op-log) — a
 // stray Escape used to lose them all. Now a cancel-exit BUFFERS them for the session; re-opening the tool RESTORES
 // them. A commit clears the draft; cancelling with no points discards it (the Backspace-to-empty = "start fresh").
@@ -737,13 +773,14 @@ function enterSketch() {
   bConstrain.style.display = ''; bConstrain.disabled = false; paintConstrain();
   const np = window.Bonsai.sketch.points.length;
   sketchMarkers(); setStat(np ? ('sketch: ' + np + ' points restored — continue or Extrude') : 'sketch: click ≥3 points on the grid, then Extrude');
+  sketchDimsRefresh();
 }
 function exitSketch(committed) {
   const p = window.Bonsai.sketch.points;                         // buffer in-progress points on a CANCEL (not a commit)
   if (committed) _sketchDraft = null;
   else if (p && p.length) { _sketchDraft = p.map(pt => ({ x: pt.x, y: pt.y })); if (window.toast) toast(p.length + ' sketch points saved — re-open Sketch to continue', 'info'); }
   else _sketchDraft = null;                                      // cancelled with no points → discard any old draft
-  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
+  sketching = false; bExtrude.style.display = 'none'; dimDepth.style.display = 'none'; bConstrain.style.display = 'none'; dimW.style.display = 'none'; dimH.style.display = 'none'; bSketch.innerHTML = SK_SKETCH; applyModeCursor();
   if (sketchGroup) { while (sketchGroup.children.length) sketchGroup.remove(sketchGroup.children[0]); }
   if (savedCam) { camera.position.copy(savedCam.pos); controls.target.copy(savedCam.tgt); if (savedCam.up) camera.up.copy(savedCam.up); controls.update(); }
 }
@@ -759,6 +796,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const s = window.Bonsai.grid.snap(hit.x, hit.y);
     window.Bonsai.sketch.addPoint(s.x, s.y); sketchMarkers();
     setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points' + (s.ref && (s.snappedX || s.snappedY) ? '  @' + s.ref : ''));
+    sketchDimsRefresh();   // shows W/H once the 4th point closes a rect/square quad
   }
 });
 bExtrude.onclick = async () => {
