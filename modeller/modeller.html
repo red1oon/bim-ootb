@@ -2694,12 +2694,22 @@ async function autoRouteMEP(asm, leaves) {
   // ONE rigid transform: worldPos = bmin + rotation(anchorPos - buildingOrigin)
   const rad = (insRot || 0) * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
   const toWorld = p => [bmin[0] + (cs*(p[0]-ox) - sn*(p[1]-oy)), bmin[1] + (sn*(p[0]-ox) + cs*(p[1]-oy)), bmin[2] + (p[2]-oz)];
-  const ops = segs.map(s => ({
-    op_type: 'GEOM_SWEEP',
-    parameters: { profile: { w: 0.05, h: 0.05 }, path: [toWorld(s.from), toWorld(s.to)] },
-    _rw: { disc: s.disc, storey: s.storey }
-  }));
+  // WalkerDoctrine.md §8 — real cross-section per segment's discipline, HARD FAIL (no invented constant) when
+  // none is verified in component_library.db (today: FP only — routewalker.js's rwCrossSectionFor). A refused
+  // segment is COUNTED and logged, never silently dropped and never swept at a flat invented size.
+  const ops = [], refusedMEP = [];
+  segs.forEach(s => {
+    const xs = (typeof rwCrossSectionFor === 'function') ? rwCrossSectionFor(s.disc) : { refused: true, reason: 'rwCrossSectionFor not loaded' };
+    if (xs.refused) { refusedMEP.push({ disc: s.disc, reason: xs.reason }); return; }
+    ops.push({
+      op_type: 'GEOM_SWEEP',
+      parameters: { profile: { w: xs.w, h: xs.h }, path: [toWorld(s.from), toWorld(s.to)] },
+      _rw: { disc: s.disc, storey: s.storey, crossSection: xs.product }
+    });
+  });
+  const _refByDisc = {}; refusedMEP.forEach(r => { _refByDisc[r.disc] = (_refByDisc[r.disc] || 0) + 1; });
   console.log('§MODELLER autoroute building="' + name + '" found=' + segs.length + ' emitting=' + ops.length +
+    ' refused=' + refusedMEP.length + (refusedMEP.length ? ' (' + Object.keys(_refByDisc).map(d => d + ':' + _refByDisc[d]).join(' ') + ' — no real cross-section product)' : '') +
     ' origin=[' + [ox,oy,oz].map(v=>v.toFixed(3)).join(',') + '] bmin=[' + bmin.map(v=>v.toFixed(3)).join(',') + ']');
   let routed = 0;
   for (const op of ops) {
@@ -3723,18 +3733,32 @@ async function _commitDiscChains(disc, segs) {
   // gid — W-ROUTER-NNCHAIN N6 unaffected); one seal, one verify, one fold, one repaint. The old per-commit
   // {color} opt is dropped, not lost: any re-fold already forgot it (B-rep solids fall back to fold-level
   // colour — see bonsai_kernel.js "PER-MESH colour wins" comment), and the final scrubTo here always re-folded.
-  var ops = [];
+  // WalkerDoctrine.md §8 — real cross-section per segment, HARD FAIL (no invented constant) when none is
+  // verified in component_library.db (today: FP only). routePattern()-bridged segs carry the RouteWalker
+  // sub-discipline (CW/SP) in from_kind ('RW_CW'/'RW_SP'), not in s.disc (the DiscWalker umbrella, e.g.
+  // 'PLB') — resolve that real sub-discipline before the lookup so a future CW-only or SP-only real product
+  // narrows correctly; routeChains()' own nn-network segs carry the real discipline directly in s.disc.
+  var ops = [], refusedChain = [];
   for (var i = 0; i < cap; i++) {
     var s = segs[i];
+    var xsDisc = (s.from_kind && s.from_kind.indexOf('RW_') === 0) ? s.from_kind.slice(3) : s.disc;
+    var xs = (typeof rwCrossSectionFor === 'function') ? rwCrossSectionFor(xsDisc) : { refused: true, reason: 'rwCrossSectionFor not loaded' };
+    if (xs.refused) { refusedChain.push({ disc: xsDisc, reason: xs.reason }); continue; }
     ops.push({ op_type: 'GEOM_SWEEP',
-      params: { profile: { w: 0.05, h: 0.05 }, path: [s.from.slice(), s.to.slice()],
+      params: { profile: { w: xs.w, h: xs.h }, path: [s.from.slice(), s.to.slice()],
                 _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
-                       from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap } } });
+                       from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap, crossSection: xs.product } } });
   }
   var committed = 0;
   if (ops.length) {
     try { var res = await O.commitSeedGroup(ops, 'dwchain-' + disc + '-' + O.length); committed = (res.ids || []).length; }
     catch (e) { console.warn('§ROUTER-CHAIN-COMMIT batch fail ' + (e && e.message)); }
+  }
+  if (refusedChain.length) {
+    var _refByDisc2 = {}; refusedChain.forEach(function (r) { _refByDisc2[r.disc] = (_refByDisc2[r.disc] || 0) + 1; });
+    console.log('§ROUTER-CHAIN-REFUSE disc=' + disc + ' refused=' + refusedChain.length + '/' + cap +
+      ' (' + Object.keys(_refByDisc2).map(function (d) { return d + ':' + _refByDisc2[d]; }).join(' ') +
+      ' — no real cross-section product, WalkerDoctrine.md §8)');
   }
   if (committed) {
     // commitSeedGroup already folded the chain authoritatively (no scrubTo needed) — restore decoration
