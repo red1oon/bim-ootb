@@ -13,6 +13,10 @@
     dims: {},            // { 0: number, 1: number, angle: number(deg) } — user-pinned edge lengths (rect/
                           // square mode only, edges 0/1 are the two independent dimensions; ∥/eq constraints
                           // carry 2→0, 3→1) + an optional corner angle override (default 90°, l2l_angle_ll).
+    weld: {},            // { pointIndex: targetPointIndex } — a click that landed near an EARLIER point in
+                          // THIS sketch is pinned p2p_coincident to it (a real solver constraint, tracks the
+                          // target's SOLVED position through later edits) instead of a near-duplicate point.
+    WELD_TOL: 0.4,       // same value as bonsai_grid.js's own snapTol — one shared "close enough" convention.
     _gcs: null,
     AXIS_TOL: 0.35,      // |dy| < AXIS_TOL*|dx| ⇒ treat edge as horizontal (and vice-versa)
     mode: 'axis',        // constraint intent: 'axis' (per-edge H/V) | 'rect' (∥ + ⊥) | 'square' (rect + equal sides)
@@ -32,8 +36,25 @@
       return this._gcs;
     },
 
-    reset() { this.points = []; this.dims = {}; },
+    reset() { this.points = []; this.dims = {}; this.weld = {}; },
     addPoint(x, y) { this.points.push({ id: 'p' + this.points.length, x: +x, y: +y }); return this.points.length; },
+
+    // Same as addPoint, but if (x,y) lands within WELD_TOL of an EARLIER point already in this sketch, pin
+    // the new point p2p_coincident to that one (BONSAI_KERNEL_RESEARCH.md §GAP-TO-COMPETITIVE Tier 2) — the
+    // standard CAD-sketch "click near an existing vertex to weld onto it" convention, instead of silently
+    // adding a near-duplicate point a few cm off. Returns the new count + the welded-to index (or null).
+    addPointWeld(x, y, tol) {
+      tol = tol == null ? this.WELD_TOL : tol;
+      let target = null, bestD = Infinity;
+      for (let i = 0; i < this.points.length; i++) {
+        const d = Math.hypot(this.points[i].x - x, this.points[i].y - y);
+        if (d <= tol && d < bestD) { bestD = d; target = i; }
+      }
+      const idx = this.points.length;
+      this.points.push({ id: 'p' + idx, x: +x, y: +y });
+      if (target != null) this.weld[idx] = target;
+      return { count: this.points.length, weldedTo: target };
+    },
 
     // Classify each ring edge as horizontal / vertical from the clicked deltas, so the solver snaps
     // a hand-drawn quad to clean axis-aligned edges (minimal-movement solution).
@@ -53,9 +74,20 @@
     // plus EQUAL_LENGTH of two adjacent edges (mode 'square'). Only the H/V mode used point-pair constraints;
     // these use the line + parallel/perpendicular_ll/equal_length family (we previously wired just 2 of ~60).
     // Returns { lines, constraints } so solve() can push both. Falls back to axis for non-quad rings.
+    // Weld constraints apply regardless of shape-intent mode — a click landing near an earlier point means
+    // "pin these together," independent of whether the rest of the ring is axis/rect/square.
+    _weldConstraints() {
+      const cons = [];
+      for (const i in this.weld) {
+        const j = this.weld[i];
+        cons.push({ id: 'weld' + i, type: 'p2p_coincident', p1_id: this.points[i].id, p2_id: this.points[j].id });
+      }
+      return cons;
+    },
+
     _buildConstraints() {
       const n = this.points.length;
-      if (this.mode === 'axis' || n !== 4) return { lines: [], constraints: this._autoConstraints() };
+      if (this.mode === 'axis' || n !== 4) return { lines: [], constraints: this._autoConstraints().concat(this._weldConstraints()) };
       const lines = [];
       for (let i = 0; i < n; i++) lines.push({ id: 'L' + i, type: 'line', p1_id: this.points[i].id, p2_id: this.points[(i + 1) % n].id });
       const cons = [
@@ -86,7 +118,7 @@
           cons.push({ id: 'dim' + i, type: 'p2p_distance', p1_id: a.id, p2_id: b.id, distance: this.dims[i] });
         }
       }
-      return { lines, constraints: cons };
+      return { lines, constraints: cons.concat(this._weldConstraints()) };
     },
 
     async solve() {

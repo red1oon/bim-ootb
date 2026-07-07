@@ -804,8 +804,11 @@ canvas.addEventListener('pointerdown', (e) => {
   if (raycaster.ray.intersectPlane(GROUND, hit)) {
     // 2D correlation: if the grid is active, snap the click to the nearest gridlines (A-1, B-2…).
     const s = window.Bonsai.grid.snap(hit.x, hit.y);
-    window.Bonsai.sketch.addPoint(s.x, s.y); sketchMarkers();
-    setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points' + (s.ref && (s.snappedX || s.snappedY) ? '  @' + s.ref : ''));
+    // addPointWeld: a click near an EARLIER sketch point pins the new one p2p_coincident to it instead of
+    // a near-duplicate a few cm off (standard CAD-sketch vertex-weld convention).
+    const added = window.Bonsai.sketch.addPointWeld(s.x, s.y); sketchMarkers();
+    setStat('sketch: ' + window.Bonsai.sketch.points.length + ' points' + (s.ref && (s.snappedX || s.snappedY) ? '  @' + s.ref : '') +
+      (added.weldedTo != null ? '  ⚭ welded to p' + added.weldedTo : ''));
     sketchDimsRefresh();   // shows W/H once the 4th point closes a rect/square quad
   }
 });
