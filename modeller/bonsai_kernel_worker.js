@@ -34,6 +34,19 @@ function applyFeature(kernel, op) {
     return solid;
   }
   if (op.op_type === 'GEOM_EXTRUDE_POLY') {       // sketch profile (planegcs-solved polygon) swept by depth
+    // Circle profile (BONSAI_KERNEL_RESEARCH.md §Follow-up spec — circle/arc sketch primitive — Witness:
+    // W-E2E-SKETCH-CIRCLE): profile.circle {cx,cy,r} is a SIBLING payload key to profile.points (the same
+    // convention GEOM_LOFT/GEOM_REVOLVE document for profile extensions, never a repurposing). One
+    // makeCircleEdge — the same edge-primitive class as makeLineEdge — then the SAME wire→face→extrude fold.
+    if (P.profile.circle) {
+      const c = P.profile.circle;
+      const edges = [kernel.makeCircleEdge({ x: c.cx, y: c.cy, z: 0 }, { x: 0, y: 0, z: 1 }, c.r)];
+      const wire = kernel.makeWire(edges);
+      const face = kernel.makeFace(wire);
+      const solid = kernel.extrude(face, 0, 0, P.depth);
+      kernel.release(edges[0]); kernel.release(wire); kernel.release(face);
+      return solid;
+    }
     const pts = P.profile.points;                 // [[x,y],...] ring (auto-closed); same path as W-SKETCH-SOLVE
     const v = (x, y) => ({ x, y, z: 0 });
     const edges = [];
