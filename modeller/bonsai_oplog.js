@@ -162,26 +162,40 @@
     // correct in-session but silently did NOT survive a reload. Now: fall back to the IndexedDB store above so
     // the edit actually persists, and surface a one-time visible toast (reusing modeller.html's existing
     // window.toast() mechanism — no new UI-notice code) so a silent-forever failure never recurs either.
+    // §AUTOSAVE_FIX STICKY (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4 — UPDATE 2026-07-07, Witness:
+    // W-E2E-OPLOG-CLEAR-IDB K7-K9): once ONE save has overflowed localStorage, every later save this session is
+    // doomed too (the op-log only grows — kernel_ops is append-only) — yet _save() re-attempted the synchronous
+    // setItem on EVERY _emit(), throwing+catching a real QuotaExceededError per edit for the rest of the session
+    // (the repeated "§OPLOG autosave FAILED ... QuotaExceededError" spam a real user saw twice in one session).
+    // _useIdbOnly remembers the first failure and skips straight to the IDB fallback path from then on. The
+    // fallback write + one-time toast logic itself is UNCHANGED — factored into _saveIdbFallback() so the catch
+    // path and the sticky skip-path share it (no duplicated toast/_idbFallbackNotified logic).
+    _useIdbOnly: false,
+    _saveIdbFallback(bytes) {
+      this._idbPut(this._KEY, bytes).then((ok) => {
+        if (ok) {
+          console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + bytes.length + ' key=' + this._KEY);
+          if (!this._idbFallbackNotified && window.toast) {
+            this._idbFallbackNotified = true;
+            window.toast('This model is too large for quick-save storage — now autosaving via a larger backup store (your edits are safe).', 'info');
+          }
+        } else {
+          console.error(TAG + ' §AUTOSAVE_FIX path=idb_fallback FAILED bytes=' + bytes.length + ' key=' + this._KEY + ' — this edit may NOT survive a reload');
+          if (window.toast) window.toast('⚠ Autosave failed — this edit may not survive a reload. Use Export ▸ Native .db to be safe.', 'error');
+        }
+      });
+    },
     _save() {
       if (!this.db) return;
       let bytes;
       try { bytes = this.db.export(); } catch (e) { console.error(TAG + ' autosave FAILED — could not export db ' + e); return; }
+      if (this._useIdbOnly) { this._saveIdbFallback(bytes); return; }   // sticky: don't re-run the doomed setItem
       try {
         localStorage.setItem(this._KEY, this._b64(bytes));
       } catch (e) {
         console.error(TAG + ' autosave FAILED to localStorage (edits stay in-session; falling back to IndexedDB) ' + e);
-        this._idbPut(this._KEY, bytes).then((ok) => {
-          if (ok) {
-            console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + bytes.length + ' key=' + this._KEY);
-            if (!this._idbFallbackNotified && window.toast) {
-              this._idbFallbackNotified = true;
-              window.toast('This model is too large for quick-save storage — now autosaving via a larger backup store (your edits are safe).', 'info');
-            }
-          } else {
-            console.error(TAG + ' §AUTOSAVE_FIX path=idb_fallback FAILED bytes=' + bytes.length + ' key=' + this._KEY + ' — this edit may NOT survive a reload');
-            if (window.toast) window.toast('⚠ Autosave failed — this edit may not survive a reload. Use Export ▸ Native .db to be safe.', 'error');
-          }
-        });
+        this._useIdbOnly = true;                                        // remember: this session's saves go to IDB now
+        this._saveIdbFallback(bytes);
       }
     },
 
