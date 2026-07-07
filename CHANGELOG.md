@@ -4,6 +4,24 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.12.0](https://github.com/red1oon/bim-ootb/compare/v1.11.0...v1.12.0) (2026-07-07)
+
+
+### ✨ Features
+
+* **bonsai:** GEOM_ARRAY — array/pattern op family (W-BONSAI-ARRAY) ([#685](https://github.com/red1oon/bim-ootb/issues/685)) ([b788d13](https://github.com/red1oon/bim-ootb/commit/b788d13c9e4353e7226a5282f95fb7a01bf7bd5f))
+* **bonsai:** GEOM_LOFT — loft op family (W-BONSAI-LOFT) ([#688](https://github.com/red1oon/bim-ootb/issues/688)) ([d1d771e](https://github.com/red1oon/bim-ootb/commit/d1d771eb9a873098c416cbf87cd254fcd759425e))
+* **bonsai:** Tier 1 kernel shoulders — REVOLVE/SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT (W-BONSAI-TIER1) ([#691](https://github.com/red1oon/bim-ootb/issues/691)) ([bccea6d](https://github.com/red1oon/bim-ootb/commit/bccea6dcd2b732fc065e2b19d9b6701af8bd2294))
+* **modeller:** M1 — bridge ARC-derived anchors into routewalker.js's pattern engine ([#683](https://github.com/red1oon/bim-ootb/issues/683)) ([a5a514c](https://github.com/red1oon/bim-ootb/commit/a5a514c941928fddb2d6c5b0ac09e3e581b551d2))
+* **modeller:** M4 — construction reveal over M1's PLB pattern-bridge network ([#686](https://github.com/red1oon/bim-ootb/issues/686)) ([fb0cfaa](https://github.com/red1oon/bim-ootb/commit/fb0cfaadd1857ee3774a02a68203c8e0409f684d))
+* **modeller:** M5 — elbow/tee fitting placement at MEP bends ([#689](https://github.com/red1oon/bim-ootb/issues/689)) ([9d0938e](https://github.com/red1oon/bim-ootb/commit/9d0938ea53d9d863982b219e4c30cd103db08a9f))
+* **modeller:** wire real MEP mini-BOM rotation lookup ahead of bisector fallback ([#690](https://github.com/red1oon/bim-ootb/issues/690)) ([7a8e71d](https://github.com/red1oon/bim-ootb/commit/7a8e71db684cee811cb043aaf8e2e47de8810ebd))
+
+
+### 🐛 Fixes
+
+* **modeller:** M2 follow-up — close the real STR-column clash gap in the PLB pattern bridge ([#684](https://github.com/red1oon/bim-ootb/issues/684)) ([3b3a4c9](https://github.com/red1oon/bim-ootb/commit/3b3a4c9a5bbf5ed224099aa724536d28ff349433))
+
 ## [1.11.0](https://github.com/red1oon/bim-ootb/compare/v1.10.0...v1.11.0) (2026-07-06)
 
 
