@@ -120,6 +120,27 @@
         } catch (e) { resolve(false); }
       });
     },
+    // §AUTOSAVE_FIX companion — clear()'s IndexedDB counterpart to localStorage.removeItem (Witness:
+    // W-E2E-OPLOG-CLEAR-IDB). Same defensive shape as _idbGet/_idbPut above: try/catch around indexedDB.open,
+    // every error path resolve(false), never throw. A missing store means nothing to delete → resolve(false).
+    _idbDelete(key) {
+      return new Promise((resolve) => {
+        try {
+          const rq = indexedDB.open('bim_ootb_cache');
+          rq.onsuccess = () => {
+            const idb = rq.result;
+            if (!idb.objectStoreNames.contains('oplog_fallback')) { resolve(false); return; }
+            try {
+              const tx = idb.transaction('oplog_fallback', 'readwrite');
+              tx.objectStore('oplog_fallback').delete(key);
+              tx.oncomplete = () => resolve(true);
+              tx.onerror = () => resolve(false);
+            } catch (e) { resolve(false); }
+          };
+          rq.onerror = () => resolve(false);
+        } catch (e) { resolve(false); }
+      });
+    },
     // Restore precedence: localStorage first (the common case, zero async cost); if empty, check the IDB
     // fallback (a prior save that overflowed localStorage). If BOTH exist (localStorage held an older,
     // pre-overflow save; IDB holds a later fallback save, or vice versa on a since-cleared localStorage),
@@ -141,26 +162,40 @@
     // correct in-session but silently did NOT survive a reload. Now: fall back to the IndexedDB store above so
     // the edit actually persists, and surface a one-time visible toast (reusing modeller.html's existing
     // window.toast() mechanism — no new UI-notice code) so a silent-forever failure never recurs either.
+    // §AUTOSAVE_FIX STICKY (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4 — UPDATE 2026-07-07, Witness:
+    // W-E2E-OPLOG-CLEAR-IDB K7-K9): once ONE save has overflowed localStorage, every later save this session is
+    // doomed too (the op-log only grows — kernel_ops is append-only) — yet _save() re-attempted the synchronous
+    // setItem on EVERY _emit(), throwing+catching a real QuotaExceededError per edit for the rest of the session
+    // (the repeated "§OPLOG autosave FAILED ... QuotaExceededError" spam a real user saw twice in one session).
+    // _useIdbOnly remembers the first failure and skips straight to the IDB fallback path from then on. The
+    // fallback write + one-time toast logic itself is UNCHANGED — factored into _saveIdbFallback() so the catch
+    // path and the sticky skip-path share it (no duplicated toast/_idbFallbackNotified logic).
+    _useIdbOnly: false,
+    _saveIdbFallback(bytes) {
+      this._idbPut(this._KEY, bytes).then((ok) => {
+        if (ok) {
+          console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + bytes.length + ' key=' + this._KEY);
+          if (!this._idbFallbackNotified && window.toast) {
+            this._idbFallbackNotified = true;
+            window.toast('This model is too large for quick-save storage — now autosaving via a larger backup store (your edits are safe).', 'info');
+          }
+        } else {
+          console.error(TAG + ' §AUTOSAVE_FIX path=idb_fallback FAILED bytes=' + bytes.length + ' key=' + this._KEY + ' — this edit may NOT survive a reload');
+          if (window.toast) window.toast('⚠ Autosave failed — this edit may not survive a reload. Use Export ▸ Native .db to be safe.', 'error');
+        }
+      });
+    },
     _save() {
       if (!this.db) return;
       let bytes;
       try { bytes = this.db.export(); } catch (e) { console.error(TAG + ' autosave FAILED — could not export db ' + e); return; }
+      if (this._useIdbOnly) { this._saveIdbFallback(bytes); return; }   // sticky: don't re-run the doomed setItem
       try {
         localStorage.setItem(this._KEY, this._b64(bytes));
       } catch (e) {
         console.error(TAG + ' autosave FAILED to localStorage (edits stay in-session; falling back to IndexedDB) ' + e);
-        this._idbPut(this._KEY, bytes).then((ok) => {
-          if (ok) {
-            console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + bytes.length + ' key=' + this._KEY);
-            if (!this._idbFallbackNotified && window.toast) {
-              this._idbFallbackNotified = true;
-              window.toast('This model is too large for quick-save storage — now autosaving via a larger backup store (your edits are safe).', 'info');
-            }
-          } else {
-            console.error(TAG + ' §AUTOSAVE_FIX path=idb_fallback FAILED bytes=' + bytes.length + ' key=' + this._KEY + ' — this edit may NOT survive a reload');
-            if (window.toast) window.toast('⚠ Autosave failed — this edit may not survive a reload. Use Export ▸ Native .db to be safe.', 'error');
-          }
-        });
+        this._useIdbOnly = true;                                        // remember: this session's saves go to IDB now
+        this._saveIdbFallback(bytes);
       }
     },
 
@@ -243,7 +278,13 @@
     // clearing it in _foldUpto() alone (the originally drafted fix) would MISS the LEAF-commit path (bonsai_
     // oplog.js commit(): LEAF ops skip _foldUpto and append optimistically, but still _emit()).
     _emit() { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
-    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
+    // clear() empties BOTH persisted copies of this._KEY — localStorage AND the §AUTOSAVE_FIX IndexedDB fallback
+    // (the _loadBytesEither precedence comment above PROMISES "clear() ... empties both keys together"; before this
+    // fix only localStorage was removed, so a Terminal-scale model whose autosave had overflowed into IDB silently
+    // RESURRECTED from the stale IDB entry on the next open of the same key). The IDB purge is fire-and-forget —
+    // same style as _save()'s _idbPut — because no clear() call site awaits it; the synchronous localStorage
+    // removal + in-memory reset semantics stay exactly as before. Witness: W-E2E-OPLOG-CLEAR-IDB.
+    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } this._idbDelete(this._KEY); if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
 
     // Read the live GEOM ops out of the signed log, mapped to fold-op shape (parent rides in parameters).
     // §OUTLINER-STALL: memoized on db-object identity (auto-invalidates on setModelKey/reload/clear, which all
