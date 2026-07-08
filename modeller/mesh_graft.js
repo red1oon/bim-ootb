@@ -132,7 +132,128 @@
     return applyMeshTransform(template, transform);
   }
 
+  // ---------------------------------------------------------------------------------------------------
+  // placeInWorld -- orientation-preserving PLACEMENT: compose a graft's recentred local mesh with its
+  // target element's REAL world placement (element_transforms: center_xyz + rotation_xyz), so a grafted
+  // element lands exactly where the real building measurement says it should, oriented correctly.
+  //
+  // Ground truth for this composition (traced directly from bonsai_library.js/arc_editable.js, not
+  // guessed -- both are QUOTED below because getting rotation composition wrong is a silent, hard-to-spot
+  // failure mode):
+  //  - arc_editable.js §ARC-3AXIS: "bbox is already centred at local origin... translate the rotated box
+  //    directly by the MEASURED centre, no ground-seat step... places centres not bottoms."
+  //  - bonsai_library.js §REAL-GEOM RE-SEAT: "seat on the MATCHED CATALOG's own half-height... so the
+  //    swapped-in mesh's WORLD CENTRE still lands exactly on the measured (cx,cy,cz)" -- i.e. the ground-
+  //    seat branch's seatHalfZ/re-seat machinery is `place()`'s bottom-seating primitive achieving the
+  //    SAME end goal as the 3-axis branch's direct centre placement, once real per-element geometry (or,
+  //    here, a GRAFTED result carrying its own honest recentred bbox) is involved.
+  //  => both branches converge on ONE formula once you already have your own recentred-about-centre mesh:
+  //       worldVertex = R(rotX,rotY,rotZ) · localRecentredVertex + (cx, cy, cz)
+  //
+  // Rotation itself has TWO real conventions in this codebase, both replicated bit-exact (not approximated):
+  //  - tilted (rotX||rotY truthy): bonsai_library.js's place() 3-axis branch literally does
+  //    `new THREE.Euler(pl.rotX, pl.rotZRad, -(pl.rotY))` (THREE's default 'XYZ' order) then
+  //    `Quaternion.setFromEuler(euler)` -- quaternionFromEulerXYZ() below implements THREE.js's OWN
+  //    published algorithm for that exact case (half-angle products, order 'XYZ'), so a grafted tilted
+  //    element rotates IDENTICALLY to how the Modeller already rotates real/box geometry -- not a
+  //    reinvented convention that happens to look similar.
+  //  - ground-seat / yaw-only (rotX=rotY=0): plain rotation about +Z by rotZ (radians) -- unambiguous,
+  //    matches place()'s `cs*x-sn*y, sn*x+cs*y` ground-seat rotation shape with no axis relabeling quirk.
+  function quaternionFromEulerXYZ(x, y, z) {
+    var c1 = Math.cos(x / 2), c2 = Math.cos(y / 2), c3 = Math.cos(z / 2);
+    var s1 = Math.sin(x / 2), s2 = Math.sin(y / 2), s3 = Math.sin(z / 2);
+    return {
+      x: s1 * c2 * c3 + c1 * s2 * s3,
+      y: c1 * s2 * c3 - s1 * c2 * s3,
+      z: c1 * c2 * s3 + s1 * s2 * c3,
+      w: c1 * c2 * c3 - s1 * s2 * s3
+    };
+  }
+  // THREE.Vector3.applyQuaternion's own algorithm, replicated exactly (not the shorter but numerically-
+  // different "conjugate sandwich" formula) so results match bit-for-bit, not just "close."
+  function applyQuaternion(v, q) {
+    var vx = v[0], vy = v[1], vz = v[2], qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    var ix = qw * vx + qy * vz - qz * vy;
+    var iy = qw * vy + qz * vx - qx * vz;
+    var iz = qw * vz + qx * vy - qy * vx;
+    var iw = -qx * vx - qy * vy - qz * vz;
+    return [
+      ix * qw + iw * -qx + iy * -qz - iz * -qy,
+      iy * qw + iw * -qy + iz * -qx - ix * -qz,
+      iz * qw + iw * -qz + ix * -qy - iy * -qx
+    ];
+  }
+  function rotateZ(v, rad) {
+    var cs = Math.cos(rad), sn = Math.sin(rad);
+    return [cs * v[0] - sn * v[1], sn * v[0] + cs * v[1], v[2]];
+  }
+
+  // placeInWorld(graftedOrRealResult, targetPlacement) -> { positions (world-space Float32Array), faces,
+  //   worldBbox: [xmin,xmax,ymin,ymax,zmin,zmax] }
+  // graftedOrRealResult: { positions (RECENTRED about own bbox centre, per applyMeshTransform's/
+  //   real_geometry.js's shared convention), faces }
+  // targetPlacement: { cx, cy, cz, rotX, rotY, rotZ } -- element_transforms' own columns, RADIANS
+  // (rotation_x/y/z are stored in radians throughout this project -- §ARC-ROT-UNIT).
+  function placeInWorld(result, targetPlacement) {
+    var rotX = targetPlacement.rotX || 0, rotY = targetPlacement.rotY || 0, rotZ = targetPlacement.rotZ || 0;
+    var tilted = !!(rotX || rotY);
+    var q = tilted ? quaternionFromEulerXYZ(rotX, rotZ, -rotY) : null;
+    var n = result.positions.length / 3;
+    var out = new Float32Array(result.positions.length);
+    for (var i = 0; i < n; i++) {
+      var local = [result.positions[i * 3], result.positions[i * 3 + 1], result.positions[i * 3 + 2]];
+      var rotated = tilted ? applyQuaternion(local, q) : rotateZ(local, rotZ);
+      out[i * 3] = rotated[0] + targetPlacement.cx;
+      out[i * 3 + 1] = rotated[1] + targetPlacement.cy;
+      out[i * 3 + 2] = rotated[2] + targetPlacement.cz;
+    }
+    return { positions: out, faces: result.faces, worldBbox: bboxOf(out) };
+  }
+
+  // expectedWorldBbox(targetPlacement) -- the GROUND-TRUTH world AABB, derived ONLY from element_transforms'
+  // own coarse box (center_xyz + bbox_x/y/z), completely independently of any mesh at all.
+  //
+  // §PLACEMENT-FINDING (2026-07-09, real data, Duplex): `element_transforms.bbox_x/y/z` is the element's
+  // WORLD-SPACE (post-rotation) AABB size, NOT a local pre-rotation box to be rotated again here --
+  // verified directly on a real rotated (rotation_z=-90°) Duplex wall: its RAW base_geometries vertex
+  // blob's own local extent is (17.383, 0.417, 3.1), while element_transforms reports bbox=(0.417, 17.383,
+  // 3.1) -- axes SWAPPED, matching "rotate local by -90°" exactly, i.e. bbox_x/y/z is already the final
+  // world answer. (An earlier version of this function WRONGLY rotated the coarse box a second time --
+  // caught by this exact real-data test disagreeing with placeInWorld's independently-correct output by
+  // 8.48, a huge, obviously-wrong delta -- fixed here.) So the ground-truth box is just centered directly
+  // at (cx,cy,cz), NO rotation applied -- an AABB has no orientation of its own to rotate.
+  //
+  // Real, NOT-yet-investigated implication flagged here, not fixed (out of this session's scope --
+  // arc_editable.js is a live-rendering file this session has deliberately not touched): arc_editable.js's
+  // OWN coarse box-fallback path (`bbox = [-bx/2,bx/2,...]` then rotated via place()) would, per this same
+  // finding, DOUBLE-ROTATE for any ARC element that (a) has NO real geometry link (uses the box-fallback
+  // path at all) AND (b) has a non-0/180° rotation_z -- e.g. exactly the -90°/270° cases measured here.
+  // Currently unobserved in practice because every tested ARC-only resident's rotated elements all resolve
+  // to REAL geometry (0 box-fallback), per the existing M3 witness (`boxFallback=0`) -- but this could bite
+  // a FUTURE onboarded building with both traits. Flag only, not investigated/fixed further this session.
+  function expectedWorldBbox(targetPlacement) {
+    var hx = (targetPlacement.bx || 0) / 2, hy = (targetPlacement.by || 0) / 2, hz = (targetPlacement.bz || 0) / 2;
+    return [targetPlacement.cx - hx, targetPlacement.cx + hx, targetPlacement.cy - hy, targetPlacement.cy + hy, targetPlacement.cz - hz, targetPlacement.cz + hz];
+  }
+
+  // compareToGroundTruth(placedResult, targetPlacement, tolerance) -> { pass, maxDelta, actual, expected }
+  // tolerance default 0.031 (30mm + 1mm float-noise slack) -- reuses this project's OWN previously-
+  // validated real-vs-noise threshold (witness_cross_edges_real_aabb.js G4), not an invented number.
+  function compareToGroundTruth(placedResult, targetPlacement, tolerance) {
+    tolerance = tolerance == null ? 0.031 : tolerance;
+    var actual = placedResult.worldBbox;
+    var expected = expectedWorldBbox(targetPlacement);
+    var deltas = actual.map(function (v, i) { return Math.abs(v - expected[i]); });
+    var maxDelta = Math.max.apply(null, deltas);
+    return { pass: maxDelta <= tolerance, maxDelta: maxDelta, actual: actual, expected: expected, tolerance: tolerance };
+  }
+
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
 
-  return { graftFit: graftFit, applyMeshTransform: applyMeshTransform, permToTransform: permToTransform, invertPerm: invertPerm, bboxOf: bboxOf, TAG: TAG };
+  return {
+    graftFit: graftFit, applyMeshTransform: applyMeshTransform, permToTransform: permToTransform, invertPerm: invertPerm,
+    placeInWorld: placeInWorld, expectedWorldBbox: expectedWorldBbox, compareToGroundTruth: compareToGroundTruth,
+    quaternionFromEulerXYZ: quaternionFromEulerXYZ, applyQuaternion: applyQuaternion,
+    bboxOf: bboxOf, TAG: TAG
+  };
 });
