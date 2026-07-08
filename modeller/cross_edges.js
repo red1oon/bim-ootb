@@ -278,9 +278,13 @@
     };
   }
 
+  // §SEAM-HEALING (SPEC_SEAM_HEALING_ENGINE.md §2/§3, bim-compiler): expose the real-AABB reader itself —
+  // additive only, same function, no behavior change to any existing caller (deriveAdjacency/deriveDatumsAnchored/
+  // deriveSpans already called it internally). seam_heal.js reuses this instead of re-deriving the rotation-
+  // aware real-AABB logic (§REAL-AABB above), per this project's "don't reinvent proximity detection" rule.
   var API = { deriveAdjacency: deriveAdjacency, faceTouch: faceTouch, TOL: TOL, MIN_OVERLAP: MIN_OVERLAP,
     deriveDatumsAnchored: deriveDatumsAnchored, deriveSpans: deriveSpans,
-    readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll };
+    readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll, readBoxes: _readBoxes };
   window.CrossEdges = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : this);
