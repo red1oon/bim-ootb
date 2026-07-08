@@ -50,9 +50,15 @@ runE2E('W-E2E-DM-MULTISELECT', async (t) => {
   const [f0, f1, f2] = fids;
   console.log('§DM-MULTI fixture fids=' + JSON.stringify(fids));
 
-  // deterministic overhead camera over the walls (the same top-down idiom the harness's overhead() uses)
-  await pg.evaluate(() => { const cam = window.A.camera, ctl = window.A.controls; cam.up.set(0, 1, 0); cam.position.set(3, 0.1, 16); ctl.target.set(3, 0.1, 0); ctl.update(); if (window.A.requestRender) window.A.requestRender(); });
-  await t.sleep(350);
+  // deterministic overhead camera over the walls (the same top-down idiom the harness's overhead() uses).
+  // §ZOOM-SEL: every selection change now auto-flies the camera to frame the selection, so the overhead
+  // framing must be RE-APPLIED (after t.flySettle()) before computing any further click coordinates — same
+  // as the real user re-aiming on the settled frame.
+  const overhead = async () => {
+    await pg.evaluate(() => { const cam = window.A.camera, ctl = window.A.controls; cam.up.set(0, 1, 0); cam.position.set(3, 0.1, 16); ctl.target.set(3, 0.1, 0); ctl.update(); if (window.A.requestRender) window.A.requestRender(); });
+    await t.sleep(350);
+  };
+  await overhead();
   const proj = (x, y, z) => pg.evaluate((a, b, c) => { const v = new window.THREE.Vector3(a, b, c).project(window.A.camera); const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(); return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top]; }, x, y, z);
   const selSet = () => pg.evaluate(() => Array.from(window.Bonsai._selSet || []).sort((a, b) => a - b));
   const bboxOf = (fid) => pg.evaluate(f => { const m = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === f); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; }, fid);
@@ -80,10 +86,18 @@ runE2E('W-E2E-DM-MULTISELECT', async (t) => {
   await t.shot('01-marquee');
 
   // ── S3/S4: REAL Shift+click toggle on the control wall ─────────────────────────────────────────
+  // §ZOOM-SEL: the marquee select flew the camera — settle, restore the overhead frame, re-aim at W2
+  await t.flySettle(); await overhead();
+  const p2a = await proj(5.5, 0.1, 1.5);
   await pg.keyboard.down('Shift');
-  await pg.mouse.move(p2[0], p2[1]); await t.sleep(40);
-  await pg.mouse.down(); await t.sleep(30); await pg.mouse.up(); await t.sleep(200);
+  await pg.mouse.move(p2a[0], p2a[1]); await t.sleep(40);
+  await pg.mouse.down(); await t.sleep(30); await pg.mouse.up(); await pg.keyboard.up('Shift'); await t.sleep(200);
   const afterAdd = await selSet();
+  // the add flew the camera again — settle, restore, re-aim for the removing click
+  await t.flySettle(); await overhead();
+  const p2b = await proj(5.5, 0.1, 1.5);
+  await pg.keyboard.down('Shift');
+  await pg.mouse.move(p2b[0], p2b[1]); await t.sleep(40);
   await pg.mouse.down(); await t.sleep(30); await pg.mouse.up(); await pg.keyboard.up('Shift'); await t.sleep(200);
   const afterRemove = await selSet();
   console.log('§DM-MULTI toggle afterAdd=' + JSON.stringify(afterAdd) + ' afterRemove=' + JSON.stringify(afterRemove));
@@ -93,6 +107,8 @@ runE2E('W-E2E-DM-MULTISELECT', async (t) => {
     afterRemove.length === 2 && afterRemove[0] === f0 && afterRemove[1] === f1, JSON.stringify(afterRemove));
 
   // ── S5-S8: REAL toolbar Move + REAL X-shaft drag of the group ──────────────────────────────────
+  // §ZOOM-SEL: the toggle-remove flew the camera — settle + restore the overhead frame before the drag
+  await t.flySettle(); await overhead();
   await pg.click('#b-move'); await t.sleep(300);
   const armed = await pg.evaluate(() => ({ moving: !!document.querySelector('#b-move.on'), gizmo: !!window.A.scene.getObjectByName('MoveGizmo') }));
   // grab a point ON the +X shaft (c0=(1.5,0.1,1.5); L=min(3,max(0.9,3*0.7+0.4))=2.5 → shaft spans x 1.5..4.0)
