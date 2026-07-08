@@ -3610,7 +3610,13 @@ function _renderDiscWalk(disc, placements) {
     function _mesh(sub, mat) {
       if (!sub.length) return;
       var im = new THREE.InstancedMesh(geo, mat, sub.length);
-      sub.forEach(function (p, i) { m.makeTranslation(p.x, p.y, p.z); im.setMatrixAt(i, m); });
+      // §ROTATION-BOUND Bug B: disc_walker already computes a real per-placement `yaw` (wall/run orientation —
+      // e.g. hostBind's SIDE/TOP/BOTTOM/CENTER branches, place()'s host-wall branch) but this renderer ignored it,
+      // always drawing an axis-aligned box (translation-only matrix). `_renderDiscAssembly` (below) already does
+      // this correctly via a quaternion; here `yaw` is a single Z-axis angle (0 or π/2 today), so a plain
+      // makeRotationZ + setPosition is the matching minimal fix. `p.yaw` is undefined for array/density placements
+      // (no host) → `|| 0` reproduces today's axis-aligned render exactly for every non-host-bound placement.
+      sub.forEach(function (p, i) { m.makeRotationZ(p.yaw || 0); m.setPosition(p.x, p.y, p.z); im.setMatrixAt(i, m); });
       im.instanceMatrix.needsUpdate = true; im.userData.dwDisc = disc;
       im.userData.dwSub = sub;   // §Q2 (W-E2E-INSTPICK): instanceId i ↔ sub[i] — array REFERENCE, no per-instance objects
       root.add(im);
