@@ -256,11 +256,153 @@
     return { healed: healed, refused: refused, junctionsDetected: junctions.length };
   }
 
+  // ── §3 Tier 2 (stretch): real measured junction descriptors, for the family-clustering pass ──────────
+  // deriveJunctionDescriptors(db, opts) -> [{host_guid, filling_guid, host_class, filling_class,
+  //   relationship_type: 'fills'|'abuts', rel_offset:[x,y,z], size_ratio:[x,y,z], source_building}]
+  //
+  // A junction's "shape" for clustering purposes is this 6-float RELATIONSHIP descriptor (how far the
+  // filling's centre sits from the host's centre, normalized by the host's own size; how the filling's
+  // size compares to the host's), not a cropped mesh -- the cheap, honest equivalent of §3a's per-vertex
+  // normalization for a case where "the shape" is a real measured RELATIONSHIP, not a point cloud. Same
+  // "own the mid-ground, don't over-engineer" default the mesh-fit spec's §2 already established.
+  //
+  // NON-INVENT / REUSE: recovered relationships (`rel_fills_host`, provenance ifc:recovered) are preferred
+  // when present (SampleHouse 7 rows, Duplex 50 rows this session); buildings that lack that precomputed
+  // table (confirmed this session: Ifc4_Revit, SampleCastle -- neither carries rel_fills_host/rel_adjacency)
+  // fall back to cross_edges.js's own LIVE proximity detection (`deriveAdjacency`, provenance
+  // derived:face-touch) as the candidate junction source -- exactly the reuse this spec's §3 names
+  // explicitly, never a required precomputed table.
+  function deriveJunctionDescriptors(db, opts) {
+    opts = opts || {};
+    if (!CrossEdges || !CrossEdges.readBoxes) return [];
+    var boxes = CrossEdges.readBoxes(db, opts.geoDb);
+    var aabbByGuid = {};
+    boxes.forEach(function (b) { aabbByGuid[b.guid] = b.aabb; });
+    var classByGuid = {};
+    try {
+      db.exec('SELECT guid, ifc_class FROM elements_meta')[0].values.forEach(function (v) { classByGuid[v[0]] = v[1]; });
+    } catch (e) { /* no elements_meta -- classes stay unknown, rows without a class pair are skipped below */ }
+
+    var rows = [];
+    var fills = CrossEdges.readFillsHost ? CrossEdges.readFillsHost(db) : [];
+    fills.forEach(function (e) {
+      rows.push({ host_guid: e.host_guid, filling_guid: e.filling_guid, host_class: e.host_class, filling_class: e.filling_class, relationship_type: 'fills' });
+    });
+    if (!fills.length && CrossEdges.deriveAdjacency) {
+      // live fallback (§3's explicit callout) -- classify by whichever side's class is present; direction
+      // (which guid is "host") is arbitrary for a plain face-touch pair, so both orderings are candidates
+      // and the clustering bucket key naturally separates real host/filling asymmetry (e.g. IfcWall/IfcSlab
+      // vs IfcSlab/IfcWall) rather than guessing one.
+      var abuts = CrossEdges.deriveAdjacency(db, opts);
+      abuts.forEach(function (e) {
+        rows.push({ host_guid: e.a, filling_guid: e.b, host_class: classByGuid[e.a], filling_class: classByGuid[e.b], relationship_type: 'abuts' });
+      });
+    }
+
+    var out = [];
+    rows.forEach(function (r) {
+      var hAabb = aabbByGuid[r.host_guid], fAabb = aabbByGuid[r.filling_guid];
+      if (!hAabb || !fAabb || !r.host_class || !r.filling_class) return;   // missing real geometry/class -- skip, don't guess
+      var hSize = [hAabb[1] - hAabb[0], hAabb[3] - hAabb[2], hAabb[5] - hAabb[4]];
+      var fSize = [fAabb[1] - fAabb[0], fAabb[3] - fAabb[2], fAabb[5] - fAabb[4]];
+      var hCenter = [(hAabb[0] + hAabb[1]) / 2, (hAabb[2] + hAabb[3]) / 2, (hAabb[4] + hAabb[5]) / 2];
+      var fCenter = [(fAabb[0] + fAabb[1]) / 2, (fAabb[2] + fAabb[3]) / 2, (fAabb[4] + fAabb[5]) / 2];
+      var relOffset = [0, 1, 2].map(function (ax) { return hSize[ax] > 0 ? (fCenter[ax] - hCenter[ax]) / hSize[ax] : 0; });
+      var sizeRatio = [0, 1, 2].map(function (ax) { return hSize[ax] > 0 ? fSize[ax] / hSize[ax] : 0; });
+      out.push({ host_guid: r.host_guid, filling_guid: r.filling_guid, host_class: r.host_class, filling_class: r.filling_class,
+        relationship_type: r.relationship_type, rel_offset: relOffset, size_ratio: sizeRatio, host_size: hSize });
+    });
+    return out;
+  }
+
+  var PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+
+  // junctionRms(a, b, perm) -- RMS distance between two 6-float descriptors {rel_offset, size_ratio},
+  // permuting WHICH world axis plays "X/Y/Z" consistently across both halves of the descriptor. Faithful
+  // reuse of build_mesh_templates.js's rmsDiff SHAPE (index-aligned per-axis compare over all 6 permutations)
+  // -- applied to a 6-float relationship vector instead of a per-vertex point cloud.
+  function junctionRms(a, b, perm) {
+    var sumSq = 0;
+    for (var k = 0; k < 3; k++) {
+      var dOff = a.rel_offset[perm[k]] - b.rel_offset[k]; sumSq += dOff * dOff;
+      var dRatio = a.size_ratio[perm[k]] - b.size_ratio[k]; sumSq += dRatio * dRatio;
+    }
+    return Math.sqrt(sumSq / 6);
+  }
+
+  // clusterJunctionFamilies(descriptors, rmsThreshold) -> {templates: [{template_id, host_class,
+  //   filling_class, relationship_type, rel_offset, size_ratio, source_building, member_count}],
+  //   map: [{host_guid, filling_guid, template_id, permutation, rms_confidence}]}
+  // Same bucket-then-cluster STRUCTURE as build_mesh_templates.js's §3a loop: group by the discrete key
+  // first (host_class, filling_class, relationship_type -- the junction analog of (vertex_count,face_count)),
+  // then within each bucket find the best-matching existing family across all 6 axis permutations, or start
+  // a new family. Low-confidence matches are kept (queryable/auditable per §3a), never silently discarded.
+  function clusterJunctionFamilies(descriptors, rmsThreshold, sourceBuildingOf) {
+    rmsThreshold = rmsThreshold != null ? rmsThreshold : 0.15;   // relationship-space, not vertex-space -- a looser bar is honest (real junctions vary more than a rigid template's own vertices)
+    var buckets = {};
+    descriptors.forEach(function (d) {
+      var key = d.host_class + '|' + d.filling_class + '|' + d.relationship_type;
+      (buckets[key] = buckets[key] || []).push(d);
+    });
+    var templates = [], map = [], templateId = 0;
+    Object.keys(buckets).forEach(function (key) {
+      var members = buckets[key];
+      var families = [];   // { templateId, rel_offset, size_ratio, memberCount, host_class, filling_class, relationship_type, source_building }
+      members.forEach(function (m) {
+        var best = null;
+        for (var fi = 0; fi < families.length; fi++) {
+          var fam = families[fi];
+          for (var pi = 0; pi < PERMS.length; pi++) {
+            var rms = junctionRms(m, fam, PERMS[pi]);
+            if (rms <= rmsThreshold && (!best || rms < best.rms)) best = { familyIdx: fi, perm: PERMS[pi], rms: rms };
+          }
+        }
+        if (best) {
+          var fam2 = families[best.familyIdx];
+          fam2.memberCount++;
+          map.push({ host_guid: m.host_guid, filling_guid: m.filling_guid, template_id: fam2.templateId, permutation: best.perm, rms_confidence: best.rms });
+        } else {
+          templateId++;
+          families.push({ templateId: templateId, rel_offset: m.rel_offset, size_ratio: m.size_ratio, memberCount: 1,
+            host_class: m.host_class, filling_class: m.filling_class, relationship_type: m.relationship_type,
+            source_building: sourceBuildingOf ? sourceBuildingOf(m) : null });
+          map.push({ host_guid: m.host_guid, filling_guid: m.filling_guid, template_id: templateId, permutation: [0, 1, 2], rms_confidence: 0 });
+        }
+      });
+      families.forEach(function (f) {
+        templates.push({ template_id: f.templateId, host_class: f.host_class, filling_class: f.filling_class,
+          relationship_type: f.relationship_type, rel_offset: f.rel_offset, size_ratio: f.size_ratio,
+          source_building: f.source_building, member_count: f.memberCount });
+      });
+    });
+    return { templates: templates, map: map };
+  }
+
+  // graftJunction(template, newHostAabb) -> {suggested_filling_center, suggested_filling_size,
+  //   source_status:'GRAFTED', source_template_id, source_building}
+  // §3c analog for junctions: denormalize a real measured template's relationship (offset+size, both
+  // fractions of the ORIGINAL host's own size) by a NEW host's real size -- placing/sizing a new filling
+  // the way a real one actually sat relative to its own host, not a generic centered/flush guess. Honestly
+  // labeled GRAFTED (§1 of the mesh-fit spec, applied uniformly here) -- this is a provisional placement
+  // suggestion, not the same epistemic status as a MEASURED relationship.
+  function graftJunction(template, newHostAabb) {
+    var hSize = [newHostAabb[1] - newHostAabb[0], newHostAabb[3] - newHostAabb[2], newHostAabb[5] - newHostAabb[4]];
+    var hCenter = [(newHostAabb[0] + newHostAabb[1]) / 2, (newHostAabb[2] + newHostAabb[3]) / 2, (newHostAabb[4] + newHostAabb[5]) / 2];
+    var suggestedCenter = [0, 1, 2].map(function (ax) { return hCenter[ax] + template.rel_offset[ax] * hSize[ax]; });
+    var suggestedSize = [0, 1, 2].map(function (ax) { return template.size_ratio[ax] * hSize[ax]; });
+    return {
+      suggested_filling_center: suggestedCenter, suggested_filling_size: suggestedSize,
+      source_status: 'GRAFTED', source_template_id: template.template_id, source_building: template.source_building || null
+    };
+  }
+
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
 
   return {
     TAG: TAG, JUNCTION_TOL: JUNCTION_TOL,
     detectJunctions: detectJunctions, worldAxisToLocal: worldAxisToLocal, clipMeshToPlane: clipMeshToPlane,
-    healElementAtJunction: healElementAtJunction, healAll: healAll, bboxOf: bboxOf
+    healElementAtJunction: healElementAtJunction, healAll: healAll, bboxOf: bboxOf,
+    deriveJunctionDescriptors: deriveJunctionDescriptors, clusterJunctionFamilies: clusterJunctionFamilies,
+    graftJunction: graftJunction
   };
 });
