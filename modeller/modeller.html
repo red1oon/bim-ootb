@@ -2893,11 +2893,15 @@ async function autoRouteMEP(asm, leaves) {
     SWITCH:'ROLE__SWITCH', SUPPLY_DIFFUSER:'ROLE__DIFFUSER', EXHAUST_FAN:'ROLE__EXHAUST_FAN', SPRINKLER:'ROLE__SPRINKLER',
     FLOOR_TRAP:'ROLE__FLOOR_TRAP', SINK:'ROLE__SINK', TOILET:'ROLE__TOILET' };
   const L = window.Bonsai.library;
+  // WalkerDoctrine.md §11 — a real catalog box (exact role, or any real box of the fixture's own ifc_class) is
+  // an honest proxy; a WRONG-CLASS box (e.g. a toilet rendered as a diffuser) is invented content dressed up
+  // as real placement and is refused, not substituted — same refuse-count-log pattern as the cross-section
+  // check just above (WalkerDoctrine.md §8), never a flat invented stand-in.
   const hashFor = f => {
     let h = FIX_HASH[f.product];
     if (h && L.get(h)) return h;
-    const byClass = (L.catalog() || []).find(c => c.ifc_class === f.ifcClass);   // fallback: any box of the right ifc class
-    return byClass ? byClass.hash : 'ROLE__DIFFUSER';                            // final generic ACMV box
+    const byClass = (L.catalog() || []).find(c => c.ifc_class === f.ifcClass);   // real box of the right ifc class
+    return byClass ? byClass.hash : null;                                       // no real match → refuse, don't invent
   };
   // Discipline COLOUR (step C): f.rgba is the REAL material_rgba from RW_IFC_MAP ('r,g,b,a'). Persist it as a hex
   // int in the signed op PARAMETERS (not the per-commit {color} opt — GEOM_INSERT is non-LEAF, so every re-fold/
@@ -2905,9 +2909,11 @@ async function autoRouteMEP(asm, leaves) {
   // in params → survives the DB round-trip → foldInsert reads parameters.color → each fixture mesh keeps its colour
   // through scrub/history replay (step F). Lights warm-yellow, fans cyan, sprinkler red, outlet amber, sanitary blue.
   const rgbaHex = s => { const p = String(s || '').split(',').map(Number); const ch = i => Number.isFinite(p[i]) ? Math.max(0, Math.min(255, p[i] | 0)) : 180; return (ch(0) << 16) | (ch(1) << 8) | ch(2); };   // NOT `p[i]||180` — a legit 0 channel (amber B=0) must stay 0
-  let placedFx = 0;
+  let placedFx = 0; const refusedFx = [];
   for (const f of fixtures) {
-    const hash = hashFor(f); const c = L.get(hash); const ch = c ? c.h : 0.4;
+    const hash = hashFor(f);
+    if (!hash) { refusedFx.push({ product: f.product, ifc: f.ifcClass }); continue; }   // no real catalog box → refuse, never invent
+    const c = L.get(hash); const ch = c ? c.h : 0.4;
     const w = toWorld([f.x, f.y, f.z]);
     const op = { op_type:'GEOM_INSERT',
       parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba) },
@@ -2916,6 +2922,8 @@ async function autoRouteMEP(asm, leaves) {
     catch (e) { console.warn('§MODELLER fixture commit fail ' + (e && e.message || e)); }
     setStat('placing fixtures… ' + placedFx + '/' + fixtures.length);
   }
+  if (refusedFx.length) { const _byP = {}; refusedFx.forEach(r => _byP[r.product] = (_byP[r.product]||0)+1);
+    console.log('§MODELLER §WALKERDOCTRINE-11 fixtures refused=' + refusedFx.length + ' (' + Object.keys(_byP).map(p => p + ':' + _byP[p]).join(' ') + ' — no real catalog box, never invented)'); }
   await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   syncHistory(); audioCue('commit');
