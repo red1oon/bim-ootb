@@ -67,11 +67,13 @@
     return null;
   }
 
-  // buildGeometryIndex(db, geoDb) — ONE pass over element_instances (in `db`) × the geometry table (in
-  // `geoDb`, DEFAULTS to `db` — the original single-file behaviour, byte-identical) -> {
+  // buildGeometryIndex(db, geoDb, templateIndex) — ONE pass over element_instances (in `db`) × the geometry
+  // table (in `geoDb`, DEFAULTS to `db` — the original single-file behaviour, byte-identical) -> {
   //   table,                              the table name used ('component_geometries'|'base_geometries'|null)
   //   byGuid:     { guid: geometry_hash|null },     every element_instances row (null hash = no instance link)
-  //   resolved:   { geometry_hash: {positions,faces,bbox} }   DECODED + RECENTRED once per DISTINCT hash
+  //   resolved:   { geometry_hash: {positions,faces,bbox,anchorOffset,source_status} }   DECODED + RECENTRED
+  //               once per DISTINCT hash — source_status is 'MEASURED' for every hash resolved from this
+  //               tier (real, untouched extracted geometry).
   // }. Many guids instance the SAME hash (component reuse) — decoding once per hash (not per guid) avoids
   // redundant base64/typed-array work on a 3000+-element building sharing ~2300 distinct meshes.
   //
@@ -83,7 +85,17 @@
   // When geoDb === db (every OTHER resident — SampleHouse/Duplex/SampleCastle/SampleCastle-ARC, all single-
   // file), this produces the EXACT same byGuid/resolved sets as the old one-shot JOIN — same skip rules
   // (null hash / missing blob / degenerate vert-or-face count all stay unresolved, same as before).
-  function buildGeometryIndex(db, geoDb) {
+  //
+  // §MESHFIT (SPEC_MESH_FIT_GRAFT_HEAL_ENGINE.md §1/§3c, bim-compiler): templateIndex is an OPTIONAL third
+  // argument — when omitted (every current call site: arc_editable.js, cross_edges.js), behaviour is
+  // BYTE-IDENTICAL to before this change, zero new code paths run. When supplied, it is an object exposing
+  // `resolveGrafted(hash) -> {positions,faces,bbox,anchorOffset,source_status:'GRAFTED',source_template_hash,
+  // source_building} | null` (see modeller/mesh_graft.js's graftFit + a mesh_templates.db-backed adapter) —
+  // any hash that did NOT resolve as MEASURED above gets ONE more chance to resolve as an honestly-labeled
+  // GRAFTED result before the caller's existing hardfail/box-fallback path runs. A grafted entry is NEVER
+  // written into `out.resolved` ahead of / instead of a real MEASURED one — this tier only fires for hashes
+  // still unresolved after the real pass above.
+  function buildGeometryIndex(db, geoDb, templateIndex) {
     geoDb = geoDb || db;
     var table = geometryTable(geoDb);
     var out = { table: table, byGuid: {}, resolved: {} };
@@ -118,8 +130,18 @@
           var raw = toFloat32(vBlob), faces = toUint32(fBlob);
           if (raw.length < 9 || faces.length < 3) return;          // degenerate (<3 verts / <1 tri) → unresolved
           var rc = recenter(raw);
-          out.resolved[hash] = { positions: rc.positions, faces: faces, bbox: rc.bbox, anchorOffset: rc.anchorOffset };
+          out.resolved[hash] = { positions: rc.positions, faces: faces, bbox: rc.bbox, anchorOffset: rc.anchorOffset, source_status: 'MEASURED' };
         } catch (e) { /* leave unresolved — caller's hardfail path logs+skips */ }
+      });
+    }
+    // §MESHFIT third tier — only for hashes the real pass above left unresolved, only when the caller opted
+    // in by supplying templateIndex (see comment above; absent by default at every existing call site).
+    if (templateIndex && typeof templateIndex.resolveGrafted === 'function') {
+      hashList.forEach(function (hash) {
+        if (out.resolved[hash]) return; // already MEASURED — a graft never overrides real geometry
+        var g;
+        try { g = templateIndex.resolveGrafted(hash); } catch (e) { g = null; }
+        if (g) out.resolved[hash] = g;
       });
     }
     return out;

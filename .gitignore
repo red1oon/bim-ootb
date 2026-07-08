@@ -18,6 +18,7 @@
 !modeller/terminal_rules.db
 !modeller/mep_rw.db
 !modeller/Ifc4_Revit_extracted.db
+!modeller/mesh_templates.db
 *.bin
 node_modules/
 test-results/
