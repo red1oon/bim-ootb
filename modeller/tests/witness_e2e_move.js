@@ -91,6 +91,10 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
     if (sel.length === 1) { fid = sel[0]; break; }
   }
+  // §ZOOM-SEL: the pick auto-flew the camera (zoomToSelection) — wait it out before computing any drag
+  // coordinates, or they are stale mid-fly (a real user drags on the settled frame)
+  { const t0 = Date.now(); while (Date.now() - t0 < 15000 && await pg.evaluate(() => !!window.__flyLive)) await sleep(120); }
+  await sleep(300);
   const c0 = fid != null ? await pg.evaluate(f => window.__e2e.centre(f), fid) : null;
   const oplog0 = await pg.evaluate(() => ({ len: window.Bonsai.oplog.length, cur: window.Bonsai.oplog.cursor }));
   const pix0 = await pg.evaluate(() => window.__e2e.pixsum());

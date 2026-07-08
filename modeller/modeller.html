@@ -981,6 +981,80 @@ function _paintSel() {                                    // emissive: primary b
 }
 // a re-fold rebuilds meshes (new geometry uuids) — re-sync outlines onto the fresh meshes
 window.addEventListener('bonsai:oplog', () => { try { _paintSel(); } catch (e) { } });
+// ── §ZOOM-SEL (MODELLER_ZOOM_TO_SELECTION.md — Witness: W-E2E-ZOOMSEL): port of the Viewer Find panel's
+// zoom-to-frame mechanism (viewer/navigate_find.js _lerpCam/_fitDistForBox/_zoomToBoxFill — the frustum-fit
+// variant, not the naive maxDim*factor one). Fires automatically on every real selection change via
+// setSelectionIds below, mirroring Find's automatic framing.
+// ⚠ Z-UP ADAPTATION (spec warning, do-not-blindly-copy): the Viewer's offset dir (0.5,0.5,0.7) and basis
+// up (0,1,0) are ITS Y-up convention. This scene is Z-up (line ~386, DEFAULT_UP=(0,0,1)); the offset here is
+// this file's OWN witnessed CLASSIC iso direction (1,-1,1.3) (W-SCENE-GRID, ~line 390 — same dir as the Iso
+// view preset and the boot camera), and _fitDistForBox's basis up is world +Z, so right/up reproduce EXACTLY
+// the camera's lookAt basis under camera.up=(0,0,1) (right = fwd×up ≡ lookAt xAxis; up = right×fwd ≡ yAxis).
+const ZOOM_ISO_DIR = new THREE.Vector3(1, -1, 1.3).normalize();
+let _flyId = 0, _flyYield = false;   // _flyYield: cancellation came from USER input (log it), not a newer fly
+// §FLY-YIELD (ported, load-bearing): the moment the user grabs the controls (OrbitControls 'start'), cancel
+// any in-flight fly — otherwise the lerp keeps writing target+position and fights the pull.
+// MODELLER WRINKLE the Viewer doesn't have: bare pick fires on POINTERDOWN (see the replace-select handler
+// below), so a select+rotate-drag is ONE gesture whose 'start' fires BEFORE this fly begins — the 'start'
+// hook alone can't yield it. Any held-button drag >4px (same threshold as the marquee's click/drag split)
+// also yields, covering that gesture plus gizmo/marquee drags mid-fly. Hooked EAGERLY (not lazily like the
+// Viewer) so even the first-ever fly's own triggering gesture can yield it.
+controls.addEventListener('start', () => { _flyId++; _flyYield = true; });
+{
+  let _dn = null;
+  canvas.addEventListener('pointerdown', e => { _dn = { x: e.clientX, y: e.clientY }; }, true);
+  window.addEventListener('pointermove', e => { if (_dn && e.buttons && (Math.abs(e.clientX - _dn.x) + Math.abs(e.clientY - _dn.y)) > 4) { _flyId++; _flyYield = true; _dn = null; } });
+  window.addEventListener('pointerup', () => { _dn = null; });
+}
+function _lerpCam(center, dist) {
+  if (!camera || !controls) return;
+  const myId = ++_flyId; _flyYield = false;
+  window.__flyLive = myId;                                 // witness oracle: nonzero = a fly is in flight
+  const end = center.clone().addScaledVector(ZOOM_ISO_DIR, dist);
+  const start = camera.position.clone();
+  let t = 0;
+  (function anim() {
+    if (myId !== _flyId) {
+      if (window.__flyLive === myId) window.__flyLive = 0;   // cancelled with no successor fly
+      if (_flyYield) console.log('§ZOOM-SEL yield (fly cancelled by user grab)');
+      return;
+    }
+    t += 0.04; if (t > 1) t = 1;
+    const e = 1 - Math.pow(1 - t, 3);
+    camera.position.lerpVectors(start, end, e);
+    controls.target.copy(center);
+    controls.update();
+    if (t < 1) requestAnimationFrame(anim); else if (window.__flyLive === myId) window.__flyLive = 0;
+  })();
+}
+// Frustum-fit distance: project the box's 8 corners onto the camera's right/up/forward basis and fit the
+// larger of (screen-height, screen-width) demand against FOV/aspect — not a naive bounding-sphere fit.
+function _fitDistForBox(size) {
+  const fwd = ZOOM_ISO_DIR.clone().negate();
+  const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 0, 1)).normalize();   // world up = +Z here
+  const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+  const hx = size.x / 2, hy = size.y / 2, hz = size.z / 2, c = new THREE.Vector3();
+  let hW = 0, hH = 0, hD = 0;
+  for (let sx = -1; sx <= 1; sx += 2) for (let sy = -1; sy <= 1; sy += 2) for (let sz = -1; sz <= 1; sz += 2) {
+    c.set(sx * hx, sy * hy, sz * hz);
+    hW = Math.max(hW, Math.abs(c.dot(right))); hH = Math.max(hH, Math.abs(c.dot(up))); hD = Math.max(hD, Math.abs(c.dot(fwd)));
+  }
+  const tanV = Math.tan((camera.fov || 55) * Math.PI / 360);
+  const tanH = tanV * (camera.aspect || 1);
+  return (Math.max(hH / tanV, hW / tanH) + hD * 0.3) * 1.03;
+}
+// bbox source = selBox() (hoisted below): the union Box3 across selMeshes() — the Modeller-native mirror of
+// the Viewer's _bboxOfGuids union, already group-aware. Empty selection → null → silent no-op (guard shape
+// mirrors the Viewer's `if (!bb || !A.camera) return false`).
+function zoomToSelection() {
+  const box = selBox(); if (!box || !camera) return false;
+  const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const dist = _fitDistForBox(size);
+  _lerpCam(center, dist);
+  console.log('§ZOOM-SEL fill dist=' + dist.toFixed(2) + ' size=' + size.x.toFixed(1) + 'x' + size.y.toFixed(1) + 'x' + size.z.toFixed(1) +
+    ' center=' + center.x.toFixed(2) + ',' + center.y.toFixed(2) + ',' + center.z.toFixed(2));
+  return true;
+}
 function setSelectionIds(ids, primary) {
   selectedIds = new Set((ids || []).filter(x => x != null)); window.Bonsai._selSet = selectedIds;
   const g = window.Bonsai.group && window.Bonsai.group();
@@ -993,6 +1067,9 @@ function setSelectionIds(ids, primary) {
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
   console.log('§MODELLER select featureId=' + selectedId + (selectedIds.size > 1 ? ' set=[' + Array.from(selectedIds).join(',') + '] n=' + selectedIds.size : ''));
+  // §ZOOM-SEL: Find-panel-style automatic frame on every real selection change (click / marquee / Outliner
+  // pick — every path funnels through here). Empty selection is a guarded no-op inside zoomToSelection.
+  if (selectedIds.size) zoomToSelection();
   // CONNECT_SCENE_SPEC.md P1 — broadcast the PRIMARY pick over the shared 'selection' channel so the Viewer/ERP land
   // on the SAME signed entity. Payload is anchored on signed identity (op_hash) + the component's ifc_class
   // (the only cross-surface bridge: viewer elements_meta + ERP product Value). Echo-guarded by _applyingRemoteSel.

@@ -200,10 +200,37 @@ async function runE2E(NAME, body, opts) {
         const wallish = c => c.sz && c.sz[2] >= 1.2 && Math.min(c.sz[0], c.sz[1]) <= 0.6 && Math.max(c.sz[0], c.sz[1]) >= 1.0 && Math.max(c.sz[0], c.sz[1]) <= 8;
         cands = cands.filter(wallish).concat(cands.filter(c => !wallish(c)));
       }
-      for (const c of cands) { await pg.mouse.move(c.sx, c.sy); await sleep(40); await pg.mouse.click(c.sx, c.sy); await sleep(120);
-        const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
-        if (sel.length === 1 && (!opts.prefer || sel[0] === c.fid)) return { fid: sel[0], centre: await this.centre(sel[0]) }; }
+      // §ZOOM-SEL: every selection now auto-flies the camera (modeller.html zoomToSelection). A real user
+      // acts on the SETTLED frame, so pick() waits out the fly (window.__flyLive oracle) before returning —
+      // otherwise every coordinate a witness computes right after pick() is stale mid-flight. On a wrong-fid
+      // hit the fly also moved the camera, so the remaining precomputed candidate coords are stale too:
+      // refetch them and restart the scan.
+      const wallish = c => c.sz && c.sz[2] >= 1.2 && Math.min(c.sz[0], c.sz[1]) <= 0.6 && Math.max(c.sz[0], c.sz[1]) >= 1.0 && Math.max(c.sz[0], c.sz[1]) <= 8;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        for (const c of cands) { await pg.mouse.move(c.sx, c.sy); await sleep(40); await pg.mouse.click(c.sx, c.sy); await sleep(120);
+          const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
+          if (sel.length === 1 && (!opts.prefer || sel[0] === c.fid)) { await this.flySettle(); return { fid: sel[0], centre: await this.centre(sel[0]) }; }
+          if (sel.length) {
+            // selected the WRONG element (occluder in front of the candidate's projected centre) → the camera
+            // flew to it, so every remaining candidate's precomputed coords are stale. Restore the EXACT frame
+            // they were computed from (deselect = no fly on empty, then re-Fit = deterministic whole-model
+            // frame, same as t.open's) and keep marching the list.
+            await this.flySettle();
+            await pg.evaluate(() => window.Bonsai.select(null));
+            const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); }
+          }
+        }
+        cands = await pg.evaluate(() => window.__e2e.candidates());
+        if (opts.prefer === 'wall') cands = cands.filter(wallish).concat(cands.filter(c => !wallish(c)));
+      }
       return null;
+    },
+    // §ZOOM-SEL: wait for an in-flight zoom-to-selection camera fly (plus OrbitControls damping tail) to
+    // finish — headless-swiftshader rAF runs ~14fps so the 25-frame fly takes ~2s wall-clock.
+    async flySettle(maxMs) {
+      const t0 = Date.now(); maxMs = maxMs || 15000;
+      while (Date.now() - t0 < maxMs && await pg.evaluate(() => !!window.__flyLive)) await sleep(120);
+      await sleep(300);
     },
     clickSel(sel) { return pg.click(sel); },
     async drag(down, up, steps) { await pg.mouse.move(down[0], down[1]); await sleep(40); await pg.mouse.down(); await sleep(40); await pg.mouse.move((down[0] + up[0]) / 2, (down[1] + up[1]) / 2, { steps: Math.max(2, (steps || 6) >> 1) }); await sleep(30); await pg.mouse.move(up[0], up[1], { steps: steps || 6 }); await sleep(60); await pg.mouse.up(); await sleep(450); },

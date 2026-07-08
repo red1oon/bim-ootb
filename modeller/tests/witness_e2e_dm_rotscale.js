@@ -84,6 +84,11 @@ runE2E('W-E2E-DM-ROTSCALE', async (t) => {
   // real click-select on the L's bottom arm top face (1.5, 0.25, 1)
   const pk = await proj(1.5, 0.25, 1);
   await pg.mouse.move(pk[0], pk[1]); await t.sleep(60); await pg.mouse.click(pk[0], pk[1]); await t.sleep(250);
+  // §ZOOM-SEL: the select auto-flew the camera — settle, then RESTORE the hand-chosen oblique framing this
+  // witness depends on before computing any drag coordinates
+  await t.flySettle();
+  await pg.evaluate(() => { const cam = window.A.camera, ctl = window.A.controls; cam.up.set(0, 0, 1); cam.position.set(6, -5, 9); ctl.target.set(1, 1, 0.5); ctl.update(); if (window.A.requestRender) window.A.requestRender(); });
+  await t.sleep(350);
   await pg.click('#b-move'); await t.sleep(300);
   const ringInfo = await pg.evaluate(() => {
     const gz = window.A.scene.getObjectByName('MoveGizmo'); if (!gz) return null;
@@ -173,6 +178,10 @@ runE2E('W-E2E-DM-ROTSCALE', async (t) => {
   const dc = [(door.bb[0] + door.bb[1]) / 2, (door.bb[2] + door.bb[3]) / 2];
   const pkd = await proj(dc[0], dc[1], door.bb[5] - 0.02);       // click the door near its top face
   await pg.mouse.move(pkd[0], pkd[1]); await t.sleep(60); await pg.mouse.click(pkd[0], pkd[1]); await t.sleep(250);
+  // §ZOOM-SEL: settle the select-fly, restore this section's hand-chosen framing (same as R-section above)
+  await t.flySettle();
+  await pg.evaluate(() => { const cam = window.A.camera, ctl = window.A.controls; cam.up.set(0, 0, 1); cam.position.set(8, -2, 8); ctl.target.set(3, 3, 1); ctl.update(); if (window.A.requestRender) window.A.requestRender(); });
+  await t.sleep(350);
   await pg.click('#b-move'); await t.sleep(300);
   const cubeInfo = await pg.evaluate(() => {
     const gz = window.A.scene.getObjectByName('MoveGizmo'); if (!gz) return null;

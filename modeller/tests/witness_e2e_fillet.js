@@ -44,6 +44,8 @@ runE2E('W-E2E-FILLET', async (t) => {
   await t.pg.mouse.click(wpx[0], wpx[1]); await t.sleep(300);
   const selOk = await t.pg.evaluate((f) => Array.from(window.Bonsai._selSet || []).includes(f), wallId);
   t.assert('F2 SELECT (real click selects the wall)', selOk, 'selected=' + selOk);
+  // §ZOOM-SEL: the select auto-flew the camera — settle before projecting edge-marker click coordinates
+  await t.flySettle();
 
   // F3 enter Fillet → edges read + markers rendered.
   await t.clickSel('#b-fillet'); await t.sleep(700);
