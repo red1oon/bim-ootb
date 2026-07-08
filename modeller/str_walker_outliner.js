@@ -39,7 +39,8 @@
     { key: 'SampleCastle', label: 'SampleCastle · column-framed',      db: 'SampleCastle_extracted.db', v: 2 },
     { key: 'SampleCastle-ARC', label: 'SampleCastle · ARC only (diagnostic)', db: 'SampleCastle_ARC_extracted.db', v: 1 },
     { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db',          v: 1,
-      geoDb: 'Terminal_geo.db', geoV: 1 }
+      geoDb: 'Terminal_geo.db', geoV: 1 },
+    { key: 'Ifc4_Revit',   label: 'Ifc4_Revit · all-discipline reference', db: 'Ifc4_Revit_extracted.db', v: 1 }
   ];
 
   // The modeller's own GH-Pages playground base — modeller.html and its resident DBs now share the

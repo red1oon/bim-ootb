@@ -17,6 +17,7 @@
 !modeller/Terminal_geo.db
 !modeller/terminal_rules.db
 !modeller/mep_rw.db
+!modeller/Ifc4_Revit_extracted.db
 *.bin
 node_modules/
 test-results/
