@@ -315,6 +315,38 @@
       console.log(TAG + ' §OLCOLLAPSEALL newlyCollapsed=' + added + ' totalKeys=' + Object.keys(this._collapsed).length);
       this._paint();
     },
+    // §OLGROUPSELECT (prompts/OUTLINER_GROUP_SELECT.md — Witness: W-E2E-OL-GROUPSELECT): dbl-click a
+    // category/group header selects EVERY leaf element under it in one action (the Viewer Find panel's
+    // "a GROUP result selects the whole set", Outliner-side). Leaf enumeration MIRRORS collapseAll() above:
+    // tree category → walk this._lastRoots[cat.key] (the fold the last _paint captured, §POLISH3 — never a
+    // fresh re-fold), a LEAF is n.kind==='element' (_renderNodes' own isLeaf test); flat category → the same
+    // ops.filter(cat.match).map(cat.node) rows _paint renders. Ids resolve to NUMERIC featureIds exactly the
+    // way the [data-bnode] leaf-click handler does (numeric id as-is; guid → window.__arcFidByGuid) —
+    // selectMany consumes featureIds only, so an unresolvable leaf (walked-instance dwp| row, generated
+    // element with no bridge entry) is SKIPPED, never guessed. selectMany → setSelectionIds already
+    // zoom-frames the new selection (§ZOOM-SEL, #711) — deliberately NO second zoom call here.
+    // Empty group / zero resolvable leaves (e.g. a walker info category) = clean logged no-op.
+    selectGroup(catKey) {
+      const cat = this._categories.find(c => c.key === catKey);
+      if (!cat || !(window.Bonsai && window.Bonsai.selectMany)) return;
+      const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
+      const ids = [], seen = new Set();
+      const push = id => {
+        let num = +id;
+        if (isNaN(num) && fidByGuid[id] != null) num = +fidByGuid[id];
+        if (!isNaN(num) && !seen.has(num)) { seen.add(num); ids.push(num); }
+      };
+      if (cat.tree) {
+        const walk = n => { if (n.kind === 'element') push(n.id); (n.children || []).forEach(walk); };
+        (this._lastRoots[cat.key] || []).forEach(walk);
+      } else {
+        const ops = (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps() : [];
+        ops.filter(cat.match).map(cat.node).forEach(n => push(n.id));
+      }
+      if (!ids.length) { console.log(TAG + ' §OLGROUPSELECT cat=' + catKey + ' n=0 (no selectable leaves — no-op)'); return; }
+      window.Bonsai.selectMany(ids);
+      console.log(TAG + ' §OLGROUPSELECT cat=' + catKey + ' n=' + ids.length);
+    },
 
     // M8 INCREMENTAL (RESUME_MODELLER_POLISH.md #7): the Outliner has TWO sections — the seeded BOM-tree
     // categories (the loaded building: storey→room→disc→class→element, thousands of nodes, RE-FOLDED only on a
@@ -465,6 +497,11 @@
     _wireFlat(root) {
       this._wireMore(root);
       root.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._saveCollapsed(); this._paint(); });
+      // §OLGROUPSELECT (prompts/OUTLINER_GROUP_SELECT.md — Witness: W-E2E-OL-GROUPSELECT): dbl-click a flat
+      // group header selects every row under it — ADDITIVE alongside the single-click collapse toggle above
+      // (the same added-alongside pattern as #bo-root's dblclick, never replacing the onclick). The dblclick's
+      // own two click events toggle collapse twice = net collapse state unchanged.
+      root.querySelectorAll('[data-grp]').forEach(d => d.ondblclick = () => this.selectGroup(d.getAttribute('data-grp')));
       root.querySelectorAll('[data-fid]').forEach(d => d.onclick = (e) => {
         const fid = +d.getAttribute('data-fid');
         if (this._ctrlToggle(e, fid)) return;                // §P4 multi-toggle wins over replace-select
@@ -604,6 +641,10 @@
       root.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.onclick = () => {
         const k = 'tcat|' + d.getAttribute('data-tcat'); this._collapsed[k] = !this._collapsed[k]; this._saveCollapsed(); this._paint();
       });
+      // §OLGROUPSELECT (prompts/OUTLINER_GROUP_SELECT.md — Witness: W-E2E-OL-GROUPSELECT): dbl-click a
+      // tree-category header selects every leaf element under it — additive alongside the single-click
+      // collapse toggle above (never replaces it). #bo-root's dblclick (collapseAll) is a DIFFERENT target.
+      root.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.ondblclick = () => this.selectGroup(d.getAttribute('data-tcat')));
       root.querySelectorAll('[data-bnode]').forEach(d => {
         const id = d.getAttribute('data-bnode'), isLeaf = d.getAttribute('data-leaf') === '1';
         const disc = d.getAttribute('data-disc');
