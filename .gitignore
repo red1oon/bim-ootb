@@ -16,6 +16,7 @@
 !modeller/Terminal_meta.db
 !modeller/Terminal_geo.db
 !modeller/terminal_rules.db
+!modeller/mep_rw.db
 *.bin
 node_modules/
 test-results/
