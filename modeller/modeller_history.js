@@ -86,6 +86,11 @@
     profiles: PROFILES,
     depthKey: 'bim.hist.depth.modeller',   // own namespace — never inherits a stale Viewer/iDempiere stop
     ignorePersistedDepth: true,            // Modeller has no breadth-knob UI — always boot at defaultDepth()
+    // modeller.html's OWN window-level Ctrl+Z/Ctrl+Y (doUndo/doRedo) already owns undo/redo here, with its
+    // own UI wrap-up (audio cue, status text, selection clear, syncHistory). Without this, both that
+    // listener AND history_bar's document-level one fired on the SAME keypress → one Ctrl+Z silently ran
+    // TWO undos (found by witness_e2e_dm_gridundo.js U6, 2026-07-08).
+    skipKeyboard: true,
     defaultDepth: function () { return 'high'; },
     restore: _restore,
     sharedKey: 'bim.docHistory',

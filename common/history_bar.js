@@ -113,7 +113,11 @@ window.HistoryBar = (function () {
       _depth = _migrateDepth(_storedDepth) || _migrateDepth(_cfg.defaultDepth()) || 'high';
     }
     catch (e) { _depth = _migrateDepth(_cfg.defaultDepth()) || 'high'; }
-    if (!_configured) { _wireKeyboard(); _wireCrossTab(); _configured = true; }
+    // skipKeyboard: an app that already owns Ctrl+Z/Ctrl+Y itself (with its own undo/redo UI wrap-up —
+    // audio cue, status text, selection sync) opts out of this module's OWN document-level keyboard
+    // wiring, so one keypress doesn't fire the underlying undo/redo twice. Default false — every other
+    // app keeps wiring keyboard here exactly as before.
+    if (!_configured) { if (!_cfg.skipKeyboard) _wireKeyboard(); _wireCrossTab(); _configured = true; }
     _syncTapKnob();                     // ONE KNOB: push the loaded depth onto the §-tap at startup
     if (_cfg.treeKey) _persistLoad();   // restore persisted universes for this building (item 4)
     console.log('§HIST_CONFIGURE source=' + _cfg.source + ' depth=' + _depth + ' host=' + (_cfg.mountHostId || 'body') + ' treeKey=' + (_cfg.treeKey || '-'));
