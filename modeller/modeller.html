@@ -1860,10 +1860,15 @@ canvas.addEventListener('pointerdown', (e) => {
   if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
   const gl = nearestGridline(hit.x, hit.y);
   if (gl) {
+    // §GRIDSCOPE (GRID_SMART_ELEMENT_SCOPE.md): orthoAt = the hit's coordinate on the OTHER axis from the
+    // gripped line (hit.y for an x-axis line grip) — "where along the line's length did the user grab it,"
+    // fed to beginDragSession() so elementData() can scope governance to near that point, not the whole
+    // building. Already had this data on hand (`hit`); only NEW work is passing it through.
+    const orthoAt = gl.axis === 'x' ? hit.y : hit.x;
     _dragGrid = { ...gl, downAt: gl.axis === 'x' ? hit.x : hit.y }; gmPreviewLine(gl.axis, gl.coord); setStat('drag grid ' + gl.id + ' (' + gl.axis + ')');
     // §SCALE_CHECK_FIX (Finding 1): gridline-grab = the drag session boundary — cache the attach-map engine +
     // mesh/box maps ONCE here so every pointermove frame below reuses them instead of rebuilding from scratch.
-    if (window.Bonsai.gridmove && window.Bonsai.gridmove.beginDragSession) window.Bonsai.gridmove.beginDragSession();
+    if (window.Bonsai.gridmove && window.Bonsai.gridmove.beginDragSession) window.Bonsai.gridmove.beginDragSession(gl.axis, orthoAt);
   }
 });
 canvas.addEventListener('pointermove', (e) => {
