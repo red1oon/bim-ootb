@@ -576,8 +576,16 @@
     ready = false; lastEx = [];
     window.__dwBuf = null; window.__dwName = null;
     window.swXEdges = null;
+    // §GRIDSCOPE-FIX (2026-07-09, same §GRID-CLEAR-LEAK family): __arcGuidByFid/__arcFidByGuid (arc_editable.js
+    // buildBridge, set at Open) were ALSO never reset here -- after a clear, the NEXT authoring session's
+    // featureIds restart from 1 and can collide with the PREVIOUS building's stale guid mapping. Confirmed
+    // real: bonsai_gridmove.js's elementData() now excludes real ARC elements from grid governance by
+    // checking this map -- without this reset, a fresh post-clear wall's featureId 1 could wrongly match a
+    // stale entry and get incorrectly excluded (caught by witness_e2e_gridstretch.js going from commands=1
+    // to commands=0 the moment that exclusion landed).
+    window.__arcGuidByFid = null; window.__arcFidByGuid = null;
     if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
-    console.log(TAG + ' §GRID-CLEAR-LEAK onClear — ready=false, __dwBuf cleared, swXEdges cleared');
+    console.log(TAG + ' §GRID-CLEAR-LEAK onClear — ready=false, __dwBuf cleared, swXEdges cleared, arc bridge cleared');
   }
 
   window.STRWalkerOutliner = {

@@ -52,15 +52,72 @@
       return { commands: commands2, riders: riders2, excluded };
     },
 
+    // §GRIDSCOPE (prompts/GRID_SMART_ELEMENT_SCOPE.md, 2026-07-09 — decided direction, built here):
+    // TWO independent narrowings of grid governance, both applied here, neither touching the shared
+    // (Viewer-used) grid_kinematics.js engine itself:
+    //
+    // 1. CLASS ALLOWLIST — furniture/coverings/openings never participate in DIRECT grid attachment (a
+    //    couch sitting in a room doesn't drag when the room's wall stretches). Doors/windows are excluded
+    //    here too -- they ride via §STRETCH-RIDE (resolved off REAL rel_fills_host edges, sdg_cascade.js),
+    //    NOT by being independently classified against the grid -- excluding them from elementData() does
+    //    not affect their movement, only removes a redundant (and sometimes WRONG-tint) direct classification.
+    _STRUCTURAL_CLASSES: ['IfcWall', 'IfcWallStandardCase', 'IfcSlab', 'IfcFooting', 'IfcColumn', 'IfcBeam',
+      'IfcRailing', 'IfcStairFlight', 'IfcRoof'],
+    // fid -> ifc_class, read from the REAL committed GEOM_INSERT op parameters (arc_editable.js's
+    // buildSeedOps already writes params.ifc_class per seed op -- extracted, not invented). A synthetic/
+    // hand-authored wall (GEOM_EXTRUDE_POLY etc.) has no ifc_class recorded at all -- treated as UNKNOWN,
+    // kept eligible (unchanged behavior for the tool's actual primary use case: freshly-sketched content).
+    _buildClassByFid() {
+      const O = window.Bonsai.oplog; const out = {}; if (!O || !O.db) return out;
+      try {
+        const r = O.db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='GEOM_INSERT'");
+        if (r.length) r[0].values.forEach(v => { try { const p = JSON.parse(v[1]); if (p && p.ifc_class) out[v[0]] = p.ifc_class; } catch (e) { } });
+      } catch (e) { }
+      return out;
+    },
+    // 2. GRAB-LOCALITY — a gridline is otherwise infinite (grid_kinematics.js's _findBestGrid classifies
+    // purely by along-axis centerline distance, §ATTACH_TOL=0.5m, with NO awareness of position along the
+    // line's own length). Fine for a small authored scene; genuinely wrong for a real, dense building where
+    // dozens of walls at completely different rooms can all coincidentally sit within 0.5m of the SAME x or
+    // y coordinate (confirmed real: Duplex, one gridline drag, ~50 real elements swept into one commit).
+    // Scope candidates to elements near WHERE THE USER ACTUALLY GRABBED the line (the pointerdown hit's
+    // ORTHOGONAL coordinate — e.g. hit.y for an x-axis line) — matches how a user actually thinks about it
+    // ("I grabbed THIS stretch"), not a re-derivation of "architectural convenience" via face tolerance.
+    // Radius is DERIVED from the grid's own orthogonal-axis line spacing (one bay, +50% margin so an
+    // element right at a bay boundary still qualifies) — extracted from the real grid definition already
+    // present, not an invented constant. `draggedAxis` names the axis of the GRIPPED line ('x' or 'y') --
+    // the orthogonal-axis lines (whose spacing defines the bay) are the OTHER grid axis.
+    _localityRadius(draggedAxis) {
+      const G = window.Bonsai.grid; const lines = (draggedAxis === 'x' ? G.ys : G.xs) || [];
+      if (lines.length < 2) return Infinity;   // a single-line grid on the orthogonal axis has no "bay" to derive -- don't filter
+      const sorted = lines.slice().sort((a, b) => a - b);
+      let maxGap = 0;
+      for (let i = 1; i < sorted.length; i++) maxGap = Math.max(maxGap, sorted[i] - sorted[i - 1]);
+      return maxGap * 1.5;
+    },
+
     // The engine's elementData = each authored solid's centre + bbox extents (the geometry it must recompose).
     elementData() {
       const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
-      return g.children.filter(o => o.isMesh && o.userData.featureId != null).map(m => {
+      const classByFid = this._buildClassByFid();
+      const allow = this._STRUCTURAL_CLASSES;
+      const draggedAxis = this._dragAxis, orthoAt = this._dragOrthoAt;   // set by beginDragSession(); null outside a session (unchanged/global behavior for direct computeCommands() callers, e.g. discovery-sweep tests)
+      const radius = draggedAxis != null ? this._localityRadius(draggedAxis) : Infinity;
+      return g.children.filter(o => {
+        if (!(o.isMesh && o.userData.featureId != null)) return false;
+        const cls = classByFid[o.userData.featureId];
+        if (cls != null && allow.indexOf(cls) === -1) return false;   // known class, not structural/enclosure -> exclude
+        return true;
+      }).map(m => {
         m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox;
         return { guid: m.userData.featureId,
           x: (bb.min.x + bb.max.x) / 2, y: (bb.min.y + bb.max.y) / 2, z: (bb.min.z + bb.max.z) / 2,
           bboxX: bb.max.x - bb.min.x, bboxY: bb.max.y - bb.min.y, bboxZ: bb.max.z - bb.min.z,
           ifcClass: 'IfcWall' };
+      }).filter(elem => {
+        if (draggedAxis == null || !isFinite(radius)) return true;
+        const orthoPos = draggedAxis === 'x' ? elem.y : elem.x;   // draggedAxis names the GRIPPED line's axis; the element's ORTHOGONAL coordinate is the OTHER one
+        return Math.abs(orthoPos - orthoAt) <= radius;
       });
     },
 
@@ -85,17 +142,25 @@
     // the two sibling per-frame O(n) scans (mesh-by-fid for gmTint, box-by-fid for §STRETCH-RIDE) for the
     // duration of this ONE drag session. Logged so the cache lifecycle is visible in the console, not just
     // inferred from timing.
-    beginDragSession() {
+    // §GRIDSCOPE: draggedAxis/orthoAt (OPTIONAL, both new params) are the grabbed line's axis + the
+    // pointerdown hit's orthogonal-axis coordinate (modeller.html's pointerdown handler) — feeds
+    // elementData()'s grab-locality filter above. Omitted (any pre-existing caller) ⇒ draggedAxis stays
+    // null ⇒ locality filtering is skipped entirely (byte-identical to before this change for those callers).
+    beginDragSession(draggedAxis, orthoAt) {
+      this._dragAxis = draggedAxis != null ? draggedAxis : null;
+      this._dragOrthoAt = orthoAt != null ? orthoAt : null;
       this._engine = this._buildEngine();
       this._meshCache = this._buildMeshByFid();
       this._boxCache = this._buildBoxByFid();
-      console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)');
+      console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)' +
+        (this._dragAxis != null ? (' §GRIDSCOPE axis=' + this._dragAxis + ' orthoAt=' + this._dragOrthoAt.toFixed(3) + ' radius=' + this._localityRadius(this._dragAxis).toFixed(3)) : ''));
     },
     // Called on commit/cancel — the NEXT drag (or any non-session caller) rebuilds fresh off the post-commit
     // scene, so a scene edit between drags is never served a stale attach map.
     endDragSession() {
       if (this._engine) console.log(TAG + ' §SCALE_CHECK_FIX drag-session end — caches cleared');
       this._engine = null; this._meshCache = null; this._boxCache = null;
+      this._dragAxis = null; this._dragOrthoAt = null;
     },
     // PURE recompose: use the cached attached engine if a drag session is active, else build-and-discard
     // (unchanged fallback behavior for any caller outside a session, e.g. tests).
