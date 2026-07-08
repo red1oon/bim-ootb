@@ -254,54 +254,84 @@
     }).catch(function (err) { console.warn(TAG + ' §IFC-OPEN-FAIL ' + (err && err.message)); });
   }
 
-  // Reuse the viewer's IndexedDB building cache (bim_ootb_cache / store 'dbs', keyed by URL — the same
-  // store scene.js A.cachedFetch + the Schedule Editor use, PR #517 W-SE-DB-CACHE). Read = a miss falls
-  // through to network; opened WITHOUT a version so we never clobber the viewer's schema (drift trap).
-  function _idbGetDb(url) {
-    return new Promise(function (resolve) {
+  // §IDB-RACE-FIX (2026-07-08, W-IDB-RACE): a resident with a `geoDb` field fires TWO near-simultaneous
+  // IndexedDB opens on a fresh profile — openResident's _idbPutDb (caching the just-fetched meta db) and
+  // _fetchGeoDb's _idbGetDb (checking the geo db cache). On a fresh profile the 'dbs' store doesn't exist
+  // yet, so _idbPutDb's open() triggers a version-upgrade transaction; the OTHER, versionless open() from
+  // _idbGetDb lands while that upgrade is pending and blocks until it resolves. Measured: ~28-30s stall
+  // (a raw `indexedDB.open('bim_ootb_cache')` probe, no app logic involved, reproduced the same wait) —
+  // almost certainly the real explanation for Terminal's long-documented "35,552 ops legitimately takes
+  // 30-40s to settle" (smoke_terminal.js comment), since Terminal has always been the one resident that
+  // exercises this exact concurrent-open pattern (the only one with a `geoDb` field until this fix).
+  // Fix: do the store-creation upgrade ONCE, eagerly, at module load — every _idbGetDb/_idbPutDb call
+  // then awaits that single shared promise before opening its own connection, so by the time either one
+  // actually runs, the store already exists and no upgrade (hence no race) is ever pending again.
+  var _idbStoreReady = null;
+  function _idbEnsureStore() {
+    if (_idbStoreReady) return _idbStoreReady;
+    _idbStoreReady = new Promise(function (resolve) {
       try {
         var rq = indexedDB.open('bim_ootb_cache');
         rq.onsuccess = function () {
           var idb = rq.result;
-          if (!idb.objectStoreNames.contains('dbs')) { resolve(null); return; }
-          try {
-            var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
-            g.onsuccess = function () { resolve(g.result || null); };
-            g.onerror = function () { resolve(null); };
-          } catch (e) { resolve(null); }
-        };
-        rq.onerror = function () { resolve(null); };
-      } catch (e) { resolve(null); }
-    });
-  }
-
-  // Persist a fetched DB so the next Open is LOCAL (the "fetch once → local resident" contract). If the
-  // shared 'dbs' store doesn't exist yet (modeller-only user who never streamed in the viewer), create
-  // it via a single version+1 upgrade. All failures are swallowed → caching is best-effort, never fatal.
-  function _idbPutDb(url, buf) {
-    return new Promise(function (resolve) {
-      function put(idb) {
-        try {
-          var tx = idb.transaction('dbs', 'readwrite');
-          tx.objectStore('dbs').put(buf, url);
-          tx.oncomplete = function () { resolve(true); };
-          tx.onerror = function () { resolve(false); };
-        } catch (e) { resolve(false); }
-      }
-      try {
-        var rq = indexedDB.open('bim_ootb_cache');
-        rq.onsuccess = function () {
-          var idb = rq.result;
-          if (idb.objectStoreNames.contains('dbs')) { put(idb); return; }
+          if (idb.objectStoreNames.contains('dbs')) { idb.close(); resolve(); return; }
           var v = idb.version; idb.close();
           var up = indexedDB.open('bim_ootb_cache', v + 1);
           up.onupgradeneeded = function () { var d = up.result; if (!d.objectStoreNames.contains('dbs')) d.createObjectStore('dbs'); };
-          up.onsuccess = function () { put(up.result); };
-          up.onerror = function () { resolve(false); };
+          up.onsuccess = function () { up.result.close(); resolve(); };
+          up.onerror = function () { resolve(); };
+          up.onblocked = function () { resolve(); };
+        };
+        rq.onerror = function () { resolve(); };
+      } catch (e) { resolve(); }
+    });
+    return _idbStoreReady;
+  }
+  // Kick it off NOW (module init) — same "start it early, most callers never wait on it" idiom as the
+  // §GEOMAP-WIRE gmLoad() call below; by the time the user picks a resident this has usually resolved.
+  if (typeof window !== 'undefined' && window.indexedDB) _idbEnsureStore();
+
+  // Reuse the viewer's IndexedDB building cache (bim_ootb_cache / store 'dbs', keyed by URL — the same
+  // store scene.js A.cachedFetch + the Schedule Editor use, PR #517 W-SE-DB-CACHE). Read = a miss falls
+  // through to network; store existence is guaranteed by _idbEnsureStore() above, so this open() never
+  // has to race a concurrent version-upgrade.
+  function _idbGetDb(url) {
+    return _idbEnsureStore().then(function () { return new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('bim_ootb_cache');
+        rq.onsuccess = function () {
+          var idb = rq.result;
+          if (!idb.objectStoreNames.contains('dbs')) { idb.close(); resolve(null); return; }
+          try {
+            var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
+            g.onsuccess = function () { idb.close(); resolve(g.result || null); };
+            g.onerror = function () { idb.close(); resolve(null); };
+          } catch (e) { idb.close(); resolve(null); }
+        };
+        rq.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    }); });
+  }
+
+  // Persist a fetched DB so the next Open is LOCAL (the "fetch once → local resident" contract). Store
+  // existence is guaranteed by _idbEnsureStore() above (no more lazy per-call version-upgrade here) — all
+  // failures are still swallowed, caching stays best-effort, never fatal.
+  function _idbPutDb(url, buf) {
+    return _idbEnsureStore().then(function () { return new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('bim_ootb_cache');
+        rq.onsuccess = function () {
+          var idb = rq.result;
+          try {
+            var tx = idb.transaction('dbs', 'readwrite');
+            tx.objectStore('dbs').put(buf, url);
+            tx.oncomplete = function () { idb.close(); resolve(true); };
+            tx.onerror = function () { idb.close(); resolve(false); };
+          } catch (e) { idb.close(); resolve(false); }
         };
         rq.onerror = function () { resolve(false); };
       } catch (e) { resolve(false); }
-    });
+    }); });
   }
 
   // Re-apply this instance's recorded STR_WALK_EDIT ops onto the FRESH walk so prior edits re-appear
