@@ -292,6 +292,29 @@
       if (changed) { this._saveCollapsed(); console.log(TAG + ' §OLEXPAND id=' + String(id).slice(0, 12) + ' (auto-expanded collapsed ancestors / widened window)'); }
       return changed;
     },
+    // §OLCOLLAPSEALL (prompts/OUTLINER_COLLAPSE_ALL.md — Witness: W-E2E-OL-COLLAPSEALL): bulk "collapse
+    // everything back to the top-level trunk" — dbl-click the root label (wired in _ensureSections). EXACTLY
+    // the single-node toggle pattern (set this._collapsed → _saveCollapsed() → _paint(), e.g. _wireTrees/
+    // _wireFlat), just MANY keys set true in one pass + ONE save + ONE repaint. Key shapes mirror the three
+    // existing ones only: 'tcat|'+cat.key (tree-category header), 'bn|'+n.id (branch node — only nodes WITH
+    // children, a leaf has nothing to collapse), and the flat cat.key. Enumeration walks this._lastRoots —
+    // the fold the last _paint captured (§POLISH3: dim/hide/expand walks reuse it the same way) — never a
+    // fresh cat.tree() re-fold. The root itself does not collapse (nothing above it). No expandAll pair:
+    // §V3 _expandTo already auto-reveals any selection's ancestor path, which covers the way back in.
+    collapseAll() {
+      let added = 0;
+      const set = k => { if (!this._collapsed[k]) { this._collapsed[k] = true; added++; } };
+      this._categories.forEach(cat => {
+        if (cat.tree) {
+          set('tcat|' + cat.key);
+          const mark = n => { if ((n.children || []).length) set('bn|' + n.id); (n.children || []).forEach(mark); };
+          (this._lastRoots[cat.key] || []).forEach(mark);
+        } else set(cat.key);
+      });
+      this._saveCollapsed();
+      console.log(TAG + ' §OLCOLLAPSEALL newlyCollapsed=' + added + ' totalKeys=' + Object.keys(this._collapsed).length);
+      this._paint();
+    },
 
     // M8 INCREMENTAL (RESUME_MODELLER_POLISH.md #7): the Outliner has TWO sections — the seeded BOM-tree
     // categories (the loaded building: storey→room→disc→class→element, thousands of nodes, RE-FOLDED only on a
@@ -305,8 +328,12 @@
     _ensureSections(tree) {
       if (tree.querySelector('#bo-trees')) return;
       tree.innerHTML =
-        '<div style="padding:2px 6px;color:#8b94a3">' + CHEV(true) + 'DAGeVu Model</div>' +
+        '<div id="bo-root" title="double-click: collapse all" style="padding:2px 6px;color:#8b94a3;cursor:pointer">' + CHEV(true) + 'DAGeVu Model</div>' +
         '<div id="bo-trees"></div><div id="bo-flats"></div>';
+      // §OLCOLLAPSEALL (prompts/OUTLINER_COLLAPSE_ALL.md — Witness: W-E2E-OL-COLLAPSEALL): dbl-click the
+      // root label folds the whole tree to the top-level trunk. Wired ONCE here — the skeleton (and this
+      // root row) persists across every subsequent section repaint (_ensureSections early-returns above).
+      tree.querySelector('#bo-root').addEventListener('dblclick', () => this.collapseAll());
       this._treesCache = this._flatsCache = null;   // fresh skeleton → force both sections to refill (no stale-cache desync)
     },
     _paint() {
