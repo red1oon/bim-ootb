@@ -4,6 +4,32 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.13.0](https://github.com/red1oon/bim-ootb/compare/v1.12.0...v1.13.0) (2026-07-08)
+
+
+### ✨ Features
+
+* **modeller:** arc sketch primitive — FreeCAD "Arc by center" 3-click placement, sector-closure extrude ([#701](https://github.com/red1oon/bim-ootb/issues/701)) ([768db43](https://github.com/red1oon/bim-ootb/commit/768db43fac6b0a39c7b89cc02a199e8a6ae0496e))
+* **modeller:** circle sketch primitive — center+radius placement, #dim-radius, makeCircleEdge extrude ([#699](https://github.com/red1oon/bim-ootb/issues/699)) ([2e862cb](https://github.com/red1oon/bim-ootb/commit/2e862cb1a217717d9f08b259be3ae97223140e56))
+* **modeller:** p2p_coincident sketch vertex weld ([#696](https://github.com/red1oon/bim-ootb/issues/696)) ([5807c5b](https://github.com/red1oon/bim-ootb/commit/5807c5bfb58b2d6ba141a2b67cf00a910f94dfb6))
+* **modeller:** sketch height proof + l2l_angle_ll corner-angle constraint ([#695](https://github.com/red1oon/bim-ootb/issues/695)) ([461f1ab](https://github.com/red1oon/bim-ootb/commit/461f1ab18b40e0cbbdd2296f4d80930cda0821ff))
+* **modeller:** tangent-to-gridline circle snap — first real planegcs circle constraint (tangent_lc) ([#702](https://github.com/red1oon/bim-ootb/issues/702)) ([aff1f0c](https://github.com/red1oon/bim-ootb/commit/aff1f0c0ba22c2e177db9832ab2c505bfac221fd))
+* **modeller:** wire p2p_distance sketch dimension + fix invisible dim-* toolbar fields ([#694](https://github.com/red1oon/bim-ootb/issues/694)) ([e8aa3d6](https://github.com/red1oon/bim-ootb/commit/e8aa3d611c0b56e63e1ed553403432c8e544318d))
+
+
+### 🐛 Fixes
+
+* **modeller:** de-duplicate Ctrl+Z/Ctrl+Y — one keypress fired two undos ([#707](https://github.com/red1oon/bim-ootb/issues/707)) ([1c58348](https://github.com/red1oon/bim-ootb/commit/1c58348903c79669cf70b3c0a0ad2167191a76f4))
+* **modeller:** MEP fixture placement refuses, never invents, an unmatched box ([#708](https://github.com/red1oon/bim-ootb/issues/708)) ([4af60c4](https://github.com/red1oon/bim-ootb/commit/4af60c402a52563d6edbfd7358399264ccbd9b9a))
+* **modeller:** oplog load paths (restore/reload/setModelKey) no longer autosave just-loaded bytes back to storage ([#705](https://github.com/red1oon/bim-ootb/issues/705)) ([1c14e1f](https://github.com/red1oon/bim-ootb/commit/1c14e1f3f86f34d9d2ad08d618208794fe12c033))
+* **modeller:** oplog.clear() purges IDB fallback; stop re-attempting doomed localStorage.setItem ([#703](https://github.com/red1oon/bim-ootb/issues/703)) ([cfe491f](https://github.com/red1oon/bim-ootb/commit/cfe491f227be07aaf403ef062f27976e62271135))
+* **viewer:** port real-placement gate from modeller PR [#693](https://github.com/red1oon/bim-ootb/issues/693) — kill hardcoded 0.15 fixture box ([#697](https://github.com/red1oon/bim-ootb/issues/697)) ([23e292e](https://github.com/red1oon/bim-ootb/commit/23e292ed1b1f1801681195bea572801890e8e2aa))
+
+
+### 📝 Documentation
+
+* **modeller:** update in-app User Guide — Move & Manipulate, sketch dimension typing, Circle mode ([#700](https://github.com/red1oon/bim-ootb/issues/700)) ([327c879](https://github.com/red1oon/bim-ootb/commit/327c879e88dedb180a72d918d3bb15d52c9f6ebe))
+
 ## [1.12.0](https://github.com/red1oon/bim-ootb/compare/v1.11.0...v1.12.0) (2026-07-07)
 
 
