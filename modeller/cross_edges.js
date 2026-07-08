@@ -278,9 +278,14 @@
     };
   }
 
+  // §PLACEMENT-VERIFY (SPEC_MESH_FIT_GRAFT_HEAL_ENGINE.md §9/§10, bim-compiler): expose the real-AABB reader
+  // itself -- additive only, same function, no behavior change to any existing caller (deriveAdjacency/
+  // deriveDatumsAnchored/deriveSpans already called it internally). witness_mesh_graft_placement.js reuses
+  // this as an INDEPENDENT ground truth for placeInWorld, instead of a second implementation sharing the
+  // same assumptions (same additive export already proven safe in the seam-healing engine's own copy).
   var API = { deriveAdjacency: deriveAdjacency, faceTouch: faceTouch, TOL: TOL, MIN_OVERLAP: MIN_OVERLAP,
     deriveDatumsAnchored: deriveDatumsAnchored, deriveSpans: deriveSpans,
-    readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll };
+    readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll, readBoxes: _readBoxes };
   window.CrossEdges = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : this);

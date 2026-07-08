@@ -1,14 +1,23 @@
-// witness_mesh_graft_placement.js -- proves mesh_graft.js's placeInWorld + compareToGroundTruth (the
-// orientation-preserving placement mechanism + RosettaStone-style spatial compare gate) on REAL data
-// where real data exists, and on a clearly-labeled SYNTHETIC case for the tilted branch (no ARC-only
-// resident on hand has a real rotation_x/rotation_y!=0 element -- SampleCastle's earlier-documented 497/
-// 3317 tilted count was from a different pre-strip snapshot; today's ARC-only copies here all have 0).
-// Never presents the synthetic case as if it were measured -- same discipline as witness_meshfit_thirdtier.js.
+// witness_mesh_graft_placement.js -- proves mesh_graft.js's placeInWorld (the orientation-preserving
+// placement mechanism) on REAL data where real data exists, and on a clearly-labeled SYNTHETIC case for
+// the tilted branch (no ARC-only resident on hand has a real rotation_x/rotation_y!=0 element).
+//
+// §9 CORRECTION (2026-07-09, same day, seam-healing session): an earlier version of this witness compared
+// placeInWorld's output against this file's own expectedWorldBbox/compareToGroundTruth -- which shares
+// placeInWorld's OWN blind spot (both dropped anchorOffset), so it reported a false pass (maxDelta≈4.7e-7)
+// while placeInWorld's real output was off by up to 8.69m/1.55m (the full anchorOffset). Ground truth for
+// CASE1/CASE2 now comes from cross_edges.js's `readBoxes` -- a GENUINELY independent, already-proven
+// computation (different code path: direct raw-vertex rotate+envelope, not placeInWorld's recentre+anchor-
+// add-back+rotate chain), not a second implementation of the same assumption. See
+// SPEC_MESH_FIT_GRAFT_HEAL_ENGINE.md §9/§10 for the full writeup.
 const fs = require('fs');
 const initSqlJs = require('sql.js');
 const MeshGraft = require('../mesh_graft.js');
+const RealGeometry = require('../real_geometry.js');
+const CrossEdges = require('../cross_edges.js');
 
 function toF32(b) { return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4); }
+function bboxOf(p) { return MeshGraft.bboxOf(p); }
 
 (async () => {
   const SQL = await initSqlJs();
@@ -28,18 +37,27 @@ function toF32(b) { return new Float32Array(b.buffer, b.byteOffset, b.byteLength
 
   const geomRow = duplexDb.exec("SELECT vertices, faces FROM base_geometries WHERE geometry_hash=?", [hash])[0];
   const rawPos = toF32(geomRow.values[0][0]);
-  // recentre about own bbox centre (real_geometry.js's own convention -- placeInWorld expects this input shape)
-  function bboxOf(p) { return MeshGraft.bboxOf(p); }
-  const bb = bboxOf(rawPos);
-  const ccx = (bb[0] + bb[1]) / 2, ccy = (bb[2] + bb[3]) / 2, ccz = (bb[4] + bb[5]) / 2;
-  const recentred = new Float32Array(rawPos.length);
-  for (let i = 0; i < rawPos.length; i += 3) { recentred[i] = rawPos[i] - ccx; recentred[i + 1] = rawPos[i + 1] - ccy; recentred[i + 2] = rawPos[i + 2] - ccz; }
+  // real_geometry.js's OWN recenter() -- the same convention every other consumer in this codebase uses,
+  // returning the REAL anchorOffset (mesh bbox centre relative to the true IFC placement anchor), not a
+  // manual reimplementation that silently drops it (that was the root cause of the original bug: CASE1
+  // used to recentre by hand and never carry anchorOffset forward at all).
+  const rc = RealGeometry.recenter(rawPos);
+  console.log('§W-PLACEMENT CASE1 real_anchorOffset=' + rc.anchorOffset.map(v => v.toFixed(4)).join(','));
 
-  const placed1 = MeshGraft.placeInWorld({ positions: recentred, faces: geomRow.values[0][1] }, { cx, cy, cz, rotX, rotY, rotZ });
-  const cmp1 = MeshGraft.compareToGroundTruth(placed1, { cx, cy, cz, bx, by, bz, rotX, rotY, rotZ });
-  console.log('§W-PLACEMENT CASE1 actual_world_bbox=' + cmp1.actual.map(v => v.toFixed(4)).join(',') +
-    ' expected_world_bbox=' + cmp1.expected.map(v => v.toFixed(4)).join(',') +
-    ' maxDelta=' + cmp1.maxDelta.toFixed(5) + ' tolerance=' + cmp1.tolerance + ' pass=' + cmp1.pass);
+  const placed1 = MeshGraft.placeInWorld({ positions: rc.positions, faces: geomRow.values[0][1], anchorOffset: rc.anchorOffset }, { cx, cy, cz, rotX, rotY, rotZ });
+
+  // independent ground truth: cross_edges.js's readBoxes, a DIFFERENT already-proven implementation (direct
+  // raw-vertex rotate+envelope against `element_transforms`+`base_geometries`, not placeInWorld's own
+  // recentre/anchor-add-back/rotate chain) -- a real cross-check, not a second copy of the same assumption.
+  const boxes = CrossEdges.readBoxes(duplexDb);
+  const groundTruthBox = boxes.find(b => b.guid === guid);
+  if (!groundTruthBox) { console.error('§W-PLACEMENT FATAL cross_edges.js readBoxes found no box for ' + guid); process.exit(1); }
+  const delta1 = placed1.worldBbox.map((v, i) => Math.abs(v - groundTruthBox.aabb[i]));
+  const maxDelta1 = Math.max(...delta1);
+  const cmp1pass = maxDelta1 < 0.001;   // sub-mm -- both are real, exact computations, not independently-tolerant approximations
+  console.log('§W-PLACEMENT CASE1 placeInWorld_worldBbox=' + placed1.worldBbox.map(v => v.toFixed(4)).join(',') +
+    ' cross_edges_ground_truth=' + groundTruthBox.aabb.map(v => v.toFixed(4)).join(',') +
+    ' maxDelta=' + maxDelta1.toExponential(3) + ' pass=' + cmp1pass);
 
   // ---- CASE 2: REAL data -- graft a family member INTO this same real Duplex slot, proving a GRAFTED
   // result (not just measured geometry) also places correctly.
@@ -73,16 +91,37 @@ function toF32(b) { return new Float32Array(b.buffer, b.byteOffset, b.byteLength
   // rescale the template to the RECOVERED LOCAL target size (not bx/by/bz directly -- see finding above)
   const tRaw = toF32(tVBlob), tBb = bboxOf(tRaw), tSize = [tBb[1] - tBb[0], tBb[3] - tBb[2], tBb[5] - tBb[4]];
   const axis1 = [a1x, a1y, a1z], axis2 = [a2x, a2y, a2z], axis3 = [a3x, a3y, a3z];
-  const axes = [axis1, axis2, axis3];
   function axisIndex(v) { return v[0] ? 0 : v[1] ? 1 : 2; }
   const rescaled = { scale: localTargetSize[axisIndex(axis1)] / tSize[0], scale2: localTargetSize[axisIndex(axis2)] / tSize[1], scale3: localTargetSize[axisIndex(axis3)] / tSize[2] };
   const grafted = MeshGraft.applyMeshTransform(template, { axis1, axis2, axis3, scale: rescaled.scale, scale2: rescaled.scale2, scale3: rescaled.scale3 });
   console.log('§W-PLACEMENT CASE2 grafted_local_bbox_size=' + [grafted.bbox[1] - grafted.bbox[0], grafted.bbox[3] - grafted.bbox[2], grafted.bbox[5] - grafted.bbox[4]].map(v => v.toFixed(4)).join(','));
 
-  const placed2 = MeshGraft.placeInWorld(grafted, { cx, cy, cz, rotX, rotY, rotZ });
-  const cmp2 = MeshGraft.compareToGroundTruth(placed2, { cx, cy, cz, bx, by, bz, rotX, rotY, rotZ });
+  // §9-NOTE / §10-FINDING: a graft's OWN bbox centre is the point that lands at the target's `center_xyz` --
+  // its `anchorOffset` (applyMeshTransform's internal recentre bookkeeping, see mesh_graft.js's own comment
+  // at that return site) is NOT a real placement-relevant offset. Deliberately NOT passed to placeInWorld
+  // here (equivalent to anchorOffset=[0,0,0]).
+  //
+  // An EARLIER version of this CASE2 check expected the grafted result to land on the SAME true world AABB
+  // as CASE1's real measured element (reusing its slot) -- that is the WRONG expectation, not a bug: a
+  // graft has no way to know or reproduce a SPECIFIC real mesh's own anchorOffset (an arbitrary IFC local-
+  // coordinate-origin choice baked into that ONE measured mesh, e.g. this real wall's own placement anchor
+  // sits at one END of the wall, 8.69m from its own bbox centre -- there is no way for a graft to infer
+  // that quirk, nor should it try to). The CORRECT, honest claim for grafting -- matching how
+  // arc_editable.js's own box-fallback path ALREADY treats `center_xyz` for a target with no real geometry
+  // (its box literally IS centred there, `[-bx/2,bx/2,...]` about the anchor) -- is: the grafted result
+  // lands its own bbox CENTRE exactly at the target's `center_xyz`, at the RECOVERED real LOCAL size.
+  // Checked against that claim below, not against CASE1's specific real anchorOffset.
+  const placed2 = MeshGraft.placeInWorld({ positions: grafted.positions, faces: grafted.faces }, { cx, cy, cz, rotX, rotY, rotZ });
+  const placed2Size = [placed2.worldBbox[1] - placed2.worldBbox[0], placed2.worldBbox[3] - placed2.worldBbox[2], placed2.worldBbox[5] - placed2.worldBbox[4]];
+  const placed2Center = [(placed2.worldBbox[0] + placed2.worldBbox[1]) / 2, (placed2.worldBbox[2] + placed2.worldBbox[3]) / 2, (placed2.worldBbox[4] + placed2.worldBbox[5]) / 2];
+  const anchorTarget = [cx, cy, cz];
+  const worldTargetSize = [bx, by, bz];   // placed2.worldBbox is WORLD-space -- compare against the WORLD-space bbox_x/y/z, not localTargetSize (pre-rotation)
+  const centerDelta = Math.max(...placed2Center.map((v, i) => Math.abs(v - anchorTarget[i])));
+  const sizeDelta = Math.max(...placed2Size.map((v, i) => Math.abs(v - worldTargetSize[i])));
+  const cmp2pass = centerDelta < 0.001 && sizeDelta < 0.001;   // placed AT the target's own anchor, sized to the true world footprint (axis-corrected via the recovered local size feeding the graft's own scale)
   console.log('§W-PLACEMENT CASE2(GRAFTED,real-yaw-placement) source_status=' + grafted.source_status +
-    ' maxDelta=' + cmp2.maxDelta.toFixed(5) + ' pass=' + cmp2.pass);
+    ' placed_center=' + placed2Center.map(v => v.toFixed(4)).join(',') + ' anchor_target=' + anchorTarget.map(v => v.toFixed(4)).join(',') +
+    ' centerDelta=' + centerDelta.toExponential(3) + ' sizeDelta=' + sizeDelta.toExponential(3) + ' pass=' + cmp2pass);
 
   // ---- CASE 3: SYNTHETIC -- tilted (rotX/rotY nonzero) placement composition, checked against a plain
   // 3x3 rotation MATRIX built fresh here (a genuinely independent implementation, not a reuse of
@@ -90,13 +129,17 @@ function toF32(b) { return new Float32Array(b.buffer, b.byteOffset, b.byteLength
   // does NOT touch the bbox_x/y/z-is-world-space question above (no bbox comparison here at all) -- purely
   // proves placeInWorld rotates+translates individual points to the mathematically correct world location.
   // Labeled explicitly synthetic: no ARC-only resident on hand has a real tilted+geometry-linked element.
+  // Same §9-NOTE as CASE2: the graft's own anchorOffset is deliberately NOT passed here either (both sides
+  // of this comparison -- placeInWorld's call and the independent matVec check below -- agree it's absent,
+  // a genuinely apples-to-apples comparison, not a shared blind spot: this synthetic case never claims to
+  // validate anchorOffset handling at all, only the rotation+translation composition itself).
   function rotationMatrixXYZ(ex, ey, ez) {
     // standard intrinsic-XYZ rotation matrix R = Rx(ex)*Ry(ey)*Rz(ez), built from first principles
     // (elementary rotation matrices + matrix multiplication), independent of the quaternion code path.
-    var cx = Math.cos(ex), sx = Math.sin(ex), cy = Math.cos(ey), sy = Math.sin(ey), cz = Math.cos(ez), sz = Math.sin(ez);
-    var Rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]];
-    var Ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
-    var Rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]];
+    var cxr = Math.cos(ex), sxr = Math.sin(ex), cyr = Math.cos(ey), syr = Math.sin(ey), czr = Math.cos(ez), szr = Math.sin(ez);
+    var Rx = [[1, 0, 0], [0, cxr, -sxr], [0, sxr, cxr]];
+    var Ry = [[cyr, 0, syr], [0, 1, 0], [-syr, 0, cyr]];
+    var Rz = [[czr, -szr, 0], [szr, czr, 0], [0, 0, 1]];
     function matmul(A, B) {
       var C = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
       for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) for (var k = 0; k < 3; k++) C[i][j] += A[i][k] * B[k][j];
@@ -107,7 +150,7 @@ function toF32(b) { return new Float32Array(b.buffer, b.byteOffset, b.byteLength
   function matVec(M, v) { return [M[0][0] * v[0] + M[0][1] * v[1] + M[0][2] * v[2], M[1][0] * v[0] + M[1][1] * v[1] + M[1][2] * v[2], M[2][0] * v[0] + M[2][1] * v[1] + M[2][2] * v[2]]; }
 
   const synthTarget = { cx: 12.5, cy: -3.2, cz: 4.1, rotX: 0.35, rotY: -0.6, rotZ: 1.1 };
-  const placed3 = MeshGraft.placeInWorld(grafted, synthTarget);
+  const placed3 = MeshGraft.placeInWorld({ positions: grafted.positions, faces: grafted.faces }, synthTarget);
   // bonsai_library.js's own 3-axis branch: new THREE.Euler(rotX, rotZRad, -rotY) -- replicate that EXACT
   // axis relabeling with the independent matrix here too, so this is a like-for-like cross-check.
   const R = rotationMatrixXYZ(synthTarget.rotX, synthTarget.rotZ, -synthTarget.rotY);
@@ -124,7 +167,7 @@ function toF32(b) { return new Float32Array(b.buffer, b.byteOffset, b.byteLength
   console.log('§W-PLACEMENT CASE3(SYNTHETIC,tilted,point-by-point-vs-independent-matrix) target=' + JSON.stringify(synthTarget) +
     ' vertices_checked=' + (grafted.positions.length / 3) + ' max_point_error=' + maxPointErr.toExponential(3) + ' pass=' + cmp3pass);
 
-  const pass = cmp1.pass && cmp2.pass && cmp3pass;
+  const pass = cmp1pass && cmp2pass && cmp3pass;
   console.log('§W-PLACEMENT RESULT ' + (pass ? 'PASS' : 'FAIL'));
   process.exit(pass ? 0 : 1);
 })().catch(e => { console.error('§W-PLACEMENT FATAL', e); process.exit(1); });

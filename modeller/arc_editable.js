@@ -35,6 +35,33 @@
     catch (e) { return false; }
   }
 
+  // §BOXFALLBACK-FIX (SPEC_MESH_FIT_GRAFT_HEAL_ENGINE.md §7/§9/§10, CONFIRMED then FIXED 2026-07-09):
+  // element_transforms.bbox_x/y/z is the element's WORLD-SPACE (post-rotation) size, not a local pre-
+  // rotation box (§PLACEMENT-FINDING, verified on real Duplex data: a rotation_z=-90° wall's RAW vertex
+  // blob extent is (17.383,0.417,3.1) local, while bbox_x/y/z reports (0.417,17.383,3.1) -- axes SWAPPED,
+  // i.e. already the world answer). Building a LOCAL box `[-bx/2,bx/2,...]` directly from bx/by/bz and then
+  // letting place() rotate it AGAIN double-applies the rotation -- confirmed by direct calculation: this
+  // real wall's fallback box would render 8.69m wide in X where the real building is 0.417m wide. Only
+  // triggers for an element that is BOTH box-fallback (no real geometry link) AND rotated by an exact odd
+  // multiple of 90/270 deg -- every ARC-only resident tested so far has boxFallback=0 for its rotated
+  // elements, so this has never actually rendered wrong yet, but it would the day a rotated box-fallback
+  // element gets onboarded.
+  //
+  // Fix: recover the LOCAL (pre-rotation) size by un-permuting X/Y before place() rotates it -- exactly
+  // invertible only for yaw-only (rotation_x=rotation_y=0) at a clean multiple of 90 deg (an axis
+  // permutation, not a general rotation-of-AABB inverse, which isn't solvable in general -- same limitation
+  // already documented, mesh-fit spec §8). Any OTHER rotation (oblique yaw, or a genuine 3-axis tilt)
+  // returns the size UNCHANGED -- the pre-existing (already-approximate, not a regression) behaviour for a
+  // case that has no exact inverse anyway.
+  function _localBoxSizeFromWorldYawOnly(wx, wy, wz, rx, ry, rz) {
+    if (rx || ry) return [wx, wy, wz];                    // genuine 3-axis tilt -- not invertible, unchanged
+    var twoPi = Math.PI * 2, r = ((rz % twoPi) + twoPi) % twoPi;
+    var nearQuarter = Math.round(r / (Math.PI / 2)) * (Math.PI / 2);
+    if (Math.abs(r - nearQuarter) > 1e-6) return [wx, wy, wz];   // not a clean 90 multiple -- unchanged
+    var steps = Math.round(nearQuarter / (Math.PI / 2)) % 2;     // 0/2 -> unchanged; 1/3 -> x/y swap
+    return steps === 0 ? [wx, wy, wz] : [wy, wx, wz];
+  }
+
   // §LOD400-STALL fix (Bug 1 root cause): some elements_meta schemas (e.g. Terminal_meta.db, built by a
   // different extraction path than *_extracted.db) have NO `id` column — guid is the sole PRIMARY KEY. The
   // seed query used to hardcode `ORDER BY m.id`, which THREW for that schema (sql.js "no such column: m.id"),
@@ -171,7 +198,13 @@
           }
         } else gmAudit.noBand++;
       }
-      var bbox = [-bx / 2, bx / 2, -by / 2, by / 2, -bz / 2, bz / 2];   // MEASURED local box, centred in x/y/z (kept
+      // §BOXFALLBACK-FIX: bbox_x/y/z (bx,by,bz) is WORLD-space -- recover the LOCAL pre-rotation size before
+      // building the LOCAL box that place() is about to rotate (see helper's own header for the full finding).
+      // NOTE: `_matchLod300(cls, bx, by, bz)` below deliberately still uses the WORLD-space bx/by/bz as before
+      // (catalog-dimension matching is a separate, pre-existing code path, not part of the confirmed bug this
+      // fix addresses -- out of scope here, unchanged).
+      var localSize = _localBoxSizeFromWorldYawOnly(bx, by, bz, rx, ry, rz);
+      var bbox = [-localSize[0] / 2, localSize[0] / 2, -localSize[1] / 2, localSize[1] / 2, -localSize[2] / 2, localSize[2] / 2];   // MEASURED local box, centred in x/y/z (kept
       // on every op regardless of match — audit trail: what was actually measured, vs what mesh got stamped).
       var seatHalfZ = bz / 2;                                          // §LOD-300: seat half-height defaults to MEASURED
       var m = _matchLod300(cls, bx, by, bz);                           // Bug-2 partial fix: try the 3-item real-mesh catalog

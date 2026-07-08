@@ -106,6 +106,14 @@
       positions: recentred,
       faces: faces,
       bbox: [outBb[0] - cx, outBb[1] - cx, outBb[2] - cy, outBb[3] - cy, outBb[4] - cz, outBb[5] - cz],
+      // §9-NOTE (2026-07-09, seam-healing session): this `anchorOffset` is a DIFFERENT thing from
+      // real_geometry.js's `recenter()` anchorOffset, despite the same field name/shape. Here it is just
+      // "how far this function's own internal recentre step shifted the transformed output" -- a byproduct
+      // of the template's arbitrary raw coordinate origin, NOT a real IFC placement anchor (a fresh graft
+      // has no placement of its own to be anchor-relative to). Do NOT feed this into placeInWorld the same
+      // way a REAL element's recenter()-anchorOffset is fed in -- a grafted result's own bbox centre IS the
+      // point that should land at the target's center_xyz; treat this field as informational bookkeeping,
+      // not a placement-time offset, unless a future design deliberately gives it that meaning.
       anchorOffset: [cx, cy, cz],
       source_status: 'GRAFTED',
       source_template_hash: template.template_hash,
@@ -191,21 +199,34 @@
   // placeInWorld(graftedOrRealResult, targetPlacement) -> { positions (world-space Float32Array), faces,
   //   worldBbox: [xmin,xmax,ymin,ymax,zmin,zmax] }
   // graftedOrRealResult: { positions (RECENTRED about own bbox centre, per applyMeshTransform's/
-  //   real_geometry.js's shared convention), faces }
+  //   real_geometry.js's shared convention), faces, anchorOffset (OPTIONAL, [x,y,z] -- the offset recenter()
+  //   subtracted, i.e. how far the mesh's own bbox centre sits from its TRUE local placement anchor;
+  //   defaults to [0,0,0] when absent, e.g. a genuinely centred template) }
   // targetPlacement: { cx, cy, cz, rotX, rotY, rotZ } -- element_transforms' own columns, RADIANS
   // (rotation_x/y/z are stored in radians throughout this project -- §ARC-ROT-UNIT).
+  //
+  // §9 FIX (SPEC_MESH_FIT_GRAFT_HEAL_ENGINE.md, 2026-07-09 -- seam-healing session, same-day correction):
+  // the true world formula (real_geometry.js's own header, ARC-ANCHOR) is
+  //   worldVertex = center + R·(recentredVertex + anchorOffset) = center + R·recentredVertex + R·anchorOffset
+  // An earlier version of this function dropped the `R·anchorOffset` term entirely -- confirmed wrong by
+  // up to the full anchorOffset magnitude (real Duplex data: 8.69m/1.55m off), the SAME bug shape already
+  // fixed once elsewhere in this codebase (`project_modeller_arc_anchor_placement_bug.md`,
+  // `bonsai_library.js foldInsert`, up to 18m off). `anchorOffset` is a CONSTANT translation for the whole
+  // mesh (not per-vertex), so it only needs rotating once, added to every output vertex alongside `center`.
   function placeInWorld(result, targetPlacement) {
     var rotX = targetPlacement.rotX || 0, rotY = targetPlacement.rotY || 0, rotZ = targetPlacement.rotZ || 0;
     var tilted = !!(rotX || rotY);
     var q = tilted ? quaternionFromEulerXYZ(rotX, rotZ, -rotY) : null;
+    var ao = result.anchorOffset || [0, 0, 0];
+    var rotatedAnchor = tilted ? applyQuaternion(ao, q) : rotateZ(ao, rotZ);
     var n = result.positions.length / 3;
     var out = new Float32Array(result.positions.length);
     for (var i = 0; i < n; i++) {
       var local = [result.positions[i * 3], result.positions[i * 3 + 1], result.positions[i * 3 + 2]];
       var rotated = tilted ? applyQuaternion(local, q) : rotateZ(local, rotZ);
-      out[i * 3] = rotated[0] + targetPlacement.cx;
-      out[i * 3 + 1] = rotated[1] + targetPlacement.cy;
-      out[i * 3 + 2] = rotated[2] + targetPlacement.cz;
+      out[i * 3] = rotated[0] + rotatedAnchor[0] + targetPlacement.cx;
+      out[i * 3 + 1] = rotated[1] + rotatedAnchor[1] + targetPlacement.cy;
+      out[i * 3 + 2] = rotated[2] + rotatedAnchor[2] + targetPlacement.cz;
     }
     return { positions: out, faces: result.faces, worldBbox: bboxOf(out) };
   }

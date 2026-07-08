@@ -99,26 +99,52 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
   // element's), by design (§5 doctrine "same placement, richer mesh"); it is excluded from the rot≈0-AABB==measured
   // check for that reason (a SEPARATE assertion below proves its world-centre still lands on the measured point,
   // which is the placement invariant this witness actually cares about).
-  var posOk = 0, boxConstrOk = 0, foldExtentOk = 0, fidOk = 0, rotZeroN = 0, n = seed.ops.length, matchedN = 0;
+  // §BOXFALLBACK-FIX regression note (SPEC_MESH_FIT_GRAFT_HEAL_ENGINE.md §7/§9/§10, 2026-07-09): the ORIGINAL
+  // A4 asserted `op.params.bbox`'s LOCAL extent equals T.bx/T.by/T.bz DIRECTLY, unconditionally -- an
+  // unexamined assumption that bbox_x/y/z IS a local pre-rotation size. That assumption is now CONFIRMED
+  // FALSE (bbox_x/y/z is WORLD-space, post-rotation) and the fix un-permutes X/Y for a clean 90°-multiple
+  // yaw before constructing the local box -- correctly making pe's LOCAL extent DIFFER from T.bx/T.by for
+  // exactly those elements (10/39 on this building). The ORIGINAL A4 also deliberately EXCLUDED every
+  // rotated element from the fold-extent (AABB fidelity) check at all ("only axis-aligned rot≈0 ... keep
+  // AABB==measured") -- meaning rotated elements were NEVER actually verified end-to-end before this fix.
+  // Both corrected below: boxConstr now expects the RECOVERED local size for a clean-90°-yaw element (the
+  // un-permutation this fix performs), and foldExtent is EXTENDED to also cover those elements (a real
+  // strengthening -- this is the first time a rotated element's AABB fidelity is actually checked).
+  function localSizeYawOnly(bx, by, bz, rz) {
+    var twoPi = Math.PI * 2, r = ((rz % twoPi) + twoPi) % twoPi;
+    var nearQuarter = Math.round(r / (Math.PI / 2)) * (Math.PI / 2);
+    if (Math.abs(r - nearQuarter) > 1e-6) return [bx, by, bz];
+    var steps = Math.round(nearQuarter / (Math.PI / 2)) % 2;
+    return steps === 0 ? [bx, by, bz] : [by, bx, bz];
+  }
+  var posOk = 0, boxConstrOk = 0, foldExtentOk = 0, fidOk = 0, foldExtentN = 0, n = seed.ops.length, matchedN = 0;
   seed.ops.forEach(function (op) {
     var g = op.outputGuid, T = truth[g], fid = seed.bridge.fidByGuid[g];
     var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
     var bb = aabb(d.positions);
     if (approx(bb.cx, T.cx) && approx(bb.cy, T.cy) && approx(bb.cz, T.cz)) posOk++;        // world centre == measured (rot-invariant) — holds for BOTH raw-bbox and matched-mesh ops
-    // construction-level: the seed box extent == measured bbox (exact) — always true, hash or not (audit trail kept)
+    // construction-level: the seed box's LOCAL extent == the RECOVERED local size (bx/by un-permuted for a
+    // clean 90°-multiple yaw, unchanged otherwise) — always true, hash or not (audit trail kept)
     var pe = op.params.bbox;
-    if (approx(pe[1] - pe[0], T.bx) && approx(pe[3] - pe[2], T.by) && approx(pe[5] - pe[4], T.bz)) boxConstrOk++;
+    var rzRad = T.rz;   // truth.rz is `element_transforms.rotation_z` straight from the DB -- already RADIANS (§ARC-ROT-UNIT)
+    var expectedLocal = localSizeYawOnly(T.bx, T.by, T.bz, rzRad);
+    if (approx(pe[1] - pe[0], expectedLocal[0]) && approx(pe[3] - pe[2], expectedLocal[1]) && approx(pe[5] - pe[4], expectedLocal[2])) boxConstrOk++;
     if (op.params.hash) matchedN++;                                    // Bug-2: LOD-300 real-mesh match, extent is the CATALOG's — skip below
-    // geometry-level extent: only axis-aligned (rot≈0), UNMATCHED (still raw-bbox) elements keep AABB == measured
-    else if (approx(T.rz % 360, 0, 1e-3) || approx(Math.abs(T.rz % 360), 360, 1e-3)) {
-      rotZeroN++;
-      if (approx(bb.ex, T.bx) && approx(bb.ey, T.by) && approx(bb.ez, T.bz)) foldExtentOk++;
+    // geometry-level extent: any UNMATCHED (still raw-bbox) element at rot≈0 OR a clean 90°-multiple yaw now
+    // has an EXACTLY recoverable world AABB (the fix's whole point) — checked for BOTH, not just rot≈0.
+    else {
+      var isZero = approx(T.rz % 360, 0, 1e-3) || approx(Math.abs(T.rz % 360), 360, 1e-3);
+      var isClean90 = (function () { var k = Math.round(rzRad / (Math.PI / 2)); return Math.abs(rzRad - k * (Math.PI / 2)) < 1e-6; })();
+      if (isZero || isClean90) {
+        foldExtentN++;
+        if (approx(bb.ex, T.bx) && approx(bb.ey, T.by) && approx(bb.ez, T.bz)) foldExtentOk++;
+      }
     }
     if (d.featureId === fid) fidOk++;
   });
   chk('A3 folded mesh world-centre == measured center_xyz within 1e-6 (NO invented offset)', posOk === n, posOk + '/' + n);
-  chk('A4 seed box extent == measured bbox (exact) + rot≈0 unmatched AABB extent == measured', boxConstrOk === n && foldExtentOk === rotZeroN && rotZeroN > 0,
-    'boxConstr=' + boxConstrOk + '/' + n + ' foldExtent=' + foldExtentOk + '/' + rotZeroN + ' (matched-LOD300 excluded: ' + matchedN + ')');
+  chk('A4 seed box LOCAL extent == recovered local size + rot≈0-OR-clean90 unmatched world AABB == measured', boxConstrOk === n && foldExtentOk === foldExtentN && foldExtentN > 0,
+    'boxConstr=' + boxConstrOk + '/' + n + ' foldExtent=' + foldExtentOk + '/' + foldExtentN + ' (matched-LOD300 excluded: ' + matchedN + ')');
   chk('A5 each folded mesh carries featureId == its op id (gizmo-selectable + GEOM_MOVE-able)', fidOk === n, fidOk + '/' + n);
 
   // A6 — output_guid persisted on kernel_ops, queryable by featureId(=id)
@@ -171,10 +197,21 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     'matched=' + seed.matched + ' unmatched=' + seed.unmatched + ' total=' + n);
 
   // A10 — §ARC-ROT-UNIT regression guard: element_transforms.rotation_z is RADIANS; an UNMATCHED (still
-  // raw-bbox) rotated element's folded world AABB must match the analytic rotated-box extent (halfX=hx|cosθ|+
-  // hy|sinθ|, halfY=hx|sinθ|+hy|cosθ|) computed from the TRUE θ=T.rz — not the near-zero angle a
-  // radians-fed-as-degrees bug would silently produce. Matched-LOD300 ops are excluded (their extent is the
-  // catalog mesh's own shape, not the raw box formula — same exclusion doctrine as A4).
+  // raw-bbox) rotated element's folded world AABB must match the analytic rotated-box extent computed from
+  // the TRUE θ=T.rz — not the near-zero angle a radians-fed-as-degrees bug would silently produce.
+  // Matched-LOD300 ops are excluded (their extent is the catalog mesh's own shape, not the raw box formula
+  // — same exclusion doctrine as A4).
+  //
+  // §BOXFALLBACK-FIX correction (2026-07-09): the ORIGINAL formula here (`bx*|cos|+by*|sin|` etc.) is the
+  // "AABB of a LOCAL rectangle rotated by θ" formula -- correct ONLY if bx/by were a local pre-rotation
+  // size. Now confirmed bx/by is WORLD-space already (§9/§10), that formula was unknowingly checking
+  // self-consistency of the STILL-DOUBLE-ROTATING path for oblique angles (this fix cannot correct those --
+  // not invertible, see arc_editable.js's own _localBoxSizeFromWorldYawOnly header), not true-world-footprint
+  // fidelity. For a CLEAN 90°-multiple yaw, this fix makes exact recovery possible -- the correct, STRONGER
+  // expectation there is simply that the folded world AABB equals T.bx/T.by DIRECTLY (no trig needed, since
+  // un-permuting then re-rotating by exactly 90° reproduces the original world size exactly). Oblique angles
+  // keep the ORIGINAL self-consistency formula, unchanged (still not a regression -- this fix doesn't touch
+  // that path at all).
   var rotOk = 0, rotN = 0;
   unmatchedOps.forEach(function (op) {
     var T = truth[op.outputGuid];
@@ -183,8 +220,14 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     var fid = seed.bridge.fidByGuid[op.outputGuid];
     var d = Library.foldInsert({ id: fid, op_type: 'GEOM_INSERT', parameters: op.params });
     var bb = aabb(d.positions);
-    var c = Math.abs(Math.cos(T.rz)), s = Math.abs(Math.sin(T.rz));
-    var expEx = T.bx * c + T.by * s, expEy = T.bx * s + T.by * c;
+    var kQuarter = Math.round(T.rz / (Math.PI / 2));
+    var isClean90 = Math.abs(T.rz - kQuarter * (Math.PI / 2)) < 1e-6;
+    var expEx, expEy;
+    if (isClean90) { expEx = T.bx; expEy = T.by; }                // exact recovery now possible — true world footprint
+    else {
+      var c = Math.abs(Math.cos(T.rz)), s = Math.abs(Math.sin(T.rz));
+      expEx = T.bx * c + T.by * s; expEy = T.bx * s + T.by * c;    // oblique — unchanged self-consistency formula
+    }
     if (approx(bb.ex, expEx, 1e-3) && approx(bb.ey, expEy, 1e-3)) rotOk++;
   });
   chk('A10 unmatched rotated element folds to the ANALYTIC true-angle AABB (radians-as-degrees bug would fail this)',
