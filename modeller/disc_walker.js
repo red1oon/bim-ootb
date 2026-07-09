@@ -247,13 +247,37 @@
   // occupied only where a real element's XY footprint covers it. Per-element cell span is
   // bounded so one giant slab can't blow up the grid (it still marks its own footprint).
   var _OCC_SPAN = 256;                                       // max cells one element marks per axis
-  function occupancy(bdb, st, cell) {
-    cell = Math.max(cell > 0 ? cell : 1, 0.5);
-    var rows = _rows(bdb,
-      "SELECT t.center_x cx, t.center_y cy, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_ " +
+  // §BUG-A-OCC-SCOPE (RESUME_DISC_WALKER_ENVELOPE_BOUND.md ⛔ item 1, MEASURED 2026-07-09): occupancy() reads
+  // EVERY element on a storey to build the footprint mask that density/single fixture placement snaps to —
+  // and unlike routing classes (pipes/fittings/ducts, measured max delta 0.21m — negligible, left uncorrected),
+  // it's dominated by IfcWall*, which carries the SAME raw-placement-line-origin defect proven in hostBind
+  // (measured true-midpoint delta up to 3.12m on Duplex, 1.03m SampleCastle). Corrected here the same way.
+  // Cached per (bdb,storey) since occupancy() is called once per placement RULE for the same storey (place()
+  // loops rules×storeys) — recomputing _trueMidpoint per element on every call would be O(rules) redundant work.
+  // `geoDb` (optional, §GEO-SPLIT): threaded through to `_trueMidpoint` for residents whose geometry table
+  // lives in a separate handle (Terminal_geo.db). Cache is keyed by `bdb` only — a given bdb is always paired
+  // with the same geoDb within one walk, so this doesn't need a second cache dimension.
+  var _occMidCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function _occElements(bdb, st, geoDb) {
+    var byStorey = _occMidCache ? _occMidCache.get(bdb) : null;
+    if (!byStorey) { byStorey = {}; if (_occMidCache) _occMidCache.set(bdb, byStorey); }
+    if (byStorey[st.name]) return byStorey[st.name];
+    var raw = _rows(bdb,
+      "SELECT m.guid g, t.center_x cx, t.center_y cy, t.center_z cz, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_, " +
+      "COALESCE(t.rotation_x,0) rx, COALESCE(t.rotation_y,0) ry, COALESCE(t.rotation_z,0) rot " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.storey='" + _esc(st.name) + "'");
+    var out = raw.map(function (e) {
+      var mid = _trueMidpoint(bdb, e.g, { x: e.cx, y: e.cy, z: e.cz, rx: e.rx, ry: e.ry, rot: e.rot }, geoDb);
+      return { cx: mid.verified ? mid.x : e.cx, cy: mid.verified ? mid.y : e.cy, bx: e.bx, by_: e.by_ };
+    });
+    byStorey[st.name] = out;
+    return out;
+  }
+  function occupancy(bdb, st, cell, geoDb) {
+    cell = Math.max(cell > 0 ? cell : 1, 0.5);
+    var els = _occElements(bdb, st, geoDb);
     var occ = {};
-    rows.forEach(function (e) {
+    els.forEach(function (e) {
       var i0 = Math.floor((e.cx - e.bx / 2) / cell), i1 = Math.floor((e.cx + e.bx / 2) / cell);
       var j0 = Math.floor((e.cy - e.by_ / 2) / cell), j1 = Math.floor((e.cy + e.by_ / 2) / cell);
       for (var i = i0; i <= i1 && i < i0 + _OCC_SPAN; i++)
@@ -266,7 +290,7 @@
 
   // ── PLACER ──────────────────────────────────────────────────────────────────────
   var _MAX_PER_STOREY = 50000;                               // legacy spacing-tile backstop (never silent)
-  function place(disc, storeys, bdb) {
+  function place(disc, storeys, bdb, geoDb) {
     var reps = repRules(disc), out = [];
     // §PRIM: attach the class's MEASURED bbox (or null) to every placement so the modeller
     // sizes its GENERATED-fixture box per class. SIZE only — count/position untouched.
@@ -282,7 +306,7 @@
         if (rp.density > 0 && rp.sx > 0) {                  // AREA-SCALED measured count, envelope-placed (FIXTURES only)
           var count = Math.round(rp.density * w * d);       // n_measured × (target_area / src_area)
           if (count > 0) {
-            var cells = occupancy(bdb, st, rp.sx);
+            var cells = occupancy(bdb, st, rp.sx, geoDb);
             if (!cells.length) cells = [{ x: (st.x0 + st.x1) / 2, y: (st.y0 + st.y1) / 2 }];
             var cap = cells.length, placeN = Math.min(count, cap), stride = cap / placeN;
             for (var c = 0; c < placeN; c++) {
@@ -320,7 +344,7 @@
           // void at the raw bbox centre. Snap the centre to the nearest occupied cell (same envelope as the array
           // path). NON-INVENT: the cell is a real ARC footprint cell; no occupancy (bare DB) → keep the centre.
           var scx = (st.x0 + st.x1) / 2, scy = (st.y0 + st.y1) / 2;
-          var scells = occupancy(bdb, st, rp.sx > 0 ? rp.sx : 1);
+          var scells = occupancy(bdb, st, rp.sx > 0 ? rp.sx : 1, geoDb);
           if (scells.length) {
             var sbest = scells[0], sbd = Infinity;
             for (var sc = 0; sc < scells.length; sc++) {
@@ -353,15 +377,100 @@
   // is supplied (sourced from ERP.db `_shim_attributes`), never guessed. A placement with no host within
   // `reach_m` is REFUSED (kept floating + counted) — REFUSE beats fabricate. host_ifc_class matches as a
   // substring so 'IfcWall' still picks up IfcWallStandardCase (backward-compatible with the wall-only path).
-  function hostBind(placements, bdb, shim) {
+  // §BUG-A-TRUE-MIDPOINT (RESUME_DISC_WALKER_ENVELOPE_BOUND.md): element_transforms.center is the raw IFC
+  // placement-line origin, NOT a bbox midpoint -- proven off by up to a wall's own half-length on real,
+  // non-centred walls (measured: Duplex wall 2O2Fr$t4X7Zf8NOew3FNqI, Y off by 0.81m; bbox_x/y/z themselves ARE
+  // reliable, computed as maxXYZ-minXYZ by the extractor -- only the CENTRE is suspect). Recover the TRUE
+  // world-bbox midpoint from the host's OWN real mesh (component_geometries via element_instances, mirroring
+  // scripts/test_orientation_proof.py's proven P2 BBOX_RECONSTRUCT: R(rotation) @ local_mesh_bbox_corners +
+  // centre = world bbox). Available today on Duplex/SampleHouse/SampleCastle (100% wall coverage measured);
+  // Terminal has neither this nor elements_rtree -- falls back to the raw (unverified) centre rather than
+  // inventing one; callers get `verified:false` and log the uncertainty once per host, never silently trusting
+  // an unmeasured number as ground truth (mirrors the existing §DW-NONCARDINAL refuse-and-log precedent).
+  function _eulerMat3(rx, ry, rz) {
+    var ca = Math.cos(rx), sa = Math.sin(rx), cb = Math.cos(ry), sb = Math.sin(ry), cc = Math.cos(rz), sc = Math.sin(rz);
+    return [
+      [cb * cc, sa * sb * cc - ca * sc, ca * sb * cc + sa * sc],
+      [cb * sc, sa * sb * sc + ca * cc, ca * sb * sc - sa * cc],
+      [-sb, sa * cb, ca * cb]
+    ];
+  }
+  // §BUG-A CORRECTION (found by an independent reviewer session, re-verified here before touching code): the
+  // LIVE building DBs (e.g. ~/bim-ootb/modeller/Duplex_extracted.db, the actual 65/267-outside evidence DB) name
+  // this table `base_geometries`, NOT `component_geometries` -- this repo's own committed `deploy/buildings/*`
+  // copies happen to use the other name, which is why the fix "worked" there and did NOTHING on the real evidence
+  // DB (confirmed: live Duplex has 0 `component_geometries` rows, 170/170 populated `base_geometries` rows).
+  // `scripts/measure_narrowphase.js` already carries this exact two-name fallback precedent for the same reason
+  // -- mirrored here, not invented.
+  var _GEOM_TABLES = ['component_geometries', 'base_geometries'];
+  // §GEO-SPLIT (2026-07-09, mirrors real_geometry.js's buildGeometryIndex(db,geoDb), already proven live for
+  // Terminal in the modeller): `geoDb` is an OPTIONAL second sql.js handle carrying the geometry table, for
+  // residents where element_instances (in `bdb`) and component_geometries (250MB, in a SEPARATE file --
+  // Terminal_geo.db) can't be sql.js-JOINed because they're independently-opened databases. Defaults to `bdb`
+  // (single-file residents: SampleHouse/Duplex/SampleCastle) -- byte-identical old behaviour when omitted.
+  function _geomRow(bdb, ghash, geoDb) {
+    var g = geoDb || bdb;
+    for (var i = 0; i < _GEOM_TABLES.length; i++) {
+      try {
+        var r = _rows(g, "SELECT vertices vb FROM " + _GEOM_TABLES[i] + " WHERE geometry_hash='" + _esc(ghash) + "'")[0];
+        if (r && r.vb && r.vb.length) return r;
+      } catch (e) { /* table doesn't exist on this DB -- try the next name */ }
+    }
+    return null;
+  }
+  function _trueMidpoint(bdb, guid, w, geoDb) {
+    var fallback = { x: w.x, y: w.y, z: w.z, verified: false };
+    var inst, geo;
+    try { inst = _rows(bdb, "SELECT geometry_hash gh FROM element_instances WHERE guid='" + _esc(guid) + "'")[0]; }
+    catch (e) { return fallback; }                                // no element_instances table on this DB
+    if (!inst || !inst.gh) return fallback;
+    geo = _geomRow(bdb, inst.gh, geoDb);
+    if (!geo || !geo.vb || !geo.vb.length) return fallback;
+    var u8 = (geo.vb instanceof Uint8Array) ? geo.vb : new Uint8Array(geo.vb);
+    var n3 = Math.floor(u8.byteLength / 4 / 3) * 3;
+    var f32 = new Float32Array(u8.buffer, u8.byteOffset, n3);
+    if (f32.length < 3) return fallback;
+    var lMin = [Infinity, Infinity, Infinity], lMax = [-Infinity, -Infinity, -Infinity];
+    for (var i = 0; i + 2 < f32.length; i += 3) {
+      for (var k = 0; k < 3; k++) { var v = f32[i + k]; if (v < lMin[k]) lMin[k] = v; if (v > lMax[k]) lMax[k] = v; }
+    }
+    var R = _eulerMat3(w.rx || 0, w.ry || 0, w.rot || 0);
+    var wMin = [Infinity, Infinity, Infinity], wMax = [-Infinity, -Infinity, -Infinity];
+    [0, 1].forEach(function (xi) { [0, 1].forEach(function (yi) { [0, 1].forEach(function (zi) {
+      var c = [xi ? lMax[0] : lMin[0], yi ? lMax[1] : lMin[1], zi ? lMax[2] : lMin[2]];
+      var wx = R[0][0] * c[0] + R[0][1] * c[1] + R[0][2] * c[2] + w.x;
+      var wy = R[1][0] * c[0] + R[1][1] * c[1] + R[1][2] * c[2] + w.y;
+      var wz = R[2][0] * c[0] + R[2][1] * c[1] + R[2][2] * c[2] + w.z;
+      if (wx < wMin[0]) wMin[0] = wx; if (wx > wMax[0]) wMax[0] = wx;
+      if (wy < wMin[1]) wMin[1] = wy; if (wy > wMax[1]) wMax[1] = wy;
+      if (wz < wMin[2]) wMin[2] = wz; if (wz > wMax[2]) wMax[2] = wz;
+    }); }); });
+    return { x: (wMin[0] + wMax[0]) / 2, y: (wMin[1] + wMax[1]) / 2, z: (wMin[2] + wMax[2]) / 2, verified: true };
+  }
+
+  // `geoDb` (optional, §GEO-SPLIT): a SEPARATE sql.js handle carrying the geometry table for residents where
+  // it can't live in `bdb` itself (Terminal_geo.db, 250MB, kept apart from Terminal_meta.db). Omitted → old
+  // single-file behaviour, unchanged (SampleHouse/Duplex/SampleCastle all embed their own geometry).
+  function hostBind(placements, bdb, shim, geoDb) {
     shim = shim || {};
     var reach = shim.reach_m != null ? shim.reach_m : 6;
     var hostClass = shim.host_ifc_class || 'IfcWall';
     var mount = (shim.mount || 'SIDE').toUpperCase();
     var hosts = _rows(bdb,
-      "SELECT m.guid g, m.storey st, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz " +
+      "SELECT m.guid g, m.storey st, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, " +
+      "t.rotation_x rx, t.rotation_y ry, t.rotation_z rot " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class LIKE '%" + _esc(hostClass) + "%'");
     if (!hosts.length) return { bound: [], refused: placements.length, noHost: true, hostClass: hostClass };
+    var unverifiedHosts = 0;
+    hosts.forEach(function (h) {
+      var mid = _trueMidpoint(bdb, h.g, h, geoDb);
+      h.tx = mid.x; h.ty = mid.y; h.tz = mid.z; h.midVerified = mid.verified;
+      if (!mid.verified) {
+        unverifiedHosts++;
+        console.log(TAG + ' §DW-UNVERIFIED-MIDPOINT host=' + h.g + ' ifc=' + hostClass +
+          ' (no mesh geometry on this DB -- raw center used, may be off up to half the host length; RESUME_DISC_WALKER_ENVELOPE_BOUND.md §BUG-A)');
+      }
+    });
     var off = shim.offset_m || 0;
     var bound = [], refused = 0, refusedList = [];
 
@@ -370,7 +479,7 @@
       var lines = hosts.map(function (w) {
         var horiz = w.bx >= w.by_ ? 0 : 1;                       // dominant horizontal axis = host run
         var hlen = (horiz === 0 ? w.bx : w.by_) / 2, thick = (horiz === 0 ? w.by_ : w.bx);
-        var a = [w.x, w.y], b = [w.x, w.y]; a[horiz] -= hlen; b[horiz] += hlen;
+        var a = [w.tx, w.ty], b = [w.tx, w.ty]; a[horiz] -= hlen; b[horiz] += hlen;   // §BUG-A: TRUE midpoint, not raw centre
         return { a: a, b: b, horiz: horiz, thick: thick, w: w };
       });
       placements.forEach(function (p) {
@@ -394,16 +503,24 @@
         var pz = (shim.height_m != null && p.storeyZ != null) ? (p.storeyZ + shim.height_m) : p.z;
         bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
           storey: p.storey, host: bl.w.g, mount: 'SIDE', prov: 'shim:host-' + hostClass + '-side',
-          bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4) });
+          bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bl.w.midVerified });
       });
-      return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount };
+      return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts };
     }
 
     // ── TOP / BOTTOM / CENTER: nearest host by XY, bind to its top/bottom/centre face ──
     // CENTER (z = host centre + signed offset) is the natural anchor when the device rides at a fixed rise off
-    // the host centre (e.g. SC vent grilles sit 0.415m above their same-storey window centre). TOP/BOTTOM add a
+    // the host centre (e.g. SC vent grilles sit above their same-storey window centre). TOP/BOTTOM add a
     // half-extent to reach the named face. `shim.same_storey` constrains host selection to the placement's own
     // storey — required for vertically STACKED hosts (windows stack floor-on-floor; nearest-XY alone is ambiguous).
+    // §BUG-A-OCC-SCOPE (2026-07-09, supersedes the earlier "deliberately RAW" note): the earlier scope-out was
+    // because the MINED offset (VENT_WINDOW_SHIM) was measured against the window's RAW centre_z, so correcting
+    // only the apply side introduced a fresh mismatch. MEASURED (scripts/witness_hostbind_agnostic.js H0): the
+    // 7 SC grille-associated windows carry a REAL, consistent Z true-midpoint defect (true_z = raw_z − 0.0835m,
+    // MAD≈0 — not noise), so VENT_WINDOW_SHIM's 0.415m raw-measured offset was itself contaminated (true rise
+    // is 0.498m). Now BOTH sides use the true midpoint (`tz`, mining re-measured accordingly) — self-consistent.
+    // XY uses `bh.x/bh.y` still (no window XY defect was ever measured; §BUG-A's proven defect is wall-linear,
+    // not point-host XY — same "don't overfit past the evidence" scope discipline as before, now for X/Y only).
     var sign = mount === 'BOTTOM' ? -1 : 1;                       // TOP=+half above, BOTTOM=−half below, CENTER=face 0
     var faceHalf = mount === 'CENTER' ? 0 : 1;                    // CENTER rides the centre; TOP/BOTTOM the face
     var sameStorey = !!shim.same_storey;
@@ -417,12 +534,12 @@
       }
       if (!bh || best > reach) { refused++; refusedList.push(p); return; }  // no host in reach → honest refuse
       var horiz = bh.bx >= bh.by_ ? 0 : 1;                        // host run axis (for yaw)
-      var pz = bh.z + sign * faceHalf * (bh.bz / 2) + sign * off; // named face of the REAL host + offset
+      var pz = bh.tz + sign * faceHalf * (bh.bz / 2) + sign * off; // named face of the TRUE host + offset
       bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
         storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
-        bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4) });
+        bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bh.midVerified });
     });
-    return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount };
+    return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts };
   }
 
   // ── ROUTER ────────────────────────────────────────────────────────────────────────
@@ -1356,7 +1473,8 @@
       console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' REFUSE no-substrate');
       return { disc: disc, refused: true, reason: 'no habitable storeys', placed: 0 };
     }
-    var placements = place(disc, sub, bdb);
+    var geoDb = opts && opts.geoDb;                                              // §GEO-SPLIT (Terminal_geo.db)
+    var placements = place(disc, sub, bdb, geoDb);
     // ── HOST-BIND from the PROJECTION: snap floating host-bound placements onto a real host (anti-float),
     // count-preserving. Source = caller opts.shims (override) ELSE the projected `rule_shim` table (the
     // first-class §SHIM flow — same as routing/placement). §SHIM-SELECT made this DEFAULT-ON (2026-06-30): the
@@ -1386,7 +1504,7 @@
         var grp = byCls[cls];
         var shim = _shimForFixture(shimSrc, disc, cls);
         if (!shim) { rebuilt = rebuilt.concat(grp); totRefused += 0; return; }   // no shim for class → leave floating
-        var hb = hostBind(grp, bdb, shim);
+        var hb = hostBind(grp, bdb, shim, geoDb);
         if (hb.noHost) {
           rebuilt = rebuilt.concat(grp);                                          // host class absent in bldg → kept floating
           console.log(TAG + ' §WALK-HOSTBIND disc=' + disc + '/' + cls + ' percept=' + shim.product_value +
@@ -1480,6 +1598,7 @@
     route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
+    _trueMidpoint: _trueMidpoint,
     bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,
     lookupRealFitting: lookupRealFitting, MEP_REAL_FITTINGS: MEP_REAL_FITTINGS,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
