@@ -387,13 +387,47 @@
   // Terminal has neither this nor elements_rtree -- falls back to the raw (unverified) centre rather than
   // inventing one; callers get `verified:false` and log the uncertainty once per host, never silently trusting
   // an unmeasured number as ground truth (mirrors the existing §DW-NONCARDINAL refuse-and-log precedent).
+  // §ROTATION-CONVENTION FIX (RESUME_DISC_WALKER_ENVELOPE_BOUND.md item 3, 2026-07-09): this used to build a
+  // literal XYZ rotation matrix straight from (rotation_x, rotation_y, rotation_z) -- but the ACTUAL production
+  // renderer takes ONE OF TWO DIFFERENT CODE PATHS depending on whether the element has a genuine 3-axis tilt
+  // (bonsai_library.js:76, `if (pl.rotX || pl.rotY)`, mirrored by arc_editable.js:211's `if (rx||ry)`):
+  //   - rx||ry truthy (Terminal doors/windows/furniture/proxies -- 325 real elements): render applies
+  //     `new THREE.Euler(rotX, rotZRad, -rotY)` (default 'XYZ' order) -- the render's Y-axis angle is
+  //     rotation_z and its Z-axis angle is -rotation_y, NOT rotation_y/rotation_z taken literally.
+  //   - rx=ry=0 (the COMMON case -- ordinary wall/door/window yaw, ALL of Duplex/SampleHouse/SampleCastle and
+  //     most of Terminal): render takes the SEPARATE plain-Z-axis-yaw path (bonsai_library.js:92-97, standard
+  //     cos/sin about Z using rotation_z directly) -- NOT the Euler remap at all.
+  // ⚠ A FIRST VERSION OF THIS FIX APPLIED THE EULER REMAP UNCONDITIONALLY and broke the common case: with
+  // rx=ry=0, the remap reduces to a PURE Y-AXIS rotation, silently rotating every ordinary yawed wall about
+  // the wrong axis (caught by bim-compiler's scripts/witness_true_midpoint.js T5 regression, 65->33 outside
+  // on real Duplex -- diffed against a `git stash` baseline to confirm it was a genuine regression before
+  // concluding anything). Branching on `rx||ry` (matching the render's OWN branch condition exactly) fixes
+  // this: rx=ry=0 reduces to the ORIGINAL cardinal-Z formula, byte-identical to pre-fix behaviour on the
+  // common case -- VERIFIED against real Terminal_ARC.db elements (325 with non-zero rotation_y) using the
+  // REAL browser-side THREE.js as ground truth: old (unconditional-literal) formula diverged up to 1.1569m,
+  // this fix matches the real renderer to 0.00000000m across every real case tested (tilt + zero-rotation
+  // controls). eulerXYZ_toQuat/quatToMat9 = the EXACT quaternion/matrix math extracted verbatim from
+  // modeller/lib/three.core.min.js by the embed-8-arc rotation-consolidation session
+  // (prompts/Modeller/DISC_Walker/embed8_scripts/finalize_all_8.js), already proven bit-for-bit correct there
+  // (max error 1e-13 to 1e-17) -- reused here, not reinvented. Full proof: bim-compiler
+  // scripts/witness_rotation_convention.js (30/30 pass incl. the full existing regression suite).
+  function _eulerXYZ_toQuat(ex, ey, ez) {
+    var c1 = Math.cos(ex / 2), c2 = Math.cos(ey / 2), c3 = Math.cos(ez / 2), s1 = Math.sin(ex / 2), s2 = Math.sin(ey / 2), s3 = Math.sin(ez / 2);
+    return { x: s1 * c2 * c3 + c1 * s2 * s3, y: c1 * s2 * c3 - s1 * c2 * s3, z: c1 * c2 * s3 + s1 * s2 * c3, w: c1 * c2 * c3 - s1 * s2 * s3 };
+  }
+  function _quatToMat9(q) {
+    var x = q.x, y = q.y, z = q.z, w = q.w, x2 = x + x, y2 = y + y, z2 = z + z,
+      xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+    return [1 - (yy + zz), xy + wz, xz - wy, xy - wz, 1 - (xx + zz), yz + wx, xz + wy, yz - wx, 1 - (xx + yy)];
+  }
   function _eulerMat3(rx, ry, rz) {
-    var ca = Math.cos(rx), sa = Math.sin(rx), cb = Math.cos(ry), sb = Math.sin(ry), cc = Math.cos(rz), sc = Math.sin(rz);
-    return [
-      [cb * cc, sa * sb * cc - ca * sc, ca * sb * cc + sa * sc],
-      [cb * sc, sa * sb * sc + ca * cc, ca * sb * sc - sa * cc],
-      [-sb, sa * cb, ca * cb]
-    ];
+    if (rx || ry) {                                   // genuine 3-axis tilt -> render's Euler(rotX,rotZ,-rotY) remap
+      var q = _eulerXYZ_toQuat(rx, rz, -ry);
+      var m = _quatToMat9(q);
+      return [[m[0], m[3], m[6]], [m[1], m[4], m[7]], [m[2], m[5], m[8]]];
+    }
+    var cc = Math.cos(rz), sc = Math.sin(rz);          // rx=ry=0 -> render's OTHER path: plain cardinal-Z yaw
+    return [[cc, -sc, 0], [sc, cc, 0], [0, 0, 1]];
   }
   // §BUG-A CORRECTION (found by an independent reviewer session, re-verified here before touching code): the
   // LIVE building DBs (e.g. ~/bim-ootb/modeller/Duplex_extracted.db, the actual 65/267-outside evidence DB) name
