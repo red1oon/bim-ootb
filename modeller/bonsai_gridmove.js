@@ -67,14 +67,24 @@
     // buildSeedOps already writes params.ifc_class per seed op -- extracted, not invented). A synthetic/
     // hand-authored wall (GEOM_EXTRUDE_POLY etc.) has no ifc_class recorded at all -- treated as UNKNOWN,
     // kept eligible (unchanged behavior for the tool's actual primary use case: freshly-sketched content).
-    _buildClassByFid() {
-      const O = window.Bonsai.oplog; const out = {}; if (!O || !O.db) return out;
+    // §ROTATION-GUARD (prompts/GRID_ROTATION_GUARD.md §1 step 3): the SAME pass over the SAME parsed JSON
+    // also yields fid -> yawRad from params.placement.rot — which is DEGREES at this boundary (buildSeedOps
+    // commits `rot: rz * 180 / Math.PI`); convert to RADIANS here, the engine speaks radians only. Absent
+    // (synthetic content, or the §ARC-3AXIS tilted shape that carries rotZRad instead) → undefined →
+    // unguarded/eligible, symmetric with the class-UNKNOWN rule above.
+    _buildInsertMaps() {
+      const O = window.Bonsai.oplog; const maps = { classByFid: {}, yawRadByFid: {} }; if (!O || !O.db) return maps;
       try {
         const r = O.db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='GEOM_INSERT'");
-        if (r.length) r[0].values.forEach(v => { try { const p = JSON.parse(v[1]); if (p && p.ifc_class) out[v[0]] = p.ifc_class; } catch (e) { } });
+        if (r.length) r[0].values.forEach(v => { try {
+          const p = JSON.parse(v[1]);
+          if (p && p.ifc_class) maps.classByFid[v[0]] = p.ifc_class;
+          if (p && p.placement && typeof p.placement.rot === 'number') maps.yawRadByFid[v[0]] = p.placement.rot * Math.PI / 180;
+        } catch (e) { } });
       } catch (e) { }
-      return out;
+      return maps;
     },
+    _buildClassByFid() { return this._buildInsertMaps().classByFid; },
     // 2. GRAB-LOCALITY — a gridline is otherwise infinite (grid_kinematics.js's _findBestGrid classifies
     // purely by along-axis centerline distance, §ATTACH_TOL=0.5m, with NO awareness of position along the
     // line's own length). Fine for a small authored scene; genuinely wrong for a real, dense building where
@@ -99,7 +109,8 @@
     // The engine's elementData = each authored solid's centre + bbox extents (the geometry it must recompose).
     elementData() {
       const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
-      const classByFid = this._buildClassByFid();
+      const maps = this._buildInsertMaps();
+      const classByFid = maps.classByFid, yawRadByFid = maps.yawRadByFid;
       const allow = this._STRUCTURAL_CLASSES;
       const draggedAxis = this._dragAxis, orthoAt = this._dragOrthoAt;   // set by beginDragSession(); null outside a session (unchanged/global behavior for direct computeCommands() callers, e.g. discovery-sweep tests)
       const radius = draggedAxis != null ? this._localityRadius(draggedAxis) : Infinity;
@@ -113,7 +124,8 @@
         return { guid: m.userData.featureId,
           x: (bb.min.x + bb.max.x) / 2, y: (bb.min.y + bb.max.y) / 2, z: (bb.min.z + bb.max.z) / 2,
           bboxX: bb.max.x - bb.min.x, bboxY: bb.max.y - bb.min.y, bboxZ: bb.max.z - bb.min.z,
-          ifcClass: 'IfcWall' };
+          ifcClass: 'IfcWall',
+          yawRad: yawRadByFid[m.userData.featureId] };   // §ROTATION-GUARD: undefined when unrecorded ⇒ engine behavior unchanged
       }).filter(elem => {
         if (draggedAxis == null || !isFinite(radius)) return true;
         const orthoPos = draggedAxis === 'x' ? elem.y : elem.x;   // draggedAxis names the GRIPPED line's axis; the element's ORTHOGONAL coordinate is the OTHER one
@@ -153,7 +165,8 @@
       this._meshCache = this._buildMeshByFid();
       this._boxCache = this._buildBoxByFid();
       console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)' +
-        (this._dragAxis != null ? (' §GRIDSCOPE axis=' + this._dragAxis + ' orthoAt=' + this._dragOrthoAt.toFixed(3) + ' radius=' + this._localityRadius(this._dragAxis).toFixed(3)) : ''));
+        (this._dragAxis != null ? (' §GRIDSCOPE axis=' + this._dragAxis + ' orthoAt=' + this._dragOrthoAt.toFixed(3) + ' radius=' + this._localityRadius(this._dragAxis).toFixed(3)) : '') +
+        (this._engine.getYawSkipCount && this._engine.getYawSkipCount() ? ' §ROTATION-GUARD yawSkipped=' + this._engine.getYawSkipCount() + ' element-axis classification(s) (oblique yaw, AABB edges unreal — fell through to interior)' : ''));
     },
     // Called on commit/cancel — the NEXT drag (or any non-session caller) rebuilds fresh off the post-commit
     // scene, so a scene edit between drags is never served a stale attach map.
