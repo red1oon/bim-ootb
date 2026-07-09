@@ -75,7 +75,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
 
     // ── MEP density + gate ──
     await window.DiscWalker.dwInit(window.SQL, './', 'terminal_rules.db');
-    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_meta.db')).arrayBuffer();
+    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_ARC.db')).arrayBuffer();
     var mdb = new window.SQL.Database(new Uint8Array(mbuf));
     function realCount(disc) { var r = mdb.exec("SELECT count(*) FROM elements_meta WHERE discipline='" + disc + "'"); return r.length ? r[0].values[0][0] : 0; }
     var byDisc = {}, all = [], mepRows = {};

@@ -26,12 +26,20 @@ const ROOT = path.join(__dirname, '..', '..');
 const OUT = process.env.SWEEP_OUT || path.join(ROOT, 'logs');
 const TOL = 1e-3;
 
+// EMBED_8_ARC_BUILDINGS_MESH_DB.md: the canonical 8, each ARC-only metadata paired with the shared mesh.db
+// (superseded str_walker_outliner.js's single-file/split-pair originals — same registry shape this sweep
+// exercises). minChildren = a conservative lower bound (not exact) below each building's REAL elements_meta
+// row count (measured, 2026-07-10): SampleHouse 60, Duplex 218, SampleCastle 3342, HHS 2560, Clinic 2620,
+// Hospital 14641, HospitalGarage 1271, Terminal 35552.
 const RESIDENTS = [
-  { key: 'SampleHouse', db: 'SampleHouse_extracted.db', minChildren: 30, deadline: 120000 },
-  { key: 'Duplex', db: 'Duplex_extracted.db', minChildren: 200, deadline: 120000 },
-  { key: 'SampleCastle', db: 'SampleCastle_extracted.db', minChildren: 2000, deadline: 180000 },
-  { key: 'SampleCastle-ARC', db: 'SampleCastle_ARC_extracted.db', minChildren: 2000, deadline: 180000 },
-  { key: 'Terminal', db: 'Terminal_meta.db', geoDb: 'Terminal_geo.db', minChildren: 100, deadline: 240000 }
+  { key: 'SampleHouse', db: 'SampleHouse_ARC.db', geoDb: 'mesh.db', minChildren: 40, deadline: 120000 },
+  { key: 'Duplex', db: 'Duplex_ARC.db', geoDb: 'mesh.db', minChildren: 150, deadline: 120000 },
+  { key: 'SampleCastle', db: 'SampleCastle_ARC.db', geoDb: 'mesh.db', minChildren: 2000, deadline: 180000 },
+  { key: 'HHS', db: 'HHS_ARC.db', geoDb: 'mesh.db', minChildren: 1500, deadline: 150000 },
+  { key: 'Clinic', db: 'Clinic_ARC.db', geoDb: 'mesh.db', minChildren: 1500, deadline: 150000 },
+  { key: 'Hospital', db: 'Hospital_ARC.db', geoDb: 'mesh.db', minChildren: 8000, deadline: 210000 },
+  { key: 'HospitalGarage', db: 'Garage_ARC.db', geoDb: 'mesh.db', minChildren: 800, deadline: 150000 },
+  { key: 'Terminal', db: 'Terminal_ARC.db', geoDb: 'mesh.db', minChildren: 20000, deadline: 240000 }
 ];
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream' };
