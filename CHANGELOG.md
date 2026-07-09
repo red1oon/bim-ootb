@@ -4,6 +4,25 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.14.0](https://github.com/red1oon/bim-ootb/compare/v1.13.0...v1.14.0) (2026-07-08)
+
+
+### ✨ Features
+
+* **modeller:** onboard Ifc4_Revit as a new ARC-only resident ([#715](https://github.com/red1oon/bim-ootb/issues/715)) ([2c52f3f](https://github.com/red1oon/bim-ootb/commit/2c52f3fdeb6133cf206c126b8e9125db177417c3))
+* **modeller:** Outliner collapse-all — dbl-click the root label folds the tree to the trunk ([#709](https://github.com/red1oon/bim-ootb/issues/709)) ([1cc282f](https://github.com/red1oon/bim-ootb/commit/1cc282ff05dfde43129dae4481da6e0d24b09c47))
+* **modeller:** Outliner group select — dbl-click a category/group header selects the whole group (W-E2E-OL-GROUPSELECT) ([#713](https://github.com/red1oon/bim-ootb/issues/713)) ([c6bfd7d](https://github.com/red1oon/bim-ootb/commit/c6bfd7dc5ea25d469fa65a259e462b7800a30e6f))
+* **modeller:** zoom-to-selection — port Viewer Find panel's frame-fly, Z-up adapted (W-E2E-ZOOMSEL) ([#711](https://github.com/red1oon/bim-ootb/issues/711)) ([fab731b](https://github.com/red1oon/bim-ootb/commit/fab731b3a4f5abccdddcd2b935d7a9e72f2ee588))
+
+
+### 🐛 Fixes
+
+* **modeller:** apply proven Terminal_geo.db mesh dedup — 96.1MB saved ([#714](https://github.com/red1oon/bim-ootb/issues/714)) ([9657a9c](https://github.com/red1oon/bim-ootb/commit/9657a9cfa5cdd1ebc4aaf7451124b0ad23be14ee))
+* **modeller:** eager IndexedDB store creation — kills a ~28-30s open stall ([#716](https://github.com/red1oon/bim-ootb/issues/716)) ([faf0219](https://github.com/red1oon/bim-ootb/commit/faf021994ad2653707102b0187b283b9c504f3e6))
+* **modeller:** grid-drag smart element scope + numeric sandbox proof ([#718](https://github.com/red1oon/bim-ootb/issues/718)) ([f028387](https://github.com/red1oon/bim-ootb/commit/f028387b3b63d19714a151399329d68f8439fc17))
+* **modeller:** strip all 4 residents to ARC-only + repair mep_rw.db copy ([#712](https://github.com/red1oon/bim-ootb/issues/712)) ([b93ca13](https://github.com/red1oon/bim-ootb/commit/b93ca1320d8c096b163107a0ea7b7e4577fe0a82))
+* **modeller:** thread hostBind's real yaw into _renderDiscWalk (Bug B, §ROTATION-BOUND) ([#717](https://github.com/red1oon/bim-ootb/issues/717)) ([aaa4517](https://github.com/red1oon/bim-ootb/commit/aaa4517c021152c1877fea94d4efb7fe4aa1f7fb))
+
 ## [1.13.0](https://github.com/red1oon/bim-ootb/compare/v1.12.0...v1.13.0) (2026-07-08)
 
 
