@@ -19,8 +19,23 @@
     // ── S275: CSS — slim accordion layout ──
     var style = document.createElement('style');
     style.textContent = [
-      '#find-panel { top: 50%; right: 70px; transform: translateY(-50%);',
-      '  width: 280px; max-width: 35vw; padding: 0; max-height: 88vh; overflow: hidden; }',
+      // §FIND-PANEL-FIX (2026-07-11): self-contained position:fixed + display:none fallback.
+      // .bim-panel (viewer.html) already sets position:fixed but NOT display:none, and
+      // appendChild(panel) below runs before any toggle logic sets display — so the panel was
+      // a plain visible block the instant it hit the DOM (the untraced §FIND_VIS_TRACE
+      // "appears on its own at onset" bug, open since 2026-07-06). Every sibling panel avoids
+      // this: wizard.js self-declares position, panels.js A.createPanel() explicitly hides on
+      // creation. Do not drop this rule even if .bim-panel is later revisited.
+      // §FIND-PANEL-FIX part 2 — "above browser top border": this rule used to center via
+      // `top:50%; transform:translateY(-50%)`. panels.js §PANEL-AUTOPLACE fires on the panel's
+      // first style mutation (init-time, _makeDraggable's cursor write, inline display '' ≠
+      // 'none') and overwrites top to 54px inline — but never clears the CSS transform, so the
+      // panel rendered translateY(-50%) ABOVE top:54 (measured top=-101.5 at height 311 on a
+      // 1400×900 desktop — witness_find_panel_hidden_onload_2026-07-11.js). The centered look
+      // never survived autoplace anyway, so declare top:54 (autoplace's own default) with NO
+      // transform. The ≤600px media query below already sets its own top:60/transform:none.
+      '#find-panel { position: fixed; top: 54px; right: 70px;',
+      '  width: 280px; max-width: 35vw; padding: 0; max-height: 88vh; overflow: hidden; display: none; }',
       // Search bar
       '#find-panel .find-search-bar {',
       '  display: flex; align-items: center; gap: 4px; padding: 8px 10px 6px;',
