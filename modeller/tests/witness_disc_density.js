@@ -15,7 +15,7 @@
  */
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
-var { chromium } = require('playwright');
+var { chromium } = require(path.join(process.env.HOME, 'bim-ootb', 'tests', 'node_modules', 'playwright'));   // absolute — no NODE_PATH dependency (same pattern as witness_dw_pixelprobe's puppeteer)
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json',
   '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream', '.png': 'image/png' };
