@@ -40,7 +40,7 @@
  */
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
-var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
+var { chromium } = require('playwright');
 
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm',
