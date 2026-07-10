@@ -16,7 +16,8 @@
  *  (b) R3-R5  — a 45° wall at positions that WOULD produce EDGE_LEFT / SPAN / ATTACH under the old
  *               unguarded math (proven by running the same fixture WITHOUT yawRad) instead produces NO
  *               attach-map entry and lands in the interior list.
- *      R6     — the guard is x/z only: an oblique element still ATTACHes on the y (height) axis.
+ *      R6     — §AXIS-SCOPE (§8, updated 2026-07-10): the guard now ALSO covers y (the Modeller's real
+ *               second plan axis, Z-up) — an oblique element no longer ATTACHes on y either.
  *  (c) R7     — yawRad undefined everywhere ⇒ zero skips, classifications match the engine's documented
  *               rules exactly (existing callers unaffected).
  *  (d) R8     — adapter boundary (bonsai_gridmove.js): GEOM_INSERT placement.rot (DEGREES) → elementData
@@ -96,8 +97,9 @@ function wall45(cx, yawRad) {
   return [{ guid: 'B1', x: cx, y: 1.5, z: 3, bboxX: BBOX45, bboxY: 3, bboxZ: BBOX45, ifcClass: 'IfcWall', yawRad: yawRad }];
 }
 // Each case: (i) UNGUARDED (yawRad undefined) run proves the position WOULD misclassify — the "old math"
-// verdict; (ii) GUARDED (yawRad=π/4) run must produce NO attach-map entry + an interior record + 2 skips
-// (axes x and z; y is never skipped).
+// verdict; (ii) GUARDED (yawRad=π/4) run must produce NO attach-map entry + an interior record + 3 skips
+// (axes x, y AND z — §AXIS-SCOPE, GRID_ROTATION_GUARD.md §8: this Modeller-only copy's real second plan
+// axis is y, not z; the fixture's own y:1.5 now also skips, same as x and the always-dead z).
 function caseB(name, cx, expectedOldRelation) {
   section(name);
   var eOld = new GridKinematicEngine(wall45(cx, undefined), GRID_X10);
@@ -112,7 +114,7 @@ function caseB(name, cx, expectedOldRelation) {
   assert(itemsNew.length === 0, 'GUARDED (yawRad=45°): NO attach-map entry on axis x');
   assert(eNew.getInteriorElements().length === 1 && eNew.getInteriorElements()[0].guid === 'B1',
     'GUARDED: falls through to the interior (bay-proportional, center-only) list');
-  assert(eNew.getYawSkipCount() === 2, 'exactly 2 skips (axes x+z, never y) — got ' + eNew.getYawSkipCount());
+  assert(eNew.getYawSkipCount() === 3, 'exactly 3 skips (axes x+y+z, post-§AXIS-SCOPE) — got ' + eNew.getYawSkipCount());
 }
 // R3 false EDGE_LEFT: cx=11.5 → AABB lo = 11.5-1.52028 = 9.97972; |9.97972-10| = 0.02028 < EDGE_TOL(0.1).
 //   But the true 45° wall has NO edge at x=10 — its min-x is a single CORNER at 9.97972; the wall's real
@@ -126,19 +128,25 @@ caseB('R4 — false SPAN at cx=11.4 (10 strictly inside AABB 9.880..12.920)', 11
 //   runs ALONG the grid; this one crosses it at 45°.
 caseB('R5 — false ATTACH at cx=10.3 (center within 0.5 of grid 10)', 10.3, 'ATTACH');
 
-section('R6 — guard is x/z only: oblique element still ATTACHes on the y (height) axis');
+section('R6 — §AXIS-SCOPE (GRID_ROTATION_GUARD.md §8): guard now covers y too — oblique element no longer ATTACHes on y either');
 (function () {
-  // y-grid at 0; element center y=0.2 → |0.2-0| = 0.2 < ATTACH_TOL(0.5) ⇒ ATTACH on y. Yaw about the
-  // vertical never changes a body's height extent, so this classification must SURVIVE the guard.
+  // CORRECTED 2026-07-10 (Watchdog finding): this test used to assert the OPPOSITE — that y "is height,
+  // yaw-invariant" and survives the guard. That was true for the VIEWER's Y-up convention this engine was
+  // originally written for, but this file is the Modeller-ONLY copy, and the Modeller is Z-up: its real
+  // second plan axis is y (bonsai_gridmove.js._buildEngine() only ever emits axis:'x'/axis:'y' grid lines,
+  // never axis:'z'). An oblique yaw corrupts the AABB on y exactly as it does on x for this file's one real
+  // caller — so y must now ALSO be skipped. (z stays in the guard condition too — harmless dead code, see
+  // grid_kinematics.js's own §AXIS-SCOPE comment — but no gridline is ever defined on z here to demonstrate.)
+  // y-grid at 0; element center y=0.2 → |0.2-0| = 0.2 < ATTACH_TOL(0.5) ⇒ WOULD ATTACH on y absent the guard.
   var eng = new GridKinematicEngine(
     [{ guid: 'BY', x: 10.3, y: 0.2, z: 3, bboxX: BBOX45, bboxY: 3, bboxZ: BBOX45, ifcClass: 'IfcWall', yawRad: Math.PI / 4 }],
     [{ id: 'A', axis: 'x', pos: 10 }, { id: 'Gy', axis: 'y', pos: 0 }]);
   eng.attachGridToElements();
   var yItems = eng.getAttachMap()['Gy'] || [];
-  assert(yItems.length === 1 && yItems[0].axis === 'y' && yItems[0].relation === 'ATTACH',
-    'y-axis ATTACH survives (got ' + JSON.stringify(yItems.map(function (i) { return i.relation; })) + ')');
+  assert(yItems.length === 0, 'y-axis ATTACH NO LONGER survives (got ' + JSON.stringify(yItems.map(function (i) { return i.relation; })) + ')');
   assert((eng.getAttachMap()['A'] || []).length === 0, 'x-axis still guarded on the same element');
-  assert(eng.getYawSkipCount() === 2, 'skips remain exactly x+z (got ' + eng.getYawSkipCount() + ')');
+  assert(eng.getInteriorElements().some(function (ie) { return ie.guid === 'BY'; }), 'falls through to interior (both x and y ungoverned)');
+  assert(eng.getYawSkipCount() === 3, 'skips are x+y+z (got ' + eng.getYawSkipCount() + ')');
 })();
 
 // ═══ (c) yawRad undefined everywhere ⇒ completely unaffected ═══════════════════════════════════════════
