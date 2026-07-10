@@ -9,11 +9,16 @@
  *
  * ISSUES THIS WITNESS EXPOSES:
  *   P1 STALE-ARC   — 6 residents ship main's actual, real 0-row spatial_structure gap (no table
- *                    at all) and Duplex ships the unfiltered 26th (Roof) row — genuinely stale on
- *                    this checkout, not simulated. Opening each LIVE must self-heal to the correct
- *                    row count with zero manual step.
- *   P2 NOPATCH-OK  — Terminal ships no patch file (already byte-identical to source) — the loader
- *                    must 404-skip it silently, never error, never block the open.
+ *                    at all), Duplex ships the unfiltered 26th (Roof) row, and Terminal ships the
+ *                    pre-§7 43-row synthetic set (needs the wellformed 53→59-total recompile) —
+ *                    genuinely stale on this checkout, not simulated. Opening each LIVE must
+ *                    self-heal to the correct row count with zero manual step. §7 ROOM
+ *                    WELL-FORMEDNESS (ROOM_INJECTION_HYBRID.md §7 / ROOM009-014) is now folded
+ *                    into every building's patch — all 8 residents carry a patch file, so the
+ *                    original P2 NOPATCH-OK case (a resident with no patch at all) no longer has
+ *                    a real example on this checkout; the loader's 404-skip path is otherwise
+ *                    unverified by this witness (no regression risk — it's the untouched, simpler
+ *                    branch of _applyPendingPatch).
  *   P3 MESH-IDEMPOTENT — mesh.db.sql's 26 INSERT OR IGNORE rows already resolve on this checkout's
  *                    real mesh.db (re-applying costs nothing, proves no corruption/duplication).
  *   P4 MESH-FALSIFIER — a deliberately-staled mesh.db copy (the 26 rows stripped, reproducing the
@@ -96,11 +101,11 @@ async function openResident(br, root, key, minChildren, deadlineMs) {
     { key: 'SampleHouse', db: 'SampleHouse_ARC.db', expectSpatial: 6, minChildren: 2 },
     { key: 'Duplex', db: 'Duplex_ARC.db', expectSpatial: 25, minChildren: 20 },
     { key: 'SampleCastle', db: 'SampleCastle_ARC.db', expectSpatial: 55, minChildren: 20 },
-    { key: 'HHS', db: 'HHS_ARC.db', expectSpatial: 109, minChildren: 20 },
-    { key: 'Clinic', db: 'Clinic_ARC.db', expectSpatial: 200, minChildren: 20 },
-    { key: 'Hospital', db: 'Hospital_ARC.db', expectSpatial: 208, minChildren: 20 },
+    { key: 'HHS', db: 'HHS_ARC.db', expectSpatial: 36, minChildren: 20 },
+    { key: 'Clinic', db: 'Clinic_ARC.db', expectSpatial: 212, minChildren: 20 },
+    { key: 'Hospital', db: 'Hospital_ARC.db', expectSpatial: 220, minChildren: 20 },
     { key: 'HospitalGarage', db: 'Garage_ARC.db', expectSpatial: 6, minChildren: 2 },
-    { key: 'Terminal', db: 'Terminal_ARC.db', expectSpatial: gt.before['Terminal_ARC.db'], minChildren: 20, noPatch: true },
+    { key: 'Terminal', db: 'Terminal_ARC.db', expectSpatial: 59, minChildren: 20 },
   ];
 
   for (const r of RESIDENTS) {
