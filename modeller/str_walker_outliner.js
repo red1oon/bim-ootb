@@ -36,14 +36,14 @@
   // EMBED_8_ARC_BUILDINGS_MESH_DB.md — the canonical 8, ARC-only metadata each, ALL sharing ONE mesh.db
   // (true-dup + rotation-consolidation + orphan-removal applied; see that spec's §-log for the numbers).
   var RESIDENTS = [
-    { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'mesh.db', geoV: 1 },
-    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 1 },
-    { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'mesh.db', geoV: 1 },
-    { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'mesh.db', geoV: 1 },
-    { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 1 },
-    { key: 'Hospital',      label: 'Hospital · column-framed',          db: 'Hospital_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 1 },
-    { key: 'HospitalGarage',label: 'HospitalGarage · column-framed',    db: 'Garage_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 1 },
-    { key: 'Terminal',      label: 'Terminal · column-framed (oracle)', db: 'Terminal_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 1 }
+    { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'mesh.db', geoV: 2 },
+    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 2, geoDb: 'mesh.db', geoV: 2 },
+    { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'mesh.db', geoV: 2 },
+    { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'mesh.db', geoV: 2 },
+    { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 2 },
+    { key: 'Hospital',      label: 'Hospital · column-framed',          db: 'Hospital_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 2 },
+    { key: 'HospitalGarage',label: 'HospitalGarage · column-framed',    db: 'Garage_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 2 },
+    { key: 'Terminal',      label: 'Terminal · column-framed (oracle)', db: 'Terminal_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 2 }
   ];
 
   // The modeller's own GH-Pages playground base — modeller.html and its resident DBs now share the
@@ -385,9 +385,14 @@
       console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
       _replayEdits();
       _fetchGeoDb(res).then(function (geoBuf) {
+        // §LIVEWIRE: stash the geometry buffer alongside __dwBuf so _discWalkOne can thread it into
+        // dwWalk as opts.geoDb (hostBind/_trueMidpoint midpoint correction + the LOD400 render seam
+        // both resolve real meshes from it). Cleared/replaced on every open, same lifecycle as __dwBuf.
+        window.__dwGeoBuf = geoBuf || null;
         _seedArcEditable(O, res.key, geoBuf);
       }).catch(function (e) {
         console.warn(TAG + ' §STRWALK-OPEN geoDb fetch failed for ' + res.key + ' — seeding meta-only (no real geometry)', e && e.message);
+        window.__dwGeoBuf = null;
         _seedArcEditable(O, res.key, null);
       });
     });

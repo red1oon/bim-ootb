@@ -125,7 +125,35 @@
     return out;
   }
 
+  // resolveHashes(geoDb, hashes) — decode SPECIFIC geometry hashes straight from the geometry table,
+  // WITHOUT an element_instances pass (§LIVEWIRE, RESUME_DISC_WALKER_ENVELOPE_BOUND.md): schedule-
+  // generated fixtures carry rule-mined hashes (rule_space_schedule/rule_mesh_binding) that reference
+  // NO element row — they are new placements, not extracted elements. Same decode + recenter + skip
+  // rules as buildGeometryIndex's resolve pass (degenerate/missing → absent from the result, caller
+  // stays honest with its box/refuse path). Returns { hash: {positions,faces,bbox,anchorOffset} }.
+  function resolveHashes(geoDb, hashes) {
+    var out = {};
+    var table = geometryTable(geoDb);
+    if (!table || !hashes || !hashes.length) return out;
+    var placeholders = hashes.map(function (h) { return "'" + String(h).replace(/'/g, "''") + "'"; }).join(',');
+    var gr;
+    try { gr = geoDb.exec("SELECT geometry_hash, vertices, faces FROM " + table + " WHERE geometry_hash IN (" + placeholders + ")"); }
+    catch (e) { _log(TAG + ' resolveHashes query failed ' + (e && e.message)); return out; }
+    if (!gr.length) return out;
+    gr[0].values.forEach(function (v) {
+      var hash = v[0], vBlob = v[1], fBlob = v[2];
+      if (out[hash] || !vBlob || !fBlob) return;
+      try {
+        var raw = toFloat32(vBlob), faces = toUint32(fBlob);
+        if (raw.length < 9 || faces.length < 3) return;
+        var rc = recenter(raw);
+        out[hash] = { positions: rc.positions, faces: faces, bbox: rc.bbox, anchorOffset: rc.anchorOffset };
+      } catch (e) { /* leave unresolved — caller degrades honestly */ }
+    });
+    return out;
+  }
+
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
 
-  return { geometryTable: geometryTable, buildGeometryIndex: buildGeometryIndex, recenter: recenter, bboxOf: bboxOf, TAG: TAG };
+  return { geometryTable: geometryTable, buildGeometryIndex: buildGeometryIndex, resolveHashes: resolveHashes, recenter: recenter, bboxOf: bboxOf, TAG: TAG };
 });
