@@ -59,9 +59,11 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     var ar = await window.ArcEditable.seedArc(adb, {
       commitGroup: function (ops, gid) { return O.commitSeedGroup(ops, gid); },
       registerGeometry: function (assets) { window.Bonsai.library.registerRealGeometry(assets); }, building: 'dwdensity' });
-    // 2) rules + oracle
+    // 2) rules + oracle — Terminal_meta.db (all-discipline real extraction, per this file's own header comment)
+    // is the designed oracle source; Terminal_ARC.db is the shipped ARC-only resident (0 MEP rows since the
+    // embed-8 strip, 6068fab) and was never the intended oracle here — this was a stale fetch path, not a data gap.
     await window.DiscWalker.dwInit(window.SQL, './', 'terminal_rules.db');
-    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_ARC.db')).arrayBuffer();
+    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_meta.db')).arrayBuffer();
     var mdb = new window.SQL.Database(new Uint8Array(mbuf));
     function realCount(disc) { var r = mdb.exec("SELECT count(*) FROM elements_meta WHERE discipline='" + disc + "'"); return r.length ? r[0].values[0][0] : 0; }
     // independent ARC occupancy envelope (recomputed HERE so D3 is a genuine oracle, not the engine grading itself)
