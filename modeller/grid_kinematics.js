@@ -30,13 +30,23 @@
   var FLAT_ROOF_TOL  = 0.05;  // metres — yRange below this = flat roof
   var RIDGE_BAND = 0.10;      // fraction — top 10% of yRange = ridge
   var EAVE_BAND  = 0.10;      // fraction — bottom 10% of yRange = eave
+  var YAW_TOL    = 0.01;      // radians (~0.57°) — max distance from a 90°-multiple before an element's
+                              // yaw counts as oblique (§ROTATION-GUARD; same tolerance that verified the
+                              // "zero live oblique structural elements" claim in GRID_ROTATION_GUARD.md §0)
 
   // ── GridKinematicEngine ────────────────────────────────────────────────────
 
   /**
    * @param {Array} elementData — [{guid, x, y, z, bboxX, bboxY, bboxZ,
-   *                                ifcClass, vertices?, scaleX?, scaleY?, scaleZ?}]
+   *                                ifcClass, vertices?, scaleX?, scaleY?, scaleZ?, yawRad?}]
    * @param {Array} gridLines   — [{id, axis:'x'|'y'|'z', pos}]
+   *
+   * yawRad (OPTIONAL, §ROTATION-GUARD — prompts/GRID_ROTATION_GUARD.md §1): the element's in-plan yaw in
+   * RADIANS. Undefined (every pre-existing caller/fixture) ⇒ byte-identical behavior to before this field
+   * existed. Defined and oblique (off a 90°-multiple by > YAW_TOL) ⇒ the element's world AABB lo/hi only
+   * touch the true rotated body at a corner, so AABB-edge classification would fabricate ATTACH/EDGE/SPAN
+   * relations — such an element is skipped on the plan axes and falls through to the bay-proportional
+   * interior path (center-only math, rotation-safe).
    */
   function GridKinematicEngine(elementData, gridLines) {
     this._elements = elementData;
@@ -63,6 +73,10 @@
 
     // Set of governed guids (for fast interior exclusion)
     this._governed = {};
+
+    // §ROTATION-GUARD: element×axis classifications skipped for oblique yaw (summary count only —
+    // per-element logging would spam a real building's console; callers may surface this once per drag)
+    this._yawSkipCount = 0;
   }
 
   // ── attachGridToElements() — Build attach map ─────────────────────────────
@@ -71,6 +85,7 @@
     this._attachMap = {};
     this._interiorElements = [];
     this._governed = {};
+    this._yawSkipCount = 0;
 
     // Sorted grid positions per axis (for bay computation)
     this._sortedGrids = { x: [], y: [], z: [] };
@@ -107,6 +122,7 @@
   GridKinematicEngine.prototype._classifyElement = function(elem) {
     var axes = ['x', 'y', 'z'];
     var isRoof = elem.ifcClass === 'IfcRoof' || elem.ifcClass === 'IfcSlab:ROOF';
+    var yawOblique = _isObliqueYaw(elem.yawRad);
 
     for (var ai = 0; ai < axes.length; ai++) {
       var axis = axes[ai];
@@ -125,6 +141,15 @@
       // For roof elements on Y: ROOF_LIFT (rigid translate)
       if (isRoof && axis === 'y') {
         this._classifyRoofVertical(elem);
+        continue;
+      }
+
+      // §ROTATION-GUARD (GRID_ROTATION_GUARD.md §1): oblique yaw ⇒ the AABB lo/hi below are NOT the
+      // element's real edges on the plan axes — skip AABB classification there ('y' is height,
+      // yaw-invariant), the same quiet outcome as _findBestGrid finding nothing. The element falls
+      // through to Phase 3's center-only bay-proportional path if no other axis governs it.
+      if (yawOblique && (axis === 'x' || axis === 'z')) {
+        this._yawSkipCount++;
         continue;
       }
 
@@ -616,6 +641,12 @@
     return this._gridById[id] || null;
   };
 
+  // §ROTATION-GUARD: how many element×axis classifications the last attachGridToElements() skipped
+  // for oblique yaw (0 when no caller passes yawRad — i.e. for every pre-existing caller).
+  GridKinematicEngine.prototype.getYawSkipCount = function() {
+    return this._yawSkipCount;
+  };
+
   // ── Pure utility functions ─────────────────────────────────────────────────
 
   function _halfExtentForAxis(elem, axis) {
@@ -630,6 +661,18 @@
     if (axis === 'y') return elem.scaleY || 1;
     if (axis === 'z') return elem.scaleZ || 1;
     return 1;
+  }
+
+  /**
+   * _isObliqueYaw — §ROTATION-GUARD: true iff yawRad is defined and further than YAW_TOL from every
+   * multiple of π/2 (at 90°-multiples a rotated rectangle's AABB coincides with its real edges, so
+   * classification stays exact and nothing is skipped).
+   */
+  function _isObliqueYaw(yawRad) {
+    if (yawRad === undefined || yawRad === null) return false;
+    var m = yawRad % (Math.PI / 2);
+    if (m < 0) m += Math.PI / 2;
+    return Math.min(m, Math.PI / 2 - m) > YAW_TOL;
   }
 
   /**
@@ -667,8 +710,10 @@
   exports.EDGE_TOL = EDGE_TOL;
   exports.MIN_WALL_WIDTH = MIN_WALL_WIDTH;
   exports.FLAT_ROOF_TOL = FLAT_ROOF_TOL;
+  exports.YAW_TOL = YAW_TOL;
 
-  // Export pure utility for testing
+  // Export pure utilities for testing
   exports._bayProportionalDelta = _bayProportionalDelta;
+  exports._isObliqueYaw = _isObliqueYaw;
 
 })(typeof module !== 'undefined' ? module.exports : (window.GridKinematics = {}));
