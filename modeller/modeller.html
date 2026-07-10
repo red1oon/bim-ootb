@@ -3856,8 +3856,12 @@ async function _commitDiscWalk(disc, placements) {
     var found = cat.find(function (c) { return c.ifc_class === p.ifc_class; });
     var hash = found ? found.hash : (cat[0] ? cat[0].hash : null);
     if (!hash) continue;
+    // §DW-ROT-UNIT (W-DW-ROT-UNITS): p.yaw is RADIANS (disc_walker hostBind Math.PI/2 / wall rotation_z);
+    // placement.rot is DEGREES everywhere it is consumed (bonsai_library place(), bonsai_gridmove yawRadByFid)
+    // — convert at this commit boundary, the same §ARC-ROT-UNIT pattern as arc_editable.js buildSeedOps.
+    // Measured unfixed: folded fixture painted at 1.57° instead of 90° (Δ88.43°, dw_rot_units_BEFORE.log).
     ops.push({ op_type: 'GEOM_INSERT',
-      params: { hash: hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: p.yaw || 0 },
+      params: { hash: hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: (p.yaw || 0) * 180 / Math.PI },
                 lod: '200', color: color,
                 _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null } } });
   }
