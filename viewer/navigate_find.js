@@ -23,9 +23,13 @@
       // .bim-panel (viewer.html) already sets position:fixed but NOT display:none, and
       // appendChild(panel) below runs before any toggle logic sets display — so the panel was
       // a plain visible block the instant it hit the DOM (the untraced §FIND_VIS_TRACE
-      // "appears on its own at onset" bug, open since 2026-07-06). Every sibling panel avoids
-      // this: wizard.js self-declares position, panels.js A.createPanel() explicitly hides on
-      // creation. Do not drop this rule even if .bim-panel is later revisited.
+      // "appears on its own at onset" bug, open since 2026-07-06). It was intermittent
+      // because this module is LAZY (main.js loadNavigate): a cold load never creates the
+      // panel — it popped visible only when some consumer (zoom-scope ?find=, Alt+X
+      // fallback, nav wiring) triggered loadNavigate WITHOUT opening the panel. Every
+      // sibling panel avoids this: wizard.js self-declares position, panels.js
+      // A.createPanel() explicitly hides on creation. Do not drop this rule even if
+      // .bim-panel is later revisited. Witness: W-FIND-VIS-ONLOAD.
       // §FIND-PANEL-FIX part 2 — "above browser top border": this rule used to center via
       // `top:50%; transform:translateY(-50%)`. panels.js §PANEL-AUTOPLACE fires on the panel's
       // first style mutation (init-time, _makeDraggable's cursor write, inline display '' ≠
