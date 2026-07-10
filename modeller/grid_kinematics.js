@@ -157,13 +157,20 @@
       }
 
       // §ROTATION-GUARD (GRID_ROTATION_GUARD.md §1): oblique yaw ⇒ the AABB lo/hi below are NOT the
-      // element's real edges on the plan axes — skip AABB classification there ('y' is height,
-      // yaw-invariant), the same quiet outcome as _findBestGrid finding nothing. The element falls
-      // through to Phase 3's center-only bay-proportional path if no other axis governs it.
+      // element's real edges on the plan axes — skip AABB classification there, the same quiet outcome as
+      // _findBestGrid finding nothing. The element falls through to Phase 3's center-only bay-proportional
+      // path if no other axis governs it.
       // §ROTATION-GUARD-3AXIS (GRID_ROTATION_GUARD.md §5): same skip for a non-negligible rotX/rotY tilt —
       // found live-reachable (fids 933/1291/2514/3055 in SampleCastle_ARC.db, yawRad undefined for all of
       // them since the §ARC-3AXIS placement shape carries no `.rot`, so the yaw-only check above never fired).
-      if ((yawOblique || tilted) && (axis === 'x' || axis === 'z')) {
+      // §AXIS-SCOPE (GRID_ROTATION_GUARD.md §8, Watchdog finding): this 'x'/'z' pair was written for the
+      // VIEWER's Y-up convention (y=height). This copy of the file is Modeller-only (viewer/grid_kinematics.js
+      // is untouched), and the Modeller is Z-up (real_geometry.js, modeller.html's camera.up.set(0,0,1)) — its
+      // authoring grid (bonsai_grid.js/bonsai_gridmove.js._buildEngine()) only ever emits axis:'x'/axis:'y'
+      // lines, NEVER axis:'z'. So 'y' is the Modeller's real second plan axis (needs the same guard as 'x'),
+      // while 'z' structurally never has a grid line to classify against — kept in the condition anyway
+      // (harmless dead code for this file's one real caller; not worth the risk of removing it).
+      if ((yawOblique || tilted) && (axis === 'x' || axis === 'y' || axis === 'z')) {
         if (tilted) this._tiltSkipCount++; else this._yawSkipCount++;
         continue;
       }
@@ -588,6 +595,14 @@
       case 'WALL_HEIGHT_SCALE':
         // Wall grows taller: newScale = (origHeight + delta) / origHeight * origScale
         // Wall center shifts up by delta/2 (fixed base, growing top)
+        // §AXIS-SCOPE NOTE (GRID_ROTATION_GUARD.md §8, Watchdog finding, not fixed here): this hardcodes
+        // axis:'y' as "vertical" — correct for the VIEWER's Y-up convention, WRONG for this Modeller-only
+        // copy's real Z-up scene if this cascade ever fires here (it currently cannot: this cascade only
+        // triggers off a ROOF_LIFT-attached item, which requires isRoof===true, which requires a real
+        // ifcClass — and bonsai_gridmove.js's elementData() hardcodes ifcClass:'IfcWall' for every element
+        // it emits, so isRoof is always false for the Modeller today; this is dead code here, same
+        // dormant-but-real pattern as every other finding in this lineage — not fixed, needs its own
+        // design pass if the Modeller ever gains real roof/ifcClass support).
         var newHeight = cascade.origHeight + delta;
         if (newHeight < MIN_WALL_WIDTH) newHeight = MIN_WALL_WIDTH;
         var scaleRatio = newHeight / cascade.origHeight;

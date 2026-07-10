@@ -72,8 +72,8 @@ console.log('═══ W-GRID-TILT-GUARD — non-negligible rotX/rotY tilt guard
     chk('with tiltYRad=π/2 the SAME shape/position no longer classifies', afterHit,
       JSON.stringify(engAfter.getAttachMap()['gx4']));
     chk('tilted element falls through to interior instead', afterInterior);
-    chk('getTiltSkipCount() counted exactly 2 (x AND z both skipped, same x/z-scope as the yaw guard\'s own R6)',
-      engAfter.getTiltSkipCount() === 2, 'got ' + engAfter.getTiltSkipCount());
+    chk('getTiltSkipCount() counted exactly 3 (x, y AND z all skipped, post-§AXIS-SCOPE)',
+      engAfter.getTiltSkipCount() === 3, 'got ' + engAfter.getTiltSkipCount());
   })();
 
   console.log('\n── G2 — tiltXRad/tiltYRad undefined: zero tiltSkipCount, byte-identical to pre-fix ──');
@@ -96,18 +96,22 @@ console.log('═══ W-GRID-TILT-GUARD — non-negligible rotX/rotY tilt guard
     chk('sub-threshold tilt: classification unaffected', (eng.getAttachMap()['A'] || []).some(function (i) { return i.guid === 'WA' && i.relation === 'ATTACH'; }));
   })();
 
-  console.log('\n── G4 — guard is x/z only (same documented scope as yaw): a tilted element still ATTACHes on y ──');
+  console.log('\n── G4 — §AXIS-SCOPE (GRID_ROTATION_GUARD.md §8): guard now covers y too — a tilted element no longer ATTACHes on y either ──');
   (function () {
+    // CORRECTED 2026-07-10 (Watchdog finding, same as witness_grid_rotation_guard.js's R6): y is the
+    // Modeller's real second plan axis (Z-up; bonsai_gridmove.js never emits axis:'z' grid lines), so a
+    // non-negligible tilt must skip y exactly like it skips x.
     const eng = new GridKinematicEngine(
       [{ guid: 'BY', x: 50, y: 0.2, z: 50, bboxX: 0.866, bboxY: 3, bboxZ: 0.042, ifcClass: 'IfcRailing', tiltYRad: Math.PI / 2 }],
       [{ id: 'Gy', axis: 'y', pos: 0 }]);
     eng.attachGridToElements();
     const yItems = eng.getAttachMap()['Gy'] || [];
-    chk('y-axis ATTACH survives even with tiltYRad set (documented x/z-only scope, matches yaw)',
-      yItems.length === 1 && yItems[0].relation === 'ATTACH', JSON.stringify(yItems));
+    chk('y-axis ATTACH NO LONGER survives with tiltYRad set (post-§AXIS-SCOPE)',
+      yItems.length === 0, JSON.stringify(yItems));
+    chk('falls through to interior instead', eng.getInteriorElements().some(function (ie) { return ie.guid === 'BY'; }));
   })();
 
-  console.log('\n── G5 — yaw and tilt skip-counts attributed independently ──');
+  console.log('\n── G5 — yaw and tilt skip-counts attributed independently (x+y+z, post-§AXIS-SCOPE) ──');
   (function () {
     const eng = new GridKinematicEngine(
       [
@@ -116,8 +120,8 @@ console.log('═══ W-GRID-TILT-GUARD — non-negligible rotX/rotY tilt guard
       ],
       [{ id: 'A', axis: 'x', pos: 10 }]);
     eng.attachGridToElements();
-    chk('yawSkipCount counts only the yaw-oblique element (x+z, same scope as R6)', eng.getYawSkipCount() === 2, 'got ' + eng.getYawSkipCount());
-    chk('tiltSkipCount counts only the tilted element (x+z)', eng.getTiltSkipCount() === 2, 'got ' + eng.getTiltSkipCount());
+    chk('yawSkipCount counts only the yaw-oblique element (x+y+z)', eng.getYawSkipCount() === 3, 'got ' + eng.getYawSkipCount());
+    chk('tiltSkipCount counts only the tilted element (x+y+z)', eng.getTiltSkipCount() === 3, 'got ' + eng.getTiltSkipCount());
   })();
 
   console.log('\n── G6 — _hasTilt boundary arithmetic (distance from ZERO, unlike _isObliqueYaw\'s nearest-90°) ──');
