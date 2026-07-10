@@ -67,14 +67,24 @@
     // buildSeedOps already writes params.ifc_class per seed op -- extracted, not invented). A synthetic/
     // hand-authored wall (GEOM_EXTRUDE_POLY etc.) has no ifc_class recorded at all -- treated as UNKNOWN,
     // kept eligible (unchanged behavior for the tool's actual primary use case: freshly-sketched content).
-    _buildClassByFid() {
-      const O = window.Bonsai.oplog; const out = {}; if (!O || !O.db) return out;
+    // §ROTATION-GUARD (prompts/GRID_ROTATION_GUARD.md §1 step 3): the SAME pass over the SAME parsed JSON
+    // also yields fid -> yawRad from params.placement.rot — which is DEGREES at this boundary (buildSeedOps
+    // commits `rot: rz * 180 / Math.PI`); convert to RADIANS here, the engine speaks radians only. Absent
+    // (synthetic content, or the §ARC-3AXIS tilted shape that carries rotZRad instead) → undefined →
+    // unguarded/eligible, symmetric with the class-UNKNOWN rule above.
+    _buildInsertMaps() {
+      const O = window.Bonsai.oplog; const maps = { classByFid: {}, yawRadByFid: {} }; if (!O || !O.db) return maps;
       try {
         const r = O.db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='GEOM_INSERT'");
-        if (r.length) r[0].values.forEach(v => { try { const p = JSON.parse(v[1]); if (p && p.ifc_class) out[v[0]] = p.ifc_class; } catch (e) { } });
+        if (r.length) r[0].values.forEach(v => { try {
+          const p = JSON.parse(v[1]);
+          if (p && p.ifc_class) maps.classByFid[v[0]] = p.ifc_class;
+          if (p && p.placement && typeof p.placement.rot === 'number') maps.yawRadByFid[v[0]] = p.placement.rot * Math.PI / 180;
+        } catch (e) { } });
       } catch (e) { }
-      return out;
+      return maps;
     },
+    _buildClassByFid() { return this._buildInsertMaps().classByFid; },
     // 2. GRAB-LOCALITY — a gridline is otherwise infinite (grid_kinematics.js's _findBestGrid classifies
     // purely by along-axis centerline distance, §ATTACH_TOL=0.5m, with NO awareness of position along the
     // line's own length). Fine for a small authored scene; genuinely wrong for a real, dense building where
@@ -152,6 +162,9 @@
       this._engine = this._buildEngine();
       this._meshCache = this._buildMeshByFid();
       this._boxCache = this._buildBoxByFid();
+      // §SCALE-YAW-GUARD (GRID_ROTATED_SCALE_HARDENING.md §1.1): session-cached fid -> yawRad so computeCommands()
+      // can stamp each command WITHOUT re-querying kernel_ops per pointermove frame (§SCALE_CHECK_FIX invariant).
+      this._yawCache = this._buildInsertMaps().yawRadByFid;
       console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)' +
         (this._dragAxis != null ? (' §GRIDSCOPE axis=' + this._dragAxis + ' orthoAt=' + this._dragOrthoAt.toFixed(3) + ' radius=' + this._localityRadius(this._dragAxis).toFixed(3)) : ''));
     },
@@ -159,17 +172,23 @@
     // scene, so a scene edit between drags is never served a stale attach map.
     endDragSession() {
       if (this._engine) console.log(TAG + ' §SCALE_CHECK_FIX drag-session end — caches cleared');
-      this._engine = null; this._meshCache = null; this._boxCache = null;
+      this._engine = null; this._meshCache = null; this._boxCache = null; this._yawCache = null;
       this._dragAxis = null; this._dragOrthoAt = null;
     },
     // PURE recompose: use the cached attached engine if a drag session is active, else build-and-discard
     // (unchanged fallback behavior for any caller outside a session, e.g. tests).
     computeCommands(gridId, delta) {
       const eng = this._engine || this._buildEngine();
+      // §SCALE-YAW-GUARD: fid -> yawRad (radians, from GEOM_INSERT placement.rot) rides each command so the
+      // worker's SCALE fold can refuse a world-axis stretch of an obliquely-yawed solid (defense in depth —
+      // GRID_ROTATION_GUARD.md already keeps such elements out of ATTACH/EDGE/SPAN classification upstream).
+      // Unrecorded fid ⇒ undefined ⇒ worker behavior byte-identical to before.
+      const yawByFid = this._yawCache || this._buildInsertMaps().yawRadByFid;
       // engine guid === our featureId; carry it forward as featureId so the worker fold is unambiguous.
       return eng.dragGrid(gridId, delta).map(c => ({
         featureId: c.guid, action: c.action, axis: c.axis,
-        delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge }));
+        delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge,
+        yawRad: yawByFid[c.guid] }));
     },
     // fid -> mesh map (gmTint's per-command lookup — was g.children.find(), O(n) per command per frame).
     _buildMeshByFid() {

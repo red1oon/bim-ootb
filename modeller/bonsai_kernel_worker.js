@@ -486,13 +486,40 @@ function buildSolids(kernel, ops, seedBoxes) {
           const d = c.delta || 0;
           out = kernel.translate(pe.shape, c.axis === 'x' ? d : 0, c.axis === 'y' ? d : 0, c.axis === 'z' ? d : 0);
         } else {                                       // SCALE: non-uniform axis-stretch about the stationary (min) edge
+          // §SCALE-YAW-GUARD — Implementing GRID_ROTATED_SCALE_HARDENING.md §1 — Witness: W-GRID-SCALE-YAW-HARDENING.
+          // A world-axis stretch of a yawed solid is a SHEAR, not a stretch (no world axis is a local axis of the
+          // solid off 90°-multiples). If the command carries an OPTIONAL yawRad (radians) whose distance to the
+          // nearest multiple of π/2 exceeds 0.01 rad (~0.57°, same tolerance as GRID_ROTATION_GUARD.md §1), and the
+          // scale axis is IN-PLAN ('x'/'y' — yaw is about Z in this worker's frame, see GEOM_ROTATE below, so an
+          // axis-'z' stretch is yaw-safe as-is), compose rotate→scale→rotate-back as ONE matrix and call
+          // generalTransform exactly ONCE — never 3 chained calls (GEOM_SCALE's Copy=false aliasing hazard, below).
+          // Anchor: the shape's world-bbox CENTRE (the file's own rotated-op convention — GEOM_ROTATE spins about
+          // bbox centre; the naive branch's min-EDGE anchor is a world-AABB construct with no local analog readable
+          // from a world AABB). translateDelta stays a WORLD-axis shift (same semantics as TRANSLATE's world delta,
+          // which is yaw-correct). yawRad undefined (every caller today) ⇒ the naive branch below, byte-identical.
           const f = c.newScale != null ? c.newScale : 1;
           const b = kernel.getBoundingBox(pe.shape, false);
-          const a = c.axis === 'x' ? b.xmin : c.axis === 'y' ? b.ymin : b.zmin;
-          const tx = a * (1 - f) + (c.translateDelta || 0);
-          const M = c.axis === 'x' ? [f, 0, 0, tx, 0, 1, 0, 0, 0, 0, 1, 0]
-                  : c.axis === 'y' ? [1, 0, 0, 0, 0, f, 0, tx, 0, 0, 1, 0]
-                  :                  [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, f, tx];
+          const HALF_PI = Math.PI / 2;
+          const oblique = typeof c.yawRad === 'number' && isFinite(c.yawRad) &&
+            Math.abs(c.yawRad - Math.round(c.yawRad / HALF_PI) * HALF_PI) > 0.01;
+          let M;
+          if (oblique && (c.axis === 'x' || c.axis === 'y')) {
+            // L = R(yaw)·S·R(−yaw) in-plan (2D about Z): L = [[sx·c²+sy·s², (sx−sy)·c·s], [(sx−sy)·c·s, sx·s²+sy·c²]]
+            const cs = Math.cos(c.yawRad), sn = Math.sin(c.yawRad);
+            const sx = c.axis === 'x' ? f : 1, sy = c.axis === 'y' ? f : 1;
+            const l00 = sx * cs * cs + sy * sn * sn, l01 = (sx - sy) * cs * sn, l11 = sx * sn * sn + sy * cs * cs;
+            const px = (b.xmin + b.xmax) / 2, py = (b.ymin + b.ymax) / 2;   // bbox-centre anchor (fixed point)
+            const td = c.translateDelta || 0;
+            const t0 = px - (l00 * px + l01 * py) + (c.axis === 'x' ? td : 0);
+            const t1 = py - (l01 * px + l11 * py) + (c.axis === 'y' ? td : 0);
+            M = [l00, l01, 0, t0, l01, l11, 0, t1, 0, 0, 1, 0];
+          } else {
+            const a = c.axis === 'x' ? b.xmin : c.axis === 'y' ? b.ymin : b.zmin;
+            const tx = a * (1 - f) + (c.translateDelta || 0);
+            M = c.axis === 'x' ? [f, 0, 0, tx, 0, 1, 0, 0, 0, 0, 1, 0]
+              : c.axis === 'y' ? [1, 0, 0, 0, 0, f, 0, tx, 0, 0, 1, 0]
+              :                  [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, f, tx];
+          }
           out = kernel.generalTransform(pe.shape, M);  // gp_GTrsf supports non-uniform scale (input cached → NOT released)
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
