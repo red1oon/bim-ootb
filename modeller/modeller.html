@@ -3439,7 +3439,29 @@ async function _discWalkOne(disc, ctx, opts) {
     if (disc === 'PLB') { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
     if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return { refused: true, reason: 'no building open', placed: 0 }; }
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
-    var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '');
+    // §LIVEWIRE DEFAULT-FLIP (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE, 2026-07-10): schedule-FIRST.
+    // The proven paths engage where their data exists — placeSchedule on real-space buildings (Duplex, 21
+    // stamped rooms, W-DX-WALKBACK-RSGT 14/14), placeMeasured on terminal_rules buildings (W-TERM-NOSPACES
+    // 5/5). A building neither path can serve (no spaces + no rule_mesh_binding → honest 0) falls back to
+    // the LEGACY walk below, byte-identical to before the flip — no resident loses placements; the flip is
+    // strictly additive where the mined data supports it. §-logged both ways, never silent.
+    //   opts.geoDb  — transient open of the shared mesh.db buffer (stashed __dwGeoBuf at resident-open):
+    //                 hostBind/_trueMidpoint midpoint correction now runs on REAL meshes in the live walk
+    //                 (legacy live walks passed no geoDb at all — a standing correctness gap, now closed).
+    //   opts.avoid  — other discs' live placements (window.__dwWalks): W7 cross-disc clearance coordination.
+    var gdb = null;
+    try { if (window.__dwGeoBuf) gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); }
+    catch (ge) { console.warn('§DISC-WALK geoDb open failed — walking meta-only: ' + (ge && ge.message)); gdb = null; }
+    var avoid = [];
+    Object.keys(window.__dwWalks || {}).forEach(function (d2) {
+      if (d2 !== disc) avoid = avoid.concat(window.__dwWalks[d2] || []);
+    });
+    var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { schedule: true, geoDb: gdb || undefined, avoid: avoid });
+    if (w.refused || !w.placed) {
+      console.log('§SCHED-FALLBACK ' + disc + ' schedule/measured-band yielded 0 (' + (w.reason || 'no placements') + ') → legacy walk (pre-flip behaviour, unchanged)');
+      w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { geoDb: gdb || undefined });
+    }
+    if (gdb) { try { gdb.close(); } catch (e2) { } }
     bdb.close();
     if (w.refused || !w.placed) {
       _clearDiscWalk(disc);
@@ -3463,7 +3485,11 @@ async function _discWalkOne(disc, ctx, opts) {
     var gatedN = w.placements.filter(function (p) { return p.gated && !p.clash; }).length;
     var clashN = w.placements.filter(function (p) { return p.clash; }).length;
     var nSeg = (w.chainSegs && w.chainSegs.length) || 0;
-    setStat(disc + ' — ' + w.placed + ' placed across ' + w.storeys + ' storeys' + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.chains ? ' · ' + w.chains.length + ' routed' : '')));
+    // §LIVEWIRE: a schedule walk reports per-SPACE, a measured-band walk per-ZONE (both return storeys:0);
+    // the legacy walk keeps its per-storey wording — honest about which engine path actually ran.
+    var scopeTxt = w.schedule ? (w.schedule.spacesUsed + '/' + w.schedule.spaces + ' spaces')
+      : (w.mode === 'measured-band' ? (w.measured.zones + ' measured zones') : (w.storeys + ' storeys'));
+    setStat(disc + ' — ' + w.placed + ' placed across ' + scopeTxt + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.chains ? ' · ' + w.chains.length + ' routed' : '')));
     console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' clash=' + clashN + ' (DiscWalker/' + ((window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'rules') + ')');
     // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
     await _commitDiscWalk(disc, w.placements);
@@ -3595,18 +3621,57 @@ function _renderDiscWalk(disc, placements) {
   // a BOX of that class's MEASURED median bbox (bx/by/bz, stamped on the rules + carried by
   // disc_walker.place). SIZE only; count/position untouched. A class with no measured bbox (bx null) →
   // the 0.18 marker cube fallback (never a fabricated size). The 3-material split is preserved per class.
+  // §LIVEWIRE LOD400 (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE item 5 — the render seam): a
+  // schedule/measured-band placement carries its MINED real mesh hash (rule_space_schedule /
+  // rule_mesh_binding, projected into the shared mesh.db by project_device_meshes_to_meshdb.py).
+  // Bucket by (class, hash) — one InstancedMesh geometry per REAL mesh, recentred about its own bbox
+  // centre (RealGeometry.resolveHashes), exactly the centre semantics the measured box already had.
+  // No hash / hash unresolvable → the pre-existing _dwPrimGeo path (LOD300 catalog match or measured
+  // box), UNCHANGED for every legacy placement. Never a fabricated shape.
   var byCls = {};
-  placements.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+  placements.forEach(function (p) { var k = p.ifc_class + '|' + (p.geometry_hash || ''); (byCls[k] = byCls[k] || []).push(p); });
+  var _lodHashes = {};
+  placements.forEach(function (p) { if (p.geometry_hash) _lodHashes[p.geometry_hash] = 1; });
+  var _lod400 = {};
+  if (Object.keys(_lodHashes).length && window.__dwGeoBuf && window.RealGeometry && window.SQL) {
+    try {
+      var _gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf));
+      _lod400 = window.RealGeometry.resolveHashes(_gdb, Object.keys(_lodHashes));
+      _gdb.close();
+      // §LIVEWIRE register the resolved device meshes into the library's real-geometry registry (the
+      // §REAL-GEOM seam bonsai_library.foldInsert already honours via P.realGeomHash) so the op-log fold
+      // of _commitDiscWalk's rows renders the SAME real mesh, not a proxy. anchorOffset [0,0,0] on
+      // purpose: the walker's (x,y,z) IS the intended volumetric centre (recentred mesh), unlike seeded
+      // ARC elements whose placement is the IFC anchor. Idempotent (registry skips known keys).
+      if (window.Bonsai && window.Bonsai.library && window.Bonsai.library.registerRealGeometry) {
+        window.Bonsai.library.registerRealGeometry(Object.keys(_lod400).map(function (h) {
+          return { hash: h, v: _lod400[h].positions, f: _lod400[h].faces, bbox: _lod400[h].bbox, anchorOffset: [0, 0, 0] };
+        }));
+      }
+    } catch (e) { console.warn('§DW-PRIM-LOD mesh.db resolve failed ' + (e && e.message)); _lod400 = {}; }
+  }
   var dims = [];
-  var lod300N = 0, lod200N = 0;                                                 // Bug-2 honesty tally (matched vs unmatched)
-  Object.keys(byCls).forEach(function (cls) {
-    var list = byCls[cls], s = list[0];
+  var lod400N = 0, lod300N = 0, lod200N = 0;                                    // honesty tally (real mined mesh / catalog match / box)
+  Object.keys(byCls).forEach(function (key) {
+    var list = byCls[key], s = list[0];
+    var cls = s.ifc_class;
     var measured = (s.bx > 0 && s.by > 0 && s.bz > 0);
     var bx = measured ? s.bx : 0.18, by = measured ? s.by : 0.18, bz = measured ? s.bz : 0.18;
     var prim = s.prim || 'box';                                                 // §LOD-SEAM render kind (sprinkler/light/…)
-    var geo = window._dwPrimGeo(prim, bx, by, bz, cls);                         // POC box (measured), catalog-matched LOD300 mesh, or → LOD400 mesh swaps in here
+    var geo = null, isLod400 = false;
+    var d400 = s.geometry_hash && _lod400[s.geometry_hash];
+    if (d400) {
+      geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(d400.positions, 3));
+      geo.setIndex(new THREE.BufferAttribute(d400.faces, 1));
+      geo.computeVertexNormals();
+      geo.userData.lod400 = true; geo.userData.hash = s.geometry_hash;
+      isLod400 = true;
+    } else {
+      geo = window._dwPrimGeo(prim, bx, by, bz, cls);                           // POC box (measured) or catalog-matched LOD300 mesh
+    }
     var isLod300 = !!(geo.userData && geo.userData.lod300);
-    if (isLod300) lod300N += list.length; else lod200N += list.length;
+    if (isLod400) lod400N += list.length; else if (isLod300) lod300N += list.length; else lod200N += list.length;
     function _mesh(sub, mat) {
       if (!sub.length) return;
       var im = new THREE.InstancedMesh(geo, mat, sub.length);
@@ -3625,7 +3690,7 @@ function _renderDiscWalk(disc, placements) {
     _mesh(list, matN);                                                          // all (normal box)
     _mesh(list.filter(function (p) { return p.gated && !p.clash; }), matG);     // orange = yielded into the plenum
     _mesh(list.filter(function (p) { return p.clash; }), matC);                 // red = irreducible clash
-    dims.push(cls.replace('Ifc', '') + '/' + prim + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)') + (isLod300 ? '(LOD300)' : ''));
+    dims.push(cls.replace('Ifc', '') + '/' + prim + ':' + [bx, by, bz].map(function (v) { return (+v).toFixed(2); }).join('×') + (measured ? '' : '(fallback)') + (isLod400 ? '(LOD400:' + String(s.geometry_hash).slice(0, 8) + ')' : (isLod300 ? '(LOD300)' : '')));
   });
   // §3c CONNECTOR EDGES: every fixture connectorEnrich stamped (.connector, projected from rule_connector)
   // draws its FIXTURE→SERVICE hookup as a short line from the fixture along the connector faceDir (e.g. each
@@ -3649,8 +3714,8 @@ function _renderDiscWalk(disc, placements) {
   }
   window.__dwInstVer++;   // §I5: fresh buckets → invalidate the record→(im,i) ref map (hidden lens resets, §V1 doctrine)
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
-  console.log('§DW-PRIM-LOD disc=' + disc + ' lod300=' + lod300N + ' lod200=' + lod200N +
-    ' (Bug-2 partial fix: lod300=matched real catalog mesh, lod200=unchanged POC box; honest gap, not silently "fixed")');
+  console.log('§DW-PRIM-LOD disc=' + disc + ' lod400=' + lod400N + ' lod300=' + lod300N + ' lod200=' + lod200N +
+    ' (lod400=rule-mined REAL mesh from shared mesh.db [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
 }
@@ -3853,6 +3918,24 @@ async function _commitDiscWalk(disc, placements) {
   var ops = [];
   for (var i = 0; i < placements.length; i++) {
     var p = placements[i];
+    // §LIVEWIRE (LOD400 law at the COMMIT seam too): a placement carrying its rule-mined geometry_hash
+    // commits with its OWN measured bbox + realGeomHash — foldInsert's §REAL-GEOM path renders the real
+    // device mesh (registered by _renderDiscWalk above), or an honest MEASURED box when the registry
+    // isn't loaded (fresh session replay). NEVER the old cat[0] fallback, which folded every unmatched
+    // fixture as the catalog's first item — a full-height Column per outlet (the op-log half of
+    // "geometry hell", W-DW-LIVEWIRE L7 pins the fix). Fold convention notes: placement.z is the SEAT
+    // (bottom) so commit centre−bz/2; placement.rot is DEGREES in foldInsert's place() — the walker's
+    // yaw is radians, converted here. Hash-less legacy placements keep the old path byte-identical.
+    if (p.geometry_hash) {
+      var hbx = p.bx > 0 ? p.bx : 0.18, hby = p.by > 0 ? p.by : 0.18, hbz = p.bz > 0 ? p.bz : 0.18;
+      ops.push({ op_type: 'GEOM_INSERT',
+        params: { bbox: [-hbx / 2, hbx / 2, -hby / 2, hby / 2, -hbz / 2, hbz / 2],
+                  realGeomHash: p.geometry_hash,
+                  placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +(p.z - hbz / 2).toFixed(4), rot: +((p.yaw || 0) * 180 / Math.PI).toFixed(4) },
+                  lod: '200', color: color,
+                  _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null, cz: +p.z.toFixed(4) } } });
+      continue;
+    }
     var found = cat.find(function (c) { return c.ifc_class === p.ifc_class; });
     var hash = found ? found.hash : (cat[0] ? cat[0].hash : null);
     if (!hash) continue;
@@ -4434,7 +4517,7 @@ window._dwRules = function (nm) {
 // rules across a deploy (silently missing e.g. the new FP sprinkler shim). On a rules-version change, evict the
 // two rules keys ONCE so the fresh DBs load + re-cache normally. Bump window.__dwRulesVer whenever a *_rules.db
 // changes (in lock-step with sw.js CACHE_VERSION). Building *_extracted.db are immutable per url → never evicted.
-window.__dwRulesVer = 'v21';
+window.__dwRulesVer = 'v22';
 window._dwBustStaleRulesCache = async function () {
   try {
     var KEY = 'dw_rules_ver', cur = window.__dwRulesVer;
