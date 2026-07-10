@@ -104,7 +104,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     DISCS.forEach(function (disc) { window.__renderDiscWalk(disc, byDisc[disc]); });
 
     // 6) ORACLE — real Terminal inter-disc clash RATE under the SAME rules (sampled, cap 400/disc)
-    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_meta.db')).arrayBuffer();
+    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_ARC.db')).arrayBuffer();
     var mdb = new window.SQL.Database(new Uint8Array(mbuf));
     var realAll = [];
     DISCS.forEach(function (disc) {

@@ -33,14 +33,17 @@
   //     mesh substrate (component_geometries), fetched+cached independently (its own IndexedDB URL key, own
   //     `geoV` cache-bust) ONLY for residents that declare it — Terminal is the sole split-file resident today;
   //     every other entry has no `geoDb` and takes ZERO extra network/IDB path (see openResident/_fetchGeoDb).
+  // EMBED_8_ARC_BUILDINGS_MESH_DB.md — the canonical 8, ARC-only metadata each, ALL sharing ONE mesh.db
+  // (true-dup + rotation-consolidation + orphan-removal applied; see that spec's §-log for the numbers).
   var RESIDENTS = [
-    { key: 'SampleHouse',  label: 'SampleHouse · wall-bearing',         db: 'SampleHouse_extracted.db',  v: 2 },
-    { key: 'Duplex',       label: 'Duplex · wall-bearing',             db: 'Duplex_extracted.db',       v: 2 },
-    { key: 'SampleCastle', label: 'SampleCastle · column-framed',      db: 'SampleCastle_extracted.db', v: 2 },
-    { key: 'SampleCastle-ARC', label: 'SampleCastle · ARC only (diagnostic)', db: 'SampleCastle_ARC_extracted.db', v: 1 },
-    { key: 'Terminal',     label: 'Terminal · column-framed (oracle)', db: 'Terminal_meta.db',          v: 1,
-      geoDb: 'Terminal_geo.db', geoV: 1 },
-    { key: 'Ifc4_Revit',   label: 'Ifc4_Revit · all-discipline reference', db: 'Ifc4_Revit_extracted.db', v: 1 }
+    { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'mesh.db', geoV: 1 },
+    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 1 },
+    { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'mesh.db', geoV: 1 },
+    { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'mesh.db', geoV: 1 },
+    { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 1 },
+    { key: 'Hospital',      label: 'Hospital · column-framed',          db: 'Hospital_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 1 },
+    { key: 'HospitalGarage',label: 'HospitalGarage · column-framed',    db: 'Garage_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 1 },
+    { key: 'Terminal',      label: 'Terminal · column-framed (oracle)', db: 'Terminal_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 1 }
   ];
 
   // The modeller's own GH-Pages playground base — modeller.html and its resident DBs now share the
