@@ -38,7 +38,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
   await page.goto('http://localhost:' + port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(function () {
     return window.__sceneReady === true && !!window.SQL && !!window.ArcEditable && !!window.DiscWalker &&
-           !!window.__renderDiscWalk && !!window.__dwPixelProbe;
+           !!window.__renderDiscWalk && !!window.__dwOcclusionProbe;
   }, { timeout: 25000 }).catch(function () {});
 
   var pass = 0, fail = 0;
@@ -124,7 +124,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
   }, { DISCS: DISCS, port: port });
   await page.waitForTimeout(400);
 
-  var probe = await page.evaluate(function () { return window.__dwPixelProbe(); });
+  var probe = await page.evaluate(function () { return window.__dwOcclusionProbe(); });
   var shot = path.join(ROOT, 'modeller', 'tests', 'disc_clash.png');
   await page.screenshot({ path: shot });
 

@@ -4676,7 +4676,8 @@ window.__arcPixelProbe = function (isolateFids) {
 // The disc-walk markers are InstancedMeshes in _dwRoot (no op-log featureId), so __arcPixelProbe's fid-isolation
 // can't reach them — here we hide the _dwRoot children (optionally one disc) and diff the frame. Same anti-collusion
 // A/B method: pixels that CHANGE when the MEP layer is hidden ARE the MEP's own rasterized footprint over the ARC.
-window.__dwPixelProbe = function (disc) {
+// (Named __dwOcclusionProbe — distinct from the §4 scene-graph-census __dwPixelProbe, which this once shadowed.)
+window.__dwOcclusionProbe = function (disc) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { error: 'no-group' };
   const root = g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
   if (!root) return { error: 'no-dwRoot', dwPainted: 0 };
