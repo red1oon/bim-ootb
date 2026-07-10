@@ -164,6 +164,9 @@
       this._engine = this._buildEngine();
       this._meshCache = this._buildMeshByFid();
       this._boxCache = this._buildBoxByFid();
+      // §SCALE-YAW-GUARD (GRID_ROTATED_SCALE_HARDENING.md §1.1): session-cached fid -> yawRad so computeCommands()
+      // can stamp each command WITHOUT re-querying kernel_ops per pointermove frame (§SCALE_CHECK_FIX invariant).
+      this._yawCache = this._buildInsertMaps().yawRadByFid;
       console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)' +
         (this._dragAxis != null ? (' §GRIDSCOPE axis=' + this._dragAxis + ' orthoAt=' + this._dragOrthoAt.toFixed(3) + ' radius=' + this._localityRadius(this._dragAxis).toFixed(3)) : '') +
         (this._engine.getYawSkipCount && this._engine.getYawSkipCount() ? ' §ROTATION-GUARD yawSkipped=' + this._engine.getYawSkipCount() + ' element-axis classification(s) (oblique yaw, AABB edges unreal — fell through to interior)' : ''));
@@ -172,17 +175,23 @@
     // scene, so a scene edit between drags is never served a stale attach map.
     endDragSession() {
       if (this._engine) console.log(TAG + ' §SCALE_CHECK_FIX drag-session end — caches cleared');
-      this._engine = null; this._meshCache = null; this._boxCache = null;
+      this._engine = null; this._meshCache = null; this._boxCache = null; this._yawCache = null;
       this._dragAxis = null; this._dragOrthoAt = null;
     },
     // PURE recompose: use the cached attached engine if a drag session is active, else build-and-discard
     // (unchanged fallback behavior for any caller outside a session, e.g. tests).
     computeCommands(gridId, delta) {
       const eng = this._engine || this._buildEngine();
+      // §SCALE-YAW-GUARD: fid -> yawRad (radians, from GEOM_INSERT placement.rot) rides each command so the
+      // worker's SCALE fold can refuse a world-axis stretch of an obliquely-yawed solid (defense in depth —
+      // GRID_ROTATION_GUARD.md already keeps such elements out of ATTACH/EDGE/SPAN classification upstream).
+      // Unrecorded fid ⇒ undefined ⇒ worker behavior byte-identical to before.
+      const yawByFid = this._yawCache || this._buildInsertMaps().yawRadByFid;
       // engine guid === our featureId; carry it forward as featureId so the worker fold is unambiguous.
       return eng.dragGrid(gridId, delta).map(c => ({
         featureId: c.guid, action: c.action, axis: c.axis,
-        delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge }));
+        delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge,
+        yawRad: yawByFid[c.guid] }));
     },
     // fid -> mesh map (gmTint's per-command lookup — was g.children.find(), O(n) per command per frame).
     _buildMeshByFid() {
