@@ -38,7 +38,7 @@
 
   /**
    * @param {Array} elementData — [{guid, x, y, z, bboxX, bboxY, bboxZ,
-   *                                ifcClass, vertices?, scaleX?, scaleY?, scaleZ?, yawRad?}]
+   *                                ifcClass, vertices?, scaleX?, scaleY?, scaleZ?, yawRad?, tiltXRad?, tiltYRad?}]
    * @param {Array} gridLines   — [{id, axis:'x'|'y'|'z', pos}]
    *
    * yawRad (OPTIONAL, §ROTATION-GUARD — prompts/GRID_ROTATION_GUARD.md §1): the element's in-plan yaw in
@@ -47,6 +47,14 @@
    * touch the true rotated body at a corner, so AABB-edge classification would fabricate ATTACH/EDGE/SPAN
    * relations — such an element is skipped on the plan axes and falls through to the bay-proportional
    * interior path (center-only math, rotation-safe).
+   *
+   * tiltXRad/tiltYRad (OPTIONAL, §ROTATION-GUARD-3AXIS — GRID_ROTATION_GUARD.md §5): roll/pitch about a
+   * HORIZONTAL axis, RADIANS. Undefined (every pre-existing caller) ⇒ unaffected. Unlike yaw, this is NOT
+   * "safe again at every 90°-multiple" — a pure Z-yaw never moves the vertical axis, but a rotation about X
+   * or Y can swap which local dimension faces "up" even at an exact 90°, reorienting the element out of the
+   * horizontal plane the plan-axis classification assumes. So ANY non-negligible tiltXRad/tiltYRad
+   * (> YAW_TOL from ZERO, not from the nearest 90°-multiple) skips plan-axis classification, same
+   * fall-through as an oblique yaw.
    */
   function GridKinematicEngine(elementData, gridLines) {
     this._elements = elementData;
@@ -77,6 +85,8 @@
     // §ROTATION-GUARD: element×axis classifications skipped for oblique yaw (summary count only —
     // per-element logging would spam a real building's console; callers may surface this once per drag)
     this._yawSkipCount = 0;
+    // §ROTATION-GUARD-3AXIS: same, for non-negligible rotX/rotY tilt (GRID_ROTATION_GUARD.md §5)
+    this._tiltSkipCount = 0;
   }
 
   // ── attachGridToElements() — Build attach map ─────────────────────────────
@@ -86,6 +96,7 @@
     this._interiorElements = [];
     this._governed = {};
     this._yawSkipCount = 0;
+    this._tiltSkipCount = 0;
 
     // Sorted grid positions per axis (for bay computation)
     this._sortedGrids = { x: [], y: [], z: [] };
@@ -123,6 +134,7 @@
     var axes = ['x', 'y', 'z'];
     var isRoof = elem.ifcClass === 'IfcRoof' || elem.ifcClass === 'IfcSlab:ROOF';
     var yawOblique = _isObliqueYaw(elem.yawRad);
+    var tilted = _hasTilt(elem.tiltXRad, elem.tiltYRad);
 
     for (var ai = 0; ai < axes.length; ai++) {
       var axis = axes[ai];
@@ -148,8 +160,11 @@
       // element's real edges on the plan axes — skip AABB classification there ('y' is height,
       // yaw-invariant), the same quiet outcome as _findBestGrid finding nothing. The element falls
       // through to Phase 3's center-only bay-proportional path if no other axis governs it.
-      if (yawOblique && (axis === 'x' || axis === 'z')) {
-        this._yawSkipCount++;
+      // §ROTATION-GUARD-3AXIS (GRID_ROTATION_GUARD.md §5): same skip for a non-negligible rotX/rotY tilt —
+      // found live-reachable (fids 933/1291/2514/3055 in SampleCastle_ARC.db, yawRad undefined for all of
+      // them since the §ARC-3AXIS placement shape carries no `.rot`, so the yaw-only check above never fired).
+      if ((yawOblique || tilted) && (axis === 'x' || axis === 'z')) {
+        if (tilted) this._tiltSkipCount++; else this._yawSkipCount++;
         continue;
       }
 
@@ -647,6 +662,12 @@
     return this._yawSkipCount;
   };
 
+  // §ROTATION-GUARD-3AXIS: same, for non-negligible rotX/rotY tilt (0 when no caller passes
+  // tiltXRad/tiltYRad — every pre-existing caller and every yaw-only element).
+  GridKinematicEngine.prototype.getTiltSkipCount = function() {
+    return this._tiltSkipCount;
+  };
+
   // ── Pure utility functions ─────────────────────────────────────────────────
 
   function _halfExtentForAxis(elem, axis) {
@@ -673,6 +694,20 @@
     var m = yawRad % (Math.PI / 2);
     if (m < 0) m += Math.PI / 2;
     return Math.min(m, Math.PI / 2 - m) > YAW_TOL;
+  }
+
+  /**
+   * _hasTilt — §ROTATION-GUARD-3AXIS: true iff tiltXRad or tiltYRad is defined and exceeds YAW_TOL in
+   * absolute value — distance from ZERO, deliberately NOT distance from the nearest 90°-multiple like
+   * _isObliqueYaw above. Reason: a pure Z-yaw never moves the vertical axis, so a 90°-multiple yaw leaves
+   * the element's footprint axis-aligned. A rotation about X or Y (roll/pitch) has no such guarantee — even
+   * an exact 90° tilt there can swap which local dimension faces "up", reorienting the element out of the
+   * horizontal plane entirely, so ANY non-negligible tilt is treated as unsafe for plan-axis classification.
+   */
+  function _hasTilt(tiltXRad, tiltYRad) {
+    var tx = (typeof tiltXRad === 'number' && isFinite(tiltXRad)) ? Math.abs(tiltXRad) : 0;
+    var ty = (typeof tiltYRad === 'number' && isFinite(tiltYRad)) ? Math.abs(tiltYRad) : 0;
+    return tx > YAW_TOL || ty > YAW_TOL;
   }
 
   /**
@@ -715,5 +750,6 @@
   // Export pure utilities for testing
   exports._bayProportionalDelta = _bayProportionalDelta;
   exports._isObliqueYaw = _isObliqueYaw;
+  exports._hasTilt = _hasTilt;
 
 })(typeof module !== 'undefined' ? module.exports : (window.GridKinematics = {}));
