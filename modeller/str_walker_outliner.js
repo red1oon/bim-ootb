@@ -353,6 +353,38 @@
     } catch (e) { console.warn(TAG + ' replay failed', e && e.message); }
   }
 
+  // §PATCH-SELFHEAL (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE / ROOM_INJECTION_HYBRID.md Task 4
+  // follow-up): a shipped resident/geoDb .db can be stale relative to a small, real, already-witnessed SQL
+  // fix that never crossed the network as a binary commit (LFS-blocked until 2026-08-01 — see
+  // modeller/patches/README.md). `modeller/patches/<dbFile>.sql` names its target by convention
+  // (`mesh.db.sql` patches `mesh.db`, `Duplex_ARC.db.sql` patches `Duplex_ARC.db`, etc). Fetched and
+  // `db.run()` on EVERY open — cache-hit or fresh fetch, since a cached copy may itself predate this fix —
+  // never the other way (the IDB cache always stores the RAW server bytes, so it can't drift from the
+  // server's own truth; only the buffer handed to the walker/geoDb is patched). Every script here is
+  // idempotent (`INSERT OR IGNORE`, or a `DELETE` that's a no-op once already applied), so a repeat apply
+  // on an already-current db is a safe, cheap no-op. Best-effort: a missing patch (404, the common case —
+  // most dbs have none) or any exec failure is swallowed and the ORIGINAL buffer is returned untouched —
+  // this never blocks or breaks an open.
+  function _applyPendingPatch(buf, dbFile) {
+    var url = _modellerBase() + 'patches/' + dbFile + '.sql';
+    return fetch(url).then(function (r) {
+      if (!r.ok) return buf;
+      return r.text().then(function (sql) {
+        try {
+          var pdb = new window.SQL.Database(new Uint8Array(buf));
+          pdb.run(sql);
+          var out = pdb.export().buffer;
+          pdb.close();
+          console.log(TAG + ' §PATCH-APPLY ' + dbFile + ' applied (' + sql.length + ' bytes)');
+          return out;
+        } catch (e) {
+          console.warn(TAG + ' §PATCH-APPLY ' + dbFile + ' FAILED (using unpatched db)', e && e.message);
+          return buf;
+        }
+      });
+    }).catch(function () { return buf; });
+  }
+
   // §GEO-SPLIT: lazily fetch+cache a resident's SEPARATE geometry-mesh db (Terminal_geo.db), reusing the
   // exact same IndexedDB cache pattern (_idbGetDb/_idbPutDb, its own URL key so it caches independently of
   // the meta db) — cache-first, else fetch+persist. Residents with no `geoDb` field resolve null IMMEDIATELY,
@@ -363,7 +395,7 @@
     return _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-HIT (local) ' + (cached.byteLength / 1024 / 1024).toFixed(1) + 'MB');
-        return cached;
+        return _applyPendingPatch(cached, res.geoDb);
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-MISS → fetch ' + url);
       return fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
@@ -371,7 +403,7 @@
           _idbPutDb(url, buf).then(function (p) {
             console.log(TAG + ' §STRWALK-CACHE ' + res.geoDb + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024 / 1024).toFixed(1) + 'MB');
           });
-          return buf;
+          return _applyPendingPatch(buf, res.geoDb);
         });
     });
   }
@@ -492,19 +524,23 @@
     _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');
-        if (_openBuffer(cached, res.key)) _forkEditable(res);
+        _applyPendingPatch(cached, res.db).then(function (patchedBuf) {
+          if (_openBuffer(patchedBuf, res.key)) _forkEditable(res);
+        });
         return;
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-MISS → fetch ' + url);
       fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
         .then(function (buf) {
-          var ok = _openBuffer(buf, res.key);
-          if (ok) {
-            _forkEditable(res);
-            _idbPutDb(url, buf).then(function (p) {
-              console.log(TAG + ' §STRWALK-CACHE ' + res.db + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024).toFixed(0) + 'KB');
-            });
-          }
+          return _applyPendingPatch(buf, res.db).then(function (patchedBuf) {
+            var ok = _openBuffer(patchedBuf, res.key);
+            if (ok) {
+              _forkEditable(res);
+              _idbPutDb(url, buf).then(function (p) {
+                console.log(TAG + ' §STRWALK-CACHE ' + res.db + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024).toFixed(0) + 'KB');
+              });
+            }
+          });
         })
         .catch(function (e) { console.warn(TAG + ' §STRWALK-OPEN resident fetch FAILED ' + res.db, e && e.message); });
     });
