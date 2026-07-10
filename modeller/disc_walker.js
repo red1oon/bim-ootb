@@ -526,6 +526,32 @@
     // band → the walked db's frame. Missing key → 0 (bands already in the db's frame).
     var zOffRow = _rows(db, "SELECT value FROM rules_meta WHERE key='z_datum_offset'");
     var zOff = zOffRow.length ? parseFloat(zOffRow[0].value) || 0 : 0;
+    // §TE-ARC-DATUM-FIX (bim-compiler RESUME_DISC_WALKER_ENVELOPE_BOUND.md §TE-ARC-DATUM, 2026-07-10,
+    // ported from build/disc_walker.js): the baked z_datum_offset targets ONE frame (the mining
+    // extraction's) — the shipped Terminal_ARC.db sits 14.66 m below it and every band starved. With
+    // rule_frame_ref (per-class mean_z refs in the BAND frame, stamped from measured data), MEASURE
+    // the offset from the walked substrate itself: median over shared non-generatable classes of
+    // (walked class mean z − ref mean z). Same-frame substrates reproduce the legacy offset exactly;
+    // any pure-translation frame reconciles. <3 shared classes → honest fallback, logged.
+    if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_frame_ref'").length) {
+      var deltas = [];
+      _rows(db, 'SELECT ifc_class, mean_z FROM rule_frame_ref').forEach(function (fr) {
+        var w = _rows(bdb, "SELECT COUNT(*) n, AVG(t.center_z) mz FROM elements_meta em " +
+          "JOIN element_transforms t ON t.guid = em.guid WHERE em.ifc_class='" + _esc(fr.ifc_class) + "'");
+        if (w.length && w[0].n >= 5 && w[0].mz !== null) deltas.push(w[0].mz - fr.mean_z);
+      });
+      if (deltas.length >= 3) {
+        deltas.sort(function (a, b) { return a - b; });
+        var mid = deltas[Math.floor(deltas.length / 2)];
+        var mad = deltas.map(function (d) { return Math.abs(d - mid); }).sort(function (a, b) { return a - b; });
+        zOff = mid;
+        console.log(TAG + ' §DW-DATUM ' + disc + ' zOff=' + mid.toFixed(3) + ' measured from walked substrate (' +
+          deltas.length + ' ref classes, MAD=' + mad[Math.floor(mad.length / 2)].toFixed(3) + ')');
+      } else {
+        console.log(TAG + ' §DW-DATUM-FALLBACK ' + disc + ' only ' + deltas.length +
+          ' shared ref classes (<3) — legacy z_datum_offset=' + zOff + ' applied');
+      }
+    }
     var out = [], refused = {}, zones = 0;
     rows.forEach(function (r) {
       r = Object.assign({}, r);
