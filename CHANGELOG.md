@@ -4,6 +4,21 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.15.0](https://github.com/red1oon/bim-ootb/compare/v1.14.0...v1.15.0) (2026-07-10)
+
+
+### ✨ Features
+
+* **gridmove:** §SCALE-YAW-GUARD — harden GEOM_GRID_MOVE SCALE fold against rotated elements (GRID_ROTATED_SCALE_HARDENING.md §1) ([#721](https://github.com/red1oon/bim-ootb/issues/721)) ([c32692e](https://github.com/red1oon/bim-ootb/commit/c32692e1d83fddbeb83aa2253e15d4915b2c877b))
+* **modeller:** embed 8 ARC-only buildings + shared mesh.db resident registry ([6068fab](https://github.com/red1oon/bim-ootb/commit/6068fab40e467934d92da2fef88f4682e444cdf9))
+
+
+### 🐛 Fixes
+
+* **disc_walker:** correct _eulerMat3 rotation-convention for real 3-axis tilts ([144943b](https://github.com/red1oon/bim-ootb/commit/144943b918268fdb37694c4ed3f7592606c77564))
+* **disc_walker:** port true-midpoint + geoDb split-file support from bim-compiler ([8d161fa](https://github.com/red1oon/bim-ootb/commit/8d161fa41a66b38d3de0b69f2e27c987a3411ed3))
+* **modeller:** guard grid-drag classification against oblique-yawed elements ([#720](https://github.com/red1oon/bim-ootb/issues/720)) ([67742b2](https://github.com/red1oon/bim-ootb/commit/67742b259b2897c8242a109b6807489beedb6d6f))
+
 ## [1.14.0](https://github.com/red1oon/bim-ootb/compare/v1.13.0...v1.14.0) (2026-07-08)
 
 

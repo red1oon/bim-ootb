@@ -136,5 +136,52 @@
     return { red: red, orange: orange };
   }
 
-  return { evaluate: evaluate, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE };
+  // (5) UBBL ROOM SIZE — DEMO INDICATOR (STATIC, not part of evaluate()'s delta contract).
+  // Implementing UBBL_RULES_GATE.md §2 (bim-compiler prompts) — Witness: W-UBBL-ROOM-DEMO.
+  // Unlike cases (1)-(4), which are delta-honest edit checks (a pre-existing as-extracted condition is
+  // NEVER flagged), this case is a static per-room inspection of as-extracted `spatial_structure`
+  // IfcSpace rows — the pre-existing state is exactly what it reports on. Folding it into evaluate()
+  // would violate that file-level doctrine, so it is a separate pure entry point emitting the 5th kind.
+  // NON-INVENT: the ONLY two thresholds wired are the two independently-verified numbers from
+  // UBBL_RULES_GATE.md §1b (By-Law 42): "all other rooms" floor area >= 6.5 m² and headroom >= 2.5 m.
+  // The 11 m² / 9.3 m² first/second-habitable-room tiers and any per-room-TYPE threshold are
+  // deliberately NOT built — they need a room-order/type classifier that does not exist (§1c BLOCKED);
+  // inventing a type mapping to unlock them would violate PRIME RULE. Demo/mockup scope only
+  // (user decision 2026-07-05): every output carries UBBL_DEMO_LABEL verbatim — it is an indicator,
+  // NOT a compliance verdict, and the label is the guardrail against it silently becoming one.
+  var UBBL_MIN_AREA = 6.5;      // m² — By-Law 42 "all other rooms" minimum (verified, spec §1b)
+  var UBBL_MIN_HEADROOM = 2.5;  // m  — By-Law 42 minimum headroom height (verified, spec §1b)
+  var UBBL_DEMO_LABEL = "UBBL-style demo indicator (By-Law 42, 'all other rooms' minimum only) — not a compliance verdict";
+
+  // ubblRoomSizeDemo(spaces, opts) → {kind:'ubbl-room-size', checked, flagged:[…], label}. PURE.
+  //   spaces = [{guid, name, size_x, size_y, size_z}, …]  (spatial_structure rows, type='IfcSpace' —
+  //            Duplex-extractor schema; SampleHouse predates it and has no such table: caller's concern)
+  //   opts   = {minArea, minHeadroom} — explicit params like CLEARANCE, defaults are the §1b numbers
+  // Rooms with NULL/missing dims are reported under `unmeasured`, never guessed at (non-invent).
+  function ubblRoomSizeDemo(spaces, opts) {
+    opts = opts || {};
+    var minArea = opts.minArea != null ? opts.minArea : UBBL_MIN_AREA;
+    var minHeadroom = opts.minHeadroom != null ? opts.minHeadroom : UBBL_MIN_HEADROOM;
+    var flagged = [], unmeasured = [], checked = 0;
+    (spaces || []).forEach(function (s) {
+      if (s == null || s.size_x == null || s.size_y == null || s.size_z == null) {
+        unmeasured.push({ kind: 'ubbl-room-size', guid: s && s.guid, name: s && s.name, label: UBBL_DEMO_LABEL });
+        return;
+      }
+      checked++;
+      var area = s.size_x * s.size_y;
+      var belowArea = area < minArea, belowHeadroom = s.size_z < minHeadroom;
+      if (belowArea || belowHeadroom) {
+        flagged.push({
+          kind: 'ubbl-room-size', guid: s.guid, name: s.name,
+          size_x: +s.size_x.toFixed(3), size_y: +s.size_y.toFixed(3), size_z: +s.size_z.toFixed(3),
+          area: +area.toFixed(3), belowArea: belowArea, belowHeadroom: belowHeadroom,
+          minArea: minArea, minHeadroom: minHeadroom, label: UBBL_DEMO_LABEL
+        });
+      }
+    });
+    return { kind: 'ubbl-room-size', checked: checked, flagged: flagged, unmeasured: unmeasured, label: UBBL_DEMO_LABEL };
+  }
+
+  return { evaluate: evaluate, ubblRoomSizeDemo: ubblRoomSizeDemo, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE, UBBL_MIN_AREA: UBBL_MIN_AREA, UBBL_MIN_HEADROOM: UBBL_MIN_HEADROOM, UBBL_DEMO_LABEL: UBBL_DEMO_LABEL };
 });

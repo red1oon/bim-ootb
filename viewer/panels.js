@@ -1488,11 +1488,23 @@ function setupPanels(A) {
         // Own dedicated column (left:928), stacked vertically — kept OUT of Settings'/JSON-
         // editor's columns since those run much taller (700px+) and would otherwise overlap
         // anything sharing their column further down the same column.
-        var _pos = { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
-                     camview: { top: '640px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
+        // §MOBILE-DRAWER-FIX (2026-07-11): left:928 assumes a >=1158px-wide desktop viewport.
+        // A.createPanel's §PANEL-AUTOPLACE MutationObserver would normally correct a bad
+        // hardcoded position via A._placePanel — but that observer explicitly skips mobile
+        // (`!window._isMobile`), so on a phone (~375-430px wide) these 3 drawers opened fully
+        // off-screen: toggle()/isOpen() fired correctly (master icon lit "active") but nothing
+        // was visible or reachable — witnessed via §NAV_DRAWER_RECT left=928 on a 390px viewport.
+        // Mobile gets its own right-anchored column instead (same per-drawer vertical stagger,
+        // width 230px fits any phone down to ~254px wide) — no autoplace dependency needed.
+        var _onMobileDrawer = !!window._isMobile;
+        var _pos = _onMobileDrawer
+          ? { navigate: { top: '70px', right: '12px' }, inspect: { top: '250px', right: '12px' },
+              camview: { top: '430px', right: '12px' } }[masterId] || { top: '70px', right: '12px' }
+          : { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
+              camview: { top: '640px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
         panel = A.createPanel(panelId, {
           closable: true,
-          style: { position: 'fixed', top: _pos.top, left: _pos.left, zIndex: '1100', width: '230px', padding: '10px 8px' },
+          style: Object.assign({ position: 'fixed', zIndex: '1100', width: '230px', padding: '10px 8px' }, _pos),
           content: '<h3 style="margin:0 0 8px 6px;color:#4fc3f7;font-size:13px">' + title + '</h3>',
           onClose: function() { console.log('§DRAWER_CLOSE id=' + masterId); _syncPillHighlights(); }
         });

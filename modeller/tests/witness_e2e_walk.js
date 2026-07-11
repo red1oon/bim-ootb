@@ -75,9 +75,26 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
     const r = window.A.renderer; r.render(window.A.scene, window.A.camera); const gl = r.getContext();
     const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
     let s = 0; for (let i = 0; i < px.length; i += 257) s = (s + px[i]) >>> 0;
+    // §LIVEWIRE W7 mechanics change (2026-07-10): the schedule walk places fixtures at their REAL
+    // positions INSIDE the building (outlets on walls, lights on ceilings) — from the default exterior
+    // camera they are occluded by the ARC envelope, so a whole-frame checksum no longer changes. The OLD
+    // assertion only ever passed because mis-placed fixtures poked through the roof (the geometry hell
+    // this lane fixed). Same claim ("the walked geometry paints pixels"), occlusion-free measurement:
+    // checksum the frame with ONLY the walked layer visible vs with it hidden too — must differ.
+    const grp = g, vis = [];
+    grp.children.forEach(o => { if (!(o.userData && o.userData.dwRoot)) { vis.push([o, o.visible]); o.visible = false; } });
+    r.render(window.A.scene, window.A.camera);
+    const pxA = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pxA);
+    let sWith = 0; for (let i = 0; i < pxA.length; i += 257) sWith = (sWith + pxA[i]) >>> 0;
+    const dwVis = []; if (root) { dwVis.push([root, root.visible]); root.visible = false; }
+    r.render(window.A.scene, window.A.camera);
+    const pxB = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pxB);
+    let sWithout = 0; for (let i = 0; i < pxB.length; i += 257) sWithout = (sWithout + pxB[i]) >>> 0;
+    dwVis.forEach(([o, v]) => { o.visible = v; }); vis.forEach(([o, v]) => { o.visible = v; });
+    r.render(window.A.scene, window.A.camera);
     return { n: (window.__dwWalks && window.__dwWalks.ELEC || []).length, elecObjs: e.length,
       instances: e.reduce((a, o) => a + (o.isInstancedMesh ? (o.count || 0) : 0), 0),
-      oplogLen: window.Bonsai.oplog.length, cur: window.Bonsai.oplog.cursor, inserts, pix: s };
+      oplogLen: window.Bonsai.oplog.length, cur: window.Bonsai.oplog.cursor, inserts, pix: s, pixDW: sWith, pixNoDW: sWithout };
   });
   // W5 — verifyChain on the live kernel_ops db
   const chain = await pg.evaluate(async () => { try { const db = await window.Bonsai.oplog._ensureDb(); const v = await window.KernelOps.verifyChain(db); return !!v.ok; } catch (e) { return 'ERR:' + e.message; } });
@@ -111,7 +128,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   chk('W4 COMMITTED (op-log grew by n GEOM_INSERT)', after.oplogLen === before.oplogLen + after.n && after.inserts >= after.n, 'oplog ' + before.oplogLen + '→' + after.oplogLen + ' (+' + after.n + ') inserts=' + after.inserts);
   chk('W5 CHAIN-OK (verifyChain after batch)', chain === true, 'verifyChain=' + chain);
   chk('W6 REVERSIBLE (undo clears ELEC, cursor back)', undo.elecInstances === 0 && undo.cur === before.cur, 'elecInstances=' + undo.elecInstances + ' cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ')');
-  chk('W7 VISIBLE (framebuffer changed)', before.pix !== after.pix, 'pix ' + before.pix + '→' + after.pix);
+  chk('W7 VISIBLE (walked layer paints pixels, occlusion-free)', after.pixDW !== after.pixNoDW, 'pixDW ' + after.pixDW + ' vs noDW ' + after.pixNoDW + ' (whole-frame ' + before.pix + '→' + after.pix + ' — interior fixtures are legitimately occluded from outside)');
   chk('W8 NO-ERROR', errs.length === 0, errs.slice(0, 2).join(' | '));
 
   console.log('W-E2E-WALK: ' + pass + ' PASS / ' + fail + ' FAIL');
