@@ -288,6 +288,10 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
+<!-- Building Parts Outliner category (Stairway/Lift Shaft/Plant Room) — Modeller-side port of the
+     Viewer's Parts axis (viewer/navigate_find.js @ d04ddd5). Reads window.__dwBuf (the open building's
+     substrate), same accessor disc_walker.js/modeller.html already use. hideWhenEmpty. -->
+<script src="building_parts_outliner.js?v=1" onerror="console.warn('§BUILDING-PARTS-OUTLINER LOAD_FAIL building_parts_outliner.js')"></script>
 <script src="seed_trunk.js?v=1" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
 <!-- §TEAMS-EMBED — GATED Teams overlay over the live scene (teams/ROADMAP.md §S11). ONE inert guarded script:
      OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
@@ -3385,6 +3389,7 @@ if (!window.SQL && window.initSqlJs) {
 if (window.BOMTreeOutliner) window.BOMTreeOutliner.register();   // ARC = the lead containment tree
 if (window.STRWalkerOutliner) window.STRWalkerOutliner.register();   // STR Walker result tab + grid-drag re-walk
 if (window.DWInstancesOutliner) window.DWInstancesOutliner.register();   // §I5 Walked Fixtures — per-instance rows/eyes
+if (window.BuildingPartsOutliner) window.BuildingPartsOutliner.register();   // Building Parts — Stairway/Lift Shaft/Plant Room (viewer d04ddd5 parity)
 console.log('§MODELLER outliner ready — ARC (bom-graph) leads + STR Walker tab (Open via the pill rail)');
 
 // ── DISC = WALKER (W-UX-4): a discipline node in the bom-graph is a WALKER entry point. Clicking it dispatches
