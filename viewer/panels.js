@@ -16,7 +16,10 @@ var ICONS = {
   moreVert:  { svg: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>', trl: null, key: '.', desc: 'More' },
   moreHoriz: { svg: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>', trl: null, key: '.', desc: 'More' },  // FLAT kebab — mobile ⋯ trigger (differs from Android's vertical ⋮); parity with erp/icons.js
   scissors:  { svg: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', trl: 'ui_tt_section', key: null, desc: 'Section Cut' },
-  eye:       { svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', trl: 'ui_tt_xray', key: 'X', desc: 'X-Ray' },
+  // §OUTLINER_TAXONOMY_REDESIGN.md §6b: X-Ray moved to `bone` (below) — Eye freed, repurposed as
+  // the Role/Profession view-filter toggle (id:'roleFilter' in _actions). trl/desc updated so a
+  // stale X-Ray tooltip can't leak if A.icon('eye',...) is ever called directly.
+  eye:       { svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', trl: null, key: 'r', desc: 'Role View' },
   clipboard: { svg: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>', trl: 'ui_tt_issues', key: 'I', desc: 'Issues' },
   triangle:  { svg: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', trl: 'ui_tt_clash', key: null, desc: 'Clash Matrix' },
   plane:     { svg: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', trl: 'ui_tt_fly', key: 'L', desc: 'Fly Tour' },
@@ -691,6 +694,40 @@ function setupPanels(A) {
     console.log('[S200] §DISC_FILTER ' + (list && list.length ? '[' + list.join(',') + ']' : 'ALL'));
   };
 
+  // §OUTLINER_TAXONOMY_REDESIGN.md §3/§6b — Role/profession VIEW FILTER. Convenience only, NOT
+  // access control: no auth, no gating, anyone can cycle it, same as any other view toggle (xray,
+  // section, night...). Reuses A.filterDiscs (§NAV_FIND_002) exclusively — the ONLY filtering
+  // mechanism in this app; no new filter engine built here. Discipline codes limited to what was
+  // actually confirmed present in elements_meta.discipline this session (ACMV/ELEC/PLB/FP/MEP/
+  // STR/ARC) — no invented trade categories.
+  // Cleaner: no discipline code represents "cleaning" — it's not an equipment trade, it's
+  // whole-building access. Tagging a cleaner to one system code would misrepresent their scope,
+  // so the honest preset is discs:[] (no filter — sees everything), distinguished from the plain
+  // "All" state only by its label/console role key, not by different scene visibility.
+  var ROLE_PRESETS = [
+    { key: 'plumber',     label: 'Plumber',     discs: ['PLB', 'FP'] },
+    { key: 'electrician', label: 'Electrician', discs: ['ELEC'] },
+    { key: 'acmv',        label: 'ACMV Tech',   discs: ['ACMV'] },
+    { key: 'structural',  label: 'Structural',  discs: ['STR'] },
+    { key: 'cleaner',     label: 'Cleaner',     discs: [] }
+  ];
+  A._roleFilterIdx = -1;  // -1 = All (no role active)
+
+  // Cycle: All -> Plumber -> Electrician -> ACMV Tech -> Structural -> Cleaner -> All ...
+  A.cycleRoleFilter = function() {
+    A._roleFilterIdx += 1;
+    if (A._roleFilterIdx >= ROLE_PRESETS.length) A._roleFilterIdx = -1;
+    var preset = A._roleFilterIdx === -1 ? null : ROLE_PRESETS[A._roleFilterIdx];
+    var discs = preset ? preset.discs : [];
+    A.filterDiscs(discs);
+    console.log('[S200] §ROLE_FILTER role=' + (preset ? preset.key : 'all') + ' discs=[' + discs.join(',') + ']');
+    return preset;
+  };
+
+  A._roleFilterLabel = function() {
+    return A._roleFilterIdx === -1 ? 'All' : ROLE_PRESETS[A._roleFilterIdx].label;
+  };
+
   // §S280d: shared traversal for disc + storey combined visibility
   A._applyDiscVisibility = function() {
     A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
@@ -1186,6 +1223,15 @@ function setupPanels(A) {
       // source of truth — the Navigate drawer rows call these SAME entries by id).
       { id: 'find',       name: 'Find / Navigate', key: 'f', pill: false, icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
+      // §OUTLINER_TAXONOMY_REDESIGN.md §3/§6b: Eye icon freed by the bone/X-Ray swap, repurposed
+      // as the Role/Profession view filter — cycles All -> Plumber -> Electrician -> ACMV Tech ->
+      // Structural -> Cleaner -> All, each tap calling A.filterDiscs (§NAV_FIND_002), the ONLY
+      // filtering mechanism reused here. Convenience view toggle, NOT access control (no auth).
+      { id: 'roleFilter', name: 'Role View',       key: 'r', pill: false, icon: I.eye.svg,
+        fn: function() { if (typeof A.cycleRoleFilter === 'function') A.cycleRoleFilter(); },
+        isActive: function() { return typeof A._roleFilterIdx === 'number' && A._roleFilterIdx !== -1; },
+        stateLabel: function() { return typeof A._roleFilterLabel === 'function' ? A._roleFilterLabel() : 'All'; },
+        children: [ { name: 'Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)' }, { name: 'Filters the 3D scene + Outliner to that role\'s disciplines' }, { name: 'Convenience filter only — not access control' } ] },
       { id: 'help',       name: 'Help',            key: 'F1', icon: I.circleHelp.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
       // HISTORY_KNOB_DIAL.md rework: ONE "W" World-history pill replaces the old History pill.
       //   TAP        = open the cross-page overlay (which building/doc/page).
@@ -1535,7 +1581,7 @@ function setupPanels(A) {
       };
     }
 
-    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'worldhist', 'docHist', 'home', 'walk']);
+    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk']);
     var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report', 'fly']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
 
@@ -2096,7 +2142,7 @@ function setupPanels(A) {
     // absorbed into a drawer or Help/Settings-only — still present here so Settings' pill editor
     // and any localStorage-order migration have a stable position for them).
     var _defaultOrder = ['save','open','navigate','inspect','palette','camview','share','settings','help',
-      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk'];
+      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','roleFilter','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({
