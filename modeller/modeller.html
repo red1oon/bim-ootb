@@ -84,11 +84,15 @@
   #m-help-panel .hp-ic svg { width: 16px; height: 16px; }
   #m-help-panel .hp-name { color: #c7cdd8; }
 
-  /* ── Collapsible Outliner (Bonsai-style left panel): chevron collapses it, a tab reopens. Persisted. ── */
-  #bonsai-outliner { transition: transform .18s ease; }
-  #ol-collapse { background: transparent; border: 0; color: #6b7488; cursor: pointer;
-    display: inline-flex; align-items: center; padding: 2px; border-radius: 5px; }
-  #ol-collapse:hover { color: #cdd6e4; background: #23262e; }
+  /* ── Collapsible Outliner (Bonsai-style left panel): chevron collapses it, a tab reopens. Persisted. ──
+     §MAT-PARITY Task 2 (MODELLER_RENDER_MATERIAL_PARITY.md): the toggle WORKED (verified — clicking it always
+     set body.ol-collapsed correctly), the bug was pure discoverability — background:transparent;border:0 gave
+     it ZERO visual weight at rest, so it read as decoration fused into the equally-muted "OUTLINER" label next
+     to it, not as a button, unlike every OTHER icon control in this app (#bar button, #ol-show below) which all
+     carry a visible chip (background+border) at rest, not just on hover. Matches that established convention. */
+  #ol-collapse { background: #232733; border: 1px solid #39404f; color: #9aa4b8; cursor: pointer;
+    display: inline-flex; align-items: center; padding: 3px; border-radius: 6px; }
+  #ol-collapse:hover { color: #cdd6e4; background: #2c3140; }
   #ol-show { position: fixed; top: 10px; left: 10px; z-index: 21; width: 40px; height: 40px; display: none;
     align-items: center; justify-content: center; background: #232733; color: #cdd6e4;
     border: 1px solid #39404f; border-radius: 10px; cursor: pointer; }
