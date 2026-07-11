@@ -113,6 +113,9 @@
         '<div style="padding:7px 9px;border-bottom:1px solid #2c303a;display:flex;gap:6px;align-items:center">' +
         '<input id="bo-find" placeholder="🔍 find…" style="flex:1;min-width:0;box-sizing:border-box;background:#13151a;' +
         'border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 8px;font-size:12px;outline:none">' +
+        '<button id="bo-collapseall" title="Collapse all — fold the tree to its top-level trunk" ' +
+        'style="flex:0 0 auto;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#7f8aa0;' +
+        'padding:4px 8px;font-size:13px;cursor:pointer;line-height:1">⤒</button>' +
         '<button id="bo-adj" title="Adjacency lens — highlight a selected element’s abutting neighbours" ' +
         'style="flex:0 0 auto;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#7f8aa0;' +
         'padding:4px 8px;font-size:13px;cursor:pointer;line-height:1">⇄</button></div>' +
@@ -121,6 +124,11 @@
       host.appendChild(el);
       this._el = el;
       el.querySelector('#bo-find').addEventListener('input', e => { this._find = e.target.value.toLowerCase(); this._paint(); });
+      // §MAT-PARITY follow-up (MODELLER_RENDER_MATERIAL_PARITY.md, user 2026-07-11: "still cannot find
+      // button to collapse all"): collapseAll() itself already existed and worked (dbl-click #bo-root,
+      // §OLCOLLAPSEALL) — the gap was discoverability, same class of bug as the panel chevron above. A
+      // REAL button, not a hidden gesture. #bo-root's dblclick stays wired too (harmless alias, never removed).
+      el.querySelector('#bo-collapseall').addEventListener('click', () => this.collapseAll());
       el.querySelector('#bo-adj').addEventListener('click', () => {
         this._adjLens = !this._adjLens;
         const b = this._el.querySelector('#bo-adj');
@@ -315,9 +323,12 @@
       console.log(TAG + ' §OLCOLLAPSEALL newlyCollapsed=' + added + ' totalKeys=' + Object.keys(this._collapsed).length);
       this._paint();
     },
-    // §OLGROUPSELECT (prompts/OUTLINER_GROUP_SELECT.md — Witness: W-E2E-OL-GROUPSELECT): dbl-click a
+    // §OLGROUPSELECT (prompts/OUTLINER_GROUP_SELECT.md — Witness: W-E2E-OL-GROUPSELECT): a click on a
     // category/group header selects EVERY leaf element under it in one action (the Viewer Find panel's
-    // "a GROUP result selects the whole set", Outliner-side). Leaf enumeration MIRRORS collapseAll() above:
+    // "a GROUP result selects the whole set", Outliner-side). Originally dblclick-only; promoted to
+    // single-click by §OLSUBTREE-SELECT option 1 (MODELLER_RENDER_MATERIAL_PARITY.md follow-up,
+    // 2026-07-11) — the dblclick wiring was removed as redundant, not left as a no-op alias. Leaf
+    // enumeration MIRRORS collapseAll() above:
     // tree category → walk this._lastRoots[cat.key] (the fold the last _paint captured, §POLISH3 — never a
     // fresh re-fold), a LEAF is n.kind==='element' (_renderNodes' own isLeaf test); flat category → the same
     // ops.filter(cat.match).map(cat.node) rows _paint renders. Ids resolve to NUMERIC featureIds exactly the
@@ -346,6 +357,40 @@
       if (!ids.length) { console.log(TAG + ' §OLGROUPSELECT cat=' + catKey + ' n=0 (no selectable leaves — no-op)'); return; }
       window.Bonsai.selectMany(ids);
       console.log(TAG + ' §OLGROUPSELECT cat=' + catKey + ' n=' + ids.length);
+    },
+
+    // §OLSUBTREE-SELECT (MODELLER_RENDER_MATERIAL_PARITY.md follow-up, option 1 — user 2026-07-11: single-
+    // click a higher-level Outliner row should "highlight that whole section", citing the Viewer Find
+    // panel's _phaseSelect/_drillSelect). selectGroup() above already does this but only for a TOP-LEVEL
+    // category header, sweeping its ENTIRE forest; this finds one specific branch node (any depth) within
+    // a category's forest and selects only ITS subtree — narrower, for clicks on e.g. "Level 1" or
+    // "IfcWindow (24)", not the whole "BOM Tree (218)". Depth-first search over this._lastRoots (the same
+    // fold selectGroup/collapseAll already reuse, never a fresh re-fold).
+    _findNode(catKey, nodeId) {
+      const search = list => {
+        for (const n of list) {
+          if (String(n.id) === String(nodeId)) return n;
+          if (n.children && n.children.length) { const found = search(n.children); if (found) return found; }
+        }
+        return null;
+      };
+      return search(this._lastRoots[catKey] || []);
+    },
+    selectSubtree(catKey, nodeId) {
+      const node = this._findNode(catKey, nodeId);
+      if (!node || !(window.Bonsai && window.Bonsai.selectMany)) return;
+      const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
+      const ids = [], seen = new Set();
+      const push = id => {
+        let num = +id;
+        if (isNaN(num) && fidByGuid[id] != null) num = +fidByGuid[id];
+        if (!isNaN(num) && !seen.has(num)) { seen.add(num); ids.push(num); }
+      };
+      const walk = n => { if (n.kind === 'element') push(n.id); (n.children || []).forEach(walk); };
+      walk(node);
+      if (!ids.length) { console.log(TAG + ' §OLSUBTREE-SELECT node=' + nodeId + ' n=0 (no selectable leaves — no-op)'); return; }
+      window.Bonsai.selectMany(ids);
+      console.log(TAG + ' §OLSUBTREE-SELECT node=' + nodeId + ' n=' + ids.length);
     },
 
     // M8 INCREMENTAL (RESUME_MODELLER_POLISH.md #7): the Outliner has TWO sections — the seeded BOM-tree
@@ -496,12 +541,17 @@
     },
     _wireFlat(root) {
       this._wireMore(root);
-      root.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => { const k = d.getAttribute('data-grp'); this._collapsed[k] = !this._collapsed[k]; this._saveCollapsed(); this._paint(); });
-      // §OLGROUPSELECT (prompts/OUTLINER_GROUP_SELECT.md — Witness: W-E2E-OL-GROUPSELECT): dbl-click a flat
-      // group header selects every row under it — ADDITIVE alongside the single-click collapse toggle above
-      // (the same added-alongside pattern as #bo-root's dblclick, never replacing the onclick). The dblclick's
-      // own two click events toggle collapse twice = net collapse state unchanged.
-      root.querySelectorAll('[data-grp]').forEach(d => d.ondblclick = () => this.selectGroup(d.getAttribute('data-grp')));
+      root.querySelectorAll('[data-grp]').forEach(d => d.onclick = () => {
+        // §OLSUBTREE-SELECT option 1 (MODELLER_RENDER_MATERIAL_PARITY.md follow-up): a flat group header's
+        // single click is now select+zoom ONLY, Find-panel style — was dblclick-only before (§OLGROUPSELECT),
+        // promoted to single-click. Deliberately NOT combined with a manual collapse-toggle: setActive()'s
+        // own auto-expand-on-pick (§V3) unconditionally re-reveals any row containing the just-selected
+        // content — a toggle-to-collapsed here gets silently undone by the VERY SAME _paint() needed to
+        // render it (repaint re-applies setActive → finds the row it just hid → auto-expands it back), no
+        // ordering trick avoids this (confirmed empirically). The Viewer's own Find panel doesn't combine
+        // them either (separate label-tap/arrow-tap zones) — matching that split, not fighting the redraw.
+        this.selectGroup(d.getAttribute('data-grp'));
+      });
       root.querySelectorAll('[data-fid]').forEach(d => d.onclick = (e) => {
         const fid = +d.getAttribute('data-fid');
         if (this._ctrlToggle(e, fid)) return;                // §P4 multi-toggle wins over replace-select
@@ -639,12 +689,21 @@
       this._wireMore(root);
       const byKey = {}; treeCats.forEach(c => byKey[c.key] = c);
       root.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.onclick = () => {
-        const k = 'tcat|' + d.getAttribute('data-tcat'); this._collapsed[k] = !this._collapsed[k]; this._saveCollapsed(); this._paint();
+        // §OLSUBTREE-SELECT option 1 (MODELLER_RENDER_MATERIAL_PARITY.md follow-up): a category header's
+        // single click is now select+zoom ONLY, Find-panel style. Deliberately NOT combined with a manual
+        // collapse-toggle: setActive()'s own auto-expand-on-pick (§V3) unconditionally re-reveals any row
+        // containing the just-selected content — a toggle-to-collapsed here gets silently undone by the
+        // VERY SAME _paint() needed to render it (repaint re-applies setActive → finds the row it just hid
+        // → auto-expands it back), no ordering trick avoids this (confirmed empirically). The Viewer's own
+        // Find panel doesn't combine them either (separate label-tap/arrow-tap zones) — matching that
+        // split, not fighting the redraw. A top-level category header never carries a `disc` walk dispatch
+        // (only nested bnode rows do), so no collision to guard against here either.
+        this.selectGroup(d.getAttribute('data-tcat'));
       });
-      // §OLGROUPSELECT (prompts/OUTLINER_GROUP_SELECT.md — Witness: W-E2E-OL-GROUPSELECT): dbl-click a
-      // tree-category header selects every leaf element under it — additive alongside the single-click
-      // collapse toggle above (never replaces it). #bo-root's dblclick (collapseAll) is a DIFFERENT target.
-      root.querySelectorAll('[data-tcat]:not([data-bnode])').forEach(d => d.ondblclick = () => this.selectGroup(d.getAttribute('data-tcat')));
+      // §OLGROUPSELECT's old dblclick-selects-a-tree-category wiring lived here — REMOVED (not just left as
+      // an alias): single-click above now does the identical selectGroup() call, so the dblclick would only
+      // double/triple-fire the same selection + a redundant §ZOOM-SEL, not add a distinct affordance.
+      // #bo-root's dblclick (collapseAll, a genuinely DIFFERENT bulk action) is untouched by this.
       root.querySelectorAll('[data-bnode]').forEach(d => {
         const id = d.getAttribute('data-bnode'), isLeaf = d.getAttribute('data-leaf') === '1';
         const disc = d.getAttribute('data-disc');
@@ -685,11 +744,20 @@
             // setActive only restyles flat data-fid rows; the bom-graph bnode highlights are computed in _paint).
             if (this._adjLens) { const deg = (this._adjMap && this._adjMap[id]) ? this._adjMap[id].size : 0; console.log(TAG + ' §XEDGE-LENS select=' + String(id).slice(0, 10) + ' neighbours=' + deg); this._paint(); }
           }
-          else {
+          else if (disc) {
             // W-UX-4: a discipline node WALKS on click (and still toggles its subtree). The walker dispatch
             // (STR walk / RouteWalker / honest refusal) is the category's onWalk; pure pointer, no geometry.
-            if (disc) { const cat = byKey[d.getAttribute('data-tcat')]; if (cat && cat.onWalk) cat.onWalk(disc); }
+            // No selection happens on this branch, so no auto-expand-on-pick — the manual toggle is safe here.
+            const cat = byKey[d.getAttribute('data-tcat')]; if (cat && cat.onWalk) cat.onWalk(disc);
             this._collapsed['bn|' + id] = !this._collapsed['bn|' + id]; this._saveCollapsed(); this._paint();
+          } else {
+            // §OLSUBTREE-SELECT option 1 (MODELLER_RENDER_MATERIAL_PARITY.md follow-up): every OTHER non-
+            // leaf row (Level 1, ARC, IfcWindow(24), …) selects+zooms its own subtree, Find-panel style —
+            // select ONLY, no manual collapse-toggle: setActive()'s own auto-expand-on-pick (§V3)
+            // unconditionally re-reveals a row containing the just-selected content, so a toggle-to-
+            // collapsed here would get silently undone by the very _paint() needed to render it (confirmed
+            // empirically — matches the tcat/flat-group handlers above, same reasoning).
+            this.selectSubtree(d.getAttribute('data-tcat'), id);
           }
         };
         d.ondragstart = e => { e.dataTransfer.setData('text/bnode', id); this._dragSrc = id; };
