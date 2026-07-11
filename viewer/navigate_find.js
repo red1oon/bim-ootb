@@ -1604,19 +1604,19 @@
       A.scene.add(mesh);
       return mesh;
     }
-    // §ROOM-CUBOID: the SELECTED room as a crisp yellow box — faint translucent fill + a bright
+    // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
     // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
     // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
     function _drawRoomCuboid(center, size) {
       if (!A.scene || typeof THREE === 'undefined') return;
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
-      var fillMat = new THREE.MeshBasicMaterial({ color: 0xffd400, transparent: true, opacity: 0.10,
+      var fillMat = new THREE.MeshBasicMaterial({ color: 0x9c6ade, transparent: true, opacity: 0.10,
         depthWrite: false, side: THREE.DoubleSide });
       var fill = new THREE.Mesh(boxGeo, fillMat); fill.position.copy(center);
       fill.renderOrder = 998; fill.userData._roomShell = true;
       A.scene.add(fill); _roomBoxes.push({ guid: '_cuboidFill', mesh: fill });
       var edges = new THREE.EdgesGeometry(boxGeo);
-      var lineMat = new THREE.LineBasicMaterial({ color: 0xffe83a, transparent: true, opacity: 0.95, depthTest: false });
+      var lineMat = new THREE.LineBasicMaterial({ color: 0xc77dff, transparent: true, opacity: 0.95, depthTest: false });
       var wire = new THREE.LineSegments(edges, lineMat); wire.position.copy(center);
       wire.renderOrder = 1002; wire.userData._roomShell = true;
       A.scene.add(wire); _roomBoxes.push({ guid: '_cuboidWire', mesh: wire });
@@ -1907,21 +1907,26 @@
       _roomBoxes.forEach(function(rb) {
         if (rb.mesh && rb.mesh.material) { rb.mesh.material.opacity = 0.04; rb.mesh.material.needsUpdate = true; }
       });
-      // §ROOM-SHELL (user): highlight the room's REAL bounding surfaces (the walls/floor/ceiling most
-      // exposed to the cuboid) — the room shows as its actual shell in real materials + yellow
-      // silhouette, building ghosted to 0.2, zoom to the volume. This also validates the dims: a face
-      // with a wall = right edge. Falls back to the abstract cuboid only when no bounding mesh is found.
+      // §ROOM_HIGHLIGHT (2026-07-12, VIEWER_FIND_PANEL_ROOM_ACCURACY.md §8): the abstract single-box
+      // cuboid (_drawRoomCuboid — ONE mesh, no seams) is now the PRIMARY highlight whenever the room's
+      // volume (zoomBox) is known. The real-bounding-element lookup (_roomBoundingGuids) still runs and
+      // still drives the storey-dim/x-ray/zoom-to-fit side effects via _drillSelect — it's just no
+      // longer what LIGHTS UP: multiple adjacent real elements each getting their own yellow fill/
+      // silhouette read as fragmented "cut" seams where they meet. Real-element highlight only remains
+      // the default when no room volume is available to draw a cuboid from.
       var bound = _roomBoundingGuids(nm && nm.length ? nm[0] : null);
       if (bound.size && zoomBox) {
-        var _clip = _boxClipPlanes(zoomBox.center, zoomBox.size, 0.7);   // confine the shell to the cuboid (+0.7m)
-        console.log('[RP-TA] §ROOM_CLIP box=' + zoomBox.size.x.toFixed(1) + 'x' + zoomBox.size.y.toFixed(1) +
-          'x' + zoomBox.size.z.toFixed(1) + ' margin=0.7 planes=' + (_clip ? _clip.length : 0));
-        _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, clipPlanes: _clip, zoomMult: 1.8 });
+        _drawRoomCuboid(zoomBox.center, zoomBox.size);
+        var _clip = _boxClipPlanes(zoomBox.center, zoomBox.size, 0.7);   // confine the ancestor shell to the cuboid (+0.7m)
+        console.log('[RP-TA] §ROOM_HIGHLIGHT mode=cuboid guid=' + guid + ' bound=' + bound.size +
+          ' box=' + zoomBox.size.x.toFixed(1) + 'x' + zoomBox.size.y.toFixed(1) + 'x' + zoomBox.size.z.toFixed(1) + ' margin=0.7');
+        _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, clipPlanes: _clip, zoomMult: 1.8, suppressHighlight: true });
       } else if (bound.size) {
+        console.log('[RP-TA] §ROOM_HIGHLIGHT mode=bounding-elements guid=' + guid + ' (no zoomBox available)');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, zoomMult: 1.8 });
       } else {
         if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size);
-        console.log('[RP-TA] §ROOM_CUBOID_FALLBACK guid=' + guid + ' (no bounding mesh found)');
+        console.log('[RP-TA] §ROOM_HIGHLIGHT mode=' + (zoomBox ? 'cuboid' : 'cuboid-fallback') + ' guid=' + guid + ' (no bounding mesh found)');
         _drillSelect(storeySet || new Set([guid]), name, 'ROOM_SELECT', { isItem: false, zoomBox: zoomBox });
       }
     }
@@ -2529,7 +2534,12 @@
         var _clip = opts.clipPlanes || null;
         var solid = _buildShapeMeshes(focusSet, null, 1.0, null, _clip);          // focus solid, real material (clipped for rooms)
         var hl = 0;
-        if (isItem && _clip) {
+        // §ROOM_HIGHLIGHT: caller already drew its own primary highlight (the purple room cuboid) and
+        // only wants the ancestor-dim/zoom-to-fit side effects from this focusSet — skip the per-element
+        // yellow fill/silhouette entirely so it can't read as fragmented "cut" seams (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §8).
+        if (opts.suppressHighlight) {
+          // no-op: hl stays 0, real materials from `solid` above still render normally (undimmed, clipped to the room volume)
+        } else if (isItem && _clip) {
           // §ROOM-CLIP: room shell is confined to the cuboid via clip planes; OutlinePass can't clip,
           // so a clipped yellow fill over the real surfaces marks the room instead of the silhouette.
           hl = _buildShapeMeshes(focusSet, 0xffd400, null, 0.4, _clip);
