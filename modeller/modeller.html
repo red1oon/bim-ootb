@@ -2408,12 +2408,59 @@ function _gateRel() {
   (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) { relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; abuts.push({ a, b }); } });
   return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf, abuts: abuts };
 }
+// §OBB (Implementing CLASH_GATE_OBB_NARROWPHASE.md §2 — Witness: W-SDG-OBB): per-fid LOCAL half-extents +
+// rotation for SdgGate's SAT narrow phase, read from the LIVE op-log (the same undone=0 GEOM% rows
+// foldChainToScene folds — bonsai_oplog.js scrub convention), so gizmo GEOM_ROTATE/GEOM_SCALE stay honest.
+// Rules (mirrors bonsai_library.js foldInsert's own precedence/branches — the meshes the gate's AABBs measure):
+//   • local box: registered real mesh bbox (rg:hash) wins, else catalog bbox (P.hash), else P.bbox.
+//   • yaw path: r = [0,0,(placement.rot + net drot)°→rad]; §ARC-3AXIS path: r = [rotX, rotY, rotZRad] radians.
+//   • net GEOM_SCALE multiplies the LOCAL half-extents (fold scales local geometry, edge-anchored).
+//   • honest AABB fallback (fid OMITTED from the map): grid-stretched fids (world-axis stretch ≠ local-axis op)
+//     and 3-axis-tilted fids that were later gizmo-rotated (fold's drot path is yaw-only — don't guess).
+//   • unrotated+unscaled fids are omitted too (SdgGate treats absent entries as exact axis-aligned boxes).
+// Cached by op-log length — every commit invalidates naturally.
+function _gateObb() {
+  try {
+    const O = window.Bonsai && window.Bonsai.oplog; if (!(O && O.db)) return null;
+    const n = O.length;
+    if (window.__gateObbCache && window.__gateObbCache.n === n) return window.__gateObbCache.map;
+    const r = O.db.exec("SELECT id, op_type, parameters FROM kernel_ops WHERE undone=0 AND op_type LIKE 'GEOM%' ORDER BY id");
+    if (!r.length) return null;
+    const drot = {}, scl = {}, grid = {}, map = {};
+    const rows = r[0].values.map(v => ({ id: v[0], op_type: v[1], P: JSON.parse(v[2]) }));
+    rows.forEach(({ op_type, P }) => {
+      if (op_type === 'GEOM_ROTATE') drot[P.parent] = (drot[P.parent] || 0) + (P.drot || 0);
+      else if (op_type === 'GEOM_SCALE') { const s = scl[P.parent] || [1, 1, 1]; s[0] *= P.fx != null ? P.fx : 1; s[1] *= P.fy != null ? P.fy : 1; s[2] *= P.fz != null ? P.fz : 1; scl[P.parent] = s; }
+      else if (op_type === 'GEOM_GRID_MOVE') (P.commands || []).forEach(c => { if (c.featureId != null) grid[c.featureId] = 1; });
+    });
+    const Lib = window.Bonsai.library;
+    rows.forEach(({ id, op_type, P }) => {
+      if (op_type !== 'GEOM_INSERT' || grid[id]) return;
+      const real = P.realGeomHash && Lib && Lib._geom && Lib._geom['rg:' + P.realGeomHash];
+      const cat = !real && P.hash && Lib && Lib.get && Lib.get(P.hash);
+      const bb = real ? real.bbox : (cat ? cat.bbox : P.bbox);
+      const pl = P.placement;
+      if (!bb || !pl) return;
+      let rot;
+      if (pl.rotX || pl.rotY) { if (drot[id]) return; rot = [pl.rotX || 0, pl.rotY || 0, pl.rotZRad || 0]; }
+      else rot = [0, 0, ((pl.rot || 0) + (drot[id] || 0)) * Math.PI / 180];
+      const s = scl[id] || [1, 1, 1];
+      if (!rot[0] && !rot[1] && !rot[2] && s[0] === 1 && s[1] === 1 && s[2] === 1) return;   // exact via AABB already
+      map[id] = { h: [s[0] * (bb[1] - bb[0]) / 2, s[1] * (bb[3] - bb[2]) / 2, s[2] * (bb[5] - bb[4]) / 2], r: rot };
+    });
+    const cnt = Object.keys(map).length;
+    window.__gateObbCache = { n, map: cnt ? map : null };
+    console.log('§GATE-OBB entries=' + cnt + ' (rotated/scaled shape data for the SAT narrow phase) builtAtOps=' + n);
+    return window.__gateObbCache.map;
+  } catch (e) { console.warn('§GATE-OBB build failed — AABB-only fallback', e && e.message); return null; }
+}
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
 window.__gateBoxes = _gateBoxes;   // test hook (mirrors window.__commitMove) — read live world AABBs, W-SAVE-COMPLETEIT E2E fixture engineering
 window.__gateRel = _gateRel;       // test hook — read the live abuts/hostOf relation (same)
+window.__gateObb = _gateObb;       // test hook — read the live OBB narrow-phase map (W-SDG-OBB browser smoke)
 function _runGate(before, moved) {
   if (!(window.SdgGate && window.__arcFidByGuid)) return '';
-  const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), {});
+  const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), { obb: _gateObb() });   // §OBB narrow phase (W-SDG-OBB)
   if (!res.red.length && !res.orange.length) return '';
   console.log('§GATE red=' + res.red.length + ' orange=' + res.orange.length + ' ' + JSON.stringify(res.red.slice(0, 3)) + ' ' + JSON.stringify(res.orange.slice(0, 3)));
   const hot = new Set(); res.red.forEach(r => { hot.add(r.a); hot.add(r.b); }); res.orange.forEach(o => { hot.add(o.a); hot.add(o.b); });
@@ -2503,7 +2550,7 @@ async function runSave() {
   const rel = _gateRel();
   const before = window.__saveGateBaseline || _gateBoxes();     // conservative fallback — see §SAVE-BASELINE above
   let after = _gateBoxes();
-  let res = window.SdgGate.evaluate(before, after, _diffMoved(before, after), rel, {});
+  let res = window.SdgGate.evaluate(before, after, _diffMoved(before, after), rel, { obb: _gateObb() });   // §OBB narrow phase (W-SDG-OBB)
   const origOrange = res.orange;
   console.log('§SAVE_GATE red=' + res.red.length + ' orange=' + res.orange.length +
     (res.red.length ? ' redKinds=' + res.red.map(r => r.kind).join(',') : '') +
@@ -2554,7 +2601,7 @@ async function runSave() {
     });
     // FULL RE-EVALUATE — re-run the whole-scene check against the SAME before-baseline, over the post-heal
     // state, to decide block/clean AND to catch any one-hop cascade issue a heal opened at a neighbour.
-    res = window.SdgGate.evaluate(before, after, _diffMoved(before, after), rel, {});
+    res = window.SdgGate.evaluate(before, after, _diffMoved(before, after), rel, { obb: _gateObb() });   // §OBB narrow phase (W-SDG-OBB) — heal commits bumped the op-log, cache rebuilds itself
     console.log('§SAVE_REVERIFY red=' + res.red.length + ' orange=' + res.orange.length + ' result=' + (res.red.length ? 'still-RED' : 'Clean'));
     // ONE-HOP PROOF: anything in the re-verified orange list that was NOT in the ORIGINAL orange list is a
     // genuinely NEW item this heal pass opened at a neighbour (or a pre-existing separate finding) — surfaced,

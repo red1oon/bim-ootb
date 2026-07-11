@@ -29,6 +29,80 @@
     return sep.length === 1 ? -ov[sep[0]] : null;
   }
   function centre(a) { return [(a[0] + a[1]) / 2, (a[2] + a[3]) / 2, (a[4] + a[5]) / 2]; }
+
+  // ── §OBB NARROW PHASE (Implementing CLASH_GATE_OBB_NARROWPHASE.md §2 — Witness: W-SDG-OBB) ─────────────────
+  // Two-phase clash test: the AABB overlaps()/penetration() above stays the cheap broad phase (unchanged, byte-
+  // identical when no OBB data is supplied); for AABB-overlapping pairs where either side is genuinely ROTATED,
+  // an OBB-OBB Separating Axis Test refines the verdict — a rotated pair whose world AABBs overlap but whose
+  // real oriented boxes are disjoint is CLEARED (the classic AABB false positive), and a genuinely penetrating
+  // rotated pair gets its true minimum-translation depth instead of the AABB's inflated one.
+  //
+  // DATA CONVENTIONS (verified against real SampleHouse_extracted.db, 2026-07-11 — do not "fix" without re-measuring):
+  //   • element_transforms.bbox_x/y/z is the WORLD-AABB FULL extent (maxK−minK), NOT the local box: a −90° wall
+  //     stores (0.29, 5.8) world vs (5.8, 0.29) local mesh; the 37° furniture stores exactly |L·cosθ|+|W·sinθ|.
+  //     So obb.h must be LOCAL half-extents (from the element's own local mesh/base bbox) — never bbox_x/y/z/2
+  //     for a rotated element.
+  //   • rotation_x/y/z are RADIANS. obbAxes() mirrors bonsai_library.js place()'s TWO branches exactly (the
+  //     production fold math the gate's AABBs come from): yaw-only ⇒ R = Rz(rz); rotX/rotY present ⇒
+  //     R = Rx(rx)·Ry(rz)·Rz(−ry) (THREE Euler(rotX, rotZRad, −rotY), order 'XYZ' — viewer/streaming.js parity).
+  //   • The OBB CENTRE is derived from the pair's own passed AABB (a box's world AABB is always centred on the
+  //     box centre), so translation moves need no obb update — h/axes are per-element STATIC shape data.
+  var OBB_EPS = 1e-6;   // cross-product axis |A_i×B_j| = sin(angle between edges); below 1e-6 (~6e-5°) the axis
+  // direction is numerical noise — SKIP it (Ericson, Real-Time Collision Detection §4.4.1's near-parallel-edge
+  // robustness pitfall). Skipping is CONSERVATIVE: it can only miss a separation (keeping the AABB-era flag),
+  // never fabricate one — and when edges are truly parallel the face axes already prove any separation.
+  function _rx(t) { var c = Math.cos(t), s = Math.sin(t); return [[1, 0, 0], [0, c, -s], [0, s, c]]; }
+  function _ry(t) { var c = Math.cos(t), s = Math.sin(t); return [[c, 0, s], [0, 1, 0], [-s, 0, c]]; }
+  function _rz(t) { var c = Math.cos(t), s = Math.sin(t); return [[c, -s, 0], [s, c, 0], [0, 0, 1]]; }
+  function _mm(A, B) {
+    var C = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) C[i][j] = A[i][0] * B[0][j] + A[i][1] * B[1][j] + A[i][2] * B[2][j];
+    return C;
+  }
+  // obbAxes([rx,ry,rz] radians — the element_transforms convention) → the box's 3 local axes in world (unit,
+  // columns of R). Branch selection mirrors place() EXACTLY, including its 3-axis Euler mapping seam.
+  function obbAxes(r) {
+    var rx = r[0] || 0, ry = r[1] || 0, rz = r[2] || 0;
+    var R = (rx || ry) ? _mm(_mm(_rx(rx), _ry(rz)), _rz(-ry)) : _rz(rz);
+    return [[R[0][0], R[1][0], R[2][0]], [R[0][1], R[1][1], R[2][1]], [R[0][2], R[1][2], R[2][2]]];
+  }
+  function _prepObb(e) {   // {h:[hx,hy,hz] LOCAL half-extents (m), r:[rx,ry,rz] radians} → prepared OBB
+    var r = e.r || [0, 0, 0];
+    var rotated = Math.abs(r[0] || 0) > 1e-9 || Math.abs(r[1] || 0) > 1e-9 || Math.abs(r[2] || 0) > 1e-9;
+    return { h: e.h, axes: obbAxes(r), rotated: rotated };
+  }
+  function _axisObb(box) {   // identity OBB straight off an AABB (exact for any unrotated element)
+    return { h: [(box[1] - box[0]) / 2, (box[3] - box[2]) / 2, (box[5] - box[4]) / 2], axes: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], rotated: false };
+  }
+  // OBB-OBB SAT over the 15 candidate axes (3 of A, 3 of B, 9 edge-cross products). Returns 0 when a separating
+  // axis exists (disjoint — even if the AABBs overlap), else the minimum normalized overlap = the real
+  // penetration depth (m) along the minimum-translation axis. Centres come from the passed AABBs (see above).
+  function obbPenetration(a, oa, b, ob) {
+    var ca = centre(a), cb = centre(b);
+    var d = [cb[0] - ca[0], cb[1] - ca[1], cb[2] - ca[2]];
+    var A = oa.axes, B = ob.axes, ha = oa.h, hb = ob.h;
+    var best = Infinity;
+    function axisOk(L) {   // false ⇔ L separates the boxes
+      var n2 = L[0] * L[0] + L[1] * L[1] + L[2] * L[2];
+      if (n2 < OBB_EPS * OBB_EPS) return true;                 // degenerate cross (near-parallel edges) — skip
+      var ra = 0, rb = 0, k;
+      for (k = 0; k < 3; k++) ra += ha[k] * Math.abs(A[k][0] * L[0] + A[k][1] * L[1] + A[k][2] * L[2]);
+      for (k = 0; k < 3; k++) rb += hb[k] * Math.abs(B[k][0] * L[0] + B[k][1] * L[1] + B[k][2] * L[2]);
+      var dist = Math.abs(d[0] * L[0] + d[1] * L[1] + d[2] * L[2]);
+      var ov = (ra + rb - dist) / Math.sqrt(n2);               // normalize → metres (cross axes are non-unit)
+      if (ov < 0) return false;
+      if (ov < best) best = ov;
+      return true;
+    }
+    var i, j;
+    for (i = 0; i < 3; i++) if (!axisOk(A[i])) return 0;
+    for (i = 0; i < 3; i++) if (!axisOk(B[i])) return 0;
+    for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) {
+      var u = A[i], v = B[j];
+      if (!axisOk([u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]])) return 0;
+    }
+    return best;
+  }
   function withinXY(box, pt, tol) {       // is pt inside box's XY footprint (the wall opening sits in plan)
     tol = tol || 0;
     return pt[0] >= box[0] - tol && pt[0] <= box[1] + tol && pt[1] >= box[2] - tol && pt[1] <= box[3] + tol;
@@ -38,11 +112,34 @@
   //   before/after = {fid: aabb}      moved = [fid,…] (host + cascade riders)
   //   rel = { related(a,b)->bool  (hosted-by/abuts/anchored = EXPECTED contact, never a clash),
   //           hostOf: {fillingFid: hostFid}, abuts: [{a,b}] (real face-touch fid pairs) }
-  //   opts = {clashTol, clearance}
+  //   opts = {clashTol, clearance, obb}
+  //   opts.obb (OPTIONAL, §OBB above) = {fid: {h:[hx,hy,hz] LOCAL half-extents m, r:[rx,ry,rz] radians}} —
+  //   enables the SAT narrow phase on the clash test for pairs where either side is rotated. Absent (every
+  //   pre-existing caller) ⇒ behaviour byte-identical to the AABB-only gate. Only kind (1) clash consumes it:
+  //   faceGap/clearance, door-out, door-crush, abuts-realign stay AABB-based (CLASH_GATE_OBB_NARROWPHASE.md §4
+  //   non-goals — their surrounding logic is untouched; the clearance gap on a rotated pair therefore remains
+  //   the conservative AABB approximation, stated honestly rather than half-upgraded).
   function evaluate(before, after, moved, rel, opts) {
     opts = opts || {}; rel = rel || {};
     var clashTol = opts.clashTol != null ? opts.clashTol : CLASH_TOL;
     var clearance = opts.clearance != null ? opts.clearance : CLEARANCE;
+    var obbPrep = null;
+    if (opts.obb) {
+      obbPrep = {};
+      Object.keys(opts.obb).forEach(function (f) {
+        var e = opts.obb[f];
+        if (e && e.h && e.h.length === 3) obbPrep[f] = _prepObb(e);
+      });
+    }
+    // narrow-refined penetration: broad AABB first (cheap, common case unchanged); SAT only when the AABBs
+    // overlap AND either side is genuinely rotated (unrotated OBB ≡ AABB — skipping keeps them byte-identical).
+    function pen2(x, y, bx, by) {
+      var p = penetration(bx, by);
+      if (p <= 0 || !obbPrep) return p;
+      var ox = obbPrep[x], oy = obbPrep[y];
+      if (!(ox && ox.rotated) && !(oy && oy.rotated)) return p;
+      return obbPenetration(bx, ox || _axisObb(bx), by, oy || _axisObb(by));
+    }
     var related = rel.related || function () { return false; };
     var hostOf = rel.hostOf || {};
     var movedSet = {}; moved.forEach(function (m) { movedSet[m] = 1; });
@@ -57,8 +154,8 @@
         var key = Math.min(+m, +o) + '|' + Math.max(+m, +o);
         if (seen[key]) return; seen[key] = 1;
         if (related(+m, +o)) return;                          // expected contact (door-in-wall, abuts) → never a clash
-        var penA = penetration(after[m], after[o]);
-        var penB = (before[m] && before[o]) ? penetration(before[m], before[o]) : 0;
+        var penA = pen2(+m, +o, after[m], after[o]);          // §OBB: SAT-refined for rotated pairs (else = AABB)
+        var penB = (before[m] && before[o]) ? pen2(+m, +o, before[m], before[o]) : 0;
         if (penA > clashTol && penA > penB + clashTol) {       // NEW or WORSENED interpenetration
           red.push({ kind: 'clash', a: +m, b: +o, depth: +penA.toFixed(4) }); return;
         }
@@ -136,5 +233,7 @@
     return { red: red, orange: orange };
   }
 
-  return { evaluate: evaluate, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE };
+  return { evaluate: evaluate, penetration: penetration, faceGap: faceGap, overlaps: overlaps,
+    obbPenetration: obbPenetration, obbAxes: obbAxes, OBB_EPS: OBB_EPS,   // §OBB narrow phase (W-SDG-OBB)
+    CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE };
 });
