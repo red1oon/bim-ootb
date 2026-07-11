@@ -684,6 +684,41 @@ async function setupScene(A) {
     return buf;
   };
 
+  // §PATCH-SELFHEAL (Viewer side — ported from the Modeller's proven modeller/patches/ +
+  // str_walker_outliner.js _applyPendingPatch convention, same LFS-blocked-until-2026-08-01
+  // rationale: a shipped buildings/*.db can be stale relative to a small, real, already-witnessed
+  // SQL fix that never crossed the network as a binary commit — VIEWER_FIND_PANEL_ROOM_ACCURACY.md
+  // §2b, e.g. buildings/HHS_Office_Federated_extracted.db's spatial_structure). Convention:
+  // `buildings/patches/<dbFile>.sql` names its target by the db's own filename (last path segment
+  // of `url`), fetched from the SAME directory the db itself was fetched from (so it works whether
+  // A.DB_URL is a relative `buildings/X.db` or an absolute OCI/GH-Pages URL). Applied on EVERY
+  // load — cache-hit or fresh fetch — since a cached copy may itself predate the fix; the IDB cache
+  // always stores the RAW server bytes, only the buffer handed to SQL.Database is patched. Every
+  // patch script MUST be idempotent (DELETE-then-INSERT or INSERT OR IGNORE) so a repeat apply on
+  // an already-current db is a safe no-op. Best-effort: a missing patch (404, the common case) or
+  // any exec failure is swallowed and the ORIGINAL buffer returned untouched — never blocks an open.
+  A._applyPendingPatch = async function(buf, url) {
+    try {
+      var dir = url.slice(0, url.lastIndexOf('/') + 1);
+      var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var patchUrl = dir + 'patches/' + dbFile + '.sql';
+      var r = await fetch(patchUrl);
+      if (!r.ok) { console.log(`[S203] §PATCH_NONE ${dbFile} (${r.status})`); return buf; }
+      var sql = await r.text();
+      var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
+      if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
+      var pdb = new SQLFactory.Database(new Uint8Array(buf));
+      pdb.run(sql);
+      var out = pdb.export().buffer;
+      pdb.close();
+      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes) from ${patchUrl}`);
+      return out;
+    } catch (e) {
+      console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
+      return buf;
+    }
+  };
+
   // BLOB → Three.js BufferGeometry (optional precomputed normals BLOB)
   A.blobToGeometry = function(vBlob, fBlob, nBlob) {
     try {

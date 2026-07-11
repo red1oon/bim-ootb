@@ -1586,6 +1586,7 @@ function setupStreaming(A) {
       // ── Full download (single-DB path — use split_db.sh for large buildings) ──
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_fetching||'Fetching {url}...').replace('{url}',A.DB_URL);
       var dbBuf = await A.cachedFetch(A.DB_URL);
+      if (A._applyPendingPatch) dbBuf = await A._applyPendingPatch(dbBuf, A.DB_URL);
       A.db = new SQL.Database(new Uint8Array(dbBuf));
       console.log(`[S192] §DB_LOADED size=${(dbBuf.byteLength/1024/1024).toFixed(0)}MB`);
       // §S283: Remember last building URL for PWA resume

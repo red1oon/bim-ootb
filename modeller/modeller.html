@@ -4763,6 +4763,19 @@ window.__arcPixelProbe = function (isolateFids) {
 // The disc-walk markers are InstancedMeshes in _dwRoot (no op-log featureId), so __arcPixelProbe's fid-isolation
 // can't reach them — here we hide the _dwRoot children (optionally one disc) and diff the frame. Same anti-collusion
 // A/B method: pixels that CHANGE when the MEP layer is hidden ARE the MEP's own rasterized footprint over the ARC.
+// §8E-3 fix (RESUME_GRAPH_MODELLER_INTEGRATION.md §8E-3): the disc-filtered isolation only matched
+// userData.dwDisc (fixture-box InstancedMeshes from _renderDiscWalk) — the ROUTED NETWORK's own tubes
+// (_renderDiscChains, userData.dwChain) were silently EXCLUDED from both the hide-set and the mesh/inFrustum
+// census, so calling __dwPixelProbe('PLB') on a walked+routed disc under-counted: the tubes stayed visible in
+// BOTH the A and B frames (never hidden) and so contributed ZERO to the A/B diff — a routed network could paint
+// real pixels and this probe would still report dwPainted from fixtures only, missing the tube footprint
+// entirely. Fixed by matching EITHER tag (dwDisc OR dwChain) — same anti-collusion method, now covers both the
+// GENERATED fixture layer and the LANDED routed-network layer for a given discipline.
+function _dwProbeMatch(m, disc) {
+  if (!disc) return true;
+  var d = m.userData || {};
+  return d.dwDisc === disc || d.dwChain === disc;
+}
 window.__dwPixelProbe = function (disc) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { error: 'no-group' };
   const root = g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
@@ -4777,7 +4790,7 @@ window.__dwPixelProbe = function (disc) {
   const pxA = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pxA);
   const hidden = [];
   root.children.forEach(function (m) {
-    if (disc && !(m.userData && m.userData.dwDisc === disc)) return;
+    if (!_dwProbeMatch(m, disc)) return;
     if (m.visible) { hidden.push(m); m.visible = false; }
   });
   renderer.render(scene, camera);
@@ -4788,12 +4801,14 @@ window.__dwPixelProbe = function (disc) {
     if (Math.abs(pxA[i] - pxB[i]) > 8 || Math.abs(pxA[i + 1] - pxB[i + 1]) > 8 || Math.abs(pxA[i + 2] - pxB[i + 2]) > 8) dwPainted++;
   }
   const _v = new THREE.Vector3();
+  let boxes = 0, tubes = 0;
   root.children.forEach(function (m) {
-    if (!m.isMesh) return; if (disc && !(m.userData && m.userData.dwDisc === disc)) return;
-    meshes++; m.getWorldPosition(_v); _v.project(camera);
+    if (!m.isMesh) return; if (!_dwProbeMatch(m, disc)) return;
+    meshes++; if (m.userData.dwChain === disc) tubes++; else boxes++;
+    m.getWorldPosition(_v); _v.project(camera);
     if (_v.x >= -1 && _v.x <= 1 && _v.y >= -1 && _v.y <= 1 && _v.z >= -1 && _v.z <= 1) inFr++;
   });
-  return { w: w, h: h, dwPainted: dwPainted, dwPaintedFrac: dwPainted / (w * h), meshes: meshes, inFrustum: inFr };
+  return { w: w, h: h, dwPainted: dwPainted, dwPaintedFrac: dwPainted / (w * h), meshes: meshes, boxes: boxes, tubes: tubes, inFrustum: inFr };
 };
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;

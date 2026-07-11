@@ -19,8 +19,23 @@
     // ── S275: CSS — slim accordion layout ──
     var style = document.createElement('style');
     style.textContent = [
-      '#find-panel { top: 50%; right: 70px; transform: translateY(-50%);',
-      '  width: 280px; max-width: 35vw; padding: 0; max-height: 88vh; overflow: hidden; }',
+      // §FIND-PANEL-FIX (2026-07-11): self-contained position:fixed + display:none fallback.
+      // .bim-panel (viewer.html) already sets position:fixed but NOT display:none, and
+      // appendChild(panel) below runs before any toggle logic sets display — so the panel was
+      // a plain visible block the instant it hit the DOM (the untraced §FIND_VIS_TRACE
+      // "appears on its own at onset" bug, open since 2026-07-06). Every sibling panel avoids
+      // this: wizard.js self-declares position, panels.js A.createPanel() explicitly hides on
+      // creation. Do not drop this rule even if .bim-panel is later revisited.
+      // §FIND-PANEL-FIX part 2 — "above browser top border": this rule used to center via
+      // `top:50%; transform:translateY(-50%)`. panels.js §PANEL-AUTOPLACE fires on the panel's
+      // first style mutation (init-time, _makeDraggable's cursor write, inline display '' ≠
+      // 'none') and overwrites top to 54px inline — but never clears the CSS transform, so the
+      // panel rendered translateY(-50%) ABOVE top:54 (measured top=-101.5 at height 311 on a
+      // 1400×900 desktop — witness_find_panel_hidden_onload_2026-07-11.js). The centered look
+      // never survived autoplace anyway, so declare top:54 (autoplace's own default) with NO
+      // transform. The ≤600px media query below already sets its own top:60/transform:none.
+      '#find-panel { position: fixed; top: 54px; right: 70px;',
+      '  width: 280px; max-width: 35vw; padding: 0; max-height: 88vh; overflow: hidden; display: none; }',
       // Search bar
       '#find-panel .find-search-bar {',
       '  display: flex; align-items: center; gap: 4px; padding: 8px 10px 6px;',
@@ -569,6 +584,9 @@
       if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); }
       // §PHASE_LENS/§MAT_SELECT: leaving Phase/Material tears down element highlight.
       if (_treeMode === 'phase' || _treeMode === 'material') _highlightLensReset();
+      // Parts axis uses plain filterByGuids isolate (Room's FALLBACK contents-isolate path, not
+      // the box/highlight lens) — no overlay to tear down; the unconditional filterByGuids(null)
+      // a few lines below already resets it on every axis change.
       _treeMode = mode;
       // §NAV_FIND_002: axis change clears multi-select + restores full scene (unify engine)
       _selStoreys.clear(); _selDiscs.clear(); _anchor = null;
@@ -596,6 +614,7 @@
         else if (_treeMode === 'room') _buildRoomTree();
         else if (_treeMode === 'material') _buildMaterialTree();
         else if (_treeMode === 'phase') _buildPhaseTree();
+        else if (_treeMode === 'parts') _buildPartsTree();
       } catch(e) { console.warn('§FIND_TREE error', e); }
     }
 
@@ -605,9 +624,30 @@
     // §RP Task A: a room has VOLUME data when spatial_structure carries center_*/size_*
     // columns AND at least one IfcSpace row is populated. _roomHasVol is cached per-open.
     var _roomHasVol = false;
+    // §BUILDING-PARTS-TAXONOMY: STAIRWAY/LIFT_SHAFT/PLANT_ROOM keyword constants, ported verbatim
+    // from bim-compiler build/building_parts_taxonomy.js (which itself reuses build/room_walker.js's
+    // §STAIR-EXCLUDE / door-rescue constants — see prompts/BUILDING_PARTS_TAXONOMY.md in that repo,
+    // witnessed 13/13 PASS on real Duplex/SampleCastle/Terminal/Hospital/Clinic IFC data). Existence-
+    // only match against elements_meta.ifc_class / .element_name — no element_transforms JOIN
+    // required (§PARENT-NO-TRANSFORM there: an IfcStair assembly parent frequently carries no
+    // transform of its own, only its child IfcStairFlight does; an existence match is the correct
+    // "does this building have one" signal, same choice this axis needs).
+    var STAIR_LIKE = ["IfcStair%", "IfcRamp%"];
+    var LIFT_KEYWORDS = ["liftdeur", "lift", "elevator", "aufzug", "fahrstuhl", "hoist"];
+    var PLANT_KEYWORDS = ["vent", "duct", "fan", "ahu", "damper", "chiller", "condens", "fancoil", "pump"];
+    function _partsCond(part) {
+      if (part === 'STAIRWAY') return STAIR_LIKE.map(function(p) { return "ifc_class LIKE '" + p + "'"; }).join(' OR ');
+      var words = (part === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+      return words.map(function(w) { return "LOWER(element_name) LIKE '%" + w + "%'"; }).join(' OR ');
+    }
+    var _PARTS_GROUPS = [
+      { type: 'STAIRWAY', label: 'Stairway' },
+      { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
+      { type: 'PLANT_ROOM', label: 'Plant Room' }
+    ];
     function _probeLenses() {
       var bld = A.activeBuilding || '';
-      var room = false, material = false, phase = false;
+      var room = false, material = false, phase = false, parts = false;
       _roomHasVol = false;
       try {
         var hasSS = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'");
@@ -649,8 +689,14 @@
         } catch(e) { /* kernel_ops table may not exist yet */ }
         phase = hasElems && (genReady || opsExist);
       } catch(e) { /* phase stays false */ }
-      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase);
-      return { room: room, material: material, phase: phase };
+      try {
+        var partsCond = '(' + _partsCond('STAIRWAY') + ') OR (' + _partsCond('LIFT_SHAFT') + ') OR (' + _partsCond('PLANT_ROOM') + ')';
+        var pc = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE (" + partsCond + ")" +
+          (bld ? " AND building = ?" : ""), bld ? [bld] : []);
+        parts = !!(pc.length && pc[0].values[0][0] > 0);
+      } catch(e) { /* parts stays false */ }
+      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' parts=' + parts);
+      return { room: room, material: material, phase: phase, parts: parts };
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -665,6 +711,7 @@
       if (present.room) ax.push({ key: 'room', label: _t('ui_lens_room', 'Room') });
       if (present.material) ax.push({ key: 'material', label: _t('ui_lens_material', 'Material') });
       if (present.phase) ax.push({ key: 'phase', label: _t('ui_lens_phase', 'Phase') });
+      if (present.parts) ax.push({ key: 'parts', label: _t('ui_axis_parts', 'Parts') });
       return ax;
     }
 
@@ -1491,19 +1538,95 @@
       ];
     }
     // All IfcSpace volumes mapped to Three space (IFC size → Three: x→x, z→y, y→z — bbox parity).
+    // §ROOM-HAB (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 1): filters out non-habitable spaces
+    // (Roof/Shaft/Void/Plant/... voids, real OR synthetic) via the shared window.RoomHabitability
+    // classifier (common/room_habitability.js, ported from disc_walker.js's spaceHabitable()) —
+    // this is a DISPLAY filter only, distinct from the Modeller's stricter real-vs-synthetic
+    // (RM_/≈ prefix) exclusion; the Room Lens intentionally still shows synthetic compile_rooms.py
+    // rooms, it just must not show one labelled Roof/Shaft/etc as if it were a normal room.
+    // §MULTI-RECT (ROOM_INJECTION_HYBRID.md §8/§9): a compiled room may be N spatial_structure rows
+    // (one per sub-rectangle) sharing `room_guid` — the LOGICAL room key. Group by it (falling back
+    // to `guid` for real IfcSpace / pre-§8 data with no room_guid column) so the Room Lens renders
+    // the UNION of a room's sub-rect boxes, not one undersized/border-hugging inscribed rectangle
+    // and not N disconnected boxes each masquerading as its own room. Ports the SAME guarded-query +
+    // grouping shape already proven by `viewer/hba_lens.js` `bindStoreysFromModel` (W-HBA-MULTIRECT
+    // 6/6) — that is the reference pattern for this fix, not re-derived from scratch. Returns a FLAT
+    // array (one entry per sub-rect box, `guid` = the LOGICAL room guid so callers can group/count
+    // by it) — habitability is evaluated ONCE per logical room (name/predefined_type/object_type are
+    // identical across a room's sub-rect set per §8's own design), never per sub-rect.
     function _allRoomVolumes() {
       var out = [];
       if (!A.ifc2three || typeof THREE === 'undefined') return out;
+      var RH = window.RoomHabitability;
+      var env = RH ? RH.envelopeFromTransforms(A.dbQuery) : null;
+      var excluded = 0;
       try {
-        A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z" +
-          " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL")
-          .forEach(function(r) {
-            var c = A.ifc2three(r[2], r[3], r[4]);
-            out.push({ guid: r[0], name: r[1],
+        var rows;
+        // §MULTI-RECT guard: A.dbQuery (viewer/helpers.js) never THROWS on a bad column reference —
+        // it catches internally and returns [] (logging §HELPERS_QUERY_ERR), unlike the try/catch
+        // double-query shape hba_lens.js uses in the Modeller context. Selecting a nonexistent
+        // `room_guid` column here would therefore silently return ZERO rows with no fallback ever
+        // firing — verified directly this session (pre-§8 DBs regressed to boxes=0 until this was
+        // fixed). Probe the column via PRAGMA table_info first instead (same technique
+        // `_probeLenses()` already uses a few lines up in this file for `center_x`/`size_x`).
+        var hasRoomGuid = false;
+        try {
+          var ssCols = A.dbQuery("PRAGMA table_info(spatial_structure)");
+          hasRoomGuid = ssCols.some(function(c) { return c[1] === 'room_guid'; });
+        } catch (eCols) { /* hasRoomGuid stays false */ }
+        rows = A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z," +
+          " object_type, predefined_type" + (hasRoomGuid ? ", room_guid" : ", NULL") +
+          " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL");
+        var groups = {}, order = [];
+        (rows || []).forEach(function(r) {
+          var lg = r[10] || r[0];   // logical room guid: room_guid, falling back to this row's own guid
+          if (!groups[lg]) {
+            groups[lg] = { guid: lg, name: r[1],
+              // §ROOM-TYPE-FALLTHROUGH: object_type is 'COMPILED' for every synthetic room — no single
+              // field reliably carries the habitability keyword (verified directly: some synthetic sets
+              // tag the void in `name` only — e.g. buildings/Duplex_extracted.db's "≈ Roof R1" with
+              // predefined_type generically 'INTERNAL' — others tag it in predefined_type — e.g. HHS's
+              // 'INTERNAL_DOORPART'). Join object_type/predefined_type/name and let spaceHabitable's
+              // token match find the keyword wherever it actually is — never invents a label, just
+              // widens which already-real field is checked. Representative fields (name/type) come from
+              // the FIRST row seen for this logical guid — identical across the set per §8's own design.
+              label: [r[8], r[9], r[1]].filter(Boolean).join(' '), z1: -Infinity, rects: [] };
+            order.push(lg);
+          }
+          var g = groups[lg];
+          var z1 = r[4] + (r[7] || 0) / 2;
+          if (z1 > g.z1) g.z1 = z1;   // conservative: if ANY sub-rect pokes above the envelope, check catches it
+          g.rects.push({ cx: r[2], cy: r[3], cz: r[4], sx: r[5], sy: r[6], sz: r[7] });
+        });
+        order.forEach(function(lg) {
+          var g = groups[lg];
+          if (RH) {
+            var v = RH.spaceHabitable({ label: g.label, z1: g.z1 }, env);
+            if (!v.ok) {
+              excluded++;
+              console.log('[RP-TA] §ROOM_VOL_NONHAB ' + (g.name || g.guid) + ' (' + g.guid + ') excluded — ' + v.why);
+              return;
+            }
+          }
+          g.rects.forEach(function(rc) {
+            var c = A.ifc2three(rc.cx, rc.cy, rc.cz);
+            out.push({ guid: g.guid, name: g.name,
               center: new THREE.Vector3(c.x, c.y, c.z),
-              size: new THREE.Vector3(Math.max(r[5] || 0.3, 0.3), Math.max(r[7] || 0.3, 0.3), Math.max(r[6] || 0.3, 0.3)) });
+              size: new THREE.Vector3(Math.max(rc.sx || 0.3, 0.3), Math.max(rc.sz || 0.3, 0.3), Math.max(rc.sy || 0.3, 0.3)) });
           });
+        });
+        var kept = order.length - excluded;
+        // Key names kept BACKWARD-COMPATIBLE with witness_room_lens_hab.js's existing
+        // /habitable=(\d+) excluded=(\d+)/ regex (habitable = logical ROOM count, same semantic as
+        // before this fix, when 1 row = 1 room); `boxes=` is the NEW field — sub-rect box count,
+        // equal to habitable on any single-rect building (regression signal) and > habitable only
+        // where §8 multi-rect data exists.
+        console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + kept + ' excluded=' + excluded +
+          ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
+        return out;
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
+      console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + out.length + ' excluded=' + excluded +
+        ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
       return out;
     }
 
@@ -1527,13 +1650,19 @@
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; } // ghost the rest
       _dimXrayTo(0.12);
       var vols = _allRoomVolumes();
+      // §MULTI-RECT: `vols` is FLAT (one entry per sub-rect box; `guid` is the LOGICAL room guid).
+      // Draw one shell per sub-rect (their union IS the room's real footprint) but count ROOMS by
+      // distinct guid — same "N rects = ONE logical room" convention W-ROOM-FILL/W-HBA-MULTIRECT
+      // already proved for hba_lens.js's outline drawing.
+      var rooms = {};
       vols.forEach(function(v) {
         var mesh = _drawRoomShell(v.center, v.size, 0.10, 0x4fc3f7);
         if (mesh) _roomBoxes.push({ guid: v.guid, name: v.name, mesh: mesh, center: v.center, size: v.size });
+        rooms[v.guid] = true;
       });
       if (A.markDirty) A.markDirty();
-      console.log('[RP-TA] §ROOM_LENS mode=shell shells=' + _roomBoxes.length +
-        ' (all rooms shine-through; building ghost=0.12)');
+      console.log('[RP-TA] §ROOM_LENS mode=shell rooms=' + Object.keys(rooms).length +
+        ' shells=' + _roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');
     }
 
     // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
@@ -1719,8 +1848,14 @@
         } catch(e) { console.warn('[RP-TA] §ROOM_TREE_ERR', e.message); }
         var byGroup = {}, order = [], typed = 0;
         rooms.forEach(function(r) {
-          var gk = (_roomGroupBy === 'type') ? (r[3] || r[4] || '(untyped)') : (r[2] || '(no storey)');
-          if (_roomGroupBy === 'type' && (r[3] || r[4])) typed++;
+          // §ROOM-TYPE-FALLTHROUGH (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 2): object_type
+          // (r[3]) is 'COMPILED' for EVERY synthetic room — that's not a useful Type-view bucket,
+          // so fall through to predefined_type (r[4], e.g. INTERNAL_DOORPART/INTERNAL_SMALL/
+          // INTERNAL) instead of masking it. Real IfcSpace rows (object_type a real IFC type, e.g.
+          // 'Office') still group by object_type first, unchanged.
+          var typeKey = (r[3] && r[3] !== 'COMPILED') ? r[3] : r[4];
+          var gk = (_roomGroupBy === 'type') ? (typeKey || '(untyped)') : (r[2] || '(no storey)');
+          if (_roomGroupBy === 'type' && typeKey) typed++;
           if (!byGroup[gk]) { byGroup[gk] = []; order.push(gk); }
           byGroup[gk].push({ key: r[0], label: r[1] || '(unnamed)' });
         });
@@ -1752,6 +1887,47 @@
         elTree.appendChild(_treeNode(g.label, g.count, 0, { onTap: function() { _isolateLensGroup('room', g); } }));
       });
       console.log('[RP-T3] §LENS_GROUPS lens=room mode=contents groups=' + groups.length);
+    }
+
+    // Isolate a Parts group (or a single leaf, passed as a 1-element array) — plain filterByGuids,
+    // no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail (isoBar show)
+    // but takes the guid set directly since _buildPartsTree already has the rows in hand (no re-query).
+    function _isolatePartsGroup(label, guids) {
+      if (!A.db || !A.filterByGuids) return;
+      if (A.filterStorey) A.filterStorey(null);
+      if (A.filterDisc) A.filterDisc(null);
+      var set = new Set(guids);
+      if (!set.size) { console.log('[RP-A1] §FILTER_ISOLATE_EMPTY lens=parts group="' + label + '"'); return; }
+      _emitIsolate(set, 'parts="' + label + '"');
+      if (elIsoBar) {
+        elIsoBar.style.display = 'flex';
+        if (elIsoBtn) elIsoBtn.style.display = 'none';
+        if (elShowAllBtn) elShowAllBtn.style.display = '';
+      }
+    }
+
+    // ══ Parts axis — STAIRWAY/LIFT_SHAFT/PLANT_ROOM, contents-isolate (Room's FALLBACK style) ══
+    // Data-gated PER GROUP (same discipline as the axis itself, W-LENS-PROBE): a group only
+    // appears when its query returns >0 real elements_meta rows. No box/highlight lens — tapping
+    // a group or a leaf isolates via filterByGuids, same engine as every other axis (W-LENS-ISOLATE).
+    function _buildPartsTree() {
+      var groupsShown = 0, totalRows = 0;
+      _PARTS_GROUPS.forEach(function(pg) {
+        var rows = [];
+        try {
+          rows = A.dbQuery("SELECT guid, element_name FROM elements_meta WHERE (" + _partsCond(pg.type) + ")");
+        } catch(e) { console.warn('[RP-T3] §PARTS_TREE_ERR', pg.type, e.message); }
+        if (!rows.length) return; // data-gated: no row for this part in this building → no group
+        groupsShown++; totalRows += rows.length;
+        var guids = rows.map(function(r) { return r[0]; });
+        var kids = rows.map(function(r) {
+          var label = r[1] || '(unnamed)';
+          return _treeNode(label, '', 1, { onTap: function() { _isolatePartsGroup(label, [r[0]]); } });
+        });
+        elTree.appendChild(_treeNode(pg.label, rows.length, 0,
+          { children: kids, onTap: function() { _isolatePartsGroup(pg.label, guids); } }));
+      });
+      console.log('[RP-T3] §LENS_GROUPS lens=parts groups=' + groupsShown + '/' + _PARTS_GROUPS.length + ' rows=' + totalRows);
     }
 
     // §MAT_SELECT: Material axis is a HIGHLIGHT lens (parity with Room/Phase).
