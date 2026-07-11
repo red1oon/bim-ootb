@@ -103,8 +103,11 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     // 5) render each disc (now carrying clash flags) for the sight-check + readPixels
     DISCS.forEach(function (disc) { window.__renderDiscWalk(disc, byDisc[disc]); });
 
-    // 6) ORACLE — real Terminal inter-disc clash RATE under the SAME rules (sampled, cap 400/disc)
-    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_ARC.db')).arrayBuffer();
+    // 6) ORACLE — real Terminal inter-disc clash RATE under the SAME rules (sampled, cap 400/disc).
+    // Terminal_meta.db (all-discipline real extraction) is the designed oracle source; Terminal_ARC.db is
+    // the shipped ARC-only resident (0 MEP rows since the embed-8 strip, 6068fab) — stale fetch path, not
+    // a data gap.
+    var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_meta.db')).arrayBuffer();
     var mdb = new window.SQL.Database(new Uint8Array(mbuf));
     var realAll = [];
     DISCS.forEach(function (disc) {
