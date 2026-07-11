@@ -202,7 +202,7 @@
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
-<script src="bonsai_kernel.js?v=6" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=7" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
@@ -250,7 +250,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
      Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
 <script src="real_geometry.js?v=1" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
-<script src="arc_editable.js?v=4" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="arc_editable.js?v=5" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- §SAVE-1/2 (MODELLER_SAVE_COMPLETEIT.md): Save = validated snapshot promotion. sdg_save.js = pure
@@ -270,7 +270,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="str_walker_bridge.js?v=5" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
 <script src="str_walker_outliner.js?v=14" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=17" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=18" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
