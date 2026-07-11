@@ -1491,19 +1491,48 @@
       ];
     }
     // All IfcSpace volumes mapped to Three space (IFC size → Three: x→x, z→y, y→z — bbox parity).
+    // §ROOM-HAB (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 1): filters out non-habitable spaces
+    // (Roof/Shaft/Void/Plant/... voids, real OR synthetic) via the shared window.RoomHabitability
+    // classifier (common/room_habitability.js, ported from disc_walker.js's spaceHabitable()) —
+    // this is a DISPLAY filter only, distinct from the Modeller's stricter real-vs-synthetic
+    // (RM_/≈ prefix) exclusion; the Room Lens intentionally still shows synthetic compile_rooms.py
+    // rooms, it just must not show one labelled Roof/Shaft/etc as if it were a normal room.
     function _allRoomVolumes() {
       var out = [];
       if (!A.ifc2three || typeof THREE === 'undefined') return out;
+      var RH = window.RoomHabitability;
+      var env = RH ? RH.envelopeFromTransforms(A.dbQuery) : null;
+      var excluded = 0;
       try {
-        A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z" +
+        A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z," +
+          " object_type, predefined_type" +
           " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL")
           .forEach(function(r) {
+            if (RH) {
+              // §ROOM-TYPE-FALLTHROUGH: object_type is 'COMPILED' for every synthetic room — no
+              // single field reliably carries the habitability keyword (verified directly: some
+              // synthetic sets tag the void in `name` only — e.g. buildings/Duplex_extracted.db's
+              // "≈ Roof R1" with predefined_type generically 'INTERNAL' — others tag it in
+              // predefined_type — e.g. HHS's 'INTERNAL_DOORPART'). Join object_type/predefined_type/
+              // name and let spaceHabitable's token match find the keyword wherever it actually is —
+              // never invents a label, just widens which already-real field is checked.
+              var label = [r[8], r[9], r[1]].filter(Boolean).join(' ');
+              var space = { label: label, z1: r[4] + (r[7] || 0) / 2 };
+              var v = RH.spaceHabitable(space, env);
+              if (!v.ok) {
+                excluded++;
+                console.log('[RP-TA] §ROOM_VOL_NONHAB ' + (r[1] || r[0]) + ' (' + r[0] + ') excluded — ' + v.why);
+                return;
+              }
+            }
             var c = A.ifc2three(r[2], r[3], r[4]);
             out.push({ guid: r[0], name: r[1],
               center: new THREE.Vector3(c.x, c.y, c.z),
               size: new THREE.Vector3(Math.max(r[5] || 0.3, 0.3), Math.max(r[7] || 0.3, 0.3), Math.max(r[6] || 0.3, 0.3)) });
           });
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
+      console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + out.length + ' excluded=' + excluded +
+        (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
       return out;
     }
 
@@ -1719,8 +1748,14 @@
         } catch(e) { console.warn('[RP-TA] §ROOM_TREE_ERR', e.message); }
         var byGroup = {}, order = [], typed = 0;
         rooms.forEach(function(r) {
-          var gk = (_roomGroupBy === 'type') ? (r[3] || r[4] || '(untyped)') : (r[2] || '(no storey)');
-          if (_roomGroupBy === 'type' && (r[3] || r[4])) typed++;
+          // §ROOM-TYPE-FALLTHROUGH (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 2): object_type
+          // (r[3]) is 'COMPILED' for EVERY synthetic room — that's not a useful Type-view bucket,
+          // so fall through to predefined_type (r[4], e.g. INTERNAL_DOORPART/INTERNAL_SMALL/
+          // INTERNAL) instead of masking it. Real IfcSpace rows (object_type a real IFC type, e.g.
+          // 'Office') still group by object_type first, unchanged.
+          var typeKey = (r[3] && r[3] !== 'COMPILED') ? r[3] : r[4];
+          var gk = (_roomGroupBy === 'type') ? (typeKey || '(untyped)') : (r[2] || '(no storey)');
+          if (_roomGroupBy === 'type' && typeKey) typed++;
           if (!byGroup[gk]) { byGroup[gk] = []; order.push(gk); }
           byGroup[gk].push({ key: r[0], label: r[1] || '(unnamed)' });
         });
