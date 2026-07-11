@@ -1625,14 +1625,23 @@
     function _drawRoomCuboid(center, size) {
       if (!A.scene || typeof THREE === 'undefined') return;
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
-      var fillMat = new THREE.MeshBasicMaterial({ color: 0x9c6ade, transparent: true, opacity: 0.35,
+      var fillMat = new THREE.MeshBasicMaterial({ color: 0x9c6ade, transparent: true, opacity: 0.5,
         depthWrite: false, side: THREE.DoubleSide });
       var fill = new THREE.Mesh(boxGeo, fillMat); fill.position.copy(center);
       fill.renderOrder = 998; fill.userData._roomShell = true;
       A.scene.add(fill); _roomBoxes.push({ guid: '_cuboidFill', mesh: fill });
       var edges = new THREE.EdgesGeometry(boxGeo);
-      var lineMat = new THREE.LineBasicMaterial({ color: 0xc77dff, transparent: true, opacity: 0.95, depthTest: false });
+      var lineMat = new THREE.LineBasicMaterial({ color: 0xd8b4fe, transparent: true, opacity: 1.0, depthTest: false });
       var wire = new THREE.LineSegments(edges, lineMat); wire.position.copy(center);
+      // §BORDER_STRONG: LineBasicMaterial.linewidth is silently ignored by nearly every browser/GPU
+      // (WebGL spec limitation) -- a real 1px line reads as weak against a busy scene no matter the
+      // opacity. Fake a thicker border with a second, slightly-scaled duplicate wireframe underneath.
+      var wire2 = new THREE.LineSegments(edges, lineMat.clone());
+      wire2.material.opacity = 0.5;
+      wire2.scale.set(1.015, 1.015, 1.015);
+      wire2.position.copy(center);
+      wire2.renderOrder = 1001; wire2.userData._roomShell = true;
+      A.scene.add(wire2); _roomBoxes.push({ guid: '_cuboidWireOuter', mesh: wire2 });
       wire.renderOrder = 1002; wire.userData._roomShell = true;
       A.scene.add(wire); _roomBoxes.push({ guid: '_cuboidWire', mesh: wire });
     }
