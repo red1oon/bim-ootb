@@ -159,3 +159,30 @@ KEEP commit 9feb7a2 (additive, regression-clean, closes the instanced-only leak)
 original symptom on the strength of it; it needs its own repro-first session using the exact
 original interaction sequence (which panels/lens actions were taken, X-Ray state, etc.).
 NOT pushed — standing push-pause honored.
+
+## 2026-07-12 (later) — REAL ROOT CAUSE FOUND AND FIXED: x1/1000-crushed geometry blobs
+User re-tasked: "fix it without impact to already OK other IFC/buildings DBs." Empirical chain:
+1. Browser probe on jkr_aligned.db: ALL slot placements CORRECT (modelOffset 271421/721385/85,
+   every discipline within ±30m, CONTRACT orphans=0) — yet the render is dust specks.
+2. Offline blob forensics: `component_geometries.vertices` extents vs `bbox_x/y/z` per element —
+   ratio distribution is cleanly BIMODAL: median exactly 1000.0 (5,915 blobs, incl. 3,068/3,118
+   ARC) vs ratio 1.0 (962 blobs, mostly PLB pipes — which is why plumbing solids DID render in
+   the user's screenshots while ARC didn't). The mm-unit georeferenced Revit IFCs were uniformly
+   down-scaled x1/1000 at web-ifc import: jkr.db was self-consistent (centers AND verts /1000 —
+   renders coherent, scale invisible); the offline center-only repair (jkr_aligned.db) restored
+   TRUE meter centers but left the crushed verts → correct positions, microscopic solids. Bboxes
+   read bbox columns (true meters) → "bboxes fine, solids missing". The filterDiscs diagnosis was
+   a red herring (see previous section).
+3. Fix: bim-compiler `scripts/fix_mm_scale_blobs.py` (commit c8179dad6 there) — per-geometry:
+   scale verts x1000 ONLY where all referencing elements' bbox/extent ratios agree (~1000);
+   leave correct blobs; never touch mixed evidence. Run: scaled=5915 left_correct=962
+   mixed_untouched=0 → `jkr_fixed.db` (new file; jkr.db/jkr_aligned.db untouched).
+4. Witness (headless browser on jkr_fixed.db): full solid building renders; ARC isolate renders
+   the complete architectural shell with hiddenDiscs=[PLB,ELEC,STR,MEP,ACMV,FP]; show-all clears
+   to []. Screenshots: scratchpad discfilter_out/fixed_view.png, fixed_arc_isolate.png.
+5. Zero impact on other buildings BY CONSTRUCTION: no viewer code changed at all; the repair is
+   a new data file for this series only.
+Follow-up (spec'd lane, not done here): import_worker.js unit/georef handling for mm-unit
+georeferenced IFC — detect IfcUnitAssignment scale + map-coordinate magnitude at import so the
+next Revit-georeferenced drop doesn't need offline repair; extract_merge_disciplines.py §PROOF
+should also assert vertex-extent≈bbox consistency, which would have caught this immediately.
