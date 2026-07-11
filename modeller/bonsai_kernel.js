@@ -178,7 +178,13 @@
       if (d.indices) geo.setIndex(new THREE.BufferAttribute(d.indices, 1));
       if (!d.normals) geo.computeVertexNormals();
       geo.computeBoundingBox();
-      const mat = new THREE.MeshStandardMaterial({ color: opts.color != null ? opts.color : 0x9fb4c8, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide });
+      const matOpts = { color: opts.color != null ? opts.color : 0x9fb4c8, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide };
+      // §MAT-PARITY (MODELLER_RENDER_MATERIAL_PARITY.md Task 1): mirror viewer/streaming.js A._getMaterial's
+      // own opacity gate exactly (`if (parts.length >= 4 && parts[3] < 1.0) { opts.transparent = true; opts.opacity = a; }`)
+      // — glass/IfcWindow etc. now render see-through instead of solid, sourced from real material_rgba alpha
+      // (arc_editable.js → bonsai_library.js foldInsert → here). opts.opacity absent/>=1 ⇒ unchanged opaque path.
+      if (opts.opacity != null && opts.opacity < 1.0) { matOpts.transparent = true; matOpts.opacity = opts.opacity; }
+      const mat = new THREE.MeshStandardMaterial(matOpts);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.name = opts.name || ('bonsai:' + d.featureId);
       mesh.userData.featureId = d.featureId;
@@ -241,7 +247,7 @@
       let totalTris = 0;
       // PER-MESH colour wins over the fold-level colour: a folded insert (RouteWalker fixture) carries md.color
       // (its discipline hex from parameters.color); B-rep solids have none → fall back to the fold-level opts.color.
-      meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
+      meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity }); totalTris += md.triangleCount; if (g) g.add(m); });
 
       // §LOD400-STALL: GEOM_INSERT folds HOST-side (bonsai.library) — CHUNKED + YIELDED above CHUNK ops so a
       // Terminal-scale open (tens of thousands of raw-bbox ARC inserts) actually PAINTS PROGRESSIVELY between
@@ -254,7 +260,7 @@
         const buildOne = (op) => {
           const md = window.Bonsai.library.foldInsert(op, moveBy.get(op.id), gridBy.get(op.id));
           meshes.push(md);
-          const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color });
+          const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity });
           totalTris += md.triangleCount; if (g) g.add(m);
         };
         if (insertOps.length > CHUNK) {

@@ -584,6 +584,9 @@
       if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); _clearPathHighlight(); }
       // §PHASE_LENS/§MAT_SELECT: leaving Phase/Material tears down element highlight.
       if (_treeMode === 'phase' || _treeMode === 'material') _highlightLensReset();
+      // Parts axis uses plain filterByGuids isolate (Room's FALLBACK contents-isolate path, not
+      // the box/highlight lens) — no overlay to tear down; the unconditional filterByGuids(null)
+      // a few lines below already resets it on every axis change.
       _treeMode = mode;
       // §NAV_FIND_002: axis change clears multi-select + restores full scene (unify engine)
       _selStoreys.clear(); _selDiscs.clear(); _anchor = null;
@@ -611,6 +614,7 @@
         else if (_treeMode === 'room') _buildRoomTree();
         else if (_treeMode === 'material') _buildMaterialTree();
         else if (_treeMode === 'phase') _buildPhaseTree();
+        else if (_treeMode === 'parts') _buildPartsTree();
       } catch(e) { console.warn('§FIND_TREE error', e); }
     }
 
@@ -620,9 +624,84 @@
     // §RP Task A: a room has VOLUME data when spatial_structure carries center_*/size_*
     // columns AND at least one IfcSpace row is populated. _roomHasVol is cached per-open.
     var _roomHasVol = false;
+    // §BUILDING-PARTS-TAXONOMY: STAIRWAY/LIFT_SHAFT/PLANT_ROOM keyword constants, ported verbatim
+    // from bim-compiler build/building_parts_taxonomy.js (which itself reuses build/room_walker.js's
+    // §STAIR-EXCLUDE / door-rescue constants — see prompts/BUILDING_PARTS_TAXONOMY.md in that repo,
+    // witnessed 13/13 PASS on real Duplex/SampleCastle/Terminal/Hospital/Clinic IFC data). Existence-
+    // only match against elements_meta.ifc_class / .element_name — no element_transforms JOIN
+    // required (§PARENT-NO-TRANSFORM there: an IfcStair assembly parent frequently carries no
+    // transform of its own, only its child IfcStairFlight does; an existence match is the correct
+    // "does this building have one" signal, same choice this axis needs).
+    var STAIR_LIKE = ["IfcStair%", "IfcRamp%"];
+    var LIFT_KEYWORDS = ["liftdeur", "lift", "elevator", "aufzug", "fahrstuhl", "hoist"];
+    var PLANT_KEYWORDS = ["vent", "duct", "fan", "ahu", "damper", "chiller", "condens", "fancoil", "pump"];
+    function _partsCond(part) {
+      if (part === 'STAIRWAY') return STAIR_LIKE.map(function(p) { return "ifc_class LIKE '" + p + "'"; }).join(' OR ');
+      var words = (part === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+      // §PLANT_ROOM_GATE_FIX Bug 1: SQL stays a broad substring pre-filter (cheap, superset —
+      // real matches never excluded here); the word-boundary discipline that actually rejects
+      // false positives (e.g. "Preventer" containing "vent") runs in JS via _keywordTokenMatch()
+      // below, applied to the rows this SQL returns. Kept as LIKE (not narrowed here) because
+      // SQLite has no REGEXP/word-boundary operator built in — see FIND_PANEL_PLANT_ROOM_GATE_FIX.md.
+      return words.map(function(w) { return "LOWER(element_name) LIKE '%" + w + "%'"; }).join(' OR ');
+    }
+    // §PLANT_ROOM_GATE_FIX Bug 1: real-data-driven word-boundary check (bim-compiler
+    // prompts/FIND_PANEL_PLANT_ROOM_GATE_FIX.md) — confirmed against real element_name templates
+    // across Duplex/Terminal/Hospital/Clinic/HHS (59 distinct templates surveyed) that these names
+    // use TWO delimiter styles interchangeably: non-alphanumeric separators (space/colon/underscore/
+    // hyphen — e.g. "M_Backflow Preventer_...") AND bare camelCase compounds with no separator at
+    // all (e.g. "BottomDuct", "AirBox"). A plain regex \b is insufficient (it treats "_" as a word
+    // character, so "_AHU_" would never trip a boundary) and exact-token matching is too strict (it
+    // would reject genuine hits like "Ventilated" in "Wall Mounted Ventilated Fans"). This splits on
+    // BOTH delimiter styles, then requires the keyword to be a TOKEN PREFIX (not mid-token) —
+    // rejects "Preventer" (keyword "vent" appears mid-token, not at a token start) while keeping
+    // "Duct" (from "BottomDuct", a camelCase-split token start) and "Ventilated"/"Vent" (prefix match).
+    function _splitNameTokens(name) {
+      var raw = String(name || '').split(/[^A-Za-z]+/).filter(Boolean);
+      var out = [];
+      raw.forEach(function(tok) {
+        var start = 0;
+        for (var i = 1; i < tok.length; i++) {
+          if (/[a-z]/.test(tok.charAt(i - 1)) && /[A-Z]/.test(tok.charAt(i))) {
+            out.push(tok.slice(start, i));
+            start = i;
+          }
+        }
+        out.push(tok.slice(start));
+      });
+      return out;
+    }
+    function _keywordTokenMatch(name, words) {
+      var tokens = _splitNameTokens(name);
+      return tokens.some(function(t) {
+        var tl = t.toLowerCase();
+        return words.some(function(w) { return tl.indexOf(w) === 0; });
+      });
+    }
+    // §PLANT_ROOM_GATE_FIX Bug 2: smallest static filename->class map (NOT a general classifier —
+    // mirrors bim-compiler config/building_taxonomy.yaml's building_classes exactly, which itself
+    // cites WalkerDoctrine.md §1 LOCKED: residential = SampleHouse/Duplex/SampleCastle, complex =
+    // Terminal/Clinic/Hospital/HHS). The Viewer has no building-class concept anywhere else (grep
+    // confirmed zero hits before this change) — this reads A.DB_URL (the ?db= query param, a stable
+    // filename per WalkerDoctrine's own fixed building list) rather than A.activeBuilding (the raw
+    // elements_meta.building column, confirmed messy/inconsistent per-building — e.g. Clinic carries
+    // 5 different discipline-suffixed values, Duplex carries the full IFC federation filename).
+    var _RESIDENTIAL_BUILDINGS = ['duplex', 'samplehouse', 'samplecastle'];
+    var _COMPLEX_BUILDINGS = ['terminal', 'clinic', 'hospital', 'hhs'];
+    function _buildingClass() {
+      var src = String((A.DB_URL || '')).toLowerCase();
+      for (var i = 0; i < _COMPLEX_BUILDINGS.length; i++) { if (src.indexOf(_COMPLEX_BUILDINGS[i]) >= 0) return 'complex'; }
+      for (var i = 0; i < _RESIDENTIAL_BUILDINGS.length; i++) { if (src.indexOf(_RESIDENTIAL_BUILDINGS[i]) >= 0) return 'residential'; }
+      return null; // unclassed (e.g. Garage, n=1 per scoreboard) — PLANT_ROOM stays hidden, same as residential
+    }
+    var _PARTS_GROUPS = [
+      { type: 'STAIRWAY', label: 'Stairway' },
+      { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
+      { type: 'PLANT_ROOM', label: 'Plant Room' }
+    ];
     function _probeLenses() {
       var bld = A.activeBuilding || '';
-      var room = false, material = false, phase = false;
+      var room = false, material = false, phase = false, parts = false;
       _roomHasVol = false;
       try {
         var hasSS = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'");
@@ -664,8 +743,14 @@
         } catch(e) { /* kernel_ops table may not exist yet */ }
         phase = hasElems && (genReady || opsExist);
       } catch(e) { /* phase stays false */ }
-      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase);
-      return { room: room, material: material, phase: phase };
+      try {
+        var partsCond = '(' + _partsCond('STAIRWAY') + ') OR (' + _partsCond('LIFT_SHAFT') + ') OR (' + _partsCond('PLANT_ROOM') + ')';
+        var pc = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE (" + partsCond + ")" +
+          (bld ? " AND building = ?" : ""), bld ? [bld] : []);
+        parts = !!(pc.length && pc[0].values[0][0] > 0);
+      } catch(e) { /* parts stays false */ }
+      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' parts=' + parts);
+      return { room: room, material: material, phase: phase, parts: parts };
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -680,6 +765,7 @@
       if (present.room) ax.push({ key: 'room', label: _t('ui_lens_room', 'Room') });
       if (present.material) ax.push({ key: 'material', label: _t('ui_lens_material', 'Material') });
       if (present.phase) ax.push({ key: 'phase', label: _t('ui_lens_phase', 'Phase') });
+      if (present.parts) ax.push({ key: 'parts', label: _t('ui_axis_parts', 'Parts') });
       return ax;
     }
 
@@ -2075,6 +2161,67 @@
       });
     }
 
+    // Isolate a Parts group (or a single leaf, passed as a 1-element array) — plain filterByGuids,
+    // no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail (isoBar show)
+    // but takes the guid set directly since _buildPartsTree already has the rows in hand (no re-query).
+    function _isolatePartsGroup(label, guids) {
+      if (!A.db || !A.filterByGuids) return;
+      if (A.filterStorey) A.filterStorey(null);
+      if (A.filterDisc) A.filterDisc(null);
+      var set = new Set(guids);
+      if (!set.size) { console.log('[RP-A1] §FILTER_ISOLATE_EMPTY lens=parts group="' + label + '"'); return; }
+      _emitIsolate(set, 'parts="' + label + '"');
+      if (elIsoBar) {
+        elIsoBar.style.display = 'flex';
+        if (elIsoBtn) elIsoBtn.style.display = 'none';
+        if (elShowAllBtn) elShowAllBtn.style.display = '';
+      }
+    }
+
+    // ══ Parts axis — STAIRWAY/LIFT_SHAFT/PLANT_ROOM, contents-isolate (Room's FALLBACK style) ══
+    // Data-gated PER GROUP (same discipline as the axis itself, W-LENS-PROBE): a group only
+    // appears when its query returns >0 real elements_meta rows. No box/highlight lens — tapping
+    // a group or a leaf isolates via filterByGuids, same engine as every other axis (W-LENS-ISOLATE).
+    function _buildPartsTree() {
+      var groupsShown = 0, totalRows = 0;
+      var bldClass = _buildingClass();
+      _PARTS_GROUPS.forEach(function(pg) {
+        // §PLANT_ROOM_GATE_FIX Bug 2: config/building_taxonomy.yaml's `residential` building_class
+        // has NO PLANT_ROOM entry at all (advisory, n=1, complex-only per its own citation) — mirror
+        // that gate here so a residential/unclassed building never shows a Plant Room group, same as
+        // the bim-compiler checklistReport() this axis's query logic was ported from.
+        if (pg.type === 'PLANT_ROOM' && bldClass !== 'complex') {
+          console.log('[RP-T3] §PARTS_CLASS_GATE type=PLANT_ROOM buildingClass=' + bldClass + ' -> hidden (complex-only)');
+          return;
+        }
+        var rows = [];
+        try {
+          rows = A.dbQuery("SELECT guid, element_name FROM elements_meta WHERE (" + _partsCond(pg.type) + ")");
+        } catch(e) { console.warn('[RP-T3] §PARTS_TREE_ERR', pg.type, e.message); }
+        if (pg.type !== 'STAIRWAY') {
+          // §PLANT_ROOM_GATE_FIX Bug 1: LIFT_SHAFT/PLANT_ROOM used a bare SQL substring match —
+          // narrow the SQL's superset down to real word-boundary hits (STAIRWAY uses ifc_class,
+          // not a name keyword, so it's exempt — no false-positive mechanism to fix there).
+          var words = (pg.type === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+          var before = rows.length;
+          rows = rows.filter(function(r) { return _keywordTokenMatch(r[1], words); });
+          if (rows.length !== before) {
+            console.log('[RP-T3] §PARTS_WORD_BOUNDARY_FILTER type=' + pg.type + ' before=' + before + ' after=' + rows.length);
+          }
+        }
+        if (!rows.length) return; // data-gated: no row for this part in this building → no group
+        groupsShown++; totalRows += rows.length;
+        var guids = rows.map(function(r) { return r[0]; });
+        var kids = rows.map(function(r) {
+          var label = r[1] || '(unnamed)';
+          return _treeNode(label, '', 1, { onTap: function() { _isolatePartsGroup(label, [r[0]]); } });
+        });
+        elTree.appendChild(_treeNode(pg.label, rows.length, 0,
+          { children: kids, onTap: function() { _isolatePartsGroup(pg.label, guids); } }));
+      });
+      console.log('[RP-T3] §LENS_GROUPS lens=parts groups=' + groupsShown + '/' + _PARTS_GROUPS.length + ' rows=' + totalRows);
+    }
+
     // §MAT_SELECT: Material axis is a HIGHLIGHT lens (parity with Room/Phase).
     // §RP Material category — SQL-DERIVED (heuristic, deterministic) from material_name
     // keywords. Labelled "(derived)" in the UI/§-log per the resolved decision — this is NOT
@@ -2597,6 +2744,10 @@
     // Hand the isolate set to the viewer + emit the W-FILTER-ISOLATE witness.
     function _emitIsolate(set, by) {
       A.filterByGuids(set);
+      // §ISOLATE_ZOOM (FIND_PANEL_ISOLATE_NO_CAMERA_ZOOM.md): isolate-tap only used to filter
+      // visibility, never reframed the camera — reuse the SAME group-fit primitive _drillSelect/
+      // focusElement already call, so an isolate on an off-screen target actually flies to it.
+      var zoomed = _zoomToGroup(set);
       var bld = A.activeBuilding || '';
       var total = 0;
       try {
@@ -2604,7 +2755,7 @@
         if (tr.length) total = tr[0].values[0][0];
       } catch(e) { /* total stays 0 */ }
       console.log('[RP-A1] §FILTER visible=' + set.size + ' hidden=' + Math.max(0, total - set.size) +
-        ' total=' + total + ' by=' + by);
+        ' total=' + total + ' by=' + by + ' zoom=' + (zoomed ? 'fit' : 'none'));
     }
 
     function applyIsolate() {

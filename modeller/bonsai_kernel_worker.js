@@ -502,8 +502,21 @@ function buildSolids(kernel, ops, seedBoxes) {
           const HALF_PI = Math.PI / 2;
           const oblique = typeof c.yawRad === 'number' && isFinite(c.yawRad) &&
             Math.abs(c.yawRad - Math.round(c.yawRad / HALF_PI) * HALF_PI) > 0.01;
+          // §ROTATION-GUARD-3AXIS (GRID_ROTATED_SCALE_HARDENING.md §5): a non-negligible rotX/rotY tilt has
+          // no safe correction here — composing a correct rotate→scale→rotate-back for an arbitrary 3-axis
+          // tilt is real design work (this file's own §3 "genuinely open question", explicitly out of scope).
+          // REFUSE instead: leave the solid UNCHANGED rather than shear it. Tolerance is distance from ZERO
+          // (not the nearest 90°-multiple like yaw above) — see grid_kinematics.js's _hasTilt for why a pure
+          // roll/pitch has no "safe at 90°" exemption the way in-plane yaw does. Found live-reachable:
+          // SampleCastle_ARC.db fids 933/1291/2514/3055 (GRID_ROTATION_GUARD.md §5) — this is defense in
+          // depth for those exact fids should a future caller ever route them into a SCALE command.
+          const tiltX = typeof c.tiltXRad === 'number' && isFinite(c.tiltXRad) ? Math.abs(c.tiltXRad) : 0;
+          const tiltY = typeof c.tiltYRad === 'number' && isFinite(c.tiltYRad) ? Math.abs(c.tiltYRad) : 0;
+          const tilted = tiltX > 0.01 || tiltY > 0.01;
           let M;
-          if (oblique && (c.axis === 'x' || c.axis === 'y')) {
+          if (tilted) {
+            out = pe.shape;   // REFUSE: no-op, shape stays as-is (skips shapeCache/generalTransform below)
+          } else if (oblique && (c.axis === 'x' || c.axis === 'y')) {
             // L = R(yaw)·S·R(−yaw) in-plan (2D about Z): L = [[sx·c²+sy·s², (sx−sy)·c·s], [(sx−sy)·c·s, sx·s²+sy·c²]]
             const cs = Math.cos(c.yawRad), sn = Math.sin(c.yawRad);
             const sx = c.axis === 'x' ? f : 1, sy = c.axis === 'y' ? f : 1;
@@ -520,7 +533,7 @@ function buildSolids(kernel, ops, seedBoxes) {
               : c.axis === 'y' ? [1, 0, 0, 0, 0, f, 0, tx, 0, 0, 1, 0]
               :                  [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, f, tx];
           }
-          out = kernel.generalTransform(pe.shape, M);  // gp_GTrsf supports non-uniform scale (input cached → NOT released)
+          if (!tilted) out = kernel.generalTransform(pe.shape, M);  // gp_GTrsf supports non-uniform scale (input cached → NOT released)
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
       }

@@ -21,6 +21,14 @@
   'use strict';
   var TAG = '§DW';
   var ROOT = (typeof window !== 'undefined') ? window : {};
+  // §ROOM-TYPE-WEIGHT (prompts/DISC_WALK_ROOM_TYPE_AWARE.md, 2026-07-11): geometry-based room-type
+  // classifier (modeller/room_type_classifier.js, ported verbatim from bim-compiler) — used ONLY as a
+  // FALLBACK inside _spaceTypeFor() below, when a space's real LABEL does not resolve via the existing
+  // rule_space_type/rule_space_alias string match. Dual-mode load, same convention as every other
+  // sibling module this file already reaches for (RoomTypeClassifier = require(...) in Node, or
+  // window.RoomTypeClassifier in browser once modeller/room_type_classifier.js is <script>-tagged).
+  var RoomTypeClassifier = (typeof window !== 'undefined') ? window.RoomTypeClassifier :
+    (typeof require !== 'undefined' ? (function () { try { return require('./room_type_classifier.js'); } catch (e) { return null; } })() : null);
   var _db = null, _ready = false, _loadedFile = null;
   // §BORROW — per-discipline source map (docs/WalkerDoctrine.md §2). The PRIMARY _db is the building-class
   // ruleset (e.g. duplex_rules.db for residential). A discipline ABSENT from the residential set (e.g. FP/
@@ -30,6 +38,20 @@
   // a borrowed discipline reuses that DB's MEASURED rows; nothing is fabricated.
   var _borrow = {};                                              // disc -> borrowed sql.js db handle
   function _dbFor(disc) { return _borrow[disc] || _db; }
+  // §ROOM-TYPE-WEIGHT state: opt-in, defaults OFF (null) — every existing caller that never invokes
+  // dwSetRoomTypeConfig gets byte-identical behavior (label match only, exactly as before this change).
+  var _roomTypeConfig = null;
+  function dwSetRoomTypeConfig(config) { _roomTypeConfig = config || null; return !!_roomTypeConfig; }
+  // MEASURED disc->room-type density correlation (build/measure_disc_room_type_density.js, real Duplex
+  // MEP data, 2026-07-11): PLB and FP each show a real, replicated categorical presence/absence signal
+  // by classified room type (PLB concentrates in BATHROOM/UTILITY, ~0 elsewhere; FP concentrates in
+  // FOYER, ~0 elsewhere including HALLWAY) — see prompts/DISC_WALK_ROOM_TYPE_AWARE.md for the full table.
+  // ELEC is present in EVERY room type (no discriminating presence signal, only a density gradient that
+  // n=2-per-type cannot separate from noise) and ACMV has ZERO real elements in the only real MEP
+  // substrate this repo has (Duplex — real Malaysian residential units use split-unit A/C, not ducted
+  // diffusers) — both are honestly EXCLUDED here, never forced. Adding a disc to this set requires a
+  // NEW measured citation, not an assumption.
+  var ROOM_TYPE_MEASURED_DISCS = { PLB: true, FP: true };
   // Register/clear a borrowed discipline source. dwBorrow('FP', terminalDb) → FP rules read from terminalDb.
   function dwBorrow(disc, db) { if (db) _borrow[disc] = db; else delete _borrow[disc]; return _borrow; }
   // Browser borrow-by-FILE (docs/WalkerDoctrine.md §2): IDB-cached load + open + register a borrowed discipline
@@ -243,14 +265,51 @@
   // LongName → schedule space_type: normalize (upper, spaces→_, strip trailing numbering — the
   // same normalization H6's deriveSpaceType applied), then direct rule_space_type match, then
   // rule_space_alias ('LIVING_ROOM'→LIVING, 'HALLWAY'→CORRIDOR, ...). null = no schedule (skip).
-  function _spaceTypeFor(disc, label) {
-    if (!label) return null;
-    var norm = String(label).toUpperCase().replace(/[\s]+/g, '_').replace(/[_\s]*\d+$/, '').trim();
-    if (!norm) return null;
+  //
+  // §ROOM-TYPE-WEIGHT FALLBACK (prompts/DISC_WALK_ROOM_TYPE_AWARE.md): when the LABEL match above
+  // finds nothing (e.g. a synthetic COMPILED room with no semantic name — the case this repo's
+  // shipped non-Duplex/Terminal buildings mostly are), and the caller has loaded a room-type config
+  // (dwSetRoomTypeConfig) AND this disc has a real MEASURED density signal (ROOM_TYPE_MEASURED_DISCS —
+  // today: PLB, FP only; ELEC/ACMV honestly excluded, see that const's comment), classify the space's
+  // OWN bbox geometry (area+aspect, same features the classifier trains on) and use ITS type as a
+  // second-chance space_type — but ONLY after validating the classifier's `canonical_type` (or its own
+  // type name) actually exists in this disc's rule_space_type, so this NEVER returns a type the
+  // schedule tables don't recognize. Zero regression: this branch is unreachable whenever the label
+  // match above already succeeded, and unreachable entirely until dwSetRoomTypeConfig is called.
+  function _spaceTypeFor(disc, sp) {
+    var label = (sp && typeof sp === 'object') ? sp.label : sp;   // back-compat: a bare string still works
     var db = _dbFor(disc);
-    if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(norm) + "'").length) return norm;
-    var a = _rows(db, "SELECT space_type_id st FROM rule_space_alias WHERE alias='" + _esc(norm) + "'");
-    return a.length ? a[0].st : null;
+    if (label) {
+      var norm = String(label).toUpperCase().replace(/[\s]+/g, '_').replace(/[_\s]*\d+$/, '').trim();
+      if (norm) {
+        if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(norm) + "'").length) return norm;
+        var a = _rows(db, "SELECT space_type_id st FROM rule_space_alias WHERE alias='" + _esc(norm) + "'");
+        if (a.length) return a[0].st;
+      }
+    }
+    // ── geometry fallback ──
+    if (!_roomTypeConfig || !RoomTypeClassifier || !ROOM_TYPE_MEASURED_DISCS[disc]) return null;
+    if (!sp || typeof sp !== 'object' || sp.x0 == null || sp.x1 == null || sp.y0 == null || sp.y1 == null) return null;
+    var feats = RoomTypeClassifier.featuresFromRects([{
+      size_x: sp.x1 - sp.x0, size_y: sp.y1 - sp.y0, center_x: (sp.x0 + sp.x1) / 2, center_y: (sp.y0 + sp.y1) / 2
+    }]);
+    if (!feats) return null;
+    var result = RoomTypeClassifier.classifyRoom(feats, _roomTypeConfig);
+    if (result.unclassified || !result.type) return null;
+    var tmpl = _roomTypeConfig.templates && _roomTypeConfig.templates[result.type];
+    var candidates = [];
+    if (tmpl && tmpl.canonical_type) candidates.push(String(tmpl.canonical_type).toUpperCase());
+    candidates.push(result.type);
+    for (var i = 0; i < candidates.length; i++) {
+      if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(candidates[i]) + "'").length) {
+        console.log(TAG + ' §DW-ROOMTYPE ' + disc + ' space "' + (label || sp.guid || '?') + '" — no label match, ' +
+          'geometry classifier -> ' + result.type + ' (conf=' + (result.confidence * 100).toFixed(1) +
+          '%, area=' + feats.area.toFixed(2) + 'm2 aspect=' + feats.aspect.toFixed(2) + ') -> space_type=' +
+          candidates[i] + ' [measured signal: build/measure_disc_room_type_density.js]');
+        return candidates[i];
+      }
+    }
+    return null;
   }
 
   // Ported VERBATIM from SpaceScheduleDAO.resolveQty (§6.12.4 §8): per_area first;
@@ -392,7 +451,7 @@
     var avoidAll = opts.avoid || [];
     var out = [], refused = {}, skipped = [], used = 0;
     all.forEach(function (sp) {
-      var stype = _spaceTypeFor(disc, sp.label);
+      var stype = _spaceTypeFor(disc, sp);
       if (!stype) { skipped.push(sp.label); return; }
       var sched = _rows(_dbFor(disc), "SELECT * FROM rule_space_schedule WHERE disc='" + _esc(disc) +
         "' AND space_type_id='" + _esc(stype) + "'");
@@ -2202,7 +2261,8 @@
   var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind,
     route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
-    spacesOf: spacesOf, placeSchedule: placeSchedule,
+    spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
+    _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     _trueMidpoint: _trueMidpoint,
     bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,

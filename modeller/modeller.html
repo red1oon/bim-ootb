@@ -84,11 +84,15 @@
   #m-help-panel .hp-ic svg { width: 16px; height: 16px; }
   #m-help-panel .hp-name { color: #c7cdd8; }
 
-  /* ── Collapsible Outliner (Bonsai-style left panel): chevron collapses it, a tab reopens. Persisted. ── */
-  #bonsai-outliner { transition: transform .18s ease; }
-  #ol-collapse { background: transparent; border: 0; color: #6b7488; cursor: pointer;
-    display: inline-flex; align-items: center; padding: 2px; border-radius: 5px; }
-  #ol-collapse:hover { color: #cdd6e4; background: #23262e; }
+  /* ── Collapsible Outliner (Bonsai-style left panel): chevron collapses it, a tab reopens. Persisted. ──
+     §MAT-PARITY Task 2 (MODELLER_RENDER_MATERIAL_PARITY.md): the toggle WORKED (verified — clicking it always
+     set body.ol-collapsed correctly), the bug was pure discoverability — background:transparent;border:0 gave
+     it ZERO visual weight at rest, so it read as decoration fused into the equally-muted "OUTLINER" label next
+     to it, not as a button, unlike every OTHER icon control in this app (#bar button, #ol-show below) which all
+     carry a visible chip (background+border) at rest, not just on hover. Matches that established convention. */
+  #ol-collapse { background: #232733; border: 1px solid #39404f; color: #9aa4b8; cursor: pointer;
+    display: inline-flex; align-items: center; padding: 3px; border-radius: 6px; }
+  #ol-collapse:hover { color: #cdd6e4; background: #2c3140; }
   #ol-show { position: fixed; top: 10px; left: 10px; z-index: 21; width: 40px; height: 40px; display: none;
     align-items: center; justify-content: center; background: #232733; color: #cdd6e4;
     border: 1px solid #39404f; border-radius: 10px; cursor: pointer; }
@@ -198,7 +202,7 @@
 <div id="stat">booting…</div>
 
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
-<script src="bonsai_kernel.js?v=6" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=7" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
@@ -237,7 +241,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=11" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=12" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
@@ -246,7 +250,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
      Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
 <script src="real_geometry.js?v=1" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
-<script src="arc_editable.js?v=4" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="arc_editable.js?v=5" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
 <script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- §SAVE-1/2 (MODELLER_SAVE_COMPLETEIT.md): Save = validated snapshot promotion. sdg_save.js = pure
@@ -266,7 +270,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="str_walker_bridge.js?v=5" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
 <script src="str_walker_outliner.js?v=14" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=17" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=18" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -284,6 +288,10 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
+<!-- Building Parts Outliner category (Stairway/Lift Shaft/Plant Room) — Modeller-side port of the
+     Viewer's Parts axis (viewer/navigate_find.js @ d04ddd5). Reads window.__dwBuf (the open building's
+     substrate), same accessor disc_walker.js/modeller.html already use. hideWhenEmpty. -->
+<script src="building_parts_outliner.js?v=1" onerror="console.warn('§BUILDING-PARTS-OUTLINER LOAD_FAIL building_parts_outliner.js')"></script>
 <script src="seed_trunk.js?v=1" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
 <!-- §TEAMS-EMBED — GATED Teams overlay over the live scene (teams/ROADMAP.md §S11). ONE inert guarded script:
      OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
@@ -3381,6 +3389,7 @@ if (!window.SQL && window.initSqlJs) {
 if (window.BOMTreeOutliner) window.BOMTreeOutliner.register();   // ARC = the lead containment tree
 if (window.STRWalkerOutliner) window.STRWalkerOutliner.register();   // STR Walker result tab + grid-drag re-walk
 if (window.DWInstancesOutliner) window.DWInstancesOutliner.register();   // §I5 Walked Fixtures — per-instance rows/eyes
+if (window.BuildingPartsOutliner) window.BuildingPartsOutliner.register();   // Building Parts — Stairway/Lift Shaft/Plant Room (viewer d04ddd5 parity)
 console.log('§MODELLER outliner ready — ARC (bom-graph) leads + STR Walker tab (Open via the pill rail)');
 
 // ── DISC = WALKER (W-UX-4): a discipline node in the bom-graph is a WALKER entry point. Clicking it dispatches
@@ -4766,7 +4775,7 @@ window.__arcPixelProbe = function (isolateFids) {
 // §8E-3 fix (RESUME_GRAPH_MODELLER_INTEGRATION.md §8E-3): the disc-filtered isolation only matched
 // userData.dwDisc (fixture-box InstancedMeshes from _renderDiscWalk) — the ROUTED NETWORK's own tubes
 // (_renderDiscChains, userData.dwChain) were silently EXCLUDED from both the hide-set and the mesh/inFrustum
-// census, so calling __dwPixelProbe('PLB') on a walked+routed disc under-counted: the tubes stayed visible in
+// census, so calling the occlusion probe on a walked+routed disc under-counted: the tubes stayed visible in
 // BOTH the A and B frames (never hidden) and so contributed ZERO to the A/B diff — a routed network could paint
 // real pixels and this probe would still report dwPainted from fixtures only, missing the tube footprint
 // entirely. Fixed by matching EITHER tag (dwDisc OR dwChain) — same anti-collusion method, now covers both the
@@ -4776,7 +4785,8 @@ function _dwProbeMatch(m, disc) {
   var d = m.userData || {};
   return d.dwDisc === disc || d.dwChain === disc;
 }
-window.__dwPixelProbe = function (disc) {
+// (Named __dwOcclusionProbe — distinct from the §4 scene-graph-census __dwPixelProbe, which this once shadowed.)
+window.__dwOcclusionProbe = function (disc) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { error: 'no-group' };
   const root = g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
   if (!root) return { error: 'no-dwRoot', dwPainted: 0 };
