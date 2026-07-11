@@ -1512,6 +1512,16 @@
     // this is a DISPLAY filter only, distinct from the Modeller's stricter real-vs-synthetic
     // (RM_/≈ prefix) exclusion; the Room Lens intentionally still shows synthetic compile_rooms.py
     // rooms, it just must not show one labelled Roof/Shaft/etc as if it were a normal room.
+    // §MULTI-RECT (ROOM_INJECTION_HYBRID.md §8/§9): a compiled room may be N spatial_structure rows
+    // (one per sub-rectangle) sharing `room_guid` — the LOGICAL room key. Group by it (falling back
+    // to `guid` for real IfcSpace / pre-§8 data with no room_guid column) so the Room Lens renders
+    // the UNION of a room's sub-rect boxes, not one undersized/border-hugging inscribed rectangle
+    // and not N disconnected boxes each masquerading as its own room. Ports the SAME guarded-query +
+    // grouping shape already proven by `viewer/hba_lens.js` `bindStoreysFromModel` (W-HBA-MULTIRECT
+    // 6/6) — that is the reference pattern for this fix, not re-derived from scratch. Returns a FLAT
+    // array (one entry per sub-rect box, `guid` = the LOGICAL room guid so callers can group/count
+    // by it) — habitability is evaluated ONCE per logical room (name/predefined_type/object_type are
+    // identical across a room's sub-rect set per §8's own design), never per sub-rect.
     function _allRoomVolumes() {
       var out = [];
       if (!A.ifc2three || typeof THREE === 'undefined') return out;
@@ -1519,35 +1529,72 @@
       var env = RH ? RH.envelopeFromTransforms(A.dbQuery) : null;
       var excluded = 0;
       try {
-        A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z," +
-          " object_type, predefined_type" +
-          " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL")
-          .forEach(function(r) {
-            if (RH) {
-              // §ROOM-TYPE-FALLTHROUGH: object_type is 'COMPILED' for every synthetic room — no
-              // single field reliably carries the habitability keyword (verified directly: some
-              // synthetic sets tag the void in `name` only — e.g. buildings/Duplex_extracted.db's
-              // "≈ Roof R1" with predefined_type generically 'INTERNAL' — others tag it in
-              // predefined_type — e.g. HHS's 'INTERNAL_DOORPART'). Join object_type/predefined_type/
-              // name and let spaceHabitable's token match find the keyword wherever it actually is —
-              // never invents a label, just widens which already-real field is checked.
-              var label = [r[8], r[9], r[1]].filter(Boolean).join(' ');
-              var space = { label: label, z1: r[4] + (r[7] || 0) / 2 };
-              var v = RH.spaceHabitable(space, env);
-              if (!v.ok) {
-                excluded++;
-                console.log('[RP-TA] §ROOM_VOL_NONHAB ' + (r[1] || r[0]) + ' (' + r[0] + ') excluded — ' + v.why);
-                return;
-              }
+        var rows;
+        // §MULTI-RECT guard: A.dbQuery (viewer/helpers.js) never THROWS on a bad column reference —
+        // it catches internally and returns [] (logging §HELPERS_QUERY_ERR), unlike the try/catch
+        // double-query shape hba_lens.js uses in the Modeller context. Selecting a nonexistent
+        // `room_guid` column here would therefore silently return ZERO rows with no fallback ever
+        // firing — verified directly this session (pre-§8 DBs regressed to boxes=0 until this was
+        // fixed). Probe the column via PRAGMA table_info first instead (same technique
+        // `_probeLenses()` already uses a few lines up in this file for `center_x`/`size_x`).
+        var hasRoomGuid = false;
+        try {
+          var ssCols = A.dbQuery("PRAGMA table_info(spatial_structure)");
+          hasRoomGuid = ssCols.some(function(c) { return c[1] === 'room_guid'; });
+        } catch (eCols) { /* hasRoomGuid stays false */ }
+        rows = A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z," +
+          " object_type, predefined_type" + (hasRoomGuid ? ", room_guid" : ", NULL") +
+          " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL");
+        var groups = {}, order = [];
+        (rows || []).forEach(function(r) {
+          var lg = r[10] || r[0];   // logical room guid: room_guid, falling back to this row's own guid
+          if (!groups[lg]) {
+            groups[lg] = { guid: lg, name: r[1],
+              // §ROOM-TYPE-FALLTHROUGH: object_type is 'COMPILED' for every synthetic room — no single
+              // field reliably carries the habitability keyword (verified directly: some synthetic sets
+              // tag the void in `name` only — e.g. buildings/Duplex_extracted.db's "≈ Roof R1" with
+              // predefined_type generically 'INTERNAL' — others tag it in predefined_type — e.g. HHS's
+              // 'INTERNAL_DOORPART'). Join object_type/predefined_type/name and let spaceHabitable's
+              // token match find the keyword wherever it actually is — never invents a label, just
+              // widens which already-real field is checked. Representative fields (name/type) come from
+              // the FIRST row seen for this logical guid — identical across the set per §8's own design.
+              label: [r[8], r[9], r[1]].filter(Boolean).join(' '), z1: -Infinity, rects: [] };
+            order.push(lg);
+          }
+          var g = groups[lg];
+          var z1 = r[4] + (r[7] || 0) / 2;
+          if (z1 > g.z1) g.z1 = z1;   // conservative: if ANY sub-rect pokes above the envelope, check catches it
+          g.rects.push({ cx: r[2], cy: r[3], cz: r[4], sx: r[5], sy: r[6], sz: r[7] });
+        });
+        order.forEach(function(lg) {
+          var g = groups[lg];
+          if (RH) {
+            var v = RH.spaceHabitable({ label: g.label, z1: g.z1 }, env);
+            if (!v.ok) {
+              excluded++;
+              console.log('[RP-TA] §ROOM_VOL_NONHAB ' + (g.name || g.guid) + ' (' + g.guid + ') excluded — ' + v.why);
+              return;
             }
-            var c = A.ifc2three(r[2], r[3], r[4]);
-            out.push({ guid: r[0], name: r[1],
+          }
+          g.rects.forEach(function(rc) {
+            var c = A.ifc2three(rc.cx, rc.cy, rc.cz);
+            out.push({ guid: g.guid, name: g.name,
               center: new THREE.Vector3(c.x, c.y, c.z),
-              size: new THREE.Vector3(Math.max(r[5] || 0.3, 0.3), Math.max(r[7] || 0.3, 0.3), Math.max(r[6] || 0.3, 0.3)) });
+              size: new THREE.Vector3(Math.max(rc.sx || 0.3, 0.3), Math.max(rc.sz || 0.3, 0.3), Math.max(rc.sy || 0.3, 0.3)) });
           });
+        });
+        var kept = order.length - excluded;
+        // Key names kept BACKWARD-COMPATIBLE with witness_room_lens_hab.js's existing
+        // /habitable=(\d+) excluded=(\d+)/ regex (habitable = logical ROOM count, same semantic as
+        // before this fix, when 1 row = 1 room); `boxes=` is the NEW field — sub-rect box count,
+        // equal to habitable on any single-rect building (regression signal) and > habitable only
+        // where §8 multi-rect data exists.
+        console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + kept + ' excluded=' + excluded +
+          ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
+        return out;
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
       console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + out.length + ' excluded=' + excluded +
-        (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
+        ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
       return out;
     }
 
@@ -1571,13 +1618,19 @@
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; } // ghost the rest
       _dimXrayTo(0.12);
       var vols = _allRoomVolumes();
+      // §MULTI-RECT: `vols` is FLAT (one entry per sub-rect box; `guid` is the LOGICAL room guid).
+      // Draw one shell per sub-rect (their union IS the room's real footprint) but count ROOMS by
+      // distinct guid — same "N rects = ONE logical room" convention W-ROOM-FILL/W-HBA-MULTIRECT
+      // already proved for hba_lens.js's outline drawing.
+      var rooms = {};
       vols.forEach(function(v) {
         var mesh = _drawRoomShell(v.center, v.size, 0.10, 0x4fc3f7);
         if (mesh) _roomBoxes.push({ guid: v.guid, name: v.name, mesh: mesh, center: v.center, size: v.size });
+        rooms[v.guid] = true;
       });
       if (A.markDirty) A.markDirty();
-      console.log('[RP-TA] §ROOM_LENS mode=shell shells=' + _roomBoxes.length +
-        ' (all rooms shine-through; building ghost=0.12)');
+      console.log('[RP-TA] §ROOM_LENS mode=shell rooms=' + Object.keys(rooms).length +
+        ' shells=' + _roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');
     }
 
     // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
