@@ -115,3 +115,47 @@ run. That's your job.
 - Do NOT touch `jkr.db` / `jkr_aligned.db` / any file under `~/Downloads/OPEN SOURCE BIM/` —
   not part of this repo, not this task.
 - Do NOT push or open a PR (standing pause).
+
+---
+
+## 2026-07-12 — VERIFICATION EXECUTED (Fable) — diagnosis NOT confirmed; fix harmless & kept
+
+Driver: session scratchpad `drive_discfilter.js` (headless chromium, real user path — Role View
+cycle to Structural then back to All, plus direct `filterDiscs(['STR'])`/`filterDiscs(null)`),
+served from this worktree on :8097. Full logs: `discfilter_out/{OLD_jkr,NEW_jkr,NEW_duplex,
+OLD_clinic}.log` + 16 screenshots (scratchpad).
+
+### Step 3 result — the bug does NOT reproduce on the parent commit (945ebcd)
+Run on the ACTUAL repro building (`jkr_aligned.db`, 8,985 elements) with the UNFIXED panels.js:
+- `§DRV CONTAINER_STATS invisibleToScan=[]` — every discipline, ARC included, IS visible to the
+  old `o.isMesh && o.userData.disc` scan. Root fact the diagnosis missed: **THREE.BatchedMesh and
+  InstancedMesh both extend Mesh (`isMesh===true`), and every one of jkr's 271 BatchedMesh
+  containers carries mesh-level `userData.disc`** (`batchNoDisc:0`). The scan sees the containers.
+- `STATE_AFTER_STR_ISOLATE hiddenDiscs=[PLB,ELEC,ARC,MEP,ACMV,FP]` — CORRECT full complement,
+  ARC properly hidden during isolate.
+- `STATE_AFTER_SHOW_ALL hiddenDiscs=[]` — nothing stuck. Same clean result on Clinic (16,071
+  elements, OLD code) and via direct filterDiscs probes. §DISC_FILTER lines all correct.
+- Direction-of-failure note: even where the scan CAN miss a discipline, the consequence is the
+  disc *never entering* hiddenDiscs → it stays VISIBLE during someone else's isolate (a leak).
+  This mechanism cannot produce "stuck hidden" — a disc absent from the scan can't be added to
+  the hidden set. The observed live symptom (ARC solids never rendering) must have a different
+  root cause (candidates for a fresh investigation WITH the original repro recipe: filterByGuids/
+  room-isolate/X-Ray interplay leaving per-slot BatchedMesh visibility behind, or a streaming-
+  side failure to build ARC's batched buckets in that session).
+
+### Step 4-6 — fix verified behavior-neutral and kept
+- Fixed panels.js (9feb7a2) on jkr: identical correct states (isolate complement, clean show-all).
+- Duplex regression (small building, 38 batch + 106 instanced containers): STR isolate hides
+  exactly [ARC,MEP]; show-all clears; §DISC_FILTER lines correct. PASSED.
+- The fix DOES close a real latent gap the numbers expose: all 1,120 InstancedMesh containers
+  have NO mesh-level `userData.disc` (`instNoDisc:1120`) — a discipline rendered ONLY as
+  InstancedMesh (zero batched buckets, zero plain meshes) would be invisible to the old scan and
+  would LEAK (stay visible) during isolates. Neither test building has such a discipline today,
+  but imported/instanced-heavy families could. Keep the fix.
+
+### Verdict
+KEEP commit 9feb7a2 (additive, regression-clean, closes the instanced-only leak). The
+"Architecture stuck permanently hidden" symptom is NOT explained by this fix — do not close the
+original symptom on the strength of it; it needs its own repro-first session using the exact
+original interaction sequence (which panels/lens actions were taken, X-Ray state, etc.).
+NOT pushed — standing push-pause honored.
