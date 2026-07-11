@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v764';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v765';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -51,7 +51,6 @@ const PRECACHE_ASSETS = [
   'tip_fold.js',       // T7 (W-T7-INC) fix 3: memoized tip-folds (moveDeltaFor precedent, ERP-side)
   'erp_shard.js',      // T7 (W-T7-INC) fix 4/4b: signed shard boundary + lazy verified history
   '../common/about_diy.js',  // ABOUT_BOX_CONSOLIDATE.md — shared About/DIY modal (replaces migrate_showme.js here)
-  'migrate_agent.js',
   'overlay_kit.js',    // CONSISTENCY_FINISH.md §K-1 — shared import-overlay toolbox (window.OverlayKit)
   'erp_picker.js',     // MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (window.ErpPicker)
   'genesis.html',      // SYSTEM_ADMIN_LANE §5 L1 — Initial Tenant Setup wizard (W-GENESIS-WIZARD-LIVE)
