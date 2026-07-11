@@ -5,7 +5,7 @@
  * clash-OFF baseline — measured, never forced green. Substrate: Terminal_arcstr_proof.db (laid ARC shell) + terminal_rules.db
  * (rules mined off Terminal) + Terminal_meta.db (real per-disc counts = ORACLE).
  *   D1 RENDER — each disc's fixtures render into the scene (_dwRoot) + in-frustum
- *   D2 §READPIXELS — the MEP layer rasterizes over the laid ARC (A/B-isolated via __dwPixelProbe)
+ *   D2 §READPIXELS — the MEP layer rasterizes over the laid ARC (A/B-isolated via __dwOcclusionProbe)
  *   D3 ENVELOPE — every placement lands inside an INDEPENDENTLY-recomputed ARC occupancy envelope (no void fixtures)
  *   D4 COUNT — area-distributed discs same-order vs oracle [0.3×,3×]; ACMV+FP tight ≤20% (reported per disc)
  *   D5 PLB routed → no-endpoints honest refusal (chains=0, no fabricated network)
@@ -15,7 +15,7 @@
  */
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
-var { chromium } = require('playwright');
+var { chromium } = require(path.join(process.env.HOME, 'bim-ootb', 'tests', 'node_modules', 'playwright'));   // absolute — no NODE_PATH dependency (same pattern as witness_dw_pixelprobe's puppeteer)
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json',
   '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream', '.png': 'image/png' };
@@ -42,7 +42,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
   await page.goto('http://localhost:' + port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(function () {
     return window.__sceneReady === true && !!window.SQL && !!window.ArcEditable && !!window.DiscWalker &&
-           !!window.__renderDiscWalk && !!window.__dwPixelProbe;
+           !!window.__renderDiscWalk && !!window.__dwOcclusionProbe;
   }, { timeout: 25000 }).catch(function () {});
 
   var pass = 0, fail = 0;
@@ -121,7 +121,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
 
   // readPixels per disc (A/B-isolated _dwRoot layer)
   var probes = {};
-  for (var i = 0; i < DISCS.length; i++) probes[DISCS[i]] = await page.evaluate(function (d) { return window.__dwPixelProbe(d); }, DISCS[i]);
+  for (var i = 0; i < DISCS.length; i++) probes[DISCS[i]] = await page.evaluate(function (d) { return window.__dwOcclusionProbe(d); }, DISCS[i]);
   var shot = path.join(ROOT, 'modeller', 'tests', 'disc_density.png');
   await page.screenshot({ path: shot });
 

@@ -10,7 +10,7 @@
  */
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
-var { chromium } = require('playwright');
+var { chromium } = require(path.join(process.env.HOME, 'bim-ootb', 'tests', 'node_modules', 'playwright'));   // absolute — no NODE_PATH dependency (same pattern as witness_dw_pixelprobe's puppeteer)
 
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm',
@@ -84,7 +84,14 @@ async function openResidentAndSeed(page, key) {
 
   logs.length = 0;
   var sweepsBefore = await page.evaluate(function () { return (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; }).length : 0; });
-  await page.click('#bo-tree [data-disc="MEP"]');
+  // Harness robustness: if B5 found no MEP node this click throws — catch it so B6-B8 still tally
+  // instead of crashing the suite on an uncaught rejection. Short timeout: B5's waitForSelector
+  // already spent the full 30s wait on this exact selector.
+  try {
+    await page.click('#bo-tree [data-disc="MEP"]', { timeout: 5000 });
+  } catch (e) {
+    console.log('  ⚠ MEP click failed (node absent?) — continuing tally: ' + String(e.message || e).split('\n')[0]);
+  }
   // discWalk MEP is async (rwInit + route); wait for its honest-refusal (or routed) log to land
   await page.waitForTimeout(900);
   var sweepsAfter = await page.evaluate(function () { return (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; }).length : 0; });
@@ -103,4 +110,8 @@ async function openResidentAndSeed(page, key) {
   console.log('W-UX-DISC: ' + pass + ' PASS / ' + fail + ' FAIL');
   await browser.close(); srv.close();
   process.exit(fail ? 1 : 0);
-})();
+})().catch(function (e) {
+  // Last-resort net (harness robustness): never die on an uncaught rejection — report + honest FAIL exit.
+  console.log('  ❌ UNCAUGHT — witness aborted: ' + String(e && e.message || e).split('\n')[0]);
+  process.exit(1);
+});

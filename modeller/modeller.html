@@ -4775,7 +4775,7 @@ window.__arcPixelProbe = function (isolateFids) {
 // §8E-3 fix (RESUME_GRAPH_MODELLER_INTEGRATION.md §8E-3): the disc-filtered isolation only matched
 // userData.dwDisc (fixture-box InstancedMeshes from _renderDiscWalk) — the ROUTED NETWORK's own tubes
 // (_renderDiscChains, userData.dwChain) were silently EXCLUDED from both the hide-set and the mesh/inFrustum
-// census, so calling __dwPixelProbe('PLB') on a walked+routed disc under-counted: the tubes stayed visible in
+// census, so calling the occlusion probe on a walked+routed disc under-counted: the tubes stayed visible in
 // BOTH the A and B frames (never hidden) and so contributed ZERO to the A/B diff — a routed network could paint
 // real pixels and this probe would still report dwPainted from fixtures only, missing the tube footprint
 // entirely. Fixed by matching EITHER tag (dwDisc OR dwChain) — same anti-collusion method, now covers both the
@@ -4785,7 +4785,8 @@ function _dwProbeMatch(m, disc) {
   var d = m.userData || {};
   return d.dwDisc === disc || d.dwChain === disc;
 }
-window.__dwPixelProbe = function (disc) {
+// (Named __dwOcclusionProbe — distinct from the §4 scene-graph-census __dwPixelProbe, which this once shadowed.)
+window.__dwOcclusionProbe = function (disc) {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return { error: 'no-group' };
   const root = g.children.find(function (o) { return o.userData && o.userData.dwRoot; });
   if (!root) return { error: 'no-dwRoot', dwPainted: 0 };
