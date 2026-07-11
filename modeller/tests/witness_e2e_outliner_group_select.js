@@ -10,32 +10,43 @@
  *   from the live selection set / DOM / §-log against INDEPENDENTLY hand-computed expected id sets. Read
  *   the log after every run; exit code is not evidence.
  *
+ * §OLSUBTREE-SELECT UPDATE (MODELLER_RENDER_MATERIAL_PARITY.md follow-up, 2026-07-11, user-directed
+ * "option 1"): selectGroup() was promoted from dblclick-only to a SINGLE click on the header (Find-panel
+ * parity — a higher-level Outliner row now highlights+zooms its whole section on one click, not two). The
+ * old dblclick wiring was REMOVED as redundant. A combined "single-click ALSO toggles collapse" design was
+ * tried and REVERTED after empirical proof it can't work: setActive()'s pre-existing auto-expand-on-pick
+ * (§V3) unconditionally re-reveals any row containing the just-selected content — a manual toggle-to-
+ * collapsed on the SAME row gets silently undone by the very _paint() needed to render the toggle (repaint
+ * re-applies setActive → finds the row it just hid → auto-expands it back). No click ordering avoids this,
+ * it's a structural conflict between "select this" and "hide this" in one gesture. Final design: a header
+ * click is select+zoom ONLY — matches the Viewer Find panel's own actual pattern (separate label-tap vs
+ * arrow-tap zones; the Modeller has no arrow zone, so collapse only comes from the tree's own auto-expand
+ * or the bulk Collapse All button). K2-K4 below test this final contract, not the old dblclick one.
+ *
  * Issues under test (each K names what it proves or disproves):
  *   K1 BASELINE        — Duplex renders the bomtree header + walls flat header, and the hand-walk of
  *                        _lastRoots.bomtree (kind==='element' → __arcFidByGuid/numeric, deduped) yields >1
  *                        expected fids while the walls group holds exactly the 3 authored op ids: without
  *                        this every claim below is vacuous.
- *   K2 TREE-GROUP-SELECT — a REAL dblclick on the bomtree category header puts EXACTLY the hand-computed
+ *   K2 TREE-GROUP-SELECT — a REAL single click on the bomtree category header puts EXACTLY the hand-computed
  *                        expected fid set into window.Bonsai._selSet (counted, ID-level set equality — not
- *                        "count > 0"), §OLGROUPSELECT cat=bomtree n=<expected> logged with that count, and
- *                        the dblclick's own two click events left the header's collapse state net-unchanged.
- *   K3 ZOOM-COMPOSES   — that same dblclick fired #711's §ZOOM-SEL fill line (zoomToSelection ran off
+ *                        "count > 0") and §OLGROUPSELECT cat=bomtree n=<expected> is logged with that count.
+ *   K3 ZOOM-COMPOSES   — that same click fired #711's §ZOOM-SEL fill line (zoomToSelection ran off
  *                        selectMany → setSelectionIds), proving the two merged features compose with NO
  *                        zoom re-wiring in this change.
- *   K4 SINGLE-CLICK-UNTOUCHED — with the selection cleared (so §V3 reveal-on-pick cannot auto-reopen the
- *                        branch — run 1 measured exactly that with a live selection), a single click on the
- *                        SAME header still ONLY toggles collapse (flag flips true then back), the selection
- *                        stays empty and NO new §OLGROUPSELECT line fires — the existing onclick handler is
- *                        genuinely undisturbed, dblclick is purely additive.
- *   K5 FLAT-GROUP-SELECT — a REAL dblclick on the walls flat group header selects EXACTLY the 3 authored
+ *   K4 REPEAT-CLICK-IDEMPOTENT — clicking the SAME header again re-fires an identical selectGroup (same
+ *                        set, a fresh §OLGROUPSELECT log line) with no crash/drift — proves a header click
+ *                        is a safe, repeatable action, not a one-shot toggle with a "wrong" second state.
+ *   K5 FLAT-GROUP-SELECT — a REAL single click on the walls flat group header selects EXACTLY the 3 authored
  *                        GEOM_EXTRUDE_POLY op ids (ID-level equality) + §OLGROUPSELECT cat=walls n=3 logged.
  *   K6 EMPTY-NOOP      — selectGroup on a category with zero selectable leaves (strwalk: walker info rows,
  *                        no kind==='element') logs the n=0 no-op and leaves the live selection UNTOUCHED
  *                        (still the 3 walls from K5).
- *   K7 ROOT-COEXISTS   — with the selection cleared (same §V3 reveal caveat as K4), dblclick on #bo-root
- *                        STILL collapses everything (§OLCOLLAPSEALL fires, zero [data-bnode] and zero
- *                        [data-fid] rows) and fires NO §OLGROUPSELECT — the per-category dblclick and the
- *                        whole-tree dblclick live on different targets without interfering.
+ *   K7 ROOT-COEXISTS   — with the selection cleared (§V3 reveal caveat — a live selection's ancestor path
+ *                        legitimately auto-reopens after collapse-all, proven by W-E2E-OL-COLLAPSEALL K5/K6),
+ *                        dblclick on #bo-root STILL collapses everything (§OLCOLLAPSEALL fires, zero
+ *                        [data-bnode] and zero [data-fid] rows) and fires NO §OLGROUPSELECT — the bulk
+ *                        Collapse All action and per-header select live on different targets, no interference.
  *   +  NO-ERROR (harness): no pageerror / fatal across the whole sequence.
  */
 'use strict';
@@ -87,7 +98,6 @@ runE2E('W-E2E-OL-GROUPSELECT', async (t) => {
   const selNow = () => pg.evaluate(() => Array.from(window.Bonsai._selSet || []).sort((a, b) => a - b));
   const setEq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
   const nLogs = re => t.slog.filter(l => re.test(l)).length;
-  const colOf = () => pg.evaluate(() => !!window.Bonsai.outliner._collapsed['tcat|bomtree']);
 
   // K1 — baseline: both header kinds exist; hand-derived expected sets are non-trivial and the walls
   // group is EXACTLY the 3 authored ops (nothing else invents walls on a fresh open)
@@ -103,47 +113,34 @@ runE2E('W-E2E-OL-GROUPSELECT', async (t) => {
     ' bnodes=' + hdrs.bnodes);
   await t.shot('baseline');
 
-  // K2 — REAL dblclick on the bomtree category header → EXACT hand-computed selection
-  const colBefore = await colOf();
-  const gsel0 = nLogs(/§OLGROUPSELECT/), zoom0 = nLogs(/§ZOOM-SEL fill/);
-  await pg.click(TCAT_SEL, { clickCount: 2 });
+  // K2 — REAL single click on the bomtree category header → EXACT hand-computed selection
+  await pg.click(TCAT_SEL);
   await t.flySettle();
   const selT = await selNow();
   const gLog = t.slog.filter(l => /§OLGROUPSELECT cat=bomtree/.test(l));
-  t.assert('K2 TREE-GROUP-SELECT exact ID-level set match + counted log + net collapse unchanged',
-    setEq(selT, expT) && gLog.length === 1 && new RegExp(' n=' + expT.length + '$').test(gLog[0]) &&
-    (await colOf()) === colBefore,
+  t.assert('K2 TREE-GROUP-SELECT exact ID-level set match + counted log',
+    setEq(selT, expT) && gLog.length === 1 && new RegExp(' n=' + expT.length + '$').test(gLog[0]),
     'sel=' + selT.length + ' expected=' + expT.length + ' idSetEqual=' + setEq(selT, expT) +
     ' log=' + (gLog[0] || 'MISSING'));
   await t.shot('tree-selected');
 
-  // K3 — #711 zoom composes: the dblclick itself produced a NEW §ZOOM-SEL fill line (no re-wiring here)
+  // K3 — #711 zoom composes: that same click produced a NEW §ZOOM-SEL fill line (no re-wiring here)
   const zoom1 = nLogs(/§ZOOM-SEL fill/);
   t.assert('K3 ZOOM-COMPOSES §ZOOM-SEL fill fired off selectMany (landed #711, untouched here)',
-    zoom1 === zoom0 + 1,
-    'zoomLogs before=' + zoom0 + ' after=' + zoom1);
+    zoom1 === 1,
+    'zoomLogs after first click=' + zoom1);
 
-  // K4 — single-click regression, selection CLEARED first: with a live selection §V3 reveal-on-pick
-  // auto-reopens the collapsed branch (run 1 measured colAfterSingle=false for that reason — product
-  // behavior, proven by W-E2E-OL-COLLAPSEALL K5). Cleared, the toggle must flip and STICK.
-  await pg.evaluate(() => window.Bonsai.select(null));
-  await sleep(200);
-  const gsel4 = nLogs(/§OLGROUPSELECT/);
+  // K4 — clicking the SAME header again: selectGroup re-fires idempotently (same set), no crash/drift
+  const gsel3 = nLogs(/§OLGROUPSELECT/);
   await pg.click(TCAT_SEL);
-  await sleep(300);
-  const colAfterOne = await colOf();
-  const selAfterOne = await selNow();
-  await pg.click(TCAT_SEL);   // restore expanded for the next steps
-  await sleep(300);
-  const colRestored = await colOf();
-  t.assert('K4 SINGLE-CLICK-UNTOUCHED collapse-only toggle (flips + sticks), no select, no group-select log',
-    colAfterOne === !colBefore && colRestored === colBefore && selAfterOne.length === 0 &&
-    nLogs(/§OLGROUPSELECT/) === gsel4,
-    'colBefore=' + colBefore + ' afterSingle=' + colAfterOne + ' restored=' + colRestored +
-    ' selN=' + selAfterOne.length + ' groupSelectLogs=' + nLogs(/§OLGROUPSELECT/));
+  await t.flySettle();
+  const selT2 = await selNow();
+  t.assert('K4 REPEAT-CLICK-IDEMPOTENT re-fires an identical group-select, no crash/drift',
+    setEq(selT2, expT) && nLogs(/§OLGROUPSELECT/) === gsel3 + 1,
+    'selEqual=' + setEq(selT2, expT) + ' groupSelectLogs=' + nLogs(/§OLGROUPSELECT/));
 
-  // K5 — REAL dblclick on the walls FLAT group header → exactly the 3 authored op ids
-  await pg.click(GRP_SEL, { clickCount: 2 });
+  // K5 — REAL single click on the walls FLAT group header → exactly the 3 authored op ids
+  await pg.click(GRP_SEL);
   await t.flySettle();
   const selW = await selNow();
   const wLog = t.slog.filter(l => /§OLGROUPSELECT cat=walls/.test(l));

@@ -43,6 +43,47 @@
     var words = (part === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
     return words.map(function (w) { return "LOWER(element_name) LIKE '%" + w + "%'"; }).join(' OR ');
   }
+  // §PLANT_ROOM_GATE_FIX (bim-compiler prompts/FIND_PANEL_PLANT_ROOM_GATE_FIX.md, ported from the
+  // Viewer's own fix on the SAME session — viewer/navigate_find.js's _splitNameTokens/_keywordTokenMatch,
+  // do not re-derive, keep byte-identical) — the SQL above is a broad substring pre-filter (superset,
+  // real hits never excluded); this JS-side pass rejects false positives like "Preventer" (contains
+  // "vent" mid-token, no real word-boundary) while keeping real camelCase compounds ("BottomDuct") and
+  // real prefix hits ("Ventilated"). See the Viewer commit for the full real-data citation.
+  function _splitNameTokens(name) {
+    var raw = String(name || '').split(/[^A-Za-z]+/).filter(Boolean);
+    var out = [];
+    raw.forEach(function (tok) {
+      var start = 0;
+      for (var i = 1; i < tok.length; i++) {
+        if (/[a-z]/.test(tok.charAt(i - 1)) && /[A-Z]/.test(tok.charAt(i))) {
+          out.push(tok.slice(start, i));
+          start = i;
+        }
+      }
+      out.push(tok.slice(start));
+    });
+    return out;
+  }
+  function _keywordTokenMatch(name, words) {
+    var tokens = _splitNameTokens(name);
+    return tokens.some(function (t) {
+      var tl = t.toLowerCase();
+      return words.some(function (w) { return tl.indexOf(w) === 0; });
+    });
+  }
+  // §PLANT_ROOM_GATE_FIX Bug 2 — same static filename->class map as the Viewer's fix (mirrors
+  // bim-compiler config/building_taxonomy.yaml's building_classes: residential has NO PLANT_ROOM
+  // entry, complex-only, WalkerDoctrine.md §1 LOCKED). Reads window.__dwName (the opened .db's
+  // filename) since that is this file's own equivalent of the Viewer's A.DB_URL — a stable,
+  // already-fixed identifier per the same building list, not a general classifier.
+  var _RESIDENTIAL_BUILDINGS = ['duplex', 'samplehouse', 'samplecastle'];
+  var _COMPLEX_BUILDINGS = ['terminal', 'clinic', 'hospital', 'hhs'];
+  function _buildingClass() {
+    var src = String(window.__dwName || '').toLowerCase();
+    for (var i = 0; i < _COMPLEX_BUILDINGS.length; i++) { if (src.indexOf(_COMPLEX_BUILDINGS[i]) >= 0) return 'complex'; }
+    for (var i = 0; i < _RESIDENTIAL_BUILDINGS.length; i++) { if (src.indexOf(_RESIDENTIAL_BUILDINGS[i]) >= 0) return 'residential'; }
+    return null; // unclassed — PLANT_ROOM stays hidden, same treatment as residential
+  }
   var _PARTS_GROUPS = [
     { type: 'STAIRWAY', label: 'Stairway' },
     { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
@@ -64,11 +105,22 @@
     var db = null, groupsShown = 0, totalRows = 0;
     try {
       db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      var bldClass = _buildingClass();
       _PARTS_GROUPS.forEach(function (pg) {
+        if (pg.type === 'PLANT_ROOM' && bldClass !== 'complex') {
+          console.log(TAG + ' §PARTS_CLASS_GATE type=PLANT_ROOM buildingClass=' + bldClass + ' -> hidden (complex-only)');
+          return;
+        }
         var rows = [];
         try {
           rows = _rows(db, "SELECT guid, element_name, ifc_class FROM elements_meta WHERE (" + _partsCond(pg.type) + ")");
         } catch (e) { console.warn(TAG + ' query failed', pg.type, e && e.message); }
+        if (pg.type !== 'STAIRWAY') {
+          var words = (pg.type === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+          var before = rows.length;
+          rows = rows.filter(function (r) { return _keywordTokenMatch(r.element_name, words); });
+          if (rows.length !== before) console.log(TAG + ' §PARTS_WORD_BOUNDARY_FILTER type=' + pg.type + ' before=' + before + ' after=' + rows.length);
+        }
         if (!rows.length) return;   // data-gated: no row for this part in this building → no group
         groupsShown++; totalRows += rows.length;
         // Leaf id = the RAW guid (bom_tree_outliner.js's convention: "the seeded ARC-BOM tree's leaf id IS
