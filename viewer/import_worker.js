@@ -681,6 +681,51 @@ self.onmessage = async function(e) {
       }
     }
     console.log('[S220] §UNITS autoScale=' + autoScale + (autoScale !== 1.0 ? ' (mm→m heuristic)' : ' (already metres)'));
+
+    // ── §JKR_SCALE_SELFHEAL (2026-07-12): some IFC exports leave a geometry's vertex data at a
+    // different scale than its own bbox_x/y/z after the autoScale pass above — bbox is computed
+    // early from vertex/box data but never touched by autoScale, so if a geometry's vertices get
+    // an extra implicit rescale somewhere in the pipeline, bbox stays the reliable reference.
+    // Deterministic, per-element, only corrects on a clean ~1000x agreement; leaves ambiguous
+    // cases untouched (never guess). Ported from bim-compiler scripts/fix_mm_scale_blobs.py,
+    // which fixed this offline for the jkr georeferenced Revit series — this runs the same check
+    // live at import time so future drops self-heal instead of needing an offline repair pass.
+    (function selfHealVertexScale() {
+      var transformByGuid = {};
+      for (var sti = 0; sti < transforms.length; sti++) transformByGuid[transforms[sti].guid] = transforms[sti];
+      var fixed = 0, ambiguous = 0;
+      for (var sgi = 0; sgi < geometries.length; sgi++) {
+        var geoEntry = geometries[sgi];
+        var t = transformByGuid[geoEntry.guid];
+        if (!t) continue;
+        var bboxMax = Math.max(t.bx || 0, t.by || 0, t.bz || 0);
+        if (bboxMax <= 0) continue;
+        var vArr = new Float32Array(geoEntry.vertices);
+        var vc = vArr.length / 3;
+        if (vc < 1) continue;
+        var xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+        for (var vi = 0; vi < vc; vi++) {
+          var vx = vArr[vi * 3], vy = vArr[vi * 3 + 1], vz = vArr[vi * 3 + 2];
+          if (vx < xMin) xMin = vx; if (vx > xMax) xMax = vx;
+          if (vy < yMin) yMin = vy; if (vy > yMax) yMax = vy;
+          if (vz < zMin) zMin = vz; if (vz > zMax) zMax = vz;
+        }
+        var vertExtent = Math.max(xMax - xMin, yMax - yMin, zMax - zMin);
+        if (vertExtent <= 0) continue;
+        var ratio = bboxMax / vertExtent;
+        if (ratio >= 900 && ratio <= 1100) {
+          for (var wi = 0; wi < vArr.length; wi++) vArr[wi] *= 1000.0;
+          geoEntry.vertices = vArr.buffer;
+          fixed++;
+        } else if (ratio > 30 || ratio < 1 / 30) {
+          ambiguous++;  // neither ~1 nor ~1000 — don't guess, leave untouched, but note it
+        }
+      }
+      if (fixed > 0 || ambiguous > 0) {
+        console.log('[S220] §JKR_SCALE_SELFHEAL fixed=' + fixed + ' ambiguous_left=' + ambiguous + ' of ' + geometries.length + ' geometries');
+      }
+    })();
+
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 
