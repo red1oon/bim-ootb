@@ -451,6 +451,18 @@ self.onmessage = async function(e) {
     // Phase 4: Tessellate geometry (50-90%)
     // Same pipeline as Java: apply 4x4 transform → compute centroid → re-center at origin
     // Viewer expects: library vertices centered at origin, center_x/y/z = world position
+    //
+    // KNOWN LIMITATION (2026-07-12, JKR multi-discipline IFC4 set): geo.flatTransformation
+    // below is trusted as the fully-composed world matrix, but for some IFC exports (deep/nested
+    // IfcLocalPlacement→PlacementRelTo chains) web-ifc's GetFlatMesh returns a partial/truncated
+    // composition — most elements collapse toward one residual point instead of spreading across
+    // their real storey position, even though each element's own local mesh still renders intact
+    // ("well formed but miles apart" symptom). bim-compiler's offline extractor resolves the same
+    // files correctly (ifcopenshell.geom.iterator + shape.transformation.matrix). If a drop looks
+    // collapsed/misaligned, don't debug it live in this worker — run it offline instead:
+    //   python3 scripts/extract_merge_disciplines.py --ifc-dir <dir> --pattern "<prefix>*.ifc" \
+    //       --output <name>_extracted.db
+    // (bim-compiler repo). It has a built-in §PROOF per-discipline alignment self-check.
     const geometries = []; // { guid, geomHash, vertices: ArrayBuffer, indices: ArrayBuffer }
     const transforms = []; // { guid, cx, cy, cz, rx, ry, rz }
     let geomDone = 0;
