@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v742';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v743';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -58,7 +58,6 @@ const PRECACHE_ASSETS = [
   'mep_report.html',
   'erp.html',
   'idempiere.html',
-  '2d.html',
   'offline.html',
   'manifest.webmanifest',
   // Core viewer modules (order matches index.html script tags)
@@ -165,10 +164,7 @@ const PRECACHE_ASSETS = [
   'wizard_storeys.js',
   'wizard_classify.js',
   'section_cut.js',
-  'dxf-parser.js',
-  'dxf_export.js',
   'elevation.js',
-  'title_block.js',
   'dlod.js',
   // Vendor libs not in LOCAL_LIBS (loaded by index.html)
   'lib/httpvfs.js',
