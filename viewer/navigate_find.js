@@ -638,7 +638,61 @@
     function _partsCond(part) {
       if (part === 'STAIRWAY') return STAIR_LIKE.map(function(p) { return "ifc_class LIKE '" + p + "'"; }).join(' OR ');
       var words = (part === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+      // §PLANT_ROOM_GATE_FIX Bug 1: SQL stays a broad substring pre-filter (cheap, superset —
+      // real matches never excluded here); the word-boundary discipline that actually rejects
+      // false positives (e.g. "Preventer" containing "vent") runs in JS via _keywordTokenMatch()
+      // below, applied to the rows this SQL returns. Kept as LIKE (not narrowed here) because
+      // SQLite has no REGEXP/word-boundary operator built in — see FIND_PANEL_PLANT_ROOM_GATE_FIX.md.
       return words.map(function(w) { return "LOWER(element_name) LIKE '%" + w + "%'"; }).join(' OR ');
+    }
+    // §PLANT_ROOM_GATE_FIX Bug 1: real-data-driven word-boundary check (bim-compiler
+    // prompts/FIND_PANEL_PLANT_ROOM_GATE_FIX.md) — confirmed against real element_name templates
+    // across Duplex/Terminal/Hospital/Clinic/HHS (59 distinct templates surveyed) that these names
+    // use TWO delimiter styles interchangeably: non-alphanumeric separators (space/colon/underscore/
+    // hyphen — e.g. "M_Backflow Preventer_...") AND bare camelCase compounds with no separator at
+    // all (e.g. "BottomDuct", "AirBox"). A plain regex \b is insufficient (it treats "_" as a word
+    // character, so "_AHU_" would never trip a boundary) and exact-token matching is too strict (it
+    // would reject genuine hits like "Ventilated" in "Wall Mounted Ventilated Fans"). This splits on
+    // BOTH delimiter styles, then requires the keyword to be a TOKEN PREFIX (not mid-token) —
+    // rejects "Preventer" (keyword "vent" appears mid-token, not at a token start) while keeping
+    // "Duct" (from "BottomDuct", a camelCase-split token start) and "Ventilated"/"Vent" (prefix match).
+    function _splitNameTokens(name) {
+      var raw = String(name || '').split(/[^A-Za-z]+/).filter(Boolean);
+      var out = [];
+      raw.forEach(function(tok) {
+        var start = 0;
+        for (var i = 1; i < tok.length; i++) {
+          if (/[a-z]/.test(tok.charAt(i - 1)) && /[A-Z]/.test(tok.charAt(i))) {
+            out.push(tok.slice(start, i));
+            start = i;
+          }
+        }
+        out.push(tok.slice(start));
+      });
+      return out;
+    }
+    function _keywordTokenMatch(name, words) {
+      var tokens = _splitNameTokens(name);
+      return tokens.some(function(t) {
+        var tl = t.toLowerCase();
+        return words.some(function(w) { return tl.indexOf(w) === 0; });
+      });
+    }
+    // §PLANT_ROOM_GATE_FIX Bug 2: smallest static filename->class map (NOT a general classifier —
+    // mirrors bim-compiler config/building_taxonomy.yaml's building_classes exactly, which itself
+    // cites WalkerDoctrine.md §1 LOCKED: residential = SampleHouse/Duplex/SampleCastle, complex =
+    // Terminal/Clinic/Hospital/HHS). The Viewer has no building-class concept anywhere else (grep
+    // confirmed zero hits before this change) — this reads A.DB_URL (the ?db= query param, a stable
+    // filename per WalkerDoctrine's own fixed building list) rather than A.activeBuilding (the raw
+    // elements_meta.building column, confirmed messy/inconsistent per-building — e.g. Clinic carries
+    // 5 different discipline-suffixed values, Duplex carries the full IFC federation filename).
+    var _RESIDENTIAL_BUILDINGS = ['duplex', 'samplehouse', 'samplecastle'];
+    var _COMPLEX_BUILDINGS = ['terminal', 'clinic', 'hospital', 'hhs'];
+    function _buildingClass() {
+      var src = String((A.DB_URL || '')).toLowerCase();
+      for (var i = 0; i < _COMPLEX_BUILDINGS.length; i++) { if (src.indexOf(_COMPLEX_BUILDINGS[i]) >= 0) return 'complex'; }
+      for (var i = 0; i < _RESIDENTIAL_BUILDINGS.length; i++) { if (src.indexOf(_RESIDENTIAL_BUILDINGS[i]) >= 0) return 'residential'; }
+      return null; // unclassed (e.g. Garage, n=1 per scoreboard) — PLANT_ROOM stays hidden, same as residential
     }
     var _PARTS_GROUPS = [
       { type: 'STAIRWAY', label: 'Stairway' },
@@ -1912,11 +1966,31 @@
     // a group or a leaf isolates via filterByGuids, same engine as every other axis (W-LENS-ISOLATE).
     function _buildPartsTree() {
       var groupsShown = 0, totalRows = 0;
+      var bldClass = _buildingClass();
       _PARTS_GROUPS.forEach(function(pg) {
+        // §PLANT_ROOM_GATE_FIX Bug 2: config/building_taxonomy.yaml's `residential` building_class
+        // has NO PLANT_ROOM entry at all (advisory, n=1, complex-only per its own citation) — mirror
+        // that gate here so a residential/unclassed building never shows a Plant Room group, same as
+        // the bim-compiler checklistReport() this axis's query logic was ported from.
+        if (pg.type === 'PLANT_ROOM' && bldClass !== 'complex') {
+          console.log('[RP-T3] §PARTS_CLASS_GATE type=PLANT_ROOM buildingClass=' + bldClass + ' -> hidden (complex-only)');
+          return;
+        }
         var rows = [];
         try {
           rows = A.dbQuery("SELECT guid, element_name FROM elements_meta WHERE (" + _partsCond(pg.type) + ")");
         } catch(e) { console.warn('[RP-T3] §PARTS_TREE_ERR', pg.type, e.message); }
+        if (pg.type !== 'STAIRWAY') {
+          // §PLANT_ROOM_GATE_FIX Bug 1: LIFT_SHAFT/PLANT_ROOM used a bare SQL substring match —
+          // narrow the SQL's superset down to real word-boundary hits (STAIRWAY uses ifc_class,
+          // not a name keyword, so it's exempt — no false-positive mechanism to fix there).
+          var words = (pg.type === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+          var before = rows.length;
+          rows = rows.filter(function(r) { return _keywordTokenMatch(r[1], words); });
+          if (rows.length !== before) {
+            console.log('[RP-T3] §PARTS_WORD_BOUNDARY_FILTER type=' + pg.type + ' before=' + before + ' after=' + rows.length);
+          }
+        }
         if (!rows.length) return; // data-gated: no row for this part in this building → no group
         groupsShown++; totalRows += rows.length;
         var guids = rows.map(function(r) { return r[0]; });
