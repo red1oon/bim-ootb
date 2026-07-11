@@ -113,6 +113,9 @@
         '<div style="padding:7px 9px;border-bottom:1px solid #2c303a;display:flex;gap:6px;align-items:center">' +
         '<input id="bo-find" placeholder="🔍 find…" style="flex:1;min-width:0;box-sizing:border-box;background:#13151a;' +
         'border:1px solid #2c303a;border-radius:5px;color:#c7cdd8;padding:5px 8px;font-size:12px;outline:none">' +
+        '<button id="bo-collapseall" title="Collapse all — fold the tree to its top-level trunk" ' +
+        'style="flex:0 0 auto;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#7f8aa0;' +
+        'padding:4px 8px;font-size:13px;cursor:pointer;line-height:1">⤒</button>' +
         '<button id="bo-adj" title="Adjacency lens — highlight a selected element’s abutting neighbours" ' +
         'style="flex:0 0 auto;background:#13151a;border:1px solid #2c303a;border-radius:5px;color:#7f8aa0;' +
         'padding:4px 8px;font-size:13px;cursor:pointer;line-height:1">⇄</button></div>' +
@@ -121,6 +124,11 @@
       host.appendChild(el);
       this._el = el;
       el.querySelector('#bo-find').addEventListener('input', e => { this._find = e.target.value.toLowerCase(); this._paint(); });
+      // §MAT-PARITY follow-up (MODELLER_RENDER_MATERIAL_PARITY.md, user 2026-07-11: "still cannot find
+      // button to collapse all"): collapseAll() itself already existed and worked (dbl-click #bo-root,
+      // §OLCOLLAPSEALL) — the gap was discoverability, same class of bug as the panel chevron above. A
+      // REAL button, not a hidden gesture. #bo-root's dblclick stays wired too (harmless alias, never removed).
+      el.querySelector('#bo-collapseall').addEventListener('click', () => this.collapseAll());
       el.querySelector('#bo-adj').addEventListener('click', () => {
         this._adjLens = !this._adjLens;
         const b = this._el.querySelector('#bo-adj');
