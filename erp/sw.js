@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v763';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v764';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -42,7 +42,6 @@ const PRECACHE_ASSETS = [
   'field_health.js',  // SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth)
   'op_upcaster.js',   // D2 — schema_version stamp + read-time upcaster registry (default write seam)
   'ad_ui.js',
-  'erp_panel.js',
   'erp_persist.js',
   'erp_pills.js',
   'erp_replay.js',
@@ -87,8 +86,6 @@ const PRECACHE_ASSETS = [
   'plugins/widget_callout.mjs',     // example bundle — M_Product.Name → upper (C-1)
   'plugins/production_validator.mjs',// example bundle — M_Production BEFORE_SAVE qty<0 reject (C-2)
   'plugins/wip_token.mjs',          // example bundle — {Production.WIP} token from seed (C-3)
-  'menu_seed.js',
-  'role_band.js',
   'icons.js',
   '../common/pill_builder.js',   // THE one canonical builder (PILLS_CONSOLIDATION_REVIEW_2026-07-03 — fork retired)
   'kernel_ops.js',     // shared infra — dedupe to common/ later (ERP_FOLDER_HOME.md)
