@@ -2616,11 +2616,13 @@
       var set = new Set();
       try {
         var ph = labels.map(function() { return '?'; }).join(',');
+        // `labels` are always raw codes (data-find-parent values) — the query never sees the friendly word.
         A.dbQuery("SELECT guid FROM elements_meta WHERE " + col + " IN (" + ph + ")", labels)
           .forEach(function(r) { set.add(r[0]); });
       } catch (e) { console.warn('[RP-TB] §AXIS_GROUP_ERR', e.message); }
-      // top-level group: storey/disc solid, building 0.2.
-      _drillSelect(set, labels.join(', '), (mode === 'storey' ? 'STOREY' : 'DISC') + '_SELECT', { isItem: false });
+      // top-level group: storey/disc solid, building 0.2. Display-only friendly relabel for disc.
+      var _dispLabels = (mode === 'disc') ? labels.map(friendlyDisc) : labels;
+      _drillSelect(set, _dispLabels.join(', '), (mode === 'storey' ? 'STOREY' : 'DISC') + '_SELECT', { isItem: false });
     }
 
     // §RP-SHAPE L4: storey/disc → type → INDIVIDUAL ITEM. Lazy children for a Type leaf.
@@ -2818,6 +2820,10 @@
 
     function _treeNode(label, count, level, opts) {
       opts = opts || {};
+      // §DISC_LABELS display-only relabel: `value` is the underlying identity used for
+      // multi-select/query/data-find-parent (defaults to `label` — unchanged for every other
+      // axis). Disc mode passes opts.value = the raw code while `label` carries the friendly word.
+      var value = (opts.value !== undefined && opts.value !== null) ? opts.value : label;
       var row = document.createElement('div');
       row.className = 'find-tree-row'; // §FOCUS: tag every row (any depth) so the last-clicked gets the band
       var isParent = level === 0;
@@ -2847,8 +2853,10 @@
       row.appendChild(arrow);
       row.appendChild(text);
       row.appendChild(badge);
-      // §NAV_FIND_002: tag parent rows so multi-select range/highlight can read DOM order
-      if (isParent) row.setAttribute('data-find-parent', label);
+      // §NAV_FIND_002: tag parent rows so multi-select range/highlight can read DOM order.
+      // Tag with `value` (raw code for disc, same as label elsewhere) — this is what
+      // _selDiscs/_axisGroupSelect/the SQL query actually key on, never the friendly text.
+      if (isParent) row.setAttribute('data-find-parent', value);
 
       // Hover
       row.addEventListener('pointerenter', function() {
@@ -2907,18 +2915,19 @@
           var ctrl = e.ctrlKey || e.metaKey;
           var shift = e.shiftKey;
           var mod = shift ? 'shift' : (ctrl ? 'ctrl' : 'plain');
+          // §DISC_LABELS: identity/selection keys off `value` (raw code), never the friendly `label`.
           if (shift && _anchor !== null) {
             var labels = _orderedParentLabels();
-            var ai = labels.indexOf(_anchor), bi = labels.indexOf(label);
+            var ai = labels.indexOf(_anchor), bi = labels.indexOf(value);
             if (ai >= 0 && bi >= 0) {
               sel.clear();
               for (var k = Math.min(ai, bi); k <= Math.max(ai, bi); k++) sel.add(labels[k]);
-            } else { sel.clear(); sel.add(label); _anchor = label; }
+            } else { sel.clear(); sel.add(value); _anchor = value; }
           } else if (ctrl) {
-            if (sel.has(label)) sel.delete(label); else sel.add(label);
-            _anchor = label;
+            if (sel.has(value)) sel.delete(value); else sel.add(value);
+            _anchor = value;
           } else {
-            sel.clear(); sel.add(label); _anchor = label;
+            sel.clear(); sel.add(value); _anchor = value;
           }
           _applyParentHighlight();
           var arr = Array.from(sel);
@@ -2929,7 +2938,9 @@
           // single result-item click (line ~3027), so a group's cost + push button were never visible.
           var _elSelText = document.getElementById('find-selected-text');
           if (arr.length) {
-            if (_elSelText) _elSelText.textContent = arr.join(', ') + ' · ' + arr.length + ' ' + _treeMode + (arr.length > 1 ? 's' : '');
+            // Display friendly words for disc mode; storey codes are already human (e.g. "Level 1").
+            var _dispArr = (_treeMode === 'disc') ? arr.map(friendlyDisc) : arr;
+            if (_elSelText) _elSelText.textContent = _dispArr.join(', ') + ' · ' + arr.length + ' ' + _treeMode + (arr.length > 1 ? 's' : '');
             elSelected.style.display = 'flex';
           } else {
             elSelected.style.display = 'none';
@@ -3026,7 +3037,10 @@
         if (!disc) return;
         if (filter && disc.toLowerCase().indexOf(filter) < 0) return;
 
-        var node = _treeNode(disc, discCnt, 0, {
+        // §DISC_LABELS: render the friendly word, but `value: disc` keeps the raw code as the
+        // multi-select/query identity (data-find-parent, _selDiscs, A.filterDisc — unchanged).
+        var node = _treeNode(friendlyDisc(disc), discCnt, 0, {
+          value: disc,
           children: true,
           multiSelect: true, // §NAV_FIND_002: _doTap manages selection + filter
           onExpand: function(container) {
@@ -3042,7 +3056,7 @@
                 container.appendChild(_treeNode(friendlyClass(ifc), tp[1], 1, {
                   children: true, // §RP-SHAPE L4: arrow expands → individual items
                   // §RP-SHAPE: tap a Type leaf → light that type's shapes, discipline solid, rest 0.2
-                  onTap: function() { _typeShapeDrill('discipline', disc, ifc, friendlyClass(ifc) + ' @ ' + disc); },
+                  onTap: function() { _typeShapeDrill('discipline', disc, ifc, friendlyClass(ifc) + ' @ ' + friendlyDisc(disc)); },
                   onExpand: function(c) { if (c._loaded) return; c._loaded = true; _typeItemChildren(c, 'discipline', disc, ifc); }
                 }));
               });
@@ -3635,6 +3649,16 @@
       return c;
     }
 
+    // §OUTLINER_TAXONOMY_REDESIGN.md §2 Layer 1: DISPLAY-ONLY word mapping for the raw discipline
+    // CODE stored in elements_meta.discipline (ACMV/ELEC/PLB/FP/MEP/STR/ARC). Every filter/query/
+    // A.filterDisc still runs on the raw code — this only swaps the rendered text. Fixed list, no
+    // invented mapping for a code outside it (unmapped code falls back to itself, never blank).
+    var DISC_LABELS = {
+      ACMV: 'Air-Conditioning', ELEC: 'Electrical', PLB: 'Plumbing', PLMB: 'Plumbing',
+      FP: 'Fire Protection', STR: 'Structure', ARC: 'Architecture', MEP: 'Mechanical & Electrical'
+    };
+    function friendlyDisc(code) { return DISC_LABELS[code] || code; }
+
     function classIcon(ifcClass) {
       var c = (ifcClass || '').toLowerCase();
       if (c.includes('door')) return '\uD83D\uDEAA';
@@ -3741,7 +3765,7 @@
         document.getElementById('info-guid').textContent = rows[0][2] || '—';
         document.getElementById('info-building').textContent = rows[0][3] || '—';
         document.getElementById('info-storey').textContent = rows[0][4] || '—';
-        document.getElementById('info-disc').textContent = rows[0][5] || '—';
+        document.getElementById('info-disc').textContent = rows[0][5] ? friendlyDisc(rows[0][5]) : '—';
         document.getElementById('info-material').textContent = rows[0][6] || '—';
         document.getElementById('info-panel').style.display = 'block';
         var snagRow = document.getElementById('snag-btn-row');

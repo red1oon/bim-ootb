@@ -87,6 +87,16 @@ var ICONS = {
   waypoints:   { svg: '<circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/><circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/><circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/><circle cx="12" cy="19.5" r="2.5"/>', trl: null, key: null, desc: 'Untangle Graph' }
 };
 
+// §OUTLINER_TAXONOMY_REDESIGN.md §2 Layer 1: DISPLAY-ONLY word mapping for the raw discipline
+// CODE (ACMV/ELEC/PLB/FP/MEP/STR/ARC) as stored in elements_meta.discipline / BOM discipline
+// names. Every filter/query/DocCanvas.setActiveDisc still runs on the raw code — this only
+// swaps rendered text. Fixed list, unmapped code falls back to itself (never blank/invented).
+var DISC_LABELS = {
+  ACMV: 'Air-Conditioning', ELEC: 'Electrical', PLB: 'Plumbing', PLMB: 'Plumbing',
+  FP: 'Fire Protection', STR: 'Structure', ARC: 'Architecture', MEP: 'Mechanical & Electrical'
+};
+function friendlyDisc(code) { return DISC_LABELS[code] || code; }
+
 // HISTORY_KNOB_DIAL.md — the W pill's long-press drawer.
 //   §2026-07-06: Z (docHist) moved OUT to its own row in the Navigate drawer (see panels.js
 //   _actions 'docHist') — only the dangerous bomb (clear history, warns first) stays hidden here.
@@ -939,7 +949,7 @@ function setupPanels(A) {
             row.appendChild(ic);
             // Label
             var lbl = document.createElement('span');
-            lbl.textContent = d;
+            lbl.textContent = friendlyDisc(d);
             lbl.style.cssText = 'color:' + (_discColorMap[d] || '#ccc') + ';font:bold 13px monospace;';
             row.appendChild(lbl);
             // Active indicator
