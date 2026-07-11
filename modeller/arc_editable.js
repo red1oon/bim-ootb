@@ -24,6 +24,19 @@
   };
   function colorFor(cls) { return PALETTE[cls] != null ? PALETTE[cls] : 0xb9c4cf; }
 
+  // §MAT-PARITY (MODELLER_RENDER_MATERIAL_PARITY.md Task 1): elements_meta.material_rgba is the SAME real
+  // per-element "r,g,b,a" string viewer/streaming.js reads (A._getMaterial(el.rgba, ...) at ~L739/865/963) —
+  // the alpha channel is real IFC-authored transparency (e.g. Duplex's 22 IfcWindow rows carry alpha=0.100,
+  // confirmed via sqlite3 on buildings/Duplex_extracted.db). Colour here stays the PALETTE (cosmetic, per
+  // colorFor above, unchanged) — this ONLY recovers alpha, mirroring the Viewer's own opacity gate
+  // (streaming.js: `if (parts.length >= 4 && parts[3] < 1.0) a = parts[3]`). Malformed/absent → undefined
+  // (opaque, today's unchanged behaviour).
+  function alphaFor(rgba) {
+    if (!rgba || rgba.indexOf(',') < 0) return undefined;
+    var parts = rgba.split(',').map(Number);
+    return (parts.length >= 4 && parts[3] < 1.0) ? parts[3] : undefined;
+  }
+
   // discipline='ARC' is the canonical filter (VISION-LOCK: ARC = sole edited substrate). When the discipline
   // column is absent/empty, fall back to an ARC-ish class set (LOGGED at the call site — measure-don't-whitelist
   // caveat: this is a discipline-recovery fallback, not a geometry whitelist).
@@ -124,13 +137,13 @@
     var hasId = _hasIdColumn(db);
     if (!hasId) _log(TAG + ' §ARC-SEED-SCHEMA elements_meta has no id column — ORDER BY guid fallback (stable, guid-keyed bridge unaffected)');
     var sql = "SELECT m.guid, m.ifc_class, t.center_x, t.center_y, t.center_z, " +
-      "t.bbox_x, t.bbox_y, t.bbox_z, t.rotation_x, t.rotation_y, t.rotation_z FROM elements_meta m " +
+      "t.bbox_x, t.bbox_y, t.bbox_z, t.rotation_x, t.rotation_y, t.rotation_z, m.material_rgba FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid = m.guid WHERE " + where + " ORDER BY " + (hasId ? 'm.id' : 'm.guid');
     var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0;
     var geomIdx = RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} };
     var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0;
     if (r.length) r[0].values.forEach(function (v) {
-      var guid = v[0], cls = v[1], cx = v[2], cy = v[3], cz = v[4], bx = v[5], by = v[6], bz = v[7], rx = v[8] || 0, ry = v[9] || 0, rz = v[10] || 0;
+      var guid = v[0], cls = v[1], cx = v[2], cy = v[3], cz = v[4], bx = v[5], by = v[6], bz = v[7], rx = v[8] || 0, ry = v[9] || 0, rz = v[10] || 0, rgba = v[11];
       // §ARC-YAW-ONLY (code-parity audit vs the Viewer): viewer/streaming.js applies the FULL 3-axis Euler
       // (_euler.set(el.rotX, el.rotZ, -el.rotY)) — every rotation_x/y/z column, straight radians. This ARC-seed
       // path only ever fed rotation_z through place()'s single yaw (cos/sin about Z); rotation_x/rotation_y were
@@ -175,7 +188,7 @@
       // on every op regardless of match — audit trail: what was actually measured, vs what mesh got stamped).
       var seatHalfZ = bz / 2;                                          // §LOD-300: seat half-height defaults to MEASURED
       var m = _matchLod300(cls, bx, by, bz);                           // Bug-2 partial fix: try the 3-item real-mesh catalog
-      var params = { bbox: bbox, color: colorFor(cls), provenance: 'recovered:extracted', ifc_class: cls };
+      var params = { bbox: bbox, color: colorFor(cls), provenance: 'recovered:extracted', ifc_class: cls, opacity: alphaFor(rgba) };
       if (m) {
         matched++;
         params.hash = m.hash;
@@ -309,6 +322,6 @@
 
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
 
-  return { buildSeedOps: buildSeedOps, buildBridge: buildBridge, seedArc: seedArc, colorFor: colorFor, ARC_CLASSES: ARC_CLASSES,
+  return { buildSeedOps: buildSeedOps, buildBridge: buildBridge, seedArc: seedArc, colorFor: colorFor, alphaFor: alphaFor, ARC_CLASSES: ARC_CLASSES,
     TAG: TAG, LOD300_CATALOG: LOD300_CATALOG, LOD300_TOL: LOD300_TOL, matchLod300: _matchLod300 };
 });

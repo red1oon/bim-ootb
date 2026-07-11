@@ -493,7 +493,10 @@
       }
       // PER-MESH colour: a signed GEOM_INSERT may carry parameters.color (hex int) — RouteWalker fixtures persist
       // their discipline colour there so each box keeps it through scrub/replay (the fold is otherwise one colour).
-      return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices, color: (P.color != null ? P.color : undefined) };
+      // PER-MESH opacity (§MAT-PARITY, MODELLER_RENDER_MATERIAL_PARITY.md Task 1): arc_editable.js's ARC seed
+      // stamps parameters.opacity from the element's real material_rgba alpha (glass/IfcWindow etc.) — same
+      // source viewer/streaming.js reads. undefined ⇒ opaque, today's unchanged behaviour for every other class.
+      return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices, color: (P.color != null ? P.color : undefined), opacity: (P.opacity != null ? P.opacity : undefined) };
     },
 
     // GHOST preview (uncommitted): a LOD-200 box of the component at a candidate placement, so the host can
