@@ -2526,6 +2526,10 @@
     // Hand the isolate set to the viewer + emit the W-FILTER-ISOLATE witness.
     function _emitIsolate(set, by) {
       A.filterByGuids(set);
+      // §ISOLATE_ZOOM (FIND_PANEL_ISOLATE_NO_CAMERA_ZOOM.md): isolate-tap only used to filter
+      // visibility, never reframed the camera — reuse the SAME group-fit primitive _drillSelect/
+      // focusElement already call, so an isolate on an off-screen target actually flies to it.
+      var zoomed = _zoomToGroup(set);
       var bld = A.activeBuilding || '';
       var total = 0;
       try {
@@ -2533,7 +2537,7 @@
         if (tr.length) total = tr[0].values[0][0];
       } catch(e) { /* total stays 0 */ }
       console.log('[RP-A1] §FILTER visible=' + set.size + ' hidden=' + Math.max(0, total - set.size) +
-        ' total=' + total + ' by=' + by);
+        ' total=' + total + ' by=' + by + ' zoom=' + (zoomed ? 'fit' : 'none'));
     }
 
     function applyIsolate() {
