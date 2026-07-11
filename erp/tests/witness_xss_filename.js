@@ -32,12 +32,12 @@ function loadModule(file) {
 }
 
 var np = loadModule('ninja_pill.js').NinjaPill;
-var ms = loadModule('migrate_showme.js').MigrateShowMe;
+// migrate_showme.js retired 2026-07-12 (TRILOGY_STALE_CODE_AUDIT) — NinjaPill remains the covered sink
 
 var EVIL = '<img src=x onerror=alert(1)>.xlsx';
 var BENIGN = 'Q3 report & summary.xlsx';
 
-[['NinjaPill', np], ['MigrateShowMe', ms]].forEach(function (m) {
+[['NinjaPill', np]].forEach(function (m) {
   var name = m[0], mod = m[1];
   check(name + ' exposes _escHtml', mod && typeof mod._escHtml === 'function');
   if (!mod || !mod._escHtml) return;
@@ -48,7 +48,7 @@ var BENIGN = 'Q3 report & summary.xlsx';
 });
 
 // Wiring (secondary): every innerHTML line that concatenates a filename is escaped.
-['ninja_pill.js', 'migrate_showme.js'].forEach(function (file) {
+['ninja_pill.js'].forEach(function (file) {
   var offenders = fs.readFileSync(path.join(ERP, file), 'utf8').split('\n').filter(function (l) {
     return l.indexOf('.innerHTML') >= 0 && (/\bf\.name\b|\bfname\b/.test(l)) && l.indexOf('_escHtml(') < 0;
   });
