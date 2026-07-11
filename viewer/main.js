@@ -134,7 +134,10 @@ async function initViewer() {
         return;
       }
       // Load sub-modules in dependency order, then the bootstrap
+      // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §2 Task 1 — room_habitability.js first: navigate_find.js's
+      // _allRoomVolumes() calls window.RoomHabitability.spaceHabitable() when the Room Lens opens.
       var modules = [
+        '../common/room_habitability.js?v=1',
         'navigate_find.js?v=44',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',

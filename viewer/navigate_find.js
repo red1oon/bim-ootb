@@ -1491,18 +1491,44 @@
       ];
     }
     // All IfcSpace volumes mapped to Three space (IFC size → Three: x→x, z→y, y→z — bbox parity).
+    // Implementing VIEWER_FIND_PANEL_ROOM_ACCURACY.md §2 Task 1 — Witness: W-VIEWER-ROOM-HAB.
+    // Ports ROOM_INJECTION_HYBRID.md §6's spaceHabitable() classifier (W-ROOM-HAB 5/5, proven on
+    // Duplex's known-21: 20 habitable + R301 Roof excluded) via the shared common/room_habitability.js
+    // module (window.RoomHabitability, loaded by main.js before this file runs its query) — a real,
+    // honestly-extracted IfcSpace is not automatically a room a user should be shown (Roof/Shaft/
+    // Plant/... voids). label falls back to `name` when `object_type` is empty (the canonical
+    // buildings/*_extracted.db carries the real space-type string in `name`, not `object_type` —
+    // see the module's own header comment; a synthetic COMPILED row's object_type is 'COMPILED',
+    // which never matches the exclude-list, so it always passes here — its exclusion from
+    // schedule placement is the SEPARATE, already-existing guid NOT LIKE 'RM\_%' mechanism).
     function _allRoomVolumes() {
       var out = [];
       if (!A.ifc2three || typeof THREE === 'undefined') return out;
       try {
-        A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z" +
+        var env = null;
+        var envRows = A.dbQuery("SELECT MIN(center_z-bbox_z/2), MAX(center_z+bbox_z/2) FROM element_transforms");
+        if (envRows.length && envRows[0][1] != null) env = { z1: envRows[0][1] };
+        var RH = (typeof window !== 'undefined') && window.RoomHabitability;
+        var excluded = 0;
+        A.dbQuery("SELECT guid, name, object_type, center_x, center_y, center_z, size_x, size_y, size_z" +
           " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL")
           .forEach(function(r) {
-            var c = A.ifc2three(r[2], r[3], r[4]);
+            if (RH) {
+              var label = (r[2] != null && String(r[2]).length) ? r[2] : r[1];
+              var z1 = (r[5] || 0) + (r[8] || 0) / 2;
+              var v = RH.spaceHabitable({ label: label, z1: z1 }, env);
+              if (!v.ok) {
+                excluded++;
+                console.log('[RP-TA] §ROOM_VOL_NONHAB ' + r[1] + ' (' + r[0] + ') excluded — ' + v.why);
+                return;
+              }
+            }
+            var c = A.ifc2three(r[3], r[4], r[5]);
             out.push({ guid: r[0], name: r[1],
               center: new THREE.Vector3(c.x, c.y, c.z),
-              size: new THREE.Vector3(Math.max(r[5] || 0.3, 0.3), Math.max(r[7] || 0.3, 0.3), Math.max(r[6] || 0.3, 0.3)) });
+              size: new THREE.Vector3(Math.max(r[6] || 0.3, 0.3), Math.max(r[8] || 0.3, 0.3), Math.max(r[7] || 0.3, 0.3)) });
           });
+        console.log('[RP-TA] §ROOM_VOL rooms=' + out.length + ' excluded=' + excluded);
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
       return out;
     }
@@ -1719,7 +1745,15 @@
         } catch(e) { console.warn('[RP-TA] §ROOM_TREE_ERR', e.message); }
         var byGroup = {}, order = [], typed = 0;
         rooms.forEach(function(r) {
-          var gk = (_roomGroupBy === 'type') ? (r[3] || r[4] || '(untyped)') : (r[2] || '(no storey)');
+          // Implementing VIEWER_FIND_PANEL_ROOM_ACCURACY.md §2 Task 2 — Witness: W-VIEWER-TYPE-GROUP.
+          // Every synthetic (compiled) room has object_type='COMPILED' — a non-empty string — so the
+          // plain r[3]||r[4] precedence never reaches predefined_type (INTERNAL/INTERNAL_SMALL/
+          // INTERNAL_DOORPART), dumping every building's compiled rooms into one generic "COMPILED"
+          // bucket. Special-case COMPILED to fall through to predefined_type (still '(untyped)' if
+          // that's also empty); every other object_type keeps its original first precedence.
+          var gk = (_roomGroupBy === 'type')
+            ? ((r[3] === 'COMPILED') ? (r[4] || '(untyped)') : (r[3] || r[4] || '(untyped)'))
+            : (r[2] || '(no storey)');
           if (_roomGroupBy === 'type' && (r[3] || r[4])) typed++;
           if (!byGroup[gk]) { byGroup[gk] = []; order.push(gk); }
           byGroup[gk].push({ key: r[0], label: r[1] || '(unnamed)' });
