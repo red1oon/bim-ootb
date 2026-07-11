@@ -72,14 +72,23 @@
     // commits `rot: rz * 180 / Math.PI`); convert to RADIANS here, the engine speaks radians only. Absent
     // (synthetic content, or the §ARC-3AXIS tilted shape that carries rotZRad instead) → undefined →
     // unguarded/eligible, symmetric with the class-UNKNOWN rule above.
+    // §ROTATION-GUARD-3AXIS (GRID_ROTATION_GUARD.md §5): the §ARC-3AXIS placement shape ({rotX,rotY,rotZRad},
+    // arc_editable.js buildSeedOps ~line 218) carries genuine roll/pitch tilt the yaw-only read above never
+    // sees (no `.rot` field on that shape) — read rotX/rotY here too. Already RADIANS at this boundary (no
+    // degrees step, unlike `.rot`). Found live-reachable: SampleCastle_ARC.db fids 933/1291/2514/3055 all
+    // have yawRadByFid undefined (§ARC-3AXIS rows) yet ATTACH/EDGE-classified today with zero guard.
     _buildInsertMaps() {
-      const O = window.Bonsai.oplog; const maps = { classByFid: {}, yawRadByFid: {} }; if (!O || !O.db) return maps;
+      const O = window.Bonsai.oplog;
+      const maps = { classByFid: {}, yawRadByFid: {}, tiltXRadByFid: {}, tiltYRadByFid: {} };
+      if (!O || !O.db) return maps;
       try {
         const r = O.db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='GEOM_INSERT'");
         if (r.length) r[0].values.forEach(v => { try {
           const p = JSON.parse(v[1]);
           if (p && p.ifc_class) maps.classByFid[v[0]] = p.ifc_class;
           if (p && p.placement && typeof p.placement.rot === 'number') maps.yawRadByFid[v[0]] = p.placement.rot * Math.PI / 180;
+          if (p && p.placement && typeof p.placement.rotX === 'number') maps.tiltXRadByFid[v[0]] = p.placement.rotX;
+          if (p && p.placement && typeof p.placement.rotY === 'number') maps.tiltYRadByFid[v[0]] = p.placement.rotY;
         } catch (e) { } });
       } catch (e) { }
       return maps;
@@ -111,6 +120,7 @@
       const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
       const maps = this._buildInsertMaps();
       const classByFid = maps.classByFid, yawRadByFid = maps.yawRadByFid;
+      const tiltXRadByFid = maps.tiltXRadByFid, tiltYRadByFid = maps.tiltYRadByFid;
       const allow = this._STRUCTURAL_CLASSES;
       const draggedAxis = this._dragAxis, orthoAt = this._dragOrthoAt;   // set by beginDragSession(); null outside a session (unchanged/global behavior for direct computeCommands() callers, e.g. discovery-sweep tests)
       const radius = draggedAxis != null ? this._localityRadius(draggedAxis) : Infinity;
@@ -125,7 +135,9 @@
           x: (bb.min.x + bb.max.x) / 2, y: (bb.min.y + bb.max.y) / 2, z: (bb.min.z + bb.max.z) / 2,
           bboxX: bb.max.x - bb.min.x, bboxY: bb.max.y - bb.min.y, bboxZ: bb.max.z - bb.min.z,
           ifcClass: 'IfcWall',
-          yawRad: yawRadByFid[m.userData.featureId] };   // §ROTATION-GUARD: undefined when unrecorded ⇒ engine behavior unchanged
+          yawRad: yawRadByFid[m.userData.featureId],   // §ROTATION-GUARD: undefined when unrecorded ⇒ engine behavior unchanged
+          tiltXRad: tiltXRadByFid[m.userData.featureId],   // §ROTATION-GUARD-3AXIS: ditto
+          tiltYRad: tiltYRadByFid[m.userData.featureId] };
       }).filter(elem => {
         if (draggedAxis == null || !isFinite(radius)) return true;
         const orthoPos = draggedAxis === 'x' ? elem.y : elem.x;   // draggedAxis names the GRIPPED line's axis; the element's ORTHOGONAL coordinate is the OTHER one
@@ -164,34 +176,37 @@
       this._engine = this._buildEngine();
       this._meshCache = this._buildMeshByFid();
       this._boxCache = this._buildBoxByFid();
-      // §SCALE-YAW-GUARD (GRID_ROTATED_SCALE_HARDENING.md §1.1): session-cached fid -> yawRad so computeCommands()
-      // can stamp each command WITHOUT re-querying kernel_ops per pointermove frame (§SCALE_CHECK_FIX invariant).
-      this._yawCache = this._buildInsertMaps().yawRadByFid;
+      // §SCALE-YAW-GUARD (GRID_ROTATED_SCALE_HARDENING.md §1.1): session-cached fid -> yawRad/tiltXRad/tiltYRad
+      // so computeCommands() can stamp each command WITHOUT re-querying kernel_ops per pointermove frame
+      // (§SCALE_CHECK_FIX invariant). One shared cache object (one query) for all three optional fields.
+      this._insertMapsCache = this._buildInsertMaps();
       console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)' +
         (this._dragAxis != null ? (' §GRIDSCOPE axis=' + this._dragAxis + ' orthoAt=' + this._dragOrthoAt.toFixed(3) + ' radius=' + this._localityRadius(this._dragAxis).toFixed(3)) : '') +
-        (this._engine.getYawSkipCount && this._engine.getYawSkipCount() ? ' §ROTATION-GUARD yawSkipped=' + this._engine.getYawSkipCount() + ' element-axis classification(s) (oblique yaw, AABB edges unreal — fell through to interior)' : ''));
+        (this._engine.getYawSkipCount && this._engine.getYawSkipCount() ? ' §ROTATION-GUARD yawSkipped=' + this._engine.getYawSkipCount() + ' element-axis classification(s) (oblique yaw, AABB edges unreal — fell through to interior)' : '') +
+        (this._engine.getTiltSkipCount && this._engine.getTiltSkipCount() ? ' §ROTATION-GUARD-3AXIS tiltSkipped=' + this._engine.getTiltSkipCount() + ' element-axis classification(s) (non-negligible rotX/rotY — fell through to interior)' : ''));
     },
     // Called on commit/cancel — the NEXT drag (or any non-session caller) rebuilds fresh off the post-commit
     // scene, so a scene edit between drags is never served a stale attach map.
     endDragSession() {
       if (this._engine) console.log(TAG + ' §SCALE_CHECK_FIX drag-session end — caches cleared');
-      this._engine = null; this._meshCache = null; this._boxCache = null; this._yawCache = null;
+      this._engine = null; this._meshCache = null; this._boxCache = null; this._insertMapsCache = null;
       this._dragAxis = null; this._dragOrthoAt = null;
     },
     // PURE recompose: use the cached attached engine if a drag session is active, else build-and-discard
     // (unchanged fallback behavior for any caller outside a session, e.g. tests).
     computeCommands(gridId, delta) {
       const eng = this._engine || this._buildEngine();
-      // §SCALE-YAW-GUARD: fid -> yawRad (radians, from GEOM_INSERT placement.rot) rides each command so the
-      // worker's SCALE fold can refuse a world-axis stretch of an obliquely-yawed solid (defense in depth —
-      // GRID_ROTATION_GUARD.md already keeps such elements out of ATTACH/EDGE/SPAN classification upstream).
-      // Unrecorded fid ⇒ undefined ⇒ worker behavior byte-identical to before.
-      const yawByFid = this._yawCache || this._buildInsertMaps().yawRadByFid;
+      // §SCALE-YAW-GUARD / §ROTATION-GUARD-3AXIS: fid -> yawRad/tiltXRad/tiltYRad ride each command so the
+      // worker's SCALE fold can refuse a world-axis stretch of an obliquely-yawed OR tilted solid (defense in
+      // depth — GRID_ROTATION_GUARD.md already keeps such elements out of ATTACH/EDGE/SPAN classification
+      // upstream). Unrecorded fid ⇒ undefined ⇒ worker behavior byte-identical to before.
+      const maps = this._insertMapsCache || this._buildInsertMaps();
+      const yawByFid = maps.yawRadByFid, tiltXByFid = maps.tiltXRadByFid, tiltYByFid = maps.tiltYRadByFid;
       // engine guid === our featureId; carry it forward as featureId so the worker fold is unambiguous.
       return eng.dragGrid(gridId, delta).map(c => ({
         featureId: c.guid, action: c.action, axis: c.axis,
         delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge,
-        yawRad: yawByFid[c.guid] }));
+        yawRad: yawByFid[c.guid], tiltXRad: tiltXByFid[c.guid], tiltYRad: tiltYByFid[c.guid] }));
     },
     // fid -> mesh map (gmTint's per-command lookup — was g.children.find(), O(n) per command per frame).
     _buildMeshByFid() {
