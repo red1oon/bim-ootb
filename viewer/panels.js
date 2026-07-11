@@ -685,10 +685,27 @@ function setupPanels(A) {
     A.hiddenDiscs.clear();
     if (list && list.length) {
       var keep = new Set(list);
-      // Build hiddenDiscs from scene — hide everything not in the keep set
+      // Build hiddenDiscs from scene — hide everything not in the keep set.
+      // Must enumerate ALL three mesh representations (plain Mesh, InstancedMesh,
+      // BatchedMesh), not just plain Mesh — a discipline that's ENTIRELY batched
+      // (e.g. a large, uniform discipline like Architecture) was invisible here,
+      // so it never got added to `keep`'s complement and stayed permanently hidden
+      // the first time ANY isolate/multi-select ran, even after switching back to
+      // "ALL" — because _applyDiscVisibility only re-applies whatever's already in
+      // hiddenDiscs, it never rediscovers a wrongly-omitted discipline.
       A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
         if (!keep.has(obj.userData.disc)) A.hiddenDiscs.add(obj.userData.disc);
       });
+      for (var _bmId in A._batchMeta) {
+        A._batchMeta[_bmId].forEach(function(meta) {
+          if (meta.disc && !keep.has(meta.disc)) A.hiddenDiscs.add(meta.disc);
+        });
+      }
+      for (var _imId in A._instanceMeta) {
+        A._instanceMeta[_imId].forEach(function(meta) {
+          if (meta.disc && !keep.has(meta.disc)) A.hiddenDiscs.add(meta.disc);
+        });
+      }
     }
     A._applyDiscVisibility();
     console.log('[S200] §DISC_FILTER ' + (list && list.length ? '[' + list.join(',') + ']' : 'ALL'));
