@@ -270,12 +270,9 @@ async function initViewer() {
     if (typeof APP.toggleGridOverlay === 'function') {
       APP.toggleGridOverlay();
     } else {
-      console.warn('§2D_OPEN grid_overlay.js not loaded — falling back to 2d.html');
-      const p = new URLSearchParams(location.search);
-      const db = p.get('db') || '';
-      const lib = p.get('lib') || '';
-      const bld = APP.activeBuilding || '';
-      window.open('2d.html?db=' + encodeURIComponent(db) + '&lib=' + encodeURIComponent(lib) + '&bld=' + encodeURIComponent(bld), '_blank');
+      // 2d.html retired 2026-07-12 (Modeller 3D grid / grid_overlay.js is the only 2D path)
+      console.error('§2D_OPEN grid_overlay.js not loaded — 2D unavailable');
+      APP.status.textContent = '2D grid unavailable — reload the app';
     }
   };
 
