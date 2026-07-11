@@ -584,6 +584,9 @@
       if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); }
       // §PHASE_LENS/§MAT_SELECT: leaving Phase/Material tears down element highlight.
       if (_treeMode === 'phase' || _treeMode === 'material') _highlightLensReset();
+      // Parts axis uses plain filterByGuids isolate (Room's FALLBACK contents-isolate path, not
+      // the box/highlight lens) — no overlay to tear down; the unconditional filterByGuids(null)
+      // a few lines below already resets it on every axis change.
       _treeMode = mode;
       // §NAV_FIND_002: axis change clears multi-select + restores full scene (unify engine)
       _selStoreys.clear(); _selDiscs.clear(); _anchor = null;
@@ -611,6 +614,7 @@
         else if (_treeMode === 'room') _buildRoomTree();
         else if (_treeMode === 'material') _buildMaterialTree();
         else if (_treeMode === 'phase') _buildPhaseTree();
+        else if (_treeMode === 'parts') _buildPartsTree();
       } catch(e) { console.warn('§FIND_TREE error', e); }
     }
 
@@ -620,9 +624,30 @@
     // §RP Task A: a room has VOLUME data when spatial_structure carries center_*/size_*
     // columns AND at least one IfcSpace row is populated. _roomHasVol is cached per-open.
     var _roomHasVol = false;
+    // §BUILDING-PARTS-TAXONOMY: STAIRWAY/LIFT_SHAFT/PLANT_ROOM keyword constants, ported verbatim
+    // from bim-compiler build/building_parts_taxonomy.js (which itself reuses build/room_walker.js's
+    // §STAIR-EXCLUDE / door-rescue constants — see prompts/BUILDING_PARTS_TAXONOMY.md in that repo,
+    // witnessed 13/13 PASS on real Duplex/SampleCastle/Terminal/Hospital/Clinic IFC data). Existence-
+    // only match against elements_meta.ifc_class / .element_name — no element_transforms JOIN
+    // required (§PARENT-NO-TRANSFORM there: an IfcStair assembly parent frequently carries no
+    // transform of its own, only its child IfcStairFlight does; an existence match is the correct
+    // "does this building have one" signal, same choice this axis needs).
+    var STAIR_LIKE = ["IfcStair%", "IfcRamp%"];
+    var LIFT_KEYWORDS = ["liftdeur", "lift", "elevator", "aufzug", "fahrstuhl", "hoist"];
+    var PLANT_KEYWORDS = ["vent", "duct", "fan", "ahu", "damper", "chiller", "condens", "fancoil", "pump"];
+    function _partsCond(part) {
+      if (part === 'STAIRWAY') return STAIR_LIKE.map(function(p) { return "ifc_class LIKE '" + p + "'"; }).join(' OR ');
+      var words = (part === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+      return words.map(function(w) { return "LOWER(element_name) LIKE '%" + w + "%'"; }).join(' OR ');
+    }
+    var _PARTS_GROUPS = [
+      { type: 'STAIRWAY', label: 'Stairway' },
+      { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
+      { type: 'PLANT_ROOM', label: 'Plant Room' }
+    ];
     function _probeLenses() {
       var bld = A.activeBuilding || '';
-      var room = false, material = false, phase = false;
+      var room = false, material = false, phase = false, parts = false;
       _roomHasVol = false;
       try {
         var hasSS = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'");
@@ -664,8 +689,14 @@
         } catch(e) { /* kernel_ops table may not exist yet */ }
         phase = hasElems && (genReady || opsExist);
       } catch(e) { /* phase stays false */ }
-      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase);
-      return { room: room, material: material, phase: phase };
+      try {
+        var partsCond = '(' + _partsCond('STAIRWAY') + ') OR (' + _partsCond('LIFT_SHAFT') + ') OR (' + _partsCond('PLANT_ROOM') + ')';
+        var pc = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE (" + partsCond + ")" +
+          (bld ? " AND building = ?" : ""), bld ? [bld] : []);
+        parts = !!(pc.length && pc[0].values[0][0] > 0);
+      } catch(e) { /* parts stays false */ }
+      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' parts=' + parts);
+      return { room: room, material: material, phase: phase, parts: parts };
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -680,6 +711,7 @@
       if (present.room) ax.push({ key: 'room', label: _t('ui_lens_room', 'Room') });
       if (present.material) ax.push({ key: 'material', label: _t('ui_lens_material', 'Material') });
       if (present.phase) ax.push({ key: 'phase', label: _t('ui_lens_phase', 'Phase') });
+      if (present.parts) ax.push({ key: 'parts', label: _t('ui_axis_parts', 'Parts') });
       return ax;
     }
 
@@ -1855,6 +1887,47 @@
         elTree.appendChild(_treeNode(g.label, g.count, 0, { onTap: function() { _isolateLensGroup('room', g); } }));
       });
       console.log('[RP-T3] §LENS_GROUPS lens=room mode=contents groups=' + groups.length);
+    }
+
+    // Isolate a Parts group (or a single leaf, passed as a 1-element array) — plain filterByGuids,
+    // no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail (isoBar show)
+    // but takes the guid set directly since _buildPartsTree already has the rows in hand (no re-query).
+    function _isolatePartsGroup(label, guids) {
+      if (!A.db || !A.filterByGuids) return;
+      if (A.filterStorey) A.filterStorey(null);
+      if (A.filterDisc) A.filterDisc(null);
+      var set = new Set(guids);
+      if (!set.size) { console.log('[RP-A1] §FILTER_ISOLATE_EMPTY lens=parts group="' + label + '"'); return; }
+      _emitIsolate(set, 'parts="' + label + '"');
+      if (elIsoBar) {
+        elIsoBar.style.display = 'flex';
+        if (elIsoBtn) elIsoBtn.style.display = 'none';
+        if (elShowAllBtn) elShowAllBtn.style.display = '';
+      }
+    }
+
+    // ══ Parts axis — STAIRWAY/LIFT_SHAFT/PLANT_ROOM, contents-isolate (Room's FALLBACK style) ══
+    // Data-gated PER GROUP (same discipline as the axis itself, W-LENS-PROBE): a group only
+    // appears when its query returns >0 real elements_meta rows. No box/highlight lens — tapping
+    // a group or a leaf isolates via filterByGuids, same engine as every other axis (W-LENS-ISOLATE).
+    function _buildPartsTree() {
+      var groupsShown = 0, totalRows = 0;
+      _PARTS_GROUPS.forEach(function(pg) {
+        var rows = [];
+        try {
+          rows = A.dbQuery("SELECT guid, element_name FROM elements_meta WHERE (" + _partsCond(pg.type) + ")");
+        } catch(e) { console.warn('[RP-T3] §PARTS_TREE_ERR', pg.type, e.message); }
+        if (!rows.length) return; // data-gated: no row for this part in this building → no group
+        groupsShown++; totalRows += rows.length;
+        var guids = rows.map(function(r) { return r[0]; });
+        var kids = rows.map(function(r) {
+          var label = r[1] || '(unnamed)';
+          return _treeNode(label, '', 1, { onTap: function() { _isolatePartsGroup(label, [r[0]]); } });
+        });
+        elTree.appendChild(_treeNode(pg.label, rows.length, 0,
+          { children: kids, onTap: function() { _isolatePartsGroup(pg.label, guids); } }));
+      });
+      console.log('[RP-T3] §LENS_GROUPS lens=parts groups=' + groupsShown + '/' + _PARTS_GROUPS.length + ' rows=' + totalRows);
     }
 
     // §MAT_SELECT: Material axis is a HIGHLIGHT lens (parity with Room/Phase).
