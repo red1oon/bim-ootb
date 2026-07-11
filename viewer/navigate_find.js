@@ -581,7 +581,7 @@
     // (unify engine), then lists the new axis groups.
     function _setTreeMode(mode) {
       // §RP Task A: leaving the Room axis tears down room boxes + shape overlays + restores opacity.
-      if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); }
+      if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); _clearPathHighlight(); }
       // §PHASE_LENS/§MAT_SELECT: leaving Phase/Material tears down element highlight.
       if (_treeMode === 'phase' || _treeMode === 'material') _highlightLensReset();
       // Parts axis uses plain filterByGuids isolate (Room's FALLBACK contents-isolate path, not
@@ -836,6 +836,99 @@
     var _roomXrayWasOff = false;
     var _hlXrayWasOff = false; // true → the Phase/Material highlight lens turned X-Ray on
     var _mgLensOwned = false;  // §MOBILE-BBOX: true → the lens auto-enabled the bbox shell on mobile (hide it on reset; user Alt+X is NOT lens-owned)
+
+    // ══ §7 Room-to-room pathway (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7) ══
+    // Room axis "Path" sub-mode: pick two rooms, route through the real door-adjacency graph
+    // (common/room_graph.js — new, see that file's header for why no such graph existed before).
+    var _pathGraphCache = null, _pathGraphBld = null;  // cached per activeBuilding (rebuilding on every keystroke is wasteful)
+    var _pathFromGuid = '', _pathToGuid = '', _pathLastResult = null;
+    var _pathExtraMeshes = [];  // the connecting polyline + any path-only overlays (disposed on reset/mode-leave)
+
+    function _roomGraphFor() {
+      var RG = (typeof window !== 'undefined') && window.RoomGraph;
+      if (!RG || !A.dbQuery) return null;
+      if (_pathGraphCache && _pathGraphBld === A.activeBuilding) return _pathGraphCache;
+      var g = RG.buildGraph(A.dbQuery, { log: function(m) { console.log('[RP-PATH] ' + m); } });
+      _pathGraphCache = g; _pathGraphBld = A.activeBuilding;
+      return g;
+    }
+
+    function _clearPathHighlight() {
+      _pathExtraMeshes.forEach(function(m) {
+        if (m.parent) m.parent.remove(m);
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) m.material.dispose();
+      });
+      _pathExtraMeshes = [];
+    }
+
+    // Highlight the found path: brighten path-room shells, dim every other room shell, draw a
+    // connecting line through the actual room centers (in path order), zoom to fit.
+    function _drawPathHighlight(graph, result) {
+      _clearPathHighlight();
+      var pathSet = {}; result.path.forEach(function(g) { pathSet[g] = true; });
+      _roomBoxes.forEach(function(rb) {
+        if (rb.mesh && rb.mesh.material) {
+          rb.mesh.material.opacity = pathSet[rb.guid] ? 0.55 : 0.04;
+          rb.mesh.material.needsUpdate = true;
+        }
+      });
+      if (A.scene && A.ifc2three && typeof THREE !== 'undefined') {
+        var pts = result.path.map(function(g) {
+          var n = graph.nodesByGuid[g];
+          var c = A.ifc2three(n.cx, n.cy, n.cz || 0);
+          return new THREE.Vector3(c.x, c.y + 0.05, c.z); // +0.05 lift so the line clears room-shell faces
+        });
+        if (pts.length > 1) {
+          var geo = new THREE.BufferGeometry().setFromPoints(pts);
+          var mat = new THREE.LineBasicMaterial({ color: 0xffd400, linewidth: 3, transparent: true, opacity: 0.95, depthTest: false });
+          var line = new THREE.Line(geo, mat);
+          line.renderOrder = 1003;
+          A.scene.add(line);
+          _pathExtraMeshes.push(line);
+        }
+      }
+      // Zoom to fit the union of the path rooms' boxes.
+      var bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+      result.path.forEach(function(g) {
+        _roomBoxes.forEach(function(rb) {
+          if (rb.guid !== g || !rb.center || !rb.size) return;
+          var c = rb.center, s = rb.size;
+          bx0 = Math.min(bx0, c.x - s.x / 2); bx1 = Math.max(bx1, c.x + s.x / 2);
+          by0 = Math.min(by0, c.y - s.y / 2); by1 = Math.max(by1, c.y + s.y / 2);
+          bz0 = Math.min(bz0, c.z - s.z / 2); bz1 = Math.max(bz1, c.z + s.z / 2);
+        });
+      });
+      if (bx1 > bx0 && typeof THREE !== 'undefined') {
+        var center = new THREE.Vector3((bx0 + bx1) / 2, (by0 + by1) / 2, (bz0 + bz1) / 2);
+        var size = new THREE.Vector3(bx1 - bx0, by1 - by0, bz1 - bz0);
+        _zoomToBoxFill(center, size, 'ROOM_PATH_ZOOM', 1.4);
+      }
+      if (A.markDirty) A.markDirty();
+    }
+
+    // Run the graph + Dijkstra, log §ROOM_PATH (found) / §ROOM_PATH_NOT_FOUND (honest, no invented
+    // connectivity), draw the result, and return it so the caller can render the room-list UI.
+    function _findRoomPath(fromGuid, toGuid) {
+      var RG = (typeof window !== 'undefined') && window.RoomGraph;
+      var graph = _roomGraphFor();
+      if (!RG || !graph) { console.warn('[RP-PATH] §ROOM_PATH_ERR RoomGraph not loaded'); return null; }
+      var result = RG.shortestPath(graph, fromGuid, toGuid);
+      var fromN = graph.nodesByGuid[fromGuid], toN = graph.nodesByGuid[toGuid];
+      if (!result) {
+        console.log('[RP-PATH] §ROOM_PATH_NOT_FOUND from=' + (fromN ? fromN.name : fromGuid) +
+          ' to=' + (toN ? toN.name : toGuid) + ' — no door-connected route (disconnected component)');
+        _clearPathHighlight();
+        return null;
+      }
+      var roomNames = result.path.map(function(g) { return graph.nodesByGuid[g].name; });
+      var doorGuids = result.doors.map(function(d) { return d.guid; });
+      console.log('[RP-PATH] §ROOM_PATH from=' + fromN.name + ' to=' + toN.name +
+        ' hops=' + result.doors.length + ' rooms=[' + roomNames.join(',') + ']' +
+        ' doors=[' + doorGuids.join(',') + '] distance=' + result.distance.toFixed(2) + 'm');
+      _drawPathHighlight(graph, result);
+      return result;
+    }
 
     // §C ELEMENT-PRECISE: the Phase/Material highlight overlay. ONE InstancedMesh of unit
     // boxes — one box per matched element, positioned+scaled from element_transforms (same
@@ -1856,23 +1949,29 @@
       _drillSelect(set, gk, 'ROOM_GROUP', { isItem: false }); // top-level group: floor solid, building 0.2
     }
 
-    // §RP sub-toggle row [A | B] — a small two-pill regroup control inside a lens tree.
-    function _subToggleRow(labelA, valA, labelB, valB, current, onPick) {
+    // §RP sub-toggle row [A | B | ...] — a small N-pill regroup control inside a lens tree.
+    // §7 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md): generalized from a fixed 2-pill signature to an
+    // options array so the Room axis could grow a 3rd "Path" pill without a second control type.
+    // Old (labelA,valA,labelB,valB,current,onPick) call shape still works — normalized below.
+    function _subToggleRow(a, b, c, d, e, f) {
+      var options, current, onPick;
+      if (Array.isArray(a)) { options = a; current = b; onPick = c; }
+      else { options = [{ label: a, val: b }, { label: c, val: d }]; current = e; onPick = f; }
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:6px;padding:6px 10px;align-items:center;border-bottom:1px solid rgba(255,255,255,0.05)';
       var hint = document.createElement('span');
       hint.style.cssText = 'font-size:10px;color:#888;margin-right:2px';
       hint.textContent = _t('ui_lens_group', 'group:');
       row.appendChild(hint);
-      [[labelA, valA], [labelB, valB]].forEach(function(o) {
-        var on = (current === o[1]);
-        var b = document.createElement('button');
-        b.textContent = o[0];
-        b.style.cssText = 'padding:3px 10px;font-size:10px;font-weight:700;border-radius:5px;cursor:pointer;white-space:nowrap;' +
+      options.forEach(function(o) {
+        var on = (current === o.val);
+        var btn = document.createElement('button');
+        btn.textContent = o.label;
+        btn.style.cssText = 'padding:3px 10px;font-size:10px;font-weight:700;border-radius:5px;cursor:pointer;white-space:nowrap;' +
           'border:1px solid rgba(79,195,247,' + (on ? '0.7' : '0.25') + ');' +
           'background:rgba(79,195,247,' + (on ? '0.25' : '0.08') + ');color:' + (on ? '#fff' : '#4fc3f7') + ';';
-        b.addEventListener('pointerup', function(e) { e.stopPropagation(); onPick(o[1]); });
-        row.appendChild(b);
+        btn.addEventListener('pointerup', function(e) { e.stopPropagation(); onPick(o.val); });
+        row.appendChild(btn);
       });
       return row;
     }
@@ -1891,9 +1990,20 @@
           if (elIsoBtn) elIsoBtn.style.display = 'none';
           if (elShowAllBtn) elShowAllBtn.style.display = '';
         }
-        elTree.appendChild(_subToggleRow(
-          _t('ui_axis_storey', 'Storey'), 'storey', _t('ui_room_type', 'Type'), 'type',
-          _roomGroupBy, function(v) { if (v !== _roomGroupBy) { _roomGroupBy = v; buildTree(); } }));
+        elTree.appendChild(_subToggleRow([
+            { label: _t('ui_axis_storey', 'Storey'), val: 'storey' },
+            { label: _t('ui_room_type', 'Type'), val: 'type' },
+            { label: _t('ui_room_path', 'Path'), val: 'path' }
+          ], _roomGroupBy, function(v) { if (v !== _roomGroupBy) { _roomGroupBy = v; buildTree(); } }));
+        // §7 Path sub-mode: two-room picker + Dijkstra route over the real door-adjacency graph
+        // (common/room_graph.js). Own render path — no Storey/Type grouping list underneath.
+        if (_roomGroupBy === 'path') {
+          if (elIsoBar) elIsoBar.style.display = 'none'; // no isolate concept for a path — it's a highlight, not a filter
+          _buildPathPanel();
+          console.log('[RP-T3] §LENS_GROUPS lens=room mode=path');
+          return;
+        }
+        _clearPathHighlight(); // leaving Path sub-mode — drop its line/zoom-only overlay (room shells stay, dims are reset by _roomLensOn above)
         var rooms = [];
         try {
           rooms = A.dbQuery("SELECT s.guid, s.name, p.name, s.object_type, s.predefined_type" +
@@ -1941,6 +2051,114 @@
         elTree.appendChild(_treeNode(g.label, g.count, 0, { onTap: function() { _isolateLensGroup('room', g); } }));
       });
       console.log('[RP-T3] §LENS_GROUPS lens=room mode=contents groups=' + groups.length);
+    }
+
+    // §7 Path sub-mode UI: a From/To room picker + Find button, results rendered as tappable
+    // room rows (reusing _treeNode → _roomSelect, same as every other lens list) with the real
+    // door name/guid printed between consecutive hops.
+    function _buildPathPanel() {
+      var graph = _roomGraphFor();
+      var wrap = document.createElement('div');
+      if (!graph || !graph.nodes.length) {
+        wrap.style.cssText = 'color:#888;font-size:11px;padding:14px 10px';
+        wrap.textContent = _t('ui_room_path_unavailable', 'No room graph available for this building.');
+        elTree.appendChild(wrap);
+        return;
+      }
+      wrap.style.cssText = 'padding:8px 10px;display:flex;flex-direction:column;gap:6px';
+      var sorted = graph.nodes.slice().sort(function(a, b) {
+        if (a.storey !== b.storey) return a.storey < b.storey ? -1 : 1;
+        return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+      });
+      function mkSelect(id, placeholder) {
+        var sel = document.createElement('select');
+        sel.id = id;
+        sel.style.cssText = 'flex:1;min-width:0;padding:5px 6px;font-size:11px;border-radius:5px;' +
+          'border:1px solid rgba(255,255,255,0.2);background:#1a1a1a;color:#ddd';
+        var opt0 = document.createElement('option');
+        opt0.value = ''; opt0.textContent = placeholder;
+        sel.appendChild(opt0);
+        sorted.forEach(function(n) {
+          var opt = document.createElement('option');
+          opt.value = n.guid;
+          opt.textContent = n.name + ' · ' + (n.label || n.name) + ' (' + n.storey + ')';
+          sel.appendChild(opt);
+        });
+        return sel;
+      }
+      var row1 = document.createElement('div');
+      row1.style.cssText = 'display:flex;gap:6px;align-items:center';
+      var selFrom = mkSelect('find-path-from', _t('ui_room_path_from', 'From room…'));
+      var selTo = mkSelect('find-path-to', _t('ui_room_path_to', 'To room…'));
+      selFrom.value = _pathFromGuid; selTo.value = _pathToGuid;
+      selFrom.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
+      selTo.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
+      selFrom.addEventListener('change', function(e) { e.stopPropagation(); _pathFromGuid = selFrom.value; });
+      selTo.addEventListener('change', function(e) { e.stopPropagation(); _pathToGuid = selTo.value; });
+      row1.appendChild(selFrom);
+      var arrow = document.createElement('span'); arrow.textContent = '→'; arrow.style.cssText = 'color:#666;flex-shrink:0';
+      row1.appendChild(arrow);
+      row1.appendChild(selTo);
+      wrap.appendChild(row1);
+
+      var btn = document.createElement('button');
+      btn.textContent = _t('ui_room_path_find', 'Find Path');
+      btn.style.cssText = 'padding:6px 10px;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;' +
+        'border:1px solid rgba(79,195,247,0.6);background:rgba(79,195,247,0.18);color:#fff';
+      var resultBox = document.createElement('div');
+      resultBox.style.cssText = 'display:flex;flex-direction:column;gap:2px';
+      btn.addEventListener('pointerup', function(e) {
+        e.stopPropagation();
+        if (!_pathFromGuid || !_pathToGuid) {
+          resultBox.innerHTML = '';
+          resultBox.textContent = _t('ui_room_path_pick_both', 'Pick a From and a To room.');
+          resultBox.style.cssText = 'font-size:11px;color:#e67e22;padding:6px 2px';
+          return;
+        }
+        if (_pathFromGuid === _pathToGuid) {
+          resultBox.innerHTML = '';
+          resultBox.textContent = _t('ui_room_path_same', 'From and To are the same room.');
+          resultBox.style.cssText = 'font-size:11px;color:#e67e22;padding:6px 2px';
+          return;
+        }
+        var res = _findRoomPath(_pathFromGuid, _pathToGuid);
+        _pathLastResult = res;
+        resultBox.style.cssText = 'display:flex;flex-direction:column;gap:2px';
+        _renderPathResult(resultBox, graph, res);
+      });
+      wrap.appendChild(btn);
+      wrap.appendChild(resultBox);
+      elTree.appendChild(wrap);
+
+      // Re-render a previous result if the user left and re-entered Path mode with the same picks.
+      if (_pathLastResult && _pathFromGuid && _pathToGuid) _renderPathResult(resultBox, graph, _pathLastResult);
+    }
+
+    function _renderPathResult(box, graph, res) {
+      box.innerHTML = '';
+      if (!res) {
+        var msg = document.createElement('div');
+        msg.style.cssText = 'font-size:11px;color:#e67e22;padding:6px 2px';
+        msg.textContent = _t('ui_room_path_none', 'No door-connected path — these rooms are on disconnected parts of the building.');
+        box.appendChild(msg);
+        return;
+      }
+      var hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:10px;color:#4fc3f7;padding:4px 2px 2px';
+      hdr.textContent = res.doors.length + (res.doors.length === 1 ? ' door · ' : ' doors · ') + res.distance.toFixed(1) + 'm';
+      box.appendChild(hdr);
+      res.path.forEach(function(guid, i) {
+        var n = graph.nodesByGuid[guid];
+        box.appendChild(_treeNode((i + 1) + '. ' + n.name + ' · ' + (n.label || n.name), '', 1,
+          { onTap: function() { _roomSelect(guid); } }));
+        if (i < res.doors.length) {
+          var d = document.createElement('div');
+          d.style.cssText = 'padding:2px 10px 2px 34px;font-size:9px;color:#777;display:flex;align-items:center;gap:4px';
+          d.textContent = '└─ door: ' + (res.doors[i].name || res.doors[i].guid);
+          d.title = 'door guid: ' + res.doors[i].guid;
+          box.appendChild(d);
+        }
+      });
     }
 
     // Isolate a Parts group (or a single leaf, passed as a 1-element array) — plain filterByGuids,
