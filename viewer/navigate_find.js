@@ -881,11 +881,26 @@
         });
         if (pts.length > 1) {
           var geo = new THREE.BufferGeometry().setFromPoints(pts);
-          var mat = new THREE.LineBasicMaterial({ color: 0xffd400, linewidth: 3, transparent: true, opacity: 0.95, depthTest: false });
+          // §PATH_NEON: bright neon green, distinct from every other yellow highlight in this file
+          // (isolate/cuboid-fallback both use 0xffd400 — a path in the same hue was easy to miss).
+          // LineBasicMaterial.linewidth is silently ignored by nearly every browser/GPU (WebGL spec
+          // limitation) — a plain color swap alone still renders as a near-invisible 1px hairline, so
+          // small marker spheres are added at each waypoint room-center to keep the route legible even
+          // when the connecting line itself is thin.
+          var mat = new THREE.LineBasicMaterial({ color: 0x39ff14, linewidth: 3, transparent: true, opacity: 0.95, depthTest: false });
           var line = new THREE.Line(geo, mat);
           line.renderOrder = 1003;
           A.scene.add(line);
           _pathExtraMeshes.push(line);
+          var markerGeo = new THREE.SphereGeometry(0.18, 12, 12);
+          var markerMat = new THREE.MeshBasicMaterial({ color: 0x39ff14, transparent: true, opacity: 0.9, depthTest: false });
+          pts.forEach(function(p) {
+            var marker = new THREE.Mesh(markerGeo, markerMat);
+            marker.position.copy(p);
+            marker.renderOrder = 1004;
+            A.scene.add(marker);
+            _pathExtraMeshes.push(marker);
+          });
         }
       }
       // Zoom to fit the union of the path rooms' boxes.
@@ -1610,7 +1625,7 @@
     function _drawRoomCuboid(center, size) {
       if (!A.scene || typeof THREE === 'undefined') return;
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
-      var fillMat = new THREE.MeshBasicMaterial({ color: 0x9c6ade, transparent: true, opacity: 0.10,
+      var fillMat = new THREE.MeshBasicMaterial({ color: 0x9c6ade, transparent: true, opacity: 0.35,
         depthWrite: false, side: THREE.DoubleSide });
       var fill = new THREE.Mesh(boxGeo, fillMat); fill.position.copy(center);
       fill.renderOrder = 998; fill.userData._roomShell = true;
