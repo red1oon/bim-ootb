@@ -17,14 +17,14 @@
  *       modeller/tests/witness_modeller_router_nnchain.js (W-ROUTER-NNCHAIN), which drives that real "Open"
  *       flow, is therefore CURRENTLY RED on this checkout (5/8 FAIL, re-run 2026-07-11 — a substrate-data
  *       regression since it last passed, not a render-code fault; the render code below is untouched and correct).
- *   (2) window.__dwPixelProbe's A/B-isolation only matched userData.dwDisc (the GENERATED-fixture-box tag) —
+ *   (2) window.__dwOcclusionProbe's A/B-isolation only matched userData.dwDisc (the GENERATED-fixture-box tag) —
  *       the routed-network's own tubes carry userData.dwChain and were silently excluded from the hide-set, so
- *       calling __dwPixelProbe('PLB') on a routed disc under-counted (tubes stayed visible in both A/B frames,
+ *       calling __dwOcclusionProbe('PLB') on a routed disc under-counted (tubes stayed visible in both A/B frames,
  *       contributing 0 to the diff even when they painted real pixels). Fixed in this same commit (see the
- *       §8E-3 comment above window.__dwPixelProbe in modeller.html) — this witness is what exercises the fix.
+ *       §8E-3 comment above window.__dwOcclusionProbe in modeller.html) — this witness is what exercises the fix.
  * This witness does NOT touch the shipped Terminal_ARC.db resident (no binary edits, per LFS-quota-exhausted
  * discipline) — it drives the SAME render+probe functions directly via their witness seam (window.DiscWalker.
- * routeChains, window.__dwChainRender = _renderDiscChains, window.__dwPixelProbe), fed by the REAL MEP-bearing
+ * routeChains, window.__dwChainRender = _renderDiscChains, window.__dwOcclusionProbe), fed by the REAL MEP-bearing
  * fixtures already proven by the engine-side witness (bim-compiler/scripts/witness_walkback_mep.js,
  * W-WALKBACK-MEP 8/8: Terminal_extracted.db 5317 segs, Duplex_mep_extracted.db 358 segs) — same non-invent
  * discipline as witness_str_into_arc.js using Terminal_arcstr_proof.db instead of the live resident.
@@ -47,9 +47,9 @@
  *   R6  Terminal PLB tubes rendered == segs (render count == data count, no silent drop)
  *   R7  Terminal ACMV tubes rendered == segs
  *   R8  Duplex PLB tubes rendered == segs
- *   R9  §READPIXELS Terminal PLB — A/B-isolated __dwPixelProbe('PLB') tubes>0 and dwPainted>0 real px
- *   R10 §READPIXELS Terminal ACMV — A/B-isolated __dwPixelProbe('ACMV') tubes>0 and dwPainted>0 real px
- *   R11 §READPIXELS Duplex PLB — A/B-isolated __dwPixelProbe('PLB') tubes>0 and dwPainted>0 real px
+ *   R9  §READPIXELS Terminal PLB — A/B-isolated __dwOcclusionProbe('PLB') tubes>0 and dwPainted>0 real px
+ *   R10 §READPIXELS Terminal ACMV — A/B-isolated __dwOcclusionProbe('ACMV') tubes>0 and dwPainted>0 real px
+ *   R11 §READPIXELS Duplex PLB — A/B-isolated __dwOcclusionProbe('PLB') tubes>0 and dwPainted>0 real px
  *   R12 no script LOAD_FAIL / pageerror
  *
  * Read the § log after the run; exit code is not the evidence (Log Mandate).
@@ -102,7 +102,7 @@ function serve() {
   page.on('pageerror', function (e) { logs.push('PAGEERROR ' + e.message); });
   await page.goto('http://localhost:' + port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(function () {
-    return window.__sceneReady === true && !!window.SQL && !!window.ArcEditable && !!window.DiscWalker && !!window.__dwChainRender && !!window.__dwPixelProbe;
+    return window.__sceneReady === true && !!window.SQL && !!window.ArcEditable && !!window.DiscWalker && !!window.__dwChainRender && !!window.__dwOcclusionProbe;
   }, { timeout: 25000 }).catch(function () {});
 
   var pass = 0, fail = 0;
@@ -164,8 +164,8 @@ function serve() {
   chk('R6 Terminal PLB tubes rendered == segs (no silent drop)', drift.plb.count === T.plbSegs, 'rendered=' + drift.plb.count + ' segs=' + T.plbSegs);
   chk('R7 Terminal ACMV tubes rendered == segs', drift.acmv.count === T.acmvSegs, 'rendered=' + drift.acmv.count + ' segs=' + T.acmvSegs);
 
-  var probePLB = await page.evaluate(function () { return window.__dwPixelProbe('PLB'); });
-  var probeACMV = await page.evaluate(function () { return window.__dwPixelProbe('ACMV'); });
+  var probePLB = await page.evaluate(function () { return window.__dwOcclusionProbe('PLB'); });
+  var probeACMV = await page.evaluate(function () { return window.__dwOcclusionProbe('ACMV'); });
   chk('R9 §READPIXELS Terminal PLB — A/B-isolated tubes painted real px', probePLB.tubes > 0 && probePLB.dwPainted > 0,
     'tubes=' + probePLB.tubes + ' dwPainted=' + probePLB.dwPainted + 'px (' + (probePLB.dwPaintedFrac * 100).toFixed(2) + '%)');
   chk('R10 §READPIXELS Terminal ACMV — A/B-isolated tubes painted real px', probeACMV.tubes > 0 && probeACMV.dwPainted > 0,
@@ -202,7 +202,7 @@ function serve() {
   });
   chk('R8 Duplex PLB tubes rendered == segs', driftDX.count === D.plbSegs, 'rendered=' + driftDX.count + ' segs=' + D.plbSegs);
 
-  var probeDX = await page.evaluate(function () { return window.__dwPixelProbe('PLB'); });
+  var probeDX = await page.evaluate(function () { return window.__dwOcclusionProbe('PLB'); });
   chk('R11 §READPIXELS Duplex PLB — A/B-isolated tubes painted real px', probeDX.tubes > 0 && probeDX.dwPainted > 0,
     'tubes=' + probeDX.tubes + ' dwPainted=' + probeDX.dwPainted + 'px (' + (probeDX.dwPaintedFrac * 100).toFixed(2) + '%)');
 

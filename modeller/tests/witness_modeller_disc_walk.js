@@ -12,7 +12,7 @@
  */
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
-var { chromium } = require('playwright');
+var { chromium } = require(path.join(process.env.HOME, 'bim-ootb', 'tests', 'node_modules', 'playwright'));   // absolute — no NODE_PATH dependency (same pattern as witness_dw_pixelprobe's puppeteer)
 
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm',
@@ -117,4 +117,8 @@ async function openResidentAndSeed(page, key) {
   console.log('W-UX-DISC: ' + pass + ' PASS / ' + fail + ' FAIL');
   await browser.close(); srv.close();
   process.exit(fail ? 1 : 0);
-})();
+})().catch(function (e) {
+  // Last-resort net (harness robustness): never die on an uncaught rejection — report + honest FAIL exit.
+  console.log('  ❌ UNCAUGHT — witness aborted: ' + String(e && e.message || e).split('\n')[0]);
+  process.exit(1);
+});
