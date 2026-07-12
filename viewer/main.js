@@ -144,7 +144,7 @@ async function initViewer() {
         // consumed by navigate_find.js's Room axis "Path" sub-mode. Same lazy-load rationale as
         // room_habitability.js above (only needed alongside navigate_find.js itself).
         '../common/room_graph.js?v=1',
-        'navigate_find.js?v=47',
+        'navigate_find.js?v=48',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
