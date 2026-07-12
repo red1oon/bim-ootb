@@ -160,3 +160,61 @@ as-authored (cross-file site-borrow remains the documented out-of-scope manual/o
 Duplex/SampleHouse/Clinic regress with maxAbsDelta=0 (215+58+2273 transforms compared old-vs-new).
 Generality: this closes the CLASS (unit-scaled and/or georeferenced exports, single or federated,
 any magnitude) — per-file authoring defects surface as §GEOREF_MISMATCH instead of silent breakage.
+
+## 2026-07-12 (Sonnet) — the above claim was TRUE but never reached the live page. Proved + fixed.
+
+User reported testing still failed after the "RESOLVED" claim above. Investigation (not
+re-verification of the algorithm — proving whether the shipped fix actually runs in the browser
+a real user drops files into): `fe535d5` touched only `viewer/import.js`. That file's
+`A.importMultiIFC` is NOT the landing-page Drop-IFC handler — it's wired via `viewer/main.js`
+`setupImport(A)`, an IN-VIEWER re-import feature reached only after a building is already open.
+The actual landing page (`index.html`, confirmed live front door by its own header comment) wires
+`#m-import-zone`/`#m-import-file` to `import_own.js`'s `importMultiIFC` — a THIRD, independently
+written copy of this same feature that never received any part of the fix (no `forceGeorefOffset`,
+no session-frame chaining). A fourth copy existed in `gallery.html` (self-admitted dead/preserved
+old landing page, not in `sw.js` precache) — now moved to `archive/gallery.html`. This
+fork-into-4-copies is exactly how the fix silently failed to ship: `test_units_v2_full.js`'s
+"federate" witness mode *reimplemented* the session-offset chaining in the test script itself
+rather than calling any of the 3 real production entry points — so it validated the idea, not the
+shipped feature, on any path a real user could hit.
+
+Proved live (headless Playwright, real browser, real `index.html` → `openHub()` → real
+`#m-import-file`, all 7 real JKR IFC4 files from `~/Downloads/OPEN SOURCE BIM/IFC 4/`, unpatched
+`import_own.js`): reproduced the user's exact failure — CW-sourced elements ~300m from the rest
+(each file computing its own unshared rebase offset), other disciplines drifting apart by up to
+~7m (offsets ranged X 271415-271418, Y 721376-721383 across the 6 "good" files).
+
+Fix: ported `import.js`'s `§GEOREF_SESSION` federation-frame chaining into `import_own.js` (the
+file that's actually live). Also found and fixed a real latent bug in the ORIGINAL `fe535d5` logic
+while re-testing with federation now wired end-to-end: on `§GEOREF_MISMATCH`, the code force-applied
+the federation frame's offset to the mismatched file's own (un-georeferenced, near-zero) coordinates
+— for CW this moved it from ~300m off to ~271km off, the opposite of its own comment ("imported
+as-authored"). Fixed in `viewer/import_worker.js`: on mismatch, keep the file's own computed offset
+(usually 0) and only warn — the shared fix, so both `import.js` and `import_own.js` get the
+correction for free.
+
+Re-verified live, same real browser + real UI + real files, RosettaStone-style reconciliation
+against the canonical ground truth `~/bim-ootb/buildings/JKR_extracted.db`:
+```
+§ROSETTA_G1 element count by discipline: 8985/8985, delta=0 every discipline
+§ROSETTA_G2 guid coverage: 8985 common, 0 missing, 0 extra
+§ROSETTA_G3 position (claude local + stored georef_offset, reprojected to world, vs truth):
+  median=1.5mm  p90=288.6m  maxAbsDelta=288.6m  count_over_1m=1216
+§ROSETTA_G4 elements >1m off, by discipline: PLB=1140 MEP=47 ARC=24 ACMV=1 ELEC=4
+  — 1204 of 1216 exactly match CW's own reported per-file counts (PLB=1140 MEP=47 ARC=17);
+  12 residual (ARC+7, ACMV+1, ELEC+4) unexplained by CW alone — small, likely web-ifc vs
+  ifcopenshell placement-composition noise on a handful of elements, NOT a new georef bug.
+  Flagged here, not hidden; not investigated further (out of this task's scope).
+```
+Backward-compat regression, same real UI, 3-file UNMERGED `Ifc4_Revit_ARC/MEP/STR.ifc` (non-
+georeferenced Revit federation) vs `Ifc4_Revit_extracted.db` ground truth: 1934/1934 guids match,
+maxAbsDelta=0.043m — confirms non-georeferenced imports are unaffected by any of this.
+
+Committed locally on this branch (`0819997`), NOT pushed (standing push-pause). `JKR_claude.db`
+(the real merged output from this run) saved to scratchpad for reference, not committed (derived
+artifact, regenerable by re-running the same drop).
+
+**Still open, not done here:** `viewer/import.js`'s in-viewer import path was never exercised live
+in this session (only unit-tested via the original witness) — same class of file, presumably fine
+since it already had the federation logic fe535d5 added, but "presumably" isn't "proved" per this
+project's own standard. Also: the 12-element residual in §ROSETTA_G4 is unexplained, not urgent.
