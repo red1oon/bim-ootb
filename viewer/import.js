@@ -158,7 +158,7 @@ function setupImport(A) {
     console.log('[S220] §IMPORT_START file=' + file.name + ' size=' + sizeMB + 'MB');
 
     return new Promise((resolve, reject) => {
-      const workerUrl = new URL('import_worker.js?v=8', location.href).href;
+      const workerUrl = new URL('import_worker.js?v=12', location.href).href;
       const worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
@@ -284,6 +284,10 @@ function setupImport(A) {
     var allElements = [], allGeometries = [], allTransforms = [];
     var allDiscs = {}, allStoreys = new Set();
     var totalElements = 0;
+    // §GEOREF_REBASE federation frame: the first file that computes a georef offset pins it
+    // for every subsequent file in this drop, so all disciplines rebase into ONE shared local
+    // frame (per-file self-offsets can differ by metres — that would shear the federation).
+    var sessionGeorefOffset = null, sessionUnitScale = 1;
 
     for (var fi = 0; fi < files.length; fi++) {
       var file = files[fi];
@@ -297,7 +301,13 @@ function setupImport(A) {
           var filePct = (fi / files.length + pct / 100 / files.length) * 90;
           if (progressBar) progressBar.style.width = filePct.toFixed(1) + '%';
           if (status) status.textContent = fileLabel + ' — ' + phase;
-        });
+        }, sessionGeorefOffset);
+        if (!sessionGeorefOffset && result.meta.georefOffset &&
+            (result.meta.georefOffset[0] || result.meta.georefOffset[1] || result.meta.georefOffset[2])) {
+          sessionGeorefOffset = result.meta.georefOffset;
+          console.log('[S220] §GEOREF_SESSION frame pinned by ' + file.name + ' offset=(' + sessionGeorefOffset.join(',') + ')');
+        }
+        if (result.meta.unitScale && result.meta.unitScale !== 1) sessionUnitScale = result.meta.unitScale;
 
         allElements = allElements.concat(result.elements);
         allGeometries = allGeometries.concat(result.geometries);
@@ -332,6 +342,8 @@ function setupImport(A) {
           geomCount: allGeometries.length,
           disciplines: allDiscs,
           storeys: Array.from(allStoreys).sort(),
+          georefOffset: sessionGeorefOffset || [0, 0, 0],  // §GEOREF_REBASE traceability → project_metadata
+          unitScale: sessionUnitScale,
         },
         elements: allElements,
         geometries: allGeometries,
@@ -373,10 +385,10 @@ function setupImport(A) {
   };
 
   // Parse one IFC file via worker — returns promise with raw data
-  function _parseOneIFC(file, onProgress) {
+  function _parseOneIFC(file, onProgress, forceGeorefOffset) {
     return new Promise(function(resolve, reject) {
       file.arrayBuffer().then(function(arrayBuffer) {
-        var worker = new Worker(new URL('import_worker.js?v=8', location.href).href);
+        var worker = new Worker(new URL('import_worker.js?v=12', location.href).href);
         worker.onmessage = function(e) {
           var msg = e.data;
           if (msg.type === 'progress') {
@@ -399,7 +411,8 @@ function setupImport(A) {
         };
         // §S284d: transfer the wasm bytes so the worker never fetches the binary itself.
         _getWebIfcWasmBytes().then(function(wasmBytes){
-          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: wasmBytes }, [arrayBuffer]);
+          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: wasmBytes,
+            forceGeorefOffset: forceGeorefOffset || null }, [arrayBuffer]);
         }).catch(function(engineErr){ worker.terminate(); reject(engineErr); });
       });
     });
