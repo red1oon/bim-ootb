@@ -67,20 +67,56 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     var mdb = new window.SQL.Database(new Uint8Array(mbuf));
     function realCount(disc) { var r = mdb.exec("SELECT count(*) FROM elements_meta WHERE discipline='" + disc + "'"); return r.length ? r[0].values[0][0] : 0; }
     // independent ARC occupancy envelope (recomputed HERE so D3 is a genuine oracle, not the engine grading itself)
+    // §BUG-A ORACLE CONVENTION (bim-compiler RESUME_DISC_WALKER_ENVELOPE_BOUND.md, reviewer finding 5 — the
+    // identical contamination was found+fixed in witness_elec_hostbind.js/witness_dwwalk_hostbind.js): a raw
+    // element_transforms.center is the IFC placement-line ORIGIN, not the element's midpoint (measured off by up
+    // to 11.27m on 73/2147 elements of THIS substrate). The engine places via mesh-recovered true midpoints, so
+    // an occupancy oracle built from raw center±bbox/2 rasterizes a grid displaced from the real building —
+    // grading correct placements as "void". Recompute each cell around the element's OWN _trueMidpoint (still an
+    // independent recompute: the GRID math stays this witness's own, only the defective centre source is corrected).
     var sub = window.DiscWalker.substrate(adb);
     function occCells(st, cell) {
       cell = Math.max(cell > 0 ? cell : 1, 0.5);
-      var r = adb.exec("SELECT t.center_x,t.center_y,COALESCE(t.bbox_x,0),COALESCE(t.bbox_y,0) FROM elements_meta m " +
+      var r = adb.exec("SELECT t.guid,t.center_x,t.center_y,t.center_z,COALESCE(t.bbox_x,0),COALESCE(t.bbox_y,0)," +
+        "COALESCE(t.rotation_x,0),COALESCE(t.rotation_y,0),COALESCE(t.rotation_z,0) FROM elements_meta m " +
         "JOIN element_transforms t ON m.guid=t.guid WHERE m.storey='" + String(st.name).replace(/'/g, "''") + "'");
       var occ = {};
       if (r.length) r[0].values.forEach(function (v) {
-        var i0 = Math.floor((v[0] - v[2] / 2) / cell), i1 = Math.floor((v[0] + v[2] / 2) / cell);
-        var j0 = Math.floor((v[1] - v[3] / 2) / cell), j1 = Math.floor((v[1] + v[3] / 2) / cell);
+        var mid = window.DiscWalker._trueMidpoint(adb, v[0], { x: v[1], y: v[2], z: v[3], rx: v[6], ry: v[7], rot: v[8] });
+        var cx = (mid && mid.verified) ? mid.x : v[1], cy = (mid && mid.verified) ? mid.y : v[2];
+        var i0 = Math.floor((cx - v[4] / 2) / cell), i1 = Math.floor((cx + v[4] / 2) / cell);
+        var j0 = Math.floor((cy - v[5] / 2) / cell), j1 = Math.floor((cy + v[5] / 2) / cell);
         for (var i = i0; i <= i1 && i < i0 + 256; i++) for (var j = j0; j <= j1 && j < j0 + 256; j++) occ[i + ',' + j] = 1;
       });
       return occ;
     }
     var subByName = {}; sub.forEach(function (st) { subByName[st.name] = st; });
+    // §D3-HOST-FOOTPRINT: Terminal_arcstr_proof.db is a MERGED two-block model — its 82 IfcCoverings all sit
+    // under the Malay-named storeys (Aras Tanah/01-04) while fixtures walk English-labelled storeys too, so a
+    // ceiling fixture legitimately binds (nearest-XY, storey-agnostic hostBind) to a real Covering recorded
+    // under ANOTHER storey label. Such a placement is NOT void — it sits at a real element's measured position —
+    // but a per-storey grid can never contain it (measured: every pre-fix D3 miss was prov shim:host-IfcCovering-
+    // bottom with a cross-storey host). Oracle therefore grades a host-BOUND placement against its OWN host's
+    // independently-recomputed true footprint (stricter than a union grid: it must sit AT its claimed host);
+    // floats keep the per-storey occupancy grid.
+    var hostCellCache = {};
+    function hostCells(guid, cell) {
+      var key = guid + '|' + cell;
+      if (hostCellCache[key]) return hostCellCache[key];
+      var occ = {};
+      var r = adb.exec("SELECT t.guid,t.center_x,t.center_y,t.center_z,COALESCE(t.bbox_x,0),COALESCE(t.bbox_y,0)," +
+        "COALESCE(t.rotation_x,0),COALESCE(t.rotation_y,0),COALESCE(t.rotation_z,0) FROM element_transforms t WHERE t.guid='" +
+        String(guid).replace(/'/g, "''") + "'");
+      if (r.length && r[0].values.length) {
+        var v = r[0].values[0];
+        var mid = window.DiscWalker._trueMidpoint(adb, v[0], { x: v[1], y: v[2], z: v[3], rx: v[6], ry: v[7], rot: v[8] });
+        var cx = (mid && mid.verified) ? mid.x : v[1], cy = (mid && mid.verified) ? mid.y : v[2];
+        var i0 = Math.floor((cx - v[4] / 2) / cell), i1 = Math.floor((cx + v[4] / 2) / cell);
+        var j0 = Math.floor((cy - v[5] / 2) / cell), j1 = Math.floor((cy + v[5] / 2) / cell);
+        for (var i = i0; i <= i1 && i < i0 + 256; i++) for (var j = j0; j <= j1 && j < j0 + 256; j++) occ[i + ',' + j] = 1;
+      }
+      return (hostCellCache[key] = occ);
+    }
 
     // 3) walk + render each disc
     var out = {};
@@ -101,8 +137,12 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
       pl.forEach(function (p) {
         var st = subByName[p.storey]; if (!st) return; checked++;
         // cell size = the class's measured spacing if array-placed, else 1m (coarse) — match the engine's grid
-        var cell = 1; var key = p.storey + '|' + cell;
-        var occ = occCache[key] || (occCache[key] = occCells(st, cell));
+        var cell = 1;
+        // host-BOUND placement → grade against its OWN host's true footprint (§D3-HOST-FOOTPRINT above);
+        // float → the per-storey occupancy grid as before.
+        var occ;
+        if (p.host) occ = hostCells(p.host, cell);
+        else { var key = p.storey + '|' + cell; occ = occCache[key] || (occCache[key] = occCells(st, cell)); }
         var i = Math.floor(p.x / cell), j = Math.floor(p.y / cell);
         // accept the cell or its 8-neighbourhood (placement centre may sit at a cell edge after striding)
         var hit = false;
