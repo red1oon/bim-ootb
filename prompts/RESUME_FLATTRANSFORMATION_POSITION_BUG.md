@@ -137,3 +137,26 @@ matching `jkr_fixed.db`'s per-discipline spread (within a few cm) for the 6 corr
 georeferenced files (everything except CW, which stays out of scope). Verified live via the
 Playwright-driven direct-worker test, with the Duplex regression check showing zero change.
 §-logged, committed locally on this worktree/branch, NOT pushed.
+
+---
+
+## 2026-07-12 (Fable) — RESOLVED at the source: the "position bug" WAS the unit heuristic
+
+Commit `fe535d5` (§UNITS_V2, this branch, local — push-pause honored). The collapse-to-one-point
+was never a web-ifc flatTransformation composition failure: web-ifc 0.0.77 already normalises the
+jkr files' declared MILLI units to metres, and its placements are CORRECT (verified: Drop-path ARC
+Z[81.0..91.1] vs offline ifcopenshell ground truth Z[80.7..91.2]). The old `maxCoord>500 ⇒ mm ⇒
+/1000` heuristic then saw georeferenced meter coordinates (~271km easting) and crushed everything
+x1/1000 — centers collapse to a ~271.4/721.4 "residual point", verts to dust. One bug, both
+symptoms. The heuristic also never scaled bbox_x/y/z — the inconsistency that made the reverted
+bbox-ratio self-heal (dcf8aa6) blow up into "geometry hell".
+
+Fix: span-based unit detection (span>1500 ⇒ mm; scales centers+verts+bboxes TOGETHER), per-axis
+georef rebase >10km with the offset recorded in project_metadata, and a shared federation frame
+across multi-file drops (§GEOREF_SESSION pins file 1's offset; §GEOREF_MISMATCH >1km names a
+defective file). Witness: all 7 jkr files land co-located X[-23..24] Y[-15..16] Z[80..92] in one
+frame with 0/8985 scale mismatches; the CW zeroed-IfcSite defect is flagged loudly and imported
+as-authored (cross-file site-borrow remains the documented out-of-scope manual/offline step);
+Duplex/SampleHouse/Clinic regress with maxAbsDelta=0 (215+58+2273 transforms compared old-vs-new).
+Generality: this closes the CLASS (unit-scaled and/or georeferenced exports, single or federated,
+any magnitude) — per-file authoring defects surface as §GEOREF_MISMATCH instead of silent breakage.
