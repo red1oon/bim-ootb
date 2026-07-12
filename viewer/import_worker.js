@@ -646,29 +646,82 @@ self.onmessage = async function(e) {
 
     const storeys = [...new Set(renderableElements.map(e => e.storey))].sort();
 
-    // Post-hoc unit heuristic: if bounding box > 500m in any axis, assume mm → divide by 1000
+    // §UNITS v2 (2026-07-12, JKR georeferenced Revit series — see prompts/
+    // RESUME_ARCH_DISC_FILTER_STUCK_HIDDEN.md + RESUME_FLATTRANSFORMATION_POSITION_BUG.md):
+    // Discriminate units by model SPAN, never by absolute coordinate magnitude. The old
+    // `maxCoord > 500 ⇒ mm` test crushed georeferenced METER models (site at ~271km map
+    // easting, span 60m) x1/1000 — and it scaled centers+verts but NOT bbox_x/y/z, leaving
+    // every mm-import's bboxes 1000x too big (which is also what made the later bbox-ratio
+    // self-heal misfire into "geometry hell"). Rules:
+    //   span > 1500 in any axis (incl. element bbox extents) ⇒ mm model ⇒ scale centers,
+    //     verts AND bboxes by 0.001, together, once. (No real building spans 1.5km; a mm
+    //     building spans ≥ ~1500 even for a 1.5m shed.)
+    //   after unit normalisation, any axis whose coordinates sit > 10km from origin ⇒
+    //     georeferenced ⇒ REBASE that axis to a local origin (whole-metre offset, recorded
+    //     in project_metadata as georef_offset_*) — position is an offset problem, not a
+    //     unit problem, and float32 render/positions paths lose precision at map magnitude.
     var autoScale = 1.0;
+    var georefOffset = [0, 0, 0];
     if (transforms.length > 0) {
-      var maxCoord = 0;
+      var _minC = [Infinity, Infinity, Infinity], _maxC = [-Infinity, -Infinity, -Infinity], _maxBbox = 0;
       for (var ti = 0; ti < transforms.length; ti++) {
-        maxCoord = Math.max(maxCoord, Math.abs(transforms[ti].cx), Math.abs(transforms[ti].cy), Math.abs(transforms[ti].cz));
+        var _t = transforms[ti], _cs = [_t.cx, _t.cy, _t.cz];
+        for (var _ax = 0; _ax < 3; _ax++) {
+          if (_cs[_ax] < _minC[_ax]) _minC[_ax] = _cs[_ax];
+          if (_cs[_ax] > _maxC[_ax]) _maxC[_ax] = _cs[_ax];
+        }
+        _maxBbox = Math.max(_maxBbox, _t.bx || 0, _t.by || 0, _t.bz || 0);
       }
-      if (maxCoord > 500) {
+      var _span = Math.max(_maxC[0] - _minC[0], _maxC[1] - _minC[1], _maxC[2] - _minC[2], _maxBbox);
+      if (_span > 1500) {
         autoScale = 0.001;
         for (var ti = 0; ti < transforms.length; ti++) {
-          transforms[ti].cx *= 0.001;
-          transforms[ti].cy *= 0.001;
-          transforms[ti].cz *= 0.001;
+          transforms[ti].cx *= 0.001; transforms[ti].cy *= 0.001; transforms[ti].cz *= 0.001;
+          transforms[ti].bx *= 0.001; transforms[ti].by *= 0.001; transforms[ti].bz *= 0.001;
         }
-        // Also scale library vertices
         for (var gi = 0; gi < geometries.length; gi++) {
           var vBuf = new Float32Array(geometries[gi].vertices);
           for (var vi = 0; vi < vBuf.length; vi++) vBuf[vi] *= 0.001;
           geometries[gi].vertices = vBuf.buffer;
         }
+        for (var _ax = 0; _ax < 3; _ax++) { _minC[_ax] *= 0.001; _maxC[_ax] *= 0.001; }
       }
+      var _computed = [0, 0, 0];
+      for (var _ax = 0; _ax < 3; _ax++) {
+        var _mid = (_minC[_ax] + _maxC[_ax]) / 2;
+        if (Math.abs(_mid) > 10000) _computed[_ax] = Math.round(_mid);
+      }
+      var _forced = e.data.forceGeorefOffset;
+      if (_forced && (_forced[0] || _forced[1] || _forced[2])) {
+        // Federation frame pinned by an earlier file in this drop — use it verbatim so all
+        // files share ONE local origin. If this file's own data disagrees by >1km, that is a
+        // source-file defect (e.g. a zeroed IfcSite while siblings carry the real map base) —
+        // flag it loudly, never silently re-anchor.
+        georefOffset = [_forced[0], _forced[1], _forced[2]];
+        var _dev = Math.max(Math.abs(_computed[0] - georefOffset[0]),
+                            Math.abs(_computed[1] - georefOffset[1]),
+                            Math.abs(_computed[2] - georefOffset[2]));
+        if (_dev > 1000) {
+          console.log('[S220] §GEOREF_MISMATCH ' + filename + ' computed=(' + _computed.join(',') +
+            ') vs federation frame=(' + georefOffset.join(',') + ') — this file sits >1km from its siblings' +
+            ' (zeroed IfcSite / different base point?). Imported as-authored; repair the source or use the offline extractor.');
+        }
+      } else {
+        georefOffset = _computed;
+      }
+      if (georefOffset[0] || georefOffset[1] || georefOffset[2]) {
+        for (var ti = 0; ti < transforms.length; ti++) {
+          transforms[ti].cx -= georefOffset[0];
+          transforms[ti].cy -= georefOffset[1];
+          transforms[ti].cz -= georefOffset[2];
+        }
+        console.log('[S220] §GEOREF_REBASE offset=(' + georefOffset.join(',') + ') — georeferenced site rebased to local origin (offset kept in project_metadata)');
+      }
+      console.log('[S220] §UNITS_V2 span=' + _span.toFixed(1) + ' autoScale=' + autoScale +
+        (autoScale !== 1.0 ? ' (mm→m, centers+verts+bboxes together)' : ' (already metres)'));
+    } else {
+      console.log('[S220] §UNITS_V2 span=n/a autoScale=1 (no transforms)');
     }
-    console.log('[S220] §UNITS autoScale=' + autoScale + (autoScale !== 1.0 ? ' (mm→m heuristic)' : ' (already metres)'));
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 
@@ -867,6 +920,8 @@ self.onmessage = async function(e) {
         disciplines: discCounts,
         flowTermSplit: flowTermSplit, // §FLOWTERM-NOTE: how the abstract IfcFlowTerminal was split by name
         storeys: storeys,
+        unitScale: autoScale,        // §UNITS_V2 — 0.001 when a mm-unit model was normalised to metres
+        georefOffset: georefOffset,  // §GEOREF_REBASE — whole-metre site offset subtracted from centers
       },
       elements: renderableElements,
       geometries: geometries,
