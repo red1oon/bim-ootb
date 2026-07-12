@@ -1355,10 +1355,19 @@ function setupStreaming(A) {
     }
 
     // §6.9 Split DB detection: try _meta.db alongside any .db URL
+    // §SPLIT_PAIR_REQUIRED (2026-07-13): meta.db's presence alone is NOT sufficient to commit to
+    // split mode — a stray/incomplete split upload (meta.db present, geo.db never uploaded, e.g.
+    // Duplex: small building, never needed a split at all) forced every such building down the
+    // split path on meta.db alone, then failed the mesh fetch on the missing geo half. Require
+    // BOTH halves to actually exist (network) before trusting split mode. The import:// (browser
+    // Drop-IFC) case is unaffected — its cache entries are always written together atomically in
+    // import_own.js, so checking meta alone there was never unsafe.
     var _splitMode = false;
     var metaUrl = A.DB_URL.replace('_extracted.db', '_meta.db');
+    var geoUrl = A.DB_URL.replace('_extracted.db', '_geo.db');
     // §S260b: Also handle plain names like "hospital.db" → "hospital_meta.db"
     if (metaUrl === A.DB_URL) metaUrl = A.DB_URL.replace(/\.db$/, '_meta.db');
+    if (geoUrl === A.DB_URL) geoUrl = A.DB_URL.replace(/\.db$/, '_geo.db');
     if (metaUrl !== A.DB_URL) {
       try {
         // §OFFLINE-GATEWAY-LEAK: check IndexedDB before ever touching the network — a repeat/offline
@@ -1368,15 +1377,16 @@ function setupStreaming(A) {
           _splitMode = !!_metaCached;
         } else {
           var headResp = await fetch(metaUrl, { method: 'HEAD' });
-          _splitMode = headResp.ok;
+          var _geoHeadOk = headResp.ok && await fetch(geoUrl, { method: 'HEAD' }).then(r => r.ok, () => false);
+          _splitMode = headResp.ok && _geoHeadOk;
         }
       } catch(e) { _splitMode = false; }
     }
-    console.log(`[S192] §DB_SPLIT_DETECT meta=${metaUrl} found=${_splitMode}`);
+    console.log(`[S192] §DB_SPLIT_DETECT meta=${metaUrl} geo=${geoUrl} found=${_splitMode}`);
 
     if (_splitMode) {
       // ── §S260b: Three-phase — positions.bin (instant bboxes) → meta.db (panels) → geo.db (meshes) ──
-      var geoUrl = A.DB_URL.replace('_extracted.db', '_geo.db');
+      // geoUrl already computed above (§SPLIT_PAIR_REQUIRED detection).
       // Bypass new URL() for import:// URLs (would throw)
       var _geoAbsUrl = geoUrl.startsWith('import://') ? geoUrl : new URL(geoUrl, location.href).href;
       var posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
