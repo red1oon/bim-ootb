@@ -143,7 +143,7 @@ async function initViewer() {
         // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7 — room-to-room adjacency graph + pathfinding,
         // consumed by navigate_find.js's Room axis "Path" sub-mode. Same lazy-load rationale as
         // room_habitability.js above (only needed alongside navigate_find.js itself).
-        '../common/room_graph.js?v=1',
+        '../common/room_graph.js?v=2',
         'navigate_find.js?v=48',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
