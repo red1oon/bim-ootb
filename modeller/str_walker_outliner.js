@@ -485,6 +485,34 @@
     } catch (e) { console.warn(TAG + ' §STRWALK-RENDER-WIRE threw ' + (e && e.message)); if (window.__saveGateInit) window.__saveGateInit(); }
   }
 
+  // §PATCH-SELFHEAL (Modeller side — port of viewer/scene.js A._applyPendingPatch, same rationale:
+  // a shipped modeller/*.db can be stale relative to a small, real, already-witnessed SQL fix that
+  // never crosses the network as a binary — first user: modeller/patches/Terminal_ARC.db.sql,
+  // ROOM_TAXONOMY_STRATEGY_2026-07-12.md GRIND RESULTS, replaces the pre-R-REJECT stale room set).
+  // Convention: `modeller/patches/<dbFile>.sql`, same dir as the resident db. Applied on EVERY open
+  // — cache-hit or fresh fetch — since a cached copy may itself predate the fix; IDB always stores
+  // the RAW server bytes, only the buffer handed to SQL.Database is patched. Every patch MUST be
+  // idempotent. Best-effort: a missing patch (404, the common case) or any exec failure returns the
+  // ORIGINAL buffer untouched — never blocks an open.
+  function _applyPendingPatch(buf, dbFile) {
+    var patchUrl = _modellerBase() + 'patches/' + dbFile + '.sql';
+    return fetch(patchUrl).then(function (r) {
+      if (!r.ok) { console.log(TAG + ' §PATCH_NONE ' + dbFile + ' (' + r.status + ')'); return buf; }
+      return r.text().then(function (sql) {
+        if (!window.SQL) { console.warn(TAG + ' §PATCH_APPLY_FAIL ' + dbFile + ' — sql.js not ready'); return buf; }
+        var pdb = new window.SQL.Database(new Uint8Array(buf));
+        pdb.run(sql);
+        var out = pdb.export().buffer;
+        pdb.close();
+        console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' applied (' + sql.length + ' bytes) from ' + patchUrl);
+        return out;
+      });
+    }).catch(function (e) {
+      console.warn(TAG + ' §PATCH_APPLY_FAIL ' + dbFile + ' — using unpatched db', e && e.message);
+      return buf;
+    });
+  }
+
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
   // playground (../modeller/<db>) and cache it. GH Pages serves Range requests + gzip → fetch() auto-inflates.
   function openResident(res) {
@@ -492,20 +520,22 @@
     _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');
-        if (_openBuffer(cached, res.key)) _forkEditable(res);
+        _applyPendingPatch(cached, res.db).then(function (patched) {
+          if (_openBuffer(patched, res.key)) _forkEditable(res);
+        });
         return;
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-MISS → fetch ' + url);
       fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
-        .then(function (buf) {
-          var ok = _openBuffer(buf, res.key);
+        .then(function (buf) { return _applyPendingPatch(buf, res.db).then(function (patched) {
+          var ok = _openBuffer(patched, res.key);
           if (ok) {
             _forkEditable(res);
-            _idbPutDb(url, buf).then(function (p) {
+            _idbPutDb(url, buf).then(function (p) {   // cache RAW server bytes, not the patched buffer
               console.log(TAG + ' §STRWALK-CACHE ' + res.db + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024).toFixed(0) + 'KB');
             });
           }
-        })
+        }); })
         .catch(function (e) { console.warn(TAG + ' §STRWALK-OPEN resident fetch FAILED ' + res.db, e && e.message); });
     });
   }

@@ -624,6 +624,11 @@
     // §RP Task A: a room has VOLUME data when spatial_structure carries center_*/size_*
     // columns AND at least one IfcSpace row is populated. _roomHasVol is cached per-open.
     var _roomHasVol = false;
+    // §NEEDLE (ROOM_INJECTOR_NEEDLE.md): cached _probeLenses() result (incl. spaceCount, the raw
+    // IfcSpace row count) so _renderNeedle() can gate on it without re-querying; whether an
+    // injection is in flight (guards double-press).
+    var _lastPresent = null;
+    var _needleBusy = false;
     // §BUILDING-PARTS-TAXONOMY: STAIRWAY/LIFT_SHAFT/PLANT_ROOM keyword constants, ported verbatim
     // from bim-compiler build/building_parts_taxonomy.js (which itself reuses build/room_walker.js's
     // §STAIR-EXCLUDE / door-rescue constants — see prompts/BUILDING_PARTS_TAXONOMY.md in that repo,
@@ -723,6 +728,23 @@
           } catch(e) { /* _roomHasVol stays false */ }
         }
       } catch(e) { /* room stays false */ }
+      // §NEEDLE (ROOM_INJECTOR_NEEDLE.md §STANDARDIZATION): three states, not a binary zero/non-
+      // zero — compiled rows are tagged 'RM_'/'STC_' (room_walker.js's own guid convention, same
+      // prefix the patch files use). ANY non-RM_ IfcSpace row means real extraction is present —
+      // the needle must never show (never overwrite real data). All-RM_ rows (rooms present but
+      // every one compiler-owned) → needle stays as a subtle RECOMPUTE action. Zero rows → the
+      // original greyed-facet trigger.
+      var _needleSpaceCount = 0, _needleState = 'none';
+      try {
+        var scQ = A.db.exec("SELECT COUNT(*), COUNT(CASE WHEN guid LIKE 'RM\\_%' ESCAPE '\\' THEN 1 END)" +
+          " FROM spatial_structure WHERE type='IfcSpace'");
+        var _total = scQ.length ? scQ[0].values[0][0] : 0;
+        var _compiled = scQ.length ? scQ[0].values[0][1] : 0;
+        _needleSpaceCount = _total;
+        if (_total === 0) _needleState = 'zero';
+        else if (_total === _compiled) _needleState = 'recompute'; // every row is RM_ (compiler-owned)
+        else _needleState = 'none'; // at least one real (non-RM_) row present — never touch it
+      } catch(e) { /* table missing → zero */ _needleState = 'zero'; }
       try {
         var mc = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE material_name IS NOT NULL" +
           (bld ? " AND building = ?" : ""), bld ? [bld] : []);
@@ -749,8 +771,8 @@
           (bld ? " AND building = ?" : ""), bld ? [bld] : []);
         parts = !!(pc.length && pc[0].values[0][0] > 0);
       } catch(e) { /* parts stays false */ }
-      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' parts=' + parts);
-      return { room: room, material: material, phase: phase, parts: parts };
+      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' parts=' + parts + ' spaceCount=' + _needleSpaceCount + ' needleState=' + _needleState);
+      return { room: room, material: material, phase: phase, parts: parts, spaceCount: _needleSpaceCount, needleState: _needleState };
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -762,6 +784,7 @@
                 { key: 'disc', label: _t('ui_axis_disc', 'Discipline') }];
       if (!A.db) return ax;
       var present = _probeLenses();
+      _lastPresent = present; // §NEEDLE: cache for _renderNeedle()
       if (present.room) ax.push({ key: 'room', label: _t('ui_lens_room', 'Room') });
       if (present.material) ax.push({ key: 'material', label: _t('ui_lens_material', 'Material') });
       if (present.phase) ax.push({ key: 'phase', label: _t('ui_lens_phase', 'Phase') });
@@ -802,6 +825,127 @@
       elAxisBar.appendChild(btn);
       console.log('[RP-T3] §LENS_AXES toggle cur=' + cur.key + ' next=' + nxt.key +
         ' available=' + ax.map(function(a){ return a.key; }).join(','));
+      _renderNeedle();
+    }
+
+    // ══ §NEEDLE (ROOM_INJECTOR_NEEDLE.md + §STANDARDIZATION) — one-press room injection ══
+    // Three states, keyed off _lastPresent.needleState (set by _probeLenses()):
+    //   'zero'      — no IfcSpace rows at all → Room axis absent from the cycle (S1's "greyed"),
+    //                 needle shown prominent: "inject compiled rooms".
+    //   'recompute' — rooms present but EVERY row is compiler-owned (RM_ guid prefix) → facets
+    //                 work normally (Room axis in the cycle); needle STAYS, subtle, as an explicit
+    //                 re-run action (standing policy: no auto-compute, user data only changes on
+    //                 an explicit press).
+    //   'none'      — at least one REAL (non-RM_) IfcSpace row → no needle, ever (S5 + never
+    //                 overwrite real extraction).
+    function _renderNeedle() {
+      var old = document.getElementById('find-needle-btn');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      if (!elAxisBar || !A.db || !_lastPresent || _lastPresent.needleState === 'none') return;
+      var bld = A.activeBuilding || '';
+      var btn = document.createElement('button');
+      btn.id = 'find-needle-btn';
+      btn.textContent = '💉';
+      if (_lastPresent.needleState === 'zero') {
+        console.log('[NEEDLE] §NEEDLE_DETECT bld=' + bld + ' rooms=' + _lastPresent.spaceCount);
+        btn.title = 'No rooms in this building — inject compiled rooms';
+        btn.style.cssText = 'margin-left:2px;padding:5px 9px;font-size:13px;border-radius:7px;' +
+          'border:1px dashed rgba(255,255,255,0.35);background:rgba(255,255,255,0.05);' +
+          'color:#999;cursor:pointer;opacity:0.85;';
+      } else { // 'recompute'
+        console.log('[NEEDLE] §NEEDLE_RECOMPUTE_AVAILABLE bld=' + bld + ' rooms=' + _lastPresent.spaceCount);
+        btn.title = 'Recompute compiled rooms (replaces the previous compiled set)';
+        btn.style.cssText = 'margin-left:2px;padding:4px 7px;font-size:12px;border-radius:7px;' +
+          'border:1px solid rgba(79,195,247,0.3);background:rgba(255,255,255,0.03);' +
+          'color:#4fc3f7;cursor:pointer;opacity:0.5;';
+      }
+      btn.addEventListener('pointerup', function(e) { e.stopPropagation(); _needleInject(btn); });
+      elAxisBar.appendChild(btn);
+    }
+
+    // S2 (two sources, in order) + S3 (IDB persist) + S4 (ungrey/refresh).
+    async function _needleInject(btn) {
+      if (_needleBusy || !A.db) return;
+      _needleBusy = true; btn.disabled = true; btn.textContent = '…';
+      var bld = A.activeBuilding || '';
+      var url = A.DB_URL || '';
+      var dir = url.slice(0, url.lastIndexOf('/') + 1);
+      var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var patchUrl = dir + 'patches/' + dbFile + '.sql';
+      var source = null;
+      try {
+        // S2.1 — patch source (curated): same sql.js run() semantics as A._applyPendingPatch
+        // (G1), applied directly to the LIVE db rather than a pre-load buffer.
+        var applied = false;
+        try {
+          var r = await fetch(patchUrl);
+          if (r.ok) {
+            var sqlText = await r.text();
+            A.db.run(sqlText);
+            applied = true;
+            console.log('[NEEDLE] §PATCH_APPLY ' + dbFile + ' applied (' + sqlText.length + ' bytes) from ' + patchUrl + ' [needle]');
+          } else {
+            console.log('[NEEDLE] §PATCH_NONE ' + dbFile + ' (' + r.status + ') [needle]');
+          }
+        } catch (e) { console.warn('[NEEDLE] §NEEDLE_PATCH_ERR ' + (e && e.message)); }
+
+        if (applied) {
+          source = 'patch';
+        } else {
+          // S2.2 — walker source (any building): lazy-load the room_walker JS port, compile
+          // deterministically from walls/doors. Refuses honestly (roomsWritten=0) if the
+          // building lacks them — never invents rooms.
+          if (!window.RoomWalker) {
+            await new Promise(function(resolve, reject) {
+              var s = document.createElement('script');
+              s.src = 'lib/room_walker.js?v=1';
+              s.onload = function() { resolve(); };
+              s.onerror = function() { reject(new Error('room_walker.js load failed')); };
+              document.head.appendChild(s);
+            });
+          }
+          if (!window.RoomWalker) throw new Error('RoomWalker unavailable after load');
+          window.RoomWalker.walk(A.db, { write: true });
+          source = 'walker';
+        }
+
+        var cq = A.dbQuery("SELECT COUNT(*), COUNT(DISTINCT room_guid) FROM spatial_structure WHERE type='IfcSpace'");
+        var rectsN = cq.length ? cq[0][0] : 0;
+        var roomsN = cq.length ? cq[0][1] : 0;
+        console.log('[NEEDLE] §NEEDLE_INJECT bld=' + bld + ' source=' + source + ' rooms=' + roomsN + ' rects=' + rectsN);
+
+        // S3 — persist patched/injected bytes into the SAME IDB cache slot the loader reads
+        // (G4), so rooms survive reload without re-injection. Never blocks on failure.
+        try {
+          var outBuf = A.db.export().buffer;
+          var cacheDb = await A.openCacheDB();
+          if (cacheDb) {
+            await new Promise(function(resolve) {
+              try {
+                var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
+                var req = tx.objectStore(A.CACHE_STORE).put(outBuf, url);
+                req.onerror = function() { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail err=' + req.error); };
+                tx.oncomplete = function() { console.log('[NEEDLE] §NEEDLE_PERSIST idb=ok bytes=' + outBuf.byteLength); resolve(); };
+                tx.onerror = function() { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail tx-error'); resolve(); };
+              } catch (e2) { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail ' + e2.message); resolve(); }
+            });
+          } else {
+            console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail no-cache-db');
+          }
+        } catch (e) { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail ' + (e && e.message)); }
+
+        // S4 — ungrey + refresh: invalidate the room-graph cache so PATH mode sees the new
+        // rooms without a reload, then re-probe/re-render (the pill removes itself once
+        // spaceCount > 0 — see _renderNeedle's own gate).
+        _pathGraphCache = null; _pathGraphBld = null;
+        _renderAxes();
+        buildTree();
+      } catch (e) {
+        console.warn('[NEEDLE] §NEEDLE_INJECT_ERR ' + (e && e.message));
+        btn.disabled = false; btn.textContent = '💉';
+      } finally {
+        _needleBusy = false;
+      }
     }
 
     function _isolateLensGroup(lens, g) {
