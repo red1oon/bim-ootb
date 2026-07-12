@@ -4,6 +4,27 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.17.0](https://github.com/red1oon/bim-ootb/compare/v1.16.0...v1.17.0) (2026-07-12)
+
+
+### ✨ Features
+
+* **room_graph:** occupant pathfinder — circulation + stair + exit edges (human-walk routing) ([#759](https://github.com/red1oon/bim-ootb/issues/759)) ([b3462f6](https://github.com/red1oon/bim-ootb/commit/b3462f687c572d33b054a80c2ac1425adc88c750))
+
+
+### 🐛 Fixes
+
+* **disc_walker:** PATH_LEGAL_SEGMENTS §G3-REVISED — mesh-derived storey raster, no chord thru the void ([#767](https://github.com/red1oon/bim-ootb/issues/767)) ([073336f](https://github.com/red1oon/bim-ootb/commit/073336ff0f7b48d7fb0af9268c2ad65b8baa5864))
+* **import:** Drop-IFC federation + site-identity auto-correct for georeferenced multi-file drops ([#762](https://github.com/red1oon/bim-ootb/issues/762)) ([2b955ed](https://github.com/red1oon/bim-ootb/commit/2b955ed33a566af6434912902b57656535fdfcae))
+* **room_graph:** stair E3 — assembly-class fallback + consecutive-storey chaining + gap-relative tower ends (SampleCastle cross-storey paths) ([#763](https://github.com/red1oon/bim-ootb/issues/763)) ([80018dd](https://github.com/red1oon/bim-ootb/commit/80018dd7f941fe31cc756cc30799361983997cc5))
+* **rooms:** STAIRWELL-STACK — stop compiling stair shafts as rooms (Terminal, user screenshot ≈ Aras 01 R1) ([#761](https://github.com/red1oon/bim-ootb/issues/761)) ([4f4b10f](https://github.com/red1oon/bim-ootb/commit/4f4b10f01c208ad9f5960fafb2b9168829a797c9))
+* **rooms:** Terminal room self-heal (Viewer 0→59 rooms) + Modeller patch loader + needle room injector ([#758](https://github.com/red1oon/bim-ootb/issues/758)) ([d58ef64](https://github.com/red1oon/bim-ootb/commit/d58ef64f2cbfb33261c2658e55bbf534f818f7a2))
+* **sw:** bump CACHE_VERSION v745→v746 — split-DB pair fix ([#764](https://github.com/red1oon/bim-ootb/issues/764)) never reached live browsers ([#765](https://github.com/red1oon/bim-ootb/issues/765)) ([46f3a70](https://github.com/red1oon/bim-ootb/commit/46f3a70a60abb182850ce101efb8f9cf2b328726))
+* **viewer:** cache-bust room_graph.js v=1→v=2 — occupant graph ([#759](https://github.com/red1oon/bim-ootb/issues/759)) + stair chaining ([#763](https://github.com/red1oon/bim-ootb/issues/763)) never reached returning browsers ([#766](https://github.com/red1oon/bim-ootb/issues/766)) ([80b20fd](https://github.com/red1oon/bim-ootb/commit/80b20fd6136fa4622e812ea4c05b9ad272b2dd83))
+* **viewer:** keyboard shortcuts dead on touch-capable desktops + dead Record binding ([#757](https://github.com/red1oon/bim-ootb/issues/757)) ([f7f27e7](https://github.com/red1oon/bim-ootb/commit/f7f27e748129ef2e8b161349854da262c58cc625))
+* **viewer:** Room Lens selected-room cuboid — dispose the previous highlight before drawing a new one ([#768](https://github.com/red1oon/bim-ootb/issues/768)) ([6b69dc8](https://github.com/red1oon/bim-ootb/commit/6b69dc8f16ab413a0b5d2581461f12d2c05ea44f))
+* **viewer:** split-DB detection requires BOTH meta.db AND geo.db, not meta.db alone ([#764](https://github.com/red1oon/bim-ootb/issues/764)) ([359a86f](https://github.com/red1oon/bim-ootb/commit/359a86f382b3492093396b8cf0f8f3915a1bbe80))
+
 ## [1.16.0](https://github.com/red1oon/bim-ootb/compare/v1.15.0...v1.16.0) (2026-07-11)
 
 
