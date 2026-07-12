@@ -350,7 +350,7 @@ async function handleImportFile(file) {
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
   const arrayBuffer = await file.arrayBuffer();
-  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=9' : 'viewer/mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=10' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   if (fmt.route === 'ifc') {
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
@@ -528,12 +528,12 @@ function _commonPrefix(strs) {
 
 // Parse ONE IFC file via worker → resolves the 'done' msg (elements/geometries/transforms/meta),
 // with discipline-from-filename override applied (mirrors handleImportFile's parse half).
-function _parseOwnIFC(file, onProgress) {
+function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
   return new Promise(async function (resolve, reject) {
-    var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name };
+    var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name, forceGeorefOffset: forceGeorefOffset || null };
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
     catch (engineErr) { reject(engineErr); return; }
-    var worker = _createWorker('viewer/import_worker.js?v=9');
+    var worker = _createWorker('viewer/import_worker.js?v=10');
     worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }
@@ -584,6 +584,15 @@ async function importMultiIFC(files) {
   if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
 
   var allElements = [], allGeometries = [], allTransforms = [], allDiscs = {}, allStoreys = new Set(), totalElements = 0;
+  // §GEOREF_REBASE federation frame (ported from viewer/import.js fe535d5 — this landing-page
+  // path builds its OWN worker calls and was missing the fix entirely): the first file that
+  // computes a georef offset pins it for every subsequent file in this drop, so all disciplines
+  // rebase into ONE shared local frame. Without this, each file rebases independently and a
+  // multi-discipline federated drop (e.g. JKR's 7 files) shears apart by however much each
+  // file's own bbox-midpoint rounds differently — verified live 2026-07-12: JKR disciplines
+  // landed up to ~7m apart, and the CW file (zeroed IfcSite defect) silently landed ~300m away
+  // with no warning at all.
+  var sessionGeorefOffset = null, sessionUnitScale = 1;
 
   for (var fi = 0; fi < files.length; fi++) {
     var file = files[fi];
@@ -595,7 +604,13 @@ async function importMultiIFC(files) {
         var filePct = (fi / files.length + pct / 100 / files.length) * 90;
         if (progressBar) progressBar.style.width = filePct.toFixed(1) + '%';
         if (status) status.textContent = fileLabel + ' — ' + phase;
-      });
+      }, sessionGeorefOffset);
+      if (!sessionGeorefOffset && result.meta.georefOffset &&
+          (result.meta.georefOffset[0] || result.meta.georefOffset[1] || result.meta.georefOffset[2])) {
+        sessionGeorefOffset = result.meta.georefOffset;
+        console.log('§GEOREF_SESSION frame pinned by ' + file.name + ' offset=(' + sessionGeorefOffset.join(',') + ')');
+      }
+      if (result.meta.unitScale && result.meta.unitScale !== 1) sessionUnitScale = result.meta.unitScale;
       allElements = allElements.concat(result.elements);
       allGeometries = allGeometries.concat(result.geometries);
       allTransforms = allTransforms.concat(result.transforms);
@@ -617,7 +632,8 @@ async function importMultiIFC(files) {
     var SQL = await _loadSqlJs();
     var mergedData = {
       meta: { name: buildingName, filename: buildingName, elementCount: totalElements, geomCount: allGeometries.length,
-              disciplines: allDiscs, storeys: Array.from(allStoreys).sort() },
+              disciplines: allDiscs, storeys: Array.from(allStoreys).sort(),
+              georefOffset: sessionGeorefOffset || [0, 0, 0], unitScale: sessionUnitScale },
       elements: allElements, geometries: allGeometries, transforms: allTransforms,
     };
     var dbs = buildImportDBs(SQL, mergedData);
