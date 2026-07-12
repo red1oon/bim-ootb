@@ -51,6 +51,19 @@ runE2E('W-E2E-SEEDTRUNK', async (t) => {
   await t.shot('04-routed');
   await t.shot('seedtrunk-trunk-raw');
 
+  // guide frame: the trunk's real default colour (DW_COLOR.ELEC, gold) is the same family as the ELEC
+  // fixture boxes it threads through, and reads as low-contrast clutter against the wall in a static
+  // screenshot (2026-07-13 user report). Recolour the trunk LineSegments for the capture only (no op
+  // committed, no app-code change) — same precedent as the 2026-07-09 session's hot-pink capture fix.
+  await t.pg.evaluate(() => {
+    const g = window.Bonsai.group(); const root = g && g.children.find(o => o.userData && o.userData.dwRoot);
+    const lines = root ? root.children.filter(o => o.isLineSegments && o.userData && o.userData.dwTrunk === 'ELEC') : [];
+    lines.forEach(l => { l.material = l.material.clone(); l.material.color.setHex(0xff00ff); l.material.linewidth = 4; });
+    if (window.A && A.requestRender) A.requestRender();
+  });
+  await t.sleep(200);
+  await t.shot('seedtrunk-trunk-hotpink');
+
   t.assert('T3 ROUTED (Route ▶ renders a dwTrunk=ELEC line where there was none)', trunk0.n === 0 && trunk1.n >= 1 && trunk1.segs > 0, 'trunk ' + trunk0.n + '→' + trunk1.n + ' segs0=' + trunk0.segs + ' segs1=' + trunk1.segs + ' entry=' + (chosen && chosen.guid));
   t.assert('T4 PLANNED (net has storeys, not refused; rendered segs>0)', !!plan && plan.refused === false && plan.storeys >= 1 && trunk1.segs > 0, 'plan=' + JSON.stringify(plan) + ' segs=' + trunk1.segs);
   t.assert('T5 VISIBLE (framebuffer changed after routing)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
