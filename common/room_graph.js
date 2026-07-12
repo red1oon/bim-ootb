@@ -212,11 +212,23 @@
     });
 
     // ── E3: stair/ramp flights bridge two storeys' circulation nodes ──
+    // §STAIR-CLASS-FALLBACK (SampleCastle, 2026-07-13): flights (IfcStairFlight/IfcRampFlight) are
+    // PREFERRED — proven z-span behavior on Terminal/JKR/Duplex — but some real buildings model
+    // stairs ONLY as IfcStair/IfcRamp ASSEMBLIES (SampleCastle: 9 IfcStair, zero flights → zero E3
+    // edges → every cross-storey path refused, user-reported §ROOM_PATH_NOT_FOUND). If the flight
+    // query returns nothing, fall back to the assembly classes; never mix both (a building with
+    // both — Duplex — would double-count the same physical stair).
     var flightRows = [];
+    var _stairSelect = "SELECT m.guid, m.element_name, t.center_x, t.center_y, t.center_z, t.bbox_z" +
+      ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid';
     try {
-      flightRows = dbQuery("SELECT m.guid, m.element_name, t.center_x, t.center_y, t.center_z, t.bbox_z" +
-        ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
+      flightRows = dbQuery(_stairSelect +
         " WHERE (m.ifc_class LIKE 'IfcStairFlight%' OR m.ifc_class LIKE 'IfcRampFlight%') AND t.center_z IS NOT NULL") || [];
+      if (!flightRows.length) {
+        flightRows = dbQuery(_stairSelect +
+          " WHERE (m.ifc_class LIKE 'IfcStair%' OR m.ifc_class LIKE 'IfcRamp%') AND t.center_z IS NOT NULL") || [];
+        if (flightRows.length) log('§ROOM_GRAPH_STAIR_FALLBACK assemblies=' + flightRows.length + ' (no flight rows in this building)');
+      }
     } catch (eFl) { log('§ROOM_GRAPH_STAIR_ERR ' + eFl.message); }
 
     var flightGroups = {}, flightGroupOrder = [];
@@ -235,6 +247,30 @@
     });
 
     var e3 = 0, e3Skipped = 0;
+    var _e3Seen = {};
+    // Shared E3 edge creation (§STAIR-CHAIN): one storey-pair edge per physical stair span, with
+    // the stairwp render waypoints at the group's real z ends. Deduped on storeyA|storeyB — two
+    // stair groups (or one tower emitting a chain) never produce parallel identical edges.
+    function _e3Chain(sA, sB, gr, key) {
+      var ek = sA + '|' + sB;
+      if (_e3Seen[ek]) return;
+      _e3Seen[ek] = 1;
+      var gcx = gr.cx / gr.n, gcy = gr.cy / gr.n;
+      var zA = storeyZ[sA], zB = storeyZ[sB];
+      var circA = circNode(sA, gcx, gcy, zA), circB = circNode(sB, gcx, gcy, zB);
+      // §API-COMPAT-WAYPOINT: two synthetic-but-deterministic waypoint guids (this flight group's
+      // own representative guid + a side suffix) at the SEGMENT's real z ends — used to render
+      // the vertical hop hugging the actual stair, not a storey centroid (see shortestPath()).
+      var repGuid = gr.guids[0];
+      var zLo = Math.min(zA, zB), zHi = Math.max(zA, zB);
+      var loWp = repGuid + '::' + sA.replace(/\W/g, '_') + '::lo', hiWp = repGuid + '::' + sB.replace(/\W/g, '_') + '::hi';
+      if (!nodes[loWp]) nodes[loWp] = { guid: loWp, kind: 'stairwp', name: key + ' (lower)', cx: gcx, cy: gcy, cz: zLo };
+      if (!nodes[hiWp]) nodes[hiWp] = { guid: hiWp, kind: 'stairwp', name: key + ' (upper)', cx: gcx, cy: gcy, cz: zHi };
+      var wpForA = (zA <= zB) ? loWp : hiWp, wpForB = (zA <= zB) ? hiWp : loWp;
+      edges.push({ a: circA, b: circB, doorGuid: repGuid, doorName: key, storey: sA + ' / ' + sB,
+        kind: 'E3', w: Math.abs(zB - zA) || Math.abs(gr.zhi - gr.zlo), wpA: wpForA, wpB: wpForB });
+      e3++;
+    }
     flightGroupOrder.forEach(function (key) {
       var gr = flightGroups[key];
       if (gr.n === 0) return;
@@ -251,7 +287,35 @@
       var contained = storeysSorted.filter(function (s) { return gr.zlo <= storeyZ[s] && storeyZ[s] <= gr.zhi; });
       var sA, sB;
       if (contained.length >= 2) {
-        sA = contained[0]; sB = contained[contained.length - 1];
+        // §STAIR-CHAIN (SampleCastle, 2026-07-13): a group spanning 3+ storeys (a stair TOWER —
+        // the assembly-class case, one IfcStair per whole tower) must connect CONSECUTIVE floors,
+        // not just its two ends — bridging only lowest<->highest left every middle storey with no
+        // vertical edge (user-reported: 00->03 refused while the stair tower plainly serves all
+        // floors). Emit the chain here for the middle pairs; fall through for the end pair so the
+        // shared edge-creation below stays single-source. Duplicate physical stairs produce the
+        // same chain — deduped by _e3Seen.
+        for (var ci = 1; ci + 1 < contained.length; ci++) {
+          _e3Chain(contained[ci], contained[ci + 1], gr, key);
+        }
+        // §STAIR-TOWER-ENDS (SampleCastle, 2026-07-13): storeyZ is MEAN WALL-CENTER z, which sits
+        // roughly half a wall above the floor a stair's top actually lands on — so a tower whose
+        // top flight genuinely serves the next storey's floor still falls short of that storey's
+        // z (castle: tower tops at 9.11, storey 03 walls average 10.02, gap 02→03 = 3.0m, the
+        // extension covers 70% of it). If the group's end extends >=30% (the same constant the
+        // single-contained rule already uses) of the gap toward the adjacent storey, chain it too
+        // — gap-relative, not span-relative, because a multi-storey tower's own span dwarfs any
+        // one storey's gap.
+        var lastC = contained[contained.length - 1], lastIdx = storeysSorted.indexOf(lastC);
+        if (lastIdx + 1 < storeysSorted.length) {
+          var nxtS = storeysSorted[lastIdx + 1], gapUp = storeyZ[nxtS] - storeyZ[lastC];
+          if (gapUp > 0 && (gr.zhi - storeyZ[lastC]) >= 0.3 * gapUp) _e3Chain(lastC, nxtS, gr, key);
+        }
+        var firstC = contained[0], firstIdx = storeysSorted.indexOf(firstC);
+        if (firstIdx - 1 >= 0) {
+          var prvS = storeysSorted[firstIdx - 1], gapDn = storeyZ[firstC] - storeyZ[prvS];
+          if (gapDn > 0 && (storeyZ[firstC] - gr.zlo) >= 0.3 * gapDn) _e3Chain(prvS, firstC, gr, key);
+        }
+        sA = contained[0]; sB = contained[1];
       } else if (contained.length === 1) {
         var s0 = contained[0], idx = storeysSorted.indexOf(s0);
         var downExt = storeyZ[s0] - gr.zlo, upExt = gr.zhi - storeyZ[s0];
@@ -270,19 +334,7 @@
         if (!below.length || !above.length) { e3Skipped++; return; }
         sA = below[below.length - 1]; sB = above[0];
       }
-      var zA = storeyZ[sA], zB = storeyZ[sB];
-      var circA = circNode(sA, gcx, gcy, zA), circB = circNode(sB, gcx, gcy, zB);
-      // §API-COMPAT-WAYPOINT: two synthetic-but-deterministic waypoint guids (this flight group's
-      // own representative guid + a side suffix) at the flight's real low/high z — used to render
-      // the vertical hop hugging the actual stair, not a storey centroid (see shortestPath()).
-      var repGuid = gr.guids[0];
-      var loWp = repGuid + '::lo', hiWp = repGuid + '::hi';
-      if (!nodes[loWp]) nodes[loWp] = { guid: loWp, kind: 'stairwp', name: key + ' (lower)', cx: gcx, cy: gcy, cz: gr.zlo };
-      if (!nodes[hiWp]) nodes[hiWp] = { guid: hiWp, kind: 'stairwp', name: key + ' (upper)', cx: gcx, cy: gcy, cz: gr.zhi };
-      var wpForA = (zA <= zB) ? loWp : hiWp, wpForB = (zA <= zB) ? hiWp : loWp;
-      edges.push({ a: circA, b: circB, doorGuid: repGuid, doorName: key, storey: sA + ' / ' + sB,
-        kind: 'E3', w: Math.abs(gr.zhi - gr.zlo), wpA: wpForA, wpB: wpForB });
-      e3++;
+      _e3Chain(sA, sB, gr, key);
     });
 
     // ── E4: escape — the existing nonRoomDoors detection becomes an N-EXIT node (free fire-escape
