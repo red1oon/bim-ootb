@@ -522,9 +522,18 @@ bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group();
 // carrying parameters.color, from step C) glows in its discipline colour THROUGH the shell. Reversible with ZERO
 // snapshot bookkeeping: toggle OFF just re-folds the signed log (scrubTo) → true materials rebuilt deterministically.
 let _xrayOn = false;
+// §XRAY-FIXTURE-FIX (XRAY_FIXTURE_CLASSIFICATION_FIX.md): eligibility is the op's own _dw/_rw fixture tag
+// (DiscWalker modeller.html:3945/3958, autoRouteMEP :3010) — NOT bare colour-presence. arc_editable.js
+// stamps a cosmetic PALETTE colour on EVERY authored ARC element (walls included), so "has a colour" alone
+// can't tell a wall from a fixture; "was committed by a fixture-placing path" can, and that tag is already
+// in the signed op-log for every real fixture population (DiscWalker walk + catalog-drop autoRouteMEP).
 function _fixtureColorMap() {
   const m = {}, O = window.Bonsai.oplog;
-  if (O) O._geomOps().forEach(o => { if (o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.color != null) m[o.id] = o.parameters.color; });
+  if (O) O._geomOps().forEach(o => {
+    if (o.op_type !== 'GEOM_INSERT' || !o.parameters || o.parameters.color == null) return;
+    const isFixture = o.parameters._dw != null || (o.parameters._rw && o.parameters._rw.fixture === true);
+    if (isFixture) m[o.id] = o.parameters.color;
+  });
   return m;
 }
 async function xrayReveal(on) {
@@ -539,8 +548,12 @@ async function xrayReveal(on) {
   }
   const fx = _fixtureColorMap();
   let glass = 0, glow = 0;
+  // walked-discipline fixtures batch into InstancedMesh buckets nested one level under a dwRoot marker
+  // (DiscWalker perf batching, modeller.html:3684-3697) — NOT direct children of g, so they need their own
+  // pass; every bucket is homogeneously one discipline's real committed fixtures (dwDisc set at render time).
+  const dwRoot = g.children.find(o => o.userData && o.userData.dwRoot);
   g.children.forEach(mesh => {
-    if (!mesh.isMesh || !mesh.material) return;
+    if (mesh === dwRoot || !mesh.isMesh || !mesh.material) return;
     if (!mesh._xrayOwn) { mesh.material = mesh.material.clone(); mesh._xrayOwn = true; }   // own material → no shared contamination
     const mat = mesh.material, fid = mesh.userData && mesh.userData.featureId;
     const col = (fid != null && fx[fid] != null) ? fx[fid] : null;
@@ -555,6 +568,15 @@ async function xrayReveal(on) {
       mat.depthWrite = false; mat.depthTest = true; mat.needsUpdate = true; mesh.renderOrder = 0;
       glass++;
     }
+  });
+  if (dwRoot) dwRoot.children.forEach(mesh => {
+    if (!mesh.isMesh || !mesh.material || mesh.userData.dwDisc == null) return;   // only real walked-discipline buckets
+    if (!mesh._xrayOwn) { mesh.material = mesh.material.clone(); mesh._xrayOwn = true; }
+    const mat = mesh.material, col = mat.color.getHex();   // bucket's own discipline colour (all instances share one material)
+    mat.transparent = true; mat.opacity = 0.97;
+    if (mat.emissive) { mat.emissive.setHex(col); mat.emissiveIntensity = 0.85; }
+    mat.depthTest = false; mat.depthWrite = false; mat.needsUpdate = true; mesh.renderOrder = 999;
+    glow++;
   });
   _xrayOn = true;
   if (window.A && A.requestRender) A.requestRender();
