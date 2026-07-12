@@ -14,7 +14,7 @@
 const { runE2E } = require('./e2e_harness');
 runE2E('W-E2E-DELETE', async (t) => {
   await t.open('Duplex'); await t.shot('01-open');
-  const sel = await t.pick();
+  const sel = await t.pick({ prefer: 'wall' });   // guide frame: a wall (may carry a window), not whatever solid the scan hits first
   t.assert('D1 SELECT (real click selects a feature)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
   const fidPred = new Function('o', 'return o.featureId === ' + sel.fid);
@@ -25,6 +25,7 @@ runE2E('W-E2E-DELETE', async (t) => {
   await t.clickSel('#b-del'); await t.sleep(900);
   const after = await t.oplog(); const gone = await t.census(fidPred); const chain = await t.verifyChain();
   await t.shot('03-deleted');
+  await t.clickSel('#b-fit'); await t.sleep(600);   // guide frame: whole building, not the zoomed-to-selection pick frame
   await t.shot('delete-gone-raw');
   t.assert('D2 DELETE (active count −1 AND mesh removed)', after.len === before.len - 1 && gone.n === 0, 'len ' + before.len + '→' + after.len + ' meshFid' + sel.fid + '=' + gone.n);
   t.assert('D3 CHAIN-OK (verifyChain — soft-delete, payload untouched)', chain === true, 'verifyChain=' + chain);

@@ -105,6 +105,17 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   const fitB = await pg.$('#b-fit'); if (fitB) { await fitB.click(); await sleep(600); }
   await shot('fixtures');
 
+  // guide frame: X-ray reveal (shipped feature, window.__xrayReveal — the #b-xray button's own handler) —
+  // structure goes near-transparent glass, walked fixtures glow through in their discipline colour. The
+  // plain 'fixtures' shot above is honestly near-empty (fixtures live inside rooms, occluded from outside);
+  // this is the frame that actually shows the walk landed.
+  const xr = await pg.evaluate(() => window.__xrayReveal(true));
+  await sleep(400);
+  await shot('fixtures-xray');
+  console.log('  §XRAY ' + JSON.stringify(xr));
+  await pg.evaluate(() => window.__xrayReveal(false));
+  await sleep(200);
+
   // W6 — UNDO via the real history slider back to pre-walk cursor
   await pg.evaluate(c => { const s = document.getElementById('hist-slider'); s.value = c; s.dispatchEvent(new Event('input', { bubbles: true })); }, before.cur);
   await sleep(800);
