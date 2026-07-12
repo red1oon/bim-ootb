@@ -100,6 +100,13 @@
     _ensureWideTasks(db);   // migrate any legacy-thin tasks table → the widened DDL `_cap` reads
     db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
 
+    // §SE-5a: one transaction around the whole rebuild (delete + insert). Without this, sql.js pays
+    // per-statement implicit-commit overhead on EVERY row — for a large building (tens of thousands of
+    // elements) that is a multi-second, unbroken main-thread block (measured 4.3s/63k els, 10.4s/123k
+    // els pre-fix) long enough to trip Chrome's "Page Unresponsive" prompt. Batching is the standard
+    // SQLite bulk-write fix, not a new algorithm. Same rows, same order, same output — write cost only.
+    db.run('BEGIN TRANSACTION');
+
     // Idempotent rebuild: drop any prior authored rows for this schedule.
     var oldIds = [];
     var pr = db.exec("SELECT task_id FROM tasks WHERE schedule_id='" + schedId + "'");
@@ -156,6 +163,8 @@
     });
     stmtTk.free();
     stmtTe.free();
+
+    db.run('COMMIT');   // §SE-5a — single commit for the whole rebuild
 
     console.log('§AUTHOR_MATERIALIZE schedule=' + schedId + ' mode=' + (blank ? 'blank' : 'dated') +
       ' phases=' + outPhases.length + ' leafTasks=' + outPhases.length +
@@ -223,6 +232,7 @@
       "' AND (is_summary IS NULL OR is_summary=0) ORDER BY rowid");
     var ids = (lr.length && lr[0].values.length) ? lr[0].values.map(function (r) { return r[0]; }) : [];
     var cursor = 0;
+    db.run('BEGIN TRANSACTION');   // §SE-5a — same per-statement-overhead fix as materializeDefault
     ids.forEach(function (tid) {
       var s = _addDays(start, cursor), f = _addDays(start, cursor + phaseDays);
       db.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
@@ -231,6 +241,7 @@
     });
     db.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
       [start, _addDays(start, cursor), scheduleId]);
+    db.run('COMMIT');
     console.log('§AUTHOR_SCHEDULE schedule=' + scheduleId + ' phases=' + ids.length + ' from=' + start + ' span=' + cursor + 'd');
     return { scheduled: ids.length, start: start, span: cursor };
   }
@@ -589,6 +600,35 @@
     return { ok: true, taskId: tid, parent: parent };
   }
 
+  // reparentTask(db, scheduleId, taskId, newParentId) — §SE-5b Indent/Outdent: move one WBS node under a
+  // different parent (or to root when newParentId is null). Refuses self, unknown task/parent, and any
+  // move that would create a cycle (newParentId is taskId or one of its own descendants). A newly-indented
+  // leaf inherits nothing (it keeps its own dates/assignments — only its position in the tree changes);
+  // the caller (UI) is responsible for picking a sensible newParentId (indent = previous sibling, outdent =
+  // current grandparent). Returns { ok, taskId, wbsParent } or { ok:false, reason }.
+  function reparentTask(db, scheduleId, taskId, newParentId) {
+    function fail(reason) { console.log('§SE_REPARENT_FAIL task=' + taskId + ' newParent=' + newParentId + ' reason=' + reason); return { ok: false, reason: reason }; }
+    if (!taskId) return fail('missing_id');
+    if (newParentId && newParentId === taskId) return fail('self_parent');
+    var tr = db.exec('SELECT wbs_parent FROM tasks WHERE task_id=? AND schedule_id=?', [taskId, scheduleId]);
+    if (!tr.length || !tr[0].values.length) return fail('no_such_task');
+    if (newParentId) {
+      var pr = db.exec('SELECT 1 FROM tasks WHERE task_id=? AND schedule_id=?', [newParentId, scheduleId]);
+      if (!pr.length || !pr[0].values.length) return fail('no_such_parent');
+      // cycle guard: walk newParentId's ancestor chain; if it reaches taskId, the move would loop.
+      var cur = newParentId, seen = {}, guard = 0;
+      while (cur && !seen[cur] && guard++ < 10000) {
+        if (cur === taskId) return fail('cycle');
+        seen[cur] = true;
+        var ar = db.exec('SELECT wbs_parent FROM tasks WHERE task_id=?', [cur]);
+        cur = (ar.length && ar[0].values.length) ? ar[0].values[0][0] : null;
+      }
+    }
+    db.run('UPDATE tasks SET wbs_parent=? WHERE task_id=?', [newParentId || null, taskId]);
+    console.log('§SE_REPARENT task=' + taskId + ' -> parent=' + (newParentId || '(root)'));
+    return { ok: true, taskId: taskId, wbsParent: newParentId || null };
+  }
+
   // breakdownByAttribute(db, scheduleId, taskId, attr) — auto-split a leaf phase's assigned elements into
   // child sub-tasks grouped by an elements_meta attribute (storey | ifc_class/type | discipline). Each
   // distinct value → child "<parent> · <value>" (DETERMINISTIC id parentId__<slug(value)> so a peer replay
@@ -644,6 +684,7 @@
     computeCpm: computeCpm,
     moveTask: moveTask,
     addTask: addTask,
+    reparentTask: reparentTask,
     breakdownByAttribute: breakdownByAttribute
   };
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;

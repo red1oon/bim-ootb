@@ -15,6 +15,11 @@
   var db = null, schedId = null, sync = null;
   var collapsed = {};   // task_id -> true when its subtree is collapsed
   var critSet = {};     // task_id -> true after a CPM run (drives the red rail + bold links)
+  // §SE-5b: Gantt tick-density zoom (Day/Week/Month). The chart always fits the WHOLE project span into
+  // the available width (no pan/scroll) — "zoom" here changes how granular the axis ticks/labels are,
+  // not the visible time range. Honest framing: a scale-zoom (with panning) is the natural next slice.
+  var _zoom = 'week';
+  var ZOOM_MIN_STEP = { day: 1, week: 7, month: 30 };
 
   function $(id) { return document.getElementById(id); }
   function status(msg) { var s = $('se-status'); if (s) s.textContent = msg; console.log('§SE_UI ' + msg); }
@@ -53,6 +58,20 @@
     }
   }
 
+  // ── §SE-5b WBS tree lookups (indent/outdent need "where does this node sit") ────────────────
+  function _findNode(roots, id) {
+    for (var i = 0; i < roots.length; i++) {
+      if (roots[i].id === id) return roots[i];
+      var f = _findNode(roots[i].children || [], id);
+      if (f) return f;
+    }
+    return null;
+  }
+  function _siblingsAndIndex(roots, node) {
+    var container = node.parent ? ((_findNode(roots, node.parent) || {}).children || []) : roots;
+    return { siblings: container, index: container.indexOf(node) };
+  }
+
   // ── STEP 1: collapsible WBS outline ──────────────────────────────────────────
   function renderWbs() {
     var host = $('se-wbs'); if (!host) return;
@@ -76,15 +95,23 @@
           tf <= 0 ? 'critical' : ('float ' + tf + 'd')));
       }
       if (node.start) row.appendChild(el('span', 'se-dates', node.start + (node.finish ? ' → ' + node.finish : '')));
-      // §SE-WBS deepen-the-tree actions: ＋ add a sub-task (any node) · break a populated leaf down by attribute
-      var act = el('span'); act.style.cssText = 'margin-left:auto;display:inline-flex;gap:4px;align-items:center';
-      var addBtn = el('button', null, '＋'); addBtn.title = 'Add a sub-task under ' + node.name;
-      addBtn.style.cssText = 'font-size:11px;line-height:1;padding:1px 5px;cursor:pointer';
+      // §SE-WBS deepen-the-tree actions: outdent/indent · add a sub-task (any node) · break a leaf down
+      var act = el('span', 'se-row-actions');
+      if (node.parent) {
+        var si = _siblingsAndIndex(roots, node);
+        var outBtn = el('button', 'se-indent-btn', '⇤'); outBtn.title = 'Outdent (promote one level)';
+        outBtn.onclick = function (ev) { ev.stopPropagation(); doOutdent(node.id); };
+        act.appendChild(outBtn);
+        var inBtn = el('button', 'se-indent-btn', '⇥'); inBtn.title = 'Indent (nest under the previous row)';
+        inBtn.disabled = si.index <= 0;
+        inBtn.onclick = function (ev) { ev.stopPropagation(); doIndent(node.id); };
+        act.appendChild(inBtn);
+      }
+      var addBtn = el('button', 'se-add-sub-btn', '+'); addBtn.title = 'Add a sub-task under ' + node.name;
       addBtn.onclick = function (ev) { ev.stopPropagation(); doAddTask(node.id, node.name); };
       act.appendChild(addBtn);
       if (!node.isSummary && node.guidCount > 1) {
         var sel = el('select'); sel.title = 'Break this phase into sub-tasks grouped by…';
-        sel.style.cssText = 'font-size:10px;padding:0 2px;cursor:pointer';
         sel.appendChild(new Option('break by…', ''));
         ['storey', 'type', 'discipline'].forEach(function (o) { sel.appendChild(new Option(o, o)); });
         sel.onclick = function (ev) { ev.stopPropagation(); };
@@ -96,6 +123,33 @@
       if (hasKids && !collapsed[node.id]) node.children.forEach(function (c) { walk(c, depth + 1); });
     }
     roots.forEach(function (r) { walk(r, 0); });
+  }
+
+  // §SE-5b indent/outdent — reparent one WBS node relative to its current position, broadcast the
+  // signed op so peer surfaces converge, then refreshFold() (invalidates stale CPM, re-renders all).
+  function doIndent(taskId) {
+    var roots = SA().wbsTree(db, schedId);
+    var node = _findNode(roots, taskId); if (!node) return;
+    var si = _siblingsAndIndex(roots, node);
+    if (si.index <= 0) { status('Cannot indent - no preceding row at this level to nest under'); return; }
+    var newParent = si.siblings[si.index - 1].id;
+    var r = SA().reparentTask(db, schedId, taskId, newParent);
+    if (!r.ok) { status('Indent refused - ' + r.reason); return; }
+    broadcast({ op: 'reparent', schedId: schedId, taskId: taskId, wbsParent: newParent });
+    collapsed[newParent] = false;
+    status('Indented "' + node.name + '" under "' + si.siblings[si.index - 1].name + '"');
+    refreshFold();
+  }
+  function doOutdent(taskId) {
+    var roots = SA().wbsTree(db, schedId);
+    var node = _findNode(roots, taskId); if (!node || !node.parent) { status('Cannot outdent - already at top level'); return; }
+    var parentNode = _findNode(roots, node.parent);
+    var newParent = parentNode ? parentNode.parent : null;
+    var r = SA().reparentTask(db, schedId, taskId, newParent);
+    if (!r.ok) { status('Outdent refused - ' + r.reason); return; }
+    broadcast({ op: 'reparent', schedId: schedId, taskId: taskId, wbsParent: newParent });
+    status('Outdented "' + node.name + '"');
+    refreshFold();
   }
 
   // §SE-WBS — deepen the WBS: add a sub-task, or auto-split a phase by an element attribute. Each edit runs
@@ -200,9 +254,10 @@
     var chartW = Math.max(240, (host.clientWidth || 700) - labelW - 8);
     var pxPerDay = chartW / totalDays;
 
-    // axis: a tick roughly every ~7 days (snap to weeks), labelled with the date.
+    // axis: tick DENSITY follows the Day/Week/Month zoom pick (whole span always fits — no pan yet).
     var axis = el('div', 'g-axis');
-    var stepDays = Math.max(7, Math.ceil(totalDays / 8 / 7) * 7);
+    var baseStep = ZOOM_MIN_STEP[_zoom] || 7;
+    var stepDays = Math.max(baseStep, Math.ceil(totalDays / 8 / baseStep) * baseStep);
     for (var d = 0; d <= totalDays; d += stepDays) {
       var tick = el('div', 'g-tick', addDays(min, d));
       tick.style.left = (d * pxPerDay) + 'px';
@@ -210,27 +265,54 @@
     }
     host.appendChild(axis);
 
+    // §SE-5b today marker — a vertical line at "now" if it falls inside the rendered span.
+    var todayISO = new Date().toISOString().slice(0, 10);
+    if (todayISO >= min && todayISO <= max) {
+      var todayLine = el('div', 'g-today-line');
+      todayLine.style.left = (daysBetween(min, todayISO) * pxPerDay) + 'px';
+      todayLine.title = 'Today (' + todayISO + ')';
+      host.appendChild(todayLine);
+    }
+
     leaves.forEach(function (n) {
       var dur = daysBetween(n.start, n.finish);
       var off = daysBetween(min, n.start);
       var row = el('div', 'g-row');
       row.appendChild(el('div', 'g-label', n.name));
       var track = el('div', 'g-track');
-      var bar = el('div', 'g-bar' + (n.critical ? ' crit' : ''), dur + 'd');
-      bar.style.left = (off * pxPerDay) + 'px';
-      bar.style.width = Math.max(8, dur * pxPerDay) + 'px';
-      bar.dataset.task = n.id;
-      bar.title = n.name + '  ' + n.start + ' → ' + n.finish + (n.totalFloat != null ? '  (float ' + n.totalFloat + 'd)' : '');
-      _wireBarDrag(bar, n, off, pxPerDay);
-      var handle = el('div', 'g-handle', '▸');
-      handle.title = 'drag onto another bar to link (FS)';
-      _wireLinkDrag(handle, n);
-      bar.appendChild(handle);
-      track.appendChild(bar);
+      // §SE-5b milestone — a 0-day task (start===finish) renders as a diamond, not a bar.
+      if (dur === 0) {
+        var ms = el('div', 'g-milestone' + (n.critical ? ' crit' : ''));
+        ms.style.left = (off * pxPerDay) + 'px';
+        ms.dataset.task = n.id;
+        ms.title = n.name + '  ' + n.start + ' (milestone)';
+        track.appendChild(ms);
+      } else {
+        var bar = el('div', 'g-bar' + (n.critical ? ' crit' : ''), dur + 'd');
+        bar.style.left = (off * pxPerDay) + 'px';
+        bar.style.width = Math.max(8, dur * pxPerDay) + 'px';
+        bar.dataset.task = n.id;
+        bar.title = n.name + '  ' + n.start + ' → ' + n.finish + (n.totalFloat != null ? '  (float ' + n.totalFloat + 'd)' : '');
+        _wireBarDrag(bar, n, off, pxPerDay);
+        var handle = el('div', 'g-handle', '▸');
+        handle.title = 'drag onto another bar to link (FS)';
+        _wireLinkDrag(handle, n);
+        bar.appendChild(handle);
+        track.appendChild(bar);
+      }
       row.appendChild(track);
       host.appendChild(row);
     });
-    console.log('§SE_GANTT bars=' + leaves.length + ' span=' + min + '..' + max + ' days=' + totalDays);
+    console.log('§SE_GANTT bars=' + leaves.length + ' span=' + min + '..' + max + ' days=' + totalDays + ' zoom=' + _zoom);
+  }
+
+  // §SE-5b — switch tick-density zoom and re-render; keeps the active button highlighted.
+  function setZoom(z) {
+    if (!ZOOM_MIN_STEP[z] || z === _zoom) return;
+    _zoom = z;
+    document.querySelectorAll('.zoom-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.zoom === z); });
+    renderGantt();
+    console.log('§SE_ZOOM ' + z);
   }
 
   // drag a bar horizontally → reschedule (snap to whole days, duration locked).
@@ -419,15 +501,26 @@
       })
       .then(function () {
         var act = SA().activeSchedule(db);
-        if (!act) {
-          // Blank model → seed the smart default so there's a schedule to edit (rates.js globals).
-          var resM = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
-          schedId = 'SCH_AUTHORED';
-          status('Seeded default schedule (' + resM.phases.length + ' phases) — ' + url.split('/').pop());
-        } else {
+        if (act) {
           schedId = act.id;
           status('Editing ' + (act.name || act.id) + ' (' + act.taskCount + ' tasks)' + (act.captured ? ' — imported' : ''));
+          return;
         }
+        // Blank model → seed the smart default so there's a schedule to edit (rates.js globals).
+        // §SE-5a fixed the multi-second freeze (transaction-wrapped bulk write), but a large building
+        // is still real work (~1-2s) — paint a "please wait" status FIRST (setTimeout yields one frame
+        // to the renderer) so the tab visibly acknowledges the load instead of looking frozen.
+        status('Materializing default schedule for ' + url.split('/').pop() + ' — please wait…');
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            var resM = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
+            schedId = 'SCH_AUTHORED';
+            status('Seeded default schedule (' + resM.phases.length + ' phases) — ' + url.split('/').pop());
+            resolve();
+          }, 30);
+        });
+      })
+      .then(function () {
         var b = $('se-bld'); if (b) b.textContent = url.split('/').pop() + '  •  ' + (schedId);
         // §SE-4: live cross-surface sync — emit our ops + replay peers' ops on our db.
         if (global.ScheduleSync) { sync = global.ScheduleSync.create(); sync.listen(db, onSynced); }
@@ -439,12 +532,16 @@
           impBtn.onclick = function () { impFile.click(); };
           impFile.onchange = function () { if (impFile.files && impFile.files[0]) doImportP6(impFile.files[0]); impFile.value = ''; };
         }
+        document.querySelectorAll('.zoom-btn').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.zoom === _zoom);
+          b.onclick = function () { setZoom(b.dataset.zoom); };
+        });
         window.addEventListener('resize', renderGantt);
       })
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
   }
 
-  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm };
+  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm, setZoom: setZoom };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(typeof window !== 'undefined' ? window : this);
