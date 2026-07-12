@@ -350,7 +350,7 @@ async function handleImportFile(file) {
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
   const arrayBuffer = await file.arrayBuffer();
-  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=10' : 'viewer/mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=12' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   if (fmt.route === 'ifc') {
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
@@ -533,7 +533,7 @@ function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
     var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name, forceGeorefOffset: forceGeorefOffset || null };
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
     catch (engineErr) { reject(engineErr); return; }
-    var worker = _createWorker('viewer/import_worker.js?v=10');
+    var worker = _createWorker('viewer/import_worker.js?v=12');
     worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }
@@ -551,6 +551,51 @@ function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
     };
     worker.onerror = function (err) { worker.terminate(); reject(new Error(err.message)); };
     worker.postMessage(workerMsg, [workerMsg.arrayBuffer]);
+  });
+}
+
+// §SITE_IDENTITY (2026-07-12): general, not hardcoded to any one file/discipline/project. A
+// federated multi-file drop's files each re-serialize the SAME real-world IfcSite entity —
+// same GlobalId, one copy per file. If 2+ files in the drop agree on that entity's placement and
+// one disagrees by a wide margin, the disagreeing copy is a source authoring defect (proven by
+// GUID identity, not guessed), and the fix is to correct that file's elements using the
+// sibling-agreed (real, extracted, not invented) value — same principle already used for the
+// federation offset itself, just keyed by the site's own identity instead of a derived bbox.
+function _applySiteIdentityCorrection(fileResults, sessionGeorefOffset) {
+  var byGuid = {};
+  fileResults.forEach(function (fr) {
+    var g = fr.result.meta.siteGuid, loc = fr.result.meta.siteLocation;
+    if (!g || !loc) return;
+    (byGuid[g] = byGuid[g] || []).push({ fr: fr, loc: loc });
+  });
+  var sessOff = sessionGeorefOffset || [0, 0, 0];
+  Object.keys(byGuid).forEach(function (guid) {
+    var entries = byGuid[guid];
+    if (entries.length < 2) return; // only one file carries this site — nothing to compare against
+    var bestCluster = null, bestSize = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var cand = entries[i].loc;
+      var cluster = entries.filter(function (e) {
+        return Math.abs(e.loc[0] - cand[0]) < 10 && Math.abs(e.loc[1] - cand[1]) < 10 && Math.abs(e.loc[2] - cand[2]) < 10;
+      });
+      if (cluster.length > bestSize) { bestSize = cluster.length; bestCluster = cluster; }
+    }
+    if (bestSize < 2) return; // every file disagrees pairwise — no safe consensus to correct against
+    var canonical = bestCluster[0].loc;
+    entries.forEach(function (e) {
+      var dev = Math.max(Math.abs(e.loc[0] - canonical[0]), Math.abs(e.loc[1] - canonical[1]), Math.abs(e.loc[2] - canonical[2]));
+      if (dev <= 1000) return; // already agrees with consensus, nothing to correct
+      var applied = e.fr.result.meta.appliedGeorefOffset || [0, 0, 0];
+      var shift = [
+        applied[0] - e.loc[0] + canonical[0] - sessOff[0],
+        applied[1] - e.loc[1] + canonical[1] - sessOff[1],
+        applied[2] - e.loc[2] + canonical[2] - sessOff[2],
+      ];
+      e.fr.result.transforms.forEach(function (t) { t.cx += shift[0]; t.cy += shift[1]; t.cz += shift[2]; });
+      console.log('§SITE_IDENTITY_AUTOFIX ' + e.fr.name + ' site guid=' + guid + ' own=(' + e.loc.join(',') +
+        ') vs sibling-consensus=(' + canonical.join(',') + ') corrected shift=(' +
+        shift.map(function (v) { return v.toFixed(2); }).join(',') + ')');
+    });
   });
 }
 
@@ -593,6 +638,7 @@ async function importMultiIFC(files) {
   // landed up to ~7m apart, and the CW file (zeroed IfcSite defect) silently landed ~300m away
   // with no warning at all.
   var sessionGeorefOffset = null, sessionUnitScale = 1;
+  var fileResults = []; // §SITE_IDENTITY — deferred concat so a correction pass can run first
 
   for (var fi = 0; fi < files.length; fi++) {
     var file = files[fi];
@@ -611,9 +657,7 @@ async function importMultiIFC(files) {
         console.log('§GEOREF_SESSION frame pinned by ' + file.name + ' offset=(' + sessionGeorefOffset.join(',') + ')');
       }
       if (result.meta.unitScale && result.meta.unitScale !== 1) sessionUnitScale = result.meta.unitScale;
-      allElements = allElements.concat(result.elements);
-      allGeometries = allGeometries.concat(result.geometries);
-      allTransforms = allTransforms.concat(result.transforms);
+      fileResults.push({ name: file.name, result: result });
       totalElements += result.meta.elementCount;
       for (var d in result.meta.disciplines) allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d];
       result.meta.storeys.forEach(function (s) { allStoreys.add(s); });
@@ -625,6 +669,15 @@ async function importMultiIFC(files) {
       return;
     }
   }
+
+  // §SITE_IDENTITY correction pass — now that every file's own site GUID/location is known,
+  // fix any file whose site entity disagrees with the sibling consensus for that same GUID.
+  _applySiteIdentityCorrection(fileResults, sessionGeorefOffset);
+  fileResults.forEach(function (fr) {
+    allElements = allElements.concat(fr.result.elements);
+    allGeometries = allGeometries.concat(fr.result.geometries);
+    allTransforms = allTransforms.concat(fr.result.transforms);
+  });
 
   if (status) status.textContent = 'Building merged database (' + totalElements + ' elements)...';
   if (progressBar) progressBar.style.width = '92%';

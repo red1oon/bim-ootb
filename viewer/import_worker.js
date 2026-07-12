@@ -730,6 +730,63 @@ self.onmessage = async function(e) {
     } else {
       console.log('[S220] §UNITS_V2 span=n/a autoScale=1 (no transforms)');
     }
+
+    // §SITE_IDENTITY (2026-07-12): read this file's own IfcSite GlobalId + raw placement, scaled
+    // to metres. A federated drop's files each re-serialize the SAME real-world IfcSite (identical
+    // GlobalId) — if one file's copy of that entity disagrees with its siblings' (e.g. a zeroed
+    // placement where siblings carry the real map base, JKR's CW file), that's a source-file
+    // authoring defect, not a guess: the orchestrator can detect it by GUID match across files in
+    // the same drop and correct it using the sibling files' own (already-extracted, real) value —
+    // general to any file/discipline, not specific to any one project.
+    //
+    // NOTE: raw ifcApi.GetLine() entity values (IfcCartesianPoint.Coordinates) are the DECLARED
+    // unit as literally written in the STEP file — NOT auto-normalised the way GetFlatMesh()'s
+    // flatTransformation is. So `autoScale` (derived from already-normalised element transforms)
+    // is the WRONG factor here — verified live: using it left siteLocation ~1000x too large,
+    // producing a >270,000,000m "correction". Read the file's own declared LENGTHUNIT directly.
+    var _lengthUnitScale = 1;
+    try {
+      var _siUnits = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSIUNIT);
+      for (var _ui = 0; _ui < _siUnits.size(); _ui++) {
+        var _u = ifcApi.GetLine(modelID, _siUnits.get(_ui));
+        if (_u.UnitType && _u.UnitType.value === 'LENGTHUNIT') {
+          var _prefix = _u.Prefix && _u.Prefix.value;
+          var _prefixScale = { EXA:1e18, PETA:1e15, TERA:1e12, GIGA:1e9, MEGA:1e6, KILO:1e3, HECTO:1e2, DECA:10,
+            DECI:0.1, CENTI:0.01, MILLI:0.001, MICRO:1e-6, NANO:1e-9, PICO:1e-12, FEMTO:1e-15, ATTO:1e-18 };
+          _lengthUnitScale = _prefix && _prefixScale[_prefix] ? _prefixScale[_prefix] : 1;
+          break;
+        }
+      }
+    } catch (unitErr) { /* default to 1 (metres) */ }
+
+    var siteGuid = null, siteLocation = null;
+    try {
+      var siteIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSITE);
+      if (siteIds.size() > 0) {
+        var _site = ifcApi.GetLine(modelID, siteIds.get(0));
+        siteGuid = _site.GlobalId && _site.GlobalId.value;
+        if (_site.ObjectPlacement && _site.ObjectPlacement.value != null) {
+          var _lp = ifcApi.GetLine(modelID, _site.ObjectPlacement.value);
+          if (_lp && _lp.RelativePlacement && _lp.RelativePlacement.value != null) {
+            var _rp = ifcApi.GetLine(modelID, _lp.RelativePlacement.value);
+            if (_rp && _rp.Location && _rp.Location.value != null) {
+              var _loc = ifcApi.GetLine(modelID, _rp.Location.value);
+              if (_loc && _loc.Coordinates && _loc.Coordinates.length >= 3) {
+                siteLocation = [
+                  (_loc.Coordinates[0]._representationValue || 0) * _lengthUnitScale,
+                  (_loc.Coordinates[1]._representationValue || 0) * _lengthUnitScale,
+                  (_loc.Coordinates[2]._representationValue || 0) * _lengthUnitScale,
+                ];
+              }
+            }
+          }
+        }
+        console.log('[S220] §SITE_IDENTITY guid=' + siteGuid + ' lengthUnitScale=' + _lengthUnitScale +
+          ' location=(' + (siteLocation ? siteLocation.join(',') : 'n/a') + ')');
+      }
+    } catch (siteErr) {
+      console.log('[S220] §SITE_IDENTITY_ERROR ' + siteErr.message);
+    }
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 
@@ -930,6 +987,9 @@ self.onmessage = async function(e) {
         storeys: storeys,
         unitScale: autoScale,        // §UNITS_V2 — 0.001 when a mm-unit model was normalised to metres
         georefOffset: georefOffset,  // §GEOREF_REBASE — whole-metre site offset subtracted from centers
+        appliedGeorefOffset: georefOffset, // alias, explicit name for §SITE_IDENTITY correction math
+        siteGuid: siteGuid,          // §SITE_IDENTITY — this file's own IfcSite GlobalId, if any
+        siteLocation: siteLocation,  // §SITE_IDENTITY — that site's raw placement, scaled to metres
       },
       elements: renderableElements,
       geometries: geometries,
