@@ -4,6 +4,50 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.16.0](https://github.com/red1oon/bim-ootb/compare/v1.15.0...v1.16.0) (2026-07-11)
+
+
+### ✨ Features
+
+* **disc_walker:** room-type-aware _spaceTypeFor() fallback, gated to measured signal (PLB/FP) ([#738](https://github.com/red1oon/bim-ootb/issues/738)) ([f0f0994](https://github.com/red1oon/bim-ootb/commit/f0f0994d11d7cb9ba99a34a098d70c15aaeefb10))
+* **gate:** §UBBL-DEMO — 5th sdg_gate case, static UBBL-style room-size demo indicator (By-Law 42 subset) ([#729](https://github.com/red1oon/bim-ootb/issues/729)) ([a4f1f59](https://github.com/red1oon/bim-ootb/commit/a4f1f59a010d5bfd3c6c0576aaa2ea28fc645e6b))
+* **modeller:** §8E-3 routed MEP network render witness + __dwPixelProbe chain-tube fix ([#731](https://github.com/red1oon/bim-ootb/issues/731)) ([9abb845](https://github.com/red1oon/bim-ootb/commit/9abb8452152867ffef86304176694f50349fbaed))
+* **modeller:** Building Parts Outliner category (Stairway/Lift Shaft/Plant Room) ([#737](https://github.com/red1oon/bim-ootb/issues/737)) ([8c6c70f](https://github.com/red1oon/bim-ootb/commit/8c6c70fc36b66ff809cdb8ed7d21a87938532a3b))
+* **modeller:** Outliner single-click on a category/branch row selects+zooms (Find-panel parity) ([#739](https://github.com/red1oon/bim-ootb/issues/739)) ([4e50be2](https://github.com/red1oon/bim-ootb/commit/4e50be22f64555aa44fa0deef614465b82638e30))
+* **viewer:** §7 room-to-room adjacency graph + Dijkstra pathfinding in Find panel ([#746](https://github.com/red1oon/bim-ootb/issues/746)) ([3f6dbbc](https://github.com/red1oon/bim-ootb/commit/3f6dbbce8b5ccf2477829ed33eb1e69a6773dd59))
+* **viewer:** Eye icon = Role/Profession view filter (Plumber/Electrician/ACMV/Structural/Cleaner) ([#749](https://github.com/red1oon/bim-ootb/issues/749)) ([cbe6d2b](https://github.com/red1oon/bim-ootb/commit/cbe6d2bacca7a4ee3b40c5f641479d16d41804a4))
+* **viewer:** Parts axis (Stairway/Lift Shaft/Plant Room) in Find panel ([#736](https://github.com/red1oon/bim-ootb/issues/736)) ([2058e70](https://github.com/red1oon/bim-ootb/commit/2058e70cb60e9c68a5e4f295cb786e8ff85fda52))
+
+
+### 🐛 Fixes
+
+* **disc_walker:** dedupe window.__dwPixelProbe, KEEP-BOTH _dwProbeMatch/__dwOcclusionProbe rename ([#743](https://github.com/red1oon/bim-ootb/issues/743)) ([8899174](https://github.com/red1oon/bim-ootb/commit/8899174a2e96814b1dc200b4866d57c867424adb))
+* **modeller:** §AXIS-SCOPE — extend yaw/tilt skip to axis 'y' (the Modeller's real 2nd plan axis) ([#722](https://github.com/red1oon/bim-ootb/issues/722)) ([3252d50](https://github.com/red1oon/bim-ootb/commit/3252d5060891ddb4dde5c69d9b912779ff892159))
+* **modeller:** glass/window transparency + Outliner collapse discoverability ([#735](https://github.com/red1oon/bim-ootb/issues/735)) ([924d434](https://github.com/red1oon/bim-ootb/commit/924d434d1de39a61cb370a61cb2db0ba52b02622))
+* **modeller:** port §TE-ARC-DATUM walk-time z-datum reconciliation + W-DW-DATUM witness ([#726](https://github.com/red1oon/bim-ootb/issues/726)) ([3d09ad6](https://github.com/red1oon/bim-ootb/commit/3d09ad6ef9f6ed0a092e9adab4fe6092b0113e3d))
+* **modeller:** witness_dw_rot_units.js — use portable require('playwright') ([#723](https://github.com/red1oon/bim-ootb/issues/723)) ([81f2dbd](https://github.com/red1oon/bim-ootb/commit/81f2dbd68dd7c5861a0807c136c19210eae92acb))
+* **tests:** repoint Terminal density/clash witness oracle to Terminal_meta.db ([#741](https://github.com/red1oon/bim-ootb/issues/741)) ([a4c61eb](https://github.com/red1oon/bim-ootb/commit/a4c61ebb83919643ec9a8968d3772da42fdfc444))
+* **tests:** retarget W-UX-DISC B5/B6 MEP-refusal oracle SampleCastle -&gt; Clinic + crash-guard the missing-node click ([#742](https://github.com/red1oon/bim-ootb/issues/742)) ([accffaa](https://github.com/red1oon/bim-ootb/commit/accffaa4fac1fc1f1e7a05e092222042b7adc031))
+* **viewer,modeller:** Find panel Parts axis — PLANT_ROOM word-boundary + class-gate ([#740](https://github.com/red1oon/bim-ootb/issues/740)) ([9b62c4f](https://github.com/red1oon/bim-ootb/commit/9b62c4f977c6bc35efd12a208b657bd4ca39f2a1))
+* **viewer:** add missing viewer/buildings/patches/ copy of the HHS self-heal SQL ([#744](https://github.com/red1oon/bim-ootb/issues/744)) ([79a0f7d](https://github.com/red1oon/bim-ootb/commit/79a0f7d0f2c7b4c40bc5a363baafb8927f4c919f))
+* **viewer:** brighter room highlight + visible neon-green path ([#755](https://github.com/red1oon/bim-ootb/issues/755)) ([38d1d8e](https://github.com/red1oon/bim-ootb/commit/38d1d8ee1b95e51a1af4111a36a191508e6667e9))
+* **viewer:** bump cache-bust to v=47 + strengthen room highlight further ([#756](https://github.com/red1oon/bim-ootb/issues/756)) ([178aba3](https://github.com/red1oon/bim-ootb/commit/178aba373dd3a34dbb977205e797f1c5bac4f9e4))
+* **viewer:** bump navigate_find.js cache-bust to v=46 ([#752](https://github.com/red1oon/bim-ootb/issues/752)) ([353dd7c](https://github.com/red1oon/bim-ootb/commit/353dd7cbd402dc3656beb8ac81c9d05e12e55940))
+* **viewer:** Find panel Disc axis + Doc Canvas popup show friendly discipline words, not raw codes ([#748](https://github.com/red1oon/bim-ootb/issues/748)) ([b83c791](https://github.com/red1oon/bim-ootb/commit/b83c791fc6f3203d3480a21ef6fbbabec9e82c57))
+* **viewer:** Find panel isolate-tap now reframes the camera, not just visibility-filters ([#745](https://github.com/red1oon/bim-ootb/issues/745)) ([31b2375](https://github.com/red1oon/bim-ootb/commit/31b2375928f632fb65f04a9f907c70c4d4309d9f))
+* **viewer:** Find panel visible at onset + rendered above browser top border ([#728](https://github.com/red1oon/bim-ootb/issues/728)) ([d89e559](https://github.com/red1oon/bim-ootb/commit/d89e55983554ce964892459515b94883e22eb268))
+* **viewer:** pill master drawers (Navigate/Inspect/Camera-View) render off-screen on mobile ([#727](https://github.com/red1oon/bim-ootb/issues/727)) ([7c8bffa](https://github.com/red1oon/bim-ootb/commit/7c8bffa2a80050879307dbb283403fe39290c561))
+* **viewer:** Room Lens habitability filter + Type-view COMPILED fallthrough + HHS self-heal migration ([#732](https://github.com/red1oon/bim-ootb/issues/732)) ([f60bfb7](https://github.com/red1oon/bim-ootb/commit/f60bfb778c6912813459779e72fba8e60ae07571))
+* **viewer:** Room Lens renders room_guid-grouped multi-rect volume boxes (ROOM_INJECTION_HYBRID.md §9) ([#733](https://github.com/red1oon/bim-ootb/issues/733)) ([032224b](https://github.com/red1oon/bim-ootb/commit/032224be826d48a85be0f7c52f6fdafa8465a1ef))
+* **viewer:** room-tap highlight defaults to purple cuboid, not fragmented real-element seams ([#747](https://github.com/red1oon/bim-ootb/issues/747)) ([dc58d3d](https://github.com/red1oon/bim-ootb/commit/dc58d3dde963db036991ff3450d9d97db7de6b50))
+
+
+### ♻️ Refactors
+
+* **erp,viewer:** resolve audit stale candidates — 2 removals, 8 deliberate keeps ([#753](https://github.com/red1oon/bim-ootb/issues/753)) ([40e107b](https://github.com/red1oon/bim-ootb/commit/40e107ba7e89c8f3390c11c7c6f4a4cb85392355))
+* **trilogy:** remove 29 confirmed-orphan files + unused 22MB OCCT kernel copy (TRILOGY_STALE_CODE_AUDIT follow-up) ([#751](https://github.com/red1oon/bim-ootb/issues/751)) ([c49e66e](https://github.com/red1oon/bim-ootb/commit/c49e66e6a88d7a61047f44ff2a6ebf461d0ae973))
+* **viewer:** retire 2d.html DXF plan viewer + exclusive satellites (user directive 2026-07-12) ([#750](https://github.com/red1oon/bim-ootb/issues/750)) ([375bf32](https://github.com/red1oon/bim-ootb/commit/375bf32e63c51aea3858221212ce509104fc53a9))
+
 ## [1.15.0](https://github.com/red1oon/bim-ootb/compare/v1.14.0...v1.15.0) (2026-07-10)
 
 
