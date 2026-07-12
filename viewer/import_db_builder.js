@@ -26,6 +26,13 @@ function buildImportDBs(SQL, data) {
   db.run('CREATE TABLE IF NOT EXISTS project_metadata (key TEXT PRIMARY KEY, value TEXT)');
   db.run('INSERT INTO project_metadata VALUES (?,?),(?,?),(?,?),(?,?)',
     ['project_name', data.meta.name, 'import_date', new Date().toISOString(), 'building_name', buildingName, 'source_uri', data.meta.source_uri || '']);
+  // §GEOREF_REBASE traceability — the import subtracted this whole-metre site offset from all
+  // centers (georeferenced source); recorded so the true map position is recoverable.
+  if (data.meta && data.meta.georefOffset && (data.meta.georefOffset[0] || data.meta.georefOffset[1] || data.meta.georefOffset[2])) {
+    db.run('INSERT INTO project_metadata VALUES (?,?),(?,?),(?,?),(?,?)',
+      ['georef_offset_x', String(data.meta.georefOffset[0]), 'georef_offset_y', String(data.meta.georefOffset[1]),
+       'georef_offset_z', String(data.meta.georefOffset[2]), 'unit_scale', String(data.meta.unitScale || 1)]);
+  }
 
   // Elements
   db.run('CREATE TABLE IF NOT EXISTS elements_meta (guid TEXT PRIMARY KEY, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT)');
