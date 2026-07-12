@@ -694,17 +694,25 @@ self.onmessage = async function(e) {
       var _forced = e.data.forceGeorefOffset;
       if (_forced && (_forced[0] || _forced[1] || _forced[2])) {
         // Federation frame pinned by an earlier file in this drop — use it verbatim so all
-        // files share ONE local origin. If this file's own data disagrees by >1km, that is a
-        // source-file defect (e.g. a zeroed IfcSite while siblings carry the real map base) —
-        // flag it loudly, never silently re-anchor.
-        georefOffset = [_forced[0], _forced[1], _forced[2]];
-        var _dev = Math.max(Math.abs(_computed[0] - georefOffset[0]),
-                            Math.abs(_computed[1] - georefOffset[1]),
-                            Math.abs(_computed[2] - georefOffset[2]));
+        // files share ONE local origin, UNLESS this file's own data disagrees by >1km, which
+        // is a source-file defect (e.g. a zeroed IfcSite while siblings carry the real map
+        // base). In that case do NOT force the alien offset onto data that was never in that
+        // frame to begin with — verified live 2026-07-12: force-applying it moved the
+        // defective file from ~300m off (its own near-zero local frame) to ~271km off (the
+        // full federation offset applied to coordinates that never had it), which is worse,
+        // not "as-authored". Fall back to this file's own honest (usually zero) offset and
+        // flag it loudly instead.
+        var _dev = Math.max(Math.abs(_computed[0] - _forced[0]),
+                            Math.abs(_computed[1] - _forced[1]),
+                            Math.abs(_computed[2] - _forced[2]));
         if (_dev > 1000) {
+          georefOffset = _computed;
           console.log('[S220] §GEOREF_MISMATCH ' + filename + ' computed=(' + _computed.join(',') +
-            ') vs federation frame=(' + georefOffset.join(',') + ') — this file sits >1km from its siblings' +
-            ' (zeroed IfcSite / different base point?). Imported as-authored; repair the source or use the offline extractor.');
+            ') vs federation frame=(' + _forced.join(',') + ') — this file sits >1km from its siblings' +
+            ' (zeroed IfcSite / different base point?). Kept at its OWN frame (not force-shifted into the' +
+            ' federation frame — that would move it further, not closer); repair the source or use the offline extractor.');
+        } else {
+          georefOffset = [_forced[0], _forced[1], _forced[2]];
         }
       } else {
         georefOffset = _computed;
