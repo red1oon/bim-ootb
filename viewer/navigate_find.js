@@ -1763,11 +1763,32 @@
       A.scene.add(mesh);
       return mesh;
     }
+    // §ROOM-CUBOID-STALE-FIX (2026-07-13, user-reported screenshot RoomOverSize.png): every call
+    // pushed a NEW fill/wire/wireOuter trio into `_roomBoxes` under the SAME fixed guid keys, but
+    // never removed the PREVIOUS trio first — the dim-other-shells pass in _roomSelect() (which
+    // runs before this) only lowers old cuboid meshes to opacity 0.04, it never disposes them, so
+    // an earlier-selected (possibly larger) room's cuboid lingered in the scene as a faint ghost
+    // box — most visible in its wireframe (depthTest:false → always draws on top regardless of
+    // opacity). Strip any existing cuboid entries first so exactly ONE selected-room cuboid exists.
+    function _clearRoomCuboid() {
+      var kept = [];
+      _roomBoxes.forEach(function(rb) {
+        if (rb.guid === '_cuboidFill' || rb.guid === '_cuboidWireOuter' || rb.guid === '_cuboidWire') {
+          if (rb.mesh) {
+            if (rb.mesh.parent) rb.mesh.parent.remove(rb.mesh);
+            if (rb.mesh.geometry) rb.mesh.geometry.dispose();
+            if (rb.mesh.material) rb.mesh.material.dispose();
+          }
+        } else kept.push(rb);
+      });
+      _roomBoxes = kept;
+    }
     // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
     // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
     // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
     function _drawRoomCuboid(center, size) {
       if (!A.scene || typeof THREE === 'undefined') return;
+      _clearRoomCuboid();
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
       var fillMat = new THREE.MeshBasicMaterial({ color: 0x9c6ade, transparent: true, opacity: 0.5,
         depthWrite: false, side: THREE.DoubleSide });
