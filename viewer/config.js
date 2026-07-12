@@ -4,7 +4,12 @@
 
 // §S282b: Platform detection — set once, before any UI module reads it.
 // pill_builder.js, scene.js, time_machine.js all read window._isMobile at init.
-window._isMobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+// Touch capability alone isn't enough — touchscreen laptops/2-in-1s/desktop monitors are
+// touch-capable but not mobile. Require a narrow screen too, matching the width-gated
+// _isMobile already used locally in effects.js/streaming.js. Without this, every keyboard
+// shortcut (scene.js's keydown handler returns immediately when window._isMobile is true)
+// silently stops firing on any touch-capable desktop.
+window._isMobile = (('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.screen.width < 1024);
 
 function setupConfig(A) {
   const _params = new URLSearchParams(location.search);
