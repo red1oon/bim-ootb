@@ -1441,6 +1441,11 @@ function setupStreaming(A) {
       // Phase 1: Download meta.db (sync DB for panels + queries)
       A.status.textContent = _posLoaded ? 'Bboxes drawn. Loading metadata...' : 'Fetching metadata...';
       var metaBuf = await A.cachedFetch(metaUrl);
+      // §PATCH-SELFHEAL: the split path must heal the SAME way the whole-db path does
+      // (streaming.js §whole-db load calls this on A.DB_URL) — meta.db is the file the Room
+      // lens/graph actually read in split mode, so a shipped-stale room set (e.g. Terminal's
+      // pre-STAIRWELL-STACK 43 rooms) is patched here or nowhere. Raw bytes stay in IDB.
+      if (A._applyPendingPatch) metaBuf = await A._applyPendingPatch(metaBuf, metaUrl);
       A.db = new SQL.Database(new Uint8Array(metaBuf));
       A.libDb = A.db;
       A._splitHasMeta = true;
