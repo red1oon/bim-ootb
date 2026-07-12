@@ -76,10 +76,18 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  '
   chk('§ROOM_GRAPH nodes count matches ground truth (' + gtRooms.length + ')', graph.nodes.length === gtRooms.length,
     'nodes=' + graph.nodes.length);
 
-  // G1: every edge's door guid is a REAL door guid from elements_meta (not invented).
+  // G1: every edge's guid is a REAL element guid from elements_meta (not invented).
+  // Occupant-graph E3 edges (kind='stair') legitimately carry IfcStairFlight/IfcRampFlight guids
+  // (OCCUPANT_PATHFINDER.md) — validate those against the real stair set, everything else against
+  // the real door set. Same non-invention bar, per edge kind.
   const gtDoorGuids = new Set(gtDoors.map(d => d.guid));
-  const badEdgeDoors = graph.edges.filter(e => !gtDoorGuids.has(e.doorGuid));
-  chk('G1 every graph edge carries a REAL door guid from elements_meta', badEdgeDoors.length === 0,
+  const gtStairGuids = new Set(dbQuery(
+    "SELECT guid FROM elements_meta WHERE ifc_class LIKE 'IfcStair%' OR ifc_class LIKE 'IfcRamp%'"
+  ).map(r => r[0]));
+  const badEdgeDoors = graph.edges.filter(e =>
+    e.kind === 'E3' ? !gtStairGuids.has(e.doorGuid) : !gtDoorGuids.has(e.doorGuid));
+  chk('G1 every graph edge carries a REAL element guid from elements_meta (doors; stairs for kind=E3)',
+    badEdgeDoors.length === 0,
     'edges=' + graph.edges.length + ' bad=' + badEdgeDoors.length);
 
   // G2: hub/leaf — Hallway/Foyer (supplementary tier) vs Bedroom/Bathroom/Kitchen/Utility (primary tier).
