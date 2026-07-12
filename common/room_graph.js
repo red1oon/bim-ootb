@@ -72,6 +72,9 @@
 (function () {
   'use strict';
   var ROOT = (typeof window !== 'undefined') ? window : {};
+  // §G3-REVISED (PATH_LEGAL_SEGMENTS.md) — pack/unpack + lookup for the offline-precomputed
+  // per-storey walkable raster (scripts/build_storey_walkable_raster.js). Dual-mode like this file.
+  var StoreyRaster = (typeof module !== 'undefined' && module.exports) ? require('./storey_raster.js') : ROOT.StoreyRaster;
 
   // Ported verbatim from scripts/compile_rooms.py — see file header. Not a new number.
   var DOOR_BUFFER_SLACK = 0.20;
@@ -199,6 +202,11 @@
           log('§ROOM_GRAPH_AMBIGUOUS_DOOR "' + name + '" candidates=' + cands.length +
             ' picked=' + cands[0].lg + ',' + cands[1].lg);
         }
+        // §G4-DETOUR-NODES (PATH_LEGAL_SEGMENTS.md): every room-facing door becomes a doorwp
+        // waypoint too (not just E2's circulation-rescue case below) — shortestPath()'s
+        // visibility-graph detour walks these as its candidate waypoints. Additive only:
+        // graph.nodes (room-only, §API-COMPAT) is untouched, this only grows nodesByGuid's superset.
+        if (!nodes[guid]) nodes[guid] = { guid: guid, kind: 'doorwp', name: name, storey: storey, cx: dx, cy: dy, cz: dz };
       } else if (cands.length === 1) {
         deadend++; e2++;
         var cg = circNode(storey, dx, dy, dz);
@@ -367,10 +375,29 @@
       ' deadend=' + deadend + ' orphan=' + orphan + ' ambiguous=' + ambiguous +
       ' circ=' + circCount + ' stairs=' + e3 + ' (skipped=' + e3Skipped + ') exits=' + exits + ' e2=' + e2);
 
+    // §G3-REVISED (PATH_LEGAL_SEGMENTS.md): read-only lookup of the offline-precomputed per-storey
+    // walkable raster (scripts/build_storey_walkable_raster.js self-heals this table onto a
+    // building's db). Defensive: table absent (older patch / building not yet mined) -> rasters
+    // stays {} and shortestPath()'s chord-legality test falls back to roomRectsByStorey alone.
+    var rasters = {};
+    try {
+      var rasterRows = dbQuery('SELECT storey,res,x0,y0,cols,rows,bits FROM storey_walkable_raster') || [];
+      rasterRows.forEach(function (row) { rasters[row[0]] = StoreyRaster.fromRow(row); });
+    } catch (eRas) { /* table absent — rasters stays {}, defensive fallback in shortestPath() */ }
+    if (Object.keys(rasters).length) log('§PATH_LEGAL_RASTER storeys=' + Object.keys(rasters).join(','));
+    var roomRectsByStorey = {};
+    roomOrder.forEach(function (lg) {
+      var g = nodes[lg];
+      if (!roomRectsByStorey[g.storey]) roomRectsByStorey[g.storey] = [];
+      g.rects.forEach(function (rc) { roomRectsByStorey[g.storey].push(rc); });
+    });
+
     return {
       nodes: roomOrder.map(function (lg) { return nodes[lg]; }), // §API-COMPAT: room-only, see file header
       edges: edges,
       nodesByGuid: nodes, // superset: room + circ + exit + waypoint entries, see file header
+      rasters: rasters, // §G3-REVISED: {storey: StoreyRaster instance}, see shortestPath()
+      roomRectsByStorey: roomRectsByStorey, // §G3-REVISED fallback when a storey has no raster
       stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors,
         edges: edges.filter(function (e) { return e.kind === 'E1'; }).length,
         deadend: deadend, orphan: orphan, ambiguous: ambiguous,
@@ -474,6 +501,124 @@
     return arrivedGuid; // defensive fallback — should not happen with a well-formed edge
   }
 
+  // shortestPath()'s signature is frozen (§API-COMPATIBLE, no opts/log param) — same direct-console
+  // convention modeller/real_geometry.js's own `_log` already uses in this codebase, since there is
+  // no caller-injected logger to route through here (unlike buildGraph's `opts.log`).
+  function _log(m) { if (typeof console !== 'undefined') console.log(m); }
+
+  // §PATH_LEGAL_SEGMENTS.md §G3-REVISED — is (px,py) on `storey` walkable? Raster first (real
+  // mesh-derived, accurate on concave floors — the real slab physically continues under interior
+  // walls, so two adjacent rooms' rects never leave a spurious gap there). Room-rects fallback when
+  // this storey has no raster (older patch / building not yet mined — never a hard failure): each
+  // rect is inflated by DOOR_BUFFER_SLACK (the SAME constant this file already uses for the real
+  // gap between a door's own footprint and its neighbouring rooms, ported from compile_rooms.py —
+  // see file header) so the real wall/doorway sliver between two adjacent rooms' own rects — e.g.
+  // Duplex Level 2 A204/A205, measured ~0.12m gap — doesn't spuriously flag a genuinely-walked
+  // doorway as illegal (a chord's OTHER end still has to reach an actual rect; a real multi-metre
+  // void like the HHS courtyard is far too wide for this small a buffer to paper over). Returns
+  // true/false/null (null = no data AT ALL for this storey — caller must not penalize a chord it
+  // cannot judge).
+  function _pointWalkable(graph, storey, px, py) {
+    var raster = graph.rasters && graph.rasters[storey];
+    if (raster) return raster.contains(px, py);
+    var rects = graph.roomRectsByStorey && graph.roomRectsByStorey[storey];
+    if (!rects || !rects.length) return null;
+    for (var i = 0; i < rects.length; i++) {
+      var rc = rects[i];
+      if (px >= rc.x0 - DOOR_BUFFER_SLACK && px <= rc.x1 + DOOR_BUFFER_SLACK &&
+        py >= rc.y0 - DOOR_BUFFER_SLACK && py <= rc.y1 + DOOR_BUFFER_SLACK) return true;
+    }
+    return false;
+  }
+
+  var PATH_LEGAL_SAMPLE_RES = 0.25; // matches PATH_LEGAL_SEGMENTS.md's own sampling step
+
+  // Sample a->b @0.25m, count illegal points. A storey with NO walkable data at all (raster absent
+  // AND zero rooms — should not happen for a real storey, defensive only) never flags illegal, so
+  // pre-this-feature behavior is preserved byte-for-byte when there is nothing to judge against.
+  function _chordIllegalCount(graph, storey, ax, ay, bx, by) {
+    var len = Math.hypot(bx - ax, by - ay);
+    var n = Math.max(1, Math.ceil(len / PATH_LEGAL_SAMPLE_RES));
+    var illegal = 0, anyData = false;
+    for (var i = 0; i <= n; i++) {
+      var t = i / n, px = ax + (bx - ax) * t, py = ay + (by - ay) * t;
+      var w = _pointWalkable(graph, storey, px, py);
+      if (w === null) continue;
+      anyData = true;
+      if (!w) illegal++;
+    }
+    return anyData ? illegal : 0;
+  }
+
+  // §G4 visibility-graph detour: nodes = this storey's real door-waypoint centers (doorwp entries,
+  // registered for EVERY room-facing door — see buildGraph's E1/E2 branches) + the chord's own two
+  // endpoints. Edge iff the straight segment between two points is legal (0 illegal @0.25m).
+  // Dijkstra over that small graph. Returns the INTERIOR doorwp guids only (endpoints excluded —
+  // caller already has them in `path`), or null if no legal detour exists (chord left as-is,
+  // honest degrade — never invents a waypoint that isn't a real door).
+  function _detourForChord(graph, storey, ax, ay, bx, by) {
+    var pts = [{ id: null, x: ax, y: ay }, { id: null, x: bx, y: by }];
+    Object.keys(graph.nodesByGuid).forEach(function (g) {
+      var n = graph.nodesByGuid[g];
+      if (n.kind === 'doorwp' && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
+    });
+    var n = pts.length, adj = [];
+    for (var i = 0; i < n; i++) adj.push([]);
+    for (var i = 0; i < n; i++) {
+      for (var j = i + 1; j < n; j++) {
+        if (_chordIllegalCount(graph, storey, pts[i].x, pts[i].y, pts[j].x, pts[j].y) === 0) {
+          var w = Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y);
+          adj[i].push({ to: j, w: w }); adj[j].push({ to: i, w: w });
+        }
+      }
+    }
+    var dist = pts.map(function () { return Infinity; });
+    var prev = pts.map(function () { return -1; });
+    var visited = pts.map(function () { return false; });
+    dist[0] = 0;
+    var pq = [0];
+    while (pq.length) {
+      pq.sort(function (a, b) { return dist[a] - dist[b]; });
+      var u = pq.shift();
+      if (visited[u]) continue;
+      visited[u] = true;
+      if (u === 1) break;
+      adj[u].forEach(function (e) {
+        var nd = dist[u] + e.w;
+        if (nd < dist[e.to]) { dist[e.to] = nd; prev[e.to] = u; pq.push(e.to); }
+      });
+    }
+    if (dist[1] === Infinity) { _log('§PATH_LEGAL_DETOUR_FAIL storey=' + storey + ' no legal detour among ' + (n - 2) + ' doors'); return null; }
+    var hopIdx = [], cur = 1;
+    while (cur !== -1) { hopIdx.unshift(cur); cur = prev[cur]; }
+    var mid = [];
+    for (var k = 1; k < hopIdx.length - 1; k++) mid.push(pts[hopIdx[k]].id);
+    return mid;
+  }
+
+  // §PATH_LEGAL_SEGMENTS.md — walk the just-built `path`, testing every consecutive same-storey
+  // chord (both endpoints resolve to the SAME storey — a stairwp<->stairwp vertical hop never
+  // matches, left untouched per this spec's own fence) and splicing in a visibility-graph detour
+  // wherever a chord fails. Never touches WHICH rooms/doors the route uses (`doors` list
+  // untouched) — only the polyline's intermediate points, exactly per the spec's scope fence.
+  function _legalizePath(graph, path) {
+    var legalized = 0, detoured = 0;
+    var out = [path[0]];
+    for (var i = 0; i + 1 < path.length; i++) {
+      var a = graph.nodesByGuid[path[i]], b = graph.nodesByGuid[path[i + 1]];
+      if (!a || !b || a.storey == null || a.storey !== b.storey) { out.push(path[i + 1]); continue; }
+      legalized++;
+      var illegal = _chordIllegalCount(graph, a.storey, a.cx, a.cy, b.cx, b.cy);
+      if (illegal > 0) {
+        var mid = _detourForChord(graph, a.storey, a.cx, a.cy, b.cx, b.cy);
+        if (mid && mid.length) { detoured++; mid.forEach(function (g) { out.push(g); }); }
+      }
+      out.push(path[i + 1]);
+    }
+    if (legalized) _log('§PATH_LEGAL legalized=' + legalized + ' detoured=' + detoured);
+    return out;
+  }
+
   // Dijkstra shortest path over the FULL occupant graph. SAME SIGNATURE / SAME RESULT SHAPE as
   // before ({path, doors, distance}) — every existing consumer (viewer/navigate_find.js) needs
   // zero edits: `path` entries still resolve via `graph.nodesByGuid[g]` to a real {cx,cy,cz,name}
@@ -493,6 +638,7 @@
       path.unshift(p.from);
       cur = p.from;
     }
+    path = _legalizePath(graph, path);
     return { path: path, doors: doors, distance: core.dist[toGuid] };
   }
 

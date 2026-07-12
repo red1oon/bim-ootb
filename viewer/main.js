@@ -140,10 +140,16 @@ async function initViewer() {
       // navigate_find.js itself — no reason to spend the bytes on every boot.
       var modules = [
         '../common/room_habitability.js?v=1',
+        // PATH_LEGAL_SEGMENTS.md §G3-REVISED — pack/unpack + lookup for the offline-precomputed
+        // per-storey walkable raster; must load BEFORE room_graph.js (buildGraph() references
+        // window.StoreyRaster when it reads storey_walkable_raster).
+        '../common/storey_raster.js?v=1',
         // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7 — room-to-room adjacency graph + pathfinding,
         // consumed by navigate_find.js's Room axis "Path" sub-mode. Same lazy-load rationale as
         // room_habitability.js above (only needed alongside navigate_find.js itself).
-        '../common/room_graph.js?v=2',
+        // v3 (PATH_LEGAL_SEGMENTS.md, 2026-07-13): same-storey chord legality + visibility-graph
+        // detour — a returning browser's cached v2 never draws the courtyard-void fix without this bump.
+        '../common/room_graph.js?v=3',
         'navigate_find.js?v=48',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
