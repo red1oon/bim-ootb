@@ -42,6 +42,29 @@ Confirmed PRE-EXISTING on unmodified origin/main (not caused by the X-ray fix). 
   alongside the 4 batched ones — worth checking against any existing perf witness (`§DW-PRIM`/`§BONSAI
   chain` timing lines already log solids/tris counts that would show the inflation).
 
+## G5 — root cause of the individual fold-copies' geometry, found chasing a guide screenshot (2026-07-13)
+
+Not just duplicated — a subset of the individual fold-copies (G1) render at the WRONG SIZE, and it's a
+known, already-named bug that isn't fixed for this code path. Measured on SampleCastle's ELEC walk: sampled
+6 of the largest individual fold-copy meshes (by volume), ALL were `h=4.0m, w=0.45-0.8m, d=0.45-0.8m` — a
+building-scale box, not a fixture. Their source op's `parameters` carry NEITHER `bbox` NOR `realGeomHash`
+(both `undefined`) — meaning they fell through DiscWalker's commit branch that has NO measured geometry
+(`modeller.html` ~3948-3958: `var hash = found ? found.hash : (cat[0] ? cat[0].hash : null)`), which a
+standing code comment at ~3933-3934 explicitly names as the bug already fixed elsewhere: *"NEVER the old
+cat[0] fallback, which folded every unmatched fixture as the catalog's first item — a full-height Column per
+outlet (the op-log half of 'geometry hell'...)"*. The LIVE InstancedMesh render path (`dwRoot` buckets,
+`_dwPrimGeo`) correctly uses measured/matched geometry for these same placements (confirmed via
+`§DW-PRIM-LOD lod400=0 lod300=0 lod200=325` — honest measured boxes, right-sized). So the fix that comment
+describes was applied to the LIVE render path but NOT to the generic op-log fold path that also builds an
+individual copy of every `GEOM_INSERT` — the two renderers disagree on geometry for the exact same op.
+This is very likely the actual driver of "why X-ray still looks like tall spikes post-fix" on SampleCastle
+(not primarily alpha-accumulation as first guessed) — with `depthTest:false, renderOrder:999` (X-ray's glow
+treatment), an oversized wrong-fallback fixture box renders on top of everything else, unoccluded, exactly
+like the original wall-spike symptom looked. Worth checking whether this also produces visible artifacts in
+NORMAL (non-X-ray) viewing, where these same oversized boxes would still be present (just occluded by
+normal depth-testing, so probably hidden behind real structure most of the time — X-ray is what makes them
+impossible to miss).
+
 ## Related, separate visual observation (not this file's subject, noted so it isn't lost either)
 
 Post-fix (`XRAY_FIXTURE_CLASSIFICATION_FIX.md`), the classifier is verified numerically correct down to
