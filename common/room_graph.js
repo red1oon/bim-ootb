@@ -99,6 +99,63 @@
     return n.replace(INDEX_SUFFIX_RE, '');
   }
 
+  // §STAIR-GROUPS (extracted from buildGraph's E3 logic, 2026-07-14 §HALLWAY-BACKBONE) — the ONE
+  // trusted stair extractor for this codebase (WalkerDoctrine §10). §STAIR-CLASS-FALLBACK
+  // (SampleCastle, 2026-07-13): flights (IfcStairFlight/IfcRampFlight) are PREFERRED — proven
+  // z-span behavior on Terminal/JKR/Duplex — but some real buildings model stairs ONLY as
+  // IfcStair/IfcRamp ASSEMBLIES (SampleCastle: 9 IfcStair, zero flights). If the flight query
+  // returns nothing, fall back to the assembly classes; never mix both (a building with both —
+  // Duplex — would double-count the same physical stair). Deliberately NO discipline filter — real
+  // data (Clinic) shows the primary flight rows split ARC (the "Concrete Pan" stairs) vs STR (the
+  // "Monolithic Concrete Stair") for the SAME building; an ARC-only filter would silently drop the
+  // STR-tagged physical stair. Groups by stairBaseKey() so a multi-flight physical stair (Run 1/
+  // Run 2, or a trailing ":N" flight index) counts as ONE stair, not one per flight — verified
+  // against Clinic's real elements_meta 2026-07-14: 8 flight rows -> 4 stair groups + 1 ramp group
+  // (Ramp:150mm Concrete ADA Ramp), matching the trusted Building Parts Taxonomy ground truth of 4
+  // stairs, where three different ad-hoc `ifc_class LIKE 'IfcStair%'` phrasings returned 7/8/13.
+  // §XY-FOOTPRINT (2026-07-14, §HALLWAY-BACKBONE): also tracks each group's real XY bbox extent
+  // (xlo/xhi/ylo/yhi, from every flight row's own bbox_x/bbox_y) — needed by
+  // common/hallway_backbone.js's terminateAtStair() for a real bbox-rect distance test, not just a
+  // mean-center point. Additive only — the existing E3 z-bridging consumer (cx/cy/n/zlo/zhi) is
+  // untouched.
+  // Returns { groups: {key: {guids,cx,cy,n,zlo,zhi,xlo,xhi,ylo,yhi}}, order: [key,...] (insertion order) }.
+  function getStairGroups(dbQuery, log) {
+    log = log || function () {};
+    var flightRows = [];
+    var _stairSelect = "SELECT m.guid, m.element_name, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z" +
+      ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid';
+    try {
+      flightRows = dbQuery(_stairSelect +
+        " WHERE (m.ifc_class LIKE 'IfcStairFlight%' OR m.ifc_class LIKE 'IfcRampFlight%') AND t.center_z IS NOT NULL") || [];
+      if (!flightRows.length) {
+        flightRows = dbQuery(_stairSelect +
+          " WHERE (m.ifc_class LIKE 'IfcStair%' OR m.ifc_class LIKE 'IfcRamp%') AND t.center_z IS NOT NULL") || [];
+        if (flightRows.length) log('§ROOM_GRAPH_STAIR_FALLBACK assemblies=' + flightRows.length + ' (no flight rows in this building)');
+      }
+    } catch (eFl) { log('§ROOM_GRAPH_STAIR_ERR ' + eFl.message); }
+
+    var groups = {}, order = [];
+    flightRows.forEach(function (f) {
+      var key = stairBaseKey(f[1]);
+      if (!groups[key]) {
+        groups[key] = { guids: [], cx: 0, cy: 0, n: 0, zlo: Infinity, zhi: -Infinity,
+          xlo: Infinity, xhi: -Infinity, ylo: Infinity, yhi: -Infinity };
+        order.push(key);
+      }
+      var gr = groups[key];
+      gr.guids.push(f[0]);
+      var cx = f[2], cy = f[3], cz = f[4], bx = f[5] || 0, by = f[6] || 0, bz = f[7] || 0;
+      gr.cx += cx; gr.cy += cy; gr.n++;
+      gr.zlo = Math.min(gr.zlo, cz - bz / 2);
+      gr.zhi = Math.max(gr.zhi, cz + bz / 2);
+      gr.xlo = Math.min(gr.xlo, cx - bx / 2);
+      gr.xhi = Math.max(gr.xhi, cx + bx / 2);
+      gr.ylo = Math.min(gr.ylo, cy - by / 2);
+      gr.yhi = Math.max(gr.yhi, cy + by / 2);
+    });
+    return { groups: groups, order: order };
+  }
+
   // Build the room-adjacency graph from the SAME building db the Room Lens already reads.
   // Returns { nodes:[{guid,name,label,storey,rects,cx,cy}] (ROOM NODES ONLY — see file header),
   //           edges:[{a,b,doorGuid,doorName,storey,kind,ambiguous?}],
@@ -180,7 +237,57 @@
       return cg;
     }
 
+    // §HALLWAY-BACKBONE (2026-07-14): a room's lone door used to rescue onto ONE per-storey
+    // `CIRC::<storey>` blob (see circNode above) — every E2-rescued door on a floor collapsed to
+    // the SAME point, so two rooms both reached only via E2 measured zero distance apart no matter
+    // how far the real hallway actually runs between them, and the rendered path floated straight
+    // through open space instead of hugging the corridor (user-reported, 2026-07-14). Fix: build a
+    // real, wall-grounded corridor spine (common/hallway_backbone.js) and rescue each E2 door onto
+    // its NEAREST real spine waypoint instead of the shared blob, with spine waypoints chained to
+    // each other by real-distance edges along the actual corridor. Falls back to the OLD single-
+    // blob behavior per storey if the backbone build finds nothing there (short/doorless corridor,
+    // or the module isn't available) — never worse than before, never invents a spine that isn't
+    // grounded in real doors+walls.
     var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0;
+    var HallwayBackbone = (typeof module !== 'undefined' && module.exports) ? require('./hallway_backbone.js') : ROOT.HallwayBackbone;
+    var spineByStorey = {}; // storey -> [{guid,cx,cy}]
+    // §CORRIDOR-WIDTH: real, wall-measured corridor rects (see hallway_backbone.js bucketRect) fed
+    // into _pointWalkable()'s room-rects fallback — WITHOUT this, a storey with no walkable raster
+    // treats genuine open corridor floor (no room modeled there) as illegal, so a legality detour
+    // can never succeed through it no matter how many spine candidate points are added.
+    var corridorRectsByStorey = {};
+    if (HallwayBackbone) {
+      try {
+        var backbone = HallwayBackbone.buildBackbone(dbQuery, { log: log });
+        backbone.joined.forEach(function (b, bi) {
+          var mid = (b.span.lo + b.span.hi) / 2;
+          var scx = (b.axis === 'x') ? mid : b.runCoord;
+          var scy = (b.axis === 'x') ? b.runCoord : mid;
+          var sg = 'SPINE::' + b.key;
+          nodes[sg] = { guid: sg, kind: 'spine', name: 'Corridor — ' + b.storey, storey: b.storey, cx: scx, cy: scy, cz: storeyZ[b.storey] };
+          order.push(sg);
+          b._spineGuid = sg;
+          (spineByStorey[b.storey] = spineByStorey[b.storey] || []).push(nodes[sg]);
+          (corridorRectsByStorey[b.storey] = corridorRectsByStorey[b.storey] || []).push(HallwayBackbone.bucketRect(b));
+        });
+        backbone.crossings.forEach(function (c) {
+          var a = backbone.joined[c.a], b = backbone.joined[c.b];
+          if (!a || !b || !a._spineGuid || !b._spineGuid) return;
+          var w = Math.hypot(nodes[a._spineGuid].cx - nodes[b._spineGuid].cx, nodes[a._spineGuid].cy - nodes[b._spineGuid].cy);
+          edges.push({ a: a._spineGuid, b: b._spineGuid, doorGuid: null, doorName: 'Corridor junction', storey: a.storey, kind: 'E5', w: w });
+        });
+        log('§HALLWAY_BACKBONE_WIRED spineNodes=' + backbone.joined.length + ' spineEdges=' + backbone.crossings.length +
+          ' storeys=' + Object.keys(spineByStorey).length);
+      } catch (eBb) { log('§HALLWAY_BACKBONE_ERR ' + eBb.message); }
+    }
+    function nearestSpine(storey, px, py) {
+      var pts = spineByStorey[storey];
+      if (!pts || !pts.length) return null;
+      var best = null, bestD = Infinity;
+      pts.forEach(function (p) { var d = Math.hypot(p.cx - px, p.cy - py); if (d < bestD) { bestD = d; best = p; } });
+      return best;
+    }
+
     doorRows.forEach(function (d) {
       var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0;
       if (!isRoomDoor(name)) { nonRoomDoors++; return; }
@@ -209,50 +316,31 @@
         if (!nodes[guid]) nodes[guid] = { guid: guid, kind: 'doorwp', name: name, storey: storey, cx: dx, cy: dy, cz: dz };
       } else if (cands.length === 1) {
         deadend++; e2++;
-        var cg = circNode(storey, dx, dy, dz);
+        // §HALLWAY-BACKBONE: rescue onto the NEAREST real corridor spine point for this storey
+        // when one exists (real distance, real hallway) — falls back to the old single per-storey
+        // blob only when no backbone was built here (e.g. too few doors to form a corridor).
+        var nearSpine = nearestSpine(storey, dx, dy);
+        var cg = nearSpine ? nearSpine.guid : circNode(storey, dx, dy, dz);
         // §API-COMPAT-WAYPOINT: register the door's OWN real guid as a rendering waypoint for this
         // circ hop (see shortestPath() below) — a real position, not a storey centroid.
         if (!nodes[guid]) nodes[guid] = { guid: guid, kind: 'doorwp', name: name, storey: storey, cx: dx, cy: dy, cz: dz };
-        edges.push({ a: cands[0].lg, b: cg, doorGuid: guid, doorName: name, storey: storey, kind: 'E2', wpA: null, wpB: guid });
+        var e2w = nearSpine ? Math.hypot(nearSpine.cx - dx, nearSpine.cy - dy) : undefined;
+        edges.push({ a: cands[0].lg, b: cg, doorGuid: guid, doorName: name, storey: storey, kind: 'E2', wpA: null, wpB: guid, w: e2w });
       } else {
         orphan++;
       }
     });
 
     // ── E3: stair/ramp flights bridge two storeys' circulation nodes ──
-    // §STAIR-CLASS-FALLBACK (SampleCastle, 2026-07-13): flights (IfcStairFlight/IfcRampFlight) are
-    // PREFERRED — proven z-span behavior on Terminal/JKR/Duplex — but some real buildings model
-    // stairs ONLY as IfcStair/IfcRamp ASSEMBLIES (SampleCastle: 9 IfcStair, zero flights → zero E3
-    // edges → every cross-storey path refused, user-reported §ROOM_PATH_NOT_FOUND). If the flight
-    // query returns nothing, fall back to the assembly classes; never mix both (a building with
-    // both — Duplex — would double-count the same physical stair).
-    var flightRows = [];
-    var _stairSelect = "SELECT m.guid, m.element_name, t.center_x, t.center_y, t.center_z, t.bbox_z" +
-      ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid';
-    try {
-      flightRows = dbQuery(_stairSelect +
-        " WHERE (m.ifc_class LIKE 'IfcStairFlight%' OR m.ifc_class LIKE 'IfcRampFlight%') AND t.center_z IS NOT NULL") || [];
-      if (!flightRows.length) {
-        flightRows = dbQuery(_stairSelect +
-          " WHERE (m.ifc_class LIKE 'IfcStair%' OR m.ifc_class LIKE 'IfcRamp%') AND t.center_z IS NOT NULL") || [];
-        if (flightRows.length) log('§ROOM_GRAPH_STAIR_FALLBACK assemblies=' + flightRows.length + ' (no flight rows in this building)');
-      }
-    } catch (eFl) { log('§ROOM_GRAPH_STAIR_ERR ' + eFl.message); }
-
-    var flightGroups = {}, flightGroupOrder = [];
-    flightRows.forEach(function (f) {
-      var key = stairBaseKey(f[1]);
-      if (!flightGroups[key]) {
-        flightGroups[key] = { guids: [], cx: 0, cy: 0, n: 0, zlo: Infinity, zhi: -Infinity };
-        flightGroupOrder.push(key);
-      }
-      var gr = flightGroups[key];
-      gr.guids.push(f[0]);
-      gr.cx += f[2]; gr.cy += f[3]; gr.n++;
-      var cz = f[4], bz = f[5] || 0;
-      gr.zlo = Math.min(gr.zlo, cz - bz / 2);
-      gr.zhi = Math.max(gr.zhi, cz + bz / 2);
-    });
+    // §STAIR-GROUPS: extracted to getStairGroups() below (2026-07-14, §HALLWAY-BACKBONE) so a
+    // second consumer (common/hallway_backbone.js's terminateAtStair) can reuse the SAME trusted
+    // flight-first/assembly-fallback query + physical-stair grouping instead of a fresh ad-hoc
+    // IfcStair% query — WalkerDoctrine §10, one function not a new one. Verified against Clinic's
+    // real data 2026-07-14: yields exactly 4 physical stairs (the trusted Building Parts Taxonomy
+    // ground truth), where a naive `ifc_class LIKE 'IfcStair%'` count returns 7/8/13 depending on
+    // phrasing — this function is the one to call, not a new query.
+    var stairGroupsResult = getStairGroups(dbQuery, log);
+    var flightGroups = stairGroupsResult.groups, flightGroupOrder = stairGroupsResult.order;
 
     var e3 = 0, e3Skipped = 0;
     var _e3Seen = {};
@@ -407,6 +495,7 @@
       nodesByGuid: nodes, // superset: room + circ + exit + waypoint entries, see file header
       rasters: rasters, // §G3-REVISED: {storey: StoreyRaster instance}, see shortestPath()
       roomRectsByStorey: roomRectsByStorey, // §G3-REVISED fallback when a storey has no raster
+      corridorRectsByStorey: corridorRectsByStorey, // §CORRIDOR-WIDTH: real backbone corridor rects, same fallback
       stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors,
         edges: edges.filter(function (e) { return e.kind === 'E1'; }).length,
         deadend: deadend, orphan: orphan, ambiguous: ambiguous,
@@ -531,11 +620,24 @@
     var raster = graph.rasters && graph.rasters[storey];
     if (raster) return raster.contains(px, py);
     var rects = graph.roomRectsByStorey && graph.roomRectsByStorey[storey];
-    if (!rects || !rects.length) return null;
-    for (var i = 0; i < rects.length; i++) {
-      var rc = rects[i];
-      if (px >= rc.x0 - DOOR_BUFFER_SLACK && px <= rc.x1 + DOOR_BUFFER_SLACK &&
-        py >= rc.y0 - DOOR_BUFFER_SLACK && py <= rc.y1 + DOOR_BUFFER_SLACK) return true;
+    // §CORRIDOR-WIDTH: real, wall-measured corridor rects (hallway_backbone.js bucketRect) — see
+    // that fix's comment above the caller for WHY this is a different, stronger-evidence case than
+    // just widening DOOR_BUFFER_SLACK (a courtyard-sized void still correctly fails; a corridor
+    // only gets a rect here when it's an ACTUAL wall-bounded run with >=3 real doors).
+    var corridors = graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey];
+    if ((!rects || !rects.length) && (!corridors || !corridors.length)) return null;
+    if (rects) {
+      for (var i = 0; i < rects.length; i++) {
+        var rc = rects[i];
+        if (px >= rc.x0 - DOOR_BUFFER_SLACK && px <= rc.x1 + DOOR_BUFFER_SLACK &&
+          py >= rc.y0 - DOOR_BUFFER_SLACK && py <= rc.y1 + DOOR_BUFFER_SLACK) return true;
+      }
+    }
+    if (corridors) {
+      for (var j = 0; j < corridors.length; j++) {
+        var cc = corridors[j];
+        if (px >= cc.x0 && px <= cc.x1 && py >= cc.y0 && py <= cc.y1) return true;
+      }
     }
     return false;
   }
@@ -569,7 +671,16 @@
     var pts = [{ id: null, x: ax, y: ay }, { id: null, x: bx, y: by }];
     Object.keys(graph.nodesByGuid).forEach(function (g) {
       var n = graph.nodesByGuid[g];
-      if (n.kind === 'doorwp' && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
+      // §HALLWAY-BACKBONE: real corridor spine points are ALSO valid detour candidates, not just
+      // doorwp — a door-only visibility graph can genuinely have no legal edge between two doors
+      // that face each other across an open corridor (every straight door-to-door chord crosses
+      // the gap the raster marks non-walkable near a jutting wall corner), even though a real
+      // route along the corridor's own centerline exists. Observed live on Clinic First Floor
+      // before this fix: `§PATH_LEGAL_DETOUR_FAIL ... no legal detour among 139 doors` — the
+      // chord was then left AS-IS, undetoured, i.e. still crossing a wall. Adding spine nodes only
+      // ADDS candidate points/edges to this visibility graph — it can only turn a FAIL into a real
+      // route, never remove an already-legal one.
+      if ((n.kind === 'doorwp' || n.kind === 'spine') && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
     });
     var n = pts.length, adj = [];
     for (var i = 0; i < n; i++) adj.push([]);
@@ -641,7 +752,10 @@
     while (cur !== fromGuid) {
       var p = core.prev[cur];
       if (!p) return null; // defensive — should not happen if dist[toGuid] finite
-      doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
+      // §HALLWAY-BACKBONE E5 (corridor-junction) hops carry no real elements_meta guid — this
+      // file's own invariant is "doors[] = real doors only" (see G1 witness), so they contribute
+      // to `path` (a real, wall-grounded position either way) but not to the exposed doors list.
+      if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
       var publicCur = _publicHop(graph, cur, p.edge, p.arriveSide);
       path[0] = publicCur; // replace the just-pushed guid with its public form
       path.unshift(p.from);
@@ -682,7 +796,10 @@
     while (cur !== fromGuid) {
       var p = prev[cur];
       if (!p) { log('§ESCAPE_ROUTE from=' + fromGuid + ' RECONSTRUCT_FAIL'); return null; }
-      doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
+      // §HALLWAY-BACKBONE E5 (corridor-junction) hops carry no real elements_meta guid — this
+      // file's own invariant is "doors[] = real doors only" (see G1 witness), so they contribute
+      // to `path` (a real, wall-grounded position either way) but not to the exposed doors list.
+      if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
       path[0] = _publicHop(graph, cur, p.edge, p.arriveSide);
       path.unshift(p.from);
       cur = p.from;
@@ -694,7 +811,8 @@
 
   var API = {
     buildGraph: buildGraph, degree: degree, components: components, shortestPath: shortestPath,
-    escapeRoute: escapeRoute, isRoomDoor: isRoomDoor, stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK
+    escapeRoute: escapeRoute, isRoomDoor: isRoomDoor, stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK,
+    getStairGroups: getStairGroups
   };
   ROOT.RoomGraph = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
