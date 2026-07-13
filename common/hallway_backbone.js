@@ -188,13 +188,22 @@
   // bucket's span. Returns { chains: [[bucket,...ordered...], ...] } — each chain is an ORDERED
   // path (not just a graph), per the user's explicit ask: the same structure feeds both path
   // routing (door-to-door must have a clear corridor-hugging route) and a flythrough camera path.
+  // §CROSSING-IDENTITY (2026-07-14, real bug found via user screenshot): crossings/chains
+  // reference the actual BUCKET OBJECTS, not positional array indices. buildBackbone() calls this
+  // function once PER STOREY (a fresh, separately-indexed `buckets` array each time) — an
+  // index-based crossing (`{a:i, b:j}`) would only be valid relative to THAT call's own local
+  // array, but was being looked up against the GLOBAL cross-storey `joined` array by the caller
+  // (room_graph.js), so a First-Floor local index could silently resolve to a completely different
+  // Second-Floor bucket. Confirmed live: a phantom `spine(First Floor)->spine(Second Floor)`
+  // edge with no real stair between them. Object references have no such ambiguity — safe to
+  // compare by `===` since these are the SAME objects returned in `joined`/`chains`.
   function walkBackbone(buckets) {
     var n = buckets.length;
     var parent = buckets.map(function (_, i) { return i; });
     function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
     function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
 
-    var crossings = []; // {a,b,x,y} — real crossing points, kept for ordering + rendering
+    var crossings = []; // {a,b,x,y} — a and b are real bucket OBJECTS (see §CROSSING-IDENTITY)
     for (var i = 0; i < n; i++) {
       for (var j = i + 1; j < n; j++) {
         var A = buckets[i], B = buckets[j];
@@ -207,7 +216,7 @@
         var bIn = bAlong >= B.span.lo - WALL_CROSS_SLACK && bAlong <= B.span.hi + WALL_CROSS_SLACK;
         if (aIn && bIn) {
           union(i, j);
-          crossings.push({ a: i, b: j, x: xB, y: yB });
+          crossings.push({ a: A, b: B, x: xB, y: yB });
         }
       }
     }
@@ -217,26 +226,26 @@
 
     var chains = Object.keys(groups).map(function (r) {
       var idxs = groups[r];
+      var idxBuckets = idxs.map(function (ix) { return buckets[ix]; });
       // Order the chain by a simple traversal: start at a bucket with only one crossing (a real
       // end), walk crossing-to-crossing. Falls back to insertion order if the chain has no clean
       // single-degree start (e.g. a loop) — never invents a position, just doesn't over-claim order.
-      var memberSet = {}; idxs.forEach(function (ix) { memberSet[ix] = true; });
-      var localCross = crossings.filter(function (c) { return memberSet[c.a] && memberSet[c.b]; });
-      var degree = {}; idxs.forEach(function (ix) { degree[ix] = 0; });
-      localCross.forEach(function (c) { degree[c.a]++; degree[c.b]++; });
-      var starts = idxs.filter(function (ix) { return degree[ix] <= 1; });
-      var startIdx = starts.length ? starts[0] : idxs[0];
-      var visited = {}, ordered = [], cur = startIdx;
-      while (cur !== undefined && !visited[cur]) {
-        visited[cur] = true; ordered.push(cur);
-        var next = localCross.find(function (c) { return (c.a === cur || c.b === cur) && !visited[c.a === cur ? c.b : c.a]; });
+      var localCross = crossings.filter(function (c) { return idxBuckets.indexOf(c.a) >= 0 && idxBuckets.indexOf(c.b) >= 0; });
+      var degree = new Map(); idxBuckets.forEach(function (b) { degree.set(b, 0); });
+      localCross.forEach(function (c) { degree.set(c.a, degree.get(c.a) + 1); degree.set(c.b, degree.get(c.b) + 1); });
+      var starts = idxBuckets.filter(function (b) { return degree.get(b) <= 1; });
+      var startB = starts.length ? starts[0] : idxBuckets[0];
+      var visited = new Set(), ordered = [], cur = startB;
+      while (cur !== undefined && !visited.has(cur)) {
+        visited.add(cur); ordered.push(cur);
+        var next = localCross.find(function (c) { return (c.a === cur || c.b === cur) && !visited.has(c.a === cur ? c.b : c.a); });
         cur = next ? (next.a === cur ? next.b : next.a) : undefined;
       }
-      idxs.forEach(function (ix) { if (!visited[ix]) ordered.push(ix); }); // stray members (loop remnants), appended not dropped
+      idxBuckets.forEach(function (b) { if (!visited.has(b)) ordered.push(b); }); // stray members (loop remnants), appended not dropped
       return {
-        buckets: ordered.map(function (ix) { return buckets[ix]; }),
+        buckets: ordered,
         crossings: localCross,
-        storey: buckets[idxs[0]].storey
+        storey: idxBuckets[0].storey
       };
     });
     return { chains: chains, crossings: crossings };

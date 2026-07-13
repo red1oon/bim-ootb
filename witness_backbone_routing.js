@@ -54,6 +54,32 @@ if (e2ToSpine.length >= 2) {
     weights.filter(w => w > 0.01).length > weights.length * 0.5, 'nonZero=' + weights.filter(w => w > 0.01).length + '/' + weights.length);
 }
 
+// ── §CIRC-SPINE-BRIDGE regression guard (2026-07-14, found via a real user screenshot: Clinic
+// First Floor R10 -> Second Floor R5 returned a path with a PHANTOM cross-storey spine-to-spine
+// edge — walkBackbone() ran per-storey and returned crossing indices LOCAL to that storey's own
+// array, but room_graph.js looked them up as GLOBAL indices into the full cross-storey `joined`
+// array, so a First-Floor local index could silently resolve to an unrelated Second-Floor bucket.
+// Fixed by making crossings reference bucket OBJECTS, not positional indices. That fix then
+// exposed a SECOND real bug: E2 rescuing onto the nearest spine (instead of the old CIRC blob)
+// left E3's stair-bridging CIRC nodes as an unreachable island whenever a backbone existed on
+// that storey — cross-floor paths returned null where they used to work. Fixed with a
+// circ-to-nearest-spine bridge edge (kind E6). Both must hold together, permanently. ──
+chk('G0 no E5 (corridor-junction) edge ever connects two DIFFERENT storeys',
+  graph.edges.filter(e => e.kind === 'E5').every(e => graph.nodesByGuid[e.a].storey === graph.nodesByGuid[e.b].storey),
+  'E5 edges=' + graph.edges.filter(e => e.kind === 'E5').length);
+const spineStoreys = new Set(spineNodes.map(g => graph.nodesByGuid[g].storey));
+const circOnSpineStoreys = circNodes.filter(g => spineStoreys.has(graph.nodesByGuid[g].storey));
+const bridgedCirc = circOnSpineStoreys.filter(g => graph.edges.some(e => e.kind === 'E6' && (e.a === g || e.b === g)));
+chk('G0b every CIRC node on a storey that HAS a spine is bridged into it (not an island) — a storey with no backbone at all (e.g. a doorless footing level) is correctly exempt',
+  circOnSpineStoreys.length === 0 || bridgedCirc.length === circOnSpineStoreys.length,
+  'circOnSpineStoreys=' + circOnSpineStoreys.length + ' bridged=' + bridgedCirc.length + ' (total circ=' + circNodes.length + ')');
+{
+  const r10r5 = RoomGraph.shortestPath(graph, 'RM_First_Floor_10', 'RM_Second_Floor_5');
+  chk('G0c a known real cross-floor pair (First Floor R10 -> Second Floor R5) is reachable via a REAL stair',
+    !!(r10r5 && r10r5.path.some(g => graph.nodesByGuid[g].kind === 'stairwp')),
+    r10r5 ? ('distance=' + r10r5.distance.toFixed(1) + ' hops=' + r10r5.path.length) : 'NULL (regressed)');
+}
+
 // Pick a real multi-hop room pair through the spine and confirm the rendered path visits
 // GEOMETRICALLY DISTINCT points (proves it hugs the corridor's real shape, not a straight
 // teleport through one fixed blob position).

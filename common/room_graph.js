@@ -271,7 +271,10 @@
           (corridorRectsByStorey[b.storey] = corridorRectsByStorey[b.storey] || []).push(HallwayBackbone.bucketRect(b));
         });
         backbone.crossings.forEach(function (c) {
-          var a = backbone.joined[c.a], b = backbone.joined[c.b];
+          // §CROSSING-IDENTITY: c.a/c.b are real bucket OBJECTS (see hallway_backbone.js
+          // walkBackbone) — do NOT index into backbone.joined with them (that was the bug: a
+          // per-storey-local index treated as a global one, producing phantom cross-storey edges).
+          var a = c.a, b = c.b;
           if (!a || !b || !a._spineGuid || !b._spineGuid) return;
           var w = Math.hypot(nodes[a._spineGuid].cx - nodes[b._spineGuid].cx, nodes[a._spineGuid].cy - nodes[b._spineGuid].cy);
           edges.push({ a: a._spineGuid, b: b._spineGuid, doorGuid: null, doorName: 'Corridor junction', storey: a.storey, kind: 'E5', w: w });
@@ -441,6 +444,30 @@
       }
       _e3Chain(sA, sB, gr, key);
     });
+
+    // §CIRC-SPINE-BRIDGE (2026-07-14, real regression found via user screenshot + HHS report):
+    // E3's stair edges connect circA<->circB (the per-storey CIRC blob, still created here
+    // unconditionally for stair-bridging even though E2 now prefers a real spine waypoint over
+    // it). On a storey where a backbone WAS built, E2 never rescues onto CIRC anymore — so CIRC
+    // silently became an ISLAND: reachable from a real stair, reachable from nothing else, no path
+    // could ever cross that floor transition even though a real stair genuinely connects it.
+    // Confirmed live: Clinic First Floor R10 -> Second Floor R5 returned a real (if imperfect)
+    // path before this session's spine-wiring change, then NULL after it — a straight regression,
+    // not an improvement. Fix: bridge every CIRC node into its own storey's nearest real spine
+    // point (real distance, same nearestSpine() helper E2 already uses) so the two subgraphs merge
+    // into one connected network again. No-op (never created, nothing to bridge) on a storey with
+    // no backbone — same graceful-degrade discipline as the rest of this feature.
+    var circBridges = 0;
+    order.forEach(function (lg) {
+      var g = nodes[lg];
+      if (g.kind !== 'circ') return;
+      var sp = nearestSpine(g.storey, g.cx, g.cy);
+      if (!sp) return;
+      var w = Math.hypot(sp.cx - g.cx, sp.cy - g.cy);
+      edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Corridor junction', storey: g.storey, kind: 'E6', w: w });
+      circBridges++;
+    });
+    if (circBridges) log('§CIRC_SPINE_BRIDGE bridged=' + circBridges);
 
     // ── E4: escape — the existing nonRoomDoors detection becomes an N-EXIT node (free fire-escape
     // target); connect the nearest room-or-circ node on that storey (real distance, not invented).
