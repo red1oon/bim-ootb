@@ -188,7 +188,12 @@
       "t.bbox_x bx, t.bbox_y by_, t.bbox_z bz " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid");
     var by = {};
-    els.forEach(function (e) { if (e.s == null) return; (by[e.s] = by[e.s] || []).push(e); });
+    // §STOREY-UNKNOWN-EXCLUDE (found chasing SampleCastle ELEC X-ray shot, 2026-07-13): 'Unknown' is a
+    // data-extraction artifact (elements — mostly IfcBuildingElementPart sub-parts — whose storey inherit
+    // from a parent failed), not a real floor. Grouping it in here synthesizes a fake storey (bogus median
+    // Z + huge bogus footprint from scattered unrelated elements spanning multiple REAL floors), which
+    // place() then walks fixtures onto with no real wall to host-bind against — the drifting-fixture bug.
+    els.forEach(function (e) { if (e.s == null || e.s === 'Unknown') return; (by[e.s] = by[e.s] || []).push(e); });
     var storeys = [];
     Object.keys(by).forEach(function (s) {
       var g = by[s];
