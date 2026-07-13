@@ -3129,14 +3129,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
 
   // ── Pill rail (mobile-style, right edge) — Posted · Graph · Kanban · Install · Migrate (Odoo effects). ──
-  function _overlay(title, node) {
+  // onClose (optional, §BUGFIX 2026-07-13): callers that mount extra body-level chrome alongside `node`
+  // (POS lens's cart float panel + ⋯ dock — see pos_lens.js) pass a teardown so it fires on EVERY close
+  // path (✕ tap, back-gesture), not just their own explicit exit button. Unused callers are unaffected.
+  function _overlay(title, node, onClose) {
     _injectPostedCSS(); _injectPillCSS();
     var prev = $('posted-overlay'); if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
     var ov = el('div'); ov.id = 'posted-overlay';
     var hd = el('div', 'posted-ov-hd', title);
     var x = el('span', 'posted-ov-x', '✕');
     var unbind = window.AcctsPosted.bindBack(close);
-    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); }
+    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); if (typeof onClose === 'function') { try { onClose(); } catch (e) {} } }
     x.addEventListener('click', close); hd.appendChild(x);
     ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
   }
