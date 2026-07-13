@@ -3465,10 +3465,13 @@ async function _discWalkOne(disc, ctx, opts) {
     Object.keys(window.__dwWalks || {}).forEach(function (d2) {
       if (d2 !== disc) avoid = avoid.concat(window.__dwWalks[d2] || []);
     });
-    var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { schedule: true, geoDb: gdb || undefined, avoid: avoid });
+    // §SPACE-GATE (FUNCTIONAL_SPACES_ENSEMBLE.md 2026-07-13): the scene half of the gate's
+    // measured z-envelope — computed here because only the caller has the loaded meshes.
+    var sceneEnv = _dwSceneEnvelope();
+    var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { schedule: true, geoDb: gdb || undefined, avoid: avoid, sceneEnv: sceneEnv });
     if (w.refused || !w.placed) {
       console.log('§SCHED-FALLBACK ' + disc + ' schedule/measured-band yielded 0 (' + (w.reason || 'no placements') + ') → legacy walk (pre-flip behaviour, unchanged)');
-      w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { geoDb: gdb || undefined });
+      w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { geoDb: gdb || undefined, sceneEnv: sceneEnv });
     }
     if (gdb) { try { gdb.close(); } catch (e2) { } }
     bdb.close();
@@ -3540,6 +3543,33 @@ async function _discWalkOne(disc, ctx, opts) {
   } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); return { refused: true, reason: 'error: ' + (e && e.message), placed: 0 }; }
 }
 
+// §SPACE-GATE scene envelope (FUNCTIONAL_SPACES_ENSEMBLE.md 2026-07-13, spec revision 1): the real
+// structural z-extent of the LOADED scene — the SAME world-space Box3 sweep witness_dw_storey_band.js
+// measures structZmax with (non-fixture meshes only; walked-fixture meshes excluded via their op-log
+// _dw/_rw tags + the dwRoot group). Passed to dwWalk as opts.sceneEnv so spaceGate's envelope is the
+// UNION of this and the DB element-center extremes — the DB half alone under-reaches a roof-top mount
+// (SampleCastle dak 13.24 vs max center 13.012), the scene half alone is empty before meshes stream in
+// (Terminal). Returns null when no structural mesh is loaded — the gate then relies on DB centers.
+function _dwSceneEnvelope() {
+  try {
+    var g = window.Bonsai && window.Bonsai.group && window.Bonsai.group(); if (!g) return null;
+    var fixtureOpIds = {};
+    var O = window.Bonsai.oplog;
+    if (O && O._geomOps) O._geomOps().forEach(function (o) {
+      if (o.op_type === 'GEOM_INSERT' && o.parameters && (o.parameters._dw != null || (o.parameters._rw && o.parameters._rw.fixture === true))) fixtureOpIds[o.id] = 1;
+    });
+    var zmin = Infinity, zmax = -Infinity, n = 0;
+    g.children.forEach(function (o) {
+      if (!o.isMesh || (o.userData && (o.userData.dwRoot || fixtureOpIds[o.userData.featureId]))) return;
+      var b = new THREE.Box3().setFromObject(o);
+      if (!isFinite(b.min.z) || !isFinite(b.max.z)) return;
+      if (b.min.z < zmin) zmin = b.min.z;
+      if (b.max.z > zmax) zmax = b.max.z;
+      n++;
+    });
+    return n ? { zmin: zmin, zmax: zmax, n: n } : null;
+  } catch (e) { console.warn('§DW-SPACEGATE sceneEnv failed — gate falls back to DB centers: ' + (e && e.message)); return null; }
+}
 // DiscWalker 3D render — markers for a walked discipline live in a dedicated child group of the editable
 // group, keyed by disc so a re-walk replaces cleanly. GREEN placements, ORANGE if the gate yielded them.
 window.__dwWalks = window.__dwWalks || {};   // disc -> placements (for the cross-disc gate re-fold)

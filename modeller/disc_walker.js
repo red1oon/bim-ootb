@@ -1983,6 +1983,105 @@
     return { yields: yields, residual: residual, iterations: it, floor: floor, order: ord };
   }
 
+  // ── §SPACE-GATE — no-MEP-outside-space refuse gate (post-placement sanity gate) ──────
+  // Implementing prompts/FUNCTIONAL_SPACES_ENSEMBLE.md (bim-compiler) §SPACE-GATE 2026-07-13 —
+  // Witness: W-DW-SPACE-GATE. ONE shared function every dwWalk placement path (schedule /
+  // measured-band §NOSPACES / legacy) routes through AFTER hostBind()/placeMeasured()/
+  // placeSchedule() finalize a placement and BEFORE it reaches the commit path — a REFUSE gate
+  // on the symptom (a whole stratum floating above/below all real structure, e.g. SampleHouse
+  // "Roof" z=4.11 vs real top 3.475; HHS "Ceiling Level 02" z=11.01 vs 10.789), NOT a new
+  // placement-generation signal. BOUNDARY (settled, project_room_injection_split_decision
+  // 2026-07-10): spacesOf() keeps excluding compiled RM_/≈ rows from GENERATING placements;
+  // this gate may read them only to REFUSE an already-computed placement — containment-check
+  // use is deliberately weaker than placement-driving use.
+  // Two measured containment signals, precedence room → envelope, refuse only when BOTH fail:
+  //  (1) room-level (precise, rescue-only): (x,y,z) inside ANY room AABB (center±size/2,
+  //      inclusive, no invented pad) — elements_meta IfcSpace ∪ spatial_structure IfcSpace
+  //      INCLUDING compiled rows. Same interval primitive as hostBind's z-band test, 3 axes.
+  //  (2) structural Z-envelope (coarse, always available): z within [min,max] of element
+  //      CENTERS (elements_meta≠IfcSpace ⋈ element_transforms). Centers, NOT bbox tops: the
+  //      shipped bbox_z carries the local-axis defect (SampleHouse rotated roof members claim
+  //      ztop=4.503 vs real scene top 3.475 — a bbox-top envelope would PASS the bad 4.11
+  //      stratum). A fixture above every real element's measured center is above the
+  //      building's real fabric. Verified fleet-wide against wdwsb_FLEET_AFTER.log 2026-07-12:
+  //      catches both known-bad strata, keeps every legit stratum (worst margin HHS 9.56 vs 10.645).
+  // Refusals are REMOVED from the committed set, returned in .refusedList, §-logged per
+  // stratum — never silently dropped, never silently kept. opts.noSpaceGate=true = escape
+  // hatch (same pattern as noHostBind). No rooms AND no envelope → honest no-op (cannot
+  // refuse without a measured bound).
+  function _gateRooms(bdb) {
+    var out = _rows(bdb, "SELECT t.center_x cx, t.center_y cy, t.center_z cz, COALESCE(t.bbox_x,0) bx, " +
+      "COALESCE(t.bbox_y,0) by_, COALESCE(t.bbox_z,0) bz FROM elements_meta m JOIN element_transforms t " +
+      "ON m.guid=t.guid WHERE m.ifc_class='IfcSpace'");
+    if (_rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'").length) {
+      out = out.concat(_rows(bdb, "SELECT center_x cx, center_y cy, center_z cz, COALESCE(size_x,0) bx, " +
+        "COALESCE(size_y,0) by_, COALESCE(size_z,0) bz FROM spatial_structure WHERE type='IfcSpace'"));
+    }
+    // a room with no measured height is a plane — it cannot contain a point, drop it from the gate set
+    return out.filter(function (s) { return s.bx > 0.1 && s.by_ > 0.1 && s.bz > 0.1; })
+      .map(function (s) { return [s.cx - s.bx / 2, s.cx + s.bx / 2, s.cy - s.by_ / 2, s.cy + s.by_ / 2, s.cz - s.bz / 2, s.cz + s.bz / 2]; });
+  }
+  // Effective envelope = UNION of two real measurements (spec revision 1, 2026-07-13):
+  //  (a) DB element-CENTER extremes (always available; centers are immune to the bbox_z local-axis
+  //      defect but under-reach a roof-top mount — SampleCastle's legit dak stratum sits at 13.24
+  //      vs max center 13.012, real top 13.356);
+  //  (b) caller-passed SCENE structural extremes (opts.sceneEnv from modeller.html
+  //      _dwSceneEnvelope() — the same world-space Box3 sweep the storey-band witness measures;
+  //      absent/empty scene → null, e.g. Terminal before its meshes stream in).
+  // max/min of the two can only KEEP more than either alone — conservative, both bounds measured.
+  function _gateEnvelope(bdb, sceneEnv) {
+    var r = _rows(bdb, "SELECT MAX(t.center_z) mx, MIN(t.center_z) mn, COUNT(*) n FROM elements_meta m " +
+      "JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class<>'IfcSpace'")[0];
+    var db = (r && r.n >= 2 && r.mx != null) ? { zmax: r.mx, zmin: r.mn } : null;
+    var sc = (sceneEnv && sceneEnv.n > 0 && isFinite(sceneEnv.zmax) && isFinite(sceneEnv.zmin))
+      ? { zmax: sceneEnv.zmax, zmin: sceneEnv.zmin } : null;
+    if (!db && !sc) return null;
+    if (!db) return { zmax: sc.zmax, zmin: sc.zmin, src: 'scene' };
+    if (!sc) return { zmax: db.zmax, zmin: db.zmin, src: 'db-centers' };
+    return { zmax: Math.max(db.zmax, sc.zmax), zmin: Math.min(db.zmin, sc.zmin), src: 'union' };
+  }
+  function _spaceContains(p, rooms, env) {
+    for (var i = 0; i < rooms.length; i++) {
+      var b = rooms[i];
+      if (p.x >= b[0] && p.x <= b[1] && p.y >= b[2] && p.y <= b[3] && p.z >= b[4] && p.z <= b[5]) return 'room';
+    }
+    if (env && p.z >= env.zmin && p.z <= env.zmax) return 'envelope';
+    return null;
+  }
+  function spaceGate(placements, bdb, disc, bldg, opts) {
+    if (opts && opts.noSpaceGate) return { kept: placements, refusedList: [], skipped: true };
+    if (!placements || !placements.length) return { kept: placements || [], refusedList: [] };
+    var rooms = _gateRooms(bdb), env = _gateEnvelope(bdb, opts && opts.sceneEnv);
+    if (!rooms.length && !env) {
+      console.log(TAG + ' §DW-SPACEGATE disc=' + disc + ' bldg=' + bldg + ' NO-OP (no rooms, no envelope — nothing measured to refuse against)');
+      return { kept: placements, refusedList: [], rooms: 0, env: null };
+    }
+    var kept = [], refused = [], via = { room: 0, envelope: 0 };
+    placements.forEach(function (p) {
+      var v = _spaceContains(p, rooms, env);
+      if (v) { via[v]++; kept.push(p); } else { p.spaceRefused = true; refused.push(p); }
+    });
+    var envTxt = env ? '[' + env.zmin.toFixed(3) + ',' + env.zmax.toFixed(3) + ']/' + env.src : 'none';
+    console.log(TAG + ' §DW-SPACEGATE disc=' + disc + ' bldg=' + bldg + ' checked=' + placements.length +
+      ' kept=' + kept.length + ' refused=' + refused.length + ' via room=' + via.room + ' env=' + via.envelope +
+      ' rooms=' + rooms.length + ' envZ=' + envTxt);
+    if (refused.length) {                                    // stratified refuse log — pooled numbers hide subgroup breaks
+      var strata = {};
+      refused.forEach(function (p) {
+        var k = (p.storey || '?') + '|' + (p.ifc_class || '?') + '|' + (p.prov || '?');
+        var s = (strata[k] = strata[k] || { n: 0, z0: Infinity, z1: -Infinity });
+        s.n++; if (p.z < s.z0) s.z0 = p.z; if (p.z > s.z1) s.z1 = p.z;
+      });
+      Object.keys(strata).sort().forEach(function (k) {
+        var s = strata[k], parts = k.split('|');
+        console.log(TAG + ' §DW-SPACEGATE-REFUSE bldg=' + bldg + ' storey="' + parts[0] + '" cls=' + parts[1] +
+          ' prov=' + parts[2] + ' n=' + s.n + ' z=[' + s.z0.toFixed(2) + ',' + s.z1.toFixed(2) + '] envZ=' + envTxt +
+          ' — outside every room AABB AND outside the structural z-envelope (refused, not committed)');
+      });
+    }
+    return { kept: kept, refusedList: refused, rooms: rooms.length, env: env, via: via };
+  }
+
   // ── WALK (the disc-node onWalk entry point) ─────────────────────────────────────────
   // opts.shims (optional) = array of host-bind percepts from disc_patterns.db `_shim_attributes` (physically
   // library/ERP.db until the rename slice lands), or any {product_value, host_ifc_class, mount,
@@ -2092,23 +2191,31 @@
           });
           mPlaced = mOut;
         } else mFloat = mPlaced.length;
+        var mGate = spaceGate(mPlaced, bdb, disc, buildingName, opts);   // §SPACE-GATE — before commit, after hostBind
+        mPlaced = mGate.kept;
         var mChains = route(disc, bdb), mSrc = routeChains(disc, bdb);
         var mRefN = Object.keys(pm.refused).reduce(function (a, k) { return a + pm.refused[k]; }, 0);
         console.log(TAG + ' §WALK-NOSPACES disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
           ' zones=' + pm.zones + ' hostBound=' + mBound + ' floats=' + mFloat + ' lod400Refused=' + mRefN +
+          ' spaceGateRefused=' + mGate.refusedList.length +
           (Object.keys(pm.refused).length ? ' [' + Object.keys(pm.refused).map(function (k) { return k + '×' + pm.refused[k]; }).join(' ') + ']' : ''));
         return { disc: disc, refused: false, mode: 'measured-band', placed: mPlaced.length, placements: mPlaced,
           measured: { zones: pm.zones, hostBound: mBound, floats: mFloat, lod400Refused: pm.refused },
+          spaceGate: { refused: mGate.refusedList.length, refusedList: mGate.refusedList, rooms: mGate.rooms, env: mGate.env },
           chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0 };
       }
+      var sGate = spaceGate(ps.placements, bdb, disc, buildingName, opts);   // §SPACE-GATE — before commit
+      ps.placements = sGate.kept;
       var schains = route(disc, bdb), src2 = routeChains(disc, bdb);
       var refusedN = Object.keys(ps.refused).reduce(function (a, k) { return a + ps.refused[k]; }, 0);
       console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' placed=' + ps.placements.length +
         ' spaces=' + ps.spacesUsed + '/' + ps.spaces + ' lod400Refused=' + refusedN +
+        ' spaceGateRefused=' + sGate.refusedList.length +
         (Object.keys(ps.refused).length ? ' [' + Object.keys(ps.refused).map(function (k) { return k + '×' + ps.refused[k]; }).join(' ') + ']' : '') +
         ' skippedSpaces=' + ps.skippedSpaces.length);
       return { disc: disc, refused: false, placed: ps.placements.length, placements: ps.placements,
         schedule: { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused },
+        spaceGate: { refused: sGate.refusedList.length, refusedList: sGate.refusedList, rooms: sGate.rooms, env: sGate.env },
         chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0 };
     }
     var reps = repRules(disc);
@@ -2191,6 +2298,10 @@
           host: _agg(hostKeys), mount: _agg(mountKeys), percept: _agg(perceptKeys), byClass: byClassInfo };
       }
     }
+    // §SPACE-GATE — after hostBind finalizes positions, BEFORE routePattern anchors on the placements
+    // and before the caller commits them (refused fixtures must not seed pattern segments either).
+    var lGate = spaceGate(placements, bdb, disc, buildingName, opts);
+    placements = lGate.kept;
     var chains = route(disc, bdb);
     var rc = routeChains(disc, bdb);                         // LIVE nn-chain geometry (real on MEP-rich bldgs, 0 on residents)
     // §CAMPAIGN M1 bridge: routeChains legitimately returns 0 on an ARC-only building (no real MEP elements
@@ -2208,6 +2319,7 @@
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
     return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo,
+      spaceGate: { refused: lGate.refusedList.length, refusedList: lGate.refusedList, rooms: lGate.rooms, env: lGate.env },
       chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length, patternBridge: patternInfo };
   }
 
@@ -2262,6 +2374,7 @@
     route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
+    spaceGate: spaceGate, _spaceContains: _spaceContains, _gateRooms: _gateRooms, _gateEnvelope: _gateEnvelope,
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     _trueMidpoint: _trueMidpoint,
