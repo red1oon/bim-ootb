@@ -1,0 +1,280 @@
+/**
+ * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
+ * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+ * SPDX-License-Identifier: MIT
+ *
+ * hallway_backbone.js — §HALLWAY-BACKBONE (2026-07-14, bim-compiler
+ * prompts/FUNCTIONAL_SPACE_MGMT_NEXT_SESSION.md). Compiles a real, door+wall-grounded corridor
+ * spine per storey from the SAME building db common/room_graph.js already reads. Verb chain
+ * (matches the spec doc's step numbering 1:1):
+ *   1. doorEdge(door)        — wall-run-axis from the door's OWN bbox aspect ratio.
+ *   2. correlateDoorEdges()  — bucket-matrix keyed by (storey, axis, roundedRunCoord).
+ *   3. joinDoorways()        — buckets with >=3 aligned doors = hallway-candidate.
+ *   4. growToWall()          — extend the bucket's span until a REAL perpendicular wall caps it.
+ *   5. terminateAtStair()    — an open (uncapped) end near a stair is a connecting space, not a
+ *                              dead-end. Reuses room_graph.js's getStairGroups() — WalkerDoctrine
+ *                              §10, the ONE trusted stair extractor, not a fresh ad-hoc query.
+ *   6. walkBackbone()        — union-find merge of buckets whose grown spans cross (T-junction),
+ *                              then an ordered walk of each resulting chain (serves BOTH path
+ *                              routing/escape-route AND a flythrough camera path from the same
+ *                              structure — user's explicit ask, one structure two consumers).
+ *
+ * WHY: room_graph.js's shortestPath() currently rescues a room's lone door onto ONE
+ * per-storey `CIRC::<storey>` blob (see room_graph.js buildGraph() E2) and its _legalizePath()
+ * detour only re-routes a chord that CROSSES A WALL — a chord that stays in open space but cuts
+ * diagonally across a real corridor (not hugging its centerline) is "legal" and never detoured.
+ * Both are why a rendered room-to-room path can visibly float through open space instead of
+ * following the real hallway/stairway route (user-reported, 2026-07-14). This module's spine
+ * nodes are meant to REPLACE that single blob with real, ordered waypoints along the actual
+ * corridor, so shortestPath()'s own Dijkstra naturally routes through them — not just a rendering
+ * patch. escapeRoute() reuses the exact same graph, so it inherits the fix for free, no separate
+ * feature.
+ *
+ * DESIGN PRINCIPLE (user, 2026-07-14): the bucket/array-set is deliberately generic (storey, axis,
+ * runCoord) — not hard-wired to doors only. Any element that corroborates a space's identity
+ * (railings, stairs, walls, doors) can roll into the same structure later; this file's `doorEdge`
+ * is one instance of an "edge contributor," not the only one that will ever exist.
+ *
+ * Caller contract: same dual-mode `dbQuery(sql)` -> array-of-row-arrays convention as
+ * room_graph.js — DB/file I/O-free, runs identically in-browser and in a node witness script.
+ */
+(function () {
+  'use strict';
+  var ROOT = (typeof window !== 'undefined') ? window : {};
+  var RoomGraph = (typeof module !== 'undefined' && module.exports) ? require('./room_graph.js') : ROOT.RoomGraph;
+
+  // §RUN_COORD_TOL: bucket-rounding width for "these doors share the same wall run." Grounded in
+  // real wall-thickness scale (typical interior wall 0.15-0.3m; this is generous slack for
+  // wall-centerline-vs-face offset across a building's doors, not fitted to one building's data).
+  var RUN_COORD_TOL = 0.6;
+  var MIN_DOORS_FOR_HALLWAY = 3;
+  // §STAIR_CLEARANCE: movement-clearance tolerance, per user's own steer ("stairs movement space
+  // can be of say 2 meter height flow onto the stairs contour").
+  var STAIR_CLEARANCE = 2.0;
+  // Slack added to a wall's own half-thickness when testing whether it actually crosses a
+  // corridor's runCoord line (real walls are rasterized transforms, not infinitely thin planes).
+  var WALL_CROSS_SLACK = 0.3;
+
+  // ── 1. doorEdge ──────────────────────────────────────────────────────────────────────────────
+  // d: {guid, name, storey, cx, cy, bx, by}. rotation_z is NOT used — measured across this
+  // extracted data (2026-07-14 scratch session) as always 0, unusable as an axis signal. The
+  // door's OWN bbox aspect ratio is the real, measured signal instead: a door wide in X sits in a
+  // wall that runs along X (cluster candidates share Y); wide in Y sits in a Y-running wall.
+  function doorEdge(d) {
+    var wideX = d.bx >= d.by;
+    return wideX
+      ? { guid: d.guid, name: d.name, storey: d.storey, axis: 'x', runCoord: d.cy, alongCoord: d.cx, cx: d.cx, cy: d.cy }
+      : { guid: d.guid, name: d.name, storey: d.storey, axis: 'y', runCoord: d.cx, alongCoord: d.cy, cx: d.cx, cy: d.cy };
+  }
+
+  // ── 2. correlateDoorEdges ────────────────────────────────────────────────────────────────────
+  function correlateDoorEdges(edges) {
+    var buckets = {}, order = [];
+    edges.forEach(function (e) {
+      var rounded = Math.round(e.runCoord / RUN_COORD_TOL) * RUN_COORD_TOL;
+      var key = e.storey + '|' + e.axis + '|' + rounded.toFixed(2);
+      if (!buckets[key]) {
+        buckets[key] = { key: key, storey: e.storey, axis: e.axis, runCoord: rounded, doors: [] };
+        order.push(key);
+      }
+      buckets[key].doors.push(e);
+    });
+    return order.map(function (k) { return buckets[k]; });
+  }
+
+  // ── 3. joinDoorways ──────────────────────────────────────────────────────────────────────────
+  function joinDoorways(buckets) {
+    return buckets.filter(function (b) { return b.doors.length >= MIN_DOORS_FOR_HALLWAY; });
+  }
+
+  // ── 4. growToWall ────────────────────────────────────────────────────────────────────────────
+  // walls: array of {cx,cy,bx,by} (real IfcWall% only — columns/beams deliberately excluded per
+  // user, "ignore supporting columns/beams for convenience"). A capping wall runs PERPENDICULAR to
+  // this bucket's axis (a cross-wall stopping the corridor) — a wall running the SAME way as the
+  // bucket is more of the corridor's own side wall, not a cap.
+  function growToWall(bucket, walls) {
+    var alongs = bucket.doors.map(function (d) { return d.alongCoord; });
+    var lo = Math.min.apply(null, alongs), hi = Math.max.apply(null, alongs);
+    var rc = bucket.runCoord;
+    var loCap = null, hiCap = null;
+    walls.forEach(function (w) {
+      var wWideX = w.bx >= w.by;
+      var wAxis = wWideX ? 'x' : 'y';
+      if (wAxis === bucket.axis) return; // must run the OTHER way to cap this corridor
+      var alongC = (bucket.axis === 'x') ? w.cx : w.cy;
+      var perpLo = (bucket.axis === 'x') ? (w.cy - w.by / 2) : (w.cx - w.bx / 2);
+      var perpHi = (bucket.axis === 'x') ? (w.cy + w.by / 2) : (w.cx + w.bx / 2);
+      if (rc < perpLo - WALL_CROSS_SLACK || rc > perpHi + WALL_CROSS_SLACK) return; // doesn't cross this line
+      if (alongC <= lo && (loCap === null || alongC > loCap)) loCap = alongC;
+      if (alongC >= hi && (hiCap === null || alongC < hiCap)) hiCap = alongC;
+    });
+    bucket.span = { lo: (loCap !== null) ? loCap : lo, hi: (hiCap !== null) ? hiCap : hi };
+    bucket.openLo = (loCap === null);
+    bucket.openHi = (hiCap === null);
+    return bucket;
+  }
+
+  // Point-to-AABB distance (same convention as room_graph.js's rectDist): 0 if inside, else
+  // Euclidean distance to the nearest edge/corner.
+  function _rectDist(x0, y0, x1, y1, px, py) {
+    var dx = Math.max(x0 - px, 0, px - x1);
+    var dy = Math.max(y0 - py, 0, py - y1);
+    return Math.hypot(dx, dy);
+  }
+
+  // ── 5. terminateAtStair ──────────────────────────────────────────────────────────────────────
+  // stairGroups: the `groups` map from RoomGraph.getStairGroups(dbQuery, log) — the ONE trusted
+  // stair extractor (WalkerDoctrine §10), reused here rather than a fresh ad-hoc IfcStair% query.
+  function terminateAtStair(bucket, stairGroups, storeyOf) {
+    var rc = bucket.runCoord;
+    function endPoint(along) {
+      return (bucket.axis === 'x') ? { x: along, y: rc } : { x: rc, y: along };
+    }
+    function nearestStair(pt) {
+      var best = null, bestD = Infinity;
+      Object.keys(stairGroups).forEach(function (key) {
+        var gr = stairGroups[key];
+        if (gr.xlo === Infinity) return; // no XY footprint captured (defensive, shouldn't happen)
+        var d = _rectDist(gr.xlo, gr.ylo, gr.xhi, gr.yhi, pt.x, pt.y);
+        if (d < bestD) { bestD = d; best = key; }
+      });
+      return { key: best, dist: bestD };
+    }
+    if (bucket.openLo) {
+      var r = nearestStair(endPoint(bucket.span.lo));
+      bucket.stairLo = (r.dist <= STAIR_CLEARANCE) ? r.key : null;
+      bucket.stairLoDist = r.dist;
+    }
+    if (bucket.openHi) {
+      var r2 = nearestStair(endPoint(bucket.span.hi));
+      bucket.stairHi = (r2.dist <= STAIR_CLEARANCE) ? r2.key : null;
+      bucket.stairHiDist = r2.dist;
+    }
+    return bucket;
+  }
+
+  // ── 6. walkBackbone ──────────────────────────────────────────────────────────────────────────
+  // Union-find merge of buckets whose grown spans CROSS (T-junction): an x-run bucket's runCoord
+  // falls inside a y-run bucket's span, AND that y-run bucket's runCoord falls inside the x-run
+  // bucket's span. Returns { chains: [[bucket,...ordered...], ...] } — each chain is an ORDERED
+  // path (not just a graph), per the user's explicit ask: the same structure feeds both path
+  // routing (door-to-door must have a clear corridor-hugging route) and a flythrough camera path.
+  function walkBackbone(buckets) {
+    var n = buckets.length;
+    var parent = buckets.map(function (_, i) { return i; });
+    function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+    function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+
+    var crossings = []; // {a,b,x,y} — real crossing points, kept for ordering + rendering
+    for (var i = 0; i < n; i++) {
+      for (var j = i + 1; j < n; j++) {
+        var A = buckets[i], B = buckets[j];
+        if (A.storey !== B.storey || A.axis === B.axis) continue;
+        var xB = (A.axis === 'x') ? B.runCoord : A.runCoord; // the shared crossing point
+        var yB = (A.axis === 'x') ? A.runCoord : B.runCoord;
+        var aAlong = (A.axis === 'x') ? xB : yB;
+        var bAlong = (B.axis === 'x') ? xB : yB;
+        var aIn = aAlong >= A.span.lo - WALL_CROSS_SLACK && aAlong <= A.span.hi + WALL_CROSS_SLACK;
+        var bIn = bAlong >= B.span.lo - WALL_CROSS_SLACK && bAlong <= B.span.hi + WALL_CROSS_SLACK;
+        if (aIn && bIn) {
+          union(i, j);
+          crossings.push({ a: i, b: j, x: xB, y: yB });
+        }
+      }
+    }
+
+    var groups = {};
+    for (var k = 0; k < n; k++) { var r = find(k); (groups[r] = groups[r] || []).push(k); }
+
+    var chains = Object.keys(groups).map(function (r) {
+      var idxs = groups[r];
+      // Order the chain by a simple traversal: start at a bucket with only one crossing (a real
+      // end), walk crossing-to-crossing. Falls back to insertion order if the chain has no clean
+      // single-degree start (e.g. a loop) — never invents a position, just doesn't over-claim order.
+      var memberSet = {}; idxs.forEach(function (ix) { memberSet[ix] = true; });
+      var localCross = crossings.filter(function (c) { return memberSet[c.a] && memberSet[c.b]; });
+      var degree = {}; idxs.forEach(function (ix) { degree[ix] = 0; });
+      localCross.forEach(function (c) { degree[c.a]++; degree[c.b]++; });
+      var starts = idxs.filter(function (ix) { return degree[ix] <= 1; });
+      var startIdx = starts.length ? starts[0] : idxs[0];
+      var visited = {}, ordered = [], cur = startIdx;
+      while (cur !== undefined && !visited[cur]) {
+        visited[cur] = true; ordered.push(cur);
+        var next = localCross.find(function (c) { return (c.a === cur || c.b === cur) && !visited[c.a === cur ? c.b : c.a]; });
+        cur = next ? (next.a === cur ? next.b : next.a) : undefined;
+      }
+      idxs.forEach(function (ix) { if (!visited[ix]) ordered.push(ix); }); // stray members (loop remnants), appended not dropped
+      return {
+        buckets: ordered.map(function (ix) { return buckets[ix]; }),
+        crossings: localCross,
+        storey: buckets[idxs[0]].storey
+      };
+    });
+    return { chains: chains, crossings: crossings };
+  }
+
+  // ── Orchestrator ─────────────────────────────────────────────────────────────────────────────
+  // dbQuery: same convention as room_graph.js. opts.log optional. Returns
+  // { buckets, joined, chains, crossings, stats }.
+  function buildBackbone(dbQuery, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+
+    var doorRows = dbQuery("SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, " +
+      "COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by2 " +
+      "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC' AND t.center_x IS NOT NULL") || [];
+    var wallRows = dbQuery("SELECT m.storey, t.center_x, t.center_y, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by2 " +
+      "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE m.ifc_class LIKE 'IfcWall%' AND m.discipline='ARC' AND t.center_x IS NOT NULL") || [];
+
+    var edges = doorRows.map(function (d) {
+      return doorEdge({ guid: d[0], name: d[1], storey: d[2] || '', cx: d[3], cy: d[4], bx: d[5], by: d[6] });
+    });
+    var wallsByStorey = {};
+    wallRows.forEach(function (w) {
+      var st = w[0] || '';
+      (wallsByStorey[st] = wallsByStorey[st] || []).push({ cx: w[1], cy: w[2], bx: w[3], by: w[4] });
+    });
+
+    var buckets = correlateDoorEdges(edges);
+    var joined = joinDoorways(buckets);
+    joined.forEach(function (b) { growToWall(b, wallsByStorey[b.storey] || []); });
+
+    var stairGroupsResult = RoomGraph ? RoomGraph.getStairGroups(dbQuery, log) : { groups: {} };
+    joined.forEach(function (b) { terminateAtStair(b, stairGroupsResult.groups); });
+
+    var byStorey = {};
+    joined.forEach(function (b) { (byStorey[b.storey] = byStorey[b.storey] || []).push(b); });
+    var allChains = [], allCrossings = [];
+    Object.keys(byStorey).forEach(function (st) {
+      var r = walkBackbone(byStorey[st]);
+      allChains = allChains.concat(r.chains);
+      allCrossings = allCrossings.concat(r.crossings);
+    });
+
+    var openEnds = 0, stairTerminated = 0;
+    joined.forEach(function (b) {
+      if (b.openLo) { openEnds++; if (b.stairLo) stairTerminated++; }
+      if (b.openHi) { openEnds++; if (b.stairHi) stairTerminated++; }
+    });
+    var stats = {
+      doors: doorRows.length, walls: wallRows.length, buckets: buckets.length,
+      joined: joined.length, chains: allChains.length, crossings: allCrossings.length,
+      openEnds: openEnds, stairTerminated: stairTerminated, stairGroups: stairGroupsResult.order.length
+    };
+    log('§HALLWAY_BACKBONE buckets=' + stats.buckets + ' joined=' + stats.joined + ' chains=' + stats.chains +
+      ' crossings=' + stats.crossings + ' openEnds=' + stats.openEnds + ' stairTerminated=' + stats.stairTerminated +
+      ' stairGroups=' + stats.stairGroups);
+
+    return { buckets: buckets, joined: joined, chains: allChains, crossings: allCrossings, stats: stats };
+  }
+
+  var API = {
+    doorEdge: doorEdge, correlateDoorEdges: correlateDoorEdges, joinDoorways: joinDoorways,
+    growToWall: growToWall, terminateAtStair: terminateAtStair, walkBackbone: walkBackbone,
+    buildBackbone: buildBackbone
+  };
+  ROOT.HallwayBackbone = API;
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
+})();
