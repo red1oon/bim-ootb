@@ -486,6 +486,22 @@
     return null;
   }
 
+  // §SUSPECT-ELONGATED (compile_rooms.py port, 2026-07-13): a wall-bounded or door-partitioned
+  // pocket can still be an absurdly long undivided span (real walls/doors on the enclosing sides,
+  // nothing dividing the middle). Threshold measured, not eyeballed: HHS's own 105 door-partitioned
+  // rooms had a clean bimodal aspect spread — 98 climb smoothly 1.00->7.50, then a hard gap to 7
+  // outliers at 13.64->37.25 (R9 = 13.64, the smallest of the 7). SUSPECT_ELONGATED_ASPECT_MIN =
+  // midpoint of that gap: (7.50 + 13.64) / 2 = 10.57. Runs against BOTH floodRooms and
+  // partitionByDoors (a real HHS flood-fill room also came out 24.2m x 2.0m, aspect 12.1, proving
+  // wall-bounded rooms aren't immune either). A flagged room still compiles (never invented away) —
+  // same §ROOM-FORM treatment as SUSPECT_OPEN/SUSPECT_NO_DOOR.
+  var SUSPECT_ELONGATED_ASPECT_MIN = 10.57;
+  function _isElongated(wx0, wy0, wx1, wy1) {
+    var spanX = wx1 - wx0, spanY = wy1 - wy0;
+    var aspect = Math.max(spanX, spanY) / Math.max(Math.min(spanX, spanY), 0.01);
+    return aspect > SUSPECT_ELONGATED_ASPECT_MIN;
+  }
+
   function floodRooms(walls, stairs, doors, doorWMed) {
     stairs = stairs || []; doors = doors || []; doorWMed = doorWMed || 0.0;
     var ext = _gridExtent(walls);
@@ -547,6 +563,7 @@
         for (c2 = 0; c2 < comp.length; c2++) inSet[comp[c2]] = 1;
         var openM = _openPerimeterM(comp, inSet, raw, dil, nx, ny, SEAL);
         var suspect = _classify(hasDoor, openM, doorWMed);
+        if (!suspect && _isElongated(wx0, wy0, wx1, wy1)) suspect = 'ELONGATED';
         var gr = _growRegion(comp, inSet, raw, dil, nx, ny, SEAL);
         var totalCells = comp.length + gr.added.length;
         var dec = _decomposeRegion(inSet, ny, gr.mni, gr.mxi, gr.mnj, gr.mxj, totalCells, !!suspect);
@@ -572,14 +589,58 @@
     return rooms;
   }
 
+  // §DOOR-PARTITION-EXT-EXCLUDE (compile_rooms.py port, 2026-07-13): returns ONLY the ext mask
+  // (reachable-from-border), unlike _floodExterior above which returns the final intersected
+  // enclosed set — kept separate so partitionByDoors can compute ext on the DILATED footprint but
+  // apply it against the RAW free cells (recovering the seal band), without touching floodRooms'
+  // already-working _floodExterior call.
+  function _exteriorMask(free, nx, ny) {
+    var ext = new Uint8Array(nx * ny);
+    var stack = [];
+    for (var i = 0; i < nx; i++) {
+      [0, ny - 1].forEach(function (j) {
+        var k = i * ny + j;
+        if (free[k] && !ext[k]) { ext[k] = 1; stack.push(k); }
+      });
+    }
+    for (var j = 0; j < ny; j++) {
+      [0, nx - 1].forEach(function (i) {
+        var k = i * ny + j;
+        if (free[k] && !ext[k]) { ext[k] = 1; stack.push(k); }
+      });
+    }
+    while (stack.length) {
+      var k0 = stack.pop();
+      var i0 = Math.floor(k0 / ny), j0 = k0 % ny;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+        var a = i0 + d[0], b = j0 + d[1];
+        if (a >= 0 && a < nx && b >= 0 && b < ny) {
+          var k = a * ny + b;
+          if (free[k] && !ext[k]) { ext[k] = 1; stack.push(k); }
+        }
+      });
+    }
+    return ext;
+  }
+
   function partitionByDoors(walls, doors, stairs, doorWMed) {
     if (!doors.length) return [];
     doorWMed = doorWMed || 0.0;
-    var ext = _gridExtent(walls);
-    var nx = ext.nx, ny = ext.ny, xs0 = ext.xs0, ys0 = ext.ys0;
-    var raw = _rasterizeWalls(walls, ext);
+    var extent = _gridExtent(walls);
+    var nx = extent.nx, ny = extent.ny, xs0 = extent.xs0, ys0 = extent.ys0;
+    var raw = _rasterizeWalls(walls, extent);
+    // §DOOR-PARTITION-EXT-EXCLUDE (real HHS finding: R9's own footprint sampled 93% exterior-
+    // reachable): the door-BFS must never claim exterior space as a room. ext determined on the
+    // dilated (sealed) footprint, applied against RAW free cells — the ext flood never reaches a
+    // raw-free/dilation-blocked cell, so the seal band is "given back" automatically.
+    var freeRaw = new Uint8Array(nx * ny);
+    for (var m0 = 0; m0 < nx * ny; m0++) freeRaw[m0] = raw[m0] ? 0 : 1;
+    var dil = SEAL > 0 ? _dilate(raw, nx, ny, SEAL) : raw;
+    var freeDil = new Uint8Array(nx * ny);
+    for (var m1 = 0; m1 < nx * ny; m1++) freeDil[m1] = dil[m1] ? 0 : 1;
+    var extMask = _exteriorMask(freeDil, nx, ny);
     var free = new Uint8Array(nx * ny);
-    for (var m = 0; m < nx * ny; m++) free[m] = raw[m] ? 0 : 1;
+    for (var m = 0; m < nx * ny; m++) free[m] = (freeRaw[m] && !extMask[m]) ? 1 : 0;
     var cz = walls.reduce(function (s, w) { return s + w[2]; }, 0) / walls.length;
     var bz = walls.reduce(function (s, w) { return s + w[5]; }, 0) / walls.length;
     var ix = function (x) { return Math.min(nx - 1, Math.max(0, Math.floor((x - xs0) / RES))); };
@@ -649,6 +710,7 @@
       var openM = _openPerimeterM(cells, inSet, raw, raw, nx, ny, 0);
       var hasDoor = doorAdjacent(wx0, wy0, wx1, wy1, doors);
       var suspect = _classify(hasDoor, openM, doorWMed);
+      if (!suspect && _isElongated(wx0, wy0, wx1, wy1)) suspect = 'ELONGATED';
       var dec = _decomposeRegion(inSet, ny, mni, mxi, mnj, mxj, cells.length, !!suspect);
       for (c2 = 0; c2 < cells.length; c2++) inSet[cells[c2]] = 0;
       var rects = [];
@@ -687,6 +749,11 @@
                                      // AABB counts as backing it (shared by merge + reject)
   var REJECT_ENCLOSURE = 0.25;      // enclosure < this => REJECT (not a room)
   var SUSPECT_OPEN_ENCLOSURE = 0.50; // enclosure < this (and >= REJECT_ENCLOSURE) => SUSPECT_OPEN
+  // §STAIRWELL-STACK (mirror of compile_rooms.py, user report 2026-07-12): a shaft's per-storey
+  // flight covers only ~0.22 of its pocket (under STAIR_OVERLAP_REJECT=0.35, which stays), but the
+  // STACK across storeys covers 1.30-2.23x vs 0.37 max for any legitimate room — measured gap.
+  var STAIRWELL_STACK_REJECT = 0.50;    // cumulative all-storey stair overlap >= this x area...
+  var STAIRWELL_STACK_MIN_LEVELS = 3;   // ...across >= this many distinct ~2m z-buckets => shaft
 
   // §R-MERGE/§R-REJECT: whole-building real wall list (ifc_class LIKE 'IfcWall%' only -- NOT the
   // wider WALL_LIKE raster set floodRooms uses -- with z). [cx,cy,cz,bx,by,bz] arrays.
@@ -696,6 +763,38 @@
       "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
       "WHERE m.ifc_class LIKE 'IfcWall%' AND m.discipline='ARC' AND t.center_x IS NOT NULL");
     return rows.map(function (r) { return [r.cx, r.cy, r.cz, r.bx, r.by2, r.bz]; });
+  }
+
+  // §STAIRWELL-STACK: whole-building stair/ramp footprints WITH z ([cx,cy,cz,bx,by]) — the
+  // vertical-stack test needs distinct z-levels, which the per-storey stairs list drops.
+  function allStairsZ(db) {
+    var cond = STAIR_LIKE.map(function (p) { return "m.ifc_class LIKE '" + p + "'"; }).join(' OR ');
+    var rows = _rows(db, "SELECT t.center_x cx,t.center_y cy,t.center_z cz," +
+      "COALESCE(t.bbox_x,0) bx,COALESCE(t.bbox_y,0) by2 " +
+      "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE (" + cond + ") AND m.discipline='ARC' AND t.center_x IS NOT NULL");
+    return rows.map(function (r) { return [r.cx, r.cy, r.cz, r.bx, r.by2]; });
+  }
+
+  // §STAIRWELL-STACK: drop pockets that are vertical stair shafts (see constants above).
+  function rejectStairwell(rooms, stairsZ) {
+    var out = [];
+    rooms.forEach(function (r) {
+      var bb = _roomBbox(r);
+      var x0 = bb[0], y0 = bb[1], x1 = bb[2], y1 = bb[3];
+      var area = Math.max(1e-6, (x1 - x0) * (y1 - y0));
+      var cum = 0, levels = {};
+      stairsZ.forEach(function (s) {
+        var ox = Math.max(0, Math.min(x1, s[0] + s[3] / 2) - Math.max(x0, s[0] - s[3] / 2));
+        var oy = Math.max(0, Math.min(y1, s[1] + s[4] / 2) - Math.max(y0, s[1] - s[4] / 2));
+        var o = ox * oy;
+        if (o > 0.01) { cum += o; levels[Math.round((s[2] || 0) / 2)] = 1; }
+      });
+      if (cum / area >= STAIRWELL_STACK_REJECT &&
+          Object.keys(levels).length >= STAIRWELL_STACK_MIN_LEVELS) return;
+      out.push(r);
+    });
+    return out;
   }
 
   // §R-MERGE: whole-building real door centers (with z) for the seam door-block test.
@@ -933,6 +1032,7 @@
     // §R-MERGE/§R-REJECT: whole-building wall/door lists (not the per-storey raster set).
     var allWallsRawList = allWallsRaw(db);
     var allDoorsRawList = allDoorsRaw(db);
+    var allStairsZList = allStairsZ(db);   // §STAIRWELL-STACK
     var mergedTotal = 0, rejectedTotal = 0;
 
     var allrooms = [], report = [], stZ = {};
@@ -960,6 +1060,7 @@
       var mergedN = preMergeN - rooms.length;
       var preRejectN = rooms.length;
       rooms = rejectRooms(rooms, allWallsRawList);
+      rooms = rejectStairwell(rooms, allStairsZList);   // §STAIRWELL-STACK, after R-REJECT
       var rejectedN = preRejectN - rooms.length;
       mergedTotal += mergedN; rejectedTotal += rejectedN;
       var rescued = rooms.filter(function (r) { return r.door_rescued; }).length;
@@ -986,9 +1087,46 @@
     var doorRescuedTotal = allrooms.filter(function (r) { return r.door_rescued; }).length;
     var doorPartitionTotal = allrooms.filter(function (r) { return r.door_partitioned; }).length;
     var suspectTotal = allrooms.filter(function (r) { return r.suspect; }).length;
+    _verifyNoOverlap(allrooms);
     return { report: report, rooms: allrooms, stZ: stZ, total: total, doorRescuedTotal: doorRescuedTotal,
       doorPartitionTotal: doorPartitionTotal, suspectTotal: suspectTotal,
       mergedTotal: mergedTotal, rejectedTotal: rejectedTotal };
+  }
+
+  // §NO-OVERLAP (compile_rooms.py port, 2026-07-13 — user request "rooms are stacked to each
+  // other, not overlapping"): permanent regression guard, informs like §PHASE0-HEALTH, never
+  // blocks. Verified 0 violations across 773 real rect rows in 6 buildings at the time this was
+  // added — both compile paths already guarantee disjointness by construction.
+  function _verifyNoOverlap(allrooms) {
+    var byStorey = {};
+    allrooms.forEach(function (r) { (byStorey[r.storey] = byStorey[r.storey] || []).push(r); });
+    var hits = 0;
+    Object.keys(byStorey).forEach(function (st) {
+      var rooms = byStorey[st];
+      for (var i = 0; i < rooms.length; i++) {
+        for (var j = i + 1; j < rooms.length; j++) {
+          var ri = rooms[i], rj = rooms[j];
+          if (ri.guid === rj.guid) continue;
+          (ri.rects || [ri]).forEach(function (a) {
+            var ax0 = a.cx - a.sx / 2, ax1 = a.cx + a.sx / 2;
+            var ay0 = a.cy - a.sy / 2, ay1 = a.cy + a.sy / 2;
+            (rj.rects || [rj]).forEach(function (b) {
+              var bx0 = b.cx - b.sx / 2, bx1 = b.cx + b.sx / 2;
+              var by0 = b.cy - b.sy / 2, by1 = b.cy + b.sy / 2;
+              var ox = Math.min(ax1, bx1) - Math.max(ax0, bx0);
+              var oy = Math.min(ay1, by1) - Math.max(ay0, by0);
+              if (ox > 0 && oy > 0 && ox * oy > 0.5) {
+                hits++;
+                console.log('  ⚠ §NO-OVERLAP VIOLATION storey=' + st + ' ' + ri.guid +
+                  ' vs ' + rj.guid + ' overlap=' + (ox * oy).toFixed(2) + 'm2');
+              }
+            });
+          });
+        }
+      }
+    });
+    if (!hits) console.log('§NO-OVERLAP: 0 cross-room overlaps (invariant holds)');
+    return hits;
   }
 
   // Persist a compileRooms() result into spatial_structure + rel_contained_in_space (the --write
@@ -1100,7 +1238,8 @@
     VERT_FACTOR: VERT_FACTOR, OPEN_PERIM_FACTOR: OPEN_PERIM_FACTOR,
     MERGE_GAP_TOL_FACTOR: MERGE_GAP_TOL_FACTOR, MERGE_SHARE_MIN: MERGE_SHARE_MIN,
     MERGE_WALL_COVER_MAX: MERGE_WALL_COVER_MAX, MERGE_DOOR_TOL: MERGE_DOOR_TOL, WALL_TOL: WALL_TOL,
-    REJECT_ENCLOSURE: REJECT_ENCLOSURE, SUSPECT_OPEN_ENCLOSURE: SUSPECT_OPEN_ENCLOSURE
+    REJECT_ENCLOSURE: REJECT_ENCLOSURE, SUSPECT_OPEN_ENCLOSURE: SUSPECT_OPEN_ENCLOSURE,
+    SUSPECT_ELONGATED_ASPECT_MIN: SUSPECT_ELONGATED_ASPECT_MIN
   };
   ROOT.RoomWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
