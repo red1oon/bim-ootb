@@ -667,6 +667,77 @@
     return { ok: true, parent: taskId, attr: col, groups: out, created: created };
   }
 
+  // ── §SE-6: persist authored schedule edits back to the shared IndexedDB building cache ──────────
+  // GAP THIS CLOSES: materializeDefault/assignElement/addDependency/moveTask/reparentTask/etc. all
+  // write straight to the in-memory sql.js `db` — but NOTHING saved that db back anywhere. Neither
+  // the ✎ Author wizard (which edits the SAME db as the main viewer, `APP.db`) nor the ↗ Editor tab
+  // (its OWN separate in-memory copy) survived a tab close: kernel_ops.js's own IDB persistence
+  // (`§KRN_PERSIST`) only fires on a signed `commitOp()` — schedule-table writes never go through it
+  // (kernel_ops mirroring is explicitly deferred, per the module header above). So a closed tab lost
+  // every authored phase/dependency/date — a "professional" editor that silently discards work.
+  // Fix: ONE shared debounced-persist helper (both UIs call this, not divergent copies), reusing the
+  // EXACT IDB-open pattern kernel_ops.js already proved correct — prefer `APP.openCacheDB()` (the
+  // app's single opener; kernel_ops.js's own comment documents a past bug where a raw
+  // `indexedDB.open('bim_ootb_cache', 1)` drifted behind scene.js's real version and silently never
+  // fired). Same cache store ('dbs'), same key (the building URL) `cachedFetch`/`_idbGetDb` already
+  // read from — so a reopened tab (Editor OR a fresh viewer load) picks up the edited bytes for free,
+  // no new read-path needed.
+  // openBuildingCache() — the ONE opener for 'bim_ootb_cache', usable from ANY surface. Prefers
+  // `APP.openCacheDB()` (scene.js's opener) when present so we share its exact handle/version. But the
+  // ↗ Editor tab is a standalone page that NEVER loads scene.js — if it's the FIRST surface to ever
+  // touch this IndexedDB in a fresh profile, a bare unversioned `indexedDB.open('bim_ootb_cache')`
+  // creates an empty v1 database with NO object stores (this was caught live: W-SCHED-PERSIST's first
+  // run FAILED with "no cache store" for exactly this reason). Fix: version-open at 2 with the SAME
+  // onupgradeneeded schema as scene.js A.openCacheDB (`dbs` + `timestamps` stores) so whichever
+  // surface opens it FIRST creates a schema fully compatible with the other.
+  function openBuildingCache() {
+    var g = (typeof window !== 'undefined') ? window : global;
+    if (g.APP && g.APP.openCacheDB) return g.APP.openCacheDB();
+    return new Promise(function (resolve) {
+      var idbFactory = (typeof indexedDB !== 'undefined') ? indexedDB : g.indexedDB;
+      if (!idbFactory) { resolve(null); return; }
+      try {
+        var rq = idbFactory.open('bim_ootb_cache', 2);   // matches scene.js A.openCacheDB exactly
+        rq.onupgradeneeded = function () {
+          var idb = rq.result;
+          if (!idb.objectStoreNames.contains('dbs')) idb.createObjectStore('dbs');
+          if (!idb.objectStoreNames.contains('timestamps')) idb.createObjectStore('timestamps');
+        };
+        rq.onsuccess = function () { resolve(rq.result); };
+        rq.onerror = function () { resolve(null); };
+        rq.onblocked = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  var _persistTimers = {};   // url -> timer, so rapid edits on the SAME db coalesce into one write
+  function persistDb(db, url, opts) {
+    opts = opts || {};
+    if (!db || !url) return Promise.resolve(false);
+    var delay = opts.immediate ? 0 : (opts.delay != null ? opts.delay : 1200);
+    if (_persistTimers[url]) { clearTimeout(_persistTimers[url]); }
+    return new Promise(function (resolve) {
+      _persistTimers[url] = setTimeout(function () {
+        delete _persistTimers[url];
+        try {
+          var buf = db.export().buffer;
+          openBuildingCache().then(function (idb) {
+            if (!idb || !idb.objectStoreNames.contains('dbs')) {
+              console.warn('§SCHED_PERSIST_ERR no cache store url=' + url); resolve(false); return;
+            }
+            var tx = idb.transaction('dbs', 'readwrite');
+            tx.objectStore('dbs').put(buf, url);
+            tx.oncomplete = function () {
+              console.log('§SCHED_PERSIST url=' + url + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
+              resolve(true);
+            };
+            tx.onerror = function () { console.warn('§SCHED_PERSIST_ERR tx ' + (tx.error && tx.error.message)); resolve(false); };
+          }).catch(function (e) { console.warn('§SCHED_PERSIST_ERR open ' + (e && e.message)); resolve(false); });
+        } catch (e) { console.warn('§SCHED_PERSIST_ERR', e); resolve(false); }
+      }, delay);
+    });
+  }
+
   var API = {
     matchRule: matchRule,
     materializeDefault: materializeDefault,
@@ -685,7 +756,9 @@
     moveTask: moveTask,
     addTask: addTask,
     reparentTask: reparentTask,
-    breakdownByAttribute: breakdownByAttribute
+    breakdownByAttribute: breakdownByAttribute,
+    persistDb: persistDb,
+    openBuildingCache: openBuildingCache
   };
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

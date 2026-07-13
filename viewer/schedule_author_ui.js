@@ -14,6 +14,18 @@
   function rules() { return global.SEQUENCE_RULES || {}; }
   var SA = function () { return global.ScheduleAuthor; };
 
+  // §SE-6: the wizard edits APP.db directly (shares it with the whole viewer) — but kernel_ops.js's
+  // own IDB persistence (§KRN_PERSIST) only fires on a signed commitOp(); schedule-table writes never
+  // go through it (kernel_ops mirroring is deferred, per schedule_author.js's header). So every
+  // authored phase/reassignment/date was ONLY ever in memory — closing the tab lost it, same gap the
+  // ↗ Editor tab had. Reuses the identical debounced ScheduleAuthor.persistDb helper (one
+  // implementation, not two divergent copies) keyed by APP.DB_URL — the same slot cachedFetch reads.
+  function persist(opts) {
+    var a = A(), d = db();
+    if (!SA().persistDb || !d || !a || !a.DB_URL) return;
+    SA().persistDb(d, a.DB_URL, opts);
+  }
+
   var _panel = null, _built = false;
   var _state = null;   // { schedId, start, order:[taskId], name:{}, dur:{}, count:{} }
 
@@ -250,6 +262,7 @@
       setTimeout(function () { global.toggleTimeMachine(); }, 60);   // fallback (older viewer)
     }
     _syncWhatIf();   // mirror the authored phases into C_ProjectPhase so the What-if (⑂) panel matches
+    persist({ immediate: true });   // §SE-6 — Apply-to-4D is a deliberate commit, flush without delay
   }
 
   function render() {
@@ -341,6 +354,7 @@
         else box.style.display = 'none';
       };
     });
+    if (_state && _state.order.length) persist();   // §SE-6 — only once a real schedule exists to save
   }
 
   function _fillElements(box, tid, opts) {
@@ -387,6 +401,11 @@
     document.getElementById('sa-draft').onclick = generateDraft;
     document.getElementById('sa-apply').onclick = applyTo4D;
     dragByHandle(_panel, document.getElementById('sa-head'));   // panel is repositionable (drag the header)
+    // §SE-6: immediate flush when the tab is backgrounded/closed — safety net alongside the debounced
+    // save in render(). visibilitychange (not beforeunload) per Chrome's own guidance on reliability.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') persist({ immediate: true });
+    });
     _built = true;
     render();
   }

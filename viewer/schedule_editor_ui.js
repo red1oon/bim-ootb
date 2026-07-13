@@ -12,7 +12,7 @@
   'use strict';
 
   var SA = function () { return global.ScheduleAuthor; };
-  var db = null, schedId = null, sync = null;
+  var db = null, schedId = null, sync = null, _dbUrl = null;
   var collapsed = {};   // task_id -> true when its subtree is collapsed
   var critSet = {};     // task_id -> true after a CPM run (drives the red rail + bold links)
   // §SE-5b: Gantt tick-density zoom (Day/Week/Month). The chart always fits the WHOLE project span into
@@ -393,6 +393,16 @@
       broadcast({ op: 'cpm', projectDuration: r.projectDuration, criticalIds: r.criticalIds });
     }
     renderWbs(); renderDeps(); renderGantt();
+    persist();
+  }
+
+  // §SE-6: debounced write-back to the SAME IndexedDB cache slot the building was loaded from — the
+  // gap that made every schedule edit vanish on tab close (see schedule_author.js persistDb doc).
+  // Called from BOTH mutation choke points below (refreshFold covers WBS/dep/date/reparent edits;
+  // onComputeCpm doesn't route through refreshFold, so it calls persist() directly above).
+  function persist(opts) {
+    if (!SA().persistDb || !db || !_dbUrl) return;
+    SA().persistDb(db, _dbUrl, opts);
   }
 
   // After a graph edit the prior CPM is INVALID — null the computed columns (everywhere) until the
@@ -405,28 +415,27 @@
     } catch (e) {}
     var o = $('se-cpm-out'); if (o) o.textContent = '';
     renderWbs(); renderDeps(); renderGantt();
+    persist();
   }
 
   // Reuse the viewer's IndexedDB cache (bim_ootb_cache / store 'dbs', keyed by URL — scene.js A.cachedFetch)
   // so the Editor does NOT re-download a whole building the viewer already streamed. The ↗ Editor button
   // passes ?db=<APP.DB_URL>, the exact key the viewer wrote, so this hits. Read-only; a miss falls through
-  // to network. Opened WITHOUT a version so we never clobber the viewer's schema. (W-SE-DB-CACHE)
+  // to network. §SE-6: routed through ScheduleAuthor.openBuildingCache — a bare unversioned open used
+  // to silently create a store-less db if the Editor was the FIRST surface to ever touch it in a fresh
+  // profile (caught live by W-SCHED-PERSIST); the shared opener self-heals that via a versioned
+  // onupgradeneeded, so read and write now use the exact same, robust opener.
   function _idbGetDb(url) {
-    return new Promise(function (resolve) {
-      try {
-        var rq = indexedDB.open('bim_ootb_cache');
-        rq.onsuccess = function () {
-          var idb = rq.result;
-          if (!idb.objectStoreNames.contains('dbs')) { resolve(null); return; }
-          try {
-            var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
-            g.onsuccess = function () { resolve(g.result || null); };
-            g.onerror = function () { resolve(null); };
-          } catch (e) { resolve(null); }
-        };
-        rq.onerror = function () { resolve(null); };
-      } catch (e) { resolve(null); }
-    });
+    return SA().openBuildingCache().then(function (idb) {
+      return new Promise(function (resolve) {
+        if (!idb || !idb.objectStoreNames.contains('dbs')) { resolve(null); return; }
+        try {
+          var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
+          g.onsuccess = function () { resolve(g.result || null); };
+          g.onerror = function () { resolve(null); };
+        } catch (e) { resolve(null); }
+      });
+    }).catch(function () { return null; });
   }
 
   // ── §X5: import a Primavera P6 programme (.xer / PMXML .xml) into THIS editor's db ──────────────
@@ -464,6 +473,7 @@
         }
         collapsed = {}; critSet = {};
         renderWbs(); renderDeps(); renderGantt(); fillAddForm();
+        persist();   // §SE-6 — an imported P6 programme is a real edit, save it
         status('Imported ' + det.format + ' "' + file.name + '" → ' +
           data._meta.summaryCount + ' WBS / ' + data._meta.leafCount + ' activities / ' +
           data.taskSequences.length + ' links — press ▶ Compute CPM for the critical path.' + bindMsg +
@@ -480,6 +490,7 @@
   function init() {
     if (!SA() || !SA().wbsTree) { status('engine not loaded'); return; }
     var url = resolveDbUrl();
+    _dbUrl = url;
     status('Loading ' + url.split('/').pop() + ' …');
     var initSqlJs = global.initSqlJs;
     initSqlJs({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/' + f; } })
@@ -516,6 +527,7 @@
             var resM = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
             schedId = 'SCH_AUTHORED';
             status('Seeded default schedule (' + resM.phases.length + ' phases) — ' + url.split('/').pop());
+            persist();   // §SE-6 — the freshly-seeded schedule is itself an edit worth saving
             resolve();
           }, 30);
         });
@@ -537,6 +549,13 @@
           b.onclick = function () { setZoom(b.dataset.zoom); };
         });
         window.addEventListener('resize', renderGantt);
+        // §SE-6: an immediate (non-debounced) flush when the tab is backgrounded/closed — the
+        // debounced 1.2s save covers the common case, this is the safety net for "closed right after
+        // an edit." visibilitychange (not beforeunload) per Chrome's own guidance — more reliably
+        // fires before a tab actually goes away (bfcache/close), and the write can still complete.
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'hidden') persist({ immediate: true });
+        });
       })
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
   }
