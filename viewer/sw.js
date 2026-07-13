@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v748';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v749';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -218,6 +218,12 @@ const _PRECACHE_SET = new Set(PRECACHE_ASSETS);
 // Precached files use cache-first — freshness guaranteed by CACHE_VERSION bump on deploy.
 function isNetworkFirst(url) {
   var base = url.split('?')[0];
+  // room_walker.js lives under lib/ by folder placement only — it's OUR frequently-changing
+  // room logic (PR #773/#776/#779 all touched it), not a third-party immutable vendor lib.
+  // The blanket lib/ rule below silently starved it of the network-first path for 3 straight
+  // deploys (found 2026-07-14, prompts/FUNCTIONAL_SPACE_MGMT_NEXT_SESSION.md §CACHE-LANDMINE) —
+  // exempt it explicitly rather than trusting folder placement to imply immutability.
+  if (base.endsWith('/lib/room_walker.js')) return true;
   // lib/ files are versioned and immutable — always cache-first
   if (base.includes('/lib/')) return false;
   // CDN fallback assets are also immutable — cache-first
