@@ -4224,6 +4224,22 @@
     };
 
     // ── Zoom-Across SCOPE consume (ZOOM_ACROSS_SCOPE_SESSION §SPEC) ─────────────────────────────────────────
+    // §BUGFIX 2026-07-13 (user report: "the ERP drawer at the bottom does not appear [after Zoom Across
+    // lands]; only when exiting the building and back to it, it is") — root cause: A.focusElement only
+    // does the 3D highlight (ghost/outline/zoom); it never touches #find-selected (the bottom bar with
+    // the cost figure + "› ERP" push + "open ↗"/"iDempiere ↗" links). Every OTHER selection path (a
+    // single result-item click, line ~3940; a storey/disc GROUP tap, line ~3117) explicitly reveals that
+    // bar via elSelected.style.display='flex' + _updateSelCost(set,label) — applyFindScope (the THIRD
+    // selection path, boot-time auto-Find from the ERP pill) never did. Re-entering the building later
+    // hits one of the other two paths, which is why a manual re-select "fixed" it. Mirrors the GROUP-tap
+    // fix (§FIND_MULTISEL, line ~3117) exactly — same reveal, same _updateSelCost call.
+    function _revealSelectedBar(set, label) {
+      var elSelText = document.getElementById('find-selected-text');
+      if (!set || !set.size) { if (elSelected) elSelected.style.display = 'none'; return; }
+      if (elSelText) elSelText.textContent = label;
+      if (elSelected) elSelected.style.display = 'flex';
+      try { _updateSelCost(set, label); } catch (e) { console.log('§ZOOM-SCOPE_BAR_ERR ' + e.message); }
+    }
     // The ERP "Zoom Across" pill cold-opens the viewer with ?find=<scope>; we run the INCUMBENT Find on it and
     // light the matches with the SAME highlighter a pick/Find-zoom uses (A.focusElement). NO parallel highlighter.
     //   scope = a comma-separated guid set  → focus those elements directly.
@@ -4240,7 +4256,9 @@
       // guid-set: has a comma OR isn't an Ifc* class token → treat as explicit element ids.
       if (scope.indexOf(',') >= 0 || !/^ifc[a-z]/i.test(scope)) {
         var guids = scope.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-        var lit = A.focusElement(new Set(guids), { item: guids.length === 1 });
+        var guidSet = new Set(guids);
+        var lit = A.focusElement(guidSet, { item: guids.length === 1 });
+        _revealSelectedBar(guidSet, guids.length === 1 ? ('Zoom Across · 1 item') : ('Zoom Across · ' + guids.length + ' items'));
         if (tmOpen && guids.length) {
           try { window.tmJumpToElement(guids[0]); } catch (e) {}   // TM consumes: jump to its construction moment
           console.log('§ZOOM-SCOPE route=tm kind=guids n=' + guids.length + ' moment=' + guids[0]);
@@ -4256,6 +4274,7 @@
       runSearch();
       var set = new Set((nav.results || []).map(function (r) { return r.guid; }).filter(Boolean));
       if (set.size) A.focusElement(set, { item: false });
+      _revealSelectedBar(set, friendlyClass(scope) + ' · ' + set.size + (set.size === 1 ? ' item' : ' items'));
       if (tmOpen && set.size) {
         var firstG = (nav.results || []).map(function (r) { return r.guid; }).filter(Boolean)[0];
         if (firstG) { try { window.tmJumpToElement(firstG); } catch (e) {} }   // TM consumes the class's first element
