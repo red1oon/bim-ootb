@@ -251,6 +251,11 @@
     var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0;
     var HallwayBackbone = (typeof module !== 'undefined' && module.exports) ? require('./hallway_backbone.js') : ROOT.HallwayBackbone;
     var spineByStorey = {}; // storey -> [{guid,cx,cy}]
+    // §CORRIDOR-WIDTH: real, wall-measured corridor rects (see hallway_backbone.js bucketRect) fed
+    // into _pointWalkable()'s room-rects fallback — WITHOUT this, a storey with no walkable raster
+    // treats genuine open corridor floor (no room modeled there) as illegal, so a legality detour
+    // can never succeed through it no matter how many spine candidate points are added.
+    var corridorRectsByStorey = {};
     if (HallwayBackbone) {
       try {
         var backbone = HallwayBackbone.buildBackbone(dbQuery, { log: log });
@@ -263,6 +268,7 @@
           order.push(sg);
           b._spineGuid = sg;
           (spineByStorey[b.storey] = spineByStorey[b.storey] || []).push(nodes[sg]);
+          (corridorRectsByStorey[b.storey] = corridorRectsByStorey[b.storey] || []).push(HallwayBackbone.bucketRect(b));
         });
         backbone.crossings.forEach(function (c) {
           var a = backbone.joined[c.a], b = backbone.joined[c.b];
@@ -489,6 +495,7 @@
       nodesByGuid: nodes, // superset: room + circ + exit + waypoint entries, see file header
       rasters: rasters, // §G3-REVISED: {storey: StoreyRaster instance}, see shortestPath()
       roomRectsByStorey: roomRectsByStorey, // §G3-REVISED fallback when a storey has no raster
+      corridorRectsByStorey: corridorRectsByStorey, // §CORRIDOR-WIDTH: real backbone corridor rects, same fallback
       stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors,
         edges: edges.filter(function (e) { return e.kind === 'E1'; }).length,
         deadend: deadend, orphan: orphan, ambiguous: ambiguous,
@@ -613,11 +620,24 @@
     var raster = graph.rasters && graph.rasters[storey];
     if (raster) return raster.contains(px, py);
     var rects = graph.roomRectsByStorey && graph.roomRectsByStorey[storey];
-    if (!rects || !rects.length) return null;
-    for (var i = 0; i < rects.length; i++) {
-      var rc = rects[i];
-      if (px >= rc.x0 - DOOR_BUFFER_SLACK && px <= rc.x1 + DOOR_BUFFER_SLACK &&
-        py >= rc.y0 - DOOR_BUFFER_SLACK && py <= rc.y1 + DOOR_BUFFER_SLACK) return true;
+    // §CORRIDOR-WIDTH: real, wall-measured corridor rects (hallway_backbone.js bucketRect) — see
+    // that fix's comment above the caller for WHY this is a different, stronger-evidence case than
+    // just widening DOOR_BUFFER_SLACK (a courtyard-sized void still correctly fails; a corridor
+    // only gets a rect here when it's an ACTUAL wall-bounded run with >=3 real doors).
+    var corridors = graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey];
+    if ((!rects || !rects.length) && (!corridors || !corridors.length)) return null;
+    if (rects) {
+      for (var i = 0; i < rects.length; i++) {
+        var rc = rects[i];
+        if (px >= rc.x0 - DOOR_BUFFER_SLACK && px <= rc.x1 + DOOR_BUFFER_SLACK &&
+          py >= rc.y0 - DOOR_BUFFER_SLACK && py <= rc.y1 + DOOR_BUFFER_SLACK) return true;
+      }
+    }
+    if (corridors) {
+      for (var j = 0; j < corridors.length; j++) {
+        var cc = corridors[j];
+        if (px >= cc.x0 && px <= cc.x1 && py >= cc.y0 && py <= cc.y1) return true;
+      }
     }
     return false;
   }
@@ -651,7 +671,16 @@
     var pts = [{ id: null, x: ax, y: ay }, { id: null, x: bx, y: by }];
     Object.keys(graph.nodesByGuid).forEach(function (g) {
       var n = graph.nodesByGuid[g];
-      if (n.kind === 'doorwp' && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
+      // §HALLWAY-BACKBONE: real corridor spine points are ALSO valid detour candidates, not just
+      // doorwp — a door-only visibility graph can genuinely have no legal edge between two doors
+      // that face each other across an open corridor (every straight door-to-door chord crosses
+      // the gap the raster marks non-walkable near a jutting wall corner), even though a real
+      // route along the corridor's own centerline exists. Observed live on Clinic First Floor
+      // before this fix: `§PATH_LEGAL_DETOUR_FAIL ... no legal detour among 139 doors` — the
+      // chord was then left AS-IS, undetoured, i.e. still crossing a wall. Adding spine nodes only
+      // ADDS candidate points/edges to this visibility graph — it can only turn a FAIL into a real
+      // route, never remove an already-legal one.
+      if ((n.kind === 'doorwp' || n.kind === 'spine') && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
     });
     var n = pts.length, adj = [];
     for (var i = 0; i < n; i++) adj.push([]);

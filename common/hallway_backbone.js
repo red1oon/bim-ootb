@@ -114,6 +114,35 @@
     return bucket;
   }
 
+  // §CORRIDOR-WIDTH (2026-07-14): the corridor's own SIDE walls run the SAME axis as the bucket
+  // (unlike growToWall's END caps, which run perpendicular) — find the nearest one flanking
+  // runCoord on each side, so the backbone carries a REAL measured width, not just a centerline.
+  // WHY: room_graph.js's `_pointWalkable()` falls back to "is this point inside a compiled room
+  // rect" when a storey has no walkable raster — by that fallback's own documented design, real
+  // open corridor floor (no room modeled there) reads as illegal. Feeding this measured width back
+  // into that legality test (see room_graph.js wiring) lets a real, wall-bounded corridor register
+  // as walkable even without a raster, instead of every corridor chord failing detour.
+  var DEFAULT_HALF_WIDTH = 1.2; // m — only used when no flanking wall is found on that side (rare: an open-plan edge)
+  function bucketWidth(bucket, walls) {
+    var rc = bucket.runCoord, lo = bucket.span.lo, hi = bucket.span.hi;
+    var nearAbove = null, nearBelow = null;
+    walls.forEach(function (w) {
+      var wWideX = w.bx >= w.by;
+      var wAxis = wWideX ? 'x' : 'y';
+      if (wAxis !== bucket.axis) return; // only the corridor's OWN side walls (same run direction)
+      var alongC = (bucket.axis === 'x') ? w.cx : w.cy;
+      var alongHalf = (bucket.axis === 'x') ? (w.bx / 2) : (w.by / 2);
+      if (alongC + alongHalf < lo || alongC - alongHalf > hi) return; // must run alongside this corridor
+      var perpC = (bucket.axis === 'x') ? w.cy : w.cx;
+      var perpHalf = (bucket.axis === 'x') ? (w.by / 2) : (w.bx / 2);
+      if (perpC >= rc) { var d = (perpC - perpHalf) - rc; if (d >= -WALL_CROSS_SLACK && (nearAbove === null || d < nearAbove)) nearAbove = Math.max(d, 0); }
+      else { var d2 = rc - (perpC + perpHalf); if (d2 >= -WALL_CROSS_SLACK && (nearBelow === null || d2 < nearBelow)) nearBelow = Math.max(d2, 0); }
+    });
+    bucket.halfWidthHi = (nearAbove !== null) ? nearAbove : DEFAULT_HALF_WIDTH;
+    bucket.halfWidthLo = (nearBelow !== null) ? nearBelow : DEFAULT_HALF_WIDTH;
+    return bucket;
+  }
+
   // Point-to-AABB distance (same convention as room_graph.js's rectDist): 0 if inside, else
   // Euclidean distance to the nearest edge/corner.
   function _rectDist(x0, y0, x1, y1, px, py) {
@@ -240,6 +269,7 @@
     var buckets = correlateDoorEdges(edges);
     var joined = joinDoorways(buckets);
     joined.forEach(function (b) { growToWall(b, wallsByStorey[b.storey] || []); });
+    joined.forEach(function (b) { bucketWidth(b, wallsByStorey[b.storey] || []); });
 
     var stairGroupsResult = RoomGraph ? RoomGraph.getStairGroups(dbQuery, log) : { groups: {} };
     joined.forEach(function (b) { terminateAtStair(b, stairGroupsResult.groups); });
@@ -270,9 +300,21 @@
     return { buckets: buckets, joined: joined, chains: allChains, crossings: allCrossings, stats: stats };
   }
 
+  // A bucket's real walkable footprint as an AABB rect — span along its axis, measured
+  // (or default) half-width perpendicular. Used by room_graph.js's _pointWalkable() fallback so a
+  // real corridor registers as walkable even on a storey with no raster.
+  function bucketRect(b) {
+    var perpLo = b.runCoord - (b.halfWidthLo != null ? b.halfWidthLo : DEFAULT_HALF_WIDTH);
+    var perpHi = b.runCoord + (b.halfWidthHi != null ? b.halfWidthHi : DEFAULT_HALF_WIDTH);
+    return (b.axis === 'x')
+      ? { x0: b.span.lo, x1: b.span.hi, y0: perpLo, y1: perpHi }
+      : { x0: perpLo, x1: perpHi, y0: b.span.lo, y1: b.span.hi };
+  }
+
   var API = {
     doorEdge: doorEdge, correlateDoorEdges: correlateDoorEdges, joinDoorways: joinDoorways,
-    growToWall: growToWall, terminateAtStair: terminateAtStair, walkBackbone: walkBackbone,
+    growToWall: growToWall, bucketWidth: bucketWidth, bucketRect: bucketRect,
+    terminateAtStair: terminateAtStair, walkBackbone: walkBackbone,
     buildBackbone: buildBackbone
   };
   ROOT.HallwayBackbone = API;
