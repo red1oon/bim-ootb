@@ -279,6 +279,10 @@
     var allChains = [], allCrossings = [];
     Object.keys(byStorey).forEach(function (st) {
       var r = walkBackbone(byStorey[st]);
+      r.chains.forEach(function (ch) {
+        var chainIndex = allChains.length + r.chains.indexOf(ch);
+        ch.buckets.forEach(function (b) { b._chainIndex = chainIndex; });
+      });
       allChains = allChains.concat(r.chains);
       allCrossings = allCrossings.concat(r.crossings);
     });
@@ -311,11 +315,72 @@
       : { x0: perpLo, x1: perpHi, y0: b.span.lo, y1: b.span.hi };
   }
 
+  // §CORRIDOR-TYPE-LABEL (2026-07-14, user ask: "long corridors well named under Type.Hall/
+  // Corridor" — resume doc §OPEN #2's UX ask, superseded signal now the verified backbone instead
+  // of the old undercounting hallwayness() formula). DISPLAY-TIME classification only — does NOT
+  // rewrite spatial_structure/predefined_type (that's compile-time, Sacred-file/mined-pipeline
+  // territory, a bigger cross-repo change); a caller (e.g. the Find panel's Type-grouped room
+  // tree) asks "which already-compiled rooms sit on a real hallway spine" and overrides the
+  // DISPLAYED label only, non-destructively, for any already-compiled/patched building without a
+  // new extraction run. A room qualifies iff its own rect-set CENTROID falls inside a joined
+  // (>=3-door) bucket's real measured rect (bucketRect) on the same storey — real, measured
+  // evidence (the bucket only exists because of real doors + real walls), not a shape/area guess.
+  // Returns a map: { logicalRoomGuid: { chain: chainIndex|null } } for every matched room.
+  function classifyCorridorRooms(dbQuery, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    var backbone = buildBackbone(dbQuery, opts);
+    if (!backbone.joined.length) return {};
+
+    var hasRoomGuid = false;
+    try {
+      var cols = dbQuery('PRAGMA table_info(spatial_structure)') || [];
+      hasRoomGuid = cols.some(function (c) { return c[1] === 'room_guid'; });
+    } catch (eCols) { /* stays false */ }
+
+    // storey name comes via the parent IfcBuildingStorey row's own name — same join-through-parent
+    // convention room_graph.js buildGraph() and navigate_find.js's room tree both already use.
+    var spaceRows = dbQuery("SELECT s.guid, p.name" + (hasRoomGuid ? ', s.room_guid' : ', NULL') +
+      ', s.center_x, s.center_y, s.size_x, s.size_y' +
+      ' FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid' +
+      " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL AND s.size_x IS NOT NULL") || [];
+
+    var rects = {}; // logicalGuid -> {storey, sumX, sumY, n}
+    spaceRows.forEach(function (r) {
+      var logicalGuid = r[2] || r[0];
+      var storey = r[1] || '';
+      if (!rects[logicalGuid]) rects[logicalGuid] = { storey: storey, sumX: 0, sumY: 0, n: 0 };
+      rects[logicalGuid].sumX += r[3]; rects[logicalGuid].sumY += r[4]; rects[logicalGuid].n++;
+    });
+
+    var bucketsByStorey = {};
+    backbone.joined.forEach(function (b, bi) {
+      (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push({ rect: bucketRect(b), chain: b._chainIndex != null ? b._chainIndex : null });
+    });
+
+    var result = {};
+    Object.keys(rects).forEach(function (lg) {
+      var r = rects[lg];
+      var cx = r.sumX / r.n, cy = r.sumY / r.n;
+      var candidates = bucketsByStorey[r.storey];
+      if (!candidates) return;
+      for (var i = 0; i < candidates.length; i++) {
+        var rc = candidates[i].rect;
+        if (cx >= rc.x0 && cx <= rc.x1 && cy >= rc.y0 && cy <= rc.y1) {
+          result[lg] = { chain: candidates[i].chain };
+          break;
+        }
+      }
+    });
+    log('§CORRIDOR_TYPE_LABEL classifiedRooms=' + Object.keys(result).length + ' / ' + Object.keys(rects).length);
+    return result;
+  }
+
   var API = {
     doorEdge: doorEdge, correlateDoorEdges: correlateDoorEdges, joinDoorways: joinDoorways,
     growToWall: growToWall, bucketWidth: bucketWidth, bucketRect: bucketRect,
     terminateAtStair: terminateAtStair, walkBackbone: walkBackbone,
-    buildBackbone: buildBackbone
+    buildBackbone: buildBackbone, classifyCorridorRooms: classifyCorridorRooms
   };
   ROOT.HallwayBackbone = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
