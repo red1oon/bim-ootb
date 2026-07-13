@@ -21,8 +21,14 @@
 
   var RES = 0.20;          // grid cell size (m)
   var MIN_AREA = 4.0;      // m^2 — drop slivers / wall cavities
-  var MAX_AREA_ABS = 150.0;  // m^2 — drop exterior-leak blobs (a real room is rarely bigger)
-  var MAX_AREA_FRAC = 0.92;  // also drop anything ~the whole storey plan
+  // §SUSPECT-LARGE (compile_rooms.py port, 2026-07-14): MAX_AREA_ABS used to be a hard drop
+  // threshold, calibrated to residential room sizes. That predates §DOOR-PARTITION-EXT-EXCLUDE,
+  // now the real leak detector — measured fleet-wide, real confirmed-interior pockets range
+  // 38-1544 m^2, so a fixed drop threshold is wrong for some real building (incl. "residential"-
+  // classed SampleCastle at 315 m^2). Repurposed: still compiles, flagged for review instead of
+  // silently vanishing.
+  var MAX_AREA_ABS = 150.0;  // m^2 — SUSPECT_LARGE flag threshold, no longer a drop threshold
+  var MAX_AREA_FRAC = 0.92;  // still a hard drop — self-scaling (% of THIS building's own storey plan)
   var SEAL = 2;             // dilate walls this many cells (×RES) to close hairline corner/door gaps
   var WALL_LIKE = ["IfcWall%", "IfcDoor%", "IfcCurtainWall%", "IfcColumn%", "IfcWindow%"];
   // §STAIR-EXCLUDE: a stairwell is a wall-enclosed pocket, so the flood-fill flags it as a "room".
@@ -578,7 +584,7 @@
           });
         }
         var area = comp.length * cellArea;
-        if (area > MAX_AREA_ABS || area > planArea * MAX_AREA_FRAC) continue;
+        if (area > planArea * MAX_AREA_FRAC) continue;   // §SUSPECT-LARGE: MAX_AREA_ABS flags below, never drops
         var wx0 = xs0 + mni * RES, wx1 = xs0 + (mxi + 1) * RES;
         var wy0 = ys0 + mnj * RES, wy1 = ys0 + (mxj + 1) * RES;
         // §DOOR-RESCUE (abstract test, applies uniformly — not a size band): a pocket is a room if
@@ -601,6 +607,7 @@
         var openM = _openPerimeterM(comp, inSet, raw, dil, nx, ny, SEAL);
         var suspect = _classify(hasDoor, openM, doorWMed);
         if (!suspect && _isElongated(wx0, wy0, wx1, wy1)) suspect = 'ELONGATED';
+        if (!suspect && area > MAX_AREA_ABS) suspect = 'LARGE';
         var gr = _growRegion(comp, inSet, raw, dil, nx, ny, SEAL);
         var totalCells = comp.length + gr.added.length;
         var dec = _decomposeRegion(inSet, ny, gr.mni, gr.mxi, gr.mnj, gr.mxj, totalCells, !!suspect);
@@ -740,7 +747,7 @@
       var wx0 = xs0 + mni * RES, wx1 = xs0 + (mxi + 1) * RES;
       var wy0 = ys0 + mnj * RES, wy1 = ys0 + (mxj + 1) * RES;
       if ((wx1 - wx0) < NOISE_FLOOR_DIM || (wy1 - wy0) < NOISE_FLOOR_DIM) return;
-      if (area > MAX_AREA_ABS || area > planArea * MAX_AREA_FRAC) return;
+      if (area > planArea * MAX_AREA_FRAC) return;   // §SUSPECT-LARGE: MAX_AREA_ABS flags below, never drops
       if (stairOverlapFrac(wx0, wy0, wx1, wy1, stairs) >= STAIR_OVERLAP_REJECT) return;
       // §ROOM-FORM + §RECT-HONESTY + §MULTI-RECT (ROOM_INJECTION_HYBRID.md §7/§8). No dilation on
       // this path → sealSteps=0 for the openM march, no seal band to grow back into.
@@ -750,6 +757,7 @@
       var hasDoor = doorAdjacent(wx0, wy0, wx1, wy1, doors);
       var suspect = _classify(hasDoor, openM, doorWMed);
       if (!suspect && _isElongated(wx0, wy0, wx1, wy1)) suspect = 'ELONGATED';
+      if (!suspect && area > MAX_AREA_ABS) suspect = 'LARGE';
       var dec = _decomposeRegion(inSet, ny, mni, mxi, mnj, mxj, cells.length, !!suspect);
       for (c2 = 0; c2 < cells.length; c2++) inSet[cells[c2]] = 0;
       var rects = [];
